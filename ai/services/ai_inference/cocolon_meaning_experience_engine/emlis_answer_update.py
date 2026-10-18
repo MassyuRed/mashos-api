@@ -90,6 +90,7 @@ class PreparedEmlisMeaning:
     legacy_cognitive_self_continuation: bool = False
     legacy_relief_unknown_retention: bool = False
     legacy_relief_unknown_source: bool = False
+    legacy_relief_cognition_anaphora: bool = False
 
 
 def _text(row, index, resolver) -> str:
@@ -939,7 +940,7 @@ def _active_plan(original, thread, added, inactive, updates, unresolved=(), *, p
         nuclei, relations, resolver) for n in pair[:2]}
     nuclei = tuple(replace(n, semantic_frame=replace(n.semantic_frame,
         attribute_codes=tuple(code for code in n.semantic_frame.attribute_codes
-            if not code.startswith('source_relief_cognition_slot:'))))
+            if not code.startswith(('source_relief_cognition_slot:', 'source_relief_cognition_anaphora:')))))
         if n.nucleus_id not in valid_response_ids and any(code.startswith('source_relief_cognition_slot:')
             for code in n.semantic_frame.attribute_codes) else n for n in nuclei)
     # The original joint reading expires when any of its source roles or
@@ -1017,6 +1018,17 @@ def prepare_emlis_meaning(request: GenerationRequest) -> PreparedEmlisMeaning:
         if (str(exc) not in {"emlis_checkpoint_source_prefix_mismatch", "emlis_question_noncanonical"}
             or thread.control.prepared_meaning_checkpoint_ref is None and not legacy_question):
             raise
+        # u335 owns its complete full-clause reception and checkpoint.
+        # Re-derive it; never relabel a new anaphoric selection with an old ID.
+        prior_anaphora = original_meaning_plan(thread, _legacy_relief_cognition_anaphora=True)
+        if prior_anaphora.nuclei != original.nuclei or prior_anaphora.relations != original.relations:
+            try:
+                restored = _prepare_emlis_meaning_from_plan(request, thread, prior_anaphora)
+            except ValueError as prior_exc:
+                if str(prior_exc) not in {'emlis_checkpoint_source_prefix_mismatch', 'emlis_question_noncanonical'}:
+                    raise
+            else:
+                return replace(restored, legacy_relief_cognition_anaphora=True)
         # Restore u334's full source interpretation before correcting the
         # lexical conflict/reflexive defaults. Its checkpoint is not a label
         # that can be attached to the newly recognized three-object source.

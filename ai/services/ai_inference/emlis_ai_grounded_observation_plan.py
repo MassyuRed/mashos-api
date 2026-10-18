@@ -17420,6 +17420,7 @@ def project_final_stage1_grounded_observation_plan(
     _legacy_cognitive_self_continuation: bool = True,
     _legacy_relief_unknown_retention: bool = True,
     _legacy_relief_unknown_source: bool = True,
+    _legacy_relief_cognition_anaphora: bool = True,
 ) -> GroundedObservationPlan:
     """Project final Stage-1 typed owners without changing the active plan.
 
@@ -17502,7 +17503,8 @@ def project_final_stage1_grounded_observation_plan(
         nuclei = tuple(replace(n, semantic_frame=replace(n.semantic_frame,
             attribute_codes=(*n.semantic_frame.attribute_codes,
                 'source_relief_cognition_slot:' + slots[n.nucleus_id],
-                'source_relief_cognition_origin:' + slots[n.nucleus_id])))
+                'source_relief_cognition_origin:' + slots[n.nucleus_id],
+                *(() if _legacy_relief_cognition_anaphora else ('source_relief_cognition_anaphora:v1',)))))
             if n.nucleus_id in slots else n for n in nuclei)
     if not _legacy_relief_unknown_source:
         nuclei, relations = _final_source_relief_unknown(
@@ -18105,6 +18107,16 @@ def _explicit_unknown_object_reception(response, nuclei, relations, evidence_spa
             if source_owned_separate_contrast_objects(m, nuclei, relations, evidence_spans, normalized_input)
             else m for m in reception.moves)
         response = replace(response, human_reception_plan=replace(reception, moves=moves))
+    pairs = source_owned_relief_cognition_pairs(nuclei, relations, evidence_spans, normalized_input)
+    eligible = tuple({left.nucleus_id, right.nucleus_id} for left, right, _ in pairs
+        if all('source_relief_cognition_anaphora:v1' in n.semantic_frame.attribute_codes
+               for n in (left, right)))
+    reception = response.human_reception_plan
+    if reception is not None:
+        response = replace(response, human_reception_plan=replace(reception, moves=tuple(
+            replace(m, reference_mode='anaphoric_first')
+            if m.required and set((*m.target_nucleus_ids, *m.support_nucleus_ids)) in eligible
+            else m for m in reception.moves)))
     independent = (_source_independent_unknown_object_group(nuclei, relations, evidence_spans, normalized_input)
         or _source_same_field_unknown_object_group(nuclei, relations, evidence_spans, normalized_input)
         or _source_relief_cognition_unknown_group(nuclei, relations, evidence_spans, normalized_input))
@@ -19107,6 +19119,7 @@ def build_final_stage1_grounded_observation_plan(
     _legacy_cognitive_self_continuation: bool = True,
     _legacy_relief_unknown_retention: bool = True,
     _legacy_relief_unknown_source: bool = True,
+    _legacy_relief_cognition_anaphora: bool = True,
 ) -> GroundedObservationPlan:
     """Build the registered-disabled final Stage-1 typed grounding plan.
 
@@ -19180,6 +19193,7 @@ def build_final_stage1_grounded_observation_plan(
         _legacy_cognitive_self_continuation=_legacy_cognitive_self_continuation,
         _legacy_relief_unknown_retention=_legacy_relief_unknown_retention,
         _legacy_relief_unknown_source=_legacy_relief_unknown_source,
+        _legacy_relief_cognition_anaphora=_legacy_relief_cognition_anaphora,
     )
 
 

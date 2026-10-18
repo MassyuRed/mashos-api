@@ -1038,7 +1038,7 @@ def _retained_relief_cognition_eligibility(prepared, plan, resolver):
     group = _source_relief_cognition_unknown_from_resolver(plan.nuclei, plan.relations, resolver)
     thread, checkpoint = prepared.thread, prepared.checkpoint
     if (not group or thread.answers or thread.control.answers or thread.control.current_round != 0
-        or any(getattr(prepared, f.name) for f in fields(prepared) if f.name.startswith('legacy_'))
+        or any(getattr(prepared, f.name) for f in fields(prepared) if f.name.startswith('legacy_') and f.name != 'legacy_relief_cognition_anaphora')
         or checkpoint.answer_update is not None or checkpoint.accepted_update_refs
         or checkpoint.inactive_claim_refs or checkpoint.unresolved_parts
         or checkpoint.assessment_status != 'RESOLVED'):

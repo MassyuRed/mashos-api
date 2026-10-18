@@ -5096,6 +5096,7 @@ def validate_grounded_human_reception_surface(
     *,
     plan: GroundedObservationPlan | None = None,
     selected_subjective_input: SelectedSubjectiveReceptionInputV1 | None = None,
+    preceding_observation: str | None = None,
 ) -> tuple[str, ...]:
     """Validate the R4 surface without reconstructing observation meaning."""
 
@@ -5297,7 +5298,7 @@ def validate_grounded_human_reception_surface(
                 number < len(clauses) and move.move_id in clauses[number].move_ids
                 and ((clauses[number].move_ids == (move.move_id,)
                     and read_source_owned_discourse(text, move, plan, resolver,
-                        selected_subjective_input, preceding_context=(
+                        selected_subjective_input, preceding_observation=preceding_observation, preceding_context=(
                             by_id[clauses[number - 1].move_ids[0]], sentences[number - 1])
                         if number and len(clauses[number - 1].move_ids) == 1 else None) is not None)
                     or (len(clauses[number].move_ids) == 2
@@ -11921,7 +11922,7 @@ def _source_owned_answer_feeling_sentence(move, realization, plan, resolver,
     return topic + time + _feeling_acknowledgement(finite)
 
 
-def _source_owned_relief_cognition_sentence(move, plan, resolver, selected, recovery_stage):
+def _source_owned_relief_cognition_sentence(move, plan, resolver, selected, recovery_stage, preceding_observation=None):
     from emlis_ai_grounded_observation_gate import _relief_cognition_selected_reception
     from emlis_ai_grounded_observation_plan import _source_cognitive_feeling_parts
     pair = _relief_cognition_selected_reception(move, plan, resolver, selected)
@@ -11933,6 +11934,12 @@ def _source_owned_relief_cognition_sentence(move, plan, resolver, selected, reco
     scopes = {role: (a, b) for role, a, b, _ in parts}
     condition = cognitive[:scopes['cognitive_condition'][0]]
     feeling = cognitive[slice(*scopes['feeling'])]
+    from emlis_ai_grounded_observation_gate import _relief_cognition_observation_antecedents
+    if _relief_cognition_observation_antecedents(pair, move, resolver, preceding_observation):
+        from emlis_ai_grounded_observation_plan import _source_nominal_past_feeling_parts
+        relief_head = _source_nominal_past_feeling_parts(relief)[3]
+        loneliness = 'そのさびしさ' if feeling.endswith('さびしい') else 'その寂しさ'
+        return relief_head + 'と聞いて、私も少し安心しましたが、' + loneliness + 'にも、今、耳を傾けていたいです'
     relief, condition = (re.sub(r'^(?:私|わたし|自分|僕|ぼく|俺|おれ)(?=は|が|も)', 'あなた', text)
                          for text in (relief, condition))
     return (relief + 'と聞いて、私も少し安心しましたが、' + condition + 'と'
@@ -12371,6 +12378,7 @@ def _author_source_grounded_reception_clauses(
     recovery_stage: ReceptionRecoveryStage,
     binding_seeds: tuple[_ReceptionClauseBindingSeedV1, ...] = (),
     selected_subjective_input: SelectedSubjectiveReceptionInputV1 | None = None,
+    preceding_observation: str | None = None,
 ) -> GroundedHumanReceptionSurface:
     """The sole final author; bindings are emitted in the same append pass."""
 
@@ -12951,7 +12959,7 @@ def _author_source_grounded_reception_clauses(
             if corrected is not None:
                 move_sentence = '言い直してくださった気持ちは、' + corrected + 'ということなのですね'
             relief_sentence = _source_owned_relief_cognition_sentence(
-                move, plan, resolver, selected_subjective_input, recovery_stage)
+                move, plan, resolver, selected_subjective_input, recovery_stage, preceding_observation)
             if relief_sentence is not None:
                 move_sentence = relief_sentence
             # A source-owned reading is checked against its actual source roles,
@@ -12960,6 +12968,7 @@ def _author_source_grounded_reception_clauses(
             discourse_proof = read_source_owned_discourse(
                 move_sentence + "。", move, plan, resolver,
                 selected_subjective_input, preceding_context=preceding_context,
+                preceding_observation=preceding_observation,
             )
             if discourse_proof is None and (
                 _visible_fragment_occurrence_count(
@@ -13218,6 +13227,7 @@ def _author_source_grounded_reception_clauses(
         resolver,
         plan=plan,
         selected_subjective_input=selected_subjective_input,
+        preceding_observation=preceding_observation,
     )
     if issues:
         raise GroundedHumanReceptionSurfaceError(
@@ -13235,6 +13245,7 @@ def _replay_source_grounded_human_reception_from_plan(
     recovery_stage: ReceptionRecoveryStage,
     clause_plans: Sequence[GroundedReceptionClausePlan],
     selected_subjective_input: SelectedSubjectiveReceptionInputV1 | None = None,
+    preceding_observation: str | None = None,
 ) -> GroundedHumanReceptionSurface:
     """Validation-only replay from existing grounding inputs, never a carrier."""
 
@@ -13261,6 +13272,7 @@ def _replay_source_grounded_human_reception_from_plan(
         nucleus_index=nucleus_index,
         recovery_stage=recovery_stage,
         selected_subjective_input=selected_subjective_input,
+        preceding_observation=preceding_observation,
     )
 
 
@@ -13489,6 +13501,7 @@ def _realize_source_grounded_human_reception(
     recovery_stage: ReceptionRecoveryStage,
     clause_plans: Sequence[GroundedReceptionClausePlan],
     selected_subjective_input: SelectedSubjectiveReceptionInputV1 | None = None,
+    preceding_observation: str | None = None,
 ) -> GroundedHumanReceptionSurface:
     """Consume exact selected-meaning expressions and author Layer 2 once."""
 
@@ -13579,6 +13592,7 @@ def _realize_source_grounded_human_reception(
         recovery_stage=recovery_stage,
         binding_seeds=tuple(seeds),
         selected_subjective_input=selected_subjective_input,
+        preceding_observation=preceding_observation,
     )
 
 
@@ -13629,6 +13643,7 @@ def replay_source_grounded_human_reception_from_plan(
     recovery_stage: ReceptionRecoveryStage,
     clause_plans: Sequence[GroundedReceptionClausePlan],
     selected_subjective_input: SelectedSubjectiveReceptionInputV1 | None = None,
+    preceding_observation: str | None = None,
 ) -> GroundedHumanReceptionSurface:
     """Independently rebuild final bytes from plan inputs only."""
 
@@ -13641,6 +13656,7 @@ def replay_source_grounded_human_reception_from_plan(
             recovery_stage=recovery_stage,
             clause_plans=clause_plans,
             selected_subjective_input=selected_subjective_input,
+            preceding_observation=preceding_observation,
         )
     except GroundedHumanReceptionSurfaceError as exc:
         raise GroundedHumanReceptionSurfaceError(
@@ -13662,6 +13678,7 @@ def realize_source_grounded_human_reception(
     recovery_stage: ReceptionRecoveryStage,
     clause_plans: Sequence[GroundedReceptionClausePlan],
     selected_subjective_input: SelectedSubjectiveReceptionInputV1 | None = None,
+    preceding_observation: str | None = None,
 ) -> GroundedHumanReceptionSurface:
     """Named-failure boundary for the final source-grounded author."""
 
@@ -13675,6 +13692,7 @@ def realize_source_grounded_human_reception(
             recovery_stage=recovery_stage,
             clause_plans=clause_plans,
             selected_subjective_input=selected_subjective_input,
+            preceding_observation=preceding_observation,
         )
     except GroundedHumanReceptionSurfaceError as exc:
         raise GroundedHumanReceptionSurfaceError(

@@ -37,6 +37,10 @@ def assert_record(req, row):
 def test_complete_original_meaning_and_delivery_against_u334(row):
     req = request(row['memo'])
     if row['case'] not in IMPROVED:
+        # These complete u334 controls remain restorable; fresh u336 output
+        # is checked separately against the complete u335 source baseline.
+        req = replace(req, emlis_thread=replace(req.emlis_thread,
+            prepared_meaning_checkpoint_ref=row['checkpoint']['checkpoint_id']))
         assert_record(req, row)
         return
     p = prepare_emlis_meaning(req); plan = build_updated_grounded_plan(p)
@@ -97,7 +101,12 @@ def test_reader_rejects_missing_facets_and_changed_unknown_source(context, mutat
     elif mutation == 'object': changed = body.replace('何が嫌なのか','何が嬉しいのか').replace('何が不安なのか','何が悲しいのか').replace('どこが不安なのか','どこが悲しいのか')
     elif mutation == 'owner': changed = body.replace('ご自身でも','友達でも').replace('あなたにも','友達にも').replace('ご自身にも','友達にも')
     elif mutation == 'time': changed = body.replace('わからない','わからなかった').replace('分からない','分からなかった')
-    elif mutation == 'certainty': changed = body.replace('かもしれない','に違いない')
+    elif mutation == 'certainty':
+        from test_cmee_emlis_detached_observation import read_body
+        whole = context[0].artifact.text
+        changed = whole.replace('かもしれない','に違いない')
+        assert changed != whole and not read_body(context, changed).passed
+        return
     else: changed = body.replace('です。何が','です。だから、何が').replace('です。どこが','です。だから、どこが')
     assert changed != body
     assert not inverse(context, changed, without_author=True).passed

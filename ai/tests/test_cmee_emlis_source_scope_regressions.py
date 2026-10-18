@@ -321,7 +321,14 @@ def test_past_and_current_feelings_keep_their_full_objects_and_distinct_times(so
     assert len([r for r in plan.relations if r.type == 'contrast']) == 1
     assert '同時' not in result.artifact.text
     for clause in source.rstrip('。').split('。でも、'):
-        assert clause in result.artifact.observation and clause in result.artifact.reception
+        assert clause in result.artifact.observation
+        if 'その寂しさにも' not in result.artifact.reception:
+            assert clause in result.artifact.reception
+    if 'その寂しさにも' in result.artifact.reception:
+        # Approved joint retention: the independent reader must resolve both
+        # short references from the complete actual Layer-1 source clauses.
+        assert any('source_relief_cognition_anaphora:v1' in n.semantic_frame.attribute_codes for n in memo)
+        assert 'と聞いて、私も少し安心しましたが、その寂しさにも、今、耳を傾けていたいです。' in result.artifact.reception
     assert inverse(ctx, result.artifact.reception, without_author=True).passed
     public = MeaningExperienceEngine().generate(request(source + unknown))
     assert public.artifact is not None and public.artifact.text == result.artifact.text
@@ -356,7 +363,23 @@ def test_body_reader_rejects_scope_object_time_and_contrast_loss_without_author(
     artifact = result.artifact
     before = getattr(artifact, section)
     left, right = PAST_AND_PREDICTED_FEELING.rstrip('。').split('。でも、')
-    if change == 'reverse':
+    if section == 'reception' and 'その寂しさにも' in before:
+        old, new = {
+            'short_left': ('ほっとしたと聞いて、', ''),
+            'short_right': ('その寂しさにも、', ''),
+            'possibility': ('その寂しさ', '必ず誘われない寂しさ'),
+            'condition': ('その寂しさ', '現実に誘われなくなった寂しさ'),
+            'negation': ('その寂しさ', 'その嬉しさ'),
+            'past': ('ほっとした', 'ほっとする'),
+            'reverse': ('ほっとしたと聞いて、', 'その寂しさと聞いて、'),
+            'cause': ('と聞いて、', 'ので、'),
+            'collapse': ('ほっとしたと聞いて、私も少し安心しましたが、', ''),
+            'actor': ('私も少し', '友人も少し'),
+            'negative_reception': ('安心しましたが', '安心しませんでしたが'),
+            'extra_claim': ('です。', 'です。承認を求めているのですね。'),
+        }[change]
+        after = before.replace(old, new)
+    elif change == 'reverse':
         after = before.replace(left, '__LEFT__').replace(right, left).replace('__LEFT__', right)
     elif change == 'simultaneous':
         after = before.replace('の一方で', 'と').replace('とあります。', 'が、異なる向きのまま同時にあります。')
@@ -471,10 +494,11 @@ def test_temporal_object_cannot_be_removed_retimed_or_asserted_by_body_reader(ol
     source = ('友人の誘いを断って、一人で休めたことにほっとした。'
               'でも、今後は誘ってもらえないかもしれないと考えると寂しい。')
     context = actual(request=request(source))
-    reception = context[0].artifact.reception
-    changed = reception.replace(old, new)
-    assert changed != reception
-    assert not inverse(context, changed, without_author=True).passed
+    from test_cmee_emlis_detached_observation import read_body
+    body = context[0].artifact.text
+    changed = body.replace(old, new)
+    assert changed != body
+    assert not read_body(context, changed).passed
 
 
 @pytest.mark.parametrize('case_index', range(4))
@@ -490,7 +514,9 @@ def test_pre_temporal_topic_checkpoint_keeps_complete_u319_meaning(case_index):
     req = request(row['memo'])
     fresh = prepare_emlis_meaning(req)
     changed = row['case_id'] != 'original03'
-    assert (fresh.checkpoint.checkpoint_id != row['checkpoint']['checkpoint_id']) == changed
+    new_reference = any('source_relief_cognition_anaphora:v1' in n.semantic_frame.attribute_codes
+                        for n in fresh.original_plan.nuclei)
+    assert (fresh.checkpoint.checkpoint_id != row['checkpoint']['checkpoint_id']) == (changed or new_reference)
     saved = replace(req, emlis_thread=replace(req.emlis_thread,
         prepared_meaning_checkpoint_ref=row['checkpoint']['checkpoint_id']))
     restored = prepare_emlis_meaning(saved)
@@ -622,7 +648,9 @@ def test_pre_self_reason_checkpoint_rederives_complete_u323_meaning(case_index):
     req = request(row['memo'])
     fresh = prepare_emlis_meaning(req)
     changed = case_index != 3
-    assert (fresh.checkpoint.checkpoint_id != row['checkpoint']['checkpoint_id']) == changed
+    new_reference = any('source_relief_cognition_anaphora:v1' in n.semantic_frame.attribute_codes
+                        for n in fresh.original_plan.nuclei)
+    assert (fresh.checkpoint.checkpoint_id != row['checkpoint']['checkpoint_id']) == (changed or new_reference)
     saved = replace(req, emlis_thread=replace(req.emlis_thread,
         prepared_meaning_checkpoint_ref=row['checkpoint']['checkpoint_id']))
     restored = prepare_emlis_meaning(saved)

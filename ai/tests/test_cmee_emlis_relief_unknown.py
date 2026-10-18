@@ -21,9 +21,9 @@ IMPROVED = {'base', 'self', 'boku', 'slight', 'past_possible'}
 @pytest.mark.parametrize('row', BASELINE['cases'], ids=lambda row: row['case'])
 def test_u334_original_meaning_and_controls_survive_while_independent_unknown_is_received(row):
     req = request(row['memo'])
-    if row['case'] in {'relief', 'unknown_jibun'}:
-        # Keep these historical u334 stop records exact. Current recognition
-        # and full u334 restoration are covered in relief_unknown_source.
+    if row['case'] not in IMPROVED:
+        # Preserve historical controls explicitly; current source/short-form
+        # outcomes are checked against u335 in relief_anaphora.
         req = replace(req, emlis_thread=replace(req.emlis_thread,
             prepared_meaning_checkpoint_ref=row['checkpoint']['checkpoint_id']))
     p = prepare_emlis_meaning(req)
@@ -94,13 +94,14 @@ def test_current_body_is_read_independently_and_keeps_approved_synonym(context):
  ('まだわからない','もうわかった'), ('まだわからない','まだわからないから寂しい'),
  ('です。何が','です。だから、何が'), ('かもしれない','に違いない'),
  ('ほっとした','ほっとしなかった'), ('寂しい','怖い'),
- ('あなたは友達','友達は友達'), ('と聞いて、','が原因で、'),
- ('寂しいという気持ちにも','寂しかったという気持ちにも'),
+ ('私は友達','友達は友達'), ('と聞いて、','が原因で、'),
+ ('その寂しさにも','その時の寂しさにも'),
 ])
 def test_reader_rejects_loss_swapped_owner_certainty_and_cause_without_author(context,before,after):
-    body=context[0].artifact.reception; changed=body.replace(before,after)
+    from test_cmee_emlis_detached_observation import read_body
+    body=context[0].artifact.text; changed=body.replace(before,after)
     assert changed!=body
-    assert not inverse(context,changed,without_author=True).passed
+    assert not read_body(context,changed).passed
 
 
 @pytest.mark.parametrize('mutation', ['checkpoint','move','unknown_move','unknown_role','projection','claim',

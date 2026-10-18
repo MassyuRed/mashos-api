@@ -1,3 +1,5 @@
+> 2026-10-18最新：u336。承認済みの実Observation共同保持による返答短縮。末尾u336を参照。
+
 > 2026-10-18最新：u335。安堵＋独立不明のsource誤認識修復、旧checkpoint保持、短文化の未実装限定案。末尾u335を参照。
 
 > 2026-10-18最新：u334。承認済み二反応と独立不明の限定併存を実装。本文・旧checkpoint・保存再表示の結果と限界は末尾u334。
@@ -22614,3 +22616,21 @@ STRUCTURE_MAP_DELTA_NONE。既存production3ownerの認識・旧modeのみ、新
 primary outcome=DIRECT_PRODUCT_OR_ACCEPTANCE_WORK。PRODUCT_NOT_CLEAR／初回一体単位未完了／正式0/3／candidate_ready=false／automatic_progression=false。Draft/open/unmerged・未配置。10/31管理線・12/18目標・Piece/Analysis主枠53.25％を維持。
 
 詳細・未加工本文・次の限定案：[Cocolon_EmlisAI_u335_ReliefUnknown_SourceRepair_and_Anaphoric_Proposal_20261018.md](https://github.com/MassyuRed/Cocolon/blob/agent/three-core-cmee-current-structure-20260815/Cocolon_前提資料/audits/emlis_ai/Cocolon_EmlisAI_u335_ReliefUnknown_SourceRepair_and_Anaphoric_Proposal_20261018.md)。
+
+## u336 — 実Observationに基づく二反応Receptionの短文化（2026-10-18）
+
+Mashが本会話でu335の具体案を「進めていいよ」と明示承認したため、作業規則18 §11.3の保持条件変更を実装。既存u332安堵／不確かな認知に伴う寂しさpairについて、完全な両原文節を実Observationに保ち、同じselected target／basis／source roleへの一意な参照を証明できる場合だけReceptionを短くする。独立wh不明がある場合も、その既存の受け取りは必須のまま。基本例のReceptionは115→68文字。
+
+既存SentenceSurfaceの行ownerでObservationを先に生成し、その実文字列を既存HumanReception author/replayへ渡す。独立readerは最終body bytesからObservationを読み直し、全Observation検査が通った時だけ照応を許す。完全二節・順序・主体・肯否・時点・程度・可能性・条件・実対比をexact照合。前Reception用のpreceding_contextは代用しない。別の安堵／寂しさ、同一行の別経験などで一意条件が成立しなければ全文へ戻す。不正Observationは本文全体を拒否する。
+
+既存ANAPHORIC／antecedent_refs／PRIOR_LAYER1_EXACT_SEMANTIC_COVERを使用し、新meaning型・主観反応・carrier family・Move・文数予算は追加しない。source資格版により新checkpointを分離し、旧u335全40recordは完全な旧意味・旧本文・旧停止へ復元。5訂正／撤回ではlive pair資格と照応資格を失効させる。
+
+40入力は前後とも本文あり21／なし19。17例の返答を短縮し、Observationは全21本文で不変。13停止例は資格版によるcheckpoint等の変化のみで停止を維持、10例は完全record不変。過去不明の既存自己評価誤読や独立不明の欠落など、停止しない既知品質問題も未解決のまま記録する。出力可能性の改善を今回の成果として数えない。
+
+実service＋隔離PGlite SQL/RPC27ケースと同じ27DTOの現行API client／hook／Modal再表示を確認。4入力×3tier、旧完成本文1、4入力×checkpoint前後の実中断8、曖昧な不明の全文fallback1、実在する問いからの5訂正／撤回。checkpoint前は現行短文、保存済みu335 checkpoint後は旧全文でFINAL。saved GET/startは作者禁止、UIはclose/reopen各2回。native／HTTP／Authはstub、本人実機・本番の検査ではない。
+
+STRUCTURE_MAP_DELTA_NONE。既存production8file、新production file0、論理contract79・公開API／DB／RN／依存／外部AI／費用／配置は不変。保持期待の変更は今回承認のpairに限定し、完全原文をObservation＋短参照の独立検証へ移す。歴史fixtureは保持し、u335完全record fixtureと新cross-section testを追加。最終検査数は監査を参照。
+
+primary outcome=DIRECT_PRODUCT_OR_ACCEPTANCE_WORK。PRODUCT_NOT_CLEAR／初回一体単位未完了／正式0/3／candidate_ready=false／automatic_progression=false。Draft/open/unmerged・未配置。E04の深さ／E05問い／E06〜E09、一般入力・本人実機・正式受入れは未完。10/20方式判断、10/31管理線、12/18目標、Piece/Analysis主枠53.25％を維持。
+
+実本文・検査・未解決：[Cocolon_EmlisAI_u336_ActualObservation_Anaphoric_Reception_20261018.md](https://github.com/MassyuRed/Cocolon/blob/agent/three-core-cmee-current-structure-20260815/Cocolon_前提資料/audits/emlis_ai/Cocolon_EmlisAI_u336_ActualObservation_Anaphoric_Reception_20261018.md)。

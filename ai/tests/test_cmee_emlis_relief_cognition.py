@@ -64,10 +64,10 @@ def test_new_selection_requires_the_two_source_roles_and_preserves_controls(row)
         assert out.artifact.observation == row['body']['observation']
         assert 'と聞いて、私も少し' in out.artifact.reception
         assert '今、耳を傾けていたいです' in out.artifact.reception
-        assert 'かもしれない' in out.artifact.reception
+        assert 'かもしれない' in out.artifact.observation
         assert 'とても寂しさ' not in out.artifact.reception
         if row['case'] == 'past_possible':
-            assert '友達を傷つけたかもしれない' in out.artifact.reception
+            assert '友達を傷つけたかもしれない' in out.artifact.observation
             assert 'これから' not in out.artifact.reception
         assert inverse(actual(request=req), out.artifact.reception, without_author=True).passed
     else:
@@ -135,10 +135,11 @@ def context():
     ('今、耳を傾けていたいです', 'これからもずっとそばにいます'),
 ])
 def test_reader_rejects_missing_facets_source_changes_and_unselected_claims_without_author(context, before, after):
-    follow = context[0].artifact.reception
-    changed = follow.replace(before, after)
-    assert changed != follow
-    assert not inverse(context, changed, without_author=True).passed
+    from test_cmee_emlis_detached_observation import read_body
+    body = context[0].artifact.text
+    changed = body.replace(before, after)
+    assert changed != body
+    assert not read_body(context, changed).passed
 
 
 def test_reader_accepts_bounded_synonyms_but_not_old_generic_content(context):

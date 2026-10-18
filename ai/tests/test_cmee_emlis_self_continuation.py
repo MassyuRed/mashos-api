@@ -23,12 +23,12 @@ def test_complete_self_host_continues_but_controls_keep_their_old_result(row):
     p = prepare_emlis_meaning(req)
     plan = build_updated_grounded_plan(p)
     out = MeaningExperienceEngine().generate(req)
-    if row['case'] in IMPROVED:
+    if row['case'] in IMPROVED or row['case'] in {'base','both_self','right_self'}:
         assert out.artifact, out.reason_codes
         assert 'と聞いて、私も少し安心しましたが' in out.artifact.reception
         assert '今、耳を傾けていたいです' in out.artifact.reception
-        assert 'かもしれない' in out.artifact.reception
-        assert 'あなた' in out.artifact.reception
+        assert 'かもしれない' in out.artifact.observation
+        assert row['memo'].split('。')[0] in out.artifact.observation
         assert facets(project_thread_meaning(p, plan).selected_reception)
         assert p.checkpoint.checkpoint_id != row['checkpoint']['checkpoint_id']
         assert inverse(actual(request=req), out.artifact.reception, without_author=True).passed
@@ -95,10 +95,14 @@ def current_context(request):
     ('今、耳を傾けていたいです', 'これから誘われるはずです'),
 ])
 def test_current_body_rejects_owner_object_scope_and_facet_loss_without_author(current_context, before, after):
-    body = current_context[0].artifact.reception
+    from test_cmee_emlis_detached_observation import read_body
+    body = current_context[0].artifact.text
+    # The original SELF actor is now retained in Layer 1.
+    before, after = (('私は', '友達は' if after == '友達は' else '僕は')
+                     if before == 'あなたは' else (before, after))
     changed = body.replace(before, after)
     assert changed != body
-    assert not inverse(current_context, changed, without_author=True).passed
+    assert not read_body(current_context, changed).passed
 
 
 @pytest.mark.parametrize('name,old,new,time', UPDATES, ids=[r[0] for r in UPDATES])
@@ -148,7 +152,8 @@ def test_service_saves_and_rereads_new_self_body_without_generation(qcase, qdb, 
     qdb.query('update public.emotions set memo=$2 where id=$1', [parent, '私は'+BASE])
     dto = run(service.start(user, parent))
     assert dto['body_state'] == 'FINAL' and dto['pending_question'] is None
-    assert 'あなたは友達からの誘い' in dto['current_observation']['text']
+    assert '「私は友達からの誘い' in dto['current_observation']['text']
+    assert 'その寂しさにも、今、耳を傾けていたいです。' in dto['current_observation']['text']
     assert '私も少し安心しました' in dto['current_observation']['text']
     monkeypatch.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved body regenerated'))
     assert run(service.get(user, parent)) == dto

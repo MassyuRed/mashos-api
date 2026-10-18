@@ -174,7 +174,7 @@ _BODY_RECEPTION_MARKERS: Final[tuple[tuple[str, re.Pattern[str]], ...]] = (
     ("receive", re.compile(r"受け止め|大切に思|大切にした|大切にしたい|尊重|のでしたね|のですね|のです|のだと受け取りました|どちらの言葉からも受け取りました|ことについて受け取ったのは、|経験として受け取りました(?=。|$)|充足として受け取りました(?=。|$)|満足の拠り所が見えます(?=。|$)|ことの両方を受け取りました(?=。|$)|一緒に見ていきたいです|として読めます|として受け取れます")),
     ("felt_response", re.compile(r"感じます|感じて|思います|見過ごしたく|流したく")),
     ("protect", re.compile(r"見失わ|終わらない|決まるとは思え|消さず|残しておきたい|残したい|なかったことにしたくない")),
-    ("attention", re.compile(r"特に印象|印象に残|見過ご|目(?:が|に)留ま|(?:理由|つながり|対比)に目を向けています(?=。|$)")),
+    ("attention", re.compile(r"特に印象|印象に残|見過ご|目(?:が|に)留ま|(?:理由|つながり|対比)に目を向けています(?=。|$)|耳を傾け(?:てい)?たいです(?=。|$)")),
     ("target_burden", re.compile(r"しんどさ|苦しさ|つらさ|負荷|自己評価")),
     ("target_effort", re.compile(r"実際(?:に|の).{0,20}行動|手間")),
     ("target_intention", re.compile(r"願い|思い|意図|これからの行動|その向き")),
@@ -4524,6 +4524,7 @@ def _render_human_follow(
     resolver: EvidenceSpanResolver,
     *,
     selected_subjective_input: SelectedSubjectiveReceptionInputV1 | None = None,
+    preceding_observation: str | None = None,
 ) -> str:
     reception_plan = plan.response_plan.human_reception_plan
     if reception_plan is None or not reception_plan.required:
@@ -4553,6 +4554,7 @@ def _render_human_follow(
                 recovery_stage=recovery_stage,
                 clause_plans=clause_plans,
                 selected_subjective_input=selected_subjective_input,
+                preceding_observation=preceding_observation,
             )
         except GroundedHumanReceptionSurfaceError as exc:
             raise GroundedSentenceSurfaceError(str(exc)) from exc
@@ -4576,6 +4578,7 @@ def realize_grounded_human_follow_text(
     resolver: EvidenceSpanResolver,
     *,
     selected_subjective_input: SelectedSubjectiveReceptionInputV1 | None = None,
+    preceding_observation: str | None = None,
 ) -> str:
     """Realize the one canonical reception line owned by this surface."""
 
@@ -4592,6 +4595,7 @@ def realize_grounded_human_follow_text(
         nucleus_index,
         resolver,
         selected_subjective_input=selected_subjective_input,
+        preceding_observation=preceding_observation,
     )
 
 
@@ -4750,6 +4754,25 @@ def _realize_line(
             selected_subjective_input=selected_subjective_input,
         )
     raise GroundedSentenceSurfaceError(f"unsupported_surface_function:{line.surface_function}")
+
+
+def realize_grounded_observation_text(sentence_plan, plan, resolver, *,
+        selected_subjective_input=None, neutral_received_contrast_ids=frozenset(),
+        joined_unfinished_appraisal_ids=frozenset()):
+    """Run the existing Layer-1 line owner before authoring Layer 2.
+
+    This is actual preceding text, not an inferred context or a proof token.
+    The final assembly independently renders and verifies the same bytes.
+    """
+    nuclei = {n.nucleus_id: n for n in plan.nuclei}
+    relations = {r.relation_id: r for r in plan.relations}
+    return '\n'.join(text for line in sentence_plan.lines
+        if line.binding.line_role != 'human_follow'
+        if (text := _clean(_apply_integrated_human_follow(_realize_line(line,
+            plan=plan, nucleus_index=nuclei, relation_index=relations, resolver=resolver,
+            selected_subjective_input=selected_subjective_input,
+            neutral_received_contrast_ids=neutral_received_contrast_ids,
+            joined_unfinished_appraisal_ids=joined_unfinished_appraisal_ids), line.binding)))).strip()
 
 
 def split_two_stage_surface(text: Any) -> tuple[str, str, tuple[str, ...]]:
@@ -4931,6 +4954,7 @@ def realize_grounded_sentence_plan_with_human_reception(
     *,
     human_reception_surface: GroundedHumanReceptionSurface | None = None,
     selected_subjective_input: SelectedSubjectiveReceptionInputV1 | None = None,
+    preceding_observation: str | None = None,
     neutral_received_contrast_ids: frozenset[str] = frozenset(),
     joined_unfinished_appraisal_ids: frozenset[str] = frozenset(),
 ) -> tuple[GroundedSurfaceResult, tuple[SentenceSurfacePlacement, ...]]:
@@ -4960,6 +4984,7 @@ def realize_grounded_sentence_plan_with_human_reception(
             resolver,
             plan=plan,
             selected_subjective_input=selected_subjective_input,
+            preceding_observation=preceding_observation,
         )
     ):
         raise GroundedSentenceSurfaceError(
@@ -5007,6 +5032,8 @@ def realize_grounded_sentence_plan_with_human_reception(
             "REALIZABLE_RECEPTION_EXPRESSION_VISIBLE_BINDING_GAP"
         )
 
+    if preceding_observation is not None and split_two_stage_surface(result.text)[0] != preceding_observation:
+        raise GroundedSentenceSurfaceError('human_reception_preceding_observation_mismatch')
     placements: list[SentenceSurfacePlacement] = []
     seen_binding_refs: set[str] = set()
     prior_end = 0
@@ -5622,6 +5649,7 @@ def validate_grounded_surface_result(
                                     reception_plan_line.reception_clause_plans
                                 ),
                                 selected_subjective_input=selected_subjective_input,
+                                preceding_observation=_observation,
                             )
                         )
                         if expected_reception.text != reception_line.text:
@@ -5689,6 +5717,7 @@ def validate_grounded_surface_result(
                                 resolver,
                                 plan=plan,
                                 selected_subjective_input=selected_subjective_input,
+                                preceding_observation=_observation,
                             )
                         )
     elif result.status == "separate_safety_owner":

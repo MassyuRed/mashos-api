@@ -224,15 +224,19 @@ def realize_emlis_thread_body(prepared) -> EmlisThreadBodyOutcomeV1:
              for clause in clauses for i, move_id in enumerate(clause.move_ids)}
     reception = plan.response_plan.human_reception_plan
     expressions = tuple(_bind_expression(plan, resolver, projection, move, forms[move.move_id]) for move in reception.moves)
+    joined_ids = _retained_unfinished_appraisal_relations(prepared, plan)
+    neutral_ids = (_retained_shared_target_received_relations(prepared, plan, resolver)
+        | _current_single_received_contrast_relations(prepared, plan))
+    preceding_observation = surface_owner.realize_grounded_observation_text(
+        sentence_plan, plan, resolver, selected_subjective_input=selected,
+        joined_unfinished_appraisal_ids=joined_ids, neutral_received_contrast_ids=neutral_ids)
     human_surface = hr.realize_source_grounded_human_reception(reception, expressions,
         {n.nucleus_id: n for n in plan.nuclei}, resolver, plan=plan, recovery_stage="full",
-        clause_plans=clauses, selected_subjective_input=selected)
+        clause_plans=clauses, selected_subjective_input=selected, preceding_observation=preceding_observation)
     surface, _placements = surface_owner.realize_grounded_sentence_plan_with_human_reception(
         sentence_plan, plan, resolver, human_reception_surface=human_surface,
-        selected_subjective_input=selected,
-        joined_unfinished_appraisal_ids=_retained_unfinished_appraisal_relations(prepared, plan),
-        neutral_received_contrast_ids=(_retained_shared_target_received_relations(prepared, plan, resolver)
-            | _current_single_received_contrast_relations(prepared, plan)))
+        selected_subjective_input=selected, preceding_observation=preceding_observation,
+        joined_unfinished_appraisal_ids=joined_ids, neutral_received_contrast_ids=neutral_ids)
     issues = surface_owner.validate_grounded_surface_result(surface, sentence_plan, plan, resolver,
                                                              selected_subjective_input=selected)
     inverse = evaluate_grounded_surface_body_inverse(body=surface.text.encode(), plan=plan,

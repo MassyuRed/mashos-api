@@ -891,6 +891,7 @@ def _evaluate_reception_gates(
                     plan,
                     resolver,
                     selected_subjective_input=selected_subjective_input,
+                    preceding_observation=observation_text,
                 )
             except (AttributeError, KeyError, TypeError, ValueError):
                 reasons_by_gate["reception_move_realization_gate"].append(
@@ -904,10 +905,11 @@ def _evaluate_reception_gates(
                         recovery_stage=sentence_plan.recovery_stage,
                         clause_plans=human_line.reception_clause_plans,
                         selected_subjective_input=selected_subjective_input,
+                        preceding_observation=observation_text,
                     )
                     if not _received_discourse_equivalent(reception_text, realized_reception.text,
                         reception_plan, human_line.reception_clause_plans, plan, resolver,
-                        selected_subjective_input):
+                        selected_subjective_input, preceding_observation=observation_text):
                         raise GroundedHumanReceptionSurfaceError(
                             "human_reception_surface_replay_mismatch"
                         )
@@ -1220,7 +1222,7 @@ def _evaluate_reception_gates(
             )
             if not _received_discourse_equivalent(reception_text.strip(), expected_reception_text.strip(),
                 reception_plan, human_line.reception_clause_plans, plan, resolver,
-                selected_subjective_input):
+                selected_subjective_input, preceding_observation=observation_text):
                 reasons_by_gate["reception_move_realization_gate"].append(
                     "reception_canonical_surface_mismatch"
                 )
@@ -5096,7 +5098,33 @@ def _relief_cognition_selected_reception(move, plan, resolver, selected):
     return left, right, edge
 
 
-def _read_relief_cognition_discourse(raw, move, plan, resolver, selected):
+def _relief_cognition_observation_antecedents(pair, move, resolver, preceding_observation):
+    """Bind short references to unique, complete actual Layer-1 clauses.
+
+    The caller must first prove the live selected pair. Source qualification
+    only permits this check; neither it nor a previous Reception is evidence
+    that the preceding Observation actually contains those meanings.
+    """
+    if (not isinstance(preceding_observation, str) or not preceding_observation
+        or move.reference_mode != 'anaphoric_first'
+        or any('source_relief_cognition_anaphora:v1' not in n.semantic_frame.attribute_codes
+               for n in pair[:2])):
+        return False
+    left, right, _ = pair
+    sources = tuple(resolver.resolve(n.source_span_ids[0]).raw_text for n in (left, right))
+    lines = preceding_observation.splitlines()
+    matches = tuple(i for i, line in enumerate(lines)
+        if (m := re.fullmatch(r'「(?P<left>[^「」]+)」の一方で「(?P<right>[^「」]+)」とあります。', line))
+        and (m['left'], m['right']) == sources)
+    if len(matches) != 1 or any(preceding_observation.count(source) != 1 for source in sources):
+        return False
+    # Another relief/loneliness host makes the short reference ambiguous.
+    # Keep its full form rather than selecting an antecedent by proximity.
+    other = '\n'.join(line for i, line in enumerate(lines) if i != matches[0])
+    return re.search(r'ほっと|安心|寂し|さびし', other) is None
+
+
+def _read_relief_cognition_discourse(raw, move, plan, resolver, selected, preceding_observation=None):
     pair = _relief_cognition_selected_reception(move, plan, resolver, selected)
     if pair is None:
         return None
@@ -5105,6 +5133,18 @@ def _read_relief_cognition_discourse(raw, move, plan, resolver, selected):
     source_left, source_right = (resolver.resolve(n.source_span_ids[0]).raw_text for n in (left, right))
     parts, _ = _source_cognitive_feeling_parts(source_right)
     scopes = {role: (start, end) for role, start, end, _ in parts}
+    short = re.fullmatch(r'(?P<relief>ほっとした|安心した)と聞いて、私も少し(?:安心しました|ほっとしました)(?:が|し)、'
+        r'(?P<feeling>その(?:寂しさ|さびしさ))にも、今、耳を傾け(?:てい)?たいです。', raw)
+    if short is not None:
+        from emlis_ai_grounded_observation_plan import _source_nominal_past_feeling_parts
+        relief = _source_nominal_past_feeling_parts(source_left)
+        feeling = source_right[slice(*scopes['feeling'])]
+        if (not _relief_cognition_observation_antecedents(pair, move, resolver, preceding_observation)
+            or not relief or short['relief'] != relief[3]
+            or short['feeling'] != ('そのさびしさ' if feeling.endswith('さびしい') else 'その寂しさ')):
+            return None
+        return tuple((len(raw[:short.start(role)].encode()), len(raw[:short.end(role)].encode()), source.encode())
+            for role, source in (('relief', source_left), ('feeling', source_right)))
     match = re.fullmatch(r'(?P<relief>[^。]+)と聞いて、私も少し(?:安心しました|ほっとしました)(?:が|し)、'
         r'(?P<cognition>[^。]+?)と(?P<feeling>(?:少し(?:だけ)?|ちょっと|とても|まだ|ずっと)?(?:寂しい|さびしい))'
         r'という気持ちにも、今、耳を傾け(?:てい)?たいです。', raw)
@@ -5126,7 +5166,7 @@ def _read_relief_cognition_discourse(raw, move, plan, resolver, selected):
 
 
 def read_source_owned_discourse(raw, move, plan, resolver, selected_subjective_input=None,
-                                *, preceding_context=None):
+                                *, preceding_context=None, preceding_observation=None):
     """Read supported finite source duties without a literal-author oracle."""
     from cocolon_meaning_experience_engine.contracts import EmlisReliefCognitionAppraisalContent
     decision = next((d for d in selected_subjective_input.decisions if d.move_id == move.move_id), None) if selected_subjective_input else None
@@ -5134,7 +5174,7 @@ def read_source_owned_discourse(raw, move, plan, resolver, selected_subjective_i
     if decision and (type(decision.subjective_proposition.appraisal_content) is EmlisReliefCognitionAppraisalContent
                      or type(decision) is SelectedRetainedReliefCognitionDecisionV1):
         # A missing new facet cannot fall back to the old contrast wording.
-        return _read_relief_cognition_discourse(raw, move, plan, resolver, selected_subjective_input)
+        return _read_relief_cognition_discourse(raw, move, plan, resolver, selected_subjective_input, preceding_observation)
     corrected = _relief_cognition_corrected_source(move, plan, resolver, selected_subjective_input)
     if corrected is not None:
         match = re.fullmatch(r'言い直してくださった気持ちは、(?P<feeling>[^。]+)ということなのですね。', raw)
@@ -5937,7 +5977,7 @@ def _read_received_discourse_parts(raw, move, plan, resolver, selected_subjectiv
 
 
 def _received_discourse_equivalent(actual, canonical, reception_plan, clauses, plan,
-                                   resolver, selected_subjective_input):
+                                   resolver, selected_subjective_input, *, preceding_observation=None):
     """Do not make a grammatical acknowledgement spelling a semantic oracle.
 
     Unchanged clauses retain the existing contract. A changed finite reading
@@ -5969,7 +6009,7 @@ def _received_discourse_equivalent(actual, canonical, reception_plan, clauses, p
         previous = (moves.get(clauses[number - 1].move_ids[0])
                     if number and len(clauses[number - 1].move_ids) == 1 else None)
         if move is None or any(read_source_owned_discourse(text + "。", move, plan, resolver,
-            selected_subjective_input, preceding_context=(previous, parts[number - 1] + "。")
+            selected_subjective_input, preceding_observation=preceding_observation, preceding_context=(previous, parts[number - 1] + "。")
             if previous is not None else None) is None
             for text, parts in ((left, actual_parts), (right, canonical_parts))):
             return False
@@ -7672,6 +7712,11 @@ def evaluate_grounded_surface_body_inverse(
         ):
             failures.append(f"body_inverse_required_effort_missing:{index}")
 
+    # Only actual body bytes that passed the whole Layer-1 inverse may
+    # license a Layer-2 short reference. Never render an expected Observation.
+    preceding_observation = ('\n'.join(_body_inverse_visible_text(body, line)
+        for line in observation_lines) if not failures else None)
+
     for index, (parsed_line, planned_line) in enumerate(
         zip(reception_lines, planned_reception_lines),
         start=1,
@@ -7731,11 +7776,12 @@ def evaluate_grounded_surface_body_inverse(
                         recovery_stage=sentence_plan.recovery_stage,
                         clause_plans=planned_line.reception_clause_plans,
                         selected_subjective_input=selected_subjective_input,
+                        preceding_observation=preceding_observation,
                     )
                     if not _received_discourse_equivalent(
                         _body_inverse_visible_text(body, parsed_line), replay.text,
                         reception_plan, planned_line.reception_clause_plans, plan, resolver,
-                        selected_subjective_input):
+                        selected_subjective_input, preceding_observation=preceding_observation):
                         failures.append(f"body_inverse_reception_replay_mismatch:{index}")
                 except (GroundedHumanReceptionSurfaceError, AttributeError, KeyError, TypeError, ValueError):
                     failures.append(f"body_inverse_reception_replay_unavailable:{index}")
@@ -7875,6 +7921,7 @@ def evaluate_grounded_surface_body_inverse(
                         finite_proof = read_source_owned_discourse(
                             body[parsed_sentence.utf8_byte_start:parsed_sentence.utf8_byte_end].decode("utf-8"),
                             move, plan, resolver, selected_subjective_input,
+                            preceding_observation=preceding_observation,
                             preceding_context=(
                                 move_index[clause_plans[clause_index - 1].move_ids[0]],
                                 body[parsed_sentences[clause_index - 1].utf8_byte_start:
