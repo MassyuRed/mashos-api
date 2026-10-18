@@ -1,0 +1,729 @@
+{
+  "source_commit": "741463920723bae5ac81d5052a779ca838778cfe",
+  "cases": [
+    {
+      "case": "degree_first",
+      "memo": "昨日は友達と話せてとても嬉しかった。でも、今日は疲れている。",
+      "checkpoint_sha": "8e93487a675a2aacec05b4b192e8a805c1ed470aa79ac9fa1ce1fe38167c0e55",
+      "checkpoint_id": "emlis-checkpoint-f72bfc9ad3311c0020ca6564cc98d59976c5b3f199c0dbae0c07f4c94f716714",
+      "plan_sha": "e2888810167e37bc896618d08667437ad3854124c44b04ee0023633a90ce33ae",
+      "nuclei_sha": "20b10cf4adb4ef43bfaf94dd487e8997143013f2f1f20d392e6f973679fa44e8",
+      "relations_sha": "cf67f2bd17b45acfe8b67c05f67aa88496381b6865d2c619f05818479f41eedc",
+      "reference_modes": [
+        "anaphoric_first"
+      ],
+      "selected_sha": "35501faf251392765e1d6176beaf1b6420ad2d1a45d05c6fbb3aec8f7b35d1a9",
+      "decisions_sha": "2f4c5b79d73d2e2b7e28a13dfeaa518b0e914c1ab02387bdbbf7fb8e3fd7dda1",
+      "artifact_sha": "b574f47c8fd41206a2e3a375da3cb84320844d31b8d5ad742bbe53f53e9b56bb",
+      "body": "見えたこと：\n「昨日は友達と話せてとても嬉しかった」と「今日は疲れている」が、異なる向きのまま同時にあります。\n\nEmlisから：\nその状態が重なる中で、今ここに置かれた言葉ともう一方の向きとの違いをどちらの側も残したまま、小さくせずに受け止めています。",
+      "observation": "「昨日は友達と話せてとても嬉しかった」と「今日は疲れている」が、異なる向きのまま同時にあります。",
+      "reception": "その状態が重なる中で、今ここに置かれた言葉ともう一方の向きとの違いをどちらの側も残したまま、小さくせずに受け止めています。",
+      "question": null,
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      },
+      "reasons": [
+        "no_bound_personal_meaning_target"
+      ]
+    },
+    {
+      "case": "degree_both",
+      "memo": "昨日は友達と話せてとてもうれしかった。ただ、今はとても疲れている。",
+      "checkpoint_sha": "7a8a6e6d20eb7fdeef239b606025edaaf2cbf91d69e201137209b5c755af6fe6",
+      "checkpoint_id": "emlis-checkpoint-1c25dcfd6ff5b5cce6d8eab54231d1ac3a7343df57233123a81b02c169bcfbfc",
+      "plan_sha": "e2888810167e37bc896618d08667437ad3854124c44b04ee0023633a90ce33ae",
+      "nuclei_sha": "20b10cf4adb4ef43bfaf94dd487e8997143013f2f1f20d392e6f973679fa44e8",
+      "relations_sha": "cf67f2bd17b45acfe8b67c05f67aa88496381b6865d2c619f05818479f41eedc",
+      "reference_modes": [
+        "anaphoric_first"
+      ],
+      "selected_sha": "85e7d9a54d1efe3226a63a5285262e0c9209aaa511ebf6d5c8c7cba7ba593008",
+      "decisions_sha": "a99fbdb4542f334e376ed15c0398599b350f7f32bfdad80346079ab07de6d09c",
+      "artifact_sha": "4bccd0dbececcdfe8b156467d275c6ff097c77e7acf5715ea896ff308988400c",
+      "body": "見えたこと：\n「昨日は友達と話せてとてもうれしかった」と「今はとても疲れている」が、異なる向きのまま同時にあります。\n\nEmlisから：\nその状態が重なる中で、今ここに置かれた言葉ともう一方の向きとの違いをどちらの側も残したまま、小さくせずに受け止めています。",
+      "observation": "「昨日は友達と話せてとてもうれしかった」と「今はとても疲れている」が、異なる向きのまま同時にあります。",
+      "reception": "その状態が重なる中で、今ここに置かれた言葉ともう一方の向きとの違いをどちらの側も残したまま、小さくせずに受け止めています。",
+      "question": null,
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      },
+      "reasons": [
+        "no_bound_personal_meaning_target"
+      ]
+    },
+    {
+      "case": "degree_second",
+      "memo": "昨日は友達と話せて嬉しくなかった。でも、今日はとても疲れている。",
+      "checkpoint_sha": "52d6cfc04fc9480e7fb1dd537f840e0d5ade80122913c058ca6c0e827176eedf",
+      "checkpoint_id": "emlis-checkpoint-7460803daa85a487af40d4f352fcb22f211d45e7c448c9880e5f6f0fff5bc6d5",
+      "plan_sha": "a72a08016856f1977e29054af652a1af453fabf0e5de8fd36655742269d1c208",
+      "nuclei_sha": "4ef3c85dfdb3881cd463b6d14e3f9cc88b6f75c97b34c6d43aa47c68bffcdafd",
+      "relations_sha": "cf67f2bd17b45acfe8b67c05f67aa88496381b6865d2c619f05818479f41eedc",
+      "reference_modes": [
+        "anaphoric_first"
+      ],
+      "selected_sha": "6bf41513ad8a70b8b50302bda29ed57f522d2030c07f712e78be3f8ed44d4e67",
+      "decisions_sha": "585bc0b708b5138cb423e66bb5cf2878f2642387733da305259b94f75c79ff70",
+      "artifact_sha": "8db9e212667a51c72a74d15c65291dfb157a0435c8b10cf51e1bdf8f0b140c5d",
+      "body": "見えたこと：\n「昨日は友達と話せて嬉しくなかった」と「今日はとても疲れている」が、異なる向きのまま同時にあります。\n\nEmlisから：\nその状態が重なる中で、今ここに置かれた言葉ともう一方の向きとの違いをどちらの側も残したまま、小さくせずに受け止めています。",
+      "observation": "「昨日は友達と話せて嬉しくなかった」と「今日はとても疲れている」が、異なる向きのまま同時にあります。",
+      "reception": "その状態が重なる中で、今ここに置かれた言葉ともう一方の向きとの違いをどちらの側も残したまま、小さくせずに受け止めています。",
+      "question": null,
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      },
+      "reasons": [
+        "no_bound_personal_meaning_target"
+      ]
+    },
+    {
+      "case": "degree_negative",
+      "memo": "昨日は友達と話せてとても嬉しくなかった。でも、今日は疲れている。",
+      "checkpoint_sha": "5117e7d189ce94c05cceac66698ef3c526a122bd88de08b5456d44c981f0c544",
+      "checkpoint_id": "emlis-checkpoint-21e564cca6cbc53aa3fc22cc8512ec54d78ecbd61558c0301cf9c1829ced82c0",
+      "plan_sha": "a72a08016856f1977e29054af652a1af453fabf0e5de8fd36655742269d1c208",
+      "nuclei_sha": "4ef3c85dfdb3881cd463b6d14e3f9cc88b6f75c97b34c6d43aa47c68bffcdafd",
+      "relations_sha": "cf67f2bd17b45acfe8b67c05f67aa88496381b6865d2c619f05818479f41eedc",
+      "reference_modes": [
+        "anaphoric_first"
+      ],
+      "selected_sha": "89612b77ee6577e1d5bdf5e70ea667a0ebc53234eb8e7ed3332fee5d5a2ca834",
+      "decisions_sha": "2f889d11931040cc19e38a36f706c0ad3515756f521b2bd943163b0ee4416505",
+      "artifact_sha": "eb893e19319f678b94a0f2a488fa1a5ee906f36889fadd169c23a17f55214575",
+      "body": "見えたこと：\n「昨日は友達と話せてとても嬉しくなかった」と「今日は疲れている」が、異なる向きのまま同時にあります。\n\nEmlisから：\nその状態が重なる中で、今ここに置かれた言葉ともう一方の向きとの違いをどちらの側も残したまま、小さくせずに受け止めています。",
+      "observation": "「昨日は友達と話せてとても嬉しくなかった」と「今日は疲れている」が、異なる向きのまま同時にあります。",
+      "reception": "その状態が重なる中で、今ここに置かれた言葉ともう一方の向きとの違いをどちらの側も残したまま、小さくせずに受け止めています。",
+      "question": null,
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      },
+      "reasons": [
+        "no_bound_personal_meaning_target"
+      ]
+    },
+    {
+      "case": "degree_untimed_first",
+      "memo": "友達と話せてとても嬉しかった。でも、少し疲れた。",
+      "checkpoint_sha": "6d125ff1b354ab062c5489034be7de6a8f4ee0acdddef834a24eeb40ae7f6be5",
+      "checkpoint_id": "emlis-checkpoint-33baf5aa82cd473d67eed028b236f7c440301be167774bbcf7cfc2cbd2ae08d1",
+      "plan_sha": "5591b3faed47715f0d95397982803f9b7e6fa461fd52bf63d83539d7e2caca9c",
+      "nuclei_sha": "e539e71f4ea5674b5a6f8289c43286d0a0a53f006602ce3d17a4f7880efdb8d7",
+      "relations_sha": "cf67f2bd17b45acfe8b67c05f67aa88496381b6865d2c619f05818479f41eedc",
+      "reference_modes": [
+        "anaphoric_first"
+      ],
+      "selected_sha": "29ae6ab9a1f0782ba94271c104e88c13a2dc07ea8f783ce210d0855b56b98506",
+      "decisions_sha": "e6eab8e21b74c704161eb6113807c2f4acf220671c00aee803b7de26c0bcf8f3",
+      "artifact_sha": "1b135e1f1353468f4bde9e1d83412f35483a2b48c599d7fb369a00093038faea",
+      "body": "見えたこと：\n「友達と話せてとても嬉しかった」と「少し疲れた」が、異なる向きのまま同時にあります。\n\nEmlisから：\nその状態が重なる中で、今ここに置かれた言葉ともう一方の向きとの違いをどちらの側も残したまま、小さくせずに受け止めています。",
+      "observation": "「友達と話せてとても嬉しかった」と「少し疲れた」が、異なる向きのまま同時にあります。",
+      "reception": "その状態が重なる中で、今ここに置かれた言葉ともう一方の向きとの違いをどちらの側も残したまま、小さくせずに受け止めています。",
+      "question": null,
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      },
+      "reasons": [
+        "no_bound_personal_meaning_target"
+      ]
+    },
+    {
+      "case": "degree_untimed_second",
+      "memo": "友達と話せて嬉しかった。でも、とても疲れた。",
+      "checkpoint_sha": "90bc013c15bfb699f7a2ce20643d56c5f622e3c24264d6b63567361f24aded8c",
+      "checkpoint_id": "emlis-checkpoint-928ec546aaa0efbd05f7ad7f3d79b4bfd4f561fbc2d68c6e6f770c7eaf5846b6",
+      "plan_sha": "5591b3faed47715f0d95397982803f9b7e6fa461fd52bf63d83539d7e2caca9c",
+      "nuclei_sha": "e539e71f4ea5674b5a6f8289c43286d0a0a53f006602ce3d17a4f7880efdb8d7",
+      "relations_sha": "cf67f2bd17b45acfe8b67c05f67aa88496381b6865d2c619f05818479f41eedc",
+      "reference_modes": [
+        "anaphoric_first"
+      ],
+      "selected_sha": "e598b2ef1fdd11f5418fb3ef862e05b19d8551fe0e7694a9855a7c43e663e694",
+      "decisions_sha": "55cb177c961e9cb181f0d740033c0514d42f2c69f9a8aa4075cbe789e28d4eb9",
+      "artifact_sha": "ec5ed2284001107c5bfa09dfd30b46fa546613accbfa1d0626b19afb1dfa2d47",
+      "body": "見えたこと：\n「友達と話せて嬉しかった」と「とても疲れた」が、異なる向きのまま同時にあります。\n\nEmlisから：\nその状態が重なる中で、今ここに置かれた言葉ともう一方の向きとの違いをどちらの側も残したまま、小さくせずに受け止めています。",
+      "observation": "「友達と話せて嬉しかった」と「とても疲れた」が、異なる向きのまま同時にあります。",
+      "reception": "その状態が重なる中で、今ここに置かれた言葉ともう一方の向きとの違いをどちらの側も残したまま、小さくせずに受け止めています。",
+      "question": null,
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      },
+      "reasons": [
+        "no_bound_personal_meaning_target"
+      ]
+    },
+    {
+      "case": "degree_time_also",
+      "memo": "昨日も友達と話せてとても嬉しかった。でも、今日も疲れている。",
+      "checkpoint_sha": "7cb6c83d5a451a5456e55bf0176497cd12051a8584d6d792d312267a2671ef64",
+      "checkpoint_id": "emlis-checkpoint-11b475aa445f9fe363cfed28d0d8500be7cc3f0ac476380518d3e02f43be2258",
+      "plan_sha": "e2888810167e37bc896618d08667437ad3854124c44b04ee0023633a90ce33ae",
+      "nuclei_sha": "20b10cf4adb4ef43bfaf94dd487e8997143013f2f1f20d392e6f973679fa44e8",
+      "relations_sha": "cf67f2bd17b45acfe8b67c05f67aa88496381b6865d2c619f05818479f41eedc",
+      "reference_modes": [
+        "anaphoric_first"
+      ],
+      "selected_sha": "cc08ca2e7d1d99203ea2ba2c9f769bc598b5a42608f930b3588271e1c3b43bb9",
+      "decisions_sha": "58585eb3e57ac832599500aa68d7f5522d507e07876c4b8ffcdcb68c41ebf0ec",
+      "artifact_sha": "de055c0f4631bd153f92d5daf23987895a3c28396281e215a04acd8801c239a9",
+      "body": "見えたこと：\n「昨日も友達と話せてとても嬉しかった」と「今日も疲れている」が、異なる向きのまま同時にあります。\n\nEmlisから：\nその状態が重なる中で、今ここに置かれた言葉ともう一方の向きとの違いをどちらの側も残したまま、小さくせずに受け止めています。",
+      "observation": "「昨日も友達と話せてとても嬉しかった」と「今日も疲れている」が、異なる向きのまま同時にあります。",
+      "reception": "その状態が重なる中で、今ここに置かれた言葉ともう一方の向きとの違いをどちらの側も残したまま、小さくせずに受け止めています。",
+      "question": null,
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      },
+      "reasons": [
+        "no_bound_personal_meaning_target"
+      ]
+    },
+    {
+      "case": "degree_now",
+      "memo": "昨日は友達と話せてとても嬉しかった。ただ、今は疲れている。",
+      "checkpoint_sha": "795e19db5ddaf4b069dcf447f051a1257d638c3214016ad7c0b8dc7b2a444a42",
+      "checkpoint_id": "emlis-checkpoint-c7d0aa7a0473da5dc027e08d868be0d8553045f49327d3153d2261b2ee6456cb",
+      "plan_sha": "e2888810167e37bc896618d08667437ad3854124c44b04ee0023633a90ce33ae",
+      "nuclei_sha": "20b10cf4adb4ef43bfaf94dd487e8997143013f2f1f20d392e6f973679fa44e8",
+      "relations_sha": "cf67f2bd17b45acfe8b67c05f67aa88496381b6865d2c619f05818479f41eedc",
+      "reference_modes": [
+        "anaphoric_first"
+      ],
+      "selected_sha": "6a27c4f740cba618987e7e527f10b4522ba3c9016ec6031d8300e5024b88fb33",
+      "decisions_sha": "d615473de450adc1de9f3eb1b482cd5bb8ec990f77cd006b0fc872f1dba4a246",
+      "artifact_sha": "a73aba4f3ff54161e810a20950564424c57a4cb0fbe4abe50157e708bf4fb08b",
+      "body": "見えたこと：\n「昨日は友達と話せてとても嬉しかった」と「今は疲れている」が、異なる向きのまま同時にあります。\n\nEmlisから：\nその状態が重なる中で、今ここに置かれた言葉ともう一方の向きとの違いをどちらの側も残したまま、小さくせずに受け止めています。",
+      "observation": "「昨日は友達と話せてとても嬉しかった」と「今は疲れている」が、異なる向きのまま同時にあります。",
+      "reception": "その状態が重なる中で、今ここに置かれた言葉ともう一方の向きとの違いをどちらの側も残したまま、小さくせずに受け止めています。",
+      "question": null,
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      },
+      "reasons": [
+        "no_bound_personal_meaning_target"
+      ]
+    },
+    {
+      "case": "plain",
+      "memo": "昨日は友達と話せて嬉しかった。でも、今日は疲れている。",
+      "checkpoint_sha": "04ae198aa579042b6ac65f03afcab1c0fbc130af4b9eef33f22b9b675abe93ae",
+      "checkpoint_id": "emlis-checkpoint-febb8b10db6ade529d966775acb71c57304a51af352b8ef037cdb19c18e80fc5",
+      "plan_sha": "6320cb22ae9eed30244f2eed389248632e758706a9caa38c42704a486bbc4185",
+      "nuclei_sha": "20b10cf4adb4ef43bfaf94dd487e8997143013f2f1f20d392e6f973679fa44e8",
+      "relations_sha": "cf67f2bd17b45acfe8b67c05f67aa88496381b6865d2c619f05818479f41eedc",
+      "reference_modes": [
+        "short_anchor_if_ambiguous"
+      ],
+      "selected_sha": "c2bcc010094043d8de2acdd3d16f2541f7ec6b8a3ab5ab9102b2c97bf622cc63",
+      "decisions_sha": "f25298deab9d46d464226fc4f69eafbe26c374acca29c027007c4948c88f139c",
+      "artifact_sha": "b1256f07b32ade9a86fde75b68d76a1be04d684b79cc1924f593e41c65c09f89",
+      "body": "見えたこと：\n「昨日は友達と話せて嬉しかった」の一方で「今日は疲れている」とあります。\n\nEmlisから：\n昨日は友達と話せて嬉しかったことと今日は疲れていることの両方を、その違いも含めて小さくせずに受け止めています。",
+      "observation": "「昨日は友達と話せて嬉しかった」の一方で「今日は疲れている」とあります。",
+      "reception": "昨日は友達と話せて嬉しかったことと今日は疲れていることの両方を、その違いも含めて小さくせずに受け止めています。",
+      "question": null,
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      },
+      "reasons": [
+        "no_bound_personal_meaning_target"
+      ]
+    },
+    {
+      "case": "slight",
+      "memo": "友達と話せて嬉しかった。でも、少し疲れた。",
+      "checkpoint_sha": "1e3d38d357d5f685afedf0d90cbec1a6078d2d3fcb0682acf2dc36568d99c063",
+      "checkpoint_id": "emlis-checkpoint-3958c277efcc5cc6a9575883374ece4b4906c74d412ed3201d54a2deaf0408dd",
+      "plan_sha": "bf359fc48147fa50ace14f0752a2f351336fe125f67b5b6fd7c46024e8449f30",
+      "nuclei_sha": "e539e71f4ea5674b5a6f8289c43286d0a0a53f006602ce3d17a4f7880efdb8d7",
+      "relations_sha": "cf67f2bd17b45acfe8b67c05f67aa88496381b6865d2c619f05818479f41eedc",
+      "reference_modes": [
+        "short_anchor_if_ambiguous"
+      ],
+      "selected_sha": "acbe440597af76881162b587f0ed2caa3d9625e9415f3c4ab6232025e4c80d47",
+      "decisions_sha": "ebf9abeb0ffbbd7030a71fe03805bd9d7e862b76f9c2928597b697e5c805b845",
+      "artifact_sha": "7243377466019228d118ceb722b2db5f554b3529a9e930de0f4cc7820684b6ab",
+      "body": "見えたこと：\n「友達と話せて嬉しかった」と「少し疲れた」が、異なる向きのまま同時にあります。\n\nEmlisから：\n友達と話せて嬉しかったことと少し疲れたことの両方を、その違いも含めて小さくせずに受け止めています。",
+      "observation": "「友達と話せて嬉しかった」と「少し疲れた」が、異なる向きのまま同時にあります。",
+      "reception": "友達と話せて嬉しかったことと少し疲れたことの両方を、その違いも含めて小さくせずに受け止めています。",
+      "question": null,
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      },
+      "reasons": [
+        "no_bound_personal_meaning_target"
+      ]
+    },
+    {
+      "case": "other_topic",
+      "memo": "昨日は友達もとても嬉しかった。でも、今日は疲れている。",
+      "checkpoint_sha": "6b15cc1379a8b10f797726761311444ee77fa0918798534a979d7e2e240f97a8",
+      "checkpoint_id": "emlis-checkpoint-8343d03b21c1fc2e0e816383f30fa623d861757c8d8d2e2d317608d6c8736e7f",
+      "plan_sha": "e2888810167e37bc896618d08667437ad3854124c44b04ee0023633a90ce33ae",
+      "nuclei_sha": "20b10cf4adb4ef43bfaf94dd487e8997143013f2f1f20d392e6f973679fa44e8",
+      "relations_sha": "cf67f2bd17b45acfe8b67c05f67aa88496381b6865d2c619f05818479f41eedc",
+      "reference_modes": [
+        "anaphoric_first"
+      ],
+      "selected_sha": "d8892d7980b6238adc7ca6c53c27bf81d90d64b7ffb01b490a68a1956aa92c2e",
+      "decisions_sha": "5e6aa1973f76e1d96a9317ff187bdff21bb902eb650e5c4ce47b4cea4be6bb8b",
+      "artifact_sha": "cfc4595ba5df46ffb490853e196877d86e968b876ea03403f1e2edf79f176062",
+      "body": "見えたこと：\n「昨日は友達もとても嬉しかった」と「今日は疲れている」が、異なる向きのまま同時にあります。\n\nEmlisから：\nその状態が重なる中で、今ここに置かれた言葉ともう一方の向きとの違いをどちらの側も残したまま、小さくせずに受け止めています。",
+      "observation": "「昨日は友達もとても嬉しかった」と「今日は疲れている」が、異なる向きのまま同時にあります。",
+      "reception": "その状態が重なる中で、今ここに置かれた言葉ともう一方の向きとの違いをどちらの側も残したまま、小さくせずに受け止めています。",
+      "question": null,
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      },
+      "reasons": [
+        "no_bound_personal_meaning_target"
+      ]
+    },
+    {
+      "case": "explicit_self",
+      "memo": "昨日は私はとても嬉しかった。でも、今日は疲れている。",
+      "checkpoint_sha": "684b1b8d09f4565b53357260de480fcf4204c7e325fdb02a7ff4e518ce6bae70",
+      "checkpoint_id": "emlis-checkpoint-a7d7aab947c0e31b8739bac6953e841f47f26f30947dd2627dedbb3b8abd7eca",
+      "plan_sha": "e2888810167e37bc896618d08667437ad3854124c44b04ee0023633a90ce33ae",
+      "nuclei_sha": "20b10cf4adb4ef43bfaf94dd487e8997143013f2f1f20d392e6f973679fa44e8",
+      "relations_sha": "cf67f2bd17b45acfe8b67c05f67aa88496381b6865d2c619f05818479f41eedc",
+      "reference_modes": [
+        "anaphoric_first"
+      ],
+      "selected_sha": "6afb44fd10933c4bd1baa7e6c047e95bc43510bf4514a406b7ab85cd4a0eaf8b",
+      "decisions_sha": "ba54e2ae56acfecb994a1744116283465c1dc138199faffac686e36f7f2883a5",
+      "artifact_sha": "f982eac71ad1259a12846eb0625abccd55c38b8d7c43e4dbcf9d57717c474c6c",
+      "body": "見えたこと：\n「昨日は私はとても嬉しかった」と「今日は疲れている」が、異なる向きのまま同時にあります。\n\nEmlisから：\nその状態が重なる中で、今ここに置かれた言葉ともう一方の向きとの違いをどちらの側も残したまま、小さくせずに受け止めています。",
+      "observation": "「昨日は私はとても嬉しかった」と「今日は疲れている」が、異なる向きのまま同時にあります。",
+      "reception": "その状態が重なる中で、今ここに置かれた言葉ともう一方の向きとの違いをどちらの側も残したまま、小さくせずに受け止めています。",
+      "question": null,
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      },
+      "reasons": [
+        "no_bound_personal_meaning_target"
+      ]
+    },
+    {
+      "case": "other_actor",
+      "memo": "昨日は友達がとても嬉しかった。でも、今日は疲れている。",
+      "checkpoint_sha": "8cbf9608bb1f88e224e7fbdf433ee20c58124f4c0436d9137106a100c0c19bdf",
+      "checkpoint_id": "emlis-checkpoint-e6f25dc22c994b281db69606ee3ff1c2a5cf9102070499957dbe6d288396c03e",
+      "plan_sha": "e2888810167e37bc896618d08667437ad3854124c44b04ee0023633a90ce33ae",
+      "nuclei_sha": "20b10cf4adb4ef43bfaf94dd487e8997143013f2f1f20d392e6f973679fa44e8",
+      "relations_sha": "cf67f2bd17b45acfe8b67c05f67aa88496381b6865d2c619f05818479f41eedc",
+      "reference_modes": [
+        "anaphoric_first"
+      ],
+      "selected_sha": "01f18a9dbcedd95a57198600057ebf97cb860cff04c371006ad3aac8c09c5eee",
+      "decisions_sha": "65ee76acbc6c6708448784d9607f491e3efa55fd87eddbb49ed0a7f2cc7ad922",
+      "artifact_sha": "f64933fce202072e080c3d854f1f477d6c17d64cc5f2912c42e28dee8543ada7",
+      "body": "見えたこと：\n「昨日は友達がとても嬉しかった」と「今日は疲れている」が、異なる向きのまま同時にあります。\n\nEmlisから：\nその状態が重なる中で、今ここに置かれた言葉ともう一方の向きとの違いをどちらの側も残したまま、小さくせずに受け止めています。",
+      "observation": "「昨日は友達がとても嬉しかった」と「今日は疲れている」が、異なる向きのまま同時にあります。",
+      "reception": "その状態が重なる中で、今ここに置かれた言葉ともう一方の向きとの違いをどちらの側も残したまま、小さくせずに受け止めています。",
+      "question": null,
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      },
+      "reasons": [
+        "no_bound_personal_meaning_target"
+      ]
+    },
+    {
+      "case": "quoted",
+      "memo": "「昨日は友達と話せてとても嬉しかった。でも、今日は疲れている。」と聞いた。",
+      "checkpoint_sha": "b1b51c659cd8b866cd8b3850313874c4a7173010c2a6bdcaa7cdffc9925417b8",
+      "checkpoint_id": "emlis-checkpoint-4c911b3b233bf0643aaba775efd527c117d239bf604085861581491207845eee",
+      "plan_sha": "8b2cf4108f09995e6d70e0d1982e5b1808fdc75834919855be262417968f0b79",
+      "nuclei_sha": "12412b9024de4b71688192421ab842027ef5e16bdca2c8d028d8a185da42ae81",
+      "relations_sha": "f2743c9d3f5b955b835bdf7307dbc68bf252cce196912659943bff86e810bf28",
+      "reference_modes": [
+        "short_anchor_if_ambiguous"
+      ],
+      "selected_sha": "68306b58f125e22dbd24fb149052b01b86d6e64e5a1b4dc9b375082958cfe66b",
+      "decisions_sha": "155b179a6f63a0a59c0c378f491415a1c95ebc76469989319b7964d4d8831e93",
+      "artifact_sha": "c299e49498c9fc21fa6d8c3ec9f4f3e37907cb63df07d9d6c6c0477508746ca8",
+      "body": "見えたこと：\n「昨日は友達と話せてとても嬉しかった」と「今日は疲れている」が、異なる向きのまま同時にあります。\n今回の中心には、「と聞いた」があります。\n\nEmlisから：\n昨日は友達と話せてとても嬉しかったという気持ちと今日は疲れていることとの違いをどちらの側も残したまま、感じています。",
+      "observation": "「昨日は友達と話せてとても嬉しかった」と「今日は疲れている」が、異なる向きのまま同時にあります。\n今回の中心には、「と聞いた」があります。",
+      "reception": "昨日は友達と話せてとても嬉しかったという気持ちと今日は疲れていることとの違いをどちらの側も残したまま、感じています。",
+      "question": null,
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      },
+      "reasons": [
+        "no_bound_personal_meaning_target"
+      ]
+    },
+    {
+      "case": "conditional",
+      "memo": "昨日は友達と話せても嬉しくなかった。でも、今日は疲れている。",
+      "checkpoint_sha": "b75c0ad8673b32ba5069bee8aad58e05c5f9593b155d58b70c24e56ab7780ac4",
+      "checkpoint_id": "emlis-checkpoint-95c337b62fbdc98fa1c39cad826bd4e9710be5e252c2487183c9837dd4a4c77e",
+      "plan_sha": "a72a08016856f1977e29054af652a1af453fabf0e5de8fd36655742269d1c208",
+      "nuclei_sha": "4ef3c85dfdb3881cd463b6d14e3f9cc88b6f75c97b34c6d43aa47c68bffcdafd",
+      "relations_sha": "cf67f2bd17b45acfe8b67c05f67aa88496381b6865d2c619f05818479f41eedc",
+      "reference_modes": [
+        "anaphoric_first"
+      ],
+      "selected_sha": "3920ea78074b53802e1b6d4c7d8321c035e3d55d645f41becb64dd39502db3e8",
+      "decisions_sha": "2e642846379ba013ba88db199ab260ac8f2afa9d0b5641b5e738e0fc345c7c2c",
+      "artifact_sha": "f367c9af149939b0afc91c5ece14e09692a0a34954c6665115753b97a1f9bf0f",
+      "body": "見えたこと：\n「昨日は友達と話せても嬉しくなかった」と「今日は疲れている」が、異なる向きのまま同時にあります。\n\nEmlisから：\nその状態が重なる中で、今ここに置かれた言葉ともう一方の向きとの違いをどちらの側も残したまま、小さくせずに受け止めています。",
+      "observation": "「昨日は友達と話せても嬉しくなかった」と「今日は疲れている」が、異なる向きのまま同時にあります。",
+      "reception": "その状態が重なる中で、今ここに置かれた言葉ともう一方の向きとの違いをどちらの側も残したまま、小さくせずに受け止めています。",
+      "question": null,
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      },
+      "reasons": [
+        "no_bound_personal_meaning_target"
+      ]
+    },
+    {
+      "case": "conditional_degree",
+      "memo": "昨日は友達と話せてもとても嬉しくなかった。でも、今日は疲れている。",
+      "checkpoint_sha": "c1dc5b940350a1aeb284e1e27b9f334c8da46bb4b9774fcc094f319e701dfc84",
+      "checkpoint_id": "emlis-checkpoint-ceb27e021a0113a452f3b45e13b1a8156d837f9e9da5274021418278eb287a4c",
+      "plan_sha": "a72a08016856f1977e29054af652a1af453fabf0e5de8fd36655742269d1c208",
+      "nuclei_sha": "4ef3c85dfdb3881cd463b6d14e3f9cc88b6f75c97b34c6d43aa47c68bffcdafd",
+      "relations_sha": "cf67f2bd17b45acfe8b67c05f67aa88496381b6865d2c619f05818479f41eedc",
+      "reference_modes": [
+        "anaphoric_first"
+      ],
+      "selected_sha": "bda01d059e539f2ce6f397adb11392578599356f30371c25a25befe9df3c66c3",
+      "decisions_sha": "3d169c582ed30d8889cf6f183be5a7c651c194e84c5b127ae5d0cd200366e775",
+      "artifact_sha": "e399a17b279fb60f4e60329faaa81097e051d6e6bbdb25f96e935ccc7514c59a",
+      "body": "見えたこと：\n「昨日は友達と話せてもとても嬉しくなかった」と「今日は疲れている」が、異なる向きのまま同時にあります。\n\nEmlisから：\nその状態が重なる中で、今ここに置かれた言葉ともう一方の向きとの違いをどちらの側も残したまま、小さくせずに受け止めています。",
+      "observation": "「昨日は友達と話せてもとても嬉しくなかった」と「今日は疲れている」が、異なる向きのまま同時にあります。",
+      "reception": "その状態が重なる中で、今ここに置かれた言葉ともう一方の向きとの違いをどちらの側も残したまま、小さくせずに受け止めています。",
+      "question": null,
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      },
+      "reasons": [
+        "no_bound_personal_meaning_target"
+      ]
+    },
+    {
+      "case": "hypothetical",
+      "memo": "もし友達と話せてとても嬉しかった。でも、今日は疲れている。",
+      "checkpoint_sha": "36a8e68085c892798f972113cb9324f84a90d867212788135cf4860f6942b8df",
+      "checkpoint_id": "emlis-checkpoint-0e327d8a3bf72d8e8522ddd0c2023ea4002308b0035b0375fe80d38419e86156",
+      "plan_sha": "1ed3b287e407f77ebb8a9fdc4ae147238251809368331a0eef627f37e5d2f842",
+      "nuclei_sha": "13c39d4f0051a49a22cf8085c9366741f1da5bec797da3b63e62bf1ad9768f71",
+      "relations_sha": "cf67f2bd17b45acfe8b67c05f67aa88496381b6865d2c619f05818479f41eedc",
+      "reference_modes": [
+        "anaphoric_first"
+      ],
+      "selected_sha": "0d87c61e3df4502e9b2e3f97434b3a1f8a242e78dbcc18cc08c4514adae92b70",
+      "decisions_sha": "2b0bcdc8b89defa84ead15dc9d7e97f74f8e00cf04b20d3ee479eb1c895fbd1d",
+      "artifact_sha": "529cbcc33a3f654e247592935025f66b2030fe97db8c92b1adea5c3e858c525c",
+      "body": "見えたこと：\n「もし友達と話せてとても嬉しかった」と「今日は疲れている」が、異なる向きのまま同時にあります。\n\nEmlisから：\nその状態が重なる中で、今ここに置かれた言葉ともう一方の向きとの違いをどちらの側も残したまま、小さくせずに受け止めています。",
+      "observation": "「もし友達と話せてとても嬉しかった」と「今日は疲れている」が、異なる向きのまま同時にあります。",
+      "reception": "その状態が重なる中で、今ここに置かれた言葉ともう一方の向きとの違いをどちらの側も残したまま、小さくせずに受け止めています。",
+      "question": null,
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      },
+      "reasons": [
+        "no_bound_personal_meaning_target"
+      ]
+    },
+    {
+      "case": "polite",
+      "memo": "昨日は友達と話せてとても嬉しかったです。でも、今日は疲れている。",
+      "checkpoint_sha": "14966fc906f09ced950a23a51098ed77ff8b59f89f04eb340da98bb5210ddc8c",
+      "checkpoint_id": "emlis-checkpoint-1cf1aaeaa21ab5f9e7ffea93bc922b5c35abd4397fbafe65108af197e0e388cf",
+      "plan_sha": "e2888810167e37bc896618d08667437ad3854124c44b04ee0023633a90ce33ae",
+      "nuclei_sha": "20b10cf4adb4ef43bfaf94dd487e8997143013f2f1f20d392e6f973679fa44e8",
+      "relations_sha": "cf67f2bd17b45acfe8b67c05f67aa88496381b6865d2c619f05818479f41eedc",
+      "reference_modes": [
+        "anaphoric_first"
+      ],
+      "selected_sha": "2328d66f918c26aed0004d23993281f9d3b6e7d03def701e9023005d0de84da2",
+      "decisions_sha": "dde63333bec793efe1b59d507769dd9bd0841e438219245d4af7c681a4d95df8",
+      "artifact_sha": "ce87ca7b8067df14ce337cadeac456b9824ac7769981d6acdf7bc1173dd08fe9",
+      "body": "見えたこと：\n「昨日は友達と話せてとても嬉しかったです」と「今日は疲れている」が、異なる向きのまま同時にあります。\n\nEmlisから：\nその状態が重なる中で、今ここに置かれた言葉ともう一方の向きとの違いをどちらの側も残したまま、小さくせずに受け止めています。",
+      "observation": "「昨日は友達と話せてとても嬉しかったです」と「今日は疲れている」が、異なる向きのまま同時にあります。",
+      "reception": "その状態が重なる中で、今ここに置かれた言葉ともう一方の向きとの違いをどちらの側も残したまま、小さくせずに受け止めています。",
+      "question": null,
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      },
+      "reasons": [
+        "no_bound_personal_meaning_target"
+      ]
+    },
+    {
+      "case": "repeated_degree",
+      "memo": "昨日は友達と話せてとてもとても嬉しかった。でも、今日は疲れている。",
+      "checkpoint_sha": "a1f6f52aa64eda026acb6384a27cb346d8b1d070216d006d58001504c18fb600",
+      "checkpoint_id": "emlis-checkpoint-cc022239ca275602a0a6c19530e54dcaeb2b597bdfeae9635441803feefaf9fe",
+      "plan_sha": "e2888810167e37bc896618d08667437ad3854124c44b04ee0023633a90ce33ae",
+      "nuclei_sha": "20b10cf4adb4ef43bfaf94dd487e8997143013f2f1f20d392e6f973679fa44e8",
+      "relations_sha": "cf67f2bd17b45acfe8b67c05f67aa88496381b6865d2c619f05818479f41eedc",
+      "reference_modes": [
+        "anaphoric_first"
+      ],
+      "selected_sha": "ab7af8360941b9322b22b7c439f50cfb31aef2685148b41a9afb45f517f27cfc",
+      "decisions_sha": "f16accc3e13d7fd5d118bac062f5245be48939cc115ba81ca57907291d05cb0b",
+      "artifact_sha": "938c66846ca981a6c41dda620ce3a629bfddde6f78ff12e49212e1bef2857ba0",
+      "body": "見えたこと：\n「昨日は友達と話せてとてもとても嬉しかった」と「今日は疲れている」が、異なる向きのまま同時にあります。\n\nEmlisから：\nその状態が重なる中で、今ここに置かれた言葉ともう一方の向きとの違いをどちらの側も残したまま、小さくせずに受け止めています。",
+      "observation": "「昨日は友達と話せてとてもとても嬉しかった」と「今日は疲れている」が、異なる向きのまま同時にあります。",
+      "reception": "その状態が重なる中で、今ここに置かれた言葉ともう一方の向きとの違いをどちらの側も残したまま、小さくせずに受け止めています。",
+      "question": null,
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      },
+      "reasons": [
+        "no_bound_personal_meaning_target"
+      ]
+    },
+    {
+      "case": "unsupported_predicate",
+      "memo": "昨日は友達と話せてとても楽しかった。でも、今日は疲れている。",
+      "checkpoint_sha": "b9cfe6f6ec4f15d0a76565ee17e5d3b764a0d00ea0cdb9e1a7f170275d4e77d3",
+      "checkpoint_id": "emlis-checkpoint-b09304f50206debf80645d2b400017f25fcc3f96a4f0a9d00e6a3b1ed1ee7347",
+      "plan_sha": "528ddc75e80eac94050065e1c69c0707296cd0c770545a594f3ec9bccfef6b16",
+      "nuclei_sha": "c0ac23143438aa47b8b76393cf44a39dfd711bed1c5d529097847856de5b077c",
+      "relations_sha": "cf67f2bd17b45acfe8b67c05f67aa88496381b6865d2c619f05818479f41eedc",
+      "reference_modes": [
+        "short_anchor_if_ambiguous"
+      ],
+      "selected_sha": "c5a836c3375d32507973a54b8ad73b0e9aee7a8b159bdc9b42ce9e40412e1537",
+      "decisions_sha": "a752bc6b9895d7a8c7ef64a6cf0c2bf3eb8a34a6c757b596b76918d5efb5a568",
+      "artifact_sha": "17118005d11d9491d064e4490ccab9c891b2622fbc75874751d4e2c87f0f738d",
+      "body": "見えたこと：\n「昨日は友達と話せてとても楽しかった」と「今日は疲れている」が、異なる向きのまま同時にあります。\n\nEmlisから：\n昨日は友達と話せてとても楽しかったという今ここに置かれた言葉と今日は疲れていることの両方を、その違いも含めて小さくせずに受け止めています。",
+      "observation": "「昨日は友達と話せてとても楽しかった」と「今日は疲れている」が、異なる向きのまま同時にあります。",
+      "reception": "昨日は友達と話せてとても楽しかったという今ここに置かれた言葉と今日は疲れていることの両方を、その違いも含めて小さくせずに受け止めています。",
+      "question": null,
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      },
+      "reasons": [
+        "no_bound_personal_meaning_target"
+      ]
+    },
+    {
+      "case": "reverse",
+      "memo": "今日は疲れている。でも、昨日は友達と話せて嬉しかった。",
+      "checkpoint_sha": "44c47942aa12f18a4490d4542a43fb0668e2cab538d06bb60b0564286ff4f67b",
+      "checkpoint_id": "emlis-checkpoint-48c7f431cce5da935b2a25aa52299415d911b2caf28d31ef3bd59f50b67b6ad4",
+      "plan_sha": "9638f500e50fd504315cb893a55017b2709859650e35b96f1890ac9665b29c63",
+      "nuclei_sha": "c8cb7229906e2e3167d6fa7d40c9ded43dc717d624e471f558c97530ef8c32dd",
+      "relations_sha": "dc0497f8b96eea0e23afeed4d384e1dbdcfcd5dcba0337a93e45a31248ef0dd0",
+      "reference_modes": [
+        "anaphoric_first"
+      ],
+      "projection_error": "RECEPTION_BINDING_CONFLICT_STOP",
+      "artifact_sha": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "body": null,
+      "observation": null,
+      "reception": null,
+      "question": null,
+      "question_decision": {
+        "disposition": "BLOCKED",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "prequestion_body_unavailable"
+      },
+      "reasons": [
+        "emlis_q3_initial_body_unavailable"
+      ]
+    },
+    {
+      "case": "reverse_degree",
+      "memo": "今日はとても疲れている。でも、昨日は友達と話せて嬉しかった。",
+      "checkpoint_sha": "7eb9155d3aa4add92d42473effe4a982ac151c523f21d8a357422dd78d276338",
+      "checkpoint_id": "emlis-checkpoint-253f088785ebb46a8b2751aa8aea338a35aba86c9d616e8fb13d22c6515f52fe",
+      "plan_sha": "9638f500e50fd504315cb893a55017b2709859650e35b96f1890ac9665b29c63",
+      "nuclei_sha": "c8cb7229906e2e3167d6fa7d40c9ded43dc717d624e471f558c97530ef8c32dd",
+      "relations_sha": "dc0497f8b96eea0e23afeed4d384e1dbdcfcd5dcba0337a93e45a31248ef0dd0",
+      "reference_modes": [
+        "anaphoric_first"
+      ],
+      "projection_error": "RECEPTION_BINDING_CONFLICT_STOP",
+      "artifact_sha": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "body": null,
+      "observation": null,
+      "reception": null,
+      "question": null,
+      "question_decision": {
+        "disposition": "BLOCKED",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "prequestion_body_unavailable"
+      },
+      "reasons": [
+        "emlis_q3_initial_body_unavailable"
+      ]
+    }
+  ]
+}

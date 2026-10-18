@@ -8119,11 +8119,18 @@ def source_owned_separate_contrast_objects(move, nuclei, relations, evidence_spa
         return ()
     for span in (left, right):
         raw = re.sub(r"^(?:昨日|今日|今|その時)(?:は|も)?[、,]?", "", span.raw_text)
+        terminal = re.search(r"(?P<degree>とても)?(?:嬉しかった|うれしかった|楽しかった|嬉しくなかった|うれしくなかった|楽しくなかった|疲れた|疲れなかった|疲れている)$", raw)
+        if terminal is None:
+            return ()
+        # The も inside one degree adverb directly attached to this known
+        # predicate is not a topic particle. Remove it only from the guard's
+        # inspection copy; source clauses and every other も stay intact.
+        inspected = (raw[:terminal.start('degree')] + raw[terminal.end('degree'):]
+                     if terminal.group('degree') is not None else raw)
         # Known time prefixes remain in the delivered clause. Other topic,
         # owner, report, question, polite or conditional frames need their
         # own reversible realization; do not feed them to a plain nominal.
-        if (not raw or re.search(r"は|が|も|私|僕|俺|自分|わたし|ぼく|おれ|もし|仮に|として|かもしれ|[、,]", raw)
-            or not re.search(r"(?:嬉しかった|うれしかった|楽しかった|嬉しくなかった|うれしくなかった|楽しくなかった|疲れた|疲れなかった|疲れている)$", raw)):
+        if re.search(r"は|が|も|私|僕|俺|自分|わたし|ぼく|おれ|もし|仮に|として|かもしれ|[、,]", inspected):
             return ()
     return pair
 
