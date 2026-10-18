@@ -820,3 +820,132 @@ def test_unknown_object_raw_field_and_normalized_ledger_keep_same_body(memo):
     assert read_body(context, context[0].artifact.text).passed
     public = MeaningExperienceEngine().generate(request(memo))
     assert public.artifact.text == context[0].artifact.text
+
+
+@pytest.fixture(scope='module')
+def single_unknown_context():
+    from test_cmee_emlis_received_discourse import actual
+    return actual(request=request('何が嫌なのか、自分でもまだよく分からない。'))
+
+
+@pytest.mark.parametrize('case_index', range(10))
+def test_single_unknown_object_preserves_saved_meaning_and_selected_openness(case_index):
+    import hashlib
+    import json
+    from dataclasses import asdict
+    from pathlib import Path
+    from test_cmee_emlis_received_discourse import actual, inverse
+    frozen = json.loads((Path(__file__).parent / 'fixtures' /
+        'cmee_emlis_u325_single_unknown_checkpoint_v1.json').read_text())
+    assert frozen['source_commit'] == '8df8bdb1d0076fe6c7895b7c423aa144182af4e6'
+    row = frozen['cases'][case_index]
+    req = request(row['memo'])
+    req = replace(req, emlis_thread=replace(req.emlis_thread,
+        prepared_meaning_checkpoint_ref=row['checkpoint']['checkpoint_id']))
+    prepared = prepare_emlis_meaning(req)
+    plan = build_updated_grounded_plan(prepared)
+    selected = asdict(project_thread_meaning(prepared, plan).selected_reception)
+    def digest(obj):
+        return hashlib.sha256(json.dumps(obj, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+    assert json.loads(json.dumps(asdict(prepared.checkpoint))) == row['checkpoint']
+    for name in ('nuclei', 'relations'):
+        assert digest([asdict(n) for n in getattr(plan, name)]) == row[name + '_sha256']
+    assert digest({k:v for k,v in selected.items() if k not in {'input_ref', 'grounding_ref'}}) == row['selected_content_sha256']
+    assert selected['input_ref'] != row['selected_input_ref'] and selected['grounding_ref'] != row['grounding_ref']
+    context = actual(request=req)
+    result = MeaningExperienceEngine().generate(req)
+    assert result.artifact and result.artifact.text == context[0].artifact.text
+    follow = result.artifact.reception
+    original = row['memo'].rstrip('。')
+    recipient = original.replace('自分自身', 'ご自身').replace('自分', 'ご自身').replace('私', 'あなた')
+    assert recipient in follow
+    assert '結論を急がずに' in follow
+    assert '小さくせずに' not in follow
+    assert follow.count('まだ') == original.count('まだ')
+    assert result.artifact.observation == row['body'].split('\n\nEmlisから：\n')[0].split('見えたこと：\n')[1]
+    assert json.loads(json.dumps(asdict(result.question_decision))) == row['question_decision']
+    assert result.question is None
+    assert inverse(context, follow, without_author=True).passed
+
+
+@pytest.mark.parametrize('old,new', [
+    ('何が嫌なのか', '何が不安なのか'), ('何が嫌なのか', 'なぜ嫌なのか'),
+    ('何が嫌なのか、', ''), ('ご自身でも', '私でも'), ('ご自身でも', '友人でも'),
+    ('ご自身でも', 'ご自身には'), ('ご自身でも', ''),
+    ('まだよく', 'まだ'), ('まだよく', 'よく'), ('まだよく', ''),
+    ('分からない', '分かった'), ('分からない', '分からなかった'),
+    ('分からない', '分からないと思う'), ('結論を急がずに、', ''),
+    ('結論を急がずに', '結論を決めて'), ('のだと受け止めています', 'から苦しいのですね'),
+])
+def test_single_unknown_inverse_rejects_lost_scope_and_closed_uncertainty(single_unknown_context, old, new):
+    from test_cmee_emlis_received_discourse import inverse
+    context = single_unknown_context
+    follow = context[0].artifact.reception
+    changed = follow.replace(old, new)
+    assert changed != follow
+    assert not inverse(context, changed, without_author=True).passed
+
+
+def test_single_unknown_inverse_keeps_existing_receipt_marker_contract(single_unknown_context):
+    from test_cmee_emlis_received_discourse import inverse
+    follow = single_unknown_context[0].artifact.reception.replace('受け止めています', '受け取っています')
+    assert not inverse(single_unknown_context, follow, without_author=True).passed
+
+
+@pytest.mark.parametrize('memo,action', [
+    ('その理由は自分でもよくわからない。', ''),
+    ('なぜ嫌なのか、自分でもよくわからない。', ''),
+    ('何が嫌なのか、友人でもよくわからない。', ''),
+    ('何が嫌なのか、自分でもよくわからなかった。', ''),
+    ('何が嫌なのか、自分でもよくわからない？', ''),
+    ('何が嫌なのか、自分でもよくわからないと言った。', ''),
+    ('何が嫌なのか、自分でもよくわからないと思う。', ''),
+    ('もし何が嫌なのか、自分でもよくわからないなら休む。', ''),
+    ('「何が嫌なのか、自分でもよくわからない」と友人が言った。', ''),
+    ('友人の話。何が嫌なのか、自分でもよくわからない。', ''),
+    ('何が嫌なのか、自分でもよくわからない。机を片付けた。', ''),
+    ('何が嫌なのか、自分でもよくわからない。', '机を片付けた。'),
+])
+def test_single_unknown_source_proof_excludes_other_owners_and_additional_material(memo, action):
+    from emlis_ai_grounded_observation_plan import _source_unknown_object_group_from_resolver
+    req = initial(memo, action)
+    prepared = prepare_emlis_meaning(req)
+    plan = build_updated_grounded_plan(prepared)
+    assert not _source_unknown_object_group_from_resolver(plan.nuclei, plan.relations,
+        prepared.thread.resolver(), include_single=True)
+
+
+@pytest.mark.parametrize('prefix,suffix', [(' ', ''), ('　', ''), ('', ' '), ('', '　')])
+def test_single_unknown_raw_field_whitespace_retains_full_object(prefix, suffix):
+    from test_cmee_emlis_received_discourse import actual, inverse
+    context = actual(request=request(prefix + '何が嫌なのか、自分でもよくわからない。' + suffix))
+    assert '何が嫌なのか、ご自身でもよくわからない' in context[0].artifact.reception
+    assert inverse(context, context[0].artifact.reception, without_author=True).passed
+
+
+@pytest.mark.parametrize('change', ['duplicate', 'pair', 'foreign', 'tense', 'object', 'inactive'])
+def test_single_unknown_ir_cannot_rebind_scope(single_unknown_context, change):
+    import emlis_ai_grounded_human_reception as hr
+    from emlis_ai_grounded_observation_plan import _source_unknown_object_group_from_resolver
+    _, plan, _, resolver, _ = single_unknown_context
+    reception = plan.response_plan.human_reception_plan
+    move, = reception.moves
+    index = {n.nucleus_id:n for n in plan.nuclei}
+    if change == 'inactive':
+        remaining = tuple(n for n in plan.nuclei if n.nucleus_id not in move.target_nucleus_ids)
+        assert not _source_unknown_object_group_from_resolver(remaining, (), resolver, include_single=True)
+        return
+    ir = hr._project_source_grounded_reception_move_realization(reception, move, index, resolver,
+        plan=plan, recovery_stage='full', clause_form='FINITE')
+    if change == 'duplicate':
+        changed = replace(ir, nominalization_plan=(*ir.nominalization_plan, ir.nominalization_plan[-1]))
+    elif change == 'pair':
+        changed = replace(ir, nominalization_plan=(ir.nominalization_plan[0], 'source-unknown-object:0:1'))
+    elif change == 'foreign':
+        changed = replace(ir, semantic_profiles=(replace(ir.semantic_profiles[0], actor_kind='OTHER'),))
+    elif change == 'tense':
+        changed = replace(ir, time_scope='past')
+    else:
+        changed = replace(ir, semantic_fragments=('その理由は分からない',))
+    with pytest.raises(hr.GroundedHumanReceptionSurfaceError):
+        hr._unknown_object_group_ir_text(changed)

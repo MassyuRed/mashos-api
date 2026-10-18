@@ -1,0 +1,325 @@
+{
+  "source_commit": "8df8bdb1d0076fe6c7895b7c423aa144182af4e6",
+  "cases": [
+    {
+      "memo": "何が嫌なのか、自分でもよくわからない。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-c2e06809028178047e78a05c6407db3abb9e9b471ef7ff0c4270d5e190ae81b2",
+        "source_prefix_ref": "emlis-q3-source-prefix-aea36e0ea68075326da3956fa1c2772ce7a40c6a71660d13cbf9515a58c5d709",
+        "base_meaning_ref": "emlis-base-meaning-02a9299359f2a30fe1bce678eceb7586763aae65de8997a915987a6412be2757",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "nuclei_sha256": "d840feca0e95ba33b877f5f37a3eed7df67b41db52c9b9d810ad06ee44701f71",
+      "relations_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "selected_sha256": "cf0816340054e918e982929e4f409b80cd31c7df28d3dc411755d503a35b2376",
+      "selected_content_sha256": "df6d25e0b3cc244e950091fd147de10b177db3b8e74fd5f32154cd14c2f63ab0",
+      "selected_input_ref": "selected-reception-input:cc14f5d7fb0f35ac416caf6fc000f56e7959eba96f4bea220597e3c4e820fc34",
+      "grounding_ref": "0bfed25c7a33e610452be070fdb3c49a73fab4421e8c8924313d6c2e56c47c0c",
+      "body": "見えたこと：\n今は、「何が嫌なのか、自分でもよくわからない」という感覚が前に出ています。\n\nEmlisから：\n結論を急がずに、まだ分からないことを小さくせずに受け止めています。",
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      }
+    },
+    {
+      "memo": "何が嫌なのか、自分でもはっきり分からない。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-522f5d2d4e09552d49f9d93bd7bb2fc6d467f5ee81cdbff391eb02e7eeaa8527",
+        "source_prefix_ref": "emlis-q3-source-prefix-7fd230e4a850a37f48333695ec123d81967a4e8534d97e7cb8a4aa0b5ad9c09b",
+        "base_meaning_ref": "emlis-base-meaning-ae709f728bc7ff2e25ed5aa54b5572bdb579ba61a58d6ef7f72af0f0806900a7",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "nuclei_sha256": "d840feca0e95ba33b877f5f37a3eed7df67b41db52c9b9d810ad06ee44701f71",
+      "relations_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "selected_sha256": "44d056bffea1dc1a993abae8b3223e12a4786eacd252f48ae9e513dde09c55fc",
+      "selected_content_sha256": "894fcccd661d6a19854e5264c32026864fb3ef1a647b0880abf48abd925d00ee",
+      "selected_input_ref": "selected-reception-input:18b44858938b52ac4142eec7241a99cf2ef563284aaa3f5622eba138a9ccdaff",
+      "grounding_ref": "c91b6153b714cf11022c4ae8668d76f7523ec2f9a982310c4242fc85ecc61067",
+      "body": "見えたこと：\n今は、「何が嫌なのか、自分でもはっきり分からない」という感覚が前に出ています。\n\nEmlisから：\n結論を急がずに、まだ分からないことを小さくせずに受け止めています。",
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      }
+    },
+    {
+      "memo": "何が嫌なのか私にもまだわからない。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-a4b737f02a58e5f19340555a3105705a53da9575af3212ee9d06a9ff438d4008",
+        "source_prefix_ref": "emlis-q3-source-prefix-30ed97286c8de20f1f3b73689fd29489411e948800ec5c391e1f5f795cc366dd",
+        "base_meaning_ref": "emlis-base-meaning-3e560ccd843b3acadafefbc4e883040eba3ae6a6ee3a1162d4b871bfa17b8d9e",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "nuclei_sha256": "bc677fdfd767c400617f916a9cb2b9d19fbd1cf1c6062d0f919e2de467d908f8",
+      "relations_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "selected_sha256": "d773a319257e80334ae0a0a2e6ef76d789efba977381958d29a247346749caa4",
+      "selected_content_sha256": "f6194eb76fa6c276fb71d4da5fb1893c1d96e9e6a91f53f644c2401b501375f6",
+      "selected_input_ref": "selected-reception-input:ece349c54314a31a62030d7dc33ec0c702ab7553c3568033df7479668b18988b",
+      "grounding_ref": "b283de45ed9b47bdfc2e1803e2de3f093606576e1175185a7fef1a7f34f96494",
+      "body": "見えたこと：\n今は、「何が嫌なのか私にもまだわからない」という感覚が前に出ています。\n\nEmlisから：\n結論を急がずに、まだ分からないことを小さくせずに受け止めています。",
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      }
+    },
+    {
+      "memo": "どこが嫌なのか、自分でもよくわからない。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-be9fb8d6304d58a9d4f848fc0d2d4d4e9ea2f7a259e8f74af4aafbe1d07b9239",
+        "source_prefix_ref": "emlis-q3-source-prefix-3bc003427424e761d28f20baf6fa7cd59f3c3c243c5b3acd1823070d0d166f06",
+        "base_meaning_ref": "emlis-base-meaning-48eca13bb159b4426727962b43adf8c5c279388bbc6527e1119e5a1686038ca5",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "nuclei_sha256": "d840feca0e95ba33b877f5f37a3eed7df67b41db52c9b9d810ad06ee44701f71",
+      "relations_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "selected_sha256": "9dc20351a3d588070ab9cc8ec963676bbad63dc296ef03dd8ba93f2187dcb774",
+      "selected_content_sha256": "fd63c87cff6f4f91b4a4884b6fd1929d1c8bb4c64db360dc1fd30d935889c007",
+      "selected_input_ref": "selected-reception-input:1338e443938623aa2bc98d13b8e99ffb4f77281a124244f3b5aed1bf719bc54f",
+      "grounding_ref": "f9ba15fd75e5779cad987368839ae6746204bd0c0275e6530eae5ac365e1eb92",
+      "body": "見えたこと：\n今は、「どこが嫌なのか、自分でもよくわからない」という感覚が前に出ています。\n\nEmlisから：\n結論を急がずに、まだ分からないことを小さくせずに受け止めています。",
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      }
+    },
+    {
+      "memo": "何が不安なのか、自分でもよくわからない。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-426edb0ded8890e9d83210636303c48912d332f5bb0b647f1a4c86809f23cdfc",
+        "source_prefix_ref": "emlis-q3-source-prefix-9362f7948e220f5f0066756c2a79292bc0621d3f5de90e2a1665e3e22877b7b3",
+        "base_meaning_ref": "emlis-base-meaning-30c5008352d2ad289a29dd240e94af41642ae139514f766ac04d5a30a393a9c8",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "nuclei_sha256": "1875d76b69b1d8b89db66813dc9cea0b2d5504282f3a2f0a8601827fd422e635",
+      "relations_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "selected_sha256": "66ff26ea131eb6455063b584e6492ccf3a0f1d1c0da433aeb3ff83d25c4b72ea",
+      "selected_content_sha256": "181a4007262cb9fc071030177b8bf735cb036941b1b8c845154c5ed640b10003",
+      "selected_input_ref": "selected-reception-input:27baa1c0d381677c1d0b71a8dd7cbd69c8e9bb802f4fc26676315b58978212e8",
+      "grounding_ref": "7cd18ab645f6938ac2cfe16c6ff1009cf8667b969b720b24403ea403bbd6f72e",
+      "body": "見えたこと：\n今は、「何が不安なのか、自分でもよくわからない」という感覚が前に出ています。\n\nEmlisから：\n結論を急がずに、まだ分からないことを小さくせずに受け止めています。",
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      }
+    },
+    {
+      "memo": "何がつらいのか、私にもまだわからない。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-011cf5cd59ce676160ce284b8e37e6ecfa52e3a1c2c7512faa6435238cee7759",
+        "source_prefix_ref": "emlis-q3-source-prefix-d377de71a80002d7bbc6ee946f27fd0eed154a04089b61e1416912aea9bb89e3",
+        "base_meaning_ref": "emlis-base-meaning-43393bc9f4d54177bb4ea26d45bbeb91d4a56f6a03d31afd078f10e85a133a23",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "nuclei_sha256": "311ca6ac5547428caaf74ec46b0571672cd5f8b04b570eac3e887034e0a4547f",
+      "relations_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "selected_sha256": "1b5d8d8b75504443213b32cd98b7771234cb457a8465be79ed34bf097ff38010",
+      "selected_content_sha256": "addd333ea12ff6aa9cf3fcd05788d9aed691bea4c42ccbf94cde142ce789687c",
+      "selected_input_ref": "selected-reception-input:96a2bc8592309f70ed0f6601efdae4419216d57f68b4b95799b9def05265f226",
+      "grounding_ref": "2c4823508dada258df954594a324122e0944cce9148f9dbab3102b2e4a045d49",
+      "body": "見えたこと：\n今は、「何がつらいのか、私にもまだわからない」という感覚が前に出ています。\n\nEmlisから：\n結論を急がずに、まだ分からないことを小さくせずに受け止めています。",
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      }
+    },
+    {
+      "memo": "何が怖いのか、私にもまだ分からない。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-70e9cf3fe5697f5602a939ec84fc985769758a2282ca3a2506d562eb859ede04",
+        "source_prefix_ref": "emlis-q3-source-prefix-620a21ac71d0a3f097cacd18241707d4875d40a8876c2fb515393e6a53761619",
+        "base_meaning_ref": "emlis-base-meaning-ed2b5436281a551cab7014de59226af0362e2905972b237d04e784e64ae1d50c",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "nuclei_sha256": "311ca6ac5547428caaf74ec46b0571672cd5f8b04b570eac3e887034e0a4547f",
+      "relations_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "selected_sha256": "35ad164767c5f30112f5a1bab3f5792022a758c8f7fb0be5f8987378a131a325",
+      "selected_content_sha256": "24cd640f221198e3877b11335ab6494bd3ebf8b6e9525348af1b36c4b057a750",
+      "selected_input_ref": "selected-reception-input:6b3480391567a684e8b5117fb7cd679e0fc52ecf41057bfdd61d5457c8537ab4",
+      "grounding_ref": "3b5600b38f033d35d159960f85bc8c9843f5226b4581ffcddd4ff44b704a1a49",
+      "body": "見えたこと：\n今は、「何が怖いのか、私にもまだ分からない」という感覚が前に出ています。\n\nEmlisから：\n結論を急がずに、まだ分からないことを小さくせずに受け止めています。",
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      }
+    },
+    {
+      "memo": "何が嫌なのか、自分でもまだよく分からない。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-aca1320b704dbe52c4715c31fce7155675761fe0d9e44bd72e038300f33e931f",
+        "source_prefix_ref": "emlis-q3-source-prefix-da4c2a1c581cc21ff75f04366e765e1f5c5d2a87267164e3677dadeb33be561a",
+        "base_meaning_ref": "emlis-base-meaning-adc88584cec688a8ba8ad413d271374611bcddea3d961ba930637e4000729580",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "nuclei_sha256": "d840feca0e95ba33b877f5f37a3eed7df67b41db52c9b9d810ad06ee44701f71",
+      "relations_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "selected_sha256": "99339a93c7a4dd75cedfaf603e1900963e3149725f09d638980d3ed985129f92",
+      "selected_content_sha256": "3832f85526a5dd0bc8ae1be6a7091647f3b3c6076b5a7ed93db3d15d65a4b4fc",
+      "selected_input_ref": "selected-reception-input:c67e1acb2849082eb78c10e05690b1c93167bdff36c7696f94bcf109a391b48f",
+      "grounding_ref": "2a36ba83e73920ed814d647314f8c33046944b2cc0670cf32877e78a68690696",
+      "body": "見えたこと：\n今は、「何が嫌なのか、自分でもまだよく分からない」という感覚が前に出ています。\n\nEmlisから：\n結論を急がずに、まだ分からないことを小さくせずに受け止めています。",
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      }
+    },
+    {
+      "memo": "何が嫌なのか、自分自身でもよくわからない。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-b502052daa42edfb2424ffafaf819c59a7f676e68bf27f18062502424cdb9222",
+        "source_prefix_ref": "emlis-q3-source-prefix-53d6414ac4f7e74f20c23160708e5e1242f9cc7308ce48bbc31fbda432b80a36",
+        "base_meaning_ref": "emlis-base-meaning-c9bb443d5a48235da7017ca41eca7a4669e7250f870f0a812b867991da80e448",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "nuclei_sha256": "5a489334c70a09b5075a9d177a8840730d65fa71e52d4116680e2ad4dcd22c6c",
+      "relations_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "selected_sha256": "5b2efd3e05f9f456deeeddf776f49be6226c7e1f1dab7be7234977b9375f73ac",
+      "selected_content_sha256": "ab9fcb7dafb38cfdf3da4e951a6f2707cae3210551ee3ef64b0e70bd61e34199",
+      "selected_input_ref": "selected-reception-input:894bc5e5ddb8b95d7d991ddaa570f01c3eabef5388331bf9086ed5bd52d7a9a4",
+      "grounding_ref": "2556d85595a77e7829acc4b84b54353daf78ad8e5eb7e80edd313eaaa0c9aac5",
+      "body": "見えたこと：\n今は、「何が嫌なのか、自分自身でもよくわからない」という感覚が前に出ています。\n\nEmlisから：\n結論を急がずに、まだ分からないことを小さくせずに受け止めています。",
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      }
+    },
+    {
+      "memo": "何が嫌なのか、私自身にもまだ分からない。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-081a4f3df367fa15c8853fd21d290d187ec88844a4d9031491cb145e7a15c44c",
+        "source_prefix_ref": "emlis-q3-source-prefix-b0d7ba86c03f27a7b0e0f7900a8287cd1bd2c524c74fb7cd41534765c508f06b",
+        "base_meaning_ref": "emlis-base-meaning-5bdeb9a2ae625806c0a240d93936f7d0c07a96fb23e789625212c0f2c508245f",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "nuclei_sha256": "bc677fdfd767c400617f916a9cb2b9d19fbd1cf1c6062d0f919e2de467d908f8",
+      "relations_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "selected_sha256": "812ce52e0ced58c781d701e4651a4227680fe73bf97ac70420a3a198c3db6257",
+      "selected_content_sha256": "000588c36dcfe75bc3f31f7b0ff95ce0dae61fdc244e2096c2c802f83d98eb1f",
+      "selected_input_ref": "selected-reception-input:53236a2638f807394e513ecb92927c7a53a3263dffad66bcd985f57ce06f6bdb",
+      "grounding_ref": "0de515bf6cebf6f36c448557d007e257b327d09e1143da9837768c72ffaa9c2b",
+      "body": "見えたこと：\n今は、「何が嫌なのか、私自身にもまだ分からない」という感覚が前に出ています。\n\nEmlisから：\n結論を急がずに、まだ分からないことを小さくせずに受け止めています。",
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      }
+    }
+  ]
+}

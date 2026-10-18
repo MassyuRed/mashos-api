@@ -372,8 +372,12 @@ def _semantic_subcheck_reasons(
                     # license the same sensation outside the disclosure.
                     replacements.add((parsed.utf8_byte_start, parsed.utf8_byte_end, b""))
     reception_plan = plan.response_plan.human_reception_plan
+    from emlis_ai_grounded_observation_plan import _source_unknown_object_group_from_resolver
+    unknown_group = _source_unknown_object_group_from_resolver(plan.nuclei, plan.relations, resolver, include_single=True)
     for move in reception_plan.moves if reception_plan is not None else ():
-        if len(move.target_nucleus_ids) > 1 or move.support_nucleus_ids:
+        if len(move.target_nucleus_ids) > 1 or move.support_nucleus_ids or (
+            len(unknown_group) == 1 and move.target_nucleus_ids == (unknown_group[0].nucleus_id,)
+            and not move.support_nucleus_ids and move.reception_act == "stay_with_current_burden"):
             if sensation_witness is None:
                 sensation_witness = parse_grounded_surface_body_bytes(sensation_body)
             for sentence in sensation_witness.sentences:
@@ -4419,8 +4423,34 @@ def _feeling_reason_unknown_restores_source(visible, source):
 def _read_unknown_object_discourse(raw, move, plan, resolver, selected_subjective_input):
     """Read both finite sources independently, preserving the wh-object and SELF."""
     from emlis_ai_grounded_observation_plan import _source_unknown_object_group_from_resolver, _source_self_unknown_object_parts
-    group = _source_unknown_object_group_from_resolver(plan.nuclei, plan.relations, resolver)
+    group = _source_unknown_object_group_from_resolver(plan.nuclei, plan.relations, resolver, include_single=True)
     ids = (*move.target_nucleus_ids, *move.support_nucleus_ids)
+    if len(group) == 1:
+        n = group[0]
+        if (not move.required or move.move_role != "felt_response" or move.reception_act != "stay_with_current_burden"
+            or ids != (n.nucleus_id,) or move.support_nucleus_ids
+            or re.search(r'[「」『』“”‘’"?？!！\r\n]', raw)):
+            return None
+        if selected_subjective_input is not None:
+            decision = next((d for d in selected_subjective_input.decisions if d.move_id == move.move_id), None)
+            appraisal = decision.subjective_proposition.appraisal_content if decision else None
+            if appraisal is None or appraisal.dimension != "UNFINISHED_OPENNESS" or appraisal.operation != "LEAVE_UNFINISHED":
+                return None
+        source = str(resolver.resolve(n.source_span_ids[0]).raw_text).strip(" 　。．.")
+        proof = _source_self_unknown_object_parts(source)
+        parsed = re.fullmatch(r"結論を急がずに、(?P<unknown>[^。！？!?]+)のだと受け止めています。", raw)
+        if parsed is None:
+            return None
+        visible = parsed['unknown']
+        start, end = proof.span('owner')
+        recipient = "ご自身" if proof['owner'] == "自分" else "あなた"
+        if visible[start:start + len(recipient)] != recipient:
+            return None
+        owner = proof['owner'] + (proof['self_suffix'] or "") if proof['owner'] == "自分" else proof['owner']
+        restored = visible[:start] + owner + visible[start + len(recipient):]
+        if restored != source:
+            return None
+        return ((len(raw[:parsed.start('unknown')].encode()), len(raw[:parsed.end('unknown')].encode()), source.encode()),)
     if (not group or not move.required or move.move_role != "felt_response"
         or move.reception_act != "stay_with_current_burden"
         or len(move.target_nucleus_ids) != 1 or len(move.support_nucleus_ids) != 1

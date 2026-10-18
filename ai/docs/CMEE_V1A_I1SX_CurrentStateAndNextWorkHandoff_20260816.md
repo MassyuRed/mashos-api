@@ -22362,3 +22362,16 @@ PRODUCT_NOT_CLEAR・初回一体単位未完了・正式0/3・candidate_ready=fa
 主担当が未加工10全文を読んだ。対象欠落は修復したが、引用中心のObservationと原文に近いReceptionは残り、E04の深い受容・E05の問いの完成ではない。原04はENDのため架空の質問を使って回答更新成功とは扱わない。単独不明の汎用化、別行動併記時の受け取り対象選択などが次の具体的残件。PRODUCT_NOT_CLEAR・初回一体単位未完了・正式0/3・candidate_ready=false・automatic_progression=false・Draft/open/unmerged・未配置を維持。既存の期限・配分・53.25%は再評価しない。
 
 全文・source・検証条件：[u325監査](https://github.com/MassyuRed/Cocolon/blob/agent/three-core-cmee-current-structure-20260815/Cocolon_前提資料/audits/emlis_ai/Cocolon_EmlisAI_u325_UnknownObjectReception_20261018.md)。
+
+
+## u326 — 単独の不明対象を受け取り本文へ戻す（2026-10-18 JST）
+
+u325で残った単独入力「何が嫌なのか、自分でもよくわからない。」の汎用化を修復した。現行Receptionは「結論を急がずに、何が嫌なのか、ご自身でもよくわからないのだと受け止めています。」。既存選択のUNFINISHED_OPENNESS／LEAVE_UNFINISHEDを維持し、本人・対象・程度・否定・現在時点を原文から実現する。原文にない「まだ」、原因・助言・問いを追加しない。完全な単独memoのSELF不明対象を証明できる場合だけ扱い、既存3製品owner内で参照実現と作者・独立readerを修復した。STRUCTURE_MAP_DELTA_NONE。
+
+旧u325の10入力を新規歴史fixture `ai/tests/fixtures/cmee_emlis_u325_single_unknown_checkpoint_v1.json` に保持し、完全checkpoint・核・辺・選択内容の同一性を確認した。参照方式由来のgrounding_ref／selected input_refだけは更新される。source_scope最終341 passed（追加49を含む）、Q3理由不明対照48 passed／既存3 failed、Q2/Q3 application別集合54 passed、現行identity別1 passed。最終skip 0、合計444 passed／3 failedであり全成功ではない。既存期待値の変更・削除は0、既知3失敗は旧名詞句への置換・一致期待で再現したまま維持した。途中の新規同義語許可試験1失敗は既存response marker契約外であり、readerの受理範囲を現行文へ限定して拒否試験に修正。PGlite未指定による途中9 skipとidentityのimport path収集エラーは環境指定を補って最終runで解消し、途中結果は加算していない。
+
+実EmlisThreadService＋隔離PGlite6ケース、実保存DTOによる現行apiClient／emlisThreadApi／useEmlisThread／EmlisThreadModal native stub6件の本文・close/reopenを確認した。現行3プラン、旧完成本文の作者禁止GET/start保持、旧checkpoint前／後の中断からの再開を区別した。checkpoint後の再開では保存意味eventを保持する。実機・本番DB・deploy・mergeは未実施。
+
+主担当が未加工10全文を読んだ。対象欠落の修復であり、引用中心のObservation、原文に近いReceptionや「あなたにも」等の自然さは残る。E04の深い受容・E05の問い・初回一体単位の完成とは扱わない。独立した行動の併記で不明対象の受け止めが選択から落ちる問題は別残件であり、次は選択ownerで元の不明対象と行動の役割を証明して追う。PRODUCT_NOT_CLEAR・初回一体単位未完了・正式0/3・candidate_ready=false・automatic_progression=false・Draft/open/unmerged・未配置を維持。同Work補助は正式別model評価ではない。10/20方式判断・10/31管理線・12/18公開目標、Piece／Analysis主枠・53.25%は再評価しない。
+
+全文・source・検証条件：[u326監査](https://github.com/MassyuRed/Cocolon/blob/agent/three-core-cmee-current-structure-20260815/Cocolon_前提資料/audits/emlis_ai/Cocolon_EmlisAI_u326_SingleUnknownObjectReception_20261018.md)。

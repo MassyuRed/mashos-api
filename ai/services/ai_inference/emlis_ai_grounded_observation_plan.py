@@ -17448,7 +17448,39 @@ def _source_feeling_unknown_object_group(nuclei, relations, evidence_spans, norm
     return feeling, unknown
 
 
-def _source_unknown_object_group_from_resolver(nuclei, relations, resolver):
+def _source_single_unknown_object(nuclei, relations, evidence_spans, normalized_input):
+    """Read the complete single-field SELF unknown already selected as material."""
+    if normalized_input is None:
+        return ()
+    text = tuple(n for n in nuclei if set(n.source_fields) & _TEXT_SOURCE_FIELDS)
+    spans = tuple(s for s in evidence_spans if s.source_field in _TEXT_SOURCE_FIELDS)
+    if len(text) != 1 or len(spans) != 1:
+        return ()
+    n, span = text[0], spans[0]
+    f = n.semantic_frame
+    source = str(normalized_input.get("memo") or "")
+    fragment = str(span.raw_text).strip(" 　。．.")
+    if (n.source_fields != ("memo",) or span.source_field != "memo"
+        or n.source_span_ids != (span.span_id,)
+        or n.retention != "required" or n.grounding_kind != "explicit"
+        or n.allowed_claim_scope != "explicit_current_input"
+        or (n.kind, f.predicate_kind, f.modality) != ("uncertainty", "uncertainty", "uncertain")
+        or f.actor != "current_user" or f.polarity != "negative"
+        or f.time_scope not in {"current_input", "present"}
+        or not {"operator:uncertainty", "semantic_role:limiting_unknown"} <= set(f.attribute_codes)
+        or any(c.startswith(("source_fragment_", "surface_scalar_", "thread_time:")) for c in f.attribute_codes)
+        or not _source_self_unknown_object_parts(fragment)
+        or any(n.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id) for r in relations)
+        or _top_level_text(source) != source or re.search(r"[?？!！…‥\r\n]", source)
+        or not 0 <= span.start_index < span.end_index <= len(source)
+        or source[span.start_index:span.end_index] != span.raw_text
+        or source[:span.start_index].strip()
+        or not re.fullmatch(r"\s*[。．.]?\s*", source[span.end_index:])):
+        return ()
+    return (n,)
+
+
+def _source_unknown_object_group_from_resolver(nuclei, relations, resolver, *, include_single=False):
     read_field = getattr(resolver, "source_text_for_span_field", None)
     memo = tuple(s for s in resolver.resolve_many(resolver.span_ids) if s.source_field == "memo")
     if read_field is None or not memo:
@@ -17457,20 +17489,23 @@ def _source_unknown_object_group_from_resolver(nuclei, relations, resolver):
     # to the admitted normalized field. Use the same existing normalizer,
     # including for leading/full-width whitespace, before comparing slices.
     normalized = normalize_emlis_current_input({"memo": read_field(memo[0].span_id)})
-    return _source_feeling_unknown_object_group(nuclei, relations,
-        resolver.resolve_many(resolver.span_ids), normalized)
+    return ((_source_single_unknown_object(nuclei, relations,
+        resolver.resolve_many(resolver.span_ids), normalized) if include_single else ()) or
+        _source_feeling_unknown_object_group(nuclei, relations,
+        resolver.resolve_many(resolver.span_ids), normalized))
 
 
 def _explicit_unknown_object_reception(response, nuclei, relations, evidence_spans, normalized_input):
     """Change reference realization only, after the existing Move is selected."""
-    group = _source_feeling_unknown_object_group(nuclei, relations, evidence_spans, normalized_input)
+    group = (_source_single_unknown_object(nuclei, relations, evidence_spans, normalized_input)
+        or _source_feeling_unknown_object_group(nuclei, relations, evidence_spans, normalized_input))
     reception = response.human_reception_plan
     if not group or reception is None:
         return response
     ids = {n.nucleus_id for n in group}
     moves = tuple(replace(m, reference_mode="short_anchor_if_ambiguous")
         if m.required and m.move_role == "felt_response" and m.reception_act == "stay_with_current_burden"
-        and len(m.target_nucleus_ids) == len(m.support_nucleus_ids) == 1
+        and len(m.target_nucleus_ids) == 1 and len(m.support_nucleus_ids) == len(group) - 1
         and set((*m.target_nucleus_ids, *m.support_nucleus_ids)) == ids else m for m in reception.moves)
     return replace(response, human_reception_plan=replace(reception, moves=moves))
 
