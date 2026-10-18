@@ -29,7 +29,13 @@ SHORTENED = {'add_now_positive','add_past_positive','add_now_negative','add_past
 @lru_cache(None)
 def request(case, profile, updated):
     r=ROWS[case]; req=(initial if profile=='q1' else begin)(r['memo'])
-    return advance(req,r['answer']) if updated else req
+    req=advance(req,r['answer']) if updated else req
+    if case=='extra_unknown' and updated:
+        # u346 repairs this meaning selection. Keep this u344 layout comparison
+        # on its saved meaning; the u345 frozen suite checks the new derivation.
+        req=replace(req,emlis_thread=replace(req.emlis_thread,
+            prepared_meaning_checkpoint_ref=r[profile]['updated']['checkpoint_id']))
+    return req
 
 @lru_cache(None)
 def generated(case, profile, updated):

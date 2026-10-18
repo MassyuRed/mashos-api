@@ -35,7 +35,7 @@ ROWS = {row['case']: row for row in BASELINE['cases']}
 IMPROVED = {
     'add_now_positive', 'add_past_positive', 'add_now_negative', 'add_past_burden',
     'self_pair', 'degree_pair', 'revise_other',
-    'withdraw_other_event',
+    'withdraw_other_event', 'extra_unknown',  # u346 restores the same pair duty.
 }
 CASES = [pytest.param(row, id=row['case']) for row in BASELINE['cases']]
 PROFILES = pytest.mark.parametrize('profile', ['q1', 'q3'])
@@ -197,6 +197,7 @@ def test_first_answer_keeps_pair_and_exact_other_experience_or_remains_a_control
                 'add_past_burden': ('その時', '重'),
                 'self_pair': ('回答した時点', '嬉しい'),
                 'degree_pair': ('回答した時点', '少し悲し'),
+                'extra_unknown': ('回答した時点', '嬉しい'),
             }[row['case']]
             assert all(part in follow for part in expected)
     if row['case'] == 'degree_pair':

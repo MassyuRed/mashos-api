@@ -8892,11 +8892,27 @@ def _thread_retained_reaction_groups(nuclei, relations, *, separate_later_scopes
             in n.semantic_frame.attribute_codes and n.retention == 'required')
         right = tuple(n for n in nuclei if 'source_relief_cognition_slot:loneliness'
             in n.semantic_frame.attribute_codes and n.retention == 'required')
+        # The answer owner may retain this pair beside one independent current
+        # SELF unknown. Source/wh/whole-field eligibility is replayed by the
+        # selected-content validator; this structural pass adds no unknown duty.
+        unknown = tuple(n for n in nuclei if n.retention == 'required'
+            and n.source_fields == ('memo',) and n.grounding_kind == 'explicit'
+            and n.allowed_claim_scope == 'explicit_current_input'
+            and (n.kind, n.semantic_frame.predicate_kind, n.semantic_frame.modality,
+                 n.semantic_frame.actor, n.semantic_frame.polarity)
+                == ('uncertainty', 'uncertainty', 'uncertain', 'current_user', 'negative')
+            and n.semantic_frame.time_scope in {'current_input', 'present'}
+            and {'operator:uncertainty', 'semantic_role:limiting_unknown'} <= set(n.semantic_frame.attribute_codes)
+            and len(n.source_span_ids) == 1
+            and n.source_span_ids == n.surface_anchor_ids == n.semantic_frame.target_anchor_ids
+            and not any(n.nucleus_id in (e.from_nucleus_id, e.to_nucleus_id) for e in relations))
         if (len(witnessed) == len(left) == len(right) == 1 and len(relations) == 1
+            and len(unknown) <= 1
             and _thread_withdrawn_original_reaction(witnessed[0], relations)
             and not any(n.source_fields == ('answer_text_private',) for n in nuclei)
             and {n.nucleus_id for n in nuclei if n.retention == 'required'}
-                == {left[0].nucleus_id, right[0].nucleus_id, witnessed[0].nucleus_id}
+                == {left[0].nucleus_id, right[0].nucleus_id, witnessed[0].nucleus_id,
+                    *(n.nucleus_id for n in unknown)}
             and (relations[0].type, relations[0].retention, relations[0].from_nucleus_id,
                  relations[0].to_nucleus_id) == ('contrast', 'required', left[0].nucleus_id, right[0].nucleus_id)):
             return (('lived_change', (left[0].nucleus_id,), (right[0].nucleus_id,)),

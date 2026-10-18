@@ -479,6 +479,59 @@ def _retained_relief_cognition_duties(prepared, nuclei, relations):
     return (*duties, ('current_burden', (edge.from_nucleus_id,), (edge.to_nucleus_id,)))
 
 
+def _independent_unknown_beside_received_pair(prepared, left, right, contrast, rest):
+    """Prove a complete trailing unknown without selecting or consuming it.
+
+    Only the already selected pair is retained. The unknown stays unchanged in
+    Observation; this does not add a fourth object or a third Reception duty.
+    """
+    if len(rest) != 3:
+        return None
+    candidates = tuple(n for n in rest if n.kind == 'uncertainty')
+    if len(candidates) != 1:
+        return None
+    unknown, = candidates
+    others = tuple(n for n in rest if n != unknown)
+    original = prepared.original_plan
+    moves = original.response_plan.human_reception_plan.moves
+    if (len(moves) != 1 or not moves[0].required
+        or moves[0].reception_act != 'recognize_lived_change'
+        or moves[0].target_nucleus_ids != (left.nucleus_id,)
+        or moves[0].support_nucleus_ids != (right.nucleus_id,)
+        or any(unknown.nucleus_id in (e.from_nucleus_id, e.to_nucleus_id)
+               for e in original.relations)):
+        return None
+    spans = {s.span_id: s for s in prepared.thread.original.evidence_spans}
+    received_ids = {sid for n in others for sid in n.source_span_ids}
+    if (len(received_ids) != 1 or len(unknown.source_span_ids) != 1
+        or unknown.surface_anchor_ids != unknown.source_span_ids
+        or unknown.semantic_frame.target_anchor_ids != unknown.source_span_ids
+        or not received_ids | set(unknown.source_span_ids) | set(right.source_span_ids) <= set(spans)):
+        return None
+    received = spans[next(iter(received_ids))]
+    span = spans[unknown.source_span_ids[0]]
+    source = prepared.thread.resolver().source_text_for_span_field(span.span_id)
+    end = spans[right.source_span_ids[0]].end_index
+    owners = {left.nucleus_id, right.nucleus_id, *(n.nucleus_id for n in rest)}
+    if (received.source_field != 'memo' or span.source_field != 'memo'
+        or not end < received.start_index < received.end_index < span.start_index < span.end_index <= len(source)
+        or source[received.start_index:received.end_index] != received.raw_text
+        or source[span.start_index:span.end_index] != span.raw_text
+        or not re.fullmatch(r'\s*[。．.]\s*', source[end:received.start_index])
+        or not re.fullmatch(r'\s*[。．.]\s*', source[received.end_index:span.start_index])
+        or not re.fullmatch(r'\s*[。．.]?\s*', source[span.end_index:])
+        or {s.span_id for s in spans.values() if s.source_field in gp._TEXT_SOURCE_FIELDS}
+            != set(contrast.source_span_ids) | received_ids | {span.span_id}
+        or any(n.nucleus_id not in owners and set(n.source_fields) & gp._TEXT_SOURCE_FIELDS
+            and not (n.retention == 'optional' and n.grounding_kind == 'user_stated_relation'
+                and 'detected_type:relation_marker' in n.semantic_frame.attribute_codes
+                and set(n.source_span_ids) <= set(contrast.source_span_ids)) for n in original.nuclei)
+        or not gp._source_single_unknown_object((unknown,), (),
+            (replace(span, start_index=0, end_index=len(span.raw_text)),), {'memo': span.raw_text})):
+        return None
+    return unknown
+
+
 def _unchanged_relief_cognition_update_source(prepared):
     """Prove the u332 pair is untouched by one accepted, separate received update.
 
@@ -503,6 +556,10 @@ def _unchanged_relief_cognition_update_source(prepared):
     owned = {left.nucleus_id, right.nucleus_id}
     rest = tuple(n for n in original.nuclei if n.retention == 'required' and n.nucleus_id not in owned)
     edges = tuple(e for e in original.relations if e != contrast)
+    unknown = _independent_unknown_beside_received_pair(prepared, left, right, contrast, rest)
+    if unknown is not None:
+        # Exclude only from the local received-role proof, never from meaning.
+        rest = tuple(n for n in rest if n != unknown)
     if (len(rest) != 2 or len(edges) != 1 or not gp._received_contrast_group_targets(rest, edges)
         or any(n.semantic_frame.actor != 'current_user' or n.grounding_kind != 'explicit'
             or n.source_fields not in {('memo',), ('memo_action',)}
@@ -585,8 +642,12 @@ def _retained_unchanged_relief_cognition_duties(prepared, nuclei, relations):
         return ()
     left, right, contrast, event, reaction, item, answer = source
     index = {n.nucleus_id: n for n in nuclei}
+    separate = tuple(n for n in prepared.original_plan.nuclei if n.retention == 'required'
+        and n.nucleus_id not in {left.nucleus_id, right.nucleus_id, event.nucleus_id, reaction.nucleus_id})
     pairs = gp.source_owned_relief_cognition_from_resolver(nuclei, relations, prepared.thread.resolver())
     if ((left, right, contrast) not in pairs or any(index.get(n.nucleus_id) != n for n in (left, right))
+        or any(index.get(n.nucleus_id) != n or any(n.nucleus_id in (e.from_nucleus_id, e.to_nucleus_id)
+            for e in relations) for n in separate)
         or set(index) != ({n.nucleus_id for n in prepared.original_plan.nuclei}
             - set(prepared.checkpoint.inactive_claim_refs)) | set(item.changed_claim_refs)):
         return ()
