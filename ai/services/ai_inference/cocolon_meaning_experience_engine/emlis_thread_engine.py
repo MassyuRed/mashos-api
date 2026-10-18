@@ -13,11 +13,13 @@ from .source_kernel import SourceAdmissionError
 
 
 def _original_body_uses_prepared_plan(prepared):
-    from emlis_ai_grounded_observation_plan import source_owned_result_appraisal, _source_independent_unknown_object_from_resolver
+    from emlis_ai_grounded_observation_plan import source_owned_result_appraisal, _source_independent_unknown_object_from_resolver, _source_same_field_unknown_object_from_resolver
     return (prepared.thread.control.capability_snapshot.startswith("Q3_")
         or (not prepared.legacy_unknown_object_action_scope
             and bool(_source_independent_unknown_object_from_resolver(
-                prepared.original_plan.nuclei, prepared.original_plan.relations, prepared.thread.resolver())))
+                prepared.original_plan.nuclei, prepared.original_plan.relations, prepared.thread.resolver())
+                or _source_same_field_unknown_object_from_resolver(
+                    prepared.original_plan.nuclei, prepared.original_plan.relations, prepared.thread.resolver())))
         or prepared.legacy_result_appraisal or prepared.legacy_appraisal_reason
         or prepared.legacy_shared_target_contrast
         or prepared.legacy_duplicate_appraisal_source or prepared.legacy_received_appraisal_context or prepared.legacy_repeated_appraisal_context

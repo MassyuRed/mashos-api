@@ -9651,7 +9651,7 @@ def build_grounded_reception_opportunities(
                         and {"lexical:source_bounded_expression", "lexical:preserve_source_predicate",
                              "lexical:no_new_sensation_family", "semantic_role:limiting_unknown"}
                             <= set(cognition.semantic_frame.attribute_codes)
-                        and action.source_fields == ("memo_action",)
+                        and action.source_fields in {("memo_action",), ("memo",)}
                         and action.retention == "required" and action.semantic_frame.actor == "current_user"
                         and source_proven_performed_action_status(action)
                         for cognition, action in ((representative, other), (other, representative))
@@ -11486,7 +11486,12 @@ def _build_response_and_policies(
         and len(independent_materials) == 1
         and not primary_focus_nucleus_ids
         and selected_follow is not None
-        and selected_follow.source_fields == ("memo_action",)
+        and (selected_follow.source_fields == ("memo_action",)
+             or selected_follow.source_fields == ("memo",)
+             and independent_materials[0].kind == independent_materials[0].semantic_frame.predicate_kind == "uncertainty"
+             and {"lexical:source_bounded_expression", "lexical:preserve_source_predicate",
+                  "lexical:no_new_sensation_family", "semantic_role:limiting_unknown"}
+                 <= set(independent_materials[0].semantic_frame.attribute_codes))
         and selected_follow.retention == "required"
         and selected_follow.semantic_frame.actor == "current_user"
         and (source_proven_performed_action_status(selected_follow)
@@ -17270,6 +17275,8 @@ def project_final_stage1_grounded_observation_plan(
     if not _legacy_unknown_object_action_scope:
         independent_unknown = _source_independent_unknown_object_group(
             nuclei, relations, evidence_spans, normalized_input, require_witness=False)
+        independent_unknown = independent_unknown or _source_same_field_unknown_object_group(
+            nuclei, relations, evidence_spans, normalized_input, require_witness=False)
         if independent_unknown:
             unknown, action = independent_unknown
             nuclei = tuple(replace(n, semantic_frame=replace(n.semantic_frame,
@@ -17536,6 +17543,65 @@ def _source_independent_unknown_object_group(nuclei, relations, evidence_spans, 
     return unknown, action
 
 
+def _source_same_field_unknown_object_group(nuclei, relations, evidence_spans, normalized_input, *, require_witness=True):
+    """Two complete memo sentences: SELF unknown and an already proved act.
+
+    Sentence order is not a cause, background, or resolution. This proof does
+    not reclassify events/values as actions or discard any asserted relation.
+    """
+    if normalized_input is None:
+        return ()
+    text = tuple(n for n in nuclei if set(n.source_fields) & _TEXT_SOURCE_FIELDS)
+    spans = {s.span_id: s for s in evidence_spans if s.source_field in _TEXT_SOURCE_FIELDS}
+    if (len(text) != 2 or len(spans) != 2
+        or any(n.source_fields != ("memo",) or len(n.source_span_ids) != 1
+               or n.source_span_ids[0] not in spans for n in text)):
+        return ()
+    unknowns = tuple(n for n in text if n.kind == n.semantic_frame.predicate_kind == "uncertainty")
+    actions = tuple(n for n in text if n.kind == n.semantic_frame.predicate_kind == "action")
+    if len(unknowns) != 1 or len(actions) != 1:
+        return ()
+    unknown, action = unknowns[0], actions[0]
+    f = unknown.semantic_frame
+    source = str(normalized_input.get("memo") or "")
+    left, right = sorted(spans.values(), key=lambda s: s.start_index)
+    if (any(n.retention != "required" or n.grounding_kind != "explicit"
+            or n.allowed_claim_scope != "explicit_current_input" or n.semantic_frame.actor != "current_user"
+            or any(c.startswith(("source_fragment_", "surface_scalar_", "thread_time:", "semantic_dependency:"))
+                   for c in n.semantic_frame.attribute_codes) for n in text)
+        or f.modality != "uncertain" or f.polarity != "negative"
+        or f.time_scope not in {"current_input", "present"}
+        or not {"operator:uncertainty", "semantic_role:limiting_unknown"} <= set(f.attribute_codes)
+        or not _source_self_unknown_object_parts(str(spans[unknown.source_span_ids[0]].raw_text).strip(" 　。．."))
+        or not source_proven_performed_action_status(action)
+        or not _source_operator_owner_scope_is_bound(str(spans[action.source_span_ids[0]].raw_text))
+        or require_witness and not {"lexical:source_bounded_expression", "lexical:preserve_source_predicate",
+                                   "lexical:no_new_sensation_family"} <= set(f.attribute_codes)
+        or _top_level_text(source) != source or re.search(r"[?？!！…‥\r\n]", source)
+        or any(span.source_field != "memo" or not 0 <= span.start_index < span.end_index <= len(source)
+               or source[span.start_index:span.end_index] != span.raw_text for span in (left, right))
+        or source[:left.start_index].strip()
+        or not re.fullmatch(r"\s*[。．.]\s*", source[left.end_index:right.start_index])
+        or not re.fullmatch(r"\s*[。．.]?\s*", source[right.end_index:])):
+        return ()
+    owned = {unknown.nucleus_id, action.nucleus_id}
+    if any(r.retention == "required" or r.grounding_kind != "bounded_structural_inference"
+           or r.type != "uncertain_connection" or {r.from_nucleus_id, r.to_nucleus_id} != owned
+           for r in relations if {r.from_nucleus_id, r.to_nucleus_id} & owned):
+        return ()
+    return unknown, action
+
+
+def _source_same_field_unknown_object_from_resolver(nuclei, relations, resolver):
+    read_field = getattr(resolver, "source_text_for_span_field", None)
+    spans = resolver.resolve_many(resolver.span_ids)
+    memo = next((s for s in spans if s.source_field == "memo"), None)
+    if read_field is None or memo is None:
+        return ()
+    normalized = normalize_emlis_current_input({"memo": read_field(memo.span_id)})
+    return _source_same_field_unknown_object_group(nuclei, relations, spans, normalized)
+
+
 def _source_independent_unknown_object_from_resolver(nuclei, relations, resolver):
     read_field = getattr(resolver, "source_text_for_span_field", None)
     spans = resolver.resolve_many(resolver.span_ids)
@@ -17563,7 +17629,8 @@ def _source_unknown_object_group_from_resolver(nuclei, relations, resolver, *, i
 
 def _explicit_unknown_object_reception(response, nuclei, relations, evidence_spans, normalized_input):
     """Change reference realization only, after the existing Move is selected."""
-    independent = _source_independent_unknown_object_group(nuclei, relations, evidence_spans, normalized_input)
+    independent = (_source_independent_unknown_object_group(nuclei, relations, evidence_spans, normalized_input)
+        or _source_same_field_unknown_object_group(nuclei, relations, evidence_spans, normalized_input))
     group = (independent[:1] or _source_single_unknown_object(nuclei, relations, evidence_spans, normalized_input)
         or _source_feeling_unknown_object_group(nuclei, relations, evidence_spans, normalized_input))
     reception = response.human_reception_plan
@@ -17574,6 +17641,11 @@ def _explicit_unknown_object_reception(response, nuclei, relations, evidence_spa
         if m.required and m.move_role == "felt_response" and m.reception_act == "stay_with_current_burden"
         and len(m.target_nucleus_ids) == 1 and len(m.support_nucleus_ids) == len(group) - 1
         and set((*m.target_nucleus_ids, *m.support_nucleus_ids)) == ids else m for m in reception.moves)
+    if independent and independent[1].source_fields == ("memo",):
+        moves = tuple(replace(m, reference_mode="short_anchor_if_ambiguous")
+            if m.required and m.reception_act == "honor_concrete_effort"
+            and m.target_nucleus_ids == (independent[1].nucleus_id,)
+            and not m.support_nucleus_ids else m for m in moves)
     return replace(response, human_reception_plan=replace(reception, moves=moves))
 
 

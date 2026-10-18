@@ -3144,11 +3144,11 @@ def _source_grounded_received_contrast_rows(targets, supports, nucleus_index, re
 
 
 def _source_unknown_object_clauses(move, plan, resolver):
-    from emlis_ai_grounded_observation_plan import _source_unknown_object_group_from_resolver, _source_independent_unknown_object_from_resolver
+    from emlis_ai_grounded_observation_plan import _source_unknown_object_group_from_resolver, _source_independent_unknown_object_from_resolver, _source_same_field_unknown_object_from_resolver
     if plan is None or FINAL_STAGE1_GROUNDED_PROJECTION_VERSION not in plan.source_contracts:
         return ()
     group = _source_unknown_object_group_from_resolver(plan.nuclei, plan.relations, resolver, include_single=True)
-    group = group or _source_independent_unknown_object_from_resolver(plan.nuclei, plan.relations, resolver)[:1]
+    group = group or (_source_independent_unknown_object_from_resolver(plan.nuclei, plan.relations, resolver) or _source_same_field_unknown_object_from_resolver(plan.nuclei, plan.relations, resolver))[:1]
     ids = (*move.target_nucleus_ids, *move.support_nucleus_ids)
     if (not group or not move.required or move.move_role != "felt_response"
         or move.reception_act != "stay_with_current_burden"
@@ -6279,8 +6279,8 @@ def derive_source_grounded_nominalization_plan(
         if fragments != unknown_object:
             raise GroundedHumanReceptionSurfaceError("REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP")
         if len(unknown_object) == 1:
-            from emlis_ai_grounded_observation_plan import _source_independent_unknown_object_from_resolver
-            independent = _source_independent_unknown_object_from_resolver(plan.nuclei, plan.relations, resolver)
+            from emlis_ai_grounded_observation_plan import _source_independent_unknown_object_from_resolver, _source_same_field_unknown_object_from_resolver
+            independent = (_source_independent_unknown_object_from_resolver(plan.nuclei, plan.relations, resolver) or _source_same_field_unknown_object_from_resolver(plan.nuclei, plan.relations, resolver))
             marker = "source-independent-unknown-object:0" if independent else "source-single-unknown-object:0"
             return (*nominalization, marker)
         feeling_slot = next(i for i, n in enumerate(nuclei) if n.kind == "reaction")

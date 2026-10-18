@@ -1073,3 +1073,125 @@ def test_independent_unknown_proof_does_not_expand_source_scope(memo,action):
     p = prepare_emlis_meaning(_unknown_action_request(memo,action))
     plan = build_updated_grounded_plan(p)
     assert not _source_independent_unknown_object_from_resolver(plan.nuclei,plan.relations,p.thread.resolver())
+
+
+@pytest.fixture(scope='module')
+def same_field_unknown_baseline():
+    import json
+    from pathlib import Path
+    return json.loads((Path(__file__).parent / 'fixtures' /
+        'cmee_emlis_u327_same_field_unknown_action_checkpoint_v1.json').read_text())
+
+
+@pytest.mark.parametrize('modern', [False, True])
+@pytest.mark.parametrize('case_index', [0, 1, 4, 5, 8, 9, 12, 13])
+def test_same_field_unknown_and_proved_action_reach_both_sections(same_field_unknown_baseline, case_index, modern):
+    from test_cmee_emlis_received_discourse import actual, inverse
+    from emlis_ai_grounded_observation_plan import _source_same_field_unknown_object_from_resolver
+    row = same_field_unknown_baseline['cases'][case_index]
+    assert row['body'] is None
+    req = _unknown_action_request(row['memo'], '', modern)
+    prepared = prepare_emlis_meaning(req)
+    plan = build_updated_grounded_plan(prepared)
+    unknown, action = _source_same_field_unknown_object_from_resolver(plan.nuclei, plan.relations, prepared.thread.resolver())
+    assert unknown.source_fields == action.source_fields == ('memo',)
+    assert unknown.semantic_frame.time_scope in {'present', 'current_input'}
+    assert action.semantic_frame.time_scope == 'past'
+    moves = plan.response_plan.human_reception_plan.moves
+    assert [m.reception_act for m in moves] == ['stay_with_current_burden', 'honor_concrete_effort']
+    assert [m.target_nucleus_ids for m in moves] == [(unknown.nucleus_id,), (action.nucleus_id,)]
+    assert all(m.required and not m.support_nucleus_ids for m in moves)
+    decisions = project_thread_meaning(prepared, plan).selected_reception.decisions
+    assert len(decisions) == 2
+    assert all((d.subjective_proposition.appraisal_content.dimension,
+        d.subjective_proposition.appraisal_content.operation) == ('MATERIAL_WEIGHT', 'RECEIVE_AS_MATERIAL') for d in decisions)
+    assert not set(decisions[0].selected_contribution_refs) & set(decisions[1].selected_contribution_refs)
+    assert all(r.type == 'uncertain_connection' and r.retention != 'required' for r in plan.relations)
+    context = actual(request=req)
+    result = MeaningExperienceEngine().generate(req)
+    assert result.artifact and result.artifact.text == context[0].artifact.text
+    assert row['unknown'].rstrip('。') in result.artifact.observation
+    assert row['action'].rstrip('。') in result.artifact.observation
+    follow = result.artifact.reception
+    recipient = row['unknown'].rstrip('。').replace('自分自身', 'ご自身').replace('自分', 'ご自身').replace('私', 'あなた')
+    assert follow == recipient + 'のですね。メモを書いたことを見過ごさず、大切に受け止めています。'
+    assert result.question is None and result.question_decision.disposition == 'END'
+    assert inverse(context, follow, without_author=True).passed
+
+
+@pytest.mark.parametrize('case_index', range(16))
+def test_same_field_saved_checkpoint_retains_complete_old_meaning(same_field_unknown_baseline, case_index):
+    import json, hashlib
+    from dataclasses import asdict
+    row = same_field_unknown_baseline['cases'][case_index]
+    assert same_field_unknown_baseline['source_commit'] == 'd2cdc5d81d807f04999c48a263ef3647e6085087'
+    req = _unknown_action_request(row['memo'], '')
+    req = replace(req, emlis_thread=replace(req.emlis_thread, prepared_meaning_checkpoint_ref=row['checkpoint']['checkpoint_id']))
+    restored = prepare_emlis_meaning(req)
+    assert json.loads(json.dumps(asdict(restored.checkpoint))) == row['checkpoint']
+    plan = build_updated_grounded_plan(restored)
+    def digest(x):
+        return hashlib.sha256(json.dumps(x,ensure_ascii=False,sort_keys=True,separators=(',',':')).encode()).hexdigest()
+    assert digest([asdict(n) for n in plan.nuclei]) == row['nuclei_sha256']
+    assert digest([asdict(r) for r in plan.relations]) == row['relations_sha256']
+    try:
+        selected = asdict(project_thread_meaning(restored, plan).selected_reception)
+    except ValueError as exc:
+        selected = {'error':str(exc)}
+    assert digest(selected) == row['selected_sha256']
+    result = MeaningExperienceEngine().generate(req)
+    assert (result.artifact.text if result.artifact else None) == row['body']
+    assert json.loads(json.dumps(asdict(result.question_decision) if result.question_decision else None)) == row['question_decision']
+
+
+@pytest.mark.parametrize('memo', [
+    '何が嫌なのか、自分でもよく分からない。友人がメモを書いた。',
+    '何が嫌なのか、自分でもよく分からない。メモを書いていない。',
+    '何が嫌なのか、自分でもよく分からない。メモを書くつもりだ。',
+    '何が嫌なのか、自分でもよく分からない。メモを書いたら休む。',
+    '何が嫌なのか、自分でもよく分からない。メモを書いてもらった。',
+    '何が嫌なのか、自分でもよく分からない。だからメモを書いた。',
+    '何が嫌なのか、自分でもよく分からないが、メモを書いた。',
+    '何が嫌なのか、自分でもよく分からない？メモを書いた。',
+    '何が嫌なのか、自分でもよく分からない。メモを書いた？',
+    '何が嫌なのか、友人にもよく分からない。メモを書いた。',
+    '何が嫌なのか、自分でもよく分からなかった。メモを書いた。',
+    '何が嫌なのか、自分でもよく分からないと思う。メモを書いた。',
+    '「何が嫌なのか、自分でもよく分からない」と話した。メモを書いた。',
+    '友人の話。何が嫌なのか、自分でもよく分からない。メモを書いた。',
+    '何が嫌なのか、自分でもよく分からない。メモを書いた。資料を整理した。',
+    'なぜ嫌なのか、自分でもよく分からない。メモを書いた。',
+    '今はまだよく分からない。メモを書いた。',
+    '何が嫌なのか、自分でもよく分からない。机を片付けた。',
+    '何が嫌なのか、自分でもよく分からない。資料を整理した。',
+])
+def test_same_field_pair_does_not_promote_unproved_sources(memo):
+    from emlis_ai_grounded_observation_plan import _source_same_field_unknown_object_from_resolver
+    p = prepare_emlis_meaning(_unknown_action_request(memo, ''))
+    plan = build_updated_grounded_plan(p)
+    assert not _source_same_field_unknown_object_from_resolver(plan.nuclei, plan.relations, p.thread.resolver())
+
+
+@pytest.fixture(scope='module')
+def same_field_unknown_context():
+    from test_cmee_emlis_received_discourse import actual
+    return actual(request=_unknown_action_request('何が嫌なのか、自分でもよく分からない。メモを書いた。', ''))
+
+
+@pytest.mark.parametrize('before,after', [
+    ('何が嫌なのか', 'なぜ嫌なのか'),
+    ('ご自身でも', '友人にも'),
+    ('よく分からない', 'よく分かる'),
+    ('よく分からない', 'まだよく分からない'),
+    ('よく分からない', 'よく分からなかった'),
+    ('メモを書いた', 'メモを書いていない'),
+    ('メモを書いた', '机を片付けた'),
+    ('メモを書いたことを見過ごさず、大切に受け止めています。', ''),
+    ('何が嫌なのか、ご自身でもよく分からないのですね。', ''),
+    ('のですね。', 'のは、メモを書いたからですね。'),
+])
+def test_same_field_reader_rejects_changed_meaning_without_author(same_field_unknown_context, before, after):
+    from test_cmee_emlis_received_discourse import inverse
+    follow = same_field_unknown_context[0].artifact.reception
+    assert before in follow
+    assert not inverse(same_field_unknown_context, follow.replace(before, after), without_author=True).passed

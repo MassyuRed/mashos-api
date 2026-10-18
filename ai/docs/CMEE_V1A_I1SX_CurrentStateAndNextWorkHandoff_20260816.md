@@ -1,3 +1,5 @@
+> 2026-10-18最新：u328で同欄のwh本人不明＋証明済み実行行動の本文停止を修復。旧意味・旧本文と現行生成を区別。机等の誤分類、E04/E05は未完。詳細は末尾u328。
+
 > 2026-10-18最新：u327で別欄のSELF不明対象＋独立した実行済み行動を両方受け止めるよう修復。既存MATERIAL_WEIGHTを保持し、新しい選択意味と旧checkpointの完全復元を区別。E04/E05等は未完、未配置・PRODUCT_NOT_CLEAR。詳細は末尾u327。
 
 **u165 内容修正（2026-10-08 JST・未配置）**：「俺は／おれは」の明示本人記述が分析に出ない表記漏れを修正。既存Analysisの8箇所と共有Planの属格希望・読点付き現在負荷の2箇所へ本人表記だけを追加し、有限節・原文出典・主体・肯否定・順序を保持する。最終対象548 tests PASS（Analysis316・共有231・identity1）、2027 subtests PASS。合成10全文と実RN表示model一致、保存後の再生成禁止readを確認。STRUCTURE_MAP_DELTA_NONE。全日本語表現対応・実DB・実機・商品受入れ未確認。詳細は06／API handoff末尾u165。
@@ -22392,3 +22394,24 @@ u326から残る「何が嫌なのか、自分でもよくわからない。」�
 主担当は20入力の未加工全文を読んだ。不明対象の欠落は対象内で修復したが、引用＋「感覚」のObservation、近い内容の反復、行動を「大切に思っています」と受け止める定型は残る。E04の入力固有の深い受容・E05の問いの完成とは扱わない。同欄へ不明と行動を併記した場合の誤分類、裸のscalar不明「今はまだよく分からない。」＋「机を片付けた。」で不明が落ちる問題は今回の証明範囲外であり残件。次はそれらのsourceと責務選択を確認し、語尾だけの変更で完了としない。PRODUCT_NOT_CLEAR・初回一体単位未完了・正式0/3・candidate_ready=false・automatic_progression=false・Draft/open/unmerged・未配置を維持。同Work補助は正式別model評価ではない。10/20方式判断・10/31管理線・12/18公開目標、Piece／Analysis主枠・53.25%は再評価しない。
 
 全文・source・検証条件：[u327監査](https://github.com/MassyuRed/Cocolon/blob/agent/three-core-cmee-current-structure-20260815/Cocolon_前提資料/audits/emlis_ai/Cocolon_EmlisAI_u327_IndependentUnknownActionReception_20261018.md)。
+
+
+## u328 — 同欄の本人不明と証明済み行動で止まる本文を修復（2026-10-18 JST）
+
+最新weekly20261017 E01〜E04とu327残件を起点に、同じmemoの「何が嫌なのか、自分でもよくわからない。メモを書いた。」と逆順で本文が止まる原因を修復した。行動自体は既にaction/fact/pastとして読めていたが、本人不明のsource証明・選択・本文接続が別欄限定で、Q3ではLIMITED_RECEPTION_CAPABILITY_GAP_STOPになっていた。
+
+既存4製品owner内で、完全な二文・SELFの現在wh不明・既に証明済みの本人実行行動を照合し、既存3属性とMATERIAL_WEIGHT／RECEIVE_AS_MATERIALの二責務へ接続した。両方の対象を本文へ明示し、source-orderを背景や因果へ変えない。Q1も準備済みplanを本文へ渡す。行動の再分類・required関係削除・意味型追加は行っていない。別欄のu327 helperと既存拒否検査は保持した。
+
+- 元の16例：対象8例は本文なし→本文あり。残る机の8例はcheckpoint／核辺／selected／本文・問いの取得recordが不変（4本文あり、4未提供）。机を願いとする誤認は未修復である。
+- source_scope **496 passed**（既存435＋新規61）。Q3対照 **54 passed／既知3 failed**、Q2/Q3 application **54 passed**、現行共有owner identity **1 passed**。別集合の合計 **605 passed／既知3 failed、skip 0**。全体suite合格ではない。
+- 実service＋隔離PGlite SQL/RPC **7ケース**、同じ保存DTOを使う現行API client／hook／Modal native stub **7ケース**で保存・GET・元入力・履歴・close/reopen一致。本人実機・本番通信ではない。
+- 旧完成本文と旧確定の未提供状態は再生成しない。旧checkpoint前の保存中断は現行二責務へ進む。旧checkpoint後の中断は旧意味を完全再導出し、旧未提供状態を保持する。旧IDへ新意味を付け替えない。
+- 途中33失敗はQ1の未接続8、追加検査の語尾期待8、JSON配列/tuple比較16、変異対象文字列1。Q1製品接続と新規検査の表現・serializationを修正し、既存assertionの変更・削除なしで最終496成功。保存試験は旧本文未提供のためOBSERVATION eventが出ないことを踏まえ、中断注入を実際の終端結果保存へ修正した。途中runを合算しない。
+
+STRUCTURE_MAP_DELTA_NONE（既存owner内のsource証明・選択・本文接続修復）。新fixtureは修正前APIの合成16例を凍結。System Context prepareはrepository metadata不在で失敗したため成功扱いせず、GitHub treeと全現行blobの照合済み実ファイルを直接読んだ。前提資料・作業規則・必読incident・全体設計図／全file地図・最新weeklyと対象sourceを照合。同Work補助は正式別model評価ではない。
+
+受容の近い反復、Observationの感覚分類・引用、行動への定型は残る。机のvalue／願い誤認とrequired関係、資料整理のevent残留、昨日行動が先行する場合の不明誤分類、scalar不明＋別欄行動の片側欠落は未修復。E04の深い受容／E05問い・範囲外E06・E07〜E09を閉じない。対象はENDであり、架空の質問による回答成功を作らない。
+
+次は同欄の机／資料整理の実source分類と、その分類から生じる誤関係を既存ownerで確認し、正しい意味と受け取りを一体で修復する。一般にrequired関係を削除してはならない。10/20には、局所的な保持・停止修復が深い受容と問いへどこまで届いたかで方式継続を判断する。PRODUCT_NOT_CLEAR／初回一体単位未完了／正式0/3／candidate_ready=false／automatic_progression=false／Draft/open/unmerged・未配置。10/31管理線・12/18目標・Piece/Analysis主枠・53.25％は再評価しない。
+
+未加工全文：Cocolon PR30 の `Cocolon_前提資料/audits/emlis_ai/Cocolon_EmlisAI_u328_SameFieldUnknownActionReception_20261018.md`。

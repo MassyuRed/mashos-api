@@ -372,9 +372,9 @@ def _semantic_subcheck_reasons(
                     # license the same sensation outside the disclosure.
                     replacements.add((parsed.utf8_byte_start, parsed.utf8_byte_end, b""))
     reception_plan = plan.response_plan.human_reception_plan
-    from emlis_ai_grounded_observation_plan import _source_unknown_object_group_from_resolver, _source_independent_unknown_object_from_resolver
+    from emlis_ai_grounded_observation_plan import _source_unknown_object_group_from_resolver, _source_independent_unknown_object_from_resolver, _source_same_field_unknown_object_from_resolver
     unknown_group = _source_unknown_object_group_from_resolver(plan.nuclei, plan.relations, resolver, include_single=True)
-    unknown_group = unknown_group or _source_independent_unknown_object_from_resolver(plan.nuclei, plan.relations, resolver)[:1]
+    unknown_group = unknown_group or (_source_independent_unknown_object_from_resolver(plan.nuclei, plan.relations, resolver) or _source_same_field_unknown_object_from_resolver(plan.nuclei, plan.relations, resolver))[:1]
     for move in reception_plan.moves if reception_plan is not None else ():
         if len(move.target_nucleus_ids) > 1 or move.support_nucleus_ids or (
             len(unknown_group) == 1 and move.target_nucleus_ids == (unknown_group[0].nucleus_id,)
@@ -4423,9 +4423,9 @@ def _feeling_reason_unknown_restores_source(visible, source):
 
 def _read_unknown_object_discourse(raw, move, plan, resolver, selected_subjective_input):
     """Read both finite sources independently, preserving the wh-object and SELF."""
-    from emlis_ai_grounded_observation_plan import _source_unknown_object_group_from_resolver, _source_self_unknown_object_parts, _source_independent_unknown_object_from_resolver
+    from emlis_ai_grounded_observation_plan import _source_unknown_object_group_from_resolver, _source_self_unknown_object_parts, _source_independent_unknown_object_from_resolver, _source_same_field_unknown_object_from_resolver
     group = _source_unknown_object_group_from_resolver(plan.nuclei, plan.relations, resolver, include_single=True)
-    independent = _source_independent_unknown_object_from_resolver(plan.nuclei, plan.relations, resolver)
+    independent = (_source_independent_unknown_object_from_resolver(plan.nuclei, plan.relations, resolver) or _source_same_field_unknown_object_from_resolver(plan.nuclei, plan.relations, resolver))
     group = group or independent[:1]
     ids = (*move.target_nucleus_ids, *move.support_nucleus_ids)
     if len(group) == 1:
