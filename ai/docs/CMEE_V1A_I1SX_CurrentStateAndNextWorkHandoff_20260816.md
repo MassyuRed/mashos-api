@@ -22651,3 +22651,18 @@ STRUCTURE_MAP_DELTA_NONE。既存production6file、新production file0、論理c
 過去不明の現在自己評価への誤読、独立不明の欠落、「どうしたいのか」の未対応、一般入力、E04の深さ／E05の問い／E06〜E09は残る。今回の限定的な人称修復を深い受容の完成に数えない。次は過去不明のsource認識とu334の現在不明保持との境界を具体化し、必要な内容契約判断を分ける。10/20方式判断、10/31管理線、12/18目標、Piece/Analysis主枠53.25％は維持。
 
 詳細・実本文・再開先：[Cocolon_EmlisAI_u337_SelfRecipient_AfterPairRevision_20261018.md](https://github.com/MassyuRed/Cocolon/blob/agent/three-core-cmee-current-structure-20260815/Cocolon_前提資料/audits/emlis_ai/Cocolon_EmlisAI_u337_SelfRecipient_AfterPairRevision_20261018.md)。
+
+
+## u338 — 過去の本人不明の誤読を診断し、限定実装案を具体化（2026-10-18）
+
+Mashの残件継続指示によりu337の次の残件を調査。開始原本API `c26ece428f59a01cf8928ab19bd5416b879c7d31`／Cocolon `f09ccb9c7cb8bf343bc7035b8dbfa5efb48b0f51`。全体設計・全file地図・前提／規則の本会話読了を引き継ぎ、最新weekly・正本05／06・u334保持契約・実sourceを確認した。
+
+合成12原文×単独／安堵pair後置の24入力で、過去の「何が嫌なのか、自分でもよくわからなかった」が現在の自己評価／感覚へ変わり、Receptionから不明が消える問題を確認。本文18／未提供6は診断出力数で、品質成功数ではない。現在対照は不明を保持する。私／僕・丁寧過去・明示時間・他者・引用・肯定の理解も比較した。sourceだけをuncertainty／pastへ変更したメモリ内の仮想実行は、単独・pairともLIMITED能力不足で停止した。
+
+正本05の初回unknown source-object対応とu334保持契約は本人・現在に限定され、過去を通すだけの修復では閉じない。Rule18 §11.3のLEVEL_3に当たる契約拡張として、既存wh対象＋後置明示SELF＋過去陰性有限節の単独／既存pair後置だけを扱う候補を監査へ用意した。本人・対象・程度・過去を維持し、現在の解決／継続や原因を推測しない。既存内部内容・作者／独立reader・旧checkpoint復元・既存更新対照の維持・保存再表示を一体で検証する案である。追加のメモリ実験で既存UNFINISHEDのままpast qualifierを持つ選択が成立することを確認し、新enum／DIRECT_STATE写像は不要と判断した。ただし本文と三対象保持は未修復。対象はENDであり過去不明への回答機能は追加しない。一般unknown admissionや資格外入力へ広げない。
+
+未承認・未実装。active contract／製品source／test／fixture変更0、今回pytest／SQL／UI検証0。前回u337の検査数を加算しない。同Workのread-only補助を正式な別model Pro／Ultra審査に数えない。技術判断をread-onlyだからLEVEL_1と扱わず、過去のLEVEL_1記録を新しい権限根拠にしない。
+
+STRUCTURE_MAP_DELTA_NONE。必要性=DIRECT_PRODUCT_OR_ACCEPTANCE_WORK、primary outcome=BLOCKER_NARROWED。PRODUCT_NOT_CLEAR／初回一体単位未完了／正式0/3／candidate_ready=false／automatic_progression=false。Draft/open/unmerged・未配置。一般入力・E04深さ／E05問い／E06〜E09は未完。10/20方式判断、10/31管理線、12/18目標、Piece/Analysis主枠53.25％は不変。
+
+24実本文・原因・未採用案・成功／停止条件：[Cocolon_EmlisAI_u338_PastUnknown_Diagnosis_and_Proposal_20261018.md](https://github.com/MassyuRed/Cocolon/blob/agent/three-core-cmee-current-structure-20260815/Cocolon_前提資料/audits/emlis_ai/Cocolon_EmlisAI_u338_PastUnknown_Diagnosis_and_Proposal_20261018.md)。
