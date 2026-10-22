@@ -24,7 +24,12 @@ def install_request_perf_middleware(app: FastAPI) -> None:
     @app.middleware("http")
     async def _request_perf_middleware(request: Request, call_next):
         request_id = str(getattr(request.state, "cocolon_request_id", "") or "").strip() or uuid4().hex[:12]
-        token = begin_request_metrics(request_id, request.method, request.url.path)
+        raw_path = request.url.path
+        piece_path = raw_path == "/emotion/piece" or raw_path.startswith("/emotion/piece/")
+        # No source/preview/record identifiers enter request metrics, even when
+        # authentication, routing or a downstream middleware fails early.
+        metric_path = "/emotion/piece/{route}" if piece_path else raw_path
+        token = begin_request_metrics(request_id, request.method, metric_path)
         started = time.perf_counter()
         status_code = 500
         error_name = None
@@ -40,6 +45,13 @@ def install_request_perf_middleware(app: FastAPI) -> None:
             wall_ms = (time.perf_counter() - started) * 1000.0
             metrics = snapshot_request_metrics()
             finish_request_metrics(token)
+            if piece_path:
+                route = request.scope.get("route")
+                route_path = getattr(route, "path", None) or getattr(route, "path_format", None)
+                if isinstance(route_path, str) and (
+                    route_path == "/emotion/piece" or route_path.startswith("/emotion/piece/")
+                ):
+                    metric_path = route_path
 
             should_log = (
                 LOG_ALL_REQUESTS
@@ -51,11 +63,13 @@ def install_request_perf_middleware(app: FastAPI) -> None:
                 fields = {
                     "request_id": request_id,
                     "method": request.method,
-                    "path": request.url.path,
+                    "path": metric_path,
                     "status_code": status_code,
                     "wall_ms": round(wall_ms, 2),
                     **(metrics or {}),
                 }
+                if piece_path:
+                    fields["path"] = metric_path
                 if error_name:
                     fields["error"] = error_name
                 level = "warning" if (wall_ms >= REQUEST_SLOW_LOG_THRESHOLD_MS or status_code >= 500 or error_name) else "info"
