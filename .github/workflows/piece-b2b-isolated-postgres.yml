@@ -2,10 +2,13 @@
 name: Piece B2-B/B3/B4/B5 isolated PostgreSQL
 
 'on':
+  pull_request:
+    branches:
+      - agent/piece-runtime-live-base-20261023
+    types: [opened, synchronize, reopened]
   push:
     branches:
       - agent/cmee-v1a-i1sx-source-explicit-20260815
-      - agent/piece-private-runtime-candidate-20261023
     paths:
       - .github/workflows/piece-b2b-isolated-postgres.yml
       - supabase/migrations/20260808_002_piece_v2_foundation.sql
