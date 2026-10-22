@@ -693,3 +693,92 @@ def test_default_quota_and_legacy_alias_keep_old_dto_only(shared_env, monkeypatc
     selected = [entry for entry in iter_public_api_contracts(piece_preview=True)
                 if entry.method == 'GET' and entry.path == '/emotion/piece/quota']
     assert len(selected) == 1 and selected[0].contract_id == 'emotion.piece.quota.v2'
+
+# Existing PCE-7 privacy boundary on the actual request-performance sink.
+# These synthetic URLs must never become request-metric or serialized-log IDs.
+@pytest.mark.parametrize('case,method,path,expected,status', [
+    ('detail', 'GET', '/emotion/piece/synthetic-sensitive-record', '/emotion/piece/{piece_id}', 200),
+    ('source', 'GET', '/emotion/piece/source-ref/synthetic-sensitive-source', '/emotion/piece/source-ref/{saved_input_id}', 200),
+    ('preview', 'PATCH', '/emotion/piece/preview/synthetic-sensitive-preview', '/emotion/piece/preview/{preview_id}', 200),
+    ('missing', 'GET', '/emotion/piece/synthetic-sensitive-missing/extra', '/emotion/piece/{route}', 404),
+    ('method', 'POST', '/emotion/piece/synthetic-sensitive-method', '/emotion/piece/{piece_id}', 405),
+    ('error', 'GET', '/emotion/piece/synthetic-sensitive-error', '/emotion/piece/{piece_id}', 500),
+    ('early', 'GET', '/emotion/piece/synthetic-sensitive-early', '/emotion/piece/{route}', 500),
+    ('slow', 'GET', '/emotion/piece/synthetic-sensitive-slow', '/emotion/piece/{piece_id}', 200),
+    ('override', 'GET', '/emotion/piece/synthetic-sensitive-override', '/emotion/piece/{piece_id}', 200),
+    ('query', 'GET', '/emotion/piece/synthetic-sensitive-query?private=synthetic-sensitive-param', '/emotion/piece/{piece_id}', 200),
+    ('encoded', 'GET', '/emotion/piece/synthetic-sensitive-encoded%2Fextra', '/emotion/piece/{route}', 404),
+    ('other', 'GET', '/ordinary/synthetic-sensitive-control', '/ordinary/synthetic-sensitive-control', 200),
+])
+def test_piece_request_performance_metrics_and_serialized_logs_omit_url_identifiers(
+        monkeypatch, caplog, case, method, path, expected, status):
+    import json
+    import logging
+    from fastapi import FastAPI, Request
+    import middleware_request_perf as perf
+    import observability
+    from request_metrics import snapshot_request_metrics, set_metric
+
+    app = FastAPI()
+    observed = []
+
+    @app.get('/emotion/piece/{piece_id}')
+    async def detail(request: Request, piece_id: str):
+        observed.append(snapshot_request_metrics())
+        if case == 'error':
+            raise RuntimeError('synthetic failure')
+        if case == 'override':
+            # A later metric cannot overwrite the final code-owned log path.
+            set_metric('path', request.url.path)
+        return {'ok': True}
+
+    @app.get('/emotion/piece/source-ref/{saved_input_id}')
+    async def source(saved_input_id: str):
+        observed.append(snapshot_request_metrics())
+        return {'ok': True}
+
+    @app.patch('/emotion/piece/preview/{preview_id}')
+    async def visual(preview_id: str):
+        observed.append(snapshot_request_metrics())
+        return {'ok': True}
+
+    @app.get('/ordinary/{item}')
+    async def ordinary(item: str):
+        observed.append(snapshot_request_metrics())
+        return {'ok': True}
+
+    @app.middleware('http')
+    async def reject_before_routing(request, call_next):
+        if case == 'early':
+            observed.append(snapshot_request_metrics())
+            raise RuntimeError('synthetic early failure')
+        return await call_next(request)
+
+    monkeypatch.setattr(perf, 'LOG_ALL_REQUESTS', case not in ('slow', 'error', 'early'))
+    monkeypatch.setattr(perf, 'REQUEST_SLOW_LOG_THRESHOLD_MS', 0.0 if case == 'slow' else 10**12)
+    monkeypatch.setattr(observability, 'OBS_LOG_JSON', True)
+    perf.install_request_perf_middleware(app)
+
+    async def execute():
+        async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app, raise_app_exceptions=False),
+                base_url='http://private-monitoring.invalid') as client:
+            return await client.request(method, path)
+
+    with caplog.at_level(logging.INFO, logger='request_perf'):
+        response = asyncio.run(execute())
+    assert response.status_code == status
+    records = [r.getMessage() for r in caplog.records if r.name == 'request_perf']
+    assert len(records) == 1
+    payload = json.loads(records[0])
+    assert payload['event'] == 'http_request_perf'
+    assert payload['status_code'] == status
+    assert payload['path'] in (expected, '/emotion/piece/{route}') if case == 'method' else payload['path'] == expected
+    if case == 'other':
+        # Non-Piece metrics retain their previous per-request raw URL behavior.
+        assert observed[0]['path'] == '/ordinary/synthetic-sensitive-control'
+    else:
+        assert 'synthetic-sensitive' not in records[0]
+        assert all(snapshot['path'] == '/emotion/piece/{route}' for snapshot in observed)
+        assert all('synthetic-sensitive' not in json.dumps(snapshot) for snapshot in observed)
+
