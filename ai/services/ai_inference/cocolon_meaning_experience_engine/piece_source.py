@@ -1178,6 +1178,10 @@ def validate_piece_saved_fields(meaning: PieceSourceMeaning) -> None:
     same saved snapshot rederives the graph, field evidence and editorial
     bindings; no caller-supplied field map can weaken source coverage.
     """
+    from .piece_semantic_admission import PieceSemanticSnapshotV1, validate_snapshot_self
+    if type(meaning) is PieceSemanticSnapshotV1:
+        validate_snapshot_self(meaning)
+        return
     is_saved = meaning.envelope.source_schema_version == 'piece.saved_source.original_fields.v1'
     if not is_saved and meaning.saved_snapshot is None:
         if meaning.selected_feelings:

@@ -38,11 +38,16 @@ def unavailable(code: str) -> PieceContractError:
 def validate_candidate_text(payload: Mapping) -> str:
     """Validate canonical shape/envelope, not semantic or public acceptance."""
     text = reconstruct_piece_text(payload)
-    lo, hi, sentences = ENVELOPES[payload['format_type']]
+    return _validate_text_envelope(text, payload['body_blocks'], payload['format_type'])
+
+
+def _validate_text_envelope(text, blocks, format_type):
+    """Shared shape limits only; this does not confer any meaning/Safety version."""
+    lo, hi, sentences = ENVELOPES[format_type]
     n = len(re.sub(r'\s', '', text))
     if not lo <= n <= hi or len(re.findall(r'[。！？!?]', text)) > sentences:
         raise unavailable('content_envelope')
-    if any('\n' in b for b in payload['body_blocks']):
+    if any('\n' in b for b in blocks):
         raise unavailable('embedded_block_break')
     return text
 
@@ -100,6 +105,20 @@ def validate_source_meaning_preservation(meaning, plan, artifact) -> None:
     reads stored data, or grants ready/adjusted. Source-parser independence and
     an independent human review are NOT claimed by this author-free check.
     """
+    from cocolon_meaning_experience_engine.piece_semantic_admission import PieceSemanticSnapshotV1
+    if type(meaning) is PieceSemanticSnapshotV1:
+        # Source identity includes the P1 tier; this path performs review only.
+        import json
+        from cocolon_meaning_experience_engine.piece_semantic_admission import _request
+        from cocolon_meaning_experience_engine.piece_v1c import PieceGenerationRequest
+        source = meaning.source_snapshot
+        for tier in ('free', 'plus', 'premium'):
+            req = PieceGenerationRequest('review-private-piece', source, source.owner_id,
+                source.saved_input_id, source.source_version, tier=tier)
+            if _request(req).request_id == meaning.request_ref:
+                return validate_piece_semantic_preservation(meaning, plan, artifact,
+                    tier=tier, requested_format=None)
+        raise unavailable('piece_semantic_request_binding')
     from piece_v2_contract import validate_piece_text_binding
     from piece_v2_generation import _FOCUS
     from piece_v2_expression import _SELF_TOPIC, _WISH_END
@@ -248,3 +267,78 @@ def validate_source_meaning_preservation(meaning, plan, artifact) -> None:
             if re.fullmatch(pattern, visible) is None:
                 reject()
             previous_id, previous_author = node_id, author
+
+
+def validate_piece_semantic_preservation(snapshot, plan, artifact, *, tier, requested_format):
+    """P4 author-free review of actual private blocks and their source duties.
+
+    No compiler/realizer/candidate acquisition is called. Source-scope validation
+    is shared with admission; parser independence or general paraphrase review
+    is not claimed. The closed arm allows no source-to-text lexical changes.
+    """
+    import hashlib
+    import json
+    from dataclasses import asdict
+    from cocolon_meaning_experience_engine.piece_semantic_admission import (
+        PieceSemanticPlanV1, PieceSemanticArtifactV1, PieceSemanticRealizationV1,
+        PLAN_SCHEMA, ARTIFACT_SCHEMA, MEANING_VERSION, PROFILE,
+        canonical, digest, require, validate_snapshot_self, source_nodes,
+    )
+    validate_snapshot_self(snapshot)
+    require(type(plan) is PieceSemanticPlanV1, 'piece_semantic_plan_type')
+    nodes = source_nodes(snapshot)
+    expected_duties = [dict(duty_ref='duty:' + b.claim_ref, claim_refs=[b.claim_ref],
+        node_refs=[b.node_ref], source_binding_refs=[b.source_binding_ref],
+        required_scope_refs=json.loads(b.claim_json)['polarity']['scope_refs'],
+        operation='KEEP_COMPLETE_SOURCE_CONTEXT') for b in snapshot.claim_bindings]
+    groups = (tuple(n[0] for n in nodes[:-1]), (nodes[-1][0],))
+    selection_refs = tuple('selection:' + '|'.join(r.alias_refs) for r in snapshot.source_selections)
+    expected_plan = dict(schema_version=PLAN_SCHEMA, semantic_profile=PROFILE,
+        snapshot_ref=snapshot.snapshot_ref, source_commitment=snapshot.source_commitment,
+        graph_id='piece-graph:' + digest([snapshot.snapshot_ref,[n[0] for n in nodes]]),
+        duties=expected_duties,block_node_ids=groups,selection_duties=selection_refs,
+        eligible_formats=('short_essay',),intent='USER_OWNED_COCOLON_SHAPED')
+    require(canonical(asdict(plan))==canonical(expected_plan), 'piece_semantic_plan_coverage')
+    selected = choose_format(tier=tier,requested=requested_format,
+                             eligible=plan.eligible_formats,recommended='short_essay')
+    if artifact is None:
+        return
+    require(type(artifact) is PieceSemanticArtifactV1, 'piece_semantic_artifact_type')
+    require((artifact.schema_version,artifact.semantic_profile,artifact.meaning_contract_version)==
+            (ARTIFACT_SCHEMA,PROFILE,MEANING_VERSION),'piece_semantic_artifact_namespace')
+    require(artifact.snapshot_ref==snapshot.snapshot_ref and artifact.plan_ref==plan.plan_ref
+            and artifact.source_commitment==snapshot.source_commitment
+            and artifact.format_type==selected and artifact.eligible_formats==plan.eligible_formats
+            and artifact.retained_selection_refs==selection_refs,'piece_semantic_artifact_binding')
+    require(type(artifact.body_blocks) is tuple and len(artifact.body_blocks)==len(groups)
+            and all(type(b) is str and b for b in artifact.body_blocks),'piece_semantic_blocks')
+    # Inspect the entire visible source interval, including every connective;
+    # checking the six isolated predicates alone would miss an invented cause.
+    locations = {}
+    by_node = {n[0]:n for n in nodes}
+    for bi, group in enumerate(groups):
+        offset = 0
+        for node_ref in group:
+            _, field, start, end, source_text = by_node[node_ref]
+            require(artifact.body_blocks[bi][offset:offset+len(source_text)]==source_text,
+                    'piece_semantic_visible_scope')
+            locations[node_ref]=(bi,offset,start)
+            offset += len(source_text)
+        require(offset==len(artifact.body_blocks[bi]),'piece_semantic_extra_visible_meaning')
+    require(artifact.piece_text=='\n\n'.join(artifact.body_blocks)
+            and artifact.piece_text_hash==hashlib.sha256(artifact.piece_text.encode()).hexdigest(),
+            'piece_semantic_text_binding')
+    expected_realizations=[]
+    for b in snapshot.claim_bindings:
+        bi,offset,base=locations[b.node_ref]
+        a=offset+b.scalar_start-base;end=offset+b.scalar_end-base
+        require(artifact.body_blocks[bi][a:end]==json.loads(b.claim_json)['text'],
+                'piece_semantic_claim_visible_binding')
+        expected_realizations.append(dict(claim_ref=b.claim_ref,duty_ref='duty:'+b.claim_ref,
+            node_refs=[b.node_ref],source_binding_refs=[b.source_binding_ref],
+            block_index=bi,visible_scalar_start=a,visible_scalar_end=end))
+    require(all(type(r) is PieceSemanticRealizationV1 for r in artifact.claim_realizations)
+            and canonical([asdict(r) for r in artifact.claim_realizations])==canonical(expected_realizations),
+            'piece_semantic_visible_trace')
+    _validate_text_envelope(artifact.piece_text,artifact.body_blocks,artifact.format_type)
+    check_existing_detectors(artifact.piece_text)

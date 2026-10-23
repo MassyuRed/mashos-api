@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import hashlib
+import json
 import re
 
 from piece_v2_contract import PieceContractError
@@ -127,6 +128,23 @@ def compile_piece_artifact_plan(meaning: PieceSourceMeaning) -> PieceArtifactPla
     missing cause, certainty or relation. The actual first-person construction
     must also bind. Non-final intents no longer lose subsequent uncertainty.
     """
+    from .piece_semantic_admission import (
+        PieceSemanticSnapshotV1, PieceSemanticDutyBindingV1, PieceSemanticPlanV1,
+        source_nodes, digest,
+    )
+    if type(meaning) is PieceSemanticSnapshotV1:
+        validate_piece_saved_fields(meaning)
+        nodes = source_nodes(meaning)
+        duties = tuple(PieceSemanticDutyBindingV1(
+            'duty:' + binding.claim_ref, (binding.claim_ref,), (binding.node_ref,),
+            (binding.source_binding_ref,), tuple(json.loads(binding.claim_json)['polarity']['scope_refs']))
+            for binding in meaning.claim_bindings)
+        return PieceSemanticPlanV1(
+            meaning.snapshot_ref, meaning.source_commitment,
+            'piece-graph:' + digest([meaning.snapshot_ref, [node[0] for node in nodes]]),
+            duties, (tuple(node[0] for node in nodes[:-1]), (nodes[-1][0],)),
+            tuple('selection:' + '|'.join(row.alias_refs) for row in meaning.source_selections),
+            ('short_essay',))
     from piece_v2_generation import _UNCERTAIN, _DEICTIC
     graph = meaning.graph
     validate_piece_saved_fields(meaning)
@@ -695,6 +713,49 @@ def _paired_self_continuations(meaning: PieceSourceMeaning,
 def realize_piece_artifact(meaning: PieceSourceMeaning, plan: PieceArtifactPlan,
                            *, tier: str, requested_format: str | None) -> PieceArtifact:
     """Realize plan-owned duties from the source graph; never call B8's old author."""
+    from .piece_semantic_admission import (
+        PieceSemanticSnapshotV1, PieceSemanticArtifactV1, PieceSemanticRealizationV1,
+        source_nodes,
+    )
+    if type(meaning) is PieceSemanticSnapshotV1:
+        from piece_v2_content_policy import (
+            validate_piece_semantic_preservation, _validate_text_envelope,
+        )
+        validate_piece_saved_fields(meaning)
+        validate_piece_semantic_preservation(meaning, plan, None, tier=tier,
+                                            requested_format=requested_format)
+        nodes = {row[0]: row for row in source_nodes(meaning)}
+        blocks = []
+        visible = {}
+        for block_index, group in enumerate(plan.block_node_ids):
+            text = ''
+            for node_ref in group:
+                row = nodes[node_ref]
+                visible[node_ref] = (block_index, len(text), row[2])
+                # The sole Piece author retains the complete written clause,
+                # including the shared second sentence's connective and comma.
+                text += row[4]
+            blocks.append(text)
+        blocks = tuple(blocks)
+        selected = choose_format(tier=tier, requested=requested_format,
+                                 eligible=plan.eligible_formats, recommended='short_essay')
+        text = '\n\n'.join(blocks)
+        _validate_text_envelope(text, blocks, selected)
+        check_existing_detectors(text)
+        realized = []
+        for binding, duty in zip(meaning.claim_bindings, plan.duties, strict=True):
+            bi, offset, source_start = visible[binding.node_ref]
+            realized.append(PieceSemanticRealizationV1(binding.claim_ref, duty.duty_ref,
+                (binding.node_ref,), (binding.source_binding_ref,), bi,
+                offset + binding.scalar_start - source_start,
+                offset + binding.scalar_end - source_start))
+        artifact = PieceSemanticArtifactV1(meaning.snapshot_ref, plan.plan_ref,
+            meaning.source_commitment, blocks, text,
+            hashlib.sha256(text.encode('utf-8')).hexdigest(), selected,
+            plan.eligible_formats, tuple(realized), plan.selection_duties)
+        validate_piece_semantic_preservation(meaning, plan, artifact, tier=tier,
+                                            requested_format=requested_format)
+        return artifact
     graph = meaning.graph
     if plan.graph_id != graph.graph_id or plan.source_version != graph.source_version:
         raise unavailable('piece_plan_source_binding')
