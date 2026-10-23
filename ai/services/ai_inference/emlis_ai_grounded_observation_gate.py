@@ -5403,6 +5403,32 @@ def _read_retained_received_event_discourse(raw, move, plan, resolver, selected)
 def read_source_owned_discourse(raw, move, plan, resolver, selected_subjective_input=None,
                                 *, preceding_context=None, preceding_observation=None):
     """Read supported finite source duties without a literal-author oracle."""
+    from emlis_ai_grounded_observation_plan import source_snapshot_v2_group
+    group = source_snapshot_v2_group(plan.nuclei, plan.relations, resolver,
+        nucleus_ids=(*move.target_nucleus_ids, *move.support_nucleus_ids))
+    if group:
+        if not move.required or move not in plan.response_plan.human_reception_plan.moves:
+            return None
+        kind, ids, lexical = group
+        # Anaphora owes the complete, independently read Observation in this
+        # same body. A missing/changed antecedent cannot borrow saved prose.
+        if preceding_observation is None:
+            return None
+        antecedents = tuple(text for text in re.split(r"(?<=。)\s*", preceding_observation)
+            if read_snapshot_observation_clause(text,kind,lexical))
+        if len(antecedents) != 1:
+            return None
+        if kind == "written_te":
+            parsed = re.fullmatch(r"(?P<object>その打合せでの関わり方)に、私は心が留まります。", raw)
+            if parsed is None:
+                return None
+            start, end = (len(raw[:p].encode()) for p in parsed.span("object"))
+            return tuple((start,end,value.encode()) for value in lexical)
+        parsed = re.fullmatch(r"(?P<joy>[^、。]+)という気持ちも、(?P<unknown>どの部分かまだ曖昧)なままで受け止めています。", raw)
+        if parsed is None or parsed["joy"] != lexical[0]:
+            return None
+        return tuple((len(raw[:parsed.start(key)].encode()), len(raw[:parsed.end(key)].encode()), value.encode())
+            for key,value in zip(("joy","unknown"),lexical))
     from cocolon_meaning_experience_engine.contracts import EmlisReliefCognitionAppraisalContent
     decision = next((d for d in selected_subjective_input.decisions if d.move_id == move.move_id), None) if selected_subjective_input else None
     from emlis_ai_grounded_human_reception import SelectedRetainedReliefCognitionDecisionV1, SelectedRetainedReliefReceivedDecisionV1
@@ -7055,6 +7081,32 @@ def _body_inverse_shared_target_appraisal_observation(body, parsed_line, planned
             {'noni': 'のに', 'kedo': 'けど', 'keredo': 'けれど', 'keredomo': 'けれども'}.get(links[0]))
 
 
+def read_snapshot_observation_clause(raw, kind, lexical):
+    """Independent finite source restoration, shared by inverse and anaphora."""
+    pattern = (r"(?P<a>[^、。]+)、(?P<b>[^。]+)のですね。" if kind == "written_te"
+        else r"(?P<a>[^、。]+)一方で、(?P<b>[^。]+)なのですね。")
+    parsed = re.fullmatch(pattern, raw)
+    return bool(parsed is not None and (parsed["a"],parsed["b"]) == lexical)
+
+
+def _body_inverse_snapshot_v2(body, witness, line, planned_line, plan, resolver):
+    from emlis_ai_grounded_observation_plan import source_snapshot_v2_group
+    groups = source_snapshot_v2_group(plan.nuclei, plan.relations, resolver)
+    if groups is None: return (), frozenset()
+    rows = tuple(_body_inverse_visible_text(body, r) for r in witness.sentences
+        if r.section == "observation" and r.section_line_ordinal == line.section_ordinal)
+    sources, consumed = [], set()
+    for kind, ids, lexical in groups:
+        links = tuple(r for r in plan.relations if (r.from_nucleus_id, r.to_nucleus_id) == ids
+            and r.relation_id in planned_line.binding.relation_ids)
+        if not links: continue
+        matches = tuple(raw for raw in rows if read_snapshot_observation_clause(raw,kind,lexical))
+        if len(matches) == 1:
+            sources.extend(lexical)
+            consumed.add(links[0].relation_id)
+    return tuple(sources), frozenset(consumed)
+
+
 def evaluate_grounded_surface_body_inverse(
     *,
     body: bytes,
@@ -7185,6 +7237,20 @@ def evaluate_grounded_surface_body_inverse(
         direct_sources, direct_relations, direct_nuclei = (
             _body_inverse_limited_change_feeling(body, witness, parsed_line, planned_line, plan, resolver)
             if final_stage1_plan else ((), frozenset(), frozenset()))
+        snapshot_sources, snapshot_relations = _body_inverse_snapshot_v2(
+            body, witness, parsed_line, planned_line, plan, resolver)
+        direct_sources += snapshot_sources
+        direct_relations |= snapshot_relations
+        direct_nuclei |= frozenset(nid for r in plan.relations if r.relation_id in snapshot_relations
+            for nid in (r.from_nucleus_id, r.to_nucleus_id))
+        from emlis_ai_grounded_observation_plan import source_snapshot_v2_group
+        snapshot_groups = source_snapshot_v2_group(plan.nuclei, plan.relations, resolver)
+        if snapshot_groups is not None:
+            expected_snapshot_links = {r.relation_id for r in plan.relations
+                if r.relation_id in planned_line.binding.relation_ids
+                and any((r.from_nucleus_id, r.to_nucleus_id) == ids for _, ids, _ in snapshot_groups)}
+            if expected_snapshot_links != set(snapshot_relations):
+                failures.append(f"body_inverse_snapshot_v2_source_mismatch:{index}")
         negative_relations = frozenset()
         reason_appraisal_relations = (_body_inverse_reason_appraisal(
             body, parsed_line, planned_line, plan, resolver) if final_stage1_plan else frozenset())
@@ -7293,7 +7359,7 @@ def evaluate_grounded_surface_body_inverse(
             if not matches:
                 failures.append(f"body_inverse_unbound_observation_quote:{index}")
                 continue
-        if (set(planned_line.binding.relation_ids) - negative_relations - reason_appraisal_relations - unfinished_appraisal_relations
+        if (set(planned_line.binding.relation_ids) - snapshot_relations - negative_relations - reason_appraisal_relations - unfinished_appraisal_relations
             and not parsed_line.relation_marker_codes):
             failures.append(f"body_inverse_required_relation_marker_missing:{index}")
         relation_index = {item.relation_id: item for item in plan.relations}
@@ -7443,7 +7509,7 @@ def evaluate_grounded_surface_body_inverse(
             if relation is None:
                 failures.append(f"body_inverse_required_relation_missing:{index}")
                 continue
-            if relation_id in unfinished_appraisal_relations:
+            if relation_id in snapshot_relations or relation_id in unfinished_appraisal_relations:
                 # The complete source-bound clause independently proved these
                 # two edges. Its shared evaluation need not be quoted twice.
                 continue
@@ -8007,6 +8073,8 @@ def evaluate_grounded_surface_body_inverse(
             # This exact finite host already states the unresolved object.
             # A changed/deleted host fails the complete source match above.
             and not direct_decision
+            and not all(item.nucleus_id in direct_nuclei for item in required_nuclei
+                if item.kind == "uncertainty" or "semantic_role:limiting_unknown" in item.semantic_frame.attribute_codes)
         ):
             failures.append(f"body_inverse_required_unknown_missing:{index}")
         required_future_intention = any(

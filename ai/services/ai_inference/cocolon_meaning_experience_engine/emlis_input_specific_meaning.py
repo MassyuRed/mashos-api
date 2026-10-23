@@ -661,6 +661,43 @@ def _thread_scope_relation_source_is_bound(row, premeaning_inputs):
     edge = edges.get(row.relation_ref)
     if graph.source_version not in {"cocolon.cmee.emlis_thread.v1", "cocolon.cmee.emlis_thread.q3.v1"} or edge is None:
         return False
+    if row.relation_kind is EmlisThreadScopeRelationKind.WRITTEN_TE_LINK:
+        from .contracts import SnapshotSourceQualifierRowV2
+        witnesses = tuple(q for q in premeaning_inputs.source_qualifier_rows
+            if type(q) is SnapshotSourceQualifierRowV2)
+        if not witnesses or edge.relation != "source_written_te_link" or not _relation_is_source_explicit(edge, graph):
+            return False
+        q = witnesses[0]
+        mapping = dict(q.nucleus_node_bindings)
+        from .emlis_thread_source import identity
+        if (q.checkpoint_ref != identity("semantic-checkpoint",graph.source_envelope_id,q.snapshot_ref)
+            or graph.graph_id != identity("graph",q.checkpoint_ref)):
+            return False
+        edge_mapping = dict(q.relation_edge_bindings)
+        slices = {s.slice_ref: s for s in q.source_slices}
+        for w in q.written_links:
+            if (w.source_type != "SOURCE_WRITTEN_TE_LINK" or w.polarity != "AFFIRMED"
+                or edge_mapping.get(w.relation_ref) != edge.edge_id
+                or edge.edge_id != identity("me",q.checkpoint_ref,w.relation_ref,edge.evidence_ids)
+                or (mapping.get(w.from_nucleus_ref), mapping.get(w.to_nucleus_ref)) != (edge.source_node_id, edge.target_node_id)
+                or len(w.marker_slice_refs) != 1 or len(w.scope_refs) != 1):
+                continue
+            marker = slices.get(w.marker_slice_refs[0])
+            primaries = tuple(next((s for s in q.source_slices if s.nucleus_ref == nid), None)
+                for nid in (w.from_nucleus_ref,w.to_nucleus_ref))
+            if marker is None or any(s is None for s in primaries): continue
+            a,b = primaries
+            nodes = {n.node_id:n for n in graph.nodes}
+            if (marker.quote == "任せて、" + b.quote
+                and marker.raw_field_start == a.raw_field_end - 3 and marker.raw_field_end == b.raw_field_end
+                and marker.source_ref == a.source_ref == b.source_ref
+                and marker.field_path == a.field_path == b.field_path
+                and marker.native_span_ref == a.native_span_ref == b.native_span_ref
+                and nodes[edge.source_node_id].value == a.quote.removesuffix("。")
+                and nodes[edge.target_node_id].value == b.quote.removesuffix("。")
+                and nodes[edge.source_node_id].evidence_ids == nodes[edge.target_node_id].evidence_ids == edge.evidence_ids):
+                return True
+        return False
     if row.relation_kind is EmlisThreadScopeRelationKind.ABOUT_TARGET:
         return edge.relation == 'evaluation_about_event'
     if (row.relation_kind is not EmlisThreadScopeRelationKind.SATISFACTION_REASON

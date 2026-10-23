@@ -407,6 +407,7 @@ class EmlisThreadScopeRelationKind(str, Enum):
     """Private thread links; a reason is SELF's explanation, not objective causation."""
     ABOUT_TARGET = "evaluation_about_event"
     SATISFACTION_REASON = "satisfaction_reason"
+    WRITTEN_TE_LINK = "source_written_te_link"
 
 
 def admitted_scope_relation_kind(value: object) -> bool:
@@ -1215,6 +1216,86 @@ class GroundedSourceQualifierRow:
 
     node_ref: str
     qualifier_refs: Tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class SnapshotSourceSliceBindingV2:
+    slice_ref: str
+    claim_ref: str
+    nucleus_ref: str
+    source_ref: str
+    source_version: str
+    native_span_ref: str
+    field_path: str
+    raw_field_start: int
+    raw_field_end: int
+    lexical_start: int
+    lexical_end: int
+    quote: str
+    subject_binding: str
+    source_entity: Optional[str]
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class SnapshotCaseArgumentBindingV2:
+    argument_ref: str
+    owning_nucleus_ref: str
+    written_role: str
+    text: str
+    source_slice_refs: Tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class SnapshotPersonStatedUnknownBindingV2:
+    unknown_ref: str
+    statement_nucleus_ref: str
+    target_nucleus_refs: Tuple[str, ...]
+    origin: str
+    dimension: str
+    resolution_state: str
+    statement_polarity: str
+    statement_modality: str
+    statement_time_scope: str
+    target_time_scope: str
+    evidence_slice_refs: Tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class SnapshotWrittenLinkBindingV2:
+    relation_ref: str
+    source_type: str
+    from_nucleus_ref: str
+    to_nucleus_ref: str
+    marker_slice_refs: Tuple[str, ...]
+    scope_refs: Tuple[str, ...]
+    polarity: str
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class SnapshotSourceQualifierRowV2(GroundedSourceQualifierRow):
+    """Snapshot bindings before graph IDs; the map is derived after checkpoint."""
+    snapshot_ref: str
+    checkpoint_ref: str
+    source_slices: Tuple[SnapshotSourceSliceBindingV2, ...]
+    case_arguments: Tuple[SnapshotCaseArgumentBindingV2, ...]
+    person_stated_unknowns: Tuple[SnapshotPersonStatedUnknownBindingV2, ...]
+    written_links: Tuple[SnapshotWrittenLinkBindingV2, ...]
+    nucleus_node_bindings: Tuple[Tuple[str, str], ...]
+    relation_edge_bindings: Tuple[Tuple[str, str], ...]
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class SnapshotBindingConsumptionV2:
+    snapshot_ref: str
+    binding_kind: str
+    binding_ref: str
+    nucleus_refs: Tuple[str, ...]
+    graph_node_refs: Tuple[str, ...]
+    graph_edge_refs: Tuple[str, ...]
+    source_slice_refs: Tuple[str, ...]
+    section: str
+    visible_scalar_start: int
+    visible_scalar_end: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -2555,6 +2636,13 @@ _STAGE1_TUPLE_FIELDS = {
         "material_unknown_refs",
     ),
     GroundedSourceQualifierRow: ("qualifier_refs",),
+    SnapshotSourceSliceBindingV2: (),
+    SnapshotCaseArgumentBindingV2: ("source_slice_refs",),
+    SnapshotPersonStatedUnknownBindingV2: ("target_nucleus_refs", "evidence_slice_refs"),
+    SnapshotWrittenLinkBindingV2: ("marker_slice_refs", "scope_refs"),
+    SnapshotSourceQualifierRowV2: ("qualifier_refs", "source_slices", "case_arguments", "person_stated_unknowns",
+        "written_links", "nucleus_node_bindings", "relation_edge_bindings"),
+    SnapshotBindingConsumptionV2: ("nucleus_refs", "graph_node_refs", "graph_edge_refs", "source_slice_refs"),
     GroundedSemanticComponentProjection: (
         "qualifier_refs",
         "source_evidence_refs",
@@ -8222,6 +8310,51 @@ def source_explicit_epistemic_unknown_object_ref(premeaning_inputs, disposition)
         # negation. Keep that polarity while binding its separate UNKNOWN to
         # the same complete finite source object. A neutral label alone is
         # insufficient; the thread adapter also checks the original span.
+        if type(qualifiers[0]) is SnapshotSourceQualifierRowV2:
+            q = qualifiers[0]
+            mapping = dict(q.nucleus_node_bindings)
+            from .emlis_thread_source import identity
+            if (len(mapping) != len(q.nucleus_node_bindings) or len(set(mapping.values())) != len(mapping)
+                or q.checkpoint_ref != identity("semantic-checkpoint", graph.source_envelope_id, q.snapshot_ref)
+                or graph.graph_id != identity("graph", q.checkpoint_ref)
+                or any(nid not in {n.node_id for n in graph.nodes}
+                    or nid != identity("mn", q.checkpoint_ref, nucleus,
+                        next(n.evidence_ids for n in graph.nodes if n.node_id == nid))
+                    for nucleus,nid in q.nucleus_node_bindings)):
+                continue
+            witnesses = tuple(u for u in q.person_stated_unknowns
+                if mapping.get(u.statement_nucleus_ref) == node.node_id)
+            if len(witnesses) != 1:
+                continue
+            u = witnesses[0]
+            target = tuple(n for n in graph.nodes if n.node_id in {mapping.get(t) for t in u.target_nucleus_refs})
+            if (u.origin != "PERSON_STATED" or u.dimension != "JOY_ASPECT"
+                or u.resolution_state != "SOURCE_STATEMENT_RETAINED" or u.statement_polarity != "AFFIRMED"
+                or u.statement_modality != "ASSERTED_AS_WRITTEN"
+                or (u.statement_time_scope, u.target_time_scope) != ("present", "past")
+                or len(target) != 1 or target[0].node_kind != "reaction"
+                or target[0].epistemic_state is not EpistemicState.SOURCE_EXPLICIT
+                or node.value != "どこが" + target[0].value + "かはまだ曖昧"
+                or any({v for v in codes if v.startswith(axis + ":")} != {axis + ":" + expected}
+                    for axis,expected in (("actor","current_user"),("modality","uncertain"),("polarity","neutral"),("time_scope","present")))):
+                continue
+            target_qualifiers = tuple(qr for qr in premeaning_inputs.source_qualifier_rows
+                if qr.node_ref == _graph_object_ref(target[0]))
+            if len(target_qualifiers) != 1:
+                continue
+            target_codes = set(target_qualifiers[0].qualifier_refs)
+            if any({v for v in target_codes if v.startswith(axis + ":")} != {axis + ":" + expected}
+                for axis,expected in (("actor","current_user"),("modality","feeling"),("polarity","positive"),("time_scope","past"))):
+                continue
+            cs = tuple(c for c in premeaning_inputs.interpretation_candidate_rows if c.semantic_refs == (ref,))
+            rows = tuple(c for c in premeaning_inputs.observation_contribution_rows if c.semantic_refs == (ref,))
+            expected_evidence = tuple(f"evidence:{e}@{graph.source_version}" for e in node.evidence_ids)
+            if (len(cs) == len(rows) == 1 and _stage1_direct_unfinished_contribution(cs[0], rows[0], ref)
+                and cs[0].evidence_refs == rows[0].evidence_refs == expected_evidence
+                and len(cs[0].required_qualifiers) == len(set(cs[0].required_qualifiers))
+                and set(cs[0].required_qualifiers) == codes - {"world:unknown"}):
+                candidates.append(ref)
+            continue
         from emlis_ai_grounded_observation_plan import _source_independent_decision_clause_parts
         decision = _source_independent_decision_clause_parts(node.value)
         expected_polarity = ("polarity:neutral" if decision is not None
@@ -22335,6 +22468,12 @@ __all__ = [
     "GroundedInterpretationProjection",
     "GroundedSemanticComponentProjection",
     "GroundedSourceQualifierRow",
+    "SnapshotSourceSliceBindingV2",
+    "SnapshotCaseArgumentBindingV2",
+    "SnapshotPersonStatedUnknownBindingV2",
+    "SnapshotWrittenLinkBindingV2",
+    "SnapshotSourceQualifierRowV2",
+    "SnapshotBindingConsumptionV2",
     "GroundedSourceRelationRow",
     "InflectionClassSpec",
     "InterpretationEpistemicState",

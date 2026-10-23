@@ -563,7 +563,7 @@ def _project_thread_meaning_aggregate(prepared, plan) -> ThreadMeaningProjection
         acts, tuple(o for o in owner_refs if o in visible_owners), visible_owners, visible_owners,
         tuple(unknown_owners), tuple(unknown_owners), tuple(unknown_owners), ())
     covered = {n for edge in plan.relations if edge.relation_id in plan.coverage_requirements.required_relation_ids
-               and edge.type != "evaluation_about_event"
+               and edge.type not in {"evaluation_about_event", "source_written_te_link"}
                for n in (edge.from_nucleus_id, edge.to_nucleus_id)}
     shared_target = source_owned_shared_target_appraisal_contrast(plan.nuclei, plan.relations, resolver)
     if shared_target:
@@ -590,7 +590,7 @@ def _project_thread_meaning_aggregate(prepared, plan) -> ThreadMeaningProjection
         nucleus_to_node=node_ids, relation_to_edge=edge_ids,
         required_node_ids=frozenset(node_ids[n] for n in plan.coverage_requirements.required_nucleus_ids if n not in covered),
         required_edge_ids=frozenset(edge_ids[e.relation_id] for e in plan.relations
-            if e.relation_id in plan.coverage_requirements.required_relation_ids and e.type != "evaluation_about_event"),
+            if e.relation_id in plan.coverage_requirements.required_relation_ids and e.type not in {"evaluation_about_event", "source_written_te_link"}),
         source_order={ref: i for i, ref in enumerate((*node_ids.values(), *edge_ids.values()))})
     rows = r._candidate_rows_from_binding(graph=graph, parent_plan=parent, binding=binding,
         visible_claim_ids=set((*node_ids.values(), *edge_ids.values())),
@@ -617,6 +617,13 @@ def _project_thread_meaning_aggregate(prepared, plan) -> ThreadMeaningProjection
             *c.project_stage1_source_contract_qualifiers(source_attribute_codes=frame.attribute_codes,
                 source_explicit_shift_relation_endpoint=node.node_id in shift_endpoints,
                 stage1_response_schema_version=c.CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V2))))
+    from .emlis_semantic_admission import snapshot_resolver, SnapshotEvidenceSpanResolverV2
+    resolver = snapshot_resolver(prepared)
+    if type(resolver) is SnapshotEvidenceSpanResolverV2:
+        carried = resolver.binding_rows(node_ids, edge_ids)
+        qualifiers = [c.SnapshotSourceQualifierRowV2(q.node_ref, q.qualifier_refs, **carried)
+            if any(q.node_ref == r._node_ref(node_ids[n]) for n in resolver.native_nucleus_ids) else q
+            for q in qualifiers]
     relation_rows = tuple(c.GroundedSourceRelationRow(r._edge_ref(e.edge_id), kind)
         for e in graph.edges if (kind := (c.EmlisThreadScopeRelationKind.ABOUT_TARGET
             if e.relation == "evaluation_about_event" and (any(
@@ -627,6 +634,7 @@ def _project_thread_meaning_aggregate(prepared, plan) -> ThreadMeaningProjection
                 (reason := source_owned_result_appraisal_reason(about, plan.nuclei, plan.relations)) is not None
                 and (binding.edge_meta[e.edge_id].from_nucleus_id, binding.edge_meta[e.edge_id].to_nucleus_id)
                     == (reason.nucleus_id, about.to_nucleus_id) for about in plan.relations)
+            else c.EmlisThreadScopeRelationKind.WRITTEN_TE_LINK if e.relation == "source_written_te_link"
             else c.project_foreground_scope_relation_kind(e.relation))) is not None)
     pre = c.PreMeaningGroundedInputs("1.0", c.CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V2,
         graph, r._graph_ref(graph), parent.observation_duty_id, candidates, field, contributions,

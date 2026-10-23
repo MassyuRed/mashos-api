@@ -552,3 +552,279 @@ def test_q3_real_continue_keeps_prior_answers_about_relations_and_nochange(qcase
     observations = [e for e in saved["events"] if e["kind"] == "OBSERVATION"]
     graph = observations[-1]["payload"]["meaning_graph"]
     assert len([e for e in graph["edges"] if e["relation"] == "evaluation_about_event"]) == (2 if last_unknown else 3)
+
+# The second offline profile has a distinct namespace. Original P2 is frozen;
+# it is never relabelled as model output or substituted for the old fixtures.
+from cocolon_meaning_experience_engine.emlis_semantic_admission import (
+    PROFILE_V2, CHECKPOINT_SCHEMA_V3, snapshot_resolver, _semantic_ref, _json)
+from cocolon_meaning_experience_engine.contracts import GenerationRequest
+from emlis_ai_current_input_bundle import build_emlis_current_input_bundle
+from cocolon_meaning_experience_engine.source_kernel import freeze_text_source
+from cocolon_meaning_experience_engine.emlis_thread_contracts import EmlisThreadInputV1
+from cocolon_meaning_experience_engine.emlis_thread_projection import project_thread_meaning
+
+V2_FIXTURE = json.loads((Path(__file__).parent / 'fixtures/cmee_emlis_semantic_targeted_unknown_action_v2.json').read_text())
+
+
+def e02_case(*, mixed=False, withdraw=False):
+    raw, packet = copy.deepcopy(V2_FIXTURE['original']), copy.deepcopy(V2_FIXTURE['packet'])
+    if mixed:
+        prefix = '褒められたのに、嬉しくなかった。'
+        raw['memo'] = prefix + raw['memo']
+        for e in packet['evidence']:
+            if e['field_path'] == 'memo': e['start'] += len(prefix); e['end'] += len(prefix)
+        index = len(packet['evidence'])
+        packet['evidence'] += [evidence(raw['id'], 'memo', raw['memo'], q) for q in ('褒められた','嬉しくなかった','のに')]
+        packet['candidate']['claims'][:0] = [claim('event','EVENT','褒められた',index),
+            claim('reaction','STATE','嬉しくなかった',index+1,negative=True)]
+        packet['candidate']['relations'].insert(0, dict(relation_id='contrast',type='SOURCE_WRITTEN_CONCESSION',
+            from_claim_id='event',to_claim_id='reaction',polarity='AFFIRMED',scope_refs=['contrast'],qualifiers=[],evidence_indexes=[index+2]))
+    if withdraw:
+        raw['memo_action'] += '帰宅しても苦しかった。'
+        index = len(packet['evidence'])
+        packet['evidence'].append(evidence(raw['id'],'memo_action',raw['memo_action'],'帰宅しても苦しかった'))
+        packet['candidate']['claims'].append(claim('other','STATE','帰宅しても苦しかった',index,predicate='苦しかった'))
+    req=GenerationRequest('offline-trial-E02-0',build_emlis_current_input_bundle(raw),raw['id'])
+    src=freeze_text_source(req)
+    return replace(req,emlis_thread=EmlisThreadInputV1('offline-thread-'+raw['id'],src.envelope.envelope_id,
+        capability_snapshot='Q3_FREE',question_control_context=EmlisQuestionControlV1(question_limit=1))),packet
+
+
+def fresh_v2(req, packet, prior=None):
+    return SemanticInput('FRESH_CANDIDATE',receipt(req,packet),prior_snapshot_json=prior,semantic_profile=PROFILE_V2)
+
+
+def resume_v2(snapshot):
+    return SemanticInput('RESUME_ADOPTED',snapshot_json=snapshot,semantic_profile=PROFILE_V2)
+
+
+def generate_v2(req, semantic):
+    cp=MeaningExperienceEngine().prepare_emlis_update(req,semantic_input=semantic)
+    req=replace(req,emlis_thread=replace(req.emlis_thread,prepared_meaning_checkpoint_ref=cp.checkpoint_id))
+    return req,cp,MeaningExperienceEngine().generate(req,semantic_input=resume_v2(cp.semantic_snapshot))
+
+
+def test_v2_original_e02_full_body_typed_targets_and_replay():
+    req, packet=e02_case()
+    assert prepare_emlis(req).request_id == 'prep-b9e74c65cdf2eaac838906c19e661d18ee980855c5bda172bd7a520997869763'
+    req,cp,out=generate_v2(req,fresh_v2(req,packet))
+    assert cp.semantic_schema_version == CHECKPOINT_SCHEMA_V3
+    assert out.artifact is not None, out.reason_codes
+    assert out.question is None
+    p=json.loads(cp.semantic_snapshot)
+    assert p['packet']==packet and p['semantic_profile']==PROFILE_V2 and p['adapter_version']=='1'
+    b=p['native_bindings']; u,=b['person_stated_unknowns']
+    assert u['target_nucleus_refs']==[p['claim_mapping']['e0.joy']]
+    assert u['statement_nucleus_ref']==p['claim_mapping']['e0.unclear']
+    assert (u['statement_time_scope'],u['target_time_scope'])==('present','past')
+    assert [a['written_role'] for a in b['case_arguments']]==['WRITTEN_で','WRITTEN_に','WRITTEN_を','WRITTEN_まで']
+    assert all(s['subject_binding']=='OMITTED' and s['source_entity'] is None for s in b['source_slices'])
+    listen=next(s for s in b['source_slices'] if s['claim_ref']=='e0.listen')
+    assert (listen['raw_field_start'],listen['raw_field_end'],listen['lexical_start'],listen['lexical_end'])==(14,22,14,21)
+    prepared=prepare_snapshot_meaning(req,resume_v2(cp.semantic_snapshot));plan=derive_snapshot_plan(prepared)
+    projection=project_thread_meaning(prepared,plan)
+    ids=[p['claim_mapping'][c] for c in ('e0.delegate','e0.listen')]
+    assert ids[0]!=ids[1] and projection.binding.nucleus_to_node[ids[0]]!=projection.binding.nucleus_to_node[ids[1]]
+    assert all(word in out.artifact.text for word in ('打合せで','後輩に','説明を任せて','最後まで聞いた','うれしかった','まだ曖昧'))
+    assert all(word not in out.artifact.text for word in ('信頼','成長','同時','この順','だから'))
+    from cocolon_meaning_experience_engine.contracts import SnapshotBindingConsumptionV2, source_explicit_epistemic_unknown_object_ref
+    for trace,section,text in ((out.artifact.meaning_trace,'OBSERVATION',out.artifact.observation),
+                               (out.artifact.reception_trace,'RECEPTION',out.artifact.reception)):
+        consumed=tuple(t for t in trace if type(t) is SnapshotBindingConsumptionV2)
+        assert len(consumed)==17
+        assert {t.binding_kind for t in consumed}=={'SOURCE_SLICE','WRITTEN_CASE','PERSON_STATED_UNKNOWN','WRITTEN_LINK'}
+        assert all(t.section==section and text[t.visible_scalar_start:t.visible_scalar_end] and t.graph_node_refs for t in consumed)
+    unknown_owner=next(d for d in projection.graph.owner_dispositions if d.target_unknown_ref)
+    assert source_explicit_epistemic_unknown_object_ref(projection.premeaning,unknown_owner) is not None
+    assert MeaningExperienceEngine().generate(req,semantic_input=resume_v2(cp.semantic_snapshot))==out
+
+
+@pytest.mark.parametrize('text,operation,withdraw',[
+    ('今は嬉しい。','ADD',False),
+    ('あの時も本当は嬉しかった。書き方を間違えた。','REVISE',False),
+    ('その時は寂しかった。「帰宅しても苦しかった」は誤りです。','ADD',True)])
+def test_v2_actual_pending_preserves_new_sources(text,operation,withdraw):
+    req,packet=e02_case(mixed=True,withdraw=withdraw)
+    req,before,first=generate_v2(req,fresh_v2(req,packet))
+    assert first.artifact is not None,first.reason_codes
+    assert first.question is not None
+    req=answered(req,first,text)
+    req=replace(req,emlis_thread=replace(req.emlis_thread,question_control_context=replace(
+        req.emlis_thread.question_control_context,issued_questions=(first.question,))))
+    updated=answer_packet(req,before.semantic_snapshot,operation=operation,withdraw=withdraw)
+    if operation=='REVISE':
+        updated['candidate']['relations']=[r for r in packet['candidate']['relations'] if 'reaction' not in (r['from_claim_id'],r['to_claim_id'])]
+    req,cp,out=generate_v2(req,fresh_v2(req,updated,before.semantic_snapshot))
+    assert out.artifact is not None,out.reason_codes
+    b,a=json.loads(before.semantic_snapshot),json.loads(cp.semantic_snapshot)
+    assert b['native_bindings']==a['native_bindings']
+    assert a['prior_snapshot']==b
+    for cid in ('e0.joy','e0.unclear','e0.delegate','e0.listen'):
+        assert a['claim_mapping'][cid]==b['claim_mapping'][cid]
+    assert '説明を任せて' in out.artifact.text and '最後まで聞いた' in out.artifact.text and 'まだ曖昧' in out.artifact.text
+    assert MeaningExperienceEngine().generate(req,semantic_input=resume_v2(cp.semantic_snapshot))==out
+
+
+@pytest.mark.parametrize('mutation', ['target','case','te','unknown','predicate_extra'])
+def test_v2_candidate_closed_boundaries(mutation):
+    req,packet=e02_case()
+    c=packet['candidate']
+    if mutation=='target': c['unknowns'][0]['target_claim_refs']=['e0.listen']
+    if mutation=='case': c['claims'][2]['predicate']['arguments'][1]['role']='RECIPIENT'
+    if mutation=='te': c['relations'][0]['type']='ACTION_BEFORE_AFTER'
+    if mutation=='unknown': c['unknowns'][0]['dimension']='REASON'
+    if mutation=='predicate_extra': c['claims'][2]['predicate']['extra']='trust'
+    with pytest.raises(SemanticNotAdopted):
+        prepare_snapshot_meaning(req,fresh_v2(req,packet))
+
+
+@pytest.mark.parametrize('mutation', ['target','slice','adapter','schema','profile'])
+def test_v2_canonical_rehash_does_not_authorize_changed_bindings(mutation):
+    req,packet=e02_case();prepared=prepare_snapshot_meaning(req,fresh_v2(req,packet))
+    p=json.loads(prepared.semantic_snapshot)
+    if mutation=='target': p['native_bindings']['person_stated_unknowns'][0]['target_nucleus_refs']=[p['claim_mapping']['e0.listen']]
+    if mutation=='slice': p['native_bindings']['source_slices'][0]['lexical_end']-=1
+    if mutation=='adapter': p['adapter_version']='2'
+    if mutation=='schema': p['schema_version']='cocolon.cmee.emlis_semantic_snapshot.v1'
+    if mutation=='profile': p['semantic_profile']=PROFILE
+    p['snapshot_ref']=_semantic_ref(p)
+    with pytest.raises(SemanticNotAdopted):
+        prepare_snapshot_meaning(req,resume_v2(_json(p)))
+
+
+@pytest.mark.parametrize('target',['e0.joy','e0.unclear','e0.delegate','e0.listen'])
+def test_v2_new_elements_cannot_be_answer_update_targets(target):
+    req,packet=e02_case(mixed=True);req,cp,first=generate_v2(req,fresh_v2(req,packet))
+    req=answered(req,first,'今は嬉しい。')
+    req=replace(req,emlis_thread=replace(req.emlis_thread,question_control_context=replace(
+        req.emlis_thread.question_control_context,issued_questions=(first.question,))))
+    packet=answer_packet(req,cp.semantic_snapshot)
+    packet['candidate']['updates'][0]['target_claim_refs']=[target]
+    with pytest.raises(SemanticNotAdopted) as exc:
+        prepare_snapshot_meaning(req,fresh_v2(req,packet,cp.semantic_snapshot))
+    assert exc.value.decision=='HOLD' and exc.value.reason_code=='semantic_v2_target_update_unsupported'
+
+
+@pytest.mark.parametrize('before,after',[
+    ('後輩に','後輩が'),('説明を任せて','説明を任せたので'),('最後まで聞いた','聞いた'),
+    ('説明を任せて、最後まで聞いた','最後まで聞いた、説明を任せて'),
+    ('うれしかった一方で','うれしくなかった一方で'),
+    ('どこがうれしかったかはまだ曖昧','うれしかったかどうかはまだ曖昧'),
+    ('その打合せでの関わり方','後輩を信頼したこと'),('どの部分かまだ曖昧','喜びの原因がまだ曖昧')])
+def test_v2_body_inverse_rejects_changed_arguments_targets_and_both_actions(before,after):
+    from emlis_ai_grounded_sentence_surface import build_grounded_sentence_plan
+    from emlis_ai_grounded_observation_gate import evaluate_grounded_surface_body_inverse
+    req,packet=e02_case();req,cp,out=generate_v2(req,fresh_v2(req,packet))
+    prepared=prepare_snapshot_meaning(req,resume_v2(cp.semantic_snapshot));plan=derive_snapshot_plan(prepared)
+    projection=project_thread_meaning(prepared,plan);resolver=snapshot_resolver(prepared)
+    sentence=build_grounded_sentence_plan(plan,resolver,recovery_stage='full')
+    body=out.artifact.text
+    assert before in body
+    bad=evaluate_grounded_surface_body_inverse(body=body.replace(before,after).encode(),plan=plan,
+        sentence_plan=sentence,resolver=resolver,selected_subjective_input=projection.selected_reception)
+    assert not bad.passed
+
+
+def offline_service_v2(case,db,*,unsupported=False):
+    user,parent,old=case
+    _,packet=e02_case(mixed=True)
+    raw=V2_FIXTURE['original']
+    db.query('update public.emotions set memo=$1,memo_action=$2 where id=$3',
+        ['褒められたのに、嬉しくなかった。'+raw['memo'],raw['memo_action'],parent])
+    calls=[]
+    def source(req,prior):
+        calls.append(bool(prior))
+        value=answer_packet(req,prior) if prior else copy.deepcopy(packet)
+        if prior and unsupported:
+            value['candidate']['updates'][0]['target_claim_refs']=['e0.delegate']
+        for e in value['evidence']:
+            if e['source_id']=='E02-O': e['source_id']=parent
+        return receipt(req,value)
+    return user,parent,EmlisThreadService(store=old.store,runtime_profile=Q3_PROFILE,semantic_profile=PROFILE_V2,offline_candidate_source=source),calls
+
+
+def test_v2_actual_sql_save_interruption_retry_and_read_only_restart(qcase,qdb,monkeypatch):
+    user,parent,service,calls=offline_service_v2(qcase,qdb)
+    first=run(service.start(user,parent));assert first['pending_question'],first
+    old_generate=service.engine.generate
+    def interrupt(*args,**kwargs): raise asyncio.CancelledError()
+    monkeypatch.setattr(service.engine,'generate',interrupt)
+    with pytest.raises(asyncio.CancelledError): run(answer(service,user,first,'今は嬉しい。'))
+    broken=run(service.get(user,parent));assert broken['can_retry'],broken
+    saved=run(service.store.read(user,input_id=parent));before=[e['id'] for e in saved['events'] if e['kind']=='MEANING_UPDATE']
+    assert len(before)==2
+    monkeypatch.setattr(service.engine,'generate',old_generate)
+    def never(*a,**k): raise AssertionError('must not reacquire or author saved DTO')
+    service.offline_candidate_source=never
+    done=run(service.action(user,broken['thread_id'],action='retry_response',expected_revision=broken['revision'],
+        idempotency_key='snapshot-v2-retry',operation_id=broken['operation_id']))
+    assert done['body_state']=='REFINED',done
+    assert '最後まで聞いた' in done['current_observation']['text']
+    saved=run(service.store.read(user,input_id=parent));assert before==[e['id'] for e in saved['events'] if e['kind']=='MEANING_UPDATE']
+    assert calls==[False,True]
+    class NoAuthor:
+        def __getattr__(self,name): return never
+    restarted=EmlisThreadService(store=service.store,engine=NoAuthor())
+    read=run(restarted.get(user,parent))
+    assert not read["can_write"]
+    assert {k:v for k,v in read.items() if k!="can_write"}=={k:v for k,v in done.items() if k!="can_write"}
+
+
+def test_v2_unsupported_answer_preserves_private_evaluation_without_current_old_body(qcase,qdb):
+    user,parent,service,calls=offline_service_v2(qcase,qdb,unsupported=True)
+    first=run(service.start(user,parent));done=run(answer(service,user,first,'今は嬉しい。'))
+    assert done['body_state']=='ANSWER_UNREFLECTED' and done['current_observation'] is None,done
+    saved=run(service.store.read(user,input_id=parent))
+    assert len([e for e in saved['events'] if e['kind']=='MEANING_UPDATE'])==1
+    assert any(e['payload'].get('stage')=='SEMANTIC_NOT_ADOPTED' for e in saved['events'] if e['kind']=='OPERATION')
+    assert run(service.get(user,parent))==done and calls==[False,True]
+
+
+def test_v2_period_permission_does_not_allow_crossing_native_sentences():
+    from cocolon_meaning_experience_engine.emlis_semantic_admission import _locate_v2
+    from cocolon_meaning_experience_engine.emlis_thread_source import admit_emlis_thread
+    req,_=e02_case(withdraw=True)
+    raw=req.current_input_bundle.raw_current_input
+    quote=raw['memo_action']
+    ev=dict(source_id=raw['id'],field_path='memo_action',start=0,end=len(quote),quote=quote)
+    with pytest.raises(SemanticNotAdopted) as exc:
+        _locate_v2(admit_emlis_thread(req),prepare_emlis(req),[ev])
+    assert exc.value.reason_code=='semantic_subrange_crosses_native_span'
+
+
+@pytest.mark.parametrize('mutation',['statement_past','joy_present','duplicate_mapping'])
+def test_v2_unknown_carrier_checks_exact_axes_and_graph_mapping(mutation):
+    from cocolon_meaning_experience_engine.contracts import SnapshotSourceQualifierRowV2, source_explicit_epistemic_unknown_object_ref
+    req,packet=e02_case();prepared=prepare_snapshot_meaning(req,fresh_v2(req,packet));plan=derive_snapshot_plan(prepared)
+    projection=project_thread_meaning(prepared,plan);pre=projection.premeaning
+    disposition=next(d for d in projection.graph.owner_dispositions if d.target_unknown_ref)
+    assert source_explicit_epistemic_unknown_object_ref(pre,disposition)
+    mapping=json.loads(prepared.semantic_snapshot)['claim_mapping']
+    target=projection.binding.nucleus_to_node[mapping['e0.joy' if mutation=='joy_present' else 'e0.unclear']]
+    qualifiers=[]
+    for row in pre.source_qualifier_rows:
+        if type(row) is SnapshotSourceQualifierRowV2 and target in row.node_ref:
+            row=replace(row,nucleus_node_bindings=(*row.nucleus_node_bindings,row.nucleus_node_bindings[0])) if mutation=='duplicate_mapping' else replace(
+                row,qualifier_refs=(*row.qualifier_refs,'time_scope:present' if mutation=='joy_present' else 'time_scope:past'))
+        qualifiers.append(row)
+    bad=replace(pre,source_qualifier_rows=tuple(qualifiers))
+    assert source_explicit_epistemic_unknown_object_ref(bad,disposition) is None
+
+
+@pytest.mark.parametrize('mutation',['marker','scope','relation'])
+def test_v2_te_scope_requires_actual_link_and_marker(mutation):
+    from cocolon_meaning_experience_engine.contracts import SnapshotSourceQualifierRowV2,EmlisThreadScopeRelationKind
+    from cocolon_meaning_experience_engine.emlis_input_specific_meaning import _thread_scope_relation_source_is_bound
+    req,packet=e02_case();prepared=prepare_snapshot_meaning(req,fresh_v2(req,packet));plan=derive_snapshot_plan(prepared)
+    pre=project_thread_meaning(prepared,plan).premeaning
+    link=next(r for r in pre.source_relation_rows if r.relation_kind is EmlisThreadScopeRelationKind.WRITTEN_TE_LINK)
+    assert _thread_scope_relation_source_is_bound(link,pre)
+    qualifiers=[]
+    for row in pre.source_qualifier_rows:
+        if type(row) is SnapshotSourceQualifierRowV2:
+            links=tuple(replace(w,**({'marker_slice_refs':()} if mutation=='marker' else
+                {'scope_refs':()} if mutation=='scope' else {'relation_ref':'semantic-relation-unbound'}))
+                if w.source_type=='SOURCE_WRITTEN_TE_LINK' else w for w in row.written_links)
+            row=replace(row,written_links=links)
+        qualifiers.append(row)
+    assert not _thread_scope_relation_source_is_bound(link,replace(pre,source_qualifier_rows=tuple(qualifiers)))

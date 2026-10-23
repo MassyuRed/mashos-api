@@ -220,10 +220,50 @@ def _retained_unfinished_appraisal_relations(prepared, plan):
     return frozenset((appraisal.relation_id,))
 
 
+def _snapshot_binding_traces(plan, projection, resolver, observation, reception_text):
+    from .emlis_semantic_admission import SnapshotEvidenceSpanResolverV2
+    if type(resolver) is not SnapshotEvidenceSpanResolverV2:
+        return (), ()
+    import re
+    from .contracts import SnapshotBindingConsumptionV2
+    from emlis_ai_grounded_observation_plan import source_snapshot_v2_group
+    from emlis_ai_grounded_observation_gate import read_snapshot_observation_clause, read_source_owned_discourse
+    result = {"OBSERVATION":[], "RECEPTION":[]}
+    for kind, ids, lexical in source_snapshot_v2_group(plan.nuclei,plan.relations,resolver):
+        moves = tuple(m for m in plan.response_plan.human_reception_plan.moves
+            if set((*m.target_nucleus_ids,*m.support_nucleus_ids)) == set(ids))
+        if len(moves) != 1: raise ValueError("snapshot_v2_trace_move_unbound")
+        spans = {}
+        for section,text in (("OBSERVATION",observation),("RECEPTION",reception_text)):
+            rows = tuple(m for m in re.finditer(r"[^。\n]+。",text)
+                if (read_snapshot_observation_clause(m.group().strip(),kind,lexical) if section == "OBSERVATION" else
+                    read_source_owned_discourse(m.group().strip(),moves[0],plan,resolver,projection.selected_reception,
+                        preceding_observation=observation) is not None))
+            if len(rows) != 1: raise ValueError("snapshot_v2_trace_visible_binding_unbound")
+            spans[section] = rows[0].span()
+        edges = tuple(e for e in plan.relations if (e.from_nucleus_id,e.to_nucleus_id) == ids)
+        graph_edges = tuple(_edge_ref(projection.binding.relation_to_edge[e.relation_id]) for e in edges)
+        rows = [("SOURCE_SLICE",s.slice_ref,(s.nucleus_ref,),(s.slice_ref,))
+            for s in resolver.source_slices if s.nucleus_ref in ids]
+        rows += [("WRITTEN_CASE",a.argument_ref,(a.owning_nucleus_ref,),a.source_slice_refs)
+            for a in resolver.case_arguments if a.owning_nucleus_ref in ids]
+        rows += [("PERSON_STATED_UNKNOWN",u.unknown_ref,(u.statement_nucleus_ref,*u.target_nucleus_refs),u.evidence_slice_refs)
+            for u in resolver.person_stated_unknowns if u.statement_nucleus_ref in ids]
+        rows += [("WRITTEN_LINK",w.relation_ref,(w.from_nucleus_ref,w.to_nucleus_ref),w.marker_slice_refs)
+            for w in resolver.written_links if (w.from_nucleus_ref,w.to_nucleus_ref) == ids]
+        for section in result:
+            for family,ref,nuclei,slices in rows:
+                result[section].append(SnapshotBindingConsumptionV2(resolver.snapshot_ref,family,ref,nuclei,
+                    tuple(_node_ref(projection.binding.nucleus_to_node[n]) for n in nuclei),graph_edges,slices,
+                    section,*spans[section]))
+    return tuple(result["OBSERVATION"]),tuple(result["RECEPTION"])
+
+
 def realize_emlis_thread_body(prepared) -> EmlisThreadBodyOutcomeV1:
     plan = build_updated_grounded_plan(prepared)
     projection = project_thread_meaning(prepared, plan)
-    resolver = prepared.thread.resolver()
+    from .emlis_semantic_admission import snapshot_resolver
+    resolver = snapshot_resolver(prepared)
     selected = projection.selected_reception
     sentence_plan = surface_owner.build_grounded_sentence_plan(plan, resolver, recovery_stage="full")
     clauses = tuple(row.reception_clause_plans for row in sentence_plan.lines if row.binding.line_role == "human_follow")
@@ -261,10 +301,12 @@ def realize_emlis_thread_body(prepared) -> EmlisThreadBodyOutcomeV1:
     checkpoint = prepared.checkpoint
     status = EngineStatus.LIMITED if (projection.premeaning.material_unknown_refs
         or plan.input_profile.material_quality in {"limited_grounding", "labels_only_limited"}) else EngineStatus.GENERATED
+    snapshot_meaning_trace, snapshot_reception_trace = _snapshot_binding_traces(
+        plan, projection, resolver, observation, reception_text)
     artifact = EmlisThreadBodyArtifactV1(identity("emlis-artifact", checkpoint.checkpoint_id, surface.text),
         observation, reception_text, checkpoint.source_prefix_ref, checkpoint.checkpoint_id,
-        resolver.qualified_refs, projection.meaning_plan.meaning_visible_causal_trace_rows,
-        projection.meaning_plan.reception_visible_causal_trace_rows, status)
+        resolver.qualified_refs, (*projection.meaning_plan.meaning_visible_causal_trace_rows, *snapshot_meaning_trace),
+        (*projection.meaning_plan.reception_visible_causal_trace_rows, *snapshot_reception_trace), status)
     if prepared.thread.control.admitted_history:
         from .emlis_thread_history import history_line_plan, derive_interpretive_frames
         from emlis_ai_grounded_observation_gate import evaluate_emlis_history_line_inverse

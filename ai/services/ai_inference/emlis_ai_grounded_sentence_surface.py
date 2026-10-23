@@ -3857,6 +3857,14 @@ def _render_relation(
         if relation_id not in relation_index:
             continue
         relation = relation_index[relation_id]
+        from emlis_ai_grounded_observation_plan import source_snapshot_v2_group
+        snapshot_group = source_snapshot_v2_group(tuple(nucleus_index.values()), tuple(relation_index.values()), resolver,
+            nucleus_ids=(relation.from_nucleus_id, relation.to_nucleus_id)) if typed_semantic_duties else None
+        if snapshot_group:
+            kind, ids, lexical = snapshot_group
+            sentences.append(lexical[0] + ("、" if kind == "written_te" else "一方で、") + lexical[1]
+                + ("のですね。" if kind == "written_te" else "なのですね。"))
+            continue
         if typed_semantic_duties:
             left = _final_stage1_typed_relation_endpoint(
                 relation.from_nucleus_id,
@@ -4450,6 +4458,15 @@ def _render_final_stage1_limited_scope(
     resolver: EvidenceSpanResolver,
 ) -> str:
     """Keep typed final meaning visible without replaying the whole memo."""
+
+    from emlis_ai_grounded_observation_plan import source_snapshot_v2_group
+    group = source_snapshot_v2_group(tuple(nucleus_index.values()), tuple(relation_index.values()), resolver,
+        nucleus_ids=binding.nucleus_ids)
+    if group:
+        kind, ids, lexical = group
+        if kind == "written_te":
+            return lexical[0] + "、" + lexical[1] + "のですね。"
+        return lexical[0] + "一方で、" + lexical[1] + "なのですね。"
 
     if binding.claim_scope == "limited_grounding_no_event_completion":
         cognition = _source_bound_current_cognition(binding, nucleus_index, resolver)

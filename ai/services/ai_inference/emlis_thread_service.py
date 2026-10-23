@@ -76,8 +76,8 @@ def _request(snapshot, *, checkpoint_ref=None, include_context=True):
     original["created_at"] = parse_iso_utc(original["created_at"]).isoformat()
     semantic_profile = t["data"].get("semantic_profile")
     if semantic_profile is not None:
-        from cocolon_meaning_experience_engine.emlis_semantic_admission import PROFILE
-        if semantic_profile != PROFILE or not include_context or t["data"].get("execution_mode") != ExecutionMode.OFFLINE_CANDIDATE.value:
+        from cocolon_meaning_experience_engine.emlis_semantic_admission import PROFILE, PROFILE_V2
+        if semantic_profile not in {PROFILE, PROFILE_V2} or not include_context or t["data"].get("execution_mode") != ExecutionMode.OFFLINE_CANDIDATE.value:
             raise ValueError("semantic_profile_or_history_not_supported")
     req = GenerationRequest("emlis-" + t["id"], build_emlis_current_input_bundle(original), original["id"],
                             execution_mode=ExecutionMode.OFFLINE_CANDIDATE.value if semantic_profile else APPLICATION_EXECUTION_MODE)
@@ -234,8 +234,8 @@ class EmlisThreadService:
         if runtime_profile not in {RUNTIME_PROFILE, Q3_PROFILE}:
             raise ValueError("unsupported_thread_profile")
         if semantic_profile is not None or offline_candidate_source is not None:
-            from cocolon_meaning_experience_engine.emlis_semantic_admission import PROFILE
-            if semantic_profile != PROFILE or not callable(offline_candidate_source) or enforce_application_policy:
+            from cocolon_meaning_experience_engine.emlis_semantic_admission import PROFILE, PROFILE_V2
+            if semantic_profile not in {PROFILE, PROFILE_V2} or not callable(offline_candidate_source) or enforce_application_policy:
                 raise ValueError("semantic_offline_configuration_required")
         self.semantic_profile = semantic_profile
         self.offline_candidate_source = offline_candidate_source
@@ -528,8 +528,8 @@ class EmlisThreadService:
             semantic = t["data"].get("semantic_profile")
             if semantic:
                 from cocolon_meaning_experience_engine.emlis_semantic_admission import (
-                    PROFILE, CHECKPOINT_SCHEMA, SemanticInput, SemanticNotAdopted)
-                if semantic != PROFILE or t["data"].get("execution_mode") != ExecutionMode.OFFLINE_CANDIDATE.value:
+                    PROFILE, PROFILE_V2, CHECKPOINT_SCHEMA, CHECKPOINT_SCHEMA_V3, SemanticInput, SemanticNotAdopted)
+                if semantic not in {PROFILE, PROFILE_V2} or t["data"].get("execution_mode") != ExecutionMode.OFFLINE_CANDIDATE.value:
                     raise ValueError("semantic_profile_invalid")
             checkpoint = _find(snapshot, t.get("current_meaning_event_id"))
             if t.get("evaluated_prefix_ref") != t["source_prefix_ref"]:
@@ -539,7 +539,7 @@ class EmlisThreadService:
                     if evaluation:
                         return await self._finish(user_id, snapshot,
                             body_state="ANSWER_UNREFLECTED" if t.get("latest_answer_event_id") else "UNAVAILABLE", state="COMPLETED")
-                    semantic_input = SemanticInput("FRESH_CANDIDATE", candidate, prior_snapshot_json=prior)
+                    semantic_input = SemanticInput("FRESH_CANDIDATE", candidate, prior_snapshot_json=prior, semantic_profile=semantic)
                     try:
                         cp = await asyncio.to_thread(self.engine.prepare_emlis_update, _request(snapshot), semantic_input=semantic_input)
                     except SemanticNotAdopted as exc:
@@ -559,12 +559,12 @@ class EmlisThreadService:
                 t = snapshot["thread"]
                 checkpoint = _find(snapshot, t["current_meaning_event_id"])
             cp = checkpoint["payload"]
-            if cp["semantic_schema_version"] != (CHECKPOINT_SCHEMA if semantic else SEMANTIC_SCHEMA) or cp["source_prefix_ref"] != t["source_prefix_ref"]:
+            if cp["semantic_schema_version"] != (CHECKPOINT_SCHEMA_V3 if semantic and semantic == PROFILE_V2 else CHECKPOINT_SCHEMA if semantic else SEMANTIC_SCHEMA) or cp["source_prefix_ref"] != t["source_prefix_ref"]:
                 raise ValueError("checkpoint_contract_changed")
             if semantic:
                 if cp.get("semantic_profile") != semantic or not cp.get("semantic_snapshot"):
                     raise ValueError("semantic_saved_snapshot_required")
-                semantic_input = SemanticInput("RESUME_ADOPTED", snapshot_json=cp["semantic_snapshot"])
+                semantic_input = SemanticInput("RESUME_ADOPTED", snapshot_json=cp["semantic_snapshot"], semantic_profile=semantic)
                 restored = await asyncio.to_thread(self.engine.prepare_emlis_update,
                     _request(snapshot, checkpoint_ref=cp["checkpoint_id"]), semantic_input=semantic_input)
                 if _json(restored) != cp:

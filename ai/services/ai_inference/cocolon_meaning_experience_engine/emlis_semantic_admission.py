@@ -14,7 +14,8 @@ import emlis_ai_grounded_observation_plan as gp
 from emlis_ai_evidence_ledger_service import EvidenceLedgerValidationReport
 from emlis_ai_safety_triage import classify_emlis_safety_triage_text, TRIAGE_SAFE_OBSERVATION
 
-from .contracts import ExecutionMode
+from .contracts import (ExecutionMode, SnapshotSourceSliceBindingV2, SnapshotCaseArgumentBindingV2,
+    SnapshotPersonStatedUnknownBindingV2, SnapshotWrittenLinkBindingV2)
 from .emlis_answer_update import PreparedEmlisMeaning, _base_ref
 from .emlis_thread_contracts import (EmlisMeaningCheckpointV1, AnswerMeaningUpdateV1,
     EmlisAnswerUpdateItemV1, AnswerTemporalBindingV1, EmlisQuestionControlV1,
@@ -27,6 +28,9 @@ SCHEMA = "cocolon.cmee.emlis_semantic_snapshot.v1"
 CHECKPOINT_SCHEMA = "cocolon.cmee.emlis_answer_meaning.v2"
 CANDIDATE_SCHEMA = "cocolon.cmee.semantic_mapping_proposal.v1"
 CURRENT_ADAPTER_VERSION = "2"
+PROFILE_V2 = "emlis_candidate_snapshot.v2"
+SCHEMA_V2 = "cocolon.cmee.emlis_semantic_snapshot.v2"
+CHECKPOINT_SCHEMA_V3 = "cocolon.cmee.emlis_answer_meaning.v3"
 _CLAIM_KEYS = {"claim_id", "kind", "text", "subject", "predicate", "polarity",
                "modality", "about_time", "qualifiers", "evidence_indexes"}
 _PUNCT = re.compile(r"[\s。、，,.！？!?「」『』]+")
@@ -43,6 +47,7 @@ class SemanticInput:
     receipt: CandidateReceipt | None = None
     snapshot_json: str | None = None
     prior_snapshot_json: str | None = None
+    semantic_profile: str = PROFILE
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -91,6 +96,8 @@ def _semantic_ref(payload):
     semantic = {k: payload[k] for k in ("schema_version", "semantic_profile", "admission_version",
         "adapter_version", "request_ref", "source_prefix_ref", "source_bindings", "packet", "prior_ref",
         "answer_count", "question_control", "claim_mapping")}
+    if payload["semantic_profile"] == PROFILE_V2:
+        semantic["native_bindings"] = payload["native_bindings"]
     return "semantic-" + hashlib.sha256(_json(semantic).encode()).hexdigest()
 
 
@@ -242,7 +249,11 @@ def _validate_packet(packet, material, thread):
     return _locate(thread, material, ev)
 
 
-def _nuclei(packet, material, thread, *, adapter_version):
+def _nuclei(packet, material, thread, *, adapter_version, semantic_profile=PROFILE):
+    if semantic_profile == PROFILE_V2:
+        if adapter_version != "1":
+            _fail("REJECT", "semantic_adapter_version_unsupported")
+        return _nuclei_v2(packet, material, thread)[:3]
     if adapter_version not in {"1", "2"}:
         _fail("REJECT", "semantic_adapter_version_unsupported")
     c, ev = packet["candidate"], packet["evidence"]
@@ -323,8 +334,235 @@ def _nuclei(packet, material, thread, *, adapter_version):
     return tuple(rows), tuple(relations), mapping
 
 
-def _plan(packet, material, thread, *, adapter_version, extra_relations=(), focus=()):
-    nuclei, relations, mapping = _nuclei(packet, material, thread, adapter_version=adapter_version)
+def _v2_parts(packet):
+    _keys(packet, {"candidate", "evidence"})
+    c = packet["candidate"]
+    _keys(c, {"schema_version", "core", "claims", "relations", "unknowns", "conflicts", "updates"})
+    if c["schema_version"] != CANDIDATE_SCHEMA or c["core"] != "emlis" or c["conflicts"]:
+        _fail("UNSUPPORTED", "semantic_v2_candidate_scope_unsupported")
+    if any(type(c[k]) is not list for k in ("claims", "relations", "unknowns", "conflicts", "updates")):
+        _fail("REJECT", "semantic_collection_invalid")
+    if not 4 <= len(c["claims"]) <= 16:
+        _fail("UNSUPPORTED", "semantic_v2_claim_count_unsupported")
+    ids = [x["claim_id"] for x in c["claims"]]
+    if len(set(ids)) != len(ids) or any(type(x) is not str or not re.fullmatch(r"[A-Za-z0-9_.-]{1,64}", x) for x in ids):
+        _fail("REJECT", "semantic_claim_id_invalid")
+    index = {x["claim_id"]: x for x in c["claims"]}
+    unknowns = c["unknowns"]
+    if len(unknowns) != 1:
+        _fail("UNSUPPORTED", "semantic_v2_unknown_scope_unsupported")
+    u = unknowns[0]
+    _keys(u, {"unknown_id", "target_claim_refs", "dimension", "description", "origin", "resolution_state", "evidence_indexes"})
+    if (u["origin"] != "PERSON_STATED" or u["dimension"] != "JOY_ASPECT"
+        or u["resolution_state"] != "SOURCE_STATEMENT_RETAINED" or len(u["target_claim_refs"]) != 1
+        or u["target_claim_refs"][0] not in index):
+        _fail("UNSUPPORTED", "semantic_v2_unknown_scope_unsupported")
+    joy = index[u["target_claim_refs"][0]]
+    statements = [x for x in c["claims"] if x["kind"] == "EXPLICIT_UNKNOWN"]
+    actions = [x for x in c["claims"] if x["kind"] == "ACTION"]
+    if len(statements) != 1 or len(actions) != 2:
+        _fail("UNSUPPORTED", "semantic_v2_group_incomplete")
+    statement = statements[0]
+    delegates = [x for x in actions if x["predicate"]["surface"] == "任せて"]
+    listeners = [x for x in actions if x["predicate"]["surface"] == "聞いた"]
+    if len(delegates) != 1 or len(listeners) != 1:
+        _fail("UNSUPPORTED", "semantic_v2_action_scope_unsupported")
+    delegate, listener = delegates[0], listeners[0]
+    if (joy["kind"] != "STATE" or joy["text"] not in {"うれしかった", "嬉しかった"}
+        or statement["text"] != "どこが" + joy["text"] + "かはまだ曖昧"
+        or statement["predicate"] != {"surface":"曖昧", "arguments":[]}
+        or statement["evidence_indexes"] != u["evidence_indexes"]):
+        _fail("HOLD", "semantic_v2_unknown_target_not_bound")
+    # This finite grammar admits written case, not inferred recipient/cause.
+    if delegate["text"] != "打合せで後輩に説明を任せて" or listener["text"] != "最後まで聞いた。":
+        _fail("UNSUPPORTED", "semantic_v2_action_grammar_unsupported")
+    special = (joy, statement, delegate, listener)
+    for x in special:
+        _keys(x, _CLAIM_KEYS)
+        _keys(x["predicate"], {"surface", "arguments"})
+        refs = _refs(x["evidence_indexes"], len(packet["evidence"]))
+        if len(refs) != 1 or packet["evidence"][refs[0]]["quote"] != x["text"]:
+            _fail("REJECT", "semantic_v2_claim_anchor_invalid")
+        if (x["subject"] != {"binding":"OMITTED", "source_entity":None, "evidence_indexes":[]}
+            or x["polarity"] != {"value":"AFFIRMED", "scope_refs":[x["claim_id"]], "evidence_indexes":refs}
+            or x["modality"] != {"value":"ASSERTED_AS_WRITTEN", "evidence_indexes":refs}
+            or x["qualifiers"]
+            or x["about_time"] != {"kind":"WRITTEN_STILL_UNKNOWN" if x is statement else "WRITTEN_PAST_UNRESOLVED_OCCASION",
+                "expression":None, "anchor_source_id":None, "evidence_indexes":refs}):
+            _fail("HOLD", "semantic_v2_written_scope_unbound")
+    wanted = ((delegate, (("WRITTEN_で", "打合せ"), ("WRITTEN_に", "後輩"), ("WRITTEN_を", "説明"))),
+              (listener, (("WRITTEN_まで", "最後"),)))
+    for x, pairs in wanted:
+        args = x["predicate"]["arguments"]
+        if len(args) != len(pairs):
+            _fail("UNSUPPORTED", "semantic_v2_case_scope_unsupported")
+        for a, (role, text) in zip(args, pairs):
+            _keys(a, {"role", "text", "claim_ref", "evidence_indexes"})
+            if (a["role"], a["text"], a["claim_ref"]) != (role, text, None):
+                _fail("HOLD", "semantic_v2_case_not_bound")
+            refs = _refs(a["evidence_indexes"], len(packet["evidence"]))
+            e = packet["evidence"][x["evidence_indexes"][0]]
+            if len(refs) != 1:
+                _fail("UNSUPPORTED", "semantic_v2_case_not_atomic")
+            part = packet["evidence"][refs[0]]
+            if (part["quote"] != text + role.removeprefix("WRITTEN_")
+                or part["source_id"] != e["source_id"] or part["field_path"] != e["field_path"]
+                or not e["start"] <= part["start"] < part["end"] <= e["end"]):
+                _fail("REJECT", "semantic_v2_case_evidence_invalid")
+    special_ids = {x["claim_id"] for x in special}
+    links = [r for r in c["relations"] if {r["from_claim_id"], r["to_claim_id"]} & special_ids]
+    expected = {(delegate["claim_id"], listener["claim_id"], "SOURCE_WRITTEN_TE_LINK"),
+                (joy["claim_id"], statement["claim_id"], "SOURCE_WRITTEN_CONCESSION")}
+    if len(links) != 2 or {(r["from_claim_id"], r["to_claim_id"], r["type"]) for r in links} != expected:
+        _fail("UNSUPPORTED", "semantic_v2_written_links_incomplete")
+    if len({r["relation_id"] for r in c["relations"]}) != len(c["relations"]):
+        _fail("REJECT", "semantic_relation_id_invalid")
+    for r in links:
+        _keys(r, {"relation_id", "type", "from_claim_id", "to_claim_id", "polarity", "scope_refs", "qualifiers", "evidence_indexes"})
+        refs = _refs(r["evidence_indexes"], len(packet["evidence"]))
+        if (r["relation_id"] in ids or r["polarity"] != "AFFIRMED" or r["scope_refs"] != [r["relation_id"]]
+            or r["qualifiers"] or len(refs) != 1):
+            _fail("REJECT", "semantic_v2_relation_scope_invalid")
+        e = packet["evidence"][refs[0]]
+        a, b = (packet["evidence"][index[r[k]]["evidence_indexes"][0]] for k in ("from_claim_id", "to_claim_id"))
+        te = r["type"] == "SOURCE_WRITTEN_TE_LINK"
+        if (a["source_id"] != b["source_id"] or e["source_id"] != a["source_id"]
+            or a["field_path"] != b["field_path"] or e["field_path"] != a["field_path"]
+            or e["start"] != (a["end"] - 3 if te else a["start"]) or e["end"] != b["end"]
+            or b["start"] != a["end"] + (1 if te else 3)
+            or e["quote"] != ("任せて、" + b["quote"] if te else a["quote"] + "けど、" + b["quote"])):
+            _fail("REJECT", "semantic_v2_relation_evidence_invalid")
+    return special, tuple(links)
+
+
+def _compact_packet(packet, claims, relations):
+    """Reuse v1 validation only for its exact retained finite language."""
+    result = json.loads(_json(packet))
+    result["candidate"].update(claims=list(claims), relations=list(relations), unknowns=[])
+    used = set()
+    def collect(value):
+        if type(value) is dict:
+            for k, v in value.items():
+                if k == "evidence_indexes": used.update(v)
+                else: collect(v)
+        elif type(value) is list:
+            for v in value: collect(v)
+    collect(result["candidate"])
+    order = sorted(used)
+    positions = {i: j for j, i in enumerate(order)}
+    def remap(value):
+        if type(value) is dict:
+            return {k: [positions[i] for i in v] if k == "evidence_indexes" else remap(v) for k, v in value.items()}
+        if type(value) is list: return [remap(v) for v in value]
+        return value
+    result["candidate"] = remap(result["candidate"])
+    result["evidence"] = [packet["evidence"][i] for i in order]
+    return result
+
+
+def _locate_v2(thread, material, evidence):
+    # Only the single terminal full stop may lie outside a native lexical span.
+    fields = {s["source_id"]: s["text_fields"] for s in material.payload()["sources"]}
+    lexical = []
+    for e in evidence:
+        value = dict(e)
+        text = fields[e["source_id"]][e["field_path"]]
+        if e["quote"].endswith("。") and text[e["end"] - 1:e["end"]] == "。":
+            value.update(end=e["end"] - 1, quote=e["quote"][:-1])
+        lexical.append(value)
+    return _locate(thread, material, lexical)
+
+
+def _nuclei_v2(packet, material, thread):
+    special, links = _v2_parts(packet)
+    joy, statement, delegate, listener = special
+    c, ev = packet["candidate"], packet["evidence"]
+    special_ids = {x["claim_id"] for x in special}
+    retained = _compact_packet(packet, [x for x in c["claims"] if x["claim_id"] not in special_ids - {joy["claim_id"]}],
+        [r for r in c["relations"] if r not in links])
+    rows, relations, mapping = _nuclei(retained, material, thread, adapter_version="2")
+    rows, relations = list(rows), list(relations)
+    locations = _locate_v2(thread, material, ev)
+    for x in special:
+        i = x["evidence_indexes"][0]
+        q, start, end = locations[i]
+        source = next(s for s in material.payload()["sources"] if s["source_id"] == ev[i]["source_id"])
+        if source["role"] != "ORIGINAL_INPUT" or ev[i]["field_path"] not in {"memo", "memo_action"}:
+            _fail("UNSUPPORTED", "semantic_v2_original_source_required")
+        nid = identity("semantic-nucleus", q.source_envelope_id, x["claim_id"], ev[i])
+        mapping[x["claim_id"]] = nid
+        if x is joy:
+            continue
+        unknown = x is statement
+        kind, time = ("uncertainty", "present") if unknown else ("action", "past")
+        attrs = ("semantic_role:generic_relation_fragment", f"source_fragment_scalar_range:{start}:{end}",
+            "source_fragment_scalar_source:normalized_raw_text", "time_scope:" + time,
+            "semantic_role:limiting_unknown" if unknown else "operator:performed_action",
+            "source_snapshot_v2:" + ("joy_aspect_statement" if unknown else "written_te_action"))
+        frame = gp.GroundedSemanticFrame("current_user", kind, "neutral", "uncertain" if unknown else "fact",
+            time_scope=time, attribute_codes=attrs)
+        rows.append(gp.GroundedSemanticNucleus(nid, kind, (q.thread_span_id,), (ev[i]["field_path"],), (q.thread_span_id,),
+            frame, "explicit", 1.0, 1.0, "required", "explicit_current_input",
+            ("no_unstated_cause", "no_third_party_intention", "no_stable_personality")))
+    # No overlapping primary claims, even when their native ledger span is shared.
+    anchors = [ev[x["evidence_indexes"][0]] for x in c["claims"]]
+    for i, a in enumerate(anchors):
+        if any(a["source_id"] == b["source_id"] and a["field_path"] == b["field_path"]
+            and a["start"] < b["end"] and b["start"] < a["end"] for b in anchors[:i]):
+            _fail("REJECT", "semantic_claim_anchor_overlap")
+    for r in links:
+        q = locations[r["evidence_indexes"][0]][0]
+        if any(locations[x["evidence_indexes"][0]][0].thread_span_id != q.thread_span_id
+               for x in special if x["claim_id"] in {r["from_claim_id"], r["to_claim_id"]}):
+            _fail("UNSUPPORTED", "semantic_v2_relation_crosses_native_span")
+        relations.append(gp.GroundedSemanticRelation(identity("semantic-relation", q.source_envelope_id, r),
+            "source_written_te_link" if r["type"] == "SOURCE_WRITTEN_TE_LINK" else "contrast",
+            mapping[r["from_claim_id"]], mapping[r["to_claim_id"]], (q.thread_span_id,), "user_stated_relation", 1.0, "required"))
+    u = c["unknowns"][0]
+    sid = locations[statement["evidence_indexes"][0]][0].thread_span_id
+    boundaries = (gp.GroundedUnknownBoundary(identity("semantic-unknown", u), "source_explicit_epistemic_limit",
+        (mapping[statement["claim_id"]],), (sid,), "hedge_only"),)
+    return tuple(rows), tuple(relations), mapping, boundaries
+
+
+def native_bindings_v2(packet, material, thread):
+    special, links = _v2_parts(packet)
+    _, _, mapping, _ = _nuclei_v2(packet, material, thread)
+    locations = _locate_v2(thread, material, packet["evidence"])
+    slices, args = [], []
+    def bind(x, i):
+        e = packet["evidence"][i]
+        q, start, end = locations[i]
+        ref = identity("semantic-slice", x["claim_id"], e)
+        row = SnapshotSourceSliceBindingV2(ref, x["claim_id"], mapping[x["claim_id"]], e["source_id"],
+            next(s["source_version"] for s in material.payload()["sources"] if s["source_id"] == e["source_id"]), q.thread_span_id, e["field_path"], e["start"], e["end"], start, end,
+            e["quote"], x["subject"]["binding"], x["subject"]["source_entity"])
+        if row not in slices: slices.append(row)
+        return ref
+    for x in special:
+        bind(x, x["evidence_indexes"][0])
+        for a in x["predicate"]["arguments"]:
+            refs = tuple(bind(x, i) for i in a["evidence_indexes"])
+            args.append(SnapshotCaseArgumentBindingV2(identity("semantic-case", x["claim_id"], a),
+                mapping[x["claim_id"]], a["role"], a["text"], refs))
+    written = []
+    index = {x["claim_id"]: x for x in special}
+    for r in links:
+        refs = tuple(bind(index[r["from_claim_id"]], i) for i in r["evidence_indexes"])
+        q = locations[r["evidence_indexes"][0]][0]
+        written.append(SnapshotWrittenLinkBindingV2(identity("semantic-relation", q.source_envelope_id, r), r["type"], mapping[r["from_claim_id"]],
+            mapping[r["to_claim_id"]], refs, tuple(r["scope_refs"]), r["polarity"]))
+    u = packet["candidate"]["unknowns"][0]
+    unknown = SnapshotPersonStatedUnknownBindingV2(u["unknown_id"], mapping[special[1]["claim_id"]],
+        (mapping[special[0]["claim_id"]],), u["origin"], u["dimension"], u["resolution_state"],
+        "AFFIRMED", "ASSERTED_AS_WRITTEN", "present", "past", tuple(bind(special[1], i) for i in u["evidence_indexes"]))
+    return json.loads(_json(dict(source_slices=[asdict(x) for x in slices], case_arguments=[asdict(x) for x in args],
+        person_stated_unknowns=[asdict(unknown)], written_links=[asdict(x) for x in written])))
+
+
+def _plan(packet, material, thread, *, adapter_version, extra_relations=(), focus=(), semantic_profile=PROFILE):
+    nuclei, relations, mapping = _nuclei(packet, material, thread, adapter_version=adapter_version, semantic_profile=semantic_profile)
+    unknowns = _nuclei_v2(packet, material, thread)[3] if semantic_profile == PROFILE_V2 else ()
     relations += tuple(extra_relations)
     text = "\n".join(str(s["text_fields"].get(f) or "") for s in material.payload()["sources"]
                       for f in s["text_fields"])
@@ -340,10 +578,10 @@ def _plan(packet, material, thread, *, adapter_version, extra_relations=(), focu
     result = gp.GroundedObservationPlan(gp.GROUND_OBSERVATION_PLAN_SCHEMA_VERSION,
         gp.GROUND_OBSERVATION_PLAN_ADAPTER_VERSION, gp.GROUND_OBSERVATION_PLAN_GENERATION_PATH,
         gp.GroundedInputProfile("text_present", "grounded", complexity, len(nuclei), len(relations), safety.safety_triage_kind),
-        nuclei, relations, (), response, coverage, surface, safety_policy,
+        nuclei, relations, unknowns, response, coverage, surface, safety_policy,
         EvidenceLedgerValidationReport(True, canonical_span_ids=resolver.span_ids),
-        gp._all_plan_evidence_ids(nuclei, relations, ()),
-        (gp.FINAL_STAGE1_GROUNDED_PROJECTION_VERSION, PROFILE))
+        gp._all_plan_evidence_ids(nuclei, relations, unknowns),
+        (gp.FINAL_STAGE1_GROUNDED_PROJECTION_VERSION, semantic_profile))
     if gp.validate_grounded_observation_plan(result, resolver):
         _fail("UNSUPPORTED", "semantic_native_plan_not_validated")
     return result, mapping
@@ -365,12 +603,13 @@ def _restore(request, text):
         p = json.loads(text)
         _keys(p, {"schema_version", "semantic_profile", "admission_version", "adapter_version",
             "request_ref", "source_prefix_ref", "source_bindings", "packet", "prior_ref", "prior_snapshot",
-            "receipt", "answer_count", "question_control", "snapshot_ref", "claim_mapping"})
-        if _json(p) != text or p["schema_version"] != SCHEMA or p["semantic_profile"] != PROFILE or p["snapshot_ref"] != _semantic_ref(p):
+            "receipt", "answer_count", "question_control", "snapshot_ref", "claim_mapping"}
+            | ({"native_bindings"} if p.get("semantic_profile") == PROFILE_V2 else set()))
+        if _json(p) != text or (p["schema_version"], p["semantic_profile"]) not in {(SCHEMA, PROFILE), (SCHEMA_V2, PROFILE_V2)} or p["snapshot_ref"] != _semantic_ref(p):
             raise ValueError()
         thread = admit_emlis_thread(request)
         material = prepare_emlis(request)
-        if (p["admission_version"] != "1" or p["adapter_version"] not in {"1", "2"}
+        if (p["admission_version"] != "1" or p["adapter_version"] not in ({"1"} if p["semantic_profile"] == PROFILE_V2 else {"1", "2"})
             or p["request_ref"] != material.request_id or type(p["answer_count"]) is not int
             or p["answer_count"] != len(thread.answers)
             or p["question_control"] != json.loads(_json(asdict(thread.control.question_control_context)))
@@ -403,16 +642,22 @@ def _prepare_snapshot_meaning(request, semantic_input):
     """Adopt once or replay one immutable saved decision; never call a model."""
     if type(semantic_input) is not SemanticInput or request.execution_mode != ExecutionMode.OFFLINE_CANDIDATE.value:
         _fail("REJECT", "semantic_offline_input_required")
+    if semantic_input.semantic_profile not in {PROFILE, PROFILE_V2}:
+        _fail("REJECT", "semantic_profile_invalid")
     thread, material = admit_emlis_thread(request), prepare_emlis(request)
     if semantic_input.mode == "RESUME_ADOPTED":
         if semantic_input.receipt is not None or semantic_input.prior_snapshot_json is not None or not semantic_input.snapshot_json:
             _fail("REJECT", "semantic_resume_input_invalid")
         thread, material, p = _restore(request, semantic_input.snapshot_json)
+        if p["semantic_profile"] != semantic_input.semantic_profile:
+            _fail("REJECT", "semantic_profile_mismatch")
     elif semantic_input.mode == "FRESH_CANDIDATE":
         if semantic_input.snapshot_json is not None or request.emlis_thread.prepared_meaning_checkpoint_ref is not None:
             _fail("REJECT", "semantic_same_prefix_readoption_forbidden")
         packet = _receipt(material, semantic_input.receipt)
-        p = dict(schema_version=SCHEMA, semantic_profile=PROFILE, admission_version="1", adapter_version=CURRENT_ADAPTER_VERSION,
+        p = dict(schema_version=SCHEMA_V2 if semantic_input.semantic_profile == PROFILE_V2 else SCHEMA,
+            semantic_profile=semantic_input.semantic_profile, admission_version="1",
+            adapter_version="1" if semantic_input.semantic_profile == PROFILE_V2 else CURRENT_ADAPTER_VERSION,
             request_ref=material.request_id, source_prefix_ref=thread.source_prefix_ref,
             source_bindings=_source_binding(material), packet=packet, prior_ref=None,
             prior_snapshot=None, receipt=asdict(semantic_input.receipt), answer_count=len(thread.answers),
@@ -421,10 +666,14 @@ def _prepare_snapshot_meaning(request, semantic_input):
             prior = json.loads(semantic_input.prior_snapshot_json)
             if not thread.answers or prior["answer_count"] != len(thread.answers) - 1 or prior["snapshot_ref"] != _semantic_ref(prior):
                 _fail("REJECT", "semantic_prior_snapshot_invalid")
+            if prior["semantic_profile"] != p["semantic_profile"]:
+                _fail("REJECT", "semantic_profile_lineage_mismatch")
             p.update(prior_ref=prior["snapshot_ref"], prior_snapshot=prior)
         elif thread.answers:
             _fail("REJECT", "semantic_prior_snapshot_required")
-        p["claim_mapping"] = _nuclei(packet, material, thread, adapter_version=p["adapter_version"])[2]
+        p["claim_mapping"] = _nuclei(packet, material, thread, adapter_version=p["adapter_version"], semantic_profile=p["semantic_profile"])[2]
+        if p["semantic_profile"] == PROFILE_V2:
+            p["native_bindings"] = native_bindings_v2(packet, material, thread)
         p["snapshot_ref"] = _semantic_ref(p)
     else:
         _fail("REJECT", "semantic_input_mode_invalid")
@@ -439,8 +688,12 @@ def _prepare_snapshot_meaning(request, semantic_input):
 
 def _prepare_payload(thread, material, p, request):
     prior = p["prior_snapshot"]
+    if prior and prior["semantic_profile"] != p["semantic_profile"]:
+        _fail("REJECT", "semantic_profile_lineage_mismatch")
     packet = p["packet"]
     updates = packet["candidate"]["updates"]
+    if p["semantic_profile"] == PROFILE_V2 and p["native_bindings"] != native_bindings_v2(packet, material, thread):
+        _fail("REJECT", "semantic_native_binding_mismatch")
     if bool(prior) != bool(thread.answers):
         _fail("REJECT", "semantic_snapshot_lineage_invalid")
     original_p = p
@@ -453,8 +706,8 @@ def _prepare_payload(thread, material, p, request):
     if original_p["source_bindings"] != _source_binding(original_material):
         _fail("REJECT", "semantic_original_snapshot_binding_invalid")
     original_plan, _ = _plan(original_p["packet"], original_material, original_thread,
-        adapter_version=original_p["adapter_version"])
-    current_plan, mapping = _plan(packet, material, thread, adapter_version=p["adapter_version"])
+        adapter_version=original_p["adapter_version"], semantic_profile=original_p["semantic_profile"])
+    current_plan, mapping = _plan(packet, material, thread, adapter_version=p["adapter_version"], semantic_profile=p["semantic_profile"])
     if p["claim_mapping"] != mapping:
         _fail("REJECT", "semantic_claim_mapping_mismatch")
     accepted, inactive, update_items, extras = (), (), [], []
@@ -471,7 +724,7 @@ def _prepare_payload(thread, material, p, request):
         before = {c["claim_id"]: c for c in prior["packet"]["candidate"]["claims"]}
         now = {c["claim_id"]: c for c in packet["candidate"]["claims"]}
         prior_mapping = _nuclei(prior["packet"], prior_material, prior_thread,
-            adapter_version=prior["adapter_version"])[2]
+            adapter_version=prior["adapter_version"], semantic_profile=prior["semantic_profile"])[2]
         prior_nodes = {n.nucleus_id: n for n in prior_plan.nuclei}
         removed, added, affected = set(), set(), []
         answer = thread.answers[-1]
@@ -482,6 +735,13 @@ def _prepare_payload(thread, material, p, request):
                 or not set(targets) <= before.keys() or not set(new) <= now.keys()
                 or set(new) & before.keys() or u["answer_source_id"] != answer.source.answer_id or u["prior_meaning_ref"] != prior["snapshot_ref"]):
                 _fail("REJECT", "semantic_update_binding_invalid")
+            if p["semantic_profile"] == PROFILE_V2:
+                protected = {s["claim_ref"] for s in prior["native_bindings"]["source_slices"]
+                    if s["nucleus_ref"] in {u["statement_nucleus_ref"] for u in prior["native_bindings"]["person_stated_unknowns"]}
+                    | {n for u in prior["native_bindings"]["person_stated_unknowns"] for n in u["target_nucleus_refs"]}
+                    | {a["owning_nucleus_ref"] for a in prior["native_bindings"]["case_arguments"]}}
+                if set(targets) & protected:
+                    _fail("HOLD", "semantic_v2_target_update_unsupported")
             target_ids = tuple(prior_mapping[c] for c in targets)
             if operation == "ADD" and not set(target_ids) <= set(actual.decision.affected_meaning_refs):
                 _fail("HOLD", "semantic_add_target_not_pending")
@@ -530,6 +790,13 @@ def _prepare_payload(thread, material, p, request):
         expected_rel = [r for r in old_rel.values() if not {r["from_claim_id"], r["to_claim_id"]} & removed]
         if packet["candidate"]["relations"] != expected_rel:
             _fail("REJECT", "semantic_unchanged_relation_modified")
+        if p["semantic_profile"] == PROFILE_V2:
+            if packet["candidate"]["unknowns"] != prior["packet"]["candidate"]["unknowns"]:
+                _fail("HOLD", "semantic_v2_unknown_update_unsupported")
+            before_bindings, now_bindings = prior["native_bindings"], p["native_bindings"]
+            for family in ("case_arguments", "person_stated_unknowns", "written_links"):
+                if before_bindings[family] != now_bindings[family]:
+                    _fail("HOLD", "semantic_v2_binding_update_unsupported")
         inactive = tuple(dict.fromkeys((*prior_prepared.checkpoint.inactive_claim_refs,
             *(prior_mapping[t] for t in removed), *(d for item in update_items for d in item.affected_dependency_refs))))
         active_ids = {n.nucleus_id for n in current_plan.nuclei}
@@ -538,7 +805,7 @@ def _prepare_payload(thread, material, p, request):
             and r.relation_id not in inactive] + extras
         accepted = tuple(n for n in current_plan.nuclei if n.nucleus_id not in {x.nucleus_id for x in original_plan.nuclei})
         current_plan, mapping = _plan(packet, material, thread, extra_relations=extras,
-            adapter_version=p["adapter_version"], focus=tuple(n.nucleus_id for n in accepted))
+            adapter_version=p["adapter_version"], semantic_profile=p["semantic_profile"], focus=tuple(n.nucleus_id for n in accepted))
     elif updates:
         _fail("REJECT", "semantic_initial_update_forbidden")
     _coverage(packet, material, thread, prior)
@@ -550,7 +817,9 @@ def _prepare_payload(thread, material, p, request):
     cp = SnapshotCheckpoint(identity("semantic-checkpoint", thread.source_prefix_ref, p["snapshot_ref"]),
         thread.source_prefix_ref, _base_ref(thread, prior_plan if prior else original_plan), update, "RESOLVED",
         tuple(dict.fromkeys((*(prior_prepared.checkpoint.accepted_update_refs if prior else ()),
-            *(x.update_ref for x in update_items)))), inactive, (), semantic_snapshot=_json(p), snapshot_ref=p["snapshot_ref"])
+            *(x.update_ref for x in update_items)))), inactive, (),
+        semantic_schema_version=CHECKPOINT_SCHEMA_V3 if p["semantic_profile"] == PROFILE_V2 else CHECKPOINT_SCHEMA,
+        semantic_profile=p["semantic_profile"], semantic_snapshot=_json(p), snapshot_ref=p["snapshot_ref"])
     if request.emlis_thread.prepared_meaning_checkpoint_ref not in {None, cp.checkpoint_id}:
         _fail("REJECT", "semantic_checkpoint_reference_mismatch")
     return SnapshotPreparedMeaning(thread, original_plan, accepted, cp, semantic_snapshot=_json(p), semantic_material_json=material.private_json)
@@ -617,12 +886,12 @@ def derive_snapshot_plan(prepared):
         _, prior_material, checked = _restore(prior_req, _json(prior))
         previous = _prepare_payload(prior_thread, prior_material, checked, prior_req)
         active_ids = {n.nucleus_id for n in _plan(p["packet"], material, prepared.thread,
-            adapter_version=p["adapter_version"])[0].nuclei}
+            adapter_version=p["adapter_version"], semantic_profile=p["semantic_profile"])[0].nuclei}
         extras = [r for r in derive_snapshot_plan(previous).relations if r.type == "evaluation_about_event"
             and r.from_nucleus_id in active_ids and r.to_nucleus_id in active_ids
             and r.relation_id not in prepared.checkpoint.inactive_claim_refs]
     if prepared.checkpoint.answer_update:
-        active = _plan(p["packet"], material, prepared.thread, adapter_version=p["adapter_version"])[0]
+        active = _plan(p["packet"], material, prepared.thread, adapter_version=p["adapter_version"], semantic_profile=p["semantic_profile"])[0]
         active_ids = {n.nucleus_id for n in active.nuclei}
         q = prepared.thread.control.question_control_context.pending_question
         focus = next((n for n in q.decision.affected_meaning_refs if n in active_ids), None)
@@ -633,5 +902,45 @@ def derive_snapshot_plan(prepared):
                     extras.append(gp.GroundedSemanticRelation(identity("semantic-about", p["snapshot_ref"], nid),
                         "evaluation_about_event", focus, nid, (sid,), "user_stated_relation", 1.0, "required"))
     return _plan(p["packet"], material, prepared.thread, extra_relations=extras,
-        adapter_version=p["adapter_version"], focus=tuple(n.nucleus_id for n in prepared.accepted_nuclei))[0]
+        adapter_version=p["adapter_version"], semantic_profile=p["semantic_profile"], focus=tuple(n.nucleus_id for n in prepared.accepted_nuclei))[0]
 
+
+
+from .emlis_thread_source import ThreadEvidenceSpanResolver
+
+
+class SnapshotEvidenceSpanResolverV2(ThreadEvidenceSpanResolver):
+    """Private typed source adapter for the same immutable adopted snapshot."""
+    def __init__(self, prepared, payload):
+        super().__init__(prepared.thread.original, prepared.thread.answers)
+        self.snapshot_ref = payload["snapshot_ref"]
+        self.checkpoint_ref = prepared.checkpoint.checkpoint_id
+        value = payload["native_bindings"]
+        def rows(cls, family, tuple_fields):
+            return tuple(cls(**{k: tuple(v) if k in tuple_fields else v for k,v in x.items()}) for x in value[family])
+        self.source_slices = rows(SnapshotSourceSliceBindingV2, "source_slices", ())
+        self.case_arguments = rows(SnapshotCaseArgumentBindingV2, "case_arguments", ("source_slice_refs",))
+        self.person_stated_unknowns = rows(SnapshotPersonStatedUnknownBindingV2, "person_stated_unknowns", ("target_nucleus_refs", "evidence_slice_refs"))
+        self.written_links = rows(SnapshotWrittenLinkBindingV2, "written_links", ("marker_slice_refs", "scope_refs"))
+        self.native_nucleus_ids = tuple(dict.fromkeys(x.nucleus_ref for x in self.source_slices))
+
+    def binding_rows(self, node_ids, edge_ids):
+        if not set(self.native_nucleus_ids) <= set(node_ids) or len(set(node_ids.values())) != len(node_ids):
+            _fail("REJECT", "semantic_v2_graph_binding_invalid")
+        return dict(snapshot_ref=self.snapshot_ref, checkpoint_ref=self.checkpoint_ref, source_slices=self.source_slices,
+            case_arguments=self.case_arguments, person_stated_unknowns=self.person_stated_unknowns,
+            written_links=self.written_links, nucleus_node_bindings=tuple(sorted(node_ids.items())),
+            relation_edge_bindings=tuple(sorted(edge_ids.items())))
+
+
+def snapshot_resolver(prepared):
+    if type(prepared) is not SnapshotPreparedMeaning:
+        return prepared.thread.resolver()
+    p = json.loads(prepared.semantic_snapshot)
+    if p["semantic_profile"] != PROFILE_V2:
+        return prepared.thread.resolver()
+    from .preparation import PreparedRequest
+    material = PreparedRequest("prep-" + hashlib.sha256(prepared.semantic_material_json.encode()).hexdigest(), prepared.semantic_material_json)
+    if (p["snapshot_ref"] != _semantic_ref(p) or p["native_bindings"] != native_bindings_v2(p["packet"], material, prepared.thread)):
+        _fail("REJECT", "semantic_v2_resolver_binding_invalid")
+    return SnapshotEvidenceSpanResolverV2(prepared, p)

@@ -234,6 +234,7 @@ _FINAL_RELATION_LABELS: Final[dict[str, str]] = {
     "temporal_before_after": "時間の前後",
     "shift_from_to": "前から後への変化",
     "contrast": "異なる向き",
+    "source_written_te_link": "原文のて連結",
     "coexistence": "同時にある状態",
     "user_stated_cause": "入力内で示された理由のつながり",
     "user_stated_result": "入力内で示された結果のつながり",
@@ -6723,6 +6724,10 @@ _SOURCE_GROUNDED_RELATION_FRAMES: Final[
         ("BEFORE", "AFTER"), ("から", "へ"), ("FROM", "TO"),
         "移り", "移っていく", "dynamic_shift", "の移り変わり",
     ),
+    "source_written_te_link": _SourceGroundedRelationFrameV1(
+        ("LEFT", "RIGHT"), ("と", "を"), (None, None),
+        "行い", "行った", "present_actual_output",
+    ),
     "uncertain_connection": _SourceGroundedRelationFrameV1(
         ("BEFORE", "AFTER"), ("から", "へ"), ("FROM", "TO"),
         "のつながりはまだ定まらず", "のつながりはまだ定まらない",
@@ -12925,7 +12930,18 @@ def _author_source_grounded_reception_clauses(
                 and preceding_change_context == (context_ids[0],
                     meaning_realization.semantic_fragments[meaning_realization.context_slots[0]])):
                 shared_context_slot = meaning_realization.context_slots[0]
-            target_core = _source_grounded_target_np(
+            from emlis_ai_grounded_observation_plan import source_snapshot_v2_group
+            snapshot_group = source_snapshot_v2_group(plan.nuclei, plan.relations, resolver,
+                nucleus_ids=(*move.target_nucleus_ids, *move.support_nucleus_ids))
+            if snapshot_group:
+                referent_text = "、".join(snapshot_group[2])
+            target_core = (_SourceGroundedClauseCoreV1(
+                "、".join(snapshot_group[2]), referent_text, tuple(range(len(meaning_realization.semantic_fragments))),
+                len(meaning_realization.relations), target_owner_slot,
+                *_source_grounded_temporal_aspect_realization(meaning_realization,
+                    meaning_realization.semantic_fragments[target_owner_slot], target_referent=referent_text),
+                "SELF_PERFORMED" if snapshot_group[0] == "written_te" else "STATE", ())
+                if snapshot_group else _source_grounded_target_np(
                 move,
                 meaning_realization,
                 referent_text=referent_text,
@@ -12953,7 +12969,7 @@ def _author_source_grounded_reception_clauses(
                     and nucleus_index[nid].source_fields == ("answer_text_private",)
                     for code in nucleus_index[nid].semantic_frame.attribute_codes
                     if code.startswith("thread_time:")), None),
-            )
+            ))
             if meaning_realization.reference_mode == "ANAPHORIC":
                 # Only the context actually emitted by the attributable
                 # relation above loses its second adjunct occurrence. A
@@ -13095,7 +13111,7 @@ def _author_source_grounded_reception_clauses(
                     and following[2] in {"answer_time", "prior_answer_time"}):
                     acknowledge_received = False
             from emlis_ai_grounded_observation_gate import _shared_target_preceding_appraisal
-            move_sentence = _source_grounded_reception_fragment(
+            move_sentence = ("" if snapshot_group else _source_grounded_reception_fragment(
                 move,
                 meaning_realization,
                 context_prefix=context_prefix,
@@ -13117,7 +13133,7 @@ def _author_source_grounded_reception_clauses(
                 received_record_prefixes=tuple(record_prefixes.get(nid, "") for nid in move.target_nucleus_ids),
                 received_record_quote_limit=(reception_plan.quote_policy.max_anchor_visible_chars
                     if reception_plan.quote_policy.max_anchor_count > 0 else 0),
-            )
+            ))
             survivor = _source_owned_relief_survivor_sentence(
                 move, plan, resolver, selected_decision, recovery_stage)
             if survivor is not None:
@@ -13187,6 +13203,12 @@ def _author_source_grounded_reception_clauses(
                 move, plan, resolver, selected_subjective_input, recovery_stage, preceding_observation)
             if relief_sentence is not None:
                 move_sentence = relief_sentence
+            if snapshot_group:
+                kind, ids, lexical = snapshot_group
+                if kind == "written_te":
+                    move_sentence = "その打合せでの関わり方に、私は心が留まります"
+                else:
+                    move_sentence = lexical[0] + "という気持ちも、どの部分かまだ曖昧なままで受け止めています"
             # A source-owned reading is checked against its actual source roles,
             # not against the old nominalized referent or a fixed closing.
             from emlis_ai_grounded_observation_gate import read_source_owned_discourse

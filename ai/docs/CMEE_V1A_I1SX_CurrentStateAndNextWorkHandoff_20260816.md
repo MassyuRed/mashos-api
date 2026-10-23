@@ -22990,3 +22990,22 @@ Cocolon既存trialのsemantic_snapshot_results.jsonへ合成初回/ADD/REVISE/WI
 sourceはemlis_semantic_admission.pyのみ、同family testと新fixture cmee_emlis_semantic_adapter_v1.json。原e5ca453から修正前に実採取した3系列の全outcome再現を含む最終35 passed/FAIL0/SKIP0、21.49秒。元25＋新10で反復を加算しない。旧pending→新回答、別時点/程度/否定/今も、既存隔離SQL保存/中断/三回答を含む。P1/旧application/広範囲旧失敗は今回再実行0。実出力はCocolon既存trial JSON.adapter_v2_correction。作者だけの既知残件という説明を新adapterとの不整合へ訂正する。
 
 本人不明/二行動の採用拡張は未実装。Cocolon共有design01/schema05の具体案と最新weekly Kから再開する。unknown statement/joy対象と二時点、同span二actionの一意binding、原格/省略主体/te連結/句点差、作者/逆検査/版保存が必要。JOY_ASPECT新問や新要素自身の一般更新/通常有効化は案に含めない。STRUCTURE_MAP_DELTA_NONE、限定TECHNICAL_CREDIT、product_credit=0/PRODUCT_NOT_CLEAR/正式0/3/candidate_ready=false/automatic_progression=false。作者/共有型/通常service/公開API/DTO/RN/実DB/Render/モデル/課金/merge/deploy変更0。
+
+
+## 2026-10-23 — 承認済み本人明示不明・二行動のoffline profile2
+
+Mashの追加範囲への「進めていいよ」を受領し、本人明示のJOY_ASPECT不明と二行動を、新規・明示offlineの`emlis_candidate_snapshot.v2`へ限定実装した。原E02-0は四claim／unknown statement→joy対象／過去の喜びと記述present／原格4つ／OMITTED主体／te連結とconcessionを、既存作者の実本文・private保存再開まで保持する。E02-0自身は問いなしENDで、架空pendingを作らない。
+
+snapshot schemaは`cocolon.cmee.emlis_semantic_snapshot.v2`、checkpointは`cocolon.cmee.emlis_answer_meaning.v3`、admission/adapter各1。旧profileはFRESH adapter2・保存1/2をそのまま再現する。namespace tupleと全prior edgeの同profileを照合する。native_bindingsは意味hashへ含め、graph IDはhashへ含めない。checkpoint確定後のclaim→nucleus→nodeとnative relation→edgeを明示導出し、同span二actionを別核・別nodeとして保持する。
+
+四typed binding familyは既存PreMeaningの新専用qualifier rowへ渡し、UNKNOWN carrierとjoyの肯否・modality・時点・evidence、原格とTE witnessを独立照合する。native TEはprivate scope-only linkで、ACTION_BEFORE_AFTER／同時性へ代用しない。既存Observation／HR作者と既存独立readerに有限armを追加。各section17件のSnapshotBindingConsumptionV2が、slice／case／unknown／written linkを実visible範囲とgraph対応へ束縛する。本文変異8条件、candidate閉鎖5、canonical再hash改変5、新要素target更新4、越native句点1、unknown carrier改変3、TE witness改変3等を拒否確認した。
+
+実際に成立する別焦点のQ3 pendingからADD／REVISE／WITHDRAWを通し、新四要素のpacket・typed bindings・核対応が未変更であることを確認。Q3実serviceは意味保存後のCancelledError→保存GET→明示retryを通し、候補再取得なし・意味checkpoint重複なし。通常readerの再開は作者を呼ばず保存DTOを返し、can_write=falseになる。未対応更新はprivate評価を残しANSWER_UNREFLECTED／current_observation=nullで旧本文を新prefixへ付替えない。
+
+初回の実Observationは「うれしかった一方で、どこがうれしかったかはまだ曖昧なのですね。」「打合せで後輩に説明を任せて、最後まで聞いたのですね。」。Receptionは「その打合せでの関わり方に、私は心が留まります。うれしかったという気持ちも、どの部分かまだ曖昧なままで受け止めています。」。行動の短い照応は同prefixの実Observationが独立読取に合格した場合だけ束縛し、別の生成本文・保存旧本文から補わない。喜びのどの部分かを保持し、原因不明／喜び自体の不明／信頼・成長へ変えない。
+
+最終対象146 passed／FAIL0／SKIP0、106.30秒、既存警告2。内訳はsnapshot同family70（旧35＋新35）、P1旧22、Q2/Q3 application旧54。34 subtests・反復実行・本文採取を件数へ加算しない。旧adapter1/2の全outcome fixtureは変更0。旧広範囲Q1/Q3の未分類失敗は未解消で、全suite成功とはしない。
+
+原E02の有限文法と既受理event/feelingの併存に閉じる。一般unknown/ACTION、新要素自身の変更・解消・依存削除はHOLD/UNSUPPORTED。旧Q2 cap4では混在更新の5 contributionを提供できず意味保存後BODY_UNAVAILABLEとなる制限を残し、capを緩めない。現在のQ3実serviceでの隔離SQL/RPC保存・中断再開成功と区別する。実モデル／有料推論／重み／学習／本人DB／Render／通常application有効化／公開API・DTO・RN変更／merge／deployは0。限定TECHNICAL_CREDIT、STRUCTURE_MAP_DELTA_PRESENT、product_credit=0／PRODUCT_NOT_CLEAR／正式Product Read0/3／candidate_ready=false／automatic_progression=false。
+
+全変更fileはCocolon 01A末尾、型はdesign05、実出力とsnapshotは既存trial JSON.targeted_unknown_action_v2、進行はlatest weekly L。既存scope readerもTEの同じtyped authorityを照合するため変更した。旧Q2 capを緩めず、現在Q3の実pending・保存再開を検証した。旧広範囲失敗や時点語の「も」の反復は別残件。

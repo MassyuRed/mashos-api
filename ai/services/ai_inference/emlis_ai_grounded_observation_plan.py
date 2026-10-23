@@ -95,6 +95,7 @@ RelationKind = Literal[
     "self_evaluation_about_state",
     "preserves_despite",
     "uncertain_connection",
+    "source_written_te_link",
     "continuation_or_refusal",
 ]
 Retention = Literal["required", "should", "optional"]
@@ -203,6 +204,7 @@ _ALLOWED_RELATION_KINDS: Final = frozenset(
         "self_evaluation_about_state",
         "preserves_despite",
         "uncertain_connection",
+        "source_written_te_link",
         "continuation_or_refusal",
     }
 )
@@ -20292,3 +20294,54 @@ __all__ = [
     "validate_grounded_human_reception_plan",
     "validate_grounded_observation_plan",
 ]
+
+
+def source_snapshot_v2_group(nuclei, relations, resolver, *, nucleus_ids=None):
+    """Read a closed native binding, without authoring or inferring case roles."""
+    from cocolon_meaning_experience_engine.emlis_semantic_admission import SnapshotEvidenceSpanResolverV2
+    if type(resolver) is not SnapshotEvidenceSpanResolverV2:
+        return None
+    index = {n.nucleus_id: n for n in nuclei}
+    slices = {s.slice_ref: s for s in resolver.source_slices}
+    for row in resolver.source_slices:
+        if row.nucleus_ref not in index or row.subject_binding != "OMITTED" or row.source_entity is not None:
+            raise GroundedObservationPlanError("snapshot_v2_source_binding_invalid")
+        native = resolver.resolve(row.native_span_ref)
+        raw = resolver.source_text_for_span_field(row.native_span_ref)
+        if (raw[row.raw_field_start:row.raw_field_end] != row.quote
+            or _clean(native.raw_text)[row.lexical_start:row.lexical_end] != row.quote.removesuffix("。")):
+            raise GroundedObservationPlanError("snapshot_v2_source_slice_invalid")
+    selected = set(nucleus_ids) if nucleus_ids is not None else None
+    groups = []
+    for u in resolver.person_stated_unknowns:
+        joy, = u.target_nucleus_refs
+        ids = (joy, u.statement_nucleus_ref)
+        if (u.origin, u.dimension, u.resolution_state, u.statement_polarity, u.statement_modality,
+            u.statement_time_scope, u.target_time_scope) != ("PERSON_STATED", "JOY_ASPECT", "SOURCE_STATEMENT_RETAINED",
+                "AFFIRMED", "ASSERTED_AS_WRITTEN", "present", "past"):
+            raise GroundedObservationPlanError("snapshot_v2_unknown_binding_invalid")
+        primary = tuple(next(s for s in resolver.source_slices if s.nucleus_ref == nid) for nid in ids)
+        if primary[1].quote != "どこが" + primary[0].quote + "かはまだ曖昧":
+            raise GroundedObservationPlanError("snapshot_v2_unknown_target_invalid")
+        groups.append(("joy_aspect", ids, tuple(s.quote for s in primary)))
+    for link in resolver.written_links:
+        if link.source_type != "SOURCE_WRITTEN_TE_LINK": continue
+        ids = (link.from_nucleus_ref, link.to_nucleus_ref)
+        primary = tuple(next(s for s in resolver.source_slices if s.nucleus_ref == nid) for nid in ids)
+        args = tuple(a for a in resolver.case_arguments if a.owning_nucleus_ref in ids)
+        if tuple((a.owning_nucleus_ref, a.written_role, a.text) for a in args) != (
+            (ids[0], "WRITTEN_で", "打合せ"), (ids[0], "WRITTEN_に", "後輩"),
+            (ids[0], "WRITTEN_を", "説明"), (ids[1], "WRITTEN_まで", "最後")):
+            raise GroundedObservationPlanError("snapshot_v2_case_binding_invalid")
+        if any(slices[ref].quote != a.text + a.written_role.removeprefix("WRITTEN_")
+               for a in args for ref in a.source_slice_refs):
+            raise GroundedObservationPlanError("snapshot_v2_case_slice_invalid")
+        groups.append(("written_te", ids, tuple(s.quote.removesuffix("。") for s in primary)))
+    for kind, ids, parts in groups:
+        relation_type = "source_written_te_link" if kind == "written_te" else "contrast"
+        if len(tuple(r for r in relations if r.type == relation_type
+                and (r.from_nucleus_id, r.to_nucleus_id) == ids and r.retention == "required"
+                and r.grounding_kind == "user_stated_relation")) != 1:
+            raise GroundedObservationPlanError("snapshot_v2_link_binding_invalid")
+        if selected == set(ids): return kind, ids, parts
+    return tuple(groups) if selected is None else None
