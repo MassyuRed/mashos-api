@@ -28,6 +28,9 @@ class MeaningExperienceEngine:
     """
 
     def generate(self, request: GenerationRequest | PieceGenerationRequest | AnalysisObservedMapRequest, *, semantic_input=None) -> EngineOutcome | PieceEngineOutcome | AnalysisEngineOutcome:
+        if semantic_input is not None and type(request) is AnalysisObservedMapRequest:
+            from .cores.analysis.semantic_admission import generate_analysis_semantic
+            return generate_analysis_semantic(request, semantic_input)
         if semantic_input is not None and type(request) is PieceGenerationRequest:
             from .piece_semantic_admission import generate_piece_semantic
             return generate_piece_semantic(request, semantic_input)

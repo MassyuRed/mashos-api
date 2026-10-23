@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 import hashlib
+import json
 import re
 
 from emlis_ai_grounded_observation_plan import (
@@ -2264,3 +2265,200 @@ def compile_observed_graph(source_set: AnalysisSourceSet) -> ObservedGraph:
         for index, (targets, evidence) in enumerate(conflict_evidence.items(), 1))
     return ObservedGraph(tuple(nodes), tuple(edges), tuple(gaps), updates, conflicts,
                          tuple(annotation_claims.values()))
+
+
+# Explicit offline semantic snapshots use a private graph. They do not enter
+# the legacy parser, ObservedGraph, route edge taxonomy, or public DTO.
+_ANALYSIS_SEMANTIC_GRAPH_SCHEMA = 'cocolon.cmee.analysis_semantic_graph.v1'
+
+
+def _semantic_json(value):
+    return json.dumps(value, ensure_ascii=False, sort_keys=True,
+                      separators=(',', ':'), allow_nan=False)
+
+
+def _semantic_digest(value):
+    return hashlib.sha256(_semantic_json(value).encode('utf-8')).hexdigest()
+
+
+def _semantic_ref(kind, snapshot_ref, meaning_ref):
+    return 'analysis-semantic-' + kind + ':' + _semantic_digest(
+        [snapshot_ref, meaning_ref])
+
+
+def _semantic_same(left, right):
+    # JSON spelling, unlike Python equality, distinguishes bool and integer.
+    return _semantic_json(left) == _semantic_json(right)
+
+
+def _semantic_snapshot_view(snapshot):
+    from .semantic_admission import AnalysisSemanticSnapshotV1
+    if type(snapshot) is not AnalysisSemanticSnapshotV1:
+        raise AnalysisSourceError('analysis_semantic_snapshot_type_invalid')
+    view = snapshot.payload()
+    if (type(view) is not dict or
+            view.get('semantic_profile') != 'analysis_candidate_snapshot.v1'):
+        raise AnalysisSourceError('analysis_semantic_snapshot_type_invalid')
+    # Request/owner/source meaning validation belongs to admission and is
+    # performed by the lifecycle caller before this private projection arm.
+    return view
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class AnalysisSemanticGraphV1:
+    graph_json: str
+
+    def payload(self):
+        if type(self.graph_json) is not str:
+            raise AnalysisSourceError('analysis_semantic_graph_invalid')
+        value = json.loads(self.graph_json)
+        if not _semantic_same(self.graph_json, _semantic_json(value)):
+            raise AnalysisSourceError('analysis_semantic_graph_invalid')
+        return value
+
+    @property
+    def graph_ref(self):
+        return self.payload()['graph_ref']
+
+
+def _semantic_binding_carrier(binding, packet, snapshot_ref):
+    claim = binding['claim_json']
+    evidence = packet['evidence'][claim['evidence_indexes'][0]]
+    return dict(unit_ref=claim['unit_ref'], group_ref=claim['group_ref'],
+        claim_json=claim, source_binding_ref=binding['source_binding_ref'],
+        source_binding_json=binding['source_binding_json'],
+        visible_label=evidence['quote'])
+
+
+def compile_semantic_graph(snapshot):
+    """Compile already-admitted meaning without the legacy finite parser."""
+    view = _semantic_snapshot_view(snapshot)
+    packet = view['candidate_packet']
+    candidate = packet['candidate']
+    ref = view['snapshot_ref']
+    bindings = {b['unit_ref']: b for b in view['unit_bindings']}
+    nodes, dependent_scopes, annotations, unit_node_bindings = [], [], [], []
+    for unit in candidate['units']:
+        binding = bindings[unit['unit_ref']]
+        carrier = _semantic_binding_carrier(binding, packet, ref)
+        if unit['carrier'] == 'GRAPH_NODE':
+            node_ref = _semantic_ref('node', ref, unit['unit_ref'])
+            nodes.append(dict(carrier, node_ref=node_ref,
+                              node_kind=unit['proposed_node_kind']))
+            unit_node_bindings.append(dict(unit_ref=unit['unit_ref'], node_ref=node_ref))
+        elif unit['carrier'] == 'DEPENDENT_SCOPE':
+            dependent_scopes.append(dict(carrier, carrier_ref=_semantic_ref(
+                'dependent-scope', ref, unit['unit_ref'])))
+        elif unit['carrier'] != 'ANNOTATION':
+            raise AnalysisSourceError('analysis_semantic_carrier_invalid')
+    for annotation in candidate['annotations']:
+        binding = bindings[annotation['unit_ref']]
+        annotations.append(dict(annotation, carrier_ref=_semantic_ref(
+            'annotation', ref, annotation['annotation_ref']),
+            unit_binding=_semantic_binding_carrier(binding, packet, ref)))
+    groups = []
+    for group in candidate['sentence_groups']:
+        evidence = packet['evidence'][group['evidence_indexes'][0]]
+        groups.append(dict(group, source_id=evidence['source_id'],
+            field_path=evidence['field_path'], original_text=evidence['quote'],
+            unit_refs=[u['unit_ref'] for u in candidate['units']
+                       if u['group_ref'] == group['group_ref']]))
+    payload = dict(schema_version=_ANALYSIS_SEMANTIC_GRAPH_SCHEMA,
+        semantic_profile=view['semantic_profile'], snapshot_ref=ref,
+        source_commitment=view['source_commitment'],
+        source_set_ref=view['source_set_ref'], period=view['period'],
+        nodes=nodes, dependent_scopes=dependent_scopes, groups=groups,
+        scope_relations=[dict(r, scope_ref=_semantic_ref('scope', ref,
+            r['relation_ref'])) for r in candidate['scope_relations']],
+        unknowns=[dict(u, carrier_ref=_semantic_ref('unknown', ref,
+            u['unknown_ref'])) for u in candidate['unknowns']],
+        annotations=annotations, source_selections=candidate['source_selections'],
+        unit_node_bindings=unit_node_bindings, evidence=packet['evidence'],
+        route_edges=[])
+    payload['graph_ref'] = 'analysis-semantic-graph:' + _semantic_digest(payload)
+    graph = AnalysisSemanticGraphV1(_semantic_json(payload))
+    validate_semantic_graph(snapshot, graph)
+    return graph
+
+
+def validate_semantic_graph(snapshot, graph):
+    """Inspect a saved graph directly against its adopted source bindings.
+
+    This validator does not invoke the compiler or the old parser. Full source
+    and semantic admission is independently checked by the lifecycle caller.
+    """
+    view = _semantic_snapshot_view(snapshot)
+    if type(graph) is not AnalysisSemanticGraphV1:
+        raise AnalysisSourceError('analysis_semantic_graph_invalid')
+    value = graph.payload()
+    expected_keys = {'schema_version', 'semantic_profile', 'snapshot_ref',
+        'source_commitment', 'source_set_ref', 'period', 'nodes',
+        'dependent_scopes', 'groups', 'scope_relations', 'unknowns',
+        'annotations', 'source_selections', 'unit_node_bindings', 'evidence',
+        'route_edges', 'graph_ref'}
+    if type(value) is not dict or set(value) != expected_keys:
+        raise AnalysisSourceError('analysis_semantic_graph_invalid')
+    identity = dict(schema_version=_ANALYSIS_SEMANTIC_GRAPH_SCHEMA,
+        semantic_profile=view['semantic_profile'], snapshot_ref=view['snapshot_ref'],
+        source_commitment=view['source_commitment'],
+        source_set_ref=view['source_set_ref'], period=view['period'], route_edges=[])
+    if any(not _semantic_same(value[k], expected) for k, expected in identity.items()):
+        raise AnalysisSourceError('analysis_semantic_graph_invalid')
+    packet, ref = view['candidate_packet'], view['snapshot_ref']
+    candidate = packet['candidate']
+    bindings = {b['unit_ref']: b for b in view['unit_bindings']}
+    observed_refs = []
+    for carrier_name, unit_carrier in (('nodes', 'GRAPH_NODE'),
+                                       ('dependent_scopes', 'DEPENDENT_SCOPE')):
+        required = [u for u in candidate['units'] if u['carrier'] == unit_carrier]
+        rows = value[carrier_name]
+        if type(rows) is not list or len(rows) != len(required):
+            raise AnalysisSourceError('analysis_semantic_graph_invalid')
+        for row, unit in zip(rows, required):
+            binding = bindings[unit['unit_ref']]
+            expected = dict(unit_ref=unit['unit_ref'], group_ref=unit['group_ref'],
+                claim_json=unit, source_binding_ref=binding['source_binding_ref'],
+                source_binding_json=binding['source_binding_json'],
+                visible_label=packet['evidence'][unit['evidence_indexes'][0]]['quote'])
+            if unit_carrier == 'GRAPH_NODE':
+                node_ref = _semantic_ref('node', ref, unit['unit_ref'])
+                expected.update(node_ref=node_ref, node_kind=unit['proposed_node_kind'])
+                observed_refs.append(dict(unit_ref=unit['unit_ref'], node_ref=node_ref))
+            else:
+                expected['carrier_ref'] = _semantic_ref('dependent-scope', ref, unit['unit_ref'])
+            if not _semantic_same(row, expected):
+                raise AnalysisSourceError('analysis_semantic_graph_invalid')
+    expected_groups = []
+    for group in candidate['sentence_groups']:
+        evidence = packet['evidence'][group['evidence_indexes'][0]]
+        expected_groups.append(dict(group, source_id=evidence['source_id'],
+            field_path=evidence['field_path'], original_text=evidence['quote'],
+            unit_refs=[u['unit_ref'] for u in candidate['units'] if u['group_ref'] == group['group_ref']]))
+    expected_annotations = []
+    for annotation in candidate['annotations']:
+        binding = bindings[annotation['unit_ref']]
+        unit = binding['claim_json']
+        expected_annotations.append(dict(annotation,
+            carrier_ref=_semantic_ref('annotation', ref, annotation['annotation_ref']),
+            unit_binding=dict(unit_ref=unit['unit_ref'], group_ref=unit['group_ref'],
+                claim_json=unit, source_binding_ref=binding['source_binding_ref'],
+                source_binding_json=binding['source_binding_json'],
+                visible_label=packet['evidence'][unit['evidence_indexes'][0]]['quote'])))
+    expected_collections = dict(groups=expected_groups,
+        scope_relations=[dict(r, scope_ref=_semantic_ref('scope', ref, r['relation_ref']))
+                         for r in candidate['scope_relations']],
+        unknowns=[dict(u, carrier_ref=_semantic_ref('unknown', ref, u['unknown_ref']))
+                  for u in candidate['unknowns']],
+        annotations=expected_annotations, source_selections=candidate['source_selections'],
+        unit_node_bindings=observed_refs, evidence=packet['evidence'])
+    if any(not _semantic_same(value[k], expected) for k, expected in expected_collections.items()):
+        raise AnalysisSourceError('analysis_semantic_graph_invalid')
+    material = {k: v for k, v in value.items() if k != 'graph_ref'}
+    if value['graph_ref'] != 'analysis-semantic-graph:' + _semantic_digest(material):
+        raise AnalysisSourceError('analysis_semantic_graph_invalid')
+    return graph
+
+
+def graph_from_payload(snapshot, payload):
+    graph = AnalysisSemanticGraphV1(_semantic_json(payload))
+    return validate_semantic_graph(snapshot, graph)

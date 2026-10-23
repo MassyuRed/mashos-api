@@ -7,6 +7,7 @@ Owner authorization, retention and deletion checks remain the caller's duty.
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+import json
 import logging
 from uuid import uuid4
 
@@ -497,3 +498,259 @@ def generate_observed_map(request: AnalysisObservedMapRequest) -> AnalysisEngine
         return _failed_outcome(EngineStatus.UNAVAILABLE, 'analysis_comparison_unavailable',
             stage='comparison', diagnostic_reason=(str(exc) if isinstance(exc, AnalysisSourceError)
                                                     else 'analysis_comparison_unavailable'))
+
+
+# Private snapshot projection. The legacy safe projection and its edge wording
+# remain unchanged; no new scope relation is sent through _text_from_visual.
+from .intent_compiler import (
+    AnalysisSemanticGraphV1, _semantic_json, _semantic_digest, _semantic_ref,
+    _semantic_same, _semantic_snapshot_view, validate_semantic_graph,
+)
+
+_ANALYSIS_SEMANTIC_ARTIFACT_SCHEMA = 'cocolon.cmee.analysis_semantic_artifact.v1'
+_ANALYSIS_SEMANTIC_MEANING_VERSION = 'cocolon.cmee.analysis_candidate_meaning.v1'
+_ANALYSIS_SEMANTIC_VISUAL_SCHEMA = 'cocolon.cmee.analysis_semantic_visual.v1'
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class AnalysisSemanticArtifactV1:
+    artifact_json: str
+
+    def payload(self):
+        if type(self.artifact_json) is not str:
+            raise AnalysisSourceError('analysis_semantic_artifact_invalid')
+        value = json.loads(self.artifact_json)
+        if not _semantic_same(self.artifact_json, _semantic_json(value)):
+            raise AnalysisSourceError('analysis_semantic_artifact_invalid')
+        return value
+
+    @property
+    def artifact_ref(self):
+        return self.payload()['artifact_ref']
+
+    @property
+    def text_sections(self):
+        return tuple(self.payload()['text_sections'])
+
+    @property
+    def visual_projection_json(self):
+        return _semantic_json(self.payload()['visual_projection_json'])
+
+
+def _semantic_evidence_ref(graph, index):
+    return _semantic_ref('evidence', graph['snapshot_ref'],
+                         _semantic_json(graph['evidence'][index]))
+
+
+def _semantic_visual_material(graph):
+    # This is a schema projection, not a second graph or semantic author.
+    value = {k: v for k, v in graph.items()
+             if k not in ('schema_version', 'unit_node_bindings')}
+    value['schema_version'] = _ANALYSIS_SEMANTIC_VISUAL_SCHEMA
+    value['source_selections'] = [dict(s, visual_ref=_semantic_ref(
+        'selection', graph['snapshot_ref'], s['selection_ref']))
+        for s in graph['source_selections']]
+    value['evidence'] = [dict(e, evidence_ref=_semantic_evidence_ref(graph, i))
+                         for i, e in enumerate(graph['evidence'])]
+    return value
+
+
+def _semantic_text_layout(graph):
+    """Place complete source groups and the bounded material-unknown label."""
+    sections, group_ranges = [], {}
+    source_ids = list(dict.fromkeys(g['source_id'] for g in graph['groups']))
+    for source_id in source_ids:
+        groups = [g for g in graph['groups'] if g['source_id'] == source_id]
+        text, previous_field = '', None
+        section_index = len(sections)
+        for group in groups:
+            if previous_field is not None and group['field_path'] != previous_field:
+                text += '\n'
+            start = len(text)
+            text += group['original_text']
+            evidence = graph['evidence'][group['evidence_indexes'][0]]
+            group_ranges[group['group_ref']] = (section_index, start, evidence)
+            previous_field = group['field_path']
+        sections.append(dict(source_id=source_id,
+                             section_kind='ORIGINAL_SOURCE_GROUPS', text=text))
+    unknown_ranges = {}
+    for unknown in graph['unknowns']:
+        evidence = graph['evidence'][unknown['evidence_indexes'][0]]
+        label = unknown['proposed_label']
+        unknown_ranges[unknown['unknown_ref']] = (len(sections), 0, len(label))
+        sections.append(dict(source_id=evidence['source_id'],
+            section_kind='MATERIAL_UNKNOWN', text=label))
+    return sections, group_ranges, unknown_ranges
+
+
+def _semantic_trace_rows(graph, group_ranges, unknown_ranges):
+    rows = []
+    carriers = [(n['unit_ref'], n['node_ref'], n) for n in graph['nodes']]
+    carriers += [(n['unit_ref'], n['carrier_ref'], n)
+                 for n in graph['dependent_scopes']]
+    carriers += [(a['unit_ref'], a['carrier_ref'], a['unit_binding'])
+                 for a in graph['annotations']]
+    for unit_ref, carrier_ref, carrier in carriers:
+        unit = carrier['claim_json']
+        section_index, group_start, group_evidence = group_ranges[unit['group_ref']]
+        evidence = graph['evidence'][unit['evidence_indexes'][0]]
+        start = group_start + evidence['start'] - group_evidence['start']
+        rows.append(dict(meaning_ref=unit_ref, trace_kind=unit['carrier'],
+            carrier_ref=carrier_ref, group_ref=unit['group_ref'],
+            source_binding_refs=[carrier['source_binding_ref']],
+            text_section_index=section_index, visible_scalar_start=start,
+            visible_scalar_end=start + len(evidence['quote']), visual_ref=carrier_ref))
+    for relation in graph['scope_relations']:
+        evidence = graph['evidence'][relation['evidence_indexes'][0]]
+        group = next(g for g in graph['groups'] if
+            g['source_id'] == evidence['source_id'] and g['field_path'] == evidence['field_path'] and
+            (base := graph['evidence'][g['evidence_indexes'][0]])['start'] <= evidence['start'] and
+            evidence['end'] <= base['end'])
+        section_index, group_start, group_evidence = group_ranges[group['group_ref']]
+        start = group_start + evidence['start'] - group_evidence['start']
+        indexes = list(dict.fromkeys(relation['evidence_indexes'] + relation['marker_evidence_indexes']))
+        rows.append(dict(meaning_ref=relation['relation_ref'],
+            trace_kind='SOURCE_SCOPE_RELATION', carrier_ref=relation['scope_ref'],
+            group_ref=group['group_ref'],
+            source_binding_refs=[_semantic_evidence_ref(graph, i) for i in indexes],
+            text_section_index=section_index, visible_scalar_start=start,
+            visible_scalar_end=start + len(evidence['quote']), visual_ref=relation['scope_ref']))
+    for unknown in graph['unknowns']:
+        section_index, start, end = unknown_ranges[unknown['unknown_ref']]
+        rows.append(dict(meaning_ref=unknown['unknown_ref'], trace_kind='MATERIAL_UNKNOWN',
+            carrier_ref=unknown['carrier_ref'], group_ref=None,
+            source_binding_refs=[_semantic_evidence_ref(graph, i) for i in unknown['evidence_indexes']],
+            text_section_index=section_index, visible_scalar_start=start,
+            visible_scalar_end=end, visual_ref=unknown['carrier_ref']))
+    for selection in graph['source_selections']:
+        visual_ref = _semantic_ref('selection', graph['snapshot_ref'], selection['selection_ref'])
+        rows.append(dict(meaning_ref=selection['selection_ref'],
+            trace_kind='RETAINED_SOURCE_SELECTION', carrier_ref=visual_ref,
+            group_ref=None, source_binding_refs=[_semantic_ref('selection-binding',
+                graph['snapshot_ref'], _semantic_json([selection['source_id'], alias]))
+                for alias in selection['alias_refs']], text_section_index=None,
+            visible_scalar_start=None, visible_scalar_end=None, visual_ref=visual_ref))
+    return rows
+
+
+def _semantic_artifact_identity(payload):
+    material = {k: v for k, v in payload.items() if k not in ('artifact_ref', 'content_hash')}
+    content_hash = 'sha256:' + _semantic_digest(material)
+    artifact_ref = 'analysis-semantic-artifact:' + _semantic_digest([
+        content_hash, material['schema_version'], material['semantic_profile'],
+        material['snapshot_ref'], material['graph_ref']])
+    return content_hash, artifact_ref
+
+
+def realize_semantic_graph(snapshot, graph):
+    """The existing sole realizer's explicit private snapshot arm."""
+    validate_semantic_graph(snapshot, graph)
+    view, source = _semantic_snapshot_view(snapshot), graph.payload()
+    sections, group_ranges, unknown_ranges = _semantic_text_layout(source)
+    payload = dict(schema_version=_ANALYSIS_SEMANTIC_ARTIFACT_SCHEMA,
+        meaning_contract_version=_ANALYSIS_SEMANTIC_MEANING_VERSION,
+        semantic_profile=view['semantic_profile'], snapshot_ref=view['snapshot_ref'],
+        graph_ref=source['graph_ref'], source_commitment=view['source_commitment'],
+        visual_projection_json=_semantic_visual_material(source), text_sections=sections,
+        realizations=_semantic_trace_rows(source, group_ranges, unknown_ranges),
+        retained_selection_refs=[s['selection_ref'] for s in source['source_selections']])
+    payload['content_hash'], payload['artifact_ref'] = _semantic_artifact_identity(payload)
+    artifact = AnalysisSemanticArtifactV1(_semantic_json(payload))
+    validate_semantic_artifact(snapshot, graph, artifact)
+    return artifact
+
+
+def validate_semantic_artifact(snapshot, graph, artifact):
+    """Read saved surfaces from source/graph constraints without the author.
+
+    The reader does not call realize_semantic_graph, compile_semantic_graph,
+    the old safe label/parser, or the old text renderer. A matching hash alone
+    cannot satisfy source content, typed coverage, or visible-range checks.
+    """
+    validate_semantic_graph(snapshot, graph)
+    view, source = _semantic_snapshot_view(snapshot), graph.payload()
+    if type(artifact) is not AnalysisSemanticArtifactV1:
+        raise AnalysisSourceError('analysis_semantic_artifact_invalid')
+    payload = artifact.payload()
+    keys = {'schema_version', 'meaning_contract_version', 'semantic_profile',
+        'snapshot_ref', 'graph_ref', 'source_commitment', 'visual_projection_json',
+        'text_sections', 'realizations', 'retained_selection_refs', 'content_hash', 'artifact_ref'}
+    if type(payload) is not dict or set(payload) != keys:
+        raise AnalysisSourceError('analysis_semantic_artifact_invalid')
+    expected_identity = dict(schema_version=_ANALYSIS_SEMANTIC_ARTIFACT_SCHEMA,
+        meaning_contract_version=_ANALYSIS_SEMANTIC_MEANING_VERSION,
+        semantic_profile=view['semantic_profile'], snapshot_ref=view['snapshot_ref'],
+        graph_ref=source['graph_ref'], source_commitment=view['source_commitment'])
+    if any(not _semantic_same(payload[k], expected) for k, expected in expected_identity.items()):
+        raise AnalysisSourceError('analysis_semantic_artifact_invalid')
+    visual = payload['visual_projection_json']
+    if not _semantic_same(visual, _semantic_visual_material(source)):
+        raise AnalysisSourceError('analysis_semantic_artifact_invalid')
+    # Inspect record/field groups as saved visible text, not generated prose.
+    sections = payload['text_sections']
+    source_ids = list(dict.fromkeys(g['source_id'] for g in source['groups']))
+    if type(sections) is not list or len(sections) != len(source_ids) + len(source['unknowns']):
+        raise AnalysisSourceError('analysis_semantic_artifact_invalid')
+    group_ranges, unknown_ranges = {}, {}
+    for section_index, source_id in enumerate(source_ids):
+        groups = [g for g in source['groups'] if g['source_id'] == source_id]
+        pieces, size, previous_field = [], 0, None
+        for group in groups:
+            if previous_field is not None and group['field_path'] != previous_field:
+                pieces.append('\n')
+                size += 1
+            group_ranges[group['group_ref']] = (section_index, size,
+                source['evidence'][group['evidence_indexes'][0]])
+            pieces.append(group['original_text'])
+            size += len(group['original_text'])
+            previous_field = group['field_path']
+        expected_section = dict(source_id=source_id,
+            section_kind='ORIGINAL_SOURCE_GROUPS', text=''.join(pieces))
+        if not _semantic_same(sections[section_index], expected_section):
+            raise AnalysisSourceError('analysis_semantic_artifact_invalid')
+    for index, unknown in enumerate(source['unknowns'], len(source_ids)):
+        evidence = source['evidence'][unknown['evidence_indexes'][0]]
+        expected_section = dict(source_id=evidence['source_id'],
+            section_kind='MATERIAL_UNKNOWN', text=unknown['proposed_label'])
+        if not _semantic_same(sections[index], expected_section):
+            raise AnalysisSourceError('analysis_semantic_artifact_invalid')
+        unknown_ranges[unknown['unknown_ref']] = (index, 0, len(unknown['proposed_label']))
+    expected_traces = _semantic_trace_rows(source, group_ranges, unknown_ranges)
+    if not _semantic_same(payload['realizations'], expected_traces):
+        raise AnalysisSourceError('analysis_semantic_artifact_invalid')
+    # Every visible range must literally address its source quote or bounded
+    # unknown label. Retained selections deliberately have no text range.
+    units = {u['unit_ref']: u for u in view['candidate_packet']['candidate']['units']}
+    relations = {r['relation_ref']: r for r in source['scope_relations']}
+    unknowns = {u['unknown_ref']: u for u in source['unknowns']}
+    for trace in payload['realizations']:
+        if trace['trace_kind'] == 'RETAINED_SOURCE_SELECTION':
+            if any(trace[k] is not None for k in ('group_ref', 'text_section_index',
+                                                'visible_scalar_start', 'visible_scalar_end')):
+                raise AnalysisSourceError('analysis_semantic_artifact_invalid')
+            continue
+        section = sections[trace['text_section_index']]['text']
+        a, b = trace['visible_scalar_start'], trace['visible_scalar_end']
+        if type(a) is not int or type(b) is not int or not 0 <= a < b <= len(section):
+            raise AnalysisSourceError('analysis_semantic_artifact_invalid')
+        meaning_ref = trace['meaning_ref']
+        if meaning_ref in units:
+            literal = source['evidence'][units[meaning_ref]['evidence_indexes'][0]]['quote']
+        elif meaning_ref in relations:
+            literal = source['evidence'][relations[meaning_ref]['evidence_indexes'][0]]['quote']
+        else:
+            literal = unknowns[meaning_ref]['proposed_label']
+        if section[a:b] != literal:
+            raise AnalysisSourceError('analysis_semantic_artifact_invalid')
+    if not _semantic_same(payload['retained_selection_refs'],
+            [s['selection_ref'] for s in source['source_selections']]):
+        raise AnalysisSourceError('analysis_semantic_artifact_invalid')
+    content_hash, artifact_ref = _semantic_artifact_identity(payload)
+    if payload['content_hash'] != content_hash or payload['artifact_ref'] != artifact_ref:
+        raise AnalysisSourceError('analysis_semantic_artifact_invalid')
+    return artifact
+
+
+def artifact_from_payload(snapshot, graph, payload):
+    artifact = AnalysisSemanticArtifactV1(_semantic_json(payload))
+    return validate_semantic_artifact(snapshot, graph, artifact)
