@@ -26,6 +26,7 @@ PROFILE = "emlis_candidate_snapshot.v1"
 SCHEMA = "cocolon.cmee.emlis_semantic_snapshot.v1"
 CHECKPOINT_SCHEMA = "cocolon.cmee.emlis_answer_meaning.v2"
 CANDIDATE_SCHEMA = "cocolon.cmee.semantic_mapping_proposal.v1"
+CURRENT_ADAPTER_VERSION = "2"
 _CLAIM_KEYS = {"claim_id", "kind", "text", "subject", "predicate", "polarity",
                "modality", "about_time", "qualifiers", "evidence_indexes"}
 _PUNCT = re.compile(r"[\s。、，,.！？!?「」『』]+")
@@ -241,7 +242,9 @@ def _validate_packet(packet, material, thread):
     return _locate(thread, material, ev)
 
 
-def _nuclei(packet, material, thread):
+def _nuclei(packet, material, thread, *, adapter_version):
+    if adapter_version not in {"1", "2"}:
+        _fail("REJECT", "semantic_adapter_version_unsupported")
     c, ev = packet["candidate"], packet["evidence"]
     locations = _validate_packet(packet, material, thread)
     contrasts = {r["from_claim_id"]: (r, "before") for r in c["relations"]}
@@ -289,6 +292,13 @@ def _nuclei(packet, material, thread):
                 _fail("HOLD", "semantic_answer_time_evidence_missing")
             if not re.match(r"^(?:今|現在)(?:は|も)" if time == "present" else r"^(?:その時|あの時|当時)(?:は|も)?", claim["text"]):
                 _fail("HOLD", "semantic_answer_time_expression_unbound")
+            if adapter_version == "2" and not re.match(r"^(?:今|現在|その時|あの時|当時)も", claim["text"]):
+                # The author supplies thread_time itself. Keep the full claim in
+                # the snapshot, but pass its lexical content without that prefix.
+                # Additive `も` is not an expendable time label. Its original
+                # lexical range stays intact until the author can represent it.
+                prefix = re.match(r"^(?:今|現在|その時|あの時|当時)(?:は)?", claim["text"])
+                attrs[1] = f"source_fragment_scalar_range:{start + prefix.end()}:{end}"
             attrs += ["thread_time:" + claim["about_time"]["kind"].lower(),
                 "lexical:preserve_source_predicate", "lexical:no_new_sensation_family"]
         frame = gp.GroundedSemanticFrame("current_user", "event" if kind == "event" else "feeling",
@@ -313,8 +323,8 @@ def _nuclei(packet, material, thread):
     return tuple(rows), tuple(relations), mapping
 
 
-def _plan(packet, material, thread, *, extra_relations=(), focus=()):
-    nuclei, relations, mapping = _nuclei(packet, material, thread)
+def _plan(packet, material, thread, *, adapter_version, extra_relations=(), focus=()):
+    nuclei, relations, mapping = _nuclei(packet, material, thread, adapter_version=adapter_version)
     relations += tuple(extra_relations)
     text = "\n".join(str(s["text_fields"].get(f) or "") for s in material.payload()["sources"]
                       for f in s["text_fields"])
@@ -360,7 +370,7 @@ def _restore(request, text):
             raise ValueError()
         thread = admit_emlis_thread(request)
         material = prepare_emlis(request)
-        if (p["admission_version"] != "1" or p["adapter_version"] != "1"
+        if (p["admission_version"] != "1" or p["adapter_version"] not in {"1", "2"}
             or p["request_ref"] != material.request_id or type(p["answer_count"]) is not int
             or p["answer_count"] != len(thread.answers)
             or p["question_control"] != json.loads(_json(asdict(thread.control.question_control_context)))
@@ -402,7 +412,7 @@ def _prepare_snapshot_meaning(request, semantic_input):
         if semantic_input.snapshot_json is not None or request.emlis_thread.prepared_meaning_checkpoint_ref is not None:
             _fail("REJECT", "semantic_same_prefix_readoption_forbidden")
         packet = _receipt(material, semantic_input.receipt)
-        p = dict(schema_version=SCHEMA, semantic_profile=PROFILE, admission_version="1", adapter_version="1",
+        p = dict(schema_version=SCHEMA, semantic_profile=PROFILE, admission_version="1", adapter_version=CURRENT_ADAPTER_VERSION,
             request_ref=material.request_id, source_prefix_ref=thread.source_prefix_ref,
             source_bindings=_source_binding(material), packet=packet, prior_ref=None,
             prior_snapshot=None, receipt=asdict(semantic_input.receipt), answer_count=len(thread.answers),
@@ -414,7 +424,7 @@ def _prepare_snapshot_meaning(request, semantic_input):
             p.update(prior_ref=prior["snapshot_ref"], prior_snapshot=prior)
         elif thread.answers:
             _fail("REJECT", "semantic_prior_snapshot_required")
-        p["claim_mapping"] = _nuclei(packet, material, thread)[2]
+        p["claim_mapping"] = _nuclei(packet, material, thread, adapter_version=p["adapter_version"])[2]
         p["snapshot_ref"] = _semantic_ref(p)
     else:
         _fail("REJECT", "semantic_input_mode_invalid")
@@ -442,8 +452,9 @@ def _prepare_payload(thread, material, p, request):
     original_material = prepare_emlis(original_req)
     if original_p["source_bindings"] != _source_binding(original_material):
         _fail("REJECT", "semantic_original_snapshot_binding_invalid")
-    original_plan, _ = _plan(original_p["packet"], original_material, original_thread)
-    current_plan, mapping = _plan(packet, material, thread)
+    original_plan, _ = _plan(original_p["packet"], original_material, original_thread,
+        adapter_version=original_p["adapter_version"])
+    current_plan, mapping = _plan(packet, material, thread, adapter_version=p["adapter_version"])
     if p["claim_mapping"] != mapping:
         _fail("REJECT", "semantic_claim_mapping_mismatch")
     accepted, inactive, update_items, extras = (), (), [], []
@@ -459,7 +470,8 @@ def _prepare_payload(thread, material, p, request):
             _fail("REJECT", "semantic_question_noncanonical")
         before = {c["claim_id"]: c for c in prior["packet"]["candidate"]["claims"]}
         now = {c["claim_id"]: c for c in packet["candidate"]["claims"]}
-        prior_mapping = _nuclei(prior["packet"], prior_material, prior_thread)[2]
+        prior_mapping = _nuclei(prior["packet"], prior_material, prior_thread,
+            adapter_version=prior["adapter_version"])[2]
         prior_nodes = {n.nucleus_id: n for n in prior_plan.nuclei}
         removed, added, affected = set(), set(), []
         answer = thread.answers[-1]
@@ -526,7 +538,7 @@ def _prepare_payload(thread, material, p, request):
             and r.relation_id not in inactive] + extras
         accepted = tuple(n for n in current_plan.nuclei if n.nucleus_id not in {x.nucleus_id for x in original_plan.nuclei})
         current_plan, mapping = _plan(packet, material, thread, extra_relations=extras,
-                                    focus=tuple(n.nucleus_id for n in accepted))
+            adapter_version=p["adapter_version"], focus=tuple(n.nucleus_id for n in accepted))
     elif updates:
         _fail("REJECT", "semantic_initial_update_forbidden")
     _coverage(packet, material, thread, prior)
@@ -604,12 +616,13 @@ def derive_snapshot_plan(prepared):
             prior_thread.original.envelope.source_record_id, emlis_thread=prior_thread.control)
         _, prior_material, checked = _restore(prior_req, _json(prior))
         previous = _prepare_payload(prior_thread, prior_material, checked, prior_req)
-        active_ids = {n.nucleus_id for n in _plan(p["packet"], material, prepared.thread)[0].nuclei}
+        active_ids = {n.nucleus_id for n in _plan(p["packet"], material, prepared.thread,
+            adapter_version=p["adapter_version"])[0].nuclei}
         extras = [r for r in derive_snapshot_plan(previous).relations if r.type == "evaluation_about_event"
             and r.from_nucleus_id in active_ids and r.to_nucleus_id in active_ids
             and r.relation_id not in prepared.checkpoint.inactive_claim_refs]
     if prepared.checkpoint.answer_update:
-        active = _plan(p["packet"], material, prepared.thread)[0]
+        active = _plan(p["packet"], material, prepared.thread, adapter_version=p["adapter_version"])[0]
         active_ids = {n.nucleus_id for n in active.nuclei}
         q = prepared.thread.control.question_control_context.pending_question
         focus = next((n for n in q.decision.affected_meaning_refs if n in active_ids), None)
@@ -620,5 +633,5 @@ def derive_snapshot_plan(prepared):
                     extras.append(gp.GroundedSemanticRelation(identity("semantic-about", p["snapshot_ref"], nid),
                         "evaluation_about_event", focus, nid, (sid,), "user_stated_relation", 1.0, "required"))
     return _plan(p["packet"], material, prepared.thread, extra_relations=extras,
-        focus=tuple(n.nucleus_id for n in prepared.accepted_nuclei))[0]
+        adapter_version=p["adapter_version"], focus=tuple(n.nucleus_id for n in prepared.accepted_nuclei))[0]
 

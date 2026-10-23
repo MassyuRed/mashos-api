@@ -1,6 +1,7 @@
 """Synthetic candidate admission and actual existing thread/service boundaries."""
 import copy
 import json
+from pathlib import Path
 from dataclasses import asdict, replace
 from unittest.mock import patch
 
@@ -21,6 +22,9 @@ import httpx
 from test_emlis_q3_application import qdb, qcase, cont
 from emlis_thread_service import Q3_PROFILE
 import asyncio
+
+
+V1_FIXTURE = json.loads((Path(__file__).parent / "fixtures/cmee_emlis_semantic_adapter_v1.json").read_text())
 
 
 def receipt(req, packet, **metadata):
@@ -126,6 +130,80 @@ def test_initial_candidate_reaches_real_author_question_and_snapshot_replay():
         again = MeaningExperienceEngine().generate(req, semantic_input=SemanticInput("RESUME_ADOPTED", snapshot_json=cp.semantic_snapshot))
     assert again == out
     assert not out.automatic_progression
+
+
+@pytest.mark.parametrize("row", V1_FIXTURE["records"], ids=lambda row: row["case"])
+def test_frozen_adapter_v1_snapshots_replay_complete_original_outcomes(row):
+    req = initial(memo_action=row["original_memo_action"])
+    req, cp, first = generate(req, SemanticInput("RESUME_ADOPTED", snapshot_json=row["initial_snapshot"]))
+    assert json.loads(json.dumps(asdict(first))) == row["initial_outcome"]
+    req = answered(req, first, row["answer_text"])
+    _, cp, out = generate(req, SemanticInput("RESUME_ADOPTED", snapshot_json=row["answer_snapshot"]))
+    assert json.loads(json.dumps(asdict(out))) == row["answer_outcome"]
+    assert cp.semantic_snapshot == row["answer_snapshot"]
+
+
+@pytest.mark.parametrize("row", V1_FIXTURE["records"], ids=lambda row: row["case"])
+def test_new_adapter_separates_time_topic_without_dropping_additive_particle(row):
+    req = initial(memo_action=row["original_memo_action"])
+    _, cp, first = generate(req, fresh(req))
+    req = answered(req, first, row["answer_text"])
+    packet = answer_packet(req, cp.semantic_snapshot, operation="REVISE" if row["case"] == "REVISE" else "ADD",
+        withdraw=row["case"] == "WITHDRAW")
+    req, cp, out = generate(req, fresh(req, packet, cp.semantic_snapshot))
+    assert json.loads(cp.semantic_snapshot)["adapter_version"] == "2"
+    assert out.artifact is not None, out.reason_codes
+    assert all(phrase not in out.artifact.text for phrase in (
+        "回答した時点では今は", "その時にその時は", "その時は「その時は"))
+    prepared = prepare_snapshot_meaning(req, SemanticInput("RESUME_ADOPTED", snapshot_json=cp.semantic_snapshot))
+    node = prepared.accepted_nuclei[-1]
+    raw = node.semantic_frame.attribute_codes
+    expected = {"ADD":"source_fragment_scalar_range:2:5", "REVISE":"source_fragment_scalar_range:0:12",
+                "WITHDRAW":"source_fragment_scalar_range:4:9"}[row["case"]]
+    assert expected in raw
+    if row["case"] == "REVISE":
+        assert "あの時も本当は" in out.artifact.text
+    assert json.loads(cp.semantic_snapshot)["packet"] == packet
+
+
+def test_actual_v1_pending_can_take_one_new_v2_answer_without_reinterpreting_prior():
+    row = V1_FIXTURE["records"][0]
+    req, old_cp, first = generate(initial(), SemanticInput("RESUME_ADOPTED", snapshot_json=row["initial_snapshot"]))
+    req = answered(req, first, row["answer_text"])
+    packet = answer_packet(req, old_cp.semantic_snapshot)
+    _, cp, out = generate(req, fresh(req, packet, old_cp.semantic_snapshot))
+    snapshot = json.loads(cp.semantic_snapshot)
+    assert snapshot["adapter_version"] == "2" and snapshot["prior_snapshot"]["adapter_version"] == "1"
+    assert snapshot["prior_snapshot"] == json.loads(old_cp.semantic_snapshot)
+    assert out.artifact is not None
+    assert "では今は" not in out.artifact.text
+
+
+@pytest.mark.parametrize("text,kind,expression,predicate,negative", [
+    ("現在は少し嬉しくない。", "ANSWER_TIME", "現在", "嬉しくない", True),
+    ("今も少し嬉しくない。", "ANSWER_TIME", "今", "嬉しくない", True),
+    ("当時は本当は嬉しかった。書き方を間違えた。", "ORIGINAL_OCCASION", "当時", "嬉しかった", False)])
+def test_time_alias_keeps_degree_and_polarity(text, kind, expression, predicate, negative):
+    req = initial()
+    _, cp, first = generate(req, fresh(req))
+    req = answered(req, first, text)
+    packet = answer_packet(replace(req, emlis_thread=replace(req.emlis_thread, answers=(replace(
+        req.emlis_thread.answers[0], answer_text_private=("今は嬉しい。" if kind == "ANSWER_TIME"
+            else "あの時も本当は嬉しかった。書き方を間違えた。")),))), cp.semantic_snapshot,
+        operation="ADD" if kind == "ANSWER_TIME" else "REVISE")
+    i = len(packet["evidence"]) - 1
+    quote = text.split("。")[0]
+    packet["evidence"][i] = evidence("snapshot-answer", "answer_text_private", text, quote)
+    packet["candidate"]["claims"][-1] = claim("answer", "STATE", quote, i, negative=negative,
+        time=kind, expression=expression, source="snapshot-answer", predicate=predicate)
+    req, cp, out = generate(req, fresh(req, packet, cp.semantic_snapshot))
+    assert out.artifact is not None, out.reason_codes
+    assert ("少し嬉しくない" if negative else "本当は嬉しかった") in out.artifact.text
+    if expression + "も" in quote:
+        assert expression + "も" in out.artifact.text
+    assert "では現在は" not in out.artifact.text and "その時は当時は" not in out.artifact.text
+    prepared = prepare_snapshot_meaning(req, SemanticInput("RESUME_ADOPTED", snapshot_json=cp.semantic_snapshot))
+    assert prepared.accepted_nuclei[-1].semantic_frame.polarity == ("negative" if negative else "positive")
 
 
 @pytest.mark.parametrize("text,operation,withdraw", [

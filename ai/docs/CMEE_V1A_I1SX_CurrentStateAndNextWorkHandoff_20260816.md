@@ -22982,3 +22982,11 @@ MashがP2後の限定案へ「進めていいよ」と承認。新emlis_semantic
 新profileはenforce_application_policy=false＋同profile/candidate DIだけwrite可能。通常readerは非再生成の保存再読のみcan_write=false。取得開始だけ残る場合は再取得しない。非採用はprivate OPERATIONで保存し新prefix意味/current本文を偽造しない。nochangeも保存snapshot検証後に旧本文を再使用。newprofile historyへのhandoffは未対応として拒否する。
 
 Cocolon既存trialのsemantic_snapshot_results.jsonへ合成初回/ADD/REVISE/WITHDRAWの原文/未加工本文/source blob/検査結果を保持。P2 E02-0はunknown/actionsを消さずUNSUPPORTED、E02-Bは実pendingなし、Piece/Analysisは範囲外。時点語が反復する既存受容本文・一般意味/条件理解・通常接続は未完。実モデル/推論/重み/学習/課金/実DB/Render/公開API/DTO/RN/merge/deploy0。限定TECHNICAL_CREDIT、STRUCTURE_MAP_DELTA_PRESENT、PRODUCT_NOT_CLEAR/正式0/3/candidate_ready=false/automatic_progression=false。次はlatest weekly Jとtrial P3から、未対応の本人不明/行動とnative対応・作者差分へ進む。
+
+## 2026-10-23 — adapter2時点範囲の既存整合修復
+
+新adapterが時点込みclaimをpreserve_source_predicateへ渡し、作者がthread_timeを重ねていた。FRESHだけadapter2、裸時点語/はのlexical範囲を分離。全snapshot/時点/根拠/少し/本当は/否定は保持。もは添加を落とさず元範囲/反復残件を維持。保存1/2は全original/prior/current plan/問い/再開で各版復元。
+
+sourceはemlis_semantic_admission.pyのみ、同family testと新fixture cmee_emlis_semantic_adapter_v1.json。原e5ca453から修正前に実採取した3系列の全outcome再現を含む最終35 passed/FAIL0/SKIP0、21.49秒。元25＋新10で反復を加算しない。旧pending→新回答、別時点/程度/否定/今も、既存隔離SQL保存/中断/三回答を含む。P1/旧application/広範囲旧失敗は今回再実行0。実出力はCocolon既存trial JSON.adapter_v2_correction。作者だけの既知残件という説明を新adapterとの不整合へ訂正する。
+
+本人不明/二行動の採用拡張は未実装。Cocolon共有design01/schema05の具体案と最新weekly Kから再開する。unknown statement/joy対象と二時点、同span二actionの一意binding、原格/省略主体/te連結/句点差、作者/逆検査/版保存が必要。JOY_ASPECT新問や新要素自身の一般更新/通常有効化は案に含めない。STRUCTURE_MAP_DELTA_NONE、限定TECHNICAL_CREDIT、product_credit=0/PRODUCT_NOT_CLEAR/正式0/3/candidate_ready=false/automatic_progression=false。作者/共有型/通常service/公開API/DTO/RN/実DB/Render/モデル/課金/merge/deploy変更0。
