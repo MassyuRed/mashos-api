@@ -18,7 +18,7 @@ from uuid import uuid4
 from emlis_ai_current_input_bundle import build_emlis_current_input_bundle
 from publish_governance import parse_iso_utc, timestamp_in_history_retention
 from cocolon_meaning_experience_engine import MeaningExperienceEngine
-from cocolon_meaning_experience_engine.contracts import GenerationRequest, EngineStatus
+from cocolon_meaning_experience_engine.contracts import GenerationRequest, EngineStatus, ExecutionMode
 from cocolon_meaning_experience_engine.source_kernel import freeze_text_source
 from cocolon_meaning_experience_engine.emlis_thread_source import admit_emlis_thread, identity
 from cocolon_meaning_experience_engine.emlis_thread_contracts import (
@@ -74,8 +74,13 @@ def _request(snapshot, *, checkpoint_ref=None, include_context=True):
         if field in original and original[field] is None:
             original[field] = ""
     original["created_at"] = parse_iso_utc(original["created_at"]).isoformat()
+    semantic_profile = t["data"].get("semantic_profile")
+    if semantic_profile is not None:
+        from cocolon_meaning_experience_engine.emlis_semantic_admission import PROFILE
+        if semantic_profile != PROFILE or not include_context or t["data"].get("execution_mode") != ExecutionMode.OFFLINE_CANDIDATE.value:
+            raise ValueError("semantic_profile_or_history_not_supported")
     req = GenerationRequest("emlis-" + t["id"], build_emlis_current_input_bundle(original), original["id"],
-                            execution_mode=APPLICATION_EXECUTION_MODE)
+                            execution_mode=ExecutionMode.OFFLINE_CANDIDATE.value if semantic_profile else APPLICATION_EXECUTION_MODE)
     ref = freeze_text_source(req).envelope.envelope_id
     if t["data"].get("original_source_ref", ref) != ref:
         raise ValueError("original_source_changed")
@@ -224,9 +229,16 @@ def thread_dto(snapshot, *, requested_attempt_id=None, can_write=True):
 
 
 class EmlisThreadService:
-    def __init__(self, store=None, engine=None, *, runtime_profile=RUNTIME_PROFILE, enforce_application_policy=False):
+    def __init__(self, store=None, engine=None, *, runtime_profile=RUNTIME_PROFILE, enforce_application_policy=False,
+                 semantic_profile=None, offline_candidate_source=None):
         if runtime_profile not in {RUNTIME_PROFILE, Q3_PROFILE}:
             raise ValueError("unsupported_thread_profile")
+        if semantic_profile is not None or offline_candidate_source is not None:
+            from cocolon_meaning_experience_engine.emlis_semantic_admission import PROFILE
+            if semantic_profile != PROFILE or not callable(offline_candidate_source) or enforce_application_policy:
+                raise ValueError("semantic_offline_configuration_required")
+        self.semantic_profile = semantic_profile
+        self.offline_candidate_source = offline_candidate_source
         self.enforce_application_policy = enforce_application_policy
         self.runtime_profile = runtime_profile
         self.store = store or EmlisThreadStore()
@@ -239,8 +251,17 @@ class EmlisThreadService:
         if not self._writable():
             raise ThreadStoreError("application_paused", 503)
 
+    def _semantic_writable(self, snapshot):
+        profile = (snapshot.get("thread") or {}).get("data", {}).get("semantic_profile")
+        return profile is None or (not self.enforce_application_policy and profile == self.semantic_profile
+            and callable(self.offline_candidate_source))
+
+    def _require_thread_write(self, snapshot):
+        if not self._semantic_writable(snapshot):
+            raise ThreadStoreError("semantic_offline_configuration_required", 409)
+
     def _dto(self, snapshot, **kwargs):
-        return thread_dto(snapshot, can_write=self._writable(), **kwargs)
+        return thread_dto(snapshot, can_write=self._writable() and self._semantic_writable(snapshot), **kwargs)
 
     async def get(self, user_id, input_id):
         snapshot = await self._hydrate(user_id, await self.store.read(user_id, input_id=input_id))
@@ -260,6 +281,7 @@ class EmlisThreadService:
 
     async def _commit(self, user_id, snapshot, next_state, events, **kwargs):
         self._require_write()
+        self._require_thread_write({"thread": next_state})
         result = await self.store.commit(user_id, snapshot, next_state, events, **kwargs)
         return {**result, **({"context":snapshot["context"]} if "context" in snapshot else {})}
 
@@ -274,6 +296,8 @@ class EmlisThreadService:
             "data": {"runtime_profile": self.runtime_profile, "execution_mode": APPLICATION_EXECUTION_MODE,
                      "started_tier": snapshot["tier"],
                      "body_state": "UNAVAILABLE", "answer_assessment": "NOT_APPLICABLE"}}
+        if self.semantic_profile:
+            t["data"].update(semantic_profile=self.semantic_profile, execution_mode=ExecutionMode.OFFLINE_CANDIDATE.value)
         self._begin(t, snapshot)
         if self.runtime_profile == Q3_PROFILE:
             t["data"].update(context_guards=[h["guard"] for h in snapshot["context"]["history"]],
@@ -321,6 +345,7 @@ class EmlisThreadService:
             raise ThreadStoreError("answer_invalid", 422)
         snapshot = await self._hydrate(user_id, await self.store.read(user_id, thread_id=thread_id))
         t = _check(snapshot)
+        self._require_thread_write(snapshot)
         fingerprint = identity("answer-request", question_id, answer_text, authored_at)
         replay = self._replay(snapshot, idempotency_key, fingerprint)
         if replay:
@@ -362,6 +387,7 @@ class EmlisThreadService:
             raise ThreadStoreError("frame_feedback_invalid",422)
         snapshot = await self._hydrate(user_id,await self.store.read(user_id,thread_id=thread_id))
         t = _check(snapshot)
+        self._require_thread_write(snapshot)
         fingerprint = identity("frame-feedback-request",frame_ref,status,correction_text)
         replay = self._replay(snapshot,idempotency_key,fingerprint)
         if replay:
@@ -387,6 +413,7 @@ class EmlisThreadService:
         self._require_write()
         snapshot = await self._hydrate(user_id, await self.store.read(user_id, thread_id=thread_id))
         t = _check(snapshot)
+        self._require_thread_write(snapshot)
         fingerprint = identity("action-request", action, question_id, operation_id)
         replay = self._replay(snapshot, idempotency_key, fingerprint)
         if replay:
@@ -446,13 +473,79 @@ class EmlisThreadService:
             raise
         return await self._process(user_id, snapshot)
 
+    async def _semantic_candidate(self, user_id, snapshot):
+        """Persist acquisition and receipt separately; interrupted acquisition is not retried."""
+        from cocolon_meaning_experience_engine.preparation import CandidateReceipt
+        t = snapshot["thread"]
+        prefix = t["source_prefix_ref"]
+        previous = [e for e in snapshot["events"] if e["kind"] == "OPERATION"
+            and e["payload"].get("attempted_source_prefix_ref") == prefix]
+        evaluation = next((e for e in reversed(previous) if e["payload"].get("stage") == "SEMANTIC_NOT_ADOPTED"), None)
+        if evaluation:
+            return snapshot, None, None, evaluation
+        saved = next((e for e in reversed(previous) if e["payload"].get("stage") == "SEMANTIC_CANDIDATE_RECEIVED"), None)
+        prior_event = _find(snapshot, t.get("current_meaning_event_id"))
+        prior = prior_event["payload"].get("semantic_snapshot") if prior_event else None
+        if saved:
+            return snapshot, CandidateReceipt(**saved["payload"]["candidate_receipt"]), prior, None
+        if previous:
+            raise ThreadStoreError("semantic_candidate_acquisition_incomplete")
+        if self.semantic_profile != t["data"].get("semantic_profile") or not self.offline_candidate_source:
+            raise ThreadStoreError("semantic_candidate_source_unavailable")
+        started = _event("OPERATION", {"stage":"SEMANTIC_CANDIDATE_STARTED",
+            "attempted_source_prefix_ref":prefix}, t)
+        snapshot = await self._commit(user_id, snapshot, copy.deepcopy(t), [started], finishing_attempt=t["active_attempt_id"])
+        import inspect
+        candidate = self.offline_candidate_source(_request(snapshot), prior)
+        if inspect.isawaitable(candidate):
+            candidate = await candidate
+        if type(candidate) is not CandidateReceipt:
+            raise ValueError("semantic_candidate_receipt_required")
+        t = snapshot["thread"]
+        event = _event("OPERATION", {"stage":"SEMANTIC_CANDIDATE_RECEIVED",
+            "attempted_source_prefix_ref":prefix, "candidate_receipt":asdict(candidate)}, t)
+        snapshot = await self._commit(user_id, snapshot, copy.deepcopy(t), [event], finishing_attempt=t["active_attempt_id"])
+        return snapshot, candidate, prior, None
+
+    async def _semantic_unadopted(self, user_id, snapshot, decision, code, receipt):
+        t = copy.deepcopy(snapshot["thread"])
+        prior = _find(snapshot, t.get("current_meaning_event_id"))
+        event = _event("OPERATION", {"stage":"SEMANTIC_NOT_ADOPTED", "semantic_profile":t["data"]["semantic_profile"],
+            "attempted_source_prefix_ref":t["source_prefix_ref"],
+            "prior_active_snapshot_ref":prior["payload"].get("snapshot_ref") if prior else None,
+            "decision":decision, "reason_codes":[code], "candidate_receipt":asdict(receipt) if receipt else None}, t)
+        t["data"].update(semantic_evaluation_ref=event["id"], answer_assessment="UNRESOLVED" if t.get("latest_answer_event_id") else "NOT_APPLICABLE", meaning_updated=False)
+        snapshot = await self._commit(user_id, snapshot, t, [event], finishing_attempt=t["active_attempt_id"])
+        return await self._finish(user_id, snapshot, body_state="ANSWER_UNREFLECTED" if t.get("latest_answer_event_id") else "UNAVAILABLE",
+            state="COMPLETED")
+
     async def _process(self, user_id, snapshot):
         t, attempt = snapshot["thread"], snapshot["thread"]["active_attempt_id"]
         try:
             self._require_write()
+            self._require_thread_write(snapshot)
+            semantic_input = None
+            semantic = t["data"].get("semantic_profile")
+            if semantic:
+                from cocolon_meaning_experience_engine.emlis_semantic_admission import (
+                    PROFILE, CHECKPOINT_SCHEMA, SemanticInput, SemanticNotAdopted)
+                if semantic != PROFILE or t["data"].get("execution_mode") != ExecutionMode.OFFLINE_CANDIDATE.value:
+                    raise ValueError("semantic_profile_invalid")
             checkpoint = _find(snapshot, t.get("current_meaning_event_id"))
             if t.get("evaluated_prefix_ref") != t["source_prefix_ref"]:
-                cp = await asyncio.to_thread(self.engine.prepare_emlis_update, _request(snapshot))
+                if semantic:
+                    snapshot, candidate, prior, evaluation = await self._semantic_candidate(user_id, snapshot)
+                    t = snapshot["thread"]
+                    if evaluation:
+                        return await self._finish(user_id, snapshot,
+                            body_state="ANSWER_UNREFLECTED" if t.get("latest_answer_event_id") else "UNAVAILABLE", state="COMPLETED")
+                    semantic_input = SemanticInput("FRESH_CANDIDATE", candidate, prior_snapshot_json=prior)
+                    try:
+                        cp = await asyncio.to_thread(self.engine.prepare_emlis_update, _request(snapshot), semantic_input=semantic_input)
+                    except SemanticNotAdopted as exc:
+                        return await self._semantic_unadopted(user_id, snapshot, exc.decision, exc.reason_code, candidate)
+                else:
+                    cp = await asyncio.to_thread(self.engine.prepare_emlis_update, _request(snapshot))
                 t = copy.deepcopy(t)
                 checkpoint = _event("MEANING_UPDATE", cp, t)
                 t["current_meaning_event_id"] = checkpoint["id"]
@@ -466,8 +559,16 @@ class EmlisThreadService:
                 t = snapshot["thread"]
                 checkpoint = _find(snapshot, t["current_meaning_event_id"])
             cp = checkpoint["payload"]
-            if cp["semantic_schema_version"] != SEMANTIC_SCHEMA or cp["source_prefix_ref"] != t["source_prefix_ref"]:
+            if cp["semantic_schema_version"] != (CHECKPOINT_SCHEMA if semantic else SEMANTIC_SCHEMA) or cp["source_prefix_ref"] != t["source_prefix_ref"]:
                 raise ValueError("checkpoint_contract_changed")
+            if semantic:
+                if cp.get("semantic_profile") != semantic or not cp.get("semantic_snapshot"):
+                    raise ValueError("semantic_saved_snapshot_required")
+                semantic_input = SemanticInput("RESUME_ADOPTED", snapshot_json=cp["semantic_snapshot"])
+                restored = await asyncio.to_thread(self.engine.prepare_emlis_update,
+                    _request(snapshot, checkpoint_ref=cp["checkpoint_id"]), semantic_input=semantic_input)
+                if _json(restored) != cp:
+                    raise ValueError("semantic_saved_checkpoint_mismatch")
             update = cp.get("answer_update")
             if update and update["disposition"] == "NO_MATERIAL_UPDATE":
                 previous = _find(snapshot, t.get("last_observation_event_id"))
@@ -478,7 +579,8 @@ class EmlisThreadService:
             if update and update["disposition"] == "UNRESOLVED":
                 return await self._finish(user_id, snapshot, body_state="ANSWER_UNREFLECTED", state="COMPLETED")
             self._require_write()
-            outcome = await asyncio.to_thread(self.engine.generate, _request(snapshot, checkpoint_ref=cp["checkpoint_id"]))
+            outcome = await asyncio.to_thread(self.engine.generate, _request(snapshot, checkpoint_ref=cp["checkpoint_id"]),
+                **({"semantic_input":semantic_input} if semantic else {}))
             if _json(outcome.meaning_checkpoint) != cp:
                 raise ValueError("checkpoint_body_mismatch")
             if outcome.artifact is None:
@@ -488,7 +590,8 @@ class EmlisThreadService:
                     failure="separate_safety_owner_required" if safety else "body_not_validated")
             artifact = outcome.artifact
             from cocolon_meaning_experience_engine.emlis_answer_update import prepare_emlis_meaning, build_updated_grounded_plan, _base_ref
-            prepared = prepare_emlis_meaning(_request(snapshot, checkpoint_ref=cp["checkpoint_id"]))
+            prepared = prepare_emlis_meaning(_request(snapshot, checkpoint_ref=cp["checkpoint_id"]),
+                **({"semantic_input":semantic_input} if semantic else {}))
             effective_ref = _base_ref(prepared.thread, build_updated_grounded_plan(prepared))
             observation = _event("OBSERVATION", {"text": artifact.text,
                 "effective_plan_ref":effective_ref, "context_guards":t["data"].get("context_guards", []), "context_ref":_context_ref(snapshot),
@@ -511,6 +614,8 @@ class EmlisThreadService:
                 pass
             raise
         except ThreadStoreError as exc:
+            if exc.code in {"semantic_candidate_acquisition_incomplete", "semantic_candidate_source_unavailable"}:
+                return await self._semantic_unadopted(user_id, snapshot, "HOLD", exc.code, None)
             if exc.code == "application_paused":
                 return await self._record_failure(user_id, snapshot, attempt, "worker_interrupted", paused=True)
             if exc.transient:

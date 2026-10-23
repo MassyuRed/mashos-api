@@ -27,7 +27,9 @@ class MeaningExperienceEngine:
     belongs to the application config, not this pure meaning engine.
     """
 
-    def generate(self, request: GenerationRequest | PieceGenerationRequest | AnalysisObservedMapRequest) -> EngineOutcome | PieceEngineOutcome | AnalysisEngineOutcome:
+    def generate(self, request: GenerationRequest | PieceGenerationRequest | AnalysisObservedMapRequest, *, semantic_input=None) -> EngineOutcome | PieceEngineOutcome | AnalysisEngineOutcome:
+        if semantic_input is not None and (not isinstance(request, GenerationRequest) or request.execution_mode != ExecutionMode.OFFLINE_CANDIDATE.value or request.emlis_thread is None):
+            return self._rejected("semantic_offline_thread_required")
         if isinstance(request, AnalysisObservedMapRequest):
             return generate_observed_map(request)
         if isinstance(request, PieceGenerationRequest):
@@ -45,7 +47,7 @@ class MeaningExperienceEngine:
 
         if request.emlis_thread is not None:
             from .emlis_thread_engine import generate_emlis_thread
-            return generate_emlis_thread(self, request)
+            return generate_emlis_thread(self, request, semantic_input=semantic_input) if semantic_input is not None else generate_emlis_thread(self, request)
 
         return self._generate_original_body(request)
 
@@ -147,7 +149,7 @@ class MeaningExperienceEngine:
             automatic_progression=False,
         )
 
-    def prepare_emlis_update(self, request: GenerationRequest):
+    def prepare_emlis_update(self, request: GenerationRequest, *, semantic_input=None):
         """Pure Emlis meaning checkpoint, before body generation or issuance."""
         if (type(request) is not GenerationRequest
                 or request.core_id != CoreId.EMLIS_AI.value
@@ -156,7 +158,7 @@ class MeaningExperienceEngine:
                 or not str(request.request_id or "").strip()):
             raise ValueError("emlis_update_request_out_of_scope")
         from .emlis_answer_update import prepare_emlis_meaning
-        return prepare_emlis_meaning(request).checkpoint
+        return (prepare_emlis_meaning(request, semantic_input=semantic_input) if semantic_input is not None else prepare_emlis_meaning(request)).checkpoint
 
 
 __all__ = ["MeaningExperienceEngine"]

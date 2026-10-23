@@ -1336,7 +1336,10 @@ def _active_plan(original, thread, added, inactive, updates, unresolved=(), *, p
         evidence_ledger_validation=EvidenceLedgerValidationReport(True, canonical_span_ids=resolver.span_ids))
 
 
-def prepare_emlis_meaning(request: GenerationRequest) -> PreparedEmlisMeaning:
+def prepare_emlis_meaning(request: GenerationRequest, *, semantic_input=None) -> PreparedEmlisMeaning:
+    if semantic_input is not None:
+        from .emlis_semantic_admission import prepare_snapshot_meaning
+        return prepare_snapshot_meaning(request, semantic_input)
     thread = admit_emlis_thread(request)
     original = original_meaning_plan(thread)
     try:
@@ -2049,6 +2052,9 @@ def _prepare_answer(thread, original, *, legacy_unknown_replacement_time=False, 
 
 def build_updated_grounded_plan(prepared: PreparedEmlisMeaning):
     """Post-checkpoint plan construction; failure cannot undo meaning."""
+    if getattr(prepared, "semantic_snapshot", ""):
+        from .emlis_semantic_admission import derive_snapshot_plan
+        return derive_snapshot_plan(prepared)
     if not prepared.thread.answers or prepared.checkpoint.answer_update.disposition == "NO_MATERIAL_UPDATE":
         return prepared.original_plan
     return _active_plan(prepared.original_plan, prepared.thread,

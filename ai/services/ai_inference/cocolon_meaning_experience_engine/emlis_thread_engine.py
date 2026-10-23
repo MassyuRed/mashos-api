@@ -14,7 +14,8 @@ from .source_kernel import SourceAdmissionError
 
 def _original_body_uses_prepared_plan(prepared):
     from emlis_ai_grounded_observation_plan import source_owned_result_appraisal, _source_independent_unknown_object_from_resolver, _source_same_field_unknown_object_from_resolver, _source_separate_contrast_objects_from_resolver
-    return (prepared.thread.control.capability_snapshot.startswith("Q3_")
+    return (bool(getattr(prepared, "semantic_snapshot", ""))
+        or prepared.thread.control.capability_snapshot.startswith("Q3_")
         or any('source_received_personal_meaning:v1' in n.semantic_frame.attribute_codes
                for n in prepared.original_plan.nuclei)
         or any('source_past_self_unknown:v1' in n.semantic_frame.attribute_codes
@@ -38,10 +39,10 @@ def _original_body_uses_prepared_plan(prepared):
                for r in prepared.original_plan.relations))
 
 
-def generate_emlis_thread(engine, request) -> EmlisThreadOutcomeV1:
+def generate_emlis_thread(engine, request, *, semantic_input=None) -> EmlisThreadOutcomeV1:
     end = EmlisQuestionDecisionV1("END", decision_reason="free_round_complete")
     try:
-        prepared = prepare_emlis_meaning(request)
+        prepared = prepare_emlis_meaning(request, semantic_input=semantic_input) if semantic_input is not None else prepare_emlis_meaning(request)
     except (SourceAdmissionError, ValueError) as exc:
         # All lower-level admission errors are fixed codes, never exception
         # text from arbitrary parsers or private source-bearing objects.
@@ -55,6 +56,12 @@ def generate_emlis_thread(engine, request) -> EmlisThreadOutcomeV1:
             EmlisQuestionDecisionV1("BLOCKED", decision_reason="meaning_read_failed"),
             reason_codes=("emlis_meaning_preparation_unavailable",))
     checkpoint = prepared.checkpoint
+    if getattr(prepared, "semantic_snapshot", ""):
+        from .emlis_semantic_admission import snapshot_question
+        def choose_question(thread, plan, *, parent_request_id):
+            return snapshot_question(thread, plan, prepared.semantic_snapshot, parent_request_id=parent_request_id)
+    else:
+        choose_question = question_candidate
     if not prepared.thread.answers:
         if _original_body_uses_prepared_plan(prepared):
             try:
@@ -71,7 +78,7 @@ def generate_emlis_thread(engine, request) -> EmlisThreadOutcomeV1:
                 meaning_checkpoint=checkpoint, reason_codes=body.reason_codes)
         sufficiency = "LIMITED" if body.status is EngineStatus.LIMITED else "SUFFICIENT"
         try:
-            decision, question = question_candidate(prepared.thread, prepared.original_plan,
+            decision, question = choose_question(prepared.thread, prepared.original_plan,
                                                      parent_request_id=request.request_id)
         except Exception:
             decision, question = EmlisQuestionDecisionV1("END", decision_reason="question_realization_unavailable"), None
@@ -118,7 +125,7 @@ def generate_emlis_thread(engine, request) -> EmlisThreadOutcomeV1:
     if (request.emlis_thread.capability_snapshot == "Q3_PREMIUM"
             and checkpoint.assessment_status == "RESOLVED"):
         try:
-            end, question = question_candidate(prepared.thread, build_updated_grounded_plan(prepared),
+            end, question = choose_question(prepared.thread, build_updated_grounded_plan(prepared),
                                                parent_request_id=request.request_id)
         except Exception:
             end = EmlisQuestionDecisionV1("END", decision_reason="question_realization_unavailable")

@@ -22972,3 +22972,13 @@ u354実本文の残件をLEVEL_2で修復。安堵・寂しさのpair＋received
 対象321件の最終結果passed、未解消fail／skip0。未変更u354の60recordで全意味・選択・Reception・本文のその他fieldが一致し、Observation一文と本文由来IDだけ24recordで変わる。残り36は本文／停止も同一。旧u350未完成checkpointは旧時点解釈を保持して現行表面へ進むため、この一文だけ変わり得る。完成済み旧DTO・確定旧失敗は非再生成。実SQL14件で初回・実pendingへのADD／現在否定REVISE・旧保存・意味前後中断再開を通し、同じ18DTOを現行apiClient→API→hook→Modalで各2回close/reopenした。HTTP/Auth/nativeはstub、実端末・本番・全suiteの成功ではない。
 
 STRUCTURE_MAP_DELTA_NONE。既存production3file内、新production／型／意味版／依存／API／DTO／DB／RN／Safety変更0、logical90を維持。正式別model評価ではなく主担当実行と補助読取レビュー。限定TECHNICAL_CREDIT。PRODUCT_NOT_CLEAR／正式0/3／candidate_ready=false／automatic_progression=false。長い原文反復、深い受容、一般入力、PARTIAL、説明Mを含む別sourceの更新、任意多段・本人実機は残る。範囲外の元reaction訂正では「その時は今は嬉しい」等の時点衝突が比較本文に残り、次の具体的な診断対象とする。次はE05/E06/E08の実本文品質と既存方式判断へ戻る。10/20方式判断・10/31管理線・12/18公開目標、Piece/Analysis主枠53.25％は再評価しない。Draft PR3／30、merge・deployなし。詳細・全変更file・本文は[u355監査](https://github.com/MassyuRed/Cocolon/blob/agent/three-core-cmee-current-structure-20260815/Cocolon_前提資料/audits/emlis_ai/Cocolon_EmlisAI_u355_MixedReceivedTimeNeutral_20261019.md)。
+
+## 2026-10-23 — 承認済み限定offline Emlis semantic snapshot
+
+MashがP2後の限定案へ「進めていいよ」と承認。新emlis_semantic_admission.pyと既存engine/emlis_answer_update/emlis_thread_engine/emlis_thread_serviceだけで、新規・明示offlineのP1receipt→暫定snapshot→既存作者/実問い/実回答更新→意味先行保存/再開を接続した。keyword-only SemanticInputを使用し、旧request/control/schemaとlegacy既定経路は維持。新schema/profile/fieldの正本はCocolon design05末尾、全pathは01A末尾。source base b7eb534。P1受口NOT_ADOPTED、旧fixture/protected期待、共有contracts/作者/single-input三guardは変更0。
+
+最終新25＋P1旧22＝47 passed（21.63s、fail/skip0）、旧Q2/Q3 application54は未変更HEAD/変更後とも54passed。重複除外101成功。PGliteで既存SQL/RPCを実行し、保存段階別中断・同receipt/snapshot再開・取得未完了HOLD終了・通常service mutation拒否・Premium三回答/第三わからないを検証。旧Q1/Q3広範囲は多失敗で打切り。先頭Q1 reception113行だけ旧HEADでも同失敗を再現、他の失敗は未分類/未解消で全suite合格ではない。
+
+新profileはenforce_application_policy=false＋同profile/candidate DIだけwrite可能。通常readerは非再生成の保存再読のみcan_write=false。取得開始だけ残る場合は再取得しない。非採用はprivate OPERATIONで保存し新prefix意味/current本文を偽造しない。nochangeも保存snapshot検証後に旧本文を再使用。newprofile historyへのhandoffは未対応として拒否する。
+
+Cocolon既存trialのsemantic_snapshot_results.jsonへ合成初回/ADD/REVISE/WITHDRAWの原文/未加工本文/source blob/検査結果を保持。P2 E02-0はunknown/actionsを消さずUNSUPPORTED、E02-Bは実pendingなし、Piece/Analysisは範囲外。時点語が反復する既存受容本文・一般意味/条件理解・通常接続は未完。実モデル/推論/重み/学習/課金/実DB/Render/公開API/DTO/RN/merge/deploy0。限定TECHNICAL_CREDIT、STRUCTURE_MAP_DELTA_PRESENT、PRODUCT_NOT_CLEAR/正式0/3/candidate_ready=false/automatic_progression=false。次はlatest weekly Jとtrial P3から、未対応の本人不明/行動とnative対応・作者差分へ進む。
