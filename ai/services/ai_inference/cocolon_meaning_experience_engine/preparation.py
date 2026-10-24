@@ -205,7 +205,7 @@ def _check_evidence(request, candidate):
 
 def receive_candidate(request, *, request_id, raw_output, finish_reason,
                       provider=None, model=None, revision=None, usage=None,
-                      elapsed_seconds=None):
+                      elapsed_seconds=None, adapter_revision=None):
     """Retain raw response/metadata; nothing here adopts or generates meaning.
 
     No provider is called. Timeout/length/error always dominate parse success;
@@ -216,7 +216,7 @@ def receive_candidate(request, *, request_id, raw_output, finish_reason,
         raise ValueError("preparation_response_request_mismatch")
     if raw_output is not None and type(raw_output) is not str:
         raise ValueError("preparation_raw_output_invalid")
-    if any(v is not None and type(v) is not str for v in (provider, model, revision, finish_reason)):
+    if any(v is not None and type(v) is not str for v in (provider, model, revision, finish_reason, adapter_revision)):
         raise ValueError("preparation_metadata_invalid")
     if (elapsed_seconds is not None and
             (type(elapsed_seconds) not in (int, float) or not math.isfinite(elapsed_seconds)
@@ -246,5 +246,9 @@ def receive_candidate(request, *, request_id, raw_output, finish_reason,
     metadata = dict(provider=provider, model=model, revision=revision, usage=usage,
                     finish_reason=finish_reason, elapsed_seconds=elapsed_seconds,
                     evidence_check="LOCATION_ONLY_NOT_SEMANTIC_ADMISSION")
+    # Omission preserves all old receipt bytes. New offline learned-model runs
+    # can bind the actual adapter identity separately from the base revision.
+    if adapter_revision is not None:
+        metadata["adapter_revision"] = adapter_revision
     return CandidateReceipt(request_id, status, raw_output,
                             _json(candidate) if candidate is not None else None, _json(metadata))

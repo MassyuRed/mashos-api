@@ -627,6 +627,8 @@ def _restore(request, text):
 
 
 def prepare_snapshot_meaning(request, semantic_input):
+    if type(semantic_input) is SemanticInput and semantic_input.semantic_profile == MODEL_PROFILE:
+        return prepare_model_snapshot(request, semantic_input)
     try:
         return _prepare_snapshot_meaning(request, semantic_input)
     except SemanticNotAdopted as exc:
@@ -944,3 +946,492 @@ def snapshot_resolver(prepared):
     if (p["snapshot_ref"] != _semantic_ref(p) or p["native_bindings"] != native_bindings_v2(p["packet"], material, prepared.thread)):
         _fail("REJECT", "semantic_v2_resolver_binding_invalid")
     return SnapshotEvidenceSpanResolverV2(prepared, p)
+
+
+# The learned-response profile is a separate, bounded offline vertical. It does
+# not weaken or route arbitrary predicates through either historical adapter.
+MODEL_PROFILE = "emlis_model_proposal.v1"
+MODEL_SCHEMA = "cocolon.cmee.emlis_semantic_snapshot.v3"
+MODEL_CHECKPOINT_SCHEMA = "cocolon.cmee.emlis_answer_meaning.v4"
+MODEL_CANDIDATE_SCHEMA = "cocolon.cmee.semantic_and_surface_proposal.v1"
+
+
+def is_model_profile(value):
+    return value == MODEL_PROFILE
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class ModelCheckpoint(EmlisMeaningCheckpointV1):
+    semantic_schema_version: str = MODEL_CHECKPOINT_SCHEMA
+    semantic_profile: str = MODEL_PROFILE
+    semantic_snapshot: str = ""
+    snapshot_ref: str = ""
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class ModelPreparedMeaning:
+    thread: object
+    checkpoint: ModelCheckpoint
+    semantic_snapshot: str
+    semantic_material_json: str
+    meaning_json: str
+    surface_proposal_json: str
+    question_proposal_json: str
+    native_bindings_json: str
+
+
+def _model_fail(code, decision="REJECT"):
+    _fail(decision, "model_" + code)
+
+
+def _model_span(text, quote, source_id, field):
+    if type(quote) is not str or not quote or text.count(quote) != 1:
+        _model_fail("source_anchor_not_unique", "HOLD")
+    start = text.index(quote)
+    return dict(source_id=source_id, field_path=field, start=start,
+                end=start + len(quote), quote=quote)
+
+
+def _model_nominal_slot(text, *, state_modifier=False):
+    """Accept one written nominal slot, never a hidden subordinate action.
+
+    The bounded repair family allows a single listed state modifier followed
+    by a noun token (Kanji/Katakana/ASCII digits or letters). This is a lexical
+    script/grammar boundary, not a dictionary of permitted item/person names.
+    Hiragana-containing compound names, additional case particles, relative
+    clauses and action conjunctions are unsupported rather than shortened.
+    For example, a second 'を...して' must not become part of one patient.
+    """
+    if state_modifier:
+        text = re.sub(r"^(?:ぐらついていた|壊れていた|緩んでいた|傷んでいた|古い|新しい)", "", text, count=1)
+    return bool(re.fullmatch(r"[一-龥々ァ-ヶーA-Za-z0-9０-９]{1,32}", text))
+
+
+def _model_source_roles(thread, material):
+    """Read a repair/reuse syntax family, not a fixture or a free-text parser.
+
+    Lexical objects and participants are read from their written case slots.
+    Unsupported subjects, polarity, embedding or added clauses are retained in
+    the source and cause UNSUPPORTED; they are never discarded to fit a case.
+    """
+    original = material.payload()["sources"][0]
+    sid, fields = original["source_id"], original["text_fields"]
+    memo, action = fields.get("memo"), fields.get("memo_action")
+    if type(memo) is not str or type(action) is not str:
+        _model_fail("source_text_required", "UNSUPPORTED")
+    am = re.fullmatch(r"(?P<object>[^、。\n]{1,60})を(?P<repair>修理して|直して)[、,]"
+                     r"(?P<result>また(?:座れる|使える)ようになった)[。]?", action)
+    mm = re.fullmatch(r"(?P<solo>(?:全部|すべて)?一人で(?:直せた|修理できた)こと)が[、,]?"
+                     r"(?P<joy>うれしかった|嬉しかった)[。]?", memo)
+    if not am or not mm or not _model_nominal_slot(am["object"], state_modifier=True):
+        _model_fail("repair_reuse_source_out_of_scope", "UNSUPPORTED")
+    roles = {
+        "repair": _model_span(action, action[:am.start("result")].rstrip("、,"), sid, "memo_action"),
+        "usable_again": _model_span(action, am["result"], sid, "memo_action"),
+        "joy": _model_span(memo, mm["joy"], sid, "memo"),
+        "solo_appraisal_object": _model_span(memo, mm["solo"], sid, "memo"),
+    }
+    markers = {
+        "repair_and_result": _model_span(action, am["repair"][-2:] + action[am.end("repair"):am.start("result")], sid, "memo_action"),
+        "joy_ground": _model_span(memo, memo.rstrip("。"), sid, "memo"),
+    }
+    cases = [dict(role="repair", written_role="を", text=am["object"], source_id=sid,
+                  field_path="memo_action", start=am.start("object"), end=am.end("object"))]
+    source_fields = {s["source_id"]: s["text_fields"] for s in material.payload()["sources"]}
+    corrections, negations = {}, []
+    if thread.answers:
+        answer = thread.answers[0].source
+        text, aid = answer.answer_text_private, answer.answer_id
+        # A visible correction, cooperation and explicit non-solo/reuse reason
+        # are required together. No model assertion can supply a missing one.
+        pattern = (r"(?P<correction>(?:さっき|先ほど)「(?P<old>(?:全部|すべて)?一人で)」と(?:書いた|言った)のは訂正します)[。]"
+                   r"(?:途中で)?(?P<guidance>(?P<person>[^、。\n]{1,24})に(?P<procedure>手順|やり方|方法)を(?:教えてもらって|教わって))[、,]"
+                   r"(?P<joint>一緒に(?:直しました|修理しました))[。][\s]*"
+                   r"(?P<reason_sentence>(?:うれしかった|嬉しかった)のも、?(?P<old_reason>一人で(?:できた|直せた)からではなく)[、,]"
+                   r"(?P<reuse>捨てずにまた使えるようになったからです))[。]?")
+        cm = re.fullmatch(pattern, text)
+        if not cm or not _model_nominal_slot(cm["person"]):
+            _model_fail("correction_source_out_of_scope", "UNSUPPORTED")
+        if cm["old"] not in mm["solo"]:
+            _model_fail("correction_target_not_bound", "HOLD")
+        roles.pop("solo_appraisal_object")
+        for role, group in (("friend_guidance", "guidance"), ("joint_repair", "joint"),
+                            ("reuse_appraisal_object", "reuse")):
+            roles[role] = _model_span(text, cm[group], aid, "answer_text_private")
+        for key, group in (("revise_solo", "correction"), ("old_reason_negated", "old_reason"),
+                           ("joy_ground_revised", "reason_sentence")):
+            corrections[key] = _model_span(text, cm[group], aid, "answer_text_private")
+        person_start = cm.start("person")
+        cases.extend([dict(role="friend_guidance", written_role="に", text=cm["person"],
+            source_id=aid, field_path="answer_text_private", start=person_start, end=cm.end("person")),
+            dict(role="friend_guidance", written_role="を", text=cm["procedure"],
+            source_id=aid, field_path="answer_text_private", start=cm.start("procedure"), end=cm.end("procedure"))])
+        negations = [corrections["old_reason_negated"], _model_span(text, "捨てずに", aid, "answer_text_private")]
+    return roles, markers, corrections, cases, source_fields, negations
+
+
+def _model_packet(packet, material, thread, prior):
+    _keys(packet, {"candidate", "evidence"})
+    c, ev = packet["candidate"], packet["evidence"]
+    _keys(c, {"schema_version", "core", "claims", "relations", "unknowns", "conflicts", "updates",
+              "surface_proposal", "question_proposal"})
+    if c["schema_version"] != MODEL_CANDIDATE_SCHEMA or c["core"] != "emlis":
+        _model_fail("candidate_version_invalid")
+    if any(type(c[k]) is not list for k in ("claims", "relations", "unknowns", "conflicts", "updates")):
+        _model_fail("collection_invalid")
+    if c["conflicts"]:
+        _model_fail("conflicts_not_supported", "UNSUPPORTED")
+    roles, markers, corrections, cases, source_fields, negations = _model_source_roles(thread, material)
+    if type(ev) is not list or len(ev) > 32 or len({_json(e) for e in ev}) != len(ev):
+        _model_fail("evidence_collection_invalid")
+    def ev_index(anchor):
+        found = [i for i, e in enumerate(ev) if e == anchor]
+        if len(found) != 1:
+            _model_fail("required_source_anchor_missing", "HOLD")
+        return found[0]
+    # Old evidence may remain in a correction packet, but every row must be a
+    # known source role/connector/correction. Arbitrary extra text is not lost.
+    original_roles, original_markers, _, _, _, _ = _model_source_roles(
+        replace(thread, answers=()), material)
+    allowed = list(original_roles.values()) + list(original_markers.values()) + list(roles.values()) + list(corrections.values())
+    if any(e not in allowed for e in ev):
+        _model_fail("evidence_out_of_scope", "UNSUPPORTED")
+    mapped, ids = {}, set()
+    role_for_text = {v["quote"]: k for k, v in roles.items()}
+    if len(role_for_text) != len(roles) or len(c["claims"]) != len(roles):
+        _model_fail("claim_coverage_invalid", "HOLD")
+    for claim in c["claims"]:
+        _keys(claim, _CLAIM_KEYS)
+        cid = claim["claim_id"]
+        if type(cid) is not str or not re.fullmatch(r"[A-Za-z0-9_.-]{1,64}", cid) or cid in ids:
+            _model_fail("claim_identity_invalid")
+        ids.add(cid)
+        role = role_for_text.get(claim["text"])
+        if role is None or role in mapped:
+            _model_fail("claim_source_semantics_not_bound", "HOLD")
+        anchor = roles[role]
+        index = ev_index(anchor)
+        kind = "STATE" if role == "joy" else "ACTION_RESULT" if role == "usable_again" else "USER_APPRAISAL_OBJECT" if role.endswith("appraisal_object") else "EVENT"
+        expected = dict(kind=kind, subject=dict(binding="OMITTED", source_entity=None, evidence_indexes=[]),
+            predicate=dict(surface=anchor["quote"], arguments=[]),
+            polarity=dict(value="AFFIRMED", scope_refs=[cid], evidence_indexes=[index]),
+            modality=dict(value="ASSERTED_AS_WRITTEN", evidence_indexes=[index]),
+            about_time=dict(kind="WRITTEN_PAST_UNRESOLVED_OCCASION", expression=None,
+                            anchor_source_id=anchor["source_id"], evidence_indexes=[index]),
+            qualifiers=[], evidence_indexes=[index])
+        if any(claim[k] != v for k, v in expected.items()):
+            _model_fail("claim_axes_not_source_bound", "HOLD")
+        mapped[role] = dict(claim_ref=cid, text=anchor["quote"], **{k:v for k,v in anchor.items() if k != "quote"})
+    relation_roles, relids = {}, set()
+    required_relations = {"repair_and_result": ("SOURCE_WRITTEN_TE_LINK", "repair", "usable_again", markers["repair_and_result"])}
+    joy_role = "reuse_appraisal_object" if thread.answers else "solo_appraisal_object"
+    ground_role = "joy_ground_revised" if thread.answers else "joy_ground"
+    required_relations[ground_role] = ("USER_STATED_JOY_GROUND", joy_role, "joy",
+        corrections["joy_ground_revised"] if thread.answers else markers["joy_ground"])
+    if len(c["relations"]) != len(required_relations):
+        _model_fail("relation_coverage_invalid", "HOLD")
+    for r in c["relations"]:
+        _keys(r, {"relation_id", "type", "from_claim_id", "to_claim_id", "polarity", "scope_refs", "qualifiers", "evidence_indexes"})
+        rid = r["relation_id"]
+        if type(rid) is not str or not re.fullmatch(r"[A-Za-z0-9_.-]{1,64}", rid) or rid in ids | relids:
+            _model_fail("relation_identity_invalid")
+        relids.add(rid)
+        matches = [role for role,(kind,frm,to,anchor) in required_relations.items()
+            if r["type"] == kind and r["from_claim_id"] == mapped[frm]["claim_ref"]
+            and r["to_claim_id"] == mapped[to]["claim_ref"] and r["evidence_indexes"] == [ev_index(anchor)]]
+        if len(matches) != 1 or matches[0] in relation_roles or r["polarity"] != "AFFIRMED" or r["scope_refs"] != [rid] or r["qualifiers"]:
+            _model_fail("relation_direction_or_scope_not_bound", "HOLD")
+        relation_roles[matches[0]] = rid
+    unknowns = c["unknowns"]
+    if thread.answers:
+        if unknowns:
+            _model_fail("corrected_gap_not_inactive", "HOLD")
+    else:
+        if len(unknowns) != 1:
+            _model_fail("initial_gap_missing", "HOLD")
+        u = unknowns[0]
+        _keys(u, {"unknown_id", "kind", "target_claim_refs", "description", "evidence_indexes"})
+        if (type(u["unknown_id"]) is not str or not re.fullmatch(r"[A-Za-z0-9_.-]{1,64}", u["unknown_id"])
+            or u["unknown_id"] in ids | relids or u["kind"] != "NOT_STATED"
+            or u["target_claim_refs"] != [mapped["solo_appraisal_object"]["claim_ref"], mapped["joy"]["claim_ref"]]
+            or u["evidence_indexes"] != [ev_index(roles["solo_appraisal_object"]), ev_index(roles["joy"])]
+            or type(u["description"]) is not str or not u["description"].strip()):
+            _model_fail("not_stated_gap_not_bound", "HOLD")
+    _model_updates(c, ev, mapped, relation_roles, corrections, prior)
+    _model_surface_shape(c, ids, relids)
+    native_slices = []
+    resolver = thread.resolver()
+    sources = {s["source_id"]:s for s in material.payload()["sources"]}
+    for e in ev:
+        native_refs = [q.thread_span_id for q in resolver.qualified_refs
+            if q.source_envelope_id == sources[e["source_id"]]["envelope_id"]
+            and q.evidence.field_path == e["field_path"]
+            and q.evidence.scalar_start < e["end"] and e["start"] < q.evidence.scalar_end]
+        if not native_refs:
+            _model_fail("native_span_binding_missing")
+        native_slices.append(dict(e, native_span_refs=native_refs))
+    for case in cases:
+        case["owner_claim_ref"] = mapped[case.pop("role")]["claim_ref"]
+    raw = sources[next(iter(source_fields))]["original"]
+    return dict(stage="AFTER_CORRECTION" if thread.answers else "INITIAL", roles=mapped,
+        relation_roles=relation_roles, source_fields=source_fields, source_slices=native_slices,
+        case_arguments=cases, source_negations=negations,
+        written_links=[dict(relation_ref=r["relation_id"], type=r["type"], from_claim_ref=r["from_claim_id"],
+                            to_claim_ref=r["to_claim_id"], evidence_indexes=r["evidence_indexes"]) for r in c["relations"]],
+        preserved_selections={k:raw.get(k) for k in ("category", "emotions", "emotion_details", "is_secret")})
+
+
+def _model_surface_shape(c, ids, relids):
+    surface = c["surface_proposal"]
+    _keys(surface, {"observation", "reception", "update_note", "bindings"})
+    if (any(type(surface[k]) is not str or not surface[k].strip() for k in ("observation", "reception"))
+        or surface["update_note"] is not None and (type(surface["update_note"]) is not str or not surface["update_note"].strip())
+        or type(surface["bindings"]) is not list):
+        _model_fail("surface_shape_invalid")
+    expected_sections = {"observation", "reception"} | ({"update_note"} if surface["update_note"] is not None else set())
+    seen = set()
+    for b in surface["bindings"]:
+        if type(b) is not dict:
+            _model_fail("surface_binding_invalid")
+        section = b.get("section")
+        _keys(b, {"section", "claim_refs", "relation_refs"} | ({"update_refs"} if section == "update_note" else set()))
+        if section not in expected_sections or section in seen:
+            _model_fail("surface_section_invalid")
+        seen.add(section)
+        for field, allowed in (("claim_refs",ids), ("relation_refs",relids)):
+            values = b[field]
+            if type(values) is not list or len(set(values)) != len(values) or any(v not in allowed for v in values):
+                _model_fail("surface_reference_invalid")
+        if not b["claim_refs"]:
+            _model_fail("surface_claim_binding_required")
+        if section == "update_note" and (type(b["update_refs"]) is not list or any(type(i) is not int or not 0 <= i < len(c["updates"]) for i in b["update_refs"])):
+            _model_fail("surface_update_reference_invalid")
+    if seen != expected_sections:
+        _model_fail("surface_section_coverage_invalid")
+    q = c["question_proposal"]
+    if q is not None:
+        _keys(q, {"text", "target_unknown_ref", "focus", "claim_refs"})
+        if (not c["unknowns"] or q["target_unknown_ref"] != c["unknowns"][0]["unknown_id"]
+            or q["focus"] != "PERSONAL_JOY_SIGNIFICANCE" or q["claim_refs"] != c["unknowns"][0]["target_claim_refs"]
+            or type(q["text"]) is not str or not q["text"].strip()):
+            _model_fail("question_proposal_not_bound", "HOLD")
+
+
+def _model_updates(c, ev, mapped, relation_roles, corrections, prior):
+    if prior is None:
+        if c["updates"]:
+            _model_fail("initial_updates_forbidden")
+        return
+    previous = prior["native_bindings"]
+    pc = prior["meaning_packet"]["candidate"]
+    expected = [
+        ("REVISE", "CLAIM", previous["roles"]["solo_appraisal_object"]["claim_ref"],
+         [mapped["friend_guidance"]["claim_ref"],mapped["joint_repair"]["claim_ref"]],
+         [corrections["revise_solo"], dict((k,v) for k,v in mapped["friend_guidance"].items() if k not in {"claim_ref","text"}), dict((k,v) for k,v in mapped["joint_repair"].items() if k not in {"claim_ref","text"})]),
+        ("REVISE", "RELATION", previous["relation_roles"]["joy_ground"], [relation_roles["joy_ground_revised"]],
+         [corrections["old_reason_negated"], corrections["joy_ground_revised"]]),
+        ("INVALIDATE_GAP", "UNKNOWN", pc["unknowns"][0]["unknown_id"], [],
+         [corrections["revise_solo"], corrections["joy_ground_revised"]])]
+    # Retained original source meanings cannot disappear, change role or acquire
+    # different IDs when only the personal explanation was corrected.
+    for role in ("repair", "usable_again", "joy"):
+        if mapped[role] != previous["roles"][role]:
+            _model_fail("unaffected_meaning_changed", "HOLD")
+    if relation_roles["repair_and_result"] != previous["relation_roles"]["repair_and_result"]:
+        _model_fail("unaffected_relation_changed", "HOLD")
+    if len(c["updates"]) != len(expected):
+        _model_fail("update_coverage_invalid", "HOLD")
+    for row, (op,kind,target,replacements,anchors) in zip(c["updates"],expected):
+        _keys(row, {"operation","target_kind","target_ref","replacement_refs","evidence_indexes","prior_snapshot_ref"})
+        indices = []
+        for anchor in anchors:
+            if "quote" not in anchor:
+                role = next(v for v in mapped.values() if all(v.get(k) == a for k,a in anchor.items()))
+                anchor = dict(anchor,quote=role["text"])
+            match = [i for i,e in enumerate(ev) if e == anchor]
+            if len(match) != 1:
+                _model_fail("update_evidence_missing")
+            indices.append(match[0])
+        if row != dict(operation=op,target_kind=kind,target_ref=target,replacement_refs=replacements,
+                       evidence_indexes=indices,prior_snapshot_ref=prior["snapshot_ref"]):
+            _model_fail("update_not_prior_or_source_bound", "HOLD")
+
+
+def _model_meaning_packet(packet):
+    # Free-form model descriptions are diagnostics, not trusted meaning. The
+    # typed missing dimension and targets are source-validated separately.
+    # Keep the exact original explanation in packet/receipt, and give the
+    # adopted NOT_STATED gap a CMEE-owned coverage explanation.
+    candidate = json.loads(_json({k:v for k,v in packet["candidate"].items()
+                                  if k not in {"surface_proposal","question_proposal"}}))
+    for row in candidate.get("unknowns", []):
+        if type(row) is dict and row.get("kind") == "NOT_STATED":
+            row["description"] = "詳しい本人の意味づけは未記載。"
+    return dict(candidate=candidate, evidence=packet["evidence"])
+
+
+def _model_semantic_ref(p):
+    semantic = {k:p[k] for k in ("schema_version","semantic_profile","admission_version","adapter_version",
+        "request_ref","source_prefix_ref","source_bindings","meaning_packet","native_bindings",
+        "prior_ref","answer_count","question_control")}
+    return "semantic-" + hashlib.sha256(_json(semantic).encode()).hexdigest()
+
+
+def _model_proposal_ref(packet):
+    return identity("model-proposal", packet)
+
+
+def _model_checkpoint(thread, material, p):
+    ref = p["snapshot_ref"]
+    update = None
+    accepted, inactive = (), ()
+    if p["prior_snapshot"]:
+        rows = p["meaning_packet"]["candidate"]["updates"]
+        accepted = tuple(identity("model-update",p["prior_ref"],r) for r in rows)
+        inactive = tuple(r["target_ref"] for r in rows)
+        answer = thread.answers[0].source
+        items = tuple(EmlisAnswerUpdateItemV1(uid,r["target_kind"],(r["target_ref"],),
+            tuple(identity("model-evidence",p["request_ref"],p["packet"]["evidence"][i]) for i in r["evidence_indexes"]),
+            AnswerTemporalBindingV1("ORIGINAL_OCCASION",thread.control.original_source_ref),
+            r["operation"],tuple(r["replacement_refs"]),(r["target_ref"],),())
+            for uid,r in zip(accepted,rows))
+        update = AnswerMeaningUpdateV1(answer.answer_id,answer.question_id,p["prior_ref"],items,(),"RESOLVED",ref)
+    cp = ModelCheckpoint(identity("model-checkpoint",thread.source_prefix_ref,ref),thread.source_prefix_ref,
+        ref,update,"RESOLVED",accepted,inactive,(),semantic_snapshot=_json(p),snapshot_ref=ref)
+    c = p["packet"]["candidate"]
+    return ModelPreparedMeaning(thread,cp,_json(p),material.private_json,_json(p["meaning_packet"]),
+        _json(c["surface_proposal"]),_json(c["question_proposal"]),_json(p["native_bindings"]))
+
+
+def prepare_model_snapshot(request, semantic_input):
+    """Source-bound provisional meaning; no provider, alternate author or I/O."""
+    try:
+        return _prepare_model_snapshot(request, semantic_input)
+    except SemanticNotAdopted as exc:
+        exc.receipt = semantic_input.receipt if type(semantic_input) is SemanticInput else None
+        raise
+    except (ValueError,TypeError,KeyError,IndexError,AttributeError,RecursionError):
+        raise SemanticNotAdopted("REJECT","model_payload_invalid",
+            semantic_input.receipt if type(semantic_input) is SemanticInput else None) from None
+
+
+def _prepare_model_snapshot(request, semantic_input):
+    if (type(semantic_input) is not SemanticInput or semantic_input.semantic_profile != MODEL_PROFILE
+        or request.execution_mode != ExecutionMode.OFFLINE_CANDIDATE.value):
+        _model_fail("offline_profile_required")
+    thread, material = admit_emlis_thread(request), prepare_emlis(request)
+    control = thread.control
+    if (control.capability_snapshot not in {"FREE_Q1","Q3_FREE"} or len(thread.answers)>1
+        or control.admitted_history or control.frame_feedback_sources or control.rejected_frame_keys
+        or control.question_control_context.question_limit != 1):
+        _model_fail("free_scope_required", "UNSUPPORTED")
+    for source in material.payload()["sources"]:
+        for text in source["text_fields"].values():
+            if type(text) is str and classify_emlis_safety_triage_text(text).safety_triage_kind != TRIAGE_SAFE_OBSERVATION:
+                _model_fail("separate_safety_owner_required", "HOLD")
+    resume = semantic_input.mode == "RESUME_ADOPTED"
+    if resume:
+        if semantic_input.receipt is not None or semantic_input.prior_snapshot_json is not None or not semantic_input.snapshot_json:
+            _model_fail("resume_input_invalid")
+        p = json.loads(semantic_input.snapshot_json)
+        _keys(p, {"schema_version","semantic_profile","admission_version","adapter_version","request_ref",
+            "source_prefix_ref","source_bindings","packet","meaning_packet","native_bindings","prior_ref",
+            "prior_snapshot","receipt","answer_count","question_control","snapshot_ref","proposal_ref"})
+        if _json(p) != semantic_input.snapshot_json:
+            _model_fail("snapshot_not_canonical")
+        packet = _receipt(material,CandidateReceipt(**p["receipt"]))
+        prior = p["prior_snapshot"]
+    elif semantic_input.mode == "FRESH_CANDIDATE":
+        if semantic_input.snapshot_json is not None or request.emlis_thread.prepared_meaning_checkpoint_ref is not None:
+            _model_fail("same_prefix_readoption_forbidden")
+        packet = _receipt(material,semantic_input.receipt)
+        prior = json.loads(semantic_input.prior_snapshot_json) if semantic_input.prior_snapshot_json else None
+        p = dict(schema_version=MODEL_SCHEMA,semantic_profile=MODEL_PROFILE,admission_version="1",adapter_version="1",
+            request_ref=material.request_id,source_prefix_ref=thread.source_prefix_ref,source_bindings=_source_binding(material),
+            packet=packet,meaning_packet=_model_meaning_packet(packet),prior_ref=prior["snapshot_ref"] if prior else None,
+            prior_snapshot=prior,receipt=asdict(semantic_input.receipt),answer_count=len(thread.answers),
+            question_control=json.loads(_json(asdict(control.question_control_context))))
+    else:
+        _model_fail("input_mode_invalid")
+    if bool(prior) != bool(thread.answers):
+        _model_fail("prior_snapshot_required")
+    if prior:
+        if prior.get("answer_count") != 0 or prior.get("semantic_profile") != MODEL_PROFILE or prior.get("prior_snapshot") is not None:
+            _model_fail("prior_lineage_invalid")
+        previous_thread = _thread_at(thread,prior)
+        previous_request = replace(request,emlis_thread=previous_thread.control)
+        old = prepare_model_snapshot(previous_request,SemanticInput("RESUME_ADOPTED",snapshot_json=_json(prior),semantic_profile=MODEL_PROFILE))
+        decision, question = model_question(old,parent_request_id=request.request_id)
+        actual = control.question_control_context.pending_question
+        if question is None or actual != question or actual.question_id != thread.answers[0].source.question_id:
+            _model_fail("actual_pending_question_not_bound")
+        if control.question_control_context.stop or control.question_control_context.issued_count != 1:
+            _model_fail("answer_control_invalid")
+    native = _model_packet(packet,material,thread,prior)
+    if resume:
+        expected = (MODEL_SCHEMA,MODEL_PROFILE,"1","1",material.request_id,thread.source_prefix_ref,
+                    _source_binding(material),len(thread.answers),json.loads(_json(asdict(control.question_control_context))))
+        actual = tuple(p[k] for k in ("schema_version","semantic_profile","admission_version","adapter_version",
+            "request_ref","source_prefix_ref","source_bindings","answer_count","question_control"))
+        if (actual != expected or type(p["answer_count"]) is not int or p["packet"] != packet
+            or p["meaning_packet"] != _model_meaning_packet(packet) or p["native_bindings"] != native
+            or p["prior_ref"] != (prior["snapshot_ref"] if prior else None)
+            or p["snapshot_ref"] != _model_semantic_ref(p) or p["proposal_ref"] != _model_proposal_ref(packet)):
+            _model_fail("snapshot_binding_invalid")
+    else:
+        p["native_bindings"] = native
+        p["snapshot_ref"] = _model_semantic_ref(p)
+        p["proposal_ref"] = _model_proposal_ref(packet)
+    return _model_checkpoint(thread,material,p)
+
+
+def model_snapshot_payload(prepared):
+    if type(prepared) is not ModelPreparedMeaning:
+        _model_fail("prepared_type_invalid")
+    return json.loads(prepared.semantic_snapshot)
+
+
+def restore_model_snapshot(request, snapshot_json):
+    return prepare_model_snapshot(request,SemanticInput("RESUME_ADOPTED",snapshot_json=snapshot_json,semantic_profile=MODEL_PROFILE))
+
+
+def model_question(prepared, *, parent_request_id, respect_control=True):
+    from .emlis_question import model_question_candidate
+    return model_question_candidate(prepared, parent_request_id=parent_request_id,
+                                    respect_control=respect_control)
+
+
+def model_prior_for_messages(request, prior_snapshot_json):
+    """Validate the actual source/question lineage before exposing old meaning.
+
+    The returned interpretation excludes all proposed surface/question wording,
+    raw provider output and usage metadata. It never becomes a user source.
+    """
+    try:
+        thread = admit_emlis_thread(request)
+        if not thread.answers:
+            if prior_snapshot_json is not None:
+                _model_fail("initial_prior_forbidden")
+            return None
+        if type(prior_snapshot_json) is not str:
+            _model_fail("prior_snapshot_required")
+        p = json.loads(prior_snapshot_json)
+        if (p.get("semantic_profile") != MODEL_PROFILE or p.get("answer_count") != 0
+            or p.get("prior_snapshot") is not None):
+            _model_fail("prior_lineage_invalid")
+        prior_thread = _thread_at(thread,p)
+        old = restore_model_snapshot(replace(request,emlis_thread=prior_thread.control),prior_snapshot_json)
+        _, expected_question = model_question(old,parent_request_id=request.request_id)
+        actual = thread.control.question_control_context.pending_question
+        if (expected_question is None or expected_question != actual
+            or thread.answers[0].source.question_id != expected_question.question_id
+            or thread.control.question_control_context.stop
+            or thread.control.question_control_context.issued_count != 1):
+            _model_fail("actual_pending_question_not_bound")
+        return dict(semantic_profile=MODEL_PROFILE,snapshot_ref=old.checkpoint.snapshot_ref,
+                    meaning_packet=json.loads(old.meaning_json),
+                    native_bindings=json.loads(old.native_bindings_json))
+    except SemanticNotAdopted:
+        raise
+    except (ValueError,TypeError,KeyError,AttributeError,IndexError,RecursionError):
+        _model_fail("prior_snapshot_invalid")

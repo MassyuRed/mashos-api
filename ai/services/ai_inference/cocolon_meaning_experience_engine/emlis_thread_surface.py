@@ -260,6 +260,9 @@ def _snapshot_binding_traces(plan, projection, resolver, observation, reception_
 
 
 def realize_emlis_thread_body(prepared) -> EmlisThreadBodyOutcomeV1:
+    from .emlis_semantic_admission import ModelPreparedMeaning
+    if type(prepared) is ModelPreparedMeaning:
+        return _realize_model_thread_body(prepared)
     plan = build_updated_grounded_plan(prepared)
     projection = project_thread_meaning(prepared, plan)
     from .emlis_semantic_admission import snapshot_resolver
@@ -323,3 +326,33 @@ def realize_emlis_thread_body(prepared) -> EmlisThreadBodyOutcomeV1:
             # Observation/Reception. No history line or frame is emitted.
             pass
     return EmlisThreadBodyOutcomeV1(status, artifact, projection.graph, ("emlis_thread_body_generated",))
+
+
+def _realize_model_thread_body(prepared):
+    """Finalize a source-admitted proposal inside the same sole body owner."""
+    import json
+    from .emlis_thread_contracts import EmlisModelThreadBodyArtifactV1
+    from emlis_ai_grounded_observation_gate import evaluate_emlis_model_surface_inverse
+    proposal = json.loads(prepared.surface_proposal_json)
+    meaning = json.loads(prepared.meaning_json)
+    native = json.loads(prepared.native_bindings_json)
+    traces = evaluate_emlis_model_surface_inverse(
+        proposal=proposal, meaning_packet=meaning, native_bindings=native)
+    checkpoint = prepared.checkpoint
+    saved = json.loads(prepared.semantic_snapshot)
+    meaning_trace = tuple(row for row in traces if row["section"] != "reception")
+    reception_trace = tuple(row for row in traces if row["section"] == "reception")
+    artifact = EmlisModelThreadBodyArtifactV1(
+        identity("emlis-model-artifact", checkpoint.checkpoint_id, saved["proposal_ref"],
+                 proposal["observation"], proposal["reception"], proposal["update_note"]),
+        proposal["observation"], proposal["reception"], checkpoint.source_prefix_ref,
+        checkpoint.checkpoint_id, prepared.thread.resolver().qualified_refs,
+        meaning_trace, reception_trace, EngineStatus.GENERATED,
+        update_note=proposal["update_note"], proposal_ref=saved["proposal_ref"])
+    graph = dict(schema_version="cocolon.cmee.emlis_model_meaning_graph.v1",
+        snapshot_ref=checkpoint.snapshot_ref, source_prefix_ref=checkpoint.source_prefix_ref,
+        claims=meaning["candidate"]["claims"], relations=meaning["candidate"]["relations"],
+        unknowns=meaning["candidate"]["unknowns"], updates=meaning["candidate"]["updates"],
+        native_bindings=native)
+    return EmlisThreadBodyOutcomeV1(EngineStatus.GENERATED, artifact, graph,
+                                   ("emlis_model_body_independently_read",))

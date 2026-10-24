@@ -10056,3 +10056,138 @@ def _read_initial_personal_meaning_discourse(raw, move, plan, resolver, selected
         return tuple(sources)
     except (ValueError, TypeError, AttributeError, KeyError):
         return None
+
+
+def evaluate_emlis_model_surface_inverse(*, proposal, meaning_packet, native_bindings):
+    """Independently read a bounded repair/reuse profile's proposed Japanese.
+
+    This is a recognizer, not a body generator, a model judge, or a call back
+    into the old finite author. Lexical objects/participants come from native
+    source case slots. Unrecognized sentences fail closed; matching supplied
+    claim references alone never makes a sentence faithful. General Japanese
+    fidelity and product naturalness are deliberately not claimed here.
+    """
+    def fail(code):
+        raise ValueError("model_surface_" + code)
+
+    def clean(value):
+        return re.sub(r"[\s、,。！？!?「」『』]", "", value)
+
+    def literal(value):
+        return re.escape(clean(value))
+
+    roles = native_bindings["roles"]
+    candidate = meaning_packet["candidate"]
+    after = native_bindings["stage"] == "AFTER_CORRECTION"
+    if native_bindings["stage"] not in {"INITIAL", "AFTER_CORRECTION"}:
+        fail("stage_unsupported")
+    cases = native_bindings["case_arguments"]
+    objects = [row["text"] for row in cases if row["owner_claim_ref"] == roles["repair"]["claim_ref"] and row["written_role"] == "を"]
+    if len(objects) != 1:
+        fail("case_binding_invalid")
+    object_text = objects[0]
+    # A written noun head is an anaphoric mention of the same unique repair
+    # object, not a second guessed object or a replacement of source metadata.
+    head_match = re.search(r"[一-龠々ァ-ヺー]+$", object_text)
+    object_forms = {object_text, head_match[0] if head_match else object_text}
+    object_pattern = "(?:" + "|".join(literal(x) for x in sorted(object_forms, key=len, reverse=True)) + ")"
+    result = clean(roles["usable_again"]["text"])
+    joy = r"(?:うれしかった|嬉しかった)"
+    tail = r"(?:のですね|んですね|のです|ということですね)"
+    patterns = []
+
+    def add(pattern, role_names, relation_names=(), update_indexes=()):
+        patterns.append((re.compile(pattern), set(role_names), set(relation_names), set(update_indexes)))
+
+    add(object_pattern + r"を(?:修理し|修理して|直し|直して)" + re.escape(result) + tail,
+        ("repair", "usable_again"), ("repair_and_result",))
+    if not after:
+        appraisal = literal(roles["solo_appraisal_object"]["text"])
+        add(appraisal + r"が" + joy + tail, ("solo_appraisal_object", "joy"), ("joy_ground",))
+        add(joy + r"のは" + appraisal + r"だった" + tail,
+            ("solo_appraisal_object", "joy"), ("joy_ground",))
+    else:
+        persons = [r["text"] for r in cases if r["owner_claim_ref"] == roles["friend_guidance"]["claim_ref"] and r["written_role"] == "に"]
+        procedures = [r["text"] for r in cases if r["owner_claim_ref"] == roles["friend_guidance"]["claim_ref"] and r["written_role"] == "を"]
+        if len(persons) != 1 or len(procedures) != 1:
+            fail("case_binding_invalid")
+        guidance = literal(persons[0]) + r"に" + literal(procedures[0]) + r"を(?:教わり|教わって|教えてもらい|教えてもらって)"
+        joint = r"(?:一緒に" + object_pattern + r"を|" + object_pattern + r"を一緒に|一緒に)(?:直した|修理した|直しました|修理しました)"
+        add(guidance + joint + tail, ("friend_guidance", "joint_repair"))
+        reuse_text = roles["reuse_appraisal_object"]["text"]
+        if not reuse_text.endswith("からです"):
+            fail("reason_binding_invalid")
+        reuse = literal(reuse_text[:-len("からです")])
+        add(reuse + r"ことが" + joy + tail, ("reuse_appraisal_object", "joy"), ("joy_ground_revised",))
+        add(joy + r"のは" + reuse + r"ことだった" + tail,
+            ("reuse_appraisal_object", "joy"), ("joy_ground_revised",))
+        # A concise account of the source-confirmed changes; this says neither
+        # that the old claim is still true nor that a new cause was invented.
+        add(r"共同(?:修理|作業)とまた使えることへの(?:喜び|うれしさ)へ(?:訂正|更新)しました",
+            ("friend_guidance", "joint_repair", "reuse_appraisal_object"), ("joy_ground_revised",), (0, 1, 2))
+
+    # Emlis' own response to a known result has a different role from a claim
+    # about why the person felt joy. It is bound to that result and cannot
+    # introduce another person's feelings, a diagnosis or a future outcome.
+    result_continuative = re.escape(result[:-2] + "って") if result.endswith("った") else None
+    if result_continuative:
+        add(r"(?:その)?" + object_pattern + r"に" + result_continuative + r"よかった(?:ですね|です)",
+            ("usable_again",))
+        add(result_continuative + r"よかった(?:ですね|です)", ("usable_again",))
+        if result.startswith("また"):
+            add(r"また(?:その)?" + object_pattern + r"に" + re.escape(result[2:-2] + "って")
+                + r"よかった(?:ですね|です)", ("usable_again",))
+    add(r"(?:" + object_pattern + r"が)?" + re.escape(result) + r"と(?:聞けて|聞いて)私も(?:うれしい|嬉しい)です",
+        ("usable_again", "joy"))
+    if after:
+        add(literal(roles["reuse_appraisal_object"]["text"][:-len("からです")])
+            .replace("なった", "なって") + r"よかった(?:ですね|です)", ("reuse_appraisal_object",))
+
+    relation_roles = native_bindings["relation_roles"]
+    role_ids = {name: row["claim_ref"] for name, row in roles.items()}
+    bindings = {row["section"]: row for row in proposal["bindings"]}
+    required = {
+        "observation": {"friend_guidance", "joint_repair"} if after else {"repair", "usable_again"},
+        "reception": {"reuse_appraisal_object", "joy"} if after else {"solo_appraisal_object", "joy"},
+    }
+    traces = []
+    seen_sentences = set()
+    for section in ("observation", "reception", "update_note"):
+        text = proposal[section]
+        if text is None:
+            if section != "update_note" or section in bindings:
+                fail("section_invalid")
+            continue
+        if type(text) is not str or not text.strip() or section not in bindings or re.search(r"[?？]", text):
+            fail("section_invalid")
+        sentence_rows = []
+        consumed_roles, consumed_relations, consumed_updates = set(), set(), set()
+        for match in re.finditer(r"[^。！？!?]+[。！？!?]?", text):
+            sentence = clean(match[0])
+            if sentence in seen_sentences:
+                fail("sentence_repeated")
+            seen_sentences.add(sentence)
+            matches = [(role_set, relations, updates) for pattern, role_set, relations, updates in patterns
+                       if pattern.fullmatch(sentence)]
+            if len(matches) != 1:
+                fail("sentence_not_read")
+            role_set, relations, updates = matches[0]
+            if updates and section != "update_note" or section == "update_note" and not updates:
+                fail("section_role_invalid")
+            consumed_roles.update(role_set)
+            consumed_relations.update(relations)
+            consumed_updates.update(updates)
+            sentence_rows.append(dict(start=match.start(), end=match.end(),
+                claim_refs=tuple(role_ids[name] for name in sorted(role_set)),
+                relation_refs=tuple(relation_roles[name] for name in sorted(relations))))
+        expected_claims = {role_ids[name] for name in consumed_roles}
+        expected_relations = {relation_roles[name] for name in consumed_relations}
+        binding = bindings[section]
+        if (not sentence_rows or not required.get(section, set()) <= consumed_roles
+                or set(binding["claim_refs"]) != expected_claims
+                or set(binding["relation_refs"]) != expected_relations
+                or section == "update_note" and (not after or set(binding["update_refs"]) != consumed_updates)):
+            fail("binding_or_coverage_invalid")
+        traces.append(dict(section=section, claim_refs=tuple(sorted(expected_claims)),
+                           relation_refs=tuple(sorted(expected_relations)), sentences=tuple(sentence_rows)))
+    return tuple(traces)

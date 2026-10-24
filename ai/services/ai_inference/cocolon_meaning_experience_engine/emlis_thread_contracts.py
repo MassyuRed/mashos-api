@@ -198,3 +198,17 @@ class EmlisThreadBodyOutcomeV1:
     artifact: EmlisThreadBodyArtifactV1
     meaning_graph: Any
     reason_codes: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class EmlisModelThreadBodyArtifactV1(EmlisThreadBodyArtifactV1):
+    """Private model-profile artifact; old artifact serialization stays exact."""
+
+    schema_version: str = "cocolon.cmee.emlis_model_thread_artifact.v1"
+    update_note: str | None = None
+    proposal_ref: str = ""
+
+    @property
+    def text(self) -> str:
+        body = f"見えたこと：\n{self.observation}\n\nEmlisから：\n{self.reception}"
+        return body + (f"\n\n読み直したこと：\n{self.update_note}" if self.update_note else "")

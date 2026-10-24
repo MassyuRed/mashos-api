@@ -76,8 +76,8 @@ def _request(snapshot, *, checkpoint_ref=None, include_context=True):
     original["created_at"] = parse_iso_utc(original["created_at"]).isoformat()
     semantic_profile = t["data"].get("semantic_profile")
     if semantic_profile is not None:
-        from cocolon_meaning_experience_engine.emlis_semantic_admission import PROFILE, PROFILE_V2
-        if semantic_profile not in {PROFILE, PROFILE_V2} or not include_context or t["data"].get("execution_mode") != ExecutionMode.OFFLINE_CANDIDATE.value:
+        from cocolon_meaning_experience_engine.emlis_semantic_admission import PROFILE, PROFILE_V2, MODEL_PROFILE
+        if semantic_profile not in {PROFILE, PROFILE_V2, MODEL_PROFILE} or not include_context or t["data"].get("execution_mode") != ExecutionMode.OFFLINE_CANDIDATE.value:
             raise ValueError("semantic_profile_or_history_not_supported")
     req = GenerationRequest("emlis-" + t["id"], build_emlis_current_input_bundle(original), original["id"],
                             execution_mode=ExecutionMode.OFFLINE_CANDIDATE.value if semantic_profile else APPLICATION_EXECUTION_MODE)
@@ -234,8 +234,8 @@ class EmlisThreadService:
         if runtime_profile not in {RUNTIME_PROFILE, Q3_PROFILE}:
             raise ValueError("unsupported_thread_profile")
         if semantic_profile is not None or offline_candidate_source is not None:
-            from cocolon_meaning_experience_engine.emlis_semantic_admission import PROFILE, PROFILE_V2
-            if semantic_profile not in {PROFILE, PROFILE_V2} or not callable(offline_candidate_source) or enforce_application_policy:
+            from cocolon_meaning_experience_engine.emlis_semantic_admission import PROFILE, PROFILE_V2, MODEL_PROFILE
+            if semantic_profile not in {PROFILE, PROFILE_V2, MODEL_PROFILE} or not callable(offline_candidate_source) or enforce_application_policy:
                 raise ValueError("semantic_offline_configuration_required")
         self.semantic_profile = semantic_profile
         self.offline_candidate_source = offline_candidate_source
@@ -528,8 +528,9 @@ class EmlisThreadService:
             semantic = t["data"].get("semantic_profile")
             if semantic:
                 from cocolon_meaning_experience_engine.emlis_semantic_admission import (
-                    PROFILE, PROFILE_V2, CHECKPOINT_SCHEMA, CHECKPOINT_SCHEMA_V3, SemanticInput, SemanticNotAdopted)
-                if semantic not in {PROFILE, PROFILE_V2} or t["data"].get("execution_mode") != ExecutionMode.OFFLINE_CANDIDATE.value:
+                    PROFILE, PROFILE_V2, MODEL_PROFILE, CHECKPOINT_SCHEMA, CHECKPOINT_SCHEMA_V3,
+                    MODEL_CHECKPOINT_SCHEMA, SemanticInput, SemanticNotAdopted)
+                if semantic not in {PROFILE, PROFILE_V2, MODEL_PROFILE} or t["data"].get("execution_mode") != ExecutionMode.OFFLINE_CANDIDATE.value:
                     raise ValueError("semantic_profile_invalid")
             checkpoint = _find(snapshot, t.get("current_meaning_event_id"))
             if t.get("evaluated_prefix_ref") != t["source_prefix_ref"]:
@@ -559,7 +560,9 @@ class EmlisThreadService:
                 t = snapshot["thread"]
                 checkpoint = _find(snapshot, t["current_meaning_event_id"])
             cp = checkpoint["payload"]
-            if cp["semantic_schema_version"] != (CHECKPOINT_SCHEMA_V3 if semantic and semantic == PROFILE_V2 else CHECKPOINT_SCHEMA if semantic else SEMANTIC_SCHEMA) or cp["source_prefix_ref"] != t["source_prefix_ref"]:
+            expected_schema = (MODEL_CHECKPOINT_SCHEMA if semantic == MODEL_PROFILE else
+                CHECKPOINT_SCHEMA_V3 if semantic == PROFILE_V2 else CHECKPOINT_SCHEMA) if semantic else SEMANTIC_SCHEMA
+            if cp["semantic_schema_version"] != expected_schema or cp["source_prefix_ref"] != t["source_prefix_ref"]:
                 raise ValueError("checkpoint_contract_changed")
             if semantic:
                 if cp.get("semantic_profile") != semantic or not cp.get("semantic_snapshot"):
@@ -592,7 +595,7 @@ class EmlisThreadService:
             from cocolon_meaning_experience_engine.emlis_answer_update import prepare_emlis_meaning, build_updated_grounded_plan, _base_ref
             prepared = prepare_emlis_meaning(_request(snapshot, checkpoint_ref=cp["checkpoint_id"]),
                 **({"semantic_input":semantic_input} if semantic else {}))
-            effective_ref = _base_ref(prepared.thread, build_updated_grounded_plan(prepared))
+            effective_ref = cp["base_meaning_ref"] if semantic and semantic == MODEL_PROFILE else _base_ref(prepared.thread, build_updated_grounded_plan(prepared))
             observation = _event("OBSERVATION", {"text": artifact.text,
                 "effective_plan_ref":effective_ref, "context_guards":t["data"].get("context_guards", []), "context_ref":_context_ref(snapshot),
                 "stage": "REFINED" if t.get("latest_answer_event_id") else "INITIAL",

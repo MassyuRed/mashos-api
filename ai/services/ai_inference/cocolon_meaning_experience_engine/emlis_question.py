@@ -398,3 +398,56 @@ def validate_question_binding(thread: AdmittedEmlisThread, plan) -> None:
     if canonical is None or question != replace(canonical, decision=replace(
             canonical.decision, asked_target_refs=question.decision.asked_target_refs)):
         raise ValueError("emlis_question_noncanonical")
+
+
+def model_question_candidate(prepared, *, parent_request_id: str, respect_control: bool = True):
+    """Issue one source-derived question for an admitted private model profile.
+
+    The provider's wording and any provider-supplied ID are not authority. This
+    owner derives the target, prompt and identity from the admitted appraisal
+    object and its NOT_STATED personal-significance gap. The same pure function
+    is used when a real answer is rebound to its previously issued question.
+    """
+    import json
+    from .emlis_semantic_admission import ModelPreparedMeaning
+    if type(prepared) is not ModelPreparedMeaning:
+        raise ValueError("model_question_prepared_type_invalid")
+    thread = prepared.thread
+    control = thread.control.question_control_context
+    if (control.stop or thread.answers or control.issued_count >= control.question_limit
+            or thread.control.capability_snapshot not in {"FREE_Q1", "Q3_FREE"}):
+        return EmlisQuestionDecisionV1("END", decision_reason="free_round_complete"), None
+    proposal = json.loads(prepared.question_proposal_json)
+    if proposal is None:
+        return EmlisQuestionDecisionV1("END", decision_reason="model_question_not_proposed"), None
+    native = json.loads(prepared.native_bindings_json)
+    meaning = json.loads(prepared.meaning_json)["candidate"]
+    roles = native["roles"]
+    if native["stage"] != "INITIAL" or not {"solo_appraisal_object", "joy"} <= set(roles):
+        return EmlisQuestionDecisionV1("END", decision_reason="model_question_target_unavailable"), None
+    object_ref, joy_ref = (roles[key]["claim_ref"] for key in ("solo_appraisal_object", "joy"))
+    gaps = tuple(row for row in meaning["unknowns"]
+        if row["kind"] == "NOT_STATED" and set(row["target_claim_refs"]) == {object_ref, joy_ref})
+    if (len(gaps) != 1 or proposal["focus"] != "PERSONAL_JOY_SIGNIFICANCE"
+            or proposal["target_unknown_ref"] != gaps[0]["unknown_id"]
+            or set(proposal["claim_refs"]) != {object_ref, joy_ref}):
+        return EmlisQuestionDecisionV1("END", decision_reason="model_question_target_unavailable"), None
+    object_text = roles["solo_appraisal_object"]["text"]
+    if not object_text or any(character in object_text for character in "「」『』\n\r。！？!?"):
+        return EmlisQuestionDecisionV1("END", decision_reason="model_question_target_unavailable"), None
+    target = identity("emlis-target", thread.original.envelope.envelope_id,
+                      prepared.checkpoint.snapshot_ref, object_ref, joy_ref,
+                      gaps[0]["unknown_id"], "personal_joy_significance")
+    if (respect_control and control.pending_question is not None) or target in control.asked_target_refs:
+        return EmlisQuestionDecisionV1("END", decision_reason="model_question_target_already_asked"), None
+    evidence = tuple(identity("model-question-evidence", prepared.checkpoint.snapshot_ref, roles[key])
+                     for key in ("solo_appraisal_object", "joy"))
+    decision = EmlisQuestionDecisionV1("ASK", target, "PERSONAL_JOY_SIGNIFICANCE", evidence,
+        "personal_joy_significance", (object_ref, joy_ref), (object_ref, joy_ref),
+        control.asked_target_refs if respect_control else (),
+        "source_bound_joy_personal_significance_missing")
+    question = EmlisClarificationV1(
+        identity("emlis-question", thread.control.thread_id, target, prepared.checkpoint.snapshot_ref),
+        parent_request_id, thread.control.thread_id, thread.original.envelope.envelope_id, decision,
+        f"「{object_text}」がなぜ嬉しかったのですか？")
+    return decision, question

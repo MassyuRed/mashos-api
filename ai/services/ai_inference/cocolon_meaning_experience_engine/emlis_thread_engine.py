@@ -56,6 +56,9 @@ def generate_emlis_thread(engine, request, *, semantic_input=None) -> EmlisThrea
             EmlisQuestionDecisionV1("BLOCKED", decision_reason="meaning_read_failed"),
             reason_codes=("emlis_meaning_preparation_unavailable",))
     checkpoint = prepared.checkpoint
+    from .emlis_semantic_admission import ModelPreparedMeaning
+    if type(prepared) is ModelPreparedMeaning:
+        return _generate_model_thread(request, prepared)
     if getattr(prepared, "semantic_snapshot", ""):
         from .emlis_semantic_admission import snapshot_question
         def choose_question(thread, plan, *, parent_request_id):
@@ -133,3 +136,29 @@ def generate_emlis_thread(engine, request, *, semantic_input=None) -> EmlisThrea
         body_sufficiency="LIMITED" if body.status is EngineStatus.LIMITED else "SUFFICIENT",
         body_state="PARTIALLY_REFINED" if checkpoint.assessment_status == "PARTIAL" else "REFINED",
         reason_codes=body.reason_codes)
+
+
+def _generate_model_thread(request, prepared):
+    """Same thread host; the private profile never enters the old finite plan."""
+    from .emlis_semantic_admission import model_question
+    checkpoint = prepared.checkpoint
+    if prepared.thread.answers and request.emlis_thread.prepared_meaning_checkpoint_ref != checkpoint.checkpoint_id:
+        return EmlisThreadOutcomeV1(EngineStatus.REJECTED, None,
+            EmlisQuestionDecisionV1("END", decision_reason="free_round_complete"),
+            meaning_checkpoint=checkpoint, reason_codes=("emlis_checkpoint_reference_required",))
+    try:
+        body = realize_emlis_thread_body(prepared)
+    except Exception:
+        return EmlisThreadOutcomeV1(EngineStatus.UNAVAILABLE, None,
+            EmlisQuestionDecisionV1("BLOCKED", decision_reason="model_surface_not_validated"),
+            meaning_checkpoint=checkpoint,
+            body_state="MEANING_UPDATED_BODY_UNAVAILABLE" if prepared.thread.answers else "UNAVAILABLE",
+            reason_codes=("model_surface_not_validated",))
+    try:
+        decision, question = model_question(prepared, parent_request_id=request.request_id)
+    except Exception:
+        decision, question = EmlisQuestionDecisionV1("END", decision_reason="question_realization_unavailable"), None
+    return EmlisThreadOutcomeV1(EngineStatus.QUESTION_PENDING if question else body.status,
+        body, decision, question, checkpoint, "SUFFICIENT",
+        "REFINED" if prepared.thread.answers else "PRE_QUESTION" if question else "FINAL",
+        ("model_question_candidate_ready" if question else decision.decision_reason,))

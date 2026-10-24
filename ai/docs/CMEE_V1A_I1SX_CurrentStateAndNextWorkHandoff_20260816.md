@@ -23009,3 +23009,24 @@ snapshot schemaは`cocolon.cmee.emlis_semantic_snapshot.v2`、checkpointは`coco
 原E02の有限文法と既受理event/feelingの併存に閉じる。一般unknown/ACTION、新要素自身の変更・解消・依存削除はHOLD/UNSUPPORTED。旧Q2 cap4では混在更新の5 contributionを提供できず意味保存後BODY_UNAVAILABLEとなる制限を残し、capを緩めない。現在のQ3実serviceでの隔離SQL/RPC保存・中断再開成功と区別する。実モデル／有料推論／重み／学習／本人DB／Render／通常application有効化／公開API・DTO・RN変更／merge／deployは0。限定TECHNICAL_CREDIT、STRUCTURE_MAP_DELTA_PRESENT、product_credit=0／PRODUCT_NOT_CLEAR／正式Product Read0/3／candidate_ready=false／automatic_progression=false。
 
 全変更fileはCocolon 01A末尾、型はdesign05、実出力とsnapshotは既存trial JSON.targeted_unknown_action_v2、進行はlatest weekly L。既存scope readerもTEの同じtyped authorityを照合するため変更した。旧Q2 capを緩めず、現在Q3の実pending・保存再開を検証した。旧広範囲失敗や時点語の「も」の反復は別残件。
+
+
+## 2026-10-24 — 承認済み4B意味・自然本文候補のoffline接続と学習コード
+
+MashがCocolon bb87f1ddの共有設計01 CM-01/T1へ「進めて」と承認。新規・明示offline Freeだけに`emlis_model_proposal.v1`を実装した。モデルは意味と自然本文の候補、CMEEはsource資格・意味採否・最終本文・実問い・更新・保存を持つ。実モデルは未呼出しで、以下は合成候補によるactual engine/service検証である。
+
+- `emlis_semantic_admission.py`：新snapshot v3/checkpoint v4、原格・省略主体・原TE・本人の喜び対象、NOT_STATEDと本人明示unknownの区別、共同修理／喜び理由の明示訂正をsource全文から束縛。表面案・モデル説明・provider metadataを意味IDから分け、raw/元案をsnapshotへ保持する。旧v1/v2の処理・fixtureは維持。
+- `emlis_question.py`：新PERSONAL_JOY_SIGNIFICANCE焦点。モデルは提案だけで、sourceから現ownerがtarget/prompt/IDを発行。実pendingと実priorの一致で回答を束縛。Free残数0・skip/END、初回null案を保持。
+- `emlis_thread_surface.py`／既存`emlis_ai_grounded_observation_gate.py`：現最終作者内で候補文を最終化し、別のauthor-free readerがsourceの対象／参加者・肯否・時点・理由・残存結果を読取。旧finite作者の生成を呼ぶfallbackや、単にrefが合うことによる採用はしない。対応範囲外の自由文は本文不採用。
+- `emlis_thread_engine.py`／`emlis_thread_service.py`／private artifact subclass：既存dispatchとevent保存を継承。初回実ASK→本人訂正→REFINED、意味保存後のCancelledError→同意味／同proposal再開、完成GET/start/同key再送の非生成を確認。通常applicationのpolicy併用禁止・既存read-only reader can_write=falseは維持。
+- 新`model_candidate_source.py`：固定4B/revision、同材料からのJSON-only messages、検証済みpriorの意味だけを投影。元材料は削除せず、重複するnative proofはモデルへ再送しない。async generator注入・token上限・deadline・raw/finish/usage/baseとadapter identityを既存P1へ渡す。実endpoint/secret/課金/自動retry/cache/DBは持たない。P1 optional adapter_revisionはNone時metadata key自体を省き旧receipt bytesを維持。
+
+最終backend対象7file **219 PASS／FAIL0／SKIP0、105.09秒**、既存Pydantic警告1。34 subtestsと反復実行は件数へ加算しない。旧P1 22＋旧snapshot70＋旧Q2/Q3 application54＋新meaning33＋新surface/service25＋新provider15。current shared-owner identityの1検査も別実行でPASS（24.67秒、194 deselected）。その初回は新sourceに対する現行runtime hashの旧期待で失敗し、current identity fixtureだけ再導出した。language identityと歴史的IM03 proof／旧snapshot fixtureは変更していない。backend合計220はこの対象集合だけで、全suite・CI・商品受入れではない。
+
+途中のactual欠陥：名詞slotが「古い椅子を壊して新しい椅子」を一対象として飲み込み、破壊行動を本文から落とせた。名詞token＋許可状態修飾の資格へ最小修復し、原対象6変異・参加者追加行動等を追加したmeaning33で拒否を確認。未知ひらがな複合名・追加格／動詞節はsourceを削らずUNSUPPORTED。品目／人名lookupは作っていない。surface最初のSQL検査1失敗はread-only readerをcan_write=trueとしたtest期待の誤りを修正。意味側の新participant回帰の途中1失敗も、旧quoteを探すfixture不備をsourceへ再束縛して修正した。最終未解消fail0。
+
+Cocolonの新4Bpackは実sourceに一致するchair初回／訂正後2教師（品質goldではない）と、学習外の既読EFREE6 proxyを保持。旧9教師・旧eval・受領9B重みは不変、旧7教師は未対応理由を記録。実4B tokenizerで初回4080 tokens、訂正後7856 tokens、prefix／final assistant mask／EOS／no truncationと固定indexの16moduleをCPU確認。context8192/max_new2048、最大prompt5979+2048=8027。実GPUのmodule/gradient/reload/VRAMは未実証。N=2×1epoch=2update、before/after各8生成・教師NLL各2の診断コードで、自動追加epochなし。学習用8検査は別集合で成功。保存raw→P1→実意味／本文のconsumerは固定priorの単発fit診断であり、モデルの初回出力から動的に作る実GPU一往復ではない。
+
+全変更path・private型・actual本文／snapshotはCocolon全file地図01A／shared01／Emlis02／schema05／実装順06／current maps／最新weekly第8回の実装節と、新4Bpackのcpu_connection_results.jsonへ同期する。通常API/DTO/DB schema/RN・依存仕様・Render・merge/deployは変更0。GPU起動・有料推論・重み取得・学習0。学習前に単価／期限／支出枠／mount／Pod外退避先・停止を具体化する。16GB優先／24GB許容は方針で、適合実証・自動借り直しの許可ではない。
+
+STRUCTURE_MAP_DELTA_PRESENT（private offline ownerと新profile）。正式Product Read0/3／PRODUCT_NOT_CLEAR／candidate_ready=false／automatic_progression=falseは維持。一般語彙／自由な日本語／Plus/Premium／Piece/Analysisの実モデル接続、通常有効化・本人端末の完成には拡張しない。
