@@ -6,7 +6,11 @@ import json
 
 import pytest
 
-from test_cmee_emlis_model_meaning import initial_model_request
+from test_cmee_emlis_model_meaning import (
+    initial_model_request, model_packet, model_semantic, prepare_model_snapshot,
+)
+from cocolon_meaning_experience_engine.emlis_semantic_admission import SemanticNotAdopted
+from cocolon_meaning_experience_engine.preparation import prepare_emlis, receive_candidate
 from cocolon_meaning_experience_engine.model_candidate_source import (
     MODEL, REVISION, JSON_INSTRUCTION, ModelCallLimits, ModelCandidateSource,
     ModelResponse, build_model_messages,
@@ -33,6 +37,46 @@ def test_messages_preserve_full_native_material_and_distinguish_generated_interp
     changed = copy.deepcopy(messages)
     changed[1]["content"] = "discarded"
     assert build_model_messages(req) == messages
+
+
+@pytest.mark.parametrize("mutation", ["prompt_offsets", "utf8_offsets", "missing_conflicts",
+    "bindings_object", "nested_surface", "literal_predicate"])
+def test_explained_output_errors_remain_rejected_without_repair(mutation):
+    # Regression classes observed in the real diagnostic. Synthetic packets
+    # exercise the unchanged consumer; no real raw is corrected or substituted.
+    req = initial_model_request()
+    packet = model_packet(req)
+    assert prepare_model_snapshot(req, model_semantic(req, packet)).checkpoint
+    candidate = packet["candidate"]
+    if mutation == "prompt_offsets":
+        packet["evidence"][0]["start"] += 406
+        packet["evidence"][0]["end"] += 406
+    elif mutation == "utf8_offsets":
+        ev = packet["evidence"][0]
+        field = req.current_input_bundle.raw_current_input[ev["field_path"]]
+        ev["start"], ev["end"] = (len(field[:ev["start"]].encode("utf-8")),
+                                  len(field[:ev["end"]].encode("utf-8")))
+    elif mutation == "missing_conflicts":
+        candidate.pop("conflicts")
+    elif mutation == "bindings_object":
+        surface = candidate["surface_proposal"]
+        surface["bindings"] = {row["section"]: row for row in surface["bindings"]}
+    elif mutation == "nested_surface":
+        candidate["claims"][0]["surface_proposal"] = candidate.pop("surface_proposal")
+    else:
+        candidate["claims"][0]["predicate"]["surface"] = "the same exact quote as claim.text"
+    raw = json.dumps(packet, ensure_ascii=False)
+    prepared = prepare_emlis(req)
+    receipt = receive_candidate(prepared, request_id=prepared.request_id,
+                                raw_output=raw, finish_reason="stop")
+    assert receipt.raw_output == raw
+    if mutation in {"prompt_offsets", "utf8_offsets"}:
+        assert receipt.status == "INVALID_EVIDENCE"
+    else:
+        assert receipt.status == "CANDIDATE_UNREVIEWED"
+        with pytest.raises(SemanticNotAdopted):
+            prepare_model_snapshot(req, model_semantic(req, packet))
+    assert json.loads(receipt.raw_output) == packet
 
 
 def test_non_offline_or_non_free_request_never_reaches_generator():

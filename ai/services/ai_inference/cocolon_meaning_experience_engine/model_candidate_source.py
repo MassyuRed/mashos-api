@@ -47,7 +47,7 @@ OUTPUT_SPEC = {
     "claim_kinds": ["EVENT", "STATE", "ACTION_RESULT", "USER_APPRAISAL_OBJECT"],
     "claim_text": "Exact source quote, not a paraphrase; evidence_indexes has its one matching evidence index.",
     "subject": {"binding": "OMITTED", "source_entity": None, "evidence_indexes": []},
-    "predicate": {"surface": "the same exact quote as claim.text", "arguments": []},
+    "predicate": {"surface": "Copy claim.text exactly", "arguments": []},
     "polarity": {"value": "AFFIRMED", "scope_refs": ["own claim_id"], "evidence_indexes": ["own index"]},
     "modality": {"value": "ASSERTED_AS_WRITTEN", "evidence_indexes": ["own index"]},
     "about_time": {"kind": "WRITTEN_PAST_UNRESOLVED_OCCASION", "expression": None,
@@ -55,9 +55,10 @@ OUTPUT_SPEC = {
     "claim_qualifiers": [],
     "bounded_scope": "Repair/reuse, explicit solo joy appraisal, or one explicit correction to cooperation/reuse joy. Other source grammars remain unsupported; do not force them into these axes.",
     "evidence_fields": ["source_id", "field_path", "start", "end", "quote"],
-    "evidence_coordinate": "Unicode scalar offsets, half-open, within the exact text_fields value",
+    "evidence_coordinate": "Per source_id's text_fields[field_path], zero-based Unicode scalars (not UTF-8/prompt offsets): 0<=start<end<=len(field); field[start:end]==quote.",
     "surface_fields": ["observation", "reception", "update_note", "bindings"],
     "surface_binding_fields": ["section", "claim_refs", "relation_refs"],
+    "surface_bindings": "Array: one object per observation/reception and non-null update_note. Use these section names; claim_refs/relation_refs are arrays; update_note also has update_refs.",
     "update_note_binding_additional_field": "update_refs",
     "question_fields": ["text", "target_unknown_ref", "focus", "claim_refs"],
     "question_focus": "PERSONAL_JOY_SIGNIFICANCE",
@@ -70,8 +71,9 @@ OUTPUT_SPEC = {
     "relation_policy": "AFFIRMED, scope_refs=[own relation_id], qualifiers=[]; written TE is not objective cause or strict temporal order.",
     "unknown_fields": ["unknown_id", "kind", "target_claim_refs", "description", "evidence_indexes"],
     "unknown_kind": "NOT_STATED describes an absent detailed personal explanation, not a person saying they do not know.",
-    "conflicts": "Empty only for genuinely supported unconflicted material; do not discard conflicting material to fit this profile.",
-    "policy": "Every candidate is unadopted. Source locations are not proof of interpretation or prose fidelity.",
+    "conflicts": "Required array; [] only for unconflicted source. Never discard conflicts to fit this profile.",
+    "policy": "All *_fields are exact required object keys. surface_proposal belongs directly to candidate, never claims. Every candidate is unadopted; locations are not semantic/prose proof.",
+    "descriptions": "Replace instruction strings with source text/IDs/zero-based integer evidence indexes; never copy instructions as values.",
 }
 
 
