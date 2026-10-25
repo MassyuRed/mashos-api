@@ -7,7 +7,7 @@ import json
 import pytest
 
 from test_cmee_emlis_model_meaning import (
-    initial_model_request, model_packet, model_semantic, prepare_model_snapshot,
+    initial_model_request, model_answer, model_packet, model_semantic, prepare_model_snapshot,
 )
 from cocolon_meaning_experience_engine.emlis_semantic_admission import SemanticNotAdopted
 from cocolon_meaning_experience_engine.preparation import prepare_emlis, receive_candidate
@@ -39,9 +39,22 @@ def test_messages_preserve_full_native_material_and_distinguish_generated_interp
     assert build_model_messages(req) == messages
 
 
+def test_stage_instructions_preserve_answer_source_and_do_not_contaminate_initial_messages():
+    req = initial_model_request()
+    initial = build_model_messages(req)
+    prepared = prepare_model_snapshot(req, model_semantic(req))
+    answer = model_answer(req, prepared)
+    body = json.loads(build_model_messages(answer, prepared.semantic_snapshot)[1]["content"])
+    assert body["material"] == prepare_emlis(answer).payload()
+    assert body["prior_adopted_interpretation"]["meaning_packet"] == json.loads(prepared.meaning_json)
+    assert body["material"]["control"]["actual_question_budget_remaining"] == 0
+    assert build_model_messages(req) == initial
+
+
 @pytest.mark.parametrize("mutation", ["prompt_offsets", "utf8_offsets", "missing_conflicts",
     "bindings_object", "nested_surface", "literal_predicate", "observation_object",
-    "reception_null", "missing_source_entity", "merged_claims"])
+    "reception_null", "missing_source_entity", "merged_claims", "envelope_byte_offsets",
+    "field_path_prefix", "missing_core", "claim_conflicts", "binding_section_label"])
 def test_explained_output_errors_remain_rejected_without_repair(mutation):
     # Regression classes observed in the real diagnostic. Synthetic packets
     # exercise the unchanged consumer; no real raw is corrected or substituted.
@@ -74,12 +87,25 @@ def test_explained_output_errors_remain_rejected_without_repair(mutation):
         candidate["claims"][0]["subject"].pop("source_entity")
     elif mutation == "merged_claims":
         candidate["claims"][0]["text"] += candidate["claims"].pop(1)["text"]
+    elif mutation == "envelope_byte_offsets":
+        ev = packet["evidence"][0]
+        native = next(e for e in prepare_emlis(req).payload()["sources"][0]["evidence"]
+                      if e["field_path"] == ev["field_path"])
+        ev["start"], ev["end"] = native["utf8_start"], native["utf8_end"]
+    elif mutation == "field_path_prefix":
+        packet["evidence"][0]["field_path"] = "text_fields." + packet["evidence"][0]["field_path"]
+    elif mutation == "missing_core":
+        candidate.pop("core")
+    elif mutation == "claim_conflicts":
+        candidate["claims"][0]["conflicts"] = candidate.pop("conflicts")
+    elif mutation == "binding_section_label":
+        candidate["surface_proposal"]["bindings"][0]["section"] = "repair_result"
     raw = json.dumps(packet, ensure_ascii=False)
     prepared = prepare_emlis(req)
     receipt = receive_candidate(prepared, request_id=prepared.request_id,
                                 raw_output=raw, finish_reason="stop")
     assert receipt.raw_output == raw
-    if mutation in {"prompt_offsets", "utf8_offsets"}:
+    if mutation in {"prompt_offsets", "utf8_offsets", "envelope_byte_offsets", "field_path_prefix"}:
         assert receipt.status == "INVALID_EVIDENCE"
     else:
         assert receipt.status == "CANDIDATE_UNREVIEWED"

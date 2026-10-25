@@ -38,42 +38,48 @@ SYSTEM_INSTRUCTION = JSON_INSTRUCTION + (
 
 # Describes the actual bounded profile, not an example answer or a hidden gold.
 OUTPUT_SPEC = {
-    "schema_version": CANDIDATE_SCHEMA,
-    "candidate_fields": ["schema_version", "core", "claims", "relations", "unknowns", "conflicts",
-                         "updates", "surface_proposal", "question_proposal"],
-    "core": "emlis",
-    "claim_fields": ["claim_id", "kind", "text", "subject", "predicate", "polarity", "modality",
-                     "about_time", "qualifiers", "evidence_indexes"],
-    "claim_kinds": ["EVENT", "STATE", "ACTION_RESULT", "USER_APPRAISAL_OBJECT"],
-    "claim_text": "Atomic exact quote/claim, one evidence index. Separate event, result, joy STATE, joy-object USER_APPRAISAL_OBJECT and correction clauses.",
-    "subject": {"binding": "OMITTED", "source_entity": None, "evidence_indexes": []},
-    "predicate": {"surface": "Copy claim.text exactly", "arguments": []},
-    "polarity": {"value": "AFFIRMED", "scope_refs": ["own claim_id"], "evidence_indexes": ["own index"]},
-    "modality": {"value": "ASSERTED_AS_WRITTEN", "evidence_indexes": ["own index"]},
-    "about_time": {"kind": "WRITTEN_PAST_UNRESOLVED_OCCASION", "expression": None,
-                   "anchor_source_id": "source_id of the claim quote", "evidence_indexes": ["own index"]},
-    "claim_qualifiers": [],
-    "bounded_scope": "Repair/reuse/solo joy or one correction to cooperation/reuse joy. Other grammars unsupported.",
-    "evidence_fields": ["source_id", "field_path", "start", "end", "quote"],
-    "evidence_coordinate": "source_id.text_fields[field_path], zero-based Unicode scalars, not bytes/prompt offsets; field[start:end]==quote; 0<=start<end<=len(field).",
-    "surface_fields": ["observation", "reception", "update_note", "bindings"],
-    "surface_values": "observation/reception: nonempty Japanese prose strings, not objects/null. Initial: repair/result and solo joy; corrected: guidance/joint repair and reuse joy. Address the person; invent no reasons. update_note: null or nonempty prose of actual change.",
-    "surface_binding_fields": ["section", "claim_refs", "relation_refs"],
-    "surface_bindings": "Array: one object/non-null section. claim_refs/relation_refs match prose meanings. update_note adds update_refs: integer update indexes.",
-    "question_fields": ["text", "target_unknown_ref", "focus", "claim_refs"],
-    "question_focus": "PERSONAL_JOY_SIGNIFICANCE",
-    "update_fields": ["operation", "target_kind", "target_ref", "replacement_refs", "evidence_indexes",
-                      "prior_snapshot_ref"],
-    "update_operations": ["REVISE", "INVALIDATE_GAP"],
-    "update_target_kinds": ["CLAIM", "RELATION", "UNKNOWN"],
-    "relation_fields": ["relation_id", "type", "from_claim_id", "to_claim_id", "polarity", "scope_refs", "qualifiers", "evidence_indexes"],
-    "relation_types": ["SOURCE_WRITTEN_TE_LINK", "USER_STATED_JOY_GROUND"],
-    "relation_policy": "AFFIRMED, scope_refs=[own relation_id], qualifiers=[]. TE repair->result: quote connector, not cause/order. JOY object->joy: quote full ground.",
-    "unknown_fields": ["unknown_id", "kind", "target_claim_refs", "description", "evidence_indexes"],
-    "unknown_kind": "NOT_STATED: detailed personal explanation absent, not explicit personal uncertainty.",
-    "conflicts": "Required array; [] only if unconflicted.",
-    "policy": "All *_fields and subject keys required, including source_entity:null. surface_proposal is candidate-level. question_proposal may be null. Unadopted proposals only.",
-    "descriptions": "Use quotes/IDs/integer indexes, not instruction strings. Never emit this spec.",
+    "notation": "Replace $... placeholders; $i=integer. Arrays show element shapes, not counts. Emit candidate/evidence only.",
+    "shape": {
+        "candidate": {
+            "schema_version": CANDIDATE_SCHEMA, "core": "emlis",
+            "claims": [{
+                "claim_id": "$id", "kind": "$claim_kind", "text": "$quote",
+                "subject": {"binding": "OMITTED", "source_entity": None, "evidence_indexes": []},
+                "predicate": {"surface": "$quote", "arguments": []},
+                "polarity": {"value": "AFFIRMED", "scope_refs": ["$cid"], "evidence_indexes": ["$i"]},
+                "modality": {"value": "ASSERTED_AS_WRITTEN", "evidence_indexes": ["$i"]},
+                "about_time": {"kind": "WRITTEN_PAST_UNRESOLVED_OCCASION", "expression": None,
+                               "anchor_source_id": "$sid", "evidence_indexes": ["$i"]},
+                "qualifiers": [], "evidence_indexes": ["$i"],
+            }],
+            "relations": [{"relation_id": "$id", "type": "$relation_type",
+                "from_claim_id": "$from_id", "to_claim_id": "$to_id", "polarity": "AFFIRMED",
+                "scope_refs": ["$rid"], "qualifiers": [], "evidence_indexes": ["$i"]}],
+            "unknowns": [{"unknown_id": "$id", "kind": "NOT_STATED",
+                "target_claim_refs": ["$object", "$joy"], "description": "$missing_detail",
+                "evidence_indexes": ["$object_index", "$joy_index"]}],
+            "conflicts": [], "updates": [],
+            "surface_proposal": {"observation": "$prose", "reception": "$prose",
+                "update_note": None, "bindings": [
+                    {"section": "observation", "claim_refs": ["$cid"], "relation_refs": ["$rid"]},
+                    {"section": "reception", "claim_refs": ["$cid"], "relation_refs": ["$rid"]},
+                ]},
+            "question_proposal": None,
+        },
+        "evidence": [{"source_id": "$sid", "field_path": "$field",
+                      "start": "$start_integer", "end": "$end_integer", "quote": "$quote"}],
+    },
+    "coordinates": "field_path=memo|memo_action|answer_text_private, no prefix. start/end=field-local Unicode: field[start:end]==quote. Use scalar_*, recompute subquotes; NEVER utf8_*/field_utf8_*.",
+    "meaning": "Atomic exact quotes, one index/claim. EVENT/ACTION_RESULT/STATE/USER_APPRAISAL_OBJECT. Initial4: repair/result/joy/object, NOT_STATED gap1, updates0. Corrected6: same repair/result/joy IDs + guidance/joint/reuse, gap0. Other grammars unsupported. NOT_STATED is missing detail, not uncertainty.",
+    "relations": "SOURCE_WRITTEN_TE_LINK repair->result: connector quote, not cause/order. USER_STATED_JOY_GROUND object->joy: full-ground quote. conflicts belongs to candidate.",
+    "correction_update_item": {"operation": "$REVISE_or_INVALIDATE_GAP", "target_kind": "$CLAIM_RELATION_UNKNOWN",
+        "target_ref": "$prior_target_id", "replacement_refs": ["$new_id"], "evidence_indexes": ["$i"],
+        "prior_snapshot_ref": "$prior_snapshot_ref"},
+    "correction_updates": "Order: REVISE solo CLAIM->guidance/joint; REVISE joy-ground RELATION, replacement_refs=[new relation ID] (reuse->joy); INVALIDATE_GAP UNKNOWN, replacement_refs=[]. Current answer evidence; prior is not source.",
+    "prose": "Japanese strings: observation repair/result initially, guidance/joint corrected; reception addresses joy/object. update_note null or actual-change string; bind section=update_note with integer update_refs if present. Refs match prose.",
+    "optional_question_item": {"text": "$question", "target_unknown_ref": "$unknown_id",
+        "focus": "PERSONAL_JOY_SIGNIFICANCE", "claim_refs": ["$object", "$joy"]},
+    "question": "null or optional_question_item; budget/stop rules apply.",
 }
 
 
@@ -100,8 +106,20 @@ def build_model_messages(request, prior_snapshot_json=None):
         # duplicate source/proof payload: the complete current native material
         # is already present, and the model needs the adopted meaning and ref.
         prior = {key: prior[key] for key in ("semantic_profile", "snapshot_ref", "meaning_packet")}
+    # Show the current stage's hierarchy, not contradictory empty/nonempty
+    # examples for both stages. This only changes instructions, not material,
+    # candidate acceptance, source coordinates or the saved interpretation.
+    spec = json.loads(_json(OUTPUT_SPEC))
+    if control.answers:
+        spec["shape"]["candidate"]["unknowns"] = []
+        spec["shape"]["candidate"]["updates"] = [spec.pop("correction_update_item")]
+        spec.pop("optional_question_item")
+        spec["question"] = "question_proposal=null: answer already used the question budget."
+    else:
+        spec.pop("correction_update_item")
+        spec.pop("correction_updates")
     body = dict(semantic_profile=PROFILE, request_ref=prepared.request_id, material=material,
-                prior_adopted_interpretation=prior, output_spec=OUTPUT_SPEC)
+                prior_adopted_interpretation=prior, output_spec=spec)
     return [{"role": "system", "content": SYSTEM_INSTRUCTION},
             {"role": "user", "content": _json(body)}]
 
