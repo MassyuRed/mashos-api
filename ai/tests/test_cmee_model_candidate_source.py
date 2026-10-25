@@ -40,7 +40,8 @@ def test_messages_preserve_full_native_material_and_distinguish_generated_interp
 
 
 @pytest.mark.parametrize("mutation", ["prompt_offsets", "utf8_offsets", "missing_conflicts",
-    "bindings_object", "nested_surface", "literal_predicate"])
+    "bindings_object", "nested_surface", "literal_predicate", "observation_object",
+    "reception_null", "missing_source_entity", "merged_claims"])
 def test_explained_output_errors_remain_rejected_without_repair(mutation):
     # Regression classes observed in the real diagnostic. Synthetic packets
     # exercise the unchanged consumer; no real raw is corrected or substituted.
@@ -63,8 +64,16 @@ def test_explained_output_errors_remain_rejected_without_repair(mutation):
         surface["bindings"] = {row["section"]: row for row in surface["bindings"]}
     elif mutation == "nested_surface":
         candidate["claims"][0]["surface_proposal"] = candidate.pop("surface_proposal")
-    else:
+    elif mutation == "literal_predicate":
         candidate["claims"][0]["predicate"]["surface"] = "the same exact quote as claim.text"
+    elif mutation == "observation_object":
+        candidate["surface_proposal"]["observation"] = {"text": candidate["surface_proposal"]["observation"]}
+    elif mutation == "reception_null":
+        candidate["surface_proposal"]["reception"] = None
+    elif mutation == "missing_source_entity":
+        candidate["claims"][0]["subject"].pop("source_entity")
+    elif mutation == "merged_claims":
+        candidate["claims"][0]["text"] += candidate["claims"].pop(1)["text"]
     raw = json.dumps(packet, ensure_ascii=False)
     prepared = prepare_emlis(req)
     receipt = receive_candidate(prepared, request_id=prepared.request_id,
