@@ -69,14 +69,15 @@ OUTPUT_SPEC = {
         "evidence": [{"source_id": "$sid", "field_path": "$field",
                       "start": "$start_integer", "end": "$end_integer", "quote": "$quote"}],
     },
-    "coordinates": "source_id=material.sources[i].source_id, NOT original IDs. field_path=memo|memo_action|answer_text_private, no prefix. start/end=zero-based field-local Unicode: text_fields[field_path][start:end]==quote. Count characters in that field only, never UTF-8 bytes or JSON positions.",
-    "meaning": "Atomic exact quotes, one index/claim. EVENT/ACTION_RESULT/STATE/USER_APPRAISAL_OBJECT. Initial4: repair/result/joy/object, NOT_STATED gap1, updates0. Corrected6: same repair/result/joy IDs + guidance/joint/reuse, gap0. Other grammars unsupported. NOT_STATED is missing detail, not uncertainty.",
-    "relations": "SOURCE_WRITTEN_TE_LINK repair->result: connector quote, not cause/order. USER_STATED_JOY_GROUND object->joy: full-ground quote. conflicts belongs to candidate.",
+    "coordinates": "source_id=material.sources[i].source_id, NOT original IDs. field_path=memo|memo_action|answer_text_private, no prefix. field_unicode_spans[field] lists [start,end,one Unicode character] for the entire unchanged field, including spaces/newlines. Select quote from text_fields[field], copy the first character's start and last character's end. text_fields[field][start:end]==quote. Answer offsets start at the full field's beginning, never restart at a clause. Never use UTF-8 bytes or JSON positions.",
+    "meaning": "Atomic exact quotes, one index/claim. Action=EVENT; established result=ACTION_RESULT; joy itself=STATE; what the person is glad about=USER_APPRAISAL_OBJECT. Initial4: repair/result/joy/object, NOT_STATED gap1, updates0. Corrected6: same repair/result/joy IDs + guidance/joint/reuse, gap0. Other grammars unsupported. NOT_STATED is missing detail, not uncertainty.",
+    "references": "evidence_indexes are zero-based positions in your final evidence array, not claim order or source order. Each claim must reference its own exact quote row. claim_refs/target_claim_refs contain only claims[].claim_id; relation_refs only relations[].relation_id. References to an unknown_id belong only in target_unknown_ref or an UNKNOWN update target, never claim_refs. update_refs are zero-based positions in updates.",
+    "relations": "SOURCE_WRITTEN_TE_LINK repair->result: actual te-connector quote, not an object particle or cause/order. USER_STATED_JOY_GROUND object->joy: the full ground expression linking the gladness to its object, excluding trailing sentence punctuation, not just a particle. conflicts belongs to candidate.",
     "correction_update_item": {"operation": "$REVISE_or_INVALIDATE_GAP", "target_kind": "$CLAIM_RELATION_UNKNOWN",
         "target_ref": "$prior_target_id", "replacement_refs": ["$new_id"], "evidence_indexes": ["$i"],
         "prior_snapshot_ref": "$prior_snapshot_ref"},
-    "correction_updates": "Order: REVISE solo CLAIM->guidance/joint; REVISE joy-ground RELATION, replacement_refs=[new relation ID] (reuse->joy); INVALIDATE_GAP UNKNOWN, replacement_refs=[]. Current answer evidence; prior is not source.",
-    "prose": "Japanese strings: observation repair/result initially, guidance/joint corrected; reception addresses joy/object. update_note null or actual-change string; bind section=update_note with integer update_refs if present. Refs match prose.",
+    "correction_updates": "Order and required current-answer evidence: REVISE solo CLAIM->guidance/joint: correction declaration, guidance, joint (3 rows); REVISE joy-ground RELATION, replacement_refs=[new relation ID] (reuse->joy): negation of old reason, full revised joy-reason expression (2 rows); INVALIDATE_GAP UNKNOWN, replacement_refs=[]: correction declaration, same full revised-reason expression (2 rows). Quote expressions exclude trailing sentence punctuation. Include all these quote rows in evidence and reference their final array positions. Prior is not source.",
+    "prose": "Japanese strings addressed to the person: observation repair/result initially, guidance/joint corrected; reception acknowledges joy/object naturally. Put any question only in question_proposal.text; reception is not a question, repeated question, or verbatim source copy. update_note null or actual-change string; bind section=update_note with integer update_refs if present. Refs match prose.",
     "optional_question_item": {"text": "$question", "target_unknown_ref": "$unknown_id",
         "focus": "PERSONAL_JOY_SIGNIFICANCE", "claim_refs": ["$object", "$joy"]},
     "question": "null or optional_question_item; budget/stop rules apply.",
@@ -104,6 +105,13 @@ def build_model_messages(request, prior_snapshot_json=None):
          if key not in {"evidence", "envelope_id", "source_commitment"}}
         for source in material["sources"]
     ]
+    # A mechanical full-field character map, not selected quotes or meanings.
+    # Python string positions match the unchanged CMEE evidence contract.
+    for source in material["sources"]:
+        source["field_unicode_spans"] = {
+            field: [[i, i + 1, char] for i, char in enumerate(text)]
+            for field, text in source["text_fields"].items()
+        }
     control = request.emlis_thread
     if (material["tier"] != "free" or len(control.answers) > 1
             or control.admitted_history or control.frame_feedback_sources or control.rejected_frame_keys
@@ -125,6 +133,10 @@ def build_model_messages(request, prior_snapshot_json=None):
         spec["shape"]["candidate"]["updates"] = [spec.pop("correction_update_item")]
         spec.pop("optional_question_item")
         spec["question"] = "question_proposal=null: answer already used the question budget."
+        surface = spec["shape"]["candidate"]["surface_proposal"]
+        surface["update_note"] = "$actual_change"
+        surface["bindings"].append({"section": "update_note", "claim_refs": ["$cid"],
+                                    "relation_refs": ["$rid"], "update_refs": ["$i"]})
     else:
         spec.pop("correction_update_item")
         spec.pop("correction_updates")

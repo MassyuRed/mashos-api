@@ -31,8 +31,12 @@ def assert_source_projection(body, native):
         key: value for key, value in native.items() if key != "sources"}
     assert len(body["material"]["sources"]) == len(native["sources"])
     for visible, original in zip(body["material"]["sources"], native["sources"], strict=True):
-        assert visible == {key: value for key, value in original.items()
+        assert {key: value for key, value in visible.items() if key != "field_unicode_spans"} == {
+                           key: value for key, value in original.items()
                            if key not in {"evidence", "envelope_id", "source_commitment"}}
+        assert visible["field_unicode_spans"] == {
+            field: [[i, i + 1, char] for i, char in enumerate(text)]
+            for field, text in original["text_fields"].items()}
         assert original["evidence"] and original["envelope_id"] and original["source_commitment"]
         assert not {"evidence", "envelope_id", "source_commitment"}.intersection(visible)
 
@@ -63,6 +67,54 @@ def test_stage_instructions_preserve_answer_source_and_do_not_contaminate_initia
     assert body["prior_adopted_interpretation"]["meaning_packet"] == json.loads(prepared.meaning_json)
     assert body["material"]["control"]["actual_question_budget_remaining"] == 0
     assert build_model_messages(req) == initial
+
+
+def test_character_map_preserves_scalar_positions_and_original_bytes():
+    # No normalization, UTF-8 offsets, grapheme grouping, JSON escape counting,
+    # or semantic quote selection, even for repeated / non-BMP characters.
+    text = 'A😀e\u0301\n"\\漢漢'
+    req = initial_model_request(object_text=text)
+    native = prepare_emlis(req).payload()
+    body = json.loads(build_model_messages(req)[1]["content"])
+    assert_source_projection(body, native)
+    source = body["material"]["sources"][0]
+    chars = source["field_unicode_spans"]["memo_action"]
+    assert chars[:9] == [[0,1,"A"],[1,2,"😀"],[2,3,"e"],[3,4,"\u0301"],
+                         [4,5,"\n"],[5,6,'"'],[6,7,"\\"],[7,8,"漢"],[8,9,"漢"]]
+    field = source["text_fields"]["memo_action"]
+    assert "".join(row[2] for row in chars) == field
+    assert chars[-1][1] == len(field)
+    assert prepare_emlis(req).payload() == native
+
+
+def test_answer_character_map_starts_at_full_field_and_keeps_blank_lines():
+    req = initial_model_request()
+    prior = prepare_model_snapshot(req, model_semantic(req))
+    text = '前置き😀\n\n同じ語、同じ語。'
+    answer = model_answer(req, prior, text=text)
+    native = prepare_emlis(answer).payload()
+    body = json.loads(build_model_messages(answer, prior.semantic_snapshot)[1]["content"])
+    assert_source_projection(body, native)
+    source = next(s for s in body["material"]["sources"] if "answer_text_private" in s["text_fields"])
+    chars = source["field_unicode_spans"]["answer_text_private"]
+    assert chars[4:7] == [[4,5,"\n"],[5,6,"\n"],[6,7,"同"]]
+    assert "".join(row[2] for row in chars) == text
+    assert chars[-1][1] == len(text)
+    assert body["prior_adopted_interpretation"]["meaning_packet"] == json.loads(prior.meaning_json)
+    assert prepare_emlis(answer).payload() == native
+
+
+@pytest.mark.parametrize("bounds", [(0, 1000), (0, 1)])
+def test_character_map_does_not_repair_bad_generated_evidence(bounds):
+    req = initial_model_request()
+    packet = model_packet(req)
+    packet["evidence"][0]["start"], packet["evidence"][0]["end"] = bounds
+    raw = json.dumps(packet, ensure_ascii=False)
+    prepared = prepare_emlis(req)
+    receipt = receive_candidate(prepared, request_id=prepared.request_id,
+                                raw_output=raw, finish_reason="stop")
+    assert receipt.status == "INVALID_EVIDENCE"
+    assert receipt.raw_output == raw
 
 
 @pytest.mark.parametrize("mutation", ["prompt_offsets", "utf8_offsets", "missing_conflicts",
