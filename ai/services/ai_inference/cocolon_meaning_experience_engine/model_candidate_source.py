@@ -38,7 +38,7 @@ SYSTEM_INSTRUCTION = JSON_INSTRUCTION + (
 
 # Describes the actual bounded profile, not an example answer or a hidden gold.
 OUTPUT_SPEC = {
-    "notation": "Replace $... placeholders; $i=integer. Arrays show element shapes, not counts. Emit candidate/evidence only.",
+    "notation": "Replace $... placeholders; $i=integer. Arrays show element shapes, not counts. Emit minified candidate/evidence JSON, no indentation/newlines.",
     "shape": {
         "candidate": {
             "schema_version": CANDIDATE_SCHEMA, "core": "emlis",
@@ -69,7 +69,7 @@ OUTPUT_SPEC = {
         "evidence": [{"source_id": "$sid", "field_path": "$field",
                       "start": "$start_integer", "end": "$end_integer", "quote": "$quote"}],
     },
-    "coordinates": "field_path=memo|memo_action|answer_text_private, no prefix. start/end=field-local Unicode: field[start:end]==quote. Use scalar_*, recompute subquotes; NEVER utf8_*/field_utf8_*.",
+    "coordinates": "source_id=material.sources[i].source_id, NOT original/envelope IDs. field_path=memo|memo_action|answer_text_private, no prefix. start/end=field-local Unicode: field[start:end]==quote. Use scalar_*, recompute subquotes; NEVER utf8_*/field_utf8_*.",
     "meaning": "Atomic exact quotes, one index/claim. EVENT/ACTION_RESULT/STATE/USER_APPRAISAL_OBJECT. Initial4: repair/result/joy/object, NOT_STATED gap1, updates0. Corrected6: same repair/result/joy IDs + guidance/joint/reuse, gap0. Other grammars unsupported. NOT_STATED is missing detail, not uncertainty.",
     "relations": "SOURCE_WRITTEN_TE_LINK repair->result: connector quote, not cause/order. USER_STATED_JOY_GROUND object->joy: full-ground quote. conflicts belongs to candidate.",
     "correction_update_item": {"operation": "$REVISE_or_INVALIDATE_GAP", "target_kind": "$CLAIM_RELATION_UNKNOWN",

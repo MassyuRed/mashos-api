@@ -54,7 +54,7 @@ def test_stage_instructions_preserve_answer_source_and_do_not_contaminate_initia
 @pytest.mark.parametrize("mutation", ["prompt_offsets", "utf8_offsets", "missing_conflicts",
     "bindings_object", "nested_surface", "literal_predicate", "observation_object",
     "reception_null", "missing_source_entity", "merged_claims", "envelope_byte_offsets",
-    "field_path_prefix", "missing_core", "claim_conflicts", "binding_section_label"])
+    "field_path_prefix", "missing_core", "claim_conflicts", "binding_section_label", "inner_source_id"])
 def test_explained_output_errors_remain_rejected_without_repair(mutation):
     # Regression classes observed in the real diagnostic. Synthetic packets
     # exercise the unchanged consumer; no real raw is corrected or substituted.
@@ -94,6 +94,8 @@ def test_explained_output_errors_remain_rejected_without_repair(mutation):
         ev["start"], ev["end"] = native["utf8_start"], native["utf8_end"]
     elif mutation == "field_path_prefix":
         packet["evidence"][0]["field_path"] = "text_fields." + packet["evidence"][0]["field_path"]
+    elif mutation == "inner_source_id":
+        packet["evidence"][0]["source_id"] = req.emlis_thread.original_source_ref
     elif mutation == "missing_core":
         candidate.pop("core")
     elif mutation == "claim_conflicts":
@@ -105,7 +107,7 @@ def test_explained_output_errors_remain_rejected_without_repair(mutation):
     receipt = receive_candidate(prepared, request_id=prepared.request_id,
                                 raw_output=raw, finish_reason="stop")
     assert receipt.raw_output == raw
-    if mutation in {"prompt_offsets", "utf8_offsets", "envelope_byte_offsets", "field_path_prefix"}:
+    if mutation in {"prompt_offsets", "utf8_offsets", "envelope_byte_offsets", "field_path_prefix", "inner_source_id"}:
         assert receipt.status == "INVALID_EVIDENCE"
     else:
         assert receipt.status == "CANDIDATE_UNREVIEWED"
