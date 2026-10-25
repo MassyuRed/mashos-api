@@ -230,15 +230,22 @@ def thread_dto(snapshot, *, requested_attempt_id=None, can_write=True):
 
 class EmlisThreadService:
     def __init__(self, store=None, engine=None, *, runtime_profile=RUNTIME_PROFILE, enforce_application_policy=False,
-                 semantic_profile=None, offline_candidate_source=None):
+                 semantic_profile=None, offline_candidate_source=None, offline_model_attempt_seconds=None):
         if runtime_profile not in {RUNTIME_PROFILE, Q3_PROFILE}:
             raise ValueError("unsupported_thread_profile")
         if semantic_profile is not None or offline_candidate_source is not None:
             from cocolon_meaning_experience_engine.emlis_semantic_admission import PROFILE, PROFILE_V2, MODEL_PROFILE
             if semantic_profile not in {PROFILE, PROFILE_V2, MODEL_PROFILE} or not callable(offline_candidate_source) or enforce_application_policy:
                 raise ValueError("semantic_offline_configuration_required")
+        if offline_model_attempt_seconds is not None:
+            from cocolon_meaning_experience_engine.emlis_semantic_admission import MODEL_PROFILE
+            if (type(offline_model_attempt_seconds) is not int or not 31 <= offline_model_attempt_seconds <= 180
+                    or semantic_profile != MODEL_PROFILE or not callable(offline_candidate_source)
+                    or enforce_application_policy):
+                raise ValueError("offline_model_attempt_configuration_required")
         self.semantic_profile = semantic_profile
         self.offline_candidate_source = offline_candidate_source
+        self.offline_model_attempt_seconds = offline_model_attempt_seconds
         self.enforce_application_policy = enforce_application_policy
         self.runtime_profile = runtime_profile
         self.store = store or EmlisThreadStore()
@@ -317,11 +324,22 @@ class EmlisThreadService:
             raise
         return await self._process(user_id, snapshot)
 
-    @staticmethod
-    def _begin(t, snapshot, operation_id=None):
+    def _attempt_seconds(self, t):
+        if self.offline_model_attempt_seconds is None:
+            return ATTEMPT_SECONDS
+        from cocolon_meaning_experience_engine.emlis_semantic_admission import MODEL_PROFILE
+        data = t.get("data", {})
+        if (self.offline_model_attempt_seconds is not None and self.semantic_profile == MODEL_PROFILE
+                and callable(self.offline_candidate_source) and not self.enforce_application_policy
+                and data.get("semantic_profile") == MODEL_PROFILE
+                and data.get("execution_mode") == ExecutionMode.OFFLINE_CANDIDATE.value):
+            return self.offline_model_attempt_seconds
+        return ATTEMPT_SECONDS
+
+    def _begin(self, t, snapshot, operation_id=None):
         t["active_operation_id"] = operation_id or str(uuid4())
         t["active_attempt_id"] = str(uuid4())
-        t["processing_deadline_at"] = (_now(snapshot) + timedelta(seconds=ATTEMPT_SECONDS)).isoformat()
+        t["processing_deadline_at"] = (_now(snapshot) + timedelta(seconds=self._attempt_seconds(t))).isoformat()
         t["data"].update(failure_code=None, operation_id=t["active_operation_id"], attempt_id=t["active_attempt_id"])
 
     def _replay(self, snapshot, key, fingerprint):
@@ -496,9 +514,30 @@ class EmlisThreadService:
             "attempted_source_prefix_ref":prefix}, t)
         snapshot = await self._commit(user_id, snapshot, copy.deepcopy(t), [started], finishing_attempt=t["active_attempt_id"])
         import inspect
+        wait_seconds = None
+        attempt_seconds = self._attempt_seconds(t)
+        if attempt_seconds != ATTEMPT_SECONDS:
+            # Only the explicit private model profile gets a longer attempt.
+            # Leave 30 seconds for receipt, meaning and body commits. The
+            # server-returned clock also accounts for the STARTED commit.
+            wait_seconds = min(attempt_seconds - 30,
+                (parse_iso_utc(t["processing_deadline_at"]) - _now(snapshot)).total_seconds() - 30)
+            if wait_seconds <= 0:
+                raise ThreadStoreError("semantic_candidate_acquisition_incomplete")
         candidate = self.offline_candidate_source(_request(snapshot), prior)
         if inspect.isawaitable(candidate):
-            candidate = await candidate
+            if wait_seconds is None:
+                candidate = await candidate
+            else:
+                try:
+                    candidate = await asyncio.wait_for(candidate, timeout=wait_seconds)
+                except TimeoutError:
+                    # STARTED remains authoritative: an absent response does
+                    # not permit another provider acquisition. External
+                    # CancelledError still reaches the existing worker path.
+                    raise ThreadStoreError("semantic_candidate_acquisition_incomplete") from None
+        # A synchronous source keeps its existing behavior; it cannot be
+        # interrupted by wait_for. SQL still rejects every expired commit.
         if type(candidate) is not CandidateReceipt:
             raise ValueError("semantic_candidate_receipt_required")
         t = snapshot["thread"]
@@ -618,7 +657,14 @@ class EmlisThreadService:
             raise
         except ThreadStoreError as exc:
             if exc.code in {"semantic_candidate_acquisition_incomplete", "semantic_candidate_source_unavailable"}:
-                return await self._semantic_unadopted(user_id, snapshot, "HOLD", exc.code, None)
+                # STARTED may already have advanced the revision inside the
+                # acquisition call. Close only this still-current attempt,
+                # using its saved revision rather than the caller's snapshot.
+                fresh = await self._hydrate(user_id, await self.store.read(user_id, thread_id=t["id"]))
+                _check(fresh)
+                if fresh["thread"]["active_attempt_id"] != attempt:
+                    return self._dto(fresh)
+                return await self._semantic_unadopted(user_id, fresh, "HOLD", exc.code, None)
             if exc.code == "application_paused":
                 return await self._record_failure(user_id, snapshot, attempt, "worker_interrupted", paused=True)
             if exc.transient:

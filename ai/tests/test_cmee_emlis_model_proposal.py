@@ -7,6 +7,7 @@ import asyncio
 import copy
 import json
 from dataclasses import replace
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -28,6 +29,8 @@ from cocolon_meaning_experience_engine.emlis_thread_surface import realize_emlis
 from cocolon_meaning_experience_engine.preparation import prepare_emlis, receive_candidate
 from emlis_ai_grounded_observation_gate import evaluate_emlis_model_surface_inverse
 from emlis_thread_service import EmlisThreadService
+from emlis_thread_store import ThreadStoreError
+import emlis_thread_service as thread_service_module
 
 
 CORRECTION = ("さっき「全部一人で」と書いたのは訂正します。途中で友人に手順を教えてもらって、一緒に直しました。\n\n"
@@ -204,7 +207,7 @@ def test_model_source_object_is_dynamic_and_a_foreign_body_is_not_rebound():
     assert rejected.artifact is None
 
 
-def model_service(case, db):
+def model_service(case, db, *, offline_model_attempt_seconds=None):
     user, parent, _ = case
     db.query("update public.emotions set memo=$1,memo_action=$2,category=array['生活'],emotions=array['喜び'],emotion_details=$3 where id=$4",
         ["全部一人で直せたことが、うれしかった。", "ぐらついていた椅子を修理して、また座れるようになった。",
@@ -219,11 +222,13 @@ def model_service(case, db):
         return receive_candidate(material, request_id=material.request_id,
             raw_output=json.dumps(packet, ensure_ascii=False), finish_reason="stop", provider="synthetic-test",
             model="synthetic-not-4B", usage={"input_tokens": None, "output_tokens": None})
-    return user, parent, EmlisThreadService(semantic_profile=MODEL_PROFILE, offline_candidate_source=source), calls
+    return user, parent, EmlisThreadService(semantic_profile=MODEL_PROFILE, offline_candidate_source=source,
+        offline_model_attempt_seconds=offline_model_attempt_seconds), calls
 
 
-def test_model_service_sql_real_question_correction_and_saved_read_never_regenerates(case, db):
-    user, parent, service, calls = model_service(case, db)
+@pytest.mark.parametrize("attempt_seconds", [None, 180])
+def test_model_service_sql_real_question_correction_and_saved_read_never_regenerates(case, db, attempt_seconds):
+    user, parent, service, calls = model_service(case, db, offline_model_attempt_seconds=attempt_seconds)
     first = run(service.start(user, parent))
     assert first["state"] == "AWAITING_ANSWER", first
     completed = run(answer(service, user, first, CORRECTION))
@@ -245,8 +250,9 @@ def test_model_service_sql_real_question_correction_and_saved_read_never_regener
     assert replay["current_observation"] == completed["current_observation"] and len(calls) == 2
 
 
-def test_model_service_sql_meaning_survives_interrupted_author_and_explicit_resume(case, db, monkeypatch):
-    user, parent, service, calls = model_service(case, db)
+@pytest.mark.parametrize("attempt_seconds", [None, 180])
+def test_model_service_sql_meaning_survives_interrupted_author_and_explicit_resume(case, db, monkeypatch, attempt_seconds):
+    user, parent, service, calls = model_service(case, db, offline_model_attempt_seconds=attempt_seconds)
     first = run(service.start(user, parent))
     original_generate = service.engine.generate
     def interrupt(*args, **kwargs):
@@ -272,3 +278,185 @@ def test_model_profile_stays_offline_only():
     with pytest.raises(ValueError, match="semantic_offline_configuration_required"):
         EmlisThreadService(semantic_profile=MODEL_PROFILE, offline_candidate_source=lambda *_: None,
                            enforce_application_policy=True)
+
+
+@pytest.mark.parametrize("seconds", [False, True, 0, 30, 181, -1, 180.0, "180"])
+def test_offline_model_attempt_rejects_non_integer_or_unbounded_values(seconds):
+    with pytest.raises(ValueError, match="offline_model_attempt_configuration_required"):
+        EmlisThreadService(semantic_profile=MODEL_PROFILE, offline_candidate_source=lambda *_: None,
+            offline_model_attempt_seconds=seconds)
+
+
+@pytest.mark.parametrize("profile", [None, "emlis_candidate_snapshot.v1", "emlis_candidate_snapshot.v2"])
+def test_long_attempt_cannot_be_configured_for_other_profiles(profile):
+    options = {"semantic_profile": profile, "offline_candidate_source": lambda *_: None} if profile else {}
+    with pytest.raises(ValueError):
+        EmlisThreadService(**options, offline_model_attempt_seconds=180)
+    with pytest.raises(ValueError):
+        EmlisThreadService(semantic_profile=MODEL_PROFILE, offline_model_attempt_seconds=180)
+    with pytest.raises(ValueError):
+        EmlisThreadService(semantic_profile=MODEL_PROFILE, offline_candidate_source=lambda *_: None,
+            enforce_application_policy=True, offline_model_attempt_seconds=180)
+
+
+@pytest.mark.parametrize("seconds", [31, 180])
+def test_explicit_attempt_is_bound_to_the_actual_offline_model_thread(seconds):
+    service = EmlisThreadService(semantic_profile=MODEL_PROFILE, offline_candidate_source=lambda *_: None,
+        offline_model_attempt_seconds=seconds)
+    instant = datetime(2026, 10, 25, tzinfo=timezone.utc)
+    for profile, mode, expected in [
+        (MODEL_PROFILE, "OFFLINE_CANDIDATE", seconds),
+        (None, "OFFLINE_CANDIDATE", 30),
+        ("emlis_candidate_snapshot.v1", "OFFLINE_CANDIDATE", 30),
+        ("emlis_candidate_snapshot.v2", "OFFLINE_CANDIDATE", 30),
+        (MODEL_PROFILE, "EMLIS_APPLICATION", 30),
+    ]:
+        t = {"data": {"semantic_profile": profile, "execution_mode": mode}}
+        service._begin(t, {"now": instant.isoformat()})
+        assert datetime.fromisoformat(t["processing_deadline_at"]) == instant + timedelta(seconds=expected)
+    default = EmlisThreadService(semantic_profile=MODEL_PROFILE, offline_candidate_source=lambda *_: None)
+    t = {"data": {"semantic_profile": MODEL_PROFILE, "execution_mode": "OFFLINE_CANDIDATE"}}
+    default._begin(t, {"now": instant.isoformat()})
+    assert datetime.fromisoformat(t["processing_deadline_at"]) == instant + timedelta(seconds=30)
+
+
+def acquisition_case(monkeypatch, source):
+    """Only acquisition orchestration; this journal is not SQL evidence."""
+    service = EmlisThreadService(semantic_profile=MODEL_PROFILE, offline_candidate_source=source,
+        offline_model_attempt_seconds=180)
+    snapshot = {"now": "2026-10-25T00:00:00+00:00", "events": [],
+        "thread": {"id": "acquisition-thread", "source_prefix_ref": "acquisition-prefix",
+            "data": {"semantic_profile": MODEL_PROFILE, "execution_mode": "OFFLINE_CANDIDATE"}}}
+    service._begin(snapshot["thread"], snapshot)
+    saved = [snapshot]
+    async def commit(user_id, old, thread, events, **kwargs):
+        saved[0] = {**copy.deepcopy(old), "thread": copy.deepcopy(thread),
+            "events": copy.deepcopy(old["events"] + events)}
+        return saved[0]
+    monkeypatch.setattr(service, "_commit", commit)
+    monkeypatch.setattr(thread_service_module, "_request", lambda _: initial_model_request())
+    return service, saved
+
+
+def test_async_acquisition_timeout_cancels_once_and_keeps_started_without_reacquiring(monkeypatch):
+    state = {"calls": 0, "cancelled": False}
+    async def source(*_):
+        state["calls"] += 1
+        try:
+            await asyncio.Event().wait()
+        finally:
+            state["cancelled"] = True
+    service, saved = acquisition_case(monkeypatch, source)
+    observed = []
+    original_wait_for = asyncio.wait_for
+    async def expire(awaitable, *, timeout):
+        observed.append(timeout)
+        return await original_wait_for(awaitable, timeout=.001)
+    monkeypatch.setattr(thread_service_module.asyncio, "wait_for", expire)
+    with pytest.raises(ThreadStoreError, match="semantic_candidate_acquisition_incomplete"):
+        run(service._semantic_candidate("user", saved[0]))
+    assert observed == [150] and state == {"calls": 1, "cancelled": True}
+    assert [e["payload"]["stage"] for e in saved[0]["events"]] == ["SEMANTIC_CANDIDATE_STARTED"]
+    with pytest.raises(ThreadStoreError, match="semantic_candidate_acquisition_incomplete"):
+        run(service._semantic_candidate("user", saved[0]))
+    assert state["calls"] == 1 and observed == [150]
+
+
+def test_external_acquisition_cancel_is_not_converted_to_timeout_or_reacquisition(monkeypatch):
+    entered = asyncio.Event()
+    state = {"calls": 0, "cancelled": False}
+    async def source(*_):
+        state["calls"] += 1
+        entered.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            state["cancelled"] = True
+    service, saved = acquisition_case(monkeypatch, source)
+    async def exercise():
+        task = asyncio.create_task(service._semantic_candidate("user", saved[0]))
+        await entered.wait()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+    run(exercise())
+    assert state == {"calls": 1, "cancelled": True}
+    with pytest.raises(ThreadStoreError, match="semantic_candidate_acquisition_incomplete"):
+        run(service._semantic_candidate("user", saved[0]))
+    assert state["calls"] == 1
+
+
+def test_saved_receipt_is_reused_and_sync_source_keeps_its_existing_behavior(monkeypatch):
+    req = initial_model_request()
+    material = prepare_emlis(req)
+    receipt = receive_candidate(material, request_id=material.request_id,
+        raw_output=json.dumps(natural_packet(req), ensure_ascii=False), finish_reason="stop")
+    calls = []
+    def source(*_):
+        calls.append(1)
+        return receipt
+    service, saved = acquisition_case(monkeypatch, source)
+    async def forbidden_wait(*args, **kwargs):
+        raise AssertionError("synchronous source was wrapped in async wait")
+    monkeypatch.setattr(thread_service_module.asyncio, "wait_for", forbidden_wait)
+    _, first, _, _ = run(service._semantic_candidate("user", saved[0]))
+    _, again, _, _ = run(service._semantic_candidate("user", saved[0]))
+    assert first == again == receipt and calls == [1]
+    assert [e["payload"]["stage"] for e in saved[0]["events"]] == [
+        "SEMANTIC_CANDIDATE_STARTED", "SEMANTIC_CANDIDATE_RECEIVED"]
+
+
+def test_remaining_attempt_reserves_thirty_seconds_before_invoking_a_source(monkeypatch):
+    calls = []
+    service, saved = acquisition_case(monkeypatch, lambda *_: calls.append(1))
+    saved[0]["thread"]["processing_deadline_at"] = "2026-10-25T00:00:30+00:00"
+    with pytest.raises(ThreadStoreError, match="semantic_candidate_acquisition_incomplete"):
+        run(service._semantic_candidate("user", saved[0]))
+    assert not calls
+
+
+def test_model_service_sql_timeout_is_hold_and_saved_reads_do_not_retry(case, db, monkeypatch):
+    user, parent, service, _ = model_service(case, db, offline_model_attempt_seconds=180)
+    state = {"calls": 0, "cancelled": False}
+    async def source(*_):
+        state["calls"] += 1
+        try:
+            await asyncio.Event().wait()
+        finally:
+            state["cancelled"] = True
+    service.offline_candidate_source = source
+    original_wait_for = asyncio.wait_for
+    async def expire(awaitable, *, timeout):
+        assert 0 < timeout <= 150
+        return await original_wait_for(awaitable, timeout=.001)
+    monkeypatch.setattr(thread_service_module.asyncio, "wait_for", expire)
+    failed = run(service.start(user, parent))
+    assert failed["state"] == "COMPLETED" and failed["current_observation"] is None and not failed["can_retry"]
+    assert run(service.get(user, parent)) == failed
+    assert run(service.start(user, parent)) == failed
+    snapshot = run(service.store.read(user, input_id=parent))
+    stages = [e["payload"].get("stage") for e in snapshot["events"] if e["kind"] == "OPERATION"]
+    assert stages.count("SEMANTIC_CANDIDATE_STARTED") == 1 and "SEMANTIC_CANDIDATE_RECEIVED" not in stages
+    hold = next(e["payload"] for e in snapshot["events"] if e["payload"].get("stage") == "SEMANTIC_NOT_ADOPTED")
+    assert hold["decision"] == "HOLD" and hold["reason_codes"] == ["semantic_candidate_acquisition_incomplete"]
+    assert state == {"calls": 1, "cancelled": True}
+
+
+def test_model_service_sql_received_candidate_survives_cancel_before_meaning(case, db, monkeypatch):
+    user, parent, service, calls = model_service(case, db, offline_model_attempt_seconds=180)
+    first = run(service.start(user, parent))
+    original_prepare = service.engine.prepare_emlis_update
+    def interrupt(*args, **kwargs):
+        raise asyncio.CancelledError()
+    monkeypatch.setattr(service.engine, "prepare_emlis_update", interrupt)
+    with pytest.raises(asyncio.CancelledError):
+        run(answer(service, user, first, CORRECTION))
+    failed = run(service.get(user, parent))
+    assert failed["can_retry"] and failed["answer_saved"] and not failed["meaning_updated"]
+    monkeypatch.setattr(service.engine, "prepare_emlis_update", original_prepare)
+    resumed = run(service.action(user, failed["thread_id"], action="retry_response",
+        expected_revision=failed["revision"], idempotency_key="model-receipt-resume", operation_id=failed["operation_id"]))
+    assert resumed["body_state"] == "REFINED" and len(calls) == 2
+    snapshot = run(service.store.read(user, input_id=parent))
+    assert len([e for e in snapshot["events"] if e["kind"] == "MEANING_UPDATE"]) == 2
+    assert len([e for e in snapshot["events"] if e["kind"] == "ANSWER"]) == 1
