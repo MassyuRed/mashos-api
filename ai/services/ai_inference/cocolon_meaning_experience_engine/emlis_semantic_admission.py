@@ -1007,6 +1007,41 @@ def _model_nominal_slot(text, *, state_modifier=False):
     return bool(re.fullmatch(r"[一-龥々ァ-ヶーA-Za-z0-9０-９]{1,32}", text))
 
 
+def _model_daily_source_roles(thread, material):
+    """The approved initial meal/calm family; all text remains in its field.
+
+    A written tara link is not a general causal claim. The two eating roles
+    stay distinct: neither food identity nor a purpose is inferred across fields.
+    """
+    original = material.payload()["sources"][0]
+    sid, fields = original["source_id"], original["text_fields"]
+    memo, action = fields.get("memo"), fields.get("memo_action")
+    if type(memo) is not str or type(action) is not str:
+        return None
+    am = re.fullmatch(r"(?P<return>帰って)から、(?P<cook>(?P<food>うどん|雑炊)を作って)(?P<eat>食べた)。", action)
+    mm = re.fullmatch(r"(?P<meal>(?:あったかいもの|温かいもの)を?食べた)ら、(?P<calm>(?:ちょっと|少し)落ち着いた)。", memo)
+    if not am or not mm:
+        return None
+    if thread.answers:
+        _model_fail("daily_initial_only", "UNSUPPORTED")
+    roles = {name: _model_span(text, match[group], sid, field)
+             for name, text, match, group, field in (
+                 ("return", action, am, "return", "memo_action"),
+                 ("cook", action, am, "cook", "memo_action"),
+                 ("eat", action, am, "eat", "memo_action"),
+                 ("warm_food_eat", memo, mm, "meal", "memo"),
+                 ("slight_calm", memo, mm, "calm", "memo"))}
+    markers = {
+        "return_scope": _model_span(action, action[:-1], sid, "memo_action"),
+        "cook_and_eat": _model_span(action, "作って食べた", sid, "memo_action"),
+        "written_eat_calm": _model_span(memo, memo[:-1], sid, "memo"),
+    }
+    cases = [dict(role="cook", written_role="を", text=am["food"], source_id=sid,
+                  field_path="memo_action", start=am.start("food"), end=am.end("food"))]
+    return roles, markers, {}, cases, {
+        s["source_id"]: s["text_fields"] for s in material.payload()["sources"]}, []
+
+
 def _model_source_roles(thread, material):
     """Read a repair/reuse syntax family, not a fixture or a free-text parser.
 
@@ -1014,6 +1049,9 @@ def _model_source_roles(thread, material):
     Unsupported subjects, polarity, embedding or added clauses are retained in
     the source and cause UNSUPPORTED; they are never discarded to fit a case.
     """
+    daily = _model_daily_source_roles(thread, material)
+    if daily is not None:
+        return daily
     original = material.payload()["sources"][0]
     sid, fields = original["source_id"], original["text_fields"]
     memo, action = fields.get("memo"), fields.get("memo_action")
@@ -1082,6 +1120,11 @@ def _model_packet(packet, material, thread, prior):
     if c["conflicts"]:
         _model_fail("conflicts_not_supported", "UNSUPPORTED")
     roles, markers, corrections, cases, source_fields, negations = _model_source_roles(thread, material)
+    daily = "slight_calm" in roles
+    if daily and (prior is not None or c["updates"] or c["unknowns"]
+                  or c["question_proposal"] is not None
+                  or c["surface_proposal"].get("update_note") is not None):
+        _model_fail("daily_initial_only", "UNSUPPORTED")
     if type(ev) is not list or len(ev) > 32 or len({_json(e) for e in ev}) != len(ev):
         _model_fail("evidence_collection_invalid")
     def ev_index(anchor):
@@ -1111,7 +1154,7 @@ def _model_packet(packet, material, thread, prior):
             _model_fail("claim_source_semantics_not_bound", "HOLD")
         anchor = roles[role]
         index = ev_index(anchor)
-        kind = "STATE" if role == "joy" else "ACTION_RESULT" if role == "usable_again" else "USER_APPRAISAL_OBJECT" if role.endswith("appraisal_object") else "EVENT"
+        kind = "STATE" if role in {"joy", "slight_calm"} else "ACTION_RESULT" if role == "usable_again" else "USER_APPRAISAL_OBJECT" if role.endswith("appraisal_object") else "EVENT"
         expected = dict(kind=kind, subject=dict(binding="OMITTED", source_entity=None, evidence_indexes=[]),
             predicate=dict(surface=anchor["quote"], arguments=[]),
             polarity=dict(value="AFFIRMED", scope_refs=[cid], evidence_indexes=[index]),
@@ -1123,11 +1166,19 @@ def _model_packet(packet, material, thread, prior):
             _model_fail("claim_axes_not_source_bound", "HOLD")
         mapped[role] = dict(claim_ref=cid, text=anchor["quote"], **{k:v for k,v in anchor.items() if k != "quote"})
     relation_roles, relids = {}, set()
-    required_relations = {"repair_and_result": ("SOURCE_WRITTEN_TE_LINK", "repair", "usable_again", markers["repair_and_result"])}
-    joy_role = "reuse_appraisal_object" if thread.answers else "solo_appraisal_object"
-    ground_role = "joy_ground_revised" if thread.answers else "joy_ground"
-    required_relations[ground_role] = ("USER_STATED_JOY_GROUND", joy_role, "joy",
-        corrections["joy_ground_revised"] if thread.answers else markers["joy_ground"])
+    if daily:
+        required_relations = {
+            "return_before_cook": ("SOURCE_WRITTEN_TEMPORAL_KARA_LINK", "return", "cook", markers["return_scope"]),
+            "return_before_eat": ("SOURCE_WRITTEN_TEMPORAL_KARA_LINK", "return", "eat", markers["return_scope"]),
+            "cook_and_eat": ("SOURCE_WRITTEN_TE_LINK", "cook", "eat", markers["cook_and_eat"]),
+            "written_eat_calm": ("SOURCE_WRITTEN_TARA_LINK", "warm_food_eat", "slight_calm", markers["written_eat_calm"]),
+        }
+    else:
+        required_relations = {"repair_and_result": ("SOURCE_WRITTEN_TE_LINK", "repair", "usable_again", markers["repair_and_result"])}
+        joy_role = "reuse_appraisal_object" if thread.answers else "solo_appraisal_object"
+        ground_role = "joy_ground_revised" if thread.answers else "joy_ground"
+        required_relations[ground_role] = ("USER_STATED_JOY_GROUND", joy_role, "joy",
+            corrections["joy_ground_revised"] if thread.answers else markers["joy_ground"])
     if len(c["relations"]) != len(required_relations):
         _model_fail("relation_coverage_invalid", "HOLD")
     for r in c["relations"]:
@@ -1143,7 +1194,10 @@ def _model_packet(packet, material, thread, prior):
             _model_fail("relation_direction_or_scope_not_bound", "HOLD")
         relation_roles[matches[0]] = rid
     unknowns = c["unknowns"]
-    if thread.answers:
+    if daily:
+        if unknowns:
+            _model_fail("daily_initial_only", "UNSUPPORTED")
+    elif thread.answers:
         if unknowns:
             _model_fail("corrected_gap_not_inactive", "HOLD")
     else:
@@ -1173,12 +1227,15 @@ def _model_packet(packet, material, thread, prior):
     for case in cases:
         case["owner_claim_ref"] = mapped[case.pop("role")]["claim_ref"]
     raw = sources[next(iter(source_fields))]["original"]
-    return dict(stage="AFTER_CORRECTION" if thread.answers else "INITIAL", roles=mapped,
+    native = dict(stage="AFTER_CORRECTION" if thread.answers else "INITIAL", roles=mapped,
         relation_roles=relation_roles, source_fields=source_fields, source_slices=native_slices,
         case_arguments=cases, source_negations=negations,
         written_links=[dict(relation_ref=r["relation_id"], type=r["type"], from_claim_ref=r["from_claim_id"],
                             to_claim_ref=r["to_claim_id"], evidence_indexes=r["evidence_indexes"]) for r in c["relations"]],
         preserved_selections={k:raw.get(k) for k in ("category", "emotions", "emotion_details", "is_secret")})
+    if daily:
+        native["family"] = "DAILY_CALM_V1"
+    return native
 
 
 def _model_surface_shape(c, ids, relids):
@@ -1368,8 +1425,11 @@ def _prepare_model_snapshot(request, semantic_input):
         if control.question_control_context.stop or control.question_control_context.issued_count != 1:
             _model_fail("answer_control_invalid")
     native = _model_packet(packet,material,thread,prior)
+    # Source-derived versioning keeps all old chair snapshots byte-identical.
+    # A saved or generated family/version label cannot select its own parser.
+    version = "2" if native.get("family") == "DAILY_CALM_V1" else "1"
     if resume:
-        expected = (MODEL_SCHEMA,MODEL_PROFILE,"1","1",material.request_id,thread.source_prefix_ref,
+        expected = (MODEL_SCHEMA,MODEL_PROFILE,version,version,material.request_id,thread.source_prefix_ref,
                     _source_binding(material),len(thread.answers),json.loads(_json(asdict(control.question_control_context))))
         actual = tuple(p[k] for k in ("schema_version","semantic_profile","admission_version","adapter_version",
             "request_ref","source_prefix_ref","source_bindings","answer_count","question_control"))
@@ -1379,6 +1439,7 @@ def _prepare_model_snapshot(request, semantic_input):
             or p["snapshot_ref"] != _model_semantic_ref(p) or p["proposal_ref"] != _model_proposal_ref(packet)):
             _model_fail("snapshot_binding_invalid")
     else:
+        p["admission_version"] = p["adapter_version"] = version
         p["native_bindings"] = native
         p["snapshot_ref"] = _model_semantic_ref(p)
         p["proposal_ref"] = _model_proposal_ref(packet)

@@ -10058,6 +10058,75 @@ def _read_initial_personal_meaning_discourse(raw, move, plan, resolver, selected
         return None
 
 
+def _evaluate_emlis_model_daily_calm_surface_inverse(proposal, meaning_packet, native):
+    """Read the approved daily family independently of the proposal builder.
+
+    Source clauses and complete section coverage are rechecked. In particular,
+    the tara statement is never read as a general causal or physiological rule.
+    """
+    def fail(code):
+        raise ValueError("model_surface_" + code)
+
+    if native.get("stage") != "INITIAL" or len(native["source_fields"]) != 1:
+        fail("daily_stage_invalid")
+    fields = next(iter(native["source_fields"].values()))
+    am = re.fullmatch(r"(帰って)から、((うどん|雑炊)を作って)(食べた)。", fields.get("memo_action", ""))
+    mm = re.fullmatch(r"((あったかいもの|温かいもの)を?食べた)ら、((ちょっと|少し)落ち着いた)。", fields.get("memo", ""))
+    roles = native["roles"]
+    expected_roles = {"return", "cook", "eat", "warm_food_eat", "slight_calm"}
+    if not am or not mm or set(roles) != expected_roles:
+        fail("daily_source_invalid")
+    expected_text = dict(zip(("return", "cook", "eat", "warm_food_eat", "slight_calm"),
+                            (am[1], am[2], am[4], mm[1], mm[3])))
+    if any(roles[name]["text"] != value for name, value in expected_text.items()):
+        fail("daily_source_binding_invalid")
+    candidate = meaning_packet["candidate"]
+    if (candidate["unknowns"] or candidate["conflicts"] or candidate["updates"]
+            or proposal.get("update_note") is not None):
+        fail("daily_initial_only")
+    relation_roles = native["relation_roles"]
+    required = {
+        "observation": ({"return", "cook", "eat"}, {"return_before_cook", "return_before_eat", "cook_and_eat"}),
+        "reception": ({"warm_food_eat", "slight_calm"}, {"written_eat_calm"}),
+    }
+    if set(relation_roles) != set().union(*(r for _, r in required.values())):
+        fail("daily_relations_invalid")
+    rows = proposal.get("bindings")
+    if type(rows) is not list or len(rows) != 2 or {r.get("section") for r in rows} != set(required):
+        fail("section_invalid")
+    # Food comes from the written cooking clause, not the warm-food memo.
+    # Neither recognizer supplies an identity edge between the two eating acts.
+    tail = r"(?:のですね|んですね|のです|ということですね)"
+    patterns = {
+        "observation": r"帰ってから" + re.escape(am[3]) + r"を作って食べた" + tail,
+        "reception": r"(?:あったかいもの|温かいもの)を?食べて(?:少し|ちょっと)落ち着けてよかった(?:です|ですね)",
+    }
+    bindings = {row["section"]: row for row in rows}
+    traces = []
+    for section, (role_names, relation_names) in required.items():
+        value = proposal.get(section)
+        if type(value) is not str or re.search(r"[！？!?]", value):
+            fail("section_invalid")
+        sentences = list(re.finditer(r"[^。]+[。]?", value))
+        if len(sentences) != 1 or sentences[0].group(0) != value:
+            fail("sentence_not_read")
+        clean = re.sub(r"[\s、,。]", "", value)
+        if not re.fullmatch(patterns[section], clean):
+            fail("sentence_not_read")
+        claim_refs = tuple(sorted(roles[name]["claim_ref"] for name in role_names))
+        relation_refs = tuple(sorted(relation_roles[name] for name in relation_names))
+        binding = bindings[section]
+        if (set(binding) != {"section", "claim_refs", "relation_refs"}
+                or len(binding["claim_refs"]) != len(claim_refs)
+                or len(binding["relation_refs"]) != len(relation_refs)
+                or set(binding["claim_refs"]) != set(claim_refs)
+                or set(binding["relation_refs"]) != set(relation_refs)):
+            fail("binding_or_coverage_invalid")
+        traces.append(dict(section=section, claim_refs=claim_refs, relation_refs=relation_refs,
+            sentences=(dict(start=0, end=len(value), claim_refs=claim_refs, relation_refs=relation_refs),)))
+    return tuple(traces)
+
+
 def evaluate_emlis_model_surface_inverse(*, proposal, meaning_packet, native_bindings):
     """Independently read a bounded repair/reuse profile's proposed Japanese.
 
@@ -10067,6 +10136,9 @@ def evaluate_emlis_model_surface_inverse(*, proposal, meaning_packet, native_bin
     claim references alone never makes a sentence faithful. General Japanese
     fidelity and product naturalness are deliberately not claimed here.
     """
+    if native_bindings.get("family") == "DAILY_CALM_V1":
+        return _evaluate_emlis_model_daily_calm_surface_inverse(proposal, meaning_packet, native_bindings)
+
     def fail(code):
         raise ValueError("model_surface_" + code)
 

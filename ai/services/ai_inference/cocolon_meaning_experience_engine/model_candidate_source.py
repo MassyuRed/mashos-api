@@ -128,7 +128,36 @@ def build_model_messages(request, prior_snapshot_json=None):
     # examples for both stages. Candidate acceptance, source coordinates and
     # the saved interpretation remain unchanged.
     spec = json.loads(_json(OUTPUT_SPEC))
-    if control.answers:
+    from .emlis_semantic_admission import _model_daily_source_roles
+    daily = _model_daily_source_roles(control, prepared) is not None
+    if daily:
+        spec["shape"]["candidate"]["unknowns"] = []
+        for key in ("correction_update_item", "correction_updates", "optional_question_item"):
+            spec.pop(key)
+        spec["meaning"] = (
+            "Daily initial only: five exact-quote claims, EVENT return/cook/eat/warm_food_eat; STATE slight_calm. "
+            "Return is the written returning verb; cook includes its written food/object and te-ending; eat is the following eating verb. "
+            "The separate memo eating clause includes warm food and eating, excluding the final tara ra; "
+            "slight_calm includes the entire written degree plus calm predicate. Keep all five distinct; do not infer food identity across fields. "
+            "unknowns/conflicts/updates=[]; no missing-reason gap, joy claim or extra inferred facts."
+        )
+        spec["relations"] = (
+            "Four written links: SOURCE_WRITTEN_TEMPORAL_KARA_LINK return->cook AND return->eat, "
+            "both cite the complete unchanged action clause without final punctuation (same evidence row). "
+            "SOURCE_WRITTEN_TE_LINK cook->eat cites the complete cooking/eating predicate connector expression, "
+            "excluding the food/object. SOURCE_WRITTEN_TARA_LINK warm_food_eat->slight_calm cites the complete memo "
+            "clause without final punctuation. Tara is the written link, never general cause or purpose. "
+            "Evidence contains five role quotes and three distinct link quotes, with exact full-field coordinates."
+        )
+        spec["prose"] = (
+            "Natural Japanese observation preserves returning before BOTH cooking and eating, with the source food. "
+            "Reception acknowledges the warm-food eating and slight calm with a short Emlis response. Preserve slight degree; "
+            "do not identify warm food with the other field's meal or add hunger/purpose/physiological cause. "
+            "Observation binding covers return/cook/eat and all three action links; reception covers warm_food_eat/slight_calm "
+            "and the tara link. update_note=null; question_proposal=null."
+        )
+        spec["question"] = "question_proposal=null: this initial daily input requires no question."
+    elif control.answers:
         spec["shape"]["candidate"]["unknowns"] = []
         spec["shape"]["candidate"]["updates"] = [spec.pop("correction_update_item")]
         spec.pop("optional_question_item")
