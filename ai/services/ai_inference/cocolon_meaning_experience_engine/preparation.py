@@ -15,6 +15,7 @@ from .contracts import GenerationRequest
 from .emlis_thread_source import admit_emlis_thread
 
 SCHEMA = "cocolon.cmee.internal_preparation.v1"
+QUOTE_CANDIDATE_SCHEMA = "cocolon.cmee.quote_candidate.v1"
 POLICIES = {
     "source": "Original, supplemental, history and generated interpretation stay separate.",
     "meaning": "Preserve subject, time, polarity, relations, unknowns and conflicts.",
@@ -179,11 +180,45 @@ def _candidate(raw):
     def invalid_constant(_):
         raise ValueError("non_finite_json")
     obj = json.loads(raw, object_pairs_hook=_unique_object, parse_constant=invalid_constant)
-    if (type(obj) is not dict or set(obj) != {"candidate", "evidence"}
+    legacy = type(obj) is dict and set(obj) == {"candidate", "evidence"}
+    quoted = (type(obj) is dict and set(obj) == {"schema_version", "candidate", "evidence_quotes"}
+              and obj["schema_version"] == QUOTE_CANDIDATE_SCHEMA)
+    evidence_key = "evidence_quotes" if quoted else "evidence"
+    if (not (legacy or quoted)
             or type(obj["candidate"]) is not dict or not obj["candidate"]
-            or type(obj["evidence"]) is not list or not obj["evidence"]):
+            or type(obj[evidence_key]) is not list or not obj[evidence_key]):
         raise ValueError("candidate_shape_invalid")
     return obj
+
+
+def _compile_quote_candidate(request, candidate):
+    """Locate an explicitly selected exact quote; never repair legacy offsets.
+
+    Keep the generator's actual raw separately. This deterministic projection
+    is replayed from that same raw by semantic receipt verification.
+    """
+    material = request.payload()
+    if (material["core"] != "emlis" or material["execution_mode"] != "OFFLINE_PREPARATION"
+            or candidate["candidate"].get("core") != "emlis"):
+        return None
+    sources = {s["source_id"]: s for s in material["sources"]}
+    evidence = []
+    for ref in candidate["evidence_quotes"]:
+        if (type(ref) is not dict or set(ref) != {"source_id", "field_path", "quote"}
+                or any(type(ref[k]) is not str for k in ("source_id", "field_path", "quote"))
+                or not ref["quote"]):
+            return None
+        source = sources.get(ref["source_id"])
+        text = source["text_fields"].get(ref["field_path"]) if source else None
+        if type(text) is not str:
+            return None
+        quote = ref["quote"]
+        start = text.find(quote)
+        # Searching again at start+1 includes overlapping occurrences.
+        if start < 0 or text.find(quote, start + 1) >= 0:
+            return None
+        evidence.append(dict(ref, start=start, end=start + len(quote)))
+    return dict(candidate=candidate["candidate"], evidence=evidence)
 
 
 def _check_evidence(request, candidate):
@@ -234,7 +269,9 @@ def receive_candidate(request, *, request_id, raw_output, finish_reason,
             candidate = _candidate(raw_output)
             # JSON exponent overflow and unpaired Unicode are not candidates.
             _json(candidate).encode("utf-8")
-            status = "CANDIDATE_UNREVIEWED" if _check_evidence(request, candidate) else "INVALID_EVIDENCE"
+            if "evidence_quotes" in candidate:
+                candidate = _compile_quote_candidate(request, candidate)
+            status = "CANDIDATE_UNREVIEWED" if candidate is not None and _check_evidence(request, candidate) else "INVALID_EVIDENCE"
         except (ValueError, TypeError, RecursionError, UnicodeError):
             candidate = None
             status = "INVALID_FORMAT"
@@ -252,3 +289,4 @@ def receive_candidate(request, *, request_id, raw_output, finish_reason,
         metadata["adapter_revision"] = adapter_revision
     return CandidateReceipt(request_id, status, raw_output,
                             _json(candidate) if candidate is not None else None, _json(metadata))
+

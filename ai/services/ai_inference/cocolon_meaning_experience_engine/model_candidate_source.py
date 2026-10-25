@@ -14,12 +14,13 @@ import math
 import time
 
 from .contracts import ExecutionMode, GenerationRequest
-from .preparation import prepare_emlis, receive_candidate
+from .preparation import QUOTE_CANDIDATE_SCHEMA, _candidate, prepare_emlis, receive_candidate
 
 MODEL = "Qwen/Qwen3.5-4B"
 REVISION = "851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a"
 PROFILE = "emlis_model_proposal.v1"
 CANDIDATE_SCHEMA = "cocolon.cmee.semantic_and_surface_proposal.v1"
+LEGACY_CANDIDATE_FORMAT = "legacy_numeric"
 JSON_INSTRUCTION = (
     "JSONだけを返してください。最上位はcandidateとevidenceだけです。"
     "candidate.schema_versionはcocolon.cmee.semantic_and_surface_proposal.v1です。"
@@ -88,11 +89,13 @@ def _json(value):
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
 
 
-def build_model_messages(request, prior_snapshot_json=None):
+def build_model_messages(request, prior_snapshot_json=None, *, candidate_format=LEGACY_CANDIDATE_FORMAT):
     """Keep source text/metadata; leave native proof coordinates with CMEE."""
     if (type(request) is not GenerationRequest or request.core_id != "emlis_ai"
             or request.execution_mode != ExecutionMode.OFFLINE_CANDIDATE.value):
         raise ValueError("model_candidate_explicit_offline_emlis_required")
+    if candidate_format not in (LEGACY_CANDIDATE_FORMAT, QUOTE_CANDIDATE_SCHEMA):
+        raise ValueError("model_candidate_format_invalid")
     prepared = prepare_emlis(request)
     material = prepared.payload()
     # Native evidence remains in `prepared` for receive/admission. Its envelope
@@ -171,7 +174,26 @@ def build_model_messages(request, prior_snapshot_json=None):
         spec.pop("correction_updates")
     body = dict(semantic_profile=PROFILE, request_ref=prepared.request_id, material=material,
                 prior_adopted_interpretation=prior, output_spec=spec)
-    return [{"role": "system", "content": SYSTEM_INSTRUCTION},
+    system = SYSTEM_INSTRUCTION
+    if candidate_format == QUOTE_CANDIDATE_SCHEMA:
+        system = system.replace("最上位はcandidateとevidenceだけです。",
+            "最上位はschema_versionとcandidateとevidence_quotesだけです。schema_versionは" + QUOTE_CANDIDATE_SCHEMA + "です。")
+        body["model_output_format"] = QUOTE_CANDIDATE_SCHEMA
+        for source in material["sources"]:
+            del source["field_unicode_spans"]
+        spec["shape"] = dict(schema_version=QUOTE_CANDIDATE_SCHEMA,
+            candidate=spec["shape"]["candidate"],
+            evidence_quotes=[dict(source_id="$sid", field_path="$field", quote="$exact_nonempty_quote")])
+        spec["coordinates"] = (
+            "source_id=material.sources[i].source_id, NOT original IDs. field_path=memo|memo_action|answer_text_private, no prefix. "
+            "Copy an exact nonempty quote from that source's unchanged text_fields[field]. "
+            "The quote must occur exactly once within that field; missing or ambiguous quotes are rejected. "
+            "Do not emit start/end, evidence, guessed coordinates, normalized or edited quotes. "
+            "CMEE derives scalar positions mechanically; matching a location never admits meaning."
+        )
+        spec["relations"] = spec["relations"].replace(
+            "with exact full-field coordinates", "with source/field-bound exact quotes; do not emit numeric coordinates")
+    return [{"role": "system", "content": system},
             {"role": "user", "content": _json(body)}]
 
 
@@ -209,16 +231,20 @@ class ModelCandidateSource:
     acquisition event; this adapter never resends the operation automatically.
     token_counter must use the pinned 4B tokenizer and the same chat template.
     """
-    def __init__(self, generator, token_counter, *, limits, adapter_revision=None):
+    def __init__(self, generator, token_counter, *, limits, adapter_revision=None,
+                 candidate_format=LEGACY_CANDIDATE_FORMAT):
         if not callable(generator) or not callable(token_counter) or type(limits) is not ModelCallLimits:
             raise ValueError("model_candidate_generator_tokenizer_and_limits_required")
         if adapter_revision is not None and (type(adapter_revision) is not str or not adapter_revision.strip()):
             raise ValueError("model_candidate_adapter_identity_invalid")
+        if candidate_format not in (LEGACY_CANDIDATE_FORMAT, QUOTE_CANDIDATE_SCHEMA):
+            raise ValueError("model_candidate_format_invalid")
         self.generator, self.token_counter = generator, token_counter
         self.limits, self.adapter_revision = limits, adapter_revision
+        self.candidate_format = candidate_format
 
     async def __call__(self, request, prior_snapshot_json=None):
-        messages = build_model_messages(request, prior_snapshot_json)
+        messages = build_model_messages(request, prior_snapshot_json, candidate_format=self.candidate_format)
         prepared = prepare_emlis(request)
         count = self.token_counter(messages)
         if type(count) is not int or count <= 0:
@@ -245,6 +271,15 @@ class ModelCandidateSource:
                                      finish_reason="error", elapsed_seconds=time.monotonic()-started)
         identity_ok = (result.model == MODEL and result.revision == REVISION
                        and result.adapter_revision == self.adapter_revision)
+        # An explicitly selected wire format cannot silently fall back to the
+        # other parser. Preserve the actual response and terminal error state.
+        if type(result.raw_output) is str:
+            try:
+                packet = _candidate(result.raw_output)
+                quoted = "evidence_quotes" in packet
+                identity_ok = identity_ok and (quoted == (self.candidate_format == QUOTE_CANDIDATE_SCHEMA))
+            except (ValueError, TypeError, RecursionError, UnicodeError):
+                pass  # receive_candidate owns strict format diagnostics.
         try:
             return receive_candidate(prepared, request_id=prepared.request_id,
                 raw_output=result.raw_output, finish_reason=result.finish_reason if identity_ok else "error",
@@ -257,3 +292,4 @@ class ModelCandidateSource:
             return receive_candidate(prepared, request_id=prepared.request_id,
                 raw_output=result.raw_output if type(result.raw_output) is str else None,
                 finish_reason="error", elapsed_seconds=time.monotonic()-started)
+
