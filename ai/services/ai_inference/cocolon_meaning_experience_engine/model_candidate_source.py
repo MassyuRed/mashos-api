@@ -69,7 +69,7 @@ OUTPUT_SPEC = {
         "evidence": [{"source_id": "$sid", "field_path": "$field",
                       "start": "$start_integer", "end": "$end_integer", "quote": "$quote"}],
     },
-    "coordinates": "source_id=material.sources[i].source_id, NOT original/envelope IDs. field_path=memo|memo_action|answer_text_private, no prefix. start/end=field-local Unicode: field[start:end]==quote. Use scalar_*, recompute subquotes; NEVER utf8_*/field_utf8_*.",
+    "coordinates": "source_id=material.sources[i].source_id, NOT original IDs. field_path=memo|memo_action|answer_text_private, no prefix. start/end=zero-based field-local Unicode: text_fields[field_path][start:end]==quote. Count characters in that field only, never UTF-8 bytes or JSON positions.",
     "meaning": "Atomic exact quotes, one index/claim. EVENT/ACTION_RESULT/STATE/USER_APPRAISAL_OBJECT. Initial4: repair/result/joy/object, NOT_STATED gap1, updates0. Corrected6: same repair/result/joy IDs + guidance/joint/reuse, gap0. Other grammars unsupported. NOT_STATED is missing detail, not uncertainty.",
     "relations": "SOURCE_WRITTEN_TE_LINK repair->result: connector quote, not cause/order. USER_STATED_JOY_GROUND object->joy: full-ground quote. conflicts belongs to candidate.",
     "correction_update_item": {"operation": "$REVISE_or_INVALIDATE_GAP", "target_kind": "$CLAIM_RELATION_UNKNOWN",
@@ -88,12 +88,22 @@ def _json(value):
 
 
 def build_model_messages(request, prior_snapshot_json=None):
-    """Project native material without truncation; validate prior before exposure."""
+    """Keep source text/metadata; leave native proof coordinates with CMEE."""
     if (type(request) is not GenerationRequest or request.core_id != "emlis_ai"
             or request.execution_mode != ExecutionMode.OFFLINE_CANDIDATE.value):
         raise ValueError("model_candidate_explicit_offline_emlis_required")
     prepared = prepare_emlis(request)
     material = prepared.payload()
+    # Native evidence remains in `prepared` for receive/admission. Its envelope
+    # byte locators are not candidate field-local character coordinates. The
+    # real 4B copied those competing locators despite explicit instructions.
+    # Remove only redundant proof metadata from the model-facing copy; retain
+    # every source's original fields, full text, role/date/parent and control.
+    material["sources"] = [
+        {key: value for key, value in source.items()
+         if key not in {"evidence", "envelope_id", "source_commitment"}}
+        for source in material["sources"]
+    ]
     control = request.emlis_thread
     if (material["tier"] != "free" or len(control.answers) > 1
             or control.admitted_history or control.frame_feedback_sources or control.rejected_frame_keys
@@ -103,12 +113,12 @@ def build_model_messages(request, prior_snapshot_json=None):
     prior = model_prior_for_messages(request, prior_snapshot_json)
     if prior is not None:
         # The helper verifies native bindings locally. Do not send their
-        # duplicate source/proof payload: the complete current native material
-        # is already present, and the model needs the adopted meaning and ref.
+        # duplicate source/proof payload: the complete current source text is
+        # already present, and the model needs the adopted meaning and ref.
         prior = {key: prior[key] for key in ("semantic_profile", "snapshot_ref", "meaning_packet")}
     # Show the current stage's hierarchy, not contradictory empty/nonempty
-    # examples for both stages. This only changes instructions, not material,
-    # candidate acceptance, source coordinates or the saved interpretation.
+    # examples for both stages. Candidate acceptance, source coordinates and
+    # the saved interpretation remain unchanged.
     spec = json.loads(_json(OUTPUT_SPEC))
     if control.answers:
         spec["shape"]["candidate"]["unknowns"] = []

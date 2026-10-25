@@ -26,13 +26,27 @@ def response(req, *, finish="stop", **changes):
     return replace(value, **changes)
 
 
-def test_messages_preserve_full_native_material_and_distinguish_generated_interpretation():
+def assert_source_projection(body, native):
+    assert {key: value for key, value in body["material"].items() if key != "sources"} == {
+        key: value for key, value in native.items() if key != "sources"}
+    assert len(body["material"]["sources"]) == len(native["sources"])
+    for visible, original in zip(body["material"]["sources"], native["sources"], strict=True):
+        assert visible == {key: value for key, value in original.items()
+                           if key not in {"evidence", "envelope_id", "source_commitment"}}
+        assert original["evidence"] and original["envelope_id"] and original["source_commitment"]
+        assert not {"evidence", "envelope_id", "source_commitment"}.intersection(visible)
+
+
+def test_messages_preserve_source_text_metadata_and_distinguish_generated_interpretation():
     req = initial_model_request()
+    native = prepare_emlis(req).payload()
     messages = build_model_messages(req)
     assert JSON_INSTRUCTION in messages[0]["content"]
     body = json.loads(messages[1]["content"])
     assert body["prior_adopted_interpretation"] is None
     assert body["material"]["sources"][0]["original"] == req.current_input_bundle.raw_current_input
+    assert_source_projection(body, native)
+    assert prepare_emlis(req).payload() == native
     assert body["material"]["control"]["actual_question_budget_remaining"] == 1
     changed = copy.deepcopy(messages)
     changed[1]["content"] = "discarded"
@@ -45,7 +59,7 @@ def test_stage_instructions_preserve_answer_source_and_do_not_contaminate_initia
     prepared = prepare_model_snapshot(req, model_semantic(req))
     answer = model_answer(req, prepared)
     body = json.loads(build_model_messages(answer, prepared.semantic_snapshot)[1]["content"])
-    assert body["material"] == prepare_emlis(answer).payload()
+    assert_source_projection(body, prepare_emlis(answer).payload())
     assert body["prior_adopted_interpretation"]["meaning_packet"] == json.loads(prepared.meaning_json)
     assert body["material"]["control"]["actual_question_budget_remaining"] == 0
     assert build_model_messages(req) == initial
