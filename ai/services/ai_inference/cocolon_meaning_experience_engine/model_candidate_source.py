@@ -89,6 +89,86 @@ def _json(value):
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
 
 
+def _model_v3_output_spec(contract):
+    """Same wire, stage-specific semantic duties; never include a gold body."""
+    spec = json.loads(_json(OUTPUT_SPEC))
+    for key in ("correction_update_item", "correction_updates", "optional_question_item"):
+        spec.pop(key)
+    after = contract["stage"] == "AFTER_EXPLANATION"
+    spec["meaning"] = (
+        "Use every written clause role below exactly once, each claim.text/predicate.surface an exact original field quote. "
+        "Keep original adopted claims/relations and IDs on explanation answers; add new explanation meanings, never invent a correction. "
+        "These are bounded written grammar duties, not permission to infer facts. Omitted subjects remain OMITTED. "
+        "Reported statements/conditional quotations are not achieved actions or promises; person perception is not objective reality."
+    )
+    spec["clause_roles"] = {name:dict(kind=r["kind"], polarity=r["polarity"], modality=r["modality"],
+        about_time=r["about"], time_expression=r["time_expression"])
+        for name,r in contract["roles"].items()}
+    spec["role_order"] = list(contract["roles"])
+    spec["written_link_order"] = list(contract["links"])
+    spec["axes"] = (
+        "Each claim has one own-quote evidence index; subject={binding:OMITTED,source_entity:null,evidence_indexes:[]}; "
+        "predicate.arguments=[], qualifiers=[]. polarity.scope_refs=[own claim_id]. Negative joint-preparation AND promise "
+        "cite their complete shared negative sentence ending in arimasen. Time scopes cite the complete written time expression; "
+        "otherwise use the own quote index and expression=null. Modality cites the own quote."
+    )
+    spec["written_links"] = {name:dict(type=r["kind"], from_role=r["left"], to_role=r["right"])
+        for name,r in contract["links"].items()}
+    spec["relations"] = (
+        "All and only the written_links, with exact source evidence of the complete connector scope. "
+        "Full action and memo without final punctuation are the initial connector scopes. Answer concessions use their whole sentence; "
+        "temporal AT uses the awareness/time/no-contact expression; concern content uses the full quoted reflection plus ongoing concern. "
+        "SHOP past_reference cites the written two-person-future noun phrase; de-link cites distance plus sadness. "
+        "ANSWER_EXPLAINS_TARGET is bound by the real pending question, not a causal inference. No guessed cause/intent edge."
+    )
+    spec["prose"] = (
+        "Natural Japanese addressed to the person in observation/reception, with short grounded Emlis acknowledgement. "
+        "Every sentence must preserve who did/perceived what, negative scope, degree and time. Bind exactly the meanings expressed. "
+        "BOOK preserves late return/apology, reassurance and remaining concern; after answer, awareness/no contact, "
+        "returned book, counterfactual regret and current concern. SHOP preserves celebration/joy AND felt left-behind, "
+        "then shared past talk, NO joint preparation/promise, subjective realization on the friend's side and distance from that past. "
+        "REPOT keeps uncle as explainer and person as recipient/listener, with understanding/relief but no cross-field chronology. "
+        "KNIT keeps burden, slight sadness and stated unknown relation, without cause, resolution or ability judgment. "
+        "Any actual explanation change belongs in update_note with all update_refs. Questions only in question_proposal."
+    )
+    if contract["family"] == "KNIT_UNKNOWN_V3":
+        spec["shape"]["candidate"]["unknowns"] = [dict(unknown_id="$id", kind="PERSON_STATED",
+            target_claim_refs=["$burden_id", "$sadness_id"], description="$complete_stated_unknown_quote",
+            evidence_indexes=["$unknown_index", "$burden_index", "$sadness_index"])]
+        spec["unknowns"] = "One PERSON_STATED unknown targets burden and sadness; description is the complete stated-unknown quote. Evidence order: unknown statement, burden, sadness. No cause or resolution."
+    elif contract["target"] and not after:
+        spec["shape"]["candidate"]["unknowns"] = [dict(unknown_id="$id", kind="NOT_STATED",
+            target_claim_refs=["$" + contract["target"] + "_id"], description=contract["gap_description"],
+            evidence_indexes=["$target_quote_index"])]
+        spec["unknowns"] = "One NOT_STATED unknown targets only " + contract["target"] + "; description=" + contract["gap_description"] + ". Evidence is that target claim's own quote. This is missing detail, not a person-stated inability/unknown."
+    else:
+        spec["shape"]["candidate"]["unknowns"] = []
+        spec["unknowns"] = "unknowns=[]"
+    spec["shape"]["candidate"]["claims"][0]["polarity"]["value"] = "$source_role_polarity"
+    spec["shape"]["candidate"]["claims"][0]["modality"]["value"] = "$source_role_modality"
+    spec["shape"]["candidate"]["claims"][0]["about_time"]["kind"] = "$source_role_time"
+    spec["shape"]["candidate"]["claims"][0]["about_time"]["expression"] = "$written_time_or_null"
+    if after:
+        spec["shape"]["candidate"]["updates"] = [dict(operation="$ADD_or_INVALIDATE_GAP", target_kind="UNKNOWN",
+            target_ref="$prior_gap_id", replacement_refs=["$new_meaning_id"], evidence_indexes=["$i"], prior_snapshot_ref="$actual_prior_ref")]
+        spec["updates"] = (
+            "For each added answer role in role_order, emit one ADD targeting the prior unknown gap, replacement_refs="
+            "[new claim ID, then each new relation ID whose to-role is this role, in written_link_order]. Evidence order: "
+            "the claim quote, then the attached relation scopes, deduplicated. Keep every initial meaning/ID. "
+            "Last emit INVALIDATE_GAP for that gap only, replacement_refs=[], evidence=[answer_explains_target scope]. "
+            "No old claim or relation is invalidated. Each new role keeps its own time rather than all being ORIGINAL_OCCASION."
+        )
+        surface=spec["shape"]["candidate"]["surface_proposal"]
+        surface["update_note"] = "$actual_explanation_addition"
+        surface["bindings"].append(dict(section="update_note",claim_refs=["$cid"],relation_refs=["$rid"],update_refs=["$i"]))
+    if contract["target"] and not after:
+        spec["shape"]["candidate"]["question_proposal"] = dict(text=contract["prompt"], focus=contract["focus"], target_unknown_ref="$gap_id", claim_refs=["$target_claim_id"])
+        spec["question"] = "Emit the source-bound question_proposal shown in shape; actual question IDs belong to CMEE."
+    else:
+        spec["question"] = "question_proposal=null; no extra question"
+    return spec
+
+
 def build_model_messages(request, prior_snapshot_json=None, *, candidate_format=LEGACY_CANDIDATE_FORMAT):
     """Keep source text/metadata; leave native proof coordinates with CMEE."""
     if (type(request) is not GenerationRequest or request.core_id != "emlis_ai"
@@ -133,7 +213,12 @@ def build_model_messages(request, prior_snapshot_json=None, *, candidate_format=
     spec = json.loads(_json(OUTPUT_SPEC))
     from .emlis_semantic_admission import _model_daily_source_roles
     daily = _model_daily_source_roles(control, prepared) is not None
-    if daily:
+    from .emlis_semantic_admission import _model_v3_source_contract
+    from .emlis_thread_source import admit_emlis_thread
+    v3 = _model_v3_source_contract(admit_emlis_thread(request), prepared)
+    if v3 is not None:
+        spec = _model_v3_output_spec(v3)
+    elif daily:
         spec["shape"]["candidate"]["unknowns"] = []
         for key in ("correction_update_item", "correction_updates", "optional_question_item"):
             spec.pop(key)

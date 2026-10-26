@@ -1108,6 +1108,250 @@ def _model_source_roles(thread, material):
     return roles, markers, corrections, cases, source_fields, negations
 
 
+# Approved source-derived v3. The old repair/daily recognizers remain unchanged.
+_MODEL_V3_FAMILIES = {"BOOK_CONCERN_V3", "SHOP_DISTANCE_V3", "REPOT_RECEPTION_V3", "KNIT_UNKNOWN_V3"}
+
+
+def _model_v3_source_contract(thread, material):
+    """Read complete written clauses; no fixture IDs, generated text or I/O."""
+    source = material.payload()["sources"][0]
+    sid, fields = source["source_id"], source["text_fields"]
+    memo, action = fields.get("memo", ""), fields.get("memo_action", "")
+    if not isinstance(memo, str) or not isinstance(action, str):
+        return None
+    patterns = (
+        ("BOOK_CONCERN_V3", r"(?P<late_return>借りていた本を返すのが遅れて)、(?P<apologize>友人に謝った)。",
+         r"(?P<reassurance_received>大丈夫って言ってくれた)けど、(?P<remaining_concern>まだちょっと気になる)。"),
+        ("SHOP_DISTANCE_V3", r"(?P<opening_known>昔からの友人が店を開いたと知って)、(?P<celebration_sent>お祝いのメッセージを送った)。",
+         r"(?P<joy>うれしかった)けど、(?P<felt_left_behind>少し置いていかれた気がした)。"),
+        ("REPOT_RECEPTION_V3", r"(?P<guidance_received>植え替えの手順を叔父に説明してもらい)、(?P<listened_to_end>最後まで聞いた)。",
+         r"(?P<understood_method>やり方が分かって)(?P<relief>安心した)。"),
+        ("KNIT_UNKNOWN_V3", r"(?P<unravelled>今日は編みかけの見本をほどいた)。",
+         r"(?P<burden>ほどくのは面倒だった)。(?P<sadness>さみしさも少しあった)。(?P<stated_unknown>二つがどうつながるかは、自分でも分からない)。"),
+    )
+    chosen = next(((family, re.fullmatch(ap, action), re.fullmatch(mp, memo))
+                   for family, ap, mp in patterns if re.fullmatch(ap, action) and re.fullmatch(mp, memo)), None)
+    if chosen is None:
+        return None
+    family, am, mm = chosen
+    roles, links, cases = {}, {}, []
+    source_fields = {s["source_id"]: s["text_fields"] for s in material.payload()["sources"]}
+    def role(name, field, text, quote, *, kind="EVENT", polarity="AFFIRMED",
+             modality="ASSERTED_AS_WRITTEN", about="WRITTEN_PAST_UNRESOLVED_OCCASION",
+             polarity_quote=None, time_quote=None, source_id=sid):
+        anchor = _model_span(text, quote, source_id, field)
+        roles[name] = dict(anchor=anchor, kind=kind, polarity=polarity, modality=modality, about=about,
+            polarity_anchor=_model_span(text, polarity_quote, source_id, field) if polarity_quote else anchor,
+            time_anchor=_model_span(text, time_quote, source_id, field) if time_quote else anchor,
+            time_expression=time_quote)
+    def link(name, kind, left, right, field, text, quote, source_id=sid):
+        links[name] = dict(kind=kind, left=left, right=right, anchor=_model_span(text, quote, source_id, field))
+    states = {"remaining_concern", "joy", "felt_left_behind", "understood_method", "relief", "burden", "sadness"}
+    for match, field, text in ((am, "memo_action", action), (mm, "memo", memo)):
+        for name, quote in match.groupdict().items():
+            if quote is None:
+                continue
+            role(name, field, text, quote,
+                 kind="EXPLICIT_UNKNOWN" if name == "stated_unknown" else "STATE" if name in states else "EVENT",
+                 modality="PERSON_PERCEPTION" if name == "felt_left_behind" else "ASSERTED_AS_WRITTEN",
+                 about="WRITTEN_PRESENT" if name in {"remaining_concern", "stated_unknown"} else "WRITTEN_PAST_UNRESOLVED_OCCASION")
+    if family in {"BOOK_CONCERN_V3", "SHOP_DISTANCE_V3", "REPOT_RECEPTION_V3"}:
+        left, right = list(am.groupdict())
+        link("action_link", "SOURCE_WRITTEN_CONTINUATIVE_LINK" if family == "REPOT_RECEPTION_V3" else "SOURCE_WRITTEN_TE_LINK",
+             left, right, "memo_action", action, action[:-1])
+        left, right = list(mm.groupdict())
+        link("memo_link", "SOURCE_WRITTEN_TE_LINK" if family == "REPOT_RECEPTION_V3" else "SOURCE_WRITTEN_CONCESSION",
+             left, right, "memo", memo, memo[:-1])
+    if family == "REPOT_RECEPTION_V3":
+        for text, particle in (("植え替えの手順", "を"), ("叔父", "に")):
+            a = _model_span(action, text, sid, "memo_action")
+            cases.append(dict(role="guidance_received", written_role=particle, text=text,
+                              **{k:v for k,v in a.items() if k != "quote"}))
+    target = "remaining_concern" if family == "BOOK_CONCERN_V3" else "felt_left_behind" if family == "SHOP_DISTANCE_V3" else None
+    focus = "PERSONAL_CONCERN_TARGET" if family == "BOOK_CONCERN_V3" else "PERSONAL_FEELING_REASON" if family == "SHOP_DISTANCE_V3" else None
+    prompt = "何が気になりますか？" if family == "BOOK_CONCERN_V3" else "「少し置いていかれた気がした」のはなぜですか？" if family == "SHOP_DISTANCE_V3" else None
+    gap_description = "気がかりの対象は未記載。" if family == "BOOK_CONCERN_V3" else "置いていかれたように感じた理由は未記載。"
+    initial_names, initial_links = tuple(roles), tuple(links)
+    if thread.answers:
+        if target is None or len(thread.answers) != 1:
+            _model_fail("v3_initial_only", "UNSUPPORTED")
+        answer = thread.answers[0].source
+        aid, text = answer.answer_id, answer.answer_text_private
+        if family == "BOOK_CONCERN_V3":
+            pattern = (r'(?P<self_statement>自分から「週末に返すね」と言っていた)のに、(?P<late_awareness>遅くなると分かった)時点で(?P<no_contact>連絡しなかった)ことです。\n\n'
+                       r'(?P<returned>本は返した)のですが、「(?P<counterfactual>一言、遅くなるって伝えておけばよかったな)」と、(?P<continuing_concern>まだ気になっています)。')
+        else:
+            pattern = (r'(?P<shared_talk>以前、その友人と「いつか店をやれたらいいね」と話していたことがあるんです)。'
+                       r'(?P<no_joint_preparation>具体的に一緒に準備をしていたわけでも)、(?P<no_promise>約束していたわけでもありません)。\n\n'
+                       r'でも、開店したと聞いたとき、(?P<perceived_realization>二人で話していた未来が、友人の方ではもう現実になっていたんだな、と感じました)。'
+                       r'(?P<answer_joy>うれしい)のに、(?P<felt_distance>あの話を一緒にしていた頃から少し離れてしまったようで)、(?P<answer_sadness>寂しかったです)。')
+        match = re.fullmatch(pattern, text)
+        if match is None:
+            _model_fail("v3_answer_source_out_of_scope", "UNSUPPORTED")
+        for name, quote in match.groupdict().items():
+            perception = name in {"perceived_realization", "felt_distance"}
+            state = name in {"late_awareness", "counterfactual", "continuing_concern", "perceived_realization", "felt_distance", "answer_joy", "answer_sadness"}
+            negative = name in {"no_contact", "no_joint_preparation", "no_promise"}
+            negation = "具体的に一緒に準備をしていたわけでも、約束していたわけでもありません" if name in {"no_joint_preparation", "no_promise"} else None
+            scene = "開店したと聞いたとき" if name in {"perceived_realization", "felt_distance", "answer_joy", "answer_sadness"} else "遅くなると分かった時点" if name == "no_contact" else None
+            role(name, "answer_text_private", text, quote,
+                 kind="REPORTED_STATEMENT" if name in {"self_statement", "shared_talk"} else "STATE" if state else "EVENT",
+                 polarity="NEGATED" if negative else "AFFIRMED",
+                 modality="PERSON_PERCEPTION" if perception else "COUNTERFACTUAL_APPRAISAL" if name == "counterfactual" else "ASSERTED_AS_WRITTEN",
+                 about="ANSWER_TIME" if name in {"counterfactual", "continuing_concern"} else "WRITTEN_PRESENT_IN_PAST_CONTEXT" if name == "answer_joy" else "WRITTEN_PAST_UNRESOLVED_OCCASION",
+                 polarity_quote=negation, time_quote=scene, source_id=aid)
+        def answer_link(name, kind, left, right, quote):
+            link(name, kind, left, right, "answer_text_private", text, quote, source_id=aid)
+        if family == "BOOK_CONCERN_V3":
+            first, second = text.split("\n\n")
+            answer_link("statement_concession", "SOURCE_WRITTEN_CONCESSION", "self_statement", "no_contact", first[:-1])
+            answer_link("awareness_time", "SOURCE_WRITTEN_TEMPORAL_AT_LINK", "late_awareness", "no_contact", "遅くなると分かった時点で連絡しなかったことです")
+            answer_link("returned_concession", "SOURCE_WRITTEN_CONCESSION", "returned", "continuing_concern", second[:-1])
+            answer_link("concern_content", "SOURCE_QUOTED_CONCERN_CONTENT", "counterfactual", "continuing_concern", "「一言、遅くなるって伝えておけばよかったな」と、まだ気になっています")
+            answer_link("answer_explains_target", "ANSWER_EXPLAINS_TARGET", target, "no_contact", first[:-1])
+        else:
+            answer_link("past_reference", "SOURCE_WRITTEN_REFERENCE", "shared_talk", "perceived_realization", "二人で話していた未来")
+            answer_link("answer_concession", "SOURCE_WRITTEN_CONCESSION", "answer_joy", "answer_sadness", "うれしいのに、あの話を一緒にしていた頃から少し離れてしまったようで、寂しかったです")
+            answer_link("distance_link", "SOURCE_WRITTEN_DE_LINK", "felt_distance", "answer_sadness", "あの話を一緒にしていた頃から少し離れてしまったようで、寂しかったです")
+            answer_link("answer_explains_target", "ANSWER_EXPLAINS_TARGET", target, "felt_distance", match["felt_distance"])
+    return dict(family=family, stage="AFTER_EXPLANATION" if thread.answers else "INITIAL",
+        roles=roles, links=links, cases=cases, source_fields=source_fields, initial_roles=initial_names,
+        initial_links=initial_links, target=target, focus=focus, prompt=prompt, gap_description=gap_description)
+
+
+def _model_v3_packet(packet, material, thread, prior, contract):
+    c, ev = packet["candidate"], packet["evidence"]
+    roles, links = contract["roles"], contract["links"]
+    if type(ev) is not list or len(ev) > 48 or len({_json(e) for e in ev}) != len(ev):
+        _model_fail("evidence_collection_invalid")
+    allowed = [r[k] for r in roles.values() for k in ("anchor", "polarity_anchor", "time_anchor")]
+    allowed += [r["anchor"] for r in links.values()]
+    if any(e not in allowed for e in ev):
+        _model_fail("evidence_out_of_scope", "UNSUPPORTED")
+    def index(anchor):
+        found = [i for i,e in enumerate(ev) if e == anchor]
+        if len(found) != 1:
+            _model_fail("required_source_anchor_missing", "HOLD")
+        return found[0]
+    mapped, ids = {}, set()
+    if len(c["claims"]) != len(roles):
+        _model_fail("claim_coverage_invalid", "HOLD")
+    for claim in c["claims"]:
+        _keys(claim, _CLAIM_KEYS)
+        cid = claim["claim_id"]
+        if type(cid) is not str or not re.fullmatch(r"[A-Za-z0-9_.-]{1,64}", cid) or cid in ids:
+            _model_fail("claim_identity_invalid")
+        ids.add(cid)
+        matches = [name for name,r in roles.items() if claim["text"] == r["anchor"]["quote"]]
+        if len(matches) != 1 or matches[0] in mapped:
+            _model_fail("claim_source_semantics_not_bound", "HOLD")
+        name = matches[0]; r = roles[name]; a = r["anchor"]; i = index(a)
+        expected = dict(kind=r["kind"], subject=dict(binding="OMITTED", source_entity=None, evidence_indexes=[]),
+            predicate=dict(surface=a["quote"], arguments=[]),
+            polarity=dict(value=r["polarity"], scope_refs=[cid], evidence_indexes=[index(r["polarity_anchor"])]),
+            modality=dict(value=r["modality"], evidence_indexes=[i]),
+            about_time=dict(kind=r["about"], expression=r["time_expression"], anchor_source_id=a["source_id"], evidence_indexes=[index(r["time_anchor"])]),
+            qualifiers=[], evidence_indexes=[i])
+        if any(claim[k] != v for k,v in expected.items()):
+            _model_fail("claim_axes_not_source_bound", "HOLD")
+        mapped[name] = dict(claim_ref=cid, text=a["quote"], **{k:v for k,v in a.items() if k != "quote"})
+    relids, relation_roles = set(), {}
+    if len(c["relations"]) != len(links):
+        _model_fail("relation_coverage_invalid", "HOLD")
+    for row in c["relations"]:
+        _keys(row, {"relation_id", "type", "from_claim_id", "to_claim_id", "polarity", "scope_refs", "qualifiers", "evidence_indexes"})
+        rid = row["relation_id"]
+        if type(rid) is not str or not re.fullmatch(r"[A-Za-z0-9_.-]{1,64}", rid) or rid in ids | relids:
+            _model_fail("relation_identity_invalid")
+        matches = [name for name,r in links.items() if row == dict(relation_id=rid, type=r["kind"],
+            from_claim_id=mapped[r["left"]]["claim_ref"], to_claim_id=mapped[r["right"]]["claim_ref"],
+            polarity="AFFIRMED", scope_refs=[rid], qualifiers=[], evidence_indexes=[index(r["anchor"])])]
+        if len(matches) != 1 or matches[0] in relation_roles:
+            _model_fail("relation_direction_or_scope_not_bound", "HOLD")
+        relids.add(rid); relation_roles[matches[0]] = rid
+    unknowns = c["unknowns"]
+    target = contract["target"]
+    expected_unknown = None
+    if target and not thread.answers:
+        expected_unknown = dict(kind="NOT_STATED", target_claim_refs=[mapped[target]["claim_ref"]],
+            description=contract["gap_description"], evidence_indexes=[index(roles[target]["anchor"])])
+    elif contract["family"] == "KNIT_UNKNOWN_V3":
+        expected_unknown = dict(kind="PERSON_STATED", target_claim_refs=[mapped[n]["claim_ref"] for n in ("burden", "sadness")],
+            description=roles["stated_unknown"]["anchor"]["quote"], evidence_indexes=[index(roles[n]["anchor"]) for n in ("stated_unknown", "burden", "sadness")])
+    if expected_unknown is None:
+        if unknowns:
+            _model_fail("v3_unknown_coverage_invalid", "HOLD")
+    else:
+        if len(unknowns) != 1:
+            _model_fail("v3_unknown_coverage_invalid", "HOLD")
+        u = unknowns[0]; _keys(u, {"unknown_id", "kind", "target_claim_refs", "description", "evidence_indexes"})
+        uid = u["unknown_id"]
+        if type(uid) is not str or not re.fullmatch(r"[A-Za-z0-9_.-]{1,64}", uid) or uid in ids | relids or any(u[k] != v for k,v in expected_unknown.items()):
+            _model_fail("v3_unknown_not_source_bound", "HOLD")
+    temporal = []
+    if prior is None:
+        if thread.answers or c["updates"]:
+            _model_fail("initial_updates_forbidden")
+    else:
+        previous = prior["native_bindings"]
+        if previous.get("family") != contract["family"] or previous["stage"] != "INITIAL":
+            _model_fail("v3_prior_family_invalid", "HOLD")
+        for name in contract["initial_roles"]:
+            if mapped[name] != previous["roles"][name]:
+                _model_fail("unaffected_meaning_changed", "HOLD")
+        for name in contract["initial_links"]:
+            if relation_roles[name] != previous["relation_roles"][name]:
+                _model_fail("unaffected_relation_changed", "HOLD")
+        gap = prior["meaning_packet"]["candidate"]["unknowns"][0]["unknown_id"]
+        old_ids = {r["claim_id"] for r in prior["meaning_packet"]["candidate"]["claims"]} | {r["relation_id"] for r in prior["meaning_packet"]["candidate"]["relations"]} | {gap}
+        new_roles = [n for n in roles if n not in contract["initial_roles"]]
+        expected_updates = []
+        for name in new_roles:
+            own_links = [n for n,r in links.items() if n not in contract["initial_links"] and r["right"] == name]
+            replacements = [mapped[name]["claim_ref"]] + [relation_roles[n] for n in own_links]
+            if old_ids & set(replacements):
+                _model_fail("v3_new_meaning_identity_reused", "HOLD")
+            evidence = list(dict.fromkeys([index(roles[name]["anchor"])] + [index(links[n]["anchor"]) for n in own_links]))
+            expected_updates.append(dict(operation="ADD", target_kind="UNKNOWN", target_ref=gap,
+                replacement_refs=replacements, evidence_indexes=evidence, prior_snapshot_ref=prior["snapshot_ref"]))
+            temporal.append([roles[name]["about"], roles[name]["anchor"]["source_id"], [index(roles[name]["time_anchor"])]] )
+        anchor = links["answer_explains_target"]["anchor"]
+        expected_updates.append(dict(operation="INVALIDATE_GAP", target_kind="UNKNOWN", target_ref=gap,
+            replacement_refs=[], evidence_indexes=[index(anchor)], prior_snapshot_ref=prior["snapshot_ref"]))
+        temporal.append(["ANSWER_TIME", anchor["source_id"], [index(anchor)]])
+        if c["updates"] != expected_updates:
+            _model_fail("v3_explanation_updates_not_bound", "HOLD")
+    # Existing shape checks remain exact; only the two new question focuses differ.
+    saved_question = c["question_proposal"]
+    _model_surface_shape(dict(c, question_proposal=None), ids, relids)
+    if target and not thread.answers:
+        expected_q = dict(text=contract["prompt"], target_unknown_ref=unknowns[0]["unknown_id"],
+                          focus=contract["focus"], claim_refs=[mapped[target]["claim_ref"]])
+        if saved_question != expected_q:
+            _model_fail("question_proposal_not_bound", "HOLD")
+    elif saved_question is not None:
+        _model_fail("v3_question_not_available", "HOLD")
+    if bool(c["surface_proposal"]["update_note"]) != bool(prior):
+        _model_fail("v3_update_note_stage_invalid", "HOLD")
+    resolver, sources = thread.resolver(), {s["source_id"]:s for s in material.payload()["sources"]}
+    slices = []
+    for e in ev:
+        refs = [q.thread_span_id for q in resolver.qualified_refs if q.source_envelope_id == sources[e["source_id"]]["envelope_id"]
+                and q.evidence.field_path == e["field_path"] and q.evidence.scalar_start < e["end"] and e["start"] < q.evidence.scalar_end]
+        if not refs:
+            _model_fail("native_span_binding_missing")
+        slices.append(dict(e, native_span_refs=refs))
+    cases = [dict((k,v) for k,v in r.items() if k != "role") | {"owner_claim_ref":mapped[r["role"]]["claim_ref"]} for r in contract["cases"]]
+    raw = material.payload()["sources"][0]["original"]
+    return dict(family=contract["family"], stage=contract["stage"], roles=mapped,
+        relation_roles=relation_roles, source_fields=contract["source_fields"], source_slices=slices,
+        case_arguments=cases, source_negations=[r["polarity_anchor"] for r in roles.values() if r["polarity"] == "NEGATED"],
+        written_links=[dict(relation_ref=r["relation_id"], type=r["type"], from_claim_ref=r["from_claim_id"], to_claim_ref=r["to_claim_id"], evidence_indexes=r["evidence_indexes"]) for r in c["relations"]],
+        update_temporal=temporal,
+        preserved_selections={k:raw.get(k) for k in ("category", "emotions", "emotion_details", "is_secret")})
+
+
+
 def _model_packet(packet, material, thread, prior):
     _keys(packet, {"candidate", "evidence"})
     c, ev = packet["candidate"], packet["evidence"]
@@ -1119,6 +1363,9 @@ def _model_packet(packet, material, thread, prior):
         _model_fail("collection_invalid")
     if c["conflicts"]:
         _model_fail("conflicts_not_supported", "UNSUPPORTED")
+    v3 = _model_v3_source_contract(thread, material)
+    if v3 is not None:
+        return _model_v3_packet(packet, material, thread, prior, v3)
     roles, markers, corrections, cases, source_fields, negations = _model_source_roles(thread, material)
     daily = "slight_calm" in roles
     if daily and (prior is not None or c["updates"] or c["unknowns"]
@@ -1323,7 +1570,10 @@ def _model_meaning_packet(packet):
                                   if k not in {"surface_proposal","question_proposal"}}))
     for row in candidate.get("unknowns", []):
         if type(row) is dict and row.get("kind") == "NOT_STATED":
-            row["description"] = "詳しい本人の意味づけは未記載。"
+            targets = [x["text"] for x in candidate["claims"] if x["claim_id"] in row["target_claim_refs"]]
+            row["description"] = ("気がかりの対象は未記載。" if targets == ["まだちょっと気になる"] else
+                "置いていかれたように感じた理由は未記載。" if targets == ["少し置いていかれた気がした"] else
+                "詳しい本人の意味づけは未記載。")
     return dict(candidate=candidate, evidence=packet["evidence"])
 
 
@@ -1338,7 +1588,33 @@ def _model_proposal_ref(packet):
     return identity("model-proposal", packet)
 
 
+def _model_v3_checkpoint(thread, material, p):
+    ref = p["snapshot_ref"]
+    update, accepted, inactive = None, (), ()
+    if p["prior_snapshot"]:
+        rows = p["meaning_packet"]["candidate"]["updates"]
+        accepted = tuple(identity("model-update", p["prior_ref"], row) for row in rows)
+        inactive = tuple(dict.fromkeys(row["target_ref"] for row in rows if row["operation"] == "INVALIDATE_GAP"))
+        items = []
+        for uid, row, time_spec in zip(accepted, rows, p["native_bindings"]["update_temporal"]):
+            def eref(i):
+                return identity("model-evidence", p["request_ref"], p["packet"]["evidence"][i])
+            temporal = AnswerTemporalBindingV1(time_spec[0], time_spec[1], tuple(eref(i) for i in time_spec[2]))
+            items.append(EmlisAnswerUpdateItemV1(uid, row["target_kind"], (row["target_ref"],),
+                tuple(eref(i) for i in row["evidence_indexes"]), temporal, row["operation"],
+                tuple(row["replacement_refs"]), (row["target_ref"],) if row["operation"] == "INVALIDATE_GAP" else (), ()))
+        answer = thread.answers[0].source
+        update = AnswerMeaningUpdateV1(answer.answer_id, answer.question_id, p["prior_ref"], tuple(items), (), "RESOLVED", ref)
+    cp = ModelCheckpoint(identity("model-checkpoint", thread.source_prefix_ref, ref), thread.source_prefix_ref,
+        ref, update, "RESOLVED", accepted, inactive, (), semantic_snapshot=_json(p), snapshot_ref=ref)
+    c = p["packet"]["candidate"]
+    return ModelPreparedMeaning(thread, cp, _json(p), material.private_json, _json(p["meaning_packet"]),
+        _json(c["surface_proposal"]), _json(c["question_proposal"]), _json(p["native_bindings"]))
+
+
 def _model_checkpoint(thread, material, p):
+    if p["native_bindings"].get("family") in _MODEL_V3_FAMILIES:
+        return _model_v3_checkpoint(thread, material, p)
     ref = p["snapshot_ref"]
     update = None
     accepted, inactive = (), ()
@@ -1427,7 +1703,7 @@ def _prepare_model_snapshot(request, semantic_input):
     native = _model_packet(packet,material,thread,prior)
     # Source-derived versioning keeps all old chair snapshots byte-identical.
     # A saved or generated family/version label cannot select its own parser.
-    version = "2" if native.get("family") == "DAILY_CALM_V1" else "1"
+    version = "3" if native.get("family") in _MODEL_V3_FAMILIES else "2" if native.get("family") == "DAILY_CALM_V1" else "1"
     if resume:
         expected = (MODEL_SCHEMA,MODEL_PROFILE,version,version,material.request_id,thread.source_prefix_ref,
                     _source_binding(material),len(thread.answers),json.loads(_json(asdict(control.question_control_context))))

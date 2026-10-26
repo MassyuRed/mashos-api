@@ -1,0 +1,1359 @@
+{
+  "schema_version": "cmee_emlis_sixrow_v3_fixture.v1",
+  "purpose": "Independent hand-authored synthetic source/meaning/prose fixture. No model output, training, unknown evaluation or human acceptance.",
+  "topics": {
+    "book": {
+      "family": "BOOK_CONCERN_V3",
+      "original": {
+        "id": "FT-BOOK-O",
+        "memo": "大丈夫って言ってくれたけど、まだちょっと気になる。",
+        "memo_action": "借りていた本を返すのが遅れて、友人に謝った。",
+        "category": [
+          "人間関係"
+        ],
+        "emotions": [
+          "不安"
+        ],
+        "emotion_details": [
+          {
+            "type": "不安",
+            "strength": "weak"
+          }
+        ],
+        "created_at": "2026-10-26T00:00:00Z",
+        "is_secret": false
+      },
+      "target": "remaining_concern",
+      "focus": "PERSONAL_CONCERN_TARGET",
+      "question": "何が気になりますか？",
+      "gap_description": "気がかりの対象は未記載。",
+      "initial": {
+        "provenance": {
+          "id": "FT-BOOK-INITIAL",
+          "status": "PROPOSED_KAREN_EDIT_NOT_TRAINED_NOT_ADMITTED_NOT_HUMAN_ACCEPTED",
+          "origin": "KAREN_EDIT_OF_EXISTING_RECORD",
+          "source_refs": [
+            {
+              "path": "Cocolon_前提資料/observation_learning/sessions/2026/OBS-20261022-003/01_dialogue.md",
+              "commit": "d57fe2205cfa74d018b2a33a1e4e74ca6837310d",
+              "blob_sha": "8b7c1cea2dd2b1db6d6c9f6eacc6491f17ac569d",
+              "dialogue_id": "D00",
+              "start_scalar": 805,
+              "end_scalar_exclusive": 958,
+              "quote": "| 項目 | 入力内容 |\n| --- | --- |\n| 感情選択 | 不安（弱） |\n| 思考内容（考えていること） | 大丈夫って言ってくれたけど、まだちょっと気になる。 |\n| 行動内容（実際に起こった出来事） | 借りていた本を返すのが遅れて、友人に謝った。 |\n| カテゴリー | 人間関係 |"
+            }
+          ],
+          "source_bundle": {
+            "original": {
+              "id": "FT-BOOK-O",
+              "memo": "大丈夫って言ってくれたけど、まだちょっと気になる。",
+              "memo_action": "借りていた本を返すのが遅れて、友人に謝った。",
+              "category": [
+                "人間関係"
+              ],
+              "emotions": [
+                "不安"
+              ],
+              "emotion_details": [
+                {
+                  "type": "不安",
+                  "strength": "weak"
+                }
+              ]
+            },
+            "question_budget_total": 1,
+            "question_budget_remaining": 1
+          },
+          "old_generic_target": {
+            "observation": "本を返すのが遅れたことを謝った後も、気がかりがあるのですね。",
+            "reception": "「大丈夫」と言われても、まだ残っていることがあるのですね。その気がかりにも耳を傾けたいです。",
+            "question": "何が気になりますか？",
+            "update_note": null,
+            "grounded_points": [
+              {
+                "source_id": "FT-BOOK-O",
+                "fields": [
+                  "memo",
+                  "memo_action",
+                  "emotion_details"
+                ]
+              }
+            ],
+            "unknowns": [
+              "何が気になっているかは、今回の記録にはまだ書かれていない。"
+            ]
+          },
+          "proposed_surface": {
+            "observation": "本を返すのが遅れて友人に謝り、「大丈夫」と言われても、まだ気がかりが残っているのですね。",
+            "reception": "「大丈夫」と言ってもらえたことも、まだ気になることも、聞いていたいです。",
+            "question": "何が気になりますか？",
+            "update_note": null
+          },
+          "native_packet_prepared": false,
+          "question_origin": "MASH_VERBATIM_QUESTION_INTEGRATED_BY_KAREN",
+          "limits": "Planning examples only. No model generation or native adoption. Original source, questions and old teacher bytes remain unchanged.",
+          "teacher_source": {
+            "path": "Cocolon_前提資料/observation_learning/training/2026-10-24-emlis-free-pilot/sft_examples.jsonl",
+            "commit": "8eeb8e4c5577cc00fab53b3de413a894172ac5e1",
+            "row_id": "FT-BOOK-INITIAL"
+          }
+        },
+        "surface": {
+          "observation": "本を返すのが遅れて友人に謝り、「大丈夫」と言われても、まだ少し気がかりが残っているのですね。",
+          "reception": "「大丈夫」と言ってもらえたことも、まだ気になることも、聞いていたいです。",
+          "question": "何が気になりますか？",
+          "update_note": null
+        },
+        "roles": [
+          {
+            "name": "late_return",
+            "field": "memo_action",
+            "quote": "借りていた本を返すのが遅れて",
+            "kind": "EVENT",
+            "polarity": "AFFIRMED",
+            "modality": "ASSERTED_AS_WRITTEN",
+            "about": "WRITTEN_PAST_UNRESOLVED_OCCASION",
+            "polarity_quote": null,
+            "time_quote": null
+          },
+          {
+            "name": "apologize",
+            "field": "memo_action",
+            "quote": "友人に謝った",
+            "kind": "EVENT",
+            "polarity": "AFFIRMED",
+            "modality": "ASSERTED_AS_WRITTEN",
+            "about": "WRITTEN_PAST_UNRESOLVED_OCCASION",
+            "polarity_quote": null,
+            "time_quote": null
+          },
+          {
+            "name": "reassurance_received",
+            "field": "memo",
+            "quote": "大丈夫って言ってくれた",
+            "kind": "EVENT",
+            "polarity": "AFFIRMED",
+            "modality": "ASSERTED_AS_WRITTEN",
+            "about": "WRITTEN_PAST_UNRESOLVED_OCCASION",
+            "polarity_quote": null,
+            "time_quote": null
+          },
+          {
+            "name": "remaining_concern",
+            "field": "memo",
+            "quote": "まだちょっと気になる",
+            "kind": "STATE",
+            "polarity": "AFFIRMED",
+            "modality": "ASSERTED_AS_WRITTEN",
+            "about": "WRITTEN_PRESENT",
+            "polarity_quote": null,
+            "time_quote": null
+          }
+        ],
+        "links": [
+          {
+            "name": "action_link",
+            "kind": "SOURCE_WRITTEN_TE_LINK",
+            "left": "late_return",
+            "right": "apologize",
+            "field": "memo_action",
+            "quote": "借りていた本を返すのが遅れて、友人に謝った"
+          },
+          {
+            "name": "memo_link",
+            "kind": "SOURCE_WRITTEN_CONCESSION",
+            "left": "reassurance_received",
+            "right": "remaining_concern",
+            "field": "memo",
+            "quote": "大丈夫って言ってくれたけど、まだちょっと気になる"
+          }
+        ],
+        "bindings": [
+          {
+            "section": "observation",
+            "claim_refs": [
+              "late_return",
+              "apologize",
+              "reassurance_received",
+              "remaining_concern"
+            ],
+            "relation_refs": [
+              "action_link",
+              "memo_link"
+            ]
+          },
+          {
+            "section": "reception",
+            "claim_refs": [
+              "reassurance_received",
+              "remaining_concern"
+            ],
+            "relation_refs": [
+              "memo_link"
+            ]
+          }
+        ]
+      },
+      "after": {
+        "provenance": {
+          "id": "FT-BOOK-AFTER-ANSWER",
+          "status": "PROPOSED_KAREN_EDIT_NOT_TRAINED_NOT_ADMITTED_NOT_HUMAN_ACCEPTED",
+          "origin": "KAREN_EDIT_OF_EXISTING_RECORD",
+          "source_refs": [
+            {
+              "path": "Cocolon_前提資料/observation_learning/sessions/2026/OBS-20261022-003/01_dialogue.md",
+              "commit": "d57fe2205cfa74d018b2a33a1e4e74ca6837310d",
+              "blob_sha": "8b7c1cea2dd2b1db6d6c9f6eacc6491f17ac569d",
+              "dialogue_id": "D00",
+              "start_scalar": 805,
+              "end_scalar_exclusive": 958,
+              "quote": "| 項目 | 入力内容 |\n| --- | --- |\n| 感情選択 | 不安（弱） |\n| 思考内容（考えていること） | 大丈夫って言ってくれたけど、まだちょっと気になる。 |\n| 行動内容（実際に起こった出来事） | 借りていた本を返すのが遅れて、友人に謝った。 |\n| カテゴリー | 人間関係 |"
+            },
+            {
+              "path": "Cocolon_前提資料/observation_learning/sessions/2026/OBS-20261022-003/01_dialogue.md",
+              "commit": "d57fe2205cfa74d018b2a33a1e4e74ca6837310d",
+              "blob_sha": "8b7c1cea2dd2b1db6d6c9f6eacc6491f17ac569d",
+              "dialogue_id": "D01",
+              "start_scalar": 994,
+              "end_scalar_exclusive": 1009,
+              "quote": "質問。\n・何が気になりますか？"
+            },
+            {
+              "path": "Cocolon_前提資料/observation_learning/sessions/2026/OBS-20261022-003/01_dialogue.md",
+              "commit": "d57fe2205cfa74d018b2a33a1e4e74ca6837310d",
+              "blob_sha": "8b7c1cea2dd2b1db6d6c9f6eacc6491f17ac569d",
+              "dialogue_id": "D02",
+              "start_scalar": 1052,
+              "end_scalar_exclusive": 1144,
+              "quote": "自分から「週末に返すね」と言っていたのに、遅くなると分かった時点で連絡しなかったことです。\n\n本は返したのですが、「一言、遅くなるって伝えておけばよかったな」と、まだ気になっています。"
+            }
+          ],
+          "source_bundle": {
+            "original": {
+              "id": "FT-BOOK-O",
+              "memo": "大丈夫って言ってくれたけど、まだちょっと気になる。",
+              "memo_action": "借りていた本を返すのが遅れて、友人に謝った。",
+              "category": [
+                "人間関係"
+              ],
+              "emotions": [
+                "不安"
+              ],
+              "emotion_details": [
+                {
+                  "type": "不安",
+                  "strength": "weak"
+                }
+              ]
+            },
+            "question_budget_total": 1,
+            "question_budget_remaining": 0,
+            "prior_questions": [
+              {
+                "question_id": "FT-BOOK-O-Q1",
+                "parent_record_id": "FT-BOOK-O",
+                "text": "何が気になりますか？"
+              }
+            ],
+            "supplemental": [
+              {
+                "source_id": "FT-BOOK-O-A1",
+                "source_role": "SUPPLEMENTAL_ANSWER",
+                "parent_record_id": "FT-BOOK-O",
+                "in_reply_to": "FT-BOOK-O-Q1",
+                "text": "自分から「週末に返すね」と言っていたのに、遅くなると分かった時点で連絡しなかったことです。\n\n本は返したのですが、「一言、遅くなるって伝えておけばよかったな」と、まだ気になっています。"
+              }
+            ]
+          },
+          "old_generic_target": {
+            "observation": "遅れると分かった時点で連絡しなかったことが、今も気になっているのですね。",
+            "reception": "本を返して謝った今も、「あの時に一言伝えておけば」という思いが残っている。今の気がかりがどこにあるのか、伝えてくださったことを受け取りました。",
+            "question": null,
+            "update_note": "気がかりの対象が、遅れると分かった時点で連絡しなかったことだと説明されました。以前に別の理由が確定していたことにはしません。",
+            "grounded_points": [
+              {
+                "source_id": "FT-BOOK-O",
+                "fields": [
+                  "memo",
+                  "memo_action"
+                ]
+              },
+              {
+                "source_id": "FT-BOOK-O-A1",
+                "fields": [
+                  "text"
+                ]
+              }
+            ],
+            "unknowns": [
+              "友人が実際にどう受け取ったかは、この可視情報からは判断できない。"
+            ]
+          },
+          "proposed_surface": {
+            "observation": "遅くなると分かった時に連絡しなかったことが、今も気になっているのですね。",
+            "reception": "本を返しても、あの時に一言伝えておけば、という思いは残っているのですね。何が気になっているのか、話してくださってありがとうございます。",
+            "question": null,
+            "update_note": "気がかりの対象が、遅れると分かった時に連絡しなかったことだと説明されました。"
+          },
+          "native_packet_prepared": false,
+          "question_origin": null,
+          "limits": "Planning examples only. No model generation or native adoption. Original source, questions and old teacher bytes remain unchanged.",
+          "teacher_source": {
+            "path": "Cocolon_前提資料/observation_learning/training/2026-10-24-emlis-free-pilot/sft_examples.jsonl",
+            "commit": "8eeb8e4c5577cc00fab53b3de413a894172ac5e1",
+            "row_id": "FT-BOOK-AFTER-ANSWER"
+          }
+        },
+        "answer": "自分から「週末に返すね」と言っていたのに、遅くなると分かった時点で連絡しなかったことです。\n\n本は返したのですが、「一言、遅くなるって伝えておけばよかったな」と、まだ気になっています。",
+        "surface": {
+          "observation": "遅くなると分かった時に連絡しなかったことが、今も気になっているのですね。",
+          "reception": "本を返しても、あの時に一言伝えておけば、という思いは残っているのですね。何が気になっているのか、話してくださってありがとうございます。",
+          "question": null,
+          "update_note": "気がかりの対象が、遅れると分かった時に連絡しなかったことだと説明されました。"
+        },
+        "roles": [
+          {
+            "name": "self_statement",
+            "field": "answer_text_private",
+            "quote": "自分から「週末に返すね」と言っていた",
+            "kind": "REPORTED_STATEMENT",
+            "polarity": "AFFIRMED",
+            "modality": "ASSERTED_AS_WRITTEN",
+            "about": "WRITTEN_PAST_UNRESOLVED_OCCASION",
+            "polarity_quote": null,
+            "time_quote": null
+          },
+          {
+            "name": "late_awareness",
+            "field": "answer_text_private",
+            "quote": "遅くなると分かった",
+            "kind": "STATE",
+            "polarity": "AFFIRMED",
+            "modality": "ASSERTED_AS_WRITTEN",
+            "about": "WRITTEN_PAST_UNRESOLVED_OCCASION",
+            "polarity_quote": null,
+            "time_quote": null
+          },
+          {
+            "name": "no_contact",
+            "field": "answer_text_private",
+            "quote": "連絡しなかった",
+            "kind": "EVENT",
+            "polarity": "NEGATED",
+            "modality": "ASSERTED_AS_WRITTEN",
+            "about": "WRITTEN_PAST_UNRESOLVED_OCCASION",
+            "polarity_quote": null,
+            "time_quote": "遅くなると分かった時点"
+          },
+          {
+            "name": "returned",
+            "field": "answer_text_private",
+            "quote": "本は返した",
+            "kind": "EVENT",
+            "polarity": "AFFIRMED",
+            "modality": "ASSERTED_AS_WRITTEN",
+            "about": "WRITTEN_PAST_UNRESOLVED_OCCASION",
+            "polarity_quote": null,
+            "time_quote": null
+          },
+          {
+            "name": "counterfactual",
+            "field": "answer_text_private",
+            "quote": "一言、遅くなるって伝えておけばよかったな",
+            "kind": "STATE",
+            "polarity": "AFFIRMED",
+            "modality": "COUNTERFACTUAL_APPRAISAL",
+            "about": "ANSWER_TIME",
+            "polarity_quote": null,
+            "time_quote": null
+          },
+          {
+            "name": "continuing_concern",
+            "field": "answer_text_private",
+            "quote": "まだ気になっています",
+            "kind": "STATE",
+            "polarity": "AFFIRMED",
+            "modality": "ASSERTED_AS_WRITTEN",
+            "about": "ANSWER_TIME",
+            "polarity_quote": null,
+            "time_quote": null
+          }
+        ],
+        "links": [
+          {
+            "name": "statement_concession",
+            "kind": "SOURCE_WRITTEN_CONCESSION",
+            "left": "self_statement",
+            "right": "no_contact",
+            "field": "answer_text_private",
+            "quote": "自分から「週末に返すね」と言っていたのに、遅くなると分かった時点で連絡しなかったことです"
+          },
+          {
+            "name": "awareness_time",
+            "kind": "SOURCE_WRITTEN_TEMPORAL_AT_LINK",
+            "left": "late_awareness",
+            "right": "no_contact",
+            "field": "answer_text_private",
+            "quote": "遅くなると分かった時点で連絡しなかったことです"
+          },
+          {
+            "name": "returned_concession",
+            "kind": "SOURCE_WRITTEN_CONCESSION",
+            "left": "returned",
+            "right": "continuing_concern",
+            "field": "answer_text_private",
+            "quote": "本は返したのですが、「一言、遅くなるって伝えておけばよかったな」と、まだ気になっています"
+          },
+          {
+            "name": "concern_content",
+            "kind": "SOURCE_QUOTED_CONCERN_CONTENT",
+            "left": "counterfactual",
+            "right": "continuing_concern",
+            "field": "answer_text_private",
+            "quote": "「一言、遅くなるって伝えておけばよかったな」と、まだ気になっています"
+          },
+          {
+            "name": "answer_explains_target",
+            "kind": "ANSWER_EXPLAINS_TARGET",
+            "left": "remaining_concern",
+            "right": "no_contact",
+            "field": "answer_text_private",
+            "quote": "自分から「週末に返すね」と言っていたのに、遅くなると分かった時点で連絡しなかったことです"
+          }
+        ],
+        "bindings": [
+          {
+            "section": "observation",
+            "claim_refs": [
+              "late_awareness",
+              "no_contact",
+              "continuing_concern"
+            ],
+            "relation_refs": [
+              "awareness_time"
+            ]
+          },
+          {
+            "section": "reception",
+            "claim_refs": [
+              "returned",
+              "counterfactual",
+              "continuing_concern",
+              "remaining_concern",
+              "no_contact"
+            ],
+            "relation_refs": [
+              "returned_concession",
+              "concern_content",
+              "answer_explains_target"
+            ]
+          },
+          {
+            "section": "update_note",
+            "claim_refs": [
+              "remaining_concern",
+              "late_awareness",
+              "no_contact"
+            ],
+            "relation_refs": [
+              "answer_explains_target",
+              "awareness_time"
+            ]
+          }
+        ]
+      }
+    },
+    "shop": {
+      "family": "SHOP_DISTANCE_V3",
+      "original": {
+        "id": "FT-SHOP-O",
+        "memo": "うれしかったけど、少し置いていかれた気がした。",
+        "memo_action": "昔からの友人が店を開いたと知って、お祝いのメッセージを送った。",
+        "category": [
+          "人間関係"
+        ],
+        "emotions": [
+          "喜び",
+          "悲しみ"
+        ],
+        "emotion_details": [
+          {
+            "type": "喜び",
+            "strength": "medium"
+          },
+          {
+            "type": "悲しみ",
+            "strength": "weak"
+          }
+        ],
+        "created_at": "2026-10-26T00:00:00Z",
+        "is_secret": false
+      },
+      "target": "felt_left_behind",
+      "focus": "PERSONAL_FEELING_REASON",
+      "question": "「少し置いていかれた気がした」のはなぜですか？",
+      "gap_description": "置いていかれたように感じた理由は未記載。",
+      "initial": {
+        "provenance": {
+          "id": "FT-SHOP-INITIAL",
+          "status": "PROPOSED_KAREN_EDIT_NOT_TRAINED_NOT_ADMITTED_NOT_HUMAN_ACCEPTED",
+          "origin": "KAREN_EDIT_OF_EXISTING_RECORD",
+          "source_refs": [
+            {
+              "path": "Cocolon_前提資料/observation_learning/sessions/2026/OBS-20261023-001/01_dialogue.md",
+              "commit": "d57fe2205cfa74d018b2a33a1e4e74ca6837310d",
+              "blob_sha": "1db0f3170e28902b3c14c9505b6c930380694444",
+              "dialogue_id": "D00",
+              "start_scalar": 665,
+              "end_scalar_exclusive": 832,
+              "quote": "| 項目 | 入力内容 |\n| --- | --- |\n| 感情選択 | 喜び（中）・悲しみ（弱） |\n| 思考内容（考えていること） | うれしかったけど、少し置いていかれた気がした。 |\n| 行動内容（実際に起こった出来事） | 昔からの友人が店を開いたと知って、お祝いのメッセージを送った。 |\n| カテゴリー | 人間関係 |"
+            }
+          ],
+          "source_bundle": {
+            "original": {
+              "id": "FT-SHOP-O",
+              "memo": "うれしかったけど、少し置いていかれた気がした。",
+              "memo_action": "昔からの友人が店を開いたと知って、お祝いのメッセージを送った。",
+              "category": [
+                "人間関係"
+              ],
+              "emotions": [
+                "喜び",
+                "悲しみ"
+              ],
+              "emotion_details": [
+                {
+                  "type": "喜び",
+                  "strength": "medium"
+                },
+                {
+                  "type": "悲しみ",
+                  "strength": "weak"
+                }
+              ]
+            },
+            "question_budget_total": 1,
+            "question_budget_remaining": 1
+          },
+          "old_generic_target": {
+            "observation": "友人の開店を知ってお祝いを送り、うれしさと「置いていかれた」ような感覚を記録しているのですね。",
+            "reception": "友人を祝う気持ちだけでは言い表せないところもあったのですね。お祝いしたことと、ここに書いてくださった感覚を、どちらも受け取りたいです。",
+            "question": "「少し置いていかれた気がした」のはなぜですか？",
+            "update_note": null,
+            "grounded_points": [
+              {
+                "source_id": "FT-SHOP-O",
+                "fields": [
+                  "memo",
+                  "memo_action",
+                  "emotion_details"
+                ]
+              }
+            ],
+            "unknowns": [
+              "「置いていかれた気がした」理由は、この初回入力では分からない。"
+            ]
+          },
+          "proposed_surface": {
+            "observation": "友人の開店を知ってお祝いのメッセージを送り、うれしさと、少し置いていかれたような感覚があったのですね。",
+            "reception": "開店を喜ぶ気持ちと、少し置いていかれたような感覚を、どちらも聞いていたいです。",
+            "question": "「少し置いていかれた気がした」のはなぜですか？",
+            "update_note": null
+          },
+          "native_packet_prepared": false,
+          "question_origin": "MASH_VERBATIM_QUESTION_INTEGRATED_BY_KAREN",
+          "limits": "Planning examples only. No model generation or native adoption. Original source, questions and old teacher bytes remain unchanged.",
+          "teacher_source": {
+            "path": "Cocolon_前提資料/observation_learning/training/2026-10-24-emlis-free-pilot/sft_examples.jsonl",
+            "commit": "8eeb8e4c5577cc00fab53b3de413a894172ac5e1",
+            "row_id": "FT-SHOP-INITIAL"
+          }
+        },
+        "surface": {
+          "observation": "友人の開店を知ってお祝いのメッセージを送り、うれしさと、少し置いていかれたような感覚があったのですね。",
+          "reception": "開店を喜ぶ気持ちと、少し置いていかれたような感覚を、どちらも聞いていたいです。",
+          "question": "「少し置いていかれた気がした」のはなぜですか？",
+          "update_note": null
+        },
+        "roles": [
+          {
+            "name": "opening_known",
+            "field": "memo_action",
+            "quote": "昔からの友人が店を開いたと知って",
+            "kind": "EVENT",
+            "polarity": "AFFIRMED",
+            "modality": "ASSERTED_AS_WRITTEN",
+            "about": "WRITTEN_PAST_UNRESOLVED_OCCASION",
+            "polarity_quote": null,
+            "time_quote": null
+          },
+          {
+            "name": "celebration_sent",
+            "field": "memo_action",
+            "quote": "お祝いのメッセージを送った",
+            "kind": "EVENT",
+            "polarity": "AFFIRMED",
+            "modality": "ASSERTED_AS_WRITTEN",
+            "about": "WRITTEN_PAST_UNRESOLVED_OCCASION",
+            "polarity_quote": null,
+            "time_quote": null
+          },
+          {
+            "name": "joy",
+            "field": "memo",
+            "quote": "うれしかった",
+            "kind": "STATE",
+            "polarity": "AFFIRMED",
+            "modality": "ASSERTED_AS_WRITTEN",
+            "about": "WRITTEN_PAST_UNRESOLVED_OCCASION",
+            "polarity_quote": null,
+            "time_quote": null
+          },
+          {
+            "name": "felt_left_behind",
+            "field": "memo",
+            "quote": "少し置いていかれた気がした",
+            "kind": "STATE",
+            "polarity": "AFFIRMED",
+            "modality": "PERSON_PERCEPTION",
+            "about": "WRITTEN_PAST_UNRESOLVED_OCCASION",
+            "polarity_quote": null,
+            "time_quote": null
+          }
+        ],
+        "links": [
+          {
+            "name": "action_link",
+            "kind": "SOURCE_WRITTEN_TE_LINK",
+            "left": "opening_known",
+            "right": "celebration_sent",
+            "field": "memo_action",
+            "quote": "昔からの友人が店を開いたと知って、お祝いのメッセージを送った"
+          },
+          {
+            "name": "memo_link",
+            "kind": "SOURCE_WRITTEN_CONCESSION",
+            "left": "joy",
+            "right": "felt_left_behind",
+            "field": "memo",
+            "quote": "うれしかったけど、少し置いていかれた気がした"
+          }
+        ],
+        "bindings": [
+          {
+            "section": "observation",
+            "claim_refs": [
+              "opening_known",
+              "celebration_sent",
+              "joy",
+              "felt_left_behind"
+            ],
+            "relation_refs": [
+              "action_link",
+              "memo_link"
+            ]
+          },
+          {
+            "section": "reception",
+            "claim_refs": [
+              "joy",
+              "felt_left_behind"
+            ],
+            "relation_refs": [
+              "memo_link"
+            ]
+          }
+        ]
+      },
+      "after": {
+        "provenance": {
+          "id": "FT-SHOP-AFTER-ANSWER",
+          "status": "PROPOSED_KAREN_EDIT_NOT_TRAINED_NOT_ADMITTED_NOT_HUMAN_ACCEPTED",
+          "origin": "KAREN_EDIT_OF_EXISTING_RECORD",
+          "source_refs": [
+            {
+              "path": "Cocolon_前提資料/observation_learning/sessions/2026/OBS-20261023-001/01_dialogue.md",
+              "commit": "d57fe2205cfa74d018b2a33a1e4e74ca6837310d",
+              "blob_sha": "1db0f3170e28902b3c14c9505b6c930380694444",
+              "dialogue_id": "D00",
+              "start_scalar": 665,
+              "end_scalar_exclusive": 832,
+              "quote": "| 項目 | 入力内容 |\n| --- | --- |\n| 感情選択 | 喜び（中）・悲しみ（弱） |\n| 思考内容（考えていること） | うれしかったけど、少し置いていかれた気がした。 |\n| 行動内容（実際に起こった出来事） | 昔からの友人が店を開いたと知って、お祝いのメッセージを送った。 |\n| カテゴリー | 人間関係 |"
+            },
+            {
+              "path": "Cocolon_前提資料/observation_learning/sessions/2026/OBS-20261023-001/01_dialogue.md",
+              "commit": "d57fe2205cfa74d018b2a33a1e4e74ca6837310d",
+              "blob_sha": "1db0f3170e28902b3c14c9505b6c930380694444",
+              "dialogue_id": "D01",
+              "start_scalar": 867,
+              "end_scalar_exclusive": 895,
+              "quote": "問い。\n・「少し置いていかれた気がした」のはなぜですか？"
+            },
+            {
+              "path": "Cocolon_前提資料/observation_learning/sessions/2026/OBS-20261023-001/01_dialogue.md",
+              "commit": "d57fe2205cfa74d018b2a33a1e4e74ca6837310d",
+              "blob_sha": "1db0f3170e28902b3c14c9505b6c930380694444",
+              "dialogue_id": "D02",
+              "start_scalar": 937,
+              "end_scalar_exclusive": 1106,
+              "quote": "以前、その友人と「いつか店をやれたらいいね」と話していたことがあるんです。具体的に一緒に準備をしていたわけでも、約束していたわけでもありません。\n\nでも、開店したと聞いたとき、二人で話していた未来が、友人の方ではもう現実になっていたんだな、と感じました。うれしいのに、あの話を一緒にしていた頃から少し離れてしまったようで、寂しかったです。"
+            }
+          ],
+          "source_bundle": {
+            "original": {
+              "id": "FT-SHOP-O",
+              "memo": "うれしかったけど、少し置いていかれた気がした。",
+              "memo_action": "昔からの友人が店を開いたと知って、お祝いのメッセージを送った。",
+              "category": [
+                "人間関係"
+              ],
+              "emotions": [
+                "喜び",
+                "悲しみ"
+              ],
+              "emotion_details": [
+                {
+                  "type": "喜び",
+                  "strength": "medium"
+                },
+                {
+                  "type": "悲しみ",
+                  "strength": "weak"
+                }
+              ]
+            },
+            "question_budget_total": 1,
+            "question_budget_remaining": 0,
+            "prior_questions": [
+              {
+                "question_id": "FT-SHOP-O-Q1",
+                "parent_record_id": "FT-SHOP-O",
+                "text": "「少し置いていかれた気がした」のはなぜですか？"
+              }
+            ],
+            "supplemental": [
+              {
+                "source_id": "FT-SHOP-O-A1",
+                "source_role": "SUPPLEMENTAL_ANSWER",
+                "parent_record_id": "FT-SHOP-O",
+                "in_reply_to": "FT-SHOP-O-Q1",
+                "text": "以前、その友人と「いつか店をやれたらいいね」と話していたことがあるんです。具体的に一緒に準備をしていたわけでも、約束していたわけでもありません。\n\nでも、開店したと聞いたとき、二人で話していた未来が、友人の方ではもう現実になっていたんだな、と感じました。うれしいのに、あの話を一緒にしていた頃から少し離れてしまったようで、寂しかったです。"
+              }
+            ]
+          },
+          "old_generic_target": {
+            "observation": "一緒に店の話をしていた頃から、少し離れてしまったように感じたのですね。",
+            "reception": "友人が店を形にしたうれしさがあっても、一緒に未来の話をしていた時間を思うと寂しい。その両方がありながら、お祝いを送った行動に、私は優しさを感じました。",
+            "question": null,
+            "update_note": "本人の説明で、二人で話していた未来が友人の方で現実になり、あの頃から離れたように感じたことが分かりました。共同計画や約束があったことにはしません。",
+            "grounded_points": [
+              {
+                "source_id": "FT-SHOP-O",
+                "fields": [
+                  "memo_action",
+                  "emotion_details"
+                ]
+              },
+              {
+                "source_id": "FT-SHOP-O-A1",
+                "fields": [
+                  "text"
+                ]
+              }
+            ],
+            "unknowns": [
+              "本人自身の開店の夢や、その未達成との比較が理由かどうかは語られていない。"
+            ]
+          },
+          "proposed_surface": {
+            "observation": "二人で話していた未来が、友人の方ではもう現実になっていたんだな、と感じたのですね。その一方で、あの話を一緒にしていた頃から少し離れてしまったようで、寂しかったのですね。",
+            "reception": "一緒に準備したり約束したりしていたわけではなくても、二人で話した時間はあったのですね。開店のうれしさも、その頃から離れたような寂しさも、受け取りました。",
+            "question": null,
+            "update_note": "本人の説明で、二人で話していた未来と、あの頃からの距離が気持ちに関わっていたことが分かりました。共同準備や約束があったことにはしません。"
+          },
+          "native_packet_prepared": false,
+          "question_origin": null,
+          "limits": "Planning examples only. No model generation or native adoption. Original source, questions and old teacher bytes remain unchanged.",
+          "teacher_source": {
+            "path": "Cocolon_前提資料/observation_learning/training/2026-10-24-emlis-free-pilot/sft_examples.jsonl",
+            "commit": "8eeb8e4c5577cc00fab53b3de413a894172ac5e1",
+            "row_id": "FT-SHOP-AFTER-ANSWER"
+          }
+        },
+        "answer": "以前、その友人と「いつか店をやれたらいいね」と話していたことがあるんです。具体的に一緒に準備をしていたわけでも、約束していたわけでもありません。\n\nでも、開店したと聞いたとき、二人で話していた未来が、友人の方ではもう現実になっていたんだな、と感じました。うれしいのに、あの話を一緒にしていた頃から少し離れてしまったようで、寂しかったです。",
+        "surface": {
+          "observation": "二人で話していた未来が、友人の方ではもう現実になっていたんだな、と感じたのですね。その一方で、あの話を一緒にしていた頃から少し離れてしまったようで、寂しかったのですね。",
+          "reception": "一緒に準備したり約束したりしていたわけではなくても、二人で話した時間はあったのですね。開店のうれしさも、その頃から離れたような寂しさも、受け取りました。",
+          "question": null,
+          "update_note": "本人の説明で、二人で話していた未来と、あの頃からの距離が気持ちに関わっていたことが分かりました。共同準備や約束があったことにはしません。"
+        },
+        "roles": [
+          {
+            "name": "shared_talk",
+            "field": "answer_text_private",
+            "quote": "以前、その友人と「いつか店をやれたらいいね」と話していたことがあるんです",
+            "kind": "REPORTED_STATEMENT",
+            "polarity": "AFFIRMED",
+            "modality": "ASSERTED_AS_WRITTEN",
+            "about": "WRITTEN_PAST_UNRESOLVED_OCCASION",
+            "polarity_quote": null,
+            "time_quote": null
+          },
+          {
+            "name": "no_joint_preparation",
+            "field": "answer_text_private",
+            "quote": "具体的に一緒に準備をしていたわけでも",
+            "kind": "EVENT",
+            "polarity": "NEGATED",
+            "modality": "ASSERTED_AS_WRITTEN",
+            "about": "WRITTEN_PAST_UNRESOLVED_OCCASION",
+            "polarity_quote": "具体的に一緒に準備をしていたわけでも、約束していたわけでもありません",
+            "time_quote": null
+          },
+          {
+            "name": "no_promise",
+            "field": "answer_text_private",
+            "quote": "約束していたわけでもありません",
+            "kind": "EVENT",
+            "polarity": "NEGATED",
+            "modality": "ASSERTED_AS_WRITTEN",
+            "about": "WRITTEN_PAST_UNRESOLVED_OCCASION",
+            "polarity_quote": "具体的に一緒に準備をしていたわけでも、約束していたわけでもありません",
+            "time_quote": null
+          },
+          {
+            "name": "perceived_realization",
+            "field": "answer_text_private",
+            "quote": "二人で話していた未来が、友人の方ではもう現実になっていたんだな、と感じました",
+            "kind": "STATE",
+            "polarity": "AFFIRMED",
+            "modality": "PERSON_PERCEPTION",
+            "about": "WRITTEN_PAST_UNRESOLVED_OCCASION",
+            "polarity_quote": null,
+            "time_quote": "開店したと聞いたとき"
+          },
+          {
+            "name": "answer_joy",
+            "field": "answer_text_private",
+            "quote": "うれしい",
+            "kind": "STATE",
+            "polarity": "AFFIRMED",
+            "modality": "ASSERTED_AS_WRITTEN",
+            "about": "WRITTEN_PRESENT_IN_PAST_CONTEXT",
+            "polarity_quote": null,
+            "time_quote": "開店したと聞いたとき"
+          },
+          {
+            "name": "felt_distance",
+            "field": "answer_text_private",
+            "quote": "あの話を一緒にしていた頃から少し離れてしまったようで",
+            "kind": "STATE",
+            "polarity": "AFFIRMED",
+            "modality": "PERSON_PERCEPTION",
+            "about": "WRITTEN_PAST_UNRESOLVED_OCCASION",
+            "polarity_quote": null,
+            "time_quote": "開店したと聞いたとき"
+          },
+          {
+            "name": "answer_sadness",
+            "field": "answer_text_private",
+            "quote": "寂しかったです",
+            "kind": "STATE",
+            "polarity": "AFFIRMED",
+            "modality": "ASSERTED_AS_WRITTEN",
+            "about": "WRITTEN_PAST_UNRESOLVED_OCCASION",
+            "polarity_quote": null,
+            "time_quote": "開店したと聞いたとき"
+          }
+        ],
+        "links": [
+          {
+            "name": "past_reference",
+            "kind": "SOURCE_WRITTEN_REFERENCE",
+            "left": "shared_talk",
+            "right": "perceived_realization",
+            "field": "answer_text_private",
+            "quote": "二人で話していた未来"
+          },
+          {
+            "name": "answer_concession",
+            "kind": "SOURCE_WRITTEN_CONCESSION",
+            "left": "answer_joy",
+            "right": "answer_sadness",
+            "field": "answer_text_private",
+            "quote": "うれしいのに、あの話を一緒にしていた頃から少し離れてしまったようで、寂しかったです"
+          },
+          {
+            "name": "distance_link",
+            "kind": "SOURCE_WRITTEN_DE_LINK",
+            "left": "felt_distance",
+            "right": "answer_sadness",
+            "field": "answer_text_private",
+            "quote": "あの話を一緒にしていた頃から少し離れてしまったようで、寂しかったです"
+          },
+          {
+            "name": "answer_explains_target",
+            "kind": "ANSWER_EXPLAINS_TARGET",
+            "left": "felt_left_behind",
+            "right": "felt_distance",
+            "field": "answer_text_private",
+            "quote": "あの話を一緒にしていた頃から少し離れてしまったようで"
+          }
+        ],
+        "bindings": [
+          {
+            "section": "observation",
+            "claim_refs": [
+              "shared_talk",
+              "perceived_realization",
+              "felt_distance",
+              "answer_sadness"
+            ],
+            "relation_refs": [
+              "past_reference",
+              "distance_link"
+            ]
+          },
+          {
+            "section": "reception",
+            "claim_refs": [
+              "no_joint_preparation",
+              "no_promise",
+              "shared_talk",
+              "answer_joy",
+              "felt_distance",
+              "answer_sadness"
+            ],
+            "relation_refs": [
+              "answer_concession",
+              "distance_link"
+            ]
+          },
+          {
+            "section": "update_note",
+            "claim_refs": [
+              "shared_talk",
+              "perceived_realization",
+              "felt_left_behind",
+              "felt_distance",
+              "answer_sadness",
+              "no_joint_preparation",
+              "no_promise"
+            ],
+            "relation_refs": [
+              "past_reference",
+              "answer_explains_target"
+            ]
+          }
+        ]
+      }
+    },
+    "repot": {
+      "family": "REPOT_RECEPTION_V3",
+      "original": {
+        "id": "FT-REPOT-O",
+        "memo": "やり方が分かって安心した。",
+        "memo_action": "植え替えの手順を叔父に説明してもらい、最後まで聞いた。",
+        "category": [
+          "生活"
+        ],
+        "emotions": [
+          "平穏"
+        ],
+        "emotion_details": [
+          {
+            "type": "平穏",
+            "strength": "medium"
+          }
+        ],
+        "created_at": "2026-10-26T00:00:00Z",
+        "is_secret": false
+      },
+      "target": null,
+      "focus": null,
+      "question": null,
+      "gap_description": "置いていかれたように感じた理由は未記載。",
+      "initial": {
+        "provenance": {
+          "id": "FT-REPOT-INITIAL",
+          "status": "PROPOSED_KAREN_EDIT_NOT_TRAINED_NOT_ADMITTED_NOT_HUMAN_ACCEPTED",
+          "origin": "KAREN_NEW_FICTITIOUS_SUPPLEMENT",
+          "source_refs": [],
+          "source_bundle": {
+            "original": {
+              "id": "FT-REPOT-O",
+              "memo": "やり方が分かって安心した。",
+              "memo_action": "植え替えの手順を叔父に説明してもらい、最後まで聞いた。",
+              "category": [
+                "生活"
+              ],
+              "emotions": [
+                "平穏"
+              ],
+              "emotion_details": [
+                {
+                  "type": "平穏",
+                  "strength": "medium"
+                }
+              ]
+            },
+            "question_budget_total": 1,
+            "question_budget_remaining": 1
+          },
+          "old_generic_target": {
+            "observation": "叔父に植え替えの手順を説明してもらい、最後まで聞いたのですね。",
+            "reception": "やり方が分かって、安心できたのですね。最後まで説明を聞いた後の、その安心を受け取りました。",
+            "question": null,
+            "update_note": null,
+            "grounded_points": [
+              {
+                "source_id": "FT-REPOT-O",
+                "fields": [
+                  "memo",
+                  "memo_action",
+                  "emotion_details"
+                ]
+              }
+            ],
+            "unknowns": []
+          },
+          "proposed_surface": {
+            "observation": "叔父に植え替えの手順を説明してもらい、最後まで聞いたのですね。",
+            "reception": "やり方が分かって、安心できてよかったです。",
+            "question": null,
+            "update_note": null
+          },
+          "native_packet_prepared": false,
+          "question_origin": null,
+          "limits": "Planning examples only. No model generation or native adoption. Original source, questions and old teacher bytes remain unchanged.",
+          "teacher_source": {
+            "path": "Cocolon_前提資料/observation_learning/training/2026-10-24-emlis-free-pilot/sft_examples.jsonl",
+            "commit": "8eeb8e4c5577cc00fab53b3de413a894172ac5e1",
+            "row_id": "FT-REPOT-INITIAL"
+          },
+          "candidate_reference": {
+            "path": "Cocolon_前提資料/observation_learning/training/2026-10-23-pilot-prep/sft_candidates.jsonl",
+            "commit": "d57fe2205cfa74d018b2a33a1e4e74ca6837310d",
+            "blob_sha": "1bac939575e93ece2b383948043548cef1f17d65",
+            "candidate_id": "SUP-REPOT-SUBJECT",
+            "original_messages": [
+              {
+                "role": "system",
+                "content": "渡された記録だけから、指定された観測技術の部分課題に答えてください。本人の発言と過去の問いを区別し、問いの前提を本人の事実にしないでください。未確認の動機・他者の気持ち・因果・人格を足さず、否定・留保・時点・訂正対象を保ってください。"
+              },
+              {
+                "role": "user",
+                "content": "誰が何をし、本人が何を受け取ったかを保って一文に整理してください。\n\n【行動】\n植え替えの手順を叔父に説明してもらい、最後まで聞いた。\n\n【思考・受け止め】\nやり方が分かって安心した。"
+              },
+              {
+                "role": "assistant",
+                "content": "叔父が植え替えの手順を説明し、本人は最後まで聞いて、やり方が分かったことで安心したと述べています。"
+              }
+            ]
+          },
+          "author_added_input_fields": {
+            "category": [
+              "生活"
+            ],
+            "emotions": [
+              "平穏"
+            ],
+            "emotion_details": [
+              {
+                "type": "平穏",
+                "strength": "medium"
+              }
+            ]
+          }
+        },
+        "surface": {
+          "observation": "叔父に植え替えの手順を説明してもらい、最後まで聞いたのですね。",
+          "reception": "やり方が分かって、安心できてよかったです。",
+          "question": null,
+          "update_note": null
+        },
+        "roles": [
+          {
+            "name": "guidance_received",
+            "field": "memo_action",
+            "quote": "植え替えの手順を叔父に説明してもらい",
+            "kind": "EVENT",
+            "polarity": "AFFIRMED",
+            "modality": "ASSERTED_AS_WRITTEN",
+            "about": "WRITTEN_PAST_UNRESOLVED_OCCASION",
+            "polarity_quote": null,
+            "time_quote": null
+          },
+          {
+            "name": "listened_to_end",
+            "field": "memo_action",
+            "quote": "最後まで聞いた",
+            "kind": "EVENT",
+            "polarity": "AFFIRMED",
+            "modality": "ASSERTED_AS_WRITTEN",
+            "about": "WRITTEN_PAST_UNRESOLVED_OCCASION",
+            "polarity_quote": null,
+            "time_quote": null
+          },
+          {
+            "name": "understood_method",
+            "field": "memo",
+            "quote": "やり方が分かって",
+            "kind": "STATE",
+            "polarity": "AFFIRMED",
+            "modality": "ASSERTED_AS_WRITTEN",
+            "about": "WRITTEN_PAST_UNRESOLVED_OCCASION",
+            "polarity_quote": null,
+            "time_quote": null
+          },
+          {
+            "name": "relief",
+            "field": "memo",
+            "quote": "安心した",
+            "kind": "STATE",
+            "polarity": "AFFIRMED",
+            "modality": "ASSERTED_AS_WRITTEN",
+            "about": "WRITTEN_PAST_UNRESOLVED_OCCASION",
+            "polarity_quote": null,
+            "time_quote": null
+          }
+        ],
+        "links": [
+          {
+            "name": "action_link",
+            "kind": "SOURCE_WRITTEN_CONTINUATIVE_LINK",
+            "left": "guidance_received",
+            "right": "listened_to_end",
+            "field": "memo_action",
+            "quote": "植え替えの手順を叔父に説明してもらい、最後まで聞いた"
+          },
+          {
+            "name": "memo_link",
+            "kind": "SOURCE_WRITTEN_TE_LINK",
+            "left": "understood_method",
+            "right": "relief",
+            "field": "memo",
+            "quote": "やり方が分かって安心した"
+          }
+        ],
+        "bindings": [
+          {
+            "section": "observation",
+            "claim_refs": [
+              "guidance_received",
+              "listened_to_end"
+            ],
+            "relation_refs": [
+              "action_link"
+            ]
+          },
+          {
+            "section": "reception",
+            "claim_refs": [
+              "understood_method",
+              "relief"
+            ],
+            "relation_refs": [
+              "memo_link"
+            ]
+          }
+        ]
+      }
+    },
+    "knit": {
+      "family": "KNIT_UNKNOWN_V3",
+      "original": {
+        "id": "FT-KNIT-O",
+        "memo": "ほどくのは面倒だった。さみしさも少しあった。二つがどうつながるかは、自分でも分からない。",
+        "memo_action": "今日は編みかけの見本をほどいた。",
+        "category": [
+          "生活"
+        ],
+        "emotions": [
+          "悲しみ"
+        ],
+        "emotion_details": [
+          {
+            "type": "悲しみ",
+            "strength": "weak"
+          }
+        ],
+        "created_at": "2026-10-26T00:00:00Z",
+        "is_secret": false
+      },
+      "target": null,
+      "focus": null,
+      "question": null,
+      "gap_description": "置いていかれたように感じた理由は未記載。",
+      "initial": {
+        "provenance": {
+          "id": "FT-KNIT-INITIAL",
+          "status": "PROPOSED_KAREN_EDIT_NOT_TRAINED_NOT_ADMITTED_NOT_HUMAN_ACCEPTED",
+          "origin": "KAREN_NEW_FICTITIOUS_SUPPLEMENT",
+          "source_refs": [],
+          "source_bundle": {
+            "original": {
+              "id": "FT-KNIT-O",
+              "memo": "ほどくのは面倒だった。さみしさも少しあった。二つがどうつながるかは、自分でも分からない。",
+              "memo_action": "今日は編みかけの見本をほどいた。",
+              "category": [
+                "生活"
+              ],
+              "emotions": [
+                "悲しみ"
+              ],
+              "emotion_details": [
+                {
+                  "type": "悲しみ",
+                  "strength": "weak"
+                }
+              ]
+            },
+            "question_budget_total": 1,
+            "question_budget_remaining": 1
+          },
+          "old_generic_target": {
+            "observation": "編みかけの見本をほどき、面倒だったことと、少しさみしかったことを記録したのですね。",
+            "reception": "その二つがどうつながるかは、まだ分からないのですね。今はうまく結び付けられなくても、どちらもあったこととして受け取りたいです。",
+            "question": null,
+            "update_note": null,
+            "grounded_points": [
+              {
+                "source_id": "FT-KNIT-O",
+                "fields": [
+                  "memo",
+                  "memo_action",
+                  "emotion_details"
+                ]
+              }
+            ],
+            "unknowns": [
+              "面倒さとさみしさの関係は、本人が分からないと明示している。"
+            ]
+          },
+          "proposed_surface": {
+            "observation": "編みかけの見本をほどいたのですね。面倒だったことと、少しさみしかったことが、どちらもあったのですね。",
+            "reception": "二つがどうつながるのかは、まだ分からないのですね。分からないところも含めて、今の言葉として聞いていたいです。",
+            "question": null,
+            "update_note": null
+          },
+          "native_packet_prepared": false,
+          "question_origin": null,
+          "limits": "Planning examples only. No model generation or native adoption. Original source, questions and old teacher bytes remain unchanged.",
+          "teacher_source": {
+            "path": "Cocolon_前提資料/observation_learning/training/2026-10-24-emlis-free-pilot/sft_examples.jsonl",
+            "commit": "8eeb8e4c5577cc00fab53b3de413a894172ac5e1",
+            "row_id": "FT-KNIT-INITIAL"
+          },
+          "candidate_reference": {
+            "path": "Cocolon_前提資料/observation_learning/training/2026-10-23-pilot-prep/sft_candidates.jsonl",
+            "commit": "d57fe2205cfa74d018b2a33a1e4e74ca6837310d",
+            "blob_sha": "1bac939575e93ece2b383948043548cef1f17d65",
+            "candidate_id": "SUP-KNIT-UNKNOWN",
+            "original_messages": [
+              {
+                "role": "system",
+                "content": "渡された記録だけから、指定された観測技術の部分課題に答えてください。本人の発言と過去の問いを区別し、問いの前提を本人の事実にしないでください。未確認の動機・他者の気持ち・因果・人格を足さず、否定・留保・時点・訂正対象を保ってください。"
+              },
+              {
+                "role": "user",
+                "content": "記録された行動・受け止め・不明を短く整理してください。並んだ記述を原因と結果に変えないでください。\n\n【本人の記録】\n今日は編みかけの見本をほどいた。ほどくのは面倒だった。さみしさも少しあった。二つがどうつながるかは、自分でも分からない。"
+              },
+              {
+                "role": "assistant",
+                "content": "編みかけの見本をほどき、面倒だったことと、さみしさも少しあったことを記録しています。面倒さとさみしさがどうつながるかは、自分でも分からないと述べています。"
+              }
+            ]
+          },
+          "author_added_input_fields": {
+            "category": [
+              "生活"
+            ],
+            "emotions": [
+              "悲しみ"
+            ],
+            "emotion_details": [
+              {
+                "type": "悲しみ",
+                "strength": "weak"
+              }
+            ]
+          }
+        },
+        "surface": {
+          "observation": "編みかけの見本をほどいたのですね。面倒だったことと、少しさみしかったことが、どちらもあったのですね。",
+          "reception": "二つがどうつながるのかは、まだ分からないのですね。分からないところも含めて、今の言葉として聞いていたいです。",
+          "question": null,
+          "update_note": null
+        },
+        "roles": [
+          {
+            "name": "unravelled",
+            "field": "memo_action",
+            "quote": "今日は編みかけの見本をほどいた",
+            "kind": "EVENT",
+            "polarity": "AFFIRMED",
+            "modality": "ASSERTED_AS_WRITTEN",
+            "about": "WRITTEN_PAST_UNRESOLVED_OCCASION",
+            "polarity_quote": null,
+            "time_quote": null
+          },
+          {
+            "name": "burden",
+            "field": "memo",
+            "quote": "ほどくのは面倒だった",
+            "kind": "STATE",
+            "polarity": "AFFIRMED",
+            "modality": "ASSERTED_AS_WRITTEN",
+            "about": "WRITTEN_PAST_UNRESOLVED_OCCASION",
+            "polarity_quote": null,
+            "time_quote": null
+          },
+          {
+            "name": "sadness",
+            "field": "memo",
+            "quote": "さみしさも少しあった",
+            "kind": "STATE",
+            "polarity": "AFFIRMED",
+            "modality": "ASSERTED_AS_WRITTEN",
+            "about": "WRITTEN_PAST_UNRESOLVED_OCCASION",
+            "polarity_quote": null,
+            "time_quote": null
+          },
+          {
+            "name": "stated_unknown",
+            "field": "memo",
+            "quote": "二つがどうつながるかは、自分でも分からない",
+            "kind": "EXPLICIT_UNKNOWN",
+            "polarity": "AFFIRMED",
+            "modality": "ASSERTED_AS_WRITTEN",
+            "about": "WRITTEN_PRESENT",
+            "polarity_quote": null,
+            "time_quote": null
+          }
+        ],
+        "links": [],
+        "bindings": [
+          {
+            "section": "observation",
+            "claim_refs": [
+              "unravelled",
+              "burden",
+              "sadness"
+            ],
+            "relation_refs": []
+          },
+          {
+            "section": "reception",
+            "claim_refs": [
+              "stated_unknown",
+              "burden",
+              "sadness"
+            ],
+            "relation_refs": []
+          }
+        ]
+      }
+    }
+  }
+}

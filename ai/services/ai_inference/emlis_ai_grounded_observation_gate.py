@@ -10127,6 +10127,166 @@ def _evaluate_emlis_model_daily_calm_surface_inverse(proposal, meaning_packet, n
     return tuple(traces)
 
 
+def _evaluate_emlis_model_v3_surface_inverse(proposal, meaning_packet, native):
+    """Independent bounded Japanese recognition, never a second body author.
+
+    Re-read complete fields here rather than calling the admission recognizer.
+    Literal quotations alone cannot license a changed subject, polarity, time,
+    perceived reality, unknown target, or the direction of an explanation.
+    """
+    def fail(code):
+        raise ValueError("model_surface_v3_" + code)
+    sources = native.get("source_fields", {})
+    originals = [(sid,f) for sid,f in sources.items() if "memo" in f and "memo_action" in f]
+    if len(originals) != 1:
+        fail("original_source_invalid")
+    sid, fields = originals[0]
+    patterns = (
+        ("BOOK_CONCERN_V3", r"(?P<late_return>借りていた本を返すのが遅れて)、(?P<apologize>友人に謝った)。",
+         r"(?P<reassurance_received>大丈夫って言ってくれた)けど、(?P<remaining_concern>まだちょっと気になる)。"),
+        ("SHOP_DISTANCE_V3", r"(?P<opening_known>昔からの友人が店を開いたと知って)、(?P<celebration_sent>お祝いのメッセージを送った)。",
+         r"(?P<joy>うれしかった)けど、(?P<felt_left_behind>少し置いていかれた気がした)。"),
+        ("REPOT_RECEPTION_V3", r"(?P<guidance_received>植え替えの手順を叔父に説明してもらい)、(?P<listened_to_end>最後まで聞いた)。",
+         r"(?P<understood_method>やり方が分かって)(?P<relief>安心した)。"),
+        ("KNIT_UNKNOWN_V3", r"(?P<unravelled>今日は編みかけの見本をほどいた)。",
+         r"(?P<burden>ほどくのは面倒だった)。(\s*)(?P<sadness>さみしさも少しあった)。(\s*)(?P<stated_unknown>二つがどうつながるかは、自分でも分からない)。"),
+    )
+    found = [(family, re.fullmatch(ap, fields.get("memo_action", "")), re.fullmatch(mp, fields.get("memo", "")))
+             for family,ap,mp in patterns if re.fullmatch(ap,fields.get("memo_action","")) and re.fullmatch(mp,fields.get("memo",""))]
+    if len(found) != 1 or found[0][0] != native.get("family"):
+        fail("source_family_invalid")
+    family, action, memo = found[0]
+    expected = {}
+    for match,field in ((action,"memo_action"),(memo,"memo")):
+        expected.update({name:(sid,field,text) for name,text in match.groupdict().items()})
+    after = native.get("stage") == "AFTER_EXPLANATION"
+    if native.get("stage") not in {"INITIAL","AFTER_EXPLANATION"}:
+        fail("stage_invalid")
+    answers = [(key,value) for key,value in sources.items() if "answer_text_private" in value]
+    if bool(answers) != after or len(sources) != 1 + int(after) or len(answers) > 1:
+        fail("source_stage_invalid")
+    if after:
+        aid, af = answers[0]
+        text = af["answer_text_private"]
+        if family == "BOOK_CONCERN_V3":
+            ap = (r'(?P<self_statement>自分から「週末に返すね」と言っていた)のに、(?P<late_awareness>遅くなると分かった)時点で(?P<no_contact>連絡しなかった)ことです。\n\n'
+                  r'(?P<returned>本は返した)のですが、「(?P<counterfactual>一言、遅くなるって伝えておけばよかったな)」と、(?P<continuing_concern>まだ気になっています)。')
+        elif family == "SHOP_DISTANCE_V3":
+            ap = (r'(?P<shared_talk>以前、その友人と「いつか店をやれたらいいね」と話していたことがあるんです)。'
+                  r'(?P<no_joint_preparation>具体的に一緒に準備をしていたわけでも)、(?P<no_promise>約束していたわけでもありません)。\n\n'
+                  r'でも、開店したと聞いたとき、(?P<perceived_realization>二人で話していた未来が、友人の方ではもう現実になっていたんだな、と感じました)。'
+                  r'(?P<answer_joy>うれしい)のに、(?P<felt_distance>あの話を一緒にしていた頃から少し離れてしまったようで)、(?P<answer_sadness>寂しかったです)。')
+        else:
+            fail("initial_only")
+        matched = re.fullmatch(ap,text)
+        if matched is None:
+            fail("answer_source_invalid")
+        expected.update({name:(aid,"answer_text_private",quote) for name,quote in matched.groupdict().items()})
+    roles = native.get("roles",{})
+    if set(roles) != set(expected):
+        fail("role_coverage_invalid")
+    for name,(source_id,field,quote) in expected.items():
+        role = roles[name]
+        text = sources[source_id][field]
+        if (role.get("source_id"),role.get("field_path"),role.get("text")) != (source_id,field,quote):
+            fail("role_source_invalid")
+        if text.count(quote) != 1 or role.get("start") != text.index(quote) or role.get("end") != text.index(quote)+len(quote):
+            fail("role_source_invalid")
+    candidate = meaning_packet["candidate"]
+    if family == "KNIT_UNKNOWN_V3":
+        u = candidate["unknowns"]
+        if (len(u)!=1 or u[0]["kind"]!="PERSON_STATED" or u[0]["target_claim_refs"] != [roles[n]["claim_ref"] for n in ("burden","sadness")]
+                or u[0]["description"] != expected["stated_unknown"][2]):
+            fail("unknown_target_invalid")
+    def clean(value):
+        return re.sub(r"[\s、,。「」『』]", "", value)
+    tail = r"(?:のですね|んですね|ということですね)"
+    grammar=[]
+    def add(pattern, names, relations=(), *, section=None):
+        grammar.append((re.compile(pattern),set(names),set(relations),section))
+    if family == "BOOK_CONCERN_V3" and not after:
+        add(r"本を返すのが遅れて友人に謝り大丈夫と言われてもまだ少し気がかりが残っている"+tail,
+            ("late_return","apologize","reassurance_received","remaining_concern"),("action_link","memo_link"),section="observation")
+        add(r"大丈夫と言ってもらえたこともまだ気になることも聞いていたいです",
+            ("reassurance_received","remaining_concern"),("memo_link",),section="reception")
+        required={"observation":{"late_return","apologize","reassurance_received","remaining_concern"},"reception":{"reassurance_received","remaining_concern"}}
+    elif family == "BOOK_CONCERN_V3":
+        add(r"遅くなると分かった時に連絡しなかったことが今も気になっている"+tail,
+            ("late_awareness","no_contact","continuing_concern"),("awareness_time",),section="observation")
+        add(r"本を返してもあの時に一言伝えておけばという思いは残っている"+tail,
+            ("returned","counterfactual","continuing_concern"),("returned_concession","concern_content"),section="reception")
+        add(r"何が気になっているのか話してくださってありがとうございます",
+            ("remaining_concern","no_contact"),("answer_explains_target",),section="reception")
+        add(r"気がかりの対象が遅れると分かった時に連絡しなかったことだと説明されました",
+            ("remaining_concern","late_awareness","no_contact"),("answer_explains_target","awareness_time"),section="update_note")
+        required={"observation":{"late_awareness","no_contact","continuing_concern"},"reception":{"returned","counterfactual","continuing_concern"},"update_note":{"remaining_concern","no_contact"}}
+    elif family == "SHOP_DISTANCE_V3" and not after:
+        add(r"友人の開店を知ってお祝いのメッセージを送りうれしさと少し置いていかれたような感覚があった"+tail,
+            ("opening_known","celebration_sent","joy","felt_left_behind"),("action_link","memo_link"),section="observation")
+        add(r"開店を喜ぶ気持ちと少し置いていかれたような感覚をどちらも聞いていたいです",
+            ("joy","felt_left_behind"),("memo_link",),section="reception")
+        required={"observation":{"opening_known","celebration_sent","joy","felt_left_behind"},"reception":{"joy","felt_left_behind"}}
+    elif family == "SHOP_DISTANCE_V3":
+        add(r"二人で話していた未来が友人の方ではもう現実になっていたんだなと感じた"+tail,
+            ("shared_talk","perceived_realization"),("past_reference",),section="observation")
+        add(r"(?:その一方で)?あの話を一緒にしていた頃から少し離れてしまったようで寂しかった"+tail,
+            ("felt_distance","answer_sadness"),("distance_link",),section="observation")
+        add(r"一緒に準備したり約束したりしていたわけではなくても二人で話した時間はあった"+tail,
+            ("no_joint_preparation","no_promise","shared_talk"),section="reception")
+        add(r"開店のうれしさもその頃から離れたような寂しさも受け取りました",
+            ("answer_joy","felt_distance","answer_sadness"),("answer_concession","distance_link"),section="reception")
+        add(r"本人の説明で二人で話していた未来とあの頃からの距離が気持ちに関わっていたことが分かりました",
+            ("shared_talk","perceived_realization","felt_left_behind","felt_distance","answer_sadness"),("past_reference","answer_explains_target"),section="update_note")
+        add(r"共同準備や約束があったことにはしません",("no_joint_preparation","no_promise"),section="update_note")
+        required={"observation":{"shared_talk","perceived_realization","felt_distance","answer_sadness"},"reception":{"no_joint_preparation","no_promise","shared_talk","answer_joy","felt_distance","answer_sadness"},"update_note":{"felt_left_behind","felt_distance","no_joint_preparation","no_promise"}}
+    elif family == "REPOT_RECEPTION_V3":
+        add(r"叔父に植え替えの手順を説明してもらい最後まで聞いた"+tail,
+            ("guidance_received","listened_to_end"),("action_link",),section="observation")
+        add(r"やり方が分かって安心できてよかった(?:です|ですね)",
+            ("understood_method","relief"),("memo_link",),section="reception")
+        required={"observation":{"guidance_received","listened_to_end"},"reception":{"understood_method","relief"}}
+    else:
+        add(r"編みかけの見本をほどいた"+tail,("unravelled",),section="observation")
+        add(r"面倒だったことと少しさみしかったことがどちらもあった"+tail,("burden","sadness"),section="observation")
+        add(r"二つがどうつながるのかはまだ分からない"+tail,("stated_unknown","burden","sadness"),section="reception")
+        add(r"分からないところも含めて今の言葉として聞いていたいです",("stated_unknown",),section="reception")
+        required={"observation":{"unravelled","burden","sadness"},"reception":{"stated_unknown","burden","sadness"}}
+    if set(proposal) != {"observation","reception","update_note","bindings"}:
+        fail("section_shape_invalid")
+    bindings = {row["section"]:row for row in proposal["bindings"]}
+    if len(bindings)!=len(proposal["bindings"]) or set(bindings)!=set(required):
+        fail("section_coverage_invalid")
+    relation_roles=native["relation_roles"]
+    seen, traces=set(),[]
+    for section in ("observation","reception","update_note"):
+        value=proposal[section]
+        if value is None:
+            if section in required or section!="update_note":
+                fail("section_invalid")
+            continue
+        if type(value) is not str or not value.strip() or re.search(r"[！？!?]",value) or section not in bindings:
+            fail("section_invalid")
+        names,relations,sentences=set(),set(),[]
+        for match in re.finditer(r"[^。]+[。]?",value):
+            sentence=clean(match[0])
+            matches=[(ns,rs) for pattern,ns,rs,where in grammar if where==section and pattern.fullmatch(sentence)]
+            if len(matches)!=1 or sentence in seen:
+                fail("sentence_not_read")
+            seen.add(sentence); ns,rs=matches[0]; names|=ns; relations|=rs
+            sentences.append(dict(start=match.start(),end=match.end(),claim_refs=tuple(sorted(roles[n]["claim_ref"] for n in ns)),relation_refs=tuple(sorted(relation_roles[n] for n in rs))))
+        expected_claims={roles[n]["claim_ref"] for n in names}
+        expected_relations={relation_roles[n] for n in relations}
+        binding=bindings[section]
+        if (not sentences or not required[section] <= names or set(binding["claim_refs"])!=expected_claims
+                or len(binding["claim_refs"])!=len(expected_claims) or set(binding["relation_refs"])!=expected_relations
+                or len(binding["relation_refs"])!=len(expected_relations)):
+            fail("binding_or_coverage_invalid")
+        if section=="update_note" and (not after or set(binding["update_refs"])!=set(range(len(candidate["updates"])))):
+            fail("update_coverage_invalid")
+        traces.append(dict(section=section,claim_refs=tuple(sorted(expected_claims)),relation_refs=tuple(sorted(expected_relations)),sentences=tuple(sentences)))
+    return tuple(traces)
+
+
 def evaluate_emlis_model_surface_inverse(*, proposal, meaning_packet, native_bindings):
     """Independently read a bounded repair/reuse profile's proposed Japanese.
 
@@ -10136,6 +10296,8 @@ def evaluate_emlis_model_surface_inverse(*, proposal, meaning_packet, native_bin
     claim references alone never makes a sentence faithful. General Japanese
     fidelity and product naturalness are deliberately not claimed here.
     """
+    if native_bindings.get("family") in {"BOOK_CONCERN_V3", "SHOP_DISTANCE_V3", "REPOT_RECEPTION_V3", "KNIT_UNKNOWN_V3"}:
+        return _evaluate_emlis_model_v3_surface_inverse(proposal, meaning_packet, native_bindings)
     if native_bindings.get("family") == "DAILY_CALM_V1":
         return _evaluate_emlis_model_daily_calm_surface_inverse(proposal, meaning_packet, native_bindings)
 

@@ -400,6 +400,34 @@ def validate_question_binding(thread: AdmittedEmlisThread, plan) -> None:
         raise ValueError("emlis_question_noncanonical")
 
 
+def _model_v3_question_candidate(prepared, native, meaning, *, parent_request_id, respect_control):
+    """The actual one-question target, never a provider-created pending ID."""
+    family = native["family"]
+    choices = {
+        "BOOK_CONCERN_V3": ("remaining_concern", "PERSONAL_CONCERN_TARGET", "何が気になりますか？"),
+        "SHOP_DISTANCE_V3": ("felt_left_behind", "PERSONAL_FEELING_REASON", "「少し置いていかれた気がした」のはなぜですか？"),
+    }
+    if native["stage"] != "INITIAL" or family not in choices:
+        return EmlisQuestionDecisionV1("END", decision_reason="model_question_target_unavailable"), None
+    role, focus, prompt = choices[family]
+    thread = prepared.thread
+    control = thread.control.question_control_context
+    ref = native["roles"][role]["claim_ref"]
+    gaps = [g for g in meaning["unknowns"] if g["kind"] == "NOT_STATED" and g["target_claim_refs"] == [ref]]
+    if len(gaps) != 1:
+        return EmlisQuestionDecisionV1("END", decision_reason="model_question_target_unavailable"), None
+    target = identity("emlis-target", thread.original.envelope.envelope_id,
+        prepared.checkpoint.snapshot_ref, ref, gaps[0]["unknown_id"], focus)
+    if (respect_control and control.pending_question is not None) or target in control.asked_target_refs:
+        return EmlisQuestionDecisionV1("END", decision_reason="model_question_target_already_asked"), None
+    evidence = (identity("model-question-evidence", prepared.checkpoint.snapshot_ref, native["roles"][role]),)
+    decision = EmlisQuestionDecisionV1("ASK", target, focus, evidence, focus.lower(), (ref,), (ref,),
+        control.asked_target_refs if respect_control else (), "source_bound_personal_explanation_missing")
+    question = EmlisClarificationV1(identity("emlis-question", thread.control.thread_id, target, prepared.checkpoint.snapshot_ref),
+        parent_request_id, thread.control.thread_id, thread.original.envelope.envelope_id, decision, prompt)
+    return decision, question
+
+
 def model_question_candidate(prepared, *, parent_request_id: str, respect_control: bool = True):
     """Issue one source-derived question for an admitted private model profile.
 
@@ -422,6 +450,8 @@ def model_question_candidate(prepared, *, parent_request_id: str, respect_contro
         return EmlisQuestionDecisionV1("END", decision_reason="model_question_not_proposed"), None
     native = json.loads(prepared.native_bindings_json)
     meaning = json.loads(prepared.meaning_json)["candidate"]
+    if native.get("family") in {"BOOK_CONCERN_V3", "SHOP_DISTANCE_V3"}:
+        return _model_v3_question_candidate(prepared, native, meaning, parent_request_id=parent_request_id, respect_control=respect_control)
     roles = native["roles"]
     if native["stage"] != "INITIAL" or not {"solo_appraisal_object", "joy"} <= set(roles):
         return EmlisQuestionDecisionV1("END", decision_reason="model_question_target_unavailable"), None

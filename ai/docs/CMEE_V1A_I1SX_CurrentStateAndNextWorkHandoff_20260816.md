@@ -23030,3 +23030,16 @@ Cocolonの新4Bpackは実sourceに一致するchair初回／訂正後2教師（�
 全変更path・private型・actual本文／snapshotはCocolon全file地図01A／shared01／Emlis02／schema05／実装順06／current maps／最新weekly第8回の実装節と、新4Bpackのcpu_connection_results.jsonへ同期する。通常API/DTO/DB schema/RN・依存仕様・Render・merge/deployは変更0。GPU起動・有料推論・重み取得・学習0。学習前に単価／期限／支出枠／mount／Pod外退避先・停止を具体化する。16GB優先／24GB許容は方針で、適合実証・自動借り直しの許可ではない。
 
 STRUCTURE_MAP_DELTA_PRESENT（private offline ownerと新profile）。正式Product Read0/3／PRODUCT_NOT_CLEAR／candidate_ready=false／automatic_progression=falseは維持。一般語彙／自由な日本語／Plus/Premium／Piece/Analysisの実モデル接続、通常有効化・本人端末の完成には拡張しない。
+
+
+## 2026-10-26 — 承認済み4題材6教材のprivate版3接続（限定CPU完了）
+
+Mash承認c97d6794、再試行指示でJupyter直接接続が復旧。API4002b457を保持した独立copyへ、既存emlis_semantic_admission/model_candidate_source/emlis_question/emlis_ai_grounded_observation_gateの4ownerだけを変更した。BOOK/SHOPは実初回pendingと同priorから説明ADD、元claim/relation保持、gapのみ失効、時点別update、Free一回答END。REPOTは原格/受領/理解と安心、KNITはPERSON_STATEDの二対象不明を保持して初回END。完全sourceからadmission/adapter3を選び、引用一致だけで意味/本文を認定しない。旧chair1/daily2、外側snapshot.v3/checkpoint.v4/profile.v1/wire、公開API/DTO/DB/RN/通常app/依存/型数/30秒と明示offline180秒は保持。
+
+独立手製test_cmee_emlis_sixrow.py/fixtureの新112を含む対象394成功/0fail/skip0/2deselected。新6SQL状態で意味保存後中断→同snapshot明示retry→保存後GET/start NoGenerationとイベント非増加。旧18構成（chair2/daily16）のsnapshot/meaning/native/surface/question/outcome/両形式messagesは1,851,616bytes全一致SHAeab937b04fc88a07308f451526549595a2ccef95dfa1495720af0b705c498af8。新native6はEOS/切捨てなしcontext8192 max7935。全6actual本文を原文に照合し、BOOK弱程度とSHOP否定/知覚、REPOT主客、KNIT二対象不明を保持した。
+
+途中attempt01は対象外FB172 plugin importがFastAPI不足でsetup停止、旧172ledgerと対象8fileの一致0を確認して限定-p no指定。attempt02は69/6でfixture根拠indexとstale envelope、attempt03は392/4で偽pending負例のparent2と未変更HTTP/FastAPI依存2。最終は対象外HTTP2を明示除外し394/0。製品4sourceは初回転送以降不変、補正はtest/起動のみ。HTTP/Auth/native/live DBを成功に換算しない。新依存0、失敗log/XMLを上書きせず保持。
+
+新native6/実意味と本文/token長/4試行履歴/最終pytest/旧互換hash/CPU runner/source manifestはCocolon `Cocolon_前提資料/observation_learning/training/2026-10-26-unconnected-native/`、全file地図01A・共有設計01/02/05・current maps/全体00/weekly§56を同単位で同期。BOOK/SHOP回答target3178/3561は旧2560出力上限超過だが全context内、今回上限変更や新GPUplanを自動開始せず次の具体条件へ残す。旧adapter45779/旧API/native9不変。
+
+限定TECHNICAL_CREDIT/STRUCTURE_MAP_DELTA_PRESENT、新dataclass0、商品0/正式0/3/54.50％/candidate_ready=false/automatic_progression=false。実4B model読込/forward/学習/生成0、新観測会は本件不要。root華恋/Codex Work/GPT-6が単一writer、2agent read-only補助で正式Pro/Ultra/human承認ではない。Render/Supabase/本人DB/通常app/merge/deploy/管理console/一覧/API/Stop/再起動/削除/新Pod/charge0。GPU稼働保持指示・保持料金は継続。
