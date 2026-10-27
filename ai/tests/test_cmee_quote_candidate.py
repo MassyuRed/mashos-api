@@ -204,3 +204,31 @@ def test_real_sql_quote_receipt_is_saved_and_reread_without_generation(case, db,
     after=run(service.store.read(user,input_id=parent))
     assert {k:v for k,v in before.items() if k!='now'}=={k:v for k,v in after.items() if k!='now'}
     assert len(calls)==1
+
+
+def test_quote_prior_hides_native_coordinates_without_mutating_saved_meaning():
+    from test_cmee_emlis_model_meaning import (
+        initial_model_request, model_answer, model_semantic,
+    )
+    req = initial_model_request()
+    initial = build_model_messages(req, candidate_format=QUOTE_CANDIDATE_SCHEMA)
+    prior = prepare_model_snapshot(req, model_semantic(req))
+    answer = model_answer(req, prior)
+    saved_before = prior.semantic_snapshot
+    meaning_before = prior.meaning_json
+    legacy = build_model_messages(answer, prior.semantic_snapshot)
+    native = json.loads(legacy[1]["content"])["prior_adopted_interpretation"]
+    quoted = build_model_messages(answer, prior.semantic_snapshot,
+                                  candidate_format=QUOTE_CANDIDATE_SCHEMA)
+    visible = json.loads(quoted[1]["content"])["prior_adopted_interpretation"]
+    expected = copy.deepcopy(native)
+    for item in expected["meaning_packet"]["evidence"]:
+        assert "start" in item and "end" in item
+        del item["start"], item["end"]
+    assert visible == expected
+    assert visible["meaning_packet"]["candidate"] == native["meaning_packet"]["candidate"]
+    assert prior.semantic_snapshot == saved_before and prior.meaning_json == meaning_before
+    assert json.loads(prior.meaning_json) == native["meaning_packet"]
+    assert build_model_messages(answer, prior.semantic_snapshot) == legacy
+    assert build_model_messages(req, candidate_format=QUOTE_CANDIDATE_SCHEMA) == initial
+

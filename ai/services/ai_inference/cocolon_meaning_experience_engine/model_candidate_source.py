@@ -268,6 +268,17 @@ def build_model_messages(request, prior_snapshot_json=None, *, candidate_format=
             "unknown_id must match [A-Za-z0-9_.-]{1,64}, distinct from claim_id/relation_id. "
             "Use exact current/prior unknown IDs in references; description is separate."
         )
+        if prior is not None:
+            # This is a model-facing copy, never the saved/adopted packet.
+            # Source text uses quote-only addresses here; leaving the prior's
+            # native scalar offsets mixed a competing numeric format into
+            # the very same prompt. Retain the evidence rows/order/quotes
+            # and all meaning/IDs, while CMEE keeps the original full proof.
+            prior = json.loads(_json(prior))
+            for evidence in prior["meaning_packet"]["evidence"]:
+                evidence.pop("start", None)
+                evidence.pop("end", None)
+            body["prior_adopted_interpretation"] = prior
         for source in material["sources"]:
             del source["field_unicode_spans"]
         spec["shape"] = dict(schema_version=QUOTE_CANDIDATE_SCHEMA,
@@ -381,4 +392,5 @@ class ModelCandidateSource:
             return receive_candidate(prepared, request_id=prepared.request_id,
                 raw_output=result.raw_output if type(result.raw_output) is str else None,
                 finish_reason="error", elapsed_seconds=time.monotonic()-started)
+
 
