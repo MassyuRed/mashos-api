@@ -264,6 +264,10 @@ def build_model_messages(request, prior_snapshot_json=None, *, candidate_format=
         system = system.replace("最上位はcandidateとevidenceだけです。",
             "最上位はschema_versionとcandidateとevidence_quotesだけです。schema_versionは" + QUOTE_CANDIDATE_SCHEMA + "です。")
         body["model_output_format"] = QUOTE_CANDIDATE_SCHEMA
+        spec["unknown_id_constraints"] = (
+            "unknown_id must match [A-Za-z0-9_.-]{1,64}, distinct from claim_id/relation_id. "
+            "Use exact current/prior unknown IDs in references; description is separate."
+        )
         for source in material["sources"]:
             del source["field_unicode_spans"]
         spec["shape"] = dict(schema_version=QUOTE_CANDIDATE_SCHEMA,

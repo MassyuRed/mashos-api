@@ -127,6 +127,9 @@ def test_quote_prompt_is_explicit_and_old_prompt_bytes_are_the_default():
     new = build_model_messages(req, candidate_format=QUOTE_CANDIDATE_SCHEMA)
     body = json.loads(new[1]['content'])
     assert body['model_output_format'] == QUOTE_CANDIDATE_SCHEMA
+    assert '[A-Za-z0-9_.-]{1,64}' in body['output_spec']['unknown_id_constraints']
+    assert 'prior unknown IDs' in body['output_spec']['unknown_id_constraints']
+    assert 'unknown_id_constraints' not in json.loads(old[1]['content'])['output_spec']
     assert set(body['output_spec']['shape']) == {'schema_version','candidate','evidence_quotes'}
     assert 'field_unicode_spans' not in new[1]['content']
     assert 'with exact full-field coordinates' not in new[1]['content']

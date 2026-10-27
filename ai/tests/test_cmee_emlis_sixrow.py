@@ -175,6 +175,8 @@ def test_messages_are_stage_specific_preserve_full_fields_and_correct_unknown_sh
     req,p,_,prior=state(topic,after)
     messages=build_model_messages(req,prior.semantic_snapshot if prior else None,candidate_format=QUOTE_CANDIDATE_SCHEMA)
     payload=json.loads(messages[1]['content']); spec=payload['output_spec']; shape=spec['shape']['candidate']
+    assert '[A-Za-z0-9_.-]{1,64}' in spec['unknown_id_constraints']
+    assert 'missing_explanation' not in spec['unknown_id_constraints']
     fields=payload['material']['sources'][0]['text_fields']; raw=req.current_input_bundle.raw_current_input
     assert fields['memo']==raw['memo'] and fields['memo_action']==raw['memo_action']
     assert spec['role_order']==[r['name'] for r in FIXTURE[topic]['initial']['roles']]+([r['name'] for r in FIXTURE[topic]['after']['roles']] if after else [])
@@ -316,3 +318,25 @@ def test_real_sql_six_states_interrupt_after_meaning_retry_same_snapshot_and_sav
     reread=run(service.store.read(user,input_id=parent))
     assert {k:v for k,v in saved.items() if k!='now'}=={k:v for k,v in reread.items() if k!='now'}
     assert len(calls)==call_count
+
+
+@pytest.mark.parametrize('topic', ['book', 'shop', 'knit'])
+@pytest.mark.parametrize('unknown_id,legal', [
+    ('missing_reason', True), ('u' * 64, True), ('気がかり', False),
+    ('', False), ('u' * 65, False), ('has space', False), ('COLLIDE_WITH_CLAIM', False),
+])
+def test_unknown_id_contract_keeps_legal_aliases_and_rejects_invalid_identifiers(topic, unknown_id, legal):
+    req, _, _, prior = state(topic, False)
+    packet = fixture_packet(req, topic, prior)
+    candidate = packet['candidate']
+    if unknown_id == 'COLLIDE_WITH_CLAIM':
+        unknown_id = candidate['claims'][0]['claim_id']
+    candidate['unknowns'][0]['unknown_id'] = unknown_id
+    if candidate['question_proposal'] is not None:
+        candidate['question_proposal']['target_unknown_ref'] = unknown_id
+    if legal:
+        adopted = prepare_model_snapshot(req, semantic(req, packet, prior))
+        assert unknown_id in adopted.meaning_json
+    else:
+        with pytest.raises(SemanticNotAdopted, match='unknown_not_source_bound'):
+            prepare_model_snapshot(req, semantic(req, packet, prior))
