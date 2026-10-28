@@ -222,3 +222,29 @@ def test_valid_chair_answer_cannot_opt_itself_into_named_v3_family():
             prior_snapshot_json=prior.semantic_snapshot,semantic_profile=MODEL_PROFILE))
     with pytest.raises(ValueError,match='explanation_required'):
         build_model_messages(req,prior.semantic_snapshot,candidate_format=named.SCHEMA)
+
+
+@pytest.mark.parametrize('topic', ['book', 'shop'])
+def test_named_prompt_prior_roundtrip_keeps_all_meanings_quotes_and_saved_bytes(topic):
+    req, _, _, prior, _, _ = after(topic)
+    saved = prior.semantic_snapshot
+    quote_messages = build_model_messages(req, saved, candidate_format=named.QUOTE)
+    quoted = json.loads(quote_messages[1]['content'])
+    messages = build_model_messages(req, saved, candidate_format=named.SCHEMA)
+    body = json.loads(messages[1]['content'])
+    before = quoted['prior_adopted_interpretation']
+    projected = body['prior_adopted_interpretation']
+    decoded = named.decode(projected['meaning_packet'])
+    assert decoded['candidate'] == before['meaning_packet']['candidate']
+    assert decoded['evidence_quotes'] == before['meaning_packet']['evidence']
+    assert projected['snapshot_ref'] == before['snapshot_ref']
+    assert projected['semantic_profile'] == before['semantic_profile']
+    assert body['material'] == quoted['material']
+    assert prior.semantic_snapshot == saved
+    assert build_model_messages(req, saved, candidate_format=named.QUOTE) == quote_messages
+    for role in body['output_spec']['clause_roles'].values():
+        assert not {'about_time', 'modality', 'time_expression'} & role.keys()
+        assert {'time', 'mode', 'expr'} <= role.keys()
+    # Calling the projection repeatedly never mutates the adopted snapshot.
+    assert build_model_messages(req, saved, candidate_format=named.SCHEMA) == messages
+
