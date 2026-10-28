@@ -372,9 +372,19 @@ def _named_reference_messages(original):
             if 'operation' in value:out['$id']='$unique_update_name'
             return out
         return value
-    spec['shape']={'v':codec.SCHEMA,'a':{'s0':'$actual_source_id','p0':'$actual_prior_snapshot_ref'},'c':translate_shape(old_shape['candidate']),
-        'q':[{'id':'$unique_quote_name','s':'@$source_alias','f':q['field_path'],'t':q['quote']} for q in old_shape['evidence_quotes']]}
-    spec['named_wire']={k:v for k,v in codec.specification().items() if k not in ('root','schema')}
+    candidate_shape=translate_shape(old_shape['candidate'])
+    addition=candidate_shape['updates'][0]
+    addition['op']='ADD'
+    gap=copy.deepcopy(addition)
+    gap.update(op='INVALIDATE_GAP',replace=[])
+    candidate_shape['updates']=[addition,gap]
+    shape={'v':codec.SCHEMA,
+        'a':{'s0':'$original_input_source_id','s1':'$supplemental_answer_source_id','p0':'$actual_prior_snapshot_ref'},
+        'q':[{'id':'$unique_quote_name','s':'@$source_alias','f':q['field_path'],'t':q['quote']} for q in old_shape['evidence_quotes']],
+        'c':candidate_shape}
+    # The selected shape already spells every compact key. A second long-key
+    # dictionary is redundant here and competes with the selected notation.
+    spec['named_wire']={'preservation':codec.specification()['preservation']}
     spec['coordinates']='q lists model-selected exact source quotes, each with unique id, identity alias s from a, field f and quote text t. Every actual source/prior identity must be explicitly copied into a. Preserve quote order. Quotes occur exactly once in their source field. No coordinates or inferred evidence.'
     spec['references']='ev contains output q.id names. ur contains $id names of output updates. All other claim/relation/unknown refs retain their original kinds and namespaces. Every semantic reference must be provided by the model. Never count array positions.'
     spec['notation']='Emit minified named-wire JSON. Field aliases affect syntax only; all semantic rules, claim duties, update counts/operations, scope and prose requirements below are unchanged. Examples are element shapes, not counts.'
@@ -387,8 +397,27 @@ def _named_reference_messages(original):
             for long,short in sorted(codec.KEYS.items(),key=lambda x:-len(x[0])):
                 value=value.replace(long,short)
             spec[key]=value.replace('evidence=','ev=')
+    # Instruction prose and output fields must not share names with different
+    # types. Only the candidate shape contains the actual output field names.
+    for field in ('meaning','axes','coordinates','references','relations','unknowns','updates','prose','question'):
+        if field in spec:
+            spec[field+'_requirements']=spec.pop(field)
+    addition_count=len(spec['role_order'])-len(prior['meaning_packet']['c']['claims'])
+    spec['updates_requirements'] += ' Emit '+str(addition_count)+' ADDs in added role order, then one INVALIDATE_GAP: '+str(addition_count+1)+' total updates.'
+    spec['output_types']=(
+        'Flat root: v is the version STRING, a an identity object, q an array, c a candidate object. '
+        'c.prose is an object: observation, reception, update_note are Japanese strings addressed to the person; binds is an array. '
+        'c.updates is an array. ur lists only this output updates.$id, never a relation ID or gap ID. '
+        'prior_adopted_interpretation is read-only context. Its a/q names are local there; declare every used identity and quote in your own a/q. '
+        'updates.prior uses the snapshot alias @p0, not a source alias. '
+        'The JSON starts with the literal prefix `{"v":"'+codec.SCHEMA+'","a":`; continue with the a object. Never nest a packet inside v.'
+    )
+    spec['shape']=shape
     user['model_output_format']=codec.SCHEMA
-    messages[1]['content']=json.dumps(user,ensure_ascii=False,separators=(',',':'),sort_keys=True)
+    # Present current material and prior first; the final complete shape is the
+    # new output, in the same v/a/q/c order as the unchanged training targets.
+    user['output_spec']=user.pop('output_spec')
+    messages[1]['content']=json.dumps(user,ensure_ascii=False,separators=(',',':'),allow_nan=False)
     return messages
 
 @dataclass(frozen=True, slots=True)
@@ -494,6 +523,7 @@ class ModelCandidateSource:
             return receive_candidate(prepared, request_id=prepared.request_id, **receipt_options,
                 raw_output=result.raw_output if type(result.raw_output) is str else None,
                 finish_reason="error", elapsed_seconds=time.monotonic()-started)
+
 
 
 

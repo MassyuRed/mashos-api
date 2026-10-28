@@ -248,3 +248,48 @@ def test_named_prompt_prior_roundtrip_keeps_all_meanings_quotes_and_saved_bytes(
     # Calling the projection repeatedly never mutates the adopted snapshot.
     assert build_model_messages(req, saved, candidate_format=named.SCHEMA) == messages
 
+
+@pytest.mark.parametrize('topic,count', [('book', 7), ('shop', 8)])
+def test_named_prompt_output_types_and_namespaces_match_unchanged_complete_fixture(topic,count):
+    req, _, _, prior, packet, wire = after(topic)
+    body=json.loads(build_model_messages(req,prior.semantic_snapshot,candidate_format=named.SCHEMA)[1]['content'])
+    spec=body['output_spec']
+    assert list(body)[-1]=='output_spec' and list(spec)[-1]=='shape'
+    assert list(spec['shape'])==list(wire)==['v','a','q','c']
+    assert spec['shape']['v']==wire['v']==named.SCHEMA
+    assert set(spec['shape']['a'])=={'s0','s1','p0'}
+    assert not {'prose','updates','relations','unknowns','question'} & spec.keys()
+    assert 'key_aliases' not in spec['named_wire']
+    shape=spec['shape']['c']
+    assert isinstance(shape['prose'],dict) and isinstance(shape['prose']['binds'],list)
+    assert all(isinstance(shape['prose'][k],str) for k in ('observation','reception','update_note'))
+    assert [(u['op'],u['replace']) for u in shape['updates']]==[('ADD',['$new_meaning_id']),('INVALIDATE_GAP',[])]
+    actual=packet['candidate']['updates']
+    assert len(actual)==count and [u['operation'] for u in actual]==['ADD']*(count-1)+['INVALIDATE_GAP']
+    assert str(count)+' total updates' in spec['updates_requirements']
+    # IDs are arbitrary names, not role labels. A legal renaming in the prior
+    # context must not change the number of newly required answer meanings.
+    from cocolon_meaning_experience_engine.model_candidate_source import _named_reference_messages
+    quoted=build_model_messages(req,prior.semantic_snapshot,candidate_format=named.QUOTE)
+    context=json.loads(quoted[1]['content'])
+    mapping={c['claim_id']:'prior_claim_'+str(i) for i,c in enumerate(context['prior_adopted_interpretation']['meaning_packet']['candidate']['claims'])}
+    def rename(value):
+        if isinstance(value,str):return mapping.get(value,value)
+        if isinstance(value,list):return [rename(x) for x in value]
+        if isinstance(value,dict):return {k:rename(v) for k,v in value.items()}
+        return value
+    context['prior_adopted_interpretation']['meaning_packet']=rename(context['prior_adopted_interpretation']['meaning_packet'])
+    quoted[1]['content']=canonical(context)
+    renamed=json.loads(_named_reference_messages(quoted)[1]['content'])
+    assert renamed['output_spec']['updates_requirements']==spec['updates_requirements']
+    assert {c['cid'] for c in renamed['prior_adopted_interpretation']['meaning_packet']['c']['claims']}==set(mapping.values())
+    assert 'only this output updates.$id' in spec['output_types']
+    assert 'snapshot alias @p0, not a source alias' in spec['output_types']
+    # The complete independent teacher still traverses the unmodified receiver
+    # and native readers; prompt type clarification supplies no missing meaning.
+    receipt=received(req,canonical(wire))
+    prepared=prepare_model_snapshot(req,SemanticInput('FRESH_CANDIDATE',receipt,
+        prior_snapshot_json=prior.semantic_snapshot,semantic_profile=MODEL_PROFILE))
+    assert json.loads(prepared.semantic_snapshot)['packet']['candidate']==packet['candidate']
+
+
