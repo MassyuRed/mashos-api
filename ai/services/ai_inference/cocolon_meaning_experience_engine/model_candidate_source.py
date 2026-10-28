@@ -373,6 +373,9 @@ def _named_reference_messages(original):
             return out
         return value
     candidate_shape=translate_shape(old_shape['candidate'])
+    # Define update IDs before prose bindings refer to them. Object order is
+    # presentation only; preserve every semantic value and array order.
+    candidate_shape['prose']=candidate_shape.pop('prose')
     addition=candidate_shape['updates'][0]
     addition['op']='ADD'
     gap=copy.deepcopy(addition)
@@ -406,8 +409,8 @@ def _named_reference_messages(original):
     spec['updates_requirements'] += ' Emit '+str(addition_count)+' ADDs in added role order, then one INVALIDATE_GAP: '+str(addition_count+1)+' total updates.'
     spec['output_types']=(
         'Flat root: v is the version STRING, a an identity object, q an array, c a candidate object. '
-        'c.prose is an object: observation, reception, update_note are Japanese strings addressed to the person; binds is an array. '
         'c.updates is an array. ur lists only this output updates.$id, never a relation ID or gap ID. '
+        'Write c.updates before c.prose. c.prose is an object: observation, reception, update_note are Japanese strings addressed to the person; binds is an array. '
         'prior_adopted_interpretation is read-only context. Its a/q names are local there; declare every used identity and quote in your own a/q. '
         'updates.prior uses the snapshot alias @p0, not a source alias. '
         'The JSON starts with the literal prefix `{"v":"'+codec.SCHEMA+'","a":`; continue with the a object. Never nest a packet inside v.'

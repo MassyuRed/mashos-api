@@ -60,8 +60,12 @@ def after(topic='book'):
 
 
 @pytest.mark.parametrize('topic,count',[('book',7),('shop',8)])
-def test_actual_named_raw_replay_native_meaning_body_all_updates_and_saved_resume(topic,count):
+@pytest.mark.parametrize('updates_first',[False,True])
+def test_actual_named_raw_replay_native_meaning_body_all_updates_and_saved_resume(topic,count,updates_first):
     req,old,old_out,prior,packet,wire = after(topic)
+    if updates_first:
+        wire['c']['prose']=wire['c'].pop('prose')
+        assert list(wire['c']).index('updates') < list(wire['c']).index('prose')
     raw = ' \n'+json.dumps(wire,ensure_ascii=False,indent=1)+'\n'
     receipt = received(req,raw)
     assert receipt.status == 'CANDIDATE_UNREVIEWED'
@@ -261,6 +265,7 @@ def test_named_prompt_output_types_and_namespaces_match_unchanged_complete_fixtu
     assert not {'prose','updates','relations','unknowns','question'} & spec.keys()
     assert 'key_aliases' not in spec['named_wire']
     shape=spec['shape']['c']
+    assert list(shape).index('updates') < list(shape).index('prose')
     assert isinstance(shape['prose'],dict) and isinstance(shape['prose']['binds'],list)
     assert all(isinstance(shape['prose'][k],str) for k in ('observation','reception','update_note'))
     assert [(u['op'],u['replace']) for u in shape['updates']]==[('ADD',['$new_meaning_id']),('INVALIDATE_GAP',[])]
