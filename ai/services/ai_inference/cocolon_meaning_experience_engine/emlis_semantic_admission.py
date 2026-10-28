@@ -1672,12 +1672,14 @@ def _prepare_model_snapshot(request, semantic_input):
             "prior_snapshot","receipt","answer_count","question_control","snapshot_ref","proposal_ref"})
         if _json(p) != semantic_input.snapshot_json:
             _model_fail("snapshot_not_canonical")
-        packet = _receipt(material,CandidateReceipt(**p["receipt"]))
+        model_receipt = CandidateReceipt(**p["receipt"])
+        packet = _receipt(material,model_receipt)
         prior = p["prior_snapshot"]
     elif semantic_input.mode == "FRESH_CANDIDATE":
         if semantic_input.snapshot_json is not None or request.emlis_thread.prepared_meaning_checkpoint_ref is not None:
             _model_fail("same_prefix_readoption_forbidden")
-        packet = _receipt(material,semantic_input.receipt)
+        model_receipt = semantic_input.receipt
+        packet = _receipt(material,model_receipt)
         prior = json.loads(semantic_input.prior_snapshot_json) if semantic_input.prior_snapshot_json else None
         p = dict(schema_version=MODEL_SCHEMA,semantic_profile=MODEL_PROFILE,admission_version="1",adapter_version="1",
             request_ref=material.request_id,source_prefix_ref=thread.source_prefix_ref,source_bindings=_source_binding(material),
@@ -1701,6 +1703,11 @@ def _prepare_model_snapshot(request, semantic_input):
         if control.question_control_context.stop or control.question_control_context.issued_count != 1:
             _model_fail("answer_control_invalid")
     native = _model_packet(packet,material,thread,prior)
+    from .named_reference_wire import SCHEMA as NAMED_FORMAT
+    if json.loads(model_receipt.metadata_json).get("candidate_format") == NAMED_FORMAT:
+        if (native.get("family") not in {"BOOK_CONCERN_V3", "SHOP_DISTANCE_V3"}
+                or native.get("stage") != "AFTER_EXPLANATION"):
+            _model_fail("named_reference_explanation_required", "UNSUPPORTED")
     # Source-derived versioning keeps all old chair snapshots byte-identical.
     # A saved or generated family/version label cannot select its own parser.
     version = "3" if native.get("family") in _MODEL_V3_FAMILIES else "2" if native.get("family") == "DAILY_CALM_V1" else "1"

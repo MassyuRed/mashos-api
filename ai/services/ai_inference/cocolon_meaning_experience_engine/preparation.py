@@ -240,7 +240,7 @@ def _check_evidence(request, candidate):
 
 def receive_candidate(request, *, request_id, raw_output, finish_reason,
                       provider=None, model=None, revision=None, usage=None,
-                      elapsed_seconds=None, adapter_revision=None):
+                      elapsed_seconds=None, adapter_revision=None, candidate_format=None):
     """Retain raw response/metadata; nothing here adopts or generates meaning.
 
     No provider is called. Timeout/length/error always dominate parse success;
@@ -261,12 +261,22 @@ def receive_candidate(request, *, request_id, raw_output, finish_reason,
             type(k) is not str or (v is not None and (type(v) is not int or v < 0))
             for k, v in usage.items())):
         raise ValueError("preparation_usage_invalid")
+    from .named_reference_wire import SCHEMA as NAMED_FORMAT, loads as named_loads, decode as decode_named
+    if candidate_format not in (None, NAMED_FORMAT):
+        raise ValueError("preparation_candidate_format_invalid")
     candidate = None
     if raw_output is None or not raw_output.strip():
         status = "EMPTY"
     else:
         try:
-            candidate = _candidate(raw_output)
+            if candidate_format == NAMED_FORMAT:
+                material = request.payload()
+                if (material["core"] != "emlis" or material["tier"] != "free"
+                        or material["task"] != "EMLIS_ANSWER_MATERIAL"):
+                    raise ValueError("named_offline_free_answer_required")
+                candidate = decode_named(named_loads(raw_output))
+            else:
+                candidate = _candidate(raw_output)
             # JSON exponent overflow and unpaired Unicode are not candidates.
             _json(candidate).encode("utf-8")
             if "evidence_quotes" in candidate:
@@ -287,6 +297,8 @@ def receive_candidate(request, *, request_id, raw_output, finish_reason,
     # can bind the actual adapter identity separately from the base revision.
     if adapter_revision is not None:
         metadata["adapter_revision"] = adapter_revision
+    if candidate_format is not None:
+        metadata["candidate_format"] = candidate_format
     return CandidateReceipt(request_id, status, raw_output,
                             _json(candidate) if candidate is not None else None, _json(metadata))
 
