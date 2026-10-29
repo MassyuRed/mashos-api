@@ -1704,10 +1704,13 @@ def _prepare_model_snapshot(request, semantic_input):
             _model_fail("answer_control_invalid")
     native = _model_packet(packet,material,thread,prior)
     from .named_reference_wire import SCHEMA as NAMED_FORMAT
-    if json.loads(model_receipt.metadata_json).get("candidate_format") == NAMED_FORMAT:
+    from .fixed_rows_reference_wire import SCHEMA as ROWS_FORMAT
+    wire_format = json.loads(model_receipt.metadata_json).get("candidate_format")
+    if wire_format in {NAMED_FORMAT, ROWS_FORMAT}:
         if (native.get("family") not in {"BOOK_CONCERN_V3", "SHOP_DISTANCE_V3"}
                 or native.get("stage") != "AFTER_EXPLANATION"):
-            _model_fail("named_reference_explanation_required", "UNSUPPORTED")
+            _model_fail("fixed_rows_explanation_required" if wire_format == ROWS_FORMAT
+                        else "named_reference_explanation_required", "UNSUPPORTED")
     # Source-derived versioning keeps all old chair snapshots byte-identical.
     # A saved or generated family/version label cannot select its own parser.
     version = "3" if native.get("family") in _MODEL_V3_FAMILIES else "2" if native.get("family") == "DAILY_CALM_V1" else "1"

@@ -262,14 +262,19 @@ def receive_candidate(request, *, request_id, raw_output, finish_reason,
             for k, v in usage.items())):
         raise ValueError("preparation_usage_invalid")
     from .named_reference_wire import SCHEMA as NAMED_FORMAT, loads as named_loads, decode as decode_named
-    if candidate_format not in (None, NAMED_FORMAT):
+    from .fixed_rows_reference_wire import SCHEMA as ROWS_FORMAT, decode as decode_rows, accepts_material
+    if candidate_format not in (None, NAMED_FORMAT, ROWS_FORMAT):
         raise ValueError("preparation_candidate_format_invalid")
     candidate = None
     if raw_output is None or not raw_output.strip():
         status = "EMPTY"
     else:
         try:
-            if candidate_format == NAMED_FORMAT:
+            if candidate_format == ROWS_FORMAT:
+                if not accepts_material(request.payload()):
+                    raise ValueError("fixed_rows_offline_free_explanation_required")
+                candidate = decode_rows(named_loads(raw_output))
+            elif candidate_format == NAMED_FORMAT:
                 material = request.payload()
                 if (material["core"] != "emlis" or material["tier"] != "free"
                         or material["task"] != "EMLIS_ANSWER_MATERIAL"):
