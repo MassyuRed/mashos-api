@@ -242,11 +242,9 @@ async def owner_history(request: Request) -> JSONResponse:
         return features.failure(exc, OWNER_READ_STATUS)
 
 
-@router.get('/{piece_id}')
-async def owner_detail(piece_id: str, request: Request) -> JSONResponse:
-    """Return the exact saved body and recipe for subsequent owner display."""
+async def _read_owner_artifact(piece_id: str, request: Request, *, exporting: bool = False) -> JSONResponse:
     from piece_v2_owner_service import PieceOwnerService, OWNER_READ_STATUS, load_saved_records
-    features = _OperationFeatures(request, 'piece_v2_owner_read_enabled')
+    features = _OperationFeatures(request, 'piece_v2_export_enabled' if exporting else 'piece_v2_owner_read_enabled')
     try:
         owner = await _authenticated_owner(request)
         features.require()
@@ -259,6 +257,22 @@ async def owner_detail(piece_id: str, request: Request) -> JSONResponse:
         return _response(result)
     except Exception as exc:
         return features.failure(exc, OWNER_READ_STATUS)
+
+
+@router.get('/{piece_id}/export')
+async def owner_export(piece_id: str, request: Request) -> JSONResponse:
+    """Reauthorize local export against the current owner and saved artifact.
+
+    Ordinary detail remains available when export is stopped. No image,
+    receipt, regeneration or quota consumption is introduced by this read.
+    """
+    return await _read_owner_artifact(piece_id, request, exporting=True)
+
+
+@router.get('/{piece_id}')
+async def owner_detail(piece_id: str, request: Request) -> JSONResponse:
+    """Return the exact saved body and recipe for subsequent owner display."""
+    return await _read_owner_artifact(piece_id, request)
 
 
 _OWNER_MUTATION_STATUS = {

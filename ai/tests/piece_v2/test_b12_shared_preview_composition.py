@@ -165,6 +165,7 @@ def test_candidate_reuses_factory_without_changing_default_routes_or_registry(sh
     expected[('DELETE', VISUAL_ROUTE)] = 1
     expected[('POST', '/emotion/piece/save')] = 1
     expected[('GET', '/emotion/piece/history')] = 1
+    expected[('GET', '/emotion/piece/{piece_id}/export')] = 1
     expected[('GET', '/emotion/piece/{piece_id}')] = 1
     expected[('DELETE', '/emotion/piece/{piece_id}')] = 1
     assert counts == expected
@@ -436,6 +437,57 @@ def owner_candidate(kind, **changes):
 def owner_get(app, path='history', **options):
     options.setdefault('headers', {'Authorization': 'Bearer synthetic-owner'})
     return send(app, 'GET', '/emotion/piece/' + path, **options)
+
+
+@pytest.mark.parametrize('kind', ['preview', 'shared'])
+@pytest.mark.parametrize('side', ['export_requested', 'export_ready', 'owner_read_requested', 'owner_read_ready'])
+@pytest.mark.parametrize('value', [False, None, 1, 'true'])
+def test_export_requires_independent_strict_permission_and_owner_read(owner_env, kind, side, value):
+    settings = dict(export_requested=True, export_ready=True)
+    settings[side] = value
+    app = owner_candidate(kind, **settings)
+    row = owner_env['rows'][0]
+    result = owner_get(app, row['id'] + '/export')
+    assert result.status_code == 503 and result.json() == DISABLED
+    assert result.headers['cache-control'] == 'no-store'
+    assert owner_env['reads'] == []
+    if side.startswith('export'):
+        assert owner_get(app, row['id']).status_code == 200
+
+
+@pytest.mark.parametrize('kind', ['preview', 'shared'])
+def test_export_reads_exact_saved_artifact_without_generation_or_writes(owner_env, kind):
+    app = owner_candidate(kind, export_requested=True, export_ready=True)
+    row = owner_env['rows'][0]
+    before = copy.deepcopy(row)
+    result = owner_get(app, row['id'] + '/export')
+    assert result.status_code == 200
+    owner_env['helper']['_detail'](result.json(), row)
+    assert result.headers['cache-control'] == 'no-store'
+    if kind == 'shared':
+        assert result.headers['x-cocolon-contract-id'] == 'emotion.piece.export.v2'
+    assert row == before and len(owner_env['reads']) == 1
+
+
+@pytest.mark.parametrize('kind', ['preview', 'shared'])
+@pytest.mark.parametrize('cause', ['unauthenticated', 'other_owner', 'deleted', 'stop_during_read', 'owner_read_stop'])
+def test_export_rejects_missing_owner_or_stopped_operation(owner_env, kind, cause):
+    app = owner_candidate(kind, export_requested=True, export_ready=True)
+    row = owner_env['rows'][0]
+    options = {}
+    if cause == 'unauthenticated':
+        options['headers'] = {}
+    elif cause == 'other_owner':
+        options['headers'] = {'Authorization': 'Bearer synthetic-viewer'}
+    elif cause == 'deleted':
+        row['lifecycle_status'] = 'deleted'
+    else:
+        flag = 'piece_v2_owner_read_enabled' if cause == 'owner_read_stop' else 'piece_v2_export_enabled'
+        owner_env['after_read'] = lambda: app.state.piece_v2_runtime['ready'].update({flag: False})
+    result = owner_get(app, row['id'] + '/export', **options)
+    assert result.status_code == (401 if cause == 'unauthenticated' else
+        404 if cause in ('other_owner', 'deleted') else 503)
+    assert row['piece_text'] not in result.text
 
 
 @pytest.mark.parametrize('kind', ['preview', 'shared'])

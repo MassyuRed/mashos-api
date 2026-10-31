@@ -87,6 +87,8 @@ def create_piece_preview_application(*, preview_requested: bool = False,
                                      save_ready: bool = False,
                                      owner_read_requested: bool = False,
                                      owner_read_ready: bool = False,
+                                     export_requested: bool = False,
+                                     export_ready: bool = False,
                                      owner_delete_requested: bool = False,
                                      owner_delete_ready: bool = False):
     """Compose existing preview, owner recovery, source and bootstrap handlers.
@@ -106,8 +108,9 @@ def create_piece_preview_application(*, preview_requested: bool = False,
     pair AND effective preview. Its readiness covers the existing PCE-7 atomic
     RPC/quota/monitoring prerequisites; runtime values and quota.can_save do
     not establish it. Registration does not admit a native renderer or fit.
-    No public write, visibility mutation, public read or export operation can
-    be enabled by this composition.
+    Native export preparation has a strict requested/ready pair AND owner
+    read. It returns the existing saved artifact, never a regenerated image.
+    No public write, visibility mutation or public read can be enabled here.
     Actual Auth/DB/device admission and production cutover remain separate.
     """
     requested = dict.fromkeys(PIECE_FEATURE_NAMES, False)
@@ -118,6 +121,8 @@ def create_piece_preview_application(*, preview_requested: bool = False,
     ready['piece_v2_save_enabled'] = save_ready is True
     requested['piece_v2_owner_read_enabled'] = owner_read_requested is True
     ready['piece_v2_owner_read_enabled'] = owner_read_ready is True
+    requested['piece_v2_export_enabled'] = export_requested is True
+    ready['piece_v2_export_enabled'] = export_ready is True
     requested['piece_v2_delete_enabled'] = owner_delete_requested is True
     ready['piece_v2_delete_enabled'] = owner_delete_ready is True
     configuration = {'requested': requested, 'ready': ready}
@@ -131,7 +136,7 @@ def create_piece_preview_application(*, preview_requested: bool = False,
     from fastapi import FastAPI
     from api_app_bootstrap import register_app_bootstrap_routes
     from api_piece_v2 import (read_quota, create_preview, mutate_preview_visual, cancel_preview, save_preview,
-                             owner_history, owner_detail, owner_delete)
+                             owner_history, owner_detail, owner_export, owner_delete)
     from piece_v2_source_ref_http import read_original_source_ref
 
     app = FastAPI(openapi_url=None, docs_url=None, redoc_url=None)
@@ -156,6 +161,7 @@ def create_piece_preview_application(*, preview_requested: bool = False,
     app.add_api_route('/emotion/piece/quota', read_quota, methods=['GET'])
     app.add_api_route('/emotion/piece/save', save_preview, methods=['POST'])
     app.add_api_route('/emotion/piece/history', owner_history, methods=['GET'])
+    app.add_api_route('/emotion/piece/{piece_id}/export', owner_export, methods=['GET'])
     # Keep static paths before the owner-ID path. Shared composition also
     # preserves its additional static legacy paths before this same route.
     app.add_api_route('/emotion/piece/{piece_id}', owner_detail, methods=['GET'])

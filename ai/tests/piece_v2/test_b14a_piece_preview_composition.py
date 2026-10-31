@@ -102,6 +102,7 @@ def test_default_composition_has_only_existing_preview_and_bootstrap_handlers(co
         ('/emotion/piece/quota', ('GET',)),
         ('/emotion/piece/save', ('POST',)),
         ('/emotion/piece/history', ('GET',)),
+        ('/emotion/piece/{piece_id}/export', ('GET',)),
         ('/emotion/piece/{piece_id}', ('GET',)),
         ('/emotion/piece/{piece_id}', ('DELETE',)),
     }
@@ -249,7 +250,7 @@ def test_factory_does_not_import_or_modify_production_or_legacy_application(comp
         return original(name, *args, **kwargs)
     monkeypatch.setattr(builtins, '__import__', guarded)
     app = enabled()
-    assert len(app.routes) == 11
+    assert len(app.routes) == 12
     assert app is not composition_env['app']
 
 
@@ -310,3 +311,4 @@ def test_existing_http_runtime_validation_preserves_all_rejections(composition_e
         assert response.status_code == 503, value
         assert response.json() == {'code': 'PIECE_TEMPORARILY_UNAVAILABLE'}
     assert composition_env['service'] == composition_env['rpc'] == 0
+

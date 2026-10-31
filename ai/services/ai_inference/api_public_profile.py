@@ -78,7 +78,8 @@ def register_public_profile_routes(app):
             row = rows[0]
             user_id = row.get("id")
 
-            # 2) Read privacy flags (optional)
+            # Missing settings retain the existing default; a failed lookup
+            # cannot establish that the profile is public.
             is_private_account = False
             is_friend_code_public = True
             if user_id:
@@ -100,12 +101,12 @@ def register_public_profile_routes(app):
                         if v.get("is_friend_code_public") is not None:
                             is_friend_code_public = bool(v.get("is_friend_code_public"))
                 else:
-                    # Not fatal for Phase1; keep defaults.
                     logger.warning(
                         "Supabase visibility query failed: %s %s",
                         vis.status_code,
                         vis.text[:500],
                     )
+                    raise HTTPException(status_code=502, detail="Supabase visibility query failed")
 
             # Anti-enumeration: if user disabled public friend_code, behave as "not found".
             if not is_friend_code_public:
