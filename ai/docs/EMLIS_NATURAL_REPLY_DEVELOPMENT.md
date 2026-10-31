@@ -4,7 +4,7 @@
 
 Mashが承認した通常入力→自然な返答→保存→非生成の再読のsource準備。Q3の既存SQL・公開DTOを再利用し、private `natural_reply.v1`だけを追加した。新profileは初回本人宛本文のみ。観測用5段packet、意味checkpoint、3種類の可視本文を必須にしない。分析材料は`NOT_GENERATED`であり、返答を本人の事実へ逆流させない。
 
-10/31後続で固定4Bの実18生成と、実本文2件の隔離SQL保存・別service instance再読を確認した（末尾の実測記録）。本番HTTP・配置・新RN配布・本人端末は未実施。Free/Plusの実4B品質、Plus全蓄積からの関連履歴検索、新profileの任意問い・補足・frame訂正の反映、分析材料の生成・採用は未完成。既存本人履歴3/6件の原文受渡しの検査は、その完成とは別。過去記録にも既存Safety ownerを適用し、別Safety/自己否定の記録は通常返信の材料から除外する。過去の危機を今回の状態として扱わない。
+10/31後続の実4B/実HTTPS→隔離Q3保存・同一本文非生成再読は末尾の履歴に保持。最新は後続9（weekly§25）の18教師36更新・別保存reload/32EOS。T04本人宛化等は改善したが否定反転等でd691製品不採用、全32本文確認・新旧重み保全済み。次は別題材の事実保持/改変の対比ペアと最小学習修正案をCPUで具体化する。対比方式未導入・効果未確認。本番HTTP・配置・新RN配布・本人端末は未実施。Free/Plusの実4B品質、Plus全蓄積関連履歴、新profile問い/補足/frame訂正、分析材料は未完成。既存本人履歴3/6件の原文受渡し検査は完成とは別。過去記録にも既存Safety ownerを適用し、別Safety/自己否定の記録は通常返信から除外する。過去の危機を今回状態としない。
 
 ## 接続
 
@@ -275,3 +275,36 @@ NR01/02の自然さ・文脈、NR06の語尾反復には部分改善。NR03/04�
 次は単語単位の修正反復を止め、本人宛話者・感情所有・否定/限定同意を別題材で教える6教師草案R01〜06をCPU準備した。華恋の架空草案・未学習で、Mashの実演/承認済み正解ではない。read-only点検後、R04の発言由来/R06の同意範囲を最小推敲。旧12教師・今回までの評価原文は変更/教師転用0。旧12と一つのfull-assistant CE候補へまとめ、訓練順/更新数/予算/生成上限/保存再読/打切りを固定してから実行する。元af44を候補初期値として検討し、不採用6dacを自動継承しない。6草案のGPU投入・次runは未実行、追加観測会は現時点不要。
 
 primary BLOCKER_NARROWED。PRODUCT_NOT_CLEAR/正式0/3/54.50％維持。製品source/owner/公開DTO/DB/RN/料金/quota/期限/配置/main/公開/他中核変更0、STRUCTURE_MAP_DELTA_NONE（隔離した試験と教材草案のみ）。実emotion submit/本番factory/Auth/Supabase/Render/RN配布/本人端末/API・DB process再起動/新HTTP-SQL保存は未実行。
+
+
+## 後続9： 旧12＋別題材6の学習候補 — 本人宛化は改善、否定反転で不採用
+
+Mashの「作業を続けて」に従い、§24の次計画を一回実行した。fresh PR30 `23f4fd1b`/API PR3 `7954c7c6`、前提/作業規則・全機能現在地全文・最新weekly・観測学習の目的・実source/教師を確認。前監査以後は記録文書だけの差分で、全体設計/01A〜C全file地図/current maps/製品sourceは同一。既監査を再利用した。rootが実行・編集・判定・保存、補助agentはread-onlyの計画/source/全32本文監査。正式な別モデルPro審査やhuman Product Readとは数えない。
+
+### 後続9：1 18教師のfull-assistant CE、36更新と別保存再読
+
+不採用6dacを継承せず、元af44を試験初期値にした。旧12の原bytes/内容/全token-maskを保持し、Karen作成の架空6草案R01〜06を加えた。6草案をMash実演/承認済み正解へ昇格せず、評価入力の教師転用0。元SYSTEM/raw JSON・固定base851bf6e・既存pins/BF16/SDPA/LoRA112tensorは不変。新6もprompt全mask、assistant正文＋単一im_end改行を確認した。
+
+事前固定したseed42のshuffle2周・18件各2回＝実36optimizer更新、full-assistant CE/AdamW lr5e-5/weight_decay0/clip1。学習26.626393112004735秒/180秒、追加更新/再試行0。前後の計測forwardを更新へ加算しない。全18 NLLは低下、正文token加重平均1.262210→0.621972だが、生成品質の成功とは別。旧12の再学習も同時に行うため、変化を新6だけの効果に因果帰属しない。
+
+新weights SHA256 `d691295d90a61ea6feb45797b573fec66e6e6a6d30d20800fdde8dc2daf58696`、config `70b302945297947ba04178f4ef459537c6864305c1cbc9f7ff7d184374946da3`を別directoryに保存。全112tensor変化。元model/optimizerを解放し、fresh baseへ非学習reload、全112完全一致を確認。Pod外でも全112F32/3,833,856有限値とSHAを照合。旧af44/config・原12教師は前後不変。optimizer/RNG途中状態は保存せず、厳密な中断再開checkpointではない。
+
+### 後続9：2 全32本文 — 部分改善と重大退行を分ける
+
+教師18＋既使用診断12（NR01〜08/13/16/17/18）＋開始時モデル未使用NR19/20を各1回、実32生成・全EOS・欠測0/再試行0、約0.548〜2.330秒。生成promptはsystem/userのみ、正文正解/教材focus/provenanceを含めない。元greedy/非thinking/各call seed42/context8192/max2048/各23秒を維持。token→全文→索引で確定保存し、全32本文をrootが読んだ。全教師promptは学習prefixと完全一致。旧24件も同一messagesのaf44/6dacと比較した。
+
+T04は全文で本人宛化を確認し、T09は現在の非怒りと未納得を明確に分けた。NR13は本人内語・電車の誤記・悔しさ補完を外し、NR04は全文コピーを解消。NR16も父の楽しみを本人の感情へ直接移さず発言として返す。一方、NR03は「約束していない」を「約束していた」へ反転し、「離れたよう」の留保も確定へ変えた。コピーが解消しても意味が壊れており、重大な退行として新d691は製品不採用。
+
+R02には休んでいたという未記載の実行補完、NR07には本人の「私」を残す話者混在、NR02には予見時点→既成事実把握のずれがある。T10の不明の弱まり、R06の返事済→能力表現へのずれも残るが、受任承諾への反転とは数えない。R03は合格/喜びの情報選択の改善余地で、本人感情の反転/創作とは分ける。短い受取りや教師文字列不一致だけで不合格にしない。
+
+新19/20は大きな意味反転のない小範囲の返答候補。教師18/既使用12は適合・退行診断で、独立した新入力はこの2件だけ。一般品質合格・商品合格率を作らない。NR19/20は以後使用済み。
+
+### 後続9：3 保全・費用・次の一作業
+
+全体実行窓103.90146970748901秒/600秒、最後に確認した$0.58/hによる当該窓だけの按分約$0.01674。準備・待機・回収・記録・保持を含むレンタル全体の時間/請求額は不明。終了時GPU processなし/2MiB/0％、GPU Stop/restart/delete0でPod稼働保持。
+
+全教師/評価/encoded-mask/36更新順・loss/NLL/32本文・token/新重み/config/source/計画/予算/終了確認/新旧比較/全件判断/次案を[cocolon-recipient18-20261031.zip](https://chatgpt.com/library?file_id=libfile_d4944e909e3c8191acc8e9c4aa8e41e0&account_id=personal) version0へ保全。8member・14,344,648bytes・SHA256 `d1d268e9642253064c1e2a4e0296caddd2c466dc2729183929177e3aab7958c5`。同梱の未改変Pod原ZIPは58member/14,330,421bytes/SHA `c1ba9eda3c4c3e5dc61a0a13cd26e67acfea19915503c3662539df4c468e14bf`。個別のprivate入力/返答本文を公開GitHubへ転載しない。
+
+次は同full-assistant CEの教材追加/周回増加だけでGPUを反復せず、別題材の事実保持返答と事実改変返答の対比ペア、および最小の学習修正案をCPUで一つ具体化する。実誤答は失敗型の根拠とし、今回までの評価入力は教師へそのまま転用しない。対比/選好方式は未導入・効果未確認で、既存lossへ自動導入しない。loss対象/基準重み/更新予算/未使用評価/保存再読/停止を固定してから次のGPU実行を判断する。今回d691の自動継承/次学習0、追加観測会の依頼0。本人宛本文→通常API→保存→非生成再読→本人端末の完成条件を保持する。
+
+primary BLOCKER_NARROWED。PRODUCT_NOT_CLEAR/正式0/3/54.50％維持。製品source/owner/公開DTO/DB/RN/料金/quota/期限/配置/main/他中核変更0、STRUCTURE_MAP_DELTA_NONE（隔離した学習と本文確認のみ）。実emotion submit/本番factory/Auth/Supabase/Render/RN配布/本人端末/API・DB process再起動/新HTTP-SQL保存は未実行。
