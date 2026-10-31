@@ -41,4 +41,4 @@ Analysisの保存source adapterは最大3回答を全ID/round/owner束縛で保�
 
 検証：PGlite0.5.8の実Q2/Q3+新migration/実Python store/serviceを使用し、合成providerでnatural/Q3/提供toolの63 PASS / FAIL0 / SKIP0。Free除外、直近枠より古い関連選択、Premium4000日前、Plus権利、保存cohort固定、履歴/ANSWER revision/tier変更拒否、旧Q3再読、3回答・訂正・Safety・service専用権限、adapter identityとHTTP上限を含む。Analysisは新複数回答・既存保存/保存再読、既存verticalの補足/訂正関連177 PASS / FAIL0 / SKIP0、無関係なvertical425件は未実行。合成providerの結果を実モデル品質・本人実機へ換算しない。
 
-この後続の記録時点ではmigrationは適用前。実DB定義を照会し、現emlis_thread_commitの本文が旧migrationの7580文字と完全一致することを確認済み。適用・確認後の実績は全体現在地/weeklyへ追記する。
+実DB定義を照会し、変更前emlis_thread_commitの本文が旧migrationの7580文字と完全一致することを確認した後、Supabaseへmigrationを適用した（成功）。新RPC存在、service_roleのみ実行可、anon/authenticated実行不可、natural保存guardの存在を実DB metadataで確認。ユーザーデータへのprobe生成/保存は行っていない。稼働APIの更新は別途未完。
