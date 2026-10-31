@@ -4,7 +4,7 @@
 
 Mashが承認した通常入力→自然な返答→保存→非生成の再読のsource準備。Q3の既存SQL・公開DTOを再利用し、private `natural_reply.v1`だけを追加した。新profileは初回本人宛本文のみ。観測用5段packet、意味checkpoint、3種類の可視本文を必須にしない。分析材料は`NOT_GENERATED`であり、返答を本人の事実へ逆流させない。
 
-10/31後続の実4B/実HTTPS→隔離Q3保存・同一本文非生成再読は履歴保持。最新は後続10（weekly§26）の事実保持対比8組・DPO+chosenCE案のCPU具体化。数式6group/実tokenizer/旧12mask確認を4.676秒で完了、4B読込/更新/生成0。次は固定af44参照/初期値の28更新/30生成案を既存有限runnerへ最小接続し、一回の実4B試行へ進める。方式効果/VRAM/保存reload未確認、d691継承0/評価原文転用0。§25のd691不採用と全32本文保全は保持。本番HTTP・配置・新RN配布・本人端末、Plus全蓄積関連履歴、新profile問い/補足/frame訂正・分析材料は未完成。既存本人履歴3/6件の原文受渡し検査は完成とは別。過去記録にも既存Safety ownerを適用し、別Safety/自己否定を通常返信から除外する。過去の危機を今回状態としない。
+10/31後続の実4B/実HTTPS→隔離Q3保存・同一本文非生成再読は履歴保持。最新は後続11（weekly§27）の対比28更新/分割score誤差0/別保存freshreload112一致/30EOS。T04本人語り/NR07話者/NR13事実・内語が残り55e9不採用。旧3候補の重み/config不変。既存base8対af44同8はCPU照合して再生成0、base復帰だけも未解決。次はd691を製品不採用のまま隔離初期値/固定参照へ明示選択し、本人宛化から事実保持を直す一回案・未実行。55e9追加周回0/評価転用0。実emotion submit/本番HTTP・配置・新RN配布・本人端末、Plus全蓄積関連履歴、新profile問い/補足/frame訂正・分析材料は未完成。過去記録にも既存Safety ownerを適用し、別Safety/自己否定を通常返信から除外し、過去の危機を今回状態にしない。
 
 ## 接続
 
@@ -337,3 +337,42 @@ CPUの勾配式・tokenizerのcreditに限定する。実4Bのscore/勾配一致
 次はこの候補のlossを既存有限runnerへ最小接続し、元重み/encoded/固定参照値/分割score一致条件と予算を実行前に固定して、一回の実4B学習・保存reload・30本文確認へ進める。runner接続とGPU実行は今回未実施。d691の製品/初期値自動採用や同方式の周回追加へ戻らず、追加観測会は現時点不要。
 
 primary TECHNICAL_CREDIT（数式実装/CPU準備のみ）。PRODUCT_NOT_CLEAR/正式0/3/54.50％維持。製品source/owner/通常loss/公開DTO/DB/RN/料金/quota/期限/Render/Supabase/配置/main/他中核変更0、STRUCTURE_MAP_DELTA_NONE（隔離したCPU試験と未実行案だけ）。実emotion submit/本番Auth/RN配布/本人端末/新HTTP-SQL保存は未実行。
+
+
+## 後続11： 対比学習28更新と30返答 — 技術経路は成立、本人語り等が残り不採用
+
+Mashの続行指示により§26の一回案を実装・実行した。fresh PR30 `b9822b5b`/API PR3 `5deece41`、前提/作業規則・全機能現在地全文・最新weekly・観測学習の目的・実sourceを確認。前回以後は文書だけの差分で、設計/01A〜C全file地図/current maps/製品sourceは同一、既監査を再利用。rootが編集/実行/判断/保存、agentはsource/全30本文/数値/既存比較のread-only監査。正式な別モデルPro審査やhuman Product Readとは分ける。
+
+### 後続11：1 固定参照から実4Bの28更新・保存再読へ
+
+元af44/configを固定し、架空8pair・旧12教師・28順・SYSTEM/raw JSON・既存pins/固定base/BF16/SDPAを保持。評価原文の教師転用0、d691継承0。非学習af44でchosen/rejectedの参照16forwardをCPU scalar保存し、modelを解放してfresh base+trainable af44を読込み全112値一致を確認した。
+
+実28optimizer update＝pair16＋旧教師replay12、training forward76。beta.1+chosen meanCE.1/replay係数1/lr1e-5/weight_decay0/clip1/seed42。分割係数を計るforwardもbackward用と同じtrain/checkpoint/dropout0/精度/autograd有効にそろえ、直後detachしてgraphを保持しない。再計算abs1e-4/rtol0は事前固定、全16pairの実誤差は0。両branchのbackward後だけclip/stepした。学習39.044257秒/180秒、追加/再試行0。後測定16forwardは更新へ加算しない。
+
+全8の参照比DPO marginは正となったが、C06/C07の絶対chosen-minus-rejected SUMは依然負であり「8件とも良い側を選ぶようになった」とは言えない。自由生成・商品成功とも分離する。今回peak allocated8.783195GiB/reserved8.964844GiBはこの短い一回の実測で、一般入力や他環境の必要VRAMへ流用しない。
+
+新weights SHA256 `55e90885c5f7b12a61f2d51320212c29a7bf7cc0a0ecfa65b0374d20cd48a742`、config `c573a074f3b631f21f9c2373eddbe9884e6cd6ba848e32d324be232df858cb93`を別保存。全112tensor変化。model/optimizerを解放してfresh baseへ非学習reload、全112値一致。Pod外でも112F32/3,833,856有限値とSHAを照合した。参照JSONと旧af44/6dac/d691の3重み/configは前後不変。optimizer/RNGの厳密な途中再開checkpointは保存しない。
+
+### 後続11：2 全30本文の判定
+
+旧教師12＋pair prompt8＋既使用診断8＋開始時モデル未使用NR21/22を各1回、実30生成・全EOS・欠測0/再試行0、約0.484〜1.717秒。正解/誤答/理由は生成promptへ入れず、token→全文→索引の順に保存。rootが全30を読んだ。
+
+NR03は旧全文コピー/前d691の明示否定反転を避けて本人宛に返したが、「その頃からの寂しさ」は元の距離感と時点の扱いがずれた疑いがあり、約束/準備否定を保持した返答とは主張しない。NR04の本人宛化、NR16の父の期待を発言として返す点も部分改善。一方T04は本人語りが残り、NR07は本人「私」の混在、NR13は電車の事実ずれと本人内語が残る。55e9は製品不採用。
+
+T09は旧曖昧さを維持し、確定した怒り持続への反転と数えない。C05の不明の語り手、C08の本人の可能性からEmlisの可能性提示への移動も改善余地。新21の「了承→承知」は同意否定の厳密保持の証明にせず、明確な承諾成立の反転とも断定しない。新22/C04/C07/NR20等の短い受取りを短さだけで落とさない。新2件を一般合格へ広げず、NR21/22は以後使用済み。
+
+### 後続11：3 既存base8とaf44同8をCPUで直接照合、再生成せず
+
+次の判断にbase対af44の同条件比較を検討したが、§17のbase8と§21のaf44同8に原本があると監査で確認した。原Library version0を取得し、全messages/material一致と同固定revision/BF16/SDPA/SYSTEM/raw JSON/非thinking/greedy/max2048/context8192をsourceから照合。全8組の旧実本文をCPUで対照化し、新たな16生成を行わなかった。旧baseは各call seed再設定とraw token IDsを残していないため、厳密な数値再現・独立token照合を証明したとはしない。
+
+af44はNR01/02の語法/補完やNR08を改善する一方、NR03/04をコピーする。baseにもNR03の意味補完とNR08のコピーがあり、baseへ戻すだけを解決としない。これは既存実績の再読で、新しいbase生成/学習や商品creditに加算しない。
+
+### 後続11：4 費用・保全・次の一作業
+
+実行窓109.758419秒/600秒、最後の$0.58/hによる窓按分約$0.01768。準備/待機/回収/CPU整理/記録/保持を含むレンタル全体の時間/総請求額は不明。終了時対象processなし/GPU2MiB/0％、GPU Stop/restart/delete0で稼働保持。
+
+全実入力/30本文token/教師/encoded/28順/参照・後測定/step・forwardcounter/新重みconfig/source/固定予算/保存reload/終了/全件判断/旧base原本・af44比較/次案を[cocolon-preference28-20261031.zip](https://chatgpt.com/library?file_id=libfile_b9a56a0aa7f881919644397b132062fb&account_id=personal) version0へ保存。12member/14,437,521bytes/SHA256 `4798fc59c826dc61328a0e0be5b16120b513938900ab4fde7119813f755e9dcc`。同梱の未改変Pod原ZIPは61member/14,344,513bytes/SHA `1aaf632c2b83c63245764448d3d08b12ef33990629954e79d2e12d702e24172d`。個別private本文は公開GitHubへ載せない。
+
+次はT04/NR13本人宛化・T09現在否定が改善していたd691を、製品不採用のまま隔離実験の初期値/固定参照として明示選択する案。既存8pairの否定/主体/話者修正を同28更新の一回枠で適用し、その本人宛化を出発点に事実保持を直す。55e9の周回追加や候補の製品自動採用ではない。初期値と参照の組合せが変わる比較で、初期値だけの単独因果効果や成功保証は主張しない。d691での新しい参照16forwardを計測し、af44参照cacheは流用しない。NR03否定反転の是正とT04/NR13本人宛の維持を同時に確認する。両候補の改善が組み合わさるという未検証の仮説で、DPOによる是正/転移の保証はない。新評価2件は次の実行前に別題材で固定し、21/22を未使用へ戻さない。source/対象hash/予算/保存再読の固定と実行は次unit、今回この案の追加GPU0。追加観測会は現時点不要。
+
+primary TECHNICAL_CREDIT（実4Bの固定参照/分割更新/保存reload経路）。PRODUCT_NOT_CLEAR/正式0/3/54.50％維持。製品source/owner/通常loss/公開DTO/DB/RN/料金/quota/期限/Render/Supabase/配置/main/他中核変更0、STRUCTURE_MAP_DELTA_NONE（隔離した実験のみ）。実emotion submit/本番Auth/RN配布/本人端末/新HTTP-SQL保存は未実行。
