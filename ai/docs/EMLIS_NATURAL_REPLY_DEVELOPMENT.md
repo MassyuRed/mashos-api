@@ -148,3 +148,42 @@ Mashの「処理落ちしているから、続きから再開して」で、§19
 次は通常返答だけを対象にする**架空の教材候補12件とモデル未使用評価2件**をCPU準備。root華恋案でありMash実演/品質承認/訓練済ではない。主体/否定/時点/発言と感情の所有/理由不明を扱い、旧19教材/観測会/凍結評価は不変。評価2にassistant正解文を置かず、原材料を変えず現productのraw JSON提示へそろえた。教師の3つの語法/時点/否定をread-only点検後に最小修正。学習runner/mask/EOS/実token長/更新数/費用時間の固定はまだ必要で、追加学習の実行可能・効果・一般品質成功にはしない。
 
 全実結果・source pack・修復前後・失敗・終了・教材案は[cocolon-natural-reply-quality-followup-20261031.zip](https://chatgpt.com/library?file_id=libfile_6c7af4d2a68881919b3bd4fe8b63e561&account_id=personal)、version1、110member、7,335,671bytes、SHA256432fb4c1fd2fdcedb80285a9145f04e9ba22c8177be72e6280d87b1b77f57f20。個別本文は公開GitHubへ載せない。完成条件は引き続き、一般入力へ自然な返答→通常接続→同本文保存再読→本人端末での一巡であり、今回の部分結果を完成へ換算しない。
+
+
+<a id="recipient-fit24-20261031"></a>
+## 2026-10-31 後続5：通常返答12教師・24更新 — 保存重み再読込と10返答、全体品質は未達
+
+Mashの「作業を進めて」に従い、§20で準備した華恋の架空12教材を、固定Qwen3.5-4Bから作る別LoRAへ各2回、計24更新した。rootが全実行・書込を担当し、補助agentはread-only点検。全体現在地を全文、全体設計・全file地図・最新weekly・観測学習の目的・必読incident・実sourceをfresh確認した。旧fit38を初期値に使わず、通常返答だけを切り分けた。教材はMashの完成実演・品質承認済み教師ではない。旧19教材、観測会、凍結評価は変更しない。
+
+### 後続5：1 実際の学習と保存
+
+| 項目 | 確認事実 |
+|---|---|
+| 入力・loss | 現productのraw JSON/SYSTEM/非thinking/greedyを維持。既存run_pilot.pyのprefix一致・assistant-only mask・終端・teacher_loss方式を確認し使用。promptは-100、assistant正文＋単一im_end/改行だけ監督。最大train397token、切詰め0 |
+| 実更新 | seed42の固定shuffle 2epoch、12行×2＝24 training forward/optimizer。AdamW lr5e-5/weight_decay0/clip1。前後各12のNLL測定forwardは別カウント |
+| LoRA | r8/alpha16/dropout0。8full-attention層のq/k/v/o＋MLP gate/up/down、56module・112tensor・3,833,856param。112全tensorが変化、有限F32 |
+| 教師適合 | 12行の単純平均NLL 2.026144→1.198713、全12行低下。一般入力の品質合格には換算しない |
+| 保存再読 | 別directoryへ保存後にmodel/optimizerを解放し、新しい固定base objectへ非学習reload。全keys/shape/valueが保存112tensorと完全一致、eval/全requires_gradFalse |
+| Pod外保全 | 受領safetensorsのSHA一致、112tensor/3,833,856値のF32・有限性を別途確認。旧fit38/ad8bとconfigは実行前後不変 |
+
+新adapterのweights SHA256は `af44fdf40ada403d04b3b5ba1f14b6257b967f679549f1042dbee635ea707ae1`、configは `6568e73e87e56543afbc6b85a81c08b0a816767c353fab2accda10e5d4c5f817`。peak allocated9,418,122,752bytes/reserved9,506,390,016bytes。移行には固定base全重み/tokenizerも必要で、adapterだけの単独完全モデルではない。optimizer/RNGの途中状態は保存せず、学習途中の厳密再開には使えない。
+
+### 後続5：2 全10返答の読了結果
+
+保存版で既知8＋開始時にモデル未使用だったNR13/14を計10生成し、全EOS、約0.548〜2.074秒。既知8は§17のbase比較とmessages/material全文一致、NR13/14は教師から独立しassistant正解文を置かなかった。NR13/14は今回で使用済みとなり、今後の未使用評価へ戻さない。
+
+NR01の文法、NR02の未記載原因・感情補完、NR08の期待から経験への変換は旧base比で改善した。一方、NR03/04は原文全文の再掲、NR13は本人の内語をassistantが語り直し、本人宛返答として未達。NR03の否定文字列保持を意味理解の改善証明には数えない。これら3件を主根拠として**全体最低線は未達、製品採用0**。NR06の語尾反復、NR07の本人の安心への受取りの狭さ、NR14の事務的な温度感は改善余地として分ける。短い受取り・一度の言換えや「承知しました」単独を、新たな不合格条件にはしない。
+
+### 後続5：3 実HTTPS→隔離SQL→同一本文再読
+
+NR13/14は保存adapterを各1回、実HTTPSで呼び、既存render_emlis_ai_replyのpending/thread GETから実Q3 migration/RPC SQLへ保存。保存完了GETまで約2.097秒/2.341秒。source receipt・保存DTO・同Python processの別FastAPI app/service instanceによるGET4回・既存start2回は同一本文/eventで、追加生成なし。source各1回/OBSERVATION各1/分析NOT_GENERATED。手動artifact注入は使わなかった。
+
+入力row/Auth/factoryはfixture。実emotion submit全体、本番factory/Auth/Supabase/Render/API配置/RN配布/本人端末、API/DB process再起動は未確認。TLSはlocalhost SAN/明示CA検証、127.0.0.1だけ、Bearerはmemory内のみ。Jupyter token転用・公開port拡張0。前回の隔離Node/PGlite/Python環境を再利用し、新依存導入0。
+
+### 後続5：4 時間・終了・原本・次の修正対象
+
+CPU準備前からの1200秒枠に対し終了確認419.448秒、一回実行で追加更新/再試行なし。最後に表示された$0.58/hによる当該窓だけの按分は約$0.06758。レンタル全体・待機・記録整理・終了後保持の総時間/総請求額は不明。終了時probe processなし/GPU2MiB・0％。GPU Stop/restart/delete0でPod稼働保持。
+
+全source/固定plan/教師/評価/実encoded-mask/24更新順/loss/前後NLL/新adapterとconfig/全10本文・tokenIDs/HTTP-SQL-DTO/終了/Pod外検証を[cocolon-recipient-fit24-20261031.zip](https://chatgpt.com/library?file_id=libfile_9d7d7721f05081919b7e6edd5905f915&account_id=personal) version2へ保全。50member、16,674,663bytes、SHA256 `fccfdb708573a03ca7edc892c3fd02c898b4c9d10496e6b94ca30e0d2c0bf6ee`。個別本文は公開GitHubへ載せない。初期UNRUN表示と生成8件時点のroot_reviewはその時点の履歴であり、最終summary/全10結果/終了確認を優先する。
+
+今回のprimaryは限定TECHNICAL_CREDIT。全体品質・通常経路・本人端末一巡は残り、PRODUCT_NOT_CLEAR/正式0/3/54.50％維持。次は全文貼返しと本人宛の語りの原因を、教師・提示・実生成の対応から絞る。同じ24更新の繰返しや更新数の自動追加を次の処置にはしない。本人宛返答→通常接続→保存→同本文再読→本人端末の完成条件は保持する。製品source/owner/公開DTO/DB/RN/期限/本番/配布/main/料金/quota変更0、STRUCTURE_MAP_DELTA_NONE。
