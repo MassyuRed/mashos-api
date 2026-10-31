@@ -215,3 +215,29 @@ rootが追加した任意比較処理が、call5の生成/decode後・保存前�
 次は追加学習より先に、保存af44で既存12教師のsystem/userだけを各1回自由生成し、既知教師での語り未定着と未知入力への汎化不足を分ける計画。元SYSTEM/raw JSON/greedy/seed42を固定し、assistant正解は入力しない。教師文字列完全一致を商品条件にせず意味/話者/自然さを全文で読む。最大12生成/10分の未実行計画で、今回の枠を再開しない。
 
 primaryはBLOCKER_NARROWED。一般品質・通常経路・本人端末は未達で、PRODUCT_NOT_CLEAR/正式0/3/54.50%維持。本番factory/Auth/API配置/Supabase/RN配布/本人端末/API・DB process再起動の新確認0、HTTP/SQL保存の新実行0。製品source/owner/公開DTO/DB/RN/期限/本番/main/料金/quota変更0、STRUCTURE_MAP_DELTA_NONE（試験側の提示比較のみ）。
+
+
+<a id="teacher12-generation-20261031"></a>
+## 後続7： 既存12教師の自由生成 — 全12保存、教えた入力でも全文コピーが残存
+
+Mashの「作業を続けて」に従い、§22の次計画を同Jupyterで一回実行した。fresh PR30 `625b1cc4`/API PR3 `093f3afd`、全体現在地・前提/作業規則・設計と全file地図・観測学習の目的・実sourceを確認。rootが実行/書込、補助agentはrunnerと全12本文のread-only監査。別モデルPro/Ultraの正式審査と数えない。
+
+### 後続7：1 本人宛返答が教えた入力で成立するか
+
+固定base revision851bf6e、保存af44/config6568e73の非学習reloadは112tensor全値一致。原teachers.json SHA `c7523b25a8fa7bc272128fafdbb71d484e934911b1e24e6601a8694272146a64`とT01〜12を固定し、system/userだけをモデルへ渡した。assistant正解を入力へ含めない。Pod外の回収後照合でも、実prompt token列が元学習encodedのprompt prefixと全12件完全一致した。元SYSTEM/raw JSON/非thinking/greedy/各call seed42/context8192/max2048/各23秒を維持。追加学習・新教材・依存追加0。
+
+実12生成・全12本文/token保存・全EOS、約0.484〜1.637秒、欠測0・再試行0。生tokenを各callへ先に確定保存し、その後decode本文→全件索引の順とし、前回の任意比較lookupを保存前に置かなかった。
+
+T04は原入力memo全文のコピーで、本人宛返答として明確な未達。既に正しい教師があり、その入力自身でも語りが定着していない。T09は怒りの持続と出来事への未納得の区別が曖昧な表現であり、感情持続への断定的な反転とは数えない。T07/08/10の短い受取りを、短さや教師文字列との不一致で落とさない。他9件にも明確な意味反転は見当たらないが、語法/重複/評価の追加等は改善余地と分ける。今回、12件の機械的な商品合否率は新設しない。
+
+未知入力への汎化だけでなく、教えた入力でも本人宛返答が未定着と絞れた。NLL低下を自由生成の成功へ換算しない。学習回数・方式・容量等の単一原因は未特定で、製品採用0/一般品質未達を維持する。
+
+### 後続7：2 実行時間・回収・現在地
+
+共通600秒枠の完了窓21.117725372314453秒。既存Pod画面の今回単価$0.58/hを確認し、当該窓按分約$0.003402。接続・準備・回収・記録・待機・保持等を含むレンタル全体の時間/総請求額ではない。終了時run processなし/GPU2MiB・0％、af44/configと原教師不変、GPU Stop/restart/delete0で稼働保持。
+
+全12入力/正解参照/実本文/token/encoded/source/予算/全件個別記録一致/元学習prefix一致/原GPU ZIP/全file hash/全件判断は[cocolon-teacher12-20261031.zip](https://chatgpt.com/library?file_id=libfile_fe1dd819f29881919104ae4c07bb349a&account_id=personal) version0へ保全。31member・71,406bytes・SHA256 `0daa8a41f754da22f788983dbe3dec30934e9b16142cbba8cbed4cf8ca0c0c84`。Pod原本24member・30,863bytes・SHA256 `29dabe7b7eba314b1b35e78037dd4540e927218f0292840df5385640cfe94c59`も原bytesで同梱。個別の入力/返答本文は公開GitHubへ載せない。
+
+次は教材追加や一律の更新数増加より先に、T04の元prompt/保存af44に対する本人宛返答開始とコピー開始の選択差へ絞り、追加生成なしの最小計算を検討して有限の学習修正を選ぶ。新prompt/checker・同12件再生成を初手にしない。この欠陥には既存の正しい教師があり、Mashへ追加観測会は依頼しない。次の計算・学習・再生成は今回未実行。
+
+primary BLOCKER_NARROWED。PRODUCT_NOT_CLEAR/正式0/3/54.50％維持。製品source/owner/公開DTO/DB/RN/料金/quota/配置/公開/main/他中核変更0、STRUCTURE_MAP_DELTA_NONE（試験側の既知入力診断のみ）。実emotion submit/本番factory/Auth/Supabase/Render/RN配布/本人端末/API・DB process再起動/新HTTP-SQL保存は未実行。
