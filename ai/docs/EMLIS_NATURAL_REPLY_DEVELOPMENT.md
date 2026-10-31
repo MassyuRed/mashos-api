@@ -101,3 +101,27 @@ HF5.19にpresenceの標準field/classがなく、生成済tokenだけへ各1回�
 原本`cocolon-natural-base-followup-20261031.zip`（Library libfile_cb5fcb1bf880819187aef6fff6e12c24、61member、SHA25677d8f7bfd3512be53f164b84a55a952119404724ccab472f565ab662e816aa1b）へ全18本文/messages、元10/追加8の変更、実source/数値assert/予算/終了、未実行HTTP案・次の全値保持案を保存。個別本文は公開GitHubへ出さない。
 
 primaryはBLOCKER_NARROWED。通常応答の品質改善や正式受入れとして加算せず、商品0/正式0/3/54.50％・STRUCTURE_MAP_DELTA_NONEを維持。今回の実行は終了し、生成枠・時間・旧counterを遡及変更しない。
+
+
+<a id="natural-utterance-http-20261031"></a>
+## 2026-10-31 後続3： 本人発話提示の比較と実HTTPS→SQL保存再読 — 比較8未達・接続2成立
+
+§18の次案を、別の10生成/900秒枠で実行した。原product SYSTEM、固定base revision、原材料、sampling一組、各call seed42を保持し、user contentの提示形式だけ変更。material_json内のmemo/memo_actionを原文のまま先頭、残るcurrent値とpast_user_recordsを付帯情報として全値保持した。既存材料に元からないcategory等まで保持したとは主張しない。
+
+8比較は全EOS・約1.002〜2.088秒だが、全体の最低線は未達。NR03の明示的に否定された約束の事実化、NR01/06の日本語の崩れ、NR02の助詞/時点表現、NR08の期待から経験へのずれと気分による因果補完が残った。一方NR02での友人感情追加、NR07の本人/Emlisなり替わり、NR08の全文貼返しは今回消えており、部分変化を無かったことにしない。NR04の怒りの疑念は原入力にもあり、創作/断定違反とは数えない。短い受取りや一度の言換えを理由に不合格へ戻さない。JSON提示だけが原因/解決との仮説は確定せず、候補の製品採用なし。
+
+### 後続3：1 実モデル通信から保存・同一本文再読
+
+品質未達を記録後、残2枠は技術接続だけの判定としてNR09/10を実行した。以前の手動artifact注入を使わず、既存render_emlis_ai_replyのpending scheduling/thread GETから実HTTPSで4Bを各1回呼び、同一source prefixの本文を実Q3 migration/RPC SQLへ保存した。保存完了GETまで2.106秒/2.862秒、生成は1.738秒/2.468秒。両本文は自然な受取り候補で、大きな意味反転は見つからなかったが、2件から一般品質合格へ広げない。
+
+同Python process内の別FastAPI app/service instanceでGET各2回、既存start各1回、同一本文/event・source各1回・OBSERVATION各1・分析NOT_GENERATEDを確認。生成末尾改行は既存sourceのstripで除かれ、保存以後の本文は一致する。入力rowはsynthetic insert、Authとfactoryはfixtureへ置換。実emotion/submit全体、本番factory、Supabase Auth、Render、RN、本人端末、API/DB process再起動は未確認。通常商品を動かしたとの成功にはしない。
+
+TLSはlocalhost SANの証明書を明示CAとして検証し、127.0.0.1だけにbind、Bearerはmemory内のみ。鍵/認証値は原本束から除外、Jupyter token転用と公開port拡張0。sampling要求とgeneratorを一致させ、正規sourceへの候補hash一致を開始前、実HTTPuser文とformatter一致を終了時assertした。Python依存をPyPI、Node v24.22.2を公式配布/SHASUMS確認、PGlite0.5.8をnpm ignore-scriptsで隔離導入した。製品sourceの採用変更は0。
+
+### 後続3：2 時間・原本・現在の残件
+
+CPU準備前に900秒deadlineを置き、終了確認316.855秒/10生成、同条件retry/追加学習0で閉じた。当該窓の表示$0.58/h按分は約$0.05105。レンタル全体、待機、記録整理、終了後保持の総請求額は未測定。probe processなし/GPU2MiB・0％/fit38 ad8bとconfig不変、GPU Stop/restart/delete0でPodを保持。ローカルpack作成失敗と終了archive importのpath不足は修復し、GPU再生成にはしていない。
+
+非公開原本は[cocolon-natural-utterance-http-20261031.zip](https://chatgpt.com/library?file_id=libfile_a58ec87554088191a7469d98948187d5&account_id=personal)、42member、2,457,542bytes、SHA256 a496aaf223e9a5f2e7ea810b0ca1efc3d4ae7dbedad05092ed1359744f172ae6。全10本文/messages、実source pack247file/manifest、候補/runner/helper、実HTTP/SQL/DTO、時間/終了確認を保持し、個別本文は公開GitHubへ載せない。
+
+今回減った残件は隔離環境の実HTTPS保存再読で、primary TECHNICAL_CREDIT。一般品質と本人端末は残り、正式0/3・54.50％・PRODUCT_NOT_CLEARを維持。次は失敗した主体/否定/時点の保持と自然な本人宛返答を、従来の複雑な意味JSON教材から切り分け、未使用評価を別に置く最小教材案を具体化する提案。追加生成/学習は開始しておらず、旧counter/失敗を変更しない。通常API配置/RN配布/本人端末の完成にも換算しない。製品owner/公開DTO/DB/RN/期限/料金/quotaの変更なし、STRUCTURE_MAP_DELTA_NONE。
