@@ -161,8 +161,16 @@ async def render_emlis_ai_reply(
     from emlis_thread_config import application_mode, writes_enabled
     mode = application_mode()
     if mode != "legacy" and current_input.get("id"):
-        from emlis_thread_service import EmlisThreadService, Q3_PROFILE
-        owner = EmlisThreadService(runtime_profile=Q3_PROFILE, enforce_application_policy=True)
+        from emlis_thread_factory import application_thread_service, schedule_initial_reply
+        owner = application_thread_service()
+        if owner.response_profile:
+            pending = writes_enabled() and callable(owner.natural_reply_source)
+            if pending:
+                schedule_initial_reply(owner, user_id, str(current_input["id"]))
+            return ReplyEnvelope(comment_text="", meta={
+                "observation_status": "unavailable", "used_sources": ["current_input"],
+                "rejection_reasons": ["thread_reply_pending" if pending else "thread_body_unavailable"],
+            }, used_evidence=[], evidence_by_line={}, used_memory_layers=[], fallback_used=False)
         dto = await (owner.start(user_id, str(current_input["id"])) if writes_enabled()
                      else owner.get(user_id, str(current_input["id"])))
         text = str((dto.get("current_observation") or {}).get("text") or "").strip() if mode != "development" else ""

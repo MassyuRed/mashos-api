@@ -132,8 +132,8 @@ def register_emlis_thread_routes(app: FastAPI, *, service=None):
     def owner():
         if service is not None:
             return service
-        from emlis_thread_service import EmlisThreadService
-        return EmlisThreadService(enforce_application_policy=True)
+        from emlis_thread_factory import application_thread_service
+        return application_thread_service()
 
     async def user(authorization, response, *, write=False):
         response.headers["Cache-Control"] = "private, no-store"

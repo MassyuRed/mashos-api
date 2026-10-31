@@ -32,6 +32,7 @@ ATTEMPT_SECONDS = 30
 DTO_SCHEMA = "cocolon.emlis_thread.application.v1"
 RUNTIME_PROFILE = "q2.free.one_round.v1"
 Q3_PROFILE = "q3.plan.sequential.v1"
+NATURAL_REPLY_PROFILE = "natural_reply.v1"
 
 def question_limit(t, tier):
     started = t.get("started_question_limit", 1)
@@ -230,9 +231,18 @@ def thread_dto(snapshot, *, requested_attempt_id=None, can_write=True):
 
 class EmlisThreadService:
     def __init__(self, store=None, engine=None, *, runtime_profile=RUNTIME_PROFILE, enforce_application_policy=False,
-                 semantic_profile=None, offline_candidate_source=None, offline_model_attempt_seconds=None):
+                 semantic_profile=None, offline_candidate_source=None, offline_model_attempt_seconds=None,
+                 natural_reply_source=None, response_profile=None):
         if runtime_profile not in {RUNTIME_PROFILE, Q3_PROFILE}:
             raise ValueError("unsupported_thread_profile")
+        if natural_reply_source is not None:
+            if not callable(natural_reply_source) or semantic_profile is not None:
+                raise ValueError("natural_reply_configuration_invalid")
+            response_profile = NATURAL_REPLY_PROFILE
+        if response_profile not in {None, NATURAL_REPLY_PROFILE}:
+            raise ValueError("unsupported_response_profile")
+        self.response_profile = response_profile
+        self.natural_reply_source = natural_reply_source
         if semantic_profile is not None or offline_candidate_source is not None:
             from cocolon_meaning_experience_engine.emlis_semantic_admission import PROFILE, PROFILE_V2, MODEL_PROFILE
             if semantic_profile not in {PROFILE, PROFILE_V2, MODEL_PROFILE} or not callable(offline_candidate_source) or enforce_application_policy:
@@ -259,16 +269,28 @@ class EmlisThreadService:
             raise ThreadStoreError("application_paused", 503)
 
     def _semantic_writable(self, snapshot):
+        data = (snapshot.get("thread") or {}).get("data", {})
+        response_profile = data.get("response_profile", self.response_profile if not snapshot.get("thread") else None)
+        if response_profile is not None:
+            return response_profile == NATURAL_REPLY_PROFILE and callable(self.natural_reply_source)
         profile = (snapshot.get("thread") or {}).get("data", {}).get("semantic_profile")
         return profile is None or (not self.enforce_application_policy and profile == self.semantic_profile
             and callable(self.offline_candidate_source))
 
     def _require_thread_write(self, snapshot):
         if not self._semantic_writable(snapshot):
+            if (snapshot.get("thread") or {}).get("data", {}).get("response_profile"):
+                raise ThreadStoreError("natural_reply_configuration_required", 503)
             raise ThreadStoreError("semantic_offline_configuration_required", 409)
 
     def _dto(self, snapshot, **kwargs):
-        return thread_dto(snapshot, can_write=self._writable() and self._semantic_writable(snapshot), **kwargs)
+        dto = thread_dto(snapshot, can_write=self._writable() and self._semantic_writable(snapshot), **kwargs)
+        t = snapshot.get("thread")
+        if t and t["data"].get("response_profile") == NATURAL_REPLY_PROFILE:
+            # An unknown provider result never permits another acquisition.
+            received = self._natural_receipt(snapshot, "NATURAL_REPLY_RECEIVED")
+            dto["can_retry"] = bool(dto.get("can_retry") and received)
+        return dto
 
     async def get(self, user_id, input_id):
         snapshot = await self._hydrate(user_id, await self.store.read(user_id, input_id=input_id))
@@ -305,6 +327,8 @@ class EmlisThreadService:
                      "body_state": "UNAVAILABLE", "answer_assessment": "NOT_APPLICABLE"}}
         if self.semantic_profile:
             t["data"].update(semantic_profile=self.semantic_profile, execution_mode=ExecutionMode.OFFLINE_CANDIDATE.value)
+        if self.response_profile:
+            t["data"].update(response_profile=self.response_profile, analysis_state="NOT_GENERATED")
         self._begin(t, snapshot)
         if self.runtime_profile == Q3_PROFILE:
             t["data"].update(context_guards=[h["guard"] for h in snapshot["context"]["history"]],
@@ -558,11 +582,82 @@ class EmlisThreadService:
         return await self._finish(user_id, snapshot, body_state="ANSWER_UNREFLECTED" if t.get("latest_answer_event_id") else "UNAVAILABLE",
             state="COMPLETED")
 
+    @staticmethod
+    def _natural_receipt(snapshot, stage):
+        t = snapshot["thread"]
+        return next((e for e in reversed(snapshot["events"]) if e["kind"] == "OPERATION"
+            and e["payload"].get("stage") == stage
+            and e["payload"].get("source_prefix_ref") == t["source_prefix_ref"]
+            and e["payload"].get("context_ref") == _context_ref(snapshot)), None)
+
+    async def _process_natural(self, user_id, snapshot):
+        from cocolon_meaning_experience_engine.natural_reply import (
+            ARTIFACT_SCHEMA, NaturalReply, NaturalReplyError, prepare_natural_reply, validate_reply)
+        t = snapshot["thread"]
+        material, safety = prepare_natural_reply(_request(snapshot))
+        if material.source_prefix_ref != t["source_prefix_ref"]:
+            raise ValueError("natural_reply_source_changed")
+        if not safety.normal_observation_allowed:
+            # Non-emergency self-denial has its own owner, distinct from
+            # support/emergency. Neither is sent to the ordinary provider.
+            code = "safe_state_answer_owner_required" if safety.safe_state_answer_allowed else "separate_safety_owner_required"
+            return await self._finish(user_id, snapshot, body_state="UNAVAILABLE", state="COMPLETED", failure=code)
+        received = self._natural_receipt(snapshot, "NATURAL_REPLY_RECEIVED")
+        if received:
+            candidate = validate_reply(NaturalReply(**received["payload"]["reply"]), material)
+        else:
+            if self._natural_receipt(snapshot, "NATURAL_REPLY_CALL_STARTED"):
+                return await self._finish(user_id, snapshot, body_state="UNAVAILABLE", state="RESPONSE_FAILED",
+                                          failure="natural_reply_result_unknown")
+            event = _event("OPERATION", {"stage": "NATURAL_REPLY_CALL_STARTED",
+                "source_prefix_ref": t["source_prefix_ref"], "context_ref": _context_ref(snapshot)}, t)
+            snapshot = await self._commit(user_id, snapshot, copy.deepcopy(t), [event], finishing_attempt=t["active_attempt_id"])
+            t = snapshot["thread"]
+            remaining = (parse_iso_utc(t["processing_deadline_at"]) - _now(snapshot)).total_seconds() - 3
+            if remaining <= 0:
+                raise NaturalReplyError("natural_reply_deadline")
+            self._require_write()
+            try:
+                candidate = validate_reply(await asyncio.wait_for(self.natural_reply_source(material),
+                    timeout=min(25.0, remaining)), material)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                return await self._finish(user_id, snapshot, body_state="UNAVAILABLE", state="RESPONSE_FAILED",
+                                          failure="natural_reply_unavailable")
+            event = _event("OPERATION", {"stage": "NATURAL_REPLY_RECEIVED",
+                "source_prefix_ref": t["source_prefix_ref"], "context_ref": _context_ref(snapshot),
+                "reply": asdict(candidate)}, t)
+            try:
+                snapshot = await self._commit(user_id, snapshot, copy.deepcopy(t), [event], finishing_attempt=t["active_attempt_id"])
+            except ThreadStoreError as exc:
+                if exc.code != "save_result_unknown":
+                    raise
+                # Resolve an unknown receipt ACK by reading the actual row.
+                # Do not resend the HTTP request or repeat the receipt write.
+                fresh = await self._hydrate(user_id, await self.store.read(user_id, thread_id=t["id"]))
+                _check(fresh)
+                saved = self._natural_receipt(fresh, "NATURAL_REPLY_RECEIVED")
+                if (fresh["thread"]["active_attempt_id"] != t["active_attempt_id"]
+                        or not saved or saved["payload"].get("reply") != asdict(candidate)):
+                    raise exc
+                snapshot = fresh
+            t = snapshot["thread"]
+        observation = _event("OBSERVATION", {"text": candidate.text, "stage": "INITIAL",
+            "source_prefix_ref": t["source_prefix_ref"], "context_ref": _context_ref(snapshot),
+            "context_guards": t["data"].get("context_guards", []),
+            "artifact": {"schema_version": ARTIFACT_SCHEMA, "text": candidate.text,
+                         "model": candidate.model, "analysis_state": "NOT_GENERATED"}}, t)
+        return await self._finish(user_id, snapshot, body_state="FINAL", state="COMPLETED", observation=observation)
+
     async def _process(self, user_id, snapshot):
         t, attempt = snapshot["thread"], snapshot["thread"]["active_attempt_id"]
         try:
             self._require_write()
             self._require_thread_write(snapshot)
+            if t["data"].get("response_profile") == NATURAL_REPLY_PROFILE:
+                remaining = (parse_iso_utc(t["processing_deadline_at"]) - _now(snapshot)).total_seconds()
+                return await asyncio.wait_for(self._process_natural(user_id, snapshot), timeout=max(0, remaining))
             semantic_input = None
             semantic = t["data"].get("semantic_profile")
             if semantic:

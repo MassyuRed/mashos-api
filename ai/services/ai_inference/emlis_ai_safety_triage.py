@@ -98,6 +98,11 @@ _SELF_OWNED_WORTH_NEGATION_RE: Final = re.compile(
     rf"{_SELF_REFERENCE_SOURCE}(?:自身)?の価値(?:が|は|も)?(?:ない|無い)",
     re.IGNORECASE,
 )
+_SELF_ABSENCE_APPRAISAL_RE: Final = re.compile(
+    rf"{_SELF_REFERENCE_SOURCE}(?:なんて|なんか|など)(?:いない|居ない)"
+    r"(?:ほう|方)が(?:いい|良い)(?=$|[。．.!！])",
+    re.IGNORECASE,
+)
 _SELF_DIRECTED_NEGATIVE_ACTION_RE: Final = re.compile(
     rf"{_REFLEXIVE_SELF_OBJECT_SOURCE}"
     rf"[^。！？!?\n]{{0,20}}{_SELF_DIRECTED_NEGATIVE_ACTION_SOURCE}",
@@ -159,6 +164,7 @@ def is_bounded_self_denial_text(value: Any) -> bool:
     return bool(
         _BOUNDED_SELF_WORTH_NEGATION_RE.search(text)
         or _SELF_OWNED_WORTH_NEGATION_RE.search(text)
+        or _SELF_ABSENCE_APPRAISAL_RE.search(text)
         or _SELF_DIRECTED_NEGATIVE_ACTION_RE.search(text)
         or _SELF_DENIAL_IDENTITY_INABILITY_RE.search(text)
     )
