@@ -4,7 +4,7 @@
 
 Mashが承認した通常入力→自然な返答→保存→非生成の再読のsource準備。Q3の既存SQL・公開DTOを再利用し、private `natural_reply.v1`だけを追加した。新profileは初回本人宛本文のみ。観測用5段packet、意味checkpoint、3種類の可視本文を必須にしない。分析材料は`NOT_GENERATED`であり、返答を本人の事実へ逆流させない。
 
-実モデル・本番配置・新RN配布・本人端末は未実施。Free/Plusの実4B品質、Plus全蓄積からの関連履歴検索、新profileの任意問い・補足・frame訂正の反映、分析材料の生成・採用は未完成。既存本人履歴3/6件の原文受渡しの検査は、その完成とは別。過去記録にも既存Safety ownerを適用し、別Safety/自己否定の記録は通常返信の材料から除外する。過去の危機を今回の状態として扱わない。
+10/31後続で固定4Bの実18生成と、実本文2件の隔離SQL保存・別service instance再読を確認した（末尾の実測記録）。本番HTTP・配置・新RN配布・本人端末は未実施。Free/Plusの実4B品質、Plus全蓄積からの関連履歴検索、新profileの任意問い・補足・frame訂正の反映、分析材料の生成・採用は未完成。既存本人履歴3/6件の原文受渡しの検査は、その完成とは別。過去記録にも既存Safety ownerを適用し、別Safety/自己否定の記録は通常返信の材料から除外する。過去の危機を今回の状態として扱わない。
 
 ## 接続
 
@@ -33,11 +33,11 @@ provider設定欠落中も保存済本文のGETは可能、新profileの書込�
 
 `ai/tools/serve_emlis_natural_reply.py`は既存local cacheだけを使う本人限定probe。Qwen/Qwen3.5-4Bの固定revision `851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a`、既存transformers5.19.0/peft0.21.2/accelerate1.15.0/safetensors0.8.0。`HF_HUB_OFFLINE=TRANSFORMERS_OFFLINE=1`を要求し、学習・downloadをしない。CPU検証ではモデルを読み込んでいない。
 
-baseと比べる保存候補はfit38のad8b：weights SHA256 `ad8b89e8974df9bfe7e804b8f67bbaac59e6cbb37042c3254fb58ffb64230d0a`、config SHA256 `ef4b1aef621fb4e234ce6a05601efb62a987c3cf5d40f3995ca1b72200bab145`。直近focus29の初期値として回収済みであり、新ed298856を自動採用しないためこの一つに限定する。品質優位を認定した選択ではない。56対象・112 tensor/3,833,856 paramsの保存/読込一致、非学習を起動時に確認する。このGPU起動確認は未実施。
+baseと比べる保存候補はfit38のad8b：weights SHA256 `ad8b89e8974df9bfe7e804b8f67bbaac59e6cbb37042c3254fb58ffb64230d0a`、config SHA256 `ef4b1aef621fb4e234ce6a05601efb62a987c3cf5d40f3995ca1b72200bab145`。直近focus29の初期値として回収済みであり、新ed298856を自動採用しないためこの一つに限定する。品質優位を認定した選択ではない。56対象・112 tensor/3,833,856 paramsの保存/読込一致、非学習を起動時に確認する。後続実測で、このloaderのGPU読込・56対象/112 tensor/3,833,856 params一致・非学習を確認した。
 
-HTTPは認証、同時1件、読込前からのSIGALRMによるprocess hard上限・明示回数上限、context8192/max_new2048、nonthinking、非sampling、EOS完了を条件にする。23秒StoppingCriteriaはtoken境界の判定で、一つのforwardの途中を止める保証ではない。process hard上限とは区別する。期限終了/打切りは成功本文にしない。提供口自身はGPUを停止・再起動・削除せず、常時host契約を決めない。モデル読込には既存学習loaderの固定情報を使用し、この新提供口のGPU成立確認は別途必要。
+HTTPは認証、同時1件、読込前からのSIGALRMによるprocess hard上限・明示回数上限、context8192/max_new2048、nonthinking、非sampling、EOS完了を条件にする。23秒StoppingCriteriaはtoken境界の判定で、一つのforwardの途中を止める保証ではない。process hard上限とは区別する。期限終了/打切りは成功本文にしない。提供口自身はGPUを停止・再起動・削除せず、常時host契約を決めない。モデル読込には既存学習loaderの固定情報を使用し、後続でloader/direct生成は成立したが、HTTP経由の実GPU疎通は別途必要。
 
-次の実測案は追加学習0、baseと保存fit38一つで8入力×2=最大16生成、採用候補の通常接続・保存再読を最大2生成、合計最大18。旧5種類は型を参照し、正解例文への一致を要求せず、未使用3入力を混ぜる。8入力の原文は実行前に固定し、固定応答集や学習教師へ採用しない。GPUの現在単価・接続・実行条件を確認し、準備/読込/保持/回収込みの時間・費用を具体化してから起動する。旧runの承認は再利用しない。
+以下は後続実測前の案（実結果と変更は末尾）：追加学習0、baseと保存fit38一つで8入力×2=最大16生成、採用候補の通常接続・保存再読を最大2生成、合計最大18。旧5種類は型を参照し、正解例文への一致を要求せず、未使用3入力を混ぜる。8入力の原文は実行前に固定し、固定応答集や学習教師へ採用しない。GPUの現在単価・接続・実行条件を確認し、準備/読込/保持/回収込みの時間・費用を具体化してから起動する。旧runの承認は再利用しない。
 
 ## 検証
 
@@ -48,3 +48,20 @@ HTTPは認証、同時1件、読込前からのSIGALRMによるprocess hard上�
 - 独立した読取レビューでSTARTED/ACK回収/owner/旧profile/待機表示を点検・修復。実4B本文品質・実機・正式商品受入れの判定ではない。
 
 稼働読取：既存Render serviceはautoDeploy OFF・linked main、Piece private factoryのstartCommandを維持。Supabaseの既存thread/event列をread-only確認。今回のGPU・課金・重み変更・DB書込・配置・build・配布・main mergeは0。正式0/3・54.50％を再採点しない。
+
+
+## 2026-10-31 後続実測 — 実18生成と隔離SQL保存再読
+
+Mashの新Pod利用・Googleログインからの作業継続指示で、Pod `10o4zhfktg9nc1`/RTX PRO4000 Blackwell24GBへ直接Jupyter接続。空の新Podへ既存固定4依存・公式固定base revision・回収済fit38/ad8bを復元した。Torch2.8.0+cu128/SM120/BF16、既存loader/adapter56対象・112 tensor一致を実測。復元は学習ではなく、重み更新0。固定済み8入力×base/fit38の16生成は全EOS、約0.825〜3.427秒/生成だった。読込・通信・SQLを含む通常30秒の成立ではない。
+
+全16本文をrootと独立read-only監査で読んだ。baseには否定を未完了へ変える本文と本人原文の全文貼返し、fit38には相手の発言を相手の感情へ変える本文と本人の一人称へなり替わる本文があり、両候補とも全体の最低線未達。短い自然な受取りは浅さだけでは不合格にしていない。未記載の可能性補完と、未確定を断定する違反も区別した。
+
+残2生成は、元予定の新入力NR09/10をNOT_RUNとして、共通指示の最小修正後のfit38 NR02/07へ振替え。修正NR02は友人の感情追加が残存。NR07は本人への主語を修復したが、Emlisの「私」使用と不自然な自己感情報告が残った。2件を品質合格にせず、実験指示の製品source採用を取り消し、`natural_reply.py`はbea4ed1fと同一本文へ復帰。元16・修正2・両指示/sourceは非公開原本へ保持した。
+
+元16件のうち妥当なfit38 NR01/08の実本文を使い、原材料JSON全文一致後に既存service/Q3実SQLへmanual bridgeで保存。保存2件、同Python process内の別service instanceでGET4回、既存start2回の同一本文/event・source各1回・OBSERVATION各1・分析NOT_GENERATEDを確認した。GPU時とSQL時のsource prefixは別で、新prefixへ束縛した手動artifact受渡し。追加生成・本番HTTP・API/DB process再起動・実Auth/本番Supabase/RN/本人端末成功ではない。実際に呼ぶHTTP sourceと30秒の端から端の確認は残る。
+
+関連23検証成功（3.54秒/既存warning1）。今回の実測はTECHNICAL_CREDITで、商品採用・正式0/3・54.50％は変えない。共通1500秒枠のsetup前〜終了確認1142.077秒、当該窓の$0.58/h按分約$0.1840。レンタル開始からの総請求額・終了後保持等は未測定。終了後probe processなし/GPU2MiB・0％/ad8bとconfig不変。GPU Stop/restart/delete0、Render/本番DB/RN/main/配置/配布変更0。
+
+非公開原本：`cocolon-natural-reply-actual-20261031.zip`、Library `libfile_0831a417bae0819196da4401cef8fd70`、SHA256 `121d0145b3ad46a09a709469a3e9dc3abde465386e8badeb2005b152c9d49fa7`、60member。raw/messages/元・修正source/予算/実環境/全失敗/SQL再読/終了確認を保持。正解文への一致や追加学習は使用していない。
+
+今回18回の実行は閉鎖し、自動再開しない。次は追加学習に戻らず、学習前4Bへ主体・感情所有とEmlis一人称を保つ最小案を具体化する。修正後8件合格・通常接続・本人端末の完成に換算しない。STRUCTURE_MAP_DELTA_NONE（製品sourceと責務の追加変更なし）。
