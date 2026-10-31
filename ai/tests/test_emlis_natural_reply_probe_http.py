@@ -1,5 +1,6 @@
 """Actual local HTTP probe protocol with a synthetic generator; no GPU."""
 import importlib.util
+import hashlib
 import os
 from pathlib import Path
 import signal
@@ -10,10 +11,36 @@ import time
 from http.server import ThreadingHTTPServer
 
 import httpx
+import pytest
 
 spec = importlib.util.spec_from_file_location("natural_probe", Path(__file__).parents[1] / "tools/serve_emlis_natural_reply.py")
 probe = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(probe)
+
+
+def test_selected_saved_candidate_requires_matching_pair_and_detects_later_change(tmp_path):
+    weights, config = b'synthetic saved weights', b'{"synthetic":"config"}'
+    (tmp_path/'adapter_model.safetensors').write_bytes(weights)
+    (tmp_path/'adapter_config.json').write_bytes(config)
+    identity = hashlib.sha256(weights).hexdigest(), hashlib.sha256(config).hexdigest()
+    assert probe.adapter_identity(tmp_path, *identity) == identity
+    with pytest.raises(ValueError, match='configuration_invalid'):
+        probe.adapter_identity(tmp_path, identity[0], None)
+    with pytest.raises(ValueError, match='configuration_invalid'):
+        probe.adapter_identity(None, *identity)
+    with pytest.raises(ValueError, match='identity_changed'):
+        probe.adapter_identity(tmp_path, '0'*64, identity[1])
+    (tmp_path/'adapter_config.json').write_bytes(b'changed after load')
+    with pytest.raises(ValueError, match='identity_changed'):
+        probe.adapter_identity(tmp_path, *identity)
+
+
+def test_default_adapter_still_requires_fit38_identity(tmp_path, monkeypatch):
+    (tmp_path/'adapter_model.safetensors').write_bytes(b'weights')
+    (tmp_path/'adapter_config.json').write_bytes(b'config')
+    monkeypatch.setattr(probe,'FIT38_WEIGHTS',hashlib.sha256(b'weights').hexdigest())
+    monkeypatch.setattr(probe,'FIT38_CONFIG',hashlib.sha256(b'config').hexdigest())
+    assert probe.adapter_identity(tmp_path) == (probe.FIT38_WEIGHTS,probe.FIT38_CONFIG)
 
 
 def test_authenticated_probe_enforces_request_limit_without_repeating_generator():

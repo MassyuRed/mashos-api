@@ -127,8 +127,6 @@ def _analysis_saved_member(snapshot, *, owner, input_id, tier, start, end):
                     or any(e['thread_id'] != thread['id'] for e in events)):
                 raise AnalysisSavedSourceError('analysis_saved_source_invalid')
             answer_events = [e for e in events if e['kind'] == 'ANSWER']
-            if len(answer_events) > 1:
-                raise AnalysisSavedSourceError('analysis_multiple_answers_not_supported')
             request = _request(snapshot, include_context=False)
             admitted = admit_emlis_thread(request)
             question_events = [e for e in events if e['kind'] == 'QUESTION']

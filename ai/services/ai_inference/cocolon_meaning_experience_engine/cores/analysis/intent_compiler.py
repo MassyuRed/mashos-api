@@ -1970,9 +1970,14 @@ def _partial_anxiety_pair_can_be_retained(left, right):
             (), ('DEGREE_SLIGHT',), ('DEGREE_YAYA',), ('DEGREE_CHOTTO',)})
 
 
-def _admit_ordinary_supplement(answer, original):
-    claims = _self_propositions(answer, require_complete=True)
-    earlier = [(p, original.envelope.envelope_id) for p, _ in _self_propositions(original)]
+def _admit_ordinary_supplement(answer, earlier_sources, excluded):
+    _check_supplement_claims(answer, _self_propositions(answer, require_complete=True), earlier_sources, excluded)
+
+
+def _check_supplement_claims(answer, claims, earlier_sources, excluded):
+    earlier = [(p, source.envelope.envelope_id) for source in earlier_sources
+               for p, evidence in _self_propositions(source)
+               if evidence.source_span_id not in excluded.get(source.envelope.envelope_id, set())]
     for current, _ in claims:
         for previous, source_id in earlier:
             # Without an explicit correction target, do not choose between
@@ -2013,7 +2018,8 @@ def _active_sources(source_set):
         if original is None:
             raise AnalysisSourceError('analysis_supplement_parent_missing')
         if match is None:
-            _admit_ordinary_supplement(answer, original)
+            earlier = tuple(source for source in views if source.record_ref == answer.record_ref)
+            _admit_ordinary_supplement(answer, earlier, excluded)
             views.append(answer)
             continue
         old = match['old'].rstrip('。．.')
@@ -2029,6 +2035,8 @@ def _active_sources(source_set):
         if len(targets) != 1:
             raise AnalysisSourceError('analysis_correction_target_unresolved')
         target = targets[0]
+        if target.source_span_id in excluded.get(original.envelope.envelope_id, set()):
+            raise AnalysisSourceError('analysis_correction_target_unresolved')
         original_plan = build_final_stage1_grounded_observation_plan(
             original.normalized, evidence_spans=original.spans)
         target_is_self_claim = False
@@ -2057,6 +2065,8 @@ def _active_sources(source_set):
             leading = len(raw) - len(raw.lstrip())
             view = scoped_source_view(answer, leading + match.start('new'),
                                       leading + match.end('new'))
+            earlier = tuple(source for source in views if source.record_ref == answer.record_ref)
+            _check_supplement_claims(view, _self_propositions(view), earlier, excluded)
             views.append(view)
         update = ObservedSourceUpdate('analysis-update:' + commitment([
             answer.envelope.envelope_id, target.evidence_id,

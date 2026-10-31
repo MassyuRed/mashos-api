@@ -1,5 +1,7 @@
 # 11/1 リリース機構の実装記録
 
+後続実装：natural専用の関連履歴RPC、原入力/複数回答/本人訂正の別材料化、権限・source失効時のtimeline本文抑止、Analysisの最大3補足対応と先行補足/訂正文間の矛盾照合、選択adapter SHA対指定を追加。実SQLを使うローカル検証63件とAnalysis177件はPASS。実4B生成・Render配置・実機は未実施。累積/月次当時snapshot・月追加1万円内の常時提供方式は未完。
+
 品質反復にRNのビルド・実機確認を毎回要求しない。11/1は機構・配布・運用と初回接続、11/2〜11/6はサーバー側の品質改善というMashの指示を維持する。
 
 ## この変更
@@ -26,3 +28,17 @@ ai/tests/piece_v2/test_b12_shared_preview_composition.py
 この記録時点のRenderは `3577d7fdeb19158ef5e675f51960652a52c24487` のまま。新API配置、新RN配布、実モデルHTTPS提供口、実Auth→4B→DB保存→同本文再読は未完。exportの実機成功も未完。iOS専用rendererをAndroid対応済みとは数えない。
 
 週間8タスクのうち、本人原入力/補足/訂正と返答/分析材料の分離、Plusの関連履歴選択、Analysis累積/月次snapshotは別の未完作業として継続する。上記変更を8タスク全完了や公開可能状態とは報告しない。料金680円/1480円の実ストア請求設定・両OS配布・月追加1万円内の本番提供方式・申請Console確認も残る。
+
+## 後続 — 履歴/補足・候補読込の機構
+
+`20261101010000_emlis_natural_related_context.sql` は旧Q3 contextを維持し、新naturalだけが全閲覧権利内の先行記録から文字n-gram一致で関連候補を最大Plus3/Premium6件選ぶ。Plus365日の既存閲覧権利は維持。Premiumの余分な3650日探索制限を外す。保存時はowner/原文MD5/thread revision/権利/順序/CASを再確認し、再読時は保存guardの同じIDだけを再取得する。生成後に別記録が増えても保存本文を再検索で失効させない。変更で無効になった過去threadは候補から除き、古い補足を新原文へ付けない。旧Q3の保存profileは現在設定を継承しない。
+
+モデル材料では原入力、順番付き本人ANSWER、本人frame訂正を別欄にする。AIの問いは回答を読む文脈として明示し、生成済み観測/返答は本人事実へ使わない。本人の補足・訂正にも既存Safetyを適用し、対象外の過去資料は補足だけでなく記録全体を除く。権限変更/参照元編集・削除で無効になったnatural本文はcurrentだけでなくtimelineからも除く。
+
+Analysisの保存source adapterは最大3回答を全ID/round/owner束縛で保持する。compilerは同じ記録の先行する有効な原入力/補足/置換文と矛盾照合し、二重訂正、補足そのものへの未解決訂正、解釈未対応を成功へ変えない。累積更新や当時の月次保存寿命を完成させた変更ではない。
+
+提供toolは `--adapter-weights-sha256` / `--adapter-config-sha256` を対で受け、選択候補の保存hashをロード前後に検査する。未指定は旧fit38固定、base revision/依存/112tensor/値一致/非学習/18要求・1800秒/23秒生成上限は保持。重みや指示を同じAPI契約内で更新するたびにRNをビルドする必要はない。新候補を自動採用せず、常時GPU提供/新しい費用契約へ切り替えない。
+
+検証：PGlite0.5.8の実Q2/Q3+新migration/実Python store/serviceを使用し、合成providerでnatural/Q3/提供toolの63 PASS / FAIL0 / SKIP0。Free除外、直近枠より古い関連選択、Premium4000日前、Plus権利、保存cohort固定、履歴/ANSWER revision/tier変更拒否、旧Q3再読、3回答・訂正・Safety・service専用権限、adapter identityとHTTP上限を含む。Analysisは新複数回答・既存保存/保存再読、既存verticalの補足/訂正関連177 PASS / FAIL0 / SKIP0、無関係なvertical425件は未実行。合成providerの結果を実モデル品質・本人実機へ換算しない。
+
+この後続の記録時点ではmigrationは適用前。実DB定義を照会し、現emlis_thread_commitの本文が旧migrationの7580文字と完全一致することを確認済み。適用・確認後の実績は全体現在地/weeklyへ追記する。

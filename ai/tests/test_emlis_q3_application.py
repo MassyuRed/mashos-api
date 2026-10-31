@@ -12,8 +12,11 @@ class Q3Database(Database):
         sql=(Path(__file__).parents[2]/'supabase/migrations/20260911041749_emlis_q3_plan_rounds.sql').read_text()
         self.proc.stdin.write(json.dumps(dict(sql=sql,script=True))+'\n'); self.proc.stdin.flush()
         result=json.loads(self.proc.stdout.readline()); assert 'code' not in result,result
+        sql=(Path(__file__).parents[2]/'supabase/migrations/20261101010000_emlis_natural_related_context.sql').read_text()
+        self.proc.stdin.write(json.dumps(dict(sql=sql,script=True))+'\n'); self.proc.stdin.flush()
+        result=json.loads(self.proc.stdout.readline()); assert 'code' not in result,result
     async def rpc(self,name,payload,**kwargs):
-        assert name in {'emlis_thread_read','emlis_thread_commit','emlis_thread_context'}
+        assert name in {'emlis_thread_read','emlis_thread_commit','emlis_thread_context','emlis_thread_related_context'}
         args=','.join(f'{k} => ${i}' for i,k in enumerate(payload,1))
         params=[json.dumps(v,ensure_ascii=False) if isinstance(v,(dict,list)) else v for v in payload.values()]
         result=await asyncio.to_thread(self.query,f'select public.{name}({args}) as value',params,'service_role')

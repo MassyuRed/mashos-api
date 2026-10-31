@@ -53,6 +53,13 @@ class EmlisThreadStore:
             raise ThreadStoreError("thread_unavailable",404)
         return result
 
+    async def related_context(self, user_id, input_id, *, context_guards=None):
+        result = await self._rpc('emlis_thread_related_context', {
+            'p_user_id': user_id, 'p_input_id': input_id, 'p_context_guards': context_guards})
+        if not isinstance(result, dict):
+            raise ThreadStoreError('thread_unavailable', 404)
+        return result
+
     async def commit(self, user_id, snapshot, next_state, events, *, finishing_attempt=None):
         old = snapshot.get("thread") or {}
         result = await self._rpc("emlis_thread_commit", {

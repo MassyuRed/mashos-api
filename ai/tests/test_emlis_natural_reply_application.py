@@ -216,6 +216,174 @@ def test_existing_history_boundary_passes_user_originals_only(natural_case, qdb,
         assert "thread" not in history[0] and "artifact" not in history[0]
 
 
+def insert_past(qdb, user, memo, days=1):
+    identity = str(uuid4())
+    qdb.query("insert into public.emotions values ($1,$2,(now()-($4::int*interval '1 day')) at time zone 'UTC',$3,'',array['仕事'],array['平穏'],$5)",
+        [identity,user,memo,days,json.dumps([dict(type='平穏',strength='medium')])])
+    return identity
+
+
+@pytest.mark.parametrize('tier,days,included',[('free',30,False),('plus',30,True),('plus',400,False),('premium',4000,True)])
+def test_related_search_precedes_context_limit_and_respects_plan_access(natural_case,qdb,tier,days,included):
+    user,parent,service,calls=natural_case
+    qdb.query('update public.profiles set subscription_tier=$2 where id=$1',[user,tier])
+    older=insert_past(qdb,user,'会議の資料を読み直した。',days)
+    for i in range(1,8): insert_past(qdb,user,'バナナ。',i)
+    result=run(service.start(user,parent))
+    assert result['current_observation']['text']==BODY
+    records=json.loads(calls[0].material_json)['past_user_records']
+    assert [r['input_id'] for r in records]==([older] if included else [])
+    assert len(calls)==1
+
+
+def test_saved_reply_keeps_selected_cohort_when_another_related_record_is_added(natural_case,qdb):
+    user,parent,service,calls=natural_case
+    qdb.query("update public.profiles set subscription_tier='plus' where id=$1",[user])
+    insert_past(qdb,user,'会議の資料を読み直した。',30)
+    saved=run(service.start(user,parent))
+    for i in range(1,6): insert_past(qdb,user,'会議の資料を読み直した。',i)
+    assert run(service.get(user,parent))['current_observation']==saved['current_observation']
+    assert len(calls)==1
+
+
+@pytest.mark.parametrize('mutation',['edit','delete','tier','answer_revision'])
+def test_selected_source_change_during_natural_generation_rejects_save(natural_case,qdb,mutation):
+    user,parent,service,calls=natural_case
+    qdb.query("update public.profiles set subscription_tier='plus' where id=$1",[user])
+    past=insert_past(qdb,user,'会議の資料を読み直した。',10)
+    if mutation=='answer_revision':
+        run(EmlisThreadService(runtime_profile=Q3_PROFILE).start(user,past))
+    original=service.natural_reply_source
+    async def changed(material):
+        result=await original(material)
+        if mutation=='edit': qdb.query("update public.emotions set memo='changed' where id=$1",[past])
+        elif mutation=='delete': qdb.query('delete from public.emotions where id=$1',[past])
+        elif mutation=='tier': qdb.query("update public.profiles set subscription_tier='free' where id=$1",[user])
+        else: qdb.query('update public.emlis_input_threads set revision=revision+1 where original_emotion_id=$1',[past])
+        return result
+    service.natural_reply_source=changed
+    with pytest.raises(ThreadStoreError): run(service.start(user,parent))
+    assert len(calls)==1
+    dto=run(service.get(user,parent))
+    assert dto['current_observation'] is None
+    assert BODY not in json.dumps(dto,ensure_ascii=False)
+
+
+def test_natural_configured_reader_preserves_legacy_paid_thread_and_context_rpc(natural_case,qdb,monkeypatch):
+    from test_emlis_q2_application import answer
+    user,parent,_,_=natural_case
+    qdb.query("update public.profiles set subscription_tier='premium' where id=$1",[user])
+    qdb.query('update public.emotions set memo=$2 where id=$1',[parent,'褒められたのに、嬉しくなかった。'])
+    old=EmlisThreadService(runtime_profile=Q3_PROFILE)
+    saved=run(old.start(user,parent))
+    saved=run(answer(old,user,saved,'その時は重かった。'))
+    calls=[]
+    async def rpc(name,payload,**kw):
+        calls.append(name)
+        return await qdb.rpc(name,payload,**kw)
+    monkeypatch.setattr(emlis_thread_store,'sb_post_rpc',rpc)
+    async def no_provider(_): raise AssertionError('GET generated a reply')
+    reader=EmlisThreadService(runtime_profile=Q3_PROFILE,natural_reply_source=no_provider)
+    assert run(reader.get(user,parent))==saved
+    assert 'emlis_thread_context' in calls
+    assert 'emlis_thread_related_context' not in calls
+
+
+def completed_answered_past(qdb,user):
+    from test_emlis_q2_application import answer
+    from test_emlis_q3_application import cont
+    memo='褒められたのに、嬉しくなかった。誘われたのに、悲しかった。頼まれたのに、寂しかった。'
+    past=insert_past(qdb,user,memo)
+    old=EmlisThreadService(runtime_profile=Q3_PROFILE)
+    dto=run(old.start(user,past))
+    texts=('その時は重かった。','その時は怖かった。','その時は苦しかった。')
+    for i,text in enumerate(texts):
+        dto=run(answer(old,user,dto,text,'past-answer-'+str(i)))
+        if i<2: dto=run(cont(old,user,dto,'past-continue-'+str(i)))
+    assert dto['state']=='COMPLETED'
+    return past,memo,texts,dto
+
+
+def test_history_preserves_three_user_answers_and_correction_as_separate_sources(natural_case,qdb):
+    from datetime import timedelta
+    from astor_material_snapshots import _analysis_saved_member
+    from cocolon_meaning_experience_engine.cores.analysis.source_adapter import _time
+    from emlis_thread_service import _request
+    from cocolon_meaning_experience_engine.natural_reply import prepare_natural_reply
+    user,parent,service,calls=natural_case
+    qdb.query("update public.profiles set subscription_tier='premium' where id=$1",[user])
+    past,memo,texts,old=completed_answered_past(qdb,user)
+    saved_snapshot=run(service.store.read(user,input_id=past))
+    stamp=_time(saved_snapshot['original']['created_at'],saved_utc=True)
+    member,_=_analysis_saved_member(saved_snapshot,owner=user,input_id=past,tier='premium',
+        start=stamp-timedelta(seconds=1),end=stamp+timedelta(seconds=1))
+    assert [a.text for a in member.supplements]==list(texts)
+    qdb.query('update public.emotions set memo=$2 where id=$1',[parent,memo])
+    qdb.query("insert into public.emlis_frame_feedback(user_id,source_emotion_id,frame_key,frame_ref,status,correction_text) values ($1,$2,'synthetic-frame','synthetic-ref','REVISED',$3)",
+        [user,past,'期待ではなく、結果だけで判断されたことが気になった。'])
+    result=run(service.start(user,parent))
+    assert result['current_observation']['text']==BODY
+    material=json.loads(calls[0].material_json)
+    record=next(r for r in material['past_user_records'] if r['input_id']==past)
+    assert record['original']['memo']==memo
+    assert [a['text'] for a in record['answers']]==list(texts)
+    assert [a['round_index'] for a in record['answers']]==[1,2,3]
+    assert all(a['source_role']=='SUPPLEMENTAL_ANSWER' and a['ai_question_context'] for a in record['answers'])
+    assert material['user_frame_feedback'][0]['input_id']==past
+    assert material['user_frame_feedback'][0]['source_role']=='USER_FRAME_FEEDBACK'
+    assert old['current_observation']['text'] not in calls[0].material_json
+    # The same admitted answers also work when they are the current record.
+    request=_request(run(service.store.read(user,input_id=past)))
+    prepared,safety=prepare_natural_reply(request)
+    assert safety.normal_observation_allowed
+    assert [a['text'] for a in json.loads(prepared.material_json)['current_answers']]==list(texts)
+
+
+def test_unsafe_supplement_excludes_whole_past_record_and_blocks_current_material(natural_case,qdb):
+    from dataclasses import replace
+    from emlis_thread_service import _request
+    from cocolon_meaning_experience_engine.natural_reply import prepare_natural_reply
+    user,parent,service,calls=natural_case
+    qdb.query("update public.profiles set subscription_tier='premium' where id=$1",[user])
+    past,memo,_,_=completed_answered_past(qdb,user)
+    request=_request(run(service.store.read(user,input_id=past)))
+    first=replace(request.emlis_thread.answers[0],answer_text_private='自分には価値がない。')
+    request=replace(request,emlis_thread=replace(request.emlis_thread,answers=(first,*request.emlis_thread.answers[1:])))
+    _,safety=prepare_natural_reply(request)
+    assert not safety.normal_observation_allowed
+    qdb.query('update public.emotions set memo=$2 where id=$1',[parent,memo])
+    original=service.natural_reply_source
+    async def inspect_material(material):
+        value=json.loads(material.material_json)
+        assert value['past_user_records']==[]
+        assert value['user_frame_feedback']==[]
+        return await original(material)
+    service.natural_reply_source=inspect_material
+    qdb.query("update public.emlis_thread_events set payload=jsonb_set(payload,'{source,answer_text_private}',to_jsonb($2::text)) where thread_id=(select id from public.emlis_input_threads where original_emotion_id=$1) and kind='ANSWER' and round_index=1",
+        [past,'自分には価値がない。'])
+    # The fixture keeps the stored thread binding but updates its raw source;
+    # admission and Safety still inspect the complete answer, not AI prose.
+    assert run(service.start(user,parent))['current_observation']['text']==BODY
+    assert len(calls)==1
+
+
+def test_related_context_rpc_is_service_only_and_rejects_another_owner(natural_case,qdb):
+    user,parent,_,_=natural_case
+    for role in ['anon','authenticated']:
+        assert qdb.query('select public.emlis_thread_related_context($1,$2)',[user,parent],role)['code']=='42501'
+    other=str(uuid4())
+    assert qdb.query('select public.emlis_thread_related_context($1,$2)',[other,parent],'service_role')['code']=='P0002'
+
+
+def test_edited_past_thread_is_excluded_without_attaching_stale_answers(natural_case,qdb):
+    user,parent,service,calls=natural_case
+    qdb.query("update public.profiles set subscription_tier='premium' where id=$1",[user])
+    past,memo,_,_=completed_answered_past(qdb,user)
+    qdb.query('update public.emotions set memo=$2 where id=$1',[past,'会議の資料を読み直した。'])
+    assert run(service.start(user,parent))['current_observation']['text']==BODY
+    assert json.loads(calls[0].material_json)['past_user_records']==[]
+
+
 def test_pause_during_provider_keeps_input_and_does_not_save_or_repeat_reply(natural_case, monkeypatch):
     user, parent, service, calls = natural_case
     service.enforce_application_policy = True

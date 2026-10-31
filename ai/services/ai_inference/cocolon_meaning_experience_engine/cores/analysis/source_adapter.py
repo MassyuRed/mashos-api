@@ -220,7 +220,7 @@ def freeze_analysis_sources(request: AnalysisObservedMapRequest) -> AnalysisSour
             raise AnalysisSourceError('analysis_owner_mismatch')
         if member.record_state != 'LIVE':
             raise AnalysisSourceError('analysis_record_not_live')
-        if not isinstance(member.supplements, tuple) or len(member.supplements) > 1:
+        if not isinstance(member.supplements, tuple) or len(member.supplements) > 3:
             raise AnalysisSourceError('analysis_supplement_cardinality')
         if any(type(s) is not AnalysisSupplement for s in member.supplements):
             raise AnalysisSourceError('analysis_supplement_binding_invalid')

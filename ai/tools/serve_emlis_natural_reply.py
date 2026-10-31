@@ -13,6 +13,7 @@ from importlib.metadata import version
 import json
 import os
 from pathlib import Path
+import re
 import signal
 import threading
 import time
@@ -85,16 +86,29 @@ def make_handler(generate, *, api_key, model_name, deadline, max_requests):
     return Handler
 
 
-def load_generator(adapter, process_stop):
+def adapter_identity(adapter, weights_sha256=None, config_sha256=None):
+    """Verify an explicitly selected saved candidate; never select a new one."""
+    if weights_sha256 is None and config_sha256 is None:
+        weights_sha256, config_sha256 = FIT38_WEIGHTS, FIT38_CONFIG
+    elif (not adapter or not isinstance(weights_sha256, str) or not isinstance(config_sha256, str)
+          or not re.fullmatch(r'[0-9a-f]{64}', weights_sha256)
+          or not re.fullmatch(r'[0-9a-f]{64}', config_sha256)):
+        raise ValueError('adapter_identity_configuration_invalid')
+    if not adapter:
+        return None
+    path = Path(adapter)
+    for name, digest in (("adapter_model.safetensors", weights_sha256), ("adapter_config.json", config_sha256)):
+        if hashlib.sha256((path / name).read_bytes()).hexdigest() != digest:
+            raise ValueError('saved_adapter_identity_changed')
+    return weights_sha256, config_sha256
+
+
+def load_generator(adapter, process_stop, *, weights_sha256=None, config_sha256=None):
     if os.environ.get("HF_HUB_OFFLINE") != "1" or os.environ.get("TRANSFORMERS_OFFLINE") != "1":
         raise ValueError("offline_cache_required")
     if {name: version(name) for name in PINS} != PINS:
         raise ValueError("model_dependency_changed")
-    if adapter:
-        path = Path(adapter)
-        for name, digest in (("adapter_model.safetensors", FIT38_WEIGHTS), ("adapter_config.json", FIT38_CONFIG)):
-            if hashlib.sha256((path / name).read_bytes()).hexdigest() != digest:
-                raise ValueError("fit38_saved_identity_changed")
+    selected_identity = adapter_identity(adapter, weights_sha256, config_sha256)
     import torch
     from transformers import AutoTokenizer, Qwen3_5ForConditionalGeneration, StoppingCriteria, StoppingCriteriaList
     if not torch.cuda.is_available() or torch.cuda.device_count() != 1:
@@ -123,6 +137,8 @@ def load_generator(adapter, process_stop):
     model.requires_grad_(False)
     if model.training or any(p.requires_grad for p in model.parameters()):
         raise ValueError("nontraining_model_required")
+    if selected_identity:
+        adapter_identity(adapter, *selected_identity)
 
     class Deadline(StoppingCriteria):
         def __init__(self, end):
@@ -155,6 +171,8 @@ def load_generator(adapter, process_stop):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--adapter")
+    parser.add_argument("--adapter-weights-sha256")
+    parser.add_argument("--adapter-config-sha256")
     parser.add_argument("--model-name", required=True)
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--max-requests", type=int, required=True)
@@ -162,6 +180,10 @@ def main():
     args = parser.parse_args()
     if not 1 <= args.max_requests <= 18 or not 1 <= args.seconds <= 1800:
         parser.error("bounded probe limits required")
+    if args.adapter_weights_sha256 is not None or args.adapter_config_sha256 is not None:
+        if (not args.adapter or not re.fullmatch(r'[0-9a-f]{64}', args.adapter_weights_sha256 or '')
+                or not re.fullmatch(r'[0-9a-f]{64}', args.adapter_config_sha256 or '')):
+            parser.error('an adapter and both SHA256 values are required together')
     key = os.environ.get("EMLIS_NATURAL_REPLY_API_KEY", "")
     if len(key) < 24:
         parser.error("a private API key of at least 24 characters is required")
@@ -173,7 +195,10 @@ def main():
     signal.setitimer(signal.ITIMER_REAL, args.seconds)
     signal.signal(signal.SIGTERM, lambda *_: stop.set())
     signal.signal(signal.SIGINT, lambda *_: stop.set())
-    generator = load_generator(args.adapter, stop)
+    identity_options = (dict(weights_sha256=args.adapter_weights_sha256,
+                             config_sha256=args.adapter_config_sha256)
+                        if args.adapter_weights_sha256 is not None else {})
+    generator = load_generator(args.adapter, stop, **identity_options)
     server = ThreadingHTTPServer(("0.0.0.0", args.port), make_handler(generator,
         api_key=key, model_name=args.model_name, deadline=deadline, max_requests=args.max_requests))
     server.timeout = 1

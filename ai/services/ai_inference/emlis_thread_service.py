@@ -200,6 +200,13 @@ def thread_dto(snapshot, *, requested_attempt_id=None, can_write=True):
         common = {"event_id": event["id"], "kind": event["kind"], "recorded_at": event.get("recorded_at"),
                   "round_index": event["round_index"]}
         if event["kind"] == "OBSERVATION":
+            if (p.get('artifact', {}).get('schema_version') == 'cocolon.emlis.recipient_reply.v1'
+                    and (not _generation_current(snapshot)
+                         or not _context_current(snapshot, p.get('context_guards', []))
+                         or p.get('context_ref') != _context_ref(snapshot))):
+                # A natural reply cannot be split into current/past sections.
+                # Do not leak a stale paid/deleted source through the timeline.
+                continue
             timeline.append({**common, "text": _observation_text(snapshot,p), "stage": p["stage"],
                 "is_current": bool(current and current["id"] == event["id"])})
         elif event["kind"] == "QUESTION":
@@ -301,7 +308,12 @@ class EmlisThreadService:
         t = snapshot.get("thread")
         if (t["data"].get("runtime_profile") if t else self.runtime_profile) != Q3_PROFILE:
             return snapshot
-        context = await self.store.context(user_id, snapshot["original"]["id"])
+        profile = t['data'].get('response_profile') if t is not None else self.response_profile
+        if profile == NATURAL_REPLY_PROFILE:
+            guards = None if fresh or t is None else t['data'].get('context_guards', [])
+            context = await self.store.related_context(user_id, snapshot['original']['id'], context_guards=guards)
+        else:
+            context = await self.store.context(user_id, snapshot['original']['id'])
         snapshot["context"] = context
         if t and fresh:
             t["data"]["context_guards"] = [h["guard"] for h in context["history"]]
