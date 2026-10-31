@@ -241,3 +241,37 @@ T04は原入力memo全文のコピーで、本人宛返答として明確な未�
 次は教材追加や一律の更新数増加より先に、T04の元prompt/保存af44に対する本人宛返答開始とコピー開始の選択差へ絞り、追加生成なしの最小計算を検討して有限の学習修正を選ぶ。新prompt/checker・同12件再生成を初手にしない。この欠陥には既存の正しい教師があり、Mashへ追加観測会は依頼しない。次の計算・学習・再生成は今回未実行。
 
 primary BLOCKER_NARROWED。PRODUCT_NOT_CLEAR/正式0/3/54.50％維持。製品source/owner/公開DTO/DB/RN/料金/quota/配置/公開/main/他中核変更0、STRUCTURE_MAP_DELTA_NONE（試験側の既知入力診断のみ）。実emotion submit/本番factory/Auth/Supabase/Render/RN配布/本人端末/API・DB process再起動/新HTTP-SQL保存は未実行。
+
+
+<a id="copy-start-repair1-20261031"></a>
+## 後続8： コピー開始の診断とT04一回更新 — 24生成、本人語りは残り候補不採用
+
+Mashの作業続行指示により、§23の次対象を進めた。fresh PR30 `6d68126a`/API PR3 `68ac4a97`と、前提/作業規則・全体現在地・設計と全file地図・実source/教師/全出力を確認。rootが実行/書込、補助agentはsource/全24本文/次の6教師草案のread-only監査。正式な別モデルPro/Ultra審査とは数えない。
+
+### 後続8：1 保存af44の書き出し選択を1forwardで実測
+
+T04の元prompt token列/教師SHA/112tensorを照合し、非学習の1forwardだけで全logitsを保存した。生成0・更新0。教師の開始tokenは2位/約21.44%、実コピー開始tokenは1位/約29.30%、logit差0.3125。generation configの明示overrideはuse_cache/eos等で、観測済みgreedy開始と整合する。ただし最初の語の条件付き分布であり、全文コピーの単一原因・学習の効果・人間の正解率を表すものではない。
+
+### 後続8：2 一回だけのfull-assistant CE修正と保存再読
+
+この僅差へ対応する有限実験として、元af44を実験初期値とし、既存T04の正解だけを一回学習した。元SYSTEM/raw JSON/正文/encoded/mask/単一im_end改行を全一致で確認。文頭語だけのlossや出力強制へ変えず、既存full-assistant CE・AdamW lr5e-5/weight_decay0/clip1/seed42を維持した。前後NLL測定forwardとoptimizer更新を分け、実更新は1回・追加/再試行0。
+
+T04 NLL1.183846→0.966542、全112tensorが変化。新weights SHA256 `6dac464a2cd4e19d91900dbe0dd2f8570c40532344cac0e2b8feb511ede8dc8f`、config `0310132186b574999fef5ca3edcd705a99eb5580952f39c22063445a825987cc`を別directoryへ保存。元model/optimizerを解放して新base objectへ非学習reload、全112tensor完全一致を確認。Pod外もSHA/112finiteF32/3,833,856値を照合した。旧af44/config・原12教師は不変。optimizer/RNG途中状態は保存せず、追加重みだけを単独完全モデルとはしない。
+
+### 後続8：3 全24本文の結果と途中説明の訂正
+
+既存教師12＋既使用診断10（NR01〜08/13/16）＋開始時モデル未使用NR17/18を各1回、実24生成・全EOS・欠測0、約0.491〜1.998秒。各promptはsystem/userだけで、正解assistantを入力しない。実本文/tokenを先に保存し、旧本文との比較はPod外でmessages一致後に行った。
+
+T04は書き出しが変わっても、後半は本人の語りを再掲したまま。途中の短い画面出力からrootが「本人宛の返事へ変わった」と早計に伝えたが、全文照合後に明示訂正した。本人宛化・コピー解消の成功とは数えず、候補6dacは製品不採用とする。NLL低下/先頭変化を品質成功に換算しない。
+
+NR01/02の自然さ・文脈、NR06の語尾反復には部分改善。NR03/04の全文コピーは不変。NR13は内語を外せた一方、電車に関する事実/語法と感情特定にずれが残る。NR16の感情所有の曖昧さは旧af44にもあり、新発退行とはしない。T09は既存の曖昧表現を維持し、怒り持続への断定的反転とは数えない。短い受取りや教師文字列との不一致だけで落とさない。新17/18は大きな意味反転のない受取り候補だが、2件から一般品質合格へ拡大しない。NR17/18は今後使用済み。
+
+### 後続8：4 保全・費用・次の修正準備
+
+診断窓9.141213655471802秒/300秒、学習/保存reload/24生成窓54.83512568473816秒/600秒。今回表示$0.58/hの両窓だけの按分合計約$0.01031。窓間・接続・source準備・回収・記録・待機・保持を含むレンタル全体の時間/請求額は不明。終了時対象processなし/GPU2MiB・0％、GPU Stop/restart/delete0でPod稼働保持。
+
+新adapter/設定・全24入力/本文/token・教師/encoded/mask・診断/実行source・固定計画/予算・全logits診断・新旧比較・終了確認・次の6草案は[cocolon-copy-repair1-20261031.zip](https://chatgpt.com/library?file_id=libfile_e074ff4ee0148191b811f3e3b6cd78be&account_id=personal) version0へ保存。9member・14,793,623bytes・SHA256 `666cfad553987721474bdcc1ed59f1d905777cf699a62a54d8c59835e0536b16`。同梱Pod原ZIPは42member/14,778,010bytes/SHA `16ffb61f619096948ed47a4c66fb3bad4ed887caa54580eea5fc532f3a2b1648`。その中の1forward原ZIPは11member/474,798bytes/SHA `06811de97d11076e8483e779517888f900c8484d0ab29ef980904fe69b182604`。個別本文は公開GitHubへ転載しない。
+
+次は単語単位の修正反復を止め、本人宛話者・感情所有・否定/限定同意を別題材で教える6教師草案R01〜06をCPU準備した。華恋の架空草案・未学習で、Mashの実演/承認済み正解ではない。read-only点検後、R04の発言由来/R06の同意範囲を最小推敲。旧12教師・今回までの評価原文は変更/教師転用0。旧12と一つのfull-assistant CE候補へまとめ、訓練順/更新数/予算/生成上限/保存再読/打切りを固定してから実行する。元af44を候補初期値として検討し、不採用6dacを自動継承しない。6草案のGPU投入・次runは未実行、追加観測会は現時点不要。
+
+primary BLOCKER_NARROWED。PRODUCT_NOT_CLEAR/正式0/3/54.50％維持。製品source/owner/公開DTO/DB/RN/料金/quota/期限/配置/main/公開/他中核変更0、STRUCTURE_MAP_DELTA_NONE（隔離した試験と教材草案のみ）。実emotion submit/本番factory/Auth/Supabase/Render/RN配布/本人端末/API・DB process再起動/新HTTP-SQL保存は未実行。
