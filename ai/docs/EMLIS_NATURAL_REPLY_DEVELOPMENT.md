@@ -187,3 +187,31 @@ CPU準備前からの1200秒枠に対し終了確認419.448秒、一回実行で
 全source/固定plan/教師/評価/実encoded-mask/24更新順/loss/前後NLL/新adapterとconfig/全10本文・tokenIDs/HTTP-SQL-DTO/終了/Pod外検証を[cocolon-recipient-fit24-20261031.zip](https://chatgpt.com/library?file_id=libfile_9d7d7721f05081919b7e6edd5905f915&account_id=personal) version2へ保全。50member、16,674,663bytes、SHA256 `fccfdb708573a03ca7edc892c3fd02c898b4c9d10496e6b94ca30e0d2c0bf6ee`。個別本文は公開GitHubへ載せない。初期UNRUN表示と生成8件時点のroot_reviewはその時点の履歴であり、最終summary/全10結果/終了確認を優先する。
 
 今回のprimaryは限定TECHNICAL_CREDIT。全体品質・通常経路・本人端末一巡は残り、PRODUCT_NOT_CLEAR/正式0/3/54.50％維持。次は全文貼返しと本人宛の語りの原因を、教師・提示・実生成の対応から絞る。同じ24更新の繰返しや更新数の自動追加を次の処置にはしない。本人宛返答→通常接続→保存→同本文再読→本人端末の完成条件は保持する。製品source/owner/公開DTO/DB/RN/期限/本番/配布/main/料金/quota変更0、STRUCTURE_MAP_DELTA_NONE。
+
+
+<a id="recipient-format-20261031"></a>
+## 後続6： 保存済み通常返答LoRAの提示比較 — 10生成・9本文、本人内語は未解消
+
+Mashの前回続行指示を受け、全体現在地・設計・全file地図・最新weekly・実教師/encoded-mask/全10出力を照合した。rootが実行・書込、補助agentはread-only監査。教師12件に全文コピー/本人内語を正解として教える箇所はなく、prompt除外・assistant正文と単一終端の監督は一致した。SYSTEMにも本人宛/一人称/貼返し抑止が既にあり、原因を指示欠落やmask不備へ決め付けない。
+
+保存af44の固定base非学習reload・全112tensor一致を確認し、元SYSTEM/greedy/非thinking/各call seed42を固定。raw JSON対§19の既存全値保持日本語formatterだけを変更した。§19はbase/sampling、§21はaf44/raw/greedyであり、今回の組合せは未試験だった。既知NR03/04/13と開始時モデル未使用NR15/16、各2条件の実10生成。追加学習0、重み変更0、新依存0。
+
+### 後続6：1 実本文から分かったこと
+
+保存本文9件は全EOS、約0.661〜2.799秒。rawのNR03/04は前回本文に完全一致。日本語提示で両者の全文貼返しが解消し、NR04は本人の疑念として返す妥当な候補になった。一方NR03は未記載要素・話者の曖昧さ・原入力の留保消失、NR13は本人内語の語り直しが残る。NR15は両条件同一の短い受取りで、短さだけを不合格理由にしない。NR16は日本語提示で本人の心配を返すが、rawでは父の期待へ焦点が移る。部分改善を保持しつつ、全体最低線は未達、formatterの製品採用0。JSON形式が唯一の原因/解決とは確定しない。
+
+### 後続6：2 記録実装ミス、欠測と限定継続
+
+rootが追加した任意比較処理が、call5の生成/decode後・保存前に、前回all_resultsに存在しないNR13を検索してStopIterationとなった。個別call_09を参照すべき箇所だった。call5の本文/tokenは保存されず欠測、STARTED fileは成功証拠にしない。前回本文や推測で穴埋めせず、NR13の当回ペア比較は不成立とする。
+
+元compare.py/failure/run.logを保持し、回数5・元600秒deadlineを継承してresume.pyで未実行6〜10だけ継続。call5の再生成0、実10生成/保存9本文。初回preflight/loadedは継続時に同名で上書きされ、初回ロード時刻の独立原本はない。重み照合値は一致。今後は生token/textを先に確定保存し、任意の比較metadataをその後に処理する。
+
+### 後続6：3 費用・終了・原本・次の一手
+
+完了窓137.8603925704956秒/600秒、今回表示$0.58/hによる当該窓按分約$0.02221。接続確認・回収・記録・待機・保持を含むレンタル全体の時間/請求額は不明。終了時比較processなし、GPU2MiB/0%、保存af44/config不変。GPU Stop/restart/delete0で同Pod稼働保持。
+
+全実9本文/token/固定10入力/元と継続source/記録失敗/重み照合/全file hash/未実行の次計画は[cocolon-recipient-format-20261031.zip](https://chatgpt.com/library?file_id=libfile_0aba4568481c8191971211d41ff6dade&account_id=personal) version0へ保全。32member・95,374bytes・SHA256 `6710c5fdc69d99e4ebe938d503ef0c859469a91827c63eb9b8e039010a65edc2`。Pod原本ZIP27member・45,924bytes・SHA256 `7ce3d67086f67b8e0880279713339d256aed81ab53c0cccd8651621243d12bf7`も改変せず同梱。個別の入力/返答本文は公開GitHubへ載せない。NR15/16は今回で使用済み。
+
+次は追加学習より先に、保存af44で既存12教師のsystem/userだけを各1回自由生成し、既知教師での語り未定着と未知入力への汎化不足を分ける計画。元SYSTEM/raw JSON/greedy/seed42を固定し、assistant正解は入力しない。教師文字列完全一致を商品条件にせず意味/話者/自然さを全文で読む。最大12生成/10分の未実行計画で、今回の枠を再開しない。
+
+primaryはBLOCKER_NARROWED。一般品質・通常経路・本人端末は未達で、PRODUCT_NOT_CLEAR/正式0/3/54.50%維持。本番factory/Auth/API配置/Supabase/RN配布/本人端末/API・DB process再起動の新確認0、HTTP/SQL保存の新実行0。製品source/owner/公開DTO/DB/RN/期限/本番/main/料金/quota変更0、STRUCTURE_MAP_DELTA_NONE（試験側の提示比較のみ）。
