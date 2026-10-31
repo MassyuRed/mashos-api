@@ -125,3 +125,26 @@ CPU準備前に900秒deadlineを置き、終了確認316.855秒/10生成、同�
 非公開原本は[cocolon-natural-utterance-http-20261031.zip](https://chatgpt.com/library?file_id=libfile_a58ec87554088191a7469d98948187d5&account_id=personal)、42member、2,457,542bytes、SHA256 a496aaf223e9a5f2e7ea810b0ca1efc3d4ae7dbedad05092ed1359744f172ae6。全10本文/messages、実source pack247file/manifest、候補/runner/helper、実HTTP/SQL/DTO、時間/終了確認を保持し、個別本文は公開GitHubへ載せない。
 
 今回減った残件は隔離環境の実HTTPS保存再読で、primary TECHNICAL_CREDIT。一般品質と本人端末は残り、正式0/3・54.50％・PRODUCT_NOT_CLEARを維持。次は失敗した主体/否定/時点の保持と自然な本人宛返答を、従来の複雑な意味JSON教材から切り分け、未使用評価を別に置く最小教材案を具体化する提案。追加生成/学習は開始しておらず、旧counter/失敗を変更しない。通常API配置/RN配布/本人端末の完成にも換算しない。製品owner/公開DTO/DB/RN/期限/料金/quotaの変更なし、STRUCTURE_MAP_DELTA_NONE。
+
+
+<a id="natural-quality-followup-20261031"></a>
+## 2026-10-31 後続4： 再開後の返答品質比較 — 新13生成、未使用2件保存、一般品質は未達
+
+Mashの「処理落ちしているから、続きから再開して」で、§19の原本とfresh PR30/API PR3を再確認した。§19は完了済みとして保持し、rootが実行・書込、補助agentはread-only点検。全体現在地/全体設計・file地図/最新weekly/必読incident/実sourceから通常返答の修復を進めた。
+
+| 条件 | 実際の結果 |
+|---|---|
+| D：架空の別人の会話例3組だけ追加 | Cと同じbase/SYSTEM/原材料/提示形式/sampling/各call seed42で既知8＋未使用NR11/12、計10生成。全EOS。日本語・不明保持の部分改善があるが、否定された約束の事実化、本人感情の追加、語法の不自然さ等で全体最低線未達。例の人物/出来事の混入は見つからず、候補不採用 |
+| D：未使用2件の実HTTPS保存 | NR11/12を実モデルで各1回生成し、既存reply入口/Q3 SQLへ保存。約1.591秒/2.258秒で保存完了GET、同process別app/service GET4回/start2回で同一本文/event、追加生成なし。両本文は最低線候補。本番Auth/通常emotion submit/RN/本人端末の成功ではない |
+| E：thinkingのみTrue | 会話例なしのC条件からmodeのみ変更。最大10の最初の1件が23.002秒で最終返答を得られず停止、残9はNOT_RUN。失敗raw保存漏れがあり、marker/内部出力の詳細原因は再構成しない |
+| F：検討256token後の終了marker制約 | 初回は14.322秒/EOSで返答を出したが、連続2終了markerを受口が拒否。元raw/hash/失敗を保持し、強制時・間は空白のみ・再開なし・EOS限定のmechanical parser修復を1回実施。9つのCPU境界確認後、初回rawをID/messages一致で再解析し、再生成0。元deadline/budget bytesと全体count1を継承した限定継続はNR02が23.012秒/460token/finish lengthで失敗、検討が続き最終返答は未完成。2度目の失敗で停止、全体2生成・残8はNOT_RUN。新NR13/14も未実行 |
+
+新actual生成はD10＋E1＋F2＝13。F初回の再解析を生成へ加算せず、未完了の検討文を本人本文へ渡さない。通常30秒/生成23秒/max2048を延ばさず、本文の語句/文数は固定しない。E/F/修復案は製品不採用。F childのreasoning_tokensは最後のclose位置で、正確な検討数は最初のclose位置から読む。Dの例3は頻度差が曖昧、payloadのmax18/旧run名は継承された宣言不備で、実budget/counterは10。元bytesを遡及修正せずsidecarへ記録した。
+
+### 後続4：1 終了状態・原本・次の対象
+
+計測窓はD285.317秒、E178.141秒、F修復込み498.988秒で各900秒内。前回表示$0.58/hによる窓按分の合計は約$0.1551。先行確認、窓間、記録整理、保持等を含むレンタル全体の請求額は不明。最新終了確認で生成processなし/GPU2MiB・0％/fit38 ad8bとconfig不変。追加学習/重み更新/GPU Stop/restart/delete0でPod保持。本番DB/Render/RN/配布/main/料金/quota/製品source変更0、STRUCTURE_MAP_DELTA_NONE。商品受入れ0/3と54.50％は維持。
+
+次は通常返答だけを対象にする**架空の教材候補12件とモデル未使用評価2件**をCPU準備。root華恋案でありMash実演/品質承認/訓練済ではない。主体/否定/時点/発言と感情の所有/理由不明を扱い、旧19教材/観測会/凍結評価は不変。評価2にassistant正解文を置かず、原材料を変えず現productのraw JSON提示へそろえた。教師の3つの語法/時点/否定をread-only点検後に最小修正。学習runner/mask/EOS/実token長/更新数/費用時間の固定はまだ必要で、追加学習の実行可能・効果・一般品質成功にはしない。
+
+全実結果・source pack・修復前後・失敗・終了・教材案は[cocolon-natural-reply-quality-followup-20261031.zip](https://chatgpt.com/library?file_id=libfile_6c7af4d2a68881919b3bd4fe8b63e561&account_id=personal)、version1、110member、7,335,671bytes、SHA256432fb4c1fd2fdcedb80285a9145f04e9ba22c8177be72e6280d87b1b77f57f20。個別本文は公開GitHubへ載せない。完成条件は引き続き、一般入力へ自然な返答→通常接続→同本文保存再読→本人端末での一巡であり、今回の部分結果を完成へ換算しない。
