@@ -203,11 +203,14 @@ def test_existing_history_boundary_passes_user_originals_only(natural_case, qdb,
     past = str(uuid4())
     qdb.query("insert into public.emotions values ($1,$2,(now()-interval '1 day') at time zone 'UTC',$3,'',array['仕事'],array['不安'],$4)",
         [past, user, "昨日の会議では資料を忘れて困った。", json.dumps([dict(type="不安", strength="medium")])])
+    qdb.query("insert into public.emotions values ($1,$2,(now()-interval '2 days') at time zone 'UTC',$3,'',array['仕事'],array['不安'],$4)",
+        [str(uuid4()), user, "自分には価値がない。", json.dumps([dict(type="不安", strength="medium")])])
     dto = run(service.start(user, parent))
     assert dto["current_observation"]["text"] == BODY
     material = json.loads(calls[0].material_json)
     history = material["past_user_records"]
     assert len(history) == (0 if tier == "free" else 1)
+    assert "自分には価値がない" not in calls[0].material_json
     if history:
         assert history[0]["original"]["memo"] == "昨日の会議では資料を忘れて困った。"
         assert "thread" not in history[0] and "artifact" not in history[0]

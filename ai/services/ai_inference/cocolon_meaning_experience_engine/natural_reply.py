@@ -62,6 +62,12 @@ def prepare_natural_reply(request):
         if past.answers:
             # Do not omit a saved correction or use an AI body as its substitute.
             raise NaturalReplyError("natural_reply_history_answers_not_connected")
+        past_safety = build_emlis_safety_triage_decision(
+            current_input=source.request.current_input_bundle.raw_current_input,
+            evidence_spans=past.original.evidence_spans)
+        if not past_safety.normal_observation_allowed:
+            # Keep the existing history owner's independent Safety exclusion.
+            continue
         history.append({"recorded_at": source.recorded_at,
                         "original": _material(source.request.current_input_bundle.raw_current_input)})
     material = {"current": _material(original), "past_user_records": history}
