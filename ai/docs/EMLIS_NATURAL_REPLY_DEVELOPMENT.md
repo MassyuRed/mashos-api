@@ -4,7 +4,7 @@
 
 Mashが承認した通常入力→自然な返答→保存→非生成の再読のsource準備。Q3の既存SQL・公開DTOを再利用し、private `natural_reply.v1`だけを追加した。新profileは初回本人宛本文のみ。観測用5段packet、意味checkpoint、3種類の可視本文を必須にしない。分析材料は`NOT_GENERATED`であり、返答を本人の事実へ逆流させない。
 
-10/31後続の実4B/実HTTPS→隔離Q3保存・同一本文非生成再読は末尾の履歴に保持。最新は後続9（weekly§25）の18教師36更新・別保存reload/32EOS。T04本人宛化等は改善したが否定反転等でd691製品不採用、全32本文確認・新旧重み保全済み。次は別題材の事実保持/改変の対比ペアと最小学習修正案をCPUで具体化する。対比方式未導入・効果未確認。本番HTTP・配置・新RN配布・本人端末は未実施。Free/Plusの実4B品質、Plus全蓄積関連履歴、新profile問い/補足/frame訂正、分析材料は未完成。既存本人履歴3/6件の原文受渡し検査は完成とは別。過去記録にも既存Safety ownerを適用し、別Safety/自己否定の記録は通常返信から除外する。過去の危機を今回状態としない。
+10/31後続の実4B/実HTTPS→隔離Q3保存・同一本文非生成再読は履歴保持。最新は後続10（weekly§26）の事実保持対比8組・DPO+chosenCE案のCPU具体化。数式6group/実tokenizer/旧12mask確認を4.676秒で完了、4B読込/更新/生成0。次は固定af44参照/初期値の28更新/30生成案を既存有限runnerへ最小接続し、一回の実4B試行へ進める。方式効果/VRAM/保存reload未確認、d691継承0/評価原文転用0。§25のd691不採用と全32本文保全は保持。本番HTTP・配置・新RN配布・本人端末、Plus全蓄積関連履歴、新profile問い/補足/frame訂正・分析材料は未完成。既存本人履歴3/6件の原文受渡し検査は完成とは別。過去記録にも既存Safety ownerを適用し、別Safety/自己否定を通常返信から除外する。過去の危機を今回状態としない。
 
 ## 接続
 
@@ -308,3 +308,32 @@ R02には休んでいたという未記載の実行補完、NR07には本人の�
 次は同full-assistant CEの教材追加/周回増加だけでGPUを反復せず、別題材の事実保持返答と事実改変返答の対比ペア、および最小の学習修正案をCPUで一つ具体化する。実誤答は失敗型の根拠とし、今回までの評価入力は教師へそのまま転用しない。対比/選好方式は未導入・効果未確認で、既存lossへ自動導入しない。loss対象/基準重み/更新予算/未使用評価/保存再読/停止を固定してから次のGPU実行を判断する。今回d691の自動継承/次学習0、追加観測会の依頼0。本人宛本文→通常API→保存→非生成再読→本人端末の完成条件を保持する。
 
 primary BLOCKER_NARROWED。PRODUCT_NOT_CLEAR/正式0/3/54.50％維持。製品source/owner/公開DTO/DB/RN/料金/quota/期限/配置/main/他中核変更0、STRUCTURE_MAP_DELTA_NONE（隔離した学習と本文確認のみ）。実emotion submit/本番factory/Auth/Supabase/Render/RN配布/本人端末/API・DB process再起動/新HTTP-SQL保存は未実行。
+
+
+## 後続10： 事実保持の対比案 — 架空8組とCPU計算を準備、4B学習は未実施
+
+Mashの続行指示に従い§25の次のCPU具体化を完了した。fresh PR30 `aba146b4`/API PR3 `a9c891d1`と前提/作業規則・全機能現在地全文・最新weekly・観測学習の目的を確認。前監査後の3差分は00/weekly/API開発記録だけで、設計/01A〜C全file地図/current maps/製品source同一。既監査を再利用し、rootが編集/実行/判断/保存、agentは教材/数式/source/固定案をread-only監査。正式な別モデルPro審査やhuman Product Readとは数えない。
+
+### 後続10：1 同じ本人宛文体で、事実保持と改変を対にする
+
+Karen架空8組C01〜08をCPU作成。連言否定、行為主体、感情所有、限定同意、過去/現在、未実行予定、語り手、推測留保を扱う。短さや語尾だけで良否を分けず、誤答側は意図的な比較対象で製品本文ではない。C02の感情所有/C07の鍵の所有推定を点検後に最小推敲した。Mash実演/正式正解へ昇格せず、旧12/R01〜06/既使用NRのbytes変更・評価原文の教師転用0。
+
+DPO原論文Appendix Bのsigmoid目的と公式TRLの参照logprob事前計算を確認した。[実行案](https://github.com/MassyuRed/Cocolon/blob/agent/three-core-cmee-current-structure-20260815/Cocolon_前提資料/observation_learning/training/2026-10-31-natural-reply-preference/README.md)に数式/実装順/境界を固定。af44を参照/初期値とし、6dac/d691は継承しない。assistant token logprobのSUMで参照との差を引き、beta0.1のDPO+chosen meanCE0.1を使う案。旧12 meanCE係数1各1回と8pair各2回を固定順に混ぜた28optimizer step/lr1e-5、旧12+pair8+既使用8+モデル未使用NR21/22の30生成、学習180秒/全体600秒/各23秒/再試行0をCPUで具体化した。独自の混合候補で原論文設定そのものではなく、値や方式の最適性・効果は未確認。新TRL/報酬モデル/二重baseを導入しない。
+
+### 後続10：2 実CPUとtokenizerで成立した範囲
+
+既存JupyterのCPUで120秒上限の一回を実4.676453104009852秒で完了。既存torch2.8.0+cu128/transformers5.19.0、CUDA_VISIBLE_DEVICES空・前後CUDA未初期化。4B重み読込0・モデル更新0・モデル生成0。玩具tensorのbackwardを4B学習へ加算しない。
+
+6検査groupが成功：参照=policyでln2/勾配±0.05/参照detach、選好方向、causal shiftとprompt/余剰最終logit除外、異長・参照JSON往復と分割係数対autograd（最大差0）、極端margin有限、固定tokenizer8pair両側と旧12encoded-mask一致。prompt364〜374token、chosen19〜30/rejected18〜26tokenで極端な長さ差はないが、長さバイアス解消の証明ではない。既存の学習終端im_end248046と生成EOS設定248044を混同せず、新しい終端は追加していない。
+
+CPUの勾配式・tokenizerのcreditに限定する。実4Bのscore/勾配一致・VRAM適合・参照logprob計測・自由生成・保存reloadは未実行。選好marginを商品品質へ換算せず、数式検査6を商品合格率としない。NR21/22はモデル未使用のまま。
+
+### 後続10：3 保全と次の一作業
+
+元af44/6dac/d691の3重みはCPU前後SHA一致、終了時GPU2MiB/0％。GPU Stop/restart/delete0で稼働保持。GPU計算0でも保持課金は続き、レンタル総時間/請求額は不明。次案600秒の按分上限は最後の$0.58/hなら約$0.09667で、準備/待機/回収/記録/保持等は別。
+
+全8pair良否/30評価案/28順/実encoded/数式source/CPU検証source/結果/log/旧重み不変/次計画/判断は[cocolon-preference8-cpu-20261031.zip](https://chatgpt.com/library?file_id=libfile_dea813b14bbc8191a3586374dde0e815&account_id=personal) version0へ保存。9member/34,778bytes/SHA256 `7f74424839f76794219cc7a3f1ab9870fc26e8a0cd5ca89dacb9952359fbe375`。未改変Pod原ZIPは14member/20,151bytes/SHA `3b15fa928a63fffe1241e6debbca953ebf5b85eaa126bc4f3910c53cf74335f2`。個別private本文は公開GitHubへ載せない。
+
+次はこの候補のlossを既存有限runnerへ最小接続し、元重み/encoded/固定参照値/分割score一致条件と予算を実行前に固定して、一回の実4B学習・保存reload・30本文確認へ進める。runner接続とGPU実行は今回未実施。d691の製品/初期値自動採用や同方式の周回追加へ戻らず、追加観測会は現時点不要。
+
+primary TECHNICAL_CREDIT（数式実装/CPU準備のみ）。PRODUCT_NOT_CLEAR/正式0/3/54.50％維持。製品source/owner/通常loss/公開DTO/DB/RN/料金/quota/期限/Render/Supabase/配置/main/他中核変更0、STRUCTURE_MAP_DELTA_NONE（隔離したCPU試験と未実行案だけ）。実emotion submit/本番Auth/RN配布/本人端末/新HTTP-SQL保存は未実行。
