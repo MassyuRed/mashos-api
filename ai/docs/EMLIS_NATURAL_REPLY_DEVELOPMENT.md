@@ -65,3 +65,39 @@ Mashの新Pod利用・Googleログインからの作業継続指示で、Pod `10
 非公開原本：`cocolon-natural-reply-actual-20261031.zip`、Library `libfile_0831a417bae0819196da4401cef8fd70`、SHA256 `121d0145b3ad46a09a709469a3e9dc3abde465386e8badeb2005b152c9d49fa7`、60member。raw/messages/元・修正source/予算/実環境/全失敗/SQL再読/終了確認を保持。正解文への一致や追加学習は使用していない。
 
 今回18回の実行は閉鎖し、自動再開しない。次は追加学習に戻らず、学習前4Bへ主体・感情所有とEmlis一人称を保つ最小案を具体化する。修正後8件合格・通常接続・本人端末の完成に換算しない。STRUCTURE_MAP_DELTA_NONE（製品sourceと責務の追加変更なし）。
+
+
+<a id="natural-base-followup-20261031"></a>
+## 2026-10-31 後続2： 学習前4Bの指示/対話/生成条件比較 — 新18生成、通常採用未達
+
+Mashの「作業を進めて」を受け、§17の18生成を再開せず新しい実行を同Jupyterで行った。重み再転送・追加学習なし。全体現在地/作業規則/必読incident/全体設計・file地図/最新weeklyと実sourceを確認し、rootが実行、補助agentはread-only監査を担当した。
+
+### 2026-10-31 後続2：1 条件の変更と結果
+
+| 範囲 | 条件・結果 |
+|---|---|
+| 最初の8 | 同じbase/8原材料で、前回fit38に試した共通指示と否定/全文貼返しの一文を使用。全EOSだが相手感情追加・本人一人称・全文コピー・要約調が残る |
+| 残2 | 当初のHTTP保存NR09/10から、本人が今話しかけている対話場面の指示を使うNR02/07へ振替え。対話口調には変わったが、未記載の心理・関係の保証/助言、Emlisの目撃者化と姉という立場の追加が残り不採用。NR09/10はNOT_RUN |
+| 別条件の8追加 | 固定revisionの公式cardを確認し、元product指示/同じ原材料/baseのまま、nonthinking一般用途のsampling値を参照した一組で比較。seed42を各case開始前に固定し一回ずつ。全EOSだが友人の感情追加・存在しない約束・Emlis目撃者/表情創作・理由不明から原因候補/問い・全文コピーが残った |
+
+最後の8追加は華恋が新しい設定差の確認として事前に説明した変更であり、Mashが個別に18という回数を指定した記録にはしない。当初10件のcounter/sourceを残して別counter/sourceで8件、計18件。共通900秒のdeadlineを延ばさず、§17の旧18・既知失敗も変更しない。成功seedの選別、同条件の自動retry、応答の書換え0。18件を全件読んだが商品最低線未達、実験source/prompt/設定を製品採用しない。
+
+### 2026-10-31 後続2：2 公式資料と、実装上の限界
+
+固定revisionの[公式README](https://huggingface.co/Qwen/Qwen3.5-4B/raw/851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a/README.md) L1075〜1079はnonthinking一般用途にtemperature0.7/top_p0.8/top_k20/min_p0/presence1.5/repetition1.0を示す。従来のgreedyとの差を比較した。公式推奨であることを失敗原因の証明へ変換しない。
+
+HF5.19にpresenceの標準field/classがなく、生成済tokenだけへ各1回−1.5とする一回限りの同等処理を使用。prompt除外/頻度加算なしの数値assertと独立read-onlyコード監査を実施。max_new2048/23秒は既存の独自上限で、card全条件再現ではない。seed42は選別防止用で、異環境完全再現保証ではない。コピーした実験handlerはtemperature0要求を残すため、今回のsampling generatorとHTTP契約が一致せず、そのまま通常HTTPへ採用できない。今回はdirect呼出しのみ。
+
+### 2026-10-31 後続2：3 保存接続・時間・終了状態
+
+実GPU HTTP→既存service/Q3 SQLのloopback TLS案とsource packはCPU準備のみ。GPUにNode/npmはなく、導入/配置/実HTTPは0。新規の生成/保存2件は未実施で、§17の手動artifact2件を今回のHTTP成功へ数えない。本番Auth/Supabase/RN/本人端末・API/DB process再起動も未実施。製品source/公開DTO/DB/期限/料金/quota/Render/main/配布の差分0。
+
+計測した実行窓の終了確認は775.928秒、元deadline900秒内、表示$0.58/h按分約$0.1250。これに先行する前提確認/CPU準備/転送や終了後の文書整理は含まれず、当初説明した「準備・回収込み15分」を全工程で達成したとは主張しない。レンタル全体/間の待機/終了後保持等の総時間・総請求額は未測定。probe processなし/GPU2MiB・0％/fit38 ad8bとconfig不変。学習/重み更新/Stop/restart/delete0で稼働保持。
+
+### 2026-10-31 後続2：4 次の一手と非公開原本
+
+次は直接学習より先に、**元の指示・原材料・base・sampling・seed42を固定し、提示形式だけ変える比較**を行う案。本人原文を日本語の発話本文として先頭に置き、感情・強度・日時・過去記録は明示した補助情報として全て保持する。JSONが要約対象として読まれる仮説は未検証で、原因/解決と断定しない。8件の全値保持・元JSONへの対応をCPU確認したが、新GPUは未実行。正解文/固定応答や新しい採否checkerは増やさない。
+
+原本`cocolon-natural-base-followup-20261031.zip`（Library libfile_cb5fcb1bf880819187aef6fff6e12c24、61member、SHA25677d8f7bfd3512be53f164b84a55a952119404724ccab472f565ab662e816aa1b）へ全18本文/messages、元10/追加8の変更、実source/数値assert/予算/終了、未実行HTTP案・次の全値保持案を保存。個別本文は公開GitHubへ出さない。
+
+primaryはBLOCKER_NARROWED。通常応答の品質改善や正式受入れとして加算せず、商品0/正式0/3/54.50％・STRUCTURE_MAP_DELTA_NONEを維持。今回の実行は終了し、生成枠・時間・旧counterを遡及変更しない。
