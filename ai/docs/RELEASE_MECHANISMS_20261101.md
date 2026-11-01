@@ -1,6 +1,6 @@
 # 11/1 リリース機構の実装記録
 
-後続実装：natural専用の関連履歴RPC、原入力/複数回答/本人訂正の別材料化、権限・source失効時のtimeline本文抑止、Analysisの最大3補足対応と先行補足/訂正文間の矛盾照合、選択adapter SHA対指定を追加。実SQLを使うローカル検証63件とAnalysis177件はPASS。固定baseの実4B HTTPS1callは後述の契約成功。実Auth/DB/実機は未実施。Renderは744336c0のnatural設定反映後、build待機中read_onlyでLive。累積/月次当時snapshot・月追加1万円内の常時提供方式は未完。
+後続実装：natural専用の関連履歴RPC、原入力/複数回答/本人訂正の別材料化、権限・source失効時のtimeline本文抑止、Analysisの最大3補足対応と先行補足/訂正文間の矛盾照合、選択adapter SHA対指定を追加。実SQLを使うローカル検証63件とAnalysis177件はPASS。固定baseの実4B HTTPS1callは後述の契約成功。6701で本人実Auth→固定4B→実DB FINAL保存1件→同じ記録から同じ返事の再表示を確認。生成品質の合格ではない。Renderは744336c0のartifactを維持。累積/月次当時snapshot・月追加1万円内の常時提供方式は未完。
 
 品質反復にRNのビルド・実機確認を毎回要求しない。11/1は機構・配布・運用と初回接続、11/2〜11/6はサーバー側の品質改善というMashの指示を維持する。
 
@@ -25,9 +25,9 @@ ai/tests/piece_v2/test_b12_shared_preview_composition.py
 
 ## 配置時点と残作業
 
-11/1にAPI `744336c0de999e271a755b441394f382548829ab` を既存Renderへ指定commitで配置し、`dep-dbj853ou01pc73enjrt0` は00:08:08 UTCにLive。RN `6675b4ed` のiOS run41254631100/#66/BUILD_NUMBER6601はArchive/IPA/TestFlight Upload成功後、Apple90683の写真利用目的文不足で拒否・配布不可。RNb8a43e5aで両keyと実Archive検査を修正し、run41260929560/#67を新規起動。実モデルHTTPS1callは契約成功、実Auth→4B→DB保存→同本文再読は未完。exportの実機成功も未完。iOS専用rendererをAndroid対応済みとは数えない。
+11/1にAPI `744336c0de999e271a755b441394f382548829ab` を既存Renderへ指定commitで配置し、`dep-dbj853ou01pc73enjrt0` は00:08:08 UTCにLive。RN `6675b4ed` のiOS run41254631100/#66/BUILD_NUMBER6601はArchive/IPA/TestFlight Upload成功後、Apple90683の写真利用目的文不足で拒否・配布不可。RNb8a43e5aで両keyと実Archive検査を修正し、run41260929560/#67/6701は全工程success・Apple処理通過・内部テスト中、Mashが起動を確認。実Auth→4B→DB保存→同本文再読は後述の本人確認で完了。exportの実機成功も未完。iOS専用rendererをAndroid対応済みとは数えない。
 
-週間8タスクのうち、本人原入力/補足/訂正の別材料化とPlus権利内関連履歴選択は後述のsource/DBで実装済み。実4B/本人実機・新しい観測材料生成は未完。Analysis累積/月次snapshotも未完として継続する。上記変更を8タスク全完了や公開可能状態とは報告しない。料金680円/1480円の実ストア請求設定・両OS配布・月追加1万円内の本番提供方式・申請Console確認も残る。
+週間8タスクのうち、本人原入力/補足/訂正の別材料化とPlus権利内関連履歴選択は後述のsource/DBで実装済み。初回1件の実4B/本人実機/保存再読は完了。品質改善と本人補足/訂正からの新しい観測材料生成は未完。Analysis累積/月次snapshotも未完として継続する。上記変更を8タスク全完了や公開可能状態とは報告しない。料金680円/1480円の実ストア請求設定・両OS配布・月追加1万円内の本番提供方式・申請Console確認も残る。
 
 ## 後続 — 履歴/補足・候補読込の機構
 
@@ -49,14 +49,25 @@ Renderの既存service `srv-d4ppfpm3jp1c73952bj0` はAPI744336c0/dep-dbj853ou01p
 
 公開healthz200/ok、app/bootstrap200と上記flag、新exportの未認証GET401・emotion.piece.export.v2/PIECE_AUTH_REQUIRED・no-storeを実HTTP確認。配置開始後に取得したapp error logsは0件。本人データへのprobe保存は未実行。API7bbb4661のAnalysis CI41253745568もsuccess（1634 PASS＋12020 subtests、owner1 PASS・194 deselected、合成保存再読success）。
 
-GitHub/Google認証の継続許可後、RN6675b4edで新iOS run41254631100を起動。Archive/IPA/Upload to TestFlight/全job success、実ログBUILD_NUMBER=6601。Apple処理/配布対象、本人導入/通常操作は未確認。
+GitHub/Google認証の継続許可後、RN6675b4edで新iOS run41254631100を起動。Archive/IPA/Upload to TestFlight/全job success、実ログBUILD_NUMBER=6601。この6601は後続Apple90683で配布不可。修正後の6701で内部配布と本人通常入力を確認。
 
 Mashの明示承認後、新Pod6i2aa1nj683s8y/RTX3090×1/$0.51/hのHTTP8888,8000を保存/resetし環境を復元。Python3.12.3/torch2.8.0+cu128、隔離venvのtransformers5.19.0/peft0.21.2/accelerate1.15.0/safetensors0.8.0、提供tool SHA d3b7a04e38769485da995c8323aaaaf4426ff5273fcba6dff578ada85bdb77b6、base固定revision851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0aの2shardを照合。専用Bearerの値はchat/公開source/logに出さない。鍵なしHTTPS POST401、既存SelfHostedNaturalReplySourceの架空材料1callは7.771秒/42文字でHTTP/model/schema/EOS/本文形式の契約成功、再試行0。本人Auth/DB/実機や品質採用の成功ではない。
 
 Render環境変数更新pluginがautoDeploy OFFでもmain2d2f06dの配置dep-dbj8pt49v7es739dsefgを起動し、00:52:20 UTC update_failed（create_application ImportError）。既存Live744336c0は維持。744336c0を指定し直したdep-dbj8rik9v7es739e00q0は00:55:48 UTC Live、health/bootstrap200・threads/export trueを確認。今後のenv操作はDashboard Save and deployで既存artifactを使い、main起動を避ける。
 
-6601はApple側の90683で配布不可とMash画像/認証後のAppStoreConnectで確認。RNb8a43e5aはNSPhotoLibraryUsageDescriptionと既存Add目的文の両方を宣言し、Archive実appの2key非空検査をUpload前へ追加。新iOS#67/run41260929560/job124713864844は実行中、Apple処理成功と本人導入は未確認。
+6601はApple側の90683で配布不可とMash画像/認証後のAppStoreConnectで確認。RNb8a43e5aはNSPhotoLibraryUsageDescriptionと既存Add目的文の両方を宣言し、Archive実appの2key非空検査をUpload前へ追加。新iOS#67/run41260929560/job124713864844は01:38:35 UTCにArchive/実物目的文検査/IPA/Uploadを含めsuccess。Apple処理を通過し暗号化情報を保存後、既存内部グループで6701「テスト中」を確認、Mashが6701起動を確認。
 
-モデルHTTP serverは00:51:54 UTCから1477秒で停止、所有process不在・GPU1MiB/0％を確認。新PodのStop/新規作成/削除/チャージは華恋0。残り最大3要求/300秒だけを新配布候補の初回確認へ残す。APIはMODE=read_only＋natural_reply.v1を維持し、同source744336c0/既存artifactのdep-dbj96l67bikc73ep8hugが01:18:55 UTC Live。保存済みreaderをlegacyへ戻さない。実DBの本文/owner/inputIDなし集計では、00:55:48 UTC以降のnatural更新/FINAL保存/active/CALL_STARTEDは全0件。通常実Auth→4B→DB保存→本人同本文再読、月追加1万円内の常時提供は未完。
+モデルHTTP serverは00:51:54 UTCから1477秒で停止、所有process不在・GPU1MiB/0％を確認。新PodのStop/新規作成/削除/チャージは華恋0。残り最大3要求/300秒だけを新配布候補の初回確認へ残す。APIはMODE=read_only＋natural_reply.v1を維持し、同source744336c0/既存artifactのdep-dbj96l67bikc73ep8hugが01:18:55 UTC Live。保存済みreaderをlegacyへ戻さない。実DBの本文/owner/inputIDなし集計では、00:55:48 UTC以降のnatural更新/FINAL保存/active/CALL_STARTEDは全0件。この段階の通常実Auth→4B→DB保存→本人同本文再読は未完で、後続の6701確認で完了した。月追加1万円内の常時提供は未完。
 
 今回product source/公開contractの追加変更なし、STRUCTURE_MAP_DELTA_NONE。詳しい本人端末/8task残件と次の許可対象はRNの最新weekly第9回§36。
+
+
+## 11/1 6701の本人初回保存・再読の結果
+
+Mashから6701起動の回答を受け、API744336c0の既存artifactをMODE=developmentへ反映。dep-dbj9lvh42hec73cd65ugは01:51:36 UTC Live。モデルは同固定base/同専用Bearerで01:51:45 UTCに最大3要求300秒で再開。本人へ通知送信を避けた感情入力1件→返事を閉じる→同じ記録の「Emlisの返事を開く」を案内し、同じ返事が表示されたとの回答を受領した。
+
+Supabaseのnatural_reply.v1の本文/owner/inputIDを返さない集計で、01:52:16 UTCのFINAL/CALL_STARTED/active全0から、01:53:53 UTCに更新1/FINAL1/CALL_STARTED1/active0。再読回答後01:57:04 UTCにも同じ1/1/1/0を確認。保存済みFINAL artifact.schema_versionはcocolon.emlis.recipient_reply.v1。初回実Auth→モデル→DB保存→本人同本文再読の配線を確認し、synthetic1call/合成テストや品質採用と混同しない。
+
+FINAL保存・active0を確認後01:54:48 UTCにモデルserverを停止要求。再開は切上げ184秒、先行1477秒との合計1661秒で承認済み1800秒以内。所有model process不在・GPU1MiB/0％を確認。Podは稼働中($0.51/h)、華恋のStop/新規作成/削除/チャージ0。学習0・候補品質反復0。
+
+最終read_onlyはdep-dbj9pqvb9u1s73de4160（01:59:49 UTC Live、source744336c0）で反映し、画面reload後の保存値read_onlyも照合した。先行dep-dbj9o1flk1mc738ksqgg（01:55:59 UTC Live）は後の保存値確認でdevelopmentのままと判明したため、編集値を入力/確定して保存し直した。Liveだけでmode反映済みとせず、最終保存値まで確認した。11/2〜11/6はサーバー側品質改善、候補ごとのRN再ビルドは不要、最終候補のみ接続という指示を維持。Piece実機/OS出力、Android、課金実ストア、累積/月次snapshot、常時提供原価、申請Console/更新契約の本人確認、旧V4 metrics19失敗は残る。詳細はRN weekly第9回§37。追加product source/DB/依存変更0、STRUCTURE_MAP_DELTA_NONE。
