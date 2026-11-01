@@ -820,3 +820,10 @@ Mashの「完成まで進めて」に基づく変更。詳細は最新weekly第9
 公開API/7field source-ref/DB schema/保存枠/owner/receipt/CAS/依存/native描画は不変。新fileなし、STRUCTURE_MAP_DELTA_PRESENT（private選択根拠と既存renderer保持）。本文の曖昧な感情言及や句点なし等の一般文法対応、4B接続、Android/商品受入れの完了へ拡張しない。
 
 局所検証：API6file557 PASS、自然profileの生成→実PGlite preview/visual-change/private保存/同内容再読と元source失効の7 PASS、RN renderer/保存host/exportの251 PASS。反復実行は加算しない。本人対象記録もprivate CPUで生成し本文実読済み、公開testは架空記録。実Auth/実OS/iPhoneの画像保存一巡は配布後に本人確認する。旧native V4 19失敗は未解消。稼働/配布結果はweekly§40へ記録する。
+
+
+### 11/1 配置と既存CIの経路一覧同期
+
+API7f0cee40/dep-dbjbtqlg1s2s73faadmgは04:25:24 UTC Live。healthz/app bootstrap200、Piece private5ON/public3OFF、配置後取得範囲app error0。既存free resource/autoDeploy OFF/設定を保持し、DB追加適用/GPU起動/provider呼出し0。
+
+自動CI41272660291は前段19検査step成功後、既存test_b10_preview_application_native.pyの経路一覧が以前追加したGET /emotion/piece/{piece_id}/exportを含まないため、生成前の同じassertで6FAIL/他7PASS。今回の意味生成/SQL保存失敗とは区別する。既存一覧へ1経路を同期し、local実factoryの12経路を確認。製品sourceの追加変更・API再配置・RN再buildは不要。新headの既存CIで実native後続検査まで確認する。
