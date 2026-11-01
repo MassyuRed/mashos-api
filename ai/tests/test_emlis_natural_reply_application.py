@@ -62,6 +62,80 @@ def test_saved_reply_reopens_without_provider_or_meaning_generation(natural_case
     assert all(x not in public for x in ("source_prefix_ref", "material_json", "NATURAL_REPLY", "self-hosted-test-4b"))
 
 
+def _piece_adapter(user, service, monkeypatch):
+    import piece_v2_source_adapter as piece
+    async def verified(_authorization):
+        return user
+    monkeypatch.setattr(piece, '_require_user_id', verified)
+    return piece.PieceSavedSourceAdapter(store=service.store)
+
+
+@pytest.mark.parametrize('tier,days', [('free', 1), ('plus', 200), ('premium', 4000)])
+def test_piece_uses_original_after_natural_final_with_saved_context(natural_case, qdb, monkeypatch, tier, days):
+    from piece_v2_source_adapter import project_saved_original_source
+    user, parent, service, calls = natural_case
+    qdb.query('update public.profiles set subscription_tier=$2 where id=$1', [user, tier])
+    past = str(uuid4())
+    qdb.query("insert into public.emotions values ($1,$2,(now()-($3||' days')::interval) at time zone 'UTC',$4,'',array['仕事'],array['平穏'],$5)",
+        [past, user, str(days), '会議の資料を読み直した。', json.dumps([dict(type='平穏', strength='medium')])])
+    dto = run(service.start(user, parent))
+    adapter = _piece_adapter(user, service, monkeypatch)
+    handoff = run(adapter.resolve_original_handoff('Bearer synthetic', parent))
+    ref = run(adapter.resolve_original_source_ref('Bearer synthetic', parent))
+    assert ref['emlis_observation_result_identity'] == dto['current_observation']['event_id']
+    assert ref['emlis_observation_stage'] == 'normal_observation'
+    assert len(ref) == 7 and ref['supplemental_answer_identity'] is None
+    source = project_saved_original_source(handoff.original, source_stage='normal_observation')
+    assert BODY not in repr(source) and BODY not in handoff._lineage_json.decode()
+    assert source.original_text == handoff.original.original_payload()['memo']
+    saved = run(service.store.read(user, input_id=parent))
+    assert saved['thread']['current_meaning_event_id'] is None
+    assert saved['thread']['data']['analysis_state'] == 'NOT_GENERATED'
+    guards = saved['thread']['data']['context_guards']
+    assert bool(guards) == (tier != 'free')
+    if guards:
+        # A new unrelated/coinciding record never substitutes the saved cohort.
+        qdb.query("insert into public.emotions values ($1,$2,(now()-interval '1 hour') at time zone 'UTC',$3,'',array['仕事'],array['平穏'],$4)",
+            [str(uuid4()), user, '会議の資料を読み直した。', json.dumps([dict(type='平穏', strength='medium')])])
+        assert run(adapter.resolve_original_handoff('Bearer synthetic', parent)) == handoff
+        qdb.query("update public.emotions set memo='編集済み' where id=$1", [past])
+        with pytest.raises(ValueError, match='PIECE_SOURCE_NOT_ELIGIBLE'):
+            run(adapter.resolve_original_source_ref('Bearer synthetic', parent))
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize('corruption', ['receipt', 'start', 'finish', 'artifact', 'context', 'active', 'meaning'])
+def test_piece_rejects_incomplete_or_mismatched_natural_control(natural_case, monkeypatch, corruption):
+    import copy
+    user, parent, service, _ = natural_case
+    run(service.start(user, parent))
+    value = run(service.store.read(user, input_id=parent))
+    value = copy.deepcopy(value)
+    t = value['thread']
+    obs = next(e for e in value['events'] if e['kind'] == 'OBSERVATION')
+    if corruption == 'receipt':
+        next(e for e in value['events'] if e['payload'].get('stage') == 'NATURAL_REPLY_RECEIVED')['payload']['reply']['text'] = 'different'
+    elif corruption == 'start':
+        value['events'] = [e for e in value['events'] if e['payload'].get('stage') != 'NATURAL_REPLY_CALL_STARTED']
+    elif corruption == 'finish':
+        value['events'][-1]['attempt_id'] = str(uuid4())
+    elif corruption == 'artifact':
+        obs['payload']['artifact']['schema_version'] = 'invalid'
+    elif corruption == 'context':
+        obs['payload']['context_ref'] = 'different-context'
+    elif corruption == 'active':
+        t['active_attempt_id'] = str(uuid4())
+    else:
+        t['current_meaning_event_id'] = str(uuid4())
+    class ReadOnly:
+        async def read(self, *_args, **_kwargs): return copy.deepcopy(value)
+        async def related_context(self, *_args, **_kwargs): return {'history': [], 'feedback': []}
+    adapter = _piece_adapter(user, service, monkeypatch)
+    adapter._store = ReadOnly()
+    with pytest.raises(ValueError, match='PIECE_SOURCE_NOT_ELIGIBLE'):
+        run(adapter.resolve_original_handoff('Bearer synthetic', parent))
+
+
 def test_parallel_initial_starts_admit_one_provider_call(natural_case):
     user, parent, service, calls = natural_case
 
@@ -110,6 +184,11 @@ def test_rolled_back_body_save_reuses_durable_receipt_on_explicit_retry(natural_
         operation_id=failed_dto["operation_id"]))
     assert result["current_observation"]["text"] == BODY
     assert len(calls) == 1
+    # The valid receipt belongs to the first attempt; Piece binds the retried
+    # observation to its own successful finish without reacquiring the model.
+    adapter = _piece_adapter(user, service, monkeypatch)
+    ref = run(adapter.resolve_original_source_ref('Bearer synthetic', parent))
+    assert ref['emlis_observation_result_identity'] == result['current_observation']['event_id']
 
 
 def test_provider_failure_keeps_input_and_does_not_offer_regeneration(natural_case):

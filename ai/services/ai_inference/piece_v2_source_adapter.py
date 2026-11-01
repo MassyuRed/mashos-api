@@ -255,7 +255,7 @@ class PieceSavedSourceAdapter:
         This reads existing control metadata; it does not run an Emlis author or
         pass its text, question, interpretation or history to the Piece author.
         """
-        from emlis_thread_service import _check, _generation_current, Q3_PROFILE
+        from emlis_thread_service import _check, _generation_current, Q3_PROFILE, NATURAL_REPLY_PROFILE
         saved, snapshot = await self._resolve_original_with_snapshot(
             authorization, saved_input_id)
         try:
@@ -263,8 +263,13 @@ class PieceSavedSourceAdapter:
             if thread is None:
                 raise _error('PIECE_SOURCE_NOT_ELIGIBLE')
             if thread['data']['runtime_profile'] == Q3_PROFILE:
-                snapshot['context'] = await self._store.context(
-                    saved.authenticated_owner_id, saved.saved_input_id)
+                if thread['data'].get('response_profile') == NATURAL_REPLY_PROFILE:
+                    snapshot['context'] = await self._store.related_context(
+                        saved.authenticated_owner_id, saved.saved_input_id,
+                        context_guards=thread['data'].get('context_guards', []))
+                else:
+                    snapshot['context'] = await self._store.context(
+                        saved.authenticated_owner_id, saved.saved_input_id)
             if not _generation_current(snapshot):
                 raise _error('PIECE_SOURCE_NOT_ELIGIBLE')
             return _original_observation_handoff(saved, snapshot)
@@ -413,6 +418,8 @@ def _original_observation_handoff(saved: PieceSavedOriginal, snapshot: dict) -> 
     and decision body never enter the handoff or Piece semantic material.
     """
     from cocolon_meaning_experience_engine.emlis_thread_contracts import SEMANTIC_SCHEMA
+    from cocolon_meaning_experience_engine.natural_reply import ARTIFACT_SCHEMA, PROFILE
+    from emlis_thread_service import Q3_PROFILE, _context_ref
 
     def require(condition):
         if not condition:
@@ -423,16 +430,18 @@ def _original_observation_handoff(saved: PieceSavedOriginal, snapshot: dict) -> 
 
     t, events = snapshot['thread'], snapshot['events']
     d = t['data']
+    natural = d.get('response_profile') == PROFILE
     require(type(t['revision']) is int and t['revision'] > 0)
     thread_id = _uuid(t['id'], 'PIECE_SOURCE_NOT_ELIGIBLE')
     require(t['state'] in {'COMPLETED', 'AWAITING_ANSWER'})
     require(all(t[key] is None for key in (
         'active_operation_id', 'active_attempt_id', 'processing_deadline_at', 'latest_answer_event_id')))
     require(d.get('failure_code') is None and d.get('answer_assessment') == 'NOT_APPLICABLE')
-    require(d.get('meaning_updated') is False)
+    require((d.get('meaning_updated') is None or d.get('meaning_updated') is False)
+            if natural else d.get('meaning_updated') is False)
     require(canonical_json_bytes(t['source_snapshot']) == saved._original_json)
     require(ref(d.get('original_source_ref')) and ref(t['source_prefix_ref']))
-    require(t['evaluated_prefix_ref'] == t['source_prefix_ref'])
+    require(t['evaluated_prefix_ref'] is None if natural else t['evaluated_prefix_ref'] == t['source_prefix_ref'])
     require(type(events) is list and bool(events))
     by_id, seqs = {}, []
     for event in events:
@@ -445,15 +454,49 @@ def _original_observation_handoff(saved: PieceSavedOriginal, snapshot: dict) -> 
         seqs.append(event['seq'])
     require(seqs == sorted(set(seqs)))
     observation = by_id[t['last_observation_event_id']]
-    checkpoint = by_id[t['current_meaning_event_id']]
-    require(observation['kind'] == 'OBSERVATION' and checkpoint['kind'] == 'MEANING_UPDATE')
+    require(observation['kind'] == 'OBSERVATION')
     require(sum(e['kind'] == 'OBSERVATION' for e in events) == 1)
-    op, cp = observation['payload'], checkpoint['payload']
+    op = observation['payload']
     require(op.get('stage') == 'INITIAL' and observation['round_index'] == 0)
-    require(cp.get('semantic_schema_version') == SEMANTIC_SCHEMA and cp.get('answer_update') is None)
-    require(ref(cp.get('checkpoint_id')) and op.get('meaning_checkpoint_ref') == cp['checkpoint_id'])
-    require(op.get('source_prefix_ref') == cp.get('source_prefix_ref') == t['source_prefix_ref'])
-    require(checkpoint['seq'] < observation['seq'])
+    require(op.get('source_prefix_ref') == t['source_prefix_ref'])
+    if natural:
+        # A recipient reply deliberately has no semantic checkpoint. Its saved
+        # receipt is completion evidence only, never Piece's semantic material.
+        require(d.get('runtime_profile') == Q3_PROFILE and d.get('analysis_state') == 'NOT_GENERATED')
+        require(t['state'] == 'COMPLETED' and d.get('body_state') == 'FINAL')
+        require(t['current_meaning_event_id'] is None and t['issued_count'] == 0)
+        require(not any(e['kind'] in {'MEANING_UPDATE', 'QUESTION', 'TERMINAL'} for e in events))
+        require(op.get('context_ref') == _context_ref(snapshot))
+        require(op.get('context_guards') == d.get('context_guards', []))
+        artifact = op.get('artifact')
+        require(type(artifact) is dict and artifact.get('schema_version') == ARTIFACT_SCHEMA
+            and artifact.get('analysis_state') == 'NOT_GENERATED'
+            and type(op.get('text')) is str and bool(op['text'].strip())
+            and artifact.get('text') == op['text'] and ref(artifact.get('model')))
+        received = [e for e in events if e['kind'] == 'OPERATION'
+            and e['payload'].get('stage') == 'NATURAL_REPLY_RECEIVED'
+            and e['payload'].get('source_prefix_ref') == t['source_prefix_ref']
+            and e['payload'].get('context_ref') == op['context_ref']
+            and e['seq'] < observation['seq']]
+        require(len(received) == 1)
+        receipt = received[0]
+        require(receipt['operation_id'] == observation['operation_id'])
+        require(receipt['payload'].get('reply') == {'text': op['text'], 'model': artifact['model'],
+            'source_prefix_ref': t['source_prefix_ref'], 'schema_version': ARTIFACT_SCHEMA})
+        starts = [e for e in events if e['kind'] == 'OPERATION'
+            and e['payload'].get('stage') == 'NATURAL_REPLY_CALL_STARTED'
+            and e['operation_id'] == receipt['operation_id'] and e['attempt_id'] == receipt['attempt_id']
+            and e['payload'].get('source_prefix_ref') == t['source_prefix_ref']
+            and e['payload'].get('context_ref') == op['context_ref'] and e['seq'] < receipt['seq']]
+        require(len(starts) == 1)
+    else:
+        checkpoint = by_id[t['current_meaning_event_id']]
+        cp = checkpoint['payload']
+        require(checkpoint['kind'] == 'MEANING_UPDATE')
+        require(cp.get('semantic_schema_version') == SEMANTIC_SCHEMA and cp.get('answer_update') is None)
+        require(ref(cp.get('checkpoint_id')) and op.get('meaning_checkpoint_ref') == cp['checkpoint_id'])
+        require(cp.get('source_prefix_ref') == t['source_prefix_ref'])
+        require(checkpoint['seq'] < observation['seq'])
     stamp = parse_iso_utc(observation['recorded_at'])
     require(stamp is not None and parse_iso_utc(saved.recorded_at) <= stamp <= parse_iso_utc(snapshot['now']))
     for key in ('operation_id', 'attempt_id'):

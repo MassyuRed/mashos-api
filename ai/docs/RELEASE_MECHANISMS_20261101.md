@@ -71,3 +71,14 @@ Supabaseのnatural_reply.v1の本文/owner/inputIDを返さない集計で、01:
 FINAL保存・active0を確認後01:54:48 UTCにモデルserverを停止要求。再開は切上げ184秒、先行1477秒との合計1661秒で承認済み1800秒以内。所有model process不在・GPU1MiB/0％を確認。Podは稼働中($0.51/h)、華恋のStop/新規作成/削除/チャージ0。学習0・候補品質反復0。
 
 最終read_onlyはdep-dbj9pqvb9u1s73de4160（01:59:49 UTC Live、source744336c0）で反映し、画面reload後の保存値read_onlyも照合した。先行dep-dbj9o1flk1mc738ksqgg（01:55:59 UTC Live）は後の保存値確認でdevelopmentのままと判明したため、編集値を入力/確定して保存し直した。Liveだけでmode反映済みとせず、最終保存値まで確認した。11/2〜11/6はサーバー側品質改善、候補ごとのRN再ビルドは不要、最終候補のみ接続という指示を維持。Piece実機/OS出力、Android、課金実ストア、累積/月次snapshot、常時提供原価、申請Console/更新契約の本人確認、旧V4 metrics19失敗は残る。詳細はRN weekly第9回§37。追加product source/DB/依存変更0、STRUCTURE_MAP_DELTA_NONE。
+
+
+## 11/1 応答ポップアップからのPiece作成接続
+
+Mashの明示UI指示（RN weekly第9回§38）に合わせ、新natural FINALを既存のoriginal-only Piece作成へ接続した。従来のhandoffはMEANING_UPDATE必須で、新naturalが意図的に保存しない意味checkpointを要求して422となっていた。natural_reply.v1/Q3だけを別検査し、同本人/同原本、FINAL/NOT_GENERATED/no active・answer・meaning、現在OBSERVATION、保存CALL_STARTED→RECEIVED、同observationと同attemptの成功finishを照合する。正規の保存再試行でreceiptが旧attemptの場合は保持する。recipient本文は整合照合だけに使い、Pieceの素材/lineageへ流さず、元memo/memo_actionと完全原本JSONを既存作者へ渡す。
+
+自然profileの履歴は保存済みguard指定のrelated_contextへ揃えた。新migration20261101022630_piece_natural_reply_context.sqlは既存issue/save/visual-changeの3RPCに限り、context呼出しと旧365/3650日の追加上限をnaturalだけ現在の権利へ合わせる。旧Q3、本人/原本/版、lock順、待機後の時計、保存枠、feedback照合、関数owner/ACLは保持する。新table/公開API/DTO/依存/モデル設定は追加しない。
+
+対象検証175 PASS/FAIL0/SKIP0（PGlite0.5.8の実SQL＋合成Auth/provider）。既存natural保存/再読、旧handoff/source HTTP、新natural原本投影、3tierの保存cohort、Premium4000日前、後からの新記録で非置換、receipt再保存を含む。Pieceの実SQL preview/visual/saveは3tier成功、原本/使用履歴の編集・削除後は3操作×3tierの9拒否、関数3本のservice_role限定を確認。ネイティブPostgreSQL並行実行/本人端末/画像品質の合格ではない。RNの対象209検査も成功し、通常footer2ボタン/両入口/一回要求/閉じる/本人・focus・runtime変化と保存回復保持を確認した。無関係なMetro bundle検査は今回のローカル対象から除いた。
+
+配置前の実DBは3RPCが旧contextを使用し、全3本SECURITY DEFINER/search_path=pg_catalog、anon/authenticated実行不可・service_role実行可と確認。migration適用/API指定版配置/iOS新buildとApple内部配布の結果は後続へ記録する。GPUはMashから停止報告を受領し、華恋の再起動・学習・実provider呼出し0。
