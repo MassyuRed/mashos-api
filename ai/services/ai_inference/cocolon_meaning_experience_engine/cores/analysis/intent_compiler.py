@@ -949,6 +949,19 @@ def _proposition_meaning(proposition):
 
 
 @dataclass(frozen=True, slots=True, repr=False)
+class ObservedQuotedField:
+    """Offline model classification, not an independently resolved proposition."""
+    owner_scope: str
+    source_set_ref: str
+    record_ref: str
+    record_version: str
+    field_ref: str
+    node_kind: str
+    text: str
+    evidence: EvidenceRef
+
+
+@dataclass(frozen=True, slots=True, repr=False)
 class ObservedNode:
     node_ref: str
     node_kind: str
@@ -960,6 +973,7 @@ class ObservedNode:
     temporal_scope: str
     proposition: ObservedProposition | None = None
     update_refs: tuple[str, ...] = ()
+    quoted_field: ObservedQuotedField | None = None
 
 
 @dataclass(frozen=True, slots=True, repr=False)

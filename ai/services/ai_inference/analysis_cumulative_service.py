@@ -91,7 +91,23 @@ def _checked_coverage(coverage):
     return coverage
 
 
-def build_cumulative_map(owner, snapshot):
+def prepare_cumulative_model_fields(owner, snapshot):
+    """Explicit offline probe; never selected by ensure_map or an HTTP flag."""
+    from astor_material_snapshots import _analysis_saved_member
+    from cocolon_meaning_experience_engine.cores.analysis.source_adapter import (
+        AnalysisObservedMapRequest, commitment, _time)
+    from cocolon_meaning_experience_engine.cores.analysis.semantic_admission import prepare_analysis_model_fields
+    owner = _owner(owner)
+    start, end = snapshot['period_start'], snapshot['period_end']
+    records = tuple(_analysis_saved_member(dict(raw, tier=snapshot['tier'], now=snapshot['now']),
+        owner=owner, input_id=raw['original']['id'], tier=snapshot['tier'],
+        start=_time(start), end=_time(end), cumulative=True)[0] for raw in snapshot['members'])
+    request_id = 'analysis-model-' + commitment([owner, snapshot['guard'], start, end])[7:]
+    request = AnalysisObservedMapRequest(request_id, owner, start, end, records)
+    return prepare_analysis_model_fields(request, source_guard=snapshot['guard'])
+
+
+def build_cumulative_map(owner, snapshot, *, model_input=None):
     """Use the existing compiler/author once for the complete eligible set.
 
     A source whose safety/update semantics cannot be admitted is explicitly
@@ -103,6 +119,24 @@ def build_cumulative_map(owner, snapshot):
     from cocolon_meaning_experience_engine.cores.analysis.intent_compiler import compile_observed_graph
     from cocolon_meaning_experience_engine import MeaningExperienceEngine
     from cocolon_meaning_experience_engine.contracts import EngineStatus
+    if model_input is not None:
+        from cocolon_meaning_experience_engine.cores.analysis.semantic_admission import require
+        expected = prepare_cumulative_model_fields(owner, snapshot)
+        require(type(model_input) is type(expected) and model_input.request == expected.request
+            and model_input.request_ref == expected.request_ref
+            and model_input.source_guard == expected.source_guard, 'analysis_model_input_binding_invalid')
+        outcome = MeaningExperienceEngine().generate(expected.request, semantic_input=model_input)
+        artifact = outcome.artifact
+        mapped = {r for n in artifact.graph.nodes for r in n.record_refs} if artifact else set()
+        # Visible classification candidates are still semantically unparsed.
+        count = len(expected.request.members)
+        stale = sum(sum(e.get('kind') == 'ANSWER' for e in raw['events'])
+            for raw in snapshot['members'] if raw.get('thread')
+            and raw['thread'].get('source_snapshot') != raw['original'])
+        coverage = _checked_coverage(dict(profile=PROFILE, source_count=count,
+            processed_count=count, mapped_count=len(mapped), unparsed_count=count,
+            excluded_count=0, exclusion_reasons={}, stale_supplement_count=stale))
+        return artifact, coverage
     start, end = snapshot['period_start'], snapshot['period_end']
     records, reasons, unparsed, mapped, stale = [], Counter(), 0, 0, 0
     request_id = 'analysis-cumulative-' + uuid4().hex

@@ -155,7 +155,36 @@ def _source_prefix(phrase, parts):
     return phrase
 
 
-def _safe_label(node, graph):
+def _safe_label(node, graph, *, owner_scope=None, source_set_ref=None, source_members=()):
+    if node.quoted_field is not None:
+        # The explicit offline probe keeps the COMPLETE original field. It
+        # does not certify the model's kind, actor, polarity or time reading.
+        import hashlib
+        from .intent_compiler import ObservedQuotedField
+        q = node.quoted_field
+        if type(q) is not ObservedQuotedField:
+            raise AnalysisSourceError('analysis_safe_surface_unavailable')
+        e = q.evidence
+        raw = q.text.encode('utf-8')
+        sha = hashlib.sha256(raw).hexdigest()
+        if (q.owner_scope != owner_scope or q.source_set_ref != source_set_ref
+                or not any(m.saved_record_ref == q.record_ref
+                    and m.saved_record_version == q.record_version
+                    and m.inclusion_status == 'INCLUDED'
+                    and e.source_envelope_id in m.child_source_envelope_refs
+                    for m in source_members)
+                or node.node_kind != q.node_kind or node.visible_label != q.text
+                or node.record_refs != (q.record_ref,) or node.evidence_refs != (e,)
+                or node.proposition is not None or node.update_refs
+                or (node.polarity, node.modality, node.temporal_scope) !=
+                   ('AS_WRITTEN_UNRESOLVED',) * 3
+                or e.scalar_start != 0 or e.scalar_end != len(q.text)
+                or e.utf8_start != e.field_utf8_start
+                or e.utf8_end != e.field_utf8_end
+                or e.utf8_end - e.utf8_start != len(raw)
+                or e.field_sha256 != sha or e.literal_sha256 != sha):
+            raise AnalysisSourceError('analysis_safe_surface_unavailable')
+        return q.text + '（原文・分類候補）'
     parts = node.proposition
     replay = _proposition(node.visible_label)
     if parts and parts.dependent_form == 'TE_BEFORE_PAST_CHANGE' and _te_order_context(node, graph):
@@ -358,11 +387,15 @@ class ObservedSelfStructureMap:
 
         A matching scope string is a second-line binding check, not proof of
         authentication. The future API must recheck its live owner lifecycle.
-        No source body, private identifier, locator or commitment is copied.
+        The legacy finite arm copies no source body. The explicit offline
+        model-fields probe quotes a complete field to this owner only and
+        marks its classification as a candidate. No locator/commitment leaks.
         """
         if authenticated_owner_scope != self.owner_scope:
             raise AnalysisSourceError('analysis_projection_owner_mismatch')
-        labels = {node.node_ref: _safe_label(node, self.graph) for node in self.graph.nodes}
+        labels = {node.node_ref: _safe_label(node, self.graph,
+            owner_scope=self.owner_scope, source_set_ref=self.source_set_ref,
+            source_members=self.source_members) for node in self.graph.nodes}
         return {
             'schema_version': 'cocolon.cmee.analysis_watashi_map_safe_projection.v1alpha1',
             'wire_kind': 'watashi.map.v2', 'projection_of': self.reference,
