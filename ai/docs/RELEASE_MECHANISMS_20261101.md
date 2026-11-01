@@ -1,6 +1,6 @@
 # 11/1 リリース機構の実装記録
 
-後続実装：natural専用の関連履歴RPC、原入力/複数回答/本人訂正の別材料化、権限・source失効時のtimeline本文抑止、Analysisの最大3補足対応と先行補足/訂正文間の矛盾照合、選択adapter SHA対指定を追加。実SQLを使うローカル検証63件とAnalysis177件はPASS。実4B生成・実機は未実施。Renderは後述の744336c0をLive配置済み。累積/月次当時snapshot・月追加1万円内の常時提供方式は未完。
+後続実装：natural専用の関連履歴RPC、原入力/複数回答/本人訂正の別材料化、権限・source失効時のtimeline本文抑止、Analysisの最大3補足対応と先行補足/訂正文間の矛盾照合、選択adapter SHA対指定を追加。実SQLを使うローカル検証63件とAnalysis177件はPASS。固定baseの実4B HTTPS1callは後述の契約成功。実Auth/DB/実機は未実施。Renderは744336c0のnatural設定反映後、build待機中read_onlyでLive。累積/月次当時snapshot・月追加1万円内の常時提供方式は未完。
 
 品質反復にRNのビルド・実機確認を毎回要求しない。11/1は機構・配布・運用と初回接続、11/2〜11/6はサーバー側の品質改善というMashの指示を維持する。
 
@@ -25,7 +25,7 @@ ai/tests/piece_v2/test_b12_shared_preview_composition.py
 
 ## 配置時点と残作業
 
-11/1にAPI `744336c0de999e271a755b441394f382548829ab` を既存Renderへ指定commitで配置し、`dep-dbj853ou01pc73enjrt0` は00:08:08 UTCにLive。RN `6675b4ed` のiOS run41254631100/#66/BUILD_NUMBER6601はArchive/IPA/TestFlight Uploadまで成功。Apple処理/配布対象・端末導入、実モデルHTTPS提供口、実Auth→4B→DB保存→同本文再読は未完。exportの実機成功も未完。iOS専用rendererをAndroid対応済みとは数えない。
+11/1にAPI `744336c0de999e271a755b441394f382548829ab` を既存Renderへ指定commitで配置し、`dep-dbj853ou01pc73enjrt0` は00:08:08 UTCにLive。RN `6675b4ed` のiOS run41254631100/#66/BUILD_NUMBER6601はArchive/IPA/TestFlight Upload成功後、Apple90683の写真利用目的文不足で拒否・配布不可。RNb8a43e5aで両keyと実Archive検査を修正し、run41260929560/#67を新規起動。実モデルHTTPS1callは契約成功、実Auth→4B→DB保存→同本文再読は未完。exportの実機成功も未完。iOS専用rendererをAndroid対応済みとは数えない。
 
 週間8タスクのうち、本人原入力/補足/訂正の別材料化とPlus権利内関連履歴選択は後述のsource/DBで実装済み。実4B/本人実機・新しい観測材料生成は未完。Analysis累積/月次snapshotも未完として継続する。上記変更を8タスク全完了や公開可能状態とは報告しない。料金680円/1480円の実ストア請求設定・両OS配布・月追加1万円内の本番提供方式・申請Console確認も残る。
 
@@ -51,6 +51,12 @@ Renderの既存service `srv-d4ppfpm3jp1c73952bj0` はAPI744336c0/dep-dbj853ou01p
 
 GitHub/Google認証の継続許可後、RN6675b4edで新iOS run41254631100を起動。Archive/IPA/Upload to TestFlight/全job success、実ログBUILD_NUMBER=6601。Apple処理/配布対象、本人導入/通常操作は未確認。
 
-後続でMash提供の新Pod6i2aa1nj683s8y/RTX3090×1/$0.51/hへ接続。直接/labはtoken画面だが、Google認証済みRunpodの正式Jupyterリンクから認証成功。旧Pod移行/新Pod作成/停止/削除/チャージは華恋0。Python3.12.3/torch2.8.0+cu128の新環境へ隔離venvの固定4依存とAPI744336c0の提供tool（SHA256 d3b7a04e38769485da995c8323aaaaf4426ff5273fcba6dff578ada85bdb77b6）、base固定revision851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0aを準備。indexの2shard存在と依存を再確認した。model GPU load/学習/生成0。HTTPは8888のみで、8000追加のEdit Podは全データ消去/reset警告がある。8888,8000を保存前に保持しSave/reset未実行。専用Bearer/モデルHTTP起動/Render natural profile/endpoint/model/key設定と実Auth保存再読は未完。月追加1万円内の常時提供も未成立。
+Mashの明示承認後、新Pod6i2aa1nj683s8y/RTX3090×1/$0.51/hのHTTP8888,8000を保存/resetし環境を復元。Python3.12.3/torch2.8.0+cu128、隔離venvのtransformers5.19.0/peft0.21.2/accelerate1.15.0/safetensors0.8.0、提供tool SHA d3b7a04e38769485da995c8323aaaaf4426ff5273fcba6dff578ada85bdb77b6、base固定revision851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0aの2shardを照合。専用Bearerの値はchat/公開source/logに出さない。鍵なしHTTPS POST401、既存SelfHostedNaturalReplySourceの架空材料1callは7.771秒/42文字でHTTP/model/schema/EOS/本文形式の契約成功、再試行0。本人Auth/DB/実機や品質採用の成功ではない。
 
-今回product source/公開contractの追加変更なし、STRUCTURE_MAP_DELTA_NONE。詳しい本人端末/8task残件と次の許可対象はRNの最新weekly第9回§34/35。
+Render環境変数更新pluginがautoDeploy OFFでもmain2d2f06dの配置dep-dbj8pt49v7es739dsefgを起動し、00:52:20 UTC update_failed（create_application ImportError）。既存Live744336c0は維持。744336c0を指定し直したdep-dbj8rik9v7es739e00q0は00:55:48 UTC Live、health/bootstrap200・threads/export trueを確認。今後のenv操作はDashboard Save and deployで既存artifactを使い、main起動を避ける。
+
+6601はApple側の90683で配布不可とMash画像/認証後のAppStoreConnectで確認。RNb8a43e5aはNSPhotoLibraryUsageDescriptionと既存Add目的文の両方を宣言し、Archive実appの2key非空検査をUpload前へ追加。新iOS#67/run41260929560/job124713864844は実行中、Apple処理成功と本人導入は未確認。
+
+モデルHTTP serverは00:51:54 UTCから1477秒で停止、所有process不在・GPU1MiB/0％を確認。新PodのStop/新規作成/削除/チャージは華恋0。残り最大3要求/300秒だけを新配布候補の初回確認へ残す。APIはMODE=read_only＋natural_reply.v1を維持し、同source744336c0/既存artifactのdep-dbj96l67bikc73ep8hugが01:18:55 UTC Live。保存済みreaderをlegacyへ戻さない。実DBの本文/owner/inputIDなし集計では、00:55:48 UTC以降のnatural更新/FINAL保存/active/CALL_STARTEDは全0件。通常実Auth→4B→DB保存→本人同本文再読、月追加1万円内の常時提供は未完。
+
+今回product source/公開contractの追加変更なし、STRUCTURE_MAP_DELTA_NONE。詳しい本人端末/8task残件と次の許可対象はRNの最新weekly第9回§36。
