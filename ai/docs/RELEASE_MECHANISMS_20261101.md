@@ -1,6 +1,6 @@
 # 11/1 リリース機構の実装記録
 
-後続実装：natural専用の関連履歴RPC、原入力/複数回答/本人訂正の別材料化、権限・source失効時のtimeline本文抑止、Analysisの最大3補足対応と先行補足/訂正文間の矛盾照合、選択adapter SHA対指定を追加。実SQLを使うローカル検証63件とAnalysis177件はPASS。実4B生成・Render配置・実機は未実施。累積/月次当時snapshot・月追加1万円内の常時提供方式は未完。
+後続実装：natural専用の関連履歴RPC、原入力/複数回答/本人訂正の別材料化、権限・source失効時のtimeline本文抑止、Analysisの最大3補足対応と先行補足/訂正文間の矛盾照合、選択adapter SHA対指定を追加。実SQLを使うローカル検証63件とAnalysis177件はPASS。実4B生成・実機は未実施。Renderは後述の744336c0をLive配置済み。累積/月次当時snapshot・月追加1万円内の常時提供方式は未完。
 
 品質反復にRNのビルド・実機確認を毎回要求しない。11/1は機構・配布・運用と初回接続、11/2〜11/6はサーバー側の品質改善というMashの指示を維持する。
 
@@ -25,9 +25,9 @@ ai/tests/piece_v2/test_b12_shared_preview_composition.py
 
 ## 配置時点と残作業
 
-この記録時点のRenderは `3577d7fdeb19158ef5e675f51960652a52c24487` のまま。新API配置、新RN配布、実モデルHTTPS提供口、実Auth→4B→DB保存→同本文再読は未完。exportの実機成功も未完。iOS専用rendererをAndroid対応済みとは数えない。
+11/1にAPI `744336c0de999e271a755b441394f382548829ab` を既存Renderへ指定commitで配置し、`dep-dbj853ou01pc73enjrt0` は00:08:08 UTCにLive。RN `6675b4ed` のiOS run41254631100/#66/BUILD_NUMBER6601はArchive/IPA/TestFlight Uploadまで成功。Apple処理/配布対象・端末導入、実モデルHTTPS提供口、実Auth→4B→DB保存→同本文再読は未完。exportの実機成功も未完。iOS専用rendererをAndroid対応済みとは数えない。
 
-週間8タスクのうち、本人原入力/補足/訂正と返答/分析材料の分離、Plusの関連履歴選択、Analysis累積/月次snapshotは別の未完作業として継続する。上記変更を8タスク全完了や公開可能状態とは報告しない。料金680円/1480円の実ストア請求設定・両OS配布・月追加1万円内の本番提供方式・申請Console確認も残る。
+週間8タスクのうち、本人原入力/補足/訂正の別材料化とPlus権利内関連履歴選択は後述のsource/DBで実装済み。実4B/本人実機・新しい観測材料生成は未完。Analysis累積/月次snapshotも未完として継続する。上記変更を8タスク全完了や公開可能状態とは報告しない。料金680円/1480円の実ストア請求設定・両OS配布・月追加1万円内の本番提供方式・申請Console確認も残る。
 
 ## 後続 — 履歴/補足・候補読込の機構
 
@@ -41,4 +41,16 @@ Analysisの保存source adapterは最大3回答を全ID/round/owner束縛で保�
 
 検証：PGlite0.5.8の実Q2/Q3+新migration/実Python store/serviceを使用し、合成providerでnatural/Q3/提供toolの63 PASS / FAIL0 / SKIP0。Free除外、直近枠より古い関連選択、Premium4000日前、Plus権利、保存cohort固定、履歴/ANSWER revision/tier変更拒否、旧Q3再読、3回答・訂正・Safety・service専用権限、adapter identityとHTTP上限を含む。Analysisは新複数回答・既存保存/保存再読、既存verticalの補足/訂正関連177 PASS / FAIL0 / SKIP0、無関係なvertical425件は未実行。合成providerの結果を実モデル品質・本人実機へ換算しない。
 
-実DB定義を照会し、変更前emlis_thread_commitの本文が旧migrationの7580文字と完全一致することを確認した後、Supabaseへmigrationを適用した（成功）。新RPC存在、service_roleのみ実行可、anon/authenticated実行不可、natural保存guardの存在を実DB metadataで確認。ユーザーデータへのprobe生成/保存は行っていない。稼働APIの更新は別途未完。
+実DB定義を照会し、変更前emlis_thread_commitの本文が旧migrationの7580文字と完全一致することを確認した後、Supabaseへmigrationを適用した（成功）。新RPC存在、service_roleのみ実行可、anon/authenticated実行不可、natural保存guardの存在を実DB metadataで確認。ユーザーデータへのprobe生成/保存は行っていない。稼働APIの更新は下記の通り完了。
+
+## 11/1 配置・送信の実結果
+
+Renderの既存service `srv-d4ppfpm3jp1c73952bj0` はAPI744336c0/dep-dbj853ou01pc73enjrt0をLive確認。main/autoDeploy OFFと既存factory commandを保ち、export_requested/export_readyだけ追加ON。preview/save/owner-read/export/owner-deleteの各pair ON、public-write/public-read/visibility-toggle OFF。renderer ios.v1/TTL600秒を保持。pluginにstart command/source指定操作がないためDashboardで保存/指定commit deployし、新serviceや有料planは作成していない。
+
+公開healthz200/ok、app/bootstrap200と上記flag、新exportの未認証GET401・emotion.piece.export.v2/PIECE_AUTH_REQUIRED・no-storeを実HTTP確認。配置開始後に取得したapp error logsは0件。本人データへのprobe保存は未実行。API7bbb4661のAnalysis CI41253745568もsuccess（1634 PASS＋12020 subtests、owner1 PASS・194 deselected、合成保存再読success）。
+
+GitHub/Google認証の継続許可後、RN6675b4edで新iOS run41254631100を起動。Archive/IPA/Upload to TestFlight/全job success、実ログBUILD_NUMBER=6601。Apple処理/配布対象、本人導入/通常操作は未確認。
+
+Runpodの既存Pod10o4zhfktg9nc1は停止中・GPU割当先利用不可。開始表示$0.57/h、残高$5.73、container50GB/persistent storageなし。同型新Podへの自動移行は自動承認審査が新資源・データ移動・追加課金の可能性を理由に拒否し未実行。新Pod/GPU起動/学習/生成0。既存cacheの存否、実Connect HTTPS、専用Bearer、Render natural profile/endpoint/model/key設定は未完。月追加1万円内の常時提供は未成立。
+
+今回product source/公開contractの追加変更なし、STRUCTURE_MAP_DELTA_NONE。詳しい本人端末/8task残件と次の許可対象はRNの最新weekly第9回§34。
