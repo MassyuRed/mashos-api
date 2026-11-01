@@ -12,7 +12,8 @@ from piece_v2_contract import PieceContractError, reconstruct_piece_text
 from piece_text_formatter import format_reflection_text
 
 FORMATS = ('short_essay', 'quote', 'declaration')
-ENVELOPES = {'short_essay': (24, 420, 6), 'quote': (12, 120, 2),
+# Short original inputs remain short; minimum length never authorizes padding.
+ENVELOPES = {'short_essay': (1, 420, 6), 'quote': (12, 120, 2),
              'declaration': (12, 180, 4)}
 
 
@@ -224,22 +225,6 @@ def validate_source_meaning_preservation(meaning, plan, artifact) -> None:
         previous_id, previous_author = None, None
         for node_id, visible in zip(group, sentences, strict=True):
             node, operation = source_nodes[node_id], duties[node_id]
-            if node.node_kind == 'PIECE_SELECTED_FEELING':
-                # Saved-field validation independently rederives JSON aliases,
-                # raw strength and record commitment. No text offsets or author
-                # invocation can stand in for that source binding.
-                import json
-                value = json.loads(node.value)
-                refs = tuple(ev.evidence_id for ev in meaning.selection_evidence
-                             if ev.node_id == node_id)
-                degree = {'': '', 'weak': '弱い', 'medium': '中程度の', 'strong': '強い'}
-                if (operation != 'SOURCE_RECORDED_FEELING' or refs != node.evidence_ids
-                        or not refs or value['scope'] != 'RECORDED_SELF'
-                        or re.fullmatch('記録時には、' + re.escape(degree[value['strength']])
-                                        + re.escape(value['label']) + 'を感じていました。', visible) is None):
-                    reject()
-                previous_id, previous_author = node_id, None
-                continue
             if operation == 'KEEP_COMPLETE_SOURCE_CONTEXT':
                 if re.fullmatch(anchor(node.value), visible) is None:
                     reject()

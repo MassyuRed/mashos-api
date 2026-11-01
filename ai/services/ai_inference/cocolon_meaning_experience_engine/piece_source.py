@@ -92,10 +92,10 @@ class PieceExpressionScope:
 
 @dataclass(frozen=True, slots=True, repr=False)
 class PieceSelectedFeeling:
-    """A saved selection covered by text or its recorded-self JSON proposition.
+    """A saved selection bound to written text or private selection context.
 
     selection_field/index address the immutable saved JSON, not text offsets.
-    node/evidence address retained text or separate PieceSelectionEvidence.
+    node/evidence address retained text or separate, non-visible selection context.
     This is selection coverage, never a cause or an inferred intensity.
     The full saved snapshot still owns the exact raw label/strength spelling.
     """
@@ -131,6 +131,7 @@ class PieceSourceMeaning:
     saved_snapshot: object | None = None
     selected_feelings: tuple[PieceSelectedFeeling, ...] = ()
     selection_evidence: tuple[PieceSelectionEvidence, ...] = ()
+    selection_contexts: tuple[MeaningNode, ...] = ()
 
 
 def piece_text_nodes(meaning: PieceSourceMeaning) -> tuple[MeaningNode, ...]:
@@ -1232,7 +1233,7 @@ def validate_piece_saved_fields(meaning: PieceSourceMeaning) -> None:
         return
     is_saved = meaning.envelope.source_schema_version == 'piece.saved_source.original_fields.v1'
     if not is_saved and meaning.saved_snapshot is None:
-        if (meaning.selected_feelings or meaning.selection_evidence
+        if (meaning.selected_feelings or meaning.selection_evidence or meaning.selection_contexts
                 or any(n.node_kind == 'PIECE_SELECTED_FEELING' for n in meaning.graph.nodes)):
             raise unavailable('piece_saved_field_binding')
         return
@@ -1351,16 +1352,8 @@ def build_piece_source_meaning(source: object, *, expected_owner_id: str,
     edges.extend(_reference_edges(references, tuple(nodes)))
     selections, selection_evidence, selection_nodes = _selected_feeling_bindings(
         source, tuple(nodes), tuple(evidence))
-    for node in selection_nodes:
-        nodes.append(node)
-        resolutions.append(SourceOwnerResolution(
-            meaning_owner_id=node.owner_id, owner_class=OwnerClass.REQUIRED,
-            resolver_resolution=ResolverResolution.UNIQUE,
-            attachment_admission=AttachmentAdmission.PROVISIONAL_ONLY,
-            visible_authority=VisibleAuthority.SOURCE_EXPLICIT,
-            source_owner_disposition=SourceOwnerDisposition.SOURCE_EXPLICIT_VISIBLE,
-            visible_claim_refs=(node.node_id,), evidence_refs=node.evidence_ids,
-            target_unknown_ref=None, reason_codes=('piece_saved_selected_feeling',)))
+    # Selections are private context, not authored image-text propositions.
+    # Their exact JSON evidence remains bound through saved-field rederivation.
     # Preserve predecessor identities when the graph has no new attachment.
     graph_seed = envelope_id if not references else json.dumps(
         [envelope_id, 'piece.nominal_reference.v1',
@@ -1370,7 +1363,7 @@ def build_piece_source_meaning(source: object, *, expected_owner_id: str,
         graph_seed = json.dumps([graph_seed, 'piece.personal_evaluation.v1',
                                  [asdict(frame) for frame in evaluations]], ensure_ascii=False)
     if selection_nodes:
-        graph_seed = json.dumps([graph_seed, 'piece.saved_selected_feeling.v1',
+        graph_seed = json.dumps([graph_seed, 'piece.saved_selection_context.v1',
                                  [asdict(ev) for ev in selection_evidence]], ensure_ascii=False)
     owners = tuple(node.owner_id for node in nodes)
     if scopes:
@@ -1389,4 +1382,4 @@ def build_piece_source_meaning(source: object, *, expected_owner_id: str,
     return PieceSourceMeaning(envelope, graph, tuple(evidence), tuple(meanings), aliases,
                               references, evaluations, scopes,
                               source if source.saved_original_json is not None else None,
-                              selections, selection_evidence)
+                              selections, selection_evidence, selection_nodes)

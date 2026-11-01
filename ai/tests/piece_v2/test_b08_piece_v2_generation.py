@@ -108,9 +108,10 @@ def test_huge_source_is_not_shortened():
         generate('私が大切にしたいのは、' + '自分が納得することと、' * 50 + '待つことです。')
 
 
-def test_free_short_text_stays_unavailable_without_padding():
-    with pytest.raises(PieceContractError):
-        generate('私が選びたいのは、今は答えを急がないことです。')
+def test_free_short_text_keeps_its_complete_meaning_without_padding():
+    result = generate('私が選びたいのは、今は答えを急がないことです。')
+    assert result['format_type'] == 'short_essay'
+    assert result['piece_text'] == '私は、今は答えを急がないことを選びたい。'
 
 
 @pytest.mark.parametrize('text', [

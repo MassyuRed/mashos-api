@@ -310,7 +310,7 @@ def test_actual_sql_emlis_result_identifies_pre_question_without_promoting_conte
     generated = run(adapter.generate_original_candidate_from_saved_state(AUTH, parent))
     assert generated['source_lineage'] == lineage
     candidate = generated['candidate']
-    assert candidate['piece_text'] == '褒められたのに、嬉しくなかった。\n\n記録時には、中程度の不安を感じていました。'
+    assert candidate['piece_text'] == '褒められたのに、嬉しくなかった。'
     assert candidate['format_type'] == 'short_essay'
     assert candidate['quota_effect'] == candidate['record_effect'] == 0
     after = run(service.store.read(user, input_id=parent))

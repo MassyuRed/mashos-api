@@ -168,8 +168,9 @@ def test_selected_binding_cannot_be_forged_between_meaning_and_realization(chang
 
 def test_feelings_without_an_explicit_expression_do_not_manufacture_a_will():
     row = record(); row['memo_action'] = ''
-    result = outcome(row)
-    assert result.status == EngineStatus.UNAVAILABLE and result.artifact is None
+    result = generated(row)
+    assert result.artifact.piece_text == row['memo']
+    assert not result.artifact_plan.declaration_eligible
 
 
 @pytest.mark.parametrize('label', ['喜び', '悲しみ', '怒り', '不安', '平穏'])
@@ -178,14 +179,15 @@ def test_recorded_selection_is_meaning_without_a_manufactured_original_span(labe
     row = record('今日は机を片付けました。', label=label, strength=strength)
     row['memo_action'] = '本を棚に戻しました。'
     result = generated(row)
-    assert result.artifact.body_blocks == (row['memo'], row['memo_action'],
-        '記録時には、' + degree + label + 'を感じていました。')
+    assert result.artifact.body_blocks == (row['memo'], row['memo_action'])
     meaning = result.source_meaning
     assert meaning.envelope.raw_utf8.decode() == row['memo'] + '\n\n' + row['memo_action']
     assert len(meaning.evidence) == len(meaning.sentences) == 2
     assert len(meaning.selection_evidence) == 2
-    assert len(meaning.graph.nodes) == 3
-    assert meaning.graph.nodes[-1].node_kind == 'PIECE_SELECTED_FEELING'
+    assert len(meaning.graph.nodes) == 2
+    assert len(meaning.selection_contexts) == 1
+    assert meaning.selection_contexts[0].node_kind == 'PIECE_SELECTED_FEELING'
+    assert all(n.node_kind != 'PIECE_SELECTED_FEELING' for n in meaning.graph.nodes)
     assert all(e.field_path in ('memo', 'memo_action') for e in meaning.evidence)
     assert result.artifact_plan.declaration_eligible is False
 
@@ -204,24 +206,54 @@ def test_recorded_selection_provenance_cannot_be_forged(change):
         compile_piece_artifact_plan(replace(meaning, selection_evidence=edited))
 
 
-@pytest.mark.parametrize('edit', ['drop', 'repeat', 'strength', 'feeling', 'scope', 'cause', 'will'])
-def test_independent_review_rejects_changes_to_recorded_feeling(edit):
+@pytest.mark.parametrize('added', ['記録時には、強い不安を感じていました。',
+    '記録した感情は不安です。', 'いつも強い不安を感じています。',
+    '読書のため、不安になりました。', '私は必ず続けます。'])
+@pytest.mark.parametrize('placement', ['paragraph', 'sentence'])
+def test_independent_review_rejects_metadata_explanation_or_other_added_information(added, placement):
     from piece_v2_content_policy import validate_source_meaning_preservation
     import hashlib
     result = generated(record(INTENT))
     artifact = result.artifact
     blocks = list(artifact.body_blocks)
-    final = blocks[-1]
-    changes = {'drop': '', 'repeat': final + final,
-        'strength': final.replace('強い', '弱い'), 'feeling': final.replace('不安', '喜び'),
-        'scope': final.replace('記録時には、', 'いつも、'),
-        'cause': '読書のため、' + final, 'will': final + '私は必ず続けます。'}
-    blocks[-1] = changes[edit]
+    if placement == 'paragraph': blocks.append(added)
+    else: blocks[-1] += added
     text = '\n\n'.join(blocks)
     changed = replace(artifact, body_blocks=tuple(blocks), piece_text=text,
                       piece_text_hash=hashlib.sha256(text.encode()).hexdigest())
     with pytest.raises(ValueError):
         validate_source_meaning_preservation(result.source_meaning, result.artifact_plan, changed)
+
+
+@pytest.mark.parametrize('tier', ['free', 'plus', 'premium'])
+@pytest.mark.parametrize('text', ['嬉しい。', '今日は机を片付けました。', '今日は机を片付けました。棚に本を戻しました。'])
+def test_short_original_never_needs_metadata_padding(tier, text):
+    from piece_v2_generation import generate_piece_candidate
+    row = record(text, label='平穏', strength='medium'); row['memo_action'] = None
+    source = PieceSourceSnapshot(OWNER, INPUT, 'emlis.current_input_bundle.v1', text,
+                                saved_original_json=canonical_json_bytes(row))
+    candidate = generate_piece_candidate(source, authenticated_owner_id=OWNER, tier=tier)
+    assert candidate['piece_text'] == text
+    assert candidate['content_payload']['body_blocks'] == [text]
+    if tier == 'free': assert candidate['format_type'] == 'short_essay'
+
+
+def test_selection_context_cannot_be_changed_or_inserted_into_visible_plan():
+    result = generated(record(INTENT)); meaning = result.source_meaning
+    context = meaning.selection_contexts[0]
+    with pytest.raises(ValueError, match='piece_saved_field_binding'):
+        compile_piece_artifact_plan(replace(meaning, selection_contexts=(replace(context, value='{}'),)))
+    plan = replace(result.artifact_plan, block_node_ids=result.artifact_plan.block_node_ids + ((context.node_id,),))
+    with pytest.raises(ValueError):
+        realize_piece_artifact(meaning, plan, tier='free', requested_format=None)
+
+
+@pytest.mark.parametrize('text', ['本。', '今日の仕事と明日の予定についてのメモ。'])
+def test_hidden_selection_does_not_promote_a_nominal_fragment(text):
+    row = record(text, label='平穏', strength='medium'); row['memo_action'] = None
+    result = outcome(row)
+    assert result.status == EngineStatus.UNAVAILABLE
+    assert result.reason_codes == ('expression_meaning_not_admitted',)
 
 
 @pytest.fixture(scope='module')

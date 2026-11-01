@@ -159,7 +159,6 @@ def compile_piece_artifact_plan(meaning: PieceSourceMeaning) -> PieceArtifactPla
     focal = False
     has_calendar_time_context = False
     text_nodes = piece_text_nodes(meaning)
-    feeling_nodes = tuple(n for n in graph.nodes if n.node_kind == 'PIECE_SELECTED_FEELING')
     for index, (node, semantic) in enumerate(zip(text_nodes, meaning.sentences, strict=True)):
         sentence = node.value
         admitted = [r.reference_scalar_span for r in meaning.nominal_references
@@ -207,9 +206,15 @@ def compile_piece_artifact_plan(meaning: PieceSourceMeaning) -> PieceArtifactPla
             intents.append(index)
         else:
             duties.append(PieceTextDuty(node.node_id, 'KEEP_COMPLETE_SOURCE_CONTEXT'))
-    if not intents and not meaning.selected_feelings:
-        raise unavailable('expression_meaning_not_admitted')
-    duties.extend(PieceTextDuty(n.node_id, 'SOURCE_RECORDED_FEELING') for n in feeling_nodes)
+    if not intents:
+        # A hidden selection cannot turn a nominal fragment into an article.
+        # This bounded account arm requires a written finite account/state;
+        # it does not add an experiencer, predicate or inferred explanation.
+        account_end = re.compile(r'(?:です|ます|でした|ました|ません|だった|'
+                                 r'ない|なかった|かった|しい|た|だ)[。！？!?]$')
+        if (not meaning.selected_feelings
+                or not any(account_end.search(n.value) for n in text_nodes)):
+            raise unavailable('expression_meaning_not_admitted')
     ids = tuple(node.node_id for node in text_nodes)
     # A newly admitted temporal context must not be moved behind a later wish.
     # Keep the original sequence without adding an inferred time/scope edge.
@@ -251,9 +256,7 @@ def compile_piece_artifact_plan(meaning: PieceSourceMeaning) -> PieceArtifactPla
         field_order = tuple(dict.fromkeys(ev.field_path for ev in meaning.evidence))
         blocks = tuple(tuple(node.node_id for node, ev in zip(text_nodes, meaning.evidence, strict=True)
                              if ev.field_path == key) for key in field_order)
-    if feeling_nodes:
-        blocks += (tuple(n.node_id for n in feeling_nodes),)
-    declaration = (bool(intents) and not feeling_nodes and len(ids) == 1 and not meaning.expression_scopes
+    declaration = (bool(intents) and len(ids) == 1 and not meaning.expression_scopes
                    and not _UNCERTAIN.search(graph.nodes[0].value))
     # A source-written past wish/value/state is an account of that time,
     # not evidence of a present commitment. Bind this to the same complete
@@ -781,13 +784,6 @@ def realize_piece_artifact(meaning: PieceSourceMeaning, plan: PieceArtifactPlan,
     sentences: dict[str, str] = {}
     evidence_by_id = {ev.evidence_id: ev for ev in meaning.evidence}
     for node, duty in zip(graph.nodes, plan.duties, strict=True):
-        if node.node_kind == 'PIECE_SELECTED_FEELING':
-            if duty.operation != 'SOURCE_RECORDED_FEELING':
-                raise unavailable('piece_plan_operation_binding')
-            feeling = json.loads(node.value)
-            degree = {'': '', 'weak': '弱い', 'medium': '中程度の', 'strong': '強い'}[feeling['strength']]
-            sentences[node.node_id] = '記録時には、' + degree + feeling['label'] + 'を感じていました。'
-            continue
         evidence = evidence_by_id.get(node.evidence_ids[0])
         if evidence is None:
             raise unavailable('piece_graph_source_binding')

@@ -154,9 +154,10 @@ def test_selected_feelings_are_not_silently_discarded_to_generate_text(field, va
     result = outcome(source(record))
     assert result.status == EngineStatus.GENERATED
     labels = value if field == 'emotions' else [x['type'] for x in value]
-    assert all(label in result.artifact.body_blocks[-1] for label in labels)
-    assert len(result.source_meaning.graph.nodes) == 2 + len(labels)
-    assert result.artifact.body_blocks[:2] == ('余裕があるなら、私は陶芸を選びたい。', ACTION)
+    assert all(label not in result.artifact.piece_text for label in labels)
+    assert len(result.source_meaning.graph.nodes) == 2
+    assert len(result.source_meaning.selection_contexts) == len(labels)
+    assert result.artifact.body_blocks == ('余裕があるなら、私は陶芸を選びたい。', ACTION)
     assert not result.artifact_plan.declaration_eligible
 
 

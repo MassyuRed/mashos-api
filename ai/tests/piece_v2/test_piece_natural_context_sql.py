@@ -81,7 +81,7 @@ def test_natural_saved_cohort_survives_preview_visual_and_save(natural_case, qdb
     generated = run(adapter.generate_original_candidate_from_saved_state('Bearer synthetic', parent))
     candidate = generated['candidate']
     assert generated['source_lineage'] == lineage
-    assert candidate['piece_text'] == '会議の資料を読み直した。終わって少し安心した。\n\n記録時には、中程度の平穏を感じていました。'
+    assert candidate['piece_text'] == '会議の資料を読み直した。終わって少し安心した。'
     recipe = build_visual_recipe(candidate['format_type'], tier=tier, language='ja')
     record = {k: candidate[k] for k in ['format_type', 'content_payload', 'piece_text', 'piece_text_hash']}
     record.update(content_payload_hash=canonical_sha256_hex(candidate['content_payload']),
