@@ -843,3 +843,10 @@ API piece_source.pyの選択JSON根拠はprivate selection_contextsへ分離し�
 
 
 検証は対象7file579 PASS/FAIL0/SKIP0（既存warning1）。全5感情/強度、短い本文の全tier生成、元から書いた感情文の保持、追加説明/原因/意思/別段落の独立拒否、選択context改ざん/可視plan混入拒否、自然profileの生成→preview/visual/private保存/再読・source失効を含む。本人原本もprivate CPUで20字の本文だけを生成し実読、本人内容を公開testへ採用しない。限定の述語終端で名詞断片は拒否するが一般日本語の完全理解は主張しない。新規署名build/GPU/DB変更0。API配置結果は後続へ記録する。
+
+
+### 配置結果
+
+API ba0de5028e46e2e0d7c27a35802aca0384072291/dep-dbjckv5g1s2s73fc6uegは11/1 14:16:37 JST（05:16:37 UTC）Live。反映後healthz/app bootstrap200、Piece private5ON/public3OFF、取得範囲のapp error0。設定/DB変更/GPU/実provider/新規署名build0、7001を継続する。
+
+同sourceのnative PostgreSQL CI41275948956/job124758034597は全step success。生成/safety/実SQL保存/既存保存reader/shared API/既定契約を含む。Analysis CI41275948966はこの記録時点では実行中で、全CI完了/成功とは扱わない。前回RNの既知V4失敗/legacy canvas失敗は今回未修復、再build/再試行なし。今回の変更は次に新規作成するPieceへ適用し、保存済み本文/画像へ遡及しない。Mashへ追加の端末確認を今回の修正条件として要求しない。STRUCTURE_MAP_DELTA_NONE（検証・配置結果の記録のみ）。
