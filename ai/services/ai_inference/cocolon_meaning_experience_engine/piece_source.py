@@ -92,11 +92,11 @@ class PieceExpressionScope:
 
 @dataclass(frozen=True, slots=True, repr=False)
 class PieceSelectedFeeling:
-    """A saved selection covered by one retained, explicit self proposition.
+    """A saved selection covered by text or its recorded-self JSON proposition.
 
     selection_field/index address the immutable saved JSON, not text offsets.
-    node/evidence address the independently retained written proposition. This
-    is equivalence coverage, never a cause, an inferred intensity or new prose.
+    node/evidence address retained text or separate PieceSelectionEvidence.
+    This is selection coverage, never a cause or an inferred intensity.
     The full saved snapshot still owns the exact raw label/strength spelling.
     """
     selection_field: str
@@ -105,6 +105,17 @@ class PieceSelectedFeeling:
     strength: str
     node_id: str
     evidence_id: str
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class PieceSelectionEvidence:
+    """An immutable JSON selection, never a fabricated original-text span."""
+    evidence_id: str
+    node_id: str
+    selection_field: str
+    selection_index: int
+    record_sha256: str
+    value_json: str
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -119,6 +130,11 @@ class PieceSourceMeaning:
     expression_scopes: tuple[PieceExpressionScope, ...] = ()
     saved_snapshot: object | None = None
     selected_feelings: tuple[PieceSelectedFeeling, ...] = ()
+    selection_evidence: tuple[PieceSelectionEvidence, ...] = ()
+
+
+def piece_text_nodes(meaning: PieceSourceMeaning) -> tuple[MeaningNode, ...]:
+    return tuple(n for n in meaning.graph.nodes if n.node_kind != 'PIECE_SELECTED_FEELING')
 
 
 # These are clause operators, not a list of causes, topics or output phrases.
@@ -368,11 +384,13 @@ def _expression_scopes(text: str, nodes: tuple[MeaningNode, ...],
 def validate_piece_expression_scopes(meaning: PieceSourceMeaning) -> None:
     """Keep the writer's scope interpretation tied to its actual source."""
     expected = _expression_scopes(meaning.envelope.raw_utf8.decode('utf-8'),
-                              meaning.graph.nodes, meaning.sentences)
+                              piece_text_nodes(meaning), meaning.sentences)
     if meaning.expression_scopes != expected:
         raise unavailable('piece_intent_scope_source_binding')
     by_node = {scope.node_id: scope for scope in expected}
     for node in meaning.graph.nodes:
+        if node.node_kind == 'PIECE_SELECTED_FEELING':
+            continue
         expected_kind = (_SCOPE_KINDS[by_node[node.node_id].relation]
                          if node.node_id in by_node else 'PIECE_SOURCE_PROPOSITION')
         if node.node_kind != expected_kind:
@@ -813,7 +831,7 @@ def _reference_edges(references: tuple[PieceNominalReference, ...],
 def validate_piece_nominal_references(meaning: PieceSourceMeaning) -> None:
     """The artifact planner consumes the source attachments, not a free allowlist."""
     expected = _nominal_references(meaning.envelope.raw_utf8.decode('utf-8'),
-                                   meaning.graph.nodes, meaning.sentences)
+                                   piece_text_nodes(meaning), meaning.sentences)
     edges = tuple(e for e in meaning.graph.edges if e.relation == _REFERENCE_RELATION)
     if (meaning.nominal_references != expected
             or edges != _reference_edges(expected, meaning.graph.nodes)):
@@ -974,7 +992,7 @@ def _personal_evaluations(text: str, nodes: tuple[MeaningNode, ...],
 
 def validate_piece_personal_evaluations(meaning: PieceSourceMeaning) -> None:
     expected = _personal_evaluations(meaning.envelope.raw_utf8.decode('utf-8'),
-                                     meaning.graph.nodes, meaning.sentences)
+                                     piece_text_nodes(meaning), meaning.sentences)
     if meaning.personal_evaluations != expected:
         raise unavailable('piece_evaluation_source_binding')
 
@@ -1087,23 +1105,24 @@ def _saved_field_projection(source) -> tuple[tuple[str, int, int], ...]:
 
 
 def _selected_feeling_bindings(source, nodes: tuple[MeaningNode, ...],
-                               evidence: tuple[EvidenceRef, ...]) -> tuple[PieceSelectedFeeling, ...]:
-    """Cover every selected feeling with one explicit, still-visible sentence.
+                               evidence: tuple[EvidenceRef, ...]):
+    """Cover every selection by exact text or immutable recorded-self evidence.
 
     This bounded route admits only present affirmative first-person feeling
     propositions whose whole written meaning already carries the selection.
     Negated, past, modal, conditional, reported or ambiguous matches do not
-    provide that cover. Unrepresented feelings remain unavailable; the author
-    is not permitted to invent an explanation, will, cause or degree for them.
+    provide text-equivalence cover. If the label is absent from the text, the
+    selection itself supplies a separate recorded self-state. The author is
+    not permitted to invent an explanation, will, cause or degree for it.
     """
     if source.saved_original_json is None:
-        return ()
+        return (), (), ()
     from emlis_ai_current_input_bundle import _normalize_strength
     from .source_kernel import CANONICAL_EMOTIONS, CANONICAL_STRENGTHS
     record = json.loads(source.saved_original_json)
     tags, details = record['emotions'] or [], record['emotion_details'] or []
     if not tags and not details:
-        return ()
+        return (), (), ()
 
     def require(condition):
         if not condition:
@@ -1124,7 +1143,7 @@ def _selected_feeling_bindings(source, nodes: tuple[MeaningNode, ...],
             require(detail.get('type') == '自己理解')
             raw_strength = detail.get('strength', '')
             require(type(raw_strength) is str and raw_strength in ('', 'medium'))
-        return ()
+        return (), (), ()
 
     # 自己理解 is an input mode, not a feeling from which to infer a state.
     labels = tuple(label for label in CANONICAL_EMOTIONS if label != '自己理解')
@@ -1156,9 +1175,30 @@ def _selected_feeling_bindings(source, nodes: tuple[MeaningNode, ...],
         if match:
             matches.setdefault(match['label'], []).append((node, degree[match['degree'] or '']))
     evidence_by_id = {item.evidence_id: item for item in evidence}
-    bound = []
+    bound, selection_evidence, selection_nodes = [], [], []
+    metadata = {}
     for field, index, label, strength in rows:
         candidates = matches.get(label, [])
+        if not candidates:
+            # A selection is an explicit recorded self-state, not a missing
+            # sentence to invent in the original. Ambiguous/negated/past or
+            # differently worded mentions are not deduplicated by guesswork.
+            require(not any(label in node.value for node in nodes))
+            if label not in metadata:
+                node_id = f'piece:feeling{len(metadata)+1}'
+                selected_strength = next((s for f, i, l, s in rows
+                                          if f == 'emotion_details' and l == label), '')
+                metadata[label] = (node_id, selected_strength, [])
+            node_id, selected_strength, refs = metadata[label]
+            evidence_id = f'piece:selection:{field}:{index}'
+            refs.append(evidence_id)
+            selection_evidence.append(PieceSelectionEvidence(
+                evidence_id, node_id, field, index,
+                hashlib.sha256(source.saved_original_json).hexdigest(),
+                json.dumps(record[field][index], ensure_ascii=False, sort_keys=True,
+                           separators=(',', ':'))))
+            bound.append(PieceSelectedFeeling(field, index, label, strength, node_id, evidence_id))
+            continue
         require(len(candidates) == 1)
         node, written_strength = candidates[0]
         require(not strength or strength == written_strength)
@@ -1168,7 +1208,15 @@ def _selected_feeling_bindings(source, nodes: tuple[MeaningNode, ...],
         require(record[ev.field_path][ev.scalar_start:ev.scalar_end] == node.value)
         bound.append(PieceSelectedFeeling(field, index, label, strength,
                                           node.node_id, ev.evidence_id))
-    return tuple(bound)
+    for label, (node_id, strength, refs) in metadata.items():
+        selection_nodes.append(MeaningNode(
+            node_id=node_id, owner_id=node_id + ':owner',
+            node_kind='PIECE_SELECTED_FEELING', grounding_kind='explicit',
+            value=json.dumps({'label': label, 'strength': strength,
+                              'scope': 'RECORDED_SELF'}, ensure_ascii=False,
+                             sort_keys=True, separators=(',', ':')),
+            epistemic_state=EpistemicState.SOURCE_EXPLICIT, evidence_ids=tuple(refs)))
+    return tuple(bound), tuple(selection_evidence), tuple(selection_nodes)
 
 
 def validate_piece_saved_fields(meaning: PieceSourceMeaning) -> None:
@@ -1184,7 +1232,8 @@ def validate_piece_saved_fields(meaning: PieceSourceMeaning) -> None:
         return
     is_saved = meaning.envelope.source_schema_version == 'piece.saved_source.original_fields.v1'
     if not is_saved and meaning.saved_snapshot is None:
-        if meaning.selected_feelings:
+        if (meaning.selected_feelings or meaning.selection_evidence
+                or any(n.node_kind == 'PIECE_SELECTED_FEELING' for n in meaning.graph.nodes)):
             raise unavailable('piece_saved_field_binding')
         return
     from piece_v2_generation import PieceSourceSnapshot
@@ -1300,6 +1349,18 @@ def build_piece_source_meaning(source: object, *, expected_owner_id: str,
              if node.node_id in scope_by_node else node for node in nodes]
     references = _nominal_references(text, tuple(nodes), tuple(meanings))
     edges.extend(_reference_edges(references, tuple(nodes)))
+    selections, selection_evidence, selection_nodes = _selected_feeling_bindings(
+        source, tuple(nodes), tuple(evidence))
+    for node in selection_nodes:
+        nodes.append(node)
+        resolutions.append(SourceOwnerResolution(
+            meaning_owner_id=node.owner_id, owner_class=OwnerClass.REQUIRED,
+            resolver_resolution=ResolverResolution.UNIQUE,
+            attachment_admission=AttachmentAdmission.PROVISIONAL_ONLY,
+            visible_authority=VisibleAuthority.SOURCE_EXPLICIT,
+            source_owner_disposition=SourceOwnerDisposition.SOURCE_EXPLICIT_VISIBLE,
+            visible_claim_refs=(node.node_id,), evidence_refs=node.evidence_ids,
+            target_unknown_ref=None, reason_codes=('piece_saved_selected_feeling',)))
     # Preserve predecessor identities when the graph has no new attachment.
     graph_seed = envelope_id if not references else json.dumps(
         [envelope_id, 'piece.nominal_reference.v1',
@@ -1308,6 +1369,9 @@ def build_piece_source_meaning(source: object, *, expected_owner_id: str,
     if evaluations:
         graph_seed = json.dumps([graph_seed, 'piece.personal_evaluation.v1',
                                  [asdict(frame) for frame in evaluations]], ensure_ascii=False)
+    if selection_nodes:
+        graph_seed = json.dumps([graph_seed, 'piece.saved_selected_feeling.v1',
+                                 [asdict(ev) for ev in selection_evidence]], ensure_ascii=False)
     owners = tuple(node.owner_id for node in nodes)
     if scopes:
         graph_seed = json.dumps([
@@ -1325,4 +1389,4 @@ def build_piece_source_meaning(source: object, *, expected_owner_id: str,
     return PieceSourceMeaning(envelope, graph, tuple(evidence), tuple(meanings), aliases,
                               references, evaluations, scopes,
                               source if source.saved_original_json is not None else None,
-                              _selected_feeling_bindings(source, tuple(nodes), tuple(evidence)))
+                              selections, selection_evidence)

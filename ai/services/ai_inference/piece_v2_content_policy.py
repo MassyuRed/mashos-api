@@ -127,6 +127,7 @@ def validate_source_meaning_preservation(meaning, plan, artifact) -> None:
         piece_public_role_aliases, validate_piece_saved_fields,
         validate_piece_nominal_references, validate_piece_personal_evaluations,
         validate_piece_expression_scopes,
+        piece_text_nodes,
     )
     from cocolon_meaning_experience_engine.piece_v1c import PieceArtifact, PieceArtifactPlan
 
@@ -154,9 +155,10 @@ def validate_source_meaning_preservation(meaning, plan, artifact) -> None:
             or not ids or any(not group for group in plan.block_node_ids)):
         reject()
     spans = {s.node_id: s for s in meaning.sentences}
-    if set(spans) != set(ids) or len(meaning.evidence) != len(nodes):
+    text_nodes = piece_text_nodes(meaning)
+    if set(spans) != {n.node_id for n in text_nodes} or len(meaning.evidence) != len(text_nodes):
         reject()
-    for node, evidence in zip(nodes, meaning.evidence, strict=True):
+    for node, evidence in zip(text_nodes, meaning.evidence, strict=True):
         span = spans[node.node_id]
         if (original[span.source_start:span.source_end] != node.value
                 or node.evidence_ids != (evidence.evidence_id,)
@@ -222,6 +224,22 @@ def validate_source_meaning_preservation(meaning, plan, artifact) -> None:
         previous_id, previous_author = None, None
         for node_id, visible in zip(group, sentences, strict=True):
             node, operation = source_nodes[node_id], duties[node_id]
+            if node.node_kind == 'PIECE_SELECTED_FEELING':
+                # Saved-field validation independently rederives JSON aliases,
+                # raw strength and record commitment. No text offsets or author
+                # invocation can stand in for that source binding.
+                import json
+                value = json.loads(node.value)
+                refs = tuple(ev.evidence_id for ev in meaning.selection_evidence
+                             if ev.node_id == node_id)
+                degree = {'': '', 'weak': '弱い', 'medium': '中程度の', 'strong': '強い'}
+                if (operation != 'SOURCE_RECORDED_FEELING' or refs != node.evidence_ids
+                        or not refs or value['scope'] != 'RECORDED_SELF'
+                        or re.fullmatch('記録時には、' + re.escape(degree[value['strength']])
+                                        + re.escape(value['label']) + 'を感じていました。', visible) is None):
+                    reject()
+                previous_id, previous_author = node_id, None
+                continue
             if operation == 'KEEP_COMPLETE_SOURCE_CONTEXT':
                 if re.fullmatch(anchor(node.value), visible) is None:
                     reject()

@@ -249,7 +249,7 @@ def test_change_during_actual_piece_generation_prevents_return(monkeypatch,chang
     assert str(error.value) in {'PIECE_CONFLICT','PIECE_SOURCE_NOT_ELIGIBLE','PIECE_AUTH_REQUIRED'}
 
 
-@pytest.mark.parametrize('kind', ['emotion','incomplete'])
+@pytest.mark.parametrize('kind', ['incomplete'])
 def test_state_admission_does_not_override_existing_cmee_content_refusal(kind):
     s=snapshot()
     if kind == 'emotion': s['original']['emotions']=['平穏']
@@ -307,16 +307,17 @@ def test_actual_sql_emlis_result_identifies_pre_question_without_promoting_conte
     assert lineage['observation']['emlis_observation_stage'] == 'pre_question_observation'
     assert lineage['piece_generation_eligibility']['decision'] == 'eligible'
     assert handoff == run(adapter_type()().resolve_original_handoff(AUTH, parent))
-    # The real saved result still includes selected emotions. Do not silently
-    # drop them to manufacture a successful Piece body.
-    with pytest.raises(ValueError) as error:
-        run(adapter.generate_original_candidate_from_saved_state(AUTH, parent))
-    assert str(error.value) == 'PIECE_CONTENT_UNAVAILABLE:saved_emotion_meaning_not_yet_supported'
+    generated = run(adapter.generate_original_candidate_from_saved_state(AUTH, parent))
+    assert generated['source_lineage'] == lineage
+    candidate = generated['candidate']
+    assert candidate['piece_text'] == '褒められたのに、嬉しくなかった。\n\n記録時には、中程度の不安を感じていました。'
+    assert candidate['format_type'] == 'short_essay'
+    assert candidate['quota_effect'] == candidate['record_effect'] == 0
     after = run(service.store.read(user, input_id=parent))
     assert before['thread'] == after['thread'] and before['events'] == after['events']
     print('SAVED_STATE_SQL', json.dumps({'ending': ending, 'state': current['state'],
         'original': before['original'], 'lineage': lineage,
-        'piece_candidate': None, 'content_status': str(error.value)}, ensure_ascii=False))
+        'piece_candidate': candidate, 'content_status': 'generated'}, ensure_ascii=False))
 
 
 @pytest.mark.parametrize('answer_text', ['わからない。', '次も同じ成果を求められるようで、重かった。'])

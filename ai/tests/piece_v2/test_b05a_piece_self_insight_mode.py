@@ -57,7 +57,7 @@ def test_unit_mode_is_retained_without_a_feeling_or_text_invention(variant):
     raw = canonical_json_bytes(row)
     source = SimpleNamespace(saved_original_json=raw)
     # A selection is not a license to synthesize a node/evidence or an emotion.
-    assert _selected_feeling_bindings(source, (), ()) == ()
+    assert _selected_feeling_bindings(source, (), ()) == ((), (), ())
     assert source.saved_original_json is raw
     assert json.loads(raw) == before == row
     assert row['memo'] == THOUGHT and row['memo_action'] == RESERVATION
@@ -123,7 +123,7 @@ def feeling_record(label='不安', strength='strong', degree='強い'):
 def test_unit_ordinary_feelings_keep_exact_existing_proposition_coverage(label, strength, degree):
     row, node, ev = feeling_record(label, strength, degree)
     source = SimpleNamespace(saved_original_json=canonical_json_bytes(row))
-    result = _selected_feeling_bindings(source, (node,), (ev,))
+    result = _selected_feeling_bindings(source, (node,), (ev,))[0]
     assert [(b.selection_field, b.label, b.strength, b.node_id, b.evidence_id)
             for b in result] == [('emotions', label, '', 'n1', 'e1'),
                                 ('emotion_details', label, strength, 'n1', 'e1')]
@@ -133,10 +133,10 @@ def test_unit_ordinary_feelings_keep_exact_existing_proposition_coverage(label, 
 def test_unit_existing_feeling_strength_aliases_are_unchanged(strength):
     row, node, ev = feeling_record(strength=strength)
     source = SimpleNamespace(saved_original_json=canonical_json_bytes(row))
-    assert _selected_feeling_bindings(source, (node,), (ev,))[-1].strength == 'strong'
+    assert _selected_feeling_bindings(source, (node,), (ev,))[0][-1].strength == 'strong'
 
 
-@pytest.mark.parametrize('mutation', ['missing_text', 'mismatched_strength', 'mixed_mode', 'wrong_evidence'])
+@pytest.mark.parametrize('mutation', ['mismatched_strength', 'mixed_mode', 'wrong_evidence'])
 def test_unit_ordinary_feeling_is_not_silently_dropped(mutation):
     row, node, ev = feeling_record()
     if mutation == 'missing_text': nodes = ()
@@ -151,7 +151,7 @@ def test_unit_ordinary_feeling_is_not_silently_dropped(mutation):
 
 
 def test_unit_non_saved_source_is_unchanged():
-    assert _selected_feeling_bindings(SimpleNamespace(saved_original_json=None), (), ()) == ()
+    assert _selected_feeling_bindings(SimpleNamespace(saved_original_json=None), (), ()) == ((), (), ())
 
 
 @pytest.mark.parametrize('variant', VARIANTS)

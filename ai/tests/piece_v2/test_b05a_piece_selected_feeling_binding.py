@@ -1,8 +1,7 @@
 """Selected feeling meaning in original-only Piece; no live auth/DB/UI claim.
 
-Every admitted selection must already be expressed in a retained whole source
-proposition. The SQL case uses the real existing Emlis writer and stored state,
-not a caller's invented terminal flag. No existing test expectation is edited.
+Every selection is retained through text equivalence or exact saved JSON
+evidence. The SQL case uses the existing Emlis writer and stored state.
 """
 import asyncio
 import copy
@@ -109,7 +108,7 @@ def test_unspecified_strength_is_not_inferred_from_a_label(mode):
 
 
 @pytest.mark.parametrize('change', [
-    'missing', 'negative', 'past', 'uncertain', 'conditional', 'other_person', 'report',
+    'negative', 'past', 'uncertain', 'conditional', 'other_person', 'report',
     'degree_mismatch', 'degree_missing', 'two_matches', 'duplicate_tag', 'duplicate_detail',
     'other_tag', 'unknown_label', 'unknown_strength', 'self_understanding', 'extra_detail_key',
     'nonstring_strength', 'two_different_degrees', 'field_fragment',
@@ -171,6 +170,58 @@ def test_feelings_without_an_explicit_expression_do_not_manufacture_a_will():
     row = record(); row['memo_action'] = ''
     result = outcome(row)
     assert result.status == EngineStatus.UNAVAILABLE and result.artifact is None
+
+
+@pytest.mark.parametrize('label', ['喜び', '悲しみ', '怒り', '不安', '平穏'])
+@pytest.mark.parametrize('strength,degree', [('', ''), ('weak', '弱い'), ('medium', '中程度の'), ('strong', '強い')])
+def test_recorded_selection_is_meaning_without_a_manufactured_original_span(label, strength, degree):
+    row = record('今日は机を片付けました。', label=label, strength=strength)
+    row['memo_action'] = '本を棚に戻しました。'
+    result = generated(row)
+    assert result.artifact.body_blocks == (row['memo'], row['memo_action'],
+        '記録時には、' + degree + label + 'を感じていました。')
+    meaning = result.source_meaning
+    assert meaning.envelope.raw_utf8.decode() == row['memo'] + '\n\n' + row['memo_action']
+    assert len(meaning.evidence) == len(meaning.sentences) == 2
+    assert len(meaning.selection_evidence) == 2
+    assert len(meaning.graph.nodes) == 3
+    assert meaning.graph.nodes[-1].node_kind == 'PIECE_SELECTED_FEELING'
+    assert all(e.field_path in ('memo', 'memo_action') for e in meaning.evidence)
+    assert result.artifact_plan.declaration_eligible is False
+
+
+@pytest.mark.parametrize('change', ['record', 'raw', 'field', 'index', 'node', 'remove'])
+def test_recorded_selection_provenance_cannot_be_forged(change):
+    row = record(INTENT)
+    result = generated(row)
+    meaning = result.source_meaning
+    evidence = meaning.selection_evidence[0]
+    changes = {'record': {'record_sha256': '0'*64}, 'raw': {'value_json': '"怒り"'},
+               'field': {'selection_field': 'memo'}, 'index': {'selection_index': 2},
+               'node': {'node_id': 'piece:s1'}}
+    edited = () if change == 'remove' else (replace(evidence, **changes[change]),) + meaning.selection_evidence[1:]
+    with pytest.raises(ValueError, match='piece_saved_field_binding'):
+        compile_piece_artifact_plan(replace(meaning, selection_evidence=edited))
+
+
+@pytest.mark.parametrize('edit', ['drop', 'repeat', 'strength', 'feeling', 'scope', 'cause', 'will'])
+def test_independent_review_rejects_changes_to_recorded_feeling(edit):
+    from piece_v2_content_policy import validate_source_meaning_preservation
+    import hashlib
+    result = generated(record(INTENT))
+    artifact = result.artifact
+    blocks = list(artifact.body_blocks)
+    final = blocks[-1]
+    changes = {'drop': '', 'repeat': final + final,
+        'strength': final.replace('強い', '弱い'), 'feeling': final.replace('不安', '喜び'),
+        'scope': final.replace('記録時には、', 'いつも、'),
+        'cause': '読書のため、' + final, 'will': final + '私は必ず続けます。'}
+    blocks[-1] = changes[edit]
+    text = '\n\n'.join(blocks)
+    changed = replace(artifact, body_blocks=tuple(blocks), piece_text=text,
+                      piece_text_hash=hashlib.sha256(text.encode()).hexdigest())
+    with pytest.raises(ValueError):
+        validate_source_meaning_preservation(result.source_meaning, result.artifact_plan, changed)
 
 
 @pytest.fixture(scope='module')

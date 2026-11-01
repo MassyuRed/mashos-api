@@ -24,6 +24,7 @@ from .piece_source import (
     _SIMPLE_NOUN, _calendar_time_adverb_span, _direct_transitive_expression, _PERSON_NAME_LEFT_BOUNDARY, PiecePersonalEvaluation, PieceSourceMeaning, build_piece_source_meaning,
     piece_public_role_aliases, validate_piece_nominal_references, validate_piece_saved_fields,
     validate_piece_personal_evaluations, validate_piece_expression_scopes,
+    piece_text_nodes,
 )
 
 
@@ -157,7 +158,9 @@ def compile_piece_artifact_plan(meaning: PieceSourceMeaning) -> PieceArtifactPla
     intents: list[int] = []
     focal = False
     has_calendar_time_context = False
-    for index, (node, semantic) in enumerate(zip(graph.nodes, meaning.sentences, strict=True)):
+    text_nodes = piece_text_nodes(meaning)
+    feeling_nodes = tuple(n for n in graph.nodes if n.node_kind == 'PIECE_SELECTED_FEELING')
+    for index, (node, semantic) in enumerate(zip(text_nodes, meaning.sentences, strict=True)):
         sentence = node.value
         admitted = [r.reference_scalar_span for r in meaning.nominal_references
                     if r.reference_node_id == node.node_id]
@@ -204,9 +207,10 @@ def compile_piece_artifact_plan(meaning: PieceSourceMeaning) -> PieceArtifactPla
             intents.append(index)
         else:
             duties.append(PieceTextDuty(node.node_id, 'KEEP_COMPLETE_SOURCE_CONTEXT'))
-    if not intents:
+    if not intents and not meaning.selected_feelings:
         raise unavailable('expression_meaning_not_admitted')
-    ids = tuple(node.node_id for node in graph.nodes)
+    duties.extend(PieceTextDuty(n.node_id, 'SOURCE_RECORDED_FEELING') for n in feeling_nodes)
+    ids = tuple(node.node_id for node in text_nodes)
     # A newly admitted temporal context must not be moved behind a later wish.
     # Keep the original sequence without adding an inferred time/scope edge.
     dependent = has_calendar_time_context or any(
@@ -238,16 +242,18 @@ def compile_piece_artifact_plan(meaning: PieceSourceMeaning) -> PieceArtifactPla
     else:
         # A wish followed by a limitation is one reading group. Never move it
         # to the end, turn it into a standalone declaration, or drop its tail.
-        pivot = intents[0]
+        pivot = intents[0] if intents else 0
         blocks = (ids[:pivot], ids[pivot:]) if pivot else (ids,)
     if meaning.saved_snapshot is not None:
         # UI field order is not a temporal/causal relation. Keep each written
         # field intact as one paragraph; do not front an action-field intention
         # across thought context or elide an author across the field boundary.
         field_order = tuple(dict.fromkeys(ev.field_path for ev in meaning.evidence))
-        blocks = tuple(tuple(node.node_id for node, ev in zip(graph.nodes, meaning.evidence)
+        blocks = tuple(tuple(node.node_id for node, ev in zip(text_nodes, meaning.evidence, strict=True)
                              if ev.field_path == key) for key in field_order)
-    declaration = (len(ids) == 1 and not meaning.expression_scopes
+    if feeling_nodes:
+        blocks += (tuple(n.node_id for n in feeling_nodes),)
+    declaration = (bool(intents) and not feeling_nodes and len(ids) == 1 and not meaning.expression_scopes
                    and not _UNCERTAIN.search(graph.nodes[0].value))
     # A source-written past wish/value/state is an account of that time,
     # not evidence of a present commitment. Bind this to the same complete
@@ -419,6 +425,8 @@ def _adjacent_self_continuations(meaning: PieceSourceMeaning,
     continuation_referents = {}
     for group in plan.block_node_ids:
         for previous, current in zip(group, group[1:]):
+            if previous not in spans or current not in spans:
+                continue
             if positions[current] != positions[previous] + 1:
                 continue
             gap = original[spans[previous].source_end:spans[current].source_start]
@@ -771,7 +779,18 @@ def realize_piece_artifact(meaning: PieceSourceMeaning, plan: PieceArtifactPlan,
         raise unavailable('piece_plan_semantic_binding')
     continuations, direct_continuations = _linked_self_continuations(meaning, plan)
     sentences: dict[str, str] = {}
-    for node, duty, evidence in zip(graph.nodes, plan.duties, meaning.evidence, strict=True):
+    evidence_by_id = {ev.evidence_id: ev for ev in meaning.evidence}
+    for node, duty in zip(graph.nodes, plan.duties, strict=True):
+        if node.node_kind == 'PIECE_SELECTED_FEELING':
+            if duty.operation != 'SOURCE_RECORDED_FEELING':
+                raise unavailable('piece_plan_operation_binding')
+            feeling = json.loads(node.value)
+            degree = {'': '', 'weak': '弱い', 'medium': '中程度の', 'strong': '強い'}[feeling['strength']]
+            sentences[node.node_id] = '記録時には、' + degree + feeling['label'] + 'を感じていました。'
+            continue
+        evidence = evidence_by_id.get(node.evidence_ids[0])
+        if evidence is None:
+            raise unavailable('piece_graph_source_binding')
         raw = meaning.envelope.raw_utf8
         if (node.evidence_ids != (evidence.evidence_id,)
                 or raw[evidence.utf8_start:evidence.utf8_end].decode('utf-8') != node.value):

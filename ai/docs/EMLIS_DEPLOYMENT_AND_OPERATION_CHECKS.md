@@ -803,3 +803,20 @@ iOSは[run65 / 38041653252](https://github.com/MassyuRed/Cocolon/actions/runs/38
 今回の報告は指定文言の表示確認である。端末のビルド番号、画面を閉じた後/再起動後の再表示、分析生成や内容品質の合格を別途確認したとはしない。再表示の未報告を今回の表示対応の新しい完了条件にはせず、追加入力や再配置を求めない。
 
 今回は本人報告を既存のAPI運用記録とAnalysis current mapへ反映しただけ。製品source/test、DB、環境変数、deploy/build、mergeの追加操作なし、検査再実行なし。個人の入力/分析本文・ID・画像の転記なし。STRUCTURE_MAP_DELTA_NONE。
+
+
+<a id="piece-first-image-save-completion-20261101"></a>
+## 2026-11-01 — 保存した感情選択からの画像化・保存一巡
+
+Mashの「完成まで進めて」に基づく変更。詳細は最新weekly第9回§40。保存原本の選択済み感情が特定の本文文型を要求されていた拒否原因を再現し、通常の本人選択そのものを意味根拠へ接続する。GPU/別作者/原文画像fallbackは使わない。
+
+| 既存owner | 今回の責務 |
+|---|---|
+| API cocolon_meaning_experience_engine/piece_source.py | private PieceSelectionEvidenceを追加。保存JSONのrecord hash・field/index・raw値を本文spanと分離。emotionsとemotion_detailsを同一感情nodeへまとめ、本文で既に同等表現済みなら旧node/ID/本文を維持 |
+| API cocolon_meaning_experience_engine/piece_v1c.py | 既存planにSOURCE_RECORDED_FEELING、唯一作者に記録時の本人感情/選択強度を追加。元memo/actionの全命題/順序は保持。感情はshort_essayの根拠になり、意思を創作してdeclarationにはしない |
+| API piece_v2_content_policy.py | 保存snapshotからの再導出とauthor-free本文検査で全選択/全原文を照合。選択の削除/重複/別感情/強度変更/恒常化/原因・意思追加を拒否 |
+| RN components/piece/PieceVisualCard.js | 明示piece.rn_bitmap_renderer.ios.v1だけ完成採用proofを同artifactへ保持。構築/初回最終採用は元8秒。完成後の閲覧/保存fitは元source expires_atと全identityで判定し、600秒以内に読んで保存できる。prototypeの8秒、saved画像保持、期限外完了拒否は維持 |
+
+公開API/7field source-ref/DB schema/保存枠/owner/receipt/CAS/依存/native描画は不変。新fileなし、STRUCTURE_MAP_DELTA_PRESENT（private選択根拠と既存renderer保持）。本文の曖昧な感情言及や句点なし等の一般文法対応、4B接続、Android/商品受入れの完了へ拡張しない。
+
+局所検証：API6file557 PASS、自然profileの生成→実PGlite preview/visual-change/private保存/同内容再読と元source失効の7 PASS、RN renderer/保存host/exportの251 PASS。反復実行は加算しない。本人対象記録もprivate CPUで生成し本文実読済み、公開testは架空記録。実Auth/実OS/iPhoneの画像保存一巡は配布後に本人確認する。旧native V4 19失敗は未解消。稼働/配布結果はweekly§40へ記録する。

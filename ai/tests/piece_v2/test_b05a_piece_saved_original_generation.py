@@ -152,9 +152,12 @@ def test_selected_feelings_are_not_silently_discarded_to_generate_text(field, va
     record = row()
     record['original'][field] = value
     result = outcome(source(record))
-    assert result.status == EngineStatus.UNAVAILABLE
-    assert result.reason_codes == ('saved_emotion_meaning_not_yet_supported',)
-    assert result.artifact is None
+    assert result.status == EngineStatus.GENERATED
+    labels = value if field == 'emotions' else [x['type'] for x in value]
+    assert all(label in result.artifact.body_blocks[-1] for label in labels)
+    assert len(result.source_meaning.graph.nodes) == 2 + len(labels)
+    assert result.artifact.body_blocks[:2] == ('余裕があるなら、私は陶芸を選びたい。', ACTION)
+    assert not result.artifact_plan.declaration_eligible
 
 
 def test_same_literal_in_both_fields_keeps_both_propositions():

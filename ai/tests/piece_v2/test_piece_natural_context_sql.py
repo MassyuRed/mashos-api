@@ -78,12 +78,16 @@ def test_natural_saved_cohort_survives_preview_visual_and_save(natural_case, qdb
     for _ in range(4):
         qdb.query("insert into public.emotions values ($1,$2,(now()-interval '1 hour') at time zone 'UTC',$3,'',array['仕事'],array['平穏'],$4)",
             [str(uuid4()), user, '会議の資料を読み直した。', json.dumps([dict(type='平穏', strength='medium')])])
-    fixture = B2['_record']()
-    recipe = build_visual_recipe('quote', tier=tier, language='ja')
-    record = {k: fixture[k] for k in ['format_type', 'content_payload', 'content_payload_hash',
-        'piece_text', 'piece_text_hash', 'safety_state', 'renderer_version']}
+    generated = run(adapter.generate_original_candidate_from_saved_state('Bearer synthetic', parent))
+    candidate = generated['candidate']
+    assert generated['source_lineage'] == lineage
+    assert candidate['piece_text'] == '会議の資料を読み直した。終わって少し安心した。\n\n記録時には、中程度の平穏を感じていました。'
+    recipe = build_visual_recipe(candidate['format_type'], tier=tier, language='ja')
+    record = {k: candidate[k] for k in ['format_type', 'content_payload', 'piece_text', 'piece_text_hash']}
+    record.update(content_payload_hash=canonical_sha256_hex(candidate['content_payload']),
+                  safety_state='ready', renderer_version='piece.rn_bitmap_renderer.ios.v1')
     record.update(source_lineage=lineage, visual_recipe=recipe,
-                  visual_recipe_hash=canonical_sha256_hex(recipe), eligible_formats=['quote'])
+                  visual_recipe_hash=canonical_sha256_hex(recipe), eligible_formats=candidate['eligible_formats'])
     issued = rpc(qdb, 'piece_issue_preview_v2', {'p_owner_user_id': user,
         'p_idempotency_key_hash': hashlib.sha256(('preview-' + parent).encode()).hexdigest(),
         'p_request_hash': canonical_sha256_hex(record), 'p_record': record,
@@ -121,6 +125,9 @@ def test_natural_saved_cohort_survives_preview_visual_and_save(natural_case, qdb
     save_args['p_expected_preview_revision'] = changed['preview_revision']
     saved = rpc(qdb, 'piece_save_v2', save_args)
     assert saved['lifecycle_status'] == 'saved'
+    reread = qdb.query('select piece_text,piece_text_hash,content_payload,visibility_scope from public.piece_records where id=$1', [saved['piece_id']])['rows'][0]
+    assert all(reread[k] == record[k] for k in ['piece_text', 'piece_text_hash', 'content_payload'])
+    assert reread['visibility_scope'] == 'private'
     assert len(calls) == 1
     assert qdb.query('select count(*) as n from public.piece_quota_consumptions where owner_user_id=$1', [user])['rows'][0]['n'] == 1
 
