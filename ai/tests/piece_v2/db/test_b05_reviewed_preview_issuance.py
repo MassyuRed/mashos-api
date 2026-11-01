@@ -470,7 +470,8 @@ def _preview_http_harness(database, monkeypatch, *, tier='free', named=False):
         return _B5['OWNER']
 
     async def issue(authorization, value, **kwargs):
-        assert set(kwargs) == {'idempotency_key', 'ttl_seconds', 'renderer_version', 'rpc', 'expected_subscription_tier'}
+        assert set(kwargs) == {'idempotency_key', 'ttl_seconds', 'renderer_version', 'rpc', 'expected_subscription_tier', 'allowed_renderers'}
+        assert kwargs['allowed_renderers'] == state.get('expected_renderers', ('synthetic-renderer.v1',))
         result = await actual_issue(authorization, value, load_record=load, **kwargs)
         state['last_internal_result'] = deepcopy(result)
         return result
@@ -815,3 +816,26 @@ def test_http_replay_checks_quota_tier_again_after_initial_probe(database, monke
     result = _preview_http_post(app, request)
     assert result.status_code == 409 and result.json() == {'code': 'PIECE_CONFLICT'}
     assert calls == 2 and state['authors'] == state['http_rpc'] == 1
+
+
+@pytest.mark.parametrize('stored_version', ['piece.rn_bitmap_renderer.ios.v1', 'piece.rn_bitmap_renderer.ios.v2'])
+def test_native_http_bitmap_brand_version_survives_same_key_replay(database, monkeypatch, stored_version):
+    app, _, request, _, state = _preview_http_harness(database, monkeypatch)
+    v1, v2 = 'piece.rn_bitmap_renderer.ios.v1', 'piece.rn_bitmap_renderer.ios.v2'
+    app.state.piece_preview_runtime['renderer_version'] = v1
+    old_headers = [('authorization', _B5['AUTH']), ('idempotency-key', 'synthetic-generated-preview')]
+    new_headers = old_headers + [('x-piece-renderer', v2)]
+    state['expected_renderers'] = (v1, v2) if stored_version == v2 else (v1,)
+    first = _preview_http_post(app, request, headers=new_headers if stored_version == v2 else old_headers)
+    assert first.status_code == 200 and first.json()['renderer_version'] == stored_version
+    posts = len(state['posts'])
+    state['expected_renderers'] = (v1, v2)
+    replay = _preview_http_post(app, request, headers=new_headers)
+    assert replay.status_code == 200 and replay.json()['renderer_version'] == stored_version
+    assert replay.json()['piece_text_hash'] == first.json()['piece_text_hash']
+    assert len(state['posts']) == posts
+    if stored_version == v2:
+        state['expected_renderers'] = (v1,)
+        old = _preview_http_post(app, request, headers=old_headers)
+        assert old.status_code == 400 and old.json() == {'code': 'PIECE_REQUEST_INVALID'}
+        assert len(state['posts']) == posts

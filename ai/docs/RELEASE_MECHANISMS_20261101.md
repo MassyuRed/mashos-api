@@ -110,3 +110,8 @@ API1296eaeaのnatural引継ぎは稼働しているが、preview生成は4Bを�
 §43候補は既定のpublic renderer ios.v1=Cocolonを維持し、compiled v2対応iOSのexact X-Piece-Renderer headerだけをpreferred ios.v2=Emlis/allowed(v1,v2)へ交渉する。旧/欠落/未知headerは既定版。preview serviceのfirst issue/並行issue返却/同key再読/visualとsave serviceの初回/保存済み再送は保存rowのrendererを検査・保持する。preferred版への再生成/上書きはしない。renderer/TTL設定なしの既存専用visual/save compositionは互換Noneを保ち、新規発行には従来どおりruntimeを必須とする。recipe内部ID cocolon_text_mark/version1/DB schema/保存JSON・hash・枠/公開制御は不変、migrationなし。
 
 対象4fileのPython255 PASS/11 native SQL deselected（隔離DBが必要なためこのローカル実行では未実行）/既存warning1。交渉・旧preview再読・visual版保持・新旧保存/保存済み再送拒否を合成Auth/実ASGIと実serviceで検査した。RNはv1/v2のbrand測定/完成後保持/export token-binding経路を検査。新API指定配置・署名build/Apple処理/既存内部配布は後続。旧V4 metrics19失敗・legacy canvas失敗/原因未確定を解消した変更ではない。GPU再起動/新実provider呼出し/DBデータ変更0。
+
+
+### §43 追加CIでのfixture補正
+
+API3407402の実PostgreSQL CI41283428092はreviewed issuanceのHTTP27 FAIL/105 PASSで停止した。新allowed_renderersを拒む旧test wrapperのexact kwargs集合が原因で、実service/RPC前に503となった。集合へ新引数を追加し既定集合をexact照合、新v1/v2の実SQL初回発行/同key非生成再読/旧client未知v2拒否も追加した。製品3sourceは3407402から変更なし、再CI結果は後続。Render dep-dbjebcflk1mc7390mnr0は3407402で07:11:03 UTC Live。新署名buildはRN7464f858/#71/run41283646380で進行中。
