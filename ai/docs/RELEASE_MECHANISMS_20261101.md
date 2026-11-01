@@ -51,6 +51,6 @@ Renderの既存service `srv-d4ppfpm3jp1c73952bj0` はAPI744336c0/dep-dbj853ou01p
 
 GitHub/Google認証の継続許可後、RN6675b4edで新iOS run41254631100を起動。Archive/IPA/Upload to TestFlight/全job success、実ログBUILD_NUMBER=6601。Apple処理/配布対象、本人導入/通常操作は未確認。
 
-Runpodの既存Pod10o4zhfktg9nc1は停止中・GPU割当先利用不可。開始表示$0.57/h、残高$5.73、container50GB/persistent storageなし。同型新Podへの自動移行は自動承認審査が新資源・データ移動・追加課金の可能性を理由に拒否し未実行。新Pod/GPU起動/学習/生成0。既存cacheの存否、実Connect HTTPS、専用Bearer、Render natural profile/endpoint/model/key設定は未完。月追加1万円内の常時提供は未成立。
+後続でMash提供の新Pod6i2aa1nj683s8y/RTX3090×1/$0.51/hへ接続。直接/labはtoken画面だが、Google認証済みRunpodの正式Jupyterリンクから認証成功。旧Pod移行/新Pod作成/停止/削除/チャージは華恋0。Python3.12.3/torch2.8.0+cu128の新環境へ隔離venvの固定4依存とAPI744336c0の提供tool（SHA256 d3b7a04e38769485da995c8323aaaaf4426ff5273fcba6dff578ada85bdb77b6）、base固定revision851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0aを準備。indexの2shard存在と依存を再確認した。model GPU load/学習/生成0。HTTPは8888のみで、8000追加のEdit Podは全データ消去/reset警告がある。8888,8000を保存前に保持しSave/reset未実行。専用Bearer/モデルHTTP起動/Render natural profile/endpoint/model/key設定と実Auth保存再読は未完。月追加1万円内の常時提供も未成立。
 
-今回product source/公開contractの追加変更なし、STRUCTURE_MAP_DELTA_NONE。詳しい本人端末/8task残件と次の許可対象はRNの最新weekly第9回§34。
+今回product source/公開contractの追加変更なし、STRUCTURE_MAP_DELTA_NONE。詳しい本人端末/8task残件と次の許可対象はRNの最新weekly第9回§34/35。
