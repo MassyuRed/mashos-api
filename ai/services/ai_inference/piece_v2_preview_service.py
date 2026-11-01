@@ -309,6 +309,7 @@ class PiecePreviewService:
         preview_id: str, request: dict, expected_subscription_tier: str,
         rpc: Callable[[str, dict], Awaitable[dict]],
         load_record: Callable[[str, str], Awaitable[dict | None]] = _load_owned_preview_for_replay,
+        allowed_renderers: tuple[str, ...] | None = None,
     ) -> dict:
         """Revise only the visual recipe of an owned, persisted draft.
 
@@ -342,6 +343,8 @@ class PiecePreviewService:
             if (row['id'] != pid or row['owner_user_id'] != owner
                     or row['piece_contract_version'] != 'piece.record.v2'):
                 raise _error('PIECE_NOT_FOUND')
+            if allowed_renderers is not None and row['renderer_version'] not in allowed_renderers:
+                raise _error('PIECE_REQUEST_INVALID')
             _positive(row['preview_revision']); _positive(row['row_version'])
             if row['preview_revision'] != value['expected_preview_revision']:
                 raise _error('PIECE_PREVIEW_STALE')
@@ -404,6 +407,7 @@ class PiecePreviewService:
         *, idempotency_key: str, ttl_seconds: int, renderer_version: str,
         rpc: Callable[[str, dict], Awaitable[dict]],
         safety_review: Callable[[PreparedPiecePreview], Awaitable[str]] | None = None,
+        allowed_renderers: tuple[str, ...] | None = None,
     ) -> dict:
         """Connect a server-held CMEE/B9 assembly to the existing B5 store.
 
@@ -440,6 +444,8 @@ class PiecePreviewService:
             if (type(ttl_seconds) is not int or not 0 < ttl_seconds <= 2147483647
                     or type(renderer_version) is not str
                     or re.fullmatch(r'[A-Za-z0-9_.:\-]{1,128}', renderer_version) is None):
+                raise _error('PIECE_REQUEST_INVALID')
+            if allowed_renderers is not None and renderer_version not in allowed_renderers:
                 raise _error('PIECE_REQUEST_INVALID')
             if not callable(safety_review):
                 raise _error('PIECE_SAFETY_UNAVAILABLE')
@@ -503,7 +509,7 @@ class PiecePreviewService:
             record = {key: artifact[key] for key in content_fields}
             record.update(source_lineage=lineage, renderer_version=renderer_version,
                           safety_state='adjusted' if decision == 'transformed' else 'ready')
-            return await issue_piece_preview(
+            result = await issue_piece_preview(
                 authenticated_user_id=handoff.original.authenticated_owner_id,
                 record=record, request_fingerprint=canonical_sha256_hex(value),
                 idempotency_key=idempotency_key, ttl_seconds=ttl_seconds, rpc=rpc,
@@ -511,6 +517,9 @@ class PiecePreviewService:
                 expected_source_state={'original': handoff.original.original_payload(),
                     'thread_id': handoff.thread_id, 'thread_revision': handoff.thread_revision,
                     'lineage': lineage})
+            if allowed_renderers is not None and result['renderer_version'] not in allowed_renderers:
+                raise _error('PIECE_REQUEST_INVALID')
+            return result
         except PieceContractError as exc:
             raise _error(exc.code if exc.code in errors else 'PIECE_TEMPORARILY_UNAVAILABLE') from None
         except Exception:
@@ -523,6 +532,7 @@ class PiecePreviewService:
         self, authorization: str | None, request: dict, *, idempotency_key: str,
         expected_subscription_tier: str | None = None,
         load_record: Callable[[str, str], Awaitable[dict | None]] = _load_owned_preview_for_replay,
+        allowed_renderers: tuple[str, ...] | None = None,
     ) -> dict:
         """Read an issued preview after losing the in-memory prepared object.
 
@@ -583,6 +593,8 @@ class PiecePreviewService:
             if (row['id'] != preview_id or row['owner_user_id'] != owner
                     or row['piece_contract_version'] != PIECE_V2_CONTRACT_VERSIONS['piece_contract_version']):
                 raise _error('PIECE_NOT_FOUND')
+            if allowed_renderers is not None and row['renderer_version'] not in allowed_renderers:
+                raise _error('PIECE_REQUEST_INVALID')
             if (row['preview_request_hash'] != canonical_sha256_hex(value)
                     or row['lifecycle_status'] != 'preview_draft'
                     or row['visibility_scope'] != 'private'
@@ -661,6 +673,7 @@ class PiecePreviewService:
         rpc: Callable[[str, dict], Awaitable[dict]],
         expected_subscription_tier: str | None = None,
         load_record: Callable[[str, str], Awaitable[dict | None]] = _load_owned_preview_for_replay,
+        allowed_renderers: tuple[str, ...] | None = None,
     ) -> dict:
         """Internal original-only creation/replay with the actual bounded reviewer.
 
@@ -688,6 +701,8 @@ class PiecePreviewService:
             if (type(ttl_seconds) is not int or not 0 < ttl_seconds <= 2147483647
                     or type(renderer_version) is not str
                     or re.fullmatch(r'[A-Za-z0-9_.:\-]{1,128}', renderer_version) is None):
+                raise _error('PIECE_REQUEST_INVALID')
+            if allowed_renderers is not None and renderer_version not in allowed_renderers:
                 raise _error('PIECE_REQUEST_INVALID')
             if not callable(rpc) or not callable(load_record):
                 raise _error('PIECE_TEMPORARILY_UNAVAILABLE')
@@ -719,7 +734,7 @@ class PiecePreviewService:
             if await load_record(owner, preview_id) is not None:
                 return await self.read_original_preview(authorization, value,
                     idempotency_key=idempotency_key, load_record=load_record,
-                    expected_subscription_tier=expected_subscription_tier)
+                    expected_subscription_tier=expected_subscription_tier, allowed_renderers=allowed_renderers)
             prepared = await self.prepare_original(authorization, value)
             if prepared.handoff != handoff:
                 raise _error('PIECE_CONFLICT')
@@ -728,7 +743,7 @@ class PiecePreviewService:
             return await self.issue_prepared_original(authorization, value, prepared,
                 idempotency_key=idempotency_key, ttl_seconds=ttl_seconds,
                 renderer_version=renderer_version, rpc=rpc,
-                safety_review=review_prepared_original)
+                safety_review=review_prepared_original, allowed_renderers=allowed_renderers)
         except PieceContractError as exc:
             raise _error(exc.code if exc.code in errors else 'PIECE_TEMPORARILY_UNAVAILABLE') from None
         except Exception:

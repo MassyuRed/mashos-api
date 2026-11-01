@@ -191,7 +191,8 @@ async def save_preview(request: Request) -> JSONResponse:
         features.require()
         result = await PieceSaveService(load_record=features.wrap(load_owned_preview),
             rpc=features.wrap(save_rpc)).save(request.headers['authorization'],
-            authenticated_user_id=owner, request=value, idempotency_key=keys[0])
+            authenticated_user_id=owner, request=value, idempotency_key=keys[0],
+            allowed_renderers=_renderer_preferences(request)[1])
         features.require()
         return _response(result)
     except Exception as exc:
@@ -419,6 +420,24 @@ def _preview_runtime(request: Request) -> tuple[int, str]:
         getattr(request.app.state, 'piece_preview_runtime', None))
 
 
+def _renderer_preferences(request: Request) -> tuple[str | None, tuple[str, ...] | None]:
+    """Negotiate only the explicitly deployed iOS bitmap brand versions.
+
+    Missing/older clients retain the configured renderer. The client cannot
+    select an arbitrary renderer, renew an artifact, or rewrite a saved row.
+    """
+    configuration = getattr(request.app.state, 'piece_preview_runtime', None)
+    configured = _preview_runtime(request)[1] if configuration is not None else None
+    values = request.headers.getlist('x-piece-renderer')
+    if len(values) > 1:
+        raise PieceContractError('PIECE_REQUEST_INVALID')
+    if (configured in (None, 'piece.rn_bitmap_renderer.ios.v1')
+            and values == ['piece.rn_bitmap_renderer.ios.v2']):
+        return 'piece.rn_bitmap_renderer.ios.v2', (
+            'piece.rn_bitmap_renderer.ios.v1', 'piece.rn_bitmap_renderer.ios.v2')
+    return configured, (configured,) if configured is not None else None
+
+
 def _preview_public_response(result: object) -> dict:
     """Project the persisted artifact, not the source or internal review."""
     import json
@@ -475,7 +494,8 @@ async def create_preview(request: Request) -> JSONResponse:
         except (ValueError, UnicodeError):
             raise PieceContractError('PIECE_REQUEST_INVALID') from None
         value = _request_snapshot(raw)
-        ttl, renderer = _preview_runtime(request)
+        ttl, _ = _preview_runtime(request)
+        renderer, allowed_renderers = _renderer_preferences(request)
         # Read before generation/issuance: missing quota infrastructure must
         # not create a hidden preview. This snapshot does not admit a save.
         quota = await read_piece_quota(authenticated_user_id=owner,
@@ -483,7 +503,7 @@ async def create_preview(request: Request) -> JSONResponse:
         features.require()
         result = await PiecePreviewService().issue_original(
             request.headers['authorization'], value, idempotency_key=keys[0],
-            ttl_seconds=ttl, renderer_version=renderer,
+            ttl_seconds=ttl, renderer_version=renderer, allowed_renderers=allowed_renderers,
             expected_subscription_tier=quota['subscription_tier'],
             rpc=features.wrap(_preview_rpc))
         features.require()
@@ -527,6 +547,7 @@ async def mutate_preview_visual(preview_id: str, request: Request) -> JSONRespon
         result = await PiecePreviewService().mutate_original_visual(
             request.headers['authorization'], authenticated_user_id=owner,
             preview_id=preview_id, request=value,
+            allowed_renderers=_renderer_preferences(request)[1],
             expected_subscription_tier=quota['subscription_tier'],
             load_record=features.wrap(_load_owned_preview_for_replay),
             rpc=features.wrap(_preview_rpc))

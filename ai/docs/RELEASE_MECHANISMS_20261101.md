@@ -102,3 +102,11 @@ API `1296eaea589a09fe91f84689c6d55d67e577ec23` の指定commit配置 `dep-dbjafe
 RN weekly第9回§39。Mashは応答popupを指示通りと確認。一方Pieceはsource-ref取得200→preview422で未作成（03:11:14/17 UTC、Supabase errors0）。native preview見出しが時計と重なるためRNの既存Modal内に専用SafeAreaProvider/全4edgeを追加し、機能全体を未提供とする古い固定案内も修復。対象RN231 PASS、新配布/本人座標確認は同§39へ。
 
 API1296eaeaのnatural引継ぎは稼働しているが、preview生成は4Bを呼ばず既存CMEEの有限Piece作者を使用。CPU架空対応価値観文は生成成功、通常の動作確認メモはexpression_meaning_not_admittedを再現。一般入力対応は未完成。本人の厳密な内部拒否理由は本文未取得のため未特定。今回API製品source/DB/flags/deploy/生成基準の変更0、GPU再起動/実モデル呼出し0。原文画像貼付や拒否緩和で完成扱いしない。
+
+## 11/1 第9回§41/§43 — ユーザー本文だけのPieceとEmlis画像ブランド
+
+先行APIba0de502はLiveで、本人が記録した本文だけを必要に応じて整形し、選択感情の説明文は画像本文へ加えない。private selection contextと原本/evidenceは保持する。7001の画像生成/本人一覧/Photos保存はMash本人確認済み。
+
+§43候補は既定のpublic renderer ios.v1=Cocolonを維持し、compiled v2対応iOSのexact X-Piece-Renderer headerだけをpreferred ios.v2=Emlis/allowed(v1,v2)へ交渉する。旧/欠落/未知headerは既定版。preview serviceのfirst issue/並行issue返却/同key再読/visualとsave serviceの初回/保存済み再送は保存rowのrendererを検査・保持する。preferred版への再生成/上書きはしない。renderer/TTL設定なしの既存専用visual/save compositionは互換Noneを保ち、新規発行には従来どおりruntimeを必須とする。recipe内部ID cocolon_text_mark/version1/DB schema/保存JSON・hash・枠/公開制御は不変、migrationなし。
+
+対象4fileのPython255 PASS/11 native SQL deselected（隔離DBが必要なためこのローカル実行では未実行）/既存warning1。交渉・旧preview再読・visual版保持・新旧保存/保存済み再送拒否を合成Auth/実ASGIと実serviceで検査した。RNはv1/v2のbrand測定/完成後保持/export token-binding経路を検査。新API指定配置・署名build/Apple処理/既存内部配布は後続。旧V4 metrics19失敗・legacy canvas失敗/原因未確定を解消した変更ではない。GPU再起動/新実provider呼出し/DBデータ変更0。

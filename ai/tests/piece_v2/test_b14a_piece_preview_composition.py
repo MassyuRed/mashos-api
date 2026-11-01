@@ -312,3 +312,28 @@ def test_existing_http_runtime_validation_preserves_all_rejections(composition_e
         assert response.json() == {'code': 'PIECE_TEMPORARILY_UNAVAILABLE'}
     assert composition_env['service'] == composition_env['rpc'] == 0
 
+
+@pytest.mark.parametrize('header,expected', [
+    (None, 'piece.rn_bitmap_renderer.ios.v1'),
+    ('piece.rn_bitmap_renderer.ios.v2', 'piece.rn_bitmap_renderer.ios.v2'),
+    ('unknown.renderer', 'piece.rn_bitmap_renderer.ios.v1'),
+])
+def test_bitmap_brand_negotiation_passes_only_deployed_versions(composition_env, monkeypatch, header, expected):
+    seen = []
+    class Preview:
+        async def issue_original(self, authorization, value, **options):
+            seen.append(options)
+            result = copy.deepcopy(composition_env['preview'])
+            result['renderer_version'] = options['renderer_version']
+            return result
+    monkeypatch.setattr(sys.modules['piece_v2_preview_service'], 'PiecePreviewService', Preview)
+    app = enabled(preview_runtime={'ttl_seconds': 600, 'renderer_version': 'piece.rn_bitmap_renderer.ios.v1'})
+    headers = {'Authorization': AUTH, 'Idempotency-Key': 'same-synthetic-key'}
+    if header is not None:
+        headers['X-Piece-Renderer'] = header
+    response = send(app, 'POST', PREVIEW_PATH, headers=headers, json=preview_request())
+    assert response.status_code == 200
+    assert response.json()['renderer_version'] == expected
+    assert seen[0]['renderer_version'] == expected
+    assert seen[0]['allowed_renderers'] == (('piece.rn_bitmap_renderer.ios.v1', 'piece.rn_bitmap_renderer.ios.v2')
+        if header == 'piece.rn_bitmap_renderer.ios.v2' else ('piece.rn_bitmap_renderer.ios.v1',))

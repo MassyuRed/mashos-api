@@ -516,3 +516,24 @@ def test_http_cancellation_remains_cancellation_through_all_wrappers(harness):
         send(s)
     assert len(s['posts']) == 1 and s['row'] == s['original']
 
+
+@pytest.mark.parametrize('version', ['piece.rn_bitmap_renderer.ios.v1', 'piece.rn_bitmap_renderer.ios.v2'])
+def test_new_bitmap_client_replays_and_mutates_stored_brand_without_reauthoring(harness, version):
+    s = harness
+    s['row']['renderer_version'] = version
+    allowed = ('piece.rn_bitmap_renderer.ios.v1', 'piece.rn_bitmap_renderer.ios.v2')
+    replay = run(s['owner'].read_original_preview(AUTH, s['request'], idempotency_key=KEY,
+        expected_subscription_tier='premium', load_record=s['load'], allowed_renderers=allowed))
+    assert replay['renderer_version'] == version and s['posts'] == []
+    result = mutate(s, allowed_renderers=allowed)
+    assert result['renderer_version'] == version and s['row']['renderer_version'] == version
+    assert len(s['posts']) == 1
+
+
+def test_old_bitmap_client_cannot_mutate_a_new_brand_record(harness):
+    s = harness
+    s['row']['renderer_version'] = 'piece.rn_bitmap_renderer.ios.v2'
+    s['app'].state.piece_preview_runtime = {'ttl_seconds': 600, 'renderer_version': 'piece.rn_bitmap_renderer.ios.v1'}
+    result = send(s)
+    assert result.status_code == 400 and result.json() == {'code': 'PIECE_REQUEST_INVALID'}
+    assert s['posts'] == []

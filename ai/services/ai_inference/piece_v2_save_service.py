@@ -72,7 +72,8 @@ class PieceSaveService:
         self._source_adapter = source_adapter if source_adapter is not None else PieceSavedSourceAdapter()
 
     async def save(self, authorization: str, *, authenticated_user_id: str,
-                   request: dict, idempotency_key: str) -> dict:
+                   request: dict, idempotency_key: str,
+                   allowed_renderers: tuple[str, ...] | None = None) -> dict:
         """The HTTP owner authenticates every call, including committed replay.
 
         For a first save, B5 rechecks current source eligibility without calling
@@ -95,6 +96,8 @@ class PieceSaveService:
                     or row.get('owner_user_id') != owner
                     or row.get('piece_contract_version') != 'piece.record.v2'):
                 _fail('PIECE_NOT_FOUND')
+            if allowed_renderers is not None and row.get('renderer_version') not in allowed_renderers:
+                _fail('PIECE_REQUEST_INVALID')
             if type(row.get('preview_revision')) is not int or row['preview_revision'] < 1:
                 _fail()
             if row['preview_revision'] != value['expected_preview_revision']:

@@ -453,3 +453,25 @@ def test_native_stop_before_save_keeps_preview_and_quota_untouched(database, har
     assert s['posts'] == [] and _B4['_used'](conn) == 0
     assert conn.execute('SELECT lifecycle_status FROM public.piece_records WHERE id=%s',
                         (s['row']['id'],)).fetchone()[0] == 'preview_draft'
+
+@pytest.mark.parametrize('version', ['piece.rn_bitmap_renderer.ios.v1', 'piece.rn_bitmap_renderer.ios.v2'])
+def test_new_bitmap_client_saves_stored_brand_without_changing_artifact(harness, version):
+    call, s = harness
+    s['row']['renderer_version'] = version
+    s['app'].state.piece_preview_runtime = {'ttl_seconds': 600, 'renderer_version': 'piece.rn_bitmap_renderer.ios.v1'}
+    response = call(headers={'Authorization': 'Bearer synthetic-owner', 'Idempotency-Key': 'synthetic-save',
+        'X-Piece-Renderer': 'piece.rn_bitmap_renderer.ios.v2'})
+    assert response.status_code == 200 and len(s['posts']) == 1
+    assert s['row']['renderer_version'] == version
+
+
+@pytest.mark.parametrize('saved', [False, True])
+def test_old_bitmap_client_rejects_new_brand_before_first_save_or_saved_replay(harness, saved):
+    call, s = harness
+    s['row']['renderer_version'] = 'piece.rn_bitmap_renderer.ios.v2'
+    s['app'].state.piece_preview_runtime = {'ttl_seconds': 600, 'renderer_version': 'piece.rn_bitmap_renderer.ios.v1'}
+    if saved:
+        s['row']['lifecycle_status'] = 'saved'
+        s['row']['expires_at'] = None
+    _error(call(), 400, 'PIECE_REQUEST_INVALID')
+    assert s['posts'] == []
