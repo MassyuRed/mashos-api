@@ -115,18 +115,20 @@ def prepare_cumulative_model_field_kinds(owner, snapshot):
     return prepare_analysis_model_field_kinds(prepared.request, source_guard=prepared.source_guard)
 
 
-def prepare_cumulative_model_units(owner, snapshot):
+def prepare_cumulative_model_units(owner, snapshot, *, instruction_version='baseline.v1'):
     """Explicit private candidate profile; no normal map/HTTP switch."""
     from cocolon_meaning_experience_engine.cores.analysis.semantic_admission import prepare_analysis_model_units
     prepared = prepare_cumulative_model_fields(owner, snapshot)
-    return prepare_analysis_model_units(prepared.request, source_guard=prepared.source_guard)
+    return prepare_analysis_model_units(prepared.request, source_guard=prepared.source_guard,
+        instruction_version=instruction_version)
 
 
 def build_cumulative_unit_candidates(owner, snapshot, *, model_input):
     from cocolon_meaning_experience_engine import MeaningExperienceEngine
     from cocolon_meaning_experience_engine.cores.analysis.semantic_admission import (
         AnalysisModelUnitsInput, require)
-    expected = prepare_cumulative_model_units(owner, snapshot)
+    require(type(model_input) is AnalysisModelUnitsInput, 'analysis_model_units_binding_invalid')
+    expected = prepare_cumulative_model_units(owner, snapshot, instruction_version=model_input.instruction_version)
     require(type(model_input) is AnalysisModelUnitsInput
         and model_input.request == expected.request and model_input.request_ref == expected.request_ref
         and model_input.source_guard == expected.source_guard, 'analysis_model_units_binding_invalid')
@@ -148,7 +150,9 @@ def serialize_cumulative_unit_candidates(owner, snapshot, *, model_input, artifa
     """One private caller-managed file containing exact cumulative coverage."""
     from cocolon_meaning_experience_engine.cores.analysis.semantic_admission import (
         canonical, require, serialize_analysis_model_units)
-    expected = prepare_cumulative_model_units(owner, snapshot)
+    from cocolon_meaning_experience_engine.cores.analysis.semantic_admission import AnalysisModelUnitsInput
+    require(type(model_input) is AnalysisModelUnitsInput, 'analysis_model_units_binding_invalid')
+    expected = prepare_cumulative_model_units(owner, snapshot, instruction_version=model_input.instruction_version)
     require(type(model_input) is type(expected) and model_input.request == expected.request
         and model_input.request_ref == expected.request_ref and model_input.source_guard == expected.source_guard
         and canonical(coverage) == canonical(_unit_candidate_coverage(expected, snapshot)),
@@ -157,10 +161,10 @@ def serialize_cumulative_unit_candidates(owner, snapshot, *, model_input, artifa
         coverage=coverage, state=json.loads(serialize_analysis_model_units(model_input, artifact))))
 
 
-def reload_cumulative_unit_candidates(owner, snapshot, raw):
+def reload_cumulative_unit_candidates(owner, snapshot, raw, *, instruction_version='baseline.v1'):
     from cocolon_meaning_experience_engine.cores.analysis.semantic_admission import (
         _load, canonical, require, reload_analysis_model_units)
-    prepared = prepare_cumulative_model_units(owner, snapshot)
+    prepared = prepare_cumulative_model_units(owner, snapshot, instruction_version=instruction_version)
     saved = _load(raw)
     require(type(saved) is dict and set(saved) == {'schema_version','coverage','state'}
         and saved['schema_version'] == 'cocolon.cmee.cumulative_unit_candidates_file.v1'

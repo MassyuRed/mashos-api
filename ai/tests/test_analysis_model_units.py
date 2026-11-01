@@ -208,3 +208,32 @@ def test_empty_candidates_are_retained_and_normal_build_never_selects_them():
     assert len(artifact.graph.fields) == 3 and coverage['unparsed_count'] == 2
     with patch.object(service,'prepare_cumulative_model_units',side_effect=AssertionError('not default')):
         assert service.build_cumulative_map(OWNER,sample())[0] is None
+
+
+def test_clarified_instruction_has_distinct_binding_and_keeps_old_replay():
+    old=prepared(); new=service.prepare_cumulative_model_units(OWNER,sample(),instruction_version='clarified.v1')
+    assert old.request_ref != new.request_ref and old.messages() != new.messages()
+    value=synthetic_call(new)
+    artifact,counts=service.build_cumulative_unit_candidates(OWNER,sample(),model_input=value)
+    raw=service.serialize_cumulative_unit_candidates(OWNER,sample(),model_input=value,artifact=artifact,coverage=counts)
+    assert json.loads(raw)['state']['schema_version'].endswith('.v2')
+    restored,recounted=service.reload_cumulative_unit_candidates(OWNER,sample(),raw,instruction_version='clarified.v1')
+    assert restored==artifact and recounted==counts
+    with pytest.raises(AnalysisSemanticError): service.reload_cumulative_unit_candidates(OWNER,sample(),raw)
+    old_value,old_artifact,old_counts=build()
+    old_raw=service.serialize_cumulative_unit_candidates(OWNER,sample(),model_input=old_value,artifact=old_artifact,coverage=old_counts)
+    assert json.loads(old_raw)['state']['schema_version'].endswith('.v1')
+    assert service.reload_cumulative_unit_candidates(OWNER,sample(),old_raw)==(old_artifact,old_counts)
+
+
+@pytest.mark.parametrize('version',['unknown.v1',None,True])
+def test_unknown_instruction_versions_are_not_defaulted(version):
+    with pytest.raises(AnalysisSemanticError,match='instruction_invalid'):
+        service.prepare_cumulative_model_units(OWNER,sample(),instruction_version=version)
+
+
+def test_responses_cannot_be_transferred_between_instruction_versions():
+    old=synthetic_call(prepared())
+    new=service.prepare_cumulative_model_units(OWNER,sample(),instruction_version='clarified.v1')
+    with pytest.raises(AnalysisSemanticError,match='response_invalid'):
+        service.build_cumulative_unit_candidates(OWNER,sample(),model_input=replace(new,response=old.response))
