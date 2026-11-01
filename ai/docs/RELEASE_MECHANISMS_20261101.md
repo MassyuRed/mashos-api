@@ -59,7 +59,7 @@ Render環境変数更新pluginがautoDeploy OFFでもmain2d2f06dの配置dep-dbj
 
 モデルHTTP serverは00:51:54 UTCから1477秒で停止、所有process不在・GPU1MiB/0％を確認。新PodのStop/新規作成/削除/チャージは華恋0。残り最大3要求/300秒だけを新配布候補の初回確認へ残す。APIはMODE=read_only＋natural_reply.v1を維持し、同source744336c0/既存artifactのdep-dbj96l67bikc73ep8hugが01:18:55 UTC Live。保存済みreaderをlegacyへ戻さない。実DBの本文/owner/inputIDなし集計では、00:55:48 UTC以降のnatural更新/FINAL保存/active/CALL_STARTEDは全0件。この段階の通常実Auth→4B→DB保存→本人同本文再読は未完で、後続の6701確認で完了した。月追加1万円内の常時提供は未完。
 
-今回product source/公開contractの追加変更なし、STRUCTURE_MAP_DELTA_NONE。詳しい本人端末/8task残件と次の許可対象はRNの最新weekly第9回§36。
+今回product source/公開contractの追加変更なし、STRUCTURE_MAP_DELTA_NONE。詳しい本人初回確認/8task残件はRNの最新weekly第9回§37。
 
 
 ## 11/1 6701の本人初回保存・再読の結果
