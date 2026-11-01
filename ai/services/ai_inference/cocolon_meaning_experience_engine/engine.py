@@ -30,9 +30,12 @@ class MeaningExperienceEngine:
     def generate(self, request: GenerationRequest | PieceGenerationRequest | AnalysisObservedMapRequest, *, semantic_input=None) -> EngineOutcome | PieceEngineOutcome | AnalysisEngineOutcome:
         if semantic_input is not None and type(request) is AnalysisObservedMapRequest:
             from .cores.analysis.semantic_admission import (AnalysisModelFieldsInput,
-                generate_analysis_model_fields)
+                AnalysisModelFieldKindsInput, generate_analysis_model_fields,
+                generate_analysis_model_field_kinds)
             if type(semantic_input) is AnalysisModelFieldsInput:
                 return generate_analysis_model_fields(request, semantic_input)
+            if type(semantic_input) is AnalysisModelFieldKindsInput:
+                return generate_analysis_model_field_kinds(request, semantic_input)
             from .cores.analysis.semantic_admission import generate_analysis_semantic
             return generate_analysis_semantic(request, semantic_input)
         if semantic_input is not None and type(request) is PieceGenerationRequest:

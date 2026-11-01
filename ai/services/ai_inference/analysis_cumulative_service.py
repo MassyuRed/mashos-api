@@ -107,6 +107,13 @@ def prepare_cumulative_model_fields(owner, snapshot):
     return prepare_analysis_model_fields(request, source_guard=snapshot['guard'])
 
 
+def prepare_cumulative_model_field_kinds(owner, snapshot):
+    """Explicit offline classifications; source admission is shared with v1."""
+    from cocolon_meaning_experience_engine.cores.analysis.semantic_admission import prepare_analysis_model_field_kinds
+    prepared = prepare_cumulative_model_fields(owner, snapshot)
+    return prepare_analysis_model_field_kinds(prepared.request, source_guard=prepared.source_guard)
+
+
 def build_cumulative_map(owner, snapshot, *, model_input=None):
     """Use the existing compiler/author once for the complete eligible set.
 
@@ -120,8 +127,10 @@ def build_cumulative_map(owner, snapshot, *, model_input=None):
     from cocolon_meaning_experience_engine import MeaningExperienceEngine
     from cocolon_meaning_experience_engine.contracts import EngineStatus
     if model_input is not None:
-        from cocolon_meaning_experience_engine.cores.analysis.semantic_admission import require
-        expected = prepare_cumulative_model_fields(owner, snapshot)
+        from cocolon_meaning_experience_engine.cores.analysis.semantic_admission import (
+            AnalysisModelFieldKindsInput, require)
+        expected = (prepare_cumulative_model_field_kinds(owner, snapshot)
+            if type(model_input) is AnalysisModelFieldKindsInput else prepare_cumulative_model_fields(owner, snapshot))
         require(type(model_input) is type(expected) and model_input.request == expected.request
             and model_input.request_ref == expected.request_ref
             and model_input.source_guard == expected.source_guard, 'analysis_model_input_binding_invalid')
