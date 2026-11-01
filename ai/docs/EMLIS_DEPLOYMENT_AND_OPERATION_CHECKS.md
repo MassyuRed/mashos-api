@@ -827,3 +827,6 @@ Mashの「完成まで進めて」に基づく変更。詳細は最新weekly第9
 API7f0cee40/dep-dbjbtqlg1s2s73faadmgは04:25:24 UTC Live。healthz/app bootstrap200、Piece private5ON/public3OFF、配置後取得範囲app error0。既存free resource/autoDeploy OFF/設定を保持し、DB追加適用/GPU起動/provider呼出し0。
 
 自動CI41272660291は前段19検査step成功後、既存test_b10_preview_application_native.pyの経路一覧が以前追加したGET /emotion/piece/{piece_id}/exportを含まないため、生成前の同じassertで6FAIL/他7PASS。今回の意味生成/SQL保存失敗とは区別する。既存一覧へ1経路を同期し、local実factoryの12経路を確認。製品sourceの追加変更・API再配置・RN再buildは不要。新headの既存CIで実native後続検査まで確認する。
+
+
+9dae48b7のnative CI41273204564/job124750036125は04:31:43 UTCまでに全step success。経路一覧同期後の6case、actual CMEE/実PostgreSQL保存、shared API/既定契約まで通過。7f0cee40のAnalysis CI41272660317もsuccess。新たな製品source差分/再配置はなく、Liveは7f0cee40のまま。通常本人Auth/実iPhoneの画像保存・Photos/Shareは7001配布後の確認対象として保持する。この結果更新だけのSTRUCTURE_MAP_DELTA_NONE。
