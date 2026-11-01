@@ -28,6 +28,60 @@ NODE_KINDS = ('SCENE', 'ROLE', 'ATTENTION_OR_THOUGHT',
 
 
 @dataclass(frozen=True, slots=True, repr=False)
+class AnalysisUnitQualifier:
+    kind: str
+    quote: str
+    evidence: EvidenceRef
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class AnalysisUnitCandidate:
+    index: int
+    quote: str
+    node_kind: str | None
+    parent: int | None
+    scope_role: str | None
+    qualifiers: tuple[AnalysisUnitQualifier, ...]
+    evidence: EvidenceRef
+    actor: str = 'UNRESOLVED_NOT_OWNER_DERIVED'
+    polarity: str = 'AS_WRITTEN_UNRESOLVED'
+    modality: str = 'AS_WRITTEN_UNRESOLVED'
+    temporal_scope: str = 'AS_WRITTEN_UNRESOLVED'
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class AnalysisUnitCandidateField:
+    field: int
+    field_ref: str
+    field_path: str
+    record_ref: str
+    record_version: str
+    complete_source_text: str
+    evidence: EvidenceRef
+    units: tuple[AnalysisUnitCandidate, ...]
+    residual_ranges: tuple[tuple[int, int], ...]
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class AnalysisUnitCandidateGraph:
+    """Private model proposals, deliberately not an ObservedGraph."""
+    owner_scope: str
+    source_set_ref: str
+    request_ref: str
+    response_ref: str
+    fields: tuple[AnalysisUnitCandidateField, ...]
+    unparsed_record_refs: tuple[str, ...]
+    semantic_status: str = 'UNVALIDATED_MODEL_CANDIDATE'
+    route_edges: tuple = ()
+
+
+def compile_analysis_unit_candidates(frozen, request_ref, response_ref, fields):
+    # Admission binds every part to its complete source before compilation.
+    return AnalysisUnitCandidateGraph(frozen.owner_scope, frozen.source_set_ref,
+        request_ref, response_ref, tuple(fields), tuple(m.saved_record_ref for m in frozen.members))
+
+
+@dataclass(frozen=True, slots=True, repr=False)
 class ObservedProposition:
     """Whole-clause grammatical interpretation, private and source-bound.
 

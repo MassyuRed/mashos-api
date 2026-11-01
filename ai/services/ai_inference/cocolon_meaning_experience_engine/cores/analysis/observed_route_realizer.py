@@ -24,6 +24,77 @@ from .source_adapter import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class AnalysisUnitCandidateArtifact:
+    """Private diagnostic output; has no normal safe_projection interface."""
+    candidate_id: str
+    graph: object
+    text: str
+    diagram_json: str
+
+
+def _unit_candidate_content(graph):
+    from dataclasses import asdict
+    from .intent_compiler import AnalysisUnitCandidateGraph
+    from .semantic_admission import canonical, digest, require
+    require(type(graph) is AnalysisUnitCandidateGraph
+        and graph.semantic_status == 'UNVALIDATED_MODEL_CANDIDATE' and graph.route_edges == (),
+        'analysis_model_units_graph_invalid')
+    lines = ['未検証の意味候補です。元の全文と一緒に確認するための表示です。']
+    fields = []
+    for field in graph.fields:
+        # Context appears once per field, in the same group as its proposals.
+        lines.extend(['', f'原文 {field.field}（{field.field_path}）：', field.complete_source_text])
+        candidates = []
+        for unit in field.units:
+            carrier = ('本人記載の不明候補' if unit.scope_role == 'WRITTEN_UNKNOWN'
+                else '従属内容候補' if unit.parent is not None else '経路の分類候補')
+            details = unit.node_kind or unit.scope_role
+            line = f'未検証の意味候補 {unit.index}・{carrier}（{details}）：「{unit.quote}」'
+            if unit.parent is not None:
+                line += f'／従属先候補 {unit.parent}'
+            if unit.qualifiers:
+                line += '／' + '、'.join(f'{q.kind}候補「{q.quote}」' for q in unit.qualifiers)
+            lines.append(line)
+            candidates.append(dict(index=unit.index, quote=unit.quote, carrier=carrier,
+                node_kind=unit.node_kind, parent=unit.parent, scope_role=unit.scope_role,
+                qualifiers=[asdict(q) for q in unit.qualifiers], evidence=asdict(unit.evidence),
+                actor=unit.actor, polarity=unit.polarity, modality=unit.modality,
+                temporal_scope=unit.temporal_scope, semantic_status=graph.semantic_status))
+        if not field.units:
+            lines.append('この欄の意味候補は未抽出です。')
+        residual = [dict(start=a, end=b, quote=field.complete_source_text[a:b])
+            for a,b in field.residual_ranges]
+        lines.append('意味の確認は未完了です。候補同士の経路・因果は確定していません。')
+        fields.append(dict(field=field.field, field_path=field.field_path,
+            record_ref=field.record_ref, record_version=field.record_version,
+            complete_source_text=field.complete_source_text, evidence=asdict(field.evidence),
+            requires_complete_field_context=True, candidates=candidates,
+            residual_source_ranges=residual, meaning_coverage='UNPARSED'))
+    diagram = dict(schema_version='cocolon.cmee.analysis_unit_candidate_diagram.v1',
+        owner_scope=graph.owner_scope, source_set_ref=graph.source_set_ref,
+        semantic_status=graph.semantic_status, fields=fields, route_edges=[],
+        coverage=dict(source_count=len(graph.unparsed_record_refs),
+            unparsed_count=len(graph.unparsed_record_refs), mapped_count=0,
+            unparsed_record_refs=list(graph.unparsed_record_refs)))
+    candidate_id = 'analysis-unit-candidate:' + digest(asdict(graph))
+    return candidate_id, '\n'.join(lines), canonical(diagram)
+
+
+def realize_analysis_unit_candidates(graph):
+    """The existing sole Analysis author, explicit private candidate arm."""
+    candidate_id, text, diagram = _unit_candidate_content(graph)
+    return AnalysisUnitCandidateArtifact(candidate_id, graph, text, diagram)
+
+
+def validate_analysis_unit_artifact(artifact):
+    from .semantic_admission import require
+    expected = _unit_candidate_content(artifact.graph)
+    require((artifact.candidate_id, artifact.text, artifact.diagram_json) == expected,
+            'analysis_model_units_saved_content_invalid')
+
 # Exact literals only: exceptions and source values must never enter logs.
 _FAILURE_LOG_REASONS = frozenset({
     'analysis_answer_range_invalid',
