@@ -2259,18 +2259,24 @@ def compile_observed_graph(source_set: AnalysisSourceSet) -> ObservedGraph:
             'SOURCE_SCOPE', 'UNSUPPORTED_OR_UNCERTAIN_SOURCE_SCOPE'))
     # A supplemental answer shares its original's occasion. Two fields or two
     # answers from one record therefore never turn into a repeated pattern.
-    for i, left in enumerate(nodes):
-        for right in nodes[i + 1:]:
-            together = [ref for ref, ids in occurrences.items()
-                        if {left.node_ref, right.node_ref} <= ids]
-            if len(together) < 2:
-                continue
-            supporting_envelopes = {s.envelope.envelope_id for s in source_set.sources
-                                    if s.record_ref in together}
-            refs = tuple(dict.fromkeys(r for r in (*left.evidence_refs, *right.evidence_refs)
-                                      if r.source_envelope_id in supporting_envelopes))
-            edges.append(ObservedEdge('e' + str(len(edges) + 1),
-                'REPEATED_COOCCURRENCE', (left.node_ref, right.node_ref), refs))
+    from itertools import combinations
+    pair_records, envelopes_by_record = {}, {}
+    for source in source_set.sources:
+        envelopes_by_record.setdefault(source.record_ref, set()).add(source.envelope.envelope_id)
+    for ref, ids in occurrences.items():
+        for pair in combinations(sorted(ids, key=lambda n: int(n[1:])), 2):
+            pair_records.setdefault(pair, []).append(ref)
+    node_index = {n.node_ref: n for n in nodes}
+    for pair in sorted(pair_records, key=lambda p: (int(p[0][1:]), int(p[1][1:]))):
+        together = pair_records[pair]
+        if len(together) < 2:
+            continue
+        left, right = (node_index[ref] for ref in pair)
+        supporting_envelopes = set().union(*(envelopes_by_record[ref] for ref in together))
+        refs = tuple(dict.fromkeys(r for r in (*left.evidence_refs, *right.evidence_refs)
+                                  if r.source_envelope_id in supporting_envelopes))
+        edges.append(ObservedEdge('e' + str(len(edges) + 1),
+            'REPEATED_COOCCURRENCE', pair, refs))
     conflicts = tuple(ObservedConflict('c' + str(index), targets, evidence)
         for index, (targets, evidence) in enumerate(conflict_evidence.items(), 1))
     return ObservedGraph(tuple(nodes), tuple(edges), tuple(gaps), updates, conflicts,

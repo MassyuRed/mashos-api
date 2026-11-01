@@ -114,6 +114,13 @@ async def list_history(
     if not me:
         raise HTTPException(status_code=401, detail="Invalid user")
 
+    from analysis_observed_service import observed_enabled
+    if family == 'self_structure' and observed_enabled():
+        if report_type != 'monthly':
+            raise HTTPException(400, 'analysis_history_type_invalid')
+        from analysis_cumulative_service import map_history
+        return await map_history(me, limit=max(1, min(int(limit or 60), 200)), offset=max(0, int(offset or 0)))
+
     tier_str = await _resolve_subscription_tier(me)
     now = now_utc or datetime.now(timezone.utc)
     context = await resolve_report_view_context(me, now_utc=now)
@@ -230,6 +237,7 @@ async def get_detail(
     family: str,
     report_id: str,
     now_utc: Optional[datetime] = None,
+    month: Optional[str] = None,
 ) -> Dict[str, Any]:
     config = _get_family_config(family)
     me = str(user_id or "").strip()
@@ -243,7 +251,8 @@ async def get_detail(
     observed = family == 'self_structure' and observed_enabled()
     observed_tier = None
     if observed:
-        result = await read_saved(me, report_id=rid, history=True, limit=1)
+        from analysis_cumulative_service import read_maps
+        result = await read_maps(me, report_id=rid, month=month, limit=1)
         observed_tier = result['subscription_tier']
         if result['items']:
             return {'status': 'ok', 'item': result['items'][0]}

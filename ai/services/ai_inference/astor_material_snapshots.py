@@ -97,7 +97,7 @@ async def _analysis_period_ids(owner: str, start: str, end: str) -> tuple[str, .
         raise AnalysisSavedSourceError('analysis_saved_source_unavailable') from None
 
 
-def _analysis_saved_member(snapshot, *, owner, input_id, tier, start, end):
+def _analysis_saved_member(snapshot, *, owner, input_id, tier, start, end, cumulative=False):
     from cocolon_meaning_experience_engine.cores.analysis.source_adapter import (
         AnalysisSavedRecord, AnalysisSupplement, ORIGINAL_FIELDS, canonical_bytes, commitment, _time,
     )
@@ -113,7 +113,23 @@ def _analysis_saved_member(snapshot, *, owner, input_id, tier, start, end):
         created = _time(original['created_at'], saved_utc=True)
         if not start <= created < end:
             raise AnalysisSavedSourceError('analysis_saved_source_changed')
-        thread = _check(snapshot)
+        if cumulative:
+            # Map scope is all owned inputs, independent of the general input
+            # history window. Never impersonate a higher subscription tier.
+            thread = snapshot.get('thread')
+            if thread and (thread.get('user_id') != owner
+                    or thread.get('original_emotion_id') != input_id):
+                raise AnalysisSavedSourceError('analysis_saved_owner_mismatch')
+            if thread and thread.get('source_snapshot') != original:
+                # After an input edit, answers bound to the older original are
+                # not answers to its replacement. The current original remains.
+                thread = None
+                snapshot = dict(snapshot, thread=None, events=[])
+            if thread and thread['data']['runtime_profile'] not in {
+                    'q2.free.one_round.v1', 'q3.plan.sequential.v1'}:
+                raise AnalysisSavedSourceError('analysis_saved_source_invalid')
+        else:
+            thread = _check(snapshot)
         events = snapshot['events']
         if type(events) is not list or any(type(e) is not dict for e in events):
             raise AnalysisSavedSourceError('analysis_saved_source_invalid')
@@ -127,7 +143,7 @@ def _analysis_saved_member(snapshot, *, owner, input_id, tier, start, end):
                     or any(e['thread_id'] != thread['id'] for e in events)):
                 raise AnalysisSavedSourceError('analysis_saved_source_invalid')
             answer_events = [e for e in events if e['kind'] == 'ANSWER']
-            request = _request(snapshot, include_context=False)
+            request = _request(snapshot, include_context=False, analysis_source_only=True) if cumulative else _request(snapshot, include_context=False)
             admitted = admit_emlis_thread(request)
             question_events = [e for e in events if e['kind'] == 'QUESTION']
             question_ids = [e['question_id'] for e in question_events]

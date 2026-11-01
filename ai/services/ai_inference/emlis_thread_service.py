@@ -67,7 +67,7 @@ def _find(snapshot, event_id):
     return next((e for e in snapshot["events"] if e["id"] == event_id), None)
 
 
-def _request(snapshot, *, checkpoint_ref=None, include_context=True):
+def _request(snapshot, *, checkpoint_ref=None, include_context=True, analysis_source_only=False):
     t, original = snapshot["thread"], dict(snapshot["original"])
     # DB optional text is nullable; the source kernel requires text leaves.
     # Adapt only this generation copy. Preserve the raw snapshot for storage CAS.
@@ -78,7 +78,7 @@ def _request(snapshot, *, checkpoint_ref=None, include_context=True):
     semantic_profile = t["data"].get("semantic_profile")
     if semantic_profile is not None:
         from cocolon_meaning_experience_engine.emlis_semantic_admission import PROFILE, PROFILE_V2, MODEL_PROFILE
-        if semantic_profile not in {PROFILE, PROFILE_V2, MODEL_PROFILE} or not include_context or t["data"].get("execution_mode") != ExecutionMode.OFFLINE_CANDIDATE.value:
+        if semantic_profile not in {PROFILE, PROFILE_V2, MODEL_PROFILE} or (not include_context and not analysis_source_only) or t["data"].get("execution_mode") != ExecutionMode.OFFLINE_CANDIDATE.value:
             raise ValueError("semantic_profile_or_history_not_supported")
     req = GenerationRequest("emlis-" + t["id"], build_emlis_current_input_bundle(original), original["id"],
                             execution_mode=ExecutionMode.OFFLINE_CANDIDATE.value if semantic_profile else APPLICATION_EXECUTION_MODE)

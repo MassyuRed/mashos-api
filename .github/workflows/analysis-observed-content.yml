@@ -10,6 +10,15 @@ name: Analysis observed content
       - ai/services/ai_inference/cocolon_meaning_experience_engine/**
       - ai/services/ai_inference/emlis_ai_grounded_observation_plan.py
       - ai/services/ai_inference/analysis_observed_service.py
+      - ai/services/ai_inference/analysis_cumulative_service.py
+      - ai/services/ai_inference/api_self_structure*.py
+      - ai/services/ai_inference/astor_self_structure_report.py
+      - ai/services/ai_inference/api_cron_distribution.py
+      - ai/services/ai_inference/astor_worker.py
+      - ai/tests/test_analysis_cumulative*.py
+      - ai/tests/test_analysis_observed_api.py
+      - ai/tests/analysis_cumulative_sql.cjs
+      - supabase/migrations/20261101080144_cumulative_watashi_map.sql
       - ai/tests/test_cmee_analysis_v1d_vertical.py
       - ai/tests/test_cmee_analysis_nominal_relations.py
       - ai/tests/test_analysis_observed_storage.py
@@ -29,7 +38,7 @@ jobs:
     env:
       PYTEST_DISABLE_PLUGIN_AUTOLOAD: '1'
       PYTHONDONTWRITEBYTECODE: '1'
-      PYTHONPATH: ai/services/ai_inference:ai/tests
+      PYTHONPATH: .:ai/services:ai/services/ai_inference:ai/tests
     steps:
       - name: Check out the triggering commit
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -90,3 +99,30 @@ jobs:
               projection = result.artifact.safe_projection(authenticated_owner_scope=OWNER)
               print('GRAPH:', len(projection['nodes']), 'nodes', len(projection['edges']), 'edges')
           PY
+
+      - name: Set up Node for existing PostgreSQL test harness
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+      - name: Install PostgreSQL WASM test dependency
+        run: npm install --prefix "$RUNNER_TEMP/analysis-postgres" --ignore-scripts --no-audit --no-fund @electric-sql/pglite@0.5.8
+      - name: Verify cumulative API, Q3 saved sources and existing job entrypoints
+        env:
+          Q2_PGLITE_MODULE: ${{ runner.temp }}/analysis-postgres/node_modules/@electric-sql/pglite
+        run: >-
+          python -m pytest -q --tb=short -ra
+          -p pytest_subtests.plugin -p no:cacheprovider -c /dev/null --noconftest
+          ai/tests/test_analysis_cumulative.py
+          ai/tests/test_analysis_cumulative_jobs.py
+          ai/tests/test_analysis_observed_api.py
+      - name: Verify monthly rank, immutable re-read and source deletion SQL
+        env:
+          NODE_PATH: ${{ runner.temp }}/analysis-postgres/node_modules
+        run: |
+          python - <<'PY'
+          import json, os
+          from test_analysis_cumulative import sql_fixture
+          with open(os.path.join(os.environ['RUNNER_TEMP'], 'analysis-cumulative.json'), 'w') as out:
+              json.dump(sql_fixture(), out, ensure_ascii=False)
+          PY
+          node ai/tests/analysis_cumulative_sql.cjs "$RUNNER_TEMP/analysis-cumulative.json"

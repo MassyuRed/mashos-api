@@ -3475,6 +3475,17 @@ async def refresh_myprofile_monthly_report(
     if not uid:
         raise ValueError("user_id is required")
 
+    from analysis_observed_service import observed_enabled
+    if observed_enabled():
+        if not include_secret:
+            raise ValueError('analysis_source_scope_override_unavailable')
+        from analysis_cumulative_service import ensure_map
+        result = await ensure_map(uid, monthly=True)
+        return {'status': 'ok', 'user_id': uid, 'period': 'all', 'report_mode': 'standard',
+            'generated_at': result['generated_at'], 'report_id': result['report_id'],
+            'source_profile': 'cumulative.v1', 'report_text': result['content_text'] or '',
+            'report_meta': result['meta'] or {}, 'history_saved': result['history_saved']}
+
     period_used = str(period_override or "28d").strip() or "28d"
     report_mode = _normalize_report_mode(report_mode_override)
     now_dt = (now or _dt.datetime.now(_dt.timezone.utc)).astimezone(_dt.timezone.utc).replace(microsecond=0)
@@ -3522,6 +3533,15 @@ async def refresh_myprofile_latest_report(
     uid = str(user_id or "").strip()
     if not uid:
         raise ValueError("user_id is required")
+
+    from analysis_observed_service import observed_enabled
+    if observed_enabled():
+        from analysis_cumulative_service import ensure_map
+        result = await ensure_map(uid, force=force)
+        # Worker callers log this result. Do not return private map contents.
+        return {'status': 'ok' if result['has_visible_content'] else 'empty',
+            'user_id': uid, 'report_mode': 'standard', 'period': 'all',
+            'generated_at': result['generated_at']}
 
     period_used = str(period_override or MYPROFILE_LATEST_PERIOD or "28d").strip() or "28d"
 

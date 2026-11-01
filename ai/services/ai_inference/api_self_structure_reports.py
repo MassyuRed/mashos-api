@@ -25,6 +25,9 @@ class SelfStructureReportHistoryItem(BaseModel):
     period_end: Optional[str] = None
     generated_at: Optional[str] = None
     updated_at: Optional[str] = None
+    source_profile: Optional[str] = None
+    snapshot_month: Optional[str] = None
+    captured_at: Optional[str] = None
 
 
 class SelfStructureReportHistoryResponse(BaseModel):
@@ -71,6 +74,7 @@ def register_self_structure_report_routes(app: FastAPI) -> None:
     async def get_self_structure_report_detail(
         report_id: str = Path(..., min_length=1),
         authorization: Optional[str] = Header(default=None, alias="Authorization"),
+        month: Optional[str] = Query(default=None),
     ) -> SelfStructureReportDetailResponse:
         """Current owner for Self Structure report detail."""
         me = await _require_user_id(authorization)
@@ -79,8 +83,20 @@ def register_self_structure_report_routes(app: FastAPI) -> None:
             family="self_structure",
             report_id=str(report_id or "").strip(),
             now_utc=datetime.now(timezone.utc),
+            month=month,
         )
         return SelfStructureReportDetailResponse(**payload)
+
+    @app.get("/self-structure/reports/{report_id}/evidence")
+    async def get_map_evidence(
+        report_id: str = Path(..., min_length=1),
+        node: str = Query(...),
+        month: Optional[str] = Query(default=None),
+        authorization: Optional[str] = Header(default=None, alias="Authorization"),
+    ):
+        me = await _require_user_id(authorization)
+        from analysis_cumulative_service import map_evidence
+        return await map_evidence(me, report_id, node, month=month)
 
 
 __all__ = [

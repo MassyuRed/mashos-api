@@ -2386,6 +2386,11 @@ async def _handle_analyze_self_structure_standard_v1(*, user_id: str, payload: D
     if not uid:
         raise ValueError("user_id is required")
 
+    from analysis_observed_service import observed_enabled
+    if observed_enabled():
+        result = await refresh_myprofile_latest_report(user_id=uid, trigger='self_structure_standard')
+        return dict(result, scope='cumulative')
+
     scope = str((payload or {}).get("scope") or SNAPSHOT_SCOPE_DEFAULT).strip() or SNAPSHOT_SCOPE_DEFAULT
     if scope != SNAPSHOT_SCOPE_DEFAULT:
         raise ValueError(f"unsupported scope for self structure standard analysis: {scope}")
@@ -2422,6 +2427,11 @@ async def _handle_analyze_self_structure_deep_v1(*, user_id: str, payload: Dict[
     uid = str(user_id or "").strip()
     if not uid:
         raise ValueError("user_id is required")
+
+    from analysis_observed_service import observed_enabled
+    if observed_enabled():
+        result = await refresh_myprofile_latest_report(user_id=uid, trigger='self_structure_deep')
+        return dict(result, scope='cumulative')
 
     scope = str((payload or {}).get("scope") or SNAPSHOT_SCOPE_DEFAULT).strip() or SNAPSHOT_SCOPE_DEFAULT
     if scope != SNAPSHOT_SCOPE_DEFAULT:

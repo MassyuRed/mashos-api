@@ -297,7 +297,15 @@ ASTOR_STRUCTURE_PATTERNS_TABLE = (
 ).strip()
 
 
-class MyProfileLatestEnsureResponse(BaseModel):
+class CumulativeMapMetadata(BaseModel):
+    report_id: Optional[str] = None
+    source_profile: Optional[str] = None
+    map_context: Optional[Dict[str, Any]] = None
+    snapshot_month: Optional[str] = None
+    captured_at: Optional[str] = None
+
+
+class MyProfileLatestEnsureResponse(CumulativeMapMetadata):
     status: str = Field("ok", description="ok")
     refreshed: bool = Field(..., description="True if report was regenerated & saved")
     reason: str = Field(
@@ -448,14 +456,14 @@ async def _enqueue_self_structure_monthly_distribution_candidate(
     return False
 
 
-class MyProfileMonthlyEnsureResponse(BaseModel):
+class MyProfileMonthlyEnsureResponse(CumulativeMapMetadata):
     status: str = Field("ok", description="ok")
     refreshed: bool = Field(..., description="True if regenerated & saved")
     reason: str = Field(..., description="missing | force | mode_mismatch | schema_mismatch | up_to_date | no_visible_content | insufficient_input | unchanged | in_progress")
     report_mode: str = Field(..., description="light | standard | deep")
     period: str = Field(..., description="lookback period (e.g. 28d)")
-    period_start: str = Field(..., description="period_start (ISO)")
-    period_end: str = Field(..., description="period_end (ISO)")
+    period_start: Optional[str] = Field(default=None, description="period_start (ISO)")
+    period_end: Optional[str] = Field(default=None, description="period_end (ISO)")
     generated_at: Optional[str] = Field(default=None, description="generated_at of returned report")
     title: Optional[str] = Field(default=None, description="report title")
     content_text: Optional[str] = Field(default=None, description="report body")
@@ -1341,7 +1349,8 @@ def register_self_structure_routes(app: FastAPI) -> None:
 
         from analysis_observed_service import observed_enabled, saved_status
         if observed_enabled():
-            return SelfStructureLatestStatusResponse(**(await saved_status(str(uid), period=DEFAULT_LATEST_PERIOD)))
+            from analysis_cumulative_service import map_status
+            return SelfStructureLatestStatusResponse(**(await map_status(str(uid))))
 
         try:
             resp = await _sb_get(
@@ -1411,6 +1420,11 @@ def register_self_structure_routes(app: FastAPI) -> None:
             raise HTTPException(status_code=401, detail="Failed to resolve user id")
 
         effective_period = (period or DEFAULT_LATEST_PERIOD or "28d").strip() or "28d"
+
+        from analysis_observed_service import observed_enabled
+        if observed_enabled():
+            from analysis_cumulative_service import ensure_map
+            return SelfStructureLatestEnsureResponse(**(await ensure_map(uid, ensure=ensure, force=force)))
 
         # ---- Resolve report_mode (with subscription gating; fail-closed) ----
         # わたしマップ Phase 1: Free は latest の light 概要のみ許可する。
@@ -1730,6 +1744,13 @@ def register_self_structure_routes(app: FastAPI) -> None:
         include_secret = bool(body.include_secret)
         effective_period = (body.period or DEFAULT_MONTHLY_DISTRIBUTION_PERIOD or "28d").strip() or "28d"
         distribution_origin = bool(body.distribution_origin or str(body.trigger or "").strip() == "internal_rollover")
+
+        from analysis_observed_service import observed_enabled
+        if observed_enabled():
+            if not include_secret or body.now_iso is not None:
+                raise HTTPException(400, 'analysis_period_override_unavailable')
+            from analysis_cumulative_service import ensure_map
+            return SelfStructureMonthlyEnsureResponse(**(await ensure_map(uid, monthly=True)))
 
         # ---- Resolve report_mode (with subscription gating; fail-closed) ----
         # Spec v2: free users cannot view MyProfile self-structure reports.

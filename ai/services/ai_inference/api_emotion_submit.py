@@ -690,6 +690,12 @@ async def _auto_refresh_myprofile_latest_report(user_id: str) -> None:
     if not uid:
         return
 
+    from analysis_observed_service import observed_enabled
+    if observed_enabled():
+        from analysis_cumulative_service import ensure_map
+        await ensure_map(uid)
+        return
+
     # ---- throttle ----
     min_interval = int(MYPROFILE_LATEST_REFRESH_MIN_INTERVAL_SECONDS or 0)
     if min_interval > 0:

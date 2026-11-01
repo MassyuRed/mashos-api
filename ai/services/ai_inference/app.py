@@ -1475,6 +1475,15 @@ async def infer(
         # 不正/期限切れトークンは 401
         viewer_user_id = await _resolve_user_id_from_token(access_token)
 
+    if is_myprofile_report:
+        from analysis_observed_service import observed_enabled
+        if observed_enabled():
+            if not viewer_user_id:
+                raise HTTPException(401, 'Authorization is required')
+            # Cumulative private maps use authenticated owner routes, never a
+            # generic inference target or a caller-supplied owner's ID.
+            raise HTTPException(409, 'analysis_use_authenticated_self_structure_route')
+
     # --- Step 5: Subscription tier & report_mode gating ---
     # report_mode is used for:
     # - MyProfile monthly report generation

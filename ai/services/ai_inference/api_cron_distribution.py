@@ -1083,6 +1083,25 @@ async def _run_myprofile_monthly_for_users(
     run_id: Optional[str] = None,
     job: Optional[str] = None,
 ) -> Tuple[List[Dict[str, Any]], List[str]]:
+    from analysis_observed_service import observed_enabled
+    if observed_enabled():
+        if not include_secret:
+            raise HTTPException(400, 'analysis_source_scope_override_unavailable')
+        from analysis_cumulative_service import ensure_map
+        sem = asyncio.Semaphore(max(1, DEFAULT_CONCURRENCY))
+        errors = []
+        async def cumulative_one(uid):
+            async with sem:
+                try:
+                    result = await ensure_map(uid, monthly=True, ensure=not dry_run)
+                    return {'user_id': uid, 'status': ('generated' if dry_run and not result['has_visible_content']
+                        else ('generated' if result['refreshed'] else ('exists' if result['has_visible_content'] else 'skipped'))),
+                        'report_id': result['report_id'], 'report_mode': 'standard', 'dry_run': dry_run}
+                except Exception:
+                    errors.append('analysis_monthly_unavailable')
+                    return {'user_id': uid, 'status': 'error', 'error': 'analysis_monthly_unavailable'}
+        return list(await asyncio.gather(*(cumulative_one(uid) for uid in user_ids))), errors
+
     if build_myprofile_monthly_report is None:
         raise HTTPException(status_code=500, detail="astor_myprofile_report is not available")
 

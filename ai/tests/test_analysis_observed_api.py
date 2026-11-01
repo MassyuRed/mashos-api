@@ -1,6 +1,10 @@
-"""Real FastAPI entrypoints; fake Auth/DB transport, real lifecycle and CMEE."""
+"""Current cumulative FastAPI contract; synthetic transport, real compiler/author.
+
+The withdrawn period/tier API expectations were replaced by Mash's 11/1
+cumulative policy. Period compiler/storage regression remains in its own tests.
+"""
 import copy
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 import os
 import unittest
 from unittest.mock import AsyncMock, patch
@@ -11,269 +15,174 @@ import httpx
 import api_emotion_submit as auth
 import api_self_structure as latest
 import api_self_structure_reports as reports
-import api_report_reads as unread
-import analysis_observed_service as service
+import analysis_cumulative_service as service
 import report_artifact_read_service as reader
-from subscription import SubscriptionTier
-from ai.tests.test_analysis_observed_storage import fixture, OWNER, OTHER, GUARD, result
+from ai.tests.test_analysis_cumulative import source_snapshot, OWNER
+
+OTHER = str(UUID(int=2))
 
 
 class AnalysisApiTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
-        self.fx = fixture()
+        self.source = source_snapshot(2)
         self.saved = []
+        self.months = {}
         self.calls = []
-        self.tier = 'plus'
-        self.legacy = []
+        self.current = True
+        self.tier = 'free'
+        self.month = datetime.now(timezone(timedelta(hours=9))).date().replace(day=1).isoformat()
         self.patches = [
             patch.dict(os.environ, COCOLON_ANALYSIS_OBSERVED_MODE='development'),
             patch.object(auth, '_ensure_supabase_config'),
-            patch.object(auth, 'resolve_user_id_verified_cached', AsyncMock(side_effect=lambda token: OWNER if token=='valid' else None)),
+            patch.object(auth, 'resolve_user_id_verified_cached', AsyncMock(side_effect=lambda token: OWNER if token == 'valid' else None)),
             patch.object(auth, '_sb_auth_headers_shared', return_value={}),
-            patch.object(auth, '_sb_get_shared', AsyncMock(return_value=httpx.Response(401,json={}))),
+            patch.object(auth, '_sb_get_shared', AsyncMock(return_value=httpx.Response(401, json={}))),
             patch.object(service, '_rpc', side_effect=self.rpc),
-            patch.object(reader, 'sb_get', AsyncMock(side_effect=lambda *a, **kw: httpx.Response(200,json=self.legacy))),
-            patch('subscription_store.get_subscription_tier_for_user', AsyncMock(return_value=SubscriptionTier.PLUS)),
-            patch('access_policy.subscription_context.get_subscription_tier_for_user', AsyncMock(return_value=SubscriptionTier.PLUS)),
+            patch.object(reader, 'sb_get', AsyncMock(side_effect=AssertionError('cumulative must not query legacy history'))),
         ]
-        for p in self.patches: p.start()
-        self.app = FastAPI()
-        latest.register_self_structure_routes(self.app)
-        reports.register_self_structure_report_routes(self.app)
-        self.client = httpx.AsyncClient(transport=httpx.ASGITransport(app=self.app),base_url='http://synthetic')
+        for p in self.patches:
+            p.start()
+        app = FastAPI()
+        latest.register_self_structure_routes(app)
+        reports.register_self_structure_report_routes(app)
+        self.client = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://synthetic')
 
     async def asyncTearDown(self):
         await self.client.aclose()
-        for p in reversed(self.patches): p.stop()
+        for p in reversed(self.patches):
+            p.stop()
 
-    async def rpc(self, name, payload):
-        self.calls.append((name,payload))
-        self.assertEqual(payload['p_user_id'],OWNER)
-        if name == 'analysis_observed_source_snapshot':
-            return {'guard':GUARD,'tier':self.tier,'now':payload['p_end'],
-                'members':[{'original':self.fx['original'],'thread':None,'events':[]}]}
-        if name == 'analysis_observed_comparison_snapshot':
-            start, end = datetime.fromisoformat(payload['p_start']), datetime.fromisoformat(payload['p_end'])
-            previous_start = start-(end-start)
-            current = dict(self.fx['original'], created_at=(end-timedelta(hours=1)).replace(tzinfo=None).isoformat())
-            previous = dict(current, id=str(UUID(int=99)), memo='私は考えをノートに書かなかった。',
-                created_at=(start-timedelta(hours=1)).replace(tzinfo=None).isoformat())
-            def snap(original):
-                return {'guard':GUARD,'tier':self.tier,'now':payload['p_end'],
-                    'members':[{'original':original,'thread':None,'events':[]}]}
-            return {'guard':'analysis-db-compare-v1:'+'b'*64,'tier':self.tier,'comparison_eligible':True,
-                'current':snap(current),'previous':snap(previous),
-                'previous_start':previous_start.isoformat(),'previous_end':start.isoformat()}
-        if name == 'analysis_observed_commit':
-            row = copy.deepcopy(self.fx['row'])
-            row.update(id=str(UUID(payload['p_artifact_id'][9:])),report_type=payload['p_report_type'],
-                report_mode=payload['p_mode'],period_start=payload['p_start'],period_end=payload['p_end'],
-                content_text=payload['p_text'],content_json={'report_mode':payload['p_mode'],'watashiMap':payload['p_projection']})
-            self.saved = [row]
+    async def rpc(self, name, p):
+        self.calls.append((name, p))
+        self.assertEqual(p['p_user_id'], OWNER)
+        if name == 'analysis_cumulative_source_snapshot':
+            return dict(copy.deepcopy(self.source), tier=self.tier)
+        if name == 'analysis_cumulative_commit':
+            if p.get('p_artifact_id'):
+                row = dict(id=str(UUID(p['p_artifact_id'][9:])), report_type='latest', report_mode='standard',
+                    title='わたしマップ', source_profile='cumulative.v1', snapshot_month=None, captured_at=None,
+                    period_start=p['p_start'], period_end=p['p_end'], generated_at=p['p_end'], updated_at=p['p_end'],
+                    content_text=p['p_text'], content_json=dict(report_mode='standard', watashiMap=p['p_projection'],
+                        map_context=p['p_private_evidence']['coverage']))
+                self.saved.append(row)
+                self.current = True
+            row = self.saved[-1]
+            self.months.setdefault(self.month, dict(row, snapshot_month=self.month, report_type='monthly', captured_at=row['generated_at']))
             return row['id']
-        if payload.get('p_history') and self.tier=='free':
-            raise HTTPException(403,'analysis_history_unavailable')
-        rows = self.saved
-        if payload.get('p_id'): rows = [r for r in rows if r['id']==payload['p_id']]
-        elif payload.get('p_report_type'): rows = [r for r in rows if r['report_type']==payload['p_report_type']]
-        if payload.get('p_mode'): rows = [r for r in rows if r['report_mode']==payload['p_mode']]
-        return result(rows,self.tier,matched=any(r['id']==payload.get('p_id') for r in self.saved))
+        if name == 'analysis_cumulative_read':
+            if p['p_history'] or p.get('p_month'):
+                rows = sorted(self.months.values(), key=lambda r: r['snapshot_month'], reverse=True)
+                cap = {'free': 2, 'plus': 12, 'premium': len(rows)}[self.tier]
+                rows = rows[:cap]
+                if p.get('p_month'):
+                    rows = [r for r in rows if r['snapshot_month'] == p['p_month']]
+            else:
+                rows = self.saved[-1:] if self.current else []
+                if p.get('p_id') and not rows:
+                    rows = list(self.months.values())[:2]
+            if p.get('p_id'):
+                rows = [r for r in rows if r['id'] == p['p_id']]
+            rows = rows[p['p_offset']:p['p_offset']+p['p_limit']]
+            if p.get('p_metadata_only'):
+                rows = [{k:v for k,v in row.items() if k not in {'content_json','content_text'}} for row in rows]
+            return dict(items=copy.deepcopy(rows), subscription_tier=self.tier,
+                matched=any(r['id'] == p.get('p_id') for r in self.saved),
+                history_limit={'free': 2, 'plus': 12, 'premium': None}[self.tier])
+        raise AssertionError(name)
 
-    async def get(self,path,**kwargs):
-        return await self.client.get(path,headers={'Authorization':'Bearer valid'},**kwargs)
+    async def get(self, path):
+        return await self.client.get(path, headers={'Authorization': 'Bearer valid'})
 
-    async def test_http_save_latest_status_read_and_owner_binding(self):
-        response = await self.get('/self-structure/latest?report_mode=standard&user_id='+OTHER)
-        self.assertEqual(response.status_code,200,response.text)
+    async def monthly(self, body=None):
+        return await self.client.post('/self-structure/monthly/ensure', json=body or {}, headers={'Authorization': 'Bearer valid'})
+
+    async def test_real_generation_status_and_saved_same_text_graph_and_authenticated_owner(self):
+        response = await self.get('/self-structure/latest?period=28d&report_mode=deep&user_id='+OTHER)
+        self.assertEqual(response.status_code, 200, response.text)
         body = response.json()
         self.assertTrue(body['refreshed'])
-        ref = body['meta']['projection_of']
-        status = await self.get('/self-structure/latest/status')
-        self.assertEqual(status.json()['version_key'],ref)
-        count = sum(n=='analysis_observed_commit' for n,_ in self.calls)
-        again = await self.get('/self-structure/latest?ensure=false')
-        self.assertEqual(again.json()['meta'],body['meta'])
-        self.assertEqual(again.json()['content_text'],body['content_text'])
-        self.assertEqual(sum(n=='analysis_observed_commit' for n,_ in self.calls),count)
-        self.assertNotIn('private_evidence',response.text)
+        self.assertEqual(body['period'], 'all')
+        self.assertEqual(body['report_mode'], 'standard')
+        self.assertEqual(body['map_context']['source_count'], 2)
+        self.assertEqual((await self.get('/self-structure/latest/status')).json()['version_key'], body['meta']['projection_of'])
+        again = (await self.get('/self-structure/latest?ensure=false')).json()
+        self.assertEqual(again['meta'], body['meta'])
+        self.assertEqual(again['content_text'], body['content_text'])
+        detail = await self.get('/self-structure/reports/'+body['report_id']+'?month='+self.month)
+        self.assertEqual(detail.status_code, 200, detail.text)
+        self.assertEqual(detail.json()['item']['content_json']['watashiMap'], body['meta'])
+        self.assertEqual(detail.json()['item']['content_text'], body['content_text'])
+        self.assertNotIn('private_evidence', response.text+detail.text)
+        self.assertEqual(sum(n == 'analysis_cumulative_commit' for n, _ in self.calls), 1)
 
-    async def test_missing_invalid_auth_never_touches_store(self):
-        for headers in ({},{'Authorization':'Bearer invalid'}):
-            response=await self.client.get('/self-structure/latest',headers=headers)
-            self.assertEqual(response.status_code,401)
-            response=await self.client.get('/self-structure/reports/history',headers=headers)
-            self.assertEqual(response.status_code,401)
-        self.assertEqual(self.calls,[])
+    async def test_all_plans_use_the_same_current_map_and_free_monthly_is_available(self):
+        first = (await self.get('/self-structure/latest')).json()
+        for tier in ('free', 'plus', 'premium'):
+            self.tier = tier
+            row = (await self.get('/self-structure/latest?ensure=false')).json()
+            self.assertEqual(row['meta'], first['meta'])
+            self.assertEqual(row['content_text'], first['content_text'])
+            history = await self.get('/self-structure/reports/history')
+            self.assertEqual(history.status_code, 200, history.text)
+            self.assertEqual(history.json()['items'][0]['snapshot_month'], self.month)
 
-    async def test_empty_current_http_latest_and_monthly_are_normal_unsaved_results(self):
-        async def empty_rpc(name, payload):
-            response = await self.rpc(name, payload)
-            if name == 'analysis_observed_source_snapshot':
-                response['members'] = []
-            elif name == 'analysis_observed_comparison_snapshot':
-                response['current']['members'] = []
-            return response
-        for mode in ('off', 'development'):
-            with self.subTest(comparison=mode), \
-                    patch.dict(os.environ, COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE=mode), \
-                    patch.object(service, '_rpc', side_effect=empty_rpc):
-                latest_response = await self.get('/self-structure/latest?ensure=true&force=false')
-                monthly_response = await self.client.post('/self-structure/monthly/ensure',
-                    headers={'Authorization': 'Bearer valid'}, json={})
-                for response in (latest_response, monthly_response):
-                    self.assertEqual(response.status_code, 200, response.text)
-                    body = response.json()
-                    self.assertEqual(body['status'], 'ok')
-                    self.assertEqual(body['reason'], 'no_visible_content')
-                    self.assertFalse(body['refreshed'])
-                    self.assertFalse(body['has_visible_content'])
-                    self.assertEqual(body['skip_reason'], 'analysis_saved_map_unavailable')
-                    for key in ('meta', 'content_text', 'title', 'generated_at'):
-                        self.assertIsNone(body[key])
-                    self.assertLess(datetime.fromisoformat(body['period_start']),
-                                    datetime.fromisoformat(body['period_end']))
-                self.assertFalse(monthly_response.json()['history_saved'])
+    async def test_monthly_existing_capture_is_not_regenerated_after_current_becomes_uninterpretable(self):
+        first = (await self.monthly()).json()
+        self.current = False
+        self.source['members'][0]['original']['memo'] = 'まだ言葉にできない。'
+        with patch.object(service, 'build_cumulative_map', side_effect=AssertionError('historical regeneration forbidden')):
+            again = await self.monthly({'force': True})
+        self.assertEqual(again.status_code, 200, again.text)
+        for key in ('report_id', 'content_text', 'meta', 'captured_at', 'generated_at'):
+            self.assertEqual(again.json()[key], first[key])
+        self.assertEqual(sum(n == 'analysis_cumulative_commit' for n, _ in self.calls), 1)
+
+    async def test_no_saved_map_empty_sources_and_unparsed_sources_are_distinct(self):
+        read = (await self.get('/self-structure/latest?ensure=false')).json()
+        self.assertEqual(read['reason'], 'no_visible_content')
+        self.source['members'] = []
+        empty = (await self.get('/self-structure/latest')).json()
+        self.assertEqual(empty['reason'], 'no_visible_content')
+        self.assertEqual(empty['map_context']['source_count'], 0)
+        self.source = source_snapshot(1)
+        self.source['members'][0]['original']['memo'] = 'まだ言葉を整理しているところです。'
+        pending = (await self.get('/self-structure/latest')).json()
+        self.assertEqual(pending['reason'], 'insufficient_input')
+        self.assertEqual(pending['map_context']['unparsed_count'], 1)
+        self.assertIsNone(pending['meta'])
         self.assertEqual(self.saved, [])
-        self.assertFalse(any(n == 'analysis_observed_commit' for n, _ in self.calls))
-        # Nothing is saved for absence: a later real input can generate normally.
-        with patch.dict(os.environ, COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE='development'):
-            generated = await self.get('/self-structure/latest')
-        self.assertEqual(generated.status_code, 200, generated.text)
-        self.assertTrue(generated.json()['refreshed'])
-        self.assertTrue(generated.json()['has_visible_content'])
-        self.assertEqual(sum(n == 'analysis_observed_commit' for n, _ in self.calls), 1)
 
-    async def test_insufficient_current_input_is_pending_without_report_or_save(self):
-        original = dict(self.fx['original'], memo='まだ言葉を整理しているところです。',
-                        memo_action='書店でブラブラした。')
+    async def test_missing_or_invalid_auth_cannot_touch_source_or_evidence(self):
+        for headers in ({}, {'Authorization': 'Bearer invalid'}):
+            for url in ('/self-structure/latest', '/self-structure/reports/history',
+                        '/self-structure/reports/'+str(UUID(int=99))+'/evidence?node=n1'):
+                response = await self.client.get(url, headers=headers)
+                self.assertEqual(response.status_code, 401)
+        self.assertEqual(self.calls, [])
 
-        async def snapshot_rpc(name, payload):
-            if name in ('analysis_observed_source_snapshot', 'analysis_observed_comparison_snapshot'):
-                self.calls.append((name, payload))
-                start = datetime.fromisoformat(payload['p_start'])
-                end = datetime.fromisoformat(payload['p_end'])
-                current = {'guard': GUARD, 'tier': self.tier, 'now': payload['p_end'],
-                    'members': [{'original': dict(original, created_at=(end-timedelta(hours=1))
-                        .replace(tzinfo=None).isoformat()), 'thread': None, 'events': []}]}
-                if name == 'analysis_observed_source_snapshot':
-                    return current
-                return {'guard': 'analysis-db-compare-v1:'+'b'*64,
-                    'tier': self.tier, 'comparison_eligible': True, 'current': current,
-                    'previous': dict(current, members=[]),
-                    'previous_start': (start-(end-start)).isoformat(), 'previous_end': payload['p_start']}
-            return await self.rpc(name, payload)
-
-        before = copy.deepcopy(original)
-        for comparison_mode in ('off', 'development'):
-            with self.subTest(comparison_mode=comparison_mode), \
-                    patch.dict(os.environ, COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE=comparison_mode), \
-                    patch.object(service, '_rpc', side_effect=snapshot_rpc):
-                responses = [await self.get('/self-structure/latest'),
-                    await self.client.post('/self-structure/monthly/ensure', json={},
-                                           headers={'Authorization': 'Bearer valid'})]
-                for response in responses:
-                    self.assertEqual(response.status_code, 200, response.text)
-                    body = response.json()
-                    self.assertEqual(body['status'], 'ok')
-                    self.assertEqual(body['reason'], 'insufficient_input')
-                    self.assertEqual(body['skip_reason'], 'analysis_insufficient_input')
-                    self.assertFalse(body['refreshed'])
-                    self.assertFalse(body['has_visible_content'])
-                    for key in ('meta', 'content_text', 'title', 'generated_at'):
-                        self.assertIsNone(body[key])
-                    self.assertLess(datetime.fromisoformat(body['period_start']),
-                                    datetime.fromisoformat(body['period_end']))
-                self.assertFalse(responses[1].json()['history_saved'])
-                self.assertEqual(original, before)
-        self.assertFalse(self.saved)
-        self.assertFalse(any(n == 'analysis_observed_commit' for n, _ in self.calls))
-        # Absence alone, without a generation attempt, does not establish insufficiency.
-        read = await self.get('/self-structure/latest?ensure=false')
-        self.assertEqual(read.json()['reason'], 'no_visible_content')
-        # No placeholder was persisted: a later interpretable input still generates.
-        with patch.dict(os.environ, COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE='development'):
-            generated = await self.get('/self-structure/latest')
-        self.assertEqual(generated.status_code, 200, generated.text)
-        self.assertTrue(generated.json()['has_visible_content'])
-        self.assertTrue(generated.json()['refreshed'])
-        self.assertEqual(sum(n == 'analysis_observed_commit' for n, _ in self.calls), 1)
-
-    async def test_internal_generation_failure_is_not_insufficient_input(self):
-        from cocolon_meaning_experience_engine.cores.analysis import observed_route_realizer
-        with patch.object(observed_route_realizer, 'compile_observed_graph',
-                          side_effect=ValueError('synthetic internal failure')), \
-                patch.dict(os.environ, COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE='development'):
-            response = await self.get('/self-structure/latest')
-        self.assertEqual(response.status_code, 422)
-        self.assertEqual(response.json()['detail'], 'analysis_observed_map_unavailable')
-        self.assertFalse(any(n == 'analysis_observed_commit' for n, _ in self.calls))
-
-    async def test_snapshot_storage_failure_http_is_not_an_empty_result(self):
-        async def failed_rpc(name, payload):
-            if name == 'analysis_observed_comparison_snapshot':
-                raise HTTPException(503, 'analysis_saved_store_unavailable')
-            return await self.rpc(name, payload)
-        with patch.dict(os.environ, COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE='development'), \
-                patch.object(service, '_rpc', side_effect=failed_rpc):
+    async def test_storage_failure_and_generation_failure_do_not_become_empty_or_legacy(self):
+        with patch.object(service, '_rpc', AsyncMock(side_effect=HTTPException(503, 'analysis_storage_unavailable'))):
             response = await self.get('/self-structure/latest')
         self.assertEqual(response.status_code, 503)
-        self.assertEqual(response.json()['detail'], 'analysis_saved_store_unavailable')
-        self.assertFalse(any(n == 'analysis_observed_commit' for n, _ in self.calls))
+        with patch.object(service, 'build_cumulative_map', side_effect=ValueError('synthetic private error')):
+            response = await self.get('/self-structure/latest')
+        self.assertEqual(response.status_code, 422)
+        self.assertNotIn('synthetic private', response.text)
+        self.assertEqual(self.saved, [])
 
-    async def test_comparison_http_latest_history_detail_return_same_saved_text_and_graph(self):
-        with patch.dict(os.environ, COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE='development'):
-            response=await self.get('/self-structure/latest?report_mode=standard&user_id='+OTHER)
-            self.assertEqual(response.status_code,200,response.text)
-            body=response.json(); row=self.saved[0]
-            self.assertEqual(body['meta']['period_comparison']['state'],'COMPARABLE')
-            again=await self.get('/self-structure/latest?ensure=false&report_mode=standard')
-            detail=await self.get('/self-structure/reports/'+row['id'])
-            self.assertEqual(again.json()['content_text'],body['content_text'])
-            self.assertEqual(detail.json()['item']['content_json']['watashiMap'],body['meta'])
-            self.assertEqual(detail.json()['item']['content_text'],body['content_text'])
-            row['report_type']='monthly'
-            history=await self.get('/self-structure/reports/history')
-            self.assertEqual(history.json()['items'][0]['id'],row['id'])
-            self.assertEqual(sum(n=='analysis_observed_commit' for n,_ in self.calls),1)
-            for private in ('previous_evidence','comparison_dependency','current_source_set_ref'):
-                self.assertNotIn(private,response.text+again.text+detail.text+history.text)
+    async def test_unsupported_source_overrides_are_denied_and_legacy_is_not_merged(self):
+        self.assertEqual((await self.monthly({'include_secret': False})).status_code, 400)
+        self.assertEqual((await self.monthly({'now_iso': '2025-01-01T00:00:00Z'})).status_code, 400)
+        self.assertEqual((await self.get('/self-structure/reports/history?report_type=latest')).status_code, 400)
+        self.assertEqual((await self.get('/self-structure/reports/history')).json()['items'], [])
 
-    async def test_plan_and_unsupported_secret_override(self):
-        deep=await self.get('/self-structure/latest?report_mode=deep')
-        self.assertEqual(deep.status_code,403)
-        monthly=await self.client.post('/self-structure/monthly/ensure',headers={'Authorization':'Bearer valid'},
-            json={'include_secret':False})
-        self.assertEqual(monthly.status_code,400)
-        self.tier='free'
-        history=await self.get('/self-structure/reports/history')
-        self.assertEqual(history.status_code,403)
-        self.assertFalse(any(n=='analysis_observed_commit' for n,_ in self.calls))
-
-    async def test_http_history_detail_unread_same_id_and_legacy_mode_guard(self):
-        row=copy.deepcopy(self.fx['row']); row['report_type']='monthly'; self.saved=[row]
-        legacy=copy.deepcopy(row); legacy.update(id=str(UUID(int=777)),content_text='legacy')
-        for shape in ({'reportMode':'deep'},{'meta':{'report_mode':'deep'}},
-                      {'report_mode':'standard','meta':{'report_mode':'deep'}}):
-            legacy['content_json']=shape; self.legacy=[legacy]
-            page=await self.get('/self-structure/reports/history')
-            self.assertEqual(page.status_code,200,page.text)
-            self.assertEqual([r['id'] for r in page.json()['items']],[row['id']])
-        detail=await self.get('/self-structure/reports/'+row['id'])
-        self.assertEqual(detail.json()['item']['content_json'],row['content_json'])
-        self.assertEqual(await unread._fetch_latest_self_structure_ids(OWNER,tier_str='plus',limit=1),[row['id']])
-
-    async def test_active_failure_does_not_call_legacy_builder(self):
-        with patch.object(service,'generate_saved',AsyncMock(side_effect=HTTPException(409,'changed'))), \
-             patch.object(latest,'_sb_get',AsyncMock(side_effect=AssertionError('legacy accessed'))):
-            response=await self.get('/self-structure/latest')
-        self.assertEqual(response.status_code,409)
-
-    async def test_default_off_does_not_touch_observed_storage(self):
-        with patch.dict(os.environ,COCOLON_ANALYSIS_OBSERVED_MODE='off'), \
-             patch.object(latest,'_sb_get',AsyncMock(return_value=httpx.Response(200,json=[]))):
-            response=await self.get('/self-structure/latest/status')
-        self.assertEqual(response.status_code,200,response.text)
-        self.assertEqual(self.calls,[])
+    async def test_default_off_does_not_access_cumulative_store(self):
+        with patch.dict(os.environ, COCOLON_ANALYSIS_OBSERVED_MODE='off'), \
+                patch.object(latest, '_sb_get', AsyncMock(return_value=httpx.Response(200, json=[]))):
+            response = await self.get('/self-structure/latest/status')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.calls, [])
 
 
-if __name__=='__main__': unittest.main()
+if __name__ == '__main__':
+    unittest.main()
