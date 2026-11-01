@@ -1,6 +1,6 @@
 # 11/1 リリース機構の実装記録
 
-後続実装：natural専用の関連履歴RPC、原入力/複数回答/本人訂正の別材料化、権限・source失効時のtimeline本文抑止、Analysisの最大3補足対応と先行補足/訂正文間の矛盾照合、選択adapter SHA対指定を追加。実SQLを使うローカル検証63件とAnalysis177件はPASS。固定baseの実4B HTTPS1callは後述の契約成功。6701で本人実Auth→固定4B→実DB FINAL保存1件→同じ記録から同じ返事の再表示を確認。生成品質の合格ではない。Renderは744336c0のartifactを維持。累積/月次当時snapshot・月追加1万円内の常時提供方式は未完。
+後続実装：natural専用の関連履歴RPC、原入力/複数回答/本人訂正の別材料化、権限・source失効時のtimeline本文抑止、Analysisの最大3補足対応と先行補足/訂正文間の矛盾照合、選択adapter SHA対指定を追加。実SQLを使うローカル検証63件とAnalysis177件はPASS。固定baseの実4B HTTPS1callは後述の契約成功。6701で本人実Auth→固定4B→実DB FINAL保存1件→同じ記録から同じ返事の再表示を確認。生成品質の合格ではない。初回接続時はRender744336c0を維持し、最新のUI接続用1296eaea配置結果は後述。累積/月次当時snapshot・月追加1万円内の常時提供方式は未完。
 
 品質反復にRNのビルド・実機確認を毎回要求しない。11/1は機構・配布・運用と初回接続、11/2〜11/6はサーバー側の品質改善というMashの指示を維持する。
 
@@ -82,3 +82,16 @@ Mashの明示UI指示（RN weekly第9回§38）に合わせ、新natural FINAL�
 対象検証175 PASS/FAIL0/SKIP0（PGlite0.5.8の実SQL＋合成Auth/provider）。既存natural保存/再読、旧handoff/source HTTP、新natural原本投影、3tierの保存cohort、Premium4000日前、後からの新記録で非置換、receipt再保存を含む。Pieceの実SQL preview/visual/saveは3tier成功、原本/使用履歴の編集・削除後は3操作×3tierの9拒否、関数3本のservice_role限定を確認。ネイティブPostgreSQL並行実行/本人端末/画像品質の合格ではない。RNの対象209検査も成功し、通常footer2ボタン/両入口/一回要求/閉じる/本人・focus・runtime変化と保存回復保持を確認した。無関係なMetro bundle検査は今回のローカル対象から除いた。
 
 配置前の実DBは3RPCが旧contextを使用し、全3本SECURITY DEFINER/search_path=pg_catalog、anon/authenticated実行不可・service_role実行可と確認。migration適用/API指定版配置/iOS新buildとApple内部配布の結果は後続へ記録する。GPUはMashから停止報告を受領し、華恋の再起動・学習・実provider呼出し0。
+
+
+## 実DB適用・指定API配置・6801の内部配布
+
+RN `ef9f7bfca874734d6fdb937f94bccac32bcb7de0` のiOS #68/run41266287100/job124729659513は02:55:28 UTCまでに全工程success。実署名Archive、写真Usage/Add両keyの実物検査、IPA export、TestFlight uploadが成功。App Store Connectで1.0(6801)のApple処理通過を確認し、既存実装と同じ暗号化情報を保存。中断後はdialog消失を確認して再送せず、既存内部グループ「Emlis テスト版配布」のbuild一覧で6801「テスト中」を確認した。テスター追加/外部配布/App Store公開は0。新UIの本人端末での表示・Piece作成/保存/OS出力は未確認で、6701の初回生成/同本文再読確認とは区別する。
+
+Supabase `piece_natural_reply_context` migrationの適用successを確認。既存3RPCのnatural context/現在権利ガード、SECURITY DEFINER/search_path=pg_catalog、anon/authenticated実行不可・service_role実行可を実metadataで再照合。advisor分類別件数は前後不変（既存警告は未解消、全件同一bytesという意味ではない）。本人本文の追加読取/probe保存は0。
+
+API `1296eaea589a09fe91f84689c6d55d67e577ec23` の指定commit配置 `dep-dbjafelg1s2s73f6mah0` は02:46:53 UTC Live。healthz200/ok、app/bootstrap200、Piece private5ON/public3OFF、保存済みCOCOLON_EMLIS_THREAD_MODE=read_onlyを確認。配置後app error logsは取得範囲で0件（既存起動warningの解消ではない）。natural profile/専用endpoint/modelと既存free resource/autoDeploy OFFを維持し、新規有料resource/plan/GPU起動/provider実呼出し/学習0。
+
+同headの自動CIはJS契約/iOS canvas/Pods/Android source・exportがsuccess。iOS metricsは既存V4 output_v4_*の19失敗（1/20成功）が残る。既存native129/129、V9 46/46、bitmap44/44は成功。前source963944bbとのnative metrics実装/検査差分0で、今回の対象RN209 PASSとは分けて記録する。全CI成功やPiece本人画像の受入れとはしない。
+
+全体現在地/全体構造/全file地図/EmlisとPieceのcurrent map/Piece正本入口/API既存運用記録へ同じ現在状態を反映。残る8タスク・累積/月次snapshot・Android実配布・実ストア料金/購入/復元・月追加1万円内の本番常時提供・申請Console/本人基本機能一巡は、今回のUI修正で完了へ変更しない。11/2〜11/6はサーバー側品質改善、候補ごとのRN再build不要、最終候補だけ接続という配分を維持する。
