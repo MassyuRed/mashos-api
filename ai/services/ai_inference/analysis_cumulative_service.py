@@ -180,7 +180,7 @@ def prepare_cumulative_quoted_parent_units(owner, snapshot):
     return prepare_analysis_model_quoted_parent_units(prepared.request, source_guard=prepared.source_guard)
 
 
-def prepare_cumulative_category_units(owner, snapshot):
+def prepare_cumulative_category_units(owner, snapshot, *, prompt_version='selected_categories.v1'):
     """Current category-aware 4B preparation; legacy saved probes stay v1."""
     from dataclasses import replace
     from cocolon_meaning_experience_engine.cores.analysis.semantic_admission import (
@@ -188,7 +188,7 @@ def prepare_cumulative_category_units(owner, snapshot):
     prepared = prepare_cumulative_model_fields(owner, snapshot)
     request = replace(prepared.request, selected_category_context=True)
     return prepare_analysis_model_quoted_parent_units(request, source_guard=prepared.source_guard,
-        prompt_version=QUOTED_PARENT_CATEGORY_PROFILE)
+        prompt_version=prompt_version)
 
 
 def build_cumulative_quoted_parent_candidates(owner, snapshot, *, model_input):
@@ -197,8 +197,8 @@ def build_cumulative_quoted_parent_candidates(owner, snapshot, *, model_input):
         AnalysisModelQuotedParentUnitsInput, require)
     require(type(model_input) is AnalysisModelQuotedParentUnitsInput,
             'analysis_quoted_parent_units_binding_invalid')
-    expected = (prepare_cumulative_category_units(owner, snapshot)
-        if model_input.prompt_version == 'selected_categories.v1'
+    expected = (prepare_cumulative_category_units(owner, snapshot, prompt_version=model_input.prompt_version)
+        if model_input.prompt_version in {'selected_categories.v1', 'selected_material.v2'}
         else prepare_cumulative_quoted_parent_units(owner, snapshot))
     require(model_input.request == expected.request and model_input.request_ref == expected.request_ref
         and model_input.source_guard == expected.source_guard, 'analysis_quoted_parent_units_binding_invalid')
@@ -211,8 +211,8 @@ def serialize_cumulative_quoted_parent_candidates(owner, snapshot, *, model_inpu
         AnalysisModelQuotedParentUnitsInput, canonical, require, serialize_analysis_model_quoted_parent_units)
     require(type(model_input) is AnalysisModelQuotedParentUnitsInput,
             'analysis_quoted_parent_units_binding_invalid')
-    expected = (prepare_cumulative_category_units(owner, snapshot)
-        if model_input.prompt_version == 'selected_categories.v1'
+    expected = (prepare_cumulative_category_units(owner, snapshot, prompt_version=model_input.prompt_version)
+        if model_input.prompt_version in {'selected_categories.v1', 'selected_material.v2'}
         else prepare_cumulative_quoted_parent_units(owner, snapshot))
     require(model_input.request == expected.request and model_input.request_ref == expected.request_ref
         and model_input.source_guard == expected.source_guard
@@ -226,9 +226,9 @@ def reload_cumulative_quoted_parent_candidates(owner, snapshot, raw):
     from cocolon_meaning_experience_engine.cores.analysis.semantic_admission import (
         _load, canonical, require, reload_analysis_model_quoted_parent_units)
     saved = _load(raw)
-    prepared = (prepare_cumulative_category_units(owner, snapshot)
+    prepared = (prepare_cumulative_category_units(owner, snapshot, prompt_version=saved['state']['prompt_version'])
         if type(saved) is dict and type(saved.get('state')) is dict
-        and saved['state'].get('prompt_version') == 'selected_categories.v1'
+        and saved['state'].get('prompt_version') in {'selected_categories.v1', 'selected_material.v2'}
         else prepare_cumulative_quoted_parent_units(owner, snapshot))
     require(type(saved) is dict and set(saved) == {'schema_version','coverage','state'}
         and saved['schema_version'] == 'cocolon.cmee.cumulative_quoted_parent_unit_candidates_file.v1'
@@ -432,4 +432,5 @@ def _project_evidence(owner, raw):
             memo=original['memo'], memo_action=original['memo_action'],
             answers=answers, version_state='CURRENT' if unchanged else 'EDITED_SINCE_ANALYSIS'))
     return items
+
 

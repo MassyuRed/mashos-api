@@ -211,3 +211,79 @@ def test_ambiguous_source_quotes_remain_rejected_and_unicode_ranges_exact():
 def test_normal_map_never_selects_new_profile():
     with patch.object(service, 'prepare_cumulative_quoted_parent_units', side_effect=AssertionError('not default')):
         assert service.build_cumulative_map(OWNER, sample())[0] is None
+
+
+
+def test_material_context_binds_record_fields_and_saved_selections_without_ids():
+    snap = sample()
+    snap['members'][0]['original']['category'] = ['仕事']
+    snap['members'][1]['original']['category'] = ['趣味']
+    p = service.prepare_cumulative_category_units(OWNER, snap, prompt_version='selected_material.v2')
+    material = json.loads(p.messages()[1]['content'])
+    assert len(material['records']) == 2
+    assert [r['fields'] for r in material['records']] == [[1, 2], [3]]
+    assert [f['record'] for f in material['fields']] == [1, 1, 2]
+    for context, member in zip(material['records'], snap['members']):
+        raw = member['original']
+        assert context['selected_categories'] == raw['category']
+        assert context['selected_emotions'] == raw['emotions']
+        assert context['emotion_details'] == raw['emotion_details']
+        assert context['recorded_at'].startswith(raw['created_at'][:19])
+        assert set(context) == {'record','recorded_at','selected_categories','selected_emotions','emotion_details','fields'}
+        assert raw['id'] not in p.messages()[1]['content']
+    assert material['analysis_as_of'] == p.request.period_end
+    assert '記録日時で、本文の出来事日時ではありません' in p.messages()[0]['content']
+    assert 'recordsの値を引用しません' in p.messages()[0]['content']
+
+
+@pytest.mark.parametrize('prompt', ['baseline.v1', 'selected_categories.v1', 'selected_material.v2'])
+def test_all_three_saved_message_versions_replay_without_generation(prompt):
+    snap = sample()
+    p = (prepared(snap) if prompt == 'baseline.v1' else
+        service.prepare_cumulative_category_units(OWNER, snap, prompt_version=prompt))
+    value = call(p)
+    artifact, counts = service.build_cumulative_quoted_parent_candidates(OWNER, snap, model_input=value)
+    saved = service.serialize_cumulative_quoted_parent_candidates(OWNER, snap,
+        model_input=value, artifact=artifact, coverage=counts)
+    with patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('generate')), \
+         patch.object(compiler, 'compile_analysis_unit_candidates', side_effect=AssertionError('compile')), \
+         patch.object(author, 'realize_analysis_unit_candidates', side_effect=AssertionError('author')):
+        assert service.reload_cumulative_quoted_parent_candidates(OWNER, snap, saved) == (artifact, counts)
+    assert counts['mapped_count'] == 0 and artifact.graph.route_edges == ()
+    material = json.loads(p.messages()[1]['content'])
+    if prompt != 'selected_material.v2':
+        assert set(material) == {'schema_version','fields'}
+        assert all('record' not in f for f in material['fields'])
+    if prompt == 'baseline.v1':
+        assert all(set(f) == {'field','field_path','text'} for f in material['fields'])
+    elif prompt == 'selected_categories.v1':
+        assert all(set(f) == {'field','field_path','text','selected_categories'} for f in material['fields'])
+
+
+@pytest.mark.parametrize('change', ['created_at','emotions','category'])
+def test_material_context_changes_invalidate_the_old_call(change):
+    snap = sample()
+    p = service.prepare_cumulative_category_units(OWNER, snap, prompt_version='selected_material.v2')
+    value = call(p)
+    replacement = {'created_at':'2025-01-01T01:01:00','emotions':['怒り'],'category':['趣味']}[change]
+    snap['members'][0]['original'][change] = replacement
+    changed = service.prepare_cumulative_category_units(OWNER, snap, prompt_version='selected_material.v2')
+    assert changed.messages() != p.messages()
+    with pytest.raises(AnalysisSemanticError):
+        service.build_cumulative_quoted_parent_candidates(OWNER, snap, model_input=value)
+
+
+def test_material_metadata_is_not_an_extra_quote_source_or_a_legacy_saved_state():
+    snap = sample()
+    p = service.prepare_cumulative_category_units(OWNER, snap, prompt_version='selected_material.v2')
+    packet = quoted_packet()
+    packet['fields'][0]['units'][0]['quote'] = '2025-01-01T01:00:00+00:00'
+    with pytest.raises(AnalysisSemanticError):
+        service.build_cumulative_quoted_parent_candidates(OWNER, snap, model_input=call(p, packet))
+    value = call(p)
+    artifact, counts = service.build_cumulative_quoted_parent_candidates(OWNER, snap, model_input=value)
+    saved = json.loads(service.serialize_cumulative_quoted_parent_candidates(OWNER, snap,
+        model_input=value, artifact=artifact, coverage=counts))
+    saved['state']['prompt_version'] = 'selected_categories.v1'
+    with pytest.raises(AnalysisSemanticError):
+        service.reload_cumulative_quoted_parent_candidates(OWNER, snap, canonical(saved))

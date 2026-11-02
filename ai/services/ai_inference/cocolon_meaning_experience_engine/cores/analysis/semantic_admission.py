@@ -935,6 +935,8 @@ QUOTED_PARENT_UNITS_SCHEMA = 'cocolon.cmee.analysis_model_units_quoted_parents.v
 QUOTED_PARENT_UNITS_STATE = 'cocolon.cmee.analysis_model_units_quoted_parents_state.v1'
 QUOTED_PARENT_CATEGORY_PROFILE = 'selected_categories.v1'
 QUOTED_PARENT_CATEGORY_STATE = 'cocolon.cmee.analysis_model_units_quoted_parents_state.categories.v1'
+QUOTED_PARENT_MATERIAL_PROFILE = 'selected_material.v2'
+QUOTED_PARENT_MATERIAL_STATE = 'cocolon.cmee.analysis_model_units_quoted_parents_state.material.v2'
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -962,7 +964,7 @@ class AnalysisModelQuotedParentUnitsInput:
             dict(field=i, field_path=f['field_path'], text=f['text'])
             for i, f in enumerate(fields, 1)])
         instruction = _quoted_parent_units_instruction()
-        if self.prompt_version == QUOTED_PARENT_CATEGORY_PROFILE:
+        if self.prompt_version in {QUOTED_PARENT_CATEGORY_PROFILE, QUOTED_PARENT_MATERIAL_PROFILE}:
             from .source_adapter import selected_categories
             for row, field in zip(material['fields'], fields):
                 row['selected_categories'] = list(selected_categories(frozen, field['source'].record_ref))
@@ -970,13 +972,36 @@ class AnalysisModelQuotedParentUnitsInput:
                 '本文を読む文脈として使い、同じ本文でも別カテゴリの記録を混同しません。'
                 'カテゴリ名だけから場所・役割・原因・人格・相手の意図を作りません。'
                 'quoteとqualifiersは本文textからだけ引用し、カテゴリを本文の引用にしません。')
+        if self.prompt_version == QUOTED_PARENT_MATERIAL_PROFILE:
+            # Only already owner/version-checked originals enter this context.
+            # Ordinals link fields without exposing record or owner identifiers.
+            originals = {m.saved_record_ref: json.loads(m.original_json) for m in self.request.members}
+            included = [m for m in frozen.members if m.inclusion_status == 'INCLUDED']
+            ordinals = {m.saved_record_ref: i for i, m in enumerate(included, 1)}
+            for row, field in zip(material['fields'], fields):
+                row['record'] = ordinals[field['source'].record_ref]
+            from .source_adapter import _time
+            material['analysis_as_of'] = frozen.period[1]
+            material['records'] = [dict(record=ordinals[m.saved_record_ref],
+                recorded_at=_time(originals[m.saved_record_ref]['created_at'], saved_utc=True).isoformat(),
+                selected_categories=list(selected_categories(frozen, m.saved_record_ref)),
+                selected_emotions=originals[m.saved_record_ref]['emotions'],
+                emotion_details=originals[m.saved_record_ref]['emotion_details'],
+                fields=[row['field'] for row in material['fields'] if row['record'] == ordinals[m.saved_record_ref]])
+                for m in included]
+            instruction += ('\nrecordsは本人の原記録に保存された文脈です。record番号で同じ記録の二つの欄を対応させ、memoは思考・気持ち、'
+                'memo_actionは出来事・行動として読みます。selected_emotionsとemotion_detailsは本人の選択で、'
+                '本文の誰の感情か・原因・役割・性格を確定する根拠にしません。'
+                'recorded_atは記録日時で、本文の出来事日時ではありません。analysis_as_ofは分析対象の終点です。'
+                '日時順だけから変化・因果・記録間の関係を作りません。'
+                'quote、parent_quote、qualifiersは対応するfieldのtextからだけ取り、recordsの値を引用しません。')
         return [dict(role='system', content=instruction),
                 dict(role='user', content=canonical(material))]
 
 
 def _quoted_parent_units_ref(request, frozen, source_guard, prompt_version='baseline.v1'):
     _model_fields_ref(request, frozen, source_guard)
-    require(prompt_version in {'baseline.v1', QUOTED_PARENT_CATEGORY_PROFILE},
+    require(prompt_version in {'baseline.v1', QUOTED_PARENT_CATEGORY_PROFILE, QUOTED_PARENT_MATERIAL_PROFILE},
             'analysis_quoted_parent_units_binding_invalid')
     require(prompt_version == 'baseline.v1' or request.selected_category_context,
             'analysis_quoted_parent_units_binding_invalid')
@@ -1095,7 +1120,9 @@ def serialize_analysis_model_quoted_parent_units(model_input, artifact):
         response=asdict(model_input.response), candidate_id=artifact.candidate_id,
         graph=asdict(artifact.graph), text=artifact.text, diagram=json.loads(artifact.diagram_json))
     if model_input.prompt_version != 'baseline.v1':
-        saved.update(schema_version=QUOTED_PARENT_CATEGORY_STATE, prompt_version=model_input.prompt_version)
+        saved.update(schema_version=(QUOTED_PARENT_MATERIAL_STATE
+            if model_input.prompt_version == QUOTED_PARENT_MATERIAL_PROFILE else QUOTED_PARENT_CATEGORY_STATE),
+            prompt_version=model_input.prompt_version)
     return canonical(saved)
 
 
@@ -1105,12 +1132,14 @@ def reload_analysis_model_quoted_parent_units(prepared, raw):
     require(type(prepared) is AnalysisModelQuotedParentUnitsInput and prepared.response is None,
             'analysis_quoted_parent_units_reload_input_invalid')
     saved = _load(raw)
-    category_prompt = prepared.prompt_version == QUOTED_PARENT_CATEGORY_PROFILE
+    category_prompt = prepared.prompt_version in {QUOTED_PARENT_CATEGORY_PROFILE, QUOTED_PARENT_MATERIAL_PROFILE}
+    expected_schema = (QUOTED_PARENT_MATERIAL_STATE if prepared.prompt_version == QUOTED_PARENT_MATERIAL_PROFILE
+        else QUOTED_PARENT_CATEGORY_STATE if category_prompt else QUOTED_PARENT_UNITS_STATE)
     state_keys = {'schema_version','request_ref','response','candidate_id','graph','text','diagram'}
     if category_prompt:
         state_keys.add('prompt_version')
     require(type(saved) is dict and set(saved) == state_keys
-        and saved['schema_version'] == (QUOTED_PARENT_CATEGORY_STATE if category_prompt else QUOTED_PARENT_UNITS_STATE)
+        and saved['schema_version'] == expected_schema
         and (not category_prompt or saved['prompt_version'] == prepared.prompt_version)
         and saved['request_ref'] == prepared.request_ref and type(saved['response']) is dict
         and set(saved['response']) == {'request_ref','messages_sha256','raw_sha256','finish_reason','raw'},
@@ -1266,4 +1295,5 @@ def generate_analysis_model_field_kinds(request, model_input):
             'analysis_model_kinds_field_invalid')
         kinds.append(row['node_kind'])
     return _realize_model_field_kinds(frozen, fields, kinds)
+
 
