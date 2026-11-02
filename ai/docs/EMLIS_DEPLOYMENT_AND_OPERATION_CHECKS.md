@@ -850,3 +850,18 @@ API piece_source.pyの選択JSON根拠はprivate selection_contextsへ分離し�
 API ba0de5028e46e2e0d7c27a35802aca0384072291/dep-dbjckv5g1s2s73fc6uegは11/1 14:16:37 JST（05:16:37 UTC）Live。反映後healthz/app bootstrap200、Piece private5ON/public3OFF、取得範囲のapp error0。設定/DB変更/GPU/実provider/新規署名build0、7001を継続する。
 
 同sourceのnative PostgreSQL CI41275948956/job124758034597は全step success。生成/safety/実SQL保存/既存保存reader/shared API/既定契約を含む。Analysis CI41275948966はこの記録時点では実行中で、全CI完了/成功とは扱わない。前回RNの既知V4失敗/legacy canvas失敗は今回未修復、再build/再試行なし。今回の変更は次に新規作成するPieceへ適用し、保存済み本文/画像へ遡及しない。Mashへ追加の端末確認を今回の修正条件として要求しない。STRUCTURE_MAP_DELTA_NONE（検証・配置結果の記録のみ）。
+
+<a id="analysis-selected-category-context-live-20261102"></a>
+## 2026-11-02 — わたしマップの選択カテゴリ接続を配置
+
+Mashのカテゴリ接続修正指示に基づき、API2c259f0e33abcd70cf353a8f53af3dc3b06eb63eを指定commitで配置。通常累積mapのカテゴリ集合別集約/比較、本人補足の親カテゴリ継承、原record/versionと証拠対応、既存visible_labelで文章/図表示、旧current一度更新/旧月次保持を実装した。新4B準備selected_categories.v1は明示offlineのみで、通常4B有効化・実モデル呼出しではない。
+
+[Analysis CI41437730142](https://github.com/MassyuRed/mashos-api/actions/runs/41437730142)はhead一致で全step success。1644 tests＋12020 subtests、shared owner1（194 deselected）、累積/Q3/API/job24＋2 subtests、月次SQL201原本/15参照の所有者/順位/不変再読/削除を確認。local新10対象と未変更RN表示契約でカテゴリ付き合成mapの文章一致も確認。実本人Auth/端末表示/一般意味品質へ換算しない。
+
+Renderサービスsrv-d4ppfpm3jp1c73952bj0／既存まっしゅ's workspace tea-d4pp61idbo4c73bf4hkg。MCPは指定commitを選べないため既存DashboardのManual Deploy→Deploy a specific commitを使用した。最初のGitHubログインは配置連携のみで使用不可と表示され、Mashが選択したGoogle経由で認証後、commit/full SHAとmessageを照合して一回配置。認証値を記録しない。
+
+deploy dep-dbk7l2uc6qcc73dp5d70、11:56:59 UTC開始、11:58:13.663479 UTC Live。startup complete 11:58:12.077926641 UTC、Uvicorn0.0.0.0:10000。旧live36713940との差分はAnalysisの明示offline準備6commit＋今回修正1commitで、DB/依存/公開API/こころ天気の変更なし。main/autoDeploy OFF/Free/1instance/既存start設定は維持し、サービス設定・環境変数・DB schema・RN buildは変更0。
+
+配置後11:59:38〜12:00:27 UTCのHTTP確認：/healthz200/status ok、/app/bootstrap200、/self-structure/latest401、/self-structure/reports/history401。最初の/historyという存在しない短縮pathへのprobe404は経路指定誤りで、source定義の/reports/historyを改めて確認した。bootstrapのPiece preview/save/owner-read/export/deleteはtrue、public-write/public-read/visibility-toggleはfalse。11:56:59〜12:00 UTCのapp/error取得は0件/hasMore=false。
+
+旧currentのカテゴリ付き再導出は次の本人による正常ensure時に行う。保存済み月次を作り直さず、追加の本人入力や実機確認を今回の修正条件として要求しない。通常有限文法・役割/選択傾向の一般読解・4B候補採用・IF/Savedは残件。前提資料の最新weekly§79/Analysis04/03/01Bを同期。配置結果記録そのものはSTRUCTURE_MAP_DELTA_NONE。
