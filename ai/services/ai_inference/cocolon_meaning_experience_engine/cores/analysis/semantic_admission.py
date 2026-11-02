@@ -773,8 +773,6 @@ def _unit_evidence(field, start, end):
 
 
 def _admit_model_units(request, model_input):
-    from .intent_compiler import (NODE_KINDS, AnalysisUnitQualifier,
-        AnalysisUnitCandidate, AnalysisUnitCandidateField)
     require(type(model_input) is AnalysisModelUnitsInput and model_input.request == request,
             'analysis_model_units_binding_invalid')
     frozen, fields = _model_fields_source(request)
@@ -798,6 +796,14 @@ def _admit_model_units(request, model_input):
     require(type(packet) is dict and set(packet) == {'fields'}
         and type(packet['fields']) is list and len(packet['fields']) == len(fields),
         'analysis_model_units_packet_invalid')
+    return _bind_model_unit_fields(frozen, fields, packet,
+        'analysis-model-units-response:' + digest(asdict(response)))
+
+
+def _bind_model_unit_fields(frozen, fields, packet, response_ref):
+    """Bind source-owned coordinates after a profile's strict raw reader."""
+    from .intent_compiler import (NODE_KINDS, AnalysisUnitQualifier,
+        AnalysisUnitCandidate, AnalysisUnitCandidateField)
     bound = []
     for ordinal, (row, field) in enumerate(zip(packet['fields'], fields), 1):
         require(type(row) is dict and set(row) == {'field', 'units'}
@@ -862,7 +868,7 @@ def _admit_model_units(request, model_input):
         bound.append(AnalysisUnitCandidateField(ordinal, field['field_ref'], field['field_path'],
             source.record_ref, source.record_version, field['text'], field['evidence'],
             tuple(units), tuple(residual)))
-    return frozen, tuple(bound), 'analysis-model-units-response:' + digest(asdict(response))
+    return frozen, tuple(bound), response_ref
 
 
 def generate_analysis_model_units(request, model_input):
@@ -921,6 +927,177 @@ def reload_analysis_model_units(prepared, raw):
     artifact = AnalysisUnitCandidateArtifact(saved['candidate_id'], graph, saved['text'],
         canonical(saved['diagram']))
     _validated_unit_artifact(value, artifact)
+    return artifact
+
+
+QUOTED_PARENT_UNITS_PROFILE = 'analysis_model_units_quoted_parents.v1'
+QUOTED_PARENT_UNITS_SCHEMA = 'cocolon.cmee.analysis_model_units_quoted_parents.v1'
+QUOTED_PARENT_UNITS_STATE = 'cocolon.cmee.analysis_model_units_quoted_parents_state.v1'
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class AnalysisModelQuotedParentUnitsResponse:
+    request_ref: str
+    messages_sha256: str
+    raw_sha256: str
+    finish_reason: str
+    raw: str
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class AnalysisModelQuotedParentUnitsInput:
+    request: AnalysisObservedMapRequest
+    source_guard: str
+    request_ref: str
+    response: AnalysisModelQuotedParentUnitsResponse | None = None
+
+    def messages(self):
+        frozen, fields = _model_fields_source(self.request)
+        require(self.request_ref == _quoted_parent_units_ref(self.request, frozen, self.source_guard),
+                'analysis_quoted_parent_units_binding_invalid')
+        material = dict(schema_version=QUOTED_PARENT_UNITS_SCHEMA, fields=[
+            dict(field=i, field_path=f['field_path'], text=f['text'])
+            for i, f in enumerate(fields, 1)])
+        return [dict(role='system', content=_quoted_parent_units_instruction()),
+                dict(role='user', content=canonical(material))]
+
+
+def _quoted_parent_units_ref(request, frozen, source_guard):
+    _model_fields_ref(request, frozen, source_guard)
+    return 'analysis-quoted-parent-units-request:' + digest([
+        QUOTED_PARENT_UNITS_PROFILE, request.request_id, frozen.owner_scope,
+        frozen.source_set_ref, source_guard])
+
+
+def prepare_analysis_model_quoted_parent_units(request, *, source_guard):
+    frozen, _ = _model_fields_source(request)
+    return AnalysisModelQuotedParentUnitsInput(request, source_guard,
+        _quoted_parent_units_ref(request, frozen, source_guard))
+
+
+def _quoted_parent_units_instruction():
+    lines = _clarified_units_instruction().split('\n')
+    for i, line in enumerate(lines):
+        if line.startswith('例の出力:'):
+            packet = json.loads(line[len('例の出力:'):])
+            for field in packet['fields']:
+                units = field['units']
+                field['units'] = [dict(quote=u['quote'], node_kind=u['node_kind'],
+                    parent_quote=None if u['parent'] is None else units[u['parent']-1]['quote'],
+                    scope_role=u['scope_role'], qualifiers=u['qualifiers']) for u in units]
+            lines[i] = '例の出力:' + canonical(packet)
+        else:
+            lines[i] = line.replace('parent=null', 'parent_quote=null').replace(
+                'parentは同fieldの親番号（unitsの1始まり）',
+                'parent_quoteは同fieldに実際に返した親unitのquoteと完全同一の文字列')
+    return '\n'.join(lines) + (
+        '\n各unitはquote,node_kind,parent_quote,scope_role,qualifiersの5keyだけ。'
+        'parentというkeyや親番号は返しません。親の引用も原文を変えず完全一致で写します。'
+        '同じquoteの親unitが複数ある場合は参照できません。'
+        '親を新たに補わず、正しい親の意味を選んでください。')
+
+
+def _admit_quoted_parent_units(request, model_input):
+    require(type(model_input) is AnalysisModelQuotedParentUnitsInput and model_input.request == request,
+            'analysis_quoted_parent_units_binding_invalid')
+    frozen, fields = _model_fields_source(request)
+    expected_ref = _quoted_parent_units_ref(request, frozen, model_input.source_guard)
+    require(model_input.request_ref == expected_ref, 'analysis_quoted_parent_units_binding_invalid')
+    response = model_input.response
+    require(type(response) is AnalysisModelQuotedParentUnitsResponse,
+            'analysis_quoted_parent_units_response_invalid')
+    require(type(response.finish_reason) is str and response.finish_reason == 'stop',
+            'analysis_model_generation_incomplete')
+    require(type(response.raw) is str and type(response.raw_sha256) is str
+        and type(response.request_ref) is str and response.request_ref == expected_ref
+        and type(response.messages_sha256) is str
+        and response.messages_sha256 == digest(model_input.messages()),
+        'analysis_quoted_parent_units_response_invalid')
+    try:
+        raw_hash = hashlib.sha256(response.raw.encode('utf-8')).hexdigest()
+    except UnicodeEncodeError:
+        raise AnalysisSemanticError('analysis_quoted_parent_units_response_invalid') from None
+    require(raw_hash == response.raw_sha256, 'analysis_quoted_parent_units_response_invalid')
+    packet = _load(response.raw)
+    require(type(packet) is dict and set(packet) == {'fields'}
+        and type(packet['fields']) is list and len(packet['fields']) == len(fields),
+        'analysis_quoted_parent_units_packet_invalid')
+    bound_packet = dict(fields=[])
+    for row in packet['fields']:
+        require(type(row) is dict and set(row) == {'field', 'units'}
+            and type(row['units']) is list and len(row['units']) <= 8,
+            'analysis_quoted_parent_units_field_invalid')
+        for unit in row['units']:
+            require(type(unit) is dict and set(unit) ==
+                {'quote', 'node_kind', 'parent_quote', 'scope_role', 'qualifiers'}
+                and type(unit['quote']) is str and bool(unit['quote'].strip())
+                and (unit['parent_quote'] is None or
+                    (type(unit['parent_quote']) is str and bool(unit['parent_quote'].strip()))),
+                'analysis_quoted_parent_units_unit_invalid')
+        resolved = []
+        for unit in row['units']:
+            parent_quote = unit['parent_quote']
+            parent = None
+            if parent_quote is not None:
+                matches = [i for i, p in enumerate(row['units'], 1) if p['quote'] == parent_quote]
+                require(len(matches) == 1, 'analysis_quoted_parent_units_parent_ambiguous_or_missing')
+                parent = matches[0]
+            resolved.append(dict(quote=unit['quote'], node_kind=unit['node_kind'], parent=parent,
+                scope_role=unit['scope_role'], qualifiers=unit['qualifiers']))
+        bound_packet['fields'].append(dict(field=row['field'], units=resolved))
+    # This is source-derived graph binding of the new wire. The original raw
+    # and response identity remain unchanged; no old response is synthesized.
+    return _bind_model_unit_fields(frozen, fields, bound_packet,
+        'analysis-quoted-parent-units-response:' + digest(asdict(response)))
+
+
+def generate_analysis_model_quoted_parent_units(request, model_input):
+    from .intent_compiler import compile_analysis_unit_candidates
+    from .observed_route_realizer import realize_analysis_unit_candidates
+    frozen, fields, response_ref = _admit_quoted_parent_units(request, model_input)
+    graph = compile_analysis_unit_candidates(frozen, model_input.request_ref, response_ref, fields)
+    return realize_analysis_unit_candidates(graph)
+
+
+def _validated_quoted_parent_unit_artifact(model_input, artifact):
+    from .intent_compiler import AnalysisUnitCandidateGraph
+    from .observed_route_realizer import AnalysisUnitCandidateArtifact, validate_analysis_unit_artifact
+    frozen, fields, response_ref = _admit_quoted_parent_units(model_input.request, model_input)
+    expected = AnalysisUnitCandidateGraph(frozen.owner_scope, frozen.source_set_ref,
+        model_input.request_ref, response_ref, fields, tuple(m.saved_record_ref for m in frozen.members))
+    require(type(artifact) is AnalysisUnitCandidateArtifact and artifact.graph == expected,
+            'analysis_quoted_parent_units_artifact_binding_invalid')
+    validate_analysis_unit_artifact(artifact)
+
+
+def serialize_analysis_model_quoted_parent_units(model_input, artifact):
+    _validated_quoted_parent_unit_artifact(model_input, artifact)
+    return canonical(dict(schema_version=QUOTED_PARENT_UNITS_STATE, request_ref=model_input.request_ref,
+        response=asdict(model_input.response), candidate_id=artifact.candidate_id,
+        graph=asdict(artifact.graph), text=artifact.text, diagram=json.loads(artifact.diagram_json)))
+
+
+def reload_analysis_model_quoted_parent_units(prepared, raw):
+    from .intent_compiler import AnalysisUnitCandidateGraph
+    from .observed_route_realizer import AnalysisUnitCandidateArtifact
+    require(type(prepared) is AnalysisModelQuotedParentUnitsInput and prepared.response is None,
+            'analysis_quoted_parent_units_reload_input_invalid')
+    saved = _load(raw)
+    require(type(saved) is dict and set(saved) ==
+        {'schema_version','request_ref','response','candidate_id','graph','text','diagram'}
+        and saved['schema_version'] == QUOTED_PARENT_UNITS_STATE
+        and saved['request_ref'] == prepared.request_ref and type(saved['response']) is dict
+        and set(saved['response']) == {'request_ref','messages_sha256','raw_sha256','finish_reason','raw'},
+        'analysis_quoted_parent_units_state_invalid')
+    value = replace(prepared, response=AnalysisModelQuotedParentUnitsResponse(**saved['response']))
+    frozen, fields, response_ref = _admit_quoted_parent_units(prepared.request, value)
+    graph = AnalysisUnitCandidateGraph(frozen.owner_scope, frozen.source_set_ref,
+        prepared.request_ref, response_ref, fields, tuple(m.saved_record_ref for m in frozen.members))
+    require(canonical(saved['graph']) == canonical(asdict(graph)),
+            'analysis_quoted_parent_units_saved_graph_invalid')
+    artifact = AnalysisUnitCandidateArtifact(saved['candidate_id'], graph, saved['text'],
+        canonical(saved['diagram']))
+    _validated_quoted_parent_unit_artifact(value, artifact)
     return artifact
 
 

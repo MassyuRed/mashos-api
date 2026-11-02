@@ -173,6 +173,52 @@ def reload_cumulative_unit_candidates(owner, snapshot, raw, *, instruction_versi
     return reload_analysis_model_units(prepared, canonical(saved['state'])), saved['coverage']
 
 
+def prepare_cumulative_quoted_parent_units(owner, snapshot):
+    """Separate explicit private wire; the normal builder never selects it."""
+    from cocolon_meaning_experience_engine.cores.analysis.semantic_admission import prepare_analysis_model_quoted_parent_units
+    prepared = prepare_cumulative_model_fields(owner, snapshot)
+    return prepare_analysis_model_quoted_parent_units(prepared.request, source_guard=prepared.source_guard)
+
+
+def build_cumulative_quoted_parent_candidates(owner, snapshot, *, model_input):
+    from cocolon_meaning_experience_engine import MeaningExperienceEngine
+    from cocolon_meaning_experience_engine.cores.analysis.semantic_admission import (
+        AnalysisModelQuotedParentUnitsInput, require)
+    require(type(model_input) is AnalysisModelQuotedParentUnitsInput,
+            'analysis_quoted_parent_units_binding_invalid')
+    expected = prepare_cumulative_quoted_parent_units(owner, snapshot)
+    require(model_input.request == expected.request and model_input.request_ref == expected.request_ref
+        and model_input.source_guard == expected.source_guard, 'analysis_quoted_parent_units_binding_invalid')
+    artifact = MeaningExperienceEngine().generate(expected.request, semantic_input=model_input)
+    return artifact, _unit_candidate_coverage(expected, snapshot)
+
+
+def serialize_cumulative_quoted_parent_candidates(owner, snapshot, *, model_input, artifact, coverage):
+    from cocolon_meaning_experience_engine.cores.analysis.semantic_admission import (
+        AnalysisModelQuotedParentUnitsInput, canonical, require, serialize_analysis_model_quoted_parent_units)
+    require(type(model_input) is AnalysisModelQuotedParentUnitsInput,
+            'analysis_quoted_parent_units_binding_invalid')
+    expected = prepare_cumulative_quoted_parent_units(owner, snapshot)
+    require(model_input.request == expected.request and model_input.request_ref == expected.request_ref
+        and model_input.source_guard == expected.source_guard
+        and canonical(coverage) == canonical(_unit_candidate_coverage(expected, snapshot)),
+        'analysis_quoted_parent_units_coverage_invalid')
+    return canonical(dict(schema_version='cocolon.cmee.cumulative_quoted_parent_unit_candidates_file.v1',
+        coverage=coverage, state=json.loads(serialize_analysis_model_quoted_parent_units(model_input, artifact))))
+
+
+def reload_cumulative_quoted_parent_candidates(owner, snapshot, raw):
+    from cocolon_meaning_experience_engine.cores.analysis.semantic_admission import (
+        _load, canonical, require, reload_analysis_model_quoted_parent_units)
+    prepared = prepare_cumulative_quoted_parent_units(owner, snapshot)
+    saved = _load(raw)
+    require(type(saved) is dict and set(saved) == {'schema_version','coverage','state'}
+        and saved['schema_version'] == 'cocolon.cmee.cumulative_quoted_parent_unit_candidates_file.v1'
+        and canonical(saved['coverage']) == canonical(_unit_candidate_coverage(prepared, snapshot)),
+        'analysis_quoted_parent_units_coverage_invalid')
+    return reload_analysis_model_quoted_parent_units(prepared, canonical(saved['state'])), saved['coverage']
+
+
 def build_cumulative_map(owner, snapshot, *, model_input=None):
     """Use the existing compiler/author once for the complete eligible set.
 
