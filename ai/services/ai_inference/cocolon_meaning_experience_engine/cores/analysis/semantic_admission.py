@@ -613,7 +613,7 @@ MODEL_UNITS_PROFILE = 'analysis_model_units.v1'
 MODEL_UNITS_SCHEMA = 'cocolon.cmee.analysis_model_units.v1'
 MODEL_UNITS_STATE = 'cocolon.cmee.analysis_model_units_state.v1'
 MODEL_UNITS_CLARIFIED_STATE = 'cocolon.cmee.analysis_model_units_state.v2'
-MODEL_UNITS_INSTRUCTIONS = ('baseline.v1', 'clarified.v1')
+MODEL_UNITS_INSTRUCTIONS = ('baseline.v1', 'clarified.v1', 'quote_first.v1')
 UNIT_SCOPE_ROLES = ('CONTENT_TARGET', 'UNKNOWN_CONTENT', 'ATTRIBUTIVE_CONTENT',
                     'TE_CONTEXT', 'WRITTEN_REASON')
 UNIT_QUALIFIERS = ('NEGATION', 'EPISTEMIC_EXPRESSION', 'RELATIVE_TIME',
@@ -664,6 +664,8 @@ class AnalysisModelUnitsInput:
             '"node_kind":"分類候補又はnull","parent":null,"scope_role":null,"qualifiers":[]}]}]}。')
         if self.instruction_version == 'clarified.v1':
             instruction = _clarified_units_instruction()
+        elif self.instruction_version == 'quote_first.v1':
+            instruction = _quote_first_units_instruction()
         return [{'role': 'system', 'content': instruction},
                 {'role': 'user', 'content': canonical(material)}]
 
@@ -729,6 +731,26 @@ def _clarified_units_instruction():
         instruction += '\n例の入力:' + canonical(dict(fields=[dict(field=1,text=text)]))
         instruction += '\n例の出力:' + canonical(dict(fields=[dict(field=1,units=units)]))
     return instruction + '\n今回の入力にだけ答えてください。出力のrootはfields一つだけです。'
+
+
+def _quote_first_units_instruction():
+    """Same examples and wire; choose evidence before scope and parent."""
+    lines = _clarified_units_instruction().split('\n')
+    for i, line in enumerate(lines):
+        if not line.startswith('例の出力:'):
+            continue
+        packet = json.loads(line[len('例の出力:'):])
+        for field in packet['fields']:
+            field['units'] = [dict(quote=u['quote'], scope_role=u['scope_role'],
+                node_kind=u['node_kind'], parent=u['parent'],
+                qualifiers=[dict(quote=q['quote'], kind=q['kind']) for q in u['qualifiers']])
+                for u in field['units']]
+        lines[i] = '例の出力:' + json.dumps(packet, ensure_ascii=False, separators=(',', ':'))
+    return '\n'.join(lines) + (
+        '\n各unitはquote,scope_role,node_kind,parent,qualifiersの順で出力します。'
+        '先に逐語引用を選び、その内容の種類と接続先を決めます。'
+        'qualifierもquote,kindの順です。引用は助詞を抜かず原文通りに写します。'
+        'UNKNOWN_CONTENTのparentは、同じ不明内容を述べるWRITTEN_UNKNOWNの実際のunit番号です。')
 
 
 def _unique_quote_range(text, quote):

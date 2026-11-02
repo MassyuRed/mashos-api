@@ -237,3 +237,25 @@ def test_responses_cannot_be_transferred_between_instruction_versions():
     new=service.prepare_cumulative_model_units(OWNER,sample(),instruction_version='clarified.v1')
     with pytest.raises(AnalysisSemanticError,match='response_invalid'):
         service.build_cumulative_unit_candidates(OWNER,sample(),model_input=replace(new,response=old.response))
+
+
+def test_quote_first_preserves_meaning_and_replay_but_rejects_other_version_binding():
+    new=service.prepare_cumulative_model_units(OWNER,sample(),instruction_version='quote_first.v1')
+    data=packet()
+    for field in data['fields']:
+        field['units']=[{key:u[key] for key in ('quote','scope_role','node_kind','parent','qualifiers')}
+            for u in field['units']]
+    value=synthetic_call(new,raw=json.dumps(data,ensure_ascii=False,separators=(',',':')))
+    artifact,counts=service.build_cumulative_unit_candidates(OWNER,sample(),model_input=value)
+    assert artifact.graph.fields[0].units[2].parent == 4
+    assert artifact.graph.fields[0].units[1].qualifiers[0].quote == 'はいない'
+    raw=service.serialize_cumulative_unit_candidates(OWNER,sample(),model_input=value,artifact=artifact,coverage=counts)
+    with patch.object(MeaningExperienceEngine,'generate',side_effect=AssertionError('no generation')):
+        assert service.reload_cumulative_unit_candidates(OWNER,sample(),raw,instruction_version='quote_first.v1') == (artifact,counts)
+    for version in ('baseline.v1','clarified.v1'):
+        other=service.prepare_cumulative_model_units(OWNER,sample(),instruction_version=version)
+        assert other.request_ref != new.request_ref
+        with pytest.raises(AnalysisSemanticError):
+            service.build_cumulative_unit_candidates(OWNER,sample(),model_input=replace(other,response=value.response))
+        with pytest.raises(AnalysisSemanticError):
+            service.reload_cumulative_unit_candidates(OWNER,sample(),raw,instruction_version=version)
