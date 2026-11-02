@@ -11773,5 +11773,143 @@ class AnalysisVerticalTests(unittest.TestCase):
             broken.safe_projection(authenticated_owner_scope=OWNER)
 
 
+class SelectedCategoryContextTests(unittest.TestCase):
+    def rec(self, number, categories, memo=TEXT, *, day=1):
+        base = record(number, memo, created_at=f'2026-10-{day:02d}T01:00:00Z')
+        raw = json.loads(base.original_json)
+        raw['category'] = list(categories)
+        return replace(base, original_json=canonical_bytes(raw).decode(),
+                       saved_record_version=commitment(raw))
+
+    def req(self, *members):
+        return replace(request(*members), selected_category_context=True)
+
+    def build(self, req):
+        outcome = MeaningExperienceEngine().generate(req)
+        self.assertIsNotNone(outcome.artifact, outcome.reason_codes)
+        return outcome.artifact
+
+    def test_same_content_in_different_categories_is_not_one_repeated_pattern(self):
+        artifact = self.build(self.req(self.rec(1, ['仕事']), self.rec(2, ['人間関係'])))
+        self.assertEqual(len(artifact.graph.nodes), 4)
+        self.assertFalse(artifact.graph.edges)
+        self.assertTrue(all(len(n.record_refs) == 1 for n in artifact.graph.nodes))
+        labels = [n['visible_label'] for n in artifact.safe_projection(authenticated_owner_scope=OWNER)['nodes']]
+        self.assertEqual(sum(x.startswith('選択カテゴリ：仕事\n') for x in labels), 2)
+        self.assertEqual(sum(x.startswith('選択カテゴリ：人間関係\n') for x in labels), 2)
+        self.assertFalse(any(n.node_kind in {'SCENE', 'ROLE'} for n in artifact.graph.nodes))
+
+    def test_repetition_and_counts_remain_within_the_selected_category_set(self):
+        artifact = self.build(self.req(*(self.rec(n, cats) for n, cats in (
+            (1, ['仕事']), (2, ['仕事']), (3, ['趣味']), (4, ['趣味'])))))
+        self.assertEqual(len(artifact.graph.nodes), 4)
+        self.assertEqual([len(n.record_refs) for n in artifact.graph.nodes], [2, 2, 2, 2])
+        self.assertEqual(len(artifact.graph.edges), 2)
+        nodes = {n.node_ref: n for n in artifact.graph.nodes}
+        for edge in artifact.graph.edges:
+            self.assertEqual(nodes[edge.endpoint_refs[0]].selected_categories,
+                             nodes[edge.endpoint_refs[1]].selected_categories)
+
+    def test_multiselect_order_and_duplicate_labels_do_not_duplicate_records(self):
+        artifact = self.build(self.req(self.rec(1, ['仕事', '人間関係']),
+                                      self.rec(2, ['人間関係', '仕事', '仕事'])))
+        self.assertEqual(len(artifact.graph.nodes), 2)
+        self.assertTrue(all(len(n.record_refs) == 2 for n in artifact.graph.nodes))
+        self.assertEqual(len(artifact.graph.edges), 1)
+        self.assertEqual(artifact.graph.nodes[0].selected_categories, tuple(sorted(('仕事', '人間関係'))))
+
+    def test_answer_inherits_the_originals_selected_category(self):
+        parent = self.rec(1, ['学習'], '私は仕事を続けたい。')
+        answer = '私は資料を調べた。'
+        supplement = AnalysisSupplement('selected-category-answer', OWNER, parent.saved_record_ref,
+            parent.saved_record_version, answer, commitment(answer))
+        artifact = self.build(self.req(replace(parent, supplements=(supplement,))))
+        self.assertEqual(len(artifact.graph.nodes), 2)
+        self.assertTrue(all(n.selected_categories == ('学習',) for n in artifact.graph.nodes))
+        self.assertIn('選択カテゴリ：学習', artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text'])
+
+    def test_category_alone_does_not_invent_a_scene_role_or_route(self):
+        result = MeaningExperienceEngine().generate(self.req(self.rec(1, ['仕事'], '')))
+        self.assertIsNone(result.artifact)
+        empty = self.build(self.req(self.rec(1, [])))
+        self.assertTrue(all(n['visible_label'].startswith('選択カテゴリ：未選択\n')
+            for n in empty.safe_projection(authenticated_owner_scope=OWNER)['nodes']))
+
+    def test_category_is_bound_to_original_version_before_projection(self):
+        artifact = self.build(self.req(self.rec(1, ['仕事'])))
+        node = artifact.graph.nodes[0]
+        altered = replace(artifact, graph=replace(artifact.graph, nodes=(
+            replace(node, selected_categories=('趣味',)), *artifact.graph.nodes[1:])))
+        with self.assertRaises(AnalysisSourceError):
+            altered.safe_projection(authenticated_owner_scope=OWNER)
+        raw = json.loads(artifact.category_records[0].original_json)
+        raw['category'] = ['趣味']
+        forged = replace(artifact.category_records[0], original_json=canonical_bytes(raw).decode())
+        with self.assertRaises(AnalysisSourceError):
+            replace(artifact, category_records=(forged,)).safe_projection(authenticated_owner_scope=OWNER)
+
+    def test_category_cannot_be_removed_or_taken_from_an_unrelated_record(self):
+        artifact = self.build(self.req(self.rec(1, ['仕事']), self.rec(2, ['趣味'])))
+        node = artifact.graph.nodes[0]
+        for changed in (replace(node, selected_categories=(), selected_category_context=False),
+                        replace(node, record_refs=('synthetic-record-2',), selected_categories=('趣味',))):
+            broken = replace(artifact, graph=replace(artifact.graph,
+                nodes=(changed, *artifact.graph.nodes[1:])))
+            with self.assertRaises(AnalysisSourceError):
+                broken.safe_projection(authenticated_owner_scope=OWNER)
+
+    def test_category_changes_are_visible_in_the_existing_period_comparison(self):
+        previous = self.req(self.rec(1, ['仕事']))
+        current = replace(self.req(self.rec(2, ['趣味'], day=3)),
+            period_start='2026-10-03T00:00:00Z', period_end='2026-10-05T00:00:00Z',
+            comparison_previous_request=previous)
+        artifact = self.build(current)
+        self.assertEqual(artifact.period_comparison.comparability_state, 'COMPARABLE')
+        self.assertIn('ROUTE_EVIDENCE_CHANGED',
+            [c.change_kind for c in artifact.period_comparison.change_claims])
+        mixed = replace(current, comparison_previous_request=replace(previous, selected_category_context=False))
+        rejected = MeaningExperienceEngine().generate(mixed)
+        self.assertIsNone(rejected.artifact)
+        self.assertIn('analysis_comparison_request_invalid', rejected.reason_codes)
+
+    def test_legacy_request_policy_and_protective_annotation_remain_usable(self):
+        legacy = self.build(request(self.rec(1, ['仕事'])))
+        self.assertTrue(all(not n['visible_label'].startswith('選択カテゴリ：')
+            for n in legacy.safe_projection(authenticated_owner_scope=OWNER)['nodes']))
+        artifact = self.build(self.req(self.rec(1, ['人間関係'], '私は家族を守りたい。')))
+        self.assertEqual(artifact.safe_projection(authenticated_owner_scope=OWNER)['annotation_badges'][0]['kind'],
+                         'PROTECTIVE')
+
+    def test_category_prompt_and_legacy_saved_raw_each_reload_without_generation(self):
+        from cocolon_meaning_experience_engine.cores.analysis import semantic_admission as admission
+        from cocolon_meaning_experience_engine.cores.analysis.observed_route_realizer import validate_analysis_unit_artifact
+        legacy_request = request(self.rec(1, ['仕事']))
+        category_request = replace(legacy_request, selected_category_context=True)
+        guard = 'analysis-db-cumulative-v1:' + 'a' * 64
+        legacy = admission.prepare_analysis_model_quoted_parent_units(legacy_request, source_guard=guard)
+        category = admission.prepare_analysis_model_quoted_parent_units(category_request, source_guard=guard,
+            prompt_version=admission.QUOTED_PARENT_CATEGORY_PROFILE)
+        self.assertNotEqual(legacy.request_ref, category.request_ref)
+        self.assertNotIn('selected_categories', json.loads(legacy.messages()[1]['content'])['fields'][0])
+        self.assertEqual(json.loads(category.messages()[1]['content'])['fields'][0]['selected_categories'], ['仕事'])
+        for prepared in (legacy, category):
+            raw = admission.canonical({'fields': [{'field': 1, 'units': []}]})
+            response = admission.AnalysisModelQuotedParentUnitsResponse(prepared.request_ref,
+                admission.digest(prepared.messages()), hashlib.sha256(raw.encode()).hexdigest(), 'stop', raw)
+            bound = replace(prepared, response=response)
+            artifact = admission.generate_analysis_model_quoted_parent_units(prepared.request, bound)
+            saved = admission.serialize_analysis_model_quoted_parent_units(bound, artifact)
+            with patch.object(admission, 'generate_analysis_model_quoted_parent_units',
+                              side_effect=AssertionError('saved read must not generate')):
+                loaded = admission.reload_analysis_model_quoted_parent_units(prepared, saved)
+            self.assertEqual(loaded.text, artifact.text)
+            self.assertEqual(loaded.diagram_json, artifact.diagram_json)
+            validate_analysis_unit_artifact(loaded)
+            other = category if prepared is legacy else legacy
+            with self.assertRaises(admission.AnalysisSemanticError):
+                admission.reload_analysis_model_quoted_parent_units(other, saved)
+
+
 if __name__ == '__main__':
     unittest.main()
+

@@ -933,6 +933,8 @@ def reload_analysis_model_units(prepared, raw):
 QUOTED_PARENT_UNITS_PROFILE = 'analysis_model_units_quoted_parents.v1'
 QUOTED_PARENT_UNITS_SCHEMA = 'cocolon.cmee.analysis_model_units_quoted_parents.v1'
 QUOTED_PARENT_UNITS_STATE = 'cocolon.cmee.analysis_model_units_quoted_parents_state.v1'
+QUOTED_PARENT_CATEGORY_PROFILE = 'selected_categories.v1'
+QUOTED_PARENT_CATEGORY_STATE = 'cocolon.cmee.analysis_model_units_quoted_parents_state.categories.v1'
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -950,29 +952,46 @@ class AnalysisModelQuotedParentUnitsInput:
     source_guard: str
     request_ref: str
     response: AnalysisModelQuotedParentUnitsResponse | None = None
+    prompt_version: str = 'baseline.v1'
 
     def messages(self):
         frozen, fields = _model_fields_source(self.request)
-        require(self.request_ref == _quoted_parent_units_ref(self.request, frozen, self.source_guard),
+        require(self.request_ref == _quoted_parent_units_ref(self.request, frozen, self.source_guard, self.prompt_version),
                 'analysis_quoted_parent_units_binding_invalid')
         material = dict(schema_version=QUOTED_PARENT_UNITS_SCHEMA, fields=[
             dict(field=i, field_path=f['field_path'], text=f['text'])
             for i, f in enumerate(fields, 1)])
-        return [dict(role='system', content=_quoted_parent_units_instruction()),
+        instruction = _quoted_parent_units_instruction()
+        if self.prompt_version == QUOTED_PARENT_CATEGORY_PROFILE:
+            from .source_adapter import selected_categories
+            for row, field in zip(material['fields'], fields):
+                row['selected_categories'] = list(selected_categories(frozen, field['source'].record_ref))
+            instruction += ('\nselected_categoriesは本人が元の記録に選んだ内容カテゴリです。'
+                '本文を読む文脈として使い、同じ本文でも別カテゴリの記録を混同しません。'
+                'カテゴリ名だけから場所・役割・原因・人格・相手の意図を作りません。'
+                'quoteとqualifiersは本文textからだけ引用し、カテゴリを本文の引用にしません。')
+        return [dict(role='system', content=instruction),
                 dict(role='user', content=canonical(material))]
 
 
-def _quoted_parent_units_ref(request, frozen, source_guard):
+def _quoted_parent_units_ref(request, frozen, source_guard, prompt_version='baseline.v1'):
     _model_fields_ref(request, frozen, source_guard)
-    return 'analysis-quoted-parent-units-request:' + digest([
+    require(prompt_version in {'baseline.v1', QUOTED_PARENT_CATEGORY_PROFILE},
+            'analysis_quoted_parent_units_binding_invalid')
+    require(prompt_version == 'baseline.v1' or request.selected_category_context,
+            'analysis_quoted_parent_units_binding_invalid')
+    identity = [
         QUOTED_PARENT_UNITS_PROFILE, request.request_id, frozen.owner_scope,
-        frozen.source_set_ref, source_guard])
+        frozen.source_set_ref, source_guard]
+    if prompt_version != 'baseline.v1':
+        identity.append(prompt_version)
+    return 'analysis-quoted-parent-units-request:' + digest(identity)
 
 
-def prepare_analysis_model_quoted_parent_units(request, *, source_guard):
+def prepare_analysis_model_quoted_parent_units(request, *, source_guard, prompt_version='baseline.v1'):
     frozen, _ = _model_fields_source(request)
     return AnalysisModelQuotedParentUnitsInput(request, source_guard,
-        _quoted_parent_units_ref(request, frozen, source_guard))
+        _quoted_parent_units_ref(request, frozen, source_guard, prompt_version), prompt_version=prompt_version)
 
 
 def _quoted_parent_units_instruction():
@@ -1001,7 +1020,7 @@ def _admit_quoted_parent_units(request, model_input):
     require(type(model_input) is AnalysisModelQuotedParentUnitsInput and model_input.request == request,
             'analysis_quoted_parent_units_binding_invalid')
     frozen, fields = _model_fields_source(request)
-    expected_ref = _quoted_parent_units_ref(request, frozen, model_input.source_guard)
+    expected_ref = _quoted_parent_units_ref(request, frozen, model_input.source_guard, model_input.prompt_version)
     require(model_input.request_ref == expected_ref, 'analysis_quoted_parent_units_binding_invalid')
     response = model_input.response
     require(type(response) is AnalysisModelQuotedParentUnitsResponse,
@@ -1072,9 +1091,12 @@ def _validated_quoted_parent_unit_artifact(model_input, artifact):
 
 def serialize_analysis_model_quoted_parent_units(model_input, artifact):
     _validated_quoted_parent_unit_artifact(model_input, artifact)
-    return canonical(dict(schema_version=QUOTED_PARENT_UNITS_STATE, request_ref=model_input.request_ref,
+    saved = dict(schema_version=QUOTED_PARENT_UNITS_STATE, request_ref=model_input.request_ref,
         response=asdict(model_input.response), candidate_id=artifact.candidate_id,
-        graph=asdict(artifact.graph), text=artifact.text, diagram=json.loads(artifact.diagram_json)))
+        graph=asdict(artifact.graph), text=artifact.text, diagram=json.loads(artifact.diagram_json))
+    if model_input.prompt_version != 'baseline.v1':
+        saved.update(schema_version=QUOTED_PARENT_CATEGORY_STATE, prompt_version=model_input.prompt_version)
+    return canonical(saved)
 
 
 def reload_analysis_model_quoted_parent_units(prepared, raw):
@@ -1083,9 +1105,13 @@ def reload_analysis_model_quoted_parent_units(prepared, raw):
     require(type(prepared) is AnalysisModelQuotedParentUnitsInput and prepared.response is None,
             'analysis_quoted_parent_units_reload_input_invalid')
     saved = _load(raw)
-    require(type(saved) is dict and set(saved) ==
-        {'schema_version','request_ref','response','candidate_id','graph','text','diagram'}
-        and saved['schema_version'] == QUOTED_PARENT_UNITS_STATE
+    category_prompt = prepared.prompt_version == QUOTED_PARENT_CATEGORY_PROFILE
+    state_keys = {'schema_version','request_ref','response','candidate_id','graph','text','diagram'}
+    if category_prompt:
+        state_keys.add('prompt_version')
+    require(type(saved) is dict and set(saved) == state_keys
+        and saved['schema_version'] == (QUOTED_PARENT_CATEGORY_STATE if category_prompt else QUOTED_PARENT_UNITS_STATE)
+        and (not category_prompt or saved['prompt_version'] == prepared.prompt_version)
         and saved['request_ref'] == prepared.request_ref and type(saved['response']) is dict
         and set(saved['response']) == {'request_ref','messages_sha256','raw_sha256','finish_reason','raw'},
         'analysis_quoted_parent_units_state_invalid')
@@ -1106,18 +1132,21 @@ def _realize_model_field_kinds(frozen, fields, kinds):
     from uuid import uuid4
     from ...contracts import EngineStatus
     from .intent_compiler import (ObservedGraph, ObservedNode, ObservedQuotedField, UnknownGap)
+    from .source_adapter import selected_categories
     from .observed_route_realizer import ObservedSelfStructureMap, AnalysisEngineOutcome
     nodes, gaps = [], []
     for field, kind in zip(fields, kinds):
         if kind == 'UNRESOLVED':
             continue
         source = field['source']
+        categories = selected_categories(frozen, source.record_ref)
         q = ObservedQuotedField(frozen.owner_scope, frozen.source_set_ref,
             source.record_ref, source.record_version, field['field_ref'],
             kind, field['text'], field['evidence'])
         nodes.append(ObservedNode('n' + str(len(nodes)+1), kind, field['text'],
             (source.record_ref,), (field['evidence'],), *('AS_WRITTEN_UNRESOLVED',)*3,
-            quoted_field=q))
+            quoted_field=q, selected_categories=categories or (),
+            selected_category_context=categories is not None))
     # Every model-classified record remains semantically unparsed until the
     # actual candidate is read. A node is NOT a claim of successful reading.
     for member in frozen.members:
@@ -1137,7 +1166,7 @@ def _realize_model_field_kinds(frozen, fields, kinds):
             ('analysis_observed_route_not_established',))
     graph = ObservedGraph(tuple(nodes), (), tuple(gaps))
     artifact = ObservedSelfStructureMap('artifact:' + uuid4().hex, 1, frozen.owner_scope,
-        frozen.source_set_ref, frozen.period, graph, frozen.members)
+        frozen.source_set_ref, frozen.period, graph, frozen.members, category_records=frozen.category_records)
     artifact.safe_projection(authenticated_owner_scope=frozen.owner_scope)
     return AnalysisEngineOutcome(EngineStatus.GENERATED,
         ('analysis_model_classification_candidate',), artifact)
@@ -1237,3 +1266,4 @@ def generate_analysis_model_field_kinds(request, model_input):
             'analysis_model_kinds_field_invalid')
         kinds.append(row['node_kind'])
     return _realize_model_field_kinds(frozen, fields, kinds)
+

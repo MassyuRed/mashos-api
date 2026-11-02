@@ -171,6 +171,8 @@ def _checked_projection(projection, report_id):
             _require(type(a['target_ref']) is str and a['target_ref'] in thought_refs)
             if a['kind'] == 'PROTECTIVE':
                 label = next(n['visible_label'] for n in nodes if n['node_ref'] == a['target_ref'])
+                from cocolon_meaning_experience_engine.cores.analysis.observed_route_realizer import category_label_base
+                label = category_label_base(label)
                 suffix = '守ることへの希望'
                 _require(label.endswith(suffix) and _protective_wish_proposition(
                     '私は' + label[:-len(suffix)] + '守りたい') is not None)
@@ -369,3 +371,4 @@ async def saved_status(user_id, *, period='28d'):
         'generated_at': row['generated_at'] if row else None,
         'saved_report_mode': row['report_mode'] if row else None,
         'has_visible_content': bool(row), 'skip_reason': None if row else 'analysis_saved_map_unavailable'}
+

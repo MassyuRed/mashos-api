@@ -117,6 +117,57 @@ class CumulativeReadTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(rpc.await_args.args[1]['p_existing_id'], fx['id'])
 
 
+
+    async def test_legacy_current_refreshes_once_but_monthly_snapshot_remains_unchanged(self):
+        from datetime import datetime, timedelta, timezone
+        from cocolon_meaning_experience_engine.cores.analysis.observed_route_realizer import ObservedSelfStructureMap
+        snapshot = source_snapshot(1)
+        artifact, coverage = service.build_cumulative_map(OWNER, snapshot)
+        projection = artifact.safe_projection(authenticated_owner_scope=OWNER)
+        rid = str(UUID(artifact.artifact_id[9:]))
+        row = dict(id=rid, source_profile='cumulative.v1', report_mode='standard', report_type='latest',
+            title='わたしマップ', period_start=snapshot['period_start'], period_end=snapshot['period_end'],
+            generated_at=snapshot['period_end'], snapshot_month=None, captured_at=None,
+            content_text=artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text'],
+            content_json=dict(report_mode='standard', watashiMap=projection, map_context=coverage))
+        old = copy.deepcopy(row)
+        old['id'] = str(UUID(int=999))
+        old['content_json']['watashiMap']['projection_of'] = 'artifact:' + UUID(int=999).hex + '@1'
+        for node in old['content_json']['watashiMap']['nodes']:
+            node['visible_label'] = node['visible_label'].split('\n', 1)[1]
+        old['content_text'] = ObservedSelfStructureMap._text_from_visual(old['content_json']['watashiMap'])['text']
+        untouched = copy.deepcopy(old)
+        reads = AsyncMock(side_effect=[{'items':[old]}, {'items':[row]}, {'items':[row]}, {'items':[row]}])
+        rpc = AsyncMock(side_effect=[snapshot, rid, snapshot, rid])
+        builder = service.build_cumulative_map
+        with patch.object(service, 'read_maps', reads), patch.object(service, '_rpc', rpc), \
+                patch.object(service, 'observed_mode', return_value='development'), \
+                patch.object(service, 'build_cumulative_map', wraps=builder) as build:
+            first = await service.ensure_map(OWNER)
+            second = await service.ensure_map(OWNER)
+        self.assertTrue(first['refreshed'])
+        self.assertFalse(second['refreshed'])
+        self.assertEqual(build.call_count, 1)
+        self.assertTrue(rpc.await_args_list[1].args[1]['p_force'])
+        self.assertEqual(rpc.await_args_list[3].args[1]['p_existing_id'], rid)
+        self.assertEqual(old, untouched)
+        old['snapshot_month'] = datetime.now(timezone(timedelta(hours=9))).date().replace(day=1).isoformat()
+        with patch.object(service, 'read_maps', AsyncMock(return_value={'items':[old]})), \
+                patch.object(service, 'build_cumulative_map', side_effect=AssertionError('monthly must not rebuild')), \
+                patch.object(service, '_rpc', side_effect=AssertionError('monthly must not write')):
+            historical = await service.ensure_map(OWNER, monthly=True)
+        self.assertEqual(historical['meta'], old['content_json']['watashiMap'])
+        self.assertEqual(historical['content_text'], untouched['content_text'])
+
+    async def test_category_context_protective_projection_passes_the_saved_wire_validator(self):
+        from analysis_observed_service import _checked_projection
+        snapshot = source_snapshot(1)
+        snapshot['members'][0]['original']['memo'] = '私は家族を守りたい。'
+        artifact, _ = service.build_cumulative_map(OWNER, snapshot)
+        projection = artifact.safe_projection(authenticated_owner_scope=OWNER)
+        self.assertEqual(_checked_projection(projection, str(UUID(artifact.artifact_id[9:]))), projection)
+
+
 def test_real_q3_saved_answers_cross_trimmed_sql_source_and_cumulative_lifecycle(monkeypatch):
     import asyncio
     from dataclasses import asdict
@@ -195,3 +246,4 @@ def test_real_q3_saved_answers_cross_trimmed_sql_source_and_cumulative_lifecycle
 
 if __name__ == '__main__':
     unittest.main()
+

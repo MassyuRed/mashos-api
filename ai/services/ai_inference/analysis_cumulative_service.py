@@ -180,13 +180,26 @@ def prepare_cumulative_quoted_parent_units(owner, snapshot):
     return prepare_analysis_model_quoted_parent_units(prepared.request, source_guard=prepared.source_guard)
 
 
+def prepare_cumulative_category_units(owner, snapshot):
+    """Current category-aware 4B preparation; legacy saved probes stay v1."""
+    from dataclasses import replace
+    from cocolon_meaning_experience_engine.cores.analysis.semantic_admission import (
+        prepare_analysis_model_quoted_parent_units, QUOTED_PARENT_CATEGORY_PROFILE)
+    prepared = prepare_cumulative_model_fields(owner, snapshot)
+    request = replace(prepared.request, selected_category_context=True)
+    return prepare_analysis_model_quoted_parent_units(request, source_guard=prepared.source_guard,
+        prompt_version=QUOTED_PARENT_CATEGORY_PROFILE)
+
+
 def build_cumulative_quoted_parent_candidates(owner, snapshot, *, model_input):
     from cocolon_meaning_experience_engine import MeaningExperienceEngine
     from cocolon_meaning_experience_engine.cores.analysis.semantic_admission import (
         AnalysisModelQuotedParentUnitsInput, require)
     require(type(model_input) is AnalysisModelQuotedParentUnitsInput,
             'analysis_quoted_parent_units_binding_invalid')
-    expected = prepare_cumulative_quoted_parent_units(owner, snapshot)
+    expected = (prepare_cumulative_category_units(owner, snapshot)
+        if model_input.prompt_version == 'selected_categories.v1'
+        else prepare_cumulative_quoted_parent_units(owner, snapshot))
     require(model_input.request == expected.request and model_input.request_ref == expected.request_ref
         and model_input.source_guard == expected.source_guard, 'analysis_quoted_parent_units_binding_invalid')
     artifact = MeaningExperienceEngine().generate(expected.request, semantic_input=model_input)
@@ -198,7 +211,9 @@ def serialize_cumulative_quoted_parent_candidates(owner, snapshot, *, model_inpu
         AnalysisModelQuotedParentUnitsInput, canonical, require, serialize_analysis_model_quoted_parent_units)
     require(type(model_input) is AnalysisModelQuotedParentUnitsInput,
             'analysis_quoted_parent_units_binding_invalid')
-    expected = prepare_cumulative_quoted_parent_units(owner, snapshot)
+    expected = (prepare_cumulative_category_units(owner, snapshot)
+        if model_input.prompt_version == 'selected_categories.v1'
+        else prepare_cumulative_quoted_parent_units(owner, snapshot))
     require(model_input.request == expected.request and model_input.request_ref == expected.request_ref
         and model_input.source_guard == expected.source_guard
         and canonical(coverage) == canonical(_unit_candidate_coverage(expected, snapshot)),
@@ -210,8 +225,11 @@ def serialize_cumulative_quoted_parent_candidates(owner, snapshot, *, model_inpu
 def reload_cumulative_quoted_parent_candidates(owner, snapshot, raw):
     from cocolon_meaning_experience_engine.cores.analysis.semantic_admission import (
         _load, canonical, require, reload_analysis_model_quoted_parent_units)
-    prepared = prepare_cumulative_quoted_parent_units(owner, snapshot)
     saved = _load(raw)
+    prepared = (prepare_cumulative_category_units(owner, snapshot)
+        if type(saved) is dict and type(saved.get('state')) is dict
+        and saved['state'].get('prompt_version') == 'selected_categories.v1'
+        else prepare_cumulative_quoted_parent_units(owner, snapshot))
     require(type(saved) is dict and set(saved) == {'schema_version','coverage','state'}
         and saved['schema_version'] == 'cocolon.cmee.cumulative_quoted_parent_unit_candidates_file.v1'
         and canonical(saved['coverage']) == canonical(_unit_candidate_coverage(prepared, snapshot)),
@@ -260,7 +278,8 @@ def build_cumulative_map(owner, snapshot, *, model_input=None):
             start=_time(start), end=_time(end), cumulative=True)
         if raw.get('thread') and raw['thread'].get('source_snapshot') != raw['original']:
             stale += sum(e.get('kind') == 'ANSWER' for e in raw['events'])
-        single = AnalysisObservedMapRequest(request_id, owner, start, end, (member,))
+        single = AnalysisObservedMapRequest(request_id, owner, start, end, (member,),
+            selected_category_context=True)
         try:
             graph = compile_observed_graph(freeze_analysis_sources(single))
         except AnalysisSourceError as exc:
@@ -278,7 +297,8 @@ def build_cumulative_map(owner, snapshot, *, model_input=None):
         excluded_count=sum(reasons.values()), exclusion_reasons=dict(reasons), stale_supplement_count=stale))
     if not records:
         return None, coverage
-    request = AnalysisObservedMapRequest(request_id, owner, start, end, tuple(records))
+    request = AnalysisObservedMapRequest(request_id, owner, start, end, tuple(records),
+        selected_category_context=True)
     outcome = MeaningExperienceEngine().generate(request)
     if (outcome.artifact is None and outcome.status is EngineStatus.UNAVAILABLE
             and outcome.reason_codes == ('analysis_observed_route_not_established',)):
@@ -307,7 +327,14 @@ async def ensure_map(user_id, *, ensure=True, force=False, monthly=False):
         if not re.fullmatch(r'analysis-db-cumulative-v1:[0-9a-f]{64}', snapshot['guard']):
             raise HTTPException(503, 'analysis_saved_source_unavailable')
         # The commit is also the idempotent monthly capture for a reused map.
-        if current_row and not force:
+        # Refresh an old current once under the category policy. Historical
+        # month references are immutable and returned above without rebuilding.
+        from cocolon_meaning_experience_engine.cores.analysis.observed_route_realizer import CATEGORY_LABEL_PREFIX
+        category_current = bool(current_row and all(
+            n['visible_label'].startswith(CATEGORY_LABEL_PREFIX) and '\n' in n['visible_label']
+            for n in current_row['content_json']['watashiMap']['nodes']))
+        refresh_category_policy = bool(current_row and not category_current)
+        if current_row and not force and not refresh_category_policy:
             rid = await _rpc('analysis_cumulative_commit', dict(p_user_id=owner, p_guard=snapshot['guard'],
                 p_existing_id=current_row['id']))
         else:
@@ -325,7 +352,8 @@ async def ensure_map(user_id, *, ensure=True, force=False, monthly=False):
             _checked_projection(projection, str(UUID(artifact.artifact_id[9:])))
             rid = await _rpc('analysis_cumulative_commit', dict(p_user_id=owner, p_guard=snapshot['guard'],
                 p_artifact_id=artifact.artifact_id, p_private_evidence=private, p_projection=projection,
-                p_text=text, p_start=snapshot['period_start'], p_end=snapshot['period_end'], p_force=force))
+                p_text=text, p_start=snapshot['period_start'], p_end=snapshot['period_end'],
+                p_force=force or refresh_category_policy))
             refreshed = True
         checked = await read_maps(owner, report_id=rid if not monthly else None,
             history=monthly, month=this_month if monthly else None, limit=1)
@@ -404,3 +432,4 @@ def _project_evidence(owner, raw):
             memo=original['memo'], memo_action=original['memo_action'],
             answers=answers, version_state='CURRENT' if unchanged else 'EDITED_SINCE_ANALYSIS'))
     return items
+

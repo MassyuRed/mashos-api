@@ -21,6 +21,7 @@ from .intent_compiler import (ObservedGraph, NODE_KINDS, compile_observed_graph,
 from .source_adapter import (
     AnalysisObservedMapRequest, AnalysisSourceError, AnalysisSourceMember,
     freeze_analysis_sources,
+    record_selected_categories, commitment,
 )
 
 logger = logging.getLogger(__name__)
@@ -137,6 +138,43 @@ LABELS = {'SCENE': '場面', 'ROLE': '役割',
           'IMMEDIATE_RESULT_OR_AFTERMATH': '結果・余韻',
           'SOURCE_SCOPE': 'まだ読み取れていない内容',
           'ROUTE_CONNECTION': '段階同士のつながり'}
+
+CATEGORY_LABEL_PREFIX = '選択カテゴリ：'
+
+
+def category_label_base(label):
+    """The existing wire stays closed; only its visible text gains context."""
+    if label.startswith(CATEGORY_LABEL_PREFIX) and '\n' in label:
+        return label.split('\n', 1)[1]
+    return label
+
+
+def _category_label(node, label, members, records, owner_scope):
+    if not node.selected_category_context:
+        if node.selected_categories or records:
+            raise AnalysisSourceError('analysis_record_version_mismatch')
+        return label
+    if type(node.selected_categories) is not tuple or not node.record_refs:
+        raise AnalysisSourceError('analysis_record_version_mismatch')
+    owned_envelopes = set()
+    for ref in node.record_refs:
+        matches = [r for r in records if r.saved_record_ref == ref]
+        declared = [m for m in members if m.saved_record_ref == ref
+            and len(matches) == 1 and m.saved_record_version == matches[0].saved_record_version
+            and m.inclusion_status == 'INCLUDED']
+        if (len(matches) != 1 or len(declared) != 1
+                or matches[0].owner_scope != owner_scope or not any(m.saved_record_ref == ref
+                and m.saved_record_version == matches[0].saved_record_version
+                and m.inclusion_status == 'INCLUDED' for m in members)
+                or record_selected_categories(matches[0]) != node.selected_categories):
+            raise AnalysisSourceError('analysis_record_version_mismatch')
+        envelopes = set(declared[0].child_source_envelope_refs)
+        if not any(e.source_envelope_id in envelopes for e in node.evidence_refs):
+            raise AnalysisSourceError('analysis_record_version_mismatch')
+        owned_envelopes.update(envelopes)
+    if not node.evidence_refs or any(e.source_envelope_id not in owned_envelopes for e in node.evidence_refs):
+        raise AnalysisSourceError('analysis_record_version_mismatch')
+    return CATEGORY_LABEL_PREFIX + ('・'.join(node.selected_categories) or '未選択') + '\n' + label
 
 CONFLICT_LABEL = '同じ記録に肯定と否定の記述があります。同じ機会のことかは確定していません。'
 BURDEN_LABELS = {predicate: 'この希望と対比して、' + predicate
@@ -323,6 +361,8 @@ class ObservedSelfStructureMap:
     epistemic_partition: str = 'OBSERVED'
     wire_kind: str = 'watashi.map.v2'
     period_comparison: PeriodComparison | None = None
+    # Request-local original proofs; never copied into public or saved DTOs.
+    category_records: tuple = ()
 
     @property
     def reference(self):
@@ -435,7 +475,7 @@ class ObservedSelfStructureMap:
             'period_label': ' ～ '.join(self.period),
             'period_comparison': self._comparison_projection(),
             'nodes': [{'node_ref': n.node_ref, 'node_kind': n.node_kind,
-                'visible_label': n.visible_label,
+                'visible_label': _category_label(n, n.visible_label, self.source_members, self.category_records, self.owner_scope),
                 'evidence_badge_count': len(n.record_refs)} for n in self.graph.nodes],
             'edges': [dict({'edge_ref': e.edge_ref, 'edge_kind': e.edge_kind,
                 'visible_label': ('記録内に書かれた順序' if e.edge_kind == 'OBSERVED_ORDER'
@@ -464,9 +504,10 @@ class ObservedSelfStructureMap:
         """
         if authenticated_owner_scope != self.owner_scope:
             raise AnalysisSourceError('analysis_projection_owner_mismatch')
-        labels = {node.node_ref: _safe_label(node, self.graph,
+        labels = {node.node_ref: _category_label(node, _safe_label(node, self.graph,
             owner_scope=self.owner_scope, source_set_ref=self.source_set_ref,
-            source_members=self.source_members) for node in self.graph.nodes}
+            source_members=self.source_members), self.source_members, self.category_records, self.owner_scope)
+            for node in self.graph.nodes}
         return {
             'schema_version': 'cocolon.cmee.analysis_watashi_map_safe_projection.v1alpha1',
             'wire_kind': 'watashi.map.v2', 'projection_of': self.reference,
@@ -562,7 +603,7 @@ def _generate_single_observed_map(request: AnalysisObservedMapRequest, *,
                 'analysis_observed_route_not_established', stage=period_role)
         artifact = ObservedSelfStructureMap('artifact:' + uuid4().hex, 1,
             sources.owner_scope, sources.source_set_ref, sources.period,
-            graph, sources.members)
+            graph, sources.members, category_records=sources.category_records)
         # A partial observed map is a valid result, not a fallback to v1.
         return AnalysisEngineOutcome(EngineStatus.GENERATED,
             ('analysis_partial_observed_map',), artifact)
@@ -578,7 +619,8 @@ def generate_observed_map(request: AnalysisObservedMapRequest) -> AnalysisEngine
     if previous is None:
         return _generate_single_observed_map(request)
     if (type(previous) is not AnalysisObservedMapRequest
-            or previous.comparison_previous_request is not None):
+            or previous.comparison_previous_request is not None
+            or previous.selected_category_context != request.selected_category_context):
         return _failed_outcome(EngineStatus.REJECTED, 'analysis_comparison_request_invalid',
                                stage='comparison')
     if previous.authenticated_owner_scope != request.authenticated_owner_scope:
@@ -858,3 +900,4 @@ def validate_semantic_artifact(snapshot, graph, artifact):
 def artifact_from_payload(snapshot, graph, payload):
     artifact = AnalysisSemanticArtifactV1(_semantic_json(payload))
     return validate_semantic_artifact(snapshot, graph, artifact)
+

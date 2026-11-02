@@ -71,6 +71,8 @@ class AnalysisObservedMapRequest:
     # Internal, owner-resolved raw sources only. Never a saved/public DTO or
     # generated text used as input. One previous period, no comparison chain.
     comparison_previous_request: AnalysisObservedMapRequest | None = None
+    # Cumulative category policy; legacy/offline snapshots retain their old policy.
+    selected_category_context: bool = False
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -101,6 +103,25 @@ class AnalysisSourceSet:
     period: tuple[str, str]
     members: tuple[AnalysisSourceMember, ...]
     sources: tuple[AnalysisSource, ...]
+    category_records: tuple[AnalysisSavedRecord, ...] = ()
+
+
+def record_selected_categories(record: AnalysisSavedRecord) -> tuple[str, ...]:
+    """User-selected content labels, never inferred scene/role/cause evidence."""
+    original = json.loads(record.original_json)
+    if (original.get('id') != record.saved_record_ref
+            or commitment(original) != record.saved_record_version):
+        raise AnalysisSourceError('analysis_record_version_mismatch')
+    return tuple(sorted(normalize_emlis_current_input(original)['category']))
+
+
+def selected_categories(source_set: AnalysisSourceSet, record_ref: str):
+    if not source_set.category_records:
+        return None
+    matches = [r for r in source_set.category_records if r.saved_record_ref == record_ref]
+    if len(matches) != 1:
+        raise AnalysisSourceError('analysis_record_version_mismatch')
+    return record_selected_categories(matches[0])
 
 
 def _time(value: str, *, saved_utc: bool = False) -> datetime:
@@ -208,7 +229,8 @@ def freeze_analysis_sources(request: AnalysisObservedMapRequest) -> AnalysisSour
             request.locale != 'ja-JP' or not request.request_id or
             not isinstance(request.authenticated_owner_scope, str) or
             not request.authenticated_owner_scope.strip() or
-            not isinstance(request.members, tuple)):
+            not isinstance(request.members, tuple) or
+            type(request.selected_category_context) is not bool):
         raise AnalysisSourceError('analysis_request_out_of_scope')
     start, end = _time(request.period_start), _time(request.period_end)
     if start >= end:
@@ -276,7 +298,15 @@ def freeze_analysis_sources(request: AnalysisObservedMapRequest) -> AnalysisSour
             'INCLUDED' if included else 'EXCLUDED',
             'IN_PERIOD' if included else 'OUTSIDE_PERIOD', tuple(children)))
     period = (start.isoformat(), end.isoformat())
-    source_set_ref = 'analysis-set:' + commitment([
-        request.authenticated_owner_scope, period, [asdict(m) for m in members], POLICY])[7:]
+    identity = [request.authenticated_owner_scope, period, [asdict(m) for m in members], POLICY]
+    category_records = ()
+    if request.selected_category_context:
+        identity.append('selected-category-context.v1')
+        included_refs = {m.saved_record_ref for m in members if m.inclusion_status == 'INCLUDED'}
+        category_records = tuple(m for m, _ in originals.values() if m.saved_record_ref in included_refs)
+        for record in category_records:
+            record_selected_categories(record)
+    source_set_ref = 'analysis-set:' + commitment(identity)[7:]
     return AnalysisSourceSet(source_set_ref, request.authenticated_owner_scope,
-                             period, tuple(members), tuple(sources))
+                             period, tuple(members), tuple(sources), category_records)
+

@@ -21,7 +21,7 @@ from emlis_ai_grounded_observation_plan import (
 from ...contracts import EvidenceRef
 from ...emlis_answer_update import _WITHDRAWAL, _REPLACEMENT
 from .source_adapter import (AnalysisSourceError, AnalysisSourceSet, commitment,
-                            scoped_source_view, source_field_text)
+                            scoped_source_view, source_field_text, selected_categories)
 
 NODE_KINDS = ('SCENE', 'ROLE', 'ATTENTION_OR_THOUGHT',
               'ACTION_OR_NONACTION', 'IMMEDIATE_RESULT_OR_AFTERMATH')
@@ -1028,6 +1028,8 @@ class ObservedNode:
     proposition: ObservedProposition | None = None
     update_refs: tuple[str, ...] = ()
     quoted_field: ObservedQuotedField | None = None
+    selected_categories: tuple[str, ...] = ()
+    selected_category_context: bool = False
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -1120,7 +1122,8 @@ def _period_meaning_groups(graph):
         if p is None:
             raise AnalysisSourceError('analysis_comparison_meaning_unavailable')
         return (n.node_kind, _proposition_meaning(p), n.polarity, n.modality,
-                n.temporal_scope, p.relative_day, p.sequence_marker)
+                n.temporal_scope, p.relative_day, p.sequence_marker,
+                n.selected_categories if n.selected_category_context else None)
     nodes = {n.node_ref: n for n in graph.nodes}
     keys = {ref: node_key(n) for ref, n in nodes.items()}
     groups = {kind: {} for kind in ('ROUTE_EVIDENCE_CHANGED',
@@ -2216,14 +2219,16 @@ def compile_observed_graph(source_set: AnalysisSourceSet) -> ObservedGraph:
             # Each source's 今回 names its own occasion, even with a written SELF.
             occasion_scope = (source.envelope.envelope_id if proposition
                 and 'THIS_OCCASION' in proposition.written_modifiers else None)
-            signature = (kind, meaning, polarity, modality, time, occurrence_scope, day_scope, occasion_scope)
+            categories = selected_categories(source_set, source.record_ref)
+            signature = (kind, meaning, polarity, modality, time, occurrence_scope, day_scope, occasion_scope, categories)
             index = by_signature.get(signature)
             if index is None:
                 index = len(nodes)
                 by_signature[signature] = index
                 nodes.append(ObservedNode('n' + str(index + 1), kind, label,
                     (source.record_ref,), (evidence,), polarity,
-                    modality, time, proposition, node_updates))
+                    modality, time, proposition, node_updates,
+                    selected_categories=categories or (), selected_category_context=categories is not None))
             else:
                 old = nodes[index]
                 nodes[index] = replace(old,
@@ -2546,3 +2551,4 @@ def validate_semantic_graph(snapshot, graph):
 def graph_from_payload(snapshot, payload):
     graph = AnalysisSemanticGraphV1(_semantic_json(payload))
     return validate_semantic_graph(snapshot, graph)
+
