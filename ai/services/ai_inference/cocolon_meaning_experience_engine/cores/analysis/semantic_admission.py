@@ -1205,7 +1205,8 @@ def _validate_written_role_artifact(model_input, artifact):
         and artifact.period_comparison is None
         and canonical([asdict(m) for m in artifact.source_members]) ==
             canonical([asdict(m) for m in frozen.members])
-        and canonical(artifact.category_records) == canonical(frozen.category_records),
+        and canonical([asdict(m) for m in artifact.category_records]) ==
+            canonical([asdict(m) for m in frozen.category_records]),
         'analysis_written_role_artifact_changed')
     validate_model_written_role_graph(frozen, field, artifact.graph)
     return frozen
