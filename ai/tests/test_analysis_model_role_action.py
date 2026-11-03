@@ -67,6 +67,9 @@ def test_role_and_action_keep_polarity_fields_evidence_and_missing_route(role_ne
     candidate, counts = service.build_cumulative_quoted_parent_candidates(OWNER, snap, model_input=value)
     assert counts['mapped_count'] == 0 and all(u.actor == 'UNRESOLVED_NOT_OWNER_DERIVED'
         for f in candidate.graph.fields for u in f.units)
+    action_field = next(f for f in candidate.graph.fields if f.units[0].node_kind == 'ACTION_OR_NONACTION')
+    assert action.evidence_refs == (action_field.units[0].evidence,)
+    assert action.evidence_refs[0].evidence_id != action_field.evidence.evidence_id
     with pytest.raises(AnalysisSemanticUnsupported):
         service.build_cumulative_written_role_map(OWNER, snap, model_input=value)
 

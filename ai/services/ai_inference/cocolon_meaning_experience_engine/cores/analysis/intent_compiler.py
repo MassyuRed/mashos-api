@@ -1270,7 +1270,9 @@ def _model_written_role_action_proof(source_set, fields):
                 and q.evidence.scalar_start >= finite[0])
             if not (actor or negative):
                 raise AnalysisSourceError('analysis_written_role_action_qualifier_mismatch')
-    evidence = replace(action.evidence, scalar_end=len(label),
+    evidence = replace(action.evidence,
+        evidence_id='analysis-unit-evidence:' + commitment([action.field_ref, 0, len(label)])[7:],
+        scalar_end=len(label),
         utf8_end=action.evidence.field_utf8_start + len(label.encode('utf-8')),
         literal_sha256=hashlib.sha256(label.encode('utf-8')).hexdigest())
     return role, role_p, action, p, evidence, label, categories
@@ -1300,7 +1302,8 @@ def validate_model_written_role_action_graph(source_set, fields, graph):
     # Recheck the two complete source witnesses in place, without invoking a
     # graph compiler, a language author, or a model during saved-file reads.
     from dataclasses import asdict
-    if (type(graph) is not ObservedGraph or graph.edges or graph.source_updates
+    if (type(graph) is not ObservedGraph or type(graph.nodes) is not tuple
+            or type(graph.unknown_gaps) is not tuple or graph.edges or graph.source_updates
             or graph.conflicts or graph.annotations
             or _semantic_json([asdict(n) for n in graph.nodes]) !=
                _semantic_json([asdict(n) for n in _written_role_action_nodes(source_set, fields)])
