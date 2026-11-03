@@ -1242,28 +1242,30 @@ def reload_analysis_model_quoted_parent_units(prepared, raw):
 
 
 MODEL_WRITTEN_ROLE_STATE = 'cocolon.cmee.analysis_model_written_role_state.v1'
+MODEL_WRITTEN_ROLE_ACTION_STATE = 'cocolon.cmee.analysis_model_written_role_action_state.v1'
 
 
-def _written_role_material(request, model_input):
+def _written_role_material(request, model_input, *, with_action=False):
     frozen, fields, response_ref = _admit_quoted_parent_units(request, model_input)
-    if len(frozen.members) != 1 or len(fields) != 1 or any(m.supplements for m in request.members):
+    require(type(with_action) is bool, 'analysis_written_role_scope_unsupported')
+    if len(frozen.members) != 1 or len(fields) != (2 if with_action else 1) or any(m.supplements for m in request.members):
         raise AnalysisSemanticUnsupported('analysis_written_role_scope_unsupported')
-    return frozen, fields[0], response_ref
+    return frozen, fields if with_action else fields[0], response_ref
 
 
-def generate_analysis_model_written_role(request, model_input):
+def generate_analysis_model_written_role(request, model_input, *, with_action=False):
     """Explicit partial-frame admission; never upgrade the old unit artifact.
 
     The first vertical consumes one original record with one nonempty field.
     The whole source witness closes actor, role relation, polarity and tense;
     a candidate's actor qualifier or the authenticated owner cannot do that.
     """
-    from .intent_compiler import compile_model_written_role_graph
+    from .intent_compiler import compile_model_written_role_graph, compile_model_written_role_action_graph
     from .observed_route_realizer import realize_model_written_role_graph
-    frozen, field, response_ref = _written_role_material(request, model_input)
-    graph = compile_model_written_role_graph(frozen, field)
+    frozen, field, response_ref = _written_role_material(request, model_input, with_action=with_action)
+    graph = (compile_model_written_role_action_graph if with_action else compile_model_written_role_graph)(frozen, field)
     return realize_model_written_role_graph(frozen, graph,
-        request_ref=model_input.request_ref, response_ref=response_ref)
+        request_ref=model_input.request_ref, response_ref=response_ref, with_action=with_action)
 
 
 def _written_role_artifact_payload(artifact):
@@ -1274,14 +1276,15 @@ def _written_role_artifact_payload(artifact):
         diagram=artifact.safe_projection(authenticated_owner_scope=artifact.owner_scope))
 
 
-def _validate_written_role_artifact(model_input, artifact):
-    from .intent_compiler import validate_model_written_role_graph
+def _validate_written_role_artifact(model_input, artifact, *, with_action=False):
+    from .intent_compiler import validate_model_written_role_graph, validate_model_written_role_action_graph
     from .observed_route_realizer import ObservedSelfStructureMap
-    frozen, field, response_ref = _written_role_material(model_input.request, model_input)
+    frozen, field, response_ref = _written_role_material(model_input.request, model_input, with_action=with_action)
     require(type(artifact) is ObservedSelfStructureMap,
             'analysis_written_role_artifact_changed')
     expected_id = 'artifact:' + commitment([
-        'analysis_model_written_role.v1', model_input.request_ref, response_ref])[7:]
+        'analysis_model_written_role_action.v1' if with_action else 'analysis_model_written_role.v1',
+        model_input.request_ref, response_ref])[7:]
     require(canonical([artifact.artifact_id, artifact.artifact_version, artifact.owner_scope,
         artifact.source_set_ref, artifact.period, artifact.artifact_kind,
         artifact.epistemic_partition, artifact.wire_kind]) == canonical([
@@ -1293,18 +1296,18 @@ def _validate_written_role_artifact(model_input, artifact):
         and canonical([asdict(m) for m in artifact.category_records]) ==
             canonical([asdict(m) for m in frozen.category_records]),
         'analysis_written_role_artifact_changed')
-    validate_model_written_role_graph(frozen, field, artifact.graph)
+    (validate_model_written_role_action_graph if with_action else validate_model_written_role_graph)(frozen, field, artifact.graph)
     return frozen
 
 
-def serialize_analysis_model_written_role(model_input, artifact):
-    _validate_written_role_artifact(model_input, artifact)
-    return canonical(dict(schema_version=MODEL_WRITTEN_ROLE_STATE,
+def serialize_analysis_model_written_role(model_input, artifact, *, with_action=False):
+    _validate_written_role_artifact(model_input, artifact, with_action=with_action)
+    return canonical(dict(schema_version=MODEL_WRITTEN_ROLE_ACTION_STATE if with_action else MODEL_WRITTEN_ROLE_STATE,
         request_ref=model_input.request_ref, prompt_version=model_input.prompt_version,
         response=asdict(model_input.response), artifact=_written_role_artifact_payload(artifact)))
 
 
-def reload_analysis_model_written_role(prepared, raw):
+def reload_analysis_model_written_role(prepared, raw, *, with_action=False):
     from .intent_compiler import (ObservedGraph, ObservedNode, ObservedProposition, UnknownGap)
     from .observed_route_realizer import ObservedSelfStructureMap
     from ...contracts import EvidenceRef
@@ -1313,35 +1316,38 @@ def reload_analysis_model_written_role(prepared, raw):
     saved = _load(raw)
     require(type(saved) is dict and set(saved) == {
         'schema_version', 'request_ref', 'prompt_version', 'response', 'artifact'}
-        and saved['schema_version'] == MODEL_WRITTEN_ROLE_STATE
+        and saved['schema_version'] == (MODEL_WRITTEN_ROLE_ACTION_STATE if with_action else MODEL_WRITTEN_ROLE_STATE)
         and saved['request_ref'] == prepared.request_ref
         and saved['prompt_version'] == prepared.prompt_version
         and type(saved['response']) is dict and set(saved['response']) == {
             'request_ref', 'messages_sha256', 'raw_sha256', 'finish_reason', 'raw'},
         'analysis_written_role_saved_schema_invalid')
     value = replace(prepared, response=AnalysisModelQuotedParentUnitsResponse(**saved['response']))
-    frozen, _, _ = _written_role_material(prepared.request, value)
+    frozen, _, _ = _written_role_material(prepared.request, value, with_action=with_action)
     data = saved['artifact']
     require(type(data) is dict and set(data) == {'artifact_id','artifact_version','owner_scope',
         'source_set_ref','period','graph','text','diagram'} and type(data['graph']) is dict,
         'analysis_written_role_saved_artifact_changed')
     g = data['graph']
     require(set(g) == {'nodes','edges','unknown_gaps','source_updates','conflicts','annotations'}
-        and type(g['nodes']) is list and len(g['nodes']) == 1
+        and type(g['nodes']) is list and len(g['nodes']) == (2 if with_action else 1)
         and all(g[k] == [] for k in ('edges','source_updates','conflicts','annotations')),
         'analysis_written_role_saved_artifact_changed')
     try:
-        row = dict(g['nodes'][0]); p = dict(row['proposition'])
-        p.update(arguments=tuple(tuple(a) for a in p['arguments']),
-            source_parts=tuple(tuple(a) for a in p['source_parts']),
-            written_modifiers=tuple(p['written_modifiers']))
-        row.update(proposition=ObservedProposition(**p),
-            evidence_refs=tuple(EvidenceRef(**e) for e in row['evidence_refs']),
-            record_refs=tuple(row['record_refs']), update_refs=tuple(row['update_refs']),
-            selected_categories=tuple(row['selected_categories']))
+        nodes = []
+        for node in g['nodes']:
+            row = dict(node); p = dict(row['proposition'])
+            p.update(arguments=tuple(tuple(a) for a in p['arguments']),
+                source_parts=tuple(tuple(a) for a in p['source_parts']),
+                written_modifiers=tuple(p['written_modifiers']))
+            row.update(proposition=ObservedProposition(**p),
+                evidence_refs=tuple(EvidenceRef(**e) for e in row['evidence_refs']),
+                record_refs=tuple(row['record_refs']), update_refs=tuple(row['update_refs']),
+                selected_categories=tuple(row['selected_categories']))
+            nodes.append(ObservedNode(**row))
         gaps = tuple(UnknownGap(**dict(x, between_node_refs=tuple(x['between_node_refs'])))
             for x in g['unknown_gaps'])
-        graph = ObservedGraph((ObservedNode(**row),), (), gaps)
+        graph = ObservedGraph(tuple(nodes), (), gaps)
         artifact = ObservedSelfStructureMap(data['artifact_id'], data['artifact_version'],
             data['owner_scope'], data['source_set_ref'], tuple(data['period']), graph,
             frozen.members, category_records=frozen.category_records)
@@ -1349,7 +1355,7 @@ def reload_analysis_model_written_role(prepared, raw):
         raise AnalysisSemanticError('analysis_written_role_saved_artifact_changed') from None
     # Restore the immutable saved graph, then validate source, typed meaning,
     # and the stored projections. Never compile, author or call a model here.
-    _validate_written_role_artifact(value, artifact)
+    _validate_written_role_artifact(value, artifact, with_action=with_action)
     require(canonical(data) == canonical(_written_role_artifact_payload(artifact)),
             'analysis_written_role_saved_artifact_changed')
     return artifact

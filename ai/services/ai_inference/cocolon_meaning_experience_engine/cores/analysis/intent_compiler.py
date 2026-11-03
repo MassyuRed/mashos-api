@@ -1210,6 +1210,106 @@ def validate_model_written_role_graph(source_set, field, graph):
     return graph
 
 
+def _model_written_role_action_proof(source_set, fields):
+    """Two complete original fields: written role and finite SELF past action.
+
+    This reuses the established grammars. No cross-field order, motive,
+    responsibility-to-action inference, or unresolved remainder is admitted.
+    """
+    if (len(source_set.members) != 1 or len(source_set.sources) != 1
+            or source_set.sources[0].envelope.source_role != 'ORIGINAL_INPUT'
+            or len(fields) != 2 or {f.field_path for f in fields} != {'memo', 'memo_action'}):
+        raise AnalysisSourceError('analysis_written_role_action_scope_unsupported')
+    roles = [f for f in fields if _written_role_proposition(f.complete_source_text) is not None]
+    if len(roles) != 1:
+        raise AnalysisSourceError('analysis_written_role_action_scope_unsupported')
+    role = roles[0]
+    role_p, categories = _model_written_role_proof(source_set, role)
+    action = next(f for f in fields if f is not role)
+    text = action.complete_source_text
+    label = text.rstrip('。．.')
+    p = _proposition(label)
+    if (text not in {label, label + '。', label + '．', label + '.'}
+            or p is None or p.actor != 'SELF' or p.modality != 'fact' or p.temporal_scope != 'past'
+            or p.polarity not in {'positive', 'negative'} or p.predicate_lemma not in _PAST_ACTION_LEMMAS
+            or _proposition_node_kind(p) != 'ACTION_OR_NONACTION'
+            or any((p.sequence_marker, p.relative_day, p.possible_content, p.result_state,
+                    p.dependent_form, p.scene_state, p.role_state, p.written_modifiers))):
+        raise AnalysisSourceError('analysis_written_role_action_scope_unsupported')
+    if (action.record_ref != role.record_ref or action.record_version != role.record_version
+            or action.evidence.source_envelope_id != role.evidence.source_envelope_id
+            or action.evidence.scalar_start != 0 or action.evidence.scalar_end != len(text)
+            or action.evidence.utf8_start != action.evidence.field_utf8_start
+            or action.evidence.utf8_end != action.evidence.field_utf8_end):
+        raise AnalysisSourceError('analysis_written_role_action_binding_invalid')
+    subject = next(((a, b) for name, a, b in p.source_parts if name == 'SELF_TOPIC'), None)
+    finite = next(((a, b) for name, a, b in p.source_parts if name == 'FINITE_PREDICATE'), None)
+    if subject is None or finite is None:
+        raise AnalysisSourceError('analysis_written_role_action_scope_unsupported')
+    roots = [u for u in action.units if u.parent is None]
+    accepted = {text, label, label[subject[1]:]}
+    nouns = {noun for _, noun in p.arguments}
+    if (len(roots) != 1 or roots[0].node_kind != 'ACTION_OR_NONACTION'
+            or roots[0].scope_role is not None or roots[0].quote not in accepted
+            or any(u is not roots[0] and not (u.parent == roots[0].index
+                and u.scope_role == 'CONTENT_TARGET' and u.quote in nouns) for u in action.units)):
+        raise AnalysisSourceError('analysis_written_role_action_candidate_mismatch')
+    self_text = label[subject[0]:subject[1]].split('は', 1)[0]
+    finite_text = label[finite[0]:finite[1]]
+    operators = {finite_text}
+    match = re.search(r'(なかった(?:です)?|ませんでした)$', finite_text)
+    if match:
+        operators.add(match[0])
+    for unit in action.units:
+        for q in unit.qualifiers:
+            actor = (q.kind == 'EXPLICIT_ACTOR' and q.quote in {self_text, self_text + 'は'}
+                and q.evidence.scalar_start == subject[0]
+                and q.evidence.scalar_end == subject[0] + len(q.quote))
+            negative = (q.kind == 'NEGATION' and p.polarity == 'negative' and q.quote in operators
+                and q.evidence.scalar_end == len(label)
+                and q.evidence.scalar_start >= finite[0])
+            if not (actor or negative):
+                raise AnalysisSourceError('analysis_written_role_action_qualifier_mismatch')
+    evidence = replace(action.evidence, scalar_end=len(label),
+        utf8_end=action.evidence.field_utf8_start + len(label.encode('utf-8')),
+        literal_sha256=hashlib.sha256(label.encode('utf-8')).hexdigest())
+    return role, role_p, action, p, evidence, label, categories
+
+
+def _written_role_action_nodes(source_set, fields):
+    role, role_p, action, action_p, evidence, label, categories = _model_written_role_action_proof(source_set, fields)
+    return tuple(ObservedNode('n' + str(i), 'ROLE' if f is role else 'ACTION_OR_NONACTION',
+        f.complete_source_text if f is role else label, (f.record_ref,),
+        (f.evidence if f is role else evidence,), p.polarity, p.modality, p.temporal_scope, p,
+        selected_categories=categories or (), selected_category_context=categories is not None)
+        for i, f in enumerate(fields, 1) for p in (role_p if f is role else action_p,))
+
+
+def _written_role_action_gaps():
+    missing = tuple(k for k in NODE_KINDS if k not in {'ROLE', 'ACTION_OR_NONACTION'})
+    return tuple(UnknownGap('g' + str(i), ('n1',), k, 'NOT_ESTABLISHED_FROM_SOURCE')
+        for i, k in enumerate(missing, 1)) + (UnknownGap('g4', ('n1', 'n2'),
+            'ROUTE_CONNECTION', 'ONLY_EXPLICIT_ORDER_IS_SHOWN'),)
+
+
+def compile_model_written_role_action_graph(source_set, fields):
+    return ObservedGraph(_written_role_action_nodes(source_set, fields), (), _written_role_action_gaps())
+
+
+def validate_model_written_role_action_graph(source_set, fields, graph):
+    # Recheck the two complete source witnesses in place, without invoking a
+    # graph compiler, a language author, or a model during saved-file reads.
+    from dataclasses import asdict
+    if (type(graph) is not ObservedGraph or graph.edges or graph.source_updates
+            or graph.conflicts or graph.annotations
+            or _semantic_json([asdict(n) for n in graph.nodes]) !=
+               _semantic_json([asdict(n) for n in _written_role_action_nodes(source_set, fields)])
+            or _semantic_json([asdict(g) for g in graph.unknown_gaps]) !=
+               _semantic_json([asdict(g) for g in _written_role_action_gaps()])):
+        raise AnalysisSourceError('analysis_written_role_action_saved_graph_changed')
+    return graph
+
+
 @dataclass(frozen=True, slots=True, repr=False)
 class PeriodChange:
     change_id: str

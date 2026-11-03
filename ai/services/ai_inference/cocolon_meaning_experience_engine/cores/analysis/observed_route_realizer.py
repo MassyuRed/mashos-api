@@ -599,10 +599,11 @@ class AnalysisEngineOutcome:
             'automatic_progression': False}
 
 
-def realize_model_written_role_graph(sources, graph, *, request_ref, response_ref):
+def realize_model_written_role_graph(sources, graph, *, request_ref, response_ref, with_action=False):
     """Use the existing map author for an explicitly admitted partial frame."""
     artifact = ObservedSelfStructureMap('artifact:' + commitment([
-        'analysis_model_written_role.v1', request_ref, response_ref])[7:], 1,
+        'analysis_model_written_role_action.v1' if with_action else 'analysis_model_written_role.v1',
+        request_ref, response_ref])[7:], 1,
         sources.owner_scope, sources.source_set_ref, sources.period,
         graph, sources.members, category_records=sources.category_records)
     artifact.safe_projection(authenticated_owner_scope=sources.owner_scope)
