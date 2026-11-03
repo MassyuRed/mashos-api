@@ -71,7 +71,7 @@ async def read_piece_quota(*, authenticated_user_id: str, post_rpc) -> dict:
         raise PieceContractError('PIECE_TEMPORARILY_UNAVAILABLE') from None
 
 
-def project_piece_plan_capabilities(*, server_tier: str) -> dict:
+def project_piece_plan_capabilities(*, server_tier: str, expanded_palette: bool = False) -> dict:
     """PCE-6 plan display only; eligible formats remain the artifact's list.
 
     Neither this table nor quota.can_save authorizes a feature or a mutation.
@@ -79,10 +79,12 @@ def project_piece_plan_capabilities(*, server_tier: str) -> dict:
     """
     if type(server_tier) is not str or server_tier not in SAVE_LIMITS:
         raise PieceContractError('PIECE_TEMPORARILY_UNAVAILABLE')
+    from piece_v2_visual import LEGACY_THEME_IDS, THEME_IDS
     return {
         'format_selection': {'free': 'fixed', 'plus': 'automatic',
                              'premium': 'eligible_choice'}[server_tier],
-        'theme_ids': ['soft_paper'] if server_tier == 'free' else ['soft_paper', 'quiet_night'],
+        'theme_ids': (['soft_paper'] if server_tier == 'free' else
+                      list(THEME_IDS if expanded_palette else LEGACY_THEME_IDS)),
         'aspect_ratios': ['4:5', '9:16'] if server_tier == 'premium' else ['4:5'],
         'branding_modes': (['required_small'] if server_tier == 'free' else
                            ['required_subtle', 'off'] if server_tier == 'premium' else ['required_subtle']),

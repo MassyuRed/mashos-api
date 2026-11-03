@@ -63,6 +63,9 @@ def _boundary(params):
 def _memory_rows(rows, params):
     rows = [r for r in rows if r['owner_user_id'] == params['owner_user_id'][3:]
         and r['lifecycle_status'] == 'saved']
+    if 'visual_recipe->theme->>theme_id' in params:
+        themes = params['visual_recipe->theme->>theme_id'].removeprefix('in.(').removesuffix(')').split(',')
+        rows = [r for r in rows if r['visual_recipe']['theme']['theme_id'] in themes]
     if 'id' in params:
         rows = [r for r in rows if r['id'] == params['id'][3:]]
     else:
@@ -430,3 +433,32 @@ def test_owner_read_stop_during_io_does_not_return_body(harness, monkeypatch, ki
     assert len(s['reads']) == reads
     assert s['rows'][0]['piece_text'] not in call(path).text
     assert len(s['reads']) == reads
+
+
+def test_legacy_palette_filters_before_history_pagination_and_detail_export(harness):
+    from piece_v2_contract import canonical_sha256_hex
+    from piece_v2_visual import build_visual_recipe
+
+    call, state = harness
+    old_rows = [_row(stamp=f'2026-10-{i:02d}T00:00:00+00:00') for i in range(1, 22)]
+    expanded = _row(stamp='2026-10-23T00:00:00+00:00')
+    recipe = build_visual_recipe(expanded['format_type'], tier='premium',
+        language=expanded['content_payload']['language'], theme='ocean_ice')
+    expanded.update(visual_recipe=recipe, visual_recipe_hash=canonical_sha256_hex(recipe))
+    state['rows'] = old_rows + [expanded]
+
+    first = call().json()
+    assert [item['piece_id'] for item in first['items']] == [row['id'] for row in old_rows[:0:-1]]
+    assert first['next_cursor']
+    second = call(query={'cursor': first['next_cursor']}).json()
+    assert [item['piece_id'] for item in second['items']] == [old_rows[0]['id']]
+    assert second['next_cursor'] is None
+    assert state['reads'][0]['visual_recipe->theme->>theme_id'] == 'in.(soft_paper,quiet_night)'
+    _error(call(expanded['id']), 404, 'PIECE_NOT_FOUND')
+    _error(call(expanded['id'] + '/export'), 404, 'PIECE_NOT_FOUND')
+
+    headers = {'Authorization': 'Bearer synthetic-owner', 'X-Piece-Palette': '2'}
+    assert call(headers=headers).json()['items'][0]['piece_id'] == expanded['id']
+    assert 'visual_recipe->theme->>theme_id' not in state['reads'][-1]
+    _detail(call(expanded['id'], headers=headers).json(), expanded)
+    _detail(call(expanded['id'] + '/export', headers=headers).json(), expanded)

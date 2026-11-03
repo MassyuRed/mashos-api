@@ -13,7 +13,7 @@ from piece_v2_content_policy import choose_format
 from piece_v2_contract import PieceContractError, canonical_json_bytes
 from piece_v2_source_adapter import PieceSavedHandoff, PieceSavedSourceAdapter
 from piece_v2_store import _preview_content, save_piece, save_request_arguments
-from piece_v2_visual import build_visual_recipe
+from piece_v2_visual import build_visual_recipe, require_piece_theme
 
 SAVE_STATUS = {
     'PIECE_REQUEST_INVALID': 400, 'PIECE_AUTH_REQUIRED': 401,
@@ -73,7 +73,8 @@ class PieceSaveService:
 
     async def save(self, authorization: str, *, authenticated_user_id: str,
                    request: dict, idempotency_key: str,
-                   allowed_renderers: tuple[str, ...] | None = None) -> dict:
+                   allowed_renderers: tuple[str, ...] | None = None,
+                   expanded_palette: bool = False) -> dict:
         """The HTTP owner authenticates every call, including committed replay.
 
         For a first save, B5 rechecks current source eligibility without calling
@@ -126,6 +127,8 @@ class PieceSaveService:
                 _preview_content(content)
             except PieceContractError:
                 _fail('PIECE_HASH_MISMATCH')
+            require_piece_theme(row['visual_recipe']['theme']['theme_id'], expanded_palette=(
+                expanded_palette and row['renderer_version'] == 'piece.rn_bitmap_renderer.ios.v2'))
             lineage = row['source_lineage']
             current = await self._source_adapter.resolve_original_handoff(
                 authorization, lineage['source_input']['source_input_id'])

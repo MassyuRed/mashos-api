@@ -475,3 +475,25 @@ def test_old_bitmap_client_rejects_new_brand_before_first_save_or_saved_replay(h
         s['row']['expires_at'] = None
     _error(call(), 400, 'PIECE_REQUEST_INVALID')
     assert s['posts'] == []
+
+
+def test_expanded_palette_save_requires_advertised_reader_and_current_paid_plan(harness):
+    call, state = harness
+    row = state['row']
+    recipe = build_visual_recipe(row['format_type'], tier='premium',
+        language=row['content_payload']['language'], theme='lavender_ink')
+    v2 = 'piece.rn_bitmap_renderer.ios.v2'
+    row.update(visual_recipe=recipe, visual_recipe_hash=canonical_sha256_hex(recipe), renderer_version=v2)
+    state['app'].state.piece_preview_runtime = {
+        'ttl_seconds': 600, 'renderer_version': 'piece.rn_bitmap_renderer.ios.v1'}
+    headers = {'Authorization': 'Bearer synthetic-owner', 'Idempotency-Key': 'synthetic-save',
+               'X-Piece-Renderer': v2}
+
+    _error(call(headers=headers), 422, 'PIECE_VISUAL_SELECTION_NOT_ALLOWED')
+    expanded = dict(headers, **{'X-Piece-Palette': '2'})
+    _error(call(headers=expanded), 422, 'PIECE_VISUAL_SELECTION_NOT_ALLOWED')
+    assert state['posts'] == []
+    state['handoff'] = _handoff(row, tier='premium')
+    response = call(headers=expanded)
+    assert response.status_code == 200
+    assert len(state['posts']) == 1

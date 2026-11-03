@@ -537,3 +537,40 @@ def test_old_bitmap_client_cannot_mutate_a_new_brand_record(harness):
     result = send(s)
     assert result.status_code == 400 and result.json() == {'code': 'PIECE_REQUEST_INVALID'}
     assert s['posts'] == []
+
+
+def test_expanded_palette_patch_and_replay_keep_original_text_and_revision(harness):
+    from piece_v2_visual import THEME_IDS
+
+    s = harness
+    v2 = 'piece.rn_bitmap_renderer.ios.v2'
+    s['row']['renderer_version'] = v2
+    s['app'].state.piece_preview_runtime = {
+        'ttl_seconds': 600, 'renderer_version': 'piece.rn_bitmap_renderer.ios.v1'}
+    bitmap = {'Authorization': AUTH, 'X-Piece-Renderer': v2}
+    expanded = dict(bitmap, **{'X-Piece-Palette': '2'})
+    body = mutation(choice('forest_mint', '9:16', 'off'))
+
+    error(send(s, headers=bitmap, body=body), 422, 'PIECE_VISUAL_SELECTION_NOT_ALLOWED')
+    assert s['posts'] == []
+    changed = send(s, headers=expanded, body=body)
+    assert changed.status_code == 200
+    payload = changed.json()
+    assert payload['plan_capabilities']['theme_ids'] == list(THEME_IDS)
+    assert payload['visual_recipe']['theme']['theme_id'] == 'forest_mint'
+    assert payload['visual_recipe_hash'] == canonical_sha256_hex(payload['visual_recipe'])
+    assert payload['piece_text_hash'] == s['original']['piece_text_hash']
+    error(send(s, headers=bitmap, body=mutation(revision=2)), 422, 'PIECE_VISUAL_SELECTION_NOT_ALLOWED')
+
+    async def replay(headers):
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=s['app']),
+                base_url='https://test.invalid') as client:
+            return await client.post('/emotion/piece/preview', json=s['request'],
+                headers=dict(headers, **{'Idempotency-Key': KEY}))
+
+    error(run(replay(bitmap)), 422, 'PIECE_VISUAL_SELECTION_NOT_ALLOWED')
+    recovered = run(replay(expanded))
+    assert recovered.status_code == 200
+    assert recovered.json()['visual_recipe_hash'] == payload['visual_recipe_hash']
+    assert recovered.json()['preview_revision'] == 2
+    assert len(s['posts']) == 1

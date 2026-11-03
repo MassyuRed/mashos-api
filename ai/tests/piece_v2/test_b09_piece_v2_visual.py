@@ -4,7 +4,7 @@ import hashlib
 import pytest
 from piece_v2_contract import PieceContractError, canonical_sha256_hex
 from piece_v2_generation import PieceSourceSnapshot, generate_piece_candidate
-from piece_v2_visual import build_visual_recipe, validate_visual_recipe, resolve_visual
+from piece_v2_visual import THEME_IDS, build_visual_recipe, validate_visual_recipe, resolve_visual
 from piece_v2_layout import TextMeasurement, build_measured_layout, fit_summary
 
 
@@ -38,7 +38,7 @@ def render(c=None, r=None, metrics=None):
 
 @pytest.mark.parametrize('fmt', ['short_essay', 'quote', 'declaration'])
 @pytest.mark.parametrize('ratio', ['4:5', '9:16'])
-@pytest.mark.parametrize('theme', ['soft_paper', 'quiet_night'])
+@pytest.mark.parametrize('theme', THEME_IDS)
 def test_all_catalog_combinations(fmt, ratio, theme):
     c = candidate(fmt)
     r = build_visual_recipe(fmt, tier='premium', aspect_ratio=ratio, theme=theme)

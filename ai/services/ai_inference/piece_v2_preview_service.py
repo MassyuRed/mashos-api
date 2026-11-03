@@ -26,7 +26,7 @@ from piece_v2_generation import generate_piece_candidate
 from piece_v2_source_adapter import (
     PieceSavedHandoff, PieceSavedSourceAdapter, project_saved_original_source,
 )
-from piece_v2_visual import build_visual_recipe, validate_visual_recipe
+from piece_v2_visual import build_visual_recipe, require_piece_theme, validate_visual_recipe
 
 _SOURCE_FIELDS = frozenset({
     'source_input_id', 'source_input_version', 'source_input_bundle_commitment',
@@ -310,6 +310,7 @@ class PiecePreviewService:
         rpc: Callable[[str, dict], Awaitable[dict]],
         load_record: Callable[[str, str], Awaitable[dict | None]] = _load_owned_preview_for_replay,
         allowed_renderers: tuple[str, ...] | None = None,
+        expanded_palette: bool = False,
     ) -> dict:
         """Revise only the visual recipe of an owned, persisted draft.
 
@@ -361,6 +362,9 @@ class PiecePreviewService:
                 _preview_content(dict(row, eligible_formats=row['preview_eligible_formats']))
             except PieceContractError:
                 raise _error('PIECE_HASH_MISMATCH') from None
+            expanded = expanded_palette and row['renderer_version'] == 'piece.rn_bitmap_renderer.ios.v2'
+            require_piece_theme(row['visual_recipe']['theme']['theme_id'], expanded_palette=expanded)
+            require_piece_theme(value['visual_selection']['theme_id'], expanded_palette=expanded)
             handoff = await self._source_adapter.resolve_original_handoff(
                 authorization, row['source_lineage']['source_input']['source_input_id'])
             if (type(handoff) is not PieceSavedHandoff

@@ -41,7 +41,8 @@ def qdb():
         + 'revoke all on public.pieces from public,anon,authenticated; grant select on public.pieces to service_role;')
     for name in ['20260808_001_piece_v2_legacy_read_bridge.sql', '20260808_002_piece_v2_foundation.sql',
                  '20260808_003_piece_v2_rls_and_staging.sql', '20260808_004_piece_v2_atomic_functions.sql',
-                 '20261010050940_piece_v2_preview_visual_change.sql', '20261101022630_piece_natural_reply_context.sql']:
+                 '20261010050940_piece_v2_preview_visual_change.sql', '20261101022630_piece_natural_reply_context.sql',
+                 '20261103235434_piece_v2_expand_visual_palette.sql']:
         script(db, (ROOT / 'supabase/migrations' / name).read_text())
     yield db
     db.proc.stdin.close()
@@ -97,10 +98,12 @@ def test_natural_saved_cohort_survives_preview_visual_and_save(natural_case, qdb
         'preview_revision','row_version','expires_at','visibility_scope','source_lineage','format_type',
         'preview_eligible_formats','content_payload','content_payload_hash','piece_text','piece_text_hash',
         'safety_state','visual_recipe','visual_recipe_hash','renderer_version']
+    changed_recipe = build_visual_recipe(candidate['format_type'], tier=tier, language='ja',
+        theme={'free': 'soft_paper', 'plus': 'rose_berry', 'premium': 'ocean_ice'}[tier])
     visual_args = {'p_owner_user_id': user,
         'p_preview_id': issued['preview_id'], 'p_expected_preview_revision': 1,
-        'p_expected_record': {k: row[k] for k in keys}, 'p_visual_recipe': recipe,
-        'p_visual_recipe_hash': canonical_sha256_hex(recipe),
+        'p_expected_record': {k: row[k] for k in keys}, 'p_visual_recipe': changed_recipe,
+        'p_visual_recipe_hash': canonical_sha256_hex(changed_recipe),
         'p_expected_subscription_tier': tier, 'p_expected_source_state': expected}
     save_args = {'p_owner_user_id': user, 'p_preview_id': issued['preview_id'],
         'p_expected_preview_revision': 1, 'p_piece_text_hash': record['piece_text_hash'],
@@ -123,10 +126,13 @@ def test_natural_saved_cohort_survives_preview_visual_and_save(natural_case, qdb
         return
     changed = rpc(qdb, 'piece_mutate_preview_visual_v2', visual_args)
     save_args['p_expected_preview_revision'] = changed['preview_revision']
+    save_args['p_visual_recipe_hash'] = changed['visual_recipe_hash']
     saved = rpc(qdb, 'piece_save_v2', save_args)
     assert saved['lifecycle_status'] == 'saved'
-    reread = qdb.query('select piece_text,piece_text_hash,content_payload,visibility_scope from public.piece_records where id=$1', [saved['piece_id']])['rows'][0]
+    reread = qdb.query('select piece_text,piece_text_hash,content_payload,visibility_scope,visual_recipe,visual_recipe_hash from public.piece_records where id=$1', [saved['piece_id']])['rows'][0]
     assert all(reread[k] == record[k] for k in ['piece_text', 'piece_text_hash', 'content_payload'])
+    assert reread['visual_recipe'] == changed_recipe
+    assert reread['visual_recipe_hash'] == canonical_sha256_hex(changed_recipe)
     assert reread['visibility_scope'] == 'private'
     assert len(calls) == 1
     assert qdb.query('select count(*) as n from public.piece_quota_consumptions where owner_user_id=$1', [user])['rows'][0]['n'] == 1

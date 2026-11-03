@@ -144,6 +144,12 @@ def _project(row: dict, owner: str) -> dict:
         _fail()
 
 
+def _theme_filter(theme_ids: tuple[str, ...] | None) -> dict:
+    if theme_ids is None:
+        return {}
+    return {'visual_recipe->theme->>theme_id': 'in.(' + ','.join(theme_ids) + ')'}
+
+
 class PieceOwnerService:
     def __init__(self, *, load_records=load_saved_records):
         self._load_records = load_records
@@ -156,32 +162,37 @@ class PieceOwnerService:
             # caller validation or a database provider's auth/not-found code.
             _fail()
 
-    async def detail(self, *, authenticated_user_id: str, piece_id: str) -> dict:
+    async def detail(self, *, authenticated_user_id: str, piece_id: str,
+                     theme_ids: tuple[str, ...] | None = None) -> dict:
         try:
             owner = _uuid(authenticated_user_id, 'PIECE_AUTH_REQUIRED')
             raw = piece_id[6:] if isinstance(piece_id, str) and piece_id.startswith('piece:') else piece_id
             pid = _uuid(raw, 'PIECE_NOT_FOUND')
             rows = await self._read({'select': ','.join(_COLUMNS),
                 'owner_user_id': 'eq.' + owner, 'lifecycle_status': 'eq.saved',
-                'id': 'eq.' + pid, 'limit': '2'})
+                'id': 'eq.' + pid, 'limit': '2', **_theme_filter(theme_ids)})
             if type(rows) is not list or len(rows) > 1:
                 _fail()
             if not rows or type(rows[0]) is not dict or rows[0].get('id') != pid:
                 _fail('PIECE_NOT_FOUND')
-            return _project(rows[0], owner)
+            item = _project(rows[0], owner)
+            if theme_ids is not None and item['visual_recipe']['theme']['theme_id'] not in theme_ids:
+                _fail('PIECE_NOT_FOUND')
+            return item
         except PieceContractError as exc:
             _fail(exc.code if exc.code in OWNER_READ_STATUS else 'PIECE_TEMPORARILY_UNAVAILABLE')
         except Exception:
             _fail()
 
     async def history(self, *, authenticated_user_id: str, limit: str = '20',
-                      cursor: str | None = None) -> dict:
+                      cursor: str | None = None,
+                      theme_ids: tuple[str, ...] | None = None) -> dict:
         try:
             owner = _uuid(authenticated_user_id, 'PIECE_AUTH_REQUIRED')
             size, boundary = _history_request(owner, limit, cursor)
             params = {'select': ','.join(_COLUMNS), 'owner_user_id': 'eq.' + owner,
                 'lifecycle_status': 'eq.saved', 'order': 'saved_at.desc,id.desc',
-                'limit': str(size + 1)}
+                'limit': str(size + 1), **_theme_filter(theme_ids)}
             if boundary is not None:
                 stamp, pid = boundary[0].isoformat(), boundary[1]
                 params['or'] = f'(saved_at.lt.{stamp},and(saved_at.eq.{stamp},id.lt.{pid}))'
@@ -192,6 +203,8 @@ class PieceOwnerService:
             for row in rows:
                 try:
                     item = _project(row, owner)
+                    if theme_ids is not None and item['visual_recipe']['theme']['theme_id'] not in theme_ids:
+                        _fail()
                     current = _boundary(row)
                     if previous is not None and current >= previous:
                         _fail()

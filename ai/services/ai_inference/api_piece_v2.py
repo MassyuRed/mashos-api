@@ -14,6 +14,7 @@ from fastapi.responses import JSONResponse
 
 from piece_v2_contract import PieceContractError, normalize_visibility_scope
 from piece_v2_store import cancel_piece_preview
+from piece_v2_visual import LEGACY_THEME_IDS, require_piece_theme
 from piece_v2_runtime_control import require_piece_feature_enabled, validate_piece_preview_runtime
 
 router = APIRouter(prefix='/emotion/piece')
@@ -192,7 +193,8 @@ async def save_preview(request: Request) -> JSONResponse:
         result = await PieceSaveService(load_record=features.wrap(load_owned_preview),
             rpc=features.wrap(save_rpc)).save(request.headers['authorization'],
             authenticated_user_id=owner, request=value, idempotency_key=keys[0],
-            allowed_renderers=_renderer_preferences(request)[1])
+            allowed_renderers=_renderer_preferences(request)[1],
+            expanded_palette=_expanded_palette(request))
         features.require()
         return _response(result)
     except Exception as exc:
@@ -236,7 +238,8 @@ async def owner_history(request: Request) -> JSONResponse:
             raise PieceContractError('PIECE_REQUEST_INVALID')
         features.require()
         result = await PieceOwnerService(load_records=features.wrap(load_saved_records)).history(authenticated_user_id=owner,
-            limit=query.get('limit', '20'), cursor=query.get('cursor'))
+            limit=query.get('limit', '20'), cursor=query.get('cursor'),
+            theme_ids=None if _expanded_palette(request) else LEGACY_THEME_IDS)
         features.require()
         return _response(result)
     except Exception as exc:
@@ -253,7 +256,8 @@ async def _read_owner_artifact(piece_id: str, request: Request, *, exporting: bo
             raise PieceContractError('PIECE_REQUEST_INVALID')
         features.require()
         result = await PieceOwnerService(load_records=features.wrap(load_saved_records)).detail(
-            authenticated_user_id=owner, piece_id=piece_id)
+            authenticated_user_id=owner, piece_id=piece_id,
+            theme_ids=None if _expanded_palette(request) else LEGACY_THEME_IDS)
         features.require()
         return _response(result)
     except Exception as exc:
@@ -438,6 +442,13 @@ def _renderer_preferences(request: Request) -> tuple[str | None, tuple[str, ...]
     return configured, (configured,) if configured is not None else None
 
 
+def _expanded_palette(request: Request) -> bool:
+    values = request.headers.getlist('x-piece-palette')
+    if len(values) > 1:
+        raise PieceContractError('PIECE_REQUEST_INVALID')
+    return values == ['2']
+
+
 def _preview_public_response(result: object) -> dict:
     """Project the persisted artifact, not the source or internal review."""
     import json
@@ -496,6 +507,9 @@ async def create_preview(request: Request) -> JSONResponse:
         value = _request_snapshot(raw)
         ttl, _ = _preview_runtime(request)
         renderer, allowed_renderers = _renderer_preferences(request)
+        expanded_palette = _expanded_palette(request)
+        require_piece_theme(value['visual_selection']['theme_id'], expanded_palette=(
+            expanded_palette and renderer == 'piece.rn_bitmap_renderer.ios.v2'))
         # Read before generation/issuance: missing quota infrastructure must
         # not create a hidden preview. This snapshot does not admit a save.
         quota = await read_piece_quota(authenticated_user_id=owner,
@@ -508,8 +522,10 @@ async def create_preview(request: Request) -> JSONResponse:
             rpc=features.wrap(_preview_rpc))
         features.require()
         public = _preview_public_response(result)
+        expanded = expanded_palette and public['renderer_version'] == 'piece.rn_bitmap_renderer.ios.v2'
+        require_piece_theme(public['visual_recipe']['theme']['theme_id'], expanded_palette=expanded)
         public.update(quota=quota, plan_capabilities=project_piece_plan_capabilities(
-            server_tier=quota['subscription_tier']))
+            server_tier=quota['subscription_tier'], expanded_palette=expanded))
         return _response(public)
     except Exception as exc:
         # Cancellation (BaseException) deliberately propagates unchanged.
@@ -544,17 +560,20 @@ async def mutate_preview_visual(preview_id: str, request: Request) -> JSONRespon
             raise PieceContractError('PIECE_REQUEST_INVALID') from None
         quota = await read_piece_quota(authenticated_user_id=owner,
             post_rpc=features.wrap(sb_post_rpc))
+        expanded_palette = _expanded_palette(request)
         result = await PiecePreviewService().mutate_original_visual(
             request.headers['authorization'], authenticated_user_id=owner,
-            preview_id=preview_id, request=value,
+            preview_id=preview_id, request=value, expanded_palette=expanded_palette,
             allowed_renderers=_renderer_preferences(request)[1],
             expected_subscription_tier=quota['subscription_tier'],
             load_record=features.wrap(_load_owned_preview_for_replay),
             rpc=features.wrap(_preview_rpc))
         features.require()
         public = _preview_public_response(result)
+        expanded = expanded_palette and public['renderer_version'] == 'piece.rn_bitmap_renderer.ios.v2'
+        require_piece_theme(public['visual_recipe']['theme']['theme_id'], expanded_palette=expanded)
         public.update(quota=quota, plan_capabilities=project_piece_plan_capabilities(
-            server_tier=quota['subscription_tier']))
+            server_tier=quota['subscription_tier'], expanded_palette=expanded))
         return _response(public)
     except Exception as exc:
         return features.failure(exc, _PREVIEW_STATUS)
