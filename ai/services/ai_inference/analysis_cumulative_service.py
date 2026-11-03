@@ -92,12 +92,11 @@ def _checked_coverage(coverage):
     return coverage
 
 
-def prepare_cumulative_model_fields(owner, snapshot):
-    """Explicit offline probe; never selected by ensure_map or an HTTP flag."""
+def _cumulative_model_request(owner, snapshot):
+    """Resolve the existing saved-source owner before any model profile."""
     from astor_material_snapshots import _analysis_saved_member
     from cocolon_meaning_experience_engine.cores.analysis.source_adapter import (
         AnalysisObservedMapRequest, commitment, _time)
-    from cocolon_meaning_experience_engine.cores.analysis.semantic_admission import prepare_analysis_model_fields
     owner = _owner(owner)
     start, end = snapshot['period_start'], snapshot['period_end']
     records = tuple(_analysis_saved_member(dict(raw, tier=snapshot['tier'], now=snapshot['now']),
@@ -105,7 +104,13 @@ def prepare_cumulative_model_fields(owner, snapshot):
         start=_time(start), end=_time(end), cumulative=True)[0] for raw in snapshot['members'])
     request_id = 'analysis-model-' + commitment([owner, snapshot['guard'], start, end])[7:]
     request = AnalysisObservedMapRequest(request_id, owner, start, end, records)
-    return prepare_analysis_model_fields(request, source_guard=snapshot['guard'])
+    return request
+
+
+def prepare_cumulative_model_fields(owner, snapshot):
+    """Explicit offline probe; never selected by ensure_map or an HTTP flag."""
+    from cocolon_meaning_experience_engine.cores.analysis.semantic_admission import prepare_analysis_model_fields
+    return prepare_analysis_model_fields(_cumulative_model_request(owner, snapshot), source_guard=snapshot['guard'])
 
 
 def prepare_cumulative_model_field_kinds(owner, snapshot):
@@ -186,9 +191,8 @@ def prepare_cumulative_category_units(owner, snapshot, *, prompt_version='select
     from dataclasses import replace
     from cocolon_meaning_experience_engine.cores.analysis.semantic_admission import (
         prepare_analysis_model_quoted_parent_units, QUOTED_PARENT_CATEGORY_PROFILE)
-    prepared = prepare_cumulative_model_fields(owner, snapshot)
-    request = replace(prepared.request, selected_category_context=True)
-    return prepare_analysis_model_quoted_parent_units(request, source_guard=prepared.source_guard,
+    request = replace(_cumulative_model_request(owner, snapshot), selected_category_context=True)
+    return prepare_analysis_model_quoted_parent_units(request, source_guard=snapshot['guard'],
         prompt_version=prompt_version)
 
 
@@ -199,7 +203,7 @@ def build_cumulative_quoted_parent_candidates(owner, snapshot, *, model_input):
     require(type(model_input) is AnalysisModelQuotedParentUnitsInput,
             'analysis_quoted_parent_units_binding_invalid')
     expected = (prepare_cumulative_category_units(owner, snapshot, prompt_version=model_input.prompt_version)
-        if model_input.prompt_version in {'selected_categories.v1', 'selected_material.v2'}
+        if model_input.prompt_version in {'selected_categories.v1', 'selected_material.v2', 'selected_material.v3'}
         else prepare_cumulative_quoted_parent_units(owner, snapshot, prompt_version=model_input.prompt_version))
     require(model_input.request == expected.request and model_input.request_ref == expected.request_ref
         and model_input.source_guard == expected.source_guard, 'analysis_quoted_parent_units_binding_invalid')
@@ -213,7 +217,7 @@ def serialize_cumulative_quoted_parent_candidates(owner, snapshot, *, model_inpu
     require(type(model_input) is AnalysisModelQuotedParentUnitsInput,
             'analysis_quoted_parent_units_binding_invalid')
     expected = (prepare_cumulative_category_units(owner, snapshot, prompt_version=model_input.prompt_version)
-        if model_input.prompt_version in {'selected_categories.v1', 'selected_material.v2'}
+        if model_input.prompt_version in {'selected_categories.v1', 'selected_material.v2', 'selected_material.v3'}
         else prepare_cumulative_quoted_parent_units(owner, snapshot, prompt_version=model_input.prompt_version))
     require(model_input.request == expected.request and model_input.request_ref == expected.request_ref
         and model_input.source_guard == expected.source_guard
@@ -231,7 +235,7 @@ def reload_cumulative_quoted_parent_candidates(owner, snapshot, raw):
         if type(saved) is dict and type(saved.get('state')) is dict else 'baseline.v1')
     prepared = (prepare_cumulative_category_units(owner, snapshot, prompt_version=saved['state']['prompt_version'])
         if type(saved) is dict and type(saved.get('state')) is dict
-        and saved['state'].get('prompt_version') in {'selected_categories.v1', 'selected_material.v2'}
+        and saved['state'].get('prompt_version') in {'selected_categories.v1', 'selected_material.v2', 'selected_material.v3'}
         else prepare_cumulative_quoted_parent_units(owner, snapshot, prompt_version=prompt))
     require(type(saved) is dict and set(saved) == {'schema_version','coverage','state'}
         and saved['schema_version'] == 'cocolon.cmee.cumulative_quoted_parent_unit_candidates_file.v1'
@@ -246,7 +250,7 @@ def _written_role_input(owner, snapshot, model_input):
     require(type(model_input) is AnalysisModelQuotedParentUnitsInput,
             'analysis_written_role_input_invalid')
     expected = (prepare_cumulative_category_units(owner, snapshot, prompt_version=model_input.prompt_version)
-        if model_input.prompt_version in {'selected_categories.v1', 'selected_material.v2'}
+        if model_input.prompt_version in {'selected_categories.v1', 'selected_material.v2', 'selected_material.v3'}
         else prepare_cumulative_quoted_parent_units(owner, snapshot, prompt_version=model_input.prompt_version))
     require(model_input.request == expected.request and model_input.request_ref == expected.request_ref
         and model_input.source_guard == expected.source_guard
@@ -290,7 +294,7 @@ def reload_cumulative_written_role_map(owner, snapshot, raw):
         and type(saved['state']) is dict, 'analysis_written_role_file_invalid')
     prompt = saved['state'].get('prompt_version')
     prepared = (prepare_cumulative_category_units(owner, snapshot, prompt_version=prompt)
-        if prompt in {'selected_categories.v1', 'selected_material.v2'}
+        if prompt in {'selected_categories.v1', 'selected_material.v2', 'selected_material.v3'}
         else prepare_cumulative_quoted_parent_units(owner, snapshot, prompt_version=prompt))
     artifact = reload_analysis_model_written_role(prepared, canonical(saved['state']))
     coverage = _checked_coverage(dict(profile=PROFILE, source_count=1, processed_count=1,

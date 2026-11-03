@@ -523,12 +523,12 @@ class AnalysisModelFieldsInput:
                 {'role':'user', 'content':canonical(material)}]
 
 
-def _model_fields_source(request):
+def _model_fields_source(request, *, allow_supplements=False):
     from emlis_ai_grounded_observation_plan import build_final_stage1_grounded_observation_plan
     from .intent_compiler import _active_sources
     frozen = freeze_analysis_sources(request)
     if (request.comparison_previous_request is not None
-            or any(m.supplements for m in request.members)
+            or (not allow_supplements and any(m.supplements for m in request.members))
             or not frozen.members or any(m.inclusion_status != 'INCLUDED' for m in frozen.members)):
         raise AnalysisSemanticUnsupported('analysis_model_fields_scope_unsupported')
     # Preserve the normal active-source and COMPLETE-source Safety boundary.
@@ -539,7 +539,10 @@ def _model_fields_source(request):
         plan = build_final_stage1_grounded_observation_plan(source.normalized, evidence_spans=source.spans)
         if plan.input_profile.material_quality == 'safety_routed':
             raise AnalysisSourceError('analysis_separate_safety_required')
-        for field in ('memo', 'memo_action'):
+        # Answers remain separate envelopes and may only supply their own memo.
+        # Never fall back to a parent's memo_action for an empty answer field.
+        source_fields = ('memo',) if source.envelope.source_role == 'SUPPLEMENTAL_ANSWER' else ('memo', 'memo_action')
+        for field in source_fields:
             first = next((e for e in source.evidence if e.field_path == field), None)
             if first is None:
                 # Empty fields have no ledger span. No nonempty body is dropped.
@@ -937,6 +940,8 @@ QUOTED_PARENT_CATEGORY_PROFILE = 'selected_categories.v1'
 QUOTED_PARENT_CATEGORY_STATE = 'cocolon.cmee.analysis_model_units_quoted_parents_state.categories.v1'
 QUOTED_PARENT_MATERIAL_PROFILE = 'selected_material.v2'
 QUOTED_PARENT_MATERIAL_STATE = 'cocolon.cmee.analysis_model_units_quoted_parents_state.material.v2'
+QUOTED_PARENT_MATERIAL_V3_PROFILE = 'selected_material.v3'
+QUOTED_PARENT_MATERIAL_V3_STATE = 'cocolon.cmee.analysis_model_units_quoted_parents_state.material.v3'
 QUOTED_PARENT_SEMANTIC_PROFILE = 'semantic_boundaries.v2'
 QUOTED_PARENT_SEMANTIC_STATE = 'cocolon.cmee.analysis_model_units_quoted_parents_state.semantic_boundaries.v2'
 QUOTED_PARENT_SEMANTIC_V3_PROFILE = 'semantic_boundaries.v3'
@@ -961,14 +966,16 @@ class AnalysisModelQuotedParentUnitsInput:
     prompt_version: str = 'baseline.v1'
 
     def messages(self):
-        frozen, fields = _model_fields_source(self.request)
+        frozen, fields = _model_fields_source(self.request,
+            allow_supplements=self.prompt_version == QUOTED_PARENT_MATERIAL_V3_PROFILE)
         require(self.request_ref == _quoted_parent_units_ref(self.request, frozen, self.source_guard, self.prompt_version),
                 'analysis_quoted_parent_units_binding_invalid')
         material = dict(schema_version=QUOTED_PARENT_UNITS_SCHEMA, fields=[
             dict(field=i, field_path=f['field_path'], text=f['text'])
             for i, f in enumerate(fields, 1)])
         instruction = _quoted_parent_units_instruction()
-        if self.prompt_version in {QUOTED_PARENT_SEMANTIC_PROFILE, QUOTED_PARENT_SEMANTIC_V3_PROFILE}:
+        if self.prompt_version in {QUOTED_PARENT_SEMANTIC_PROFILE, QUOTED_PARENT_SEMANTIC_V3_PROFILE,
+                QUOTED_PARENT_MATERIAL_V3_PROFILE}:
             instruction += ('\n意味上の境界：'
                 'CONTENT_TARGETは親述語が向く対象・内容です。サ変名詞が「する」と一体で述語を作る場合、'
                 'その語幹を対象として切り出しません。別の述語に対して対象を示す助詞付きの名詞句とは区別します。'
@@ -985,9 +992,10 @@ class AnalysisModelQuotedParentUnitsInput:
                 '推測・否定・不明を削って断定にせず、他者の役割を本人へ移しません。'
                 'EXPLICIT_ACTORも原文の表記をそのまま引用し、書かれていない助詞を足しません。'
                 'quoteのために語を補ったり言い換えたりせず、原文の連続文字列をそのまま使います。')
-        if self.prompt_version == QUOTED_PARENT_SEMANTIC_V3_PROFILE:
+        if self.prompt_version in {QUOTED_PARENT_SEMANTIC_V3_PROFILE, QUOTED_PARENT_MATERIAL_V3_PROFILE}:
             instruction += _reason_boundaries_units_instruction()
-        if self.prompt_version in {QUOTED_PARENT_CATEGORY_PROFILE, QUOTED_PARENT_MATERIAL_PROFILE}:
+        if self.prompt_version in {QUOTED_PARENT_CATEGORY_PROFILE, QUOTED_PARENT_MATERIAL_PROFILE,
+                QUOTED_PARENT_MATERIAL_V3_PROFILE}:
             from .source_adapter import selected_categories
             for row, field in zip(material['fields'], fields):
                 row['selected_categories'] = list(selected_categories(frozen, field['source'].record_ref))
@@ -995,7 +1003,7 @@ class AnalysisModelQuotedParentUnitsInput:
                 '本文を読む文脈として使い、同じ本文でも別カテゴリの記録を混同しません。'
                 'カテゴリ名だけから場所・役割・原因・人格・相手の意図を作りません。'
                 'quoteとqualifiersは本文textからだけ引用し、カテゴリを本文の引用にしません。')
-        if self.prompt_version == QUOTED_PARENT_MATERIAL_PROFILE:
+        if self.prompt_version in {QUOTED_PARENT_MATERIAL_PROFILE, QUOTED_PARENT_MATERIAL_V3_PROFILE}:
             # Only already owner/version-checked originals enter this context.
             # Ordinals link fields without exposing record or owner identifiers.
             originals = {m.saved_record_ref: json.loads(m.original_json) for m in self.request.members}
@@ -1018,6 +1026,24 @@ class AnalysisModelQuotedParentUnitsInput:
                 'recorded_atは記録日時で、本文の出来事日時ではありません。analysis_as_ofは分析対象の終点です。'
                 '日時順だけから変化・因果・記録間の関係を作りません。'
                 'quote、parent_quote、qualifiersは対応するfieldのtextからだけ取り、recordsの値を引用しません。')
+        if self.prompt_version == QUOTED_PARENT_MATERIAL_V3_PROFILE:
+            # These are ordinals of admitted source children, not question rounds
+            # or event times. The saved-source owner has already checked answers.
+            answer_ordinals = {s.envelope.envelope_id: i
+                for member in included
+                for i, s in enumerate((s for s in frozen.sources
+                    if s.record_ref == member.saved_record_ref
+                    and s.envelope.source_role == 'SUPPLEMENTAL_ANSWER'), 1)}
+            for row, field in zip(material['fields'], fields):
+                source = field['source']
+                row['source_role'] = source.envelope.source_role
+                row['supplement'] = answer_ordinals.get(source.envelope.envelope_id)
+            instruction += ('\nsource_roleは原入力ORIGINAL_INPUTと本人補足SUPPLEMENTAL_ANSWERを分けます。'
+                '補足も親recordの選択カテゴリを保持しますが、選択感情とrecorded_atは親原入力の値です。'
+                'supplementは保存済み補足の順番であり、質問回や回答日時ではありません。'
+                '補足を原入力に連結せず、主体・時点・不明を元のfieldごとに保ちます。'
+                '別fieldの語句をquoteやparent_quoteに使わず、記録内の二欄や補足を別の反復機会に数えません。'
+                '本人補足を理由に、原入力の未記載な役割・動機・選択基準を作りません。')
         return [dict(role='system', content=instruction),
                 dict(role='user', content=canonical(material))]
 
@@ -1025,7 +1051,7 @@ class AnalysisModelQuotedParentUnitsInput:
 def _quoted_parent_units_ref(request, frozen, source_guard, prompt_version='baseline.v1'):
     _model_fields_ref(request, frozen, source_guard)
     require(prompt_version in {'baseline.v1', QUOTED_PARENT_CATEGORY_PROFILE, QUOTED_PARENT_MATERIAL_PROFILE,
-            QUOTED_PARENT_SEMANTIC_PROFILE, QUOTED_PARENT_SEMANTIC_V3_PROFILE},
+            QUOTED_PARENT_SEMANTIC_PROFILE, QUOTED_PARENT_SEMANTIC_V3_PROFILE, QUOTED_PARENT_MATERIAL_V3_PROFILE},
             'analysis_quoted_parent_units_binding_invalid')
     require(prompt_version in {'baseline.v1', QUOTED_PARENT_SEMANTIC_PROFILE, QUOTED_PARENT_SEMANTIC_V3_PROFILE}
             or request.selected_category_context,
@@ -1039,7 +1065,8 @@ def _quoted_parent_units_ref(request, frozen, source_guard, prompt_version='base
 
 
 def prepare_analysis_model_quoted_parent_units(request, *, source_guard, prompt_version='baseline.v1'):
-    frozen, _ = _model_fields_source(request)
+    frozen, _ = _model_fields_source(request,
+        allow_supplements=prompt_version == QUOTED_PARENT_MATERIAL_V3_PROFILE)
     return AnalysisModelQuotedParentUnitsInput(request, source_guard,
         _quoted_parent_units_ref(request, frozen, source_guard, prompt_version), prompt_version=prompt_version)
 
@@ -1094,7 +1121,8 @@ def _reason_boundaries_units_instruction():
 def _admit_quoted_parent_units(request, model_input):
     require(type(model_input) is AnalysisModelQuotedParentUnitsInput and model_input.request == request,
             'analysis_quoted_parent_units_binding_invalid')
-    frozen, fields = _model_fields_source(request)
+    frozen, fields = _model_fields_source(request,
+        allow_supplements=model_input.prompt_version == QUOTED_PARENT_MATERIAL_V3_PROFILE)
     expected_ref = _quoted_parent_units_ref(request, frozen, model_input.source_guard, model_input.prompt_version)
     require(model_input.request_ref == expected_ref, 'analysis_quoted_parent_units_binding_invalid')
     response = model_input.response
@@ -1171,6 +1199,7 @@ def serialize_analysis_model_quoted_parent_units(model_input, artifact):
         graph=asdict(artifact.graph), text=artifact.text, diagram=json.loads(artifact.diagram_json))
     if model_input.prompt_version != 'baseline.v1':
         saved.update(schema_version={QUOTED_PARENT_MATERIAL_PROFILE: QUOTED_PARENT_MATERIAL_STATE,
+            QUOTED_PARENT_MATERIAL_V3_PROFILE: QUOTED_PARENT_MATERIAL_V3_STATE,
             QUOTED_PARENT_CATEGORY_PROFILE: QUOTED_PARENT_CATEGORY_STATE,
             QUOTED_PARENT_SEMANTIC_PROFILE: QUOTED_PARENT_SEMANTIC_STATE,
             QUOTED_PARENT_SEMANTIC_V3_PROFILE: QUOTED_PARENT_SEMANTIC_V3_STATE}[model_input.prompt_version],
@@ -1188,6 +1217,7 @@ def reload_analysis_model_quoted_parent_units(prepared, raw):
     expected_schema = {'baseline.v1': QUOTED_PARENT_UNITS_STATE,
         QUOTED_PARENT_CATEGORY_PROFILE: QUOTED_PARENT_CATEGORY_STATE,
         QUOTED_PARENT_MATERIAL_PROFILE: QUOTED_PARENT_MATERIAL_STATE,
+        QUOTED_PARENT_MATERIAL_V3_PROFILE: QUOTED_PARENT_MATERIAL_V3_STATE,
         QUOTED_PARENT_SEMANTIC_PROFILE: QUOTED_PARENT_SEMANTIC_STATE,
         QUOTED_PARENT_SEMANTIC_V3_PROFILE: QUOTED_PARENT_SEMANTIC_V3_STATE}.get(prepared.prompt_version)
     state_keys = {'schema_version','request_ref','response','candidate_id','graph','text','diagram'}
@@ -1216,7 +1246,7 @@ MODEL_WRITTEN_ROLE_STATE = 'cocolon.cmee.analysis_model_written_role_state.v1'
 
 def _written_role_material(request, model_input):
     frozen, fields, response_ref = _admit_quoted_parent_units(request, model_input)
-    if len(frozen.members) != 1 or len(fields) != 1:
+    if len(frozen.members) != 1 or len(fields) != 1 or any(m.supplements for m in request.members):
         raise AnalysisSemanticUnsupported('analysis_written_role_scope_unsupported')
     return frozen, fields[0], response_ref
 
