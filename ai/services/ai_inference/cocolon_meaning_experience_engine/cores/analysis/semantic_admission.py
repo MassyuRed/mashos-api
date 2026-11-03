@@ -939,6 +939,8 @@ QUOTED_PARENT_MATERIAL_PROFILE = 'selected_material.v2'
 QUOTED_PARENT_MATERIAL_STATE = 'cocolon.cmee.analysis_model_units_quoted_parents_state.material.v2'
 QUOTED_PARENT_SEMANTIC_PROFILE = 'semantic_boundaries.v2'
 QUOTED_PARENT_SEMANTIC_STATE = 'cocolon.cmee.analysis_model_units_quoted_parents_state.semantic_boundaries.v2'
+QUOTED_PARENT_SEMANTIC_V3_PROFILE = 'semantic_boundaries.v3'
+QUOTED_PARENT_SEMANTIC_V3_STATE = 'cocolon.cmee.analysis_model_units_quoted_parents_state.semantic_boundaries.v3'
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -966,7 +968,7 @@ class AnalysisModelQuotedParentUnitsInput:
             dict(field=i, field_path=f['field_path'], text=f['text'])
             for i, f in enumerate(fields, 1)])
         instruction = _quoted_parent_units_instruction()
-        if self.prompt_version == QUOTED_PARENT_SEMANTIC_PROFILE:
+        if self.prompt_version in {QUOTED_PARENT_SEMANTIC_PROFILE, QUOTED_PARENT_SEMANTIC_V3_PROFILE}:
             instruction += ('\n意味上の境界：'
                 'CONTENT_TARGETは親述語が向く対象・内容です。サ変名詞が「する」と一体で述語を作る場合、'
                 'その語幹を対象として切り出しません。別の述語に対して対象を示す助詞付きの名詞句とは区別します。'
@@ -983,6 +985,8 @@ class AnalysisModelQuotedParentUnitsInput:
                 '推測・否定・不明を削って断定にせず、他者の役割を本人へ移しません。'
                 'EXPLICIT_ACTORも原文の表記をそのまま引用し、書かれていない助詞を足しません。'
                 'quoteのために語を補ったり言い換えたりせず、原文の連続文字列をそのまま使います。')
+        if self.prompt_version == QUOTED_PARENT_SEMANTIC_V3_PROFILE:
+            instruction += _reason_boundaries_units_instruction()
         if self.prompt_version in {QUOTED_PARENT_CATEGORY_PROFILE, QUOTED_PARENT_MATERIAL_PROFILE}:
             from .source_adapter import selected_categories
             for row, field in zip(material['fields'], fields):
@@ -1021,9 +1025,10 @@ class AnalysisModelQuotedParentUnitsInput:
 def _quoted_parent_units_ref(request, frozen, source_guard, prompt_version='baseline.v1'):
     _model_fields_ref(request, frozen, source_guard)
     require(prompt_version in {'baseline.v1', QUOTED_PARENT_CATEGORY_PROFILE, QUOTED_PARENT_MATERIAL_PROFILE,
-            QUOTED_PARENT_SEMANTIC_PROFILE},
+            QUOTED_PARENT_SEMANTIC_PROFILE, QUOTED_PARENT_SEMANTIC_V3_PROFILE},
             'analysis_quoted_parent_units_binding_invalid')
-    require(prompt_version in {'baseline.v1', QUOTED_PARENT_SEMANTIC_PROFILE} or request.selected_category_context,
+    require(prompt_version in {'baseline.v1', QUOTED_PARENT_SEMANTIC_PROFILE, QUOTED_PARENT_SEMANTIC_V3_PROFILE}
+            or request.selected_category_context,
             'analysis_quoted_parent_units_binding_invalid')
     identity = [
         QUOTED_PARENT_UNITS_PROFILE, request.request_id, frozen.owner_scope,
@@ -1059,6 +1064,31 @@ def _quoted_parent_units_instruction():
         'parentというkeyや親番号は返しません。親の引用も原文を変えず完全一致で写します。'
         '同じquoteの親unitが複数ある場合は参照できません。'
         '親を新たに補わず、正しい親の意味を選んでください。')
+
+
+def _reason_boundaries_units_instruction():
+    """One public synthetic contrast to the existing attributive/te example."""
+    text = '昨日は読めなかった本が、今日は読めたので安心した。'
+    units = [
+        dict(quote='安心した',node_kind='IMMEDIATE_RESULT_OR_AFTERMATH',parent_quote=None,
+            scope_role=None,qualifiers=[]),
+        dict(quote='今日は読めたので',node_kind=None,parent_quote='安心した',scope_role='WRITTEN_REASON',
+            qualifiers=[dict(kind='RELATIVE_TIME',quote='今日'),dict(kind='REASON_MARKER',quote='ので')]),
+        dict(quote='昨日は読めなかった本',node_kind=None,parent_quote='今日は読めたので',scope_role='ATTRIBUTIVE_CONTENT',
+            qualifiers=[dict(kind='RELATIVE_TIME',quote='昨日'),dict(kind='NEGATION',quote='なかった')])]
+    return ('\n理由接続と不明の境界：'
+        '連体内容を含む文でも、筆者が「ので」「から」等を理由接続として明記した節は、'
+        '対応する親述語のWRITTEN_REASONとし、同じunitのREASON_MARKERに実際の接続表現を逐語引用します。'
+        '語の出現だけでは理由関係を作らず、原文が理由として述べる範囲と接続先を読みます。'
+        '単なる「て」の文脈を理由へ変えず、明記された理由接続をTE_CONTEXTへ置き換えません。'
+        '理由を問う不明は既知の理由ではありません。「なぜ」等の問いの語だけから理由節や原因を補いません。'
+        '問われる内容と不明表現を保ち、既知理由や解決済み因果へ昇格させません。'
+        '不明内容の全件別unit化を必須にはしません。UNKNOWN_CONTENTを返す場合の既存の親制約は保持します。'
+        '次の1例は既存の連体内容と「て」文脈の例と対比する、形式と意味境界の説明用架空例です。'
+        '今回入力の事実や教師として混ぜません。'
+        '\n例の入力:' + canonical(dict(fields=[dict(field=1,text=text)])) +
+        '\n例の出力:' + canonical(dict(fields=[dict(field=1,units=units)])) +
+        '\n今回の入力にだけ答えてください。出力のrootはfields一つだけです。')
 
 
 def _admit_quoted_parent_units(request, model_input):
@@ -1142,7 +1172,8 @@ def serialize_analysis_model_quoted_parent_units(model_input, artifact):
     if model_input.prompt_version != 'baseline.v1':
         saved.update(schema_version={QUOTED_PARENT_MATERIAL_PROFILE: QUOTED_PARENT_MATERIAL_STATE,
             QUOTED_PARENT_CATEGORY_PROFILE: QUOTED_PARENT_CATEGORY_STATE,
-            QUOTED_PARENT_SEMANTIC_PROFILE: QUOTED_PARENT_SEMANTIC_STATE}[model_input.prompt_version],
+            QUOTED_PARENT_SEMANTIC_PROFILE: QUOTED_PARENT_SEMANTIC_STATE,
+            QUOTED_PARENT_SEMANTIC_V3_PROFILE: QUOTED_PARENT_SEMANTIC_V3_STATE}[model_input.prompt_version],
             prompt_version=model_input.prompt_version)
     return canonical(saved)
 
@@ -1157,7 +1188,8 @@ def reload_analysis_model_quoted_parent_units(prepared, raw):
     expected_schema = {'baseline.v1': QUOTED_PARENT_UNITS_STATE,
         QUOTED_PARENT_CATEGORY_PROFILE: QUOTED_PARENT_CATEGORY_STATE,
         QUOTED_PARENT_MATERIAL_PROFILE: QUOTED_PARENT_MATERIAL_STATE,
-        QUOTED_PARENT_SEMANTIC_PROFILE: QUOTED_PARENT_SEMANTIC_STATE}.get(prepared.prompt_version)
+        QUOTED_PARENT_SEMANTIC_PROFILE: QUOTED_PARENT_SEMANTIC_STATE,
+        QUOTED_PARENT_SEMANTIC_V3_PROFILE: QUOTED_PARENT_SEMANTIC_V3_STATE}.get(prepared.prompt_version)
     state_keys = {'schema_version','request_ref','response','candidate_id','graph','text','diagram'}
     if versioned_prompt:
         state_keys.add('prompt_version')

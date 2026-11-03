@@ -298,7 +298,7 @@ def role_sample(text='私の役割は連絡係だった。'):
 
 def role_call(snap, *, quote=None, kind='ROLE', prompt='baseline.v1'):
     p = (service.prepare_cumulative_quoted_parent_units(OWNER, snap, prompt_version=prompt)
-        if prompt in {'baseline.v1', 'semantic_boundaries.v2'} else
+        if prompt in {'baseline.v1', 'semantic_boundaries.v2', 'semantic_boundaries.v3'} else
         service.prepare_cumulative_category_units(OWNER, snap, prompt_version=prompt))
     text = snap['members'][0]['original']['memo']
     data = {'fields': [{'field': 1, 'units': [dict(node_kind=kind,
@@ -390,7 +390,8 @@ def test_written_role_does_not_drop_another_field_or_accept_a_conflicting_candid
         service.build_cumulative_written_role_map(OWNER, snap, model_input=value)
 
 
-@pytest.mark.parametrize('prompt', ['baseline.v1', 'selected_categories.v1', 'selected_material.v2', 'semantic_boundaries.v2'])
+@pytest.mark.parametrize('prompt', ['baseline.v1', 'selected_categories.v1', 'selected_material.v2',
+    'semantic_boundaries.v2', 'semantic_boundaries.v3'])
 def test_written_role_saved_meaning_and_body_replay_without_engine_or_model_calls(prompt):
     snap = role_sample(); value = role_call(snap, prompt=prompt)
     artifact, coverage = service.build_cumulative_written_role_map(OWNER, snap, model_input=value)
@@ -449,28 +450,32 @@ def test_semantic_boundaries_are_an_explicit_instruction_only_variant():
                 model_input=replace(p, response=foreign.response))
 
 
-def test_semantic_boundaries_saved_unit_file_replays_without_an_engine_compiler_or_author():
+@pytest.mark.parametrize('prompt', ['semantic_boundaries.v2', 'semantic_boundaries.v3'])
+def test_semantic_boundaries_saved_unit_file_replays_without_an_engine_compiler_or_author(prompt):
     snap = sample()
-    p = service.prepare_cumulative_quoted_parent_units(OWNER, snap, prompt_version='semantic_boundaries.v2')
+    p = service.prepare_cumulative_quoted_parent_units(OWNER, snap, prompt_version=prompt)
     value = call(p)
     artifact, counts = service.build_cumulative_quoted_parent_candidates(OWNER, snap, model_input=value)
     raw = service.serialize_cumulative_quoted_parent_candidates(OWNER, snap,
         model_input=value, artifact=artifact, coverage=counts)
     state = json.loads(raw)['state']
-    assert state['schema_version'] == 'cocolon.cmee.analysis_model_units_quoted_parents_state.semantic_boundaries.v2'
-    assert state['prompt_version'] == 'semantic_boundaries.v2'
+    assert state['schema_version'] == 'cocolon.cmee.analysis_model_units_quoted_parents_state.' + prompt
+    assert state['prompt_version'] == prompt
     assert state['response']['raw'] == value.response.raw
     with patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('generate')), \
          patch.object(compiler, 'compile_analysis_unit_candidates', side_effect=AssertionError('compile')), \
-         patch.object(author, 'realize_analysis_unit_candidates', side_effect=AssertionError('author')):
+         patch.object(compiler, 'compile_model_written_role_graph', side_effect=AssertionError('role compile')), \
+         patch.object(author, 'realize_analysis_unit_candidates', side_effect=AssertionError('author')), \
+         patch.object(author, 'realize_model_written_role_graph', side_effect=AssertionError('role author')):
         assert service.reload_cumulative_quoted_parent_candidates(OWNER, snap, raw) == (artifact, counts)
     assert counts['mapped_count'] == 0 and counts['unparsed_count'] == 2
 
 
+@pytest.mark.parametrize('prompt', ['semantic_boundaries.v2', 'semantic_boundaries.v3'])
 @pytest.mark.parametrize('change', ['version','schema','messages','request','qualifier'])
-def test_semantic_boundaries_do_not_relabel_saved_calls_or_relax_source_binding(change):
+def test_semantic_boundaries_do_not_relabel_saved_calls_or_relax_source_binding(change, prompt):
     snap = sample()
-    p = service.prepare_cumulative_quoted_parent_units(OWNER, snap, prompt_version='semantic_boundaries.v2')
+    p = service.prepare_cumulative_quoted_parent_units(OWNER, snap, prompt_version=prompt)
     value = call(p)
     if change == 'qualifier':
         data = quoted_packet(); data['fields'][0]['units'][0]['qualifiers'] = [dict(kind='EXPLICIT_ACTOR', quote='原文外')]
@@ -489,14 +494,108 @@ def test_semantic_boundaries_do_not_relabel_saved_calls_or_relax_source_binding(
         service.reload_cumulative_quoted_parent_candidates(OWNER, snap, canonical(data))
 
 
-def test_semantic_boundaries_preserve_written_role_rejection_of_an_unwanted_copula_modifier():
+@pytest.mark.parametrize('prompt', ['semantic_boundaries.v2', 'semantic_boundaries.v3'])
+def test_semantic_boundaries_preserve_written_role_rejection_of_an_unwanted_copula_modifier(prompt):
     from cocolon_meaning_experience_engine.cores.analysis.source_adapter import AnalysisSourceError
     snap = role_sample()
-    value = role_call(snap, prompt='semantic_boundaries.v2')
+    value = role_call(snap, prompt=prompt)
     data = json.loads(value.response.raw)
     data['fields'][0]['units'][0]['qualifiers'] = [dict(kind='WRITTEN_MODIFIER', quote='だった')]
     with pytest.raises((AnalysisSemanticError, AnalysisSourceError), match='analysis_written_role_qualifier_mismatch'):
         service.build_cumulative_written_role_map(OWNER, snap,
             model_input=call(service.prepare_cumulative_quoted_parent_units(OWNER, snap,
-                prompt_version='semantic_boundaries.v2'), data))
+                prompt_version=prompt), data))
+
+
+def test_semantic_v3_appends_one_public_reason_contrast_to_v2_only():
+    snap = sample()
+    v2 = service.prepare_cumulative_quoted_parent_units(OWNER, snap, prompt_version='semantic_boundaries.v2')
+    v3 = service.prepare_cumulative_quoted_parent_units(OWNER, snap, prompt_version='semantic_boundaries.v3')
+    assert prepared(snap).prompt_version == 'baseline.v1'
+    assert v3.request == v2.request and v3.source_guard == v2.source_guard
+    assert v3.request_ref != v2.request_ref and v3.messages()[1] == v2.messages()[1]
+    assert v3.messages()[0]['content'].startswith(v2.messages()[0]['content'] + '\n')
+    lines = v3.messages()[0]['content'].split('\n')
+    inputs = [json.loads(line[len('例の入力:'):]) for line in lines if line.startswith('例の入力:')]
+    outputs = [json.loads(line[len('例の出力:'):]) for line in lines if line.startswith('例の出力:')]
+    assert len(inputs) == len(outputs) == 4
+    old_lines = v2.messages()[0]['content'].split('\n')
+    assert inputs[:3] == [json.loads(line[len('例の入力:'):]) for line in old_lines if line.startswith('例の入力:')]
+    assert outputs[:3] == [json.loads(line[len('例の出力:'):]) for line in old_lines if line.startswith('例の出力:')]
+    contrast = role_sample(inputs[-1]['fields'][0]['text'])
+    p = service.prepare_cumulative_quoted_parent_units(OWNER, contrast, prompt_version='semantic_boundaries.v3')
+    artifact, counts = service.build_cumulative_quoted_parent_candidates(OWNER, contrast,
+        model_input=call(p, outputs[-1]))
+    units = artifact.graph.fields[0].units
+    assert [u.scope_role for u in units] == [None, 'WRITTEN_REASON', 'ATTRIBUTIVE_CONTENT']
+    assert units[1].parent == 1 and units[2].parent == 2
+    assert [(q.kind, q.quote) for q in units[1].qualifiers] == [('RELATIVE_TIME', '今日'), ('REASON_MARKER', 'ので')]
+    assert counts['mapped_count'] == 0 and artifact.graph.route_edges == ()
+
+
+@pytest.mark.parametrize('source,target', [('semantic_boundaries.v2','semantic_boundaries.v3'),
+    ('semantic_boundaries.v3','semantic_boundaries.v2')])
+def test_semantic_v2_v3_calls_and_saved_profiles_cannot_be_relabelled(source, target):
+    from cocolon_meaning_experience_engine.cores.analysis.semantic_admission import reload_analysis_model_quoted_parent_units
+    snap = sample()
+    p = service.prepare_cumulative_quoted_parent_units(OWNER, snap, prompt_version=source)
+    other = service.prepare_cumulative_quoted_parent_units(OWNER, snap, prompt_version=target)
+    value = call(p)
+    with pytest.raises(AnalysisSemanticError):
+        service.build_cumulative_quoted_parent_candidates(OWNER, snap,
+            model_input=replace(other, response=value.response))
+    artifact, counts = service.build_cumulative_quoted_parent_candidates(OWNER, snap, model_input=value)
+    saved = json.loads(service.serialize_cumulative_quoted_parent_candidates(OWNER, snap,
+        model_input=value, artifact=artifact, coverage=counts))
+    with pytest.raises(AnalysisSemanticError):
+        reload_analysis_model_quoted_parent_units(other, canonical(saved['state']))
+    saved['state']['prompt_version'] = target
+    saved['state']['schema_version'] = 'cocolon.cmee.analysis_model_units_quoted_parents_state.' + target
+    with pytest.raises(AnalysisSemanticError):
+        service.reload_cumulative_quoted_parent_candidates(OWNER, snap, canonical(saved))
+
+
+@pytest.mark.parametrize('prompt', ['semantic_boundaries.v2', 'semantic_boundaries.v3'])
+def test_semantic_profiles_keep_complete_unknown_roots_without_mandatory_content_splitting(prompt):
+    snap = role_sample('なぜ開催できたかは分からない。')
+    p = service.prepare_cumulative_quoted_parent_units(OWNER, snap, prompt_version=prompt)
+    data = dict(fields=[dict(field=1, units=[dict(quote='なぜ開催できたかは分からない',node_kind=None,
+        parent_quote=None,scope_role='WRITTEN_UNKNOWN',
+        qualifiers=[dict(kind='EPISTEMIC_EXPRESSION',quote='分からない')])])])
+    artifact, counts = service.build_cumulative_quoted_parent_candidates(OWNER, snap, model_input=call(p, data))
+    unit, = artifact.graph.fields[0].units
+    assert unit.scope_role == 'WRITTEN_UNKNOWN' and unit.parent is None and unit.node_kind is None
+    assert counts['mapped_count'] == 0 and counts['unparsed_count'] == 1 and artifact.graph.route_edges == ()
+
+
+@pytest.mark.parametrize('prompt,ref,messages_hash,saved_hash', [
+    ('baseline.v1','e0707847563ac1da98e11185201736153553fd5237961295a341503544668447',
+        '26cb491d51904ec4cea26b42d89485d5ea1ef54a50bedb2674b58fc269bff69d','ad571817653c5958cb9490a78e77e6bb7d6637bcab9fe3cd65c4f55aaef30be7'),
+    ('selected_categories.v1','0a699af3bbd412153779a26ee281d31c885c21cfbaa89b5bb787004ebb849b99',
+        'faa24b0fea10811143604c9327e5b29bd4522090abcef51b73b3eeea9dbf8ee3','71fca025b6a8f973b29c3945c88744a7d768a1fa3b46a037ec3eb03e704309f2'),
+    ('selected_material.v2','0bbf80a466bb1d067a4b6d7007c9058aa46fbaa6022a112bd01ae26fa21b5f8b',
+        '6ac3eef2932535feb52456bde39679a012fe9874e1b46d6d491ca4a90724b5b4','e9ad25fb11119945bafa4104615ce2974a4dd639e88e262d383f397e42f65609'),
+    ('semantic_boundaries.v2','664446f5f1b9fa7b1c2478ac4026683f9341e71e3a5d8da541779d03ff99b2e5',
+        '4ec4139c1a0603a1a3d542c4c301aa37055906b8eb2e8acae7d0bbc06362afd0','9c745e1059b5536a7f9e0c07b802c7ff589486f827fba4d149c1d289fe18cdb7'),
+])
+def test_existing_quoted_profile_messages_refs_and_saved_bytes_remain_frozen(prompt, ref, messages_hash, saved_hash):
+    from cocolon_meaning_experience_engine.cores.analysis import semantic_admission as admission
+    from cocolon_meaning_experience_engine.cores.analysis.source_adapter import (
+        AnalysisObservedMapRequest, AnalysisSavedRecord, commitment)
+    # Byte snapshots captured on dc05 before adding v3, using only this public fixture.
+    original = dict(id='00000000-0000-0000-0000-000000000101',created_at='2025-01-01T01:00:00',
+        memo='私の役割は連絡係だった。',memo_action='',category=['仕事'],emotions=['平穏'],emotion_details=[])
+    record = AnalysisSavedRecord(OWNER,original['id'],commitment(original),canonical(original))
+    request = AnalysisObservedMapRequest('analysis-model-compat',OWNER,'2025-01-01T01:00:00+00:00',
+        '2026-11-01T08:00:00+00:00',(record,),selected_category_context=prompt.startswith('selected_'))
+    p = admission.prepare_analysis_model_quoted_parent_units(request,
+        source_guard='analysis-db-cumulative-v1:'+'a'*64,prompt_version=prompt)
+    value = call(p, dict(fields=[dict(field=1,units=[dict(quote='私の役割は連絡係だった',node_kind='ROLE',
+        parent_quote=None,scope_role=None,qualifiers=[])])]))
+    artifact = admission.generate_analysis_model_quoted_parent_units(request,value)
+    saved = admission.serialize_analysis_model_quoted_parent_units(value,artifact)
+    assert p.request_ref == 'analysis-quoted-parent-units-request:' + ref
+    assert hashlib.sha256(canonical(p.messages()).encode()).hexdigest() == messages_hash
+    assert hashlib.sha256(saved.encode()).hexdigest() == saved_hash
+    assert admission.reload_analysis_model_quoted_parent_units(p,saved) == artifact
 
