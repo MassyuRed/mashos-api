@@ -237,6 +237,67 @@ def reload_cumulative_quoted_parent_candidates(owner, snapshot, raw):
     return reload_analysis_model_quoted_parent_units(prepared, canonical(saved['state'])), saved['coverage']
 
 
+def _written_role_input(owner, snapshot, model_input):
+    from cocolon_meaning_experience_engine.cores.analysis.semantic_admission import (
+        AnalysisModelQuotedParentUnitsInput, require)
+    require(type(model_input) is AnalysisModelQuotedParentUnitsInput,
+            'analysis_written_role_input_invalid')
+    expected = (prepare_cumulative_category_units(owner, snapshot, prompt_version=model_input.prompt_version)
+        if model_input.prompt_version in {'selected_categories.v1', 'selected_material.v2'}
+        else prepare_cumulative_quoted_parent_units(owner, snapshot))
+    require(model_input.request == expected.request and model_input.request_ref == expected.request_ref
+        and model_input.source_guard == expected.source_guard
+        and model_input.prompt_version == expected.prompt_version,
+        'analysis_written_role_input_invalid')
+    return expected
+
+
+def build_cumulative_written_role_map(owner, snapshot, *, model_input):
+    """Explicit offline vertical to the existing map; normal ensure is unchanged."""
+    from cocolon_meaning_experience_engine.cores.analysis.semantic_admission import (
+        generate_analysis_model_written_role)
+    _written_role_input(owner, snapshot, model_input)
+    artifact = generate_analysis_model_written_role(model_input.request, model_input)
+    # The admission scope consumes one complete original field/record. Missing
+    # stages stay gaps; no choice criterion, task outcome or route is invented.
+    coverage = _checked_coverage(dict(profile=PROFILE, source_count=1, processed_count=1,
+        mapped_count=1, unparsed_count=0, excluded_count=0,
+        exclusion_reasons={}, stale_supplement_count=0))
+    return artifact, coverage
+
+
+def serialize_cumulative_written_role_map(owner, snapshot, *, model_input, artifact, coverage):
+    from cocolon_meaning_experience_engine.cores.analysis.semantic_admission import (
+        serialize_analysis_model_written_role, canonical, require)
+    _written_role_input(owner, snapshot, model_input)
+    require(canonical(coverage) == canonical(_checked_coverage(dict(profile=PROFILE, source_count=1,
+        processed_count=1, mapped_count=1, unparsed_count=0, excluded_count=0,
+        exclusion_reasons={}, stale_supplement_count=0))), 'analysis_written_role_coverage_invalid')
+    state = json.loads(serialize_analysis_model_written_role(model_input, artifact))
+    return canonical(dict(schema_version='cocolon.cmee.cumulative_written_role_file.v1',
+        coverage=coverage, state=state))
+
+
+def reload_cumulative_written_role_map(owner, snapshot, raw):
+    from cocolon_meaning_experience_engine.cores.analysis.semantic_admission import (
+        _load, canonical, require, reload_analysis_model_written_role)
+    saved = _load(raw)
+    require(type(saved) is dict and set(saved) == {'schema_version', 'coverage', 'state'}
+        and saved['schema_version'] == 'cocolon.cmee.cumulative_written_role_file.v1'
+        and type(saved['state']) is dict, 'analysis_written_role_file_invalid')
+    prompt = saved['state'].get('prompt_version')
+    prepared = (prepare_cumulative_category_units(owner, snapshot, prompt_version=prompt)
+        if prompt in {'selected_categories.v1', 'selected_material.v2'}
+        else prepare_cumulative_quoted_parent_units(owner, snapshot))
+    artifact = reload_analysis_model_written_role(prepared, canonical(saved['state']))
+    coverage = _checked_coverage(dict(profile=PROFILE, source_count=1, processed_count=1,
+        mapped_count=1, unparsed_count=0, excluded_count=0,
+        exclusion_reasons={}, stale_supplement_count=0))
+    require(type(saved['coverage']) is dict and canonical(saved['coverage']) == canonical(coverage),
+            'analysis_written_role_coverage_invalid')
+    return artifact, coverage
+
+
 def build_cumulative_map(owner, snapshot, *, model_input=None):
     """Use the existing compiler/author once for the complete eligible set.
 

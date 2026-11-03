@@ -287,3 +287,147 @@ def test_material_metadata_is_not_an_extra_quote_source_or_a_legacy_saved_state(
     saved['state']['prompt_version'] = 'selected_categories.v1'
     with pytest.raises(AnalysisSemanticError):
         service.reload_cumulative_quoted_parent_candidates(OWNER, snap, canonical(saved))
+
+
+def role_sample(text='私の役割は連絡係だった。'):
+    snap = sample()
+    snap['members'] = snap['members'][:1]
+    snap['members'][0]['original'].update(memo=text, memo_action='')
+    return snap
+
+
+def role_call(snap, *, quote=None, kind='ROLE', prompt='baseline.v1'):
+    p = (prepared(snap) if prompt == 'baseline.v1' else
+        service.prepare_cumulative_category_units(OWNER, snap, prompt_version=prompt))
+    text = snap['members'][0]['original']['memo']
+    data = {'fields': [{'field': 1, 'units': [dict(node_kind=kind,
+        quote=text.rstrip('。．.') if quote is None else quote,
+        parent_quote=None, scope_role=None, qualifiers=[])]}]}
+    return call(p, data)
+
+
+@pytest.mark.parametrize('text,role,polarity', [
+    ('私の役割は連絡係だった。', '連絡係', 'positive'),
+    ('わたしの役割は会場の受付でした。', '会場の受付', 'positive'),
+    ('僕の役割は道具係ではなかった。', '道具係', 'negative'),
+    ('私の役割は記録係ではありませんでした。', '記録係', 'negative'),
+])
+def test_written_role_model_vertical_adds_typed_meaning_to_the_existing_map(text, role, polarity):
+    snap = role_sample(text); value = role_call(snap)
+    before, before_counts = service.build_cumulative_map(OWNER, snap)
+    assert before is None and before_counts['unparsed_count'] == 1
+    candidate, candidate_counts = service.build_cumulative_quoted_parent_candidates(
+        OWNER, snap, model_input=value)
+    artifact, coverage = service.build_cumulative_written_role_map(OWNER, snap, model_input=value)
+    assert type(artifact.graph) is compiler.ObservedGraph
+    node, = artifact.graph.nodes
+    assert (node.node_kind, node.proposition.actor, node.proposition.arguments,
+        node.polarity, node.modality, node.temporal_scope, node.proposition.role_state) == (
+            'ROLE', 'SELF', (('は', role),), polarity, 'fact', 'past', 'WRITTEN_PAST_ROLE')
+    assert node.quoted_field is None and not artifact.graph.edges
+    assert {g.missing_scope for g in artifact.graph.unknown_gaps} == set(compiler.NODE_KINDS) - {'ROLE'}
+    assert coverage['mapped_count'] == 1 and coverage['unparsed_count'] == 0
+    visual = artifact.safe_projection(authenticated_owner_scope=OWNER)
+    body = artifact.safe_text_projection(authenticated_owner_scope=OWNER)
+    assert visual['nodes'][0]['visible_label'] == text.rstrip('。．.') + '（記録された役割）'
+    assert visual['nodes'][0]['visible_label'] in canonical(body)
+    # Original candidates never become globally validated or rewritten.
+    assert candidate_counts['mapped_count'] == 0 and candidate_counts['unparsed_count'] == 1
+    assert candidate.graph.fields[0].units[0].actor == 'UNRESOLVED_NOT_OWNER_DERIVED'
+    assert candidate.graph.fields[0].units[0].polarity == 'AS_WRITTEN_UNRESOLVED'
+
+
+def test_written_role_uses_complete_source_witness_instead_of_an_actor_qualifier():
+    snap = role_sample('私の役割は荷物の受付ではなかった。')
+    value = role_call(snap, quote='荷物の受付ではなかった')
+    artifact, _ = service.build_cumulative_written_role_map(OWNER, snap, model_input=value)
+    node = artifact.graph.nodes[0]
+    assert (node.proposition.actor, node.polarity) == ('SELF', 'negative')
+    assert node.evidence_refs[0].scalar_start == 0
+    assert node.evidence_refs[0].scalar_end == len(snap['members'][0]['original']['memo'])
+    assert [role for role, _, _ in node.proposition.source_parts] == [
+        'SELF_POSSESSIVE', 'EXPLICIT_ROLE_TOPIC', 'ROLE_NOMINAL', 'FINITE_ROLE_COPULA']
+
+
+@pytest.mark.parametrize('text', [
+    '連絡係だった。', '姉の役割は連絡係だった。', '私は無関係だった。',
+    '私の役割は連絡係だったかもしれない。', '私の役割は連絡係だったか分からない。',
+    '私の役割は連絡係だったと言われた。', '「私の役割は連絡係だった」と姉が言った。',
+    'もし私の役割は連絡係だったなら困った。', '私の役割は連絡係だった。これは姉の話だ。',
+    '私の役割は連絡係だ。', '私の役割は連絡係ではなかったわけではない。',
+    '私の役割は誰の連絡係だった。', '私の役割は来週の連絡係だった。',
+])
+def test_written_role_does_not_promote_a_source_with_unresolved_actor_scope_or_time(text):
+    from cocolon_meaning_experience_engine.cores.analysis.source_adapter import AnalysisSourceError
+    snap = role_sample(text)
+    with pytest.raises((AnalysisSemanticError, AnalysisSourceError)):
+        service.build_cumulative_written_role_map(OWNER, snap, model_input=role_call(snap))
+
+
+@pytest.mark.parametrize('change', ['other_field', 'two_records', 'wrong_kind', 'small_quote', 'false_qualifier'])
+def test_written_role_does_not_drop_another_field_or_accept_a_conflicting_candidate(change):
+    from cocolon_meaning_experience_engine.cores.analysis.source_adapter import AnalysisSourceError
+    snap = role_sample(); value = role_call(snap)
+    if change == 'other_field':
+        snap['members'][0]['original']['memo_action'] = '姉の話を聞いた。'
+        p = prepared(snap)
+        data = json.loads(value.response.raw)
+        data['fields'].append(dict(field=2, units=[]))
+        value = call(p, data)
+    if change == 'two_records':
+        extra = copy.deepcopy(snap['members'][0]); extra['original']['id'] = '00000000-0000-0000-0000-000000000067'
+        snap['members'].append(extra)
+        data = json.loads(value.response.raw); data['fields'].append(dict(field=2, units=[]))
+        value = call(prepared(snap), data)
+    if change == 'wrong_kind': value = role_call(snap, kind='SCENE')
+    if change == 'small_quote': value = role_call(snap, quote='連絡係')
+    if change == 'false_qualifier':
+        data = json.loads(value.response.raw)
+        data['fields'][0]['units'][0]['qualifiers'] = [dict(kind='NEGATION', quote='だった')]
+        value = call(prepared(snap), data)
+    with pytest.raises((AnalysisSemanticError, AnalysisSourceError)):
+        service.build_cumulative_written_role_map(OWNER, snap, model_input=value)
+
+
+@pytest.mark.parametrize('prompt', ['baseline.v1', 'selected_categories.v1', 'selected_material.v2'])
+def test_written_role_saved_meaning_and_body_replay_without_engine_or_model_calls(prompt):
+    snap = role_sample(); value = role_call(snap, prompt=prompt)
+    artifact, coverage = service.build_cumulative_written_role_map(OWNER, snap, model_input=value)
+    raw = service.serialize_cumulative_written_role_map(OWNER, snap,
+        model_input=value, artifact=artifact, coverage=coverage)
+    with patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('no generation')), \
+         patch.object(compiler, 'compile_model_written_role_graph', side_effect=AssertionError('no compile')), \
+         patch.object(author, 'realize_model_written_role_graph', side_effect=AssertionError('no author')):
+        assert service.reload_cumulative_written_role_map(OWNER, snap, raw) == (artifact, coverage)
+    assert json.loads(raw)['state']['response']['raw'] == value.response.raw
+
+
+@pytest.mark.parametrize('change', ['owner', 'guard', 'source', 'role', 'polarity', 'text', 'diagram', 'coverage', 'bool'])
+def test_written_role_saved_meaning_cannot_be_tampered_or_moved_to_a_fresh_source(change):
+    snap = role_sample(); value = role_call(snap)
+    artifact, coverage = service.build_cumulative_written_role_map(OWNER, snap, model_input=value)
+    data = json.loads(service.serialize_cumulative_written_role_map(OWNER, snap,
+        model_input=value, artifact=artifact, coverage=coverage))
+    owner = OWNER; a = data['state']['artifact']
+    if change == 'owner': owner = '00000000-0000-0000-0000-000000000002'
+    if change == 'guard': snap['guard'] = 'analysis-db-cumulative-v1:' + 'f'*64
+    if change == 'source': snap['members'][0]['original']['memo'] = '私の役割は道具係だった。'
+    if change == 'role': a['graph']['nodes'][0]['proposition']['arguments'][0][1] = '道具係'
+    if change == 'polarity': a['graph']['nodes'][0]['polarity'] = 'negative'
+    if change == 'text': a['text'] = {'text': '連絡係という性格です。'}
+    if change == 'diagram': a['diagram']['nodes'][0]['visible_label'] = '連絡係ではなかった'
+    if change == 'coverage': data['coverage']['unparsed_count'] = 1
+    if change == 'bool': data['coverage']['mapped_count'] = True
+    with pytest.raises((AnalysisSemanticError, ValueError)):
+        service.reload_cumulative_written_role_map(owner, snap, canonical(data))
+
+
+@pytest.mark.parametrize('kind,quote', [('NEGATION', 'た'), ('EXPLICIT_ACTOR', '役割は')])
+def test_written_role_qualifier_requires_the_actual_operator_or_holder(kind, quote):
+    from cocolon_meaning_experience_engine.cores.analysis.source_adapter import AnalysisSourceError
+    snap = role_sample('私の役割は連絡係ではなかった。')
+    data = json.loads(role_call(snap).response.raw)
+    data['fields'][0]['units'][0]['qualifiers'] = [dict(kind=kind, quote=quote)]
+    with pytest.raises(AnalysisSourceError, match='analysis_written_role_qualifier_mismatch'):
+        service.build_cumulative_written_role_map(OWNER, snap,
+            model_input=call(prepared(snap), data))

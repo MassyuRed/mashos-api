@@ -1093,6 +1093,123 @@ class ObservedGraph:
     annotations: tuple[ObservedAnnotation, ...] = ()
 
 
+def _written_role_proposition(text):
+    """One explicit SELF role statement, not a generic noun/coplanar guess.
+
+    The written の役割は relation proves the role; a word ending in 係 does
+    not. Consume the complete field so a reported, hypothetical or uncertain
+    host cannot be discarded. Recording time never supplies event time.
+    This witness is only used by the explicit model-role admission profile.
+    """
+    if type(text) is not str:
+        return None
+    match = re.fullmatch(
+        r'(?P<self>私|わたし|僕|ぼく|俺|おれ|自分)(?P<topic>の役割は)'
+        r'(?P<noun>' + _NOMINAL + r'(?:の' + _NOMINAL + r')*)'
+        r'(?P<copula>だった|でした|ではなかった|ではなかったです|'
+        r'ではありませんでした|じゃなかった|じゃなかったです)(?:[。．.]?)', text)
+    if match is None or re.search(r'(?:^|の)(?:何|誰|幾)', match['noun']):
+        return None
+    # An unresolved temporal/scope expression must not be hidden in an open
+    # kanji nominal. Keep this lexical boundary aligned with existing frames.
+    if any(_has_unparsed_nominal_segment(p)
+            or re.match(r'^(?:今日|昨日|明日|明後日|一昨日|今朝|昨夜|先週|来週|今週|今月|先月|来月|今年|昨年|来年)', p)
+            for p in match['noun'].split('の')):
+        return None
+    negative = match['copula'] not in {'だった', 'でした'}
+    parts = (('SELF_POSSESSIVE', match.start('self'), match.end('self')),
+        ('EXPLICIT_ROLE_TOPIC', match.start('topic'), match.end('topic')),
+        ('ROLE_NOMINAL', match.start('noun'), match.end('noun')),
+        ('FINITE_ROLE_COPULA', match.start('copula'), match.end('copula')))
+    return ObservedProposition('SELF', (('は', match['noun']),), 'だ',
+        'negative' if negative else 'positive', 'fact', 'past', parts,
+        role_state='WRITTEN_PAST_ROLE')
+
+
+def _model_written_role_proof(source_set, field):
+    """Validate the complete written witness without compiling a saved map."""
+    if (type(field) is not AnalysisUnitCandidateField or len(source_set.members) != 1
+            or field.record_ref != source_set.members[0].saved_record_ref
+            or field.record_version != source_set.members[0].saved_record_version):
+        raise AnalysisSourceError('analysis_written_role_binding_invalid')
+    proposition = _written_role_proposition(field.complete_source_text)
+    if proposition is None:
+        raise AnalysisSourceError('analysis_written_role_scope_unsupported')
+    parts = {role: (a, b) for role, a, b in proposition.source_parts}
+    a, _ = parts['ROLE_NOMINAL']; _, b = parts['FINITE_ROLE_COPULA']
+    accepted_quotes = {field.complete_source_text,
+        field.complete_source_text.rstrip('。．.'), field.complete_source_text[a:b]}
+    roots = [u for u in field.units if u.parent is None]
+    if (len(roots) != 1 or roots[0].node_kind != 'ROLE'
+            or roots[0].scope_role is not None or roots[0].quote not in accepted_quotes
+            or any(u is not roots[0] and not (u.parent == roots[0].index
+                and u.scope_role == 'CONTENT_TARGET' and u.quote == proposition.arguments[0][1])
+                for u in field.units)):
+        raise AnalysisSourceError('analysis_written_role_candidate_mismatch')
+    for unit in field.units:
+        for qualifier in unit.qualifiers:
+            actor_end = parts['SELF_POSSESSIVE'][1]
+            copula = field.complete_source_text[parts['FINITE_ROLE_COPULA'][0]:b]
+            negative_operators = ({copula, 'ありませんでした'}
+                if copula == 'ではありませんでした' else
+                {copula, 'なかったです' if copula.endswith('です') else 'なかった'})
+            allowed = ((qualifier.kind == 'EXPLICIT_ACTOR'
+                        and qualifier.quote in {field.complete_source_text[:actor_end],
+                                                field.complete_source_text[:actor_end] + 'の'})
+                or (qualifier.kind == 'NEGATION' and proposition.polarity == 'negative'
+                    and qualifier.quote in negative_operators))
+            if not allowed:
+                raise AnalysisSourceError('analysis_written_role_qualifier_mismatch')
+    e = field.evidence
+    if (e.scalar_start != 0 or e.scalar_end != len(field.complete_source_text)
+            or e.utf8_start != e.field_utf8_start or e.utf8_end != e.field_utf8_end):
+        raise AnalysisSourceError('analysis_written_role_binding_invalid')
+    categories = selected_categories(source_set, field.record_ref)
+    return proposition, categories
+
+
+def compile_model_written_role_graph(source_set, field):
+    """Admit one source-explicit partial frame from a bound ROLE proposal.
+
+    The candidate stays unchanged. No qualifier becomes an independent fact,
+    and this does not widen compile_observed_graph's normal finite parser.
+    """
+    proposition, categories = _model_written_role_proof(source_set, field)
+    e = field.evidence
+    node = ObservedNode('n1', 'ROLE', field.complete_source_text,
+        (field.record_ref,), (e,), proposition.polarity, proposition.modality,
+        proposition.temporal_scope, proposition,
+        selected_categories=categories or (), selected_category_context=categories is not None)
+    gaps = tuple(UnknownGap('g' + str(i), ('n1',), kind,
+        'NOT_ESTABLISHED_FROM_SOURCE') for i, kind in enumerate(
+            (k for k in NODE_KINDS if k != 'ROLE'), 1))
+    return ObservedGraph((node,), (), gaps)
+
+
+def validate_model_written_role_graph(source_set, field, graph):
+    """Check restored meaning in place; do not invoke the compiler/author."""
+    proposition, categories = _model_written_role_proof(source_set, field)
+    if (type(graph) is not ObservedGraph or type(graph.nodes) is not tuple
+            or len(graph.nodes) != 1 or graph.edges or graph.source_updates
+            or graph.conflicts or graph.annotations):
+        raise AnalysisSourceError('analysis_written_role_saved_graph_changed')
+    node = graph.nodes[0]
+    from dataclasses import asdict
+    expected = dict(node_ref='n1', node_kind='ROLE', visible_label=field.complete_source_text,
+        record_refs=[field.record_ref], evidence_refs=[asdict(field.evidence)],
+        polarity=proposition.polarity, modality=proposition.modality,
+        temporal_scope=proposition.temporal_scope, proposition=asdict(proposition),
+        update_refs=[], quoted_field=None, selected_categories=list(categories or ()),
+        selected_category_context=categories is not None)
+    gaps = [dict(gap_ref='g' + str(i), between_node_refs=['n1'], missing_scope=kind,
+        reason_code='NOT_ESTABLISHED_FROM_SOURCE') for i, kind in enumerate(
+            (k for k in NODE_KINDS if k != 'ROLE'), 1)]
+    if (type(node) is not ObservedNode or _semantic_json(asdict(node)) != _semantic_json(expected)
+            or _semantic_json([asdict(g) for g in graph.unknown_gaps]) != _semantic_json(gaps)):
+        raise AnalysisSourceError('analysis_written_role_saved_graph_changed')
+    return graph
+
+
 @dataclass(frozen=True, slots=True, repr=False)
 class PeriodChange:
     change_id: str

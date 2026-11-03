@@ -265,6 +265,29 @@ def _source_prefix(phrase, parts):
 
 
 def _safe_label(node, graph, *, owner_scope=None, source_set_ref=None, source_members=()):
+    if node.proposition is not None and node.proposition.role_state == 'WRITTEN_PAST_ROLE':
+        from .intent_compiler import _written_role_proposition
+        import hashlib
+        p = _written_role_proposition(node.visible_label)
+        raw = node.visible_label.encode('utf-8')
+        sha = hashlib.sha256(raw).hexdigest()
+        e = node.evidence_refs[0] if len(node.evidence_refs) == 1 else None
+        if (p is None or p != node.proposition or node.node_kind != 'ROLE'
+                or any(type(a) is not int or type(b) is not int
+                    for _, a, b in node.proposition.source_parts)
+                or (node.polarity, node.modality, node.temporal_scope) !=
+                   (p.polarity, p.modality, p.temporal_scope)
+                or node.quoted_field is not None or node.update_refs
+                or len(node.record_refs) != 1 or e is None
+                or not any(m.saved_record_ref == node.record_refs[0]
+                    and m.inclusion_status == 'INCLUDED'
+                    and e.source_envelope_id in m.child_source_envelope_refs for m in source_members)
+                or e.scalar_start != 0 or e.scalar_end != len(node.visible_label)
+                or e.utf8_start != e.field_utf8_start or e.utf8_end != e.field_utf8_end
+                or e.utf8_end - e.utf8_start != len(raw)
+                or e.field_sha256 != sha or e.literal_sha256 != sha):
+            raise AnalysisSourceError('analysis_safe_surface_unavailable')
+        return node.visible_label.rstrip('。．.') + '（記録された役割）'
     if node.quoted_field is not None:
         # The explicit offline probe keeps the COMPLETE original field. It
         # does not certify the model's kind, actor, polarity or time reading.
@@ -574,6 +597,17 @@ class AnalysisEngineOutcome:
             'artifact_present': self.artifact is not None,
             'production_enabled': False, 'record_effect': 0,
             'automatic_progression': False}
+
+
+def realize_model_written_role_graph(sources, graph, *, request_ref, response_ref):
+    """Use the existing map author for an explicitly admitted partial frame."""
+    artifact = ObservedSelfStructureMap('artifact:' + commitment([
+        'analysis_model_written_role.v1', request_ref, response_ref])[7:], 1,
+        sources.owner_scope, sources.source_set_ref, sources.period,
+        graph, sources.members, category_records=sources.category_records)
+    artifact.safe_projection(authenticated_owner_scope=sources.owner_scope)
+    artifact.safe_text_projection(authenticated_owner_scope=sources.owner_scope)
+    return artifact
 
 
 def _failed_outcome(status, reason, *, stage, diagnostic_reason=None):
