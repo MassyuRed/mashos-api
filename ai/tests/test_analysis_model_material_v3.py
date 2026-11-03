@@ -2,6 +2,7 @@
 import copy
 from dataclasses import replace
 import json
+import sys
 from unittest.mock import patch
 
 import pytest
@@ -21,6 +22,11 @@ from test_analysis_saved_period import with_answer
 from test_analysis_model_quoted_parent_units import call
 
 PROMPT = 'selected_material.v3'
+
+
+@pytest.fixture(autouse=True, params=['selected_material.v3', 'selected_material.v4'])
+def material_prompt(request, monkeypatch):
+    monkeypatch.setattr(sys.modules[__name__], 'PROMPT', request.param)
 
 
 def snapshot(answer='私は資料を調べた。'):
@@ -169,3 +175,50 @@ def test_model_supplement_cannot_enter_the_original_only_typed_role_vertical():
     from cocolon_meaning_experience_engine.cores.analysis.semantic_admission import generate_analysis_model_written_role
     with pytest.raises(AnalysisSemanticUnsupported):
         generate_analysis_model_written_role(p.request, call(p, data))
+
+
+def test_v4_contrast_is_field_local_and_the_output_drops_context_metadata():
+    snap = source_snapshot(1)
+    p = service.prepare_cumulative_category_units(OWNER, snap, prompt_version='selected_material.v4')
+    instruction = p.messages()[0]['content']
+    example = instruction.rsplit('例の入力:', 1)[1].split('\n例の出力:', 1)
+    material = json.loads(example[0]); data = json.loads(example[1].split('\n今回の', 1)[0])
+    for f, row in zip(material['fields'], data['fields']):
+        assert set(row) == {'field', 'units'}
+        for unit in row['units']:
+            assert unit['quote'] in f['text']
+            assert all(q['quote'] in unit['quote'] for q in unit['qualifiers'])
+    snap['members'][0]['original'].update(memo=material['fields'][0]['text'],
+        memo_action=material['fields'][1]['text'])
+    p = service.prepare_cumulative_category_units(OWNER, snap, prompt_version='selected_material.v4')
+    artifact, _ = service.build_cumulative_quoted_parent_candidates(OWNER, snap, model_input=call(p, data))
+    assert len(artifact.graph.fields) == 2
+    typed, _ = service.build_cumulative_written_role_map(OWNER, snap,
+        model_input=call(p, data), with_action=True)
+    assert len(typed.graph.nodes) == 2 and typed.graph.edges == ()
+    bad = copy.deepcopy(data)
+    bad['fields'][0]['units'][0]['qualifiers'][0]['quote'] = '僕は'
+    with pytest.raises(AnalysisSemanticError):
+        service.build_cumulative_quoted_parent_candidates(OWNER, snap, model_input=call(p, bad))
+    bad = copy.deepcopy(data); bad['fields'][0]['record'] = 1
+    with pytest.raises(AnalysisSemanticError):
+        service.build_cumulative_quoted_parent_candidates(OWNER, snap, model_input=call(p, bad))
+
+
+@pytest.mark.parametrize('source_prompt,target_prompt', [('selected_material.v3','selected_material.v4'),
+    ('selected_material.v4','selected_material.v3')])
+def test_material_versions_cannot_rebind_responses_or_mix_saved_states(source_prompt, target_prompt):
+    snap = source_snapshot(1)
+    p = service.prepare_cumulative_category_units(OWNER, snap, prompt_version=source_prompt)
+    q = service.prepare_cumulative_category_units(OWNER, snap, prompt_version=target_prompt)
+    assert p.request_ref != q.request_ref and p.messages() != q.messages()
+    value = call(p, packet(p))
+    with pytest.raises(AnalysisSemanticError):
+        service.build_cumulative_quoted_parent_candidates(OWNER, snap,
+            model_input=replace(q, response=value.response))
+    artifact, coverage = service.build_cumulative_quoted_parent_candidates(OWNER, snap, model_input=value)
+    raw = json.loads(service.serialize_cumulative_quoted_parent_candidates(OWNER, snap,
+        model_input=value, artifact=artifact, coverage=coverage))
+    raw['state']['prompt_version'] = target_prompt
+    with pytest.raises(AnalysisSemanticError):
+        service.reload_cumulative_quoted_parent_candidates(OWNER, snap, canonical(raw))

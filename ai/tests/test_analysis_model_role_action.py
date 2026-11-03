@@ -2,6 +2,7 @@
 import copy
 from dataclasses import replace
 import json
+import sys
 from unittest.mock import patch
 
 import pytest
@@ -16,6 +17,14 @@ from test_analysis_cumulative import OWNER, source_snapshot
 from test_analysis_model_quoted_parent_units import call
 
 
+PROMPT = 'selected_material.v2'
+
+
+@pytest.fixture(autouse=True, params=['selected_material.v2', 'selected_material.v4'])
+def material_prompt(request, monkeypatch):
+    monkeypatch.setattr(sys.modules[__name__], 'PROMPT', request.param)
+
+
 def sample(role_negative=False, action_negative=False, swap=False):
     snap = source_snapshot(1)
     role = '私の役割は連絡係' + ('ではなかった。' if role_negative else 'だった。')
@@ -25,7 +34,7 @@ def sample(role_negative=False, action_negative=False, swap=False):
 
 
 def prepared(snap):
-    return service.prepare_cumulative_category_units(OWNER, snap, prompt_version='selected_material.v2')
+    return service.prepare_cumulative_category_units(OWNER, snap, prompt_version=PROMPT)
 
 
 def packet(p):

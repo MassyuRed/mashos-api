@@ -942,6 +942,8 @@ QUOTED_PARENT_MATERIAL_PROFILE = 'selected_material.v2'
 QUOTED_PARENT_MATERIAL_STATE = 'cocolon.cmee.analysis_model_units_quoted_parents_state.material.v2'
 QUOTED_PARENT_MATERIAL_V3_PROFILE = 'selected_material.v3'
 QUOTED_PARENT_MATERIAL_V3_STATE = 'cocolon.cmee.analysis_model_units_quoted_parents_state.material.v3'
+QUOTED_PARENT_MATERIAL_V4_PROFILE = 'selected_material.v4'
+QUOTED_PARENT_MATERIAL_V4_STATE = 'cocolon.cmee.analysis_model_units_quoted_parents_state.material.v4'
 QUOTED_PARENT_SEMANTIC_PROFILE = 'semantic_boundaries.v2'
 QUOTED_PARENT_SEMANTIC_STATE = 'cocolon.cmee.analysis_model_units_quoted_parents_state.semantic_boundaries.v2'
 QUOTED_PARENT_SEMANTIC_V3_PROFILE = 'semantic_boundaries.v3'
@@ -967,7 +969,7 @@ class AnalysisModelQuotedParentUnitsInput:
 
     def messages(self):
         frozen, fields = _model_fields_source(self.request,
-            allow_supplements=self.prompt_version == QUOTED_PARENT_MATERIAL_V3_PROFILE)
+            allow_supplements=self.prompt_version in {QUOTED_PARENT_MATERIAL_V3_PROFILE, QUOTED_PARENT_MATERIAL_V4_PROFILE})
         require(self.request_ref == _quoted_parent_units_ref(self.request, frozen, self.source_guard, self.prompt_version),
                 'analysis_quoted_parent_units_binding_invalid')
         material = dict(schema_version=QUOTED_PARENT_UNITS_SCHEMA, fields=[
@@ -975,7 +977,7 @@ class AnalysisModelQuotedParentUnitsInput:
             for i, f in enumerate(fields, 1)])
         instruction = _quoted_parent_units_instruction()
         if self.prompt_version in {QUOTED_PARENT_SEMANTIC_PROFILE, QUOTED_PARENT_SEMANTIC_V3_PROFILE,
-                QUOTED_PARENT_MATERIAL_V3_PROFILE}:
+                QUOTED_PARENT_MATERIAL_V3_PROFILE, QUOTED_PARENT_MATERIAL_V4_PROFILE}:
             instruction += ('\n意味上の境界：'
                 'CONTENT_TARGETは親述語が向く対象・内容です。サ変名詞が「する」と一体で述語を作る場合、'
                 'その語幹を対象として切り出しません。別の述語に対して対象を示す助詞付きの名詞句とは区別します。'
@@ -992,10 +994,10 @@ class AnalysisModelQuotedParentUnitsInput:
                 '推測・否定・不明を削って断定にせず、他者の役割を本人へ移しません。'
                 'EXPLICIT_ACTORも原文の表記をそのまま引用し、書かれていない助詞を足しません。'
                 'quoteのために語を補ったり言い換えたりせず、原文の連続文字列をそのまま使います。')
-        if self.prompt_version in {QUOTED_PARENT_SEMANTIC_V3_PROFILE, QUOTED_PARENT_MATERIAL_V3_PROFILE}:
+        if self.prompt_version in {QUOTED_PARENT_SEMANTIC_V3_PROFILE, QUOTED_PARENT_MATERIAL_V3_PROFILE, QUOTED_PARENT_MATERIAL_V4_PROFILE}:
             instruction += _reason_boundaries_units_instruction()
         if self.prompt_version in {QUOTED_PARENT_CATEGORY_PROFILE, QUOTED_PARENT_MATERIAL_PROFILE,
-                QUOTED_PARENT_MATERIAL_V3_PROFILE}:
+                QUOTED_PARENT_MATERIAL_V3_PROFILE, QUOTED_PARENT_MATERIAL_V4_PROFILE}:
             from .source_adapter import selected_categories
             for row, field in zip(material['fields'], fields):
                 row['selected_categories'] = list(selected_categories(frozen, field['source'].record_ref))
@@ -1003,7 +1005,7 @@ class AnalysisModelQuotedParentUnitsInput:
                 '本文を読む文脈として使い、同じ本文でも別カテゴリの記録を混同しません。'
                 'カテゴリ名だけから場所・役割・原因・人格・相手の意図を作りません。'
                 'quoteとqualifiersは本文textからだけ引用し、カテゴリを本文の引用にしません。')
-        if self.prompt_version in {QUOTED_PARENT_MATERIAL_PROFILE, QUOTED_PARENT_MATERIAL_V3_PROFILE}:
+        if self.prompt_version in {QUOTED_PARENT_MATERIAL_PROFILE, QUOTED_PARENT_MATERIAL_V3_PROFILE, QUOTED_PARENT_MATERIAL_V4_PROFILE}:
             # Only already owner/version-checked originals enter this context.
             # Ordinals link fields without exposing record or owner identifiers.
             originals = {m.saved_record_ref: json.loads(m.original_json) for m in self.request.members}
@@ -1026,7 +1028,7 @@ class AnalysisModelQuotedParentUnitsInput:
                 'recorded_atは記録日時で、本文の出来事日時ではありません。analysis_as_ofは分析対象の終点です。'
                 '日時順だけから変化・因果・記録間の関係を作りません。'
                 'quote、parent_quote、qualifiersは対応するfieldのtextからだけ取り、recordsの値を引用しません。')
-        if self.prompt_version == QUOTED_PARENT_MATERIAL_V3_PROFILE:
+        if self.prompt_version in {QUOTED_PARENT_MATERIAL_V3_PROFILE, QUOTED_PARENT_MATERIAL_V4_PROFILE}:
             # These are ordinals of admitted source children, not question rounds
             # or event times. The saved-source owner has already checked answers.
             answer_ordinals = {s.envelope.envelope_id: i
@@ -1044,6 +1046,8 @@ class AnalysisModelQuotedParentUnitsInput:
                 '補足を原入力に連結せず、主体・時点・不明を元のfieldごとに保ちます。'
                 '別fieldの語句をquoteやparent_quoteに使わず、記録内の二欄や補足を別の反復機会に数えません。'
                 '本人補足を理由に、原入力の未記載な役割・動機・選択基準を作りません。')
+        if self.prompt_version == QUOTED_PARENT_MATERIAL_V4_PROFILE:
+            instruction += _actor_field_boundaries_units_instruction()
         return [dict(role='system', content=instruction),
                 dict(role='user', content=canonical(material))]
 
@@ -1051,7 +1055,7 @@ class AnalysisModelQuotedParentUnitsInput:
 def _quoted_parent_units_ref(request, frozen, source_guard, prompt_version='baseline.v1'):
     _model_fields_ref(request, frozen, source_guard)
     require(prompt_version in {'baseline.v1', QUOTED_PARENT_CATEGORY_PROFILE, QUOTED_PARENT_MATERIAL_PROFILE,
-            QUOTED_PARENT_SEMANTIC_PROFILE, QUOTED_PARENT_SEMANTIC_V3_PROFILE, QUOTED_PARENT_MATERIAL_V3_PROFILE},
+            QUOTED_PARENT_SEMANTIC_PROFILE, QUOTED_PARENT_SEMANTIC_V3_PROFILE, QUOTED_PARENT_MATERIAL_V3_PROFILE, QUOTED_PARENT_MATERIAL_V4_PROFILE},
             'analysis_quoted_parent_units_binding_invalid')
     require(prompt_version in {'baseline.v1', QUOTED_PARENT_SEMANTIC_PROFILE, QUOTED_PARENT_SEMANTIC_V3_PROFILE}
             or request.selected_category_context,
@@ -1066,7 +1070,7 @@ def _quoted_parent_units_ref(request, frozen, source_guard, prompt_version='base
 
 def prepare_analysis_model_quoted_parent_units(request, *, source_guard, prompt_version='baseline.v1'):
     frozen, _ = _model_fields_source(request,
-        allow_supplements=prompt_version == QUOTED_PARENT_MATERIAL_V3_PROFILE)
+        allow_supplements=prompt_version in {QUOTED_PARENT_MATERIAL_V3_PROFILE, QUOTED_PARENT_MATERIAL_V4_PROFILE})
     return AnalysisModelQuotedParentUnitsInput(request, source_guard,
         _quoted_parent_units_ref(request, frozen, source_guard, prompt_version), prompt_version=prompt_version)
 
@@ -1118,11 +1122,39 @@ def _reason_boundaries_units_instruction():
         '\n今回の入力にだけ答えてください。出力のrootはfields一つだけです。')
 
 
+def _actor_field_boundaries_units_instruction():
+    """An opt-in contrast for observed cross-field actor and metadata copying."""
+    role = '僕の役割は会計係だった'
+    action = '僕は費用を記録しなかった'
+    def unit(quote, kind, qualifiers=(), parent=None, scope=None):
+        return dict(quote=quote, node_kind=kind, parent_quote=parent,
+                    scope_role=scope, qualifiers=list(qualifiers))
+    material = dict(fields=[dict(field=1, field_path='memo', text=role+'。',
+        record=1, selected_categories=['生活'], source_role='ORIGINAL_INPUT', supplement=None),
+        dict(field=2, field_path='memo_action', text=action+'。', record=1,
+        selected_categories=['生活'], source_role='ORIGINAL_INPUT', supplement=None)])
+    packet = dict(fields=[dict(field=1, units=[unit(role, 'ROLE',
+        [dict(kind='EXPLICIT_ACTOR', quote='僕')])]), dict(field=2, units=[
+        unit(action, 'ACTION_OR_NONACTION', [dict(kind='EXPLICIT_ACTOR', quote='僕'),
+            dict(kind='NEGATION', quote='なかった')]),
+        unit('費用', None, parent=action, scope='CONTENT_TARGET')])])
+    return ('\n欄ごとの人物引用と出力形式：EXPLICIT_ACTORはそのunitに実在する人物表現の最小の引用で表せます。'
+        '所有格「僕の」と主題格「僕は」はどちらも人物表現「僕」をそのまま引用できます。'
+        '別のfieldにある助詞付き表現を移さず、原文にない「は」を加えません。'
+        '役割文の「の」「は」はこの例では文法上の助詞で、役割を修飾する内容ではありません。'
+        '肯定の「だった」をWRITTEN_MODIFIERへ分離しません。否定の有無はunit自身の原文で区別します。'
+        '入力の文脈metadataは出力schemaではありません。出力rootはfieldsだけ、各fieldはfieldとunitsだけです。'
+        'record、records、field_path、text、selected_categories、source_role、supplement、日時や感情のkeyを出力しません。'
+        '次は形式を示す架空の対照例で、今回入力の事実ではありません。'
+        '\n例の入力:' + canonical(material) + '\n例の出力:' + canonical(packet) +
+        '\n今回の文脈を保ち、引用は各fieldのtextだけから取り、同じ出力schemaで答えてください。')
+
+
 def _admit_quoted_parent_units(request, model_input):
     require(type(model_input) is AnalysisModelQuotedParentUnitsInput and model_input.request == request,
             'analysis_quoted_parent_units_binding_invalid')
     frozen, fields = _model_fields_source(request,
-        allow_supplements=model_input.prompt_version == QUOTED_PARENT_MATERIAL_V3_PROFILE)
+        allow_supplements=model_input.prompt_version in {QUOTED_PARENT_MATERIAL_V3_PROFILE, QUOTED_PARENT_MATERIAL_V4_PROFILE})
     expected_ref = _quoted_parent_units_ref(request, frozen, model_input.source_guard, model_input.prompt_version)
     require(model_input.request_ref == expected_ref, 'analysis_quoted_parent_units_binding_invalid')
     response = model_input.response
@@ -1200,6 +1232,7 @@ def serialize_analysis_model_quoted_parent_units(model_input, artifact):
     if model_input.prompt_version != 'baseline.v1':
         saved.update(schema_version={QUOTED_PARENT_MATERIAL_PROFILE: QUOTED_PARENT_MATERIAL_STATE,
             QUOTED_PARENT_MATERIAL_V3_PROFILE: QUOTED_PARENT_MATERIAL_V3_STATE,
+            QUOTED_PARENT_MATERIAL_V4_PROFILE: QUOTED_PARENT_MATERIAL_V4_STATE,
             QUOTED_PARENT_CATEGORY_PROFILE: QUOTED_PARENT_CATEGORY_STATE,
             QUOTED_PARENT_SEMANTIC_PROFILE: QUOTED_PARENT_SEMANTIC_STATE,
             QUOTED_PARENT_SEMANTIC_V3_PROFILE: QUOTED_PARENT_SEMANTIC_V3_STATE}[model_input.prompt_version],
@@ -1218,6 +1251,7 @@ def reload_analysis_model_quoted_parent_units(prepared, raw):
         QUOTED_PARENT_CATEGORY_PROFILE: QUOTED_PARENT_CATEGORY_STATE,
         QUOTED_PARENT_MATERIAL_PROFILE: QUOTED_PARENT_MATERIAL_STATE,
         QUOTED_PARENT_MATERIAL_V3_PROFILE: QUOTED_PARENT_MATERIAL_V3_STATE,
+        QUOTED_PARENT_MATERIAL_V4_PROFILE: QUOTED_PARENT_MATERIAL_V4_STATE,
         QUOTED_PARENT_SEMANTIC_PROFILE: QUOTED_PARENT_SEMANTIC_STATE,
         QUOTED_PARENT_SEMANTIC_V3_PROFILE: QUOTED_PARENT_SEMANTIC_V3_STATE}.get(prepared.prompt_version)
     state_keys = {'schema_version','request_ref','response','candidate_id','graph','text','diagram'}
