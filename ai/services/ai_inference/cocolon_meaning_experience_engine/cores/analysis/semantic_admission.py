@@ -937,6 +937,8 @@ QUOTED_PARENT_CATEGORY_PROFILE = 'selected_categories.v1'
 QUOTED_PARENT_CATEGORY_STATE = 'cocolon.cmee.analysis_model_units_quoted_parents_state.categories.v1'
 QUOTED_PARENT_MATERIAL_PROFILE = 'selected_material.v2'
 QUOTED_PARENT_MATERIAL_STATE = 'cocolon.cmee.analysis_model_units_quoted_parents_state.material.v2'
+QUOTED_PARENT_SEMANTIC_PROFILE = 'semantic_boundaries.v2'
+QUOTED_PARENT_SEMANTIC_STATE = 'cocolon.cmee.analysis_model_units_quoted_parents_state.semantic_boundaries.v2'
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -964,6 +966,23 @@ class AnalysisModelQuotedParentUnitsInput:
             dict(field=i, field_path=f['field_path'], text=f['text'])
             for i, f in enumerate(fields, 1)])
         instruction = _quoted_parent_units_instruction()
+        if self.prompt_version == QUOTED_PARENT_SEMANTIC_PROFILE:
+            instruction += ('\n意味上の境界：'
+                'CONTENT_TARGETは親述語が向く対象・内容です。サ変名詞が「する」と一体で述語を作る場合、'
+                'その語幹を対象として切り出しません。別の述語に対して対象を示す助詞付きの名詞句とは区別します。'
+                'そのunitの行動・役割の述語そのものが否定なら、同じunitのNEGATIONに実際の否定表現を引用して保持します。'
+                '引用や従属内容の否定を親述語の否定へ移しません。'
+                '不明表現はEPISTEMIC_EXPRESSIONで扱い、単純な否定にしません。'
+                'RELATIVE_TIMEは相対的な時を表す引用だけです。「かも」などの推測・疑問の表現を時点にしません。'
+                'UNKNOWN_CONTENTを返すときは、対応するWRITTEN_UNKNOWN親もunitsへ返します。'
+                '同じ不明述語が複数ある場合は、各内容と不明述語を含む一意な原文引用で親を分けます。'
+                'qualifierは、その引用を実際に含むunitにだけ付けます。'
+                'ROLEは、その場での担当・立場・役目そのものを述べた節です。単なる名詞や性質を役割にしません。'
+                '明記された役割文では、役割名詞と終止表現を同じROLE引用へ保持します。'
+                '肯定過去の「だった」「でした」自体をWRITTEN_MODIFIERにしません。'
+                '推測・否定・不明を削って断定にせず、他者の役割を本人へ移しません。'
+                'EXPLICIT_ACTORも原文の表記をそのまま引用し、書かれていない助詞を足しません。'
+                'quoteのために語を補ったり言い換えたりせず、原文の連続文字列をそのまま使います。')
         if self.prompt_version in {QUOTED_PARENT_CATEGORY_PROFILE, QUOTED_PARENT_MATERIAL_PROFILE}:
             from .source_adapter import selected_categories
             for row, field in zip(material['fields'], fields):
@@ -1001,9 +1020,10 @@ class AnalysisModelQuotedParentUnitsInput:
 
 def _quoted_parent_units_ref(request, frozen, source_guard, prompt_version='baseline.v1'):
     _model_fields_ref(request, frozen, source_guard)
-    require(prompt_version in {'baseline.v1', QUOTED_PARENT_CATEGORY_PROFILE, QUOTED_PARENT_MATERIAL_PROFILE},
+    require(prompt_version in {'baseline.v1', QUOTED_PARENT_CATEGORY_PROFILE, QUOTED_PARENT_MATERIAL_PROFILE,
+            QUOTED_PARENT_SEMANTIC_PROFILE},
             'analysis_quoted_parent_units_binding_invalid')
-    require(prompt_version == 'baseline.v1' or request.selected_category_context,
+    require(prompt_version in {'baseline.v1', QUOTED_PARENT_SEMANTIC_PROFILE} or request.selected_category_context,
             'analysis_quoted_parent_units_binding_invalid')
     identity = [
         QUOTED_PARENT_UNITS_PROFILE, request.request_id, frozen.owner_scope,
@@ -1120,8 +1140,9 @@ def serialize_analysis_model_quoted_parent_units(model_input, artifact):
         response=asdict(model_input.response), candidate_id=artifact.candidate_id,
         graph=asdict(artifact.graph), text=artifact.text, diagram=json.loads(artifact.diagram_json))
     if model_input.prompt_version != 'baseline.v1':
-        saved.update(schema_version=(QUOTED_PARENT_MATERIAL_STATE
-            if model_input.prompt_version == QUOTED_PARENT_MATERIAL_PROFILE else QUOTED_PARENT_CATEGORY_STATE),
+        saved.update(schema_version={QUOTED_PARENT_MATERIAL_PROFILE: QUOTED_PARENT_MATERIAL_STATE,
+            QUOTED_PARENT_CATEGORY_PROFILE: QUOTED_PARENT_CATEGORY_STATE,
+            QUOTED_PARENT_SEMANTIC_PROFILE: QUOTED_PARENT_SEMANTIC_STATE}[model_input.prompt_version],
             prompt_version=model_input.prompt_version)
     return canonical(saved)
 
@@ -1132,15 +1153,17 @@ def reload_analysis_model_quoted_parent_units(prepared, raw):
     require(type(prepared) is AnalysisModelQuotedParentUnitsInput and prepared.response is None,
             'analysis_quoted_parent_units_reload_input_invalid')
     saved = _load(raw)
-    category_prompt = prepared.prompt_version in {QUOTED_PARENT_CATEGORY_PROFILE, QUOTED_PARENT_MATERIAL_PROFILE}
-    expected_schema = (QUOTED_PARENT_MATERIAL_STATE if prepared.prompt_version == QUOTED_PARENT_MATERIAL_PROFILE
-        else QUOTED_PARENT_CATEGORY_STATE if category_prompt else QUOTED_PARENT_UNITS_STATE)
+    versioned_prompt = prepared.prompt_version != 'baseline.v1'
+    expected_schema = {'baseline.v1': QUOTED_PARENT_UNITS_STATE,
+        QUOTED_PARENT_CATEGORY_PROFILE: QUOTED_PARENT_CATEGORY_STATE,
+        QUOTED_PARENT_MATERIAL_PROFILE: QUOTED_PARENT_MATERIAL_STATE,
+        QUOTED_PARENT_SEMANTIC_PROFILE: QUOTED_PARENT_SEMANTIC_STATE}.get(prepared.prompt_version)
     state_keys = {'schema_version','request_ref','response','candidate_id','graph','text','diagram'}
-    if category_prompt:
+    if versioned_prompt:
         state_keys.add('prompt_version')
     require(type(saved) is dict and set(saved) == state_keys
         and saved['schema_version'] == expected_schema
-        and (not category_prompt or saved['prompt_version'] == prepared.prompt_version)
+        and (not versioned_prompt or saved['prompt_version'] == prepared.prompt_version)
         and saved['request_ref'] == prepared.request_ref and type(saved['response']) is dict
         and set(saved['response']) == {'request_ref','messages_sha256','raw_sha256','finish_reason','raw'},
         'analysis_quoted_parent_units_state_invalid')
@@ -1409,5 +1432,6 @@ def generate_analysis_model_field_kinds(request, model_input):
             'analysis_model_kinds_field_invalid')
         kinds.append(row['node_kind'])
     return _realize_model_field_kinds(frozen, fields, kinds)
+
 
 
