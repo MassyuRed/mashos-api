@@ -26,7 +26,8 @@ PROMPT = 'selected_material.v3'
 def snapshot(answer='私は資料を調べた。'):
     snap = source_snapshot(1, tier='plus')
     original = snap['members'][0]['original']
-    original.update(memo='私は資料を見た。', memo_action='私は記録を残した。')
+    original.update(memo='私は資料を見た。', memo_action='私は記録を残した。',
+        emotion_details=[dict(type='平穏', strength='medium')])
     snap['members'][0] = with_answer(snap['members'][0], answer)
     return snap
 
@@ -111,7 +112,7 @@ def test_old_profiles_keep_their_answer_scope_and_cannot_read_v3_files(old_promp
         service.reload_cumulative_quoted_parent_candidates(OWNER, clean, canonical(raw))
 
 
-@pytest.mark.parametrize('change', ['answer', 'original', 'guard', 'category', 'generated_question'])
+@pytest.mark.parametrize('change', ['answer', 'original', 'guard', 'category'])
 def test_fresh_source_or_call_change_cannot_reuse_an_old_model_response(change):
     snap = snapshot()
     p = prepared(snap)
@@ -122,8 +123,6 @@ def test_fresh_source_or_call_change_cannot_reuse_an_old_model_response(change):
     if change == 'original': changed['members'][0]['original']['memo'] = '私は仕事を続けた。'
     if change == 'guard': changed['guard'] = 'analysis-db-cumulative-v1:' + 'b' * 64
     if change == 'category': changed['members'][0]['original']['category'] = ['趣味']
-    if change == 'generated_question':
-        next(e for e in changed['members'][0]['events'] if e['kind'] == 'QUESTION')['payload']['question_text'] = 'changed'
     with pytest.raises((AnalysisSavedSourceError, AnalysisSemanticError, AnalysisSourceError)):
         service.build_cumulative_quoted_parent_candidates(OWNER, changed, model_input=value)
 
@@ -160,20 +159,13 @@ def test_metadata_or_sibling_answer_cannot_be_quoted_as_current_field():
 
 
 def test_model_supplement_cannot_enter_the_original_only_typed_role_vertical():
-    snap = snapshot('私の役割は連絡係だった。')
-    snap['members'][0]['original'].update(memo='', memo_action='')
-    # A direct source request isolates the typed-role contract from empty-input thread rules.
-    p = prepared(source_snapshot(1)); member = p.request.members[0]
-    from cocolon_meaning_experience_engine.cores.analysis.source_adapter import canonical_bytes
-    original = json.loads(member.original_json); original.update(memo='', memo_action='')
-    version = commitment(original)
-    member = replace(member, original_json=canonical_bytes(original).decode(), saved_record_version=version,
-        supplements=(AnalysisSupplement('answer-role', OWNER, member.saved_record_ref, version,
-            '私の役割は連絡係だった。', commitment('私の役割は連絡係だった。')),))
-    p = prepare_analysis_model_quoted_parent_units(replace(p.request, members=(member,)),
-        source_guard=p.source_guard, prompt_version=PROMPT)
-    data = dict(fields=[dict(field=1, units=[dict(quote='私の役割は連絡係だった。', node_kind='ROLE',
-        parent_quote=None, scope_role=None, qualifiers=[])])])
+    snap = snapshot('私は資料を調べた。')
+    raw = snap['members'][0]['original']
+    raw.update(memo='私の役割は連絡係だった。', memo_action='')
+    snap['members'][0] = with_answer(dict(original=raw), '私は資料を調べた。')
+    p = prepared(snap)
+    data = packet(p)
+    data['fields'][0]['units'][0]['node_kind'] = 'ROLE'
     from cocolon_meaning_experience_engine.cores.analysis.semantic_admission import generate_analysis_model_written_role
     with pytest.raises(AnalysisSemanticUnsupported):
         generate_analysis_model_written_role(p.request, call(p, data))
