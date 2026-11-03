@@ -1260,6 +1260,11 @@ def _model_written_role_action_proof(source_set, fields):
     match = re.search(r'(なかった(?:です)?|ませんでした)$', finite_text)
     if match:
         operators.add(match[0])
+    # A suru inflection is also an exact negative operator inside the
+    # already parsed finite predicate; it is not a free substring suffix.
+    if (p.polarity == 'negative' and p.predicate_lemma.endswith('する')
+            and finite_text == p.predicate_lemma[:-2] + 'しなかった'):
+        operators.add('しなかった')
     for unit in action.units:
         for q in unit.qualifiers:
             actor = (q.kind == 'EXPLICIT_ACTOR' and q.quote in {self_text, self_text + 'は'}

@@ -147,3 +147,41 @@ def test_pair_saved_meaning_and_body_tampering_is_rejected(change):
     if change == 'id': a['artifact_id']='artifact:changed'
     with pytest.raises((AnalysisSemanticError,AnalysisSourceError)):
         service.reload_cumulative_written_role_map(OWNER,snap,canonical(saved),with_action=True)
+
+
+@pytest.mark.parametrize('swap', [False, True])
+def test_exact_suru_negative_operator_survives_field_swap_categories_and_saved_read(swap):
+    snap = sample()
+    original = snap['members'][0]['original']
+    role, action = '私の役割は受付係だった。', '私は予定を記録しなかった。'
+    original.update(memo=action if swap else role, memo_action=role if swap else action,
+        category=['生活'])
+    p = prepared(snap); data = packet(p)
+    field = next(f for f in data['fields'] if f['units'][0]['node_kind'] == 'ACTION_OR_NONACTION')
+    field['units'][0]['qualifiers'] = [dict(kind='EXPLICIT_ACTOR', quote='私'),
+        dict(kind='NEGATION', quote='しなかった')]
+    value = call(p, data)
+    artifact, coverage = service.build_cumulative_written_role_map(OWNER, snap,
+        model_input=value, with_action=True)
+    assert len(artifact.graph.nodes) == 2 and not artifact.graph.edges
+    action_node = next(n for n in artifact.graph.nodes if n.node_kind == 'ACTION_OR_NONACTION')
+    assert action_node.proposition.predicate_lemma == '記録する' and action_node.polarity == 'negative'
+    assert all(n.selected_categories == ('生活',) for n in artifact.graph.nodes)
+    saved = service.serialize_cumulative_written_role_map(OWNER, snap, model_input=value,
+        artifact=artifact, coverage=coverage, with_action=True)
+    with patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('saved regeneration')):
+        assert service.reload_cumulative_written_role_map(OWNER, snap, saved, with_action=True) == (artifact, coverage)
+
+
+@pytest.mark.parametrize('action,qualifier_kind,quote', [
+    ('私は予定を記録した。', 'NEGATION', 'した'),
+    ('私は仕事を続けなかった。', 'NEGATION', 'けなかった'),
+    ('私は予定を記録しなかった。', 'NEGATION', 'し'),
+    ('私は予定を記録しなかったです。', 'NEGATION', 'しなかった'),
+    ('私は予定を記録しなかった。', 'WRITTEN_MODIFIER', 'しなかった')])
+def test_suru_operator_fix_does_not_admit_false_or_partial_negative_operators(action, qualifier_kind, quote):
+    snap = sample(); snap['members'][0]['original']['memo_action'] = action
+    p = prepared(snap); data = packet(p)
+    data['fields'][1]['units'][0]['qualifiers'] = [dict(kind=qualifier_kind, quote=quote)]
+    with pytest.raises((AnalysisSemanticError, AnalysisSourceError)):
+        service.build_cumulative_written_role_map(OWNER, snap, model_input=call(p, data), with_action=True)
