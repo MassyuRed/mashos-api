@@ -923,12 +923,16 @@ _EVALUATIVE_PREDICATE = (
     r'(?P<inflection>(?:(?P<state>(?:では|じゃ)(?:なかった|ない)|だった)'
     r'(?P<state_modal>{modal})?|'
     r'(?P<bare_modal>{modal})|{finite_negative}{copula})))')
+# Match the same source-written horizontal target pause as the transitive
+# focal grammar. Capture offsets exclude only that separator; target-internal
+# spaces and all original source bytes remain untouched.
 _EVALUATIVE_FOCUS = re.compile(
     r'^(?P<speaker>私|わたし|僕|ぼく|俺|おれ)'
     r'(?P<construction>にとって|が)[、，,]?'
     + _EVALUATIVE_PREDICATE.format(
         copula='な', modal=_PLAIN_EVALUATION_MODAL, finite_negative='')
-    + r'のは[、，,]?(?P<target>.+?)(?P<copula>です|だ)[。！!]$')
+    + r'のは[、，,]?(?:[ \t\u3000]+(?![ \t\u3000、，,]))?'
+    r'(?P<target>.+?)(?P<copula>です|だ)[。！!]$')
 _EVALUATIVE_FINITE = re.compile(
     r'^(?P<speaker>私|わたし|僕|ぼく|俺|おれ)'
     r'(?P<construction>にとって|は)[、，,]?[ \t\u3000]*'

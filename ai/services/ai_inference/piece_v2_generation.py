@@ -77,11 +77,15 @@ _FINITE_PREDICATES, _PAST_PREDICATES, _PLAIN_PREDICATES = _transitive_predicate_
 # not part of the predicate or an inferred subject. Keep capture spans
 # in the untouched source for the existing resolver and writer. Multiple
 # separators, whitespace and missing/other authors gain no admission.
+# After のは and its optional comma, a horizontal pause is a separator,
+# not part of the object. The new gap arm cannot stop inside whitespace or
+# consume another comma; the existing no-gap parse remains available.
 _FOCUS = re.compile(r'^(?P<speaker>私|わたし|僕|ぼく|俺|おれ)が[、，,]?(?P<predicate>(?:(?:'
                     + '|'.join(map(re.escape, _PREDICATES)) + r')|(?P<past_predicate>'
                     + '|'.join(re.escape(p) for p in _PAST_PREDICATES if p in _PLAIN_PREDICATES)
                     + r'))(?P<modal>' + _PLAIN_EVALUATION_MODAL
-                    + r')?)のは[、，,]?(?P<object>.+?)(?:です|だ)[。！!]$')
+                    + r')?)のは[、，,]?(?:[ \t\u3000]+(?![ \t\u3000、，,]))?'
+                    r'(?P<object>.+?)(?:です|だ)[。！!]$')
 _UNCERTAIN = re.compile(r'かもしれ|分から|わから|迷って|迷い|まだ決め|とは限ら|たぶん|おそらく')
 _DEICTIC = re.compile(r'^(?:これ|それ|あれ|ここ|そこ|あそこ)(?:は|が|を|に|で|も)')
 _NESTED = re.compile(r'[「」『』"“”]|(?:[がは]私)|(?:と(?:彼|彼女|上司|友人))')

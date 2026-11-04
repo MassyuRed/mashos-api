@@ -945,7 +945,16 @@ def realize_piece_artifact(meaning: PieceSourceMeaning, plan: PieceArtifactPlan,
             topic = _SELF_TOPIC.fullmatch(text)
             if topic is None or not _WISH_END.search(topic['body']):
                 raise unavailable('piece_plan_operation_binding')
-            text = topic['speaker'] + 'は、' + topic['body'] + '。'
+            direct = _direct_transitive_expression(node.value)
+            if direct is not None:
+                # This existing wish also has a source-proven transitive
+                # object. Share its separator boundary with independent
+                # review, rather than retaining a pause inside that object.
+                text = _publicize_source_sentence(
+                    direct['speaker'] + 'は、' + direct['object']
+                    + 'を' + direct['predicate'] + '。', meaning)
+            else:
+                text = topic['speaker'] + 'は、' + topic['body'] + '。'
         elif duty.operation == 'SOURCE_TRANSITIVE_SELF_TOPIC':
             direct = _direct_transitive_expression(node.value)
             if direct is None:

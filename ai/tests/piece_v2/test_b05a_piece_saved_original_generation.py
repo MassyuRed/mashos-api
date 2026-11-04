@@ -30,6 +30,17 @@ AUTH = 'Bearer synthetic-owner-session'
 THOUGHT = '余裕があるなら、私が選びたいのは、陶芸です。'
 ACTION = 'まだ、始める日は決めていません。'
 
+FOCAL_PAUSE_CASES = (
+    '私が選びたいのは、{gap}陶芸です。',
+    '私が望んでいなかったのは、{gap}競争です！',
+    '私が望んでいなかったかもしれないのは、{gap}競争です!',
+    '余裕があるなら、私が選びたいのは、{gap}陶芸です。',
+    '以前は、私が望んでいなかったのは、{gap}競争です。',
+    '私にとって大切なのは、{gap}家族です。',
+    '私にとって大切ではなかったのは、{gap}家族です！',
+    '私にとって必要だったとは限らないのは、{gap}家族です!',
+)
+
 
 def run(value):
     return asyncio.run(value)
@@ -85,6 +96,155 @@ def generated(value=None):
     result = outcome(source(value))
     assert result.status == EngineStatus.GENERATED, result.reason_codes
     return result
+
+
+@pytest.mark.parametrize('template', FOCAL_PAUSE_CASES)
+@pytest.mark.parametrize('gap', (' ', '\t', '\u3000'))
+@pytest.mark.parametrize('mode', ('平穏', '自己理解'))
+@pytest.mark.parametrize('layout', ('thought', 'action'))
+def test_focal_pause_gap_keeps_complete_meaning_and_saved_field_coordinates(template, gap, mode, layout):
+    def value_for(space):
+        expression = template.format(gap=space)
+        value = row(expression, '姉はまだ分かりません。') if layout == 'thought' else row(
+            '🌱を見た。', expression + '姉はまだ分かりません。')
+        value['original']['emotions'] = [mode]
+        return value
+
+    value = value_for(gap)
+    plain = generated(value_for(''))
+    result = generated(value)
+    assert result.artifact.as_candidate() == plain.artifact.as_candidate()
+    assert result.artifact_plan.declaration_eligible == plain.artifact_plan.declaration_eligible
+    assert result.source_meaning.saved_snapshot.saved_original_json == canonical_json_bytes(value['original'])
+    raw = result.source_meaning.envelope.raw_utf8
+    for node, ev in zip(result.source_meaning.graph.nodes, result.source_meaning.evidence, strict=True):
+        field = value['original'][ev.field_path]
+        assert field[ev.scalar_start:ev.scalar_end] == node.value
+        assert raw[ev.utf8_start:ev.utf8_end].decode('utf-8') == node.value
+        assert raw[ev.field_utf8_start:ev.field_utf8_end].decode('utf-8') == field
+    meaning_text = raw.decode('utf-8')
+    for frame in result.source_meaning.personal_evaluations:
+        for scalar, utf8 in zip(frame.scalar_parts, frame.utf8_parts, strict=True):
+            assert meaning_text[slice(*scalar)] == raw[slice(*utf8)].decode('utf-8')
+        assert not meaning_text[slice(*frame.scalar_parts[2])].startswith((' ', '\t', '\u3000'))
+
+
+@pytest.mark.parametrize('separator', ('', '、', '，', ','))
+@pytest.mark.parametrize('gap', (' ', '\t', '\u3000'))
+@pytest.mark.parametrize('mode', ('平穏', '自己理解'))
+def test_focal_gap_only_follows_the_existing_optional_single_separator(separator, gap, mode):
+    value = row(f'私が選びたいのは{separator}{gap}陶芸です。', '姉はまだ分かりません。')
+    value['original']['emotions'] = [mode]
+    result = generated(value)
+    assert result.artifact.piece_text == '私は、陶芸を選びたい。\n\n姉はまだ分かりません。'
+
+
+@pytest.mark.parametrize('prefix', ('私が望んでいたのは、', '私にとって必要ではなかったのは、'))
+@pytest.mark.parametrize('gap', (' ', '\t', '\u3000'))
+@pytest.mark.parametrize('mode', ('平穏', '自己理解'))
+@pytest.mark.parametrize('field', ('memo', 'memo_action'))
+def test_focal_gap_keeps_the_same_unique_reference_and_raw_span(prefix, gap, mode, field):
+    previous = '私は窓辺で草花を眺めて過ごす時間を大切にしています。'
+    value = row(previous, '姉はまだ分かりません。')
+    value['original'][field] += prefix + gap + 'その時間です。'
+    value['original']['emotions'] = [mode]
+    plain = copy.deepcopy(value)
+    plain['original'][field] = plain['original'][field].replace(prefix + gap, prefix)
+    result = generated(value)
+    assert result.artifact.as_candidate() == generated(plain).artifact.as_candidate()
+    meaning = result.source_meaning
+    raw = meaning.envelope.raw_utf8
+    reference, = meaning.nominal_references
+    assert raw[slice(*reference.reference_utf8_span)].decode('utf-8') == 'その時間'
+    assert raw.decode('utf-8')[slice(*reference.reference_scalar_span)] == 'その時間'
+    assert raw[slice(*reference.antecedent_utf8_span)].decode('utf-8') == '窓辺で草花を眺めて過ごす時間'
+
+
+@pytest.mark.parametrize('expression,expected', (
+    ('私が望んでいたのは、{gap}自分の 時間です。', '私は、自分の 時間を望んでいた。'),
+    ('私にとって必要なのは、{gap}自分の 時間です。', '私にとって、自分の 時間が必要です。'),
+))
+@pytest.mark.parametrize('gap', (' ', '\t', '\u3000'))
+def test_only_the_focal_separator_gap_is_removed_from_the_visible_argument(expression, expected, gap):
+    value = row(expression.format(gap=gap), None)
+    value['original']['emotions'] = ['自己理解']
+    result = generated(value)
+    assert result.artifact.piece_text == expected
+    assert '自分の 時間' in result.artifact.piece_text
+
+
+@pytest.mark.parametrize('text', (
+    '私が選びたいのは、 、陶芸です。',
+    '私が選びたいのは、、 陶芸です。',
+    '私にとって大切なのは、 、家族です。',
+    '私にとって大切なのは、、 家族です。',
+    '私が選びたいのは、\n陶芸です。',
+    '私が選びたいのは、 陶 芸です。',
+))
+@pytest.mark.parametrize('mode', ('平穏', '自己理解'))
+def test_focal_horizontal_pause_does_not_join_lines_or_admit_extra_separators(text, mode):
+    value = row(text, '姉はまだ分かりません。')
+    value['original']['emotions'] = [mode]
+    result = outcome(source(value))
+    assert result.status == EngineStatus.UNAVAILABLE
+    assert result.artifact is None
+
+
+@pytest.mark.parametrize('old,new', (
+    ('競争', '陶芸'), ('望んでいなかった', '望んでいる'), ('姉', '私'), ('！', '。'),
+))
+def test_focal_separator_fix_does_not_authorize_a_changed_target_tense_actor_or_stop(old, new):
+    from piece_v2_content_policy import validate_source_meaning_preservation
+    from piece_v2_contract import PieceContractError
+    value = row('以前は、私が望んでいなかったのは、\u3000競争です！', '姉はまだ分かりません。')
+    value['original']['emotions'] = ['自己理解']
+    result = generated(value)
+    blocks = tuple(block.replace(old, new) for block in result.artifact.body_blocks)
+    text = '\n\n'.join(blocks)
+    corrupted = replace(result.artifact, body_blocks=blocks, piece_text=text,
+                        piece_text_hash=hashlib.sha256(text.encode('utf-8')).hexdigest())
+    with pytest.raises(PieceContractError):
+        validate_source_meaning_preservation(result.source_meaning, result.artifact_plan, corrupted)
+
+
+@pytest.mark.parametrize('prefix', ('私は', '私は、', '僕は，'))
+@pytest.mark.parametrize('gap', (' ', '\t', '\u3000'))
+@pytest.mark.parametrize('predicate', ('選びたい', '大切にしたくない'))
+@pytest.mark.parametrize('mode', ('平穏', '自己理解'))
+@pytest.mark.parametrize('field', ('memo', 'memo_action'))
+def test_direct_wish_separator_has_the_same_body_in_the_writer_and_independent_review(prefix, gap, predicate, mode, field):
+    from piece_v2_content_policy import validate_source_meaning_preservation
+    expression = prefix + gap + '陶芸を' + predicate + '。'
+    value = row(expression, '姉はまだ分かりません。') if field == 'memo' else row(
+        '🌱を見た。', expression + '姉はまだ分かりません。')
+    value['original']['emotions'] = [mode]
+    plain = copy.deepcopy(value)
+    plain['original'][field] = plain['original'][field].replace(prefix + gap, prefix)
+    result = generated(value)
+    assert result.artifact.as_candidate() == generated(plain).artifact.as_candidate()
+    assert result.artifact_plan.declaration_eligible == generated(plain).artifact_plan.declaration_eligible
+    validate_source_meaning_preservation(result.source_meaning, result.artifact_plan, result.artifact)
+    for node, ev in zip(result.source_meaning.graph.nodes, result.source_meaning.evidence, strict=True):
+        raw = result.source_meaning.envelope.raw_utf8
+        assert value['original'][ev.field_path][ev.scalar_start:ev.scalar_end] == node.value
+        assert raw[ev.utf8_start:ev.utf8_end].decode('utf-8') == node.value
+
+
+@pytest.mark.parametrize('text,expected', (
+    ('私は 本を読みたい。', '私は 本を読みたい。'),
+    ('私は 陶芸を選びたい！', '私は 陶芸を選びたい！'),
+    ('私は 陶芸を選びたい!', '私は 陶芸を選びたい!'),
+    ('私は 自分の 時間を大切にしたい。', '私は、自分の 時間を大切にしたい。'),
+    ('余裕があるなら、私は 陶芸を選びたい。', '余裕があるなら、私は陶芸を選びたい。'),
+    ('私は 陶芸を選びたくなかった。', '私は、陶芸を選びたくなかった。'),
+))
+def test_direct_wish_spacing_fix_preserves_the_existing_literal_scope_and_past_paths(text, expected):
+    from piece_v2_content_policy import validate_source_meaning_preservation
+    value = row(text, None)
+    value['original']['emotions'] = ['自己理解']
+    result = generated(value)
+    assert result.artifact.piece_text == expected
+    validate_source_meaning_preservation(result.source_meaning, result.artifact_plan, result.artifact)
 
 
 def test_two_saved_fields_reach_the_existing_engine_without_becoming_one_field():
