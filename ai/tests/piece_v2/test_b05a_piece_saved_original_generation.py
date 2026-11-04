@@ -632,8 +632,9 @@ def test_literal_accounts_keep_source_paragraphs_duplicates_and_comparisons(mode
 @pytest.mark.parametrize('body', ['', '、', 'です', 'たい', 'たいです', 'たくない',
                                   'みたい', 'みたいです', 'てみたい', 'でみたい'])
 @pytest.mark.parametrize('prefix', ['', '余裕があるなら、'])
-def test_bare_self_operators_never_become_a_source_proposition(mode, body, prefix):
-    value = row(prefix + '私は' + body + '。', None)
+@pytest.mark.parametrize('stop', ['。', '！', '!'])
+def test_bare_self_operators_never_become_a_source_proposition(mode, body, prefix, stop):
+    value = row(prefix + '私は' + body + stop, None)
     value['original']['emotions'] = [mode]
     with pytest.raises(ValueError, match='expression_meaning_not_admitted'):
         run(adapter_module.PieceSavedSourceAdapter(store=Store(value))
@@ -726,6 +727,157 @@ def test_noninterrogative_word_boundaries_do_not_admit_actual_questions(mode, te
         run(adapter_module.PieceSavedSourceAdapter(store=Store(value))
             .generate_original_candidate_for_development(
                 AUTH, INPUT, source_stage='normal_observation'))
+
+
+@pytest.mark.parametrize('mode', ['平穏', '自己理解'])
+@pytest.mark.parametrize('stop', ['！', '!'])
+@pytest.mark.parametrize('body', [
+    '私は本を読みたい', 'わたしは静かに休みたいです',
+    '僕は水を飲みたくない', '私は猫みたい',
+])
+@pytest.mark.parametrize('shape', ['single', 'paragraph', 'duplicate'])
+def test_literal_self_accounts_keep_their_written_exclamation(mode, stop, body, shape):
+    first = body + stop
+    memo, blocks = first, [first]
+    if shape == 'paragraph':
+        memo, blocks = first + '\n窓を閉めませんでした。', [first, '窓を閉めませんでした。']
+    elif shape == 'duplicate':
+        memo, blocks = first * 2, [first * 2]
+    value = row(memo, None)
+    value['original']['emotions'] = [mode]
+    result = generated(value)
+    assert result.artifact.body_blocks == tuple(blocks)
+    assert result.artifact.piece_text == '\n\n'.join(blocks)
+    assert not result.artifact_plan.declaration_eligible
+    assert all(d.operation == 'KEEP_COMPLETE_SOURCE_CONTEXT' for d in result.artifact_plan.duties)
+
+
+@pytest.mark.parametrize('mode', ['平穏', '自己理解'])
+@pytest.mark.parametrize('memo,action,blocks', [
+    ('私は本を読みたい。まだ決めていません。', None,
+     ('私は本を読みたい。まだ決めていません。',)),
+    ('私は静かに休みたいです。\nただし、まだ決めていません。', None,
+     ('私は静かに休みたいです。', 'ただし、まだ決めていません。')),
+    ('私は猫みたい。理由はまだわからない。', None,
+     ('私は猫みたい。理由はまだわからない。',)),
+    ('私は本を読みたい！\n今は続けるか迷っています。', None,
+     ('私は本を読みたい！', '今は続けるか迷っています。')),
+    ('まだ決めていません。\n私は本を読みたい。', None,
+     ('まだ決めていません。', '私は本を読みたい。')),
+    ('私は本を読みたい。', '私はまだ決めていません。',
+     ('私は本を読みたい。', '私はまだ決めていません。')),
+    ('私は本を読みたい。私は本を読みたい。', '私はまだ決めていません。',
+     ('私は本を読みたい。私は本を読みたい。', '私はまだ決めていません。')),
+    ('私は本を読みたい。', '資料を読みました。まだ決めていません。',
+     ('私は本を読みたい。', '資料を読みました。まだ決めていません。')),
+    ('私は本を読みたい!\n姉はまだ決めていません。\n資料を読みました', None,
+     ('私は本を読みたい!', '姉はまだ決めていません。', '資料を読みました')),
+])
+def test_literal_self_accounts_keep_complete_existing_reservations(mode, memo, action, blocks):
+    value = row(memo, action)
+    value['original']['emotions'] = [mode]
+    result = generated(value)
+    assert result.artifact.body_blocks == blocks
+    assert result.artifact.piece_text == '\n\n'.join(blocks)
+    assert not result.artifact_plan.declaration_eligible
+    assert all(d.operation == 'KEEP_COMPLETE_SOURCE_CONTEXT' for d in result.artifact_plan.duties)
+
+
+@pytest.mark.parametrize('memo,action', [
+    ('私は本を読みたい？', None), ('私は本を読みたい!!', None),
+    ('私は本を読みたい！？', None), ('私は何を読みたい！', None),
+    ('私はもし本を読みたい！', None), ('私は本を読みたいなら！', None),
+    ('私は本を読みたい！まだ決めていませんか。', None),
+    ('私は本を読みたい！まだ決めていません？', None),
+    ('私は本を読みたい！まだ決めていません?', None),
+    ('私は本を読みたい！まだ何を決めていません。', None),
+    ('私は本を読みたい！仮にまだ決めていません。', None),
+    ('私は本を読みたい！まだ決めていませんと聞きました。', None),
+    ('私は本を読みたい！まだ決めていないなら、私は資料を読みました。', None),
+    ('私は本を読みたい！まだ決めていませんが。', None),
+    ('私は本を読みたい！まだ決めて。', None),
+    ('私は本を読みたい！私はまだ決め', 'ていません。'),
+    ('私は本を読みたい！', '私はまだ決め\nていません。'),
+    ('私は本を\n読みたい！', None),
+    ('私は本を', '読みたい！'),
+])
+def test_literal_exclamation_and_reservation_do_not_complete_questions_or_fragments(memo, action):
+    value = row(memo, action)
+    value['original']['emotions'] = ['自己理解']
+    with pytest.raises(ValueError):
+        run(adapter_module.PieceSavedSourceAdapter(store=Store(value))
+            .generate_original_candidate_for_development(
+                AUTH, INPUT, source_stage='normal_observation'))
+
+
+@pytest.mark.parametrize('memo', [
+    'まだ決めていません。',
+    '私は本を読みたい！今日は晴れです。',
+    '私は本を読みたい！姉は本を読みたい。',
+    '私は本を読みたい！' + '\nまだ決めていません。' * 3,
+])
+def test_self_insight_reservations_do_not_grant_generic_context_or_exceed_paragraph_limits(memo):
+    value = row(memo, None)
+    value['original']['emotions'] = ['自己理解']
+    with pytest.raises(ValueError):
+        run(adapter_module.PieceSavedSourceAdapter(store=Store(value))
+            .generate_original_candidate_for_development(
+                AUTH, INPUT, source_stage='normal_observation'))
+
+
+@pytest.mark.parametrize('boundary,accepted', [
+    ('sentences6', True), ('sentences7', False),
+    ('paragraphs3', True), ('paragraphs4', False),
+    ('characters420', True), ('characters421', False),
+])
+def test_literal_reservation_keeps_existing_content_envelope(boundary, accepted):
+    first, reservation = '私は本を読みたい！', 'まだ決めていません。'
+    if boundary.startswith('sentences'):
+        text = first + reservation * (int(boundary[len('sentences'):]) - 1)
+    elif boundary.startswith('paragraphs'):
+        text = first + ('\n' + reservation) * (int(boundary[len('paragraphs'):]) - 1)
+    else:
+        total = int(boundary[len('characters'):])
+        text = '私は' + '花' * (total - len('私はを読みたい！' + reservation)) + 'を読みたい！' + reservation
+        assert len(text) == total
+    value = row(text, None)
+    value['original']['emotions'] = ['自己理解']
+    result = outcome(source(value))
+    if accepted:
+        assert result.status == EngineStatus.GENERATED, result.reason_codes
+        assert result.artifact.piece_text == text.replace('\n', '\n\n')
+        assert not result.artifact_plan.declaration_eligible
+    else:
+        assert result.status == EngineStatus.UNAVAILABLE
+        assert result.artifact is None
+
+
+@pytest.mark.parametrize('mutation', ['punctuation', 'subject', 'negation', 'reservation', 'merge', 'order'])
+def test_author_free_review_keeps_literal_exclamation_and_other_person_reservation(mutation):
+    from piece_v2_content_policy import validate_source_meaning_preservation
+
+    value = row('私は本を読みたい！\n姉はまだ決めていません。', None)
+    value['original']['emotions'] = ['自己理解']
+    result = generated(value)
+    plan, blocks = result.artifact_plan, list(result.artifact.body_blocks)
+    if mutation == 'punctuation':
+        blocks[0] = blocks[0].replace('！', '。')
+    elif mutation == 'subject':
+        blocks[1] = blocks[1].replace('姉は', '私は')
+    elif mutation == 'negation':
+        blocks[0] = blocks[0].replace('読みたい', '読みたくない')
+    elif mutation == 'reservation':
+        blocks[1] = '姉は決めました。'
+    elif mutation == 'merge':
+        plan = replace(plan, block_node_ids=(('piece:s1', 'piece:s2'),))
+        blocks = [''.join(blocks)]
+    else:
+        blocks.reverse()
+    text = '\n\n'.join(blocks)
+    artifact = replace(result.artifact, body_blocks=tuple(blocks), piece_text=text,
+        piece_text_hash=hashlib.sha256(text.encode()).hexdigest())
+    with pytest.raises(ValueError, match='piece_meaning_not_preserved'):
+        validate_source_meaning_preservation(result.source_meaning, plan, artifact)
 
 
 @pytest.mark.parametrize('mutation', ['subject', 'object', 'negation', 'punctuation', 'drop_duplicate', 'order'])

@@ -156,7 +156,10 @@ def compile_piece_artifact_plan(meaning: PieceSourceMeaning) -> PieceArtifactPla
             duties, (tuple(node[0] for node in nodes[:-1]), (nodes[-1][0],)),
             tuple('selection:' + '|'.join(row.alias_refs) for row in meaning.source_selections),
             ('short_essay',))
-    from piece_v2_generation import _UNCERTAIN, _DEICTIC, _is_unpunctuated_account
+    from piece_v2_generation import (
+        _UNCERTAIN, _DEICTIC, _is_unpunctuated_account,
+        _OMITTED_ACCOUNT_QUESTION, _OMITTED_LEXICAL_SCOPE,
+    )
     graph = meaning.graph
     validate_piece_saved_fields(meaning)
     validate_piece_nominal_references(meaning)
@@ -233,12 +236,21 @@ def compile_piece_artifact_plan(meaning: PieceSourceMeaning) -> PieceArtifactPla
             literal_mode = bool(meaning.selected_feelings) or _validated_self_insight_mode(
                 record['emotions'] or [], record['emotion_details'] or [])
             if literal_mode and any(_literal_self_account(node.value) for node in text_nodes):
-                # Every new literal sentence must be complete on its own.
-                # Existing exact action accounts may accompany it, but an
-                # unrelated field cannot supply a missing predicate or stop.
+                # Every literal sentence must be complete on its own.
+                # Reuse the existing finite written account and uncertainty
+                # operators for a source-written reservation, without giving
+                # it a new speaker, intention or relation to the self account.
+                # A question, unfinished condition or report does not qualify;
+                # an unrelated field cannot supply a predicate or stop.
                 literal_account = all(
                     _literal_self_account(node.value) or _is_unpunctuated_account(
                         node.value[:-1] if node.value.endswith(('。', '！', '!')) else node.value)
+                    or (_UNCERTAIN.search(node.value)
+                        and _WRITTEN_ACCOUNT_END.search(node.value)
+                        and node.value.endswith(('。', '！', '!'))
+                        and not _OMITTED_ACCOUNT_QUESTION.search(node.value)
+                        and not _OMITTED_LEXICAL_SCOPE.search(node.value)
+                        and not _EMBEDDED_REPORT.search(node.value))
                     for node in text_nodes)
         if (saved is not None and not meaning.selected_feelings and all(
                 _is_unpunctuated_account(

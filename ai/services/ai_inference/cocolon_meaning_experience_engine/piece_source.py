@@ -178,9 +178,13 @@ _BARE_SELF_OPERATORS = frozenset({'たい', 'たくない', 'みたい', 'てみ
 
 
 def _validate_self_predicate_body(sentence: str) -> None:
-    expressions = [sentence]
-    scoped = (_SCOPED_EXPRESSION.fullmatch(sentence)
-              or _TEMPORAL_EVALUATION.fullmatch(sentence))
+    # A single written exclamation is an existing declarative terminator.
+    # Use a grammar-only view, including for the rejection reader; the
+    # original node/evidence and the author's KEEP surface remain untouched.
+    statement = sentence[:-1] + '。' if sentence.endswith(('！', '!')) else sentence
+    expressions = [statement]
+    scoped = (_SCOPED_EXPRESSION.fullmatch(statement)
+              or _TEMPORAL_EVALUATION.fullmatch(statement))
     if scoped is not None:
         expressions.append(scoped['intention'])
     for expression in expressions:
@@ -204,7 +208,8 @@ def _literal_self_account(sentence: str) -> bool:
     from piece_v2_generation import (
         _OMITTED_ACCOUNT_QUESTION, _OMITTED_LEXICAL_SCOPE, _OMITTED_NEW_PREFIX_GUARD,
     )
-    topic = _SELF_TOPIC.fullmatch(sentence)
+    statement = sentence[:-1] + '。' if sentence.endswith(('！', '!')) else sentence
+    topic = _SELF_TOPIC.fullmatch(statement)
     if topic is None:
         return False
     body = topic['body'].strip()
