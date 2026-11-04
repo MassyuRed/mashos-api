@@ -27,7 +27,7 @@ from piece_v2_preview_service import PreparedPiecePreview
 from piece_v2_source_adapter import PieceSavedHandoff, project_saved_original_source
 from cocolon_meaning_experience_engine.piece_source import build_piece_source_meaning
 from cocolon_meaning_experience_engine.piece_v1c import (
-    PieceArtifact, compile_piece_artifact_plan,
+    PieceArtifact, compile_piece_artifact_plan, _has_topic_qualification,
 )
 
 _ARTIFACT_FIELDS = frozenset({
@@ -95,7 +95,8 @@ def _check_formats(meaning, plan, payload: dict, artifact: PieceArtifact) -> Non
     """
     eligible = []
     for fmt in FORMATS:
-        if fmt == 'quote' and (len(meaning.graph.nodes) != 1 or meaning.expression_scopes):
+        if fmt == 'quote' and (len(meaning.graph.nodes) != 1 or meaning.expression_scopes
+                               or _has_topic_qualification(meaning, plan.duties)):
             continue
         if fmt == 'declaration' and not plan.declaration_eligible:
             continue

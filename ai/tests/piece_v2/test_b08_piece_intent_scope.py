@@ -85,6 +85,70 @@ def test_condition_is_not_an_unqualified_declaration_or_detached_quote(tier):
         assert refused.status == EngineStatus.UNAVAILABLE and refused.artifact is None
 
 
+@pytest.mark.parametrize('speaker', ('私', 'ぼく', '俺'))
+@pytest.mark.parametrize('operator', ('ので', 'なら', 'ならば', 'けれど', 'けれども'))
+@pytest.mark.parametrize('separator', ('、', '，', ','))
+@pytest.mark.parametrize('tier', ('free', 'plus', 'premium'))
+def test_qualification_inside_the_existing_self_topic_retains_short_essay(speaker, operator, separator, tier):
+    text = f'{speaker}は余裕がある{operator}{separator}陶芸を選びたい。'
+    out = generated(text, tier=tier)
+    expected = f'{speaker}は、余裕がある{operator}{separator}陶芸を選びたい。'
+    assert out.artifact.piece_text == expected
+    assert out.artifact.eligible_formats == ('short_essay',)
+    assert out.artifact.format_type == 'short_essay'
+    assert not out.artifact_plan.declaration_eligible
+    assert out.source_meaning.expression_scopes == ()
+    assert out.artifact_plan.duties[0].operation == 'SOURCE_FIRST_PERSON_TOPIC'
+    source = PieceSourceSnapshot('synthetic-owner', 'synthetic-scope-source', 'v1', text)
+    assert generate_piece_candidate(source, authenticated_owner_id=source.owner_id,
+        tier=tier) == out.artifact.as_candidate()
+    assert out.source_meaning.envelope.raw_utf8 == text.encode('utf-8')
+
+
+@pytest.mark.parametrize('operator', ('ので', 'なら', 'ならば', 'けれど', 'けれども'))
+@pytest.mark.parametrize('requested_format', ('quote', 'declaration'))
+def test_topic_first_qualification_cannot_be_requested_as_an_unqualified_format(operator, requested_format):
+    text = f'私は余裕がある{operator}、陶芸を選びたい。'
+    out = run(text, tier='premium', requested_format=requested_format)
+    assert out.status == EngineStatus.UNAVAILABLE and out.artifact is None
+
+
+@pytest.mark.parametrize('text', (
+    '私はたぶん読書する時間を選びたい。',
+    '私にとっておそらく休む時間が大切です。',
+    '私が選びたいのは、たぶん読書する時間です。',
+    '私は分からないことを調べる時間を大切にしたい。',
+))
+def test_ambiguous_target_uncertainty_does_not_gain_a_declaration(text):
+    out = generated(text)
+    assert not out.artifact_plan.declaration_eligible
+    assert 'declaration' not in out.artifact.eligible_formats
+
+
+@pytest.mark.parametrize('operator', ('ので', 'なら', 'ならば', 'けれど', 'けれども'))
+@pytest.mark.parametrize('offered', (None, 'quote', 'declaration'))
+def test_author_free_format_review_matches_the_qualified_topic_offer(monkeypatch, operator, offered):
+    import piece_v2_safety_review as review
+    import cocolon_meaning_experience_engine.piece_v1c as author
+    from piece_v2_contract import PieceContractError
+    out = generated(f'私は余裕がある{operator}、陶芸を選びたい。')
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError('Format review must not author or regenerate text.')
+
+    monkeypatch.setattr(author, 'realize_piece_artifact', forbidden)
+    artifact = out.artifact if offered is None else replace(out.artifact,
+        eligible_formats=('short_essay', offered))
+    if offered is None:
+        assert review._check_formats(out.source_meaning, out.artifact_plan,
+            artifact.content_payload(), artifact) is None
+    else:
+        with pytest.raises(PieceContractError) as error:
+            review._check_formats(out.source_meaning, out.artifact_plan,
+                artifact.content_payload(), artifact)
+        assert error.value.code == 'PIECE_SAFETY_UNAVAILABLE'
+
+
 @pytest.mark.parametrize('text', [
     '友人が遠くに住んでいる。私は手紙でゆっくり近況を伝えたい。',
     '私は、友人が遠くに住んでいるので手紙で近況を伝えたい。',

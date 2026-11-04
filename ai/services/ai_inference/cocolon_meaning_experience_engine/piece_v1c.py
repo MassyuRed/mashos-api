@@ -23,7 +23,7 @@ from .contracts import EngineStatus, ExecutionMode
 from .piece_source import (
     _SIMPLE_NOUN, _calendar_time_adverb_span, _direct_transitive_expression, _PERSON_NAME_LEFT_BOUNDARY,
     _validated_self_insight_mode, PiecePersonalEvaluation, PieceSourceMeaning, build_piece_source_meaning,
-    _literal_self_account, _written_feeling_expression,
+    _literal_self_account, _written_feeling_expression, _SCOPE_RELATIONS,
     piece_public_role_aliases, validate_piece_nominal_references, validate_piece_saved_fields,
     validate_piece_personal_evaluations, validate_piece_expression_scopes,
     piece_text_nodes,
@@ -137,6 +137,22 @@ def _focal_parts(sentence: str) -> tuple[str, str, str] | None:
             or _NESTED.search(obj) or _DEICTIC.search(obj)):
         raise unavailable('focal_object_not_self_contained')
     return obj, match['predicate'], match['speaker']
+
+
+def _has_topic_qualification(meaning: PieceSourceMeaning, duties: tuple[PieceTextDuty, ...]) -> bool:
+    # The established topic author can retain a written condition/reason/
+    # concession inside its body without creating a typed source scope. That
+    # missing type cannot license a detached quote or unqualified declaration.
+    # Restrict only this already-admitted duty at the same explicit operator
+    # and comma boundary; do not add source admission or reinterpret a KEEP.
+    for node, duty in zip(meaning.graph.nodes, duties, strict=True):
+        if duty.operation != 'SOURCE_FIRST_PERSON_TOPIC':
+            continue
+        topic = _SELF_TOPIC.fullmatch(node.value)
+        if topic is not None and any(re.search(re.escape(marker) + r'[、，,]', topic['body'])
+                                     for marker in _SCOPE_RELATIONS):
+            return True
+    return False
 
 
 def compile_piece_artifact_plan(meaning: PieceSourceMeaning) -> PieceArtifactPlan:
@@ -336,7 +352,8 @@ def compile_piece_artifact_plan(meaning: PieceSourceMeaning) -> PieceArtifactPla
             paragraphs[-1].append(node.node_id)
             previous = (evidence.field_path, sentence.source_end)
         blocks = tuple(tuple(group) for group in paragraphs)
-    declaration = (bool(intents) and len(ids) == 1 and not meaning.expression_scopes
+    topic_qualified = _has_topic_qualification(meaning, tuple(duties))
+    declaration = (bool(intents) and len(ids) == 1 and not meaning.expression_scopes and not topic_qualified
                    and not _UNCERTAIN.search(graph.nodes[0].value))
     # A source-written past wish/value/state is an account of that time,
     # not evidence of a present commitment. Bind this to the same complete
@@ -1033,7 +1050,8 @@ def realize_piece_artifact(meaning: PieceSourceMeaning, plan: PieceArtifactPlan,
                    for group in plan.block_node_ids)
     payloads = {}
     for fmt in ('short_essay', 'quote', 'declaration'):
-        if fmt == 'quote' and (len(ids) != 1 or meaning.expression_scopes):
+        if fmt == 'quote' and (len(ids) != 1 or meaning.expression_scopes
+                               or _has_topic_qualification(meaning, plan.duties)):
             continue
         if fmt == 'declaration' and not plan.declaration_eligible:
             continue
