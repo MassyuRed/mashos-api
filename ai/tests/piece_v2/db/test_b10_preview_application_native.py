@@ -67,6 +67,7 @@ def test_composed_application_generates_persists_and_replays_exact_body(
         ('/emotion/piece/history', ('GET',)),
         ('/emotion/piece/{piece_id}', ('GET',)),
         ('/emotion/piece/{piece_id}/export', ('GET',)),
+        ('/emotion/piece/{piece_id}/export-receipt', ('POST',)),
         ('/emotion/piece/{piece_id}', ('DELETE',)),
     }
     bootstrap = _bootstrap(app)
@@ -75,6 +76,19 @@ def test_composed_application_generates_persists_and_replays_exact_body(
              if k.startswith('piece_v2_')}
     assert len(flags) == 8 and flags.pop('piece_v2_preview_enabled') is True
     assert not any(flags.values())
+
+    # The prepared receipt route exists without admitting exports or receipts.
+    # Keep this default-OFF check ahead of the first preview write below.
+    async def receipt_while_disabled():
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),
+                                    base_url='http://piece-test.invalid') as client:
+            return await client.post('/emotion/piece/' + request['source_ref']['source_input_id']
+                                     + '/export-receipt', headers={'Authorization': _B5['AUTH']})
+    closed = asyncio.run(receipt_while_disabled())
+    assert closed.status_code == 503 and closed.json() == {'code': 'PIECE_FEATURE_DISABLED'}
+    assert state['authors'] == state['actual_reviews'] == state['http_rpc'] == 0
+    assert conn.execute('SELECT count(*) FROM public.piece_records').fetchone() == (0,)
+    assert _B5['_B4']['_used'](conn) == 0
 
     first = _post(app, request)
     assert first.status_code == 200
