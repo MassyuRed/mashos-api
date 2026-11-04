@@ -25,6 +25,7 @@ from .piece_source import (
     _validated_self_insight_mode, PiecePersonalEvaluation, PieceSourceMeaning, build_piece_source_meaning,
     _literal_self_account, _written_feeling_expression, _SCOPE_RELATIONS,
     _scoped_self_topic, _qualified_self_topic, _SCOPED_EXPRESSION, _same_self_scope_author,
+    _FINITE_RESERVATION_QUESTION,
     piece_public_role_aliases, validate_piece_nominal_references, validate_piece_saved_fields,
     validate_piece_personal_evaluations, validate_piece_expression_scopes,
     piece_text_nodes,
@@ -37,8 +38,6 @@ _WRITTEN_ACCOUNT_END = re.compile(
 # 迷っている is complete without admitting arbitrary plain verb endings.
 _FINITE_RESERVATION_END = re.compile(
     r'(?:(?:分かり|わかり|とは限り)ません(?:でした)?|迷っている)[。！!]$')
-_FINITE_RESERVATION_QUESTION = re.compile(
-    r'(?:何|なん|なに)で(?!も(?=[^ぁ-ん]|\Z))|どんな(?!に)')
 # A pause after the already-written まだ does not complete a decision. Keep
 # only its existing finite negative predicate in this literal-account arm.
 # A target/topic would need its own source proof; do not swallow a clause.

@@ -52,6 +52,72 @@ VARIANTS = ['ui_medium', 'tags_only', 'tags_null_details', 'details_only',
             'details_null_tags', 'missing_strength', 'empty_strength']
 
 
+@pytest.mark.parametrize('text,expected', (
+    ('私はどうしても迷っているけれど、私は読書が好きです。',
+     '私はどうしても迷っているけれど、読書が好きです。'),
+    ('私はどうやっても迷っているけれど、私が選びたいのは、読書です！',
+     '私はどうやっても迷っているけれど、読書を選びたい！'),
+    ('僕はどうしても\t迷っているけれども、僕にとって一人で過ごす時間が大切でした。',
+     '僕はどうしても\t迷っているけれども、僕にとって一人で過ごす時間が大切でした。'),
+    ('私はどうやっても選べないので、私が望んでいなかったのは、競争です!',
+     '私はどうやっても選べないので、競争を望んでいなかった!'),
+))
+@pytest.mark.parametrize('mode', ('平穏', MODE))
+def test_initial_nonquestion_adverb_keeps_the_existing_self_scope_and_inner_expression(text, expected, mode):
+    from piece_v2_content_policy import validate_source_meaning_preservation
+
+    value = saved_state(text, None)
+    value['original']['emotions'] = [mode]
+    result = outcome(source(value))
+    assert result.status.value == 'GENERATED', result.reason_codes
+    assert result.artifact.body_blocks == (expected,)
+    assert result.artifact.piece_text_hash == hashlib.sha256(expected.encode()).hexdigest()
+    assert result.artifact.eligible_formats == ('short_essay',)
+    assert not result.artifact_plan.declaration_eligible
+    meaning = result.source_meaning
+    assert meaning.envelope.raw_utf8 == text.encode()
+    assert meaning.saved_snapshot.saved_original_json == canonical_json_bytes(value['original'])
+    scope, = meaning.expression_scopes
+    assert result.artifact_plan.duties[0].operation == 'SOURCE_SCOPED_EXPRESSION_TO_FIRST_PERSON'
+    assert text[slice(*scope.scope_scalar_span)] == text[:text.index('、')]
+    assert text[slice(*scope.expression_scalar_span)] == text[text.index('、') + 1:]
+    for scalar, utf8 in ((scope.scope_scalar_span, scope.scope_utf8_span),
+                         (scope.expression_scalar_span, scope.expression_utf8_span)):
+        assert text[slice(*scalar)].encode() == meaning.envelope.raw_utf8[slice(*utf8)]
+    for frame in meaning.personal_evaluations:
+        for scalar, utf8 in zip(frame.scalar_parts, frame.utf8_parts, strict=True):
+            assert text[slice(*scalar)].encode() == meaning.envelope.raw_utf8[slice(*utf8)]
+    evidence, = meaning.evidence
+    assert text[evidence.scalar_start:evidence.scalar_end] == text
+    assert meaning.envelope.raw_utf8[evidence.utf8_start:evidence.utf8_end] == text.encode()
+    validate_source_meaning_preservation(meaning, result.artifact_plan, result.artifact)
+
+
+@pytest.mark.parametrize('text', (
+    '私はどうしても友人も迷っているけれど、私は読書が好きです。',
+    '私はどうしても友人が迷っているけれど、私は読書が好きです。',
+    '私はどうしても今は迷っているけれど、私は読書が好きです。',
+    '私はどうしても、迷っているけれど、私は読書が好きです。',
+    '私はどうしても何を選ぶなら、私は読書が好きです。',
+    '私はどうしても何で迷っているけれど、私は読書が好きです。',
+    '私はどうやっても\tなんで迷っているけれど、私は読書が好きです。',
+    '私はどうしても なにで迷っているけれど、私は読書が好きです。',
+    '私はどうやっても\u3000どんな本を選ぶなら、私は読書が好きです。',
+    '私はどうしてもらった本を読むなら、私は読書が好きです。',
+    '私は今どうしても迷っているけれど、私は読書が好きです。',
+    '私はどうしてもなら、私は読書が好きです。',
+    '私はどうしても たい なら、私は読書が好きです。',
+    '私はどうしても\tたいです\tなら、私は読書が好きです。',
+    '私はどうしても\tたい です\tなら、私は読書が好きです。',
+))
+def test_nonquestion_adverb_does_not_erase_a_later_participant_question_or_incomplete_scope(text):
+    value = saved_state(text, None)
+    value['original']['emotions'] = [MODE]
+    result = outcome(source(value))
+    assert result.status.value == 'UNAVAILABLE'
+    assert result.artifact is None
+
+
 @pytest.mark.parametrize('text', (
     '私は迷っているけれど、私は静かに休みたい。',
     '僕はまだ迷っているけれども、僕は水を飲みたい！',

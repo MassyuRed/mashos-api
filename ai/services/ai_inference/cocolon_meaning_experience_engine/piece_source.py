@@ -175,6 +175,10 @@ _SELF_TOPIC_MENTION = re.compile(r'(?:私|わたし|僕|ぼく|俺|おれ)は')
 _SELF_PREDICATE_BODY = re.compile(
     r'^(?:私|わたし|僕|ぼく|俺|おれ)は[、，,]?(?P<body>.*)。$')
 _BARE_SELF_OPERATORS = frozenset({'たい', 'たくない', 'みたい', 'てみたい', 'でみたい'})
+# Shared finite question boundary for the existing reservation and self-scope
+# readers. Keep the established nonquestion でも / どんなに distinctions.
+_FINITE_RESERVATION_QUESTION = re.compile(
+    r'(?:何|なん|なに)で(?!も(?=[^ぁ-ん]|\Z))|どんな(?!に)')
 
 
 def _topic_qualification_tail(body: str) -> str | None:
@@ -287,10 +291,24 @@ def _same_self_scope_author(premise: str, speaker: str) -> bool:
     """Reuse the existing conservative, literally identical scope author."""
     from piece_v2_expression import _SELF_TOPIC, _DEPENDENT_START, _EMBEDDED_REPORT
     topic = _SELF_TOPIC.fullmatch(premise + '。')
+    body = topic['body'] if topic is not None else ''
+    # These two complete initial adverbs already have a nonquestion reading.
+    # Their internal も is not an additional participant. Use the same
+    # non-hiragana/end boundary; retain every following particle and comma.
+    prefix = re.match(r'どう(?:して|やって)も(?=[^ぁ-ん]|\Z)', body)
+    if prefix is not None:
+        from piece_v2_generation import _OMITTED_ACCOUNT_QUESTION
+        if (_OMITTED_ACCOUNT_QUESTION.search(body)
+                or _FINITE_RESERVATION_QUESTION.search(body)):
+            return False
+        body = body[prefix.end():].lstrip(' \t\u3000')
+        bare = body.strip(' \t\u3000').removesuffix('です').rstrip(' \t\u3000')
+        if not bare or bare in _BARE_SELF_OPERATORS:
+            return False
     return (topic is not None and topic['speaker'] == speaker
-            and not re.search(r'[はがも、，,]', topic['body'])
-            and not _DEPENDENT_START.search(topic['body'])
-            and not _EMBEDDED_REPORT.search(topic['body']))
+            and not re.search(r'[はがも、，,]', body)
+            and not _DEPENDENT_START.search(body)
+            and not _EMBEDDED_REPORT.search(body))
 
 
 def _scoped_self_topic(expression: str) -> re.Match[str] | None:
