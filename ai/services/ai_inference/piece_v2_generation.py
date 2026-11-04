@@ -92,7 +92,8 @@ _NESTED = re.compile(r'[「」『』"“”]|(?:[がは]私)|(?:と(?:彼|彼女
 # with the same affirmative or negative ending. No generic kana stem rule.
 _OMITTED_ACCOUNT_OBJECT = re.compile(r'[一-龥々ァ-ヴ][一-龥々ァ-ヴーぁ-ん]{0,24}\Z')
 _OMITTED_ACCOUNT_PREDICATE = re.compile(r'[一-龥々]{2,}し(?:ませんでした|ました)')
-_OMITTED_LEXICAL_PREDICATE = re.compile(r'(?:送り|読み|開け|始め|終え)(?:ませんでした|ました)')
+_OMITTED_LEXICAL_PREDICATE = re.compile(
+    r'(?:送り|読み|開け|終え|(?P<guarded_stem>始め|受け取り|閉め))(?:ませんでした|ました)')
 # Only an explicit calendar word and particle can intervene between を and
 # the finite lexical predicate. The original wording remains the KEEP node.
 _OMITTED_LEXICAL_TIME = re.compile(
@@ -130,9 +131,10 @@ def _is_unpunctuated_account(text: str) -> bool:
     time = _OMITTED_LEXICAL_TIME.match(predicate)
     if time:
         predicate = predicate[time.end():]
-    if not _OMITTED_LEXICAL_PREDICATE.fullmatch(predicate):
+    lexical = _OMITTED_LEXICAL_PREDICATE.fullmatch(predicate)
+    if lexical is None:
         return False
-    if (time or predicate.startswith('始め')) and _OMITTED_NEW_PREFIX_GUARD.search(obj):
+    if (time or lexical['guarded_stem']) and _OMITTED_NEW_PREFIX_GUARD.search(obj):
         return False
     from piece_v2_expression import _DEPENDENT_START
     return not (_DEPENDENT_START.search(clause) or _OMITTED_LEXICAL_SCOPE.search(clause))
