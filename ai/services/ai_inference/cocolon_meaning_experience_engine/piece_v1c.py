@@ -31,6 +31,13 @@ from .piece_source import (
 
 _WRITTEN_ACCOUNT_END = re.compile(
     r'(?:です|ます|でした|ました|ません|だった|ない|なかった|かった|しい|た|だ)[。！？!?]$')
+# Finite inflections of the already-written reservation context. Keep these
+# local to literal retention: a polite negative is no less uncertain, and
+# 迷っている is complete without admitting arbitrary plain verb endings.
+_FINITE_RESERVATION_END = re.compile(
+    r'(?:(?:分かり|わかり|とは限り)ません(?:でした)?|迷っている)[。！!]$')
+_FINITE_RESERVATION_QUESTION = re.compile(
+    r'(?:何|なん|なに)で(?!も(?=[^ぁ-ん]|\Z))|どんな(?!に)')
 # The overt action noun and written final stop license only literal account
 # retention. The suffix alone, an unfinished subordinate clause, and a
 # question do not establish this form.
@@ -257,8 +264,10 @@ def compile_piece_artifact_plan(meaning: PieceSourceMeaning) -> PieceArtifactPla
                         and not _unproved_explicit_account_object(node.value.rpartition('を')[0]))
                     for node in text_nodes)
                 self_accounts = tuple(_literal_self_account(node.value) for node in text_nodes)
-                reservations = tuple(bool(_UNCERTAIN.search(node.value)
-                        and _WRITTEN_ACCOUNT_END.search(node.value)
+                reservations = tuple(bool(((_UNCERTAIN.search(node.value)
+                        and _WRITTEN_ACCOUNT_END.search(node.value))
+                        or (_FINITE_RESERVATION_END.search(node.value)
+                            and not _FINITE_RESERVATION_QUESTION.search(node.value)))
                         and node.value.endswith(('。', '！', '!'))
                         and not _OMITTED_ACCOUNT_QUESTION.search(node.value)
                         and not _OMITTED_LEXICAL_SCOPE.search(node.value)

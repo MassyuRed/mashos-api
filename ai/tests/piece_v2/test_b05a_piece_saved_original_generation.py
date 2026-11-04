@@ -1026,6 +1026,56 @@ def test_existing_nominalization_and_complete_uncertainty_remain_written_source(
     assert not result.artifact_plan.declaration_eligible
 
 
+@pytest.mark.parametrize('reservation', [
+    'まだ分かりません。', 'まだわかりません！',
+    'まだ分かりませんでした。', 'まだわかりませんでした!',
+    '次も同じとは限りません。', '次も同じとは限りませんでした。',
+    '姉はまだ迷っている。', '今は続けるか迷っている！',
+])
+@pytest.mark.parametrize('first', ['資料を読みました。', '私は本を読みたい！'])
+@pytest.mark.parametrize('shape', ['same_sentence_group', 'newline', 'other_field'])
+def test_existing_reservation_inflections_remain_literal_in_self_insight(reservation, first, shape):
+    from piece_v2_content_policy import validate_source_meaning_preservation
+
+    memo = first + reservation if shape == 'same_sentence_group' else (
+        first + '\n' + reservation if shape == 'newline' else first)
+    value = row(memo, reservation if shape == 'other_field' else None)
+    value['original']['emotions'] = ['自己理解']
+    result = generated(value)
+    expected = first + reservation if shape == 'same_sentence_group' else first + '\n\n' + reservation
+    assert result.artifact.piece_text == expected
+    assert all(duty.operation == 'KEEP_COMPLETE_SOURCE_CONTEXT' for duty in result.artifact_plan.duties)
+    assert result.artifact_plan.declaration_eligible is False
+    assert 'declaration' not in result.artifact.eligible_formats
+    validate_source_meaning_preservation(result.source_meaning, result.artifact_plan, result.artifact)
+
+
+@pytest.mark.parametrize('text', [
+    'まだ分かりません。', 'まだ迷っている。',
+    '資料を読みました。まだ分かりません？',
+    '資料を読みました。まだ迷っている？',
+    '資料を読みました。まだ分かりません',
+    '資料を読みました。まだ迷っている',
+    '資料を読みました。まだ分かりませんでしたと聞きました。',
+    '資料を読みました。もし続けるならまだ迷っている。',
+    '資料を読みました。姉がまだ迷っていると言いました。',
+    '資料を読みました。姉がまだ迷っているっていいます。',
+    '資料を読みました。次も同じとは限りませんでしたが。',
+    '資料を読みました。いつまで迷っている。',
+    '資料を読みました。何で迷っている。',
+    '資料を読みました。なんで迷っている。',
+    '資料を読みました。なにで迷っている。',
+    '資料を読みました。どんなことで迷っている。',
+    '資料を読みました。何でもらったか迷っている。',
+])
+def test_reservation_inflections_do_not_complete_a_fragment_question_or_report(text):
+    value = row(text, None)
+    value['original']['emotions'] = ['自己理解']
+    result = outcome(source(value))
+    assert result.status == EngineStatus.UNAVAILABLE
+    assert result.artifact is None
+
+
 @pytest.mark.parametrize('prefix', ['誰に', '誰から', 'だれに', 'だれから'])
 @pytest.mark.parametrize('ending', ['ます。', 'ました。', 'ました'])
 def test_question_cue_does_not_read_received_verb_as_indefinite_particle(prefix, ending):
