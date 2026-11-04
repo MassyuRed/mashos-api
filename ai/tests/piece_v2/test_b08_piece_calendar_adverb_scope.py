@@ -17,6 +17,7 @@ from piece_v2_expression import _REFERENCE
 from piece_v2_contract import canonical_sha256_hex
 from piece_v2_visual import build_visual_recipe
 from piece_v2_layout import TextMeasurement, build_measured_layout
+from cocolon_meaning_experience_engine.piece_source import _calendar_time_adverb_span
 
 TARGET = '朝に窓辺で葉の形をゆっくり眺める時間'
 FOCAL = '以前は、私が望んでいたかもしれないのは、' + TARGET + 'です。'
@@ -72,6 +73,71 @@ def test_explicit_self_topic_is_not_inferred_from_time(speaker):
     tail = 'まだ続けるかは決めていない。'
     text = speaker + 'はこれから毎朝窓辺の葉を眺めたい。' + tail
     assert_body(text, speaker + 'は、これから毎朝窓辺の葉を眺めたい。' + tail)
+
+
+@pytest.mark.parametrize('speaker', ('私', 'わたし'))
+@pytest.mark.parametrize('comma', ('', '、'))
+@pytest.mark.parametrize('gap', (' ', '\t', '\u3000'))
+@pytest.mark.parametrize('time', ('これから毎朝', 'これから3日間、'))
+def test_self_topic_horizontal_pause_keeps_existing_calendar_and_duration(time, gap, comma, speaker):
+    body = time + '窓辺の葉を眺めたい。'
+    text = speaker + 'は' + comma + gap + body
+    expected = speaker + 'は、' + gap + body
+    tail = 'まだ続けるかは決めていない。'
+    actual = assert_body(text + tail, expected + tail)
+    span = _calendar_time_adverb_span(text)
+    assert span == (text.index('これから'), text.index('これから') + len('これから'))
+    assert text[slice(*span)] == 'これから'
+    assert actual.source_meaning.nominal_references == ()
+    assert not actual.artifact_plan.declaration_eligible
+
+
+@pytest.mark.parametrize('gap', ('\n', '\u00a0', '\u200b', ' 、'))
+@pytest.mark.parametrize('time', ('これから毎朝', 'これから3日間、'))
+def test_topic_pause_does_not_admit_unproved_calendar_separators(gap, time):
+    text = '私は、' + gap + time + '窓辺の葉を眺めたい。'
+    assert _calendar_time_adverb_span(text) is None
+    actual = outcome(text + 'まだ続けるかは決めていない。')
+    assert actual.status == EngineStatus.UNAVAILABLE and actual.artifact is None
+
+
+@pytest.mark.parametrize('mode', ('平穏', '自己理解'))
+@pytest.mark.parametrize('gap', (' ', '\t', '\u3000'))
+@pytest.mark.parametrize('time', ('これから毎朝', 'これから3日間、'))
+def test_saved_topic_pause_retains_source_fields_and_author_free_review(monkeypatch, mode, gap, time):
+    from test_b05a_piece_saved_original_generation import row, source, outcome as saved_outcome, OWNER
+    import api_account_visibility
+    from cocolon_meaning_experience_engine import piece_v1c
+    from piece_v2_content_policy import validate_source_meaning_preservation
+    from piece_v2_contract import canonical_json_bytes
+
+    async def synthetic_owner(token):
+        assert token == 'synthetic-owner-session'
+        return OWNER
+    monkeypatch.setattr(api_account_visibility, '_resolve_user_id_from_token', synthetic_owner)
+    text = '私は、' + gap + time + '窓辺の葉を眺めたい。'
+    tail = 'まだ続けるかは決めていない。'
+    value = row(text, tail)
+    value['original']['emotions'] = [mode]
+    value['original']['emotion_details'] = [{'type': mode, 'strength': 'medium'}]
+    raw = canonical_json_bytes(value['original'])
+    actual = saved_outcome(source(value))
+    assert actual.status == EngineStatus.GENERATED, actual.as_body_free()
+    assert actual.source_meaning.saved_snapshot.saved_original_json == raw
+    assert canonical_json_bytes(value['original']) == raw
+    assert actual.artifact.piece_text == text + '\n\n' + tail
+    assert actual.artifact.eligible_formats == ('short_essay',)
+    def forbidden(*args, **kwargs):
+        pytest.fail('saved preservation review must not generate or author')
+    monkeypatch.setattr(MeaningExperienceEngine, 'generate', forbidden)
+    monkeypatch.setattr(piece_v1c, 'compile_piece_artifact_plan', forbidden)
+    monkeypatch.setattr(piece_v1c, 'realize_piece_artifact', forbidden)
+    validate_source_meaning_preservation(actual.source_meaning, actual.artifact_plan, actual.artifact)
+    changed_text = actual.artifact.piece_text.replace('これから', '昨日から', 1)
+    changed = replace(actual.artifact, body_blocks=tuple(changed_text.split('\n\n')),
+        piece_text=changed_text, piece_text_hash=hashlib.sha256(changed_text.encode()).hexdigest())
+    with pytest.raises(ValueError, match='piece_meaning_not_preserved'):
+        validate_source_meaning_preservation(actual.source_meaning, actual.artifact_plan, changed)
 
 
 @pytest.mark.parametrize('separator', ('、', '，', ',', '、\t', '、　', ' '))

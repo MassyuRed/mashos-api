@@ -282,6 +282,10 @@ def _calendar_time_adverb_span(sentence: str) -> tuple[int, int] | None:
     topic = _SELF_TOPIC.fullmatch(sentence[offset:])
     if topic is not None:
         offset += topic.start('body')
+        # The topic already allows a horizontal pause before its body.
+        # Advance only the matcher position, retaining the raw token span.
+        while offset < len(sentence) and sentence[offset] in ' \t\u3000':
+            offset += 1
     match = (_CALENDAR_TIME_ADVERB.match(sentence, offset)
              or _DURATION_TIME_ADVERB.match(sentence, offset))
     return match.span('adverb') if match is not None else None
@@ -1028,10 +1032,12 @@ _EVALUATIVE_FOCUS = re.compile(
         copula='な', modal=_PLAIN_EVALUATION_MODAL, finite_negative='')
     + r'のは[、，,]?(?:[ \t\u3000]+(?![ \t\u3000、，,]))?'
     r'(?P<target>.+?)(?P<copula>です|だ)[。！!]$')
+# The written target particle can have the same horizontal pause as a topic.
+# Its separators belong to neither the target nor the finite predicate span.
 _EVALUATIVE_FINITE = re.compile(
     r'^(?P<speaker>私|わたし|僕|ぼく|俺|おれ)'
     r'(?P<construction>にとって|は)[、，,]?[ \t\u3000]*'
-    r'(?P<target>.+?)が'
+    r'(?P<target>.+?)[ \t\u3000]*が[ \t\u3000]*'
     # A complete finite evaluation may leave its nonpast affirmative copula
     # unwritten. The explicit speaker, target particle and predicate still
     # bind here; an absent copula is not inserted into the source or author.

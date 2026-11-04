@@ -332,6 +332,12 @@ def test_declarative_exclamation_survives_preview_save_replay_and_owner_read(
         '私は手紙を\t送りませんでした！',
         ['私は本を 読みました。私は本を 読みました。', '私は手紙を\t送りませんでした！'],
         id='object-pause-duplicate-fields'),
+    pytest.param('私は、 これから毎朝窓辺の葉を眺めたい。', 'まだ続けるかは決めていない。',
+        ['私は、 これから毎朝窓辺の葉を眺めたい。', 'まだ続けるかは決めていない。'],
+        id='calendar-self-topic-pause'),
+    pytest.param('私は、\tこれから3日間、窓辺の葉を眺めたい。', 'まだ続けるかは決めていない。',
+        ['私は、\tこれから3日間、窓辺の葉を眺めたい。', 'まだ続けるかは決めていない。'],
+        id='duration-self-topic-pause'),
 ])
 def test_literal_self_expressions_survive_preview_save_replay_and_owner_read(
         format_flow, qdb, tier, mode, memo, action, blocks):

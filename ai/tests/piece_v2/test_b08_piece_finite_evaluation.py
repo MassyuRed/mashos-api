@@ -79,6 +79,42 @@ def test_normal_order_uses_existing_evaluation_and_complete_author(name, text, e
     assert not out.automatic_progression
 
 
+@pytest.mark.parametrize('perspective,base', (('私にとって', '大切'), ('僕は', '好き')))
+@pytest.mark.parametrize('ending', ('です', 'ではなかったかもしれない'))
+@pytest.mark.parametrize('side', ('before', 'after', 'both'))
+@pytest.mark.parametrize('gap', (' ', '\t', '\u3000'))
+def test_evaluation_particle_pause_keeps_target_predicate_and_reference(perspective, base, ending, side, gap):
+    target = '一人で静かに本を読む時間'
+    before = gap if side in ('before', 'both') else ''
+    after = gap if side in ('after', 'both') else ''
+    text = perspective + target + before + 'が' + after + base + ending + '。'
+    tail = '私はその時間を大切にしたい。'
+    actual = generated(text + tail)
+    baseline = generated(perspective + target + 'が' + base + ending + '。' + tail)
+    assert actual.artifact == baseline.artifact
+    assert actual.source_meaning.envelope.raw_utf8 == (text + tail).encode()
+    frame, = actual.source_meaning.personal_evaluations
+    assert (text + tail)[slice(*frame.scalar_parts[2])] == target
+    assert (text + tail)[slice(*frame.scalar_parts[1])] == base + ending
+    for scalar, utf8 in zip(frame.scalar_parts, frame.utf8_parts, strict=True):
+        assert (text + tail)[slice(*scalar)] == actual.source_meaning.envelope.raw_utf8[slice(*utf8)].decode()
+    ref, = actual.source_meaning.nominal_references
+    assert (text + tail)[slice(*ref.antecedent_scalar_span)] == target
+    assert (text + tail)[slice(*ref.reference_scalar_span)] == 'その時間'
+    candidate = generate_piece_candidate(PieceSourceSnapshot(
+        'synthetic-owner', 'synthetic-finite-evaluation', 'v1', text + tail),
+        authenticated_owner_id='synthetic-owner')
+    assert candidate == actual.artifact.as_candidate()
+
+
+@pytest.mark.parametrize('gap', ('\n', '\u00a0', '、'))
+@pytest.mark.parametrize('side', ('before', 'after'))
+def test_evaluation_pause_does_not_complete_an_unproved_separator(gap, side):
+    text = '私は読書' + (gap if side == 'before' else '') + 'が' + (gap if side == 'after' else '') + '好きです。'
+    out = run(text)
+    assert out.status == EngineStatus.UNAVAILABLE and out.artifact is None
+
+
 @pytest.mark.parametrize('ending,polarity,time,commitment', [
     ('です', 'AFFIRMATIVE', 'NONPAST', 'ASSERTED'),
     ('だ', 'AFFIRMATIVE', 'NONPAST', 'ASSERTED'),
