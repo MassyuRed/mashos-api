@@ -674,6 +674,60 @@ def test_new_literal_account_requires_valid_saved_selection_and_never_grants_dec
                 AUTH, INPUT, source_stage='normal_observation', requested_format='declaration'))
 
 
+@pytest.mark.parametrize('mode', ['平穏', '自己理解'])
+@pytest.mark.parametrize('text', [
+    'ほとんどの資料を読みました',
+    'ほとんどの資料を読みませんでした。',
+    '私はどこにも手紙を送りませんでした',
+    'どこにでも手紙を送りました',
+    'どうしても資料を読みました',
+    'どうやっても窓を開けませんでした',
+    '私はどうしても本を読みたい。',
+    'ほとんど資料を読みました',
+    'いくつかの資料を読みました',
+    'いつもの資料を読みました',
+    '誰にも資料を送りませんでした',
+])
+def test_noninterrogative_complete_accounts_keep_quantifier_and_indefinite_words(mode, text):
+    value = row(text, None)
+    value['original']['emotions'] = [mode]
+    result = generated(value)
+    assert result.artifact.piece_text == text
+    assert result.artifact.body_blocks == (text,)
+    assert not result.artifact_plan.declaration_eligible
+    candidate = run(adapter_module.PieceSavedSourceAdapter(store=Store(value))
+                    .generate_original_candidate_for_development(
+                        AUTH, INPUT, source_stage='normal_observation'))
+    assert candidate['piece_text'] == text
+
+
+@pytest.mark.parametrize('mode', ['平穏', '自己理解'])
+@pytest.mark.parametrize('text', [
+    'どの資料を読みました', 'どこに手紙を送りました',
+    'どこから届いた資料を読みました', 'どこで本を読みました',
+    'どうして資料を読みました', 'どうやって窓を開けました',
+    '誰に資料を送りました', 'いつ資料を読みました',
+    'ほとんどの資料をいつ読みました',
+    'どうしてもどの本を読みました',
+    '私はどうしても何を読みたい。',
+    'どこからもらった資料を読みました',
+    'どこにもぐった人の本を読みました',
+    'どこへもっていった資料を読みました',
+    'どうしてもらった資料を読みました',
+    '私はどうしてもらった本を読みたい。',
+    # These indefinite spellings remain outside this bounded correction.
+    'どこからも届いた資料を読みました',
+    'どこででも本を読みました',
+])
+def test_noninterrogative_word_boundaries_do_not_admit_actual_questions(mode, text):
+    value = row(text, None)
+    value['original']['emotions'] = [mode]
+    with pytest.raises(ValueError):
+        run(adapter_module.PieceSavedSourceAdapter(store=Store(value))
+            .generate_original_candidate_for_development(
+                AUTH, INPUT, source_stage='normal_observation'))
+
+
 @pytest.mark.parametrize('mutation', ['subject', 'object', 'negation', 'punctuation', 'drop_duplicate', 'order'])
 def test_independent_review_binds_literal_accounts_without_inferring_wishes(mutation):
     from piece_v2_content_policy import validate_source_meaning_preservation

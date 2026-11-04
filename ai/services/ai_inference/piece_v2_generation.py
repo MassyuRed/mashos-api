@@ -110,11 +110,17 @@ _OMITTED_LEXICAL_SCOPE = re.compile(
     r'場合(?:[、，,\s]|は|には|でも)|'
     r'(?:と|って)(?:言われ|言った|言って|言いました|聞いた|聞いて|聞きました|'
     r'伝えた|伝えて|伝えました|話した|話して|話しました|書いた|書いて|書きました)')
-# Reject common written question cues even without a question mark; do not
-# treat indefinite forms such as いつも or なぜか as those same cues.
+# Reject common written question cues even without a question mark. Read a
+# complete cue, not the interior of ほとんどの or an indefinite construction
+# such as どこにも / どうしても. For newly excluded particles, require an
+# overt non-hiragana boundary after も; もらった / もぐった / もって must
+# not masquerade as that particle. Ambiguous hiragana continuations retain
+# refusal. The existing いつも / 誰にも exclusions are unchanged, and none
+# of these boundaries supplies a predicate or sentence ending.
 _OMITTED_ACCOUNT_QUESTION = re.compile(
-    r'何を|なにを|ど(?:れ|ちら|なた)(?!も|か|でも)|(?<!ほ)どの|どう(?:いう|やって|して|いった)|'
-    r'どこ(?:で(?!も)|に|の|へ|から|まで(?!も)|を|が|は|と)|'
+    r'何を|なにを|ど(?:れ|ちら|なた)(?!も|か|でも)|(?<!ほ)(?<!ほとん)どの|'
+    r'どう(?:いう|やって(?!も(?=[^ぁ-ん]|\Z))|して(?!も(?=[^ぁ-ん]|\Z))|いった)|'
+    r'どこ(?:で(?!も)|に(?!(?:も|でも)(?=[^ぁ-ん]|\Z))|の|へ|から|まで(?!も)|を|が|は|と)|'
     r'(?<![こそあど])いつ(?!も|か|でも|までも)|(?:なぜ|何故)(?!か)|'
     r'何時(?:に|の|まで(?!も)|から|頃|ごろ)|'
     r'(?:誰|だれ)(?:が|の|を|に|と|から|まで|へ|で)(?!も|でも)')
