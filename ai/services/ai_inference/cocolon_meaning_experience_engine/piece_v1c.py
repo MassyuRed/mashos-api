@@ -24,7 +24,7 @@ from .piece_source import (
     _SIMPLE_NOUN, _calendar_time_adverb_span, _direct_transitive_expression, _PERSON_NAME_LEFT_BOUNDARY,
     _validated_self_insight_mode, PiecePersonalEvaluation, PieceSourceMeaning, build_piece_source_meaning,
     _literal_self_account, _written_feeling_expression, _SCOPE_RELATIONS,
-    _scoped_self_topic, _qualified_self_topic,
+    _scoped_self_topic, _qualified_self_topic, _SCOPED_EXPRESSION, _same_self_scope_author,
     piece_public_role_aliases, validate_piece_nominal_references, validate_piece_saved_fields,
     validate_piece_personal_evaluations, validate_piece_expression_scopes,
     piece_text_nodes,
@@ -157,11 +157,25 @@ def _has_topic_qualification(meaning: PieceSourceMeaning, duties: tuple[PieceTex
     # The established topic author can retain a written condition/reason/
     # concession inside its body without creating a typed source scope. That
     # missing type cannot license a detached quote or unqualified declaration.
-    # Restrict only this already-admitted duty at the same explicit operator
-    # and comma boundary; do not add source admission or reinterpret a KEEP.
+    # Restrict formats of already-admitted duties at the written operator
+    # and comma boundary. Source admission, KEEP meaning and body stay intact.
     original = meaning.envelope.raw_utf8.decode('utf-8')
     evaluations = {frame.node_id: frame for frame in meaning.personal_evaluations}
     for node, duty in zip(meaning.graph.nodes, duties, strict=True):
+        if duty.operation == 'KEEP_COMPLETE_SOURCE_CONTEXT':
+            # A retained literal can state the same author on both sides of
+            # an existing operator. Its finite reservation must remain with
+            # that expression even though neither a wish/simile decision nor
+            # a typed scope is made. Restrict formats only; keep every word.
+            scoped = _SCOPED_EXPRESSION.fullmatch(node.value)
+            if scoped is not None and _literal_self_account(node.value):
+                topic = _scoped_self_topic(scoped['intention'])
+                if (topic is not None
+                        and _same_self_scope_author(scoped['premise'], topic['speaker'])
+                        and _FINITE_RESERVATION_END.search(scoped['premise'] + '。')
+                        and _literal_self_account(scoped['intention'])):
+                    return True
+            continue
         if duty.operation == 'SOURCE_FIRST_PERSON_TOPIC':
             topic = _qualified_self_topic(node.value)
             if topic is not None and any(re.search(re.escape(marker) + r'[、，,]', topic['body'])

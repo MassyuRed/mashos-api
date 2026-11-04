@@ -52,6 +52,86 @@ VARIANTS = ['ui_medium', 'tags_only', 'tags_null_details', 'details_only',
             'details_null_tags', 'missing_strength', 'empty_strength']
 
 
+@pytest.mark.parametrize('text', (
+    '私は迷っているけれど、私は静かに休みたい。',
+    '僕はまだ迷っているけれども、僕は水を飲みたい！',
+    '私は分かりませんでしたので、私は本を読みたい!',
+    '私は迷っているけれど、私は鳥みたい！',
+))
+@pytest.mark.parametrize('mode', ('平穏', MODE))
+def test_retained_same_author_reservation_keeps_its_body_without_a_detached_quote(text, mode):
+    from cocolon_meaning_experience_engine.engine import MeaningExperienceEngine
+    from cocolon_meaning_experience_engine.piece_v1c import PieceGenerationRequest
+    from piece_v2_content_policy import validate_source_meaning_preservation
+
+    value = saved_state(text, None)
+    value['original']['emotions'] = [mode]
+    snapshot = source(value)
+    request = PieceGenerationRequest('saved-retained-reservation', snapshot, snapshot.owner_id,
+        snapshot.saved_input_id, snapshot.source_version, tier='premium')
+    result = MeaningExperienceEngine().generate(request)
+    assert result.status.value == 'GENERATED', result.reason_codes
+    assert result.artifact.body_blocks == (text,)
+    assert result.artifact.piece_text_hash == hashlib.sha256(text.encode()).hexdigest()
+    assert result.artifact.eligible_formats == ('short_essay',)
+    assert not result.artifact_plan.declaration_eligible
+    assert result.artifact_plan.duties[0].operation == 'KEEP_COMPLETE_SOURCE_CONTEXT'
+    meaning = result.source_meaning
+    assert meaning.expression_scopes == ()
+    assert meaning.envelope.raw_utf8 == text.encode()
+    assert meaning.saved_snapshot.saved_original_json == canonical_json_bytes(value['original'])
+    evidence, = meaning.evidence
+    assert text[evidence.scalar_start:evidence.scalar_end] == text
+    assert meaning.envelope.raw_utf8[evidence.utf8_start:evidence.utf8_end] == text.encode()
+    validate_source_meaning_preservation(meaning, result.artifact_plan, result.artifact)
+    for selected in ('quote', 'declaration'):
+        refused = MeaningExperienceEngine().generate(replace(request, requested_format=selected))
+        assert refused.status.value == 'UNAVAILABLE'
+        assert refused.artifact is None
+
+
+@pytest.mark.parametrize('text,formats', (
+    ('私は静かに休みたい！', ('short_essay',)),
+    ('私は迷っているけれど、僕は静かに休みたい！', ('short_essay', 'quote')),
+    ('私は迷っているけれど、友人は静かに休みたい！', ('short_essay', 'quote')),
+    ('私は迷っているけれど私は静かに休みたい！', ('short_essay', 'quote')),
+    ('私はきたので、私は静かに休みたい！', ('short_essay', 'quote')),
+    ('私は迷っている町なので、私は静かに休みたい！', ('short_essay', 'quote')),
+    ('私は迷っていたけれど、私は静かに休みたい！', ('short_essay', 'quote')),
+))
+def test_retained_source_without_the_same_finite_author_boundary_keeps_its_offer(text, formats):
+    value = saved_state(text, None)
+    value['original']['emotions'] = [MODE]
+    result = outcome(source(value))
+    assert result.status.value == 'GENERATED', result.reason_codes
+    assert result.artifact.piece_text == text
+    assert result.artifact.eligible_formats == formats
+    assert result.artifact_plan.duties[0].operation == 'KEEP_COMPLETE_SOURCE_CONTEXT'
+
+
+def test_retained_reservation_format_review_rejects_an_added_quote_without_author_replay(monkeypatch):
+    from cocolon_meaning_experience_engine.engine import MeaningExperienceEngine
+    from cocolon_meaning_experience_engine import piece_v1c
+    from piece_v2_safety_review import _check_formats
+
+    value = saved_state('私は迷っているけれど、私は静かに休みたい!', None)
+    value['original']['emotions'] = [MODE]
+    result = outcome(source(value))
+    assert result.status.value == 'GENERATED', result.reason_codes
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError('Format review called an author or Engine')
+
+    monkeypatch.setattr(MeaningExperienceEngine, 'generate', forbidden)
+    monkeypatch.setattr(piece_v1c, 'realize_piece_artifact', forbidden)
+    _check_formats(result.source_meaning, result.artifact_plan,
+                   result.artifact.content_payload(), result.artifact)
+    forged = replace(result.artifact, format_type='quote',
+                     eligible_formats=('short_essay', 'quote'))
+    with pytest.raises(PieceContractError):
+        _check_formats(result.source_meaning, result.artifact_plan, forged.content_payload(), forged)
+
+
 @pytest.mark.parametrize('text,expected', (
     ('私は母が戻るなら、話したい！', '私は、母が戻るなら、話したい！'),
     ('僕は友人も来るならば，話したくない!', '僕は、友人も来るならば，話したくない!'),
