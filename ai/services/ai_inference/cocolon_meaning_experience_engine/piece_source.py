@@ -649,14 +649,35 @@ def _role_bindings(text: str) -> tuple[PieceRoleBinding, ...]:
             raise unavailable('public_role_binding_missing')
         if match.group() not in by_name:
             raise unavailable('public_role_binding_missing')
+        # Keep the old topical-label refusal unchanged. For subject/additive
+        # labels require a written finite copula; for an object label require
+        # a finite naming assignment. A person receiving/hearing a name is
+        # still an ordinary role reference (名前が友人に伝わった etc.).
+        label_value = False
+        suffix = text[match.end():]
+        for start in (match.start(), *(
+                binding.source_start for binding in bindings
+                if binding.source_end == match.end())):
+            label = re.search(
+                r'(?:名前|名字|姓|呼び名|氏名)[ \t\u3000]*(?P<particle>[はがもを])'
+                r'[ \t\u3000]*[、，,]?[ \t\u3000]*$', text[:start])
+            if label is None:
+                continue
+            particle = label['particle']
+            if (particle == 'は'
+                    or particle in ('が', 'も') and re.match(
+                        r'[ \t\u3000]*(?:です|でした|だった|だ|(?:では|じゃ)'
+                        r'(?:ない(?:です)?|なかった(?:です)?|ありません(?:でした)?))[。！!]', suffix)
+                    or particle == 'を' and re.match(
+                        r'[ \t\u3000]*に[ \t\u3000]*(?:した(?:い|くない)(?:です)?'
+                        r'|した(?:かった|くなかった)(?:です)?|しました|しません(?:でした)?'
+                        r'|します|した|する|しない|しなかった)[。！!]', suffix)):
+                label_value = True
+                break
         if (re.match(r'[ \t\u3000]*(?:という|と言う|っていう|と呼|と書|と読'
                      r'|と名(?:付|づ)け(?:た(?:い|くない)(?:です)?|ました|ません(?:でした)?|ます|た|る|ない)'
                      r'(?=[。！!、，, \t\u3000]|$))', text[match.end():])
-                or any(re.search(
-                    r'(?:名前|名字|姓|呼び名|氏名)[ \t\u3000]*は[ \t\u3000]*[、，,]?[ \t\u3000]*$',
-                    text[:start]) for start in (match.start(), *(
-                        binding.source_start for binding in bindings
-                        if binding.source_end == match.end())))):
+                or label_value):
             # Here the name is itself what the author is talking about.
             # Replacing it by a relationship would change the proposition.
             # Horizontal layout cannot license that replacement. Naming is

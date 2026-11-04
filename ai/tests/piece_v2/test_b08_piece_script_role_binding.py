@@ -260,3 +260,59 @@ def test_completed_name_topic_does_not_capture_the_next_role_phrase(name, bounda
     assert '名前はまだ未定です。' in out.artifact.piece_text
     assert '友人と話したい。' in out.artifact.piece_text
     assert generate_piece_candidate(source, authenticated_owner_id=source.owner_id) == out.artifact.as_candidate()
+
+
+@pytest.mark.parametrize('name', MATERIAL_NAMES)
+@pytest.mark.parametrize('particle', ('が', 'も'))
+@pytest.mark.parametrize('role', ('友人の{name}', '私の友人の{name}',
+                                '友人の中村さんの同僚の{name}'))
+@pytest.mark.parametrize('stop', ('。', '！', '!'))
+def test_subject_and_additive_name_values_do_not_become_roles(name, particle, role, stop):
+    text = f'名前{particle}、 {role.format(name=name)}です{stop}私は落ち着いて話したい。'
+    _, out = outcome(text)
+    assert out.status == EngineStatus.UNAVAILABLE
+    assert out.reason_codes == ('public_identity_is_material',)
+    assert out.artifact is None
+
+
+@pytest.mark.parametrize('particle', ('が', 'も'))
+@pytest.mark.parametrize('ending', ('です', 'でした', 'だ', 'だった', 'ではない', 'じゃないです',
+    'ではなかった', 'じゃなかったです', 'ではありません', 'じゃありませんでした'))
+def test_finite_name_value_copula_keeps_identity_material(particle, ending):
+    _, out = outcome(f'私は友人の田中さんと話したい。呼び名{particle}田中さん{ending}。')
+    assert out.status == EngineStatus.UNAVAILABLE
+    assert out.reason_codes == ('public_identity_is_material',)
+
+
+@pytest.mark.parametrize('label', ('名前', '名字', '姓', '呼び名', '氏名'))
+@pytest.mark.parametrize('name', MATERIAL_NAMES)
+@pytest.mark.parametrize('ending', ('したいです', 'しませんでした'))
+def test_an_explicit_name_assignment_cannot_assign_a_relationship(label, name, ending):
+    _, out = outcome(f'私は{label}を \t友人の{name}に{ending}。まだ、確認する日は決めていない。')
+    assert out.status == EngineStatus.UNAVAILABLE
+    assert out.reason_codes == ('public_identity_is_material',)
+    assert out.artifact is None
+
+
+@pytest.mark.parametrize('ending', ('したい', 'したくない', 'したいです', 'したくないです',
+    'したかった', 'したかったです', 'したくなかった', 'したくなかったです',
+    'します', 'しません', 'しました', 'しませんでした', 'した', 'する', 'しない', 'しなかった'))
+def test_name_assignment_finite_forms_keep_the_actual_name_material(ending):
+    _, out = outcome(f'私は氏名を友人の中村さんの同僚の井上さんに{ending}。まだ、用意はできていない。')
+    assert out.status == EngineStatus.UNAVAILABLE
+    assert out.reason_codes == ('public_identity_is_material',)
+
+
+@pytest.mark.parametrize('name', MATERIAL_NAMES)
+@pytest.mark.parametrize('particle', ('が', 'も', 'を'))
+@pytest.mark.parametrize('ending', ('伝わりました', '聞きたい', '相談したい'))
+def test_a_person_receiving_or_hearing_a_name_remains_an_ordinary_role(name, particle, ending):
+    text = f'私は友人の{name}と話したい。名前{particle}友人の{name}に{ending}。'
+    source, out = outcome(text)
+    expected = f'私は、友人と話したい。名前{particle}友人に{ending}。'
+    assert out.status == EngineStatus.GENERATED, out.as_body_free()
+    assert out.artifact.piece_text == expected
+    assert generate_piece_candidate(source, authenticated_owner_id=source.owner_id) == out.artifact.as_candidate()
+    for node, ev in zip(out.source_meaning.graph.nodes, out.source_meaning.evidence, strict=True):
+        assert text[ev.scalar_start:ev.scalar_end] == node.value
+        assert text.encode('utf-8')[ev.utf8_start:ev.utf8_end].decode('utf-8') == node.value
