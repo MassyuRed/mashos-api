@@ -62,6 +62,49 @@ VARIANTS = ['ui_medium', 'tags_only', 'tags_null_details', 'details_only',
     '私は書類を整理しました。', '私は書類を整理しません。',
     '私は本を昨日に 読みました。',
 ))
+def test_saved_self_insight_action_keeps_horizontal_pause_before_object_particle(sentence, gap):
+    from piece_v2_content_policy import validate_source_meaning_preservation
+
+    text = sentence.replace('を', gap + 'を', 1)
+    value = saved_state(text, None)
+    value['original']['emotions'] = [MODE]
+    result = outcome(source(value))
+    assert result.status.value == 'GENERATED', result.reason_codes
+    assert result.artifact.piece_text == text
+    assert result.artifact.piece_text_hash == hashlib.sha256(text.encode()).hexdigest()
+    meaning = result.source_meaning
+    assert meaning.saved_snapshot.saved_original_json == canonical_json_bytes(value['original'])
+    assert not result.artifact_plan.declaration_eligible
+    for node, ev in zip(meaning.graph.nodes, meaning.evidence, strict=True):
+        assert value['original'][ev.field_path][ev.scalar_start:ev.scalar_end] == node.value
+        assert meaning.envelope.raw_utf8[ev.utf8_start:ev.utf8_end].decode() == node.value
+    validate_source_meaning_preservation(meaning, result.artifact_plan, result.artifact)
+
+
+@pytest.mark.parametrize('gap', (' ', '\t', '\u3000'))
+@pytest.mark.parametrize('sentence', (
+    '私は何を読みました。', 'もし時間があるなら、私は本を読みました。',
+    '私は本を読めました。', '私は本を。', '私は本\nを読みました。',
+    '私は本\u00a0を読みました。', 'を読みました。',
+))
+def test_pause_before_object_particle_does_not_complete_an_unproved_action(sentence, gap):
+    value = saved_state(sentence.replace('を', gap + 'を', 1), None)
+    value['original']['emotions'] = [MODE]
+    result = outcome(source(value))
+    assert result.status.value == 'UNAVAILABLE'
+    assert result.artifact is None
+
+
+@pytest.mark.parametrize('gap', (' ', '\t', '\u3000'))
+@pytest.mark.parametrize('sentence', (
+    '私は本を読みました。', '私は本を読みませんでした！',
+    '私は本を読みます。', '私は本を読みません!',
+    '手紙を送りました', '荷物を受け取りませんでした',
+    '私は箱を開けました。', '私は戸を閉めません。',
+    '私は作業を始めます。', '私は作業を終えました。',
+    '私は書類を整理しました。', '私は書類を整理しません。',
+    '私は本を昨日に 読みました。',
+))
 def test_saved_self_insight_action_keeps_horizontal_pause_after_object(sentence, gap):
     from piece_v2_content_policy import validate_source_meaning_preservation
 
@@ -93,13 +136,14 @@ def test_self_insight_action_pause_does_not_admit_an_unknown_or_unfinished_predi
     assert result.artifact is None
 
 
-def test_action_particle_pause_stays_bound_to_both_saved_fields_without_author_replay(monkeypatch):
+@pytest.mark.parametrize('side', ('after', 'before'))
+def test_action_particle_pause_stays_bound_to_both_saved_fields_without_author_replay(monkeypatch, side):
     from cocolon_meaning_experience_engine import piece_v1c
     from cocolon_meaning_experience_engine.engine import MeaningExperienceEngine
     from piece_v2_content_policy import validate_source_meaning_preservation
 
-    thought = '私は本を 読みました。'
-    action = '私は手紙を\t送りませんでした！'
+    thought = '私は本を 読みました。' if side == 'after' else '私は本 を読みました。'
+    action = '私は手紙を\t送りませんでした！' if side == 'after' else '私は手紙\tを送りませんでした！'
     value = saved_state(thought, action)
     value['original']['emotions'] = [MODE]
     result = outcome(source(value))
@@ -111,7 +155,7 @@ def test_action_particle_pause_stays_bound_to_both_saved_fields_without_author_r
     monkeypatch.setattr(piece_v1c, 'compile_piece_artifact_plan', forbidden)
     monkeypatch.setattr(piece_v1c, 'realize_piece_artifact', forbidden)
     validate_source_meaning_preservation(result.source_meaning, result.artifact_plan, result.artifact)
-    for blocks in ((thought.replace('を ', 'を'), action),
+    for blocks in ((thought.replace(' ', ''), action),
                    (thought, action.replace('ませんでした', 'ました')),
                    (thought.replace('私は', '姉は'), action),
                    (thought, action.replace('！', '。')),

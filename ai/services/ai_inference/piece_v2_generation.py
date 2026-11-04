@@ -164,8 +164,13 @@ def _is_unpunctuated_account(text: str, *, allow_nonpast: bool = False) -> bool:
     # and evidence spans retain every separator. Do not cross a line break.
     predicate = predicate.lstrip(' \t\u3000')
     clause = text.lstrip()
-    if (not particle or not _OMITTED_ACCOUNT_OBJECT.search(obj[-25:])
-            or clause.startswith('もし') or _OMITTED_ACCOUNT_QUESTION.search(clause)):
+    # A pause before を is outside the written nominal object. Keep the
+    # exact object/source for every other guard and all evidence coordinates.
+    object_end = obj.rstrip(' \t\u3000')
+    # The same pause cannot hide the existing 何を / なにを question cue.
+    question_clause = object_end + particle + predicate if object_end != obj else clause
+    if (not particle or not _OMITTED_ACCOUNT_OBJECT.search(object_end[-25:])
+            or clause.startswith('もし') or _OMITTED_ACCOUNT_QUESTION.search(question_clause)):
         return False
     if _OMITTED_ACCOUNT_PREDICATE.fullmatch(predicate):
         return True
