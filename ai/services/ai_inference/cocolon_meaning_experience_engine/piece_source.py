@@ -152,7 +152,7 @@ _SCOPE_RELATIONS = {
 _SCOPED_EXPRESSION = re.compile(
     r'^(?P<scope>(?P<premise>.+?)(?P<marker>'
     + '|'.join(map(re.escape, _SCOPE_RELATIONS)) + r'))[、，,][ \t\u3000]*'
-    r'(?P<intention>(?:私|わたし|僕|ぼく|俺|おれ)(?:は|にとって|が)[、，,]?.+。)$')
+    r'(?P<intention>(?:私|わたし|僕|ぼく|俺|おれ)(?:は|にとって|が)[、，,]?.+[。！!])$')
 # A sentence-initial time topic qualifies an explicit evaluation. The comma
 # fixes its boundary; time words inside the nominal target are not extracted.
 # Preserve the written relative time and contrast/additive particle without
@@ -163,7 +163,7 @@ _SCOPED_EXPRESSION = re.compile(
 # its exact source span, not the spelling alone, can authorize a temporal token.
 _TEMPORAL_EVALUATION = re.compile(
     r'^(?P<scope>(?P<premise>以前|当時|今|現在|これから)(?P<marker>は|も))[、，,][ \t\u3000]*'
-    r'(?P<intention>(?:私|わたし|僕|ぼく|俺|おれ)(?:は|にとって|が)[、，,]?.+。)$')
+    r'(?P<intention>(?:私|わたし|僕|ぼく|俺|おれ)(?:は|にとって|が)[、，,]?.+[。！!])$')
 # Preserve the complete self expression, not an inferred desire lemma.
 # 読みたい / 休みたい and a source-written comparison ending みたい retain
 # their exact surface. Neither is promoted to declaration by this operator.
@@ -307,7 +307,7 @@ def _direct_transitive_expression(sentence: str) -> re.Match[str] | None:
         r'(?P<object>.+?)を(?P<predicate>(?:(?:'
         + '|'.join(map(re.escape, predicates)) + r')|(?P<past_predicate>'
         + '|'.join(map(re.escape, past_predicates)) + r'))(?P<modal>'
-        + _FINITE_EVALUATION_MODAL + r')?)。', sentence)
+        + _FINITE_EVALUATION_MODAL + r')?)[。！!]', sentence)
     if match is None:
         return None
     # The modal's own polite register is allowed, not a polite finite base
@@ -921,7 +921,7 @@ _EVALUATIVE_FOCUS = re.compile(
     r'(?P<construction>にとって|が)[、，,]?'
     + _EVALUATIVE_PREDICATE.format(
         copula='な', modal=_PLAIN_EVALUATION_MODAL, finite_negative='')
-    + r'のは[、，,]?(?P<target>.+?)(?P<copula>です|だ)。$')
+    + r'のは[、，,]?(?P<target>.+?)(?P<copula>です|だ)[。！!]$')
 _EVALUATIVE_FINITE = re.compile(
     r'^(?P<speaker>私|わたし|僕|ぼく|俺|おれ)'
     r'(?P<construction>にとって|は)[、，,]?[ \t\u3000]*'
@@ -933,7 +933,7 @@ _EVALUATIVE_FINITE = re.compile(
     + _EVALUATIVE_PREDICATE.format(
         copula=r'(?P<copula>でした|です|だ)?', modal=_FINITE_EVALUATION_MODAL,
         finite_negative=_FINITE_NEGATIVE)
-    + r'。$')
+    + r'[。！!]$')
 _SIMPLE_NOUN = re.compile(r'[一-龥々ァ-ヴー]+')
 
 

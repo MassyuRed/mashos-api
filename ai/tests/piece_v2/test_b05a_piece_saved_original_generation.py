@@ -1076,6 +1076,96 @@ def test_reservation_inflections_do_not_complete_a_fragment_question_or_report(t
     assert result.artifact is None
 
 
+@pytest.mark.parametrize('base', [
+    '私は読書を大切にしています。',
+    '私は競争を望んでいません。',
+    '私が選びたいのは、陶芸です。',
+    '余裕があるなら、私が選びたいのは、陶芸です。',
+    '以前は、私が望んでいなかったのは、競争です。',
+    '私は読書が好きです。',
+    '私にとって大切なのは、家族です。',
+    '疲れているけれど、私は読書が好きです。',
+])
+@pytest.mark.parametrize('mode', ['平穏', '自己理解'])
+@pytest.mark.parametrize('stop', ['！', '!'])
+@pytest.mark.parametrize('shape', ['single', 'reservation', 'newline', 'other_field'])
+def test_structured_accounts_keep_original_exclamation_after_existing_editorial_operations(base, mode, stop, shape):
+    from piece_v2_content_policy import validate_source_meaning_preservation
+
+    reservation = '姉はまだ分かりません。'
+    memo = base + reservation if shape == 'reservation' else (
+        base + '\n' + reservation if shape == 'newline' else base)
+    action = reservation if shape == 'other_field' else None
+    baseline_value = row(memo, action)
+    baseline_value['original']['emotions'] = [mode]
+    baseline = generated(baseline_value)
+    value = copy.deepcopy(baseline_value)
+    for field in ('memo', 'memo_action'):
+        if value['original'][field]:
+            value['original'][field] = value['original'][field].replace('。', stop)
+    result = generated(value)
+    assert result.artifact.piece_text == baseline.artifact.piece_text.replace('。', stop)
+    assert result.artifact.body_blocks == tuple(block.replace('。', stop) for block in baseline.artifact.body_blocks)
+    assert result.artifact_plan.block_node_ids == baseline.artifact_plan.block_node_ids
+    assert result.artifact_plan.declaration_eligible == baseline.artifact_plan.declaration_eligible
+    assert tuple(d.operation for d in result.artifact_plan.duties) == tuple(d.operation for d in baseline.artifact_plan.duties)
+    raw = result.source_meaning.envelope.raw_utf8
+    for node, evidence in zip(result.source_meaning.graph.nodes, result.source_meaning.evidence, strict=True):
+        assert raw[evidence.utf8_start:evidence.utf8_end].decode('utf-8') == node.value
+    validate_source_meaning_preservation(result.source_meaning, result.artifact_plan, result.artifact)
+
+
+@pytest.mark.parametrize('text', [
+    '私は読書を大切にしたい', '私は人との関係を大切にしたい',
+    '私は自分の時間を守りたい', '僕は水を飲みたくない',
+])
+@pytest.mark.parametrize('stop', ['！', '!'])
+@pytest.mark.parametrize('mode', ['平穏', '自己理解'])
+@pytest.mark.parametrize('shape', ['single', 'paragraph', 'duplicate'])
+def test_existing_literal_exclamations_do_not_gain_a_structured_intent(text, stop, mode, shape):
+    sentence = text + stop
+    memo = sentence if shape == 'single' else sentence + ('\n' if shape == 'paragraph' else '') + sentence
+    value = row(memo, None)
+    value['original']['emotions'] = [mode]
+    result = generated(value)
+    assert result.artifact.piece_text == memo.replace('\n', '\n\n')
+    assert all(d.operation == 'KEEP_COMPLETE_SOURCE_CONTEXT' for d in result.artifact_plan.duties)
+    assert not result.artifact_plan.declaration_eligible
+    assert 'declaration' not in result.artifact.eligible_formats
+
+
+@pytest.mark.parametrize('text', [
+    '私は読書を大切にしています！！',
+    '私は読書を大切にしています!?',
+    '私が選びたいのは、陶芸です？',
+    '余裕があるなら、私が選びたいのは、陶芸です?!',
+    '私は読書が好きです!!',
+    '私はです！',
+    '私はたい!',
+])
+def test_structured_exclamation_does_not_normalize_double_stops_or_questions(text):
+    value = row(text, None)
+    value['original']['emotions'] = ['自己理解']
+    result = outcome(source(value))
+    assert result.status == EngineStatus.UNAVAILABLE
+    assert result.artifact is None
+
+
+@pytest.mark.parametrize('original_stop,changed_stop', [('！', '。'), ('!', '！'), ('！', '!')])
+def test_author_free_review_rejects_structured_exclamation_replacement(original_stop, changed_stop):
+    from piece_v2_content_policy import validate_source_meaning_preservation
+    value = row('余裕があるなら、私が選びたいのは、陶芸です' + original_stop, '姉はまだ分かりません。')
+    value['original']['emotions'] = ['自己理解']
+    result = generated(value)
+    blocks = list(result.artifact.body_blocks)
+    blocks[0] = blocks[0][:-1] + changed_stop
+    text = '\n\n'.join(blocks)
+    corrupted = replace(result.artifact, body_blocks=tuple(blocks), piece_text=text,
+        piece_text_hash=hashlib.sha256(text.encode()).hexdigest())
+    with pytest.raises(ValueError, match='piece_meaning_not_preserved'):
+        validate_source_meaning_preservation(result.source_meaning, result.artifact_plan, corrupted)
+
+
 @pytest.mark.parametrize('prefix', ['誰に', '誰から', 'だれに', 'だれから'])
 @pytest.mark.parametrize('ending', ['ます。', 'ました。', 'ました'])
 def test_question_cue_does_not_read_received_verb_as_indefinite_particle(prefix, ending):

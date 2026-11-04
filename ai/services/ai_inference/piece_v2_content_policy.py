@@ -215,25 +215,26 @@ def validate_source_meaning_preservation(meaning, plan, artifact) -> None:
     positions = {node_id: i for i, node_id in enumerate(ids)}
 
     def arguments(node_id, expression):
+        stop = re.escape(source_nodes[node_id].value[-1])
         frame = evaluations.get(node_id)
         if frame is not None:
             author, predicate, target = (original[a:b] for a, b in frame.scalar_parts)
             finite = predicate[:-1] + frame.copula if predicate.endswith('な') else predicate
             viewpoint = 'にとって' if frame.construction == 'にとって' else 'は'
-            return author, viewpoint, anchor(target) + 'が' + anchor(finite) + '。', None
+            return author, viewpoint, anchor(target) + 'が' + anchor(finite) + stop, None
         focal = _FOCUS.fullmatch(expression)
         direct = _direct_transitive_expression(expression) if focal is None else None
         if focal is not None or direct is not None:
             parsed = focal if focal is not None else direct
             target = parsed['object'].lstrip('、，,') if focal is not None else parsed['object']
-            return parsed['speaker'], 'は', anchor(target) + 'を' + anchor(parsed['predicate']) + '。', None
+            return parsed['speaker'], 'は', anchor(target) + 'を' + anchor(parsed['predicate']) + stop, None
         topic = _SELF_TOPIC.fullmatch(expression)
         if topic is None:
             reject()
         kind = 'wish' if _WISH_END.search(topic['body']) else 'literal'
         if kind == 'literal' and node_id not in scopes:
             reject()
-        return topic['speaker'], 'は', anchor(topic['body']) + '。', kind
+        return topic['speaker'], 'は', anchor(topic['body']) + stop, kind
 
     for group, block in zip(plan.block_node_ids, artifact.body_blocks, strict=True):
         sentences = re.findall(r'[^。！？!?]+[。！？!?]', block)

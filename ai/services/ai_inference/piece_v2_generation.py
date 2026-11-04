@@ -81,7 +81,7 @@ _FOCUS = re.compile(r'^(?P<speaker>私|わたし|僕|ぼく|俺|おれ)が[、�
                     + '|'.join(map(re.escape, _PREDICATES)) + r')|(?P<past_predicate>'
                     + '|'.join(re.escape(p) for p in _PAST_PREDICATES if p in _PLAIN_PREDICATES)
                     + r'))(?P<modal>' + _PLAIN_EVALUATION_MODAL
-                    + r')?)のは[、，,]?(?P<object>.+?)(?:です|だ)[。]$')
+                    + r')?)のは[、，,]?(?P<object>.+?)(?:です|だ)[。！!]$')
 _UNCERTAIN = re.compile(r'かもしれ|分から|わから|迷って|迷い|まだ決め|とは限ら|たぶん|おそらく')
 _DEICTIC = re.compile(r'^(?:これ|それ|あれ|ここ|そこ|あそこ)(?:は|が|を|に|で|も)')
 _NESTED = re.compile(r'[「」『』"“”]|(?:[がは]私)|(?:と(?:彼|彼女|上司|友人))')

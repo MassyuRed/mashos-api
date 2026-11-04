@@ -213,6 +213,12 @@ def compile_piece_artifact_plan(meaning: PieceSourceMeaning) -> PieceArtifactPla
             duties.append(PieceTextDuty(node.node_id, 'SOURCE_PERSONAL_EVALUATION'))
             intents.append(index)
             continue
+        if sentence.endswith(('！', '!')) and _literal_self_account(sentence):
+            # Existing literal self accounts already own these exact words and
+            # emphasis. Punctuation support for the structured families must
+            # not convert that retained wish/simile into a new declaration.
+            duties.append(PieceTextDuty(node.node_id, 'KEEP_COMPLETE_SOURCE_CONTEXT'))
+            continue
         topic = _SELF_TOPIC.fullmatch(sentence)
         if (topic is not None and _WISH_END.search(topic['body'])
                 and semantic.role in _INTENT_ROLES
@@ -997,6 +1003,15 @@ def realize_piece_artifact(meaning: PieceSourceMeaning, plan: PieceArtifactPlan,
                                      + edited[scope.node_id][len(prefix):])
         if len(re.sub(r'\s', '', ''.join(edited.values()))) >= ENVELOPES['short_essay'][0]:
             sentences = edited
+    # Editorial word order and optional repeated-topic removal do not own the
+    # source's written emphasis. Restore its one declarative stop only after
+    # those existing edits, without normalizing a source, span or KEEP node.
+    for node, duty in zip(graph.nodes, plan.duties, strict=True):
+        if duty.operation != 'KEEP_COMPLETE_SOURCE_CONTEXT' and node.value.endswith(('。', '！', '!')):
+            text = sentences[node.node_id]
+            if not text.endswith('。'):
+                raise unavailable('piece_plan_operation_binding')
+            sentences[node.node_id] = text[:-1] + node.value[-1]
     blocks = tuple(''.join(sentences[node_id] for node_id in group)
                    for group in plan.block_node_ids)
     payloads = {}
