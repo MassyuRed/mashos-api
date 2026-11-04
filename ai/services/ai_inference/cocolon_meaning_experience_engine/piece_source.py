@@ -509,8 +509,9 @@ _HIRAGANA_NAME_RIGHT = re.compile(r'(?:$|[\s、，,。！？!?・･]|[はがを
 # Ambiguous quantity, collective and kinship forms do not prove an identity.
 # Refuse their role-looking readings, rather than silently singularizing or
 # dropping a relationship. This is not an exhaustive ordinary-word lexicon.
-_HIRAGANA_NON_IDENTITY = re.compile(
-    r'(?:たく|みな|お?(?:とう|かあ|にい|ねえ|じい|ばあ|じ|ば)|だんな|よめ|むすめ)さん')
+_ROLE_NON_IDENTITY = re.compile(
+    r'(?:たく|みな|お?(?:とう|かあ|にい|ねえ|じい|ばあ|じ|ば)|だんな|よめ|むすめ'
+    r'|皆|父|母|兄|姉|爺|婆|叔父|伯父|叔母|伯母|旦那|嫁|娘)さん')
 _HIRAGANA_SELF_PREFIX = re.compile(
     r'(?:^|[\s、，,。！？!?])(?:私|わたし|僕|ぼく|俺|おれ)(?:は|が|にとって)$')
 
@@ -615,7 +616,7 @@ def piece_public_role_aliases(bindings: tuple[PieceRoleBinding, ...]) -> dict[st
 def _role_bindings(text: str) -> tuple[PieceRoleBinding, ...]:
     matches = tuple(sorted((*_ROLE_NAME.finditer(text), *_HIRAGANA_ROLE_NAME.finditer(text)),
                            key=lambda m: m.start()))
-    if any(_HIRAGANA_NON_IDENTITY.fullmatch(match['name']) for match in matches):
+    if any(_ROLE_NON_IDENTITY.fullmatch(match['name']) for match in matches):
         raise unavailable('public_role_binding_ambiguous')
     names = _piece_name_mentions(text, tuple(match['name'] for match in matches))
     names_by_end = {match.end(): match for match in names}
@@ -648,10 +649,16 @@ def _role_bindings(text: str) -> tuple[PieceRoleBinding, ...]:
             raise unavailable('public_role_binding_missing')
         if match.group() not in by_name:
             raise unavailable('public_role_binding_missing')
-        if (re.match(r'(?:という|と言う|っていう|と呼|と書|と読)', text[match.end():])
-                or re.search(r'(?:名前|名字|姓|呼び名)は[、，,]?$', text[:match.start()])):
+        if (re.match(r'[ \t\u3000]*(?:という|と言う|っていう|と呼|と書|と読'
+                     r'|と名(?:付|づ)け(?:た(?:い|くない)(?:です)?|ました|ません(?:でした)?|ます|た|る|ない)'
+                     r'(?=[。！!、，, \t\u3000]|$))', text[match.end():])
+                or re.search(r'(?:名前|名字|姓|呼び名|氏名)[ \t\u3000]*は[ \t\u3000]*[、，,]?[ \t\u3000]*$',
+                             text[:match.start()])):
             # Here the name is itself what the author is talking about.
             # Replacing it by a relationship would change the proposition.
+            # Horizontal layout cannot license that replacement. Naming is
+            # limited to written finite forms; 名付けについて / 名付けの
+            # remain ordinary topics discussed with the named person.
             raise unavailable('public_identity_is_material')
     return bindings
 
