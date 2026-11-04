@@ -279,7 +279,10 @@ def _calendar_time_adverb_span(sentence: str) -> tuple[int, int] | None:
         offset = dependent.end()
         while offset < len(sentence) and sentence[offset] in '、，, \t\u3000':
             offset += 1
-    topic = _SELF_TOPIC.fullmatch(sentence[offset:])
+    # Read the already-supported single exclamation at the same scalar width.
+    # Only the topic match uses this view; token spans and source stay raw.
+    topic_view = sentence[:-1] + '。' if sentence.endswith(('！', '!')) else sentence
+    topic = _SELF_TOPIC.fullmatch(topic_view[offset:])
     if topic is not None:
         offset += topic.start('body')
         # The topic already allows a horizontal pause before its body.

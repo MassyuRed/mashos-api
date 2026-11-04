@@ -338,6 +338,12 @@ def test_declarative_exclamation_survives_preview_save_replay_and_owner_read(
     pytest.param('私は、\tこれから3日間、窓辺の葉を眺めたい。', 'まだ続けるかは決めていない。',
         ['私は、\tこれから3日間、窓辺の葉を眺めたい。', 'まだ続けるかは決めていない。'],
         id='duration-self-topic-pause'),
+    pytest.param('私はこれから毎朝窓辺の葉を眺めたい！', '続けるかはまだ決めていない。',
+        ['私はこれから毎朝窓辺の葉を眺めたい！', '続けるかはまだ決めていない。'],
+        id='calendar-self-topic-exclamation'),
+    pytest.param('わたしは、\tこれから3日間、窓辺の🌿の形を静かに眺めたい!', '続けるかはまだ決めていない。',
+        ['わたしは、\tこれから3日間、窓辺の🌿の形を静かに眺めたい!', '続けるかはまだ決めていない。'],
+        id='duration-self-topic-exclamation'),
 ])
 def test_literal_self_expressions_survive_preview_save_replay_and_owner_read(
         format_flow, qdb, tier, mode, memo, action, blocks):

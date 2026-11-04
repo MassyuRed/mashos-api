@@ -140,6 +140,86 @@ def test_saved_topic_pause_retains_source_fields_and_author_free_review(monkeypa
         validate_source_meaning_preservation(actual.source_meaning, actual.artifact_plan, changed)
 
 
+@pytest.mark.parametrize('opening', ('私は', 'ただ、わたしは、\t', 'しかし、僕は\u3000'))
+@pytest.mark.parametrize('time', ('これから毎朝', 'これから3日間、'))
+@pytest.mark.parametrize('stop', ('！', '!'))
+def test_self_topic_calendar_exclamation_keeps_literal_time_and_terminator(opening, time, stop):
+    first = opening + time + '窓辺の葉を眺めたい' + stop
+    tail = 'まだ続けるかは決めていない。'
+    actual = assert_body(FOCAL + first + tail, BODY + first + tail)
+    start = first.index('これから')
+    assert _calendar_time_adverb_span(first) == (start, start + len('これから'))
+    assert actual.source_meaning.nominal_references == ()
+    assert actual.artifact_plan.duties[1].operation == 'KEEP_COMPLETE_SOURCE_CONTEXT'
+    assert actual.artifact.eligible_formats == ('short_essay',)
+    assert not actual.artifact_plan.declaration_eligible
+
+
+@pytest.mark.parametrize('mode', ('平穏', '自己理解'))
+@pytest.mark.parametrize('time', ('これから毎朝', 'これから3日間、'))
+@pytest.mark.parametrize('stop', ('！', '!'))
+def test_saved_calendar_exclamation_retains_fields_and_author_free_review(monkeypatch, mode, time, stop):
+    from test_b05a_piece_saved_original_generation import row, source, outcome as saved_outcome, OWNER
+    import api_account_visibility
+    from cocolon_meaning_experience_engine import piece_v1c
+    from piece_v2_content_policy import validate_source_meaning_preservation
+    from piece_v2_contract import canonical_json_bytes
+
+    async def synthetic_owner(token):
+        assert token == 'synthetic-owner-session'
+        return OWNER
+    monkeypatch.setattr(api_account_visibility, '_resolve_user_id_from_token', synthetic_owner)
+    first = 'わたしは、\t' + time + '窓辺の🌿の形を静かに眺めたい' + stop
+    tail = '続けるかはまだ決めていない。'
+    value = row(first, tail)
+    value['original']['emotions'] = [mode]
+    value['original']['emotion_details'] = [{'type': mode, 'strength': 'medium'}]
+    raw = canonical_json_bytes(value['original'])
+    actual = saved_outcome(source(value))
+    assert actual.status == EngineStatus.GENERATED, actual.as_body_free()
+    assert actual.source_meaning.saved_snapshot.saved_original_json == raw
+    assert canonical_json_bytes(value['original']) == raw
+    assert actual.artifact.body_blocks == (first, tail)
+    assert actual.artifact.piece_text == first + '\n\n' + tail
+    assert actual.artifact.eligible_formats == ('short_essay',)
+    for node, evidence in zip(actual.source_meaning.graph.nodes, actual.source_meaning.evidence, strict=True):
+        field = value['original'][evidence.field_path]
+        assert field[evidence.scalar_start:evidence.scalar_end] == node.value
+        assert actual.source_meaning.envelope.raw_utf8[evidence.utf8_start:evidence.utf8_end].decode() == node.value
+    def forbidden(*args, **kwargs):
+        pytest.fail('saved preservation review must not generate or author')
+    monkeypatch.setattr(MeaningExperienceEngine, 'generate', forbidden)
+    monkeypatch.setattr(piece_v1c, 'compile_piece_artifact_plan', forbidden)
+    monkeypatch.setattr(piece_v1c, 'realize_piece_artifact', forbidden)
+    validate_source_meaning_preservation(actual.source_meaning, actual.artifact_plan, actual.artifact)
+    for old, new in (('これから', '昨日から'), (stop, '。')):
+        changed_text = actual.artifact.piece_text.replace(old, new, 1)
+        changed = replace(actual.artifact, body_blocks=tuple(changed_text.split('\n\n')),
+            piece_text=changed_text, piece_text_hash=hashlib.sha256(changed_text.encode()).hexdigest())
+        with pytest.raises(ValueError, match='piece_meaning_not_preserved'):
+            validate_source_meaning_preservation(actual.source_meaning, actual.artifact_plan, changed)
+
+
+@pytest.mark.parametrize('stop', ('！', '!'))
+@pytest.mark.parametrize('first', (
+    '私はこれから3日間窓辺の葉を眺めたい',
+    '私はそれから毎朝窓辺の葉を眺めたい',
+    '私はあれから毎朝窓辺の葉を眺めたい',
+    '私はこれから毎日の予定を眺めたい',
+    '私はこれから毎朝眺める時間が好きです',
+    '私は窓辺でこれから毎朝眺めるものを選びたい',
+))
+def test_calendar_exclamation_does_not_resolve_nominal_or_other_deictic_uses(first, stop):
+    actual = outcome(first + stop + 'まだ続けるかは決めていない。')
+    assert actual.status == EngineStatus.UNAVAILABLE and actual.artifact is None
+
+
+@pytest.mark.parametrize('stop', ('！！', '!?', '！。', '？'))
+def test_calendar_topic_view_does_not_complete_other_terminators(stop):
+    actual = outcome('私はこれから毎朝窓辺の葉を眺めたい' + stop + 'まだ続けるかは決めていない。')
+    assert actual.status == EngineStatus.UNAVAILABLE and actual.artifact is None
+
+
 @pytest.mark.parametrize('separator', ('、', '，', ',', '、\t', '、　', ' '))
 def test_original_internal_spacing_and_calendar_adverb_are_not_normalized(separator):
     tail = 'ただ、これから' + separator + '毎週続けるかはまだ決めていない。'
