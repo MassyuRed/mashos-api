@@ -292,16 +292,20 @@ def _same_self_scope_author(premise: str, speaker: str) -> bool:
     from piece_v2_expression import _SELF_TOPIC, _DEPENDENT_START, _EMBEDDED_REPORT
     topic = _SELF_TOPIC.fullmatch(premise + '。')
     body = topic['body'] if topic is not None else ''
+    # The existing topic grammar owns an optional comma and horizontal pause.
+    # Inspect an adverb-only left-trimmed view; the premise, source spans and
+    # writer retain those separators. Non-adverb branches keep their old view.
+    adverb_body = body.lstrip(' \t\u3000')
     # These two complete initial adverbs already have a nonquestion reading.
     # Their internal も is not an additional participant. Use the same
     # non-hiragana/end boundary; retain every following particle and comma.
-    prefix = re.match(r'どう(?:して|やって)も(?=[^ぁ-ん]|\Z)', body)
+    prefix = re.match(r'どう(?:して|やって)も(?=[^ぁ-ん]|\Z)', adverb_body)
     if prefix is not None:
         from piece_v2_generation import _OMITTED_ACCOUNT_QUESTION
-        if (_OMITTED_ACCOUNT_QUESTION.search(body)
-                or _FINITE_RESERVATION_QUESTION.search(body)):
+        if (_OMITTED_ACCOUNT_QUESTION.search(adverb_body)
+                or _FINITE_RESERVATION_QUESTION.search(adverb_body)):
             return False
-        body = body[prefix.end():].lstrip(' \t\u3000')
+        body = adverb_body[prefix.end():].lstrip(' \t\u3000')
         bare = body.strip(' \t\u3000').removesuffix('です').rstrip(' \t\u3000')
         if not bare or bare in _BARE_SELF_OPERATORS:
             return False

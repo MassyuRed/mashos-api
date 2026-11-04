@@ -63,9 +63,17 @@ VARIANTS = ['ui_medium', 'tags_only', 'tags_null_details', 'details_only',
      '私はどうやっても選べないので、競争を望んでいなかった!'),
 ))
 @pytest.mark.parametrize('mode', ('平穏', MODE))
-def test_initial_nonquestion_adverb_keeps_the_existing_self_scope_and_inner_expression(text, expected, mode):
+@pytest.mark.parametrize('pause', ('', ' ', '\t', '\u3000', '、 \t\u3000'))
+def test_initial_nonquestion_adverb_keeps_the_existing_self_scope_and_inner_expression(text, expected, mode, pause):
     from piece_v2_content_policy import validate_source_meaning_preservation
 
+    # The topic's horizontal separator is not a participant or a new clause.
+    # Bind it in the unchanged source; only the rejection reader's view may
+    # ignore the gap before the already-supported initial adverb.
+    scope_text, expression = text.split('、', 1)
+    scope_text = scope_text.replace('は', 'は' + pause, 1)
+    text = scope_text + '、' + expression
+    expected = expected.replace('は', 'は' + pause, 1)
     value = saved_state(text, None)
     value['original']['emotions'] = [mode]
     result = outcome(source(value))
@@ -79,8 +87,8 @@ def test_initial_nonquestion_adverb_keeps_the_existing_self_scope_and_inner_expr
     assert meaning.saved_snapshot.saved_original_json == canonical_json_bytes(value['original'])
     scope, = meaning.expression_scopes
     assert result.artifact_plan.duties[0].operation == 'SOURCE_SCOPED_EXPRESSION_TO_FIRST_PERSON'
-    assert text[slice(*scope.scope_scalar_span)] == text[:text.index('、')]
-    assert text[slice(*scope.expression_scalar_span)] == text[text.index('、') + 1:]
+    assert text[slice(*scope.scope_scalar_span)] == scope_text
+    assert text[slice(*scope.expression_scalar_span)] == expression
     for scalar, utf8 in ((scope.scope_scalar_span, scope.scope_utf8_span),
                          (scope.expression_scalar_span, scope.expression_utf8_span)):
         assert text[slice(*scalar)].encode() == meaning.envelope.raw_utf8[slice(*utf8)]
@@ -110,7 +118,9 @@ def test_initial_nonquestion_adverb_keeps_the_existing_self_scope_and_inner_expr
     '私はどうしても\tたいです\tなら、私は読書が好きです。',
     '私はどうしても\tたい です\tなら、私は読書が好きです。',
 ))
-def test_nonquestion_adverb_does_not_erase_a_later_participant_question_or_incomplete_scope(text):
+@pytest.mark.parametrize('pause', ('', ' \t\u3000', '、\u3000'))
+def test_nonquestion_adverb_does_not_erase_a_later_participant_question_or_incomplete_scope(text, pause):
+    text = text.replace('は', 'は' + pause, 1)
     value = saved_state(text, None)
     value['original']['emotions'] = [MODE]
     result = outcome(source(value))
