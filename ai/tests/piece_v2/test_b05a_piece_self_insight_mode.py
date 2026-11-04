@@ -7,6 +7,7 @@ No existing tests, runtime switches, public routes or databases are modified.
 """
 import copy
 from dataclasses import replace
+import hashlib
 import json
 from types import SimpleNamespace
 
@@ -49,6 +50,55 @@ def selection_variant(row, variant):
 
 VARIANTS = ['ui_medium', 'tags_only', 'tags_null_details', 'details_only',
             'details_null_tags', 'missing_strength', 'empty_strength']
+
+
+@pytest.mark.parametrize('reservation', (
+    'まだ、決めていません。', 'まだ，決めていない！',
+    'まだ,決めていませんでした!', 'まだ、決めていなかった。',
+))
+@pytest.mark.parametrize('separate_fields', (False, True))
+def test_literal_account_keeps_a_paused_finite_decision_reservation(reservation, separate_fields):
+    from piece_v2_content_policy import validate_source_meaning_preservation
+    account = '私は本を読みたい！'
+    value = saved_state(account, reservation) if separate_fields else saved_state(account + reservation, None)
+    value['original']['emotions'] = [MODE]
+    result = outcome(source(value))
+    assert result.status.value == 'GENERATED', result.reason_codes
+    blocks = (account, reservation) if separate_fields else (account + reservation,)
+    assert result.artifact.body_blocks == blocks
+    assert result.artifact.piece_text == '\n\n'.join(blocks)
+    assert result.artifact.piece_text_hash == hashlib.sha256(result.artifact.piece_text.encode()).hexdigest()
+    assert result.artifact.eligible_formats == ('short_essay',)
+    assert not result.artifact_plan.declaration_eligible
+    assert all(d.operation == 'KEEP_COMPLETE_SOURCE_CONTEXT' for d in result.artifact_plan.duties)
+    meaning = result.source_meaning
+    assert meaning.saved_snapshot.saved_original_json == canonical_json_bytes(value['original'])
+    assert meaning.selected_feelings == ()
+    for node, evidence in zip(meaning.graph.nodes, meaning.evidence, strict=True):
+        field = value['original'][evidence.field_path]
+        assert field[evidence.scalar_start:evidence.scalar_end] == node.value
+        assert meaning.envelope.raw_utf8[evidence.utf8_start:evidence.utf8_end] == node.value.encode()
+    validate_source_meaning_preservation(meaning, result.artifact_plan, result.artifact)
+
+
+@pytest.mark.parametrize('reservation', (
+    'まだ、決めています。', 'まだ、決めました。', 'まだ、やめていません。',
+    'まだ、何を決めていません。', 'まだ、どんな本を読むかは決めていません。',
+    'まだ、余裕があるなら決めていません。', 'まだ、読む日は決めていませんと言われた。',
+    'まだ、決めていません？', 'まだ、読む日は決めていません',
+    'まだ、決めていないわけではありません。',
+    'まだ、読む日は決めていません。', 'まだ，読む日は決めていない！',
+    'まだ, 読む日は決めていませんでした!', 'まだ、\u3000読む日は決めていなかった。',
+    'まだ、余裕があるので私は決めていません。',
+    'まだ、遠いけれど私は決めていません。',
+    'まだ、は決めていません。', 'まだ、 は決めていません。',
+))
+def test_paused_decision_does_not_supply_an_unknown_predicate_or_relax_scope_guards(reservation):
+    value = saved_state('私は本を読みたい！' + reservation, None)
+    value['original']['emotions'] = [MODE]
+    result = outcome(source(value))
+    assert result.status.value == 'UNAVAILABLE'
+    assert result.artifact is None
 
 
 @pytest.mark.parametrize('variant', VARIANTS)

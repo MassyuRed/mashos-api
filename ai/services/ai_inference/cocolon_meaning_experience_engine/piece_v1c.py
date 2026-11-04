@@ -39,6 +39,13 @@ _FINITE_RESERVATION_END = re.compile(
     r'(?:(?:分かり|わかり|とは限り)ません(?:でした)?|迷っている)[。！!]$')
 _FINITE_RESERVATION_QUESTION = re.compile(
     r'(?:何|なん|なに)で(?!も(?=[^ぁ-ん]|\Z))|どんな(?!に)')
+# A pause after the already-written まだ does not complete a decision. Keep
+# only its existing finite negative predicate in this literal-account arm.
+# A target/topic would need its own source proof; do not swallow a clause.
+# This is not a global
+# uncertainty cue, a new proposition, or a format-eligibility rule.
+_PAUSED_DECISION_RESERVATION = re.compile(
+    r'^まだ[、，,][ \t\u3000]*決めて(?:いませんでした|いません|いなかった|いない)[。！!]$')
 # Only an entire source-bound argument matching this finite nominalization
 # owns its uncertainty words. A larger target can swallow an outer adverb,
 # condition or reservation; do not exempt its matching substring.
@@ -343,7 +350,8 @@ def compile_piece_artifact_plan(meaning: PieceSourceMeaning) -> PieceArtifactPla
                     for node in text_nodes)
                 reservations = tuple(bool(((_UNCERTAIN.search(node.value)
                         and _WRITTEN_ACCOUNT_END.search(node.value))
-                        or (_FINITE_RESERVATION_END.search(node.value)
+                        or ((_FINITE_RESERVATION_END.search(node.value)
+                             or _PAUSED_DECISION_RESERVATION.fullmatch(node.value))
                             and not _FINITE_RESERVATION_QUESTION.search(node.value)))
                         and node.value.endswith(('。', '！', '!'))
                         and not _OMITTED_ACCOUNT_QUESTION.search(node.value)
