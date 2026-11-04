@@ -1190,6 +1190,24 @@ def _validated_self_insight_mode(tags: list, details: list) -> bool:
     return True
 
 
+def _written_feeling_expression(sentence: str, *, current_affirmative_only: bool) -> re.Match[str] | None:
+    """Read explicit existing feeling words without inferring a selected state.
+
+    Selection binding retains its original present affirmative, full-stop
+    spelling. Literal account retention can also keep the same verb's eight
+    polite forms already retained in selected-feeling mode. Neither purpose
+    guesses an experiencer, tense, intensity, feeling label or missing stop.
+    """
+    from .source_kernel import CANONICAL_EMOTIONS
+    labels = tuple(label for label in CANONICAL_EMOTIONS if label != '自己理解')
+    ending = (r'ています。' if current_affirmative_only else
+              r'(?:てい(?:ます|ません(?:でした)?|ました)|ます|ません(?:でした)?|ました)[。！!]')
+    return re.fullmatch(
+        r'(?:私|わたし|僕|ぼく|俺|おれ)は[、，,]?[ \t\u3000]*'
+        r'(?P<degree>弱い|中程度の|強い)?(?P<label>'
+        + '|'.join(map(re.escape, labels)) + r')を感じ' + ending, sentence)
+
+
 def _selected_feeling_bindings(source, nodes: tuple[MeaningNode, ...],
                                evidence: tuple[EvidenceRef, ...]):
     """Bind selections to matching written evidence or separate private context.
@@ -1237,13 +1255,9 @@ def _selected_feeling_bindings(source, nodes: tuple[MeaningNode, ...],
     selected_strengths = {label: strength for field, _, label, strength in rows
                           if field == 'emotion_details'}
     degree = {'': '', '弱い': 'weak', '中程度の': 'medium', '強い': 'strong'}
-    feeling = re.compile(
-        r'^(?:私|わたし|僕|ぼく|俺|おれ)は[、，,]?[ \t\u3000]*'
-        r'(?P<degree>弱い|中程度の|強い)?(?P<label>'
-        + '|'.join(map(re.escape, labels)) + r')を感じています。$')
     matches = {}
     for node in nodes:
-        match = feeling.fullmatch(node.value)
+        match = _written_feeling_expression(node.value, current_affirmative_only=True)
         if match:
             matches.setdefault(match['label'], []).append((node, degree[match['degree'] or '']))
     evidence_by_id = {item.evidence_id: item for item in evidence}

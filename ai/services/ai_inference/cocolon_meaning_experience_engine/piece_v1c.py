@@ -23,7 +23,7 @@ from .contracts import EngineStatus, ExecutionMode
 from .piece_source import (
     _SIMPLE_NOUN, _calendar_time_adverb_span, _direct_transitive_expression, _PERSON_NAME_LEFT_BOUNDARY,
     _validated_self_insight_mode, PiecePersonalEvaluation, PieceSourceMeaning, build_piece_source_meaning,
-    _literal_self_account,
+    _literal_self_account, _written_feeling_expression,
     piece_public_role_aliases, validate_piece_nominal_references, validate_piece_saved_fields,
     validate_piece_personal_evaluations, validate_piece_expression_scopes,
     piece_text_nodes,
@@ -251,7 +251,7 @@ def compile_piece_artifact_plan(meaning: PieceSourceMeaning) -> PieceArtifactPla
             self_insight_mode = not meaning.selected_feelings and _validated_self_insight_mode(
                 record['emotions'] or [], record['emotion_details'] or [])
             if meaning.selected_feelings or self_insight_mode:
-                # The two existing complete-account families share one
+                # The existing complete-account families share one
                 # reservation check. A selected mode supplies no proposition:
                 # at least one written action or explicit self expression
                 # must independently qualify, and every other sentence must
@@ -269,7 +269,10 @@ def compile_piece_artifact_plan(meaning: PieceSourceMeaning) -> PieceArtifactPla
                             node.value.rpartition('を')[0][-25:]))
                         and not _unproved_explicit_account_object(node.value.rpartition('を')[0]))
                     for node in text_nodes)
-                self_accounts = tuple(_literal_self_account(node.value) for node in text_nodes)
+                self_accounts = tuple(_literal_self_account(node.value)
+                    or _written_feeling_expression(
+                        node.value, current_affirmative_only=False) is not None
+                    for node in text_nodes)
                 reservations = tuple(bool(((_UNCERTAIN.search(node.value)
                         and _WRITTEN_ACCOUNT_END.search(node.value))
                         or (_FINITE_RESERVATION_END.search(node.value)

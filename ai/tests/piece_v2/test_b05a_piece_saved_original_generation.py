@@ -41,6 +41,9 @@ FOCAL_PAUSE_CASES = (
     '私にとって必要だったとは限らないのは、{gap}家族です!',
 )
 
+WRITTEN_FEELING_FORMS = ('ています', 'ていません', 'ていました', 'ていませんでした',
+                         'ます', 'ません', 'ました', 'ませんでした')
+
 
 def run(value):
     return asyncio.run(value)
@@ -244,6 +247,123 @@ def test_direct_wish_spacing_fix_preserves_the_existing_literal_scope_and_past_p
     value['original']['emotions'] = ['自己理解']
     result = generated(value)
     assert result.artifact.piece_text == expected
+    validate_source_meaning_preservation(result.source_meaning, result.artifact_plan, result.artifact)
+
+
+@pytest.mark.parametrize('label', ('喜び', '悲しみ', '怒り', '不安', '平穏'))
+@pytest.mark.parametrize('ending', WRITTEN_FEELING_FORMS)
+@pytest.mark.parametrize('stop', ('。', '！', '!'))
+@pytest.mark.parametrize('field', ('memo', 'memo_action'))
+def test_written_feeling_account_is_retained_without_a_selected_feeling(label, ending, stop, field):
+    from piece_v2_content_policy import validate_source_meaning_preservation
+    feeling = f'私は{label}を感じ{ending}{stop}'
+    tail = '姉はまだ分かりません。'
+    value = row(feeling, tail) if field == 'memo' else row(tail, feeling)
+    value['original']['emotions'] = ['自己理解']
+    value['original']['emotion_details'] = [{'type': '自己理解', 'strength': 'medium'}]
+    result = generated(value)
+    expected = '\n\n'.join((feeling, tail) if field == 'memo' else (tail, feeling))
+    assert result.artifact.piece_text == expected
+    assert {d.operation for d in result.artifact_plan.duties} == {'KEEP_COMPLETE_SOURCE_CONTEXT'}
+    assert not result.artifact_plan.declaration_eligible
+    assert 'declaration' not in result.artifact.eligible_formats
+    meaning = result.source_meaning
+    assert meaning.selected_feelings == meaning.selection_contexts == meaning.selection_evidence == ()
+    assert meaning.saved_snapshot.saved_original_json == canonical_json_bytes(value['original'])
+    for node, ev in zip(meaning.graph.nodes, meaning.evidence, strict=True):
+        assert value['original'][ev.field_path][ev.scalar_start:ev.scalar_end] == node.value
+        assert meaning.envelope.raw_utf8[ev.utf8_start:ev.utf8_end].decode('utf-8') == node.value
+    validate_source_meaning_preservation(meaning, result.artifact_plan, result.artifact)
+
+
+@pytest.mark.parametrize('speaker', ('私', 'わたし', '僕', 'ぼく', '俺', 'おれ'))
+@pytest.mark.parametrize('degree', ('', '弱い', '中程度の', '強い'))
+@pytest.mark.parametrize('gap', ('', ' \t\u3000'))
+def test_written_feeling_keeps_overt_speaker_degree_and_horizontal_layout(speaker, degree, gap):
+    value = row(f'{speaker}は、{gap}{degree}不安を感じています。', None)
+    value['original']['emotions'] = ['自己理解']
+    result = generated(value)
+    assert result.artifact.piece_text == value['original']['memo']
+    assert not result.artifact_plan.declaration_eligible
+
+
+@pytest.mark.parametrize('ending', WRITTEN_FEELING_FORMS)
+@pytest.mark.parametrize('stop', ('。', '！', '!'))
+def test_written_account_does_not_rebind_a_selected_present_feeling_from_negative_or_past_text(ending, stop):
+    value = row(f'私は強い不安を感じ{ending}{stop}', None)
+    value['original']['emotions'] = ['不安']
+    value['original']['emotion_details'] = [{'type': '不安', 'strength': 'strong'}]
+    result = generated(value)
+    assert result.artifact.piece_text == value['original']['memo']
+    meaning = result.source_meaning
+    if ending == 'ています' and stop == '。':
+        assert meaning.selection_contexts == meaning.selection_evidence == ()
+        assert {binding.node_id for binding in meaning.selected_feelings} == {meaning.graph.nodes[0].node_id}
+    else:
+        context, = meaning.selection_contexts
+        assert json.loads(context.value) == {'label': '不安', 'scope': 'RECORDED_SELF', 'strength': 'strong'}
+        assert {binding.node_id for binding in meaning.selected_feelings} == {context.node_id}
+
+
+@pytest.mark.parametrize('text', (
+    '姉は不安を感じています。', '私たちは不安を感じています。', '不安を感じています。',
+    '私は「不安を感じています」と書いた。', '私は不安を感じていますと聞いた。',
+    'もし私は不安を感じています。', '私は不安を感じるなら、休む。',
+    '私は不安を感じています？', '私は不安を感じています?', '私は不安を感じていますか。',
+    '私は不安を感じています！！', '私は不安を感じています', '私は不安を感じて',
+    '私は不安を\n感じています。', '私は不安を感じる。', '私は不安を感じない。',
+    '私は不安を感じていた。', '私はを感じています。', '私は強いを感じています。',
+    '私は自己理解を感じています。', '私は不安に感じています。',
+))
+def test_written_feeling_retention_does_not_fill_an_actor_form_stop_or_subordinate_clause(text):
+    value = row(text, None)
+    value['original']['emotions'] = ['自己理解']
+    result = outcome(source(value))
+    assert result.status == EngineStatus.UNAVAILABLE
+    assert result.artifact is None
+
+
+@pytest.mark.parametrize('memo,action', (
+    ('私は不安を', '感じています。'),
+    ('私は不安を感じています。', '姉は不安を感じています。'),
+    ('私は不安を感じています。', 'まだ、何を感じています。'),
+))
+def test_written_feeling_does_not_complete_another_field_or_drop_unread_context(memo, action):
+    value = row(memo, action)
+    value['original']['emotions'] = ['自己理解']
+    result = outcome(source(value))
+    assert result.status == EngineStatus.UNAVAILABLE
+    assert result.artifact is None
+
+
+@pytest.mark.parametrize('tags,details', (([], []), (['自己理解', '不安'], []),
+    (['自己理解'], [{'type': '自己理解', 'strength': 'strong'}])))
+def test_written_feeling_still_requires_the_existing_valid_saved_mode(tags, details):
+    value = row('私は不安を感じています。', None)
+    value['original']['emotions'], value['original']['emotion_details'] = tags, details
+    result = outcome(source(value))
+    assert result.status == EngineStatus.UNAVAILABLE
+    assert result.artifact is None
+
+
+@pytest.mark.parametrize('memo,action,expected', (
+    ('私は不安を感じています。私は不安を感じています。', None,
+     '私は不安を感じています。私は不安を感じています。'),
+    ('私は喜びを感じています。\n私は悲しみを感じました。', None,
+     '私は喜びを感じています。\n\n私は悲しみを感じました。'),
+    ('私は不安を感じていませんでした。まだ分かりません。', None,
+     '私は不安を感じていませんでした。まだ分かりません。'),
+    ('私は不安を感じています。', '資料を確認しました。',
+     '私は不安を感じています。\n\n資料を確認しました。'),
+))
+def test_written_feeling_preserves_duplicates_labels_paragraphs_and_complete_actions(memo, action, expected):
+    from piece_v2_content_policy import validate_source_meaning_preservation
+    value = row(memo, action)
+    value['original']['emotions'] = ['自己理解']
+    result = generated(value)
+    assert result.artifact.piece_text == expected
+    assert not result.artifact_plan.declaration_eligible
+    assert {d.operation for d in result.artifact_plan.duties} == {'KEEP_COMPLETE_SOURCE_CONTEXT'}
     validate_source_meaning_preservation(result.source_meaning, result.artifact_plan, result.artifact)
 
 
