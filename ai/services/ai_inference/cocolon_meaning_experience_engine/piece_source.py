@@ -169,6 +169,54 @@ _TEMPORAL_EVALUATION = re.compile(
 # their exact surface. Neither is promoted to declaration by this operator.
 _SCOPED_SELF_END = re.compile(r'(?:たい|たくない)(?:です)?$')
 _SELF_TOPIC_MENTION = re.compile(r'(?:私|わたし|僕|ぼく|俺|おれ)は')
+# This rejection reader deliberately permits an empty body so a grammatical
+# operator by itself cannot become a complete proposition or a declaration.
+# It supplies no new positive source grammar or lexical predicate.
+_SELF_PREDICATE_BODY = re.compile(
+    r'^(?:私|わたし|僕|ぼく|俺|おれ)は[、，,]?(?P<body>.*)。$')
+_BARE_SELF_OPERATORS = frozenset({'たい', 'たくない', 'みたい', 'てみたい', 'でみたい'})
+
+
+def _validate_self_predicate_body(sentence: str) -> None:
+    expressions = [sentence]
+    scoped = (_SCOPED_EXPRESSION.fullmatch(sentence)
+              or _TEMPORAL_EVALUATION.fullmatch(sentence))
+    if scoped is not None:
+        expressions.append(scoped['intention'])
+    for expression in expressions:
+        topic = _SELF_PREDICATE_BODY.fullmatch(expression)
+        if topic is not None:
+            body = topic['body'].strip().removesuffix('です')
+            if not body or body in _BARE_SELF_OPERATORS:
+                raise unavailable('expression_meaning_not_admitted')
+
+
+def _literal_self_account(sentence: str) -> bool:
+    """Retain a finite self expression without deciding wish versus simile.
+
+    The existing scoped literal owner already accepts these same complete
+    endings. Its plain and polite spellings own their original words here;
+    neither a shared role nor this reader supplies a new intent, predicate,
+    participant, assertion or declaration. This is finite source retention,
+    not a general grammaticality or lexical-part-of-speech judgment.
+    """
+    from piece_v2_expression import _SELF_TOPIC, _DEPENDENT_START, _EMBEDDED_REPORT
+    from piece_v2_generation import (
+        _OMITTED_ACCOUNT_QUESTION, _OMITTED_LEXICAL_SCOPE, _OMITTED_NEW_PREFIX_GUARD,
+    )
+    topic = _SELF_TOPIC.fullmatch(sentence)
+    if topic is None:
+        return False
+    body = topic['body'].strip()
+    _validate_self_predicate_body(sentence)
+    return bool(_SCOPED_SELF_END.search(body)
+                and not _DEPENDENT_START.search(body)
+                and not _EMBEDDED_REPORT.search(body)
+                and not _OMITTED_ACCOUNT_QUESTION.search(body)
+                and not _OMITTED_LEXICAL_SCOPE.search(body)
+                and not _OMITTED_NEW_PREFIX_GUARD.search(body))
+
+
 _SCOPE_KINDS = {
     'SOURCE_EXPLICIT_REASON': 'PIECE_SOURCE_REASON_SCOPED_EXPRESSION',
     'SOURCE_EXPLICIT_CONDITION': 'PIECE_SOURCE_CONDITION_SCOPED_EXPRESSION',
@@ -1277,6 +1325,8 @@ def build_piece_source_meaning(source: object, *, expected_owner_id: str,
     text = source.original_text
     check_existing_detectors(text)
     sentences = _sentences(text, allow_unpunctuated_account=source.saved_original_json is not None)
+    for sentence in sentences:
+        _validate_self_predicate_body(sentence)
     aliases = _role_bindings(text)
     role_by_position = _piece_editorial_roles(
         sentences, InputEvidenceRef(kind='saved_input', ref_id=source.saved_input_id))

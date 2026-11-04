@@ -578,6 +578,129 @@ def test_independent_review_keeps_exclamation_and_complete_account_arguments(mut
         validate_source_meaning_preservation(result.source_meaning, plan, artifact)
 
 
+@pytest.mark.parametrize('speaker', ['私', 'わたし', '僕', 'ぼく', '俺', 'おれ'])
+@pytest.mark.parametrize('mode', ['平穏', '自己理解'])
+@pytest.mark.parametrize('register', ['', 'です'])
+@pytest.mark.parametrize('body', ['本を読みたい', '水を飲みたい', '静かに休みたい'])
+def test_saved_literal_self_expression_keeps_plain_and_polite_words(speaker, mode, register, body):
+    text = speaker + 'は' + body + register + '。'
+    value = row(text, None)
+    value['tier'], value['original']['emotions'] = 'premium', [mode]
+    result = generated(value)
+    assert result.artifact.piece_text == text
+    assert [d.operation for d in result.artifact_plan.duties] == ['KEEP_COMPLETE_SOURCE_CONTEXT']
+    assert not result.artifact_plan.declaration_eligible
+    candidate = run(adapter_module.PieceSavedSourceAdapter(store=Store(value))
+                    .generate_original_candidate_for_development(
+                        AUTH, INPUT, source_stage='normal_observation'))
+    assert candidate['piece_text'] == text
+    assert candidate['content_payload']['body_blocks'] == [text]
+    assert 'declaration' not in candidate['eligible_formats']
+
+
+@pytest.mark.parametrize('mode', ['平穏', '自己理解'])
+@pytest.mark.parametrize('memo,action,blocks', [
+    ('私は本を読みたい。私は水を飲みたい。', '私は静かに休みたい。',
+     ('私は本を読みたい。私は水を飲みたい。', '私は静かに休みたい。')),
+    ('私は本を読みたいです。\n私は静かに休みたいです。', '窓を閉めませんでした。',
+     ('私は本を読みたいです。', '私は静かに休みたいです。', '窓を閉めませんでした。')),
+    ('私は本を読みたい。私は本を読みたい。', None,
+     ('私は本を読みたい。私は本を読みたい。',)),
+    ('私は本を読みたい。', '私は本を読みたい。',
+     ('私は本を読みたい。', '私は本を読みたい。')),
+    ('私は猫みたい。', None, ('私は猫みたい。',)),
+    ('私は猫みたいです。', None, ('私は猫みたいです。',)),
+    ('私は本を読みたいみたい。', None, ('私は本を読みたいみたい。',)),
+    ('私は本を読みたいみたいです。', None, ('私は本を読みたいみたいです。',)),
+])
+def test_literal_accounts_keep_source_paragraphs_duplicates_and_comparisons(mode, memo, action, blocks):
+    value = row(memo, action)
+    value['original']['emotions'] = [mode]
+    result = generated(value)
+    assert result.artifact.body_blocks == blocks
+    assert result.artifact.piece_text == '\n\n'.join(blocks)
+    assert all(d.operation == 'KEEP_COMPLETE_SOURCE_CONTEXT' for d in result.artifact_plan.duties)
+    assert not result.artifact_plan.declaration_eligible
+    candidate = run(adapter_module.PieceSavedSourceAdapter(store=Store(value))
+                    .generate_original_candidate_for_development(
+                        AUTH, INPUT, source_stage='normal_observation'))
+    assert candidate['piece_text'] == result.artifact.piece_text
+    assert candidate['content_payload']['body_blocks'] == list(blocks)
+
+
+@pytest.mark.parametrize('mode', ['平穏', '自己理解'])
+@pytest.mark.parametrize('body', ['', '、', 'です', 'たい', 'たいです', 'たくない',
+                                  'みたい', 'みたいです', 'てみたい', 'でみたい'])
+@pytest.mark.parametrize('prefix', ['', '余裕があるなら、'])
+def test_bare_self_operators_never_become_a_source_proposition(mode, body, prefix):
+    value = row(prefix + '私は' + body + '。', None)
+    value['original']['emotions'] = [mode]
+    with pytest.raises(ValueError, match='expression_meaning_not_admitted'):
+        run(adapter_module.PieceSavedSourceAdapter(store=Store(value))
+            .generate_original_candidate_for_development(
+                AUTH, INPUT, source_stage='normal_observation'))
+
+
+@pytest.mark.parametrize('memo,action', [
+    ('私は本を読みたい？', None), ('私は本を読みたいか。', None),
+    ('私は何を読みたい。', None), ('私はどの本を読みたい。', None),
+    ('私はもし本を読みたい。', None), ('私は本を読みたいなら。', None),
+    ('私は本を読みたいと。', None), ('私は本を読みたいが。', None),
+    ('私はあの本を読みたい。', None), ('私は本を読みたい', None),
+    ('私は本を\n読みたい。', None), ('私は本を', '読みたい。'),
+    ('私は静かに', '休みたい。'),
+])
+@pytest.mark.parametrize('mode', ['平穏', '自己理解'])
+def test_literal_admission_does_not_complete_questions_or_fragmented_fields(memo, action, mode):
+    value = row(memo, action)
+    value['original']['emotions'] = [mode]
+    with pytest.raises(ValueError):
+        run(adapter_module.PieceSavedSourceAdapter(store=Store(value))
+            .generate_original_candidate_for_development(
+                AUTH, INPUT, source_stage='normal_observation'))
+
+
+def test_new_literal_account_requires_valid_saved_selection_and_never_grants_declaration():
+    value = row('私は本を読みたい。', None)
+    assert outcome(source(value)).reason_codes == ('expression_meaning_not_admitted',)
+    value['original']['emotions'] = ['自己理解']
+    snapshot = source(value)
+    assert outcome(replace(snapshot, saved_original_json=None)).reason_codes == (
+        'expression_meaning_not_admitted',)
+    value['tier'] = 'premium'
+    with pytest.raises(ValueError, match='format_choice_not_admitted'):
+        run(adapter_module.PieceSavedSourceAdapter(store=Store(value))
+            .generate_original_candidate_for_development(
+                AUTH, INPUT, source_stage='normal_observation', requested_format='declaration'))
+
+
+@pytest.mark.parametrize('mutation', ['subject', 'object', 'negation', 'punctuation', 'drop_duplicate', 'order'])
+def test_independent_review_binds_literal_accounts_without_inferring_wishes(mutation):
+    from piece_v2_content_policy import validate_source_meaning_preservation
+
+    value = row('私は本を読みたい。私は本を読みたい。', '私は水を飲みたい。')
+    value['original']['emotions'] = ['自己理解']
+    result = generated(value)
+    blocks = list(result.artifact.body_blocks)
+    if mutation == 'subject':
+        blocks[0] = blocks[0].replace('私は', '姉は', 1)
+    elif mutation == 'object':
+        blocks[0] = blocks[0].replace('本', '手紙', 1)
+    elif mutation == 'negation':
+        blocks[0] = blocks[0].replace('読みたい', '読みたくない', 1)
+    elif mutation == 'punctuation':
+        blocks[0] = blocks[0].replace('。', '！', 1)
+    elif mutation == 'drop_duplicate':
+        blocks[0] = '私は本を読みたい。'
+    else:
+        blocks.reverse()
+    text = '\n\n'.join(blocks)
+    artifact = replace(result.artifact, body_blocks=tuple(blocks), piece_text=text,
+        piece_text_hash=hashlib.sha256(text.encode()).hexdigest())
+    with pytest.raises(ValueError, match='piece_meaning_not_preserved'):
+        validate_source_meaning_preservation(result.source_meaning, result.artifact_plan, artifact)
+
+
 def test_punctuated_saved_paragraphs_keep_the_same_author_and_source_order():
     value = row('私は本を読む時間を大切にしています。\n\n私は一人で静かに過ごしたい。',
                 '私は今日は外に出たくない。')

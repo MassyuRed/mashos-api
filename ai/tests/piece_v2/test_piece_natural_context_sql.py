@@ -304,6 +304,78 @@ def test_declarative_exclamation_survives_preview_save_replay_and_owner_read(
                      [user])['rows'] == [{'n': 1}]
 
 
+@pytest.mark.parametrize('tier', ['free', 'plus', 'premium'])
+@pytest.mark.parametrize('mode', ['平穏', '自己理解'])
+@pytest.mark.parametrize('memo,action,blocks', [
+    ('私は本を読みたい。私は水を飲みたい。', '私は静かに休みたい。',
+     ['私は本を読みたい。私は水を飲みたい。', '私は静かに休みたい。']),
+    ('私は本を読みたいです。\n私は静かに休みたいです。', '窓を閉めませんでした。',
+     ['私は本を読みたいです。', '私は静かに休みたいです。', '窓を閉めませんでした。']),
+])
+def test_literal_self_expressions_survive_preview_save_replay_and_owner_read(
+        format_flow, qdb, tier, mode, memo, action, blocks):
+    prepare, call, state, user = format_flow
+    request = prepare(tier, memo=memo, action=action, mode=mode)
+    response = run(call('POST', 'preview', request, key='literal-preview'))
+    assert response.status_code == 200, response.json()
+    preview = response.json()
+    assert preview['piece_text'] == '\n\n'.join(blocks)
+    assert preview['content_payload']['body_blocks'] == blocks
+    assert 'declaration' not in preview['eligible_formats']
+    replay = run(call('POST', 'preview', request, key='literal-preview'))
+    assert replay.status_code == 200 and replay.json() == preview
+    saved = run(call('POST', 'save', _save_body(preview), key='literal-save'))
+    assert saved.status_code == 200, saved.json()
+    repeated = run(call('POST', 'save', _save_body(preview), key='literal-save'))
+    assert repeated.status_code == 200 and repeated.json()['idempotency_replayed']
+    assert repeated.json()['consumption_id'] == saved.json()['consumption_id']
+    owner = run(call('GET', preview['preview_id']))
+    assert owner.status_code == 200, owner.json()
+    for field in ('piece_text', 'piece_text_hash', 'content_payload', 'content_payload_hash',
+                  'visual_recipe', 'visual_recipe_hash', 'renderer_version'):
+        assert owner.json()[field] == preview[field]
+    assert qdb.query('select count(*)::int as n from public.piece_quota_consumptions where owner_user_id=$1',
+                     [user])['rows'] == [{'n': 1}]
+    assert state['issued'] == [preview['preview_id']]
+
+
+def test_quota_rejection_keeps_preview_and_key_unspent_and_rechecks_plan(format_flow, qdb):
+    prepare, call, state, user = format_flow
+    request = prepare('free')
+    previews = []
+    # Several already checked candidates can coexist before another save uses
+    # the last slot. A quota rejection must leave this candidate/key unspent.
+    for index in range(6):
+        response = run(call('POST', 'preview', request, key=f'quota-preview-{index}'))
+        assert response.status_code == 200, response.json()
+        previews.append(response.json())
+    for index, preview in enumerate(previews[:5]):
+        response = run(call('POST', 'save', _save_body(preview), key=f'quota-save-{index}'))
+        assert response.status_code == 200, response.json()
+    preview = previews[-1]
+    body, key = _save_body(preview), 'quota-unspent-save'
+    refused = run(call('POST', 'save', body, key=key))
+    assert refused.status_code == 409 and refused.json()['code'] == 'PIECE_QUOTA_EXHAUSTED'
+    stored = qdb.query('select lifecycle_status,save_idempotency_key_hash from public.piece_records where id=$1',
+                       [preview['preview_id']])
+    assert stored['rows'] == [{'lifecycle_status': 'preview_draft', 'save_idempotency_key_hash': None}]
+    assert qdb.query('select count(*)::int as n from public.piece_quota_consumptions where owner_user_id=$1',
+                     [user])['rows'] == [{'n': 5}]
+    repeated = run(call('POST', 'save', body, key=key))
+    assert repeated.status_code == 409 and repeated.json()['code'] == 'PIECE_QUOTA_EXHAUSTED'
+    qdb.query('update public.profiles set subscription_tier=$2 where id=$1', [user, 'plus'])
+    # A new plan invalidates this fixture's old Emlis saved context. Retrying
+    # the same key must perform current admission, never bypass it or pretend
+    # that quota availability alone authorizes the unchanged candidate.
+    changed_plan = run(call('POST', 'save', body, key=key))
+    assert changed_plan.status_code == 422 and changed_plan.json()['code'] == 'PIECE_SOURCE_NOT_ELIGIBLE'
+    assert qdb.query('select lifecycle_status,save_idempotency_key_hash from public.piece_records where id=$1',
+                     [preview['preview_id']])['rows'] == stored['rows']
+    assert qdb.query('select count(*)::int as n from public.piece_quota_consumptions where owner_user_id=$1',
+                     [user])['rows'] == [{'n': 5}]
+    assert state['issued'] == [item['preview_id'] for item in previews]
+
+
 @pytest.mark.parametrize('lose_ack,old_expires', [(False, False), (True, False), (False, True)])
 def test_premium_format_replacement_uses_distinct_drafts_and_keeps_visual_choice(
         format_flow, qdb, lose_ack, old_expires):

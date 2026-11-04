@@ -23,6 +23,7 @@ from .contracts import EngineStatus, ExecutionMode
 from .piece_source import (
     _SIMPLE_NOUN, _calendar_time_adverb_span, _direct_transitive_expression, _PERSON_NAME_LEFT_BOUNDARY,
     _validated_self_insight_mode, PiecePersonalEvaluation, PieceSourceMeaning, build_piece_source_meaning,
+    _literal_self_account,
     piece_public_role_aliases, validate_piece_nominal_references, validate_piece_saved_fields,
     validate_piece_personal_evaluations, validate_piece_expression_scopes,
     piece_text_nodes,
@@ -226,6 +227,19 @@ def compile_piece_artifact_plan(meaning: PieceSourceMeaning) -> PieceArtifactPla
             or (saved is not None and _is_unpunctuated_account(node.value))
             for node in text_nodes)
         self_insight_account = False
+        literal_account = False
+        if saved is not None:
+            record = json.loads(saved.saved_original_json)
+            literal_mode = bool(meaning.selected_feelings) or _validated_self_insight_mode(
+                record['emotions'] or [], record['emotion_details'] or [])
+            if literal_mode and any(_literal_self_account(node.value) for node in text_nodes):
+                # Every new literal sentence must be complete on its own.
+                # Existing exact action accounts may accompany it, but an
+                # unrelated field cannot supply a missing predicate or stop.
+                literal_account = all(
+                    _literal_self_account(node.value) or _is_unpunctuated_account(
+                        node.value[:-1] if node.value.endswith(('。', '！', '!')) else node.value)
+                    for node in text_nodes)
         if (saved is not None and not meaning.selected_feelings and all(
                 _is_unpunctuated_account(
                     node.value[:-1] if node.value.endswith(('。', '！', '!')) else node.value)
@@ -238,7 +252,7 @@ def compile_piece_artifact_plan(meaning: PieceSourceMeaning) -> PieceArtifactPla
             record = json.loads(saved.saved_original_json)
             self_insight_account = _validated_self_insight_mode(
                 record['emotions'] or [], record['emotion_details'] or [])
-        if not (feeling_account or self_insight_account):
+        if not (feeling_account or self_insight_account or literal_account):
             raise unavailable('expression_meaning_not_admitted')
     ids = tuple(node.node_id for node in text_nodes)
     # A newly admitted temporal context must not be moved behind a later wish.
