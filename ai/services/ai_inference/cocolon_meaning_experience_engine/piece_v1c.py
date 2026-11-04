@@ -227,9 +227,14 @@ def compile_piece_artifact_plan(meaning: PieceSourceMeaning) -> PieceArtifactPla
             for node in text_nodes)
         self_insight_account = False
         if (saved is not None and not meaning.selected_feelings and all(
-                _is_unpunctuated_account(node.value.removesuffix('。')) for node in text_nodes)):
+                _is_unpunctuated_account(
+                    node.value[:-1] if node.value.endswith(('。', '！', '!')) else node.value)
+                for node in text_nodes)):
             # Source validation has already rederived the sealed saved fields.
-            # Mode allows this literal action path but supplies no proposition.
+            # A single declarative stop only delimits the grammar check. Keep
+            # the complete original node, including its written punctuation;
+            # questions gain no admission through this literal action path.
+            # Mode allows this path but supplies no proposition.
             record = json.loads(saved.saved_original_json)
             self_insight_account = _validated_self_insight_mode(
                 record['emotions'] or [], record['emotion_details'] or [])

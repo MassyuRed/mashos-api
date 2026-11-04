@@ -509,6 +509,75 @@ def test_saved_complete_lines_keep_their_own_paragraphs(mode, memo, action, bloc
     assert json.loads(result.source_meaning.saved_snapshot.saved_original_json) == value['original']
 
 
+@pytest.mark.parametrize('mode', ['平穏', '自己理解'])
+@pytest.mark.parametrize('tier', ['free', 'plus', 'premium'])
+@pytest.mark.parametrize('stop', ['。', '！', '!'])
+@pytest.mark.parametrize('shape', ['single', 'two_fields', 'two_lines'])
+def test_saved_finite_accounts_keep_declarative_punctuation(mode, tier, stop, shape):
+    first, second = '私は資料を読みました' + stop, '姉は窓を閉めませんでした。'
+    memo, action, blocks = (first, None, [first])
+    if shape == 'two_fields':
+        action, blocks = second, [first, second]
+    elif shape == 'two_lines':
+        memo, blocks = first + '\n' + second, [first, second]
+    value = row(memo, action)
+    value['tier'], value['original']['emotions'] = tier, [mode]
+    candidate = run(adapter_module.PieceSavedSourceAdapter(store=Store(value))
+                    .generate_original_candidate_for_development(
+                        AUTH, INPUT, source_stage='normal_observation'))
+    assert candidate['piece_text'] == '\n\n'.join(blocks)
+    assert candidate['content_payload']['body_blocks'] == blocks
+    assert candidate['piece_text_hash'] == hashlib.sha256(candidate['piece_text'].encode()).hexdigest()
+    assert candidate['content_payload']['format_type'] in candidate['eligible_formats']
+    assert candidate['production_enabled'] is False
+    assert candidate['record_effect'] == candidate['quota_effect'] == 0
+
+
+@pytest.mark.parametrize('text', [
+    '私は資料を読みました？', '私は資料を読みました?',
+    '私は資料を読みましたか！', '誰が資料を読みました！',
+    '私は何を読みました！', 'もし資料を読みました！',
+    '資料を閉めたら！', '資料を！', '読みました！',
+    '私は資料を読みました！！', '私は資料を読みました!？',
+])
+def test_self_insight_declarative_stop_does_not_admit_questions_or_fragments(text):
+    value = row(text, None)
+    value['original']['emotions'] = ['自己理解']
+    with pytest.raises(ValueError):
+        run(adapter_module.PieceSavedSourceAdapter(store=Store(value))
+            .generate_original_candidate_for_development(
+                AUTH, INPUT, source_stage='normal_observation'))
+
+
+@pytest.mark.parametrize('mutation', ['punctuation', 'subject', 'object', 'negation', 'merge', 'reverse'])
+def test_independent_review_keeps_exclamation_and_complete_account_arguments(mutation):
+    from piece_v2_content_policy import validate_source_meaning_preservation
+
+    value = row('私は資料を読みました！', '姉は窓を閉めませんでした。')
+    value['original']['emotions'] = ['自己理解']
+    result = generated(value)
+    plan, blocks = result.artifact_plan, result.artifact.body_blocks
+    if mutation == 'merge':
+        plan = replace(plan, block_node_ids=(('piece:s1', 'piece:s2'),))
+        blocks = (''.join(blocks),)
+    elif mutation == 'reverse':
+        plan = replace(plan, block_node_ids=tuple(reversed(plan.block_node_ids)))
+        blocks = tuple(reversed(blocks))
+    elif mutation == 'punctuation':
+        blocks = (blocks[0].replace('！', '。'), blocks[1])
+    elif mutation == 'subject':
+        blocks = (blocks[0], blocks[1].replace('姉は', '私は'))
+    elif mutation == 'object':
+        blocks = (blocks[0].replace('資料', '手紙'), blocks[1])
+    else:
+        blocks = (blocks[0], blocks[1].replace('ませんでした', 'ました'))
+    text = '\n\n'.join(blocks)
+    artifact = replace(result.artifact, body_blocks=blocks, piece_text=text,
+        piece_text_hash=hashlib.sha256(text.encode()).hexdigest())
+    with pytest.raises(ValueError, match='piece_meaning_not_preserved'):
+        validate_source_meaning_preservation(result.source_meaning, plan, artifact)
+
+
 def test_punctuated_saved_paragraphs_keep_the_same_author_and_source_order():
     value = row('私は本を読む時間を大切にしています。\n\n私は一人で静かに過ごしたい。',
                 '私は今日は外に出たくない。')

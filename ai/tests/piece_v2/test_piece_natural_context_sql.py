@@ -212,9 +212,15 @@ def format_flow(natural_case, qdb, monkeypatch):
         preview_runtime={'ttl_seconds': 600, 'renderer_version': 'piece.rn_bitmap_renderer.ios.v1'},
         save_requested=True, save_ready=True, owner_read_requested=True, owner_read_ready=True)
 
-    def prepare(tier, memo='私が大切にしたいのは、家族と落ち着いてゆっくり話す時間です。'):
+    def prepare(tier, memo='私が大切にしたいのは、家族と落ち着いてゆっくり話す時間です。',
+                *, action=None, mode=None):
         qdb.query('update public.profiles set subscription_tier=$2 where id=$1', [user, tier])
         qdb.query('update public.emotions set memo=$2 where id=$1', [parent, memo])
+        if action is not None:
+            qdb.query('update public.emotions set memo_action=$2 where id=$1', [parent, action])
+        if mode is not None:
+            qdb.query('update public.emotions set emotions=$2,emotion_details=$3 where id=$1',
+                [parent, [mode], json.dumps([dict(type=mode, strength='medium')])])
         run(service.start(user, parent))
         adapter = _piece_adapter(user, service, monkeypatch)
         monkeypatch.setattr(preview_service, 'PieceSavedSourceAdapter', lambda: adapter)
@@ -257,6 +263,36 @@ def test_complete_source_lines_survive_preview_save_replay_and_owner_read(format
     saved = run(call('POST', 'save', _save_body(preview), key='complete-lines-save'))
     assert saved.status_code == 200, saved.json()
     repeated = run(call('POST', 'save', _save_body(preview), key='complete-lines-save'))
+    assert repeated.status_code == 200 and repeated.json()['idempotency_replayed']
+    assert repeated.json()['consumption_id'] == saved.json()['consumption_id']
+    owner = run(call('GET', preview['preview_id']))
+    assert owner.status_code == 200, owner.json()
+    for key in ('piece_text', 'piece_text_hash', 'content_payload', 'content_payload_hash',
+                'visual_recipe', 'visual_recipe_hash', 'renderer_version'):
+        assert owner.json()[key] == preview[key]
+    assert qdb.query('select count(*)::int as n from public.piece_quota_consumptions where owner_user_id=$1',
+                     [user])['rows'] == [{'n': 1}]
+
+
+@pytest.mark.parametrize('tier', ['free', 'plus', 'premium'])
+@pytest.mark.parametrize('mode', ['平穏', '自己理解'])
+@pytest.mark.parametrize('stop', ['！', '!'])
+def test_declarative_exclamation_survives_preview_save_replay_and_owner_read(
+        format_flow, qdb, tier, mode, stop):
+    prepare, call, state, user = format_flow
+    memo, action = '私は資料を読みました' + stop, '姉は窓を閉めませんでした。'
+    request = prepare(tier, memo=memo, action=action, mode=mode)
+    response = run(call('POST', 'preview', request, key='exclamation-preview'))
+    assert response.status_code == 200, response.json()
+    preview = response.json()
+    assert preview['piece_text'] == memo + '\n\n' + action
+    assert preview['content_payload']['body_blocks'] == [memo, action]
+    replay = run(call('POST', 'preview', request, key='exclamation-preview'))
+    assert replay.status_code == 200 and replay.json() == preview
+    assert state['issued'] == [preview['preview_id']]
+    saved = run(call('POST', 'save', _save_body(preview), key='exclamation-save'))
+    assert saved.status_code == 200, saved.json()
+    repeated = run(call('POST', 'save', _save_body(preview), key='exclamation-save'))
     assert repeated.status_code == 200 and repeated.json()['idempotency_replayed']
     assert repeated.json()['consumption_id'] == saved.json()['consumption_id']
     owner = run(call('GET', preview['preview_id']))
