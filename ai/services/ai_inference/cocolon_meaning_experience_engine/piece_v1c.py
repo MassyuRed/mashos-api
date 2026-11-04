@@ -430,14 +430,19 @@ def _linked_self_continuations(meaning: PieceSourceMeaning,
     references = {ref.reference_node_id: ref for ref in meaning.nominal_references}
     positions = {node.node_id: i for i, node in enumerate(meaning.graph.nodes)}
     spans = {sentence.node_id: sentence for sentence in meaning.sentences}
+    duties = {duty.node_id: duty.operation for duty in plan.duties}
     continuations, direct_continuations = set(), set()
     for group in plan.block_node_ids:
         for previous, current in zip(group, group[1:]):
             ref, scope = references.get(current), scopes.get(current)
             if (ref is None or scope is None or ref.antecedent_node_id != previous
                     or previous in scopes or current in evaluations
+                    or duties[previous] == 'KEEP_COMPLETE_SOURCE_CONTEXT'
                     or ref.reference_scalar_span[0] != scope.scope_scalar_span[0]):
                 continue
+            # Literal retention owns no editorial author continuation. Keep
+            # the following explicit topic after e.g. an exclamatory wish,
+            # just as independent review does after every KEEP proposition.
             # A linked referent does not establish the subject of its whole
             # scope. A later は/が/も can introduce another participant or a
             # contrast, so do not elide the author's explicit topic across it.

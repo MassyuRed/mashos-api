@@ -235,3 +235,28 @@ def test_identity_label_layout_before_the_particle_does_not_change_its_value(nam
     assert out.status == EngineStatus.UNAVAILABLE
     assert out.reason_codes == ('public_identity_is_material',)
     assert out.artifact is None
+
+
+@pytest.mark.parametrize('name', MATERIAL_NAMES)
+@pytest.mark.parametrize('label', ('名前', '名字', '姓', '呼び名', '氏名'))
+@pytest.mark.parametrize('role', ('友人の{name}', '私の友人の{name}',
+                                '友人の中村さんの同僚の{name}'))
+@pytest.mark.parametrize('gap', ('', ' \t\u3000、 '))
+def test_identity_label_includes_the_complete_role_qualified_value(name, label, role, gap):
+    text = f'{label}は{gap}{role.format(name=name)}です。私は落ち着いて話したい。'
+    _, out = outcome(text)
+    assert out.status == EngineStatus.UNAVAILABLE
+    assert out.reason_codes == ('public_identity_is_material',)
+    assert out.artifact is None
+    assert out.as_body_free()['record_effect'] == out.as_body_free()['quota_effect'] == 0
+
+
+@pytest.mark.parametrize('name', MATERIAL_NAMES)
+@pytest.mark.parametrize('boundary', ('。', '。\n', '。\r\n'))
+def test_completed_name_topic_does_not_capture_the_next_role_phrase(name, boundary):
+    source, out = outcome(f'名前はまだ未定です{boundary}私は友人の{name}と話したい。')
+    assert out.status == EngineStatus.GENERATED, out.as_body_free()
+    assert name not in out.artifact.piece_text
+    assert '名前はまだ未定です。' in out.artifact.piece_text
+    assert '友人と話したい。' in out.artifact.piece_text
+    assert generate_piece_candidate(source, authenticated_owner_id=source.owner_id) == out.artifact.as_candidate()

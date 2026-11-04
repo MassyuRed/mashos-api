@@ -48,6 +48,8 @@ def setup(monkeypatch):
     class Adapter:
         async def resolve_original_source_ref(self, authorization, saved_input_id):
             state['calls'].append((authorization, saved_input_id))
+            if state.get('during_read') is not None:
+                state['during_read']()
             if state['error'] is not None:
                 raise state['error']
             return copy.deepcopy(state['result'])
@@ -65,6 +67,7 @@ def setup(monkeypatch):
             return await client.request(method, path, headers={'Authorization': AUTH} if headers is None else headers, content=content)
     state['send'] = lambda **kw: asyncio.run(send(**kw))
     state['send_async'] = send
+    state['app'] = app
     return state
 
 
@@ -163,3 +166,49 @@ def test_cancellation_does_not_become_a_success_or_retry(setup):
 def test_candidate_is_not_added_to_existing_router():
     assert mod.source_ref_router is not api_piece_v2.router
     assert not any(r.path == '/emotion/piece/source-ref/{saved_input_id}' for r in api_piece_v2.router.routes)
+
+
+@pytest.mark.parametrize('error', (None, PieceContractError('PIECE_SOURCE_NOT_ELIGIBLE'),
+    PieceContractError('PIECE_CONFLICT'), TimeoutError('PRIVATE'), RuntimeError('PRIVATE'),
+    PieceContractError('PRIVATE_INTERNAL')))
+@pytest.mark.parametrize('gate', ('requested', 'ready'))
+def test_stop_during_source_read_overrides_stale_success_and_failure(setup, error, gate):
+    runtime = setup['app'].state.piece_v2_runtime
+    setup['error'] = error
+    setup['during_read'] = lambda: runtime[gate].update(piece_v2_preview_enabled=False)
+    response = setup['send']()
+    assert response.status_code == 503
+    assert response.json() == {'code': 'PIECE_FEATURE_DISABLED'}
+    assert response.headers['cache-control'] == 'no-store'
+    assert setup['calls'] == [(AUTH, INPUT)]
+    assert 'PRIVATE' not in response.text and OWNER not in response.text
+    # A second explicit GET while stopped dispatches no adapter call. A new
+    # request after re-enabling starts fresh; neither state sends itself.
+    setup['error'], setup['during_read'] = None, None
+    assert setup['send']().json() == {'code': 'PIECE_FEATURE_DISABLED'}
+    assert setup['calls'] == [(AUTH, INPUT)]
+    runtime[gate]['piece_v2_preview_enabled'] = True
+    assert setup['calls'] == [(AUTH, INPUT)]
+    resumed = setup['send']()
+    assert resumed.status_code == 200 and resumed.json() == source_ref()
+    assert setup['calls'] == [(AUTH, INPUT), (AUTH, INPUT)]
+
+
+@pytest.mark.parametrize('gate', ('requested', 'ready'))
+def test_stopped_source_read_still_authenticates_before_touching_source(setup, gate):
+    setup['app'].state.piece_v2_runtime[gate]['piece_v2_preview_enabled'] = False
+    assert setup['send']().json() == {'code': 'PIECE_FEATURE_DISABLED'}
+    setup['verified'] = HTTPException(401, 'PRIVATE')
+    response = setup['send']()
+    assert response.status_code == 401 and response.json() == {'code': 'PIECE_AUTH_REQUIRED'}
+    assert setup['calls'] == []
+
+
+@pytest.mark.parametrize('gate', ('requested', 'ready'))
+def test_stop_during_cancelled_source_read_preserves_task_cancellation(setup, gate):
+    runtime = setup['app'].state.piece_v2_runtime
+    setup['during_read'] = lambda: runtime[gate].update(piece_v2_preview_enabled=False)
+    setup['error'] = asyncio.CancelledError()
+    with pytest.raises(asyncio.CancelledError):
+        setup['send']()
+    assert setup['calls'] == [(AUTH, INPUT)]

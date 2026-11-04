@@ -30,6 +30,17 @@ PREDICATES = (
 PREMISES = ('その時間が取れるなら', 'その時間が取れたので', 'その時間が短かったけれど')
 
 
+@pytest.mark.parametrize('speaker', ('私', 'わたし', '僕', 'ぼく', '俺', 'おれ'))
+@pytest.mark.parametrize('stop', ('！', '!'))
+@pytest.mark.parametrize('predicate', ('選びたい', '選びたくない'))
+@pytest.mark.parametrize('premise', PREMISES)
+def test_literal_exclamatory_antecedent_keeps_the_following_explicit_topic(speaker, stop, predicate, premise):
+    first = speaker + 'は' + TARGET + 'を' + predicate + stop
+    text = first + premise + '、' + speaker + 'は' + WISH + TAIL
+    out = assert_body(text, first + premise + '、' + speaker + 'は、' + WISH + TAIL)
+    assert out.artifact_plan.duties[0].operation == 'KEEP_COMPLETE_SOURCE_CONTEXT'
+
+
 def outcome(text, *, tier='free', requested_format=None):
     source = PieceSourceSnapshot('synthetic-owner', 'linked-direct', 'v1', text)
     return MeaningExperienceEngine().generate(PieceGenerationRequest(

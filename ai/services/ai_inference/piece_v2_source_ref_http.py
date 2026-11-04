@@ -17,9 +17,8 @@ from uuid import UUID
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
-from api_piece_v2 import _authenticated_owner, _response
+from api_piece_v2 import _authenticated_owner, _response, _OperationFeatures
 from piece_v2_contract import PieceContractError
-from piece_v2_runtime_control import require_piece_feature_enabled
 
 source_ref_router = APIRouter(prefix='/emotion/piece')
 _SOURCE_REF_FIELDS = frozenset({
@@ -69,9 +68,10 @@ async def read_original_source_ref(saved_input_id: str, request: Request) -> JSO
     pre-return revalidation. A later preview request independently revalidates.
     No body/query, caller stage, owner, tier, eligibility or new key is accepted.
     """
+    features = _OperationFeatures(request, 'piece_v2_preview_enabled')
     try:
         await _authenticated_owner(request)
-        require_piece_feature_enabled(request.app, 'piece_v2_preview_enabled')
+        features.require()
         if request.query_params or await request.body():
             raise PieceContractError('PIECE_REQUEST_INVALID')
         try:
@@ -80,16 +80,13 @@ async def read_original_source_ref(saved_input_id: str, request: Request) -> JSO
                 raise ValueError
         except (ValueError, AttributeError):
             raise PieceContractError('PIECE_REQUEST_INVALID') from None
-        require_piece_feature_enabled(request.app, 'piece_v2_preview_enabled')
+        features.require()
         from piece_v2_source_adapter import PieceSavedSourceAdapter
-        result = await PieceSavedSourceAdapter().resolve_original_source_ref(
+        result = await features.wrap(PieceSavedSourceAdapter().resolve_original_source_ref)(
             request.headers['authorization'], saved_input_id)
-        require_piece_feature_enabled(request.app, 'piece_v2_preview_enabled')
+        features.require()
         return _response(_source_ref_response(result, saved_input_id))
-    except PieceContractError as exc:
-        code = exc.code if exc.code in _SOURCE_REF_STATUS else 'PIECE_TEMPORARILY_UNAVAILABLE'
-        return _response({'code': code}, _SOURCE_REF_STATUS[code])
-    except Exception:
+    except Exception as exc:
         # No source fragments, tokens or infrastructure details in the reply.
         # BaseException/task cancellation is intentionally not caught.
-        return _response({'code': 'PIECE_TEMPORARILY_UNAVAILABLE'}, 503)
+        return features.failure(exc, _SOURCE_REF_STATUS)

@@ -652,13 +652,19 @@ def _role_bindings(text: str) -> tuple[PieceRoleBinding, ...]:
         if (re.match(r'[ \t\u3000]*(?:という|と言う|っていう|と呼|と書|と読'
                      r'|と名(?:付|づ)け(?:た(?:い|くない)(?:です)?|ました|ません(?:でした)?|ます|た|る|ない)'
                      r'(?=[。！!、，, \t\u3000]|$))', text[match.end():])
-                or re.search(r'(?:名前|名字|姓|呼び名|氏名)[ \t\u3000]*は[ \t\u3000]*[、，,]?[ \t\u3000]*$',
-                             text[:match.start()])):
+                or any(re.search(
+                    r'(?:名前|名字|姓|呼び名|氏名)[ \t\u3000]*は[ \t\u3000]*[、，,]?[ \t\u3000]*$',
+                    text[:start]) for start in (match.start(), *(
+                        binding.source_start for binding in bindings
+                        if binding.source_end == match.end())))):
             # Here the name is itself what the author is talking about.
             # Replacing it by a relationship would change the proposition.
             # Horizontal layout cannot license that replacement. Naming is
             # limited to written finite forms; 名付けについて / 名付けの
             # remain ordinary topics discussed with the named person.
+            # A role-qualified name is still the label's value. Inspect its
+            # complete source-bound phrase, including an inline named owner,
+            # rather than turning 名前は友人の田中さん into 名前は友人.
             raise unavailable('public_identity_is_material')
     return bindings
 
