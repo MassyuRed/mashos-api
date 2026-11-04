@@ -38,6 +38,12 @@ _FINITE_RESERVATION_END = re.compile(
     r'(?:(?:分かり|わかり|とは限り)ません(?:でした)?|迷っている)[。！!]$')
 _FINITE_RESERVATION_QUESTION = re.compile(
     r'(?:何|なん|なに)で(?!も(?=[^ぁ-ん]|\Z))|どんな(?!に)')
+# Only an entire source-bound argument matching this finite nominalization
+# owns its uncertainty words. A larger target can swallow an outer adverb,
+# condition or reservation; do not exempt its matching substring.
+_NOMINALIZED_RESERVATION = re.compile(
+    r'(?:(?:分から|わから)(?:ない|なかった)|迷って(?:いる|いた)|'
+    r'まだ決め(?:ていない|ていなかった))(?:こと|もの|時間)')
 # The overt action noun and written final stop license only literal account
 # retention. The suffix alone, an unfinished subordinate clause, and a
 # question do not establish this form.
@@ -153,6 +159,26 @@ def _has_topic_qualification(meaning: PieceSourceMeaning, duties: tuple[PieceTex
                                      for marker in _SCOPE_RELATIONS):
             return True
     return False
+
+
+def _has_declaration_uncertainty(meaning: PieceSourceMeaning) -> bool:
+    from piece_v2_generation import _FOCUS, _UNCERTAIN
+    node = meaning.graph.nodes[0]
+    target_span = None
+    frame = next((frame for frame in meaning.personal_evaluations
+                  if frame.node_id == node.node_id), None)
+    if frame is not None:
+        start = meaning.sentences[0].source_start
+        target_span = tuple(part - start for part in frame.scalar_parts[2])
+    else:
+        expression = _direct_transitive_expression(node.value) or _FOCUS.fullmatch(node.value)
+        if expression is not None:
+            target_span = expression.span('object')
+    nominalized = (target_span is not None
+                   and _NOMINALIZED_RESERVATION.fullmatch(node.value[slice(*target_span)]) is not None)
+    return any(not (nominalized
+                    and target_span[0] <= marker.start() < marker.end() <= target_span[1])
+               for marker in _UNCERTAIN.finditer(node.value))
 
 
 def compile_piece_artifact_plan(meaning: PieceSourceMeaning) -> PieceArtifactPlan:
@@ -354,7 +380,7 @@ def compile_piece_artifact_plan(meaning: PieceSourceMeaning) -> PieceArtifactPla
         blocks = tuple(tuple(group) for group in paragraphs)
     topic_qualified = _has_topic_qualification(meaning, tuple(duties))
     declaration = (bool(intents) and len(ids) == 1 and not meaning.expression_scopes and not topic_qualified
-                   and not _UNCERTAIN.search(graph.nodes[0].value))
+                   and not _has_declaration_uncertainty(meaning))
     # A source-written past wish/value/state is an account of that time,
     # not evidence of a present commitment. Bind this to the same complete
     # direct grammar that admitted the source; a suffix elsewhere in the

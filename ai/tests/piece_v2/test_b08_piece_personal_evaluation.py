@@ -170,6 +170,63 @@ def test_explicit_current_value_but_not_preference_is_eligible_for_declaration()
     assert quote.artifact.format_type == 'quote'
 
 
+@pytest.mark.parametrize('target', [
+    '分からないこと', 'わからなかったもの', '迷っている時間', '迷っていたこと',
+    'まだ決めていないこと', 'まだ決めていなかったこと',
+])
+@pytest.mark.parametrize('shape', ['value', 'direct', 'focus'])
+def test_finitely_nominalized_reservation_is_the_argument_not_outer_commitment(target, shape):
+    if shape == 'value':
+        text = '私にとって、' + target + 'が大切です。'
+        expected = text
+    elif shape == 'direct':
+        text = '私は' + target + 'を大切にしたい。'
+        expected = '私は、' + target + 'を大切にしたい。'
+    else:
+        text = '私が大切にしたいのは、' + target + 'です。'
+        expected = '私は、' + target + 'を大切にしたい。'
+    out = generated(text, tier='premium', requested_format='declaration')
+    assert out.artifact.piece_text == expected
+    assert out.artifact.piece_text_hash == hashlib.sha256(expected.encode()).hexdigest()
+    assert out.artifact.eligible_formats == ('short_essay', 'quote', 'declaration')
+    assert out.source_meaning.envelope.raw_utf8 == text.encode()
+    for node, evidence in zip(out.source_meaning.graph.nodes, out.source_meaning.evidence, strict=True):
+        assert text[evidence.scalar_start:evidence.scalar_end] == node.value
+        assert text.encode()[evidence.utf8_start:evidence.utf8_end] == node.value.encode()
+
+
+@pytest.mark.parametrize('text', [
+    '私にとって、たぶん分からないことが大切です。',
+    '私はおそらく迷っている時間を大切にしたい。',
+    '私にとって、迷っている、考える時間が大切です。',
+    '私はかもしれない、考える時間を大切にしたい。',
+    '私にとって、まだ決めていない、考える時間が大切です。',
+    '私にとって、迷いながら考える時間が大切です。',
+    '私にとって、困ったときに考える時間が大切です。',
+    '私にとって、もし分からないことがある時間が大切です。',
+    '私にとって、分からないことがあれば、陶芸の時間が大切です。',
+    '私にとって、分からないことがあれば陶芸の時間が大切です。',
+    '私にとって、余裕があれば分からないことが大切です。',
+    '私にとって、余裕があるので分からないことが大切です。',
+    '私にとって、余裕があるけれど分からないことが大切です。',
+    '私にとって、続けられるかもしれないことが大切です。',
+    '私は正しいとは限らないことを大切にしたい。',
+    '私にとって、分からないことが大切かもしれない。',
+    '私にとって、分からないことが大切とは限らない。',
+    '私にとって、分からないことが大切だった。',
+    '私にとって、分からないことが大切ではない。',
+    '私は分からないことを大切にしたいかもしれない。',
+    '私は分からないことを大切にしたかった。',
+    '私にとって、分からないことが好きです。',
+])
+def test_nominal_argument_does_not_discard_other_reservation_time_or_preference(text):
+    out = generated(text, tier='premium')
+    assert 'declaration' not in out.artifact.eligible_formats
+    refused = run(text, tier='premium', requested_format='declaration')
+    assert refused.status == EngineStatus.UNAVAILABLE
+    assert refused.reason_codes == ('format_choice_not_admitted',)
+
+
 def test_evaluation_and_wish_do_not_detach_the_context_or_drop_repetition():
     text = ('昨日は友人の佐藤さんと話した。私が好きなのは、ゆっくり話を聞くことだ。'
             'まだ予定は決めていない。まだ予定は決めていない。'
