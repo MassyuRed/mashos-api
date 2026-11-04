@@ -880,6 +880,173 @@ def test_author_free_review_keeps_literal_exclamation_and_other_person_reservati
         validate_source_meaning_preservation(result.source_meaning, plan, artifact)
 
 
+@pytest.mark.parametrize('mode', ['平穏', '自己理解'])
+@pytest.mark.parametrize('stop', ['。', '！', '!'])
+@pytest.mark.parametrize('ending', ['ます', 'ません', 'ました', 'ませんでした'])
+@pytest.mark.parametrize('object_text,stem', [
+    ('予定', '確認し'), ('資料', '整理し'), ('手紙', '送り'),
+    ('資料', '読み'), ('窓', '開け'), ('下書き', '終え'),
+    ('片付け', '始め'), ('荷物', '受け取り'), ('窓', '閉め'),
+])
+@pytest.mark.parametrize('shape', ['single', 'same_field_reservation', 'other_field_reservation'])
+def test_saved_finite_action_family_retains_tense_negation_and_existing_reservation(
+        mode, stop, ending, object_text, stem, shape):
+    from piece_v2_content_policy import validate_source_meaning_preservation
+
+    first, reservation = '私は' + object_text + 'を' + stem + ending + stop, '姉はまだ決めていません。'
+    memo, action, blocks = first, None, [first]
+    if shape == 'same_field_reservation':
+        memo, blocks = first + '\n' + reservation, [first, reservation]
+    elif shape == 'other_field_reservation':
+        action, blocks = reservation, [first, reservation]
+    value = row(memo, action)
+    value['original']['emotions'] = [mode]
+    result = generated(value)
+    assert result.artifact.body_blocks == tuple(blocks)
+    assert result.artifact.piece_text == '\n\n'.join(blocks)
+    assert not result.artifact_plan.declaration_eligible
+    assert all(d.operation == 'KEEP_COMPLETE_SOURCE_CONTEXT' for d in result.artifact_plan.duties)
+    validate_source_meaning_preservation(result.source_meaning, result.artifact_plan, result.artifact)
+
+
+@pytest.mark.parametrize('text', [
+    '資料を読みます', '資料を読みません', '予定を確認します', '予定を確認しません',
+    '資料を読みます？', '資料を読みません?', '予定を確認しますか。',
+    '何を読みます。', '何の資料を読みます。', 'どの予定を確認します。',
+    'もし資料を読みます。', '仮に予定を確認します。', '資料を読みますなら。',
+    '資料を読みますと書きました。', '私はを読みます。', '私は、を確認します。',
+    '姉はを読みます。', '彼がを確認します。', '姉は、を読みません。',
+    'を読みます。', '読みます。', '資料を読みます！！', '予定を確認します!？',
+    '資料を読みます。まだ決めていません？',
+    '予定を確認します。今日は晴れです。',
+    '私は本を読みたい。行きます。',
+])
+def test_new_nonpast_account_reader_does_not_supply_missing_source_or_generic_predicates(text):
+    value = row(text, None)
+    value['original']['emotions'] = ['自己理解']
+    result = outcome(source(value))
+    assert result.status == EngineStatus.UNAVAILABLE, result.reason_codes
+    assert result.artifact is None
+
+
+@pytest.mark.parametrize('memo,action', [
+    ('資料を読みます', 'まだ決めていません。'),
+    ('予定を確認しません', '資料を読みました。'),
+    ('資料を\n読みます。', None),
+    ('資料を', '読みます。'),
+    ('資料を読みます。まだ決め', 'ていません。'),
+])
+def test_nonpast_accounts_do_not_complete_sentences_across_lines_or_fields(memo, action):
+    value = row(memo, action)
+    value['original']['emotions'] = ['自己理解']
+    result = outcome(source(value))
+    assert result.status == EngineStatus.UNAVAILABLE
+    assert result.artifact is None
+
+
+@pytest.mark.parametrize('text', [
+    '明日までに返事をする。', '明日は料理する。',
+    '午前中に打ち合わせをする。', '午後はメールをする。',
+    '散歩する。', '資料を確認する。',
+])
+@pytest.mark.parametrize('mode', ['平穏', '自己理解'])
+@pytest.mark.parametrize('shape', ['single', 'same_field', 'two_fields'])
+def test_existing_plain_suru_account_family_keeps_the_same_mode_independent_source(text, mode, shape):
+    from piece_v2_content_policy import validate_source_meaning_preservation
+
+    reservation = '姉はまだ決めていません。'
+    memo, action, blocks = text, None, (text,)
+    if shape == 'same_field':
+        memo, blocks = text + '\n' + reservation, (text, reservation)
+    elif shape == 'two_fields':
+        action, blocks = reservation, (text, reservation)
+    value = row(memo, action)
+    value['original']['emotions'] = [mode]
+    result = generated(value)
+    assert result.artifact.body_blocks == blocks
+    assert result.artifact.piece_text == '\n\n'.join(blocks)
+    assert not result.artifact_plan.declaration_eligible
+    validate_source_meaning_preservation(result.source_meaning, result.artifact_plan, result.artifact)
+
+
+@pytest.mark.parametrize('text', [
+    'する。', 'を確認する。', ' を整理する。', 'をを確認する。',
+    '、を確認する。', '，を確認する。', ',を確認する。', '🌱を確認する。',
+    '私はを確認する。', '彼がを整理する。', '僕もを確認する。',
+    '姉にを整理する。', '彼へを確認する。', '僕でを確認する。', '私とを確認する。',
+    'もし資料を確認する。', '余裕があるならしおりを確認する。',
+    '資料を確認する場合。', 'どの資料を確認する。', '何をする。',
+    '資料を確認する？', '資料を確認する！', '資料を確認する',
+    '資料を確認するだろう。', '資料を確認するかも。', '仕事をしない。',
+    '資料を確認するといいます。', '資料を確認する。今日は晴れです。',
+])
+def test_plain_suru_account_reuse_does_not_admit_partial_matches_or_missing_arguments(text):
+    value = row(text, None)
+    value['original']['emotions'] = ['自己理解']
+    result = outcome(source(value))
+    assert result.status == EngineStatus.UNAVAILABLE, result.reason_codes
+    assert result.artifact is None
+
+
+@pytest.mark.parametrize('text', [
+    '僕もを読みます。', '姉にを読みます。', '彼へを確認します。',
+    '僕でを読みます。', '私とを読みます。', '小鳥沢さんはを読みません。',
+    '余裕があるならしおりを読みます。',
+    '資料を読みました。余裕があるならまだ決めていません。',
+    '資料を読みました。まだ決めていないならやめます。',
+    '資料を読みました。まだ決めていないといいます。',
+    '資料を読みました。まだ決めていないといっています。',
+    '資料を読みました。まだ決めていないといった。',
+    '資料を読みました。まだ決めていないっていっています。',
+])
+def test_new_account_admission_does_not_borrow_a_missing_argument_or_unread_scope(text):
+    value = row(text, None)
+    value['original']['emotions'] = ['自己理解']
+    result = outcome(source(value))
+    assert result.status == EngineStatus.UNAVAILABLE
+    assert result.artifact is None
+
+
+@pytest.mark.parametrize('text', [
+    '姉のことを確認します。', '今年の取り組みを確認します。', '姉のを読みます。',
+    '資料を読みました。まだ決めることができません。',
+    '資料を読みました。まだ決めたことはありません。',
+    '私は本を読みたい。まだ決めることができません。',
+    '私は本を読みたい。まだ決めたことはありません。',
+    '資料を読みました。今は続けるか迷っています。',
+    '資料を読みました。迷っているとは限らない。',
+    '資料を読みました。姉はまだ迷っていました。',
+    '資料を読みました。姉はまだ迷っていった。',
+])
+def test_existing_nominalization_and_complete_uncertainty_remain_written_source(text):
+    value = row(text, None)
+    value['original']['emotions'] = ['自己理解']
+    result = generated(value)
+    assert result.artifact.piece_text == text
+    assert not result.artifact_plan.declaration_eligible
+
+
+@pytest.mark.parametrize('prefix', ['誰に', '誰から', 'だれに', 'だれから'])
+@pytest.mark.parametrize('ending', ['ます。', 'ました。', 'ました'])
+def test_question_cue_does_not_read_received_verb_as_indefinite_particle(prefix, ending):
+    value = row(prefix + 'もらった資料を読み' + ending, None)
+    value['original']['emotions'] = ['自己理解']
+    result = outcome(source(value))
+    assert result.status == EngineStatus.UNAVAILABLE
+    assert result.artifact is None
+
+
+@pytest.mark.parametrize('text', [
+    '誰にも手紙を送りません。', '誰からも連絡を受け取りません。',
+    'だれにでも手紙を送ります。', '誰からも連絡を受け取りました',
+    '姉からもらった資料を読みます。', '何かの資料を読みます。',
+])
+def test_indefinite_and_explicit_actor_are_not_turned_into_questions(text):
+    value = row(text, None)
+    value['original']['emotions'] = ['自己理解']
+    assert generated(value).artifact.piece_text == text
+
+
 @pytest.mark.parametrize('mutation', ['subject', 'object', 'negation', 'punctuation', 'drop_duplicate', 'order'])
 def test_independent_review_binds_literal_accounts_without_inferring_wishes(mutation):
     from piece_v2_content_policy import validate_source_meaning_preservation

@@ -92,8 +92,35 @@ _NESTED = re.compile(r'[「」『』"“”]|(?:[がは]私)|(?:と(?:彼|彼女
 # with the same affirmative or negative ending. No generic kana stem rule.
 _OMITTED_ACCOUNT_OBJECT = re.compile(r'[一-龥々ァ-ヴ][一-龥々ァ-ヴーぁ-ん]{0,24}\Z')
 _OMITTED_ACCOUNT_PREDICATE = re.compile(r'[一-龥々]{2,}し(?:ませんでした|ました)')
-_OMITTED_LEXICAL_PREDICATE = re.compile(
-    r'(?:送り|読み|開け|終え|(?P<guarded_stem>始め|受け取り|閉め))(?:ませんでした|ました)')
+_ACCOUNT_LEXICAL_STEMS = r'(?:送り|読み|開け|終え|(?P<guarded_stem>始め|受け取り|閉め))'
+_OMITTED_LEXICAL_PREDICATE = re.compile(_ACCOUNT_LEXICAL_STEMS + r'(?:ませんでした|ました)')
+# An explicit declarative stop can also delimit the already-written polite
+# nonpast forms of these same stems. Omitted stops retain the past-only
+# grammar above; no kana stem, lexical entry or inferred time is introduced.
+_PUNCTUATED_NONPAST_ACCOUNT_PREDICATE = re.compile(r'[一-龥々]{2,}し(?:ません|ます)')
+_PUNCTUATED_NONPAST_LEXICAL_PREDICATE = re.compile(_ACCOUNT_LEXICAL_STEMS + r'(?:ません|ます)')
+# These source-written clause operators have no kana-following boundary in
+# the new account arm. A missing pause cannot make an unsupported condition
+# or report into an unqualified account. Ambiguous source strings stay out.
+_EXPLICIT_ACCOUNT_SCOPE = re.compile(
+    r'ならば?|たら|れば|[えけげせてねべめ]ば|'
+    r'(?P<report>(?:と|って)(?:言|い[ういわえっ]))')
+
+
+def _has_unread_explicit_account_scope(sentence: str) -> bool:
+    # 迷って owns its internal って; it is not reported speech, even when
+    # followed by いた/いった. Check only finite report operators outside
+    # already-written uncertainty words, never every と/って in the text.
+    markers = tuple(_UNCERTAIN.finditer(sentence))
+    return any(not (scope['report'] is not None and any(
+        marker.start() <= scope.start() < marker.end() for marker in markers))
+        for scope in _EXPLICIT_ACCOUNT_SCOPE.finditer(sentence))
+
+
+def _unproved_explicit_account_object(obj: str) -> bool:
+    # The final と of the existing nominalizer こと is a word boundary,
+    # not a stranded case particle. No actor/name or nominal-word list is used.
+    return bool(re.search(r'(?:[はがもにへでを]|(?<!こ)と)[、，, \t\u3000]*\Z', obj))
 # Only an explicit calendar word and particle can intervene between を and
 # the finite lexical predicate. The original wording remains the KEEP node.
 _OMITTED_LEXICAL_TIME = re.compile(
@@ -115,18 +142,18 @@ _OMITTED_LEXICAL_SCOPE = re.compile(
 # such as どこにも / どうしても. For newly excluded particles, require an
 # overt non-hiragana boundary after も; もらった / もぐった / もって must
 # not masquerade as that particle. Ambiguous hiragana continuations retain
-# refusal. The existing いつも / 誰にも exclusions are unchanged, and none
-# of these boundaries supplies a predicate or sentence ending.
+# refusal. The existing いつも exclusion is unchanged; 誰/だれ uses the same
+# bounded も/でも boundary. None supplies a predicate or sentence ending.
 _OMITTED_ACCOUNT_QUESTION = re.compile(
     r'何を|なにを|ど(?:れ|ちら|なた)(?!も|か|でも)|(?<!ほ)(?<!ほとん)どの|'
     r'どう(?:いう|やって(?!も(?=[^ぁ-ん]|\Z))|して(?!も(?=[^ぁ-ん]|\Z))|いった)|'
     r'どこ(?:で(?!も)|に(?!(?:も|でも)(?=[^ぁ-ん]|\Z))|の|へ|から|まで(?!も)|を|が|は|と)|'
     r'(?<![こそあど])いつ(?!も|か|でも|までも)|(?:なぜ|何故)(?!か)|'
     r'何時(?:に|の|まで(?!も)|から|頃|ごろ)|'
-    r'(?:誰|だれ)(?:が|の|を|に|と|から|まで|へ|で)(?!も|でも)')
+    r'(?:誰|だれ)(?:が|の|を|に|と|から|まで|へ|で)(?!(?:も|でも)(?=[^ぁ-ん]|\Z))')
 
 
-def _is_unpunctuated_account(text: str) -> bool:
+def _is_unpunctuated_account(text: str, *, allow_nonpast: bool = False) -> bool:
     obj, particle, predicate = text.rpartition('を')
     clause = text.lstrip()
     if (not particle or not _OMITTED_ACCOUNT_OBJECT.search(obj[-25:])
@@ -134,13 +161,30 @@ def _is_unpunctuated_account(text: str) -> bool:
         return False
     if _OMITTED_ACCOUNT_PREDICATE.fullmatch(predicate):
         return True
+    # In the new explicit nonpast arm, a trailing topic/subject particle
+    # cannot serve as the missing を-object. Ambiguous nominal endings stay
+    # unadmitted here; this is not a general noun/particle parser. The old
+    # omitted-stop/past grammar is unchanged.
+    unproved_nonpast_object = _unproved_explicit_account_object(obj)
+    nonpast_suru = allow_nonpast and _PUNCTUATED_NONPAST_ACCOUNT_PREDICATE.fullmatch(predicate)
+    if nonpast_suru:
+        from piece_v2_expression import _DEPENDENT_START
+        return not (unproved_nonpast_object
+                    or _OMITTED_NEW_PREFIX_GUARD.search(obj)
+                    or _DEPENDENT_START.search(clause) or _OMITTED_LEXICAL_SCOPE.search(clause)
+                    or _has_unread_explicit_account_scope(clause))
     time = _OMITTED_LEXICAL_TIME.match(predicate)
     if time:
         predicate = predicate[time.end():]
     lexical = _OMITTED_LEXICAL_PREDICATE.fullmatch(predicate)
+    nonpast = (_PUNCTUATED_NONPAST_LEXICAL_PREDICATE.fullmatch(predicate)
+               if allow_nonpast else None)
+    lexical = lexical or nonpast
     if lexical is None:
         return False
-    if (time or lexical['guarded_stem']) and _OMITTED_NEW_PREFIX_GUARD.search(obj):
+    if nonpast and (unproved_nonpast_object or _has_unread_explicit_account_scope(clause)):
+        return False
+    if (time or lexical['guarded_stem'] or nonpast) and _OMITTED_NEW_PREFIX_GUARD.search(obj):
         return False
     from piece_v2_expression import _DEPENDENT_START
     return not (_DEPENDENT_START.search(clause) or _OMITTED_LEXICAL_SCOPE.search(clause))

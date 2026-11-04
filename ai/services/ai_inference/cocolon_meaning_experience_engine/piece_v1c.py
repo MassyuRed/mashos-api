@@ -159,6 +159,8 @@ def compile_piece_artifact_plan(meaning: PieceSourceMeaning) -> PieceArtifactPla
     from piece_v2_generation import (
         _UNCERTAIN, _DEICTIC, _is_unpunctuated_account,
         _OMITTED_ACCOUNT_QUESTION, _OMITTED_LEXICAL_SCOPE,
+        _OMITTED_NEW_PREFIX_GUARD, _OMITTED_ACCOUNT_OBJECT,
+        _has_unread_explicit_account_scope, _unproved_explicit_account_object,
     )
     graph = meaning.graph
     validate_piece_saved_fields(meaning)
@@ -233,37 +235,40 @@ def compile_piece_artifact_plan(meaning: PieceSourceMeaning) -> PieceArtifactPla
         literal_account = False
         if saved is not None:
             record = json.loads(saved.saved_original_json)
-            literal_mode = bool(meaning.selected_feelings) or _validated_self_insight_mode(
+            self_insight_mode = not meaning.selected_feelings and _validated_self_insight_mode(
                 record['emotions'] or [], record['emotion_details'] or [])
-            if literal_mode and any(_literal_self_account(node.value) for node in text_nodes):
-                # Every literal sentence must be complete on its own.
-                # Reuse the existing finite written account and uncertainty
-                # operators for a source-written reservation, without giving
-                # it a new speaker, intention or relation to the self account.
-                # A question, unfinished condition or report does not qualify;
-                # an unrelated field cannot supply a predicate or stop.
-                literal_account = all(
-                    _literal_self_account(node.value) or _is_unpunctuated_account(
-                        node.value[:-1] if node.value.endswith(('。', '！', '!')) else node.value)
-                    or (_UNCERTAIN.search(node.value)
+            if meaning.selected_feelings or self_insight_mode:
+                # The two existing complete-account families share one
+                # reservation check. A selected mode supplies no proposition:
+                # at least one written action or explicit self expression
+                # must independently qualify, and every other sentence must
+                # be an account or the same finite reservation context.
+                actions = tuple(_is_unpunctuated_account(
+                        node.value[:-1] if node.value.endswith(('。', '！', '!')) else node.value,
+                        allow_nonpast=node.value.endswith(('。', '！', '!')))
+                    or bool(_PLAIN_SURU_ACCOUNT_END.search(node.value)
+                        and not _OMITTED_ACCOUNT_QUESTION.search(node.value)
+                        and not _OMITTED_NEW_PREFIX_GUARD.search(node.value)
+                        and not _OMITTED_LEXICAL_SCOPE.search(node.value)
+                        and not _has_unread_explicit_account_scope(node.value)
+                        and not _DEPENDENT_START.search(node.value)
+                        and ('を' not in node.value or _OMITTED_ACCOUNT_OBJECT.search(
+                            node.value.rpartition('を')[0][-25:]))
+                        and not _unproved_explicit_account_object(node.value.rpartition('を')[0]))
+                    for node in text_nodes)
+                self_accounts = tuple(_literal_self_account(node.value) for node in text_nodes)
+                reservations = tuple(bool(_UNCERTAIN.search(node.value)
                         and _WRITTEN_ACCOUNT_END.search(node.value)
                         and node.value.endswith(('。', '！', '!'))
                         and not _OMITTED_ACCOUNT_QUESTION.search(node.value)
                         and not _OMITTED_LEXICAL_SCOPE.search(node.value)
+                        and not _has_unread_explicit_account_scope(node.value)
                         and not _EMBEDDED_REPORT.search(node.value))
                     for node in text_nodes)
-        if (saved is not None and not meaning.selected_feelings and all(
-                _is_unpunctuated_account(
-                    node.value[:-1] if node.value.endswith(('。', '！', '!')) else node.value)
-                for node in text_nodes)):
-            # Source validation has already rederived the sealed saved fields.
-            # A single declarative stop only delimits the grammar check. Keep
-            # the complete original node, including its written punctuation;
-            # questions gain no admission through this literal action path.
-            # Mode allows this path but supplies no proposition.
-            record = json.loads(saved.saved_original_json)
-            self_insight_account = _validated_self_insight_mode(
-                record['emotions'] or [], record['emotion_details'] or [])
+                complete = all(action or account or reservation for action, account, reservation
+                               in zip(actions, self_accounts, reservations, strict=True))
+                literal_account = any(self_accounts) and complete
+                self_insight_account = self_insight_mode and any(actions) and complete
         if not (feeling_account or self_insight_account or literal_account):
             raise unavailable('expression_meaning_not_admitted')
     ids = tuple(node.node_id for node in text_nodes)
