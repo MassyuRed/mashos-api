@@ -177,6 +177,13 @@ _SELF_PREDICATE_BODY = re.compile(
 _BARE_SELF_OPERATORS = frozenset({'たい', 'たくない', 'みたい', 'てみたい', 'でみたい'})
 
 
+def _topic_qualification_tail(body: str) -> str | None:
+    boundaries = tuple(re.finditer(
+        '(?:' + '|'.join(map(re.escape, _SCOPE_RELATIONS)) + r')[、，,]', body))
+    return (body[boundaries[-1].end():].strip('、，, \t\u3000')
+            if boundaries else None)
+
+
 def _validate_self_predicate_body(sentence: str) -> None:
     # A single written exclamation is an existing declarative terminator.
     # Use a grammar-only view, including for the rejection reader; the
@@ -191,7 +198,10 @@ def _validate_self_predicate_body(sentence: str) -> None:
         topic = _SELF_PREDICATE_BODY.fullmatch(expression)
         if topic is not None:
             body = topic['body'].strip().removesuffix('です')
-            if not body or body in _BARE_SELF_OPERATORS:
+            tail = _topic_qualification_tail(body)
+            if (not body or body in _BARE_SELF_OPERATORS
+                    or (tail is not None and (
+                        not tail or tail.removesuffix('です') in _BARE_SELF_OPERATORS))):
                 raise unavailable('expression_meaning_not_admitted')
 
 
@@ -293,6 +303,27 @@ def _scoped_self_topic(expression: str) -> re.Match[str] | None:
     from piece_v2_expression import _SELF_TOPIC
     statement = expression[:-1] + '。' if expression.endswith(('！', '!')) else expression
     return _SELF_TOPIC.fullmatch(statement)
+
+
+def _qualified_self_topic(sentence: str) -> re.Match[str] | None:
+    """Read the existing topic-internal qualification at one written stop.
+
+    The plain topic grammar stays unchanged. Its already-written clause
+    operator and immediate comma can also retain one exclamation through
+    the same-width view; they do not create a typed scope or a new wish.
+    Unqualified literal emphasis keeps its existing KEEP owner instead.
+    """
+    from piece_v2_expression import _SELF_TOPIC, _WISH_END
+    topic = _SELF_TOPIC.fullmatch(sentence)
+    if topic is None and sentence.endswith(('！', '!')):
+        topic = _scoped_self_topic(sentence)
+        if topic is not None:
+            from piece_v2_generation import _OMITTED_ACCOUNT_QUESTION
+            if (_topic_qualification_tail(topic['body']) is None
+                    or not _WISH_END.search(topic['body'])
+                    or _OMITTED_ACCOUNT_QUESTION.search(topic['body'])):
+                return None
+    return topic
 
 
 def _direct_transitive_expression(sentence: str) -> re.Match[str] | None:

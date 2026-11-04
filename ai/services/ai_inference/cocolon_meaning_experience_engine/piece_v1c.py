@@ -24,7 +24,7 @@ from .piece_source import (
     _SIMPLE_NOUN, _calendar_time_adverb_span, _direct_transitive_expression, _PERSON_NAME_LEFT_BOUNDARY,
     _validated_self_insight_mode, PiecePersonalEvaluation, PieceSourceMeaning, build_piece_source_meaning,
     _literal_self_account, _written_feeling_expression, _SCOPE_RELATIONS,
-    _scoped_self_topic,
+    _scoped_self_topic, _qualified_self_topic,
     piece_public_role_aliases, validate_piece_nominal_references, validate_piece_saved_fields,
     validate_piece_personal_evaluations, validate_piece_expression_scopes,
     piece_text_nodes,
@@ -163,7 +163,7 @@ def _has_topic_qualification(meaning: PieceSourceMeaning, duties: tuple[PieceTex
     evaluations = {frame.node_id: frame for frame in meaning.personal_evaluations}
     for node, duty in zip(meaning.graph.nodes, duties, strict=True):
         if duty.operation == 'SOURCE_FIRST_PERSON_TOPIC':
-            topic = _SELF_TOPIC.fullmatch(node.value)
+            topic = _qualified_self_topic(node.value)
             if topic is not None and any(re.search(re.escape(marker) + r'[、，,]', topic['body'])
                                          for marker in _SCOPE_RELATIONS):
                 return True
@@ -288,13 +288,14 @@ def compile_piece_artifact_plan(meaning: PieceSourceMeaning) -> PieceArtifactPla
             duties.append(PieceTextDuty(node.node_id, 'SOURCE_PERSONAL_EVALUATION'))
             intents.append(index)
             continue
-        if sentence.endswith(('！', '!')) and _literal_self_account(sentence):
+        topic = _qualified_self_topic(sentence)
+        if (sentence.endswith(('！', '!')) and _literal_self_account(sentence)
+                and topic is None):
             # Existing literal self accounts already own these exact words and
             # emphasis. Punctuation support for the structured families must
             # not convert that retained wish/simile into a new declaration.
             duties.append(PieceTextDuty(node.node_id, 'KEEP_COMPLETE_SOURCE_CONTEXT'))
             continue
-        topic = _SELF_TOPIC.fullmatch(sentence)
         if (topic is not None and _WISH_END.search(topic['body'])
                 and semantic.role in _INTENT_ROLES
                 and not _DEPENDENT_START.search(topic['body'])
@@ -1034,7 +1035,7 @@ def realize_piece_artifact(meaning: PieceSourceMeaning, plan: PieceArtifactPlan,
             obj, predicate, speaker = parts
             text = speaker + 'は、' + obj + 'を' + predicate + '。'
         elif duty.operation == 'SOURCE_FIRST_PERSON_TOPIC':
-            topic = _SELF_TOPIC.fullmatch(text)
+            topic = _qualified_self_topic(text)
             if topic is None or not _WISH_END.search(topic['body']):
                 raise unavailable('piece_plan_operation_binding')
             direct = _direct_transitive_expression(node.value)

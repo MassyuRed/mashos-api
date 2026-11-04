@@ -128,7 +128,7 @@ def validate_source_meaning_preservation(meaning, plan, artifact) -> None:
         piece_public_role_aliases, validate_piece_saved_fields,
         validate_piece_nominal_references, validate_piece_personal_evaluations,
         validate_piece_expression_scopes,
-        piece_text_nodes, _scoped_self_topic,
+        piece_text_nodes, _scoped_self_topic, _qualified_self_topic,
     )
     from cocolon_meaning_experience_engine.piece_v1c import PieceArtifact, PieceArtifactPlan
 
@@ -229,7 +229,7 @@ def validate_source_meaning_preservation(meaning, plan, artifact) -> None:
             target = parsed['object'].lstrip('、，,') if focal is not None else parsed['object']
             return parsed['speaker'], 'は', anchor(target) + 'を' + anchor(parsed['predicate']) + stop, None
         topic = (_scoped_self_topic(expression) if node_id in scopes
-                 else _SELF_TOPIC.fullmatch(expression))
+                 else _qualified_self_topic(expression))
         if topic is None:
             reject()
         kind = 'wish' if _WISH_END.search(topic['body']) else 'literal'
