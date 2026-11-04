@@ -70,6 +70,37 @@ def test_simple_nominal_target_and_full_predicate_survive_topic_gap(target, pred
     assert actual.artifact.piece_text == plain + TAIL
 
 
+@pytest.mark.parametrize('gap', (' ', '\t', '\u3000'))
+@pytest.mark.parametrize('side', ('before', 'after', 'both'))
+@pytest.mark.parametrize('predicate', ('大切にしたい', '大切にしていなかったかもしれない'))
+def test_object_particle_pause_preserves_nominal_continuity(gap, side, predicate):
+    target = '一人で静かに手帳を開く時間'
+    before = gap if side in ('before', 'both') else ''
+    after = gap if side in ('after', 'both') else ''
+    sentence = '私は' + target + before + 'を' + after + predicate + '。'
+    tail = '私はその時間が好きです。'
+    plain = '私は' + target + 'を' + predicate + '。'
+    parsed = _direct_transitive_expression(sentence)
+    assert parsed is not None
+    assert parsed['object'] == target and parsed['predicate'] == predicate
+    assert sentence[slice(*parsed.span('object'))] == target
+    assert sentence[slice(*parsed.span('predicate'))] == predicate
+    actual = checked(sentence + tail)
+    assert actual.artifact == checked(plain + tail).artifact
+    ref, = actual.source_meaning.nominal_references
+    assert (sentence + tail)[slice(*ref.reference_scalar_span)] == 'その時間'
+
+
+@pytest.mark.parametrize('gap', ('\n', '\r', '\u00a0'))
+@pytest.mark.parametrize('side', ('before', 'after'))
+def test_object_particle_pause_does_not_admit_other_separators(gap, side):
+    sentence = ('私は一人で静かに手帳を開く時間' + (gap if side == 'before' else '')
+                + 'を' + (gap if side == 'after' else '') + '大切にしたい。')
+    assert _direct_transitive_expression(sentence) is None
+    out = run(sentence + '私はその時間が好きです。')
+    assert out.status == EngineStatus.UNAVAILABLE and out.artifact is None
+
+
 @pytest.mark.parametrize('speaker', ('私', 'わたし', '僕', 'ぼく', '俺', 'おれ'))
 @pytest.mark.parametrize('comma', ('、', '，', ','))
 def test_written_speaker_and_mixed_horizontal_gaps_are_not_part_of_object(speaker, comma):

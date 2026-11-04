@@ -62,6 +62,43 @@ def row(memo=THOUGHT, action=ACTION):
             'now': '2026-09-26T01:00:00+00:00', 'thread': None, 'events': []}
 
 
+@pytest.mark.parametrize('mode', ('平穏', '自己理解'))
+@pytest.mark.parametrize('gap', (' ', '\t', '\u3000'))
+def test_saved_particle_pause_keeps_cross_field_reference_and_independent_review(monkeypatch, mode, gap):
+    from cocolon_meaning_experience_engine import piece_v1c
+    from piece_v2_content_policy import validate_source_meaning_preservation
+
+    target = '一人で静かに手帳を開く時間'
+    value = row('私は' + target + gap + 'を' + gap + '大切にしたい。',
+                '私はその時間が好きです。')
+    value['original']['emotions'] = [mode]
+    value['original']['emotion_details'] = [{'type': mode, 'strength': 'medium'}]
+    before = canonical_json_bytes(value['original'])
+    actual = outcome(source(value))
+    assert actual.status == EngineStatus.GENERATED, actual.as_body_free()
+    meaning, plan, artifact = actual.source_meaning, actual.artifact_plan, actual.artifact
+    assert meaning.saved_snapshot.saved_original_json == before
+    assert canonical_json_bytes(value['original']) == before
+    assert artifact.piece_text == ('私は、' + target + 'を大切にしたい。\n\n'
+                                   + '私は、その時間が好きです。')
+    assert artifact.eligible_formats == ('short_essay',)
+    ref, = meaning.nominal_references
+    raw = meaning.envelope.raw_utf8.decode('utf-8')
+    assert raw[slice(*ref.antecedent_scalar_span)] == target
+    assert raw[slice(*ref.reference_scalar_span)] == 'その時間'
+    def forbidden(*args, **kwargs):
+        pytest.fail('independent review must not generate or author')
+    monkeypatch.setattr(MeaningExperienceEngine, 'generate', forbidden)
+    monkeypatch.setattr(piece_v1c, 'compile_piece_artifact_plan', forbidden)
+    monkeypatch.setattr(piece_v1c, 'realize_piece_artifact', forbidden)
+    validate_source_meaning_preservation(meaning, plan, artifact)
+    text = artifact.piece_text.replace(target, '家族と過ごす時間', 1)
+    changed = replace(artifact, body_blocks=tuple(text.split('\n\n')), piece_text=text,
+                      piece_text_hash=hashlib.sha256(text.encode('utf-8')).hexdigest())
+    with pytest.raises(ValueError, match='piece_meaning_not_preserved'):
+        validate_source_meaning_preservation(meaning, plan, changed)
+
+
 class Store:
     def __init__(self, value):
         self.value, self.calls = value, []

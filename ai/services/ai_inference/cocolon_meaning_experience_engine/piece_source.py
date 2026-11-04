@@ -367,9 +367,12 @@ def _direct_transitive_expression(sentence: str) -> re.Match[str] | None:
     # predicate; its complete written surface remains the predicate span.
     # Relative focus, reported speech and stacked modals remain separate.
     predicates, past_predicates, modal_predicates = _transitive_predicate_forms()
+    # Horizontal pauses at the written particle are separators, as after the
+    # self topic. Keep them outside both argument spans; internal object gaps
+    # and all raw source/scalar/UTF-8 coordinates remain unchanged.
     match = re.fullmatch(
         r'(?P<speaker>私|わたし|僕|ぼく|俺|おれ)は[、，,]?[ \t\u3000]*'
-        r'(?P<object>.+?)を(?P<predicate>(?:(?:'
+        r'(?P<object>.+?)[ \t\u3000]*を[ \t\u3000]*(?P<predicate>(?:(?:'
         + '|'.join(map(re.escape, predicates)) + r')|(?P<past_predicate>'
         + '|'.join(map(re.escape, past_predicates)) + r'))(?P<modal>'
         + _FINITE_EVALUATION_MODAL + r')?)[。！!]', sentence)
