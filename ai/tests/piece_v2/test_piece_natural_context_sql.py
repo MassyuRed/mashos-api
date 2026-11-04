@@ -157,6 +157,7 @@ def format_flow(natural_case, qdb, monkeypatch):
     import piece_v2_preview_service as preview_service
     import piece_v2_save_service as save_service
     import piece_v2_safety_review as safety_review
+    import piece_v2_source_adapter as source_adapter
     import supabase_client
     from piece_v2_runtime_control import create_piece_preview_application
 
@@ -210,7 +211,8 @@ def format_flow(natural_case, qdb, monkeypatch):
     monkeypatch.setattr(safety_review, 'review_prepared_original', review)
     app = create_piece_preview_application(preview_requested=True, preview_ready=True,
         preview_runtime={'ttl_seconds': 600, 'renderer_version': 'piece.rn_bitmap_renderer.ios.v1'},
-        save_requested=True, save_ready=True, owner_read_requested=True, owner_read_ready=True)
+        save_requested=True, save_ready=True, owner_read_requested=True, owner_read_ready=True,
+        export_requested=True, export_ready=True)
 
     def prepare(tier, memo='私が大切にしたいのは、家族と落ち着いてゆっくり話す時間です。',
                 *, action=None, mode=None):
@@ -225,7 +227,15 @@ def format_flow(natural_case, qdb, monkeypatch):
         adapter = _piece_adapter(user, service, monkeypatch)
         monkeypatch.setattr(preview_service, 'PieceSavedSourceAdapter', lambda: adapter)
         monkeypatch.setattr(save_service, 'PieceSavedSourceAdapter', lambda: adapter)
-        return {'source_ref': run(adapter.resolve_original_source_ref('Bearer synthetic', parent)),
+        monkeypatch.setattr(source_adapter, 'PieceSavedSourceAdapter', lambda: adapter)
+        source_response = run(call('GET', 'source-ref/' + parent))
+        assert source_response.status_code == 200, source_response.json()
+        assert source_response.headers['cache-control'] == 'no-store'
+        assert set(source_response.json()) == {
+            'source_input_id', 'source_input_version', 'source_input_bundle_commitment',
+            'emlis_observation_stage', 'emlis_observation_result_identity',
+            'question_need_decision_identity', 'supplemental_answer_identity'}
+        return {'source_ref': source_response.json(),
             'requested_format': None,
             'visual_selection': {'theme_id': None, 'aspect_ratio': None, 'branding_mode': None}}
 
@@ -311,6 +321,14 @@ def test_declarative_exclamation_survives_preview_save_replay_and_owner_read(
      ['私は本を読みたい。私は水を飲みたい。', '私は静かに休みたい。']),
     ('私は本を読みたいです。\n私は静かに休みたいです。', '窓を閉めませんでした。',
      ['私は本を読みたいです。', '私は静かに休みたいです。', '窓を閉めませんでした。']),
+    pytest.param('私は窓を\t閉めました！',
+        '私は本を 昨日に 読みました\r\n私は手紙を送りませんでした',
+        ['私は窓を\t閉めました！', '私は本を 昨日に 読みました', '私は手紙を送りませんでした'],
+        id='object-pause-crlf-calendar'),
+    pytest.param('私は本を 読みました。私は本を 読みました。',
+        '私は手紙を\t送りませんでした！',
+        ['私は本を 読みました。私は本を 読みました。', '私は手紙を\t送りませんでした！'],
+        id='object-pause-duplicate-fields'),
 ])
 def test_literal_self_expressions_survive_preview_save_replay_and_owner_read(
         format_flow, qdb, tier, mode, memo, action, blocks):
@@ -336,7 +354,26 @@ def test_literal_self_expressions_survive_preview_save_replay_and_owner_read(
         assert owner.json()[field] == preview[field]
     assert qdb.query('select count(*)::int as n from public.piece_quota_consumptions where owner_user_id=$1',
                      [user])['rows'] == [{'n': 1}]
+    exported = run(call('GET', preview['preview_id'] + '/export'))
+    assert exported.status_code == 200, exported.json()
+    assert exported.json() == owner.json()
+    assert exported.headers['cache-control'] == 'no-store'
     assert state['issued'] == [preview['preview_id']]
+
+
+@pytest.mark.parametrize('tier', ['free', 'plus', 'premium'])
+@pytest.mark.parametrize('mode', ['平穏', '自己理解'])
+def test_unpunctuated_earlier_field_cannot_borrow_the_later_field(format_flow, qdb, tier, mode):
+    prepare, call, state, user = format_flow
+    request = prepare(tier,
+        memo='私は本を 昨日に 読みました\r\n私は手紙を送りませんでした',
+        action='私は窓を\t閉めました！', mode=mode)
+    response = run(call('POST', 'preview', request, key='earlier-field-preview'))
+    assert response.status_code == 422 and response.json() == {'code': 'PIECE_SOURCE_NOT_ELIGIBLE'}
+    assert state['issued'] == []
+    for table in ('piece_records', 'piece_quota_consumptions'):
+        assert qdb.query('select count(*)::int as n from public.' + table + ' where owner_user_id=$1',
+                         [user])['rows'] == [{'n': 0}]
 
 
 def test_quota_rejection_keeps_preview_and_key_unspent_and_rechecks_plan(format_flow, qdb):
