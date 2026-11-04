@@ -225,6 +225,8 @@ def test_valid_saved_mode_allows_only_the_written_completed_actions(variant):
     ('昨日は資料を送りました。', '今朝は書類を読みました'),
     ('昨日は予定を確認しました。', '今朝は窓を開けました。'),
     ('昨日は窓を開けました。', '今朝は下書きを終えませんでした'),
+    ('約束した資料を昨日は送りました。', '今日は片付けを始めませんでした'),
+    ('今日は片付けを始めませんでした。', '約束した資料を昨日は送りました。'),
 ])
 def test_saved_self_insight_lexical_action_preserves_each_written_stop(variant, memo, action):
     from hashlib import sha256
@@ -266,6 +268,9 @@ def test_saved_self_insight_lexical_action_preserves_each_written_stop(variant, 
     ('mode', '資料を送りました。', '書類を駅ました', 'source_line_mid_sentence'),
     ('mode', '資料を送りました。', 'その書類を読みました。', 'unresolved_reference'),
     ('mixed', '資料を送りました。', '書類を読みました。', 'saved_emotion_meaning_not_yet_supported'),
+    ('mode', '資料を昨日は送りました', '今日は片付けを始めませんでした。', 'source_line_mid_sentence'),
+    ('mode', '資料を昨日は送りました。', '何の作業を今朝は始めました。', 'expression_meaning_not_admitted'),
+    ('mode', '資料を昨日は送りました。', 'もし作業を今朝は始めました。', 'expression_meaning_not_admitted'),
 ])
 def test_completed_action_path_requires_verified_mode_and_complete_source(selection, memo, action, reason):
     row = record()

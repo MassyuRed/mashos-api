@@ -206,17 +206,20 @@ def validate_source_meaning_preservation(meaning, plan, artifact) -> None:
             author, predicate, target = (original[a:b] for a, b in frame.scalar_parts)
             finite = predicate[:-1] + frame.copula if predicate.endswith('な') else predicate
             viewpoint = 'にとって' if frame.construction == 'にとって' else 'は'
-            return author, viewpoint, anchor(target) + 'が' + anchor(finite) + '。'
+            return author, viewpoint, anchor(target) + 'が' + anchor(finite) + '。', None
         focal = _FOCUS.fullmatch(expression)
         direct = _direct_transitive_expression(expression) if focal is None else None
         if focal is not None or direct is not None:
             parsed = focal if focal is not None else direct
             target = parsed['object'].lstrip('、，,') if focal is not None else parsed['object']
-            return parsed['speaker'], 'は', anchor(target) + 'を' + anchor(parsed['predicate']) + '。'
+            return parsed['speaker'], 'は', anchor(target) + 'を' + anchor(parsed['predicate']) + '。', None
         topic = _SELF_TOPIC.fullmatch(expression)
-        if topic is None or not _WISH_END.search(topic['body']):
+        if topic is None:
             reject()
-        return topic['speaker'], 'は', anchor(topic['body']) + '。'
+        kind = 'wish' if _WISH_END.search(topic['body']) else 'literal'
+        if kind == 'literal' and node_id not in scopes:
+            reject()
+        return topic['speaker'], 'は', anchor(topic['body']) + '。', kind
 
     for group, block in zip(plan.block_node_ids, artifact.body_blocks, strict=True):
         sentences = re.findall(r'[^。！？!?]+[。！？!?]', block)
@@ -249,7 +252,7 @@ def validate_source_meaning_preservation(meaning, plan, artifact) -> None:
             if (operation == 'SOURCE_SCOPED_EXPRESSION_TO_FIRST_PERSON') != (scope is not None):
                 reject()
             expression = original[slice(*scope.expression_scalar_span)] if scope else node.value
-            author, viewpoint, body = arguments(node_id, expression)
+            author, viewpoint, body, topic_kind = arguments(node_id, expression)
             prefix = re.escape(author + viewpoint) + '[、，,]?'
             same_author = (previous_id is not None and previous_author == author
                            and positions[node_id] == positions[previous_id] + 1
@@ -273,9 +276,14 @@ def validate_source_meaning_preservation(meaning, plan, artifact) -> None:
                                  and scope.scope_scalar_span[0] <= ref.reference_scalar_span[0]
                                  and ref.reference_scalar_span[1] <= scope.scope_scalar_span[1]
                                  for ref in meaning.nominal_references)
-                simple = (node_id not in evaluations and _FOCUS.fullmatch(expression) is None
-                          and _direct_transitive_expression(expression) is None)
-                if simple and scope.relation != 'SOURCE_EXPLICIT_CONCESSION' and not referenced:
+                premise_first = scope.relation == 'SOURCE_EXPLICIT_CONCESSION' or referenced
+                if topic_kind == 'literal':
+                    # Scoped literal comparisons already have an explicit
+                    # first person and complete predicate. Match the same
+                    # authored clause order without granting topic omission.
+                    pattern = (premise_pattern + prefix if premise_first
+                               else prefix + premise_pattern) + body
+                elif topic_kind == 'wish' and not premise_first:
                     pattern = '(?:' + pattern + '|' + optional_prefix + premise_pattern + body + ')'
             if re.fullmatch(pattern, visible) is None:
                 reject()

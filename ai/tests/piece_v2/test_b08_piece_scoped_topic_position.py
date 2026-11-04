@@ -3,7 +3,7 @@
 Synthetic source/author/B9 regressions. The optional topic omission is still
 owned by the existing continuation check; no new subject inference is made.
 """
-from dataclasses import asdict
+from dataclasses import asdict, replace
 import hashlib
 
 import pytest
@@ -11,6 +11,7 @@ import pytest
 from cocolon_meaning_experience_engine.contracts import EngineStatus
 from cocolon_meaning_experience_engine.engine import MeaningExperienceEngine
 from cocolon_meaning_experience_engine.piece_v1c import PieceGenerationRequest
+from piece_v2_content_policy import validate_source_meaning_preservation
 from piece_v2_contract import canonical_sha256_hex, validate_piece_text_binding
 from piece_v2_generation import PieceSourceSnapshot, generate_piece_candidate
 from piece_v2_layout import TextMeasurement, build_measured_layout
@@ -75,6 +76,26 @@ def test_retained_topic_does_not_move_in_front_of_its_referential_scope(name, te
     assert before == (asdict(meaning), asdict(plan))
     assert not candidate['production_enabled']
     assert candidate['record_effect'] == candidate['quota_effect'] == 0
+
+
+@pytest.mark.parametrize('replacement', [
+    'その時間が取れるなら、旅に出る前の鳥みたい。',
+    '私は、その時間が取れるなら、旅に出る前の鳥みたい。',
+    'その時間が取れるので、私は、旅に出る前の鳥みたい。',
+    'その時間が取れるなら、私は、旅に出たい。',
+])
+def test_scoped_literal_topic_review_requires_its_written_author_order_and_predicate(replacement):
+    _, out = generated(CASES[-1][1])
+    meaning, plan, artifact = out.source_meaning, out.artifact_plan, out.artifact
+    assert len(artifact.body_blocks) == 1
+    old = 'その時間が取れるなら、私は、旅に出る前の鳥みたい。'
+    text = artifact.piece_text.replace(old, replacement)
+    assert text != artifact.piece_text
+    changed = replace(artifact, body_blocks=(text,), piece_text=text,
+                      piece_text_hash=hashlib.sha256(text.encode('utf-8')).hexdigest())
+    validate_source_meaning_preservation(meaning, plan, artifact)
+    with pytest.raises(ValueError, match='piece_meaning_not_preserved'):
+        validate_source_meaning_preservation(meaning, plan, changed)
 
 
 @pytest.mark.parametrize('marker', ['ので', 'なら', 'ならば', 'けれど', 'けれども'])
