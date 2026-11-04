@@ -52,6 +52,77 @@ VARIANTS = ['ui_medium', 'tags_only', 'tags_null_details', 'details_only',
             'details_null_tags', 'missing_strength', 'empty_strength']
 
 
+@pytest.mark.parametrize('gap', (' ', '\t', '\u3000'))
+@pytest.mark.parametrize('sentence', (
+    '私は本を読みました。', '私は本を読みませんでした！',
+    '私は本を読みます。', '私は本を読みません!',
+    '手紙を送りました', '荷物を受け取りませんでした',
+    '私は箱を開けました。', '私は戸を閉めません。',
+    '私は作業を始めます。', '私は作業を終えました。',
+    '私は書類を整理しました。', '私は書類を整理しません。',
+    '私は本を昨日に 読みました。',
+))
+def test_saved_self_insight_action_keeps_horizontal_pause_after_object(sentence, gap):
+    from piece_v2_content_policy import validate_source_meaning_preservation
+
+    text = sentence.replace('を', 'を' + gap, 1)
+    value = saved_state(text, None)
+    value['original']['emotions'] = [MODE]
+    result = outcome(source(value))
+    assert result.status.value == 'GENERATED', result.reason_codes
+    assert result.artifact.piece_text == text
+    assert result.artifact.piece_text_hash == hashlib.sha256(text.encode()).hexdigest()
+    assert result.source_meaning.saved_snapshot.saved_original_json == canonical_json_bytes(value['original'])
+    assert result.artifact_plan.duties[0].operation == 'KEEP_COMPLETE_SOURCE_CONTEXT'
+    assert not result.artifact_plan.declaration_eligible
+    validate_source_meaning_preservation(result.source_meaning, result.artifact_plan, result.artifact)
+
+
+@pytest.mark.parametrize('gap', (' ', '\t', '\u3000'))
+@pytest.mark.parametrize('sentence', (
+    '私は何を読みました。', 'もし時間があるなら、私は本を読みました。',
+    '私は本を読んだと聞きました。', '私は本を読みましたか。',
+    '私は本を読めました。', '私は本を。',
+    '私は本を\n読みました。', '私は本を\u00a0読みました。',
+))
+def test_self_insight_action_pause_does_not_admit_an_unknown_or_unfinished_predicate(sentence, gap):
+    value = saved_state(sentence.replace('を', 'を' + gap, 1), None)
+    value['original']['emotions'] = [MODE]
+    result = outcome(source(value))
+    assert result.status.value == 'UNAVAILABLE'
+    assert result.artifact is None
+
+
+def test_action_particle_pause_stays_bound_to_both_saved_fields_without_author_replay(monkeypatch):
+    from cocolon_meaning_experience_engine import piece_v1c
+    from cocolon_meaning_experience_engine.engine import MeaningExperienceEngine
+    from piece_v2_content_policy import validate_source_meaning_preservation
+
+    thought = '私は本を 読みました。'
+    action = '私は手紙を\t送りませんでした！'
+    value = saved_state(thought, action)
+    value['original']['emotions'] = [MODE]
+    result = outcome(source(value))
+    assert result.status.value == 'GENERATED'
+    assert result.artifact.body_blocks == (thought, action)
+    def forbidden(*args, **kwargs):
+        pytest.fail('independent preservation review must not generate or author')
+    monkeypatch.setattr(MeaningExperienceEngine, 'generate', forbidden)
+    monkeypatch.setattr(piece_v1c, 'compile_piece_artifact_plan', forbidden)
+    monkeypatch.setattr(piece_v1c, 'realize_piece_artifact', forbidden)
+    validate_source_meaning_preservation(result.source_meaning, result.artifact_plan, result.artifact)
+    for blocks in ((thought.replace('を ', 'を'), action),
+                   (thought, action.replace('ませんでした', 'ました')),
+                   (thought.replace('私は', '姉は'), action),
+                   (thought, action.replace('！', '。')),
+                   (action, thought)):
+        text = '\n\n'.join(blocks)
+        changed = replace(result.artifact, body_blocks=blocks, piece_text=text,
+            piece_text_hash=hashlib.sha256(text.encode()).hexdigest())
+        with pytest.raises(ValueError, match='piece_meaning_not_preserved'):
+            validate_source_meaning_preservation(result.source_meaning, result.artifact_plan, changed)
+
+
 @pytest.mark.parametrize('text,expected', (
     ('私はどうしても迷っているけれど、私は読書が好きです。',
      '私はどうしても迷っているけれど、読書が好きです。'),

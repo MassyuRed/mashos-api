@@ -159,6 +159,10 @@ _OMITTED_ACCOUNT_QUESTION = re.compile(
 
 def _is_unpunctuated_account(text: str, *, allow_nonpast: bool = False) -> bool:
     obj, particle, predicate = text.rpartition('を')
+    # A horizontal pause after the written object particle does not change
+    # the finite predicate. Inspect this view only: the source, KEEP writer
+    # and evidence spans retain every separator. Do not cross a line break.
+    predicate = predicate.lstrip(' \t\u3000')
     clause = text.lstrip()
     if (not particle or not _OMITTED_ACCOUNT_OBJECT.search(obj[-25:])
             or clause.startswith('もし') or _OMITTED_ACCOUNT_QUESTION.search(clause)):
