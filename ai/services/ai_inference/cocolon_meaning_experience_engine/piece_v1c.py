@@ -227,8 +227,7 @@ def compile_piece_artifact_plan(meaning: PieceSourceMeaning) -> PieceArtifactPla
             for node in text_nodes)
         self_insight_account = False
         if (saved is not None and not meaning.selected_feelings and all(
-                not node.value.startswith('もし')
-                and _is_unpunctuated_account(node.value.removesuffix('。')) for node in text_nodes)):
+                _is_unpunctuated_account(node.value.removesuffix('。')) for node in text_nodes)):
             # Source validation has already rederived the sealed saved fields.
             # Mode allows this literal action path but supplies no proposition.
             record = json.loads(saved.saved_original_json)

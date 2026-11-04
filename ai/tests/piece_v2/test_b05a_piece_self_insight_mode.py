@@ -226,8 +226,11 @@ def test_valid_saved_mode_allows_only_the_written_completed_actions(variant):
     ('mode', '資料を確認しました。', '明日のこと。', 'expression_meaning_not_admitted'),
     ('mode', '資料を確認しましたか。', None, 'expression_meaning_not_admitted'),
     ('mode', 'どの資料を確認しました。', None, 'expression_meaning_not_admitted'),
+    ('mode', '誰が資料を確認しました。', None, 'expression_meaning_not_admitted'),
+    ('mode', '誰の資料を確認しました', None, 'source_line_mid_sentence'),
     ('mode', '資料を確認しましたが。', None, 'expression_meaning_not_admitted'),
     ('mode', 'もし資料を確認しました。', None, 'expression_meaning_not_admitted'),
+    ('mode', 'もし資料を確認しました', None, 'source_line_mid_sentence'),
     ('mode', 'その資料を確認しました。', None, 'unresolved_reference'),
 ])
 def test_completed_action_path_requires_verified_mode_and_complete_source(selection, memo, action, reason):

@@ -97,13 +97,15 @@ _OMITTED_ACCOUNT_QUESTION = re.compile(
     r'何を|なにを|ど(?:れ|ちら|なた)(?!も|か|でも)|(?<!ほ)どの|どう(?:いう|やって|して|いった)|'
     r'どこ(?:で(?!も)|に|の|へ|から|まで(?!も)|を|が|は|と)|'
     r'(?<![こそあど])いつ(?!も|か|でも|までも)|(?:なぜ|何故)(?!か)|'
-    r'何時(?:に|の|まで(?!も)|から|頃|ごろ)')
+    r'何時(?:に|の|まで(?!も)|から|頃|ごろ)|'
+    r'(?:誰|だれ)(?:が|の|を|に|と|から|まで|へ|で)(?!も|でも)')
 
 
 def _is_unpunctuated_account(text: str) -> bool:
     obj, particle, predicate = text.rpartition('を')
     return bool(particle and _OMITTED_ACCOUNT_PREDICATE.fullmatch(predicate)
                 and _OMITTED_ACCOUNT_OBJECT.search(obj[-25:])
+                and not text.lstrip().startswith('もし')
                 and not _OMITTED_ACCOUNT_QUESTION.search(text))
 
 
