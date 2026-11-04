@@ -1762,13 +1762,15 @@ def test_complete_body_blocks_reach_existing_b9(ratio, separate_lines):
     assert layout['native_device_verified'] is False
 
 
-@pytest.mark.parametrize('memo,action', [
-    (THOUGHT, ACTION),
-    ('以前は、私が望んでいなかったのは、競争です。', '今も同じ気持ちかは、まだ分かりません。'),
-    ('私は読書を大切にしています。', '今日は一冊を開いた。毎日続けるかは、まだ決めていません。'),
-    (None, '私は読書を大切にしています。まだ、毎日続けるかは決めていません。'),
+@pytest.mark.parametrize('memo,action,self_insight', [
+    (THOUGHT, ACTION, False),
+    ('以前は、私が望んでいなかったのは、競争です。', '今も同じ気持ちかは、まだ分かりません。', False),
+    ('私は読書を大切にしています。', '今日は一冊を開いた。毎日続けるかは、まだ決めていません。', False),
+    (None, '私は読書を大切にしています。まだ、毎日続けるかは決めていません。', False),
+    ('私は本を 昨日に 読みました\r\n私は手紙を送りませんでした', None, True),
+    ('私は本を 読みました。私は本を 読みました。', '私は手紙を\t送りませんでした！', True),
 ])
-def test_existing_sql_saved_read_reaches_actual_cmee_and_revalidation(monkeypatch, memo, action):
+def test_existing_sql_saved_read_reaches_actual_cmee_and_revalidation(monkeypatch, memo, action, self_insight):
     api()
     import importlib.util
     import os
@@ -1779,18 +1781,31 @@ def test_existing_sql_saved_read_reaches_actual_cmee_and_revalidation(monkeypatc
     spec = importlib.util.spec_from_file_location('piece_saved_generation_sql_fixture', path)
     existing = importlib.util.module_from_spec(spec); spec.loader.exec_module(existing)
     db = existing.Database()
+    details = [{'type': '自己理解', 'strength': 'medium'}] if self_insight else []
     try:
         assert 'code' not in db.query('insert into auth.users values ($1)', [OWNER])
         assert 'code' not in db.query("insert into public.profiles values ($1,'free')", [OWNER])
         assert 'code' not in db.query(
-            "insert into public.emotions values ($1,$2,now() at time zone 'UTC',$3,$4,array['生活'],array[]::text[],'[]'::jsonb)",
-            [INPUT, OWNER, memo, action])
+            "insert into public.emotions values ($1,$2,now() at time zone 'UTC',$3,$4,array['生活'],"
+            "case when $5 then array['自己理解'] else array[]::text[] end,$6::jsonb)",
+            [INPUT, OWNER, memo, action, self_insight, json.dumps(details, ensure_ascii=False)])
         monkeypatch.setattr(emlis_thread_store, 'sb_post_rpc', db.rpc)
         candidate = run(adapter_module.PieceSavedSourceAdapter()
             .generate_original_candidate_for_development(AUTH, INPUT,
                  source_stage='normal_observation'))
-        expected = generated(row(memo, action)).artifact.as_candidate()
+        value = row(memo, action)
+        value['original']['emotions'] = ['自己理解'] if self_insight else []
+        value['original']['emotion_details'] = details
+        expected = generated(value).artifact.as_candidate()
         assert candidate == expected
+        if self_insight:
+            # SQL-selected mode supplies no prose. Keep the source's explicit
+            # actions, duplicate statements, absent stops and field order.
+            blocks = memo.splitlines() + ([action] if action else [])
+            assert candidate['content_payload']['body_blocks'] == blocks
+            assert candidate['piece_text'] == '\n\n'.join(blocks)
+            assert candidate['piece_text_hash'] == hashlib.sha256(candidate['piece_text'].encode()).hexdigest()
+            assert candidate['record_effect'] == candidate['quota_effect'] == 0
         for table in ('emlis_input_threads', 'emlis_thread_events'):
             assert db.query(f'select count(*)::int as n from public.{table}')['rows'][0]['n'] == 0
         assert candidate['production_enabled'] is False
