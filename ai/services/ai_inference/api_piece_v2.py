@@ -190,8 +190,8 @@ async def save_preview(request: Request) -> JSONResponse:
         if args['p_visibility_scope'] == 'public':
             features.require('piece_v2_public_write_enabled')
         features.require()
-        result = await PieceSaveService(load_record=features.wrap(load_owned_preview),
-            rpc=features.wrap(save_rpc)).save(request.headers['authorization'],
+        result = await features.wrap(PieceSaveService(load_record=features.wrap(load_owned_preview),
+            rpc=features.wrap(save_rpc)).save)(request.headers['authorization'],
             authenticated_user_id=owner, request=value, idempotency_key=keys[0],
             allowed_renderers=_renderer_preferences(request)[1],
             expanded_palette=_expanded_palette(request))
@@ -596,7 +596,7 @@ async def create_preview(request: Request) -> JSONResponse:
         quota = await read_piece_quota(authenticated_user_id=owner,
             post_rpc=features.wrap(sb_post_rpc))
         features.require()
-        result = await PiecePreviewService().issue_original(
+        result = await features.wrap(PiecePreviewService().issue_original)(
             request.headers['authorization'], value, idempotency_key=keys[0],
             ttl_seconds=ttl, renderer_version=renderer, allowed_renderers=allowed_renderers,
             expected_subscription_tier=quota['subscription_tier'],
@@ -642,7 +642,7 @@ async def mutate_preview_visual(preview_id: str, request: Request) -> JSONRespon
         quota = await read_piece_quota(authenticated_user_id=owner,
             post_rpc=features.wrap(sb_post_rpc))
         expanded_palette = _expanded_palette(request)
-        result = await PiecePreviewService().mutate_original_visual(
+        result = await features.wrap(PiecePreviewService().mutate_original_visual)(
             request.headers['authorization'], authenticated_user_id=owner,
             preview_id=preview_id, request=value, expanded_palette=expanded_palette,
             allowed_renderers=_renderer_preferences(request)[1],

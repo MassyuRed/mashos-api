@@ -504,6 +504,34 @@ def test_http_stop_latches_before_dispatch_or_after_committed_write(harness, whe
     assert s['row']['preview_revision'] == 1 + write_count
 
 
+@pytest.mark.parametrize('operation', ['create', 'visual'])
+@pytest.mark.parametrize('failure', ['PIECE_SOURCE_NOT_FOUND', 'PIECE_SOURCE_NOT_ELIGIBLE',
+                                     'PIECE_AUTH_REQUIRED', 'PIECE_CONFLICT', 'transport'])
+def test_http_source_failure_after_stop_keeps_feature_disabled(harness, operation, failure):
+    s = harness
+    async def stopped_source(authorization, input_id):
+        assert authorization == AUTH and input_id == INPUT
+        await asyncio.sleep(0)
+        s['app'].state.piece_v2_runtime = {}
+        if failure == 'transport':
+            raise TimeoutError(PRIVATE)
+        raise PieceContractError(failure, PRIVATE)
+    s['adapter'].resolve_original_handoff = stopped_source
+    if operation == 'visual':
+        response = send(s)
+    else:
+        s['app'].state.piece_preview_runtime = {
+            'ttl_seconds': 600, 'renderer_version': s['row']['renderer_version']}
+        async def create():
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=s['app']),
+                    base_url='https://test.invalid') as client:
+                return await client.post('/emotion/piece/preview', json=s['request'],
+                    headers={'Authorization': AUTH, 'Idempotency-Key': KEY})
+        response = run(create())
+    error(response, 503, 'PIECE_FEATURE_DISABLED')
+    assert s['posts'] == s['reviews'] == [] and s['row'] == s['original']
+
+
 def test_http_lost_ack_returns_body_free_unavailable_once(harness):
     s = harness; s['transport_error'] = httpx.ReadTimeout(PRIVATE)
     error(send(s), 503, 'PIECE_TEMPORARILY_UNAVAILABLE')

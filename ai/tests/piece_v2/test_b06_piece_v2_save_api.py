@@ -430,6 +430,23 @@ def test_stop_during_admission_prevents_save_dispatch(harness, stage):
         assert s['source'] == []
 
 
+@pytest.mark.parametrize('failure', ['PIECE_SOURCE_NOT_FOUND', 'PIECE_SOURCE_NOT_ELIGIBLE',
+                                     'PIECE_AUTH_REQUIRED', 'PIECE_CONFLICT', 'transport'])
+def test_stop_during_failing_source_admission_keeps_stop_response(harness, monkeypatch, failure):
+    call, s = harness
+    class StoppedSource:
+        async def resolve_original_handoff(self, authorization, input_id):
+            s['source'].append((authorization, input_id))
+            await asyncio.sleep(0)
+            s['app'].state.piece_v2_runtime['requested']['piece_v2_save_enabled'] = False
+            if failure == 'transport':
+                raise TimeoutError(PRIVATE)
+            raise PieceContractError(failure, PRIVATE)
+    monkeypatch.setattr(service, 'PieceSavedSourceAdapter', StoppedSource)
+    _error(call(), 503, 'PIECE_FEATURE_DISABLED')
+    assert len(s['source']) == 1 and s['posts'] == []
+
+
 @pytest.mark.parametrize('lost_ack', [False, True])
 def test_stop_after_save_dispatch_never_retries(harness, lost_ack):
     call, s = harness
