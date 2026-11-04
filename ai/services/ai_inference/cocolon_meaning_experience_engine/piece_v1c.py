@@ -151,13 +151,38 @@ def _has_topic_qualification(meaning: PieceSourceMeaning, duties: tuple[PieceTex
     # missing type cannot license a detached quote or unqualified declaration.
     # Restrict only this already-admitted duty at the same explicit operator
     # and comma boundary; do not add source admission or reinterpret a KEEP.
+    original = meaning.envelope.raw_utf8.decode('utf-8')
+    evaluations = {frame.node_id: frame for frame in meaning.personal_evaluations}
     for node, duty in zip(meaning.graph.nodes, duties, strict=True):
-        if duty.operation != 'SOURCE_FIRST_PERSON_TOPIC':
+        if duty.operation == 'SOURCE_FIRST_PERSON_TOPIC':
+            topic = _SELF_TOPIC.fullmatch(node.value)
+            if topic is not None and any(re.search(re.escape(marker) + r'[、，,]', topic['body'])
+                                         for marker in _SCOPE_RELATIONS):
+                return True
             continue
-        topic = _SELF_TOPIC.fullmatch(node.value)
-        if topic is not None and any(re.search(re.escape(marker) + r'[、，,]', topic['body'])
-                                     for marker in _SCOPE_RELATIONS):
-            return True
+        if duty.operation == 'SOURCE_PERSONAL_EVALUATION':
+            frame = evaluations[node.node_id]
+            target = original[slice(*frame.scalar_parts[2])]
+        elif duty.operation == 'SOURCE_FOCAL_TO_FIRST_PERSON':
+            parts = _focal_parts(node.value)
+            if parts is None:
+                continue
+            target = parts[0]
+        else:
+            continue
+        # A source-bound nominal argument can also retain an outer clause.
+        # A finite reservation, action-noun する or explicit が/は/もある/ない
+        # can delimit this already-written clause. Bare た/だ endings cannot:
+        # e.g. 北野で/秦野で also have kana spellings ending たので/だので.
+        # Keep noun-internal matches and unproved premises unchanged. This
+        # limits formats, never source admission, scope types or body words.
+        for marker in _SCOPE_RELATIONS:
+            for match in re.finditer(re.escape(marker) + r'[、，,]', target):
+                premise = target[:match.start()] + '。'
+                if (_FINITE_RESERVATION_END.search(premise)
+                        or _PLAIN_SURU_ACCOUNT_END.search(premise)
+                        or re.search(r'[がはも](?:ある|ない)。$', premise)):
+                    return True
     return False
 
 

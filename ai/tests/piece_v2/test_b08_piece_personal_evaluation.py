@@ -227,6 +227,57 @@ def test_nominal_argument_does_not_discard_other_reservation_time_or_preference(
     assert refused.reason_codes == ('format_choice_not_admitted',)
 
 
+@pytest.mark.parametrize('premise', [
+    '余裕がないので', '準備するならば', '準備するなら',
+    '迷っているけれども', '迷っているけれど',
+    '余裕があるなら', '余裕があるので', '余裕はあるならば', '余裕もあるけれども',
+])
+@pytest.mark.parametrize('shape', ['value', 'focus'])
+def test_finite_clause_retained_inside_an_argument_cannot_offer_standalone_formats(premise, shape):
+    target = premise + '、陶芸の時間'
+    if shape == 'value':
+        text = '私にとって、' + target + 'が大切です。'
+        expected = text
+    else:
+        text = '私が大切にしたいのは、' + target + 'です。'
+        expected = '私は、' + target + 'を大切にしたい。'
+    out = generated(text, tier='premium')
+    assert out.artifact.eligible_formats == ('short_essay',)
+    assert out.artifact.piece_text == expected
+    assert out.source_meaning.envelope.raw_utf8 == text.encode()
+    assert not out.source_meaning.expression_scopes
+    for node, evidence in zip(out.source_meaning.graph.nodes, out.source_meaning.evidence, strict=True):
+        assert text[evidence.scalar_start:evidence.scalar_end] == node.value
+        assert text.encode()[evidence.utf8_start:evidence.utf8_end] == node.value.encode()
+    for fmt in ('quote', 'declaration'):
+        refused = run(text, tier='premium', requested_format=fmt)
+        assert refused.status == EngineStatus.UNAVAILABLE
+        assert refused.reason_codes == ('format_choice_not_admitted',)
+
+
+@pytest.mark.parametrize('target', [
+    'さよなら、またねと手を振る時間', 'おので、木を切る時間',
+    'はだので、家族と過ごす時間', '秦野で、家族と過ごす時間',
+    '神戸のきたので、家族と過ごす時間', '神戸の北野で、家族と過ごす時間',
+    'しいので、家族と過ごす時間',
+    'ものではなく、自分で決める時間',
+    '準備するなら陶芸の時間', '準備するなら 、陶芸の時間',
+])
+def test_ordinary_argument_or_unproven_operator_boundary_keeps_existing_formats(target):
+    text = '私が大切にしたいのは、' + target + 'です。'
+    out = generated(text, tier='premium')
+    assert out.artifact.eligible_formats == ('short_essay', 'quote', 'declaration')
+    assert out.artifact.piece_text == '私は、' + target + 'を大切にしたい。'
+
+
+def test_already_typed_scope_keeps_its_whole_body_and_existing_format_limit():
+    text = '迷っているけれど、私にとって陶芸の時間が大切です。'
+    out = generated(text, tier='premium')
+    assert out.artifact.eligible_formats == ('short_essay',)
+    assert len(out.source_meaning.expression_scopes) == 1
+    assert out.artifact.piece_text == '迷っているけれど、私にとって、陶芸の時間が大切です。'
+
+
 def test_evaluation_and_wish_do_not_detach_the_context_or_drop_repetition():
     text = ('昨日は友人の佐藤さんと話した。私が好きなのは、ゆっくり話を聞くことだ。'
             'まだ予定は決めていない。まだ予定は決めていない。'
