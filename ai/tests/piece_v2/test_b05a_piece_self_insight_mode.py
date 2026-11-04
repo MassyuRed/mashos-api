@@ -219,6 +219,31 @@ def test_valid_saved_mode_allows_only_the_written_completed_actions(variant):
     validate_source_meaning_preservation(result.source_meaning, result.artifact_plan, result.artifact)
 
 
+@pytest.mark.parametrize('variant', VARIANTS)
+@pytest.mark.parametrize('memo,action', [
+    ('昨日は資料を送りました。', '今朝は書類を読みました。'),
+    ('昨日は資料を送りました。', '今朝は書類を読みました'),
+    ('昨日は予定を確認しました。', '今朝は窓を開けました。'),
+    ('昨日は窓を開けました。', '今朝は下書きを終えませんでした'),
+])
+def test_saved_self_insight_lexical_action_preserves_each_written_stop(variant, memo, action):
+    from hashlib import sha256
+    from piece_v2_content_policy import validate_source_meaning_preservation
+
+    row = selection_variant(record(), variant)
+    row['memo'], row['memo_action'] = memo, action
+    result = generated({**saved_state(), 'original': row})
+    expected = (memo + '\n\n' + action).encode()
+    assert result.artifact.piece_text.encode() == expected
+    assert result.artifact.piece_text_hash == sha256(expected).hexdigest()
+    assert result.artifact.body_blocks == (memo, action)
+    assert result.source_meaning.saved_snapshot.saved_original_json == canonical_json_bytes(row)
+    assert result.source_meaning.selected_feelings == result.source_meaning.selection_contexts == ()
+    assert {d.operation for d in result.artifact_plan.duties} == {'KEEP_COMPLETE_SOURCE_CONTEXT'}
+    assert 'declaration' not in result.artifact.eligible_formats
+    validate_source_meaning_preservation(result.source_meaning, result.artifact_plan, result.artifact)
+
+
 @pytest.mark.parametrize('selection,memo,action,reason', [
     ('none', '資料を確認しました。', None, 'expression_meaning_not_admitted'),
     ('mixed', '資料を確認しました。', None, 'saved_emotion_meaning_not_yet_supported'),
@@ -232,6 +257,15 @@ def test_valid_saved_mode_allows_only_the_written_completed_actions(variant):
     ('mode', 'もし資料を確認しました。', None, 'expression_meaning_not_admitted'),
     ('mode', 'もし資料を確認しました', None, 'source_line_mid_sentence'),
     ('mode', 'その資料を確認しました。', None, 'unresolved_reference'),
+    ('mode', '資料を送りました', '書類を読みました。', 'source_line_mid_sentence'),
+    ('mode', '資料を送りました。', 'どこで書類を読みました。', 'expression_meaning_not_admitted'),
+    ('mode', '資料を送りました。', 'どこで書類を読みました', 'source_line_mid_sentence'),
+    ('mode', '窓を開けました。', 'もし書類を読みました。', 'expression_meaning_not_admitted'),
+    ('mode', '窓を開けました。', 'もし書類を読みました', 'source_line_mid_sentence'),
+    ('mode', '資料を送りました。', '書類を駅ました。', 'expression_meaning_not_admitted'),
+    ('mode', '資料を送りました。', '書類を駅ました', 'source_line_mid_sentence'),
+    ('mode', '資料を送りました。', 'その書類を読みました。', 'unresolved_reference'),
+    ('mixed', '資料を送りました。', '書類を読みました。', 'saved_emotion_meaning_not_yet_supported'),
 ])
 def test_completed_action_path_requires_verified_mode_and_complete_source(selection, memo, action, reason):
     row = record()

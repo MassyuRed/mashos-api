@@ -87,10 +87,18 @@ _DEICTIC = re.compile(r'^(?:これ|それ|あれ|ここ|そこ|あそこ)(?:は|
 _NESTED = re.compile(r'[「」『』"“”]|(?:[がは]私)|(?:と(?:彼|彼女|上司|友人))')
 
 
-# Restrict omitted punctuation to an overt object and polite past verbal noun.
-# This does not license an omitted stop on a question or a fragment.
+# A final polite past action needs a written object and a supported predicate.
+# Keep the established verbal-noun form and admit these exact lexical stems
+# with the same affirmative or negative ending. No generic kana stem rule.
 _OMITTED_ACCOUNT_OBJECT = re.compile(r'[一-龥々ァ-ヴ][一-龥々ァ-ヴーぁ-ん]{0,24}\Z')
 _OMITTED_ACCOUNT_PREDICATE = re.compile(r'[一-龥々]{2,}し(?:ませんでした|ました)')
+_OMITTED_LEXICAL_PREDICATE = re.compile(r'(?:送り|読み|開け|終え)(?:ませんでした|ました)')
+_OMITTED_LEXICAL_SCOPE = re.compile(
+    r'(?:^|[、，,\s])(?:もし|仮に|たとえ)|'
+    r'(?:ならば?|たら|れば)(?=[、，,\s一-龥々ァ-ヴ])|'
+    r'場合(?:[、，,\s]|は|には|でも)|'
+    r'(?:と|って)(?:言われ|言った|言って|言いました|聞いた|聞いて|聞きました|'
+    r'伝えた|伝えて|伝えました|話した|話して|話しました|書いた|書いて|書きました)')
 # Reject common written question cues even without a question mark; do not
 # treat indefinite forms such as いつも or なぜか as those same cues.
 _OMITTED_ACCOUNT_QUESTION = re.compile(
@@ -103,10 +111,16 @@ _OMITTED_ACCOUNT_QUESTION = re.compile(
 
 def _is_unpunctuated_account(text: str) -> bool:
     obj, particle, predicate = text.rpartition('を')
-    return bool(particle and _OMITTED_ACCOUNT_PREDICATE.fullmatch(predicate)
-                and _OMITTED_ACCOUNT_OBJECT.search(obj[-25:])
-                and not text.lstrip().startswith('もし')
-                and not _OMITTED_ACCOUNT_QUESTION.search(text))
+    clause = text.lstrip()
+    if (not particle or not _OMITTED_ACCOUNT_OBJECT.search(obj[-25:])
+            or clause.startswith('もし') or _OMITTED_ACCOUNT_QUESTION.search(clause)):
+        return False
+    if _OMITTED_ACCOUNT_PREDICATE.fullmatch(predicate):
+        return True
+    if not _OMITTED_LEXICAL_PREDICATE.fullmatch(predicate):
+        return False
+    from piece_v2_expression import _DEPENDENT_START
+    return not (_DEPENDENT_START.search(clause) or _OMITTED_LEXICAL_SCOPE.search(clause))
 
 
 def _sentences(text: str, *, allow_unpunctuated_account: bool = False) -> list[str]:

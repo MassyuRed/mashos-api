@@ -301,15 +301,18 @@ def test_saved_polite_past_terminal_stop_may_be_omitted(memo, action, blocks):
     assert candidate['piece_text'] == result.artifact.piece_text
 
 
-@pytest.mark.parametrize('replacement', [
-    '今朝は資料を確認しました。',
-    '今朝は資料を整理しました',
-    '今朝は資料を確認しました。明日の予定も決めました',
+@pytest.mark.parametrize('memo,replacement', [
+    ('今朝は資料を確認しました', '今朝は資料を確認しました。'),
+    ('今朝は資料を確認しました', '今朝は資料を整理しました'),
+    ('今朝は資料を確認しました', '今朝は資料を確認しました。明日の予定も決めました'),
+    ('資料を送りました', '資料を送りました。'),
+    ('資料を送りました', '資料を読みました'),
+    ('資料を送りました', '資料を送りました。次の書類も送りました'),
 ])
-def test_independent_review_requires_exact_unpunctuated_source(replacement):
+def test_independent_review_requires_exact_unpunctuated_source(memo, replacement):
     from piece_v2_content_policy import validate_source_meaning_preservation
 
-    value = row('今朝は資料を確認しました', None)
+    value = row(memo, None)
     value['original']['emotions'] = ['平穏']
     result = generated(value)
     validate_source_meaning_preservation(result.source_meaning, result.artifact_plan, result.artifact)
@@ -350,6 +353,89 @@ def test_omitted_stop_does_not_license_incomplete_or_unresolved_source(memo, act
     result = outcome(source(value))
     assert result.reason_codes == (reason,)
     assert result.artifact is None
+
+
+@pytest.mark.parametrize('memo,action', [
+    ('資料を送りました', None),
+    ('書類を読みました', None),
+    ('窓を開けました', None),
+    ('下書きを終えました', None),
+    ('今朝は資料を送りませんでした', None),
+    ('同僚が資料を送りました', None),
+    ('資料と書類を送りました', None),
+    ('午後におもしろい本を読みました', None),
+    ('昨日は資料を確認しました。', '今朝は窓を開けませんでした'),
+])
+def test_saved_lexical_past_action_keeps_exact_written_bytes(memo, action):
+    from piece_v2_content_policy import validate_source_meaning_preservation
+
+    value = row(memo, action)
+    value['original']['emotions'] = ['平穏']
+    result = generated(value)
+    expected = memo if action is None else memo + '\n\n' + action
+    assert result.artifact.piece_text.encode() == expected.encode()
+    assert result.artifact.piece_text_hash == hashlib.sha256(expected.encode()).hexdigest()
+    assert [node.value for node in result.source_meaning.graph.nodes] == expected.split('\n\n')
+    assert all(duty.operation == 'KEEP_COMPLETE_SOURCE_CONTEXT'
+               for duty in result.artifact_plan.duties)
+    assert 'declaration' not in result.artifact.eligible_formats
+    validate_source_meaning_preservation(result.source_meaning, result.artifact_plan, result.artifact)
+
+
+@pytest.mark.parametrize('memo,action,reason', [
+    ('資料を駅ました', None, 'source_line_mid_sentence'),
+    ('窓を資料けました', None, 'source_line_mid_sentence'),
+    ('書類を読やました', None, 'source_line_mid_sentence'),
+    ('荷物を東京にました', None, 'source_line_mid_sentence'),
+    ('契約書を受け取りました', None, 'source_line_mid_sentence'),
+    ('送りました', None, 'source_line_mid_sentence'),
+    ('資料を送りましたが', None, 'source_line_mid_sentence'),
+    ('誰が資料を送りました', None, 'source_line_mid_sentence'),
+    ('どこで書類を読みました', None, 'source_line_mid_sentence'),
+    ('窓を開けましたか', None, 'source_line_mid_sentence'),
+    ('もし資料を送りました', None, 'source_line_mid_sentence'),
+    ('明日、もし資料を送りました', None, 'source_line_mid_sentence'),
+    ('窓を開けたら書類を読みました', None, 'source_line_mid_sentence'),
+    ('仮に窓を開けました', None, 'source_line_mid_sentence'),
+    ('だから書類を読みました', None, 'source_line_mid_sentence'),
+    ('つまり書類を読みました', None, 'source_line_mid_sentence'),
+    ('資料を送れと言われて書類を読みました', None, 'source_line_mid_sentence'),
+    ('「資料を送りました」と伝えました', None, 'quoted_discourse_not_yet_supported'),
+    ('その書類を読みました', None, 'unresolved_reference'),
+    ('資料を送りました\n窓を開けました', None, 'source_line_mid_sentence'),
+    ('資料を送りました', '書類を確認しました。', 'source_line_mid_sentence'),
+    ('私の友人は犯罪者だ。資料を送りました', None, 'existing_safety_detector'),
+])
+def test_saved_lexical_past_action_does_not_extend_other_language(memo, action, reason):
+    value = row(memo, action)
+    value['original']['emotions'] = ['平穏']
+    result = outcome(source(value))
+    assert result.reason_codes == (reason,)
+    assert result.artifact is None
+
+
+def test_saved_lexical_past_action_respects_mode_and_raw_source_boundaries():
+    text = '資料を送りました'
+    value = row(text, None)
+    assert outcome(source(value)).reason_codes == ('expression_meaning_not_admitted',)
+
+    value['original']['emotions'] = ['自己理解']
+    snapshot = source(value)
+    result = outcome(snapshot)
+    assert result.artifact.piece_text == text
+    assert result.source_meaning.selected_feelings == ()
+    assert result.source_meaning.selection_contexts == ()
+    assert outcome(replace(snapshot, saved_original_json=None)).reason_codes == (
+        'source_line_mid_sentence',)
+
+    value['original']['memo'] += '。'
+    assert generated(value).artifact.piece_text == text + '。'
+    assert outcome(replace(source(value), saved_original_json=None)).reason_codes == (
+        'expression_meaning_not_admitted',)
+    value['original']['emotions'] = []
+    assert outcome(source(value)).reason_codes == ('expression_meaning_not_admitted',)
+    value['original']['emotions'] = ['平穏']
+    assert generated(value).artifact.piece_text == text + '。'
 
 
 def test_same_literal_in_both_fields_keeps_both_propositions():
