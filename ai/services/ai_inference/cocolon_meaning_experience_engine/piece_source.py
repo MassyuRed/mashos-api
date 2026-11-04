@@ -283,6 +283,18 @@ def _same_self_scope_author(premise: str, speaker: str) -> bool:
             and not _EMBEDDED_REPORT.search(topic['body']))
 
 
+def _scoped_self_topic(expression: str) -> re.Match[str] | None:
+    """Read one existing scope's topic using a same-width terminal view.
+
+    The enclosing scope already owns a single declarative terminator. Keep
+    every source byte and evidence range. This is the existing scope-ending
+    family, without deciding whether e.g. みたい is a wish or comparison.
+    """
+    from piece_v2_expression import _SELF_TOPIC
+    statement = expression[:-1] + '。' if expression.endswith(('！', '!')) else expression
+    return _SELF_TOPIC.fullmatch(statement)
+
+
 def _direct_transitive_expression(sentence: str) -> re.Match[str] | None:
     """Read an explicit self topic, nominal object and existing transitive verb.
 
@@ -417,7 +429,7 @@ def _expression_scopes(text: str, nodes: tuple[MeaningNode, ...],
         temporal = match.re is _TEMPORAL_EVALUATION
         if temporal and node.node_id not in evaluations and focal is None:
             continue
-        topic = _SELF_TOPIC.fullmatch(match['intention'])
+        topic = _scoped_self_topic(match['intention'])
         if node.node_id not in evaluations:
             if focal is None and (
                     topic is None or not _SCOPED_SELF_END.search(topic['body'])

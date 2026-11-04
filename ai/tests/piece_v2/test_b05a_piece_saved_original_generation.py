@@ -95,6 +95,79 @@ def outcome(snapshot):
         'synthetic-saved-original', snapshot, OWNER, INPUT, snapshot.source_version))
 
 
+@pytest.mark.parametrize('statement,expected,literal', [
+    ('余裕があるなら、私は静かに休みたい', '私は、余裕があるなら、静かに休みたい', True),
+    ('準備できるならば、僕は遠くへ行きたくない', '僕は、準備できるならば、遠くへ行きたくない', False),
+    ('少し疲れているので、私は静かに休みたい', '私は、少し疲れているので、静かに休みたい', True),
+    ('まだ迷っているけれど、私は遠くへ行きたい', 'まだ迷っているけれど、私は、遠くへ行きたい', False),
+    ('まだ迷っているけれども、私は遠くへ行きたくないです',
+     'まだ迷っているけれども、私は、遠くへ行きたくないです', False),
+])
+@pytest.mark.parametrize('stop', ('。', '！', '!'))
+def test_saved_simple_scope_keeps_its_terminator_and_independent_preservation(statement, expected, literal, stop):
+    from piece_v2_content_policy import validate_source_meaning_preservation
+    value = row(statement + stop, ACTION)
+    value['original']['emotions'] = ['自己理解']
+    snapshot = source(value)
+    result = outcome(snapshot)
+    assert result.status == EngineStatus.GENERATED, result.as_body_free()
+    first = (statement if literal and stop != '。' else expected) + stop
+    assert result.artifact.body_blocks == (first, ACTION)
+    assert result.artifact.eligible_formats == ('short_essay',)
+    assert len(result.source_meaning.expression_scopes) == 1
+    assert result.source_meaning.saved_snapshot.saved_original_json == canonical_json_bytes(value['original'])
+    for node, evidence in zip(result.source_meaning.graph.nodes, result.source_meaning.evidence, strict=True):
+        field = value['original'][evidence.field_path]
+        assert field[evidence.scalar_start:evidence.scalar_end] == node.value
+        assert result.source_meaning.envelope.raw_utf8[evidence.utf8_start:evidence.utf8_end] == node.value.encode()
+    validate_source_meaning_preservation(result.source_meaning, result.artifact_plan, result.artifact)
+    if stop != '。':
+        blocks = (first[:-1] + '。', ACTION)
+        body = '\n\n'.join(blocks)
+        corrupted = replace(result.artifact, body_blocks=blocks, piece_text=body,
+                            piece_text_hash=hashlib.sha256(body.encode()).hexdigest())
+        with pytest.raises(ValueError):
+            validate_source_meaning_preservation(result.source_meaning, result.artifact_plan, corrupted)
+
+
+@pytest.mark.parametrize('text', (
+    '余裕があるなら、私はたい！', '余裕があるなら、私はたい!',
+    '余裕があるなら、友人は静かに休みたい！',
+    '余裕があるなら、私は休みたいと言われたい!',
+    '余裕があるなら、私は静かに休みたい？',
+    '余裕があるなら、私は静かに休みたい!!',
+))
+def test_scope_terminal_view_does_not_admit_an_empty_other_reported_or_question_body(text):
+    value = row(text, None)
+    value['original']['emotions'] = ['自己理解']
+    result = outcome(source(value))
+    assert result.status == EngineStatus.UNAVAILABLE
+    assert result.artifact is None
+
+
+@pytest.mark.parametrize('stop', ('！', '!'))
+def test_literal_scoped_comparison_keeps_its_existing_saved_literal_body(stop):
+    from piece_v2_content_policy import validate_source_meaning_preservation
+    value = row('余裕があるなら、私は猫みたい' + stop, '本を読みました。')
+    value['original']['emotions'] = ['平穏']
+    result = outcome(source(value))
+    assert result.status == EngineStatus.GENERATED
+    assert result.artifact.body_blocks == (value['original']['memo'], value['original']['memo_action'])
+    assert len(result.source_meaning.expression_scopes) == 1
+    assert result.artifact_plan.duties[0].operation == 'SOURCE_SCOPED_EXPRESSION_TO_FIRST_PERSON'
+    assert not result.artifact_plan.declaration_eligible
+    validate_source_meaning_preservation(result.source_meaning, result.artifact_plan, result.artifact)
+    for first in ('私は、余裕があるなら、猫みたい' + stop,
+                  '余裕があるなら、猫みたい' + stop,
+                  '余裕があるので、私は猫みたい' + stop):
+        blocks = (first, value['original']['memo_action'])
+        body = '\n\n'.join(blocks)
+        altered = replace(result.artifact, body_blocks=blocks, piece_text=body,
+                          piece_text_hash=hashlib.sha256(body.encode()).hexdigest())
+        with pytest.raises(ValueError):
+            validate_source_meaning_preservation(result.source_meaning, result.artifact_plan, altered)
+
+
 def generated(value=None):
     result = outcome(source(value))
     assert result.status == EngineStatus.GENERATED, result.reason_codes

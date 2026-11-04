@@ -24,6 +24,7 @@ from .piece_source import (
     _SIMPLE_NOUN, _calendar_time_adverb_span, _direct_transitive_expression, _PERSON_NAME_LEFT_BOUNDARY,
     _validated_self_insight_mode, PiecePersonalEvaluation, PieceSourceMeaning, build_piece_source_meaning,
     _literal_self_account, _written_feeling_expression, _SCOPE_RELATIONS,
+    _scoped_self_topic,
     piece_public_role_aliases, validate_piece_nominal_references, validate_piece_saved_fields,
     validate_piece_personal_evaluations, validate_piece_expression_scopes,
     piece_text_nodes,
@@ -522,7 +523,7 @@ def _linked_self_continuations(meaning: PieceSourceMeaning,
                             scope.scope_scalar_span[1] - len(scope.marker)]
             if re.search(r'[はがも]', tail[1:] if tail.startswith(('は', 'が', 'も')) else tail):
                 continue
-            topic = _SELF_TOPIC.fullmatch(original[slice(*scope.expression_scalar_span)])
+            topic = _scoped_self_topic(original[slice(*scope.expression_scalar_span)])
             if topic is None or not _WISH_END.search(topic['body']):
                 continue
             frame = evaluations.get(previous)
@@ -761,7 +762,7 @@ def _paired_self_continuations(meaning: PieceSourceMeaning,
                 # wish may share its author. Keep evaluative viewpoints and
                 # direct transitive clauses with their existing writers.
                 expression = original[slice(*scope.expression_scalar_span)]
-                topic = _SELF_TOPIC.fullmatch(expression)
+                topic = _scoped_self_topic(expression)
                 if (duties[current] != 'SOURCE_SCOPED_EXPRESSION_TO_FIRST_PERSON'
                         or scope.relation != 'SOURCE_EXPLICIT_CONDITION'
                         or frame is not None or topic is None
@@ -985,7 +986,7 @@ def realize_piece_artifact(meaning: PieceSourceMeaning, plan: PieceArtifactPlan,
                     prefix = '' if premise.startswith(speaker + 'は') else speaker + 'は'
                     text = premise + '、' + prefix + obj + 'を' + predicate + '。'
                 else:
-                    topic = _SELF_TOPIC.fullmatch(original[slice(*scope.expression_scalar_span)])
+                    topic = _scoped_self_topic(original[slice(*scope.expression_scalar_span)])
                     if topic is None:
                         raise unavailable('piece_plan_operation_binding')
                     # Realize the written first-person topic. The complete premise,
@@ -1010,6 +1011,13 @@ def realize_piece_artifact(meaning: PieceSourceMeaning, plan: PieceArtifactPlan,
                         text = premise + '、' + prefix + topic['body'] + '。'
                     else:
                         text = prefix + premise + '、' + topic['body'] + '。'
+                    if (expression.endswith(('！', '!'))
+                            and not _WISH_END.search(topic['body'])):
+                        # This existing literal family includes both a verb's
+                        # みたい and comparisons. Keep the whole source order
+                        # and topic rather than classify or front either one.
+                        # The one original stop is restored below as usual.
+                        text = node.value[:-1] + '。'
                 text = _publicize_source_sentence(text, meaning)
         elif duty.operation == 'SOURCE_FOCAL_TO_FIRST_PERSON':
             parts = _focal_parts(text)
@@ -1074,7 +1082,7 @@ def realize_piece_artifact(meaning: PieceSourceMeaning, plan: PieceArtifactPlan,
         for scope in meaning.expression_scopes:
             if scope.node_id not in direct_continuations:
                 continue
-            topic = _SELF_TOPIC.fullmatch(original[slice(*scope.expression_scalar_span)])
+            topic = _scoped_self_topic(original[slice(*scope.expression_scalar_span)])
             if topic is None:
                 raise unavailable('piece_plan_operation_binding')
             premise = original[slice(*scope.scope_scalar_span)] + '、'
