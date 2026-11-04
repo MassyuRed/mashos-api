@@ -166,6 +166,7 @@ def test_candidate_reuses_factory_without_changing_default_routes_or_registry(sh
     expected[('POST', '/emotion/piece/save')] = 1
     expected[('GET', '/emotion/piece/history')] = 1
     expected[('GET', '/emotion/piece/{piece_id}/export')] = 1
+    expected[('POST', '/emotion/piece/{piece_id}/export-receipt')] = 1
     expected[('GET', '/emotion/piece/{piece_id}')] = 1
     expected[('DELETE', '/emotion/piece/{piece_id}')] = 1
     assert counts == expected

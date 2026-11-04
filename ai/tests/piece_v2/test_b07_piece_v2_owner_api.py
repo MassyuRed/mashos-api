@@ -293,6 +293,11 @@ def _native_connect(state, database):
         columns = params['select'].split(',')
         where = ['owner_user_id=%s', 'lifecycle_status=%s']
         values = [params['owner_user_id'][3:], params['lifecycle_status'][3:]]
+        theme_key = 'visual_recipe->theme->>theme_id'
+        if theme_key in params:
+            assert params[theme_key] == 'in.(soft_paper,quiet_night)'
+            where.append("visual_recipe->'theme'->>'theme_id' in (%s,%s)")
+            values.extend(['soft_paper', 'quiet_night'])
         if 'id' in params:
             where.append('id=%s'); values.append(params['id'][3:])
         else:

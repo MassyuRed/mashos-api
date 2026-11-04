@@ -222,9 +222,9 @@ def test_same_p1_identity_does_not_grant_saved_owner_transfer():
     with pytest.raises(ValueError):sem.load_piece_semantic_state(other,sem.canonical(raw))
 
 
-def test_regular_b8_keeps_its_existing_selection_refusal():
+def test_regular_b8_does_not_resolve_p4_fixture_reference():
     request,input=context()
-    with pytest.raises(ValueError,match='saved_emotion_meaning_not_yet_supported'):
+    with pytest.raises(ValueError,match='unresolved_reference'):
         generate_piece_candidate(request.source,authenticated_owner_id=request.expected_owner_id)
 
 

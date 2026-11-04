@@ -89,6 +89,7 @@ def create_piece_preview_application(*, preview_requested: bool = False,
                                      owner_read_ready: bool = False,
                                      export_requested: bool = False,
                                      export_ready: bool = False,
+                                     export_receipt_ready: bool = False,
                                      owner_delete_requested: bool = False,
                                      owner_delete_ready: bool = False):
     """Compose existing preview, owner recovery, source and bootstrap handlers.
@@ -110,6 +111,8 @@ def create_piece_preview_application(*, preview_requested: bool = False,
     not establish it. Registration does not admit a native renderer or fit.
     Native export preparation has a strict requested/ready pair AND owner
     read. It returns the existing saved artifact, never a regenerated image.
+    Receipt readiness stays off until its storage is independently admitted;
+    the opt-in native client then requires a receipt before the OS handoff.
     No public write, visibility mutation or public read can be enabled here.
     Actual Auth/DB/device admission and production cutover remain separate.
     """
@@ -136,11 +139,12 @@ def create_piece_preview_application(*, preview_requested: bool = False,
     from fastapi import FastAPI
     from api_app_bootstrap import register_app_bootstrap_routes
     from api_piece_v2 import (read_quota, create_preview, mutate_preview_visual, cancel_preview, save_preview,
-                             owner_history, owner_detail, owner_export, owner_delete)
+                             owner_history, owner_detail, owner_export, owner_export_receipt, owner_delete)
     from piece_v2_source_ref_http import read_original_source_ref
 
     app = FastAPI(openapi_url=None, docs_url=None, redoc_url=None)
     app.state.piece_v2_runtime = configuration
+    app.state.piece_export_receipt_ready = export_receipt_ready is True
     if values is not None:
         ttl, renderer = values
         app.state.piece_preview_runtime = {'ttl_seconds': ttl, 'renderer_version': renderer}
@@ -162,6 +166,7 @@ def create_piece_preview_application(*, preview_requested: bool = False,
     app.add_api_route('/emotion/piece/save', save_preview, methods=['POST'])
     app.add_api_route('/emotion/piece/history', owner_history, methods=['GET'])
     app.add_api_route('/emotion/piece/{piece_id}/export', owner_export, methods=['GET'])
+    app.add_api_route('/emotion/piece/{piece_id}/export-receipt', owner_export_receipt, methods=['POST'])
     # Keep static paths before the owner-ID path. Shared composition also
     # preserves its additional static legacy paths before this same route.
     app.add_api_route('/emotion/piece/{piece_id}', owner_detail, methods=['GET'])

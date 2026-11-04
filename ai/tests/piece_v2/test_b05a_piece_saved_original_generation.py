@@ -161,6 +161,190 @@ def test_selected_feelings_are_not_silently_discarded_to_generate_text(field, va
     assert not result.artifact_plan.declaration_eligible
 
 
+@pytest.mark.parametrize('memo', [
+    '明日の面接が不安だった。',
+    'もう不安ではない。',
+    '友達が不安そうだった。',
+    '私は不安を感じています。',
+    '私は弱い不安を感じています。',
+    '私は中程度の不安を感じています。私は中程度の不安を感じています。',
+])
+def test_nonmatching_written_feeling_keeps_selection_private(memo):
+    value = row(memo, None)
+    record = value['original']
+    record['emotions'] = ['不安']
+    record['emotion_details'] = [{'type': '不安', 'strength': 'medium'}]
+    store = Store(value)
+    candidate = run(adapter_module.PieceSavedSourceAdapter(store=store)
+                    .generate_original_candidate_for_development(
+                        AUTH, INPUT, source_stage='normal_observation'))
+    assert candidate['piece_text'] == memo
+    assert candidate['format_type'] == 'short_essay'
+    assert 'declaration' not in candidate['eligible_formats']
+    assert store.calls == [(OWNER, INPUT), (OWNER, INPUT)]
+
+    meaning = generated(value).source_meaning
+    context, = meaning.selection_contexts
+    assert json.loads(context.value) == {
+        'label': '不安', 'strength': 'medium', 'scope': 'RECORDED_SELF',
+    }
+    assert context not in meaning.graph.nodes
+    assert {row.node_id for row in meaning.selected_feelings} == {context.node_id}
+    assert tuple(row.evidence_id for row in meaning.selection_evidence) == context.evidence_ids
+    assert {row.record_sha256 for row in meaning.selection_evidence} == {
+        hashlib.sha256(canonical_json_bytes(record)).hexdigest(),
+    }
+
+
+def test_exact_written_feeling_keeps_existing_source_binding():
+    memo = '私は中程度の不安を感じています。'
+    value = row(memo, None)
+    value['original'].update(emotions=['不安'],
+                             emotion_details=[{'type': '不安', 'strength': 'medium'}])
+    result = generated(value)
+    meaning = result.source_meaning
+    evidence, = meaning.evidence
+    assert meaning.selection_contexts == meaning.selection_evidence == ()
+    assert {row.evidence_id for row in meaning.selected_feelings} == {evidence.evidence_id}
+    assert {row.node_id for row in meaning.selected_feelings} == {meaning.graph.nodes[0].node_id}
+    assert result.artifact.piece_text == memo
+
+
+@pytest.mark.parametrize('tags,details', [
+    (['不安'], [{'type': '喜び', 'strength': 'medium'}]),
+    (['不安'], [{'type': '不安', 'strength': 'forged'}]),
+    (['不安', '不安'], [{'type': '不安', 'strength': 'medium'}]),
+    (['不安', '自己理解'], [{'type': '不安', 'strength': 'medium'}]),
+])
+def test_separate_private_selection_still_rejects_invalid_metadata(tags, details):
+    value = row('もう不安ではない。', None)
+    value['original'].update(emotions=tags, emotion_details=details)
+    result = outcome(source(value))
+    assert result.reason_codes == ('saved_emotion_meaning_not_yet_supported',)
+    assert result.artifact is None
+
+
+@pytest.mark.parametrize('memo,action', [
+    ('明日までに返事をする。', None),
+    ('明日は料理する。', None),
+    ('午前中に打ち合わせをする。', None),
+    ('午後はメールをする。', None),
+    ('昨日の会議については保留。', '次回は資料を整理する。'),
+])
+def test_plain_suru_account_keeps_written_predicate_and_field_order(memo, action):
+    value = row(memo, action)
+    value['original']['emotions'] = ['平穏']
+    store = Store(value)
+    candidate = run(adapter_module.PieceSavedSourceAdapter(store=store)
+                    .generate_original_candidate_for_development(
+                        AUTH, INPUT, source_stage='normal_observation'))
+    expected_blocks = [memo] if action is None else [memo, action]
+    assert candidate['content_payload']['body_blocks'] == expected_blocks
+    assert candidate['piece_text'] == '\n\n'.join(expected_blocks)
+    assert 'declaration' not in candidate['eligible_formats']
+    assert store.calls == [(OWNER, INPUT), (OWNER, INPUT)]
+    assert all(duty.operation == 'KEEP_COMPLETE_SOURCE_CONTEXT'
+               for duty in generated(value).artifact_plan.duties)
+
+
+@pytest.mark.parametrize('memo,reason', [
+    ('する。', 'expression_meaning_not_admitted'),
+    ('明日は準備するかも。', 'expression_meaning_not_admitted'),
+    ('明日は準備するだろう。', 'expression_meaning_not_admitted'),
+    ('明日準備する場合。', 'expression_meaning_not_admitted'),
+    ('明日は準備する？', 'expression_meaning_not_admitted'),
+    ('「明日は準備する。」と友達が言った。', 'quoted_discourse_not_yet_supported'),
+    ('その作業をする。', 'unresolved_reference'),
+    ('それをする。', 'unresolved_reference'),
+    ('仕事をする', 'source_line_mid_sentence'),
+    ('私の友人は犯罪者だ。明日は準備する。', 'existing_safety_detector'),
+])
+def test_plain_suru_account_does_not_override_existing_refusals(memo, reason):
+    value = row(memo, None)
+    value['original']['emotions'] = ['平穏']
+    result = outcome(source(value))
+    assert result.reason_codes == (reason,)
+    assert result.artifact is None
+
+
+def test_plain_suru_account_requires_existing_saved_feeling_context():
+    result = outcome(source(row('明日までに返事をする。', None)))
+    assert result.reason_codes == ('expression_meaning_not_admitted',)
+    assert result.artifact is None
+
+
+@pytest.mark.parametrize('memo,action,blocks', [
+    ('今朝は資料を確認しました', None, ('今朝は資料を確認しました',)),
+    ('いつもの資料を確認しました', None, ('いつもの資料を確認しました',)),
+    ('ぶどうの箱を出荷しました', None, ('ぶどうの箱を出荷しました',)),
+    ('なぜか資料を確認しました', None, ('なぜか資料を確認しました',)),
+    ('昨日は予定を確認しました。 今朝は資料を整理しませんでした', None,
+     ('昨日は予定を確認しました。今朝は資料を整理しませんでした',)),
+    ('昨日は予定を確認しました。', '今朝は資料を整理しませんでした',
+     ('昨日は予定を確認しました。', '今朝は資料を整理しませんでした')),
+])
+def test_saved_polite_past_terminal_stop_may_be_omitted(memo, action, blocks):
+    value = row(memo, action)
+    value['original']['emotions'] = ['平穏']
+    result = generated(value)
+    assert result.artifact.body_blocks == blocks
+    assert result.artifact.piece_text == '\n\n'.join(blocks)
+    assert result.source_meaning.graph.nodes[len(result.source_meaning.evidence)-1].value.endswith(
+        ('しました', 'しませんでした'))
+    assert all(duty.operation == 'KEEP_COMPLETE_SOURCE_CONTEXT'
+               for duty in result.artifact_plan.duties)
+    candidate = run(adapter_module.PieceSavedSourceAdapter(store=Store(value))
+                    .generate_original_candidate_for_development(
+                        AUTH, INPUT, source_stage='normal_observation'))
+    assert candidate['piece_text'] == result.artifact.piece_text
+
+
+@pytest.mark.parametrize('replacement', [
+    '今朝は資料を確認しました。',
+    '今朝は資料を整理しました',
+    '今朝は資料を確認しました。明日の予定も決めました',
+])
+def test_independent_review_requires_exact_unpunctuated_source(replacement):
+    from piece_v2_content_policy import validate_source_meaning_preservation
+
+    value = row('今朝は資料を確認しました', None)
+    value['original']['emotions'] = ['平穏']
+    result = generated(value)
+    validate_source_meaning_preservation(result.source_meaning, result.artifact_plan, result.artifact)
+    artifact = replace(result.artifact, body_blocks=(replacement,), piece_text=replacement,
+                       piece_text_hash=hashlib.sha256(replacement.encode()).hexdigest())
+    with pytest.raises(ValueError, match='piece_meaning_not_preserved'):
+        validate_source_meaning_preservation(result.source_meaning, result.artifact_plan, artifact)
+
+
+@pytest.mark.parametrize('memo,action,reason', [
+    ('今朝は資料を', None, 'source_line_mid_sentence'),
+    ('資料を確認しましたが', None, 'source_line_mid_sentence'),
+    ('資料を確認しましたか', None, 'source_line_mid_sentence'),
+    ('何を確認しました', None, 'source_line_mid_sentence'),
+    ('どの資料を確認しました', None, 'source_line_mid_sentence'),
+    ('どういう資料を確認しました', None, 'source_line_mid_sentence'),
+    ('どこで資料を確認しました', None, 'source_line_mid_sentence'),
+    ('いつ資料を確認しました', None, 'source_line_mid_sentence'),
+    ('なぜ資料を確認しました', None, 'source_line_mid_sentence'),
+    ('何時に資料を確認しました', None, 'source_line_mid_sentence'),
+    ('何故資料を確認しました', None, 'source_line_mid_sentence'),
+    ('昨日はそれを確認しました', None, 'unresolved_reference'),
+    ('「資料を確認しました」', None, 'quoted_discourse_not_yet_supported'),
+    ('それを確認しました', None, 'source_line_mid_sentence'),
+    ('その資料を確認しました', None, 'unresolved_reference'),
+    ('予定を確認しました\n資料を整理しました', None, 'source_line_mid_sentence'),
+    ('予定を確認しました', '資料を整理しました', 'source_line_mid_sentence'),
+    ('確認しました。' * 6 + '資料を整理しました', None, 'complete_sentence_required'),
+])
+def test_omitted_stop_does_not_license_incomplete_or_unresolved_source(memo, action, reason):
+    value = row(memo, action)
+    value['original']['emotions'] = ['平穏']
+    result = outcome(source(value))
+    assert result.reason_codes == (reason,)
+    assert result.artifact is None
+
+
 def test_same_literal_in_both_fields_keeps_both_propositions():
     text = '私は読書を大切にしています。'
     result = generated(row(text, text))

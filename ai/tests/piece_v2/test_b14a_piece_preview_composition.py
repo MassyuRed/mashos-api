@@ -90,7 +90,7 @@ def send(app, method, path, **kwargs):
     return asyncio.run(run())
 
 
-def test_default_composition_has_only_existing_preview_and_bootstrap_handlers(composition_env):
+def test_default_composition_has_only_the_closed_piece_and_bootstrap_handlers(composition_env):
     before = tuple(api.router.routes)
     app = make()
     assert {(r.path, tuple(sorted(r.methods))) for r in app.routes} == {
@@ -103,6 +103,7 @@ def test_default_composition_has_only_existing_preview_and_bootstrap_handlers(co
         ('/emotion/piece/save', ('POST',)),
         ('/emotion/piece/history', ('GET',)),
         ('/emotion/piece/{piece_id}/export', ('GET',)),
+        ('/emotion/piece/{piece_id}/export-receipt', ('POST',)),
         ('/emotion/piece/{piece_id}', ('GET',)),
         ('/emotion/piece/{piece_id}', ('DELETE',)),
     }
@@ -111,6 +112,8 @@ def test_default_composition_has_only_existing_preview_and_bootstrap_handlers(co
     assert next(r.endpoint for r in app.routes if 'DELETE' in r.methods) is api.cancel_preview
     assert next(r.endpoint for r in app.routes if 'source-ref/' in r.path) is source_api.read_original_source_ref
     assert next(r.endpoint for r in app.routes if r.path == '/emotion/piece/history') is api.owner_history
+    assert next(r.endpoint for r in app.routes if r.path.endswith('/export-receipt')) is api.owner_export_receipt
+    assert app.state.piece_export_receipt_ready is False
     assert next(r.endpoint for r in app.routes if r.path == '/emotion/piece/{piece_id}') is api.owner_detail
     assert next(r.endpoint for r in app.routes if r.path == '/emotion/piece/{piece_id}' and 'DELETE' in r.methods) is api.owner_delete
     assert next(r.endpoint for r in app.routes if r.path == '/emotion/piece/quota') is api.read_quota
@@ -121,7 +124,8 @@ def test_default_composition_has_only_existing_preview_and_bootstrap_handlers(co
     assert all(composition_env[key] == 0 for key in ('auth', 'source', 'service', 'rpc'))
 
 
-@pytest.mark.parametrize('path,method', [(SOURCE_PATH, 'GET'), (PREVIEW_PATH, 'POST'), (VISUAL_PATH, 'PATCH'), ('/emotion/piece/save', 'POST')])
+@pytest.mark.parametrize('path,method', [(SOURCE_PATH, 'GET'), (PREVIEW_PATH, 'POST'), (VISUAL_PATH, 'PATCH'), ('/emotion/piece/save', 'POST'),
+    ('/emotion/piece/' + INPUT + '/export-receipt', 'POST')])
 def test_composed_default_off_is_closed_without_parsing_private_body(composition_env, path, method):
     app = make()
     response = send(app, method, path, content=b'SYNTHETIC PRIVATE INVALID JSON')
@@ -131,7 +135,8 @@ def test_composed_default_off_is_closed_without_parsing_private_body(composition
     assert composition_env['source'] == composition_env['service'] == composition_env['rpc'] == 0
 
 
-@pytest.mark.parametrize('path,method', [(SOURCE_PATH, 'GET'), (PREVIEW_PATH, 'POST'), (VISUAL_PATH, 'PATCH'), ('/emotion/piece/save', 'POST')])
+@pytest.mark.parametrize('path,method', [(SOURCE_PATH, 'GET'), (PREVIEW_PATH, 'POST'), (VISUAL_PATH, 'PATCH'), ('/emotion/piece/save', 'POST'),
+    ('/emotion/piece/' + INPUT + '/export-receipt', 'POST')])
 def test_composed_auth_precedes_flags(composition_env, path, method):
     response = send(make(), method, path, headers={})
     assert response.status_code == 401 and response.json() == {'code': 'PIECE_AUTH_REQUIRED'}
@@ -250,7 +255,7 @@ def test_factory_does_not_import_or_modify_production_or_legacy_application(comp
         return original(name, *args, **kwargs)
     monkeypatch.setattr(builtins, '__import__', guarded)
     app = enabled()
-    assert len(app.routes) == 12
+    assert len(app.routes) == 13
     assert app is not composition_env['app']
 
 

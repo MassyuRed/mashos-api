@@ -9,6 +9,7 @@ from pathlib import Path
 import runpy
 from uuid import uuid4
 
+import httpx
 import pytest
 
 from test_emlis_q3_application import Q3Database
@@ -42,17 +43,21 @@ def qdb():
     for name in ['20260808_001_piece_v2_legacy_read_bridge.sql', '20260808_002_piece_v2_foundation.sql',
                  '20260808_003_piece_v2_rls_and_staging.sql', '20260808_004_piece_v2_atomic_functions.sql',
                  '20261010050940_piece_v2_preview_visual_change.sql', '20261101022630_piece_natural_reply_context.sql',
-                 '20261103235434_piece_v2_expand_visual_palette.sql']:
+                 '20261103235434_piece_v2_expand_visual_palette.sql', '20261010_005_piece_v2_quota_read.sql']:
         script(db, (ROOT / 'supabase/migrations' / name).read_text())
     yield db
     db.proc.stdin.close()
     db.proc.wait(timeout=10)
 
 
-def rpc(db, name, payload, *, expected_failure=False):
+def rpc_query(db, name, payload):
     args = ','.join(f'{key} => ${i}' for i, key in enumerate(payload, 1))
     params = [json.dumps(v, ensure_ascii=False) if isinstance(v, (dict, list)) else v for v in payload.values()]
-    result = db.query(f'select public.{name}({args}) as value', params, 'service_role')
+    return db.query(f'select public.{name}({args}) as value', params, 'service_role', error_message=True)
+
+
+def rpc(db, name, payload, *, expected_failure=False):
+    result = rpc_query(db, name, payload)
     if expected_failure:
         assert result.get('code') == 'P0001', result
         return None
@@ -144,3 +149,183 @@ def test_context_migration_preserves_service_only_function_privileges(qdb):
     for row in result['rows']:
         assert row['prosecdef'] and row['proconfig'] == ['search_path=pg_catalog']
         assert row['service_exec'] and not row['anon_exec'] and not row['auth_exec']
+
+
+@pytest.fixture
+def format_flow(natural_case, qdb, monkeypatch):
+    import api_piece_v2 as api
+    import piece_v2_preview_service as preview_service
+    import piece_v2_save_service as save_service
+    import piece_v2_safety_review as safety_review
+    import supabase_client
+    from piece_v2_runtime_control import create_piece_preview_application
+
+    user, parent, service, provider_calls = natural_case
+    state = {'lost_issue_ack': False, 'issued': [], 'reviews': [], 'provider_calls': provider_calls}
+
+    async def verify(authorization):
+        assert authorization == 'Bearer synthetic'
+        return user
+
+    async def post(name, args, *, timeout):
+        assert timeout == 8.0
+        result = rpc_query(qdb, name, args)
+        if 'code' in result:
+            return httpx.Response(400, json=result)
+        payload = result['rows'][0]['value']
+        if name == 'piece_issue_preview_v2':
+            state['issued'].append(payload['preview_id'])
+            if state['lost_issue_ack']:
+                state['lost_issue_ack'] = False
+                raise TimeoutError()
+        return httpx.Response(200, json=payload)
+
+    async def get(path, *, params, timeout):
+        assert path == '/rest/v1/piece_records' and timeout == 8.0
+        where = ['id=$1', 'owner_user_id=$2']
+        values = [params['id'][3:], params['owner_user_id'][3:]]
+        if params.get('lifecycle_status') == 'eq.saved':
+            where.append("lifecycle_status='saved'")
+        theme_key = 'visual_recipe->theme->>theme_id'
+        if theme_key in params:
+            assert params[theme_key] == 'in.(soft_paper,quiet_night)'
+            where.append("visual_recipe->'theme'->>'theme_id' in ($3,$4)")
+            values.extend(['soft_paper', 'quiet_night'])
+        result = qdb.query('select to_jsonb(r) as value from public.piece_records r '
+            + 'where ' + ' and '.join(where), values, 'service_role')
+        assert 'code' not in result, result
+        records = [row['value'] for row in result['rows']]
+        columns = params['select'].split(',')
+        return httpx.Response(200, json=[{key: row[key] for key in columns} for row in records])
+
+    actual_review = safety_review.review_prepared_original
+
+    async def review(candidate):
+        state['reviews'].append(candidate.artifact_payload()['format_type'])
+        return await actual_review(candidate)
+
+    monkeypatch.setattr(api, '_verify_bearer', verify)
+    monkeypatch.setattr(supabase_client, 'sb_post_rpc', post)
+    monkeypatch.setattr(supabase_client, 'sb_get', get)
+    monkeypatch.setattr(safety_review, 'review_prepared_original', review)
+    app = create_piece_preview_application(preview_requested=True, preview_ready=True,
+        preview_runtime={'ttl_seconds': 600, 'renderer_version': 'piece.rn_bitmap_renderer.ios.v1'},
+        save_requested=True, save_ready=True, owner_read_requested=True, owner_read_ready=True)
+
+    def prepare(tier):
+        qdb.query('update public.profiles set subscription_tier=$2 where id=$1', [user, tier])
+        qdb.query('update public.emotions set memo=$2 where id=$1', [parent,
+            '私が大切にしたいのは、家族と落ち着いてゆっくり話す時間です。'])
+        run(service.start(user, parent))
+        adapter = _piece_adapter(user, service, monkeypatch)
+        monkeypatch.setattr(preview_service, 'PieceSavedSourceAdapter', lambda: adapter)
+        monkeypatch.setattr(save_service, 'PieceSavedSourceAdapter', lambda: adapter)
+        return {'source_ref': run(adapter.resolve_original_source_ref('Bearer synthetic', parent)),
+            'requested_format': None,
+            'visual_selection': {'theme_id': None, 'aspect_ratio': None, 'branding_mode': None}}
+
+    async def call(method, path, value=None, *, key=None, expanded=True):
+        headers = {'Authorization': 'Bearer synthetic', 'X-Piece-Renderer': 'piece.rn_bitmap_renderer.ios.v2'}
+        if expanded:
+            headers['X-Piece-Palette'] = '2'
+        if key:
+            headers['Idempotency-Key'] = key
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),
+                                     base_url='https://test.invalid') as client:
+            return await client.request(method, '/emotion/piece/' + path, headers=headers, json=value)
+
+    return prepare, call, state, user
+
+
+def _save_body(preview):
+    return {'preview_id': preview['preview_id'], 'expected_preview_revision': preview['preview_revision'],
+        **{key: preview[key] for key in ('piece_text_hash', 'content_payload_hash', 'visual_recipe_hash')}}
+
+
+@pytest.mark.parametrize('lose_ack,old_expires', [(False, False), (True, False), (False, True)])
+def test_premium_format_replacement_uses_distinct_drafts_and_keeps_visual_choice(
+        format_flow, qdb, lose_ack, old_expires):
+    from piece_v2_visual import THEME_IDS
+
+    prepare, call, state, user = format_flow
+    request = prepare('premium')
+    initial = run(call('POST', 'preview', request, key='initial-format'))
+    assert initial.status_code == 200, initial.json()
+    first = initial.json()
+    assert set(first['eligible_formats']) >= {'short_essay', 'quote'}
+    assert first['plan_capabilities']['theme_ids'] == list(THEME_IDS)
+
+    visual = {'theme_id': 'rose_berry', 'aspect_ratio': '9:16', 'branding_mode': 'off'}
+    changed = run(call('PATCH', 'preview/' + first['preview_id'], {
+        'expected_preview_revision': first['preview_revision'], 'visual_selection': visual}))
+    assert changed.status_code == 200, changed.json()
+    previous = changed.json()
+    assert previous['piece_text_hash'] == first['piece_text_hash']
+    assert previous['preview_revision'] == 2
+    chosen = next(fmt for fmt in previous['eligible_formats'] if fmt != previous['format_type'])
+    replacement = dict(request, requested_format=chosen, visual_selection=visual)
+    conflict = run(call('POST', 'preview', replacement, key='initial-format'))
+    assert conflict.status_code == 409 and conflict.json() == {'code': 'PIECE_CONFLICT'}
+
+    state['lost_issue_ack'] = lose_ack
+    result = run(call('POST', 'preview', replacement, key='replacement-format'))
+    if lose_ack:
+        assert result.status_code == 503 and result.json() == {'code': 'PIECE_TEMPORARILY_UNAVAILABLE'}
+        old = run(call('POST', 'preview', request, key='initial-format'))
+        assert old.status_code == 200 and old.json() == previous
+        result = run(call('POST', 'preview', replacement, key='replacement-format'))
+    assert result.status_code == 200, result.json()
+    latest = result.json()
+    assert latest['preview_id'] != previous['preview_id'] and latest['preview_revision'] == 1
+    assert latest['format_type'] == latest['content_payload']['format_type'] == chosen
+    assert latest['content_payload_hash'] != previous['content_payload_hash']
+    assert latest['visual_recipe']['theme']['theme_id'] == visual['theme_id']
+    assert latest['visual_recipe']['aspect_ratio'] == visual['aspect_ratio']
+    assert latest['visual_recipe']['branding']['branding_mode'] == visual['branding_mode']
+    assert latest['quota']['saved_count'] == 0
+    assert len(state['provider_calls']) == 1
+    assert state['issued'] == [previous['preview_id'], latest['preview_id']]
+    assert state['reviews'] == [first['format_type'], previous['format_type'], chosen]
+
+    old_rows = qdb.query('select id, lifecycle_status from public.piece_records where owner_user_id=$1',
+        [user])['rows']
+    assert {row['id'] for row in old_rows if row['lifecycle_status'] == 'preview_draft'} == set(state['issued'])
+    if old_expires:
+        expired = qdb.query("update public.piece_records set expires_at=clock_timestamp()-interval '1 second' "
+            'where id=$1 returning id', [previous['preview_id']])
+        assert expired['rows'] == [{'id': previous['preview_id']}]
+    cancel = run(call('DELETE', 'preview/' + previous['preview_id'],
+        {'expected_preview_revision': previous['preview_revision']}))
+    old_error = 'PIECE_PREVIEW_EXPIRED' if old_expires else 'PIECE_CONFLICT'
+    if old_expires:
+        assert cancel.status_code == 409 and cancel.json() == {'code': old_error}
+    else:
+        assert cancel.status_code == 200 and cancel.json()['lifecycle_status'] == 'cancelled'
+    old_save = run(call('POST', 'save', _save_body(previous), key='old-save'))
+    assert old_save.status_code == 409 and old_save.json() == {'code': old_error}
+
+    saved = run(call('POST', 'save', _save_body(latest), key='selected-save'))
+    assert saved.status_code == 200 and saved.json()['piece_id'] == latest['preview_id']
+    detail = run(call('GET', latest['preview_id']))
+    assert detail.status_code == 200, detail.json()
+    legacy_detail = run(call('GET', latest['preview_id'], expanded=False))
+    assert legacy_detail.status_code == 404 and legacy_detail.json() == {'code': 'PIECE_NOT_FOUND'}
+    for field in ('format_type', 'piece_text', 'piece_text_hash', 'content_payload_hash',
+                  'visual_recipe', 'visual_recipe_hash'):
+        assert detail.json()[field] == latest[field]
+    assert qdb.query('select count(*) as n from public.piece_quota_consumptions where owner_user_id=$1',
+        [user])['rows'][0]['n'] == 1
+
+
+@pytest.mark.parametrize('tier', ['free', 'plus'])
+def test_nonpremium_cannot_issue_a_requested_format(format_flow, qdb, tier):
+    prepare, call, state, user = format_flow
+    request = prepare(tier)
+    ordinary = run(call('POST', 'preview', request, key='ordinary-format'))
+    assert ordinary.status_code == 200, ordinary.json()
+    assert 'quote' in ordinary.json()['eligible_formats']
+    denied = run(call('POST', 'preview', dict(request, requested_format='quote'), key='picked-format'))
+    assert denied.status_code == 422 and denied.json() == {'code': 'PIECE_FORMAT_NOT_ELIGIBLE'}
+    assert state['issued'] == [ordinary.json()['preview_id']]
+    assert qdb.query('select count(*) as n from public.piece_quota_consumptions where owner_user_id=$1',
+        [user])['rows'][0]['n'] == 0

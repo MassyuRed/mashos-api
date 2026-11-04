@@ -259,7 +259,12 @@ async def _read_owner_artifact(piece_id: str, request: Request, *, exporting: bo
             authenticated_user_id=owner, piece_id=piece_id,
             theme_ids=None if _expanded_palette(request) else LEGACY_THEME_IDS)
         features.require()
-        return _response(result)
+        response = _response(result)
+        if exporting and getattr(request.app.state, 'piece_export_receipt_ready', False) is True:
+            from piece_v2_export_receipt_service import ACK_HEADER, ACK_VALUE, RENDERERS
+            if request.headers.getlist(ACK_HEADER) == [ACK_VALUE] and result.get('renderer_version') in RENDERERS:
+                response.headers[ACK_HEADER] = ACK_VALUE
+        return response
     except Exception as exc:
         return features.failure(exc, OWNER_READ_STATUS)
 
@@ -272,6 +277,82 @@ async def owner_export(piece_id: str, request: Request) -> JSONResponse:
     receipt, regeneration or quota consumption is introduced by this read.
     """
     return await _read_owner_artifact(piece_id, request, exporting=True)
+
+
+async def _export_receipt_rpc(name: str, args: dict) -> dict:
+    from piece_v2_export_receipt_service import RPC, STATUSES
+    if name != RPC:
+        raise PieceContractError('PIECE_TEMPORARILY_UNAVAILABLE')
+    try:
+        from supabase_client import sb_post_rpc
+        response = await sb_post_rpc(name, args, timeout=8.0)
+        value = response.json()
+        if response.status_code == 200 and type(value) is dict:
+            return value
+        if (response.status_code == 400 and type(value) is dict and value.get('code') == 'P0001'
+                and type(value.get('message')) is str and value['message'] in STATUSES):
+            raise PieceContractError(value['message'])
+    except PieceContractError:
+        raise
+    except Exception:
+        pass
+    raise PieceContractError('PIECE_TEMPORARILY_UNAVAILABLE') from None
+
+
+@router.post('/{piece_id}/export-receipt')
+async def owner_export_receipt(piece_id: str, request: Request) -> JSONResponse:
+    """Store render evidence only; no OS outcome, image, source or body."""
+    from piece_v2_export_receipt_service import ACK_HEADER, ACK_VALUE, STATUSES, save_export_receipt
+    features = _OperationFeatures(request, 'piece_v2_export_enabled')
+    def require_receipt_ready():
+        features.require()
+        if getattr(request.app.state, 'piece_export_receipt_ready', False) is not True:
+            raise PieceContractError('PIECE_FEATURE_DISABLED')
+
+    try:
+        owner = await _authenticated_owner(request)
+        require_receipt_ready()
+        keys = request.headers.getlist('idempotency-key')
+        if request.query_params or len(keys) != 1 or request.headers.getlist(ACK_HEADER) != [ACK_VALUE]:
+            raise PieceContractError('PIECE_REQUEST_INVALID')
+        try:
+            import json
+            raw = bytearray()
+            async for chunk in request.stream():
+                if len(raw) + len(chunk) > 2048:
+                    raise ValueError
+                raw.extend(chunk)
+            def unique_object(pairs):
+                result = dict(pairs)
+                if len(result) != len(pairs):
+                    raise ValueError
+                return result
+            value = json.loads(raw, object_pairs_hook=unique_object)
+        except Exception:
+            raise PieceContractError('PIECE_REQUEST_INVALID') from None
+        from piece_v2_owner_service import PieceOwnerService, load_saved_records
+        async def revalidate(name, args):
+            current = await PieceOwnerService(load_records=features.wrap(load_saved_records)).detail(
+                authenticated_user_id=owner, piece_id=piece_id,
+                theme_ids=None if _expanded_palette(request) else LEGACY_THEME_IDS)
+            if (current['row_version'] != args['p_expected_row_version']
+                    or current['piece_text_hash'] != args['p_piece_text_hash']
+                    or current['visual_recipe_hash'] != args['p_visual_recipe_hash']):
+                raise PieceContractError('PIECE_CONFLICT')
+            require_receipt_ready()
+            try:
+                result = await features.wrap(_export_receipt_rpc)(name, args)
+            except Exception:
+                require_receipt_ready()
+                raise
+            require_receipt_ready()
+            return result
+        result = await save_export_receipt(rpc=revalidate,
+            owner=owner, piece_id=piece_id, key=keys[0], value=value)
+        require_receipt_ready()
+        return _response(result)
+    except Exception as exc:
+        return features.failure(exc, STATUSES)
 
 
 @router.get('/{piece_id}')

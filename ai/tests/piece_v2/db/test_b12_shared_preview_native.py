@@ -63,11 +63,16 @@ def _save_harness(database, monkeypatch, *, tier='free'):
 
     async def load(path, *, params, timeout):
         assert path == '/rest/v1/piece_records' and timeout == 8.0
-        assert set(params) <= {'select', 'id', 'owner_user_id', 'limit', 'lifecycle_status'}
+        theme_key = 'visual_recipe->theme->>theme_id'
+        assert set(params) <= {'select', 'id', 'owner_user_id', 'limit', 'lifecycle_status', theme_key}
         where, values = ['id=%s', 'owner_user_id=%s'], [params['id'][3:], params['owner_user_id'][3:]]
         if 'lifecycle_status' in params:
             assert params['lifecycle_status'] == 'eq.saved'
             where.append('lifecycle_status=%s'); values.append('saved')
+        if theme_key in params:
+            assert params[theme_key] == 'in.(soft_paper,quiet_night)'
+            where.append("visual_recipe->'theme'->>'theme_id' in (%s,%s)")
+            values.extend(['soft_paper', 'quiet_night'])
         values.append(int(params['limit']))
         query = sql.SQL('SELECT to_jsonb(r) FROM (SELECT {} FROM public.piece_records WHERE {} LIMIT %s) r').format(
             sql.SQL(',').join(sql.Identifier(k) for k in params['select'].split(',')),

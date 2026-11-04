@@ -22,7 +22,8 @@ const readline = require('node:readline');
       if (q.role) await db.exec(`set role ${['anon','authenticated','service_role'].includes(q.role)?q.role:'postgres'}`);
       const result=q.script ? {rows:await db.exec(q.sql)} : await db.query(q.sql,q.params || []);
       process.stdout.write(JSON.stringify({rows:result.rows})+'\n');
-    } catch(e) { process.stdout.write(JSON.stringify({code:e.code || 'test_bridge_error', ...(q.script ? {message:e.message,position:e.position}: {})})+'\n'); }
+    } catch(e) { process.stdout.write(JSON.stringify({code:e.code || 'test_bridge_error',
+      ...(q.script ? {message:e.message,position:e.position} : q.errorMessage ? {message:e.message} : {})})+'\n'); }
     finally { await db.exec('reset role'); }
   }
   await db.close();

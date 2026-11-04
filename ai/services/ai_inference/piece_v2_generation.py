@@ -87,16 +87,43 @@ _DEICTIC = re.compile(r'^(?:これ|それ|あれ|ここ|そこ|あそこ)(?:は|
 _NESTED = re.compile(r'[「」『』"“”]|(?:[がは]私)|(?:と(?:彼|彼女|上司|友人))')
 
 
-def _sentences(text: str) -> list[str]:
+# Restrict omitted punctuation to an overt object and polite past verbal noun.
+# This does not license an omitted stop on a question or a fragment.
+_OMITTED_ACCOUNT_OBJECT = re.compile(r'[一-龥々ァ-ヴ][一-龥々ァ-ヴーぁ-ん]{0,24}\Z')
+_OMITTED_ACCOUNT_PREDICATE = re.compile(r'[一-龥々]{2,}し(?:ませんでした|ました)')
+# Reject common written question cues even without a question mark; do not
+# treat indefinite forms such as いつも or なぜか as those same cues.
+_OMITTED_ACCOUNT_QUESTION = re.compile(
+    r'何を|なにを|ど(?:れ|ちら|なた)(?!も|か|でも)|(?<!ほ)どの|どう(?:いう|やって|して|いった)|'
+    r'どこ(?:で(?!も)|に|の|へ|から|まで(?!も)|を|が|は|と)|'
+    r'(?<![こそあど])いつ(?!も|か|でも|までも)|(?:なぜ|何故)(?!か)|'
+    r'何時(?:に|の|まで(?!も)|から|頃|ごろ)')
+
+
+def _is_unpunctuated_account(text: str) -> bool:
+    obj, particle, predicate = text.rpartition('を')
+    return bool(particle and _OMITTED_ACCOUNT_PREDICATE.fullmatch(predicate)
+                and _OMITTED_ACCOUNT_OBJECT.search(obj[-25:])
+                and not _OMITTED_ACCOUNT_QUESTION.search(text))
+
+
+def _sentences(text: str, *, allow_unpunctuated_account: bool = False) -> list[str]:
     # No sentence splitting inside quotes is attempted by this first vertical.
     if any(c in text for c in '「」『』"“”'):
         raise unavailable('quoted_discourse_not_yet_supported')
     lines = text.replace('\r\n', '\n').replace('\r', '\n').split('\n')
     nonempty = [line.strip() for line in lines if line.strip()]
-    if any(line[-1] not in '。！？!?' for line in nonempty):
+    tail = ''
+    if nonempty and allow_unpunctuated_account and nonempty[-1][-1] not in '。！？!?':
+        tail = re.split(r'[。！？!?]', nonempty[-1])[-1]
+        if not _is_unpunctuated_account(tail):
+            raise unavailable('source_line_mid_sentence')
+    if any(line[-1] not in '。！？!?' for line in (nonempty[:-1] if tail else nonempty)):
         raise unavailable('source_line_mid_sentence')
     joined = ''.join(nonempty)
     pieces = re.findall(r'[^。！？!?]+[。！？!?]', joined)
+    if tail:
+        pieces.append(tail)
     if not pieces or ''.join(pieces) != joined or len(pieces) > 6:
         raise unavailable('complete_sentence_required')
     # Horizontal separators belong to the gap between sentences, not to the

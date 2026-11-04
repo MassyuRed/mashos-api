@@ -1094,7 +1094,10 @@ def _saved_field_projection(source) -> tuple[tuple[str, int, int], ...]:
         text = record[key]
         if text is None or not text.strip():
             continue
-        _sentences(text)  # An unfinished field cannot borrow the next field.
+        # Only the final line of the last nonempty field can omit a stop.
+        # An unfinished earlier field cannot borrow the next field.
+        _sentences(text, allow_unpunctuated_account=(
+            key == 'memo_action' or not (record['memo_action'] or '').strip()))
         if parts:
             cursor += 2
         spans.append((key, cursor, cursor + len(text)))
@@ -1105,16 +1108,32 @@ def _saved_field_projection(source) -> tuple[tuple[str, int, int], ...]:
     return tuple(spans)
 
 
+def _validated_self_insight_mode(tags: list, details: list) -> bool:
+    """Recognize the exclusive saved UI mode and validate its exact aliases."""
+    if not ('自己理解' in tags or any(type(detail) is dict and
+            detail.get('type') == '自己理解' for detail in details)):
+        return False
+    if (tags and tags != ['自己理解']) or len(details) > 1:
+        raise unavailable('saved_emotion_meaning_not_yet_supported')
+    for detail in details:
+        if (type(detail) is not dict or set(detail) - {'type', 'strength'}
+                or detail.get('type') != '自己理解'):
+            raise unavailable('saved_emotion_meaning_not_yet_supported')
+        # The hidden UI medium and omitted/empty strengths carry no meaning.
+        strength = detail.get('strength', '')
+        if type(strength) is not str or strength not in ('', 'medium'):
+            raise unavailable('saved_emotion_meaning_not_yet_supported')
+    return True
+
+
 def _selected_feeling_bindings(source, nodes: tuple[MeaningNode, ...],
                                evidence: tuple[EvidenceRef, ...]):
-    """Cover every selection by exact text or immutable recorded-self evidence.
+    """Bind selections to matching written evidence or separate private context.
 
-    This bounded route admits only present affirmative first-person feeling
-    propositions whose whole written meaning already carries the selection.
-    Negated, past, modal, conditional, reported or ambiguous matches do not
-    provide text-equivalence cover. If the label is absent from the text, the
-    selection itself supplies a separate recorded self-state. The author is
-    not permitted to invent an explanation, will, cause or degree for it.
+    Only a unique present affirmative first-person match with compatible
+    strength can bind to written evidence. The saved selection remains its
+    own private evidence when the text describes a different time, actor,
+    polarity or degree, or when the match is ambiguous.
     """
     if source.saved_original_json is None:
         return (), (), ()
@@ -1129,21 +1148,7 @@ def _selected_feeling_bindings(source, nodes: tuple[MeaningNode, ...],
         if not condition:
             raise unavailable('saved_emotion_meaning_not_yet_supported')
 
-    # The current input UI selects 自己理解 alone and sends a hidden medium
-    # placeholder, not an authored feeling intensity. Keep the exact selection
-    # in saved_snapshot/envelope identity; it contributes no feeling proposition.
-    # Missing/empty optional strength is also non-semantic. Reject mixed modes,
-    # duplicate selections, extra keys and every other strength spelling rather
-    # than normalizing them into a claim of self-understanding or ignoring them.
-    if ('自己理解' in tags or any(type(detail) is dict and
-            detail.get('type') == '自己理解' for detail in details)):
-        require(not tags or tags == ['自己理解'])
-        require(len(details) <= 1)
-        for detail in details:
-            require(type(detail) is dict and not set(detail) - {'type', 'strength'})
-            require(detail.get('type') == '自己理解')
-            raw_strength = detail.get('strength', '')
-            require(type(raw_strength) is str and raw_strength in ('', 'medium'))
+    if _validated_self_insight_mode(tags, details):
         return (), (), ()
 
     # 自己理解 is an input mode, not a feeling from which to infer a state.
@@ -1165,6 +1170,8 @@ def _selected_feeling_bindings(source, nodes: tuple[MeaningNode, ...],
     # from which to choose whichever agrees with a sentence. Never silently
     # replace a mismatching tag, detail or its explicitly selected strength.
     require(not tags or not details or tags == detail_labels)
+    selected_strengths = {label: strength for field, _, label, strength in rows
+                          if field == 'emotion_details'}
     degree = {'': '', '弱い': 'weak', '中程度の': 'medium', '強い': 'strong'}
     feeling = re.compile(
         r'^(?:私|わたし|僕|ぼく|俺|おれ)は[、，,]?[ \t\u3000]*'
@@ -1180,15 +1187,10 @@ def _selected_feeling_bindings(source, nodes: tuple[MeaningNode, ...],
     metadata = {}
     for field, index, label, strength in rows:
         candidates = matches.get(label, [])
-        if not candidates:
-            # A selection is an explicit recorded self-state, not a missing
-            # sentence to invent in the original. Ambiguous/negated/past or
-            # differently worded mentions are not deduplicated by guesswork.
-            require(not any(label in node.value for node in nodes))
+        selected_strength = selected_strengths.get(label, '')
+        if len(candidates) != 1 or (selected_strength and candidates[0][1] != selected_strength):
             if label not in metadata:
                 node_id = f'piece:feeling{len(metadata)+1}'
-                selected_strength = next((s for f, i, l, s in rows
-                                          if f == 'emotion_details' and l == label), '')
                 metadata[label] = (node_id, selected_strength, [])
             node_id, selected_strength, refs = metadata[label]
             evidence_id = f'piece:selection:{field}:{index}'
@@ -1200,9 +1202,7 @@ def _selected_feeling_bindings(source, nodes: tuple[MeaningNode, ...],
                            separators=(',', ':'))))
             bound.append(PieceSelectedFeeling(field, index, label, strength, node_id, evidence_id))
             continue
-        require(len(candidates) == 1)
-        node, written_strength = candidates[0]
-        require(not strength or strength == written_strength)
+        node, _ = candidates[0]
         require(len(node.evidence_ids) == 1 and node.evidence_ids[0] in evidence_by_id)
         ev = evidence_by_id[node.evidence_ids[0]]
         require(ev.field_path in {'memo', 'memo_action'})
@@ -1276,7 +1276,7 @@ def build_piece_source_meaning(source: object, *, expected_owner_id: str,
               else (('original_text', 0, len(source.original_text)),))
     text = source.original_text
     check_existing_detectors(text)
-    sentences = _sentences(text)
+    sentences = _sentences(text, allow_unpunctuated_account=source.saved_original_json is not None)
     aliases = _role_bindings(text)
     role_by_position = _piece_editorial_roles(
         sentences, InputEvidenceRef(kind='saved_input', ref_id=source.saved_input_id))

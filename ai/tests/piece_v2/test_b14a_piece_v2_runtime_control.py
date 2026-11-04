@@ -121,9 +121,12 @@ def wire(monkeypatch):
     import supabase_client
     from datetime import datetime, timezone
     from piece_v2_quota import project_piece_quota, project_piece_plan_capabilities
+    from piece_v2_visual import build_visual_recipe
     state['quota_calls'] = 0
     state['preview'].update(quota=project_piece_quota(server_tier='free', saved_count=0,
         server_now=datetime(2026, 10, 10, tzinfo=timezone.utc)),
+        renderer_version='synthetic-renderer.v1',
+        visual_recipe=build_visual_recipe('short_essay', tier='free', language='en'),
         plan_capabilities=project_piece_plan_capabilities(server_tier='free'))
     async def quota_rpc(name, args, *, timeout):
         assert name == 'piece_read_quota_v2' and args == {'p_owner_user_id': OWNER}

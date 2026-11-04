@@ -107,28 +107,36 @@ def test_unspecified_strength_is_not_inferred_from_a_label(mode):
     assert all(x.strength == '' for x in result.source_meaning.selected_feelings)
 
 
+@pytest.mark.parametrize('text', [
+    '私は強い不安を感じていません。',
+    '私は強い不安を感じていました。',
+    '私は強い不安を感じているかもしれません。',
+    '私は強い不安を感じているなら、休みたい。',
+    '友人は強い不安を感じています。',
+    '私は強い不安を感じています、と友人が言った。',
+    '私は弱い不安を感じています。',
+    '私は不安を感じています。',
+    '私は強い不安を感じています。私は強い不安を感じています。',
+    '私は強い不安を感じています。私は弱い不安を感じています。',
+], ids=['negative', 'past', 'uncertain', 'conditional', 'other_person', 'report',
+        'degree_mismatch', 'degree_missing', 'two_matches', 'two_different_degrees'])
+def test_written_feeling_without_unique_equivalence_retains_private_selection(text):
+    result = generated(record(text))
+    meaning = result.source_meaning
+    context, = meaning.selection_contexts
+    assert result.artifact.body_blocks == (text, INTENT_BODY)
+    assert context not in meaning.graph.nodes
+    assert {binding.node_id for binding in meaning.selected_feelings} == {context.node_id}
+    assert {binding.evidence_id for binding in meaning.selected_feelings} == set(context.evidence_ids)
+
+
 @pytest.mark.parametrize('change', [
-    'negative', 'past', 'uncertain', 'conditional', 'other_person', 'report',
-    'degree_mismatch', 'degree_missing', 'two_matches', 'duplicate_tag', 'duplicate_detail',
-    'other_tag', 'unknown_label', 'unknown_strength', 'self_understanding', 'extra_detail_key',
-    'nonstring_strength', 'two_different_degrees', 'field_fragment',
+    'duplicate_tag', 'duplicate_detail', 'other_tag', 'unknown_label', 'unknown_strength',
+    'self_understanding', 'extra_detail_key', 'nonstring_strength', 'field_fragment',
 ])
-def test_unrepresented_ambiguous_or_nonasserted_feeling_is_not_silently_discarded(change):
+def test_invalid_selection_or_incomplete_source_is_not_silently_discarded(change):
     row = record()
-    text_changes = {
-        'missing': INTENT, 'negative': '私は強い不安を感じていません。',
-        'past': '私は強い不安を感じていました。',
-        'uncertain': '私は強い不安を感じているかもしれません。',
-        'conditional': '私は強い不安を感じているなら、休みたい。',
-        'other_person': '友人は強い不安を感じています。',
-        'report': '私は強い不安を感じています、と友人が言った。',
-        'degree_mismatch': '私は弱い不安を感じています。',
-        'degree_missing': '私は不安を感じています。',
-        'two_matches': '私は強い不安を感じています。私は強い不安を感じています。',
-        'two_different_degrees': '私は強い不安を感じています。私は弱い不安を感じています。',
-        'field_fragment': '私は強い不安を',
-    }
-    if change in text_changes: row['memo'] = text_changes[change]
+    if change == 'field_fragment': row['memo'] = '私は強い不安を'
     elif change == 'duplicate_tag': row['emotions'].append('不安')
     elif change == 'duplicate_detail': row['emotion_details'].append(copy.deepcopy(row['emotion_details'][0]))
     elif change == 'other_tag': row['emotions'] = ['怒り']

@@ -14,6 +14,7 @@ import pytest
 
 from cocolon_meaning_experience_engine.piece_source import _selected_feeling_bindings
 from piece_v2_contract import PieceContractError, canonical_json_bytes
+from test_b05a_piece_saved_original_generation import auth, generated, outcome, row as saved_state, source
 
 MODE = '自己理解'
 THOUGHT = '私は読書を大切にしたい。'
@@ -136,17 +137,26 @@ def test_unit_existing_feeling_strength_aliases_are_unchanged(strength):
     assert _selected_feeling_bindings(source, (node,), (ev,))[0][-1].strength == 'strong'
 
 
-@pytest.mark.parametrize('mutation', ['mismatched_strength', 'mixed_mode', 'wrong_evidence'])
-def test_unit_ordinary_feeling_is_not_silently_dropped(mutation):
+def test_unit_different_written_strength_keeps_separate_selection_evidence():
     row, node, ev = feeling_record()
-    if mutation == 'missing_text': nodes = ()
-    else: nodes = (node,)
-    if mutation == 'mismatched_strength': row['emotion_details'][0]['strength'] = 'weak'
+    row['emotion_details'][0]['strength'] = 'weak'
+    source = SimpleNamespace(saved_original_json=canonical_json_bytes(row))
+    bindings, evidence, contexts = _selected_feeling_bindings(source, (node,), (ev,))
+    context, = contexts
+    assert {b.node_id for b in bindings} == {context.node_id}
+    assert context.node_id != node.node_id
+    assert tuple(e.evidence_id for e in evidence) == context.evidence_ids
+    assert json.loads(context.value)['strength'] == 'weak'
+
+
+@pytest.mark.parametrize('mutation', ['mixed_mode', 'wrong_evidence'])
+def test_unit_invalid_feeling_evidence_is_rejected(mutation):
+    row, node, ev = feeling_record()
     if mutation == 'mixed_mode': row['emotion_details'].append({'type': MODE, 'strength': 'medium'})
     if mutation == 'wrong_evidence': ev.field_path = 'category'
     source = SimpleNamespace(saved_original_json=canonical_json_bytes(row))
     with pytest.raises(PieceContractError) as exc:
-        _selected_feeling_bindings(source, nodes, (ev,))
+        _selected_feeling_bindings(source, (node,), (ev,))
     assert exc.value.detail == 'saved_emotion_meaning_not_yet_supported'
 
 
@@ -189,3 +199,55 @@ def test_integration_mode_keeps_the_real_source_and_existing_canonical_body(vari
     assert meaning.envelope.envelope_id != other.source_meaning.envelope.envelope_id
     with pytest.raises(PieceContractError):
         validate_piece_saved_fields(replace(meaning, saved_snapshot=other_source))
+
+
+@pytest.mark.parametrize('variant', VARIANTS)
+def test_valid_saved_mode_allows_only_the_written_completed_actions(variant):
+    from piece_v2_content_policy import validate_source_meaning_preservation
+
+    row = selection_variant(record(), variant)
+    row['memo'] = '昨日は予定を確認しました。'
+    row['memo_action'] = '今朝は資料を整理しませんでした'
+    result = generated({**saved_state(), 'original': row})
+    assert result.artifact.piece_text == row['memo'] + '\n\n' + row['memo_action']
+    assert result.source_meaning.saved_snapshot.saved_original_json == canonical_json_bytes(row)
+    assert result.source_meaning.selected_feelings == ()
+    assert result.source_meaning.selection_contexts == ()
+    assert [node.value for node in result.source_meaning.graph.nodes] == [row['memo'], row['memo_action']]
+    assert {d.operation for d in result.artifact_plan.duties} == {'KEEP_COMPLETE_SOURCE_CONTEXT'}
+    assert 'declaration' not in result.artifact.eligible_formats
+    validate_source_meaning_preservation(result.source_meaning, result.artifact_plan, result.artifact)
+
+
+@pytest.mark.parametrize('selection,memo,action,reason', [
+    ('none', '資料を確認しました。', None, 'expression_meaning_not_admitted'),
+    ('mixed', '資料を確認しました。', None, 'saved_emotion_meaning_not_yet_supported'),
+    ('wrong_strength', '資料を確認しました。', None, 'saved_emotion_meaning_not_yet_supported'),
+    ('mode', '資料を確認しました。', '明日のこと。', 'expression_meaning_not_admitted'),
+    ('mode', '資料を確認しましたか。', None, 'expression_meaning_not_admitted'),
+    ('mode', 'どの資料を確認しました。', None, 'expression_meaning_not_admitted'),
+    ('mode', '資料を確認しましたが。', None, 'expression_meaning_not_admitted'),
+    ('mode', 'もし資料を確認しました。', None, 'expression_meaning_not_admitted'),
+    ('mode', 'その資料を確認しました。', None, 'unresolved_reference'),
+])
+def test_completed_action_path_requires_verified_mode_and_complete_source(selection, memo, action, reason):
+    row = record()
+    row['memo'], row['memo_action'] = memo, action
+    if selection == 'none':
+        row['emotions'], row['emotion_details'] = [], []
+    elif selection == 'mixed':
+        row['emotions'].append('平穏')
+    elif selection == 'wrong_strength':
+        row['emotion_details'][0]['strength'] = 'strong'
+    result = outcome(source({**saved_state(), 'original': row}))
+    assert result.reason_codes == (reason,)
+    assert result.artifact is None
+
+
+def test_completed_action_mode_cannot_be_claimed_by_raw_source():
+    row = record()
+    row['memo'], row['memo_action'] = '資料を確認しました。', None
+    snapshot = source({**saved_state(), 'original': row})
+    result = outcome(replace(snapshot, saved_original_json=None))
+    assert result.reason_codes == ('expression_meaning_not_admitted',)
+    assert result.artifact is None

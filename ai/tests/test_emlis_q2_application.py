@@ -29,9 +29,10 @@ class Database:
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
         assert json.loads(self.proc.stdout.readline()) == {'ready': True}
 
-    def query(self, sql, params=(), role=None):
+    def query(self, sql, params=(), role=None, *, error_message=False):
         with self.lock:
-            self.proc.stdin.write(json.dumps(dict(sql=sql, params=params, role=role)) + '\n')
+            self.proc.stdin.write(json.dumps(dict(sql=sql, params=params, role=role,
+                                                 errorMessage=error_message)) + '\n')
             self.proc.stdin.flush()
             return json.loads(self.proc.stdout.readline())
 

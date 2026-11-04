@@ -121,7 +121,7 @@ def validate_source_meaning_preservation(meaning, plan, artifact) -> None:
                     tier=tier, requested_format=None)
         raise unavailable('piece_semantic_request_binding')
     from piece_v2_contract import validate_piece_text_binding
-    from piece_v2_generation import _FOCUS
+    from piece_v2_generation import _FOCUS, _is_unpunctuated_account
     from piece_v2_expression import _SELF_TOPIC, _WISH_END
     from cocolon_meaning_experience_engine.piece_source import (
         PieceSourceMeaning, _direct_transitive_expression, _PERSON_NAME_LEFT_BOUNDARY,
@@ -220,6 +220,16 @@ def validate_source_meaning_preservation(meaning, plan, artifact) -> None:
 
     for group, block in zip(plan.block_node_ids, artifact.body_blocks, strict=True):
         sentences = re.findall(r'[^。！？!?]+[。！？!?]', block)
+        covered = ''.join(sentences)
+        final_id = group[-1]
+        if (covered != block and block.startswith(covered)
+                and meaning.saved_snapshot is not None
+                and final_id == ids[-1]
+                and duties[final_id] == 'KEEP_COMPLETE_SOURCE_CONTEXT'
+                and _is_unpunctuated_account(source_nodes[final_id].value)):
+            # Allow the final literal source span to have no stop. The same
+            # exact KEEP check below still rejects edits and extra wording.
+            sentences.append(block[len(covered):])
         if ''.join(sentences) != block or len(sentences) != len(group):
             reject()
         previous_id, previous_author = None, None

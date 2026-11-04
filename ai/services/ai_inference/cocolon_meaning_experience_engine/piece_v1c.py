@@ -21,11 +21,20 @@ from piece_v2_expression import (
 )
 from .contracts import EngineStatus, ExecutionMode
 from .piece_source import (
-    _SIMPLE_NOUN, _calendar_time_adverb_span, _direct_transitive_expression, _PERSON_NAME_LEFT_BOUNDARY, PiecePersonalEvaluation, PieceSourceMeaning, build_piece_source_meaning,
+    _SIMPLE_NOUN, _calendar_time_adverb_span, _direct_transitive_expression, _PERSON_NAME_LEFT_BOUNDARY,
+    _validated_self_insight_mode, PiecePersonalEvaluation, PieceSourceMeaning, build_piece_source_meaning,
     piece_public_role_aliases, validate_piece_nominal_references, validate_piece_saved_fields,
     validate_piece_personal_evaluations, validate_piece_expression_scopes,
     piece_text_nodes,
 )
+
+_WRITTEN_ACCOUNT_END = re.compile(
+    r'(?:です|ます|でした|ました|ません|だった|ない|なかった|かった|しい|た|だ)[。！？!?]$')
+# The overt action noun and written final stop license only literal account
+# retention. The suffix alone, an unfinished subordinate clause, and a
+# question do not establish this form.
+_PLAIN_SURU_ACCOUNT_END = re.compile(
+    r'(?:[一-龥々]{2,}|[一-龥々ァ-ヴ][一-龥々ァ-ヴーぁ-ん]*を)する。$')
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -146,7 +155,7 @@ def compile_piece_artifact_plan(meaning: PieceSourceMeaning) -> PieceArtifactPla
             duties, (tuple(node[0] for node in nodes[:-1]), (nodes[-1][0],)),
             tuple('selection:' + '|'.join(row.alias_refs) for row in meaning.source_selections),
             ('short_essay',))
-    from piece_v2_generation import _UNCERTAIN, _DEICTIC
+    from piece_v2_generation import _UNCERTAIN, _DEICTIC, _is_unpunctuated_account
     graph = meaning.graph
     validate_piece_saved_fields(meaning)
     validate_piece_nominal_references(meaning)
@@ -210,10 +219,22 @@ def compile_piece_artifact_plan(meaning: PieceSourceMeaning) -> PieceArtifactPla
         # A hidden selection cannot turn a nominal fragment into an article.
         # This bounded account arm requires a written finite account/state;
         # it does not add an experiencer, predicate or inferred explanation.
-        account_end = re.compile(r'(?:です|ます|でした|ました|ません|だった|'
-                                 r'ない|なかった|かった|しい|た|だ)[。！？!?]$')
-        if (not meaning.selected_feelings
-                or not any(account_end.search(n.value) for n in text_nodes)):
+        saved = meaning.saved_snapshot
+        feeling_account = meaning.selected_feelings and any(
+            _WRITTEN_ACCOUNT_END.search(node.value)
+            or _PLAIN_SURU_ACCOUNT_END.search(node.value)
+            or (saved is not None and _is_unpunctuated_account(node.value))
+            for node in text_nodes)
+        self_insight_account = False
+        if (saved is not None and not meaning.selected_feelings and all(
+                not node.value.startswith('もし')
+                and _is_unpunctuated_account(node.value.removesuffix('。')) for node in text_nodes)):
+            # Source validation has already rederived the sealed saved fields.
+            # Mode allows this literal action path but supplies no proposition.
+            record = json.loads(saved.saved_original_json)
+            self_insight_account = _validated_self_insight_mode(
+                record['emotions'] or [], record['emotion_details'] or [])
+        if not (feeling_account or self_insight_account):
             raise unavailable('expression_meaning_not_admitted')
     ids = tuple(node.node_id for node in text_nodes)
     # A newly admitted temporal context must not be moved behind a later wish.
