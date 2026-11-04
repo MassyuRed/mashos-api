@@ -270,12 +270,18 @@ def compile_piece_artifact_plan(meaning: PieceSourceMeaning) -> PieceArtifactPla
         pivot = intents[0] if intents else 0
         blocks = (ids[:pivot], ids[pivot:]) if pivot else (ids,)
     if meaning.saved_snapshot is not None:
-        # UI field order is not a temporal/causal relation. Keep each written
-        # field intact as one paragraph; do not front an action-field intention
-        # across thought context or elide an author across the field boundary.
-        field_order = tuple(dict.fromkeys(ev.field_path for ev in meaning.evidence))
-        blocks = tuple(tuple(node.node_id for node, ev in zip(text_nodes, meaning.evidence, strict=True)
-                             if ev.field_path == key) for key in field_order)
+        # Source-written lines and field boundaries own their paragraphs.
+        # Keep their order without inferring a temporal or causal relation.
+        original = meaning.envelope.raw_utf8.decode('utf-8')
+        paragraphs = []
+        previous = None
+        for node, evidence, sentence in zip(text_nodes, meaning.evidence, meaning.sentences, strict=True):
+            if (previous is None or evidence.field_path != previous[0]
+                    or re.search(r'[\r\n]', original[previous[1]:sentence.source_start])):
+                paragraphs.append([])
+            paragraphs[-1].append(node.node_id)
+            previous = (evidence.field_path, sentence.source_end)
+        blocks = tuple(tuple(group) for group in paragraphs)
     declaration = (bool(intents) and len(ids) == 1 and not meaning.expression_scopes
                    and not _UNCERTAIN.search(graph.nodes[0].value))
     # A source-written past wish/value/state is an account of that time,

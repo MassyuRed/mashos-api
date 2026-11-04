@@ -1094,7 +1094,7 @@ def _saved_field_projection(source) -> tuple[tuple[str, int, int], ...]:
         text = record[key]
         if text is None or not text.strip():
             continue
-        # Only the final line of the last nonempty field can omit a stop.
+        # Complete action lines in the last nonempty field may omit stops.
         # An unfinished earlier field cannot borrow the next field.
         _sentences(text, allow_unpunctuated_account=(
             key == 'memo_action' or not (record['memo_action'] or '').strip()))

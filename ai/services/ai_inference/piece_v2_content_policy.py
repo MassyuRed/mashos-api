@@ -166,6 +166,20 @@ def validate_source_meaning_preservation(meaning, plan, artifact) -> None:
                 or meaning.envelope.raw_utf8[evidence.utf8_start:evidence.utf8_end]
                 != node.value.encode('utf-8')):
             reject()
+    if meaning.saved_snapshot is not None:
+        # Independently retain every field/complete-line boundary from the
+        # original spans. A forged plan cannot concatenate those paragraphs.
+        paragraphs = []
+        previous = None
+        for node, evidence in zip(text_nodes, meaning.evidence, strict=True):
+            span = spans[node.node_id]
+            if (previous is None or evidence.field_path != previous[0]
+                    or re.search(r'[\r\n]', original[previous[1]:span.source_start])):
+                paragraphs.append([])
+            paragraphs[-1].append(node.node_id)
+            previous = (evidence.field_path, span.source_end)
+        if plan.block_node_ids != tuple(tuple(group) for group in paragraphs):
+            reject()
 
     # Match source nouns to their already-proved public role, never infer a
     # relationship or replace a detected unsafe token with a generic phrase.
@@ -227,11 +241,10 @@ def validate_source_meaning_preservation(meaning, plan, artifact) -> None:
         final_id = group[-1]
         if (covered != block and block.startswith(covered)
                 and meaning.saved_snapshot is not None
-                and final_id == ids[-1]
                 and duties[final_id] == 'KEEP_COMPLETE_SOURCE_CONTEXT'
                 and _is_unpunctuated_account(source_nodes[final_id].value)):
-            # Allow the final literal source span to have no stop. The same
-            # exact KEEP check below still rejects edits and extra wording.
+            # A source-bound paragraph may end in its complete action line
+            # without a stop. The exact KEEP check still rejects text edits.
             sentences.append(block[len(covered):])
         if ''.join(sentences) != block or len(sentences) != len(group):
             reject()

@@ -347,7 +347,6 @@ def test_independent_review_requires_exact_unpunctuated_source(memo, replacement
     ('「資料を確認しました」', None, 'quoted_discourse_not_yet_supported'),
     ('それを確認しました', None, 'source_line_mid_sentence'),
     ('その資料を確認しました', None, 'unresolved_reference'),
-    ('予定を確認しました\n資料を整理しました', None, 'source_line_mid_sentence'),
     ('予定を確認しました', '資料を整理しました', 'source_line_mid_sentence'),
     ('確認しました。' * 6 + '資料を整理しました', None, 'complete_sentence_required'),
 ])
@@ -443,7 +442,6 @@ def test_saved_lexical_past_action_keeps_exact_written_bytes(memo, action):
     ('資料を送れと言われて書類を読みました', None, 'source_line_mid_sentence'),
     ('「資料を送りました」と伝えました', None, 'quoted_discourse_not_yet_supported'),
     ('その書類を読みました', None, 'unresolved_reference'),
-    ('資料を送りました\n窓を開けました', None, 'source_line_mid_sentence'),
     ('資料を送りました', '書類を確認しました。', 'source_line_mid_sentence'),
     ('私の友人は犯罪者だ。資料を送りました', None, 'existing_safety_detector'),
 ])
@@ -477,6 +475,104 @@ def test_saved_lexical_past_action_respects_mode_and_raw_source_boundaries():
     assert outcome(source(value)).reason_codes == ('expression_meaning_not_admitted',)
     value['original']['emotions'] = ['平穏']
     assert generated(value).artifact.piece_text == text + '。'
+
+
+@pytest.mark.parametrize('mode', ['平穏', '自己理解'])
+@pytest.mark.parametrize('memo,action,blocks', [
+    ('資料を読みました\n窓を閉めませんでした', None, ('資料を読みました', '窓を閉めませんでした')),
+    ('資料を読みました\r\n窓を閉めませんでした', None, ('資料を読みました', '窓を閉めませんでした')),
+    ('資料を読みました\r窓を閉めませんでした', None, ('資料を読みました', '窓を閉めませんでした')),
+    ('資料を読みました\n\n  窓を閉めませんでした  ', None, ('資料を読みました', '窓を閉めませんでした')),
+    ('資料を読みました。\n窓を閉めませんでした', None, ('資料を読みました。', '窓を閉めませんでした')),
+    ('資料を読みました\n窓を閉めませんでした。', None, ('資料を読みました', '窓を閉めませんでした。')),
+    ('予定を確認しました\n資料を整理しました', None, ('予定を確認しました', '資料を整理しました')),
+    ('資料を読みました\n資料を読みました', None, ('資料を読みました', '資料を読みました')),
+    ('資料を読みました。窓を閉めませんでした\n下書きを終えました', None,
+     ('資料を読みました。窓を閉めませんでした', '下書きを終えました')),
+    ('資料を読みました\n窓を閉めませんでした\n下書きを終えました', None,
+     ('資料を読みました', '窓を閉めませんでした', '下書きを終えました')),
+    ('予定を確認しました。', '資料を読みました\n窓を閉めませんでした',
+     ('予定を確認しました。', '資料を読みました', '窓を閉めませんでした')),
+])
+def test_saved_complete_lines_keep_their_own_paragraphs(mode, memo, action, blocks):
+    value = row(memo, action)
+    value['original']['emotions'] = [mode]
+    result = generated(value)
+    assert result.artifact.body_blocks == blocks
+    expected = '\n\n'.join(blocks)
+    assert result.artifact.piece_text == expected
+    assert result.artifact.piece_text_hash == hashlib.sha256(expected.encode()).hexdigest()
+    candidate = run(adapter_module.PieceSavedSourceAdapter(store=Store(value))
+                    .generate_original_candidate_for_development(AUTH, INPUT, source_stage='normal_observation'))
+    assert candidate['piece_text'] == expected
+    assert candidate['content_payload']['body_blocks'] == list(blocks)
+    assert json.loads(result.source_meaning.saved_snapshot.saved_original_json) == value['original']
+
+
+def test_punctuated_saved_paragraphs_keep_the_same_author_and_source_order():
+    value = row('私は本を読む時間を大切にしています。\n\n私は一人で静かに過ごしたい。',
+                '私は今日は外に出たくない。')
+    value['original']['emotions'] = ['平穏']
+    result = generated(value)
+    assert result.artifact.body_blocks == ('私は、本を読む時間を大切にしています。',
+        '私は、一人で静かに過ごしたい。', '私は、今日は外に出たくない。')
+    assert result.artifact_plan.block_node_ids == (('piece:s1',), ('piece:s2',), ('piece:s3',))
+
+
+def test_complete_line_admission_requires_the_bound_saved_original():
+    value = row('資料を読みました\n窓を閉めませんでした', None)
+    value['original']['emotions'] = ['平穏']
+    raw = replace(source(value), saved_original_json=None)
+    result = outcome(raw)
+    assert result.status == EngineStatus.UNAVAILABLE
+    assert result.reason_codes == ('source_line_mid_sentence',)
+    assert result.artifact is None
+
+
+@pytest.mark.parametrize('memo,action', [
+    ('資料を\n窓を閉めました', None),
+    ('窓を閉めたら\n資料を読みました', None),
+    ('資料を読みましたが\n窓を閉めました', None),
+    ('何を読みました\n窓を閉めました', None),
+    ('その資料を読みました\n窓を閉めました', None),
+    ('資料を読みました\nもし窓を閉めました', None),
+    ('資料を読みました', '窓を閉めました'),
+    ('資料を読みました\n窓を閉めました', '下書きを終えました。'),
+    ('資料を読みました\n窓を閉めました\n下書きを終えました\n予定を確認しました', None),
+    ('資料を読みました。窓を閉めました。' * 3 + '下書きを終えました', None),
+    ('資料を読みました\n\n' + '窓を閉めました。' * 50, None),
+])
+def test_complete_lines_do_not_complete_fragments_or_exceed_existing_limits(memo, action):
+    value = row(memo, action)
+    value['original']['emotions'] = ['平穏']
+    result = outcome(source(value))
+    assert result.status == EngineStatus.UNAVAILABLE
+    assert result.artifact is None
+
+
+@pytest.mark.parametrize('mutation', ['merge', 'reverse', 'punctuation', 'negation'])
+def test_independent_review_keeps_complete_line_boundaries_and_exact_predicates(mutation):
+    from piece_v2_content_policy import validate_source_meaning_preservation
+
+    value = row('資料を読みました\n窓を閉めませんでした', None)
+    value['original']['emotions'] = ['平穏']
+    result = generated(value)
+    plan, blocks = result.artifact_plan, result.artifact.body_blocks
+    if mutation == 'merge':
+        plan = replace(plan, block_node_ids=(('piece:s1', 'piece:s2'),))
+        blocks = (''.join(blocks),)
+    elif mutation == 'reverse':
+        plan = replace(plan, block_node_ids=tuple(reversed(plan.block_node_ids)))
+        blocks = tuple(reversed(blocks))
+    elif mutation == 'punctuation':
+        blocks = (blocks[0] + '。', blocks[1])
+    else:
+        blocks = (blocks[0], blocks[1].replace('ませんでした', 'ました'))
+    text = '\n\n'.join(blocks)
+    artifact = replace(result.artifact, body_blocks=blocks, piece_text=text,
+        piece_text_hash=hashlib.sha256(text.encode()).hexdigest())
+    with pytest.raises(ValueError, match='piece_meaning_not_preserved'):
+        validate_source_meaning_preservation(result.source_meaning, plan, artifact)
 
 
 def test_same_literal_in_both_fields_keeps_both_propositions():
@@ -585,8 +681,14 @@ def test_source_changed_during_generation_is_not_returned(monkeypatch, mutation)
 
 
 @pytest.mark.parametrize('ratio', ['4:5', '9:16'])
-def test_both_complete_body_blocks_reach_existing_b9(ratio):
-    candidate = generated().artifact.as_candidate()
+@pytest.mark.parametrize('separate_lines', [False, True])
+def test_complete_body_blocks_reach_existing_b9(ratio, separate_lines):
+    if separate_lines:
+        value = row('資料を読みました\n窓を閉めませんでした\n下書きを終えました', None)
+        value['original']['emotions'] = ['平穏']
+        candidate = generated(value).artifact.as_candidate()
+    else:
+        candidate = generated().artifact.as_candidate()
     class Metrics:
         profile_id = 'synthetic-saved-fields-not-native'
         def graphemes(self, text): return list(text)
@@ -596,7 +698,7 @@ def test_both_complete_body_blocks_reach_existing_b9(ratio):
     recipe = build_visual_recipe('short_essay', tier='premium', aspect_ratio=ratio)
     layout = build_measured_layout(candidate, recipe, canonical_sha256_hex(recipe), Metrics())
     reconstructed = [''.join(row['text'] for row in layout['lines'] if row['block_index'] == index)
-                     for index in range(2)]
+                     for index in range(len(candidate['content_payload']['body_blocks']))]
     assert reconstructed == candidate['content_payload']['body_blocks']
     assert layout['piece_text_hash'] == candidate['piece_text_hash']
     assert layout['native_device_verified'] is False

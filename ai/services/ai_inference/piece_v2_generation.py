@@ -146,18 +146,18 @@ def _sentences(text: str, *, allow_unpunctuated_account: bool = False) -> list[s
         raise unavailable('quoted_discourse_not_yet_supported')
     lines = text.replace('\r\n', '\n').replace('\r', '\n').split('\n')
     nonempty = [line.strip() for line in lines if line.strip()]
-    tail = ''
-    if nonempty and allow_unpunctuated_account and nonempty[-1][-1] not in '。！？!?':
-        tail = re.split(r'[。！？!?]', nonempty[-1])[-1]
-        if not _is_unpunctuated_account(tail):
-            raise unavailable('source_line_mid_sentence')
-    if any(line[-1] not in '。！？!?' for line in (nonempty[:-1] if tail else nonempty)):
-        raise unavailable('source_line_mid_sentence')
-    joined = ''.join(nonempty)
-    pieces = re.findall(r'[^。！？!?]+[。！？!?]', joined)
-    if tail:
-        pieces.append(tail)
-    if not pieces or ''.join(pieces) != joined or len(pieces) > 6:
+    pieces = []
+    for line in nonempty:
+        complete = re.findall(r'[^。！？!?]+[。！？!?]', line)
+        if line[-1] not in '。！？!?':
+            tail = re.split(r'[。！？!?]', line)[-1]
+            if not allow_unpunctuated_account or not _is_unpunctuated_account(tail):
+                raise unavailable('source_line_mid_sentence')
+            complete.append(tail)
+        if ''.join(complete) != line:
+            raise unavailable('complete_sentence_required')
+        pieces.extend(complete)
+    if not pieces or len(pieces) > 6:
         raise unavailable('complete_sentence_required')
     # Horizontal separators belong to the gap between sentences, not to the
     # next sentence's speaker or reference. Keep sentence-internal whitespace
