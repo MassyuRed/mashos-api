@@ -1304,19 +1304,20 @@ def validate_model_written_role_clause_graph(source_set, field, graph):
     return graph
 
 
-def _check_model_action_units(action, p, label):
+def _check_model_action_units(action, p, label, *, units=None, scalar_start=0):
     """Match one complete source-proved action to its unchanged model units."""
     subject = next(((a, b) for name, a, b in p.source_parts if name == 'SELF_TOPIC'), None)
     finite = next(((a, b) for name, a, b in p.source_parts if name == 'FINITE_PREDICATE'), None)
     if subject is None or finite is None:
         raise AnalysisSourceError('analysis_written_role_action_scope_unsupported')
-    roots = [u for u in action.units if u.parent is None]
-    accepted = {action.complete_source_text, label, label[subject[1]:]}
+    units = action.units if units is None else units
+    roots = [u for u in units if u.parent is None]
+    accepted = {action.complete_source_text[scalar_start:], label, label[subject[1]:]}
     nouns = {noun for _, noun in p.arguments}
     if (len(roots) != 1 or roots[0].node_kind != 'ACTION_OR_NONACTION'
             or roots[0].scope_role is not None or roots[0].quote not in accepted
             or any(u is not roots[0] and not (u.parent == roots[0].index
-                and u.scope_role == 'CONTENT_TARGET' and u.quote in nouns) for u in action.units)):
+                and u.scope_role == 'CONTENT_TARGET' and u.quote in nouns) for u in units)):
         raise AnalysisSourceError('analysis_written_role_action_candidate_mismatch')
     self_text = label[subject[0]:subject[1]].split('は', 1)[0]
     finite_text = label[finite[0]:finite[1]]
@@ -1327,16 +1328,59 @@ def _check_model_action_units(action, p, label):
     if (p.polarity == 'negative' and p.predicate_lemma.endswith('する')
             and finite_text == p.predicate_lemma[:-2] + 'しなかった'):
         operators.add('しなかった')
-    for unit in action.units:
+    for unit in units:
         for q in unit.qualifiers:
             actor = (q.kind == 'EXPLICIT_ACTOR' and q.quote in {self_text, self_text + 'は'}
-                and q.evidence.scalar_start == subject[0]
-                and q.evidence.scalar_end == subject[0] + len(q.quote))
+                and q.evidence.scalar_start == scalar_start + subject[0]
+                and q.evidence.scalar_end == scalar_start + subject[0] + len(q.quote))
             negative = (q.kind == 'NEGATION' and p.polarity == 'negative' and q.quote in operators
-                and q.evidence.scalar_end == len(label)
-                and q.evidence.scalar_start >= finite[0])
+                and q.evidence.scalar_end == scalar_start + len(label)
+                and q.evidence.scalar_start >= scalar_start + finite[0])
             if not (actor or negative):
                 raise AnalysisSourceError('analysis_written_role_action_qualifier_mismatch')
+
+
+def _written_role_clause_action_witness(text):
+    """The existing two-clause scope, with an independently explicit SELF act."""
+    label, role = _written_role_clause_witness(text)
+    start = len(label) + 1
+    tail = text[start:].rstrip('。．.')
+    action = _proposition(tail)
+    if (action.actor != 'SELF' or not any(k == 'SELF_TOPIC' for k, _, _ in action.source_parts)):
+        raise AnalysisSourceError('analysis_written_role_action_scope_unsupported')
+    return label, role, tail, action, start
+
+
+def compile_model_written_role_clause_action_graph(source_set, field):
+    """Keep both proved clauses in one original field, with no relation edge.
+
+    Candidate units and their original coordinates remain unchanged. The
+    private ROLE_CLAUSE compiler and saved identity remain role-only.
+    """
+    role = _model_written_role_clause_node(source_set, field)
+    _, _, label, p, start = _written_role_clause_action_witness(field.complete_source_text)
+    graph = compile_observed_graph(source_set)
+    if (len(graph.nodes) != 1 or graph.edges or graph.source_updates or graph.conflicts or graph.annotations):
+        raise AnalysisSourceError('analysis_written_role_action_scope_unsupported')
+    action = graph.nodes[0]
+    if (action.node_kind != 'ACTION_OR_NONACTION' or action.proposition != p
+            or action.visible_label != label or action.record_refs != role.record_refs
+            or len(action.evidence_refs) != 1 or action.update_refs or action.quoted_field is not None):
+        raise AnalysisSourceError('analysis_written_role_action_scope_unsupported')
+    e = action.evidence_refs[0]
+    base = field.evidence
+    if (e.source_envelope_id != base.source_envelope_id or e.field_path != field.field_path
+            or (e.field_utf8_start, e.field_utf8_end, e.field_sha256) !=
+               (base.field_utf8_start, base.field_utf8_end, base.field_sha256)
+            or (e.scalar_start, e.scalar_end) != (start, start + len(label))
+            or (e.utf8_start, e.utf8_end) != (
+                base.field_utf8_start + len(field.complete_source_text[:start].encode('utf-8')),
+                base.field_utf8_start + len(field.complete_source_text[:start + len(label)].encode('utf-8')))
+            or e.literal_sha256 != hashlib.sha256(label.encode('utf-8')).hexdigest()):
+        raise AnalysisSourceError('analysis_written_role_action_binding_invalid')
+    units = tuple(u for u in field.units if u.evidence.scalar_start >= start)
+    _check_model_action_units(field, p, label, units=units, scalar_start=start)
+    return ObservedGraph((role, replace(action, node_ref='n2')), (), _written_role_action_gaps())
 
 
 def compile_model_observed_actions(source_set, fields):

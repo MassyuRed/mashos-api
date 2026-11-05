@@ -113,7 +113,8 @@ def sql_source(monkeypatch):
 
 
 def insert_material(db, mode):
-    original = material(mode)['members'][0]['original']
+    original = material('role' if mode == 'combined' else mode)['members'][0]['original']
+    if mode == 'combined': original['memo'] += '僕は費用を記録した。'
     assert 'code' not in db.query('insert into auth.users values ($1)', [OWNER])
     assert 'code' not in db.query("insert into public.profiles values ($1,'free')", [OWNER])
     assert 'code' not in db.query('insert into public.emotions values ($1,$2,$3,$4,$5,$6,$7,$8)',
@@ -122,7 +123,7 @@ def insert_material(db, mode):
     return original
 
 
-@pytest.mark.parametrize('mode', ['role', 'pair', 'clause'])
+@pytest.mark.parametrize('mode', ['role', 'pair', 'clause', 'combined'])
 def test_real_sql_fresh_source_normal_commit_and_immutable_month(sql_source, monkeypatch, mode):
     db, rpc = sql_source
     original = insert_material(db, mode)
@@ -138,7 +139,7 @@ def test_real_sql_fresh_source_normal_commit_and_immutable_month(sql_source, mon
     first = run(service.ensure_map(OWNER, model_source=source))
     assert first['has_visible_content'] and first['refreshed'] and len(received) == 1
     assert '受付係' in first['content_text'] and '記録された役割' in first['content_text']
-    assert len(first['meta']['nodes']) == (2 if mode == 'pair' else 1)
+    assert len(first['meta']['nodes']) == (2 if mode in {'pair', 'combined'} else 1)
     assert first['map_context']['unparsed_count'] == int(mode == 'clause')
     if mode == 'clause': assert '費用を記録' not in first['content_text']
     raw = db.query('select private_evidence from public.analysis_observed_artifacts where id=$1', [first['report_id']])['rows'][0]['private_evidence']

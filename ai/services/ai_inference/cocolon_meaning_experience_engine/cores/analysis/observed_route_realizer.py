@@ -267,7 +267,8 @@ def _source_prefix(phrase, parts):
 def _safe_label(node, graph, *, owner_scope=None, source_set_ref=None, source_members=(),
                 source_records=(), source_period=None):
     if node.proposition is not None and node.proposition.role_state == 'WRITTEN_PAST_ROLE_CLAUSE':
-        from .intent_compiler import _written_role_clause_witness
+        from .intent_compiler import (_written_role_clause_witness,
+            _written_role_clause_action_witness, _written_role_action_gaps, _written_role_clause_gaps)
         from .source_adapter import AnalysisObservedMapRequest, freeze_analysis_sources, source_field_text
         import hashlib
         if len(source_records) != 1 or source_period is None or len(node.evidence_refs) != 1:
@@ -282,6 +283,35 @@ def _safe_label(node, graph, *, owner_scope=None, source_set_ref=None, source_me
         label, p = _written_role_clause_witness(text)
         e = node.evidence_refs[0]
         base = next(ref for ref in source.evidence if ref.field_path == 'memo')
+        unread = (len(graph.nodes) == 1 and graph.nodes[0] == node
+            and not graph.edges and not graph.source_updates and not graph.conflicts
+            and not graph.annotations and graph.unknown_gaps == _written_role_clause_gaps())
+        complete = False
+        if (not unread and len(graph.nodes) == 2 and graph.nodes[0] == node
+                and node.node_ref == 'n1' and not graph.edges and not graph.source_updates
+                and not graph.conflicts and not graph.annotations
+                and graph.unknown_gaps == _written_role_action_gaps()):
+            _, _, tail, action_p, start = _written_role_clause_action_witness(text)
+            action = graph.nodes[1]
+            ae = action.evidence_refs[0] if len(action.evidence_refs) == 1 else None
+            complete = (action.node_ref == 'n2' and action.node_kind == 'ACTION_OR_NONACTION'
+                and action.proposition == action_p and action.visible_label == tail
+                and action.record_refs == node.record_refs and not action.update_refs
+                and action.quoted_field is None and ae is not None
+                and (action.polarity, action.modality, action.temporal_scope) ==
+                   (action_p.polarity, action_p.modality, action_p.temporal_scope)
+                and action.selected_categories == node.selected_categories
+                and action.selected_category_context == node.selected_category_context
+                and all(type(n) is int for n in (ae.scalar_start, ae.scalar_end,
+                    ae.utf8_start, ae.utf8_end, ae.field_utf8_start, ae.field_utf8_end))
+                and ae.field_path == 'memo' and ae.source_envelope_id == source.envelope.envelope_id
+                and (ae.field_utf8_start, ae.field_utf8_end, ae.field_sha256) ==
+                   (base.field_utf8_start, base.field_utf8_end, base.field_sha256)
+                and (ae.scalar_start, ae.scalar_end) == (start, start + len(tail))
+                and (ae.utf8_start, ae.utf8_end) == (
+                    base.field_utf8_start + len(text[:start].encode('utf-8')),
+                    base.field_utf8_start + len(text[:start + len(tail)].encode('utf-8')))
+                and ae.literal_sha256 == hashlib.sha256(tail.encode('utf-8')).hexdigest())
         if (node.node_kind != 'ROLE' or node.proposition != p or node.visible_label != label
                 or node.record_refs != (source.record_ref,)
                 or (node.polarity, node.modality, node.temporal_scope) !=
@@ -297,8 +327,7 @@ def _safe_label(node, graph, *, owner_scope=None, source_set_ref=None, source_me
                 or (e.utf8_start, e.utf8_end) !=
                    (base.field_utf8_start, base.field_utf8_start + len(label.encode('utf-8')))
                 or e.literal_sha256 != hashlib.sha256(label.encode('utf-8')).hexdigest()
-                or not any(g.missing_scope == 'SOURCE_SCOPE' and node.node_ref in g.between_node_refs
-                    for g in graph.unknown_gaps)):
+                or not (unread or complete)):
             raise AnalysisSourceError('analysis_safe_surface_unavailable')
         return label + '（記録された役割）'
     if node.proposition is not None and node.proposition.role_state == 'WRITTEN_PAST_ROLE':
