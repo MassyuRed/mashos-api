@@ -465,7 +465,7 @@ def _require_model_write_active():
 
 
 async def _ensure_map(user_id, *, ensure=True, force=False, monthly=False, model_source=None):
-    """Save/read the normal map; optional source receives the fresh v4 input.
+    """Save/read the normal map; explicit transport may opt into the v7 input.
 
     The asynchronous source returns AnalysisModelQuotedParentUnitsResponse.
     It is called once only when rebuilding within the existing consumer scope.
@@ -508,7 +508,9 @@ async def _ensure_map(user_id, *, ensure=True, force=False, monthly=False, model
                     from cocolon_meaning_experience_engine.cores.analysis.semantic_admission import (
                         AnalysisModelQuotedParentUnitsResponse, require,
                         require_analysis_model_observed_scope)
-                    prepared = prepare_cumulative_category_units(owner, snapshot, prompt_version='selected_material.v4')
+                    from analysis_model_source import analysis_model_prompt_version
+                    prepared = prepare_cumulative_category_units(owner, snapshot,
+                        prompt_version=analysis_model_prompt_version(model_source))
                     require_analysis_model_observed_scope(prepared.request)
                     response = await _model_response(model_source, prepared)
                     require(type(response) is AnalysisModelQuotedParentUnitsResponse,

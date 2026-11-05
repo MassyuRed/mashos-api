@@ -62,8 +62,9 @@ def select_provider(monkeypatch):
         monkeypatch.setenv(name, value)
 
 
-def test_self_hosted_analysis_sends_exact_existing_material_and_retains_raw():
-    prepared = service.prepare_cumulative_category_units(OWNER, material('pair'), prompt_version='selected_material.v4')
+@pytest.mark.parametrize('profile', ['selected_material.v4', 'selected_material.v7'])
+def test_self_hosted_analysis_sends_exact_existing_material_and_retains_raw(profile):
+    prepared = service.prepare_cumulative_category_units(OWNER, material('pair'), prompt_version=profile)
     raw = ' \n' + synthetic_response(prepared).raw + '\n '
     calls = []
     def handler(request):
@@ -74,13 +75,14 @@ def test_self_hosted_analysis_sends_exact_existing_material_and_retains_raw():
         return httpx.Response(200, json=provider_packet(raw))
     source = model_sources.SelfHostedAnalysisModelSource(
         endpoint=provider_environment()['COCOLON_ANALYSIS_MODEL_ENDPOINT'],
-        model='synthetic-analysis-4b', api_key='synthetic-analysis-private-key', transport=httpx.MockTransport(handler))
+        model='synthetic-analysis-4b', api_key='synthetic-analysis-private-key', transport=httpx.MockTransport(handler), prompt_version=profile)
     response = run(source(prepared))
     assert len(calls) == 1 and response == replace(synthetic_response(prepared),
         raw=raw, raw_sha256=__import__('hashlib').sha256(raw.encode()).hexdigest())
 
 
-def test_real_loopback_https_keeps_certificate_verification_and_exact_model_packet(tmp_path):
+@pytest.mark.parametrize('profile', ['selected_material.v4', 'selected_material.v7'])
+def test_real_loopback_https_keeps_certificate_verification_and_exact_model_packet(tmp_path, profile):
     import importlib.util
     path = Path(__file__).parents[1] / 'tools/serve_emlis_natural_reply.py'
     spec = importlib.util.spec_from_file_location('analysis_https_probe', path)
@@ -92,7 +94,7 @@ def test_real_loopback_https_keeps_certificate_verification_and_exact_model_pack
         '-addext', 'subjectAltName=DNS:localhost,IP:127.0.0.1'],
         check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=15)
     key.chmod(0o600)
-    prepared = service.prepare_cumulative_category_units(OWNER, material('pair'), prompt_version='selected_material.v4')
+    prepared = service.prepare_cumulative_category_units(OWNER, material('pair'), prompt_version=profile)
     raw = synthetic_response(prepared).raw
     calls = []
     def generate(messages, deadline):
@@ -111,7 +113,7 @@ def test_real_loopback_https_keeps_certificate_verification_and_exact_model_pack
     endpoint = f'https://localhost:{server.server_port}/v1/chat/completions'
     try:
         untrusted = model_sources.SelfHostedAnalysisModelSource(endpoint=endpoint,
-            model='synthetic-analysis-4b', api_key='synthetic-private-key')
+            model='synthetic-analysis-4b', api_key='synthetic-private-key', prompt_version=profile)
         with pytest.raises(RuntimeError, match='analysis_model_source_unavailable'):
             run(untrusted(prepared))
         assert calls == []
@@ -120,7 +122,7 @@ def test_real_loopback_https_keeps_certificate_verification_and_exact_model_pack
             assert context.verify_mode == ssl.CERT_REQUIRED and context.check_hostname
             source = model_sources.SelfHostedAnalysisModelSource(endpoint=endpoint,
                 model='synthetic-analysis-4b', api_key='synthetic-private-key',
-                transport=httpx.AsyncHTTPTransport(verify=context))
+                transport=httpx.AsyncHTTPTransport(verify=context), prompt_version=profile)
             return await source(prepared)
         assert run(trusted_call()) == synthetic_response(prepared)
         assert len(calls) == 1
@@ -169,6 +171,81 @@ def test_provider_contract_failure_never_retries_redirects_or_exposes_body(defec
 def test_analysis_provider_configuration_rejects_insecure_or_credential_urls(endpoint):
     with pytest.raises(ValueError, match='analysis_model_configuration_invalid'):
         model_sources.SelfHostedAnalysisModelSource(endpoint=endpoint, model='selected-4b', api_key='private-key')
+
+
+@pytest.mark.parametrize('profile', ['selected_material.v6', 'selected_material.v8', '', None, 7])
+def test_explicit_transport_rejects_undeclared_prompt_profiles(profile):
+    with pytest.raises(ValueError, match='analysis_model_configuration_invalid'):
+        model_sources.SelfHostedAnalysisModelSource(
+            endpoint=provider_environment()['COCOLON_ANALYSIS_MODEL_ENDPOINT'],
+            model='synthetic-analysis-4b', api_key='synthetic-key', prompt_version=profile)
+
+
+@pytest.mark.parametrize('profile,other', [
+    ('selected_material.v4', 'selected_material.v7'),
+    ('selected_material.v7', 'selected_material.v4'),
+])
+def test_explicit_transport_rejects_mismatched_preparation_before_http(profile, other):
+    prepared = service.prepare_cumulative_category_units(OWNER, material('pair'), prompt_version=other)
+    def forbidden(_):
+        raise AssertionError('mismatched prompt reached HTTP')
+    source = model_sources.SelfHostedAnalysisModelSource(
+        endpoint=provider_environment()['COCOLON_ANALYSIS_MODEL_ENDPOINT'],
+        model='synthetic-analysis-4b', api_key='synthetic-key',
+        transport=httpx.MockTransport(forbidden), prompt_version=profile)
+    with pytest.raises(ValueError, match='analysis_quoted_parent_units_binding_invalid'):
+        run(source(prepared))
+
+
+def test_callback_attributes_cannot_select_the_transport_profile():
+    callback = AsyncMock()
+    callback.prompt_version = 'selected_material.v7'
+    assert model_sources.analysis_model_prompt_version(callback) == 'selected_material.v4'
+    assert model_sources.analysis_model_prompt_version(lambda _:None) == 'selected_material.v4'
+    explicit = model_sources.SelfHostedAnalysisModelSource(
+        endpoint=provider_environment()['COCOLON_ANALYSIS_MODEL_ENDPOINT'],
+        model='synthetic-analysis-4b', api_key='synthetic-key', prompt_version='selected_material.v7')
+    assert model_sources.analysis_model_prompt_version(explicit) == 'selected_material.v7'
+    with pytest.raises(AttributeError):
+        explicit.prompt_version = 'selected_material.v4'
+
+
+def test_explicit_v7_transport_uses_normal_ensure_without_replacing_preparation(model_lifecycle, monkeypatch):
+    received = []
+    prepared = service.prepare_cumulative_category_units(OWNER, model_lifecycle['snapshot'],
+        prompt_version='selected_material.v7')
+    raw = ' \n' + synthetic_response(prepared).raw + '\n '
+    def handler(request):
+        received.append(json.loads(request.content))
+        assert received[-1]['messages'] == prepared.messages()
+        return httpx.Response(200, json=provider_packet(raw))
+    source = model_sources.SelfHostedAnalysisModelSource(
+        endpoint=provider_environment()['COCOLON_ANALYSIS_MODEL_ENDPOINT'],
+        model='synthetic-analysis-4b', api_key='synthetic-key',
+        transport=httpx.MockTransport(handler), prompt_version='selected_material.v7')
+    original = service.prepare_cumulative_category_units
+    versions = []
+    def observe(owner, snapshot, *, prompt_version='selected_categories.v1'):
+        versions.append(prompt_version)
+        return original(owner, snapshot, prompt_version=prompt_version)
+    monkeypatch.setattr(service, 'prepare_cumulative_category_units', observe)
+    first = run(service.ensure_map(OWNER, model_source=source))
+    assert first['refreshed'] and len(received) == len(model_lifecycle['commits']) == 1
+    assert versions and set(versions) == {'selected_material.v7'}
+    # This isolated fixture has no SQL capture step; supply its already saved
+    # monthly reference. The actual capture lifecycle has separate SQL coverage.
+    from datetime import datetime, timezone, timedelta
+    month = datetime.now(timezone(timedelta(hours=9))).date().replace(day=1).isoformat()
+    model_lifecycle['row'].update(snapshot_month=month, captured_at=model_lifecycle['snapshot']['now'])
+    with patch.object(model_sources, 'analysis_model_prompt_version', side_effect=AssertionError('saved profile lookup')), \
+         patch.object(service, 'prepare_cumulative_category_units', side_effect=AssertionError('saved preparation')), \
+         patch.object(model_sources.SelfHostedAnalysisModelSource, '__call__', side_effect=AssertionError('saved HTTP')):
+        current = run(service.ensure_map(OWNER, model_source=source))
+        monthly = run(service.ensure_map(OWNER, monthly=True, force=True, model_source=source))
+        readonly = run(service.ensure_map(OWNER, ensure=False, force=True, model_source=source))
+    for saved in (current, monthly, readonly):
+        assert saved['report_id'] == first['report_id'] and saved['meta'] == first['meta']
+        assert saved['content_text'] == first['content_text'] and not saved['refreshed']
 
 
 @pytest.mark.parametrize('selector', ['', 'off'])

@@ -15,12 +15,17 @@ import httpx
 
 SELECTOR = 'self_hosted.v1'
 MAX_RESPONSE_BYTES = 262144
+DEFAULT_PROMPT_VERSION = 'selected_material.v4'
+EXPLICIT_PROMPT_VERSIONS = frozenset({DEFAULT_PROMPT_VERSION, 'selected_material.v7'})
 
 
 class SelfHostedAnalysisModelSource:
-    def __init__(self, *, endpoint, model, api_key, transport=None):
+    def __init__(self, *, endpoint, model, api_key, transport=None, prompt_version=DEFAULT_PROMPT_VERSION):
         if any(type(v) is not str for v in (endpoint, model, api_key)):
             raise ValueError('analysis_model_configuration_invalid')
+        if type(prompt_version) is not str or prompt_version not in EXPLICIT_PROMPT_VERSIONS:
+            raise ValueError('analysis_model_configuration_invalid')
+        self._prompt_version = prompt_version
         parsed = urlsplit(endpoint)
         if (parsed.scheme != 'https' or not parsed.hostname or parsed.username or parsed.password
                 or parsed.query or parsed.fragment or not parsed.path.endswith('/chat/completions')
@@ -30,12 +35,16 @@ class SelfHostedAnalysisModelSource:
         self.endpoint, self.model, self._api_key = endpoint, model, api_key
         self._transport = transport
 
+    @property
+    def prompt_version(self):
+        return self._prompt_version
+
     async def __call__(self, prepared):
         from cocolon_meaning_experience_engine.cores.analysis.semantic_admission import (
             AnalysisModelQuotedParentUnitsInput, AnalysisModelQuotedParentUnitsResponse,
             digest, require, require_analysis_model_observed_scope)
         require(type(prepared) is AnalysisModelQuotedParentUnitsInput
-            and prepared.response is None and prepared.prompt_version == 'selected_material.v4',
+            and prepared.response is None and prepared.prompt_version == self.prompt_version,
             'analysis_quoted_parent_units_binding_invalid')
         require_analysis_model_observed_scope(prepared.request)
         messages = prepared.messages()
@@ -75,6 +84,16 @@ class SelfHostedAnalysisModelSource:
             raise TimeoutError('analysis_model_source_timeout') from None
         except (httpx.HTTPError, httpx.InvalidURL, ValueError, TypeError, KeyError, UnicodeError, RuntimeError):
             raise RuntimeError('analysis_model_source_unavailable') from None
+
+
+def analysis_model_prompt_version(source):
+    """Only an explicitly constructed transport opts in; callbacks stay v4.
+
+    Avoid generic attribute lookup: AsyncMock and other callback objects may
+    synthesize attributes that are not a declared transport configuration.
+    The application factory and its environment/settings identity stay v4.
+    """
+    return source.prompt_version if type(source) is SelfHostedAnalysisModelSource else DEFAULT_PROMPT_VERSION
 
 
 def _settings():
