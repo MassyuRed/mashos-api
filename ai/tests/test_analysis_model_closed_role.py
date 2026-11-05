@@ -73,4 +73,12 @@ def test_uncertain_role_keeps_only_action_but_proved_negative_role_is_now_includ
 def test_closed_role_never_supplies_an_actor_to_an_omitted_action():
     snap=sample();snap['members'][0]['original'].update(memo='僕の役割は案内係だった。',memo_action='費用を記録した。')
     _,_,a,c=build(snap)
-    assert a is None and c['mapped_count']==0 and c['unparsed_count']==1
+    normal,nc=service.build_cumulative_map(OWNER,snap)
+    assert a is not None and a.graph==normal.graph and c==nc
+    assert c['mapped_count']==c['unparsed_count']==1
+    node,=a.graph.nodes
+    assert node.node_kind=='ACTION_OR_NONACTION' and node.proposition.actor=='UNSPECIFIED'
+    assert node.visible_label=='費用を記録した' and not a.graph.edges
+    assert any(g.missing_scope=='SOURCE_SCOPE' for g in a.graph.unknown_gaps)
+    text=a.safe_text_projection(authenticated_owner_scope=OWNER)['text']
+    assert '誰の行動かは未確定' in text and '案内係' not in text
