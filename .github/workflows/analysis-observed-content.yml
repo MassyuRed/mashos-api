@@ -11,6 +11,7 @@ name: Analysis observed content
       - ai/services/ai_inference/emlis_ai_grounded_observation_plan.py
       - ai/services/ai_inference/analysis_observed_service.py
       - ai/services/ai_inference/analysis_cumulative_service.py
+      - ai/services/ai_inference/analysis_model_source.py
       - ai/services/ai_inference/api_self_structure*.py
       - ai/services/ai_inference/astor_self_structure_report.py
       - ai/services/ai_inference/api_cron_distribution.py

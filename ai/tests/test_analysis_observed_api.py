@@ -160,6 +160,46 @@ class AnalysisApiTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(response.status_code, 401)
         self.assertEqual(self.calls, [])
 
+    async def test_normal_http_uses_opt_in_analysis_provider_and_keeps_saved_reads_on_config_loss(self):
+        import analysis_model_source
+        from test_analysis_cumulative_model_source import provider_environment, provider_packet, synthetic_response
+        from test_analysis_model_observed_roles import material
+        self.source = material('pair')
+        received = []
+        real_client = httpx.AsyncClient
+        def handler(request):
+            received.append(request)
+            prepared = service.prepare_cumulative_category_units(OWNER, self.source, prompt_version='selected_material.v4')
+            return httpx.Response(200, json=provider_packet(synthetic_response(prepared).raw))
+        with patch.dict(os.environ, provider_environment()), patch.object(analysis_model_source.httpx,
+                'AsyncClient', side_effect=lambda **kw: real_client(**{**kw, 'transport':httpx.MockTransport(handler)})):
+            first = await self.get('/self-structure/latest')
+            self.assertEqual(first.status_code, 200, first.text)
+            self.assertTrue(first.json()['refreshed'])
+            self.assertIn('受付係', first.json()['content_text'])
+            self.assertEqual(len(first.json()['meta']['nodes']), 2)
+            self.assertEqual(len(received), 1)
+            with patch.dict(os.environ, COCOLON_ANALYSIS_MODEL_API_KEY=''):
+                for saved in (await self.get('/self-structure/latest'),
+                        await self.get('/self-structure/latest?ensure=false'), await self.monthly({'force':True})):
+                    self.assertEqual(saved.status_code, 200, saved.text)
+                    self.assertEqual(saved.json()['content_text'], first.json()['content_text'])
+                    self.assertEqual(saved.json()['meta'], first.json()['meta'])
+                failure = await self.get('/self-structure/latest?force=true')
+                self.assertEqual(failure.status_code, 503, failure.text)
+                self.assertNotIn('synthetic-analysis-private-key', failure.text)
+            self.assertEqual(len(received), 1)
+            self.assertEqual(len(self.saved), 1)
+
+    async def test_invalid_auth_does_not_resolve_an_enabled_model_provider(self):
+        from test_analysis_cumulative_model_source import provider_environment
+        import analysis_model_source
+        with patch.dict(os.environ, provider_environment()), patch.object(analysis_model_source,
+                'application_analysis_model_source', side_effect=AssertionError('provider before authentication')):
+            result = await self.client.get('/self-structure/latest', headers={'Authorization':'Bearer invalid'})
+        self.assertEqual(result.status_code, 401)
+        self.assertEqual(self.calls, [])
+
     async def test_storage_failure_and_generation_failure_do_not_become_empty_or_legacy(self):
         with patch.object(service, '_rpc', AsyncMock(side_effect=HTTPException(503, 'analysis_storage_unavailable'))):
             response = await self.get('/self-structure/latest')

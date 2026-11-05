@@ -409,6 +409,9 @@ def build_cumulative_map(owner, snapshot, *, model_input=None):
 async def ensure_map(user_id, *, ensure=True, force=False, monthly=False, model_source=None):
     """Coalesce identical overlapping explicit model updates in this process."""
     owner = _owner(user_id)
+    if model_source is None and ensure and observed_mode() == 'development':
+        from analysis_model_source import application_analysis_model_source
+        model_source = application_analysis_model_source()
     if model_source is None or not ensure or observed_mode() != 'development':
         return await _ensure_map(owner, ensure=ensure, force=force,
             monthly=monthly, model_source=model_source)
@@ -518,6 +521,11 @@ async def _ensure_map(user_id, *, ensure=True, force=False, monthly=False, model
                 return _response(None, coverage=coverage)
             if model_source is not None:
                 _require_model_write_active()
+                from analysis_model_source import require_current_analysis_model_source
+                try:
+                    require_current_analysis_model_source(model_source)
+                except RuntimeError:
+                    raise HTTPException(503, 'analysis_model_source_unavailable') from None
             projection = artifact.safe_projection(authenticated_owner_scope=owner)
             text = artifact.safe_text_projection(authenticated_owner_scope=owner)['text']
             private = private_storage_evidence(artifact)

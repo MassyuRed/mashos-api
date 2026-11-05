@@ -13,6 +13,7 @@ import httpx
 import pytest
 
 import analysis_cumulative_service as service
+import analysis_model_source as model_sources
 from test_analysis_cumulative import OWNER, source_snapshot
 from test_analysis_model_observed_roles import material
 from test_analysis_model_quoted_parent_units import call
@@ -30,6 +31,162 @@ def synthetic_response(prepared):
 
 def run(awaitable):
     return asyncio.run(awaitable)
+
+
+def provider_environment():
+    return dict(COCOLON_ANALYSIS_MODEL_SOURCE='self_hosted.v1',
+        COCOLON_ANALYSIS_MODEL_ENDPOINT='https://synthetic-analysis.invalid/v1/chat/completions',
+        COCOLON_ANALYSIS_MODEL='synthetic-analysis-4b',
+        COCOLON_ANALYSIS_MODEL_API_KEY='synthetic-analysis-private-key')
+
+
+def provider_packet(raw, **changes):
+    packet = dict(model='synthetic-analysis-4b', choices=[dict(finish_reason='stop',
+        message=dict(role='assistant', content=raw))])
+    packet.update(changes)
+    return packet
+
+
+def mock_provider(monkeypatch, handler):
+    real_client = httpx.AsyncClient
+    monkeypatch.setattr(model_sources.httpx, 'AsyncClient',
+        lambda **kwargs: real_client(**{**kwargs, 'transport': httpx.MockTransport(handler)}))
+
+
+def select_provider(monkeypatch):
+    for name, value in provider_environment().items():
+        monkeypatch.setenv(name, value)
+
+
+def test_self_hosted_analysis_sends_exact_existing_material_and_retains_raw():
+    prepared = service.prepare_cumulative_category_units(OWNER, material('pair'), prompt_version='selected_material.v4')
+    raw = ' \n' + synthetic_response(prepared).raw + '\n '
+    calls = []
+    def handler(request):
+        calls.append(request)
+        assert request.headers['authorization'] == 'Bearer synthetic-analysis-private-key'
+        assert json.loads(request.content) == dict(model='synthetic-analysis-4b', messages=prepared.messages(),
+            temperature=0, max_tokens=2048, stream=False, chat_template_kwargs={'enable_thinking': False})
+        return httpx.Response(200, json=provider_packet(raw))
+    source = model_sources.SelfHostedAnalysisModelSource(
+        endpoint=provider_environment()['COCOLON_ANALYSIS_MODEL_ENDPOINT'],
+        model='synthetic-analysis-4b', api_key='synthetic-analysis-private-key', transport=httpx.MockTransport(handler))
+    response = run(source(prepared))
+    assert len(calls) == 1 and response == replace(synthetic_response(prepared),
+        raw=raw, raw_sha256=__import__('hashlib').sha256(raw.encode()).hexdigest())
+
+
+@pytest.mark.parametrize('defect', ['redirect', 'unauthorized', 'busy', 'unavailable', 'model', 'choices',
+    'finish', 'role', 'tool', 'function', 'reasoning', 'content', 'json', 'oversize', 'timeout', 'connection'])
+def test_provider_contract_failure_never_retries_redirects_or_exposes_body(defect):
+    prepared = service.prepare_cumulative_category_units(OWNER, material('pair'), prompt_version='selected_material.v4')
+    calls = []
+    def handler(request):
+        calls.append(request)
+        if defect == 'timeout': raise httpx.ReadTimeout('private provider address')
+        if defect == 'connection': raise httpx.ConnectError('private provider address')
+        packet = provider_packet(synthetic_response(prepared).raw)
+        if defect in {'redirect', 'unauthorized', 'busy', 'unavailable'}:
+            return httpx.Response({'redirect':302,'unauthorized':401,'busy':429,'unavailable':503}[defect],
+                content=b'private provider failure', headers={'Location':'https://other.invalid/'})
+        if defect == 'model': packet['model'] = 'unselected-model'
+        if defect == 'choices': packet['choices'] *= 2
+        if defect == 'finish': packet['choices'][0]['finish_reason'] = 'length'
+        if defect == 'role': packet['choices'][0]['message']['role'] = 'user'
+        if defect == 'tool': packet['choices'][0]['message']['tool_calls'] = [{'private':'tool'}]
+        if defect == 'function': packet['choices'][0]['message']['function_call'] = {'private':'tool'}
+        if defect == 'reasoning': packet['choices'][0]['message']['reasoning_content'] = 'private reasoning'
+        if defect == 'content': packet['choices'][0]['message']['content'] = None
+        if defect == 'json': return httpx.Response(200, content=b'private malformed JSON')
+        if defect == 'oversize': return httpx.Response(200, content=b'x' * (model_sources.MAX_RESPONSE_BYTES+1))
+        return httpx.Response(200, json=packet)
+    source = model_sources.SelfHostedAnalysisModelSource(endpoint=provider_environment()['COCOLON_ANALYSIS_MODEL_ENDPOINT'],
+        model='synthetic-analysis-4b', api_key='synthetic-analysis-private-key', transport=httpx.MockTransport(handler))
+    with pytest.raises(TimeoutError if defect == 'timeout' else RuntimeError) as error:
+        run(source(prepared))
+    assert str(error.value) == ('analysis_model_source_timeout' if defect == 'timeout' else 'analysis_model_source_unavailable')
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize('endpoint', ['http://synthetic.invalid/v1/chat/completions',
+    'https://user:password@synthetic.invalid/v1/chat/completions',
+    'https://synthetic.invalid/v1/chat/completions?key=private',
+    'https://synthetic.invalid/v1/chat/completions#private', 'https://synthetic.invalid/other', None])
+def test_analysis_provider_configuration_rejects_insecure_or_credential_urls(endpoint):
+    with pytest.raises(ValueError, match='analysis_model_configuration_invalid'):
+        model_sources.SelfHostedAnalysisModelSource(endpoint=endpoint, model='selected-4b', api_key='private-key')
+
+
+@pytest.mark.parametrize('selector', ['', 'off'])
+def test_factory_off_never_reuses_emlis_provider(monkeypatch, selector):
+    monkeypatch.setenv('COCOLON_ANALYSIS_MODEL_SOURCE', selector)
+    monkeypatch.setenv('EMLIS_NATURAL_REPLY_ENDPOINT', 'https://emlis.invalid/v1/chat/completions')
+    monkeypatch.setenv('EMLIS_NATURAL_REPLY_API_KEY', 'private-emlis-key')
+    assert model_sources.application_analysis_model_source() is None
+
+
+def test_implicit_application_updates_share_factory_identity_and_keep_saved_reads(model_lifecycle, monkeypatch):
+    select_provider(monkeypatch)
+    received = []
+    async def handler(request):
+        received.append(json.loads(request.content))
+        await asyncio.sleep(0)
+        prepared = service.prepare_cumulative_category_units(OWNER, model_lifecycle['snapshot'], prompt_version='selected_material.v4')
+        return httpx.Response(200, json=provider_packet(synthetic_response(prepared).raw))
+    mock_provider(monkeypatch, handler)
+    source = model_sources.application_analysis_model_source()
+    assert source is model_sources.application_analysis_model_source()
+    async def scenario():
+        results = await asyncio.gather(*(service.ensure_map(OWNER, force=True) for _ in range(3)))
+        assert results[0] == results[1] == results[2]
+        assert len(received) == len(model_lifecycle['commits']) == 1
+        monkeypatch.delenv('COCOLON_ANALYSIS_MODEL_API_KEY')
+        assert source is not model_sources.application_analysis_model_source()
+        saved = await service.ensure_map(OWNER)
+        assert saved['meta'] == results[0]['meta'] and saved['content_text'] == results[0]['content_text']
+        with pytest.raises(HTTPException) as error:
+            await service.ensure_map(OWNER, force=True)
+        assert error.value.status_code == 503 and len(received) == 1 and len(model_lifecycle['commits']) == 1
+    run(scenario())
+
+
+@pytest.mark.parametrize('change', ['selector', 'key', 'model', 'after_build'])
+def test_changed_application_configuration_rejects_pending_model_save(model_lifecycle, monkeypatch, change):
+    select_provider(monkeypatch)
+    def alter():
+        monkeypatch.setenv({'selector':'COCOLON_ANALYSIS_MODEL_SOURCE','key':'COCOLON_ANALYSIS_MODEL_API_KEY',
+            'model':'COCOLON_ANALYSIS_MODEL','after_build':'COCOLON_ANALYSIS_MODEL_SOURCE'}[change],
+            'off' if change in {'selector','after_build'} else 'changed-private-value')
+    def handler(request):
+        prepared = service.prepare_cumulative_category_units(OWNER, model_lifecycle['snapshot'], prompt_version='selected_material.v4')
+        if change != 'after_build': alter()
+        return httpx.Response(200, json=provider_packet(synthetic_response(prepared).raw))
+    mock_provider(monkeypatch, handler)
+    if change == 'after_build':
+        original_build = service.build_cumulative_map
+        def build(*args, **kwargs):
+            result = original_build(*args, **kwargs)
+            alter()
+            return result
+        monkeypatch.setattr(service, 'build_cumulative_map', build)
+    with pytest.raises(HTTPException) as error:
+        run(service.ensure_map(OWNER))
+    assert error.value.status_code == 503 and not model_lifecycle['commits']
+
+
+@pytest.mark.parametrize('selector', ['unsupported.v1', 'self_hosted.v1'])
+def test_bad_enabled_configuration_cannot_fall_back_to_finite_map(model_lifecycle, monkeypatch, selector):
+    select_provider(monkeypatch)
+    monkeypatch.setenv('COCOLON_ANALYSIS_MODEL_SOURCE', selector)
+    if selector == 'self_hosted.v1':
+        monkeypatch.delenv('COCOLON_ANALYSIS_MODEL_API_KEY')
+    with pytest.raises(HTTPException) as error:
+        run(service.ensure_map(OWNER))
+    assert error.value.status_code == 503 and not model_lifecycle['commits']
+    # Explicit callback remains independent from the configured application source.
+    source = AsyncMock(side_effect=lambda prepared: synthetic_response(prepared))
+    assert run(service.ensure_map(OWNER, model_source=source))['refreshed']
+    source.assert_awaited_once()
 
 
 @pytest.mark.parametrize('defect', ['request', 'messages', 'raw', 'hash', 'finish',
@@ -838,6 +995,36 @@ def test_real_sql_overlapping_force_calls_share_one_save_and_month_snapshot(sql_
         month = await service.ensure_map(OWNER, monthly=True, force=True, model_source=forbidden)
         assert month['report_id'] == values[0]['report_id'] and month['meta'] == values[0]['meta']
         forbidden.assert_not_awaited()
+    run(scenario())
+
+
+def test_real_sql_implicit_configured_http_source_uses_latest_bound_input(sql_source, monkeypatch):
+    db, _ = sql_source
+    insert_material(db, 'pair')
+    select_provider(monkeypatch)
+    original_prepare = service.prepare_cumulative_category_units
+    prepared_inputs, received = [], []
+    def prepare(*args, **kwargs):
+        value = original_prepare(*args, **kwargs)
+        prepared_inputs.append(value)
+        return value
+    monkeypatch.setattr(service, 'prepare_cumulative_category_units', prepare)
+    async def handler(request):
+        received.append(json.loads(request.content))
+        prepared = prepared_inputs[0]
+        assert received[0]['messages'] == prepared.messages()
+        return httpx.Response(200, json=provider_packet(synthetic_response(prepared).raw))
+    mock_provider(monkeypatch, handler)
+    async def scenario():
+        values = await asyncio.gather(*(service.ensure_map(OWNER, force=True) for _ in range(3)))
+        assert values[0] == values[1] == values[2] and len(received) == 1
+        assert values[0]['refreshed'] and values[0]['map_context']['mapped_count'] == 1
+        assert db.query('select count(*) as n from public.analysis_observed_artifacts')['rows'][0]['n'] == 1
+        assert db.query('select count(*) as n from public.analysis_cumulative_months')['rows'][0]['n'] == 1
+        monkeypatch.setenv('COCOLON_ANALYSIS_MODEL_API_KEY', '')
+        saved = await service.ensure_map(OWNER, monthly=True, force=True)
+        assert saved['meta'] == values[0]['meta'] and saved['content_text'] == values[0]['content_text']
+        assert len(received) == 1
     run(scenario())
 
 
