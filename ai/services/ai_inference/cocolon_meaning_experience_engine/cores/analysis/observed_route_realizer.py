@@ -271,6 +271,67 @@ def _safe_label(node, graph, *, owner_scope=None, source_set_ref=None, source_me
             _written_role_clause_action_witness, _written_role_action_gaps, _written_role_clause_gaps)
         from .source_adapter import AnalysisObservedMapRequest, freeze_analysis_sources, source_field_text
         import hashlib
+        if len(source_records) > 1:
+            # Verify the full artifact first. Then reuse exactly the old
+            # one-record clause proof against its own original and graph;
+            # another record cannot close this clause or supply its action.
+            if source_period is None:
+                raise AnalysisSourceError('analysis_safe_surface_unavailable')
+            frozen = freeze_analysis_sources(AnalysisObservedMapRequest('written-role-clause-surface',
+                owner_scope, *source_period, tuple(source_records), selected_category_context=True))
+            if (frozen.source_set_ref != source_set_ref or frozen.members != source_members
+                    or len(node.record_refs) != 1 or graph.source_updates or graph.conflicts or graph.annotations):
+                raise AnalysisSourceError('analysis_safe_surface_unavailable')
+            records = tuple(r for r in source_records if r.saved_record_ref == node.record_refs[0])
+            local = freeze_analysis_sources(AnalysisObservedMapRequest('written-role-clause-surface',
+                owner_scope, *source_period, records, selected_category_context=True))
+            envelopes = {s.envelope.envelope_id for s in local.sources}
+            nodes = []
+            for candidate in graph.nodes:
+                if node.record_refs[0] not in candidate.record_refs:
+                    continue
+                evidence = tuple(e for e in candidate.evidence_refs if e.source_envelope_id in envelopes)
+                candidate = replace(candidate, record_refs=node.record_refs, evidence_refs=evidence)
+                if candidate.node_kind == 'ACTION_OR_NONACTION' and len(evidence) == 1:
+                    source = next(s for s in local.sources if s.envelope.envelope_id == evidence[0].source_envelope_id)
+                    text = source_field_text(source, evidence[0].field_path)
+                    label = text[evidence[0].scalar_start:evidence[0].scalar_end]
+                    proposition = _proposition(label)
+                    if (proposition is None or candidate.proposition is None
+                            or _proposition_meaning(proposition) != _proposition_meaning(candidate.proposition)
+                            or (proposition.polarity, proposition.modality, proposition.temporal_scope) !=
+                               (candidate.polarity, candidate.modality, candidate.temporal_scope)):
+                        raise AnalysisSourceError('analysis_safe_surface_unavailable')
+                    candidate = replace(candidate, visible_label=label, proposition=proposition)
+                nodes.append(candidate)
+            nodes = tuple(sorted(nodes, key=lambda n: n.evidence_refs[0].scalar_start
+                if len(n.evidence_refs) == 1 else -1))
+            refs = {n.node_ref: 'n' + str(i) for i, n in enumerate(nodes, 1)}
+            if any(set(e.endpoint_refs) & refs.keys() and not set(e.endpoint_refs) <= refs.keys()
+                    for e in graph.edges):
+                raise AnalysisSourceError('analysis_safe_surface_unavailable')
+            if any(node.node_ref in g.between_node_refs and not set(g.between_node_refs) <= refs.keys()
+                    for g in graph.unknown_gaps):
+                raise AnalysisSourceError('analysis_safe_surface_unavailable')
+            edges = tuple(e for e in graph.edges if set(e.endpoint_refs) <= refs.keys())
+            # A canonically shared action may also anchor another record's
+            # gaps. Only the unique clause ROLE anchors this local proof.
+            represented = {r for n in graph.nodes for r in n.record_refs}
+            global_unread = (graph.unknown_gaps[-1] if graph.unknown_gaps
+                and any(m.saved_record_ref not in represented for m in source_members)
+                and graph.unknown_gaps[-1].missing_scope == 'SOURCE_SCOPE'
+                and graph.unknown_gaps[-1].reason_code == 'UNSUPPORTED_OR_UNCERTAIN_SOURCE_SCOPE'
+                and graph.unknown_gaps[-1].between_node_refs == (graph.nodes[0].node_ref,) else None)
+            gaps = tuple(g for g in graph.unknown_gaps if node.node_ref in g.between_node_refs
+                and g is not global_unread)
+            graph = ObservedGraph(tuple(replace(n, node_ref=refs[n.node_ref]) for n in nodes),
+                tuple(replace(e, edge_ref='e' + str(i), endpoint_refs=tuple(refs[r] for r in e.endpoint_refs))
+                    for i, e in enumerate(edges, 1)),
+                tuple(replace(g, gap_ref='g' + str(i), between_node_refs=tuple(refs[r] for r in g.between_node_refs))
+                    for i, g in enumerate(gaps, 1)))
+            return _safe_label(replace(node, node_ref=refs[node.node_ref]), graph,
+                owner_scope=owner_scope, source_set_ref=local.source_set_ref,
+                source_members=local.members, source_records=records, source_period=source_period)
         if len(source_records) != 1 or source_period is None or len(node.evidence_refs) != 1:
             raise AnalysisSourceError('analysis_safe_surface_unavailable')
         frozen = freeze_analysis_sources(AnalysisObservedMapRequest('written-role-clause-surface',

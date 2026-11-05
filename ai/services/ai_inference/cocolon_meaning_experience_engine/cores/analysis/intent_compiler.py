@@ -2702,6 +2702,20 @@ def _active_sources(source_set):
     return tuple(views), excluded, tuple(updates), replacement_updates
 
 
+def _observed_claim_signature(kind, proposition, label, polarity, modality, time,
+        evidence, ordered_evidence, envelope_id, categories):
+    """Canonical finite aggregation identity, shared by admitted model nodes."""
+    meaning = _proposition_meaning(proposition) if proposition else label
+    occurrence_scope = (evidence.evidence_id if evidence.evidence_id in ordered_evidence
+        or (proposition and (proposition.sequence_marker
+            or (proposition.actor == 'UNSPECIFIED' and kind == 'ACTION_OR_NONACTION'))) else None)
+    day_scope = ((envelope_id, proposition.relative_day)
+        if proposition and proposition.relative_day else None)
+    occasion_scope = (envelope_id if proposition
+        and 'THIS_OCCASION' in proposition.written_modifiers else None)
+    return (kind, meaning, polarity, modality, time, occurrence_scope, day_scope, occasion_scope, categories)
+
+
 def compile_observed_graph(source_set: AnalysisSourceSet) -> ObservedGraph:
     active_sources, excluded, updates, replacement_updates = _active_sources(source_set)
     nodes, edges, gaps = [], [], []
@@ -2758,26 +2772,18 @@ def compile_observed_graph(source_set: AnalysisSourceSet) -> ObservedGraph:
             # Exact grammatical equivalence, not synonymous/topic matching.
             # A polite restatement or reordered cases is still one claim;
             # preserve each source witness without inventing a cooccurrence.
-            meaning = _proposition_meaning(proposition) if proposition else label
             # A sequence is about occurrences: collapsing A -> B -> A by
             # proposition would create a false cycle or erase repeated A.
             # Ordinary, unqualified claims retain their existing aggregation.
             # An omitted action actor is not a shared person identity:
             # retain each written occurrence even without an order marker.
-            occurrence_scope = (evidence.evidence_id if evidence.evidence_id in ordered_evidence
-                or (proposition and (proposition.sequence_marker
-                    or (proposition.actor == 'UNSPECIFIED'
-                        and kind == 'ACTION_OR_NONACTION'))) else None)
             # A relative day is anchored to its own input/answer, not to the
             # viewing date or the parent's created_at. Only equivalent claims
             # in that same source and day retain ordinary aggregation.
-            day_scope = ((source.envelope.envelope_id, proposition.relative_day)
-                         if proposition and proposition.relative_day else None)
             # Each source's 今回 names its own occasion, even with a written SELF.
-            occasion_scope = (source.envelope.envelope_id if proposition
-                and 'THIS_OCCASION' in proposition.written_modifiers else None)
             categories = selected_categories(source_set, source.record_ref)
-            signature = (kind, meaning, polarity, modality, time, occurrence_scope, day_scope, occasion_scope, categories)
+            signature = _observed_claim_signature(kind, proposition, label, polarity, modality, time,
+                evidence, ordered_evidence, source.envelope.envelope_id, categories)
             index = by_signature.get(signature)
             if index is None:
                 index = len(nodes)

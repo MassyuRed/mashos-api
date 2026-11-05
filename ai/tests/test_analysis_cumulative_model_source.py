@@ -19,7 +19,7 @@ from test_analysis_model_quoted_parent_units import call
 def synthetic_response(prepared):
     fields = json.loads(prepared.messages()[1]['content'])['fields']
     packet = dict(fields=[dict(field=f['field'], units=[dict(quote=text,
-        node_kind='ROLE' if 'の役割は' in text else 'ACTION_OR_NONACTION',
+        node_kind='ROLE' if 'の役割は' in text or '担当' in text else 'ACTION_OR_NONACTION',
         parent_quote=None, scope_role=None, qualifiers=[])
         for text in f['text'].rstrip('。').split('。')]) for f in fields])
     return call(prepared, packet).response
@@ -61,9 +61,9 @@ def test_bad_response_is_not_saved_or_replaced_with_finite_output(monkeypatch, d
     source.assert_awaited_once()
 
 
-@pytest.mark.parametrize('scope', ['empty', 'multiple', 'safety'])
+@pytest.mark.parametrize('scope', ['empty', 'safety'])
 def test_unqualified_source_does_not_acquire_a_response(monkeypatch, scope):
-    snap = source_snapshot(0 if scope == 'empty' else 2 if scope == 'multiple' else 1)
+    snap = source_snapshot(0 if scope == 'empty' else 1)
     if scope == 'safety': snap['members'][0]['original']['memo'] = '死にたい。'
     source = AsyncMock(side_effect=AssertionError('unqualified source acquisition'))
     monkeypatch.setattr(service, 'read_maps', AsyncMock(return_value={'items':[]}))
@@ -73,6 +73,159 @@ def test_unqualified_source_does_not_acquire_a_response(monkeypatch, scope):
         run(service.ensure_map(OWNER, model_source=source))
     assert error.value.status_code == 422
     source.assert_not_awaited()
+
+
+def multi_material():
+    snap = source_snapshot(7)
+    bodies = [
+        ('僕の役割は受付係だった。', ''),
+        ('僕の役割は受付係だった。', '僕は費用を記録した。'),
+        ('僕の役割は案内係だった。費用を記録した。', ''),
+        ('僕の役割は案内係だった。僕は資料を調べた。', ''),
+        ('私は会合の進行を担当した。その後、私は分担を決めた。', ''),
+        ('僕は費用を記録しなかった。', ''),
+        ('まだ言葉にはできません。', ''),
+    ]
+    for i, (member, (memo, action)) in enumerate(zip(snap['members'], bodies)):
+        member['original'].update(memo=memo, memo_action=action,
+            category=['仕事'] if i % 2 == 0 else ['生活'])
+    return snap
+
+
+def multi_proposal(snap):
+    prepared = service.prepare_cumulative_category_units(OWNER, snap, prompt_version='selected_material.v4')
+    return replace(prepared, response=synthetic_response(prepared))
+
+
+def test_complete_snapshot_keeps_each_witness_unknown_record_category_and_local_order():
+    snap = multi_material()
+    value = multi_proposal(snap)
+    artifact, counts = service.build_cumulative_map(OWNER, snap, model_input=value)
+    assert counts == dict(profile='cumulative.v1', source_count=7, processed_count=7,
+        mapped_count=6, unparsed_count=2, excluded_count=0, exclusion_reasons={}, stale_supplement_count=0)
+    assert len(artifact.source_members) == len(artifact.category_records) == 7
+    assert {m.saved_record_ref for m in artifact.source_members} == {m['original']['id'] for m in snap['members']}
+    nodes = artifact.graph.nodes
+    assert len({n.node_ref for n in nodes}) == len(nodes) == 9
+    assert [n.node_ref for n in nodes] == ['n' + str(i) for i in range(1, 10)]
+    by_record = {m['original']['id']: [n for n in nodes if m['original']['id'] in n.record_refs]
+        for m in snap['members']}
+    assert [len(by_record[m['original']['id']]) for m in snap['members']] == [1, 2, 1, 2, 2, 1, 0]
+    for member in snap['members']:
+        ref = member['original']['id']
+        for node in by_record[ref]:
+            assert node.record_refs == (ref,)
+            assert node.selected_categories == tuple(member['original']['category'])
+            assert {e.source_envelope_id for e in node.evidence_refs} <= set(next(
+                m.child_source_envelope_refs for m in artifact.source_members if m.saved_record_ref == ref))
+    edge, = artifact.graph.edges
+    assert edge.edge_kind == 'OBSERVED_ORDER'
+    endpoints = [next(n for n in nodes if n.node_ref == r) for r in edge.endpoint_refs]
+    assert endpoints[0].record_refs == endpoints[1].record_refs == (snap['members'][4]['original']['id'],)
+    text = artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text']
+    assert '受付係' in text and '案内係' in text and '記録された担当' in text and '行わなかった' in text
+    service._checked_projection(artifact.safe_projection(authenticated_owner_scope=OWNER), str(UUID(artifact.artifact_id[9:])))
+
+
+@pytest.mark.parametrize('count', [2, 201])
+def test_all_owned_records_remain_in_one_model_request_including_oldest(count):
+    snap = source_snapshot(count)
+    for member in snap['members']:
+        member['original'].update(memo='僕の役割は受付係だった。', memo_action='')
+    value = multi_proposal(snap)
+    assert len(json.loads(value.messages()[1]['content'])['fields']) == count
+    artifact, counts = service.build_cumulative_map(OWNER, snap, model_input=value)
+    assert counts['source_count'] == counts['processed_count'] == counts['mapped_count'] == count
+    assert counts['unparsed_count'] == 0 and len(artifact.source_members) == count
+    assert {r for n in artifact.graph.nodes for r in n.record_refs} == {m['original']['id'] for m in snap['members']}
+    assert not artifact.graph.edges
+
+
+@pytest.mark.parametrize('different_category', [False, True])
+def test_finite_action_equivalence_and_record_badges_use_the_canonical_cumulative_signature(different_category):
+    snap = source_snapshot(2)
+    for member, memo in zip(snap['members'], ['僕は費用を記録した。', '僕は費用を記録しました。']):
+        member['original'].update(memo=memo, memo_action='')
+    if different_category: snap['members'][1]['original']['category'] = ['生活']
+    artifact, counts = service.build_cumulative_map(OWNER, snap, model_input=multi_proposal(snap))
+    finite, finite_counts = service.build_cumulative_map(OWNER, snap)
+    assert counts == finite_counts and artifact.graph == finite.graph
+    assert len(artifact.graph.nodes) == (2 if different_category else 1)
+    projection = artifact.safe_projection(authenticated_owner_scope=OWNER)
+    assert [n['evidence_badge_count'] for n in projection['nodes']] == ([1, 1] if different_category else [2])
+    assert not artifact.graph.edges
+
+
+@pytest.mark.parametrize('defect', ['memo', 'category', 'guard', 'owner'])
+def test_later_record_or_full_snapshot_identity_cannot_reuse_an_old_response(defect):
+    snap = multi_material()
+    value = multi_proposal(snap)
+    owner = OWNER
+    if defect == 'memo': snap['members'][-1]['original']['memo'] += '変更。'
+    if defect == 'category': snap['members'][-1]['original']['category'] = ['別場面']
+    if defect == 'guard': snap['guard'] = 'analysis-db-cumulative-v1:' + 'b' * 64
+    if defect == 'owner': owner = str(UUID(int=2))
+    with pytest.raises(ValueError):
+        service.build_cumulative_map(owner, snap, model_input=value)
+
+
+def test_bad_later_record_kind_does_not_borrow_another_records_role_or_finite_fallback():
+    snap = multi_material()
+    value = multi_proposal(snap)
+    packet = json.loads(value.response.raw)
+    packet['fields'][4]['units'][0]['node_kind'] = 'ACTION_OR_NONACTION'
+    value = call(replace(value, response=None), packet)
+    artifact, counts = service.build_cumulative_map(OWNER, snap, model_input=value)
+    rejected = snap['members'][3]['original']['id']
+    assert all(rejected not in n.record_refs for n in artifact.graph.nodes)
+    assert counts['source_count'] == 7 and counts['mapped_count'] == 5 and counts['unparsed_count'] == 3
+
+
+def test_safety_in_a_later_record_is_rejected_before_acquisition(monkeypatch):
+    snap = multi_material()
+    snap['members'][-1]['original']['memo'] = '死にたい。'
+    source = AsyncMock(side_effect=AssertionError('unsafe response acquisition'))
+    monkeypatch.setattr(service, 'read_maps', AsyncMock(return_value={'items': []}))
+    monkeypatch.setattr(service, '_rpc', AsyncMock(return_value=snap))
+    monkeypatch.setattr(service, 'observed_mode', lambda: 'development')
+    with pytest.raises(HTTPException) as error:
+        run(service.ensure_map(OWNER, model_source=source))
+    assert error.value.status_code == 422
+    source.assert_not_awaited()
+
+
+def test_clause_author_uses_its_own_action_witness_after_canonical_action_aggregation():
+    snap = source_snapshot(3)
+    for member, memo in zip(snap['members'], ['僕は費用を記録しました。',
+            '僕の役割は受付係だった。僕は費用を記録した。', 'まだ言葉にできません。']):
+        member['original'].update(memo=memo, memo_action='')
+    artifact, counts = service.build_cumulative_map(OWNER, snap, model_input=multi_proposal(snap))
+    assert len(artifact.graph.nodes) == 2 and counts['mapped_count'] == 2 and counts['unparsed_count'] == 1
+    action, role = artifact.graph.nodes
+    assert len(action.record_refs) == len(action.evidence_refs) == 2
+    assert role.proposition.role_state == 'WRITTEN_PAST_ROLE_CLAUSE'
+    assert '受付係' in artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text']
+    assert any(g.missing_scope == 'SOURCE_SCOPE' for g in artifact.graph.unknown_gaps)
+
+
+@pytest.mark.parametrize('defect', ['source_records', 'source_members', 'cross_edge', 'cross_gap'])
+def test_multi_clause_author_does_not_accept_another_records_proof(defect):
+    from cocolon_meaning_experience_engine.cores.analysis import intent_compiler as compiler
+    from cocolon_meaning_experience_engine.cores.analysis.source_adapter import AnalysisSourceError
+    snap = multi_material()
+    artifact, _ = service.build_cumulative_map(OWNER, snap, model_input=multi_proposal(snap))
+    clause = next(n for n in artifact.graph.nodes if n.proposition.role_state == 'WRITTEN_PAST_ROLE_CLAUSE')
+    other = next(n for n in artifact.graph.nodes if n.record_refs != clause.record_refs)
+    if defect == 'source_records': artifact = replace(artifact, category_records=artifact.category_records[:-1])
+    if defect == 'source_members': artifact = replace(artifact, source_members=artifact.source_members[:-1])
+    if defect == 'cross_edge':
+        artifact = replace(artifact, graph=replace(artifact.graph, edges=artifact.graph.edges + (
+            compiler.ObservedEdge('e99', 'OBSERVED_ORDER', (clause.node_ref, other.node_ref), clause.evidence_refs + other.evidence_refs),)))
+    if defect == 'cross_gap':
+        artifact = replace(artifact, graph=replace(artifact.graph, unknown_gaps=artifact.graph.unknown_gaps + (
+            compiler.UnknownGap('g99', (clause.node_ref, other.node_ref), 'ROUTE_CONNECTION', 'ONLY_EXPLICIT_ORDER_IS_SHOWN'),)))
+    with pytest.raises(AnalysisSourceError):
+        artifact.safe_projection(authenticated_owner_scope=OWNER)
 
 
 @pytest.mark.parametrize('ensure,mode', [(False,'development'), (True,'read_only'), (True,'off')])
@@ -185,6 +338,77 @@ def test_real_sql_source_edit_during_response_rejects_commit(sql_source):
         run(service.ensure_map(OWNER, model_source=source))
     assert error.value.status_code == 409 and error.value.detail == '40001'
     assert len(calls) == 1
+    assert db.query('select count(*) as n from public.analysis_observed_artifacts')['rows'][0]['n'] == 0
+    assert db.query('select count(*) as n from public.analysis_cumulative_months')['rows'][0]['n'] == 0
+
+
+def insert_additional_original(db, template, number, memo, category):
+    original = dict(template, id=str(UUID(int=number)), memo=memo, memo_action='', category=[category])
+    assert 'code' not in db.query('insert into public.emotions values ($1,$2,$3,$4,$5,$6,$7,$8)',
+        [original['id'], OWNER, original['created_at'], original['memo'], original['memo_action'],
+         original['category'], original['emotions'], json.dumps(original['emotion_details'])])
+    return original
+
+
+def test_real_sql_full_snapshot_single_acquisition_saved_reads_force_refresh_and_monthly_immutability(sql_source):
+    db, rpc = sql_source
+    original = insert_material(db, 'role')
+    action = insert_additional_original(db, original, 5002, '僕は費用を記録した。', '生活')
+    unknown = insert_additional_original(db, original, 5003, 'まだ言葉にできません。', '仕事')
+    calls = []
+    async def source(prepared):
+        calls.append(prepared.request_ref)
+        assert len(prepared.request.members) == 3
+        assert len(json.loads(prepared.messages()[1]['content'])['fields']) == 3
+        return synthetic_response(prepared)
+    first = run(service.ensure_map(OWNER, model_source=source))
+    assert first['refreshed'] and len(calls) == 1
+    assert first['map_context']['source_count'] == first['map_context']['processed_count'] == 3
+    assert first['map_context']['mapped_count'] == 2 and first['map_context']['unparsed_count'] == 1
+    private = db.query('select private_evidence from public.analysis_observed_artifacts where id=$1',
+        [first['report_id']])['rows'][0]['private_evidence']
+    assert set(private['source_record_refs']) == {original['id'], action['id'], unknown['id']}
+    assert private['coverage'] == first['map_context'] and len(private['source_members']) == 3
+    forbidden = AsyncMock(side_effect=AssertionError('saved multi-record read acquired a response'))
+    with patch.object(service, 'build_cumulative_map', side_effect=AssertionError('saved multi-record generation')):
+        current = run(service.ensure_map(OWNER, model_source=forbidden))
+        month = run(service.ensure_map(OWNER, monthly=True, force=True, model_source=forbidden))
+        readonly = run(service.ensure_map(OWNER, ensure=False, force=True, model_source=forbidden))
+        detail = run(service.read_maps(OWNER, report_id=first['report_id']))['items'][0]
+    for saved in (current, month, readonly):
+        assert saved['report_id'] == first['report_id'] and saved['meta'] == first['meta']
+        assert saved['content_text'] == first['content_text'] and not saved['refreshed']
+    assert detail['content_json']['map_context'] == first['map_context']
+    forbidden.assert_not_awaited()
+    assert 'code' not in db.query('update public.emotions set memo=$2 where id=$1',
+        [action['id'], '僕は費用を記録しなかった。'])
+    second = run(service.ensure_map(OWNER, force=True, model_source=source))
+    assert second['refreshed'] and second['report_id'] != first['report_id'] and len(calls) == 2
+    assert calls[0] != calls[1] and second['content_text'] != first['content_text']
+    with patch.object(service, 'build_cumulative_map', side_effect=AssertionError('saved multi-record refresh generation')):
+        history = run(service.ensure_map(OWNER, monthly=True, force=True, model_source=forbidden))
+        current = run(service.ensure_map(OWNER, ensure=False, model_source=forbidden))
+    assert history['report_id'] == first['report_id'] and history['meta'] == month['meta']
+    assert history['captured_at'] == month['captured_at'] and history['content_text'] == month['content_text']
+    assert current['meta'] == second['meta'] and current['content_text'] == second['content_text']
+    forbidden.assert_not_awaited()
+
+
+def test_real_sql_nonfirst_record_change_during_multi_response_rejects_whole_commit(sql_source):
+    db, _ = sql_source
+    original = insert_material(db, 'role')
+    action = insert_additional_original(db, original, 5002, '僕は費用を記録した。', '生活')
+    calls = []
+    async def source(prepared):
+        assert len(prepared.request.members) == 2
+        response = synthetic_response(prepared)
+        calls.append(prepared.request_ref)
+        assert 'code' not in db.query('update public.emotions set memo=$2 where id=$1',
+            [action['id'], '僕は費用を記録しなかった。'])
+        return response
+    with pytest.raises(HTTPException) as error:
+        run(service.ensure_map(OWNER, model_source=source))
+    assert error.value.status_code == 409 and error.value.detail == '40001' and len(calls) == 1
     assert db.query('select count(*) as n from public.analysis_observed_artifacts')['rows'][0]['n'] == 0
     assert db.query('select count(*) as n from public.analysis_cumulative_months')['rows'][0]['n'] == 0
 

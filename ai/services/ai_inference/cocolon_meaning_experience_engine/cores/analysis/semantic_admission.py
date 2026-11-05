@@ -1216,27 +1216,21 @@ def generate_analysis_model_quoted_parent_units(request, model_input):
 def require_analysis_model_observed_scope(request, *, frozen=None):
     """Qualify the existing consumer before acquiring an external response."""
     frozen = freeze_analysis_sources(request) if frozen is None else frozen
-    require(len(frozen.members) == len(frozen.sources) == len(frozen.category_records) == 1
-        and frozen.sources[0].envelope.source_role == 'ORIGINAL_INPUT'
+    require(bool(frozen.members)
+        and len(frozen.members) == len(frozen.sources) == len(frozen.category_records)
+        and all(m.inclusion_status == 'INCLUDED' for m in frozen.members)
+        and all(s.envelope.source_role == 'ORIGINAL_INPUT' for s in frozen.sources)
         and not any(m.supplements for m in request.members)
         and request.comparison_previous_request is None,
         'analysis_model_observed_scope_unsupported')
 
 
-def generate_analysis_model_observed_actions(request, model_input):
-    """Explicit caller route for existing source-proved roles and actions.
-
-    Reuse the private role witnesses without changing their saved identities.
-    An unsupported role proposal may still leave an independently proved
-    action; it never supplies that action's actor or a role-to-action edge.
-    """
+def _compile_model_observed_record(frozen, fields):
+    """Apply the existing one-record witnesses to their complete source."""
     from .intent_compiler import (compile_model_observed_actions,
         compile_model_written_role_graph, compile_model_written_role_action_graph,
         compile_model_written_role_clause_graph, compile_model_written_role_clause_action_graph,
         compile_model_observed_role_decision)
-    from .observed_route_realizer import realize_observed_graph
-    frozen, fields, _ = _admit_quoted_parent_units(request, model_input)
-    require_analysis_model_observed_scope(request, frozen=frozen)
     graph = None
     if len(fields) == 2:
         try:
@@ -1258,12 +1252,84 @@ def generate_analysis_model_observed_actions(request, model_input):
             pass
     if graph is None:
         graph = compile_model_observed_actions(frozen, fields)
+    return graph
+
+
+def generate_analysis_model_observed_actions(request, model_input, *, with_record_counts=False):
+    """Bind the whole response once, then retain each proved record's graph.
+
+    Local views preserve original fields/envelopes/units. Only graph references
+    are renumbered; neither model units nor facts from another record are used
+    as witnesses. Cross-record meaning and relations remain unestablished.
+    """
+    from .intent_compiler import ObservedGraph, UnknownGap, _observed_claim_signature
+    from .observed_route_realizer import realize_observed_graph
+    frozen, fields, _ = _admit_quoted_parent_units(request, model_input)
+    require_analysis_model_observed_scope(request, frozen=frozen)
+    if len(frozen.members) == 1:
+        graph = _compile_model_observed_record(frozen, fields)
+        mapped = int(graph is not None)
+        unread = int(graph is None or any(g.missing_scope == 'SOURCE_SCOPE' for g in graph.unknown_gaps))
+    else:
+        nodes, edges, gaps, by_signature = [], [], [], {}
+        mapped, unread = 0, 0
+        for member in frozen.members:
+            ref = member.saved_record_ref
+            local = replace(frozen, members=(member,),
+                sources=tuple(s for s in frozen.sources if s.record_ref == ref),
+                category_records=tuple(r for r in frozen.category_records if r.saved_record_ref == ref))
+            record_fields = tuple(f for f in fields if f.record_ref == ref)
+            part = _compile_model_observed_record(local, record_fields)
+            if part is None:
+                unread += 1
+                continue
+            require(not part.source_updates and not part.conflicts and not part.annotations,
+                'analysis_model_observed_scope_unsupported')
+            mapped += 1
+            unread += int(any(g.missing_scope == 'SOURCE_SCOPE' for g in part.unknown_gaps))
+            refs = {}
+            ordered = {e.evidence_id for edge in part.edges if edge.edge_kind == 'OBSERVED_ORDER'
+                for e in edge.evidence_refs}
+            for node in part.nodes:
+                evidence = node.evidence_refs[0]
+                signature = _observed_claim_signature(node.node_kind, node.proposition,
+                    node.visible_label, node.polarity, node.modality, node.temporal_scope,
+                    evidence, ordered, evidence.source_envelope_id,
+                    node.selected_categories if node.selected_category_context else None)
+                # Private written-role author identities remain per-record;
+                # ordinary finite actions/responsibilities share their exact
+                # existing grammatical/category/occurrence equivalence.
+                if node.proposition.role_state in {'WRITTEN_PAST_ROLE', 'WRITTEN_PAST_ROLE_CLAUSE'}:
+                    signature = (signature, ref)
+                index = by_signature.get(signature)
+                if index is None:
+                    index = len(nodes)
+                    by_signature[signature] = index
+                    nodes.append(replace(node, node_ref='n' + str(index + 1)))
+                else:
+                    old = nodes[index]
+                    nodes[index] = replace(old,
+                        record_refs=tuple(dict.fromkeys((*old.record_refs, *node.record_refs))),
+                        evidence_refs=tuple(dict.fromkeys((*old.evidence_refs, *node.evidence_refs))))
+                refs[node.node_ref] = nodes[index].node_ref
+            edge_offset, gap_offset = len(edges), len(gaps)
+            edges.extend(replace(e, edge_ref='e' + str(edge_offset + i),
+                endpoint_refs=tuple(refs[r] for r in e.endpoint_refs)) for i, e in enumerate(part.edges, 1))
+            gaps.extend(replace(g, gap_ref='g' + str(gap_offset + i),
+                between_node_refs=tuple(refs[r] for r in g.between_node_refs)) for i, g in enumerate(part.unknown_gaps, 1))
+        # Match the finite cumulative graph's final global unread marker.
+        # This is a presentation anchor, not ownership of the unread record.
+        if nodes and any(m.saved_record_ref not in {r for n in nodes for r in n.record_refs}
+                for m in frozen.members):
+            gaps.append(UnknownGap('g' + str(len(gaps) + 1), (nodes[0].node_ref,),
+                'SOURCE_SCOPE', 'UNSUPPORTED_OR_UNCERTAIN_SOURCE_SCOPE'))
+        graph = ObservedGraph(tuple(nodes), tuple(edges), tuple(gaps)) if nodes else None
     if graph is None:
-        return None
+        return (None, mapped, unread) if with_record_counts else None
     artifact = realize_observed_graph(frozen, graph)
     artifact.safe_projection(authenticated_owner_scope=frozen.owner_scope)
     artifact.safe_text_projection(authenticated_owner_scope=frozen.owner_scope)
-    return artifact
+    return (artifact, mapped, unread) if with_record_counts else artifact
 
 
 def _validated_quoted_parent_unit_artifact(model_input, artifact):

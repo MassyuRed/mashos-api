@@ -329,11 +329,10 @@ def build_cumulative_map(owner, snapshot, *, model_input=None):
             generate_analysis_model_observed_actions, require)
         if type(model_input) is AnalysisModelQuotedParentUnitsInput:
             expected = _written_role_input(owner, snapshot, model_input)
-            artifact = generate_analysis_model_observed_actions(expected.request, model_input)
+            artifact, mapped, unread = generate_analysis_model_observed_actions(
+                expected.request, model_input, with_record_counts=True)
             coverage = _unit_candidate_coverage(expected, snapshot)
-            coverage.update(mapped_count=int(artifact is not None),
-                unparsed_count=int(artifact is None or any(g.missing_scope == 'SOURCE_SCOPE'
-                    for g in artifact.graph.unknown_gaps)))
+            coverage.update(mapped_count=mapped, unparsed_count=unread)
             return artifact, _checked_coverage(coverage)
         expected = (prepare_cumulative_model_field_kinds(owner, snapshot)
             if type(model_input) is AnalysisModelFieldKindsInput else prepare_cumulative_model_fields(owner, snapshot))
