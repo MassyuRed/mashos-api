@@ -1385,18 +1385,8 @@ def compile_model_written_role_clause_action_graph(source_set, field):
     return ObservedGraph((role, replace(action, node_ref='n2')), (), _written_role_action_gaps())
 
 
-def compile_model_observed_actions(source_set, fields):
-    """Consume a matched complete action through the existing source compiler.
-
-    Keep the original whole source, its safety/host checks, evidence and gaps.
-    This does not treat model roots or the authenticated owner as actor proof.
-    The initial scope is a single plain finite action; no new grammar or edge.
-    """
-    graph = compile_observed_graph(source_set)
-    if (len(graph.nodes) != 1 or graph.edges or graph.source_updates
-            or graph.conflicts or graph.annotations):
-        return None
-    node = graph.nodes[0]
+def _model_complete_observed_action(node, fields):
+    """Match an existing finite node to its own complete, bound model field."""
     p = node.proposition
     if (node.node_kind != 'ACTION_OR_NONACTION' or p is None or p.actor != 'SELF'
             or (p.modality, p.temporal_scope) != ('fact', 'past')
@@ -1433,6 +1423,25 @@ def compile_model_observed_actions(source_set, fields):
         _check_model_action_units(field, p, label)
     except AnalysisSourceError:
         return None
+    return field
+
+
+def compile_model_observed_actions(source_set, fields):
+    """Consume a matched complete action through the existing source compiler.
+
+    Keep the original whole source, its safety/host checks, evidence and gaps.
+    This does not treat model roots or the authenticated owner as actor proof.
+    The initial scope is a single plain finite action; no new grammar or edge.
+    """
+    graph = compile_observed_graph(source_set)
+    if (len(graph.nodes) != 1 or graph.edges or graph.source_updates
+            or graph.conflicts or graph.annotations):
+        return None
+    node = graph.nodes[0]
+    field = _model_complete_observed_action(node, fields)
+    if field is None:
+        return None
+    other_fields = [f for f in fields if f is not field]
     # Some unsupported text has no shared nucleus. A nonempty other field
     # is still unread; absence from the plan cannot turn it into parsed text.
     if other_fields and not any(g.missing_scope == 'SOURCE_SCOPE' for g in graph.unknown_gaps):
@@ -1440,6 +1449,36 @@ def compile_model_observed_actions(source_set, fields):
             'g' + str(len(graph.unknown_gaps) + 1), (node.node_ref,), 'SOURCE_SCOPE',
             'UNSUPPORTED_OR_UNCERTAIN_SOURCE_SCOPE'),))
     return graph
+
+
+def compile_model_supplement_action(source_set, fields, source):
+    """Prove one ordinary answer without detaching it from its parent source.
+
+    The shared compiler validates the full record and owns its evidence. A
+    canonical node can have an original/earlier-answer representative; restore
+    only this answer's written witness for the unchanged complete-field check.
+    """
+    if source.envelope.source_role != 'SUPPLEMENTAL_ANSWER':
+        return None
+    graph = compile_observed_graph(source_set)
+    if graph.source_updates or graph.conflicts or graph.annotations:
+        return None
+    owned = [(node, e) for node in graph.nodes for e in node.evidence_refs
+        if e.source_envelope_id == source.envelope.envelope_id]
+    if len(owned) != 1:
+        return None
+    node, evidence = owned[0]
+    text = source_field_text(source, evidence.field_path)
+    label = text[evidence.scalar_start:evidence.scalar_end]
+    p = _proposition(label)
+    if (p is None or node.proposition is None
+            or _proposition_meaning(p) != _proposition_meaning(node.proposition)
+            or (p.polarity, p.modality, p.temporal_scope) !=
+               (node.polarity, node.modality, node.temporal_scope)):
+        return None
+    node = replace(node, node_ref='n1', visible_label=label, proposition=p,
+        record_refs=(source.record_ref,), evidence_refs=(evidence,))
+    return node if _model_complete_observed_action(node, fields) is not None else None
 
 
 def compile_model_observed_role_decision(source_set, fields):

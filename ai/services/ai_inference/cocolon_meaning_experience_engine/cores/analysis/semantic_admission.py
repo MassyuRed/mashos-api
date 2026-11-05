@@ -1217,15 +1217,17 @@ def require_analysis_model_observed_scope(request, *, frozen=None):
     """Qualify the existing consumer before acquiring an external response."""
     frozen = freeze_analysis_sources(request) if frozen is None else frozen
     require(bool(frozen.members)
-        and len(frozen.members) == len(frozen.sources) == len(frozen.category_records)
+        and len(frozen.members) == len(frozen.category_records)
         and all(m.inclusion_status == 'INCLUDED' for m in frozen.members)
-        and all(s.envelope.source_role == 'ORIGINAL_INPUT' for s in frozen.sources)
-        and not any(m.supplements for m in request.members)
+        and all(sum(s.record_ref == m.saved_record_ref
+            and s.envelope.source_role == 'ORIGINAL_INPUT' for s in frozen.sources) == 1
+            for m in frozen.members)
+        and all(s.envelope.source_role in {'ORIGINAL_INPUT', 'SUPPLEMENTAL_ANSWER'} for s in frozen.sources)
         and request.comparison_previous_request is None,
         'analysis_model_observed_scope_unsupported')
 
 
-def _compile_model_observed_record(frozen, fields):
+def _compile_model_original_observed_record(frozen, fields):
     """Apply the existing one-record witnesses to their complete source."""
     from .intent_compiler import (compile_model_observed_actions,
         compile_model_written_role_graph, compile_model_written_role_action_graph,
@@ -1253,6 +1255,66 @@ def _compile_model_observed_record(frozen, fields):
     if graph is None:
         graph = compile_model_observed_actions(frozen, fields)
     return graph
+
+
+def _compile_model_observed_record(frozen, fields):
+    """Retain ordinary answers as evidence of their parent's single occasion."""
+    from .intent_compiler import (ObservedGraph, UnknownGap, NODE_KINDS,
+        compile_model_supplement_action, _observed_claim_signature)
+    answers = tuple(s for s in frozen.sources if s.envelope.source_role == 'SUPPLEMENTAL_ANSWER')
+    if not answers:
+        return _compile_model_original_observed_record(frozen, fields)
+    originals = tuple(s for s in frozen.sources if s.envelope.source_role == 'ORIGINAL_INPUT')
+    original_ids = {s.envelope.envelope_id for s in originals}
+    original = replace(frozen, sources=originals)
+    original_fields = tuple(f for f in fields if f.evidence.source_envelope_id in original_ids)
+    part = _compile_model_original_observed_record(original, original_fields)
+    # Clause authors recheck the complete original-only local graph. Keep
+    # that private proof boundary until supplemental clause proof is defined.
+    if part is not None and any(n.proposition.role_state == 'WRITTEN_PAST_ROLE_CLAUSE' for n in part.nodes):
+        return None
+    nodes = list(part.nodes) if part is not None else []
+    edges = list(part.edges) if part is not None else []
+    unread = part is None or any(g.missing_scope == 'SOURCE_SCOPE' for g in part.unknown_gaps)
+    ordered = {e.evidence_id for edge in edges for e in edge.evidence_refs}
+    signatures = {}
+    for i, node in enumerate(nodes):
+        e = node.evidence_refs[0]
+        signatures[_observed_claim_signature(node.node_kind, node.proposition, node.visible_label,
+            node.polarity, node.modality, node.temporal_scope, e, ordered, e.source_envelope_id,
+            node.selected_categories if node.selected_category_context else None)] = i
+    for answer in answers:
+        node = compile_model_supplement_action(frozen, fields, answer)
+        if node is None:
+            return None
+        e = node.evidence_refs[0]
+        signature = _observed_claim_signature(node.node_kind, node.proposition, node.visible_label,
+            node.polarity, node.modality, node.temporal_scope, e, set(), e.source_envelope_id,
+            node.selected_categories if node.selected_category_context else None)
+        i = signatures.get(signature)
+        if i is None:
+            signatures[signature] = len(nodes)
+            nodes.append(replace(node, node_ref='n' + str(len(nodes) + 1)))
+        else:
+            old = nodes[i]
+            nodes[i] = replace(old, evidence_refs=tuple(dict.fromkeys((*old.evidence_refs, *node.evidence_refs))))
+    if not nodes:
+        return None
+    # Compute absence and connection gaps once for the complete occasion.
+    # Neither answer order nor a parent role establishes a relation edge.
+    present = {n.node_kind for n in nodes}
+    gaps = [UnknownGap('g' + str(i), (nodes[0].node_ref,), kind, 'NOT_ESTABLISHED_FROM_SOURCE')
+        for i, kind in enumerate((k for k in NODE_KINDS if k not in present), 1)]
+    if unread:
+        gaps.append(UnknownGap('g' + str(len(gaps) + 1), (nodes[0].node_ref,),
+            'SOURCE_SCOPE', 'UNSUPPORTED_OR_UNCERTAIN_SOURCE_SCOPE'))
+    known = {e.endpoint_refs for e in edges if e.edge_kind == 'OBSERVED_ORDER'}
+    for left, right in zip(nodes, nodes[1:]):
+        pair = (left.node_ref, right.node_ref)
+        if pair not in known and pair[::-1] not in known:
+            gaps.append(UnknownGap('g' + str(len(gaps) + 1), pair,
+                'ROUTE_CONNECTION', 'ONLY_EXPLICIT_ORDER_IS_SHOWN'))
+    return ObservedGraph(tuple(nodes), tuple(edges), tuple(gaps))
 
 
 def generate_analysis_model_observed_actions(request, model_input, *, with_record_counts=False):
