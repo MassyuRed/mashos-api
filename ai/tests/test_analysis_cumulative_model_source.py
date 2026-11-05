@@ -101,7 +101,8 @@ def multi_proposal(snap):
 
 def answer_material(original='私は資料を見た。', answer='私は費用を記録した。'):
     snap = source_snapshot(1)
-    snap['members'][0]['original'].update(memo=original, memo_action='')
+    snap['members'][0]['original'].update(memo=original, memo_action='',
+        emotion_details=[dict(type='平穏', strength='medium')])
     snap['members'][0] = with_answer(snap['members'][0], answer)
     return snap
 
@@ -613,6 +614,8 @@ def test_real_sql_saved_supplement_does_not_acquire_a_response(sql_source, monke
 def insert_bound_answer(db, rpc):
     """Use the existing saved-answer envelope shape in the real SQL snapshot."""
     original = insert_material(db, 'role')
+    assert 'code' not in db.query('update public.emotions set emotion_details=$2 where id=$1',
+        [original['id'], json.dumps([dict(type='平穏', strength='medium')])])
     snapshot = run(rpc('analysis_cumulative_source_snapshot', {'p_user_id': OWNER}))
     member = with_answer(snapshot['members'][0], '僕は費用を記録した。')
     thread = member['thread']
