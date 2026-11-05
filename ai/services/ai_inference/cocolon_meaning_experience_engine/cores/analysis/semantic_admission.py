@@ -1214,8 +1214,15 @@ def generate_analysis_model_quoted_parent_units(request, model_input):
 
 
 def generate_analysis_model_observed_actions(request, model_input):
-    """Explicit caller route to the ordinary saved map; candidates stay separate."""
-    from .intent_compiler import compile_model_observed_actions
+    """Explicit caller route for existing source-proved roles and actions.
+
+    Reuse the private role witnesses without changing their saved identities.
+    An unsupported role proposal may still leave an independently proved
+    action; it never supplies that action's actor or a role-to-action edge.
+    """
+    from .intent_compiler import (compile_model_observed_actions,
+        compile_model_written_role_graph, compile_model_written_role_action_graph,
+        compile_model_written_role_clause_graph)
     from .observed_route_realizer import realize_observed_graph
     frozen, fields, _ = _admit_quoted_parent_units(request, model_input)
     require(len(frozen.members) == len(frozen.sources) == len(frozen.category_records) == 1
@@ -1223,7 +1230,21 @@ def generate_analysis_model_observed_actions(request, model_input):
         and not any(m.supplements for m in request.members)
         and request.comparison_previous_request is None,
         'analysis_model_observed_scope_unsupported')
-    graph = compile_model_observed_actions(frozen, fields)
+    graph = None
+    if len(fields) == 2:
+        try:
+            graph = compile_model_written_role_action_graph(frozen, fields)
+        except AnalysisSourceError:
+            pass
+    elif len(fields) == 1:
+        for compile_role in (compile_model_written_role_graph, compile_model_written_role_clause_graph):
+            try:
+                graph = compile_role(frozen, fields[0])
+            except AnalysisSourceError:
+                continue
+            break
+    if graph is None:
+        graph = compile_model_observed_actions(frozen, fields)
     if graph is None:
         return None
     artifact = realize_observed_graph(frozen, graph)
