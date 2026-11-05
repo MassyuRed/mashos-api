@@ -1437,7 +1437,7 @@ def compile_model_observed_actions(source_set, fields):
     A missing subject stays UNSPECIFIED under the existing source proof;
     it never inherits SELF from the owner or a model actor qualifier.
     Single plain actions and fully witnessed one-field SELF sequences reuse
-    existing source grammar and edges. Plain positive SELF wishes keep their
+    existing source grammar and edges. Plain SELF wishes keep their
     existing wish modality and written time through a separate narrow proof.
     """
     graph = compile_observed_graph(source_set)
@@ -1463,11 +1463,13 @@ def compile_model_observed_actions(source_set, fields):
 
 
 def _model_complete_observed_plain_wishes(source_set, graph, fields):
-    """Match explicit positive wishes without turning them into performed acts.
+    """Match explicit wishes without turning them into performed acts.
 
-    The existing source compiler owns every proposition and its time. This
-    narrow original-field scope keeps one wish, or past actions with wishes,
-    and preserves the original graph including its unestablished connections.
+    The existing source compiler owns every proposition, polarity and time.
+    A complete negative wish quote retains its finite negation without a
+    separate NEGATION qualifier; model raw and qualifiers are never repaired.
+    This narrow original-field scope keeps one wish, or positive past actions
+    with wishes, and preserves the original graph and unestablished connections.
     """
     if (len(source_set.members) != 1 or len(source_set.sources) != 1 or len(fields) != 1
             or source_set.sources[0].envelope.source_role != 'ORIGINAL_INPUT'
@@ -1486,12 +1488,14 @@ def _model_complete_observed_plain_wishes(source_set, graph, fields):
     spans, consumed = [], []
     for node in graph.nodes:
         p = node.proposition
-        if (p is None or p.actor != 'SELF' or p.polarity != 'positive'
+        if (p is None or p.actor != 'SELF'
                 or p.predicate_lemma not in _PAST_ACTION_LEMMAS
-                or (node.node_kind, p.modality, p.temporal_scope) not in {
-                    ('ACTION_OR_NONACTION', 'fact', 'past'),
-                    ('ATTENTION_OR_THOUGHT', 'wish', 'current_input'),
-                    ('ATTENTION_OR_THOUGHT', 'wish', 'past')}
+                or (node.node_kind, p.polarity, p.modality, p.temporal_scope) not in {
+                    ('ACTION_OR_NONACTION', 'positive', 'fact', 'past'),
+                    ('ATTENTION_OR_THOUGHT', 'positive', 'wish', 'current_input'),
+                    ('ATTENTION_OR_THOUGHT', 'positive', 'wish', 'past'),
+                    ('ATTENTION_OR_THOUGHT', 'negative', 'wish', 'current_input'),
+                    ('ATTENTION_OR_THOUGHT', 'negative', 'wish', 'past')}
                 or (node.polarity, node.modality, node.temporal_scope) !=
                    (p.polarity, p.modality, p.temporal_scope)
                 or any((p.sequence_marker, p.relative_day, p.possible_content,

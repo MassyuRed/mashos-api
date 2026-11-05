@@ -466,6 +466,59 @@ def test_single_plain_positive_wish_keeps_hope_and_its_written_time(literal,time
     assert '実行済み' not in text and not a.graph.edges and c['unparsed_count']==0
 
 
+@pytest.mark.parametrize('ending,time',[('たくない','current_input'),('たくなかった','past')])
+@pytest.mark.parametrize('with_action',[False,True])
+@pytest.mark.parametrize('with_negation_qualifier',[False,True])
+@pytest.mark.parametrize('prompt',['selected_material.v4','selected_material.v7'])
+def test_complete_negative_wish_uses_source_polarity_without_repairing_raw(
+        ending,time,with_action,with_negation_qualifier,prompt):
+    literal='私は仕事を続け'+ending
+    text=('私は考えをノートに書いた。' if with_action else '')+literal+'。'
+    kinds=(('ACTION_OR_NONACTION',) if with_action else ())+('ATTENTION_OR_THOUGHT',)
+    sent=[]
+    def edit(data):
+        wish=data['fields'][0]['units'][-1]
+        if with_negation_qualifier:
+            wish['qualifiers']=[dict(kind='NEGATION',quote='続け'+ending)]
+        sent.append(canonical(data))
+    snap,value,a,c=wish_build(text,kinds=kinds,prompt=prompt,change=edit)
+    normal,normal_counts=service.build_cumulative_map(OWNER,snap)
+    assert a is not None and normal is not None and a.graph==normal.graph and c==normal_counts
+    assert value.response.raw==sent[0]
+    assert value.response.raw_sha256==hashlib.sha256(sent[0].encode()).hexdigest()
+    raw_wish=json.loads(value.response.raw)['fields'][0]['units'][-1]
+    assert raw_wish['quote']==literal
+    assert raw_wish['qualifiers']==([dict(kind='NEGATION',quote='続け'+ending)]
+        if with_negation_qualifier else [])
+    wish=a.graph.nodes[-1]
+    assert (wish.node_kind,wish.proposition.actor,wish.polarity,wish.modality,wish.temporal_scope)==(
+        'ATTENTION_OR_THOUGHT','SELF','negative','wish',time)
+    assert wish.visible_label==literal and not a.graph.edges
+    labels=[n['visible_label'] for n in a.safe_projection(authenticated_owner_scope=OWNER)['nodes']]
+    assert labels[-1]=='選択カテゴリ：仕事\n仕事を続けることを望まない'+('（当時）' if time=='past' else '')
+    assert sum('実行済み' in label for label in labels)==int(with_action)
+    assert a.safe_text_projection(authenticated_owner_scope=OWNER)['text']==normal.safe_text_projection(
+        authenticated_owner_scope=OWNER)['text']
+    assert c['mapped_count']==1 and c['unparsed_count']==0
+
+
+@pytest.mark.parametrize('ending',['たくない','たくなかった'])
+@pytest.mark.parametrize('mutation',['operator_removed','kind','false_actor','false_negative'])
+def test_negative_wish_cannot_lose_negation_or_change_type_or_actor(ending,mutation):
+    def edit(data):
+        wish=data['fields'][0]['units'][0]
+        if mutation=='operator_removed':wish['quote']='私は仕事を続けたく'
+        if mutation=='kind':wish['node_kind']='ACTION_OR_NONACTION'
+        if mutation=='false_actor':wish['qualifiers']=[dict(kind='EXPLICIT_ACTOR',quote='仕事')]
+        if mutation=='false_negative':wish['qualifiers']=[dict(kind='NEGATION',quote='仕事')]
+    try:
+        _,_,a,c=wish_build('私は仕事を続け'+ending+'。',
+            kinds=('ATTENTION_OR_THOUGHT',),change=edit)
+    except ERRORS:
+        return
+    assert a is None and c['mapped_count']==0 and c['unparsed_count']==1
+
+
 @pytest.mark.parametrize('mutation',['kind','missing','operator_removed','false_actor',
     'false_negative','modifier','cross_child','extra_root'])
 def test_wish_units_cannot_erase_the_operator_or_change_source_semantics(mutation):
@@ -490,15 +543,23 @@ def test_wish_units_cannot_erase_the_operator_or_change_source_semantics(mutatio
 @pytest.mark.parametrize('text',[
     '私は考えをノートに書いた。その後、私は仕事を続けたい。',
     '私は仕事を続けたい。その後、私は考えをノートに書いた。',
-    '私は考えをノートに書いた。私は仕事を続けたくない。',
     '私は考えをノートに書かなかった。私は仕事を続けたい。',
+    '私は考えをノートに書かなかった。私は仕事を続けたくない。',
+    '私は考えをノートに書かなかった。私は仕事を続けたくなかった。',
+    '私は考えをノートに書いた。その後、私は仕事を続けたくない。',
+    '私は仕事を続けたくなかった。その後、私は考えをノートに書いた。',
     '私は考えをノートに書いた。仕事を続けたい。',
+    '私は考えをノートに書いた。仕事を続けたくない。',
+    '私は考えをノートに書いた。仕事を続けたくなかった。',
     '私は考えをノートに書いた。姉は仕事を続けたい。',
+    '私は考えをノートに書いた。姉は仕事を続けたくない。',
+    '私は考えをノートに書いた。姉は仕事を続けたくなかった。',
     '私は考えをノートに書いた。私は仕事を続けたいかもしれない。',
+    '私は考えをノートに書いた。私は仕事を続けたくないかもしれない。',
     '私は考えをノートに書いた。まだ言葉にできない。私は仕事を続けたい。',
     '私は考えをノートに書いた。私は仕事を続けたい。まだ分からない。',
 ])
-def test_new_wish_scope_does_not_add_order_negation_actor_or_unread_scope(text):
+def test_new_wish_scope_does_not_add_order_negative_actions_actor_or_unread_scope(text):
     try:
         _,_,a,c=wish_build(text)
     except ERRORS:
@@ -506,15 +567,20 @@ def test_new_wish_scope_does_not_add_order_negation_actor_or_unread_scope(text):
     assert a is None and c['mapped_count']==0 and c['unparsed_count']==1
 
 
-def test_cognition_is_not_silently_admitted_as_a_plain_wish():
-    text='私は記録を残した。私は資料を調べたかもしれないと思っている。'
+@pytest.mark.parametrize('text',[
+    '私は記録を残した。私は資料を調べたかもしれないと思っている。',
+    '私は記録を残した。私は仕事を続けたくないと思っている。',
+])
+def test_cognition_is_not_silently_admitted_as_a_plain_wish(text):
     _,_,a,c=wish_build(text)
     assert a is None and c['mapped_count']==0 and c['unparsed_count']==1
 
 
-def test_wishes_cannot_borrow_another_field_or_a_supplement_proof():
+@pytest.mark.parametrize('wish',['私は仕事を続けたい。',
+    '私は仕事を続けたくない。','私は仕事を続けたくなかった。'])
+def test_wishes_cannot_borrow_another_field_or_a_supplement_proof(wish):
     def split(snap):
-        snap['members'][0]['original'].update(memo='私は仕事を続けたい。',memo_action='私は資料を見た。')
+        snap['members'][0]['original'].update(memo=wish,memo_action='私は資料を見た。')
     def wish_kind(data):
         data['fields'][0]['units'][0]['node_kind']='ATTENTION_OR_THOUGHT'
     _,_,a,c=wish_build(snapshot_change=split,change=wish_kind)
@@ -523,7 +589,7 @@ def test_wishes_cannot_borrow_another_field_or_a_supplement_proof():
     def answer(snap):
         original=snap['members'][0]['original']
         original['emotion_details']=[dict(type='平穏',strength='medium')]
-        snap['members'][0]=with_answer(snap['members'][0],'私は仕事を続けたい。')
+        snap['members'][0]=with_answer(snap['members'][0],wish)
     def answer_kind(data):
         data['fields'][1]['units'][0]['node_kind']='ATTENTION_OR_THOUGHT'
     try:
@@ -534,14 +600,19 @@ def test_wishes_cannot_borrow_another_field_or_a_supplement_proof():
     assert a is None and c['mapped_count']==0 and c['unparsed_count']==1
 
 
-def test_action_wish_saved_wire_replays_without_compiler_or_author():
-    _,_,a,c=wish_build()
+@pytest.mark.parametrize('wish',['私は仕事を続けたい。',
+    '私は仕事を続けたくない。','私は仕事を続けたくなかった。'])
+def test_action_wish_saved_wire_replays_without_compiler_or_author(wish):
+    _,_,a,c=wish_build('私は考えをノートに書いた。'+wish)
+    assert a is not None
     row=dict(id=str(UUID(a.artifact_id[9:])),source_profile=service.PROFILE,report_mode='standard',
         content_text=a.safe_text_projection(authenticated_owner_scope=OWNER)['text'],
         content_json=dict(report_mode='standard',watashiMap=a.safe_projection(authenticated_owner_scope=OWNER),map_context=c))
     expected=dict(items=[row],subscription_tier='free',matched=True,history_limit=2)
     with patch.object(service,'_rpc',AsyncMock(return_value=json.loads(canonical(expected)))),\
          patch.object(compiler,'compile_observed_graph',side_effect=AssertionError('saved compiler')),\
+         patch.object(compiler,'compile_model_observed_actions',side_effect=AssertionError('saved model compiler')),\
          patch.object(compiler,'_model_complete_observed_plain_wishes',side_effect=AssertionError('saved wish proof')),\
-         patch.object(author,'realize_observed_graph',side_effect=AssertionError('saved author')):
+         patch.object(author,'realize_observed_graph',side_effect=AssertionError('saved author')),\
+         patch.object(author,'generate_observed_map',side_effect=AssertionError('saved map author')):
         assert asyncio.run(service.read_maps(OWNER,report_id=row['id']))==expected
