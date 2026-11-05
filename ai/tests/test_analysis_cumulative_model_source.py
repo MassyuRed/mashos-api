@@ -5,6 +5,10 @@ from dataclasses import replace
 import json
 import os
 from pathlib import Path
+import ssl
+import subprocess
+import threading
+from http.server import ThreadingHTTPServer
 from unittest.mock import AsyncMock, patch
 from uuid import UUID
 
@@ -74,6 +78,56 @@ def test_self_hosted_analysis_sends_exact_existing_material_and_retains_raw():
     response = run(source(prepared))
     assert len(calls) == 1 and response == replace(synthetic_response(prepared),
         raw=raw, raw_sha256=__import__('hashlib').sha256(raw.encode()).hexdigest())
+
+
+def test_real_loopback_https_keeps_certificate_verification_and_exact_model_packet(tmp_path):
+    import importlib.util
+    path = Path(__file__).parents[1] / 'tools/serve_emlis_natural_reply.py'
+    spec = importlib.util.spec_from_file_location('analysis_https_probe', path)
+    probe = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(probe)
+    cert, key = tmp_path/'localhost.pem', tmp_path/'localhost.key'
+    subprocess.run(['openssl', 'req', '-x509', '-newkey', 'rsa:2048', '-sha256', '-days', '1', '-nodes',
+        '-keyout', str(key), '-out', str(cert), '-subj', '/CN=localhost',
+        '-addext', 'subjectAltName=DNS:localhost,IP:127.0.0.1'],
+        check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=15)
+    key.chmod(0o600)
+    prepared = service.prepare_cumulative_category_units(OWNER, material('pair'), prompt_version='selected_material.v4')
+    raw = synthetic_response(prepared).raw
+    calls = []
+    def generate(messages, deadline):
+        assert messages == prepared.messages()
+        calls.append(messages)
+        return raw, 'stop'
+    import time
+    server = ThreadingHTTPServer(('127.0.0.1', 0), probe.make_handler(generate,
+        api_key='synthetic-private-key', model_name='synthetic-analysis-4b',
+        deadline=time.monotonic()+20, max_requests=1))
+    server_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    server_context.load_cert_chain(cert, key)
+    server.socket = server_context.wrap_socket(server.socket, server_side=True)
+    worker = threading.Thread(target=server.serve_forever, daemon=True)
+    worker.start()
+    endpoint = f'https://localhost:{server.server_port}/v1/chat/completions'
+    try:
+        untrusted = model_sources.SelfHostedAnalysisModelSource(endpoint=endpoint,
+            model='synthetic-analysis-4b', api_key='synthetic-private-key')
+        with pytest.raises(RuntimeError, match='analysis_model_source_unavailable'):
+            run(untrusted(prepared))
+        assert calls == []
+        async def trusted_call():
+            context = ssl.create_default_context(cafile=str(cert))
+            assert context.verify_mode == ssl.CERT_REQUIRED and context.check_hostname
+            source = model_sources.SelfHostedAnalysisModelSource(endpoint=endpoint,
+                model='synthetic-analysis-4b', api_key='synthetic-private-key',
+                transport=httpx.AsyncHTTPTransport(verify=context))
+            return await source(prepared)
+        assert run(trusted_call()) == synthetic_response(prepared)
+        assert len(calls) == 1
+    finally:
+        server.shutdown()
+        server.server_close()
+        worker.join(timeout=5)
 
 
 @pytest.mark.parametrize('defect', ['redirect', 'unauthorized', 'busy', 'unavailable', 'model', 'choices',
