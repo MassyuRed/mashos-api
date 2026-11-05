@@ -961,6 +961,36 @@ def insert_material(db, mode):
     return original
 
 
+@pytest.mark.parametrize('text,nodes,edges,actor_unknown',[
+    ('資料を調べた。',1,0,True),
+    ('僕は資料を調べた。僕は費用を記録した。',2,0,False),
+    ('私は資料を見た。その後、私は分担を決めた。',2,1,False)])
+def test_real_sql_model_actions_keep_source_scope_and_non_generating_rereads(sql_source,text,nodes,edges,actor_unknown):
+    db,_=sql_source
+    original=insert_material(db,'role')
+    assert 'code' not in db.query('update public.emotions set memo=$1,memo_action=$2 where id=$3',
+        [text,'',original['id']])
+    calls=[]
+    async def source(prepared):
+        calls.append(prepared)
+        return synthetic_response(prepared)
+    first=run(service.ensure_map(OWNER,model_source=source))
+    assert len(calls)==1 and first['refreshed'] and first['has_visible_content']
+    assert len(first['meta']['nodes'])==nodes and len(first['meta']['edges'])==edges
+    assert ('誰の行動かは未確定' in first['content_text'])==actor_unknown
+    assert first['map_context']['mapped_count']==1 and first['map_context']['unparsed_count']==0
+    forbidden=AsyncMock(side_effect=AssertionError('saved model acquisition'))
+    with patch.object(service,'build_cumulative_map',side_effect=AssertionError('saved generation')):
+        saved=[run(service.ensure_map(OWNER,model_source=forbidden)),
+            run(service.ensure_map(OWNER,monthly=True,force=True,model_source=forbidden)),
+            run(service.ensure_map(OWNER,ensure=False,model_source=forbidden))]
+    forbidden.assert_not_awaited()
+    for value in saved:
+        assert value['report_id']==first['report_id'] and not value['refreshed']
+        assert value['meta']==first['meta'] and value['content_text']==first['content_text']
+        assert value['map_context']==first['map_context']
+
+
 @pytest.mark.parametrize('mode', ['role', 'pair', 'clause', 'combined'])
 def test_real_sql_fresh_source_normal_commit_and_immutable_month(sql_source, monkeypatch, mode):
     db, rpc = sql_source
