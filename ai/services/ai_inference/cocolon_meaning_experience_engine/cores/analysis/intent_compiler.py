@@ -1099,7 +1099,8 @@ def _written_role_proposition(text):
     The written の役割は relation proves the role; a word ending in 係 does
     not. Consume the complete field so a reported, hypothetical or uncertain
     host cannot be discarded. Recording time never supplies event time.
-    This witness is only used by the explicit model-role admission profile.
+    The ordinary scope guard also reuses it to recognize a closed sentence;
+    that use does not add a ROLE node to the ordinary map.
     """
     if type(text) is not str:
         return None
@@ -1741,6 +1742,11 @@ def _analysis_prefix_opens_report(prefix):
     # can pair の in その後 / a nominal with でした in ませんでした.
     # Inspect every other clause so a genuine earlier speaker remains open.
     for clause in re.split(r'[。．.]', prefix):
+        # A complete SELF の役割は statement closes its own past assertion.
+        # The generic の…だった heuristic must not reopen it as a report.
+        # Other clauses are still checked, including earlier/later hosts.
+        if _written_role_proposition(clause.strip()) is not None:
+            continue
         proposition = _proposition(clause.strip())
         closed_decision = bool(proposition and proposition.actor == 'SELF'
             and proposition.predicate_lemma in _PAST_DECISION_LEMMAS)

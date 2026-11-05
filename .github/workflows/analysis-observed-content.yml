@@ -36,7 +36,7 @@ jobs:
   observed-content:
     if: github.repository == 'MassyuRed/mashos-api'
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 15
     env:
       PYTEST_DISABLE_PLUGIN_AUTOLOAD: '1'
       PYTHONDONTWRITEBYTECODE: '1'
@@ -70,6 +70,7 @@ jobs:
           ai/tests/test_analysis_closed_quote_self_action.py
           ai/tests/test_analysis_model_role_clause.py
           ai/tests/test_analysis_model_observed_actions.py
+          ai/tests/test_analysis_model_closed_role.py
           ai/tests/test_analysis_model_role_action.py
           ai/tests/test_analysis_model_quoted_parent_units.py
           ai/tests/test_analysis_model_fields.py
