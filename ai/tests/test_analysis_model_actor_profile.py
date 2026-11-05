@@ -1,5 +1,4 @@
 """Opt-in actor explanation preserves source identity and unresolved candidates."""
-from dataclasses import replace
 import json
 from unittest.mock import patch
 
@@ -39,6 +38,22 @@ def test_v7_corrects_only_the_actor_explanation_and_keeps_v4_v6_messages():
     assert '所有格「僕の」と主題格「僕は」はどちらも' in old
     assert '所有格「僕の」と主題格「僕は」はどちらも' not in new
     assert 'そのunitの述語の主体' in new and '一意な原文範囲' in new
+
+
+def test_actual_four_prompt_examples_bind_to_their_own_source_fields():
+    instruction = admission._possessive_actor_units_instruction()
+    material, packet = instruction.split('例の入力:', 1)[1].split('\n例の出力:', 1)
+    material = json.loads(material)
+    packet = json.loads(packet.split('\n今回の各unit', 1)[0])
+    snap = source_snapshot(4)
+    for member, field in zip(snap['members'], material['fields']):
+        member['original'].update(memo=field['text'], memo_action='')
+    p = service.prepare_cumulative_category_units(OWNER, snap, prompt_version='selected_material.v7')
+    value = call(p, packet)
+    a, counts = service.build_cumulative_quoted_parent_candidates(OWNER, snap, model_input=value)
+    assert counts['mapped_count'] == 0 and counts['unparsed_count'] == 4
+    assert [len(f.units) for f in a.graph.fields] == [2, 2, 2, 2]
+    assert [u.parent for f in a.graph.fields for u in f.units] == [None, 1] * 4
 
 
 @pytest.mark.parametrize('text,actor', [
@@ -87,3 +102,11 @@ def test_reason_and_unperformed_wish_remain_candidates_with_no_route():
     assert a.graph.route_edges == () and counts['mapped_count'] == 0 and counts['unparsed_count'] == 1
     assert all(u.modality == 'AS_WRITTEN_UNRESOLVED' for u in a.graph.fields[0].units)
     assert 'SELF' not in [u.actor for u in a.graph.fields[0].units]
+    r = a.graph.fields[0].units[1]
+    assert r.parent == 1 and r.scope_role == 'WRITTEN_REASON'
+    assert [(q.kind, q.quote) for q in r.qualifiers] == [('REASON_MARKER', 'ので')]
+    raw = service.serialize_cumulative_quoted_parent_candidates(OWNER, snap,
+        model_input=value, artifact=a, coverage=counts)
+    assert json.loads(raw)['state']['response']['raw'] == value.response.raw
+    with patch.object(compiler, 'compile_analysis_unit_candidates', side_effect=AssertionError('saved generation')):
+        assert service.reload_cumulative_quoted_parent_candidates(OWNER, snap, raw) == (a, counts)
