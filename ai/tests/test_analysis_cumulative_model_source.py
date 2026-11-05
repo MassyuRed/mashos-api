@@ -239,6 +239,9 @@ def test_offline_batch_planner_checks_whole_source_before_any_budget_callback(sc
         for member in snap['members']: member['original']['memo'] = ''
     if scope == 'safety': snap['members'][-1]['original']['memo'] = '死にたい。'
     if scope in {'foreign_answer', 'implicit_answer'}:
+        # with_answer freezes a canonical Emlis parent; the plain cumulative
+        # fixture deliberately has no strength-bearing emotion_details.
+        snap['members'][-1]['original']['emotion_details'] = [dict(type='平穏', strength='medium')]
         snap['members'][-1] = with_answer(snap['members'][-1], '費用を記録した。' if scope=='implicit_answer' else '僕は費用を記録した。')
         if scope == 'foreign_answer': snap['members'][-1]['thread']['user_id'] = str(UUID(int=2))
     measured = []
