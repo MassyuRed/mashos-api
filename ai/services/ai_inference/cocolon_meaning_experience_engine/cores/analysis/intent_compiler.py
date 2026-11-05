@@ -1718,6 +1718,44 @@ def _known_postposed_host(continuation, *, closed_speech=False):
                     r'って|わけ|訳|のでは|のか|のは|のも|なんて|などと|かも|かどうか|はず)', continuation)
 
 
+def _closed_quote_action_context(context, span, start, end):
+    # A closed, explicitly attributed past utterance can accompany an independent
+    # SELF past action. Its content stays unread; this view is only for scope
+    # checks, never source/evidence, proposition construction or order edges.
+    if context.count('「') != 1 or context.count('」') != 1:
+        return context
+    if start != 0 or end != len(span.raw_text):
+        return context
+    proposition = _parsed_proposition(span.raw_text)
+    if not (proposition and proposition.actor == 'SELF'
+            and proposition.predicate_lemma in _PAST_ACTION_LEMMAS
+            and (proposition.modality, proposition.temporal_scope) == ('fact', 'past')
+            and not proposition.dependent_form and proposition.possible_content is None):
+        return context
+    speaker = r'(?:' + _QUALIFIED_SPEECH_SPEAKER + r'|' + _SPEECH_SPEAKER + r')'
+    hosts = list(re.finditer(r'(?:^|(?<=[。．.!！]))[ \t\u3000]*'
+        + speaker + _SPEECH_TOPIC + r'「[^「」『』“”"\r\n]+」と'
+        + _PAST_SPEECH + r'[。．.!！]', context))
+    if len(hosts) != 1 or not (hosts[0].end() <= span.start_index
+                             or span.end_index <= hosts[0].start()):
+        return context
+    host = hosts[0]
+    between = (context[host.end():span.start_index] if host.end() <= span.start_index
+               else context[span.end_index:host.start()])
+    if between.strip(' \t\u3000。．.\r\n'):
+        return context
+    following = context[host.end():].lstrip(' \t\u3000。．.!！\r\n;；')
+    if _known_postposed_host(following):
+        return context
+    # Keep coordinates and the sentence boundary. Any other quotation or
+    # report remains visible to the unchanged guards below.
+    view = context[:host.start()] + ' ' * (host.end() - host.start() - 1) + context[host.end() - 1:]
+    # The existing report scan does not establish closure at these marks.
+    if re.search(r'[!！?？…‥]', view):
+        return context
+    return view
+
+
 def _fragment(source, nucleus, plan=None, *, _protective_contrast=False):
     # Multi-span nuclei can contain unbounded relations. Keep them unknown in
     # this first consumer rather than stitching a new proposition together.
@@ -1751,6 +1789,7 @@ def _fragment(source, nucleus, plan=None, *, _protective_contrast=False):
     # Quote, report and conditional scopes need additional route semantics;
     # their presence is explicit in unknown gaps rather than silently dropped.
     context = source.normalized.get(span.source_field, '')
+    context = _closed_quote_action_context(context, span, a, b)
     if re.search(r'[「」『』“”"?？]|(?:と言われ|と聞い|そうだ|なら|(?<!か)もし)', context):
         return None
     # A complete cognitive witness can represent its uncertain complement.
@@ -2390,7 +2429,12 @@ def compile_observed_graph(source_set: AnalysisSourceSet) -> ObservedGraph:
         order_pairs = _explicit_order_pairs(source, plan,
             excluded.get(source.envelope.envelope_id, set()))
         ordered_evidence = {e.evidence_id for pair in order_pairs for e in pair}
-        admitted, by_evidence, unresolved = {}, {}, False
+        admitted, by_evidence = {}, {}
+        # Quoted speech is still unread even when it supplied no shared
+        # nucleus. Retain its scope alongside a separately proved SELF act.
+        unresolved = any(s.source_field in ('memo', 'memo_action')
+            and s.span_id not in excluded.get(source.envelope.envelope_id, set())
+            and re.search(r'[「」『』“”"]', s.raw_text) for s in source.spans)
         comparable_claims = []
         annotation_pairs = [pair for span in source.spans
             if span.span_id not in excluded.get(source.envelope.envelope_id, set())
