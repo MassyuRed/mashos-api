@@ -129,6 +129,7 @@ jobs:
           -p pytest_subtests.plugin -p no:cacheprovider -c /dev/null --rootdir=. --noconftest
           ai/tests/test_analysis_cumulative.py
           ai/tests/test_analysis_cumulative_model_source.py
+          ai/tests/test_analysis_cumulative_model_batches.py
           ai/tests/test_analysis_cumulative_jobs.py
           ai/tests/test_analysis_observed_api.py
       - name: Verify monthly rank, immutable re-read and source deletion SQL

@@ -349,6 +349,41 @@ def prepare_cumulative_model_batches(owner, snapshot, *,
         context_tokens, reserved_new_tokens, max_request_bytes)
 
 
+def _cumulative_batch_parent(owner, snapshot, model_input):
+    from cocolon_meaning_experience_engine.cores.analysis.semantic_admission import (
+        AnalysisModelObservedBatchInput, require)
+    require(type(model_input) is AnalysisModelObservedBatchInput,
+        'analysis_model_batch_input_invalid')
+    return _written_role_input(owner, snapshot, model_input.parent)
+
+
+def build_cumulative_model_batch_map(owner, snapshot, *, model_input):
+    """Explicit offline composition only; ensure/factory/store never select it."""
+    from cocolon_meaning_experience_engine.cores.analysis.semantic_admission import (
+        generate_analysis_model_observed_batches)
+    parent = _cumulative_batch_parent(owner, snapshot, model_input)
+    artifact, mapped, unread = generate_analysis_model_observed_batches(model_input, with_record_counts=True)
+    coverage = _unit_candidate_coverage(parent, snapshot)
+    coverage.update(mapped_count=mapped, unparsed_count=unread)
+    return artifact, _checked_coverage(coverage)
+
+
+def serialize_cumulative_model_batch_input(owner, snapshot, *, model_input):
+    """Caller-managed private input bytes, without a saved-map claim."""
+    from cocolon_meaning_experience_engine.cores.analysis.semantic_admission import (
+        serialize_analysis_model_observed_batch_input)
+    _cumulative_batch_parent(owner, snapshot, model_input)
+    return serialize_analysis_model_observed_batch_input(model_input)
+
+
+def reload_cumulative_model_batch_input(owner, snapshot, raw, *, prompt_version='selected_material.v4'):
+    """Rebind INPUTS only; later composition requires an explicit build call."""
+    from cocolon_meaning_experience_engine.cores.analysis.semantic_admission import (
+        reload_analysis_model_observed_batch_input)
+    prepared = prepare_cumulative_category_units(owner, snapshot, prompt_version=prompt_version)
+    return reload_analysis_model_observed_batch_input(prepared, raw)
+
+
 def build_cumulative_quoted_parent_candidates(owner, snapshot, *, model_input):
     from cocolon_meaning_experience_engine import MeaningExperienceEngine
     from cocolon_meaning_experience_engine.cores.analysis.semantic_admission import (

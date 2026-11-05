@@ -1418,12 +1418,19 @@ def generate_analysis_model_observed_actions(request, model_input, *, with_recor
     are renumbered; neither model units nor facts from another record are used
     as witnesses. Cross-record meaning and relations remain unestablished.
     """
-    from .intent_compiler import ObservedGraph, UnknownGap, _observed_claim_signature
-    from .observed_route_realizer import realize_observed_graph
     frozen, fields, _ = _admit_quoted_parent_units(request, model_input)
     require_analysis_model_observed_scope(request, frozen=frozen)
+    record_fields = {m.saved_record_ref: tuple(f for f in fields if f.record_ref == m.saved_record_ref)
+        for m in frozen.members}
+    return _realize_model_observed_records(frozen, record_fields, with_record_counts=with_record_counts)
+
+
+def _realize_model_observed_records(frozen, record_fields, *, with_record_counts=False):
+    """Compile complete occasions and merge once in the full parent's order."""
+    from .intent_compiler import ObservedGraph, UnknownGap, _observed_claim_signature
+    from .observed_route_realizer import realize_observed_graph
     if len(frozen.members) == 1:
-        graph = _compile_model_observed_record(frozen, fields)
+        graph = _compile_model_observed_record(frozen, record_fields[frozen.members[0].saved_record_ref])
         mapped = int(graph is not None)
         unread = int(graph is None or any(g.missing_scope == 'SOURCE_SCOPE' for g in graph.unknown_gaps))
     else:
@@ -1434,8 +1441,7 @@ def generate_analysis_model_observed_actions(request, model_input, *, with_recor
             local = replace(frozen, members=(member,),
                 sources=tuple(s for s in frozen.sources if s.record_ref == ref),
                 category_records=tuple(r for r in frozen.category_records if r.saved_record_ref == ref))
-            record_fields = tuple(f for f in fields if f.record_ref == ref)
-            part = _compile_model_observed_record(local, record_fields)
+            part = _compile_model_observed_record(local, record_fields[ref])
             if part is None:
                 unread += 1
                 continue
@@ -1486,6 +1492,134 @@ def generate_analysis_model_observed_actions(request, model_input, *, with_recor
     artifact.safe_projection(authenticated_owner_scope=frozen.owner_scope)
     artifact.safe_text_projection(authenticated_owner_scope=frozen.owner_scope)
     return (artifact, mapped, unread) if with_record_counts else artifact
+
+
+MODEL_OBSERVED_BATCH_INPUT_STATE = 'cocolon.cmee.analysis_model_observed_batch_input.v1'
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class AnalysisModelObservedBatchInput:
+    """Private bound inputs, not a combined Response or a saved observed map."""
+    parent: AnalysisModelQuotedParentUnitsInput
+    batches: tuple[AnalysisModelQuotedParentUnitsInput, ...]
+
+
+def _observed_batch_parent(parent):
+    require(type(parent) is AnalysisModelQuotedParentUnitsInput and parent.response is None
+        and type(parent.prompt_version) is str
+        and parent.prompt_version in {QUOTED_PARENT_MATERIAL_V4_PROFILE, QUOTED_PARENT_MATERIAL_V7_PROFILE},
+        'analysis_model_batch_parent_invalid')
+    frozen, fields = _model_fields_source(parent.request, allow_supplements=True)
+    require(parent.request_ref == _quoted_parent_units_ref(parent.request, frozen,
+        parent.source_guard, parent.prompt_version), 'analysis_model_batch_parent_invalid')
+    require_analysis_model_observed_scope(parent.request, frozen=frozen)
+    require(len({m.saved_record_ref for m in parent.request.members}) == len(parent.request.members),
+        'analysis_model_batch_partition_invalid')
+    return frozen, fields
+
+
+def _admit_model_observed_batches(model_input):
+    """Keep each strict child reader and its source-owned field coordinates."""
+    from .source_adapter import AnalysisSavedRecord
+    require(type(model_input) is AnalysisModelObservedBatchInput,
+        'analysis_model_batch_input_invalid')
+    parent = model_input.parent
+    frozen, parent_fields = _observed_batch_parent(parent)
+    require(type(model_input.batches) is tuple and 0 < len(model_input.batches) <= len(frozen.members),
+        'analysis_model_batch_partition_invalid')
+    members = {m.saved_record_ref: m for m in parent.request.members}
+    parent_sources = {s.envelope.envelope_id: s for s in frozen.sources}
+    parent_by_field = {f['field_ref']: f for f in parent_fields}
+    record_fields = {m.saved_record_ref: [] for m in frozen.members}
+    record_refs, field_refs = [], []
+    for child in model_input.batches:
+        require(type(child) is AnalysisModelQuotedParentUnitsInput
+            and type(child.request) is AnalysisObservedMapRequest
+            and type(child.request.members) is tuple and bool(child.request.members)
+            and all(type(m) is AnalysisSavedRecord for m in child.request.members)
+            and child.prompt_version == parent.prompt_version and child.source_guard == parent.source_guard,
+            'analysis_model_batch_child_invalid')
+        request_refs = tuple(m.saved_record_ref for m in child.request.members)
+        require(all(type(ref) is str and ref in members for ref in request_refs),
+            'analysis_model_batch_partition_invalid')
+        require(child.request == replace(parent.request, members=tuple(members[ref] for ref in request_refs)),
+            'analysis_model_batch_child_invalid')
+        child_frozen, fields, _ = _admit_quoted_parent_units(child.request, child)
+        require_analysis_model_observed_scope(child.request, frozen=child_frozen)
+        refs = tuple(m.saved_record_ref for m in child_frozen.members)
+        # The planner's unsplit branch keeps the original parent object and
+        # member tuple unchanged, even when the saved snapshot was unordered.
+        # Partition bookkeeping always follows the existing frozen order.
+        require((child.request == parent.request if len(model_input.batches) == 1 else request_refs == refs)
+            and all(parent_sources.get(s.envelope.envelope_id) == s for s in child_frozen.sources),
+            'analysis_model_batch_child_invalid')
+        for field in fields:
+            original = parent_by_field.get(field.field_ref)
+            require(original is not None and field.record_ref in refs
+                and (field.field_path, field.record_ref, field.record_version,
+                    field.complete_source_text, field.evidence) ==
+                    (original['field_path'], original['source'].record_ref,
+                    original['source'].record_version, original['text'], original['evidence']),
+                'analysis_model_batch_field_invalid')
+            # field.field remains the child's original ordinal. The observed
+            # compiler witnesses field_ref/envelope/scalar coordinates instead.
+            record_fields[field.record_ref].append(field)
+            field_refs.append(field.field_ref)
+        record_refs.extend(refs)
+    require(tuple(record_refs) == tuple(m.saved_record_ref for m in frozen.members)
+        and tuple(field_refs) == tuple(f['field_ref'] for f in parent_fields),
+        'analysis_model_batch_partition_invalid')
+    return frozen, {ref: tuple(fields) for ref, fields in record_fields.items()}
+
+
+def generate_analysis_model_observed_batches(model_input, *, with_record_counts=False):
+    """Explicit offline composition; this performs no acquisition or storage."""
+    frozen, record_fields = _admit_model_observed_batches(model_input)
+    return _realize_model_observed_records(frozen, record_fields, with_record_counts=with_record_counts)
+
+
+def _observed_batch_parent_binding(parent, frozen):
+    return dict(request_ref=parent.request_ref, source_guard=parent.source_guard,
+        prompt_version=parent.prompt_version, messages_sha256=digest(parent.messages()),
+        source_set_ref=frozen.source_set_ref, owner_scope=frozen.owner_scope, period=list(frozen.period))
+
+
+def serialize_analysis_model_observed_batch_input(model_input):
+    """Save exact private INPUTS only; never compile/author a saved map."""
+    frozen, _ = _admit_model_observed_batches(model_input)
+    return canonical(dict(schema_version=MODEL_OBSERVED_BATCH_INPUT_STATE,
+        parent=_observed_batch_parent_binding(model_input.parent, frozen),
+        batches=[dict(record_refs=[m.saved_record_ref for m in child.request.members],
+            request_ref=child.request_ref, response=asdict(child.response)) for child in model_input.batches]))
+
+
+def reload_analysis_model_observed_batch_input(prepared, raw):
+    """Rebind inputs to a freshly prepared parent; no model/compiler/author."""
+    frozen, _ = _observed_batch_parent(prepared)
+    saved = _load(raw)
+    require(type(saved) is dict and set(saved) == {'schema_version', 'parent', 'batches'}
+        and saved['schema_version'] == MODEL_OBSERVED_BATCH_INPUT_STATE
+        and type(saved['parent']) is dict
+        and saved['parent'] == _observed_batch_parent_binding(prepared, frozen)
+        and type(saved['batches']) is list and 0 < len(saved['batches']) <= len(frozen.members),
+        'analysis_model_batch_input_state_invalid')
+    members = {m.saved_record_ref: m for m in prepared.request.members}
+    batches = []
+    for row in saved['batches']:
+        require(type(row) is dict and set(row) == {'record_refs', 'request_ref', 'response'}
+            and type(row['record_refs']) is list and bool(row['record_refs'])
+            and all(type(ref) is str and ref in members for ref in row['record_refs'])
+            and type(row['response']) is dict and set(row['response']) ==
+                {'request_ref', 'messages_sha256', 'raw_sha256', 'finish_reason', 'raw'},
+            'analysis_model_batch_input_state_invalid')
+        child = prepare_analysis_model_quoted_parent_units(replace(prepared.request,
+            members=tuple(members[ref] for ref in row['record_refs'])),
+            source_guard=prepared.source_guard, prompt_version=prepared.prompt_version)
+        require(row['request_ref'] == child.request_ref, 'analysis_model_batch_input_state_invalid')
+        batches.append(replace(child, response=AnalysisModelQuotedParentUnitsResponse(**row['response'])))
+    value = AnalysisModelObservedBatchInput(prepared, tuple(batches))
+    _admit_model_observed_batches(value)
+    return value
 
 
 def _validated_quoted_parent_unit_artifact(model_input, artifact):
