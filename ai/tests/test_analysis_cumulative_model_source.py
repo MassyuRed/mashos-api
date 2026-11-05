@@ -51,6 +51,250 @@ def provider_packet(raw, **changes):
     return packet
 
 
+def measured_batch_budget(prepared, *, tokens_per_record=250):
+    """Deterministic unit-test counter plus the real existing JSON encoding."""
+    messages = prepared.messages()
+    records = json.loads(messages[1]['content'])['records']
+    payload = dict(model='synthetic-analysis-4b', messages=messages, temperature=0,
+        max_tokens=2048, stream=False, chat_template_kwargs={'enable_thinking': False})
+    body = httpx.Request('POST', 'https://synthetic-analysis.invalid/v1/chat/completions',
+        json=payload).content
+    return service.AnalysisModelInputBudget(3000 + len(records)*tokens_per_record, len(body))
+
+
+@pytest.mark.parametrize('profile', ['selected_material.v4', 'selected_material.v7'])
+def test_offline_batch_plan_keeps_every_201_record_and_original_source_binding(profile):
+    from cocolon_meaning_experience_engine.cores.analysis.semantic_admission import _model_fields_source
+    from cocolon_meaning_experience_engine.cores.analysis.source_adapter import freeze_analysis_sources
+    snap = source_snapshot(201)
+    original = copy.deepcopy(snap)
+    with patch.object(service, '_rpc', AsyncMock(side_effect=AssertionError('planner RPC'))):
+        plan = service.prepare_cumulative_model_batches(OWNER, snap,
+            prompt_version=profile, measure_budget=measured_batch_budget)
+        service._rpc.assert_not_awaited()
+    parent_frozen, parent_fields = _model_fields_source(plan.parent.request, allow_supplements=True)
+    expected_refs = tuple(m.saved_record_ref for m in parent_frozen.members)
+    assert len(plan.batches) > 1
+    assert tuple(ref for group in plan.record_refs for ref in group) == expected_refs
+    assert len(expected_refs) == len(set(expected_refs)) == 201
+    assert snap == original
+    parent_sources = {s.envelope.envelope_id:s for s in parent_frozen.sources}
+    source_refs, field_refs = [], []
+    for batch, budget, refs in zip(plan.batches, plan.budgets, plan.record_refs):
+        assert batch.response is None and batch.source_guard == plan.parent.source_guard
+        assert batch.prompt_version == profile
+        assert batch.request.request_id == plan.parent.request.request_id
+        assert batch.request.authenticated_owner_scope == OWNER
+        assert batch.request.period_start == plan.parent.request.period_start
+        assert batch.request.period_end == plan.parent.request.period_end
+        assert tuple(m.saved_record_ref for m in batch.request.members) == refs
+        assert budget.prompt_tokens + plan.reserved_new_tokens <= plan.context_tokens == 8192
+        assert budget.request_body_bytes <= plan.max_request_bytes == 65536
+        frozen, fields = _model_fields_source(batch.request, allow_supplements=True)
+        assert frozen == freeze_analysis_sources(batch.request)
+        assert all(parent_sources[s.envelope.envelope_id] == s for s in frozen.sources)
+        source_refs.extend(s.envelope.envelope_id for s in frozen.sources)
+        field_refs.extend(f['field_ref'] for f in fields)
+        parent_by_field = {f['field_ref']:f for f in parent_fields}
+        assert all(parent_by_field[f['field_ref']] == f for f in fields)
+    assert source_refs == [s.envelope.envelope_id for s in parent_frozen.sources]
+    assert field_refs == [f['field_ref'] for f in parent_fields]
+
+
+@pytest.mark.parametrize('profile', ['selected_material.v4', 'selected_material.v7'])
+def test_offline_batch_plan_returns_exact_parent_if_unsplit_and_does_not_change_legacy_bytes(profile):
+    snap = source_snapshot(2)
+    before = service.prepare_cumulative_category_units(OWNER, snap, prompt_version=profile)
+    messages = before.messages()
+    plan = service.prepare_cumulative_model_batches(OWNER, snap,
+        prompt_version=profile, measure_budget=measured_batch_budget)
+    assert plan.batches == (plan.parent,) and plan.batches[0] is plan.parent
+    assert plan.parent == before and plan.parent.messages() == messages
+    assert service.prepare_cumulative_category_units(OWNER, snap, prompt_version=profile) == before
+
+
+def test_offline_batch_plan_never_splits_original_fields_or_three_qualified_answers(monkeypatch):
+    from cocolon_meaning_experience_engine.cores.analysis.source_adapter import AnalysisSupplement, commitment
+    snap = source_snapshot(2)
+    snap['members'][0]['original']['memo_action'] = '僕は費用を記録した。'
+    parent_request = service._cumulative_model_request(OWNER, snap)
+    first = parent_request.members[0]
+    # The saved-source owner has its own round/answer tests. Here the planner
+    # receives its already qualified immutable member with the maximum answers.
+    texts = ('僕は資料を見た。', '僕は費用を記録した。', '僕は日程を決めなかった。')
+    answers = tuple(AnalysisSupplement(str(UUID(int=700+i)), OWNER, first.saved_record_ref,
+        first.saved_record_version, text, commitment(text)) for i,text in enumerate(texts))
+    request = replace(parent_request, members=(replace(first, supplements=answers), parent_request.members[1]))
+    monkeypatch.setattr(service, '_cumulative_model_request', lambda *_:request)
+    plan = service.prepare_cumulative_model_batches(OWNER, snap,
+        measure_budget=lambda p:measured_batch_budget(p, tokens_per_record=2000))
+    assert len(plan.batches) == 2
+    assert plan.batches[0].request.members == request.members[:1]
+    assert plan.batches[0].request.members[0].supplements == answers
+    body = json.loads(plan.batches[0].messages()[1]['content'])
+    assert len(body['records']) == 1 and len(body['fields']) == 5
+    assert [f['text'] for f in body['fields']] == [first_value for first_value in (
+        json.loads(first.original_json)['memo'], '僕は費用を記録した。', *texts)]
+    assert [f['source_role'] for f in body['fields']] == ['ORIGINAL_INPUT']*2 + ['SUPPLEMENTAL_ANSWER']*3
+    assert [f['supplement'] for f in body['fields'][2:]] == [1,2,3]
+
+
+def test_offline_batch_plan_preserves_unicode_categories_emotions_and_as_of():
+    snap = source_snapshot(3)
+    snap['members'][1]['original'].update(memo='僕は本を見た。🧭 café\u0301 雨のち晴れ。',
+        memo_action='僕は費用を記録しなかった。', category=['生活', '家'],
+        emotion_details=[dict(type='平穏', strength='medium')])
+    parent = service.prepare_cumulative_category_units(OWNER, snap, prompt_version='selected_material.v7')
+    plan = service.prepare_cumulative_model_batches(OWNER, snap, prompt_version='selected_material.v7',
+        measure_budget=lambda p:measured_batch_budget(p, tokens_per_record=2000))
+    assert len(plan.batches) == 3
+    full = json.loads(parent.messages()[1]['content'])
+    for index, (batch, original_record) in enumerate(zip(plan.batches, parent.request.members)):
+        assert batch.request.members == (original_record,)
+        user = json.loads(batch.messages()[1]['content'])
+        assert user['analysis_as_of'] == full['analysis_as_of']
+        original = json.loads(original_record.original_json)
+        assert [f['text'] for f in user['fields']] == [original[k] for k in ('memo','memo_action') if original[k]]
+        assert user['records'][0]['selected_emotions'] == original['emotions']
+        assert user['records'][0]['emotion_details'] == original['emotion_details']
+        assert user['records'][0]['selected_categories'] == full['records'][index]['selected_categories']
+        assert set(user['records'][0]['selected_categories']) == set(original['category'])
+    before = plan.parent.messages()
+    snap['members'][1]['original']['memo'] = 'changed after CPU preparation'
+    assert plan.parent.messages() == before
+
+
+def test_offline_batch_plan_enforces_body_budget_even_with_small_token_measurement():
+    snap = source_snapshot(3)
+    single = service.prepare_cumulative_category_units(OWNER, source_snapshot(1), prompt_version='selected_material.v4')
+    body_limit = measured_batch_budget(single).request_body_bytes
+    plan = service.prepare_cumulative_model_batches(OWNER, snap,
+        measure_budget=lambda p:replace(measured_batch_budget(p), prompt_tokens=1),
+        max_request_bytes=body_limit)
+    assert len(plan.batches) == 3 and all(b.request_body_bytes <= body_limit for b in plan.budgets)
+
+
+@pytest.mark.parametrize('budget', [service.AnalysisModelInputBudget(6144,65536),
+    service.AnalysisModelInputBudget(6145,65536), service.AnalysisModelInputBudget(6144,65537)])
+def test_offline_batch_plan_respects_exact_context_and_body_boundaries(budget):
+    kwargs = dict(measure_budget=lambda _:budget)
+    if budget.prompt_tokens == 6144 and budget.request_body_bytes == 65536:
+        assert len(service.prepare_cumulative_model_batches(OWNER, source_snapshot(1), **kwargs).batches) == 1
+    else:
+        with pytest.raises(ValueError, match='analysis_model_batch_record_budget_exceeded'):
+            service.prepare_cumulative_model_batches(OWNER, source_snapshot(1), **kwargs)
+
+
+def test_offline_batch_plan_oversized_later_record_never_returns_a_partial_plan():
+    snap = source_snapshot(4)
+    last_id = snap['members'][-1]['original']['id']
+    measured = []
+    def budget(prepared):
+        refs = tuple(m.saved_record_ref for m in prepared.request.members)
+        measured.append(refs)
+        return service.AnalysisModelInputBudget(7000 if last_id in refs else 3000+2000*len(refs), 1000)
+    original = copy.deepcopy(snap)
+    with pytest.raises(ValueError, match='analysis_model_batch_record_budget_exceeded'):
+        service.prepare_cumulative_model_batches(OWNER, snap, measure_budget=budget)
+    assert (last_id,) in measured and snap == original
+
+
+def test_offline_batch_plan_keeps_leading_middle_and_trailing_fieldless_records():
+    snap = source_snapshot(5)
+    for index in (0,2,4):
+        snap['members'][index]['original'].update(memo='', memo_action='')
+    plan = service.prepare_cumulative_model_batches(OWNER, snap,
+        measure_budget=lambda p:measured_batch_budget(p, tokens_per_record=1000))
+    assert [len(batch.request.members) for batch in plan.batches] == [2,3]
+    expected = tuple(raw['original']['id'] for raw in snap['members'])
+    assert tuple(ref for group in plan.record_refs for ref in group) == expected
+    for batch in plan.batches:
+        user = json.loads(batch.messages()[1]['content'])
+        assert user['fields'] and len(user['records']) == len(batch.request.members)
+
+
+def test_offline_batch_plan_uses_existing_canonical_record_order_without_changing_originals():
+    snap = source_snapshot(4)
+    snap['members'].reverse()
+    original = copy.deepcopy(snap)
+    plan = service.prepare_cumulative_model_batches(OWNER, snap,
+        measure_budget=lambda p:measured_batch_budget(p, tokens_per_record=2000))
+    expected = tuple(sorted((raw['original']['id'] for raw in snap['members'])))
+    assert tuple(ref for group in plan.record_refs for ref in group) == expected
+    assert snap == original
+
+
+def test_offline_batch_fieldless_group_failure_does_not_claim_single_record_is_oversized():
+    snap = source_snapshot(3)
+    snap['members'][0]['original']['memo'] = ''
+    with pytest.raises(ValueError, match='analysis_model_batch_group_budget_exceeded'):
+        service.prepare_cumulative_model_batches(OWNER, snap,
+            measure_budget=lambda p:measured_batch_budget(p, tokens_per_record=2000))
+
+
+@pytest.mark.parametrize('scope', ['empty', 'all_fieldless', 'safety', 'foreign_answer', 'implicit_answer'])
+def test_offline_batch_planner_checks_whole_source_before_any_budget_callback(scope):
+    snap = source_snapshot(0 if scope == 'empty' else 2)
+    if scope == 'all_fieldless':
+        for member in snap['members']: member['original']['memo'] = ''
+    if scope == 'safety': snap['members'][-1]['original']['memo'] = '死にたい。'
+    if scope in {'foreign_answer', 'implicit_answer'}:
+        snap['members'][-1] = with_answer(snap['members'][-1], '費用を記録した。' if scope=='implicit_answer' else '僕は費用を記録した。')
+        if scope == 'foreign_answer': snap['members'][-1]['thread']['user_id'] = str(UUID(int=2))
+    measured = []
+    with pytest.raises(ValueError):
+        service.prepare_cumulative_model_batches(OWNER, snap,
+            measure_budget=lambda p:measured.append(p))
+    assert measured == []
+
+
+def test_offline_batch_planner_does_not_partition_away_a_foreign_member(monkeypatch):
+    snap = source_snapshot(2)
+    request = service._cumulative_model_request(OWNER, snap)
+    foreign = replace(request.members[-1], owner_scope=str(UUID(int=2)))
+    monkeypatch.setattr(service, '_cumulative_model_request',
+        lambda *_:replace(request, members=(*request.members[:-1], foreign)))
+    measured = []
+    with pytest.raises(ValueError, match='analysis_owner_mismatch'):
+        service.prepare_cumulative_model_batches(OWNER, snap, measure_budget=lambda p:measured.append(p))
+    assert measured == []
+
+
+def test_offline_batch_planner_accepts_conservative_limits_without_relaxing_provider_limits():
+    plan = service.prepare_cumulative_model_batches(OWNER, source_snapshot(7),
+        measure_budget=measured_batch_budget, context_tokens=7000,
+        reserved_new_tokens=3000, max_request_bytes=50000)
+    assert len(plan.batches) > 1
+    assert all(b.prompt_tokens+3000 <= 7000 and b.request_body_bytes <= 50000 for b in plan.budgets)
+    assert sum(map(len, plan.record_refs)) == 7
+
+
+@pytest.mark.parametrize('bad', [True,False,0,-1,1.5,float('nan'),float('inf'),None,'100'])
+@pytest.mark.parametrize('field', ['prompt_tokens','request_body_bytes'])
+def test_offline_batch_planner_rejects_invalid_or_inexact_measurements(bad, field):
+    values = dict(prompt_tokens=1, request_body_bytes=1)
+    values[field] = bad
+    with pytest.raises(ValueError, match='analysis_model_batch_budget_invalid'):
+        service.prepare_cumulative_model_batches(OWNER, source_snapshot(1),
+            measure_budget=lambda _:service.AnalysisModelInputBudget(**values))
+
+
+@pytest.mark.parametrize('kwargs', [dict(context_tokens=True),dict(context_tokens=8193),dict(context_tokens=2048),
+    dict(context_tokens=float('nan')),dict(reserved_new_tokens=True),dict(reserved_new_tokens=2047),
+    dict(reserved_new_tokens=8192),dict(max_request_bytes=True),dict(max_request_bytes=65537),
+    dict(max_request_bytes=0),dict(max_request_bytes=1.5)])
+def test_offline_batch_planner_cannot_relax_existing_provider_budgets(kwargs):
+    with pytest.raises(ValueError, match='analysis_model_batch_budget_invalid'):
+        service.prepare_cumulative_model_batches(OWNER, source_snapshot(1),
+            measure_budget=measured_batch_budget, **kwargs)
+
+
+@pytest.mark.parametrize('callback', [None, lambda _:None, lambda _:{'prompt_tokens':1,'request_body_bytes':1}, AsyncMock()])
+def test_offline_batch_planner_requires_an_explicit_synchronous_typed_counter(callback):
+    with pytest.raises(ValueError, match='analysis_model_batch_budget_invalid'):
+        service.prepare_cumulative_model_batches(OWNER, source_snapshot(1), measure_budget=callback)
+
+
 def mock_provider(monkeypatch, handler):
     real_client = httpx.AsyncClient
     monkeypatch.setattr(model_sources.httpx, 'AsyncClient',

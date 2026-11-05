@@ -11,8 +11,10 @@ from collections import Counter
 from copy import deepcopy
 from dataclasses import dataclass
 from datetime import date
+import inspect
 import json
 import re
+from typing import TYPE_CHECKING, Callable
 from uuid import UUID, uuid4
 
 import httpx
@@ -23,6 +25,28 @@ from analysis_observed_service import _checked_projection, private_storage_evide
 
 PROFILE = 'cumulative.v1'
 MODEL_SOURCE_TIMEOUT_SECONDS = 60.0
+
+if TYPE_CHECKING:
+    from cocolon_meaning_experience_engine.cores.analysis.semantic_admission import AnalysisModelQuotedParentUnitsInput
+
+
+@dataclass(frozen=True, slots=True)
+class AnalysisModelInputBudget:
+    """Explicit CPU measurements, not an output or execution-time guarantee."""
+    prompt_tokens: int
+    request_body_bytes: int
+
+
+@dataclass(frozen=True, slots=True)
+class CumulativeModelBatchPlan:
+    """Private preparation only; never a response, artifact or saved map."""
+    parent: AnalysisModelQuotedParentUnitsInput
+    batches: tuple[AnalysisModelQuotedParentUnitsInput, ...]
+    budgets: tuple[AnalysisModelInputBudget, ...]
+    record_refs: tuple[tuple[str, ...], ...]
+    context_tokens: int
+    reserved_new_tokens: int
+    max_request_bytes: int
 
 
 @dataclass
@@ -211,6 +235,118 @@ def prepare_cumulative_category_units(owner, snapshot, *, prompt_version='select
     request = replace(_cumulative_model_request(owner, snapshot), selected_category_context=True)
     return prepare_analysis_model_quoted_parent_units(request, source_guard=snapshot['guard'],
         prompt_version=prompt_version)
+
+
+def prepare_cumulative_model_batches(owner, snapshot, *,
+        measure_budget: Callable[[AnalysisModelQuotedParentUnitsInput], AnalysisModelInputBudget],
+        prompt_version='selected_material.v4', context_tokens=8192,
+        reserved_new_tokens=2048, max_request_bytes=65536):
+    """Plan all eligible records without acquiring or combining model responses.
+
+    The caller supplies synchronous measurements from its pinned tokenizer and
+    actual HTTP JSON encoder. No tokenizer dependency or default estimate is
+    introduced in the API. Each independently bound child retains the whole
+    record, its original fields and all qualified answers, the full period and
+    the original database guard. Fieldless records stay with a neighbouring
+    complete record; they never become a new empty-source model request. No
+    snapshot with a fabricated subset guard is constructed. An indivisible
+    record group that exceeds a budget rejects the entire preparation. This
+    deterministic greedy grouping is conservative, not an optimal-partition
+    proof: a fieldless group budget failure does not prove no other grouping
+    could fit.
+
+    This input-budget plan is not selected by ensure_map or its factory. It
+    neither promises that a response fits 2048 tokens nor changes the existing
+    60-second logical acquisition deadline. Raw response composition and batch
+    execution require their own explicit private contract.
+    """
+    from dataclasses import replace
+    from cocolon_meaning_experience_engine.cores.analysis.semantic_admission import (
+        _model_fields_source, prepare_analysis_model_quoted_parent_units,
+        require_analysis_model_observed_scope)
+    if (type(prompt_version) is not str
+            or prompt_version not in {'selected_material.v4', 'selected_material.v7'}):
+        raise ValueError('analysis_model_batch_profile_invalid')
+    if (type(context_tokens) is not int or not 0 < context_tokens <= 8192
+            or type(reserved_new_tokens) is not int or not 2048 <= reserved_new_tokens < context_tokens
+            or type(max_request_bytes) is not int or not 0 < max_request_bytes <= 65536
+            or not callable(measure_budget) or inspect.iscoroutinefunction(measure_budget)):
+        raise ValueError('analysis_model_batch_budget_invalid')
+    parent = prepare_cumulative_category_units(owner, snapshot, prompt_version=prompt_version)
+    frozen, fields = _model_fields_source(parent.request, allow_supplements=True)
+    # Check the same complete-source safety/answer/update boundary before any
+    # budget callback; splitting must not hide an ineligible record or answer.
+    require_analysis_model_observed_scope(parent.request, frozen=frozen)
+    members = {member.saved_record_ref: member for member in parent.request.members}
+    if len(members) != len(parent.request.members):
+        raise ValueError('analysis_model_batch_duplicate_record')
+    ordered = tuple(members[member.saved_record_ref] for member in frozen.members)
+    nonempty = {field['source'].record_ref for field in fields}
+    groups, pending = [], []
+    for member in ordered:
+        pending.append(member)
+        if member.saved_record_ref in nonempty:
+            groups.append(tuple(pending))
+            pending = []
+    if pending:
+        groups[-1] += tuple(pending)
+
+    def measure(prepared):
+        budget = measure_budget(prepared)
+        if (type(budget) is not AnalysisModelInputBudget
+                or type(budget.prompt_tokens) is not int or budget.prompt_tokens <= 0
+                or type(budget.request_body_bytes) is not int or budget.request_body_bytes <= 0):
+            if inspect.iscoroutine(budget):
+                budget.close()
+            raise ValueError('analysis_model_batch_budget_invalid')
+        return budget
+
+    def fits(budget):
+        return (budget.prompt_tokens + reserved_new_tokens <= context_tokens
+            and budget.request_body_bytes <= max_request_bytes)
+
+    def oversized(group):
+        return ValueError('analysis_model_batch_record_budget_exceeded' if len(group) == 1
+            else 'analysis_model_batch_group_budget_exceeded')
+
+    def child(records):
+        request = replace(parent.request, members=tuple(records))
+        return prepare_analysis_model_quoted_parent_units(request,
+            source_guard=parent.source_guard, prompt_version=parent.prompt_version)
+
+    parent_budget = measure(parent)
+    if fits(parent_budget):
+        return CumulativeModelBatchPlan(parent, (parent,), (parent_budget,),
+            (tuple(member.saved_record_ref for member in ordered),),
+            context_tokens, reserved_new_tokens, max_request_bytes)
+    if len(groups) == 1:
+        raise oversized(groups[0])
+    batches, budgets, record_refs = [], [], []
+    current, prepared, budget = (), None, None
+    for group in groups:
+        candidate = current + group
+        candidate_input = child(candidate)
+        candidate_budget = measure(candidate_input)
+        if fits(candidate_budget):
+            current, prepared, budget = candidate, candidate_input, candidate_budget
+            continue
+        if not current:
+            raise oversized(group)
+        batches.append(prepared)
+        budgets.append(budget)
+        record_refs.append(tuple(record.saved_record_ref for record in current))
+        current = group
+        prepared = child(current)
+        budget = measure(prepared)
+        if not fits(budget):
+            raise oversized(group)
+    batches.append(prepared)
+    budgets.append(budget)
+    record_refs.append(tuple(record.saved_record_ref for record in current))
+    if tuple(ref for group in record_refs for ref in group) != tuple(m.saved_record_ref for m in ordered):
+        raise ValueError('analysis_model_batch_partition_invalid')
+    return CumulativeModelBatchPlan(parent, tuple(batches), tuple(budgets), tuple(record_refs),
+        context_tokens, reserved_new_tokens, max_request_bytes)
 
 
 def build_cumulative_quoted_parent_candidates(owner, snapshot, *, model_input):
