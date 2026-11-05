@@ -20,6 +20,7 @@ name: Analysis observed content
       - ai/tests/analysis_cumulative_sql.cjs
       - supabase/migrations/20261101080144_cumulative_watashi_map.sql
       - ai/tests/test_cmee_analysis_v1d_vertical.py
+      - ai/tests/test_analysis_closed_quote_self_action.py
       - ai/tests/test_cmee_analysis_nominal_relations.py
       - ai/tests/test_analysis_observed_storage.py
       - ai/tests/test_analysis_saved_period.py
@@ -65,6 +66,7 @@ jobs:
           python -m pytest -q --tb=short -ra
           -p pytest_subtests.plugin -p no:cacheprovider -c /dev/null --noconftest
           ai/tests/test_cmee_analysis_v1d_vertical.py
+          ai/tests/test_analysis_closed_quote_self_action.py
           ai/tests/test_cmee_analysis_nominal_relations.py
           ai/tests/test_analysis_observed_storage.py
           ai/tests/test_analysis_saved_period.py
