@@ -1494,6 +1494,11 @@ def compile_model_observed_role_decision(source_set, fields):
         raise AnalysisSourceError('analysis_model_role_decision_scope_unsupported')
     field = fields[0]
     graph = compile_observed_graph(source_set)
+    return _model_role_decision_field_graph(field, graph)
+
+
+def _model_role_decision_field_graph(field, graph):
+    """Prove the same complete field, two nodes and optional written order."""
     if (len(graph.nodes) != 2 or graph.source_updates or graph.conflicts or graph.annotations
             or any(g.missing_scope == 'SOURCE_SCOPE' for g in graph.unknown_gaps)):
         raise AnalysisSourceError('analysis_model_role_decision_scope_unsupported')
@@ -1562,6 +1567,69 @@ def compile_model_observed_role_decision(source_set, fields):
     elif graph.edges:
         raise AnalysisSourceError('analysis_model_role_decision_scope_unsupported')
     return graph
+
+
+def compile_model_supplement_role_decision(source_set, fields, source):
+    """Reuse the complete responsibility/decision proof for an owned answer.
+
+    First compile the whole parent and all answers. Only this answer's exact
+    witnesses enter the local proof; source roles and envelopes stay intact.
+    Canonical representatives from another source cannot supply source_parts.
+    """
+    if source.envelope.source_role != 'SUPPLEMENTAL_ANSWER':
+        return None
+    graph = compile_observed_graph(source_set)
+    if graph.source_updates or graph.conflicts or graph.annotations:
+        return None
+    matches = [f for f in fields if f.record_ref == source.record_ref
+        and f.field_path == 'memo' and f.evidence.source_envelope_id == source.envelope.envelope_id]
+    if len(matches) != 1:
+        return None
+    field = matches[0]
+    owned = []
+    for node in graph.nodes:
+        evidence = tuple(e for e in node.evidence_refs
+            if e.source_envelope_id == source.envelope.envelope_id)
+        if not evidence:
+            continue
+        if len(evidence) != 1:
+            return None
+        e = evidence[0]
+        if e.field_path != field.field_path:
+            return None
+        label = source_field_text(source, e.field_path)[e.scalar_start:e.scalar_end]
+        p = _proposition(label)
+        if (p is None or node.proposition is None
+                or _proposition_meaning(p) != _proposition_meaning(node.proposition)
+                or (p.polarity, p.modality, p.temporal_scope) !=
+                   (node.polarity, node.modality, node.temporal_scope)):
+            return None
+        owned.append(replace(node, visible_label=label, proposition=p,
+            record_refs=(source.record_ref,), evidence_refs=evidence))
+    if len(owned) != 2:
+        return None
+    owned.sort(key=lambda n: n.evidence_refs[0].scalar_start)
+    refs = {n.node_ref: 'n' + str(i) for i, n in enumerate(owned, 1)}
+    edges = []
+    for edge in graph.edges:
+        own_evidence = any(e.source_envelope_id == source.envelope.envelope_id for e in edge.evidence_refs)
+        if not own_evidence:
+            if set(edge.endpoint_refs) & refs.keys():
+                return None
+            continue
+        if (not set(edge.endpoint_refs) <= refs.keys()
+                or any(e.source_envelope_id != source.envelope.envelope_id for e in edge.evidence_refs)):
+            return None
+        edges.append(replace(edge, edge_ref='e' + str(len(edges) + 1),
+            endpoint_refs=tuple(refs[r] for r in edge.endpoint_refs)))
+    # The shared field proof checks prefix/suffix/separator, all units and
+    # exact evidence. An unread parent is not an unread part of this answer;
+    # the caller retains that parent's SOURCE_SCOPE in the final record graph.
+    local = ObservedGraph(tuple(replace(n, node_ref=refs[n.node_ref]) for n in owned), tuple(edges), ())
+    try:
+        return _model_role_decision_field_graph(field, local)
+    except AnalysisSourceError:
+        return None
 
 
 def _model_written_role_action_proof(source_set, fields):

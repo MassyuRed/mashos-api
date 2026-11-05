@@ -222,6 +222,175 @@ def test_supplement_parent_version_and_comparison_remain_unsupported():
                 prompt_version='selected_material.v4')
 
 
+def role_decision_answer(negative_role=False, negative_decision=False, marker='その後、'):
+    return ('私は会合の進行を担当' + ('しなかった' if negative_role else 'した') + '。'
+        + marker + '私は分担を' + ('決めなかった' if negative_decision else '決めた') + '。')
+
+
+def role_answer_proposal(snap, *, style=None):
+    prepared = service.prepare_cumulative_category_units(OWNER, snap, prompt_version='selected_material.v6')
+    response = synthetic_response(prepared)
+    if style is not None:
+        from test_analysis_model_role_decision import response_for
+        packet = json.loads(response.raw)
+        styled = json.loads(response_for(prepared, style=style, qualifiers=True, reorder=True).raw)
+        material = json.loads(prepared.messages()[1]['content'])['fields']
+        for index, field in enumerate(material):
+            if field['source_role'] == 'SUPPLEMENTAL_ANSWER':
+                packet['fields'][index] = styled['fields'][index]
+        response = call(prepared, packet).response
+    return replace(prepared, response=response)
+
+
+@pytest.mark.parametrize('role_negative', [False, True])
+@pytest.mark.parametrize('decision_negative', [False, True])
+@pytest.mark.parametrize('marker', ['', 'その後、'])
+def test_complete_answer_responsibility_decision_preserves_own_polarity_and_only_own_order(role_negative, decision_negative, marker):
+    snap = answer_material(answer=role_decision_answer(role_negative, decision_negative, marker))
+    value = role_answer_proposal(snap)
+    artifact, counts = service.build_cumulative_map(OWNER, snap, model_input=value)
+    assert artifact and len(artifact.graph.nodes) == 3
+    assert counts['source_count'] == counts['processed_count'] == counts['mapped_count'] == 1
+    assert counts['unparsed_count'] == 0 and len(artifact.graph.edges) == int(bool(marker))
+    parent, role, decision = artifact.graph.nodes
+    assert role.proposition.role_state == 'PAST_RESPONSIBILITY'
+    assert role.polarity == ('negative' if role_negative else 'positive')
+    assert decision.polarity == ('negative' if decision_negative else 'positive')
+    assert role.evidence_refs[0].source_envelope_id == decision.evidence_refs[0].source_envelope_id
+    assert role.evidence_refs[0].source_envelope_id != parent.evidence_refs[0].source_envelope_id
+    assert all(n.record_refs == parent.record_refs and n.selected_categories == ('仕事',)
+        and n.proposition.actor == 'SELF' for n in artifact.graph.nodes)
+    if marker:
+        edge, = artifact.graph.edges
+        assert edge.edge_kind == 'OBSERVED_ORDER' and edge.endpoint_refs == (role.node_ref, decision.node_ref)
+        assert edge.evidence_refs == role.evidence_refs + decision.evidence_refs
+    assert all(n['evidence_badge_count'] == 1 for n in artifact.safe_projection(authenticated_owner_scope=OWNER)['nodes'])
+
+
+@pytest.mark.parametrize('style', ['whole', 'without_marker', 'without_subject', 'predicate'])
+def test_answer_uses_the_existing_complete_role_decision_unit_proof(style):
+    snap = answer_material(answer=role_decision_answer(True, True))
+    artifact, counts = service.build_cumulative_map(OWNER, snap, model_input=role_answer_proposal(snap, style=style))
+    assert artifact and len(artifact.graph.nodes) == 3 and len(artifact.graph.edges) == 1
+    assert counts['unparsed_count'] == 0
+
+
+@pytest.mark.parametrize('parent,expected_nodes,unread', [
+    ('まだ言葉にできません。', 2, 1),
+    ('僕の役割は受付係だった。', 3, 0),
+    ('私は会合の進行を担当した。私は分担を決めた。', 2, 0),
+])
+def test_answer_graph_keeps_unread_parent_written_role_and_unordered_same_record_restatement(parent, expected_nodes, unread):
+    snap = answer_material(parent, role_decision_answer(marker=''))
+    artifact, counts = service.build_cumulative_map(OWNER, snap, model_input=role_answer_proposal(snap))
+    assert artifact and len(artifact.graph.nodes) == expected_nodes and not artifact.graph.edges
+    assert counts['source_count'] == counts['mapped_count'] == 1 and counts['unparsed_count'] == unread
+    assert any(g.missing_scope == 'SOURCE_SCOPE' for g in artifact.graph.unknown_gaps) == bool(unread)
+    assert all(n['evidence_badge_count'] == 1 for n in artifact.safe_projection(authenticated_owner_scope=OWNER)['nodes'])
+    if expected_nodes == 2 and not unread:
+        assert all(len(n.evidence_refs) == 2 for n in artifact.graph.nodes)
+        assert all(len({e.source_envelope_id for e in n.evidence_refs}) == 2 for n in artifact.graph.nodes)
+
+
+def test_ordered_answer_occurrences_do_not_merge_with_unordered_parent_or_another_answer():
+    from cocolon_meaning_experience_engine.cores.analysis import semantic_admission as admission
+    from cocolon_meaning_experience_engine.cores.analysis.source_adapter import AnalysisSupplement, commitment
+    snap = answer_material(role_decision_answer(marker=''), role_decision_answer())
+    prepared = service.prepare_cumulative_category_units(OWNER, snap, prompt_version='selected_material.v6')
+    member, = prepared.request.members
+    second = AnalysisSupplement('another-owned-answer', OWNER, member.saved_record_ref,
+        member.saved_record_version, role_decision_answer(), commitment(role_decision_answer()))
+    member = replace(member, supplements=member.supplements + (second,))
+    request = replace(prepared.request, members=(member,))
+    prepared = admission.prepare_analysis_model_quoted_parent_units(request,
+        source_guard=prepared.source_guard, prompt_version='selected_material.v6')
+    artifact, mapped, unread = admission.generate_analysis_model_observed_actions(request,
+        replace(prepared, response=synthetic_response(prepared)), with_record_counts=True)
+    assert artifact and mapped == 1 and unread == 0
+    assert len(artifact.graph.nodes) == 6 and len(artifact.graph.edges) == 2
+    assert len({n.node_ref for n in artifact.graph.nodes}) == 6
+    assert [e.edge_ref for e in artifact.graph.edges] == ['e1', 'e2']
+    assert len({e.evidence_refs[0].source_envelope_id for e in artifact.graph.edges}) == 2
+    for edge in artifact.graph.edges:
+        nodes = [next(n for n in artifact.graph.nodes if n.node_ref == ref) for ref in edge.endpoint_refs]
+        assert len({e.source_envelope_id for n in nodes for e in n.evidence_refs}) == 1
+        assert edge.evidence_refs == nodes[0].evidence_refs + nodes[1].evidence_refs
+    assert all(n['evidence_badge_count'] == 1 for n in artifact.safe_projection(authenticated_owner_scope=OWNER)['nodes'])
+
+
+def test_answer_order_stays_with_its_record_among_other_owned_categories():
+    snap = answer_material(answer=role_decision_answer())
+    other = source_snapshot(2)['members'][1]
+    other['original'].update(memo='僕は費用を記録しなかった。', memo_action='', category=['生活'])
+    snap['members'].append(other)
+    artifact, counts = service.build_cumulative_map(OWNER, snap, model_input=role_answer_proposal(snap))
+    assert artifact and len(artifact.graph.nodes) == 4 and len(artifact.graph.edges) == 1
+    assert counts['source_count'] == counts['mapped_count'] == 2 and counts['unparsed_count'] == 0
+    assert [n.selected_categories for n in artifact.graph.nodes] == [('仕事',)] * 3 + [('生活',)]
+    edge, = artifact.graph.edges
+    endpoints = [next(n for n in artifact.graph.nodes if n.node_ref == ref) for ref in edge.endpoint_refs]
+    assert all(n.record_refs == (snap['members'][0]['original']['id'],) for n in endpoints)
+    assert len({e.source_envelope_id for e in edge.evidence_refs}) == 1
+
+
+def test_role_clause_parent_with_answer_keeps_its_original_private_proof_boundary():
+    snap = answer_material('僕の役割は受付係だった。費用を記録した。', role_decision_answer())
+    artifact, counts = service.build_cumulative_map(OWNER, snap, model_input=role_answer_proposal(snap))
+    assert artifact is None and counts['mapped_count'] == 0 and counts['unparsed_count'] == 1
+
+
+@pytest.mark.parametrize('defect', ['role_kind', 'missing_decision', 'false_negation'])
+def test_answer_role_decision_requires_the_actual_model_role_and_complete_units(defect):
+    snap = answer_material(answer=role_decision_answer())
+    value = role_answer_proposal(snap)
+    packet = json.loads(value.response.raw)
+    units = packet['fields'][1]['units']
+    if defect == 'role_kind': units[0]['node_kind'] = 'ACTION_OR_NONACTION'
+    if defect == 'missing_decision': units.pop()
+    if defect == 'false_negation': units[1]['qualifiers'] = [dict(kind='NEGATION', quote='決めた')]
+    artifact, counts = service.build_cumulative_map(OWNER, snap, model_input=call(replace(value, response=None), packet))
+    assert artifact is None and counts['mapped_count'] == 0 and counts['unparsed_count'] == 1
+
+
+@pytest.mark.parametrize('defect', ['endpoint', 'edge_evidence', 'proposition', 'literal_hash'])
+def test_answer_local_graph_cannot_borrow_cross_source_edges_or_changed_witnesses(defect):
+    from cocolon_meaning_experience_engine.cores.analysis import intent_compiler as compiler
+    from cocolon_meaning_experience_engine.cores.analysis import semantic_admission as admission
+    snap = answer_material(answer=role_decision_answer())
+    value = role_answer_proposal(snap)
+    frozen, fields, _ = admission._admit_quoted_parent_units(value.request, value)
+    answer = next(s for s in frozen.sources if s.envelope.source_role == 'SUPPLEMENTAL_ANSWER')
+    graph = compiler.compile_observed_graph(frozen)
+    parent, role, decision = graph.nodes
+    edge, = graph.edges
+    if defect == 'endpoint': graph = replace(graph, edges=(replace(edge, endpoint_refs=(parent.node_ref, decision.node_ref)),))
+    if defect == 'edge_evidence': graph = replace(graph, edges=(replace(edge, evidence_refs=(parent.evidence_refs[0], decision.evidence_refs[0])),))
+    if defect == 'proposition': graph = replace(graph, nodes=(parent, replace(role, proposition=replace(role.proposition, actor='OTHER')), decision))
+    if defect == 'literal_hash': graph = replace(graph, nodes=(parent, replace(role,
+        evidence_refs=(replace(role.evidence_refs[0], literal_sha256='0'*64),)), decision))
+    with patch.object(compiler, 'compile_observed_graph', return_value=graph):
+        assert compiler.compile_model_supplement_role_decision(frozen, fields, answer) is None
+
+
+@pytest.mark.parametrize('answer', [
+    '会合の進行を担当した。その後、私は分担を決めた。',
+    '私は会合の進行を担当した。その後、分担を決めた。',
+    '彼は会合の進行を担当した。その後、私は分担を決めた。',
+    '私は会合の進行を担当した。その後、彼は分担を決めた。',
+    '私は会合の進行を担当した。その後、私は分担を決めた。まだ言えない。',
+])
+def test_unproved_answer_actor_or_unread_remainder_does_not_acquire_a_response(monkeypatch, answer):
+    snap = answer_material(answer=answer)
+    source = AsyncMock(side_effect=AssertionError('unproved answer acquired'))
+    monkeypatch.setattr(service, 'read_maps', AsyncMock(return_value={'items': []}))
+    monkeypatch.setattr(service, '_rpc', AsyncMock(return_value=snap))
+    monkeypatch.setattr(service, 'observed_mode', lambda: 'development')
+    with pytest.raises(HTTPException) as error:
+        run(service.ensure_map(OWNER, model_source=source))
+    assert error.value.status_code == 422
+    source.assert_not_awaited()
+
+
 def test_complete_snapshot_keeps_each_witness_unknown_record_category_and_local_order():
     snap = multi_material()
     value = multi_proposal(snap)
@@ -611,13 +780,13 @@ def test_real_sql_saved_supplement_does_not_acquire_a_response(sql_source, monke
     source.assert_not_awaited()
 
 
-def insert_bound_answer(db, rpc):
+def insert_bound_answer(db, rpc, answer_text='僕は費用を記録した。'):
     """Use the existing saved-answer envelope shape in the real SQL snapshot."""
     original = insert_material(db, 'role')
     assert 'code' not in db.query('update public.emotions set emotion_details=$2 where id=$1',
         [original['id'], json.dumps([dict(type='平穏', strength='medium')])])
     snapshot = run(rpc('analysis_cumulative_source_snapshot', {'p_user_id': OWNER}))
-    member = with_answer(snapshot['members'][0], '僕は費用を記録した。')
+    member = with_answer(snapshot['members'][0], answer_text)
     thread = member['thread']
     assert 'code' not in db.query('''insert into public.emlis_input_threads
         (id,user_id,original_emotion_id,revision,state,issued_count,source_snapshot,data)
@@ -638,9 +807,11 @@ def replace_bound_answer(db, answer_id, text):
         [answer_id, text])
 
 
-def test_real_sql_ordinary_answer_normal_save_readonly_fresh_answer_and_immutable_month(sql_source):
+@pytest.mark.parametrize('answer_kind', ['plain', 'role_decision'])
+def test_real_sql_ordinary_answer_normal_save_readonly_fresh_answer_and_immutable_month(sql_source, answer_kind):
     db, rpc = sql_source
-    original, answer_id = insert_bound_answer(db, rpc)
+    text = '僕は費用を記録した。' if answer_kind == 'plain' else role_decision_answer()
+    original, answer_id = insert_bound_answer(db, rpc, text)
     calls = []
     async def source(prepared):
         calls.append(prepared)
@@ -648,9 +819,11 @@ def test_real_sql_ordinary_answer_normal_save_readonly_fresh_answer_and_immutabl
         assert [f['source_role'] for f in fields] == ['ORIGINAL_INPUT', 'SUPPLEMENTAL_ANSWER']
         return synthetic_response(prepared)
     first = run(service.ensure_map(OWNER, model_source=source))
-    assert first['refreshed'] and len(calls) == 1 and len(first['meta']['nodes']) == 2
+    assert first['refreshed'] and len(calls) == 1
+    assert len(first['meta']['nodes']) == (2 if answer_kind == 'plain' else 3)
     assert first['map_context']['source_count'] == first['map_context']['mapped_count'] == 1
-    assert first['map_context']['unparsed_count'] == 0 and not first['meta']['edges']
+    assert first['map_context']['unparsed_count'] == 0
+    assert len(first['meta']['edges']) == int(answer_kind == 'role_decision')
     private = db.query('select private_evidence from public.analysis_observed_artifacts where id=$1',
         [first['report_id']])['rows'][0]['private_evidence']
     assert private['source_record_refs'] == [original['id']]
@@ -663,7 +836,8 @@ def test_real_sql_ordinary_answer_normal_save_readonly_fresh_answer_and_immutabl
     for saved in (current, month, readonly):
         assert saved['report_id'] == first['report_id'] and saved['meta'] == first['meta']
         assert saved['content_text'] == first['content_text'] and not saved['refreshed']
-    replace_bound_answer(db, answer_id, '僕は費用を記録しなかった。')
+    changed = '僕は費用を記録しなかった。' if answer_kind == 'plain' else role_decision_answer(True, True)
+    replace_bound_answer(db, answer_id, changed)
     stale = AsyncMock(return_value=synthetic_response(calls[0]))
     with pytest.raises(HTTPException) as error:
         run(service.ensure_map(OWNER, force=True, model_source=stale))
@@ -679,14 +853,17 @@ def test_real_sql_ordinary_answer_normal_save_readonly_fresh_answer_and_immutabl
     forbidden.assert_not_awaited()
 
 
-def test_real_sql_answer_edit_during_response_rejects_whole_commit(sql_source):
+@pytest.mark.parametrize('answer_kind', ['plain', 'role_decision'])
+def test_real_sql_answer_edit_during_response_rejects_whole_commit(sql_source, answer_kind):
     db, rpc = sql_source
-    _, answer_id = insert_bound_answer(db, rpc)
+    text = '僕は費用を記録した。' if answer_kind == 'plain' else role_decision_answer()
+    _, answer_id = insert_bound_answer(db, rpc, text)
     calls = []
     async def source(prepared):
         calls.append(prepared.request_ref)
         response = synthetic_response(prepared)
-        replace_bound_answer(db, answer_id, '僕は費用を記録しなかった。')
+        changed = '僕は費用を記録しなかった。' if answer_kind == 'plain' else role_decision_answer(True, True)
+        replace_bound_answer(db, answer_id, changed)
         return response
     with pytest.raises(HTTPException) as error:
         run(service.ensure_map(OWNER, model_source=source))

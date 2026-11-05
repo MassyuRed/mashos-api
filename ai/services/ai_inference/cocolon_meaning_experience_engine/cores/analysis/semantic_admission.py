@@ -1309,7 +1309,7 @@ def _compile_model_original_observed_record(frozen, fields):
 def _compile_model_observed_record(frozen, fields):
     """Retain ordinary answers as evidence of their parent's single occasion."""
     from .intent_compiler import (ObservedGraph, UnknownGap, NODE_KINDS,
-        compile_model_supplement_action, _observed_claim_signature)
+        compile_model_supplement_action, compile_model_supplement_role_decision, _observed_claim_signature)
     answers = tuple(s for s in frozen.sources if s.envelope.source_role == 'SUPPLEMENTAL_ANSWER')
     if not answers:
         return _compile_model_original_observed_record(frozen, fields)
@@ -1334,19 +1334,30 @@ def _compile_model_observed_record(frozen, fields):
             node.selected_categories if node.selected_category_context else None)] = i
     for answer in answers:
         node = compile_model_supplement_action(frozen, fields, answer)
-        if node is None:
+        answer_graph = (ObservedGraph((node,), (), ()) if node is not None else
+            compile_model_supplement_role_decision(frozen, fields, answer))
+        if answer_graph is None:
             return None
-        e = node.evidence_refs[0]
-        signature = _observed_claim_signature(node.node_kind, node.proposition, node.visible_label,
-            node.polarity, node.modality, node.temporal_scope, e, set(), e.source_envelope_id,
-            node.selected_categories if node.selected_category_context else None)
-        i = signatures.get(signature)
-        if i is None:
-            signatures[signature] = len(nodes)
-            nodes.append(replace(node, node_ref='n' + str(len(nodes) + 1)))
-        else:
-            old = nodes[i]
-            nodes[i] = replace(old, evidence_refs=tuple(dict.fromkeys((*old.evidence_refs, *node.evidence_refs))))
+        answer_ordered = {e.evidence_id for edge in answer_graph.edges for e in edge.evidence_refs}
+        refs = {}
+        for node in answer_graph.nodes:
+            e = node.evidence_refs[0]
+            signature = _observed_claim_signature(node.node_kind, node.proposition, node.visible_label,
+                node.polarity, node.modality, node.temporal_scope, e, answer_ordered, e.source_envelope_id,
+                node.selected_categories if node.selected_category_context else None)
+            i = signatures.get(signature)
+            if i is None:
+                i = len(nodes)
+                signatures[signature] = i
+                nodes.append(replace(node, node_ref='n' + str(i + 1)))
+            else:
+                old = nodes[i]
+                nodes[i] = replace(old, evidence_refs=tuple(dict.fromkeys((*old.evidence_refs, *node.evidence_refs))))
+            refs[node.node_ref] = nodes[i].node_ref
+        offset = len(edges)
+        edges.extend(replace(edge, edge_ref='e' + str(offset + i),
+            endpoint_refs=tuple(refs[r] for r in edge.endpoint_refs))
+            for i, edge in enumerate(answer_graph.edges, 1))
     if not nodes:
         return None
     # Compute absence and connection gaps once for the complete occasion.
