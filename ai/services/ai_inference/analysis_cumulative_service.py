@@ -204,7 +204,7 @@ def build_cumulative_quoted_parent_candidates(owner, snapshot, *, model_input):
     require(type(model_input) is AnalysisModelQuotedParentUnitsInput,
             'analysis_quoted_parent_units_binding_invalid')
     expected = (prepare_cumulative_category_units(owner, snapshot, prompt_version=model_input.prompt_version)
-        if model_input.prompt_version in {'selected_categories.v1', 'selected_material.v2', 'selected_material.v3', 'selected_material.v4'}
+        if model_input.prompt_version in {'selected_categories.v1', 'selected_material.v2', 'selected_material.v3', 'selected_material.v4', 'selected_material.v6'}
         else prepare_cumulative_quoted_parent_units(owner, snapshot, prompt_version=model_input.prompt_version))
     require(model_input.request == expected.request and model_input.request_ref == expected.request_ref
         and model_input.source_guard == expected.source_guard, 'analysis_quoted_parent_units_binding_invalid')
@@ -218,7 +218,7 @@ def serialize_cumulative_quoted_parent_candidates(owner, snapshot, *, model_inpu
     require(type(model_input) is AnalysisModelQuotedParentUnitsInput,
             'analysis_quoted_parent_units_binding_invalid')
     expected = (prepare_cumulative_category_units(owner, snapshot, prompt_version=model_input.prompt_version)
-        if model_input.prompt_version in {'selected_categories.v1', 'selected_material.v2', 'selected_material.v3', 'selected_material.v4'}
+        if model_input.prompt_version in {'selected_categories.v1', 'selected_material.v2', 'selected_material.v3', 'selected_material.v4', 'selected_material.v6'}
         else prepare_cumulative_quoted_parent_units(owner, snapshot, prompt_version=model_input.prompt_version))
     require(model_input.request == expected.request and model_input.request_ref == expected.request_ref
         and model_input.source_guard == expected.source_guard
@@ -236,7 +236,7 @@ def reload_cumulative_quoted_parent_candidates(owner, snapshot, raw):
         if type(saved) is dict and type(saved.get('state')) is dict else 'baseline.v1')
     prepared = (prepare_cumulative_category_units(owner, snapshot, prompt_version=saved['state']['prompt_version'])
         if type(saved) is dict and type(saved.get('state')) is dict
-        and saved['state'].get('prompt_version') in {'selected_categories.v1', 'selected_material.v2', 'selected_material.v3', 'selected_material.v4'}
+        and saved['state'].get('prompt_version') in {'selected_categories.v1', 'selected_material.v2', 'selected_material.v3', 'selected_material.v4', 'selected_material.v6'}
         else prepare_cumulative_quoted_parent_units(owner, snapshot, prompt_version=prompt))
     require(type(saved) is dict and set(saved) == {'schema_version','coverage','state'}
         and saved['schema_version'] == 'cocolon.cmee.cumulative_quoted_parent_unit_candidates_file.v1'
@@ -251,7 +251,7 @@ def _written_role_input(owner, snapshot, model_input):
     require(type(model_input) is AnalysisModelQuotedParentUnitsInput,
             'analysis_written_role_input_invalid')
     expected = (prepare_cumulative_category_units(owner, snapshot, prompt_version=model_input.prompt_version)
-        if model_input.prompt_version in {'selected_categories.v1', 'selected_material.v2', 'selected_material.v3', 'selected_material.v4'}
+        if model_input.prompt_version in {'selected_categories.v1', 'selected_material.v2', 'selected_material.v3', 'selected_material.v4', 'selected_material.v6'}
         else prepare_cumulative_quoted_parent_units(owner, snapshot, prompt_version=model_input.prompt_version))
     require(model_input.request == expected.request and model_input.request_ref == expected.request_ref
         and model_input.source_guard == expected.source_guard
@@ -300,7 +300,7 @@ def reload_cumulative_written_role_map(owner, snapshot, raw, *, with_action=Fals
         and type(saved['state']) is dict, 'analysis_written_role_file_invalid')
     prompt = saved['state'].get('prompt_version')
     prepared = (prepare_cumulative_category_units(owner, snapshot, prompt_version=prompt)
-        if prompt in {'selected_categories.v1', 'selected_material.v2', 'selected_material.v3', 'selected_material.v4'}
+        if prompt in {'selected_categories.v1', 'selected_material.v2', 'selected_material.v3', 'selected_material.v4', 'selected_material.v6'}
         else prepare_cumulative_quoted_parent_units(owner, snapshot, prompt_version=prompt))
     artifact = reload_analysis_model_written_role(prepared, canonical(saved['state']), with_action=with_action, clause=clause)
     coverage = _checked_coverage(dict(profile=PROFILE, source_count=1, processed_count=1,

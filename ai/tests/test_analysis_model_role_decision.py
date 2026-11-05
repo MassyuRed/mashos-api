@@ -146,3 +146,137 @@ def test_normal_saved_wire_read_does_not_rebuild_the_graph_or_derive_a_model_rep
             stack.enter_context(patch.object(obj,name,side_effect=AssertionError('saved generation')))
         stack.enter_context(patch.object(service,'_rpc',AsyncMock(return_value=expected)))
         assert asyncio.run(service.read_maps(OWNER,report_id=row['id']))==expected
+
+
+def test_v6_adds_only_an_independent_contrast_to_unchanged_v4_material():
+    snap = sample()
+    v4 = service.prepare_cumulative_category_units(OWNER, snap, prompt_version='selected_material.v4')
+    v6 = service.prepare_cumulative_category_units(OWNER, snap, prompt_version='selected_material.v6')
+    # Frozen from the unchanged 722835f9 API before adding the new profile.
+    assert admission.digest(v4.messages()) == 'fc06c5a05d4994fc4dfb3b464cf78f0e978f2ed47a538a322cd72e29ab26169e'
+    assert v6.request == v4.request and v6.source_guard == v4.source_guard
+    assert v6.request_ref != v4.request_ref and v6.messages()[1] == v4.messages()[1]
+    assert v6.messages()[0]['content'] == v4.messages()[0]['content'] + admission._responsibility_decision_units_instruction()
+    contrast = admission._responsibility_decision_units_instruction()
+    raw_input, raw_output = contrast.split('例の入力:', 1)[1].split('\n例の出力:', 1)
+    material = json.loads(raw_input)
+    packet = json.loads(raw_output.split('\n今回の入力', 1)[0])
+    assert '会場' not in contrast and '手順' not in contrast and '日程' not in contrast
+    assert [len(f['units']) for f in packet['fields']] == [2, 2]
+    for field, row in zip(material['fields'], packet['fields']):
+        assert set(row) == {'field', 'units'}
+        assert [u['node_kind'] for u in row['units']] == ['ROLE', 'ACTION_OR_NONACTION']
+        for unit in row['units']:
+            assert unit['quote'] in field['text'] and unit['parent_quote'] is None
+            assert unit['scope_role'] is None and '私は' in unit['quote']
+            assert all(q['quote'] in unit['quote'] for q in unit['qualifiers'])
+    assert all(any(q['kind'] == 'NEGATION' for q in u['qualifiers']) for u in packet['fields'][1]['units'])
+    example = source_snapshot(2)
+    for member, field in zip(example['members'], material['fields']):
+        member['original'].update(memo=field['text'], memo_action='')
+    prepared = service.prepare_cumulative_category_units(OWNER, example, prompt_version='selected_material.v6')
+    artifact, counts = service.build_cumulative_map(OWNER, example, model_input=call(prepared, packet))
+    assert artifact and len(artifact.graph.nodes) == 4 and not artifact.graph.edges
+    assert counts['source_count'] == counts['mapped_count'] == 2 and counts['unparsed_count'] == 0
+
+
+@pytest.mark.parametrize('memo,category,negative,ordered', [
+    ('私は会場の準備を担当しました。その後、私は手順を決めました。', '仕事', False, True),
+    ('僕は連絡を担当しなかった。僕は日程を決めなかった。', '生活', True, False),
+])
+def test_v6_held_out_sources_already_have_complete_existing_witnesses(memo, category, negative, ordered):
+    # Synthetic proposals check the existing scope before any live comparison.
+    snap = source_snapshot(1)
+    snap['members'][0]['original'].update(memo=memo, memo_action='', category=[category])
+    prepared = service.prepare_cumulative_category_units(OWNER, snap, prompt_version='selected_material.v6')
+    value = replace(prepared, response=response_for(prepared, qualifiers=True))
+    frozen, _, _ = admission._admit_quoted_parent_units(value.request, value)
+    expected = compiler.compile_observed_graph(frozen)
+    artifact, counts = service.build_cumulative_map(OWNER, snap, model_input=value)
+    assert artifact and artifact.graph == expected and len(artifact.graph.nodes) == 2
+    assert counts['source_count'] == counts['processed_count'] == counts['mapped_count'] == 1
+    assert counts['unparsed_count'] == 0 and len(artifact.graph.edges) == int(ordered)
+    assert all(n.proposition.actor == 'SELF' and n.temporal_scope == 'past'
+        and n.polarity == ('negative' if negative else 'positive')
+        and n.selected_categories == (category,) for n in artifact.graph.nodes)
+
+
+@pytest.mark.parametrize('source_profile,target_profile', [
+    ('selected_material.v4', 'selected_material.v6'),
+    ('selected_material.v6', 'selected_material.v4'),
+])
+@pytest.mark.parametrize('change_ref', [False, True])
+def test_v6_response_cannot_be_reassigned_across_prompt_versions(source_profile, target_profile, change_ref):
+    snap = sample()
+    source = service.prepare_cumulative_category_units(OWNER, snap, prompt_version=source_profile)
+    target = service.prepare_cumulative_category_units(OWNER, snap, prompt_version=target_profile)
+    response = response_for(source)
+    if change_ref: response = replace(response, request_ref=target.request_ref)
+    with pytest.raises(admission.AnalysisSemanticError):
+        service.build_cumulative_map(OWNER, snap, model_input=replace(target, response=response))
+
+
+@pytest.mark.parametrize('profile,state', [
+    ('selected_material.v4', admission.QUOTED_PARENT_MATERIAL_V4_STATE),
+    ('selected_material.v6', admission.QUOTED_PARENT_MATERIAL_V6_STATE),
+])
+def test_versioned_candidate_state_keeps_exact_schema_and_non_generating_roundtrip(profile, state):
+    snap = sample()
+    prepared = service.prepare_cumulative_category_units(OWNER, snap, prompt_version=profile)
+    value = replace(prepared, response=response_for(prepared, qualifiers=True))
+    artifact, counts = service.build_cumulative_quoted_parent_candidates(OWNER, snap, model_input=value)
+    raw = service.serialize_cumulative_quoted_parent_candidates(OWNER, snap,
+        model_input=value, artifact=artifact, coverage=counts)
+    saved = json.loads(raw)
+    assert saved['state']['schema_version'] == state and saved['state']['prompt_version'] == profile
+    assert saved['state']['response']['messages_sha256'] == admission.digest(prepared.messages())
+    with patch.object(service, 'build_cumulative_quoted_parent_candidates', side_effect=AssertionError('saved build')), \
+         patch.object(compiler, 'compile_observed_graph', side_effect=AssertionError('saved finite graph')), \
+         patch.object(compiler, 'compile_analysis_unit_candidates', side_effect=AssertionError('saved candidate')):
+        assert service.reload_cumulative_quoted_parent_candidates(OWNER, snap, raw) == (artifact, counts)
+    changed = json.loads(raw)
+    changed['state']['prompt_version'] = 'selected_material.v6' if profile.endswith('v4') else 'selected_material.v4'
+    with pytest.raises(admission.AnalysisSemanticError):
+        service.reload_cumulative_quoted_parent_candidates(OWNER, snap, admission.canonical(changed))
+
+
+@pytest.mark.parametrize('defect', ['field_omitted', 'metadata', 'foreign_quote', 'role_kind'])
+def test_v6_keeps_strict_fields_source_binding_and_model_kind_adoption(defect):
+    snap = sample()
+    prepared = service.prepare_cumulative_category_units(OWNER, snap, prompt_version='selected_material.v6')
+    response = response_for(prepared)
+    packet = json.loads(response.raw)
+    if defect == 'field_omitted': packet['fields'].clear()
+    if defect == 'metadata': packet['fields'][0]['record'] = 1
+    if defect == 'foreign_quote': packet['fields'][0]['units'][0]['quote'] = '私は道具の管理を担当した'
+    if defect == 'role_kind': packet['fields'][0]['units'][0]['node_kind'] = 'ACTION_OR_NONACTION'
+    value = call(prepared, packet)
+    if defect == 'role_kind':
+        artifact, counts = service.build_cumulative_map(OWNER, snap, model_input=value)
+        assert artifact is None and counts['mapped_count'] == 0 and counts['unparsed_count'] == 1
+    else:
+        with pytest.raises(admission.AnalysisSemanticError):
+            service.build_cumulative_map(OWNER, snap, model_input=value)
+
+
+def test_v6_preserves_supplement_context_and_rejects_cross_envelope_quotes():
+    from test_analysis_saved_period import with_answer
+    snap = sample()
+    snap['members'][0]['original']['emotion_details'] = [dict(type='平穏', strength='medium')]
+    snap['members'][0] = with_answer(snap['members'][0], '私は資料を見た。')
+    v4 = service.prepare_cumulative_category_units(OWNER, snap, prompt_version='selected_material.v4')
+    v6 = service.prepare_cumulative_category_units(OWNER, snap, prompt_version='selected_material.v6')
+    assert v4.messages()[1] == v6.messages()[1]
+    fields = json.loads(v6.messages()[1]['content'])['fields']
+    assert [f['source_role'] for f in fields] == ['ORIGINAL_INPUT', 'SUPPLEMENTAL_ANSWER']
+    assert [f['record'] for f in fields] == [1, 1]
+    assert all(f['selected_categories'] == ['仕事'] for f in fields)
+    response = response_for(v6)
+    artifact, counts = service.build_cumulative_map(OWNER, snap, model_input=replace(v6, response=response))
+    assert artifact and len(artifact.graph.nodes) == 3 and len(artifact.graph.edges) == 1
+    assert counts['source_count'] == counts['mapped_count'] == 1 and counts['unparsed_count'] == 0
+    assert len({e.source_envelope_id for n in artifact.graph.nodes for e in n.evidence_refs}) == 2
+    packet = json.loads(response.raw)
+    packet['fields'][0]['units'][0]['quote'] = packet['fields'][1]['units'][0]['quote']
+    with pytest.raises(admission.AnalysisSemanticError):
+        service.build_cumulative_map(OWNER, snap, model_input=call(v6, packet))
