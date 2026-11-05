@@ -1437,9 +1437,12 @@ def compile_model_observed_actions(source_set, fields):
     A missing subject stays UNSPECIFIED under the existing source proof;
     it never inherits SELF from the owner or a model actor qualifier.
     Single plain actions and fully witnessed one-field SELF sequences reuse
-    existing source grammar and edges.
+    existing source grammar and edges. Plain positive SELF wishes keep their
+    existing wish modality and written time through a separate narrow proof.
     """
     graph = compile_observed_graph(source_set)
+    if any(n.node_kind == 'ATTENTION_OR_THOUGHT' for n in graph.nodes):
+        return _model_complete_observed_plain_wishes(source_set, graph, fields)
     if len(graph.nodes) >= 2:
         return _model_complete_observed_action_sequence(graph, fields)
     if (len(graph.nodes) != 1 or graph.edges or graph.source_updates
@@ -1456,6 +1459,82 @@ def compile_model_observed_actions(source_set, fields):
         graph = replace(graph, unknown_gaps=graph.unknown_gaps + (UnknownGap(
             'g' + str(len(graph.unknown_gaps) + 1), (node.node_ref,), 'SOURCE_SCOPE',
             'UNSUPPORTED_OR_UNCERTAIN_SOURCE_SCOPE'),))
+    return graph
+
+
+def _model_complete_observed_plain_wishes(source_set, graph, fields):
+    """Match explicit positive wishes without turning them into performed acts.
+
+    The existing source compiler owns every proposition and its time. This
+    narrow original-field scope keeps one wish, or past actions with wishes,
+    and preserves the original graph including its unestablished connections.
+    """
+    if (len(source_set.members) != 1 or len(source_set.sources) != 1 or len(fields) != 1
+            or source_set.sources[0].envelope.source_role != 'ORIGINAL_INPUT'
+            or source_set.members[0].child_source_envelope_refs !=
+               (source_set.sources[0].envelope.envelope_id,)
+            or graph.edges or graph.source_updates or graph.conflicts or graph.annotations
+            or any(g.missing_scope == 'SOURCE_SCOPE' for g in graph.unknown_gaps)
+            or not graph.nodes
+            or (len(graph.nodes) > 1 and not any(
+                n.node_kind == 'ACTION_OR_NONACTION' for n in graph.nodes))):
+        return None
+    field = fields[0]
+    if field.field_path != 'memo':
+        return None
+    text, base = field.complete_source_text, field.evidence
+    spans, consumed = [], []
+    for node in graph.nodes:
+        p = node.proposition
+        if (p is None or p.actor != 'SELF' or p.polarity != 'positive'
+                or p.predicate_lemma not in _PAST_ACTION_LEMMAS
+                or (node.node_kind, p.modality, p.temporal_scope) not in {
+                    ('ACTION_OR_NONACTION', 'fact', 'past'),
+                    ('ATTENTION_OR_THOUGHT', 'wish', 'current_input'),
+                    ('ATTENTION_OR_THOUGHT', 'wish', 'past')}
+                or (node.polarity, node.modality, node.temporal_scope) !=
+                   (p.polarity, p.modality, p.temporal_scope)
+                or any((p.sequence_marker, p.relative_day, p.possible_content,
+                    p.result_state, p.dependent_form, p.scene_state, p.role_state,
+                    p.written_modifiers))
+                or len(node.evidence_refs) != 1 or node.update_refs or node.quoted_field is not None
+                or node.record_refs != (field.record_ref,)):
+            return None
+        e, = node.evidence_refs
+        label = node.visible_label
+        if (e.source_envelope_id != base.source_envelope_id
+                or e.source_envelope_id != source_set.sources[0].envelope.envelope_id
+                or e.field_path != field.field_path
+                or (e.field_utf8_start, e.field_utf8_end, e.field_sha256) !=
+                   (base.field_utf8_start, base.field_utf8_end, base.field_sha256)
+                or text[e.scalar_start:e.scalar_end] != label
+                or (e.utf8_start, e.utf8_end) != (
+                    base.field_utf8_start + len(text[:e.scalar_start].encode('utf-8')),
+                    base.field_utf8_start + len(text[:e.scalar_end].encode('utf-8')))
+                or e.literal_sha256 != hashlib.sha256(label.encode('utf-8')).hexdigest()):
+            return None
+        end = e.scalar_end + int(text[e.scalar_end:e.scalar_end+1] in {'。', '．', '.'})
+        units = tuple(u for u in field.units
+            if e.scalar_start <= u.evidence.scalar_start and u.evidence.scalar_end <= end)
+        subject = next(((a, b) for k, a, b in p.source_parts if k == 'SELF_TOPIC'), None)
+        if subject is None:
+            return None
+        quotes = {label, label[subject[0]:], label[subject[1]:]}
+        if end != e.scalar_end:
+            quotes |= {quote + text[e.scalar_end] for quote in tuple(quotes)}
+        try:
+            _check_model_action_units(field, p, label, units=units,
+                scalar_start=e.scalar_start, node_kind=node.node_kind, accepted_quotes=quotes)
+        except AnalysisSourceError:
+            return None
+        spans.append(e)
+        consumed.extend(u.index for u in units)
+    if (text[:spans[0].scalar_start].strip()
+            or text[spans[-1].scalar_end:].strip('。．.\r\n\t ')
+            or any(not re.fullmatch(r'[。．.\s]+', text[left.scalar_end:right.scalar_start])
+                for left, right in zip(spans, spans[1:]))
+            or sorted(consumed) != sorted(u.index for u in field.units)):
+        return None
     return graph
 
 

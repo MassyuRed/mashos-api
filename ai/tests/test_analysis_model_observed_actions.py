@@ -401,3 +401,147 @@ def test_multiple_action_saved_wire_preserves_both_views_without_compilation():
          patch.object(compiler,'compile_observed_graph',side_effect=AssertionError('saved compiler')),\
          patch.object(author,'realize_observed_graph',side_effect=AssertionError('saved author')):
         assert asyncio.run(service.read_maps(OWNER,report_id=row['id']))==expected
+
+
+PLAIN_ACTION_WISH = '私は考えをノートに書いた。私は仕事を続けたい。'
+
+
+def wish_build(text=PLAIN_ACTION_WISH, *, kinds=('ACTION_OR_NONACTION', 'ATTENTION_OR_THOUGHT'),
+        prompt='selected_material.v4', count=1, change=None, snapshot_change=None):
+    snap=source_snapshot(count)
+    for member in snap['members']:
+        member['original'].update(memo=text,memo_action='')
+    if snapshot_change:snapshot_change(snap)
+    p=prepared(snap,prompt)
+    fields=json.loads(p.messages()[1]['content'])['fields']
+    data=dict(fields=[dict(field=f['field'],units=[dict(quote=quote,node_kind=kind,
+        parent_quote=None,scope_role=None,qualifiers=[])
+        for quote,kind in zip(f['text'].rstrip('。').split('。'),kinds)]) for f in fields])
+    if change:change(data)
+    value=call(p,data)
+    artifact,coverage=service.build_cumulative_map(OWNER,snap,model_input=value)
+    return snap,value,artifact,coverage
+
+
+@pytest.mark.parametrize('prompt',['selected_material.v4','selected_material.v7'])
+def test_complete_action_and_wish_keep_the_existing_source_graph_and_meaning(prompt):
+    snap,_,a,c=wish_build(prompt=prompt)
+    normal,normal_counts=service.build_cumulative_map(OWNER,snap)
+    assert a is not None and a.graph==normal.graph and c==normal_counts
+    action,wish=a.graph.nodes
+    assert (action.node_kind,action.modality,action.temporal_scope)==('ACTION_OR_NONACTION','fact','past')
+    assert (wish.node_kind,wish.modality,wish.temporal_scope)==('ATTENTION_OR_THOUGHT','wish','current_input')
+    assert all(n.proposition.actor=='SELF' for n in a.graph.nodes)
+    assert c['mapped_count']==1 and c['unparsed_count']==0 and not a.graph.edges
+    assert any(g.missing_scope=='ROUTE_CONNECTION' for g in a.graph.unknown_gaps)
+    text=a.safe_text_projection(authenticated_owner_scope=OWNER)['text']
+    assert text==normal.safe_text_projection(authenticated_owner_scope=OWNER)['text']
+    labels=[n['visible_label'] for n in a.safe_projection(authenticated_owner_scope=OWNER)['nodes']]
+    assert sum('実行済み' in label for label in labels)==1
+    assert '仕事を続けることへの希望' in labels[1] and '実行済み' not in labels[1]
+
+
+def test_twenty_complete_original_records_keep_each_action_and_wish_witness():
+    snap,_,a,c=wish_build(count=20)
+    assert a is not None and c['source_count']==c['processed_count']==c['mapped_count']==20
+    assert c['unparsed_count']==0 and len(a.graph.nodes)==2 and not a.graph.edges
+    refs={m['original']['id'] for m in snap['members']}
+    for node in a.graph.nodes:
+        assert set(node.record_refs)==refs and len(node.evidence_refs)==20
+        assert node.selected_categories==('仕事',)
+    assert a.graph.nodes[1].modality=='wish'
+
+
+@pytest.mark.parametrize('literal,time',[('私は仕事を続けたい','current_input'),
+    ('私は仕事を続けたかった','past')])
+@pytest.mark.parametrize('prompt',['selected_material.v4','selected_material.v7'])
+def test_single_plain_positive_wish_keeps_hope_and_its_written_time(literal,time,prompt):
+    snap,_,a,c=wish_build(literal+'。',kinds=('ATTENTION_OR_THOUGHT',),prompt=prompt)
+    normal,normal_counts=service.build_cumulative_map(OWNER,snap)
+    assert a is not None and a.graph==normal.graph and c==normal_counts
+    node,=a.graph.nodes
+    assert (node.modality,node.temporal_scope)==('wish',time)
+    text=a.safe_text_projection(authenticated_owner_scope=OWNER)['text']
+    assert '希望' in text and ('（当時）' in text)==(time=='past')
+    assert '実行済み' not in text and not a.graph.edges and c['unparsed_count']==0
+
+
+@pytest.mark.parametrize('mutation',['kind','missing','operator_removed','false_actor',
+    'false_negative','modifier','cross_child','extra_root'])
+def test_wish_units_cannot_erase_the_operator_or_change_source_semantics(mutation):
+    def edit(data):
+        units=data['fields'][0]['units'];wish=units[1]
+        if mutation=='kind':wish['node_kind']='ACTION_OR_NONACTION'
+        if mutation=='missing':units.pop()
+        if mutation=='operator_removed':wish['quote']='私は仕事を続け'
+        if mutation=='false_actor':wish['qualifiers']=[dict(kind='EXPLICIT_ACTOR',quote='仕事')]
+        if mutation=='false_negative':wish['qualifiers']=[dict(kind='NEGATION',quote='たい')]
+        if mutation=='modifier':wish['qualifiers']=[dict(kind='WRITTEN_MODIFIER',quote='たい')]
+        if mutation=='cross_child':units.append(dict(quote='仕事',node_kind=None,
+            parent_quote=units[0]['quote'],scope_role='CONTENT_TARGET',qualifiers=[]))
+        if mutation=='extra_root':units.append(dict(wish,quote='仕事',node_kind='ROLE'))
+    try:
+        _,_,a,c=wish_build(change=edit)
+    except ERRORS:
+        return
+    assert a is None and c['mapped_count']==0 and c['unparsed_count']==1
+
+
+@pytest.mark.parametrize('text',[
+    '私は考えをノートに書いた。その後、私は仕事を続けたい。',
+    '私は仕事を続けたい。その後、私は考えをノートに書いた。',
+    '私は考えをノートに書いた。私は仕事を続けたくない。',
+    '私は考えをノートに書かなかった。私は仕事を続けたい。',
+    '私は考えをノートに書いた。仕事を続けたい。',
+    '私は考えをノートに書いた。姉は仕事を続けたい。',
+    '私は考えをノートに書いた。私は仕事を続けたいかもしれない。',
+    '私は考えをノートに書いた。まだ言葉にできない。私は仕事を続けたい。',
+    '私は考えをノートに書いた。私は仕事を続けたい。まだ分からない。',
+])
+def test_new_wish_scope_does_not_add_order_negation_actor_or_unread_scope(text):
+    try:
+        _,_,a,c=wish_build(text)
+    except ERRORS:
+        return
+    assert a is None and c['mapped_count']==0 and c['unparsed_count']==1
+
+
+def test_cognition_is_not_silently_admitted_as_a_plain_wish():
+    text='私は記録を残した。私は資料を調べたかもしれないと思っている。'
+    _,_,a,c=wish_build(text)
+    assert a is None and c['mapped_count']==0 and c['unparsed_count']==1
+
+
+def test_wishes_cannot_borrow_another_field_or_a_supplement_proof():
+    def split(snap):
+        snap['members'][0]['original'].update(memo='私は仕事を続けたい。',memo_action='私は資料を見た。')
+    def wish_kind(data):
+        data['fields'][0]['units'][0]['node_kind']='ATTENTION_OR_THOUGHT'
+    _,_,a,c=wish_build(snapshot_change=split,change=wish_kind)
+    assert a is None and c['mapped_count']==0 and c['unparsed_count']==1
+    from test_analysis_saved_period import with_answer
+    def answer(snap):
+        original=snap['members'][0]['original']
+        original['emotion_details']=[dict(type='平穏',strength='medium')]
+        snap['members'][0]=with_answer(snap['members'][0],'私は仕事を続けたい。')
+    def answer_kind(data):
+        data['fields'][1]['units'][0]['node_kind']='ATTENTION_OR_THOUGHT'
+    try:
+        _,_,a,c=wish_build('私は資料を見た。',kinds=('ACTION_OR_NONACTION',),
+            snapshot_change=answer,change=answer_kind)
+    except ERRORS:
+        return
+    assert a is None and c['mapped_count']==0 and c['unparsed_count']==1
+
+
+def test_action_wish_saved_wire_replays_without_compiler_or_author():
+    _,_,a,c=wish_build()
+    row=dict(id=str(UUID(a.artifact_id[9:])),source_profile=service.PROFILE,report_mode='standard',
+        content_text=a.safe_text_projection(authenticated_owner_scope=OWNER)['text'],
+        content_json=dict(report_mode='standard',watashiMap=a.safe_projection(authenticated_owner_scope=OWNER),map_context=c))
+    expected=dict(items=[row],subscription_tier='free',matched=True,history_limit=2)
+    with patch.object(service,'_rpc',AsyncMock(return_value=json.loads(canonical(expected)))),\
+         patch.object(compiler,'compile_observed_graph',side_effect=AssertionError('saved compiler')),\
+         patch.object(compiler,'_model_complete_observed_plain_wishes',side_effect=AssertionError('saved wish proof')),\
+         patch.object(author,'realize_observed_graph',side_effect=AssertionError('saved author')):
+        assert asyncio.run(service.read_maps(OWNER,report_id=row['id']))==expected
