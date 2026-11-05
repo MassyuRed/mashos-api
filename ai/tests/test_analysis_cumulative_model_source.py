@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, patch
 from uuid import UUID
 
 from fastapi import HTTPException
+import httpx
 import pytest
 
 import analysis_cumulative_service as service
@@ -533,6 +534,185 @@ def test_read_only_routes_never_acquire_a_response(monkeypatch, ensure, mode):
 
 
 @pytest.fixture
+def model_lifecycle(monkeypatch):
+    """Real model admission/build with isolated commit/read state."""
+    state = dict(snapshot=material('pair'), commits=[], row=None)
+    async def read(owner, **kwargs):
+        row = state['row']
+        return dict(items=[copy.deepcopy(row)] if row else [])
+    async def rpc(name, payload):
+        if name == 'analysis_cumulative_source_snapshot':
+            return copy.deepcopy(state['snapshot'])
+        assert name == 'analysis_cumulative_commit'
+        if payload['p_guard'] != state['snapshot']['guard']:
+            raise HTTPException(409, 'analysis_source_changed')
+        if 'p_existing_id' in payload:
+            return payload['p_existing_id']
+        state['commits'].append(copy.deepcopy(payload))
+        rid = str(UUID(payload['p_artifact_id'][9:]))
+        state['row'] = dict(id=rid, period_start=payload['p_start'], period_end=payload['p_end'],
+            generated_at=payload['p_end'], title='わたしマップ', snapshot_month=None, captured_at=None,
+            content_text=payload['p_text'], content_json=dict(watashiMap=payload['p_projection'],
+                map_context=payload['p_private_evidence']['coverage']))
+        return rid
+    monkeypatch.setattr(service, 'read_maps', read)
+    monkeypatch.setattr(service, '_rpc', rpc)
+    monkeypatch.setattr(service, 'observed_mode', lambda: 'development')
+    yield state
+    assert not service._model_map_flights
+
+
+def test_overlapping_model_updates_share_one_snapshot_response_commit_and_independent_dtos(model_lifecycle):
+    async def scenario():
+        entered, release = asyncio.Event(), asyncio.Event()
+        received = []
+        async def source(prepared):
+            received.append(prepared)
+            entered.set()
+            await release.wait()
+            return synthetic_response(prepared)
+        tasks = [asyncio.create_task(service.ensure_map(OWNER, force=True, model_source=source)) for _ in range(3)]
+        await entered.wait()
+        # Saved reads are independent and do not wait for this model request.
+        readonly = await service.ensure_map(OWNER, ensure=False, model_source=source)
+        assert not readonly['has_visible_content']
+        release.set()
+        values = await asyncio.gather(*tasks)
+        assert len(received) == len(model_lifecycle['commits']) == 1
+        assert values[0] == values[1] == values[2]
+        values[0]['meta']['nodes'].clear()
+        assert values[1]['meta']['nodes'] and model_lifecycle['row']['content_json']['watashiMap']['nodes']
+        # An explicit later force update is fresh, not a retained result cache.
+        later = await service.ensure_map(OWNER, force=True, model_source=source)
+        assert len(received) == len(model_lifecycle['commits']) == 2
+        assert later['report_id'] != values[1]['report_id']
+    run(scenario())
+
+
+@pytest.mark.parametrize('failure,code,detail', [
+    (OSError('secret connection address'), 503, 'analysis_model_source_unavailable'),
+    (RuntimeError('private provider diagnostics'), 503, 'analysis_model_source_unavailable'),
+    (httpx.ConnectError('private provider URL'), 503, 'analysis_model_source_unavailable'),
+    (TimeoutError('provider timeout'), 504, 'analysis_model_source_timeout'),
+    (ValueError('malformed response'), 422, 'analysis_saved_source_unavailable'),
+])
+def test_model_failure_is_shared_sanitized_not_saved_and_can_be_retried(model_lifecycle, failure, code, detail):
+    async def scenario():
+        entered, release = asyncio.Event(), asyncio.Event()
+        calls = []
+        async def source(prepared):
+            calls.append(prepared)
+            entered.set()
+            await release.wait()
+            if len(calls) == 1:
+                raise failure
+            return synthetic_response(prepared)
+        tasks = [asyncio.create_task(service.ensure_map(OWNER, model_source=source)) for _ in range(2)]
+        await entered.wait()
+        release.set()
+        errors = await asyncio.gather(*tasks, return_exceptions=True)
+        assert all(isinstance(e, HTTPException) and e.status_code == code and e.detail == detail for e in errors)
+        assert len(calls) == 1 and not model_lifecycle['commits'] and not service._model_map_flights
+        assert (await service.ensure_map(OWNER, model_source=source))['refreshed']
+        assert len(calls) == 2 and len(model_lifecycle['commits']) == 1
+    run(scenario())
+
+
+@pytest.mark.parametrize('swallow', [False, True])
+def test_model_deadline_cancels_provider_and_rejects_late_response(model_lifecycle, monkeypatch, swallow):
+    monkeypatch.setattr(service, 'MODEL_SOURCE_TIMEOUT_SECONDS', 0.02)
+    async def scenario():
+        cancelled = asyncio.Event()
+        async def source(prepared):
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                cancelled.set()
+                if swallow:
+                    return synthetic_response(prepared)
+                raise
+        with pytest.raises(HTTPException) as error:
+            await service.ensure_map(OWNER, model_source=source)
+        assert error.value.status_code == 504 and error.value.detail == 'analysis_model_source_timeout'
+        assert cancelled.is_set() and not model_lifecycle['commits'] and not service._model_map_flights
+    run(scenario())
+
+
+@pytest.mark.parametrize('all_waiters,swallow', [(False, False), (True, False), (True, True)])
+def test_cancelled_waiters_do_not_cancel_other_readers_or_allow_abandoned_commit(model_lifecycle, all_waiters, swallow):
+    async def scenario():
+        entered, release, cancelled = asyncio.Event(), asyncio.Event(), asyncio.Event()
+        calls = []
+        async def source(prepared):
+            calls.append(prepared)
+            entered.set()
+            try:
+                await release.wait()
+            except asyncio.CancelledError:
+                cancelled.set()
+                if not swallow:
+                    raise
+            return synthetic_response(prepared)
+        tasks = [asyncio.create_task(service.ensure_map(OWNER, model_source=source)) for _ in range(2)]
+        await entered.wait()
+        flight, = service._model_map_flights.values()
+        tasks[0].cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await tasks[0]
+        assert not cancelled.is_set()
+        if all_waiters:
+            tasks[1].cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await tasks[1]
+            with pytest.raises(asyncio.CancelledError):
+                await flight.task
+            assert cancelled.is_set() and not model_lifecycle['commits']
+        else:
+            release.set()
+            assert (await tasks[1])['refreshed']
+            assert len(model_lifecycle['commits']) == 1 and not cancelled.is_set()
+        assert len(calls) == 1 and not service._model_map_flights
+    run(scenario())
+
+
+@pytest.mark.parametrize('mode', ['read_only', 'off'])
+def test_switch_to_saved_reads_while_model_waits_prevents_generated_commit(model_lifecycle, monkeypatch, mode):
+    async def source(prepared):
+        response = synthetic_response(prepared)
+        monkeypatch.setattr(service, 'observed_mode', lambda: mode)
+        assert not (await service.ensure_map(OWNER, model_source=source))['has_visible_content']
+        return response
+    with pytest.raises(HTTPException) as error:
+        run(service.ensure_map(OWNER, model_source=source))
+    assert error.value.status_code == 503 and not model_lifecycle['commits']
+
+
+@pytest.mark.parametrize('difference', ['owner', 'callable', 'force', 'monthly'])
+def test_model_updates_do_not_share_different_owner_provider_or_view(monkeypatch, difference):
+    async def scenario():
+        entered, release = asyncio.Event(), asyncio.Event()
+        calls = []
+        async def fake_ensure(owner, **kwargs):
+            calls.append((owner, kwargs))
+            if len(calls) == 2:
+                entered.set()
+            await release.wait()
+            return {'owner': owner}
+        monkeypatch.setattr(service, '_ensure_map', fake_ensure)
+        monkeypatch.setattr(service, 'observed_mode', lambda: 'development')
+        source, other = object(), object()
+        first = asyncio.create_task(service.ensure_map(OWNER, model_source=source))
+        kwargs = dict(model_source=other if difference == 'callable' else source,
+            force=difference == 'force', monthly=difference == 'monthly')
+        second = asyncio.create_task(service.ensure_map(str(UUID(int=2)) if difference == 'owner' else OWNER, **kwargs))
+        await asyncio.wait_for(entered.wait(), 1)
+        release.set()
+        await asyncio.gather(first, second)
+        assert len(calls) == 2 and not service._model_map_flights
+    run(scenario())
+
+
+@pytest.fixture
 def sql_source(monkeypatch):
     if not os.environ.get('Q2_PGLITE_MODULE'):
         pytest.skip('PostgreSQL WASM dependency is not configured')
@@ -634,6 +814,54 @@ def test_real_sql_source_edit_during_response_rejects_commit(sql_source):
     assert len(calls) == 1
     assert db.query('select count(*) as n from public.analysis_observed_artifacts')['rows'][0]['n'] == 0
     assert db.query('select count(*) as n from public.analysis_cumulative_months')['rows'][0]['n'] == 0
+
+
+def test_real_sql_overlapping_force_calls_share_one_save_and_month_snapshot(sql_source):
+    db, _ = sql_source
+    insert_material(db, 'pair')
+    async def scenario():
+        entered, release = asyncio.Event(), asyncio.Event()
+        calls = []
+        async def source(prepared):
+            calls.append(prepared.request_ref)
+            entered.set()
+            await release.wait()
+            return synthetic_response(prepared)
+        updates = [asyncio.create_task(service.ensure_map(OWNER, force=True, model_source=source)) for _ in range(3)]
+        await entered.wait()
+        release.set()
+        values = await asyncio.gather(*updates)
+        assert values[0] == values[1] == values[2] and len(calls) == 1
+        assert db.query('select count(*) as n from public.analysis_observed_artifacts')['rows'][0]['n'] == 1
+        assert db.query('select count(*) as n from public.analysis_cumulative_months')['rows'][0]['n'] == 1
+        forbidden = AsyncMock(side_effect=AssertionError('saved read acquired model response'))
+        month = await service.ensure_map(OWNER, monthly=True, force=True, model_source=forbidden)
+        assert month['report_id'] == values[0]['report_id'] and month['meta'] == values[0]['meta']
+        forbidden.assert_not_awaited()
+    run(scenario())
+
+
+def test_real_sql_timed_out_refresh_preserves_previous_current_and_month(sql_source, monkeypatch):
+    db, _ = sql_source
+    insert_material(db, 'pair')
+    async def source(prepared):
+        return synthetic_response(prepared)
+    first = run(service.ensure_map(OWNER, model_source=source))
+    month = run(service.ensure_map(OWNER, monthly=True))
+    monkeypatch.setattr(service, 'MODEL_SOURCE_TIMEOUT_SECONDS', 0.02)
+    async def blocked(prepared):
+        await asyncio.Event().wait()
+    with pytest.raises(HTTPException) as error:
+        run(service.ensure_map(OWNER, force=True, model_source=blocked))
+    assert error.value.status_code == 504
+    saved = run(service.ensure_map(OWNER, ensure=False))
+    monthly = run(service.ensure_map(OWNER, monthly=True, force=True))
+    assert saved['report_id'] == first['report_id'] and saved['meta'] == first['meta']
+    assert saved['content_text'] == first['content_text']
+    assert monthly['report_id'] == month['report_id'] and monthly['captured_at'] == month['captured_at']
+    assert monthly['meta'] == month['meta'] and monthly['content_text'] == month['content_text']
+    assert db.query('select count(*) as n from public.analysis_observed_artifacts')['rows'][0]['n'] == 1
+    assert db.query('select count(*) as n from public.analysis_cumulative_months')['rows'][0]['n'] == 1
 
 
 def insert_additional_original(db, template, number, memo, category):

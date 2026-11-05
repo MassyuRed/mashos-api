@@ -8,17 +8,33 @@ from __future__ import annotations
 
 import asyncio
 from collections import Counter
+from copy import deepcopy
+from dataclasses import dataclass
 from datetime import date
 import json
 import re
 from uuid import UUID, uuid4
 
+import httpx
 from fastapi import HTTPException
 
 import analysis_observed_service as observed
 from analysis_observed_service import _checked_projection, private_storage_evidence, observed_mode
 
 PROFILE = 'cumulative.v1'
+MODEL_SOURCE_TIMEOUT_SECONDS = 60.0
+
+
+@dataclass
+class _ModelMapFlight:
+    source: object
+    task: asyncio.Task
+    waiters: int = 0
+
+
+# Only concurrent, identical explicit calls share a task. There is no completed
+# response cache; abandoned tasks are cancelled. Tasks never cross loops/owners.
+_model_map_flights = {}
 
 
 async def _rpc(name, payload):
@@ -391,6 +407,61 @@ def build_cumulative_map(owner, snapshot, *, model_input=None):
 
 
 async def ensure_map(user_id, *, ensure=True, force=False, monthly=False, model_source=None):
+    """Coalesce identical overlapping explicit model updates in this process."""
+    owner = _owner(user_id)
+    if model_source is None or not ensure or observed_mode() != 'development':
+        return await _ensure_map(owner, ensure=ensure, force=force,
+            monthly=monthly, model_source=model_source)
+    key = (asyncio.get_running_loop(), owner, id(model_source), force, monthly)
+    flight = _model_map_flights.get(key)
+    if flight is None:
+        flight = _ModelMapFlight(model_source, asyncio.create_task(_ensure_map(owner,
+            ensure=ensure, force=force, monthly=monthly, model_source=model_source)))
+        _model_map_flights[key] = flight
+    flight.waiters += 1
+    try:
+        return deepcopy(await asyncio.shield(flight.task))
+    finally:
+        flight.waiters -= 1
+        if not flight.waiters:
+            if _model_map_flights.get(key) is flight:
+                del _model_map_flights[key]
+            if not flight.task.done():
+                flight.task.cancel()
+            # Retrieve a late failure even when every caller was cancelled.
+            flight.task.add_done_callback(_consume_model_map_completion)
+
+
+def _consume_model_map_completion(task):
+    if not task.cancelled():
+        task.exception()
+
+
+async def _model_response(model_source, prepared):
+    _require_model_write_active()
+    try:
+        async with asyncio.timeout(MODEL_SOURCE_TIMEOUT_SECONDS) as deadline:
+            response = await model_source(prepared)
+        # A cooperative provider may catch cancellation to finish its cleanup.
+        # A response returned after that deadline must still never be committed.
+        if deadline.expired():
+            raise TimeoutError
+        _require_model_write_active()
+        return response
+    except TimeoutError:
+        raise HTTPException(504, 'analysis_model_source_timeout') from None
+    except (httpx.HTTPError, OSError, RuntimeError):
+        raise HTTPException(503, 'analysis_model_source_unavailable') from None
+
+
+def _require_model_write_active():
+    if asyncio.current_task().cancelling():
+        raise asyncio.CancelledError
+    if observed_mode() != 'development':
+        raise HTTPException(503, 'analysis_model_source_unavailable')
+
+
+async def _ensure_map(user_id, *, ensure=True, force=False, monthly=False, model_source=None):
     """Save/read the normal map; optional source receives the fresh v4 input.
 
     The asynchronous source returns AnalysisModelQuotedParentUnitsResponse.
@@ -436,7 +507,7 @@ async def ensure_map(user_id, *, ensure=True, force=False, monthly=False, model_
                         require_analysis_model_observed_scope)
                     prepared = prepare_cumulative_category_units(owner, snapshot, prompt_version='selected_material.v4')
                     require_analysis_model_observed_scope(prepared.request)
-                    response = await model_source(prepared)
+                    response = await _model_response(model_source, prepared)
                     require(type(response) is AnalysisModelQuotedParentUnitsResponse,
                         'analysis_quoted_parent_units_response_invalid')
                     artifact, coverage = await asyncio.to_thread(build_cumulative_map, owner, snapshot,
@@ -445,6 +516,8 @@ async def ensure_map(user_id, *, ensure=True, force=False, monthly=False, model_
                 raise HTTPException(422, 'analysis_saved_source_unavailable') from None
             if artifact is None:
                 return _response(None, coverage=coverage)
+            if model_source is not None:
+                _require_model_write_active()
             projection = artifact.safe_projection(authenticated_owner_scope=owner)
             text = artifact.safe_text_projection(authenticated_owner_scope=owner)['text']
             private = private_storage_evidence(artifact)
