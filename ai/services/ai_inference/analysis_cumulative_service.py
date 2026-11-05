@@ -1,7 +1,8 @@
 """All-owned-input map lifecycle and immutable monthly references.
 
-The authenticated API resolves the owner. No external model, lookback window,
-new language realizer, or reconstruction of unsaved past months is used here.
+The authenticated API resolves the owner. Only an explicit caller can supply
+an asynchronous model source; HTTP and scheduled callers keep the default.
+No lookback window, new realizer, or unsaved past months are introduced.
 """
 from __future__ import annotations
 
@@ -390,7 +391,13 @@ def build_cumulative_map(owner, snapshot, *, model_input=None):
     return outcome.artifact, coverage
 
 
-async def ensure_map(user_id, *, ensure=True, force=False, monthly=False):
+async def ensure_map(user_id, *, ensure=True, force=False, monthly=False, model_source=None):
+    """Save/read the normal map; optional source receives the fresh v4 input.
+
+    The asynchronous source returns AnalysisModelQuotedParentUnitsResponse.
+    It is called once only when rebuilding within the existing consumer scope.
+    Saved reads do not acquire responses; failed responses never use a fallback.
+    """
     owner = _owner(user_id)
     result = await read_maps(owner, history=monthly, limit=1)
     row = result['items'][0] if result['items'] else None
@@ -421,7 +428,20 @@ async def ensure_map(user_id, *, ensure=True, force=False, monthly=False):
                 p_existing_id=current_row['id']))
         else:
             try:
-                artifact, coverage = await asyncio.to_thread(build_cumulative_map, owner, snapshot)
+                if model_source is None:
+                    artifact, coverage = await asyncio.to_thread(build_cumulative_map, owner, snapshot)
+                else:
+                    from dataclasses import replace
+                    from cocolon_meaning_experience_engine.cores.analysis.semantic_admission import (
+                        AnalysisModelQuotedParentUnitsResponse, require,
+                        require_analysis_model_observed_scope)
+                    prepared = prepare_cumulative_category_units(owner, snapshot, prompt_version='selected_material.v4')
+                    require_analysis_model_observed_scope(prepared.request)
+                    response = await model_source(prepared)
+                    require(type(response) is AnalysisModelQuotedParentUnitsResponse,
+                        'analysis_quoted_parent_units_response_invalid')
+                    artifact, coverage = await asyncio.to_thread(build_cumulative_map, owner, snapshot,
+                        model_input=replace(prepared, response=response))
             except (ValueError, KeyError, TypeError, AttributeError):
                 raise HTTPException(422, 'analysis_saved_source_unavailable') from None
             if artifact is None:

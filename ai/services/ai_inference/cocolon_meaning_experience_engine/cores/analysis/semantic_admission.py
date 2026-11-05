@@ -1213,6 +1213,16 @@ def generate_analysis_model_quoted_parent_units(request, model_input):
     return realize_analysis_unit_candidates(graph)
 
 
+def require_analysis_model_observed_scope(request, *, frozen=None):
+    """Qualify the existing consumer before acquiring an external response."""
+    frozen = freeze_analysis_sources(request) if frozen is None else frozen
+    require(len(frozen.members) == len(frozen.sources) == len(frozen.category_records) == 1
+        and frozen.sources[0].envelope.source_role == 'ORIGINAL_INPUT'
+        and not any(m.supplements for m in request.members)
+        and request.comparison_previous_request is None,
+        'analysis_model_observed_scope_unsupported')
+
+
 def generate_analysis_model_observed_actions(request, model_input):
     """Explicit caller route for existing source-proved roles and actions.
 
@@ -1225,11 +1235,7 @@ def generate_analysis_model_observed_actions(request, model_input):
         compile_model_written_role_clause_graph)
     from .observed_route_realizer import realize_observed_graph
     frozen, fields, _ = _admit_quoted_parent_units(request, model_input)
-    require(len(frozen.members) == len(frozen.sources) == len(frozen.category_records) == 1
-        and frozen.sources[0].envelope.source_role == 'ORIGINAL_INPUT'
-        and not any(m.supplements for m in request.members)
-        and request.comparison_previous_request is None,
-        'analysis_model_observed_scope_unsupported')
+    require_analysis_model_observed_scope(request, frozen=frozen)
     graph = None
     if len(fields) == 2:
         try:
