@@ -1436,7 +1436,8 @@ def compile_model_observed_actions(source_set, fields):
     This does not treat model roots or the authenticated owner as actor proof.
     A missing subject stays UNSPECIFIED under the existing source proof;
     it never inherits SELF from the owner or a model actor qualifier.
-    The scope is a single plain finite action; no new grammar or edge.
+    Single plain actions and fully witnessed one-field SELF sequences reuse
+    existing source grammar and edges.
     """
     graph = compile_observed_graph(source_set)
     if len(graph.nodes) >= 2:
