@@ -1213,6 +1213,25 @@ def generate_analysis_model_quoted_parent_units(request, model_input):
     return realize_analysis_unit_candidates(graph)
 
 
+def generate_analysis_model_observed_actions(request, model_input):
+    """Explicit caller route to the ordinary saved map; candidates stay separate."""
+    from .intent_compiler import compile_model_observed_actions
+    from .observed_route_realizer import realize_observed_graph
+    frozen, fields, _ = _admit_quoted_parent_units(request, model_input)
+    require(len(frozen.members) == len(frozen.sources) == len(frozen.category_records) == 1
+        and frozen.sources[0].envelope.source_role == 'ORIGINAL_INPUT'
+        and not any(m.supplements for m in request.members)
+        and request.comparison_previous_request is None,
+        'analysis_model_observed_scope_unsupported')
+    graph = compile_model_observed_actions(frozen, fields)
+    if graph is None:
+        return None
+    artifact = realize_observed_graph(frozen, graph)
+    artifact.safe_projection(authenticated_owner_scope=frozen.owner_scope)
+    artifact.safe_text_projection(authenticated_owner_scope=frozen.owner_scope)
+    return artifact
+
+
 def _validated_quoted_parent_unit_artifact(model_input, artifact):
     from .intent_compiler import AnalysisUnitCandidateGraph
     from .observed_route_realizer import AnalysisUnitCandidateArtifact, validate_analysis_unit_artifact

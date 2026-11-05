@@ -661,6 +661,13 @@ def _failed_outcome(status, reason, *, stage, diagnostic_reason=None):
     return AnalysisEngineOutcome(status, (reason,))
 
 
+def realize_observed_graph(sources, graph):
+    """The ordinary map constructor, shared by source and explicit model callers."""
+    return ObservedSelfStructureMap('artifact:' + uuid4().hex, 1,
+        sources.owner_scope, sources.source_set_ref, sources.period,
+        graph, sources.members, category_records=sources.category_records)
+
+
 def _generate_single_observed_map(request: AnalysisObservedMapRequest, *,
                                   period_role='current') -> AnalysisEngineOutcome:
     try:
@@ -674,9 +681,7 @@ def _generate_single_observed_map(request: AnalysisObservedMapRequest, *,
         if not graph.nodes:
             return _failed_outcome(EngineStatus.UNAVAILABLE,
                 'analysis_observed_route_not_established', stage=period_role)
-        artifact = ObservedSelfStructureMap('artifact:' + uuid4().hex, 1,
-            sources.owner_scope, sources.source_set_ref, sources.period,
-            graph, sources.members, category_records=sources.category_records)
+        artifact = realize_observed_graph(sources, graph)
         # A partial observed map is a valid result, not a fallback to v1.
         return AnalysisEngineOutcome(EngineStatus.GENERATED,
             ('analysis_partial_observed_map',), artifact)

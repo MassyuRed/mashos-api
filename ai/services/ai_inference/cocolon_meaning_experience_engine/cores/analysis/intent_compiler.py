@@ -1303,6 +1303,98 @@ def validate_model_written_role_clause_graph(source_set, field, graph):
     return graph
 
 
+def _check_model_action_units(action, p, label):
+    """Match one complete source-proved action to its unchanged model units."""
+    subject = next(((a, b) for name, a, b in p.source_parts if name == 'SELF_TOPIC'), None)
+    finite = next(((a, b) for name, a, b in p.source_parts if name == 'FINITE_PREDICATE'), None)
+    if subject is None or finite is None:
+        raise AnalysisSourceError('analysis_written_role_action_scope_unsupported')
+    roots = [u for u in action.units if u.parent is None]
+    accepted = {action.complete_source_text, label, label[subject[1]:]}
+    nouns = {noun for _, noun in p.arguments}
+    if (len(roots) != 1 or roots[0].node_kind != 'ACTION_OR_NONACTION'
+            or roots[0].scope_role is not None or roots[0].quote not in accepted
+            or any(u is not roots[0] and not (u.parent == roots[0].index
+                and u.scope_role == 'CONTENT_TARGET' and u.quote in nouns) for u in action.units)):
+        raise AnalysisSourceError('analysis_written_role_action_candidate_mismatch')
+    self_text = label[subject[0]:subject[1]].split('は', 1)[0]
+    finite_text = label[finite[0]:finite[1]]
+    operators = {finite_text}
+    match = re.search(r'(なかった(?:です)?|ませんでした)$', finite_text)
+    if match:
+        operators.add(match[0])
+    if (p.polarity == 'negative' and p.predicate_lemma.endswith('する')
+            and finite_text == p.predicate_lemma[:-2] + 'しなかった'):
+        operators.add('しなかった')
+    for unit in action.units:
+        for q in unit.qualifiers:
+            actor = (q.kind == 'EXPLICIT_ACTOR' and q.quote in {self_text, self_text + 'は'}
+                and q.evidence.scalar_start == subject[0]
+                and q.evidence.scalar_end == subject[0] + len(q.quote))
+            negative = (q.kind == 'NEGATION' and p.polarity == 'negative' and q.quote in operators
+                and q.evidence.scalar_end == len(label)
+                and q.evidence.scalar_start >= finite[0])
+            if not (actor or negative):
+                raise AnalysisSourceError('analysis_written_role_action_qualifier_mismatch')
+
+
+def compile_model_observed_actions(source_set, fields):
+    """Consume a matched complete action through the existing source compiler.
+
+    Keep the original whole source, its safety/host checks, evidence and gaps.
+    This does not treat model roots or the authenticated owner as actor proof.
+    The initial scope is a single plain finite action; no new grammar or edge.
+    """
+    graph = compile_observed_graph(source_set)
+    if (len(graph.nodes) != 1 or graph.edges or graph.source_updates
+            or graph.conflicts or graph.annotations):
+        return None
+    node = graph.nodes[0]
+    p = node.proposition
+    if (node.node_kind != 'ACTION_OR_NONACTION' or p is None or p.actor != 'SELF'
+            or (p.modality, p.temporal_scope) != ('fact', 'past')
+            or p.predicate_lemma not in _PAST_ACTION_LEMMAS
+            or any((p.sequence_marker, p.relative_day, p.possible_content, p.result_state,
+                    p.dependent_form, p.scene_state, p.role_state, p.written_modifiers))
+            or len(node.evidence_refs) != 1 or node.update_refs or node.quoted_field is not None):
+        return None
+    e = node.evidence_refs[0]
+    matches = [f for f in fields if f.record_ref in node.record_refs
+        and f.field_path == e.field_path and f.evidence.source_envelope_id == e.source_envelope_id]
+    if len(matches) != 1:
+        return None
+    field = matches[0]
+    other_fields = [f for f in fields if f is not field]
+    # This first model-to-map scope never releases another field's report.
+    # Keep the full source in the shared compiler above, then conservatively
+    # withhold adoption for quoted or forward-reporting material elsewhere.
+    if any(re.search(r'[「」『』“”"]', f.complete_source_text)
+            or _analysis_prefix_opens_report(f.complete_source_text)
+            or _forward_speech_opens_report(f.complete_source_text) for f in other_fields):
+        return None
+    text = field.complete_source_text
+    label = text.rstrip('。．.')
+    if (text not in {label, label + '。', label + '．', label + '.'}
+            or node.visible_label != label or (e.scalar_start, e.scalar_end) != (0, len(label))
+            or e.field_sha256 != field.evidence.field_sha256
+            or (e.field_utf8_start, e.field_utf8_end) !=
+               (field.evidence.field_utf8_start, field.evidence.field_utf8_end)
+            or (e.utf8_start, e.utf8_end) !=
+               (e.field_utf8_start, e.field_utf8_start + len(label.encode('utf-8')))):
+        return None
+    try:
+        _check_model_action_units(field, p, label)
+    except AnalysisSourceError:
+        return None
+    # Some unsupported text has no shared nucleus. A nonempty other field
+    # is still unread; absence from the plan cannot turn it into parsed text.
+    if other_fields and not any(g.missing_scope == 'SOURCE_SCOPE' for g in graph.unknown_gaps):
+        graph = replace(graph, unknown_gaps=graph.unknown_gaps + (UnknownGap(
+            'g' + str(len(graph.unknown_gaps) + 1), (node.node_ref,), 'SOURCE_SCOPE',
+            'UNSUPPORTED_OR_UNCERTAIN_SOURCE_SCOPE'),))
+    return graph
+
+
 def _model_written_role_action_proof(source_set, fields):
     """Two complete original fields: written role and finite SELF past action.
 
@@ -1335,39 +1427,7 @@ def _model_written_role_action_proof(source_set, fields):
             or action.evidence.utf8_start != action.evidence.field_utf8_start
             or action.evidence.utf8_end != action.evidence.field_utf8_end):
         raise AnalysisSourceError('analysis_written_role_action_binding_invalid')
-    subject = next(((a, b) for name, a, b in p.source_parts if name == 'SELF_TOPIC'), None)
-    finite = next(((a, b) for name, a, b in p.source_parts if name == 'FINITE_PREDICATE'), None)
-    if subject is None or finite is None:
-        raise AnalysisSourceError('analysis_written_role_action_scope_unsupported')
-    roots = [u for u in action.units if u.parent is None]
-    accepted = {text, label, label[subject[1]:]}
-    nouns = {noun for _, noun in p.arguments}
-    if (len(roots) != 1 or roots[0].node_kind != 'ACTION_OR_NONACTION'
-            or roots[0].scope_role is not None or roots[0].quote not in accepted
-            or any(u is not roots[0] and not (u.parent == roots[0].index
-                and u.scope_role == 'CONTENT_TARGET' and u.quote in nouns) for u in action.units)):
-        raise AnalysisSourceError('analysis_written_role_action_candidate_mismatch')
-    self_text = label[subject[0]:subject[1]].split('は', 1)[0]
-    finite_text = label[finite[0]:finite[1]]
-    operators = {finite_text}
-    match = re.search(r'(なかった(?:です)?|ませんでした)$', finite_text)
-    if match:
-        operators.add(match[0])
-    # A suru inflection is also an exact negative operator inside the
-    # already parsed finite predicate; it is not a free substring suffix.
-    if (p.polarity == 'negative' and p.predicate_lemma.endswith('する')
-            and finite_text == p.predicate_lemma[:-2] + 'しなかった'):
-        operators.add('しなかった')
-    for unit in action.units:
-        for q in unit.qualifiers:
-            actor = (q.kind == 'EXPLICIT_ACTOR' and q.quote in {self_text, self_text + 'は'}
-                and q.evidence.scalar_start == subject[0]
-                and q.evidence.scalar_end == subject[0] + len(q.quote))
-            negative = (q.kind == 'NEGATION' and p.polarity == 'negative' and q.quote in operators
-                and q.evidence.scalar_end == len(label)
-                and q.evidence.scalar_start >= finite[0])
-            if not (actor or negative):
-                raise AnalysisSourceError('analysis_written_role_action_qualifier_mismatch')
+    _check_model_action_units(action, p, label)
     evidence = replace(action.evidence,
         evidence_id='analysis-unit-evidence:' + commitment([action.field_ref, 0, len(label)])[7:],
         scalar_end=len(label),
