@@ -204,9 +204,13 @@ def test_v6_held_out_sources_already_have_complete_existing_witnesses(memo, cate
 @pytest.mark.parametrize('source_profile,target_profile', [
     ('selected_material.v4', 'selected_material.v6'),
     ('selected_material.v6', 'selected_material.v4'),
+    ('selected_material.v4', 'selected_material.v7'),
+    ('selected_material.v7', 'selected_material.v4'),
+    ('selected_material.v6', 'selected_material.v7'),
+    ('selected_material.v7', 'selected_material.v6'),
 ])
 @pytest.mark.parametrize('change_ref', [False, True])
-def test_v6_response_cannot_be_reassigned_across_prompt_versions(source_profile, target_profile, change_ref):
+def test_response_cannot_be_reassigned_across_prompt_versions(source_profile, target_profile, change_ref):
     snap = sample()
     source = service.prepare_cumulative_category_units(OWNER, snap, prompt_version=source_profile)
     target = service.prepare_cumulative_category_units(OWNER, snap, prompt_version=target_profile)
@@ -219,6 +223,7 @@ def test_v6_response_cannot_be_reassigned_across_prompt_versions(source_profile,
 @pytest.mark.parametrize('profile,state', [
     ('selected_material.v4', admission.QUOTED_PARENT_MATERIAL_V4_STATE),
     ('selected_material.v6', admission.QUOTED_PARENT_MATERIAL_V6_STATE),
+    ('selected_material.v7', admission.QUOTED_PARENT_MATERIAL_V7_STATE),
 ])
 def test_versioned_candidate_state_keeps_exact_schema_and_non_generating_roundtrip(profile, state):
     snap = sample()
