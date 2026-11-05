@@ -224,7 +224,7 @@ def test_ordinary_saved_wire_restores_both_views_without_model_or_compiler(tmp_p
     ('資料を作った','作る'),('仕事メモを残した','残す'),
     ('費用を記録した','記録する'),('予定をメモした','メモする'),
     ('仕事を続けた','続ける'),('私の考えを書いた','書く'),
-    ('費用を記録しなかった','記録する'),('資料を調べなかったです','調べる')])
+    ('費用を記録しなかった','記録する'),('資料を調べなかった','調べる')])
 def test_model_keeps_existing_complete_omitted_action_without_assigning_an_actor(literal,lemma,field):
     snap=sample();snap['members'][0]['original'].update(memo='',memo_action='')
     snap['members'][0]['original'][field]=literal+'。'
@@ -244,6 +244,23 @@ def test_model_keeps_existing_complete_omitted_action_without_assigning_an_actor
     evidence,=node.evidence_refs
     assert source.envelope.raw_utf8[evidence.utf8_start:evidence.utf8_end].decode()==literal
     assert hashlib.sha256(literal.encode()).hexdigest()==evidence.literal_sha256
+
+
+@pytest.mark.parametrize('field',['memo','memo_action'])
+def test_polite_omitted_negative_keeps_existing_source_field_support(field):
+    snap=sample();snap['members'][0]['original'].update(memo='',memo_action='')
+    snap['members'][0]['original'][field]='資料を調べなかったです。'
+    _,_,a,c=build(snap)
+    normal,normal_counts=service.build_cumulative_map(OWNER,snap)
+    assert c==normal_counts
+    if field=='memo':
+        assert a is not None and a.graph==normal.graph
+        assert a.graph.nodes[0].proposition.actor=='UNSPECIFIED'
+        assert a.graph.nodes[0].polarity=='negative'
+    else:
+        # The existing shared source proof does not establish this action
+        # field form. The model label must not manufacture that proof.
+        assert a is None and normal is None and c['mapped_count']==0
 
 
 @pytest.mark.parametrize('actor_quote',['私','考え'])
