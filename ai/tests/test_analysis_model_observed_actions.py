@@ -153,7 +153,9 @@ def test_model_response_and_owner_snapshot_binding_are_not_reassigned(change):
     if change=='record':snap['members'][0]['original']['memo_action']='僕は予定を記録した。'
     if change=='category':snap['members'][0]['original']['category']=['生活']
     if change=='multi_record':
-        snap=source_snapshot(2);p=prepared(snap);value=call(p,packet(p))
+        # A larger, freshly bound snapshot is now qualified. The old one-record
+        # response must still never be reassigned after another record appears.
+        snap['members'].append(source_snapshot(2)['members'][1])
     with pytest.raises(ERRORS):
         service.build_cumulative_map('00000000-0000-0000-0000-000000000002' if change=='owner' else OWNER,snap,model_input=value)
 
