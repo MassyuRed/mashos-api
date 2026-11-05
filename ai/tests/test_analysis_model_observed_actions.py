@@ -301,3 +301,103 @@ def test_omitted_action_keeps_whole_source_and_incomplete_topic_boundary(literal
     snap=sample();snap['members'][0]['original'].update(memo=literal,memo_action='')
     _,_,a,c=build(snap)
     assert a is None and c['mapped_count']==0 and c['unparsed_count']==1
+
+
+def sequence_build(text,quotes,*,change=None,snapshot_change=None):
+    snap=source_snapshot(1)
+    snap['members'][0]['original'].update(memo=text,memo_action='')
+    if snapshot_change:snapshot_change(snap)
+    p=prepared(snap)
+    units=[dict(quote=quote,node_kind='ACTION_OR_NONACTION',parent_quote=None,
+        scope_role=None,qualifiers=[]) for quote in quotes]
+    data=dict(fields=[dict(field=1,units=units)])
+    if change:change(data)
+    value=call(p,data)
+    artifact,coverage=service.build_cumulative_map(OWNER,snap,model_input=value)
+    return snap,value,artifact,coverage
+
+
+@pytest.mark.parametrize('text,quotes,ordered',[
+    ('僕は資料を調べた。僕は費用を記録した。',
+        ['僕は資料を調べた','僕は費用を記録した'],False),
+    ('私は資料を見た。その後、私は分担を決めた。',
+        ['私は資料を見た','私は分担を決めた'],True),
+    ('私は資料を作らなかった。それから、私は予定をメモした。',
+        ['私は資料を作らなかった','私は予定をメモした'],True),
+    ('私は資料を調べた。私は分担を決めなかった。私は仕事を続けた。',
+        ['私は資料を調べた','私は分担を決めなかった','私は仕事を続けた'],False)])
+def test_complete_multiple_model_actions_keep_original_graph_and_written_order(text,quotes,ordered):
+    snap,_,a,c=sequence_build(text,quotes)
+    normal,normal_counts=service.build_cumulative_map(OWNER,snap)
+    assert a is not None and a.graph==normal.graph and c==normal_counts
+    assert c['mapped_count']==1 and c['unparsed_count']==0
+    assert len(a.graph.nodes)==len(quotes) and len(a.graph.edges)==int(ordered)
+    assert all(n.proposition.actor=='SELF' and n.selected_categories==('仕事',) for n in a.graph.nodes)
+    assert all(e.edge_kind=='OBSERVED_ORDER' for e in a.graph.edges)
+    if not ordered:
+        assert any(g.missing_scope=='ROUTE_CONNECTION' for g in a.graph.unknown_gaps)
+    assert a.safe_text_projection(authenticated_owner_scope=OWNER)['text']==normal.safe_text_projection(authenticated_owner_scope=OWNER)['text']
+
+
+def test_model_unit_order_and_omitted_sequence_prefix_do_not_rewrite_source_order():
+    text='私は資料を見た。その後、私は分担を決めた。'
+    quotes=['私は資料を見た','私は分担を決めた']
+    def edit(data):
+        for u in data['fields'][0]['units']:
+            u['qualifiers']=[dict(kind='EXPLICIT_ACTOR',quote='私は')]
+        data['fields'][0]['units'].reverse()
+    snap,_,a,_=sequence_build(text,quotes,change=edit)
+    normal,_=service.build_cumulative_map(OWNER,snap)
+    assert a is not None and a.graph==normal.graph
+    assert a.graph.edges[0].endpoint_refs==('n1','n2')
+
+
+@pytest.mark.parametrize('mutation',['missing','kind','combined','extra','cross_child','false_actor','false_negative'])
+def test_multiple_action_packet_must_prove_every_clause_once(mutation):
+    text='僕は資料を調べた。僕は費用を記録した。'
+    quotes=['僕は資料を調べた','僕は費用を記録した']
+    def edit(data):
+        units=data['fields'][0]['units']
+        if mutation=='missing':units.pop()
+        if mutation=='kind':units[1]['node_kind']='ROLE'
+        if mutation=='combined':units[:]=[dict(units[0],quote=text.rstrip('。'))]
+        if mutation=='extra':units.append(dict(units[0],quote='資料',node_kind='SCENE'))
+        if mutation=='cross_child':units.append(dict(quote='費用',node_kind=None,
+            parent_quote=quotes[0],scope_role='CONTENT_TARGET',qualifiers=[]))
+        if mutation=='false_actor':units[1]['qualifiers']=[dict(kind='EXPLICIT_ACTOR',quote='費用')]
+        if mutation=='false_negative':units[1]['qualifiers']=[dict(kind='NEGATION',quote='した')]
+    try:
+        _,_,a,c=sequence_build(text,quotes,change=edit)
+    except ERRORS:
+        return
+    assert a is None and c['mapped_count']==0 and c['unparsed_count']==1
+
+
+@pytest.mark.parametrize('text,quotes',[
+    ('僕は資料を調べた。不明な出来事があった。僕は費用を記録した。',
+        ['僕は資料を調べた','僕は費用を記録した']),
+    ('僕は資料を調べた。僕は費用を記録した。まだ分からない。',
+        ['僕は資料を調べた','僕は費用を記録した']),
+    ('僕は資料を調べた。姉は費用を記録した。',
+        ['僕は資料を調べた','姉は費用を記録した']),
+    ('僕は資料を調べた。費用を記録した。',
+        ['僕は資料を調べた','費用を記録した']),
+    ('その後、私は資料を見た。それから、私は分担を決めた。',
+        ['私は資料を見た','私は分担を決めた'])])
+def test_multiple_action_scope_does_not_hide_unread_text_or_assign_actors(text,quotes):
+    _,_,a,c=sequence_build(text,quotes)
+    assert a is None and c['mapped_count']==0 and c['unparsed_count']==1
+
+
+def test_multiple_action_saved_wire_preserves_both_views_without_compilation():
+    text='僕は資料を調べた。僕は費用を記録した。'
+    _,_,a,c=sequence_build(text,['僕は資料を調べた','僕は費用を記録した'])
+    projection=a.safe_projection(authenticated_owner_scope=OWNER)
+    content=a.safe_text_projection(authenticated_owner_scope=OWNER)['text']
+    row=dict(id=str(UUID(a.artifact_id[9:])),source_profile=service.PROFILE,report_mode='standard',
+        content_text=content,content_json=dict(report_mode='standard',watashiMap=projection,map_context=c))
+    expected=dict(items=[row],subscription_tier='free',matched=True,history_limit=2)
+    with patch.object(service,'_rpc',AsyncMock(return_value=json.loads(canonical(expected)))),\
+         patch.object(compiler,'compile_observed_graph',side_effect=AssertionError('saved compiler')),\
+         patch.object(author,'realize_observed_graph',side_effect=AssertionError('saved author')):
+        assert asyncio.run(service.read_maps(OWNER,report_id=row['id']))==expected

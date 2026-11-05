@@ -1439,6 +1439,8 @@ def compile_model_observed_actions(source_set, fields):
     The scope is a single plain finite action; no new grammar or edge.
     """
     graph = compile_observed_graph(source_set)
+    if len(graph.nodes) >= 2:
+        return _model_complete_observed_action_sequence(graph, fields)
     if (len(graph.nodes) != 1 or graph.edges or graph.source_updates
             or graph.conflicts or graph.annotations):
         return None
@@ -1453,6 +1455,73 @@ def compile_model_observed_actions(source_set, fields):
         graph = replace(graph, unknown_gaps=graph.unknown_gaps + (UnknownGap(
             'g' + str(len(graph.unknown_gaps) + 1), (node.node_ref,), 'SOURCE_SCOPE',
             'UNSUPPORTED_OR_UNCERTAIN_SOURCE_SCOPE'),))
+    return graph
+
+
+def _model_complete_observed_action_sequence(graph, fields):
+    """Keep a fully witnessed original field's actions and written order.
+
+    The shared source compiler owns every fact, gap and edge. Model units
+    must cover each existing clause once; unit order supplies no relation.
+    """
+    if (len(fields) != 1 or graph.source_updates or graph.conflicts or graph.annotations
+            or any(g.missing_scope == 'SOURCE_SCOPE' for g in graph.unknown_gaps)):
+        return None
+    field = fields[0]
+    text, base = field.complete_source_text, field.evidence
+    spans, consumed = [], []
+    for node in graph.nodes:
+        p = node.proposition
+        if (node.node_kind != 'ACTION_OR_NONACTION' or p is None or p.actor != 'SELF'
+                or (p.modality, p.temporal_scope) != ('fact', 'past')
+                or p.predicate_lemma not in _PAST_ACTION_LEMMAS | _PAST_DECISION_LEMMAS
+                or p.sequence_marker not in {'', 'AFTER_PREVIOUS', 'THEN_OR_ADDITION'}
+                or any((p.relative_day, p.possible_content, p.result_state, p.dependent_form,
+                    p.scene_state, p.role_state, p.written_modifiers))
+                or len(node.evidence_refs) != 1 or node.update_refs or node.quoted_field is not None
+                or node.record_refs != (field.record_ref,)):
+            return None
+        e = node.evidence_refs[0]
+        label = node.visible_label
+        if (e.source_envelope_id != base.source_envelope_id or e.field_path != field.field_path
+                or (e.field_utf8_start, e.field_utf8_end, e.field_sha256) !=
+                   (base.field_utf8_start, base.field_utf8_end, base.field_sha256)
+                or text[e.scalar_start:e.scalar_end] != label
+                or (e.utf8_start, e.utf8_end) != (
+                    base.field_utf8_start + len(text[:e.scalar_start].encode('utf-8')),
+                    base.field_utf8_start + len(text[:e.scalar_end].encode('utf-8')))
+                or e.literal_sha256 != hashlib.sha256(label.encode('utf-8')).hexdigest()):
+            return None
+        end = e.scalar_end + int(text[e.scalar_end:e.scalar_end+1] in {'。', '．', '.'})
+        units = tuple(u for u in field.units
+            if e.scalar_start <= u.evidence.scalar_start and u.evidence.scalar_end <= end)
+        subject = next(((a, b) for k, a, b in p.source_parts if k == 'SELF_TOPIC'), None)
+        if subject is None:
+            return None
+        quotes = {label, label[subject[0]:], label[subject[1]:]}
+        if end != e.scalar_end:
+            quotes |= {quote + text[e.scalar_end] for quote in tuple(quotes)}
+        try:
+            _check_model_action_units(field, p, label, units=units,
+                scalar_start=e.scalar_start, accepted_quotes=quotes)
+        except AnalysisSourceError:
+            return None
+        spans.append(e)
+        consumed.extend(u.index for u in units)
+    if (graph.nodes[0].proposition.sequence_marker
+            or text[:spans[0].scalar_start].strip()
+            or text[spans[-1].scalar_end:].strip('。．.\r\n\t ')
+            or any(not re.fullmatch(r'[。．.\s]+', text[left.scalar_end:right.scalar_start])
+                for left, right in zip(spans, spans[1:]))
+            or sorted(consumed) != sorted(u.index for u in field.units)):
+        return None
+    expected = [(left.node_ref, right.node_ref, (le, re_))
+        for left, right, le, re_ in zip(graph.nodes, graph.nodes[1:], spans, spans[1:])
+        if right.proposition.sequence_marker]
+    actual = [(edge.endpoint_refs[0], edge.endpoint_refs[1], edge.evidence_refs)
+        for edge in graph.edges if edge.edge_kind == 'OBSERVED_ORDER']
+    if len(actual) != len(graph.edges) or actual != expected:
+        return None
     return graph
 
 
