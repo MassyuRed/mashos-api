@@ -189,6 +189,59 @@ def test_real_sql_source_edit_during_response_rejects_commit(sql_source):
     assert db.query('select count(*) as n from public.analysis_cumulative_months')['rows'][0]['n'] == 0
 
 
+def test_real_sql_natural_role_decision_preserves_order_negative_refresh_and_month(sql_source):
+    from test_analysis_model_role_decision import sample, response_for
+    db, _ = sql_source
+    original = insert_material(db, 'role')
+    positive = sample()['members'][0]['original']
+    assert 'code' not in db.query('update public.emotions set memo=$2,memo_action=$3,category=$4 where id=$1',
+        [original['id'], positive['memo'], positive['memo_action'], ['生活']])
+    calls = []
+    async def source(prepared):
+        calls.append(prepared.request_ref)
+        return response_for(prepared, qualifiers=True, reorder=True)
+    first = run(service.ensure_map(OWNER, model_source=source))
+    assert first['has_visible_content'] and first['refreshed'] and len(calls) == 1
+    assert [n['node_kind'] for n in first['meta']['nodes']] == ['ROLE', 'ACTION_OR_NONACTION']
+    role, decision = first['meta']['nodes']
+    edge, = first['meta']['edges']
+    assert edge['edge_kind'] == 'OBSERVED_ORDER'
+    assert (edge['from_ref'], edge['to_ref']) == (role['node_ref'], decision['node_ref'])
+    assert '会合の進行' in role['visible_label'] and '記録された担当' in role['visible_label']
+    assert '分担を決める' in decision['visible_label'] and '実行済み' in decision['visible_label']
+    assert '原因を示す線ではありません' in first['content_text']
+    assert first['map_context']['source_count'] == first['map_context']['processed_count'] == first['map_context']['mapped_count'] == 1
+    assert first['map_context']['unparsed_count'] == 0
+    forbidden = AsyncMock(side_effect=AssertionError('saved natural role/decision acquired a response'))
+    with patch.object(service, 'build_cumulative_map', side_effect=AssertionError('saved natural role/decision generated')):
+        current = run(service.ensure_map(OWNER, model_source=forbidden))
+        monthly = run(service.ensure_map(OWNER, monthly=True, force=True, model_source=forbidden))
+        readonly = run(service.ensure_map(OWNER, ensure=False, model_source=forbidden))
+        detail = run(service.read_maps(OWNER, report_id=first['report_id']))['items'][0]
+    forbidden.assert_not_awaited()
+    for saved in (current, monthly, readonly):
+        assert not saved['refreshed'] and saved['report_id'] == first['report_id']
+        assert saved['meta'] == first['meta'] and saved['content_text'] == first['content_text']
+    assert detail['content_json']['watashiMap'] == first['meta']
+    negative = sample(True, True)['members'][0]['original']
+    assert 'code' not in db.query('update public.emotions set memo=$2 where id=$1',
+        [original['id'], negative['memo']])
+    second = run(service.ensure_map(OWNER, force=True, model_source=source))
+    assert second['refreshed'] and second['report_id'] != first['report_id'] and len(calls) == 2
+    assert calls[0] != calls[1]
+    assert [n['node_kind'] for n in second['meta']['nodes']] == ['ROLE', 'ACTION_OR_NONACTION']
+    assert '担当しなかった' in second['meta']['nodes'][0]['visible_label']
+    assert '行わなかった' in second['meta']['nodes'][1]['visible_label']
+    assert second['meta']['edges'] == first['meta']['edges'] and second['map_context']['unparsed_count'] == 0
+    with patch.object(service, 'build_cumulative_map', side_effect=AssertionError('saved natural role/decision generated')):
+        history = run(service.ensure_map(OWNER, monthly=True, force=True, model_source=forbidden))
+        current = run(service.ensure_map(OWNER, ensure=False, model_source=forbidden))
+    forbidden.assert_not_awaited()
+    assert history['report_id'] == first['report_id'] and history['captured_at'] == monthly['captured_at']
+    assert history['meta'] == first['meta'] and history['content_text'] == first['content_text']
+    assert current['meta'] == second['meta'] and current['content_text'] == second['content_text']
+
+
 def test_real_sql_saved_supplement_does_not_acquire_a_response(sql_source, monkeypatch):
     db, _ = sql_source
     original = insert_material(db, 'pair')

@@ -1304,17 +1304,19 @@ def validate_model_written_role_clause_graph(source_set, field, graph):
     return graph
 
 
-def _check_model_action_units(action, p, label, *, units=None, scalar_start=0):
+def _check_model_action_units(action, p, label, *, units=None, scalar_start=0,
+        node_kind='ACTION_OR_NONACTION', finite_part='FINITE_PREDICATE', accepted_quotes=None):
     """Match one complete source-proved action to its unchanged model units."""
     subject = next(((a, b) for name, a, b in p.source_parts if name == 'SELF_TOPIC'), None)
-    finite = next(((a, b) for name, a, b in p.source_parts if name == 'FINITE_PREDICATE'), None)
+    finite = next(((a, b) for name, a, b in p.source_parts if name == finite_part), None)
     if subject is None or finite is None:
         raise AnalysisSourceError('analysis_written_role_action_scope_unsupported')
     units = action.units if units is None else units
     roots = [u for u in units if u.parent is None]
-    accepted = {action.complete_source_text[scalar_start:], label, label[subject[1]:]}
+    accepted = ({action.complete_source_text[scalar_start:], label, label[subject[1]:]}
+        if accepted_quotes is None else accepted_quotes)
     nouns = {noun for _, noun in p.arguments}
-    if (len(roots) != 1 or roots[0].node_kind != 'ACTION_OR_NONACTION'
+    if (len(roots) != 1 or roots[0].node_kind != node_kind
             or roots[0].scope_role is not None or roots[0].quote not in accepted
             or any(u is not roots[0] and not (u.parent == roots[0].index
                 and u.scope_role == 'CONTENT_TARGET' and u.quote in nouns) for u in units)):
@@ -1437,6 +1439,89 @@ def compile_model_observed_actions(source_set, fields):
         graph = replace(graph, unknown_gaps=graph.unknown_gaps + (UnknownGap(
             'g' + str(len(graph.unknown_gaps) + 1), (node.node_ref,), 'SOURCE_SCOPE',
             'UNSUPPORTED_OR_UNCERTAIN_SOURCE_SCOPE'),))
+    return graph
+
+
+def compile_model_observed_role_decision(source_set, fields):
+    """Match model units to an existing complete responsibility/decision graph.
+
+    Keep the shared compiler's nodes, evidence, gaps and written-order edge
+    unchanged. This neither creates a role identity nor supplies a motive.
+    """
+    if (len(source_set.members) != 1 or len(source_set.sources) != 1
+            or len(source_set.category_records) != 1
+            or source_set.sources[0].envelope.source_role != 'ORIGINAL_INPUT'
+            or len(fields) != 1 or fields[0].field_path != 'memo'):
+        raise AnalysisSourceError('analysis_model_role_decision_scope_unsupported')
+    field = fields[0]
+    graph = compile_observed_graph(source_set)
+    if (len(graph.nodes) != 2 or graph.source_updates or graph.conflicts or graph.annotations
+            or any(g.missing_scope == 'SOURCE_SCOPE' for g in graph.unknown_gaps)):
+        raise AnalysisSourceError('analysis_model_role_decision_scope_unsupported')
+    role, decision = graph.nodes
+    if (role.node_kind != 'ROLE' or role.proposition is None
+            or role.proposition.role_state != 'PAST_RESPONSIBILITY'
+            or role.proposition.predicate_lemma != '担当する'
+            or decision.node_kind != 'ACTION_OR_NONACTION' or decision.proposition is None
+            or decision.proposition.predicate_lemma not in _PAST_DECISION_LEMMAS):
+        raise AnalysisSourceError('analysis_model_role_decision_scope_unsupported')
+    spans = []
+    consumed = []
+    text, base = field.complete_source_text, field.evidence
+    for node in graph.nodes:
+        p = node.proposition
+        if (p.actor != 'SELF' or (p.modality, p.temporal_scope) != ('fact', 'past')
+                or len(p.arguments) != 1 or p.arguments[0][0] != 'を'
+                or any((p.relative_day, p.possible_content, p.result_state, p.dependent_form,
+                    p.scene_state, p.written_modifiers))
+                or len(node.evidence_refs) != 1 or node.update_refs or node.quoted_field is not None
+                or node.record_refs != (field.record_ref,)):
+            raise AnalysisSourceError('analysis_model_role_decision_scope_unsupported')
+        e = node.evidence_refs[0]
+        if (e.source_envelope_id != base.source_envelope_id or e.field_path != field.field_path
+                or (e.field_utf8_start, e.field_utf8_end, e.field_sha256) !=
+                   (base.field_utf8_start, base.field_utf8_end, base.field_sha256)
+                or text[e.scalar_start:e.scalar_end] != node.visible_label
+                or (e.utf8_start, e.utf8_end) != (
+                    base.field_utf8_start + len(text[:e.scalar_start].encode('utf-8')),
+                    base.field_utf8_start + len(text[:e.scalar_end].encode('utf-8')))
+                or e.literal_sha256 != hashlib.sha256(node.visible_label.encode('utf-8')).hexdigest()):
+            raise AnalysisSourceError('analysis_model_role_decision_binding_invalid')
+        end = e.scalar_end + int(text[e.scalar_end:e.scalar_end+1] in {'。','.'})
+        units = tuple(u for u in field.units
+            if e.scalar_start <= u.evidence.scalar_start and u.evidence.scalar_end <= end)
+        subject = next(((a,b) for k,a,b in p.source_parts if k == 'SELF_TOPIC'), None)
+        finite_kind = 'FINITE_RESPONSIBILITY' if node is role else 'FINITE_PREDICATE'
+        finite = next(((a,b) for k,a,b in p.source_parts if k == finite_kind), None)
+        if subject is None or finite is None:
+            raise AnalysisSourceError('analysis_model_role_decision_scope_unsupported')
+        label = node.visible_label
+        quotes = {label, label[subject[0]:], label[subject[1]:]}
+        # A bare predicate needs its written object as an actual model child.
+        roots = [u for u in units if u.parent is None]
+        if (len(roots) == 1 and any(u.parent == roots[0].index
+                and u.scope_role == 'CONTENT_TARGET' and u.quote == p.arguments[0][1] for u in units)):
+            quotes.add(label[finite[0]:finite[1]])
+        if end != e.scalar_end:
+            quotes |= {quote + text[e.scalar_end] for quote in tuple(quotes)}
+        _check_model_action_units(field, p, label, units=units, scalar_start=e.scalar_start,
+            node_kind=node.node_kind, finite_part=finite_kind, accepted_quotes=quotes)
+        spans.append(e)
+        consumed.extend(u.index for u in units)
+    left,right = spans
+    if (text[:left.scalar_start].strip() or text[right.scalar_end:].strip('。.\r\n\t ')
+            or not re.fullmatch(r'[。.\s]+', text[left.scalar_end:right.scalar_start])
+            or sorted(consumed) != sorted(u.index for u in field.units)
+            or role.proposition.sequence_marker
+            or decision.proposition.sequence_marker not in {'','AFTER_PREVIOUS','THEN_OR_ADDITION'}):
+        raise AnalysisSourceError('analysis_model_role_decision_scope_unsupported')
+    if decision.proposition.sequence_marker:
+        if (len(graph.edges) != 1 or graph.edges[0].edge_kind != 'OBSERVED_ORDER'
+                or graph.edges[0].endpoint_refs != (role.node_ref,decision.node_ref)
+                or graph.edges[0].evidence_refs != (left,right)):
+            raise AnalysisSourceError('analysis_model_role_decision_scope_unsupported')
+    elif graph.edges:
+        raise AnalysisSourceError('analysis_model_role_decision_scope_unsupported')
     return graph
 
 

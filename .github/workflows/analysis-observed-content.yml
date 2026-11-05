@@ -72,6 +72,7 @@ jobs:
           ai/tests/test_analysis_model_observed_actions.py
           ai/tests/test_analysis_model_observed_roles.py
           ai/tests/test_analysis_model_same_field_role_action.py
+          ai/tests/test_analysis_model_role_decision.py
           ai/tests/test_analysis_model_closed_role.py
           ai/tests/test_analysis_model_role_action.py
           ai/tests/test_analysis_model_quoted_parent_units.py

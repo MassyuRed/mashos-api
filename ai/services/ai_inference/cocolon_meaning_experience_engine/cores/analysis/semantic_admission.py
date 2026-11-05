@@ -1232,7 +1232,8 @@ def generate_analysis_model_observed_actions(request, model_input):
     """
     from .intent_compiler import (compile_model_observed_actions,
         compile_model_written_role_graph, compile_model_written_role_action_graph,
-        compile_model_written_role_clause_graph, compile_model_written_role_clause_action_graph)
+        compile_model_written_role_clause_graph, compile_model_written_role_clause_action_graph,
+        compile_model_observed_role_decision)
     from .observed_route_realizer import realize_observed_graph
     frozen, fields, _ = _admit_quoted_parent_units(request, model_input)
     require_analysis_model_observed_scope(request, frozen=frozen)
@@ -1250,6 +1251,11 @@ def generate_analysis_model_observed_actions(request, model_input):
             except AnalysisSourceError:
                 continue
             break
+    if graph is None:
+        try:
+            graph = compile_model_observed_role_decision(frozen, fields)
+        except AnalysisSourceError:
+            pass
     if graph is None:
         graph = compile_model_observed_actions(frozen, fields)
     if graph is None:
