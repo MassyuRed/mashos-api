@@ -99,12 +99,12 @@ def test_other_field_report_or_dream_never_disappears_from_the_source_check(memo
     assert a is None and c['mapped_count']==0 and c['unparsed_count']==1
 
 
-@pytest.mark.parametrize('action',['費用を記録した。','姉は費用を記録した。',
+@pytest.mark.parametrize('action',['姉は費用を記録した。',
     '僕は費用を記録したかもしれない。','僕は費用を記録したと思った。',
     '僕は費用を記録したという話だった。','僕は費用を記録している。',
     '僕は費用を記録した。まだ分からない。','昨日、僕は費用を記録した。',
     '僕は費用を記録したい。','僕は費用を記録した。その後、僕は資料を見た。'])
-def test_model_root_cannot_prove_omitted_actor_embedded_or_incomplete_action(action):
+def test_model_root_cannot_prove_other_actor_embedded_or_incomplete_action(action):
     snap=sample();snap['members'][0]['original']['memo_action']=action
     _,_,a,c=build(snap)
     assert a is None and c['mapped_count']==0 and c['unparsed_count']==1
@@ -187,8 +187,11 @@ def test_edited_original_never_reuses_old_answers_and_keeps_the_stale_count():
     assert c['stale_supplement_count']==1
 
 
-def test_ordinary_saved_wire_restores_both_views_without_model_or_compiler(tmp_path):
-    snap,value,a,c=build()
+@pytest.mark.parametrize('omitted',[False,True])
+def test_ordinary_saved_wire_restores_both_views_without_model_or_compiler(tmp_path,omitted):
+    snap=sample()
+    if omitted:snap['members'][0]['original']['memo_action']='費用を記録した。'
+    snap,value,a,c=build(snap)
     projection=a.safe_projection(authenticated_owner_scope=OWNER)
     text=a.safe_text_projection(authenticated_owner_scope=OWNER)['text']
     row=dict(id=str(UUID(a.artifact_id[9:])),source_profile=service.PROFILE,report_mode='standard',
@@ -207,3 +210,77 @@ def test_ordinary_saved_wire_restores_both_views_without_model_or_compiler(tmp_p
     private=service.private_storage_evidence(a)
     assert private['schema_version']=='analysis.private-evidence.v1'
     assert 'かもしれない' not in canonical(private) and value.response.raw not in canonical(private)
+    if omitted:
+        assert a.graph.nodes[0].proposition.actor=='UNSPECIFIED'
+        assert '誰の行動かは未確定' in text
+        assert c['mapped_count']==c['unparsed_count']==1
+        assert any(g.missing_scope=='SOURCE_SCOPE' for g in a.graph.unknown_gaps)
+
+
+@pytest.mark.parametrize('field',['memo','memo_action'])
+@pytest.mark.parametrize('literal,lemma',[
+    ('振り返りメモを書いた','書く'),('資料を調べた','調べる'),
+    ('方法を試した','試す'),('新しいメモ帳を見た','見る'),
+    ('資料を作った','作る'),('仕事メモを残した','残す'),
+    ('費用を記録した','記録する'),('予定をメモした','メモする'),
+    ('仕事を続けた','続ける'),('私の考えを書いた','書く'),
+    ('費用を記録しなかった','記録する'),('資料を調べなかったです','調べる')])
+def test_model_keeps_existing_complete_omitted_action_without_assigning_an_actor(literal,lemma,field):
+    snap=sample();snap['members'][0]['original'].update(memo='',memo_action='')
+    snap['members'][0]['original'][field]=literal+'。'
+    _,value,a,c=build(snap)
+    normal,normal_counts=service.build_cumulative_map(OWNER,snap)
+    assert a is not None and a.graph==normal.graph and c==normal_counts
+    assert c['mapped_count']==1 and c['unparsed_count']==0
+    node,=a.graph.nodes
+    assert (node.proposition.actor,node.proposition.predicate_lemma,node.modality,node.temporal_scope)==(
+        'UNSPECIFIED',lemma,'fact','past')
+    assert node.polarity==('negative' if 'なかった' in literal else 'positive')
+    assert node.visible_label==literal and not a.graph.edges
+    assert node.selected_categories==('仕事',)
+    text=a.safe_text_projection(authenticated_owner_scope=OWNER)['text']
+    assert '誰の行動かは未確定' in text and text==normal.safe_text_projection(authenticated_owner_scope=OWNER)['text']
+    source,=freeze_analysis_sources(value.request).sources
+    evidence,=node.evidence_refs
+    assert source.envelope.raw_utf8[evidence.utf8_start:evidence.utf8_end].decode()==literal
+    assert hashlib.sha256(literal.encode()).hexdigest()==evidence.literal_sha256
+
+
+@pytest.mark.parametrize('actor_quote',['私','考え'])
+def test_possessive_or_object_qualifier_cannot_supply_omitted_actor(actor_quote):
+    snap=sample();snap['members'][0]['original'].update(memo='私の考えを書いた。',memo_action='')
+    def edit(data):data['fields'][0]['units'][0]['qualifiers']=[dict(kind='EXPLICIT_ACTOR',quote=actor_quote)]
+    _,_,a,c=build(snap,change=edit)
+    assert a is None and c['mapped_count']==0 and c['unparsed_count']==1
+
+
+def test_omitted_negative_action_keeps_bound_negation_and_target_child():
+    snap=sample();snap['members'][0]['original'].update(memo='費用を記録しなかった。',memo_action='')
+    def edit(data):
+        root=data['fields'][0]['units'][0]
+        root['qualifiers']=[dict(kind='NEGATION',quote='しなかった')]
+        data['fields'][0]['units'].append(dict(quote='費用',node_kind=None,
+            parent_quote=root['quote'],scope_role='CONTENT_TARGET',qualifiers=[]))
+    _,_,a,c=build(snap,change=edit)
+    assert a is not None and c['unparsed_count']==0
+    node,=a.graph.nodes
+    assert node.proposition.actor=='UNSPECIFIED' and node.polarity=='negative'
+
+
+def test_omitted_actor_occurrences_never_become_same_person_recurrence():
+    snap=source_snapshot(2)
+    for member in snap['members']:member['original'].update(memo='資料を調べた。',memo_action='')
+    _,_,a,c=build(snap)
+    assert a is not None and c['mapped_count']==2 and c['unparsed_count']==0
+    assert len(a.graph.nodes)==2 and not a.graph.edges
+    assert all(n.proposition.actor=='UNSPECIFIED' and len(n.record_refs)==1 for n in a.graph.nodes)
+    assert a.graph.nodes[0].evidence_refs!=a.graph.nodes[1].evidence_refs
+
+
+@pytest.mark.parametrize('literal',['私は、\n資料を調べた。','資料を調べたという話だった。',
+    '資料を調べたと思った。','資料を調べたい。','資料を調べている。',
+    '資料を調べた。まだ分からない。'])
+def test_omitted_action_keeps_whole_source_and_incomplete_topic_boundary(literal):
+    snap=sample();snap['members'][0]['original'].update(memo=literal,memo_action='')
+    _,_,a,c=build(snap)
+    assert a is None and c['mapped_count']==0 and c['unparsed_count']==1

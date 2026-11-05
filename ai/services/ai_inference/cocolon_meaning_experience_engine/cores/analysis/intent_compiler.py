@@ -1309,11 +1309,13 @@ def _check_model_action_units(action, p, label, *, units=None, scalar_start=0,
     """Match one complete source-proved action to its unchanged model units."""
     subject = next(((a, b) for name, a, b in p.source_parts if name == 'SELF_TOPIC'), None)
     finite = next(((a, b) for name, a, b in p.source_parts if name == finite_part), None)
-    if subject is None or finite is None:
+    if (finite is None or (subject is None and p.actor != 'UNSPECIFIED')
+            or (subject is not None and p.actor != 'SELF')):
         raise AnalysisSourceError('analysis_written_role_action_scope_unsupported')
     units = action.units if units is None else units
     roots = [u for u in units if u.parent is None]
-    accepted = ({action.complete_source_text[scalar_start:], label, label[subject[1]:]}
+    accepted = ({action.complete_source_text[scalar_start:], label}
+        | ({label[subject[1]:]} if subject is not None else set())
         if accepted_quotes is None else accepted_quotes)
     nouns = {noun for _, noun in p.arguments}
     if (len(roots) != 1 or roots[0].node_kind != node_kind
@@ -1321,7 +1323,7 @@ def _check_model_action_units(action, p, label, *, units=None, scalar_start=0,
             or any(u is not roots[0] and not (u.parent == roots[0].index
                 and u.scope_role == 'CONTENT_TARGET' and u.quote in nouns) for u in units)):
         raise AnalysisSourceError('analysis_written_role_action_candidate_mismatch')
-    self_text = label[subject[0]:subject[1]].split('は', 1)[0]
+    self_text = label[subject[0]:subject[1]].split('は', 1)[0] if subject is not None else None
     finite_text = label[finite[0]:finite[1]]
     operators = {finite_text}
     match = re.search(r'(なかった(?:です)?|ませんでした)$', finite_text)
@@ -1332,7 +1334,8 @@ def _check_model_action_units(action, p, label, *, units=None, scalar_start=0,
         operators.add('しなかった')
     for unit in units:
         for q in unit.qualifiers:
-            actor = (q.kind == 'EXPLICIT_ACTOR' and q.quote in {self_text, self_text + 'は'}
+            actor = (subject is not None and q.kind == 'EXPLICIT_ACTOR'
+                and q.quote in {self_text, self_text + 'は'}
                 and q.evidence.scalar_start == scalar_start + subject[0]
                 and q.evidence.scalar_end == scalar_start + subject[0] + len(q.quote))
             negative = (q.kind == 'NEGATION' and p.polarity == 'negative' and q.quote in operators
@@ -1388,7 +1391,7 @@ def compile_model_written_role_clause_action_graph(source_set, field):
 def _model_complete_observed_action(node, fields):
     """Match an existing finite node to its own complete, bound model field."""
     p = node.proposition
-    if (node.node_kind != 'ACTION_OR_NONACTION' or p is None or p.actor != 'SELF'
+    if (node.node_kind != 'ACTION_OR_NONACTION' or p is None or p.actor not in {'SELF', 'UNSPECIFIED'}
             or (p.modality, p.temporal_scope) != ('fact', 'past')
             or p.predicate_lemma not in _PAST_ACTION_LEMMAS
             or any((p.sequence_marker, p.relative_day, p.possible_content, p.result_state,
@@ -1431,7 +1434,9 @@ def compile_model_observed_actions(source_set, fields):
 
     Keep the original whole source, its safety/host checks, evidence and gaps.
     This does not treat model roots or the authenticated owner as actor proof.
-    The initial scope is a single plain finite action; no new grammar or edge.
+    A missing subject stays UNSPECIFIED under the existing source proof;
+    it never inherits SELF from the owner or a model actor qualifier.
+    The scope is a single plain finite action; no new grammar or edge.
     """
     graph = compile_observed_graph(source_set)
     if (len(graph.nodes) != 1 or graph.edges or graph.source_updates
