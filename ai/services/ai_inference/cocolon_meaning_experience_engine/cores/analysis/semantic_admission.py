@@ -1215,6 +1215,7 @@ def generate_analysis_model_quoted_parent_units(request, model_input):
 
 def require_analysis_model_observed_scope(request, *, frozen=None):
     """Qualify the existing consumer before acquiring an external response."""
+    from .intent_compiler import _self_propositions
     frozen = freeze_analysis_sources(request) if frozen is None else frozen
     require(bool(frozen.members)
         and len(frozen.members) == len(frozen.category_records)
@@ -1224,6 +1225,13 @@ def require_analysis_model_observed_scope(request, *, frozen=None):
             for m in frozen.members)
         and all(s.envelope.source_role in {'ORIGINAL_INPUT', 'SUPPLEMENTAL_ANSWER'} for s in frozen.sources)
         and request.comparison_previous_request is None,
+        'analysis_model_observed_scope_unsupported')
+    # A Stage1 current_user nucleus alone does not prove the proposition's
+    # actor. Each complete answer must explicitly witness SELF on its own;
+    # neither its parent actor nor the authenticated owner can supply it.
+    require(all(p.actor == 'SELF' for source in frozen.sources
+        if source.envelope.source_role == 'SUPPLEMENTAL_ANSWER'
+        for p, _ in _self_propositions(source, require_complete=True)),
         'analysis_model_observed_scope_unsupported')
 
 
