@@ -259,48 +259,51 @@ def _written_role_input(owner, snapshot, model_input):
     return expected
 
 
-def build_cumulative_written_role_map(owner, snapshot, *, model_input, with_action=False):
+def build_cumulative_written_role_map(owner, snapshot, *, model_input, with_action=False, clause=False):
     """Explicit offline vertical to the existing map; normal ensure is unchanged."""
     from cocolon_meaning_experience_engine.cores.analysis.semantic_admission import (
         generate_analysis_model_written_role)
     _written_role_input(owner, snapshot, model_input)
-    artifact = generate_analysis_model_written_role(model_input.request, model_input, with_action=with_action)
-    # The admission scope consumes one complete original field/record. Missing
-    # stages stay gaps; no choice criterion, task outcome or route is invented.
+    artifact = generate_analysis_model_written_role(model_input.request, model_input, with_action=with_action, clause=clause)
+    # The old scope consumes complete fields; explicit clause mode consumes
+    # only the leading role and preserves the rest as unparsed SOURCE_SCOPE.
+    # No choice criterion, task outcome or route is invented.
     coverage = _checked_coverage(dict(profile=PROFILE, source_count=1, processed_count=1,
-        mapped_count=1, unparsed_count=0, excluded_count=0,
+        mapped_count=1, unparsed_count=1 if clause else 0, excluded_count=0,
         exclusion_reasons={}, stale_supplement_count=0))
     return artifact, coverage
 
 
-def serialize_cumulative_written_role_map(owner, snapshot, *, model_input, artifact, coverage, with_action=False):
+def serialize_cumulative_written_role_map(owner, snapshot, *, model_input, artifact, coverage, with_action=False, clause=False):
     from cocolon_meaning_experience_engine.cores.analysis.semantic_admission import (
         serialize_analysis_model_written_role, canonical, require)
     _written_role_input(owner, snapshot, model_input)
     require(canonical(coverage) == canonical(_checked_coverage(dict(profile=PROFILE, source_count=1,
-        processed_count=1, mapped_count=1, unparsed_count=0, excluded_count=0,
+        processed_count=1, mapped_count=1, unparsed_count=1 if clause else 0, excluded_count=0,
         exclusion_reasons={}, stale_supplement_count=0))), 'analysis_written_role_coverage_invalid')
-    state = json.loads(serialize_analysis_model_written_role(model_input, artifact, with_action=with_action))
-    return canonical(dict(schema_version=('cocolon.cmee.cumulative_written_role_action_file.v1' if with_action
+    state = json.loads(serialize_analysis_model_written_role(model_input, artifact, with_action=with_action, clause=clause))
+    return canonical(dict(schema_version=('cocolon.cmee.cumulative_written_role_clause_file.v1' if clause else
+        'cocolon.cmee.cumulative_written_role_action_file.v1' if with_action
         else 'cocolon.cmee.cumulative_written_role_file.v1'),
         coverage=coverage, state=state))
 
 
-def reload_cumulative_written_role_map(owner, snapshot, raw, *, with_action=False):
+def reload_cumulative_written_role_map(owner, snapshot, raw, *, with_action=False, clause=False):
     from cocolon_meaning_experience_engine.cores.analysis.semantic_admission import (
         _load, canonical, require, reload_analysis_model_written_role)
     saved = _load(raw)
     require(type(saved) is dict and set(saved) == {'schema_version', 'coverage', 'state'}
-        and saved['schema_version'] == ('cocolon.cmee.cumulative_written_role_action_file.v1' if with_action
+        and saved['schema_version'] == ('cocolon.cmee.cumulative_written_role_clause_file.v1' if clause else
+            'cocolon.cmee.cumulative_written_role_action_file.v1' if with_action
             else 'cocolon.cmee.cumulative_written_role_file.v1')
         and type(saved['state']) is dict, 'analysis_written_role_file_invalid')
     prompt = saved['state'].get('prompt_version')
     prepared = (prepare_cumulative_category_units(owner, snapshot, prompt_version=prompt)
         if prompt in {'selected_categories.v1', 'selected_material.v2', 'selected_material.v3', 'selected_material.v4'}
         else prepare_cumulative_quoted_parent_units(owner, snapshot, prompt_version=prompt))
-    artifact = reload_analysis_model_written_role(prepared, canonical(saved['state']), with_action=with_action)
+    artifact = reload_analysis_model_written_role(prepared, canonical(saved['state']), with_action=with_action, clause=clause)
     coverage = _checked_coverage(dict(profile=PROFILE, source_count=1, processed_count=1,
-        mapped_count=1, unparsed_count=0, excluded_count=0,
+        mapped_count=1, unparsed_count=1 if clause else 0, excluded_count=0,
         exclusion_reasons={}, stale_supplement_count=0))
     require(type(saved['coverage']) is dict and canonical(saved['coverage']) == canonical(coverage),
             'analysis_written_role_coverage_invalid')
@@ -502,6 +505,5 @@ def _project_evidence(owner, raw):
             memo=original['memo'], memo_action=original['memo_action'],
             answers=answers, version_state='CURRENT' if unchanged else 'EDITED_SINCE_ANALYSIS'))
     return items
-
 
 

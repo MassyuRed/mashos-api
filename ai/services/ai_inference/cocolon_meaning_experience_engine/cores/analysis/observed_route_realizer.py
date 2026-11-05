@@ -264,7 +264,43 @@ def _source_prefix(phrase, parts):
     return phrase
 
 
-def _safe_label(node, graph, *, owner_scope=None, source_set_ref=None, source_members=()):
+def _safe_label(node, graph, *, owner_scope=None, source_set_ref=None, source_members=(),
+                source_records=(), source_period=None):
+    if node.proposition is not None and node.proposition.role_state == 'WRITTEN_PAST_ROLE_CLAUSE':
+        from .intent_compiler import _written_role_clause_witness
+        from .source_adapter import AnalysisObservedMapRequest, freeze_analysis_sources, source_field_text
+        import hashlib
+        if len(source_records) != 1 or source_period is None or len(node.evidence_refs) != 1:
+            raise AnalysisSourceError('analysis_safe_surface_unavailable')
+        frozen = freeze_analysis_sources(AnalysisObservedMapRequest('written-role-clause-surface',
+            owner_scope, *source_period, tuple(source_records), selected_category_context=True))
+        if (frozen.source_set_ref != source_set_ref or frozen.members != source_members
+                or len(frozen.sources) != 1 or len(frozen.category_records) != 1):
+            raise AnalysisSourceError('analysis_safe_surface_unavailable')
+        source = frozen.sources[0]
+        text = source_field_text(source, 'memo')
+        label, p = _written_role_clause_witness(text)
+        e = node.evidence_refs[0]
+        base = next(ref for ref in source.evidence if ref.field_path == 'memo')
+        if (node.node_kind != 'ROLE' or node.proposition != p or node.visible_label != label
+                or node.record_refs != (source.record_ref,)
+                or (node.polarity, node.modality, node.temporal_scope) !=
+                   (p.polarity, p.modality, p.temporal_scope)
+                or node.quoted_field is not None or node.update_refs
+                or source.normalized.get('memo_action')
+                or any(type(n) is not int for n in (e.scalar_start, e.scalar_end,
+                    e.utf8_start, e.utf8_end, e.field_utf8_start, e.field_utf8_end))
+                or e.field_path != 'memo' or e.source_envelope_id != source.envelope.envelope_id
+                or (e.field_utf8_start, e.field_utf8_end, e.field_sha256) !=
+                   (base.field_utf8_start, base.field_utf8_end, base.field_sha256)
+                or (e.scalar_start, e.scalar_end) != (0, len(label))
+                or (e.utf8_start, e.utf8_end) !=
+                   (base.field_utf8_start, base.field_utf8_start + len(label.encode('utf-8')))
+                or e.literal_sha256 != hashlib.sha256(label.encode('utf-8')).hexdigest()
+                or not any(g.missing_scope == 'SOURCE_SCOPE' and node.node_ref in g.between_node_refs
+                    for g in graph.unknown_gaps)):
+            raise AnalysisSourceError('analysis_safe_surface_unavailable')
+        return label + '（記録された役割）'
     if node.proposition is not None and node.proposition.role_state == 'WRITTEN_PAST_ROLE':
         from .intent_compiler import _written_role_proposition
         import hashlib
@@ -529,7 +565,8 @@ class ObservedSelfStructureMap:
             raise AnalysisSourceError('analysis_projection_owner_mismatch')
         labels = {node.node_ref: _category_label(node, _safe_label(node, self.graph,
             owner_scope=self.owner_scope, source_set_ref=self.source_set_ref,
-            source_members=self.source_members), self.source_members, self.category_records, self.owner_scope)
+            source_members=self.source_members, source_records=self.category_records,
+            source_period=self.period), self.source_members, self.category_records, self.owner_scope)
             for node in self.graph.nodes}
         return {
             'schema_version': 'cocolon.cmee.analysis_watashi_map_safe_projection.v1alpha1',
@@ -599,9 +636,10 @@ class AnalysisEngineOutcome:
             'automatic_progression': False}
 
 
-def realize_model_written_role_graph(sources, graph, *, request_ref, response_ref, with_action=False):
+def realize_model_written_role_graph(sources, graph, *, request_ref, response_ref, with_action=False, clause=False):
     """Use the existing map author for an explicitly admitted partial frame."""
     artifact = ObservedSelfStructureMap('artifact:' + commitment([
+        'analysis_model_written_role_clause.v1' if clause else
         'analysis_model_written_role_action.v1' if with_action else 'analysis_model_written_role.v1',
         request_ref, response_ref])[7:], 1,
         sources.owner_scope, sources.source_set_ref, sources.period,
@@ -935,4 +973,3 @@ def validate_semantic_artifact(snapshot, graph, artifact):
 def artifact_from_payload(snapshot, graph, payload):
     artifact = AnalysisSemanticArtifactV1(_semantic_json(payload))
     return validate_semantic_artifact(snapshot, graph, artifact)
-

@@ -21,6 +21,7 @@ name: Analysis observed content
       - supabase/migrations/20261101080144_cumulative_watashi_map.sql
       - ai/tests/test_cmee_analysis_v1d_vertical.py
       - ai/tests/test_analysis_closed_quote_self_action.py
+      - ai/tests/test_analysis_model*.py
       - ai/tests/test_cmee_analysis_nominal_relations.py
       - ai/tests/test_analysis_observed_storage.py
       - ai/tests/test_analysis_saved_period.py
@@ -64,9 +65,14 @@ jobs:
       - name: Verify Analysis generation and saved read
         run: >-
           python -m pytest -q --tb=short -ra
-          -p pytest_subtests.plugin -p no:cacheprovider -c /dev/null --noconftest
+          -p pytest_subtests.plugin -p no:cacheprovider -c /dev/null --rootdir=. --noconftest
           ai/tests/test_cmee_analysis_v1d_vertical.py
           ai/tests/test_analysis_closed_quote_self_action.py
+          ai/tests/test_analysis_model_role_clause.py
+          ai/tests/test_analysis_model_role_action.py
+          ai/tests/test_analysis_model_quoted_parent_units.py
+          ai/tests/test_analysis_model_fields.py
+          ai/tests/test_analysis_model_units.py
           ai/tests/test_cmee_analysis_nominal_relations.py
           ai/tests/test_analysis_observed_storage.py
           ai/tests/test_analysis_saved_period.py
@@ -76,7 +82,7 @@ jobs:
           PYTHONPATH: ai/services/ai_inference:ai/tests:ai
         run: >-
           python -m pytest -q --tb=short -ra
-          -p pytest_subtests.plugin -p no:cacheprovider -c /dev/null --noconftest
+          -p pytest_subtests.plugin -p no:cacheprovider -c /dev/null --rootdir=. --noconftest
           ai/tests/test_cmee_v1a_i1sx_contracts.py
           -k test_active_final_language_owner_chain_has_zero_legacy_compose_calls
       - name: Read synthetic Analysis content
@@ -113,7 +119,7 @@ jobs:
           Q2_PGLITE_MODULE: ${{ runner.temp }}/analysis-postgres/node_modules/@electric-sql/pglite
         run: >-
           python -m pytest -q --tb=short -ra
-          -p pytest_subtests.plugin -p no:cacheprovider -c /dev/null --noconftest
+          -p pytest_subtests.plugin -p no:cacheprovider -c /dev/null --rootdir=. --noconftest
           ai/tests/test_analysis_cumulative.py
           ai/tests/test_analysis_cumulative_jobs.py
           ai/tests/test_analysis_observed_api.py

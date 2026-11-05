@@ -1210,6 +1210,99 @@ def validate_model_written_role_graph(source_set, field, graph):
     return graph
 
 
+def _written_role_clause_witness(text):
+    """One leading explicit role and one independent, still unread past act.
+
+    This closes only the role's own source scope. The trailing act supplies
+    neither a SELF actor nor a role-to-action relation in this profile.
+    """
+    if type(text) is not str or re.search(r'[「」『』“”"?？]|によると|いわく|曰く|夢を見|'
+            r'(?:聞いた|聞きました|読んだ|読みました)(?:話|内容)', text):
+        raise AnalysisSourceError('analysis_written_role_clause_scope_unsupported')
+    match = re.fullmatch(r'([^。．.\r\n]+)[。．.]([^。．.\r\n]+)[。．.]?', text)
+    if match is None:
+        raise AnalysisSourceError('analysis_written_role_clause_scope_unsupported')
+    label, remainder = match.groups()
+    role = _written_role_proposition(label)
+    tail = _proposition(remainder)
+    if (role is None or tail is None or _known_postposed_host(remainder)
+            or tail.predicate_lemma not in _PAST_ACTION_LEMMAS
+            or (tail.modality, tail.temporal_scope) != ('fact', 'past')
+            or _has_unparsed_nominal_scope(tail)
+            or any((tail.sequence_marker, tail.relative_day, tail.possible_content,
+                    tail.result_state, tail.dependent_form, tail.scene_state,
+                    tail.role_state, tail.written_modifiers))):
+        raise AnalysisSourceError('analysis_written_role_clause_scope_unsupported')
+    return label, replace(role, role_state='WRITTEN_PAST_ROLE_CLAUSE')
+
+
+def _model_written_role_clause_node(source_set, field):
+    if (type(field) is not AnalysisUnitCandidateField or len(source_set.members) != 1
+            or len(source_set.sources) != 1 or len(source_set.category_records) != 1
+            or source_set.sources[0].envelope.source_role != 'ORIGINAL_INPUT'
+            or field.record_ref != source_set.members[0].saved_record_ref
+            or field.record_version != source_set.members[0].saved_record_version
+            or field.field_path != 'memo'):
+        raise AnalysisSourceError('analysis_written_role_clause_binding_invalid')
+    text = field.complete_source_text
+    label, p = _written_role_clause_witness(text)
+    parts = {name: (a, b) for name, a, b in p.source_parts}
+    accepted = {label, label + text[len(label)],
+        label[parts['ROLE_NOMINAL'][0]:parts['FINITE_ROLE_COPULA'][1]]}
+    roots = [u for u in field.units if u.parent is None and u.node_kind == 'ROLE']
+    if (len(roots) != 1 or roots[0].scope_role is not None or roots[0].quote not in accepted
+            or roots[0].evidence.scalar_end > len(label) + 1):
+        raise AnalysisSourceError('analysis_written_role_clause_candidate_mismatch')
+    root = roots[0]
+    for unit in field.units:
+        if unit is root or (unit.parent == root.index and unit.scope_role == 'CONTENT_TARGET'
+                and unit.quote == p.arguments[0][1]):
+            for q in unit.qualifiers:
+                copula = label[parts['FINITE_ROLE_COPULA'][0]:]
+                operators = ({copula, 'ありませんでした'} if copula == 'ではありませんでした'
+                    else {copula, 'なかったです' if copula.endswith('です') else 'なかった'})
+                if not ((q.kind == 'EXPLICIT_ACTOR'
+                        and q.quote in {label[:parts['SELF_POSSESSIVE'][1]],
+                                       label[:parts['SELF_POSSESSIVE'][1]] + 'の'})
+                        or (q.kind == 'NEGATION' and p.polarity == 'negative' and q.quote in operators)):
+                    raise AnalysisSourceError('analysis_written_role_clause_qualifier_mismatch')
+        elif unit.evidence.scalar_start < len(label) + 1 or unit.parent == root.index:
+            raise AnalysisSourceError('analysis_written_role_clause_candidate_mismatch')
+    e = field.evidence
+    if (e.scalar_start != 0 or e.scalar_end != len(text) or e.utf8_start != e.field_utf8_start
+            or e.utf8_end != e.field_utf8_end):
+        raise AnalysisSourceError('analysis_written_role_clause_binding_invalid')
+    evidence = replace(e,
+        evidence_id='analysis-unit-evidence:' + commitment([field.field_ref, 0, len(label)])[7:],
+        scalar_end=len(label), utf8_end=e.field_utf8_start + len(label.encode('utf-8')),
+        literal_sha256=hashlib.sha256(label.encode('utf-8')).hexdigest())
+    categories = selected_categories(source_set, field.record_ref)
+    return ObservedNode('n1', 'ROLE', label, (field.record_ref,), (evidence,),
+        p.polarity, p.modality, p.temporal_scope, p,
+        selected_categories=categories or (), selected_category_context=True)
+
+
+def _written_role_clause_gaps():
+    return tuple(UnknownGap('g' + str(i), ('n1',), kind, 'NOT_ESTABLISHED_FROM_SOURCE')
+        for i, kind in enumerate((k for k in NODE_KINDS if k != 'ROLE'), 1)) + (
+            UnknownGap('g5', ('n1',), 'SOURCE_SCOPE', 'UNSUPPORTED_OR_UNCERTAIN_SOURCE_SCOPE'),)
+
+
+def compile_model_written_role_clause_graph(source_set, field):
+    return ObservedGraph((_model_written_role_clause_node(source_set, field),), (), _written_role_clause_gaps())
+
+
+def validate_model_written_role_clause_graph(source_set, field, graph):
+    from dataclasses import asdict
+    if (type(graph) is not ObservedGraph
+            or type(graph.nodes) is not tuple or type(graph.unknown_gaps) is not tuple
+            or type(graph.edges) is not tuple
+            or _semantic_json(asdict(graph)) != _semantic_json(asdict(ObservedGraph(
+                (_model_written_role_clause_node(source_set, field),), (), _written_role_clause_gaps())))):
+        raise AnalysisSourceError('analysis_written_role_clause_saved_graph_changed')
+    return graph
+
+
 def _model_written_role_action_proof(source_set, fields):
     """Two complete original fields: written role and finite SELF past action.
 
@@ -2820,4 +2913,3 @@ def validate_semantic_graph(snapshot, graph):
 def graph_from_payload(snapshot, payload):
     graph = AnalysisSemanticGraphV1(_semantic_json(payload))
     return validate_semantic_graph(snapshot, graph)
-
