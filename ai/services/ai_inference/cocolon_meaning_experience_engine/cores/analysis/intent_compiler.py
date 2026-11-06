@@ -1468,10 +1468,12 @@ def _model_complete_observed_plain_wishes(source_set, graph, fields):
     The existing source compiler owns every proposition, polarity and time.
     A complete negative wish quote retains its finite negation without a
     separate NEGATION qualifier; model raw and qualifiers are never repaired.
-    This narrow original-field scope keeps one wish, or positive past actions
-    with wishes, and preserves the original graph and unestablished connections.
+    This narrow original-record scope keeps one wish, or positive past actions
+    with wishes, across complete memo/memo_action fields. The whole source is
+    compiled before this proof; fields never borrow each other's witnesses.
+    Preserve the original graph and unestablished connections unchanged.
     """
-    if (len(source_set.members) != 1 or len(source_set.sources) != 1 or len(fields) != 1
+    if (len(source_set.members) != 1 or len(source_set.sources) != 1 or len(fields) not in {1, 2}
             or source_set.sources[0].envelope.source_role != 'ORIGINAL_INPUT'
             or source_set.members[0].child_source_envelope_refs !=
                (source_set.sources[0].envelope.envelope_id,)
@@ -1481,11 +1483,10 @@ def _model_complete_observed_plain_wishes(source_set, graph, fields):
             or (len(graph.nodes) > 1 and not any(
                 n.node_kind == 'ACTION_OR_NONACTION' for n in graph.nodes))):
         return None
-    field = fields[0]
-    if field.field_path != 'memo':
+    if (any(f.field_path not in {'memo', 'memo_action'} for f in fields)
+            or len({f.field_path for f in fields}) != len(fields)):
         return None
-    text, base = field.complete_source_text, field.evidence
-    spans, consumed = [], []
+    witnessed = {f.field_path: (f, [], []) for f in fields}
     for node in graph.nodes:
         p = node.proposition
         if (p is None or p.actor != 'SELF'
@@ -1501,10 +1502,15 @@ def _model_complete_observed_plain_wishes(source_set, graph, fields):
                 or any((p.sequence_marker, p.relative_day, p.possible_content,
                     p.result_state, p.dependent_form, p.scene_state, p.role_state,
                     p.written_modifiers))
-                or len(node.evidence_refs) != 1 or node.update_refs or node.quoted_field is not None
-                or node.record_refs != (field.record_ref,)):
+                or len(node.evidence_refs) != 1 or node.update_refs or node.quoted_field is not None):
             return None
         e, = node.evidence_refs
+        if e.field_path not in witnessed:
+            return None
+        field, spans, consumed = witnessed[e.field_path]
+        text, base = field.complete_source_text, field.evidence
+        if node.record_refs != (field.record_ref,):
+            return None
         label = node.visible_label
         if (e.source_envelope_id != base.source_envelope_id
                 or e.source_envelope_id != source_set.sources[0].envelope.envelope_id
@@ -1533,12 +1539,14 @@ def _model_complete_observed_plain_wishes(source_set, graph, fields):
             return None
         spans.append(e)
         consumed.extend(u.index for u in units)
-    if (text[:spans[0].scalar_start].strip()
-            or text[spans[-1].scalar_end:].strip('。．.\r\n\t ')
-            or any(not re.fullmatch(r'[。．.\s]+', text[left.scalar_end:right.scalar_start])
-                for left, right in zip(spans, spans[1:]))
-            or sorted(consumed) != sorted(u.index for u in field.units)):
-        return None
+    for field, spans, consumed in witnessed.values():
+        text = field.complete_source_text
+        if (not spans or text[:spans[0].scalar_start].strip()
+                or text[spans[-1].scalar_end:].strip('。．.\r\n\t ')
+                or any(not re.fullmatch(r'[。．.\s]+', text[left.scalar_end:right.scalar_start])
+                    for left, right in zip(spans, spans[1:]))
+                or sorted(consumed) != sorted(u.index for u in field.units)):
+            return None
     return graph
 
 

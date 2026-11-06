@@ -578,13 +578,20 @@ def test_cognition_is_not_silently_admitted_as_a_plain_wish(text):
 
 @pytest.mark.parametrize('wish',['私は仕事を続けたい。',
     '私は仕事を続けたくない。','私は仕事を続けたくなかった。'])
-def test_wishes_cannot_borrow_another_field_or_a_supplement_proof(wish):
+def test_complete_wish_and_action_fields_use_their_own_original_proof(wish):
     def split(snap):
         snap['members'][0]['original'].update(memo=wish,memo_action='私は資料を見た。')
     def wish_kind(data):
         data['fields'][0]['units'][0]['node_kind']='ATTENTION_OR_THOUGHT'
     _,_,a,c=wish_build(snapshot_change=split,change=wish_kind)
-    assert a is None and c['mapped_count']==0 and c['unparsed_count']==1
+    assert a is not None and len(a.graph.nodes)==2 and not a.graph.edges
+    assert c['mapped_count']==1 and c['unparsed_count']==0
+    assert {e.field_path for n in a.graph.nodes for e in n.evidence_refs}=={'memo','memo_action'}
+
+
+@pytest.mark.parametrize('wish',['私は仕事を続けたい。',
+    '私は仕事を続けたくない。','私は仕事を続けたくなかった。'])
+def test_original_wish_proof_does_not_admit_supplement_wishes(wish):
     from test_analysis_saved_period import with_answer
     def answer(snap):
         original=snap['members'][0]['original']
@@ -598,6 +605,128 @@ def test_wishes_cannot_borrow_another_field_or_a_supplement_proof(wish):
     except ERRORS:
         return
     assert a is None and c['mapped_count']==0 and c['unparsed_count']==1
+
+
+def split_wish_build(memo, memo_action, *, prompt='selected_material.v7', change=None):
+    snap=source_snapshot(1)
+    snap['members'][0]['original'].update(memo=memo,memo_action=memo_action)
+    p=prepared(snap,prompt)
+    fields=json.loads(p.messages()[1]['content'])['fields']
+    data=dict(fields=[dict(field=f['field'],units=[dict(quote=q,
+        node_kind='ATTENTION_OR_THOUGHT' if any(x in q for x in ('たい','たかった','たくない','たくなかった'))
+            else 'ACTION_OR_NONACTION',parent_quote=None,scope_role=None,qualifiers=[])
+        for q in f['text'].rstrip('。').split('。')]) for f in fields])
+    if change:change(data)
+    value=call(p,data)
+    artifact,coverage=service.build_cumulative_map(OWNER,snap,model_input=value)
+    return snap,value,artifact,coverage
+
+
+@pytest.mark.parametrize('ending,time,polarity',[('たい','current_input','positive'),
+    ('たかった','past','positive'),('たくない','current_input','negative'),
+    ('たくなかった','past','negative')])
+@pytest.mark.parametrize('swap',[False,True])
+@pytest.mark.parametrize('prompt',['selected_material.v4','selected_material.v7'])
+def test_split_wish_keeps_whole_graph_field_evidence_and_written_meaning(ending,time,polarity,swap,prompt):
+    texts=['私は資料を見た。','私は仕事を続け'+ending+'。']
+    if swap:texts.reverse()
+    snap,value,a,c=split_wish_build(*texts,prompt=prompt)
+    normal,normal_counts=service.build_cumulative_map(OWNER,snap)
+    assert a is not None and a.graph==normal.graph and c==normal_counts
+    assert len(a.graph.nodes)==2 and not a.graph.edges and c['unparsed_count']==0
+    assert any(g.missing_scope=='ROUTE_CONNECTION' for g in a.graph.unknown_gaps)
+    assert not any(g.missing_scope=='SOURCE_SCOPE' for g in a.graph.unknown_gaps)
+    wish,=tuple(n for n in a.graph.nodes if n.node_kind=='ATTENTION_OR_THOUGHT')
+    assert (wish.proposition.actor,wish.modality,wish.temporal_scope,wish.polarity)==('SELF','wish',time,polarity)
+    source,=freeze_analysis_sources(value.request).sources
+    for node in a.graph.nodes:
+        e,=node.evidence_refs
+        text=source_field_text(source,e.field_path)
+        assert text[e.scalar_start:e.scalar_end]==node.visible_label
+        assert source.envelope.raw_utf8[e.utf8_start:e.utf8_end].decode()==node.visible_label
+        assert e.field_sha256==hashlib.sha256(text.encode()).hexdigest()
+    actual_text=a.safe_text_projection(authenticated_owner_scope=OWNER)
+    expected_text=normal.safe_text_projection(authenticated_owner_scope=OWNER)
+    assert {k:v for k,v in actual_text.items() if k!='projection_of'}=={
+        k:v for k,v in expected_text.items() if k!='projection_of'}
+    assert value.response.raw_sha256==hashlib.sha256(value.response.raw.encode()).hexdigest()
+
+
+@pytest.mark.parametrize('wish',['私は仕事を続けたい。','私は仕事を続けたかった。',
+    '私は仕事を続けたくない。','私は仕事を続けたくなかった。'])
+def test_single_memo_action_wish_uses_its_own_source_field(wish):
+    snap,_,a,c=split_wish_build('',wish)
+    normal,counts=service.build_cumulative_map(OWNER,snap)
+    assert a is not None and a.graph==normal.graph and c==counts and c['unparsed_count']==0
+    assert a.graph.nodes[0].evidence_refs[0].field_path=='memo_action'
+
+
+def test_split_fields_cover_each_clause_in_its_own_scalar_coordinate_space():
+    snap,_,a,c=split_wish_build('私は資料を見た。私は仕事を続けたい。',
+        '私は考えをノートに書きたくなかった。')
+    normal,counts=service.build_cumulative_map(OWNER,snap)
+    assert a is not None and a.graph==normal.graph and c==counts
+    assert len(a.graph.nodes)==3 and not a.graph.edges and c['unparsed_count']==0
+
+
+@pytest.mark.parametrize('memo,memo_action',[
+    ('私は資料を見なかった。','私は仕事を続けたい。'),
+    ('友人は言った。','私は仕事を続けたい。'),
+    ('私は仕事を続けたい。','友人は「準備できた」と言った。'),
+    ('私は資料を見た。','私は仕事を続けたい。まだ分からない。'),
+    ('私は仕事を続けたい。','私は資料を調べたい。'),
+    ('私は資料を見た。私は仕事を続けたい。','私は資料を見た。'),
+])
+def test_split_fields_do_not_supply_an_actor_close_reports_or_discard_unread_material(memo,memo_action):
+    try:
+        _,_,a,c=split_wish_build(memo,memo_action)
+    except ERRORS:
+        return
+    assert a is None and c['mapped_count']==0 and c['unparsed_count']==1
+
+
+@pytest.mark.parametrize('wish',['仕事を続けたい。','姉は仕事を続けたい。',
+    '私は仕事を続けたいかもしれない。'])
+def test_unproved_other_field_keeps_the_existing_partial_action_and_unread_gap(wish):
+    snap,_,a,c=split_wish_build('私は資料を見た。',wish)
+    normal,counts=service.build_cumulative_map(OWNER,snap)
+    assert a is not None and a.graph==normal.graph and c==counts
+    node,=a.graph.nodes
+    assert node.node_kind=='ACTION_OR_NONACTION' and node.visible_label=='私は資料を見た'
+    assert c['mapped_count']==1 and c['unparsed_count']==1 and not a.graph.edges
+    assert any(g.missing_scope=='SOURCE_SCOPE' for g in a.graph.unknown_gaps)
+
+
+@pytest.mark.parametrize('mutation',['wrong_kind','missing_clause','cross_child','wrong_actor'])
+def test_split_wish_model_units_still_need_their_own_complete_source_proof(mutation):
+    def edit(data):
+        wish=data['fields'][1]['units'][0]
+        if mutation=='wrong_kind':wish['node_kind']='ACTION_OR_NONACTION'
+        if mutation=='missing_clause':data['fields'][1]['units']=[]
+        if mutation=='wrong_actor':wish['qualifiers']=[dict(kind='EXPLICIT_ACTOR',quote='仕事')]
+        if mutation=='cross_child':data['fields'][0]['units'].append(dict(quote='資料',
+            parent_quote=wish['quote'],node_kind=None,scope_role='CONTENT_TARGET',qualifiers=[]))
+    try:
+        _,_,a,c=split_wish_build('私は資料を見た。','私は仕事を続けたい。',change=edit)
+    except ERRORS:
+        return
+    assert a is None and c['mapped_count']==0 and c['unparsed_count']==1
+
+
+def test_split_wish_saved_map_replays_without_source_compilation_or_authoring():
+    _,_,a,c=split_wish_build('私は資料を見た。','私は仕事を続けたくなかった。')
+    assert a is not None
+    row=dict(id=str(UUID(a.artifact_id[9:])),source_profile=service.PROFILE,report_mode='standard',
+        content_text=a.safe_text_projection(authenticated_owner_scope=OWNER)['text'],
+        content_json=dict(report_mode='standard',watashiMap=a.safe_projection(authenticated_owner_scope=OWNER),map_context=c))
+    expected=dict(items=[row],subscription_tier='free',matched=True,history_limit=2)
+    with patch.object(service,'_rpc',AsyncMock(return_value=json.loads(canonical(expected)))),\
+         patch.object(compiler,'compile_observed_graph',side_effect=AssertionError('saved compiler')),\
+         patch.object(compiler,'compile_model_observed_actions',side_effect=AssertionError('saved model compiler')),\
+         patch.object(compiler,'_model_complete_observed_plain_wishes',side_effect=AssertionError('saved wish proof')),\
+         patch.object(author,'realize_observed_graph',side_effect=AssertionError('saved author')),\
+         patch.object(author,'generate_observed_map',side_effect=AssertionError('saved map author')):
+        assert asyncio.run(service.read_maps(OWNER,report_id=row['id']))==expected
 
 
 @pytest.mark.parametrize('wish',['私は仕事を続けたい。',
