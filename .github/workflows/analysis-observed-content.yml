@@ -71,6 +71,7 @@ jobs:
           ai/tests/test_analysis_closed_quote_self_action.py
           ai/tests/test_analysis_model_role_clause.py
           ai/tests/test_analysis_model_observed_actions.py
+          ai/tests/test_analysis_model_supplement_wish.py
           ai/tests/test_analysis_model_observed_roles.py
           ai/tests/test_analysis_model_same_field_role_action.py
           ai/tests/test_analysis_model_role_decision.py

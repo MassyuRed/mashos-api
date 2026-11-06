@@ -1486,6 +1486,17 @@ def _model_complete_observed_plain_wishes(source_set, graph, fields):
     if (any(f.field_path not in {'memo', 'memo_action'} for f in fields)
             or len({f.field_path for f in fields}) != len(fields)):
         return None
+    return _model_complete_observed_plain_wish_fields(
+        graph, fields, source_set.sources[0].envelope.envelope_id)
+
+
+def _model_complete_observed_plain_wish_fields(graph, fields, source_envelope_id):
+    """Match complete fields to their own source-proved plain wish nodes.
+
+    Source scope stays with the caller: the original-only wrapper above and
+    the ordinary-answer proof below each establish their own source boundary.
+    This shared witness never changes a source role or supplies a proposition.
+    """
     witnessed = {f.field_path: (f, [], []) for f in fields}
     for node in graph.nodes:
         p = node.proposition
@@ -1513,7 +1524,7 @@ def _model_complete_observed_plain_wishes(source_set, graph, fields):
             return None
         label = node.visible_label
         if (e.source_envelope_id != base.source_envelope_id
-                or e.source_envelope_id != source_set.sources[0].envelope.envelope_id
+                or e.source_envelope_id != source_envelope_id
                 or e.field_path != field.field_path
                 or (e.field_utf8_start, e.field_utf8_end, e.field_sha256) !=
                    (base.field_utf8_start, base.field_utf8_end, base.field_sha256)
@@ -1645,6 +1656,70 @@ def compile_model_supplement_action(source_set, fields, source):
     node = replace(node, node_ref='n1', visible_label=label, proposition=p,
         record_refs=(source.record_ref,), evidence_refs=(evidence,))
     return node if _model_complete_observed_action(node, fields) is not None else None
+
+
+def compile_model_supplement_plain_wish(source_set, fields, source):
+    """Prove one whole, explicit SELF wish in an ordinary answer's own memo.
+
+    Compile the complete parent and all answers before selecting a witness.
+    Canonical aggregation can retain another source's representative, so
+    rederive the proposition and its coordinates from this answer's literal.
+    An unread parent remains the caller's gap; it cannot supply answer proof.
+    """
+    if (source.envelope.source_role != 'SUPPLEMENTAL_ANSWER'
+            or source not in source_set.sources
+            or sum(s.envelope.envelope_id == source.envelope.envelope_id
+                for s in source_set.sources) != 1):
+        return None
+    graph = compile_observed_graph(source_set)
+    if graph.source_updates or graph.conflicts or graph.annotations:
+        return None
+    source_id = source.envelope.envelope_id
+    members = [m for m in source_set.members
+        if m.saved_record_ref == source.record_ref
+        and m.saved_record_version == source.record_version
+        and source_id in m.child_source_envelope_refs]
+    own_fields = tuple(f for f in fields if f.evidence.source_envelope_id == source_id)
+    if (len(members) != 1 or len(own_fields) != 1
+            or own_fields[0].record_ref != source.record_ref
+            or own_fields[0].record_version != source.record_version
+            or own_fields[0].field_path != 'memo'):
+        return None
+    field, = own_fields
+    text = source_field_text(source, 'memo')
+    base = next(e for e in source.evidence if e.field_path == 'memo')
+    if (field.complete_source_text != text
+            or field.evidence.field_path != 'memo'
+            or (field.evidence.field_utf8_start, field.evidence.field_utf8_end,
+                field.evidence.field_sha256) !=
+               (base.field_utf8_start, base.field_utf8_end, base.field_sha256)
+            or (field.evidence.scalar_start, field.evidence.scalar_end) != (0, len(text))
+            or (field.evidence.utf8_start, field.evidence.utf8_end) !=
+               (base.field_utf8_start, base.field_utf8_end)
+            or field.evidence.literal_sha256 != hashlib.sha256(text.encode('utf-8')).hexdigest()):
+        return None
+    owned = [(node, e) for node in graph.nodes for e in node.evidence_refs
+        if e.source_envelope_id == source_id]
+    if len(owned) != 1:
+        return None
+    node, evidence = owned[0]
+    if (node.node_kind != 'ATTENTION_OR_THOUGHT'
+            or source.record_ref not in node.record_refs
+            or evidence.field_path != 'memo'
+            or any(node.node_ref in edge.endpoint_refs
+                or any(e.source_envelope_id == source_id for e in edge.evidence_refs)
+                for edge in graph.edges)):
+        return None
+    label = text[evidence.scalar_start:evidence.scalar_end]
+    p = _proposition(label)
+    if (p is None or node.proposition is None or p.modality != 'wish'
+            or _proposition_meaning(p) != _proposition_meaning(node.proposition)
+            or (p.polarity, p.modality, p.temporal_scope) !=
+               (node.polarity, node.modality, node.temporal_scope)):
+        return None
+    local = ObservedGraph((replace(node, node_ref='n1', visible_label=label,
+        proposition=p, record_refs=(source.record_ref,), evidence_refs=(evidence,)),), (), ())
+    return _model_complete_observed_plain_wish_fields(local, own_fields, source_id)
 
 
 def compile_model_observed_role_decision(source_set, fields):

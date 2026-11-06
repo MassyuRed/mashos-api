@@ -590,21 +590,25 @@ def test_complete_wish_and_action_fields_use_their_own_original_proof(wish):
 
 
 @pytest.mark.parametrize('wish',['私は仕事を続けたい。',
-    '私は仕事を続けたくない。','私は仕事を続けたくなかった。'])
+    '私は仕事を続けたかった。','私は仕事を続けたくない。','私は仕事を続けたくなかった。'])
 def test_original_wish_proof_does_not_admit_supplement_wishes(wish):
     from test_analysis_saved_period import with_answer
-    def answer(snap):
-        original=snap['members'][0]['original']
-        original['emotion_details']=[dict(type='平穏',strength='medium')]
-        snap['members'][0]=with_answer(snap['members'][0],wish)
-    def answer_kind(data):
-        data['fields'][1]['units'][0]['node_kind']='ATTENTION_OR_THOUGHT'
-    try:
-        _,_,a,c=wish_build('私は資料を見た。',kinds=('ACTION_OR_NONACTION',),
-            snapshot_change=answer,change=answer_kind)
-    except ERRORS:
-        return
-    assert a is None and c['mapped_count']==0 and c['unparsed_count']==1
+    from cocolon_meaning_experience_engine.cores.analysis.semantic_admission import _admit_quoted_parent_units
+    snap=source_snapshot(1)
+    snap['members'][0]['original'].update(memo='私は資料を見た。',memo_action='',
+        emotion_details=[dict(type='平穏',strength='medium')])
+    snap['members'][0]=with_answer(snap['members'][0],wish)
+    p=prepared(snap);data=packet(p)
+    data['fields'][1]['units'][0]['node_kind']='ATTENTION_OR_THOUGHT'
+    frozen,fields,_=_admit_quoted_parent_units(p.request,call(p,data))
+    full=compiler.compile_observed_graph(frozen)
+    assert compiler._model_complete_observed_plain_wishes(frozen,full,fields) is None
+    answer,=tuple(s for s in frozen.sources if s.envelope.source_role=='SUPPLEMENTAL_ANSWER')
+    separate=compiler.compile_model_supplement_plain_wish(frozen,fields,answer)
+    assert separate is not None and len(separate.nodes)==1 and not separate.edges
+    assert separate.nodes[0].modality=='wish'
+    assert all(e.source_envelope_id==answer.envelope.envelope_id
+        for e in separate.nodes[0].evidence_refs)
 
 
 def original_wish_with_answer(ending='たい', *, swap=False,

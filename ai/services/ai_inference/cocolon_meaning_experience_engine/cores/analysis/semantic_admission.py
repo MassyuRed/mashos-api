@@ -1404,7 +1404,8 @@ def _compile_model_original_observed_record(frozen, fields):
 def _compile_model_observed_record(frozen, fields):
     """Retain ordinary answers as evidence of their parent's single occasion."""
     from .intent_compiler import (ObservedGraph, UnknownGap, NODE_KINDS,
-        compile_model_supplement_action, compile_model_supplement_role_decision, _observed_claim_signature)
+        compile_model_supplement_action, compile_model_supplement_role_decision,
+        compile_model_supplement_plain_wish, _observed_claim_signature)
     answers = tuple(s for s in frozen.sources if s.envelope.source_role == 'SUPPLEMENTAL_ANSWER')
     if not answers:
         return _compile_model_original_observed_record(frozen, fields)
@@ -1437,6 +1438,8 @@ def _compile_model_observed_record(frozen, fields):
         node = compile_model_supplement_action(frozen, fields, answer)
         answer_graph = (ObservedGraph((node,), (), ()) if node is not None else
             compile_model_supplement_role_decision(frozen, fields, answer))
+        if answer_graph is None:
+            answer_graph = compile_model_supplement_plain_wish(frozen, fields, answer)
         if answer_graph is None:
             return None
         answer_ordered = {e.evidence_id for edge in answer_graph.edges for e in edge.evidence_refs}
