@@ -974,6 +974,8 @@ QUOTED_PARENT_MATERIAL_V11_PROFILE = 'selected_material.v11'
 QUOTED_PARENT_MATERIAL_V11_STATE = 'cocolon.cmee.analysis_model_units_quoted_parents_state.material.v11'
 QUOTED_PARENT_MATERIAL_V12_PROFILE = 'selected_material.v12'
 QUOTED_PARENT_MATERIAL_V12_STATE = 'cocolon.cmee.analysis_model_units_quoted_parents_state.material.v12'
+QUOTED_PARENT_MATERIAL_V13_PROFILE = 'selected_material.v13'
+QUOTED_PARENT_MATERIAL_V13_STATE = 'cocolon.cmee.analysis_model_units_quoted_parents_state.material.v13'
 QUOTED_PARENT_SEMANTIC_PROFILE = 'semantic_boundaries.v2'
 QUOTED_PARENT_SEMANTIC_STATE = 'cocolon.cmee.analysis_model_units_quoted_parents_state.semantic_boundaries.v2'
 QUOTED_PARENT_SEMANTIC_V3_PROFILE = 'semantic_boundaries.v3'
@@ -1001,7 +1003,7 @@ class AnalysisModelQuotedParentUnitsInput:
         # Inherit v7 material unchanged; each opt-in instruction experiment keeps
         # its own request, response digest and serialized-state identity.
         instruction_version = (QUOTED_PARENT_MATERIAL_V7_PROFILE
-            if self.prompt_version in {QUOTED_PARENT_MATERIAL_V8_PROFILE, QUOTED_PARENT_MATERIAL_V9_PROFILE, QUOTED_PARENT_MATERIAL_V10_PROFILE, QUOTED_PARENT_MATERIAL_V11_PROFILE, QUOTED_PARENT_MATERIAL_V12_PROFILE}
+            if self.prompt_version in {QUOTED_PARENT_MATERIAL_V8_PROFILE, QUOTED_PARENT_MATERIAL_V9_PROFILE, QUOTED_PARENT_MATERIAL_V10_PROFILE, QUOTED_PARENT_MATERIAL_V11_PROFILE, QUOTED_PARENT_MATERIAL_V12_PROFILE, QUOTED_PARENT_MATERIAL_V13_PROFILE}
             else self.prompt_version)
         frozen, fields = _model_fields_source(self.request,
             allow_supplements=instruction_version in {QUOTED_PARENT_MATERIAL_V3_PROFILE, QUOTED_PARENT_MATERIAL_V4_PROFILE, QUOTED_PARENT_MATERIAL_V6_PROFILE, QUOTED_PARENT_MATERIAL_V7_PROFILE})
@@ -1088,15 +1090,17 @@ class AnalysisModelQuotedParentUnitsInput:
             instruction += _responsibility_decision_units_instruction()
         if self.prompt_version == QUOTED_PARENT_MATERIAL_V8_PROFILE:
             instruction += _field_ordinal_units_instruction([row['field'] for row in material['fields']])
-        if self.prompt_version in {QUOTED_PARENT_MATERIAL_V9_PROFILE, QUOTED_PARENT_MATERIAL_V10_PROFILE, QUOTED_PARENT_MATERIAL_V11_PROFILE, QUOTED_PARENT_MATERIAL_V12_PROFILE}:
+        if self.prompt_version in {QUOTED_PARENT_MATERIAL_V9_PROFILE, QUOTED_PARENT_MATERIAL_V10_PROFILE, QUOTED_PARENT_MATERIAL_V11_PROFILE, QUOTED_PARENT_MATERIAL_V12_PROFILE, QUOTED_PARENT_MATERIAL_V13_PROFILE}:
             instruction += _wish_boundaries_units_instruction()
-        if self.prompt_version in {QUOTED_PARENT_MATERIAL_V10_PROFILE, QUOTED_PARENT_MATERIAL_V11_PROFILE, QUOTED_PARENT_MATERIAL_V12_PROFILE}:
+        if self.prompt_version in {QUOTED_PARENT_MATERIAL_V10_PROFILE, QUOTED_PARENT_MATERIAL_V11_PROFILE, QUOTED_PARENT_MATERIAL_V12_PROFILE, QUOTED_PARENT_MATERIAL_V13_PROFILE}:
             instruction += _negative_wish_examples_units_instruction()
-        if self.prompt_version in {QUOTED_PARENT_MATERIAL_V11_PROFILE, QUOTED_PARENT_MATERIAL_V12_PROFILE}:
+        if self.prompt_version in {QUOTED_PARENT_MATERIAL_V11_PROFILE, QUOTED_PARENT_MATERIAL_V12_PROFILE, QUOTED_PARENT_MATERIAL_V13_PROFILE}:
             instruction += _field_ordinal_units_instruction([row['field'] for row in material['fields']])
             instruction += _field_object_boundaries_units_instruction()
-        if self.prompt_version == QUOTED_PARENT_MATERIAL_V12_PROFILE:
+        if self.prompt_version in {QUOTED_PARENT_MATERIAL_V12_PROFILE, QUOTED_PARENT_MATERIAL_V13_PROFILE}:
             instruction += _inflection_qualifier_boundaries_units_instruction()
+        if self.prompt_version == QUOTED_PARENT_MATERIAL_V13_PROFILE:
+            instruction += _positive_past_wish_example_units_instruction()
         return [dict(role='system', content=instruction),
                 dict(role='user', content=canonical(material))]
 
@@ -1104,7 +1108,7 @@ class AnalysisModelQuotedParentUnitsInput:
 def _quoted_parent_units_ref(request, frozen, source_guard, prompt_version='baseline.v1'):
     _model_fields_ref(request, frozen, source_guard)
     require(prompt_version in {'baseline.v1', QUOTED_PARENT_CATEGORY_PROFILE, QUOTED_PARENT_MATERIAL_PROFILE,
-            QUOTED_PARENT_SEMANTIC_PROFILE, QUOTED_PARENT_SEMANTIC_V3_PROFILE, QUOTED_PARENT_MATERIAL_V3_PROFILE, QUOTED_PARENT_MATERIAL_V4_PROFILE, QUOTED_PARENT_MATERIAL_V6_PROFILE, QUOTED_PARENT_MATERIAL_V7_PROFILE, QUOTED_PARENT_MATERIAL_V8_PROFILE, QUOTED_PARENT_MATERIAL_V9_PROFILE, QUOTED_PARENT_MATERIAL_V10_PROFILE, QUOTED_PARENT_MATERIAL_V11_PROFILE, QUOTED_PARENT_MATERIAL_V12_PROFILE},
+            QUOTED_PARENT_SEMANTIC_PROFILE, QUOTED_PARENT_SEMANTIC_V3_PROFILE, QUOTED_PARENT_MATERIAL_V3_PROFILE, QUOTED_PARENT_MATERIAL_V4_PROFILE, QUOTED_PARENT_MATERIAL_V6_PROFILE, QUOTED_PARENT_MATERIAL_V7_PROFILE, QUOTED_PARENT_MATERIAL_V8_PROFILE, QUOTED_PARENT_MATERIAL_V9_PROFILE, QUOTED_PARENT_MATERIAL_V10_PROFILE, QUOTED_PARENT_MATERIAL_V11_PROFILE, QUOTED_PARENT_MATERIAL_V12_PROFILE, QUOTED_PARENT_MATERIAL_V13_PROFILE},
             'analysis_quoted_parent_units_binding_invalid')
     require(prompt_version in {'baseline.v1', QUOTED_PARENT_SEMANTIC_PROFILE, QUOTED_PARENT_SEMANTIC_V3_PROFILE}
             or request.selected_category_context,
@@ -1119,7 +1123,7 @@ def _quoted_parent_units_ref(request, frozen, source_guard, prompt_version='base
 
 def prepare_analysis_model_quoted_parent_units(request, *, source_guard, prompt_version='baseline.v1'):
     frozen, _ = _model_fields_source(request,
-        allow_supplements=prompt_version in {QUOTED_PARENT_MATERIAL_V3_PROFILE, QUOTED_PARENT_MATERIAL_V4_PROFILE, QUOTED_PARENT_MATERIAL_V6_PROFILE, QUOTED_PARENT_MATERIAL_V7_PROFILE, QUOTED_PARENT_MATERIAL_V8_PROFILE, QUOTED_PARENT_MATERIAL_V9_PROFILE, QUOTED_PARENT_MATERIAL_V10_PROFILE, QUOTED_PARENT_MATERIAL_V11_PROFILE, QUOTED_PARENT_MATERIAL_V12_PROFILE})
+        allow_supplements=prompt_version in {QUOTED_PARENT_MATERIAL_V3_PROFILE, QUOTED_PARENT_MATERIAL_V4_PROFILE, QUOTED_PARENT_MATERIAL_V6_PROFILE, QUOTED_PARENT_MATERIAL_V7_PROFILE, QUOTED_PARENT_MATERIAL_V8_PROFILE, QUOTED_PARENT_MATERIAL_V9_PROFILE, QUOTED_PARENT_MATERIAL_V10_PROFILE, QUOTED_PARENT_MATERIAL_V11_PROFILE, QUOTED_PARENT_MATERIAL_V12_PROFILE, QUOTED_PARENT_MATERIAL_V13_PROFILE})
     return AnalysisModelQuotedParentUnitsInput(request, source_guard,
         _quoted_parent_units_ref(request, frozen, source_guard, prompt_version), prompt_version=prompt_version)
 
@@ -1145,6 +1149,22 @@ def _inflection_qualifier_boundaries_units_instruction():
         'rootのquoteから希望や過去の語尾を削らず、主体・否定・相対時点や別に書かれた修飾も消しません。'
         '否定希望のNEGATIONには従来どおり原文の完全な否定述語を引用します。'
         '他者・省略主体・埋め込まれた希望を、本人自身の単純な希望や実行済みの事実へ変えません。')
+
+
+def _positive_past_wish_example_units_instruction():
+    """Synthetic combination separate from evaluation; no new training target."""
+    action='僕は道具を調べた'
+    wish='僕は予定を記録したかった'
+    def unit(quote,kind):
+        return dict(quote=quote,node_kind=kind,parent_quote=None,scope_role=None,
+            qualifiers=[dict(kind='EXPLICIT_ACTOR',quote='僕')])
+    return ('\n肯定過去の希望と実行事実を区別する架空例：'
+        '希望の述語全体はrootへ保持し、活用語尾を追加修飾として重ねません。'
+        'この例は今回入力の事実や評価対象ではなく、例の語句を今回入力へ混ぜません。'
+        + '\n例の入力:' + canonical(dict(fields=[dict(field=1,text=action+'。'+wish+'。')]))
+        + '\n例の出力:' + canonical(dict(fields=[dict(field=1,units=[
+            unit(action,'ACTION_OR_NONACTION'),unit(wish,'ATTENTION_OR_THOUGHT')])]))
+        + '\n今回の入力の全fieldを各一回、元の出力schemaで返してください。')
 
 
 def _negative_wish_examples_units_instruction():
@@ -1336,7 +1356,7 @@ def _admit_quoted_parent_units(request, model_input):
     require(type(model_input) is AnalysisModelQuotedParentUnitsInput and model_input.request == request,
             'analysis_quoted_parent_units_binding_invalid')
     frozen, fields = _model_fields_source(request,
-        allow_supplements=model_input.prompt_version in {QUOTED_PARENT_MATERIAL_V3_PROFILE, QUOTED_PARENT_MATERIAL_V4_PROFILE, QUOTED_PARENT_MATERIAL_V6_PROFILE, QUOTED_PARENT_MATERIAL_V7_PROFILE, QUOTED_PARENT_MATERIAL_V8_PROFILE, QUOTED_PARENT_MATERIAL_V9_PROFILE, QUOTED_PARENT_MATERIAL_V10_PROFILE, QUOTED_PARENT_MATERIAL_V11_PROFILE, QUOTED_PARENT_MATERIAL_V12_PROFILE})
+        allow_supplements=model_input.prompt_version in {QUOTED_PARENT_MATERIAL_V3_PROFILE, QUOTED_PARENT_MATERIAL_V4_PROFILE, QUOTED_PARENT_MATERIAL_V6_PROFILE, QUOTED_PARENT_MATERIAL_V7_PROFILE, QUOTED_PARENT_MATERIAL_V8_PROFILE, QUOTED_PARENT_MATERIAL_V9_PROFILE, QUOTED_PARENT_MATERIAL_V10_PROFILE, QUOTED_PARENT_MATERIAL_V11_PROFILE, QUOTED_PARENT_MATERIAL_V12_PROFILE, QUOTED_PARENT_MATERIAL_V13_PROFILE})
     expected_ref = _quoted_parent_units_ref(request, frozen, model_input.source_guard, model_input.prompt_version)
     require(model_input.request_ref == expected_ref, 'analysis_quoted_parent_units_binding_invalid')
     response = model_input.response
@@ -1386,7 +1406,7 @@ def _admit_quoted_parent_units(request, model_input):
     return _bind_model_unit_fields(frozen, fields, bound_packet,
         'analysis-quoted-parent-units-response:' + digest(asdict(response)),
         allow_parent_local_content_targets=(
-            model_input.prompt_version in {QUOTED_PARENT_MATERIAL_V10_PROFILE, QUOTED_PARENT_MATERIAL_V11_PROFILE, QUOTED_PARENT_MATERIAL_V12_PROFILE}))
+            model_input.prompt_version in {QUOTED_PARENT_MATERIAL_V10_PROFILE, QUOTED_PARENT_MATERIAL_V11_PROFILE, QUOTED_PARENT_MATERIAL_V12_PROFILE, QUOTED_PARENT_MATERIAL_V13_PROFILE}))
 
 
 def generate_analysis_model_quoted_parent_units(request, model_input):
@@ -1767,6 +1787,7 @@ def serialize_analysis_model_quoted_parent_units(model_input, artifact):
             QUOTED_PARENT_MATERIAL_V10_PROFILE: QUOTED_PARENT_MATERIAL_V10_STATE,
             QUOTED_PARENT_MATERIAL_V11_PROFILE: QUOTED_PARENT_MATERIAL_V11_STATE,
             QUOTED_PARENT_MATERIAL_V12_PROFILE: QUOTED_PARENT_MATERIAL_V12_STATE,
+            QUOTED_PARENT_MATERIAL_V13_PROFILE: QUOTED_PARENT_MATERIAL_V13_STATE,
             QUOTED_PARENT_CATEGORY_PROFILE: QUOTED_PARENT_CATEGORY_STATE,
             QUOTED_PARENT_SEMANTIC_PROFILE: QUOTED_PARENT_SEMANTIC_STATE,
             QUOTED_PARENT_SEMANTIC_V3_PROFILE: QUOTED_PARENT_SEMANTIC_V3_STATE}[model_input.prompt_version],
@@ -1793,6 +1814,7 @@ def reload_analysis_model_quoted_parent_units(prepared, raw):
         QUOTED_PARENT_MATERIAL_V10_PROFILE: QUOTED_PARENT_MATERIAL_V10_STATE,
         QUOTED_PARENT_MATERIAL_V11_PROFILE: QUOTED_PARENT_MATERIAL_V11_STATE,
         QUOTED_PARENT_MATERIAL_V12_PROFILE: QUOTED_PARENT_MATERIAL_V12_STATE,
+        QUOTED_PARENT_MATERIAL_V13_PROFILE: QUOTED_PARENT_MATERIAL_V13_STATE,
         QUOTED_PARENT_SEMANTIC_PROFILE: QUOTED_PARENT_SEMANTIC_STATE,
         QUOTED_PARENT_SEMANTIC_V3_PROFILE: QUOTED_PARENT_SEMANTIC_V3_STATE}.get(prepared.prompt_version)
     state_keys = {'schema_version','request_ref','response','candidate_id','graph','text','diagram'}

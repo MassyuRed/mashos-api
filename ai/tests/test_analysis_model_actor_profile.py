@@ -276,7 +276,7 @@ def test_v9_response_and_state_cannot_cross_reuse(source_profile, target_profile
     test_v7_v8_response_and_state_cannot_cross_reuse(source_profile, target_profile)
 
 
-@pytest.mark.parametrize('profile', ['selected_material.v9', 'selected_material.v12'])
+@pytest.mark.parametrize('profile', ['selected_material.v9', 'selected_material.v12', 'selected_material.v13'])
 @pytest.mark.parametrize('suffix,negative', [
     ('記録したい', False), ('記録したかった', False),
     ('記録したくない', True), ('記録したくなかった', True)])
@@ -292,7 +292,7 @@ def test_v9_preserves_exact_wish_source_and_reloads_without_generation(suffix, n
     value = call(p, packet)
     candidate = admission.generate_analysis_model_quoted_parent_units(p.request, value)
     raw = admission.serialize_analysis_model_quoted_parent_units(value, candidate)
-    assert json.loads(raw)['schema_version'] == (admission.QUOTED_PARENT_MATERIAL_V9_STATE if profile.endswith('v9') else admission.QUOTED_PARENT_MATERIAL_V12_STATE)
+    assert json.loads(raw)['schema_version'] == (admission.QUOTED_PARENT_MATERIAL_V9_STATE if profile.endswith('v9') else admission.QUOTED_PARENT_MATERIAL_V12_STATE if profile.endswith('v12') else admission.QUOTED_PARENT_MATERIAL_V13_STATE)
     with patch.object(compiler, 'compile_analysis_unit_candidates', side_effect=AssertionError('compile')), \
          patch.object(author, 'realize_analysis_unit_candidates', side_effect=AssertionError('author')):
         assert admission.reload_analysis_model_quoted_parent_units(p, raw) == candidate
@@ -384,7 +384,9 @@ def test_private_v10_keeps_short_negative_wish_unsupported_and_normal_selection_
     ('selected_material.v10','selected_material.v11'),
     ('selected_material.v11','selected_material.v10'),
     ('selected_material.v11','selected_material.v12'),
-    ('selected_material.v12','selected_material.v11')])
+    ('selected_material.v12','selected_material.v11'),
+    ('selected_material.v12','selected_material.v13'),
+    ('selected_material.v13','selected_material.v12')])
 def test_v11_response_and_state_cannot_cross_reuse(source_profile, target_profile):
     test_v7_v8_response_and_state_cannot_cross_reuse(source_profile, target_profile)
 
@@ -402,14 +404,14 @@ def test_v11_preserves_v10_source_and_meaning_instructions():
     assert new.request_ref != old.request_ref and snap == before
 
 
-@pytest.mark.parametrize('profile', ['selected_material.v11', 'selected_material.v12'])
+@pytest.mark.parametrize('profile', ['selected_material.v11', 'selected_material.v12', 'selected_material.v13'])
 def test_v11_keeps_parent_local_source_binding_and_saved_non_generation_reload(profile):
     from test_analysis_model_parent_local_content import prepare
     snap, p, value = prepare(profile=profile)
     candidate, coverage = service.build_cumulative_quoted_parent_candidates(OWNER, snap, model_input=value)
     saved = service.serialize_cumulative_quoted_parent_candidates(OWNER, snap,
         model_input=value, artifact=candidate, coverage=coverage)
-    assert json.loads(saved)['state']['schema_version'] == (admission.QUOTED_PARENT_MATERIAL_V11_STATE if profile.endswith('v11') else admission.QUOTED_PARENT_MATERIAL_V12_STATE)
+    assert json.loads(saved)['state']['schema_version'] == (admission.QUOTED_PARENT_MATERIAL_V11_STATE if profile.endswith('v11') else admission.QUOTED_PARENT_MATERIAL_V12_STATE if profile.endswith('v12') else admission.QUOTED_PARENT_MATERIAL_V13_STATE)
     with patch.object(compiler,'compile_analysis_unit_candidates',side_effect=AssertionError('compile')), \
          patch.object(author,'realize_analysis_unit_candidates',side_effect=AssertionError('author')):
         assert service.reload_cumulative_quoted_parent_candidates(OWNER,snap,saved) == (candidate,coverage)
@@ -424,7 +426,7 @@ def test_v11_keeps_parent_local_source_binding_and_saved_non_generation_reload(p
     '{"fields":[{"field":1,"units":[],"field":2,"units":[]}]}',
     '{"fields":[]}',
     '{"fields":[{"field":2,"units":[]}]}'])
-@pytest.mark.parametrize('profile', ['selected_material.v11', 'selected_material.v12'])
+@pytest.mark.parametrize('profile', ['selected_material.v11', 'selected_material.v12', 'selected_material.v13'])
 def test_v11_never_repairs_duplicate_keys_missing_fields_or_wrong_ordinals(raw, profile):
     p = service.prepare_cumulative_category_units(OWNER,source_snapshot(1),prompt_version=profile)
     response = admission.AnalysisModelQuotedParentUnitsResponse(p.request_ref,admission.digest(p.messages()),
@@ -433,7 +435,7 @@ def test_v11_never_repairs_duplicate_keys_missing_fields_or_wrong_ordinals(raw, 
         admission._admit_quoted_parent_units(p.request,replace(p,response=response))
 
 
-@pytest.mark.parametrize('profile', ['selected_material.v11', 'selected_material.v12'])
+@pytest.mark.parametrize('profile', ['selected_material.v11', 'selected_material.v12', 'selected_material.v13'])
 def test_v11_does_not_enable_normal_model_selection(profile):
     from analysis_model_source import SelfHostedAnalysisModelSource
     with pytest.raises(ValueError):
@@ -472,3 +474,30 @@ def test_v12_does_not_repair_or_adopt_a_misannotated_past_wish(extra):
         artifact,counts=service.build_cumulative_map(OWNER,snap,model_input=value)
         assert artifact is None and counts['unparsed_count']==1
         assert value.response.raw == admission.canonical(dict(fields=[dict(field=1,units=[unit(text,'ATTENTION_OR_THOUGHT',actor='私',qualifiers=extra)])]))
+
+
+
+def test_v13_independent_positive_past_example_preserves_source_and_saved_meaning():
+    lines=admission._positive_past_wish_example_units_instruction().splitlines()
+    material=json.loads(next(x[len('例の入力:'):] for x in lines if x.startswith('例の入力:')))
+    packet=json.loads(next(x[len('例の出力:'):] for x in lines if x.startswith('例の出力:')))
+    snap=source_snapshot(1)
+    snap['members'][0]['original'].update(memo=material['fields'][0]['text'],memo_action='')
+    old,new=[service.prepare_cumulative_category_units(OWNER,snap,prompt_version=p)
+        for p in ('selected_material.v12','selected_material.v13')]
+    assert old.request==new.request and old.messages()[1]==new.messages()[1]
+    assert old.request_ref!=new.request_ref
+    assert new.messages()[0]['content']==old.messages()[0]['content']+admission._positive_past_wish_example_units_instruction()
+    value=call(new,packet)
+    candidate,coverage=service.build_cumulative_quoted_parent_candidates(OWNER,snap,model_input=value)
+    saved=service.serialize_cumulative_quoted_parent_candidates(OWNER,snap,model_input=value,artifact=candidate,coverage=coverage)
+    assert json.loads(saved)['state']['schema_version']==admission.QUOTED_PARENT_MATERIAL_V13_STATE
+    with patch.object(compiler,'compile_analysis_unit_candidates',side_effect=AssertionError('compile')), \
+         patch.object(author,'realize_analysis_unit_candidates',side_effect=AssertionError('author')):
+        assert service.reload_cumulative_quoted_parent_candidates(OWNER,snap,saved)==(candidate,coverage)
+    artifact,counts=service.build_cumulative_map(OWNER,snap,model_input=value)
+    assert artifact is not None and counts['mapped_count']==1 and counts['unparsed_count']==0
+    assert [(n.node_kind,n.modality,n.polarity,n.temporal_scope,n.proposition.actor) for n in artifact.graph.nodes]==[
+        ('ACTION_OR_NONACTION','fact','positive','past','SELF'),('ATTENTION_OR_THOUGHT','wish','positive','past','SELF')]
+    assert not artifact.graph.edges
+    assert all([q.kind for q in u.qualifiers]==['EXPLICIT_ACTOR'] for f in candidate.graph.fields for u in f.units)
