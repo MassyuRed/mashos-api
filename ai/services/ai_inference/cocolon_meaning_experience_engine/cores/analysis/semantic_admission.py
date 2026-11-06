@@ -1097,7 +1097,7 @@ class AnalysisModelQuotedParentUnitsInput:
         if self.prompt_version in {QUOTED_PARENT_MATERIAL_V11_PROFILE, QUOTED_PARENT_MATERIAL_V12_PROFILE, QUOTED_PARENT_MATERIAL_V13_PROFILE}:
             instruction += _field_ordinal_units_instruction([row['field'] for row in material['fields']])
             instruction += _field_object_boundaries_units_instruction()
-        if self.prompt_version in {QUOTED_PARENT_MATERIAL_V12_PROFILE, QUOTED_PARENT_MATERIAL_V13_PROFILE}:
+        if self.prompt_version == QUOTED_PARENT_MATERIAL_V12_PROFILE:
             instruction += _inflection_qualifier_boundaries_units_instruction()
         if self.prompt_version == QUOTED_PARENT_MATERIAL_V13_PROFILE:
             instruction += _positive_past_wish_example_units_instruction()

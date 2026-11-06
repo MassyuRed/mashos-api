@@ -484,7 +484,7 @@ def test_v13_independent_positive_past_example_preserves_source_and_saved_meanin
     snap=source_snapshot(1)
     snap['members'][0]['original'].update(memo=material['fields'][0]['text'],memo_action='')
     old,new=[service.prepare_cumulative_category_units(OWNER,snap,prompt_version=p)
-        for p in ('selected_material.v12','selected_material.v13')]
+        for p in ('selected_material.v11','selected_material.v13')]
     assert old.request==new.request and old.messages()[1]==new.messages()[1]
     assert old.request_ref!=new.request_ref
     assert new.messages()[0]['content']==old.messages()[0]['content']+admission._positive_past_wish_example_units_instruction()
