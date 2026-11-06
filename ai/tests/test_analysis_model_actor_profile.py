@@ -375,3 +375,62 @@ def test_private_v10_keeps_short_negative_wish_unsupported_and_normal_selection_
     with pytest.raises(ValueError, match='analysis_model_batch_profile_invalid'):
         service.prepare_cumulative_model_batches(OWNER, snap, prompt_version='selected_material.v10',
             measure_budget=lambda _:service.AnalysisModelInputBudget(1,1))
+
+
+@pytest.mark.parametrize('source_profile,target_profile', [
+    ('selected_material.v10','selected_material.v11'),
+    ('selected_material.v11','selected_material.v10')])
+def test_v11_response_and_state_cannot_cross_reuse(source_profile, target_profile):
+    test_v7_v8_response_and_state_cannot_cross_reuse(source_profile, target_profile)
+
+
+def test_v11_preserves_v10_source_and_meaning_instructions():
+    snap = sample()
+    before = copy.deepcopy(snap)
+    old, new = [service.prepare_cumulative_category_units(OWNER, snap, prompt_version=p)
+        for p in ('selected_material.v10','selected_material.v11')]
+    fields = json.loads(new.messages()[1]['content'])['fields']
+    assert old.request == new.request and old.messages()[1] == new.messages()[1]
+    assert new.messages()[0]['content'] == old.messages()[0]['content'] + (
+        admission._field_ordinal_units_instruction([f['field'] for f in fields]) +
+        admission._field_object_boundaries_units_instruction())
+    assert new.request_ref != old.request_ref and snap == before
+
+
+def test_v11_keeps_parent_local_source_binding_and_saved_non_generation_reload():
+    from test_analysis_model_parent_local_content import prepare
+    snap, p, value = prepare(profile='selected_material.v11')
+    candidate, coverage = service.build_cumulative_quoted_parent_candidates(OWNER, snap, model_input=value)
+    saved = service.serialize_cumulative_quoted_parent_candidates(OWNER, snap,
+        model_input=value, artifact=candidate, coverage=coverage)
+    assert json.loads(saved)['state']['schema_version'] == admission.QUOTED_PARENT_MATERIAL_V11_STATE
+    with patch.object(compiler,'compile_analysis_unit_candidates',side_effect=AssertionError('compile')), \
+         patch.object(author,'realize_analysis_unit_candidates',side_effect=AssertionError('author')):
+        assert service.reload_cumulative_quoted_parent_candidates(OWNER,snap,saved) == (candidate,coverage)
+    artifact, counts = service.build_cumulative_map(OWNER,snap,model_input=value)
+    assert artifact is not None and counts['mapped_count'] == 1 and counts['unparsed_count'] == 0
+    assert [(n.node_kind,n.modality,n.polarity) for n in artifact.graph.nodes] == [
+        ('ACTION_OR_NONACTION','fact','positive'),('ATTENTION_OR_THOUGHT','wish','negative')]
+    assert value.response.raw == json.loads(saved)['state']['response']['raw']
+
+
+@pytest.mark.parametrize('raw', [
+    '{"fields":[{"field":1,"units":[],"field":2,"units":[]}]}',
+    '{"fields":[]}',
+    '{"fields":[{"field":2,"units":[]}]}'])
+def test_v11_never_repairs_duplicate_keys_missing_fields_or_wrong_ordinals(raw):
+    p = service.prepare_cumulative_category_units(OWNER,source_snapshot(1),prompt_version='selected_material.v11')
+    response = admission.AnalysisModelQuotedParentUnitsResponse(p.request_ref,admission.digest(p.messages()),
+        hashlib.sha256(raw.encode()).hexdigest(),'stop',raw)
+    with pytest.raises(admission.AnalysisSemanticError):
+        admission._admit_quoted_parent_units(p.request,replace(p,response=response))
+
+
+def test_v11_does_not_enable_normal_model_selection():
+    from analysis_model_source import SelfHostedAnalysisModelSource
+    with pytest.raises(ValueError):
+        SelfHostedAnalysisModelSource(endpoint='https://synthetic-analysis.invalid/v1/chat/completions',
+            model='synthetic-analysis',api_key='synthetic-private-key',prompt_version='selected_material.v11')
+    with pytest.raises(ValueError,match='analysis_model_batch_profile_invalid'):
+        service.prepare_cumulative_model_batches(OWNER,source_snapshot(1),prompt_version='selected_material.v11',
+            measure_budget=lambda _:service.AnalysisModelInputBudget(1,1))
