@@ -309,3 +309,69 @@ def test_private_v9_does_not_expand_transport_or_batch_selection():
     with pytest.raises(ValueError, match='analysis_model_batch_profile_invalid'):
         service.prepare_cumulative_model_batches(OWNER, source_snapshot(1), prompt_version='selected_material.v9',
             measure_budget=lambda _:service.AnalysisModelInputBudget(1,1))
+
+
+def test_v10_adds_only_independent_examples_and_preserves_v9_material():
+    snap = sample()
+    original = copy.deepcopy(snap)
+    v9, v10 = [service.prepare_cumulative_category_units(OWNER, snap, prompt_version=p)
+        for p in ('selected_material.v9', 'selected_material.v10')]
+    assert v10.request == v9.request and v10.messages()[1] == v9.messages()[1]
+    assert v10.messages()[0]['content'] == v9.messages()[0]['content'] + admission._negative_wish_examples_units_instruction()
+    assert v10.request_ref != v9.request_ref and admission.digest(v10.messages()) != admission.digest(v9.messages())
+    assert snap == original
+
+
+@pytest.mark.parametrize('source_profile,target_profile', [
+    ('selected_material.v7','selected_material.v10'), ('selected_material.v10','selected_material.v7'),
+    ('selected_material.v9','selected_material.v10'), ('selected_material.v10','selected_material.v9')])
+def test_v10_response_and_state_cannot_cross_reuse(source_profile, target_profile):
+    test_v7_v8_response_and_state_cannot_cross_reuse(source_profile, target_profile)
+
+
+@pytest.mark.parametrize('example_index,expected', [
+    (0, [('negative','wish','current_input')]),
+    (1, [('positive','fact','past'), ('negative','wish','past')])])
+def test_actual_v10_examples_keep_complete_negation_and_each_explicit_actor_on_reload(example_index, expected):
+    lines = admission._negative_wish_examples_units_instruction().splitlines()
+    materials = [json.loads(line[len('例の入力:'):]) for line in lines if line.startswith('例の入力:')]
+    packets = [json.loads(line[len('例の出力:'):]) for line in lines if line.startswith('例の出力:')]
+    snap = source_snapshot(1)
+    snap['members'][0]['original'].update(memo=materials[example_index]['fields'][0]['text'], memo_action='')
+    p = service.prepare_cumulative_category_units(OWNER, snap, prompt_version='selected_material.v10')
+    value = call(p, packets[example_index])
+    candidate, coverage = service.build_cumulative_quoted_parent_candidates(OWNER, snap, model_input=value)
+    state = service.serialize_cumulative_quoted_parent_candidates(OWNER, snap,
+        model_input=value, artifact=candidate, coverage=coverage)
+    assert json.loads(state)['state']['schema_version'] == admission.QUOTED_PARENT_MATERIAL_V10_STATE
+    with patch.object(compiler, 'compile_analysis_unit_candidates', side_effect=AssertionError('compile')), \
+         patch.object(author, 'realize_analysis_unit_candidates', side_effect=AssertionError('author')):
+        assert service.reload_cumulative_quoted_parent_candidates(OWNER, snap, state) == (candidate, coverage)
+    artifact, counts = service.build_cumulative_map(OWNER, snap, model_input=value)
+    assert artifact is not None and counts['mapped_count'] == 1 and counts['unparsed_count'] == 0
+    assert [(n.polarity,n.modality,n.temporal_scope) for n in artifact.graph.nodes] == expected
+    assert all(n.proposition.actor == 'SELF' for n in artifact.graph.nodes) and not artifact.graph.edges
+    qualifiers = [u.qualifiers for u in candidate.graph.fields[0].units]
+    assert all(any(q.kind == 'EXPLICIT_ACTOR' for q in qs) for qs in qualifiers)
+    negative = '作りたくない' if example_index == 0 else '試したくなかった'
+    assert [q.quote for qs in qualifiers for q in qs if q.kind == 'NEGATION'] == [negative]
+    assert value.response.raw == json.loads(state)['state']['response']['raw']
+
+
+def test_private_v10_keeps_short_negative_wish_unsupported_and_normal_selection_closed():
+    from analysis_model_source import SelfHostedAnalysisModelSource
+    snap = source_snapshot(1)
+    text = '私は模型を作りたくない'
+    snap['members'][0]['original'].update(memo=text+'。', memo_action='')
+    p = service.prepare_cumulative_category_units(OWNER, snap, prompt_version='selected_material.v10')
+    value = call(p, dict(fields=[dict(field=1, units=[unit(text, 'ATTENTION_OR_THOUGHT', actor='私',
+        qualifiers=[dict(kind='NEGATION', quote='たくない')])])]))
+    artifact, counts = service.build_cumulative_map(OWNER, snap, model_input=value)
+    assert artifact is None and counts['unparsed_count'] == 1
+    assert service.prepare_cumulative_category_units(OWNER, snap).prompt_version == 'selected_categories.v1'
+    with pytest.raises(ValueError):
+        SelfHostedAnalysisModelSource(endpoint='https://synthetic-analysis.invalid/v1/chat/completions',
+            model='synthetic-analysis', api_key='synthetic-private-key', prompt_version='selected_material.v10')
+    with pytest.raises(ValueError, match='analysis_model_batch_profile_invalid'):
+        service.prepare_cumulative_model_batches(OWNER, snap, prompt_version='selected_material.v10',
+            measure_budget=lambda _:service.AnalysisModelInputBudget(1,1))
