@@ -77,6 +77,7 @@ jobs:
           ai/tests/test_analysis_model_role_decision.py
           ai/tests/test_analysis_model_actor_profile.py
           ai/tests/test_analysis_model_omitted_wish.py
+          ai/tests/test_analysis_model_refusal.py
           ai/tests/test_analysis_model_closed_role.py
           ai/tests/test_analysis_model_role_action.py
           ai/tests/test_analysis_model_quoted_parent_units.py

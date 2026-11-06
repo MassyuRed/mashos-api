@@ -151,6 +151,13 @@ _SELF_WRITING_ARGUMENT = re.compile(
     + r'(?:(?:への|との|での)' + _NOMINAL + r')*)(?P<case>を|に|で)')
 _KANA_SELF_POSSESSIVE = re.compile(r'^(?:わたし|ぼく|おれ)の')
 
+# Refusal has its own original-only complete-clause proof. Do not extend
+# the general verb/noun/case inventories (wishes, answers and embedded acts).
+_REFUSAL_NOMINAL = r'(?:' + _NOMINAL + r'|集まり|誘い)'
+_PAST_REFUSAL = re.compile(r'(?P<noun>' + _REFUSAL_NOMINAL
+    + r'(?:(?:からの|への|との|での|の)' + _REFUSAL_NOMINAL + r')*)'
+    + r'(?P<case>は|を)(?P<finite>断った|断らなかった)')
+
 
 def _finite_predicates(*, include_nonpast=False):
     forms = []
@@ -765,6 +772,9 @@ def _parsed_proposition(value: str) -> ObservedProposition | None:
     wish = _omitted_plain_wish_proposition(value)
     if wish is not None:
         return wish
+    refusal = _past_refusal_proposition(value)
+    if refusal is not None:
+        return refusal
     prefix = _CLAUSE_PREFIX.match(value)
     start = prefix.end() if prefix else 0
     token = prefix.group(1) if prefix else ''
@@ -861,6 +871,30 @@ def _finite_proposition(value, body_start, actor, prefix_parts, marker='', relat
             polarity, modality, time, tuple(parts),
             marker, relative_day)
     return None
+
+
+def _past_refusal_proposition(value):
+    """A written object-topic is not an actor or an event date.
+
+    Keep は as written rather than inventing を. 今日の modifies its noun;
+    a bare day/adverb, unknown kana or extra clause cannot enter this proof.
+    _fragment separately confines recognition to a sole original memo.
+    """
+    m = _PAST_REFUSAL.fullmatch(value)
+    if m is None:
+        return None
+    heads = re.split(r'(?:からの|への|との|での|の)', m['noun'])
+    # A human topic such as 友人は断った could be the actor, not the
+    # refused object. Only these explicit refusal-object heads prove the
+    # topicalized reading; do not classify an arbitrary noun as its object.
+    if (heads[-1] not in {'誘い', '依頼', '提案', '招待'}
+            or any(_has_unparsed_nominal_segment(h)
+            or re.match(r'^(?:今日|昨日)(?=.)', h) for h in heads)):
+        return None
+    return ObservedProposition('UNSPECIFIED', ((m['case'], m['noun']),), '断る',
+        'negative' if m['finite'] == '断らなかった' else 'positive', 'fact', 'past',
+        (('CASE_' + m['case'], 0, m.start('finite')),
+         ('FINITE_PREDICATE', m.start('finite'), len(value))))
 
 
 def _omitted_plain_wish_proposition(value):
@@ -1415,7 +1449,7 @@ def _model_complete_observed_action(node, fields):
     p = node.proposition
     if (node.node_kind != 'ACTION_OR_NONACTION' or p is None or p.actor not in {'SELF', 'UNSPECIFIED'}
             or (p.modality, p.temporal_scope) != ('fact', 'past')
-            or p.predicate_lemma not in _PAST_ACTION_LEMMAS
+            or p.predicate_lemma not in _PAST_ACTION_LEMMAS | {'断る'}
             or any((p.sequence_marker, p.relative_day, p.possible_content, p.result_state,
                     p.dependent_form, p.scene_state, p.role_state, p.written_modifiers))
             or len(node.evidence_refs) != 1 or node.update_refs or node.quoted_field is not None):
@@ -1445,7 +1479,19 @@ def _model_complete_observed_action(node, fields):
                (e.field_utf8_start, e.field_utf8_start + len(label.encode('utf-8')))):
         return None
     try:
-        _check_model_action_units(field, p, label)
+        if p.predicate_lemma == '断る':
+            # A short finite root is sufficient only with its exact whole
+            # object child. No generic action quote exception is introduced.
+            if (other_fields or _past_refusal_proposition(label) != p
+                    or not any(u.parent is not None and u.scope_role == 'CONTENT_TARGET'
+                        and u.quote == p.arguments[0][1] for u in field.units)):
+                return None
+            finite = next((label[a:b] for role, a, b in p.source_parts
+                if role == 'FINITE_PREDICATE'), '')
+            _check_model_action_units(field, p, label,
+                accepted_quotes={label, text, finite})
+        else:
+            _check_model_action_units(field, p, label)
     except AnalysisSourceError:
         return None
     return field
@@ -2493,6 +2539,20 @@ def _fragment(source, nucleus, plan=None, *, _protective_contrast=False):
     if not value:
         return None
     proposition = _parsed_proposition(value)
+    past_refusal = bool(proposition and proposition.predicate_lemma == '断る')
+    if past_refusal:
+        # No actor borrowing, other-field deletion, partial quotation,
+        # supplemental-answer admission or invented refusal day/reason.
+        if (source.envelope.source_role != 'ORIGINAL_INPUT'
+                or span.source_field != 'memo'
+                or str(source.normalized.get('memo_action', '')).strip()
+                or pair is not None or a != 0 or b != len(span.raw_text)
+                or nucleus.grounding_kind != 'explicit'
+                or nucleus.allowed_claim_scope != 'explicit_current_input'
+                or _past_refusal_proposition(value) != proposition
+                or re.fullmatch(r'[ \t\u3000]*' + re.escape(value)
+                    + r'[。．.]?[ \t\u3000]*', source_field_text(source, 'memo')) is None):
+            return None
     unattributed_wish = bool(proposition and proposition.actor == 'UNSPECIFIED'
         and proposition.modality == 'wish')
     if unattributed_wish:
@@ -2525,7 +2585,7 @@ def _fragment(source, nucleus, plan=None, *, _protective_contrast=False):
     unattributed_action = bool(proposition and proposition.actor == 'UNSPECIFIED'
         and (proposition.modality, proposition.temporal_scope) == ('fact', 'past')
         and proposition.predicate_lemma in _PAST_ACTION_LEMMAS)
-    bounded_past_action = past_decision or unattributed_action
+    bounded_past_action = past_decision or unattributed_action or past_refusal
     # An explicit first-person topic does not close another speaker's report.
     # Apply the existing host checks to ordinary whole past actions as well;
     # compound endpoints keep their own shared source/host proof.
