@@ -254,3 +254,58 @@ def test_private_v8_does_not_expand_transport_planner_or_batch_envelope_selectio
     value = call(p, dict(fields=[dict(field=1, units=[])]))
     with pytest.raises(admission.AnalysisSemanticError, match='analysis_model_batch_parent_invalid'):
         admission.generate_analysis_model_observed_batches(admission.AnalysisModelObservedBatchInput(p,(value,)))
+
+
+def test_v9_keeps_v7_source_and_default_but_uses_separate_response_identity():
+    snap = source_snapshot(1)
+    snap['members'][0]['original'].update(memo='私は費用を記録したかった。', memo_action='')
+    original = copy.deepcopy(snap)
+    v7, v9 = [service.prepare_cumulative_category_units(OWNER, snap, prompt_version=p)
+        for p in ('selected_material.v7', 'selected_material.v9')]
+    assert service.prepare_cumulative_category_units(OWNER, snap).prompt_version == 'selected_categories.v1'
+    assert v9.messages()[1] == v7.messages()[1] and v9.request == v7.request
+    assert v9.messages()[0]['content'] == v7.messages()[0]['content'] + admission._wish_boundaries_units_instruction()
+    assert v9.request_ref != v7.request_ref and admission.digest(v9.messages()) != admission.digest(v7.messages())
+    assert snap == original
+
+
+@pytest.mark.parametrize('source_profile,target_profile', [
+    ('selected_material.v7','selected_material.v9'), ('selected_material.v9','selected_material.v7'),
+    ('selected_material.v8','selected_material.v9'), ('selected_material.v9','selected_material.v8')])
+def test_v9_response_and_state_cannot_cross_reuse(source_profile, target_profile):
+    test_v7_v8_response_and_state_cannot_cross_reuse(source_profile, target_profile)
+
+
+@pytest.mark.parametrize('suffix,negative', [
+    ('記録したい', False), ('記録したかった', False),
+    ('記録したくない', True), ('記録したくなかった', True)])
+def test_v9_preserves_exact_wish_source_and_reloads_without_generation(suffix, negative):
+    snap = source_snapshot(1)
+    text = '私は費用を' + suffix
+    snap['members'][0]['original'].update(memo=text+'。', memo_action='')
+    p = service.prepare_cumulative_category_units(OWNER, snap, prompt_version='selected_material.v9')
+    qualifiers = [dict(kind='NEGATION', quote=suffix)] if negative else []
+    packet = dict(fields=[dict(field=1, units=[
+        unit(text, 'ATTENTION_OR_THOUGHT', actor='私', qualifiers=qualifiers),
+        unit('費用', None, parent=text, scope='CONTENT_TARGET')])])
+    value = call(p, packet)
+    candidate = admission.generate_analysis_model_quoted_parent_units(p.request, value)
+    raw = admission.serialize_analysis_model_quoted_parent_units(value, candidate)
+    assert json.loads(raw)['schema_version'] == admission.QUOTED_PARENT_MATERIAL_V9_STATE
+    with patch.object(compiler, 'compile_analysis_unit_candidates', side_effect=AssertionError('compile')), \
+         patch.object(author, 'realize_analysis_unit_candidates', side_effect=AssertionError('author')):
+        assert admission.reload_analysis_model_quoted_parent_units(p, raw) == candidate
+    artifact, counts = service.build_cumulative_map(OWNER, snap, model_input=value)
+    assert artifact is not None and counts['unparsed_count'] == 0
+    assert len(artifact.graph.nodes) == 1 and not artifact.graph.edges
+    assert value.response.raw == json.loads(raw)['response']['raw']
+
+
+def test_private_v9_does_not_expand_transport_or_batch_selection():
+    from analysis_model_source import SelfHostedAnalysisModelSource
+    with pytest.raises(ValueError):
+        SelfHostedAnalysisModelSource(endpoint='https://synthetic-analysis.invalid/v1/chat/completions',
+            model='synthetic-analysis', api_key='synthetic-private-key', prompt_version='selected_material.v9')
+    with pytest.raises(ValueError, match='analysis_model_batch_profile_invalid'):
+        service.prepare_cumulative_model_batches(OWNER, source_snapshot(1), prompt_version='selected_material.v9',
+            measure_budget=lambda _:service.AnalysisModelInputBudget(1,1))
