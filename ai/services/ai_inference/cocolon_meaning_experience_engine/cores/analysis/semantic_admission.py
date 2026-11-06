@@ -803,7 +803,8 @@ def _admit_model_units(request, model_input):
         'analysis-model-units-response:' + digest(asdict(response)))
 
 
-def _bind_model_unit_fields(frozen, fields, packet, response_ref):
+def _bind_model_unit_fields(frozen, fields, packet, response_ref, *,
+        allow_parent_local_content_targets=False):
     """Bind source-owned coordinates after a profile's strict raw reader."""
     from .intent_compiler import (NODE_KINDS, AnalysisUnitQualifier,
         AnalysisUnitCandidate, AnalysisUnitCandidateField)
@@ -824,7 +825,22 @@ def _bind_model_unit_fields(frozen, fields, packet, response_ref):
                 or (kind is None and type(role) is str and role in UNIT_SCOPE_ROLES
                     and type(parent) is int and 1 <= parent <= len(row['units']) and parent != index),
                 'analysis_model_units_carrier_invalid')
-            start, end = _unique_quote_range(field['text'], unit['quote'])
+            try:
+                start, end = _unique_quote_range(field['text'], unit['quote'])
+            except AnalysisSemanticError as error:
+                parent_unit = row['units'][parent - 1] if type(parent) is int else None
+                if not (str(error) == 'analysis_model_units_quote_ambiguous_or_missing'
+                        and allow_parent_local_content_targets and role == 'CONTENT_TARGET'
+                        and parent_unit['parent'] is None and parent_unit['scope_role'] is None
+                        and parent_unit['node_kind'] in NODE_KINDS
+                        and field['text'].find(unit['quote']) >= 0):
+                    raise
+                # Keep every existing globally unique binding, including a
+                # bare predicate's separate object. Only an ambiguous v10
+                # target may use its globally unique quoted root as scope.
+                root_start, root_end = _unique_quote_range(field['text'], parent_unit['quote'])
+                a, b = _unique_quote_range(field['text'][root_start:root_end], unit['quote'])
+                start, end = root_start + a, root_start + b
             require(type(unit['qualifiers']) is list and len(unit['qualifiers']) <= 6,
                     'analysis_model_units_qualifier_invalid')
             qualifiers = []
@@ -1338,7 +1354,9 @@ def _admit_quoted_parent_units(request, model_input):
     # This is source-derived graph binding of the new wire. The original raw
     # and response identity remain unchanged; no old response is synthesized.
     return _bind_model_unit_fields(frozen, fields, bound_packet,
-        'analysis-quoted-parent-units-response:' + digest(asdict(response)))
+        'analysis-quoted-parent-units-response:' + digest(asdict(response)),
+        allow_parent_local_content_targets=(
+            model_input.prompt_version == QUOTED_PARENT_MATERIAL_V10_PROFILE))
 
 
 def generate_analysis_model_quoted_parent_units(request, model_input):
