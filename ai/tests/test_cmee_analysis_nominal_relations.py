@@ -87,7 +87,7 @@ class NominalRelationTests(unittest.TestCase):
 
     def test_omitted_actor_requires_closed_past_object_and_unreported_source(self):
         for clause in ('調べた', '職場で調べた', '友人は資料を調べた', '何を調べた',
-                '資料を調べる', '資料を調べたい', '資料を調べられなかった', '資料を調べていた',
+                '資料を調べる', '資料を調べられなかった', '資料を調べていた',
                 '資料を調べた後、安心した', '資料を調べてから、不安が減った',
                 '今回は事前に資料を調べた', '明日資料を調べた', '昨日分の資料を調べた',
                 '資料を調べたかもしれない', '資料を調べなければならなかった'):
@@ -105,6 +105,27 @@ class NominalRelationTests(unittest.TestCase):
                     + 'その後、私は記録を残した。'))).artifact
                 self.assertEqual([n.proposition.predicate_lemma for n in artifact.graph.nodes], ['残す'])
                 self.assertFalse(artifact.graph.edges)
+
+    def test_omitted_actor_plain_wish_keeps_modality_instead_of_becoming_an_action(self):
+        # This memo-only wish is now admitted by the narrow original proof;
+        # the past-action rejection matrix above must not erase its modality.
+        literal = '資料を調べたい'
+        req = request(record(memo=literal + '。'))
+        artifact = self.generate(req).artifact
+        self.assertIsNotNone(artifact)
+        node, = artifact.graph.nodes
+        self.assertEqual((node.node_kind, node.proposition.actor, node.modality,
+            node.polarity, node.temporal_scope),
+            ('ATTENTION_OR_THOUGHT', 'UNSPECIFIED', 'wish', 'positive', 'current_input'))
+        self.assertFalse(artifact.graph.edges)
+        source, = freeze_analysis_sources(req).sources
+        ref, = node.evidence_refs
+        self.assertEqual(source.envelope.raw_utf8[ref.utf8_start:ref.utf8_end].decode(), literal)
+        label = artifact.safe_projection(authenticated_owner_scope=OWNER)['nodes'][0]['visible_label']
+        self.assertIn('資料を調べることへの希望', label)
+        self.assertIn('誰の希望かは未確定', label)
+        self.assertNotIn('実行済み', label)
+        self.assertIn(label, artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text'])
 
     def test_omitted_actor_correction_withdrawal_and_projection_keep_uncertainty(self):
         helper = existing.AnalysisVerticalTests()
