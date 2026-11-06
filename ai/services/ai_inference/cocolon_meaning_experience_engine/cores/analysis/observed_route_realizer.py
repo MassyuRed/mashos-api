@@ -491,7 +491,8 @@ def _safe_label(node, graph, *, owner_scope=None, source_set_ref=None, source_me
     if parts.modality == 'wish':
         label = phrase + ('ことへの希望' if parts.polarity == 'positive'
                           else 'ことを望まない')
-        return label + ('（当時）' if parts.temporal_scope == 'past' else '')
+        return (label + ('（当時）' if parts.temporal_scope == 'past' else '')
+                + ('（誰の希望かは未確定）' if parts.actor == 'UNSPECIFIED' else ''))
     label = phrase + ('（実行済み）' if parts.polarity == 'positive'
                      else '（行わなかった）')
     return label + ('（誰の行動かは未確定）' if parts.actor == 'UNSPECIFIED' else '')

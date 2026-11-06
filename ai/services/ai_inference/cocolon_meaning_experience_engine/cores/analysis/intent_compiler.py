@@ -762,6 +762,9 @@ def _parsed_proposition(value: str) -> ObservedProposition | None:
     action = _contextual_past_action_proposition(value)
     if action is not None:
         return action
+    wish = _omitted_plain_wish_proposition(value)
+    if wish is not None:
+        return wish
     prefix = _CLAUSE_PREFIX.match(value)
     start = prefix.end() if prefix else 0
     token = prefix.group(1) if prefix else ''
@@ -858,6 +861,25 @@ def _finite_proposition(value, body_start, actor, prefix_parts, marker='', relat
             polarity, modality, time, tuple(parts),
             marker, relative_day)
     return None
+
+
+def _omitted_plain_wish_proposition(value):
+    """Recognize a finite wish without supplying the unwritten wisher.
+
+    Recognition alone is not source admission. _fragment confines this new
+    grammar to a sole, complete original memo; answers and clause fragments
+    retain their prior scope. Reuse only the nine verbs' four plain forms.
+    """
+    forms = tuple(row for row in _FINITE_PREDICATES
+        if row[3] == 'wish' and row[0].endswith(
+            ('たい', 'たかった', 'たくない', 'たくなかった')))
+    p = _finite_proposition(value, 0, 'UNSPECIFIED', (), predicate_forms=forms)
+    if (p is None or not any(case == 'を' for case, _ in p.arguments)
+            or any((p.sequence_marker, p.relative_day, p.possible_content,
+                p.result_state, p.dependent_form, p.scene_state, p.role_state,
+                p.written_modifiers))):
+        return None
+    return p
 
 
 def _contextual_past_action_proposition(value):
@@ -1487,10 +1509,13 @@ def _model_complete_observed_plain_wishes(source_set, graph, fields):
             or len({f.field_path for f in fields}) != len(fields)):
         return None
     return _model_complete_observed_plain_wish_fields(
-        graph, fields, source_set.sources[0].envelope.envelope_id)
+        graph, fields, source_set.sources[0].envelope.envelope_id,
+        allow_omitted=(len(fields) == len(graph.nodes) == 1
+            and fields[0].field_path == 'memo'))
 
 
-def _model_complete_observed_plain_wish_fields(graph, fields, source_envelope_id):
+def _model_complete_observed_plain_wish_fields(graph, fields, source_envelope_id,
+        *, allow_omitted=False):
     """Match complete fields to their own source-proved plain wish nodes.
 
     Source scope stays with the caller: the original-only wrapper above and
@@ -1500,7 +1525,9 @@ def _model_complete_observed_plain_wish_fields(graph, fields, source_envelope_id
     witnessed = {f.field_path: (f, [], []) for f in fields}
     for node in graph.nodes:
         p = node.proposition
-        if (p is None or p.actor != 'SELF'
+        omitted = bool(allow_omitted and p is not None and p.actor == 'UNSPECIFIED'
+            and node.node_kind == 'ATTENTION_OR_THOUGHT' and p.modality == 'wish')
+        if (p is None or (p.actor != 'SELF' and not omitted)
                 or p.predicate_lemma not in _PAST_ACTION_LEMMAS
                 or (node.node_kind, p.polarity, p.modality, p.temporal_scope) not in {
                     ('ACTION_OR_NONACTION', 'positive', 'fact', 'past'),
@@ -1538,9 +1565,10 @@ def _model_complete_observed_plain_wish_fields(graph, fields, source_envelope_id
         units = tuple(u for u in field.units
             if e.scalar_start <= u.evidence.scalar_start and u.evidence.scalar_end <= end)
         subject = next(((a, b) for k, a, b in p.source_parts if k == 'SELF_TOPIC'), None)
-        if subject is None:
+        if subject is None and not omitted:
             return None
-        quotes = {label, label[subject[0]:], label[subject[1]:]}
+        quotes = ({label} if subject is None
+            else {label, label[subject[0]:], label[subject[1]:]})
         if end != e.scalar_end:
             quotes |= {quote + text[e.scalar_end] for quote in tuple(quotes)}
         try:
@@ -2465,6 +2493,22 @@ def _fragment(source, nucleus, plan=None, *, _protective_contrast=False):
     if not value:
         return None
     proposition = _parsed_proposition(value)
+    unattributed_wish = bool(proposition and proposition.actor == 'UNSPECIFIED'
+        and proposition.modality == 'wish')
+    if unattributed_wish:
+        # An omitted actor is not the authenticated owner or a preceding
+        # clause's subject. Admit only one complete original memo, not an
+        # answer, another field, a comma/line fragment or an open host.
+        if (source.envelope.source_role != 'ORIGINAL_INPUT'
+                or span.source_field != 'memo'
+                or str(source.normalized.get('memo_action', '')).strip()
+                or pair is not None or a != 0 or b != len(span.raw_text)
+                or nucleus.grounding_kind != 'explicit'
+                or nucleus.allowed_claim_scope != 'explicit_current_input'
+                or _omitted_plain_wish_proposition(value) != proposition
+                or re.fullmatch(r'[ \t\u3000]*' + re.escape(value)
+                    + r'[。．.]?[ \t\u3000]*', source_field_text(source, 'memo')) is None):
+            return None
     if _has_unparsed_nominal_scope(proposition):
         # Use the existing unresolved-source path; never fall back to a
         # raw node that would also make unrelated readable nodes unsafe.
@@ -2725,7 +2769,7 @@ def _fragment(source, nucleus, plan=None, *, _protective_contrast=False):
     # Actions/thoughts require an explicit first-person finite host, except
     # complete past actions whose omitted actor stays UNSPECIFIED. Non-agent
     # result states retain their existing bounded exception.
-    if (result is None and change is None and not bounded_past_action
+    if (result is None and change is None and not bounded_past_action and not unattributed_wish
             and not re.match(r'^(?:(?:今日|昨日|その後|それから)[、，\s]*)?(?:私は|僕は|ぼくは|俺は|おれは|わたしは|自分は)', value)):
         return None
     # The source helper already proved a length-preserving normalization.
@@ -3056,7 +3100,8 @@ def _observed_claim_signature(kind, proposition, label, polarity, modality, time
     meaning = _proposition_meaning(proposition) if proposition else label
     occurrence_scope = (evidence.evidence_id if evidence.evidence_id in ordered_evidence
         or (proposition and (proposition.sequence_marker
-            or (proposition.actor == 'UNSPECIFIED' and kind == 'ACTION_OR_NONACTION'))) else None)
+            or (proposition.actor == 'UNSPECIFIED'
+                and kind in {'ACTION_OR_NONACTION', 'ATTENTION_OR_THOUGHT'}))) else None)
     day_scope = ((envelope_id, proposition.relative_day)
         if proposition and proposition.relative_day else None)
     occasion_scope = (envelope_id if proposition
