@@ -607,6 +607,139 @@ def test_original_wish_proof_does_not_admit_supplement_wishes(wish):
     assert a is None and c['mapped_count']==0 and c['unparsed_count']==1
 
 
+def original_wish_with_answer(ending='たい', *, swap=False,
+        prompt='selected_material.v10', answer='私は費用を記録した。',
+        categories=('仕事',), other_categories=None, duplicate=False):
+    from test_analysis_saved_period import with_answer
+    snap=source_snapshot(1 if other_categories is None else 2)
+    original=snap['members'][0]['original']
+    original.update(memo='私は仕事を続け'+ending+'。',
+        memo_action='私は資料を見た。' if swap else '',
+        category=list(categories), emotion_details=[dict(type='平穏',strength='medium')])
+    if swap:
+        original['memo'],original['memo_action']=original['memo_action'],original['memo']
+    if duplicate:
+        # The answer restates a performed act, not the original's wish.
+        original['memo']='私は費用を記録した。'
+        original['memo_action']='私は仕事を続け'+ending+'。'
+    snap['members'][0]=with_answer(snap['members'][0],answer)
+    if other_categories is not None:
+        snap['members'][1]['original'].update(memo='私は仕事を続け'+ending+'。',
+            memo_action='',category=list(other_categories))
+    p=prepared(snap,prompt)
+    fields=json.loads(p.messages()[1]['content'])['fields']
+    data=dict(fields=[dict(field=f['field'],units=[dict(quote=q,
+        node_kind='ATTENTION_OR_THOUGHT' if any(x in q for x in ('たい','たかった','たくない','たくなかった'))
+            else 'ACTION_OR_NONACTION',parent_quote=None,scope_role=None,qualifiers=[])
+        for q in f['text'].rstrip('。').split('。')]) for f in fields])
+    return snap,p,call(p,data)
+
+
+@pytest.mark.parametrize('ending,time,polarity',[('たい','current_input','positive'),
+    ('たかった','past','positive'),('たくない','current_input','negative'),
+    ('たくなかった','past','negative')])
+@pytest.mark.parametrize('swap',[False,True])
+@pytest.mark.parametrize('prompt',['selected_material.v4','selected_material.v10'])
+def test_original_wish_survives_an_ordinary_answer_without_borrowing_its_evidence(ending,time,polarity,swap,prompt):
+    snap,p,value=original_wish_with_answer(ending,swap=swap,prompt=prompt)
+    frozen=freeze_analysis_sources(p.request)
+    members_before=frozen.members
+    raw=value.response.raw
+    a,c=service.build_cumulative_map(OWNER,snap,model_input=value)
+    assert a is not None and c['mapped_count']==1 and c['unparsed_count']==0
+    assert c['source_count']==c['processed_count']==1
+    assert len(a.graph.nodes)==(3 if swap else 2) and not a.graph.edges
+    wish,=tuple(n for n in a.graph.nodes if n.node_kind=='ATTENTION_OR_THOUGHT')
+    assert (wish.proposition.actor,wish.modality,wish.temporal_scope,wish.polarity)==('SELF','wish',time,polarity)
+    e,=wish.evidence_refs
+    original,=tuple(s for s in frozen.sources if s.envelope.source_role=='ORIGINAL_INPUT')
+    answer,=tuple(s for s in frozen.sources if s.envelope.source_role=='SUPPLEMENTAL_ANSWER')
+    assert e.source_envelope_id==original.envelope.envelope_id
+    assert e.field_path==('memo_action' if swap else 'memo')
+    answer_nodes=[n for n in a.graph.nodes if any(
+        e.source_envelope_id==answer.envelope.envelope_id for e in n.evidence_refs)]
+    assert len(answer_nodes)==1 and answer_nodes[0].modality=='fact'
+    assert all(n.record_refs==(snap['members'][0]['original']['id'],)
+        and n.selected_categories==('仕事',) for n in a.graph.nodes)
+    for node in a.graph.nodes:
+        for evidence in node.evidence_refs:
+            source=next(s for s in frozen.sources if s.envelope.envelope_id==evidence.source_envelope_id)
+            text=source_field_text(source,evidence.field_path)
+            assert text[evidence.scalar_start:evidence.scalar_end]==node.visible_label
+            assert source.envelope.raw_utf8[evidence.utf8_start:evidence.utf8_end].decode()==node.visible_label
+            assert evidence.field_sha256==hashlib.sha256(text.encode()).hexdigest()
+    assert a.source_members==members_before==freeze_analysis_sources(p.request).members
+    assert set(a.source_members[0].child_source_envelope_refs)=={
+        original.envelope.envelope_id,answer.envelope.envelope_id}
+    assert a.source_set_ref==frozen.source_set_ref and value.response.raw==raw
+    assert not any(g.missing_scope=='SOURCE_SCOPE' for g in a.graph.unknown_gaps)
+    assert any(g.missing_scope=='ROUTE_CONNECTION' for g in a.graph.unknown_gaps)
+
+
+@pytest.mark.parametrize('other_categories,expected_nodes,wish_records',[
+    (('仕事',),2,2), (('生活',),3,1), (('生活','仕事'),3,1)])
+def test_original_wish_answer_keeps_other_record_and_category_occurrences(other_categories,expected_nodes,wish_records):
+    snap,p,value=original_wish_with_answer(other_categories=other_categories)
+    a,c=service.build_cumulative_map(OWNER,snap,model_input=value)
+    assert a is not None and c['mapped_count']==2 and c['unparsed_count']==0
+    assert c['source_count']==c['processed_count']==2 and len(a.graph.nodes)==expected_nodes
+    assert not a.graph.edges
+    first_wish,=tuple(n for n in a.graph.nodes if n.node_kind=='ATTENTION_OR_THOUGHT'
+        and n.selected_categories==('仕事',))
+    assert len(first_wish.record_refs)==len(first_wish.evidence_refs)==wish_records
+    assert a.source_members==freeze_analysis_sources(p.request).members
+    assert [n['evidence_badge_count'] for n in
+        a.safe_projection(authenticated_owner_scope=OWNER)['nodes']]==[
+            len(n.record_refs) for n in a.graph.nodes]
+
+
+def test_original_wish_survives_answer_restatement_without_an_extra_occasion():
+    snap,p,value=original_wish_with_answer(duplicate=True)
+    a,c=service.build_cumulative_map(OWNER,snap,model_input=value)
+    assert a is not None and c['mapped_count']==1 and c['unparsed_count']==0
+    assert len(a.graph.nodes)==2 and not a.graph.edges
+    act,wish=a.graph.nodes
+    assert len(act.evidence_refs)==2 and len(wish.evidence_refs)==1
+    assert act.record_refs==wish.record_refs==(snap['members'][0]['original']['id'],)
+    assert all(n['evidence_badge_count']==1 for n in
+        a.safe_projection(authenticated_owner_scope=OWNER)['nodes'])
+
+
+@pytest.mark.parametrize('defect',['owner','parent','round','version','raw_kind'])
+def test_original_wish_does_not_rescue_a_changed_or_unproved_answer(defect):
+    from astor_material_snapshots import AnalysisSavedSourceError
+    snap,p,value=original_wish_with_answer()
+    member=snap['members'][0]
+    answer=next(e for e in member['events'] if e['kind']=='ANSWER')
+    if defect=='owner':member['thread']['user_id']=str(UUID(int=2))
+    if defect=='parent':answer['payload']['source']['original_source_ref']='foreign'
+    if defect=='round':answer['payload']['source']['round_index']=2
+    if defect=='version':member['original']['memo']='私は仕事を続けたかった。'
+    if defect=='raw_kind':
+        data=json.loads(value.response.raw)
+        data['fields'][-1]['units'][0]['node_kind']='ROLE'
+        value=call(p,data)
+        a,c=service.build_cumulative_map(OWNER,snap,model_input=value)
+        assert a is None and c['mapped_count']==0 and c['unparsed_count']==1
+    else:
+        with pytest.raises((*ERRORS,AnalysisSavedSourceError)):
+            service.build_cumulative_map(OWNER,snap,model_input=value)
+
+
+def test_original_wish_and_answer_saved_projection_is_reused_without_generation():
+    snap,p,value=original_wish_with_answer('たくなかった')
+    a,c=service.build_cumulative_map(OWNER,snap,model_input=value)
+    projection=a.safe_projection(authenticated_owner_scope=OWNER)
+    text=a.safe_text_projection(authenticated_owner_scope=OWNER)['text']
+    row=dict(id=str(UUID(a.artifact_id[9:])),source_profile=service.PROFILE,report_mode='standard',
+        content_text=text,content_json=dict(report_mode='standard',watashiMap=projection,map_context=c))
+    expected=dict(items=[row],subscription_tier='free',matched=True,history_limit=2)
+    with patch.object(service,'_rpc',AsyncMock(return_value=json.loads(canonical(expected)))),\
+         patch.object(compiler,'compile_observed_graph',side_effect=AssertionError('saved compiler')),\
+         patch.object(author,'realize_observed_graph',side_effect=AssertionError('saved author')):
+        assert asyncio.run(service.read_maps(OWNER,report_id=row['id']))==expected
+
+
 def split_wish_build(memo, memo_action, *, prompt='selected_material.v7', change=None):
     snap=source_snapshot(1)
     snap['members'][0]['original'].update(memo=memo,memo_action=memo_action)

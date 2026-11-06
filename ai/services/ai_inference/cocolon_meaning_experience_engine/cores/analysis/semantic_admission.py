@@ -1410,7 +1410,13 @@ def _compile_model_observed_record(frozen, fields):
         return _compile_model_original_observed_record(frozen, fields)
     originals = tuple(s for s in frozen.sources if s.envelope.source_role == 'ORIGINAL_INPUT')
     original_ids = {s.envelope.envelope_id for s in originals}
-    original = replace(frozen, sources=originals)
+    # The original-only proof must see the same source membership as its
+    # fields. Keep the full parent's member/envelope set for the final graph;
+    # an ordinary answer must not make an otherwise complete original unread.
+    original = replace(frozen, sources=originals, members=tuple(
+        replace(m, child_source_envelope_refs=tuple(
+            ref for ref in m.child_source_envelope_refs if ref in original_ids))
+        for m in frozen.members))
     original_fields = tuple(f for f in fields if f.evidence.source_envelope_id in original_ids)
     part = _compile_model_original_observed_record(original, original_fields)
     # Clause authors recheck the complete original-only local graph. Keep
