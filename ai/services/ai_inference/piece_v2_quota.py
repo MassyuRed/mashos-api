@@ -71,9 +71,13 @@ async def read_piece_quota(*, authenticated_user_id: str, post_rpc) -> dict:
         raise PieceContractError('PIECE_TEMPORARILY_UNAVAILABLE') from None
 
 
-def project_piece_plan_capabilities(*, server_tier: str, expanded_palette: bool = False) -> dict:
+def project_piece_plan_capabilities(*, server_tier: str, expanded_palette: bool = False,
+                                    subscriber_customization: bool = False) -> dict:
     """PCE-6 plan display only; eligible formats remain the artifact's list.
 
+    The new client negotiates subscriber customization separately from the
+    earlier expanded palette. Older clients keep their exact metadata shape
+    and choices; server-read tier still authorizes every new recipe.
     Neither this table nor quota.can_save authorizes a feature or a mutation.
     Return fresh lists so the response cannot mutate the plan definition.
     """
@@ -83,9 +87,12 @@ def project_piece_plan_capabilities(*, server_tier: str, expanded_palette: bool 
     return {
         'format_selection': {'free': 'fixed', 'plus': 'automatic',
                              'premium': 'eligible_choice'}[server_tier],
-        'theme_ids': (['soft_paper'] if server_tier == 'free' else
+        'theme_ids': ((list(LEGACY_THEME_IDS) if subscriber_customization else ['soft_paper'])
+                     if server_tier == 'free' else
                       list(THEME_IDS if expanded_palette else LEGACY_THEME_IDS)),
-        'aspect_ratios': ['4:5', '9:16'] if server_tier == 'premium' else ['4:5'],
+        'aspect_ratios': (['4:5', '9:16'] if server_tier == 'premium' or
+                          subscriber_customization and server_tier == 'plus' else ['4:5']),
         'branding_modes': (['required_small'] if server_tier == 'free' else
-                           ['required_subtle', 'off'] if server_tier == 'premium' else ['required_subtle']),
+                           ['required_subtle', 'off'] if server_tier == 'premium' or
+                           subscriber_customization else ['required_subtle']),
     }

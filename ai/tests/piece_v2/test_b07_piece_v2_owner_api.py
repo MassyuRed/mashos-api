@@ -66,6 +66,11 @@ def _memory_rows(rows, params):
     if 'visual_recipe->theme->>theme_id' in params:
         themes = params['visual_recipe->theme->>theme_id'].removeprefix('in.(').removesuffix(')').split(',')
         rows = [r for r in rows if r['visual_recipe']['theme']['theme_id'] in themes]
+    if 'not.and' in params:
+        assert params['not.and'] == ('(visual_recipe->theme->>theme_id.eq.quiet_night,'
+            'visual_recipe->branding->>branding_mode.eq.required_small)')
+        rows = [r for r in rows if not (r['visual_recipe']['theme']['theme_id'] == 'quiet_night'
+            and r['visual_recipe']['branding']['branding_mode'] == 'required_small')]
     if 'id' in params:
         rows = [r for r in rows if r['id'] == params['id'][3:]]
     else:
@@ -298,6 +303,11 @@ def _native_connect(state, database):
             assert params[theme_key] == 'in.(soft_paper,quiet_night)'
             where.append("visual_recipe->'theme'->>'theme_id' in (%s,%s)")
             values.extend(['soft_paper', 'quiet_night'])
+        if 'not.and' in params:
+            assert params['not.and'] == ('(visual_recipe->theme->>theme_id.eq.quiet_night,'
+                'visual_recipe->branding->>branding_mode.eq.required_small)')
+            where.append("not (visual_recipe->'theme'->>'theme_id'='quiet_night' and "
+                "visual_recipe->'branding'->>'branding_mode'='required_small')")
         if 'id' in params:
             where.append('id=%s'); values.append(params['id'][3:])
         else:
@@ -467,3 +477,62 @@ def test_legacy_palette_filters_before_history_pagination_and_detail_export(harn
     assert 'visual_recipe->theme->>theme_id' not in state['reads'][-1]
     _detail(call(expanded['id'], headers=headers).json(), expanded)
     _detail(call(expanded['id'] + '/export', headers=headers).json(), expanded)
+
+
+@pytest.mark.parametrize('palette', [None, '2', '3'])
+def test_free_dark_recipe_compatibility_filters_before_keyset_without_hiding_paid_dark(harness, palette):
+    from piece_v2_contract import canonical_sha256_hex
+    from piece_v2_visual import build_visual_recipe
+    call, state = harness
+    old = [_row(stamp=f'2026-10-{i:02d}T00:00:00+00:00') for i in range(1, 4)]
+    paid_dark = _row(stamp='2026-10-04T00:00:00+00:00')
+    expanded = _row(stamp='2026-10-05T00:00:00+00:00')
+    free_dark = _row(stamp='2026-10-06T00:00:00+00:00')
+    for row, tier, theme in [(paid_dark, 'plus', 'quiet_night'),
+                              (expanded, 'plus', 'ocean_ice'), (free_dark, 'free', 'quiet_night')]:
+        recipe = build_visual_recipe(row['format_type'], tier=tier,
+            language=row['content_payload']['language'], theme=theme)
+        row.update(visual_recipe=recipe, visual_recipe_hash=canonical_sha256_hex(recipe))
+    state['rows'] = [free_dark, expanded, paid_dark, *old]
+    before = deepcopy(state['rows'])
+    headers = {'Authorization': 'Bearer synthetic-owner'}
+    if palette is not None:
+        headers['X-Piece-Palette'] = palette
+    expected = ([free_dark, expanded, paid_dark, *old[::-1]] if palette == '3' else
+                [expanded, paid_dark, *old[::-1]] if palette == '2' else [paid_dark, *old[::-1]])
+    ids, cursor = [], None
+    while True:
+        query = {'limit': '1'}
+        if cursor:
+            query['cursor'] = cursor
+        response = call(query=query, headers=headers)
+        assert response.status_code == 200
+        page = response.json()
+        ids.extend(item['piece_id'] for item in page['items'])
+        cursor = page['next_cursor']
+        assert ('not.and' in state['reads'][-1]) == (palette != '3')
+        if cursor is None:
+            break
+    assert ids == [row['id'] for row in expected]
+    _detail(call(paid_dark['id'], headers=headers).json(), paid_dark)
+    for suffix in ('', '/export'):
+        response = call(free_dark['id'] + suffix, headers=headers)
+        if palette == '3':
+            _detail(response.json(), free_dark)
+        else:
+            _error(response, 404, 'PIECE_NOT_FOUND')
+    assert state['rows'] == before
+
+
+def test_old_client_never_receives_new_free_dark_recipe_if_backend_ignores_filter(harness):
+    from piece_v2_contract import canonical_sha256_hex
+    from piece_v2_visual import build_visual_recipe
+    call, state = harness
+    row = state['rows'][0]
+    recipe = build_visual_recipe(row['format_type'], tier='free', theme='quiet_night',
+                                 language=row['content_payload']['language'])
+    row.update(visual_recipe=recipe, visual_recipe_hash=canonical_sha256_hex(recipe))
+    state['handler'] = lambda params: httpx.Response(200,
+        json=[{key: row[key] for key in params['select'].split(',')}])
+    _error(call(), 503, 'PIECE_TEMPORARILY_UNAVAILABLE')
+    _error(call(row['id']), 404, 'PIECE_NOT_FOUND')

@@ -144,10 +144,25 @@ def _project(row: dict, owner: str) -> dict:
         _fail()
 
 
-def _theme_filter(theme_ids: tuple[str, ...] | None) -> dict:
-    if theme_ids is None:
-        return {}
-    return {'visual_recipe->theme->>theme_id': 'in.(' + ','.join(theme_ids) + ')'}
+_SUBSCRIBER_RECIPE_FILTER = (
+    '(visual_recipe->theme->>theme_id.eq.quiet_night,'
+    'visual_recipe->branding->>branding_mode.eq.required_small)')
+
+
+def _theme_filter(theme_ids: tuple[str, ...] | None, *, subscriber_customization: bool) -> dict:
+    filters = {} if theme_ids is None else {
+        'visual_recipe->theme->>theme_id': 'in.(' + ','.join(theme_ids) + ')'}
+    if not subscriber_customization:
+        # Filter before LIMIT/keyset pagination. Old clients cannot validate
+        # the new Free dark recipe; paid dark/expanded recipes stay readable.
+        filters['not.and'] = _SUBSCRIBER_RECIPE_FILTER
+    return filters
+
+
+def _visual_compatible(recipe: dict, *, subscriber_customization: bool) -> bool:
+    return subscriber_customization or not (
+        recipe['theme']['theme_id'] == 'quiet_night' and
+        recipe['branding']['branding_mode'] == 'required_small')
 
 
 class PieceOwnerService:
@@ -163,20 +178,24 @@ class PieceOwnerService:
             _fail()
 
     async def detail(self, *, authenticated_user_id: str, piece_id: str,
-                     theme_ids: tuple[str, ...] | None = None) -> dict:
+                     theme_ids: tuple[str, ...] | None = None,
+                     subscriber_customization: bool = True) -> dict:
         try:
             owner = _uuid(authenticated_user_id, 'PIECE_AUTH_REQUIRED')
             raw = piece_id[6:] if isinstance(piece_id, str) and piece_id.startswith('piece:') else piece_id
             pid = _uuid(raw, 'PIECE_NOT_FOUND')
             rows = await self._read({'select': ','.join(_COLUMNS),
                 'owner_user_id': 'eq.' + owner, 'lifecycle_status': 'eq.saved',
-                'id': 'eq.' + pid, 'limit': '2', **_theme_filter(theme_ids)})
+                'id': 'eq.' + pid, 'limit': '2',
+                **_theme_filter(theme_ids, subscriber_customization=subscriber_customization)})
             if type(rows) is not list or len(rows) > 1:
                 _fail()
             if not rows or type(rows[0]) is not dict or rows[0].get('id') != pid:
                 _fail('PIECE_NOT_FOUND')
             item = _project(rows[0], owner)
             if theme_ids is not None and item['visual_recipe']['theme']['theme_id'] not in theme_ids:
+                _fail('PIECE_NOT_FOUND')
+            if not _visual_compatible(item['visual_recipe'], subscriber_customization=subscriber_customization):
                 _fail('PIECE_NOT_FOUND')
             return item
         except PieceContractError as exc:
@@ -186,13 +205,15 @@ class PieceOwnerService:
 
     async def history(self, *, authenticated_user_id: str, limit: str = '20',
                       cursor: str | None = None,
-                      theme_ids: tuple[str, ...] | None = None) -> dict:
+                      theme_ids: tuple[str, ...] | None = None,
+                      subscriber_customization: bool = True) -> dict:
         try:
             owner = _uuid(authenticated_user_id, 'PIECE_AUTH_REQUIRED')
             size, boundary = _history_request(owner, limit, cursor)
             params = {'select': ','.join(_COLUMNS), 'owner_user_id': 'eq.' + owner,
                 'lifecycle_status': 'eq.saved', 'order': 'saved_at.desc,id.desc',
-                'limit': str(size + 1), **_theme_filter(theme_ids)}
+                'limit': str(size + 1),
+                **_theme_filter(theme_ids, subscriber_customization=subscriber_customization)}
             if boundary is not None:
                 stamp, pid = boundary[0].isoformat(), boundary[1]
                 params['or'] = f'(saved_at.lt.{stamp},and(saved_at.eq.{stamp},id.lt.{pid}))'
@@ -204,6 +225,8 @@ class PieceOwnerService:
                 try:
                     item = _project(row, owner)
                     if theme_ids is not None and item['visual_recipe']['theme']['theme_id'] not in theme_ids:
+                        _fail()
+                    if not _visual_compatible(item['visual_recipe'], subscriber_customization=subscriber_customization):
                         _fail()
                     current = _boundary(row)
                     if previous is not None and current >= previous:

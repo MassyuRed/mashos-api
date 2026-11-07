@@ -41,6 +41,6 @@ ALTER TABLE public.piece_records
             -- Keep the same saved-recipe combinations as B9 validate_visual_recipe.
             -- This neither checks today's tier nor rewrites branding on downgrade.
             AND (visual_recipe#>>'{branding,branding_mode}' <> 'required_small'
-                OR (visual_recipe#>>'{theme,theme_id}' = 'soft_paper'
+                OR (visual_recipe#>>'{theme,theme_id}' IN ('soft_paper','quiet_night')
                     AND visual_recipe->>'aspect_ratio' = '4:5'))
         ) IS TRUE);

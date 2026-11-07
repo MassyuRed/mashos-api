@@ -865,3 +865,46 @@ deploy dep-dbk7l2uc6qcc73dp5d70、11:56:59 UTC開始、11:58:13.663479 UTC Live�
 配置後11:59:38〜12:00:27 UTCのHTTP確認：/healthz200/status ok、/app/bootstrap200、/self-structure/latest401、/self-structure/reports/history401。最初の/historyという存在しない短縮pathへのprobe404は経路指定誤りで、source定義の/reports/historyを改めて確認した。bootstrapのPiece preview/save/owner-read/export/deleteはtrue、public-write/public-read/visibility-toggleはfalse。11:56:59〜12:00 UTCのapp/error取得は0件/hasMore=false。
 
 旧currentのカテゴリ付き再導出は次の本人による正常ensure時に行う。保存済み月次を作り直さず、追加の本人入力や実機確認を今回の修正条件として要求しない。通常有限文法・役割/選択傾向の一般読解・4B候補採用・IF/Savedは残件。前提資料の最新weekly§79/Analysis04/03/01Bを同期。配置結果記録そのものはSTRUCTURE_MAP_DELTA_NONE。
+
+
+<a id="piece-subscriber-customization-prebuild-20261107"></a>
+## 2026-11-07 — Piece画像設定の加入者権利と、次ビルドの反映準備
+
+Mashは報告会を終了し、大ボタンの形、Piece設定のFree／サブスク差を修正した後、ビルド直前まで進めるよう指示した。今回の単位では実DB適用・Render配置・署名build・TestFlight送信を行わない。ユーザーが負担を承認したbuild超過費用を、GPU等の別費用へ拡張しない。
+
+### 新しい画像設定と旧clientの互換
+
+| tier | 色 | 比率 | ロゴ | 本文形式／保存枠 |
+|---|---|---|---|---|
+| Free | soft_paper／quiet_night | 4:5固定 | required_small固定 | 既存のfixed／月5を維持 |
+| Plus | 既存12色 | 4:5／9:16 | required_subtle／off | 既存のautomatic／月30を維持 |
+| Premium | 既存12色 | 4:5／9:16 | required_subtle／off | 既存のeligible_choice／無制限を維持 |
+
+RNは新規にX-Piece-Palette:3を送り、新capabilitiesを取得する。これはclientの対応能力で、購読権利の自己申告ではない。認証本人のserver tierで作成・変更・保存を判定する。無指定／2には旧capabilitiesを返す。旧保存recipe／hashを変更しない。
+
+Free暗色required_smallは旧RNのvalidatorが解釈できないため、未対応clientのowner履歴・詳細・exportでは既存queryにnot.and条件を追加して、その組合せだけをLIMIT／keyset前に除外する。返却後も同条件を照合。旧paid暗色や、header2の12色対応は維持する。新clientは新旧の保存版をそのまま再読する。
+
+### 読み取りで確認した現在の本番
+
+- Render：既存workspace tea-d4pp61idbo4c73bf4hkg、mashos-api srv-d4ppfpm3jp1c73952bj0、live 2c259f0e33abcd70cf353a8f53af3dc3b06eb63e／dep-dbk7l2uc6qcc73dp5d70。main連携・autoDeploy OFF。
+- 起動構成：既存private5機能ON／public3機能OFFを継承。rendererの既定ios.v1と、compiled clientの明示v2交渉を区別する。export_receipt_ready指定なし。
+- Supabase：13 migration登録。20261103235434の配色拡張、20261104002458の新receiptは未登録。実CHECKは旧配色／Free1色制約、新receiptのhash列とpiece_record_export_receipt_v2はない。既存receipt tableの存在を新SQL適用済みと誤認しない。
+- Analysis：既存累積／月次table・source_profile・source／commit RPCは存在。liveから候補まで新しい分析migrationはない。実効OBSERVED_MODEは公開bootstrapに出ず、今回未確認。秘密env全量の取得は行っていない。
+
+### 次の一回のビルドへ合わせる実行順（未実行）
+
+1. 対象DBの現CHECKを再確認し、修正済み20261103235434_piece_v2_expand_visual_palette.sqlを適用・再読する。保存物の書換え・RLS／権限変更はしない。
+2. この単位を含むPR3の検証済みcommitを指定してRenderへ配置する。main／autoDeploy OFF、既存factoryのprivate／public条件を維持し、deploy ID→live→health・bootstrap・認証境界・新旧client交渉を確認する。branchへcommitしただけでは配置にならない。
+3. 新receiptも反映する場合は、20261104002458のDB適用・再読を先に行い、対応API／native bridgeがそろった場合だけ既存export_receipt_readyを有効にする。今回の準備時点では無効のまま。旧receipt tableだけで有効にしない。
+4. Analysisのlatest compiler修正はAPI配置後の新規解析に反映する。同sourceの保存currentは再利用され得るため、実効modeを最小範囲で確認し、必要時だけ既存の認証API latest?ensure=true&force=trueで本人currentを明示再解析する。read_onlyでは新規生成を行わない。月次当時版は再生成しない。今回本人原本・生成・保存の操作は行っていない。
+5. 対応するCocolon PR30の候補を一回だけ手動buildする。workflow_dispatch、署名Archive・写真Usage/Add検査・IPA・Upload、Apple処理・内部配布まで別々に確認。build番号は既存workflowが実run番号×100＋attemptで決め、現時点の推定番号を固定しない。
+6. 実機では新規Piece previewでFree2色／有料10鍵・比率／ロゴの制限案内と、Plus／Premiumの選択→保存→再読→画像持出しを確認する。分析は通常finiteの限定改善と、未採用の研究4Bを区別して現在の内容を確認する。
+
+通常factoryは有限compilerが既定で、研究selected_material.v13／構造LogitsProcessor／全量plannerは通常未採用。buildやAPI配置だけで研究候補を自動採用しない。
+
+### 検証・今回の状態
+
+既存9suiteを一度まとめて実行し676 PASS／FAIL・ERROR・SKIP0、15 deselected（実PostgreSQL専用native）、32.14秒。PGlite0.5.8でFree暗色、Plus縦長・ロゴなし、Premiumの作成→画像設定変更→保存→同recipe／hash再読、source失効、receipt SQL、旧clientのページ送り／詳細／export互換を確認。合成Auth／providerと使い捨てSQLであり、本番DB・実HTTP PostgREST・本人端末の成功ではない。既存Pydantic警告1、diff検査成功。最初の環境不足によるpytest／SQL fixtureの停止は、隔離した既存pinの依存と既存PGlite条件をそろえて解消した。
+
+STRUCTURE_MAP_DELTA_PRESENT：既存画像設定のtier境界・対応交渉・owner互換filterの限定拡張。本文・source・保存枠・公開範囲・共有意味型を変更しない。今回のAPI／SQLは候補で、live・本番適用・build・実機受入れは未実施。
+

@@ -119,19 +119,20 @@ def test_permitted_visual_change_keeps_every_content_byte_without_author(monkeyp
                                                    after=out), ensure_ascii=False))
 
 
-@pytest.mark.parametrize('tier,selection', [('free', choice()), ('plus', choice('quiet_night'))])
-def test_free_and_plus_keep_existing_allowed_visuals(monkeypatch, tier, selection):
+@pytest.mark.parametrize('tier,selection', [('free', choice()), ('free', choice('quiet_night')),
+    ('plus', choice('quiet_night')), ('plus', choice('ocean_ice', '9:16', 'off'))])
+def test_free_two_colors_and_subscriber_visuals_preserve_content(monkeypatch, tier, selection):
     service, adapter, before = prepared(tier)
     disallow_author(monkeypatch)
     after = run(service.prepare_visual_change(None, before, selection))
     same_content(before, after)
     assert after.artifact_payload()['visual_recipe']['branding']['branding_mode'] == (
-        'required_small' if tier == 'free' else 'required_subtle')
+        selection['branding_mode'] or ('required_small' if tier == 'free' else 'required_subtle'))
 
 
 @pytest.mark.parametrize('tier,selection', [
-    ('free', choice('quiet_night')), ('free', choice(ratio='9:16')), ('free', choice(branding='off')),
-    ('plus', choice(ratio='9:16')), ('plus', choice(branding='off')),
+    ('free', choice('rose_paper')), ('free', choice(ratio='9:16')), ('free', choice(branding='off')),
+    ('plus', choice(branding='required_small')),
     ('premium', choice('unknown')), ('premium', choice(ratio='1:1')),
     ('premium', choice(branding='required_small'))])
 def test_unavailable_selection_does_not_change_previous(monkeypatch, tier, selection):

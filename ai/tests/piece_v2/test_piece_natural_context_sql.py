@@ -104,7 +104,9 @@ def test_natural_saved_cohort_survives_preview_visual_and_save(natural_case, qdb
         'preview_eligible_formats','content_payload','content_payload_hash','piece_text','piece_text_hash',
         'safety_state','visual_recipe','visual_recipe_hash','renderer_version']
     changed_recipe = build_visual_recipe(candidate['format_type'], tier=tier, language='ja',
-        theme={'free': 'soft_paper', 'plus': 'rose_berry', 'premium': 'ocean_ice'}[tier])
+        theme={'free': 'quiet_night', 'plus': 'rose_berry', 'premium': 'ocean_ice'}[tier],
+        aspect_ratio='4:5' if tier == 'free' else '9:16',
+        branding='required_small' if tier == 'free' else 'off')
     visual_args = {'p_owner_user_id': user,
         'p_preview_id': issued['preview_id'], 'p_expected_preview_revision': 1,
         'p_expected_record': {k: row[k] for k in keys}, 'p_visual_recipe': changed_recipe,
@@ -192,6 +194,11 @@ def format_flow(natural_case, qdb, monkeypatch):
             assert params[theme_key] == 'in.(soft_paper,quiet_night)'
             where.append("visual_recipe->'theme'->>'theme_id' in ($3,$4)")
             values.extend(['soft_paper', 'quiet_night'])
+        if 'not.and' in params:
+            assert params['not.and'] == ('(visual_recipe->theme->>theme_id.eq.quiet_night,'
+                'visual_recipe->branding->>branding_mode.eq.required_small)')
+            where.append("not (visual_recipe->'theme'->>'theme_id'='quiet_night' and "
+                "visual_recipe->'branding'->>'branding_mode'='required_small')")
         result = qdb.query('select to_jsonb(r) as value from public.piece_records r '
             + 'where ' + ' and '.join(where), values, 'service_role')
         assert 'code' not in result, result

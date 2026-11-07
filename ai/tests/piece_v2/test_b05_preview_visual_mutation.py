@@ -315,23 +315,18 @@ def test_current_tier_must_equal_quota_snapshot(harness):
     assert s['posts'] == s['reviews'] == []
 
 
-@pytest.mark.parametrize('selection,allowed', [(choice('quiet_night'), True),
-    (choice(ratio='9:16'), False), (choice(branding='off'), False)])
-def test_visual_entitlement_uses_fresh_plus_tier_not_previous_premium(harness, selection, allowed):
+@pytest.mark.parametrize('selection', [choice('quiet_night'),
+    choice(ratio='9:16'), choice(branding='off')])
+def test_subscriber_visuals_use_fresh_plus_tier_not_previous_premium(harness, selection):
     s = harness
     s['adapter'].handoff = replace(s['adapter'].handoff,
         original=replace(s['adapter'].handoff.original, subscription_tier='plus'))
     s['quota_tier'] = 'plus'
-    if allowed:
-        result = mutate(s, mutation(selection))
-        assert result['visual_recipe']['theme']['theme_id'] == 'quiet_night'
-        assert result['visual_recipe']['aspect_ratio'] == '4:5'
-        assert result['visual_recipe']['branding']['branding_mode'] == 'required_subtle'
-        assert s['posts'][0]['p_expected_subscription_tier'] == 'plus'
-    else:
-        with pytest.raises(PieceContractError, match='^PIECE_VISUAL_SELECTION_NOT_ALLOWED$'):
-            mutate(s, mutation(selection))
-        assert s['posts'] == []
+    result = mutate(s, mutation(selection))
+    assert result['visual_recipe']['theme']['theme_id'] == (selection['theme_id'] or 'soft_paper')
+    assert result['visual_recipe']['aspect_ratio'] == (selection['aspect_ratio'] or '4:5')
+    assert result['visual_recipe']['branding']['branding_mode'] == (selection['branding_mode'] or 'required_subtle')
+    assert s['posts'][0]['p_expected_subscription_tier'] == 'plus'
 
 
 @pytest.mark.parametrize('verdict', ['transformed', 'blocked', 'ineligible'])
@@ -599,6 +594,45 @@ def test_expanded_palette_patch_and_replay_keep_original_text_and_revision(harne
     error(run(replay(bitmap)), 422, 'PIECE_VISUAL_SELECTION_NOT_ALLOWED')
     recovered = run(replay(expanded))
     assert recovered.status_code == 200
+    assert recovered.json()['visual_recipe_hash'] == payload['visual_recipe_hash']
+    assert recovered.json()['preview_revision'] == 2
+    assert len(s['posts']) == 1
+
+
+@pytest.mark.parametrize('tier', ['plus', 'premium'])
+@pytest.mark.parametrize('palette_version', [None, '2', '3'])
+def test_subscriber_settings_negotiation_preserves_older_clients_and_saved_replay(harness, tier, palette_version):
+    from piece_v2_visual import LEGACY_THEME_IDS, THEME_IDS
+    s = harness
+    s['adapter'].handoff = replace(s['adapter'].handoff,
+        original=replace(s['adapter'].handoff.original, subscription_tier=tier))
+    s['quota_tier'] = tier
+    v2 = 'piece.rn_bitmap_renderer.ios.v2'
+    s['row']['renderer_version'] = v2
+    s['app'].state.piece_preview_runtime = {
+        'ttl_seconds': 600, 'renderer_version': 'piece.rn_bitmap_renderer.ios.v1'}
+    headers = {'Authorization': AUTH, 'X-Piece-Renderer': v2}
+    if palette_version is not None:
+        headers['X-Piece-Palette'] = palette_version
+    changed = send(s, headers=headers, body=mutation(choice()))
+    assert changed.status_code == 200
+    payload = changed.json()
+    caps = payload['plan_capabilities']
+    assert caps['theme_ids'] == list(THEME_IDS if palette_version is not None else LEGACY_THEME_IDS)
+    richer = tier == 'premium' or palette_version == '3'
+    assert caps['aspect_ratios'] == (['4:5', '9:16'] if richer else ['4:5'])
+    assert caps['branding_modes'] == (['required_subtle', 'off'] if richer else ['required_subtle'])
+    assert caps['format_selection'] == ('eligible_choice' if tier == 'premium' else 'automatic')
+    assert payload['piece_text_hash'] == s['original']['piece_text_hash']
+
+    async def replay():
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=s['app']),
+                base_url='https://test.invalid') as client:
+            return await client.post('/emotion/piece/preview', json=s['request'],
+                headers=dict(headers, **{'Idempotency-Key': KEY}))
+    recovered = run(replay())
+    assert recovered.status_code == 200
+    assert recovered.json()['plan_capabilities'] == caps
     assert recovered.json()['visual_recipe_hash'] == payload['visual_recipe_hash']
     assert recovered.json()['preview_revision'] == 2
     assert len(s['posts']) == 1

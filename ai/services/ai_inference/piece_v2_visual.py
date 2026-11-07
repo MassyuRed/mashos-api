@@ -78,9 +78,9 @@ def build_visual_recipe(format_type: str, *, tier: str = 'free', language: str =
     default_mark = 'required_small' if tier == 'free' else 'required_subtle'
     branding = default_mark if branding is None else branding
     if (theme not in THEMES or aspect_ratio not in CANVASES
-            or tier == 'free' and theme != 'soft_paper'
-            or tier != 'premium' and aspect_ratio != '4:5'
-            or branding not in ((default_mark, 'off') if tier == 'premium' else (default_mark,))):
+            or tier == 'free' and theme not in LEGACY_THEME_IDS
+            or tier == 'free' and aspect_ratio != '4:5'
+            or branding not in ((default_mark,) if tier == 'free' else (default_mark, 'off'))):
         raise invalid()
     return {
         'visual_recipe_version': 'piece.visual_recipe.v1',

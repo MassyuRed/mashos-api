@@ -54,8 +54,8 @@ def test_all_catalog_combinations(fmt, ratio, theme):
     assert 'lines' not in fit_summary(p)
 
 
-@pytest.mark.parametrize('kw', [dict(tier='free', theme='quiet_night'),
-    dict(tier='plus', aspect_ratio='9:16'), dict(tier='free', branding='off'),
+@pytest.mark.parametrize('kw', [dict(tier='free', theme='rose_paper'),
+    dict(tier='free', aspect_ratio='9:16'), dict(tier='free', branding='off'),
     dict(tier='plus', branding='required_small'), dict(tier='free', theme=''),
     dict(tier='premium', aspect_ratio='1:1')])
 def test_choices_do_not_override_entitlements(kw):

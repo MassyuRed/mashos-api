@@ -239,7 +239,8 @@ async def owner_history(request: Request) -> JSONResponse:
         features.require()
         result = await PieceOwnerService(load_records=features.wrap(load_saved_records)).history(authenticated_user_id=owner,
             limit=query.get('limit', '20'), cursor=query.get('cursor'),
-            theme_ids=None if _expanded_palette(request) else LEGACY_THEME_IDS)
+            theme_ids=None if _expanded_palette(request) else LEGACY_THEME_IDS,
+            subscriber_customization=_subscriber_customization(request))
         features.require()
         return _response(result)
     except Exception as exc:
@@ -257,7 +258,8 @@ async def _read_owner_artifact(piece_id: str, request: Request, *, exporting: bo
         features.require()
         result = await PieceOwnerService(load_records=features.wrap(load_saved_records)).detail(
             authenticated_user_id=owner, piece_id=piece_id,
-            theme_ids=None if _expanded_palette(request) else LEGACY_THEME_IDS)
+            theme_ids=None if _expanded_palette(request) else LEGACY_THEME_IDS,
+            subscriber_customization=_subscriber_customization(request))
         features.require()
         response = _response(result)
         if exporting and getattr(request.app.state, 'piece_export_receipt_ready', False) is True:
@@ -334,7 +336,8 @@ async def owner_export_receipt(piece_id: str, request: Request) -> JSONResponse:
         async def revalidate(name, args):
             current = await PieceOwnerService(load_records=features.wrap(load_saved_records)).detail(
                 authenticated_user_id=owner, piece_id=piece_id,
-                theme_ids=None if _expanded_palette(request) else LEGACY_THEME_IDS)
+                theme_ids=None if _expanded_palette(request) else LEGACY_THEME_IDS,
+                subscriber_customization=_subscriber_customization(request))
             if (current['row_version'] != args['p_expected_row_version']
                     or current['piece_text_hash'] != args['p_piece_text_hash']
                     or current['visual_recipe_hash'] != args['p_visual_recipe_hash']):
@@ -523,11 +526,20 @@ def _renderer_preferences(request: Request) -> tuple[str | None, tuple[str, ...]
     return configured, (configured,) if configured is not None else None
 
 
-def _expanded_palette(request: Request) -> bool:
+def _palette_version(request: Request) -> str | None:
     values = request.headers.getlist('x-piece-palette')
     if len(values) > 1:
         raise PieceContractError('PIECE_REQUEST_INVALID')
-    return values == ['2']
+    return values[0] if values in (['2'], ['3']) else None
+
+
+def _expanded_palette(request: Request) -> bool:
+    return _palette_version(request) in ('2', '3')
+
+
+def _subscriber_customization(request: Request) -> bool:
+    """Client capability negotiation only; never a subscription assertion."""
+    return _palette_version(request) == '3'
 
 
 def _preview_public_response(result: object) -> dict:
@@ -606,7 +618,8 @@ async def create_preview(request: Request) -> JSONResponse:
         expanded = expanded_palette and public['renderer_version'] == 'piece.rn_bitmap_renderer.ios.v2'
         require_piece_theme(public['visual_recipe']['theme']['theme_id'], expanded_palette=expanded)
         public.update(quota=quota, plan_capabilities=project_piece_plan_capabilities(
-            server_tier=quota['subscription_tier'], expanded_palette=expanded))
+            server_tier=quota['subscription_tier'], expanded_palette=expanded,
+            subscriber_customization=expanded and _subscriber_customization(request)))
         return _response(public)
     except Exception as exc:
         # Cancellation (BaseException) deliberately propagates unchanged.
@@ -654,7 +667,8 @@ async def mutate_preview_visual(preview_id: str, request: Request) -> JSONRespon
         expanded = expanded_palette and public['renderer_version'] == 'piece.rn_bitmap_renderer.ios.v2'
         require_piece_theme(public['visual_recipe']['theme']['theme_id'], expanded_palette=expanded)
         public.update(quota=quota, plan_capabilities=project_piece_plan_capabilities(
-            server_tier=quota['subscription_tier'], expanded_palette=expanded))
+            server_tier=quota['subscription_tier'], expanded_palette=expanded,
+            subscriber_customization=expanded and _subscriber_customization(request)))
         return _response(public)
     except Exception as exc:
         return features.failure(exc, _PREVIEW_STATUS)
