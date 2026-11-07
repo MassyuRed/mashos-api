@@ -25,6 +25,56 @@ REVISION = "851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a"
 FIT38_WEIGHTS = "ad8b89e8974df9bfe7e804b8f67bbaac59e6cbb37042c3254fb58ffb64230d0a"
 FIT38_CONFIG = "ef4b1aef621fb4e234ce6a05601efb62a987c3cf5d40f3995ca1b72200bab145"
 PINS = {"transformers": "5.19.0", "peft": "0.21.2", "accelerate": "1.15.0", "safetensors": "0.8.0"}
+SEMANTIC_FORMAT_SOURCE = '817f944fcc8851917c40300a47f62d1defc3ffc3'
+
+
+def semantic_output_schema(messages):
+    """Constrain protocol and source quotes; meanings remain model-generated."""
+    if (type(messages) is not list or len(messages) != 2
+            or messages[1].get('role') != 'user'):
+        raise ValueError('semantic_material_invalid')
+    material = json.loads(messages[1]['content'])
+    fields = material.get('fields')
+    if type(fields) is not list or not fields:
+        raise ValueError('semantic_fields_invalid')
+    pairs, seen = [], set()
+    for field in fields:
+        number, original = field.get('field'), field.get('text')
+        if type(number) is not int or number < 1 or number in seen or type(original) is not str:
+            raise ValueError('semantic_field_invalid')
+        seen.add(number)
+        # Long fields stay complete in messages. Offer real, unique spans
+        # within the existing quote budget rather than changing any source.
+        # Upstream enum parsing does not round-trip every JSON escape. Select
+        # literal spans between those characters, without altering material.
+        fragments = re.findall(r'[^"\\\x00-\x1f]+', original)
+        spans = [fragment[start:start + 4000].strip() for fragment in fragments
+            for start in range(0, len(fragment), 2000)]
+        spans = list(dict.fromkeys(span for span in spans if span and original.count(span) == 1
+            and not re.search(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', span)))
+        if spans:
+            pairs.append(dict(type='object', properties=dict(field=dict(type='integer', enum=[number]),
+                quote=dict(type='string', enum=spans)), required=['field', 'quote'], additionalProperties=False))
+    if not pairs:
+        raise ValueError('semantic_quotes_unavailable')
+    def text(maximum):
+        return dict(type='string', minLength=1, maxLength=maximum)
+    def obj(properties):
+        return dict(type='object', properties=properties, required=list(properties), additionalProperties=False)
+    node_ids = ['n' + str(i) for i in range(1, 25)]
+    node = obj(dict(node_id=dict(type='string', enum=node_ids),
+        node_kind=dict(type='string', enum=['SELF_POSITION', 'TARGET_MEANING', 'CHOICE_OUTPUT', 'STATE_CONTEXT']),
+        title=text(80), summary=text(400), explanation=text(3000),
+        perspective=dict(type='string', enum=['SELF', 'OBSERVED_INTERACTION']),
+        unknowns=dict(type='array', items=text(500), maxItems=4),
+        evidence=dict(type='array', items=dict(oneOf=pairs), minItems=1, maxItems=24)))
+    edge = obj({'from': dict(type='string', enum=node_ids), 'to': dict(type='string', enum=node_ids),
+        'relation_kind': dict(type='string', enum=['SELF_OUTSIDE_GAP', 'CRITERION_EXPRESSION', 'CONTEXT_CONTRAST', 'SHARED_MEANING']),
+        'label': text(80), 'explanation': text(1800)})
+    return obj(dict(schema_version=dict(type='string', enum=['cocolon.analysis.semantic_map.model.v2']),
+        overview=obj(dict(title=text(80), summary=text(2000))),
+        nodes=dict(type='array', items=node, minItems=1, maxItems=24),
+        edges=dict(type='array', items=edge, maxItems=48)))
 
 
 def make_handler(generate, *, api_key, model_name, deadline, max_requests,
@@ -114,7 +164,7 @@ def adapter_identity(adapter, weights_sha256=None, config_sha256=None):
 
 
 def load_generator(adapter, process_stop, *, weights_sha256=None, config_sha256=None,
-                   max_new_tokens=2048, context_tokens=8192):
+                   max_new_tokens=2048, context_tokens=8192, semantic_json=False):
     if (type(max_new_tokens) is not int or type(context_tokens) is not int
             or not 1 <= max_new_tokens < context_tokens <= 32768):
         raise ValueError("model_token_budget_invalid")
@@ -153,6 +203,15 @@ def load_generator(adapter, process_stop, *, weights_sha256=None, config_sha256=
         raise ValueError("nontraining_model_required")
     if selected_identity:
         adapter_identity(adapter, *selected_identity)
+    tokenizer_data = None
+    if semantic_json:
+        from lmformatenforcer.integrations.transformers import build_token_enforcer_tokenizer_data
+        distribution = __import__('importlib.metadata', fromlist=['distribution']).distribution('lm-format-enforcer')
+        origin = json.loads(distribution.read_text('direct_url.json') or '{}')
+        if origin.get('vcs_info', {}).get('commit_id') != SEMANTIC_FORMAT_SOURCE:
+            raise ValueError('semantic_format_source_changed')
+        tokenizer_data = build_token_enforcer_tokenizer_data(tokenizer,
+            vocab_size=min(len(tokenizer), model.get_output_embeddings().weight.shape[0]))
 
     class Deadline(StoppingCriteria):
         def __init__(self, end):
@@ -171,9 +230,15 @@ def load_generator(adapter, process_stop, *, weights_sha256=None, config_sha256=
             raise ValueError("context_or_deadline_exceeded")
         encoded = {k: v.to(model.device) for k, v in encoded.items()}
         stopping = Deadline(end)
+        format_options = {}
+        if semantic_json:
+            from lmformatenforcer import JsonSchemaParser
+            from lmformatenforcer.integrations.transformers import build_transformers_prefix_allowed_tokens_fn
+            format_options['prefix_allowed_tokens_fn'] = build_transformers_prefix_allowed_tokens_fn(
+                tokenizer_data, JsonSchemaParser(semantic_output_schema(messages)))
         with torch.inference_mode():
             result = model.generate(**encoded, max_new_tokens=max_new_tokens, do_sample=False,
-                num_beams=1, use_cache=True, stopping_criteria=StoppingCriteriaList([stopping]))
+                num_beams=1, use_cache=True, stopping_criteria=StoppingCriteriaList([stopping]), **format_options)
         tokens = result[0, count:]
         eos = model.generation_config.eos_token_id
         eos = eos if isinstance(eos, list) else [eos]
@@ -193,10 +258,13 @@ def main():
     parser.add_argument("--seconds", type=int)
     parser.add_argument("--analysis-service", action="store_true",
                         help="Serve ordinary Analysis until SIGTERM/SIGINT; no probe-count expiry.")
+    parser.add_argument('--semantic-json', action='store_true', help='Constrain Analysis JSON and source-quote pairs during generation.')
     parser.add_argument("--max-new-tokens", type=int)
     parser.add_argument("--context-tokens", type=int)
     parser.add_argument("--request-seconds", type=int)
     args = parser.parse_args()
+    if args.semantic_json and not args.analysis_service:
+        parser.error('semantic JSON generation requires explicit analysis service mode')
     if args.analysis_service:
         if args.max_requests is not None or args.seconds is not None:
             parser.error("analysis service and bounded probe lifetime are separate modes")
@@ -237,6 +305,8 @@ def main():
                         if args.adapter_weights_sha256 is not None else {})
     runtime_options = (dict(max_new_tokens=max_new_tokens, context_tokens=context_tokens)
                        if args.analysis_service else {})
+    if args.semantic_json:
+        runtime_options['semantic_json'] = True
     generator = load_generator(args.adapter, stop, **identity_options, **runtime_options)
     server = ThreadingHTTPServer(("0.0.0.0", args.port), make_handler(generator,
         api_key=key, model_name=args.model_name, deadline=deadline,
