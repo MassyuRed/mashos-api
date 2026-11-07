@@ -6,15 +6,18 @@ All other Jupyter routes keep their original authentication and XSRF settings.
 """
 from __future__ import annotations
 
+import asyncio
 import hmac
 import json
 from pathlib import Path
 
 from tornado.httpclient import AsyncHTTPClient, HTTPRequest
+from tornado.iostream import StreamClosedError
 from tornado.web import HTTPError, RequestHandler, authenticated
 
 UPSTREAM = "http://127.0.0.1:8000/v1/chat/completions"
 MAX_BYTES = 262144
+HEARTBEAT_SECONDS = 20
 
 
 class AnalysisBridge(RequestHandler):
@@ -48,14 +51,39 @@ class AnalysisBridge(RequestHandler):
 
     @authenticated
     async def post(self):
+        pending = None
+        started = False
         try:
-            response = await AsyncHTTPClient().fetch(HTTPRequest(UPSTREAM, method="POST",
+            pending = asyncio.ensure_future(AsyncHTTPClient().fetch(HTTPRequest(UPSTREAM, method="POST",
                 body=self.request.body, headers={"Authorization": "Bearer " + self._key,
                     "Content-Type": "application/json"}, follow_redirects=False,
-                connect_timeout=3, request_timeout=215), raise_error=False)
+                connect_timeout=3, request_timeout=215), raise_error=False))
+            while not pending.done():
+                done, _ = await asyncio.wait({pending}, timeout=HEARTBEAT_SECONDS)
+                if not done:
+                    self.set_header("Content-Type", "application/json")
+                    self.set_header("Cache-Control", "no-store")
+                    # JSON permits leading whitespace. Flush progress without
+                    # altering the eventual model content or its bound hash.
+                    self.write(b" ")
+                    await self.flush()
+                    started = True
+            response = await pending
+        except StreamClosedError:
+            return
         except Exception:
+            if started:
+                self.finish(json.dumps({"error": "analysis_bridge_unavailable", "status": 503}))
+                return
             raise HTTPError(503) from None
-        self.set_status(response.code if 100 <= response.code <= 599 else 503)
+        finally:
+            if pending is not None and not pending.done():
+                pending.cancel()
+        if not started:
+            self.set_status(response.code if 100 <= response.code <= 599 else 503)
+        elif response.code != 200:
+            self.finish(json.dumps({"error": "analysis_bridge_unavailable", "status": 503}))
+            return
         self.set_header("Content-Type", "application/json")
         self.set_header("Cache-Control", "no-store")
         # Do not forward cookies, redirect locations, or upstream credentials.

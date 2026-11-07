@@ -1,5 +1,7 @@
 """The inference key cannot become a Jupyter management credential."""
+import asyncio
 import io
+import json
 from pathlib import Path
 import tempfile
 from unittest.mock import AsyncMock, patch
@@ -71,4 +73,31 @@ class BridgeTests(AsyncHTTPTestCase):
             client.return_value.fetch = AsyncMock(side_effect=RuntimeError("private upstream text"))
             response = self.request()
         assert response.code == 503 and b"private upstream text" not in response.body
+        assert "Set-Cookie" not in response.headers
+
+    def test_slow_model_sends_progress_before_exact_json_without_cookie(self):
+        chunks = []
+        async def delayed(*args, **kwargs):
+            await asyncio.sleep(0.04)
+            assert chunks and all(chunk == b" " for chunk in chunks)
+            return HTTPResponse(HTTPRequest(UPSTREAM), 200,
+                buffer=io.BytesIO(b'{"choices":[{"message":{"content":"unchanged"}}]}'))
+        with patch("ai.tools.analysis_jupyter_bridge.AsyncHTTPClient") as client, \
+                patch("ai.tools.analysis_jupyter_bridge.HEARTBEAT_SECONDS", 0.01):
+            client.return_value.fetch = AsyncMock(side_effect=delayed)
+            response = self.request(streaming_callback=chunks.append)
+        assert response.code == 200 and len(chunks) > 1
+        assert json.loads(b"".join(chunks))["choices"][0]["message"]["content"] == "unchanged"
+        assert "Set-Cookie" not in response.headers
+
+    def test_failure_after_progress_stays_explicit_error_without_private_text(self):
+        async def delayed(*args, **kwargs):
+            await asyncio.sleep(0.03)
+            raise RuntimeError("private upstream text")
+        with patch("ai.tools.analysis_jupyter_bridge.AsyncHTTPClient") as client, \
+                patch("ai.tools.analysis_jupyter_bridge.HEARTBEAT_SECONDS", 0.01):
+            client.return_value.fetch = AsyncMock(side_effect=delayed)
+            response = self.request()
+        assert response.body.startswith(b" ") and b"private upstream text" not in response.body
+        assert json.loads(response.body) == {"error": "analysis_bridge_unavailable", "status": 503}
         assert "Set-Cookie" not in response.headers
