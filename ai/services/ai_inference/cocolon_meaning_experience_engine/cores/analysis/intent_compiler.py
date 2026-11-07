@@ -3639,6 +3639,7 @@ class AnalysisSemanticMapGraph:
     coverage_json: str
 
 def _semantic_map_context(prepared, refs):
+    from emlis_ai_current_input_bundle import normalize_emlis_current_input
     material = json.loads(prepared.material_json)
     ordered = {m.saved_record_ref: i for i, m in enumerate(prepared.frozen.members, 1)}
     result = []
@@ -3648,11 +3649,13 @@ def _semantic_map_context(prepared, refs):
     for row in material['records']:
         if row['record'] not in {ordered[ref] for ref in refs}:
             continue
-        categories = row['selected_categories']
-        if type(categories) is str:
-            categories = [categories]
+        # The source owner already accepts legacy null/scalar metadata. Use
+        # its existing normalization for display without changing raw material.
+        selected = normalize_emlis_current_input(dict(category=row['selected_categories'],
+            emotions=row['selected_emotions'], emotion_details=row['emotion_details']))
+        categories = selected['category']
         states = []
-        for item in row['emotion_details']:
+        for item in selected['emotion_details']:
             name = item.get('type', item.get('emotion'))
             name = names.get(name, name)
             if name in {'自己理解', 'self_insight'}:
@@ -3664,8 +3667,10 @@ def _semantic_map_context(prepared, refs):
         # Legacy records may have a selected feeling and no saved strength.
         # Preserve that feeling without inventing medium intensity.
         if not states:
-            states = [names.get(name, name) for name in row['selected_emotions'] if type(name) is str]
-        value = '／'.join(categories) + ('：' + '、'.join(states) if states else '')
+            states = [names.get(name, name) for name in selected['emotions'] if type(name) is str]
+        value = '／'.join(categories)
+        if states:
+            value += ('：' if value else '') + '、'.join(states)
         if value and value not in result:
             result.append(value)
     return result

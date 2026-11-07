@@ -258,3 +258,37 @@ def test_duplicate_original_identity_is_not_counted_as_two_independent_records()
     snapshot['members'][1] = deepcopy(snapshot['members'][0])
     with pytest.raises(semantic.SemanticMapError, match='analysis_semantic_duplicate_record'):
         semantic.prepare_semantic_map(OWNER, snapshot)
+
+
+def test_rejected_model_diagnostic_identifies_code_without_logging_private_material(caplog):
+    prepared = semantic.prepare_semantic_map(OWNER, sample())
+    packet = candidate()
+    packet['nodes'][0]['evidence'][0]['quote'] = 'PRIVATE_MODEL_TEXT_MUST_NOT_REACH_LOGS'
+    with pytest.raises(semantic.SemanticMapError, match='analysis_semantic_evidence_unbound'):
+        semantic.build_semantic_map(prepared, response(prepared, packet))
+    diagnostic = '\n'.join(record.getMessage() for record in caplog.records)
+    assert 'analysis_semantic_rejected stage=' in diagnostic
+    assert '_semantic_map_evidence:' in diagnostic
+    assert 'PRIVATE_MODEL_TEXT_MUST_NOT_REACH_LOGS' not in diagnostic
+    assert prepared.material_json not in diagnostic
+    assert sample()['members'][0]['original']['memo'] not in diagnostic
+
+
+@pytest.mark.parametrize('metadata,expected', [
+    ({'category': None}, '自己理解'),
+    ({'emotion_details': None, 'emotions': ['喜び']}, '価値観／人生：喜び'),
+    ({'emotion_details': ['喜び'], 'emotions': ['喜び']}, '価値観／人生：喜び'),
+    ({'category': None, 'emotion_details': None, 'emotions': None}, None),
+])
+def test_legacy_nullable_metadata_keeps_source_material_and_reaches_semantic_display(metadata, expected):
+    snapshot = sample()
+    snapshot['members'][0]['original'].update(metadata)
+    prepared = semantic.prepare_semantic_map(OWNER, snapshot)
+    original_material = prepared.material_json
+    artifact, _ = semantic.build_semantic_map(prepared, response(prepared))
+    context = artifact.safe_projection(authenticated_owner_scope=OWNER)['nodes'][0]['context']
+    assert context == ([] if expected is None else [expected])
+    assert prepared.material_json == original_material
+    record = json.loads(original_material)['records'][0]
+    for key, value in metadata.items():
+        assert record[{'category': 'selected_categories', 'emotions': 'selected_emotions'}.get(key, key)] == value

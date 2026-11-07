@@ -2374,4 +2374,13 @@ def generate_analysis_semantic_map(request, model_input):
             response_sha256=model_input.response.raw_sha256)
         return realize_analysis_semantic_map(graph)
     except AnalysisSemanticMapError as exc:
+        # Log code locations only: source, model text and exception messages
+        # can contain private material and must never reach application logs.
+        import logging
+        locations = []
+        trace = exc.__traceback__
+        while trace is not None:
+            locations.append(f'{trace.tb_frame.f_code.co_name}:{trace.tb_lineno}')
+            trace = trace.tb_next
+        logging.getLogger(__name__).warning('analysis_semantic_rejected stage=%s', '>'.join(locations))
         return AnalysisSemanticMapOutcome(EngineStatus.REJECTED, (str(exc),))

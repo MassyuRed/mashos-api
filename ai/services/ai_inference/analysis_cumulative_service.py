@@ -759,7 +759,15 @@ async def _ensure_map(user_id, *, ensure=True, force=False, monthly=False, model
                         'analysis_quoted_parent_units_response_invalid')
                     artifact, coverage = await asyncio.to_thread(build_cumulative_map, owner, snapshot,
                         model_input=replace(prepared, response=response))
-            except (ValueError, KeyError, TypeError, AttributeError):
+            except (ValueError, KeyError, TypeError, AttributeError) as exc:
+                import logging
+                locations = []
+                trace = exc.__traceback__
+                while trace is not None:
+                    locations.append(f'{trace.tb_frame.f_code.co_name}:{trace.tb_lineno}')
+                    trace = trace.tb_next
+                logging.getLogger(__name__).warning('analysis_saved_source_rejected type=%s stage=%s',
+                    type(exc).__name__, '>'.join(locations))
                 raise HTTPException(422, 'analysis_saved_source_unavailable') from None
             if artifact is None:
                 return _response(None, coverage=coverage)
