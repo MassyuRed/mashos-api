@@ -1014,3 +1014,7 @@ Mashの通常4B接続・分析画面修復指示により、`analysis_semantic_m
 合成HTTPから隔離PGliteの実migration／RPCを通して保存・根拠取得・非生成再読・月次不変を確認。初期のSQL23514は旧wire CHECKで拒否された実原因として保持し、新migration後に解消した。型・境界の検査成功は実4Bの意味読解品質の合格ではない。
 
 現時点：旧Pod停止をMashから受領、新Pod f1lle4xwq3wjlnはconsoleログイン画面・認証handoff待ち。新GPUの実load／実生成・Render設定変更／今回API配置／新署名buildは0。次は認証完了または新Jupyter直接URLから固定base復元・予算実測・同じ10入力の実出力を通し、コード候補と実読を対応させる。公開のキー・本文・credential保存はしない。残差は長大履歴の分割統合と、訂正／撤回を含む記録の一般読解。
+
+### source保存とDB適用のチェックポイント
+
+API48ca38b1b27e83e683f772c822e1b135bbcf736fの12変更blobと親／treeを読戻し一致。SQLは実登録20261107071920_analysis_semantic_map_wireとして一度適用し、2CHECKの新旧型組合せ・projection identity・validated=trueを確認した。RLS=true、anon/authenticated SELECT=false、service SELECT/INSERT/DELETE=true・UPDATE=false。前後のsecurity advisory7分類は同一で新規0。実本人rowやDMLは0、Renderのsource／設定と新GPU実行は未変更。RN候補は全体の読みの3行→全文、関係図→項目／関係詳細→根拠、現在だけの明示更新を実装。局所検証はAPI／server49 PASS、RN41 PASSで、実4Bの読解品質は認証後に実結果で判定する。
