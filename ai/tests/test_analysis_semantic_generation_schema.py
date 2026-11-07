@@ -37,6 +37,18 @@ def test_blank_and_raw_control_tokens_are_excluded_only_from_free_prose(key, exp
     assert probe.semantic_free_text_tokens(Prefix(), 0, Sent(), {1, 2}) == expected
 
 
+def test_raw_control_tokens_are_excluded_also_when_upstream_is_in_a_union_or_escape_state():
+    class Sent:
+        def tolist(self):
+            return [90]
+    class Prefix:
+        token_enforcer = SimpleNamespace(prefix_states={(90,): SimpleNamespace(
+            parser=SimpleNamespace(shortcut_key=lambda: None))})
+        def __call__(self, batch, sent):
+            return [1, 2, 3]
+    assert probe.semantic_free_text_tokens(Prefix(), 0, Sent(), {1, 2}, {1}) == [2, 3]
+
+
 def test_actual_pinned_parser_blank_prose_is_filtered_and_literal_quote_space_is_preserved():
     package = pytest.importorskip('lmformatenforcer')
     from lmformatenforcer.tokenenforcer import TokenEnforcer, TokenEnforcerTokenizerData
