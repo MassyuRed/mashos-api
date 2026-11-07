@@ -908,3 +908,17 @@ Free暗色required_smallは旧RNのvalidatorが解釈できないため、未対
 
 STRUCTURE_MAP_DELTA_PRESENT：既存画像設定のtier境界・対応交渉・owner互換filterの限定拡張。本文・source・保存枠・公開範囲・共有意味型を変更しない。今回のAPI／SQLは候補で、live・本番適用・build・実機受入れは未実施。
 
+<a id="piece-subscriber-customization-live-20261107"></a>
+## 2026-11-07 — 配色DB適用・指定API配置と一回の統合ビルド
+
+Mashの後続指示「進めて」に基づく実行。直前の準備節の実行0は当時の履歴として保持する。
+
+- Supabase `oeahmpmigszggnkyiivq` に、API5065730eの `20261103235434_piece_v2_expand_visual_palette.sql` 原文を一回適用。実登録版は `20261107020543`、name `piece_v2_expand_visual_palette`。CHECKのvalidated=trueと全12色／Free初期2色条件を独立再読した。DML・RLS・権限変更0、保存済み本文／recipe／hash／画像の移行0。
+- API `5065730ead6fc97a47a03858d0707bbf3e1c568c` を一回指定配置。Render `dep-dbn8h2jl550s73efmcng` は02:10:18 UTC開始、02:12:02 UTC（11:12:02 JST）Live。旧2c259f0eはdeactivated。main連携・autoDeploy OFF・既存起動factory・private5ON／public3OFFを保持する。
+- 11:12:52〜11:13:05 JSTの実HTTP：healthz200/status ok、bootstrap200、Piece private5=true/public3=false。認証なしPiece history／quota／preview POST空JSON、Analysis latest?ensure=false&force=false／reports historyは全401。認証・個人データ・新規生成を伴う商品操作の成功とは区別する。
+- 互換filterのPostgREST実構文確認は、架空owner・select=id・limit=0・公開publishable keyのanonで実施。正しいnot.and＋keyset orは通常の401/42501（構文通過）、括弧欠落の負例は400/PGRST100。個人row取得・DB書込0。本人の新旧履歴成功へ換算しない。
+- Renderの対象設定名だけを確認し `COCOLON_ANALYSIS_OBSERVED_MODE=development` を読取。設定変更0。model selector `COCOLON_ANALYSIS_MODEL_SOURCE` の登録項目なし、linked environment groupなし。既存有限compilerを継続し、研究selected_material.v13／構造LogitsProcessor／全量plannerを通常採用しない。
+- 同source currentは再利用され得る。RNの再取得はensureのみでforceなし。必要時の本人current再解析は既存本人認証APIのensure=true&force=trueを用い、月次当時版は保持する。今回、本人原入力取得・current強制生成・保存物上書きは0。read_onlyではforceでも生成されないというsource条件は維持。
+- Cocolon固定source `e0ec6d6a9330f9e493308be85debbb1b062d80f6` のiOS run42328190568／#75 attempt1を11:14:01 JSTに一回開始。既存採番上の7501を、Archive／IPA／Upload／Apple処理／内部配布の結果と別々に照合する。開始時点で配布済みとは扱わない。最新結果はCocolon第10回weekly§13へ記録する。
+
+新receipt SQL20261104002458の適用・readiness有効化、環境設定変更、新モデル実行／GPU・新テスター／外部配布／App Store公開は0。今回の配置だけで、通常の役割・判断基準・記録間読解や実機品質が完成したとはしない。
