@@ -29,18 +29,18 @@ def candidate():
         'overview': {'title': '自分の選択と、その場の決定',
             'summary': '納得して選びたいという基準と、意見が決定に入っていない場面との距離が見えます。'},
         'nodes': [
-            {'node_kind': 'SELF_POSITION', 'title': '納得して選ぶ自分',
+            {'node_id': 'n1', 'node_kind': 'SELF_POSITION', 'title': '納得して選ぶ自分',
              'summary': '自分の納得を選ぶ基準に置きたいと述べています。',
              'explanation': '本人の記述には「自分が納得して選びたい」があります。周りと同じ進み方だけを基準にせず、選ぶ本人としての位置を大切にしたいという読みです。',
              'perspective': 'SELF', 'unknowns': [],
              'evidence': [{'field': 1, 'quote': '自分が納得して選びたい'}]},
-            {'node_kind': 'CHOICE_OUTPUT', 'title': '意見が決定に入らなかった場面',
+            {'node_id': 'n2', 'node_kind': 'CHOICE_OUTPUT', 'title': '意見が決定に入らなかった場面',
              'summary': '希望と、その場で外へ出した内容の間に距離があります。',
              'explanation': '意見を聞かれず決まったことへの怒りと、自分で選びたいという希望が記されています。一方、その場では意見を言っていません。相手が本人をどう見ていたか、発言しなかった理由は記されていません。',
              'perspective': 'OBSERVED_INTERACTION', 'unknowns': ['その場で意見を伝えなかった理由'],
              'evidence': [{'field': 2, 'quote': '意見を聞かれず決まったことに腹が立った'},
                           {'field': 3, 'quote': '私は意見を言わなかった'}]}],
-        'edges': [{'from': 1, 'to': 2, 'relation_kind': 'SELF_OUTSIDE_GAP',
+        'edges': [{'from': 'n1', 'to': 'n2', 'relation_kind': 'SELF_OUTSIDE_GAP',
                    'label': '希望と実際の位置の距離',
                    'explanation': '自分が納得して選ぶという基準を、実際の決定にどこまで入れられたかという関係として見比べられます。'}]}
 
@@ -67,7 +67,7 @@ def test_original_role_definition_and_all_ten_sample_materials_are_model_input_n
     material = json.loads(prepared.material_json)
     assert len(material['records']) == 10 and len(material['fields']) == 19
     assert 'それぞれの世界における座標' in prepared.messages()[0]['content']
-    assert '自己定義 vs 他者定義' in prepared.messages()[0]['content']
+    assert '自分が自分の世界／他者の世界においてどう存在しているか' in prepared.messages()[0]['content']
     assert '内部分類' in prepared.messages()[0]['content']
     for index, (record, case) in enumerate(zip(material['records'], cases), 1):
         assert record['selected_categories'] == case['category']
@@ -112,7 +112,10 @@ def test_same_graph_gives_rich_details_relationships_accessible_text_and_private
     lambda packet: packet['nodes'][0]['evidence'][0].update(field=2),
     lambda packet: packet['nodes'][0]['evidence'][0].update(field=True),
     lambda packet: packet['nodes'][0]['evidence'].append(deepcopy(packet['nodes'][0]['evidence'][0])),
-    lambda packet: packet['edges'][0].update(to=99),
+    lambda packet: packet['edges'][0].update(to='n99'),
+    lambda packet: packet['edges'][0].update(to=2),
+    lambda packet: packet['nodes'][1].update(node_id='n1'),
+    lambda packet: packet['nodes'][1].update(node_id='n3'),
     lambda packet: packet['edges'][0].update(relation_kind='CAUSES'),
     lambda packet: packet['edges'].append(deepcopy(packet['edges'][0])),
     lambda packet: packet['nodes'][0].update(hidden_diagnosis='diagnosis'),
