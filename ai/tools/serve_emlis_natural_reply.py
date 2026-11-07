@@ -108,6 +108,14 @@ def semantic_output_schema(messages):
         edges=dict(type='array', items=edge, maxItems=48)))
 
 
+def semantic_json_parser(messages, alphabet):
+    from lmformatenforcer import CharacterLevelParserConfig, JsonSchemaParser
+    # LMFE snapshots alphabet_without_quotes while constructing its context.
+    # Updating parser.config later leaves that initial snapshot unchanged.
+    return JsonSchemaParser(semantic_output_schema(messages),
+        config=CharacterLevelParserConfig(alphabet=alphabet))
+
+
 def make_handler(generate, *, api_key, model_name, deadline, max_requests,
                  max_new_tokens=2048, request_seconds=23, max_request_bytes=65536):
     lock = threading.Lock()
@@ -281,10 +289,9 @@ def load_generator(adapter, process_stop, *, weights_sha256=None, config_sha256=
         format_options = {}
         if semantic_json:
             generation_stage('constraint')
-            from lmformatenforcer import JsonSchemaParser
             from lmformatenforcer.integrations.transformers import build_transformers_prefix_allowed_tokens_fn
             allowed_prefix = build_transformers_prefix_allowed_tokens_fn(
-                tokenizer_data, JsonSchemaParser(semantic_output_schema(messages)))
+                tokenizer_data, semantic_json_parser(messages, tokenizer_data.tokenizer_alphabet))
             previous_allowed = None
             def private_prefix(batch, sent):
                 nonlocal previous_allowed
@@ -307,12 +314,13 @@ def load_generator(adapter, process_stop, *, weights_sha256=None, config_sha256=
                         + '_' + mode + '_allowed_' + str(len(allowed)))
                 return allowed
             format_options['prefix_allowed_tokens_fn'] = private_prefix
+            format_options['eos_token_id'] = tokenizer_data.eos_token_id
             generation_stage('decode')
         with torch.inference_mode():
             result = model.generate(**encoded, max_new_tokens=max_new_tokens, do_sample=False,
                 num_beams=1, use_cache=True, stopping_criteria=StoppingCriteriaList([stopping]), **format_options)
         tokens = result[0, count:]
-        eos = model.generation_config.eos_token_id
+        eos = tokenizer_data.eos_token_id if semantic_json else model.generation_config.eos_token_id
         eos = eos if isinstance(eos, list) else [eos]
         finish = "stop" if len(tokens) and int(tokens[-1]) in eos and not stopping.expired else "length"
         if semantic_json:

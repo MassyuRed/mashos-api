@@ -69,6 +69,27 @@ def test_actual_pinned_parser_empty_decoder_root_loop_is_removed_before_generati
     assert 1 not in allowed and 2 in allowed
 
 
+def test_runtime_parser_initializes_unicode_before_context_and_does_not_end_on_first_japanese():
+    package = pytest.importorskip('lmformatenforcer')
+    from lmformatenforcer.tokenenforcer import TokenEnforcer, TokenEnforcerTokenizerData
+    messages = [{'role': 'system', 'content': 'synthetic'}, {'role': 'user',
+        'content': json.dumps({'fields': [{'field': 1, 'text': '部屋を整えた。'}]}, ensure_ascii=False)}]
+    beginning = '{"schema_version":"cocolon.analysis.semantic_map.model.v2","overview":{"summary":"部屋'
+    alphabet = ''.join(dict.fromkeys(beginning + 'を整えた。P'))
+    data = TokenEnforcerTokenizerData([(index, char, False) for index, char in enumerate(alphabet)],
+        lambda tokens: ''.join(alphabet[index] for index in tokens), len(alphabet), False, len(alphabet) + 1)
+    old = package.JsonSchemaParser(probe.semantic_output_schema(messages))
+    TokenEnforcer(data, old)  # The upstream late config replacement.
+    new = probe.semantic_json_parser(messages, data.tokenizer_alphabet)
+    for char in beginning:
+        old = old.add_character(char)
+        assert char in new.get_allowed_characters()
+        new = new.add_character(char)
+    assert old.can_end()  # Reproduces the observed premature completion.
+    assert not new.can_end() and new.object_stack
+    assert new.shortcut_key()[0] == 'json_freetext'
+
+
 def test_actual_pinned_parser_blank_prose_is_filtered_and_literal_quote_space_is_preserved():
     package = pytest.importorskip('lmformatenforcer')
     from lmformatenforcer.tokenenforcer import TokenEnforcer, TokenEnforcerTokenizerData
