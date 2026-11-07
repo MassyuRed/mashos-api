@@ -8,6 +8,7 @@ name: Piece B2-B/B3/B4/B5 isolated PostgreSQL
     paths:
       - .github/workflows/piece-b2b-isolated-postgres.yml
       - supabase/migrations/20260808_002_piece_v2_foundation.sql
+      - supabase/migrations/20261103235434_piece_v2_expand_visual_palette.sql
       - ai/tests/piece_v2/db/test_b02_piece_v2_foundation.py
       - supabase/migrations/20260808_003_piece_v2_rls_and_staging.sql
       - ai/services/ai_inference/piece_v2_access.py
@@ -118,6 +119,7 @@ jobs:
             ai/tests/piece_v2/db/test_b02_piece_v2_foundation.py \
             supabase/migrations/20260808_001_piece_v2_legacy_read_bridge.sql \
             supabase/migrations/20260808_002_piece_v2_foundation.sql \
+            supabase/migrations/20261103235434_piece_v2_expand_visual_palette.sql \
             ai/services/ai_inference/piece_v2_contract.py \
             ai/services/ai_inference/piece_v2_visual.py \
             supabase/migrations/20260808_003_piece_v2_rls_and_staging.sql \
@@ -164,6 +166,7 @@ jobs:
             -c /dev/null --confcutdir=ai/tests/piece_v2/db \
             ai/tests/piece_v2/db/test_b04_piece_v2_atomic_transactions.py
       - name: Run legacy public aliases with independent PostgreSQL connections
+        if: ${{ !cancelled() }}
         shell: bash
         run: |
           set -euo pipefail

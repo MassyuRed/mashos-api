@@ -28,6 +28,7 @@ from piece_v2_visual import build_visual_recipe, validate_visual_recipe  # noqa:
 
 _M1 = _ROOT / 'supabase/migrations/20260808_001_piece_v2_legacy_read_bridge.sql'
 _M2 = _ROOT / 'supabase/migrations/20260808_002_piece_v2_foundation.sql'
+_PALETTE = _ROOT / 'supabase/migrations/20261103235434_piece_v2_expand_visual_palette.sql'
 _TABLES = (
     'piece_records', 'piece_quota_month_locks', 'piece_quota_consumptions',
     'piece_record_metrics', 'piece_record_reads', 'piece_record_resonances',
@@ -35,12 +36,12 @@ _TABLES = (
 )
 _ROLES = ('anon', 'authenticated', 'service_role')
 _STAGES = ('normal_observation', 'pre_question_observation', 'refined_observation')
-# Explicit expectations from the unchanged B9 saved-recipe owner, not current tier.
+# Explicit expectations from the current B9 saved-recipe owner, not current tier.
 # All hashes below are recomputed, so rejection is not a stale-hash artefact.
 _VISUAL_SELECTIONS = (
     ('required_small', 'soft_paper', '4:5', True),
     ('required_small', 'soft_paper', '9:16', False),
-    ('required_small', 'quiet_night', '4:5', False),
+    ('required_small', 'quiet_night', '4:5', True),
     ('required_small', 'quiet_night', '9:16', False),
     ('required_subtle', 'soft_paper', '4:5', True),
     ('required_subtle', 'soft_paper', '9:16', True),
@@ -288,8 +289,11 @@ def test_b02_foundation_native_postgresql():
                     row['piece_text'], row['piece_text_hash'], row['source_lineage'],
                     row['content_payload'], row['visual_recipe'])
 
+        # Bring the historical foundation's recipe constraint to the existing
+        # palette migration before comparing it with the current saved reader.
+        conn.execute(_PALETTE.read_text(encoding='utf-8'))
+        # Both Free colors support required_small at 4:5; 9:16 stays rejected.
         # A schema-admitted recipe must survive the actual saved B9 reader.
-        # In particular required_small cannot pair with quiet_night or 9:16.
         # Preserve all existing premium/subtle/off combinations; do not infer
         # or reapply an owner's current subscription during saved validation.
         for fmt in ('quote', 'short_essay', 'declaration'):
