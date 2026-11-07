@@ -13,6 +13,7 @@ import hmac
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib.metadata import version
 import json
+import logging
 import os
 from pathlib import Path
 import re
@@ -26,6 +27,20 @@ FIT38_WEIGHTS = "ad8b89e8974df9bfe7e804b8f67bbaac59e6cbb37042c3254fb58ffb64230d0
 FIT38_CONFIG = "ef4b1aef621fb4e234ce6a05601efb62a987c3cf5d40f3995ca1b72200bab145"
 PINS = {"transformers": "5.19.0", "peft": "0.21.2", "accelerate": "1.15.0", "safetensors": "0.8.0"}
 SEMANTIC_FORMAT_SOURCE = '817f944fcc8851917c40300a47f62d1defc3ffc3'
+
+
+class SourcePrivateConstraintLog(logging.Filter):
+    """Upstream error paths must never print decoded prompts or prefixes."""
+    def filter(self, record):
+        if 'lmformatenforcer' in Path(record.pathname).parts:
+            record.msg = 'analysis_generation_constraint_internal_error'
+            record.args = ()
+            record.exc_info = record.exc_text = record.stack_info = None
+        return True
+
+
+def generation_stage(stage):
+    print('analysis_generation_stage=' + stage + ' monotonic=' + str(round(time.monotonic(), 3)), flush=True)
 
 
 def semantic_output_schema(messages):
@@ -133,16 +148,21 @@ def make_handler(generate, *, api_key, model_name, deadline, max_requests,
                 if (max_requests and served >= max_requests) or time.monotonic() >= deadline:
                     return self.reply(429, {"error": "probe_limit"})
                 served += 1
+                if not max_requests:
+                    generation_stage('admitted')
                 text, finish = generate(messages, min(deadline, time.monotonic() + request_seconds))
                 if finish not in {"stop", "length"} or not isinstance(text, str):
                     raise ValueError
-                return self.reply(200, {"model": model_name, "choices": [{
+                status, body = 200, {"model": model_name, "choices": [{
                     "index": 0, "finish_reason": finish,
-                    "message": {"role": "assistant", "content": text}}]})
-            except Exception:
-                return self.reply(503, {"error": "generation_unavailable"})
+                    "message": {"role": "assistant", "content": text}}]}
+            except Exception as exc:
+                if not max_requests:
+                    generation_stage('failed_' + type(exc).__name__)
+                status, body = 503, {"error": "generation_unavailable"}
             finally:
                 lock.release()
+            return self.reply(status, body)
     return Handler
 
 
@@ -205,6 +225,10 @@ def load_generator(adapter, process_stop, *, weights_sha256=None, config_sha256=
         adapter_identity(adapter, *selected_identity)
     tokenizer_data = None
     if semantic_json:
+        private_log_filter = SourcePrivateConstraintLog()
+        logging.getLogger().addFilter(private_log_filter)
+        for handler in logging.getLogger().handlers:
+            handler.addFilter(private_log_filter)
         from lmformatenforcer.integrations.transformers import build_token_enforcer_tokenizer_data
         distribution = __import__('importlib.metadata', fromlist=['distribution']).distribution('lm-format-enforcer')
         origin = json.loads(distribution.read_text('direct_url.json') or '{}')
@@ -222,6 +246,8 @@ def load_generator(adapter, process_stop, *, weights_sha256=None, config_sha256=
             return self.expired
 
     def generate(messages, end):
+        if semantic_json:
+            generation_stage('tokenize')
         encoded = tokenizer.apply_chat_template(messages, enable_thinking=False,
             add_generation_prompt=True, tokenize=True, return_dict=True,
             return_tensors="pt", truncation=False)
@@ -232,10 +258,22 @@ def load_generator(adapter, process_stop, *, weights_sha256=None, config_sha256=
         stopping = Deadline(end)
         format_options = {}
         if semantic_json:
+            generation_stage('constraint')
             from lmformatenforcer import JsonSchemaParser
             from lmformatenforcer.integrations.transformers import build_transformers_prefix_allowed_tokens_fn
-            format_options['prefix_allowed_tokens_fn'] = build_transformers_prefix_allowed_tokens_fn(
+            allowed_prefix = build_transformers_prefix_allowed_tokens_fn(
                 tokenizer_data, JsonSchemaParser(semantic_output_schema(messages)))
+            def private_prefix(batch, sent):
+                progress = len(sent) - count
+                measured = progress % 128 == 0
+                if measured:
+                    generation_stage('prefix_enter_' + str(progress))
+                allowed = allowed_prefix(batch, sent)
+                if measured:
+                    generation_stage('prefix_exit_' + str(progress))
+                return allowed
+            format_options['prefix_allowed_tokens_fn'] = private_prefix
+            generation_stage('decode')
         with torch.inference_mode():
             result = model.generate(**encoded, max_new_tokens=max_new_tokens, do_sample=False,
                 num_beams=1, use_cache=True, stopping_criteria=StoppingCriteriaList([stopping]), **format_options)
@@ -243,6 +281,8 @@ def load_generator(adapter, process_stop, *, weights_sha256=None, config_sha256=
         eos = model.generation_config.eos_token_id
         eos = eos if isinstance(eos, list) else [eos]
         finish = "stop" if len(tokens) and int(tokens[-1]) in eos and not stopping.expired else "length"
+        if semantic_json:
+            generation_stage('complete_' + finish)
         return tokenizer.decode(tokens, skip_special_tokens=True, clean_up_tokenization_spaces=False), finish
     return generate
 

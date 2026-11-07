@@ -1,6 +1,7 @@
 """Source-copy decoding constraints; no model or semantic-quality acceptance."""
 from copy import deepcopy
 import json
+import logging
 import sys
 import pytest
 from test_emlis_natural_reply_probe_http import probe
@@ -9,6 +10,16 @@ from test_emlis_natural_reply_probe_http import probe
 def schema_for(fields):
     return probe.semantic_output_schema([{'role': 'system', 'content': 'synthetic'},
         {'role': 'user', 'content': json.dumps({'fields': fields}, ensure_ascii=False)}])
+
+
+def test_upstream_constraint_exception_log_cannot_reveal_source_or_generated_prefix():
+    record = logging.LogRecord('root', logging.ERROR, '/vendor/lmformatenforcer/tokenenforcer.py',
+        130, 'Prefix: %s', ('SYNTHETIC_PRIVATE_SOURCE',),
+        (ValueError, ValueError('SYNTHETIC_PRIVATE_SOURCE'), None), sinfo='SYNTHETIC_PRIVATE_SOURCE')
+    record.exc_text = 'SYNTHETIC_PRIVATE_SOURCE'
+    assert probe.SourcePrivateConstraintLog().filter(record)
+    assert record.getMessage() == 'analysis_generation_constraint_internal_error'
+    assert record.exc_info is record.exc_text is record.stack_info is None
 
 
 def evidence_schema(schema):
