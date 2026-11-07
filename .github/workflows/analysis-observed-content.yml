@@ -12,6 +12,8 @@ name: Analysis observed content
       - ai/services/ai_inference/analysis_observed_service.py
       - ai/services/ai_inference/analysis_cumulative_service.py
       - ai/services/ai_inference/analysis_model_source.py
+      - ai/services/ai_inference/analysis_semantic_map.py
+      - ai/tools/serve_emlis_natural_reply.py
       - ai/services/ai_inference/api_self_structure*.py
       - ai/services/ai_inference/astor_self_structure_report.py
       - ai/services/ai_inference/api_cron_distribution.py
@@ -31,9 +33,12 @@ name: Analysis observed content
       - ai/tests/test_analysis_parallel_emotion_chronology.py
       - ai/tests/test_analysis_legacy_report_source_integrity.py
       - ai/tests/test_analysis_cumulative*.py
+      - ai/tests/test_analysis_semantic*.py
+      - ai/tests/test_emlis_natural_reply_probe_http.py
       - ai/tests/test_analysis_observed_api.py
       - ai/tests/analysis_cumulative_sql.cjs
       - supabase/migrations/20261101080144_cumulative_watashi_map.sql
+      - supabase/migrations/*_analysis_semantic_map_wire.sql
       - ai/tests/test_cmee_analysis_v1d_vertical.py
       - ai/tests/test_cmee_analysis_input_fields.py
       - ai/tests/test_input_contract_sample_sheet.py
@@ -87,6 +92,8 @@ jobs:
           ai/tests/test_cmee_analysis_v1d_vertical.py
           ai/tests/test_cmee_analysis_input_fields.py
           ai/tests/test_input_contract_sample_sheet.py
+          ai/tests/test_analysis_semantic_map.py
+          ai/tests/test_emlis_natural_reply_probe_http.py
           ai/tests/test_analysis_closed_quote_self_action.py
           ai/tests/test_analysis_model_role_clause.py
           ai/tests/test_analysis_model_observed_actions.py
@@ -152,6 +159,7 @@ jobs:
           ai/tests/test_analysis_model_fields.py
           ai/tests/test_analysis_cumulative.py
           ai/tests/test_analysis_cumulative_model_source.py
+          ai/tests/test_analysis_semantic_integration.py
           ai/tests/test_analysis_cumulative_model_batches.py
           ai/tests/test_analysis_cumulative_jobs.py
           ai/tests/test_analysis_observed_api.py

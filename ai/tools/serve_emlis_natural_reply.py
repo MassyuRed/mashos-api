@@ -1,7 +1,9 @@
-"""Bounded, private probe server for the existing local Qwen3.5-4B cache.
+"""Private inference server for the existing local Qwen3.5-4B cache.
 
-No training, downloads, provider fallback, or automatic request retry. This is
-an explicit personal connection probe, not the production hosting decision.
+The default remains the bounded personal connection probe.  The explicit
+--analysis-service mode serves the ordinary Analysis route until stopped,
+with its own output/context/time budgets. No training, downloads, provider
+fallback, or automatic request retry occur in either mode.
 """
 from __future__ import annotations
 
@@ -25,7 +27,8 @@ FIT38_CONFIG = "ef4b1aef621fb4e234ce6a05601efb62a987c3cf5d40f3995ca1b72200bab145
 PINS = {"transformers": "5.19.0", "peft": "0.21.2", "accelerate": "1.15.0", "safetensors": "0.8.0"}
 
 
-def make_handler(generate, *, api_key, model_name, deadline, max_requests):
+def make_handler(generate, *, api_key, model_name, deadline, max_requests,
+                 max_new_tokens=2048, request_seconds=23, max_request_bytes=65536):
     lock = threading.Lock()
     served = 0
 
@@ -45,6 +48,12 @@ def make_handler(generate, *, api_key, model_name, deadline, max_requests):
             except (BrokenPipeError, ConnectionResetError):
                 pass
 
+        def do_GET(self):
+            if self.path != "/healthz":
+                return self.reply(404, {"error": "not_found"})
+            return self.reply(200 if time.monotonic() < deadline else 503,
+                              {"status": "ok" if time.monotonic() < deadline else "stopping"})
+
         def do_POST(self):
             nonlocal served
             if not hmac.compare_digest(self.headers.get("Authorization", ""), "Bearer " + api_key):
@@ -53,13 +62,14 @@ def make_handler(generate, *, api_key, model_name, deadline, max_requests):
                 return self.reply(404, {"error": "not_found"})
             try:
                 length = int(self.headers.get("Content-Length", "0"))
-                if not 0 < length <= 65536:
+                if not 0 < length <= max_request_bytes or self.headers.get("Transfer-Encoding"):
                     raise ValueError
                 self.connection.settimeout(5)
                 request = json.loads(self.rfile.read(length))
                 messages = request["messages"]
                 if (request.get("model") != model_name or request.get("stream") is not False
-                        or request.get("max_tokens") != 2048 or request.get("temperature") != 0
+                        or type(request.get("max_tokens")) is not int
+                        or request["max_tokens"] != max_new_tokens or request.get("temperature") != 0
                         or request.get("chat_template_kwargs") != {"enable_thinking": False}
                         or not isinstance(messages, list) or len(messages) != 2
                         or [m["role"] for m in messages] != ["system", "user"]
@@ -70,10 +80,10 @@ def make_handler(generate, *, api_key, model_name, deadline, max_requests):
             if not lock.acquire(blocking=False):
                 return self.reply(429, {"error": "busy"})
             try:
-                if served >= max_requests or time.monotonic() >= deadline:
+                if (max_requests and served >= max_requests) or time.monotonic() >= deadline:
                     return self.reply(429, {"error": "probe_limit"})
                 served += 1
-                text, finish = generate(messages, min(deadline, time.monotonic() + 23))
+                text, finish = generate(messages, min(deadline, time.monotonic() + request_seconds))
                 if finish not in {"stop", "length"} or not isinstance(text, str):
                     raise ValueError
                 return self.reply(200, {"model": model_name, "choices": [{
@@ -103,7 +113,11 @@ def adapter_identity(adapter, weights_sha256=None, config_sha256=None):
     return weights_sha256, config_sha256
 
 
-def load_generator(adapter, process_stop, *, weights_sha256=None, config_sha256=None):
+def load_generator(adapter, process_stop, *, weights_sha256=None, config_sha256=None,
+                   max_new_tokens=2048, context_tokens=8192):
+    if (type(max_new_tokens) is not int or type(context_tokens) is not int
+            or not 1 <= max_new_tokens < context_tokens <= 32768):
+        raise ValueError("model_token_budget_invalid")
     if os.environ.get("HF_HUB_OFFLINE") != "1" or os.environ.get("TRANSFORMERS_OFFLINE") != "1":
         raise ValueError("offline_cache_required")
     if {name: version(name) for name in PINS} != PINS:
@@ -153,12 +167,12 @@ def load_generator(adapter, process_stop, *, weights_sha256=None, config_sha256=
             add_generation_prompt=True, tokenize=True, return_dict=True,
             return_tensors="pt", truncation=False)
         count = encoded["input_ids"].shape[-1]
-        if count + 2048 > 8192 or time.monotonic() >= end:
+        if count + max_new_tokens > context_tokens or time.monotonic() >= end:
             raise ValueError("context_or_deadline_exceeded")
         encoded = {k: v.to(model.device) for k, v in encoded.items()}
         stopping = Deadline(end)
         with torch.inference_mode():
-            result = model.generate(**encoded, max_new_tokens=2048, do_sample=False,
+            result = model.generate(**encoded, max_new_tokens=max_new_tokens, do_sample=False,
                 num_beams=1, use_cache=True, stopping_criteria=StoppingCriteriaList([stopping]))
         tokens = result[0, count:]
         eos = model.generation_config.eos_token_id
@@ -175,32 +189,60 @@ def main():
     parser.add_argument("--adapter-config-sha256")
     parser.add_argument("--model-name", required=True)
     parser.add_argument("--port", type=int, default=8000)
-    parser.add_argument("--max-requests", type=int, required=True)
-    parser.add_argument("--seconds", type=int, required=True)
+    parser.add_argument("--max-requests", type=int)
+    parser.add_argument("--seconds", type=int)
+    parser.add_argument("--analysis-service", action="store_true",
+                        help="Serve ordinary Analysis until SIGTERM/SIGINT; no probe-count expiry.")
+    parser.add_argument("--max-new-tokens", type=int)
+    parser.add_argument("--context-tokens", type=int)
+    parser.add_argument("--request-seconds", type=int)
     args = parser.parse_args()
-    if not 1 <= args.max_requests <= 18 or not 1 <= args.seconds <= 1800:
-        parser.error("bounded probe limits required")
+    if args.analysis_service:
+        if args.max_requests is not None or args.seconds is not None:
+            parser.error("analysis service and bounded probe lifetime are separate modes")
+        max_new_tokens = 4096 if args.max_new_tokens is None else args.max_new_tokens
+        context_tokens = 16384 if args.context_tokens is None else args.context_tokens
+        request_seconds = 210 if args.request_seconds is None else args.request_seconds
+        if (not 1 <= max_new_tokens <= 8192 or not max_new_tokens < context_tokens <= 32768
+                or not 1 <= request_seconds <= 210):
+            parser.error("analysis service limits invalid")
+        if args.adapter and (args.adapter_weights_sha256 is None or args.adapter_config_sha256 is None):
+            parser.error("analysis service requires explicit identity for any selected adapter")
+    else:
+        if (args.max_requests is None or args.seconds is None
+                or not 1 <= args.max_requests <= 18 or not 1 <= args.seconds <= 1800):
+            parser.error("bounded probe limits required")
+        if any(value is not None for value in (args.max_new_tokens, args.context_tokens, args.request_seconds)):
+            parser.error("custom inference budgets require explicit analysis service mode")
+        max_new_tokens, context_tokens, request_seconds = 2048, 8192, 23
     if args.adapter_weights_sha256 is not None or args.adapter_config_sha256 is not None:
         if (not args.adapter or not re.fullmatch(r'[0-9a-f]{64}', args.adapter_weights_sha256 or '')
                 or not re.fullmatch(r'[0-9a-f]{64}', args.adapter_config_sha256 or '')):
             parser.error('an adapter and both SHA256 values are required together')
-    key = os.environ.get("EMLIS_NATURAL_REPLY_API_KEY", "")
+    key = (os.environ.get("COCOLON_ANALYSIS_MODEL_API_KEY", "") if args.analysis_service
+           else os.environ.get("EMLIS_NATURAL_REPLY_API_KEY", ""))
     if len(key) < 24:
         parser.error("a private API key of at least 24 characters is required")
     stop = threading.Event()
-    deadline = time.monotonic() + args.seconds
+    deadline = float("inf") if args.analysis_service else time.monotonic() + args.seconds
     # Hard process bound also covers model loading and a blocked GPU forward.
     # No model or adapter is ever being written when this process terminates.
-    signal.signal(signal.SIGALRM, signal.SIG_DFL)
-    signal.setitimer(signal.ITIMER_REAL, args.seconds)
+    if not args.analysis_service:
+        signal.signal(signal.SIGALRM, signal.SIG_DFL)
+        signal.setitimer(signal.ITIMER_REAL, args.seconds)
     signal.signal(signal.SIGTERM, lambda *_: stop.set())
     signal.signal(signal.SIGINT, lambda *_: stop.set())
     identity_options = (dict(weights_sha256=args.adapter_weights_sha256,
                              config_sha256=args.adapter_config_sha256)
                         if args.adapter_weights_sha256 is not None else {})
-    generator = load_generator(args.adapter, stop, **identity_options)
+    runtime_options = (dict(max_new_tokens=max_new_tokens, context_tokens=context_tokens)
+                       if args.analysis_service else {})
+    generator = load_generator(args.adapter, stop, **identity_options, **runtime_options)
     server = ThreadingHTTPServer(("0.0.0.0", args.port), make_handler(generator,
-        api_key=key, model_name=args.model_name, deadline=deadline, max_requests=args.max_requests))
+        api_key=key, model_name=args.model_name, deadline=deadline,
+        max_requests=0 if args.analysis_service else args.max_requests,
+        max_new_tokens=max_new_tokens, request_seconds=request_seconds,
+        max_request_bytes=262144 if args.analysis_service else 65536))
     server.timeout = 1
     try:
         while not stop.is_set() and time.monotonic() < deadline:

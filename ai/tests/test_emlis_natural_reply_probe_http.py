@@ -90,3 +90,69 @@ module.main()
         capture_output=True, timeout=4)
     assert result.returncode == -signal.SIGALRM
     assert time.monotonic() - started < 4
+
+
+def test_explicit_analysis_service_accepts_longer_output_and_does_not_expire_after_probe_count():
+    calls = []
+    def generate(messages, deadline):
+        calls.append(messages)
+        assert 208 < deadline - time.monotonic() <= 210
+        return '{"overview":"合成の分析"}', 'stop'
+    server = ThreadingHTTPServer(('127.0.0.1', 0), probe.make_handler(generate,
+        api_key='synthetic-analysis-key', model_name='analysis-4b', deadline=float('inf'), max_requests=0,
+        max_new_tokens=4096, request_seconds=210, max_request_bytes=262144))
+    worker = threading.Thread(target=server.serve_forever, daemon=True)
+    worker.start()
+    packet = dict(model='analysis-4b', messages=[dict(role='system', content='合成の定義'),
+        dict(role='user', content='合成の入力')], temperature=0, max_tokens=4096, stream=False,
+        chat_template_kwargs={'enable_thinking': False})
+    try:
+        base = f'http://127.0.0.1:{server.server_port}'
+        with httpx.Client(trust_env=False) as client:
+            assert client.get(base + '/healthz').json() == {'status': 'ok'}
+            assert client.post(base + '/v1/chat/completions', json=packet).status_code == 401
+            headers = {'Authorization': 'Bearer synthetic-analysis-key'}
+            assert client.post(base + '/v1/chat/completions', headers=headers,
+                               json={**packet, 'max_tokens': 2048}).status_code == 400
+            assert client.post(base + '/v1/chat/completions', headers=headers,
+                               json={**packet, 'max_tokens': True}).status_code == 400
+            for _ in range(19):
+                response = client.post(base + '/v1/chat/completions', headers=headers, json=packet)
+                assert response.status_code == 200
+                assert response.json()['choices'][0]['finish_reason'] == 'stop'
+        assert len(calls) == 19
+    finally:
+        server.shutdown()
+        server.server_close()
+        worker.join(timeout=5)
+
+
+def test_service_cli_uses_explicit_analysis_budgets_without_probe_alarm(monkeypatch):
+    class Loaded(Exception):
+        pass
+    captured = {}
+    def load(adapter, stop, **kwargs):
+        captured.update(adapter=adapter, **kwargs)
+        raise Loaded
+    alarms = []
+    monkeypatch.setattr(probe, 'load_generator', load)
+    monkeypatch.setattr(probe.signal, 'signal', lambda *_: None)
+    monkeypatch.setattr(probe.signal, 'setitimer', lambda *args: alarms.append(args))
+    monkeypatch.setenv('COCOLON_ANALYSIS_MODEL_API_KEY', 'synthetic-analysis-private-key')
+    monkeypatch.setattr(sys, 'argv', ['serve', '--model-name', 'analysis-4b', '--analysis-service'])
+    with pytest.raises(Loaded):
+        probe.main()
+    assert captured == dict(adapter=None, max_new_tokens=4096, context_tokens=16384)
+    assert alarms == []
+
+
+@pytest.mark.parametrize('extra', [[], ['--seconds', '1800'], ['--max-requests', '18'],
+    ['--max-new-tokens', '9000'], ['--context-tokens', '4096'], ['--request-seconds', '211'],
+    ['--adapter', 'unselected-path']])
+def test_service_cli_rejects_ambiguous_modes_budgets_and_unselected_adapter(extra, monkeypatch):
+    monkeypatch.setattr(sys, 'argv', ['serve', '--model-name', 'analysis-4b'] +
+        ([] if not extra else ['--analysis-service'] + extra))
+    monkeypatch.setattr(probe, 'load_generator', lambda *_a, **_k: pytest.fail('must reject before model load'))
+    with pytest.raises(SystemExit) as exc:
+        probe.main()
+    assert exc.value.code == 2

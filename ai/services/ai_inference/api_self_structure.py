@@ -1390,6 +1390,7 @@ def register_self_structure_routes(app: FastAPI) -> None:
     @app.get("/self-structure/latest", response_model=SelfStructureLatestEnsureResponse)
     async def get_or_refresh_self_structure_latest(
         authorization: Optional[str] = Header(default=None, alias="Authorization"),
+        map_renderer: Optional[str] = Header(default=None, alias="X-Watashi-Map-Renderer"),
         ensure: bool = Query(
             default=True,
             description="If true, regenerate when stale/missing",
@@ -1423,8 +1424,9 @@ def register_self_structure_routes(app: FastAPI) -> None:
 
         from analysis_observed_service import observed_enabled
         if observed_enabled():
-            from analysis_cumulative_service import ensure_map
-            return SelfStructureLatestEnsureResponse(**(await ensure_map(uid, ensure=ensure, force=force)))
+            from analysis_cumulative_service import ensure_map, map_response_for_renderer
+            return SelfStructureLatestEnsureResponse(**map_response_for_renderer(
+                await ensure_map(uid, ensure=ensure, force=force), map_renderer))
 
         # ---- Resolve report_mode (with subscription gating; fail-closed) ----
         # わたしマップ Phase 1: Free は latest の light 概要のみ許可する。
@@ -1718,6 +1720,7 @@ def register_self_structure_routes(app: FastAPI) -> None:
     async def ensure_self_structure_monthly_report(
         body: SelfStructureMonthlyEnsureBody,
         authorization: Optional[str] = Header(default=None, alias="Authorization"),
+        map_renderer: Optional[str] = Header(default=None, alias="X-Watashi-Map-Renderer"),
     ) -> SelfStructureMonthlyEnsureResponse:
         """Ensure the current month's distributed MyProfile monthly report exists.
 
@@ -1749,8 +1752,9 @@ def register_self_structure_routes(app: FastAPI) -> None:
         if observed_enabled():
             if not include_secret or body.now_iso is not None:
                 raise HTTPException(400, 'analysis_period_override_unavailable')
-            from analysis_cumulative_service import ensure_map
-            return SelfStructureMonthlyEnsureResponse(**(await ensure_map(uid, monthly=True)))
+            from analysis_cumulative_service import ensure_map, map_response_for_renderer
+            return SelfStructureMonthlyEnsureResponse(**map_response_for_renderer(
+                await ensure_map(uid, monthly=True), map_renderer))
 
         # ---- Resolve report_mode (with subscription gating; fail-closed) ----
         # Spec v2: free users cannot view MyProfile self-structure reports.

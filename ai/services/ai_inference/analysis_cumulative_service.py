@@ -21,7 +21,7 @@ import httpx
 from fastapi import HTTPException
 
 import analysis_observed_service as observed
-from analysis_observed_service import _checked_projection, private_storage_evidence, observed_mode
+from analysis_observed_service import _checked_projection as _checked_v2_projection, private_storage_evidence, observed_mode
 
 PROFILE = 'cumulative.v1'
 MODEL_SOURCE_TIMEOUT_SECONDS = 60.0
@@ -61,6 +61,63 @@ class _ModelMapFlight:
 _model_map_flights = {}
 
 
+def _checked_projection(projection, report_id):
+    if type(projection) is dict and projection.get('wire_kind') == 'watashi.map.v3':
+        from analysis_semantic_map import validate_semantic_projection
+        try:
+            return validate_semantic_projection(projection, report_id)
+        except (ValueError, KeyError, TypeError, AttributeError, AssertionError):
+            raise HTTPException(503, 'analysis_saved_artifact_invalid') from None
+    return _checked_v2_projection(projection, report_id)
+
+
+def _projection_text(projection):
+    if projection.get('wire_kind') == 'watashi.map.v3':
+        from analysis_semantic_map import semantic_projection_text
+        return semantic_projection_text(projection)
+    from cocolon_meaning_experience_engine.cores.analysis.observed_route_realizer import ObservedSelfStructureMap
+    return ObservedSelfStructureMap._text_from_visual(projection)['text']
+
+
+def _legacy_semantic_projection(projection):
+    """Keep installed v2 clients readable while a diagram-capable build ships.
+
+    Meaning relations are not mislabeled as repeated occurrence or causation.
+    The new client receives the actual v3 graph; old clients receive the same
+    interpretations as clearly identified text, with the same evidence IDs.
+    """
+    def label(node):
+        return '\n'.join(['読み取り：' + node['title'], node['summary'], node['explanation'],
+            *node['context'], *['この記録では決められないこと：' + x for x in node['unknowns']]])
+    return dict(schema_version='cocolon.cmee.analysis_watashi_map_safe_projection.v1alpha1',
+        wire_kind='watashi.map.v2', projection_of=projection['projection_of'],
+        artifact_version=1, period_label=projection['period_label'],
+        period_comparison=dict(state='NO_PREVIOUS', reason_codes=[], safe_change_kinds=[]),
+        nodes=[dict(node_ref=n['node_ref'], node_kind='ATTENTION_OR_THOUGHT',
+            visible_label=label(n),
+            evidence_badge_count=n['evidence_badge_count']) for n in projection['nodes']],
+        edges=[], annotation_badges=[], unknown_gaps=[], conflict_badges=[],
+        accessibility_linear_order=projection['accessibility_linear_order'])
+
+
+def map_response_for_renderer(payload, renderer):
+    """Compatibility only; no generation, storage rewrite, or evidence change."""
+    if renderer == 'semantic.v1':
+        return payload
+    meta = payload.get('meta')
+    if type(meta) is dict and meta.get('wire_kind') == 'watashi.map.v3':
+        payload = deepcopy(payload)
+        payload['meta'] = _legacy_semantic_projection(meta)
+        payload['content_text'] = _projection_text(payload['meta'])
+    item = payload.get('item')
+    if type(item) is dict and item.get('content_json', {}).get('watashiMap', {}).get('wire_kind') == 'watashi.map.v3':
+        payload = deepcopy(payload)
+        row = payload['item']
+        row['content_json']['watashiMap'] = _legacy_semantic_projection(row['content_json']['watashiMap'])
+        row['content_text'] = _projection_text(row['content_json']['watashiMap'])
+    return payload
+
+
 async def _rpc(name, payload):
     return await observed._rpc(name, payload)
 
@@ -94,7 +151,6 @@ async def read_maps(user_id, *, report_id=None, history=False, limit=60, offset=
                 or type(result['items']) is not list or type(result['matched']) is not bool
                 or result['history_limit'] != {'free': 2, 'plus': 12, 'premium': None}[result['subscription_tier']]):
             raise ValueError
-        from cocolon_meaning_experience_engine.cores.analysis.observed_route_realizer import ObservedSelfStructureMap
         for row in result['items']:
             if metadata_only:
                 if (row['source_profile'] != PROFILE or row['report_mode'] != 'standard'
@@ -107,7 +163,7 @@ async def read_maps(user_id, *, report_id=None, history=False, limit=60, offset=
                     or row['content_json']['report_mode'] != 'standard'):
                 raise ValueError
             projection = _checked_projection(row['content_json']['watashiMap'], row['id'])
-            if row['content_text'] != ObservedSelfStructureMap._text_from_visual(projection)['text']:
+            if row['content_text'] != _projection_text(projection):
                 raise ValueError
             _checked_coverage(row['content_json']['map_context'])
         return result
@@ -614,7 +670,9 @@ def _consume_model_map_completion(task):
 async def _model_response(model_source, prepared):
     _require_model_write_active()
     try:
-        async with asyncio.timeout(MODEL_SOURCE_TIMEOUT_SECONDS) as deadline:
+        from analysis_model_source import is_semantic_analysis_model_source
+        timeout = 215.0 if is_semantic_analysis_model_source(model_source) else MODEL_SOURCE_TIMEOUT_SECONDS
+        async with asyncio.timeout(timeout) as deadline:
             response = await model_source(prepared)
         # A cooperative provider may catch cancellation to finish its cleanup.
         # A response returned after that deadline must still never be committed.
@@ -663,16 +721,29 @@ async def _ensure_map(user_id, *, ensure=True, force=False, monthly=False, model
         # Refresh an old current once under the category policy. Historical
         # month references are immutable and returned above without rebuilding.
         from cocolon_meaning_experience_engine.cores.analysis.observed_route_realizer import CATEGORY_LABEL_PREFIX
-        category_current = bool(current_row and all(
+        from analysis_model_source import is_semantic_analysis_model_source
+        semantic_source = is_semantic_analysis_model_source(model_source)
+        semantic_current = bool(current_row and current_row['content_json']['watashiMap']['wire_kind'] == 'watashi.map.v3')
+        category_current = bool(semantic_current or (current_row and all(
             n['visible_label'].startswith(CATEGORY_LABEL_PREFIX) and '\n' in n['visible_label']
-            for n in current_row['content_json']['watashiMap']['nodes']))
-        refresh_category_policy = bool(current_row and not category_current)
+            for n in current_row['content_json']['watashiMap']['nodes'])))
+        refresh_category_policy = bool(current_row and (
+            (semantic_source and not semantic_current) or not category_current))
         if current_row and not force and not refresh_category_policy:
             rid = await _rpc('analysis_cumulative_commit', dict(p_user_id=owner, p_guard=snapshot['guard'],
                 p_existing_id=current_row['id']))
         else:
             try:
-                if model_source is None:
+                if semantic_source:
+                    from analysis_semantic_map import prepare_semantic_map, build_semantic_map, SemanticMapNoMaterial
+                    try:
+                        prepared = await asyncio.to_thread(prepare_semantic_map, owner, snapshot)
+                    except SemanticMapNoMaterial as excluded:
+                        artifact, coverage = None, _checked_coverage(excluded.coverage)
+                    else:
+                        response = await _model_response(model_source, prepared)
+                        artifact, coverage = await asyncio.to_thread(build_semantic_map, prepared, response)
+                elif model_source is None:
                     artifact, coverage = await asyncio.to_thread(build_cumulative_map, owner, snapshot)
                 else:
                     from dataclasses import replace
@@ -701,7 +772,7 @@ async def _ensure_map(user_id, *, ensure=True, force=False, monthly=False, model
                     raise HTTPException(503, 'analysis_model_source_unavailable') from None
             projection = artifact.safe_projection(authenticated_owner_scope=owner)
             text = artifact.safe_text_projection(authenticated_owner_scope=owner)['text']
-            private = private_storage_evidence(artifact)
+            private = artifact.private_evidence() if semantic_source else private_storage_evidence(artifact)
             private['coverage'] = coverage
             private['source_record_refs'] = [s['original']['id'] for s in snapshot['members']]
             _checked_projection(projection, str(UUID(artifact.artifact_id[9:])))

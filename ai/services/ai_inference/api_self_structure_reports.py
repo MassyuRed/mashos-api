@@ -75,6 +75,7 @@ def register_self_structure_report_routes(app: FastAPI) -> None:
         report_id: str = Path(..., min_length=1),
         authorization: Optional[str] = Header(default=None, alias="Authorization"),
         month: Optional[str] = Query(default=None),
+        map_renderer: Optional[str] = Header(default=None, alias="X-Watashi-Map-Renderer"),
     ) -> SelfStructureReportDetailResponse:
         """Current owner for Self Structure report detail."""
         me = await _require_user_id(authorization)
@@ -85,7 +86,8 @@ def register_self_structure_report_routes(app: FastAPI) -> None:
             now_utc=datetime.now(timezone.utc),
             month=month,
         )
-        return SelfStructureReportDetailResponse(**payload)
+        from analysis_cumulative_service import map_response_for_renderer
+        return SelfStructureReportDetailResponse(**map_response_for_renderer(payload, map_renderer))
 
     @app.get("/self-structure/reports/{report_id}/evidence")
     async def get_map_evidence(

@@ -994,3 +994,23 @@ API238f0d63をRender dep-dbnbf9lg1s2s73c81sm0へ一回指定配置。14:31:18 JS
 固定RN56e65b1aの一回の署名iOS run42337152593／#76 attempt1は全19step success、実1.0（7601）が既存内部グループTesting。後続RNは資料／CI／隔離test lockだけでアプリsource差分0、追加署名build0。一般分析品質・旧未採用V4・旧期待群・本人原入力再解析／今回端末受入れ・実課金／公開は未完。全7,817blob一致を全意味読了としない。全詳細と未確認はCocolon第10回weekly§15.10を参照。
 
 配置ログでCI固定pinと異なる版を確認したため、追加で既存Python3.13.5と観測library（FastAPI0.162.0／Pydantic2.14.3／Starlette1.10.0／httpx0.28.1）を別の隔離targetにそろえ、同じ最終20suiteを一回実行した。407 PASS／738subtests PASS、FAIL／ERROR／SKIP／deselected0、38.62秒（既存warning2）。既存deps／製品source／requirements／実環境の変更0、外部DB／GPU／CI再実行／再配置0。これは観測版での合成回帰であり、本人の実認証・本番保存物・実機の成功へ換算しない。
+
+
+## 2026-11-07 通常わたしマップの4B意味読解と関係図 — source候補
+
+Mashの通常4B接続・分析画面修復指示により、`analysis_semantic_map.py`を既存累積ensureへ接続。従来の引用／有限構文の役割を、人間分析完成として扱わない。原典の役割・自己／他者／対象と選択の関係を解釈資料にし、原情報と推定を区別した説明・関係図を返す。元引用の実文字列／欄／版・request／messages／全量guardを照合する。モデル失敗時に有限結果へ差し替えない。
+
+設定キー（値・認証情報を記録しない）：
+
+- `COCOLON_ANALYSIS_MODEL_SOURCE=self_hosted.semantic.v1`
+- `COCOLON_ANALYSIS_MODEL_ENDPOINT`：実際に確認した専用HTTPS `/v1/chat/completions`
+- `COCOLON_ANALYSIS_MODEL`：提供serverの実model名と一致
+- `COCOLON_ANALYSIS_MODEL_API_KEY`：提供serverと同じprivate key
+
+既存`ai/tools/serve_emlis_natural_reply.py --analysis-service --model-name cocolon-qwen3.5-4b-analysis-v1 --port 8000`は、固定4B baseをoffline loadする。実行venv／base cacheは新Podで実測して復元する。研究用adapterは指定しない限り使わず、指定時は重み／設定SHAを要求する。通常モードは4096出力／16384文脈／210秒を初期値とし、従来のprobe制限は変更しない。提供枠の適切さ・実費・一般読解は実生成で確認する。
+
+保存には新migration `20261107071033_analysis_semantic_map_wire.sql`が必要。既存private v1/v2＋公開v2を保ち、公開v3＋semantic-private v1の正しい対だけを許可する。RLS／ACL／本人ID／source guard／既存行を書き換えない。APIは新clientの`X-Watashi-Map-Renderer: semantic.v1`へv3図を返す。旧clientには文脈と未確定を保持したv2説明を返すが、新しい関係図と全体・関係詳細は出ない。新RNbuildが必要。
+
+合成HTTPから隔離PGliteの実migration／RPCを通して保存・根拠取得・非生成再読・月次不変を確認。初期のSQL23514は旧wire CHECKで拒否された実原因として保持し、新migration後に解消した。型・境界の検査成功は実4Bの意味読解品質の合格ではない。
+
+現時点：旧Pod停止をMashから受領、新Pod f1lle4xwq3wjlnはconsoleログイン画面・認証handoff待ち。新GPUの実load／実生成・Render設定変更／今回API配置／新署名buildは0。次は認証完了または新Jupyter直接URLから固定base復元・予算実測・同じ10入力の実出力を通し、コード候補と実読を対応させる。公開のキー・本文・credential保存はしない。残差は長大履歴の分割統合と、訂正／撤回を含む記録の一般読解。
