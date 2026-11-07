@@ -273,9 +273,16 @@ class PreparationSourceTests(unittest.TestCase):
         text = "本人の補足です。"
         answer = AnalysisSupplement("answer-1", OWNER, raw["id"], commitment(raw),
             text, commitment(text))
+        answers = tuple(replace(answer, source_id=f"answer-{i}") for i in range(1, 5))
+        for count in range(4):
+            with self.subTest(accepted_supplement_count=count):
+                payload = prepare_analysis(analysis_request(replace(record,
+                    supplements=answers[:count])), tier="plus").payload()
+                self.assertEqual([source["source_id"] for source in payload["sources"]],
+                    [raw["id"]] + [answer.source_id for answer in answers[:count]])
         bad_records = (replace(record, owner_scope="someone-else"),
                        replace(record, saved_record_version="changed"),
-                       replace(record, supplements=(answer, replace(answer, source_id="answer-2"))))
+                       replace(record, supplements=answers))
         for bad in bad_records:
             with self.subTest(record=bad), self.assertRaises(ValueError):
                 prepare_analysis(analysis_request(bad), tier="plus")
