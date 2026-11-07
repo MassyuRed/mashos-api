@@ -64,7 +64,7 @@ def _save_harness(database, monkeypatch, *, tier='free'):
     async def load(path, *, params, timeout):
         assert path == '/rest/v1/piece_records' and timeout == 8.0
         theme_key = 'visual_recipe->theme->>theme_id'
-        assert set(params) <= {'select', 'id', 'owner_user_id', 'limit', 'lifecycle_status', theme_key}
+        assert set(params) <= {'select', 'id', 'owner_user_id', 'limit', 'lifecycle_status', theme_key, 'not.and'}
         where, values = ['id=%s', 'owner_user_id=%s'], [params['id'][3:], params['owner_user_id'][3:]]
         if 'lifecycle_status' in params:
             assert params['lifecycle_status'] == 'eq.saved'
@@ -73,6 +73,13 @@ def _save_harness(database, monkeypatch, *, tier='free'):
             assert params[theme_key] == 'in.(soft_paper,quiet_night)'
             where.append("visual_recipe->'theme'->>'theme_id' in (%s,%s)")
             values.extend(['soft_paper', 'quiet_night'])
+        if 'not.and' in params:
+            assert params['not.and'] == (
+                '(visual_recipe->theme->>theme_id.eq.quiet_night,'
+                'visual_recipe->branding->>branding_mode.eq.required_small)')
+            where.append("NOT (visual_recipe->'theme'->>'theme_id'=%s "
+                         "AND visual_recipe->'branding'->>'branding_mode'=%s)")
+            values.extend(['quiet_night', 'required_small'])
         values.append(int(params['limit']))
         query = sql.SQL('SELECT to_jsonb(r) FROM (SELECT {} FROM public.piece_records WHERE {} LIMIT %s) r').format(
             sql.SQL(',').join(sql.Identifier(k) for k in params['select'].split(',')),

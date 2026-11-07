@@ -24,6 +24,9 @@ from __future__ import annotations
 import logging
 import os
 import json
+import hashlib
+import math
+from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Literal, Optional, Tuple
@@ -165,6 +168,26 @@ JST = timezone(JST_OFFSET)
 DAY = timedelta(days=1)
 
 
+def _analysis_rendered_prose(value: Any) -> List[str]:
+    """Keep body safety separate from typed graph labels and numeric features."""
+    prose = []
+    fields = {"contentText", "content_text", "astorText", "summaryText", "description", "text", "headline",
+        "movementItems", "nextPoints", "next_points", "structural_comment", "gentle_comment", "phase_comment", "shift_comment"}
+    def visit(item: Any, key: str = "") -> None:
+        if isinstance(item, dict):
+            for name, child in item.items():
+                if name not in {"analysisPayload", "analysisMeta", "deepAnalysisMeta", "publish", "reportValidity", "textGenerationCore"}:
+                    visit(child, name)
+        elif isinstance(item, list):
+            for child in item:
+                visit(child, key)
+        elif isinstance(item, str) and (key in fields or key.endswith("Comment") or key.endswith("_comment")):
+            if item and item not in prose:
+                prose.append(item)
+    visit(value)
+    return prose
+
+
 def _attach_analysis_report_validity_meta_if_available(
     content_json: Dict[str, Any],
     *,
@@ -176,26 +199,44 @@ def _attach_analysis_report_validity_meta_if_available(
     materials: Any = None,
     source_id: Optional[str] = None,
     domain: str = "emotion_structure",
+    snapshot_binding: Optional[Dict[str, Any]] = None,
+    legacy_text: Optional[str] = None,
 ) -> Dict[str, Any]:
     if evaluate_analysis_report_validity is None or attach_report_validity_meta is None:
+        if snapshot_binding is not None:
+            blocked = dict(content_json)
+            blocked["reportValidity"] = dict(save_allowed=False, display_valid=False,
+                blocked_reasons=["analysis_snapshot_source_unavailable"])
+            return blocked
         return content_json
     try:
         result = evaluate_analysis_report_validity(
             domain=domain,
             material_count=material_count,
             output_text=output_text,
-            output_payload=output_payload,
+            output_payload=({"display_prose": _analysis_rendered_prose(output_payload)}
+                if snapshot_binding is not None else output_payload),
             material_fields=material_fields or [],
-            material_sources=materials,
+            # The snapshot branch runs its complete, source-bound composer once
+            # below; the first pass remains the same non-diagnostic safety gate.
+            material_sources=None if snapshot_binding is not None else materials,
             target_period=target_period,
             save_requested=True,
             enforce_text_generation_core=True,
         )
         updated = attach_report_validity_meta(content_json, result)
     except Exception:
+        if snapshot_binding is not None:
+            blocked = dict(content_json)
+            blocked["reportValidity"] = dict(save_allowed=False, display_valid=False,
+                blocked_reasons=["analysis_snapshot_source_unavailable"])
+            return blocked
         updated = content_json
 
     if evaluate_analysis_composer is None or attach_analysis_composer_meta is None:
+        if snapshot_binding is not None:
+            updated.setdefault("reportValidity", {}).update(save_allowed=False, display_valid=False,
+                blocked_reasons=["analysis_snapshot_source_unavailable"])
         return updated
 
     try:
@@ -208,6 +249,8 @@ def _attach_analysis_report_validity_meta_if_available(
             material_fields=material_fields or [],
             target_period=target_period,
             source_id=source_id or "analysis-report-runtime",
+            snapshot_binding=snapshot_binding,
+            snapshot_legacy_text=legacy_text,
         )
         updated = attach_analysis_composer_meta(updated, evaluation)
         validity = updated.get("reportValidity") if isinstance(updated.get("reportValidity"), dict) else None
@@ -222,6 +265,9 @@ def _attach_analysis_report_validity_meta_if_available(
                 validity["save_allowed"] = False
                 validity["display_valid"] = False
     except Exception:
+        if snapshot_binding is not None:
+            updated.setdefault("reportValidity", {}).update(save_allowed=False, display_valid=False,
+                blocked_reasons=["analysis_snapshot_source_unavailable"])
         return updated
     return updated
 
@@ -249,43 +295,168 @@ def _analysis_report_blocked_reasons(content_json: Dict[str, Any]) -> List[str]:
     return list(dict.fromkeys(reasons))
 
 
-def _snapshot_analysis_materials_for_core(
-    *,
-    snapshot_id: Optional[str],
-    snapshot_hash: Optional[str],
-    report_type: str,
-    summary: Dict[str, Any],
-    views: Dict[str, Any],
-    report_text: Any,
-) -> List[Dict[str, Any]]:
-    metrics = views.get("metrics") if isinstance(views.get("metrics"), dict) else {}
-    share = metrics.get("sharePct") if isinstance(metrics.get("sharePct"), dict) else {}
-    totals = metrics.get("totals") if isinstance(metrics.get("totals"), dict) else {}
-    signals: List[str] = []
-    for source in (share, totals):
-        if not isinstance(source, dict):
+def _snapshot_source_bytes(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
+
+
+def _snapshot_source_require(condition: bool) -> None:
+    if not condition:
+        raise HTTPException(409, "analysis_snapshot_source_mismatch")
+
+
+def _snapshot_factual_payload(value: Any) -> Any:
+    """Retain feature data and quotations, never inherited generated prose."""
+    excluded = {"narrative", "description", "content_text", "contentText", "astorText",
+        "meaningComment", "patternComment", "phaseComment", "shiftComment",
+        "phase_comment", "shift_comment", "structural_comment", "gentle_comment", "next_points"}
+    if isinstance(value, dict):
+        return {key: _snapshot_factual_payload(item) for key, item in value.items()
+            if key not in excluded and not key.replace("_", "").lower().endswith("comment")}
+    if isinstance(value, list):
+        return [_snapshot_factual_payload(item) for item in value]
+    return value
+
+
+def _freeze_snapshot_report_source(*, user_id: str, scope: str, snapshot: Dict[str, Any],
+        standard_row: Optional[Dict[str, Any]], deep_row: Optional[Dict[str, Any]],
+        include_supplement: bool = False) -> str:
+    """Request-local immutable source bytes; no candidate text is accepted here."""
+    from astor_material_snapshots import _parse_emotion_period_scope
+    info = _parse_emotion_period_scope(scope)
+    report_type = "monthly" if info["kind"] == "monthly_28d" else info["kind"]
+    snap = deepcopy(snapshot)
+    body = snap.get("payload")
+    _snapshot_source_require(isinstance(body, dict) and bool(snap.get("id")))
+    _snapshot_source_require(all(isinstance(body.get(key), dict) for key in ("period", "summary", "views")))
+    _snapshot_source_require(snap.get("user_id") == user_id and snap.get("scope") == scope
+        and snap.get("snapshot_type") == "public" and isinstance(snap.get("source_hash"), str)
+        and len(snap["source_hash"]) == 64 and all(c in "0123456789abcdef" for c in snap["source_hash"]))
+    _snapshot_source_require(body.get("version") == "emotion_period.v1" and body.get("scope") == scope
+        and body.get("snapshot_type") == "public" and body.get("source_hash") == snap["source_hash"])
+    period = body.get("period") or {}
+    _snapshot_source_require(all(_parse_iso_utc(period.get(key)) == _parse_iso_utc(info[field])
+        for key, field in (("periodStartIso", "period_start_iso"), ("periodEndIso", "period_end_iso"))))
+    count = (body.get("summary") or {}).get("emotions_public")
+    _snapshot_source_require(type(count) is int and count > 0)
+    derived, refs = {}, {}
+    missing_alignment_stages = []
+    for stage, row in (("standard", standard_row), ("deep", deep_row)):
+        if row is None:
+            derived[stage] = {}
+            refs[stage] = None
             continue
-        for key, value in source.items():
-            try:
-                numeric = int(float(value or 0))
-            except Exception:
-                numeric = 0
-            if numeric > 0:
-                signals.append(str(key))
-    material_summary = str(summary.get("emotions_public") or summary.get("emotions_total") or metrics.get("totalAll") or "").strip()
-    if material_summary:
-        material_summary = f"{report_type} public emotion material count {material_summary}"
-    text = str(report_text or "").strip() or material_summary or "analysis report material snapshot"
-    return [
-        {
-            "id": snapshot_id or snapshot_hash or f"analysis-{report_type}-snapshot",
-            "source_id": snapshot_id or snapshot_hash or f"analysis-{report_type}-snapshot",
-            "summary": material_summary or text,
-            "memo": text,
-            "emotion_signals": list(dict.fromkeys(signals)),
-            "domain": "emotion_structure",
-        }
-    ]
+        _snapshot_source_require(isinstance(row, dict) and isinstance(row.get("payload"), dict))
+        payload = row.get("payload") or {}
+        ref = payload.get("snapshot_ref") or {}
+        span = payload.get("period") or {}
+        alignment = payload.get("source_alignment") or {}
+        _snapshot_source_require(row.get("target_user_id") == user_id and row.get("snapshot_id") == snap["id"]
+            and row.get("source_hash") == snap["source_hash"] and row.get("analysis_type") == "emotion_structure"
+            and row.get("scope") == report_type and row.get("analysis_stage") == stage)
+        _snapshot_source_require(payload.get("source_hash") == snap["source_hash"]
+            and payload.get("analysis_type") == "emotion_structure" and payload.get("analysis_stage") == stage
+            and payload.get("scope") == report_type and ref == dict(snapshot_id=snap["id"], scope=scope, snapshot_type="public"))
+        _snapshot_source_require(_parse_iso_utc(span.get("start_iso")) == _parse_iso_utc(info["period_start_iso"])
+            and _parse_iso_utc(span.get("end_iso")) == _parse_iso_utc(info["period_end_iso"]))
+        if "source_alignment" not in payload:
+            missing_alignment_stages.append(stage)
+        else:
+            _snapshot_source_require(alignment == dict(profile="emotion_period.rows.v1", snapshot_id=snap["id"],
+                source_hash=snap["source_hash"], scope=scope, snapshot_type="public", row_count=count))
+        derived[stage] = _snapshot_factual_payload(payload)
+        refs[stage] = dict(analysis_result_id=str(row.get("id") or "") or None,
+            analysis_type="emotion_structure", analysis_stage=stage,
+            analysis_version=str(row.get("analysis_version") or ""), snapshot_id=snap["id"], source_hash=snap["source_hash"])
+    if missing_alignment_stages:
+        # Re-derive only otherwise coherent legacy rows. A mismatch in either
+        # stage must be rejected before this recoverable condition is exposed.
+        failure = HTTPException(409, "analysis_snapshot_alignment_missing")
+        failure._analysis_missing_alignment_stages = tuple(missing_alignment_stages)
+        if "deep" in missing_alignment_stages:
+            failure._analysis_recover_deep_alignment = dict(snapshot_id=snap["id"], source_hash=snap["source_hash"])
+        raise failure
+    return _snapshot_source_bytes(dict(owner=user_id, scope=scope, report_type=report_type,
+        snapshot=snap, derived=derived, refs=refs, include_supplement=bool(include_supplement)))
+
+
+def _snapshot_analysis_materials_for_core(source_bytes: str) -> List[Dict[str, Any]]:
+    """Scalar observations from saved source fields; output text cannot feed back."""
+    source = json.loads(source_bytes)
+    snap = source["snapshot"]
+    facts = []
+
+    def add(value: Any, path: str) -> None:
+        if isinstance(value, dict):
+            for key, item in sorted(value.items()):
+                add(item, path + "/" + key)
+        elif isinstance(value, list):
+            for index, item in enumerate(value):
+                add(item, path + "/" + str(index))
+        elif type(value) in (int, float) and math.isfinite(value):
+            identifier = snap["id"] + ":" + snap["source_hash"] + ":" + path
+            facts.append(dict(id=identifier, source_id=identifier, domain="emotion_structure",
+                summary=path + "=" + _snapshot_source_bytes(value)))
+        elif isinstance(value, str) and any(token in path for token in ("phrase_samples/", "phraseSamples/", "/keyword", "/period/")):
+            identifier = snap["id"] + ":" + snap["source_hash"] + ":" + path
+            facts.append(dict(id=identifier, source_id=identifier, domain="emotion_structure",
+                summary=path + "=" + _snapshot_source_bytes(value)))
+
+    for key in ("period", "summary", "views"):
+        add(snap["payload"].get(key), "snapshot/" + key)
+    add(source["derived"], "derived")
+    for index, note in enumerate(_common_observation_note_lines()):
+        facts.append(dict(id=f"analysis.observation-note.v1:{index}",
+            source_id=f"analysis.observation-note.v1:{index}", domain="emotion_structure", summary=note))
+    _snapshot_source_require(bool(facts))
+    return facts
+
+
+def _render_snapshot_source(source_bytes: str) -> Dict[str, Any]:
+    """Existing report writers consume frozen facts, independently of a candidate."""
+    source = json.loads(source_bytes)
+    body = source["snapshot"]["payload"]
+    period, views, summary = body["period"], body["views"], body["summary"]
+    rt = source["report_type"]
+    target = _build_target_period_from_snapshot(rt, period["periodStartIso"], period["periodEndIso"])
+    common = dict(title=target.title, period_start_iso=target.period_start_iso, period_end_iso=target.period_end_iso)
+    metrics = views["metrics"]
+    if rt == "daily":
+        light = _render_daily_standard_v3_text(**common, metrics=metrics, summary=summary, movement=views.get("movement") or {})
+    elif rt == "weekly":
+        light = _render_weekly_standard_v3_text(**common, metrics=metrics, days=views.get("days") or [], supplement_text=None)
+    else:
+        light = _render_monthly_standard_v3_text(**common, metrics=metrics, weeks=views.get("weeks") or [], supplement_text=None)
+    standard = _build_standard_report_payload(**common, report_type=rt, analysis_payload=source["derived"]["standard"],
+        snapshot_summary=summary, snapshot_views=views, light_text=light)
+    deep = _build_structural_report_payload(**common, report_type=rt, deep_analysis_payload=source["derived"]["deep"])
+    result = dict(standardReport=standard, deepReport=deep, content_text=light, metrics=metrics,
+        analysisMeta=source["refs"]["standard"], deepAnalysisMeta=source["refs"]["deep"],
+        astorText=None, astorMeta=None, astorError=None)
+    for key in (("summary", "day", "movement") if rt == "daily" else (("days",) if rt == "weekly" else ("weeks",))):
+        result[key] = summary if key == "summary" else views.get(key)
+    if source["include_supplement"]:
+        result["astorText"] = deep["contentText"] if deep else standard["contentText"]
+        result["astorMeta"] = {"source": "snapshot_observations", "snapshot_id": source["snapshot"]["id"]}
+    if build_report_kokoro_weather is not None:
+        result["kokoroWeather"] = build_report_kokoro_weather(report_type=rt, rows=[],
+            period_start_utc=target.period_start_utc, period_end_utc=target.period_end_utc,
+            existing_metrics=metrics, existing_days=views.get("days") or [], existing_weeks=views.get("weeks") or [],
+            existing_time_buckets=_extract_time_bucket_rows(snapshot_views=views, analysis_payload=source["derived"]["standard"]))
+    return result
+
+
+def _snapshot_composer_binding(source_bytes: str) -> Dict[str, Any]:
+    expected = _render_snapshot_source(source_bytes)
+    source = json.loads(source_bytes)
+    return dict(profile="analysis.snapshot.facts.v1",
+        source_digest=hashlib.sha256(source_bytes.encode("utf-8")).hexdigest(),
+        source_bytes=source_bytes,
+        expected_text=expected["standardReport"]["contentText"],
+        expected_legacy_text=expected["content_text"],
+        expected_payload={key: value for key, value in expected.items() if key != "content_text"},
+        expected_publish=dict(status="READY", scope=source["scope"], snapshotType="public",
+            publicSourceHash=source["snapshot"]["source_hash"], secretExcluded=True),
+        materials=_snapshot_analysis_materials_for_core(source_bytes))
 
 
 # Strength weights (match client)
@@ -894,7 +1065,7 @@ async def _fetch_latest_snapshot_row(
         resp = await _sb_get(
             f"/rest/v1/{MATERIAL_SNAPSHOTS_TABLE}",
             params=[
-                ("select", "id,source_hash,created_at,payload"),
+                ("select", "id,user_id,scope,snapshot_type,source_hash,created_at,payload"),
                 ("user_id", f"eq.{uid}"),
                 ("scope", f"eq.{sc}"),
                 ("snapshot_type", f"eq.{st}"),
@@ -994,7 +1165,8 @@ def _coerce_emotion_map(raw: Any) -> Dict[str, int]:
     if not isinstance(raw, dict):
         return out
     for k in EMOTION_KEYS:
-        out[k] = _coerce_int(raw.get(k), 0)
+        value = raw.get(k) if k in raw else raw.get("peace") if k == "calm" else None
+        out[k] = _coerce_int(value, 0)
     return out
 
 
@@ -1018,6 +1190,17 @@ def _first_non_empty_emotion_map(*raw_maps: Any) -> Dict[str, int]:
         if sum(m.values()) > 0:
             return m
     return {}
+
+
+def _engine_share_percent(raw: Any) -> Dict[str, int]:
+    """The existing engine stores peace and fractions; API charts use calm and percent."""
+    if not isinstance(raw, dict) or not any(key in raw for key in (*EMOTION_KEYS, "peace")):
+        return {}
+    values = {}
+    for key in EMOTION_KEYS:
+        value = raw.get(key) if key in raw else raw.get("peace") if key == "calm" else None
+        values[key] = _coerce_int(_coerce_float(value, 0.0) * 100.0, 0)
+    return values
 
 
 def _pick_top_share_items(share_map: Dict[str, int], *, limit: int = 2) -> List[Tuple[str, int]]:
@@ -1113,12 +1296,13 @@ def _normalize_time_bucket_rows(raw: Any) -> List[Dict[str, Any]]:
                 for k in EMOTION_KEYS
             }
 
-        dominant_key = str(
+        declared_dominant = str(
             data.get("dominantKey")
             or data.get("dominant_key")
             or data.get("dominant")
             or ""
-        ).strip() or _dominant_key_from_map(weighted_counts)
+        ).strip()
+        dominant_key = _dominant_key_from_map(weighted_counts) or declared_dominant
 
         row.update(
             {
@@ -1176,8 +1360,8 @@ def _find_peak_time_bucket(rows: List[Dict[str, Any]]) -> Optional[Dict[str, Any
     return best
 
 COMMON_OBSERVATION_NOTE_LINES = (
-    "このレポートは、入力から見える変化をまとめた『観測』です。",
-    "診断や断定を目的としたものではありません。",
+    "このレポートは、記録に含まれる感情と強度を期間ごとにまとめたものです。",
+    "記録された範囲の観測であり、本人の性質や出来事の背景を決めつけるものではありません。",
 )
 
 
@@ -1339,27 +1523,15 @@ def _humanize_emotion_report_payload_value(value: Any) -> Any:
 
 
 def _fallback_overview_line(report_type: str) -> str:
-    if report_type == "daily":
-        return "昨日は、ひとつにまとめて言えるほど強い偏りはまだ見えていません。"
-    if report_type == "weekly":
-        return "今週は、ひとつにまとめて言えるほど強い偏りはまだ見えていません。"
-    return "今月は、ひとつにまとめて言えるほど強い偏りはまだ見えていません。"
+    return "対象期間の感情ラベルの集計は、この項目では確認できません。"
 
 
 def _fallback_reader_comment(report_type: str) -> str:
-    if report_type == "daily":
-        return "まとまりきらない感じそのものが、昨日の自然な状態だったのかもしれません。"
-    if report_type == "weekly":
-        return "日によって違う動きが出ていたこと自体に、今週らしさが表れていたようです。"
-    return "いくつかの気持ちが重なっていたこと自体が、今月の自然な特徴だったようです。"
+    return "グラフの値は、記録時に選ばれた感情ラベルと強度の集計です。対象期間と集計値を合わせて見返せます。"
 
 
 def _fallback_time_comment(report_type: str) -> str:
-    if report_type == "daily":
-        return "昨日は特定の時間だけが強かったというより、一日の中に反応が広く散っていました。"
-    if report_type == "weekly":
-        return "今週は特定の時間に固定されるより、朝から夜まで広く反応が出ていました。"
-    return "今月は特定の時間だけが際立つというより、時間帯ごとに反応の出方が分かれていました。"
+    return "このレポートには時間帯別の内訳がありません。期間全体の割合と、表示されている日別・週別の集計を見返せます。"
 
 
 def _time_bucket_reader_label(value: Any) -> str:
@@ -1394,28 +1566,20 @@ def _build_time_bucket_comment(
 ) -> str:
     if not isinstance(peak_bucket, dict) or _coerce_int(peak_bucket.get("inputCount"), 0) <= 0:
         return _fallback_time_comment(report_type)
-
-    bucket_key = _normalize_time_bucket_key(peak_bucket.get("bucket") or peak_bucket.get("label"))
     time_label = _time_bucket_reader_label(peak_bucket.get("bucket") or peak_bucket.get("label"))
-    bucket_dom_key = _time_bucket_dominant_key(peak_bucket) or fallback_dominant_key
-    bucket_dom_label = KEY_TO_JP.get(bucket_dom_key, bucket_dom_key) if bucket_dom_key else ""
-    context_clause = TIME_BUCKET_CONTEXT_CLAUSES.get(bucket_key or "", "その時間帯がひとつの山になっていた")
-
-    if report_type == "daily":
-        first = f"昨日は{time_label}に気持ちが表へ上がりやすい一日でした。"
-    elif report_type == "weekly":
-        first = f"今週は{time_label}に気持ちが表へ上がりやすい場面がありました。"
-    else:
-        first = f"今月は{time_label}に反応が集まりやすい傾向が続いていました。"
-
-    if bucket_dom_label:
-        second = f"とくに「{bucket_dom_label}」がこの時間に出やすく、{context_clause}と読むと自然です。"
-    else:
-        second = f"{context_clause}と読むと自然です。"
-
-    if report_type == "monthly":
-        return f"{first}{second}この偏りは、月の中で何度か繰り返し見えていました。"
-    return f"{first}{second}"
+    count = _coerce_int(peak_bucket.get("inputCount"), 0)
+    weighted = _coerce_int(peak_bucket.get("weightedTotal"), 0)
+    if weighted <= 0:
+        weighted = sum(_coerce_emotion_map(peak_bucket.get("weightedCounts")).values())
+    lines = [
+        f"時間帯別では、{time_label}の入力件数が最も多い集計値の一つで、{count}件でした。",
+        f"この時間帯の感情ラベルに強度を加えた合計は{weighted}です。" if weighted > 0 else "この時間帯の加重内訳は、この項目では確認できません。",
+    ]
+    dominant = _dominant_key_from_map(peak_bucket.get("weightedCounts") or peak_bucket.get("weighted_counts"))
+    if dominant:
+        lines.append(f"この時間帯では「{KEY_TO_JP.get(dominant, dominant)}」の加重値が最大でした。")
+    lines.append("時間帯は、入力が記録された時刻に基づいています。")
+    return "".join(lines)
 
 def _normalize_summary_movement_items(summary: Dict[str, Any]) -> List[str]:
     items: List[str] = []
@@ -1480,313 +1644,106 @@ def _build_standard_summary_object(
 ) -> Dict[str, Any]:
     payload = analysis_payload if isinstance(analysis_payload, dict) else {}
     views = snapshot_views if isinstance(snapshot_views, dict) else {}
-    snap_summary = snapshot_summary if isinstance(snapshot_summary, dict) else {}
-
-    movement = views.get("movement") if isinstance(views.get("movement"), dict) else {}
-    weekly_snapshot = payload.get("weekly_snapshot") if isinstance(payload.get("weekly_snapshot"), dict) else {}
-    time_buckets = _extract_time_bucket_rows(snapshot_views=views, analysis_payload=payload)
-    peak_bucket = _find_peak_time_bucket(time_buckets)
-
-    movement_items: List[str] = []
-    overview_comment = ""
-    time_comment = ""
-    reader_comment = ""
+    summary = snapshot_summary if isinstance(snapshot_summary, dict) else {}
+    metrics = views.get("metrics") if isinstance(views.get("metrics"), dict) else {}
+    weekly = payload.get("weekly_snapshot") if isinstance(payload.get("weekly_snapshot"), dict) else {}
+    totals = _coerce_emotion_map(metrics["totals"]) if isinstance(metrics.get("totals"), dict) else _coerce_emotion_map(weekly.get("wcounts"))
+    total = sum(totals.values())
+    shares = _coerce_emotion_map(metrics["sharePct"]) if isinstance(metrics.get("sharePct"), dict) else _engine_share_percent(weekly.get("share"))
+    if not any(shares.values()) and total > 0:
+        shares = {key: int(round(totals.get(key, 0) * 100 / total)) for key in EMOTION_KEYS}
+    ranked = sorted(((key, totals.get(key, 0)) for key in EMOTION_KEYS if totals.get(key, 0) > 0),
+        key=lambda item: item[1], reverse=True)
+    count = summary.get("emotions_public")
+    count = _coerce_int(count, 0) if count is not None else None
+    period_word = {"daily": "この日", "weekly": "この週", "monthly": "この月"}.get(report_type, "この期間")
+    count_line = f"{period_word}の対象期間には、分析対象の入力が{count}件ありました。" if count is not None else f"{period_word}の感情ラベルの集計です。"
+    breakdown = "、".join(f"{KEY_TO_JP[key]}{totals.get(key, 0)}" for key in EMOTION_KEYS)
+    overview = count_line + f"強度を加えた合計は{total}で、内訳は{breakdown}です。"
+    movement_items = []
+    if ranked:
+        leading, leading_value = ranked[0]
+        tied = [KEY_TO_JP[key] for key, value in ranked if value == leading_value]
+        overview += f"最大の加重値は「{'・'.join(tied)}」の{leading_value}でした。"
+        movement_items.append(f"「{KEY_TO_JP[leading]}」の加重値は{leading_value}、全体に対する割合は{shares.get(leading, 0)}%でした。")
+        if len(ranked) > 1:
+            second, second_value = ranked[1]
+            movement_items.append(f"「{KEY_TO_JP[second]}」は{second_value}で、割合は{shares.get(second, 0)}%でした。")
+        else:
+            movement_items.append(f"集計値がある感情ラベルは「{KEY_TO_JP[leading]}」の1種類でした。")
+    else:
+        movement_items.extend(["感情ラベルの加重合計は0でした。", "割合を算出できる加重値はありませんでした。"])
 
     if report_type == "daily":
-        metrics = views.get("metrics") if isinstance(views.get("metrics"), dict) else {}
-        share_map = _first_non_empty_emotion_map(metrics.get("sharePct"))
-        weighted_counts = _first_non_empty_emotion_map(metrics.get("totals"))
-        top_items = _pick_top_share_items(share_map, limit=2)
-        dominant_key = str(metrics.get("dominantKey") or "").strip() or _dominant_key_from_map(weighted_counts) or (top_items[0][0] if top_items else None)
-        dominant_label = KEY_TO_JP.get(dominant_key, dominant_key) if dominant_key else "—"
-        secondary_label = KEY_TO_JP.get(top_items[1][0], top_items[1][0]) if len(top_items) >= 2 else None
-        total_all = _coerce_int(metrics.get("totalAll") or snap_summary.get("emotions_public") or snap_summary.get("emotions_total"), 0)
-        movement_key = str(movement.get("key") or "").strip()
-        flow_phrase = EMOTION_FLOW_PHRASE.get(dominant_key, "何かを保ち直したい気持ち")
-        peak_time_label = _time_bucket_reader_label((peak_bucket or {}).get("bucket") or (peak_bucket or {}).get("label")) if peak_bucket else ""
-
-        if total_all > 0 and dominant_key:
-            overview_comment = f"昨日は、「{dominant_label}」が強く跳ねたというより、{flow_phrase}が一日の土台に残っていたようです。"
-            if secondary_label and secondary_label != dominant_label:
-                overview_comment += f" そこに「{secondary_label}」も重なり、気持ちが一つだけでは言い切れない一日でした。"
-            elif movement_key == "down":
-                overview_comment += " 少しずつ静かなほうへ戻ろうとする向きも見えていました。"
-            elif movement_key == "up":
-                overview_comment += " 表に出る反応が前日より少し濃くなっていたようです。"
-            elif movement_key == "swing":
-                overview_comment += " 昨日までとは少し違う角度の反応も混ざっていました。"
-        elif total_all > 0:
-            overview_comment = "昨日は、ひとつの感情に言い切れないままでも、気持ちがいくつかの向きで重なっていた一日でした。"
+        movement = views.get("movement") if isinstance(views.get("movement"), dict) else {}
+        if movement and "totalYesterday" in movement:
+            previous = _coerce_int(movement.get("totalYesterday"), 0)
+            current = _coerce_int(movement.get("totalToday"), total)
+            difference = current - previous
+            movement_items.append(f"前日の加重合計{previous}に対して、この日は{current}で、差は{difference:+d}でした。")
+            before = str(movement.get("dominantYesterday") or "").strip()
+            after = str(movement.get("dominantToday") or "").strip()
+            if before and after:
+                movement_items.append(f"前日の最大ラベルは「{KEY_TO_JP.get(before, before)}」、この日は「{KEY_TO_JP.get(after, after)}」でした。")
+            else:
+                movement_items.append("前日と当日の最大ラベルを両方確認できる集計値はありませんでした。")
         else:
-            overview_comment = "昨日は入力が少なめで、ひとつの流れとして言い切るほどの偏りはまだ見えていません。"
-
-        if dominant_key:
-            movement_items.append(f"いちばん前に出ていたのは「{dominant_label}」でした。")
-        if secondary_label and secondary_label != dominant_label:
-            movement_items.append(f"「{secondary_label}」も重なり、同じテーマに対して別の角度の反応が混ざっていました。")
-        if movement_key:
-            movement_line = _render_daily_motion_line(movement)
-            if movement_line and movement_line not in movement_items:
-                movement_items.append(movement_line)
-
-        time_comment = _build_time_bucket_comment(
-            report_type="daily",
-            peak_bucket=peak_bucket,
-            fallback_dominant_key=dominant_key,
-        )
-
-        if total_all > 0:
-            reader_parts = []
-            if dominant_key:
-                reader_parts.append(
-                    f"昨日の反応は、「{dominant_label}」が一度強く出たというより、{flow_phrase}がじわっと続いていたようです。"
-                )
-            else:
-                reader_parts.append("昨日は、気持ちが一つにまとまりきらないまま重なっていた一日として読むほうが自然です。")
-            if secondary_label and secondary_label != dominant_label:
-                reader_parts.append(
-                    f"「{secondary_label}」が混ざっていたのは、同じテーマに対して心が別の角度からも反応していたためと考えると納得しやすい流れです。"
-                )
-            else:
-                reader_parts.append(
-                    "似た反応がまとまっていたことから、その場ごとの小さな揺れより、気になっているものが続いていた可能性があります。"
-                )
-            if peak_time_label:
-                reader_parts.append(
-                    f"とくに{peak_time_label}に気持ちが上がりやすかったぶん、その時間になると残っていたものが見えやすかったのかもしれません。"
-                )
-            else:
-                reader_parts.append(
-                    "時間が変わっても似た向きが残っていたのは、気持ちの芯が一日の中で続いていたためと見るほうが自然です。"
-                )
-            reader_comment = "".join(reader_parts)
-        else:
-            reader_comment = _fallback_reader_comment("daily")
-
-    elif report_type == "weekly":
-        snapshot_metrics = views.get("metrics") if isinstance(views.get("metrics"), dict) else {}
-        share_map = _first_non_empty_emotion_map(weekly_snapshot.get("share"), snapshot_metrics.get("sharePct"))
-        weighted_counts = _first_non_empty_emotion_map(weekly_snapshot.get("wcounts"), snapshot_metrics.get("totals"))
-        top_items = _pick_top_share_items(share_map, limit=2)
-        dominant_key = _dominant_key_from_map(weighted_counts) or (top_items[0][0] if top_items else None)
-        dominant_label = KEY_TO_JP.get(dominant_key, dominant_key) if dominant_key else "—"
-        secondary_label = KEY_TO_JP.get(top_items[1][0], top_items[1][0]) if len(top_items) >= 2 else None
-        n_events = _coerce_int(weekly_snapshot.get("n_events") or snap_summary.get("emotions_public") or snap_summary.get("emotions_total"), 0)
-        alternation_rate = _coerce_float(weekly_snapshot.get("alternation_rate"), 0.0)
-        flow_phrase = EMOTION_FLOW_PHRASE.get(dominant_key, "何かを保ち直したい気持ち")
-        peak_time_label = _time_bucket_reader_label((peak_bucket or {}).get("bucket") or (peak_bucket or {}).get("label")) if peak_bucket else ""
-
-        if dominant_key:
-            overview_comment = f"今週は、「{dominant_label}」が目立ったというより、{flow_phrase}が週の土台に残っていたようです。"
-            if secondary_label and secondary_label != dominant_label:
-                overview_comment += f" そこに「{secondary_label}」も重なり、ひとつの空気感だけでは言い切れない週でした。"
-            if alternation_rate >= 0.55:
-                overview_comment += " 日ごとの切り替わりも比較的多く、そのたびに気持ちの置き場を探し直していたようです。"
-            elif 0 < alternation_rate <= 0.25:
-                overview_comment += " 大きな切り替わりは少なく、近い向きの反応が続いていました。"
-            else:
-                overview_comment += " 週の中で少しずつ向きが変わる場面も見えていました。"
-        elif n_events > 0:
-            overview_comment = "今週は入力があり、ひとつに言い切れないままでも気持ちの流れを追える週でした。"
-        else:
-            overview_comment = "今週は入力が少なめで、ひとつの流れとして言い切るほどの偏りはまだ見えていません。"
-
-        if dominant_key:
-            movement_items.append(f"週全体では「{dominant_label}」の比重がいちばん高めでした。")
-        if secondary_label and secondary_label != dominant_label:
-            movement_items.append(f"「{secondary_label}」も重なり、同じテーマに対する反応の角度が週の中で少し変わっていました。")
-        if alternation_rate >= 0.55:
-            movement_items.append("日ごとに気持ちの向きが切り替わる場面が比較的多めでした。")
-        elif 0 < alternation_rate <= 0.25:
-            movement_items.append("大きな切り替わりは少なく、近い反応が続きやすい週でした。")
-        elif n_events > 0:
-            movement_items.append("気持ちの向きは週の中でゆるやかに動いていました。")
-
-        time_comment = _build_time_bucket_comment(
-            report_type="weekly",
-            peak_bucket=peak_bucket,
-            fallback_dominant_key=dominant_key,
-        )
-
-        if n_events > 0:
-            reader_parts = []
-            if dominant_key:
-                reader_parts.append(
-                    f"今週の反応は、「{dominant_label}」が単発で強かったというより、{flow_phrase}が週を通して残っていたようです。"
-                )
-            else:
-                reader_parts.append("今週は、日ごとの差よりも、重なっていた空気感そのものを受け取るほうが自然です。")
-            if secondary_label and secondary_label != dominant_label:
-                reader_parts.append(
-                    f"「{secondary_label}」が重なっていたのは、同じテーマに対して心が別の角度からも反応していたためと考えると納得しやすい流れです。"
-                )
-            else:
-                reader_parts.append(
-                    "似た反応が何度も戻っていたことから、日ごとの差よりも、週を通して残っていたもののほうが大きかった可能性があります。"
-                )
-            if alternation_rate >= 0.55:
-                reader_parts.append(
-                    "切り替わりが多かったのも、気分がばらばらだったというより、そのたびに気持ちの置き場を探し直していた流れとして読むほうが自然です。"
-                )
-            elif 0 < alternation_rate <= 0.25:
-                reader_parts.append(
-                    "大きく切り替わらなかったのは、週のあいだ同じ方向の反応が静かに残っていたためと見られます。"
-                )
-            else:
-                reader_parts.append(
-                    "週の中で向きが少しずつ変わっていても、底にある反応の軸は大きくは変わっていませんでした。"
-                )
-            if peak_time_label:
-                reader_parts.append(
-                    f"とくに{peak_time_label}に気持ちが上がりやすかったぶん、その時間帯に週らしさが集まっていたのかもしれません。"
-                )
-            else:
-                reader_parts.append(
-                    "時間帯が変わっても近い向きが残っていたのは、週の土台に同じ反応が続いていたためと見るほうが自然です。"
-                )
-            reader_comment = "".join(reader_parts)
-        else:
-            reader_comment = _fallback_reader_comment("weekly")
-
+            movement_items.extend(["前日比較の集計は、このレポートにはありません。", f"この日の加重合計は{total}でした。"])
     else:
-        snapshot_metrics = views.get("metrics") if isinstance(views.get("metrics"), dict) else {}
-        weeks = views.get("weeks") if isinstance(views.get("weeks"), list) else []
-        share_map = _first_non_empty_emotion_map(snapshot_metrics.get("sharePct"))
-        totals_map = _first_non_empty_emotion_map(snapshot_metrics.get("totals"))
-        dominant_key = _dominant_key_from_map(totals_map) or _dominant_key_from_map(share_map)
-        dominant_label = KEY_TO_JP.get(dominant_key, dominant_key) if dominant_key else "—"
-        top_items = _pick_top_share_items(share_map, limit=2)
-        secondary_label = KEY_TO_JP.get(top_items[1][0], top_items[1][0]) if len(top_items) >= 2 else None
-        total_all = _coerce_int(snapshot_metrics.get("totalAll") or snap_summary.get("emotions_public") or snap_summary.get("emotions_total"), 0)
-        flow_phrase = EMOTION_FLOW_PHRASE.get(dominant_key, "何かを保ち直したい気持ち")
-        peak_time_label = _time_bucket_reader_label((peak_bucket or {}).get("bucket") or (peak_bucket or {}).get("label")) if peak_bucket else ""
-
-        peak_week = None
-        peak_week_total = -1
-        calm_first_half = 0
-        calm_second_half = 0
-        dominant_repeat_count = 0
-        week_switches = 0
-        last_week_dom: Optional[str] = None
-        for idx, week in enumerate(weeks or []):
-            if not isinstance(week, dict):
-                continue
-            total = _coerce_int(week.get("total"), 0)
-            if total <= 0:
-                total = sum(_coerce_int(week.get(k), 0) for k in EMOTION_KEYS)
-            if total > peak_week_total:
-                peak_week_total = total
-                peak_week = week
-            if idx < 2:
-                calm_first_half += _coerce_int(week.get("calm"), 0)
-            else:
-                calm_second_half += _coerce_int(week.get("calm"), 0)
-            week_dom = _dominant_key_from_map(week)
-            if week_dom:
-                if last_week_dom and last_week_dom != week_dom:
-                    week_switches += 1
-                last_week_dom = week_dom
-                if dominant_key and week_dom == dominant_key:
-                    dominant_repeat_count += 1
-
-        peak_week_label = str((peak_week or {}).get("label") or "") if peak_week else ""
-
-        if dominant_key:
-            overview_comment = f"今月は、「{dominant_label}」が強く出たというより、{flow_phrase}が月の土台に残っていたようです。"
-            if secondary_label and secondary_label != dominant_label:
-                overview_comment += f" そこに「{secondary_label}」も重なり、ひとつの感情だけでは言い切れない月でした。"
-            if dominant_repeat_count >= 3:
-                overview_comment += f" 週をまたいで「{dominant_label}」が何度も中心に戻っていたのも、そのテーマが長く気にかかっていたことを示していそうです。"
-            elif week_switches >= 2:
-                overview_comment += " 週ごとに向きが入れ替わっていても、まったく別の反応になったというより、同じテーマの表れ方が変わっていたようです。"
-            else:
-                overview_comment += " 近い方向の反応が、月を通して静かに続いていました。"
-            if peak_week_label:
-                overview_comment += f" とくに{peak_week_label}は動きが強めでした。"
-            if calm_second_half > calm_first_half and calm_second_half > 0:
-                overview_comment += " 後半には、少し整え直そうとする向きも見えていました。"
+        buckets = views.get("days" if report_type == "weekly" else "weeks")
+        buckets = [row for row in (buckets or []) if isinstance(row, dict)]
+        populated = [(row, sum(_coerce_int(row.get(key), 0) for key in EMOTION_KEYS)) for row in buckets]
+        positive = [(row, value) for row, value in populated if value > 0]
+        bucket_unit = "日" if report_type == "weekly" else "週"
+        movement_items.append(f"表示している{len(buckets)}{bucket_unit}分の区分のうち、加重値がある区分は{len(positive)}{bucket_unit}分でした。")
+        if positive:
+            peak_value = max(value for _, value in positive)
+            peaks = [str(row.get("label") or row.get("dateKey") or "区分") for row, value in positive if value == peak_value]
+            movement_items.append(f"{'・'.join(peaks)}の加重合計が最大値{peak_value}でした。")
         else:
-            overview_comment = "今月は入力が少なめで、ひとつの流れとして言い切るほどの偏りはまだ見えていません。"
+            movement_items.append("日別・週別の区分には、正の加重値がありませんでした。")
 
-        if dominant_key:
-            movement_items.append(f"月全体では「{dominant_label}」の比重がいちばん高めでした。")
-        if secondary_label and secondary_label != dominant_label:
-            movement_items.append(f"「{secondary_label}」も重なり、同じテーマへの反応に別の角度が加わっていました。")
-        if peak_week_label:
-            movement_items.append(f"{peak_week_label}は、今月の中でも反応の動きが強めでした。")
-        if calm_second_half > calm_first_half and calm_second_half > 0:
-            movement_items.append("後半にかけて『平穏』が少し増え、整え直す向きも見えていました。")
-        elif week_switches >= 2:
-            movement_items.append("週をまたぐごとに、気持ちの向きが少しずつ入れ替わっていました。")
-
-        time_comment = _build_time_bucket_comment(
-            report_type="monthly",
-            peak_bucket=peak_bucket,
-            fallback_dominant_key=dominant_key,
-        )
-
-        if total_all > 0:
-            reader_parts = []
-            if dominant_key:
-                lead = f"今月は「{dominant_label}」を軸にしながら"
-                if secondary_label and secondary_label != dominant_label:
-                    lead += f"、「{secondary_label}」も重なり、"
-                else:
-                    lead += "、"
-                lead += "同じテーマに対する反応の質が少しずつ変わっていた月でした。"
-                reader_parts.append(lead)
+    time_buckets = _extract_time_bucket_rows(snapshot_views=views, analysis_payload=payload)
+    time_comment = _build_time_bucket_comment(report_type=report_type, peak_bucket=_find_peak_time_bucket(time_buckets))
+    reader_parts = [
+        f"感情ラベルの割合は、加重合計{total}を分母にした集計です。" if total > 0 else "加重合計が0のため、感情ラベルの割合は算出されていません。",
+        "強度は弱を1、中を2、強を3として加えています。",
+        f"今回、加重値が確認できる感情ラベルは{len(ranked)}種類でした。",
+        "日別・週別のグラフと期間全体の割合は、同じ対象期間の記録を異なる区分で示しています。" if report_type != "daily" else "前日比較の差は、入力に付けられた感情ラベルの加重合計の差です。",
+    ]
+    if count is not None:
+        reader_parts.append(f"入力件数{count}件と、感情ラベルの加重合計{total}をそれぞれ表示しています。")
+    if report_type == "monthly":
+        weeks = [row for row in (views.get("weeks") or []) if isinstance(row, dict)]
+        week_totals = []
+        for week in weeks:
+            values = _coerce_emotion_map(week)
+            value = sum(values.values())
+            week_totals.append(value)
+            label = str(week.get("label") or "週の区分")
+            if value > 0:
+                maximum = max(values.values())
+                labels = "・".join(KEY_TO_JP[key] for key in EMOTION_KEYS if values[key] == maximum)
+                reader_parts.append(f"{label}の加重合計は{value}で、最大ラベルは「{labels}」の{maximum}でした。")
             else:
-                reader_parts.append("今月は、ひとつに言い切れない流れがそのまま重なっていた月として読むほうが自然です。")
-            if dominant_repeat_count >= 3 and dominant_key:
-                reader_parts.append(
-                    f"週をまたいで「{dominant_label}」が何度も中心に戻っていたため、単発の揺れより、長く気にかかるテーマが続いていた可能性があります。"
-                )
-            elif week_switches >= 2:
-                reader_parts.append(
-                    "週ごとに中心は入れ替わっていましたが、反応が別物になったというより、同じテーマへの表れ方が変化していたようです。"
-                )
-            else:
-                reader_parts.append(
-                    f"大きく軸が変わらなかったのは、月のあいだ{flow_phrase}が土台に残っていたためと見るほうが自然です。"
-                )
-            if peak_week_label:
-                reader_parts.append(
-                    f"とくに{peak_week_label}は反応の動きが強く、その週が今月全体の空気を押し上げていたようです。"
-                )
-            if calm_second_half > calm_first_half and calm_second_half > 0:
-                reader_parts.append(
-                    "後半に『平穏』が少し増えていたのは、月の終わりに向けて気持ちを整え直す動きが入っていたためと読むと自然です。"
-                )
-            else:
-                reader_parts.append(
-                    "月末にかけても大きく静まりきらなかったことから、反応の軸は最後まで残っていたようです。"
-                )
-            reader_parts.append(
-                "複数の感情が重なっていたのは、ひとつの理由だけで揺れたというより、同じテーマに対して心が何度も別の角度から反応していたためと考えると納得しやすい流れです。"
-            )
-            if peak_time_label:
-                reader_parts.append(
-                    f"とくに{peak_time_label}に気持ちが上がりやすかったぶん、その時間帯に今月らしさが集まっていたのかもしれません。"
-                )
-            reader_comment = "".join(reader_parts)
-        else:
-            reader_comment = _fallback_reader_comment("monthly")
-
-    clean_movement_items = [s for s in movement_items if str(s or "").strip()][:4]
-    return _humanize_emotion_report_payload_value({
-        "overviewComment": overview_comment.strip() or None,
-        "movementItems": clean_movement_items,
-        "timeComment": time_comment.strip() or None,
-        "readerComment": reader_comment.strip() or None,
-        "structuralComment": overview_comment.strip() or None,
-        "gentleComment": reader_comment.strip() or None,
+                reader_parts.append(f"{label}の加重合計は0で、この区分では感情ラベルの割合を算出していません。")
+        if len(week_totals) == 4:
+            first_half, second_half = sum(week_totals[:2]), sum(week_totals[2:])
+            reader_parts.append(f"最初の2週の加重合計は{first_half}、後の2週は{second_half}で、差は{second_half-first_half:+d}でした。")
+            reader_parts.append("月のグラフは4週に区切った集計です。各区分の値を足すと、期間全体の加重合計になります。")
+    reader_comment = "".join(reader_parts)
+    return {
+        "overviewComment": overview,
+        "movementItems": movement_items[:4],
+        "timeComment": time_comment,
+        "readerComment": reader_comment,
+        "structuralComment": overview,
+        "gentleComment": reader_comment,
         "nextPoints": [],
-        "evidence": {
-            "items": [{"text": s} for s in clean_movement_items]
-        },
+        "evidence": {"items": [{"text": text} for text in movement_items[:4]]},
         "compositionMode": "replace",
         "source": "api_hybrid_summary",
-    })
+    }
 
 def _render_standard_text_from_summary(
     *,
@@ -1978,11 +1935,11 @@ def _build_standard_report_payload(
         metrics_src = views.get("metrics") if isinstance(views.get("metrics"), dict) else {}
         day = views.get("day") if isinstance(views.get("day"), dict) else {}
         movement = views.get("movement") if isinstance(views.get("movement"), dict) else {}
-        entry_count = _coerce_int(payload.get("entry_count") or snap_summary.get("emotions_public") or snap_summary.get("emotions_total"), 0)
+        entry_count = _coerce_int(snap_summary.get("emotions_public") if snap_summary.get("emotions_public") is not None else payload.get("entry_count"), 0)
         metrics = {
             "entryCount": entry_count,
-            "share": metrics_src.get("sharePct") if isinstance(metrics_src.get("sharePct"), dict) else {},
-            "weightedCounts": metrics_src.get("totals") if isinstance(metrics_src.get("totals"), dict) else {},
+            "share": _coerce_emotion_map(metrics_src.get("sharePct")),
+            "weightedCounts": _coerce_emotion_map(metrics_src.get("totals")),
             "totalAll": metrics_src.get("totalAll"),
         }
         features = {
@@ -2002,13 +1959,13 @@ def _build_standard_report_payload(
         snapshot_metrics = views.get("metrics") if isinstance(views.get("metrics"), dict) else {}
         days = views.get("days") if isinstance(views.get("days"), list) else []
         metrics = {
-            "eventCount": ws.get("n_events") or snap_summary.get("emotions_public") or snap_summary.get("emotions_total"),
+            "eventCount": snap_summary.get("emotions_public") if snap_summary.get("emotions_public") is not None else ws.get("n_events"),
             "alternationRate": ws.get("alternation_rate"),
             "entropy": ws.get("entropy"),
             "giniSimpson": ws.get("gini_simpson"),
-            "share": ws.get("share") if isinstance(ws.get("share"), dict) else (snapshot_metrics.get("sharePct") if isinstance(snapshot_metrics.get("sharePct"), dict) else {}),
-            "counts": ws.get("counts") if isinstance(ws.get("counts"), dict) else (snapshot_metrics.get("totals") if isinstance(snapshot_metrics.get("totals"), dict) else {}),
-            "weightedCounts": ws.get("wcounts") if isinstance(ws.get("wcounts"), dict) else (snapshot_metrics.get("totals") if isinstance(snapshot_metrics.get("totals"), dict) else {}),
+            "share": _coerce_emotion_map(snapshot_metrics["sharePct"]) if isinstance(snapshot_metrics.get("sharePct"), dict) else _engine_share_percent(ws.get("share")),
+            "counts": _coerce_emotion_map(ws.get("counts") if isinstance(ws.get("counts"), dict) else snapshot_metrics.get("totals")),
+            "weightedCounts": _coerce_emotion_map(snapshot_metrics["totals"]) if isinstance(snapshot_metrics.get("totals"), dict) else _coerce_emotion_map(ws.get("wcounts")),
             "totalAll": snapshot_metrics.get("totalAll"),
         }
         features = {
@@ -2027,7 +1984,7 @@ def _build_standard_report_payload(
             features["timeBucketMode"] = "weighted_count"
             features["timeBucketScope"] = "snapshot"
             metrics["timeBucketInputTotal"] = sum(_coerce_int(row.get("inputCount"), 0) for row in time_buckets)
-        timeline = ws.get("daily_share") if isinstance(ws.get("daily_share"), list) else days
+        timeline = [dict(row, share=_engine_share_percent(row.get("share"))) for row in ws["daily_share"] if isinstance(row, dict)] if isinstance(ws.get("daily_share"), list) else days
 
     elif report_type == "monthly":
         mr = payload.get("monthly_report") if isinstance(payload.get("monthly_report"), dict) else {}
@@ -2051,11 +2008,11 @@ def _build_standard_report_payload(
             )
 
         metrics = {
-            "share": snapshot_metrics.get("sharePct") if isinstance(snapshot_metrics.get("sharePct"), dict) else {},
-            "counts": snapshot_metrics.get("totals") if isinstance(snapshot_metrics.get("totals"), dict) else {},
-            "weightedCounts": snapshot_metrics.get("totals") if isinstance(snapshot_metrics.get("totals"), dict) else {},
+            "share": _coerce_emotion_map(snapshot_metrics.get("sharePct")),
+            "counts": _coerce_emotion_map(snapshot_metrics.get("totals")),
+            "weightedCounts": _coerce_emotion_map(snapshot_metrics.get("totals")),
             "totalAll": snapshot_metrics.get("totalAll"),
-            "shareTrend": mr.get("share_trend") if isinstance(mr.get("share_trend"), list) else [],
+            "shareTrend": [_engine_share_percent(row) for row in mr["share_trend"]] if isinstance(mr.get("share_trend"), list) else [],
             "alternationTrend": mr.get("alternation_trend") if isinstance(mr.get("alternation_trend"), list) else [],
             "intensityStdTrend": mr.get("intensity_std_trend") if isinstance(mr.get("intensity_std_trend"), list) else [],
             "centerShift": mr.get("center_shift") if isinstance(mr.get("center_shift"), dict) else {},
@@ -2072,7 +2029,7 @@ def _build_standard_report_payload(
             features["timeBucketMode"] = "weighted_count"
             features["timeBucketScope"] = "snapshot"
             metrics["timeBucketInputTotal"] = sum(_coerce_int(row.get("inputCount"), 0) for row in time_buckets)
-        timeline = mr.get("share_trend") if isinstance(mr.get("share_trend"), list) else weeks
+        timeline = metrics["shareTrend"] if isinstance(mr.get("share_trend"), list) else weeks
 
     if not summary.get("overviewComment") and isinstance(narrative.get("structural_comment"), str):
         summary["overviewComment"] = str(narrative.get("structural_comment") or "").strip() or None
@@ -2100,6 +2057,8 @@ def _build_standard_report_payload(
 
 def _emotion_label_ja(label: Any) -> str:
     s = str(label or "").strip()
+    if s == "peace":
+        s = "calm"
     return KEY_TO_JP.get(s, s)
 
 
@@ -2134,21 +2093,21 @@ def _localize_transition_key(value: Any) -> str:
 
 
 DEEP_THEME_HINT_LABELS: Dict[str, str] = {
-    "self_pressure": "自分を急がせる言葉",
-    "interpersonal_caution": "人との距離を気にする言葉",
-    "fatigue_limit": "限界を感じる言葉",
-    "self_doubt": "自分を責めやすい言葉",
-    "generic": "よく出ていた言葉",
+    "self_pressure": "義務や基準に関する語句候補",
+    "interpersonal_caution": "人との関係に関する語句候補",
+    "fatigue_limit": "疲れや負担に関する語句候補",
+    "self_doubt": "自己評価に関する語句候補",
+    "generic": "記録から抽出された語句候補",
 }
 
 
 
 DEEP_THEME_HINT_MEANING_COMMENTS: Dict[str, str] = {
-    "self_pressure": "自分を整えたい気持ちが強いほど、内側の緊張も高まりやすい週でした。",
-    "interpersonal_caution": "人への配慮が強い場面で、静かな不安が続きやすい週でした。",
-    "fatigue_limit": "しんどさが言葉に出たあと、疲れから静けさへ戻ろうとする動きも見えていました。",
-    "self_doubt": "うまくできていない感覚が強くなるほど、焦りや落ち込みにつながりやすい週でした。",
-    "generic": "この言葉のまとまりが、今週の気持ちの動きとつながって見えていました。",
+    "self_pressure": "義務や基準に関する語句候補と、その前後に記録された感情ラベルの対応を示します。",
+    "interpersonal_caution": "人との関係に関する語句候補と、その前後に記録された感情ラベルの対応を示します。",
+    "fatigue_limit": "疲れや負担に関する語句候補と、その前後に記録された感情ラベルの対応を示します。",
+    "self_doubt": "自己評価に関する語句候補と、その前後に記録された感情ラベルの対応を示します。",
+    "generic": "記録中の語句候補と、その前後に記録された感情ラベルの対応を示します。",
 }
 
 DEEP_SUMMARY_SOURCE_V1 = "api_deep_summary"
@@ -2168,14 +2127,21 @@ def _normalize_transition_matrix(raw: Any) -> Dict[str, Dict[str, int]]:
         return out
     for from_label, row in raw.items():
         f = str(from_label or "").strip()
+        if f == "peace":
+            if "calm" in raw:
+                continue
+            f = "calm"
         if not f:
             continue
         out[f] = {}
         row_dict = row if isinstance(row, dict) else {}
         for to_label in EMOTION_KEYS:
-            out[f][to_label] = _coerce_int(row_dict.get(to_label), 0)
+            value = row_dict.get(to_label) if to_label in row_dict else row_dict.get("peace") if to_label == "calm" else None
+            out[f][to_label] = _coerce_int(value, 0)
         for to_label, value in row_dict.items():
             t = str(to_label or "").strip()
+            if t == "peace":
+                t = "calm"
             if t and t not in out[f]:
                 out[f][t] = _coerce_int(value, 0)
     return out
@@ -2200,6 +2166,8 @@ def _normalize_transition_edges(raw: Any) -> List[Dict[str, Any]]:
             continue
         from_label = str(item.get("from_label") or item.get("fromLabel") or "").strip()
         to_label = str(item.get("to_label") or item.get("toLabel") or "").strip()
+        from_label = "calm" if from_label == "peace" else from_label
+        to_label = "calm" if to_label == "peace" else to_label
         if not from_label or not to_label:
             continue
         out.append(
@@ -2234,6 +2202,8 @@ def _normalize_recovery_time_rows(raw: Any) -> List[Dict[str, Any]]:
             continue
         from_label = str(item.get("from_label") or item.get("fromLabel") or "").strip()
         to_label = str(item.get("to_label") or item.get("toLabel") or "").strip()
+        from_label = "calm" if from_label == "peace" else from_label
+        to_label = "calm" if to_label == "peace" else to_label
         if not from_label or not to_label:
             continue
         out.append(
@@ -2302,7 +2272,7 @@ def _normalize_memo_themes(raw: Any) -> List[Dict[str, Any]]:
         theme_hint = str(item.get("theme_hint") or item.get("themeHint") or "generic").strip() or "generic"
         phrase_samples = [str(x).strip() for x in list(item.get("phrase_samples") or item.get("phraseSamples") or []) if str(x).strip()]
         linked_transition_keys = [str(x).strip() for x in list(item.get("linked_transition_keys") or item.get("linkedTransitionKeys") or []) if str(x).strip()]
-        theme_label = str(item.get("themeLabel") or item.get("theme_label") or DEEP_THEME_HINT_LABELS.get(theme_hint, DEEP_THEME_HINT_LABELS["generic"]))
+        theme_label = DEEP_THEME_HINT_LABELS.get(theme_hint, DEEP_THEME_HINT_LABELS["generic"])
         if not theme_id and not theme_label:
             continue
         out.append(
@@ -2316,7 +2286,7 @@ def _normalize_memo_themes(raw: Any) -> List[Dict[str, Any]]:
                 "linkedRouteLabels": [_localize_transition_key(x) for x in linked_transition_keys[:4]],
                 "dominantTimeBuckets": list(item.get("dominant_time_buckets") or item.get("dominantTimeBuckets") or [])[:2],
                 "count": _coerce_int(item.get("count"), 0),
-                "meaningComment": str(item.get("meaningComment") or item.get("meaning_comment") or DEEP_THEME_HINT_MEANING_COMMENTS.get(theme_hint, DEEP_THEME_HINT_MEANING_COMMENTS["generic"])).strip(),
+                "meaningComment": f"語句候補は{len(phrase_samples[:3])}種類で、この語句群に関連する遷移の集計数は{_coerce_int(item.get('count'), 0)}です。" + DEEP_THEME_HINT_MEANING_COMMENTS.get(theme_hint, DEEP_THEME_HINT_MEANING_COMMENTS["generic"]),
                 "evidence": item.get("evidence") if isinstance(item.get("evidence"), dict) else {},
                 "notes": list(item.get("notes") or []),
             }
@@ -2348,8 +2318,8 @@ def _normalize_pattern_episodes(raw: Any) -> List[Dict[str, Any]]:
                 "recoveryRouteLabel": str(item.get("recoveryRouteLabel") or item.get("recovery_route_label") or _localize_transition_key(recovery_route_key)).strip(),
                 "dominantTimeBuckets": list(item.get("dominant_time_buckets") or item.get("dominantTimeBuckets") or [])[:2],
                 "count": _coerce_int(item.get("count"), 0),
-                "patternLabel": str(item.get("patternLabel") or item.get("pattern_label") or item.get("label") or "").strip(),
-                "patternComment": str(item.get("patternComment") or item.get("pattern_comment") or item.get("description") or "").strip(),
+                "patternLabel": "記録上の感情ラベルのまとまり",
+                "patternComment": _weekly_deep_v2_pattern_comment(route_labels[:4], str(item.get("recoveryRouteLabel") or item.get("recovery_route_label") or "")),
                 "evidence": item.get("evidence") if isinstance(item.get("evidence"), dict) else {},
                 "notes": list(item.get("notes") or []),
             }
@@ -2386,11 +2356,7 @@ def _normalize_monthly_phases(raw: Any) -> List[Dict[str, Any]]:
             for x in list(item.get("theme_labels") or item.get("themeLabels") or [])
             if str(x).strip()
         ]
-        if not theme_labels:
-            theme_labels = [
-                DEEP_THEME_HINT_LABELS.get(hint, DEEP_THEME_HINT_LABELS["generic"])
-                for hint in theme_hints
-            ]
+        theme_labels = [DEEP_THEME_HINT_LABELS.get(hint, DEEP_THEME_HINT_LABELS["generic"]) for hint in theme_hints] or [DEEP_THEME_HINT_LABELS["generic"] for _ in theme_labels]
 
         route_keys = [
             str(x).strip()
@@ -2454,12 +2420,14 @@ def _normalize_monthly_phases(raw: Any) -> List[Dict[str, Any]]:
                     for x in list(item.get("pattern_ids") or item.get("patternIds") or [])
                     if str(x).strip()
                 ][:4],
-                "phaseComment": str(item.get("phase_comment") or item.get("phaseComment") or "").strip(),
+                "phaseComment": "",
                 "count": _coerce_int(item.get("count"), entry_count),
                 "evidence": item.get("evidence") if isinstance(item.get("evidence"), dict) else {},
                 "notes": list(item.get("notes") or []),
             }
         )
+
+        out[-1]["phaseComment"] = _monthly_deep_v2_phase_comment(out[-1])
 
     phase_rank = {"first_half": 0, "second_half": 1}
     out.sort(
@@ -2499,18 +2467,10 @@ def _normalize_monthly_shifts(raw: Any) -> List[Dict[str, Any]]:
         ][:3]
 
         emerging_theme_labels = [
-            str(x).strip()
-            for x in list(item.get("emerging_theme_labels") or item.get("emergingThemeLabels") or [])
-            if str(x).strip()
-        ] or [
             DEEP_THEME_HINT_LABELS.get(hint, DEEP_THEME_HINT_LABELS["generic"])
             for hint in emerging_theme_hints
         ]
         settling_theme_labels = [
-            str(x).strip()
-            for x in list(item.get("settling_theme_labels") or item.get("settlingThemeLabels") or [])
-            if str(x).strip()
-        ] or [
             DEEP_THEME_HINT_LABELS.get(hint, DEEP_THEME_HINT_LABELS["generic"])
             for hint in settling_theme_hints
         ]
@@ -2581,11 +2541,12 @@ def _normalize_monthly_shifts(raw: Any) -> List[Dict[str, Any]]:
             "fromRecoveryRouteLabel": from_recovery_route_label,
             "toRecoveryRouteLabel": to_recovery_route_label,
             "directionHint": str(item.get("direction_hint") or item.get("directionHint") or "mixed").strip() or "mixed",
-            "shiftLabel": str(item.get("shift_label") or item.get("shiftLabel") or "").strip(),
-            "shiftComment": str(item.get("shift_comment") or item.get("shiftComment") or "").strip(),
+            "shiftLabel": "前半と後半の集計項目の比較",
+            "shiftComment": "",
             "evidence": item.get("evidence") if isinstance(item.get("evidence"), dict) else {},
             "notes": list(item.get("notes") or []),
         }
+        normalized["shiftComment"] = _monthly_deep_v2_shift_comment(normalized)
         if not (
             normalized["shiftLabel"]
             or normalized["shiftComment"]
@@ -2619,8 +2580,8 @@ def _normalize_control_patterns(raw: Any) -> List[Dict[str, Any]]:
         out.append(
             {
                 "patternId": pattern_id or label or "pattern",
-                "label": label or "制御傾向",
-                "description": str(item.get("description") or "").strip() or None,
+                "label": "記録上の感情ラベルのまとまり",
+                "description": f"このまとまりには{len(transition_keys_raw)}種類の遷移が含まれ、遷移の集計数は{_coerce_int(item.get('size'), 0)}です。構成比は{_coerce_float(item.get('score'), 0.0)*100:g}%です。",
                 "size": _coerce_int(item.get("size"), 0),
                 "score": _coerce_float(item.get("score"), 0.0),
                 "transitionKeys": transition_keys_raw,
@@ -2655,30 +2616,44 @@ def _daily_deep_v2_reader_comment(
     *,
     overview_route: str,
     recovery_route: str,
+    theme_count: int = 0,
+    transition_count: int = 0,
 ) -> str:
-    hints = set(str(x or "").strip() for x in list(theme_hints or []) if str(x or "").strip())
-    if "self_pressure" in hints:
-        if recovery_route:
-            return f"昨日のあなたは、自分を支えるために強い言葉を内側へ向けながらも、{recovery_route}へ戻ろうとする動きも持っていたようです。"
-        return "昨日のあなたは、自分を支えるために強い言葉を内側へ向けるほど、気持ちも張りつめやすかったようです。"
-    if "interpersonal_caution" in hints:
-        if recovery_route:
-            return f"昨日のあなたは、人との距離を丁寧に考えるほど緊張も抱えやすく、そのあとで{recovery_route}へ戻ろうとする動きも見えていました。"
-        return "昨日のあなたは、人との距離を丁寧に考えるほど、内側では緊張を抱えやすかったようです。"
-    if "fatigue_limit" in hints:
-        if recovery_route:
-            return f"昨日のあなたは、しんどさに気づいたあとで、{recovery_route}へ静かに戻ろうとしていたように見えます。"
-        return "昨日のあなたは、しんどさを押し込めるより、限界に気づきながら静かな方へ戻ろうとしていたように見えます。"
-    if "self_doubt" in hints:
-        if recovery_route:
-            return f"昨日のあなたは、うまくできていない感覚に引っぱられながらも、{recovery_route}へ整え直そうとしていたようです。"
-        return "昨日のあなたは、うまくできていない感覚に引っぱられながらも、整え直そうとしていたようです。"
-    if recovery_route:
-        return f"昨日のあなたは、揺れたままで終わるのではなく、{recovery_route}へ戻ろうとする整え直し方も持っていたようです。"
+    lines = [f"表示している語句候補のまとまりは{theme_count}件で、感情ラベルの遷移の集計数は{transition_count}件でした。"]
     if overview_route:
-        return f"昨日のあなたは、{overview_route}に動きやすい場面があり、その切り替わりが一日の手がかりになっていたようです。"
-    return "昨日のあなたは、ただ揺れていたというより、その時々で自分を支えようとする言葉を内側に向けていたように見えます。"
+        lines.append(f"主な遷移として「{overview_route}」が集計されています。")
+    if recovery_route:
+        lines.append(f"記録間隔の集計対象には「{recovery_route}」が含まれています。")
+    lines.extend(["語句候補は、前後の記録に含まれた言葉と感情ラベルの対応からまとめています。",
+        "表示する時間は、感情ラベルが記録された時刻同士の間隔です。",
+        "各項目の件数と引用候補を合わせて、この日の記録の並びを見返せます。"])
+    return "".join(lines)
 
+
+
+def _factual_theme_items(memo_themes: List[Dict[str, Any]], memo_triggers: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    working = list(memo_themes or [])
+    if not working:
+        for index, trigger in enumerate(list(memo_triggers or [])[:2], 1):
+            keyword = str(trigger.get("keyword") or "").strip()
+            working.append(dict(themeId=f"memo_trigger_{index}", themeHint=trigger.get("themeHint") or "generic",
+                keywords=[keyword] if keyword else [], phraseSamples=list(trigger.get("phraseSamples") or ([keyword] if keyword else [])),
+                linkedRouteLabels=list(trigger.get("relatedTransitions") or []),
+                dominantTimeBuckets=list(trigger.get("dominantTimeBuckets") or []), count=trigger.get("count")))
+    result = []
+    for theme in working[:2]:
+        hint = str(theme.get("themeHint") or theme.get("theme_hint") or "generic")
+        label = DEEP_THEME_HINT_LABELS.get(hint, DEEP_THEME_HINT_LABELS["generic"])
+        phrases = [str(value).strip() for value in (theme.get("phraseSamples") or theme.get("phrase_samples") or []) if str(value).strip()][:2]
+        routes = [str(value).strip() for value in (theme.get("linkedRouteLabels") or theme.get("linked_route_labels") or []) if str(value).strip()][:2]
+        count = _coerce_int(theme.get("count"), 0)
+        lead = _quote_phrase_sample(phrases[0]) if phrases else label
+        result.append(dict(themeId=str(theme.get("themeId") or theme.get("theme_id") or label),
+            themeLead=f"引用候補：{lead}", themeLabel=label, phraseSamples=phrases,
+            meaningComment=f"表示している引用候補は{len(phrases)}種類で、この語句群に関連する集計数は{count}です。" + DEEP_THEME_HINT_MEANING_COMMENTS.get(hint, DEEP_THEME_HINT_MEANING_COMMENTS["generic"]),
+            linkedRouteLabels=routes, dominantTimeBuckets=list(theme.get("dominantTimeBuckets") or theme.get("dominant_time_buckets") or [])[:2],
+            count=count))
+    return result
 
 
 def _build_daily_deep_v2_summary(
@@ -2688,145 +2663,34 @@ def _build_daily_deep_v2_summary(
     transition_edges: List[Dict[str, Any]],
     recovery_rows: List[Dict[str, Any]],
 ) -> Dict[str, Any]:
-    working_themes = list(memo_themes or [])
-    if not working_themes:
-        fallback_themes: List[Dict[str, Any]] = []
-        for idx, memo in enumerate(list(memo_triggers or [])[:2], start=1):
-            keyword = str(memo.get("keyword") or "").strip()
-            phrase_samples = [str(x).strip() for x in list(memo.get("phraseSamples") or []) if str(x).strip()]
-            if not phrase_samples and keyword:
-                phrase_samples = [keyword]
-            fallback_themes.append(
-                {
-                    "themeId": f"memo_trigger_{idx}",
-                    "themeHint": str(memo.get("themeHint") or "generic").strip() or "generic",
-                    "themeLabel": DEEP_THEME_HINT_LABELS.get(
-                        str(memo.get("themeHint") or "generic").strip() or "generic",
-                        DEEP_THEME_HINT_LABELS["generic"],
-                    ),
-                    "keywords": [keyword] if keyword else [],
-                    "phraseSamples": phrase_samples[:2],
-                    "linkedRouteLabels": list(memo.get("relatedTransitions") or [])[:2],
-                    "dominantTimeBuckets": list(memo.get("dominantTimeBuckets") or [])[:2],
-                    "count": _coerce_int(memo.get("count"), 0),
-                    "meaningComment": DEEP_THEME_HINT_MEANING_COMMENTS.get(
-                        str(memo.get("themeHint") or "generic").strip() or "generic",
-                        DEEP_THEME_HINT_MEANING_COMMENTS["generic"],
-                    ),
-                }
-            )
-        working_themes = fallback_themes
-
-    theme_items: List[Dict[str, Any]] = []
-    for theme in list(working_themes or [])[:2]:
-        theme_id = str(theme.get("themeId") or theme.get("theme_id") or theme.get("themeLabel") or "theme").strip()
-        theme_hint = str(theme.get("themeHint") or theme.get("theme_hint") or "generic").strip() or "generic"
-        theme_label = str(
-            theme.get("themeLabel")
-            or theme.get("theme_label")
-            or DEEP_THEME_HINT_LABELS.get(theme_hint, DEEP_THEME_HINT_LABELS["generic"])
-        )
-        phrase_samples = [
-            str(x).strip()
-            for x in list(theme.get("phraseSamples") or theme.get("phrase_samples") or [])
-            if str(x).strip()
-        ][:2]
-        lead_seed = phrase_samples[0] if phrase_samples else (
-            list(theme.get("keywords") or [theme_label])[0] if list(theme.get("keywords") or []) else theme_label
-        )
-        linked_route_labels = [
-            str(x).strip()
-            for x in list(theme.get("linkedRouteLabels") or theme.get("linked_route_labels") or [])
-            if str(x).strip()
-        ][:2]
-        theme_items.append(
-            {
-                "themeId": theme_id,
-                "themeLead": f"{_quote_phrase_sample(lead_seed) or theme_label}が出やすい場面",
-                "themeLabel": theme_label,
-                "phraseSamples": phrase_samples,
-                "meaningComment": str(
-                    theme.get("meaningComment")
-                    or theme.get("meaning_comment")
-                    or DEEP_THEME_HINT_MEANING_COMMENTS.get(theme_hint, DEEP_THEME_HINT_MEANING_COMMENTS["generic"])
-                ).strip(),
-                "linkedRouteLabels": linked_route_labels,
-                "dominantTimeBuckets": list(theme.get("dominantTimeBuckets") or theme.get("dominant_time_buckets") or [])[:2],
-                "count": _coerce_int(theme.get("count"), 0),
-                "themeHint": theme_hint,
-            }
-        )
-
-    top_theme = theme_items[0] if theme_items else {}
-    overview_phrases = [str(x).strip() for x in list(top_theme.get("phraseSamples") or []) if str(x).strip()][:2]
-    overview_phrase_text = "、".join([_quote_phrase_sample(x) for x in overview_phrases])
-    overview_route = str((list(top_theme.get("linkedRouteLabels") or [])[:1] or [""])[0] or "").strip()
-    if not overview_route:
-        overview_route = str((transition_edges[0] or {}).get("routeLabel") or "").strip() if transition_edges else ""
-    recovery_route = str((recovery_rows[0] or {}).get("routeLabel") or "").strip() if recovery_rows else ""
-
-    if overview_phrase_text and overview_route:
-        overview_comment = f"昨日は、{overview_phrase_text}のような言葉が出やすい場面で、{overview_route}に気持ちが動きやすいところが見えていました。"
-    elif overview_phrase_text and recovery_route:
-        overview_comment = f"昨日は、{overview_phrase_text}のような言葉が出たあとで、{recovery_route}へ戻ろうとする動きも見えていました。"
-    elif overview_phrase_text:
-        overview_comment = f"昨日は、{overview_phrase_text}のような言葉が出やすい場面が残っていました。"
-    elif overview_route:
-        overview_comment = f"昨日は、{overview_route}に気持ちが動きやすいところが見えていました。"
-    elif recovery_route:
-        overview_comment = f"昨日は、{recovery_route}へ戻ろうとする整え直しの動きが見えていました。"
-    else:
-        overview_comment = "昨日は気持ちの奥で起きていたことをまとめるには、材料がまだ少なめでした。"
-
-    movement_items: List[str] = []
-    for theme in theme_items[:2]:
-        phrase = str((list(theme.get("phraseSamples") or [])[:1] or [""])[0] or "").strip()
-        route = str((list(theme.get("linkedRouteLabels") or [])[:1] or [""])[0] or "").strip()
-        if phrase and route:
-            movement_items.append(f"{_quote_phrase_sample(phrase)}が出た場面で、{route}に気持ちが動きやすいところがありました。")
-        elif route:
-            movement_items.append(f"{route}に気持ちが動きやすいところが見えていました。")
-    if recovery_route:
-        movement_items.append(f"そのあとで、{recovery_route}へ戻る動きも見えていました。")
-    if not movement_items and overview_route:
-        movement_items.append(f"{overview_route}に向かう切り替わりが、昨日の手がかりとして見えていました。")
-    deduped_movement: List[str] = []
-    seen_movement = set()
-    for text in movement_items:
-        s = str(text or "").strip()
-        if not s or s in seen_movement:
-            continue
-        seen_movement.add(s)
-        deduped_movement.append(s)
-    movement_items = deduped_movement[:3]
-
-    reader_comment = _daily_deep_v2_reader_comment(
-        [str(item.get("themeHint") or "generic") for item in theme_items],
-        overview_route=overview_route,
-        recovery_route=recovery_route,
-    )
-    summary = {
-        "overviewComment": overview_comment,
-        "themeItems": [
-            {
-                key: value
-                for key, value in item.items()
-                if key != "themeHint"
-            }
-            for item in theme_items
-        ],
-        "movementItems": movement_items,
-        "readerComment": reader_comment,
-    }
-    summary["structuralComment"] = summary["overviewComment"]
-    summary["gentleComment"] = summary["readerComment"]
-    evidence_items = [{"text": x} for x in summary["movementItems"][:2]]
-    if overview_route:
-        evidence_items.append({"text": f"{overview_route} が昨日の気持ちの手がかりとして見えていました。"})
-    summary["evidence"] = {"items": evidence_items[:3]}
-    summary["nextPoints"] = []
-    summary["source"] = DEEP_SUMMARY_SOURCE_DAILY_V2
-    return summary
+    themes = _factual_theme_items(memo_themes, memo_triggers)
+    transitions = sum(_coerce_int(edge.get("count"), 0) for edge in (transition_edges or []))
+    routes = [str(edge.get("routeLabel") or "").strip() for edge in (transition_edges or []) if str(edge.get("routeLabel") or "").strip()]
+    overview = (f"この日の集計では、語句候補のまとまりを{len(themes)}件表示しています。"
+        f"感情ラベルの遷移の集計数は{transitions}件で、ラベルの組合せは{len(transition_edges or [])}種類でした。")
+    if themes and themes[0]["phraseSamples"]:
+        overview += f"引用候補には{' / '.join(_quote_phrase_sample(value) for value in themes[0]['phraseSamples'])}が含まれています。"
+    if routes:
+        overview += f"主な遷移として「{routes[0]}」が集計されています。"
+    movement = []
+    for theme in themes:
+        phrases = " / ".join(_quote_phrase_sample(value) for value in theme["phraseSamples"])
+        linked = " / ".join(theme["linkedRouteLabels"])
+        movement.append(f"語句候補{phrases or theme['themeLabel']}に関連する集計数は{theme['count']}です。" + (f"対応する遷移ラベルは{linked}です。" if linked else "対応する遷移ラベルの内訳はありません。"))
+    if recovery_rows:
+        row = recovery_rows[0]
+        route = str(row.get("routeLabel") or "").strip()
+        minutes = _format_minutes_ja(row.get("meanMinutes"))
+        movement.append(f"「{route}」の記録間隔は、{_coerce_int(row.get('count'), 0)}件の集計" + (f"で平均{minutes}でした。" if minutes else "です。"))
+    if not movement:
+        for edge in list(transition_edges or [])[:3]:
+            movement.append(f"「{edge.get('routeLabel') or '遷移ラベル'}」の集計数は{_coerce_int(edge.get('count'), 0)}です。")
+    reader = _daily_deep_v2_reader_comment([], overview_route=routes[0] if routes else "",
+        recovery_route=str((recovery_rows[0] or {}).get("routeLabel") or "") if recovery_rows else "",
+        theme_count=len(themes), transition_count=transitions)
+    return dict(overviewComment=overview, themeItems=themes, movementItems=movement[:3], readerComment=reader,
+        structuralComment=overview, gentleComment=reader,
+        evidence={"items": [{"text": text} for text in movement[:3]]}, nextPoints=[], source=DEEP_SUMMARY_SOURCE_DAILY_V2)
 
 
 
@@ -2843,16 +2707,16 @@ def _render_daily_deep_v2_text(
         lines.append(rng)
     lines.append("")
 
-    lines.append("【昨日、見えていたこと】")
+    lines.append("【この日の集計】")
     lines.append(
         str((summary or {}).get("overviewComment") or "").strip()
-        or "昨日は気持ちの奥で起きていたことをまとめるには、材料がまだ少なめでした。"
+        or "この日の語句候補や遷移の集計は確認できません。"
     )
     lines.append("")
 
     theme_items = list((summary or {}).get("themeItems") or [])
     if theme_items:
-        lines.append("【あなたの言葉から見えていたテーマ】")
+        lines.append("【記録中の語句候補】")
         for theme in theme_items[:2]:
             if not isinstance(theme, dict):
                 continue
@@ -2887,7 +2751,7 @@ def _render_daily_deep_v2_text(
 
     reader_comment = str((summary or {}).get("readerComment") or "").strip()
     if reader_comment:
-        lines.append("【あなたへのコメント】")
+        lines.append("【集計の読み方】")
         lines.append(reader_comment)
         lines.append("")
 
@@ -2896,41 +2760,25 @@ def _render_daily_deep_v2_text(
     return _humanize_emotion_report_text("\n".join(lines).strip())
 
 def _weekly_deep_v2_pattern_label(theme_hints: List[str], recovery_route_label: str) -> str:
-    hints = set(str(x or "").strip() for x in list(theme_hints or []) if str(x or "").strip())
-    if "self_pressure" in hints:
-        return "抱え込みから張りつめる動き"
-    if "fatigue_limit" in hints:
-        return "疲れから静けさへ戻る動き"
-    if "interpersonal_caution" in hints:
-        return "気をつかい続けて張りつめる動き"
-    if "self_doubt" in hints:
-        return "自分を責めて沈みやすい動き"
-    if recovery_route_label:
-        return "整え直しが見えていた動き"
-    return "今週、くり返しやすかった気持ちの動き"
+    return "記録上の感情ラベルのまとまり"
 
 
 def _weekly_deep_v2_pattern_comment(route_labels: List[str], recovery_route_label: str) -> str:
-    routes = [str(x).strip() for x in list(route_labels or []) if str(x).strip()]
-    first_route = routes[0] if routes else "この流れ"
+    routes = [str(value).strip() for value in (route_labels or []) if str(value).strip()]
+    lines = [f"このまとまりには、{' / '.join(routes)}の遷移が含まれています。" if routes else "このまとまりに結び付いた遷移ラベルの内訳はありません。"]
     if recovery_route_label:
-        return f"{first_route} に動いたあとも、{recovery_route_label} へ戻る道が見えていました。"
-    if len(routes) >= 2:
-        return f"{routes[0]} を入り口にして、{routes[1]} へつながる動きが今週の中で見えていました。"
-    return f"{first_route} を中心に、近い動きが今週の中で何度か見えていました。"
+        lines.append(f"記録間隔の集計には「{recovery_route_label}」が含まれています。")
+    lines.append("同じグループに含まれる遷移ラベルと、各項目の集計数を示しています。")
+    return "".join(lines)
 
 
-def _weekly_deep_v2_reader_comment(theme_hints: List[str]) -> str:
-    hints = set(str(x or "").strip() for x in list(theme_hints or []) if str(x or "").strip())
-    if "self_pressure" in hints:
-        return "今週のあなたは、ただ揺れていたというより、自分を支えるために強い言葉を何度も内側へ向けていたように見えます。"
-    if "interpersonal_caution" in hints:
-        return "今週のあなたは、人との距離を丁寧に考えるほど、内側では緊張を抱えやすかったようです。"
-    if "fatigue_limit" in hints:
-        return "今週のあなたは、しんどさを押し込めるより、限界に気づきながら整え直そうとしていたように見えます。"
-    if "self_doubt" in hints:
-        return "今週のあなたは、うまくできていない感覚に引っぱられながらも、整え直そうとしていたように見えます。"
-    return "今週のあなたは、ただ揺れていたというより、その時々で自分を支えようとする言葉を内側に向けていたように見えます。"
+def _weekly_deep_v2_reader_comment(theme_hints: List[str], *,
+        theme_count: int = 0, pattern_count: int = 0, transition_count: int = 0) -> str:
+    return (f"この週に表示している語句候補のまとまりは{theme_count}件、遷移のまとまりは{pattern_count}件です。"
+        f"感情ラベルの遷移の集計数は{transition_count}件でした。"
+        "語句候補には、前後の記録に含まれた言葉を引用しています。"
+        "遷移のまとまりには、集計された感情ラベルの組合せと記録間隔を表示しています。"
+        "それぞれの件数・引用候補・時間の値を合わせて、この期間の記録を見返せます。")
 
 
 def _build_weekly_deep_v2_summary(
@@ -2941,144 +2789,34 @@ def _build_weekly_deep_v2_summary(
     transition_edges: List[Dict[str, Any]],
     recovery_rows: List[Dict[str, Any]],
 ) -> Dict[str, Any]:
-    working_themes = list(memo_themes or [])
-    if not working_themes:
-        fallback_themes: List[Dict[str, Any]] = []
-        for idx, memo in enumerate(list(memo_triggers or [])[:2], start=1):
-            keyword = str(memo.get("keyword") or "").strip()
-            phrase_samples = [str(x).strip() for x in list(memo.get("phraseSamples") or []) if str(x).strip()]
-            if not phrase_samples and keyword:
-                phrase_samples = [keyword]
-            fallback_themes.append(
-                {
-                    "themeId": f"memo_trigger_{idx}",
-                    "themeHint": str(memo.get("themeHint") or "generic").strip() or "generic",
-                    "themeLabel": DEEP_THEME_HINT_LABELS.get(str(memo.get("themeHint") or "generic").strip() or "generic", DEEP_THEME_HINT_LABELS["generic"]),
-                    "keywords": [keyword] if keyword else [],
-                    "phraseSamples": phrase_samples[:2],
-                    "linkedRouteLabels": list(memo.get("relatedTransitions") or [])[:2],
-                    "dominantTimeBuckets": list(memo.get("dominantTimeBuckets") or [])[:2],
-                    "count": _coerce_int(memo.get("count"), 0),
-                    "meaningComment": DEEP_THEME_HINT_MEANING_COMMENTS.get(str(memo.get("themeHint") or "generic").strip() or "generic", DEEP_THEME_HINT_MEANING_COMMENTS["generic"]),
-                }
-            )
-        working_themes = fallback_themes
-
-    theme_items: List[Dict[str, Any]] = []
-    for theme in list(working_themes or [])[:2]:
-        theme_id = str(theme.get("themeId") or theme.get("theme_id") or theme.get("themeLabel") or "theme").strip()
-        theme_hint = str(theme.get("themeHint") or theme.get("theme_hint") or "generic").strip() or "generic"
-        theme_label = str(theme.get("themeLabel") or theme.get("theme_label") or DEEP_THEME_HINT_LABELS.get(theme_hint, DEEP_THEME_HINT_LABELS["generic"]))
-        phrase_samples = [str(x).strip() for x in list(theme.get("phraseSamples") or theme.get("phrase_samples") or []) if str(x).strip()][:2]
-        lead_seed = phrase_samples[0] if phrase_samples else (list(theme.get("keywords") or [theme_label])[0] if list(theme.get("keywords") or []) else theme_label)
-        linked_route_labels = [str(x).strip() for x in list(theme.get("linkedRouteLabels") or theme.get("linked_route_labels") or []) if str(x).strip()][:2]
-        theme_items.append(
-            {
-                "themeId": theme_id,
-                "themeLead": f"{_quote_phrase_sample(lead_seed) or theme_label}が出やすい場面",
-                "themeLabel": theme_label,
-                "phraseSamples": phrase_samples,
-                "meaningComment": str(theme.get("meaningComment") or theme.get("meaning_comment") or DEEP_THEME_HINT_MEANING_COMMENTS.get(theme_hint, DEEP_THEME_HINT_MEANING_COMMENTS["generic"])).strip(),
-                "linkedRouteLabels": linked_route_labels,
-                "dominantTimeBuckets": list(theme.get("dominantTimeBuckets") or theme.get("dominant_time_buckets") or [])[:2],
-                "count": _coerce_int(theme.get("count"), 0),
-                "themeHint": theme_hint,
-            }
-        )
-
-    top_theme = theme_items[0] if theme_items else {}
-    overview_phrases = [str(x).strip() for x in list(top_theme.get("phraseSamples") or []) if str(x).strip()][:2]
-    overview_phrase_text = "、".join([_quote_phrase_sample(x) for x in overview_phrases])
-    overview_route = str((list(top_theme.get("linkedRouteLabels") or [])[:1] or [""])[0] or "").strip()
-    if not overview_route:
-        overview_route = str((transition_edges[0] or {}).get("routeLabel") or "").strip() if transition_edges else ""
-    if overview_phrase_text and overview_route:
-        overview_comment = f"今週は、{overview_phrase_text}のような言葉が出やすい場面で、{overview_route}に気持ちが動くところが何度か見えていました。"
-    elif overview_phrase_text:
-        overview_comment = f"今週は、{overview_phrase_text}のような言葉が出やすい場面が何度か見えていました。"
-    elif overview_route:
-        overview_comment = f"今週は、{overview_route}に気持ちが動くところが何度か見えていました。"
-    else:
-        overview_comment = "今週は気持ちの奥で起きていたことをまとめるには、材料がまだ少なめでした。"
-
-    movement_items: List[str] = []
-    for theme in theme_items:
-        phrase = str((list(theme.get("phraseSamples") or [])[:1] or [""])[0] or "").strip()
-        route = str((list(theme.get("linkedRouteLabels") or [])[:1] or [""])[0] or "").strip()
-        if phrase and route:
-            movement_items.append(f"{_quote_phrase_sample(phrase)}が出た場面で、{route}に気持ちが動きやすいところがありました。")
-        elif route:
-            movement_items.append(f"{route}に気持ちが動きやすいところが見えていました。")
-    if recovery_rows:
-        recovery_route = str((recovery_rows[0] or {}).get("routeLabel") or "").strip()
-        if recovery_route:
-            movement_items.append(f"{recovery_route}へ戻ろうとする動きも見えていました。")
-    deduped_movement: List[str] = []
-    seen_movement = set()
-    for text in movement_items:
-        s = str(text or "").strip()
-        if not s or s in seen_movement:
-            continue
-        seen_movement.add(s)
-        deduped_movement.append(s)
-    movement_items = deduped_movement[:3]
-
-    theme_hint_by_id = {str(item.get("themeId") or ""): str(item.get("themeHint") or "generic") for item in theme_items}
-    working_pattern_episodes = list(pattern_episodes or [])
-    if not working_pattern_episodes and (theme_items or transition_edges):
-        top_edge_route = str((transition_edges[0] or {}).get("routeLabel") or "").strip() if transition_edges else ""
-        top_recovery_route = str((recovery_rows[0] or {}).get("routeLabel") or "").strip() if recovery_rows else ""
-        working_pattern_episodes = [
-            {
-                "patternId": "pattern_1",
-                "linkedThemeIds": [str((theme_items[0] or {}).get("themeId") or "")] if theme_items else [],
-                "routeLabels": [top_edge_route] if top_edge_route else [],
-                "recoveryRouteLabel": top_recovery_route,
-                "count": _coerce_int((transition_edges[0] or {}).get("count"), 0) if transition_edges else 0,
-            }
-        ]
-
-    pattern_items: List[Dict[str, Any]] = []
-    for episode in list(working_pattern_episodes or [])[:2]:
-        linked_theme_ids = [str(x).strip() for x in list(episode.get("linkedThemeIds") or episode.get("linked_theme_ids") or []) if str(x).strip()]
-        theme_hints = [theme_hint_by_id.get(theme_id, "generic") for theme_id in linked_theme_ids if theme_id]
-        route_labels = [str(x).strip() for x in list(episode.get("routeLabels") or episode.get("route_labels") or []) if str(x).strip()][:2]
-        recovery_route_label = str(episode.get("recoveryRouteLabel") or episode.get("recovery_route_label") or "").strip()
-        pattern_label = str(episode.get("patternLabel") or episode.get("pattern_label") or _weekly_deep_v2_pattern_label(theme_hints, recovery_route_label)).strip()
-        pattern_comment = str(episode.get("patternComment") or episode.get("pattern_comment") or _weekly_deep_v2_pattern_comment(route_labels, recovery_route_label)).strip()
-        pattern_items.append(
-            {
-                "patternId": str(episode.get("patternId") or episode.get("pattern_id") or "pattern").strip() or "pattern",
-                "patternLabel": pattern_label,
-                "linkedThemeIds": linked_theme_ids,
-                "routeLabels": route_labels,
-                "recoveryRouteLabel": recovery_route_label,
-                "patternComment": pattern_comment,
-                "count": _coerce_int(episode.get("count"), 0),
-            }
-        )
-
-    reader_comment = _weekly_deep_v2_reader_comment([str(item.get("themeHint") or "generic") for item in theme_items])
-    summary = {
-        "overviewComment": overview_comment,
-        "themeItems": [
-            {
-                key: value
-                for key, value in item.items()
-                if key != "themeHint"
-            }
-            for item in theme_items
-        ],
-        "movementItems": movement_items,
-        "patternItems": pattern_items,
-        "readerComment": reader_comment,
-    }
-    summary["structuralComment"] = summary["overviewComment"]
-    summary["gentleComment"] = summary["readerComment"]
-    summary["evidence"] = {"items": [{"text": x} for x in summary["movementItems"][:3]]}
-    summary["nextPoints"] = []
-    summary["source"] = DEEP_SUMMARY_SOURCE_WEEKLY_V2
-    return summary
+    shared = _build_daily_deep_v2_summary(memo_themes=memo_themes, memo_triggers=memo_triggers,
+        transition_edges=transition_edges, recovery_rows=recovery_rows)
+    themes, movement = shared["themeItems"], shared["movementItems"]
+    episodes = list(pattern_episodes or [])
+    if not episodes and (themes or transition_edges):
+        episodes = [dict(patternId="pattern_1", linkedThemeIds=[themes[0]["themeId"]] if themes else [],
+            routeLabels=[transition_edges[0].get("routeLabel")] if transition_edges else [],
+            recoveryRouteLabel=recovery_rows[0].get("routeLabel") if recovery_rows else "",
+            count=transition_edges[0].get("count") if transition_edges else 0)]
+    patterns = []
+    for episode in episodes[:2]:
+        routes = [str(value).strip() for value in (episode.get("routeLabels") or episode.get("route_labels") or []) if str(value).strip()][:2]
+        recovery = str(episode.get("recoveryRouteLabel") or episode.get("recovery_route_label") or "").strip()
+        count = _coerce_int(episode.get("count"), 0)
+        patterns.append(dict(patternId=str(episode.get("patternId") or episode.get("pattern_id") or "pattern"),
+            patternLabel=_weekly_deep_v2_pattern_label([], recovery),
+            linkedThemeIds=list(episode.get("linkedThemeIds") or episode.get("linked_theme_ids") or []),
+            routeLabels=routes, recoveryRouteLabel=recovery,
+            patternComment=f"このまとまりに関連する集計数は{count}です。" + _weekly_deep_v2_pattern_comment(routes, recovery), count=count))
+    transitions = sum(_coerce_int(edge.get("count"), 0) for edge in (transition_edges or []))
+    overview = (f"この週の集計では、語句候補のまとまりを{len(themes)}件、遷移のまとまりを{len(patterns)}件表示しています。"
+        f"感情ラベルの遷移の集計数は{transitions}件で、ラベルの組合せは{len(transition_edges or [])}種類でした。")
+    if themes and themes[0]["phraseSamples"]:
+        overview += f"引用候補には{' / '.join(_quote_phrase_sample(value) for value in themes[0]['phraseSamples'])}が含まれています。"
+    reader = _weekly_deep_v2_reader_comment([], theme_count=len(themes), pattern_count=len(patterns), transition_count=transitions)
+    return dict(overviewComment=overview, themeItems=themes, movementItems=movement, patternItems=patterns,
+        readerComment=reader, structuralComment=overview, gentleComment=reader,
+        evidence={"items": [{"text": text} for text in movement[:3]]}, nextPoints=[], source=DEEP_SUMMARY_SOURCE_WEEKLY_V2)
 
 
 def _render_weekly_deep_v2_text(
@@ -3094,13 +2832,13 @@ def _render_weekly_deep_v2_text(
         lines.append(rng)
     lines.append("")
 
-    lines.append("【今週、見えていたこと】")
-    lines.append(str((summary or {}).get("overviewComment") or "今週は気持ちの奥で起きていたことをまとめるには、材料がまだ少なめでした。"))
+    lines.append("【この週の集計】")
+    lines.append(str((summary or {}).get("overviewComment") or "この週の語句候補や遷移の集計は確認できません。"))
     lines.append("")
 
     theme_items = list((summary or {}).get("themeItems") or [])
     if theme_items:
-        lines.append("【あなたの言葉から見えていたテーマ】")
+        lines.append("【記録中の語句候補】")
         for theme in theme_items[:2]:
             if not isinstance(theme, dict):
                 continue
@@ -3124,7 +2862,7 @@ def _render_weekly_deep_v2_text(
 
     pattern_items = list((summary or {}).get("patternItems") or [])
     if pattern_items:
-        lines.append("【今週、くり返しやすかったパターン】")
+        lines.append("【記録上の遷移のまとまり】")
         for idx, pattern in enumerate(pattern_items[:2]):
             if not isinstance(pattern, dict):
                 continue
@@ -3140,7 +2878,7 @@ def _render_weekly_deep_v2_text(
 
     reader_comment = str((summary or {}).get("readerComment") or "").strip()
     if reader_comment:
-        lines.append("【あなたへのコメント】")
+        lines.append("【集計の読み方】")
         lines.append(reader_comment)
         lines.append("")
 
@@ -3152,125 +2890,62 @@ def _render_weekly_deep_v2_text(
 
 
 def _monthly_deep_v2_pattern_comment(route_labels: List[str], recovery_route_label: str) -> str:
-    routes = [str(x).strip() for x in list(route_labels or []) if str(x).strip()]
-    first_route = routes[0] if routes else "この流れ"
-    if recovery_route_label:
-        return f"{first_route} が出たあとも、{recovery_route_label} へ戻る道が見えていました。"
-    if len(routes) >= 2:
-        return f"{routes[0]} を入り口にして、{routes[1]} へつながる動きが今月の中で見えていました。"
-    return f"{first_route} を中心に、近い動きが今月の中で何度か見えていました。"
+    return _weekly_deep_v2_pattern_comment(route_labels, recovery_route_label)
 
 
 
 def _monthly_deep_v2_phase_comment(phase: Dict[str, Any]) -> str:
-    explicit = str(phase.get("phaseComment") or "").strip()
-    if explicit:
-        return explicit
-
-    phase_label = str(phase.get("phaseLabel") or "この時期").strip() or "この時期"
-    phrase = str((list(phase.get("phraseSamples") or [])[:1] or [""])[0] or "").strip()
-    theme_label = str((list(phase.get("themeLabels") or [])[:1] or [""])[0] or "").strip()
-    lead = _quote_phrase_sample(phrase) if phrase else theme_label
-    route = str((list(phase.get("routeLabels") or [])[:1] or [""])[0] or "").strip()
+    label = str(phase.get("phaseLabel") or "この区分")
+    entry_count = _coerce_int(phase.get("entryCount"), _coerce_int(phase.get("count"), 0))
+    transitions = _coerce_int(phase.get("transitionCount"), 0)
+    lines = [f"{label}の感情ラベルの集計対象は{entry_count}件で、遷移の集計数は{transitions}件でした。"]
+    phrases = [str(value).strip() for value in (phase.get("phraseSamples") or []) if str(value).strip()]
+    if phrases:
+        lines.append(f"語句候補として{' / '.join(_quote_phrase_sample(value) for value in phrases[:3])}が抽出されています。")
+    routes = [str(value).strip() for value in (phase.get("routeLabels") or []) if str(value).strip()]
+    if routes:
+        lines.append(f"主な遷移ラベルは{' / '.join(routes[:4])}でした。")
     recovery = str(phase.get("recoveryRouteLabel") or "").strip()
-    time_label = str((list(phase.get("dominantTimeBucketLabels") or [])[:1] or [""])[0] or "").strip()
-
-    if lead and route:
-        text = f"{phase_label}は、{lead}が出やすい場面で、{route}に気持ちが動きやすい時期でした。"
-    elif route:
-        text = f"{phase_label}は、{route}が目立つ時期でした。"
-    elif lead:
-        text = f"{phase_label}は、{lead}が出やすい時期でした。"
-    else:
-        text = f"{phase_label}は、この時期らしい気持ちの動きが見えていました。"
-
     if recovery:
-        if route and recovery != route:
-            text += f" そのあとも、{recovery}へ戻る道が見えていました。"
-        else:
-            text += f" {recovery}へ戻る整え直しも見えていました。"
-
-    if time_label:
-        text += f" とくに{time_label}に出やすい傾向でした。"
-
-    return text
+        lines.append(f"記録間隔の集計対象には「{recovery}」が含まれます。")
+    buckets = [str(value).strip() for value in (phase.get("dominantTimeBucketLabels") or []) if str(value).strip()]
+    if buckets:
+        lines.append(f"集計上の主な記録時間帯は{'・'.join(buckets[:2])}でした。")
+    return "".join(lines)
 
 
 
 def _monthly_deep_v2_shift_label(shift: Dict[str, Any]) -> str:
-    explicit = str(shift.get("shiftLabel") or "").strip()
-    if explicit:
-        return explicit
-
-    direction = str(shift.get("directionHint") or "mixed").strip() or "mixed"
-    settling_route = str((list(shift.get("settlingRouteLabels") or [])[:1] or [""])[0] or "").strip()
-    emerging_route = str((list(shift.get("emergingRouteLabels") or [])[:1] or [""])[0] or "").strip()
-
-    if direction == "recovery_shift":
-        return "後半は静かに戻る動き"
-    if direction == "tension_shift":
-        return "後半は張りつめる動き"
-    if settling_route and emerging_route:
-        return f"{settling_route}から{emerging_route}への変化"
-    return "前半と後半で動き方が変化"
+    return "前半と後半の集計項目の比較"
 
 
 
 def _monthly_deep_v2_shift_comment(shift: Dict[str, Any]) -> str:
-    explicit = str(shift.get("shiftComment") or "").strip()
-    if explicit:
-        return explicit
-
-    from_phase = str(shift.get("fromPhaseLabel") or "前半").strip() or "前半"
-    to_phase = str(shift.get("toPhaseLabel") or "後半").strip() or "後半"
-
-    settling = str((list(shift.get("settlingRouteLabels") or [])[:1] or [""])[0] or "").strip()
-    if not settling:
-        settling = str((list(shift.get("settlingThemeLabels") or [])[:1] or [""])[0] or "").strip()
-
-    emerging = str((list(shift.get("emergingRouteLabels") or [])[:1] or [""])[0] or "").strip()
-    if not emerging:
-        emerging = str((list(shift.get("emergingThemeLabels") or [])[:1] or [""])[0] or "").strip()
-
-    from_recovery = str(shift.get("fromRecoveryRouteLabel") or "").strip()
-    to_recovery = str(shift.get("toRecoveryRouteLabel") or "").strip()
-
-    if settling and emerging:
-        text = f"{from_phase}は{settling}が目立っていましたが、{to_phase}は{emerging}がよく見えていました。"
-    elif emerging:
-        text = f"{to_phase}に入ってから、{emerging}が増えていました。"
-    elif settling:
-        text = f"{from_phase}で目立っていた{settling}は、{to_phase}では少し静かになっていました。"
-    else:
-        text = f"{from_phase}と{to_phase}で、目立つ気持ちの動きが少し入れ替わっていました。"
-
-    if from_recovery and to_recovery and from_recovery != to_recovery:
-        text += f" 整え直し方も、{from_recovery}から{to_recovery}へ少し移っていました。"
-    elif to_recovery:
-        text += f" {to_phase}では、{to_recovery}へ戻ろうとする動きが見えやすくなっていました。"
-
-    return text
+    before = str(shift.get("fromPhaseLabel") or "前半")
+    after = str(shift.get("toPhaseLabel") or "後半")
+    before_values = list(shift.get("settlingRouteLabels") or []) + list(shift.get("settlingThemeLabels") or [])
+    after_values = list(shift.get("emergingRouteLabels") or []) + list(shift.get("emergingThemeLabels") or [])
+    lines = [f"{before}と{after}の集計に含まれる遷移ラベルや語句候補を比較しています。"]
+    if before_values:
+        lines.append(f"{before}側の比較項目は{' / '.join(str(value) for value in before_values[:4])}です。")
+    if after_values:
+        lines.append(f"{after}側の比較項目は{' / '.join(str(value) for value in after_values[:4])}です。")
+    first_route = str(shift.get("fromRecoveryRouteLabel") or "").strip()
+    second_route = str(shift.get("toRecoveryRouteLabel") or "").strip()
+    if first_route or second_route:
+        lines.append(f"記録間隔の主な集計対象は、{before}が「{first_route or '内訳なし'}」、{after}が「{second_route or '内訳なし'}」でした。")
+    return "".join(lines)
 
 
 
-def _monthly_deep_v2_reader_comment(*, theme_hints: List[str], monthly_shifts: List[Dict[str, Any]]) -> str:
-    top_shift = monthly_shifts[0] if monthly_shifts else {}
-    direction = str((top_shift or {}).get("directionHint") or "").strip()
-    if direction == "recovery_shift":
-        return "今月のあなたは、張りつめ続けるよりも、後半にかけて少し静かに戻る方向を探していたように見えます。"
-    if direction == "tension_shift":
-        return "今月のあなたは、後半にかけて気持ちを守ろうとする反応が強まりやすかったように見えます。"
-
-    hints = set(str(x or "").strip() for x in list(theme_hints or []) if str(x or "").strip())
-    if "self_pressure" in hints:
-        return "今月のあなたは、自分を支えるために強い言葉を何度も内側へ向けていたように見えます。"
-    if "interpersonal_caution" in hints:
-        return "今月のあなたは、人との距離を丁寧に考えるほど、内側では緊張を抱えやすかったようです。"
-    if "fatigue_limit" in hints:
-        return "今月のあなたは、しんどさに気づきながら、静かに整え直す方向も探していたように見えます。"
-    if "self_doubt" in hints:
-        return "今月のあなたは、自分を責める感覚に引っぱられながらも、整え直そうとしていたように見えます。"
-    return "今月のあなたは、ただ揺れていたというより、その時々で自分を支えようとする言葉を内側に向けていたように見えます。"
+def _monthly_deep_v2_reader_comment(*, theme_hints: List[str], monthly_shifts: List[Dict[str, Any]],
+        theme_count: int = 0, pattern_count: int = 0, phase_count: int = 0, transition_count: int = 0) -> str:
+    return (f"この月に表示している語句候補のまとまりは{theme_count}件、遷移のまとまりは{pattern_count}件です。"
+        f"感情ラベルの遷移の集計数は{transition_count}件でした。"
+        f"期間内の区分は{phase_count}件、前半と後半を比較する項目は{len(monthly_shifts or [])}件表示しています。"
+        "語句候補と遷移ラベルは、それぞれの区分の記録から集計しています。"
+        "記録間隔は時刻同士の差を示し、平均・中央値などの値を各項目に表示しています。"
+        "期間全体と区分ごとの数値を合わせて、この月の記録の並びを見返せます。")
 
 
 
@@ -3284,199 +2959,51 @@ def _build_monthly_deep_v2_summary(
     monthly_phases: List[Dict[str, Any]],
     monthly_shifts: List[Dict[str, Any]],
 ) -> Dict[str, Any]:
-    working_themes = list(memo_themes or [])
-    if not working_themes:
-        fallback_themes: List[Dict[str, Any]] = []
-        for idx, memo in enumerate(list(memo_triggers or [])[:2], start=1):
-            keyword = str(memo.get("keyword") or "").strip()
-            phrase_samples = [str(x).strip() for x in list(memo.get("phraseSamples") or []) if str(x).strip()]
-            if not phrase_samples and keyword:
-                phrase_samples = [keyword]
-            fallback_themes.append(
-                {
-                    "themeId": f"theme_{idx}",
-                    "themeHint": str(memo.get("themeHint") or "generic").strip() or "generic",
-                    "themeLabel": DEEP_THEME_HINT_LABELS.get(str(memo.get("themeHint") or "generic").strip() or "generic", DEEP_THEME_HINT_LABELS["generic"]),
-                    "keywords": [keyword] if keyword else [],
-                    "phraseSamples": phrase_samples[:2],
-                    "linkedRouteLabels": list(memo.get("relatedTransitions") or [])[:2],
-                    "dominantTimeBuckets": list(memo.get("dominantTimeBuckets") or [])[:2],
-                    "count": _coerce_int(memo.get("count"), 0),
-                    "meaningComment": DEEP_THEME_HINT_MEANING_COMMENTS.get(str(memo.get("themeHint") or "generic").strip() or "generic", DEEP_THEME_HINT_MEANING_COMMENTS["generic"]),
-                }
-            )
-        working_themes = fallback_themes
-
-    theme_items: List[Dict[str, Any]] = []
-    for theme in list(working_themes or [])[:2]:
-        theme_id = str(theme.get("themeId") or theme.get("theme_id") or theme.get("themeLabel") or "theme").strip()
-        theme_hint = str(theme.get("themeHint") or theme.get("theme_hint") or "generic").strip() or "generic"
-        theme_label = str(theme.get("themeLabel") or theme.get("theme_label") or DEEP_THEME_HINT_LABELS.get(theme_hint, DEEP_THEME_HINT_LABELS["generic"]))
-        phrase_samples = [str(x).strip() for x in list(theme.get("phraseSamples") or theme.get("phrase_samples") or []) if str(x).strip()][:2]
-        lead_seed = phrase_samples[0] if phrase_samples else (list(theme.get("keywords") or [theme_label])[0] if list(theme.get("keywords") or []) else theme_label)
-        linked_route_labels = [str(x).strip() for x in list(theme.get("linkedRouteLabels") or theme.get("linked_route_labels") or []) if str(x).strip()][:2]
-        theme_items.append(
-            {
-                "themeId": theme_id,
-                "themeLead": f"{_quote_phrase_sample(lead_seed) or theme_label}が出やすい場面",
-                "themeLabel": theme_label,
-                "phraseSamples": phrase_samples,
-                "meaningComment": str(theme.get("meaningComment") or theme.get("meaning_comment") or DEEP_THEME_HINT_MEANING_COMMENTS.get(theme_hint, DEEP_THEME_HINT_MEANING_COMMENTS["generic"])).strip(),
-                "linkedRouteLabels": linked_route_labels,
-                "dominantTimeBuckets": list(theme.get("dominantTimeBuckets") or theme.get("dominant_time_buckets") or [])[:2],
-                "count": _coerce_int(theme.get("count"), 0),
-                "themeHint": theme_hint,
-            }
-        )
-
-    top_theme = theme_items[0] if theme_items else {}
-    overview_phrases = [str(x).strip() for x in list(top_theme.get("phraseSamples") or []) if str(x).strip()][:2]
-    overview_phrase_text = "、".join([_quote_phrase_sample(x) for x in overview_phrases])
-    overview_route = str((list(top_theme.get("linkedRouteLabels") or [])[:1] or [""])[0] or "").strip()
-    if not overview_route:
-        overview_route = str((transition_edges[0] or {}).get("routeLabel") or "").strip() if transition_edges else ""
-    if overview_phrase_text and overview_route:
-        overview_comment = f"今月は、{overview_phrase_text}のような言葉が出やすい場面で、{overview_route}に気持ちが動くところが何度か見えていました。"
-    elif overview_phrase_text:
-        overview_comment = f"今月は、{overview_phrase_text}のような言葉が出やすい場面が何度か見えていました。"
-    elif overview_route:
-        overview_comment = f"今月は、{overview_route}に気持ちが動くところが何度か見えていました。"
-    else:
-        overview_comment = "今月は気持ちの奥で起きていたことをまとめるには、材料がまだ少なめでした。"
-
-    movement_items: List[str] = []
-    for theme in theme_items:
-        phrase = str((list(theme.get("phraseSamples") or [])[:1] or [""])[0] or "").strip()
-        route = str((list(theme.get("linkedRouteLabels") or [])[:1] or [""])[0] or "").strip()
-        if phrase and route:
-            movement_items.append(f"{_quote_phrase_sample(phrase)}が出た場面で、{route}に気持ちが動きやすいところがありました。")
-        elif route:
-            movement_items.append(f"{route}に気持ちが動きやすいところが見えていました。")
-    if recovery_rows:
-        recovery_route = str((recovery_rows[0] or {}).get("routeLabel") or "").strip()
-        if recovery_route:
-            movement_items.append(f"{recovery_route}へ戻ろうとする動きも見えていました。")
-    deduped_movement: List[str] = []
-    seen_movement = set()
-    for text in movement_items:
-        s = str(text or "").strip()
-        if not s or s in seen_movement:
-            continue
-        seen_movement.add(s)
-        deduped_movement.append(s)
-    movement_items = deduped_movement[:3]
-
-    theme_hint_by_id = {str(item.get("themeId") or ""): str(item.get("themeHint") or "generic") for item in theme_items}
-    working_pattern_episodes = list(pattern_episodes or [])
-    if not working_pattern_episodes and (theme_items or transition_edges):
-        top_edge_route = str((transition_edges[0] or {}).get("routeLabel") or "").strip() if transition_edges else ""
-        top_recovery_route = str((recovery_rows[0] or {}).get("routeLabel") or "").strip() if recovery_rows else ""
-        working_pattern_episodes = [
-            {
-                "patternId": "pattern_1",
-                "linkedThemeIds": [str((theme_items[0] or {}).get("themeId") or "")] if theme_items else [],
-                "routeLabels": [top_edge_route] if top_edge_route else [],
-                "recoveryRouteLabel": top_recovery_route,
-                "count": _coerce_int((transition_edges[0] or {}).get("count"), 0) if transition_edges else 0,
-            }
-        ]
-
-    pattern_items: List[Dict[str, Any]] = []
-    for episode in list(working_pattern_episodes or [])[:2]:
-        linked_theme_ids = [str(x).strip() for x in list(episode.get("linkedThemeIds") or episode.get("linked_theme_ids") or []) if str(x).strip()]
-        theme_hints = [theme_hint_by_id.get(theme_id, "generic") for theme_id in linked_theme_ids if theme_id]
-        route_labels = [str(x).strip() for x in list(episode.get("routeLabels") or episode.get("route_labels") or []) if str(x).strip()][:2]
-        recovery_route_label = str(episode.get("recoveryRouteLabel") or episode.get("recovery_route_label") or "").strip()
-        pattern_label = str(episode.get("patternLabel") or episode.get("pattern_label") or _weekly_deep_v2_pattern_label(theme_hints, recovery_route_label)).strip()
-        pattern_comment = str(episode.get("patternComment") or episode.get("pattern_comment") or _monthly_deep_v2_pattern_comment(route_labels, recovery_route_label)).strip()
-        pattern_items.append(
-            {
-                "patternId": str(episode.get("patternId") or episode.get("pattern_id") or "pattern").strip() or "pattern",
-                "patternLabel": pattern_label,
-                "linkedThemeIds": linked_theme_ids,
-                "routeLabels": route_labels,
-                "recoveryRouteLabel": recovery_route_label,
-                "patternComment": pattern_comment,
-                "count": _coerce_int(episode.get("count"), 0),
-            }
-        )
-
-    phase_items: List[Dict[str, Any]] = []
+    shared = _build_weekly_deep_v2_summary(memo_themes=memo_themes, pattern_episodes=pattern_episodes,
+        memo_triggers=memo_triggers, transition_edges=transition_edges, recovery_rows=recovery_rows)
+    themes, patterns, movement = shared["themeItems"], shared["patternItems"], shared["movementItems"]
+    phases = []
     for phase in list(monthly_phases or [])[:2]:
-        phase_label = str(phase.get("phaseLabel") or "").strip()
-        theme_labels = [str(x).strip() for x in list(phase.get("themeLabels") or []) if str(x).strip()][:2]
-        phrase_samples = [str(x).strip() for x in list(phase.get("phraseSamples") or []) if str(x).strip()][:2]
-        route_labels = [str(x).strip() for x in list(phase.get("routeLabels") or []) if str(x).strip()][:2]
-        recovery_route_label = str(phase.get("recoveryRouteLabel") or "").strip()
-        time_labels = [str(x).strip() for x in list(phase.get("dominantTimeBucketLabels") or []) if str(x).strip()][:2]
-        if not phase_label:
+        label = str(phase.get("phaseLabel") or "").strip()
+        if not label:
             continue
-        if not (theme_labels or phrase_samples or route_labels or recovery_route_label):
+        theme_labels = [str(value).strip() for value in (phase.get("themeLabels") or []) if str(value).strip()][:2]
+        phrases = [str(value).strip() for value in (phase.get("phraseSamples") or []) if str(value).strip()][:2]
+        routes = [str(value).strip() for value in (phase.get("routeLabels") or []) if str(value).strip()][:2]
+        recovery = str(phase.get("recoveryRouteLabel") or "").strip()
+        if not (theme_labels or phrases or routes or recovery):
             continue
-        phase_items.append(
-            {
-                "phaseId": str(phase.get("phaseId") or "phase").strip() or "phase",
-                "phaseLabel": phase_label,
-                "phaseFocusLabel": str(phase.get("phaseFocusLabel") or (theme_labels[0] if theme_labels else (route_labels[0] if route_labels else ""))).strip(),
-                "themeLabels": theme_labels,
-                "phraseSamples": phrase_samples,
-                "routeLabels": route_labels,
-                "recoveryRouteLabel": recovery_route_label,
-                "dominantTimeBucketLabels": time_labels,
-                "phaseComment": _monthly_deep_v2_phase_comment(phase),
-                "count": _coerce_int(phase.get("count"), _coerce_int(phase.get("entryCount"), 0)),
-            }
-        )
-
-    shift_items: List[Dict[str, Any]] = []
+        phases.append(dict(phaseId=str(phase.get("phaseId") or "phase"), phaseLabel=label,
+            phaseFocusLabel=theme_labels[0] if theme_labels else (routes[0] if routes else ""),
+            themeLabels=theme_labels, phraseSamples=phrases, routeLabels=routes,
+            recoveryRouteLabel=recovery, dominantTimeBucketLabels=list(phase.get("dominantTimeBucketLabels") or [])[:2],
+            phaseComment=_monthly_deep_v2_phase_comment(phase),
+            count=_coerce_int(phase.get("count"), _coerce_int(phase.get("entryCount"), 0))))
+    shifts = []
     for shift in list(monthly_shifts or [])[:1]:
-        from_phase_label = str(shift.get("fromPhaseLabel") or "前半").strip() or "前半"
-        to_phase_label = str(shift.get("toPhaseLabel") or "後半").strip() or "後半"
-        emerging_theme_labels = [str(x).strip() for x in list(shift.get("emergingThemeLabels") or []) if str(x).strip()][:2]
-        settling_theme_labels = [str(x).strip() for x in list(shift.get("settlingThemeLabels") or []) if str(x).strip()][:2]
-        emerging_route_labels = [str(x).strip() for x in list(shift.get("emergingRouteLabels") or []) if str(x).strip()][:2]
-        settling_route_labels = [str(x).strip() for x in list(shift.get("settlingRouteLabels") or []) if str(x).strip()][:2]
-        if not (emerging_theme_labels or settling_theme_labels or emerging_route_labels or settling_route_labels or str(shift.get("shiftLabel") or "").strip() or str(shift.get("shiftComment") or "").strip()):
-            continue
-        shift_items.append(
-            {
-                "shiftId": str(shift.get("shiftId") or f"{from_phase_label}_to_{to_phase_label}").strip(),
-                "fromPhaseLabel": from_phase_label,
-                "toPhaseLabel": to_phase_label,
-                "shiftLabel": _monthly_deep_v2_shift_label(shift),
-                "shiftComment": _monthly_deep_v2_shift_comment(shift),
-                "emergingThemeLabels": emerging_theme_labels,
-                "settlingThemeLabels": settling_theme_labels,
-                "emergingRouteLabels": emerging_route_labels,
-                "settlingRouteLabels": settling_route_labels,
-                "fromRecoveryRouteLabel": str(shift.get("fromRecoveryRouteLabel") or "").strip(),
-                "toRecoveryRouteLabel": str(shift.get("toRecoveryRouteLabel") or "").strip(),
-                "directionHint": str(shift.get("directionHint") or "mixed").strip() or "mixed",
-            }
-        )
-
-    reader_comment = _monthly_deep_v2_reader_comment(
-        theme_hints=[str(item.get("themeHint") or "generic") for item in theme_items],
-        monthly_shifts=monthly_shifts,
-    )
-    summary = {
-        "overviewComment": overview_comment,
-        "themeItems": [{key: value for key, value in item.items() if key != "themeHint"} for item in theme_items],
-        "movementItems": movement_items,
-        "patternItems": pattern_items,
-        "phaseItems": phase_items,
-        "shiftItems": shift_items,
-        "readerComment": reader_comment,
-    }
-    summary["structuralComment"] = summary["overviewComment"]
-    summary["gentleComment"] = summary["readerComment"]
-    evidence_items = [{"text": x} for x in summary["movementItems"][:2]]
-    if shift_items and str((shift_items[0] or {}).get("shiftLabel") or "").strip():
-        evidence_items.append({"text": str((shift_items[0] or {}).get("shiftLabel") or "").strip()})
-    summary["evidence"] = {"items": evidence_items}
-    summary["nextPoints"] = []
-    summary["source"] = DEEP_SUMMARY_SOURCE_MONTHLY_V2
-    return summary
+        shifts.append(dict(shiftId=str(shift.get("shiftId") or "first_to_second"),
+            fromPhaseLabel=str(shift.get("fromPhaseLabel") or "前半"), toPhaseLabel=str(shift.get("toPhaseLabel") or "後半"),
+            shiftLabel=_monthly_deep_v2_shift_label(shift), shiftComment=_monthly_deep_v2_shift_comment(shift),
+            emergingThemeLabels=list(shift.get("emergingThemeLabels") or [])[:2],
+            settlingThemeLabels=list(shift.get("settlingThemeLabels") or [])[:2],
+            emergingRouteLabels=list(shift.get("emergingRouteLabels") or [])[:2],
+            settlingRouteLabels=list(shift.get("settlingRouteLabels") or [])[:2],
+            fromRecoveryRouteLabel=str(shift.get("fromRecoveryRouteLabel") or ""),
+            toRecoveryRouteLabel=str(shift.get("toRecoveryRouteLabel") or ""), directionHint=str(shift.get("directionHint") or "mixed")))
+    transitions = sum(_coerce_int(edge.get("count"), 0) for edge in (transition_edges or []))
+    overview = (f"この月の集計では、語句候補のまとまりを{len(themes)}件、遷移のまとまりを{len(patterns)}件表示しています。"
+        f"感情ラベルの遷移の集計数は{transitions}件で、ラベルの組合せは{len(transition_edges or [])}種類でした。"
+        f"期間内を{len(phases)}区分に分けた集計と、区分間の比較を{len(shifts)}件表示しています。")
+    if themes and themes[0]["phraseSamples"]:
+        overview += f"引用候補には{' / '.join(_quote_phrase_sample(value) for value in themes[0]['phraseSamples'])}が含まれています。"
+    reader = _monthly_deep_v2_reader_comment(theme_hints=[], monthly_shifts=shifts,
+        theme_count=len(themes), pattern_count=len(patterns), phase_count=len(phases), transition_count=transitions)
+    evidence = [{"text": text} for text in movement[:2]]
+    if shifts:
+        evidence.append({"text": shifts[0]["shiftLabel"]})
+    return dict(overviewComment=overview, themeItems=themes, movementItems=movement, patternItems=patterns,
+        phaseItems=phases, shiftItems=shifts, readerComment=reader, structuralComment=overview,
+        gentleComment=reader, evidence={"items": evidence}, nextPoints=[], source=DEEP_SUMMARY_SOURCE_MONTHLY_V2)
 
 
 
@@ -3485,8 +3012,8 @@ def _monthly_deep_v2_phase_section_title(
     shift_items: List[Dict[str, Any]],
 ) -> str:
     if len(list(phase_items or [])) >= 2 or list(shift_items or []):
-        return "【前半と後半で変わっていたこと】"
-    return "【今月の中で見えていた変化】"
+        return "【前半と後半の集計比較】"
+    return "【期間内の区分別集計】"
 
 
 
@@ -3508,7 +3035,7 @@ def _render_monthly_deep_v2_shift_lines(shift: Dict[str, Any]) -> List[str]:
     comment = str(shift.get("shiftComment") or "").strip()
 
     if not label and not comment:
-        label = "月の前半と後半で、気持ちの中心が少し切り替わっていました。"
+        label = "前半と後半の集計項目を比較しています。"
 
     lines: List[str] = []
     if label:
@@ -3536,16 +3063,16 @@ def _render_monthly_deep_v2_text(
         lines.append(rng)
     lines.append("")
 
-    lines.append("【今月、見えていたこと】")
+    lines.append("【この月の集計】")
     lines.append(
         str((summary or {}).get("overviewComment") or "").strip()
-        or "今月は気持ちの奥で起きていたことをまとめるには、材料がまだ少なめでした。"
+        or "この月の語句候補や遷移の集計は確認できません。"
     )
     lines.append("")
 
     theme_items = list((summary or {}).get("themeItems") or [])
     if theme_items:
-        lines.append("【あなたの言葉から見えていたテーマ】")
+        lines.append("【記録中の語句候補】")
         for theme in theme_items[:2]:
             if not isinstance(theme, dict):
                 continue
@@ -3572,7 +3099,7 @@ def _render_monthly_deep_v2_text(
 
     pattern_items = list((summary or {}).get("patternItems") or [])
     if pattern_items:
-        lines.append("【今月、くり返しやすかったパターン】")
+        lines.append("【記録上の遷移のまとまり】")
         for idx, pattern in enumerate(pattern_items[:2]):
             if not isinstance(pattern, dict):
                 continue
@@ -3603,7 +3130,7 @@ def _render_monthly_deep_v2_text(
 
     reader_comment = str((summary or {}).get("readerComment") or "").strip()
     if reader_comment:
-        lines.append("【あなたへのコメント】")
+        lines.append("【集計の読み方】")
         lines.append(reader_comment)
         lines.append("")
 
@@ -3620,199 +3147,67 @@ def _build_structural_summary_object(
     deep_payload: Dict[str, Any],
 ) -> Dict[str, Any]:
     payload = deep_payload if isinstance(deep_payload, dict) else {}
-    deep_model = _extract_deep_control_model_payload(payload)
-    transition_edges = _normalize_transition_edges(
-        deep_model.get("transition_edges") or deep_model.get("transitionEdges") or []
-    )
-    patterns = _normalize_control_patterns(deep_model.get("control_patterns") or deep_model.get("controlPatterns") or [])
-    recovery_rows = _normalize_recovery_time_rows(deep_model.get("recovery_time") or deep_model.get("recoveryTime") or [])
-    memo_triggers = _normalize_memo_triggers(deep_model.get("memo_triggers") or deep_model.get("memoTriggers") or [])
-    memo_themes = _normalize_memo_themes(deep_model.get("memo_themes") or deep_model.get("memoThemes") or [])
-    pattern_episodes = _normalize_pattern_episodes(deep_model.get("pattern_episodes") or deep_model.get("patternEpisodes") or [])
-    monthly_phases = _normalize_monthly_phases(
-        deep_model.get("monthly_phases")
-        or deep_model.get("monthlyPhases")
-        or payload.get("monthlyPhases")
-        or payload.get("monthly_phases")
-        or []
-    )
-    monthly_shifts = _normalize_monthly_shifts(
-        deep_model.get("monthly_shifts")
-        or deep_model.get("monthlyShifts")
-        or payload.get("monthlyShifts")
-        or payload.get("monthly_shifts")
-        or []
-    )
-    summary_raw = deep_model.get("summary") if isinstance(deep_model.get("summary"), dict) else {}
-    meta_raw = deep_model.get("meta") if isinstance(deep_model.get("meta"), dict) else {}
-    pattern_count = _coerce_int(summary_raw.get("patternCount"), len(patterns))
-    transition_count = _coerce_int(summary_raw.get("transitionCount"), len(transition_edges))
-    analysis_version = str(payload.get("analysis_version") or meta_raw.get("analysisVersion") or "").strip()
-    is_deep_v2_family = analysis_version == "emotion_structure.deep.v2"
+    model = _extract_deep_control_model_payload(payload)
+    edges = _normalize_transition_edges(model.get("transition_edges") or model.get("transitionEdges") or [])
+    patterns = _normalize_control_patterns(model.get("control_patterns") or model.get("controlPatterns") or [])
+    recovery = _normalize_recovery_time_rows(model.get("recovery_time") or model.get("recoveryTime") or [])
+    triggers = _normalize_memo_triggers(model.get("memo_triggers") or model.get("memoTriggers") or [])
+    themes = _normalize_memo_themes(model.get("memo_themes") or model.get("memoThemes") or [])
+    episodes = _normalize_pattern_episodes(model.get("pattern_episodes") or model.get("patternEpisodes") or [])
+    phases = _normalize_monthly_phases(model.get("monthly_phases") or model.get("monthlyPhases") or payload.get("monthlyPhases") or payload.get("monthly_phases") or [])
+    shifts = _normalize_monthly_shifts(model.get("monthly_shifts") or model.get("monthlyShifts") or payload.get("monthlyShifts") or payload.get("monthly_shifts") or [])
+    summary = model.get("summary") if isinstance(model.get("summary"), dict) else {}
+    meta = model.get("meta") if isinstance(model.get("meta"), dict) else {}
+    version = str(payload.get("analysis_version") or meta.get("analysisVersion") or "").strip()
+    if report_type == "daily" and version == "emotion_structure.deep.v2":
+        return _build_daily_deep_v2_summary(memo_themes=themes, memo_triggers=triggers,
+            transition_edges=edges, recovery_rows=recovery)
+    if report_type == "weekly" and (themes or triggers):
+        return _build_weekly_deep_v2_summary(memo_themes=themes, pattern_episodes=episodes,
+            memo_triggers=triggers, transition_edges=edges, recovery_rows=recovery)
+    if report_type == "monthly" and phases:
+        return _build_monthly_deep_v2_summary(memo_themes=themes, pattern_episodes=episodes,
+            memo_triggers=triggers, transition_edges=edges, recovery_rows=recovery,
+            monthly_phases=phases, monthly_shifts=shifts)
 
-    if report_type == "daily" and is_deep_v2_family:
-        return _build_daily_deep_v2_summary(
-            memo_themes=memo_themes,
-            memo_triggers=memo_triggers,
-            transition_edges=transition_edges,
-            recovery_rows=recovery_rows,
-        )
-
-    if report_type == "weekly" and (memo_themes or memo_triggers):
-        return _build_weekly_deep_v2_summary(
-            memo_themes=memo_themes,
-            pattern_episodes=pattern_episodes,
-            memo_triggers=memo_triggers,
-            transition_edges=transition_edges,
-            recovery_rows=recovery_rows,
-        )
-
-    if report_type == "monthly" and monthly_phases:
-        return _build_monthly_deep_v2_summary(
-            memo_themes=memo_themes,
-            pattern_episodes=pattern_episodes,
-            memo_triggers=memo_triggers,
-            transition_edges=transition_edges,
-            recovery_rows=recovery_rows,
-            monthly_phases=monthly_phases,
-            monthly_shifts=monthly_shifts,
-        )
-
-    top_edge = transition_edges[0] if transition_edges else {}
-    top_route = str(top_edge.get("routeLabel") or "").strip()
-    top_edge_count = _coerce_int(top_edge.get("count"), 0)
-    top_pattern = patterns[0] if patterns else {}
-    top_pattern_label = str(top_pattern.get("label") or "").strip()
-    top_pattern_routes = " / ".join(list(top_pattern.get("transitionRouteLabels") or [])[:2])
-    top_recovery = recovery_rows[0] if recovery_rows else {}
-    top_recovery_route = str(top_recovery.get("routeLabel") or "").strip()
-    top_recovery_mean = _format_minutes_ja(top_recovery.get("meanMinutes"))
-    top_keyword = str((memo_triggers[0] or {}).get("keyword") or "").strip() if memo_triggers else ""
-
-    structural_comment = ""
-    gentle_comment = ""
-    next_points: List[str] = []
-    evidence_items: List[Dict[str, str]] = []
-
-    if report_type == "daily":
-        if top_route:
-            structural_comment = f"昨日は {top_route} への切り替わりがいちばん目立ち、その流れが一日の中で何度か繰り返されていました。"
-            if top_edge_count > 0:
-                structural_comment += f" この切り替わりは {top_edge_count} 回見られています。"
-        elif transition_count > 0:
-            structural_comment = f"昨日は気持ちの切り替わりが {transition_count} 回あり、その動き方にまだ余韻が残っていたようです。"
-        else:
-            structural_comment = "昨日は深いところの動きを言い切るには、材料がまだ少なめでした。"
-
-        if top_recovery_route and top_recovery_mean:
-            structural_comment += f" とくに {top_recovery_route} は平均 {top_recovery_mean} ほどで起きていました。"
-
-        if top_keyword:
-            gentle_comment = f"「{top_keyword}」という言葉が、昨日の切り替わりに近い場所で何度か現れていました。"
-        elif top_recovery_route:
-            gentle_comment = f"{top_recovery_route} が起きた前後の考え方を短く振り返ると、昨日の流れが受け取りやすくなります。"
-
-        if transition_count > 0:
-            evidence_items.append({"text": f"昨日は感情の切り替わりが合計 {transition_count} 件ありました。"})
-        if top_route and top_edge_count > 0:
-            evidence_items.append({"text": f"{top_route} が昨日の中でいちばん多い流れでした。"})
-        if top_keyword:
-            evidence_items.append({"text": f"思考メモでは「{top_keyword}」が切り替わりの手がかりとして目立っていました。"})
-        if top_recovery_route and top_recovery_mean:
-            evidence_items.append({"text": f"{top_recovery_route} は平均 {top_recovery_mean} ほどで起きていました。"})
-
-        if top_route:
-            next_points.append(f"{top_route} が起きた前後で、何を考えていたかを一言だけ残してみてください。")
-        if top_keyword:
-            next_points.append(f"「{top_keyword}」が出た場面で、感情がどう動いたかを見返してみてください。")
-
-    elif report_type == "weekly":
-        if patterns:
-            structural_comment = f"今週は、気持ちを整えようとするときの出方が {pattern_count or len(patterns)} 個ほどまとまりとして見えていました。"
-            if top_pattern_label:
-                structural_comment += f" いちばん前に出やすかったのは「{top_pattern_label}」です。"
-            if top_pattern_routes:
-                structural_comment += f" 代表的な切り替わりは {top_pattern_routes} でした。"
-        elif top_route:
-            structural_comment = f"今週は {top_route} への切り替わりが目立ち、その流れが何度か繰り返されていました。"
-        elif transition_count > 0:
-            structural_comment = f"今週は気持ちの切り替わりが {transition_count} 回あり、その動き方にひとつの癖が見え始めていました。"
-        else:
-            structural_comment = "今週は深いところの動きを言い切るには、材料がまだ少なめでした。"
-
-        if top_recovery_route and top_recovery_mean:
-            gentle_comment = f"{top_recovery_route} は平均 {top_recovery_mean} ほどで起きており、今週の整え直し方の特徴として見えていました。"
-        if top_keyword:
-            if gentle_comment:
-                gentle_comment += f" また、「{top_keyword}」という言葉も切り替わりの手がかりとして現れやすかったようです。"
-            else:
-                gentle_comment = f"「{top_keyword}」という言葉が、今週の切り替わりに近い場所で何度か現れていました。"
-
-        if transition_count > 0:
-            evidence_items.append({"text": f"今週は感情の切り替わりが合計 {transition_count} 件ありました。"})
-        if pattern_count > 0:
-            evidence_items.append({"text": f"動き方のまとまりは {pattern_count} 個ほど見られました。"})
-        if top_route and top_edge_count > 0:
-            evidence_items.append({"text": f"{top_route} が今週の中で目立つ流れでした。"})
-        if top_keyword:
-            evidence_items.append({"text": f"思考メモでは「{top_keyword}」が手がかりとして目立っていました。"})
-
-        if top_pattern_label:
-            next_points.append(f"「{top_pattern_label}」が強く出た日の前後を見返して、共通点を探してみてください。")
-        if top_keyword:
-            next_points.append(f"「{top_keyword}」が出た場面で、感情がどの流れに向かいやすいかを見比べてみてください。")
-        elif top_route:
-            next_points.append(f"{top_route} が起きた前後に、どんな出来事や受け止め方があったかを振り返ってみてください。")
-
-    else:
-        if patterns:
-            structural_comment = f"今月は、気持ちを整えようとするときの出方が {pattern_count or len(patterns)} 個ほどまとまりとして見えていました。"
-            if top_pattern_label:
-                structural_comment += f" いちばん前に出やすかったのは「{top_pattern_label}」です。"
-            if top_pattern_routes:
-                structural_comment += f" 代表的な切り替わりは {top_pattern_routes} でした。"
-            if len(patterns) >= 2:
-                structural_comment += " いくつかの動き方が同時に重なっていた月でもあります。"
-        elif top_route:
-            structural_comment = f"今月は {top_route} への切り替わりが目立ち、その流れが月の中で何度か繰り返されていました。"
-        elif transition_count > 0:
-            structural_comment = f"今月は気持ちの切り替わりが {transition_count} 回あり、その動き方に月らしい癖が見え始めていました。"
-        else:
-            structural_comment = "今月は深いところの動きを言い切るには、材料がまだ少なめでした。"
-
-        if top_recovery_route and top_recovery_mean:
-            gentle_comment = f"{top_recovery_route} は平均 {top_recovery_mean} ほどで起きており、今月の整え直し方のひとつとして見えていました。"
-        if top_keyword:
-            if gentle_comment:
-                gentle_comment += f" また、「{top_keyword}」という言葉も切り替わりに関わる手がかりとして現れやすかったようです。"
-            else:
-                gentle_comment = f"「{top_keyword}」という言葉が、今月の切り替わりに近い場所で何度か現れていました。"
-
-        if transition_count > 0:
-            evidence_items.append({"text": f"今月は感情の切り替わりが合計 {transition_count} 件ありました。"})
-        if pattern_count > 0:
-            evidence_items.append({"text": f"動き方のまとまりは {pattern_count} 個ほど見られました。"})
-        if top_route and top_edge_count > 0:
-            evidence_items.append({"text": f"{top_route} が今月の中で代表的な流れでした。"})
-        if top_keyword:
-            evidence_items.append({"text": f"思考メモでは「{top_keyword}」が手がかりとして目立っていました。"})
-
-        if top_pattern_label:
-            next_points.append(f"「{top_pattern_label}」が出やすい週や時間帯を見比べると、今月の動き方がつかみやすくなります。")
-        if top_keyword:
-            next_points.append(f"「{top_keyword}」が出た場面で、どの流れに入りやすいかを来月も見比べてみてください。")
-        elif top_route:
-            next_points.append(f"{top_route} が起きる前後で、思考や時間帯の共通点を見返してみてください。")
-
-    return {
-        "structuralComment": structural_comment.strip() or None,
-        "gentleComment": gentle_comment.strip() or None,
-        "nextPoints": [str(x).strip() for x in next_points if str(x).strip()][:4],
-        "evidence": {
-            "items": [item for item in evidence_items if isinstance(item, dict) and str(item.get("text") or "").strip()][:4]
-        },
-        "source": DEEP_SUMMARY_SOURCE_V1,
-    }
+    period_word = {"daily": "この日", "weekly": "この週", "monthly": "この月"}.get(report_type, "この期間")
+    transition_count = _coerce_int(summary.get("transitionCount"), sum(edge["count"] for edge in edges))
+    pattern_count = _coerce_int(summary.get("patternCount"), len(patterns))
+    structural = (f"{period_word}の集計では、感情ラベルの遷移が{transition_count}件、"
+        f"遷移ラベルの組合せが{len(edges)}種類、遷移のまとまりが{pattern_count}件ありました。")
+    if edges:
+        first = edges[0]
+        structural += f"最も多い遷移の一つは「{first['routeLabel']}」で、集計数は{first['count']}件、構成比は{first['share']*100:g}%でした。"
+    if patterns:
+        structural += f"主なまとまりには{' / '.join(patterns[0]['transitionRouteLabels'][:3]) or '遷移ラベルの内訳なし'}が含まれています。"
+    gentle = []
+    if recovery:
+        first = recovery[0]
+        interval = _format_minutes_ja(first.get("meanMinutes"))
+        gentle.append(f"「{first['routeLabel']}」の記録間隔は{first['count']}件の集計" + (f"で、平均{interval}でした。" if interval else "です。"))
+        median = _format_minutes_ja(first.get("medianMinutes"))
+        if median:
+            gentle.append(f"同じ集計の中央値は{median}です。")
+    if triggers:
+        first = triggers[0]
+        gentle.append(f"語句候補「{first['keyword']}」に関連する集計数は{first['count']}です。")
+        if first["relatedTransitions"]:
+            gentle.append(f"対応する遷移ラベルは{' / '.join(first['relatedTransitions'][:3])}でした。")
+    gentle.extend(["遷移は、記録された感情ラベルを時刻順に並べた集計です。",
+        "表示している間隔は、記録時刻同士の差です。",
+        "各項目の集計数・構成比・記録間隔を合わせて、この期間の記録を見返せます。"])
+    evidence = [f"感情ラベルの遷移の集計数は{transition_count}件でした。",
+        f"遷移のまとまりは{pattern_count}件、ラベルの組合せは{len(edges)}種類でした。"]
+    if edges:
+        evidence.append(f"「{edges[0]['routeLabel']}」の集計数は{edges[0]['count']}件でした。")
+    if triggers:
+        evidence.append(f"語句候補「{triggers[0]['keyword']}」に関連する集計数は{triggers[0]['count']}です。")
+    return dict(structuralComment=structural, gentleComment="".join(gentle),
+        nextPoints=["遷移の件数は、感情ラベルの記録順から集計した値です。",
+            "構成比は、集計対象の遷移全体に対する割合です。",
+            "平均・中央値などの時間は、記録時刻同士の間隔を示します。",
+            "語句候補は、前後の記録と一緒に抽出された言葉を示します。"],
+        evidence={"items": [{"text": text} for text in evidence[:4]]}, source=DEEP_SUMMARY_SOURCE_V1)
 
 
 def _render_structural_text_from_summary(
@@ -3861,12 +3256,12 @@ def _render_structural_text_from_summary(
     lines.append("")
 
     if report_type == "daily":
-        lines.append("【昨日、深いところで動いていた流れ】")
-        lines.append(structural_comment or "昨日は気持ちの奥で起きていたことをまとめるには、材料がまだ少なめでした。")
+        lines.append("【この日の詳しい集計】")
+        lines.append(structural_comment or "この日の語句候補や遷移の集計は確認できません。")
         lines.append("")
 
         if recovery_rows:
-            lines.append("【切り替わりやすかった流れ】")
+            lines.append("【感情ラベル間の記録間隔】")
             for row in recovery_rows[:2]:
                 mean_text = _format_minutes_ja(row.get("meanMinutes"))
                 if mean_text:
@@ -3874,7 +3269,7 @@ def _render_structural_text_from_summary(
             lines.append("")
 
         if memo_triggers:
-            lines.append("【手がかりになりやすかった考え】")
+            lines.append("【記録中の語句候補】")
             for memo in memo_triggers[:2]:
                 keyword = str(memo.get("keyword") or "").strip()
                 related = " / ".join(list(memo.get("relatedTransitions") or [])[:2])
@@ -3894,7 +3289,7 @@ def _render_structural_text_from_summary(
             lines.append("")
 
         if gentle_comment:
-            lines.append("【こう受け取ると自然です】")
+            lines.append("【集計の読み方】")
             lines.append(gentle_comment)
             lines.append("")
 
@@ -3903,8 +3298,8 @@ def _render_structural_text_from_summary(
         return _humanize_emotion_report_text("\n".join(lines).strip())
 
     if report_type == "weekly":
-        lines.append("【今週、深いところで動いていた流れ】")
-        lines.append(structural_comment or "今週は気持ちの奥で起きていたことをまとめるには、材料がまだ少なめでした。")
+        lines.append("【この週の詳しい集計】")
+        lines.append(structural_comment or "この週の語句候補や遷移の集計は確認できません。")
         lines.append("")
 
         if patterns:
@@ -3922,7 +3317,7 @@ def _render_structural_text_from_summary(
             lines.append("")
 
         if recovery_rows:
-            lines.append("【切り替わりやすかった流れ】")
+            lines.append("【感情ラベル間の記録間隔】")
             for row in recovery_rows[:3]:
                 mean_text = _format_minutes_ja(row.get("meanMinutes"))
                 if mean_text:
@@ -3930,7 +3325,7 @@ def _render_structural_text_from_summary(
             lines.append("")
 
         if memo_triggers:
-            lines.append("【手がかりになりやすかった考え】")
+            lines.append("【記録中の語句候補】")
             for memo in memo_triggers[:3]:
                 keyword = str(memo.get("keyword") or "").strip()
                 related = " / ".join(list(memo.get("relatedTransitions") or [])[:2])
@@ -3950,7 +3345,7 @@ def _render_structural_text_from_summary(
             lines.append("")
 
         if gentle_comment:
-            lines.append("【こう受け取ると自然です】")
+            lines.append("【集計の読み方】")
             lines.append(gentle_comment)
             lines.append("")
 
@@ -3958,8 +3353,8 @@ def _render_structural_text_from_summary(
         lines.extend(_common_observation_note_lines())
         return _humanize_emotion_report_text("\n".join(lines).strip())
 
-    lines.append("【今月、深いところで続いていた流れ】")
-    lines.append(structural_comment or "今月は気持ちの奥で起きていたことをまとめるには、材料がまだ少なめでした。")
+    lines.append("【この月の詳しい集計】")
+    lines.append(structural_comment or "この月の語句候補や遷移の集計は確認できません。")
     lines.append("")
 
     if patterns:
@@ -3977,7 +3372,7 @@ def _render_structural_text_from_summary(
         lines.append("")
 
     if recovery_rows:
-        lines.append("【切り替わりやすかった流れ】")
+        lines.append("【感情ラベル間の記録間隔】")
         for row in recovery_rows[:4]:
             mean_text = _format_minutes_ja(row.get("meanMinutes"))
             if mean_text:
@@ -3985,7 +3380,7 @@ def _render_structural_text_from_summary(
         lines.append("")
 
     if memo_triggers:
-        lines.append("【手がかりになりやすかった考え】")
+        lines.append("【記録中の語句候補】")
         for memo in memo_triggers[:4]:
             keyword = str(memo.get("keyword") or "").strip()
             related = " / ".join(list(memo.get("relatedTransitions") or [])[:2])
@@ -4005,7 +3400,7 @@ def _render_structural_text_from_summary(
         lines.append("")
 
     if gentle_comment:
-        lines.append("【こう受け取ると自然です】")
+        lines.append("【集計の読み方】")
         lines.append(gentle_comment)
         lines.append("")
 
@@ -4429,24 +3824,46 @@ def _build_myweb_skip_meta(
 
 
 async def _fetch_emotion_rows(user_id: str, start_iso: str, end_iso: str) -> List[Dict[str, Any]]:
-    resp = await _sb_get(
-        "/rest/v1/emotions",
-        params=[
-            ("select", "created_at,emotions,emotion_details,memo,is_secret"),
-            ("user_id", f"eq.{user_id}"),
-            ("created_at", f"gte.{start_iso}"),
-            ("created_at", f"lte.{end_iso}"),
-            ("order", "created_at.asc"),
-        ],
-    )
-    if resp.status_code != 200:
-        logger.error("Supabase emotions fetch failed: %s %s", resp.status_code, resp.text[:500])
-        raise HTTPException(status_code=502, detail="Failed to fetch emotions")
-    try:
-        data = resp.json()
-        return data if isinstance(data, list) else []
-    except Exception:
-        return []
+    """Read the complete owner/period, retaining both original input fields."""
+    rows: List[Dict[str, Any]] = []
+    seen_ids: set[str] = set()
+    offset = 0
+    while True:
+        resp = await _sb_get(
+            "/rest/v1/emotions",
+            params=[
+                ("select", "id,user_id,created_at,emotions,emotion_details,memo,memo_action,category,is_secret,emotion_strength_avg"),
+                ("user_id", f"eq.{user_id}"),
+                ("created_at", f"gte.{start_iso}"),
+                ("created_at", f"lte.{end_iso}"),
+                ("is_secret", "eq.false"),
+                ("order", "created_at.asc,id.asc"),
+                ("limit", "1000"),
+                ("offset", str(offset)),
+            ],
+        )
+        if resp.status_code not in (200, 206):
+            logger.error("Supabase emotions fetch failed: %s %s", resp.status_code, resp.text[:500])
+            raise HTTPException(status_code=502, detail="Failed to fetch emotions")
+        try:
+            page = resp.json()
+        except Exception:
+            raise HTTPException(status_code=502, detail="Invalid emotion source response") from None
+        if not isinstance(page, list):
+            raise HTTPException(status_code=502, detail="Invalid emotion source response")
+        if not page:
+            break
+        for row in page:
+            identifier = row.get("id") if isinstance(row, dict) else None
+            if (not isinstance(identifier, str) or not identifier.strip()
+                    or identifier in seen_ids or row.get("user_id") != user_id):
+                raise HTTPException(status_code=502, detail="Emotion source identity mismatch")
+            seen_ids.add(identifier)
+            rows.append(row)
+        # A server-side row cap can be smaller than the requested limit.
+        # Advance by the actual page and stop only at an empty page.
+        offset += len(page)
+    return rows
 
 
 async def _report_exists(user_id: str, report_type: str, start_iso: str, end_iso: str) -> Optional[str]:
@@ -4690,84 +4107,10 @@ def _render_weekly_standard_v3_text(
     days: List[Dict[str, Any]],
     supplement_text: Optional[str] = None,
 ) -> str:
-    totals = metrics.get("totals") if isinstance(metrics.get("totals"), dict) else {}
-    total_all = int(metrics.get("totalAll") or 0)
-    dominant = _dominant_label(metrics)
-
-    peak_day_label: Optional[str] = None
-    peak_total = -1
-    dom_keys: List[Optional[str]] = []
-    for d in (days or []):
-        try:
-            day_total = sum(int(d.get(k, 0) or 0) for k in EMOTION_KEYS)
-        except Exception:
-            day_total = 0
-        if day_total > peak_total:
-            peak_total = day_total
-            peak_day_label = str(d.get("label") or "").strip() or None
-        dk = str(d.get("dominantKey") or "").strip() or None
-        dom_keys.append(dk)
-
-    switches = 0
-    last = None
-    for dk in dom_keys:
-        if dk and last and dk != last:
-            switches += 1
-        if dk:
-            last = dk
-
-    top_pairs: List[Tuple[str, int]] = []
-    for k in EMOTION_KEYS:
-        try:
-            v = int(totals.get(k, 0) or 0)
-        except Exception:
-            v = 0
-        if v > 0:
-            top_pairs.append((k, v))
-    top_pairs.sort(key=lambda x: x[1], reverse=True)
-
-    if total_all <= 0:
-        overview = "今週は入力が少なめで、はっきりした傾向は読み取りにくい週でした。"
-    else:
-        overview = f"今週は「{dominant}」が中心に現れていました。"
-        if len(top_pairs) >= 2:
-            k2, _v2 = top_pairs[1]
-            overview += f"その一方で、「{KEY_TO_JP.get(k2, k2)}」も重なる場面がありました。"
-        if switches >= 3:
-            overview += "日によって気持ちが切り替わりやすい場面も見られました。"
-        elif switches == 0:
-            overview += "大きな切り替わりは少なく、全体としては近い空気感が続いていました。"
-
-    movement_lines: List[str] = []
-    if peak_day_label:
-        movement_lines.append(f"感情の動きが強めに出たのは {peak_day_label} でした。")
-    if total_all > 0:
-        movement_lines.append(f"今週は「{dominant}」の比重が高く出ていました。")
-    if len(top_pairs) >= 2:
-        movement_lines.append(f"次に目立ったのは「{KEY_TO_JP.get(top_pairs[1][0], top_pairs[1][0])}」でした。")
-
-    lines: List[str] = [title]
-    rng = _range_line_jst(period_start_iso, period_end_iso)
-    if rng:
-        lines.append(rng)
-    lines.extend([
-        "",
-        "【今週、見えていたこと】",
-        overview,
-        "",
-        "【気持ちの変化】",
-    ])
-    if movement_lines:
-        for item in movement_lines[:3]:
-            lines.append(f"・{item}")
-    else:
-        lines.append("・大きな動きとしてはまだまとまりませんでした。")
-    lines.extend([
-        "",
-        "【このレポートについて】",
-    ])
-    lines.extend(_common_observation_note_lines())
-    return _humanize_emotion_report_text("\n".join(lines).strip())
+    summary = _build_standard_summary_object(report_type="weekly", analysis_payload={},
+        snapshot_summary={}, snapshot_views={"metrics": metrics, "days": days}, light_text="")
+    return _render_standard_text_from_summary(title=title, report_type="weekly",
+        period_start_iso=period_start_iso, period_end_iso=period_end_iso, summary=summary)
 
 def _render_monthly_standard_v3_text(
     *,
@@ -4778,91 +4121,18 @@ def _render_monthly_standard_v3_text(
     weeks: List[Dict[str, Any]],
     supplement_text: Optional[str] = None,
 ) -> str:
-    totals = metrics.get("totals") if isinstance(metrics.get("totals"), dict) else {}
-    total_all = int(metrics.get("totalAll") or 0)
-    dominant = _dominant_label(metrics)
-
-    week_summaries: List[str] = []
-    week_doms: List[str] = []
-    calm_by_week: List[int] = []
-    for w in (weeks or []):
-        label = str(w.get("label") or "").strip() or "週"
-        wt = 0
-        best_k = None
-        best_v = 0
-        for k in EMOTION_KEYS:
-            try:
-                v = int(w.get(k, 0) or 0)
-            except Exception:
-                v = 0
-            wt += v
-            if v > best_v:
-                best_v = v
-                best_k = k
-        calm_by_week.append(int(w.get("calm", 0) or 0))
-        dom_jp = KEY_TO_JP.get(best_k, best_k) if best_k else "—"
-        week_doms.append(str(dom_jp))
-        if wt > 0:
-            week_summaries.append(f"{label}は「{dom_jp}」が中心でした。")
-
-    reset_hint = False
-    if len(calm_by_week) >= 4:
-        try:
-            first_half = calm_by_week[0] + calm_by_week[1]
-            second_half = calm_by_week[2] + calm_by_week[3]
-            reset_hint = second_half > first_half and second_half > 0
-        except Exception:
-            reset_hint = False
-
-    if total_all <= 0:
-        overview = "今月は入力が少なめで、はっきりした傾向は読み取りにくい月でした。"
-    else:
-        overview = f"今月は「{dominant}」が中心に現れていました。"
-        dom_count = sum(1 for d in week_doms if d == dominant)
-        if dom_count >= 3:
-            overview += f"週をまたいで「{dominant}」が繰り返し中心になっていました。"
-        elif dom_count == 2:
-            overview += f"「{dominant}」が中心の週が複数あり、似た気持ちが戻ってきやすい月でした。"
-        else:
-            overview += "週ごとに中心感情が変わりやすく、その時々の状況に合わせて空気感が動いていた月でした。"
-
-    movement_lines: List[str] = []
-    movement_lines.extend(week_summaries[:2])
-    if reset_hint:
-        movement_lines.append("後半にかけて、少し整え直すような動きも見えていました。")
-
-    lines: List[str] = [title]
-    rng = _range_line_jst(period_start_iso, period_end_iso)
-    if rng:
-        lines.append(rng)
-    lines.extend([
-        "",
-        "【今月、見えていたこと】",
-        overview,
-        "",
-        "【気持ちの変化】",
-    ])
-    if movement_lines:
-        for item in movement_lines[:3]:
-            lines.append(f"・{item}")
-    else:
-        lines.append("・大きな動きとしてはまだまとまりませんでした。")
-    lines.extend([
-        "",
-        "【このレポートについて】",
-    ])
-    lines.extend(_common_observation_note_lines())
-    return _humanize_emotion_report_text("\n".join(lines).strip())
+    summary = _build_standard_summary_object(report_type="monthly", analysis_payload={},
+        snapshot_summary={}, snapshot_views={"metrics": metrics, "weeks": weeks}, light_text="")
+    return _render_standard_text_from_summary(title=title, report_type="monthly",
+        period_start_iso=period_start_iso, period_end_iso=period_end_iso, summary=summary)
 
 def _render_daily_motion_line(movement: Dict[str, Any]) -> str:
-    key = str((movement or {}).get("key") or "").strip()
-    if key == "swing":
-        return "前日とは少し違う気持ちの動きが出ていました。"
-    if key == "up":
-        return "前日より反応が表に出やすい一日でした。"
-    if key == "down":
-        return "前日より少し静かに落ち着いていく動きでした。"
-    return "前日と近い空気感のまま推移していました。"
+    data = movement if isinstance(movement, dict) else {}
+    if "totalToday" not in data or "totalYesterday" not in data:
+        return "前日比較の加重集計は、この項目では確認できません。"
+    current = _coerce_int(data.get("totalToday"), 0)
+    previous = _coerce_int(data.get("totalYesterday"), 0)
+    return f"前日の加重合計は{previous}、この日は{current}で、差は{current-previous:+d}でした。"
 
 def _render_daily_hint_line(metrics: Dict[str, Any], movement: Dict[str, Any]) -> str:
     return ""
@@ -4876,65 +4146,10 @@ def _render_daily_standard_v3_text(
     summary: Dict[str, Any],
     movement: Dict[str, Any],
 ) -> str:
-    share = (metrics or {}).get("sharePct") if isinstance((metrics or {}).get("sharePct"), dict) else {}
-    dominant_key = str((metrics or {}).get("dominantKey") or "").strip() or None
-    if not dominant_key:
-        totals = (metrics or {}).get("totals") if isinstance((metrics or {}).get("totals"), dict) else {}
-        dominant_key = _dominant_key_from_map(totals)
-    dominant_label = KEY_TO_JP.get(dominant_key, dominant_key) if dominant_key else "—"
-
-    try:
-        input_count = int((summary or {}).get("emotions_public") or 0)
-    except Exception:
-        input_count = 0
-    if input_count <= 0:
-        try:
-            input_count = int((summary or {}).get("emotions_total") or 0)
-        except Exception:
-            input_count = 0
-    if input_count <= 0:
-        try:
-            input_count = int((metrics or {}).get("totalAll") or 0)
-        except Exception:
-            input_count = 0
-
-    try:
-        dominant_pct = int(share.get(dominant_key, 0)) if dominant_key else 0
-    except Exception:
-        dominant_pct = 0
-
-    if input_count <= 0:
-        overview = "昨日は入力が少なめで、はっきりした傾向はまだ読み取りにくい日でした。"
-    else:
-        overview = f"昨日は「{dominant_label}」が比較的出やすい一日でした。"
-        if dominant_pct > 0:
-            overview += f"全体としては「{dominant_label}」の比重が高く、"
-        overview += _render_daily_motion_line(movement)
-
-    movement_lines: List[str] = []
-    if dominant_key:
-        movement_lines.append(f"最も強く出ていたのは「{dominant_label}」でした。")
-    movement_lines.append(_render_daily_motion_line(movement))
-
-    lines: List[str] = [title]
-    rng = _range_line_jst(period_start_iso, period_end_iso)
-    if rng:
-        lines.append(rng)
-    lines.extend([
-        "",
-        "【昨日、見えていたこと】",
-        overview,
-        "",
-        "【気持ちの変化】",
-    ])
-    for item in movement_lines[:2]:
-        lines.append(f"・{item}")
-    lines.extend([
-        "",
-        "【このレポートについて】",
-    ])
-    lines.extend(_common_observation_note_lines())
-    return _humanize_emotion_report_text("\n".join(lines).strip())
+    observation = _build_standard_summary_object(report_type="daily", analysis_payload={},
+        snapshot_summary=summary, snapshot_views={"metrics": metrics, "movement": movement}, light_text="")
+    return _render_standard_text_from_summary(title=title, report_type="daily",
+        period_start_iso=period_start_iso, period_end_iso=period_end_iso, summary=observation)
 
 def _render_simple_report_text(
     report_type: str,
@@ -4971,6 +4186,160 @@ def _render_simple_report_text(
     return _humanize_emotion_report_text("\n".join(lines).strip())
 
 
+DAILY_ROWS_FACT_PROFILE = "analysis.daily.rows.facts.v1"
+_DAILY_ROWS_SOURCE_FIELDS = (
+    "id", "user_id", "created_at", "emotions", "emotion_details", "memo",
+    "memo_action", "category", "is_secret", "emotion_strength_avg",
+)
+
+
+def _daily_rows_source_require(condition: bool) -> None:
+    if not condition:
+        raise HTTPException(409, "analysis_daily_rows_source_mismatch")
+
+
+def _daily_rows_source_bytes(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
+
+
+def _freeze_daily_rows_report_source(*, user_id: str, target: TargetPeriod,
+        current_rows: List[Dict[str, Any]], previous_rows: List[Dict[str, Any]]) -> str:
+    """Freeze actual local query results; this is not a database snapshot ID."""
+    _daily_rows_source_require(isinstance(user_id, str) and bool(user_id.strip())
+        and user_id == user_id.strip() and target.report_type == "daily")
+    canonical_target = _build_target_period("daily", target.dist_utc)
+    _daily_rows_source_require(all(getattr(target, key) == getattr(canonical_target, key)
+        for key in ("period_start_utc", "period_end_utc", "period_start_iso", "period_end_iso", "title", "title_meta")))
+    previous_start = target.period_start_utc - DAY
+    previous_end = target.period_start_utc - timedelta(milliseconds=1)
+    seen: set[str] = set()
+
+    def freeze_rows(rows: List[Dict[str, Any]], start: datetime, end: datetime) -> List[Dict[str, Any]]:
+        _daily_rows_source_require(isinstance(rows, list))
+        frozen = []
+        for row in rows:
+            _daily_rows_source_require(isinstance(row, dict)
+                and all(key in row for key in _DAILY_ROWS_SOURCE_FIELDS))
+            identifier = row["id"]
+            stamp = _parse_iso_utc(row["created_at"])
+            _daily_rows_source_require(isinstance(identifier, str) and bool(identifier.strip())
+                and identifier not in seen and row["user_id"] == user_id
+                and row["is_secret"] is False and stamp is not None and start <= stamp <= end
+                and _has_renderable_emotion_content(row))
+            seen.add(identifier)
+            frozen.append({key: deepcopy(row[key]) for key in _DAILY_ROWS_SOURCE_FIELDS})
+        return sorted(frozen, key=lambda row: (_parse_iso_utc(row["created_at"]), row["id"]))
+
+    current = freeze_rows(current_rows, target.period_start_utc, target.period_end_utc)
+    previous = freeze_rows(previous_rows, previous_start, previous_end)
+    _daily_rows_source_require(bool(current))
+    iso = lambda dt: dt.astimezone(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+    try:
+        return _daily_rows_source_bytes(dict(profile=DAILY_ROWS_FACT_PROFILE, owner=user_id,
+            period=dict(periodStartIso=target.period_start_iso, periodEndIso=target.period_end_iso,
+                previousPeriodStartIso=iso(previous_start), previousPeriodEndIso=iso(previous_end)),
+            current_rows=current, previous_rows=previous))
+    except (ValueError, TypeError):
+        raise HTTPException(409, "analysis_daily_rows_source_mismatch") from None
+
+
+def _daily_rows_factual_parts(source_bytes: str) -> Tuple[Dict[str, Any], TargetPeriod, Dict[str, Any]]:
+    source = json.loads(source_bytes)
+    _daily_rows_source_require(isinstance(source, dict) and set(source) ==
+        {"profile", "owner", "period", "current_rows", "previous_rows"}
+        and source["profile"] == DAILY_ROWS_FACT_PROFILE and isinstance(source["period"], dict))
+    end = _parse_iso_utc(source["period"].get("periodEndIso"))
+    _daily_rows_source_require(end is not None)
+    target = _build_target_period("daily", end + timedelta(milliseconds=1))
+    # Recheck every original row and exact period, never an output candidate.
+    _daily_rows_source_require(_freeze_daily_rows_report_source(user_id=source["owner"], target=target,
+        current_rows=source["current_rows"], previous_rows=source["previous_rows"]) == source_bytes)
+
+    def observations(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
+        strengths = {key: {strength: 0 for strength in STRENGTH_SCORE} for key in EMOTION_KEYS}
+        for row in rows:
+            for detail in _normalize_details(row):
+                key = _map_key(detail["type"])
+                if key:
+                    strengths[key][detail["strength"]] += 1
+        return dict(input_count=len(rows), metrics=_build_daily_metrics(rows), selected_strength_counts=strengths)
+
+    current = observations(source["current_rows"])
+    previous = observations(source["previous_rows"])
+    comparison = dict(state="OBSERVED" if source["previous_rows"] else "UNKNOWN",
+        current_weighted_total=current["metrics"]["totalAll"],
+        previous_weighted_total=previous["metrics"]["totalAll"],
+        difference=(current["metrics"]["totalAll"] - previous["metrics"]["totalAll"])
+            if source["previous_rows"] else None)
+    return source, target, dict(period=source["period"], current=current, previous=previous, comparison=comparison)
+
+
+def _daily_rows_analysis_materials_for_core(source_bytes: str) -> List[Dict[str, Any]]:
+    """Independent counts/strengths/periods; no candidate sentence enters here."""
+    _, _, observations = _daily_rows_factual_parts(source_bytes)
+    digest = hashlib.sha256(source_bytes.encode("utf-8")).hexdigest()
+    facts: List[Dict[str, Any]] = []
+
+    def add(value: Any, path: str) -> None:
+        if isinstance(value, dict):
+            for key, item in sorted(value.items()):
+                add(item, path + "/" + key)
+        elif value is not None:
+            identifier = "analysis.daily.rows:" + digest + ":" + path
+            facts.append(dict(id=identifier, source_id=identifier, domain="emotion_structure",
+                summary=path + "=" + _daily_rows_source_bytes(value)))
+
+    add(observations, "daily_rows")
+    for index, note in enumerate(_common_observation_note_lines()):
+        facts.append(dict(id=f"analysis.observation-note.v1:{index}",
+            source_id=f"analysis.observation-note.v1:{index}", domain="emotion_structure", summary=note))
+    return facts
+
+
+def _render_daily_rows_source(source_bytes: str) -> Dict[str, Any]:
+    """Keep the existing daily sections and payload, rendering raw facts only."""
+    source, target, facts = _daily_rows_factual_parts(source_bytes)
+    current, previous, comparison = facts["current"], facts["previous"], facts["comparison"]
+    metrics = current["metrics"]
+    totals = metrics["totals"]
+    weighted = "、".join(f"{KEY_TO_JP[key]}{totals[key]}" for key in EMOTION_KEYS)
+    maximum = max(totals.values())
+    leaders = "・".join(KEY_TO_JP[key] for key in EMOTION_KEYS if totals[key] == maximum)
+    lines = [target.title, _range_line_jst(target.period_start_iso, target.period_end_iso) or "", "",
+        "【昨日、見えていたこと】",
+        f"対象期間の分析対象の感情記録は{current['input_count']}件でした。",
+        "選択された感情の強度を弱1・中2・強3として足した加重合計は、" + weighted + "でした。", "",
+        "【気持ちの変化】", f"・加重合計が最大だった感情は「{leaders}」（{maximum}）でした。"]
+    if comparison["state"] == "OBSERVED":
+        lines.append(f"・前日分の分析対象の感情記録は{previous['input_count']}件でした。"
+            f"加重合計は前日{comparison['previous_weighted_total']}、対象期間{comparison['current_weighted_total']}で、"
+            f"差は{comparison['difference']:+d}でした。")
+    else:
+        lines.append("・比較用の前日分の分析対象の感情記録がないため、前日との加重合計は比較できません。")
+    lines.append("この差は記録数と選択された強度によるもので、気持ちの改善・悪化や原因を示しません。")
+    lines.extend(["", "【このレポートについて】", *_common_observation_note_lines()])
+    text = _humanize_emotion_report_text("\n".join(lines))
+    result: Dict[str, Any] = dict(content_text=text, metrics=metrics, reportVersion="myweb.report.v3",
+        standardReport=dict(version="myweb.standard.v1", contentText=text))
+    if build_report_kokoro_weather is not None:
+        result["kokoroWeather"] = build_report_kokoro_weather(report_type="daily", rows=source["current_rows"],
+            period_start_utc=target.period_start_utc, period_end_utc=target.period_end_utc, existing_metrics=metrics)
+    return result
+
+
+def _daily_rows_composer_binding(source_bytes: str, *, public_source_hash: Optional[str] = None,
+        generated_for_tier: Optional[str] = None) -> Dict[str, Any]:
+    expected = _render_daily_rows_source(source_bytes)
+    return dict(profile=DAILY_ROWS_FACT_PROFILE,
+        source_bytes=source_bytes,
+        source_digest=hashlib.sha256(source_bytes.encode("utf-8")).hexdigest(),
+        expected_text=expected["standardReport"]["contentText"], expected_legacy_text=expected["content_text"],
+        expected_payload={key: value for key, value in expected.items() if key != "content_text"},
+        expected_publish=dict(status="READY", scope=SNAPSHOT_SCOPE_DEFAULT, snapshotType="public",
+            publicSourceHash=public_source_hash, generatedForTier=generated_for_tier, secretExcluded=True),
+        materials=_daily_rows_analysis_materials_for_core(source_bytes))
+
+
 async def _generate_and_save(
     user_id: str,
     target: TargetPeriod,
@@ -4994,6 +4363,17 @@ async def _generate_and_save(
     if not rows:
         return "", {}, None, _build_myweb_skip_meta(report_type=target.report_type)
 
+    daily_source_bytes: Optional[str] = None
+    if target.report_type == "daily":
+        previous_start = target.period_start_utc - DAY
+        previous_end = target.period_start_utc - timedelta(milliseconds=1)
+        iso = lambda dt: dt.astimezone(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+        previous_all = await _fetch_emotion_rows(user_id, iso(previous_start), iso(previous_end))
+        previous_rows = _filter_renderable_emotion_rows([
+            row for row in previous_all if not bool((row or {}).get("is_secret"))])
+        daily_source_bytes = _freeze_daily_rows_report_source(user_id=user_id, target=target,
+            current_rows=rows, previous_rows=previous_rows)
+
     # 2) metrics
     content_json: Dict[str, Any] = {}
     astor_text: Optional[str] = None
@@ -5014,16 +4394,10 @@ async def _generate_and_save(
     )
 
     if target.report_type == "daily":
-        metrics = _build_daily_metrics(rows)
-        content_json["metrics"] = metrics
-        text = _render_daily_standard_v3_text(
-            title=target.title,
-            period_start_iso=target.period_start_iso,
-            period_end_iso=target.period_end_iso,
-            metrics=metrics,
-            summary={"emotions_public": len(rows), "emotions_total": len(rows)},
-            movement={"key": "stable"},
-        )
+        daily_render = _render_daily_rows_source(daily_source_bytes)
+        content_json.update({key: value for key, value in daily_render.items() if key != "content_text"})
+        metrics = daily_render["metrics"]
+        text = daily_render["content_text"]
     elif target.report_type == "weekly":
         days = _build_days_fixed7(rows, target.period_start_utc)
         metrics = _compute_weekly_metrics(days)
@@ -5148,10 +4522,14 @@ async def _generate_and_save(
         material_count=len(rows or []),
         output_text=text,
         output_payload=content_json,
-        material_fields=material_fields,
+        material_fields=["summary", "counts", "timestamp", "emotion_details", "strength"]
+            if daily_source_bytes is not None else material_fields,
         target_period=f"{target.period_start_iso}/{target.period_end_iso}",
-        materials=rows,
+        materials=_daily_rows_analysis_materials_for_core(daily_source_bytes) if daily_source_bytes is not None else rows,
         source_id=f"analysis-{target.report_type}-runtime",
+        snapshot_binding=_daily_rows_composer_binding(daily_source_bytes,
+            public_source_hash=public_hash, generated_for_tier=tier_str) if daily_source_bytes is not None else None,
+        legacy_text=text if daily_source_bytes is not None else None,
     )
     if not _analysis_report_save_allowed(content_json):
         return "", content_json, astor_text, {
@@ -5344,21 +4722,12 @@ async def _generate_and_save_from_snapshot(
         if deep_analysis_row and isinstance(deep_analysis_row.get("payload"), dict):
             deep_analysis_payload = deep_analysis_row.get("payload") or {}
 
-    # Optional ASTOR insight (kept same behavior as v1; may read additional materials)
-    if report_type in ("weekly", "monthly") and include_astor and is_plus_or_higher and generate_myweb_insight_payload is not None:
-        try:
-            period_days = 7 if report_type == "weekly" else 28
-            astor_text, astor_report = generate_myweb_insight_payload(user_id=uid, period_days=period_days, lang="ja")
-            astor_meta = {"engine": "astor_myweb_insight", "period_days": period_days, "version": "0.3"}
-        except Exception as e:
-            astor_error = str(e)
-
-    if astor_text:
-        content_json["astorText"] = astor_text
-        if astor_meta:
-            content_json["astorMeta"] = astor_meta
-    if astor_error:
-        content_json["astorError"] = astor_error
+    source_bytes = _freeze_snapshot_report_source(user_id=uid, scope=sc, snapshot=snap,
+        standard_row=analysis_row, deep_row=deep_analysis_row,
+        include_supplement=include_astor and is_plus_or_higher)
+    factual_source = json.loads(source_bytes)
+    analysis_payload = factual_source["derived"]["standard"]
+    deep_analysis_payload = factual_source["derived"]["deep"]
 
     # Light text is always stored in legacy content_text.
     if report_type == "daily":
@@ -5460,6 +4829,17 @@ async def _generate_and_save_from_snapshot(
     except Exception as exc:
         logger.warning("failed to attach snapshot kokoroWeather report payload scope=%s err=%r", sc, exc)
 
+    # Render all visible report fields from the same frozen numerical source.
+    bound_render = _render_snapshot_source(source_bytes)
+    for key, value in bound_render.items():
+        if key != "content_text" and value is not None:
+            content_json[key] = value
+    if bound_render["deepReport"] is None:
+        content_json.pop("deepReport", None)
+    light_text = bound_render["content_text"]
+    standard_text = bound_render["standardReport"]["contentText"]
+    astor_text = bound_render.get("astorText")
+
     # --- Governance: publish meta (DRAFT -> inspect -> READY) ---
     try:
         tier_str = None
@@ -5488,25 +4868,18 @@ async def _generate_and_save_from_snapshot(
     except Exception:
         pass
 
-    snapshot_material_count = metrics_total
-    if summary_public is not None:
-        snapshot_material_count = max(snapshot_material_count, summary_public)
+    snapshot_material_count = summary_public
     content_json = _attach_analysis_report_validity_meta_if_available(
         content_json,
         material_count=snapshot_material_count,
         output_text=standard_text,
         output_payload=content_json,
-        material_fields=["emotion_details", "timestamp", "memo", "categories"],
+        material_fields=["summary", "counts", "share", "timestamp"],
         target_period=f"{target.period_start_iso}/{target.period_end_iso}",
-        materials=_snapshot_analysis_materials_for_core(
-            snapshot_id=snap_id,
-            snapshot_hash=snap_hash,
-            report_type=report_type,
-            summary=summary,
-            views=views,
-            report_text=standard_text,
-        ),
-        source_id=snap_id or snap_hash or f"analysis-{report_type}-snapshot",
+        materials=_snapshot_analysis_materials_for_core(source_bytes),
+        source_id=snap_id,
+        snapshot_binding=_snapshot_composer_binding(source_bytes),
+        legacy_text=light_text,
     )
     if not _analysis_report_save_allowed(content_json):
         return "", content_json, astor_text, {
@@ -5694,7 +5067,11 @@ def register_analysis_report_routes(app: FastAPI) -> None:
                                 include_astor=req.include_astor,
                             )
                         except HTTPException as he:
-                            if int(getattr(he, "status_code", 0) or 0) == 404:
+                            alignment_missing = (int(getattr(he, "status_code", 0) or 0) == 409
+                                and he.detail == "analysis_snapshot_alignment_missing")
+                            recovery_deep = getattr(he, "_analysis_recover_deep_alignment", None) if alignment_missing else None
+                            if int(getattr(he, "status_code", 0) or 0) == 404 or alignment_missing:
+                                recovery_enqueued = False
                                 try:
                                     from astor_job_queue import enqueue_job as _enqueue_job
 
@@ -5708,12 +5085,17 @@ def register_analysis_report_routes(app: FastAPI) -> None:
                                             "requested_at": datetime.now(timezone.utc)
                                             .isoformat(timespec="seconds")
                                             .replace("+00:00", "Z"),
+                                            **({"recover_deep_alignment": recovery_deep}
+                                                if isinstance(recovery_deep, dict) else {}),
                                         },
                                         priority=12,
                                         debounce_seconds=10,
                                     )
+                                    recovery_enqueued = True
                                 except Exception as exc:
                                     logger.error("Failed to enqueue snapshot_generate_v1: %s", exc)
+                                    if alignment_missing:
+                                        raise HTTPException(503, "analysis_snapshot_alignment_enqueue_failed") from exc
 
                                 if poll_until is not None and MYWEB_LOCK_WAIT_SECONDS > 0:
                                     try:
@@ -5733,7 +5115,16 @@ def register_analysis_report_routes(app: FastAPI) -> None:
                                         include_astor=req.include_astor,
                                     )
                                 except HTTPException as he2:
-                                    if int(getattr(he2, "status_code", 0) or 0) == 404 and callable(get_emotion_period_public_input_status):
+                                    if (recovery_enqueued
+                                            and int(getattr(he2, "status_code", 0) or 0) == 409
+                                            and he2.detail == "analysis_snapshot_alignment_missing"):
+                                        # The unchanged snapshot job still re-enqueues
+                                        # standard/deep derivation. Keep the existing
+                                        # response schema while it is being refreshed.
+                                        meta = {"status": "skipped", "report_type": rt,
+                                            "report_id": None,
+                                            "skip_reason": "analysis_snapshot_alignment_pending"}
+                                    elif int(getattr(he2, "status_code", 0) or 0) == 404 and callable(get_emotion_period_public_input_status):
                                         status = await get_emotion_period_public_input_status(user_id=user_id, scope=scope)
                                         if not bool((status or {}).get("has_public_input")):
                                             meta = _build_myweb_skip_meta(report_type=rt, scope=scope)

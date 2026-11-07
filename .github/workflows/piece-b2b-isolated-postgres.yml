@@ -21,6 +21,17 @@ name: Piece B2-B/B3/B4/B5 isolated PostgreSQL
       - supabase/migrations/*_piece_legacy_metrics_atomic.sql
       - supabase/migrations/*_piece_legacy_reaction_alias.sql
       - ai/tests/piece_v2/db/test_piece_legacy_public_alias_native.py
+      - ai/services/ai_inference/subscription_projection.py
+      - ai/services/ai_inference/subscription_live_console_check.py
+      - ai/services/ai_inference/subscription_bootstrap_store.py
+      - ai/services/ai_inference/api_follow_graph.py
+      - ai/services/ai_inference/emlis_ai_context_service.py
+      - ai/services/ai_inference/emlis_ai_world_model_service.py
+      - ai/tests/test_subscription_purchase_owner_hint.py
+      - ai/tests/test_subscription_live_console_readiness.py
+      - ai/tests/test_follow_private_visibility_failure.py
+      - ai/tests/test_emlis_ai_metadata_input_selection.py
+      - ai/tests/test_emlis_natural_reply_application.py
       - ai/tests/piece_v2/db/test_b05_preview_persistence.py
       - ai/services/ai_inference/piece_v2_preview_service.py
       - ai/services/ai_inference/piece_v2_safety_review.py
@@ -344,6 +355,24 @@ jobs:
             -c /dev/null --noconftest \
             ai/tests/piece_v2/test_b12_shared_preview_composition.py \
             ai/tests/contract/test_api_contract_registry.py
+      - name: Set up the existing Node runtime for saved-input SQL checks
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+      - name: Install only the existing PostgreSQL WASM test dependency
+        run: npm install --prefix "$RUNNER_TEMP/shared-input-postgres" --ignore-scripts --no-audit --no-fund @electric-sql/pglite@0.5.8
+      - name: Verify complete input materials, purchase owners and private profile failures
+        env:
+          Q2_PGLITE_MODULE: ${{ runner.temp }}/shared-input-postgres/node_modules/@electric-sql/pglite
+        shell: bash
+        run: |
+          python -m pytest -q --tb=short -ra -p no:cacheprovider \
+            -c /dev/null --rootdir=. --noconftest \
+            ai/tests/test_emlis_natural_reply_application.py \
+            ai/tests/test_emlis_ai_metadata_input_selection.py \
+            ai/tests/test_subscription_purchase_owner_hint.py \
+            ai/tests/test_subscription_live_console_readiness.py \
+            ai/tests/test_follow_private_visibility_failure.py
       - name: Verify prepared shared API through native disposable persistence
         shell: bash
         env:

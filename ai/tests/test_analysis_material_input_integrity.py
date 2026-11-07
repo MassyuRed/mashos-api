@@ -174,9 +174,11 @@ def test_worker_engine_adapter_keeps_five_emotions_and_empty_details_fallback(mo
 def test_daily_report_materials_change_identity_and_weights_after_strength_edit(monkeypatch):
     state = {'row': deepcopy(ROW), 'saved': []}
 
-    async def get(path, *, params, timeout=8.0):
+    async def get(path, *, params, timeout=8.0, strict=False):
         assert path == '/rest/v1/emotions'
         filters = list(params)
+        if any(k == 'offset' and int(v) > 0 for k, v in filters):
+            return []
         # The previous-day probe is deliberately empty.
         if any(k == 'created_at' and str(v).startswith('lte.2026-11-06') for k, v in filters):
             return []

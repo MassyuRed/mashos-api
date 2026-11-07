@@ -3468,6 +3468,29 @@ def _build_deep_control_model_payload(entries: List[Any], *, scope_kind: str, pe
     }
 
 
+async def _aligned_emotion_period_rows(*, user_id: str, scope: str,
+        snapshot: Dict[str, Any]) -> tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """Bind derived features to the same complete public inputs as the snapshot."""
+    info = _parse_emotion_period_scope(scope)
+    rows = _filter_non_self_insight_rows(await fetch_emotions_in_range(user_id,
+        start_iso=info['period_start_iso'], end_iso=info['period_end_iso'],
+        include_secret=False, max_rows=None))
+    identity_rows = list(rows)
+    if info['kind'] == 'daily':
+        identity_rows += _filter_non_self_insight_rows(await fetch_emotions_in_range(user_id,
+            start_iso=info['prev_period_start_iso'], end_iso=info['prev_period_end_iso'],
+            include_secret=False, max_rows=None))
+    actual = compute_source_hash_from_emotion_meta(user_id=user_id, scope=scope,
+        snapshot_type='public', meta_rows=identity_rows)
+    if (snapshot.get('user_id') != user_id or snapshot.get('scope') != scope
+            or snapshot.get('snapshot_type') != 'public'
+            or snapshot.get('source_hash') != actual):
+        raise RuntimeError('emotion_snapshot_source_changed')
+    return rows, {'profile': 'emotion_period.rows.v1', 'snapshot_id': snapshot['id'],
+        'source_hash': actual, 'scope': scope, 'snapshot_type': 'public',
+        'row_count': len(rows)}
+
+
 async def _handle_analyze_emotion_structure_deep_v1(*, user_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
     uid = str(user_id or "").strip()
     if not uid:
@@ -3506,8 +3529,7 @@ async def _handle_analyze_emotion_structure_deep_v1(*, user_id: str, payload: Di
     if not start_iso or not end_iso:
         raise RuntimeError("snapshot period meta missing")
 
-    rows = await fetch_emotions_in_range(uid, start_iso=start_iso, end_iso=end_iso, include_secret=False)
-    rows = _filter_non_self_insight_rows(rows)
+    rows, source_alignment = await _aligned_emotion_period_rows(user_id=uid, scope=scope, snapshot=snap)
     entries = _normalize_entries_to_jst(build_emotion_entries_from_rows(rows))
     if not entries:
         return {
@@ -3568,6 +3590,7 @@ async def _handle_analyze_emotion_structure_deep_v1(*, user_id: str, payload: Di
             "end_iso": end_iso,
         },
         "entry_count": len(entries),
+        "source_alignment": source_alignment,
         "deep_control_model": deep_model,
         "controlPatterns": list(deep_model.get("control_patterns") or []),
         "patternEpisodes": list(deep_model.get("pattern_episodes") or []),
@@ -3684,13 +3707,7 @@ async def _handle_analyze_emotion_structure_standard_v1(*, user_id: str, payload
     if not start_iso or not end_iso:
         raise RuntimeError("snapshot period meta missing")
 
-    rows = await fetch_emotions_in_range(
-        uid,
-        start_iso=start_iso,
-        end_iso=end_iso,
-        include_secret=False,
-    )
-    rows = _filter_non_self_insight_rows(rows)
+    rows, source_alignment = await _aligned_emotion_period_rows(user_id=uid, scope=scope, snapshot=snap)
     entries = _normalize_entries_to_jst(build_emotion_entries_from_rows(rows))
     if not entries:
         return {
@@ -3725,6 +3742,7 @@ async def _handle_analyze_emotion_structure_standard_v1(*, user_id: str, payload
             "end_iso": end_iso,
         },
         "entry_count": len(entries),
+        "source_alignment": source_alignment,
     }
 
     if scope_kind == "daily":
@@ -4126,6 +4144,7 @@ async def _worker_loop() -> None:
                                         pub_hash = str(public.get("source_hash") or "")
                                         if not pub_hash:
                                             raise RuntimeError("public source_hash missing for emotion_period scope")
+                                        recovery_deep = (claimed.payload or {}).get("recover_deep_alignment")
                                         await enqueue_job(
                                             job_key=f"analysis_emotion_structure_standard:{claimed.user_id}:{scope}:{pub_hash}",
                                             job_type="analyze_emotion_structure_standard_v1",
@@ -4137,6 +4156,8 @@ async def _worker_loop() -> None:
                                                 "source_hash": pub_hash,
                                                 "distribution_origin": bool((claimed.payload or {}).get("distribution_origin")),
                                                 "distribution_key": (claimed.payload or {}).get("distribution_key"),
+                                                **({"recover_deep_alignment": recovery_deep}
+                                                    if isinstance(recovery_deep, dict) else {}),
                                             },
                                             priority=18,
                                         )
@@ -4165,7 +4186,12 @@ async def _worker_loop() -> None:
                 else:
                     try:
                         analysis_status = str((analysis_res or {}).get("status") or "").strip()
-                        if EMOTION_REPORT_V2_ENABLED and analysis_status == "ok":
+                        recovery_deep = (claimed.payload or {}).get("recover_deep_alignment")
+                        recover_existing_deep = isinstance(recovery_deep, dict) and recovery_deep == {
+                            "snapshot_id": (analysis_res or {}).get("snapshot_id"),
+                            "source_hash": (analysis_res or {}).get("source_hash"),
+                        }
+                        if (EMOTION_REPORT_V2_ENABLED or recover_existing_deep) and analysis_status == "ok":
                             scope = str((analysis_res or {}).get("scope") or (claimed.payload or {}).get("scope") or "").strip()
                             pub_hash = str((analysis_res or {}).get("source_hash") or (claimed.payload or {}).get("source_hash") or "").strip()
                             if scope and pub_hash:
@@ -4184,21 +4210,22 @@ async def _worker_loop() -> None:
                                     },
                                     priority=17,
                                 )
-                                await enqueue_job(
-                                    job_key=f"emotion_report_v2_refresh:{claimed.user_id}:{scope}:{pub_hash}",
-                                    job_type="generate_emotion_report_v2",
-                                    user_id=claimed.user_id,
-                                    payload={
-                                        "trigger": "analyze_emotion_structure_standard_v1",
-                                        "requested_at": (claimed.payload or {}).get("requested_at"),
-                                        "scope": scope,
-                                        "include_astor": include_astor,
-                                        "source_hash": pub_hash,
-                                        "distribution_origin": bool((claimed.payload or {}).get("distribution_origin")),
-                                        "distribution_key": (claimed.payload or {}).get("distribution_key"),
-                                    },
-                                    priority=12,
-                                )
+                                if EMOTION_REPORT_V2_ENABLED:
+                                    await enqueue_job(
+                                        job_key=f"emotion_report_v2_refresh:{claimed.user_id}:{scope}:{pub_hash}",
+                                        job_type="generate_emotion_report_v2",
+                                        user_id=claimed.user_id,
+                                        payload={
+                                            "trigger": "analyze_emotion_structure_standard_v1",
+                                            "requested_at": (claimed.payload or {}).get("requested_at"),
+                                            "scope": scope,
+                                            "include_astor": include_astor,
+                                            "source_hash": pub_hash,
+                                            "distribution_origin": bool((claimed.payload or {}).get("distribution_origin")),
+                                            "distribution_key": (claimed.payload or {}).get("distribution_key"),
+                                        },
+                                        priority=12,
+                                    )
                     except Exception as exc:
                         logger.error("Emotion report enqueue after analysis failed: %s", exc)
                 logger.info(

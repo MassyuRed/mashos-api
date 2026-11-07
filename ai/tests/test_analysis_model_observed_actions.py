@@ -250,17 +250,19 @@ def test_model_keeps_existing_complete_omitted_action_without_assigning_an_actor
 def test_polite_omitted_negative_keeps_existing_source_field_support(field):
     snap=sample();snap['members'][0]['original'].update(memo='',memo_action='')
     snap['members'][0]['original'][field]='資料を調べなかったです。'
-    _,_,a,c=build(snap)
+    _,value,a,c=build(snap)
     normal,normal_counts=service.build_cumulative_map(OWNER,snap)
-    assert c==normal_counts
-    if field=='memo':
-        assert a is not None and a.graph==normal.graph
-        assert a.graph.nodes[0].proposition.actor=='UNSPECIFIED'
-        assert a.graph.nodes[0].polarity=='negative'
-    else:
-        # The existing shared source proof does not establish this action
-        # field form. The model label must not manufacture that proof.
-        assert a is None and normal is None and c['mapped_count']==0
+    assert a is not None and a.graph==normal.graph and c==normal_counts
+    node,=a.graph.nodes
+    assert (node.node_kind,node.proposition.actor,node.polarity,node.modality,node.temporal_scope)==(
+        'ACTION_OR_NONACTION','UNSPECIFIED','negative','fact','past')
+    assert c['mapped_count']==1 and c['unparsed_count']==0 and not a.graph.edges
+    source,=freeze_analysis_sources(value.request).sources
+    evidence,=node.evidence_refs
+    assert evidence.field_path==field
+    assert source_field_text(source,field)[evidence.scalar_start:evidence.scalar_end]==node.visible_label
+    assert source.envelope.raw_utf8[evidence.utf8_start:evidence.utf8_end].decode()==node.visible_label
+    assert evidence.literal_sha256==hashlib.sha256(node.visible_label.encode()).hexdigest()
 
 
 @pytest.mark.parametrize('actor_quote',['私','考え'])
@@ -822,7 +824,56 @@ def test_split_fields_do_not_supply_an_actor_close_reports_or_discard_unread_mat
     assert a is None and c['mapped_count']==0 and c['unparsed_count']==1
 
 
-@pytest.mark.parametrize('wish',['仕事を続けたい。','姉は仕事を続けたい。',
+@pytest.mark.parametrize('ending,time,polarity',[('たい','current_input','positive'),
+    ('たかった','past','positive'),('たくない','current_input','negative'),
+    ('たくなかった','past','negative')])
+@pytest.mark.parametrize('swap',[False,True])
+@pytest.mark.parametrize('prompt',['selected_material.v4','selected_material.v7'])
+def test_split_original_omitted_wish_keeps_the_complete_graph_without_borrowing_self(ending,time,polarity,swap,prompt):
+    texts=['私は資料を見た。','仕事を続け'+ending+'。']
+    if swap:texts.reverse()
+    snap,value,a,c=split_wish_build(*texts,prompt=prompt)
+    normal,counts=service.build_cumulative_map(OWNER,snap)
+    assert a is not None and a.graph==normal.graph and c==counts
+    assert len(a.graph.nodes)==2 and not a.graph.edges
+    assert c['mapped_count']==1 and c['unparsed_count']==0
+    action,=tuple(n for n in a.graph.nodes if n.node_kind=='ACTION_OR_NONACTION')
+    wish,=tuple(n for n in a.graph.nodes if n.node_kind=='ATTENTION_OR_THOUGHT')
+    assert action.proposition.actor=='SELF'
+    assert (wish.proposition.actor,wish.modality,wish.temporal_scope,wish.polarity)==(
+        'UNSPECIFIED','wish',time,polarity)
+    assert not any(n.proposition.sequence_marker for n in a.graph.nodes)
+    assert any(g.missing_scope=='ROUTE_CONNECTION' for g in a.graph.unknown_gaps)
+    assert not any(g.missing_scope=='SOURCE_SCOPE' for g in a.graph.unknown_gaps)
+    source,=freeze_analysis_sources(value.request).sources
+    for node in a.graph.nodes:
+        e,=node.evidence_refs
+        expected_field=('memo' if swap else 'memo_action') if node is wish else (
+            'memo_action' if swap else 'memo')
+        assert e.field_path==expected_field
+        text=source_field_text(source,e.field_path)
+        assert text[e.scalar_start:e.scalar_end]==node.visible_label
+        assert source.envelope.raw_utf8[e.utf8_start:e.utf8_end].decode()==node.visible_label
+        assert e.field_sha256==hashlib.sha256(text.encode()).hexdigest()
+        assert e.literal_sha256==hashlib.sha256(node.visible_label.encode()).hexdigest()
+
+
+@pytest.mark.parametrize('mutation',['false_actor','wrong_kind','false_negative','missing_clause'])
+def test_split_original_omitted_wish_never_uses_model_units_as_an_actor_or_missing_source(mutation):
+    def edit(data):
+        wish=data['fields'][1]['units'][0]
+        if mutation=='false_actor':wish['qualifiers']=[dict(kind='EXPLICIT_ACTOR',quote='仕事')]
+        if mutation=='wrong_kind':wish['node_kind']='ACTION_OR_NONACTION'
+        if mutation=='false_negative':wish['qualifiers']=[dict(kind='NEGATION',quote='たい')]
+        if mutation=='missing_clause':data['fields'][1]['units']=[]
+    try:
+        _,_,a,c=split_wish_build('私は資料を見た。','仕事を続けたい。',change=edit)
+    except ERRORS:
+        return
+    assert a is None and c['mapped_count']==0 and c['unparsed_count']==1
+
+
+@pytest.mark.parametrize('wish',['姉は仕事を続けたい。',
     '私は仕事を続けたいかもしれない。'])
 def test_unproved_other_field_keeps_the_existing_partial_action_and_unread_gap(wish):
     snap,_,a,c=split_wish_build('私は資料を見た。',wish)
@@ -850,8 +901,9 @@ def test_split_wish_model_units_still_need_their_own_complete_source_proof(mutat
     assert a is None and c['mapped_count']==0 and c['unparsed_count']==1
 
 
-def test_split_wish_saved_map_replays_without_source_compilation_or_authoring():
-    _,_,a,c=split_wish_build('私は資料を見た。','私は仕事を続けたくなかった。')
+@pytest.mark.parametrize('prefix',['私は',''])
+def test_split_wish_saved_map_replays_without_source_compilation_or_authoring(prefix):
+    _,_,a,c=split_wish_build('私は資料を見た。',prefix+'仕事を続けたくなかった。')
     assert a is not None
     row=dict(id=str(UUID(a.artifact_id[9:])),source_profile=service.PROFILE,report_mode='standard',
         content_text=a.safe_text_projection(authenticated_owner_scope=OWNER)['text'],

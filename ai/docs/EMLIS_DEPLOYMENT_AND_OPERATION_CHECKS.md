@@ -961,3 +961,19 @@ Piece旧公開の確定不具合は次の限定修復とした。
 正式名でAPI174 PASS／FAIL・ERROR・SKIP0（旧170＋実anon/authenticated拒否4）。旧Visual／recipe／runtime停止境界／7field／owner再読／palette互換は別261 PASS／native4未実行。新9件の独立PostgreSQL接続・実待機／rollback検査を既存postgres16 CIへ追加準備。現在、実本番DDL／新API配置0。
 
 配置依存をmetadata確認した：mymodel_reflections／mymodel_qna_metrics／mymodel_qna_resonances／mymodel_qna_echoesはいずれも物理tableかつRLS=true、service_roleの既存CRUD=true。必要global／instance部分unique、共鳴／echo composite uniqueも実在。個人row取得は0。今後SQL2本の順適用／関数ACLと定義の読戻し後に対応APIを配置する。新sourceが固定4tableのoverrideを黙って使うことはせず、違う設定なら既存エラーで停止する。まだ配置したという記録にはしない。
+
+### 旧こころ天気reportの根拠・再導出境界の最終修復（配置前）
+
+旧snapshot report／cron直接日次で、生成候補を同じ候補の根拠へ戻す循環を解消した。snapshotのowner／ID／hash／scope／期間／type／stageとderivedの全bindingを照合し、候補とは独立した固定資料から本文・図・weather・補足を再描画する。AnalysisComposerは本文と全可視payload／publish条件を照合する。検証機能の欠落／例外を保存許可へ縮退させず、private source_bytesは公開metadataへ出さない。通常累積CMEEとは別の旧report経路の修復である。
+
+期間素材と実producerは二欄・9カテゴリ・全選択感情／強度・時点／ID／secretの内容hashを同じ全rowから照合する。期間は空pageまで、旧globalは既存20,000件・recent200件の上限内で実受信件数によりページを送る。短pageを終端扱いせず、不正JSON／形／後続HTTP失敗で部分snapshotを保存しない。optional未設置は初回404だけ許容する。
+
+standardの5section・4時間帯card、deepの日次5／週次6／月次7sectionと全数値graph／cardを保持する。lightは5section、直接日次は既存3見出しを維持する。原因・心理の推測句を観測記述へ直し、前日未観測は比較不能とする。入力件数と強度加重合計を区別し、可視本文の「公開入力／公開対象」は「分析対象の入力／感情記録」へ統一する。public等のwire／hash／privacy条件は変更しない。
+
+alignmentだけ欠ける旧derivedは全stageの他binding一致を確認後、既存snapshot→standard→deep jobで再導出する。未完は既存skipped＋analysis_snapshot_alignment_pending、enqueue失敗はerror、他mismatchは再投入0。ASTOR_ENABLE_EMOTION_REPORT_V2=Falseでは、既存deepのsnapshot ID／hashに結び付いたprivate proofが実standard結果と完全一致した場合だけ既存deepを修復する。standard-only欠落、deep未存在／既aligned、不正proof、snapshot ID／hash変化ではFalseを越えて新deepを作らず、自動report生成は引き続き0。True時の従来fanout、旧履歴／force条件、既存queue／設定を維持する。
+
+最終20suiteはCI同一pinで407 PASS・738 subtests PASS、FAIL／ERROR／SKIP／deselected0（38.31秒、既存warning2）。FastAPI0.142.2／Pydantic2.13.5／httpx0.28.1／pytest8.4.1／pytest-subtests0.14.2／pytest-asyncio1.2.0、Node24.22.1／PGlite0.5.8、autoload無効・両plugin明示・noconftest条件で実行した。独立139件は全成功だが重複するため合算しない。通常HTTP ensure→実enqueue実装→同hash・insert無し実worker fanout→実aligned producer→再ensure保存を両flag×3期間で合成確認し、既aligned standard／deepだけ欠落のFalse境界も独立確認した。実DB・本人原入力・GPU・配置・build・実機／商品合格を示す検証ではない。
+
+通常compilerの原入力限定wish wrapperは、二欄で既存のSELF行動と主体未指定の希望を同時に持つ原記録を保持できず全体を落とす不備を修復した。各unitの本人field／証拠を照合し、主体未指定をSELFへ昇格させない。補足への既定許可拡張・研究4B採用は行わない。関連613件成功、独立542件も成功（重複のため合算しない）。
+
+既存Analysis CIは最終report20suiteを追加し、SQL必須のmodel_fieldsをPGlite導入後へ移す。既存Piece PostgreSQL CIは旧Free暗色期待と、owner readに必要な既存not.and filterを理解しない試験loaderを補正する。製品の認証／期待成功条件を緩めない。native SQLの結果は後続の実CI記録に分ける。

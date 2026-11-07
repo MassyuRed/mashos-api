@@ -1575,7 +1575,9 @@ def _model_complete_observed_plain_wishes(source_set, graph, fields):
     A complete negative wish quote retains its finite negation without a
     separate NEGATION qualifier; model raw and qualifiers are never repaired.
     This narrow original-record scope keeps one wish, or positive past actions
-    with wishes, across complete memo/memo_action fields. The whole source is
+    with wishes, across complete memo/memo_action fields. An original wish
+    without a written actor remains UNSPECIFIED in its own complete field;
+    a separate SELF action never supplies that wish's actor. The whole source is
     compiled before this proof; fields never borrow each other's witnesses.
     Preserve the original graph and unestablished connections unchanged.
     """
@@ -1594,8 +1596,10 @@ def _model_complete_observed_plain_wishes(source_set, graph, fields):
         return None
     return _model_complete_observed_plain_wish_fields(
         graph, fields, source_set.sources[0].envelope.envelope_id,
-        allow_omitted=(len(fields) == len(graph.nodes) == 1
-            and fields[0].field_path == 'memo'))
+        # Only this original-only wrapper permits an omitted wish actor.
+        # The shared witness still checks each node's own complete field,
+        # units and evidence; supplemental answers retain the default False.
+        allow_omitted=True)
 
 
 def _model_complete_observed_plain_wish_fields(graph, fields, source_envelope_id,

@@ -347,18 +347,29 @@ def _sb_headers(*, prefer: str = "") -> Dict[str, str]:
     return h
 
 
-async def _sb_get_json(path: str, *, params: List[Tuple[str, str]], timeout: float = 8.0) -> List[Dict[str, Any]]:
+async def _sb_get_json(path: str, *, params: List[Tuple[str, str]], timeout: float = 8.0,
+        strict: bool = False) -> List[Dict[str, Any]]:
     if not _has_supabase_config():
+        if strict:
+            raise RuntimeError("emotion_period_source_unavailable")
         return []
     url = f"{SUPABASE_URL}{path}"
     async with httpx.AsyncClient(timeout=timeout) as client:
         resp = await client.get(url, headers=_sb_headers(), params=params)
     if resp.status_code not in (200, 206):
+        if strict:
+            if resp.status_code == 404:
+                raise FileNotFoundError("emotion_material_source_not_found")
+            raise RuntimeError("emotion_period_source_unavailable")
         raise RuntimeError(f"Supabase GET failed: {resp.status_code} {(resp.text or '')[:800]}")
     try:
         data = resp.json()
     except Exception:
+        if strict:
+            raise RuntimeError("emotion_period_source_unavailable") from None
         return []
+    if strict and (not isinstance(data, list) or any(not isinstance(row, dict) for row in data)):
+        raise RuntimeError("emotion_period_source_unavailable")
     if isinstance(data, list):
         return [x for x in data if isinstance(x, dict)]
     return []
@@ -449,7 +460,7 @@ async def fetch_emotion_meta_for_hash(user_id: str, *, start_iso: Optional[str] 
             params.append(("created_at", f"lte.{end_iso}"))
         params.extend(
             [
-                ("order", "created_at.asc"),
+                ("order", "created_at.asc,id.asc"),
                 ("limit", str(limit)),
                 ("offset", str(offset)),
             ]
@@ -458,15 +469,13 @@ async def fetch_emotion_meta_for_hash(user_id: str, *, start_iso: Optional[str] 
         rows = await _sb_get_json(
             "/rest/v1/emotions",
             params=params,
+            strict=True,
         )
         if not rows:
             break
 
         out.extend(rows)
-        if len(rows) < limit:
-            break
-
-        offset += limit
+        offset += len(rows)
 
     return out
 
@@ -477,16 +486,22 @@ async def fetch_recent_emotions(user_id: str, *, include_secret: bool) -> List[D
     if not uid:
         return []
 
-    params: List[Tuple[str, str]] = [
-        ("select", "id,created_at,emotions,emotion_details,memo,memo_action,is_secret,emotion_strength_avg,category"),
-        ("user_id", f"eq.{uid}"),
-        ("order", "created_at.desc"),
-        ("limit", str(max(1, int(SNAPSHOT_RECENT_EMOTIONS_LIMIT)))),
-    ]
-    if not include_secret:
-        params.append(("is_secret", "eq.false"))
-
-    rows = await _sb_get_json("/rest/v1/emotions", params=params)
+    rows: List[Dict[str, Any]] = []
+    maximum = max(1, int(SNAPSHOT_RECENT_EMOTIONS_LIMIT))
+    while len(rows) < maximum:
+        params: List[Tuple[str, str]] = [
+            ("select", "id,created_at,emotions,emotion_details,memo,memo_action,is_secret,emotion_strength_avg,category"),
+            ("user_id", f"eq.{uid}"),
+            ("order", "created_at.desc,id.desc"),
+            ("limit", str(maximum - len(rows))),
+            ("offset", str(len(rows))),
+        ]
+        if not include_secret:
+            params.append(("is_secret", "eq.false"))
+        page = await _sb_get_json("/rest/v1/emotions", params=params, strict=True)
+        if not page:
+            break
+        rows.extend(page)
     # order is desc; make it asc for readability
     return list(reversed(rows))
 
@@ -515,7 +530,7 @@ def compute_source_hash_from_emotion_meta(
     h = hashlib.sha256()
     h.update(f"v2|{uid}|{sc}|{st}|".encode("utf-8"))
 
-    for r in meta_rows:
+    for r in sorted(meta_rows, key=lambda row: (str(row.get("created_at") or ""), str(row.get("id") or ""))):
         rid = str(r.get("id") or "")
         created_at = str(r.get("created_at") or "")
         is_secret = bool(r.get("is_secret"))
@@ -736,31 +751,37 @@ async def _fetch_optional_rows_by_user(
     mx = max(ps, int(max_rows or 20000))
 
     while True:
-        limit = min(ps, mx - len(out))
+        limit = min(ps, mx - offset)
         if limit <= 0:
             break
 
-        rows = await _safe_optional_sb_get_json(
-            f"/rest/v1/{tbl}",
-            params=[
-                ("select", "*"),
-                (col, f"eq.{uid}"),
-                ("order", "created_at.asc"),
-                ("limit", str(limit)),
-                ("offset", str(offset)),
-            ],
-            timeout=10.0,
-        )
+        try:
+            rows = await _sb_get_json(
+                f"/rest/v1/{tbl}",
+                params=[
+                    ("select", "*"),
+                    (col, f"eq.{uid}"),
+                    ("order", "created_at.asc,id.asc"),
+                    ("limit", str(limit)),
+                    ("offset", str(offset)),
+                ],
+                timeout=10.0,
+                strict=True,
+            )
+        except FileNotFoundError:
+            # An optional source may be absent, but a failed later page is
+            # never evidence that the source ended successfully.
+            if offset == 0:
+                return []
+            raise
         if not rows:
             break
 
+        offset += len(rows)
         if not include_secret:
             rows = [r for r in rows if not _row_is_secret(r)]
 
         out.extend(rows)
-        if len(rows) < limit:
-            break
-        offset += limit
 
     out.sort(key=lambda r: (_row_created_at(r), str(r.get("id") or "")))
     return out
@@ -790,21 +811,19 @@ async def fetch_emotions_for_self_structure(
         params: List[Tuple[str, str]] = [
             ("select", "id,created_at,emotions,emotion_details,memo,memo_action,is_secret,emotion_strength_avg,category"),
             ("user_id", f"eq.{uid}"),
-            ("order", "created_at.asc"),
+            ("order", "created_at.asc,id.asc"),
             ("limit", str(limit)),
             ("offset", str(offset)),
         ]
         if not include_secret:
             params.append(("is_secret", "eq.false"))
 
-        rows = await _sb_get_json("/rest/v1/emotions", params=params, timeout=10.0)
+        rows = await _sb_get_json("/rest/v1/emotions", params=params, timeout=10.0, strict=True)
         if not rows:
             break
 
         out.extend(rows)
-        if len(rows) < limit:
-            break
-        offset += limit
+        offset += len(rows)
 
     return out
 
@@ -838,21 +857,19 @@ async def fetch_emotions_for_premium_reflection(
         params: List[Tuple[str, str]] = [
             ("select", "*"),
             ("user_id", f"eq.{uid}"),
-            ("order", "created_at.asc"),
+            ("order", "created_at.asc,id.asc"),
             ("limit", str(limit)),
             ("offset", str(offset)),
         ]
         if not include_secret:
             params.append(("is_secret", "eq.false"))
 
-        rows = await _sb_get_json("/rest/v1/emotions", params=params, timeout=10.0)
+        rows = await _sb_get_json("/rest/v1/emotions", params=params, timeout=10.0, strict=True)
         if not rows:
             break
 
         out.extend(rows)
-        if len(rows) < limit:
-            break
-        offset += limit
+        offset += len(rows)
 
     return out
 
@@ -1456,11 +1473,11 @@ async def fetch_emotions_in_range(
     end_iso: str,
     include_secret: bool,
     page_size: int = 1000,
-    max_rows: int = 20000,
+    max_rows: Optional[int] = 20000,
 ) -> List[Dict[str, Any]]:
     """Fetch emotion rows in a period range (for aggregation / period snapshots).
 
-    Uses pagination and caps at max_rows to avoid runaway loads.
+    Uses stable pagination. Period snapshot owners pass None for complete input.
     """
     uid = str(user_id or "").strip()
     if not uid:
@@ -1469,34 +1486,31 @@ async def fetch_emotions_in_range(
     out: List[Dict[str, Any]] = []
     offset = 0
     ps = max(1, int(page_size or 1000))
-    mx = max(ps, int(max_rows or 20000))
+    mx = None if max_rows is None else max(ps, int(max_rows or 20000))
 
     while True:
-        limit = min(ps, mx - len(out))
+        limit = ps if mx is None else min(ps, mx - len(out))
         if limit <= 0:
             break
 
         params: List[Tuple[str, str]] = [
-            ("select", "id,created_at,emotions,emotion_details,memo,memo_action,is_secret,emotion_strength_avg"),
+            ("select", "id,created_at,emotions,emotion_details,memo,memo_action,is_secret,emotion_strength_avg,category"),
             ("user_id", f"eq.{uid}"),
             ("created_at", f"gte.{start_iso}"),
             ("created_at", f"lte.{end_iso}"),
-            ("order", "created_at.asc"),
+            ("order", "created_at.asc,id.asc"),
             ("limit", str(limit)),
             ("offset", str(offset)),
         ]
         if not include_secret:
             params.append(("is_secret", "eq.false"))
 
-        rows = await _sb_get_json("/rest/v1/emotions", params=params, timeout=10.0)
+        rows = await _sb_get_json("/rest/v1/emotions", params=params, timeout=10.0, strict=True)
         if not rows:
             break
 
         out.extend(rows)
-        if len(rows) < limit:
-            break
-
-        offset += limit
+        offset += len(rows)
 
     return out
 
@@ -1566,6 +1580,7 @@ async def get_emotion_period_public_input_stats(*, user_id: str, scope: str) -> 
         start_iso=start_iso,
         end_iso=end_iso,
         include_secret=False,
+        max_rows=None,
     )
     filtered_rows = filter_self_insight_only_emotion_rows(public_rows)
 
@@ -1652,9 +1667,10 @@ async def _load_emotion_period_current_materials(*, user_id: str, scope: str) ->
     if not period_start_iso or not period_end_iso:
         raise ValueError(f"Invalid period in scope: {sc}")
 
-    meta = await fetch_emotion_meta_for_hash(uid, start_iso=period_start_iso, end_iso=period_end_iso)
-    internal_rows = await fetch_emotions_in_range(uid, start_iso=period_start_iso, end_iso=period_end_iso, include_secret=True)
-    public_rows_data = await fetch_emotions_in_range(uid, start_iso=period_start_iso, end_iso=period_end_iso, include_secret=False)
+    internal_rows = await fetch_emotions_in_range(uid, start_iso=period_start_iso,
+        end_iso=period_end_iso, include_secret=True, max_rows=None)
+    meta = list(internal_rows)
+    public_rows_data = [row for row in internal_rows if not _row_is_secret(row)]
 
     exclude_ids = {str(r.get("id") or "") for r in internal_rows if _is_self_insight_only_row(r)}
     if exclude_ids:
@@ -2077,10 +2093,11 @@ async def _generate_and_store_emotion_period_snapshots(
     prev_period_end_iso = str(info.get("prev_period_end_iso") or "").strip()
     prev_period_start_utc = info.get("prev_period_start_utc")
 
-    # 1) Fetch current-period materials only.
-    meta = await fetch_emotion_meta_for_hash(uid, start_iso=period_start_iso, end_iso=period_end_iso)
-    internal_rows = await fetch_emotions_in_range(uid, start_iso=period_start_iso, end_iso=period_end_iso, include_secret=True)
-    public_rows_data = await fetch_emotions_in_range(uid, start_iso=period_start_iso, end_iso=period_end_iso, include_secret=False)
+    # Fingerprint and aggregate exactly the same complete, request-local rows.
+    internal_rows = await fetch_emotions_in_range(uid, start_iso=period_start_iso,
+        end_iso=period_end_iso, include_secret=True, max_rows=None)
+    meta = list(internal_rows)
+    public_rows_data = [row for row in internal_rows if not _row_is_secret(row)]
 
     # 2) Exclude self-insight-only rows from emotion structure materials.
     exclude_ids = {str(r.get("id") or "") for r in internal_rows if emotion_row_is_self_insight_only(r)}
@@ -2143,9 +2160,10 @@ async def _generate_and_store_emotion_period_snapshots(
     prev_internal_rows: List[Dict[str, Any]] = []
     prev_public_rows_data: List[Dict[str, Any]] = []
     if kind == "daily" and prev_period_start_iso and prev_period_end_iso:
-        prev_meta = await fetch_emotion_meta_for_hash(uid, start_iso=prev_period_start_iso, end_iso=prev_period_end_iso)
-        prev_internal_rows = await fetch_emotions_in_range(uid, start_iso=prev_period_start_iso, end_iso=prev_period_end_iso, include_secret=True)
-        prev_public_rows_data = await fetch_emotions_in_range(uid, start_iso=prev_period_start_iso, end_iso=prev_period_end_iso, include_secret=False)
+        prev_internal_rows = await fetch_emotions_in_range(uid, start_iso=prev_period_start_iso,
+            end_iso=prev_period_end_iso, include_secret=True, max_rows=None)
+        prev_meta = list(prev_internal_rows)
+        prev_public_rows_data = [row for row in prev_internal_rows if not _row_is_secret(row)]
 
         prev_exclude_ids = {str(r.get("id") or "") for r in prev_internal_rows if emotion_row_is_self_insight_only(r)}
         if prev_exclude_ids:

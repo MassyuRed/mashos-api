@@ -16,6 +16,20 @@ name: Analysis observed content
       - ai/services/ai_inference/astor_self_structure_report.py
       - ai/services/ai_inference/api_cron_distribution.py
       - ai/services/ai_inference/astor_worker.py
+      - ai/services/ai_inference/astor_material_snapshots.py
+      - ai/services/ai_inference/api_analysis_reports.py
+      - ai/services/ai_inference/analysis_engine_adapter.py
+      - ai/services/ai_inference/kokoro_weather_service.py
+      - ai/services/analysis_engine/emotion_structure_engine/weekly.py
+      - ai/services/ai_inference/cocolon_text_generation_core/adapters/analysis_composer.py
+      - ai/tests/test_analysis_snapshot_factual_binding.py
+      - ai/tests/test_analysis_global_material_pagination.py
+      - ai/tests/test_analysis_daily_rows_factual_binding.py
+      - ai/tests/test_analysis_ensure_alignment_recovery.py
+      - ai/tests/test_analysis_report_factual_sections.py
+      - ai/tests/test_analysis_material_input_integrity.py
+      - ai/tests/test_analysis_parallel_emotion_chronology.py
+      - ai/tests/test_analysis_legacy_report_source_integrity.py
       - ai/tests/test_analysis_cumulative*.py
       - ai/tests/test_analysis_observed_api.py
       - ai/tests/analysis_cumulative_sql.cjs
@@ -59,7 +73,7 @@ jobs:
       - name: Install isolated-test dependencies
         run: >-
           python -m pip install --quiet --disable-pip-version-check
-          pytest==8.4.1 pytest-subtests==0.14.2
+          pytest==8.4.1 pytest-subtests==0.14.2 pytest-asyncio==1.2.0
           fastapi==0.142.2 pydantic==2.13.5 httpx==0.28.1
       - name: Record tested source and runtime
         run: |
@@ -87,7 +101,6 @@ jobs:
           ai/tests/test_analysis_model_role_action.py
           ai/tests/test_analysis_model_quoted_parent_units.py
           ai/tests/test_analysis_model_parent_local_content.py
-          ai/tests/test_analysis_model_fields.py
           ai/tests/test_analysis_model_units.py
           ai/tests/test_cmee_analysis_nominal_relations.py
           ai/tests/test_analysis_observed_storage.py
@@ -136,6 +149,7 @@ jobs:
         run: >-
           python -m pytest -q --tb=short -ra
           -p pytest_subtests.plugin -p no:cacheprovider -c /dev/null --rootdir=. --noconftest
+          ai/tests/test_analysis_model_fields.py
           ai/tests/test_analysis_cumulative.py
           ai/tests/test_analysis_cumulative_model_source.py
           ai/tests/test_analysis_cumulative_model_batches.py
@@ -152,3 +166,30 @@ jobs:
               json.dump(sql_fixture(), out, ensure_ascii=False)
           PY
           node ai/tests/analysis_cumulative_sql.cjs "$RUNNER_TEMP/analysis-cumulative.json"
+      - name: Verify report facts, complete input sources and safe legacy recovery
+        env:
+          Q2_PGLITE_MODULE: ${{ runner.temp }}/analysis-postgres/node_modules/@electric-sql/pglite
+        run: >-
+          python -m pytest -q --tb=short -ra
+          -p pytest_subtests.plugin -p pytest_asyncio.plugin -p no:cacheprovider
+          -c /dev/null --rootdir=. --noconftest
+          ai/tests/test_analysis_snapshot_factual_binding.py
+          ai/tests/test_analysis_global_material_pagination.py
+          ai/tests/test_analysis_daily_rows_factual_binding.py
+          ai/tests/test_analysis_ensure_alignment_recovery.py
+          ai/tests/test_analysis_report_factual_sections.py
+          ai/tests/test_analysis_material_input_integrity.py
+          ai/tests/test_analysis_parallel_emotion_chronology.py
+          ai/tests/test_analysis_legacy_report_source_integrity.py
+          ai/tests/test_analysis_report_kokoro_weather.py
+          ai/tests/test_cocolon_text_generation_core_analysis_input_contract.py
+          ai/tests/test_cocolon_text_generation_core_analysis_composer.py
+          ai/tests/test_analysis_environment_state_output_phase7.py
+          ai/tests/test_analysis_environment_state_output_phase8_display_connection.py
+          ai/tests/test_kokoro_weather_service.py
+          ai/tests/test_kokoro_weather_phase6_qa.py
+          ai/tests/test_analysis_home_summary_current_weather.py
+          ai/tests/test_self_structure_watashi_map_payload.py
+          ai/tests/test_analysis_saved_period.py
+          ai/tests/test_analysis_observed_api.py
+          ai/tests/test_analysis_observed_storage.py

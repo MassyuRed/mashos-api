@@ -198,25 +198,18 @@ async def test_ready_latest_body_filters_old_full_rows(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_generate_daily_report_attaches_kokoro_weather_without_changing_internal_type(monkeypatch):
-    start = datetime(2026, 5, 12, 0, 0, tzinfo=timezone.utc)
-    end = datetime(2026, 5, 12, 23, 59, tzinfo=timezone.utc)
-    target = reports.TargetPeriod(
-        report_type="daily",
-        dist_utc=end,
-        period_start_utc=start,
-        period_end_utc=end,
-        period_start_iso=start.isoformat().replace("+00:00", "Z"),
-        period_end_iso=end.isoformat().replace("+00:00", "Z"),
-        title="こころ天気（日）: test",
-        title_meta={},
-    )
+    target = reports._build_target_period("daily", datetime(2026, 5, 13, 3, tzinfo=timezone.utc))
     rows = [
         {"created_at": "2026-05-12T01:00:00Z", "is_secret": False, "emotion_details": [{"type": "平穏", "strength": "medium"}]},
         {"created_at": "2026-05-12T06:00:00Z", "is_secret": False, "emotion_details": [{"type": "不安", "strength": "strong"}]},
     ]
+    for index, row in enumerate(rows):
+        row.update(id=f"fixture-{index}", user_id="user-1", memo="考えたことです。",
+            memo_action="行動の記録です。", category=["生活"],
+            emotions=[d["type"] for d in row["emotion_details"]], emotion_strength_avg=2)
 
     async def fake_fetch_emotion_rows(_user_id, _start_iso, _end_iso):
-        return rows
+        return rows if _start_iso == target.period_start_iso else []
 
     async def fake_upsert(payload):
         assert payload["report_type"] == "daily"

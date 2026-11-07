@@ -30,7 +30,7 @@ def fixture(text='昨日の会議への招待は断った。', *, noun='昨日�
         member['original'].update(memo='', memo_action='')
         member['original'][field] = text
         if extra:
-            member['original']['memo_action'] = extra
+            member['original']['memo_action' if field=='memo' else 'memo'] = extra
     p = prepared(snap, 'selected_material.v13')
     fields = __import__('json').loads(p.messages()[1]['content'])['fields']
     data = dict(fields=[dict(field=f['field'], units=[
@@ -52,8 +52,9 @@ def assert_unread(snap, value):
 @pytest.mark.parametrize('noun', ['会議への招待', '集まりへの誘い', '仕事の依頼', '計画の提案'])
 @pytest.mark.parametrize('case', ['は', 'を'])
 @pytest.mark.parametrize('finite,polarity', [('断った', 'positive'), ('断らなかった', 'negative')])
-def test_complete_refusal_preserves_written_object_case_polarity_and_unknown_actor(noun, case, finite, polarity):
-    snap, p, value = fixture(noun + case + finite + '。', noun=noun, finite=finite)
+@pytest.mark.parametrize('field',['memo','memo_action'])
+def test_complete_refusal_preserves_written_object_case_polarity_and_unknown_actor(noun, case, finite, polarity, field):
+    snap, p, value = fixture(noun + case + finite + '。', noun=noun, finite=finite, field=field)
     original = copy.deepcopy(snap)
     raw = value.response.raw
     artifact, counts = service.build_cumulative_map(OWNER, snap, model_input=value)
@@ -66,6 +67,7 @@ def test_complete_refusal_preserves_written_object_case_polarity_and_unknown_act
             'ACTION_OR_NONACTION', 'UNSPECIFIED', '断る', ((case, noun),),
             polarity, 'fact', 'past', '')
     assert counts['mapped_count'] == 1 and counts['unparsed_count'] == 0
+    assert node.evidence_refs[0].field_path == field
     assert not artifact.graph.edges and not artifact.graph.annotations
     assert not artifact.graph.conflicts and not node.update_refs
     assert node.selected_categories == ('仕事',)
@@ -118,8 +120,8 @@ def test_short_model_root_cannot_erase_actor_time_report_reason_or_unread_tail(t
     assert_unread(snap, value)
 
 
-@pytest.mark.parametrize('field,extra', [('memo_action', ''), ('memo', '私は資料を見た。'),
-    ('memo', 'まだ分からない。')])
+@pytest.mark.parametrize('field',['memo','memo_action'])
+@pytest.mark.parametrize('extra',['私は資料を見た。','まだ分からない。'])
 def test_original_proof_never_discards_another_field(field, extra):
     snap, _, value = fixture(field=field, extra=extra)
     assert_unread(snap, value)

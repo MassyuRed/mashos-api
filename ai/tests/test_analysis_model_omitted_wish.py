@@ -67,11 +67,12 @@ def assert_unread(snap, value):
 
 @pytest.mark.parametrize('ending,time,polarity', FORMS)
 @pytest.mark.parametrize('object_and_stem,lemma', LEXEMES)
+@pytest.mark.parametrize('field',['memo','memo_action'])
 def test_nine_plain_wish_verbs_keep_omitted_actor_and_their_own_complete_source(
-        object_and_stem, lemma, ending, time, polarity):
+        object_and_stem, lemma, ending, time, polarity, field):
     finite = object_and_stem.split('を', 1)[1] + ending
     qualifiers = [dict(kind='NEGATION', quote=finite)] if polarity == 'negative' else []
-    snap, p, value = fixture(object_and_stem + ending + '。', qualifiers=qualifiers)
+    snap, p, value = fixture(object_and_stem + ending + '。', qualifiers=qualifiers, field=field)
     before = copy.deepcopy(snap)
     raw, raw_hash = value.response.raw, value.response.raw_sha256
     candidate, coverage = service.build_cumulative_quoted_parent_candidates(
@@ -91,7 +92,7 @@ def test_nine_plain_wish_verbs_keep_omitted_actor_and_their_own_complete_source(
     assert node.visible_label == object_and_stem + ending
     assert node.record_refs == (snap['members'][0]['original']['id'],)
     assert node.selected_categories == ('仕事',) and not node.update_refs
-    assert len(node.evidence_refs) == 1 and node.evidence_refs[0].field_path == 'memo'
+    assert len(node.evidence_refs) == 1 and node.evidence_refs[0].field_path == field
     assert not artifact.graph.edges and not artifact.graph.annotations and not artifact.graph.conflicts
     assert {g.missing_scope for g in artifact.graph.unknown_gaps} == {
         'SCENE', 'ROLE', 'ACTION_OR_NONACTION', 'IMMEDIATE_RESULT_OR_AFTERMATH'}
@@ -194,14 +195,11 @@ def test_incomplete_or_different_source_scope_cannot_be_promoted_by_a_short_wish
     assert_unread(snap, value)
 
 
-@pytest.mark.parametrize('layout', ['memo_action_only', 'second_unknown_field', 'same_wish_in_both_fields'])
-def test_original_proof_requires_one_nonempty_memo_field(layout):
+@pytest.mark.parametrize('layout', ['second_unknown_field', 'same_wish_in_both_fields'])
+def test_original_omitted_wish_proof_does_not_discard_an_unread_or_second_wish_field(layout):
     snap, _, _ = fixture()
-    if layout == 'memo_action_only':
-        snap['members'][0]['original'].update(memo='', memo_action='写真を見たかった。')
-    else:
-        snap['members'][0]['original']['memo_action'] = (
-            'まだ言葉にできません。' if layout == 'second_unknown_field' else '写真を見たかった。')
+    snap['members'][0]['original']['memo_action'] = (
+        'まだ言葉にできません。' if layout == 'second_unknown_field' else '写真を見たかった。')
     p = prepared(snap, PROFILE)
     fields = json.loads(p.messages()[1]['content'])['fields']
     data = dict(fields=[dict(field=f['field'], units=([] if '分か' in f['text'] or 'できません' in f['text']

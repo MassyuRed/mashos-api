@@ -5,7 +5,7 @@ or current cumulative-map behavior. No Supabase service or personal data is used
 """
 import asyncio
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import json
 
 import httpx
@@ -110,14 +110,24 @@ def test_daily_generation_respects_exact_period_boundaries_and_saves_the_snapsho
         {'created_at': '2026-11-07T01:00:00.000Z', 'emotions': ['平穏'],
             'emotion_details': [{'type': '平穏', 'strength': 'strong'}], 'is_secret': True},
     ]
+    for index, row in enumerate(rows):
+        row.update(id=f'fixture-{index}', user_id='synthetic-owner', memo='考えたことです。',
+            memo_action='行動の記録です。', category=['生活'], emotion_strength_avg=2)
     captured, saved = [], []
+    iso = lambda dt: dt.isoformat(timespec='milliseconds').replace('+00:00', 'Z')
+    expected_ranges = [
+        ['gte.' + target.period_start_iso, 'lte.' + target.period_end_iso],
+        ['gte.' + iso(target.period_start_utc - timedelta(days=1)),
+            'lte.' + iso(target.period_start_utc - timedelta(milliseconds=1))],
+    ]
 
     def handler(request):
         captured.append(request)
         if request.url.path == '/rest/v1/emotions':
             filters = request.url.params.get_list('created_at')
-            assert filters == ['gte.' + target.period_start_iso, 'lte.' + target.period_end_iso]
+            assert filters in expected_ranges
             assert request.url.params['user_id'] == 'eq.synthetic-owner'
+            assert request.url.params['is_secret'] == 'eq.false'
             # The mock storage applies the actual received predicates, not a
             # pre-filtered fixture, so a lost boundary cannot pass this test.
             selected = deepcopy(rows)
@@ -127,6 +137,10 @@ def test_daily_generation_respects_exact_period_boundaries_and_saves_the_snapsho
                     selected = [r for r in selected if r['created_at'] >= boundary]
                 elif operation == 'lte':
                     selected = [r for r in selected if r['created_at'] <= boundary]
+            selected = sorted((r for r in selected if r['is_secret'] is False),
+                key=lambda r: (r['created_at'], r['id']))
+            offset = int(request.url.params['offset'])
+            selected = selected[offset:offset + int(request.url.params['limit'])]
             return httpx.Response(200, json=selected)
         if request.url.path == '/rest/v1/material_snapshots':
             return httpx.Response(200, json=[{'source_hash': 'c' * 64}])
@@ -165,3 +179,5 @@ def test_daily_generation_respects_exact_period_boundaries_and_saves_the_snapsho
     assert saved[0]['period_start'] == target.period_start_iso
     assert saved[0]['period_end'] == target.period_end_iso
     assert saved[0]['content_json']['publish']['publicSourceHash'] == 'c' * 64
+    assert {tuple(request.url.params.get_list('created_at')) for request in captured
+        if request.url.path == '/rest/v1/emotions'} == {tuple(filters) for filters in expected_ranges}
