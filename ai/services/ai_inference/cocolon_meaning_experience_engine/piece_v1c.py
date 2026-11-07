@@ -222,8 +222,17 @@ def _has_declaration_uncertainty(meaning: PieceSourceMeaning) -> bool:
             target_span = expression.span('object')
     nominalized = (target_span is not None
                    and _NOMINALIZED_RESERVATION.fullmatch(node.value[slice(*target_span)]) is not None)
-    return any(not (nominalized
-                    and target_span[0] <= marker.start() < marker.end() <= target_span[1])
+    # The explicit nominal 迷いを / 迷いの may also occur within a
+    # larger bound argument. Keep every other uncertainty cue in that target.
+    # が/に can be verbal continuations (迷いがち / 迷いにくい), and
+    # known clausal continuations after の do not establish a genitive noun.
+    return any(not (target_span is not None
+                    and target_span[0] <= marker.start() < marker.end() <= target_span[1]
+                    and (nominalized or (
+                        marker.group() == '迷い' and marker.end() < target_span[1]
+                        and node.value[marker.end()] in 'をの'
+                        and not re.match(r'の(?:に|で|だ|か|なら)',
+                                         node.value[marker.end():target_span[1]]))))
                for marker in _UNCERTAIN.finditer(node.value))
 
 
