@@ -977,3 +977,20 @@ alignmentだけ欠ける旧derivedは全stageの他binding一致を確認後、�
 通常compilerの原入力限定wish wrapperは、二欄で既存のSELF行動と主体未指定の希望を同時に持つ原記録を保持できず全体を落とす不備を修復した。各unitの本人field／証拠を照合し、主体未指定をSELFへ昇格させない。補足への既定許可拡張・研究4B採用は行わない。関連613件成功、独立542件も成功（重複のため合算しない）。
 
 既存Analysis CIは最終report20suiteを追加し、SQL必須のmodel_fieldsをPGlite導入後へ移す。既存Piece PostgreSQL CIは旧Free暗色期待と、owner readに必要な既存not.and filterを理解しない試験loaderを補正する。製品の認証／期待成功条件を緩めない。native SQLの結果は後続の実CI記録に分ける。
+
+
+### 2026-11-07 — 最終修復の検証・DB適用・指定配置の実結果
+
+製品修復b1276930の後、30c7は新CI stepのPYTHONPATH、afaeはcurrent Q1 owner証拠fixture、238f0d63は既存CI timeout15→25分だけを修復した。製品source／試験期待の追加緩和0。current fixtureはGPの既存8関数のAnalysis opt-in変更を実source／ASTへ反映し、他17payload・全source symbol・scope・歴史IM03・研究raw／重みを保持する。afaeのrun42341029712は最後407の53％で15分超過打切り。GitHub Annotationsの最大15m0s超過を直接確認し、途中を成功へ換算しない。
+
+最終run42342266869／job128312337842はsource238f0d6332aca8da48ec6d9433373df9a438005b／attempt1、14:30:13 JST全工程success。前段2818 PASS／12236 subtests（380.27秒）、共有owner1 PASS／194意図的deselected（22.52秒）、累積335 PASS／2subtests（146.65秒）、月次SQL201原本／15月参照、最終407 PASS／738subtests（39.55秒）。失敗・skipによる停止0、後処理success。段間は重複し合算しない。Piece30c7のrun42340598228も全step success、新native独立接続9・材料等108・B12 native46／各skip0を実ログ確認。
+
+Supabase oeahmpmigszggnkyiivqへSQL原文をmetrics_atomic→reaction_aliasの順適用。実登録20261107045211／20261107045213、migration14→16。2関数prosrcは原文完全一致、SECURITY INVOKER・search_path=pg_catalog、PUBLIC／anon／authenticated EXECUTE=false、service_role=true。既存4物理tableのRLS=true／既存service CRUDを維持。security advisory前後7件・新規0。個人row取得／DML／新table／反応一括移行／V2公開有効化0。
+
+API238f0d63をRender dep-dbnbf9lg1s2s73c81sm0へ一回指定配置。14:31:18 JST開始、14:32:28 JST Live。全commit SHA／deploy ID／statusをMCPとDashboardで照合。main／autoDeploy OFF／Free1instance／既存起動factoryは前後一致。14:33:40〜46 JST、healthz200/status ok、bootstrap200、ios.v2＋palette3 header bootstrap200、両方private5=true／public3=false。認証なしPiece history／quota／preview POST空JSON、self-structure latest?ensure=false&force=false、analysis reports readyは全401。実HTTP8件期待どおり、取得した当該時間のapp error log0。
+
+既存課金診断ios_ready／android_ready=falseとAPI側EXPO_PUBLIC_TERMS_URL／PRIVACY_URL warningは残る。実Store・法的導線・販売受入れを成功とせず、env／価格／SKU／販売設定の変更0。配置runtimeのpackage版はCI固定pinと同一ではない。新4B・新receipt readinessを有効化せず、同source本人currentの強制再解析／月次上書きは0。
+
+固定RN56e65b1aの一回の署名iOS run42337152593／#76 attempt1は全19step success、実1.0（7601）が既存内部グループTesting。後続RNは資料／CI／隔離test lockだけでアプリsource差分0、追加署名build0。一般分析品質・旧未採用V4・旧期待群・本人原入力再解析／今回端末受入れ・実課金／公開は未完。全7,817blob一致を全意味読了としない。全詳細と未確認はCocolon第10回weekly§15.10を参照。
+
+配置ログでCI固定pinと異なる版を確認したため、追加で既存Python3.13.5と観測library（FastAPI0.162.0／Pydantic2.14.3／Starlette1.10.0／httpx0.28.1）を別の隔離targetにそろえ、同じ最終20suiteを一回実行した。407 PASS／738subtests PASS、FAIL／ERROR／SKIP／deselected0、38.62秒（既存warning2）。既存deps／製品source／requirements／実環境の変更0、外部DB／GPU／CI再実行／再配置0。これは観測版での合成回帰であり、本人の実認証・本番保存物・実機の成功へ換算しない。
