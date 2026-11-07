@@ -43,13 +43,13 @@ def generation_stage(stage):
     print('analysis_generation_stage=' + stage + ' monotonic=' + str(round(time.monotonic(), 3)), flush=True)
 
 
-def semantic_free_text_tokens(prefix, batch, sent, blocked, raw_controls=frozenset()):
+def semantic_free_text_tokens(prefix, batch, sent, blocked, invalid_json_tokens=frozenset()):
     """Exclude raw-control/blank loops only from generated prose, not quotes."""
     allowed = prefix(batch, sent)
     # Source quote candidates contain no raw controls. JSON layout can be
-    # compact, so TAB/LF/control tokens are unnecessary at every parser state,
-    # including escape/union states without the free-text shortcut.
-    allowed = [token for token in allowed if token not in raw_controls]
+    # compact. Empty decoder entries otherwise enter LMFE's root trie and are
+    # allowed at every state without advancing the parser.
+    allowed = [token for token in allowed if token not in invalid_json_tokens]
     state = prefix.token_enforcer.prefix_states[tuple(sent.tolist())].parser
     key = state.shortcut_key()
     if isinstance(key, tuple) and key[0] == 'json_freetext':
@@ -241,7 +241,7 @@ def load_generator(adapter, process_stop, *, weights_sha256=None, config_sha256=
         adapter_identity(adapter, *selected_identity)
     tokenizer_data = None
     blocked_free_text = set()
-    raw_controls = set()
+    invalid_json_tokens = set()
     if semantic_json:
         private_log_filter = SourcePrivateConstraintLog()
         logging.getLogger().addFilter(private_log_filter)
@@ -256,8 +256,8 @@ def load_generator(adapter, process_stop, *, weights_sha256=None, config_sha256=
             vocab_size=min(len(tokenizer), model.get_output_embeddings().weight.shape[0]))
         blocked_free_text = {token for token, decoded, _ in tokenizer_data.regular_tokens
             if not decoded.strip() or any(ord(char) < 32 for char in decoded)}
-        raw_controls = {token for token, decoded, _ in tokenizer_data.regular_tokens
-            if any(ord(char) < 32 for char in decoded)}
+        invalid_json_tokens = {token for token, decoded, _ in tokenizer_data.regular_tokens
+            if not decoded or any(ord(char) < 32 for char in decoded)}
 
     class Deadline(StoppingCriteria):
         def __init__(self, end):
@@ -285,16 +285,26 @@ def load_generator(adapter, process_stop, *, weights_sha256=None, config_sha256=
             from lmformatenforcer.integrations.transformers import build_transformers_prefix_allowed_tokens_fn
             allowed_prefix = build_transformers_prefix_allowed_tokens_fn(
                 tokenizer_data, JsonSchemaParser(semantic_output_schema(messages)))
+            previous_allowed = None
             def private_prefix(batch, sent):
+                nonlocal previous_allowed
                 progress = len(sent) - count
                 measured = progress % 128 == 0
                 if measured:
                     generation_stage('prefix_enter_' + str(progress))
-                if progress and int(sent[-1]) in raw_controls:
-                    raise ValueError('semantic_raw_control_generated')
-                allowed = semantic_free_text_tokens(allowed_prefix, batch, sent, blocked_free_text, raw_controls)
+                if progress and int(sent[-1]) in invalid_json_tokens:
+                    raise ValueError('semantic_nontext_token_generated')
+                if progress and previous_allowed is not None and int(sent[-1]) not in previous_allowed:
+                    generation_stage('prefix_constraint_violation')
+                    raise ValueError('semantic_prefix_constraint_violation')
+                allowed = semantic_free_text_tokens(allowed_prefix, batch, sent, blocked_free_text, invalid_json_tokens)
+                previous_allowed = allowed
                 if measured:
-                    generation_stage('prefix_exit_' + str(progress))
+                    parser = allowed_prefix.token_enforcer.prefix_states[tuple(sent.tolist())].parser
+                    key = parser.shortcut_key()
+                    mode = 'free' if isinstance(key, tuple) and key[0] == 'json_freetext' else 'other'
+                    generation_stage('prefix_exit_' + str(progress) + '_' + type(parser).__name__
+                        + '_' + mode + '_allowed_' + str(len(allowed)))
                 return allowed
             format_options['prefix_allowed_tokens_fn'] = private_prefix
             generation_stage('decode')
@@ -307,6 +317,8 @@ def load_generator(adapter, process_stop, *, weights_sha256=None, config_sha256=
         finish = "stop" if len(tokens) and int(tokens[-1]) in eos and not stopping.expired else "length"
         if semantic_json:
             generation_stage('complete_' + finish)
+            special = set(tokenizer.all_special_ids) | {token for token, value in tokenizer.added_tokens_decoder.items() if value.special}
+            generation_stage('special_count_' + str(sum(int(token) in special for token in tokens)))
         return tokenizer.decode(tokens, skip_special_tokens=True, clean_up_tokenization_spaces=False), finish
     return generate
 

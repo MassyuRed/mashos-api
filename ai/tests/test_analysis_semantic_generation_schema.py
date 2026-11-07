@@ -49,6 +49,26 @@ def test_raw_control_tokens_are_excluded_also_when_upstream_is_in_a_union_or_esc
     assert probe.semantic_free_text_tokens(Prefix(), 0, Sent(), {1, 2}, {1}) == [2, 3]
 
 
+def test_actual_pinned_parser_empty_decoder_root_loop_is_removed_before_generation():
+    package = pytest.importorskip('lmformatenforcer')
+    from lmformatenforcer.tokenenforcer import TokenEnforcer, TokenEnforcerTokenizerData
+    vocabulary = ['P', '', '{', '}']
+    data = TokenEnforcerTokenizerData([(index, char, False) for index, char in enumerate(vocabulary)],
+        lambda tokens: ''.join(vocabulary[index] for index in tokens), 4, False, 5)
+    class Sent(list):
+        def tolist(self):
+            return list(self)
+    class Prefix:
+        token_enforcer = TokenEnforcer(data, package.JsonSchemaParser(dict(type='object',
+            properties={}, additionalProperties=False)))
+        def __call__(self, batch, sent):
+            return self.token_enforcer.get_allowed_tokens(sent.tolist()).allowed_tokens
+    prefix, sent = Prefix(), Sent([0])
+    assert 1 in prefix(0, sent)  # Empty token is in upstream root.tokens.
+    allowed = probe.semantic_free_text_tokens(prefix, 0, sent, {1}, {1})
+    assert 1 not in allowed and 2 in allowed
+
+
 def test_actual_pinned_parser_blank_prose_is_filtered_and_literal_quote_space_is_preserved():
     package = pytest.importorskip('lmformatenforcer')
     from lmformatenforcer.tokenenforcer import TokenEnforcer, TokenEnforcerTokenizerData
