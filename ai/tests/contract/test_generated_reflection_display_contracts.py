@@ -47,13 +47,19 @@ def test_generated_qna_detail_uses_display_text(client, monkeypatch):
     async def fake_resolve_generated_reflection_access(*, viewer_user_id: str, q_instance_id: str):
         return dict(generated_row)
 
-    async def fake_fetch_instance_metrics(_instance_ids):
+    expected_aliases = {"reflection:test-generated-1": {
+        "reflection:test-generated-1", "test-generated-1", "reflection:generated-row-1", "generated-row-1"}}
+
+    async def fake_fetch_instance_metrics(_instance_ids, *, alias_groups=None):
+        assert alias_groups == expected_aliases
         return {"reflection:test-generated-1": {"views": 3, "resonances": 2}}
 
-    async def fake_fetch_reads(viewer_user_id: str, q_instance_ids):
+    async def fake_fetch_reads(viewer_user_id: str, q_instance_ids, *, alias_groups=None):
+        assert alias_groups == expected_aliases
         return set()
 
-    async def fake_is_resonated(viewer_user_id: str, q_instance_id: str):
+    async def fake_is_resonated(viewer_user_id: str, q_instance_id: str, *, alias_groups=None):
+        assert alias_groups == expected_aliases
         return False
 
     monkeypatch.setattr(piece_runtime_module, "_resolve_user_id_from_token", fake_resolve_user_id_from_token)

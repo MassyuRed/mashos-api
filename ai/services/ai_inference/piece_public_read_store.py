@@ -11,6 +11,7 @@ from supabase_client import (
     sb_delete as _sb_delete_shared,
     sb_get as _sb_get_shared,
     sb_patch as _sb_patch_shared,
+    sb_post_rpc as _sb_post_rpc_shared,
     sb_post as _sb_post_shared,
 )
 
@@ -143,90 +144,178 @@ async def fetch_followed_owner_ids(*, viewer_user_id: str, limit: int = 5000) ->
     return out
 
 
-async def fetch_instance_metrics(q_instance_ids: Set[str]) -> Dict[str, Dict[str, Any]]:
+def _instance_alias_owners(
+    q_instance_ids: Set[str], alias_groups: Optional[Dict[str, Set[str]]],
+) -> Dict[str, str]:
+    owners: Dict[str, str] = {}
+    for canonical in q_instance_ids:
+        aliases = {canonical} | set((alias_groups or {}).get(canonical) or ())
+        for alias in aliases:
+            if not isinstance(alias, str) or not alias:
+                raise HTTPException(status_code=502, detail="Invalid Piece state identity")
+            if alias in owners and owners[alias] != canonical:
+                raise HTTPException(status_code=502, detail="Conflicting Piece state identities")
+            owners[alias] = canonical
+    return owners
+
+
+async def _read_alias_rows(
+    path: str, *, params: Dict[str, str], instance_ids: Set[str],
+) -> List[Dict[str, Any]]:
+    """An alias aggregate cannot treat an unavailable partition as zero."""
+    try:
+        result: List[Dict[str, Any]] = []
+        ordered = sorted(instance_ids)
+        for offset in range(0, len(ordered), 200):
+            chunk = set(ordered[offset:offset + 200])
+            query = dict(params, q_instance_id=quoted_in(chunk), limit=str(len(chunk)))
+            response = await sb_get(path, params=query)
+            if response.status_code >= 300:
+                raise ValueError("alias state read failed")
+            rows = response.json()
+            if (not isinstance(rows, list)
+                    or any(not isinstance(row, dict) or row.get("q_instance_id") not in chunk for row in rows)
+                    or len({row['q_instance_id'] for row in rows}) != len(rows)):
+                raise ValueError("invalid alias state rows")
+            result.extend(rows)
+        return result
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail="Failed to load Piece state") from exc
+
+
+async def fetch_instance_metrics(
+    q_instance_ids: Set[str], *, alias_groups: Optional[Dict[str, Set[str]]] = None,
+) -> Dict[str, Dict[str, Any]]:
     if not q_instance_ids:
         return {}
+    alias_owners = _instance_alias_owners(q_instance_ids, alias_groups)
     try:
-        rows = await sb_get_json(
+        read = _read_alias_rows if alias_groups is not None else sb_get_json
+        rows = await read(
             f"/rest/v1/{METRICS_READ_TABLE}",
             params={
                 "select": "q_instance_id,q_key,views,resonances",
-                "q_instance_id": quoted_in(set(q_instance_ids)),
-                "limit": str(max(1, len(q_instance_ids))),
+                "q_instance_id": quoted_in(set(alias_owners)),
+                "limit": str(max(1, len(alias_owners))),
             },
+            **({"instance_ids": set(alias_owners)} if alias_groups is not None else {}),
         )
     except Exception:
+        if alias_groups is not None:
+            raise
         return {}
     out: Dict[str, Dict[str, Any]] = {}
     for r in rows:
         iid = str(r.get("q_instance_id") or "").strip()
-        if iid:
-            out[iid] = r
+        canonical = alias_owners.get(iid)
+        if canonical:
+            if alias_groups is None:
+                out[canonical] = r
+            else:
+                aggregate = out.setdefault(canonical, {
+                    "q_instance_id": canonical, "views": 0, "resonances": 0})
+                aggregate["views"] += int(r.get("views") or 0)
+                aggregate["resonances"] += int(r.get("resonances") or 0)
     return out
 
 
-async def fetch_reads(viewer_user_id: str, q_instance_ids: Set[str]) -> Set[str]:
+async def fetch_reads(
+    viewer_user_id: str, q_instance_ids: Set[str], *,
+    alias_groups: Optional[Dict[str, Set[str]]] = None,
+) -> Set[str]:
     if not viewer_user_id or not q_instance_ids:
         return set()
+    alias_owners = _instance_alias_owners(q_instance_ids, alias_groups)
     try:
-        rows = await sb_get_json(
+        read = _read_alias_rows if alias_groups is not None else sb_get_json
+        rows = await read(
             f"/rest/v1/{READS_READ_TABLE}",
             params={
                 "select": "q_instance_id",
                 "viewer_user_id": f"eq.{viewer_user_id}",
-                "q_instance_id": quoted_in(set(q_instance_ids)),
-                "limit": str(max(1, len(q_instance_ids))),
+                "q_instance_id": quoted_in(set(alias_owners)),
+                "limit": str(max(1, len(alias_owners))),
             },
+            **({"instance_ids": set(alias_owners)} if alias_groups is not None else {}),
         )
     except Exception:
+        if alias_groups is not None:
+            raise
         return set()
     out: Set[str] = set()
     for r in rows:
         qid = str(r.get("q_instance_id") or "").strip()
-        if qid:
-            out.add(qid)
+        if qid in alias_owners:
+            out.add(alias_owners[qid])
     return out
 
 
-async def is_resonated(viewer_user_id: str, q_instance_id: str) -> bool:
+async def is_resonated(
+    viewer_user_id: str, q_instance_id: str, *,
+    alias_groups: Optional[Dict[str, Set[str]]] = None,
+) -> bool:
     if not viewer_user_id or not q_instance_id:
         return False
-    resp = await sb_get(
-        f"/rest/v1/{RESONANCES_TABLE}",
-        params={
-            "select": "viewer_user_id",
-            "viewer_user_id": f"eq.{viewer_user_id}",
-            "q_instance_id": f"eq.{q_instance_id}",
-            "limit": "1",
-        },
-    )
+    aliases = set(_instance_alias_owners({q_instance_id}, alias_groups))
+    try:
+        resp = await sb_get(
+            f"/rest/v1/{RESONANCES_TABLE}",
+            params={
+                "select": "viewer_user_id",
+                "viewer_user_id": f"eq.{viewer_user_id}",
+                "q_instance_id": quoted_in(aliases) if alias_groups is not None else f"eq.{q_instance_id}",
+                "limit": "1",
+            },
+        )
+    except Exception as exc:
+        if alias_groups is not None:
+            raise HTTPException(status_code=502, detail="Failed to load Piece state") from exc
+        raise
     if resp.status_code >= 300:
+        if alias_groups is not None:
+            raise HTTPException(status_code=502, detail="Failed to load Piece state")
         logger.error("Supabase %s select failed: %s %s", RESONANCES_TABLE, resp.status_code, (resp.text or "")[:800])
         return False
-    rows = resp.json()
+    try:
+        rows = resp.json()
+        if alias_groups is not None and (not isinstance(rows, list)
+                or any(not isinstance(row, dict) or row.get("viewer_user_id") != viewer_user_id for row in rows)):
+            raise ValueError("invalid alias resonance state")
+    except Exception as exc:
+        if alias_groups is not None:
+            raise HTTPException(status_code=502, detail="Failed to load Piece state") from exc
+        raise
     return bool(isinstance(rows, list) and rows)
 
 
-async def fetch_resonated_instances(viewer_user_id: str, q_instance_ids: Set[str]) -> Set[str]:
+async def fetch_resonated_instances(
+    viewer_user_id: str, q_instance_ids: Set[str], *,
+    alias_groups: Optional[Dict[str, Set[str]]] = None,
+) -> Set[str]:
     if not viewer_user_id or not q_instance_ids:
         return set()
+    alias_owners = _instance_alias_owners(q_instance_ids, alias_groups)
     try:
-        rows = await sb_get_json(
+        read = _read_alias_rows if alias_groups is not None else sb_get_json
+        rows = await read(
             f"/rest/v1/{RESONANCES_TABLE}",
             params={
                 "select": "q_instance_id",
                 "viewer_user_id": f"eq.{viewer_user_id}",
-                "q_instance_id": quoted_in(set(q_instance_ids)),
-                "limit": str(max(1, len(q_instance_ids))),
+                "q_instance_id": quoted_in(set(alias_owners)),
+                "limit": str(max(1, len(alias_owners))),
             },
+            **({"instance_ids": set(alias_owners)} if alias_groups is not None else {}),
         )
     except Exception:
+        if alias_groups is not None:
+            raise
         return set()
     out: Set[str] = set()
     for r in rows:
         qid = str((r or {}).get("q_instance_id") or "").strip()
-        if qid:
-            out.add(qid)
+        if qid in alias_owners:
+            out.add(alias_owners[qid])
     return out
 
 
@@ -272,95 +361,44 @@ async def insert_view_log(*, target_user_id: str, viewer_user_id: str, question_
         logger.warning("Supabase %s insert failed: %s", VIEW_LOGS_TABLE, exc)
 
 
-async def inc_metric(*, q_key: str, q_instance_id: Optional[str] = None, field: str, delta: int = 1) -> Dict[str, int]:
+async def inc_metric(
+    *, q_key: str, q_instance_id: Optional[str] = None, field: str, delta: int = 1
+) -> Dict[str, int]:
+    """Atomically update the existing instance/global public counters.
+
+    Authentication and current public-row access remain the caller's job. One
+    service-role RPC owns both counters; no stale read/absolute PATCH is used.
+    """
     kk = str(q_key or "").strip()
     iid = str(q_instance_id or "").strip() or None
     if not kk:
         return {"views": 0, "resonances": 0}
-    if field not in ("views", "resonances"):
-        raise ValueError("invalid metric field")
-
-    async def _inc_one(*, iid_filter: Optional[str]) -> Dict[str, int]:
-        cur_views = 0
-        cur_res = 0
-        exists = False
-        params_get = {
-            "select": "q_key,q_instance_id,views,resonances",
-            "q_key": f"eq.{kk}",
-            "limit": "1",
-        }
-        if iid_filter is None:
-            params_get["q_instance_id"] = "is.null"
-        else:
-            params_get["q_instance_id"] = f"eq.{iid_filter}"
-        try:
-            resp = await sb_get(f"/rest/v1/{METRICS_TABLE}", params=params_get)
-            if resp.status_code < 300:
-                rows = resp.json()
-                if isinstance(rows, list) and rows:
-                    exists = True
-                    cur_views = int((rows[0] or {}).get("views") or 0)
-                    cur_res = int((rows[0] or {}).get("resonances") or 0)
-        except Exception as exc:
-            logger.warning("Supabase %s select failed (metrics inc): %s", METRICS_TABLE, exc)
-        if field == "views":
-            cur_views += int(delta)
-        else:
-            cur_res += int(delta)
-        cur_views = max(cur_views, 0)
-        cur_res = max(cur_res, 0)
-        params_patch = {"q_key": f"eq.{kk}"}
-        if iid_filter is None:
-            params_patch["q_instance_id"] = "is.null"
-        else:
-            params_patch["q_instance_id"] = f"eq.{iid_filter}"
-        if exists:
-            try:
-                resp2 = await _sb_patch_shared(
-                    f"/rest/v1/{METRICS_TABLE}",
-                    params=params_patch,
-                    json={
-                        "views": cur_views,
-                        "resonances": cur_res,
-                        "updated_at": _now_iso(),
-                    },
-                    prefer="return=minimal",
-                )
-                if resp2.status_code >= 300:
-                    logger.warning("Supabase %s patch failed: %s %s", METRICS_TABLE, resp2.status_code, (resp2.text or "")[:800])
-            except Exception as exc:
-                logger.warning("Supabase %s patch failed (metrics inc): %s", METRICS_TABLE, exc)
-        else:
-            try:
-                resp3 = await _sb_post_shared(
-                    f"/rest/v1/{METRICS_TABLE}",
-                    json={
-                        "q_key": kk,
-                        "q_instance_id": iid_filter,
-                        "views": cur_views,
-                        "resonances": cur_res,
-                        "updated_at": _now_iso(),
-                    },
-                    prefer="return=minimal",
-                )
-                if resp3.status_code >= 300:
-                    logger.warning("Supabase %s insert failed: %s %s", METRICS_TABLE, resp3.status_code, (resp3.text or "")[:800])
-            except Exception as exc:
-                logger.warning("Supabase %s insert failed (metrics inc): %s", METRICS_TABLE, exc)
-        return {"views": cur_views, "resonances": cur_res}
-
-    instance_counts: Optional[Dict[str, int]] = None
-    if iid is not None:
-        instance_counts = await _inc_one(iid_filter=iid)
-    global_counts = await _inc_one(iid_filter=None)
-    if instance_counts is None:
-        return {"views": int(global_counts.get("views") or 0), "resonances": int(global_counts.get("resonances") or 0)}
-    return {
-        "views": int(instance_counts.get("views") or 0),
-        "resonances": int(instance_counts.get("resonances") or 0),
-        "global_views": int(global_counts.get("views") or 0),
-        "global_resonances": int(global_counts.get("resonances") or 0),
-    }
+    if field not in ("views", "resonances") or type(delta) is not int or delta not in (-1, 1):
+        raise ValueError("invalid metric increment")
+    # The RPC is intentionally bound to the existing physical table. An old
+    # deployment override must be reconciled before enabling this implementation.
+    if METRICS_TABLE != "mymodel_qna_metrics":
+        raise HTTPException(status_code=502, detail="Piece metrics table is not supported")
+    try:
+        response = await _sb_post_rpc_shared("piece_increment_legacy_metric", {
+            "p_q_key": kk, "p_q_instance_id": iid,
+            "p_field": field, "p_delta": delta,
+        }, timeout=8.0)
+        if response.status_code >= 300:
+            raise ValueError("metric RPC failed")
+        result = response.json()
+        required = {"views", "resonances"}
+        if iid is not None:
+            required.update({"global_views", "global_resonances"})
+        if (not isinstance(result, dict) or set(result) != required
+                or any(type(result[key]) is not int or result[key] < 0 for key in required)):
+            raise ValueError("invalid metric RPC response")
+        return {key: result[key] for key in required}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("atomic Piece metric update failed")
+        raise HTTPException(status_code=502, detail="Failed to update Piece metrics") from exc
 
 
 async def _delete_by_q_instance_ids(table: str, q_instance_ids: Set[str]) -> bool:

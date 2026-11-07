@@ -106,11 +106,7 @@ def register_follow_graph_routes(app: FastAPI) -> None:
             pass
 
         # Private account => create a follow request (approval required)
-        is_private = False
-        try:
-            is_private = await _is_private_account(owner_user_id)
-        except Exception:
-            is_private = False
+        is_private = await _is_private_account(owner_user_id)
 
         if is_private:
             existing_id = await _find_existing_follow_request_id(viewer_user_id, owner_user_id)

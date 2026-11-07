@@ -945,3 +945,19 @@ Mashは、9カテゴリ・各感情強度・思考／行動の二欄を省いた
 rootで分析／保存／累積／こころ天気／契約16suiteとnatural材料・旧metadata・購入hint・console診断をまとめて実行し、20file **349 PASS／FAIL・ERROR・SKIP0**（40.89秒、既存warning4）。その後のUUID表記互換補正は担当の関連API6suite **69 PASS／FAIL・SKIP0**で再検査した。実Auth・本番PostgREST・実ストア購入・新モデル／GPU・実機成功ではない。compilerの二欄修復、RNのowner寿命、Piece公開互換等の進行中の修復を、この検証だけで完了扱いにしない。
 
 候補は現在Live5065730eとは別。資料だけの旧head3195a024を製品source配置済みと混同しない。iOS7501の大ボタン／Piece今回修正はMash確認済みだが、今回の追加修復はまだbuild／配布／本人確認していない。保存currentは同guardで再利用されるため、compiler変更だけで本人currentを再解析したとはしない。月次当時版は維持する。研究4B通常採用・本人原入力の取得／再解析・DB変更・配置・署名build・実公開はこの候補準備で0。
+
+
+### 二欄修復の第2チェックポイントとPiece旧公開の原子性・別名修復
+
+通常Analysis/sharedの最終4path＋同一入力票/実API検査の2pathを `6657a9cfa9a8f8dd7e0fe63bd7a1658f6ab50ad5`（親5993e911）へ保存し、全6原bytes／SHA・親／tree／path集合／PR3 headを読戻し一致。新10件は独立担当も成功。広域の残287旧失敗は変更前sharedでも全件同一集合、13SQL省略は別途13成功。旧checkpoint SQL2・u355現行102も成功。全品質合格とはしない。RN56e65b1aは59path保存・readback一致、最終10suite287成功。一回のiOS run42337152593/#76 attempt1を13:09:10 JST開始、現在は実行中で配布済みではない。
+
+Piece旧公開の確定不具合は次の限定修復とした。
+
+- `api_piece_runtime.py`：profile visibilityの不明・破損chunkを公開許可にしない。現在の許可済みsource row由来だけのcanonical／旧alias集合へreaction／echo／解除を束縛。要求q_keyをsourceのkeyへ照合し、任意keyへ加算しない。
+- `piece_generated_identity.py`／`piece_generated_access.py`：現正本public_id優先のcanonicalとDBid／prefix有無の旧aliasを同じ許可済みrowから導く。UUID列へ非UUIDのpublic aliasを投げてvalid text lookupが失敗する不備も修復。
+- `piece_public_read_service.py`／`piece_public_read_store.py`：旧aliasの反応・既読any・カウンタ合算と履歴再読を維持。新書込はcanonical。read→PATCHのcounter更新を原子RPCへ、反応状態／旧echo更新／両counterも同じtransactionへ移し、正常並行add/remove・失敗時partial commitを防ぐ。
+- 新SQL正本は公式CLI3.0.0生成名の `20261107040354_piece_legacy_metrics_atomic.sql`、次に `20261107040430_piece_legacy_reaction_alias.sql`。既存4table／部分uniqueを再利用、SECURITY INVOKERでservice_roleのみ実行。新table・V2公開有効化・既存反応の一括移行・不整合keyの推測修正はしない。
+
+正式名でAPI174 PASS／FAIL・ERROR・SKIP0（旧170＋実anon/authenticated拒否4）。旧Visual／recipe／runtime停止境界／7field／owner再読／palette互換は別261 PASS／native4未実行。新9件の独立PostgreSQL接続・実待機／rollback検査を既存postgres16 CIへ追加準備。現在、実本番DDL／新API配置0。
+
+配置依存をmetadata確認した：mymodel_reflections／mymodel_qna_metrics／mymodel_qna_resonances／mymodel_qna_echoesはいずれも物理tableかつRLS=true、service_roleの既存CRUD=true。必要global／instance部分unique、共鳴／echo composite uniqueも実在。個人row取得は0。今後SQL2本の順適用／関数ACLと定義の読戻し後に対応APIを配置する。新sourceが固定4tableのoverrideを黙って使うことはせず、違う設定なら既存エラーで停止する。まだ配置したという記録にはしない。

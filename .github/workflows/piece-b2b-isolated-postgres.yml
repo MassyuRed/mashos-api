@@ -17,6 +17,9 @@ name: Piece B2-B/B3/B4/B5 isolated PostgreSQL
       - ai/services/ai_inference/piece_v2_store.py
       - ai/services/ai_inference/piece_v2_quota.py
       - ai/tests/piece_v2/db/test_b04_piece_v2_atomic_transactions.py
+      - supabase/migrations/*_piece_legacy_metrics_atomic.sql
+      - supabase/migrations/*_piece_legacy_reaction_alias.sql
+      - ai/tests/piece_v2/db/test_piece_legacy_public_alias_native.py
       - ai/tests/piece_v2/db/test_b05_preview_persistence.py
       - ai/services/ai_inference/piece_v2_preview_service.py
       - ai/services/ai_inference/piece_v2_safety_review.py
@@ -160,6 +163,17 @@ jobs:
           python -m pytest -q --tb=short -ra -p no:cacheprovider \
             -c /dev/null --confcutdir=ai/tests/piece_v2/db \
             ai/tests/piece_v2/db/test_b04_piece_v2_atomic_transactions.py
+      - name: Run legacy public aliases with independent PostgreSQL connections
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha256sum \
+            supabase/migrations/*_piece_legacy_metrics_atomic.sql \
+            supabase/migrations/*_piece_legacy_reaction_alias.sql \
+            ai/tests/piece_v2/db/test_piece_legacy_public_alias_native.py
+          python -m pytest -q --tb=short -ra -p no:cacheprovider \
+            -c /dev/null --confcutdir=ai/tests/piece_v2/db \
+            ai/tests/piece_v2/db/test_piece_legacy_public_alias_native.py
       - name: Run B5 preview persistence and B4 connection tests
         shell: bash
         run: |
