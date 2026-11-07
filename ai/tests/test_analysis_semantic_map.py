@@ -116,6 +116,8 @@ def test_same_graph_gives_rich_details_relationships_accessible_text_and_private
     lambda packet: packet['edges'][0].update(to=2),
     lambda packet: packet['nodes'][1].update(node_id='n1'),
     lambda packet: packet['nodes'][1].update(node_id='n3'),
+    lambda packet: packet['nodes'][1].update({key: packet['nodes'][0][key]
+        for key in ('title', 'summary', 'explanation')}),
     lambda packet: packet['edges'][0].update(relation_kind='CAUSES'),
     lambda packet: packet['edges'].append(deepcopy(packet['edges'][0])),
     lambda packet: packet['nodes'][0].update(hidden_diagnosis='diagnosis'),

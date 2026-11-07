@@ -326,6 +326,9 @@ def build_semantic_map(prepared, response):
             evidence_badge_count=len(refs)))
         private_nodes.append(dict(node_ref='n' + str(index), node_kind=node['node_kind'],
             record_refs=refs, evidence_refs=[root for _, root in roots]))
+    # Separate roots do not turn one repeated generic description into a map.
+    _require(len({(node['title'], node['summary'], node['explanation'])
+                  for node in public_nodes}) == len(public_nodes))
     public_edges, seen = [], set()
     for index, edge in enumerate(packet['edges'], 1):
         _require(_keys(edge, {'from', 'to', 'relation_kind', 'label', 'explanation'})
