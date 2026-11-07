@@ -922,3 +922,26 @@ Mashの後続指示「進めて」に基づく実行。直前の準備節の実�
 - Cocolon固定source `e0ec6d6a9330f9e493308be85debbb1b062d80f6` のiOS run42328190568／#75 attempt1を11:14:01 JSTに一回開始。既存採番上の7501を、Archive／IPA／Upload／Apple処理／内部配布の結果と別々に照合する。開始時点で配布済みとは扱わない。最新結果はCocolon第10回weekly§13へ記録する。
 
 新receipt SQL20261104002458の適用・readiness有効化、環境設定変更、新モデル実行／GPU・新テスター／外部配布／App Store公開は0。今回の配置だけで、通常の役割・判断基準・記録間読解や実機品質が完成したとはしない。
+
+
+<a id="whole-product-input-contract-repair-20261107"></a>
+## 2026-11-07 — 全残件再点検・入力契約修復の候補（配置前）
+
+Mashは、9カテゴリ・各感情強度・思考／行動の二欄を省いたサンプル出力を重大問題として指摘し、これまでの全残件の再点検・修復と作業／出力規則の更新を指示した。Cocolon第10回weekly§15と既存CURRENT_RULES R2.1／R2.2を現在の入口とする。全tree7,817blobの一致はbyte確認であり、全意味読了・全仕様把握・商品合格ではない。
+
+### この候補の修復
+
+- natural_replyの元入力／有料履歴材料でcategory配列を保持し、既存promptへ二欄・全9場面・通常5感情各弱中強・自己理解の排他とwire medium・記録日時の契約を明記する。モデル呼出し／学習はしていない。過去Q3本人回答／訂正の材料source接続と、新natural自身の任意問い・回答更新の未接続を区別する。
+- astor_material_snapshotsの期間／global素材hashをv2へ更新し、二欄・場面・感情配列・各強度等の内容署名を含める。本文をmetadataへ新規保存せず、既存保存物を一括書換えない。
+- 旧details空配列を持つ記録も、adapter／こころ天気／旧report／旧context・world modelで既存emotions fallbackから読む。非空detailsの各強度は保持、自己理解を通常感情へ加えない。
+- emotion_structure_engine/weeklyとastor_workerは、同時感情の配列順を時間変化としない。同一時刻の複数観測で順序を区切り、跨いだmotifを作らず、量・強度集計は維持する。同率最強感情から架空の代表変化も作らない。
+- api_analysis_reportsは重複created_at下限／上限filterをlistのまま渡し、誤配置のsnapshot hash成功読取を本関数へ戻す。旧report自己本文の循環根拠検査は点検中で、この3修復で旧report全体を根拠付きと評価しない。
+- 保存数quotaの表示を「生成回数」から「保存できる数」へ同期。価格・SKU・枠・権利を変更しない。
+- subscription_projectionは検証済み購入の本人hint不一致を既存conflictでclaim／entitlement前に拒否。同一UUIDの表記差は同値、opaque値はexact、hint無し旧購入は既存claim照合を維持。
+- subscription_live_console_checkは両tierの商品欠落をreadyへ反映し、Androidは実購入productと各tierの実購入既定base plan自身のACTIVEを確認する。recognized旧plan/productの不在／INACTIVEは許容し、別productで代替しない。実Console・販売設定・envは変更しない。
+
+### 検証と残条件
+
+rootで分析／保存／累積／こころ天気／契約16suiteとnatural材料・旧metadata・購入hint・console診断をまとめて実行し、20file **349 PASS／FAIL・ERROR・SKIP0**（40.89秒、既存warning4）。その後のUUID表記互換補正は担当の関連API6suite **69 PASS／FAIL・SKIP0**で再検査した。実Auth・本番PostgREST・実ストア購入・新モデル／GPU・実機成功ではない。compilerの二欄修復、RNのowner寿命、Piece公開互換等の進行中の修復を、この検証だけで完了扱いにしない。
+
+候補は現在Live5065730eとは別。資料だけの旧head3195a024を製品source配置済みと混同しない。iOS7501の大ボタン／Piece今回修正はMash確認済みだが、今回の追加修復はまだbuild／配布／本人確認していない。保存currentは同guardで再利用されるため、compiler変更だけで本人currentを再解析したとはしない。月次当時版は維持する。研究4B通常採用・本人原入力の取得／再解析・DB変更・配置・署名build・実公開はこの候補準備で0。

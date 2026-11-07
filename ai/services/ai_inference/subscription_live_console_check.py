@@ -12,6 +12,7 @@ import httpx
 import jwt
 from fastapi import FastAPI, Header
 
+from subscription_bootstrap_store import _android_shared_product_ids, _primary_android_base_plan_id
 from subscription_config import (
     clean_optional_str,
     get_android_package_name,
@@ -380,10 +381,14 @@ async def _fetch_apple_live_snapshot() -> Dict[str, Any]:
     warnings: List[str] = []
     if not app_id:
         blocking_issues.append(f"Apple app was not found in App Store Connect for bundleId={bundle_id}.")
+    if not expected_plus_ids:
+        blocking_issues.append("Apple Plus product IDs are not configured.")
+    if not expected_premium_ids:
+        blocking_issues.append("Apple Premium product IDs are not configured.")
     if missing_plus_ids:
         blocking_issues.append(f"Apple Plus product IDs are missing in App Store Connect: {', '.join(missing_plus_ids)}")
     if missing_premium_ids:
-        warnings.append(f"Apple Premium product IDs are missing in App Store Connect: {', '.join(missing_premium_ids)}")
+        blocking_issues.append(f"Apple Premium product IDs are missing in App Store Connect: {', '.join(missing_premium_ids)}")
 
     return {
         "credentials_source": _apple_console_credentials_source(),
@@ -411,8 +416,12 @@ async def _fetch_google_live_snapshot() -> Dict[str, Any]:
 
     expected_plus_ids = sorted({pid for pid in get_android_plus_product_ids() if clean_optional_str(pid)})
     expected_premium_ids = sorted({pid for pid in get_android_premium_product_ids() if clean_optional_str(pid)})
+    purchase_product_ids = _android_shared_product_ids()
+    purchase_product_id = purchase_product_ids[0] if purchase_product_ids else None
+    plus_purchase_base_plan_id = _primary_android_base_plan_id("plus")
+    premium_purchase_base_plan_id = _primary_android_base_plan_id("premium")
 
-    product_ids = sorted(set(expected_plus_ids + expected_premium_ids))
+    product_ids = sorted(set(expected_plus_ids + expected_premium_ids + ([purchase_product_id] if purchase_product_id else [])))
     product_rows: List[Dict[str, Any]] = []
     found_product_ids: List[str] = []
     blocking_issues: List[str] = []
@@ -483,15 +492,35 @@ async def _fetch_google_live_snapshot() -> Dict[str, Any]:
     missing_plus_ids = sorted(pid for pid in expected_plus_ids if pid not in found_product_ids)
     missing_premium_ids = sorted(pid for pid in expected_premium_ids if pid not in found_product_ids)
 
-    plus_rows = [row for row in product_rows if row.get("product_id") in expected_plus_ids]
-    plus_active_base_plan_present = all(bool(row.get("has_active_base_plan")) for row in plus_rows) if plus_rows else False
+    purchase_rows = [row for row in product_rows if row.get("product_id") == purchase_product_id]
 
+    def has_active_purchase_base_plan(base_plan_id: Optional[str]) -> bool:
+        return bool(base_plan_id and purchase_rows) and all(
+            base_plan_id in {
+                plan.get("base_plan_id")
+                for plan in row.get("base_plans") or []
+                if _clean(plan.get("state")).upper() == "ACTIVE"
+            }
+            for row in purchase_rows
+        )
+
+    plus_active_base_plan_present = has_active_purchase_base_plan(plus_purchase_base_plan_id)
+    premium_active_base_plan_present = has_active_purchase_base_plan(premium_purchase_base_plan_id)
+
+    if not expected_plus_ids:
+        blocking_issues.append("Google Plus product IDs are not configured.")
+    if not expected_premium_ids:
+        blocking_issues.append("Google Premium product IDs are not configured.")
+    if not purchase_product_id:
+        blocking_issues.append("Google runtime purchase product ID is not configured.")
     if missing_plus_ids:
         blocking_issues.append(f"Google Plus product IDs are missing in Play Console: {', '.join(missing_plus_ids)}")
     if missing_premium_ids:
-        warnings.append(f"Google Premium product IDs are missing in Play Console: {', '.join(missing_premium_ids)}")
-    if plus_rows and not plus_active_base_plan_present:
-        blocking_issues.append("Google Plus subscription exists, but at least one expected Plus product has no ACTIVE base plan.")
+        blocking_issues.append(f"Google Premium product IDs are missing in Play Console: {', '.join(missing_premium_ids)}")
+    if not plus_active_base_plan_present:
+        blocking_issues.append("Google Plus runtime purchase base plan is missing or not ACTIVE in its purchase product.")
+    if not premium_active_base_plan_present:
+        blocking_issues.append("Google Premium runtime purchase base plan is missing or not ACTIVE in its purchase product.")
 
     return {
         "package_name": package_name,

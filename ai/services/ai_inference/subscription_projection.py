@@ -6,6 +6,7 @@ import os
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
+from uuid import UUID
 
 from subscription import (
     SubscriptionTier,
@@ -625,6 +626,15 @@ async def project_profile_tier(user_id: str) -> CanonicalSubscriptionState:
 
 
 async def persist_verified_purchase(*, user_id: str, verified_purchase: VerifiedPurchase) -> CanonicalSubscriptionState:
+    purchase_user_id = clean_optional_str(verified_purchase.app_user_id_hint)
+    if purchase_user_id:
+        owner_user_id = clean_optional_str(user_id)
+        try:
+            same_owner = UUID(purchase_user_id) == UUID(owner_user_id or "")
+        except ValueError:
+            same_owner = purchase_user_id == owner_user_id
+        if not same_owner:
+            raise PurchaseOwnershipConflictError("This purchase was created for another Cocolon account.")
     await upsert_purchase_claim(user_id=user_id, verified_purchase=verified_purchase)
     await upsert_entitlement_from_verified_purchase(user_id=user_id, verified_purchase=verified_purchase)
     return await project_profile_tier(user_id)

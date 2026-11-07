@@ -3152,9 +3152,11 @@ def _p75(xs: List[float]) -> Optional[float]:
 
 
 def _build_transition_records(entries: List[Any]) -> List[Dict[str, Any]]:
-    seq = sorted(list(entries or []), key=lambda e: str(getattr(e, "timestamp", "") or ""))
+    from analysis_engine.emotion_structure_engine.weekly import temporal_emotion_runs
+    pairs = [(prev, cur) for run in temporal_emotion_runs(entries)
+             for prev, cur in zip(run, run[1:])]
     out: List[Dict[str, Any]] = []
-    for prev, cur in zip(seq, seq[1:]):
+    for prev, cur in pairs:
         prev_dt = _parse_entry_dt(prev)
         cur_dt = _parse_entry_dt(cur)
         if prev_dt is None or cur_dt is None:
@@ -3460,7 +3462,7 @@ def _build_deep_control_model_payload(entries: List[Any], *, scope_kind: str, pe
             "maxPatterns": DEEP_MAX_CONTROL_PATTERNS,
         },
         "notes": [
-            "この deep モデルでは、連続するすべての感情遷移を観測対象として扱っています。",
+            "同時に記録した感情を、順番に変化したものとして扱いません。",
             "制御パターン数はデータから決まり、最大5件まで返します。",
         ],
     }

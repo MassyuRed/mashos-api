@@ -420,7 +420,7 @@ def _latest_monthly_scope_for_now(now_utc: Optional[datetime] = None) -> str:
 
 
 async def fetch_emotion_meta_for_hash(user_id: str, *, start_iso: Optional[str] = None, end_iso: Optional[str] = None) -> List[Dict[str, Any]]:
-    """Fetch (id, created_at, is_secret) rows for hashing.
+    """Fetch source fields used by the emotion material identity.
 
     Uses pagination and caps at SNAPSHOT_META_MAX_ROWS to avoid runaway loads.
     """
@@ -440,7 +440,7 @@ async def fetch_emotion_meta_for_hash(user_id: str, *, start_iso: Optional[str] 
 
         
         params: List[Tuple[str, str]] = [
-            ("select", "id,created_at,is_secret,category"),
+            ("select", "id,created_at,is_secret,memo,memo_action,category,emotions,emotion_details,emotion_strength_avg"),
             ("user_id", f"eq.{uid}"),
         ]
         if start_iso:
@@ -491,6 +491,15 @@ async def fetch_recent_emotions(user_id: str, *, include_secret: bool) -> List[D
     return list(reversed(rows))
 
 
+def _emotion_input_content_signature(row: Dict[str, Any]) -> str:
+    """Fingerprint every input dimension without retaining source text in metadata."""
+    content = {key: row.get(key) for key in (
+        "memo", "memo_action", "category", "emotions", "emotion_details", "emotion_strength_avg",
+    )}
+    encoded = json.dumps(content, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
 def compute_source_hash_from_emotion_meta(
     *,
     user_id: str,
@@ -498,19 +507,13 @@ def compute_source_hash_from_emotion_meta(
     snapshot_type: str,
     meta_rows: List[Dict[str, Any]],
 ) -> str:
-    """Compute a stable sha256 hash based on emotion meta rows.
-
-    We hash only meta fields to keep memory usage stable.
-    Hash changes when:
-    - a new row is added
-    - is_secret toggles (if included in the snapshot_type)
-    """
+    """Fingerprint membership, visibility and complete emotion input contents."""
     uid = str(user_id or "").strip()
     sc = str(scope or "").strip() or SNAPSHOT_SCOPE_DEFAULT
     st = str(snapshot_type or "").strip() or "internal"
 
     h = hashlib.sha256()
-    h.update(f"v1|{uid}|{sc}|{st}|".encode("utf-8"))
+    h.update(f"v2|{uid}|{sc}|{st}|".encode("utf-8"))
 
     for r in meta_rows:
         rid = str(r.get("id") or "")
@@ -519,8 +522,8 @@ def compute_source_hash_from_emotion_meta(
         # public snapshots should exclude secret rows entirely
         if st == "public" and is_secret:
             continue
-        category_sig = _category_signature(r.get("category"))
-        h.update((rid + "|" + created_at + "|" + ("1" if is_secret else "0") + "|" + category_sig + "\n").encode("utf-8"))
+        content_sig = _emotion_input_content_signature(r)
+        h.update((rid + "|" + created_at + "|" + ("1" if is_secret else "0") + "|" + content_sig + "\n").encode("utf-8"))
 
     return h.hexdigest()
 
@@ -909,7 +912,7 @@ def _material_meta_rows_from_rows(material_kind: str, rows: List[Dict[str, Any]]
             "is_secret": _row_is_secret(r),
         }
         if mk == "emotion_input":
-            row["content_sig"] = _category_signature(r.get("category"))
+            row["content_sig"] = _emotion_input_content_signature(r)
         elif mk == "echo":
             row["content_sig"] = "|".join([
                 str(r.get("q_instance_id") or ""),
@@ -1691,7 +1694,7 @@ async def get_emotion_period_public_input_status(*, user_id: str, scope: str) ->
 def _normalize_details(row: Dict[str, Any]) -> List[Dict[str, Any]]:
     """Normalize emotion details into [{type, strength}, ...]. (Match MyWeb logic)"""
     details = row.get("emotion_details")
-    if isinstance(details, list):
+    if isinstance(details, list) and details:
         out = []
         for it in details:
             if isinstance(it, dict):

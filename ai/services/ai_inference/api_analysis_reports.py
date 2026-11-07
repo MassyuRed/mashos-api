@@ -433,7 +433,7 @@ def _sb_headers(*, prefer: Optional[str] = None) -> Dict[str, str]:
 
 
 async def _sb_get(path: str, *, params: List[Tuple[str, str]]) -> httpx.Response:
-    return await sb_get(path, params=dict(params), timeout=10.0, headers=_sb_headers())
+    return await sb_get(path, params=params, timeout=10.0, headers=_sb_headers())
 
 
 async def _sb_post(path: str, *, params: List[Tuple[str, str]], json_body: Any, prefer: str) -> httpx.Response:
@@ -861,6 +861,17 @@ async def _fetch_latest_snapshot_hash(user_id: str, *, scope: str, snapshot_type
         )
     except Exception:
         return None
+
+    if resp.status_code not in (200, 206):
+        return None
+    try:
+        rows = resp.json()
+    except Exception:
+        return None
+    if isinstance(rows, list) and rows:
+        sh = str((rows[0] or {}).get("source_hash") or "").strip()
+        return sh or None
+    return None
 
 
 async def _fetch_latest_snapshot_row(
@@ -4246,17 +4257,6 @@ def _build_target_period_from_snapshot(report_type: str, period_start_iso: str, 
         title_meta=meta,
     )
 
-    if resp.status_code not in (200, 206):
-        return None
-    try:
-        rows = resp.json()
-    except Exception:
-        return None
-    if isinstance(rows, list) and rows:
-        sh = str((rows[0] or {}).get("source_hash") or "").strip()
-        return sh or None
-    return None
-
 
 def _parse_now_utc(now_iso: Optional[str]) -> datetime:
     if not now_iso:
@@ -4354,7 +4354,7 @@ def _build_target_period(report_type: str, now_utc: datetime) -> TargetPeriod:
 
 def _normalize_details(row: Dict[str, Any]) -> List[Dict[str, Any]]:
     details = row.get("emotion_details")
-    if isinstance(details, list):
+    if isinstance(details, list) and details:
         out = []
         for it in details:
             if isinstance(it, dict):

@@ -230,19 +230,71 @@ def test_cancelled_request_is_not_restarted_by_get_or_start(natural_case):
     assert len(calls) == 1
 
 
-def test_source_edit_before_save_rejects_old_reply(natural_case, qdb):
+@pytest.mark.parametrize("field,value", [
+    ("memo", "訂正した記録"),
+    ("category", ["仕事", "学習"]),
+    ("emotion_details", json.dumps([dict(type="平穏", strength="strong")])),
+])
+def test_source_edit_before_save_rejects_old_reply(natural_case, qdb, field, value):
     user, parent, service, calls = natural_case
     original = service.natural_reply_source
 
     async def edited(material):
         result = await original(material)
-        qdb.query("update public.emotions set memo='訂正した記録' where id=$1", [parent])
+        qdb.query(f"update public.emotions set {field}=$2 where id=$1", [parent, value])
         return result
     service.natural_reply_source = edited
     with pytest.raises(ThreadStoreError):
         run(service.start(user, parent))
     assert qdb.query("select count(*) as n from public.emlis_thread_events where kind='OBSERVATION' and thread_id in (select id from public.emlis_input_threads where original_emotion_id=$1)", [parent])["rows"][0]["n"] == 0
     assert len(calls) == 1
+
+
+@pytest.mark.parametrize("tier", ["free", "plus", "premium"])
+def test_complete_current_and_owned_history_input_fields_reach_recipient_source(natural_case, qdb, tier):
+    user, parent, service, calls = natural_case
+    categories = ["人生", "価値観", "学習", "健康", "恋愛", "人間関係", "趣味", "仕事", "生活"]
+    details = [dict(type="喜び", strength="weak"), dict(type="不安", strength="strong"),
+               dict(type="平穏", strength="medium"), dict(type="悲しみ", strength="strong"),
+               dict(type="怒り", strength="weak")]
+    memo = "会議に向けて、不安もあるけれど少し楽しみだ。"
+    action = "会議の資料を読み直した。"
+    qdb.query("update public.profiles set subscription_tier=$2 where id=$1", [user, tier])
+    qdb.query("update public.emotions set memo=$2,memo_action=$3,category=$4,emotions=$5,emotion_details=$6 where id=$1",
+        [parent, memo, action, categories, [d["type"] for d in details], json.dumps(details, ensure_ascii=False)])
+    past = str(uuid4())
+    past_categories = ["学習", "仕事"]
+    past_details = [dict(type="不安", strength="weak"), dict(type="平穏", strength="strong")]
+    qdb.query("insert into public.emotions values ($1,$2,(now()-interval '1 day') at time zone 'UTC',$3,$4,$5,$6,$7)",
+        [past, user, "会議の前には迷っていた。", action, past_categories,
+         [d["type"] for d in past_details], json.dumps(past_details, ensure_ascii=False)])
+
+    saved = run(service.start(user, parent))
+    material = json.loads(calls[0].material_json)
+    current = material["current"]
+    assert current["memo"] == memo and current["memo_action"] == action
+    assert current["category"] == categories
+    assert current["emotion_details"] == details
+    assert current["emotions"] == [d["type"] for d in details]
+    history = material["past_user_records"]
+    assert [record["input_id"] for record in history] == ([] if tier == "free" else [past])
+    if history:
+        assert history[0]["original"]["category"] == past_categories
+        assert history[0]["original"]["emotion_details"] == past_details
+        assert history[0]["original"]["memo_action"] == action
+    assert run(service.get(user, parent))["current_observation"] == saved["current_observation"]
+    assert len(calls) == 1
+
+
+def test_self_insight_keeps_its_distinct_selection_and_fixed_storage_strength(natural_case, qdb):
+    user, parent, service, calls = natural_case
+    details = [dict(type="自己理解", strength="medium")]
+    qdb.query("update public.emotions set emotions=$2,emotion_details=$3 where id=$1",
+        [parent, ["自己理解"], json.dumps(details, ensure_ascii=False)])
+    run(service.start(user, parent))
+    current = json.loads(calls[0].material_json)["current"]
+    assert current["emotions"] == ["自己理解"] and current["emotion_details"] == details
+    assert current["category"] == ["仕事"]
 
 
 def test_another_owner_cannot_read_reply(natural_case):
@@ -569,6 +621,11 @@ def test_http_provider_rejects_partial_wrong_model_or_question_without_retry(cha
 def test_http_provider_sends_only_admitted_material_and_preserves_reply():
     def transport(request):
         payload = json.loads(request.content)
+        instructions = payload["messages"][0]["content"]
+        for contract_text in ("memoは「考えたこと・感じたこと」", "memo_actionは「出来事・行動」",
+                              "categoryは本人が複数選べる記録の文脈", "weakは弱、mediumは中、strongは強",
+                              "自己理解はこの五つの感情とは別の本人選択", "created_atは記録した時点"):
+            assert contract_text in instructions
         assert payload["messages"][1]["content"] == '{"current":{"memo":"合成入力"}}'
         assert payload["chat_template_kwargs"] == {"enable_thinking": False}
         assert request.headers["Authorization"] == "Bearer synthetic-only"

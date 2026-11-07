@@ -175,7 +175,7 @@ def _map_emotion_key(value: Any) -> Optional[str]:
 
 def _normalize_details(row: Dict[str, Any]) -> List[Dict[str, Any]]:
     details = row.get("emotion_details") if isinstance(row.get("emotion_details"), list) else None
-    if isinstance(details, list):
+    if isinstance(details, list) and details:
         return [item for item in details if isinstance(item, dict)]
     emotions = row.get("emotions") if isinstance(row.get("emotions"), list) else []
     return [{"type": token, "strength": "medium"} for token in emotions if str(token or "").strip()]

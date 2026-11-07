@@ -21,6 +21,7 @@ from emlis_ai_types import (
     WorldModelHypothesis,
 )
 from emlis_ai_user_word_anchor_service import extract_user_word_anchors
+from emlis_ai_current_input_bundle import normalize_emlis_current_input
 from emlis_ai_phrase_shaping_service import shape_user_phrases
 from emlis_ai_understanding_frame_service import build_understanding_frame
 from emlis_ai_input_meaning_block_service import (
@@ -135,19 +136,24 @@ def _response_mode(*, labels: List[str], categories: List[str], anchors: List[Us
     return "receive"
 
 
-def _extract_dominant_emotion(bundle: SourceBundle) -> tuple[Optional[str], Optional[str]]:
-    details = _current_emotion_details(bundle)
+def _dominant_emotion_from_input(current_input: Dict[str, Any]) -> tuple[Optional[str], Optional[str]]:
+    details = normalize_emlis_current_input(current_input).get("emotion_details") or []
     if not details:
-        emotions = bundle.current_input.get("emotions")
-        if isinstance(emotions, list) and emotions:
-            return str(emotions[0]).strip() or None, None
         return None, None
 
-    top = sorted(details, key=lambda item: _strength_score(item.get("strength")), reverse=True)[0]
+    max_score = max(_strength_score(item.get("strength")) for item in details)
+    strongest = [item for item in details if _strength_score(item.get("strength")) == max_score]
+    if len({_emotion_label_from_item(item) for item in strongest}) != 1:
+        return None, None
+    top = strongest[0]
     return (
         _emotion_label_from_item(top),
         str(top.get("strength") or "").strip().lower() or None,
     )
+
+
+def _extract_dominant_emotion(bundle: SourceBundle) -> tuple[Optional[str], Optional[str]]:
+    return _dominant_emotion_from_input(bundle.current_input)
 
 
 def _emotion_labels(bundle: SourceBundle) -> List[str]:
@@ -194,13 +200,7 @@ def _build_same_day_change(bundle: SourceBundle) -> Optional[WorldModelHypothesi
         return None
 
     previous = bundle.same_day_recent_inputs[0]
-    prev_details = previous.get("emotion_details") if isinstance(previous.get("emotion_details"), list) else []
-    prev_top = None
-    prev_strength = None
-    if prev_details and isinstance(prev_details[0], dict):
-        prev_item = prev_details[0]
-        prev_top = _emotion_label_from_item(prev_item)
-        prev_strength = str(prev_item.get("strength") or "").strip().lower() or None
+    prev_top, prev_strength = _dominant_emotion_from_input(previous)
 
     current_top, current_strength = _extract_dominant_emotion(bundle)
     if not current_top or not prev_top:
@@ -249,12 +249,10 @@ def _build_recovery_signal(bundle: SourceBundle) -> Optional[WorldModelHypothesi
         return None
 
     previous = same_day_recent[0]
-    prev_details = previous.get("emotion_details") if isinstance(previous.get("emotion_details"), list) else []
-    if not prev_details or not isinstance(prev_details[0], dict):
+    prev_top, prev_strength = _dominant_emotion_from_input(previous)
+    if not prev_top:
         return None
 
-    prev_top = _emotion_label_from_item(prev_details[0]) or ""
-    prev_strength = str(prev_details[0].get("strength") or "").strip().lower()
     if prev_top == current_top and prev_strength == current_strength:
         return None
 

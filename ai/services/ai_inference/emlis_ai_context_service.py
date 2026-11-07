@@ -13,7 +13,7 @@ from emlis_ai_readers import (
     get_myweb_home_summary_for_emlis_ai,
 )
 from emlis_ai_greeting_state_store import decide_greeting_for_user
-from emlis_ai_current_input_bundle import normalize_emlis_current_input
+from emlis_ai_current_input_bundle import build_emlis_current_input_bundle, normalize_emlis_current_input
 from emlis_ai_types import DerivedUserModel, EmlisAICapabilityConfig, SourceBundle
 from emlis_ai_user_model_store import load_emlis_ai_user_model_for_user
 from emotion_history_search_service import (
@@ -122,7 +122,7 @@ def build_input_effort_signals(
 ) -> Dict[str, Any]:
     memo_char_count = _count_chars(current_input.get("memo"))
     memo_action_char_count = _count_chars(current_input.get("memo_action"))
-    emotion_count = len(current_input.get("emotion_details") or []) if isinstance(current_input.get("emotion_details"), list) else len(current_input.get("emotions") or []) if isinstance(current_input.get("emotions"), list) else 0
+    emotion_count = len(build_emlis_current_input_bundle(current_input).emotions)
     category_count = len(current_input.get("category") or []) if isinstance(current_input.get("category"), list) else 0
     has_today_question_link = _has_today_question_link(current_input, latest_today_question_answer or {})
     same_day_continuation = bool(same_day_recent_inputs or [])
