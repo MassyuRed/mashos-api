@@ -2350,10 +2350,18 @@ def _admit_analysis_semantic_map_response(prepared, response):
         and type(raw) is str and len(raw.encode('utf-8')) <= SEMANTIC_MAP_MAX_RESPONSE_BYTES
         and getattr(response, 'raw_sha256', None) == hashlib.sha256(raw.encode('utf-8')).hexdigest(),
         'analysis_semantic_response_unbound')
+    # Markdown is transport framing, not an authored replacement. Accept one
+    # complete JSON fence while binding evidence/hashes to the original raw.
+    fence = re.fullmatch(r'[ \t\r\n]*```(?:json)?[ \t]*\r?\n([\s\S]*)\r?\n```[ \t\r\n]*', raw, re.IGNORECASE)
+    fenced = fence is not None
+    document = fence.group(1) if fenced else raw
     try:
-        packet = json.loads(raw, object_pairs_hook=_semantic_map_strict_object,
+        packet = json.loads(document, object_pairs_hook=_semantic_map_strict_object,
             parse_constant=lambda value: (_ for _ in ()).throw(AnalysisSemanticMapError('analysis_semantic_map_invalid')))
-    except (ValueError, TypeError):
+    except (ValueError, TypeError) as exc:
+        import logging
+        logging.getLogger(__name__).warning('analysis_semantic_json_rejected type=%s fenced=%s position=%s',
+            type(exc).__name__, fenced, exc.pos if type(exc) is json.JSONDecodeError else None)
         raise AnalysisSemanticMapError('analysis_semantic_map_invalid') from None
     return packet
 

@@ -292,3 +292,35 @@ def test_legacy_nullable_metadata_keeps_source_material_and_reaches_semantic_dis
     record = json.loads(original_material)['records'][0]
     for key, value in metadata.items():
         assert record[{'category': 'selected_categories', 'emotions': 'selected_emotions'}.get(key, key)] == value
+
+
+@pytest.mark.parametrize('opening', ['```json', '```'])
+def test_complete_json_fence_keeps_original_response_binding_and_source_evidence(opening):
+    prepared = semantic.prepare_semantic_map(OWNER, sample())
+    raw = opening + '\n' + semantic._canonical(candidate()) + '\n```'
+    bound = response(prepared, raw=raw)
+    artifact, _ = semantic.build_semantic_map(prepared, bound)
+    projection = artifact.safe_projection(authenticated_owner_scope=OWNER)
+    assert [n['title'] for n in projection['nodes']] == [n['title'] for n in candidate()['nodes']]
+    assert bound.raw == raw and bound.raw_sha256 == hashlib.sha256(raw.encode()).hexdigest()
+    with pytest.raises(semantic.SemanticMapError, match='analysis_semantic_response_unbound'):
+        semantic.build_semantic_map(prepared, replace(bound, raw_sha256='0' * 64))
+
+
+@pytest.mark.parametrize('variant', ['outside_prose', 'extra_block', 'duplicate_key', 'control_inside', 'control_outside'])
+def test_json_fence_does_not_admit_extra_authored_text_or_duplicate_keys(variant):
+    prepared = semantic.prepare_semantic_map(OWNER, sample())
+    document = semantic._canonical(candidate())
+    if variant == 'duplicate_key':
+        document = document.replace('"overview":', '"overview":{},"overview":', 1)
+    elif variant == 'control_inside':
+        document = document.replace('{', '{\x0b', 1)
+    raw = '```json\n' + document + '\n```'
+    if variant == 'outside_prose':
+        raw = 'PRIVATE_MODEL_TEXT_MUST_NOT_REACH_LOGS\n' + raw
+    elif variant == 'control_outside':
+        raw = '\x0c' + raw
+    elif variant == 'extra_block':
+        raw += '\n```json\n{}\n```'
+    with pytest.raises(semantic.SemanticMapError, match='analysis_semantic_map_invalid'):
+        semantic.build_semantic_map(prepared, response(prepared, raw=raw))
