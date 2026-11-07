@@ -43,6 +43,18 @@ def generation_stage(stage):
     print('analysis_generation_stage=' + stage + ' monotonic=' + str(round(time.monotonic(), 3)), flush=True)
 
 
+def semantic_free_text_tokens(prefix, batch, sent, blocked):
+    """Exclude raw-control/blank loops only from generated prose, not quotes."""
+    allowed = prefix(batch, sent)
+    state = prefix.token_enforcer.prefix_states[tuple(sent.tolist())].parser
+    key = state.shortcut_key()
+    if isinstance(key, tuple) and key[0] == 'json_freetext':
+        allowed = [token for token in allowed if token not in blocked]
+        if not allowed:
+            raise ValueError('semantic_free_text_tokens_unavailable')
+    return allowed
+
+
 def semantic_output_schema(messages):
     """Constrain protocol and source quotes; meanings remain model-generated."""
     if (type(messages) is not list or len(messages) != 2
@@ -224,6 +236,7 @@ def load_generator(adapter, process_stop, *, weights_sha256=None, config_sha256=
     if selected_identity:
         adapter_identity(adapter, *selected_identity)
     tokenizer_data = None
+    blocked_free_text = set()
     if semantic_json:
         private_log_filter = SourcePrivateConstraintLog()
         logging.getLogger().addFilter(private_log_filter)
@@ -236,6 +249,8 @@ def load_generator(adapter, process_stop, *, weights_sha256=None, config_sha256=
             raise ValueError('semantic_format_source_changed')
         tokenizer_data = build_token_enforcer_tokenizer_data(tokenizer,
             vocab_size=min(len(tokenizer), model.get_output_embeddings().weight.shape[0]))
+        blocked_free_text = {token for token, decoded, _ in tokenizer_data.regular_tokens
+            if not decoded.strip() or any(ord(char) < 32 for char in decoded)}
 
     class Deadline(StoppingCriteria):
         def __init__(self, end):
@@ -268,7 +283,7 @@ def load_generator(adapter, process_stop, *, weights_sha256=None, config_sha256=
                 measured = progress % 128 == 0
                 if measured:
                     generation_stage('prefix_enter_' + str(progress))
-                allowed = allowed_prefix(batch, sent)
+                allowed = semantic_free_text_tokens(allowed_prefix, batch, sent, blocked_free_text)
                 if measured:
                     generation_stage('prefix_exit_' + str(progress))
                 return allowed
