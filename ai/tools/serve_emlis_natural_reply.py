@@ -49,11 +49,12 @@ def semantic_free_text_tokens(prefix, batch, sent, blocked, invalid_json_tokens=
     # Source quote candidates contain no raw controls. JSON layout can be
     # compact. Empty decoder entries otherwise enter LMFE's root trie and are
     # allowed at every state without advancing the parser.
-    allowed = [token for token in allowed if token not in invalid_json_tokens]
     state = prefix.token_enforcer.prefix_states[tuple(sent.tolist())].parser
     key = state.shortcut_key()
+    excluded = invalid_json_tokens
     if isinstance(key, tuple) and key[0] == 'json_freetext':
-        allowed = [token for token in allowed if token not in blocked]
+        excluded = invalid_json_tokens | blocked
+    allowed = [token for token in allowed if token not in excluded]
     if not allowed:
         raise ValueError('semantic_free_text_tokens_unavailable')
     return allowed
