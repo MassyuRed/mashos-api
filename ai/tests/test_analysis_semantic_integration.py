@@ -445,3 +445,93 @@ def test_semantic_actual_isolated_sql_save_evidence_non_generating_reads_and_imm
         assert db.query('select count(*) as n from public.analysis_observed_artifacts')['rows'][0]['n'] == 2
 
     asyncio.run(run())
+
+
+def test_background_latest_responds_without_generating_and_status_never_requeues(monkeypatch):
+    import api_self_structure as latest
+    import astor_job_queue as queue
+    import supabase_client
+    store = OwnedStore()
+    setup_store(monkeypatch, store)
+    monkeypatch.setenv('COCOLON_ANALYSIS_OBSERVED_MODE', 'development')
+    monkeypatch.setenv('ASTOR_WORKER_QUEUE_ENABLED', 'true')
+    monkeypatch.setattr(latest, '_resolve_user_id_from_token', AsyncMock(return_value=OWNER))
+    provider = AsyncMock(side_effect=AssertionError('background request acquired model'))
+    monkeypatch.setattr(sources, 'application_analysis_model_source', provider)
+    job_state = {'status': None}
+    async def queue_read(path, *, params, **kwargs):
+        assert params['user_id'] == 'eq.' + OWNER
+        assert params['job_key'] == 'eq.myprofile_latest_refresh:' + OWNER
+        return httpx.Response(200, json=[] if job_state['status'] is None else [dict(
+            status=job_state['status'], job_type='myprofile_latest_refresh_v1')])
+    async def enqueue(**kwargs):
+        assert kwargs['payload']['force'] is False
+        job_state['status'] = 'queued'
+    enqueue_mock = AsyncMock(side_effect=enqueue)
+    monkeypatch.setattr(queue, 'enqueue_job', enqueue_mock)
+    monkeypatch.setattr(supabase_client, 'sb_get', queue_read)
+    app = FastAPI()
+    latest.register_self_structure_routes(app)
+
+    async def scenario():
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url='http://synthetic') as client:
+            headers = {'Authorization': 'Bearer synthetic', 'X-Watashi-Map-Renderer': 'semantic.v1'}
+            denied = await client.get('/self-structure/latest?background=true')
+            assert denied.status_code == 401 and enqueue_mock.await_count == 0
+            first = await client.get('/self-structure/latest?background=true', headers=headers)
+            assert first.status_code == 200, first.text
+            assert first.json()['has_visible_content'] is False
+            assert first.json()['refresh_status'] == 'queued'
+            repeated = await client.get('/self-structure/latest?background=true', headers=headers)
+            assert repeated.json()['refresh_status'] == 'queued'
+            assert enqueue_mock.await_count == 1
+            job_state['status'] = 'running'
+            running = await client.get('/self-structure/latest/status', headers=headers)
+            assert running.status_code == 200 and running.json()['refresh_status'] == 'running'
+            job_state['status'] = 'done'  # An empty-material generation has no saved current.
+            empty = await client.get('/self-structure/latest/status', headers=headers)
+            assert empty.status_code == 200 and empty.json()['refresh_status'] is None
+            assert not empty.json()['has_visible_content']
+            read_only = await client.get('/self-structure/latest?background=true&ensure=false&force=true', headers=headers)
+            assert read_only.status_code == 200 and read_only.json()['refresh_status'] is None
+            assert enqueue_mock.await_count == 1
+            assert store.saved == []
+            provider.assert_not_called()
+    asyncio.run(scenario())
+
+
+def test_background_manual_update_keeps_current_until_worker_commits_and_preserves_sync_default(monkeypatch):
+    import api_self_structure as latest
+    store = OwnedStore()
+    setup_store(monkeypatch, store)
+    monkeypatch.setenv('COCOLON_ANALYSIS_OBSERVED_MODE', 'development')
+    monkeypatch.setattr(latest, '_resolve_user_id_from_token', AsyncMock(return_value=OWNER))
+    acquired = []
+    source = semantic_source(lambda request: (acquired.append(request) or httpx.Response(200, json=completion())))
+    monkeypatch.setattr(sources, 'application_analysis_model_source', lambda: source)
+    pending = AsyncMock(return_value='queued')
+    monkeypatch.setattr(service, 'request_map_refresh', pending)
+    monkeypatch.setattr(service, 'map_refresh_status', AsyncMock(return_value='queued'))
+    app = FastAPI()
+    latest.register_self_structure_routes(app)
+    async def scenario():
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url='http://synthetic') as client:
+            headers = {'Authorization': 'Bearer synthetic', 'X-Watashi-Map-Renderer': 'semantic.v1'}
+            created = await client.get('/self-structure/latest', headers=headers)
+            assert created.status_code == 200 and len(acquired) == len(store.saved) == 1
+            pending.assert_not_awaited()
+            before = deepcopy(created.json())
+            refreshing = await client.get('/self-structure/latest?background=true&force=true', headers=headers)
+            body = refreshing.json()
+            assert refreshing.status_code == 200 and body['refresh_status'] == 'queued'
+            assert body['report_id'] == before['report_id'] and body['meta'] == before['meta']
+            assert body['content_text'] == before['content_text']
+            pending.assert_awaited_once_with(OWNER, force=True, trigger='manual')
+            assert len(acquired) == len(store.saved) == 1
+            # Source changes hide the old current rather than returning its previous artifact.
+            store.current = None
+            hidden = await client.get('/self-structure/latest?background=true&ensure=false', headers=headers)
+            assert hidden.status_code == 200 and hidden.json()['has_visible_content'] is False
+            assert hidden.json()['meta'] is None and hidden.json()['content_text'] is None
+            assert len(acquired) == 1
+    asyncio.run(scenario())

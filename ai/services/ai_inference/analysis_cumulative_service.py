@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from datetime import date
 import inspect
 import json
+import os
 import re
 from typing import TYPE_CHECKING, Callable
 from uuid import UUID, uuid4
@@ -816,7 +817,66 @@ async def map_status(user_id):
     row = result['items'][0] if result['items'] else None
     return dict(version_key=row['content_json']['watashiMap']['projection_of'] if row else None,
         generated_at=row['generated_at'] if row else None, saved_report_mode='standard' if row else None,
-        has_visible_content=bool(row), skip_reason=None if row else 'analysis_saved_map_unavailable')
+        has_visible_content=bool(row), skip_reason=None if row else 'analysis_saved_map_unavailable',
+        refresh_status=await map_refresh_status(user_id))
+
+
+def _map_refresh_queue_enabled():
+    return (observed_mode() == 'development' and
+        os.getenv('ASTOR_WORKER_QUEUE_ENABLED', 'false').strip().lower() in {'1', 'true', 'yes', 'y', 'on'})
+
+
+async def map_refresh_status(user_id):
+    """Read only the authenticated owner's existing refresh-job state."""
+    owner = _owner(user_id)
+    if not _map_refresh_queue_enabled():
+        return None
+    from astor_job_queue import JOBS_TABLE
+    from supabase_client import sb_get
+    response = await sb_get(f'/rest/v1/{JOBS_TABLE}', params={
+        'select': 'status,job_type', 'user_id': 'eq.' + owner,
+        'job_key': 'eq.myprofile_latest_refresh:' + owner, 'limit': '1'}, timeout=3.0)
+    if response.status_code != 200:
+        raise HTTPException(503, 'analysis_refresh_status_unavailable')
+    try:
+        rows = response.json()
+        if type(rows) is not list or len(rows) > 1 or (rows and type(rows[0]) is not dict):
+            raise ValueError
+        row = rows[0] if rows else None
+        if row and row.get('job_type') == 'myprofile_latest_refresh_v1':
+            status = row.get('status')
+            if status in {'queued', 'running', 'failed'}:
+                return status
+        return None
+    except (ValueError, TypeError, KeyError):
+        raise HTTPException(503, 'analysis_refresh_status_unavailable') from None
+
+
+async def request_map_refresh(user_id, *, force=False, trigger='map_view', requested_at=None,
+                              debounce_seconds=20):
+    """Queue an existing ASTOR refresh without acquiring a model response here.
+
+    Saved-current and pending-job reads prevent ordinary screen polling from
+    resetting the job's debounce or replacing an explicit forced update.
+    """
+    owner = _owner(user_id)
+    if not _map_refresh_queue_enabled():
+        return None
+    if trigger not in {'map_view', 'manual', 'emotion_submit'}:
+        raise ValueError('analysis_refresh_trigger_invalid')
+    if not force and (await read_maps(owner, limit=1, metadata_only=True))['items']:
+        return await map_refresh_status(owner)
+    status = await map_refresh_status(owner)
+    if not force and trigger != 'emotion_submit' and status in {'queued', 'running'}:
+        return status
+    from datetime import datetime, timezone
+    from astor_job_queue import enqueue_job
+    await enqueue_job(job_key='myprofile_latest_refresh:' + owner,
+        job_type='myprofile_latest_refresh_v1', user_id=owner,
+        payload=dict(trigger=trigger, force=bool(force), requested_at=requested_at or
+            datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')),
+        debounce_seconds=debounce_seconds, priority=50)
+    return status if status == 'running' else 'queued'
 
 
 async def map_history(user_id, *, limit=60, offset=0):

@@ -1693,3 +1693,121 @@ def test_real_sql_answer_edit_during_response_rejects_whole_commit(sql_source, a
     assert error.value.status_code == 409 and error.value.detail == '40001' and len(calls) == 1
     assert db.query('select count(*) as n from public.analysis_observed_artifacts')['rows'][0]['n'] == 0
     assert db.query('select count(*) as n from public.analysis_cumulative_months')['rows'][0]['n'] == 0
+
+
+@pytest.mark.parametrize('status,expected', [('queued', 'queued'), ('running', 'running'),
+    ('failed', 'failed'), ('done', None)])
+def test_background_refresh_status_reads_only_owner_job_metadata(monkeypatch, status, expected):
+    import astor_job_queue as queue
+    import supabase_client
+    monkeypatch.setenv('ASTOR_WORKER_QUEUE_ENABLED', 'true')
+    monkeypatch.setattr(service, 'observed_mode', lambda: 'development')
+    read = AsyncMock(return_value=httpx.Response(200, json=[dict(status=status,
+        job_type='myprofile_latest_refresh_v1')]))
+    enqueue = AsyncMock(side_effect=AssertionError('status read must not enqueue'))
+    monkeypatch.setattr(supabase_client, 'sb_get', read)
+    monkeypatch.setattr(queue, 'enqueue_job', enqueue)
+    assert run(service.map_refresh_status(OWNER)) == expected
+    params = read.await_args.kwargs['params']
+    assert params == {'select': 'status,job_type', 'user_id': 'eq.' + OWNER,
+        'job_key': 'eq.myprofile_latest_refresh:' + OWNER, 'limit': '1'}
+    enqueue.assert_not_awaited()
+
+
+def test_background_status_does_not_adopt_another_job_family_or_provider_error(monkeypatch):
+    import supabase_client
+    monkeypatch.setenv('ASTOR_WORKER_QUEUE_ENABLED', 'true')
+    monkeypatch.setattr(service, 'observed_mode', lambda: 'development')
+    read = AsyncMock(return_value=httpx.Response(200, json=[dict(status='running',
+        job_type='another_family')]))
+    monkeypatch.setattr(supabase_client, 'sb_get', read)
+    assert run(service.map_refresh_status(OWNER)) is None
+    read.return_value = httpx.Response(503, text='SYNTHETIC_PRIVATE_QUEUE_DETAIL')
+    with pytest.raises(HTTPException) as exc:
+        run(service.map_refresh_status(OWNER))
+    assert exc.value.status_code == 503
+    assert exc.value.detail == 'analysis_refresh_status_unavailable'
+    assert 'SYNTHETIC_PRIVATE_QUEUE_DETAIL' not in str(exc.value)
+
+
+@pytest.mark.parametrize('status', ['queued', 'running'])
+def test_background_view_does_not_postpone_pending_generation_or_replace_force(monkeypatch, status):
+    import astor_job_queue as queue
+    monkeypatch.setenv('ASTOR_WORKER_QUEUE_ENABLED', 'true')
+    monkeypatch.setattr(service, 'observed_mode', lambda: 'development')
+    monkeypatch.setattr(service, 'read_maps', AsyncMock(return_value={'items': []}))
+    monkeypatch.setattr(service, 'map_refresh_status', AsyncMock(return_value=status))
+    enqueue = AsyncMock()
+    monkeypatch.setattr(queue, 'enqueue_job', enqueue)
+    assert run(service.request_map_refresh(OWNER)) == status
+    enqueue.assert_not_awaited()
+    service.read_maps.assert_awaited_with(OWNER, limit=1, metadata_only=True)
+
+
+def test_background_existing_current_is_reused_and_manual_force_is_explicit(monkeypatch):
+    import astor_job_queue as queue
+    monkeypatch.setenv('ASTOR_WORKER_QUEUE_ENABLED', 'true')
+    monkeypatch.setattr(service, 'observed_mode', lambda: 'development')
+    read = AsyncMock(return_value={'items': [{'id': 'synthetic-visible-current'}]})
+    monkeypatch.setattr(service, 'read_maps', read)
+    monkeypatch.setattr(service, 'map_refresh_status', AsyncMock(return_value='running'))
+    enqueue = AsyncMock()
+    monkeypatch.setattr(queue, 'enqueue_job', enqueue)
+    assert run(service.request_map_refresh(OWNER)) == 'running'
+    enqueue.assert_not_awaited()
+    assert run(service.request_map_refresh(OWNER, force=True, trigger='manual',
+        requested_at='2026-11-08T02:00:00Z')) == 'running'
+    enqueue.assert_awaited_once_with(job_key='myprofile_latest_refresh:' + OWNER,
+        job_type='myprofile_latest_refresh_v1', user_id=OWNER,
+        payload={'trigger': 'manual', 'force': True, 'requested_at': '2026-11-08T02:00:00Z'},
+        debounce_seconds=20, priority=50)
+
+
+def test_background_first_request_queues_without_model_or_snapshot_generation(monkeypatch):
+    import astor_job_queue as queue
+    monkeypatch.setenv('ASTOR_WORKER_QUEUE_ENABLED', 'true')
+    monkeypatch.setattr(service, 'observed_mode', lambda: 'development')
+    monkeypatch.setattr(service, 'read_maps', AsyncMock(return_value={'items': []}))
+    monkeypatch.setattr(service, 'map_refresh_status', AsyncMock(return_value=None))
+    monkeypatch.setattr(service, '_model_response', AsyncMock(side_effect=AssertionError('foreground generation')))
+    enqueue = AsyncMock()
+    monkeypatch.setattr(queue, 'enqueue_job', enqueue)
+    assert run(service.request_map_refresh(OWNER, trigger='emotion_submit',
+        requested_at='2026-11-08T02:00:00Z')) == 'queued'
+    assert enqueue.await_args.kwargs['payload'] == {'trigger': 'emotion_submit',
+        'force': False, 'requested_at': '2026-11-08T02:00:00Z'}
+    assert enqueue.await_args.kwargs['debounce_seconds'] == 20
+    assert enqueue.await_args.kwargs['priority'] == 50
+    service._model_response.assert_not_awaited()
+
+
+@pytest.mark.parametrize('status', ['queued', 'running'])
+def test_background_saved_input_marks_pending_job_dirty_without_losing_requested_at(monkeypatch, status):
+    import astor_job_queue as queue
+    monkeypatch.setenv('ASTOR_WORKER_QUEUE_ENABLED', 'true')
+    monkeypatch.setattr(service, 'observed_mode', lambda: 'development')
+    monkeypatch.setattr(service, 'read_maps', AsyncMock(return_value={'items': []}))
+    monkeypatch.setattr(service, 'map_refresh_status', AsyncMock(return_value=status))
+    enqueue = AsyncMock()
+    monkeypatch.setattr(queue, 'enqueue_job', enqueue)
+    assert run(service.request_map_refresh(OWNER, trigger='emotion_submit',
+        requested_at='2026-11-08T02:00:01.123456Z')) == status
+    enqueue.assert_awaited_once_with(job_key='myprofile_latest_refresh:' + OWNER,
+        job_type='myprofile_latest_refresh_v1', user_id=OWNER,
+        payload={'trigger': 'emotion_submit', 'force': False,
+            'requested_at': '2026-11-08T02:00:01.123456Z'}, debounce_seconds=20, priority=50)
+
+
+@pytest.mark.parametrize('mode,enabled', [('development', 'false'), ('read_only', 'true')])
+def test_background_disabled_queue_or_read_only_never_queues(monkeypatch, mode, enabled):
+    import astor_job_queue as queue
+    import supabase_client
+    monkeypatch.setenv('ASTOR_WORKER_QUEUE_ENABLED', enabled)
+    monkeypatch.setattr(service, 'observed_mode', lambda: mode)
+    read, enqueue = AsyncMock(), AsyncMock()
+    monkeypatch.setattr(supabase_client, 'sb_get', read)
+    monkeypatch.setattr(queue, 'enqueue_job', enqueue)
+    assert run(service.request_map_refresh(OWNER)) is None
+    assert run(service.map_refresh_status(OWNER)) is None
+    read.assert_not_awaited()
+    enqueue.assert_not_awaited()

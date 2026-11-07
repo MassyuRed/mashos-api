@@ -1907,6 +1907,24 @@ async def _post_submit_background_async(
     is_secret: bool,
     notify_friends: bool,
 ) -> None:
+    # Reserve the cumulative map before unrelated notification/ingest work.
+    # Only the durable worker generates it; the input response never waits for
+    # the model, and the 30s side-effect timeout cannot cancel its generation.
+    cumulative_refresh_handled = False
+    if ASTOR_WORKER_QUEUE_ENABLED and MYPROFILE_LATEST_AUTO_REFRESH_ENABLED:
+        from analysis_observed_service import observed_enabled
+        if observed_enabled():
+            cumulative_refresh_handled = True
+            try:
+                from analysis_cumulative_service import request_map_refresh
+                await request_map_refresh(user_id, trigger="emotion_submit",
+                    requested_at=created_at,
+                    debounce_seconds=ASTOR_SELF_STRUCTURE_DEBOUNCE_SECONDS)
+            except Exception:
+                # The saved input remains valid. The background map read can
+                # reserve the same job again if this best-effort enqueue failed.
+                logger.warning("Cumulative map refresh enqueue failed after input save")
+
     # 1) 感情通知（EmotionLog 用タイムライン + Push）
     if notify_friends:
         try:
@@ -1947,16 +1965,17 @@ async def _post_submit_background_async(
             if ASTOR_WORKER_QUEUE_ENABLED:
                 from astor_job_queue import enqueue_job as _enqueue_job
 
-                await _enqueue_job(
-                    job_key=f"myprofile_latest_refresh:{user_id}",
-                    job_type="myprofile_latest_refresh_v1",
-                    user_id=user_id,
-                    payload={
-                        "trigger": "emotion_submit",
-                        "requested_at": created_at,
-                    },
-                    priority=50,
-                )
+                if not cumulative_refresh_handled:
+                    await _enqueue_job(
+                        job_key=f"myprofile_latest_refresh:{user_id}",
+                        job_type="myprofile_latest_refresh_v1",
+                        user_id=user_id,
+                        payload={
+                            "trigger": "emotion_submit",
+                            "requested_at": created_at,
+                        },
+                        priority=50,
+                    )
                 # 4) Central material snapshots (internal/public) are generated in worker (debounced)
                 try:
                     if ASTOR_SNAPSHOT_ENQUEUE_ENABLED:

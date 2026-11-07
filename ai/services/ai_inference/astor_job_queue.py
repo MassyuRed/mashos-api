@@ -50,8 +50,7 @@ QUEUE_STATS_LIMIT = int(os.getenv("ASTOR_QUEUE_STATS_LIMIT", "5000") or "5000")
 def _now_iso_z() -> str:
     return (
         datetime.now(timezone.utc)
-        .replace(microsecond=0)
-        .isoformat()
+        .isoformat(timespec="microseconds")
         .replace("+00:00", "Z")
     )
 
@@ -138,7 +137,7 @@ def _run_after_from_debounce(
         delay = max(0, int(debounce_seconds or 0))
     except Exception:
         delay = 0
-    base = now_dt or datetime.now(timezone.utc).replace(microsecond=0)
+    base = now_dt or datetime.now(timezone.utc)
     return (base + timedelta(seconds=delay)).isoformat().replace("+00:00", "Z")
 
 
@@ -158,8 +157,11 @@ async def enqueue_job(
     Behavior:
     - If job exists and status == running:
         - update payload / meta (updated_at) only (do NOT flip to queued)
-    - Else if job exists (queued/done/failed):
+    - Else if job exists and status == queued:
         - set status=queued and run_after=(explicit run_after or debounce delay or now)
+        - retain the current generation's retry budget
+    - Else if job exists and status == done/failed:
+        - start a queued generation with attempts=0
     - Else:
         - insert new row (defaults to queued)
     """
@@ -171,8 +173,8 @@ async def enqueue_job(
     if not jk or not jt or not uid:
         raise ValueError("job_key/job_type/user_id are required")
 
-    now_dt = datetime.now(timezone.utc).replace(microsecond=0)
-    now_iso = now_dt.isoformat().replace("+00:00", "Z")
+    now_dt = datetime.now(timezone.utc)
+    now_iso = now_dt.isoformat(timespec="microseconds").replace("+00:00", "Z")
     run_after = _run_after_from_debounce(
         run_after_iso=run_after_iso,
         debounce_seconds=debounce_seconds,
@@ -205,7 +207,7 @@ async def enqueue_job(
     if isinstance(data, list) and len(data) > 0:
         return
 
-    # 2) Not running: flip to queued
+    # 2) Coalesce a queued generation without replenishing its retry budget.
     patch_queue = {
         "job_type": jt,
         "user_id": uid,
@@ -220,7 +222,7 @@ async def enqueue_job(
     resp2 = await sb_patch(
         f"/rest/v1/{JOBS_TABLE}",
         json=patch_queue,
-        params={"job_key": f"eq.{jk}", "status": "neq.running"},
+        params={"job_key": f"eq.{jk}", "status": "eq.queued"},
         prefer="return=representation",
         timeout=6.0,
     )
@@ -233,7 +235,26 @@ async def enqueue_job(
     if isinstance(data2, list) and len(data2) > 0:
         return
 
-    # 3) Insert (upsert-safe). Do NOT include status to avoid flipping running -> queued on race.
+    # 3) A terminal generation gets a fresh budget. The status predicate keeps
+    # a concurrent claim or retry from being reset by this enqueue.
+    resp_terminal = await sb_patch(
+        f"/rest/v1/{JOBS_TABLE}",
+        json={**patch_queue, "attempts": 0},
+        params={"job_key": f"eq.{jk}", "status": _in_list(["done", "failed"])},
+        prefer="return=representation",
+        timeout=6.0,
+    )
+    if resp_terminal.status_code not in (200, 204):
+        raise RuntimeError(f"enqueue_job(patch terminal) failed: {resp_terminal.status_code} {(resp_terminal.text or '')[:800]}")
+    try:
+        terminal_data = resp_terminal.json() if resp_terminal.status_code == 200 else []
+    except Exception:
+        terminal_data = []
+    if isinstance(terminal_data, list) and len(terminal_data) > 0:
+        return
+
+    # 4) Insert (upsert-safe). Do NOT include status/attempts to avoid resetting
+    # a running or queued generation when another enqueue wins the race.
     row = {
         "job_key": jk,
         "job_type": jt,
@@ -391,9 +412,9 @@ async def requeue(
     jk = str(job_key or "").strip()
     if not jk:
         return
-    now_dt = datetime.now(timezone.utc).replace(microsecond=0)
+    now_dt = datetime.now(timezone.utc)
     run_after_dt = now_dt + timedelta(seconds=max(1, int(delay_seconds or 15)))
-    now_iso = now_dt.isoformat().replace("+00:00", "Z")
+    now_iso = now_dt.isoformat(timespec="microseconds").replace("+00:00", "Z")
     run_after_iso = run_after_dt.isoformat().replace("+00:00", "Z")
 
     patch = {
@@ -455,7 +476,7 @@ async def fetch_queue_stats(
     counted because they can accumulate historically and do not represent current pressure.
     """
     ensure_supabase_config()
-    now_dt = datetime.now(timezone.utc).replace(microsecond=0)
+    now_dt = datetime.now(timezone.utc)
     now_iso = now_dt.isoformat().replace("+00:00", "Z")
     max_rows = max(1, int(limit or QUEUE_STATS_LIMIT or 5000))
     params: Dict[str, str] = {
@@ -548,7 +569,7 @@ async def requeue_stale_running_jobs(
     ensure_supabase_config()
     threshold = max(60, int(stale_running_seconds or 900))
     max_rows = max(1, int(limit or 25))
-    now_dt = datetime.now(timezone.utc).replace(microsecond=0)
+    now_dt = datetime.now(timezone.utc)
 
     params: Dict[str, str] = {
         "select": "job_key,job_type,status,worker_id,started_at,updated_at",

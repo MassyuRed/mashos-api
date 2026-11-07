@@ -33,7 +33,7 @@ import logging
 import os
 import re
 from datetime import datetime, timezone, timedelta
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Literal, Optional
 
 import httpx
 from fastapi import FastAPI, Header, HTTPException, Path, Query
@@ -330,6 +330,8 @@ class MyProfileLatestEnsureResponse(CumulativeMapMetadata):
     meta: Optional[Dict[str, Any]] = Field(default=None, description="metadata JSON")
     has_visible_content: bool = Field(default=True, description="false when the latest view is no-data only")
     skip_reason: Optional[str] = Field(default=None, description="optional no-save reason")
+    refresh_status: Optional[Literal['queued', 'running', 'failed']] = Field(default=None,
+        description="Existing background refresh state; null when no refresh is pending")
 
 
 class MyProfileLatestStatusResponse(BaseModel):
@@ -339,6 +341,8 @@ class MyProfileLatestStatusResponse(BaseModel):
     saved_report_mode: Optional[str] = Field(default=None, description="saved latest report mode (light | standard | deep)")
     has_visible_content: bool = Field(default=False, description="false when the latest view is no-data only")
     skip_reason: Optional[str] = Field(default=None, description="optional no-data reason")
+    refresh_status: Optional[Literal['queued', 'running', 'failed']] = Field(default=None,
+        description="Existing background refresh state; this status read never enqueues")
 
 
 # ----------------------------
@@ -1399,6 +1403,10 @@ def register_self_structure_routes(app: FastAPI) -> None:
             default=False,
             description="If true, force regeneration",
         ),
+        background: bool = Query(
+            default=False,
+            description="If true, read saved content immediately and queue needed generation",
+        ),
         period: Optional[str] = Query(
             default=None,
             description="Override lookback period (e.g. 28d)",
@@ -1424,9 +1432,17 @@ def register_self_structure_routes(app: FastAPI) -> None:
 
         from analysis_observed_service import observed_enabled
         if observed_enabled():
-            from analysis_cumulative_service import ensure_map, map_response_for_renderer
+            from analysis_cumulative_service import (
+                ensure_map, map_refresh_status, map_response_for_renderer, request_map_refresh)
+            if background:
+                result = await ensure_map(uid, ensure=False)
+                result['refresh_status'] = (await request_map_refresh(uid, force=force,
+                    trigger='manual' if force else 'map_view') if ensure
+                    else await map_refresh_status(uid))
+            else:
+                result = await ensure_map(uid, ensure=ensure, force=force)
             return SelfStructureLatestEnsureResponse(**map_response_for_renderer(
-                await ensure_map(uid, ensure=ensure, force=force), map_renderer))
+                result, map_renderer))
 
         # ---- Resolve report_mode (with subscription gating; fail-closed) ----
         # わたしマップ Phase 1: Free は latest の light 概要のみ許可する。
