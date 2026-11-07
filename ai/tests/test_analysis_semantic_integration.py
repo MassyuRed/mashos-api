@@ -105,6 +105,9 @@ def test_semantic_http_save_non_generating_reread_and_compatibility(monkeypatch)
 
     async def run():
         created = await service.ensure_map(OWNER, model_source=source)
+        # Stored viewing must not reacquire either a provider or a CMEE author.
+        monkeypatch.setattr(semantic.MeaningExperienceEngine, 'generate', lambda *a, **k:
+            (_ for _ in ()).throw(AssertionError('stored read re-entered CMEE generation')))
         reread = await service.ensure_map(OWNER, model_source=source)
         read_only = await service.ensure_map(OWNER, ensure=False, model_source=source)
         assert created['refreshed'] and not reread['refreshed'] and not read_only['refreshed']

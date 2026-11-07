@@ -107,6 +107,48 @@ def test_same_graph_gives_rich_details_relationships_accessible_text_and_private
     assert 'messages_sha256' not in semantic._canonical(projection)
 
 
+def test_common_engine_compiles_and_realizes_one_graph_for_all_views(monkeypatch):
+    from cocolon_meaning_experience_engine.cores.analysis import intent_compiler, observed_route_realizer
+    calls = []
+    original_engine = semantic.MeaningExperienceEngine.generate
+    original_compile = intent_compiler.compile_analysis_semantic_map
+    original_realize = observed_route_realizer.realize_analysis_semantic_map
+    def engine(self, *args, **kwargs):
+        calls.append('engine')
+        return original_engine(self, *args, **kwargs)
+    def compile_map(*args, **kwargs):
+        calls.append('compiler')
+        return original_compile(*args, **kwargs)
+    def realize_map(*args, **kwargs):
+        calls.append('realizer')
+        return original_realize(*args, **kwargs)
+    monkeypatch.setattr(semantic.MeaningExperienceEngine, 'generate', engine)
+    monkeypatch.setattr(intent_compiler, 'compile_analysis_semantic_map', compile_map)
+    monkeypatch.setattr(observed_route_realizer, 'realize_analysis_semantic_map', realize_map)
+    _, artifact, _ = build()
+    assert calls == ['engine', 'compiler', 'realizer']
+    assert type(artifact.graph) is intent_compiler.AnalysisSemanticMapGraph
+    projection = artifact.safe_projection(authenticated_owner_scope=OWNER)
+    private = artifact.private_evidence()
+    for visible, owned in zip(projection['nodes'], private['graph']['nodes']):
+        assert {key: owned[key] for key in visible} == visible
+        assert owned['record_refs'] and owned['evidence_refs']
+    assert private['graph_commitment'] == intent_compiler.commitment(private['graph'])
+    assert artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text'] == semantic.semantic_projection_text(projection)
+
+
+@pytest.mark.parametrize('mutation', [
+    lambda prepared: replace(prepared, material_json=prepared.material_json.replace('価値観', '偽の場面')),
+    lambda prepared: replace(prepared, dictionary_json='{}'),
+    lambda prepared: replace(prepared, fields=prepared.fields[:-1]),
+    lambda prepared: replace(prepared, source_count=999),
+])
+def test_cmee_rechecks_prepared_material_even_when_response_matches_modified_messages(mutation):
+    prepared = mutation(semantic.prepare_semantic_map(OWNER, sample()))
+    with pytest.raises(semantic.SemanticMapError, match='analysis_semantic_input_unbound'):
+        semantic.build_semantic_map(prepared, response(prepared))
+
+
 @pytest.mark.parametrize('change', [
     lambda packet: packet['nodes'][0]['evidence'][0].update(quote='周囲に認められたい'),
     lambda packet: packet['nodes'][0]['evidence'][0].update(field=2),

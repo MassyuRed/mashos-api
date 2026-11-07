@@ -1069,3 +1069,130 @@ def validate_semantic_artifact(snapshot, graph, artifact):
 def artifact_from_payload(snapshot, graph, payload):
     artifact = AnalysisSemanticArtifactV1(_semantic_json(payload))
     return validate_semantic_artifact(snapshot, graph, artifact)
+
+
+# Relational maps share the existing Analysis realizer owner.
+from copy import deepcopy
+from uuid import UUID
+from .semantic_admission import (SEMANTIC_MAP_SCHEMA, SEMANTIC_MAP_NODE_KINDS,
+    SEMANTIC_MAP_PERSPECTIVES, SEMANTIC_MAP_RELATION_KINDS, _semantic_map_require,
+    _semantic_map_keys, _semantic_map_text, _semantic_map_strings)
+
+@dataclass(frozen=True, slots=True, repr=False)
+class AnalysisSemanticMapArtifact:
+    artifact_id: str
+    graph: object
+
+    @property
+    def owner_scope(self):
+        return self.graph.owner_scope
+
+    @property
+    def source_set_ref(self):
+        return self.graph.source_set_ref
+
+    @property
+    def reference(self):
+        return self.artifact_id + '@1'
+
+    def safe_projection(self, *, authenticated_owner_scope):
+        _semantic_map_require(authenticated_owner_scope == self.owner_scope,
+            'analysis_owner_mismatch')
+        nodes = [{key: value for key, value in node.items()
+            if key not in {'record_refs', 'evidence_refs'}}
+            for node in json.loads(self.graph.nodes_json)]
+        projection = dict(schema_version=SEMANTIC_MAP_SCHEMA, wire_kind='watashi.map.v3',
+            projection_of=self.reference, artifact_version=1, period_label='これまでの記録',
+            overview=json.loads(self.graph.overview_json), nodes=nodes,
+            edges=json.loads(self.graph.edges_json),
+            accessibility_linear_order=[node['node_ref'] for node in nodes])
+        return validate_analysis_semantic_projection(projection,
+            str(UUID(self.artifact_id[9:])))
+
+    def safe_text_projection(self, *, authenticated_owner_scope):
+        return {'text': analysis_semantic_projection_text(self.safe_projection(
+            authenticated_owner_scope=authenticated_owner_scope))}
+
+    def private_evidence(self):
+        graph = dict(nodes=json.loads(self.graph.nodes_json),
+            edges=json.loads(self.graph.edges_json))
+        return dict(schema_version='analysis.semantic-private-evidence.v1',
+            projection_of=self.reference, source_set_ref=self.source_set_ref,
+            source_guard=self.graph.source_guard, request_ref=self.graph.request_ref,
+            messages_sha256=self.graph.messages_sha256,
+            response_sha256=self.graph.response_sha256,
+            graph_commitment=commitment(graph), graph=graph,
+            source_members=json.loads(self.graph.source_members_json))
+
+@dataclass(frozen=True, slots=True, repr=False)
+class AnalysisSemanticMapOutcome:
+    status: EngineStatus
+    reason_codes: tuple[str, ...]
+    artifact: AnalysisSemanticMapArtifact | None = None
+    coverage_json: str = '{}'
+    automatic_progression: bool = False
+
+    @property
+    def coverage(self):
+        return json.loads(self.coverage_json)
+
+
+def realize_analysis_semantic_map(graph):
+    from .intent_compiler import AnalysisSemanticMapGraph
+    _semantic_map_require(type(graph) is AnalysisSemanticMapGraph,
+        'analysis_semantic_graph_invalid')
+    artifact = AnalysisSemanticMapArtifact('artifact:' + uuid4().hex, graph)
+    artifact.safe_projection(authenticated_owner_scope=graph.owner_scope)
+    return AnalysisSemanticMapOutcome(EngineStatus.GENERATED,
+        ('analysis_semantic_map_generated',), artifact, graph.coverage_json)
+
+def validate_analysis_semantic_projection(projection, report_id):
+    """Closed public-reader contract; preserved v2 has its own existing reader."""
+    _semantic_map_require(_semantic_map_keys(projection, {'schema_version', 'wire_kind', 'projection_of', 'artifact_version',
+        'period_label', 'overview', 'nodes', 'edges', 'accessibility_linear_order'}))
+    _semantic_map_require(projection['schema_version'] == SEMANTIC_MAP_SCHEMA and projection['wire_kind'] == 'watashi.map.v3'
+        and type(projection['artifact_version']) is int and projection['artifact_version'] == 1
+        and projection['projection_of'] == 'artifact:' + UUID(report_id).hex + '@1'
+        and _semantic_map_text(projection['period_label'], 200))
+    overview = projection['overview']
+    _semantic_map_require(_semantic_map_keys(overview, {'title', 'summary'}) and _semantic_map_text(overview['title'], 80)
+        and _semantic_map_text(overview['summary'], 2000))
+    nodes, edges = projection['nodes'], projection['edges']
+    _semantic_map_require(type(nodes) is list and 1 <= len(nodes) <= 24 and type(edges) is list and len(edges) <= 48)
+    for index, node in enumerate(nodes, 1):
+        _semantic_map_require(_semantic_map_keys(node, {'node_ref', 'node_kind', 'title', 'summary', 'explanation', 'perspective',
+            'context', 'unknowns', 'evidence_badge_count'}) and node['node_ref'] == 'n' + str(index)
+            and type(node['node_kind']) is str and node['node_kind'] in SEMANTIC_MAP_NODE_KINDS
+            and type(node['perspective']) is str and node['perspective'] in SEMANTIC_MAP_PERSPECTIVES
+            and _semantic_map_text(node['title'], 80) and _semantic_map_text(node['summary'], 400) and _semantic_map_text(node['explanation'], 3000)
+            and _semantic_map_strings(node['context'], maximum=10000, text_maximum=1000)
+            and _semantic_map_strings(node['unknowns'], maximum=4, text_maximum=500)
+            and type(node['evidence_badge_count']) is int and node['evidence_badge_count'] >= 1)
+    refs = [node['node_ref'] for node in nodes]
+    _semantic_map_require(projection['accessibility_linear_order'] == refs)
+    seen = set()
+    for index, edge in enumerate(edges, 1):
+        _semantic_map_require(_semantic_map_keys(edge, {'edge_ref', 'from_ref', 'to_ref', 'relation_kind', 'label', 'explanation'})
+            and edge['edge_ref'] == 'e' + str(index) and edge['from_ref'] in refs and edge['to_ref'] in refs
+            and edge['from_ref'] != edge['to_ref'] and type(edge['relation_kind']) is str
+            and edge['relation_kind'] in SEMANTIC_MAP_RELATION_KINDS
+            and _semantic_map_text(edge['label'], 80) and _semantic_map_text(edge['explanation'], 1800))
+        key = (tuple(sorted([edge['from_ref'], edge['to_ref']])), edge['relation_kind'])
+        _semantic_map_require(key not in seen)
+        seen.add(key)
+    return deepcopy(projection)
+
+
+def analysis_semantic_projection_text(projection):
+    """The saved accessible text is generated from the same visible graph."""
+    lines = [projection['overview']['title'], projection['overview']['summary']]
+    index = {node['node_ref']: node for node in projection['nodes']}
+    for node in projection['nodes']:
+        lines.extend(['', node['title'], node['summary'], node['explanation']])
+        lines.extend(node['context'])
+        lines.extend('まだ記録にないこと：' + item for item in node['unknowns'])
+    for edge in projection['edges']:
+        lines.extend(['', index[edge['from_ref']]['title'] + ' ／ ' + index[edge['to_ref']]['title'],
+            edge['label'], edge['explanation']])
+    return '\n'.join(lines)
+

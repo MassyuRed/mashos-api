@@ -16,7 +16,8 @@ from .emlis_v1a import CMEEVerticalError, build_text_grounded_limited_artifact
 from .source_kernel import SourceAdmissionError, freeze_text_source
 from .piece_v1c import PieceEngineOutcome, PieceGenerationRequest, generate_piece_artifact
 from .cores.analysis.source_adapter import AnalysisObservedMapRequest
-from .cores.analysis.observed_route_realizer import AnalysisEngineOutcome, generate_observed_map
+from .cores.analysis.observed_route_realizer import (
+    AnalysisEngineOutcome, AnalysisSemanticMapOutcome, generate_observed_map)
 
 
 class MeaningExperienceEngine:
@@ -27,8 +28,12 @@ class MeaningExperienceEngine:
     belongs to the application config, not this pure meaning engine.
     """
 
-    def generate(self, request: GenerationRequest | PieceGenerationRequest | AnalysisObservedMapRequest, *, semantic_input=None) -> EngineOutcome | PieceEngineOutcome | AnalysisEngineOutcome:
+    def generate(self, request: GenerationRequest | PieceGenerationRequest | AnalysisObservedMapRequest, *, semantic_input=None) -> EngineOutcome | PieceEngineOutcome | AnalysisEngineOutcome | AnalysisSemanticMapOutcome:
         if semantic_input is not None and type(request) is AnalysisObservedMapRequest:
+            from .cores.analysis.semantic_admission import (
+                AnalysisSemanticMapInput, generate_analysis_semantic_map)
+            if type(semantic_input) is AnalysisSemanticMapInput:
+                return generate_analysis_semantic_map(request, semantic_input)
             from .cores.analysis.semantic_admission import (AnalysisModelFieldsInput,
                 AnalysisModelFieldKindsInput, AnalysisModelUnitsInput,
                 AnalysisModelQuotedParentUnitsInput, generate_analysis_model_quoted_parent_units,

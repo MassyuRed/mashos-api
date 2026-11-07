@@ -3622,3 +3622,120 @@ def validate_semantic_graph(snapshot, graph):
 def graph_from_payload(snapshot, payload):
     graph = AnalysisSemanticGraphV1(_semantic_json(payload))
     return validate_semantic_graph(snapshot, graph)
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class AnalysisSemanticMapGraph:
+    owner_scope: str
+    source_set_ref: str
+    source_guard: str
+    request_ref: str
+    messages_sha256: str
+    response_sha256: str
+    overview_json: str
+    nodes_json: str
+    edges_json: str
+    source_members_json: str
+    coverage_json: str
+
+def _semantic_map_context(prepared, refs):
+    material = json.loads(prepared.material_json)
+    ordered = {m.saved_record_ref: i for i, m in enumerate(prepared.frozen.members, 1)}
+    result = []
+    labels = {'weak': '弱', 'medium': '中', 'strong': '強'}
+    names = {'joy': '喜び', 'sadness': '悲しみ', 'anger': '怒り', 'anxiety': '不安',
+             'calm': '平穏', 'peace': '平穏', 'self_insight': '自己理解'}
+    for row in material['records']:
+        if row['record'] not in {ordered[ref] for ref in refs}:
+            continue
+        categories = row['selected_categories']
+        if type(categories) is str:
+            categories = [categories]
+        states = []
+        for item in row['emotion_details']:
+            name = item.get('type', item.get('emotion'))
+            name = names.get(name, name)
+            if name in {'自己理解', 'self_insight'}:
+                states.append('自己理解')
+            elif name and item.get('strength') in labels:
+                states.append(str(name) + '・' + labels[item['strength']])
+            elif name:
+                states.append(str(name))
+        # Legacy records may have a selected feeling and no saved strength.
+        # Preserve that feeling without inventing medium intensity.
+        if not states:
+            states = [names.get(name, name) for name in row['selected_emotions'] if type(name) is str]
+        value = '／'.join(categories) + ('：' + '、'.join(states) if states else '')
+        if value and value not in result:
+            result.append(value)
+    return result
+
+
+def compile_analysis_semantic_map(prepared, packet, *, response_sha256):
+    from .semantic_admission import (AnalysisSemanticMapInput,
+        SEMANTIC_MAP_MODEL_SCHEMA, SEMANTIC_MAP_NODE_KINDS, SEMANTIC_MAP_PERSPECTIVES,
+        SEMANTIC_MAP_RELATION_KINDS, _semantic_map_require, _semantic_map_keys,
+        _semantic_map_text, _semantic_map_strings, _semantic_map_evidence,
+        semantic_map_canonical, semantic_map_hash)
+    from .source_adapter import freeze_analysis_sources
+    from dataclasses import asdict
+    _semantic_map_require(type(prepared) is AnalysisSemanticMapInput
+        and freeze_analysis_sources(prepared.request) == prepared.frozen,
+        'analysis_semantic_input_unbound')
+    _semantic_map_require(_semantic_map_keys(packet, {'schema_version', 'overview', 'nodes', 'edges'})
+        and packet['schema_version'] == SEMANTIC_MAP_MODEL_SCHEMA)
+    overview = packet['overview']
+    _semantic_map_require(_semantic_map_keys(overview, {'title', 'summary'}) and _semantic_map_text(overview['title'], 80)
+        and _semantic_map_text(overview['summary'], 2000))
+    _semantic_map_require(type(packet['nodes']) is list and 1 <= len(packet['nodes']) <= 24
+        and type(packet['edges']) is list and len(packet['edges']) <= 48)
+    public_nodes, private_nodes, referenced = [], [], set()
+    for index, node in enumerate(packet['nodes'], 1):
+        _semantic_map_require(_semantic_map_keys(node, {'node_id', 'node_kind', 'title', 'summary', 'explanation', 'perspective', 'unknowns', 'evidence'})
+            and node['node_id'] == 'n' + str(index)
+            and type(node['node_kind']) is str and node['node_kind'] in SEMANTIC_MAP_NODE_KINDS
+            and type(node['perspective']) is str and node['perspective'] in SEMANTIC_MAP_PERSPECTIVES
+            and _semantic_map_text(node['title'], 80) and _semantic_map_text(node['summary'], 400) and _semantic_map_text(node['explanation'], 3000)
+            and _semantic_map_strings(node['unknowns'], maximum=4, text_maximum=500)
+            and type(node['evidence']) is list and 1 <= len(node['evidence']) <= 24)
+        roots = [_semantic_map_evidence(prepared, value) for value in node['evidence']]
+        ids = [root['evidence_id'] for _, root in roots]
+        _semantic_map_require(len(ids) == len(set(ids)))
+        refs = list(dict.fromkeys(ref for ref, _ in roots))
+        referenced.update(refs)
+        public_nodes.append(dict(node_ref='n' + str(index), node_kind=node['node_kind'],
+            title=node['title'], summary=node['summary'], explanation=node['explanation'],
+            perspective=node['perspective'], context=_semantic_map_context(prepared, refs), unknowns=node['unknowns'],
+            evidence_badge_count=len(refs)))
+        private_nodes.append(dict(public_nodes[-1],
+            record_refs=refs, evidence_refs=[root for _, root in roots]))
+    # Separate roots do not turn one repeated generic description into a map.
+    _semantic_map_require(len({(node['title'], node['summary'], node['explanation'])
+                  for node in public_nodes}) == len(public_nodes))
+    public_edges, seen = [], set()
+    for index, edge in enumerate(packet['edges'], 1):
+        _semantic_map_require(_semantic_map_keys(edge, {'from', 'to', 'relation_kind', 'label', 'explanation'})
+            and type(edge['from']) is str and type(edge['to']) is str
+            and edge['from'] in {node['node_ref'] for node in public_nodes}
+            and edge['to'] in {node['node_ref'] for node in public_nodes}
+            and edge['from'] != edge['to'] and type(edge['relation_kind']) is str
+            and edge['relation_kind'] in SEMANTIC_MAP_RELATION_KINDS
+            and _semantic_map_text(edge['label'], 80) and _semantic_map_text(edge['explanation'], 1800))
+        key = (min(edge['from'], edge['to']), max(edge['from'], edge['to']), edge['relation_kind'])
+        _semantic_map_require(key not in seen)
+        seen.add(key)
+        public_edges.append(dict(edge_ref='e' + str(index), from_ref=edge['from'],
+            to_ref=edge['to'], relation_kind=edge['relation_kind'],
+            label=edge['label'], explanation=edge['explanation']))
+    count = len(prepared.frozen.members)
+    reasons = json.loads(prepared.exclusion_reasons_json)
+    coverage = dict(profile='cumulative.v1', source_count=prepared.source_count, processed_count=count,
+        mapped_count=len(referenced), unparsed_count=count - len(referenced), excluded_count=sum(reasons.values()),
+        exclusion_reasons=reasons, stale_supplement_count=prepared.stale_supplement_count)
+    return AnalysisSemanticMapGraph(prepared.frozen.owner_scope,
+        prepared.frozen.source_set_ref, prepared.source_guard, prepared.request_ref,
+        semantic_map_hash(prepared.messages()), response_sha256,
+        semantic_map_canonical(overview), semantic_map_canonical(private_nodes),
+        semantic_map_canonical(public_edges),
+        semantic_map_canonical([asdict(m) for m in prepared.frozen.members]),
+        semantic_map_canonical(coverage))
