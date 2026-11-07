@@ -13,7 +13,7 @@ import re
 from emlis_ai_grounded_observation_plan import (
     build_final_stage1_grounded_observation_plan,
     source_proven_performed_action_status,
-    _source_current_cognition, _source_current_cognition_parts,
+    _source_current_cognition as _shared_source_current_cognition, _source_current_cognition_parts,
     _source_unfinished_result_clause_is_bound,
     _source_polite_past_feeling_is_bound,
     _source_prefix_opens_report,
@@ -22,6 +22,14 @@ from ...contracts import EvidenceRef
 from ...emlis_answer_update import _WITHDRAWAL, _REPLACEMENT
 from .source_adapter import (AnalysisSourceError, AnalysisSourceSet, commitment,
                             scoped_source_view, source_field_text, selected_categories)
+
+def _source_current_cognition(nucleus):
+    # Analysis explicitly reads either original text field. The shared witness
+    # retains its memo-only default for existing Emlis callers/checkpoints.
+    return (len(nucleus.source_fields) == 1
+        and _shared_source_current_cognition(nucleus,
+            source_field=nucleus.source_fields[0]))
+
 
 NODE_KINDS = ('SCENE', 'ROLE', 'ATTENTION_OR_THOUGHT',
               'ACTION_OR_NONACTION', 'IMMEDIATE_RESULT_OR_AFTERMATH')
@@ -341,6 +349,8 @@ def _protective_wish_proposition(value):
 
 def _protective_wish_witness(nucleus, *, contrast_fragment=False):
     frame = nucleus.semantic_frame
+    action_field = nucleus.source_fields == ('memo_action',)
+    times = {'current_input', 'future'} if action_field else {'current_input'}
     # The shared keyword frame can classify a nominal object such as 気持ち
     # as feeling before wish. The full finite surface, nucleus kind and
     # modality must still independently witness the current intention.
@@ -350,10 +360,13 @@ def _protective_wish_witness(nucleus, *, contrast_fragment=False):
     return (nucleus.grounding_kind == 'explicit'
         and nucleus.allowed_claim_scope == 'explicit_current_input'
         and nucleus.retention in {'required', 'should'}
-        and nucleus.kind == 'wish' and predicate_matches
-        and nucleus.source_fields == ('memo',) and len(nucleus.source_span_ids) == 1
-        and (frame.actor, frame.polarity, frame.modality, frame.time_scope)
-            == ('current_user', 'positive', 'wish', 'current_input')
+        and (nucleus.kind == 'wish' or action_field and nucleus.kind == 'action')
+        and predicate_matches
+        and nucleus.source_fields in {('memo',), ('memo_action',)}
+        and len(nucleus.source_span_ids) == 1
+        and (frame.actor, frame.polarity, frame.modality)
+            == ('current_user', 'positive', 'wish')
+        and frame.time_scope in times
         and 'operator:wish' in frame.attribute_codes
         and not any(code.startswith(('source_fragment_', 'surface_scalar_',
                     'thread_time:', 'semantic_dependency:'))
@@ -443,12 +456,14 @@ def _past_event_witness(nucleus, proposition):
     # Its current_input time is unspecified; the whole finite clause proves
     # past. Its default actor alone never proves SELF ownership.
     frame = nucleus.semantic_frame
+    action_field = nucleus.source_fields == ('memo_action',)
     # A nominal 記録/メモ can give the shared clause an action/action
     # classification. Only a fully parsed responsibility may consume that
     # consistent witness; the finite 担当 predicate supplies ROLE, not a
-    # completed task. Scenes still require the generic event witness.
+    # completed task. The actual action field also has an action default for
+    # complete presence clauses, whose finite predicate still proves SCENE.
     predicate_matches = (nucleus.kind == frame.predicate_kind == 'event'
-        or (proposition.role_state == 'PAST_RESPONSIBILITY'
+        or ((proposition.role_state == 'PAST_RESPONSIBILITY' or action_field)
             and nucleus.kind == frame.predicate_kind == 'action'
             and 'operator:action' in frame.attribute_codes))
     # The shared surface planner lowers ordinary clauses to should when
@@ -461,14 +476,19 @@ def _past_event_witness(nucleus, proposition):
         and nucleus.allowed_claim_scope == 'explicit_current_input'
         and nucleus.retention in retention
         and predicate_matches
-        and nucleus.source_fields == ('memo',)
+        and nucleus.source_fields in {('memo',), ('memo_action',)}
         and len(nucleus.source_span_ids) == 1
-        and frame.actor == 'current_user' and frame.modality == 'fact'
+        and frame.actor == 'current_user'
+        # The action-field default is an intention even for a complete past
+        # presence/negative responsibility. The parsed finite clause above,
+        # not the UI field's default, establishes factual past in this scope.
+        and frame.modality in ({'fact', 'intention'} if action_field else {'fact'})
         and frame.polarity == ('negative' if proposition.polarity == 'negative' else 'neutral')
         # Shared 'present' marks 今日, not the finite host's tense. Accept
         # that witness only when this complete clause explicitly carries it.
         and (frame.time_scope in {'past', 'current_input'}
-             or (frame.time_scope == 'present' and proposition.relative_day == 'TODAY'))
+             or (proposition.relative_day == 'TODAY' and
+                 frame.time_scope in ({'present', 'future'} if action_field else {'present'})))
         and not any(code.startswith(('source_fragment_', 'surface_scalar_',
                     'thread_time:', 'semantic_dependency:')) for code in frame.attribute_codes))
 
@@ -613,6 +633,7 @@ def _standalone_finite_feeling_witness(nucleus, proposition):
             or proposition.written_modifiers[0] not in allowed_degrees.values()):
         return False
     frame = nucleus.semantic_frame
+    action_field = nucleus.source_fields == ('memo_action',)
     expected = (('value', 'value', 'fact') if proposition.predicate_lemma == '安心する'
                 else ('reaction', 'feeling', 'feeling'))
     # Shared negative affect is not grammatical negation. The complete
@@ -623,20 +644,38 @@ def _standalone_finite_feeling_witness(nucleus, proposition):
             {'operator:positive_change', 'semantic_role:current_change'} & set(frame.attribute_codes)
             or (('operator:negation' in frame.attribute_codes) != (proposition.polarity == 'negative'))):
         return False
-    expected_polarity = 'negative' if negative_affect else proposition.polarity
+    expected_polarity = ('negative' if negative_affect and not action_field
+        else 'neutral' if negative_affect and proposition.polarity == 'positive'
+        else proposition.polarity)
     operators = ({'operator:feeling'} if negative_affect else
                  {'operator:negation'} if proposition.polarity == 'negative'
+                 else {'operator:positive_change'} if action_field
                  else {'operator:positive_change', 'semantic_role:current_change'})
+    frame_matches = (nucleus.kind, frame.predicate_kind, frame.modality) == expected
+    if action_field:
+        # Keep the actual action-field evidence. Shared defaults are not
+        # allowed to turn the complete feeling into a performed action.
+        frame_matches = ((nucleus.kind in {expected[0], 'action'}
+            and frame.predicate_kind == expected[1] and frame.modality == expected[2])
+            or (negative_affect and not current and nucleus.kind == 'action'
+                and frame.predicate_kind == 'feeling' and frame.modality == 'fact'
+                and 'operator:feeling' in frame.attribute_codes)
+            or (proposition.predicate_lemma == '安心する'
+                and nucleus.kind == frame.predicate_kind == 'action'
+                and frame.modality in {'fact', 'intention'}
+                and 'operator:action' in frame.attribute_codes))
     # Shared present/past marks the written day; the fully parsed finite host
     # separately proves tense. Do not borrow a date from another clause.
-    times = ({'present'} if proposition.relative_day == 'TODAY' else
+    times = (({'present', 'future', 'past'} if action_field else {'present'})
+             if proposition.relative_day == 'TODAY' else
              {'past'} if proposition.relative_day == 'YESTERDAY' else
              {'current_input'} if current else {'current_input', 'past'})
     return (nucleus.grounding_kind == 'explicit'
         and nucleus.allowed_claim_scope == 'explicit_current_input'
         and nucleus.retention in {'required', 'should'}
-        and nucleus.source_fields == ('memo',) and len(nucleus.source_span_ids) == 1
-        and (nucleus.kind, frame.predicate_kind, frame.modality) == expected
+        and nucleus.source_fields in {('memo',), ('memo_action',)}
+        and len(nucleus.source_span_ids) == 1
+        and frame_matches
         and frame.actor == 'current_user' and frame.polarity == expected_polarity
         and frame.time_scope in times
         and operators <= set(frame.attribute_codes)
@@ -684,7 +723,7 @@ def _unfinished_result_witness(nucleus):
         and nucleus.allowed_claim_scope == 'explicit_current_input'
         and nucleus.retention == 'required'
         and nucleus.kind == frame.predicate_kind == 'event'
-        and nucleus.source_fields == ('memo',)
+        and nucleus.source_fields in {('memo',), ('memo_action',)}
         and len(nucleus.source_span_ids) == 1
         and frame.actor == 'current_user' and frame.modality == 'fact'
         and frame.polarity == 'negative'
@@ -692,7 +731,6 @@ def _unfinished_result_witness(nucleus):
         and 'semantic_role:present_unfinished' in frame.attribute_codes
         and not any(code.startswith(('source_fragment_', 'surface_scalar_',
                     'thread_time:', 'semantic_dependency:')) for code in frame.attribute_codes))
-
 
 def _proposition_node_kind(proposition):
     if proposition.scene_state:
@@ -878,7 +916,7 @@ def _past_refusal_proposition(value):
 
     Keep は as written rather than inventing を. 今日の modifies its noun;
     a bare day/adverb, unknown kana or extra clause cannot enter this proof.
-    _fragment separately confines recognition to a sole original memo.
+    _fragment separately confines recognition to one complete original field.
     """
     m = _PAST_REFUSAL.fullmatch(value)
     if m is None:
@@ -901,7 +939,7 @@ def _omitted_plain_wish_proposition(value):
     """Recognize a finite wish without supplying the unwritten wisher.
 
     Recognition alone is not source admission. _fragment confines this new
-    grammar to a sole, complete original memo; answers and clause fragments
+    grammar to one complete original field; answers and clause fragments
     retain their prior scope. Reuse only the nine verbs' four plain forms.
     """
     forms = tuple(row for row in _FINITE_PREDICATES
@@ -2198,6 +2236,9 @@ def _action_change_pair(source, plan, span_id):
     """
     if plan is None:
         return None
+    span = next((s for s in source.spans if s.span_id == span_id), None)
+    if span is None or span.source_field not in {'memo', 'memo_action'}:
+        return None
     rows = [n for n in plan.nuclei if span_id in n.source_span_ids]
     if len(rows) != 2:
         return None
@@ -2211,7 +2252,7 @@ def _action_change_pair(source, plan, span_id):
         f = n.semantic_frame
         codes = f.attribute_codes
         bounds = [c for c in codes if c.startswith('source_fragment_scalar_range:')]
-        if (n.source_span_ids != (span_id,) or n.source_fields != ('memo',)
+        if (n.source_span_ids != (span_id,) or n.source_fields != (span.source_field,)
                 or n.grounding_kind != 'explicit' or n.retention != 'required'
                 or n.allowed_claim_scope != 'explicit_current_input'
                 or f.actor != 'current_user' or f.time_scope != 'past'
@@ -2228,9 +2269,6 @@ def _action_change_pair(source, plan, span_id):
             or links[0].grounding_kind != 'user_stated_relation' or links[0].retention != 'required'
             or links[0].source_span_ids != (span_id,)
             or links[0].source_relation_ids != ('typed_projection:perfective_action_before_bounded_change',)):
-        return None
-    span = next((s for s in source.spans if s.span_id == span_id), None)
-    if span is None or span.source_field != 'memo':
         return None
     raw = span.raw_text
     (a, b), (c, d) = ranges
@@ -2538,36 +2576,41 @@ def _fragment(source, nucleus, plan=None, *, _protective_contrast=False):
     value = span.raw_text[a:b].strip(' 、，。．')
     if not value:
         return None
+    # A following written speaker/cognitive/retraction host owns the entire
+    # source span, including cognition and either endpoint of a contrast.
+    # Punctuation alone cannot make its first-person content the owner's.
+    # Reuse the same closed host grammar for every candidate family.
+    following_host = context[span.end_index:].lstrip(' \t\u3000。．.!！\r\n;；')
+    if _known_postposed_host(following_host):
+        return None
     proposition = _parsed_proposition(value)
     past_refusal = bool(proposition and proposition.predicate_lemma == '断る')
     if past_refusal:
-        # No actor borrowing, other-field deletion, partial quotation,
+        # No actor borrowing, cross-field concatenation, partial quotation,
         # supplemental-answer admission or invented refusal day/reason.
         if (source.envelope.source_role != 'ORIGINAL_INPUT'
-                or span.source_field != 'memo'
-                or str(source.normalized.get('memo_action', '')).strip()
+                or span.source_field not in {'memo', 'memo_action'}
                 or pair is not None or a != 0 or b != len(span.raw_text)
                 or nucleus.grounding_kind != 'explicit'
                 or nucleus.allowed_claim_scope != 'explicit_current_input'
                 or _past_refusal_proposition(value) != proposition
                 or re.fullmatch(r'[ \t\u3000]*' + re.escape(value)
-                    + r'[。．.]?[ \t\u3000]*', source_field_text(source, 'memo')) is None):
+                    + r'[。．.]?[ \t\u3000]*', source_field_text(source, span.source_field)) is None):
             return None
     unattributed_wish = bool(proposition and proposition.actor == 'UNSPECIFIED'
         and proposition.modality == 'wish')
     if unattributed_wish:
         # An omitted actor is not the authenticated owner or a preceding
-        # clause's subject. Admit only one complete original memo, not an
-        # answer, another field, a comma/line fragment or an open host.
+        # clause's subject. Admit only a complete original field, not an
+        # answer, a cross-field join, a comma/line fragment or an open host.
         if (source.envelope.source_role != 'ORIGINAL_INPUT'
-                or span.source_field != 'memo'
-                or str(source.normalized.get('memo_action', '')).strip()
+                or span.source_field not in {'memo', 'memo_action'}
                 or pair is not None or a != 0 or b != len(span.raw_text)
                 or nucleus.grounding_kind != 'explicit'
                 or nucleus.allowed_claim_scope != 'explicit_current_input'
                 or _omitted_plain_wish_proposition(value) != proposition
                 or re.fullmatch(r'[ \t\u3000]*' + re.escape(value)
-                    + r'[。．.]?[ \t\u3000]*', source_field_text(source, 'memo')) is None):
+                    + r'[。．.]?[ \t\u3000]*', source_field_text(source, span.source_field)) is None):
             return None
     if _has_unparsed_nominal_scope(proposition):
         # Use the existing unresolved-source path; never fall back to a
@@ -2616,7 +2659,9 @@ def _fragment(source, nucleus, plan=None, *, _protective_contrast=False):
         if (pair is not None or a != 0 or b != len(span.raw_text)
                 or nucleus.grounding_kind != 'explicit'
                 or nucleus.allowed_claim_scope != 'explicit_current_input'
-                or frame.modality != 'fact'
+                or frame.modality not in ({'fact', 'intention'}
+                    if span.source_field == 'memo_action' and proposition.polarity == 'negative'
+                    else {'fact'})
                 or frame.polarity not in ({'negative'} if proposition.polarity == 'negative'
                                           else {'positive', 'neutral'})):
             return None
@@ -2629,14 +2674,18 @@ def _fragment(source, nucleus, plan=None, *, _protective_contrast=False):
                 or nucleus.kind != 'action' or nucleus.grounding_kind != 'explicit'
                 or nucleus.retention not in {'required', 'should'}
                 or nucleus.allowed_claim_scope != 'explicit_current_input'
-                or frame.actor != 'current_user' or frame.modality != 'fact'
+                or frame.actor != 'current_user'
+                or frame.modality not in ({'fact', 'intention'}
+                    if span.source_field == 'memo_action' and proposition.polarity == 'negative'
+                    else {'fact'})
                 or (proposition.polarity == 'positive' and not (
                     source_proven_performed_action_status(nucleus)
                     and frame.time_scope == 'past' and frame.polarity in {'positive', 'neutral'}))
                 or (proposition.polarity == 'negative' and not (
                     frame.polarity == 'negative'
                     and (frame.time_scope in {'past', 'current_input'}
-                         or frame.time_scope == 'present' and proposition.relative_day == 'TODAY')
+                         or (proposition.relative_day == 'TODAY' and frame.time_scope in
+                             ({'present', 'future'} if span.source_field == 'memo_action' else {'present'})))
                     and {'operator:action', 'operator:negation'} <= set(codes)
                     and 'operator:performed_action' not in codes))):
             return None
@@ -2644,9 +2693,7 @@ def _fragment(source, nucleus, plan=None, *, _protective_contrast=False):
         # A newly readable object must not turn a reported speaker's
         # first-person clause into the owner's completed action.
         prefix = context[:span.start_index]
-        other_field = ('memo' if (bounded_past_action or self_past_action
-                                 or dated_compound_nominal or kana_owned_writing)
-                       and span.source_field == 'memo_action' else 'memo_action')
+        other_field = 'memo_action' if span.source_field == 'memo' else 'memo'
         other = str(source.normalized.get(other_field, ''))
         if unattributed_action:
             # A ledger split after an unfinished topic is not a naturally
@@ -2751,7 +2798,8 @@ def _fragment(source, nucleus, plan=None, *, _protective_contrast=False):
         # All three newly admitted polite forms need the same source-host
         # proof, including those already positive in the shared keyword plan.
         if (value.endswith(('落ち着きました', '嬉しかったです', 'うれしかったです'))
-                and not _source_polite_past_feeling_is_bound(span, source.normalized)):
+                and not _source_polite_past_feeling_is_bound(
+                    span, source.normalized, source_field=span.source_field)):
             return None
         if (change.polarity == 'negative' or change.sequence_marker or change.relative_day
                 or change.predicate_lemma in {'不安だ', 'ある'}):
@@ -2759,7 +2807,8 @@ def _fragment(source, nucleus, plan=None, *, _protective_contrast=False):
             # cognitive/retracted host. This bounds only the new admission;
             # it does not reinterpret the existing positive family.
             prefix = context[:span.start_index]
-            other = str(source.normalized.get('memo_action', ''))
+            other = str(source.normalized.get(
+                'memo_action' if span.source_field == 'memo' else 'memo', ''))
             if (any(_analysis_prefix_opens_report(text) for text in (prefix, other))
                     or re.search(r'(?:言って|話して|語って|述べて|書いて|伝えて|答えて|説明して)'
                         r'(?:いた|いました|いる|います)(?:[。．.\s]|$)', prefix + '\n' + other)
@@ -2861,6 +2910,9 @@ def _burden_predicate(value):
 
 def _wish_burden_pair(source, plan, span_id):
     """Consume one complete, shared-owner contrast with two explicit selves."""
+    span = next((s for s in source.spans if s.span_id == span_id), None)
+    if span is None or span.source_field not in {'memo', 'memo_action'}:
+        return None
     rows = [n for n in plan.nuclei if span_id in n.source_span_ids]
     if len(rows) != 2:
         return None
@@ -2868,7 +2920,7 @@ def _wish_burden_pair(source, plan, span_id):
     for n in rows:
         f = n.semantic_frame
         codes = f.attribute_codes
-        if (n.source_span_ids != (span_id,) or n.source_fields != ('memo',)
+        if (n.source_span_ids != (span_id,) or n.source_fields != (span.source_field,)
                 or n.grounding_kind not in {'explicit', 'user_stated_relation'}
                 or n.retention != 'required' or n.allowed_claim_scope != 'explicit_current_input'
                 or f.actor != 'current_user' or f.time_scope != 'current_input'
@@ -2890,12 +2942,11 @@ def _wish_burden_pair(source, plan, span_id):
             or links[0].source_relation_ids != ('typed_projection:top_level_connective',)
             or links[0].source_meaning_arc_keys != ('compound_span:top_level_relation',)):
         return None
-    span = next((s for s in source.spans if s.span_id == span_id), None)
     whole = next((r for r in source.evidence if r.source_span_id == span_id), None)
-    if span is None or whole is None or span.source_field != 'memo':
+    if whole is None:
         return None
     # Long ledger fragments must not erase a reporting/dream host or modifier.
-    context = source.normalized.get('memo', '')
+    context = source.normalized.get(span.source_field, '')
     before, after = context[:span.start_index].rstrip(' \t\u3000'), context[span.end_index:].lstrip(' \t\u3000')
     if ((before and before[-1] not in '。．.!！\r\n')
             or (after and after[0] not in '。．.!！\r\n')):
@@ -2912,7 +2963,7 @@ def _wish_burden_pair(source, plan, span_id):
             or any(re.search(r'(?:^|の)(?:何|誰|幾)', noun) for _, noun in p.arguments)
             or not (whole.scalar_start == a.scalar_start < a.scalar_end < z.scalar_start < z.scalar_end == whole.scalar_end)):
         return None
-    connector = source_field_text(source, 'memo')[a.scalar_end:z.scalar_start]
+    connector = source_field_text(source, span.source_field)[a.scalar_end:z.scalar_start]
     if re.fullmatch(r'(?:けれども|けれど|けど|が)[、,]?\s*', connector) is None:
         return None
     return wish.nucleus_id, burden.nucleus_id, predicate, right[0], (a, z, whole)
@@ -2926,7 +2977,7 @@ def _self_propositions(source, *, require_complete=False, plan=None):
     """
     if plan is None:
         plan = build_final_stage1_grounded_observation_plan(
-            source.normalized, evidence_spans=source.spans)
+            source.normalized, evidence_spans=source.spans, _analysis_action_field=True)
     if plan.input_profile.material_quality == 'safety_routed':
         raise AnalysisSourceError('analysis_separate_safety_required')
     claims = []
@@ -3113,7 +3164,7 @@ def _active_sources(source_set):
         if target.source_span_id in excluded.get(original.envelope.envelope_id, set()):
             raise AnalysisSourceError('analysis_correction_target_unresolved')
         original_plan = build_final_stage1_grounded_observation_plan(
-            original.normalized, evidence_spans=original.spans)
+            original.normalized, evidence_spans=original.spans, _analysis_action_field=True)
         target_is_self_claim = False
         for nucleus in original_plan.nuclei:
             if (nucleus.source_span_ids != (target.source_span_id,)
@@ -3178,7 +3229,7 @@ def compile_observed_graph(source_set: AnalysisSourceSet) -> ObservedGraph:
     by_signature, occurrences, record_orders = {}, {}, {}
     for source in active_sources:
         plan = build_final_stage1_grounded_observation_plan(
-            source.normalized, evidence_spans=source.spans)
+            source.normalized, evidence_spans=source.spans, _analysis_action_field=True)
         if plan.input_profile.material_quality == 'safety_routed':
             raise AnalysisSourceError('analysis_separate_safety_required')
         order_pairs = _explicit_order_pairs(source, plan,

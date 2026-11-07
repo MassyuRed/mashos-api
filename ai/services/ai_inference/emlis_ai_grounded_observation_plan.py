@@ -3876,10 +3876,13 @@ _SOURCE_NEGATIVE_PAST_FEELING = (
 
 def _source_polite_past_feeling_is_bound(span, normalized_input, *, action=None, connector=None,
                                        plain_compound=False, negative_compound=False,
-                                       expected_time_scope=None):
+                                       expected_time_scope=None, source_field="memo"):
     """Prove the three polite finite feelings without widening keyword rules."""
-    if span is None or normalized_input is None or span.source_field != "memo":
+    if span is None or normalized_input is None or source_field not in {"memo", "memo_action"} or span.source_field != source_field:
         return False
+    # Existing callers keep the memo contract. Analysis opts into the actual
+    # original field, without rewriting the span or borrowing another field.
+    other_field = "memo_action" if source_field == "memo" else "memo"
     raw = str(span.raw_text)
     subject = r"(?:私|僕|ぼく|俺|おれ|わたし|自分)は(?:[、，][ \u3000]*)?"
     feeling = r"(?:落ち着きました|嬉しかったです|うれしかったです)"
@@ -3906,7 +3909,14 @@ def _source_polite_past_feeling_is_bound(span, normalized_input, *, action=None,
         # Match the shared frame's written day without changing its time.
         # The finite predicate remains past even when 今日 yields present.
         source_time = {'今日': 'present', '昨日': 'past'}.get(relative_day, 'current_input')
-        if expected_time_scope is not None and expected_time_scope != source_time:
+        # The action field tags its complete finite past inflection as past
+        # (or uses its field-level future default beside 今日). Only the
+        # explicit Analysis opt-in may consume that same finite proof.
+        compatible_times = ({source_time, "past", "future"}
+            if source_field == "memo_action" and relative_day == "今日"
+            else {source_time, "past"} if source_field == "memo_action" and not relative_day
+            else {source_time})
+        if expected_time_scope is not None and expected_time_scope not in compatible_times:
             return False
     else:
         # A complete, explicit SELF action licenses a temporal episode, not
@@ -3924,26 +3934,26 @@ def _source_polite_past_feeling_is_bound(span, normalized_input, *, action=None,
             or not re.fullmatch(r"(?:" + subject + r")?" + feeling, raw[len(action + connector):])
             or re.search(r"[何誰幾]|明日|明後日|一昨日|今朝|昨夜|先週|来週|今日|昨日", action)):
             return False
-    source = str(normalized_input.get("memo") or "")
+    source = str(normalized_input.get(source_field) or "")
     record = "\n".join(str(normalized_input.get(field) or "") for field in ("memo", "memo_action"))
     start, end = span.start_index, span.end_index
     after = source[end:].lstrip(" \t\u3000。．.!！\r\n;；")
     if action is None and (sequence_prefix or relative_day):
         # A standalone sequence/day prefix must not detach a later speaker
         # or retraction. Keep the original source/finite-host proof below.
-        prefix_context = source[:start] + "\n" + str(normalized_input.get("memo_action") or "")
+        prefix_context = source[:start] + "\n" + str(normalized_input.get(other_field) or "")
         speaker = r"(?:(?:私|僕|ぼく|俺|おれ|わたし|自分|[^\s、，。．.!！?？]+?)(?:は|が|も)[、， \u3000]*)?"
-        if (_source_prefix_opens_report(str(normalized_input.get("memo_action") or ""))
+        if (_source_prefix_opens_report(str(normalized_input.get(other_field) or ""))
             or re.search(r"(?:言って|話して|語って|述べて|書いて|伝えて|答えて|説明して)"
                          r"(?:いた|いました|いる|います)(?:[。．.\s]|$)", prefix_context)
             or re.match(r"(?:と(?:は|も)?" + speaker
                         + r"(?:思|考|感|言|い|聞|書|読|伝|認|信|報)|のは|のも|なんて|などと)", after)):
             return False
     if negative_compound and (
-        _source_prefix_opens_report(str(normalized_input.get("memo_action") or ""))
+        _source_prefix_opens_report(str(normalized_input.get(other_field) or ""))
         or re.search(r"(?:言って|話して|語って|述べて|書いて|伝えて|答えて|説明して)"
                      r"(?:いた|いました|いる|います)(?:[。．.\s]|$)",
-                     str(normalized_input.get("memo_action") or ""))
+                     str(normalized_input.get(other_field) or ""))
         or re.match(r"(?:と|って|のは|のも|なんて|などと)", after)
     ):
         return False
@@ -3974,6 +3984,7 @@ def _typed_nucleus_projections_for_span(
     *,
     base_frame: GroundedSemanticFrame,
     normalized_input: Mapping[str, Any] | None = None,
+    _analysis_action_field: bool = False,
 ) -> tuple[_TypedNucleusProjection, ...]:
     """Project compound Japanese predicate structure without new Evidence.
 
@@ -4362,7 +4373,7 @@ def _typed_nucleus_projections_for_span(
                             r"って|わけ|訳|のでは|のか|かも|かどうか|はず)", after)):
                 return False
         return bool(
-            source_field == "memo"
+            (source_field == "memo" or _analysis_action_field and source_field == "memo_action")
             and re.fullmatch(r"(?:後|あと)(?:に)?[、,]\s*|から[、,]\s*", link)
             and performed is not None
             and _COMPLETED_ACTION_RE.fullmatch(performed.group("predicate"))
@@ -4407,12 +4418,14 @@ def _typed_nucleus_projections_for_span(
             r"安心し(?:な|ません)|落ち着(?:かな|きません)|(?:嬉し|うれし)く(?:な|ありません)", change_text))
         proved_negative_feeling = negative_feeling_change and _source_polite_past_feeling_is_bound(
             span, normalized_input, action=text[action_start:surface_action_end],
-            connector=text[surface_action_end:change_start], negative_compound=True)
+            connector=text[surface_action_end:change_start], negative_compound=True,
+            source_field=source_field if _analysis_action_field else "memo")
         polite_nominal_change = change_text.endswith(("減りました", "増えました", "戻りました"))
         polite_feeling_change = change_text.endswith(("落ち着きました", "嬉しかったです", "うれしかったです"))
         proved_polite_feeling = polite_feeling_change and _source_polite_past_feeling_is_bound(
             span, normalized_input, action=text[action_start:surface_action_end],
-            connector=text[surface_action_end:change_start])
+            connector=text[surface_action_end:change_start],
+            source_field=source_field if _analysis_action_field else "memo")
         # Detect the candidate before stripping reports or quotations: a
         # suffix such as と聞いた must fail the full proof, not fall back to
         # keyword-only admission. Only these prefixed finite forms change.
@@ -4423,7 +4436,7 @@ def _typed_nucleus_projections_for_span(
         proved_plain_change = prefixed_plain_change and (
             _source_polite_past_feeling_is_bound(span, normalized_input,
                 action=text[action_start:surface_action_end], connector=text[surface_action_end:change_start],
-                plain_compound=True) if plain_feeling else
+                plain_compound=True, source_field=source_field if _analysis_action_field else "memo") if plain_feeling else
             source_proven_polite_nominal_change(text[action_start:surface_action_end],
                 text[surface_action_end:change_start], change_text, plain=True))
         observed_change = bool(
@@ -7380,10 +7393,12 @@ def _source_cognitive_feeling_parts(fragment, *, _legacy_cognitive_temporal_topi
     return None
 
 
-def _source_current_cognition(nucleus):
+def _source_current_cognition(nucleus, *, source_field="memo"):
     frame = nucleus.semantic_frame
     return bool(
-        nucleus.source_fields == ("memo",) and nucleus.retention == "required"
+        source_field in {"memo", "memo_action"}
+        and nucleus.source_fields == (source_field,)
+        and nucleus.retention in ({"required", "should"} if source_field == "memo_action" else {"required"})
         and nucleus.grounding_kind == "explicit"
         and nucleus.allowed_claim_scope == "explicit_current_input"
         and len(nucleus.source_span_ids) == 1
@@ -7403,19 +7418,26 @@ def _source_current_cognition(nucleus):
 def _final_source_current_cognition_nuclei(nuclei, evidence_spans, normalized_input, *,
         relations=(),
         _legacy_cognitive_feeling_scope=False, _legacy_cognitive_temporal_topic=False,
-        _legacy_cognitive_self_continuation=True, _legacy_cognitive_feeling_orthography=False):
+        _legacy_cognitive_self_continuation=True, _legacy_cognitive_feeling_orthography=False, _analysis_action_field=False):
     if normalized_input is None:
         return nuclei
-    source = str(normalized_input.get("memo") or "")
-    if _top_level_text(source) != source:
-        return nuclei
+    if not _analysis_action_field:
+        source = str(normalized_input.get("memo") or "")
+        if _top_level_text(source) != source:
+            return nuclei
     spans = {s.span_id: s for s in evidence_spans}
     result = []
     for nucleus in nuclei:
+        source_field = ("memo_action" if _analysis_action_field
+            and nucleus.source_fields == ("memo_action",) else "memo")
+        source = str(normalized_input.get(source_field) or "")
+        if _top_level_text(source) != source:
+            result.append(nucleus)
+            continue
         frame = nucleus.semantic_frame
         span = spans.get(nucleus.source_span_ids[0]) if len(nucleus.source_span_ids) == 1 else None
         raw = str(span.raw_text) if span is not None else ""
-        cognitive_feeling = None if _legacy_cognitive_feeling_scope else _source_cognitive_feeling_parts(
+        cognitive_feeling = None if (_legacy_cognitive_feeling_scope or source_field == "memo_action") else _source_cognitive_feeling_parts(
             raw, _legacy_cognitive_temporal_topic=_legacy_cognitive_temporal_topic,
             _legacy_cognitive_feeling_orthography=_legacy_cognitive_feeling_orthography)
         orthography_only = bool(cognitive_feeling and not _legacy_cognitive_feeling_orthography
@@ -7423,7 +7445,7 @@ def _final_source_current_cognition_nuclei(nuclei, evidence_spans, normalized_in
                 _legacy_cognitive_temporal_topic=_legacy_cognitive_temporal_topic,
                 _legacy_cognitive_feeling_orthography=True) is None)
         parts = cognitive_feeling[0] if cognitive_feeling else _source_current_cognition_parts(raw)
-        if (parts is None or nucleus.source_fields != ("memo",) or span.source_field != "memo"
+        if (parts is None or nucleus.source_fields != (source_field,) or span.source_field != source_field
             or nucleus.retention not in {"required", "should"}
             or (nucleus.grounding_kind, nucleus.allowed_claim_scope) not in {
                 ("explicit", "explicit_current_input"), ("user_stated_relation", "source_bounded_relation")}
@@ -7436,7 +7458,7 @@ def _final_source_current_cognition_nuclei(nuclei, evidence_spans, normalized_in
         start, end, raw = span.start_index, span.end_index, str(span.raw_text)
         owner_prefix = source[:start]
         if cognitive_feeling:
-            markers = tuple(m for m in evidence_spans if m.source_field == "memo"
+            markers = tuple(m for m in evidence_spans if m.source_field == source_field
                 and _is_pure_relation_marker(m)
                 and _CONTRAST_RE.search(m.raw_text)
                 and 0 <= m.start_index < m.end_index <= start
@@ -7469,7 +7491,7 @@ def _final_source_current_cognition_nuclei(nuclei, evidence_spans, normalized_in
             and not any(re.search(r'私|わたし|僕|ぼく|俺|おれ|自分',
                 re.sub(r'^(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:は|が|も)[、,]?', '', text))
                 for text in (preceding, raw))
-            and any(n.source_fields == ("memo",) and n.kind == "reaction"
+            and any(n.source_fields == (source_field,) and n.kind == "reaction"
                 and n.retention in {"required", "should"} and n.grounding_kind == "explicit"
                 and n.allowed_claim_scope == "explicit_current_input"
                 and (n.semantic_frame.actor, n.semantic_frame.predicate_kind, n.semantic_frame.modality,
@@ -7478,7 +7500,7 @@ def _final_source_current_cognition_nuclei(nuclei, evidence_spans, normalized_in
                 and "lexical:source_nominal_past_feeling" in n.semantic_frame.attribute_codes
                 and len(n.source_span_ids) == 1
                 and (prior := spans.get(n.source_span_ids[0])) is not None
-                and prior.source_field == "memo" and prior.raw_text == preceding
+                and prior.source_field == source_field and prior.raw_text == preceding
                 and 0 <= prior.start_index < prior.end_index <= len(owner_prefix)
                 and not source[:prior.start_index].strip()
                 and source[prior.start_index:prior.end_index] == preceding
@@ -15348,6 +15370,7 @@ def _final_stage1_typed_nuclei(
     _legacy_duplicate_appraisal_source: bool = False,
     _legacy_shared_target_contrast: bool = False,
     _legacy_cognitive_feeling_scope: bool = False,
+    _analysis_action_field: bool = False,
 ) -> tuple[tuple[GroundedSemanticNucleus, ...], tuple[tuple[str, str, str], ...]]:
     span_index = {
         _clean(getattr(span, "span_id", "")): span
@@ -15378,6 +15401,7 @@ def _final_stage1_typed_nuclei(
                 span,
                 base_frame=nucleus.semantic_frame,
                 normalized_input=normalized_input,
+                _analysis_action_field=_analysis_action_field,
             )
             if span is not None and nucleus.kind != "self_evaluation"
             else ()
@@ -15398,10 +15422,15 @@ def _final_stage1_typed_nuclei(
         )
         if not projections:
             frame = nucleus.semantic_frame
-            if (nucleus.kind == "reaction" and frame.predicate_kind == "feeling"
-                and frame.modality == "feeling" and frame.polarity == "negative"
+            if ((nucleus.kind == "reaction" or _analysis_action_field
+                    and nucleus.source_fields == ("memo_action",) and nucleus.kind == "action")
+                and frame.predicate_kind == "feeling"
+                and frame.modality == "feeling"
+                and frame.polarity in ({"negative", "neutral"} if _analysis_action_field
+                    and nucleus.source_fields == ("memo_action",) else {"negative"})
                 and frame.actor == "current_user"
-                and nucleus.source_fields == ("memo",) and nucleus.grounding_kind == "explicit"
+                and nucleus.source_fields in ({("memo",), ("memo_action",)}
+                    if _analysis_action_field else {("memo",)}) and nucleus.grounding_kind == "explicit"
                 and nucleus.allowed_claim_scope == "explicit_current_input"
                 and nucleus.retention in {"required", "should"}
                 and "operator:feeling" in frame.attribute_codes
@@ -15409,9 +15438,10 @@ def _final_stage1_typed_nuclei(
                                              "semantic_dependency:", "thread_time:"))
                             for code in frame.attribute_codes)
                 and _source_polite_past_feeling_is_bound(span, normalized_input,
-                    expected_time_scope=frame.time_scope)):
-                # The reaction default was negative only because the global
-                # lexicon lacks this polite inflection. Keep its whole source.
+                    expected_time_scope=frame.time_scope,
+                    source_field=span.source_field if _analysis_action_field and span is not None else "memo")):
+                # The generic reaction/action-field default lacks this polite
+                # positive inflection. Its full source proof supplies it.
                 nucleus = replace(nucleus, semantic_frame=replace(frame, polarity="positive",
                     attribute_codes=tuple(_dedupe((*frame.attribute_codes,
                         "operator:positive_change", "semantic_role:current_change")))))
@@ -17726,7 +17756,7 @@ def _source_unfinished_result_clause_is_bound(text):
         r"(?:見つか|決ま|定ま)って(?:いない|いません)", text))
 
 
-def _final_source_unfinished_result_nuclei(nuclei, evidence_spans, normalized_input):
+def _final_source_unfinished_result_nuclei(nuclei, evidence_spans, normalized_input, *, _analysis_action_field=False):
     """Keep an explicit still-unachieved result as an observation duty.
 
     A negative result is a fact, not an epistemic unknown or a positive
@@ -17735,12 +17765,19 @@ def _final_source_unfinished_result_nuclei(nuclei, evidence_spans, normalized_in
     """
     if normalized_input is None:
         return nuclei
-    source = str(normalized_input.get("memo") or "")
-    if _top_level_text(source) != source:
-        return nuclei
+    if not _analysis_action_field:
+        source = str(normalized_input.get("memo") or "")
+        if _top_level_text(source) != source:
+            return nuclei
     spans = {s.span_id: s for s in evidence_spans}
     result = []
     for nucleus in nuclei:
+        source_field = ("memo_action" if _analysis_action_field
+            and nucleus.source_fields == ("memo_action",) else "memo")
+        source = str(normalized_input.get(source_field) or "")
+        if _top_level_text(source) != source:
+            result.append(nucleus)
+            continue
         frame = nucleus.semantic_frame
         span = spans.get(nucleus.source_span_ids[0]) if len(nucleus.source_span_ids) == 1 else None
         match = (re.fullmatch(r"まだ(?P<noun>" + _WISH_OBJECT_ARGUMENT_RE.pattern
@@ -17750,7 +17787,8 @@ def _final_source_unfinished_result_nuclei(nuclei, evidence_spans, normalized_in
         # the current unfinished predicate into an asserted feeling.
         nominal_feeling = bool(match and _FEELING_RE.search(match["noun"])
             and not re.search(r"(?:^|の)(?:何|誰|幾)", match["noun"])
-            and nucleus.kind == "reaction" and frame.predicate_kind == "feeling"
+            and nucleus.kind in ({"reaction", "action"} if source_field == "memo_action" else {"reaction"})
+            and frame.predicate_kind == "feeling"
             and frame.modality == "feeling")
         nominal_day = False
         if span is not None and frame.time_scope == "past":
@@ -17768,11 +17806,14 @@ def _final_source_unfinished_result_nuclei(nuclei, evidence_spans, normalized_in
                              r"(?:聞いた|聞きました|読んだ|読みました)(?:話|内容)", context)):
                 nominal_day = False
                 nominal_feeling = False
-        if (span is not None and nucleus.source_fields == ("memo",) and span.source_field == "memo"
+        if (span is not None and nucleus.source_fields == (source_field,) and span.source_field == source_field
             and nucleus.grounding_kind == "explicit" and nucleus.allowed_claim_scope == "explicit_current_input"
             and frame.actor == "current_user" and frame.polarity == "negative"
             and ((nucleus.kind == frame.predicate_kind == "event" and frame.modality == "fact")
-                 or nominal_feeling)
+                 or nominal_feeling
+                 or (source_field == "memo_action" and nucleus.kind == frame.predicate_kind == "action"
+                     and frame.modality in {"fact", "intention"}
+                     and "operator:action" in frame.attribute_codes))
             and (frame.time_scope in {"present", "current_input", "continuing"} or nominal_day)
             and not any(c.startswith(("source_fragment_", "surface_scalar_", "thread_time:", "semantic_dependency:"))
                         for c in frame.attribute_codes)
@@ -17782,7 +17823,7 @@ def _final_source_unfinished_result_nuclei(nuclei, evidence_spans, normalized_in
             and (span.end_index == len(source) or source[span.end_index] in "。．.")
             and not re.search(r"[?？!！…‥\r\n]|もし|たら|なら|れば", span.raw_text)
             and _source_unfinished_result_clause_is_bound(span.raw_text)):
-            if nominal_feeling:
+            if nominal_feeling or source_field == "memo_action":
                 nucleus = replace(nucleus, kind="event")
                 frame = replace(frame, predicate_kind="event", modality="fact",
                     attribute_codes=tuple(c for c in frame.attribute_codes if c != "operator:feeling"))
@@ -17830,6 +17871,7 @@ def project_final_stage1_grounded_observation_plan(
     _legacy_mixed_relief_unknown: bool = True,
     _legacy_relief_received_retention: bool = True,
     _legacy_initial_personal_meaning: bool = True,
+    _analysis_action_field: bool = False,
 ) -> GroundedObservationPlan:
     """Project final Stage-1 typed owners without changing the active plan.
 
@@ -17842,6 +17884,7 @@ def project_final_stage1_grounded_observation_plan(
         plan,
         evidence_spans,
         normalized_input=normalized_input,
+        _analysis_action_field=_analysis_action_field,
         _legacy_result_appraisal=_legacy_result_appraisal,
         _legacy_appraisal_reason=_legacy_appraisal_reason,
         _legacy_received_appraisal_context=_legacy_received_appraisal_context,
@@ -17875,6 +17918,7 @@ def project_final_stage1_grounded_observation_plan(
     )
     projected_nuclei = _final_source_unfinished_result_nuclei(
         projected_nuclei, evidence_spans, normalized_input,
+        _analysis_action_field=_analysis_action_field,
     )
     projected_nuclei = _final_source_self_appraisal_nuclei(
         projected_nuclei, evidence_spans, normalized_input, plan.relations,
@@ -17888,6 +17932,7 @@ def project_final_stage1_grounded_observation_plan(
     projected_nuclei = _final_source_current_cognition_nuclei(
         projected_nuclei, evidence_spans, normalized_input,
         relations=cognitive_source_relations,
+        _analysis_action_field=_analysis_action_field,
         _legacy_cognitive_self_continuation=_legacy_cognitive_self_continuation,
         _legacy_cognitive_feeling_scope=_legacy_cognitive_feeling_scope,
         _legacy_cognitive_temporal_topic=_legacy_cognitive_temporal_topic,
@@ -20154,11 +20199,14 @@ def build_final_stage1_grounded_observation_plan(
     _legacy_mixed_relief_unknown: bool = True,
     _legacy_relief_received_retention: bool = True,
     _legacy_initial_personal_meaning: bool = True,
+    _analysis_action_field: bool = False,
 ) -> GroundedObservationPlan:
     """Build the registered-disabled final Stage-1 typed grounding plan.
 
     Thread preparation explicitly selects received context/reason continuation.
     Direct and legacy Q1 callers retain their existing source generation.
+    Analysis may explicitly reuse the same finite proofs in memo_action;
+    source fields and evidence coordinates are never rewritten for that seam.
     """
 
     normalized = normalize_emlis_current_input(current_input or {})
@@ -20209,6 +20257,7 @@ def build_final_stage1_grounded_observation_plan(
         safety_decision=triage,
         resolver=resolver,
         normalized_input=normalized,
+        _analysis_action_field=_analysis_action_field,
         _legacy_result_appraisal=_legacy_result_appraisal,
         _legacy_appraisal_reason=_legacy_appraisal_reason,
         _legacy_received_appraisal_context=_legacy_received_appraisal_context,

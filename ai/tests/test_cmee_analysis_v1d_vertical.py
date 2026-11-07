@@ -43,6 +43,17 @@ def request(*members):
 
 
 class AnalysisVerticalTests(unittest.TestCase):
+    def assert_action_field_meaning_matches(self, clause):
+        """The actual field may change evidence coordinates, never the meaning."""
+        baseline = self.generate(request(record(memo=clause))).artifact
+        actual = self.generate(request(record(memo='', action=clause))).artifact
+        self.assertIsNotNone(baseline)
+        self.assertIsNotNone(actual)
+        self.assertEqual(actual.safe_text_projection(authenticated_owner_scope=OWNER)['text'],
+                         baseline.safe_text_projection(authenticated_owner_scope=OWNER)['text'])
+        self.assertTrue(all(e.field_path == 'memo_action'
+                            for node in actual.graph.nodes for e in node.evidence_refs))
+
     def test_stacked_speaker_modifiers_keep_quotes_and_independent_actions_distinct(self):
         for speaker in ('親しい新しい友人', '親しかった新しい友人',
                         '知っている親しい友人', '親しい知っている友人',
@@ -1608,7 +1619,7 @@ class AnalysisVerticalTests(unittest.TestCase):
             for degree in (('少し',) if finite in ('不安はない', '不安がありませんでした') else (
                     '全く', 'あまり', '少しも', 'ちっとも')):
                 self.assertIsNone(self.generate(request(record(memo='私は' + degree + finite + '。'))).artifact)
-            self.assertIsNone(self.generate(request(record(memo='', action='私は' + finite + '。'))).artifact)
+            self.assert_action_field_meaning_matches('私は' + finite + '。')
         for body in ('不安ない', '不安もない', '不安にはない', '不安しかない', '不安もある',
                      '不安があるわけではない', '不安はないわけではない', '不安はなかったとは言えない',
                      '不安はないなら記録を残す', '不安はないけれど怖い', '安心はない',
@@ -1796,7 +1807,7 @@ class AnalysisVerticalTests(unittest.TestCase):
                            '不安ではないなら記録を残す', '不安ではないけれど怖い'):
                 with self.subTest(degree=degree, ending=ending):
                     self.assertIsNone(self.generate(request(record(memo='私は' + degree + ending + '。'))).artifact)
-            self.assertIsNone(self.generate(request(record(memo='', action='私は' + degree + '不安ではない。'))).artifact)
+            self.assert_action_field_meaning_matches('私は' + degree + '不安ではない。')
         for degree in ('少しは', '少しだけ', '少しもは', '少しも、', 'ちっともも',
                        '少しもちっとも', '少しもあまり', 'あまり少しも', 'ちっとも少し'):
             with self.subTest(degree=degree):
@@ -1941,7 +1952,7 @@ class AnalysisVerticalTests(unittest.TestCase):
                            '不安ではないなら記録を残す', '不安ではないけれど怖い'):
                 with self.subTest(degree=degree, ending=ending):
                     self.assertIsNone(self.generate(request(record(memo='私は' + degree + ending + '。'))).artifact)
-            self.assertIsNone(self.generate(request(record(memo='', action='私は' + degree + '不安ではない。'))).artifact)
+            self.assert_action_field_meaning_matches('私は' + degree + '不安ではない。')
         for degree in ('あまりにも', 'あんまりにも', 'あまりは', 'あんまりも', 'あまり、',
                        'あまり全く', '全然あまり', 'あまり少し', '少しあまり'):
             with self.subTest(degree=degree):
@@ -2085,7 +2096,7 @@ class AnalysisVerticalTests(unittest.TestCase):
                        '不安ではないわけではない', '不安ではなかったとは言えない'):
             with self.subTest(ending=ending):
                 self.assertIsNone(self.generate(request(record(memo='私は全然' + ending + '。'))).artifact)
-        self.assertIsNone(self.generate(request(record(memo='', action='私は全く不安ではない。'))).artifact)
+        self.assert_action_field_meaning_matches('私は全く不安ではない。')
 
     def test_emphatic_negative_anxiety_keeps_updates_grouping_and_order(self):
         old, new = '私は全く不安ではなかった', '私は不安ではなかった'
@@ -2199,7 +2210,7 @@ class AnalysisVerticalTests(unittest.TestCase):
         for finite in ('少し不安ではない', 'かなり不安じゃありません', '少しとても不安だ'):
             with self.subTest(finite=finite):
                 self.assertIsNone(self.generate(request(record(memo='今日、私は' + finite + '。'))).artifact)
-        self.assertIsNone(self.generate(request(record(memo='', action='今日、私は不安です。'))).artifact)
+        self.assert_action_field_meaning_matches('今日、私は不安です。')
 
     def test_today_current_feelings_keep_identity_updates_and_unproved_order(self):
         old, new = '今日、私は不安です', '今日、私は不安ではない'
@@ -2310,9 +2321,9 @@ class AnalysisVerticalTests(unittest.TestCase):
                 artifact = self.generate(request(record(memo=clause + '。私は記録を残した。'))).artifact
                 self.assertFalse(artifact and any(n.proposition.result_state == 'PAST_FEELING'
                     for n in artifact.graph.nodes))
-        for memo, action in (('昨日、私は不安だった。', '友人の話でした。'),
-                             ('', '今日、私は不安だった。')):
-            self.assertIsNone(self.generate(request(record(memo=memo, action=action))).artifact)
+        self.assertIsNone(self.generate(request(record(memo='昨日、私は不安だった。',
+            action='友人の話でした。'))).artifact)
+        self.assert_action_field_meaning_matches('今日、私は不安だった。')
 
     def test_dated_polite_feelings_keep_updates_and_complete_source_host(self):
         for finite in ('落ち着きました', '嬉しかったです', 'うれしかったです'):
@@ -2427,8 +2438,8 @@ class AnalysisVerticalTests(unittest.TestCase):
                         self.assertFalse(artifact and any(n.proposition.predicate_lemma == '不安だ'
                             for n in artifact.graph.nodes))
                 clause = '私は' + degree + finite + '。'
-                for memo, action in ((clause, '友人の話でした。'), ('', clause)):
-                    self.assertIsNone(self.generate(request(record(memo=memo, action=action))).artifact)
+                self.assertIsNone(self.generate(request(record(memo=clause, action='友人の話でした。'))).artifact)
+                self.assert_action_field_meaning_matches(clause)
             for ending in (*CURRENT_NEGATIVE_ANXIETY_FORMS, 'も不安です', 'だけ不安です', 'は不安です',
                     '、不安です', degree + '不安です', '少し不安です', 'とても不安です'):
                 with self.subTest(degree=degree, ending=ending):
@@ -2719,8 +2730,9 @@ class AnalysisVerticalTests(unittest.TestCase):
                 artifact = self.generate(request(record(memo=clause + '。'))).artifact
                 self.assertFalse(artifact and any(n.proposition.result_state == 'PAST_FEELING'
                     for n in artifact.graph.nodes))
-        for memo, action in (('私は少し不安だった。', '友人の話でした。'), ('', '私は少し不安だった。')):
-            self.assertIsNone(self.generate(request(record(memo=memo, action=action))).artifact)
+        self.assertIsNone(self.generate(request(record(memo='私は少し不安だった。',
+            action='友人の話でした。'))).artifact)
+        self.assert_action_field_meaning_matches('私は少し不安だった。')
 
     def test_slight_anxiety_keeps_degree_in_updates_comparison_and_safe_replay(self):
         slight, bare = '私は少し不安だった', '僕は不安だった'
@@ -2785,8 +2797,8 @@ class AnalysisVerticalTests(unittest.TestCase):
                     self.assertIsNotNone(artifact)
                     self.assertEqual([n.proposition.predicate_lemma for n in artifact.graph.nodes], ['残す'])
             clause = '私は' + degree + '不安だった。'
-            for memo, action in ((clause, '友人の話でした。'), ('', clause)):
-                self.assertIsNone(self.generate(request(record(memo=memo, action=action))).artifact)
+            self.assertIsNone(self.generate(request(record(memo=clause, action='友人の話でした。'))).artifact)
+            self.assert_action_field_meaning_matches(clause)
 
     def test_written_anxiety_degrees_keep_literal_meaning_in_updates_and_comparison(self):
         for degree, modifier in WRITTEN_ANXIETY_DEGREES[1:]:
@@ -2960,7 +2972,7 @@ class AnalysisVerticalTests(unittest.TestCase):
                         for n in artifact.graph.nodes))
             for other in ('友人は言った。', '友人の話でした。'):
                 self.assertIsNone(self.generate(request(record(memo='私は' + form + '。', action=other))).artifact)
-            self.assertIsNone(self.generate(request(record(memo='', action='私は' + form + '。'))).artifact)
+            self.assert_action_field_meaning_matches('私は' + form + '。')
         for finite in ('不安ではなくない', '不安じゃなくない', '不安ではないわけではない',
                        '少し不安ではない', 'とても不安じゃない', '不安ではないと思う'):
             with self.subTest(finite=finite):
@@ -5038,7 +5050,7 @@ class AnalysisVerticalTests(unittest.TestCase):
             result = self.generate(request(record(memo='私は' + form + '。', action='友人は言った。')))
             self.assertFalse(result.artifact and any(n.proposition.result_state == 'PAST_FEELING'
                 for n in result.artifact.graph.nodes))
-            self.assertIsNone(self.generate(request(record(memo='', action='私は' + form + '。'))).artifact)
+            self.assert_action_field_meaning_matches('私は' + form + '。')
 
     def test_negative_past_feelings_keep_updates_comparison_and_unknown_gaps(self):
         old, new = '私は安心した', '僕は安心しませんでした'
@@ -5147,7 +5159,7 @@ class AnalysisVerticalTests(unittest.TestCase):
                         self.assertFalse(result.artifact and any(n.proposition.result_state == 'PAST_FEELING'
                             for n in result.artifact.graph.nodes))
             self.assertIsNone(self.generate(request(record(memo=feeling + '。'))).artifact)
-            self.assertIsNone(self.generate(request(record(memo='', action='私は' + feeling + '。'))).artifact)
+            self.assert_action_field_meaning_matches('私は' + feeling + '。')
 
     def test_polite_compound_feeling_keeps_exact_episode_and_outgoing_order(self):
         for feeling in ('落ち着きました', '嬉しかったです', 'うれしかったです'):
@@ -5275,7 +5287,7 @@ class AnalysisVerticalTests(unittest.TestCase):
                 self.assertIsNotNone(artifact)
                 self.assertFalse(any(e.edge_kind == 'OBSERVED_ORDER' for e in artifact.graph.edges))
                 artifact.safe_projection(authenticated_owner_scope=OWNER)
-        self.assertIsNone(self.generate(request(record(memo='', action='私は安心した。'))).artifact)
+        self.assert_action_field_meaning_matches('私は安心した。')
 
     def test_standalone_self_past_feeling_keeps_split_dependent_host_pending(self):
         for feeling in ('安心した', '安心しました', '落ち着いた', '嬉しかった', 'うれしかった'):
@@ -5719,7 +5731,10 @@ class AnalysisVerticalTests(unittest.TestCase):
                 artifact = self.generate(request(record(memo=memo + '。'))).artifact
                 self.assertFalse(artifact and artifact.graph.annotations)
         artifact = self.generate(request(record(memo='私は記録を残した。', action=old + '。'))).artifact
-        self.assertFalse(artifact.graph.annotations)
+        self.assertEqual({a.kind for a in artifact.graph.annotations}, {'PROTECTIVE', 'BURDEN'})
+        self.assertTrue(all(e.field_path == 'memo_action' for a in artifact.graph.annotations
+                            for e in a.evidence_refs))
+        self.assertFalse(artifact.graph.edges)
         original = record(memo='私は記録を残した。' + old + '。')
         for quoted in ('私は家族を守りたい', old.replace('つらい', '辛い')):
             with self.subTest(quoted=quoted):
@@ -6068,7 +6083,10 @@ class AnalysisVerticalTests(unittest.TestCase):
                 artifact = self.generate(request(record(memo=memo))).artifact
                 self.assertFalse(artifact and any(a.kind == 'PROTECTIVE' for a in artifact.graph.annotations))
         artifact = self.generate(request(record(memo='私は記録を残した。', action='私は家族を守りたい。'))).artifact
-        self.assertEqual(artifact.graph.annotations, ())
+        annotation, = artifact.graph.annotations
+        self.assertEqual(annotation.kind, 'PROTECTIVE')
+        self.assertEqual({e.field_path for e in annotation.evidence_refs}, {'memo_action'})
+        self.assertFalse(artifact.graph.edges)
         artifact = self.generate(request(record(memo='私は家族を守りたい。',
             action='友人から聞いた話です。'))).artifact
         self.assertFalse(artifact and artifact.graph.annotations)
@@ -6384,7 +6402,9 @@ class AnalysisVerticalTests(unittest.TestCase):
                 self.assertFalse(artifact and artifact.graph.annotations)
         artifact = self.generate(request(record(memo='私は仕事を続けたい。',
             action='私は仕事を続けたいけれど、私はつらい。'))).artifact
-        self.assertEqual(artifact.graph.annotations, ())
+        annotation, = artifact.graph.annotations
+        self.assertEqual({e.field_path for e in annotation.evidence_refs}, {'memo_action'})
+        self.assertFalse(artifact.graph.edges)
 
     def test_burden_annotation_requires_the_shared_relation_and_finite_witness(self):
         from cocolon_meaning_experience_engine.cores.analysis import intent_compiler as compiler
@@ -6535,8 +6555,7 @@ class AnalysisVerticalTests(unittest.TestCase):
             with self.subTest(right=right):
                 artifact = self.generate(request(record(memo=prefix + right + '。'))).artifact
                 self.assertFalse(artifact and artifact.graph.annotations)
-        artifact = self.generate(request(record(memo='', action=prefix + '私は、つらい。'))).artifact
-        self.assertFalse(artifact and artifact.graph.annotations)
+        self.assert_action_field_meaning_matches(prefix + '私は、つらい。')
 
     def test_burden_spelling_does_not_promote_food_or_qualified_feelings(self):
         prefix = '私は仕事を続けたいけれど、'
@@ -6559,11 +6578,7 @@ class AnalysisVerticalTests(unittest.TestCase):
                 artifact = self.generate(request(record(memo=memo))).artifact
                 if artifact:
                     self.assertFalse(artifact.graph.annotations)
-        artifact = self.generate(request(record(memo='', action=prefix + '私は辛い。'))).artifact
-        self.assertIsNotNone(artifact)
-        self.assertFalse(artifact.graph.annotations)
-        self.assertIn('SOURCE_SCOPE', [g.missing_scope for g in artifact.graph.unknown_gaps])
-        artifact.safe_projection(authenticated_owner_scope=OWNER)
+        self.assert_action_field_meaning_matches(prefix + '私は辛い。')
 
     def test_burden_annotation_aggregates_only_its_target_and_preserves_unread_scope(self):
         memo = '私は仕事を続けたいけれど、私はつらい。'
@@ -7984,8 +7999,7 @@ class AnalysisVerticalTests(unittest.TestCase):
                 result = self.generate(request(record(memo=memo)))
                 self.assertFalse(result.artifact and any(n.proposition and n.proposition.result_state
                                                         for n in result.artifact.graph.nodes))
-        result = self.generate(request(record(memo='', action='まだ方法が見つかっていない。')))
-        self.assertIsNone(result.artifact)
+        self.assert_action_field_meaning_matches('まだ方法が見つかっていない。')
 
     def test_action_change_pair_preserves_complete_evidence_and_order(self):
         for connector, result_clause in (
@@ -9448,7 +9462,7 @@ class AnalysisVerticalTests(unittest.TestCase):
                 result = self.generate(request(record(memo=memo)))
                 self.assertFalse(result.artifact and any(n.proposition and
                     n.proposition.scene_state for n in result.artifact.graph.nodes))
-        self.assertIsNone(self.generate(request(record(memo='', action='私は職場にいた。'))).artifact)
+        self.assert_action_field_meaning_matches('私は職場にいた。')
         artifact = self.generate(request(record(memo='私は職場で資料を調べた。'))).artifact
         self.assertEqual([n.node_kind for n in artifact.graph.nodes], ['ACTION_OR_NONACTION'])
 
@@ -9797,7 +9811,7 @@ class AnalysisVerticalTests(unittest.TestCase):
                 outcome = self.generate(request(record(memo=memo)))
                 self.assertFalse(outcome.artifact and any(n.node_kind in {'ROLE', 'SCENE'}
                                                         for n in outcome.artifact.graph.nodes))
-        self.assertIsNone(self.generate(request(record(memo='', action='私は記録を担当した。'))).artifact)
+        self.assert_action_field_meaning_matches('私は記録を担当した。')
 
     def test_responsibility_requires_matching_shared_event_not_keyword_action(self):
         from cocolon_meaning_experience_engine.cores.analysis import intent_compiler as compiler
@@ -9842,7 +9856,7 @@ class AnalysisVerticalTests(unittest.TestCase):
             with self.subTest(memo=memo):
                 result = self.generate(request(record(memo=memo)))
                 self.assertFalse(result.artifact and any(n.node_kind == 'ROLE' for n in result.artifact.graph.nodes))
-        self.assertIsNone(self.generate(request(record(memo='', action='私は会議の司会を担当した。'))).artifact)
+        self.assert_action_field_meaning_matches('私は会議の司会を担当した。')
 
     def test_role_supplement_revision_withdrawal_and_restatement_keep_identity(self):
         old, new = '私は会議の司会を担当した', '私は受付を担当しませんでした'
@@ -10669,10 +10683,12 @@ class AnalysisVerticalTests(unittest.TestCase):
         node, = artifact.graph.nodes
         self.assertEqual((node.node_kind, node.proposition.arguments), ('ROLE', (('を', '記録'),)))
         artifact.safe_projection(authenticated_owner_scope=OWNER)
-        # The event witness stays memo-only; memo_action cannot replace it.
+        # Each complete original field keeps its own event evidence.
         artifact = self.generate(request(record(memo='私は資料を調べた。',
             action='私は、職場にいた。'))).artifact
-        self.assertEqual([n.node_kind for n in artifact.graph.nodes], ['ACTION_OR_NONACTION'])
+        self.assertEqual([n.node_kind for n in artifact.graph.nodes], ['ACTION_OR_NONACTION', 'SCENE'])
+        self.assertEqual(artifact.graph.nodes[1].evidence_refs[0].field_path, 'memo_action')
+        self.assertFalse(artifact.graph.edges)
         artifact.safe_projection(authenticated_owner_scope=OWNER)
 
     def test_event_topic_comma_keeps_order_and_period_comparison_semantics(self):
@@ -11438,13 +11454,6 @@ class AnalysisVerticalTests(unittest.TestCase):
                         req = request(record(memo='　' + literal + '。' if field == 'memo' else '',
                             action='　' + literal + '。' if field == 'memo_action' else ''))
                         artifact = self.generate(req).artifact
-                        if field == 'memo_action':
-                            # Scene/role shared witnesses remain memo-only,
-                            # just as for the existing plain negative form.
-                            self.assertIsNone(artifact)
-                            self.assertIsNone(self.generate(request(record(memo='',
-                                action=topic + body + '。'))).artifact)
-                            continue
                         self.assertIsNotNone(artifact)
                         node, = artifact.graph.nodes
                         p = node.proposition
