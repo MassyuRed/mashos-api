@@ -3819,6 +3819,34 @@ async def _handle_send_fcm_push_v1(*, user_id: str, payload: Dict[str, Any]) -> 
     mode = str((payload or {}).get("recipient_mode") or "user_ids").strip() or "user_ids"
     data_payload = (payload or {}).get("data") if isinstance((payload or {}).get("data"), dict) else {}
 
+    if ((payload or {}).get('event_type') == 'watashi_map_updated'
+            or data_payload.get('type') == 'watashi_map_updated'):
+        from uuid import UUID
+        uid = str(user_id or '').strip()
+        rid = str(data_payload.get('report_id') or '')
+        try:
+            expected_version = 'artifact:' + UUID(rid).hex + '@1'
+            valid = (str(UUID(uid)) == uid and str(UUID(rid)) == rid
+                and mode == 'user_ids' and payload.get('recipient_user_ids') == [uid]
+                and payload.get('actor_user_id') == uid
+                and payload.get('event_type') == 'watashi_map_updated'
+                and title == 'Emlis' and body == 'わたしマップが更新されました'
+                and data_payload.get('user_id') == uid
+                and data_payload.get('type') == 'watashi_map_updated'
+                and data_payload.get('target') == 'watashi_map'
+                and data_payload.get('version_key') == expected_version)
+        except (ValueError, TypeError, AttributeError):
+            valid = False
+        if not valid:
+            return {'status': 'skipped_invalid_map_notification'}
+        from analysis_cumulative_service import read_maps
+        # The existing metadata RPC enforces the owner's current source guard
+        # without returning the analysis body or any evidence. Read failures
+        # propagate so the durable push job can retry instead of sending stale.
+        current = await read_maps(uid, limit=1, metadata_only=True)
+        if not current['items'] or current['items'][0]['id'] != rid:
+            return {'status': 'skipped_stale_map_notification'}
+
     tokens: List[str] = []
     recipient_count = 0
     if mode == "tokens":

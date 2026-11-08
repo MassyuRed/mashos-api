@@ -17,6 +17,7 @@ name: Analysis observed content
       - ai/services/ai_inference/api_self_structure*.py
       - ai/services/ai_inference/api_emotion_submit.py
       - ai/services/ai_inference/astor_job_queue.py
+      - ai/services/ai_inference/fcm_push_queue.py
       - ai/tests/test_emotion_submit_speed_regression_phase14.py
       - ai/services/ai_inference/astor_self_structure_report.py
       - ai/services/ai_inference/api_cron_distribution.py

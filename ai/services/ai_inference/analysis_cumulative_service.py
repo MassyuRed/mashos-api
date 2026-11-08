@@ -795,7 +795,27 @@ async def _ensure_map(user_id, *, ensure=True, force=False, monthly=False, model
         row = checked['items'][0] if checked['items'] else None
         if not row:
             raise HTTPException(409, 'analysis_source_changed')
+        if refreshed and row['id'] == str(UUID(artifact.artifact_id[9:])):
+            await _queue_map_update_notification(owner, row)
     return _response(row, refreshed=refreshed, monthly=monthly, coverage=coverage)
+
+
+async def _queue_map_update_notification(owner, row):
+    """Best-effort reservation after the new map passed its saved-source guard."""
+    try:
+        from fcm_push_queue import enqueue_single_user_push_notification
+        await enqueue_single_user_push_notification(
+            user_id=owner, title='Emlis', body='わたしマップが更新されました',
+            event_type='watashi_map_updated',
+            job_key_prefix='watashi_map_updated:' + row['id'],
+            data=dict(type='watashi_map_updated', target='watashi_map', user_id=owner,
+                report_id=row['id'], version_key=row['content_json']['watashiMap']['projection_of']),
+            priority=60, only_if_absent=True)
+    except Exception:
+        # A notification outage must not turn the already saved map into a
+        # failed analysis. This reservation is best effort, not an outbox.
+        import logging
+        logging.getLogger(__name__).warning('Watashi map completion push reservation failed')
 
 
 def _response(row, *, refreshed=False, monthly=False, coverage=None):
