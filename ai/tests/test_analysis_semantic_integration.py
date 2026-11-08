@@ -535,3 +535,64 @@ def test_background_manual_update_keeps_current_until_worker_commits_and_preserv
             assert hidden.json()['meta'] is None and hidden.json()['content_text'] is None
             assert len(acquired) == 1
     asyncio.run(scenario())
+
+
+def test_background_queue_failure_does_not_hide_authorized_saved_content_or_status(monkeypatch):
+    import api_self_structure as latest
+    store = OwnedStore()
+    setup_store(monkeypatch, store)
+    monkeypatch.setenv('COCOLON_ANALYSIS_OBSERVED_MODE', 'development')
+    monkeypatch.setattr(latest, '_resolve_user_id_from_token', AsyncMock(return_value=OWNER))
+    source = semantic_source(lambda request: httpx.Response(200, json=completion()))
+    monkeypatch.setattr(sources, 'application_analysis_model_source', lambda: source)
+    unavailable = HTTPException(503, 'SYNTHETIC_PRIVATE_QUEUE_DETAIL')
+    reserve = AsyncMock(side_effect=unavailable)
+    status = AsyncMock(side_effect=unavailable)
+    monkeypatch.setattr(service, 'request_map_refresh', reserve)
+    monkeypatch.setattr(service, 'map_refresh_status', status)
+    app = FastAPI()
+    latest.register_self_structure_routes(app)
+    async def scenario():
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url='http://synthetic') as client:
+            headers = {'Authorization': 'Bearer synthetic', 'X-Watashi-Map-Renderer': 'semantic.v1'}
+            created = await client.get('/self-structure/latest', headers=headers)
+            assert created.status_code == 200
+            before = created.json()
+            for query in ('background=true&force=true', 'background=true&ensure=false'):
+                saved = await client.get('/self-structure/latest?' + query, headers=headers)
+                assert saved.status_code == 200, saved.text
+                body = saved.json()
+                assert body['refresh_status'] == 'failed' and body['has_visible_content']
+                assert body['report_id'] == before['report_id'] and body['meta'] == before['meta']
+                assert body['content_text'] == before['content_text']
+                assert 'SYNTHETIC_PRIVATE_QUEUE_DETAIL' not in saved.text
+            saved_status = await client.get('/self-structure/latest/status', headers=headers)
+            assert saved_status.status_code == 200
+            assert saved_status.json()['has_visible_content'] is True
+            assert saved_status.json()['refresh_status'] == 'failed'
+            assert saved_status.json()['version_key'] == before['meta']['projection_of']
+            assert 'SYNTHETIC_PRIVATE_QUEUE_DETAIL' not in saved_status.text
+            assert len(store.saved) == 1
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize('status_path', [False, True])
+def test_background_saved_read_guard_failure_is_not_downgraded_to_queue_failure(monkeypatch, status_path):
+    import api_self_structure as latest
+    monkeypatch.setenv('COCOLON_ANALYSIS_OBSERVED_MODE', 'development')
+    monkeypatch.setattr(latest, '_resolve_user_id_from_token', AsyncMock(return_value=OWNER))
+    monkeypatch.setattr(service, 'read_maps', AsyncMock(side_effect=HTTPException(409, 'analysis_source_changed')))
+    reserve, status = AsyncMock(), AsyncMock()
+    monkeypatch.setattr(service, 'request_map_refresh', reserve)
+    monkeypatch.setattr(service, 'map_refresh_status', status)
+    app = FastAPI()
+    latest.register_self_structure_routes(app)
+    async def scenario():
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url='http://synthetic') as client:
+            path = '/self-structure/latest/status' if status_path else '/self-structure/latest?background=true'
+            response = await client.get(path, headers={'Authorization': 'Bearer synthetic'})
+            assert response.status_code == 409
+            assert response.json() == {'detail': 'analysis_source_changed'}
+            reserve.assert_not_awaited()
+            status.assert_not_awaited()
+    asyncio.run(scenario())

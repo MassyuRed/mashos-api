@@ -331,7 +331,7 @@ class MyProfileLatestEnsureResponse(CumulativeMapMetadata):
     has_visible_content: bool = Field(default=True, description="false when the latest view is no-data only")
     skip_reason: Optional[str] = Field(default=None, description="optional no-save reason")
     refresh_status: Optional[Literal['queued', 'running', 'failed']] = Field(default=None,
-        description="Existing background refresh state; null when no refresh is pending")
+        description="Background refresh state or queue failure; null when no refresh is pending")
 
 
 class MyProfileLatestStatusResponse(BaseModel):
@@ -342,7 +342,7 @@ class MyProfileLatestStatusResponse(BaseModel):
     has_visible_content: bool = Field(default=False, description="false when the latest view is no-data only")
     skip_reason: Optional[str] = Field(default=None, description="optional no-data reason")
     refresh_status: Optional[Literal['queued', 'running', 'failed']] = Field(default=None,
-        description="Existing background refresh state; this status read never enqueues")
+        description="Background refresh state or queue failure; this status read never enqueues")
 
 
 # ----------------------------
@@ -1436,9 +1436,15 @@ def register_self_structure_routes(app: FastAPI) -> None:
                 ensure_map, map_refresh_status, map_response_for_renderer, request_map_refresh)
             if background:
                 result = await ensure_map(uid, ensure=False)
-                result['refresh_status'] = (await request_map_refresh(uid, force=force,
-                    trigger='manual' if force else 'map_view') if ensure
-                    else await map_refresh_status(uid))
+                try:
+                    result['refresh_status'] = (await request_map_refresh(uid, force=force,
+                        trigger='manual' if force else 'map_view') if ensure
+                        else await map_refresh_status(uid))
+                except Exception:
+                    # Saved-content authorization and guard checks above remain
+                    # hard failures; only the optional queue operation degrades.
+                    logger.warning('Analysis background refresh request failed')
+                    result['refresh_status'] = 'failed'
             else:
                 result = await ensure_map(uid, ensure=ensure, force=force)
             return SelfStructureLatestEnsureResponse(**map_response_for_renderer(

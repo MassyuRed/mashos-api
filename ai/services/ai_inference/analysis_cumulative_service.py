@@ -815,10 +815,17 @@ def _response(row, *, refreshed=False, monthly=False, coverage=None):
 async def map_status(user_id):
     result = await read_maps(user_id, limit=1)
     row = result['items'][0] if result['items'] else None
+    try:
+        refresh_status = await map_refresh_status(user_id)
+    except Exception:
+        # A queue outage must not hide a valid, separately authorized map.
+        import logging
+        logging.getLogger(__name__).warning('Analysis refresh status read failed')
+        refresh_status = 'failed'
     return dict(version_key=row['content_json']['watashiMap']['projection_of'] if row else None,
         generated_at=row['generated_at'] if row else None, saved_report_mode='standard' if row else None,
         has_visible_content=bool(row), skip_reason=None if row else 'analysis_saved_map_unavailable',
-        refresh_status=await map_refresh_status(user_id))
+        refresh_status=refresh_status)
 
 
 def _map_refresh_queue_enabled():
