@@ -114,7 +114,7 @@ class NaturalBridgeTests(BridgeTests):
         with patch('ai.tools.analysis_jupyter_bridge.AsyncHTTPClient') as client:
             client.return_value.fetch = AsyncMock(return_value=reply)
             assert self.request().code == 200
-            assert client.return_value.fetch.call_args.args[0].request_timeout == 25
+            assert client.return_value.fetch.call_args.args[0].request_timeout == 245
             client.reset_mock()
             assert self.request(headers={'Authorization':'Bearer synthetic-other-analysis-key'}).code == 401
             client.assert_not_called()

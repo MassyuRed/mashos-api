@@ -361,6 +361,9 @@ class EmlisThreadService:
         return await self._process(user_id, snapshot)
 
     def _attempt_seconds(self, t):
+        if t.get("data", {}).get("response_profile") == NATURAL_REPLY_PROFILE:
+            # Includes a bounded wait behind the existing Analysis GPU job.
+            return 270
         if self.offline_model_attempt_seconds is None:
             return ATTEMPT_SECONDS
         from cocolon_meaning_experience_engine.emlis_semantic_admission import MODEL_PROFILE
@@ -631,7 +634,7 @@ class EmlisThreadService:
             self._require_write()
             try:
                 candidate = validate_reply(await asyncio.wait_for(self.natural_reply_source(material),
-                    timeout=min(25.0, remaining)), material)
+                    timeout=min(240.0, remaining)), material)
             except asyncio.CancelledError:
                 raise
             except Exception:

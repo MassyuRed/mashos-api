@@ -120,7 +120,7 @@ def semantic_json_parser(messages, alphabet):
 
 def make_handler(generate, *, api_key, model_name, deadline, max_requests,
                  max_new_tokens=2048, request_seconds=23, max_request_bytes=65536,
-                 natural_reply=None):
+                 natural_reply=None, natural_queue_seconds=210):
     lock = threading.Lock()
     served = 0
 
@@ -175,7 +175,8 @@ def make_handler(generate, *, api_key, model_name, deadline, max_requests,
                     raise ValueError
             except Exception:
                 return self.reply(400, {"error": "request_invalid"})
-            if not lock.acquire(blocking=False):
+            admitted = lock.acquire(timeout=natural_queue_seconds) if natural else lock.acquire(blocking=False)
+            if not admitted:
                 return self.reply(429, {"error": "busy"})
             try:
                 if (max_requests and served >= max_requests) or time.monotonic() >= deadline:

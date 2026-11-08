@@ -100,7 +100,7 @@ class AnalysisBridge(RequestHandler):
 
 class NaturalReplyBridge(AnalysisBridge):
     key_name = "EMLIS_NATURAL_REPLY_API_KEY"
-    request_seconds = 25
+    request_seconds = 245
 
     def initialize(self, key_path="/workspace/natural-reply.env"):
         super().initialize(key_path=key_path)

@@ -171,7 +171,7 @@ def test_shared_profiles_keep_keys_budgets_and_single_gpu_lock():
     server = ThreadingHTTPServer(('127.0.0.1', 0), probe.make_handler(generate,
         api_key='analysis-test-key', model_name='analysis', deadline=float('inf'), max_requests=0,
         max_new_tokens=4096, request_seconds=210, max_request_bytes=262144,
-        natural_reply={'api_key':'natural-test-key','model_name':'natural'}))
+        natural_reply={'api_key':'natural-test-key','model_name':'natural'}, natural_queue_seconds=0.05))
     worker = threading.Thread(target=server.serve_forever, daemon=True); worker.start()
     def packet(model, tokens, body='synthetic'):
         return dict(model=model, max_tokens=tokens, temperature=0, stream=False,
@@ -222,3 +222,31 @@ def test_base_profile_restores_frozen_adapter_after_peft_context_exit(fail):
     except RuntimeError:
         assert fail
     assert model.active and not model.grads and not model.training
+
+
+def test_natural_waits_for_existing_analysis_without_repeating_either_generation():
+    entered, release = threading.Event(), threading.Event()
+    calls = []
+    def generate(messages, deadline, *, profile=None):
+        calls.append(profile)
+        if profile is None:
+            entered.set(); assert release.wait(3)
+        return '合成の返事です。' if profile else '{}', 'stop'
+    server = ThreadingHTTPServer(('127.0.0.1',0), probe.make_handler(generate,
+        api_key='analysis',model_name='analysis',deadline=float('inf'),max_requests=0,
+        max_new_tokens=4096,request_seconds=210,natural_reply={'api_key':'natural','model_name':'natural'}, natural_queue_seconds=2))
+    worker=threading.Thread(target=server.serve_forever,daemon=True);worker.start()
+    replies=[]
+    def post(model,tokens):
+        replies.append(httpx.post(f'http://127.0.0.1:{server.server_port}/v1/chat/completions', trust_env=False,
+            headers={'Authorization':'Bearer '+model}, json=dict(model=model,max_tokens=tokens,temperature=0,stream=False,
+                chat_template_kwargs={'enable_thinking':False}, messages=[dict(role='system',content='synthetic'),dict(role='user',content='synthetic')])).status_code)
+    a=threading.Thread(target=post,args=('analysis',4096));n=threading.Thread(target=post,args=('natural',2048))
+    try:
+        a.start();assert entered.wait(2);n.start()
+        time.sleep(.1)
+        assert calls==[None]
+        release.set();a.join(3);n.join(3)
+        assert sorted(replies)==[200,200] and calls==[None,'natural']
+    finally:
+        release.set();server.shutdown();server.server_close();worker.join(3)
