@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
+import re
 from urllib.parse import urlsplit
 
 import httpx
@@ -234,6 +235,23 @@ def _material(original):
             if k in original}
 
 
+_QUESTION_ENDING = re.compile(r"(?:でしょうか|ですか|ますか)[ \t\u3000]*(?=[。．.!！\r\n]|$)")
+
+
+def _has_unpunctuated_question(text):
+    """Catch the witnessed question endings, preserving quoted source speech.
+
+    Reuse the existing offset-preserving quote view. This finite check does
+    not certify that other Japanese wording is free of questions.
+    """
+    if not _QUESTION_ENDING.search(text):
+        return False
+    from emlis_ai_grounded_observation_plan import _top_level_text
+    top_level = _top_level_text(text)
+    # Malformed grouping must not conceal a matching question ending.
+    return bool(_QUESTION_ENDING.search(text if top_level is None else top_level))
+
+
 def validate_reply(reply, request):
     if (type(reply) is not NaturalReply or reply.schema_version != ARTIFACT_SCHEMA
             or reply.source_prefix_ref != request.source_prefix_ref
@@ -241,6 +259,7 @@ def validate_reply(reply, request):
             or not isinstance(reply.text, str) or not reply.text.strip()
             or len(reply.text) > 16000
             or any(x in reply.text for x in ("<think>", "</think>", "```", "？", "?"))
+            or _has_unpunctuated_question(reply.text)
             or any(ord(x) < 32 and x not in "\n\t\r" for x in reply.text)):
         raise NaturalReplyError("natural_reply_invalid")
     return reply

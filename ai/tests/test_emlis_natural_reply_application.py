@@ -724,7 +724,17 @@ def test_unconnected_frame_correction_is_not_silently_omitted(natural_case):
     assert len(calls) == 1
 
 
-@pytest.mark.parametrize("change", [{"finish_reason": "length"}, {"model": "unexpected-model"}, {"text": "もう一度教えてください？"}])
+@pytest.mark.parametrize("change", [
+    {"finish_reason": "length"}, {"model": "unexpected-model"},
+    {"text": "もう一度教えてください？"},
+    {"text": "今はどんな気持ちでしょうか。"},
+    {"text": "今も同じ気持ちですか。"},
+    {"text": "まだ待っていますか\n気になっています。"},
+    {"text": "今はどんな気持ちでしょうか"},
+    {"text": "今も同じ気持ちですか  。"},
+    {"text": "「今も同じ気持ちですか。"},
+    {"text": "「お知らせ」今はどんな気持ちでしょうか。"},
+])
 def test_http_provider_rejects_partial_wrong_model_or_question_without_retry(change):
     calls = []
 
@@ -738,6 +748,28 @@ def test_http_provider_rejects_partial_wrong_model_or_question_without_retry(cha
     with pytest.raises(NaturalReplyError):
         run(source(NaturalReplyInput("source", '{"current":{"memo":"合成入力"}}')))
     assert len(calls) == 1
+
+
+@pytest.mark.parametrize("text", [
+    "『明日でしょうか。』という言葉が気になったのですね。",
+    "「いま話せますか。」と声をかけたのですね。",
+    "「『明日ですか。』と聞いた」と書いてくださったのですね。",
+    "今は言葉にできないのですね。",
+    "その理由は分からないのですね。",
+    "あたたかな気持ちを感じたのですね。",
+])
+def test_http_provider_keeps_reported_questions_and_declarative_replies(text):
+    calls = []
+
+    def transport(request):
+        calls.append(request)
+        return httpx.Response(200, json={"model": "chosen-4b", "choices": [{
+            "finish_reason": "stop", "message": {"role": "assistant", "content": text}}]})
+
+    source = SelfHostedNaturalReplySource(endpoint="https://model.invalid/v1/chat/completions",
+        model="chosen-4b", api_key="synthetic-only", transport=httpx.MockTransport(transport))
+    reply = run(source(NaturalReplyInput("source", '{"current":{"memo":"合成入力"}}')))
+    assert reply.text == text and len(calls) == 1
 
 
 def test_http_provider_sends_only_admitted_material_and_preserves_reply():
