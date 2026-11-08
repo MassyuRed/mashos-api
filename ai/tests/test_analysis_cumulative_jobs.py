@@ -261,7 +261,7 @@ class CumulativeCompletionNotificationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(options['event_type'], 'watashi_map_updated')
         self.assertEqual(options['priority'], 60)
         self.assertTrue(options['only_if_absent'])
-        self.assertEqual(options['data'], dict(type='watashi_map_updated', target='watashi_map',
+        self.assertEqual(options['data'], dict(type='watashi_map_updated', target='watashi_map', screen='Analysis',
             user_id=OWNER, report_id=self.rid,
             version_key=self.row['content_json']['watashiMap']['projection_of']))
         self.assertNotIn(self.row['content_text'], str(options))

@@ -808,7 +808,7 @@ async def _queue_map_update_notification(owner, row):
             user_id=owner, title='Emlis', body='わたしマップが更新されました',
             event_type='watashi_map_updated',
             job_key_prefix='watashi_map_updated:' + row['id'],
-            data=dict(type='watashi_map_updated', target='watashi_map', user_id=owner,
+            data=dict(type='watashi_map_updated', target='watashi_map', screen='Analysis', user_id=owner,
                 report_id=row['id'], version_key=row['content_json']['watashiMap']['projection_of']),
             priority=60, only_if_absent=True)
     except Exception:
