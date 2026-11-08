@@ -115,6 +115,7 @@ Deprecated rows remain listed until their compatibility window is closed.
 | GET | `/ranking/mymodel_discoveries` | `ranking.mymodel_discoveries.v1` | `true` |  | Retired compatibility route |
 | GET | `/subscription/bootstrap` | `subscription.bootstrap.v1` | `false` |  | Runtime subscription sales / plan config; plans may include additive emlis_ai metadata and marketing lines |
 | GET | `/analysis/home-summary` | `analysis.home_summary.v1` | `false` |  |  |
+| GET | `/analysis/kokoro-weather` | `analysis.kokoro_weather.live.v1` | `false` |  | Owner-only input aggregation; JST today/week/month, existing history retention, no generated report |
 | POST | `/analysis/reports/ensure` | `analysis.reports.ensure.v1` | `false` |  | Analysis core reportValidity meta is additive under content_json.reportValidity; no diagnosis or overclaim output |
 | GET | `/analysis/reports/ready` | `analysis.reports.ready.v1` | `false` |  | Read-side contract may include additive content_json.reportValidity meta |
 | GET | `/analysis/reports/{report_id}` | `analysis.reports.detail.v1` | `false` |  | Detail may include additive content_json.reportValidity meta |

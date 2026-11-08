@@ -25,6 +25,10 @@ name: Analysis observed content
       - ai/services/ai_inference/astor_material_snapshots.py
       - ai/services/ai_inference/api_analysis_reports.py
       - ai/services/ai_inference/analysis_engine_adapter.py
+      - ai/services/ai_inference/api_analysis_reads.py
+      - ai/services/ai_inference/api_contract_registry.py
+      - ai/docs/PUBLIC_API_REGISTRY.md
+      - ai/tests/test_kokoro_weather_live.py
       - ai/services/ai_inference/kokoro_weather_service.py
       - ai/services/analysis_engine/emotion_structure_engine/weekly.py
       - ai/services/ai_inference/cocolon_text_generation_core/adapters/analysis_composer.py
@@ -117,6 +121,17 @@ jobs:
           ai/tests/test_analysis_observed_storage.py
           ai/tests/test_analysis_saved_period.py
           ai/tests/test_cmee_emlis_limited_change_feeling.py
+      - name: Verify input-based live Kokoro weather and saved compatibility
+        run: >-
+          python -m pytest -q --tb=short -ra
+          -p pytest_subtests.plugin -p pytest_asyncio.plugin -p no:cacheprovider -c /dev/null --rootdir=. --noconftest
+          ai/tests/test_kokoro_weather_live.py
+          ai/tests/test_kokoro_weather_service.py
+          ai/tests/test_kokoro_weather_phase6_qa.py
+          ai/tests/test_analysis_home_summary_current_weather.py
+          ai/tests/test_analysis_report_kokoro_weather.py
+          ai/tests/test_analysis_material_input_integrity.py
+          ai/tests/contract/test_api_contract_registry.py
       - name: Verify shared owner identity
         env:
           PYTHONPATH: ai/services/ai_inference:ai/tests:ai

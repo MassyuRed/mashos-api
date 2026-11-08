@@ -6,20 +6,20 @@ import logging
 import os
 from collections import Counter
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Literal, Optional, Tuple
 
-from fastapi import FastAPI, Header, HTTPException, Path
+from fastapi import FastAPI, Header, HTTPException, Path, Query, Response
 from fastapi.encoders import jsonable_encoder
 from pydantic import BaseModel, Field
 
 from api_account_visibility import _require_user_id
-from publish_governance import decide_myweb_report_publish
+from publish_governance import decide_myweb_report_publish, history_retention_window_utc
 from response_microcache import get_or_compute
 from supabase_client import sb_get
 from analysis_summary_reader import get_myweb_home_summary_from_artifacts
 from input_summary_reader import get_input_summary_snapshot
 from emlis_context_anchor_service import sanitize_content_json_for_public_read
-from kokoro_weather_service import build_current_kokoro_weather, with_previous_available
+from kokoro_weather_service import build_current_kokoro_weather, build_live_kokoro_weather, with_previous_available
 from api_analysis_reports import _is_kokoro_weather_report_row
 
 try:
@@ -490,6 +490,28 @@ _fetch_analysis_report_row = _fetch_myweb_report_row
 
 def register_analysis_read_routes(app: FastAPI) -> None:
     """Register current Analysis read routes on the given FastAPI app."""
+
+    @app.get("/analysis/kokoro-weather")
+    async def get_analysis_kokoro_weather(
+        response: Response,
+        period: Literal["today", "week", "month"] = "today",
+        anchor: Optional[str] = Query(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
+        authorization: Optional[str] = Header(default=None, alias="Authorization"),
+    ) -> Dict[str, Any]:
+        me = await _require_user_id(authorization)
+        now = _now_utc()
+        tier = await _resolve_viewer_tier(me)
+        bounds = history_retention_window_utc(tier, now_utc=now)
+        response.headers["Cache-Control"] = "private, no-store"
+        try:
+            return await build_live_kokoro_weather(me, period=period, anchor=anchor, now_utc=now, history_start_utc=bounds.get("start_utc"))
+        except PermissionError:
+            raise HTTPException(status_code=403, detail="history_retention")
+        except (ValueError, OverflowError):
+            raise HTTPException(status_code=422, detail="invalid_weather_period")
+        except Exception:
+            logger.warning("failed to load live kokoro weather", exc_info=False)
+            raise HTTPException(status_code=503, detail="failed_to_load_kokoro_weather")
 
     @app.get("/analysis/home-summary", response_model=AnalysisHomeSummaryResponse)
     async def get_analysis_home_summary(

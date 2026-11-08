@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from collections import Counter
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from supabase_client import sb_get
@@ -468,6 +468,157 @@ async def build_current_kokoro_weather(
     except Exception as exc:
         logger.warning("failed to build current kokoro weather user_id=%s err=%r", str(user_id or "")[:12], exc)
         return build_error_current_weather(start_utc=start_utc, end_utc=end_utc)
+
+
+# -----------------------------------------------------------------------------
+# Live input-based weather. Saved report projections above/below remain compatible.
+# -----------------------------------------------------------------------------
+
+def _live_period(period: str, anchor: Optional[str], now_utc: datetime):
+    today = now_utc.astimezone(JST).date()
+    selected = date.fromisoformat(anchor) if anchor else today
+    if selected > today:
+        raise ValueError("future weather is not available")
+    start = datetime.combine(selected, datetime.min.time(), JST)
+    if period == "today":
+        end = start + DAY
+        previous, following = start - DAY, end
+    elif period == "week":
+        start -= timedelta(days=start.weekday())
+        end = start + timedelta(days=7)
+        previous, following = start - timedelta(days=7), end
+    elif period == "month":
+        start = start.replace(day=1)
+        end = (start.replace(day=28) + timedelta(days=4)).replace(day=1)
+        previous, following = (start - DAY).replace(day=1), end
+    else:
+        raise ValueError("invalid weather period")
+    return start, end, previous.date(), following.date()
+
+
+def _live_aggregate(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
+    weights = {key: sum(_row_emotion_weights(row)[key] for row in rows) for key in EMOTION_KEYS}
+    total = sum(weights.values())
+    # Largest remainders keep the displayed five shares at exactly 100 percent.
+    shares = {key: weights[key] * 100 // total if total else 0 for key in EMOTION_KEYS}
+    if total:
+        ranked = sorted(EMOTION_KEYS, key=lambda key: -(weights[key] * 100 % total))
+        for key in ranked[:100 - sum(shares.values())]:
+            shares[key] += 1
+    top = max(weights.values())
+    leaders = [KEY_TO_JP[key] for key in EMOTION_KEYS if top and weights[key] == top]
+    return {
+        "status": "ok" if rows else "no_observation",
+        "input_count": len(rows),
+        "emotion_weights": weights,
+        "emotion_share_pct": shares,
+        "description": f"{'・'.join(leaders)}の割合が多く記録されています。" if rows else "この期間の感情の記録はありません。",
+    }
+
+
+def build_live_kokoro_weather_from_rows(
+    rows: List[Dict[str, Any]], *, period: str = "today", anchor: Optional[str] = None,
+    now_utc: Optional[datetime] = None, history_start_utc: Optional[datetime] = None,
+) -> Dict[str, Any]:
+    now = (now_utc or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    start, end, previous, following = _live_period(period, anchor, now)
+    read_start = max(start.astimezone(timezone.utc), history_start_utc) if history_start_utc else start.astimezone(timezone.utc)
+    if read_start >= end or read_start > now:
+        raise PermissionError("outside history retention")
+    usable = []
+    for row in rows:
+        if not isinstance(row, dict) or row.get("is_secret") is not False:
+            continue
+        created = _parse_iso_utc(row.get("created_at"))
+        if created is None or not (read_start <= created < end and created <= now):
+            continue
+        if sum(_row_emotion_weights(row).values()):
+            usable.append(row)
+    usable.sort(key=lambda row: (_parse_iso_utc(row["created_at"]), str(row.get("id", ""))))
+    summary = _live_aggregate(usable)
+    summary["recorded_days"] = len({_parse_iso_utc(row["created_at"]).astimezone(JST).date() for row in usable})
+    days = []
+    day = start
+    # Current month ends at today. A week retains its seven labelled day slots.
+    display_end = min(end, datetime.combine(now.astimezone(JST).date() + DAY, datetime.min.time(), JST)) if period == "month" else end
+    while day < display_end:
+        next_day = day + DAY
+        day_rows = [row for row in usable if day <= _parse_iso_utc(row["created_at"]) < next_day]
+        item = dict(_live_aggregate(day_rows), date=day.date().isoformat())
+        if next_day <= read_start:
+            item["status"] = "outside_history"
+        elif day > now:
+            item["status"] = "future"
+        item["partial_history"] = day < read_start < next_day
+        days.append(item)
+        day = next_day
+    buckets = []
+    if period == "today":
+        for key, label, hour_start, hour_end in BUCKET_DEFS:
+            bucket_start = start + timedelta(hours=hour_start)
+            bucket_end = start + timedelta(hours=hour_end)
+            bucket_rows = [row for row in usable if bucket_start <= _parse_iso_utc(row["created_at"]) < bucket_end]
+            item = dict(_live_aggregate(bucket_rows), key=key, label=label, hours=f"{hour_start}:00–{hour_end}:00")
+            if bucket_start > now:
+                item["status"] = "future"
+            elif bucket_end <= read_start:
+                item["status"] = "outside_history"
+            item["records"] = [{
+                "created_at": _iso_jst(_parse_iso_utc(row["created_at"])),
+                "emotions": [{"key": emotion, "weight": weight} for emotion, weight in _row_emotion_weights(row).items() if weight],
+            } for row in bucket_rows]
+            buckets.append(item)
+    return {
+        "version": "kokoro.weather.live.v1", "period": period,
+        "start_date": start.date().isoformat(), "end_date": (display_end - DAY).date().isoformat(),
+        "observed_through": _iso_jst(min(now, end)), "read_at": _iso_jst(now), "history_start": _iso_jst(read_start),
+        "partial_history": read_start > start,
+        "previous_anchor": previous.isoformat() if history_start_utc is None or start > history_start_utc else None,
+        "next_anchor": following.isoformat() if following <= now.astimezone(JST).date() else None,
+        "summary": summary, "items": days, "time_buckets": buckets,
+    }
+
+
+async def build_live_kokoro_weather(
+    user_id: str, *, period: str = "today", anchor: Optional[str] = None,
+    now_utc: Optional[datetime] = None, history_start_utc: Optional[datetime] = None,
+) -> Dict[str, Any]:
+    now = (now_utc or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    start, end, _, _ = _live_period(period, anchor, now)
+    read_start = max(start.astimezone(timezone.utc), history_start_utc) if history_start_utc else start.astimezone(timezone.utc)
+    if read_start >= end or read_start > now:
+        raise PermissionError("outside history retention")
+    rows, cursor = [], None
+    while True:
+        clauses = [f"created_at.gte.{_iso_z(read_start)}", f"created_at.lte.{_iso_z(now)}", f"created_at.lt.{_iso_z(end)}", "is_secret.eq.false"]
+        if cursor:
+            clauses.append(f"or(created_at.gt.{cursor[0]},and(created_at.eq.{cursor[0]},id.gt.{cursor[1]}))")
+        response = await sb_get("/rest/v1/emotions", params={
+            "select": "id,user_id,created_at,emotions,emotion_details,is_secret", "user_id": f"eq.{user_id}",
+            "and": f"({','.join(clauses)})", "order": "created_at.asc,id.asc", "limit": "1000",
+        }, timeout=8.0)
+        if response.status_code >= 300:
+            raise RuntimeError("failed_to_load_kokoro_weather")
+        try:
+            batch = response.json()
+        except (ValueError, TypeError) as exc:
+            raise RuntimeError("invalid_kokoro_weather_rows") from exc
+        if not isinstance(batch, list) or any(not isinstance(row, dict) for row in batch):
+            raise RuntimeError("invalid_kokoro_weather_rows")
+        if any(row.get("user_id") != user_id for row in batch):
+            raise RuntimeError("invalid_kokoro_weather_owner")
+        rows.extend(batch)
+        # A deployment may cap PostgREST below our requested page size.
+        if not batch:
+            break
+        last = batch[-1]
+        next_cursor = (last.get("created_at"), last.get("id"))
+        if not all(next_cursor) or _parse_iso_utc(next_cursor[0]) is None or (cursor and (
+            _parse_iso_utc(next_cursor[0]), str(next_cursor[1])
+        ) <= (_parse_iso_utc(cursor[0]), str(cursor[1]))):
+            raise RuntimeError("invalid_kokoro_weather_cursor")
+        cursor = next_cursor
+    return build_live_kokoro_weather_from_rows(rows, period=period, anchor=anchor, now_utc=now, history_start_utc=history_start_utc)
 
 
 # -----------------------------------------------------------------------------
