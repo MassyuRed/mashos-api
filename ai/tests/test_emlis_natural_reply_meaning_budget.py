@@ -59,8 +59,8 @@ def test_no_witness_keeps_all_base_material_and_the_exact_original_prompt():
 
 
 def test_written_person_called_honnin_is_not_the_record_writer():
-    written = material_with_meaning_support(material("本人は友人に頼んだ。"))
-    writer = material_with_meaning_support(material("私は友人に頼んだ。"))
+    written = material_with_meaning_support(material("本人が呼び止めたのは友人だった。"))
+    writer = material_with_meaning_support(material("私が呼び止めたのは友人だった。"))
     assert written['source_meaning_support']['witnesses'][0]['行為者'] == '原文の人物表記：本人'
     assert writer['source_meaning_support']['witnesses'][0]['行為者'] == '記録を書いた本人'
 
@@ -77,7 +77,7 @@ def test_past_wish_is_not_projected_as_a_current_generation_hint():
 
 
 def test_bounded_compact_hints_declare_missing_witnesses_without_truncating_source():
-    original = material("私は資料を書いた。" * 12)
+    original = material("姉が呼び止めたのは先生だった。" * 12)
     before = deepcopy(original)
     prepared = material_with_meaning_support(original)
     support = prepared["source_meaning_support"]
@@ -97,29 +97,28 @@ def test_bounded_compact_hints_declare_missing_witnesses_without_truncating_sour
 
 
 def test_long_source_loses_only_optional_hints_and_full_comparison_still_reads_it():
-    original = material("私は資料を書いた。" * 150)
+    original = material("姉が呼び止めたのは先生だった。" * 150)
     before = deepcopy(original)
     prepared = material_with_meaning_support(original)
     assert prepared is original and original == before
     assert "source_meaning_support" not in prepared
     assert system_message_for(prepared) == SYSTEM_MESSAGE
     assert len(prepare_meaning_support(original)["witnesses"]) == 150
-    review = compare_reply_meaning(encoded(prepared), "あなたは資料を書いたのですね。", "prefix")
+    review = compare_reply_meaning(encoded(prepared), "姉は先生を呼び止めたのですね。", "prefix")
     assert review.source_witness_count == 150
     assert review.verdict == "UNASSESSED"  # No arbitrary choice among repeated events.
 
 
 def test_utf8_oversized_witness_is_omitted_whole_without_losing_the_next_small_one():
-    large = "石" * 48 + "は" + "川" * 48 + "に" + "山" * 48 + "を頼んだ。"
-    original = material(large + "私は友人に頼まれた。")
+    large = "昨日の朝、今日の午後に" + "石" * 48 + "が" + "川" * 48 + "で使えないと知った。"
+    original = material(large + "昨日の朝、今日の午後に休館すると知った。")
     full = prepare_meaning_support(original)
-    assert len(full["witnesses"]) == 2
+    assert len(full["generation_witnesses"]) == 2
     prepared = material_with_meaning_support(original)
     support = prepared["source_meaning_support"]
     assert support["total_witness_count"] == 2 and support["included_witness_count"] == 1
     assert support["omitted_witness_count"] == 1
-    assert support["witnesses"][0]["行為者"] == "原文の人物表記：友人"
-    assert support["witnesses"][0]["相手"] == "記録を書いた本人"
+    assert support["witnesses"][0]["認識内容の原文"] == "今日の午後に休館する"
     assert prepared["current"]["memo"] == original["current"]["memo"]
 
 
@@ -137,7 +136,7 @@ def test_optional_reader_failure_preserves_original_material_and_base_prompt(mon
 
 
 def test_long_material_uses_the_original_http_payload_without_new_context_loss():
-    original = material("私は資料を書いた。" * 150)
+    original = material("姉が呼び止めたのは先生だった。" * 150)
     request_material = encoded(material_with_meaning_support(original))
     sent = []
 
@@ -154,3 +153,23 @@ def test_long_material_uses_the_original_http_payload_without_new_context_loss()
         model="synthetic-4b", api_key="synthetic-only", transport=httpx.MockTransport(transport))
     reply = asyncio.run(provider(NaturalReplyInput("prefix", request_material)))
     assert reply.text == "受け取りました。" and len(sent) == 1
+
+
+def test_rejected_broad_finite_hints_are_not_silently_reactivated():
+    original = material("私は友人に頼まれた。私は資料を書いた。")
+    assert len(prepare_meaning_support(original)["witnesses"]) == 2
+    assert material_with_meaning_support(original) is original
+    assert system_message_for(original) == SYSTEM_MESSAGE
+
+
+@pytest.mark.parametrize("qualifier", [
+    "これは仮の話だ。", "その話は撤回した。", "本当かはわからない。",
+    "事実かは未確認だ。", "本当かは確かめていない。", "起きたとは断定できない。",
+    "これは例文だ。", "実際に起きたわけではない。", "全部想像です。", "仮説です。",
+])
+def test_other_memo_field_cannot_be_dropped_to_assert_a_finite_hint(qualifier):
+    original = material(qualifier)
+    original["current"]["memo_action"] = "昨日の朝、今日の午後に断水すると知った。"
+    assert material_with_meaning_support(original) is original
+    original["current"]["memo_action"] = "姉が呼び止めたのは先生だった。"
+    assert material_with_meaning_support(original) is original

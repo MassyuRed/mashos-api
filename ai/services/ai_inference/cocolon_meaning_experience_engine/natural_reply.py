@@ -33,6 +33,7 @@ created_atは記録した時点です。出来事が起きた時点は原文に�
 
 MEANING_SUPPORT_MESSAGE = """
 source_meaning_supportは原文の一部を限られた文法で読んだ補助です。「行為者」は動作をした人、「相手」はその動作を受けた人です。「記録を書いた本人」はEmlisではありません。「原文の人物表記」は原文に書かれた呼称で、記録者かどうかは文脈に従います。「省略され未確定」は本人だと決めないでください。原文と前後の文脈を優先し、補助にない出来事を否定したり未実行と決めたりしないでください。
+「明記された格」は原文の動作の項です。「を」はその動作の対象で、行為者と入れ替えないでください。認識した時点と認識内容の時点は別に保ち、予告された内容を既に起きた事実や本人の意図へ変えないでください。認識した人が省略されている場合、補助だけから人物を確定しないでください。
 omitted_witness_countは載せていない読取件数です。補助や役割の解説は返答へ出さず、本人に自然に話しかけてください。「お前」など乱暴な呼称は使わず、呼びかけは省略して構いません。原文にない動機・理由・知った経緯は補わないでください。"""
 
 # These bounds apply only to optional hints. The original source and prompt
@@ -83,7 +84,7 @@ def material_with_meaning_support(material):
     try:
         from .natural_reply_meaning import SUPPORT_SCHEMA, prepare_meaning_support
         full = prepare_meaning_support(material)
-        witnesses = full["witnesses"]
+        witnesses = full["generation_witnesses"]
         selected = []
 
         def compact_support(rows):
@@ -103,14 +104,28 @@ def material_with_meaning_support(material):
                 break
             # Use role names in the model's response language. The internal
             # SELF/WRITTEN identifiers and full proof stay in the reader.
-            compact = {"source_path": witness["source_path"],
-                "scalar_start": witness["scalar_start"], "scalar_end": witness["scalar_end"],
-                "原文": witness["raw_text"], "行為者": _written_role(witness["agent"]),
-                "動作": witness["predicate"], "相手": _written_role(witness["counterpart"]),
-                "肯否": {"positive": "肯定", "negative": "否定"}[witness["polarity"]],
-                "記載形": {"fact": "出来事", "wish": "希望"}[witness["modality"]],
-                "時点": witness["relative_day"] or (
-                    "過去" if witness["temporal_scope"] == "past" else "当回")}
+            if witness["support_kind"] == "COGNITION_SCOPES":
+                part = witness["raw"]
+                compact = {"読取種別": "認識の時点と内容", "source_path": witness["source_path"],
+                    "scalar_start": part["scalar_start"], "scalar_end": part["scalar_end"],
+                    "原文": part["raw_text"], "認識内容の原文": witness["content"]["raw_text"]}
+                if witness["knowledge_time"] is not None:
+                    compact["認識した時点の原文"] = witness["knowledge_time"]["raw_text"]
+                if witness["prior_event"] is not None:
+                    compact["認識より前の記載"] = (witness["prior_event"]["raw_text"]
+                                                   + witness["after_link"]["raw_text"])
+            else:
+                compact = {"読取種別": "明記された役割", "source_path": witness["source_path"],
+                    "scalar_start": witness["scalar_start"], "scalar_end": witness["scalar_end"],
+                    "原文": witness["raw_text"], "行為者": _written_role(witness["agent"]),
+                    "動作": witness["predicate"], "相手": _written_role(witness["counterpart"]),
+                    "肯否": {"positive": "肯定", "negative": "否定"}[witness["polarity"]],
+                    "記載形": {"fact": "出来事", "wish": "希望"}[witness["modality"]],
+                    "時点": witness["relative_day"] or (
+                        "過去" if witness["temporal_scope"] == "past" else "当回")}
+                if witness["arguments"]:
+                    compact["明記された格"] = [{"格": case, "原文": noun}
+                                              for case, noun in witness["arguments"]]
             if len(_compact_json(compact).encode("utf-8")) > MEANING_SUPPORT_MAX_WITNESS_BYTES:
                 continue
             proposed = [*selected, compact]
@@ -118,12 +133,14 @@ def material_with_meaning_support(material):
                 selected = proposed
         if not selected:
             return material
-        supported = {**material, "source_meaning_support": compact_support(selected)}
-        messages = [{"role": "system", "content": system_message_for(supported)},
-                    {"role": "user", "content": _compact_json(supported)}]
-        if len(_compact_json(messages).encode("utf-8")) > MEANING_SUPPORT_MESSAGES_MAX_BYTES:
-            return material
-        return supported
+        while selected:
+            supported = {**material, "source_meaning_support": compact_support(selected)}
+            messages = [{"role": "system", "content": system_message_for(supported)},
+                        {"role": "user", "content": _compact_json(supported)}]
+            if len(_compact_json(messages).encode("utf-8")) <= MEANING_SUPPORT_MESSAGES_MAX_BYTES:
+                return supported
+            selected.pop()  # Drop optional witnesses, never the source.
+        return material
     except Exception:
         # Source admission and Safety have already run. This optional reader
         # cannot turn an unsupported source construction into a new failure.

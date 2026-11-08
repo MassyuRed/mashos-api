@@ -211,3 +211,99 @@ def test_private_report_is_immutable_stable_hash_bound_and_does_not_copy_persona
 def test_invalid_material_propagates_instead_of_becoming_semantically_unassessed(bad):
     with pytest.raises(ValueError):
         compare_reply_meaning(bad, "受け取りました。", "prefix")
+
+
+@pytest.mark.parametrize("source,subject,agent,counterpart,arguments", [
+    ("姉が呼び止めたのは先生だった。", "WRITTEN:姉", "WRITTEN:姉", "", (("を", "先生"),)),
+    ("先生に呼び止められたのは姉だった。", "WRITTEN:姉", "WRITTEN:先生", "WRITTEN:姉", ()),
+    ("先生から呼び止められたのは姉だった。", "WRITTEN:姉", "WRITTEN:先生", "WRITTEN:姉", ()),
+    ("母が呼び止めなかったのは妹だった。", "WRITTEN:母", "WRITTEN:母", "", (("を", "妹"),)),
+    ("母に呼び止められなかったのは妹だった。", "WRITTEN:妹", "WRITTEN:母", "WRITTEN:妹", ()),
+    ("先生から褒められたのは姉だった。", "WRITTEN:姉", "WRITTEN:先生", "WRITTEN:姉", ()),
+    ("先生から教えられたのは姉だった。", "WRITTEN:姉", "WRITTEN:先生", "WRITTEN:姉", ()),
+])
+def test_complete_participant_focus_retains_written_voice_roles_and_case(source, subject, agent, counterpart, arguments):
+    witnesses = prepare_meaning_support(material(source))["witnesses"]
+    assert len(witnesses) == 1
+    row = witnesses[0]
+    assert (row["subject"], row["agent"], row["counterpart"], row["arguments"]) == (
+        subject, agent, counterpart, arguments)
+    assert row["source_construction"] == "EXPLICIT_FOCUS"
+    assert row["source_context_complete"]
+    assert row["predicate"] in {"呼び止める", "褒める", "教える"}
+
+
+def test_focus_uses_original_ranges_and_does_not_rewrite_source_or_complete_other_field():
+    text = "  昨日、姉が呼び止めたのは先生だった。"
+    value = material(text, "私は少し離れて待っていた。")
+    row, = prepare_meaning_support(value)["witnesses"]
+    assert row["raw_text"] == "昨日、姉が呼び止めたのは先生だった"
+    assert text[row["scalar_start"]:row["scalar_end"]] == row["raw_text"]
+    assert text.encode()[row["utf8_start"]:row["utf8_end"]].decode() == row["raw_text"]
+    assert row["relative_day"] == "昨日" and not row["source_context_complete"]
+    assert value["current"]["memo"] == text
+
+
+@pytest.mark.parametrize("source,reply", [
+    ("姉が呼び止めたのは先生だった。", "姉が先生を呼び止めたのですね。"),
+    ("先生に呼び止められたのは姉だった。", "先生が姉を呼び止めたのですね。"),
+    ("姉が先生を呼び止めた。", "先生は姉に呼び止められたのですね。"),
+    ("先生から褒められたのは姉だった。", "先生は姉を褒めたのですね。"),
+    ("母は妹を呼び止めた。", "妹は母に呼び止められたのですね。"),
+    ("姉が呼び止めたのは先生だった。", "姉が呼び止めたのは先生だったのですね。"),
+])
+def test_focused_or_ordinary_direct_patient_survives_valid_voice_paraphrase(source, reply):
+    report = compare(source, reply)
+    assert report.verdict == "NO_CONFLICT_IN_CHECKED_SCOPE", report
+    assert report.checked_reply_count == 1
+    assert "written_agent" in report.checks[0].assessed_axes
+    assert "written_counterpart" in report.checks[0].assessed_axes
+    assert not report.full_reply_semantic_coverage
+
+
+@pytest.mark.parametrize("source,reply,reason", [
+    ("姉が呼び止めたのは先生だった。", "先生が姉を呼び止めたのですね。", "WRITTEN_PARTICIPANT_ROLES_REVERSED"),
+    ("先生に呼び止められたのは姉だった。", "姉が先生を呼び止めたのですね。", "WRITTEN_PARTICIPANT_ROLES_REVERSED"),
+    ("母は妹を呼び止めた。", "母は妹に呼び止められたのですね。", "WRITTEN_PARTICIPANT_ROLES_REVERSED"),
+    ("姉が呼び止めなかったのは先生だった。", "姉が先生を呼び止めたのですね。", "POLARITY_CHANGED"),
+])
+def test_fully_written_unique_direct_patient_mutation_is_detected(source, reply, reason):
+    report = compare(source, reply)
+    assert report.verdict == "CONFLICT", report
+    assert reason in report.checks[0].reason_codes
+
+
+@pytest.mark.parametrize("source", [
+    "呼び止めたのは姉だった。",
+    "姉が先生を呼び止めたのは母だった。",
+    "妹が先生に呼び止められたのは姉だった。",
+    "姉が呼び止めたのは駅だった。",
+    "姉が呼び止めたのは昨日だった。",
+    "先生に呼び止められたのは朝だった。",
+    "先生に呼び止められたのは理由だった。",
+    "姉が呼び止めたのは太郎だった。",
+    "姉が書いたのは手紙だった。",
+    "姉が相談したのは先生だった。",
+    "先生に教えられたのは姉だった。",
+    "姉が呼び止めたのは先生ではなかった。",
+    "姉が呼び止めたのは先生だったと思う。",
+    "姉が呼び止めたのは先生だったかもしれない。",
+    "もし姉が呼び止めたのは先生だった。",
+    "「姉が呼び止めたのは先生だった」と友人が話した。",
+])
+def test_focus_does_not_invent_missing_case_person_or_asserted_scope(source):
+    assert not prepare_meaning_support(material(source))["witnesses"]
+
+
+def test_focused_role_comparison_keeps_missing_target_unread_context_and_withdrawal_open():
+    source = "姉が呼び止めたのは先生だった。"
+    assert compare(source, "先生が呼び止めたのですね。").verdict == "UNASSESSED"
+    assert compare(material(source, "別の日には逆の立場だった。"),
+                   "先生が姉を呼び止めたのですね。").verdict == "UNASSESSED"
+    assert not prepare_meaning_support(material(source + "その話は嘘だった。"))["witnesses"]
+
+
+def test_plain_written_objects_are_not_made_focus_people_or_counterparts():
+    row, = prepare_meaning_support(material("私は資料を書いた。"))["witnesses"]
+    assert row["arguments"] == (("を", "資料"),) and row["counterpart"] == ""
+    assert row["source_construction"] == "PLAIN_FINITE"

@@ -17,7 +17,7 @@ from emlis_ai_grounded_observation_plan import _top_level_text
 from .cores.analysis.intent_compiler import _FINITE_PREDICATES
 
 SCHEMA = "cocolon.emlis.natural_meaning_comparison.v1"
-SUPPORT_SCHEMA = "cocolon.emlis.source_role_support.v1"
+SUPPORT_SCHEMA = "cocolon.emlis.source_meaning_support.v2"
 REUSED_ASSETS = (
     "emlis_ai_evidence_ledger_service._split_source_text",
     "emlis_ai_grounded_observation_plan._top_level_text",
@@ -34,6 +34,25 @@ _SOURCE_UPDATE = re.compile(r"取り消|取消|撤回|訂正|ではなく|じゃ
 _AMBIGUOUS_PASSIVE = frozenset(("教える", "助ける", "褒める", "伝える", "責める"))
 _HARD_END = re.compile(r"[。.!！?？；;]")
 _TEMPORAL_CASE = re.compile(r"^(?:今日|昨日|明日|今朝|今夜|昨夜|朝|昼|夜|夕方|当時|その時|午前|午後|先週|今週|来週|週末|平日|[月火水木金土日]曜日|[0-9〇零一二三四五六七八九十百千万]+(?:年|か月|ヶ月|月|週間|週|日|時間|時|分|秒)(?:前|後|間|頃|ごろ)?)$")
+# A pseudo-cleft can focus a place or time as well as an argument. Only
+# written participant lexemes establish the missing person argument here;
+# an arbitrary noun or proper name is not silently assigned an object case.
+_FOCUS_PARTICIPANTS = frozenset(_SELF | {"あなた", "本人", "彼", "彼女"} | {
+    "姉", "兄", "妹", "弟", "母", "父", "祖母", "祖父", "先生", "友人", "友達",
+    "同僚", "先輩", "後輩", "新人", "主任", "上司", "部下", "隣人", "管理人",
+    "店長", "店員", "生徒", "学生", "客", "お客様",
+    "案内係", "受付係", "配達員", "配送員", "清掃員", "作業員", "警備員",
+    "司書", "医師", "看護師", "大工", "運転手",
+})
+_FOCUS_HONORIFICS = frozenset({
+    "お姉さん", "お兄さん", "お母さん", "お父さん", "おじいさん", "おばあさん",
+})
+_FOCUS_COPULA = re.compile(r"(?P<host>.+)のは[、，, ]*(?P<focus>" + _NOUN + r")(?:だった|でした)$")
+# These verbs have a direct patient object. Teaching, lending, asking and
+# consultation can focus a recipient or content instead and stay outside.
+_DIRECT_OBJECT_RELATIONAL_PREDICATES = frozenset({
+    "呼び止める", "褒める", "助ける", "手伝う", "叱る", "責める", "頼る",
+})
 
 
 def _forms():
@@ -58,6 +77,7 @@ def _forms():
         ("注意する", "注意", "suru", "注意する", False),
         ("責める", "責め", "vowel", "責める", False),
         ("伝える", "伝え", "vowel", "伝える", False),
+        ("呼び止める", "呼び止め", "vowel", "呼び止める", False),
     ):
         i, a, past = {"m": (stem + "み", stem + "ま", stem + "んだ"),
             "r": (stem + "り", stem + "ら", stem + "った"),
@@ -103,6 +123,7 @@ class MeaningWitness:
     voice: str
     recipient_acknowledgement: bool
     source_context_complete: bool = False
+    source_construction: str = "PLAIN_FINITE"
 
 
 @dataclass(frozen=True, slots=True)
@@ -172,17 +193,8 @@ def _arguments(text):
     return tuple(result) if len({case for case, _ in result}) == len(result) else None
 
 
-def _read_clause(raw, *, reply):
-    if _top_level_text(raw) != raw:
-        return None
-    day = _DAY.match(raw)
-    relative_day = day[1] if day else ""
-    value = raw[day.end():] if day else raw
-    acknowledgement = bool(reply and _ACK.search(value))
-    if reply:
-        value = _ACK.sub("", value)
-    if _UNREAD.search(value):
-        return None
+def _read_finite_clause(value, *, reply, relative_day, acknowledgement):
+    """Consume one complete finite host without repairing its arguments."""
     subjects = [(match["noun"], match.end()) for match in _SUBJECT.finditer(value)
                 if match.start() == 0]
     # A simple omitted passive may prove its written ni-agent, but never
@@ -227,6 +239,60 @@ def _read_clause(raw, *, reply):
     return unique[0] if len(unique) == 1 else None
 
 
+def _focus_participant(noun):
+    if noun in _FOCUS_HONORIFICS or noun in _FOCUS_PARTICIPANTS:
+        return True
+    return re.sub(r"(?:さん|くん|ちゃん|様|氏)$", "", noun) in _FOCUS_PARTICIPANTS
+
+
+def _read_focus_clause(value, *, reply, relative_day, acknowledgement):
+    parsed = _FOCUS_COPULA.fullmatch(value)
+    if parsed is None or not _focus_participant(parsed["focus"]):
+        return None
+    host, focus = parsed["host"], parsed["focus"]
+    reading = _read_finite_clause(host, reply=reply, relative_day=relative_day,
+                                  acknowledgement=acknowledgement)
+    if reading is None or reading[6:8] != ("fact", "past"):
+        return None
+    if reading[9] == "passive" and reading[0] == "UNSTATED":
+        # The written ni/kara agent belongs to the existing passive reader.
+        # Its ambiguous ichidan/potential safeguard must pass independently.
+        ordinary = focus + "は" + host
+    elif (reading[9] == "active" and reading[4] in _DIRECT_OBJECT_RELATIONAL_PREDICATES
+          and reading[0] == reading[1] and reading[0] not in {"", "UNSTATED", "UNRESOLVED"}
+          and not reading[2] and not reading[3]):
+        subject = _SUBJECT.match(host)
+        if subject is None:
+            return None
+        # This finite construction supplies a person object, not a missing
+        # writer. Keep its literal wo-case in arguments, never counterpart.
+        ordinary = host[:subject.end()] + focus + "を" + host[subject.end():]
+    else:
+        return None
+    return _read_finite_clause(ordinary, reply=reply, relative_day=relative_day,
+                               acknowledgement=acknowledgement)
+
+
+def _read_clause(raw, *, reply):
+    if _top_level_text(raw) != raw:
+        return None
+    day = _DAY.match(raw)
+    relative_day = day[1] if day else ""
+    value = raw[day.end():] if day else raw
+    acknowledgement = bool(reply and _ACK.search(value))
+    if reply:
+        value = _ACK.sub("", value)
+    if _UNREAD.search(value):
+        return None
+    focus = _read_focus_clause(value, reply=reply, relative_day=relative_day,
+                               acknowledgement=acknowledgement)
+    if focus is not None:
+        return (*focus, "EXPLICIT_FOCUS")
+    finite = _read_finite_clause(value, reply=reply, relative_day=relative_day,
+                                 acknowledgement=acknowledgement)
+    return (*finite, "PLAIN_FINITE") if finite is not None else None
+
+
 def _clauses(text, path, group, *, reply=False):
     if not isinstance(text, str):
         raise ValueError("natural_meaning_material_invalid")
@@ -256,7 +322,7 @@ def _clauses(text, path, group, *, reply=False):
         if reading is not None:
             witnesses.append(MeaningWitness(path, group, row.start, row.end,
                 len(text[:row.start].encode("utf-8")), len(text[:row.end].encode("utf-8")),
-                raw, *reading))
+                raw, *reading[:-1], source_construction=reading[-1]))
     return tuple(replace(row, source_context_complete=len(witnesses) == len(rows))
                  for row in witnesses), len(rows)
 
@@ -311,21 +377,62 @@ def prepare_meaning_support(material: dict) -> dict:
     callers, determine entitlement, replace Safety, or parse AI questions.
     """
     witnesses, excluded = _source_witnesses(material)
+    from .natural_reply_cognition import read_cognition_clause, source_context_allows_finite_hints
+
+    current = material["current"]
+    texts = tuple(current.get(field) or "" for field in ("memo", "memo_action"))
+    current_changed = any(item.get("input_id") == material.get("current_input_id")
+                          and item.get("status") in {"REVISED", "REJECTED"}
+                          for item in material.get("user_frame_feedback", []))
+    qualified = (not material.get("current_answers", []) and not current_changed
+                 and not any(_SOURCE_UPDATE.search(text) for text in texts)
+                 and source_context_allows_finite_hints(*texts))
+    # The broad v1 finite-role generation hints regressed actual output.
+    # Keep their source witnesses for comparison, but only the new explicit
+    # focus and separately ranged cognition shapes are eligible as hints.
+    generation = [{**asdict(row), "support_kind": "EXPLICIT_ROLE_FOCUS"}
+                  for row in witnesses if qualified and row.source_group == "CURRENT"
+                  and row.source_construction == "EXPLICIT_FOCUS"]
+    cognition = []
+    if qualified:
+        for field, text in zip(("memo", "memo_action"), texts):
+            for span in _split_source_text(text, max_len=max(1, len(text))):
+                row = read_cognition_clause(text, span.start, span.end,
+                    source_path="current." + field)
+                if row is not None:
+                    cognition.append(row)
+                    generation.append({**row, "support_kind": "COGNITION_SCOPES"})
     return {"schema_version": SUPPORT_SCHEMA, "reused_assets": list(REUSED_ASSETS),
             "witnesses": [asdict(row) for row in witnesses],
+            "cognition_witnesses": cognition, "generation_witnesses": generation,
             "excluded_source_count": excluded,
-            "coverage": "EXPLICIT_FINITE_ROLES_ONLY_NOT_GENERAL_SEMANTICS"}
+            "coverage": "FINITE_SOURCE_ROLES_AND_COGNITION_SCOPES_NOT_GENERAL_SEMANTICS"}
+
+
+def _comparison_event(witness):
+    """Compare known direct-object voice while retaining written witnesses."""
+    agent, target, arguments = witness.agent, witness.counterpart, witness.arguments
+    if witness.predicate in _DIRECT_OBJECT_RELATIONAL_PREDICATES and witness.voice == "active":
+        objects = tuple(noun for case, noun in arguments if case == "を")
+        if len(objects) == 1:
+            target = _participant(objects[0], reply=witness.source_group == "REPLY")
+            arguments = tuple(row for row in arguments if row[0] != "を")
+    return agent, target, arguments
 
 
 def _event_key(witness):
-    return witness.predicate, tuple(sorted(witness.arguments))
+    return witness.predicate, tuple(sorted(_comparison_event(witness)[2]))
 
 
 def _compatible_roles(source, reply):
-    if not source.counterpart and not reply.counterpart:
-        return source.agent == reply.agent
-    source_people = {source.agent, source.counterpart} - {"", "UNSTATED"}
-    reply_people = {reply.agent, reply.counterpart} - {"", "UNSTATED"}
+    source_agent, source_target, _ = _comparison_event(source)
+    reply_agent, reply_target, _ = _comparison_event(reply)
+    if "UNRESOLVED" in {source_agent, source_target, reply_agent, reply_target}:
+        return False
+    if not source_target and not reply_target:
+        return source_agent == reply_agent
+    source_people = {source_agent, source_target} - {"", "UNSTATED"}
+    reply_people = {reply_agent, reply_target} - {"", "UNSTATED"}
     return bool(source_people and source_people <= reply_people)
 
 
@@ -362,18 +469,20 @@ def compare_reply_meaning(material_json: str, reply_text: str, source_prefix_ref
         if len(candidates) != 1:
             continue
         source = candidates[0]
+        source_agent, source_target, _ = _comparison_event(source)
+        reply_agent, reply_target, _ = _comparison_event(reply)
         reasons = []
-        if source.agent != reply.agent or (source.counterpart not in {"", "UNSTATED"}
-                                           and reply.counterpart != source.counterpart):
+        if source_agent != reply_agent or (source_target not in {"", "UNSTATED"}
+                                          and reply_target != source_target):
             reasons.append("WRITTEN_PARTICIPANT_ROLES_REVERSED")
         if source.polarity != reply.polarity:
             reasons.append("POLARITY_CHANGED")
         if reasons and (not reply.recipient_acknowledgement or not source.source_context_complete):
             continue  # no scoped confirmation of this source event
         axes = ["predicate", "written_arguments", "polarity", "modality", "finite_tense"]
-        if source.agent not in {"", "UNSTATED"}:
+        if source_agent not in {"", "UNSTATED"}:
             axes.append("written_agent")
-        if source.counterpart not in {"", "UNSTATED"}:
+        if source_target not in {"", "UNSTATED"}:
             axes.append("written_counterpart")
         checks.append(MeaningCheck(reply.scalar_start, reply.scalar_end, source.source_path,
             source.scalar_start, source.scalar_end,

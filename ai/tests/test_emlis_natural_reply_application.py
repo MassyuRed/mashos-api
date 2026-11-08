@@ -48,10 +48,9 @@ def test_finite_source_is_compared_without_changing_normal_prompt_and_review_sta
     research, safety = prepare_natural_reply(_request(snapshot), use_meaning_support=True)
     assert safety.normal_observation_allowed
     assert research.source_prefix_ref == calls[0].source_prefix_ref
-    hint = json.loads(research.material_json).pop('source_meaning_support')
-    assert hint['witnesses'][0]['行為者'] == '原文の人物表記：友人'
-    assert hint['witnesses'][0]['相手'] == '記録を書いた本人'
-    assert json.loads(research.material_json)['current'] == json.loads(calls[0].material_json)['current']
+    # Generic v1 hints regressed actual responses and stay withdrawn even in
+    # the explicit research path; their independent comparison still works.
+    assert json.loads(research.material_json) == json.loads(calls[0].material_json)
 
     def never_read_again(*args):
         raise AssertionError('saved GET never reruns the meaning reader')
@@ -61,6 +60,33 @@ def test_finite_source_is_compared_without_changing_normal_prompt_and_review_sta
     for _ in range(2):
         assert run(service.get(user, parent))['current_observation'] == dto['current_observation']
     assert len(calls) == 1
+
+
+def test_explicit_focus_research_hint_uses_the_same_saved_source_without_public_report(natural_case, qdb):
+    user, parent, service, calls = natural_case
+    qdb.query("update public.emotions set memo=$2,memo_action='' where id=$1",
+              [parent, "姉が呼び止めたのは先生だった。"])
+
+    async def reply(material):
+        calls.append(material)
+        assert 'source_meaning_support' not in json.loads(material.material_json)
+        return NaturalReply("姉は先生を呼び止めたのですね。", "synthetic-4b", material.source_prefix_ref)
+
+    service.natural_reply_source = reply
+    dto = run(service.start(user, parent))
+    snapshot = run(service.store.read(user, input_id=parent))
+    report = next(e for e in snapshot['events'] if e['kind']=='OBSERVATION')['payload']['artifact']['meaning_comparison']
+    assert report['verdict']=='NO_CONFLICT_IN_CHECKED_SCOPE' and report['checked_reply_count']==1
+    from cocolon_meaning_experience_engine.natural_reply import prepare_natural_reply
+    from emlis_thread_service import _request
+    research, safety = prepare_natural_reply(_request(snapshot), use_meaning_support=True)
+    assert safety.normal_observation_allowed and research.source_prefix_ref==calls[0].source_prefix_ref
+    candidate = json.loads(research.material_json)
+    hint = candidate.pop('source_meaning_support')['witnesses'][0]
+    assert hint['行為者']=='原文の人物表記：姉'
+    assert hint['明記された格']==[{'格':'を','原文':'先生'}]
+    assert candidate==json.loads(calls[0].material_json)
+    assert len(calls)==1 and 'meaning_comparison' not in json.dumps(dto)
 
 
 def test_initial_scoped_conflict_report_does_not_rewrite_or_retry_provider(natural_case, qdb):
