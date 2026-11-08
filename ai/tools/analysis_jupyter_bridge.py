@@ -21,10 +21,13 @@ HEARTBEAT_SECONDS = 20
 
 
 class AnalysisBridge(RequestHandler):
+    key_name = "COCOLON_ANALYSIS_MODEL_API_KEY"
+    request_seconds = 215
+
     def initialize(self, key_path="/workspace/analysis.env"):
         values = dict(line.strip().split("=", 1) for line in Path(key_path).read_text().splitlines()
                       if line.strip() and not line.lstrip().startswith("#"))
-        self._key = values.get("COCOLON_ANALYSIS_MODEL_API_KEY", "")
+        self._key = values.get(self.key_name, "")
         if len(self._key) < 24:
             raise RuntimeError("analysis_bridge_configuration_invalid")
 
@@ -57,7 +60,7 @@ class AnalysisBridge(RequestHandler):
             pending = asyncio.ensure_future(AsyncHTTPClient().fetch(HTTPRequest(UPSTREAM, method="POST",
                 body=self.request.body, headers={"Authorization": "Bearer " + self._key,
                     "Content-Type": "application/json"}, follow_redirects=False,
-                connect_timeout=3, request_timeout=215), raise_error=False))
+                connect_timeout=3, request_timeout=self.request_seconds), raise_error=False))
             while not pending.done():
                 done, _ = await asyncio.wait({pending}, timeout=HEARTBEAT_SECONDS)
                 if not done:
@@ -95,4 +98,13 @@ class AnalysisBridge(RequestHandler):
         self.finish(json.dumps({"error": "analysis_bridge_unavailable", "status": status_code}))
 
 
-default_handlers = [(r"/cocolon-analysis/v1/chat/completions", AnalysisBridge)]
+class NaturalReplyBridge(AnalysisBridge):
+    key_name = "EMLIS_NATURAL_REPLY_API_KEY"
+    request_seconds = 25
+
+    def initialize(self, key_path="/workspace/natural-reply.env"):
+        super().initialize(key_path=key_path)
+
+
+default_handlers = [(r"/cocolon-analysis/v1/chat/completions", AnalysisBridge),
+                    (r"/cocolon-emlis/v1/chat/completions", NaturalReplyBridge)]

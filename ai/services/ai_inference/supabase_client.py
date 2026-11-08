@@ -192,6 +192,7 @@ async def sb_request(
     headers: Optional[Dict[str, str]] = None,
     prefer: Optional[str] = None,
     timeout: Optional[float] = None,
+    read_retry_count: Optional[int] = None,
 ) -> httpx.Response:
     """Send a request to Supabase (base URL + path).
 
@@ -211,6 +212,8 @@ async def sb_request(
     client = await get_async_client()
     method_upper = str(method or "GET").upper()
     retry_count = _build_retry_count()
+    if method_upper == "GET" and read_retry_count is not None:
+        retry_count = max(0, min(int(read_retry_count), 2))
 
     for attempt in range(retry_count + 1):
         started = time.perf_counter()
@@ -256,6 +259,7 @@ async def sb_get(
     params: Optional[Dict[str, str]] = None,
     prefer: Optional[str] = None,
     timeout: Optional[float] = None,
+    read_retry_count: Optional[int] = None,
     headers: Optional[Dict[str, str]] = None,
 ) -> httpx.Response:
     return await sb_request(
@@ -265,6 +269,7 @@ async def sb_get(
         headers=headers,
         prefer=prefer,
         timeout=timeout,
+        read_retry_count=read_retry_count,
     )
 
 

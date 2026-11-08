@@ -156,3 +156,69 @@ def test_service_cli_rejects_ambiguous_modes_budgets_and_unselected_adapter(extr
     with pytest.raises(SystemExit) as exc:
         probe.main()
     assert exc.value.code == 2
+
+
+def test_shared_profiles_keep_keys_budgets_and_single_gpu_lock():
+    entered, release = threading.Event(), threading.Event()
+    calls = []
+    def generate(messages, deadline, *, profile=None):
+        calls.append(profile)
+        assert (20 < deadline-time.monotonic() <= 23) if profile == 'natural' else (208 < deadline-time.monotonic() <= 210)
+        if messages[1]['content'] == 'hold':
+            entered.set()
+            assert release.wait(3)
+        return '合成の返事です。' if profile else '{}', 'stop'
+    server = ThreadingHTTPServer(('127.0.0.1', 0), probe.make_handler(generate,
+        api_key='analysis-test-key', model_name='analysis', deadline=float('inf'), max_requests=0,
+        max_new_tokens=4096, request_seconds=210, max_request_bytes=262144,
+        natural_reply={'api_key':'natural-test-key','model_name':'natural'}))
+    worker = threading.Thread(target=server.serve_forever, daemon=True); worker.start()
+    def packet(model, tokens, body='synthetic'):
+        return dict(model=model, max_tokens=tokens, temperature=0, stream=False,
+                    chat_template_kwargs={'enable_thinking':False}, messages=[dict(role='system',content='synthetic'),dict(role='user',content=body)])
+    url = f'http://127.0.0.1:{server.server_port}/v1/chat/completions'
+    def post(key, payload):
+        return httpx.post(url, headers={'Authorization':'Bearer '+key}, json=payload, trust_env=False)
+    try:
+        assert post('natural-test-key',packet('analysis',4096)).status_code == 400
+        assert post('analysis-test-key',packet('natural',2048)).status_code == 400
+        assert post('natural-test-key',packet('natural',4096)).status_code == 400
+        assert post('natural-test-key',packet('natural',2048)).json()['model'] == 'natural'
+        pending = threading.Thread(target=lambda:post('analysis-test-key',packet('analysis',4096,'hold')))
+        pending.start(); assert entered.wait(3)
+        assert post('natural-test-key',packet('natural',2048)).status_code == 429
+        release.set(); pending.join(3)
+        assert post('natural-test-key',packet('natural',2048)).status_code == 200
+        assert calls == ['natural',None,'natural']
+    finally:
+        release.set();server.shutdown();server.server_close();worker.join(3)
+
+
+@pytest.mark.parametrize('fail', [False, True])
+def test_base_profile_restores_frozen_adapter_after_peft_context_exit(fail):
+    from contextlib import contextmanager
+    class Model:
+        training = False
+        grads = False
+        active = True
+        @contextmanager
+        def disable_adapter(self):
+            self.active = False
+            try:
+                yield
+            finally:
+                self.active = True
+                self.grads = True  # PEFT 0.21.2 set_adapter's default on re-enable.
+        def eval(self):
+            self.training = False
+        def requires_grad_(self, value):
+            self.grads = value
+    model = Model()
+    try:
+        with probe.base_inference_context(model):
+            assert not model.active
+            if fail:
+                raise RuntimeError('synthetic forward failure')
+    except RuntimeError:
+        assert fail
+    assert model.active and not model.grads and not model.training

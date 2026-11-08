@@ -579,9 +579,10 @@ def _history_item_public(row: Mapping[str, Any]) -> Dict[str, Any]:
 
 
 class TodayQuestionStore:
-    async def _select_rows(self, table: str, *, params: Dict[str, str]) -> List[Dict[str, Any]]:
+    async def _select_rows(self, table: str, *, params: Dict[str, str], read_retry_count: Optional[int] = None) -> List[Dict[str, Any]]:
         ensure_supabase_config()
-        resp = await sb_get(f"/rest/v1/{table}", params=params, timeout=10.0)
+        options = {"read_retry_count": read_retry_count} if read_retry_count is not None else {}
+        resp = await sb_get(f"/rest/v1/{table}", params=params, timeout=10.0, **options)
         if resp.status_code not in (200, 206):
             _raise_http_from_supabase(resp, f"Failed to query {table}")
         data = resp.json()
@@ -1945,6 +1946,7 @@ class TodayQuestionStore:
     async def _fetch_profiles_for_push_scan(self, limit: int) -> List[Dict[str, Any]]:
         rows = await self._select_rows(
             "profiles",
+            read_retry_count=2,
             params={
                 "select": "id,push_token,push_enabled",
                 "push_enabled": "eq.true",

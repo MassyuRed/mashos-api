@@ -101,3 +101,20 @@ class BridgeTests(AsyncHTTPTestCase):
         assert response.body.startswith(b" ") and b"private upstream text" not in response.body
         assert json.loads(response.body) == {"error": "analysis_bridge_unavailable", "status": 503}
         assert "Set-Cookie" not in response.headers
+
+
+class NaturalBridgeTests(BridgeTests):
+    def get_app(self):
+        from ai.tools.analysis_jupyter_bridge import NaturalReplyBridge
+        self.key_path.write_text('EMLIS_NATURAL_REPLY_API_KEY=' + KEY + '\n')
+        return Application([(ROUTE, NaturalReplyBridge, {'key_path': str(self.key_path)})], xsrf_cookies=True)
+
+    def test_natural_timeout_and_analysis_key_are_separate(self):
+        reply = HTTPResponse(HTTPRequest(UPSTREAM), 200, buffer=io.BytesIO(b'{}'))
+        with patch('ai.tools.analysis_jupyter_bridge.AsyncHTTPClient') as client:
+            client.return_value.fetch = AsyncMock(return_value=reply)
+            assert self.request().code == 200
+            assert client.return_value.fetch.call_args.args[0].request_timeout == 25
+            client.reset_mock()
+            assert self.request(headers={'Authorization':'Bearer synthetic-other-analysis-key'}).code == 401
+            client.assert_not_called()

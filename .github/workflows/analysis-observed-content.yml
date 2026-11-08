@@ -14,6 +14,13 @@ name: Analysis observed content
       - ai/services/ai_inference/analysis_model_source.py
       - ai/services/ai_inference/analysis_semantic_map.py
       - ai/tools/serve_emlis_natural_reply.py
+      - ai/tools/analysis_jupyter_bridge.py
+      - ai/services/ai_inference/supabase_client.py
+      - ai/services/ai_inference/today_question_store.py
+      - ai/services/ai_inference/report_distribution_push_store.py
+      - ai/tests/test_notification_candidate_read_retry.py
+      - ai/tests/test_emotion_submit_pending_delivery.py
+      - ai/tests/test_analysis_jupyter_bridge.py
       - ai/services/ai_inference/api_self_structure*.py
       - ai/services/ai_inference/api_emotion_submit.py
       - ai/services/ai_inference/astor_job_queue.py
@@ -90,7 +97,7 @@ jobs:
         run: >-
           python -m pip install --quiet --disable-pip-version-check
           pytest==8.4.1 pytest-subtests==0.14.2 pytest-asyncio==1.2.0
-          fastapi==0.142.2 pydantic==2.13.5 httpx==0.28.1 PyJWT==2.13.0
+          fastapi==0.142.2 pydantic==2.13.5 httpx==0.28.1 PyJWT==2.13.0 tornado==6.5.2
       - name: Record tested source and runtime
         run: |
           git rev-parse HEAD
@@ -107,6 +114,14 @@ jobs:
           ai/tests/test_analysis_report_kokoro_weather.py
           ai/tests/test_analysis_material_input_integrity.py
           ai/tests/contract/test_api_contract_registry.py
+      - name: Verify notification candidate retries and async Emlis delivery
+        run: >-
+          python -m pytest -q --tb=short -ra
+          -p pytest_subtests.plugin -p no:cacheprovider -c /dev/null --rootdir=. --noconftest
+          ai/tests/test_notification_candidate_read_retry.py
+          ai/tests/test_emotion_submit_pending_delivery.py
+          ai/tests/test_emotion_submit_public_feedback_meta_boundary.py
+          ai/tests/test_analysis_jupyter_bridge.py
       - name: Verify Analysis generation and saved read
         run: >-
           python -m pytest -q --tb=short -ra
@@ -179,6 +194,7 @@ jobs:
           python -m pytest -q --tb=short -ra
           -p pytest_subtests.plugin -p pytest_asyncio.plugin -p no:cacheprovider -c /dev/null --rootdir=. --noconftest
           ai/tests/test_emotion_submit_speed_regression_phase14.py
+          ai/tests/test_emlis_natural_reply_application.py
           ai/tests/test_analysis_model_fields.py
           ai/tests/test_analysis_cumulative.py
           ai/tests/test_analysis_cumulative_model_source.py

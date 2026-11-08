@@ -8,6 +8,7 @@ fallback, or automatic request retry occur in either mode.
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager, nullcontext
 import hashlib
 import hmac
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -118,7 +119,8 @@ def semantic_json_parser(messages, alphabet):
 
 
 def make_handler(generate, *, api_key, model_name, deadline, max_requests,
-                 max_new_tokens=2048, request_seconds=23, max_request_bytes=65536):
+                 max_new_tokens=2048, request_seconds=23, max_request_bytes=65536,
+                 natural_reply=None):
     lock = threading.Lock()
     served = 0
 
@@ -146,20 +148,26 @@ def make_handler(generate, *, api_key, model_name, deadline, max_requests,
 
         def do_POST(self):
             nonlocal served
-            if not hmac.compare_digest(self.headers.get("Authorization", ""), "Bearer " + api_key):
+            authorization = self.headers.get("Authorization", "")
+            natural = bool(natural_reply and hmac.compare_digest(authorization, "Bearer " + natural_reply["api_key"]))
+            if not natural and not hmac.compare_digest(authorization, "Bearer " + api_key):
                 return self.reply(401, {"error": "unauthorized"})
+            selected_model = natural_reply["model_name"] if natural else model_name
+            selected_tokens = 2048 if natural else max_new_tokens
+            selected_seconds = 23 if natural else request_seconds
+            selected_bytes = 65536 if natural else max_request_bytes
             if self.path != "/v1/chat/completions":
                 return self.reply(404, {"error": "not_found"})
             try:
                 length = int(self.headers.get("Content-Length", "0"))
-                if not 0 < length <= max_request_bytes or self.headers.get("Transfer-Encoding"):
+                if not 0 < length <= selected_bytes or self.headers.get("Transfer-Encoding"):
                     raise ValueError
                 self.connection.settimeout(5)
                 request = json.loads(self.rfile.read(length))
                 messages = request["messages"]
-                if (request.get("model") != model_name or request.get("stream") is not False
+                if (request.get("model") != selected_model or request.get("stream") is not False
                         or type(request.get("max_tokens")) is not int
-                        or request["max_tokens"] != max_new_tokens or request.get("temperature") != 0
+                        or request["max_tokens"] != selected_tokens or request.get("temperature") != 0
                         or request.get("chat_template_kwargs") != {"enable_thinking": False}
                         or not isinstance(messages, list) or len(messages) != 2
                         or [m["role"] for m in messages] != ["system", "user"]
@@ -175,10 +183,11 @@ def make_handler(generate, *, api_key, model_name, deadline, max_requests,
                 served += 1
                 if not max_requests:
                     generation_stage('admitted')
-                text, finish = generate(messages, min(deadline, time.monotonic() + request_seconds))
+                end = min(deadline, time.monotonic() + selected_seconds)
+                text, finish = (generate(messages, end, profile="natural") if natural else generate(messages, end))
                 if finish not in {"stop", "length"} or not isinstance(text, str):
                     raise ValueError
-                status, body = 200, {"model": model_name, "choices": [{
+                status, body = 200, {"model": selected_model, "choices": [{
                     "index": 0, "finish_reason": finish,
                     "message": {"role": "assistant", "content": text}}]}
             except Exception as exc:
@@ -206,6 +215,18 @@ def adapter_identity(adapter, weights_sha256=None, config_sha256=None):
         if hashlib.sha256((path / name).read_bytes()).hexdigest() != digest:
             raise ValueError('saved_adapter_identity_changed')
     return weights_sha256, config_sha256
+
+
+@contextmanager
+def base_inference_context(model):
+    try:
+        with model.disable_adapter():
+            yield
+    finally:
+        # PEFT re-enabling its adapter can also re-enable LoRA gradients.
+        # Restore the serving invariant on both successful and failed forwards.
+        model.eval()
+        model.requires_grad_(False)
 
 
 def load_generator(adapter, process_stop, *, weights_sha256=None, config_sha256=None,
@@ -276,19 +297,27 @@ def load_generator(adapter, process_stop, *, weights_sha256=None, config_sha256=
             self.expired = process_stop.is_set() or time.monotonic() >= self.end
             return self.expired
 
-    def generate(messages, end):
-        if semantic_json:
+    def generate(messages, end, *, profile=None):
+        if profile not in (None, "natural"):
+            raise ValueError("generation_profile_invalid")
+        use_semantic_json = semantic_json and profile != "natural"
+        output_budget = 2048 if profile == "natural" else max_new_tokens
+        context_budget = 8192 if profile == "natural" else context_tokens
+        # Preserve the base identity previously connected for natural replies.
+        # The analysis adapter stays loaded; its state is restored on context exit.
+        adapter_context = base_inference_context(model) if profile == "natural" and adapter else nullcontext()
+        if use_semantic_json:
             generation_stage('tokenize')
         encoded = tokenizer.apply_chat_template(messages, enable_thinking=False,
             add_generation_prompt=True, tokenize=True, return_dict=True,
             return_tensors="pt", truncation=False)
         count = encoded["input_ids"].shape[-1]
-        if count + max_new_tokens > context_tokens or time.monotonic() >= end:
+        if count + output_budget > context_budget or time.monotonic() >= end:
             raise ValueError("context_or_deadline_exceeded")
         encoded = {k: v.to(model.device) for k, v in encoded.items()}
         stopping = Deadline(end)
         format_options = {}
-        if semantic_json:
+        if use_semantic_json:
             generation_stage('constraint')
             from lmformatenforcer.integrations.transformers import build_transformers_prefix_allowed_tokens_fn
             allowed_prefix = build_transformers_prefix_allowed_tokens_fn(
@@ -317,14 +346,14 @@ def load_generator(adapter, process_stop, *, weights_sha256=None, config_sha256=
             format_options['prefix_allowed_tokens_fn'] = private_prefix
             format_options['eos_token_id'] = tokenizer_data.eos_token_id
             generation_stage('decode')
-        with torch.inference_mode():
-            result = model.generate(**encoded, max_new_tokens=max_new_tokens, do_sample=False,
+        with adapter_context, torch.inference_mode():
+            result = model.generate(**encoded, max_new_tokens=output_budget, do_sample=False,
                 num_beams=1, use_cache=True, stopping_criteria=StoppingCriteriaList([stopping]), **format_options)
         tokens = result[0, count:]
-        eos = tokenizer_data.eos_token_id if semantic_json else model.generation_config.eos_token_id
+        eos = tokenizer_data.eos_token_id if use_semantic_json else model.generation_config.eos_token_id
         eos = eos if isinstance(eos, list) else [eos]
         finish = "stop" if len(tokens) and int(tokens[-1]) in eos and not stopping.expired else "length"
-        if semantic_json:
+        if use_semantic_json:
             generation_stage('complete_' + finish)
             special = set(tokenizer.all_special_ids) | {token for token, value in tokenizer.added_tokens_decoder.items() if value.special}
             generation_stage('special_count_' + str(sum(int(token) in special for token in tokens)))
@@ -343,11 +372,20 @@ def main():
     parser.add_argument("--seconds", type=int)
     parser.add_argument("--analysis-service", action="store_true",
                         help="Serve ordinary Analysis until SIGTERM/SIGINT; no probe-count expiry.")
+    parser.add_argument('--natural-reply-model', help='Also serve the existing base natural-reply profile with its separate API key.')
     parser.add_argument('--semantic-json', action='store_true', help='Constrain Analysis JSON and source-quote pairs during generation.')
     parser.add_argument("--max-new-tokens", type=int)
     parser.add_argument("--context-tokens", type=int)
     parser.add_argument("--request-seconds", type=int)
     args = parser.parse_args()
+    if args.natural_reply_model and not args.analysis_service:
+        parser.error('shared natural reply requires explicit analysis service mode')
+    natural_reply = None
+    if args.natural_reply_model:
+        natural_key = os.environ.get("EMLIS_NATURAL_REPLY_API_KEY", "")
+        if len(natural_key) < 24 or natural_key == os.environ.get("COCOLON_ANALYSIS_MODEL_API_KEY", ""):
+            parser.error('shared natural reply requires its separate existing private key')
+        natural_reply = {"api_key": natural_key, "model_name": args.natural_reply_model}
     if args.semantic_json and not args.analysis_service:
         parser.error('semantic JSON generation requires explicit analysis service mode')
     if args.analysis_service:
@@ -397,7 +435,8 @@ def main():
         api_key=key, model_name=args.model_name, deadline=deadline,
         max_requests=0 if args.analysis_service else args.max_requests,
         max_new_tokens=max_new_tokens, request_seconds=request_seconds,
-        max_request_bytes=262144 if args.analysis_service else 65536))
+        max_request_bytes=262144 if args.analysis_service else 65536,
+        natural_reply=natural_reply))
     server.timeout = 1
     try:
         while not stop.is_set() and time.monotonic() < deadline:

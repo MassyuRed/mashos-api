@@ -2238,6 +2238,19 @@ def register_emotion_submit_routes(app: FastAPI) -> None:
                 emlis_ai=input_feedback_meta,
             )
 
+        # A saved input can precede async thread creation. Return only the
+        # existing pending marker; it never makes an unavailable body visible.
+        elif (isinstance(persisted.get("inserted"), dict)
+              and persisted["inserted"].get("id") and not input_feedback_comment
+              and isinstance(input_feedback_meta, dict)
+              and input_feedback_meta.get("observation_status") == "unavailable"
+              and "thread_reply_pending" in (input_feedback_meta.get("rejection_reasons") or [])):
+            input_feedback = EmotionSubmitInputFeedback(comment_text="", emlis_ai={
+                "schema_version": "emlis.public_input_feedback_meta.v1",
+                "observation_status": "unavailable",
+                "rejection_reasons": ["thread_reply_pending"],
+            })
+
         return EmotionSubmitResponse(
             status="ok",
             id=(persisted.get("inserted") or {}).get("id") if isinstance(persisted.get("inserted"), dict) else None,

@@ -122,6 +122,7 @@ class ReportDistributionPushStore:
                 "limit": str(lim),
             },
             timeout=10.0,
+            read_retry_count=2,
         )
         if resp.status_code not in (200, 206):
             _raise_http_from_supabase(resp, "Failed to fetch pending report distribution push candidates")
