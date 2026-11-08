@@ -17,9 +17,9 @@ JP_TO_KEY = {v: k for k, v in KEY_TO_JP.items()}
 SELF_INSIGHT_LABELS = {"自己理解", "SelfInsight"}
 STRENGTH_SCORE = {"weak": 1, "medium": 2, "strong": 3}
 
-LABEL_CURRENT_WEATHER = "今のこころ天気"
+LABEL_CURRENT_WEATHER = "今のこころグラフ"
 EMPTY_TITLE = "今日はまだ観測がありません"
-EMPTY_ACTION_LABEL = "前回のこころ天気を見る"
+EMPTY_ACTION_LABEL = "前回のこころグラフを見る"
 
 WEATHER_LABELS = {
     "clear": "ひらけ気味",

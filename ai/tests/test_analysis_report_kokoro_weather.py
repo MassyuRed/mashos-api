@@ -107,7 +107,7 @@ async def test_ready_projection_filters_old_emotion_reports(monkeypatch):
             "report_type": "weekly",
             "period_start": "2026-05-11T15:00:00Z",
             "period_end": "2026-05-18T14:59:59Z",
-            "title": "こころ天気（週）",
+            "title": "こころグラフ（週）",
             "kokoro_weather_version": "kokoro.weather.v1",
             "generated_at": "2026-05-18T15:00:00Z",
             "updated_at": "2026-05-18T15:00:00Z",
@@ -166,8 +166,8 @@ async def test_ready_latest_body_filters_old_full_rows(monkeypatch):
             "report_type": "weekly",
             "period_start": "2026-05-11T15:00:00Z",
             "period_end": "2026-05-18T14:59:59Z",
-            "title": "こころ天気（週）",
-            "content_text": "こころ天気本文",
+            "title": "こころグラフ（週）",
+            "content_text": "こころグラフ本文",
             "content_json": kokoro_content,
             "generated_at": "2026-05-18T15:00:00Z",
             "updated_at": "2026-05-18T15:00:00Z",
@@ -193,7 +193,7 @@ async def test_ready_latest_body_filters_old_full_rows(monkeypatch):
     )
 
     assert [item["id"] for item in payload["items"]] == ["kokoro-report"]
-    assert payload["items"][0]["content_text"] == "こころ天気本文"
+    assert payload["items"][0]["content_text"] == "こころグラフ本文"
 
 
 @pytest.mark.asyncio
@@ -345,3 +345,75 @@ async def test_unread_status_uses_only_kokoro_weather_reports(monkeypatch):
     )
 
     assert ids == ["kokoro-weekly"]
+
+
+@pytest.mark.asyncio
+async def test_mark_read_detaches_old_unread_calculation_and_preserves_other_owner(monkeypatch):
+    import asyncio
+    from collections import OrderedDict
+    import httpx
+    import response_microcache as cache
+
+    monkeypatch.setattr(cache, "_ENABLED", True)
+    monkeypatch.setattr(cache, "_cache", OrderedDict())
+    monkeypatch.setattr(cache, "_inflight", {})
+    monkeypatch.setattr(cache, "_lock", asyncio.Lock())
+    started, release = asyncio.Event(), asyncio.Event()
+    marked = False
+    scans = {"A": 0, "B": 0}
+
+    async def owner(authorization):
+        return authorization.removeprefix("Bearer ")
+
+    async def tier(_owner):
+        return "free"
+
+    async def ids(uid, report_type, **_kwargs):
+        if report_type == "daily":
+            scans[uid] += 1
+            return [f"{uid}-report"]
+        return []
+
+    async def read_ids(uid, _ids):
+        snapshot = marked
+        if uid == "A" and not snapshot:
+            started.set()
+            await release.wait()
+        return {"A-report"} if uid == "A" and snapshot else set()
+
+    async def mark(uid, rid, **_kwargs):
+        nonlocal marked
+        assert (uid, rid) == ("A", "A-report")
+        marked = True
+        return True
+
+    monkeypatch.setattr(report_reads, "_require_user_id", owner)
+    monkeypatch.setattr(report_reads, "_resolve_viewer_tier", tier)
+    monkeypatch.setattr(report_reads, "_fetch_latest_ready_myweb_ids", ids)
+    monkeypatch.setattr(report_reads, "_fetch_read_id_set", read_ids)
+    monkeypatch.setattr(report_reads, "_mark_report_as_read", mark)
+    app = FastAPI()
+    report_reads.register_report_reads_routes(app)
+    url = "/report-reads/analysis-unread-status?include_self_structure=false"
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://synthetic") as client:
+        other = await client.get(url, headers={"Authorization": "Bearer B"})
+        assert other.json()["unread_by_type"]["daily"] is True
+        old = asyncio.create_task(client.get(url, headers={"Authorization": "Bearer A"}))
+        await asyncio.wait_for(started.wait(), 1)
+        new = None
+        try:
+            result = await client.post("/report-reads/mark", headers={"Authorization": "Bearer A"}, json={"report_id": "A-report"})
+            assert result.status_code == 200 and result.json()["marked"] is True
+            new = asyncio.create_task(client.get(url, headers={"Authorization": "Bearer A"}))
+            current = await asyncio.wait_for(asyncio.shield(new), 1)
+            assert current.json()["unread_by_type"]["daily"] is False
+        finally:
+            release.set()
+            await old
+            if new is not None:
+                await new
+        assert old.result().json()["unread_by_type"]["daily"] is True
+        again = await client.get(url, headers={"Authorization": "Bearer A"})
+        assert again.json()["unread_by_type"]["daily"] is False
+        assert (await client.get(url, headers={"Authorization": "Bearer B"})).json() == other.json()
+        assert scans == {"A": 2, "B": 1}

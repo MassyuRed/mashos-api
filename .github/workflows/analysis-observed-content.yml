@@ -26,6 +26,9 @@ name: Analysis observed content
       - ai/services/ai_inference/api_analysis_reports.py
       - ai/services/ai_inference/analysis_engine_adapter.py
       - ai/services/ai_inference/api_analysis_reads.py
+      - ai/services/ai_inference/api_report_reads.py
+      - ai/services/ai_inference/response_microcache.py
+      - ai/tests/test_analysis_report_kokoro_weather.py
       - ai/services/ai_inference/api_contract_registry.py
       - ai/docs/PUBLIC_API_REGISTRY.md
       - ai/tests/test_kokoro_weather_live.py

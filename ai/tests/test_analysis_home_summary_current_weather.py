@@ -25,9 +25,9 @@ async def test_home_summary_adds_current_weather_without_removing_existing_field
         return {
             "status": "no_observation",
             "period_mode": "today_jst",
-            "label": "今のこころ天気",
+            "label": "今のこころグラフ",
             "empty_title": "今日はまだ観測がありません",
-            "empty_action_label": "前回のこころ天気を見る",
+            "empty_action_label": "前回のこころグラフを見る",
             "previous_available": False,
         }
 

@@ -80,7 +80,7 @@ class MyWebHomeSummaryResponse(BaseModel):
     weekly: MyWebWeeklySummary
     monthly: MyWebMonthlySummary
     input_status: MyWebInputStatusSummary = Field(default_factory=MyWebInputStatusSummary)
-    # Additive Phase 1 field for the Analysis top "今のこころ天気" card.
+    # Additive Phase 1 field for the Analysis top "今のこころグラフ" card.
     # Existing clients can ignore this field safely.
     current_weather: Dict[str, Any] = Field(default_factory=dict)
 
@@ -391,7 +391,7 @@ async def get_myweb_home_summary_payload_for_user(user_id: str) -> Dict[str, Any
                 current_weather={
                     "status": "error",
                     "period_mode": "today_jst",
-                    "label": "今のこころ天気",
+                    "label": "今のこころグラフ",
                     "error": "missing_user_id",
                 },
             )
@@ -449,7 +449,7 @@ async def get_myweb_home_summary_payload_for_user(user_id: str) -> Dict[str, Any
             current_weather = {
                 "status": "error",
                 "period_mode": "today_jst",
-                "label": "今のこころ天気",
+                "label": "今のこころグラフ",
                 "error": "failed_to_load_current_weather",
             }
         else:
