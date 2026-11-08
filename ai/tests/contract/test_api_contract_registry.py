@@ -163,9 +163,13 @@ print(json.dumps(routes, sort_keys=True))
         [sys.executable, "-c", script],
         cwd=root,
         env=env,
-        check=True,
+        check=False,
         capture_output=True,
         text=True,
+    )
+    assert completed.returncode == 0, (
+        f"Production route import failed (exit {completed.returncode}):\n"
+        f"{completed.stderr}"
     )
     return json.loads(completed.stdout)
 

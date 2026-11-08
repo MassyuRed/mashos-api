@@ -87,12 +87,23 @@ jobs:
         run: >-
           python -m pip install --quiet --disable-pip-version-check
           pytest==8.4.1 pytest-subtests==0.14.2 pytest-asyncio==1.2.0
-          fastapi==0.142.2 pydantic==2.13.5 httpx==0.28.1
+          fastapi==0.142.2 pydantic==2.13.5 httpx==0.28.1 PyJWT==2.13.0
       - name: Record tested source and runtime
         run: |
           git rev-parse HEAD
           python --version
           python -m pip freeze
+      - name: Verify input-based live Kokoro weather and saved compatibility
+        run: >-
+          python -m pytest -q --tb=short -ra
+          -p pytest_subtests.plugin -p pytest_asyncio.plugin -p no:cacheprovider -c /dev/null --rootdir=. --noconftest
+          ai/tests/test_kokoro_weather_live.py
+          ai/tests/test_kokoro_weather_service.py
+          ai/tests/test_kokoro_weather_phase6_qa.py
+          ai/tests/test_analysis_home_summary_current_weather.py
+          ai/tests/test_analysis_report_kokoro_weather.py
+          ai/tests/test_analysis_material_input_integrity.py
+          ai/tests/contract/test_api_contract_registry.py
       - name: Verify Analysis generation and saved read
         run: >-
           python -m pytest -q --tb=short -ra
@@ -121,17 +132,6 @@ jobs:
           ai/tests/test_analysis_observed_storage.py
           ai/tests/test_analysis_saved_period.py
           ai/tests/test_cmee_emlis_limited_change_feeling.py
-      - name: Verify input-based live Kokoro weather and saved compatibility
-        run: >-
-          python -m pytest -q --tb=short -ra
-          -p pytest_subtests.plugin -p pytest_asyncio.plugin -p no:cacheprovider -c /dev/null --rootdir=. --noconftest
-          ai/tests/test_kokoro_weather_live.py
-          ai/tests/test_kokoro_weather_service.py
-          ai/tests/test_kokoro_weather_phase6_qa.py
-          ai/tests/test_analysis_home_summary_current_weather.py
-          ai/tests/test_analysis_report_kokoro_weather.py
-          ai/tests/test_analysis_material_input_integrity.py
-          ai/tests/contract/test_api_contract_registry.py
       - name: Verify shared owner identity
         env:
           PYTHONPATH: ai/services/ai_inference:ai/tests:ai
