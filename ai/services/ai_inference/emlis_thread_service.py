@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import copy
+import hashlib
 import json
 from dataclasses import asdict, is_dataclass, replace
 from datetime import datetime, timedelta, timezone
@@ -608,6 +609,8 @@ class EmlisThreadService:
     async def _process_natural(self, user_id, snapshot):
         from cocolon_meaning_experience_engine.natural_reply import (
             ARTIFACT_SCHEMA, NaturalReply, NaturalReplyError, prepare_natural_reply, validate_reply)
+        from cocolon_meaning_experience_engine.natural_reply_meaning import (
+            SCHEMA as MEANING_REVIEW_SCHEMA, compare_reply_meaning)
         t = snapshot["thread"]
         material, safety = prepare_natural_reply(_request(snapshot))
         if material.source_prefix_ref != t["source_prefix_ref"]:
@@ -658,11 +661,26 @@ class EmlisThreadService:
                     raise exc
                 snapshot = fresh
             t = snapshot["thread"]
+        try:
+            meaning_review = compare_reply_meaning(material.material_json, candidate.text,
+                                                   material.source_prefix_ref).as_private_dict()
+        except ValueError:
+            # Invalid admitted material is not an unsupported construction.
+            raise
+        except Exception:
+            # Initial application observes this finite reader; a reader bug
+            # never certifies a reply, repeats the provider call, or replaces it.
+            meaning_review = {"schema_version": MEANING_REVIEW_SCHEMA,
+                "source_prefix_ref": material.source_prefix_ref, "verdict": "UNASSESSED",
+                "material_sha256": hashlib.sha256(material.material_json.encode("utf-8")).hexdigest(),
+                "reply_sha256": hashlib.sha256(candidate.text.encode("utf-8")).hexdigest(),
+                "reason_codes": ["CHECKER_ERROR"], "full_reply_semantic_coverage": False}
         observation = _event("OBSERVATION", {"text": candidate.text, "stage": "INITIAL",
             "source_prefix_ref": t["source_prefix_ref"], "context_ref": _context_ref(snapshot),
             "context_guards": t["data"].get("context_guards", []),
             "artifact": {"schema_version": ARTIFACT_SCHEMA, "text": candidate.text,
-                         "model": candidate.model, "analysis_state": "NOT_GENERATED"}}, t)
+                         "model": candidate.model, "analysis_state": "NOT_GENERATED",
+                         "meaning_comparison": meaning_review}}, t)
         return await self._finish(user_id, snapshot, body_state="FINAL", state="COMPLETED", observation=observation)
 
     async def _process(self, user_id, snapshot):

@@ -53,6 +53,8 @@ name: Analysis observed content
       - ai/tests/test_analysis_cumulative*.py
       - ai/tests/test_analysis_semantic*.py
       - ai/tests/test_emlis_natural_reply_probe_http.py
+      - ai/tests/test_emlis_natural_reply_meaning_reuse.py
+      - ai/tests/test_emlis_natural_reply_meaning_budget.py
       - ai/tests/test_analysis_observed_api.py
       - ai/tests/analysis_cumulative_sql.cjs
       - supabase/migrations/20261101080144_cumulative_watashi_map.sql
@@ -195,6 +197,8 @@ jobs:
           -p pytest_subtests.plugin -p pytest_asyncio.plugin -p no:cacheprovider -c /dev/null --rootdir=. --noconftest
           ai/tests/test_emotion_submit_speed_regression_phase14.py
           ai/tests/test_emlis_natural_reply_application.py
+          ai/tests/test_emlis_natural_reply_meaning_reuse.py
+          ai/tests/test_emlis_natural_reply_meaning_budget.py
           ai/tests/test_analysis_model_fields.py
           ai/tests/test_analysis_cumulative.py
           ai/tests/test_analysis_cumulative_model_source.py

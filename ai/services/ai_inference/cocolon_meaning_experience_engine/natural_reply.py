@@ -31,6 +31,104 @@ created_atは記録した時点です。出来事が起きた時点は原文に�
 この初回の受口は返事だけを扱います。問いは別の処理で決めるため、この本文には確認質問を入れないでください。
 過去の本人記録がある場合は、今回に関係するものだけを使い、古い記録で今回の説明を上書きしないでください。過去への言及は必須ではありません。"""
 
+MEANING_SUPPORT_MESSAGE = """
+source_meaning_supportは原文の一部を限られた文法で読んだ補助です。「行為者」は動作をした人、「相手」はその動作を受けた人です。「記録を書いた本人」はEmlisではありません。「原文の人物表記」は原文に書かれた呼称で、記録者かどうかは文脈に従います。「省略され未確定」は本人だと決めないでください。原文と前後の文脈を優先し、補助にない出来事を否定したり未実行と決めたりしないでください。
+omitted_witness_countは載せていない読取件数です。補助や役割の解説は返答へ出さず、本人に自然に話しかけてください。「お前」など乱暴な呼称は使わず、呼びかけは省略して構いません。原文にない動機・理由・知った経緯は補わないでください。"""
+
+# These bounds apply only to optional hints. The original source and prompt
+# are never shortened to make hints fit. A 5800-byte complete messages array
+# leaves conservative room below the server's 6144 input-token budget for
+# chat framing; the server still owns actual tokenizer/context admission.
+MEANING_SUPPORT_MAX_WITNESSES = 4
+MEANING_SUPPORT_MAX_WITNESS_BYTES = 600
+MEANING_SUPPORT_MAX_BYTES = 1600
+MEANING_SUPPORT_MESSAGES_MAX_BYTES = 5800
+
+
+def _compact_json(value):
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+
+
+def _written_role(value):
+    if value == "SELF":
+        return "記録を書いた本人"
+    if value == "UNSTATED":
+        return "省略され未確定"
+    return "原文の人物表記：" + value.removeprefix("WRITTEN:") if value else ""
+
+
+def system_message_for(request):
+    """Use the unchanged base prompt when no usable optional hints exist."""
+    try:
+        material = request if type(request) is dict else json.loads(
+            request if isinstance(request, str) else request.material_json)
+        support = material.get("source_meaning_support")
+        if not (type(support) is dict and isinstance(support.get("witnesses"), list)
+                and support["witnesses"]):
+            return SYSTEM_MESSAGE
+        from .natural_reply_meaning import SUPPORT_SCHEMA
+        if support.get("schema_version") == SUPPORT_SCHEMA:
+            return SYSTEM_MESSAGE + MEANING_SUPPORT_MESSAGE
+    except Exception:
+        pass
+    return SYSTEM_MESSAGE
+
+
+def material_with_meaning_support(material):
+    """Add bounded source-role hints without dropping any admitted material.
+
+    Full witnesses remain the comparison reader's responsibility. Oversized
+    or unreadable optional support falls back to the original material.
+    """
+    try:
+        from .natural_reply_meaning import SUPPORT_SCHEMA, prepare_meaning_support
+        full = prepare_meaning_support(material)
+        witnesses = full["witnesses"]
+        selected = []
+
+        def compact_support(rows):
+            return {"schema_version": SUPPORT_SCHEMA, "witnesses": rows,
+                "total_witness_count": len(witnesses),
+                "included_witness_count": len(rows),
+                "omitted_witness_count": len(witnesses) - len(rows),
+                "excluded_source_count": full["excluded_source_count"],
+                "coverage": full["coverage"]}
+
+        for witness in witnesses:
+            # AR-01 hints cover only the current record. Past-record relative
+            # days and wishes retain their existing material/time owner.
+            if witness["source_group"] != "CURRENT":
+                continue
+            if len(selected) == MEANING_SUPPORT_MAX_WITNESSES:
+                break
+            # Use role names in the model's response language. The internal
+            # SELF/WRITTEN identifiers and full proof stay in the reader.
+            compact = {"source_path": witness["source_path"],
+                "scalar_start": witness["scalar_start"], "scalar_end": witness["scalar_end"],
+                "原文": witness["raw_text"], "行為者": _written_role(witness["agent"]),
+                "動作": witness["predicate"], "相手": _written_role(witness["counterpart"]),
+                "肯否": {"positive": "肯定", "negative": "否定"}[witness["polarity"]],
+                "記載形": {"fact": "出来事", "wish": "希望"}[witness["modality"]],
+                "時点": witness["relative_day"] or (
+                    "過去" if witness["temporal_scope"] == "past" else "当回")}
+            if len(_compact_json(compact).encode("utf-8")) > MEANING_SUPPORT_MAX_WITNESS_BYTES:
+                continue
+            proposed = [*selected, compact]
+            if len(_compact_json(compact_support(proposed)).encode("utf-8")) <= MEANING_SUPPORT_MAX_BYTES:
+                selected = proposed
+        if not selected:
+            return material
+        supported = {**material, "source_meaning_support": compact_support(selected)}
+        messages = [{"role": "system", "content": system_message_for(supported)},
+                    {"role": "user", "content": _compact_json(supported)}]
+        if len(_compact_json(messages).encode("utf-8")) > MEANING_SUPPORT_MESSAGES_MAX_BYTES:
+            return material
+        return supported
+    except Exception:
+        # Source admission and Safety have already run. This optional reader
+        # cannot turn an unsupported source construction into a new failure.
+        return material
+
 
 def _answers(admitted):
     control = admitted.control.question_control_context
@@ -71,7 +169,7 @@ class NaturalReply:
     schema_version: str = ARTIFACT_SCHEMA
 
 
-def prepare_natural_reply(request):
+def prepare_natural_reply(request, *, use_meaning_support=False):
     """Return admitted user material and the existing independent Safety result."""
     admitted = admit_emlis_thread(request)
     original = request.current_input_bundle.raw_current_input
@@ -105,8 +203,13 @@ def prepare_natural_reply(request):
                     'input_id': f.source_emotion_id, 'status': f.status, 'correction_text': f.correction_text,
                     'version': f.version, 'updated_at': f.updated_at}
                     for f in feedback if f.source_emotion_id in included_ids]}
+    # Development comparisons showed mixed quality. Normal generation keeps
+    # the original prompt/material; only an explicit research call adds hints.
+    # The independent post-generation reader still uses the original sources.
+    if use_meaning_support:
+        material = material_with_meaning_support(material)
     return NaturalReplyInput(admitted.source_prefix_ref,
-        json.dumps(material, ensure_ascii=False, separators=(",", ":"))), safety
+        _compact_json(material)), safety
 
 
 def _material(original):
@@ -145,7 +248,7 @@ class SelfHostedNaturalReplySource:
                 response = await client.post(self.endpoint,
                     headers={"Authorization": "Bearer " + self._api_key},
                     json={"model": self.model, "messages": [
-                        {"role": "system", "content": SYSTEM_MESSAGE},
+                        {"role": "system", "content": system_message_for(request)},
                         {"role": "user", "content": request.material_json}],
                         "temperature": 0, "max_tokens": 2048, "stream": False,
                         "chat_template_kwargs": {"enable_thinking": False}})

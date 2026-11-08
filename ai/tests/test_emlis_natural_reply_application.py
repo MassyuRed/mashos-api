@@ -21,6 +21,102 @@ from cocolon_meaning_experience_engine.natural_reply import (
 BODY = "会議を終えて、少し安心できたのですね。\n\n資料を読み直したことも、今日の記録に残っています。"
 
 
+def test_finite_source_is_compared_without_changing_normal_prompt_and_review_stays_private(natural_case, qdb, monkeypatch):
+    user, parent, service, calls = natural_case
+    qdb.query("update public.emotions set memo=$2,memo_action='' where id=$1",
+              [parent, "私は友人に頼まれた。"])
+
+    async def reply(material):
+        calls.append(material)
+        assert 'source_meaning_support' not in json.loads(material.material_json)
+        return NaturalReply("あなたは友人に頼まれたのですね。", "synthetic-4b", material.source_prefix_ref)
+
+    service.natural_reply_source = reply
+    dto = run(service.start(user, parent))
+    snapshot = run(service.store.read(user, input_id=parent))
+    event = next(e for e in snapshot['events'] if e['kind'] == 'OBSERVATION')
+    report = event['payload']['artifact']['meaning_comparison']
+    assert report['verdict'] == 'NO_CONFLICT_IN_CHECKED_SCOPE'
+    assert report['checked_reply_count'] == 1 and not report['full_reply_semantic_coverage']
+    assert snapshot['thread']['data']['analysis_state'] == 'NOT_GENERATED'
+    assert event['payload']['artifact']['analysis_state'] == 'NOT_GENERATED'
+    assert len(calls) == 1
+    public = json.dumps(dto, ensure_ascii=False)
+    assert 'meaning_comparison' not in public and 'source_meaning_support' not in public
+    from cocolon_meaning_experience_engine.natural_reply import prepare_natural_reply
+    from emlis_thread_service import _request
+    research, safety = prepare_natural_reply(_request(snapshot), use_meaning_support=True)
+    assert safety.normal_observation_allowed
+    assert research.source_prefix_ref == calls[0].source_prefix_ref
+    hint = json.loads(research.material_json).pop('source_meaning_support')
+    assert hint['witnesses'][0]['行為者'] == '原文の人物表記：友人'
+    assert hint['witnesses'][0]['相手'] == '記録を書いた本人'
+    assert json.loads(research.material_json)['current'] == json.loads(calls[0].material_json)['current']
+
+    def never_read_again(*args):
+        raise AssertionError('saved GET never reruns the meaning reader')
+
+    import cocolon_meaning_experience_engine.natural_reply_meaning as meaning
+    monkeypatch.setattr(meaning, 'compare_reply_meaning', never_read_again)
+    for _ in range(2):
+        assert run(service.get(user, parent))['current_observation'] == dto['current_observation']
+    assert len(calls) == 1
+
+
+def test_initial_scoped_conflict_report_does_not_rewrite_or_retry_provider(natural_case, qdb):
+    user, parent, service, calls = natural_case
+    qdb.query("update public.emotions set memo=$2,memo_action='' where id=$1",
+              [parent, "私は友人に頼まれた。"])
+
+    async def reversed_reply(material):
+        calls.append(material)
+        return NaturalReply("あなたは友人に頼んだのですね。", "synthetic-4b", material.source_prefix_ref)
+
+    service.natural_reply_source = reversed_reply
+    dto = run(service.start(user, parent))
+    snapshot = run(service.store.read(user, input_id=parent))
+    event = next(e for e in snapshot['events'] if e['kind'] == 'OBSERVATION')
+    assert event['payload']['artifact']['meaning_comparison']['verdict'] == 'CONFLICT'
+    assert dto['current_observation']['text'] == "あなたは友人に頼んだのですね。"
+    assert len(calls) == 1
+
+
+def test_reader_bug_is_private_unassessed_and_not_source_error(natural_case, monkeypatch):
+    user, parent, service, calls = natural_case
+    import cocolon_meaning_experience_engine.natural_reply_meaning as meaning
+
+    def broken(*args):
+        raise RuntimeError('never expose internal prose from a reader error')
+
+    monkeypatch.setattr(meaning, 'compare_reply_meaning', broken)
+    dto = run(service.start(user, parent))
+    snapshot = run(service.store.read(user, input_id=parent))
+    event = next(e for e in snapshot['events'] if e['kind'] == 'OBSERVATION')
+    report = event['payload']['artifact']['meaning_comparison']
+    assert report['verdict'] == 'UNASSESSED' and report['reason_codes'] == ['CHECKER_ERROR']
+    import hashlib
+    assert report['material_sha256'] == hashlib.sha256(calls[0].material_json.encode('utf-8')).hexdigest()
+    assert report['reply_sha256'] == hashlib.sha256(dto['current_observation']['text'].encode('utf-8')).hexdigest()
+    assert not report['full_reply_semantic_coverage']
+    assert 'never expose' not in json.dumps(snapshot)
+    assert dto['body_state'] == 'FINAL' and len(calls) == 1
+
+
+def test_source_integrity_failure_is_not_swallowed_as_reader_unknown(natural_case, monkeypatch):
+    user, parent, service, calls = natural_case
+    import cocolon_meaning_experience_engine.natural_reply_meaning as meaning
+
+    def invalid(*args):
+        raise ValueError('natural_meaning_material_invalid')
+
+    monkeypatch.setattr(meaning, 'compare_reply_meaning', invalid)
+    dto = run(service.start(user, parent))
+    snapshot = run(service.store.read(user, input_id=parent))
+    assert dto['state'] == 'RESPONSE_FAILED'
+    assert not any(e['kind'] == 'OBSERVATION' for e in snapshot['events'])
+    assert len(calls) == 1
+
+
 @pytest.fixture
 def natural_case(qdb, monkeypatch):
     user, parent = str(uuid4()), str(uuid4())
