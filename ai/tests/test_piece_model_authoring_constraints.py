@@ -115,7 +115,6 @@ def test_refined_answer_cannot_borrow_the_originals_name_or_narrator():
 
 
 @pytest.mark.parametrize('text', [
-    '僕は司書に展示の予定を相談しました。',
     '私が選びたいのは、同僚の西さんと同僚の東さんと展示を見る時間です。',
     '私が選びたいのは、西さんと展示を見る時間です。',
     '私にとって、その時間が重要です。',
@@ -123,6 +122,112 @@ def test_refined_answer_cannot_borrow_the_originals_name_or_narrator():
 def test_absent_or_unestablished_finite_axes_do_not_gain_constraints(text):
     material, _ = messages(source(text, field='memo'))
     assert 'authoring_constraints' not in material['control']
+
+
+@pytest.mark.parametrize('speaker', ('私', 'わたし', '僕', 'ぼく', '俺', 'おれ'))
+@pytest.mark.parametrize('ending,predicate,polarity', [
+    ('相談しました', '相談する', 'positive'),
+    ('伝えませんでした', '伝える', 'negative'),
+    ('頼まなかった', '頼む', 'negative'),
+])
+def test_finite_source_conditions_keep_the_written_narrator_and_each_event(speaker, ending, predicate, polarity):
+    text = speaker + 'は司書に展示の予定を' + ending + '。'
+    material, _ = messages(source(text, field='memo'))
+    slot = field_constraints(material)['memo_0']
+    assert slot['required_actions'] == [dict(narrator_literal=speaker,
+        predicate_literal=ending, predicate=predicate, polarity=polarity,
+        temporal_scope='past', modality='fact', voice='active', relative_day='',
+        arguments=[dict(case='に', literal='司書'), dict(case='を', literal='展示の予定')],
+        scalar_start=0, scalar_end=len(text))]
+    assert slot['named_people'] == [] and slot['required_evaluations'] == []
+    assert 'expected_body' not in str(slot)
+
+
+def test_different_written_narrators_do_not_share_polarity_or_tense():
+    first = '僕は司書に展示の予定を相談しました。'
+    second = '私は受付係に開場の時刻を伝えませんでした。'
+    material, _ = messages(source(first + second, field='memo'))
+    actions = field_constraints(material)['memo_0']['required_actions']
+    assert [(row['narrator_literal'], row['polarity'], row['temporal_scope']) for row in actions] == [
+        ('僕', 'positive', 'past'), ('私', 'negative', 'past')]
+    assert [(row['scalar_start'], row['scalar_end']) for row in actions] == [
+        (0, len(first)), (len(first), len(first + second))]
+
+
+@pytest.mark.parametrize('target', ('参加する日は', '毎日続けるかは'))
+def test_undecided_conditions_keep_the_entire_source_target(target):
+    text = '僕は読書が好きでした。まだ、' + target + '決めていません。'
+    material, _ = messages(source(text, field='memo'))
+    slot = field_constraints(material)['memo_0']
+    start = text.index('まだ、')
+    assert slot['required_undecided_targets'] == [dict(prefix_literal='まだ、' + target,
+        target_literal=target, predicate_literal='決めていません', polarity='negative',
+        temporal_scope='nonpast', scalar_start=start, scalar_end=len(text))]
+    # The pre-existing past evaluation condition is unaffected by the new axis.
+    assert slot['required_evaluations'][0]['temporal_scope'] == 'PAST'
+
+
+def test_action_and_reservation_are_local_to_original_fields_and_the_answer():
+    original = '僕は司書に展示の予定を相談しました。まだ、参加する日は決めていません。'
+    answer = 'わたしは読書が好きでした。'
+    material, _ = messages(refined_source(original=original, answer=answer))
+    slots = field_constraints(material)
+    original_slot, answer_slot = slots['memo_0'], slots['answer_text_private_1']
+    assert original_slot['source_role'] == 'ORIGINAL_INPUT'
+    assert answer_slot['source_role'] == 'SUPPLEMENTAL_ANSWER'
+    assert original_slot['source_id'] != answer_slot['source_id']
+    assert original_slot['required_actions'][0]['narrator_literal'] == '僕'
+    assert original_slot['required_actions'][0]['polarity'] == 'positive'
+    assert original_slot['required_actions'][0]['scalar_start'] == 0
+    assert original_slot['required_undecided_targets'][0]['target_literal'] == '参加する日は'
+    assert answer_slot['required_evaluations'][0]['narrator_literal'] == 'わたし'
+    assert 'required_actions' not in answer_slot and 'required_undecided_targets' not in answer_slot
+
+
+@pytest.mark.parametrize('text', [
+    '司書に展示の予定を相談しました。',
+    'あなたは司書に展示の予定を相談しました。',
+    '私は司書に展示の予定を相談したかもしれない。',
+    '私は司書に展示の予定を相談したと聞いた。',
+    '私は司書に展示の予定を相談する。',
+    '私は司書に展示の予定を相談したなら。',
+    '私は司書に展示の予定を相談しました。まだ、',
+    '私は司書に展示の予定を相談しました！',
+    '私は司書に展示の予定を相談し、受付係に時刻を伝えました。',
+    '私は司書に展示の予定を伝えられました。',
+])
+def test_source_action_projection_does_not_parse_a_substring_or_infer_a_writer(text):
+    from piece_model_source import _source_action_constraint
+    assert _source_action_constraint(text) is None
+
+
+def test_explicit_kara_passive_retains_its_written_direction_instead_of_active_self():
+    text = '私は司書から展示の予定を伝えられました。'
+    material, _ = messages(source(text, field='memo'))
+    action = field_constraints(material)['memo_0']['required_actions'][0]
+    assert action['voice'] == 'passive' and action['narrator_literal'] == '私'
+    assert action['arguments'] == [dict(case='から', literal='司書'), dict(case='を', literal='展示の予定')]
+
+
+@pytest.mark.parametrize('text', [
+    '参加する日は決めていません。', 'まだ、参加するかは決めていなかった。',
+    'まだ、参加するかは決めていないかもしれない。',
+    'まだ、参加することは決めていません。',
+    'まだ、参加するかは決めていません。私は参加します。',
+    '「まだ、参加するかは決めていません。」',
+])
+def test_reservation_projection_reuses_the_exact_existing_whole_reader(text):
+    from piece_v2_content_policy import _piece_model_undecided_target
+    assert _piece_model_undecided_target(text) is None
+
+
+def test_evaluation_only_wire_has_no_new_condition_or_instruction():
+    material, _ = messages(source(EVALUATION, field='memo'))
+    constraints = material['control']['authoring_constraints']
+    assert set(constraints) == {'instruction', 'field_slots'}
+    assert set(field_constraints(material)['memo_0']) == {
+        'source_id', 'source_role', 'field_path', 'scalar_start', 'scalar_end',
+        'named_people', 'required_evaluations'}
 
 
 def test_constraints_require_the_exact_source_request_not_only_matching_text():

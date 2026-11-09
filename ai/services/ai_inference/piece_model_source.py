@@ -39,6 +39,38 @@ def _json(value):
                       separators=(',', ':'), allow_nan=False)
 
 
+def _source_action_constraint(text):
+    """Project only the source owner's complete, written finite account."""
+    from cocolon_meaning_experience_engine.piece_source import _finite_self_person_action_account
+    from cocolon_meaning_experience_engine import natural_reply_meaning as reader
+    if not _finite_self_person_action_account(text):
+        return None
+    rows, count = reader._clauses(text, 'piece.authoring', 'SOURCE')
+    if len(rows) != count or count != 1:
+        return None
+    row = rows[0]
+    day = reader._DAY.match(row.raw_text)
+    value = row.raw_text[day.end():] if day else row.raw_text
+    subject = reader._SUBJECT.match(value)
+    if subject is None or subject['noun'] not in reader._SELF:
+        return None
+    readings = []
+    for finite, predicate, polarity, modality, temporal, voice, receiving in reader._FORMS:
+        if (not receiving and value.endswith(finite)
+                and (predicate, polarity, modality, temporal, voice) == (
+                    row.predicate, row.polarity, row.modality, row.temporal_scope, row.voice)):
+            arguments = reader._arguments(value[subject.end():-len(finite)])
+            if arguments is not None:
+                readings.append((finite, arguments))
+    if len(readings) != 1:
+        return None
+    finite, arguments = readings[0]
+    return dict(narrator_literal=subject['noun'], predicate_literal=finite,
+        predicate=row.predicate, polarity=row.polarity, temporal_scope=row.temporal_scope,
+        modality=row.modality, voice=row.voice, relative_day=row.relative_day,
+        arguments=[dict(case=case, literal=noun) for case, noun in arguments])
+
+
 def _authoring_constraints(prepared, source_request, slots):
     """Project admitted source axes for an explicit development comparison.
 
@@ -52,6 +84,7 @@ def _authoring_constraints(prepared, source_request, slots):
     from cocolon_meaning_experience_engine.piece_source import (
         piece_public_role_aliases, piece_source_text)
     from piece_v2_contract import PieceContractError
+    from piece_v2_content_policy import _piece_model_undecided_target
 
     if prepare_piece_model_request(source_request) != prepared:
         raise ValueError('piece_model_authoring_source_mismatch')
@@ -75,7 +108,25 @@ def _authoring_constraints(prepared, source_request, slots):
         for key, slot in slots.items():
             if slot['source_id'] != source['source_id']:
                 continue
-            names, evaluations = [], []
+            names, evaluations, actions, undecided = [], [], [], []
+            for sentence in part.sentences:
+                ref = evidence[sentence.node_id]
+                if (ref.field_path != slot['field_path']
+                        or not slot['scalar_start'] <= ref.scalar_start
+                        < ref.scalar_end <= slot['scalar_end']):
+                    continue
+                literal = text[sentence.source_start:sentence.source_end]
+                action = _source_action_constraint(literal)
+                if action is not None:
+                    actions.append(dict(**action, scalar_start=ref.scalar_start,
+                                        scalar_end=ref.scalar_end))
+                reservation = _piece_model_undecided_target(literal)
+                if reservation is not None:
+                    undecided.append(dict(prefix_literal=reservation['prefix'],
+                        target_literal=reservation['target'],
+                        predicate_literal=reservation['predicate'], polarity='negative',
+                        temporal_scope='nonpast', scalar_start=ref.scalar_start,
+                        scalar_end=ref.scalar_end))
             for binding in part.role_bindings:
                 owners = [item for item in part.sentences
                           if item.source_start <= binding.source_start
@@ -107,11 +158,15 @@ def _authoring_constraints(prepared, source_request, slots):
                     polarity=frame.polarity, temporal_scope=frame.temporal_scope,
                     commitment=frame.commitment,
                     scalar_parts=[[a + delta, b + delta] for a, b in frame.scalar_parts]))
-            if names or evaluations:
+            if names or evaluations or actions or undecided:
                 result[key] = dict(source_id=slot['source_id'], source_role=slot['source_role'],
                     field_path=slot['field_path'], scalar_start=slot['scalar_start'],
                     scalar_end=slot['scalar_end'], named_people=names,
                     required_evaluations=evaluations)
+                if actions:
+                    result[key]['required_actions'] = actions
+                if undecided:
+                    result[key]['required_undecided_targets'] = undecided
     return result
 
 
@@ -151,6 +206,11 @@ def build_piece_model_messages(prepared, *, include_authoring_constraints=False,
                 control['authoring_constraints'] = dict(
                     instruction='各欄に対応する原文で成立した条件です。評価の本人・対象・述語・肯否・時点・留保を本文に保持し、named_peopleの氏名は同じ行のpublic_roleへ抽象化してください。他の欄やsourceへ条件を移さず、条件にない意味を補わないでください。',
                     field_slots=constraints)
+                if any('required_actions' in slot or 'required_undecided_targets' in slot
+                       for slot in constraints.values()):
+                    control['authoring_constraints']['finite_scope_instruction'] = (
+                        'required_actionsは各動作の本人表記・相手と対象・肯否・時点を別々に保持してください。'
+                        'required_undecided_targetsは記載された対象について未決定のまま保持してください。')
         # payload() is detached. Whole sources/private_json/request_id remain
         # unchanged; scalar slices are not normalized, trimmed or rewritten.
         return [dict(role='system', content=SYSTEM_MESSAGE),
