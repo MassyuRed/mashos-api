@@ -904,6 +904,25 @@ def _paired_self_continuations(meaning: PieceSourceMeaning,
     return frozenset(continuations)
 
 
+def realize_piece_model_artifact(meaning, plan, *, body_blocks, tier, requested_format):
+    """Adopt one fixed model body through the existing Piece artifact owner.
+
+    The model supplies no format, language, plan, recipe or safety verdict.
+    This function neither repairs a failed body nor invokes the finite author
+    as a replacement. Exact candidate bytes become the canonical artifact.
+    """
+    from piece_v2_content_policy import validate_piece_model_preservation
+    if type(body_blocks) is not tuple or not body_blocks or any(type(b) is not str for b in body_blocks):
+        raise unavailable('piece_model_body_shape')
+    selected = choose_format(tier=tier, requested=requested_format,
+        eligible=('short_essay',), recommended='short_essay')
+    text = '\n\n'.join(body_blocks)
+    artifact = PieceArtifact(body_blocks, text, hashlib.sha256(text.encode()).hexdigest(),
+                             selected, ('short_essay',))
+    validate_piece_model_preservation(meaning, plan, artifact)
+    return artifact
+
+
 def realize_piece_artifact(meaning: PieceSourceMeaning, plan: PieceArtifactPlan,
                            *, tier: str, requested_format: str | None) -> PieceArtifact:
     """Realize plan-owned duties from the source graph; never call B8's old author."""

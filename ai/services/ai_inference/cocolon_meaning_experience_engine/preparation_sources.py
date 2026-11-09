@@ -103,6 +103,77 @@ def piece_material(source, *, expected_owner_id: str, tier: str = 'free') -> dic
     }
 
 
+def piece_model_material(source, *, expected_owner_id: str, tier: str = 'free') -> dict:
+    """Source-only material for one explicitly selected Piece model attempt.
+
+    Keep legacy piece_material bytes/IDs unchanged. This projection does not
+    admit the candidate's meaning, call a parser/author, or authenticate a
+    fabricated private snapshot. The saved-source adapter owns eligibility.
+    """
+    from piece_v2_contract import canonical_json_bytes
+    from piece_v2_generation import PieceSourceSnapshot
+    from .piece_refined import PieceRefinedSourceSnapshot, refined_source_ref
+    from .emlis_thread_source import freeze_supplemental_answer
+
+    refined = type(source) is PieceRefinedSourceSnapshot
+    original = source.original if refined else source
+    material = piece_material(original, expected_owner_id=expected_owner_id, tier=tier)
+    sources = material['sources']
+    if refined:
+        frozen = freeze_supplemental_answer(source.supplemental)
+        if (source.opted_in is not True or source.supplemental_update_operation != 'ADD'
+                or source.supplemental_owner_id != expected_owner_id
+                or source.original_commitment != sources[0]['source_commitment']
+                or source.supplemental_commitment != 'sha256:' + frozen.envelope.raw_sha256
+                or source.supplemental.round_index != 1
+                or source.supplemental.answer_id == original.saved_input_id
+                or any(type(v) is not str or not v.strip() for v in (
+                    source.question_need_decision_identity, source.refined_result_identity))):
+            raise ValueError('piece_model_refined_binding')
+        sources.append({
+            'source_id': source.supplemental.answer_id,
+            'source_version': source.supplemental.source_version,
+            'source_commitment': source.supplemental_commitment,
+            'role': 'SUPPLEMENTAL_ANSWER', 'original': None,
+            'text_fields': {'answer_text_private': source.supplemental.answer_text_private},
+            'envelope_id': frozen.envelope.envelope_id,
+            'recorded_at': source.supplemental.recorded_at,
+            'parent_record_id': original.saved_input_id,
+            'evidence': [dict(asdict(ref), literal=frozen.envelope.raw_utf8[
+                ref.utf8_start:ref.utf8_end].decode('utf-8'), coordinate_space='SOURCE_ENVELOPE')
+                for ref in frozen.evidence_refs],
+        })
+        source_ref = refined_source_ref(source)
+    else:
+        if type(source) is not PieceSourceSnapshot:
+            raise ValueError('piece_model_source_type')
+        source_ref = 'piece-model-source:' + hashlib.sha256(canonical_json_bytes({
+            'owner': expected_owner_id, 'source_stage': source.source_stage,
+            'source': sources[0]})).hexdigest()
+    partition = []
+    for item in sources:
+        for field, text in item['text_fields'].items():
+            if not isinstance(text, str):
+                continue
+            offset = 0
+            for line in text.splitlines(keepends=True):
+                body = line.rstrip('\r\n')
+                if body.strip():
+                    partition.append(dict(source_id=item['source_id'], field_path=field,
+                                          scalar_start=offset, scalar_end=offset + len(body)))
+                offset += len(line)
+    if not partition or len(partition) > 3:
+        raise ValueError('piece_model_block_partition')
+    material.update(task='PIECE_MODEL_BODY', control={
+        'source_stage': 'refined_observation' if refined else original.source_stage,
+        'source_ref': source_ref, 'block_partition': partition,
+        'format_type': 'short_essay', 'language': 'ja', 'model_body_only': True,
+        'authorship': 'USER_OWNED_COCOLON_SHAPED',
+        'source_selections_are_not_written_propositions': True,
+    })
+    return material
+
+
 def analysis_material(request, *, tier: str) -> dict:
     """Reuse Analysis's source freeze, including period and supplement checks."""
     from .cores.analysis.source_adapter import freeze_analysis_sources

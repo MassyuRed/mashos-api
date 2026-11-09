@@ -234,7 +234,8 @@ def _sentences(text: str, *, allow_unpunctuated_account: bool = False) -> list[s
 
 
 def generate_piece_candidate(source: PieceSourceSnapshot, *, authenticated_owner_id: str,
-                             tier: str = 'free', requested_format: str | None = None) -> dict:
+                             tier: str = 'free', requested_format: str | None = None,
+                             model_candidate=None) -> dict:
     """Existing disabled B8 entry, now consuming CMEE's Piece artifact directly.
 
     Owner equality is a binding check, NOT authentication. B5 must still obtain
@@ -243,7 +244,7 @@ def generate_piece_candidate(source: PieceSourceSnapshot, *, authenticated_owner
     from cocolon_meaning_experience_engine.engine import MeaningExperienceEngine
     from cocolon_meaning_experience_engine.piece_source import build_piece_source_meaning
     from cocolon_meaning_experience_engine.piece_v1c import (
-        PieceGenerationRequest, PieceEngineOutcome,
+        PieceGenerationRequest, PieceEngineOutcome, PieceArtifact,
         compile_piece_artifact_plan, realize_piece_artifact,
     )
     from cocolon_meaning_experience_engine.contracts import EngineStatus
@@ -263,7 +264,8 @@ def generate_piece_candidate(source: PieceSourceSnapshot, *, authenticated_owner
         expected_saved_input_id=original.saved_input_id,
         expected_source_version=original.source_version,
         tier=tier, requested_format=requested_format)
-    outcome = MeaningExperienceEngine().generate(request)
+    outcome = (MeaningExperienceEngine().generate(request, semantic_input=model_candidate)
+               if model_candidate is not None else MeaningExperienceEngine().generate(request))
     if not isinstance(outcome, PieceEngineOutcome):
         raise unavailable('piece_engine_outcome_type')
     if (outcome.status != EngineStatus.GENERATED or outcome.artifact is None
@@ -284,6 +286,21 @@ def generate_piece_candidate(source: PieceSourceSnapshot, *, authenticated_owner
     if (type(outcome.artifact_plan) is not type(expected_plan)
             or outcome.artifact_plan != expected_plan):
         raise unavailable('piece_engine_plan_binding')
+    if model_candidate is not None:
+        from cocolon_meaning_experience_engine.piece_semantic_admission import validate_piece_model_input
+        from piece_v2_content_policy import validate_piece_model_preservation
+        try:
+            blocks = validate_piece_model_input(request, model_candidate)
+        except (ValueError, TypeError, KeyError, AttributeError, UnicodeError, RecursionError):
+            raise unavailable('piece_engine_receipt_binding') from None
+        # The actual model bytes, rather than a finite-author replay, are the
+        # canonical body. Rehashed substitutions must still match the bound
+        # receipt and pass complete independent source/body preservation.
+        if (type(outcome.artifact) is not PieceArtifact
+                or outcome.artifact.body_blocks != blocks):
+            raise unavailable('piece_engine_artifact_binding')
+        validate_piece_model_preservation(expected_meaning, expected_plan, outcome.artifact)
+        return outcome.artifact.as_candidate()
     # Reuse the sole author, not a second set of text templates. This catches
     # source/plan/result substitutions at the engine-to-B8 seam; it is NOT an
     # independent semantic review of that author or complete PCE-4 safety.

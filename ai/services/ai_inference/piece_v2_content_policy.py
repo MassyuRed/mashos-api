@@ -94,6 +94,202 @@ def choose_format(*, tier: str, requested: str | None, eligible: tuple[str, ...]
     return selected
 
 
+def _piece_model_feeling(text):
+    """Read existing complete SELF feelings; never infer from a selection."""
+    from piece_v2_expression import _SELF_TOPIC
+    from cocolon_meaning_experience_engine.emlis_answer_update import _FEELING, _NOW
+    now = _NOW.match(text)
+    prefix = now.group() if now else ''
+    value = text[now.end():] if now else text
+    topic = _SELF_TOPIC.fullmatch(value)
+    if topic is None or not _FEELING.fullmatch('私は' + topic['body']):
+        return None
+    finite = re.fullmatch(r'(?P<degree>少し|とても|本当は|まだ|全然|あまり)?'
+        r'(?P<stem>嬉し|うれし|寂し|さびし|悲し|苦し|つら|辛|怖|こわ|重|楽し|軽)'
+        r'(?P<ending>くなかった|かった|くない|い)(?:です)?', topic['body'])
+    if finite is None:
+        return None
+    ending = finite['ending']
+    return ('FEELING', 'SELF', finite['stem'], finite['degree'] or '',
+        'negative' if ending.startswith('くな') else 'positive',
+        'past' if ending.endswith('かった') else 'nonpast',
+        ('NOW', 'も' if 'も' in prefix else 'は') if now else ())
+
+
+def _piece_model_read_block(text, *, allow_self_omission=False):
+    """Use the finite reader in the person's voice, not Emlis's voice.
+
+    Every visible clause must be read. The only parse-only subject completion
+    is a later clause in this same block after explicit SELF, and only when
+    the source block was completely explicit SELF. No output is rewritten.
+    """
+    from cocolon_meaning_experience_engine import natural_reply_meaning as reader
+    from emlis_ai_evidence_ledger_service import _split_source_text
+    if type(text) is not str or not text.endswith('。') or reader._top_level_text(text) != text:
+        return None
+    rows = _split_source_text(text, max_len=max(1, len(text)))
+    if not rows:
+        return None
+    result, self_context = [], False
+    for row in rows:
+        raw = text[row.start:row.end]
+        # The ledger excludes a terminal stop; the feeling grammar owns it.
+        feeling = _piece_model_feeling(raw + '。')
+        parsed, count = reader._clauses(raw, 'piece.visible', 'PIECE_OUTPUT', reply=False)
+        if feeling is not None:
+            result.append(feeling)
+            self_context = True
+            continue
+        if len(parsed) != count or len(parsed) != 1:
+            if not allow_self_omission or not self_context:
+                return None
+            day = reader._DAY.match(raw)
+            start = day.end() if day else 0
+            if reader._SUBJECT.match(raw[start:]):
+                return None
+            view = raw[:start] + '私は' + raw[start:]
+            feeling = _piece_model_feeling(view + '。')
+            parsed, count = reader._clauses(view, 'piece.visible', 'PIECE_OUTPUT', reply=False)
+            if feeling is not None:
+                result.append(feeling)
+                continue
+            if len(parsed) != count or len(parsed) != 1:
+                return None
+        witness = parsed[0]
+        # The initial slice changes register/order/SELF repetition only. A
+        # focus or voice conversion is not licensed by event-key equality.
+        if witness.source_construction != 'PLAIN_FINITE':
+            return None
+        agent, target, arguments = reader._comparison_event(witness)
+        # The existing Emlis comparator drops ni/kara while deriving roles.
+        # Retain those written cases here: consultation from someone cannot
+        # become consultation to someone merely because names/lemmas match.
+        value = witness.raw_text
+        day = reader._DAY.match(value)
+        value = value[day.end():] if day else value
+        subject = reader._SUBJECT.match(value)
+        start = subject.end() if subject else 0
+        written = set()
+        for finite, predicate, polarity, modality, time, voice, receiving in reader._FORMS:
+            if (predicate, polarity, modality, time, voice) != (witness.predicate,
+                    witness.polarity, witness.modality, witness.temporal_scope, witness.voice):
+                continue
+            if value.endswith(finite):
+                args = reader._arguments(value[start:len(value) - len(finite)])
+                if args is not None:
+                    written.add(tuple((case, reader._participant(noun, reply=False))
+                        for case, noun in args if case in {'に', 'から'}))
+        if len(written) != 1:
+            return None
+        result.append(('FINITE', witness.subject, agent, target, tuple(sorted(arguments)),
+            witness.predicate, witness.polarity, witness.modality, witness.temporal_scope,
+            witness.relative_day, witness.voice, next(iter(written))))
+        self_context = self_context and witness.subject == 'SELF' if result[:-1] else witness.subject == 'SELF'
+    return tuple(result)
+
+
+def _piece_model_source_blocks(meaning, plan):
+    from cocolon_meaning_experience_engine.piece_source import (
+        piece_source_text, piece_text_nodes, validate_piece_saved_fields,
+        validate_piece_nominal_references, validate_piece_personal_evaluations,
+        validate_piece_expression_scopes,
+    )
+    from cocolon_meaning_experience_engine.piece_v1c import PieceArtifactPlan
+    if type(plan) is not PieceArtifactPlan:
+        raise unavailable('piece_model_plan_binding')
+    validate_piece_saved_fields(meaning)
+    validate_piece_nominal_references(meaning)
+    validate_piece_personal_evaluations(meaning)
+    validate_piece_expression_scopes(meaning)
+    nodes = piece_text_nodes(meaning)
+    ids = tuple(n.node_id for n in nodes)
+    ordered = tuple(n for group in plan.block_node_ids for n in group)
+    if (plan.graph_id != meaning.graph.graph_id or plan.source_version != meaning.graph.source_version
+            or len(set(ids)) != len(ids) or sorted(ordered) != sorted(ids)
+            or tuple(d.node_id for d in plan.duties) != tuple(n.node_id for n in meaning.graph.nodes)):
+        raise unavailable('piece_model_plan_binding')
+    spans = {span.node_id: span for span in meaning.sentences}
+    text = piece_source_text(meaning)
+    if set(spans) != set(ids):
+        raise unavailable('piece_model_source_binding')
+    blocks = []
+    for group in plan.block_node_ids:
+        if not group:
+            raise unavailable('piece_model_plan_binding')
+        positions = [ids.index(n) for n in group]
+        if positions != list(range(min(positions), max(positions) + 1)):
+            raise unavailable('piece_model_plan_binding')
+        a, b = spans[group[0]].source_start, spans[group[-1]].source_end
+        block = text[a:b]
+        if '\n' in block or '\r' in block:
+            raise unavailable('piece_model_source_partition')
+        blocks.append(block)
+    return tuple(blocks)
+
+
+def validate_piece_model_preservation(meaning, plan, artifact):
+    """Author-free whole-body review for the bounded model Piece arm.
+
+    The reader is independent of the model and author, not an independent
+    general Japanese parser. Unknown source/output clauses cannot pass the
+    new finite comparison. Existing S7 may still prove its known scopes in
+    full; an unchanged opaque substring is not a general semantic admission.
+    """
+    from collections import Counter
+    from cocolon_meaning_experience_engine.piece_v1c import PieceArtifact
+    from cocolon_meaning_experience_engine.piece_refined import (
+        PieceRefinedMeaning, PieceRefinedPlan, refined_source_ref,
+    )
+    from piece_v2_contract import validate_piece_text_binding
+    if (type(artifact) is not PieceArtifact or artifact.format_type != 'short_essay'
+            or artifact.eligible_formats != ('short_essay',)):
+        raise unavailable('piece_model_artifact_binding')
+    validate_piece_text_binding(artifact.content_payload(), artifact.piece_text, artifact.piece_text_hash)
+    validate_candidate_text(artifact.content_payload())
+    if type(meaning) is PieceRefinedMeaning:
+        if (type(plan) is not PieceRefinedPlan or plan.source_ref != meaning.source_ref
+                or meaning.source_ref != refined_source_ref(meaning.source)
+                or plan.source_roles != ('ORIGINAL_USER_INPUT', 'SUPPLEMENTAL_ANSWER')
+                or plan.eligible_formats != ('short_essay',)):
+            raise unavailable('piece_model_source_binding')
+        parts = ((meaning.original, plan.original_plan), (meaning.supplemental, plan.supplemental_plan))
+    else:
+        parts = ((meaning, plan),)
+    offset = 0
+    for part, child_plan in parts:
+        source_blocks = _piece_model_source_blocks(part, child_plan)
+        blocks = artifact.body_blocks[offset:offset + len(source_blocks)]
+        offset += len(source_blocks)
+        if len(blocks) != len(source_blocks):
+            raise unavailable('piece_model_block_partition')
+        # Existing named-person abstraction and reference dependencies remain
+        # owned by S7. Event-key comparison alone must not retain a raw name
+        # or reorder the antecedent of "その..." across its dependent clause.
+        complete = not (part.role_bindings or part.nominal_references or part.expression_scopes)
+        for source_text, output_text in zip(source_blocks, blocks, strict=True):
+            source = _piece_model_read_block(source_text)
+            all_self = source is not None and all(row[1] == 'SELF' for row in source)
+            visible = _piece_model_read_block(output_text, allow_self_omission=all_self)
+            if source is None or visible is None or Counter(source) != Counter(visible):
+                complete = False
+                break
+            if source != visible and not all_self:
+                complete = False
+                break
+        if not complete:
+            text = '\n\n'.join(blocks)
+            import hashlib
+            child = PieceArtifact(blocks, text, hashlib.sha256(text.encode()).hexdigest(),
+                                  'short_essay', ('short_essay',))
+            try:
+                validate_source_meaning_preservation(part, child_plan, child)
+            except PieceContractError:
+                raise unavailable('piece_model_meaning_unassessed_or_changed') from None
+    if offset != len(artifact.body_blocks):
+        raise unavailable('piece_model_block_partition')
+    check_existing_detectors(artifact.piece_text)
+
+
 def validate_source_meaning_preservation(meaning, plan, artifact) -> None:
     """Inspect a Piece artifact against source arguments, without author replay.
 

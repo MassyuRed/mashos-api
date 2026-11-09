@@ -199,6 +199,21 @@ does not include the private answer body or commitment; preview and save perform
 their own current-source checks. Selecting a saved answer does not register or
 activate this transport in another application.
 
+2026-11-09 private Piece model integration: `PIECE_MODEL_SOURCE=shared_4b.v1`
+selects the existing `EMLIS_NATURAL_REPLY_*` connection with a dedicated Piece
+body-only prompt. Default/off retains the current finite author. Enabled
+first creation acquires one unadopted receipt, then CMEE verifies complete
+source/body preservation before B8, Safety and the existing preview write.
+The initial model format is `short_essay` only; provider failure or an
+unassessed body has no finite-author fallback. No public fields, schema
+versions or DB columns are added. Stored preview/read, visual mutation and
+save replay do not acquire or author text again. In-process overlapping
+same-key calls share only the same request/source/runtime receipt until
+issuance exits; SQL remains the persistence authority. Provider acquisition
+is bounded at 240 seconds and the RN preview POST at 250 seconds; other
+transports retain their deadlines and caller cancellation. Code integration
+does not imply that this selector or deployment has been activated live.
+
 The v2 contract ID identifies the candidate even while its feature flag is OFF;
 changing runtime flags cannot relabel the owner as v1. The public policy version
 and default registry remain unchanged. Other legacy Piece/Q&A routes remain in

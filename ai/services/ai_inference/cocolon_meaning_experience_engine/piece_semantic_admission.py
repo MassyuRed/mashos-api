@@ -9,6 +9,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, fields, replace
 import hashlib
 import json
+import math
 import re
 
 from .contracts import EngineStatus, ExecutionMode
@@ -50,6 +51,134 @@ class PieceSemanticInputV1:
     prepared: PreparedRequest
     receipt: CandidateReceipt
     semantic_profile: str = PROFILE
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class PieceModelInputV1:
+    """One fixed model response; no model-written plan or safety decision."""
+    prepared: PreparedRequest
+    receipt: CandidateReceipt
+
+
+def prepare_piece_model_request(request):
+    from .piece_v1c import PieceGenerationRequest
+    from .piece_refined import PieceRefinedSourceSnapshot
+    from piece_v2_generation import PieceSourceSnapshot
+    from .preparation import _prepare
+    from .preparation_sources import piece_model_material
+    require(type(request) is PieceGenerationRequest
+            and request.execution_mode == ExecutionMode.OFFLINE_CANDIDATE.value
+            and request.core_id == 'piece' and request.product_job == 'EXPRESS_AND_SHARE'
+            and type(request.request_id) is str and bool(request.request_id.strip()),
+            'piece_model_request_binding')
+    source = request.source.original if type(request.source) is PieceRefinedSourceSnapshot else request.source
+    require(type(source) is PieceSourceSnapshot
+            and source.saved_input_id == request.expected_saved_input_id
+            and source.source_version == request.expected_source_version,
+            'piece_model_source_binding')
+    if request.requested_format not in (None, 'short_essay'):
+        raise PieceSemanticUnsupported('piece_model_format_not_supported')
+    return _prepare(piece_model_material(request.source,
+        expected_owner_id=request.expected_owner_id, tier=request.tier))
+
+
+def _piece_model_body(raw):
+    def invalid(_):
+        raise ValueError('piece_model_nonfinite_json')
+    value = json.loads(raw, object_pairs_hook=_unique_object, parse_constant=invalid)
+    require(type(value) is dict and set(value) == {'body_blocks'}
+            and type(value['body_blocks']) is list and 1 <= len(value['body_blocks']) <= 3
+            and all(type(b) is str and b.strip() for b in value['body_blocks']),
+            'piece_model_body_shape')
+    canonical(value).encode('utf-8')
+    return value
+
+
+def receive_piece_model_candidate(prepared, *, raw_output, finish_reason, request_id=None,
+        provider=None, model=None, revision=None, usage=None, elapsed_seconds=None, adapter_revision=None):
+    """Retain an exact body-only response; never repair it or grant adoption."""
+    request_id = prepared.request_id if request_id is None and type(prepared) is PreparedRequest else request_id
+    require(type(prepared) is PreparedRequest and request_id == prepared.request_id
+            and prepared.request_id == 'prep-' + hashlib.sha256(prepared.private_json.encode()).hexdigest()
+            and prepared.payload().get('task') == 'PIECE_MODEL_BODY', 'piece_model_receipt_request')
+    require(raw_output is None or type(raw_output) is str, 'piece_model_raw_output')
+    require(all(v is None or type(v) is str for v in (provider, model, revision, finish_reason, adapter_revision)),
+            'piece_model_metadata')
+    require(elapsed_seconds is None or (type(elapsed_seconds) in (int, float)
+            and math.isfinite(elapsed_seconds) and elapsed_seconds >= 0), 'piece_model_elapsed')
+    require(usage is None or (type(usage) is dict and all(type(k) is str
+            and (v is None or (type(v) is int and v >= 0)) for k, v in usage.items())), 'piece_model_usage')
+    packet = None
+    status = 'EMPTY'
+    if raw_output is not None and raw_output.strip():
+        try:
+            packet = _piece_model_body(raw_output)
+            status = 'CANDIDATE_UNREVIEWED'
+        except (ValueError, TypeError, UnicodeError, RecursionError, OverflowError):
+            status = 'INVALID_FORMAT'
+    if finish_reason in {'timeout', 'length', 'error'}:
+        status = {'timeout': 'TIMEOUT', 'length': 'TOKEN_LIMIT', 'error': 'PROVIDER_ERROR'}[finish_reason]
+    elif finish_reason != 'stop':
+        status = 'UNKNOWN_FINISH'
+    metadata = dict(provider=provider, model=model, revision=revision, usage=usage,
+        finish_reason=finish_reason, elapsed_seconds=elapsed_seconds,
+        evidence_check='BODY_UNREVIEWED_NOT_SEMANTIC_ADMISSION')
+    if adapter_revision is not None:
+        metadata['adapter_revision'] = adapter_revision
+    return CandidateReceipt(request_id, status, raw_output,
+        canonical(packet) if packet is not None else None, canonical(metadata))
+
+
+def validate_piece_model_input(request, value):
+    """Rebind the immutable receipt and source; acquisition is never replayed."""
+    prepared = prepare_piece_model_request(request)
+    require(type(value) is PieceModelInputV1 and type(value.prepared) is PreparedRequest
+            and value.prepared == prepared and type(value.receipt) is CandidateReceipt,
+            'piece_model_input_binding')
+    receipt = value.receipt
+    metadata = json.loads(receipt.metadata_json, object_pairs_hook=_unique_object)
+    require(type(metadata) is dict and set(metadata) in ({'provider', 'model', 'revision', 'usage',
+        'finish_reason', 'elapsed_seconds', 'evidence_check'}, {'provider', 'model', 'revision', 'usage',
+        'finish_reason', 'elapsed_seconds', 'evidence_check', 'adapter_revision'})
+        and metadata['evidence_check'] == 'BODY_UNREVIEWED_NOT_SEMANTIC_ADMISSION', 'piece_model_metadata_binding')
+    options = {k: v for k, v in metadata.items() if k != 'evidence_check'}
+    require(receive_piece_model_candidate(prepared, request_id=receipt.request_id,
+        raw_output=receipt.raw_output, **options) == receipt, 'piece_model_receipt_binding')
+    if receipt.status != 'CANDIDATE_UNREVIEWED':
+        raise PieceSemanticUnsupported('piece_model_receipt_' + receipt.status.lower())
+    blocks = tuple(_piece_model_body(receipt.raw_output)['body_blocks'])
+    require(len(blocks) == len(prepared.payload()['control']['block_partition']), 'piece_model_block_partition')
+    return blocks
+
+
+def piece_model_source_plan(request):
+    from .piece_refined import PieceRefinedSourceSnapshot, build_refined_meaning, _plans
+    from .piece_source import build_piece_source_meaning
+    from .piece_v1c import compile_piece_artifact_plan
+    if type(request.source) is PieceRefinedSourceSnapshot:
+        meaning = build_refined_meaning(request)
+        return meaning, _plans(meaning)
+    meaning = build_piece_source_meaning(request.source, expected_owner_id=request.expected_owner_id,
+        expected_saved_input_id=request.expected_saved_input_id,
+        expected_source_version=request.expected_source_version)
+    return meaning, compile_piece_artifact_plan(meaning)
+
+
+def generate_piece_model(request, value):
+    from piece_v2_contract import PieceContractError
+    from .piece_v1c import PieceEngineOutcome, realize_piece_model_artifact
+    try:
+        blocks = validate_piece_model_input(request, value)
+        meaning, plan = piece_model_source_plan(request)
+        artifact = realize_piece_model_artifact(meaning, plan, body_blocks=blocks,
+            tier=request.tier, requested_format=request.requested_format)
+        return PieceEngineOutcome(EngineStatus.GENERATED, (), meaning, plan, artifact)
+    except PieceSemanticUnsupported as exc:
+        return PieceEngineOutcome(EngineStatus.UNAVAILABLE, (str(exc),))
+    except PieceContractError as exc:
+        return PieceEngineOutcome(EngineStatus.UNAVAILABLE, (exc.detail or 'piece_model_unassessed',))
+    except (ValueError, TypeError, KeyError, AttributeError, IndexError, UnicodeError, RecursionError, OverflowError):
+        return PieceEngineOutcome(EngineStatus.REJECTED, ('piece_model_input_rejected',))
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -408,6 +537,8 @@ def admit_piece_semantic_snapshot(request, semantic_input):
 
 
 def generate_piece_semantic(request, semantic_input):
+    if type(semantic_input) is PieceModelInputV1:
+        return generate_piece_model(request, semantic_input)
     request_ref = ''
     result = None
     try:

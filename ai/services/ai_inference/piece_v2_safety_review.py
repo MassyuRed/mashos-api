@@ -19,7 +19,7 @@ import unicodedata
 from piece_text_formatter import STATE_BLOCKED, format_reflection_text
 from piece_v2_content_policy import (
     FORMATS, check_existing_detectors, validate_candidate_text,
-    validate_source_meaning_preservation,
+    validate_source_meaning_preservation, validate_piece_model_preservation,
 )
 from piece_v2_contract import (
     PIECE_V2_CONTRACT_VERSIONS, PieceContractError, canonical_sha256_hex,
@@ -148,7 +148,7 @@ async def review_prepared_original(prepared: PreparedPiecePreview) -> str:
             plan = _plans(meaning)
             if _scan(artifact.piece_text):
                 return 'blocked'
-            validate_refined_preservation(meaning, plan, artifact)
+            validate_piece_model_preservation(meaning, plan, artifact)
             if artifact.format_type != 'short_essay' or artifact.eligible_formats != ('short_essay',):
                 _reject()
             return 'transformed' if (meaning.original.role_bindings or meaning.supplemental.role_bindings) else 'ready'
@@ -164,6 +164,9 @@ async def review_prepared_original(prepared: PreparedPiecePreview) -> str:
         plan = compile_piece_artifact_plan(meaning)
         if _scan(artifact.piece_text):
             return 'blocked'
+        if artifact.format_type == 'short_essay' and artifact.eligible_formats == ('short_essay',):
+            validate_piece_model_preservation(meaning, plan, artifact)
+            return 'transformed' if meaning.role_bindings else 'ready'
         validate_source_meaning_preservation(meaning, plan, artifact)
         _check_formats(meaning, plan, payload, artifact)
         # Editorial restructuring/normalization alone is ready, not adjusted.

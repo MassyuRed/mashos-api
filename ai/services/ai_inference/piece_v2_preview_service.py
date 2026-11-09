@@ -15,6 +15,7 @@ registration, UI mutation and production acceptance remain separate.
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
+import asyncio
 from dataclasses import dataclass, field
 import json
 import re
@@ -51,6 +52,67 @@ _SERVICE_ERRORS = frozenset({
     'PIECE_HASH_MISMATCH', 'PIECE_CONFLICT', 'PIECE_TEMPORARILY_UNAVAILABLE',
 })
 _HANDOFF_TYPES = (PieceSavedHandoff, PieceSavedRefinedHandoff)
+_APPLICATION_MODEL = object()
+# Request-private acquisition only. Entries disappear when the last waiter
+# exits; this is neither a persisted preview reservation nor a result cache.
+_MODEL_INFLIGHT = {}
+_MAX_MODEL_INFLIGHT = 32
+_MODEL_UNAVAILABLE = frozenset({'TIMEOUT', 'TOKEN_LIMIT', 'PROVIDER_ERROR',
+                              'EMPTY', 'INVALID_FORMAT', 'UNKNOWN_FINISH'})
+
+
+async def _shared_model_receipt(owner, key, fingerprint, source, prepared, *, retain=None):
+    loop = asyncio.get_running_loop()
+    slot = (loop, owner, key)
+    entry = _MODEL_INFLIGHT.get(slot)
+    if entry is not None:
+        if entry['fingerprint'] != fingerprint or entry['source'] is not source:
+            raise _error('PIECE_CONFLICT')
+    else:
+        if len(_MODEL_INFLIGHT) >= _MAX_MODEL_INFLIGHT:
+            raise _error('PIECE_TEMPORARILY_UNAVAILABLE')
+        task = loop.create_task(source(prepared))
+        # Consume an exception even when all callers cancel. A provider task
+        # owns no save/RPC and cannot publish a late result on its own.
+        task.add_done_callback(lambda finished: None if finished.cancelled() else finished.exception())
+        entry = dict(fingerprint=fingerprint, source=source, task=task, waiters=0)
+        _MODEL_INFLIGHT[slot] = entry
+    entry['waiters'] += 1
+    held = False
+    def release():
+        entry['waiters'] -= 1
+        if not entry['waiters']:
+            if _MODEL_INFLIGHT.get(slot) is entry:
+                del _MODEL_INFLIGHT[slot]
+            if not entry['task'].done():
+                entry['task'].cancel()
+    try:
+        receipt = await asyncio.shield(entry['task'])
+        if retain is not None:
+            # Hold only until this first issuance exits, including an awaiting
+            # SQL ACK. A concurrent retry in that window reuses the receipt.
+            retain.append(release)
+            held = True
+        return receipt
+    finally:
+        if not held:
+            release()
+
+
+def _prepare_model_request(handoff, value):
+    from cocolon_meaning_experience_engine.piece_v1c import PieceGenerationRequest
+    from cocolon_meaning_experience_engine.piece_semantic_admission import prepare_piece_model_request
+    original = handoff.original
+    try:
+        return prepare_piece_model_request(PieceGenerationRequest(
+            request_id='piece-offline-candidate', source=_project_handoff_source(handoff),
+            expected_owner_id=original.authenticated_owner_id,
+            expected_saved_input_id=original.saved_input_id,
+            expected_source_version=original.source_input_version,
+            tier=original.subscription_tier, requested_format=value['requested_format']))
+    except ValueError as exc:
+        raise _error('PIECE_FORMAT_NOT_ELIGIBLE' if str(exc) == 'piece_model_format_not_supported'
+                     else 'PIECE_SOURCE_NOT_ELIGIBLE') from None
 
 
 def _error(code: str) -> PieceContractError:
@@ -226,10 +288,21 @@ class PreparedPiecePreview:
 
 
 class PiecePreviewService:
-    def __init__(self, *, source_adapter: PieceSavedSourceAdapter | None = None) -> None:
+    def __init__(self, *, source_adapter: PieceSavedSourceAdapter | None = None,
+                 model_source=_APPLICATION_MODEL) -> None:
         self._source_adapter = source_adapter if source_adapter is not None else PieceSavedSourceAdapter()
+        self._model_source = model_source
 
-    async def prepare_original(self, authorization: str | None, request: dict) -> PreparedPiecePreview:
+    def _selected_model(self):
+        if self._model_source is _APPLICATION_MODEL:
+            from piece_model_source import application_piece_model_source
+            return application_piece_model_source()
+        if self._model_source is not None and not callable(self._model_source):
+            raise _error('PIECE_TEMPORARILY_UNAVAILABLE')
+        return self._model_source
+
+    async def prepare_original(self, authorization: str | None, request: dict, *,
+                               _model_input=_APPLICATION_MODEL) -> PreparedPiecePreview:
         """Assemble one source-bound artifact without issuing a stored preview.
 
         No caller tier, body, owner or recipe is admitted. B5-A establishes the
@@ -251,10 +324,23 @@ class PiecePreviewService:
                 raise _error('PIECE_CONFLICT')
             original = handoff.original
             source = _project_handoff_source(handoff)
+            if _model_input is _APPLICATION_MODEL:
+                selected = self._selected_model()
+                _model_input = None
+                if selected is not None:
+                    from cocolon_meaning_experience_engine.piece_semantic_admission import PieceModelInputV1
+                    from piece_model_source import require_current_piece_model_source
+                    model_request = _prepare_model_request(handoff, value)
+                    receipt = await selected(model_request)
+                    require_current_piece_model_source(selected)
+                    if getattr(receipt, 'status', None) in _MODEL_UNAVAILABLE:
+                        raise _error('PIECE_TEMPORARILY_UNAVAILABLE')
+                    _model_input = PieceModelInputV1(model_request, receipt)
             try:
                 candidate = generate_piece_candidate(source,
                     authenticated_owner_id=original.authenticated_owner_id,
-                    tier=original.subscription_tier, requested_format=value['requested_format'])
+                    tier=original.subscription_tier, requested_format=value['requested_format'],
+                    **({'model_candidate': _model_input} if _model_input is not None else {}))
             except PieceContractError as exc:
                 code = ('PIECE_FORMAT_NOT_ELIGIBLE' if exc.detail in _FORMAT_FAILURES else
                         'PIECE_SAFETY_UNAVAILABLE' if exc.detail in _SAFETY_FAILURES else
@@ -735,6 +821,7 @@ class PiecePreviewService:
         expected_subscription_tier: str | None = None,
         load_record: Callable[[str, str], Awaitable[dict | None]] = _load_owned_preview_for_replay,
         allowed_renderers: tuple[str, ...] | None = None,
+        require_current: Callable[[], None] | None = None,
     ) -> dict:
         """Creation/replay for the explicitly requested saved-source stage.
 
@@ -742,8 +829,9 @@ class PiecePreviewService:
         Once a row has been seen, every replay error is terminal: a later 404,
         cancellation, expiry or conflict must never fall back to generation.
         A repeat returns the persisted body/recipe without authoring or review.
-        Concurrent first requests still use the existing SQL identity/locks;
-        this read probe is not a reservation or an exactly-once author claim.
+        Concurrent identical first requests share only an in-flight model
+        acquisition. Each caller still revalidates and uses SQL identity/locks;
+        this read probe is not a persisted reservation or exactly-once claim.
 
         TTL, renderer and RPC remain mandatory server inputs, not client fields
         or production defaults. The concrete reviewer is not caller-selectable.
@@ -753,6 +841,7 @@ class PiecePreviewService:
         import hashlib
         from uuid import UUID
         from piece_v2_store import _key_hash, _uuid
+        model_releases = []
         errors = _SERVICE_ERRORS | {
             'PIECE_NOT_FOUND', 'PIECE_PREVIEW_STALE', 'PIECE_PREVIEW_EXPIRED',
         }
@@ -795,14 +884,43 @@ class PiecePreviewService:
                 return await self.read_original_preview(authorization, value,
                     idempotency_key=idempotency_key, load_record=load_record,
                     expected_subscription_tier=expected_subscription_tier, allowed_renderers=allowed_renderers)
-            prepared = await self.prepare_original(authorization, value)
+            if require_current is not None:
+                require_current()
+            selected = self._selected_model()
+            model_input = None
+            if selected is not None:
+                from cocolon_meaning_experience_engine.piece_semantic_admission import PieceModelInputV1
+                from piece_model_source import require_current_piece_model_source
+                model_request = _prepare_model_request(handoff, value)
+                fingerprint = canonical_sha256_hex(dict(request=value,
+                    prepared_request_id=model_request.request_id, ttl_seconds=ttl_seconds,
+                    renderer_version=renderer_version,
+                    allowed_renderers=None if allowed_renderers is None else list(allowed_renderers),
+                    expected_subscription_tier=expected_subscription_tier))
+                receipt = await _shared_model_receipt(owner, key, fingerprint, selected, model_request,
+                                                      retain=model_releases)
+                require_current_piece_model_source(selected)
+                if getattr(receipt, 'status', None) in _MODEL_UNAVAILABLE:
+                    raise _error('PIECE_TEMPORARILY_UNAVAILABLE')
+                if require_current is not None:
+                    require_current()
+                model_input = PieceModelInputV1(model_request, receipt)
+            prepared = await self.prepare_original(authorization, value, _model_input=model_input)
             if prepared.handoff != handoff:
                 raise _error('PIECE_CONFLICT')
             # Lazy import: the reviewer uses PreparedPiecePreview from this module.
             from piece_v2_safety_review import review_prepared_original
+            if require_current is not None:
+                require_current()
+            async def current_rpc(name, args):
+                if selected is not None:
+                    require_current_piece_model_source(selected)
+                if require_current is not None:
+                    require_current()
+                return await rpc(name, args)
             return await self.issue_prepared_original(authorization, value, prepared,
                 idempotency_key=idempotency_key, ttl_seconds=ttl_seconds,
-                renderer_version=renderer_version, rpc=rpc,
+                renderer_version=renderer_version, rpc=current_rpc,
                 safety_review=review_prepared_original, allowed_renderers=allowed_renderers)
         except PieceContractError as exc:
             raise _error(exc.code if exc.code in errors else 'PIECE_TEMPORARILY_UNAVAILABLE') from None
@@ -810,3 +928,6 @@ class PiecePreviewService:
             # No fallback or retry, including after a possibly committed write.
             # BaseException cancellation continues to propagate unchanged.
             raise _error('PIECE_TEMPORARILY_UNAVAILABLE') from None
+        finally:
+            for release in model_releases:
+                release()

@@ -31,6 +31,7 @@ def _no_author(monkeypatch):
     monkeypatch.setattr(service, 'generate_piece_candidate', forbidden)
     monkeypatch.setattr(engine.MeaningExperienceEngine, 'generate', forbidden)
     monkeypatch.setattr(piece, 'realize_piece_artifact', forbidden)
+    monkeypatch.setattr(piece, 'realize_piece_model_artifact', forbidden)
     monkeypatch.setattr(piece, 'generate_piece_artifact', forbidden)
 
 
@@ -174,7 +175,7 @@ def test_post_format_scan_is_not_replaced_by_source_scan(monkeypatch, text, verd
     assert asyncio.run(review.review_prepared_original(altered)) == verdict
 
 
-@pytest.mark.parametrize('mutation', ['duplicate', 'reorder', 'unknown', 'omitted', 'quote-context', 'declaration-context'])
+@pytest.mark.parametrize('mutation', ['duplicate', 'reorder', 'unknown', 'quote-context', 'declaration-context'])
 def test_format_offer_and_selected_format_are_source_checked(monkeypatch, mutation):
     named = mutation in {'quote-context', 'declaration-context'}
     _, _, prepared, _, _ = _B5['_setup'](monkeypatch, named=named)
@@ -186,14 +187,26 @@ def test_format_offer_and_selected_format_are_source_checked(monkeypatch, mutati
         altered = _changed(prepared, eligible=list(reversed(eligible)))
     elif mutation == 'unknown':
         altered = _changed(prepared, eligible=eligible + ['unregistered'])
-    elif mutation == 'omitted':
-        assert len(eligible) > 1
-        altered = _changed(prepared, eligible=eligible[:1])
     else:
         fmt = 'quote' if mutation == 'quote-context' else 'declaration'
         altered = _changed(prepared, fmt=fmt, eligible=eligible + [fmt])
     _no_author(monkeypatch)
     assert asyncio.run(review.review_prepared_original(altered)) == 'ineligible'
+
+
+@pytest.mark.parametrize('mutation', ['negation', 'extra-claim', 'missing'])
+def test_short_essay_only_offer_needs_whole_body_preservation_and_default_offer_is_unchanged(monkeypatch, mutation):
+    _, _, prepared, _, _ = _B5['_setup'](monkeypatch)
+    # The nonselected finite writer keeps its established complete offer.
+    assert prepared.artifact_payload()['eligible_formats'] == ['short_essay', 'quote', 'declaration']
+    essay = _changed(prepared, eligible=['short_essay'])
+    _no_author(monkeypatch)
+    assert asyncio.run(review.review_prepared_original(essay)) == 'ready'
+    body = essay.artifact_payload()['content_payload']['body_blocks']
+    changed = ([body[0].replace('大切にしていない', '大切にしている')] if mutation == 'negation' else
+               [body[0] + '私は別のことを望んでいる。'] if mutation == 'extra-claim' else [''])
+    assert changed != body
+    assert asyncio.run(review.review_prepared_original(_changed(essay, blocks=changed))) == 'ineligible'
 
 
 @pytest.mark.parametrize('mutation', ['payload-hash', 'text-hash', 'language', 'title', 'extra-field', 'contract', 'visibility'])

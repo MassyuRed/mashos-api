@@ -598,9 +598,15 @@ async def create_preview(request: Request) -> JSONResponse:
         except (ValueError, UnicodeError):
             raise PieceContractError('PIECE_REQUEST_INVALID') from None
         value = _request_snapshot(raw)
-        ttl, _ = _preview_runtime(request)
+        ttl, runtime_renderer = _preview_runtime(request)
         renderer, allowed_renderers = _renderer_preferences(request)
         expanded_palette = _expanded_palette(request)
+        def require_current_preview():
+            features.require()
+            if (_preview_runtime(request) != (ttl, runtime_renderer)
+                    or _renderer_preferences(request) != (renderer, allowed_renderers)
+                    or _expanded_palette(request) != expanded_palette):
+                raise PieceContractError('PIECE_CONFLICT')
         require_piece_theme(value['visual_selection']['theme_id'], expanded_palette=(
             expanded_palette and renderer == 'piece.rn_bitmap_renderer.ios.v2'))
         # Read before generation/issuance: missing quota infrastructure must
@@ -612,6 +618,7 @@ async def create_preview(request: Request) -> JSONResponse:
             request.headers['authorization'], value, idempotency_key=keys[0],
             ttl_seconds=ttl, renderer_version=renderer, allowed_renderers=allowed_renderers,
             expected_subscription_tier=quota['subscription_tier'],
+            require_current=require_current_preview,
             rpc=features.wrap(_preview_rpc))
         features.require()
         public = _preview_public_response(result)

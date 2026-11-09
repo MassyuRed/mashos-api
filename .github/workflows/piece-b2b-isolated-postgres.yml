@@ -34,6 +34,14 @@ name: Piece B2-B/B3/B4/B5 isolated PostgreSQL
       - ai/tests/test_emlis_natural_reply_application.py
       - ai/tests/piece_v2/db/test_b05_preview_persistence.py
       - ai/services/ai_inference/piece_v2_preview_service.py
+      - ai/services/ai_inference/piece_model_source.py
+      - ai/services/ai_inference/cocolon_meaning_experience_engine/piece_semantic_admission.py
+      - ai/services/ai_inference/cocolon_meaning_experience_engine/preparation_sources.py
+      - ai/tests/test_piece_model_source.py
+      - ai/tests/test_piece_model_candidate_independent.py
+      - ai/tests/test_piece_model_finite_scope.py
+      - ai/tests/piece_v2/test_b05_piece_model_concurrency.py
+      - ai/tests/piece_v2/test_b05_piece_model_saved_pipeline.py
       - ai/services/ai_inference/piece_v2_safety_review.py
       - ai/tests/piece_v2/db/test_b05_reviewed_preview_issuance.py
       - ai/tests/piece_v2/db/test_b05_generated_preview_issuance.py
@@ -374,6 +382,19 @@ jobs:
             ai/tests/test_subscription_purchase_owner_hint.py \
             ai/tests/test_subscription_live_console_readiness.py \
             ai/tests/test_follow_private_visibility_failure.py
+      - name: Verify Piece model receipt, mutations, cancellation and saved reuse
+        env:
+          PYTHONPATH: .:ai/services:ai/services/ai_inference:ai/tests:ai/tests/piece_v2
+          Q2_PGLITE_MODULE: ${{ runner.temp }}/shared-input-postgres/node_modules/@electric-sql/pglite
+        shell: bash
+        run: |
+          python -m pytest -q --tb=short -ra -p no:cacheprovider \
+            -c /dev/null --rootdir=. --noconftest \
+            ai/tests/test_piece_model_source.py \
+            ai/tests/test_piece_model_candidate_independent.py \
+            ai/tests/test_piece_model_finite_scope.py \
+            ai/tests/piece_v2/test_b05_piece_model_concurrency.py \
+            ai/tests/piece_v2/test_b05_piece_model_saved_pipeline.py
       - name: Verify prepared shared API through native disposable persistence
         shell: bash
         env:
