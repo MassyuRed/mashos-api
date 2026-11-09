@@ -190,8 +190,14 @@ captured for that application:
 | Method | Candidate path | Contract ID | Difference from the default |
 | --- | --- | --- | --- |
 | POST | `/emotion/piece/preview` | `emotion.piece.preview.v2` | Existing `piece.api.v2` saved-source request, Idempotency-Key and response; no raw-input fallback |
-| GET | `/emotion/piece/source-ref/{saved_input_id}` | `emotion.piece.source_ref.v2` | Existing authenticated seven-field saved-source reference |
+| GET | `/emotion/piece/source-ref/{saved_input_id}` | `emotion.piece.source_ref.v2` | Authenticated seven-field saved-source reference; optional exact `supplemental_answer_identity` canonical UUID query explicitly selects one eligible saved additive answer; no query retains the original-only read |
 | POST | `/emotion/reflection/preview` | none | Not registered (404); its legacy DTO must not delegate to the v2 owner |
+
+The source-ref query accepts no answer text, owner, tier, stage or eligibility
+flag. Duplicate and unknown query fields are rejected. Its seven-field response
+does not include the private answer body or commitment; preview and save perform
+their own current-source checks. Selecting a saved answer does not register or
+activate this transport in another application.
 
 The v2 contract ID identifies the candidate even while its feature flag is OFF;
 changing runtime flags cannot relabel the owner as v1. The public policy version

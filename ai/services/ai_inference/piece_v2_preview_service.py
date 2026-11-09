@@ -1,8 +1,10 @@
-"""Disabled B5-B preparation and internal reviewed-artifact issuance.
+"""Saved-source preparation and internal reviewed-artifact issuance.
 
 prepare_original retains its pre-issuance contract. issue_prepared_original
 connects an already prepared CMEE/B9 artifact to the existing B5 store only
 when a supplied server reviewer accepts that exact source and artifact.
+An explicitly selected refined answer uses its separate source and canonical
+stored lineage through the same preparation, review and replay boundaries.
 No reviewer, renderer or TTL default, HTTP registration or production effect
 is introduced. The B5 SQL overload binds current source/tier through the write.
 Read-only restart lookup is available without the in-memory prepared object.
@@ -24,7 +26,9 @@ from piece_v2_contract import (
 )
 from piece_v2_generation import generate_piece_candidate
 from piece_v2_source_adapter import (
-    PieceSavedHandoff, PieceSavedSourceAdapter, project_saved_original_source,
+    PieceSavedHandoff, PieceSavedRefinedHandoff, PieceSavedSourceAdapter,
+    project_saved_original_source, project_saved_refined_source,
+    project_saved_refined_lineage,
 )
 from piece_v2_visual import build_visual_recipe, require_piece_theme, validate_visual_recipe
 
@@ -46,10 +50,65 @@ _SERVICE_ERRORS = frozenset({
     'PIECE_VISUAL_SELECTION_NOT_ALLOWED', 'PIECE_SAFETY_UNAVAILABLE',
     'PIECE_HASH_MISMATCH', 'PIECE_CONFLICT', 'PIECE_TEMPORARILY_UNAVAILABLE',
 })
+_HANDOFF_TYPES = (PieceSavedHandoff, PieceSavedRefinedHandoff)
 
 
 def _error(code: str) -> PieceContractError:
     return PieceContractError(code)
+
+
+def _source_ref_from_lineage(lineage: dict) -> dict:
+    """The same closed seven references for either selected source stage."""
+    result = {key: lineage['source_input'][key] for key in (
+        'source_input_id', 'source_input_version', 'source_input_bundle_commitment')}
+    result.update({key: lineage['observation'][key] for key in (
+        'emlis_observation_stage', 'emlis_observation_result_identity',
+        'question_need_decision_identity', 'supplemental_answer_identity')})
+    return result
+
+
+def _canonical_handoff_lineage(handoff) -> dict:
+    if type(handoff) is PieceSavedRefinedHandoff:
+        return project_saved_refined_lineage(handoff, opted_in=True)
+    if type(handoff) is PieceSavedHandoff:
+        return handoff.lineage_payload()
+    raise _error('PIECE_REQUEST_INVALID')
+
+
+def _project_handoff_source(handoff):
+    if type(handoff) is PieceSavedRefinedHandoff:
+        return project_saved_refined_source(handoff, opted_in=True)
+    if type(handoff) is PieceSavedHandoff:
+        return project_saved_original_source(handoff.original, source_stage=
+            handoff.lineage_payload()['observation']['emlis_observation_stage'])
+    raise _error('PIECE_REQUEST_INVALID')
+
+
+async def _resolve_handoff(adapter, authorization, source_ref):
+    """Only an explicitly selected answer enters the refined source owner."""
+    if source_ref['emlis_observation_stage'] == 'refined_observation':
+        if not source_ref.get('supplemental_answer_identity') or not source_ref.get('question_need_decision_identity'):
+            raise _error('PIECE_SOURCE_NOT_ELIGIBLE')
+        handoff = await adapter.resolve_refined_handoff(authorization, source_ref['source_input_id'],
+            supplemental_answer_identity=source_ref['supplemental_answer_identity'], opted_in=True)
+        expected_type = PieceSavedRefinedHandoff
+    else:
+        if (source_ref['emlis_observation_stage'] not in ('normal_observation', 'pre_question_observation')
+                or source_ref.get('supplemental_answer_identity') is not None):
+            raise _error('PIECE_SOURCE_NOT_ELIGIBLE')
+        handoff = await adapter.resolve_original_handoff(authorization, source_ref['source_input_id'])
+        expected_type = PieceSavedHandoff
+    if type(handoff) is not expected_type:
+        raise _error('PIECE_TEMPORARILY_UNAVAILABLE')
+    return handoff
+
+
+async def _revalidate_handoff(adapter, authorization, handoff):
+    if type(handoff) is PieceSavedRefinedHandoff:
+        return await adapter.revalidate_refined_handoff(authorization, handoff, opted_in=True)
+    if type(handoff) is PieceSavedHandoff:
+        return await adapter.revalidate_original_handoff(authorization, handoff)
+    raise _error('PIECE_REQUEST_INVALID')
 
 
 def _request_snapshot(request: object) -> dict:
@@ -72,9 +131,12 @@ def _request_snapshot(request: object) -> dict:
         for key in ('question_need_decision_identity', 'supplemental_answer_identity'):
             if source[key] is not None and (type(source[key]) is not str or not source[key].strip()):
                 raise _error('PIECE_REQUEST_INVALID')
-        if (source['source_input_version'] != EMLIS_CURRENT_INPUT_BUNDLE_SCHEMA_VERSION or
-                source['emlis_observation_stage'] not in ('normal_observation', 'pre_question_observation') or
-                source['supplemental_answer_identity'] is not None):
+        stage = source['emlis_observation_stage']
+        if (source['source_input_version'] != EMLIS_CURRENT_INPUT_BUNDLE_SCHEMA_VERSION or not (
+                stage in ('normal_observation', 'pre_question_observation')
+                and source['supplemental_answer_identity'] is None
+                or stage == 'refined_observation' and source['supplemental_answer_identity'] is not None
+                and source['question_need_decision_identity'] is not None)):
             raise _error('PIECE_SOURCE_NOT_ELIGIBLE')
         chosen = value['requested_format']
         if chosen is not None and (type(chosen) is not str or chosen not in ('short_essay', 'quote', 'declaration')):
@@ -156,7 +218,7 @@ class PreparedPiecePreview:
     owner. artifact_payload returns a copy containing neither source identity
     nor raw source fields. This object asserts no native layout or safety PASS.
     """
-    handoff: PieceSavedHandoff = field(repr=False)
+    handoff: PieceSavedHandoff | PieceSavedRefinedHandoff = field(repr=False)
     _artifact_json: bytes = field(repr=False)
 
     def artifact_payload(self) -> dict:
@@ -178,11 +240,8 @@ class PiecePreviewService:
         value = _request_snapshot(request)
         source_ref = value['source_ref']
         try:
-            handoff = await self._source_adapter.resolve_original_handoff(
-                authorization, source_ref['source_input_id'])
-            if type(handoff) is not PieceSavedHandoff:
-                raise _error('PIECE_TEMPORARILY_UNAVAILABLE')
-            lineage = handoff.lineage_payload()
+            handoff = await _resolve_handoff(self._source_adapter, authorization, source_ref)
+            lineage = _canonical_handoff_lineage(handoff)
             expected = {key: lineage['source_input'][key] for key in (
                 'source_input_id', 'source_input_version', 'source_input_bundle_commitment')}
             expected.update({key: lineage['observation'][key] for key in (
@@ -191,8 +250,7 @@ class PiecePreviewService:
             if source_ref != expected:
                 raise _error('PIECE_CONFLICT')
             original = handoff.original
-            source = project_saved_original_source(original,
-                source_stage=expected['emlis_observation_stage'])
+            source = _project_handoff_source(handoff)
             try:
                 candidate = generate_piece_candidate(source,
                     authenticated_owner_id=original.authenticated_owner_id,
@@ -225,7 +283,7 @@ class PiecePreviewService:
                 'visibility_scope': 'private',
             }
             artifact_bytes = canonical_json_bytes(artifact)
-            current = await self._source_adapter.revalidate_original_handoff(authorization, handoff)
+            current = await _revalidate_handoff(self._source_adapter, authorization, handoff)
             if current != handoff:
                 raise _error('PIECE_CONFLICT')
             return PreparedPiecePreview(handoff, artifact_bytes)
@@ -249,7 +307,7 @@ class PiecePreviewService:
         All three selectors are required; None uses B9's existing tier default.
         No author, format change, preview ID, expiry or save effect is involved.
         """
-        if type(previous) is not PreparedPiecePreview or type(previous.handoff) is not PieceSavedHandoff:
+        if type(previous) is not PreparedPiecePreview or type(previous.handoff) not in _HANDOFF_TYPES:
             raise _error('PIECE_REQUEST_INVALID')
         try:
             # Own the choice before either authenticated read can yield.
@@ -264,7 +322,7 @@ class PiecePreviewService:
             raise _error('PIECE_REQUEST_INVALID') from None
         try:
             handoff = previous.handoff
-            current = await self._source_adapter.revalidate_original_handoff(authorization, handoff)
+            current = await _revalidate_handoff(self._source_adapter, authorization, handoff)
             if current != handoff:
                 raise _error('PIECE_CONFLICT')
             # Reuse the established text/recipe contracts. This checks internal
@@ -294,7 +352,7 @@ class PiecePreviewService:
             artifact['visual_recipe'] = recipe
             artifact['visual_recipe_hash'] = canonical_sha256_hex(recipe)
             artifact_bytes = canonical_json_bytes(artifact)
-            current = await self._source_adapter.revalidate_original_handoff(authorization, handoff)
+            current = await _revalidate_handoff(self._source_adapter, authorization, handoff)
             if current != handoff:
                 raise _error('PIECE_CONFLICT')
             return PreparedPiecePreview(handoff, artifact_bytes)
@@ -365,12 +423,12 @@ class PiecePreviewService:
             expanded = expanded_palette and row['renderer_version'] == 'piece.rn_bitmap_renderer.ios.v2'
             require_piece_theme(row['visual_recipe']['theme']['theme_id'], expanded_palette=expanded)
             require_piece_theme(value['visual_selection']['theme_id'], expanded_palette=expanded)
-            handoff = await self._source_adapter.resolve_original_handoff(
-                authorization, row['source_lineage']['source_input']['source_input_id'])
-            if (type(handoff) is not PieceSavedHandoff
+            handoff = await _resolve_handoff(self._source_adapter, authorization,
+                _source_ref_from_lineage(row['source_lineage']))
+            if (type(handoff) not in _HANDOFF_TYPES
                     or handoff.original.authenticated_owner_id != owner):
                 raise _error('PIECE_SOURCE_NOT_FOUND')
-            if (canonical_json_bytes(handoff.lineage_payload()) != canonical_json_bytes(row['source_lineage'])
+            if (canonical_json_bytes(_canonical_handoff_lineage(handoff)) != canonical_json_bytes(row['source_lineage'])
                     or handoff.original.subscription_tier != expected_subscription_tier):
                 raise _error('PIECE_CONFLICT')
             _current_stored_format(row, expected_subscription_tier)
@@ -386,7 +444,7 @@ class PiecePreviewService:
             expected_decision = 'transformed' if row['safety_state'] == 'adjusted' else 'ready'
             if decision != expected_decision:
                 raise _error('PIECE_SAFETY_UNAVAILABLE')
-            current = await self._source_adapter.revalidate_original_handoff(authorization, handoff)
+            current = await _revalidate_handoff(self._source_adapter, authorization, handoff)
             if current != handoff:
                 raise _error('PIECE_CONFLICT')
             if expiry <= datetime.now(timezone.utc):
@@ -399,7 +457,7 @@ class PiecePreviewService:
                 expected_subscription_tier=expected_subscription_tier,
                 expected_source_state={'original': handoff.original.original_payload(),
                     'thread_id': handoff.thread_id, 'thread_revision': handoff.thread_revision,
-                    'lineage': handoff.lineage_payload()}, rpc=rpc)
+                    'lineage': _canonical_handoff_lineage(handoff)}, rpc=rpc)
         except PieceContractError as exc:
             raise _error(exc.code if exc.code in errors else 'PIECE_TEMPORARILY_UNAVAILABLE') from None
         except Exception:
@@ -442,7 +500,7 @@ class PiecePreviewService:
         try:
             value = _request_snapshot(request)
             if (type(previous) is not PreparedPiecePreview
-                    or type(previous.handoff) is not PieceSavedHandoff):
+                    or type(previous.handoff) not in _HANDOFF_TYPES):
                 raise _error('PIECE_REQUEST_INVALID')
             _key_hash(idempotency_key)
             if (type(ttl_seconds) is not int or not 0 < ttl_seconds <= 2147483647
@@ -456,7 +514,7 @@ class PiecePreviewService:
             if not callable(rpc):
                 raise _error('PIECE_TEMPORARILY_UNAVAILABLE')
             handoff = previous.handoff
-            lineage = handoff.lineage_payload()
+            lineage = _canonical_handoff_lineage(handoff)
             expected = {key: lineage['source_input'][key] for key in (
                 'source_input_id', 'source_input_version', 'source_input_bundle_commitment')}
             expected.update({key: lineage['observation'][key] for key in (
@@ -501,13 +559,13 @@ class PiecePreviewService:
                     raise _error('PIECE_VISUAL_SELECTION_NOT_ALLOWED')
             except PieceContractError:
                 raise _error('PIECE_VISUAL_SELECTION_NOT_ALLOWED') from None
-            current = await self._source_adapter.revalidate_original_handoff(authorization, handoff)
+            current = await _revalidate_handoff(self._source_adapter, authorization, handoff)
             if current != handoff:
                 raise _error('PIECE_CONFLICT')
             decision = await safety_review(previous)
             if type(decision) is not str or decision not in ('ready', 'transformed'):
                 raise _error('PIECE_SAFETY_UNAVAILABLE')
-            current = await self._source_adapter.revalidate_original_handoff(authorization, handoff)
+            current = await _revalidate_handoff(self._source_adapter, authorization, handoff)
             if current != handoff:
                 raise _error('PIECE_CONFLICT')
             record = {key: artifact[key] for key in content_fields}
@@ -565,9 +623,8 @@ class PiecePreviewService:
             key = _key_hash(idempotency_key)
             if not callable(load_record):
                 raise _error('PIECE_TEMPORARILY_UNAVAILABLE')
-            handoff = await self._source_adapter.resolve_original_handoff(
-                authorization, value['source_ref']['source_input_id'])
-            if type(handoff) is not PieceSavedHandoff:
+            handoff = await _resolve_handoff(self._source_adapter, authorization, value['source_ref'])
+            if type(handoff) not in _HANDOFF_TYPES:
                 raise _error('PIECE_TEMPORARILY_UNAVAILABLE')
             # HTTP supplies its current quota tier; internal callers may omit
             # it. Never infer current plan from the stored recipe or body.
@@ -580,7 +637,7 @@ class PiecePreviewService:
             owner = _uuid(handoff.original.authenticated_owner_id, owner=True)
             if UUID(owner).int == 0:
                 raise _error('PIECE_AUTH_REQUIRED')
-            lineage = handoff.lineage_payload()
+            lineage = _canonical_handoff_lineage(handoff)
             expected = {k: lineage['source_input'][k] for k in (
                 'source_input_id', 'source_input_version', 'source_input_bundle_commitment')}
             expected.update({k: lineage['observation'][k] for k in (
@@ -646,7 +703,7 @@ class PiecePreviewService:
                     raise _error('PIECE_VISUAL_SELECTION_NOT_ALLOWED')
             except PieceContractError:
                 raise _error('PIECE_VISUAL_SELECTION_NOT_ALLOWED') from None
-            current = await self._source_adapter.revalidate_original_handoff(authorization, handoff)
+            current = await _revalidate_handoff(self._source_adapter, authorization, handoff)
             if current != handoff:
                 raise _error('PIECE_CONFLICT')
             # The second read catches cancellation/deletion or revision changes
@@ -656,7 +713,7 @@ class PiecePreviewService:
                 raise _error('PIECE_NOT_FOUND')
             if canonical_json_bytes(_request(latest, set(_REPLAY_COLUMNS))) != canonical_json_bytes(row):
                 raise _error('PIECE_CONFLICT')
-            current = await self._source_adapter.revalidate_original_handoff(authorization, handoff)
+            current = await _revalidate_handoff(self._source_adapter, authorization, handoff)
             if current != handoff:
                 raise _error('PIECE_CONFLICT')
             if expiry <= datetime.now(timezone.utc):
@@ -679,7 +736,7 @@ class PiecePreviewService:
         load_record: Callable[[str, str], Awaitable[dict | None]] = _load_owned_preview_for_replay,
         allowed_renderers: tuple[str, ...] | None = None,
     ) -> dict:
-        """Internal original-only creation/replay with the actual bounded reviewer.
+        """Creation/replay for the explicitly requested saved-source stage.
 
         A successful initial lookup returning None is the only creation branch.
         Once a row has been seen, every replay error is terminal: a later 404,
@@ -710,9 +767,8 @@ class PiecePreviewService:
                 raise _error('PIECE_REQUEST_INVALID')
             if not callable(rpc) or not callable(load_record):
                 raise _error('PIECE_TEMPORARILY_UNAVAILABLE')
-            handoff = await self._source_adapter.resolve_original_handoff(
-                authorization, value['source_ref']['source_input_id'])
-            if type(handoff) is not PieceSavedHandoff:
+            handoff = await _resolve_handoff(self._source_adapter, authorization, value['source_ref'])
+            if type(handoff) not in _HANDOFF_TYPES:
                 raise _error('PIECE_TEMPORARILY_UNAVAILABLE')
             # HTTP supplies its current quota tier; internal callers may omit
             # it. Never infer current plan from the stored recipe or body.
@@ -725,7 +781,7 @@ class PiecePreviewService:
             owner = _uuid(handoff.original.authenticated_owner_id, owner=True)
             if UUID(owner).int == 0:
                 raise _error('PIECE_AUTH_REQUIRED')
-            lineage = handoff.lineage_payload()
+            lineage = _canonical_handoff_lineage(handoff)
             expected = {k: lineage['source_input'][k] for k in (
                 'source_input_id', 'source_input_version', 'source_input_bundle_commitment')}
             expected.update({k: lineage['observation'][k] for k in (

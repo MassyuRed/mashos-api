@@ -11,7 +11,10 @@ from datetime import datetime, timezone
 
 from piece_v2_content_policy import choose_format
 from piece_v2_contract import PieceContractError, canonical_json_bytes
-from piece_v2_source_adapter import PieceSavedHandoff, PieceSavedSourceAdapter
+from piece_v2_source_adapter import PieceSavedSourceAdapter
+from piece_v2_preview_service import (
+    _HANDOFF_TYPES, _resolve_handoff, _source_ref_from_lineage, _canonical_handoff_lineage,
+)
 from piece_v2_store import _preview_content, save_piece, save_request_arguments
 from piece_v2_visual import build_visual_recipe, require_piece_theme
 
@@ -130,12 +133,12 @@ class PieceSaveService:
             require_piece_theme(row['visual_recipe']['theme']['theme_id'], expanded_palette=(
                 expanded_palette and row['renderer_version'] == 'piece.rn_bitmap_renderer.ios.v2'))
             lineage = row['source_lineage']
-            current = await self._source_adapter.resolve_original_handoff(
-                authorization, lineage['source_input']['source_input_id'])
-            if (type(current) is not PieceSavedHandoff
+            current = await _resolve_handoff(self._source_adapter, authorization,
+                _source_ref_from_lineage(lineage))
+            if (type(current) not in _HANDOFF_TYPES
                     or current.original.authenticated_owner_id != owner):
                 _fail('PIECE_SOURCE_NOT_FOUND')
-            if canonical_json_bytes(current.lineage_payload()) != canonical_json_bytes(lineage):
+            if canonical_json_bytes(_canonical_handoff_lineage(current)) != canonical_json_bytes(lineage):
                 _fail('PIECE_CONFLICT')
             tier, fmt = current.original.subscription_tier, row['format_type']
             formats = tuple(row['preview_eligible_formats'])
@@ -162,7 +165,7 @@ class PieceSaveService:
                 idempotency_key=idempotency_key, rpc=self._rpc, expected_subscription_tier=tier,
                 expected_source_state={'original': current.original.original_payload(),
                     'thread_id': current.thread_id, 'thread_revision': current.thread_revision,
-                    'lineage': current.lineage_payload()})
+                    'lineage': _canonical_handoff_lineage(current)})
         except PieceContractError as exc:
             _fail(exc.code if exc.code in SAVE_STATUS else 'PIECE_TEMPORARILY_UNAVAILABLE')
         except Exception:

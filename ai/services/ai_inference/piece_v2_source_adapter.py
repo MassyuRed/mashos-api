@@ -3,14 +3,14 @@
 The existing bearer verifier establishes the caller. The existing
 emlis_thread_read RPC selects a live emotions row for that verified caller,
 under the saved-input retention policy, even when no Emlis thread exists.
-Only the original partition and body-free control lineage are retained here.
+Original and explicitly selected supplemental partitions retain separate owners.
 
 All saved fields remain separate. The original state-bound path admits only
 an already committed, current INITIAL observation: normal or pre-question,
-without answers. A separate explicitly opted-in offline refined reader admits
-one resolved additive answer without extending original preview/HTTP eligibility.
+without answers. A separate explicitly opted-in refined reader admits
+one resolved additive answer without extending original stage eligibility.
 The earlier explicit-stage method remains an offline probe, not authority.
-No route, preview record or quota is enabled; a frozen object is not ongoing access.
+A frozen object is not ongoing access; later operations revalidate current state.
 """
 from __future__ import annotations
 
@@ -89,7 +89,7 @@ class PieceSavedHandoff:
 class PieceSavedRefinedHandoff:
     """Private, explicitly selected answer beside the unchanged saved input.
 
-    This offline handoff does not extend original preview/HTTP eligibility.
+    This handoff does not extend original stage eligibility.
     The answer's existing source owner retains its identity and text; no
     Emlis observation, question body or inferred meaning becomes Piece input.
     """
@@ -311,12 +311,12 @@ class PieceSavedSourceAdapter:
         self, authorization: str | None, saved_input_id: str, *,
         supplemental_answer_identity: str, opted_in: bool,
     ) -> PieceSavedRefinedHandoff:
-        """Offline read of one committed, resolved first-round answer.
+        """Read one explicitly selected, committed first-round answer.
 
         A caller must opt into the exact saved answer. Its separate source is
         returned only after the existing owner, retention, source and context
         checks and successful refined-result lineage have been revalidated.
-        No public source_ref, preview, record or quota is issued here.
+        No preview, record or quota is issued here.
         """
         if opted_in is not True:
             raise _error('PIECE_SOURCE_NOT_ELIGIBLE')
@@ -394,6 +394,42 @@ class PieceSavedSourceAdapter:
                          'PIECE_TEMPORARILY_UNAVAILABLE') from None
         except Exception:
             # A partial projection is not returned; cancellation still escapes.
+            raise _error('PIECE_TEMPORARILY_UNAVAILABLE') from None
+
+    async def resolve_refined_source_ref(
+        self, authorization: str | None, saved_input_id: str, *,
+        supplemental_answer_identity: str, opted_in: bool,
+    ) -> dict:
+        """Project the same seven references for an explicitly selected answer.
+
+        Answer text and its private commitment remain server-side. This DTO
+        cannot authorize a later write or select the then-latest answer.
+        """
+        allowed_errors = {
+            'PIECE_REQUEST_INVALID', 'PIECE_AUTH_REQUIRED',
+            'PIECE_SOURCE_NOT_FOUND', 'PIECE_SOURCE_NOT_ELIGIBLE',
+            'PIECE_CONFLICT', 'PIECE_TEMPORARILY_UNAVAILABLE',
+        }
+        try:
+            handoff = await self.resolve_refined_handoff(
+                authorization, saved_input_id,
+                supplemental_answer_identity=supplemental_answer_identity, opted_in=opted_in)
+            lineage = project_saved_refined_lineage(handoff, opted_in=opted_in)
+            source, observation = lineage['source_input'], lineage['observation']
+            result = {key: source[key] for key in (
+                'source_input_id', 'source_input_version', 'source_input_bundle_commitment')}
+            result.update({key: observation[key] for key in (
+                'emlis_observation_stage', 'emlis_observation_result_identity',
+                'question_need_decision_identity', 'supplemental_answer_identity')})
+            current = await self.revalidate_refined_handoff(
+                authorization, handoff, opted_in=opted_in)
+            if current != handoff:
+                raise _error('PIECE_CONFLICT')
+            return result
+        except PieceContractError as exc:
+            raise _error(exc.code if exc.code in allowed_errors else
+                         'PIECE_TEMPORARILY_UNAVAILABLE') from None
+        except Exception:
             raise _error('PIECE_TEMPORARILY_UNAVAILABLE') from None
 
     async def revalidate_original_handoff(
@@ -779,7 +815,7 @@ def _refined_observation_handoff(saved: PieceSavedOriginal, snapshot: dict,
 
 
 def project_saved_refined_source(handoff: PieceSavedRefinedHandoff, *, opted_in: bool):
-    """Separate-source offline CMEE projection; live original paths stay exact."""
+    """Separate-source CMEE projection; original stage paths stay exact."""
     from cocolon_meaning_experience_engine.piece_refined import PieceRefinedSourceSnapshot
     from cocolon_meaning_experience_engine.emlis_thread_source import freeze_supplemental_answer
     if type(handoff) is not PieceSavedRefinedHandoff or opted_in is not True:
@@ -843,3 +879,19 @@ def project_saved_refined_source(handoff: PieceSavedRefinedHandoff, *, opted_in:
         refined_result_identity=observation['emlis_observation_result_identity'],
         original_commitment=handoff.original.record_commitment,
         supplemental_commitment=observation['supplemental_answer_bundle_commitment'], opted_in=True)
+
+
+def project_saved_refined_lineage(handoff: PieceSavedRefinedHandoff, *, opted_in: bool) -> dict:
+    """Project validated private control into the existing DB lineage schema.
+
+    Exact stored input bytes, prefix and refined-result binding remain in the
+    request-private handoff and its current-state fence. They are not new DB
+    fields or source text. The persisted supplement commitment retains its
+    independent identity under the existing supplemental boundary constraint.
+    """
+    project_saved_refined_source(handoff, opted_in=opted_in)
+    line = handoff.lineage_payload()
+    del line['source_input']['source_input_record_commitment']
+    del line['observation']['source_prefix_ref']
+    del line['refined_result_source_binding']
+    return line

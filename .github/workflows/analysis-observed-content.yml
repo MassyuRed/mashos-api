@@ -67,6 +67,11 @@ name: Analysis observed content
       - ai/tests/test_cmee_piece_refined_feeling_accounts.py
       - ai/tests/piece_v2/test_b08_refined_engine_result_binding.py
       - ai/tests/piece_v2/test_b05a_piece_refined_source_handoff.py
+      - ai/tests/piece_v2/test_b05c_refined_source_ref_projection.py
+      - ai/tests/piece_v2/test_b05_refined_preview_services.py
+      - ai/tests/piece_v2/test_b05_refined_preview_saved_pipeline.py
+      - ai/tests/piece_v2/test_b05_refined_source_fence_sql.py
+      - supabase/migrations/*_piece_refined_source_fence.sql
       - ai/tests/test_cmee_analysis_input_fields.py
       - ai/tests/test_input_contract_sample_sheet.py
       - ai/tests/fixtures/cocolon-input-contract-samples-20261107.json
@@ -207,6 +212,10 @@ jobs:
           ai/tests/test_cmee_piece_refined_feeling_accounts.py
           ai/tests/piece_v2/test_b08_refined_engine_result_binding.py
           ai/tests/piece_v2/test_b05a_piece_refined_source_handoff.py
+          ai/tests/piece_v2/test_b05c_refined_source_ref_projection.py
+          ai/tests/piece_v2/test_b05_refined_preview_services.py
+          ai/tests/piece_v2/test_b05_refined_preview_saved_pipeline.py
+          ai/tests/piece_v2/test_b05_refined_source_fence_sql.py
           ai/tests/test_emlis_natural_reply_application.py
           ai/tests/test_emlis_natural_reply_meaning_reuse.py
           ai/tests/test_emlis_natural_reply_meaning_budget.py

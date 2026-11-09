@@ -1,11 +1,13 @@
-"""Code-disabled review of a server-held original Piece before B5 issuance.
+"""Bounded review of a server-held saved-source Piece before B5 issuance.
 
 Use with PiecePreviewService.issue_prepared_original(safety_review=...). That
 service, not this pure reviewer, owns authentication, source/tier revalidation
 and the transactional source fence. A dataclass is not proof of authentication.
 
 This connects the existing source scanner, role abstraction, format contracts
-and author-free S7 review. It does not author or repair text, call an external
+and author-free S7 review. Refined original and answer fields are scanned and
+qualified separately, without treating generated Emlis prose as source.
+It does not author or repair text, call an external
 model, select a renderer/TTL, mount HTTP, or enable public/private export.
 The scanner and source parser remain bounded implementations, not a claim of
 complete PCE-4 coverage, independent linguistic review or product acceptance.
@@ -23,8 +25,8 @@ from piece_v2_contract import (
     PIECE_V2_CONTRACT_VERSIONS, PieceContractError, canonical_sha256_hex,
     validate_piece_text_binding,
 )
-from piece_v2_preview_service import PreparedPiecePreview
-from piece_v2_source_adapter import PieceSavedHandoff, project_saved_original_source
+from piece_v2_preview_service import PreparedPiecePreview, _HANDOFF_TYPES, _project_handoff_source
+from piece_v2_source_adapter import PieceSavedHandoff, PieceSavedRefinedHandoff
 from cocolon_meaning_experience_engine.piece_source import build_piece_source_meaning
 from cocolon_meaning_experience_engine.piece_v1c import (
     PieceArtifact, compile_piece_artifact_plan, _has_topic_qualification,
@@ -124,12 +126,32 @@ async def review_prepared_original(prepared: PreparedPiecePreview) -> str:
     cancellation and other BaseException signals still propagate.
     """
     try:
-        if type(prepared) is not PreparedPiecePreview or type(prepared.handoff) is not PieceSavedHandoff:
+        if type(prepared) is not PreparedPiecePreview or type(prepared.handoff) not in _HANDOFF_TYPES:
             _reject()
         payload, artifact = _artifact(prepared)
         handoff = prepared.handoff
-        stage = handoff.lineage_payload()['observation']['emlis_observation_stage']
-        source = project_saved_original_source(handoff.original, source_stage=stage)
+        source = _project_handoff_source(handoff)
+        if type(handoff) is PieceSavedRefinedHandoff:
+            from cocolon_meaning_experience_engine.piece_refined import (
+                build_refined_meaning, _plans, validate_refined_preservation,
+            )
+            from cocolon_meaning_experience_engine.piece_v1c import PieceGenerationRequest
+            # Scan both admitted fields before their existing public-role
+            # abstraction, without treating Emlis prose or frame metadata as
+            # the user's semantic material.
+            if _scan(source.original.original_text) or _scan(source.supplemental.answer_text_private):
+                return 'blocked'
+            meaning = build_refined_meaning(PieceGenerationRequest(
+                'piece-refined-safety-review', source, handoff.original.authenticated_owner_id,
+                handoff.original.saved_input_id, handoff.original.source_input_version,
+                tier=handoff.original.subscription_tier))
+            plan = _plans(meaning)
+            if _scan(artifact.piece_text):
+                return 'blocked'
+            validate_refined_preservation(meaning, plan, artifact)
+            if artifact.format_type != 'short_essay' or artifact.eligible_formats != ('short_essay',):
+                _reject()
+            return 'transformed' if (meaning.original.role_bindings or meaning.supplemental.role_bindings) else 'ready'
         # Check the full projected original before any role abstraction. Raw
         # source is neither replaced by the Piece body nor scanned only after
         # a potentially unsafe detail has disappeared from public wording.
