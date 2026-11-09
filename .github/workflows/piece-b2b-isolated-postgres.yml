@@ -41,6 +41,7 @@ name: Piece B2-B/B3/B4/B5 isolated PostgreSQL
       - ai/tests/test_piece_model_candidate_independent.py
       - ai/tests/test_piece_model_finite_scope.py
       - ai/tests/test_piece_model_evaluation_reuse.py
+      - ai/tests/piece_v2/test_b08_piece_bare_finite_evaluation.py
       - ai/tests/test_piece_model_field_slots.py
       - ai/tests/test_cmee_piece_supplemental_then_feeling.py
       - ai/tools/serve_emlis_natural_reply.py
@@ -424,6 +425,10 @@ jobs:
             ai/tests/piece_v2/test_b05_piece_model_concurrency.py \
             ai/tests/piece_v2/test_b05_piece_model_saved_pipeline.py \
             ai/tests/piece_v2/test_b05_piece_model_evaluation_pipeline.py
+          python -m pytest -q --tb=short -ra -p no:cacheprovider \
+            -c /dev/null --rootdir=. --noconftest \
+            ai/tests/piece_v2/test_b08_piece_bare_finite_evaluation.py \
+            -k 'compound_activity or activity_'
       - name: Verify prepared shared API through native disposable persistence
         shell: bash
         env:

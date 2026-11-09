@@ -109,6 +109,20 @@ def test_finite_reading_does_not_claim_unknown_scopes(unread):
     assert _piece_model_read_block(unread) is None
 
 
+@pytest.mark.parametrize('activity', ('家具作り', 'パン作り', '資料作り', '模型作り'))
+def test_model_activity_target_keeps_written_past_negative_evaluation(activity):
+    req = request(source('僕は' + activity + 'が少し苦手ではありませんでした。'))
+    body = '僕は' + activity + 'が少し苦手ではなかった。'
+    out = result(req, (body,))
+    assert out.status == EngineStatus.GENERATED, out.reason_codes
+    assert out.artifact.piece_text == body
+    for changed in (body.replace(activity, '読書'), body.replace('僕は', '私は'),
+                    body.replace('ではなかった', 'だった'), body.replace('ではなかった', 'ではない'),
+                    body.replace('少し', ''), body.replace('苦手', '好き'),
+                    body.replace('ではなかった', 'ではなかったかもしれない')):
+        assert result(req, (changed,)).artifact is None
+
+
 def test_existing_bound_reference_keeps_its_order_and_surface_owner():
     req = request(source('私にとって読書の時間が大切です。私はその時間が好きです。'))
     # No new scope for an unbound "その時間", even though both evaluations

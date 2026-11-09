@@ -238,3 +238,40 @@ def test_bare_value_uses_the_existing_format_policy_without_inventing_a_vow():
     assert out.artifact.piece_text == '私にとって、' + TARGET + 'が大切。'
     assert out.artifact_plan.declaration_eligible
     assert out.source_meaning.personal_evaluations[0].copula == ''
+
+
+@pytest.mark.parametrize('activity', ('家具作り', 'パン作り', '資料作り', '模型作り', '物語作り', 'ケーキ作り'))
+@pytest.mark.parametrize('construction,predicate', (('は', '苦手です'), ('にとって', '大切ではありませんでした')))
+def test_compound_activity_is_one_written_evaluation_target_not_a_performed_action(activity, construction, predicate):
+    text = '僕' + construction + activity + 'が' + predicate + '。' + TAIL
+    out = generated(text)
+    frame, = out.source_meaning.personal_evaluations
+    assert text[slice(*frame.scalar_parts[2])] == activity
+    assert text.encode()[slice(*frame.utf8_parts[2])].decode() == activity
+    assert out.artifact.piece_text == '僕' + construction + '、' + activity + 'が' + predicate + '。' + TAIL
+    assert out.artifact_plan.duties[0].operation == 'SOURCE_PERSONAL_EVALUATION'
+    assert all(node.value in (text[:-len(TAIL)], TAIL) for node in out.source_meaning.graph.nodes)
+
+
+@pytest.mark.parametrize('speaker', SPEAKERS)
+def test_activity_target_preserves_each_written_experiencer(speaker):
+    out = generated(speaker + 'は家具作りが好きです。' + TAIL)
+    assert out.artifact.piece_text.startswith(speaker + 'は、家具作りが好きです。')
+
+
+@pytest.mark.parametrize('target', (
+    '作り', '何作り', '誰作り', '何人作り', '模型作った', '模型作らない',
+    '模型作りたい', '模型作りなら', '模型作りかもしれない', '模型を作り',
+    '父が模型作り', 'その模型作り', '模型の作り', '模型 作り',
+    '模型、作り', '模型\n作り', '模型作りと料理', '「模型作り」',
+))
+def test_activity_noun_shape_does_not_swallow_unknowns_clauses_or_missing_boundaries(target):
+    _, out = run('僕は' + target + 'が苦手です。' + TAIL)
+    assert out.status == EngineStatus.UNAVAILABLE and out.artifact is None
+
+
+def test_activity_noun_does_not_grant_omitted_or_other_speaker_or_ambiguous_ga_focus():
+    for text in ('家具作りが好きです。', '友人は家具作りが好きです。',
+                 '僕が好きなのは、家具作りです。'):
+        _, out = run(text + TAIL)
+        assert out.status == EngineStatus.UNAVAILABLE and out.artifact is None

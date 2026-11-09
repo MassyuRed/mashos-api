@@ -1162,7 +1162,16 @@ def _personal_evaluation_shapes(text: str, nodes: tuple[MeaningNode, ...],
         # Reuse the existing bounded noun shape without guessing a missing
         # nominalizer or changing the target. Do not extend the が-focus:
         # 私が好きなのはX can instead make a person-like X the experiencer.
-        bare = match['construction'] in ('にとって', 'は') and _SIMPLE_NOUN.fullmatch(target)
+        # Reuse the bounded noun stem for a compound activity noun in -作り.
+        # Keep the WHOLE written target; it proves no performed 作る action.
+        # No particle, finite clause, missing stem or interrogative target
+        # gains entry through this additional shape. The shared noun grammar
+        # and the ambiguous が-focus construction remain unchanged.
+        activity_noun = (target.endswith('作り')
+                         and _SIMPLE_NOUN.fullmatch(target[:-2])
+                         and not any(cue in target[:-2] for cue in ('何', '誰')))
+        bare = (match['construction'] in ('にとって', 'は')
+                and (_SIMPLE_NOUN.fullmatch(target) or activity_noun))
         referential = bool(_evaluation_target_references(target))
         if (not (nominal or bare)
                 or (_REFERENCE.search(target) and not referential) or _NESTED.search(target)
