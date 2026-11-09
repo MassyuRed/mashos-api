@@ -113,6 +113,11 @@ def _authoring_constraints(prepared, source_request, slots):
                 actions_by_node[sentence.node_id] = action
                 if action['voice'] != 'active':
                     passive_fields.add(ref.field_path)
+        # Partial finite hints can distract the author from unrepresented
+        # feelings, evaluations or opaque context. Only a source part whose
+        # every complete sentence has the same established finite account
+        # receives these additional action conditions.
+        complete_actions = len(actions_by_node) == len(part.sentences)
         for key, slot in slots.items():
             if slot['source_id'] != source['source_id']:
                 continue
@@ -127,7 +132,8 @@ def _authoring_constraints(prepared, source_request, slots):
                 # A passive field keeps its prior authoring input. Its
                 # source narrator must not invite a rewritten active event;
                 # the model's existing whole-body reviewer still owns KEEP.
-                if action is not None and slot['field_path'] not in passive_fields:
+                if (complete_actions and action is not None
+                        and slot['field_path'] not in passive_fields):
                     actions.append(dict(**action, scalar_start=ref.scalar_start,
                                         scalar_end=ref.scalar_end))
             for binding in part.role_bindings:

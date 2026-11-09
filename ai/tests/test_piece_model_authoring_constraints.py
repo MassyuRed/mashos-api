@@ -166,7 +166,7 @@ def test_undecided_target_does_not_add_a_generation_hint(target):
 
 
 def test_action_conditions_are_local_to_original_fields_and_the_answer():
-    original = '僕は司書に展示の予定を相談しました。まだ、参加する日は決めていません。'
+    original = '僕は司書に展示の予定を相談しました。'
     answer = 'わたしは読書が好きでした。'
     material, _ = messages(refined_source(original=original, answer=answer))
     slots = field_constraints(material)
@@ -238,6 +238,34 @@ def test_passive_suppression_preserves_existing_evaluation_conditions_in_its_fie
     assert 'required_actions' not in slot
     assert slot['required_evaluations'][0]['narrator_literal'] == '僕'
     assert slot['required_evaluations'][0]['temporal_scope'] == 'PAST'
+
+
+@pytest.mark.parametrize('action_field', ('memo', 'memo_action'))
+def test_evaluation_and_action_fields_keep_prior_conditions_without_partial_action_hints(action_field):
+    action = '僕は司書に展示の予定を相談しました。'
+    evaluation = '私は読書が好きでした。'
+    material, _ = messages(source(action, field=action_field, other=evaluation))
+    constraints = material['control']['authoring_constraints']
+    assert 'finite_scope_instruction' not in constraints
+    slots = constraints['field_slots']
+    assert len(slots) == 1
+    slot = next(iter(slots.values()))
+    assert slot['field_path'] != action_field
+    assert 'required_actions' not in slot
+    assert slot['required_evaluations'][0]['temporal_scope'] == 'PAST'
+
+
+@pytest.mark.parametrize('other', [
+    '僕はとても寂しかったです。',
+    '誘われたのに、嬉しくなかった。',
+    'まだ、参加する日は決めていません。',
+])
+@pytest.mark.parametrize('same_field', (True, False))
+def test_feelings_opaque_context_and_reservations_do_not_receive_partial_action_hints(other, same_field):
+    action = '僕は司書に展示の予定を相談しました。'
+    saved = source(action + other, field='memo') if same_field else source(action, field='memo', other=other)
+    material, _ = messages(saved)
+    assert 'authoring_constraints' not in material['control']
 
 
 def test_evaluation_only_wire_has_no_new_condition_or_instruction():
