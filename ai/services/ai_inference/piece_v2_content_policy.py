@@ -564,6 +564,27 @@ def validate_source_meaning_preservation(meaning, plan, artifact, *, _model_regi
             return False
         return re.fullmatch(anchor(match['prefix']) + r'決めて(?:いません|いない)。', visible) is not None
 
+    def same_finite_model_context(node_id, source, visible):
+        # A mixed original can retain an opaque KEEP clause while another
+        # field changes only the known finite register. Keep the full S7
+        # source/plan/partition checks; compare this complete node with the
+        # existing reader, never a partial source or an inferred narrator.
+        if (node_id in scopes or node_id in evaluations
+                or any(node_id in (r.antecedent_node_id, r.reference_node_id)
+                       for r in meaning.nominal_references)
+                or anchor(source) != re.escape(source)):
+            return False
+        expected = _piece_model_read_block(source)
+        if expected is None or len(expected) != 1:
+            return False
+        key = expected[0]
+        if (key[0] != 'FINITE' or key[1] != 'SELF'
+                or key[-1] not in ('私', 'わたし', '僕', 'ぼく', '俺', 'おれ')
+                or key[5] not in ('頼む', '相談する', '伝える')
+                or key[7:11] != ('fact', 'past', '', 'active')):
+            return False
+        return _piece_model_read_block(visible) == expected
+
     def same_evaluation(node_id, visible, author, viewpoint, prefix, optional_prefix):
         frame = evaluations[node_id]
         _, _, target = (original[a:b] for a, b in frame.scalar_parts)
@@ -633,7 +654,9 @@ def validate_source_meaning_preservation(meaning, plan, artifact, *, _model_regi
             node, operation = source_nodes[node_id], duties[node_id]
             if operation == 'KEEP_COMPLETE_SOURCE_CONTEXT':
                 if (re.fullmatch(anchor(node.value), visible) is None
-                        and not (_model_register and same_undecided(node.value, visible))):
+                        and not (_model_register and (
+                            same_undecided(node.value, visible)
+                            or same_finite_model_context(node_id, node.value, visible)))):
                     reject()
                 previous_id, previous_author = node_id, None
                 continue
