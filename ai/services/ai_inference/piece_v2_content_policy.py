@@ -97,10 +97,12 @@ def choose_format(*, tier: str, requested: str | None, eligible: tuple[str, ...]
 def _piece_model_feeling(text):
     """Read existing complete SELF feelings; never infer from a selection."""
     from piece_v2_expression import _SELF_TOPIC
-    from cocolon_meaning_experience_engine.emlis_answer_update import _FEELING, _NOW
+    from cocolon_meaning_experience_engine.emlis_answer_update import _FEELING, _NOW, _THEN
     now = _NOW.match(text)
-    prefix = now.group() if now else ''
-    value = text[now.end():] if now else text
+    then = _THEN.match(text) if now is None else None
+    temporal = now or then
+    prefix = temporal.group() if temporal else ''
+    value = text[temporal.end():] if temporal else text
     topic = _SELF_TOPIC.fullmatch(value)
     if topic is None or not _FEELING.fullmatch('私は' + topic['body']):
         return None
@@ -113,7 +115,8 @@ def _piece_model_feeling(text):
     return ('FEELING', 'SELF', finite['stem'], finite['degree'] or '',
         'negative' if ending.startswith('くな') else 'positive',
         'past' if ending.endswith('かった') else 'nonpast',
-        ('NOW', 'も' if 'も' in prefix else 'は') if now else ())
+        ('NOW', 'も' if 'も' in prefix else 'は') if now else
+        ('THEN', prefix) if then else ())
 
 
 def _piece_model_evaluation(text):

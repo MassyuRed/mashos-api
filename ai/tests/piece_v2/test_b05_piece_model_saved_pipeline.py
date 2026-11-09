@@ -94,3 +94,21 @@ def test_real_q2_separate_answer_model_receipt_reuses_existing_visual_save_and_r
     # call from this actual transport boundary rather than inheriting that zero.
     result['counts']['external_model_provider'] = len(seen)
     _evidence(case_id, result, seen)
+
+
+@pytest.mark.parametrize('tier', ['free','plus','premium'])
+@pytest.mark.parametrize('case_id,answer', [
+    ('Q2-INVITE-PAST','その時、私は寂しかった。'),
+    ('Q2-INVITE-NOW','今は、私は嬉しい。'),
+])
+def test_new_eligible_refined_sources_use_real_question_answer_add_and_saved_model_text(
+        refined_pipeline_db,monkeypatch,tier,case_id,answer):
+    memo='誘われたのに、嬉しくなかった。'
+    seen=_provider(monkeypatch,case_id,[memo,answer])
+    result=_run_refined_pipeline(refined_pipeline_db,monkeypatch,answer,case_id+'-'+tier,
+        original_memo=memo,tier=tier,visual_change=True)
+    assert result['initial_dto']['state']=='AWAITING_ANSWER'
+    assert result['completed_dto']['body_state']=='REFINED'
+    assert result['quota_consumptions']==1 and result['source_unchanged'] and result['emlis_unchanged']
+    result['counts']['external_model_provider']=len(seen)
+    _evidence(case_id+'-'+tier,result,seen)

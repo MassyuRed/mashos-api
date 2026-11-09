@@ -32,7 +32,9 @@ def refined_pipeline_db(saved_piece_db):
     return db
 
 
-def _run_refined_pipeline(db, monkeypatch, answer_text, case_id, *, visual_change=False):
+def _run_refined_pipeline(db, monkeypatch, answer_text, case_id, *, visual_change=False,
+                          original_memo='褒められたのに、嬉しくなかった。', tier='free',
+                          expected_blocks=None):
     import api_account_visibility
     import emlis_thread_store
     import piece_v2_preview_service as preview_module
@@ -49,10 +51,10 @@ def _run_refined_pipeline(db, monkeypatch, answer_text, case_id, *, visual_chang
     counts = dict(q2_start=0, q2_answer=0, piece_generation_entry=0, piece_review=0,
                   preview_rpc=0, visual_rpc=0, save_rpc=0, external_model_provider=0)
     assert 'code' not in db.query('INSERT INTO auth.users VALUES ($1)', [owner])
-    assert 'code' not in db.query("INSERT INTO public.profiles VALUES ($1,'free')", [owner])
+    assert 'code' not in db.query('INSERT INTO public.profiles VALUES ($1,$2)', [owner,tier])
     assert 'code' not in db.query(
         "INSERT INTO public.emotions VALUES ($1,$2,now() at time zone 'UTC',$3,'',array['仕事'],array['不安'],$4::jsonb)",
-        [source_id, owner, '褒められたのに、嬉しくなかった。',
+        [source_id, owner, original_memo,
          json.dumps([dict(type='不安', strength='medium')], ensure_ascii=False)])
     async def verify(value):
         assert value == token
@@ -111,10 +113,12 @@ def _run_refined_pipeline(db, monkeypatch, answer_text, case_id, *, visual_chang
     monkeypatch.setattr(safety_module, 'review_prepared_original', observed_review)
     issue_args = dict(idempotency_key='refined-pipeline-preview', ttl_seconds=600,
         renderer_version='piece.rn_bitmap_renderer.ios.v2', allowed_renderers=('piece.rn_bitmap_renderer.ios.v2',),
-        expected_subscription_tier='free', load_record=load_preview, rpc=rpc)
+        expected_subscription_tier=tier, load_record=load_preview, rpc=rpc)
     preview = PiecePreviewService(source_adapter=adapter)
     first = asyncio.run(preview.issue_original('Bearer ' + token, request, **issue_args))
-    assert first['piece_text'] == original['memo'] + '\n\n' + answer_text
+    expected_blocks = [original['memo'],answer_text] if expected_blocks is None else expected_blocks
+    assert first['piece_text'] == '\n\n'.join(expected_blocks)
+    assert first['content_payload']['body_blocks'] == expected_blocks
     assert first['safety_state'] == 'ready'
     row_after_issue = asyncio.run(load_record(owner, first['preview_id']))
     assert row_after_issue['source_lineage']['observation']['supplemental_answer_identity'] == answer_id
@@ -133,7 +137,7 @@ def _run_refined_pipeline(db, monkeypatch, answer_text, case_id, *, visual_chang
                 authenticated_user_id=owner, preview_id=first['preview_id'],
                 request=dict(expected_preview_revision=first['preview_revision'],
                     visual_selection=dict(theme_id='quiet_night', aspect_ratio=None, branding_mode=None)),
-                expected_subscription_tier='free', load_record=load_preview, rpc=rpc,
+                expected_subscription_tier=tier, load_record=load_preview, rpc=rpc,
                 allowed_renderers=('piece.rn_bitmap_renderer.ios.v2',)))
         assert visual_mutation['preview_revision'] == first['preview_revision'] + 1
         assert visual_mutation['expires_at'] == first['expires_at']
@@ -179,7 +183,7 @@ def _run_refined_pipeline(db, monkeypatch, answer_text, case_id, *, visual_chang
                          piece_review=2 if visual_change else 1,
                          preview_rpc=1, visual_rpc=1 if visual_change else 0,
                          save_rpc=2, external_model_provider=0)
-    evidence = dict(case_id=case_id, answer_text=answer_text, initial_dto=started, completed_dto=completed,
+    evidence = dict(case_id=case_id, tier=tier, answer_text=answer_text, initial_dto=started, completed_dto=completed,
         snapshot_before=snapshot_before, snapshot_after=snapshot_after, source_ref=reference,
         preview=first, preview_row=row_after_issue, visual_mutation=visual_mutation,
         selected_preview=selected, current_preview_row=row_for_replay,

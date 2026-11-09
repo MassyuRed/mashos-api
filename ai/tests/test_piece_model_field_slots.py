@@ -148,7 +148,8 @@ def test_existing_focal_grammar_keeps_complete_source_surface_without_second_aut
     assert out.artifact.body_blocks==(text,)
 
 
-def test_recorded_refined_focal_source_is_preserved_separately_from_the_answer():
+def test_synthetic_refined_focal_source_is_preserved_at_engine_scope_only():
+    # This typed fixture does not prove ordinary saved QUESTION/ADD eligibility.
     original='私が選びたいのは、版画です。';answer='私は一人で考える時間を大切にしたい。'
     req=refined_request(refined_source(original,answer))
     out=produce(req,wire({'answer_text_private_1':answer,'memo_0':original}))

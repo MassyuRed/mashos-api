@@ -146,33 +146,53 @@ def validate_supplemental_meaning(meaning):
     _require(meaning == expected, 'piece_refined_answer_evidence_binding')
 
 
+def _supplemental_feeling_prefix_end(text):
+    """Read a complete SELF feeling without changing its written time.
+
+    The answer owner's NOW/THEN grammar supplies only a parse boundary. The
+    original relative-time words remain in the proposition and its evidence;
+    neither the original's recorded date nor its selected feeling fills them.
+    """
+    from piece_v2_expression import _SELF_TOPIC
+    from .emlis_answer_update import _FEELING, _NOW, _THEN
+    from .piece_source import _written_feeling_expression
+    if type(text) is not str or not text.endswith('。'):
+        return None
+    prefix = _NOW.match(text) or _THEN.match(text)
+    end = prefix.end() if prefix is not None else 0
+    body = text[end:]
+    topic = _SELF_TOPIC.fullmatch(body)
+    if topic is None or not (
+            _FEELING.fullmatch('私は' + topic['body'])
+            or _written_feeling_expression(body, current_affirmative_only=False) is not None):
+        return None
+    return end
+
+
+def supplemental_feeling_time_span(meaning, node):
+    """Locate only a fully read answer feeling's written THEN prefix.
+
+    This is a local temporal-token exemption, not a nominal-reference
+    resolver. Other source types and references elsewhere remain unchanged.
+    """
+    from .emlis_answer_update import _THEN
+    if type(meaning) is not PieceSupplementalMeaning or node not in meaning.graph.nodes:
+        return None
+    prefix = _THEN.match(node.value)
+    end = _supplemental_feeling_prefix_end(node.value)
+    return (0, end) if prefix is not None and end == prefix.end() else None
+
+
 def supplemental_feeling_account(meaning):
     """Keep a complete explicit SELF feeling from its own answer field.
 
-    Reuse the existing answer owner's finite adjective grammar, not a past
-    ending or a selected feeling from the original. The optional written
-    current-time prefix stays inside the unchanged KEEP proposition.
+    The optional source-written NOW/THEN prefix stays in the unchanged KEEP
+    proposition. It is never resolved to an absolute date or removed.
     """
-    from piece_v2_expression import _SELF_TOPIC
-    from .emlis_answer_update import _FEELING, _NOW
-    from .piece_source import _written_feeling_expression
     if type(meaning) is not PieceSupplementalMeaning or not meaning.graph.nodes:
         return False
     for node in meaning.graph.nodes:
-        if not node.value.endswith('。'):
-            return False
-        text = node.value
-        now = _NOW.match(text)
-        if now is not None:
-            text = text[now.end():]
-        topic = _SELF_TOPIC.fullmatch(text)
-        if topic is None or not (
-                # Occupy the existing grammar's optional subject slot in
-                # this parse-only view. Its remaining body must be solely a
-                # predicate, not a second 私も/自分は subject. Actual source
-                # wording and the six explicit SELF spellings stay intact.
-                _FEELING.fullmatch('私は' + topic['body'])
-                or _written_feeling_expression(text, current_affirmative_only=False) is not None):
+        if _supplemental_feeling_prefix_end(node.value) is None:
             return False
     return True
 
@@ -216,6 +236,7 @@ def build_refined_meaning(request):
     supplemental = _supplemental_meaning(answer, original.owner_id)
     _require(all(re.match(r'^(?:(?:以前|当時|今|現在|これから)[はも][、，,]\s*)?'
                          r'(?:私|わたし|僕|ぼく|俺|おれ)(?:は|が|にとって)', n.value)
+                 or supplemental_feeling_time_span(supplemental, n) is not None
                  for n in supplemental.graph.nodes), 'piece_refined_answer_not_self_contained')
     return PieceRefinedMeaning(source, refined_source_ref(source), original_meaning, supplemental)
 

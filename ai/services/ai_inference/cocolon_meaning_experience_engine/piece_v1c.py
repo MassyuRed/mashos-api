@@ -264,6 +264,7 @@ def compile_piece_artifact_plan(meaning: PieceSourceMeaning) -> PieceArtifactPla
     evaluations = {frame.node_id: frame for frame in meaning.personal_evaluations}
     validate_piece_expression_scopes(meaning)
     scopes = {scope.node_id: scope for scope in meaning.expression_scopes}
+    from .piece_refined import supplemental_feeling_time_span
     duties: list[PieceTextDuty] = []
     intents: list[int] = []
     focal = False
@@ -274,6 +275,7 @@ def compile_piece_artifact_plan(meaning: PieceSourceMeaning) -> PieceArtifactPla
         admitted = [r.reference_scalar_span for r in meaning.nominal_references
                     if r.reference_node_id == node.node_id]
         temporal = _calendar_time_adverb_span(sentence)
+        answer_time = supplemental_feeling_time_span(meaning, node)
         time_scope = scopes.get(node.node_id)
         if time_scope is not None and time_scope.relation == 'SOURCE_EXPLICIT_TIME_CONTEXT':
             # The source scope was recomputed above, including its complete
@@ -283,7 +285,9 @@ def compile_piece_artifact_plan(meaning: PieceSourceMeaning) -> PieceArtifactPla
                         time_scope.scope_scalar_span[1] - len(time_scope.marker) - semantic.source_start)
         has_calendar_time_context = has_calendar_time_context or temporal is not None
         if _DEICTIC.search(sentence) or any(
-                m.span() != temporal and not any(
+                m.span() != temporal and not (
+                    answer_time is not None and answer_time[0] <= m.start()
+                    and m.end() <= answer_time[1]) and not any(
                     a <= semantic.source_start + m.start()
                     and semantic.source_start + m.end() <= b for a, b in admitted)
                 for m in _REFERENCE.finditer(sentence)):
