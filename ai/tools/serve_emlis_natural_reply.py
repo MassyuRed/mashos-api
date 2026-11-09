@@ -28,6 +28,7 @@ FIT38_WEIGHTS = "ad8b89e8974df9bfe7e804b8f67bbaac59e6cbb37042c3254fb58ffb64230d0
 FIT38_CONFIG = "ef4b1aef621fb4e234ce6a05601efb62a987c3cf5d40f3995ca1b72200bab145"
 PINS = {"transformers": "5.19.0", "peft": "0.21.2", "accelerate": "1.15.0", "safetensors": "0.8.0"}
 SEMANTIC_FORMAT_SOURCE = '817f944fcc8851917c40300a47f62d1defc3ffc3'
+PIECE_CANDIDATE_FORMAT = 'piece.field_slots.v1'
 
 
 class SourcePrivateConstraintLog(logging.Filter):
@@ -118,6 +119,41 @@ def semantic_json_parser(messages, alphabet):
         config=CharacterLevelParserConfig(alphabet=alphabet))
 
 
+def piece_output_schema(messages):
+    """Constrain named transport slots, without constraining their meaning."""
+    if (type(messages) is not list or len(messages) != 2
+            or any(type(message) is not dict for message in messages)
+            or [message.get('role') for message in messages] != ['system', 'user']
+            or type(messages[1].get('content')) is not str):
+        raise ValueError('piece_material_invalid')
+    material = json.loads(messages[1]['content'])
+    if (type(material) is not dict or material.get('core') != 'piece'
+            or material.get('task') != 'PIECE_MODEL_BODY'
+            or type(material.get('control')) is not dict):
+        raise ValueError('piece_material_invalid')
+    slots = material['control'].get('field_slots')
+    if (type(slots) is not dict or not 1 <= len(slots) <= 3
+            or any(not re.fullmatch(r'(?:memo|memo_action|answer_text_private)_[0-2]', key)
+                   or type(value) is not dict for key, value in slots.items())
+            or {int(key.rsplit('_', 1)[1]) for key in slots} != set(range(len(slots)))):
+        raise ValueError('piece_slots_invalid')
+    # This is private decoding order only. The receiver still projects back to
+    # the frozen partition order. Decode the separate answer before originals;
+    # this does not certify source separation inside either generated value.
+    ordered_keys = sorted(slots, key=lambda key: (
+        not key.startswith('answer_text_private_'), int(key.rsplit('_', 1)[1])))
+    properties = {key: dict(type='string', minLength=1) for key in ordered_keys}
+    fields = dict(type='object', properties=properties, required=list(properties), additionalProperties=False)
+    return dict(type='object', properties=dict(field_blocks=fields), required=['field_blocks'],
+                additionalProperties=False)
+
+
+def piece_json_parser(messages, alphabet):
+    from lmformatenforcer import CharacterLevelParserConfig, JsonSchemaParser
+    return JsonSchemaParser(piece_output_schema(messages),
+        config=CharacterLevelParserConfig(alphabet=alphabet, force_json_field_order=True))
+
+
 def make_handler(generate, *, api_key, model_name, deadline, max_requests,
                  max_new_tokens=2048, request_seconds=23, max_request_bytes=65536,
                  natural_reply=None, natural_queue_seconds=210):
@@ -173,6 +209,11 @@ def make_handler(generate, *, api_key, model_name, deadline, max_requests,
                         or [m["role"] for m in messages] != ["system", "user"]
                         or any(not isinstance(m["content"], str) or not m["content"] for m in messages)):
                     raise ValueError
+                piece = 'candidate_format' in request
+                if piece:
+                    if not natural or request['candidate_format'] != PIECE_CANDIDATE_FORMAT:
+                        raise ValueError
+                    piece_output_schema(messages)
             except Exception:
                 return self.reply(400, {"error": "request_invalid"})
             admitted = lock.acquire(timeout=natural_queue_seconds) if natural else lock.acquire(blocking=False)
@@ -185,12 +226,15 @@ def make_handler(generate, *, api_key, model_name, deadline, max_requests,
                 if not max_requests:
                     generation_stage('admitted')
                 end = min(deadline, time.monotonic() + selected_seconds)
-                text, finish = (generate(messages, end, profile="natural") if natural else generate(messages, end))
+                text, finish = (generate(messages, end, profile="piece" if piece else "natural")
+                                if natural else generate(messages, end))
                 if finish not in {"stop", "length"} or not isinstance(text, str):
                     raise ValueError
                 status, body = 200, {"model": selected_model, "choices": [{
                     "index": 0, "finish_reason": finish,
                     "message": {"role": "assistant", "content": text}}]}
+                if piece:
+                    body['candidate_format'] = PIECE_CANDIDATE_FORMAT
             except Exception as exc:
                 if not max_requests:
                     generation_stage('failed_' + type(exc).__name__)
@@ -299,14 +343,17 @@ def load_generator(adapter, process_stop, *, weights_sha256=None, config_sha256=
             return self.expired
 
     def generate(messages, end, *, profile=None):
-        if profile not in (None, "natural"):
+        if profile not in (None, "natural", "piece"):
             raise ValueError("generation_profile_invalid")
+        if profile == "piece" and (not semantic_json or tokenizer_data is None):
+            raise ValueError("piece_constraint_unavailable")
         use_semantic_json = semantic_json and profile != "natural"
-        output_budget = 2048 if profile == "natural" else max_new_tokens
-        context_budget = 8192 if profile == "natural" else context_tokens
+        base_profile = profile in ("natural", "piece")
+        output_budget = 2048 if base_profile else max_new_tokens
+        context_budget = 8192 if base_profile else context_tokens
         # Preserve the base identity previously connected for natural replies.
         # The analysis adapter stays loaded; its state is restored on context exit.
-        adapter_context = base_inference_context(model) if profile == "natural" and adapter else nullcontext()
+        adapter_context = base_inference_context(model) if base_profile and adapter else nullcontext()
         if use_semantic_json:
             generation_stage('tokenize')
         encoded = tokenizer.apply_chat_template(messages, enable_thinking=False,
@@ -322,7 +369,8 @@ def load_generator(adapter, process_stop, *, weights_sha256=None, config_sha256=
             generation_stage('constraint')
             from lmformatenforcer.integrations.transformers import build_transformers_prefix_allowed_tokens_fn
             allowed_prefix = build_transformers_prefix_allowed_tokens_fn(
-                tokenizer_data, semantic_json_parser(messages, tokenizer_data.tokenizer_alphabet))
+                tokenizer_data, (piece_json_parser if profile == "piece" else semantic_json_parser)(
+                    messages, tokenizer_data.tokenizer_alphabet))
             previous_allowed = None
             def private_prefix(batch, sent):
                 nonlocal previous_allowed
@@ -335,7 +383,8 @@ def load_generator(adapter, process_stop, *, weights_sha256=None, config_sha256=
                 if progress and previous_allowed is not None and int(sent[-1]) not in previous_allowed:
                     generation_stage('prefix_constraint_violation')
                     raise ValueError('semantic_prefix_constraint_violation')
-                allowed = semantic_free_text_tokens(allowed_prefix, batch, sent, blocked_free_text, invalid_json_tokens)
+                allowed = semantic_free_text_tokens(allowed_prefix, batch, sent,
+                    set() if profile == "piece" else blocked_free_text, invalid_json_tokens)
                 previous_allowed = allowed
                 if measured:
                     parser = allowed_prefix.token_enforcer.prefix_states[tuple(sent.tolist())].parser
@@ -374,7 +423,7 @@ def main():
     parser.add_argument("--analysis-service", action="store_true",
                         help="Serve ordinary Analysis until SIGTERM/SIGINT; no probe-count expiry.")
     parser.add_argument('--natural-reply-model', help='Also serve the existing base natural-reply profile with its separate API key.')
-    parser.add_argument('--semantic-json', action='store_true', help='Constrain Analysis JSON and source-quote pairs during generation.')
+    parser.add_argument('--semantic-json', action='store_true', help='Constrain Analysis JSON/source-quote pairs and explicit Piece field slots during generation.')
     parser.add_argument("--max-new-tokens", type=int)
     parser.add_argument("--context-tokens", type=int)
     parser.add_argument("--request-seconds", type=int)

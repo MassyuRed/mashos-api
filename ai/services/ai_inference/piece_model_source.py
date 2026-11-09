@@ -118,7 +118,7 @@ class Shared4BPieceModelSource:
                 elapsed_seconds=time.monotonic() - started, candidate_format=PIECE_FIELD_SLOTS_FORMAT)
 
         body = _json(dict(model=self.model, messages=messages, temperature=0,
-            max_tokens=2048, stream=False,
+            max_tokens=2048, stream=False, candidate_format=PIECE_FIELD_SLOTS_FORMAT,
             chat_template_kwargs={'enable_thinking': False})).encode('utf-8')
         if len(body) > MAX_REQUEST_BYTES:
             return receipt()
@@ -144,7 +144,8 @@ class Shared4BPieceModelSource:
                             if len(received) > MAX_RESPONSE_BYTES:
                                 return receipt()
             data = json.loads(received.decode('utf-8'), object_pairs_hook=_unique_object)
-            if type(data) is not dict or data.get('model') != self.model:
+            if (type(data) is not dict or data.get('model') != self.model
+                    or data.get('candidate_format') != PIECE_FIELD_SLOTS_FORMAT):
                 raise ValueError
             choices = data.get('choices')
             if type(choices) is not list or len(choices) != 1 or type(choices[0]) is not dict:

@@ -35,7 +35,7 @@ def raw_for(value):
 
 
 def packet(raw, *, finish='stop', **changes):
-    value = {'model': MODEL, 'choices': [{'finish_reason': finish,
+    value = {'model': MODEL, 'candidate_format': 'piece.field_slots.v1', 'choices': [{'finish_reason': finish,
         'message': {'role': 'assistant', 'content': raw}}]}
     value.update(changes)
     return value
@@ -71,10 +71,11 @@ def test_one_shared_base_request_keeps_complete_material_and_unadopted_raw(refin
         assert request.headers['accept-encoding'] == 'identity'
         assert len(request.content) <= 65536
         assert set(body) == {'model', 'messages', 'temperature', 'max_tokens', 'stream',
-                             'chat_template_kwargs'}
+                             'chat_template_kwargs', 'candidate_format'}
         assert {key: body[key] for key in ('model', 'temperature', 'max_tokens', 'stream',
             'chat_template_kwargs')} == dict(model=MODEL, temperature=0, max_tokens=2048,
                 stream=False, chat_template_kwargs={'enable_thinking': False})
+        assert body['candidate_format'] == 'piece.field_slots.v1'
         assert [message['role'] for message in body['messages']] == ['system', 'user']
         material = json.loads(body['messages'][1]['content'])
         slots = material['control'].pop('field_slots')
@@ -139,6 +140,28 @@ def test_provider_contract_failure_is_one_unadopted_error(mutation):
     assert len(calls) == 1
     assert receipt.status == 'PROVIDER_ERROR' and receipt.candidate_json is None
     assert receipt.adoption_state == 'NOT_ADOPTED'
+
+
+@pytest.mark.parametrize('marker', [None, '', False, ['piece.field_slots.v1'], 'other'])
+def test_decoder_application_marker_is_required_without_fallback(marker):
+    value = prepared()
+    response = packet(raw_for(value))
+    response['candidate_format'] = marker
+    seen = []
+    def handler(request):
+        seen.append(request)
+        return httpx.Response(200, json=response)
+    receipt = run(source(handler)(value))
+    assert len(seen) == 1 and receipt.status == 'PROVIDER_ERROR'
+    assert receipt.raw_output is None and receipt.candidate_json is None
+
+
+def test_legacy_server_ignoring_the_request_format_is_not_admitted():
+    value = prepared()
+    response = packet(raw_for(value))
+    response.pop('candidate_format')
+    receipt = run(source(lambda r: httpx.Response(200, json=response))(value))
+    assert receipt.status == 'PROVIDER_ERROR' and receipt.raw_output is None
 
 
 @pytest.mark.parametrize('raw', ['not JSON', '{"body_blocks":["ok"],"format_type":"quote"}',

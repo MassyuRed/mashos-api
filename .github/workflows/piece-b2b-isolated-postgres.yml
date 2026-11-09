@@ -43,6 +43,9 @@ name: Piece B2-B/B3/B4/B5 isolated PostgreSQL
       - ai/tests/test_piece_model_evaluation_reuse.py
       - ai/tests/test_piece_model_field_slots.py
       - ai/tests/test_cmee_piece_supplemental_then_feeling.py
+      - ai/tools/serve_emlis_natural_reply.py
+      - ai/tests/test_piece_model_server_constraints.py
+      - ai/tools/analysis_semantic_generation_requirements.txt
       - ai/tests/piece_v2/test_b05_piece_model_concurrency.py
       - ai/tests/piece_v2/test_b05_piece_model_saved_pipeline.py
       - ai/tests/piece_v2/test_b05_piece_model_evaluation_pipeline.py
@@ -386,6 +389,8 @@ jobs:
             ai/tests/test_subscription_purchase_owner_hint.py \
             ai/tests/test_subscription_live_console_readiness.py \
             ai/tests/test_follow_private_visibility_failure.py
+      - name: Install existing pinned GPU JSON parser for CPU protocol tests
+        run: python -m pip install --quiet --disable-pip-version-check -r ai/tools/analysis_semantic_generation_requirements.txt
       - name: Verify Piece model receipt, mutations, cancellation and saved reuse
         env:
           PYTHONPATH: .:ai/services:ai/services/ai_inference:ai/tests:ai/tests/piece_v2
@@ -400,6 +405,7 @@ jobs:
             ai/tests/test_piece_model_evaluation_reuse.py \
             ai/tests/test_piece_model_field_slots.py \
             ai/tests/test_cmee_piece_supplemental_then_feeling.py \
+            ai/tests/test_piece_model_server_constraints.py \
             ai/tests/piece_v2/test_b05_piece_model_concurrency.py \
             ai/tests/piece_v2/test_b05_piece_model_saved_pipeline.py \
             ai/tests/piece_v2/test_b05_piece_model_evaluation_pipeline.py

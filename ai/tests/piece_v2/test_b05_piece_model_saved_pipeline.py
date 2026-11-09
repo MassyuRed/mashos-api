@@ -21,7 +21,7 @@ def _provider(monkeypatch, case_id, default_blocks):
     recorded = os.environ.get('PIECE_MODEL_RECORDED_DIR')
     path = Path(recorded) / (case_id + '.private.json') if recorded else None
     response = json.loads(path.read_text())['response'] if path and path.exists() else {
-        'model': 'piece-shared-4b-test', 'choices': [{'finish_reason': 'stop',
+        'model': 'piece-shared-4b-test', 'candidate_format': 'piece.field_slots.v1', 'choices': [{'finish_reason': 'stop',
             'message': {'role': 'assistant', 'content': json.dumps(
                 {'body_blocks': default_blocks}, ensure_ascii=False)}}]}
 
