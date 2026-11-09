@@ -209,8 +209,8 @@ def _validate_self_predicate_body(sentence: str) -> None:
                 raise unavailable('expression_meaning_not_admitted')
 
 
-def _finite_self_request_account(sentence: str) -> bool:
-    """Qualify a complete written request account for the existing KEEP duty.
+def _finite_self_person_action_account(sentence: str) -> bool:
+    """Qualify a complete written interpersonal account for the KEEP duty.
 
     Reuse the source-role reader's finite voice/case grammar, without making
     its provisional witness a Piece claim, inferred person, or new author.
@@ -235,7 +235,7 @@ def _finite_self_request_account(sentence: str) -> bool:
     row = rows[0]
     if (row.raw_text != sentence[:-1] or row.scalar_start != 0
             or row.scalar_end != len(sentence) - 1
-            or row.subject != 'SELF' or row.predicate != '頼む'
+            or row.subject != 'SELF' or row.predicate not in {'頼む', '相談する', '伝える'}
             or row.modality != 'fact' or row.temporal_scope != 'past'):
         return False
     value = _DAY.sub('', row.raw_text, count=1)

@@ -6,7 +6,7 @@ import pytest
 from piece_v2_contract import canonical_json_bytes,PieceContractError
 from piece_v2_generation import PieceSourceSnapshot,generate_piece_candidate
 from piece_v2_content_policy import validate_source_meaning_preservation
-from cocolon_meaning_experience_engine.piece_source import build_piece_source_meaning,piece_text_nodes,_finite_self_request_account
+from cocolon_meaning_experience_engine.piece_source import build_piece_source_meaning,piece_text_nodes,_finite_self_person_action_account
 from cocolon_meaning_experience_engine.piece_v1c import compile_piece_artifact_plan,realize_piece_artifact
 
 def source(text,*,field='memo_action',other=None,emotions=None,details=None):
@@ -25,10 +25,14 @@ def produce(saved):
     return meaning,plan,artifact
 
 @pytest.mark.parametrize('role',['同僚','司書','配達員'])
-@pytest.mark.parametrize('predicate',['頼んだ','頼まなかった','頼みました','頼みませんでした','頼まれた','頼まれなかった','頼まれました','頼まれませんでした'])
+@pytest.mark.parametrize('predicate',[
+    '頼んだ','頼まなかった','頼みました','頼みませんでした','頼まれた','頼まれなかった','頼まれました','頼まれませんでした',
+    '相談した','相談しなかった','相談しました','相談しませんでした','相談された','相談されなかった','相談されました','相談されませんでした',
+    '伝えた','伝えなかった','伝えました','伝えませんでした','伝えられた','伝えられなかった','伝えられました','伝えられませんでした'])
 @pytest.mark.parametrize('field',['memo','memo_action'])
 def test_voice_negation_register_and_field_reach_actual_author(role,predicate,field):
-    text=f'私は{role}に資料の確認を{predicate}。';saved=source(text,field=field);frozen=saved.saved_original_json
+    case = 'から' if predicate.startswith('伝えられ') else 'に'
+    text=f'私は{role}{case}資料の確認を{predicate}。';saved=source(text,field=field);frozen=saved.saved_original_json
     meaning,plan,artifact=produce(saved)
     assert artifact.piece_text==text and artifact.body_blocks==(text,)
     assert [d.operation for d in plan.duties]==['KEEP_COMPLETE_SOURCE_CONTEXT']
@@ -63,13 +67,37 @@ def test_written_self_and_passive_agent_case_remain_source_words(subject,case):
     '私は同僚に資料の確認を頼んだ！','私は同僚に資料の確認を頼んだ？',
     '私は同僚に資料の確認を頼った。'])
 def test_new_scope_does_not_guess_roles_or_broaden_unread_grammar(text):
-    assert not _finite_self_request_account(text)
+    assert not _finite_self_person_action_account(text)
     if text == '私は同僚に資料の確認を頼みたい。':
         # This wish was already an eligible literal self account. The new
         # past-event reader must not take ownership or revoke it.
         assert produce(source(text))[2].piece_text == text
         return
     with pytest.raises(PieceContractError):generate_piece_candidate(source(text),authenticated_owner_id='ar04-synthetic-owner')
+
+@pytest.mark.parametrize('verb', ['相談した', '伝えた'])
+@pytest.mark.parametrize('template', [
+    '同僚に変更の内容を{verb}。', '私は私に変更の内容を{verb}。',
+    '私はあなた様に変更の内容を{verb}。', '私は誰に変更の内容を{verb}。',
+    '私は田中さんに変更の内容を{verb}。', '私は同僚から変更の内容を{verb}。',
+    '私は同僚に変更の内容を{verb}かもしれない。',
+    '私は同僚に変更の内容を{verb}と聞いた。',
+    '私は同僚に変更の内容を{verb}なら。',
+    '「私は同僚に変更の内容を{verb}」。',
+    '私は同僚に変更の内容を{verb}？', '私は同僚に変更の内容を{verb}！',
+])
+def test_communication_does_not_bypass_unwritten_people_scope_or_questions(verb, template):
+    text = template.format(verb=verb)
+    assert not _finite_self_person_action_account(text)
+    with pytest.raises(PieceContractError):
+        generate_piece_candidate(source(text), authenticated_owner_id='ar04-synthetic-owner')
+
+@pytest.mark.parametrize('ending', ['伝えられた', '伝えられなかった', '伝えられました', '伝えられませんでした'])
+def test_ambiguous_ni_passive_is_not_reinterpreted_as_a_proven_event(ending):
+    text = f'私は同僚に変更の内容を{ending}。'
+    assert not _finite_self_person_action_account(text)
+    with pytest.raises(PieceContractError):
+        generate_piece_candidate(source(text), authenticated_owner_id='ar04-synthetic-owner')
 
 @pytest.mark.parametrize('before',[True,False])
 @pytest.mark.parametrize('field',['memo','memo_action'])
