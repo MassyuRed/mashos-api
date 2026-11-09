@@ -248,3 +248,77 @@ def test_same_author_evaluation_register_ellipsis_cannot_cross_field_or_newline(
     assert evaluate(first, ['私は読書が好きだ。', '私は料理が苦手だ。'], other=second).artifact is not None
     assert evaluate(first, ['私は読書が好きだ。', '料理が苦手だ。'], other=second).artifact is None
     assert evaluate(first + '\n' + second, ['私は読書が好きだ。', '料理が苦手だ。']).artifact is None
+
+
+@pytest.mark.parametrize('speaker', ['私', 'わたし', '僕', 'ぼく', '俺', 'おれ'])
+@pytest.mark.parametrize('pause', ['', '、', '，', ','])
+def test_qualified_focal_wish_keeps_explicit_ga_and_adjacent_reference(speaker, pause):
+    original = f'{speaker}が選びたいのは、木版画を彫る時間です。{speaker}はその時間が好きです。'
+    body = f'{speaker}が{pause}木版画を彫る時間を選びたい。その時間が好きだ。'
+    out = evaluate(original, body)
+    assert out.status == EngineStatus.GENERATED, out.reason_codes
+    with pytest.raises(PieceContractError):
+        validate_source_meaning_preservation(out.source_meaning, out.artifact_plan, out.artifact)
+
+
+@pytest.mark.parametrize('predicate', ['選びたい', '選びたくない', '大切にしたい', '大切にしたくない'])
+@pytest.mark.parametrize('register', ['', 'です'])
+def test_direct_ga_wish_retains_source_polarity_and_existing_register_pair(predicate, register):
+    original = f'僕が{predicate}のは、静かな庭で過ごす時間です。'
+    body = f'僕が静かな庭で過ごす時間を{predicate}{register}。'
+    out = evaluate(original, body)
+    assert out.status == EngineStatus.GENERATED, out.reason_codes
+
+
+GA_BODY = FOCAL_BODY.replace('私は、', '私が、', 1)
+
+
+@pytest.mark.parametrize('changed', [
+    GA_BODY.replace('私が、', '僕が、'),
+    GA_BODY.replace('私が、', '友人が、'),
+    GA_BODY.replace('私が、', ''),
+    GA_BODY.replace('私が、', '私が、、'),
+    GA_BODY.replace('読む時間', '書く時間'),
+    GA_BODY.replace('時間を大切', '時間が大切'),
+    GA_BODY.replace('大切にしたい。', '大切にしたくない。'),
+    GA_BODY.replace('大切にしたい。', '大切にしたかった。'),
+    GA_BODY.replace('大切にしたい。', '大切にしたいかもしれない。'),
+    GA_BODY.replace('大切にしたい。', '大切にしている。'),
+    GA_BODY.replace('大切にしたい。', '大切にしたい！'),
+    GA_BODY.replace('その時間', 'この時間'),
+    GA_BODY.replace('その時間が好きだ。', 'その時間が苦手だ。'),
+    GA_BODY.replace('その時間が好きだ。', 'その時間が好きだった。'),
+    GA_BODY.replace('その時間が好きだ。', ''),
+    'その時間が好きだ。' + GA_BODY.replace('その時間が好きだ。', ''),
+    GA_BODY.replace('まだ、', ''),
+    GA_BODY.replace('決めていない。', '決めた。'),
+    GA_BODY + '私は毎日続けている。',
+])
+def test_direct_ga_never_loosens_source_wish_reference_or_reservation(changed):
+    assert evaluate(FOCAL, changed).artifact is None
+
+
+@pytest.mark.parametrize('predicate', ['選びたかった', '選びたいかもしれない', '大切にしている'])
+def test_direct_ga_does_not_expand_to_past_modal_or_state_focal_predicates(predicate):
+    original = f'私が{predicate}のは、静かな庭で過ごす時間です。'
+    body = f'私が静かな庭で過ごす時間を{predicate}。'
+    assert evaluate(original, body).artifact is None
+
+
+def test_direct_ga_stays_inside_qualified_focal_source_and_field():
+    assert evaluate('私は静かな庭で過ごす時間を選びたい。',
+                    '私が静かな庭で過ごす時間を選びたい。').artifact is None
+    scoped = '疲れているなら、私が選びたいのは、静かな庭で過ごす時間です。'
+    assert evaluate(scoped, '疲れているなら、私が静かな庭で過ごす時間を選びたい。').artifact is None
+    first, second = '私が選びたいのは、静かな庭で過ごす時間です。', '私は読書が好きです。'
+    body = '私が静かな庭で過ごす時間を選びたい。'
+    assert evaluate(first, [body, '私は読書が好きだ。'], other=second).artifact is not None
+    assert evaluate(first, [body, '読書が好きだ。'], other=second).artifact is None
+    assert evaluate('私が静かな庭で過ごす時間を選びたい。', body).artifact is None
+
+
+def test_direct_ga_still_requires_source_proved_public_role():
+    body = NAMED_BODY.replace('私は、', '私が、', 1)
+    assert evaluate(NAMED, body).artifact is not None
+    assert evaluate(NAMED, body.replace('同僚と', '友人と')).artifact is None
+    assert evaluate(NAMED, body.replace('同僚と', '同僚の西さんと')).artifact is None

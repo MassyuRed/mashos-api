@@ -727,7 +727,21 @@ def validate_source_meaning_preservation(meaning, plan, artifact, *, _model_regi
                 original_order = anchor(head[:-copula_size]) + '(?:です|だ)' + re.escape(expression[-1])
                 if scope is not None:
                     original_order = anchor(original[slice(*scope.scope_scalar_span)]) + '、' + original_order
-                if re.fullmatch(original_order, visible) is None:
+                # A qualified focal wish may retain its explicit が subject
+                # in direct order. This is a source-bound model comparison,
+                # not a new source grammar or a rewrite to は. Past/modal and
+                # scoped focal expressions retain their existing comparisons.
+                direct_ga = False
+                if (operation == 'SOURCE_FOCAL_TO_FIRST_PERSON' and scope is None
+                        and focal['past_predicate'] is None and focal['modal'] is None):
+                    from piece_v2_generation import _transitive_predicate_forms
+                    finite, _, _ = _transitive_predicate_forms()
+                    predicate = focal['predicate']
+                    if (predicate.endswith(('たい', 'たくない'))
+                            and predicate in finite and predicate + 'です' in finite):
+                        direct_ga = re.fullmatch(re.escape(author + 'が') + '[、，,]?' + body,
+                                                 visible) is not None
+                if not direct_ga and re.fullmatch(original_order, visible) is None:
                     reject()
             previous_id, previous_author = node_id, None if literal_emphasis else author
 
