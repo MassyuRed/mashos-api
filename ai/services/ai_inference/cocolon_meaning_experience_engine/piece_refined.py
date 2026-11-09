@@ -146,6 +146,33 @@ def validate_supplemental_meaning(meaning):
     _require(meaning == expected, 'piece_refined_answer_evidence_binding')
 
 
+def supplemental_feeling_account(meaning):
+    """Keep a complete explicit SELF feeling from its own answer field.
+
+    Reuse the existing answer owner's finite adjective grammar, not a past
+    ending or a selected feeling from the original. The optional written
+    current-time prefix stays inside the unchanged KEEP proposition.
+    """
+    from piece_v2_expression import _SELF_TOPIC
+    from .emlis_answer_update import _FEELING, _NOW
+    from .piece_source import _written_feeling_expression
+    if type(meaning) is not PieceSupplementalMeaning or not meaning.graph.nodes:
+        return False
+    for node in meaning.graph.nodes:
+        if not node.value.endswith('。'):
+            return False
+        text = node.value
+        now = _NOW.match(text)
+        if now is not None:
+            text = text[now.end():]
+        topic = _SELF_TOPIC.fullmatch(text)
+        if topic is None or not (
+                _FEELING.fullmatch(topic['body'])
+                or _written_feeling_expression(text, current_affirmative_only=False) is not None):
+            return False
+    return True
+
+
 def build_refined_meaning(request):
     from piece_v2_generation import PieceSourceSnapshot
     source = request.source
@@ -224,24 +251,33 @@ def validate_refined_preservation(meaning, plan, artifact):
     check_existing_detectors(artifact.piece_text)
 
 
+def realize_refined_piece_artifact(meaning, plan, *, tier, requested_format):
+    """Use the sole Piece author for each qualified partition, in order."""
+    from .piece_v1c import PieceArtifact, realize_piece_artifact
+    _require(plan == _plans(meaning), 'piece_refined_plan_binding')
+    choose_format(tier=tier, requested=requested_format,
+                  eligible=('short_essay',), recommended='short_essay')
+    parts = tuple(realize_piece_artifact(part, child, tier='free', requested_format=None)
+        for part, child in ((meaning.original, plan.original_plan),
+                            (meaning.supplemental, plan.supplemental_plan)))
+    blocks = tuple(b for p in parts for b in p.body_blocks)
+    text = '\n\n'.join(blocks)
+    artifact = PieceArtifact(blocks, text, _sha(text.encode()), 'short_essay', ('short_essay',))
+    validate_refined_preservation(meaning, plan, artifact)
+    return artifact
+
+
 def generate_refined_piece(request):
-    from .piece_v1c import PieceArtifact, PieceEngineOutcome, realize_piece_artifact
+    from .piece_v1c import PieceEngineOutcome
     from piece_v2_contract import PieceContractError
     meaning = plan = None
     try:
         meaning = build_refined_meaning(request)
         plan = _plans(meaning)
-        choose_format(tier=request.tier, requested=request.requested_format,
-                      eligible=('short_essay',), recommended='short_essay')
         # Both partitions use the unchanged sole author. There is no author
         # for inferred bridges, no raw-text append and no generated Emlis text.
-        parts = tuple(realize_piece_artifact(part, child, tier='free', requested_format=None)
-            for part, child in ((meaning.original, plan.original_plan),
-                                (meaning.supplemental, plan.supplemental_plan)))
-        blocks = tuple(b for p in parts for b in p.body_blocks)
-        text = '\n\n'.join(blocks)
-        artifact = PieceArtifact(blocks, text, _sha(text.encode()), 'short_essay', ('short_essay',))
-        validate_refined_preservation(meaning, plan, artifact)
+        artifact = realize_refined_piece_artifact(meaning, plan, tier=request.tier,
+                                                  requested_format=request.requested_format)
         return PieceEngineOutcome(EngineStatus.GENERATED, ('piece_refined_source_plan_generated',),
                                    meaning, plan, artifact)
     except PieceContractError as exc:

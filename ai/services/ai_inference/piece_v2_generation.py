@@ -247,13 +247,21 @@ def generate_piece_candidate(source: PieceSourceSnapshot, *, authenticated_owner
         compile_piece_artifact_plan, realize_piece_artifact,
     )
     from cocolon_meaning_experience_engine.contracts import EngineStatus
-    if type(source) is not PieceSourceSnapshot:
+    from cocolon_meaning_experience_engine.piece_refined import (
+        PieceRefinedSourceSnapshot, build_refined_meaning, _plans,
+        realize_refined_piece_artifact, validate_refined_preservation,
+    )
+    refined = type(source) is PieceRefinedSourceSnapshot
+    if type(source) is not PieceSourceSnapshot and not refined:
+        raise unavailable('source_type')
+    original = source.original if refined else source
+    if type(original) is not PieceSourceSnapshot:
         raise unavailable('source_type')
     request = PieceGenerationRequest(
         request_id='piece-offline-candidate', source=source,
         expected_owner_id=authenticated_owner_id,
-        expected_saved_input_id=source.saved_input_id,
-        expected_source_version=source.source_version,
+        expected_saved_input_id=original.saved_input_id,
+        expected_source_version=original.source_version,
         tier=tier, requested_format=requested_format)
     outcome = MeaningExperienceEngine().generate(request)
     if not isinstance(outcome, PieceEngineOutcome):
@@ -265,14 +273,14 @@ def generate_piece_candidate(source: PieceSourceSnapshot, *, authenticated_owner
     # this request. Rebind the returned meaning to the complete original,
     # including saved fields/metadata, using the existing CMEE source owner.
     # Hash consistency inside an artifact cannot prove that source relation.
-    expected_meaning = build_piece_source_meaning(
+    expected_meaning = build_refined_meaning(request) if refined else build_piece_source_meaning(
         source, expected_owner_id=authenticated_owner_id,
-        expected_saved_input_id=source.saved_input_id,
-        expected_source_version=source.source_version)
+        expected_saved_input_id=original.saved_input_id,
+        expected_source_version=original.source_version)
     if (type(outcome.source_meaning) is not type(expected_meaning)
             or outcome.source_meaning != expected_meaning):
         raise unavailable('piece_engine_source_binding')
-    expected_plan = compile_piece_artifact_plan(expected_meaning)
+    expected_plan = _plans(expected_meaning) if refined else compile_piece_artifact_plan(expected_meaning)
     if (type(outcome.artifact_plan) is not type(expected_plan)
             or outcome.artifact_plan != expected_plan):
         raise unavailable('piece_engine_plan_binding')
@@ -280,7 +288,8 @@ def generate_piece_candidate(source: PieceSourceSnapshot, *, authenticated_owner
     # source/plan/result substitutions at the engine-to-B8 seam; it is NOT an
     # independent semantic review of that author or complete PCE-4 safety.
     # Run only during candidate generation, never on save/export/retrieval.
-    expected_artifact = realize_piece_artifact(
+    realize = realize_refined_piece_artifact if refined else realize_piece_artifact
+    expected_artifact = realize(
         expected_meaning, expected_plan, tier=tier,
         requested_format=requested_format)
     if (type(outcome.artifact) is not type(expected_artifact)
@@ -289,5 +298,6 @@ def generate_piece_candidate(source: PieceSourceSnapshot, *, authenticated_owner
     # S7 checks the supplied body against source arguments independently of
     # the author replay above. A matching faulty author cannot certify itself.
     # This finite grammar review does not issue a public safety status.
-    validate_source_meaning_preservation(expected_meaning, expected_plan, outcome.artifact)
+    validate = validate_refined_preservation if refined else validate_source_meaning_preservation
+    validate(expected_meaning, expected_plan, outcome.artifact)
     return outcome.artifact.as_candidate()

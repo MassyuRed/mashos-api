@@ -378,7 +378,13 @@ def compile_piece_artifact_plan(meaning: PieceSourceMeaning) -> PieceArtifactPla
                                in zip(actions, self_accounts, reservations, strict=True))
                 literal_account = any(self_accounts) and complete
                 self_insight_account = self_insight_mode and any(actions) and complete
-        if not (feeling_account or self_insight_account or literal_account):
+        # An independently qualified answer can explicitly state a complete
+        # feeling without carrying the original's hidden selection. Keep its
+        # source words through the existing duty/author; this grants neither
+        # a selected state, a wish nor declaration eligibility.
+        from .piece_refined import supplemental_feeling_account
+        if not (feeling_account or self_insight_account or literal_account
+                or supplemental_feeling_account(meaning)):
             raise unavailable('expression_meaning_not_admitted')
     ids = tuple(node.node_id for node in text_nodes)
     # A newly admitted temporal context must not be moved behind a later wish.

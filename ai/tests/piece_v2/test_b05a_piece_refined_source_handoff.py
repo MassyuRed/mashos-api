@@ -234,8 +234,13 @@ def test_projection_rejects_inconsistent_or_noncanonical_private_lineage(change)
     with pytest.raises(PieceContractError): project_saved_refined_source(replace(saved,_lineage_json=raw),opted_in=True)
 
 
-def test_actual_q2_sql_accepted_addition_can_be_read_without_authoring_or_writing(monkeypatch):
-    """Real existing Emlis/SQL result, retrieval only; no Piece success claim."""
+@pytest.mark.parametrize('answer_text,about_time', [
+    ('その時は重かった。', None),
+    ('私は寂しかった。', 'ORIGINAL_OCCASION'),
+    ('今は、私は嬉しい。', 'ANSWER_TIME'),
+])
+def test_actual_q2_sql_addition_reaches_only_its_supported_piece_path(monkeypatch, answer_text, about_time):
+    """Real existing Emlis/SQL ADD; complete SELF can reach private B8."""
     import os
     from uuid import uuid4
     import emlis_thread_store
@@ -254,7 +259,7 @@ def test_actual_q2_sql_accepted_addition_can_be_read_without_authoring_or_writin
         assert 'code' not in db.query("INSERT INTO public.emotions VALUES ($1,$2,now() at time zone 'UTC',$3,'',array['仕事'],array['不安'],$4::jsonb)",
             [parent,owner,'褒められたのに、嬉しくなかった。',json.dumps([dict(type='不安',strength='medium')],ensure_ascii=False)])
         service=EmlisThreadService(); started=run(service.start(owner,parent))
-        completed=run(answer_question(service,owner,started,'その時は重かった。'))
+        completed=run(answer_question(service,owner,started,answer_text))
         assert completed['body_state']=='REFINED' and completed['meaning_updated'] is True
         stored=run(service.store.read(owner,input_id=parent)); answer_id=stored['thread']['latest_answer_event_id']
         before=db.query('SELECT to_jsonb(t) AS row FROM public.emlis_input_threads t WHERE id=$1',[completed['thread_id']])
@@ -265,8 +270,35 @@ def test_actual_q2_sql_accepted_addition_can_be_read_without_authoring_or_writin
         adapter=PieceSavedSourceAdapter(store=service.store)
         handoff=run(adapter.resolve_refined_handoff(AUTH,parent,supplemental_answer_identity=answer_id,opted_in=True))
         assert handoff.original.original_payload()['memo']=='褒められたのに、嬉しくなかった。'
-        assert handoff.supplemental.answer_text_private=='その時は重かった。'
+        assert handoff.supplemental.answer_text_private==answer_text
         assert run(adapter.revalidate_refined_handoff(AUTH,handoff,opted_in=True))==handoff
+        if about_time is not None:
+            from unittest.mock import patch
+            import hashlib
+            from piece_v2_generation import generate_piece_candidate
+            from piece_v2_visual import build_visual_recipe, validate_visual_recipe
+            from piece_v2_contract import canonical_sha256_hex
+            from cocolon_meaning_experience_engine.engine import MeaningExperienceEngine
+            from cocolon_meaning_experience_engine.piece_v1c import PieceGenerationRequest
+            import cocolon_meaning_experience_engine.piece_refined as refined
+            cp=next(e['payload'] for e in stored['events'] if e['id']==stored['thread']['current_meaning_event_id'])
+            assert all(item['temporal_binding']['about_time']==about_time for item in cp['answer_update']['updates'])
+            projected=project_saved_refined_source(handoff,opted_in=True)
+            result=MeaningExperienceEngine().generate(PieceGenerationRequest(
+                'actual-q2-refined-piece',projected,owner,parent,projected.original.source_version))
+            assert result.artifact is not None, result.reason_codes
+            assert result.artifact.piece_text=='褒められたのに、嬉しくなかった。\n\n'+answer_text
+            candidate=generate_piece_candidate(projected,authenticated_owner_id=owner)
+            assert candidate['content_payload']==result.artifact.content_payload()
+            assert candidate['piece_text_hash']==result.artifact.piece_text_hash
+            recipe=build_visual_recipe(candidate['format_type'],tier='free')
+            assert validate_visual_recipe(recipe,format_type=candidate['format_type'],
+                language='ja',expected_hash=canonical_sha256_hex(recipe))==recipe
+            raw=refined.serialize_refined_piece(result)
+            with patch.object(MeaningExperienceEngine,'generate',side_effect=AssertionError('saved read generated')), \
+                 patch.object(refined,'build_refined_meaning',side_effect=AssertionError('saved read parsed')):
+                assert refined.read_saved_refined_artifact(raw,
+                    expected_state_sha256=hashlib.sha256(raw).hexdigest())==result.artifact
         assert db.query('SELECT to_jsonb(t) AS row FROM public.emlis_input_threads t WHERE id=$1',[completed['thread_id']])==before
         assert db.query('SELECT to_jsonb(e) AS row FROM public.emlis_thread_events e WHERE thread_id=$1 ORDER BY seq',[completed['thread_id']])==events_before
     finally:

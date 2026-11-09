@@ -64,6 +64,8 @@ name: Analysis observed content
       - ai/services/ai_inference/piece_v2_source_adapter.py
       - ai/services/ai_inference/piece_v2_content_policy.py
       - ai/tests/test_cmee_piece_refined_sources.py
+      - ai/tests/test_cmee_piece_refined_feeling_accounts.py
+      - ai/tests/piece_v2/test_b08_refined_engine_result_binding.py
       - ai/tests/piece_v2/test_b05a_piece_refined_source_handoff.py
       - ai/tests/test_cmee_analysis_input_fields.py
       - ai/tests/test_input_contract_sample_sheet.py
@@ -202,6 +204,8 @@ jobs:
           -p pytest_subtests.plugin -p pytest_asyncio.plugin -p no:cacheprovider -c /dev/null --rootdir=. --noconftest
           ai/tests/test_emotion_submit_speed_regression_phase14.py
           ai/tests/test_cmee_piece_refined_sources.py
+          ai/tests/test_cmee_piece_refined_feeling_accounts.py
+          ai/tests/piece_v2/test_b08_refined_engine_result_binding.py
           ai/tests/piece_v2/test_b05a_piece_refined_source_handoff.py
           ai/tests/test_emlis_natural_reply_application.py
           ai/tests/test_emlis_natural_reply_meaning_reuse.py
