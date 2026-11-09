@@ -28,7 +28,7 @@ from .piece_source import (
     _FINITE_RESERVATION_QUESTION,
     piece_public_role_aliases, validate_piece_nominal_references, validate_piece_saved_fields,
     validate_piece_personal_evaluations, validate_piece_expression_scopes,
-    piece_text_nodes,
+    piece_text_nodes, piece_source_text,
 )
 
 _WRITTEN_ACCOUNT_END = re.compile(
@@ -158,7 +158,7 @@ def _has_topic_qualification(meaning: PieceSourceMeaning, duties: tuple[PieceTex
     # missing type cannot license a detached quote or unqualified declaration.
     # Restrict formats of already-admitted duties at the written operator
     # and comma boundary. Source admission, KEEP meaning and body stay intact.
-    original = meaning.envelope.raw_utf8.decode('utf-8')
+    original = piece_source_text(meaning)
     evaluations = {frame.node_id: frame for frame in meaning.personal_evaluations}
     for node, duty in zip(meaning.graph.nodes, duties, strict=True):
         if duty.operation == 'KEEP_COMPLETE_SOURCE_CONTEXT':
@@ -417,7 +417,7 @@ def compile_piece_artifact_plan(meaning: PieceSourceMeaning) -> PieceArtifactPla
     if meaning.saved_snapshot is not None:
         # Source-written lines and field boundaries own their paragraphs.
         # Keep their order without inferring a temporal or causal relation.
-        original = meaning.envelope.raw_utf8.decode('utf-8')
+        original = piece_source_text(meaning)
         paragraphs = []
         previous = None
         for node, evidence, sentence in zip(text_nodes, meaning.evidence, meaning.sentences, strict=True):
@@ -466,7 +466,7 @@ def compile_piece_artifact_plan(meaning: PieceSourceMeaning) -> PieceArtifactPla
 def _publicize_source_sentence(sentence: str, meaning: PieceSourceMeaning) -> str:
     # Replacements use source-written roles and explicitly bound named owners.
     # No generic mask, new social role or inferred person is introduced.
-    source_text = meaning.envelope.raw_utf8.decode('utf-8')
+    source_text = piece_source_text(meaning)
     for binding in meaning.role_bindings:
         if source_text[binding.source_start:binding.source_end] != binding.role + 'の' + binding.name:
             raise unavailable('public_role_source_binding')
@@ -488,7 +488,7 @@ def _evaluation_sentence(meaning: PieceSourceMeaning, frame: PiecePersonalEvalua
                          *, separate_viewpoint: bool = True,
                          omit_self_topic: bool = False) -> str:
     """One writer realization shared by free and explicitly scoped evaluations."""
-    original = meaning.envelope.raw_utf8.decode('utf-8')
+    original = piece_source_text(meaning)
     speaker, predicate, target = (original[a:b] for a, b in frame.scalar_parts)
     perspective = speaker + ('にとって' if frame.construction == 'にとって' else 'は')
     # Only the relative nominal copula な becomes its source register's
@@ -515,7 +515,7 @@ def _linked_self_continuations(meaning: PieceSourceMeaning,
     edits are returned separately and applied only after full realization, so
     shortening cannot remove an already-admitted short essay from its envelope.
     """
-    original = meaning.envelope.raw_utf8.decode('utf-8')
+    original = piece_source_text(meaning)
     nodes = {node.node_id: node for node in meaning.graph.nodes}
     evaluations = {frame.node_id: frame for frame in meaning.personal_evaluations}
     scopes = {scope.node_id: scope for scope in meaning.expression_scopes}
@@ -595,7 +595,7 @@ def _adjacent_self_continuations(meaning: PieceSourceMeaning,
     but cannot start a new chain after an unlicensed link. The plan remains
     intact; this is not general subject/discourse resolution.
     """
-    original = meaning.envelope.raw_utf8.decode('utf-8')
+    original = piece_source_text(meaning)
     nodes = {node.node_id: node for node in meaning.graph.nodes}
     positions = {node.node_id: i for i, node in enumerate(meaning.graph.nodes)}
     spans = {sentence.node_id: sentence for sentence in meaning.sentences}
@@ -766,7 +766,7 @@ def _paired_self_continuations(meaning: PieceSourceMeaning,
     Other scopes, newlines, competing subjects or different speakers decline only
     this optional edit. Source admission, meaning and plan stay unchanged.
     """
-    original = meaning.envelope.raw_utf8.decode('utf-8')
+    original = piece_source_text(meaning)
     nodes = {node.node_id: node for node in meaning.graph.nodes}
     positions = {node.node_id: i for i, node in enumerate(meaning.graph.nodes)}
     spans = {sentence.node_id: sentence for sentence in meaning.sentences}
@@ -973,7 +973,7 @@ def realize_piece_artifact(meaning: PieceSourceMeaning, plan: PieceArtifactPlan,
             scope = next((s for s in meaning.expression_scopes if s.node_id == node.node_id), None)
             if scope is None:
                 raise unavailable('piece_plan_operation_binding')
-            original = raw.decode('utf-8')
+            original = piece_source_text(meaning)
             premise = original[slice(*scope.scope_scalar_span)]
             frame = next((f for f in meaning.personal_evaluations if f.node_id == node.node_id), None)
             if frame is not None:
@@ -1101,7 +1101,7 @@ def realize_piece_artifact(meaning: PieceSourceMeaning, plan: PieceArtifactPlan,
             sentences = edited
     if direct_continuations:
         edited = dict(sentences)
-        original = meaning.envelope.raw_utf8.decode('utf-8')
+        original = piece_source_text(meaning)
         for scope in meaning.expression_scopes:
             if scope.node_id not in direct_continuations:
                 continue
@@ -1165,6 +1165,9 @@ def generate_piece_artifact(request: PieceGenerationRequest) -> PieceEngineOutco
             or request.execution_mode != ExecutionMode.OFFLINE_CANDIDATE.value
             or not isinstance(request.request_id, str) or not request.request_id.strip()):
         return PieceEngineOutcome(EngineStatus.REJECTED, ('piece_request_out_of_scope',))
+    from .piece_refined import PieceRefinedSourceSnapshot, generate_refined_piece
+    if type(request.source) is PieceRefinedSourceSnapshot:
+        return generate_refined_piece(request)
     meaning = None
     plan = None
     try:

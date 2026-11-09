@@ -134,6 +134,14 @@ class PieceSourceMeaning:
     selection_contexts: tuple[MeaningNode, ...] = ()
 
 
+def piece_source_text(meaning: PieceSourceMeaning) -> str:
+    """Text coordinates belong to the source field, not its metadata frame."""
+    from .piece_refined import PieceSupplementalMeaning
+    if type(meaning) is PieceSupplementalMeaning:
+        return meaning.frozen_answer.source.answer_text_private
+    return meaning.envelope.raw_utf8.decode('utf-8')
+
+
 def piece_text_nodes(meaning: PieceSourceMeaning) -> tuple[MeaningNode, ...]:
     return tuple(n for n in meaning.graph.nodes if n.node_kind != 'PIECE_SELECTED_FEELING')
 
@@ -563,7 +571,7 @@ def _expression_scopes(text: str, nodes: tuple[MeaningNode, ...],
 
 def validate_piece_expression_scopes(meaning: PieceSourceMeaning) -> None:
     """Keep the writer's scope interpretation tied to its actual source."""
-    expected = _expression_scopes(meaning.envelope.raw_utf8.decode('utf-8'),
+    expected = _expression_scopes(piece_source_text(meaning),
                               piece_text_nodes(meaning), meaning.sentences)
     if meaning.expression_scopes != expected:
         raise unavailable('piece_intent_scope_source_binding')
@@ -1044,7 +1052,7 @@ def _reference_edges(references: tuple[PieceNominalReference, ...],
 
 def validate_piece_nominal_references(meaning: PieceSourceMeaning) -> None:
     """The artifact planner consumes the source attachments, not a free allowlist."""
-    expected = _nominal_references(meaning.envelope.raw_utf8.decode('utf-8'),
+    expected = _nominal_references(piece_source_text(meaning),
                                    piece_text_nodes(meaning), meaning.sentences)
     edges = tuple(e for e in meaning.graph.edges if e.relation == _REFERENCE_RELATION)
     if (meaning.nominal_references != expected
@@ -1211,7 +1219,7 @@ def _personal_evaluations(text: str, nodes: tuple[MeaningNode, ...],
 
 
 def validate_piece_personal_evaluations(meaning: PieceSourceMeaning) -> None:
-    expected = _personal_evaluations(meaning.envelope.raw_utf8.decode('utf-8'),
+    expected = _personal_evaluations(piece_source_text(meaning),
                                      piece_text_nodes(meaning), meaning.sentences)
     if meaning.personal_evaluations != expected:
         raise unavailable('piece_evaluation_source_binding')
@@ -1463,6 +1471,10 @@ def validate_piece_saved_fields(meaning: PieceSourceMeaning) -> None:
     from .piece_semantic_admission import PieceSemanticSnapshotV1, validate_snapshot_self
     if type(meaning) is PieceSemanticSnapshotV1:
         validate_snapshot_self(meaning)
+        return
+    from .piece_refined import PieceSupplementalMeaning, validate_supplemental_meaning
+    if type(meaning) is PieceSupplementalMeaning:
+        validate_supplemental_meaning(meaning)
         return
     is_saved = meaning.envelope.source_schema_version == 'piece.saved_source.original_fields.v1'
     if not is_saved and meaning.saved_snapshot is None:

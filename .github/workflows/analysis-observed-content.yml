@@ -61,6 +61,10 @@ name: Analysis observed content
       - supabase/migrations/20261101080144_cumulative_watashi_map.sql
       - supabase/migrations/*_analysis_semantic_map_wire.sql
       - ai/tests/test_cmee_analysis_v1d_vertical.py
+      - ai/services/ai_inference/piece_v2_source_adapter.py
+      - ai/services/ai_inference/piece_v2_content_policy.py
+      - ai/tests/test_cmee_piece_refined_sources.py
+      - ai/tests/piece_v2/test_b05a_piece_refined_source_handoff.py
       - ai/tests/test_cmee_analysis_input_fields.py
       - ai/tests/test_input_contract_sample_sheet.py
       - ai/tests/fixtures/cocolon-input-contract-samples-20261107.json
@@ -197,6 +201,8 @@ jobs:
           python -m pytest -q --tb=short -ra
           -p pytest_subtests.plugin -p pytest_asyncio.plugin -p no:cacheprovider -c /dev/null --rootdir=. --noconftest
           ai/tests/test_emotion_submit_speed_regression_phase14.py
+          ai/tests/test_cmee_piece_refined_sources.py
+          ai/tests/piece_v2/test_b05a_piece_refined_source_handoff.py
           ai/tests/test_emlis_natural_reply_application.py
           ai/tests/test_emlis_natural_reply_meaning_reuse.py
           ai/tests/test_emlis_natural_reply_meaning_budget.py

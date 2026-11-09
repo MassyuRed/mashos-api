@@ -128,14 +128,15 @@ def validate_source_meaning_preservation(meaning, plan, artifact) -> None:
         piece_public_role_aliases, validate_piece_saved_fields,
         validate_piece_nominal_references, validate_piece_personal_evaluations,
         validate_piece_expression_scopes,
-        piece_text_nodes, _scoped_self_topic, _qualified_self_topic,
+        piece_text_nodes, piece_source_text, _scoped_self_topic, _qualified_self_topic,
     )
     from cocolon_meaning_experience_engine.piece_v1c import PieceArtifact, PieceArtifactPlan
 
     def reject():
         raise unavailable('piece_meaning_not_preserved')
 
-    if (type(meaning) is not PieceSourceMeaning or type(plan) is not PieceArtifactPlan
+    from cocolon_meaning_experience_engine.piece_refined import PieceSupplementalMeaning
+    if (type(meaning) not in (PieceSourceMeaning, PieceSupplementalMeaning) or type(plan) is not PieceArtifactPlan
             or type(artifact) is not PieceArtifact):
         reject()
     validate_piece_saved_fields(meaning)
@@ -144,7 +145,7 @@ def validate_source_meaning_preservation(meaning, plan, artifact) -> None:
     validate_piece_expression_scopes(meaning)
     validate_piece_text_binding(artifact.content_payload(), artifact.piece_text,
                                 artifact.piece_text_hash)
-    original = meaning.envelope.raw_utf8.decode('utf-8')
+    original = piece_source_text(meaning)
     nodes = meaning.graph.nodes
     ids = tuple(node.node_id for node in nodes)
     ordered = tuple(node_id for group in plan.block_node_ids for node_id in group)

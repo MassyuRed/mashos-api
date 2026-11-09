@@ -5,11 +5,12 @@ emlis_thread_read RPC selects a live emotions row for that verified caller,
 under the saved-input retention policy, even when no Emlis thread exists.
 Only the original partition and body-free control lineage are retained here.
 
-All saved fields remain separate. The state-bound path admits only an already
-committed, current INITIAL observation: normal or pre-question, without answers.
-Refined content remains unconnected. The earlier explicit-stage method remains
-an offline probe, not authority. No route, preview record or quota is enabled;
-a frozen object is not ongoing access.
+All saved fields remain separate. The original state-bound path admits only
+an already committed, current INITIAL observation: normal or pre-question,
+without answers. A separate explicitly opted-in offline refined reader admits
+one resolved additive answer without extending original preview/HTTP eligibility.
+The earlier explicit-stage method remains an offline probe, not authority.
+No route, preview record or quota is enabled; a frozen object is not ongoing access.
 """
 from __future__ import annotations
 
@@ -18,6 +19,7 @@ import hmac
 import json
 import re
 from uuid import UUID
+from typing import TYPE_CHECKING
 
 import httpx
 from fastapi import HTTPException
@@ -31,6 +33,9 @@ from emlis_ai_nls_v3_artifact_contract import artifact_sha256
 from emlis_thread_store import EmlisThreadStore, ThreadStoreError
 from piece_v2_contract import PieceContractError, canonical_json_bytes, canonical_sha256_hex
 from publish_governance import parse_iso_utc, timestamp_in_history_retention
+
+if TYPE_CHECKING:
+    from cocolon_meaning_experience_engine.emlis_thread_contracts import SupplementalAnswerSource
 
 # Exact projection of the existing emlis_parent_source SQL function. Unknown
 # fields require an explicit adapter update, not silent source truncation.
@@ -72,6 +77,24 @@ class PieceSavedOriginal:
 class PieceSavedHandoff:
     """Private original and immutable body-free lineage, not a public DTO."""
     original: PieceSavedOriginal
+    thread_id: str
+    thread_revision: int
+    _lineage_json: bytes = field(repr=False)
+
+    def lineage_payload(self) -> dict:
+        return json.loads(self._lineage_json)
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class PieceSavedRefinedHandoff:
+    """Private, explicitly selected answer beside the unchanged saved input.
+
+    This offline handoff does not extend original preview/HTTP eligibility.
+    The answer's existing source owner retains its identity and text; no
+    Emlis observation, question body or inferred meaning becomes Piece input.
+    """
+    original: PieceSavedOriginal
+    supplemental: SupplementalAnswerSource
     thread_id: str
     thread_revision: int
     _lineage_json: bytes = field(repr=False)
@@ -283,6 +306,55 @@ class PieceSavedSourceAdapter:
             raise _error('PIECE_TEMPORARILY_UNAVAILABLE') from None
         except (ValueError, TypeError, KeyError, AttributeError, UnicodeError):
             raise _error('PIECE_SOURCE_NOT_ELIGIBLE') from None
+
+    async def resolve_refined_handoff(
+        self, authorization: str | None, saved_input_id: str, *,
+        supplemental_answer_identity: str, opted_in: bool,
+    ) -> PieceSavedRefinedHandoff:
+        """Offline read of one committed, resolved first-round answer.
+
+        A caller must opt into the exact saved answer. Its separate source is
+        returned only after the existing owner, retention, source and context
+        checks and successful refined-result lineage have been revalidated.
+        No public source_ref, preview, record or quota is issued here.
+        """
+        if opted_in is not True:
+            raise _error('PIECE_SOURCE_NOT_ELIGIBLE')
+        answer_id = _uuid(supplemental_answer_identity, 'PIECE_REQUEST_INVALID')
+        from emlis_thread_service import _check, _generation_current, Q3_PROFILE
+        saved, snapshot = await self._resolve_original_with_snapshot(authorization, saved_input_id)
+        try:
+            thread = _check(snapshot)
+            if thread is None:
+                raise _error('PIECE_SOURCE_NOT_ELIGIBLE')
+            if thread['data']['runtime_profile'] == Q3_PROFILE:
+                snapshot['context'] = await self._store.context(
+                    saved.authenticated_owner_id, saved.saved_input_id)
+            if not _generation_current(snapshot):
+                raise _error('PIECE_SOURCE_NOT_ELIGIBLE')
+            return _refined_observation_handoff(saved, snapshot, answer_id)
+        except PieceContractError:
+            raise
+        except ThreadStoreError as exc:
+            raise _error('PIECE_SOURCE_NOT_FOUND' if exc.status == 404 else
+                         'PIECE_CONFLICT' if exc.status == 409 else
+                         'PIECE_TEMPORARILY_UNAVAILABLE') from None
+        except (httpx.TransportError, httpx.TimeoutException, HTTPException):
+            raise _error('PIECE_TEMPORARILY_UNAVAILABLE') from None
+        except (ValueError, TypeError, KeyError, AttributeError, UnicodeError):
+            raise _error('PIECE_SOURCE_NOT_ELIGIBLE') from None
+
+    async def revalidate_refined_handoff(
+        self, authorization: str | None, previous: PieceSavedRefinedHandoff, *, opted_in: bool,
+    ) -> PieceSavedRefinedHandoff:
+        if type(previous) is not PieceSavedRefinedHandoff:
+            raise _error('PIECE_REQUEST_INVALID')
+        current = await self.resolve_refined_handoff(
+            authorization, previous.original.saved_input_id,
+            supplemental_answer_identity=previous.supplemental.answer_id, opted_in=opted_in)
+        if current != previous:
+            raise _error('PIECE_CONFLICT')
+        return current
 
     async def resolve_original_source_ref(
         self, authorization: str | None, saved_input_id: str,
@@ -562,3 +634,212 @@ def _original_observation_handoff(saved: PieceSavedOriginal, snapshot: dict) -> 
             'decision': 'eligible', 'reason_codes': []},
         'body_free': True}
     return PieceSavedHandoff(saved, thread_id, t['revision'], canonical_json_bytes(lineage))
+
+
+def _refined_observation_handoff(saved: PieceSavedOriginal, snapshot: dict,
+                                 answer_id: str) -> PieceSavedRefinedHandoff:
+    """Validate current saved control without reading generated prose as source."""
+    from dataclasses import replace
+    from emlis_thread_service import _request, NATURAL_REPLY_PROFILE
+    from cocolon_meaning_experience_engine.emlis_thread_contracts import SEMANTIC_SCHEMA
+    from cocolon_meaning_experience_engine.emlis_thread_source import admit_emlis_thread
+
+    def require(value):
+        if not value:
+            raise _error('PIECE_SOURCE_NOT_ELIGIBLE')
+
+    t, events = snapshot['thread'], snapshot['events']
+    d = t['data']
+    thread_id = _uuid(t['id'], 'PIECE_SOURCE_NOT_ELIGIBLE')
+    require(type(t['revision']) is int and t['revision'] > 0)
+    require(t['state'] == 'COMPLETED' and d.get('body_state') == 'REFINED')
+    require(d.get('response_profile') != NATURAL_REPLY_PROFILE and d.get('semantic_profile') is None)
+    require(d.get('failure_code') is None and d.get('answer_assessment') == 'RESOLVED'
+            and d.get('meaning_updated') is True)
+    require(all(t[k] is None for k in ('active_operation_id', 'active_attempt_id', 'processing_deadline_at')))
+    require(canonical_json_bytes(t['source_snapshot']) == saved._original_json)
+    require(t['latest_answer_event_id'] == answer_id
+            and type(t['issued_count']) is int and t['issued_count'] == 1)
+    require(type(events) is list and bool(events))
+    by_id, seqs = {}, []
+    for event in events:
+        require(type(event) is dict and event.get('thread_id') == thread_id)
+        eid = _uuid(event['id'], 'PIECE_SOURCE_NOT_ELIGIBLE')
+        require(eid not in by_id and type(event['seq']) is int and event['seq'] > 0)
+        require(type(event['payload']) is dict and event['kind'] in {
+            'OPERATION', 'MEANING_UPDATE', 'OBSERVATION', 'QUESTION', 'ANSWER'})
+        by_id[eid] = event
+        seqs.append(event['seq'])
+    require(seqs == sorted(set(seqs)))
+    answers = [e for e in events if e['kind'] == 'ANSWER']
+    questions = [e for e in events if e['kind'] == 'QUESTION']
+    require(len(answers) == len(questions) == 1)
+    answer, question = answers[0], questions[0]
+    require(answer['id'] == answer_id
+            and type(answer['round_index']) is int and type(question['round_index']) is int
+            and answer['round_index'] == question['round_index'] == 1)
+    # The existing admission proves exact original / question / answer parent
+    # identity, version, round and source-prefix binding without generation.
+    request = _request(snapshot)
+    admitted = admit_emlis_thread(request)
+    require(len(admitted.answers) == 1)
+    frozen = admitted.answers[0]
+    require(frozen.source.answer_id == answer_id and frozen.source.question_id == answer['question_id']
+            and frozen.source.question_id == question['question_id'])
+    require(t['source_prefix_ref'] == t['evaluated_prefix_ref'] == admitted.source_prefix_ref)
+    require(question['payload']['decision']['disposition'] == 'ASK'
+            and question['payload'].get('schema_version') == 'cocolon.cmee.emlis_clarification.v1'
+            and question['payload'].get('thread_id') == thread_id
+            and question['payload'].get('question_id') == question['question_id'])
+    observations = [e for e in events if e['kind'] == 'OBSERVATION']
+    initial = [e for e in observations if e['payload'].get('stage') == 'INITIAL']
+    require(len(observations) == 2 and len(initial) == 1)
+    initial = initial[0]
+    require(initial['round_index'] == 0 and initial['seq'] < question['seq'])
+    original_request = replace(request, emlis_thread=replace(request.emlis_thread, answers=(), current_round=0))
+    original_prefix = admit_emlis_thread(original_request).source_prefix_ref
+    require(initial['payload'].get('source_prefix_ref') == original_prefix)
+    initial_checkpoints = [e for e in events if e['kind'] == 'MEANING_UPDATE'
+        and e['seq'] < initial['seq'] and e['payload'].get('semantic_schema_version') == SEMANTIC_SCHEMA
+        and e['payload'].get('checkpoint_id') == initial['payload'].get('meaning_checkpoint_ref')
+        and e['payload'].get('source_prefix_ref') == original_prefix
+        and e['payload'].get('answer_update') is None]
+    require(len(initial_checkpoints) == 1)
+    require(all(question[key] == initial[key] for key in ('operation_id', 'attempt_id')))
+    initial_finishes = [e for e in events if e['kind'] == 'OPERATION'
+        and e['operation_id'] == initial['operation_id'] and e['attempt_id'] == initial['attempt_id']
+        and question['seq'] < e['seq'] < answer['seq'] and e['payload'].get('status') == 'AWAITING_ANSWER'
+        and e['payload'].get('failure_code') is None]
+    require(len(initial_finishes) == 1)
+    checkpoint, observation = by_id[t['current_meaning_event_id']], by_id[t['last_observation_event_id']]
+    cp, op = checkpoint['payload'], observation['payload']
+    require(checkpoint['kind'] == 'MEANING_UPDATE' and observation['kind'] == 'OBSERVATION')
+    require(cp.get('semantic_schema_version') == SEMANTIC_SCHEMA
+            and cp.get('source_prefix_ref') == admitted.source_prefix_ref
+            and cp.get('assessment_status') == 'RESOLVED' and cp.get('unresolved_parts') == [])
+    update = cp.get('answer_update')
+    require(type(update) is dict and update.get('disposition') == 'MATERIAL_UPDATE'
+            and update.get('answer_source_ref') == frozen.envelope.envelope_id
+            and update.get('question_ref') == frozen.source.question_id
+            and bool(update.get('updates')) and update.get('unresolved_parts') == [])
+    require(type(update['updates']) is list and all(type(item) is dict
+        and item.get('operation') == 'ADD' and item.get('superseded_claim_refs') == []
+        and item.get('affected_dependency_refs') == [] for item in update['updates']))
+    require(op.get('stage') == 'REFINED' and observation['round_index'] == 1
+            and op.get('meaning_checkpoint_ref') == cp['checkpoint_id']
+            and op.get('source_prefix_ref') == admitted.source_prefix_ref)
+    require(question['seq'] < answer['seq'] < checkpoint['seq'] < observation['seq'])
+    require(all(answer[key] == observation[key] == d.get(key) for key in ('operation_id', 'attempt_id')))
+    for key in ('operation_id', 'attempt_id'):
+        _uuid(observation[key], 'PIECE_SOURCE_NOT_ELIGIBLE')
+    finishes = [e for e in events if e['kind'] == 'OPERATION'
+        and e['operation_id'] == observation['operation_id'] and e['attempt_id'] == observation['attempt_id']
+        and e['seq'] > observation['seq'] and e['payload'].get('status') == 'COMPLETED'
+        and e['payload'].get('failure_code') is None]
+    require(len(finishes) == 1)
+    original_stamp = parse_iso_utc(saved.recorded_at)
+    answer_stamp = parse_iso_utc(frozen.source.recorded_at)
+    observation_stamp = parse_iso_utc(observation['recorded_at'])
+    finish_stamp = parse_iso_utc(finishes[0]['recorded_at'])
+    now = parse_iso_utc(snapshot['now'])
+    require(all(stamp is not None for stamp in (original_stamp, answer_stamp, observation_stamp, finish_stamp, now)))
+    require(original_stamp <= answer_stamp <= observation_stamp <= finish_stamp <= now)
+    answer_commitment = 'sha256:' + frozen.envelope.raw_sha256
+    require(saved.record_commitment != answer_commitment and saved.saved_input_id != answer_id)
+    lineage = {
+        'handoff_contract_version': 'cocolon.cross_core.source_handoff.v1',
+        'piece_source_lineage_version': 'piece.source_lineage.v1',
+        'source_input': {
+            'source_input_id': saved.saved_input_id,
+            'source_input_version': saved.source_input_version,
+            'source_input_bundle_commitment': saved.input_bundle_commitment,
+            'source_input_record_commitment': saved.record_commitment,
+            'source_owner_user_id': saved.authenticated_owner_id,
+            'source_recorded_at': original_stamp.isoformat()},
+        'observation': {
+            'emlis_observation_stage': 'refined_observation',
+            'emlis_observation_result_identity': observation['id'],
+            'emlis_observation_result_state': 'terminal_success',
+            'question_need_decision_identity': question['id'],
+            'supplemental_answer_identity': answer_id,
+            'supplemental_answer_version': frozen.source.source_version,
+            'supplemental_answer_bundle_commitment': answer_commitment,
+            'source_prefix_ref': admitted.source_prefix_ref},
+        'semantic_source_roles': ['original_input', 'supplemental_answer'],
+        'lineage_control_roles': ['emlis_observation_result', 'question_need_decision'],
+        'refined_result_source_binding': {
+            'emlis_observation_result_identity': observation['id'],
+            'original_record_commitment': saved.record_commitment,
+            'supplemental_answer_bundle_commitment': answer_commitment},
+        'piece_generation_eligibility': {
+            'contract_version': 'piece.generation_eligibility.v1',
+            'decision': 'eligible', 'reason_codes': []},
+        'body_free': True}
+    return PieceSavedRefinedHandoff(saved, frozen.source, thread_id, t['revision'], canonical_json_bytes(lineage))
+
+
+def project_saved_refined_source(handoff: PieceSavedRefinedHandoff, *, opted_in: bool):
+    """Separate-source offline CMEE projection; live original paths stay exact."""
+    from cocolon_meaning_experience_engine.piece_refined import PieceRefinedSourceSnapshot
+    from cocolon_meaning_experience_engine.emlis_thread_source import freeze_supplemental_answer
+    if type(handoff) is not PieceSavedRefinedHandoff or opted_in is not True:
+        raise _error('PIECE_SOURCE_NOT_ELIGIBLE')
+    try:
+        line = handoff.lineage_payload()
+    except (ValueError, TypeError, UnicodeError):
+        raise _error('PIECE_CONFLICT') from None
+    if (type(line) is not dict or set(line) != {
+            'handoff_contract_version', 'piece_source_lineage_version', 'source_input',
+            'observation', 'semantic_source_roles', 'lineage_control_roles',
+            'refined_result_source_binding', 'piece_generation_eligibility', 'body_free'}
+            or type(line.get('observation')) is not dict or set(line['observation']) != {
+                'emlis_observation_stage', 'emlis_observation_result_identity',
+                'emlis_observation_result_state', 'question_need_decision_identity',
+                'supplemental_answer_identity', 'supplemental_answer_version',
+                'supplemental_answer_bundle_commitment', 'source_prefix_ref'}):
+        raise _error('PIECE_CONFLICT')
+    observation = line['observation']
+    answer = freeze_supplemental_answer(handoff.supplemental)
+    binding = line['refined_result_source_binding']
+    for key in ('emlis_observation_result_identity', 'question_need_decision_identity'):
+        _uuid(observation[key], 'PIECE_CONFLICT')
+    expected_original = {
+        'source_input_id': handoff.original.saved_input_id,
+        'source_input_version': handoff.original.source_input_version,
+        'source_input_bundle_commitment': handoff.original.input_bundle_commitment,
+        'source_input_record_commitment': handoff.original.record_commitment,
+        'source_owner_user_id': handoff.original.authenticated_owner_id,
+        'source_recorded_at': parse_iso_utc(handoff.original.recorded_at).isoformat()}
+    if (line['handoff_contract_version'] != 'cocolon.cross_core.source_handoff.v1'
+            or line['piece_source_lineage_version'] != 'piece.source_lineage.v1'
+            or line['source_input'] != expected_original
+            or line['semantic_source_roles'] != ['original_input', 'supplemental_answer']
+            or line['lineage_control_roles'] != ['emlis_observation_result', 'question_need_decision']
+            or line['piece_generation_eligibility'] != {
+                'contract_version': 'piece.generation_eligibility.v1', 'decision': 'eligible', 'reason_codes': []}
+            or line['body_free'] is not True or canonical_json_bytes(line) != handoff._lineage_json
+            or observation['emlis_observation_stage'] != 'refined_observation'
+            or observation['emlis_observation_result_state'] != 'terminal_success'
+            or type(observation['source_prefix_ref']) is not str
+            or not observation['source_prefix_ref'] or any(c.isspace() for c in observation['source_prefix_ref'])
+            or type(handoff.thread_revision) is not int or handoff.thread_revision < 1
+            or handoff.thread_id != handoff.supplemental.thread_id
+            or observation['supplemental_answer_identity'] != handoff.supplemental.answer_id
+            or observation['supplemental_answer_version'] != handoff.supplemental.source_version
+            or observation['supplemental_answer_bundle_commitment'] != 'sha256:' + answer.envelope.raw_sha256
+            or binding != {
+                'emlis_observation_result_identity': observation['emlis_observation_result_identity'],
+                'original_record_commitment': handoff.original.record_commitment,
+                'supplemental_answer_bundle_commitment': observation['supplemental_answer_bundle_commitment']}):
+        raise _error('PIECE_CONFLICT')
+    # The original partition retains its established single-source snapshot;
+    # refined stage and separate answer live only in the composite capability.
+    return PieceRefinedSourceSnapshot(
+        original=project_saved_original_source(handoff.original, source_stage='normal_observation'),
+        supplemental=handoff.supplemental,
+        supplemental_owner_id=handoff.original.authenticated_owner_id,
+        supplemental_update_operation='ADD',
+        question_need_decision_identity=observation['question_need_decision_identity'],
+        refined_result_identity=observation['emlis_observation_result_identity'],
+        original_commitment=handoff.original.record_commitment,
+        supplemental_commitment=observation['supplemental_answer_bundle_commitment'], opted_in=True)
