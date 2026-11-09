@@ -174,12 +174,71 @@ def _piece_model_focal(text):
     return ('FOCAL', 'SELF', match['predicate'], match['object'], match['speaker'])
 
 
-def _piece_model_read_block(text, *, allow_self_omission=False):
+def _piece_model_read_active_coordination(raw):
+    """Read exactly two active actions sharing the final written past scope.
+
+    Reuse the old body-inverse responsibility: only the connective inflection
+    is mapped in a private parser view. The source, receipt and actual output
+    are never rewritten, and no source plan/expected sentence is consulted.
+    The first affirmative stem does not inherit the last clause's negation.
+    """
+    from cocolon_meaning_experience_engine import natural_reply_meaning as reader
+    if (raw.count('、') != 1 or ',' in raw or '，' in raw
+            or reader._UNREAD.search(raw) or reader._DAY.match(raw)):
+        return None
+    first, second = raw.split('、')
+    subject = reader._SUBJECT.match(first)
+    if subject is None or subject['noun'] not in reader._SELF or reader._DAY.match(second):
+        return None
+    narrator = subject['noun']
+    second_subject = reader._SUBJECT.match(second)
+    if second_subject is not None:
+        if second_subject['noun'] != narrator:
+            return None
+    else:
+        second = narrator + 'は' + second
+
+    def active_key(value):
+        # The existing whole-clause reader retains exact cases/objects. It
+        # must see one complete fact/past active SELF action, not a substring.
+        keys = _piece_model_read_block(value + '。')
+        if keys is None or len(keys) != 1:
+            return None
+        key = keys[0]
+        if (key[0] != 'FINITE' or key[1:3] != ('SELF', 'SELF')
+                or key[5] not in {'伝える', '相談する', '頼む'}
+                or key[7:11] != ('fact', 'past', '', 'active')
+                or key[-1] != narrator or not key[3].startswith('WRITTEN:')
+                or not reader._focus_participant(key[3].removeprefix('WRITTEN:'))
+                or len(key[4]) != 1 or key[4][0][0] != 'を'
+                or key[11] != (('に', key[3]),)):
+            return None
+        return key
+
+    final = active_key(second)
+    if final is None:
+        return None  # No explicit final past means no shared past scope.
+    candidates = []
+    for stem, past, predicate in (('伝え', '伝えた', '伝える'),
+                                  ('相談し', '相談した', '相談する'),
+                                  ('頼み', '頼んだ', '頼む')):
+        if (not first.endswith(stem)
+                or (past, predicate, 'positive', 'fact', 'past', 'active', False)
+                not in reader._FORMS):
+            continue
+        initial = active_key(first[:-len(stem)] + past)
+        if initial is not None and initial[5:7] == (predicate, 'positive'):
+            candidates.append((initial, final))
+    return candidates[0] if len(candidates) == 1 else None
+
+
+def _piece_model_read_block(text, *, allow_self_omission=False, allow_active_coordination=False):
     """Use the finite reader in the person's voice, not Emlis's voice.
 
-    Every visible clause must be read. The only parse-only subject completion
-    is a later clause in this same block after explicit SELF, and only when
-    the source block was completely explicit SELF. No output is rewritten.
+    Every visible clause must be read. Subject completion stays inside this
+    block after explicit SELF, when the source was completely explicit SELF.
+    A separately enabled whole two-action coordination can share only its
+    written final past scope. No output is rewritten.
     """
     from cocolon_meaning_experience_engine import natural_reply_meaning as reader
     from emlis_ai_evidence_ledger_service import _split_source_text
@@ -205,6 +264,11 @@ def _piece_model_read_block(text, *, allow_self_omission=False):
             last_self_speaker = value[-1]
             continue
         if len(parsed) != count or len(parsed) != 1:
+            if (allow_active_coordination and len(rows) == 1 and row.start == 0
+                    and row.end == len(text) - 1):
+                coordinated = _piece_model_read_active_coordination(raw)
+                if coordinated is not None:
+                    return coordinated
             if not allow_self_omission or not self_context or last_self_speaker is None:
                 return None
             day = reader._DAY.match(raw)
@@ -337,7 +401,8 @@ def validate_piece_model_preservation(meaning, plan, artifact):
         for source_text, output_text in zip(source_blocks, blocks, strict=True):
             source = _piece_model_read_block(source_text)
             all_self = source is not None and all(row[1] == 'SELF' for row in source)
-            visible = _piece_model_read_block(output_text, allow_self_omission=all_self)
+            visible = _piece_model_read_block(output_text, allow_self_omission=all_self,
+                                              allow_active_coordination=all_self)
             if source is None or visible is None or Counter(source) != Counter(visible):
                 complete = False
                 break
