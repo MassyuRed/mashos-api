@@ -175,7 +175,8 @@ def test_composed_application_does_not_approve_hash_consistent_meaning_change(da
     altered = _H['_changed'](prepared, blocks=blocks)
     assert altered._artifact_json != prepared._artifact_json
 
-    async def altered_preparation(*args):
+    async def altered_preparation(*args, **kwargs):
+        assert kwargs == {'_model_input': None}
         return altered
 
     monkeypatch.setattr(owner, 'prepare_original', altered_preparation)

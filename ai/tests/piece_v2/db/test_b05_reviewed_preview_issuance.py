@@ -449,7 +449,8 @@ def test_orchestrated_candidate_must_pass_actual_review_before_native_write(data
     altered = _changed(prepared, blocks=blocks)
     assert altered._artifact_json != prepared._artifact_json
 
-    async def altered_preparation(*args):
+    async def altered_preparation(*args, **kwargs):
+        assert kwargs == {'_model_input': None}
         return altered
 
     monkeypatch.setattr(owner, 'prepare_original', altered_preparation)
@@ -483,7 +484,8 @@ def _preview_http_harness(database, monkeypatch, *, tier='free', named=False):
         return _B5['OWNER']
 
     async def issue(authorization, value, **kwargs):
-        assert set(kwargs) == {'idempotency_key', 'ttl_seconds', 'renderer_version', 'rpc', 'expected_subscription_tier', 'allowed_renderers'}
+        assert set(kwargs) == {'idempotency_key', 'ttl_seconds', 'renderer_version', 'rpc', 'expected_subscription_tier', 'allowed_renderers', 'require_current'}
+        assert callable(kwargs['require_current'])
         assert kwargs['allowed_renderers'] == state.get('expected_renderers', ('synthetic-renderer.v1',))
         result = await actual_issue(authorization, value, load_record=load, **kwargs)
         state['last_internal_result'] = deepcopy(result)
@@ -704,7 +706,8 @@ def test_http_actual_safety_rejection_never_reaches_sql(database, monkeypatch):
               for b in prepared.artifact_payload()['content_payload']['body_blocks']]
     altered = _changed(prepared, blocks=blocks)
 
-    async def altered_preparation(*args):
+    async def altered_preparation(*args, **kwargs):
+        assert kwargs == {'_model_input': None}
         return altered
 
     monkeypatch.setattr(owner, 'prepare_original', altered_preparation)
