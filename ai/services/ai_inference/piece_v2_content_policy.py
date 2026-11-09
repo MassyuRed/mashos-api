@@ -592,13 +592,9 @@ def validate_source_meaning_preservation(meaning, plan, artifact, *, _model_regi
             # or elides an explicit にとって value viewpoint.
             optional_prefix = '(?:' + prefix + ')?' if same_author and viewpoint == 'は' else prefix
             if _model_register and node_id in evaluations and scope is None:
-                # The model's ordinary evaluation reader requires its explicit
-                # SELF. Only the already-bound adjacent referential continuation
-                # may combine native subject elision with a register change.
-                bound_previous = any(ref.reference_node_id == node_id
-                    and ref.antecedent_node_id == previous_id for ref in meaning.nominal_references)
-                evaluation_prefix = optional_prefix if bound_previous else prefix
-                if not same_evaluation(node_id, visible, author, viewpoint, prefix, evaluation_prefix):
+                # Reuse native same-author continuity. The full source target,
+                # literal narrator and every evaluation operator still match.
+                if not same_evaluation(node_id, visible, author, viewpoint, prefix, optional_prefix):
                     reject()
                 previous_id, previous_author = node_id, author
                 continue
@@ -633,7 +629,18 @@ def validate_source_meaning_preservation(meaning, plan, artifact, *, _model_regi
                 elif topic_kind == 'wish' and not premise_first:
                     pattern = '(?:' + pattern + '|' + optional_prefix + premise_pattern + body + ')'
             if re.fullmatch(pattern, visible) is None:
-                reject()
+                # The existing focal grammar also owns its original order.
+                # Compare source anchors; never construct or rewrite prose.
+                focal = _FOCUS.fullmatch(expression) if _model_register else None
+                if focal is None:
+                    reject()
+                head = expression[:-1]
+                copula_size = 2 if head.endswith('です') else 1
+                original_order = anchor(head[:-copula_size]) + '(?:です|だ)' + re.escape(expression[-1])
+                if scope is not None:
+                    original_order = anchor(original[slice(*scope.scope_scalar_span)]) + '、' + original_order
+                if re.fullmatch(original_order, visible) is None:
+                    reject()
             previous_id, previous_author = node_id, None if literal_emphasis else author
 
 

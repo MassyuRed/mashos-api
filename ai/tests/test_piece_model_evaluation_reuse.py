@@ -85,10 +85,10 @@ def test_whole_nominal_argument_is_retained_including_internal_comparison():
     assert result(req, ('私にとって休む時間が必要かもしれない。',)).artifact is None
 
 
-def test_evaluation_keeps_its_own_explicit_self_even_after_another_evaluation():
+def test_adjacent_same_author_evaluation_reuses_native_subject_ellipsis_with_register():
     req = request(source('私は読書が好きです。私は料理が苦手でした。'))
     assert result(req, ('私は読書が好きだ。私は料理が苦手だった。',)).artifact
-    assert result(req, ('私は読書が好きだ。料理が苦手だった。',)).artifact is None
+    assert result(req, ('私は読書が好きだ。料理が苦手だった。',)).artifact
     assert result(req, ('読書が好きだ。料理が苦手だった。',)).artifact is None
     assert result(req, ('私は読書が好きだ。料理が好きだった。',)).artifact is None
 

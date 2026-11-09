@@ -29,6 +29,10 @@ NAMED = '私が選びたいのは、同僚の西さんと展示を見る時間�
 NAMED_BODY = '私は、同僚と展示を見る時間を選びたい。私はその時間が好きだ。まだ、参加する日は決めていない。'
 EVALUATION = '私にとってとても大切なのは、静かな場所で本を読む時間です。私は読書が好きです。私は料理が苦手だった。'
 EVALUATION_TOPIC = '私にとって、静かな場所で本を読む時間はとても大切だ。私は読書が好きだ。私は料理が苦手だった。'
+FOCAL_ORDER = '私が大切にしたいのは、静かな部屋で本を読む時間だ。その時間が好きだ。まだ、毎日続けるかは決めていない。'
+EVALUATION_CONTINUED = '私にとって、静かな場所で本を読む時間がとても大切だ。読書が好きだ。料理が苦手だった。'
+SCOPED_FOCAL = '疲れているなら、私が選びたいのは、音楽を聴く時間です。まだ、出かける日は決めていません。'
+SCOPED_FOCAL_BODY = '疲れているなら、私が選びたいのは、音楽を聴く時間だ。まだ、出かける日は決めていない。'
 
 
 def evaluate(original, body, *, other=None):
@@ -137,3 +141,110 @@ def test_omission_never_borrows_self_or_reference_from_another_field():
     other = '私はその時間が好きです。まだ、毎日続けるかは決めていません。'
     assert evaluate(original, [original, 'その時間が好きだ。まだ、毎日続けるかは決めていない。'],
                     other=other).artifact is None
+
+
+@pytest.mark.parametrize('original,body', [
+    (FOCAL, FOCAL_ORDER),
+    (SCOPED_FOCAL, SCOPED_FOCAL_BODY),
+    ('私が選びたいのは、工房で木を削る時間です。私はその時間があまり好きではありませんでした。',
+     '私が選びたいのは、工房で木を削る時間だ。私はその時間があまり好きではなかった。'),
+    (NAMED, '私が選びたいのは、同僚と展示を見る時間だ。その時間が好きだ。まだ、参加する日は決めていない。'),
+    (EVALUATION, EVALUATION_CONTINUED),
+    ('私は読書が好きです。私は料理が苦手でした。', '私は読書が好きだ。料理が苦手だった。'),
+])
+def test_model_register_reuses_source_focal_order_and_native_same_author_continuity(original, body):
+    out = evaluate(original, body)
+    assert out.status == EngineStatus.GENERATED, out.reason_codes
+    # Native S7 keeps its prior literal register contract.
+    with pytest.raises(PieceContractError):
+        validate_source_meaning_preservation(out.source_meaning, out.artifact_plan, out.artifact)
+
+
+@pytest.mark.parametrize('changed', [
+    FOCAL_ORDER.replace('私が', '僕が'),
+    FOCAL_ORDER.replace('大切にしたいのは', '大切にしたくないのは'),
+    FOCAL_ORDER.replace('大切にしたいのは', '大切にしたかったのは'),
+    FOCAL_ORDER.replace('大切にしたいのは', '大切にしたいかもしれないのは'),
+    FOCAL_ORDER.replace('読む時間だ', '書く時間だ'),
+    FOCAL_ORDER.replace('読む時間だ', '読む時間だった'),
+    FOCAL_ORDER.replace('読む時間だ。', '読む時間だ！'),
+    FOCAL_ORDER.replace('その時間が好きだ。', 'その時間が少し好きだ。'),
+    FOCAL_ORDER.replace('その時間が好きだ。', 'その時間が好きではない。'),
+    FOCAL_ORDER.replace('その時間が好きだ。', 'その時間が好きだった。'),
+    FOCAL_ORDER.replace('その時間が好きだ。', 'その時間が好きかもしれない。'),
+    FOCAL_ORDER.replace('その時間が', 'この時間が'),
+    FOCAL_ORDER.replace('その時間が', 'その時間は'),
+    'その時間が好きだ。' + FOCAL_ORDER.replace('その時間が好きだ。', ''),
+    FOCAL_ORDER + '私は毎日読んでいる。',
+])
+def test_original_focal_order_retains_every_source_argument_operator_and_reference(changed):
+    assert evaluate(FOCAL, changed).artifact is None
+
+
+@pytest.mark.parametrize('changed', [
+    SCOPED_FOCAL_BODY.replace('疲れているなら、', ''),
+    SCOPED_FOCAL_BODY.replace('疲れているなら', '疲れているので'),
+    SCOPED_FOCAL_BODY.replace('疲れているなら', '疲れていないなら'),
+    SCOPED_FOCAL_BODY.replace('疲れているなら、私が', '私が疲れているなら、'),
+    SCOPED_FOCAL_BODY.replace('聴く時間だ', '聴く時間だった'),
+    SCOPED_FOCAL_BODY.replace('私が選びたい', '僕が選びたい'),
+])
+def test_original_focal_order_requires_entire_premise_in_its_source_order(changed):
+    assert evaluate(SCOPED_FOCAL, changed).artifact is None
+
+
+@pytest.mark.parametrize('changed', [
+    '私が選びたいのは、同僚の西さんと展示を見る時間だ。その時間が好きだ。まだ、参加する日は決めていない。',
+    '私が選びたいのは、同僚の東さんと展示を見る時間だ。その時間が好きだ。まだ、参加する日は決めていない。',
+    '私が選びたいのは、友人と展示を見る時間だ。その時間が好きだ。まだ、参加する日は決めていない。',
+])
+def test_original_focal_order_still_requires_exact_public_role_abstraction(changed):
+    assert evaluate(NAMED, changed).artifact is None
+
+
+@pytest.mark.parametrize('changed', [
+    EVALUATION_CONTINUED.replace('私にとって、', ''),
+    EVALUATION_CONTINUED.replace('読書が好きだ。', '僕は読書が好きだ。'),
+    EVALUATION_CONTINUED.replace('読書が好きだ。', '読書が苦手だ。'),
+    EVALUATION_CONTINUED.replace('読書が好きだ。', '読書がとても好きだ。'),
+    EVALUATION_CONTINUED.replace('読書が好きだ。', '読書が好きではない。'),
+    EVALUATION_CONTINUED.replace('読書が好きだ。', '読書が好きだった。'),
+    EVALUATION_CONTINUED.replace('読書が好きだ。', '読書が好きかもしれない。'),
+    EVALUATION_CONTINUED.replace('読書が好きだ。', '映画が好きだ。'),
+    EVALUATION_CONTINUED.replace('読書が好きだ。', '読書は好きだ。'),
+    EVALUATION_CONTINUED.replace('読書が好きだ。', '読書も好きだ。'),
+    EVALUATION_CONTINUED.replace('読書が好きだ。', '疲れているなら、読書が好きだ。'),
+    EVALUATION_CONTINUED.replace('読書が好きだ。', '読書が好きだと友人が言った。'),
+    EVALUATION_CONTINUED.replace('とても大切だ。', 'とても大切だった。'),
+])
+def test_same_author_register_ellipsis_preserves_all_evaluation_features(changed):
+    assert evaluate(EVALUATION, changed).artifact is None
+
+
+def test_first_evaluation_and_explicit_value_viewpoint_cannot_be_elided():
+    assert evaluate('私は読書が好きです。', '読書が好きだ。').artifact is None
+    original = '私は読書が好きです。私にとって料理が大切です。'
+    assert evaluate(original, '私は読書が好きだ。私にとって料理が大切だ。').artifact is not None
+    assert evaluate(original, '私は読書が好きだ。料理が大切だ。').artifact is None
+
+
+@pytest.mark.parametrize('original,explicit,omitted', [
+    ('私は読書が好きです。友人は先に帰った。私は料理が苦手です。',
+     '私は読書が好きだ。友人は先に帰った。私は料理が苦手だ。',
+     '私は読書が好きだ。友人は先に帰った。料理が苦手だ。'),
+    ('私は読書が好きです。まだ、参加する日は決めていません。私は料理が苦手です。',
+     '私は読書が好きだ。まだ、参加する日は決めていない。私は料理が苦手だ。',
+     '私は読書が好きだ。まだ、参加する日は決めていない。料理が苦手だ。'),
+    ('私は読書が好きです。僕は料理が苦手です。',
+     '私は読書が好きだ。僕は料理が苦手だ。', '私は読書が好きだ。料理が苦手だ。'),
+])
+def test_register_ellipsis_stops_at_context_or_literal_speaker_change(original, explicit, omitted):
+    assert evaluate(original, explicit).artifact is not None
+    assert evaluate(original, omitted).artifact is None
+
+
+def test_same_author_evaluation_register_ellipsis_cannot_cross_field_or_newline():
+    first, second = '私は読書が好きです。', '私は料理が苦手です。'
+    assert evaluate(first, ['私は読書が好きだ。', '私は料理が苦手だ。'], other=second).artifact is not None
+    assert evaluate(first, ['私は読書が好きだ。', '料理が苦手だ。'], other=second).artifact is None
+    assert evaluate(first + '\n' + second, ['私は読書が好きだ。', '料理が苦手だ。']).artifact is None
