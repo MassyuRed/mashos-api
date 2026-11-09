@@ -119,7 +119,7 @@ def _piece_model_feeling(text):
         ('THEN', prefix) if then else ())
 
 
-def _piece_model_evaluation(text):
+def _piece_model_evaluation(text, *, _bound_reference=False):
     """Read a complete written SELF evaluation with the existing Piece owner.
 
     The original source still needs its normal admission. These temporary
@@ -136,7 +136,7 @@ def _piece_model_evaluation(text):
     if _SCOPED_EXPRESSION.fullmatch(text) or _TEMPORAL_EVALUATION.fullmatch(text):
         return None
     match = _EVALUATIVE_FOCUS.fullmatch(text) or _EVALUATIVE_FINITE.fullmatch(text)
-    if match is None or _evaluation_target_references(match['target']):
+    if match is None or (not _bound_reference and _evaluation_target_references(match['target'])):
         return None
     node = MeaningNode('piece:visible', 'piece:visible', 'PIECE_SOURCE_PROPOSITION',
         'explicit', text, EpistemicState.SOURCE_EXPLICIT, ())
@@ -342,7 +342,10 @@ def validate_piece_model_preservation(meaning, plan, artifact):
             child = PieceArtifact(blocks, text, hashlib.sha256(text.encode()).hexdigest(),
                                   'short_essay', ('short_essay',))
             try:
-                validate_source_meaning_preservation(part, child_plan, child)
+                try:
+                    validate_source_meaning_preservation(part, child_plan, child)
+                except PieceContractError:
+                    validate_source_meaning_preservation(part, child_plan, child, _model_register=True)
             except PieceContractError:
                 raise unavailable('piece_model_meaning_unassessed_or_changed') from None
     if offset != len(artifact.body_blocks):
@@ -350,7 +353,7 @@ def validate_piece_model_preservation(meaning, plan, artifact):
     check_existing_detectors(artifact.piece_text)
 
 
-def validate_source_meaning_preservation(meaning, plan, artifact) -> None:
+def validate_source_meaning_preservation(meaning, plan, artifact, *, _model_register=False) -> None:
     """Inspect a Piece artifact against source arguments, without author replay.
 
     The existing source owner supplies validated explicit grammar and spans.
@@ -361,6 +364,8 @@ def validate_source_meaning_preservation(meaning, plan, artifact) -> None:
     Nothing here produces/rewrites a candidate, calls an author/plan compiler,
     reads stored data, or grants ready/adjusted. Source-parser independence and
     an independent human review are NOT claimed by this author-free check.
+    The default native contract stays literal. Only the model review can
+    request the bounded, source-anchored register comparisons below.
     """
     from cocolon_meaning_experience_engine.piece_semantic_admission import PieceSemanticSnapshotV1
     if type(meaning) is PieceSemanticSnapshotV1:
@@ -465,6 +470,47 @@ def validate_source_meaning_preservation(meaning, plan, artifact) -> None:
             end = match.end()
         return ''.join(parts) + re.escape(fragment[end:])
 
+    def transitive_predicate(predicate):
+        if _model_register:
+            from piece_v2_generation import _transitive_predicate_forms
+            finite, _, _ = _transitive_predicate_forms()
+            plain = predicate[:-2] if predicate.endswith('です') else predicate
+            if plain.endswith(('たい', 'たくない')) and plain in finite and plain + 'です' in finite:
+                # Only the existing whole wish predicate changes register.
+                # Its object, polarity and every enclosing source scope stay anchored.
+                return anchor(plain) + '(?:です)?'
+        return anchor(predicate)
+
+    def same_undecided(source, visible):
+        # A source-bound decision target is retained byte-for-byte. This is
+        # only the existing nonpast negative 決めている register pair, not a
+        # parser for arbitrary negative statements or an inferred reservation.
+        match = re.fullmatch(r'(?P<prefix>まだ[、，,][^。！？!?「」『』"\r\n、，,]+(?:かは|日は))'
+                             r'決めて(?:いません|いない)。', source)
+        if match is None:
+            return False
+        return re.fullmatch(anchor(match['prefix']) + r'決めて(?:いません|いない)。', visible) is not None
+
+    def same_evaluation(node_id, visible, author, viewpoint, prefix, optional_prefix):
+        frame = evaluations[node_id]
+        _, _, target = (original[a:b] for a, b in frame.scalar_parts)
+        # Source validation above owns the reference edges and public aliases.
+        # No other target particle, argument, speaker or clause can enter this view.
+        body = anchor(target) + r'が(?P<evaluation_predicate>[^。！？!?]+)' + re.escape(source_nodes[node_id].value[-1])
+        if re.fullmatch(optional_prefix + body, visible) is None:
+            return False
+        view = visible if re.fullmatch(prefix + body, visible) is not None else author + viewpoint + visible
+        source_key = _piece_model_evaluation(source_nodes[node_id].value, _bound_reference=True)
+        visible_key = _piece_model_evaluation(view, _bound_reference=True)
+        if source_key is None or visible_key is None:
+            return False
+        # が-focus -> は-topic is already the native preference operation;
+        # explicit にとって remains a distinct value viewpoint. The target
+        # itself was matched against the entire public source anchor above.
+        source_view = 'は' if source_key[2] == 'が' else source_key[2]
+        return (source_view == visible_key[2] and source_key[:2] == visible_key[:2]
+            and source_key[3] == visible_key[3] and source_key[5:] == visible_key[5:])
+
     evaluations = {f.node_id: f for f in meaning.personal_evaluations}
     scopes = {s.node_id: s for s in meaning.expression_scopes}
     duties = {d.node_id: d.operation for d in plan.duties}
@@ -484,7 +530,9 @@ def validate_source_meaning_preservation(meaning, plan, artifact) -> None:
         if focal is not None or direct is not None:
             parsed = focal if focal is not None else direct
             target = parsed['object'].lstrip('、，,') if focal is not None else parsed['object']
-            return parsed['speaker'], 'は', anchor(target) + 'を' + anchor(parsed['predicate']) + stop, None
+            predicate = (transitive_predicate(parsed['predicate']) if node_id not in scopes
+                         else anchor(parsed['predicate']))
+            return parsed['speaker'], 'は', anchor(target) + 'を' + predicate + stop, None
         topic = (_scoped_self_topic(expression) if node_id in scopes
                  else _qualified_self_topic(expression))
         if topic is None:
@@ -511,7 +559,8 @@ def validate_source_meaning_preservation(meaning, plan, artifact) -> None:
         for node_id, visible in zip(group, sentences, strict=True):
             node, operation = source_nodes[node_id], duties[node_id]
             if operation == 'KEEP_COMPLETE_SOURCE_CONTEXT':
-                if re.fullmatch(anchor(node.value), visible) is None:
+                if (re.fullmatch(anchor(node.value), visible) is None
+                        and not (_model_register and same_undecided(node.value, visible))):
                     reject()
                 previous_id, previous_author = node_id, None
                 continue
@@ -534,6 +583,17 @@ def validate_source_meaning_preservation(meaning, plan, artifact) -> None:
             # never infers the first author, crosses a field/paragraph/newline,
             # or elides an explicit にとって value viewpoint.
             optional_prefix = '(?:' + prefix + ')?' if same_author and viewpoint == 'は' else prefix
+            if _model_register and node_id in evaluations and scope is None:
+                # The model's ordinary evaluation reader requires its explicit
+                # SELF. Only the already-bound adjacent referential continuation
+                # may combine native subject elision with a register change.
+                bound_previous = any(ref.reference_node_id == node_id
+                    and ref.antecedent_node_id == previous_id for ref in meaning.nominal_references)
+                evaluation_prefix = optional_prefix if bound_previous else prefix
+                if not same_evaluation(node_id, visible, author, viewpoint, prefix, evaluation_prefix):
+                    reject()
+                previous_id, previous_author = node_id, author
+                continue
             literal_emphasis = False
             if scope is None:
                 pattern = optional_prefix + body

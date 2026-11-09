@@ -45,6 +45,9 @@ name: Piece B2-B/B3/B4/B5 isolated PostgreSQL
       - ai/tests/test_cmee_piece_supplemental_then_feeling.py
       - ai/tools/serve_emlis_natural_reply.py
       - ai/tests/test_piece_model_server_constraints.py
+      - ai/tools/training/train_piece_model_adapter.py
+      - ai/tests/test_piece_model_adapter_training.py
+      - ai/tests/test_piece_model_prose_register.py
       - ai/tools/analysis_semantic_generation_requirements.txt
       - ai/tests/piece_v2/test_b05_piece_model_concurrency.py
       - ai/tests/piece_v2/test_b05_piece_model_saved_pipeline.py
@@ -406,6 +409,8 @@ jobs:
             ai/tests/test_piece_model_field_slots.py \
             ai/tests/test_cmee_piece_supplemental_then_feeling.py \
             ai/tests/test_piece_model_server_constraints.py \
+            ai/tests/test_piece_model_adapter_training.py \
+            ai/tests/test_piece_model_prose_register.py \
             ai/tests/piece_v2/test_b05_piece_model_concurrency.py \
             ai/tests/piece_v2/test_b05_piece_model_saved_pipeline.py \
             ai/tests/piece_v2/test_b05_piece_model_evaluation_pipeline.py

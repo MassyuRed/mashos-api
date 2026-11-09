@@ -29,6 +29,7 @@ FIT38_CONFIG = "ef4b1aef621fb4e234ce6a05601efb62a987c3cf5d40f3995ca1b72200bab145
 PINS = {"transformers": "5.19.0", "peft": "0.21.2", "accelerate": "1.15.0", "safetensors": "0.8.0"}
 SEMANTIC_FORMAT_SOURCE = '817f944fcc8851917c40300a47f62d1defc3ffc3'
 PIECE_CANDIDATE_FORMAT = 'piece.field_slots.v1'
+PIECE_ADAPTER_NAME = 'piece'
 
 
 class SourcePrivateConstraintLog(logging.Filter):
@@ -156,7 +157,10 @@ def piece_json_parser(messages, alphabet):
 
 def make_handler(generate, *, api_key, model_name, deadline, max_requests,
                  max_new_tokens=2048, request_seconds=23, max_request_bytes=65536,
-                 natural_reply=None, natural_queue_seconds=210):
+                 natural_reply=None, natural_queue_seconds=210, piece_revision=None):
+    if piece_revision is not None and (type(piece_revision) is not str
+            or not re.fullmatch(r'piece-lora:[0-9a-f]{64}', piece_revision)):
+        raise ValueError('piece_adapter_revision_invalid')
     lock = threading.Lock()
     served = 0
 
@@ -235,6 +239,8 @@ def make_handler(generate, *, api_key, model_name, deadline, max_requests,
                     "message": {"role": "assistant", "content": text}}]}
                 if piece:
                     body['candidate_format'] = PIECE_CANDIDATE_FORMAT
+                    if piece_revision is not None:
+                        body['revision'] = piece_revision
             except Exception as exc:
                 if not max_requests:
                     generation_stage('failed_' + type(exc).__name__)
@@ -274,8 +280,66 @@ def base_inference_context(model):
         model.requires_grad_(False)
 
 
+@contextmanager
+def piece_inference_context(model, process_stop):
+    """Use only the separately loaded Piece adapter, then restore Analysis."""
+    previous = model.active_adapter
+    if previous != 'default':
+        raise ValueError('piece_adapter_state_invalid')
+    try:
+        model.set_adapter(PIECE_ADAPTER_NAME, inference_mode=True)
+        model.eval()
+        model.requires_grad_(False)
+        yield
+    finally:
+        try:
+            model.set_adapter(previous, inference_mode=True)
+            model.eval()
+            model.requires_grad_(False)
+        except BaseException:
+            # A failed restoration must not serve Analysis with Piece weights.
+            process_stop.set()
+            raise
+
+
+def load_piece_adapter(model, path, *, weights_sha256, config_sha256,
+                       analysis_config, analysis_weights):
+    """Load an opt-in independent LoRA; never replace or combine adapters."""
+    from peft import PeftConfig, get_peft_model_state_dict
+    from safetensors.torch import load_file
+    import torch
+    identity = adapter_identity(path, weights_sha256, config_sha256)
+    config = PeftConfig.from_pretrained(path, local_files_only=True)
+    expected_config, selected_config = analysis_config.to_dict(), config.to_dict()
+    # The fresh Piece training uses the current adapter's structural config,
+    # not its learned tensors. Only train/inference mode may differ on disk.
+    for value in (expected_config, selected_config):
+        value.pop('inference_mode', None)
+    if selected_config != expected_config:
+        raise ValueError('piece_adapter_scope_changed')
+    expected = load_file(Path(path) / 'adapter_model.safetensors')
+    if (set(expected) != set(analysis_weights) or len(expected) != 112
+            or sum(t.numel() for t in expected.values()) != 3833856
+            or any(expected[key].shape != analysis_weights[key].shape for key in expected)):
+        raise ValueError('piece_adapter_saved_weights_scope_changed')
+    model.load_adapter(path, adapter_name=PIECE_ADAPTER_NAME,
+                       is_trainable=False, local_files_only=True)
+    actual = get_peft_model_state_dict(model, adapter_name=PIECE_ADAPTER_NAME)
+    original = get_peft_model_state_dict(model)
+    if (set(actual) != set(expected) or len(actual) != 112
+            or sum(t.numel() for t in actual.values()) != 3833856
+            or any(not torch.equal(actual[k].detach().cpu(), expected[k]) for k in expected)
+            or set(original) != set(analysis_weights)
+            or any(not torch.equal(original[k].detach().cpu(), analysis_weights[k])
+                   for k in analysis_weights)):
+        raise ValueError('piece_adapter_loaded_weights_changed')
+    model.set_adapter('default', inference_mode=True)
+    adapter_identity(path, *identity)
+
+
 def load_generator(adapter, process_stop, *, weights_sha256=None, config_sha256=None,
-                   max_new_tokens=2048, context_tokens=8192, semantic_json=False):
+                   max_new_tokens=2048, context_tokens=8192, semantic_json=False,
+                   piece_adapter=None, piece_weights_sha256=None, piece_config_sha256=None):
     if (type(max_new_tokens) is not int or type(context_tokens) is not int
             or not 1 <= max_new_tokens < context_tokens <= 32768):
         raise ValueError("model_token_budget_invalid")
@@ -284,6 +348,15 @@ def load_generator(adapter, process_stop, *, weights_sha256=None, config_sha256=
     if {name: version(name) for name in PINS} != PINS:
         raise ValueError("model_dependency_changed")
     selected_identity = adapter_identity(adapter, weights_sha256, config_sha256)
+    if (piece_adapter is not None or piece_weights_sha256 is not None
+            or piece_config_sha256 is not None):
+        if (not adapter or not piece_adapter or not semantic_json
+                or piece_weights_sha256 is None or piece_config_sha256 is None):
+            raise ValueError('piece_adapter_configuration_invalid')
+        if (Path(piece_adapter).resolve() == Path(adapter).resolve()
+                or piece_weights_sha256 == selected_identity[0]):
+            raise ValueError('piece_adapter_must_be_separate')
+        adapter_identity(piece_adapter, piece_weights_sha256, piece_config_sha256)
     import torch
     from transformers import AutoTokenizer, Qwen3_5ForConditionalGeneration, StoppingCriteria, StoppingCriteriaList
     if not torch.cuda.is_available() or torch.cuda.device_count() != 1:
@@ -308,6 +381,10 @@ def load_generator(adapter, process_stop, *, weights_sha256=None, config_sha256=
                 or sum(t.numel() for t in actual.values()) != 3833856
                 or any(not torch.equal(actual[k].detach().cpu(), expected[k]) for k in expected)):
             raise ValueError("fit38_loaded_weights_changed")
+        if piece_adapter is not None:
+            load_piece_adapter(model, piece_adapter,
+                weights_sha256=piece_weights_sha256, config_sha256=piece_config_sha256,
+                analysis_config=config, analysis_weights=expected)
     model.eval()
     model.requires_grad_(False)
     if model.training or any(p.requires_grad for p in model.parameters()):
@@ -343,6 +420,8 @@ def load_generator(adapter, process_stop, *, weights_sha256=None, config_sha256=
             return self.expired
 
     def generate(messages, end, *, profile=None):
+        if piece_adapter is not None and process_stop.is_set():
+            raise ValueError('generation_stopping')
         if profile not in (None, "natural", "piece"):
             raise ValueError("generation_profile_invalid")
         if profile == "piece" and (not semantic_json or tokenizer_data is None):
@@ -353,7 +432,9 @@ def load_generator(adapter, process_stop, *, weights_sha256=None, config_sha256=
         context_budget = 8192 if base_profile else context_tokens
         # Preserve the base identity previously connected for natural replies.
         # The analysis adapter stays loaded; its state is restored on context exit.
-        adapter_context = base_inference_context(model) if base_profile and adapter else nullcontext()
+        adapter_context = (piece_inference_context(model, process_stop)
+            if profile == 'piece' and piece_adapter is not None else
+            base_inference_context(model) if base_profile and adapter else nullcontext())
         if use_semantic_json:
             generation_stage('tokenize')
         encoded = tokenizer.apply_chat_template(messages, enable_thinking=False,
@@ -416,6 +497,9 @@ def main():
     parser.add_argument("--adapter")
     parser.add_argument("--adapter-weights-sha256")
     parser.add_argument("--adapter-config-sha256")
+    parser.add_argument('--piece-adapter')
+    parser.add_argument('--piece-adapter-weights-sha256')
+    parser.add_argument('--piece-adapter-config-sha256')
     parser.add_argument("--model-name", required=True)
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--max-requests", type=int)
@@ -460,6 +544,17 @@ def main():
         if (not args.adapter or not re.fullmatch(r'[0-9a-f]{64}', args.adapter_weights_sha256 or '')
                 or not re.fullmatch(r'[0-9a-f]{64}', args.adapter_config_sha256 or '')):
             parser.error('an adapter and both SHA256 values are required together')
+    piece_options = {}
+    if any(value is not None for value in (args.piece_adapter,
+            args.piece_adapter_weights_sha256, args.piece_adapter_config_sha256)):
+        if (not args.analysis_service or not args.natural_reply_model or not args.semantic_json
+                or not args.adapter or not args.piece_adapter
+                or not re.fullmatch(r'[0-9a-f]{64}', args.piece_adapter_weights_sha256 or '')
+                or not re.fullmatch(r'[0-9a-f]{64}', args.piece_adapter_config_sha256 or '')):
+            parser.error('Piece adapter requires the shared constrained service and both SHA256 values')
+        piece_options = dict(piece_adapter=args.piece_adapter,
+            piece_weights_sha256=args.piece_adapter_weights_sha256,
+            piece_config_sha256=args.piece_adapter_config_sha256)
     key = (os.environ.get("COCOLON_ANALYSIS_MODEL_API_KEY", "") if args.analysis_service
            else os.environ.get("EMLIS_NATURAL_REPLY_API_KEY", ""))
     if len(key) < 24:
@@ -480,13 +575,14 @@ def main():
                        if args.analysis_service else {})
     if args.semantic_json:
         runtime_options['semantic_json'] = True
-    generator = load_generator(args.adapter, stop, **identity_options, **runtime_options)
+    generator = load_generator(args.adapter, stop, **identity_options, **runtime_options, **piece_options)
     server = ThreadingHTTPServer(("0.0.0.0", args.port), make_handler(generator,
         api_key=key, model_name=args.model_name, deadline=deadline,
         max_requests=0 if args.analysis_service else args.max_requests,
         max_new_tokens=max_new_tokens, request_seconds=request_seconds,
         max_request_bytes=262144 if args.analysis_service else 65536,
-        natural_reply=natural_reply))
+        natural_reply=natural_reply,
+        piece_revision='piece-lora:' + args.piece_adapter_weights_sha256 if piece_options else None))
     server.timeout = 1
     try:
         while not stop.is_set() and time.monotonic() < deadline:
