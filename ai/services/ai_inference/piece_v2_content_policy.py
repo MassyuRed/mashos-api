@@ -116,7 +116,7 @@ def _piece_model_feeling(text):
         'negative' if ending.startswith('くな') else 'positive',
         'past' if ending.endswith('かった') else 'nonpast',
         ('NOW', 'も' if 'も' in prefix else 'は') if now else
-        ('THEN', prefix) if then else ())
+        ('THEN', prefix) if then else (), topic['speaker'])
 
 
 def _piece_model_evaluation(text, *, _bound_reference=False):
@@ -157,7 +157,7 @@ def _piece_model_evaluation(text, *, _bound_reference=False):
     degree = predicate[:predicate.index(match['base'])]
     return ('EVALUATION', 'SELF', frame.construction, frame.kind,
         text[slice(*frame.scalar_parts[2])], match['base'], degree,
-        frame.polarity, frame.temporal_scope, frame.commitment)
+        frame.polarity, frame.temporal_scope, frame.commitment, match['speaker'])
 
 
 def _piece_model_focal(text):
@@ -171,7 +171,7 @@ def _piece_model_focal(text):
     match = _FOCUS.fullmatch(text)
     if match is None:
         return None
-    return ('FOCAL', 'SELF', match['predicate'], match['object'])
+    return ('FOCAL', 'SELF', match['predicate'], match['object'], match['speaker'])
 
 
 def _piece_model_read_block(text, *, allow_self_omission=False):
@@ -188,7 +188,9 @@ def _piece_model_read_block(text, *, allow_self_omission=False):
     rows = _split_source_text(text, max_len=max(1, len(text)))
     if not rows:
         return None
-    result, self_context = [], False
+    # SELF is still the actor role. The final private key member separately
+    # retains this Piece narrator's written spelling, without changing output.
+    result, self_context, last_self_speaker = [], False, None
     for row in rows:
         raw = text[row.start:row.end]
         # The ledger excludes a terminal stop; the feeling grammar owns it.
@@ -197,17 +199,19 @@ def _piece_model_read_block(text, *, allow_self_omission=False):
         focal = _piece_model_focal(raw + '。')
         parsed, count = reader._clauses(raw, 'piece.visible', 'PIECE_OUTPUT', reply=False)
         if feeling is not None or evaluation is not None or focal is not None:
-            result.append(next(value for value in (feeling, evaluation, focal) if value is not None))
+            value = next(value for value in (feeling, evaluation, focal) if value is not None)
+            result.append(value)
             self_context = True
+            last_self_speaker = value[-1]
             continue
         if len(parsed) != count or len(parsed) != 1:
-            if not allow_self_omission or not self_context:
+            if not allow_self_omission or not self_context or last_self_speaker is None:
                 return None
             day = reader._DAY.match(raw)
             start = day.end() if day else 0
             if reader._SUBJECT.match(raw[start:]):
                 return None
-            view = raw[:start] + '私は' + raw[start:]
+            view = raw[:start] + last_self_speaker + 'は' + raw[start:]
             feeling = _piece_model_feeling(view + '。')
             parsed, count = reader._clauses(view, 'piece.visible', 'PIECE_OUTPUT', reply=False)
             if feeling is not None:
@@ -229,6 +233,9 @@ def _piece_model_read_block(text, *, allow_self_omission=False):
         value = value[day.end():] if day else value
         subject = reader._SUBJECT.match(value)
         start = subject.end() if subject else 0
+        narrator = subject['noun'] if subject and witness.subject == 'SELF' else None
+        if witness.subject == 'SELF' and narrator not in reader._SELF:
+            return None
         written = set()
         for finite, predicate, polarity, modality, time, voice, receiving in reader._FORMS:
             if (predicate, polarity, modality, time, voice) != (witness.predicate,
@@ -243,8 +250,9 @@ def _piece_model_read_block(text, *, allow_self_omission=False):
             return None
         result.append(('FINITE', witness.subject, agent, target, tuple(sorted(arguments)),
             witness.predicate, witness.polarity, witness.modality, witness.temporal_scope,
-            witness.relative_day, witness.voice, next(iter(written))))
+            witness.relative_day, witness.voice, next(iter(written)), narrator))
         self_context = self_context and witness.subject == 'SELF' if result[:-1] else witness.subject == 'SELF'
+        last_self_speaker = narrator
     return tuple(result)
 
 
