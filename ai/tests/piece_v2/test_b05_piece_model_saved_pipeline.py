@@ -112,3 +112,22 @@ def test_new_eligible_refined_sources_use_real_question_answer_add_and_saved_mod
     assert result['quota_consumptions']==1 and result['source_unchanged'] and result['emlis_unchanged']
     result['counts']['external_model_provider']=len(seen)
     _evidence(case_id+'-'+tier,result,seen)
+
+
+@pytest.mark.parametrize('tier', ['free','plus','premium'])
+def test_explicit_refined_name_to_role_remains_adjusted_through_visual_save_reload(
+        refined_pipeline_db, monkeypatch, tier):
+    memo = '上司の長谷川さんに褒められたのに、嬉しくなかった。'
+    answer = 'その時、私は少し寂しかった。'
+    blocks = ['上司に褒められたのに、嬉しくなかった。', answer]
+    seen = _provider(monkeypatch, 'Q2-WRITTEN-ROLE', blocks)
+    result = _run_refined_pipeline(refined_pipeline_db, monkeypatch, answer,
+        'Q2-WRITTEN-ROLE-' + tier, original_memo=memo, tier=tier,
+        expected_blocks=blocks, expected_safety_state='adjusted', visual_change=True)
+    assert result['preview']['safety_state'] == 'adjusted'
+    assert result['snapshot_before']['original']['memo'] == memo
+    assert result['detail']['piece_text'] == '\n\n'.join(blocks)
+    assert result['source_unchanged'] and result['emlis_unchanged']
+    assert result['quota_consumptions'] == 1 and len(seen) == 1
+    result['counts']['external_model_provider'] = len(seen)
+    _evidence('Q2-WRITTEN-ROLE-' + tier, result, seen)

@@ -34,7 +34,7 @@ def refined_pipeline_db(saved_piece_db):
 
 def _run_refined_pipeline(db, monkeypatch, answer_text, case_id, *, visual_change=False,
                           original_memo='褒められたのに、嬉しくなかった。', tier='free',
-                          expected_blocks=None):
+                          expected_blocks=None, expected_safety_state='ready'):
     import api_account_visibility
     import emlis_thread_store
     import piece_v2_preview_service as preview_module
@@ -119,7 +119,10 @@ def _run_refined_pipeline(db, monkeypatch, answer_text, case_id, *, visual_chang
     expected_blocks = [original['memo'],answer_text] if expected_blocks is None else expected_blocks
     assert first['piece_text'] == '\n\n'.join(expected_blocks)
     assert first['content_payload']['body_blocks'] == expected_blocks
-    assert first['safety_state'] == 'ready'
+    # A source-stated role replacing its written name is the existing
+    # adjusted state. Preserve exact expectations for every older fixture.
+    assert expected_safety_state in ('ready', 'adjusted')
+    assert first['safety_state'] == expected_safety_state
     row_after_issue = asyncio.run(load_record(owner, first['preview_id']))
     assert row_after_issue['source_lineage']['observation']['supplemental_answer_identity'] == answer_id
     assert len(row_after_issue['source_lineage']) == 8
