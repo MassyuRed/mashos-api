@@ -82,10 +82,24 @@ def prepare_piece_model_request(request):
         expected_owner_id=request.expected_owner_id, tier=request.tier))
 
 
-def _piece_model_body(raw):
+PIECE_FIELD_SLOTS_FORMAT = 'piece.field_slots.v1'
+
+
+def _piece_model_body(raw, *, prepared=None, candidate_format=None):
     def invalid(_):
         raise ValueError('piece_model_nonfinite_json')
     value = json.loads(raw, object_pairs_hook=_unique_object, parse_constant=invalid)
+    if candidate_format == PIECE_FIELD_SLOTS_FORMAT:
+        from .preparation_sources import piece_model_field_slots
+        slots = piece_model_field_slots(prepared.payload())
+        require(type(value) is dict and set(value) == {'field_blocks'}
+                and type(value['field_blocks']) is dict
+                and set(value['field_blocks']) == set(slots)
+                and all(type(b) is str and b.strip() and '\n' not in b and '\r' not in b
+                        for b in value['field_blocks'].values()), 'piece_model_field_slots_shape')
+        value = dict(body_blocks=[value['field_blocks'][key] for key in slots])
+    else:
+        require(candidate_format is None, 'piece_model_candidate_format')
     require(type(value) is dict and set(value) == {'body_blocks'}
             and type(value['body_blocks']) is list and 1 <= len(value['body_blocks']) <= 3
             and all(type(b) is str and b.strip() for b in value['body_blocks']),
@@ -95,7 +109,8 @@ def _piece_model_body(raw):
 
 
 def receive_piece_model_candidate(prepared, *, raw_output, finish_reason, request_id=None,
-        provider=None, model=None, revision=None, usage=None, elapsed_seconds=None, adapter_revision=None):
+        provider=None, model=None, revision=None, usage=None, elapsed_seconds=None, adapter_revision=None,
+        candidate_format=None):
     """Retain an exact body-only response; never repair it or grant adoption."""
     request_id = prepared.request_id if request_id is None and type(prepared) is PreparedRequest else request_id
     require(type(prepared) is PreparedRequest and request_id == prepared.request_id
@@ -108,11 +123,12 @@ def receive_piece_model_candidate(prepared, *, raw_output, finish_reason, reques
             and math.isfinite(elapsed_seconds) and elapsed_seconds >= 0), 'piece_model_elapsed')
     require(usage is None or (type(usage) is dict and all(type(k) is str
             and (v is None or (type(v) is int and v >= 0)) for k, v in usage.items())), 'piece_model_usage')
+    require(candidate_format in (None, PIECE_FIELD_SLOTS_FORMAT), 'piece_model_candidate_format')
     packet = None
     status = 'EMPTY'
     if raw_output is not None and raw_output.strip():
         try:
-            packet = _piece_model_body(raw_output)
+            packet = _piece_model_body(raw_output, prepared=prepared, candidate_format=candidate_format)
             status = 'CANDIDATE_UNREVIEWED'
         except (ValueError, TypeError, UnicodeError, RecursionError, OverflowError):
             status = 'INVALID_FORMAT'
@@ -125,6 +141,8 @@ def receive_piece_model_candidate(prepared, *, raw_output, finish_reason, reques
         evidence_check='BODY_UNREVIEWED_NOT_SEMANTIC_ADMISSION')
     if adapter_revision is not None:
         metadata['adapter_revision'] = adapter_revision
+    if candidate_format is not None:
+        metadata['candidate_format'] = candidate_format
     return CandidateReceipt(request_id, status, raw_output,
         canonical(packet) if packet is not None else None, canonical(metadata))
 
@@ -137,16 +155,18 @@ def validate_piece_model_input(request, value):
             'piece_model_input_binding')
     receipt = value.receipt
     metadata = json.loads(receipt.metadata_json, object_pairs_hook=_unique_object)
-    require(type(metadata) is dict and set(metadata) in ({'provider', 'model', 'revision', 'usage',
-        'finish_reason', 'elapsed_seconds', 'evidence_check'}, {'provider', 'model', 'revision', 'usage',
-        'finish_reason', 'elapsed_seconds', 'evidence_check', 'adapter_revision'})
+    base_keys = {'provider', 'model', 'revision', 'usage',
+                 'finish_reason', 'elapsed_seconds', 'evidence_check'}
+    require(type(metadata) is dict and base_keys <= set(metadata)
+        <= base_keys | {'adapter_revision', 'candidate_format'}
         and metadata['evidence_check'] == 'BODY_UNREVIEWED_NOT_SEMANTIC_ADMISSION', 'piece_model_metadata_binding')
     options = {k: v for k, v in metadata.items() if k != 'evidence_check'}
     require(receive_piece_model_candidate(prepared, request_id=receipt.request_id,
         raw_output=receipt.raw_output, **options) == receipt, 'piece_model_receipt_binding')
     if receipt.status != 'CANDIDATE_UNREVIEWED':
         raise PieceSemanticUnsupported('piece_model_receipt_' + receipt.status.lower())
-    blocks = tuple(_piece_model_body(receipt.raw_output)['body_blocks'])
+    blocks = tuple(_piece_model_body(receipt.raw_output, prepared=prepared,
+        candidate_format=metadata.get('candidate_format'))['body_blocks'])
     require(len(blocks) == len(prepared.payload()['control']['block_partition']), 'piece_model_block_partition')
     return blocks
 

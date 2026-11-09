@@ -30,8 +30,8 @@ def prepared(*, refined=False):
 
 def raw_for(value):
     count = len(value.payload()['control']['block_partition'])
-    return json.dumps({'body_blocks': ['私は、陶芸を選びたい。',
-        '私は、考える時間を大切にしたい。'][:count]}, ensure_ascii=False)
+    return json.dumps({'field_blocks': dict(zip(('memo_0', 'answer_text_private_1')[:count],
+        ['私は、陶芸を選びたい。', '私は、考える時間を大切にしたい。'][:count], strict=True))}, ensure_ascii=False)
 
 
 def packet(raw, *, finish='stop', **changes):
@@ -77,6 +77,12 @@ def test_one_shared_base_request_keeps_complete_material_and_unadopted_raw(refin
                 stream=False, chat_template_kwargs={'enable_thinking': False})
         assert [message['role'] for message in body['messages']] == ['system', 'user']
         material = json.loads(body['messages'][1]['content'])
+        slots = material['control'].pop('field_slots')
+        assert set(slots) == ({'memo_0', 'answer_text_private_1'} if refined else {'memo_0'})
+        assert slots['memo_0']['literal'] == '私が選びたいのは、陶芸です。'
+        if refined:
+            assert slots['answer_text_private_1']['source_role'] == 'SUPPLEMENTAL_ANSWER'
+            assert slots['answer_text_private_1']['literal'] == '私は考える時間を大切にしたい。'
         assert material == original
         assert set(material['sources'][0]['original']) == {'id', 'created_at', 'memo',
             'memo_action', 'category', 'emotions', 'emotion_details'}
@@ -93,12 +99,14 @@ def test_one_shared_base_request_keeps_complete_material_and_unadopted_raw(refin
     assert receipt.request_id == value.request_id
     assert receipt.raw_output == raw
     assert receipt.status == 'CANDIDATE_UNREVIEWED'
-    assert json.loads(receipt.candidate_json) == json.loads(raw)
+    assert json.loads(receipt.candidate_json) == {'body_blocks':
+        ['私は、陶芸を選びたい。', '私は、考える時間を大切にしたい。'][:len(original['control']['block_partition'])]}
     assert receipt.adoption_state == 'NOT_ADOPTED'
     metadata = json.loads(receipt.metadata_json)
     assert metadata['model'] == MODEL and metadata['provider'] == sources.PROVIDER
     assert metadata['revision'] is None and metadata['usage'] is None
     assert metadata['evidence_check'] == 'BODY_UNREVIEWED_NOT_SEMANTIC_ADMISSION'
+    assert metadata['candidate_format'] == 'piece.field_slots.v1'
     assert value.payload() == original
 
 

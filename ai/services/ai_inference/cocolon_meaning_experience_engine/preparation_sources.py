@@ -174,6 +174,46 @@ def piece_model_material(source, *, expected_owner_id: str, tier: str = 'free') 
     return material
 
 
+def piece_model_field_slots(material):
+    """Resolve the existing Piece partition; this is not source admission.
+
+    Names/order are server-owned. Literal values stay exact Unicode scalar
+    slices, not expected author text or model-provided source locators.
+    """
+    try:
+        sources = material['sources']
+        control = material['control']
+        partition = control['block_partition']
+        if (material['core'] != 'piece' or material['task'] != 'PIECE_MODEL_BODY'
+                or control['model_body_only'] is not True or type(sources) is not list
+                or [s['role'] for s in sources] not in (
+                    ['ORIGINAL_INPUT'], ['ORIGINAL_INPUT', 'SUPPLEMENTAL_ANSWER'])
+                or type(partition) is not list or not 1 <= len(partition) <= 3):
+            raise ValueError
+        by_id = {s['source_id']: s for s in sources}
+        if len(by_id) != len(sources):
+            raise ValueError
+        slots = {}
+        for index, item in enumerate(partition):
+            if type(item) is not dict or set(item) != {
+                    'source_id', 'field_path', 'scalar_start', 'scalar_end'}:
+                raise ValueError
+            source = by_id[item['source_id']]
+            field = item['field_path']
+            allowed = ('memo', 'memo_action') if source['role'] == 'ORIGINAL_INPUT' else ('answer_text_private',)
+            text = source['text_fields'][field]
+            start, end = item['scalar_start'], item['scalar_end']
+            if (field not in allowed or type(text) is not str
+                    or type(start) is not int or type(end) is not int
+                    or not 0 <= start < end <= len(text) or not text[start:end].strip()):
+                raise ValueError
+            slots[field + '_' + str(index)] = dict(item,
+                source_role=source['role'], literal=text[start:end])
+        return slots
+    except (KeyError, TypeError, AttributeError, ValueError):
+        raise ValueError('piece_model_field_slots_invalid') from None
+
+
 def analysis_material(request, *, tier: str) -> dict:
     """Reuse Analysis's source freeze, including period and supplement checks."""
     from .cores.analysis.source_adapter import freeze_analysis_sources

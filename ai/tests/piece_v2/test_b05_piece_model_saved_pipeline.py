@@ -31,6 +31,13 @@ def _provider(monkeypatch, case_id, default_blocks):
         assert material['chat_template_kwargs'] == {'enable_thinking': False}
         prepared = json.loads(material['messages'][1]['content'])
         assert prepared['task'] == 'PIECE_MODEL_BODY'
+        if path is None or not path.exists():
+            # CPU prose remains independent fixed material. Only the named
+            # private wire format changes; semantic/save expectations do not.
+            keys = [item['field_path'] + '_' + str(index) for index, item
+                    in enumerate(prepared['control']['block_partition'])]
+            response['choices'][0]['message']['content'] = json.dumps(
+                {'field_blocks': dict(zip(keys, default_blocks, strict=True))}, ensure_ascii=False)
         seen.append(dict(prepared=prepared, response=response))
         return httpx.Response(200, json=response)
 
