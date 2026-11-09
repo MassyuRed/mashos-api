@@ -167,7 +167,11 @@ def supplemental_feeling_account(meaning):
             text = text[now.end():]
         topic = _SELF_TOPIC.fullmatch(text)
         if topic is None or not (
-                _FEELING.fullmatch(topic['body'])
+                # Occupy the existing grammar's optional subject slot in
+                # this parse-only view. Its remaining body must be solely a
+                # predicate, not a second 私も/自分は subject. Actual source
+                # wording and the six explicit SELF spellings stay intact.
+                _FEELING.fullmatch('私は' + topic['body'])
                 or _written_feeling_expression(text, current_affirmative_only=False) is not None):
             return False
     return True

@@ -72,6 +72,8 @@ def test_explicit_finite_answer_retained_as_its_own_source(case_id, original, an
     '私は嬉しかったと聞いた。',
     '私は嬉しかった？',
     '私は忙しかった。',
+    '私は私も嬉しかった。',
+    '僕は自分は嬉しい。',
 ))
 def test_no_guessed_owner_report_question_or_arbitrary_adjective(answer):
     out = produce(source(answer=answer))
