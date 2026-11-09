@@ -23,7 +23,7 @@ from .contracts import EngineStatus, ExecutionMode
 from .piece_source import (
     _SIMPLE_NOUN, _calendar_time_adverb_span, _direct_transitive_expression, _PERSON_NAME_LEFT_BOUNDARY,
     _validated_self_insight_mode, PiecePersonalEvaluation, PieceSourceMeaning, build_piece_source_meaning,
-    _literal_self_account, _written_feeling_expression, _SCOPE_RELATIONS,
+    _literal_self_account, _finite_self_request_account, _written_feeling_expression, _SCOPE_RELATIONS,
     _scoped_self_topic, _qualified_self_topic, _SCOPED_EXPRESSION, _same_self_scope_author,
     _FINITE_RESERVATION_QUESTION,
     piece_public_role_aliases, validate_piece_nominal_references, validate_piece_saved_fields,
@@ -345,7 +345,8 @@ def compile_piece_artifact_plan(meaning: PieceSourceMeaning) -> PieceArtifactPla
                 # at least one written action or explicit self expression
                 # must independently qualify, and every other sentence must
                 # be an account or the same finite reservation context.
-                actions = tuple(_is_unpunctuated_account(
+                actions = tuple(_finite_self_request_account(node.value)
+                    or _is_unpunctuated_account(
                         node.value[:-1] if node.value.endswith(('。', '！', '!')) else node.value,
                         allow_nonpast=node.value.endswith(('。', '！', '!')))
                     or bool(_PLAIN_SURU_ACCOUNT_END.search(node.value)

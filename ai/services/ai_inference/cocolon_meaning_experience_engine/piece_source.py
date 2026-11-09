@@ -209,6 +209,57 @@ def _validate_self_predicate_body(sentence: str) -> None:
                 raise unavailable('expression_meaning_not_admitted')
 
 
+def _finite_self_request_account(sentence: str) -> bool:
+    """Qualify a complete written request account for the existing KEEP duty.
+
+    Reuse the source-role reader's finite voice/case grammar, without making
+    its provisional witness a Piece claim, inferred person, or new author.
+    Only an explicit self subject and an already-supported written person
+    role qualify. Original words, negation, register and past time stay put.
+    """
+    from piece_v2_expression import _DEPENDENT_START, _EMBEDDED_REPORT
+    from piece_v2_generation import (
+        _UNCERTAIN, _OMITTED_ACCOUNT_QUESTION, _OMITTED_LEXICAL_SCOPE,
+        _OMITTED_NEW_PREFIX_GUARD,
+    )
+    from .natural_reply_meaning import (
+        _clauses, _DAY, _SUBJECT, _FORMS, _arguments, _focus_participant, _participant, _SELF,
+    )
+    if (not sentence.endswith('。') or any(pattern.search(sentence) for pattern in (
+            _UNCERTAIN, _OMITTED_ACCOUNT_QUESTION, _OMITTED_LEXICAL_SCOPE,
+            _OMITTED_NEW_PREFIX_GUARD, _DEPENDENT_START, _EMBEDDED_REPORT))):
+        return False
+    rows, count = _clauses(sentence, 'piece_account', 'CURRENT')
+    if len(rows) != 1 or count != 1 or not rows[0].source_context_complete:
+        return False
+    row = rows[0]
+    if (row.raw_text != sentence[:-1] or row.scalar_start != 0
+            or row.scalar_end != len(sentence) - 1
+            or row.subject != 'SELF' or row.predicate != '頼む'
+            or row.modality != 'fact' or row.temporal_scope != 'past'):
+        return False
+    value = _DAY.sub('', row.raw_text, count=1)
+    subject = _SUBJECT.match(value)
+    if subject is None:
+        return False
+    parsed = {_arguments(value[subject.end():-len(form)])
+              for form, lemma, polarity, modality, time, voice, receiving in _FORMS
+              if (lemma, polarity, modality, time, voice, receiving) == (
+                  row.predicate, row.polarity, row.modality, row.temporal_scope, row.voice, False)
+              and value.endswith(form)}
+    if len(parsed) != 1 or None in parsed:
+        return False
+    args = parsed.pop()
+    people = [(case, noun) for case, noun in args if case in {'に', 'から'}]
+    person = _participant(people[0][1], reply=False) if len(people) == 1 else ''
+    return bool(len(args) == 2 and sum(case == 'を' for case, _ in args) == 1
+                and len(people) == 1
+                and (row.voice == 'passive' or people[0][0] == 'に')
+                and person.startswith('WRITTEN:')
+                and person.removeprefix('WRITTEN:') not in _SELF | {'あなた', '本人', '彼', '彼女'}
+                and _focus_participant(people[0][1]))
+
+
 def _literal_self_account(sentence: str) -> bool:
     """Retain a finite self expression without deciding wish versus simile.
 
