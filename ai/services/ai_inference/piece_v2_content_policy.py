@@ -94,13 +94,6 @@ def choose_format(*, tier: str, requested: str | None, eligible: tuple[str, ...]
     return selected
 
 
-def _piece_model_undecided_target(text):
-    """Read the existing complete, literal-bound decision reservation only."""
-    return re.fullmatch(
-        r'(?P<prefix>まだ[、，,](?P<target>[^。！？!?「」『』"\r\n、，,]+(?:かは|日は)))'
-        r'(?P<predicate>決めて(?:いません|いない))。', text)
-
-
 def _piece_model_feeling(text):
     """Read existing complete SELF feelings; never infer from a selection."""
     from piece_v2_expression import _SELF_TOPIC
@@ -565,7 +558,8 @@ def validate_source_meaning_preservation(meaning, plan, artifact, *, _model_regi
         # A source-bound decision target is retained byte-for-byte. This is
         # only the existing nonpast negative 決めている register pair, not a
         # parser for arbitrary negative statements or an inferred reservation.
-        match = _piece_model_undecided_target(source)
+        match = re.fullmatch(r'(?P<prefix>まだ[、，,][^。！？!?「」『』"\r\n、，,]+(?:かは|日は))'
+                             r'決めて(?:いません|いない)。', source)
         if match is None:
             return False
         return re.fullmatch(anchor(match['prefix']) + r'決めて(?:いません|いない)。', visible) is not None

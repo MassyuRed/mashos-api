@@ -155,19 +155,17 @@ def test_different_written_narrators_do_not_share_polarity_or_tense():
 
 
 @pytest.mark.parametrize('target', ('参加する日は', '毎日続けるかは'))
-def test_undecided_conditions_keep_the_entire_source_target(target):
+def test_undecided_target_does_not_add_a_generation_hint(target):
     text = '僕は読書が好きでした。まだ、' + target + '決めていません。'
     material, _ = messages(source(text, field='memo'))
     slot = field_constraints(material)['memo_0']
-    start = text.index('まだ、')
-    assert slot['required_undecided_targets'] == [dict(prefix_literal='まだ、' + target,
-        target_literal=target, predicate_literal='決めていません', polarity='negative',
-        temporal_scope='nonpast', scalar_start=start, scalar_end=len(text))]
-    # The pre-existing past evaluation condition is unaffected by the new axis.
+    assert 'required_undecided_targets' not in slot
+    assert 'finite_scope_instruction' not in material['control']['authoring_constraints']
     assert slot['required_evaluations'][0]['temporal_scope'] == 'PAST'
+    assert material['control']['field_slots']['memo_0']['literal'] == text
 
 
-def test_action_and_reservation_are_local_to_original_fields_and_the_answer():
+def test_action_conditions_are_local_to_original_fields_and_the_answer():
     original = '僕は司書に展示の予定を相談しました。まだ、参加する日は決めていません。'
     answer = 'わたしは読書が好きでした。'
     material, _ = messages(refined_source(original=original, answer=answer))
@@ -179,7 +177,7 @@ def test_action_and_reservation_are_local_to_original_fields_and_the_answer():
     assert original_slot['required_actions'][0]['narrator_literal'] == '僕'
     assert original_slot['required_actions'][0]['polarity'] == 'positive'
     assert original_slot['required_actions'][0]['scalar_start'] == 0
-    assert original_slot['required_undecided_targets'][0]['target_literal'] == '参加する日は'
+    assert 'required_undecided_targets' not in original_slot
     assert answer_slot['required_evaluations'][0]['narrator_literal'] == 'わたし'
     assert 'required_actions' not in answer_slot and 'required_undecided_targets' not in answer_slot
 
@@ -201,24 +199,45 @@ def test_source_action_projection_does_not_parse_a_substring_or_infer_a_writer(t
     assert _source_action_constraint(text) is None
 
 
-def test_explicit_kara_passive_retains_its_written_direction_instead_of_active_self():
+def test_explicit_kara_passive_does_not_receive_action_rewrite_conditions():
     text = '私は司書から展示の予定を伝えられました。'
     material, _ = messages(source(text, field='memo'))
-    action = field_constraints(material)['memo_0']['required_actions'][0]
-    assert action['voice'] == 'passive' and action['narrator_literal'] == '私'
-    assert action['arguments'] == [dict(case='から', literal='司書'), dict(case='を', literal='展示の予定')]
+    assert 'authoring_constraints' not in material['control']
+    assert material['control']['field_slots']['memo_0']['literal'] == text
 
 
-@pytest.mark.parametrize('text', [
-    '参加する日は決めていません。', 'まだ、参加するかは決めていなかった。',
-    'まだ、参加するかは決めていないかもしれない。',
-    'まだ、参加することは決めていません。',
-    'まだ、参加するかは決めていません。私は参加します。',
-    '「まだ、参加するかは決めていません。」',
-])
-def test_reservation_projection_reuses_the_exact_existing_whole_reader(text):
-    from piece_v2_content_policy import _piece_model_undecided_target
-    assert _piece_model_undecided_target(text) is None
+@pytest.mark.parametrize('passive_first', [True, False])
+def test_passive_and_active_in_one_field_receive_no_action_conditions(passive_first):
+    active = '僕は受付係に開場の時刻を伝えませんでした。'
+    passive = '私は司書から展示の予定を頼まれました。'
+    text = passive + active if passive_first else active + passive
+    material, _ = messages(source(text, field='memo'))
+    assert 'authoring_constraints' not in material['control']
+    assert material['control']['field_slots']['memo_0']['literal'] == text
+
+
+@pytest.mark.parametrize('passive_field', ('memo', 'memo_action'))
+def test_passive_field_does_not_suppress_another_fields_active_conditions(passive_field):
+    active = '僕は受付係に開場の時刻を伝えませんでした。'
+    passive = '私は司書から展示の予定を頼まれました。'
+    material, _ = messages(source(passive, field=passive_field, other=active))
+    constraints = field_constraints(material)
+    active_field = 'memo_action' if passive_field == 'memo' else 'memo'
+    assert len(constraints) == 1
+    slot = next(iter(constraints.values()))
+    assert slot['field_path'] == active_field
+    assert slot['required_actions'][0]['narrator_literal'] == '僕'
+    assert slot['required_actions'][0]['polarity'] == 'negative'
+    assert slot['required_actions'][0]['scalar_start'] == 0
+
+
+def test_passive_suppression_preserves_existing_evaluation_conditions_in_its_field():
+    text = '私は司書から展示の予定を頼まれました。僕は読書が好きでした。'
+    material, _ = messages(source(text, field='memo'))
+    slot = field_constraints(material)['memo_0']
+    assert 'required_actions' not in slot
+    assert slot['required_evaluations'][0]['narrator_literal'] == '僕'
+    assert slot['required_evaluations'][0]['temporal_scope'] == 'PAST'
 
 
 def test_evaluation_only_wire_has_no_new_condition_or_instruction():

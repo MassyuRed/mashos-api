@@ -84,7 +84,6 @@ def _authoring_constraints(prepared, source_request, slots):
     from cocolon_meaning_experience_engine.piece_source import (
         piece_public_role_aliases, piece_source_text)
     from piece_v2_contract import PieceContractError
-    from piece_v2_content_policy import _piece_model_undecided_target
 
     if prepare_piece_model_request(source_request) != prepared:
         raise ValueError('piece_model_authoring_source_mismatch')
@@ -105,28 +104,32 @@ def _authoring_constraints(prepared, source_request, slots):
         aliases = piece_public_role_aliases(part.role_bindings)
         sentences = {item.node_id: item for item in part.sentences}
         evidence = {item.source_span_id: item for item in part.evidence}
+        actions_by_node, passive_fields = {}, set()
+        for sentence in part.sentences:
+            literal = text[sentence.source_start:sentence.source_end]
+            action = _source_action_constraint(literal)
+            if action is not None:
+                ref = evidence[sentence.node_id]
+                actions_by_node[sentence.node_id] = action
+                if action['voice'] != 'active':
+                    passive_fields.add(ref.field_path)
         for key, slot in slots.items():
             if slot['source_id'] != source['source_id']:
                 continue
-            names, evaluations, actions, undecided = [], [], [], []
+            names, evaluations, actions = [], [], []
             for sentence in part.sentences:
                 ref = evidence[sentence.node_id]
                 if (ref.field_path != slot['field_path']
                         or not slot['scalar_start'] <= ref.scalar_start
                         < ref.scalar_end <= slot['scalar_end']):
                     continue
-                literal = text[sentence.source_start:sentence.source_end]
-                action = _source_action_constraint(literal)
-                if action is not None:
+                action = actions_by_node.get(sentence.node_id)
+                # A passive field keeps its prior authoring input. Its
+                # source narrator must not invite a rewritten active event;
+                # the model's existing whole-body reviewer still owns KEEP.
+                if action is not None and slot['field_path'] not in passive_fields:
                     actions.append(dict(**action, scalar_start=ref.scalar_start,
                                         scalar_end=ref.scalar_end))
-                reservation = _piece_model_undecided_target(literal)
-                if reservation is not None:
-                    undecided.append(dict(prefix_literal=reservation['prefix'],
-                        target_literal=reservation['target'],
-                        predicate_literal=reservation['predicate'], polarity='negative',
-                        temporal_scope='nonpast', scalar_start=ref.scalar_start,
-                        scalar_end=ref.scalar_end))
             for binding in part.role_bindings:
                 owners = [item for item in part.sentences
                           if item.source_start <= binding.source_start
@@ -158,15 +161,13 @@ def _authoring_constraints(prepared, source_request, slots):
                     polarity=frame.polarity, temporal_scope=frame.temporal_scope,
                     commitment=frame.commitment,
                     scalar_parts=[[a + delta, b + delta] for a, b in frame.scalar_parts]))
-            if names or evaluations or actions or undecided:
+            if names or evaluations or actions:
                 result[key] = dict(source_id=slot['source_id'], source_role=slot['source_role'],
                     field_path=slot['field_path'], scalar_start=slot['scalar_start'],
                     scalar_end=slot['scalar_end'], named_people=names,
                     required_evaluations=evaluations)
                 if actions:
                     result[key]['required_actions'] = actions
-                if undecided:
-                    result[key]['required_undecided_targets'] = undecided
     return result
 
 
@@ -206,11 +207,9 @@ def build_piece_model_messages(prepared, *, include_authoring_constraints=False,
                 control['authoring_constraints'] = dict(
                     instruction='各欄に対応する原文で成立した条件です。評価の本人・対象・述語・肯否・時点・留保を本文に保持し、named_peopleの氏名は同じ行のpublic_roleへ抽象化してください。他の欄やsourceへ条件を移さず、条件にない意味を補わないでください。',
                     field_slots=constraints)
-                if any('required_actions' in slot or 'required_undecided_targets' in slot
-                       for slot in constraints.values()):
+                if any('required_actions' in slot for slot in constraints.values()):
                     control['authoring_constraints']['finite_scope_instruction'] = (
-                        'required_actionsは各動作の本人表記・相手と対象・肯否・時点を別々に保持してください。'
-                        'required_undecided_targetsは記載された対象について未決定のまま保持してください。')
+                        'required_actionsは各動作の本人表記・相手と対象・肯否・時点を別々に保持してください。')
         # payload() is detached. Whole sources/private_json/request_id remain
         # unchanged; scalar slices are not normalized, trimmed or rewritten.
         return [dict(role='system', content=SYSTEM_MESSAGE),
