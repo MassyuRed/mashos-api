@@ -22,3 +22,18 @@ def test_evaluation_receipt_stays_fixed_through_save_retry_and_new_owner_read(
     assert value['detail']['piece_text'] == body != memo
     assert value['quota_consumptions'] == 1 and value['source_unchanged'] and value['emlis_unchanged']
     _evidence(case_id + '-' + tier, value, seen)
+
+
+@pytest.mark.parametrize('tier', ('free', 'plus', 'premium'))
+def test_original_focal_surface_can_be_saved_without_forcing_the_old_author_word_order(
+        saved_piece_db, monkeypatch, tier):
+    body='私が選びたいのは、版画です。'
+    seen=_provider(monkeypatch,'focal-source-surface',[body])
+    record=dict(id='focal-source-surface',
+        created_at=saved_piece_db.query('SELECT now()::text AS stamp')['rows'][0]['stamp'],
+        memo=body,memo_action=None,category=['趣味','価値観'],emotions=['自己理解'],
+        emotion_details=[dict(type='自己理解',strength='medium')])
+    value=_run_saved_request(saved_piece_db,monkeypatch,record,tier=tier)
+    assert value['detail']['piece_text']==body
+    assert value['quota_consumptions']==1 and value['source_unchanged'] and value['emlis_unchanged']
+    _evidence('focal-source-surface-'+tier,value,seen)

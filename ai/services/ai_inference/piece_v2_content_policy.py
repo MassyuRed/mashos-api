@@ -157,6 +157,20 @@ def _piece_model_evaluation(text):
         frame.polarity, frame.temporal_scope, frame.commitment)
 
 
+def _piece_model_focal(text):
+    """Keep the existing complete SELF focal grammar in its original form.
+
+    Predicate wording retains polarity/time/modal scope; the complete target
+    stays literal. Named roles/references/scopes still require the S7 owner.
+    This does not grant arbitrary unchanged text a semantic interpretation.
+    """
+    from piece_v2_generation import _FOCUS
+    match = _FOCUS.fullmatch(text)
+    if match is None:
+        return None
+    return ('FOCAL', 'SELF', match['predicate'], match['object'])
+
+
 def _piece_model_read_block(text, *, allow_self_omission=False):
     """Use the finite reader in the person's voice, not Emlis's voice.
 
@@ -177,9 +191,10 @@ def _piece_model_read_block(text, *, allow_self_omission=False):
         # The ledger excludes a terminal stop; the feeling grammar owns it.
         feeling = _piece_model_feeling(raw + '。')
         evaluation = _piece_model_evaluation(raw + '。')
+        focal = _piece_model_focal(raw + '。')
         parsed, count = reader._clauses(raw, 'piece.visible', 'PIECE_OUTPUT', reply=False)
-        if feeling is not None or evaluation is not None:
-            result.append(feeling if feeling is not None else evaluation)
+        if feeling is not None or evaluation is not None or focal is not None:
+            result.append(next(value for value in (feeling, evaluation, focal) if value is not None))
             self_context = True
             continue
         if len(parsed) != count or len(parsed) != 1:

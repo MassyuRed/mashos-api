@@ -138,6 +138,37 @@ def test_identical_original_and_answer_are_separate_slots_not_deduplicated():
     assert len({v['source_id'] for v in slots.values()})==2
 
 
+@pytest.mark.parametrize('speaker', ('私','わたし','僕','ぼく','俺','おれ'))
+@pytest.mark.parametrize('predicate', ('選びたい','選びたくない','大切にしたい','大切にしたくない'))
+def test_existing_focal_grammar_keeps_complete_source_surface_without_second_author(speaker, predicate):
+    text=speaker+'が'+predicate+'のは、版画です。'
+    req=request(source(text,field='memo'))
+    out=produce(req,wire({'memo_0':text}))
+    assert out.artifact is not None, out.reason_codes
+    assert out.artifact.body_blocks==(text,)
+
+
+def test_recorded_refined_focal_source_is_preserved_separately_from_the_answer():
+    original='私が選びたいのは、版画です。';answer='私は一人で考える時間を大切にしたい。'
+    req=refined_request(refined_source(original,answer))
+    out=produce(req,wire({'answer_text_private_1':answer,'memo_0':original}))
+    assert out.artifact is not None, out.reason_codes
+    assert out.artifact.body_blocks==(original,answer)
+    assert out.source_meaning.original.saved_snapshot.saved_original_json==req.source.original.saved_original_json
+
+
+@pytest.mark.parametrize('changed', (
+    '友人が選びたいのは、版画です。', '私の友人が選びたいのは、版画です。',
+    '私が選びたくないのは、版画です。', '私が選びたかったのは、版画です。',
+    '私が選びたいかもしれないのは、版画です。', '私が選びたいのは、水彩です。',
+    '疲れたので、私が選びたいのは、版画です。',
+    '私が選びたいのは、版画です。だから安心した。',
+))
+def test_focal_reading_does_not_accept_changed_owner_predicate_target_or_added_scope(changed):
+    req=request(source('私が選びたいのは、版画です。',field='memo'))
+    assert produce(req,wire({'memo_0':changed})).artifact is None
+
+
 @pytest.mark.parametrize('change', [{'scalar_start':True},{'scalar_end':True},{'scalar_start':-1},
     {'scalar_end':999},{'scalar_end':0},{'field_path':'created_at'},{'source_id':'other'},{'literal':'override'}])
 def test_rehashed_bad_locators_never_become_transport_literals(change):
