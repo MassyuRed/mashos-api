@@ -116,6 +116,47 @@ def _piece_model_feeling(text):
         ('NOW', 'も' if 'も' in prefix else 'は') if now else ())
 
 
+def _piece_model_evaluation(text):
+    """Read a complete written SELF evaluation with the existing Piece owner.
+
+    The original source still needs its normal admission. These temporary
+    nodes are parser input for the visible sentence, never evidence/authority
+    supplied by the model. Only the established evaluation grammar supplies
+    polarity, time and commitment; the entire nominal target stays literal.
+    """
+    from cocolon_meaning_experience_engine.contracts import MeaningNode, EpistemicState
+    from cocolon_meaning_experience_engine.piece_source import (
+        PieceSentenceMeaning, _personal_evaluation_shapes,
+        _EVALUATIVE_FOCUS, _EVALUATIVE_FINITE, _evaluation_target_references,
+        _SCOPED_EXPRESSION, _TEMPORAL_EVALUATION,
+    )
+    if _SCOPED_EXPRESSION.fullmatch(text) or _TEMPORAL_EVALUATION.fullmatch(text):
+        return None
+    match = _EVALUATIVE_FOCUS.fullmatch(text) or _EVALUATIVE_FINITE.fullmatch(text)
+    if match is None or _evaluation_target_references(match['target']):
+        return None
+    node = MeaningNode('piece:visible', 'piece:visible', 'PIECE_SOURCE_PROPOSITION',
+        'explicit', text, EpistemicState.SOURCE_EXPLICIT, ())
+    span = PieceSentenceMeaning(node.node_id, '', 0, len(text), 'source_context')
+    try:
+        frames = _personal_evaluation_shapes(text, (node,), (span,))
+    except PieceContractError:
+        return None
+    if len(frames) != 1:
+        return None
+    frame = frames[0]
+    if frame.scalar_parts != tuple(match.span(key) for key in ('speaker', 'predicate', 'target')):
+        return None
+    predicate = text[slice(*frame.scalar_parts[1])]
+    # The grammar admits exactly one of its existing degree operators.
+    # Retain it separately from the base and inflection, rather than dropping
+    # modifiers or equating a negative modal with an affirmative assertion.
+    degree = predicate[:predicate.index(match['base'])]
+    return ('EVALUATION', 'SELF', frame.construction, frame.kind,
+        text[slice(*frame.scalar_parts[2])], match['base'], degree,
+        frame.polarity, frame.temporal_scope, frame.commitment)
+
+
 def _piece_model_read_block(text, *, allow_self_omission=False):
     """Use the finite reader in the person's voice, not Emlis's voice.
 
@@ -135,9 +176,10 @@ def _piece_model_read_block(text, *, allow_self_omission=False):
         raw = text[row.start:row.end]
         # The ledger excludes a terminal stop; the feeling grammar owns it.
         feeling = _piece_model_feeling(raw + '。')
+        evaluation = _piece_model_evaluation(raw + '。')
         parsed, count = reader._clauses(raw, 'piece.visible', 'PIECE_OUTPUT', reply=False)
-        if feeling is not None:
-            result.append(feeling)
+        if feeling is not None or evaluation is not None:
+            result.append(feeling if feeling is not None else evaluation)
             self_context = True
             continue
         if len(parsed) != count or len(parsed) != 1:
