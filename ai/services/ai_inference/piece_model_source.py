@@ -39,13 +39,91 @@ def _json(value):
                       separators=(',', ':'), allow_nan=False)
 
 
-def build_piece_model_messages(prepared):
+def _authoring_constraints(prepared, source_request, slots):
+    """Project admitted source axes for an explicit development comparison.
+
+    The source request is required because preparation intentionally freezes
+    source material before finite meaning admission. This helper neither
+    invents an admission from wire data nor supplies an expected Piece body.
+    """
+    from cocolon_meaning_experience_engine.piece_semantic_admission import (
+        prepare_piece_model_request, piece_model_source_plan)
+    from cocolon_meaning_experience_engine.piece_refined import PieceRefinedMeaning
+    from cocolon_meaning_experience_engine.piece_source import (
+        piece_public_role_aliases, piece_source_text)
+    from piece_v2_contract import PieceContractError
+
+    if prepare_piece_model_request(source_request) != prepared:
+        raise ValueError('piece_model_authoring_source_mismatch')
+    try:
+        meaning, _ = piece_model_source_plan(source_request)
+    except PieceContractError:
+        # An unread/ambiguous source gains no authoring claims. Candidate
+        # admission later keeps its existing refusal; no grammar is widened.
+        return {}
+    parts = ((meaning.original, meaning.supplemental)
+             if type(meaning) is PieceRefinedMeaning else (meaning,))
+    sources = prepared.payload()['sources']
+    result = {}
+    for part, source in zip(parts, sources, strict=True):
+        text = piece_source_text(part)
+        if part.envelope.source_record_id != source['source_id']:
+            raise ValueError('piece_model_authoring_source_mismatch')
+        aliases = piece_public_role_aliases(part.role_bindings)
+        sentences = {item.node_id: item for item in part.sentences}
+        evidence = {item.source_span_id: item for item in part.evidence}
+        for key, slot in slots.items():
+            if slot['source_id'] != source['source_id']:
+                continue
+            names, evaluations = [], []
+            for binding in part.role_bindings:
+                owners = [item for item in part.sentences
+                          if item.source_start <= binding.source_start
+                          < binding.source_end <= item.source_end]
+                if len(owners) != 1:
+                    raise ValueError('piece_model_authoring_role_range')
+                sentence = owners[0]
+                ref = evidence[sentence.node_id]
+                delta = ref.scalar_start - sentence.source_start
+                start, end = binding.source_start + delta, binding.source_end + delta
+                if (ref.field_path == slot['field_path']
+                        and slot['scalar_start'] <= start < end <= slot['scalar_end']):
+                    names.append(dict(written_name=binding.name,
+                        source_phrase=text[binding.source_start:binding.source_end],
+                        public_role=aliases[binding.name], scalar_start=start, scalar_end=end))
+            for frame in part.personal_evaluations:
+                sentence = sentences[frame.node_id]
+                ref = evidence[frame.node_id]
+                if (ref.field_path != slot['field_path']
+                        or not slot['scalar_start'] <= ref.scalar_start
+                        < ref.scalar_end <= slot['scalar_end']):
+                    continue
+                delta = ref.scalar_start - sentence.source_start
+                evaluations.append(dict(
+                    narrator_literal=text[slice(*frame.scalar_parts[0])],
+                    predicate_literal=text[slice(*frame.scalar_parts[1])],
+                    target_literal=text[slice(*frame.scalar_parts[2])],
+                    construction=frame.construction, kind=frame.kind,
+                    polarity=frame.polarity, temporal_scope=frame.temporal_scope,
+                    commitment=frame.commitment,
+                    scalar_parts=[[a + delta, b + delta] for a, b in frame.scalar_parts]))
+            if names or evaluations:
+                result[key] = dict(source_id=slot['source_id'], source_role=slot['source_role'],
+                    field_path=slot['field_path'], scalar_start=slot['scalar_start'],
+                    scalar_end=slot['scalar_end'], named_people=names,
+                    required_evaluations=evaluations)
+    return result
+
+
+def build_piece_model_messages(prepared, *, include_authoring_constraints=False, source_request=None):
     """Keep the complete frozen original and a separate supplemental source.
 
     The transport-only slot view resolves existing source ranges. It never
     changes the frozen preparation or supplies expected author prose.
     """
     try:
+        if type(include_authoring_constraints) is not bool:
+            raise ValueError
         if (type(prepared) is not PreparedRequest or type(prepared.private_json) is not str
                 or prepared.request_id != 'prep-' + hashlib.sha256(
                     prepared.private_json.encode('utf-8')).hexdigest()):
@@ -67,6 +145,12 @@ def build_piece_model_messages(prepared):
             raise ValueError
         from cocolon_meaning_experience_engine.preparation_sources import piece_model_field_slots
         control['field_slots'] = piece_model_field_slots(material)
+        if include_authoring_constraints:
+            constraints = _authoring_constraints(prepared, source_request, control['field_slots'])
+            if constraints:
+                control['authoring_constraints'] = dict(
+                    instruction='各欄に対応する原文で成立した条件です。評価の本人・対象・述語・肯否・時点・留保を本文に保持し、named_peopleの氏名は同じ行のpublic_roleへ抽象化してください。他の欄やsourceへ条件を移さず、条件にない意味を補わないでください。',
+                    field_slots=constraints)
         # payload() is detached. Whole sources/private_json/request_id remain
         # unchanged; scalar slices are not normalized, trimmed or rewritten.
         return [dict(role='system', content=SYSTEM_MESSAGE),
@@ -106,10 +190,12 @@ class Shared4BPieceModelSource:
         self.endpoint, self.model, self._api_key = endpoint, model, api_key
         self._transport = transport
 
-    async def __call__(self, prepared):
+    async def __call__(self, prepared, *, source_request=None):
         from cocolon_meaning_experience_engine.piece_semantic_admission import (
             receive_piece_model_candidate, PIECE_FIELD_SLOTS_FORMAT)
-        messages = build_piece_model_messages(prepared)
+        messages = build_piece_model_messages(prepared,
+            include_authoring_constraints=source_request is not None,
+            source_request=source_request)
         started = time.monotonic()
 
         def receipt(raw=None, finish='error', *, usage=None, revision=None):
@@ -190,7 +276,7 @@ class _ApplicationPieceModelSource:
         if self._settings != _settings():
             raise RuntimeError('piece_model_configuration_changed')
 
-    async def __call__(self, prepared):
+    async def __call__(self, prepared, *, source_request=None):
         self.require_current()
         selector, endpoint, model, api_key = self._settings
         if selector != SELECTOR:
@@ -199,7 +285,8 @@ class _ApplicationPieceModelSource:
             source = Shared4BPieceModelSource(endpoint=endpoint, model=model, api_key=api_key)
         except ValueError:
             raise RuntimeError('piece_model_configuration_invalid') from None
-        result = await source(prepared)
+        result = await source(prepared, **({'source_request': source_request}
+                                          if source_request is not None else {}))
         self.require_current()
         return result
 
@@ -223,3 +310,14 @@ def application_piece_model_source():
 def require_current_piece_model_source(source):
     if type(source) is _ApplicationPieceModelSource:
         source.require_current()
+
+
+async def call_piece_model_source(source, prepared, *, source_request=None):
+    """Pass trusted authoring input only to the configured application source.
+
+    Existing custom callbacks retain their single-argument contract. The
+    callback object is not wrapped, preserving request-private sharing identity.
+    """
+    if type(source) is _ApplicationPieceModelSource:
+        return await source(prepared, source_request=source_request)
+    return await source(prepared)

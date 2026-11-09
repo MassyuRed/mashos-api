@@ -61,7 +61,9 @@ _MODEL_UNAVAILABLE = frozenset({'TIMEOUT', 'TOKEN_LIMIT', 'PROVIDER_ERROR',
                               'EMPTY', 'INVALID_FORMAT', 'UNKNOWN_FINISH'})
 
 
-async def _shared_model_receipt(owner, key, fingerprint, source, prepared, *, retain=None):
+async def _shared_model_receipt(owner, key, fingerprint, source, prepared, *,
+                                retain=None, source_request=None):
+    from piece_model_source import call_piece_model_source
     loop = asyncio.get_running_loop()
     slot = (loop, owner, key)
     entry = _MODEL_INFLIGHT.get(slot)
@@ -71,7 +73,8 @@ async def _shared_model_receipt(owner, key, fingerprint, source, prepared, *, re
     else:
         if len(_MODEL_INFLIGHT) >= _MAX_MODEL_INFLIGHT:
             raise _error('PIECE_TEMPORARILY_UNAVAILABLE')
-        task = loop.create_task(source(prepared))
+        task = loop.create_task(call_piece_model_source(source, prepared,
+            source_request=source_request))
         # Consume an exception even when all callers cancel. A provider task
         # owns no save/RPC and cannot publish a late result on its own.
         task.add_done_callback(lambda finished: None if finished.cancelled() else finished.exception())
@@ -99,17 +102,23 @@ async def _shared_model_receipt(owner, key, fingerprint, source, prepared, *, re
             release()
 
 
-def _prepare_model_request(handoff, value):
+def _model_source_request(handoff, value):
+    """Construct the sole trusted Piece source request without model access."""
     from cocolon_meaning_experience_engine.piece_v1c import PieceGenerationRequest
-    from cocolon_meaning_experience_engine.piece_semantic_admission import prepare_piece_model_request
     original = handoff.original
+    return PieceGenerationRequest(
+        request_id='piece-offline-candidate', source=_project_handoff_source(handoff),
+        expected_owner_id=original.authenticated_owner_id,
+        expected_saved_input_id=original.saved_input_id,
+        expected_source_version=original.source_input_version,
+        tier=original.subscription_tier, requested_format=value['requested_format'])
+
+
+def _prepare_model_inputs(handoff, value):
+    from cocolon_meaning_experience_engine.piece_semantic_admission import prepare_piece_model_request
     try:
-        return prepare_piece_model_request(PieceGenerationRequest(
-            request_id='piece-offline-candidate', source=_project_handoff_source(handoff),
-            expected_owner_id=original.authenticated_owner_id,
-            expected_saved_input_id=original.saved_input_id,
-            expected_source_version=original.source_input_version,
-            tier=original.subscription_tier, requested_format=value['requested_format']))
+        source_request = _model_source_request(handoff, value)
+        return source_request, prepare_piece_model_request(source_request)
     except ValueError as exc:
         raise _error('PIECE_FORMAT_NOT_ELIGIBLE' if str(exc) == 'piece_model_format_not_supported'
                      else 'PIECE_SOURCE_NOT_ELIGIBLE') from None
@@ -329,9 +338,11 @@ class PiecePreviewService:
                 _model_input = None
                 if selected is not None:
                     from cocolon_meaning_experience_engine.piece_semantic_admission import PieceModelInputV1
-                    from piece_model_source import require_current_piece_model_source
-                    model_request = _prepare_model_request(handoff, value)
-                    receipt = await selected(model_request)
+                    from piece_model_source import (
+                        require_current_piece_model_source, call_piece_model_source)
+                    source_request, model_request = _prepare_model_inputs(handoff, value)
+                    receipt = await call_piece_model_source(selected, model_request,
+                        source_request=source_request)
                     require_current_piece_model_source(selected)
                     if getattr(receipt, 'status', None) in _MODEL_UNAVAILABLE:
                         raise _error('PIECE_TEMPORARILY_UNAVAILABLE')
@@ -891,14 +902,15 @@ class PiecePreviewService:
             if selected is not None:
                 from cocolon_meaning_experience_engine.piece_semantic_admission import PieceModelInputV1
                 from piece_model_source import require_current_piece_model_source
-                model_request = _prepare_model_request(handoff, value)
+                source_request, model_request = _prepare_model_inputs(handoff, value)
                 fingerprint = canonical_sha256_hex(dict(request=value,
                     prepared_request_id=model_request.request_id, ttl_seconds=ttl_seconds,
                     renderer_version=renderer_version,
                     allowed_renderers=None if allowed_renderers is None else list(allowed_renderers),
                     expected_subscription_tier=expected_subscription_tier))
                 receipt = await _shared_model_receipt(owner, key, fingerprint, selected, model_request,
-                                                      retain=model_releases)
+                                                      retain=model_releases,
+                                                      source_request=source_request)
                 require_current_piece_model_source(selected)
                 if getattr(receipt, 'status', None) in _MODEL_UNAVAILABLE:
                     raise _error('PIECE_TEMPORARILY_UNAVAILABLE')
