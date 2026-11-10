@@ -151,10 +151,14 @@ def test_independent_authors_do_not_become_one_author():
                 '私は、手芸を大切にしています。僕は、散歩を望んでいません。' + TAIL)
 
 
-def test_no_minimum_length_relaxation_or_filler():
-    _, result = outcome('私は散歩を望んでいる。')
-    assert result.status == EngineStatus.UNAVAILABLE
-    assert result.artifact is None
+def test_short_nominal_intent_is_not_padded_to_satisfy_a_format():
+    # The decided source-scaled short_essay minimum is 1, not the old 24.
+    text = '私は散歩を望んでいる。'
+    source, result = outcome(text)
+    assert result.status == EngineStatus.GENERATED
+    assert result.source_meaning.envelope.raw_utf8 == source.original_text.encode() == text.encode()
+    assert result.artifact.body_blocks == ('私は、散歩を望んでいる。',)
+    assert result.artifact.format_type == 'short_essay'
 
 
 def test_source_plan_tampering_still_fails():

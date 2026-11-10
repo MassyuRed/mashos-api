@@ -1111,6 +1111,22 @@ _EVALUATIVE_FINITE = re.compile(
 _SIMPLE_NOUN = re.compile(r'[一-龥々ァ-ヴー]+')
 
 
+def _modified_preference_nominal(target: str) -> bool:
+    """Prove a whole lexical noun phrase only for explicit SELF preferences.
+
+    Reuse the grounded reader's closed attributive/nominal segments and its
+    written genitive link. 静かな is a lexical attributive, not arbitrary
+    kana followed by な. No clause, missing segment, question or target
+    shortening is licensed, and the shared transitive/focal noun stays put.
+    """
+    from emlis_ai_grounded_observation_plan import _WISH_OBJECT_NOMINAL_SOURCE
+    if any(cue in target for cue in ('何', '誰')):
+        return False
+    segment = (r'(?:' + _WISH_OBJECT_NOMINAL_SOURCE
+               + r'|静かな' + _SIMPLE_NOUN.pattern + r')')
+    return re.fullmatch(segment + r'(?:の' + segment + r')*', target) is not None
+
+
 def _personal_evaluation_shapes(text: str, nodes: tuple[MeaningNode, ...],
                           sentences: tuple[PieceSentenceMeaning, ...]
                           ) -> tuple[PiecePersonalEvaluation, ...]:
@@ -1172,8 +1188,12 @@ def _personal_evaluation_shapes(text: str, nodes: tuple[MeaningNode, ...],
                          and not any(cue in target[:-2] for cue in ('何', '誰')))
         bare = (match['construction'] in ('にとって', 'は')
                 and (_SIMPLE_NOUN.fullmatch(target) or activity_noun))
+        modified_preference = (not (nominal or bare)
+                               and kind == 'PERSONAL_PREFERENCE'
+                               and match['construction'] == 'は'
+                               and _modified_preference_nominal(target))
         referential = bool(_evaluation_target_references(target))
-        if (not (nominal or bare)
+        if (not (nominal or bare or modified_preference)
                 or (_REFERENCE.search(target) and not referential) or _NESTED.search(target)
                 or 'のは' in target or target.startswith(('、', '，', ','))):
             raise unavailable('evaluation_target_not_self_contained')

@@ -104,6 +104,45 @@ def test_nominal_admission_does_not_guess_an_experiencer_or_relax_other_boundari
     assert out.status == EngineStatus.UNAVAILABLE and out.artifact is None
 
 
+@pytest.mark.parametrize('target', [
+    '一人の食事', '静かな朝食', '家族の朝食', '新しい道具',
+    '静かな図書館の席', '紙の箱', '古い資料',
+])
+@pytest.mark.parametrize('predicate,polarity,time', [
+    ('好きです', 'AFFIRMATIVE', 'NONPAST'),
+    ('苦手ではありませんでした', 'NEGATIVE', 'PAST'),
+])
+def test_modified_preference_retains_whole_target_and_typed_operator(target, predicate, polarity, time):
+    text = '私は' + target + 'が' + predicate + '。'
+    out = generated(text)
+    frame, = out.source_meaning.personal_evaluations
+    assert frame.construction == 'は' and frame.kind == 'PERSONAL_PREFERENCE'
+    assert text[slice(*frame.scalar_parts[2])] == target
+    assert (frame.polarity, frame.temporal_scope, frame.commitment) == (polarity, time, 'ASSERTED')
+    for scalar, utf8 in zip(frame.scalar_parts, frame.utf8_parts, strict=True):
+        assert text[slice(*scalar)].encode() == out.source_meaning.envelope.raw_utf8[slice(*utf8)]
+    assert out.artifact.piece_text == '私は、' + target + 'が' + predicate + '。'
+    assert not out.artifact_plan.declaration_eligible
+
+
+@pytest.mark.parametrize('text', [
+    '私は何の食事が好きです。', '私は誰の食事が好きです。',
+    '私はどの朝食が好きです。', '私はその朝食が好きです。',
+    '私は食事のが好きです。', '私はの食事が好きです。',
+    '私は静かなの朝食が好きです。', '私は静かな古い朝食が好きです。',
+    '私は未知かな朝食が好きです。', '私は食べない朝食が好きです。',
+    '私は友人が食べた朝食が好きです。', '私は佐藤さんの食事が好きです。',
+    '私は「静かな朝食」が好きです。', '私は静かな朝食が好きだと友人が言った。',
+    '友人は静かな朝食が好きです。', '静かな朝食が好きです。',
+    '私が好きなのは静かな朝食です。', '私が好きなのは一人の食事です。',
+    '私は静かな朝食は好きです。', '私は静かな朝食も好きです。',
+    '私にとって一人の食事が大切です。', '私は友人の希望を望んでいる。',
+])
+def test_modified_preference_does_not_expand_unknown_clauses_names_or_other_constructions(text):
+    out = run(text, tier='premium')
+    assert out.status == EngineStatus.UNAVAILABLE and out.artifact is None
+
+
 @pytest.mark.parametrize('field,value', [
     ('construction', 'が'), ('kind', 'PERSONAL_VALUE'),
     ('polarity', 'NEGATIVE'), ('temporal_scope', 'PAST'),

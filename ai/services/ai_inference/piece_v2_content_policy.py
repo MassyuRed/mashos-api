@@ -632,7 +632,8 @@ def validate_source_meaning_preservation(meaning, plan, artifact, *, _model_regi
                             + re.escape(body) + r'(?:です|だ)'
                             + re.escape(source[-1]), visible) is not None
 
-    def same_evaluation(node_id, visible, author, viewpoint, prefix, optional_prefix):
+    def same_evaluation(node_id, visible, author, viewpoint, prefix, optional_prefix,
+                        *, source_expression=None):
         frame = evaluations[node_id]
         _, _, target = (original[a:b] for a, b in frame.scalar_parts)
         # Source validation above owns the reference edges and public aliases.
@@ -641,7 +642,9 @@ def validate_source_meaning_preservation(meaning, plan, artifact, *, _model_regi
         if re.fullmatch(optional_prefix + body, visible) is None:
             return False
         view = visible if re.fullmatch(prefix + body, visible) is not None else author + viewpoint + visible
-        source_key = _piece_model_evaluation(source_nodes[node_id].value, _bound_reference=True)
+        source_key = _piece_model_evaluation(
+            source_nodes[node_id].value if source_expression is None else source_expression,
+            _bound_reference=True)
         visible_key = _piece_model_evaluation(view, _bound_reference=True)
         if source_key is None or visible_key is None:
             return False
@@ -736,6 +739,21 @@ def validate_source_meaning_preservation(meaning, plan, artifact, *, _model_regi
                 # Reuse native same-author continuity. The full source target,
                 # literal narrator and every evaluation operator still match.
                 if not same_evaluation(node_id, visible, author, viewpoint, prefix, optional_prefix):
+                    reject()
+                previous_id, previous_author = node_id, author
+                continue
+            if (_model_register and node_id in evaluations and scope is not None
+                    and scope.relation == 'SOURCE_EXPLICIT_TIME_CONTEXT'
+                    and evaluations[node_id].kind == 'PERSONAL_PREFERENCE'
+                    and evaluations[node_id].construction == 'は'):
+                # The source owner already bound the outer time and inner
+                # evaluation separately. Keep the entire written time topic,
+                # marker, separator and explicit narrator in each clause;
+                # compare only the inner finite evaluation's register.
+                outer = original[spans[node_id].source_start:scope.expression_scalar_span[0]]
+                if (not visible.startswith(outer)
+                        or not same_evaluation(node_id, visible[len(outer):], author,
+                            viewpoint, prefix, prefix, source_expression=expression)):
                     reject()
                 previous_id, previous_author = node_id, author
                 continue

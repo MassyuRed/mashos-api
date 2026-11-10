@@ -62,6 +62,73 @@ def evaluate(original, body, *, other=None, emotions=None, details=None):
     return result
 
 
+MODIFIED_TIME = '以前は、私は一人の食事が苦手でした。今は、私は一人の食事が好きです。'
+MODIFIED_TIME_BODY = '以前は、私は一人の食事が苦手だった。今は、私は一人の食事が好きだ。'
+
+
+@pytest.mark.parametrize('speaker', ['私', 'わたし', '僕', 'ぼく', '俺', 'おれ'])
+@pytest.mark.parametrize('target', ['一人の食事', '静かな朝食'])
+def test_modified_preference_time_register_keeps_each_whole_target_and_explicit_author(speaker, target):
+    original = MODIFIED_TIME.replace('私', speaker).replace('一人の食事', target)
+    body = MODIFIED_TIME_BODY.replace('私', speaker).replace('一人の食事', target)
+    out = evaluate(original, body)
+    assert out.status == EngineStatus.GENERATED, out.reason_codes
+    assert len(out.source_meaning.expression_scopes) == 2
+    assert all(s.relation == 'SOURCE_EXPLICIT_TIME_CONTEXT' for s in out.source_meaning.expression_scopes)
+    frames = out.source_meaning.personal_evaluations
+    assert [(f.temporal_scope, f.polarity) for f in frames] == [('PAST', 'AFFIRMATIVE'), ('NONPAST', 'AFFIRMATIVE')]
+    with pytest.raises(PieceContractError):
+        validate_source_meaning_preservation(out.source_meaning, out.artifact_plan, out.artifact)
+
+
+@pytest.mark.parametrize('original,body', [
+    ('俺は静かな朝食が好きです。', '俺は静かな朝食が好きだ。'),
+    ('私は家族の朝食が苦手ではありませんでした。', '私は家族の朝食が苦手ではなかった。'),
+    ('当時も、私は古い資料が少し苦手でした。', '当時も、私は古い資料が少し苦手だった。'),
+    ('今は、僕は一人の食事が好きかもしれません。', '今は、僕は一人の食事が好きかもしれない。'),
+    ('現在は、おれは静かな朝食が苦手ではありません。', '現在は、おれは静かな朝食が苦手ではない。'),
+    ('以前は、私は読書が好きでした。', '以前は、私は読書が好きだった。'),
+])
+def test_modified_preference_reuses_existing_tense_degree_negation_and_modal_keys(original, body):
+    assert evaluate(original, body).artifact is not None
+
+
+@pytest.mark.parametrize('changed', [
+    MODIFIED_TIME_BODY.replace('一人の食事', '食事', 1),
+    MODIFIED_TIME_BODY.replace('今は', '以前は'),
+    MODIFIED_TIME_BODY.replace('以前は', '今は'),
+    MODIFIED_TIME_BODY.replace('以前は', '以前も'),
+    MODIFIED_TIME_BODY.replace('以前は、', ''),
+    MODIFIED_TIME_BODY.replace('今は、', ''),
+    MODIFIED_TIME_BODY.replace('苦手だった', '苦手だ'),
+    MODIFIED_TIME_BODY.replace('苦手だった', '苦手ではなかった'),
+    MODIFIED_TIME_BODY.replace('好きだ', '好きだった'),
+    MODIFIED_TIME_BODY.replace('好きだ', '好きではない'),
+    MODIFIED_TIME_BODY.replace('好きだ', '好きになった'),
+    MODIFIED_TIME_BODY.replace('好きだ', '少し好きだ'),
+    MODIFIED_TIME_BODY.replace('好きだ', '好きかもしれない'),
+    MODIFIED_TIME_BODY.replace('今は、私は', '今は、僕は'),
+    MODIFIED_TIME_BODY.replace('今は、私は', '今は、'),
+    MODIFIED_TIME_BODY.replace('以前は、私は', '以前は、'),
+    MODIFIED_TIME_BODY.replace('今は、', '以前苦手だったので、'),
+    MODIFIED_TIME_BODY.replace('以前は、', '以前は，'),
+    MODIFIED_TIME_BODY.replace('だった。', 'だった！'),
+    '。'.join(reversed(MODIFIED_TIME_BODY.split('。')[:-1])) + '。',
+    MODIFIED_TIME_BODY + 'だから私は成長した。',
+])
+def test_modified_preference_scope_never_licenses_target_time_author_or_operator_changes(changed):
+    assert evaluate(MODIFIED_TIME, changed).artifact is None
+
+
+@pytest.mark.parametrize('changed', [
+    '俺は朝食が好きだ。', '俺は静かな食事が好きだ。', '私は静かな朝食が好きだ。',
+    '俺は静かな朝食が好きだった。', '俺は静かな朝食が苦手だ。',
+    '俺は静かな朝食が好きかもしれない。',
+])
+def test_modified_preference_single_clause_preserves_attributive_and_narrator(changed):
+    assert evaluate('俺は静かな朝食が好きです。', changed).artifact is None
+
+
 REASON = '私は夕方に疲れやすいので、私は短い休息が大切です。'
 REASON_BODY = '私は夕方に疲れやすいので、短い休息が大切だ。'
 SEPARATE_ACTION = '私は家族に夕食の時刻を伝えました。'
