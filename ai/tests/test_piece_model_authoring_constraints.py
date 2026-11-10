@@ -425,3 +425,87 @@ def test_opt_in_flag_has_to_be_a_boolean():
     with pytest.raises(ValueError, match='piece_model_prepared_invalid'):
         build_piece_model_messages(prepare_piece_model_request(req),
             include_authoring_constraints=1, source_request=req)
+
+
+QUOTE_ACCOUNT = '友人が「よかった！！また会おう」と言ってくれた。私は一緒に過ごせたことが嬉しかった。'
+QUOTE_FEELING = dict(emotions=['喜び'], details=[dict(type='喜び', strength='strong')])
+
+
+@pytest.mark.parametrize('field', ['memo', 'memo_action'])
+@pytest.mark.parametrize('quoted', ['よかった！！また会おう', 'どうする？急がなくてもいいよ',
+                                   'ゆっくりでいいよ。待っているよ', 'よかった!!また会おう'])
+def test_admitted_quote_projects_exact_delimiters_punctuation_and_field_offsets(field, quoted):
+    text = QUOTE_ACCOUNT.replace('よかった！！また会おう', quoted)
+    material, _ = messages(source(text, field=field, **QUOTE_FEELING))
+    constraints = material['control']['authoring_constraints']
+    slots = field_constraints(material)
+    assert set(slots) == {field + '_0'}
+    quote = slots[field + '_0']['literal_quotes'][0]
+    assert quote['literal'] == '「' + quoted + '」'
+    assert text[quote['scalar_start']:quote['scalar_end']] == quote['literal']
+    assert slots[field + '_0']['source_id'] == material['sources'][0]['source_id']
+    assert slots[field + '_0']['source_role'] == 'ORIGINAL_INPUT'
+    assert constraints['quote_context_instruction']
+    assert 'expected_body' not in str(constraints)
+
+
+def test_quote_conditions_do_not_change_default_transport_or_other_paragraphs():
+    text = QUOTE_ACCOUNT.replace('。私は', '。\n私は')
+    saved = source(text, field='memo', **QUOTE_FEELING)
+    ordinary, _ = messages(saved, opt_in=False)
+    assert 'authoring_constraints' not in ordinary['control']
+    conditioned, _ = messages(saved)
+    slots = conditioned['control']['field_slots']
+    assert slots['memo_0']['literal'] + '\n' + slots['memo_1']['literal'] == text
+    assert set(field_constraints(conditioned)) == {'memo_0'}
+    assert ordinary['sources'] == conditioned['sources']
+    assert ordinary['control']['field_slots'] == slots
+
+
+def test_quote_offset_after_another_paragraph_is_local_to_its_saved_field():
+    text = '私は読書が好きです。\n' + QUOTE_ACCOUNT
+    material, _ = messages(source(text, field='memo', other=EVALUATION, **QUOTE_FEELING))
+    slots = field_constraints(material)
+    assert 'literal_quotes' not in slots['memo_0']
+    assert 'literal_quotes' not in slots['memo_action_2']
+    quote = slots['memo_1']['literal_quotes'][0]
+    assert quote['scalar_start'] > len('私は読書が好きです。\n')
+    assert text[quote['scalar_start']:quote['scalar_end']] == '「よかった！！また会おう」'
+
+
+def test_quote_conditions_coexist_with_public_speaker_role_without_exposing_a_target_body():
+    text = QUOTE_ACCOUNT.replace('友人が', '友人の佐藤さんが')
+    material, _ = messages(source(text, field='memo', **QUOTE_FEELING))
+    slot = field_constraints(material)['memo_0']
+    assert slot['named_people'][0]['public_role'] == '友人'
+    assert slot['literal_quotes'][0]['literal'] == '「よかった！！また会おう」'
+    assert '佐藤' not in slot['literal_quotes'][0]['literal']
+    assert 'expected_body' not in str(slot)
+
+
+def test_refined_quote_duty_stays_in_its_original_part_and_not_the_answer():
+    from piece_v2_contract import canonical_json_bytes
+    saved = refined_source(original=QUOTE_ACCOUNT, answer='わたしは読書が好きです。')
+    record = json.loads(saved.original.saved_original_json)
+    record.update(emotions=['喜び'], emotion_details=QUOTE_FEELING['details'])
+    encoded = canonical_json_bytes(record)
+    saved = replace(saved, original=replace(saved.original, saved_original_json=encoded),
+        original_commitment='sha256:' + hashlib.sha256(encoded).hexdigest())
+    material, _ = messages(saved)
+    slots = field_constraints(material)
+    original, answer = slots['memo_0'], slots['answer_text_private_1']
+    assert original['literal_quotes'][0]['literal'] == '「よかった！！また会おう」'
+    assert original['source_id'] != answer['source_id']
+    assert original['source_role'] == 'ORIGINAL_INPUT'
+    assert answer['source_role'] == 'SUPPLEMENTAL_ANSWER'
+    assert 'literal_quotes' not in answer
+    assert answer['required_evaluations'][0]['narrator_literal'] == 'わたし'
+
+
+@pytest.mark.parametrize('quoted', ['「」', '「よかった」「また会おう」', '「よかった。',
+                                   '「よかった\nまた会おう」', '「私は佐藤さんに相談した」',
+                                   '「よかった『また会おう』」'])
+def test_unadmitted_quote_gains_no_authoring_claim(quoted):
+    text = QUOTE_ACCOUNT.replace('「よかった！！また会おう」', quoted)
+    material, _ = messages(source(text, field='memo', **QUOTE_FEELING))
+    assert 'authoring_constraints' not in material['control']

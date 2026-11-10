@@ -180,3 +180,40 @@ def test_configured_author_conditions_reach_saved_body_and_never_regenerate_on_r
     assert result['detail']['piece_text'] == BODY != ORIGINAL
     assert result['quota_consumptions'] == 1 and result['source_unchanged'] and result['emlis_unchanged']
     assert len(seen) == 1
+
+
+@pytest.mark.parametrize('replacement,accepted', [
+    (None, True),
+    (('！！', '。'), False),
+    (('！！', '！'), False),
+    (('私は', ''), False),
+    (('友人が', '私が'), False),
+    (('嬉しかった', '嬉しくなかった'), False),
+])
+def test_configured_quote_condition_keeps_independent_admission_and_unrepaired_response(
+        monkeypatch, replacement, accepted):
+    text = '友人が「よかった！！また会おう」と言ってくれた。私は一緒に過ごせたことが嬉しかった。'
+    body = text if replacement is None else text.replace(*replacement)
+    raw = json.dumps(dict(field_blocks=dict(memo_0=body)), ensure_ascii=False)
+    seen = []
+    def handler(value):
+        payload = json.loads(value.content)
+        material = json.loads(payload['messages'][1]['content'])
+        quote = material['control']['authoring_constraints']['field_slots']['memo_0']['literal_quotes'][0]
+        assert quote['literal'] == '「よかった！！また会おう」'
+        assert material['control']['authoring_constraints']['quote_context_instruction']
+        assert material['sources'][0]['original']['memo'] == text
+        assert payload['messages'][0]['content'] == model.SYSTEM_MESSAGE
+        seen.append(material)
+        return httpx.Response(200, json=dict(model=payload['model'], candidate_format='piece.field_slots.v1',
+            choices=[dict(finish_reason='stop', message=dict(role='assistant', content=raw))]))
+    selected = configured(monkeypatch, handler)
+    req = request(source(text, field='memo', emotions=['喜び'],
+        details=[dict(type='喜び', strength='strong')]))
+    prepared = prepare_piece_model_request(req)
+    before = req.source, prepared.private_json, prepared.request_id
+    receipt = asyncio.run(model.call_piece_model_source(selected, prepared, source_request=req))
+    out = MeaningExperienceEngine().generate(req, semantic_input=PieceModelInputV1(prepared, receipt))
+    assert (out.artifact is not None) is accepted
+    assert receipt.raw_output == raw and len(seen) == 1
+    assert (req.source, prepared.private_json, prepared.request_id) == before
