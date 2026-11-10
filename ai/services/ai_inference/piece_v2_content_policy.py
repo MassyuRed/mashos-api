@@ -687,7 +687,20 @@ def validate_source_meaning_preservation(meaning, plan, artifact, *, _model_regi
         return topic['speaker'], 'は', anchor(topic['body']) + stop, kind
 
     for group, block in zip(plan.block_node_ids, artifact.body_blocks, strict=True):
-        sentences = re.findall(r'[^。！？!?]+[。！？!?]', block)
+        if '「' in block:
+            # Reuse the same existing quote-boundary asset as source intake,
+            # not its source classification or author. The complete quoted
+            # proposition must still match its literal KEEP duty below.
+            from emlis_ai_grounded_sentence_surface import _body_sentence_spans
+            sentences, cursor = [], 0
+            for _, end in _body_sentence_spans(block):
+                # Preserve gaps the witness trims. Source intake retains
+                # Unicode spaces outside its established horizontal lstrip;
+                # candidate comparison must keep those exact same bytes.
+                sentences.append(block[cursor:end])
+                cursor = end
+        else:
+            sentences = re.findall(r'[^。！？!?]+[。！？!?]', block)
         covered = ''.join(sentences)
         final_id = group[-1]
         if (covered != block and block.startswith(covered)

@@ -608,8 +608,6 @@ def test_quoted_keep_does_not_justify_a_rewritten_quote_speaker_time_or_causal_s
     '「ゆっくりでいいよ', 'ゆっくりでいいよ」', '「」', '「 \t　」',
     '「ゆっくりでいいよ」「待っているよ」', '「外「内」外」', '「外『内』外」',
     '『ゆっくりでいいよ』', '“ゆっくりでいいよ”', '"ゆっくりでいいよ"',
-    '「ゆっくりでいいよ。待つよ」', '「ゆっくりでいいよ！」',
-    '「ゆっくりでいいよ!」', '「どうする？」', '「どうする?」',
     '「ゆっくり\nでいいよ」', '「ゆっくり\rでいいよ」', '「ゆっくり\r\nでいいよ」',
 ])
 def test_quote_admission_retains_refusal_for_unread_boundaries(quoted):
@@ -661,3 +659,146 @@ def test_quote_cannot_cross_saved_field_boundaries_or_supply_a_hidden_input_mode
 def test_literal_quote_never_hides_existing_contact_credential_or_control_detectors(quoted):
     original = QUOTED_CONTEXT.replace('ゆっくりでいいよ', quoted)
     assert evaluate(original, original, **QUOTE_FEELING).artifact is None
+
+
+@pytest.mark.parametrize('quoted', [
+    'ゆっくりでいいよ。待つよ', 'ゆっくりでいいよ！', 'ゆっくりでいいよ!',
+    'どうする？', 'どうする?', 'ゆっくりでいいよ!!', 'どうする！？',
+    '急がずに来て。私は待っているよ😊',
+    '私は本を読む時間を選びたい。まだ決めていない',
+])
+def test_quote_internal_stops_remain_in_one_literal_proposition(quoted):
+    from piece_v2_generation import _sentences
+    original = QUOTED_CONTEXT.replace('ゆっくりでいいよ', quoted)
+    first, second = original.rsplit('。私', 1)
+    expected = [first + '。', '私' + second]
+    assert _sentences(original) == expected
+    out = evaluate(original, original, **QUOTE_FEELING)
+    assert out.artifact, out.reason_codes
+    assert [node.value for node in out.source_meaning.graph.nodes] == expected
+    assert all(d.operation == 'KEEP_COMPLETE_SOURCE_CONTEXT' for d in out.artifact_plan.duties)
+    assert not out.source_meaning.personal_evaluations
+    assert not out.source_meaning.expression_scopes
+    assert not out.artifact_plan.declaration_eligible
+    for node, evidence in zip(out.source_meaning.graph.nodes, out.source_meaning.evidence, strict=True):
+        assert original[evidence.scalar_start:evidence.scalar_end] == node.value
+        assert out.source_meaning.envelope.raw_utf8[evidence.utf8_start:evidence.utf8_end] == node.value.encode()
+    saved = source(original, field='memo', **QUOTE_FEELING)
+    native = MeaningExperienceEngine().generate(request(saved))
+    assert native.artifact and native.artifact.body_blocks == (original,)
+
+
+QUOTED_STOPS = QUOTED_CONTEXT.replace('ゆっくりでいいよ', 'ゆっくりでいいよ。待つよ！')
+
+
+@pytest.mark.parametrize('changed', [
+    QUOTED_STOPS.replace('。待つよ！', '！'),
+    QUOTED_STOPS.replace('ゆっくりでいいよ。待つよ！', '待つよ！ゆっくりでいいよ。'),
+    QUOTED_STOPS.replace('ゆっくりでいいよ。', 'ゆっくりでいいよ！'),
+    QUOTED_STOPS.replace('待つよ！', '待たないよ！'),
+    QUOTED_STOPS.replace('友人が', '私が'),
+    QUOTED_STOPS.replace('言ってくれた', '言ってあげた'),
+    QUOTED_STOPS.replace('「', '').replace('」', ''),
+    QUOTED_STOPS.replace('急がなくても', '急いだので'),
+    QUOTED_STOPS.replace('過ごせる', '過ごせた'),
+    QUOTED_STOPS.replace('嬉しかった', '嬉しい'),
+    QUOTED_STOPS.replace('嬉しかった', '嬉しくなかった'),
+    QUOTED_STOPS.replace('私は', '僕は'),
+    QUOTED_STOPS.split('」')[0] + '」と言ってくれた。',
+    QUOTED_STOPS + 'だから私は友人を信頼している。',
+])
+def test_internal_quote_stops_do_not_license_omission_reordering_or_changed_meaning(changed):
+    assert evaluate(QUOTED_STOPS, changed, **QUOTE_FEELING).artifact is None
+
+
+@pytest.mark.parametrize('separator', [' ', '\t', '　', '\n', '\r\n', '\r'])
+def test_quote_stop_spans_preserve_written_gaps_and_paragraph_boundaries(separator):
+    from piece_v2_generation import _sentences
+    first, second = QUOTED_STOPS.rsplit('。私', 1)
+    original = first + '。' + separator + '私' + second
+    expected = [first + '。', '私' + second]
+    assert _sentences(original) == expected
+    blocks = expected if '\n' in separator or '\r' in separator else [''.join(expected)]
+    out = evaluate(original, blocks, **QUOTE_FEELING)
+    assert out.artifact, out.reason_codes
+    for node, evidence in zip(out.source_meaning.graph.nodes, out.source_meaning.evidence, strict=True):
+        assert original[evidence.scalar_start:evidence.scalar_end] == node.value
+    if len(blocks) == 2:
+        assert evaluate(original, [''.join(expected), ''], **QUOTE_FEELING).artifact is None
+
+
+@pytest.mark.parametrize('quoted_source', [QUOTED_CONTEXT, QUOTED_STOPS])
+@pytest.mark.parametrize('separator', ['\u00a0', '\u2002', '\u2003'])
+def test_quote_spans_keep_the_existing_unicode_separator_bytes(quoted_source, separator):
+    from piece_v2_generation import _sentences
+    first, second = quoted_source.rsplit('。私', 1)
+    original = first + '。' + separator + '私' + second
+    assert _sentences(original) == [first + '。', separator + '私' + second]
+    out = evaluate(original, original, **QUOTE_FEELING)
+    assert out.artifact, out.reason_codes
+    assert out.artifact.body_blocks == (original,)
+    for node, evidence in zip(out.source_meaning.graph.nodes, out.source_meaning.evidence, strict=True):
+        assert original[evidence.scalar_start:evidence.scalar_end] == node.value
+        assert out.source_meaning.envelope.raw_utf8[evidence.utf8_start:evidence.utf8_end] == node.value.encode()
+    native = MeaningExperienceEngine().generate(request(source(original, field='memo', **QUOTE_FEELING)))
+    assert native.artifact and native.artifact.body_blocks == (original,)
+    assert evaluate(original, quoted_source, **QUOTE_FEELING).artifact is None
+
+
+@pytest.mark.parametrize('outside', ['と言ってくれた！！', 'と言ってくれた!?', 'と言ってくれた。！'])
+def test_quote_internal_runs_do_not_expand_outer_sentence_punctuation(outside):
+    from piece_v2_generation import _sentences
+    original = QUOTED_STOPS.replace('と言ってくれた。', outside)
+    with pytest.raises(PieceContractError):
+        _sentences(original)
+    assert evaluate(original, original, **QUOTE_FEELING).artifact is None
+
+
+def test_quote_internal_stops_do_not_increase_the_existing_raw_stop_budget():
+    original = QUOTED_CONTEXT.replace('ゆっくりでいいよ', '大丈夫！！！！待つよ！')
+    out = evaluate(original, original, **QUOTE_FEELING)
+    assert out.artifact is None
+    assert out.reason_codes == ('content_envelope',)
+
+
+@pytest.mark.parametrize('quoted', [
+    '私の友人の佐藤さんも来る。待つよ！',
+    '佐藤さんも来る。待つよ！',
+    '連絡先はuser@example.com。待つよ！',
+    'api_key: fictional-only。待つよ！',
+    'ゆっくり\u200bでいいよ。待つよ！',
+])
+def test_quote_internal_stops_cannot_hide_names_contacts_credentials_or_controls(quoted):
+    original = QUOTED_CONTEXT.replace('ゆっくりでいいよ', quoted)
+    assert evaluate(original, original, **QUOTE_FEELING).artifact is None
+
+
+def test_internal_quote_stops_cannot_bridge_saved_fields_or_supply_an_input_selection():
+    first, second = QUOTED_STOPS.rsplit('。私', 1)
+    assert evaluate(first + '。', [first + '。', '私' + second],
+                    other='私' + second, **QUOTE_FEELING).artifact is not None
+    assert evaluate('友人が「ゆっくりでいいよ。',
+                    ['友人が「ゆっくりでいいよ。', '待つよ！」と言ってくれた。'],
+                    other='待つよ！」と言ってくれた。', **QUOTE_FEELING).artifact is None
+    assert evaluate(QUOTED_STOPS, QUOTED_STOPS, emotions=[], details=[]).artifact is None
+    assert evaluate(QUOTED_STOPS, QUOTED_STOPS).artifact is None
+
+
+def test_internal_quote_stops_preserve_the_existing_outside_public_role():
+    original = QUOTED_STOPS.replace('友人が', '友人の佐藤さんが')
+    assert evaluate(original, QUOTED_STOPS, **QUOTE_FEELING).artifact is not None
+    assert evaluate(original, QUOTED_STOPS.replace('友人が', '同僚が'), **QUOTE_FEELING).artifact is None
+    assert evaluate(original, original, **QUOTE_FEELING).artifact is None
+
+
+def test_literal_quote_stops_do_not_move_an_external_conditional_wish_inside_the_quote():
+    report = QUOTED_STOPS.rsplit('。私', 1)[0] + '。'
+    original, body = report + SCOPED_FOCAL, report + SCOPED_FOCAL_BODY
+    out = evaluate(original, body)
+    assert out.artifact, out.reason_codes
+    assert [d.operation for d in out.artifact_plan.duties] == [
+        'KEEP_COMPLETE_SOURCE_CONTEXT', 'SOURCE_SCOPED_EXPRESSION_TO_FIRST_PERSON',
+        'KEEP_COMPLETE_SOURCE_CONTEXT']
+    assert len(out.source_meaning.expression_scopes) == 1
+    assert evaluate(original, body.replace('疲れているなら、', '')).artifact is None
+    assert evaluate(original, body.replace('選びたい', '選ぶ')).artifact is None

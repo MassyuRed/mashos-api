@@ -526,11 +526,29 @@ def test_one_nonempty_written_field_uses_its_actual_field_identity(empty, field)
     ('私は読書を大切に', 'しています。まだ、続ける日は決めていません。'),
     (THOUGHT, 'まだ、始める日は'),
     (None, None),
-    (THOUGHT, '「続けます。」と友人が言った。'),
+    (THOUGHT, '「続けます。」「待ちます。」と友人が言った。'),
 ])
 def test_incomplete_or_unadmitted_action_is_not_removed_or_completed(memo, action):
     result = outcome(source(row(memo, action)))
     assert result.status == EngineStatus.UNAVAILABLE and result.artifact is None
+
+
+def test_complete_quoted_action_keeps_its_own_field_and_literal_words():
+    from piece_v2_content_policy import validate_source_meaning_preservation
+    action = '「続けます。」と友人が言った。'
+    value = row(THOUGHT, action)
+    result = generated(value)
+    assert result.artifact.body_blocks == ('余裕があるなら、私は陶芸を選びたい。', action)
+    assert result.artifact_plan.duties[-1].operation == 'KEEP_COMPLETE_SOURCE_CONTEXT'
+    assert len(result.source_meaning.expression_scopes) == 1
+    assert result.source_meaning.evidence[-1].field_path == 'memo_action'
+    assert not result.artifact_plan.declaration_eligible
+    assert result.source_meaning.saved_snapshot.saved_original_json == canonical_json_bytes(value['original'])
+    for node, evidence in zip(result.source_meaning.graph.nodes, result.source_meaning.evidence, strict=True):
+        field = value['original'][evidence.field_path]
+        assert field[evidence.scalar_start:evidence.scalar_end] == node.value
+        assert result.source_meaning.envelope.raw_utf8[evidence.utf8_start:evidence.utf8_end] == node.value.encode()
+    validate_source_meaning_preservation(result.source_meaning, result.artifact_plan, result.artifact)
 
 
 @pytest.mark.parametrize('field,value', [
@@ -643,7 +661,7 @@ def test_plain_suru_account_keeps_written_predicate_and_field_order(memo, action
     ('明日は準備するだろう。', 'expression_meaning_not_admitted'),
     ('明日準備する場合。', 'expression_meaning_not_admitted'),
     ('明日は準備する？', 'expression_meaning_not_admitted'),
-    ('「明日は準備する。」と友達が言った。', 'quoted_discourse_not_yet_supported'),
+    ('「明日は\n準備する。」と友達が言った。', 'quoted_discourse_not_yet_supported'),
     ('その作業をする。', 'unresolved_reference'),
     ('それをする。', 'unresolved_reference'),
     ('仕事をする', 'source_line_mid_sentence'),
@@ -655,6 +673,24 @@ def test_plain_suru_account_does_not_override_existing_refusals(memo, reason):
     result = outcome(source(value))
     assert result.reason_codes == (reason,)
     assert result.artifact is None
+
+
+def test_quoted_suru_account_is_literal_report_not_the_authors_preparation():
+    memo = '「明日は準備する。」と友達が言った。'
+    value = row(memo, None)
+    value['original']['emotions'] = ['平穏']
+    result = generated(value)
+    assert result.artifact.body_blocks == (memo,)
+    assert len(result.source_meaning.graph.nodes) == 1
+    assert [d.operation for d in result.artifact_plan.duties] == ['KEEP_COMPLETE_SOURCE_CONTEXT']
+    assert not result.source_meaning.personal_evaluations
+    assert not result.source_meaning.expression_scopes
+    assert not result.artifact_plan.declaration_eligible
+    assert result.source_meaning.saved_snapshot.saved_original_json == canonical_json_bytes(value['original'])
+    evidence, = result.source_meaning.evidence
+    assert evidence.field_path == 'memo'
+    assert (evidence.scalar_start, evidence.scalar_end) == (0, len(memo))
+    assert result.source_meaning.envelope.raw_utf8[evidence.utf8_start:evidence.utf8_end] == memo.encode()
 
 
 def test_plain_suru_account_requires_existing_saved_feeling_context():

@@ -205,8 +205,10 @@ def _is_unpunctuated_account(text: str, *, allow_nonpast: bool = False) -> bool:
 
 def _sentences(text: str, *, allow_unpunctuated_account: bool = False) -> list[str]:
     # Reuse the existing strict delimiter reader for one literal quotation.
-    # Internal stops/newlines still require a different sentence splitter;
-    # retaining this bounded shape supplies no reported speaker or meaning.
+    # Its quote-aware sentence spans keep internal stops inside the same
+    # source proposition. This supplies no reported speaker or meaning;
+    # quoted newlines, multiple quotes and nesting retain their refusal.
+    quote_spans = ()
     if any(c in text for c in '「」『』"“”'):
         from emlis_ai_grounded_sentence_surface import _body_primary_quote_spans
         spans, balanced = _body_primary_quote_spans(text)
@@ -216,14 +218,31 @@ def _sentences(text: str, *, allow_unpunctuated_account: bool = False) -> list[s
             raise unavailable('quoted_discourse_not_yet_supported')
         quoted = text[slice(*spans[0])]
         quote_tail = re.split(r'[\r\n]', text[spans[0][1] + 1:], maxsplit=1)[0].rstrip()
-        if (not quoted.strip() or re.search(r'[。！？!?\r\n]', quoted)
+        if (not quoted.strip() or re.search(r'[\r\n]', quoted)
                 or not quote_tail or quote_tail[-1] not in '。！？!?'):
             raise unavailable('quoted_discourse_not_yet_supported')
+        quote_spans = spans
     lines = text.replace('\r\n', '\n').replace('\r', '\n').split('\n')
     nonempty = [line.strip() for line in lines if line.strip()]
     pieces = []
     for line in nonempty:
-        complete = re.findall(r'[^。！？!?]+[。！？!?]', line)
+        if quote_spans and '「' in line:
+            from emlis_ai_grounded_sentence_surface import _body_sentence_spans
+            complete, cursor = [], 0
+            for _, end in _body_sentence_spans(line):
+                # The shared witness trims horizontal gaps. Retain them in
+                # this coverage view just as the existing regex did; the
+                # final lstrip below owns the sentence separator treatment.
+                complete.append(line[cursor:end])
+                cursor = end
+            # Preserve the existing one-stop outer sentence grammar. Runs
+            # inside the quotation are opaque literal source text, while an
+            # outer run or unfinished outer clause gains no new admission.
+            if any(not p.endswith(tuple('。！？!?')) or len(p) < 2
+                   or p[-2] in '。！？!?' for p in complete):
+                raise unavailable('complete_sentence_required')
+        else:
+            complete = re.findall(r'[^。！？!?]+[。！？!?]', line)
         if line[-1] not in '。！？!?':
             tail = re.split(r'[。！？!?]', line)[-1]
             if not allow_unpunctuated_account or not _is_unpunctuated_account(tail):

@@ -131,3 +131,29 @@ def test_explicit_refined_name_to_role_remains_adjusted_through_visual_save_relo
     assert result['quota_consumptions'] == 1 and len(seen) == 1
     result['counts']['external_model_provider'] = len(seen)
     _evidence('Q2-WRITTEN-ROLE-' + tier, result, seen)
+
+
+@pytest.mark.parametrize('tier', ['free', 'plus', 'premium'])
+@pytest.mark.parametrize('case_id,memo', [
+    ('QUOTE-STOP', '友人が「ゆっくりでいいよ。待っているよ」と言ってくれた。私は急がなくても一緒に過ごせることが嬉しかった。'),
+    ('QUOTE-QUESTION', '友人が「どうする？急がなくてもいいよ」と言ってくれた。私は急がなくても一緒に過ごせることが嬉しかった。'),
+    ('QUOTE-RUN', '友人が「よかった！！また会おう」と言ってくれた。私は一緒に過ごせたことが嬉しかった。'),
+    ('QUOTE-PARAGRAPH', '友人が「ゆっくりでいいよ。待っているよ」と言ってくれた。\n私は急がなくても一緒に過ごせることが嬉しかった。'),
+])
+def test_quote_internal_stops_keep_complete_cpu_text_through_sql_save_and_restart(
+        saved_piece_db, monkeypatch, tier, case_id, memo):
+    # Fixed CPU prose verifies the receipt/save path; no real model is called.
+    # The quoted speaker and outer feeling must survive byte for byte.
+    blocks = memo.split('\n')
+    seen = _provider(monkeypatch, case_id, blocks)
+    record = dict(id=case_id, created_at=saved_piece_db.query(
+        'SELECT now()::text AS stamp')['rows'][0]['stamp'], memo=memo, memo_action='',
+        category=['生活'], emotions=['喜び'],
+        emotion_details=[dict(type='喜び', strength='strong')])
+    result = _run_saved_request(saved_piece_db, monkeypatch, record, tier=tier)
+    assert result['detail']['content_payload']['body_blocks'] == blocks
+    assert result['detail']['piece_text'] == '\n\n'.join(blocks)
+    assert result['original']['memo'] == memo
+    assert result['source_unchanged'] and result['emlis_unchanged']
+    assert result['quota_consumptions'] == 1
+    _evidence(case_id + '-' + tier, result, seen)

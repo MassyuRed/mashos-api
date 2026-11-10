@@ -140,7 +140,8 @@ def test_interior_spaces_and_repeated_propositions_are_not_normalized_or_dedupli
     (focal() + '  私はそのことが好きです。', 'evaluation_target_not_self_contained'),
     (focal() + '  ' + focal() + '\t私はその時間が好きです。', 'evaluation_target_not_self_contained'),
     ('私は少し\n考えたい。  ' + TAIL, 'source_line_mid_sentence'),
-    ('私は「静かにしたい。」と言った。  ' + TAIL, 'quoted_discourse_not_yet_supported'),
+    ('私は「静かにしたい。」と言った。  ' + TAIL, 'expression_meaning_not_admitted'),
+    ('私は「静かに\nしたい。」と言った。  ' + TAIL, 'quoted_discourse_not_yet_supported'),
     ('私は小さく試したい。  。', 'complete_sentence_required'),
     ('私は小さく試したい。\t\u3000！', 'complete_sentence_required'),
     ('私は小さく試したい。' + '  予定は未定です。' * 6, 'complete_sentence_required'),
@@ -150,6 +151,24 @@ def test_spacing_cannot_supply_missing_meaning_or_remove_sentence_limits(text, r
     assert out.status == EngineStatus.UNAVAILABLE
     assert out.reason_codes == (reason,)
     assert out.artifact is None
+
+
+def test_spaced_quoted_wish_remains_context_without_supplying_an_outside_intent():
+    quoted = '私は「静かにしたい。」と言った。'
+    exact_old_input = quoted + '  ' + TAIL
+    assert _sentences(exact_old_input) == [quoted, TAIL]
+    # Sentence intake alone supplies no independent intention. Retain that
+    # refusal, then qualify a separate input with its own existing focal wish.
+    assert run(exact_old_input).reason_codes == ('expression_meaning_not_admitted',)
+    parts = [focal(), quoted, TAIL]
+    text = '  '.join(parts)
+    result = generated(text)
+    assert_source_ranges(result, text, parts)
+    assert [d.operation for d in result.artifact_plan.duties] == [
+        'SOURCE_FOCAL_TO_FIRST_PERSON', 'KEEP_COMPLETE_SOURCE_CONTEXT',
+        'KEEP_COMPLETE_SOURCE_CONTEXT']
+    assert not result.artifact_plan.declaration_eligible
+    assert result.artifact.body_blocks == ('私は、' + TARGET + 'を大切にしたい。', quoted, TAIL)
 
 
 def test_rebased_or_tampered_evidence_cannot_authorize_the_new_candidate():
