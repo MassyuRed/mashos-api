@@ -108,7 +108,6 @@ def test_modified_preference_reuses_existing_tense_degree_negation_and_modal_key
     MODIFIED_TIME_BODY.replace('好きだ', '少し好きだ'),
     MODIFIED_TIME_BODY.replace('好きだ', '好きかもしれない'),
     MODIFIED_TIME_BODY.replace('今は、私は', '今は、僕は'),
-    MODIFIED_TIME_BODY.replace('今は、私は', '今は、'),
     MODIFIED_TIME_BODY.replace('以前は、私は', '以前は、'),
     MODIFIED_TIME_BODY.replace('今は、', '以前苦手だったので、'),
     MODIFIED_TIME_BODY.replace('以前は、', '以前は，'),
@@ -118,6 +117,11 @@ def test_modified_preference_reuses_existing_tense_degree_negation_and_modal_key
 ])
 def test_modified_preference_scope_never_licenses_target_time_author_or_operator_changes(changed):
     assert evaluate(MODIFIED_TIME, changed).artifact is None
+
+
+def test_modified_preference_keeps_time_when_only_the_repeated_narrator_is_omitted():
+    body = MODIFIED_TIME_BODY.replace('今は、私は', '今は、')
+    assert evaluate(MODIFIED_TIME, body).artifact is not None
 
 
 @pytest.mark.parametrize('changed', [

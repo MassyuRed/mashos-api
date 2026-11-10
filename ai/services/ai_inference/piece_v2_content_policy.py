@@ -748,12 +748,13 @@ def validate_source_meaning_preservation(meaning, plan, artifact, *, _model_regi
                     and evaluations[node_id].construction == 'は'):
                 # The source owner already bound the outer time and inner
                 # evaluation separately. Keep the entire written time topic,
-                # marker, separator and explicit narrator in each clause;
-                # compare only the inner finite evaluation's register.
+                # marker and separator. Only the already-proved adjacent
+                # same-author topic may be omitted; the first narrator and
+                # field/paragraph boundaries retain their existing checks.
                 outer = original[spans[node_id].source_start:scope.expression_scalar_span[0]]
                 if (not visible.startswith(outer)
                         or not same_evaluation(node_id, visible[len(outer):], author,
-                            viewpoint, prefix, prefix, source_expression=expression)):
+                            viewpoint, prefix, optional_prefix, source_expression=expression)):
                     reject()
                 previous_id, previous_author = node_id, author
                 continue

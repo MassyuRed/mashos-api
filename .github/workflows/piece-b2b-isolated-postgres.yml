@@ -54,6 +54,7 @@ name: Piece B2-B/B3/B4/B5 isolated PostgreSQL
       - ai/tests/test_piece_model_adapter_training.py
       - ai/tests/test_piece_model_prose_register.py
       - ai/tests/test_piece_model_narrator_voice.py
+      - ai/tests/test_piece_model_temporal_self_omission.py
       - ai/tests/test_piece_model_authoring_constraints.py
       - ai/tests/test_piece_model_authoring_application.py
       - ai/tests/test_piece_model_coordinated_actions.py
@@ -422,6 +423,7 @@ jobs:
             ai/tests/test_piece_model_adapter_training.py \
             ai/tests/test_piece_model_prose_register.py \
             ai/tests/test_piece_model_narrator_voice.py \
+            ai/tests/test_piece_model_temporal_self_omission.py \
             ai/tests/test_piece_model_authoring_constraints.py \
             ai/tests/test_piece_model_authoring_application.py \
             ai/tests/test_piece_model_coordinated_actions.py \
