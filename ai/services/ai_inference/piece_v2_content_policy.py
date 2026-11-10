@@ -597,6 +597,41 @@ def validate_source_meaning_preservation(meaning, plan, artifact, *, _model_regi
             return False
         return _piece_model_read_block(visible) == expected
 
+    def same_literal_reason_value(node_id, source, visible):
+        # A qualified opaque KEEP may contain a complete self reason/value.
+        # Retain its literal premise, relation and entire modified target;
+        # compare only the existing affirmative copula register. This is not
+        # a new typed reason/value interpretation or source admission rule.
+        from cocolon_meaning_experience_engine.piece_source import (
+            _SCOPED_EXPRESSION, _EVALUATIVE_FINITE, _same_self_scope_author,
+        )
+        if (node_id in scopes or node_id in evaluations
+                or any(node_id in (r.antecedent_node_id, r.reference_node_id)
+                       for r in meaning.nominal_references)
+                or anchor(source) != re.escape(source)):
+            return False
+        scoped = _SCOPED_EXPRESSION.fullmatch(source)
+        if scoped is None or scoped['marker'] != 'ので':
+            return False
+        expression = scoped['intention']
+        value = _EVALUATIVE_FINITE.fullmatch(expression)
+        if (value is None or value['construction'] != 'は'
+                or value['base'] not in {'大切', '大事', '重要', '必要'}
+                or value['copula'] not in {'です', 'だ'}
+                or value['inflection'] != value['copula']
+                or re.search(r'[はがも、，,。！？!?「」『』"“”\r\n]', value['target'])
+                or re.search(r'私|わたし|僕|ぼく|俺|おれ', value['target'])
+                or not _same_self_scope_author(scoped['premise'], value['speaker'])):
+            return False
+        # Only this same sentence's literally proved author can be elided.
+        # Exact slicing also retains the source comma, spacing and terminal.
+        topic = value['speaker'] + 'は'
+        prefix = source[:scoped.start('intention')]
+        body = expression[len(topic):value.start('copula')]
+        return re.fullmatch(re.escape(prefix) + '(?:' + re.escape(topic) + ')?'
+                            + re.escape(body) + r'(?:です|だ)'
+                            + re.escape(source[-1]), visible) is not None
+
     def same_evaluation(node_id, visible, author, viewpoint, prefix, optional_prefix):
         frame = evaluations[node_id]
         _, _, target = (original[a:b] for a, b in frame.scalar_parts)
@@ -668,7 +703,8 @@ def validate_source_meaning_preservation(meaning, plan, artifact, *, _model_regi
                 if (re.fullmatch(anchor(node.value), visible) is None
                         and not (_model_register and (
                             same_undecided(node.value, visible)
-                            or same_finite_model_context(node_id, node.value, visible)))):
+                            or same_finite_model_context(node_id, node.value, visible)
+                            or same_literal_reason_value(node_id, node.value, visible)))):
                     reject()
                 previous_id, previous_author = node_id, None
                 continue

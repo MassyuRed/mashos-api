@@ -36,8 +36,8 @@ SCOPED_FOCAL = '疲れているなら、私が選びたいのは、音楽を聴�
 SCOPED_FOCAL_BODY = '疲れているなら、私が選びたいのは、音楽を聴く時間だ。まだ、出かける日は決めていない。'
 
 
-def evaluate(original, body, *, other=None):
-    saved = source(original, field='memo', other=other)
+def evaluate(original, body, *, other=None, emotions=None, details=None):
+    saved = source(original, field='memo', other=other, emotions=emotions, details=details)
     req = request(saved)
     prepared = prepare_piece_model_request(req)
     blocks = body if isinstance(body, list) else [body]
@@ -60,6 +60,81 @@ def evaluate(original, body, *, other=None):
         assert result.artifact.body_blocks == tuple(blocks)
         assert result.artifact.piece_text == '\n\n'.join(blocks)
     return result
+
+
+REASON = '私は夕方に疲れやすいので、私は短い休息が大切です。'
+REASON_BODY = '私は夕方に疲れやすいので、短い休息が大切だ。'
+SEPARATE_ACTION = '私は家族に夕食の時刻を伝えました。'
+SEPARATE_ACTION_BODY = '私は家族に夕食の時刻を伝えた。'
+
+
+def evaluate_reason(original, body):
+    # Ordinary emotion selection must match the original GeneralProse case.
+    # SELF_INSIGHT has a different source-admission contract.
+    return evaluate(original, body, other=SEPARATE_ACTION, emotions=['平穏'],
+                    details=[dict(type='平穏', strength='weak')])
+
+
+@pytest.mark.parametrize('speaker', ['私', 'わたし', '僕', 'ぼく', '俺', 'おれ'])
+@pytest.mark.parametrize('stop', ['。', '！', '!'])
+def test_opaque_reason_value_keeps_complete_premise_target_and_same_written_author(speaker, stop):
+    original = REASON.replace('私', speaker)[:-1] + stop
+    body = REASON_BODY.replace('私', speaker)[:-1] + stop
+    out = evaluate_reason(original, [body, SEPARATE_ACTION_BODY])
+    assert out.status == EngineStatus.GENERATED, out.reason_codes
+    assert out.artifact_plan.duties[0].operation == 'KEEP_COMPLETE_SOURCE_CONTEXT'
+    assert not out.source_meaning.personal_evaluations
+    assert not out.source_meaning.expression_scopes
+    with pytest.raises(PieceContractError):
+        validate_source_meaning_preservation(out.source_meaning, out.artifact_plan, out.artifact)
+
+
+@pytest.mark.parametrize('target,predicate', [
+    ('早い帰宅', '大事'), ('静かな昼寝', 'とても重要'), ('長い準備', '少し必要'),
+])
+def test_opaque_reason_value_does_not_depend_on_one_target_or_one_evaluation_word(target, predicate):
+    original = REASON.replace('短い休息', target).replace('大切', predicate)
+    body = REASON_BODY.replace('短い休息', target).replace('大切', predicate)
+    assert evaluate_reason(original, [body, SEPARATE_ACTION_BODY]).artifact
+    assert evaluate_reason(original, [body.replace(predicate, '大切'), SEPARATE_ACTION_BODY]).artifact is None
+
+
+@pytest.mark.parametrize('changed', [
+    '短い休息が大切だ。',
+    '夕方に疲れやすいので、短い休息が大切だ。',
+    REASON_BODY.replace('疲れやすい', '疲れにくい'),
+    REASON_BODY.replace('ので', 'なら'),
+    REASON_BODY.replace('ので', 'けれど'),
+    REASON_BODY.replace('短い休息', '長い休息'),
+    REASON_BODY.replace('大切', '重要'),
+    REASON_BODY.replace('大切', 'とても大切'),
+    REASON_BODY.replace('大切だ', '大切ではない'),
+    REASON_BODY.replace('大切だ', '大切だった'),
+    REASON_BODY.replace('大切だ', '大切かもしれない'),
+    REASON_BODY.replace('大切だ', '大切だと友人が言った'),
+    REASON_BODY.replace('、短い', '、僕は短い'),
+    REASON_BODY.replace('、短い', '、友人は短い'),
+    REASON_BODY.replace('、短い', '、私が短い'),
+    REASON_BODY.replace('休息が', '休息は'),
+    REASON_BODY.replace('、', '，'),
+    REASON_BODY.replace('。', '！'),
+    REASON_BODY + '私は嬉しい。',
+])
+def test_opaque_reason_value_rejects_changed_context_viewpoint_operator_and_terminal(changed):
+    assert evaluate_reason(REASON, [changed, SEPARATE_ACTION_BODY]).artifact is None
+
+
+@pytest.mark.parametrize('original,body', [
+    (REASON.replace('私は夕方', '友人は夕方'), REASON_BODY.replace('私は夕方', '友人は夕方')),
+    (REASON.replace('私は夕方', '僕は夕方'), REASON_BODY.replace('私は夕方', '僕は夕方')),
+    (REASON.replace('私は短い', '私は友人は短い'), REASON_BODY.replace('、短い', '、友人は短い')),
+    (REASON.replace('私は短い', '私は私は短い'), REASON_BODY.replace('、短い', '、私は短い')),
+    (REASON.replace('大切です', '大切ではないです'), REASON_BODY.replace('大切だ', '大切ではない')),
+    (REASON.replace('大切です', '大切でした'), REASON_BODY.replace('大切だ', '大切だった')),
+    (REASON.replace('大切です', '大切かもしれません'), REASON_BODY.replace('大切だ', '大切かもしれない')),
+])
+def test_opaque_reason_value_does_not_infer_scope_author_or_extend_past_negative_modal(original, body):
+    assert evaluate_reason(original, [body, SEPARATE_ACTION_BODY]).artifact is None
 
 
 @pytest.mark.parametrize('speaker', ['私', 'わたし', '僕', 'ぼく', '俺', 'おれ'])
