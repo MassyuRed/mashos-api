@@ -4,6 +4,7 @@ All text is fictional. These fixed CPU candidates do not call a model or the
 old author, and do not claim a general Japanese paraphrase comparison.
 """
 from contextlib import ExitStack
+from dataclasses import replace
 import json
 from unittest.mock import patch
 
@@ -59,6 +60,83 @@ def evaluate(original, body, *, other=None):
         assert result.artifact.body_blocks == tuple(blocks)
         assert result.artifact.piece_text == '\n\n'.join(blocks)
     return result
+
+
+@pytest.mark.parametrize('speaker', ['私', 'わたし', '僕', 'ぼく', '俺', 'おれ'])
+@pytest.mark.parametrize('ending,body_ending', [('たいです', 'たい'), ('たくないです', 'たくない')])
+def test_complete_literal_self_ending_keeps_every_word_with_only_polite_desu_optional(speaker, ending, body_ending):
+    original = speaker + 'は地域の活動に加わり' + ending + '。まだ、参加する日は決めていません。'
+    body = speaker + 'は地域の活動に加わり' + body_ending + '。まだ、参加する日は決めていない。'
+    out = evaluate(original, body)
+    assert out.status == EngineStatus.GENERATED, out.reason_codes
+    with pytest.raises(PieceContractError):
+        validate_source_meaning_preservation(out.source_meaning, out.artifact_plan, out.artifact)
+
+
+@pytest.mark.parametrize('target', ['写真を飾る場所は', '参加する会場は', '集合する時刻は'])
+def test_source_qualified_undecided_whole_nominal_head_keeps_exact_target(target):
+    original = FOCAL.replace('毎日続けるかは', target)
+    body = FOCAL_BODY.replace('毎日続けるかは', target)
+    out = evaluate(original, body)
+    assert out.status == EngineStatus.GENERATED, out.reason_codes
+    assert evaluate(original, body.replace(target, '参加する日は')).artifact is None
+    with pytest.raises(PieceContractError):
+        validate_source_meaning_preservation(out.source_meaning, out.artifact_plan, out.artifact)
+
+
+@pytest.mark.parametrize('changed', [
+    '地域の活動に加わりたい。',
+    '僕は地域の活動に加わりたい。',
+    '私は会社の活動に加わりたい。',
+    '私は地域の活動に加わりたくない。',
+    '私は地域の活動に加わりたかった。',
+    '私は地域の活動に加わった。',
+    '私は地域の活動に加わりたいかもしれない。',
+    '私は地域の活動に加わりたいと友人が言った。',
+    '私は寂しいので地域の活動に加わりたい。',
+    '私は地域の活動に加わりたい。私は嬉しい。',
+])
+def test_literal_self_register_never_changes_narrator_target_wish_time_or_adds_context(changed):
+    original = '私は地域の活動に加わりたいです。まだ、参加する日は決めていません。'
+    assert evaluate(original, changed + 'まだ、参加する日は決めていない。').artifact is None
+
+
+@pytest.mark.parametrize('changed', [
+    'まだ、写真を飾る日は決めていない。',
+    'まだ、写真を飾る場所も決めていない。',
+    '写真を飾る場所は決めていない。',
+    'まだ、写真を飾る場所は決めた。',
+    'まだ、写真を飾る場所は決めていなかった。',
+    'まだ、写真を飾る場所は決めていないかもしれない。',
+    'まだ、写真を飾る場所は決めていないと聞いた。',
+])
+def test_nominal_decision_target_stays_undecided_and_whole(changed):
+    original = FOCAL.replace('毎日続けるかは', '写真を飾る場所は')
+    body = FOCAL_BODY.rsplit('まだ、', 1)[0] + changed
+    assert evaluate(original, body).artifact is None
+
+
+@pytest.mark.parametrize('stop', ['。', '！', '!'])
+def test_literal_register_retains_topic_internal_reason_and_exact_emphasis(stop):
+    original = '私は疲れているので、私は地域の活動に加わりたいです' + stop
+    body = '私は疲れているので、私は地域の活動に加わりたい' + stop
+    out = evaluate(original, body)
+    assert out.status == EngineStatus.GENERATED, out.reason_codes
+    changed_stop = '。' if stop != '。' else '！'
+    assert evaluate(original, body[:-1] + changed_stop).artifact is None
+
+
+def test_literal_register_never_bypasses_a_source_scope_operation_binding():
+    original = '疲れているなら、私は本を読みたい。'
+    out = evaluate(original, '私は、疲れているなら、本を読みたい。')
+    assert out.status == EngineStatus.GENERATED, out.reason_codes
+    assert out.source_meaning.expression_scopes
+    forged_plan = replace(out.artifact_plan, duties=tuple(
+        replace(duty, operation='SOURCE_FIRST_PERSON_TOPIC')
+        for duty in out.artifact_plan.duties))
+    with pytest.raises(PieceContractError):
+        validate_source_meaning_preservation(out.source_meaning, forged_plan,
+                                           out.artifact, _model_register=True)
 
 
 @pytest.mark.parametrize('original,body', [(WISH, WISH_BODY), (FOCAL, FOCAL_BODY), (NAMED, NAMED_BODY)])

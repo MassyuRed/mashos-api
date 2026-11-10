@@ -558,11 +558,23 @@ def validate_source_meaning_preservation(meaning, plan, artifact, *, _model_regi
         # A source-bound decision target is retained byte-for-byte. This is
         # only the existing nonpast negative 決めている register pair, not a
         # parser for arbitrary negative statements or an inferred reservation.
-        match = re.fullmatch(r'(?P<prefix>まだ[、，,][^。！？!?「」『』"\r\n、，,]+(?:かは|日は))'
+        match = re.fullmatch(r'(?P<prefix>まだ[、，,][^。！？!?「」『』"\r\n、，,]+(?:かは|[一-龥々ァ-ヴー]+は))'
                              r'決めて(?:いません|いない)。', source)
         if match is None:
             return False
         return re.fullmatch(anchor(match['prefix']) + r'決めて(?:いません|いない)。', visible) is not None
+
+    def same_literal_self_register(source, visible):
+        # Reuse the qualified literal self-account owner, including its
+        # explicit narrator and complete ending. The entire source argument
+        # stays anchored; only optional polite です changes. This neither
+        # classifies a simile as a wish nor borrows a narrator or source.
+        from cocolon_meaning_experience_engine.piece_source import _literal_self_account
+        if not _literal_self_account(source):
+            return False
+        head = source[:-1]
+        bare = head[:-2] if head.endswith('です') else head
+        return re.fullmatch(anchor(bare) + r'(?:です)?' + re.escape(source[-1]), visible) is not None
 
     def same_finite_model_context(node_id, source, visible):
         # A mixed original can retain an opaque KEEP clause while another
@@ -668,6 +680,11 @@ def validate_source_meaning_preservation(meaning, plan, artifact, *, _model_regi
             scope = scopes.get(node_id)
             if (operation == 'SOURCE_SCOPED_EXPRESSION_TO_FIRST_PERSON') != (scope is not None):
                 reject()
+            if (_model_register and operation == 'SOURCE_FIRST_PERSON_TOPIC'
+                    and same_literal_self_register(node.value, visible)):
+                previous_id = node_id
+                previous_author = _scoped_self_topic(node.value)['speaker']
+                continue
             expression = original[slice(*scope.expression_scalar_span)] if scope else node.value
             author, viewpoint, body, topic_kind = arguments(node_id, expression)
             prefix = re.escape(author + viewpoint) + '[、，,]?'
