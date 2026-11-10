@@ -305,9 +305,18 @@ def test_actual_canonical_evaluation_body_is_the_b9_layout_body(ratio):
 
 
 def test_existing_free_short_essay_minimum_is_not_relaxed_for_preferences():
+    # The 2026-11-01 source-scaled envelope is nonempty (1..420), without filler.
     text = '僕が好きなのは、家で静かに音楽を聴くことです。'
-    out = run(text)
-    assert out.status == EngineStatus.UNAVAILABLE and out.reason_codes == ('format_not_eligible',)
+    expected = '僕は、家で静かに音楽を聴くことが好きです。'
+    out = generated(text)
+    assert out.artifact.piece_text == expected
+    assert out.artifact.body_blocks == (expected,)
+    assert out.artifact.format_type == 'short_essay'
+    assert out.source_meaning.envelope.raw_utf8 == text.encode('utf-8')
+    assert tuple(node.value for node in out.source_meaning.graph.nodes) == (text,)
+    assert len(out.artifact_plan.duties) == 1
+    assert not out.artifact_plan.declaration_eligible
+    assert 'declaration' not in out.artifact.eligible_formats
     assert generated(text, tier='premium').artifact.format_type == 'quote'
 
 

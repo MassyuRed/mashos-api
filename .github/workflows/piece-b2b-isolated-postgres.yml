@@ -42,6 +42,9 @@ name: Piece B2-B/B3/B4/B5 isolated PostgreSQL
       - ai/tests/test_piece_model_finite_scope.py
       - ai/tests/test_piece_model_evaluation_reuse.py
       - ai/tests/piece_v2/test_b08_piece_bare_finite_evaluation.py
+      - ai/tests/piece_v2/test_b08_piece_personal_evaluation.py
+      - ai/tests/piece_v2/test_b08_piece_past_transitive_expression.py
+      - ai/tests/piece_v2/test_b08_piece_finite_nominal_argument.py
       - ai/tests/test_piece_model_field_slots.py
       - ai/tests/test_cmee_piece_supplemental_then_feeling.py
       - ai/tools/serve_emlis_natural_reply.py
@@ -428,7 +431,10 @@ jobs:
           python -m pytest -q --tb=short -ra -p no:cacheprovider \
             -c /dev/null --rootdir=. --noconftest \
             ai/tests/piece_v2/test_b08_piece_bare_finite_evaluation.py \
-            -k 'compound_activity or activity_ or short_bare_input_is_not_padded_to_satisfy_a_format'
+            ai/tests/piece_v2/test_b08_piece_personal_evaluation.py \
+            ai/tests/piece_v2/test_b08_piece_past_transitive_expression.py \
+            ai/tests/piece_v2/test_b08_piece_finite_nominal_argument.py \
+            -k 'compound_activity or activity_ or short_bare_input_is_not_padded_to_satisfy_a_format or test_existing_free_short_essay_minimum_is_not_relaxed_for_preferences or test_short_past_source_keeps_the_existing_minimum_envelope or test_short_preference_does_not_lower_the_free_minimum_or_become_a_declaration'
       - name: Verify prepared shared API through native disposable persistence
         shell: bash
         env:

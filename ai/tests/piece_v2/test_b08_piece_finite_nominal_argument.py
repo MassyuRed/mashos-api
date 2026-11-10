@@ -120,9 +120,18 @@ def test_nominal_frame_cannot_be_replaced_by_unverified_metadata(field, value):
 
 
 def test_short_preference_does_not_lower_the_free_minimum_or_become_a_declaration():
+    # The 2026-11-01 source-scaled minimum is one character, not the old 24.
     text = '僕はコーヒーが好きです。'
-    out = run(text)
-    assert out.status == EngineStatus.UNAVAILABLE and out.reason_codes == ('format_not_eligible',)
+    expected = '僕は、コーヒーが好きです。'
+    out = generated(text)
+    assert out.artifact.piece_text == expected
+    assert out.artifact.body_blocks == (expected,)
+    assert out.artifact.format_type == 'short_essay'
+    assert out.source_meaning.envelope.raw_utf8 == text.encode('utf-8')
+    assert tuple(node.value for node in out.source_meaning.graph.nodes) == (text,)
+    assert len(out.artifact_plan.duties) == 1
+    assert not out.artifact_plan.declaration_eligible
+    assert 'declaration' not in out.artifact.eligible_formats
     assert generated(text, tier='premium', requested_format='quote').artifact.piece_text == '僕は、コーヒーが好きです。'
     assert run(text, tier='premium', requested_format='declaration').status == EngineStatus.UNAVAILABLE
 

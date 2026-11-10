@@ -245,16 +245,22 @@ def test_the_past_body_is_the_exact_existing_layout_input(ratio):
 
 
 def test_short_past_source_keeps_the_existing_minimum_envelope():
+    # The 2026-11-01 source-scaled envelope retains short past statements too.
     text = '私は一人で静かに手帳を開く時間を望んでいた。'
-    out = outcome(text)
-    assert out.status == EngineStatus.UNAVAILABLE
-    assert out.reason_codes == ('format_not_eligible',)
-    out = assert_artifact(text, '私は、一人で静かに手帳を開く時間を望んでいた。', tier='plus')
-    assert out.artifact.eligible_formats == ('quote',)
+    expected = '私は、一人で静かに手帳を開く時間を望んでいた。'
+    out = assert_artifact(text, expected)
+    assert out.artifact.format_type == 'short_essay'
+    assert tuple(node.value for node in out.source_meaning.graph.nodes) == (text,)
+    assert len(out.artifact_plan.duties) == 1
+    assert out.artifact.body_blocks == (expected,)
+    out = assert_artifact(text, expected, tier='plus')
+    assert out.artifact.eligible_formats == ('short_essay', 'quote')
     assert out.artifact.format_type == 'quote'
-    out = outcome(text, tier='premium', requested_format='short_essay')
-    assert out.status == EngineStatus.UNAVAILABLE
-    assert out.reason_codes == ('format_choice_not_admitted',)
+    out = assert_artifact(text, expected, tier='premium', requested_format='short_essay')
+    assert out.artifact.format_type == 'short_essay'
+    refused = outcome(text, tier='premium', requested_format='declaration')
+    assert refused.status == EngineStatus.UNAVAILABLE
+    assert refused.reason_codes == ('format_choice_not_admitted',)
 
 
 @pytest.mark.parametrize('context', (
