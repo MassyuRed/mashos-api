@@ -753,6 +753,16 @@ def _role_bindings(text: str) -> tuple[PieceRoleBinding, ...]:
     if any(_ROLE_NON_IDENTITY.fullmatch(match['name']) for match in matches):
         raise unavailable('public_role_binding_ambiguous')
     names = _piece_name_mentions(text, tuple(match['name'] for match in matches))
+    if names and '「' in text:
+        from emlis_ai_grounded_sentence_surface import _body_primary_quote_spans
+        quoted, _ = _body_primary_quote_spans(text)
+        # A quoted "my friend" belongs to its speaker, not to this narrator.
+        # The existing global alias owner cannot publicize a name inside a
+        # quotation without proving that perspective. Retain refusal there;
+        # names solely outside it keep their established role binding.
+        if any(start < name.end() and name.start() < end
+               for name in names for start, end in quoted):
+            raise unavailable('public_identity_is_material')
     names_by_end = {match.end(): match for match in names}
     by_end: dict[int, PieceRoleBinding] = {}
     collected = []

@@ -121,7 +121,7 @@ REJECTED = (
      '私はあなたの友人の佐藤さんと話したい。佐藤さんとはまだ会っていない。',
      'public_role_owner_not_bound'),
     ('unresolved_named_owner',
-     '私は友人の佐藤さんの上司の田中さんと話したい。田中さんとはまだ会っていない。',
+     '私は佐藤さんの上司の田中さんと話したい。田中さんとはまだ会っていない。',
      'public_role_owner_not_bound'),
     ('unresolved_owner_before_self',
      '私は父の私の友人の佐藤さんと話したい。佐藤さんとはまだ会っていない。',

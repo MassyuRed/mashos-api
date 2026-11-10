@@ -204,9 +204,21 @@ def _is_unpunctuated_account(text: str, *, allow_nonpast: bool = False) -> bool:
 
 
 def _sentences(text: str, *, allow_unpunctuated_account: bool = False) -> list[str]:
-    # No sentence splitting inside quotes is attempted by this first vertical.
+    # Reuse the existing strict delimiter reader for one literal quotation.
+    # Internal stops/newlines still require a different sentence splitter;
+    # retaining this bounded shape supplies no reported speaker or meaning.
     if any(c in text for c in '「」『』"“”'):
-        raise unavailable('quoted_discourse_not_yet_supported')
+        from emlis_ai_grounded_sentence_surface import _body_primary_quote_spans
+        spans, balanced = _body_primary_quote_spans(text)
+        if (not balanced or len(spans) != 1
+                or text.count('「') != 1 or text.count('」') != 1
+                or any(c in text for c in '『』"“”')):
+            raise unavailable('quoted_discourse_not_yet_supported')
+        quoted = text[slice(*spans[0])]
+        quote_tail = re.split(r'[\r\n]', text[spans[0][1] + 1:], maxsplit=1)[0].rstrip()
+        if (not quoted.strip() or re.search(r'[。！？!?\r\n]', quoted)
+                or not quote_tail or quote_tail[-1] not in '。！？!?'):
+            raise unavailable('quoted_discourse_not_yet_supported')
     lines = text.replace('\r\n', '\n').replace('\r', '\n').split('\n')
     nonempty = [line.strip() for line in lines if line.strip()]
     pieces = []

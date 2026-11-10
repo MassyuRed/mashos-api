@@ -526,7 +526,7 @@ def test_one_nonempty_written_field_uses_its_actual_field_identity(empty, field)
     ('私は読書を大切に', 'しています。まだ、続ける日は決めていません。'),
     (THOUGHT, 'まだ、始める日は'),
     (None, None),
-    (THOUGHT, '「続けます」と友人が言った。'),
+    (THOUGHT, '「続けます。」と友人が言った。'),
 ])
 def test_incomplete_or_unadmitted_action_is_not_removed_or_completed(memo, action):
     result = outcome(source(row(memo, action)))
