@@ -285,6 +285,108 @@ def test_literal_register_never_bypasses_a_source_scope_operation_binding():
                                            out.artifact, _model_register=True)
 
 
+@pytest.mark.parametrize('speaker', ['私', 'わたし', '僕', 'ぼく', '俺', 'おれ'])
+@pytest.mark.parametrize('marker', ['ので', 'なら', 'ならば', 'けれど', 'けれども'])
+def test_scoped_self_wish_register_keeps_its_complete_written_outer_prefix(speaker, marker):
+    original = '雨が続いている' + marker + '、' + speaker + 'は家で過ごしたいです。'
+    body = original.removesuffix('です。') + '。'
+    out = evaluate(original, body)
+    assert out.status == EngineStatus.GENERATED, out.reason_codes
+    assert len(out.source_meaning.expression_scopes) == 1
+    assert out.artifact_plan.duties[0].operation == 'SOURCE_SCOPED_EXPRESSION_TO_FIRST_PERSON'
+    assert not out.artifact_plan.declaration_eligible
+    with pytest.raises(PieceContractError):
+        validate_source_meaning_preservation(out.source_meaning, out.artifact_plan, out.artifact)
+
+
+@pytest.mark.parametrize('text', [
+    '余裕がないので、私は地域の活動に加わりたくない',
+    '予定が合うなら、僕は海辺を歩きたい',
+    'まだ時間はあるけれど、わたしは急ぎたくない',
+    '友人が「私は待っているよ」と言ってくれたので、私は家で過ごしたい',
+])
+@pytest.mark.parametrize('polite_source', [False, True])
+@pytest.mark.parametrize('stop', ['。', '！', '!'])
+def test_scoped_self_wish_register_works_both_ways_without_changing_quote_polarity_or_emphasis(
+        text, polite_source, stop):
+    original = text + ('です' if polite_source else '') + stop
+    body = text + ('' if polite_source else 'です') + stop
+    out = evaluate(original, body)
+    assert out.status == EngineStatus.GENERATED, out.reason_codes
+    assert out.artifact.body_blocks == (body,)
+
+
+SCOPED_SELF_WISH = '雨が続いているので、私は家で過ごしたいです。'
+SCOPED_SELF_WISH_BODY = '雨が続いているので、私は家で過ごしたい。'
+
+
+@pytest.mark.parametrize('body', [
+    '私は家で過ごしたい。',
+    '雨が続いているなら、私は家で過ごしたい。',
+    '雨が続いているけれど、私は家で過ごしたい。',
+    '雪が続いているので、私は家で過ごしたい。',
+    '雨が続いていないので、私は家で過ごしたい。',
+    '雨が続いていたので、私は家で過ごしたい。',
+    '雨が続いているので、家で過ごしたい。',
+    '雨が続いているので、僕は家で過ごしたい。',
+    '雨が続いているので、私は外で過ごしたい。',
+    '雨が続いているので、私は家で過ごしたくない。',
+    '雨が続いているので、私は家で過ごしたかった。',
+    '雨が続いているので、私は家で過ごした。',
+    '雨が続いているので、私は家で過ごしたいかもしれない。',
+    '雨が続いているので、私は家で過ごしたいと友人が言った。',
+    '雨が続いているので、私は家で過ごしたい！',
+    '雨が続いているので、私は家で過ごしたい。私は嬉しい。',
+    '雨が続いているので私は家で過ごしたい。',
+    '雨が続いているので，私は家で過ごしたい。',
+    '雨が続いているので、\n私は家で過ごしたい。',
+])
+def test_scoped_self_wish_register_never_changes_reason_narrator_or_complete_wish(body):
+    assert evaluate(SCOPED_SELF_WISH, body).artifact is None
+
+
+def test_scoped_self_wish_register_retains_every_quoted_word_and_outer_self():
+    original = '友人が「私は待っているよ」と言ってくれたので、私は家で過ごしたいです。'
+    body = original.removesuffix('です。') + '。'
+    assert evaluate(original, body).artifact is not None
+    assert evaluate(original, body.replace('私は待っているよ', '僕は待っているよ')).artifact is None
+    assert evaluate(original, body.replace('私は家で', '家で')).artifact is None
+
+
+@pytest.mark.parametrize('separator', ['、 ', '，\t', ',\u3000'])
+def test_scoped_self_wish_register_keeps_the_source_separator_and_horizontal_pause(separator):
+    original = SCOPED_SELF_WISH.replace('、', separator)
+    body = SCOPED_SELF_WISH_BODY.replace('、', separator)
+    assert evaluate(original, body).artifact is not None
+    assert evaluate(original, SCOPED_SELF_WISH_BODY).artifact is None
+
+
+def test_scoped_self_wish_register_cannot_borrow_a_narrator_from_another_saved_field():
+    from test_piece_model_narrator_voice import evaluate as evaluate_saved
+    other = '余裕がないので、私は地域の活動に加わりたくないです。'
+    saved = source(SCOPED_SELF_WISH, field='memo', other=other)
+    body = [SCOPED_SELF_WISH_BODY, other.removesuffix('です。') + '。']
+    assert evaluate_saved(saved, body).artifact is not None
+    assert evaluate_saved(saved, [body[0], body[1].replace('私は', '')]).artifact is None
+
+
+def test_scoped_self_wish_register_keeps_original_and_supplemental_source_authors_separate():
+    from test_cmee_piece_refined_sources import source as refined_source
+    from test_piece_model_narrator_voice import evaluate as evaluate_saved
+    answer = 'わたしは読書が好きです。'
+    saved = refined_source(original=SCOPED_SELF_WISH, answer=answer)
+    body = [SCOPED_SELF_WISH_BODY, 'わたしは読書が好きだ。']
+    assert evaluate_saved(saved, body).artifact is not None
+    assert evaluate_saved(saved, [body[0], body[1].replace('わたしは', '私は')]).artifact is None
+    assert evaluate_saved(saved, [body[0], body[1].replace('わたしは', '')]).artifact is None
+
+
+def test_scoped_self_wish_register_does_not_change_the_existing_literal_order_contract():
+    original = '疲れているなら、私は本を読みたい。'
+    assert evaluate(original, '私は、疲れているなら、本を読みたい。').artifact is not None
+    assert evaluate(original, original).artifact is None
+
+
 @pytest.mark.parametrize('original,body', [(WISH, WISH_BODY), (FOCAL, FOCAL_BODY), (NAMED, NAMED_BODY)])
 def test_source_bound_register_is_accepted_without_repair_or_author_replay(original, body):
     out = evaluate(original, body)

@@ -802,6 +802,17 @@ def validate_source_meaning_preservation(meaning, plan, artifact, *, _model_regi
                 elif topic_kind == 'wish' and not premise_first:
                     pattern = '(?:' + pattern + '|' + optional_prefix + premise_pattern + body + ')'
             if re.fullmatch(pattern, visible) is None:
+                if _model_register and scope is not None and topic_kind == 'wish':
+                    # The qualified scoped self account already owns every
+                    # word, its explicit narrator and the whole outer prefix.
+                    # Reuse the existing model register pair in source order;
+                    # do not infer a wish, change its scope, or omit its author.
+                    outer = original[spans[node_id].source_start:scope.expression_scalar_span[0]]
+                    outer_match = re.match(anchor(outer), visible)
+                    if (outer_match is not None
+                            and same_literal_self_register(expression, visible[outer_match.end():])):
+                        previous_id, previous_author = node_id, author
+                        continue
                 # The existing focal grammar also owns its original order.
                 # Compare source anchors; never construct or rewrite prose.
                 focal = _FOCUS.fullmatch(expression) if _model_register else None
