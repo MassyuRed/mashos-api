@@ -383,8 +383,124 @@ def test_scoped_self_wish_register_keeps_original_and_supplemental_source_author
 
 def test_scoped_self_wish_register_does_not_change_the_existing_literal_order_contract():
     original = '疲れているなら、私は本を読みたい。'
-    assert evaluate(original, '私は、疲れているなら、本を読みたい。').artifact is not None
-    assert evaluate(original, original).artifact is None
+    canonical = evaluate(original, '私は、疲れているなら、本を読みたい。')
+    assert canonical.artifact is not None
+    validate_source_meaning_preservation(canonical.source_meaning, canonical.artifact_plan,
+                                        canonical.artifact)
+    retained = evaluate(original, original)
+    assert retained.artifact is not None
+    with pytest.raises(PieceContractError):
+        validate_source_meaning_preservation(retained.source_meaning, retained.artifact_plan,
+                                            retained.artifact)
+
+
+@pytest.mark.parametrize('speaker', ['私', 'わたし', '僕', 'ぼく', '俺', 'おれ'])
+@pytest.mark.parametrize('marker', ['ので', 'なら', 'ならば', 'けれど', 'けれども'])
+@pytest.mark.parametrize('account', ['休みたい', '本を読みたい'])
+def test_scoped_literal_register_retains_the_full_self_account_in_source_order(speaker, marker, account):
+    original = f'疲れている{marker}、{speaker}は{account}です。'
+    body = original.removesuffix('です。') + '。'
+    out = evaluate(original, body)
+    assert out.status == EngineStatus.GENERATED, out.reason_codes
+    assert out.artifact.body_blocks == (body,)
+    assert len(out.source_meaning.expression_scopes) == 1
+    assert out.artifact_plan.duties[0].operation == 'SOURCE_SCOPED_EXPRESSION_TO_FIRST_PERSON'
+    assert not out.artifact_plan.declaration_eligible
+    # Model register retention does not expand the native author contract.
+    with pytest.raises(PieceContractError):
+        validate_source_meaning_preservation(out.source_meaning, out.artifact_plan, out.artifact)
+
+
+@pytest.mark.parametrize('account', ['休みたい', '本を読みたい', '氷みたい'])
+@pytest.mark.parametrize('polite_source', [False, True])
+@pytest.mark.parametrize('stop', ['。', '！', '!'])
+def test_scoped_literal_register_keeps_non_wish_classification_and_terminal(account, polite_source, stop):
+    from piece_v2_expression import _WISH_END
+    from cocolon_meaning_experience_engine.piece_source import _scoped_self_topic
+    text = f'寒いので、私は{account}'
+    original = text + ('です' if polite_source else '') + stop
+    body = text + ('' if polite_source else 'です') + stop
+    out = evaluate(original, body)
+    assert out.artifact is not None
+    scope = out.source_meaning.expression_scopes[0]
+    expression = original[slice(*scope.expression_scalar_span)]
+    assert not _WISH_END.search(_scoped_self_topic(expression)['body'])
+    assert not out.artifact_plan.declaration_eligible
+    changed_stop = '。' if stop != '。' else '！'
+    assert evaluate(original, body[:-1] + changed_stop).artifact is None
+
+
+SCOPED_LITERAL = '疲れているので、私は本を読みたいです。'
+SCOPED_LITERAL_BODY = '疲れているので、私は本を読みたい。'
+
+
+@pytest.mark.parametrize('body', [
+    '私は本を読みたい。',
+    '疲れていないので、私は本を読みたい。',
+    '疲れていたので、私は本を読みたい。',
+    '疲れているなら、私は本を読みたい。',
+    '疲れているけれど、私は本を読みたい。',
+    '疲れているので、本を読みたい。',
+    '疲れているので、僕は本を読みたい。',
+    '疲れているので、私は新聞を読みたい。',
+    '疲れているので、私は本を読みたくない。',
+    '疲れているので、私は本を読みたかった。',
+    '疲れているので、私は本を読んだ。',
+    '疲れているので、私は本を読みたいかもしれない。',
+    '疲れているので、私は本を読みたいと友人が言った。',
+    '疲れているので、私は本を読みたい。私は嬉しい。',
+    '疲れているので私は本を読みたい。',
+    '疲れているので，私は本を読みたい。',
+    '疲れているので、\n私は本を読みたい。',
+])
+def test_scoped_literal_register_does_not_change_context_self_or_complete_predicate(body):
+    assert evaluate(SCOPED_LITERAL, body).artifact is None
+
+
+@pytest.mark.parametrize('separator', ['、 ', '，\t', ',\u3000'])
+def test_scoped_literal_register_retains_the_original_separator_and_pause(separator):
+    original = SCOPED_LITERAL.replace('、', separator)
+    body = SCOPED_LITERAL_BODY.replace('、', separator)
+    assert evaluate(original, original).artifact is not None
+    assert evaluate(original, body).artifact is not None
+    assert evaluate(original, SCOPED_LITERAL_BODY).artifact is None
+
+
+def test_scoped_literal_register_keeps_the_quote_inside_its_source_owned_outer_context():
+    original = '友人が「私は先に休みたい」と言ったので、私は本を読みたいです。'
+    body = original.removesuffix('です。') + '。'
+    assert evaluate(original, body).artifact is not None
+    for before, after in [
+        ('私は先に休みたい', '僕は先に休みたい'),
+        ('先に休みたい', '先に休んだ'),
+        ('と言ったので', 'と言ったなら'),
+        ('私は本を', '本を'),
+        ('本を読みたい。', '本を読みたかった。'),
+    ]:
+        assert evaluate(original, body.replace(before, after)).artifact is None
+
+
+def test_scoped_literal_register_does_not_extend_emphasized_literal_narrator_continuity():
+    original = '疲れているので、私は休みたいです！私は読書が好きです。'
+    body = '疲れているので、私は休みたい！私は読書が好きだ。'
+    assert evaluate(original, body).artifact is not None
+    assert evaluate(original, body.replace('私は読書が', '読書が')).artifact is None
+
+
+def test_scoped_literal_register_keeps_separate_saved_fields_and_supplemental_authors():
+    from test_cmee_piece_refined_sources import source as refined_source
+    from test_piece_model_narrator_voice import evaluate as evaluate_saved
+    other = '寒いなら、僕は休みたいです。'
+    saved = source(SCOPED_LITERAL, field='memo', other=other)
+    body = [SCOPED_LITERAL_BODY, '寒いなら、僕は休みたい。']
+    assert evaluate_saved(saved, body).artifact is not None
+    assert evaluate_saved(saved, [body[0], body[1].replace('僕は', '')]).artifact is None
+    assert evaluate_saved(saved, [body[0], body[1].replace('僕は', '私は')]).artifact is None
+    saved = refined_source(original=SCOPED_LITERAL, answer='わたしは読書が好きです。')
+    body = [SCOPED_LITERAL_BODY, 'わたしは読書が好きだ。']
+    assert evaluate_saved(saved, body).artifact is not None
+    assert evaluate_saved(saved, [body[0], body[1].replace('わたしは', '私は')]).artifact is None
+    assert evaluate_saved(saved, [body[0], body[1].replace('わたしは', '')]).artifact is None
 
 
 @pytest.mark.parametrize('original,body', [(WISH, WISH_BODY), (FOCAL, FOCAL_BODY), (NAMED, NAMED_BODY)])
