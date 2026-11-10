@@ -85,6 +85,72 @@ def test_public_name_alias_comes_from_admitted_written_role_without_target_prose
     assert material['sources'][0]['original']['memo'] == NAMED
 
 
+@pytest.mark.parametrize('speaker', ('私', 'わたし', '僕', 'ぼく', '俺', 'おれ'))
+@pytest.mark.parametrize('predicate', ('選びたい', '選びたくない', '大切にしたい', '大切にしたくない'))
+def test_admitted_focal_order_is_projected_from_complete_source_parts(speaker, predicate):
+    text = speaker + 'が' + predicate + 'のは、休日に写真を選ぶ時間です。'
+    material, prepared = messages(source(text, field='memo'))
+    slot = field_constraints(material)['memo_0']
+    assert slot['required_focal_forms'] == [dict(source_literal=text,
+        narrator_literal=speaker, predicate_literal=predicate,
+        target_literal='休日に写真を選ぶ時間', preferred_word_order='SOURCE_FOCAL_ORDER',
+        scalar_start=0, scalar_end=len(text), scalar_parts=[
+            [0, len(speaker)], [len(speaker) + 1, len(speaker) + 1 + len(predicate)],
+            [text.index('休日'), text.index('です。')]])]
+    assert material['sources'] == prepared.payload()['sources']
+    assert material['control']['field_slots']['memo_0']['literal'] == text
+    assert 'focal_order_instruction' in material['control']['authoring_constraints']
+    assert not any(word in str(slot) for word in ('expected_body', 'candidate_body', 'body_blocks'))
+
+
+def test_focal_order_keeps_public_role_mapping_separate_and_field_offsets_local():
+    action = '私は同僚に開場の時刻を伝えました。'
+    material, _ = messages(source(action, field='memo', other=NAMED))
+    slots = field_constraints(material)
+    assert 'required_focal_forms' not in slots.get('memo_0', {})
+    focal = slots['memo_action_1']['required_focal_forms'][0]
+    assert focal['source_literal'] == NAMED[:NAMED.index('。') + 1]
+    assert focal['target_literal'] == '同僚の森さんと展示を見る時間'
+    assert slots['memo_action_1']['named_people'][0]['public_role'] == '同僚'
+    assert [NAMED[a:b] for a, b in focal['scalar_parts']] == [
+        focal[key] for key in ('narrator_literal', 'predicate_literal', 'target_literal')]
+
+
+@pytest.mark.parametrize('predicate', (
+    '選びたかった', '選びたいかもしれない', '大切にしていない', '大切にしていた',
+))
+def test_focal_conditions_preserve_the_written_predicate_instead_of_turning_it_into_a_wish(predicate):
+    text = '私が' + predicate + 'のは、休日に写真を選ぶ時間です。'
+    material, _ = messages(source(text, field='memo'))
+    focal = field_constraints(material)['memo_0']['required_focal_forms'][0]
+    assert focal['predicate_literal'] == predicate
+    assert '本人の述語・肯否・時点・留保' in material['control']['authoring_constraints']['focal_order_instruction']
+
+
+def test_focal_answer_condition_belongs_only_to_its_supplemental_source():
+    answer = '僕が大切にしたいのは、週末に本を読む時間です。'
+    material, _ = messages(refined_source(original='私は読書が好きです。', answer=answer))
+    slots = field_constraints(material)
+    assert 'required_focal_forms' not in slots['memo_0']
+    slot = slots['answer_text_private_1']
+    assert slot['source_role'] == 'SUPPLEMENTAL_ANSWER'
+    assert slot['required_focal_forms'][0]['narrator_literal'] == '僕'
+    assert slot['required_focal_forms'][0]['source_literal'] == answer
+
+
+@pytest.mark.parametrize('text', [
+    '私は休日に写真を選ぶ時間を選びたい。',
+    '疲れているなら、私が選びたいのは、休日に写真を選ぶ時間です。',
+    '私にとって重要なのは、休日に写真を選ぶ時間です。',
+])
+def test_direct_scoped_and_evaluation_frames_do_not_gain_an_unscoped_focal_condition(text):
+    material, _ = messages(source(text, field='memo'))
+    constraints = material['control'].get('authoring_constraints', {})
+    assert 'focal_order_instruction' not in constraints
+    assert all('required_focal_forms' not in slot
+               for slot in constraints.get('field_slots', {}).values())
+
+
 def test_two_fields_keep_their_own_axes_and_local_scalar_coordinates():
     material, _ = messages(source(NAMED, field='memo', other=EVALUATION))
     slots = field_constraints(material)

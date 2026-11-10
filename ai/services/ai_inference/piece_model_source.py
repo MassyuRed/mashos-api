@@ -91,26 +91,30 @@ def _authoring_constraints(prepared, source_request, slots):
     from cocolon_meaning_experience_engine.piece_source import (
         piece_public_role_aliases, piece_source_text)
     from piece_v2_contract import PieceContractError
+    from piece_v2_generation import _FOCUS
 
     if prepare_piece_model_request(source_request) != prepared:
         raise ValueError('piece_model_authoring_source_mismatch')
     try:
-        meaning, _ = piece_model_source_plan(source_request)
+        meaning, plan = piece_model_source_plan(source_request)
     except PieceContractError:
         # An unread/ambiguous source gains no authoring claims. Candidate
         # admission later keeps its existing refusal; no grammar is widened.
         return {}
     parts = ((meaning.original, meaning.supplemental)
              if type(meaning) is PieceRefinedMeaning else (meaning,))
+    plans = ((plan.original_plan, plan.supplemental_plan)
+             if type(meaning) is PieceRefinedMeaning else (plan,))
     sources = prepared.payload()['sources']
     result = {}
-    for part, source in zip(parts, sources, strict=True):
+    for part, part_plan, source in zip(parts, plans, sources, strict=True):
         text = piece_source_text(part)
         if part.envelope.source_record_id != source['source_id']:
             raise ValueError('piece_model_authoring_source_mismatch')
         aliases = piece_public_role_aliases(part.role_bindings)
         sentences = {item.node_id: item for item in part.sentences}
         evidence = {item.source_span_id: item for item in part.evidence}
+        duties = {item.node_id: item.operation for item in part_plan.duties}
         actions_by_node, passive_fields = {}, set()
         for sentence in part.sentences:
             literal = text[sentence.source_start:sentence.source_end]
@@ -128,13 +132,29 @@ def _authoring_constraints(prepared, source_request, slots):
         for key, slot in slots.items():
             if slot['source_id'] != source['source_id']:
                 continue
-            names, evaluations, actions = [], [], []
+            names, evaluations, actions, focal_forms = [], [], [], []
             for sentence in part.sentences:
                 ref = evidence[sentence.node_id]
                 if (ref.field_path != slot['field_path']
                         or not slot['scalar_start'] <= ref.scalar_start
                         < ref.scalar_end <= slot['scalar_end']):
                     continue
+                literal = text[sentence.source_start:sentence.source_end]
+                focal = _FOCUS.fullmatch(literal)
+                if (duties.get(sentence.node_id) == 'SOURCE_FOCAL_TO_FIRST_PERSON'
+                        and focal is not None):
+                    # The admitted source already owns this complete focal
+                    # construction. Preserve its word order as a generation
+                    # condition, not an author-produced expected sentence.
+                    delta = ref.scalar_start - sentence.source_start
+                    focal_forms.append(dict(source_literal=literal,
+                        narrator_literal=focal['speaker'],
+                        predicate_literal=focal['predicate'], target_literal=focal['object'],
+                        preferred_word_order='SOURCE_FOCAL_ORDER',
+                        scalar_start=ref.scalar_start, scalar_end=ref.scalar_end,
+                        scalar_parts=[[sentence.source_start + focal.start(name) + delta,
+                                       sentence.source_start + focal.end(name) + delta]
+                                      for name in ('speaker', 'predicate', 'object')]))
                 action = actions_by_node.get(sentence.node_id)
                 if complete_actions and action is not None:
                     if slot['field_path'] in passive_fields:
@@ -177,13 +197,15 @@ def _authoring_constraints(prepared, source_request, slots):
                     polarity=frame.polarity, temporal_scope=frame.temporal_scope,
                     commitment=frame.commitment,
                     scalar_parts=[[a + delta, b + delta] for a, b in frame.scalar_parts]))
-            if names or evaluations or actions:
+            if names or evaluations or actions or focal_forms:
                 result[key] = dict(source_id=slot['source_id'], source_role=slot['source_role'],
                     field_path=slot['field_path'], scalar_start=slot['scalar_start'],
                     scalar_end=slot['scalar_end'], named_people=names,
                     required_evaluations=evaluations)
                 if actions:
                     result[key]['required_actions'] = actions
+                if focal_forms:
+                    result[key]['required_focal_forms'] = focal_forms
     return result
 
 
@@ -226,6 +248,11 @@ def build_piece_model_messages(prepared, *, include_authoring_constraints=False,
                 if any('required_actions' in slot for slot in constraints.values()):
                     control['authoring_constraints']['finite_scope_instruction'] = (
                         'required_actionsは各動作の本人表記・相手と対象・肯否・時点を別々に保持してください。')
+                if any('required_focal_forms' in slot for slot in constraints.values()):
+                    control['authoring_constraints']['focal_order_instruction'] = (
+                        'required_focal_formsは原文に成立した焦点構文です。本人の述語・肯否・時点・留保と対象全体を保ち、'
+                        'source_literalの焦点語順を保持してください。名詞化された対象の末尾へ同じ述語を'
+                        '付け直さず、名前の抽象化はnamed_peopleのpublic_roleに従ってください。')
         # payload() is detached. Whole sources/private_json/request_id remain
         # unchanged; scalar slices are not normalized, trimmed or rewritten.
         return [dict(role='system', content=SYSTEM_MESSAGE),
