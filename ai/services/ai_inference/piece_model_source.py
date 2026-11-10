@@ -116,6 +116,9 @@ def _authoring_constraints(prepared, source_request, slots):
         evidence = {item.source_span_id: item for item in part.evidence}
         keep_nodes = {duty.node_id for duty in part_plan.duties
                       if duty.operation == 'KEEP_COMPLETE_SOURCE_CONTEXT'}
+        scoped_nodes = {duty.node_id for duty in part_plan.duties
+                        if duty.operation == 'SOURCE_SCOPED_EXPRESSION_TO_FIRST_PERSON'}
+        scopes = {scope.node_id: scope for scope in part.expression_scopes}
         actions_by_node, passive_fields = {}, set()
         for sentence in part.sentences:
             literal = text[sentence.source_start:sentence.source_end]
@@ -140,14 +143,22 @@ def _authoring_constraints(prepared, source_request, slots):
                         or not slot['scalar_start'] <= ref.scalar_start
                         < ref.scalar_end <= slot['scalar_end']):
                     continue
-                if sentence.node_id in keep_nodes:
-                    # Project only an already admitted KEEP quotation. The
-                    # existing delimiter reader supplies source ranges, not
-                    # an interpretation or a replacement Piece sentence.
+                scope = scopes.get(sentence.node_id)
+                if sentence.node_id in keep_nodes or (
+                        sentence.node_id in scoped_nodes and scope is not None):
+                    # Protect the admitted KEEP quotation or a quotation in
+                    # an established scope's premise. Its speaker and words
+                    # remain context, never the outer author's intention.
                     literal = text[sentence.source_start:sentence.source_end]
                     spans, balanced = _body_primary_quote_spans(literal)
                     if balanced:
                         for start, end in spans:
+                            if sentence.node_id not in keep_nodes and not (
+                                    scope.scope_scalar_span[0]
+                                    <= sentence.source_start + start - 1
+                                    < sentence.source_start + end + 1
+                                    <= scope.scope_scalar_span[1]):
+                                continue
                             quotes.append(dict(literal=literal[start - 1:end + 1],
                                 scalar_start=ref.scalar_start + start - 1,
                                 scalar_end=ref.scalar_start + end + 1))

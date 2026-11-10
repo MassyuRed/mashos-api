@@ -177,6 +177,45 @@ _TEMPORAL_EVALUATION = re.compile(
 # their exact surface. Neither is promoted to declaration by this operator.
 _SCOPED_SELF_END = re.compile(r'(?:たい|たくない)(?:です)?$')
 _SELF_TOPIC_MENTION = re.compile(r'(?:私|わたし|僕|ぼく|俺|おれ)は')
+
+
+def _scoped_expression_match(sentence: str) -> re.Match[str] | None:
+    """Bind the existing clause grammar only at an unquoted operator.
+
+    Keep the original regex for unquoted sources. For one admitted quotation,
+    constrain only the premise length at each unquoted marker candidate;
+    all groups and spans still come from matching the unchanged source.
+    """
+    if not any(c in sentence for c in '「」『』'):
+        return _SCOPED_EXPRESSION.fullmatch(sentence)
+    from emlis_ai_grounded_sentence_surface import _body_primary_quote_spans
+    quoted, balanced = _body_primary_quote_spans(sentence)
+    if not balanced or len(quoted) != 1:
+        return None
+    def inside(position):
+        return any(start - 1 <= position <= end for start, end in quoted)
+    positions = {match.start() for marker in _SCOPE_RELATIONS
+                 for match in re.finditer(re.escape(marker), sentence)
+                 if match.start() > 0 and not inside(match.start())}
+    matches = []
+    for position in sorted(positions):
+        pattern = _SCOPED_EXPRESSION.pattern.replace(
+            '(?P<premise>.+?)', '(?P<premise>.{' + str(position) + '})', 1)
+        match = re.fullmatch(pattern, sentence)
+        if match is not None and not inside(match.start('intention')):
+            matches.append(match)
+    return matches[0] if len(matches) == 1 else None
+
+
+def _has_unquoted_self_topic(premise: str) -> bool:
+    """A quoted speaker's self mention is not the outer scope's author."""
+    from emlis_ai_grounded_sentence_surface import _body_primary_quote_spans
+    quoted, balanced = _body_primary_quote_spans(premise)
+    if not balanced:
+        return True  # malformed source cannot gain a new outer reading
+    return any(not any(start - 1 <= match.start() < match.end() <= end + 1
+                       for start, end in quoted)
+               for match in _SELF_TOPIC_MENTION.finditer(premise))
 # This rejection reader deliberately permits an empty body so a grammatical
 # operator by itself cannot become a complete proposition or a declaration.
 # It supplies no new positive source grammar or lexical predicate.
@@ -202,7 +241,7 @@ def _validate_self_predicate_body(sentence: str) -> None:
     # original node/evidence and the author's KEEP surface remain untouched.
     statement = sentence[:-1] + '。' if sentence.endswith(('！', '!')) else sentence
     expressions = [statement]
-    scoped = (_SCOPED_EXPRESSION.fullmatch(statement)
+    scoped = (_scoped_expression_match(statement)
               or _TEMPORAL_EVALUATION.fullmatch(statement))
     if scoped is not None:
         expressions.append(scoped['intention'])
@@ -487,7 +526,7 @@ def _scoped_focal_expression(sentence: str) -> tuple[re.Match[str], re.Match[str
     it neither changes its written predicate tense nor supplies an author.
     """
     from piece_v2_generation import _FOCUS, _DEICTIC, _NESTED
-    scoped = (_SCOPED_EXPRESSION.fullmatch(sentence)
+    scoped = (_scoped_expression_match(sentence)
               or _TEMPORAL_EVALUATION.fullmatch(sentence))
     if scoped is None:
         return None
@@ -501,7 +540,7 @@ def _scoped_focal_expression(sentence: str) -> tuple[re.Match[str], re.Match[str
              or _direct_transitive_expression(scoped['intention']))
     if focal is None:
         return None
-    self_premise = _SELF_TOPIC_MENTION.search(scoped['premise']) is not None
+    self_premise = _has_unquoted_self_topic(scoped['premise'])
     if self_premise:
         # Share only the already-admitted sentence-initial author. This is
         # not general participant inference or a speaker-alias equivalence.
@@ -535,7 +574,7 @@ def _expression_scopes(text: str, nodes: tuple[MeaningNode, ...],
                 or text[start:end] != node.value):
             raise unavailable('piece_intent_scope_source_binding')
         focal = _scoped_focal_expression(node.value)
-        match = (_SCOPED_EXPRESSION.fullmatch(node.value)
+        match = (_scoped_expression_match(node.value)
                  or _TEMPORAL_EVALUATION.fullmatch(node.value))
         frame = evaluations.get(node.node_id)
         # A whole-sentence finite match is not evidence of an inner scope.
@@ -545,7 +584,7 @@ def _expression_scopes(text: str, nodes: tuple[MeaningNode, ...],
                             and frame.scalar_parts[0][0] == start + match.start('intention'))
         if _SELF_TOPIC.fullmatch(node.value) and focal is None and not inner_evaluation:
             continue
-        if match is None or (_SELF_TOPIC_MENTION.search(match['premise'])
+        if match is None or (_has_unquoted_self_topic(match['premise'])
                              and focal is None and not inner_evaluation):
             continue
         temporal = match.re is _TEMPORAL_EVALUATION
@@ -951,7 +990,7 @@ def _nominal_references(text: str, nodes: tuple[MeaningNode, ...],
             # licensed. The same unique-prior-object resolver below owns its
             # authority. Referring to an earlier wish/value does not assert
             # its existence, fulfill this condition, or transfer its stance.
-            conditional = _SCOPED_EXPRESSION.fullmatch(node.value)
+            conditional = _scoped_expression_match(node.value)
             if (conditional is not None and _SCOPE_RELATIONS[conditional['marker']]
                     == 'SOURCE_EXPLICIT_CONDITION'):
                 mention = _NOMINAL_REFERENCE_TARGET.fullmatch(conditional['premise'])
@@ -964,7 +1003,7 @@ def _nominal_references(text: str, nodes: tuple[MeaningNode, ...],
         # second edge. No predicate, comparison, third operand or suffix is
         # admitted by this bounded nominal conjunction.
         if _NOMINAL_REFERENCE_TARGET.match(node.value):
-            conditional = _SCOPED_EXPRESSION.fullmatch(node.value)
+            conditional = _scoped_expression_match(node.value)
             if (conditional is not None
                     and _SCOPE_RELATIONS[conditional['marker']] == 'SOURCE_EXPLICIT_CONDITION'
                     and _NOMINAL_REFERENCE_CONJUNCTION.fullmatch(conditional['premise'])):
@@ -1160,13 +1199,13 @@ def _personal_evaluation_shapes(text: str, nodes: tuple[MeaningNode, ...],
         match = (_EVALUATIVE_FOCUS.fullmatch(node.value)
                  or _EVALUATIVE_FINITE.fullmatch(node.value))
         expression_start = start
-        scoped = (_SCOPED_EXPRESSION.fullmatch(node.value)
+        scoped = (_scoped_expression_match(node.value)
                   or _TEMPORAL_EVALUATION.fullmatch(node.value))
         if scoped is not None:
             inner = (_EVALUATIVE_FOCUS.fullmatch(scoped['intention'])
                      or _EVALUATIVE_FINITE.fullmatch(scoped['intention']))
             if inner is not None and (
-                    not _SELF_TOPIC_MENTION.search(scoped['premise'])
+                    not _has_unquoted_self_topic(scoped['premise'])
                     or _same_self_scope_author(scoped['premise'], inner['speaker'])):
                 # Prefer the proven inner evaluation even when the outer
                 # finite grammar could swallow its premise and second author

@@ -24,7 +24,7 @@ from .piece_source import (
     _SIMPLE_NOUN, _calendar_time_adverb_span, _direct_transitive_expression, _PERSON_NAME_LEFT_BOUNDARY,
     _validated_self_insight_mode, PiecePersonalEvaluation, PieceSourceMeaning, build_piece_source_meaning,
     _literal_self_account, _finite_self_person_action_account, _written_feeling_expression, _SCOPE_RELATIONS,
-    _scoped_self_topic, _qualified_self_topic, _SCOPED_EXPRESSION, _same_self_scope_author,
+    _scoped_self_topic, _qualified_self_topic, _scoped_expression_match, _same_self_scope_author,
     _FINITE_RESERVATION_QUESTION,
     piece_public_role_aliases, validate_piece_nominal_references, validate_piece_saved_fields,
     validate_piece_personal_evaluations, validate_piece_expression_scopes,
@@ -166,7 +166,7 @@ def _has_topic_qualification(meaning: PieceSourceMeaning, duties: tuple[PieceTex
             # an existing operator. Its finite reservation must remain with
             # that expression even though neither a wish/simile decision nor
             # a typed scope is made. Restrict formats only; keep every word.
-            scoped = _SCOPED_EXPRESSION.fullmatch(node.value)
+            scoped = _scoped_expression_match(node.value)
             if scoped is not None and _literal_self_account(node.value):
                 topic = _scoped_self_topic(scoped['intention'])
                 if (topic is not None

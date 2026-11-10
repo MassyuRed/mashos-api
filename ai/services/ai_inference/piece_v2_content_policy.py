@@ -131,9 +131,9 @@ def _piece_model_evaluation(text, *, _bound_reference=False):
     from cocolon_meaning_experience_engine.piece_source import (
         PieceSentenceMeaning, _personal_evaluation_shapes,
         _EVALUATIVE_FOCUS, _EVALUATIVE_FINITE, _evaluation_target_references,
-        _SCOPED_EXPRESSION, _TEMPORAL_EVALUATION,
+        _scoped_expression_match, _TEMPORAL_EVALUATION,
     )
-    if _SCOPED_EXPRESSION.fullmatch(text) or _TEMPORAL_EVALUATION.fullmatch(text):
+    if _scoped_expression_match(text) or _TEMPORAL_EVALUATION.fullmatch(text):
         return None
     match = _EVALUATIVE_FOCUS.fullmatch(text) or _EVALUATIVE_FINITE.fullmatch(text)
     if match is None or (not _bound_reference and _evaluation_target_references(match['target'])):
@@ -603,14 +603,14 @@ def validate_source_meaning_preservation(meaning, plan, artifact, *, _model_regi
         # compare only the existing affirmative copula register. This is not
         # a new typed reason/value interpretation or source admission rule.
         from cocolon_meaning_experience_engine.piece_source import (
-            _SCOPED_EXPRESSION, _EVALUATIVE_FINITE, _same_self_scope_author,
+            _scoped_expression_match, _EVALUATIVE_FINITE, _same_self_scope_author,
         )
         if (node_id in scopes or node_id in evaluations
                 or any(node_id in (r.antecedent_node_id, r.reference_node_id)
                        for r in meaning.nominal_references)
                 or anchor(source) != re.escape(source)):
             return False
-        scoped = _SCOPED_EXPRESSION.fullmatch(source)
+        scoped = _scoped_expression_match(source)
         if scoped is None or scoped['marker'] != 'ので':
             return False
         expression = scoped['intention']
