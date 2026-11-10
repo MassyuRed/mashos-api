@@ -40,7 +40,7 @@ def _json(value):
                       separators=(',', ':'), allow_nan=False)
 
 
-def _source_action_constraint(text):
+def _source_action_constraint(text, *, include_semantic_roles=False):
     """Project only the source owner's complete, written finite account."""
     from cocolon_meaning_experience_engine.piece_source import _finite_self_person_action_account
     from cocolon_meaning_experience_engine import natural_reply_meaning as reader
@@ -66,10 +66,16 @@ def _source_action_constraint(text):
     if len(readings) != 1:
         return None
     finite, arguments = readings[0]
-    return dict(narrator_literal=subject['noun'], predicate_literal=finite,
+    result = dict(narrator_literal=subject['noun'], predicate_literal=finite,
         predicate=row.predicate, polarity=row.polarity, temporal_scope=row.temporal_scope,
         modality=row.modality, voice=row.voice, relative_day=row.relative_day,
         arguments=[dict(case=case, literal=noun) for case, noun in arguments])
+    if include_semantic_roles:
+        # These are arguments of this written predicate, including a negated
+        # predicate. They do not assert that a request or its object occurred.
+        result.update(source_literal=text, semantic_roles=dict(
+            subject=row.subject, agent=row.agent, counterpart=row.counterpart))
+    return result
 
 
 def _authoring_constraints(prepared, source_request, slots):
@@ -130,11 +136,14 @@ def _authoring_constraints(prepared, source_request, slots):
                         < ref.scalar_end <= slot['scalar_end']):
                     continue
                 action = actions_by_node.get(sentence.node_id)
-                # A passive field keeps its prior authoring input. Its
-                # source narrator must not invite a rewritten active event;
-                # the model's existing whole-body reviewer still owns KEEP.
-                if (complete_actions and action is not None
-                        and slot['field_path'] not in passive_fields):
+                if complete_actions and action is not None:
+                    if slot['field_path'] in passive_fields:
+                        # Bind every event in this field to its own source
+                        # roles; SELF as narrator is not always its agent.
+                        literal = text[sentence.source_start:sentence.source_end]
+                        action = _source_action_constraint(literal, include_semantic_roles=True)
+                        if action is None:
+                            raise ValueError('piece_model_authoring_action_mismatch')
                     actions.append(dict(**action, scalar_start=ref.scalar_start,
                                         scalar_end=ref.scalar_end))
             for binding in part.role_bindings:

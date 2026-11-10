@@ -13,6 +13,8 @@ import pytest
 import piece_model_source as model
 import piece_v2_preview_service as preview
 from cocolon_meaning_experience_engine.piece_semantic_admission import prepare_piece_model_request
+from cocolon_meaning_experience_engine.piece_semantic_admission import PieceModelInputV1
+from cocolon_meaning_experience_engine.engine import MeaningExperienceEngine
 from emlis_ai_current_input_bundle import normalize_emlis_current_input
 from emlis_ai_nls_v3_artifact_contract import artifact_sha256
 from piece_v2_contract import canonical_json_bytes, canonical_sha256_hex
@@ -104,6 +106,40 @@ def test_configured_source_rejects_a_mismatched_source_before_http(monkeypatch):
     with pytest.raises(ValueError, match='piece_model_prepared_invalid'):
         asyncio.run(model.call_piece_model_source(configured_source, prepared, source_request=wrong))
     assert seen == []
+
+
+@pytest.mark.parametrize('ending,accepted', [
+    ('頼まれなかった', True), ('頼まなかった', False),
+    ('頼まれない', False), ('頼まれた', False),
+])
+def test_configured_passive_roles_do_not_replace_independent_meaning_review(monkeypatch, ending, accepted):
+    text = '俺は大工から作業台の修理を頼まれませんでした。俺は後輩に工具の貸出を伝えました。'
+    body = '俺は大工から作業台の修理を' + ending + '。俺は後輩に工具の貸出を伝えた。'
+    raw = json.dumps(dict(field_blocks=dict(memo_0=body)), ensure_ascii=False)
+    seen = []
+    def handler(value):
+        payload = json.loads(value.content)
+        material = json.loads(payload['messages'][1]['content'])
+        assert payload['messages'][0]['content'] == model.SYSTEM_MESSAGE
+        assert material['sources'][0]['original']['memo'] == text
+        actions = material['control']['authoring_constraints']['field_slots']['memo_0']['required_actions']
+        assert actions[0]['source_literal'] == text[:actions[0]['scalar_end']]
+        assert actions[0]['semantic_roles'] == dict(subject='SELF', agent='WRITTEN:大工', counterpart='SELF')
+        assert (actions[0]['polarity'], actions[0]['temporal_scope'], actions[0]['voice']) == (
+            'negative', 'past', 'passive')
+        assert actions[1]['semantic_roles'] == dict(subject='SELF', agent='SELF', counterpart='WRITTEN:後輩')
+        seen.append(material)
+        return httpx.Response(200, json=dict(model=payload['model'], candidate_format='piece.field_slots.v1',
+            choices=[dict(finish_reason='stop', message=dict(role='assistant', content=raw))]))
+    selected = configured(monkeypatch, handler)
+    req = request(source(text, field='memo'))
+    prepared = prepare_piece_model_request(req)
+    before = req.source, prepared.private_json, prepared.request_id
+    receipt = asyncio.run(model.call_piece_model_source(selected, prepared, source_request=req))
+    out = MeaningExperienceEngine().generate(req, semantic_input=PieceModelInputV1(prepared, receipt))
+    assert (out.artifact is not None) is accepted
+    assert receipt.raw_output == raw and len(seen) == 1
+    assert (req.source, prepared.private_json, prepared.request_id) == before
 
 
 def test_same_key_shares_one_configured_conditioned_request_without_callback_wrapping(monkeypatch):

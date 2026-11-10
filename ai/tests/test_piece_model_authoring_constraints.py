@@ -193,42 +193,155 @@ def test_action_conditions_are_local_to_original_fields_and_the_answer():
     '私は司書に展示の予定を相談しました！',
     '私は司書に展示の予定を相談し、受付係に時刻を伝えました。',
     '私は司書に展示の予定を伝えられました。',
+    '私は司書に展示の予定を伝えられませんでした。',
+    '司書から展示の予定を頼まれませんでした。',
+    '私は誰かから展示の予定を頼まれませんでした。',
+    '私は司書から展示の予定を頼まれなかったかもしれない。',
+    '私は司書から展示の予定を頼まれない。',
+    '「私は司書から展示の予定を頼まれませんでした」。',
 ])
 def test_source_action_projection_does_not_parse_a_substring_or_infer_a_writer(text):
     from piece_model_source import _source_action_constraint
     assert _source_action_constraint(text) is None
 
 
-def test_explicit_kara_passive_does_not_receive_action_rewrite_conditions():
+def test_explicit_kara_passive_binds_source_roles_without_an_authored_target():
     text = '私は司書から展示の予定を伝えられました。'
     material, _ = messages(source(text, field='memo'))
-    assert 'authoring_constraints' not in material['control']
+    action = field_constraints(material)['memo_0']['required_actions'][0]
+    assert action['source_literal'] == text
+    assert action['semantic_roles'] == dict(subject='SELF', agent='WRITTEN:司書', counterpart='SELF')
+    assert (action['predicate'], action['voice'], action['polarity'], action['temporal_scope']) == (
+        '伝える', 'passive', 'positive', 'past')
     assert material['control']['field_slots']['memo_0']['literal'] == text
+    assert 'expected_body' not in str(action)
+
+
+@pytest.mark.parametrize('case,ending,predicate', [
+    ('から', '相談されませんでした', '相談する'),
+    ('から', '伝えられませんでした', '伝える'),
+    ('に', '頼まれませんでした', '頼む'),
+])
+def test_existing_unambiguous_passive_forms_keep_negative_past_roles(case, ending, predicate):
+    text = '私は司書' + case + '展示の予定を' + ending + '。'
+    material, _ = messages(source(text, field='memo'))
+    event = field_constraints(material)['memo_0']['required_actions'][0]
+    assert event['semantic_roles'] == dict(subject='SELF', agent='WRITTEN:司書', counterpart='SELF')
+    assert event['source_literal'] == text and event['predicate_literal'] == ending
+    assert event['arguments'][0] == dict(case=case, literal='司書')
+    assert (event['predicate'], event['polarity'], event['temporal_scope'], event['voice']) == (
+        predicate, 'negative', 'past', 'passive')
 
 
 @pytest.mark.parametrize('passive_first', [True, False])
-def test_passive_and_active_in_one_field_receive_no_action_conditions(passive_first):
+def test_passive_field_binds_each_events_own_roles_in_both_orders(passive_first):
     active = '僕は受付係に開場の時刻を伝えませんでした。'
     passive = '私は司書から展示の予定を頼まれました。'
     text = passive + active if passive_first else active + passive
     material, _ = messages(source(text, field='memo'))
-    assert 'authoring_constraints' not in material['control']
+    actions = field_constraints(material)['memo_0']['required_actions']
+    assert len(actions) == 2
+    for action in actions:
+        assert text[action['scalar_start']:action['scalar_end']] == action['source_literal']
+        if action['source_literal'] == passive:
+            assert action['narrator_literal'] == '私'
+            assert action['semantic_roles'] == dict(subject='SELF', agent='WRITTEN:司書', counterpart='SELF')
+            assert (action['voice'], action['polarity']) == ('passive', 'positive')
+        else:
+            assert action['source_literal'] == active and action['narrator_literal'] == '僕'
+            assert action['semantic_roles'] == dict(subject='SELF', agent='SELF', counterpart='WRITTEN:受付係')
+            assert (action['voice'], action['polarity']) == ('active', 'negative')
     assert material['control']['field_slots']['memo_0']['literal'] == text
 
 
 @pytest.mark.parametrize('passive_field', ('memo', 'memo_action'))
-def test_passive_field_does_not_suppress_another_fields_active_conditions(passive_field):
+def test_passive_field_roles_do_not_change_another_fields_active_conditions(passive_field):
     active = '僕は受付係に開場の時刻を伝えませんでした。'
     passive = '私は司書から展示の予定を頼まれました。'
     material, _ = messages(source(passive, field=passive_field, other=active))
     constraints = field_constraints(material)
     active_field = 'memo_action' if passive_field == 'memo' else 'memo'
-    assert len(constraints) == 1
-    slot = next(iter(constraints.values()))
+    assert len(constraints) == 2
+    slot = next(row for row in constraints.values() if row['field_path'] == active_field)
     assert slot['field_path'] == active_field
     assert slot['required_actions'][0]['narrator_literal'] == '僕'
     assert slot['required_actions'][0]['polarity'] == 'negative'
     assert slot['required_actions'][0]['scalar_start'] == 0
+    assert 'source_literal' not in slot['required_actions'][0]
+    assert 'semantic_roles' not in slot['required_actions'][0]
+    passive_slot = next(row for row in constraints.values() if row['field_path'] == passive_field)
+    event = passive_slot['required_actions'][0]
+    assert event['source_literal'] == passive
+    assert event['scalar_start'] == 0 and event['scalar_end'] == len(passive)
+    assert event['semantic_roles']['agent'] == 'WRITTEN:司書'
+
+
+def test_passive_second_field_newline_keeps_field_local_source_slices():
+    first = '私は司書から展示の予定を頼まれませんでした。'
+    second = 'ぼくは受付係に開場の時刻を伝えました。'
+    text = first + '\n' + second
+    material, _ = messages(source('僕は先生に講堂の予約を相談しました。', field='memo', other=text))
+    slots = [slot for slot in field_constraints(material).values()
+             if slot['field_path'] == 'memo_action']
+    events = [event for slot in slots for event in slot['required_actions']]
+    assert [event['source_literal'] for event in events] == [first, second]
+    assert [event['scalar_start'] for event in events] == [0, len(first) + 1]
+    for event in events:
+        assert text[event['scalar_start']:event['scalar_end']] == event['source_literal']
+    assert events[0]['semantic_roles']['agent'] == 'WRITTEN:司書'
+    assert events[1]['semantic_roles']['agent'] == 'SELF' and events[1]['narrator_literal'] == 'ぼく'
+
+
+@pytest.mark.parametrize('speaker', ('私', 'わたし', '僕', 'ぼく', '俺', 'おれ'))
+@pytest.mark.parametrize('negative', (False, True))
+@pytest.mark.parametrize('passive_first', (False, True))
+def test_passive_semantics_keep_each_narrator_polarity_past_and_nonzero_span(
+        speaker, negative, passive_first):
+    passive = speaker + 'は配達員から荷物の整理を' + ('頼まれませんでした。' if negative else '頼まれました。')
+    active = speaker + 'は受付係に配送の時刻を' + ('伝えました。' if negative else '伝えませんでした。')
+    text = passive + active if passive_first else active + passive
+    material, _ = messages(source(text, field='memo'))
+    actions = field_constraints(material)['memo_0']['required_actions']
+    assert [a['source_literal'] for a in actions] == ([passive, active] if passive_first else [active, passive])
+    assert actions[1]['scalar_start'] == len(actions[0]['source_literal'])
+    for action in actions:
+        is_passive = action['source_literal'] == passive
+        assert text[action['scalar_start']:action['scalar_end']] == action['source_literal']
+        assert action['narrator_literal'] == speaker and action['temporal_scope'] == 'past'
+        assert action['voice'] == ('passive' if is_passive else 'active')
+        assert action['polarity'] == ('negative' if negative == is_passive else 'positive')
+        assert action['semantic_roles'] == dict(subject='SELF',
+            agent='WRITTEN:配達員' if is_passive else 'SELF',
+            counterpart='SELF' if is_passive else 'WRITTEN:受付係')
+        assert action['arguments'][1]['literal'] == ('荷物の整理' if is_passive else '配送の時刻')
+        # Negation belongs to the request/communication, not its object task.
+        assert not {'task_performed', 'accepted', 'result'} & action.keys()
+
+
+def test_passive_original_roles_do_not_enter_supplemental_evaluation():
+    passive = '俺は先生から講堂の予約を頼まれませんでした。'
+    answer = 'わたしは読書が好きでした。'
+    material, _ = messages(refined_source(original=passive, answer=answer))
+    slots = field_constraints(material)
+    assert set(slots) == {'memo_0', 'answer_text_private_1'}
+    original_slot, answer_slot = slots['memo_0'], slots['answer_text_private_1']
+    event = original_slot['required_actions'][0]
+    assert original_slot['source_role'] == 'ORIGINAL_INPUT'
+    assert event['narrator_literal'] == '俺' and event['source_literal'] == passive
+    assert event['scalar_start'] == 0 and event['scalar_end'] == len(passive)
+    assert event['semantic_roles']['agent'] == 'WRITTEN:先生'
+    assert answer_slot['source_role'] == 'SUPPLEMENTAL_ANSWER'
+    assert 'required_actions' not in answer_slot
+    assert answer_slot['required_evaluations'][0]['narrator_literal'] == 'わたし'
+    assert answer_slot['required_evaluations'][0]['temporal_scope'] == 'PAST'
+    assert slots['memo_0']['source_id'] != slots['answer_text_private_1']['source_id']
+
+
+def test_unadmitted_passive_supplement_gains_no_authoring_conditions():
+    material, _ = messages(refined_source(
+        original='僕は司書に展示の予定を相談しました。',
+        answer='私は先生から講堂の予約を頼まれませんでした。'))
+    assert 'authoring_constraints' not in material['control']
 
 
 def test_passive_suppression_preserves_existing_evaluation_conditions_in_its_field():
@@ -261,8 +374,9 @@ def test_evaluation_and_action_fields_keep_prior_conditions_without_partial_acti
     'まだ、参加する日は決めていません。',
 ])
 @pytest.mark.parametrize('same_field', (True, False))
-def test_feelings_opaque_context_and_reservations_do_not_receive_partial_action_hints(other, same_field):
-    action = '僕は司書に展示の予定を相談しました。'
+@pytest.mark.parametrize('action', ('僕は司書に展示の予定を相談しました。',
+                                   '僕は司書から展示の予定を頼まれませんでした。'))
+def test_feelings_opaque_context_and_reservations_do_not_receive_partial_action_hints(other, same_field, action):
     saved = source(action + other, field='memo') if same_field else source(action, field='memo', other=other)
     material, _ = messages(saved)
     assert 'authoring_constraints' not in material['control']
