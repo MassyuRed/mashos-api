@@ -226,9 +226,16 @@ def test_b9_receives_the_exact_bare_body_and_all_reservations(ratio):
 
 
 def test_short_bare_input_is_not_padded_to_satisfy_a_format():
-    _, out = run('僕は絵が好き。')
-    assert out.status == EngineStatus.UNAVAILABLE and out.artifact is None
-    assert out.reason_codes == ('format_not_eligible',)
+    # The 2026-11-01 user-text-only decision admits complete short originals
+    # as source-scaled short essays (1..420), without adding filler to them.
+    text = '僕は絵が好き。'
+    out = generated(text)
+    assert out.artifact.piece_text == '僕は、絵が好き。'
+    assert out.artifact.body_blocks == ('僕は、絵が好き。',)
+    assert out.artifact.format_type == 'short_essay'
+    assert out.artifact.eligible_formats == ('short_essay',)
+    assert tuple(node.value for node in out.source_meaning.graph.nodes) == (text,)
+    assert not out.artifact_plan.declaration_eligible
 
 
 def test_bare_value_uses_the_existing_format_policy_without_inventing_a_vow():
