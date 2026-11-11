@@ -93,6 +93,38 @@ def test_exact_24_distinct_source_texts_are_required_without_reading_holdout_tar
         trainer.validate_rows({**selected, 'all_fictional': False})
 
 
+def test_complement36_is_explicit_and_keeps_default24_and_all_teacher_validation():
+    selected = dict(all_fictional=True, rows=[row(number) for number in range(36)])
+    before = deepcopy(selected)
+    with pytest.raises(ValueError, match='exact_24'):
+        trainer.validate_rows(selected)
+    assert trainer.validate_rows(selected, expected_rows=36) is selected['rows']
+    assert selected == before
+    with pytest.raises(ValueError, match='exact_36'):
+        trainer.validate_rows(packet(), expected_rows=36)
+    duplicate = deepcopy(selected)
+    duplicate['rows'][-1]['messages'] = deepcopy(duplicate['rows'][0]['messages'])
+    with pytest.raises(ValueError, match='source_text_missing_or_duplicate'):
+        trainer.validate_rows(duplicate, expected_rows=36)
+    bad_target = deepcopy(selected)
+    bad_target['rows'][-1]['assistant_target'] = '{"field_blocks":{"memo_1":"wrong slot"}}'
+    with pytest.raises(ValueError, match='assistant_target_shape_invalid'):
+        trainer.validate_rows(bad_target, expected_rows=36)
+
+
+def test_complement72_updates_needs_explicit36_and_still_has_a_fixed_two_pass_limit(tmp_path):
+    options = dict(output=tmp_path / 'new', max_seconds=360, updates=72,
+                   learning_rate=1e-4, seed=20261109)
+    with pytest.raises(ValueError, match='updates_invalid'):
+        trainer.validate_settings(**options)
+    trainer.validate_settings(**options, training_rows=36)
+    with pytest.raises(ValueError, match='updates_invalid'):
+        trainer.validate_settings(**{**options, 'updates': 73}, training_rows=36)
+    for count in (True, 25, 37):
+        with pytest.raises(ValueError, match='training_rows_invalid'):
+            trainer.validate_settings(**options, training_rows=count)
+
+
 @pytest.mark.parametrize('target', [
     '{"field_blocks":{"memo_0":"a","memo_0":"b"}}',
     '{"field_blocks":{"memo_0":"a"},"extra":1}',

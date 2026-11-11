@@ -47,10 +47,11 @@ def read_json(path):
                       object_pairs_hook=unique_object, parse_constant=invalid)
 
 
-def validate_settings(*, output, max_seconds, updates, learning_rate, seed):
+def validate_settings(*, output, max_seconds, updates, learning_rate, seed, training_rows=24):
+    require(type(training_rows) is int and training_rows in (24, 36), 'training_rows_invalid')
     require(not Path(output).exists(), 'output_already_exists_no_resume')
     require(type(max_seconds) is int and 1 <= max_seconds <= 480, 'max_seconds_invalid')
-    require(type(updates) is int and 1 <= updates <= 48, 'updates_invalid')
+    require(type(updates) is int and 1 <= updates <= training_rows * 2, 'updates_invalid')
     require(type(learning_rate) in (int, float) and math.isfinite(learning_rate)
             and 0 < learning_rate <= 1e-4, 'learning_rate_invalid')
     require(type(seed) is int and 0 <= seed < 2**32, 'seed_invalid')
@@ -77,11 +78,13 @@ def validate_scope(config):
         'scope_extra_trainable_configuration')
 
 
-def validate_rows(packet):
+def validate_rows(packet, *, expected_rows=24):
+    require(type(expected_rows) is int and expected_rows in (24, 36), 'training_rows_invalid')
     require(type(packet) is dict and packet.get('all_fictional') is True,
             'fictional_data_required')
     rows = packet.get('rows')
-    require(type(rows) is list and len(rows) == 24, 'exact_24_training_rows_required')
+    require(type(rows) is list and len(rows) == expected_rows,
+            f'exact_{expected_rows}_training_rows_required')
     ids, texts = set(), set()
     for row in rows:
         require(type(row) is dict and type(row.get('id')) is str
@@ -139,14 +142,14 @@ def write_report(output, report):
 
 def run(args):
     validate_settings(output=args.output, max_seconds=args.max_seconds, updates=args.updates,
-                      learning_rate=args.learning_rate, seed=args.seed)
+                      learning_rate=args.learning_rate, seed=args.seed, training_rows=args.training_rows)
     require(os.environ.get('HF_HUB_OFFLINE') == '1'
             and os.environ.get('TRANSFORMERS_OFFLINE') == '1', 'offline_cache_required')
     require({name: version(name) for name in PINS} == PINS, 'model_dependency_changed')
     require(args.scope_config.name == 'adapter_config.json' and args.scope_config.is_file(),
             'scope_config_filename_invalid')
     packet, scope = read_json(args.data), read_json(args.scope_config)
-    rows = validate_rows(packet)
+    rows = validate_rows(packet, expected_rows=args.training_rows)
     validate_scope(scope)
     scope_sha = digest(args.scope_config)
     data_sha = digest(args.data)
@@ -161,7 +164,8 @@ def run(args):
         runner_sha256=digest(__file__), training_initial='FRESH_BASE_NEW_RANDOM_LORA_CONFIG_ONLY',
         old_adapter_weights_read=False, model_loads=0, updates=0, measurement_forwards=0,
         model_generations=0, learning_rate=args.learning_rate, max_seconds=args.max_seconds,
-        requested_updates=args.updates, steps=[], measurements=[], checkpoints=[],
+        requested_updates=args.updates, requested_training_rows=args.training_rows,
+        steps=[], measurements=[], checkpoints=[],
         optimizer_and_rng_saved=False, normal_adoption=False)
     def save():
         report['process_seconds'] = round(time.monotonic() - start, 3)
@@ -269,8 +273,8 @@ def run(args):
             report['updates'] = step
             report['steps'].append(dict(step=step, id=key, loss=float(value.detach()), gradient_norm=float(norm)))
             save()
-            if step == 24 and step < args.updates:
-                checkpoint = args.output / 'checkpoint_24'
+            if step == len(rows) and step < args.updates:
+                checkpoint = args.output / f'checkpoint_{len(rows)}'
                 preserve(checkpoint)
                 report['checkpoints'].append(dict(updates=step, path=checkpoint.name,
                     weights_sha256=digest(checkpoint / 'adapter_model.safetensors')))
@@ -325,6 +329,7 @@ def main():
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--max-seconds', type=int, default=480)
     parser.add_argument('--updates', type=int, default=48)
+    parser.add_argument('--training-rows', type=int, choices=(24, 36), default=24)
     parser.add_argument('--learning-rate', type=float, default=1e-4)
     parser.add_argument('--seed', type=int, default=20261109)
     try:
