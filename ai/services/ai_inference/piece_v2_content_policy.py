@@ -635,6 +635,18 @@ def validate_source_meaning_preservation(meaning, plan, artifact, *, _model_regi
     def same_evaluation(node_id, visible, author, viewpoint, prefix, optional_prefix,
                         *, source_expression=None):
         frame = evaluations[node_id]
+        from cocolon_meaning_experience_engine.piece_source import _EVALUATIVE_FOCUS
+        expression = source_nodes[node_id].value if source_expression is None else source_expression
+        focal = _EVALUATIVE_FOCUS.fullmatch(expression)
+        if focal is not None:
+            # A qualified evaluation may keep its complete source focal order.
+            # Anchor every word, narrator, viewpoint and inner operator; only
+            # its outer present copula changes register. The caller retains
+            # the complete written scope, field and paragraph boundaries.
+            original_order = (anchor(expression[:focal.start('copula')])
+                              + r'(?:です|だ)' + anchor(expression[focal.end('copula'):]))
+            if re.fullmatch(original_order, visible) is not None:
+                return True
         _, _, target = (original[a:b] for a, b in frame.scalar_parts)
         # Source validation above owns the reference edges and public aliases.
         # No other target particle, argument, speaker or clause can enter this view.

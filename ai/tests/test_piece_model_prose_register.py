@@ -277,13 +277,65 @@ def test_scoped_evaluation_register_keeps_original_fields_and_supplemental_autho
     assert evaluate_saved(saved, [bodies[0], bodies[1].replace('わたしは', '私は')]).artifact is None
 
 
-def test_scoped_evaluation_register_does_not_add_a_focal_order_or_source_grammar():
+def test_scoped_evaluation_register_keeps_qualified_focal_order_without_adding_source_grammar():
     original = '雨が続いているので、私が好きなのは、読書の時間です。'
     assert evaluate(original, '雨が続いているので、私は読書の時間が好きだ。').artifact is not None
-    assert evaluate(original, original.replace('です', 'だ')).artifact is None
+    # The former refusal was an unimplemented model comparison, not a new
+    # source grammar. Keep its entire original focal clause and outer reason.
+    assert evaluate(original, original.replace('です', 'だ')).artifact is not None
     # A source without its own written viewpoint does not gain qualification.
     assert evaluate('雨が続いているので、静かな朝食が好きです。',
                     '雨が続いているので、私は静かな朝食が好きだ。').artifact is None
+
+
+@pytest.mark.parametrize('speaker', ['私', 'わたし', '僕', 'ぼく', '俺', 'おれ'])
+@pytest.mark.parametrize('scope', ['', '雨が続いているので、', '余裕があるなら、',
+                                  '予定は決まっているけれど、'])
+@pytest.mark.parametrize('polite_source', [True, False])
+def test_evaluation_focal_register_keeps_source_order_and_all_operators(speaker, scope, polite_source):
+    prefix = scope + speaker + 'が少し苦手だったのは、朝食の時間'
+    original = prefix + ('です。' if polite_source else 'だ。')
+    body = prefix + ('だ。' if polite_source else 'です。')
+    out = evaluate(original, body)
+    assert out.artifact is not None, out.reason_codes
+    assert out.source_meaning.personal_evaluations[0].temporal_scope == 'PAST'
+    with pytest.raises(PieceContractError):
+        validate_source_meaning_preservation(out.source_meaning, out.artifact_plan, out.artifact)
+
+
+@pytest.mark.parametrize('changed', [
+    '余裕があるなら、私にとって大切なのは、一人で本を読む時間だ。',
+    '余裕があるなら、僕にとって大事なのは、一人で本を読む時間だ。',
+    '余裕があるなら、僕にとってとても大切なのは、一人で本を読む時間だ。',
+    '余裕があるなら、僕にとって大切なのは、本を読む時間だ。',
+    '余裕があるなら、僕にとって大切なのは、一人で本を読む時間だった。',
+    '余裕があるなら、僕にとって大切なのは、一人で本を読む時間ではない。',
+    '余裕があるなら、僕にとって大切なのは、一人で本を読む時間かもしれない。',
+    '余裕があるので、僕にとって大切なのは、一人で本を読む時間だ。',
+    '余裕があるなら、大切なのは、一人で本を読む時間だ。',
+    '僕にとって、余裕があるなら、大切なのは、一人で本を読む時間だ。',
+    '余裕があるなら、僕にとって大切なのは一人で本を読む時間だ。',
+    '余裕があるなら、僕にとって大切なのは、一人で本を読む時間だ！',
+    '余裕があるなら、僕にとって大切なのは、一人で本を読む時間だ。私は安心した。',
+])
+def test_evaluation_focal_register_rejects_any_change_beyond_outer_copula(changed):
+    original = '余裕があるなら、僕にとって大切なのは、一人で本を読む時間です。'
+    assert evaluate(original, changed).artifact is None
+
+
+def test_evaluation_focal_register_keeps_field_and_supplemental_narrators():
+    from test_piece_model_narrator_voice import evaluate as evaluate_saved
+    from test_cmee_piece_refined_sources import source as refined_source
+    original = '雨が続いているので、私が好きなのは、読書の時間です。'
+    other = '余裕があるなら、僕にとって大切なのは、一人で本を読む時間です。'
+    bodies = [original.replace('です。', 'だ。'), other.replace('です。', 'だ。')]
+    assert evaluate_saved(source(original, field='memo', other=other), bodies).artifact is not None
+    assert evaluate_saved(source(original, field='memo', other=other),
+                          [bodies[0], bodies[1].replace('僕にとって', '')]).artifact is None
+    saved = refined_source(original=original, answer='わたしが好きなのは、朝食の時間です。')
+    bodies = [bodies[0], 'わたしが好きなのは、朝食の時間だ。']
+    assert evaluate_saved(saved, bodies).artifact is not None
+    assert evaluate_saved(saved, [bodies[0], bodies[1].replace('わたし', '私')]).artifact is None
 
 
 @pytest.mark.parametrize('speaker', ['私', 'わたし', '僕', 'ぼく', '俺', 'おれ'])
