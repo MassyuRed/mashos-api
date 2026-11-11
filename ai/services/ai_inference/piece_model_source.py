@@ -272,8 +272,10 @@ def build_piece_model_messages(prepared, *, include_authoring_constraints=False,
                 if any('source_scope' in action for slot in constraints.values()
                        for action in slot.get('required_actions', ())):
                     control['authoring_constraints']['scoped_action_instruction'] = (
-                        'source_scopeは動作と一体の前提です。literalの前提全体・接続語・順序を保持し、'
-                        '内側の動作だけを切り離さず、明示された本人・相手・対象・肯否・過去を保ってください。')
+                        'source_scopeは動作と一体の前提です。source_scope.prefix_literalは、同じsource・欄の対応する動作の直前に、文字・接続語・順序を変えずに保持してください。'
+                        '外側の前提の時制・継続状態を、内側の完了した動作の過去へ合わせないでください。'
+                        '内側では明示された本人・相手・対象・肯否・時点を保持し、同じ意味の述語の敬常体だけを整えてください。'
+                        'この条件はsource_scopeを持つ動作だけに適用します。')
                 if any('literal_quotes' in slot for slot in constraints.values()):
                     control['authoring_constraints']['quote_context_instruction'] = (
                         'literal_quotesは編集しない引用範囲です。かぎ括弧・内部の全ての文字・句読点・記号とその個数を原文どおり保持してください。'

@@ -169,6 +169,7 @@ MUTATIONS = [
     ('extra_subject_pause', '予定が重なっているので、僕は、友人に予定を相談した。'),
     ('premise_dropped', '僕は友人に予定を相談した。'),
     ('premise_polarity', '予定が重なっていないので、僕は友人に予定を相談した。'),
+    ('premise_aspect_to_past', '予定が重なったので、僕は友人に予定を相談した。'),
     ('reason_to_concession', '予定が重なっているけれど、僕は友人に予定を相談した。'),
     ('reason_to_condition', '予定が重なっているなら、僕は友人に予定を相談した。'),
     ('ambiguous_from', '予定が重なっているから、僕は友人に予定を相談した。'),
