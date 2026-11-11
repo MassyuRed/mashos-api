@@ -802,6 +802,21 @@ def validate_source_meaning_preservation(meaning, plan, artifact, *, _model_regi
                 elif topic_kind == 'wish' and not premise_first:
                     pattern = '(?:' + pattern + '|' + optional_prefix + premise_pattern + body + ')'
             if re.fullmatch(pattern, visible) is None:
+                if (_model_register and node_id in evaluations and scope is not None
+                        and scope.relation in {'SOURCE_EXPLICIT_REASON',
+                            'SOURCE_EXPLICIT_CONDITION', 'SOURCE_EXPLICIT_CONCESSION'}):
+                    # The source already owns this evaluation and its outer
+                    # relation. Retain the complete public source prefix and
+                    # compare the remaining evaluation with the existing
+                    # operator/target reader. Keep native matches first and
+                    # reuse only their already-proved author continuity.
+                    outer = original[spans[node_id].source_start:scope.expression_scalar_span[0]]
+                    outer_match = re.match(anchor(outer), visible)
+                    if (outer_match is not None
+                            and same_evaluation(node_id, visible[outer_match.end():], author,
+                                viewpoint, prefix, optional_prefix, source_expression=expression)):
+                        previous_id, previous_author = node_id, author
+                        continue
                 if (_model_register and scope is not None
                         and topic_kind in {'wish', 'literal'}):
                     # The qualified scoped self account already owns every

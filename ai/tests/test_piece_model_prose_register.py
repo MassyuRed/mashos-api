@@ -66,6 +66,125 @@ MODIFIED_TIME = '以前は、私は一人の食事が苦手でした。今は、
 MODIFIED_TIME_BODY = '以前は、私は一人の食事が苦手だった。今は、私は一人の食事が好きだ。'
 
 
+@pytest.mark.parametrize('marker,relation', [
+    ('ので', 'SOURCE_EXPLICIT_REASON'), ('なら', 'SOURCE_EXPLICIT_CONDITION'),
+    ('ならば', 'SOURCE_EXPLICIT_CONDITION'), ('けれど', 'SOURCE_EXPLICIT_CONCESSION'),
+    ('けれども', 'SOURCE_EXPLICIT_CONCESSION'),
+])
+@pytest.mark.parametrize('expression,body', [
+    ('私は一人の食事が好きです。', '私は一人の食事が好きだ。'),
+    ('ぼくは静かな朝食が苦手でした。', 'ぼくは静かな朝食が苦手だった。'),
+    ('俺は読書が少し好きではありません。', '俺は読書が少し好きではない。'),
+    ('わたしは料理が好きかもしれません。', 'わたしは料理が好きかもしれない。'),
+    ('僕にとって古い資料を読む時間が大切です。', '僕にとって古い資料を読む時間が大切だ。'),
+    ('私にとって休息がとても必要でした。', '私にとって休息がとても必要だった。'),
+    ('おれにとって準備が大事とは限りません。', 'おれにとって準備が大事とは限らない。'),
+    ('私にとって読書が重要だ。', '私にとって読書が重要です。'),
+])
+def test_scoped_evaluation_register_keeps_the_bound_relation_target_and_operators(marker, relation, expression, body):
+    original = '時間に余裕がある' + marker + '、' + expression
+    candidate = '時間に余裕がある' + marker + '、' + body
+    out = evaluate(original, candidate)
+    assert out.status == EngineStatus.GENERATED, out.reason_codes
+    scope, = out.source_meaning.expression_scopes
+    frame, = out.source_meaning.personal_evaluations
+    assert scope.relation == relation and scope.node_id == frame.node_id
+    assert out.artifact_plan.duties[0].operation == 'SOURCE_SCOPED_EXPRESSION_TO_FIRST_PERSON'
+    assert out.artifact.body_blocks == (candidate,)
+
+
+SCOPED_EVALUATION = '友人が「私は料理が苦手」と話してくれたので、私は静かな朝食が少し好きかもしれません。'
+SCOPED_EVALUATION_BODY = SCOPED_EVALUATION.replace('かもしれません。', 'かもしれない。')
+
+
+@pytest.mark.parametrize('body', [
+    '私は静かな朝食が少し好きかもしれない。',
+    SCOPED_EVALUATION_BODY.replace('ので', 'なら'),
+    SCOPED_EVALUATION_BODY.replace('話してくれた', '話さなかった'),
+    SCOPED_EVALUATION_BODY.replace('「私は', '「僕は'),
+    SCOPED_EVALUATION_BODY.replace('料理が苦手', '料理が好き'),
+    SCOPED_EVALUATION_BODY.replace('、私は', '、'),
+    SCOPED_EVALUATION_BODY.replace('、私は', '、僕は'),
+    SCOPED_EVALUATION_BODY.replace('静かな朝食', '朝食'),
+    SCOPED_EVALUATION_BODY.replace('朝食が', '朝食は'),
+    SCOPED_EVALUATION_BODY.replace('少し', 'とても'),
+    SCOPED_EVALUATION_BODY.replace('少し', ''),
+    SCOPED_EVALUATION_BODY.replace('好きかもしれない', '好きだ'),
+    SCOPED_EVALUATION_BODY.replace('好きかもしれない', '好きではないかもしれない'),
+    SCOPED_EVALUATION_BODY.replace('好きかもしれない', '好きだったかもしれない'),
+    SCOPED_EVALUATION_BODY.replace('好き', '苦手'),
+    SCOPED_EVALUATION_BODY.replace('。', '！'),
+    SCOPED_EVALUATION_BODY + '私は嬉しい。',
+])
+def test_scoped_evaluation_register_never_borrows_or_changes_the_outer_or_inner_meaning(body):
+    assert evaluate(SCOPED_EVALUATION, body).artifact is None
+
+
+@pytest.mark.parametrize('separator', ['、 ', '，\t', ',\u3000'])
+def test_scoped_evaluation_register_retains_the_full_outer_separator(separator):
+    original = SCOPED_EVALUATION.replace('、', separator)
+    body = SCOPED_EVALUATION_BODY.replace('、', separator)
+    assert evaluate(original, body).artifact is not None
+    assert evaluate(original, SCOPED_EVALUATION_BODY).artifact is None
+
+
+def test_scoped_evaluation_register_keeps_existing_public_roles_and_native_matches():
+    original = '友人の佐藤さんが忙しいので、私は読書が好きです。'
+    native = MeaningExperienceEngine().generate(request(source(original, field='memo')))
+    assert native.artifact.piece_text == '友人が忙しいので、私は、読書が好きです。'
+    validate_source_meaning_preservation(native.source_meaning, native.artifact_plan, native.artifact)
+    assert evaluate(original, native.artifact.piece_text).artifact == native.artifact
+    body = '友人が忙しいので、私は読書が好きだ。'
+    out = evaluate(original, body)
+    assert out.artifact is not None
+    with pytest.raises(PieceContractError):
+        validate_source_meaning_preservation(out.source_meaning, out.artifact_plan, out.artifact)
+    assert evaluate(original, body.replace('友人', '同僚')).artifact is None
+
+
+def test_scoped_evaluation_register_uses_only_existing_author_continuity():
+    original = '私は読書が好きです。雨が続いているので、私は静かな朝食が好きです。'
+    body = '私は読書が好きだ。雨が続いているので、静かな朝食が好きだ。'
+    assert evaluate(original, body).artifact is not None
+    # A same-sentence self premise already proves this author in native too.
+    original = '私は疲れているので、私は読書が好きです。'
+    assert evaluate(original, '私は疲れているので、読書が好きです。').artifact is not None
+    assert evaluate(original, '私は疲れているので、読書が好きだ。').artifact is not None
+    value = '私は疲れているので、私にとって読書が大切です。'
+    assert evaluate(value, '私は疲れているので、読書が大切だ。').artifact is None
+
+
+@pytest.mark.parametrize('separator', ['\n', '\r\n'])
+def test_scoped_evaluation_register_does_not_carry_the_author_across_paragraphs(separator):
+    original = '私は読書が好きです。' + separator + '雨が続いているので、私は静かな朝食が好きです。'
+    bodies = ['私は読書が好きだ。', '雨が続いているので、私は静かな朝食が好きだ。']
+    assert evaluate(original, bodies).artifact is not None
+    assert evaluate(original, [bodies[0], bodies[1].replace('私は', '')]).artifact is None
+
+
+def test_scoped_evaluation_register_keeps_original_fields_and_supplemental_authors_separate():
+    from test_piece_model_narrator_voice import evaluate as evaluate_saved
+    from test_cmee_piece_refined_sources import source as refined_source
+    other = '余裕があるなら、私は料理が好きです。'
+    saved = source(SCOPED_EVALUATION, field='memo', other=other)
+    bodies = [SCOPED_EVALUATION_BODY, other.replace('好きです', '好きだ')]
+    assert evaluate_saved(saved, bodies).artifact is not None
+    assert evaluate_saved(saved, [bodies[0], bodies[1].replace('私は', '')]).artifact is None
+    saved = refined_source(original=SCOPED_EVALUATION, answer='わたしは読書が好きです。')
+    bodies = [SCOPED_EVALUATION_BODY, 'わたしは読書が好きだ。']
+    assert evaluate_saved(saved, bodies).artifact is not None
+    assert evaluate_saved(saved, [bodies[0], bodies[1].replace('わたしは', '私は')]).artifact is None
+
+
+def test_scoped_evaluation_register_does_not_add_a_focal_order_or_source_grammar():
+    original = '雨が続いているので、私が好きなのは、読書の時間です。'
+    assert evaluate(original, '雨が続いているので、私は読書の時間が好きだ。').artifact is not None
+    assert evaluate(original, original.replace('です', 'だ')).artifact is None
+    # A source without its own written viewpoint does not gain qualification.
+    assert evaluate('雨が続いているので、静かな朝食が好きです。',
+                    '雨が続いているので、私は静かな朝食が好きだ。').artifact is None
+
+
 @pytest.mark.parametrize('speaker', ['私', 'わたし', '僕', 'ぼく', '俺', 'おれ'])
 @pytest.mark.parametrize('target', ['一人の食事', '静かな朝食'])
 def test_modified_preference_time_register_keeps_each_whole_target_and_explicit_author(speaker, target):
