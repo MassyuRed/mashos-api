@@ -831,6 +831,18 @@ def validate_source_meaning_preservation(meaning, plan, artifact, *, _model_regi
                             and same_literal_self_register(expression, visible[outer_match.end():])):
                         previous_id, previous_author = node_id, None if literal_emphasis else author
                         continue
+                    if not premise_first and not literal_emphasis:
+                        # Native scoped self accounts already allow this
+                        # explicit author before the complete premise. Reuse
+                        # that same position and the literal ending comparison;
+                        # the temporary view is only for review, never output.
+                        front = re.match(prefix + premise_pattern, visible)
+                        if front is not None:
+                            topic = _scoped_self_topic(expression)
+                            view = expression[:topic.start('body')] + visible[front.end():]
+                            if same_literal_self_register(expression, view):
+                                previous_id, previous_author = node_id, author
+                                continue
                 # The existing focal grammar also owns its original order.
                 # Compare source anchors; never construct or rewrite prose.
                 focal = _FOCUS.fullmatch(expression) if _model_register else None

@@ -62,6 +62,107 @@ def evaluate(original, body, *, other=None, emotions=None, details=None):
     return result
 
 
+@pytest.mark.parametrize('speaker', ['私', 'わたし', '僕', 'ぼく', '俺', 'おれ'])
+@pytest.mark.parametrize('marker', ['ので', 'なら', 'ならば'])
+@pytest.mark.parametrize('account', ['本を読みたい', '家で過ごしたい', '氷みたい'])
+@pytest.mark.parametrize('polite_source', [False, True])
+def test_canonical_self_fronted_literal_register_retains_existing_order_and_whole_account(
+        speaker, marker, account, polite_source):
+    original = f'疲れている{marker}、{speaker}は{account}' + ('です。' if polite_source else '。')
+    native_body = f'{speaker}は、疲れている{marker}、{account}' + ('です。' if polite_source else '。')
+    candidate = f'{speaker}は、疲れている{marker}、{account}' + ('。' if polite_source else 'です。')
+    native = evaluate(original, native_body)
+    assert native.artifact is not None, native.reason_codes
+    validate_source_meaning_preservation(native.source_meaning, native.artifact_plan, native.artifact)
+    out = evaluate(original, candidate)
+    assert out.status == EngineStatus.GENERATED, out.reason_codes
+    assert out.source_meaning == native.source_meaning
+    assert out.artifact_plan == native.artifact_plan
+    assert out.artifact.body_blocks == (candidate,)
+    # A model-only register comparison never changes the native author contract.
+    with pytest.raises(PieceContractError):
+        validate_source_meaning_preservation(out.source_meaning, out.artifact_plan, out.artifact)
+
+
+CANONICAL_SELF_SOURCE = '疲れているなら、私は本を読みたいです。'
+CANONICAL_SELF_BODY = '私は、疲れているなら、本を読みたい。'
+
+
+@pytest.mark.parametrize('body', [
+    CANONICAL_SELF_BODY.replace('私は', '僕は'),
+    CANONICAL_SELF_BODY.replace('私は、', ''),
+    CANONICAL_SELF_BODY.replace('疲れている', '疲れていない'),
+    CANONICAL_SELF_BODY.replace('疲れている', '疲れていた'),
+    CANONICAL_SELF_BODY.replace('なら', 'ので'),
+    CANONICAL_SELF_BODY.replace('本を', '新聞を'),
+    CANONICAL_SELF_BODY.replace('本を', '本が'),
+    CANONICAL_SELF_BODY.replace('読みたい', '読みたくない'),
+    CANONICAL_SELF_BODY.replace('読みたい', '読みたかった'),
+    CANONICAL_SELF_BODY.replace('読みたい', '読んだ'),
+    CANONICAL_SELF_BODY.replace('読みたい', '読みたいかもしれない'),
+    CANONICAL_SELF_BODY.replace('読みたい', 'とても読みたい'),
+    CANONICAL_SELF_BODY.replace('。', '！'),
+    CANONICAL_SELF_BODY.replace('なら、', 'ならば、'),
+    CANONICAL_SELF_BODY.replace('なら、', 'なら，'),
+    CANONICAL_SELF_BODY.replace('なら、', 'なら、\n'),
+    CANONICAL_SELF_BODY + '私は嬉しい。',
+])
+def test_canonical_self_fronted_register_rejects_changed_meaning_and_scope(body):
+    assert evaluate(CANONICAL_SELF_SOURCE, body).artifact is None
+
+
+@pytest.mark.parametrize('marker', ['けれど', 'けれども'])
+@pytest.mark.parametrize('polite_body', [False, True])
+def test_canonical_self_fronted_register_does_not_move_a_concession(marker, polite_body):
+    original = f'疲れている{marker}、私は本を読みたいです。'
+    fronted = f'私は、疲れている{marker}、本を読みたい' + ('です。' if polite_body else '。')
+    assert evaluate(original, fronted).artifact is None
+    assert evaluate(original, original.removesuffix('です。') + '。').artifact is not None
+
+
+@pytest.mark.parametrize('stop', ['！', '!'])
+def test_canonical_self_fronted_register_keeps_emphasized_literal_order(stop):
+    original = '寒いので、私は氷みたいです' + stop
+    assert evaluate(original, '私は、寒いので、氷みたい' + stop).artifact is None
+    assert evaluate(original, original.removesuffix('です' + stop) + stop).artifact is not None
+
+
+@pytest.mark.parametrize('separator', ['\n', '\r\n'])
+def test_canonical_self_fronted_register_keeps_paragraph_and_author_boundaries(separator):
+    original = CANONICAL_SELF_SOURCE + separator + '僕は読書が好きです。'
+    blocks = [CANONICAL_SELF_BODY, '僕は読書が好きだ。']
+    assert evaluate(original, blocks).artifact is not None
+    assert evaluate(original, [blocks[0], '読書が好きだ。']).artifact is None
+
+
+def test_canonical_self_fronted_register_keeps_saved_fields_and_refined_sources_separate():
+    from test_cmee_piece_refined_sources import source as refined_source
+    from test_piece_model_narrator_voice import evaluate as evaluate_saved
+    answer = 'わたしは読書が好きです。'
+    for saved in (source(CANONICAL_SELF_SOURCE, field='memo', other=answer),
+                  refined_source(original=CANONICAL_SELF_SOURCE, answer=answer)):
+        blocks = [CANONICAL_SELF_BODY, 'わたしは読書が好きだ。']
+        assert evaluate_saved(saved, blocks).artifact is not None
+        assert evaluate_saved(saved, [blocks[0], '読書が好きだ。']).artifact is None
+        assert evaluate_saved(saved, [blocks[0], '私は読書が好きだ。']).artifact is None
+
+
+def test_canonical_self_fronted_register_keeps_the_complete_quoted_premise():
+    original = '友人が「私は休みたい」と言ったので、私は本を読みたいです。'
+    body = '私は、友人が「私は休みたい」と言ったので、本を読みたい。'
+    assert evaluate(original, body).artifact is not None
+    assert evaluate(original, body.replace('「私は休みたい」', '「僕は休みたい」')).artifact is None
+    assert evaluate(original, body.replace('「私は休みたい」', '「私は休んだ」')).artifact is None
+
+
+def test_canonical_self_fronted_register_keeps_a_bound_reference_premise_in_native_order():
+    original = '私にとって家で過ごす時間が大切です。その時間が取れるなら、私は旅に出る前の鳥みたいです。'
+    body = '私にとって家で過ごす時間が大切だ。その時間が取れるなら、私は旅に出る前の鳥みたい。'
+    assert evaluate(original, body).artifact is not None
+    fronted = '私にとって家で過ごす時間が大切だ。私は、その時間が取れるなら、旅に出る前の鳥みたい。'
+    assert evaluate(original, fronted).artifact is None
+
+
 MODIFIED_TIME = '以前は、私は一人の食事が苦手でした。今は、私は一人の食事が好きです。'
 MODIFIED_TIME_BODY = '以前は、私は一人の食事が苦手だった。今は、私は一人の食事が好きだ。'
 

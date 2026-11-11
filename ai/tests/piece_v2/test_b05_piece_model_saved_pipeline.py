@@ -48,6 +48,36 @@ def _provider(monkeypatch, case_id, default_blocks):
     return seen
 
 
+@pytest.mark.parametrize('tier', ['free', 'plus', 'premium'])
+@pytest.mark.parametrize('case_id,memo,body', [
+    ('canonical-condition', '疲れているなら、私は本を読みたいです。',
+     '私は、疲れているなら、本を読みたい。'),
+    ('canonical-reason', '雨が続いているので、僕は家で過ごしたいです。',
+     '僕は、雨が続いているので、家で過ごしたい。'),
+    ('canonical-plain', '時間に余裕があるならば、わたしは休みたい。',
+     'わたしは、時間に余裕があるならば、休みたいです。'),
+])
+def test_canonical_self_fronted_model_register_survives_saved_owner_reread(
+        saved_piece_db, monkeypatch, tier, case_id, memo, body):
+    from contextlib import ExitStack
+    from unittest.mock import patch
+    seen = _provider(monkeypatch, case_id, [body])
+    record = dict(id=case_id,
+        created_at=saved_piece_db.query('SELECT now()::text AS stamp')['rows'][0]['stamp'],
+        memo=memo, memo_action='', category=['生活'], emotions=['平穏'],
+        emotion_details=[dict(type='平穏', strength='weak')])
+    with ExitStack() as stack:
+        for owner in ('piece_v1c.realize_piece_artifact', 'piece_v1c._publicize_source_sentence',
+                      'piece_v1c._evaluation_sentence', 'piece_refined.realize_refined_piece_artifact'):
+            stack.enter_context(patch('cocolon_meaning_experience_engine.' + owner,
+                                     side_effect=AssertionError('old author forbidden')))
+        result = _run_saved_request(saved_piece_db, monkeypatch, record, tier=tier)
+    assert result['detail']['piece_text'] == body
+    assert result['source_unchanged'] and result['emlis_unchanged']
+    assert result['quota_consumptions'] == 1
+    _evidence(case_id + '-' + tier, result, seen)
+
+
 def _evidence(case_id, result, seen):
     assert len(seen) == 1, 'replay/save/detail must never acquire another model candidate'
     result['piece_model_transport_calls'] = len(seen)
