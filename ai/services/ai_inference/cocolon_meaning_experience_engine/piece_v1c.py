@@ -23,7 +23,8 @@ from .contracts import EngineStatus, ExecutionMode
 from .piece_source import (
     _SIMPLE_NOUN, _calendar_time_adverb_span, _direct_transitive_expression, _PERSON_NAME_LEFT_BOUNDARY,
     _validated_self_insight_mode, PiecePersonalEvaluation, PieceSourceMeaning, build_piece_source_meaning,
-    _literal_self_account, _finite_self_person_action_account, _written_feeling_expression, _SCOPE_RELATIONS,
+    _literal_self_account, _finite_self_person_action_account, _scoped_finite_self_person_action,
+    _written_feeling_expression, _SCOPE_RELATIONS,
     _scoped_self_topic, _qualified_self_topic, _scoped_expression_match, _same_self_scope_author,
     _FINITE_RESERVATION_QUESTION,
     piece_public_role_aliases, validate_piece_nominal_references, validate_piece_saved_fields,
@@ -293,6 +294,11 @@ def compile_piece_artifact_plan(meaning: PieceSourceMeaning) -> PieceArtifactPla
                 for m in _REFERENCE.finditer(sentence)):
             raise unavailable('unresolved_reference')
         if node.node_id in scopes:
+            if _scoped_finite_self_person_action(sentence) is not None:
+                # A source-bound completed account stays literal in the
+                # native author. Only model preservation may vary register.
+                duties.append(PieceTextDuty(node.node_id, 'KEEP_COMPLETE_SOURCE_CONTEXT'))
+                continue
             duties.append(PieceTextDuty(node.node_id, 'SOURCE_SCOPED_EXPRESSION_TO_FIRST_PERSON'))
             intents.append(index)
             continue
@@ -339,6 +345,7 @@ def compile_piece_artifact_plan(meaning: PieceSourceMeaning) -> PieceArtifactPla
             for node in text_nodes)
         self_insight_account = False
         literal_account = False
+        scoped_action_account = False
         if saved is not None:
             record = json.loads(saved.saved_original_json)
             self_insight_mode = not meaning.selected_feelings and _validated_self_insight_mode(
@@ -363,6 +370,15 @@ def compile_piece_artifact_plan(meaning: PieceSourceMeaning) -> PieceArtifactPla
                             node.value.rpartition('を')[0][-25:]))
                         and not _unproved_explicit_account_object(node.value.rpartition('を')[0]))
                     for node in text_nodes)
+                scoped_actions = tuple(
+                    node.node_id in scopes
+                    and _scoped_finite_self_person_action(node.value) is not None
+                    for node in text_nodes)
+                # This new account owns every complete action. Do not feed
+                # it into the legacy feeling/wish/reservation qualification.
+                scoped_action_account = any(scoped_actions) and all(
+                    scoped or _finite_self_person_action_account(node.value)
+                    for node, scoped in zip(text_nodes, scoped_actions, strict=True))
                 self_accounts = tuple(_literal_self_account(node.value)
                     or _written_feeling_expression(
                         node.value, current_affirmative_only=False) is not None
@@ -387,7 +403,7 @@ def compile_piece_artifact_plan(meaning: PieceSourceMeaning) -> PieceArtifactPla
         # source words through the existing duty/author; this grants neither
         # a selected state, a wish nor declaration eligibility.
         from .piece_refined import supplemental_feeling_account
-        if not (feeling_account or self_insight_account or literal_account
+        if not (feeling_account or self_insight_account or literal_account or scoped_action_account
                 or supplemental_feeling_account(meaning)):
             raise unavailable('expression_meaning_not_admitted')
     ids = tuple(node.node_id for node in text_nodes)

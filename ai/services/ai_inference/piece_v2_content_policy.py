@@ -463,6 +463,7 @@ def validate_source_meaning_preservation(meaning, plan, artifact, *, _model_regi
         validate_piece_nominal_references, validate_piece_personal_evaluations,
         validate_piece_expression_scopes,
         piece_text_nodes, piece_source_text, _scoped_self_topic, _qualified_self_topic,
+        _scoped_finite_self_person_action,
     )
     from cocolon_meaning_experience_engine.piece_v1c import PieceArtifact, PieceArtifactPlan
 
@@ -597,6 +598,36 @@ def validate_source_meaning_preservation(meaning, plan, artifact, *, _model_regi
             return False
         return _piece_model_read_block(visible) == expected
 
+    def same_scoped_finite_model_context(node_id, source, visible):
+        # Source owns the complete outer relation and inner action together.
+        # Retain every premise/argument byte, including its narrator/cases;
+        # the existing finite reader compares only the completed predicate's
+        # register. No topic omission, fronting or argument reorder follows.
+        from cocolon_meaning_experience_engine.natural_reply_meaning import _FORMS
+        scope = scopes.get(node_id)
+        match = _scoped_finite_self_person_action(source)
+        if scope is None or match is None or anchor(source) != re.escape(source):
+            return False
+        prefix = source[:match.start('intention')]
+        if not visible.startswith(prefix) or not visible.endswith('。'):
+            return False
+        inner = match['intention']
+        expected = _piece_model_read_block(inner)
+        if expected is None or len(expected) != 1:
+            return False
+        key = expected[0]
+        if key[0] != 'FINITE' or key[1] != 'SELF' or key[7:11] != ('fact', 'past', '', 'active'):
+            return False
+        forms = [form for form, lemma, polarity, modality, temporal, voice, receiving in _FORMS
+                 if not receiving and inner.endswith(form + '。')
+                 and (lemma, polarity, modality, temporal, voice) == (
+                     key[5], key[6], key[7], key[8], key[10])]
+        if len(forms) != 1:
+            return False
+        argument_prefix = inner[:-len(forms[0])-1]
+        remainder = visible[len(prefix):]
+        return remainder.startswith(argument_prefix) and _piece_model_read_block(remainder) == expected
+
     def same_literal_reason_value(node_id, source, visible):
         # A qualified opaque KEEP may contain a complete self reason/value.
         # Retain its literal premise, relation and entire modified target;
@@ -727,11 +758,15 @@ def validate_source_meaning_preservation(meaning, plan, artifact, *, _model_regi
         previous_id, previous_author = None, None
         for node_id, visible in zip(group, sentences, strict=True):
             node, operation = source_nodes[node_id], duties[node_id]
+            if (node_id in scopes and _scoped_finite_self_person_action(node.value) is not None
+                    and operation != 'KEEP_COMPLETE_SOURCE_CONTEXT'):
+                reject()
             if operation == 'KEEP_COMPLETE_SOURCE_CONTEXT':
                 if (re.fullmatch(anchor(node.value), visible) is None
                         and not (_model_register and (
                             same_undecided(node.value, visible)
                             or same_finite_model_context(node_id, node.value, visible)
+                            or same_scoped_finite_model_context(node_id, node.value, visible)
                             or same_literal_reason_value(node_id, node.value, visible)))):
                     reject()
                 previous_id, previous_author = node_id, None

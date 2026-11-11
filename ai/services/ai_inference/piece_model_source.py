@@ -89,7 +89,7 @@ def _authoring_constraints(prepared, source_request, slots):
         prepare_piece_model_request, piece_model_source_plan)
     from cocolon_meaning_experience_engine.piece_refined import PieceRefinedMeaning
     from cocolon_meaning_experience_engine.piece_source import (
-        piece_public_role_aliases, piece_source_text)
+        piece_public_role_aliases, piece_source_text, _scoped_finite_self_person_action)
     from piece_v2_contract import PieceContractError
     from emlis_ai_grounded_sentence_surface import _body_primary_quote_spans
 
@@ -123,6 +123,18 @@ def _authoring_constraints(prepared, source_request, slots):
         for sentence in part.sentences:
             literal = text[sentence.source_start:sentence.source_end]
             action = _source_action_constraint(literal)
+            match = _scoped_finite_self_person_action(literal)
+            scope = scopes.get(sentence.node_id)
+            if match is not None and scope is not None:
+                action = _source_action_constraint(match['intention'], include_semantic_roles=True)
+                if action is None:
+                    raise ValueError('piece_model_authoring_action_mismatch')
+                ref = evidence[sentence.node_id]
+                action['source_scope'] = dict(relation=scope.relation, marker=scope.marker,
+                    literal=literal, prefix_literal=literal[:match.start('intention')],
+                    scalar_start=ref.scalar_start, scalar_end=ref.scalar_end,
+                    expression_scalar_start=ref.scalar_start + match.start('intention'),
+                    expression_scalar_end=ref.scalar_start + match.end('intention'))
             if action is not None:
                 ref = evidence[sentence.node_id]
                 actions_by_node[sentence.node_id] = action
@@ -164,15 +176,17 @@ def _authoring_constraints(prepared, source_request, slots):
                                 scalar_end=ref.scalar_start + end + 1))
                 action = actions_by_node.get(sentence.node_id)
                 if complete_actions and action is not None:
-                    if slot['field_path'] in passive_fields:
+                    if slot['field_path'] in passive_fields and 'source_scope' not in action:
                         # Bind every event in this field to its own source
                         # roles; SELF as narrator is not always its agent.
                         literal = text[sentence.source_start:sentence.source_end]
                         action = _source_action_constraint(literal, include_semantic_roles=True)
                         if action is None:
                             raise ValueError('piece_model_authoring_action_mismatch')
-                    actions.append(dict(**action, scalar_start=ref.scalar_start,
-                                        scalar_end=ref.scalar_end))
+                    action_scope = action.get('source_scope')
+                    actions.append(dict(**action,
+                        scalar_start=action_scope['expression_scalar_start'] if action_scope else ref.scalar_start,
+                        scalar_end=action_scope['expression_scalar_end'] if action_scope else ref.scalar_end))
             for binding in part.role_bindings:
                 owners = [item for item in part.sentences
                           if item.source_start <= binding.source_start
@@ -255,6 +269,11 @@ def build_piece_model_messages(prepared, *, include_authoring_constraints=False,
                 if any('required_actions' in slot for slot in constraints.values()):
                     control['authoring_constraints']['finite_scope_instruction'] = (
                         'required_actionsは各動作の本人表記・相手と対象・肯否・時点を別々に保持してください。')
+                if any('source_scope' in action for slot in constraints.values()
+                       for action in slot.get('required_actions', ())):
+                    control['authoring_constraints']['scoped_action_instruction'] = (
+                        'source_scopeは動作と一体の前提です。literalの前提全体・接続語・順序を保持し、'
+                        '内側の動作だけを切り離さず、明示された本人・相手・対象・肯否・過去を保ってください。')
                 if any('literal_quotes' in slot for slot in constraints.values()):
                     control['authoring_constraints']['quote_context_instruction'] = (
                         'literal_quotesは編集しない引用範囲です。かぎ括弧・内部の全ての文字・句読点・記号とその個数を原文どおり保持してください。'

@@ -334,6 +334,28 @@ def _literal_self_account(sentence: str) -> bool:
                 and not _OMITTED_NEW_PREFIX_GUARD.search(body))
 
 
+def _scoped_finite_self_person_action(sentence: str) -> re.Match[str] | None:
+    """Bind one written reason/concession to a complete active past account.
+
+    The premise stays literal context. This bounded arm does not interpret
+    quoted speakers, named identities, nested operators, conditions or an
+    outer self mention, and never turns a completed action into an intent.
+    """
+    from .natural_reply_meaning import _clauses, _SELF
+    if (any(c in sentence for c in '「」『』"“”\r\n')
+            or re.search(_PERSON_NAME, sentence) or _HIRAGANA_ROLE_NAME.search(sentence)):
+        return None
+    match = _scoped_expression_match(sentence)
+    if (match is None or match['marker'] not in {'ので', 'けれど', 'けれども'}
+            or re.search(r'[、，,]', match['premise'])
+            or any(marker in match['premise'] for marker in _SCOPE_RELATIONS)
+            or any(speaker in match['premise'] for speaker in _SELF)
+            or not _finite_self_person_action_account(match['intention'])):
+        return None
+    rows, count = _clauses(match['intention'], 'piece_scoped_account', 'CURRENT')
+    return match if count == len(rows) == 1 and rows[0].voice == 'active' else None
+
+
 _SCOPE_KINDS = {
     'SOURCE_EXPLICIT_REASON': 'PIECE_SOURCE_REASON_SCOPED_EXPRESSION',
     'SOURCE_EXPLICIT_CONDITION': 'PIECE_SOURCE_CONDITION_SCOPED_EXPRESSION',
@@ -577,6 +599,7 @@ def _expression_scopes(text: str, nodes: tuple[MeaningNode, ...],
         match = (_scoped_expression_match(node.value)
                  or _TEMPORAL_EVALUATION.fullmatch(node.value))
         frame = evaluations.get(node.node_id)
+        finite_action = _scoped_finite_self_person_action(node.value)
         # A whole-sentence finite match is not evidence of an inner scope.
         # The evaluation parser must have bound its speaker after the actual
         # connective, leaving the premise outside the evaluated argument.
@@ -591,7 +614,7 @@ def _expression_scopes(text: str, nodes: tuple[MeaningNode, ...],
         if temporal and node.node_id not in evaluations and focal is None:
             continue
         topic = _scoped_self_topic(match['intention'])
-        if node.node_id not in evaluations:
+        if node.node_id not in evaluations and finite_action is None:
             if focal is None and (
                     topic is None or not _SCOPED_SELF_END.search(topic['body'])
                     or _DEPENDENT_START.search(topic['body'])
