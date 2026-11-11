@@ -93,36 +93,56 @@ def test_exact_24_distinct_source_texts_are_required_without_reading_holdout_tar
         trainer.validate_rows({**selected, 'all_fictional': False})
 
 
-def test_complement36_is_explicit_and_keeps_default24_and_all_teacher_validation():
-    selected = dict(all_fictional=True, rows=[row(number) for number in range(36)])
+@pytest.mark.parametrize('count', (36, 48))
+def test_complement_rows_are_explicit_and_keep_default24_and_all_teacher_validation(count):
+    selected = dict(all_fictional=True, rows=[row(number) for number in range(count)])
     before = deepcopy(selected)
     with pytest.raises(ValueError, match='exact_24'):
         trainer.validate_rows(selected)
-    assert trainer.validate_rows(selected, expected_rows=36) is selected['rows']
+    assert trainer.validate_rows(selected, expected_rows=count) is selected['rows']
     assert selected == before
-    with pytest.raises(ValueError, match='exact_36'):
-        trainer.validate_rows(packet(), expected_rows=36)
+    with pytest.raises(ValueError, match=f'exact_{count}'):
+        trainer.validate_rows(packet(), expected_rows=count)
     duplicate = deepcopy(selected)
     duplicate['rows'][-1]['messages'] = deepcopy(duplicate['rows'][0]['messages'])
     with pytest.raises(ValueError, match='source_text_missing_or_duplicate'):
-        trainer.validate_rows(duplicate, expected_rows=36)
+        trainer.validate_rows(duplicate, expected_rows=count)
     bad_target = deepcopy(selected)
     bad_target['rows'][-1]['assistant_target'] = '{"field_blocks":{"memo_1":"wrong slot"}}'
     with pytest.raises(ValueError, match='assistant_target_shape_invalid'):
-        trainer.validate_rows(bad_target, expected_rows=36)
+        trainer.validate_rows(bad_target, expected_rows=count)
 
 
-def test_complement72_updates_needs_explicit36_and_still_has_a_fixed_two_pass_limit(tmp_path):
-    options = dict(output=tmp_path / 'new', max_seconds=360, updates=72,
+@pytest.mark.parametrize('count,updates', ((36, 72), (48, 96)))
+def test_complement_updates_need_explicit_rows_and_still_have_a_fixed_two_pass_limit(tmp_path, count, updates):
+    options = dict(output=tmp_path / 'new', max_seconds=480, updates=updates,
                    learning_rate=1e-4, seed=20261109)
     with pytest.raises(ValueError, match='updates_invalid'):
         trainer.validate_settings(**options)
-    trainer.validate_settings(**options, training_rows=36)
+    trainer.validate_settings(**options, training_rows=count)
     with pytest.raises(ValueError, match='updates_invalid'):
-        trainer.validate_settings(**{**options, 'updates': 73}, training_rows=36)
-    for count in (True, 25, 37):
+        trainer.validate_settings(**{**options, 'updates': updates + 1}, training_rows=count)
+    with pytest.raises(ValueError, match='max_seconds_invalid'):
+        trainer.validate_settings(**{**options, 'max_seconds': 481}, training_rows=count)
+    for invalid_count in (True, 25, 37, 49):
         with pytest.raises(ValueError, match='training_rows_invalid'):
-            trainer.validate_settings(**options, training_rows=count)
+            trainer.validate_settings(**options, training_rows=invalid_count)
+
+
+def test_cli_preserves_default24_and_requires_an_explicit_supported_row_count(monkeypatch, tmp_path):
+    captured = []
+    monkeypatch.setattr(trainer, 'run', captured.append)
+    base = ['trainer', '--data', str(tmp_path / 'data.json'), '--scope-config',
+            str(tmp_path / 'adapter_config.json'), '--output', str(tmp_path / 'output')]
+    for count in (None, 36, 48):
+        monkeypatch.setattr(sys, 'argv', base + ([] if count is None else ['--training-rows', str(count)]))
+        trainer.main()
+        assert captured[-1].training_rows == (24 if count is None else count)
+        assert captured[-1].updates == 48 and captured[-1].max_seconds == 480
+    monkeypatch.setattr(sys, 'argv', base + ['--training-rows', '49'])
+    with pytest.raises(SystemExit):
+        trainer.main()
+    assert len(captured) == 3
 
 
 @pytest.mark.parametrize('target', [

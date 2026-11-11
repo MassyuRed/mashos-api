@@ -48,7 +48,7 @@ def read_json(path):
 
 
 def validate_settings(*, output, max_seconds, updates, learning_rate, seed, training_rows=24):
-    require(type(training_rows) is int and training_rows in (24, 36), 'training_rows_invalid')
+    require(type(training_rows) is int and training_rows in (24, 36, 48), 'training_rows_invalid')
     require(not Path(output).exists(), 'output_already_exists_no_resume')
     require(type(max_seconds) is int and 1 <= max_seconds <= 480, 'max_seconds_invalid')
     require(type(updates) is int and 1 <= updates <= training_rows * 2, 'updates_invalid')
@@ -79,7 +79,7 @@ def validate_scope(config):
 
 
 def validate_rows(packet, *, expected_rows=24):
-    require(type(expected_rows) is int and expected_rows in (24, 36), 'training_rows_invalid')
+    require(type(expected_rows) is int and expected_rows in (24, 36, 48), 'training_rows_invalid')
     require(type(packet) is dict and packet.get('all_fictional') is True,
             'fictional_data_required')
     rows = packet.get('rows')
@@ -329,7 +329,7 @@ def main():
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--max-seconds', type=int, default=480)
     parser.add_argument('--updates', type=int, default=48)
-    parser.add_argument('--training-rows', type=int, choices=(24, 36), default=24)
+    parser.add_argument('--training-rows', type=int, choices=(24, 36, 48), default=24)
     parser.add_argument('--learning-rate', type=float, default=1e-4)
     parser.add_argument('--seed', type=int, default=20261109)
     try:
