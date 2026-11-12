@@ -41,6 +41,7 @@ def natural_questions(qdb, monkeypatch):
             stage = data.get('response_purpose', {}).get('stage', 'FINAL')
             answered = {
                 'その時は重かった。': 'その時は重かったのですね。',
+                '今は重いです。': '今は重いと感じているのですね。',
                 'その時は怖かった。': 'その時は怖かったのですね。',
                 'その時は苦しかった。': 'その時は苦しかったのですね。',
                 'はい。': 'どんな意味として届いたのかは、今の言葉だけではまだ確かめきれていません。',
@@ -477,7 +478,10 @@ def _expand_history_locator_view(meaning, record):
                 scalar_start=start, scalar_end=end, text=answers[locator['answer_id']][start:end],
                 answer_id=locator['answer_id'])
         fragments.append(fragment)
-    for group in ('active_claims', 'inactive_claims', 'inactive_relations'):
+    groups = ('active_claims', 'inactive_claims', 'inactive_relations')
+    if 'active_relations' in meaning:
+        groups = (*groups, 'active_relations')
+    for group in groups:
         expanded[group] = []
         for row in meaning[group]:
             original = {key: value for key, value in row.items() if key != 'source_fragment_refs'}
@@ -543,6 +547,71 @@ def test_resolved_history_fits_without_dropping_withdrawal_or_raw_sources(
     reread = run(service.store.read(user, input_id=past))
     assert {key: reread[key] for key in ('original', 'thread', 'events')} == {
         key: saved[key] for key in ('original', 'thread', 'events')}
+
+
+@pytest.mark.parametrize('answer_text,about_time', (
+    ('その時は重かった。', 'ORIGINAL_OCCASION'),
+    ('今は重いです。', 'ANSWER_TIME'),
+))
+def test_optin_history_plan_preserves_the_evaluation_target_and_its_owned_time(
+        natural_questions, qdb, monkeypatch, answer_text, about_time):
+    from emlis_thread_service import _request
+    from cocolon_meaning_experience_engine import natural_reply as natural
+    from cocolon_meaning_experience_engine.emlis_thread_source import admit_emlis_thread
+    from cocolon_meaning_experience_engine.emlis_thread_history import admitted_history_plans
+    user, past, service, calls = natural_questions(tier='premium')
+    qdb.query("update public.emotions set created_at=(now()-interval '1 day') at time zone 'UTC' where id=$1", [past])
+    initial = run(service.start(user, past))
+    completed = run(answer(service, user, initial, answer_text))
+    assert completed['state'] == 'COMPLETED' and completed['meaning_updated']
+    parent = str(uuid4())
+    qdb.query("insert into public.emotions values ($1,$2,now() at time zone 'UTC',$3,'',"
+              "array['仕事'],array['不安'],$4)",
+              [parent, user, ONE, json.dumps([dict(type='不安', strength='medium')])])
+    run(service.start(user, parent))
+    snapshot = run(service._hydrate(user, run(service.store.read(user, input_id=parent))))
+    request = _request(snapshot)
+    ordinary, safety = natural.prepare_natural_reply(request)
+    unused, _ = natural.prepare_natural_reply(request, use_history_answer_plan=True)
+    assert unused == ordinary  # The research flag never activates support by itself.
+    previous, _ = natural.prepare_natural_reply(request, use_meaning_support=True)
+    candidate, candidate_safety = natural.prepare_natural_reply(request,
+        use_meaning_support=True, use_history_answer_plan=True)
+    before, after = json.loads(previous.material_json), json.loads(candidate.material_json)
+    record = after['past_user_records'][0]
+    old_meaning = before['past_user_records'][0].pop('answer_meaning')
+    meaning = record.pop('answer_meaning')
+    assert after == before == json.loads(ordinary.material_json)
+    assert candidate.source_prefix_ref == previous.source_prefix_ref == ordinary.source_prefix_ref
+    assert candidate_safety == safety
+    full = _expand_history_locator_view(meaning, record)
+    relation, = full.pop('active_relations')
+    assert full == old_meaning  # No existing claim, withdrawal or unknown is replaced.
+    assert relation['relation'] == 'evaluation_about_event'
+    assert relation['from_claim_anchor'] == '褒められた'
+    assert relation['to_claim_anchor'] in {'重かった', '重いです'}
+    source, prepared, plan = admitted_history_plans(admit_emlis_thread(request))[0]
+    owned_relation, = [r for r in plan.relations if r.type == 'evaluation_about_event']
+    binding, = [item.temporal_binding for item in prepared.checkpoint.answer_update.updates
+                if item.update_ref in owned_relation.source_relation_ids]
+    assert relation['about_time'] == binding.about_time == about_time
+    envelopes = {prepared.thread.original.envelope.envelope_id: None,
+        **{a.envelope.envelope_id: a.source.answer_id for a in prepared.thread.answers}}
+    anchor_answer_id = envelopes[binding.anchor_source_ref]
+    if anchor_answer_id is None:
+        assert relation['time_anchor'] == 'original'
+    else:
+        assert relation['time_anchor_answer_id'] == anchor_answer_id
+    assert relation.get('relative_relation') == binding.relative_relation
+    assert [relation['source_fragments'][i]['text'] for i in relation['time_span_indices']] == [answer_text.rstrip('。')]
+    assert natural.system_message_for(candidate) == natural.system_message_for(previous)
+    messages = [{'role': 'system', 'content': natural.system_message_for(candidate)},
+                {'role': 'user', 'content': candidate.material_json}]
+    assert len(natural._compact_json(messages).encode('utf-8')) <= 5800
+    monkeypatch.setattr(natural, 'MEANING_SUPPORT_MESSAGES_MAX_BYTES', 1)
+    fallback, _ = natural.prepare_natural_reply(request,
+        use_meaning_support=True, use_history_answer_plan=True)
+    assert fallback == ordinary
 
 
 def test_scoped_history_never_recovers_earlier_resolved_meaning_after_latest_unknown(natural_questions, qdb):
@@ -652,3 +721,4 @@ def test_interrupted_started_provider_has_unknown_result_and_cannot_reacquire(na
             expected_revision=failed['revision'], idempotency_key='unsafe-retry',
             operation_id=failed['operation_id']))
     assert len(calls) == 2
+

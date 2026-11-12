@@ -225,7 +225,7 @@ class NaturalReply:
     schema_version: str = ARTIFACT_SCHEMA
 
 
-def _answer_meaning_material(prepared, admitted):
+def _answer_meaning_material(prepared, admitted, *, include_active_relations=False):
     """Project the existing answer owner's active/withdrawn source readings.
 
     Source leaves are read through the existing qualified locator, never from
@@ -265,7 +265,7 @@ def _answer_meaning_material(prepared, admitted):
 
     inactive = set(checkpoint.inactive_claim_refs)
     nuclei = {n.nucleus_id: n for n in (*prepared.original_plan.nuclei, *prepared.accepted_nuclei)}
-    active_claims, inactive_claims = [], []
+    active_claims, inactive_claims, projected_active_ids = [], [], set()
     for nucleus in nuclei.values():
         if (not nucleus.source_fields
                 or not set(nucleus.source_fields) <= {"memo", "memo_action", "answer_text_private"}):
@@ -281,14 +281,63 @@ def _answer_meaning_material(prepared, admitted):
             "actor": frame.actor, "polarity": frame.polarity, "modality": frame.modality,
             "time_scope": frame.time_scope}
         (inactive_claims if nucleus.nucleus_id in inactive else active_claims).append(row)
+        if nucleus.nucleus_id not in inactive:
+            projected_active_ids.add(nucleus.nucleus_id)
     inactive_relations = [{"relation": r.type, "source_fragments": fragments(r.source_span_ids),
         "from_claim_anchor": final_reception_source_anchor_text(r.from_nucleus_id, nuclei, resolver),
         "to_claim_anchor": final_reception_source_anchor_text(r.to_nucleus_id, nuclei, resolver)}
         for r in prepared.original_plan.relations if r.relation_id in inactive]
-    return {"schema_version": "natural_answer_meaning.v1", "assessment": checkpoint.assessment_status,
+    material = {"schema_version": "natural_answer_meaning.v1", "assessment": checkpoint.assessment_status,
         "disposition": update.disposition, "active_claims": active_claims,
         "inactive_claims": inactive_claims, "inactive_relations": inactive_relations,
         "unresolved_parts": [part.reason_code for part in checkpoint.unresolved_parts]}
+    if include_active_relations:
+        # Reuse the post-answer owner's surviving event/evaluation binding.
+        # A list of active words alone loses what the answer was about.
+        from .emlis_answer_update import build_updated_grounded_plan
+        plan = build_updated_grounded_plan(prepared)
+        active_index = {n.nucleus_id: n for n in plan.nuclei}
+        evidence_spans = {ref.evidence.evidence_id: ref.thread_span_id
+                          for ref in resolver.qualified_refs}
+        relations = []
+        for relation in plan.relations:
+            if (relation.type != 'evaluation_about_event'
+                    or not {relation.from_nucleus_id, relation.to_nucleus_id} <= projected_active_ids):
+                continue
+            row = {'relation': relation.type,
+                'from_claim_anchor': final_reception_source_anchor_text(
+                    relation.from_nucleus_id, active_index, resolver),
+                'to_claim_anchor': final_reception_source_anchor_text(
+                    relation.to_nucleus_id, active_index, resolver),
+                'source_fragments': fragments(relation.source_span_ids)}
+            bindings = [item.temporal_binding for item in update.updates
+                        if item.update_ref in relation.source_relation_ids]
+            if len(bindings) == 1:
+                binding, = bindings
+                _, answer_id = envelopes[binding.anchor_source_ref]
+                row['about_time'] = binding.about_time
+                if answer_id is None:
+                    row['time_anchor'] = 'original'
+                else:
+                    row['time_anchor_answer_id'] = answer_id
+                for field in ('relative_relation', 'resolved_interval', 'timezone_basis'):
+                    value = getattr(binding, field)
+                    if value is not None:
+                        row[field] = value
+                if binding.time_expression_evidence_refs:
+                    positions = []
+                    for evidence_ref in binding.time_expression_evidence_refs:
+                        for fragment in fragments((evidence_spans[evidence_ref],)):
+                            if fragment not in row['source_fragments']:
+                                row['source_fragments'].append(fragment)
+                            positions.append(row['source_fragments'].index(fragment))
+                    # Positions stay local to this relation, including when
+                    # its fragment list is represented by shared locator refs.
+                    row['time_span_indices'] = positions
+            relations.append(row)
+        if relations:
+            material['active_relations'] = relations
+    return material
 
 
 def _compact_history_answer_meaning(meaning):
@@ -302,7 +351,10 @@ def _compact_history_answer_meaning(meaning):
         return meaning
     compact = {**meaning, "schema_version": _COMPACT_HISTORY_ANSWER_MEANING_SCHEMA}
     fragments = []
-    for group in ("active_claims", "inactive_claims", "inactive_relations"):
+    groups = ("active_claims", "inactive_claims", "inactive_relations")
+    if 'active_relations' in meaning:
+        groups = (*groups, 'active_relations')
+    for group in groups:
         compact[group] = []
         for claim in meaning[group]:
             row = {key: value for key, value in claim.items() if key != "source_fragments"}
@@ -327,7 +379,8 @@ def _compact_history_answer_meaning(meaning):
             < len(_compact_json(meaning).encode('utf-8')) else meaning)
 
 
-def prepare_natural_reply(request, *, use_meaning_support=False, response_stage="FINAL", prepared_meaning=None):
+def prepare_natural_reply(request, *, use_meaning_support=False, response_stage="FINAL", prepared_meaning=None,
+                          use_history_answer_plan=False):
     """Return admitted user material and the existing independent Safety result."""
     if response_stage not in _RESPONSE_STAGES:
         raise NaturalReplyError('natural_reply_response_stage_invalid')
@@ -366,7 +419,8 @@ def prepare_natural_reply(request, *, use_meaning_support=False, response_stage=
                         "answers": _answers(past)}
         if use_meaning_support and past.answers:
             prepared = history_meanings.get(source.source_guard)
-            record["answer_meaning"] = (_answer_meaning_material(prepared, past)
+            record["answer_meaning"] = (_answer_meaning_material(prepared, past,
+                include_active_relations=use_history_answer_plan)
                 if prepared is not None else {"schema_version": "natural_answer_meaning.v1",
                     "assessment": "UNASSESSED"})
             # CURRENT_INPUT/current_user in these original locators are local
@@ -493,4 +547,5 @@ class SelfHostedNaturalReplySource:
             raise
         except Exception:
             raise NaturalReplyError("natural_reply_provider_unavailable") from None
+
 
