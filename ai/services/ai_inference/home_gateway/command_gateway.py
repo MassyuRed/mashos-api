@@ -60,6 +60,7 @@ async def _execute_home_command_impl(command: HomeCommand) -> Dict[str, Any]:
             created_at=payload.get("created_at"),
             is_secret=bool(payload.get("is_secret")),
             notify_friends=True if payload.get("notify_friends") is None else bool(payload.get("notify_friends")),
+            receive_emlis_questions=payload.get("receive_emlis_questions", True),
         )
 
     if command.name == "today_question.answer.create":

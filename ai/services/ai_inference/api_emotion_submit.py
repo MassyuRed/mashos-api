@@ -43,7 +43,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
 import httpx
 from fastapi import FastAPI, Header, HTTPException, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StrictBool
 try:
     from pydantic import model_validator  # type: ignore
 except ImportError:  # pragma: no cover
@@ -492,6 +492,7 @@ async def _insert_emotion_row(
     category: Optional[List[str]],
     created_at: str,
     is_secret: bool,
+    receive_emlis_questions: bool = True,
 ) -> Dict[str, Any]:
     """
     Supabase の emotions テーブルに1件INSERTする。
@@ -505,6 +506,7 @@ async def _insert_emotion_row(
         "memo": memo,
         "created_at": created_at,
         "is_secret": bool(is_secret),
+        "receive_emlis_questions": receive_emlis_questions,
     }
     if memo_action is not None:
         payload["memo_action"] = memo_action
@@ -877,6 +879,11 @@ class EmotionSubmitRequest(BaseModel):
     is_secret: Optional[bool] = Field(
         default=False,
         description="MyModel external からの照会制御用フラグ（感情通知には影響しない）。",
+    )
+
+    receive_emlis_questions: StrictBool = Field(
+        default=True,
+        description="今回の入力でEmlisからの問いを受け取るか。未指定はtrue。既存の履歴参照や保存済み回答は変更しない。",
     )
 
     notify_friends: Optional[bool] = Field(
@@ -2221,6 +2228,7 @@ def register_emotion_submit_routes(app: FastAPI) -> None:
                 "created_at": payload.created_at,
                 "is_secret": bool(payload.is_secret),
                 "notify_friends": notify_friends,
+                "receive_emlis_questions": payload.receive_emlis_questions,
             },
             user_id=user_id,
             requested_at=payload.created_at,

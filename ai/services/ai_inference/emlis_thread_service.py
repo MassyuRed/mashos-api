@@ -353,11 +353,18 @@ class EmlisThreadService:
                      "body_state": "UNAVAILABLE", "answer_assessment": "NOT_APPLICABLE"}}
         if self.semantic_profile:
             t["data"].update(semantic_profile=self.semantic_profile, execution_mode=ExecutionMode.OFFLINE_CANDIDATE.value)
+        if self.runtime_profile == Q3_PROFILE:
+            # This belongs to the saved input, not to source meaning. Existing
+            # threads returned above retain the preference they started with.
+            receive_questions = snapshot.get("receive_emlis_questions", True)
+            if type(receive_questions) is not bool:
+                raise ThreadStoreError("question_setting_unavailable")
+            t["data"]["receive_emlis_questions"] = receive_questions
         if self.response_profile:
             t["data"].update(response_profile=self.response_profile, analysis_state="NOT_GENERATED")
             if self.runtime_profile == Q3_PROFILE:
                 t["data"].update(natural_question_policy=NATURAL_QUESTION_POLICY,
-                    natural_questions_enabled=self.natural_questions_enabled)
+                    natural_questions_enabled=self.natural_questions_enabled and receive_questions)
         self._begin(t, snapshot)
         if self.runtime_profile == Q3_PROFILE:
             t["data"].update(context_guards=[h["guard"] for h in snapshot["context"]["history"]],
@@ -918,12 +925,15 @@ class EmlisThreadService:
                 "stage": "REFINED" if t.get("latest_answer_event_id") else "INITIAL",
                 "meaning_checkpoint_ref": cp["checkpoint_id"], "source_prefix_ref": cp["source_prefix_ref"],
                 "artifact": artifact, "meaning_graph": outcome.meaning_graph}, t)
-            followup = bool(outcome.question and t.get("latest_answer_event_id"))
-            question = _event("QUESTION", outcome.question, t, question_id=outcome.question.question_id) if outcome.question and not followup else None
+            next_question = outcome.question if t["data"].get("receive_emlis_questions", True) else None
+            followup = bool(next_question and t.get("latest_answer_event_id"))
+            question = _event("QUESTION", next_question, t, question_id=next_question.question_id) if next_question and not followup else None
             if followup:
                 snapshot = copy.deepcopy(snapshot)
-                snapshot["thread"]["data"]["continuation_question"] = _json(outcome.question)
-            return await self._finish(user_id, snapshot, body_state=outcome.body_state,
+                snapshot["thread"]["data"]["continuation_question"] = _json(next_question)
+            body_state = ("FINAL" if outcome.body_state == "PRE_QUESTION" and next_question is None
+                else outcome.body_state)
+            return await self._finish(user_id, snapshot, body_state=body_state,
                 state="AWAITING_ANSWER" if question else "AWAITING_CONTINUE" if followup else "COMPLETED", observation=observation, question=question)
         except asyncio.CancelledError:
             # Cancellation confirms the worker stopped before a further commit.

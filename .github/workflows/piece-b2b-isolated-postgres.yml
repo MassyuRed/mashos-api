@@ -33,8 +33,10 @@ name: Piece B2-B/B3/B4/B5 isolated PostgreSQL
       - ai/tests/test_emlis_ai_metadata_input_selection.py
       - ai/tests/test_emlis_natural_reply_application.py
       - ai/tests/test_emlis_natural_question_application.py
+      - ai/tests/test_emlis_question_receiving_preference.py
       - ai/tests/test_emlis_natural_reply_response_purpose.py
       - supabase/migrations/*_emlis_natural_bound_questions.sql
+      - supabase/migrations/*_emlis_question_receiving_preference.sql
       - ai/tests/piece_v2/db/test_b05_preview_persistence.py
       - ai/services/ai_inference/piece_v2_preview_service.py
       - ai/services/ai_inference/piece_model_source.py
@@ -406,6 +408,7 @@ jobs:
             -c /dev/null --rootdir=. --noconftest \
             ai/tests/test_emlis_natural_reply_application.py \
             ai/tests/test_emlis_natural_question_application.py \
+            ai/tests/test_emlis_question_receiving_preference.py \
             ai/tests/test_emlis_natural_reply_response_purpose.py \
             ai/tests/test_emlis_ai_metadata_input_selection.py \
             ai/tests/test_subscription_purchase_owner_hint.py \
