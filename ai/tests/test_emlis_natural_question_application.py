@@ -45,6 +45,7 @@ def natural_questions(qdb, monkeypatch):
                 'その時は苦しかった。': 'その時は苦しかったのですね。',
                 'はい。': 'どんな意味として届いたのかは、今の言葉だけではまだ確かめきれていません。',
                 '「嬉しくなかった」は誤りです。': '元の受け取り方について、訂正を伝えてくださったのですね。',
+                '「悲しかった」は誤りです。': '元の受け取り方について、訂正を伝えてくださったのですね。',
             }
             text = (ACK if stage == 'PRE_QUESTION' else
                     answered[data['current_answers'][-1]['text']] if stage == 'REFINED' else FINAL)
@@ -436,6 +437,13 @@ def test_research_history_uses_latest_owned_answer_meaning_without_changing_norm
         if assessment == 'RESOLVED':
             _assert_answer_projection_uses_actual_source_spans({
                 'current': record['original'], 'current_answers': record['answers'], 'answer_meaning': meaning})
+            from cocolon_meaning_experience_engine.natural_reply import _compact_history_answer_meaning
+            compact = _compact_history_answer_meaning(meaning)
+            assert _expand_history_locator_view(compact, record) == meaning
+            if answer_text == 'その時は重かった。':
+                assert any(locator['source_path'] == 'answers.text'
+                    and locator['answer_id'] == record['answers'][0]['answer_id']
+                    for locator in compact['source_fragments'])
         assert completed['current_observation']['text'] not in research.material_json
         import cocolon_meaning_experience_engine.natural_reply as natural
         monkeypatch.setattr(natural, 'MEANING_SUPPORT_MESSAGES_MAX_BYTES', 1)
@@ -449,6 +457,92 @@ def test_research_history_uses_latest_owned_answer_meaning_without_changing_norm
     restarted = EmlisThreadService(runtime_profile=Q3_PROFILE)
     assert run(restarted.get(user, parent))['current_observation'] == current['current_observation']
     assert len(calls) == before_calls
+
+
+def _expand_history_locator_view(meaning, record):
+    """Read each locator from its retained original/answer, independently."""
+    expanded = {key: value for key, value in meaning.items() if key != 'source_fragments'}
+    expanded['schema_version'] = 'natural_history_answer_meaning.v1'
+    answers = {answer['answer_id']: answer['text'] for answer in record['answers']}
+    fragments = []
+    for locator in meaning['source_fragments']:
+        start, end = locator['scalar_range']
+        if locator['source_path'].startswith('original.'):
+            field = locator['source_path'].removeprefix('original.')
+            fragment = dict(source_role='CURRENT_INPUT', field=field,
+                scalar_start=start, scalar_end=end, text=record['original'][field][start:end])
+        else:
+            assert locator['source_path'] == 'answers.text'
+            fragment = dict(source_role='SUPPLEMENTAL_ANSWER', field='answer_text_private',
+                scalar_start=start, scalar_end=end, text=answers[locator['answer_id']][start:end],
+                answer_id=locator['answer_id'])
+        fragments.append(fragment)
+    for group in ('active_claims', 'inactive_claims', 'inactive_relations'):
+        expanded[group] = []
+        for row in meaning[group]:
+            original = {key: value for key, value in row.items() if key != 'source_fragment_refs'}
+            original['source_fragments'] = [fragments[index] for index in row['source_fragment_refs']]
+            expanded[group].append(original)
+    return expanded
+
+
+@pytest.mark.parametrize('past_memo,past_action,answer_text,current_memo,current_action', (
+    ('誘われたのに、悲しかった。', '先週、弟に映画へ誘われた。', '「悲しかった」は誤りです。',
+     '誘われたのに、悲しかった。', '今日、知人に食事へ誘われた。'),
+    ('頼まれたのに、嬉しくなかった。', '先週、兄に荷物の受取を頼まれた。', '「嬉しくなかった」は誤りです。',
+     '今日はサークルの冊子づくりを頼まれたけれど、喜べなかった。', ''),
+))
+def test_resolved_history_fits_without_dropping_withdrawal_or_raw_sources(
+        natural_questions, qdb, monkeypatch, past_memo, past_action, answer_text,
+        current_memo, current_action):
+    from emlis_thread_service import _request
+    from cocolon_meaning_experience_engine import natural_reply as natural
+    from cocolon_meaning_experience_engine.emlis_thread_history import admitted_history_plans
+    from cocolon_meaning_experience_engine.emlis_thread_source import admit_emlis_thread
+    user, past, service, calls = natural_questions(tier='premium', memo=past_memo)
+    qdb.query("update public.emotions set memo_action=$2,created_at=(now()-interval '1 day') "
+              "at time zone 'UTC' where id=$1", [past, past_action])
+    initial = run(service.start(user, past))
+    completed = run(answer(service, user, initial, answer_text))
+    assert completed['state'] == 'COMPLETED' and completed['meaning_updated']
+    saved = run(service.store.read(user, input_id=past))
+    parent = str(uuid4())
+    qdb.query("insert into public.emotions values ($1,$2,now() at time zone 'UTC',$3,$4,"
+              "array['趣味','人間関係'],array['悲しみ'],$5)",
+              [parent, user, current_memo, current_action,
+               json.dumps([dict(type='悲しみ', strength='medium')])])
+    run(service.start(user, parent))
+    snapshot = run(service._hydrate(user, run(service.store.read(user, input_id=parent))))
+    request = _request(snapshot)
+    ordinary, safety = natural.prepare_natural_reply(request)
+    research, research_safety = natural.prepare_natural_reply(request, use_meaning_support=True)
+    before, after = json.loads(ordinary.material_json), json.loads(research.material_json)
+    record = after['past_user_records'][0]
+    meaning = record.pop('answer_meaning')
+    assert meaning['schema_version'] == 'natural_history_answer_meaning.v2'
+    assert meaning['source_record_id'] == record['input_id'] == past != parent
+    assert after == before and ordinary.source_prefix_ref == research.source_prefix_ref
+    assert safety == research_safety and safety.normal_observation_allowed
+    source, prepared, _ = admitted_history_plans(admit_emlis_thread(request))[0]
+    full = natural._answer_meaning_material(prepared, admit_emlis_thread(source.request))
+    full.update(schema_version='natural_history_answer_meaning.v1', source_record_id=past)
+    assert _expand_history_locator_view(meaning, record) == full
+    assert full['inactive_claims'] and full['inactive_relations']
+    assert all(row['claim_anchor'] not in past_action for row in full['inactive_claims'])
+    expected_system = natural.SYSTEM_MESSAGE + natural._SCOPED_HISTORY_ANSWER_MEANING_MESSAGE
+    assert natural.system_message_for(research) == expected_system
+    messages = lambda material: [{'role': 'system', 'content': expected_system},
+                                {'role': 'user', 'content': natural._compact_json(material)}]
+    full_material = json.loads(research.material_json)
+    full_material['past_user_records'][0]['answer_meaning'] = full
+    assert len(natural._compact_json(messages(full_material)).encode()) > 5800
+    assert len(natural._compact_json(messages(json.loads(research.material_json))).encode()) <= 5800
+    monkeypatch.setattr(natural, 'MEANING_SUPPORT_MESSAGES_MAX_BYTES', 1)
+    fallback, _ = natural.prepare_natural_reply(request, use_meaning_support=True)
+    assert fallback == ordinary
+    reread = run(service.store.read(user, input_id=past))
+    assert {key: reread[key] for key in ('original', 'thread', 'events')} == {
+        key: saved[key] for key in ('original', 'thread', 'events')}
 
 
 def test_scoped_history_never_recovers_earlier_resolved_meaning_after_latest_unknown(natural_questions, qdb):

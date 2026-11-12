@@ -67,6 +67,7 @@ _SCOPED_HISTORY_ANSWER_MEANING_MESSAGE = """
 過去のanswer_meaningはsource_record_idの過去の場面だけの読みです。CURRENT_INPUTはその記録の原入力、current_userは記録者です。active_claimsの気持ちを今回へ足さず、同じ文でも同じ出来事と決めないでください。過去に触れるなら今回と区別し、不明を補わないでください。inactiveは訂正・撤回範囲で、復活させないでください。UNASSESSEDは読取未確定です。"""
 
 _HISTORY_ANSWER_MEANING_SCHEMA = "natural_history_answer_meaning.v1"
+_COMPACT_HISTORY_ANSWER_MEANING_SCHEMA = "natural_history_answer_meaning.v2"
 
 
 def _compact_json(value):
@@ -96,7 +97,8 @@ def system_message_for(request):
         if any(record.get("answer_meaning", {}).get("schema_version") == "natural_answer_meaning.v1"
                for record in material.get("past_user_records", ())):
             message += _HISTORY_ANSWER_MEANING_MESSAGE
-        if any(record.get("answer_meaning", {}).get("schema_version") == _HISTORY_ANSWER_MEANING_SCHEMA
+        if any(record.get("answer_meaning", {}).get("schema_version") in {
+                   _HISTORY_ANSWER_MEANING_SCHEMA, _COMPACT_HISTORY_ANSWER_MEANING_SCHEMA}
                for record in material.get("past_user_records", ())):
             message += _SCOPED_HISTORY_ANSWER_MEANING_MESSAGE
         support = material.get("source_meaning_support")
@@ -289,6 +291,42 @@ def _answer_meaning_material(prepared, admitted):
         "unresolved_parts": [part.reason_code for part in checkpoint.unresolved_parts]}
 
 
+def _compact_history_answer_meaning(meaning):
+    """Share repeated evidence through exact locators into the retained record.
+
+    This is only an author view of an already resolved reading. All claims,
+    relations and their attributes remain intact; original text lives in the
+    same record's original/answers, never in a different record or AI reply.
+    """
+    if meaning.get("assessment") != "RESOLVED":
+        return meaning
+    compact = {**meaning, "schema_version": _COMPACT_HISTORY_ANSWER_MEANING_SCHEMA}
+    fragments = []
+    for group in ("active_claims", "inactive_claims", "inactive_relations"):
+        compact[group] = []
+        for claim in meaning[group]:
+            row = {key: value for key, value in claim.items() if key != "source_fragments"}
+            refs = []
+            for fragment in claim["source_fragments"]:
+                if (fragment["source_role"] == "CURRENT_INPUT"
+                        and fragment["field"] in {"memo", "memo_action"}):
+                    locator = {"source_path": "original." + fragment["field"]}
+                elif (fragment["source_role"] == "SUPPLEMENTAL_ANSWER"
+                        and fragment["field"] == "answer_text_private"):
+                    locator = {"source_path": "answers.text", "answer_id": fragment["answer_id"]}
+                else:
+                    return meaning  # Preserve the full view for other source constructions.
+                locator["scalar_range"] = [fragment["scalar_start"], fragment["scalar_end"]]
+                if locator not in fragments:
+                    fragments.append(locator)
+                refs.append(fragments.index(locator))
+            row["source_fragment_refs"] = refs
+            compact[group].append(row)
+    compact["source_fragments"] = fragments
+    return (compact if len(_compact_json(compact).encode('utf-8'))
+            < len(_compact_json(meaning).encode('utf-8')) else meaning)
+
+
 def prepare_natural_reply(request, *, use_meaning_support=False, response_stage="FINAL", prepared_meaning=None):
     """Return admitted user material and the existing independent Safety result."""
     if response_stage not in _RESPONSE_STAGES:
@@ -357,6 +395,15 @@ def prepare_natural_reply(request, *, use_meaning_support=False, response_stage=
     # the original prompt/material; only an explicit research call adds hints.
     # The independent post-generation reader still uses the original sources.
     if use_meaning_support:
+        # Try a lossless locator view before omitting a resolved history.
+        # Do not change an already fitting prompt or any admitted source.
+        for record in reversed(history):
+            messages = [{"role": "system", "content": system_message_for(material)},
+                        {"role": "user", "content": _compact_json(material)}]
+            if len(_compact_json(messages).encode("utf-8")) <= MEANING_SUPPORT_MESSAGES_MAX_BYTES:
+                break
+            if "answer_meaning" in record:
+                record["answer_meaning"] = _compact_history_answer_meaning(record["answer_meaning"])
         # Historical interpretations are optional too. Share the existing
         # whole-messages budget with current-source witnesses, dropping only
         # annotations when full originals/answers leave insufficient room.
