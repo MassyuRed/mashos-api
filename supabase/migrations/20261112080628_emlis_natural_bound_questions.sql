@@ -61,7 +61,9 @@ begin
         and q.round_index=(v->>'round_index')::integer and q.round_index=prior.issued_count) then
       raise sqlstate '23514' using message='emlis_answer_round_invalid'; end if;
   end loop;
-  if p_next->'data'->>'runtime_profile'='q3.plan.sequential.v1' and (exists(select 1 from jsonb_array_elements(p_events) x where x->>'kind' in ('MEANING_UPDATE','OBSERVATION','QUESTION')) or p_next->'data' ? 'frame_feedback_write' or p_next->'data'->>'body_state'='UNCHANGED') then
+  if p_next->'data'->>'runtime_profile'='q3.plan.sequential.v1' and (exists(select 1 from jsonb_array_elements(p_events) x where x->>'kind' in ('MEANING_UPDATE','OBSERVATION','QUESTION')) or p_next->'data' ? 'frame_feedback_write' or p_next->'data'->>'body_state'='UNCHANGED'
+      or (native_questions and p_next->'data'->>'body_state'='REFINED' and exists(
+        select 1 from jsonb_array_elements(p_events) x where x->>'kind'='TERMINAL' and x->'payload'->>'reason'='stop'))) then
     if jsonb_array_length(coalesce(p_next->'data'->'context_guards','[]')) > (case when tier='premium' then 6 when tier='plus' then 3 else 0 end) then
       raise sqlstate '40001' using message='emlis_context_access_changed'; end if;
     for g in select value from jsonb_array_elements(coalesce(p_next->'data'->'context_guards','[]')) order by value->>0 loop

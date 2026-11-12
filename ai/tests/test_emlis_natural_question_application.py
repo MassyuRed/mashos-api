@@ -207,17 +207,96 @@ def test_skip_finishes_with_new_final_reply_and_replay_never_reacquires(natural_
     assert saved['thread']['data']['natural_question_stop'] == 'skip'
 
 
-def test_stop_after_answer_uses_current_answer_without_issuing_next_question(natural_questions):
+def test_stop_after_answer_preserves_current_complete_reply_without_extra_generation(natural_questions):
     user, parent, service, calls = natural_questions(memo=THREE)
     initial = run(service.start(user, parent))
     answered = run(answer(service, user, initial, 'その時は重かった。'))
     assert answered['state'] == 'AWAITING_CONTINUE'
     done = run(service.action(user, answered['thread_id'], action='stop',
         expected_revision=answered['revision'], idempotency_key='stop'))
-    assert done['state'] == 'COMPLETED' and done['current_observation']['text'] == FINAL
+    assert done['state'] == 'COMPLETED' and done['body_state'] == 'REFINED'
+    assert done['current_observation'] == answered['current_observation']
     assert calls[-1]['current_answers'][0]['text'] == 'その時は重かった。'
-    assert 'response_purpose' not in calls[-1]
+    assert calls[-1]['response_purpose'] == {'stage': 'REFINED'}
+    assert len(calls) == 2 and done['issued_count'] == 1 and not done['can_continue']
+    saved = run(service.store.read(user, input_id=parent))
+    assert saved['thread']['data']['natural_question_stop'] == 'stop'
+    assert 'continuation_question' not in saved['thread']['data']
+    terminals = [e for e in saved['events'] if e['kind'] == 'TERMINAL']
+    assert terminals[-1]['payload']['reason'] == 'stop'
+    assert len([e for e in saved['events'] if e['kind'] == 'OBSERVATION']) == 2
+    replay = run(service.action(user, answered['thread_id'], action='stop',
+        expected_revision=answered['revision'], idempotency_key='stop'))
+    assert replay['current_observation'] == done['current_observation'] and len(calls) == 2
+    assert run(service.get(user, parent))['current_observation'] == done['current_observation']
+
+
+def test_stop_after_answer_refreshes_deleted_history_and_acquires_current_final(natural_questions, qdb):
+    user, parent, service, calls = natural_questions(tier='plus', memo=THREE)
+    past = str(uuid4())
+    qdb.query("insert into public.emotions values ($1,$2,(now()-interval '1 day') at time zone 'UTC',$3,'',"
+              "array['仕事'],array['不安'],$4)",
+              [past, user, '褒められた。会議の感想を考えた。',
+               json.dumps([dict(type='不安', strength='medium')])])
+    initial = run(service.start(user, parent))
+    answered = run(answer(service, user, initial, 'その時は重かった。'))
+    assert answered['state'] == 'AWAITING_CONTINUE' and len(calls) == 2
+    assert len(calls[-1]['past_user_records']) == 1
+    qdb.query('delete from public.emotions where id=$1', [past])
+    done = run(service.action(user, answered['thread_id'], action='stop',
+        expected_revision=answered['revision'], idempotency_key='stop-deleted-history'))
+    assert done['state'] == 'COMPLETED' and done['current_observation']['text'] == FINAL
+    assert done['current_observation']['event_id'] != answered['current_observation']['event_id']
+    assert calls[-1]['current_answers'][0]['text'] == 'その時は重かった。'
+    assert calls[-1]['past_user_records'] == [] and 'response_purpose' not in calls[-1]
     assert len(calls) == 3 and done['issued_count'] == 1
+
+
+@pytest.mark.parametrize('history_change', ('delete', 'edit'))
+def test_stop_reuse_checks_history_again_at_sql_commit(natural_questions, qdb, monkeypatch, history_change):
+    user, parent, service, calls = natural_questions(tier='plus', memo=THREE)
+    past = str(uuid4())
+    qdb.query("insert into public.emotions values ($1,$2,(now()-interval '1 day') at time zone 'UTC',$3,'',"
+              "array['仕事'],array['不安'],$4)",
+              [past, user, '褒められた。会議の感想を考えた。',
+               json.dumps([dict(type='不安', strength='medium')])])
+    initial = run(service.start(user, parent))
+    answered = run(answer(service, user, initial, 'その時は重かった。'))
+    assert answered['state'] == 'AWAITING_CONTINUE' and answered['current_observation']
+    assert len(calls) == 2 and len(calls[-1]['past_user_records']) == 1
+    changed = False
+
+    async def change_history_before_terminal(name, payload, **kwargs):
+        nonlocal changed
+        if not changed and any(e['kind'] == 'TERMINAL' and e['payload'].get('reason') == 'stop'
+                               for e in payload.get('p_events', [])):
+            changed = True
+            if history_change == 'delete':
+                result = qdb.query('delete from public.emotions where id=$1', [past])
+            else:
+                result = qdb.query('update public.emotions set memo=$2 where id=$1',
+                    [past, '褒められた。別の会議の感想を考えた。'])
+            assert 'code' not in result, result
+        return await qdb.rpc(name, payload, **kwargs)
+
+    monkeypatch.setattr(emlis_thread_store, 'sb_post_rpc', change_history_before_terminal)
+    with pytest.raises(ThreadStoreError) as conflict:
+        run(service.action(user, answered['thread_id'], action='stop',
+            expected_revision=answered['revision'], idempotency_key='stop-history-race'))
+    assert conflict.value.status == 409 and changed and len(calls) == 2
+    current = run(service.get(user, parent))
+    assert current['current_observation'] is None
+    saved = run(service.store.read(user, input_id=parent))
+    assert not any(e.get('idempotency_key') == 'stop-history-race' for e in saved['events'])
+    done = run(service.action(user, current['thread_id'], action='stop',
+        expected_revision=current['revision'], idempotency_key='stop-history-race'))
+    assert done['state'] == 'COMPLETED' and done['current_observation']['text'] == FINAL
+    assert done['current_observation']['event_id'] != answered['current_observation']['event_id']
+    assert len(calls) == 3 and calls[-1]['current_answers'][0]['text'] == 'その時は重かった。'
+    if history_change == 'delete':
+        assert calls[-1]['past_user_records'] == []
+    else:
+        assert '別の会議の感想' in json.dumps(calls[-1]['past_user_records'], ensure_ascii=False)
 
 
 def test_skip_refreshes_revoked_paid_history_before_final_response(natural_questions, qdb):

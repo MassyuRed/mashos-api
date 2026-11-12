@@ -502,29 +502,46 @@ class EmlisThreadService:
                 raise ThreadStoreError("question_conflict", 409)
             if (t["data"].get("response_profile") == NATURAL_REPLY_PROFILE
                     and t["data"].get("natural_question_policy") == NATURAL_QUESTION_POLICY):
-                # The saved pre-question acknowledgement is not a completed
-                # reply. An explicit skip/end asks the same sole provider for
-                # a final response over the current admitted sources. This is
-                # a distinct purpose, never a retry of an unknown acquisition.
                 snapshot = await self._hydrate(user_id, snapshot, fresh=True)
                 t = copy.deepcopy(snapshot["thread"])
-                t["data"].update(natural_question_stop=action, natural_response_stage="FINAL")
-                t["state"] = "REFINING" if t.get("latest_answer_event_id") else "INITIALIZING"
-                self._begin(t, snapshot)
-                proposed = {**snapshot, "thread": t}
-                t["source_prefix_ref"] = admit_emlis_thread(_request(proposed)).source_prefix_ref
-                event = _event("OPERATION", {"status": "RUNNING", "stage": "NATURAL_FINAL_REQUESTED",
-                    "question_ending": action, "request_fingerprint": fingerprint}, t, key=idempotency_key)
-                try:
-                    saved = await self._commit(user_id, snapshot, t, [event])
-                except ThreadStoreError as exc:
-                    if exc.status == 409:
-                        replay = self._replay(await self._hydrate(user_id, await self.store.read(
-                            user_id, thread_id=thread_id)), idempotency_key, fingerprint)
-                        if replay:
-                            return replay
-                    raise
-                return await self._process(user_id, saved)
+                body = _find(snapshot, t.get("last_observation_event_id"))
+                payload = body["payload"] if body else {}
+                artifact = payload.get("artifact", {})
+                reuse_refined = (action == "stop" and t["state"] == "AWAITING_CONTINUE"
+                    and t["data"].get("body_state") == "REFINED" and t.get("latest_answer_event_id")
+                    and body and body["kind"] == "OBSERVATION" and payload.get("stage") == "REFINED"
+                    and artifact.get("schema_version") == "cocolon.emlis.recipient_reply.v1"
+                    and artifact.get("text") == payload.get("text")
+                    and payload.get("source_prefix_ref") == t["source_prefix_ref"]
+                    and payload.get("context_ref") == _context_ref(snapshot)
+                    and _generation_current(snapshot)
+                    and _context_current(snapshot, payload.get("context_guards", []))
+                    and admit_emlis_thread(_request(snapshot)).source_prefix_ref == t["source_prefix_ref"])
+                if reuse_refined:
+                    # The complete answer-based reply already covers the same
+                    # live sources. End the questions without reacquiring it.
+                    t["data"]["natural_question_stop"] = action
+                    t["data"].pop("continuation_question", None)
+                else:
+                    # An initial acknowledgement or stale reply still needs a
+                    # final response over the currently admitted sources.
+                    t["data"].update(natural_question_stop=action, natural_response_stage="FINAL")
+                    t["state"] = "REFINING" if t.get("latest_answer_event_id") else "INITIALIZING"
+                    self._begin(t, snapshot)
+                    proposed = {**snapshot, "thread": t}
+                    t["source_prefix_ref"] = admit_emlis_thread(_request(proposed)).source_prefix_ref
+                    event = _event("OPERATION", {"status": "RUNNING", "stage": "NATURAL_FINAL_REQUESTED",
+                        "question_ending": action, "request_fingerprint": fingerprint}, t, key=idempotency_key)
+                    try:
+                        saved = await self._commit(user_id, snapshot, t, [event])
+                    except ThreadStoreError as exc:
+                        if exc.status == 409:
+                            replay = self._replay(await self._hydrate(user_id, await self.store.read(
+                                user_id, thread_id=thread_id)), idempotency_key, fingerprint)
+                            if replay:
+                                return replay
+                        raise
+                    return await self._process(user_id, saved)
             t["state"] = "COMPLETED"
             if t["data"]["body_state"] == "PRE_QUESTION":
                 t["data"]["body_state"] = "FINAL"
