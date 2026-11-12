@@ -376,6 +376,78 @@ def test_withdrawn_original_claim_is_marked_inactive_for_the_sole_natural_provid
     assert len(calls) == 2 and 'answer_meaning' not in json.dumps(done)
 
 
+@pytest.mark.parametrize('tier', ('free', 'plus', 'premium'))
+@pytest.mark.parametrize('answer_text,assessment', (
+    ('「嬉しくなかった」は誤りです。', 'RESOLVED'),
+    ('その時は重かった。', 'RESOLVED'),
+    ('はい。', 'UNASSESSED'),
+))
+def test_research_history_uses_latest_owned_answer_meaning_without_changing_normal_sources(
+        natural_questions, qdb, monkeypatch, tier, answer_text, assessment):
+    from emlis_thread_service import _request
+    from cocolon_meaning_experience_engine.natural_reply import prepare_natural_reply, system_message_for
+    user, past, service, calls = natural_questions(tier='premium')
+    qdb.query("update public.emotions set created_at=(now()-interval '1 day') at time zone 'UTC' where id=$1", [past])
+    initial = run(service.start(user, past))
+    completed = run(answer(service, user, initial, answer_text))
+    assert completed['state'] == 'COMPLETED'
+    past_snapshot = run(service.store.read(user, input_id=past))
+    parent = str(uuid4())
+    qdb.query('update public.profiles set subscription_tier=$2 where id=$1', [user, tier])
+    qdb.query("insert into public.emotions values ($1,$2,now() at time zone 'UTC',$3,'',"
+              "array['仕事'],array['不安'],$4)",
+              [parent, user, ONE, json.dumps([dict(type='不安', strength='medium')])])
+    current = run(service.start(user, parent))
+    snapshot = run(service._hydrate(user, run(service.store.read(user, input_id=parent))))
+    request = _request(snapshot)
+    ordinary, safety = prepare_natural_reply(request)
+    research, research_safety = prepare_natural_reply(request, use_meaning_support=True)
+    assert safety == research_safety and safety.normal_observation_allowed
+    assert research.source_prefix_ref == ordinary.source_prefix_ref
+    before, after = json.loads(ordinary.material_json), json.loads(research.material_json)
+    if tier == 'free':
+        assert before['past_user_records'] == after['past_user_records'] == []
+        assert ordinary == research
+    else:
+        assert len(after['past_user_records']) == 1
+        record = after['past_user_records'][0]
+        assert record['input_id'] == past and record['original']['memo'] == ONE
+        assert record['answers'][0]['text'] == answer_text
+        assert record['answers'][0]['ai_question_context'] == initial['pending_question']['text']
+        meaning = record.pop('answer_meaning')
+        assert meaning['assessment'] == assessment
+        assert after == before  # Every admitted raw source remains exact.
+        assert 'inactive_claims' not in before['past_user_records'][0]
+        assert 'past_user_recordsのanswer_meaning' in system_message_for(research)
+        messages = [{'role': 'system', 'content': system_message_for(research)},
+                    {'role': 'user', 'content': research.material_json}]
+        assert len(json.dumps(messages, ensure_ascii=False, separators=(',', ':')).encode()) <= 5800
+        if assessment == 'UNASSESSED':
+            assert set(meaning) == {'schema_version', 'assessment'}
+        elif '誤り' in answer_text:
+            assert any('嬉しくなかった' in row['claim_anchor'] for row in meaning['inactive_claims'])
+            assert all('嬉しくなかった' not in row['claim_anchor'] for row in meaning['active_claims'])
+            assert any('褒められた' in row['claim_anchor'] for row in meaning['active_claims'])
+        else:
+            assert any('重かった' in row['claim_anchor'] for row in meaning['active_claims'])
+        if assessment == 'RESOLVED':
+            _assert_answer_projection_uses_actual_source_spans({
+                'current': record['original'], 'current_answers': record['answers'], 'answer_meaning': meaning})
+        assert completed['current_observation']['text'] not in research.material_json
+        import cocolon_meaning_experience_engine.natural_reply as natural
+        monkeypatch.setattr(natural, 'MEANING_SUPPORT_MESSAGES_MAX_BYTES', 1)
+        fallback, _ = prepare_natural_reply(request, use_meaning_support=True)
+        assert fallback == ordinary  # Omit only optional hints, never raw sources.
+    reread = run(service.store.read(user, input_id=past))
+    assert {k: reread[k] for k in ('original', 'thread', 'events')} == {
+        k: past_snapshot[k] for k in ('original', 'thread', 'events')}
+    assert 'answer_meaning' not in json.dumps(current, ensure_ascii=False)
+    before_calls = len(calls)
+    restarted = EmlisThreadService(runtime_profile=Q3_PROFILE)
+    assert run(restarted.get(user, parent))['current_observation'] == current['current_observation']
+    assert len(calls) == before_calls
+
+
 def test_receipt_and_meaning_checkpoint_survive_final_save_failure_without_second_provider(natural_questions, qdb, monkeypatch):
     user, parent, service, calls = natural_questions()
     initial = run(service.start(user, parent))

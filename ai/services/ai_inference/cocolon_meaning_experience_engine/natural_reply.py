@@ -60,6 +60,9 @@ answer_meaningは既存の本人回答更新処理で確認した、今回の回
 claim_anchorがその読取の対象で、source_fragmentsは位置を確かめるための原文の周辺です。周辺に一緒に書かれた別の気持ちや関係まで有効だと扱わないでください。選択されたカテゴリ・感情は別の入力情報であり、本人が書いた出来事・反応のclaimではありません。
 assessmentがRESOLVEDでない部分やunresolved_partsは、既存処理で読みを確定できていません。「はい」だけから理由や気持ちを埋めたり、処理の未対応を本人の説明不足と決めたりしないでください。原入力・回答の原文を優先し、更新対象以外の意味と、出来事当時／回答時点の違いを保って返事をしてください。内部の識別子や判定名は本文へ出さないでください。"""
 
+_HISTORY_ANSWER_MEANING_MESSAGE = """
+past_user_recordsのanswer_meaningは同じinput_idの過去記録と本人回答を読み直した補助です。active_claimsも当時の内容で、現在の性格・意図ではありません。inactive_claimsとinactive_relationsは訂正・撤回された範囲です。原文に残っていても復活させず、他の内容まで取り消さないでください。UNASSESSEDは処理で未確定です。回答原文と問いを合わせて読み、不明を補わず、判定名を返事へ出さないでください。"""
+
 
 def _compact_json(value):
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
@@ -85,6 +88,9 @@ def system_message_for(request):
             message += _RESPONSE_PURPOSE_MESSAGES[purpose["stage"]]
         if material.get("answer_meaning", {}).get("schema_version") == "natural_answer_meaning.v1":
             message += _ANSWER_MEANING_MESSAGE
+        if any(record.get("answer_meaning", {}).get("schema_version") == "natural_answer_meaning.v1"
+               for record in material.get("past_user_records", ())):
+            message += _HISTORY_ANSWER_MEANING_MESSAGE
         support = material.get("source_meaning_support")
         if not (type(support) is dict and isinstance(support.get("witnesses"), list)
                 and support["witnesses"]):
@@ -290,6 +296,14 @@ def prepare_natural_reply(request, *, use_meaning_support=False, response_stage=
     current_feedback = tuple(f for f in feedback if f.source_emotion_id == current_id)
     safety = _source_safety(original, admitted, current_feedback)
     history = []
+    history_meanings = {}
+    if use_meaning_support:
+        # Reuse the owned-history interpretation, never an earlier AI body or
+        # a saved old checkpoint. Latest unsupported answers remain raw and
+        # explicitly unassessed rather than reviving an older interpretation.
+        from .emlis_thread_history import admitted_history_plans
+        history_meanings = {source.source_guard: prepared
+            for source, prepared, _ in admitted_history_plans(admitted)}
     included_ids = {current_id}
     for source in histories:
         past = admit_emlis_thread(source.request)
@@ -301,9 +315,15 @@ def prepare_natural_reply(request, *, use_meaning_support=False, response_stage=
         if not past_safety.normal_observation_allowed:
             # Keep the existing history owner's independent Safety exclusion.
             continue
-        history.append({"recorded_at": source.recorded_at,
+        record = {"recorded_at": source.recorded_at,
                         "input_id": source.source_guard[0], "original": _material(past_original),
-                        "answers": _answers(past)})
+                        "answers": _answers(past)}
+        if use_meaning_support and past.answers:
+            prepared = history_meanings.get(source.source_guard)
+            record["answer_meaning"] = (_answer_meaning_material(prepared, past)
+                if prepared is not None else {"schema_version": "natural_answer_meaning.v1",
+                    "assessment": "UNASSESSED"})
+        history.append(record)
         included_ids.add(source.source_guard[0])
     material = {"current": _material(original), "current_input_id": current_id,
                 "current_answers": _answers(admitted), "past_user_records": history,
@@ -323,6 +343,15 @@ def prepare_natural_reply(request, *, use_meaning_support=False, response_stage=
     # the original prompt/material; only an explicit research call adds hints.
     # The independent post-generation reader still uses the original sources.
     if use_meaning_support:
+        # Historical interpretations are optional too. Share the existing
+        # whole-messages budget with current-source witnesses, dropping only
+        # annotations when full originals/answers leave insufficient room.
+        for record in reversed(history):
+            messages = [{"role": "system", "content": system_message_for(material)},
+                        {"role": "user", "content": _compact_json(material)}]
+            if len(_compact_json(messages).encode("utf-8")) <= MEANING_SUPPORT_MESSAGES_MAX_BYTES:
+                break
+            record.pop("answer_meaning", None)
         material = material_with_meaning_support(material)
     return NaturalReplyInput(admitted.source_prefix_ref,
         _compact_json(material)), safety
