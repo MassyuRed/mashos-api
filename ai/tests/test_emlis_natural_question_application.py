@@ -416,14 +416,17 @@ def test_research_history_uses_latest_owned_answer_meaning_without_changing_norm
         assert record['answers'][0]['ai_question_context'] == initial['pending_question']['text']
         meaning = record.pop('answer_meaning')
         assert meaning['assessment'] == assessment
+        assert meaning['schema_version'] == 'natural_history_answer_meaning.v1'
+        assert meaning['source_record_id'] == past != parent
         assert after == before  # Every admitted raw source remains exact.
         assert 'inactive_claims' not in before['past_user_records'][0]
-        assert 'past_user_recordsのanswer_meaning' in system_message_for(research)
+        assert 'source_record_idの過去の場面' in system_message_for(research)
+        assert 'current_userは記録者' in system_message_for(research)
         messages = [{'role': 'system', 'content': system_message_for(research)},
                     {'role': 'user', 'content': research.material_json}]
         assert len(json.dumps(messages, ensure_ascii=False, separators=(',', ':')).encode()) <= 5800
         if assessment == 'UNASSESSED':
-            assert set(meaning) == {'schema_version', 'assessment'}
+            assert set(meaning) == {'schema_version', 'assessment', 'source_record_id'}
         elif '誤り' in answer_text:
             assert any('嬉しくなかった' in row['claim_anchor'] for row in meaning['inactive_claims'])
             assert all('嬉しくなかった' not in row['claim_anchor'] for row in meaning['active_claims'])
@@ -446,6 +449,37 @@ def test_research_history_uses_latest_owned_answer_meaning_without_changing_norm
     restarted = EmlisThreadService(runtime_profile=Q3_PROFILE)
     assert run(restarted.get(user, parent))['current_observation'] == current['current_observation']
     assert len(calls) == before_calls
+
+
+def test_scoped_history_never_recovers_earlier_resolved_meaning_after_latest_unknown(natural_questions, qdb):
+    from emlis_thread_service import _request
+    from cocolon_meaning_experience_engine.natural_reply import prepare_natural_reply
+    user, past, service, calls = natural_questions(tier='premium', memo=THREE)
+    qdb.query("update public.emotions set created_at=(now()-interval '1 day') at time zone 'UTC' where id=$1", [past])
+    dto = run(service.start(user, past))
+    dto = run(answer(service, user, dto, 'その時は重かった。', 'history-resolved'))
+    assert dto['answer_assessment'] == 'RESOLVED'
+    dto = run(service.action(user, dto['thread_id'], action='continue',
+        expected_revision=dto['revision'], idempotency_key='history-next'))
+    dto = run(answer(service, user, dto, 'はい。', 'history-unknown'))
+    assert dto['answer_assessment'] != 'RESOLVED'
+    if dto['state'] == 'AWAITING_CONTINUE':
+        dto = run(service.action(user, dto['thread_id'], action='stop',
+            expected_revision=dto['revision'], idempotency_key='history-stop'))
+    assert dto['state'] == 'COMPLETED'
+    parent = str(uuid4())
+    qdb.query("insert into public.emotions values ($1,$2,now() at time zone 'UTC',$3,'',"
+              "array['仕事'],array['不安'],$4)",
+              [parent, user, ONE, json.dumps([dict(type='不安', strength='medium')])])
+    service.natural_questions_enabled = False
+    run(service.start(user, parent))
+    snapshot = run(service._hydrate(user, run(service.store.read(user, input_id=parent))))
+    material, _ = prepare_natural_reply(_request(snapshot), use_meaning_support=True)
+    record = json.loads(material.material_json)['past_user_records'][0]
+    assert record['input_id'] == past
+    assert [a['text'] for a in record['answers']] == ['その時は重かった。', 'はい。']
+    assert record['answer_meaning'] == {'schema_version': 'natural_history_answer_meaning.v1',
+        'source_record_id': past, 'assessment': 'UNASSESSED'}
 
 
 def test_receipt_and_meaning_checkpoint_survive_final_save_failure_without_second_provider(natural_questions, qdb, monkeypatch):

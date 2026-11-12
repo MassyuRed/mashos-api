@@ -63,6 +63,11 @@ assessmentがRESOLVEDでない部分やunresolved_partsは、既存処理で読�
 _HISTORY_ANSWER_MEANING_MESSAGE = """
 past_user_recordsのanswer_meaningは同じinput_idの過去記録と本人回答を読み直した補助です。active_claimsも当時の内容で、現在の性格・意図ではありません。inactive_claimsとinactive_relationsは訂正・撤回された範囲です。原文に残っていても復活させず、他の内容まで取り消さないでください。UNASSESSEDは処理で未確定です。回答原文と問いを合わせて読み、不明を補わず、判定名を返事へ出さないでください。"""
 
+_SCOPED_HISTORY_ANSWER_MEANING_MESSAGE = """
+過去のanswer_meaningはsource_record_idの過去の場面だけの読みです。CURRENT_INPUTはその記録の原入力、current_userは記録者です。active_claimsの気持ちを今回へ足さず、同じ文でも同じ出来事と決めないでください。過去に触れるなら今回と区別し、不明を補わないでください。inactiveは訂正・撤回範囲で、復活させないでください。UNASSESSEDは読取未確定です。"""
+
+_HISTORY_ANSWER_MEANING_SCHEMA = "natural_history_answer_meaning.v1"
+
 
 def _compact_json(value):
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
@@ -91,6 +96,9 @@ def system_message_for(request):
         if any(record.get("answer_meaning", {}).get("schema_version") == "natural_answer_meaning.v1"
                for record in material.get("past_user_records", ())):
             message += _HISTORY_ANSWER_MEANING_MESSAGE
+        if any(record.get("answer_meaning", {}).get("schema_version") == _HISTORY_ANSWER_MEANING_SCHEMA
+               for record in material.get("past_user_records", ())):
+            message += _SCOPED_HISTORY_ANSWER_MEANING_MESSAGE
         support = material.get("source_meaning_support")
         if not (type(support) is dict and isinstance(support.get("witnesses"), list)
                 and support["witnesses"]):
@@ -323,6 +331,12 @@ def prepare_natural_reply(request, *, use_meaning_support=False, response_stage=
             record["answer_meaning"] = (_answer_meaning_material(prepared, past)
                 if prepared is not None else {"schema_version": "natural_answer_meaning.v1",
                     "assessment": "UNASSESSED"})
+            # CURRENT_INPUT/current_user in these original locators are local
+            # to this past record. Scope the author's view without rewriting
+            # any source role, actor, evidence range, claim or relation.
+            record["answer_meaning"] = {**record["answer_meaning"],
+                "schema_version": _HISTORY_ANSWER_MEANING_SCHEMA,
+                "source_record_id": past.original.envelope.source_record_id}
         history.append(record)
         included_ids.add(source.source_guard[0])
     material = {"current": _material(original), "current_input_id": current_id,
