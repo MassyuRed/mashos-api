@@ -333,7 +333,7 @@ def _material(original):
             if k in original}
 
 
-_QUESTION_ENDING = re.compile(r"(?:でしょうか|ですか|ますか)[ \t\u3000]*(?=[。．.!！\r\n]|$)")
+_QUESTION_ENDING = re.compile(r"(?:でしょうか|でしたか|ましたか|ですか|ますか)[ \t\u3000]*(?=[。．.!！\r\n]|$)")
 
 
 def _has_unpunctuated_question(text):

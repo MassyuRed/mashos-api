@@ -75,3 +75,34 @@ def test_stage_reaches_same_single_http_author_without_changing_answer_material(
     reply = asyncio.run(source(NaturalReplyInput("same-source", json.dumps(material, ensure_ascii=False))))
     assert len(calls) == 1 and reply.source_prefix_ref == "same-source"
     assert material == original
+
+
+@pytest.mark.parametrize("text, rejected", [
+    # The first sentence was returned by the existing 4B in the approved trial.
+    ("「褒められた」は、あなたにはどんな意味として届きましたか。\n", True),
+    ("その時は、どのようなお気持ちでしたか。", True),
+    ("「引き受けた」と書かれていますが、何を考えましたか。", True),
+    ("「どう感じましたか。", True),
+    # Reporting quoted speech and past-tense statements creates no new question.
+    ("「どう感じましたか。」と聞かれ、戸惑ったと書かれていますね。", False),
+    ("「その時は重かった。」という受け取りを残したのですね。", False),
+    ("昨日は重く感じられました。", False),
+    ("昨日は大切な時間でした。", False),
+])
+def test_past_polite_questions_are_not_recipient_reply_bodies(text, rejected):
+    calls = []
+
+    def handler(request):
+        calls.append(request)
+        return httpx.Response(200, json={"model": "configured-only", "choices": [{
+            "finish_reason": "stop", "message": {"role": "assistant", "content": text}}]})
+
+    source = SelfHostedNaturalReplySource(endpoint="https://provider.example/v1/chat/completions",
+        model="configured-only", api_key="synthetic", transport=httpx.MockTransport(handler))
+    request = NaturalReplyInput("same-source", "{}")
+    if rejected:
+        with pytest.raises(NaturalReplyError, match="natural_reply_invalid"):
+            asyncio.run(source(request))
+    else:
+        assert asyncio.run(source(request)).text == text
+    assert len(calls) == 1
