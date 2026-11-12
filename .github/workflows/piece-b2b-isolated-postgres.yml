@@ -424,6 +424,7 @@ jobs:
             ai/tests/test_piece_model_server_constraints.py \
             ai/tests/test_piece_model_adapter_training.py \
             ai/tests/test_piece_model_prose_register.py \
+            ai/tests/test_piece_model_operator_tree.py \
             ai/tests/test_piece_model_scoped_action.py \
             ai/tests/test_piece_model_narrator_voice.py \
             ai/tests/test_piece_model_temporal_self_omission.py \

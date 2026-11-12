@@ -328,6 +328,148 @@ def _piece_model_read_block(text, *, allow_self_omission=False, allow_active_coo
     return tuple(result)
 
 
+def _piece_model_operator_tree(sentence):
+    """Read bounded register edits without normalizing the candidate.
+
+    Every byte belongs either to a recognized complete operator/predicate or
+    to an unchanged literal leaf. Literal leaves are retained material, not
+    interpreted propositions. In particular a retained conditional/relative
+    clause never supplies an inferred actor, cause or completed action.
+    Source and candidate are parsed separately; only their full trees compare.
+    Quotes and brackets remain with the existing literal/quote-aware S7 arm.
+    """
+    from piece_v2_expression import _SELF_TOPIC, _WISH_END
+    from piece_v2_generation import _OMITTED_ACCOUNT_PREDICATE
+    from cocolon_meaning_experience_engine.natural_reply_meaning import _FORMS
+    from cocolon_meaning_experience_engine.piece_source import _EVALUATIVE_FINITE
+
+    if (type(sentence) is not str or not sentence or len(sentence) > 420
+            or sentence[-1] not in '。！!'
+            or any(c in sentence[:-1] for c in '。！？!?\r\n「」『』"“”（）()【】')):
+        return None
+
+    def explicit_topic(value):
+        return _SELF_TOPIC.fullmatch(value + '。') is not None
+
+    def feeling_head(value):
+        # The whole written target remains separate from the feeling's
+        # finite predicate. A passive inside that target is not its owner.
+        direct = _piece_model_feeling(value + '。')
+        if direct is not None:
+            return ('FEELING', direct)
+        topic = _SELF_TOPIC.fullmatch(value + '。')
+        if topic is None:
+            return None
+        target, marker, predicate = topic['body'].rpartition('は')
+        if not marker or not target.endswith('こと') or not predicate:
+            return None
+        finite = _piece_model_feeling('私は' + predicate + '。')
+        if finite is None:
+            return None
+        prefix = value[:-len(predicate)]
+        return ('TARGET_FEELING', prefix, finite[2:-1])
+
+    def parse(value, *, dependent=False, depth=0):
+        if not value or depth > 4:
+            return None
+        options = set()
+        # A single, independently read finite head owns this concession.
+        # Other commas are literal content; no split occurs at an arbitrary
+        # subject が, nor inside a quote/parenthesis.
+        splits = list(re.finditer(r'が[、，,]', value))
+        concessions = []
+        for split in splits:
+            left, right = value[:split.start()], value[split.end():]
+            heads = set()
+            evaluation = _piece_model_evaluation(left + '。')
+            evaluation_form = _EVALUATIVE_FINITE.fullmatch(left + '。')
+            # A bare nominal 好き/苦手 can close a source sentence, but it
+            # cannot take concessive が without a finite copula/operator.
+            if (evaluation is not None and evaluation_form is not None
+                    and evaluation_form['inflection']):
+                heads.add(('EVALUATION', evaluation))
+            feeling = feeling_head(left)
+            if feeling is not None:
+                heads.add(feeling)
+            if len(heads) == 1:
+                tail = parse(right, dependent=True, depth=depth + 1)
+                if tail is not None:
+                    concessions.append(('CONCESSION', next(iter(heads)),
+                                        value[split.start():split.end()], tail))
+        if len(concessions) > 1:
+            return None
+        if concessions:
+            options.add(concessions[0])
+
+        # These are operator hosts, not assertions about their content.
+        # In particular a negated interpretation is not a negative wish.
+        impression = re.fullmatch(r'(?P<content>.+)気が(?P<finite>します|する)', value)
+        if impression is not None:
+            content = impression['content']
+            # Require a written clause ending before the host, excluding a
+            # suffix inside nominal words such as 湿気/病気 and an empty host.
+            if (content[-1] in 'うくぐすつぬぶむるた'
+                    or content.endswith(('ない', 'かった'))):
+                options.add(('IMPRESSION_HOST', content, '気が',
+                             'positive', 'nonpast'))
+        interpretation = re.fullmatch(
+            r'(?P<content>.+)わけでは(?P<finite>ありません|ない)', value)
+        if interpretation is not None and explicit_topic(value):
+            content = interpretation['content']
+            ending = _WISH_END.search(content)
+            if ending is not None and ending.end() == len(content):
+                options.add(('NEGATED_INTERPRETATION_HOST', content,
+                             'わけでは', 'negative', 'nonpast'))
+
+        if explicit_topic(value):
+            # Reuse the existing finite verb inventory. The complete prefix
+            # including every case, nested nominal, condition and negation
+            # is a literal leaf; it is never parsed as a new SELF assertion.
+            matches = []
+            for surface, lemma, polarity, modality, time, voice, receiving in _FORMS:
+                if (modality == 'fact' and time == 'past' and voice == 'active'
+                        and not receiving and value.endswith(surface)):
+                    prefix = value[:-len(surface)]
+                    if prefix and prefix[-1] in 'をにでと':
+                        matches.append((len(surface), ('FINITE_WITH_RETAINED_PREFIX',
+                            prefix, lemma, polarity, modality, time, voice)))
+            if matches:
+                longest = max(size for size, _ in matches)
+                options.update(key for size, key in matches if size == longest)
+
+            # The source owner already licenses this verbal-noun grammar.
+            # Derive its lemma and complete inflection, without adding a
+            # topic/verb list or admitting arbitrary kana stems.
+            verbal = re.fullmatch(r'(?P<prefix>.+[をにでと])'
+                r'(?P<nominal>[一-龥々]{2,})し(?P<finite>ませんでした|ました|なかった|た)', value)
+            if verbal is not None:
+                negative = verbal['finite'] in ('ませんでした', 'なかった')
+                polite = verbal['nominal'] + 'し' + ('ませんでした' if negative else 'ました')
+                if _OMITTED_ACCOUNT_PREDICATE.fullmatch(polite):
+                    options.add(('FINITE_WITH_RETAINED_PREFIX', verbal['prefix'],
+                        verbal['nominal'] + 'する', 'negative' if negative else 'positive',
+                        'fact', 'past', 'active'))
+
+        # Reuse the qualified literal-self ending. Preserve its entire
+        # lexical content; do not decide whether みたい denotes a wish/simile.
+        literal = _WISH_END.search(value)
+        if literal is not None and (dependent or explicit_topic(value)):
+            ending = literal.group()
+            options.add(('LITERAL_SELF_END', value[:literal.start()],
+                         ending.removesuffix('です')))
+
+        # A structured parse takes precedence over a mere literal ending
+        # enclosing that same concession. Both sides still parse separately.
+        if concessions:
+            options = {key for key in options if key[0] != 'LITERAL_SELF_END'}
+        if len(options) > 1:
+            return None
+        return next(iter(options)) if options else ('RETAINED', value)
+
+    tree = parse(sentence[:-1])
+    return (tree, sentence[-1]) if tree is not None else None
+
+
 def _piece_model_source_blocks(meaning, plan):
     from cocolon_meaning_experience_engine.piece_source import (
         piece_source_text, piece_text_nodes, validate_piece_saved_fields,
@@ -585,6 +727,14 @@ def validate_source_meaning_preservation(meaning, plan, artifact, *, _model_regi
         bare = head[:-2] if head.endswith('です') else head
         return re.fullmatch(anchor(bare) + r'(?:です)?' + re.escape(source[-1]), visible) is not None
 
+    def same_operator_tree(source, visible):
+        # Name abstraction and dependency binding retain their existing S7
+        # owners. The new tree may compare only unchanged public literals.
+        if anchor(source) != re.escape(source):
+            return False
+        source_tree = _piece_model_operator_tree(source)
+        return source_tree is not None and source_tree == _piece_model_operator_tree(visible)
+
     def same_finite_model_context(node_id, source, visible):
         # A mixed original can retain an opaque KEEP clause while another
         # field changes only the known finite register. Keep the full S7
@@ -775,7 +925,8 @@ def validate_source_meaning_preservation(meaning, plan, artifact, *, _model_regi
                             same_undecided(node.value, visible)
                             or same_finite_model_context(node_id, node.value, visible)
                             or same_scoped_finite_model_context(node_id, node.value, visible)
-                            or same_literal_reason_value(node_id, node.value, visible)))):
+                            or same_literal_reason_value(node_id, node.value, visible)
+                            or same_operator_tree(node.value, visible)))):
                     reject()
                 previous_id, previous_author = node_id, None
                 continue
@@ -788,7 +939,8 @@ def validate_source_meaning_preservation(meaning, plan, artifact, *, _model_regi
             if (operation == 'SOURCE_SCOPED_EXPRESSION_TO_FIRST_PERSON') != (scope is not None):
                 reject()
             if (_model_register and operation == 'SOURCE_FIRST_PERSON_TOPIC'
-                    and same_literal_self_register(node.value, visible)):
+                    and (same_literal_self_register(node.value, visible)
+                         or same_operator_tree(node.value, visible))):
                 previous_id = node_id
                 previous_author = _scoped_self_topic(node.value)['speaker']
                 continue
