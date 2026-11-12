@@ -41,6 +41,8 @@ def test_source_focal_evaluation_register_survives_save_and_non_generated_reread
      '私にとって、一人で本を読む時間が大切だ。'),
     ('evaluation-past-modal', '僕にとって周りに合わせる時間が必要ではなかったかもしれません。',
      '僕にとって周りに合わせる時間が必要ではなかったかもしれない。'),
+    ('action-evaluation-self-omission', '私は友人に予定を相談しました。私は読書が好きです。',
+     '私は友人に予定を相談した。読書が好きだ。'),
 ))
 def test_evaluation_receipt_stays_fixed_through_save_retry_and_new_owner_read(
         saved_piece_db, monkeypatch, tier, case_id, memo, body):

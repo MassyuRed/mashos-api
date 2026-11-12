@@ -50,6 +50,79 @@ def test_self_repetition_can_be_removed_only_after_explicit_self_in_the_same_blo
     assert result(req, ('同僚に資料の確認を頼んだ。友人に旅程を相談しなかった。',)).artifact is None
 
 
+@pytest.mark.parametrize('speaker', ('私', 'わたし', '僕', 'ぼく', '俺', 'おれ'))
+@pytest.mark.parametrize('polite,plain', (('好きです', '好きだ'), ('苦手でした', '苦手だった')))
+def test_finite_then_evaluation_keeps_the_same_explicit_narrator_without_repetition(speaker, polite, plain):
+    original = speaker + 'は友人に予定を相談しました。' + speaker + 'は読書が' + polite + '。'
+    req = request(source(original, field='memo'))
+    explicit = speaker + 'は友人に予定を相談した。' + speaker + 'は読書が' + plain + '。'
+    body = speaker + 'は友人に予定を相談した。読書が' + plain + '。'
+    assert result(req, (explicit,)).artifact is not None
+    out = result(req, (body,))
+    assert out.status == EngineStatus.GENERATED, out.reason_codes
+    assert out.artifact.piece_text == body and out.artifact.body_blocks == (body,)
+    assert out.source_meaning.saved_snapshot.saved_original_json == req.source.saved_original_json
+    # The finite author's source replay and the model receipt stay distinct.
+    assert body != original and body != explicit
+
+
+@pytest.mark.parametrize('changed', (
+    '友人に予定を相談した。読書が少し好きではなかったかもしれない。',
+    '僕は友人に予定を相談した。読書が少し好きではなかったかもしれない。',
+    '私は友人に予定を相談した。僕は読書が少し好きではなかったかもしれない。',
+    '私は友人に予定を相談した。読書が好きではなかったかもしれない。',
+    '私は友人に予定を相談した。読書がかなり好きではなかったかもしれない。',
+    '私は友人に予定を相談した。読書が少し好きだったかもしれない。',
+    '私は友人に予定を相談した。読書が少し好きではないかもしれない。',
+    '私は友人に予定を相談した。読書が少し好きではなかった。',
+    '私は友人に予定を相談した。読書が少し好きではなかったとは限らない。',
+    '私は友人に予定を相談した。料理が少し好きではなかったかもしれない。',
+))
+def test_omitted_evaluation_never_changes_owner_target_or_any_operator(changed):
+    req = request(source('私は友人に予定を相談しました。私は読書が少し好きではなかったかもしれません。', field='memo'))
+    assert result(req, (changed,)).artifact is None
+
+
+def test_omitted_evaluation_keeps_degree_negation_past_and_reservation_together():
+    req = request(source('私は友人に予定を相談しました。私は読書が少し好きではなかったかもしれません。', field='memo'))
+    body = '私は友人に予定を相談した。読書が少し好きではなかったかもしれない。'
+    out = result(req, (body,))
+    assert out.status == EngineStatus.GENERATED, out.reason_codes
+    assert out.artifact.piece_text == body and out.artifact.body_blocks == (body,)
+
+
+@pytest.mark.parametrize('original,control,changed', (
+    ('私は友人に予定を相談しました。僕は読書が好きです。',
+     '私は友人に予定を相談した。僕は読書が好きだ。',
+     '私は友人に予定を相談した。読書が好きだ。'),
+    ('私は友人に予定を相談しました。私は司書に資料の確認を頼みました。私は読書が好きです。',
+     '私は友人に予定を相談した。私は司書に資料の確認を頼んだ。私は読書が好きだ。',
+     '私は友人に予定を相談した。同僚は司書に資料の確認を頼んだ。読書が好きだ。'),
+    ('私は友人に予定を相談しました。私にとって読書が大切です。',
+     '私は友人に予定を相談した。私にとって読書が大切だ。',
+     '私は友人に予定を相談した。読書が大切だ。'),
+))
+def test_evaluation_omission_cannot_borrow_a_different_author_or_drop_a_viewpoint(original, control, changed):
+    req = request(source(original, field='memo'))
+    assert result(req, (control,)).artifact is not None
+    assert result(req, (changed,)).artifact is None
+
+
+@pytest.mark.parametrize('partition', ('field', 'paragraph', 'supplement'))
+def test_evaluation_omission_stays_inside_its_source_field_and_paragraph(partition):
+    first = '私は友人に予定を相談しました。'
+    second = '私は読書が好きです。'
+    if partition == 'field':
+        saved = source(first, field='memo', other=second)
+    elif partition == 'paragraph':
+        saved = source(first + '\n' + second, field='memo')
+    else:
+        saved = refined_source(original=first, answer=second)
+    req = request(saved)
+    assert result(req, ('私は友人に予定を相談した。', '私は読書が好きだ。')).artifact is not None
+    assert result(req, ('私は友人に予定を相談した。', '読書が好きだ。')).artifact is None
+
+
 @pytest.mark.parametrize('body', [
     '私は同僚から資料の確認を頼んだ。私は友人に旅程を相談しなかった。',
     '私は同僚に資料の確認を頼んだ。私は友人から旅程を相談しなかった。',

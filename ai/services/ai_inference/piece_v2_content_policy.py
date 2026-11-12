@@ -273,9 +273,17 @@ def _piece_model_read_block(text, *, allow_self_omission=False, allow_active_coo
                 return None
             day = reader._DAY.match(raw)
             start = day.end() if day else 0
+            view = raw[:start] + last_self_speaker + 'は' + raw[start:]
+            evaluation = _piece_model_evaluation(view + '。')
+            if evaluation is not None:
+                # The complete typed evaluation owns its target's が; it is
+                # not a newly written actor. Reuse only this established SELF
+                # context, retaining viewpoint/operators/narrator in the key.
+                # The temporary read view never replaces the raw candidate.
+                result.append(evaluation)
+                continue
             if reader._SUBJECT.match(raw[start:]):
                 return None
-            view = raw[:start] + last_self_speaker + 'は' + raw[start:]
             feeling = _piece_model_feeling(view + '。')
             parsed, count = reader._clauses(view, 'piece.visible', 'PIECE_OUTPUT', reply=False)
             if feeling is not None:
