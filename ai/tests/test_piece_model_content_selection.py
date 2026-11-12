@@ -7,6 +7,7 @@ route, source preservation and budgeting; they make no model-quality claim.
 import asyncio
 from copy import deepcopy
 import json
+from unittest.mock import patch
 
 import httpx
 import pytest
@@ -172,3 +173,147 @@ def test_current_provider_receives_all_duties_without_forcing_one_output_sentenc
     assert len(seen) == 1 and receipt.raw_output == json.dumps(
         dict(field_blocks=dict(memo_0=body)), ensure_ascii=False)
     assert (prepared.payload(), prepared.private_json, req.source) == before
+
+
+def editorial_messages(saved):
+    req = request(saved)
+    prepared = prepare_piece_model_request(req)
+    before = prepared.private_json, prepared.request_id, deepcopy(prepared.payload())
+    # Extracting editorial choices must not produce a finite expected body.
+    with patch('cocolon_meaning_experience_engine.piece_v1c.realize_piece_artifact',
+               side_effect=AssertionError('not a second author')):
+        value = model.build_piece_model_messages(prepared, source_request=req,
+            include_authoring_constraints=True, include_editorial_choices=True)
+    assert value[0]['content'] == model.SYSTEM_MESSAGE
+    assert before == (prepared.private_json, prepared.request_id, prepared.payload())
+    return json.loads(value[1]['content']), req
+
+
+def choices(material, operation):
+    return [(key, row) for key, slot in material['control']['content_selection']['field_slots'].items()
+            for row in slot.get('editorial_choices', ()) if row['operation'] == operation]
+
+
+def test_editorial_choices_reuse_focal_parts_and_qualified_same_person_continuation():
+    material, _ = editorial_messages(source(NAMED, field='memo'))
+    focal = choices(material, 'DIRECT_FIRST_PERSON_EXPRESSION')
+    assert len(focal) == 1
+    key, row = focal[0]
+    assert key == 'memo_0'
+    assert (row['narrator_literal'], row['target_literal'], row['predicate_literal']) == (
+        'おれ', '同僚の森さんと展示を見る時間', '選びたい')
+    omissions = choices(material, 'OMIT_REPEATED_SELF_TOPIC')
+    selected = material['control']['content_selection']['field_slots'][key]['selected']
+    assert len(omissions) == 1
+    assert omissions[0][1]['node_id'] == selected[1]['node_id']
+    assert omissions[0][1]['antecedent_node_id'] == selected[0]['node_id']
+    assert NAMED[omissions[0][1]['scalar_start']:omissions[0][1]['scalar_end']] == 'おれはその時間が好きです。'
+    assert selected[-1]['operation'] == 'KEEP_COMPLETE_SOURCE_CONTEXT'
+    assert not any(row['node_id'] == selected[-1]['node_id'] for _, row in omissions)
+    assert material['sources'][0]['original']['memo'] == NAMED
+    assert material['control']['authoring_constraints']['field_slots'][key]['named_people'][0]['public_role'] == '同僚'
+
+
+@pytest.mark.parametrize('predicate', ('選びたい', '大切にしたい', '大切にしていない',
+                                      '選びたかった', '望んでいなかったかもしれない'))
+def test_focal_editorial_choice_keeps_the_actual_predicate(predicate):
+    # Use the focal source construction, not a fabricated direct target.
+    text = '私が' + predicate + 'のは、読書の時間です。'
+    material, _ = editorial_messages(source(text, field='memo'))
+    _, row = choices(material, 'DIRECT_FIRST_PERSON_EXPRESSION')[0]
+    assert row['predicate_literal'] == predicate
+    assert row['target_literal'] == '読書の時間' and row['narrator_literal'] == '私'
+    assert '選びたい' not in row['instruction']
+
+
+@pytest.mark.parametrize('partition', ('field', 'paragraph', 'supplement'))
+def test_editorial_omission_never_borrows_a_topic_across_source_partitions(partition):
+    first, second = '私は読書を選びたいです。', '私は散歩を選びたいです。'
+    saved = (source(first, field='memo', other=second) if partition == 'field' else
+             source(first + '\n' + second, field='memo') if partition == 'paragraph' else
+             refined_source(original=first, answer=second))
+    material, _ = editorial_messages(saved)
+    assert choices(material, 'OMIT_REPEATED_SELF_TOPIC') == []
+
+
+@pytest.mark.parametrize('second', (
+    '僕は散歩を選びたいです。',
+    '私にとって散歩が重要です。',
+))
+def test_editorial_omission_keeps_another_literal_narrator_or_explicit_viewpoint(second):
+    material, _ = editorial_messages(source('私は読書を選びたいです。' + second, field='memo'))
+    assert choices(material, 'OMIT_REPEATED_SELF_TOPIC') == []
+    if 'にとって' in second:
+        assert choices(material, 'TARGET_BEFORE_EVALUATION') == []
+
+
+def test_editorial_evaluation_reorders_only_a_written_focal_without_losing_viewpoint():
+    text = '僕にとって重要なのは、一人で予定を考える時間です。'
+    material, _ = editorial_messages(source(text, field='memo'))
+    assert choices(material, 'TARGET_BEFORE_EVALUATION')[0][1]['retain_viewpoint'] is True
+
+
+def test_editorial_choices_are_absent_by_default_and_unavailable_text_is_unchanged():
+    req = request(source(NAMED, field='memo'))
+    prepared = prepare_piece_model_request(req)
+    old = model.build_piece_model_messages(prepared, source_request=req, include_authoring_constraints=True)
+    assert old == model.build_piece_model_messages(prepared, source_request=req,
+        include_authoring_constraints=True, include_editorial_choices=False)
+    assert 'editorial_choices' not in old[1]['content']
+    unread = request(source('私は司書に予定を相談しました。まだ、', field='memo'))
+    prep = prepare_piece_model_request(unread)
+    assert model.build_piece_model_messages(prep, source_request=unread,
+        include_authoring_constraints=True, include_editorial_choices=True) == \
+        model.build_piece_model_messages(prep, source_request=unread, include_authoring_constraints=True)
+    with pytest.raises(ValueError, match='piece_model_prepared_invalid'):
+        model.build_piece_model_messages(prepared, include_editorial_choices=True)
+
+
+@pytest.mark.parametrize('invalid', (None, 1, 'true'))
+def test_editorial_option_requires_an_explicit_boolean(invalid):
+    req = request(source(NAMED, field='memo'))
+    prepared = prepare_piece_model_request(req)
+    with pytest.raises(ValueError, match='piece_model_prepared_invalid'):
+        model.build_piece_model_messages(prepared, source_request=req,
+            include_authoring_constraints=True, include_editorial_choices=invalid)
+
+
+def test_editorial_reference_chain_uses_existing_native_duplicate_and_continuation_decisions():
+    text = ('私が選びたいのは、読書の時間です。私はその時間が好きです。'
+            '私はその時間が苦手です。')
+    material, _ = editorial_messages(source(text, field='memo'))
+    assert len(choices(material, 'OMIT_REPEATED_SELF_TOPIC')) == 2
+    # The native owner compares its short evaluation expressions internally
+    # to decline duplicate omissions. No such prose is supplied to the model.
+    duplicate = text.replace('苦手', '好き')
+    material, _ = editorial_messages(source(duplicate, field='memo'))
+    assert len(choices(material, 'OMIT_REPEATED_SELF_TOPIC')) == 1
+
+
+@pytest.mark.parametrize('changed', (False, True))
+def test_editorial_provider_retains_raw_output_and_independent_meaning_admission(changed):
+    saved = source(NAMED, field='memo')
+    req = request(saved)
+    prepared = prepare_piece_model_request(req)
+    body = ('おれは、同僚と展示を見る時間を選びたい。その時間が好きです。'
+            'まだ、参加する日は決めていません。')
+    if changed:
+        body = body.replace('選びたい', '選んだ')
+    raw = json.dumps(dict(field_blocks=dict(memo_0=body)), ensure_ascii=False)
+    seen = []
+    def provider(value):
+        wire = json.loads(value.content)
+        material = json.loads(wire['messages'][1]['content'])
+        assert choices(material, 'OMIT_REPEATED_SELF_TOPIC')
+        seen.append(wire)
+        return httpx.Response(200, json=dict(model=wire['model'], candidate_format='piece.field_slots.v1',
+            choices=[dict(finish_reason='stop', message=dict(role='assistant', content=raw))]))
+    author = model.Shared4BPieceModelSource(endpoint='https://piece.invalid/v1/chat/completions',
+        model='fictional-cpu-author', api_key='fictional-private-source-key-32',
+        use_editorial_choices=True, transport=httpx.MockTransport(provider))
+    receipt = asyncio.run(author(prepared, source_request=req))
+    assert receipt.raw_output == raw and len(seen) == 1
+    outcome = MeaningExperienceEngine().generate(req, semantic_input=PieceModelInputV1(prepared, receipt))
+    assert (outcome.artifact is not None) is not changed
+    if not changed:
+        assert outcome.artifact.piece_text == body

@@ -78,7 +78,7 @@ def _source_action_constraint(text, *, include_semantic_roles=False):
     return result
 
 
-def _piece_content_selection(parts, plans, sources, slots):
+def _piece_content_selection(parts, plans, sources, slots, *, include_editorial_choices=False):
     """Transfer lossless content selection to the current Piece source plan.
 
     NLS v3's content-selection owner selects every required obligation before
@@ -102,6 +102,17 @@ def _piece_content_selection(parts, plans, sources, slots):
         evidence = {row.source_span_id: row for row in part.evidence}
         nodes = {row.node_id: row for row in part.graph.nodes}
         duties = {row.node_id: row for row in plan.duties}
+        if include_editorial_choices:
+            from cocolon_meaning_experience_engine.piece_v1c import (
+                _adjacent_self_continuations, _focal_parts)
+            from cocolon_meaning_experience_engine.piece_source import _EVALUATIVE_FOCUS
+            # Reuse the native author's qualified editorial decisions. Do
+            # not infer continuity from matching words, SELF labels or the
+            # output model's own plan. This does not realize a Piece artifact
+            # or expose expected body prose; the owner may compare its short
+            # evaluation expressions internally to decline duplicates.
+            omitted_topics = _adjacent_self_continuations(part, plan)
+            evaluations = {row.node_id: row for row in part.personal_evaluations}
         ordered = [node_id for group in plan.block_node_ids for node_id in group]
         if (len(duties) != len(plan.duties) or len(ordered) != len(set(ordered))
                 or set(duties) != set(sentences) or set(ordered) != set(duties)):
@@ -136,6 +147,39 @@ def _piece_content_selection(parts, plans, sources, slots):
                 reason='REQUIRED_SOURCE_PROPOSITION', operation=duties[node_id].operation,
                 scalar_start=ref.scalar_start,
                 scalar_end=ref.scalar_end, provisional_editorial_role=sentence.role))
+            if include_editorial_choices:
+                choices = []
+                operation = duties[node_id].operation
+                if operation == 'SOURCE_FOCAL_TO_FIRST_PERSON':
+                    focal = _focal_parts(literal)
+                    if focal is None:
+                        raise ValueError('piece_model_editorial_focal')
+                    target, predicate, speaker = focal
+                    choices.append(dict(node_id=node_id,
+                        scalar_start=ref.scalar_start, scalar_end=ref.scalar_end,
+                        operation='DIRECT_FIRST_PERSON_EXPRESSION',
+                        narrator_literal=speaker, target_literal=target,
+                        predicate_literal=predicate,
+                        instruction='焦点構文を、同じ本人が対象について原文の述語を直接述べる自然な語順へ組み替えてください。既存named_peopleの公開役割化を適用した上で、本人表記・対象の意味全体・述語が表す状態や希望・肯否・時点・留保を保ち、実行済みかどうかを変えないでください。'))
+                if (operation == 'SOURCE_PERSONAL_EVALUATION'
+                        and _EVALUATIVE_FOCUS.fullmatch(literal) is not None):
+                    frame = evaluations[node_id]
+                    choices.append(dict(node_id=node_id,
+                        scalar_start=ref.scalar_start, scalar_end=ref.scalar_end,
+                        operation='TARGET_BEFORE_EVALUATION',
+                        retain_viewpoint=frame.construction == 'にとって',
+                        instruction='対象を先に置いて本人の評価を述べる語順に整えられます。「にとって」の視点、対象、評価の強さ・肯否・時点・留保は残してください。'))
+                if node_id in omitted_topics:
+                    # The native owner proves adjacency, exact first-person
+                    # spelling, referent and paragraph boundaries. Only the
+                    # redundant topic can disappear, never its proposition.
+                    choices.append(dict(node_id=node_id,
+                        antecedent_node_id=ordered[ordered.index(node_id) - 1],
+                        scalar_start=ref.scalar_start, scalar_end=ref.scalar_end,
+                        operation='OMIT_REPEATED_SELF_TOPIC',
+                        instruction='直前から同じ本人の語りが続くと確認できた箇所です。繰り返す本人主語だけを省き、対象・述語・否定・時点と命題そのものは残せます。'))
+                if choices:
+                    field.setdefault('editorial_choices', []).extend(choices)
         for group in plan.block_node_ids:
             group_slots = {node_slots[node_id] for node_id in group}
             for key in slots:
@@ -174,7 +218,7 @@ def _piece_content_selection(parts, plans, sources, slots):
                 source_order_implies_cause_or_time=False)
 
 
-def _authoring_constraints(prepared, source_request, slots):
+def _authoring_constraints(prepared, source_request, slots, *, include_editorial_choices=False):
     """Return admitted source axes and whole-content selection for the author.
 
     The source request is required because preparation intentionally freezes
@@ -324,17 +368,23 @@ def _authoring_constraints(prepared, source_request, slots):
                     result[key]['required_actions'] = actions
                 if quotes:
                     result[key]['literal_quotes'] = quotes
-    return result, _piece_content_selection(parts, plans, sources, slots)
+    return result, _piece_content_selection(parts, plans, sources, slots,
+        include_editorial_choices=include_editorial_choices)
 
 
-def build_piece_model_messages(prepared, *, include_authoring_constraints=False, source_request=None):
+def build_piece_model_messages(prepared, *, include_authoring_constraints=False, source_request=None,
+                               include_editorial_choices=False):
     """Keep the complete frozen original and a separate supplemental source.
 
     The transport-only slot view resolves existing source ranges. It never
     changes the frozen preparation or supplies expected author prose.
+    Editorial choices are an explicit research opt-in, not enabled by the
+    configured application source or by authoring constraints alone.
     """
     try:
-        if type(include_authoring_constraints) is not bool:
+        if (type(include_authoring_constraints) is not bool
+                or type(include_editorial_choices) is not bool
+                or (include_editorial_choices and not include_authoring_constraints)):
             raise ValueError
         if (type(prepared) is not PreparedRequest or type(prepared.private_json) is not str
                 or prepared.request_id != 'prep-' + hashlib.sha256(
@@ -359,7 +409,8 @@ def build_piece_model_messages(prepared, *, include_authoring_constraints=False,
         control['field_slots'] = piece_model_field_slots(material)
         if include_authoring_constraints:
             constraints, selection = _authoring_constraints(
-                prepared, source_request, control['field_slots'])
+                prepared, source_request, control['field_slots'],
+                include_editorial_choices=include_editorial_choices)
             if selection is not None:
                 control['content_selection'] = selection
             if constraints:
@@ -400,9 +451,10 @@ def _unique_object(pairs):
 
 class Shared4BPieceModelSource:
     """A single authenticated HTTPS request; no automatic reacquisition."""
-    def __init__(self, *, endpoint, model, api_key, transport=None):
+    def __init__(self, *, endpoint, model, api_key, transport=None, use_editorial_choices=False):
         try:
-            if any(type(value) is not str for value in (endpoint, model, api_key)):
+            if (any(type(value) is not str for value in (endpoint, model, api_key))
+                    or type(use_editorial_choices) is not bool):
                 raise ValueError
             parsed = urlsplit(endpoint)
             if (parsed.scheme != 'https' or not parsed.hostname or parsed.username or parsed.password
@@ -419,13 +471,17 @@ class Shared4BPieceModelSource:
             raise ValueError('piece_model_configuration_invalid') from None
         self.endpoint, self.model, self._api_key = endpoint, model, api_key
         self._transport = transport
+        # A bounded research candidate only. The configured application source
+        # keeps the existing default until actual output justifies adoption.
+        self._use_editorial_choices = use_editorial_choices
 
     async def __call__(self, prepared, *, source_request=None):
         from cocolon_meaning_experience_engine.piece_semantic_admission import (
             receive_piece_model_candidate, PIECE_FIELD_SLOTS_FORMAT)
         messages = build_piece_model_messages(prepared,
             include_authoring_constraints=source_request is not None,
-            source_request=source_request)
+            source_request=source_request,
+            include_editorial_choices=self._use_editorial_choices)
         started = time.monotonic()
 
         def receipt(raw=None, finish='error', *, usage=None, revision=None):
