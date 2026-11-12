@@ -3637,6 +3637,247 @@ class AnalysisSemanticMapGraph:
     edges_json: str
     source_members_json: str
     coverage_json: str
+    meaning_review_json: str = '{}'
+
+
+def analysis_semantic_source_duties(frozen, fields):
+    """Move the existing source/unknown/relation responsibilities to map input.
+
+    The general map remains the model's interpretation. These are only the
+    premises the observed owner can derive from complete, admitted sources;
+    an unread range is not converted into an empty or false proposition.
+    Work per record so no order, repeated pattern or motive is manufactured
+    by joining two records or an original and its answer as separate events.
+    """
+    from dataclasses import asdict
+    ordered = {m.saved_record_ref: i for i, m in enumerate(frozen.members, 1)}
+    field_index = {(base.source_envelope_id, base.field_path): (number, text)
+        for number, text, _, base in fields}
+    claims, relations = [], []
+    covered = {number: set() for number, *_ in fields}
+    for member in frozen.members:
+        sources = tuple(s for s in frozen.sources if s.record_ref == member.saved_record_ref)
+        local = replace(frozen, members=(member,), sources=sources,
+            category_records=tuple(r for r in frozen.category_records
+                if r.saved_record_ref == member.saved_record_ref))
+        graph = compile_observed_graph(local)
+        occurrence_refs = {}
+        for node in graph.nodes:
+            if node.proposition is None:
+                continue
+            proposition = node.proposition
+            for evidence in node.evidence_refs:
+                field = field_index.get((evidence.source_envelope_id, evidence.field_path))
+                if field is None:
+                    continue
+                number, text = field
+                start, end = evidence.scalar_start, evidence.scalar_end
+                quote = text[start:end]
+                if not quote:
+                    continue
+                ref = 'c' + str(len(claims) + 1)
+                source = next(s for s in sources
+                    if s.envelope.envelope_id == evidence.source_envelope_id)
+                claim = dict(claim_ref=ref, field=number,
+                    record=ordered[member.saved_record_ref],
+                    source_role=source.envelope.source_role,
+                    scalar_start=start, scalar_end=end, quote=quote,
+                    node_kind=node.node_kind, proposition=asdict(proposition))
+                claims.append(claim)
+                covered[number].update(range(start, end))
+                occurrence_refs.setdefault(node.node_ref, []).append((ref, evidence))
+        for edge in graph.edges:
+            left, right = (occurrence_refs.get(ref, ()) for ref in edge.endpoint_refs)
+            evidence_ids = {e.evidence_id for e in edge.evidence_refs}
+            for a, ea in left:
+                for b, eb in right:
+                    if ea.evidence_id in evidence_ids and eb.evidence_id in evidence_ids:
+                        relations.append(dict(relation_kind=edge.edge_kind,
+                            from_claim=a, to_claim=b,
+                            record=ordered[member.saved_record_ref]))
+    residual = []
+    for number, text, _, _ in fields:
+        pending = [i for i, char in enumerate(text)
+            if i not in covered[number] and char not in ' \t\r\n\u3000。．.']
+        ranges = []
+        for i in pending:
+            if ranges and ranges[-1][1] == i:
+                ranges[-1][1] += 1
+            else:
+                ranges.append([i, i + 1])
+        if ranges:
+            residual.append(dict(field=number, ranges=ranges))
+    return dict(schema_version='analysis.semantic-source-duties.v1',
+        claims=claims, written_relations=relations, unassessed_source_ranges=residual,
+        interpretation_status='UNASSESSED',
+        forbidden_promotions=['RESULT_TO_INTENT', 'COOCCURRENCE_TO_CAUSE',
+            'RECORD_ORDER_TO_EVENT_ORDER', 'WISH_TO_PERFORMED_ACTION',
+            'UNSPECIFIED_ACTOR_TO_SELF', 'CONTEXT_DIFFERENCE_TO_FIXED_TRAIT'])
+
+
+def analysis_semantic_source_duties_material(duties):
+    """A compact generation view, retaining the full source exactly once.
+
+    The private prepared input keeps the complete owner derivation. The model
+    receives field/span references and meaning axes, without another copy of
+    every quotation, source-part coordinate or empty dataclass field.
+    """
+    def reading(p):
+        value = dict(actor=p['actor'], predicate=p['predicate_lemma'],
+            arguments=p['arguments'], polarity=p['polarity'],
+            modality=p['modality'], time=p['temporal_scope'])
+        for key, target in (('relative_day', 'relative_day'),
+                ('result_state', 'result'), ('scene_state', 'scene'),
+                ('role_state', 'role'), ('written_modifiers', 'modifiers'),
+                ('dependent_form', 'dependent'), ('sequence_marker', 'sequence')):
+            if p[key]:
+                value[target] = p[key]
+        if p['possible_content'] is not None:
+            value['possible_content'] = reading(p['possible_content'])
+        return value
+    return dict(schema_version=duties['schema_version'],
+        claims=[dict(claim_ref=c['claim_ref'], field=c['field'],
+            span=[c['scalar_start'], c['scalar_end']], reading=reading(c['proposition']))
+            for c in duties['claims']],
+        written_relations=duties['written_relations'],
+        unassessed_source_ranges=duties['unassessed_source_ranges'],
+        interpretation_status=duties['interpretation_status'],
+        forbidden_promotions=duties['forbidden_promotions'])
+
+
+def _semantic_map_duty_root(prepared, claim):
+    """Resolve a source-owner duty to the same admitted field coordinates."""
+    from dataclasses import asdict
+    from .semantic_admission import semantic_map_hash, _semantic_map_require
+    field = next((f for f in prepared.fields if f[0] == claim['field']), None)
+    _semantic_map_require(field is not None, 'analysis_semantic_input_unbound')
+    _, text, _, base = field
+    start, end = claim['scalar_start'], claim['scalar_end']
+    _semantic_map_require(text[start:end] == claim['quote'], 'analysis_semantic_input_unbound')
+    ref = replace(base, evidence_id='analysis-evidence:' + semantic_map_hash([
+        base.source_envelope_id, base.field_path, start, end]),
+        scalar_start=start, scalar_end=end,
+        utf8_start=base.field_utf8_start + len(text[:start].encode('utf-8')),
+        utf8_end=base.field_utf8_start + len(text[:end].encode('utf-8')),
+        literal_sha256=hashlib.sha256(claim['quote'].encode('utf-8')).hexdigest())
+    return asdict(ref)
+
+
+def _semantic_map_source_context(prepared, refs, roots):
+    """Retain proved context without treating a model reading as user fact."""
+    material = json.loads(prepared.material_json)
+    if material.get('source_duties') is None:
+        return [], [], []
+    duties = json.loads(prepared.source_duties_json)
+    ordered = {m.saved_record_ref: i for i, m in enumerate(prepared.frozen.members, 1)}
+    records = {ordered[ref] for ref in refs}
+    notes, conditions, support = [], [], []
+    for claim in duties['claims']:
+        if claim['record'] not in records:
+            continue
+        p = claim['proposition']
+        root = _semantic_map_duty_root(prepared, claim)
+        note = None
+        if p['scene_state'] == 'PAST_PRESENCE':
+            note = '同じ記録に書かれた場面：' + claim['quote']
+        elif p['role_state'] == 'PAST_RESPONSIBILITY':
+            note = '同じ記録に書かれた担当：' + claim['quote']
+        if note:
+            if note not in notes:
+                notes.append(note)
+                conditions.append(note)
+            support.append(root)
+        # Day, actor and modal scope belong to this particular premise, not
+        # to every other statement made in the same record or selected node.
+        quoted = any(r['source_envelope_id'] == root['source_envelope_id']
+            and r['field_path'] == root['field_path']
+            and r['scalar_start'] <= root['scalar_start']
+            and r['scalar_end'] >= root['scalar_end'] for r in roots)
+        if not quoted:
+            continue
+        scoped = []
+        if p['relative_day']:
+            note = ('根拠に書かれた時点：この記述時点の' +
+                {'TODAY': '今日', 'YESTERDAY': '昨日'}[p['relative_day']])
+            scoped.append(note)
+            conditions.append(note)
+        for modifier, wording in (('THIS_OCCASION', '今回'), ('IN_ADVANCE', '事前')):
+            if modifier in p['written_modifiers']:
+                note = '根拠に書かれた範囲・時点：' + wording
+                scoped.append(note)
+                conditions.append(note)
+        if p['modality'] == 'wish':
+            scoped.append('希望として書かれた内容：' + claim['quote'])
+        if p['possible_content'] is not None:
+            scoped.append('本人が考えた可能性として書かれた内容：' + claim['quote'])
+        if p['actor'] == 'UNSPECIFIED':
+            scoped.append('誰についての記述かは、この根拠だけでは特定されていません。')
+        for value in scoped:
+            if value not in notes:
+                notes.append(value)
+        if scoped:
+            support.append(root)
+    unique = {root['evidence_id']: root for root in support}
+    return notes, conditions, list(unique.values())
+
+
+def _semantic_map_visible_review(prepared, roots, texts):
+    """Read the actual visible fields, not a copy of the model's plan.
+
+    This reuses only complete propositions the current owner already reads.
+    Multi-clause prose and ambiguous matches stay unassessed. A unique,
+    completely quoted premise can expose a changed polarity/time/modality;
+    that narrow comparison never certifies the rest of a node or relation.
+    """
+    from .semantic_admission import _semantic_map_require
+    if json.loads(prepared.material_json).get('source_duties') is None:
+        return None
+    duties = json.loads(prepared.source_duties_json)
+    source = []
+    for claim in duties['claims']:
+        root = _semantic_map_duty_root(prepared, claim)
+        if any(r['source_envelope_id'] == root['source_envelope_id']
+                and r['field_path'] == root['field_path']
+                and r['scalar_start'] <= root['scalar_start']
+                and r['scalar_end'] >= root['scalar_end'] for r in roots):
+            source.append(claim)
+    rows = []
+    for name, text in texts:
+        value = text.strip()
+        if value[-1:] in {'。', '．', '.'}:
+            value = value[:-1]
+        visible = _proposition(value)
+        matches = []
+        if (visible is not None and not visible.possible_content
+                and not visible.dependent_form and not visible.sequence_marker):
+            for claim in source:
+                p = claim['proposition']
+                if (not p['possible_content'] and not p['dependent_form'] and not p['sequence_marker']
+                        and (visible.actor == p['actor'] or
+                             (visible.actor == 'UNSPECIFIED' and p['actor'] == 'SELF'))
+                        and visible.predicate_lemma == p['predicate_lemma']
+                        and sorted(visible.arguments) == sorted(tuple(x) for x in p['arguments'])
+                        and list(visible.written_modifiers) == p['written_modifiers']
+                        and (visible.result_state, visible.scene_state, visible.role_state)
+                            == (p['result_state'], p['scene_state'], p['role_state'])):
+                    matches.append(claim)
+        signatures = {(c['proposition']['polarity'], c['proposition']['modality'],
+                       c['proposition']['temporal_scope']) for c in matches}
+        verdict, reason = 'UNASSESSED', 'VISIBLE_OR_SOURCE_SCOPE_NOT_UNIQUELY_READ'
+        if len(matches) == 1:
+            expected = next(iter(signatures))
+            actual = (visible.polarity, visible.modality, visible.temporal_scope)
+            changed = [axis for axis, a, b in zip(('POLARITY', 'MODALITY', 'TIME'), expected, actual) if a != b]
+            day = matches[0]['proposition']['relative_day']
+            if visible.relative_day and day and visible.relative_day != day:
+                changed.append('RELATIVE_DAY')
+            _semantic_map_require(not changed, 'analysis_semantic_meaning_conflict')
+            verdict, reason = 'NO_CONFLICT_IN_CHECKED_SCOPE', 'COMPLETE_SOURCE_PREMISE_AXES_MATCH'
+        rows.append(dict(field=name, verdict=verdict, reason=reason,
+            source_claims=[c['claim_ref'] for c in matches],
+            checked_axes=['POLARITY', 'MODALITY', 'TIME'] if len(matches) == 1 else []))
+    return dict(fields=rows, interpretation_status='UNASSESSED')
+
 
 def _semantic_map_context(prepared, refs):
     from emlis_ai_current_input_bundle import normalize_emlis_current_input
@@ -3695,6 +3936,8 @@ def compile_analysis_semantic_map(prepared, packet, *, response_sha256):
     _semantic_map_require(type(packet['nodes']) is list and 1 <= len(packet['nodes']) <= 24
         and type(packet['edges']) is list and len(packet['edges']) <= 48)
     public_nodes, private_nodes, referenced = [], [], set()
+    source_conditions = {}
+    source_roots, node_reviews, edge_reviews = {}, [], []
     for index, node in enumerate(packet['nodes'], 1):
         _semantic_map_require(_semantic_map_keys(node, {'node_id', 'node_kind', 'title', 'summary', 'explanation', 'perspective', 'unknowns', 'evidence'})
             and node['node_id'] == 'n' + str(index)
@@ -3708,12 +3951,21 @@ def compile_analysis_semantic_map(prepared, packet, *, response_sha256):
         _semantic_map_require(len(ids) == len(set(ids)))
         refs = list(dict.fromkeys(ref for ref, _ in roots))
         referenced.update(refs)
+        source_notes, conditions, support = _semantic_map_source_context(prepared,
+            refs, [root for _, root in roots])
+        source_conditions['n' + str(index)] = (conditions, frozenset(refs))
+        context = list(dict.fromkeys([*_semantic_map_context(prepared, refs), *source_notes]))
+        source_roots['n' + str(index)] = [root for _, root in roots]
+        node_reviews.append(_semantic_map_visible_review(prepared,
+            source_roots['n' + str(index)],
+            [(key, node[key]) for key in ('title', 'summary', 'explanation')]))
         public_nodes.append(dict(node_ref='n' + str(index), node_kind=node['node_kind'],
             title=node['title'], summary=node['summary'], explanation=node['explanation'],
-            perspective=node['perspective'], context=_semantic_map_context(prepared, refs), unknowns=node['unknowns'],
+            perspective=node['perspective'], context=context, unknowns=node['unknowns'],
             evidence_badge_count=len(refs)))
+        all_roots = {root['evidence_id']: root for root in [*(root for _, root in roots), *support]}
         private_nodes.append(dict(public_nodes[-1],
-            record_refs=refs, evidence_refs=[root for _, root in roots]))
+            record_refs=refs, evidence_refs=list(all_roots.values())))
     # Separate roots do not turn one repeated generic description into a map.
     _semantic_map_require(len({(node['title'], node['summary'], node['explanation'])
                   for node in public_nodes}) == len(public_nodes))
@@ -3729,18 +3981,42 @@ def compile_analysis_semantic_map(prepared, packet, *, response_sha256):
         key = (min(edge['from'], edge['to']), max(edge['from'], edge['to']), edge['relation_kind'])
         _semantic_map_require(key not in seen)
         seen.add(key)
+        explanation = edge['explanation']
+        left, left_records = source_conditions[edge['from']]
+        right, right_records = source_conditions[edge['to']]
+        if (edge['relation_kind'] in {'CONTEXT_CONTRAST', 'SHARED_MEANING'}
+                and left and right and left != right and left_records.isdisjoint(right_records)):
+            # These are independent source premises, not a claim that the
+            # conditions caused an action or that the two records share an
+            # intention. Keep every proved condition visible on its node even
+            # if the existing edge text envelope has no room for the note.
+            left_text = '」「'.join(value.split('：', 1)[1] for value in left)
+            right_text = '」「'.join(value.split('：', 1)[1] for value in right)
+            note = 'それぞれの記録には「' + left_text + '」と「' + right_text + '」という文脈も書かれています。'
+            if len(explanation) + len(note) + 1 <= 1800:
+                explanation += '\n' + note
         public_edges.append(dict(edge_ref='e' + str(index), from_ref=edge['from'],
             to_ref=edge['to'], relation_kind=edge['relation_kind'],
-            label=edge['label'], explanation=edge['explanation']))
+            label=edge['label'], explanation=explanation))
+        edge_reviews.append(_semantic_map_visible_review(prepared,
+            [*source_roots[edge['from']], *source_roots[edge['to']]],
+            [(key, edge[key]) for key in ('label', 'explanation')]))
     count = len(prepared.frozen.members)
     reasons = json.loads(prepared.exclusion_reasons_json)
     coverage = dict(profile='cumulative.v1', source_count=prepared.source_count, processed_count=count,
         mapped_count=len(referenced), unparsed_count=count - len(referenced), excluded_count=sum(reasons.values()),
         exclusion_reasons=reasons, stale_supplement_count=prepared.stale_supplement_count)
+    review = (dict(schema_version='analysis.semantic-visible-review.v1',
+        overview=_semantic_map_visible_review(prepared,
+            [root for roots in source_roots.values() for root in roots], list(overview.items())),
+        nodes=node_reviews, edges=edge_reviews,
+        unknowns_status='UNASSESSED', interpretation_status='UNASSESSED')
+        if json.loads(prepared.material_json).get('source_duties') is not None else {})
     return AnalysisSemanticMapGraph(prepared.frozen.owner_scope,
         prepared.frozen.source_set_ref, prepared.source_guard, prepared.request_ref,
         semantic_map_hash(prepared.messages()), response_sha256,
         semantic_map_canonical(overview), semantic_map_canonical(private_nodes),
         semantic_map_canonical(public_edges),
         semantic_map_canonical([asdict(m) for m in prepared.frozen.members]),
-        semantic_map_canonical(coverage))
+        semantic_map_canonical(coverage), semantic_map_canonical(review))
+

@@ -53,6 +53,10 @@ name: Analysis observed content
       - ai/tests/test_analysis_cumulative*.py
       - ai/tests/test_analysis_semantic*.py
       - ai/tests/test_emlis_natural_reply_probe_http.py
+      - ai/tests/test_emlis_natural_question_application.py
+      - ai/tests/test_emlis_natural_reply_response_purpose.py
+      - ai/tests/test_analysis_semantic_source_duties.py
+      - supabase/migrations/*_emlis_natural_bound_questions.sql
       - ai/tests/test_emlis_natural_reply_meaning_reuse.py
       - ai/tests/test_emlis_natural_reply_meaning_budget.py
       - ai/tests/test_emlis_natural_reply_cognition.py
@@ -217,6 +221,8 @@ jobs:
           ai/tests/piece_v2/test_b05_refined_preview_saved_pipeline.py
           ai/tests/piece_v2/test_b05_refined_source_fence_sql.py
           ai/tests/test_emlis_natural_reply_application.py
+          ai/tests/test_emlis_natural_question_application.py
+          ai/tests/test_emlis_natural_reply_response_purpose.py
           ai/tests/test_emlis_natural_reply_meaning_reuse.py
           ai/tests/test_emlis_natural_reply_meaning_budget.py
           ai/tests/test_emlis_natural_reply_cognition.py
@@ -224,6 +230,7 @@ jobs:
           ai/tests/test_analysis_cumulative.py
           ai/tests/test_analysis_cumulative_model_source.py
           ai/tests/test_analysis_semantic_integration.py
+          ai/tests/test_analysis_semantic_source_duties.py
           ai/tests/test_analysis_cumulative_model_batches.py
           ai/tests/test_analysis_cumulative_jobs.py
           ai/tests/test_analysis_observed_api.py
@@ -265,3 +272,4 @@ jobs:
           ai/tests/test_analysis_saved_period.py
           ai/tests/test_analysis_observed_api.py
           ai/tests/test_analysis_observed_storage.py
+

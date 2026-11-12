@@ -32,6 +32,9 @@ name: Piece B2-B/B3/B4/B5 isolated PostgreSQL
       - ai/tests/test_follow_private_visibility_failure.py
       - ai/tests/test_emlis_ai_metadata_input_selection.py
       - ai/tests/test_emlis_natural_reply_application.py
+      - ai/tests/test_emlis_natural_question_application.py
+      - ai/tests/test_emlis_natural_reply_response_purpose.py
+      - supabase/migrations/*_emlis_natural_bound_questions.sql
       - ai/tests/piece_v2/db/test_b05_preview_persistence.py
       - ai/services/ai_inference/piece_v2_preview_service.py
       - ai/services/ai_inference/piece_model_source.py
@@ -57,6 +60,7 @@ name: Piece B2-B/B3/B4/B5 isolated PostgreSQL
       - ai/tests/test_piece_model_narrator_voice.py
       - ai/tests/test_piece_model_temporal_self_omission.py
       - ai/tests/test_piece_model_authoring_constraints.py
+      - ai/tests/test_piece_model_content_selection.py
       - ai/tests/test_piece_quoted_scope_binding.py
       - ai/tests/test_piece_model_authoring_application.py
       - ai/tests/test_piece_model_coordinated_actions.py
@@ -401,6 +405,8 @@ jobs:
           python -m pytest -q --tb=short -ra -p no:cacheprovider \
             -c /dev/null --rootdir=. --noconftest \
             ai/tests/test_emlis_natural_reply_application.py \
+            ai/tests/test_emlis_natural_question_application.py \
+            ai/tests/test_emlis_natural_reply_response_purpose.py \
             ai/tests/test_emlis_ai_metadata_input_selection.py \
             ai/tests/test_subscription_purchase_owner_hint.py \
             ai/tests/test_subscription_live_console_readiness.py \
@@ -429,6 +435,7 @@ jobs:
             ai/tests/test_piece_model_narrator_voice.py \
             ai/tests/test_piece_model_temporal_self_omission.py \
             ai/tests/test_piece_model_authoring_constraints.py \
+            ai/tests/test_piece_model_content_selection.py \
             ai/tests/test_piece_quoted_scope_binding.py \
             ai/tests/test_piece_model_authoring_application.py \
             ai/tests/test_piece_model_coordinated_actions.py \
@@ -457,3 +464,4 @@ jobs:
           python -m pytest -q --tb=short -ra -p no:cacheprovider \
             -c /dev/null --noconftest \
             ai/tests/piece_v2/db/test_b12_shared_preview_native.py
+

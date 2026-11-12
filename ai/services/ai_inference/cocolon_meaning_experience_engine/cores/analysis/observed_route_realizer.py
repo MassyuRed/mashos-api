@@ -1116,6 +1116,11 @@ class AnalysisSemanticMapArtifact:
     def private_evidence(self):
         graph = dict(nodes=json.loads(self.graph.nodes_json),
             edges=json.loads(self.graph.edges_json))
+        review = json.loads(self.graph.meaning_review_json)
+        if review:
+            # The private report records a bounded body read. It is neither
+            # a public DTO field nor a semantic PASS for the whole map.
+            graph['meaning_review'] = review
         return dict(schema_version='analysis.semantic-private-evidence.v1',
             projection_of=self.reference, source_set_ref=self.source_set_ref,
             source_guard=self.graph.source_guard, request_ref=self.graph.request_ref,
@@ -1195,4 +1200,5 @@ def analysis_semantic_projection_text(projection):
         lines.extend(['', index[edge['from_ref']]['title'] + ' ／ ' + index[edge['to_ref']]['title'],
             edge['label'], edge['explanation']])
     return '\n'.join(lines)
+
 

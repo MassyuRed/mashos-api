@@ -78,12 +78,109 @@ def _source_action_constraint(text, *, include_semantic_roles=False):
     return result
 
 
+def _piece_content_selection(parts, plans, sources, slots):
+    """Transfer lossless content selection to the current Piece source plan.
+
+    NLS v3's content-selection owner selects every required obligation before
+    applying a budget, and keeps nonselected meanings explicit. Piece already
+    owns a different inventory: every written proposition has a required text
+    duty, while saved selections are private context. Reuse that distinction
+    without importing the old Emlis stage, section budgets or reception voice.
+
+    This is a generation input, not a meaning verdict or an expected body.
+    Exact spans resolve against the existing complete field_slots literal;
+    the plan does not repeat the input or require an output clause per span.
+    An editorial role does not authorize a missing cause or a new fact. The
+    existing independent policy still owns admission after generation.
+    """
+    from cocolon_meaning_experience_engine.piece_source import piece_source_text
+
+    fields, relations, context = {}, [], []
+    for part, plan, source in zip(parts, plans, sources, strict=True):
+        text = piece_source_text(part)
+        sentences = {row.node_id: row for row in part.sentences}
+        evidence = {row.source_span_id: row for row in part.evidence}
+        nodes = {row.node_id: row for row in part.graph.nodes}
+        duties = {row.node_id: row for row in plan.duties}
+        ordered = [node_id for group in plan.block_node_ids for node_id in group]
+        if (len(duties) != len(plan.duties) or len(ordered) != len(set(ordered))
+                or set(duties) != set(sentences) or set(ordered) != set(duties)):
+            raise ValueError('piece_model_content_selection_coverage')
+        node_slots = {}
+        # Source order, rather than a lexical importance score, owns the
+        # reading order. Each source field/paragraph keeps its own output slot.
+        for node_id, sentence in sentences.items():
+            ref = evidence[node_id]
+            owners = [key for key, slot in slots.items()
+                      if slot['source_id'] == source['source_id']
+                      and slot['field_path'] == ref.field_path
+                      and slot['scalar_start'] <= ref.scalar_start
+                      < ref.scalar_end <= slot['scalar_end']]
+            if len(owners) != 1:
+                raise ValueError('piece_model_content_selection_slot')
+            key = owners[0]
+            slot = slots[key]
+            node_slots[node_id] = key
+            literal = text[sentence.source_start:sentence.source_end]
+            a, b = ref.scalar_start - slot['scalar_start'], ref.scalar_end - slot['scalar_start']
+            if (slot['literal'][a:b] != literal or nodes[node_id].value != literal
+                    or nodes[node_id].owner_id not in part.graph.required_owner_refs):
+                raise ValueError('piece_model_content_selection_source')
+            field = fields.setdefault(key, dict(
+                source_id=source['source_id'], source_role=source['role'],
+                source_version=source['source_version'],
+                field_path=slot['field_path'], scalar_start=slot['scalar_start'],
+                scalar_end=slot['scalar_end'], selected=[], reading_groups=[]))
+            field['selected'].append(dict(
+                node_id=node_id, status='selected', required=True,
+                reason='REQUIRED_SOURCE_PROPOSITION', operation=duties[node_id].operation,
+                scalar_start=ref.scalar_start,
+                scalar_end=ref.scalar_end, provisional_editorial_role=sentence.role))
+        for group in plan.block_node_ids:
+            group_slots = {node_slots[node_id] for node_id in group}
+            for key in slots:
+                if key in group_slots:
+                    fields[key]['reading_groups'].append(
+                        [node_id for node_id in group if node_slots[node_id] == key])
+        for edge in part.graph.edges:
+            if edge.source_node_id not in node_slots or edge.target_node_id not in node_slots:
+                raise ValueError('piece_model_content_selection_relation')
+            relations.append(dict(
+                source_id=source['source_id'], source_role=source['role'],
+                relation=edge.relation, source_slot=node_slots[edge.source_node_id],
+                source_node_id=edge.source_node_id,
+                target_slot=node_slots[edge.target_node_id], target_node_id=edge.target_node_id,
+                grounding_kind=edge.grounding_kind))
+        for scope in part.expression_scopes:
+            sentence = sentences[scope.node_id]
+            ref = evidence[scope.node_id]
+            delta = ref.scalar_start - sentence.source_start
+            relations.append(dict(
+                source_id=source['source_id'], source_role=source['role'],
+                relation=scope.relation, node_id=scope.node_id,
+                field_slot=node_slots[scope.node_id], marker=scope.marker,
+                scope_scalar_span=[a + delta for a in scope.scope_scalar_span],
+                expression_scalar_span=[a + delta for a in scope.expression_scalar_span]))
+        # No source text is dropped to make room for these context labels.
+        # In particular selecting an emotion does not author an image claim.
+        for node in part.selection_contexts:
+            context.append(dict(source_id=source['source_id'], source_role=source['role'],
+                node_id=node.node_id, status='context_only',
+                reason='NO_WRITTEN_PROPOSITION_AUTHORITY'))
+    if set(fields) != set(slots):
+        raise ValueError('piece_model_content_selection_coverage')
+    return dict(field_slots=fields, relations=relations, context_only=context,
+                deferred_by_budget=[], required_source_omission_allowed=False,
+                source_order_implies_cause_or_time=False)
+
+
 def _authoring_constraints(prepared, source_request, slots):
-    """Project admitted source axes for an explicit development comparison.
+    """Return admitted source axes and whole-content selection for the author.
 
     The source request is required because preparation intentionally freezes
     source material before finite meaning admission. This helper neither
     invents an admission from wire data nor supplies an expected Piece body.
+    Unadmitted material receives neither constraints nor a content selection.
     """
     from cocolon_meaning_experience_engine.piece_semantic_admission import (
         prepare_piece_model_request, piece_model_source_plan)
@@ -100,7 +197,7 @@ def _authoring_constraints(prepared, source_request, slots):
     except PieceContractError:
         # An unread/ambiguous source gains no authoring claims. Candidate
         # admission later keeps its existing refusal; no grammar is widened.
-        return {}
+        return {}, None
     parts = ((meaning.original, meaning.supplemental)
              if type(meaning) is PieceRefinedMeaning else (meaning,))
     plans = ((plan.original_plan, plan.supplemental_plan)
@@ -227,7 +324,7 @@ def _authoring_constraints(prepared, source_request, slots):
                     result[key]['required_actions'] = actions
                 if quotes:
                     result[key]['literal_quotes'] = quotes
-    return result
+    return result, _piece_content_selection(parts, plans, sources, slots)
 
 
 def build_piece_model_messages(prepared, *, include_authoring_constraints=False, source_request=None):
@@ -261,7 +358,10 @@ def build_piece_model_messages(prepared, *, include_authoring_constraints=False,
         from cocolon_meaning_experience_engine.preparation_sources import piece_model_field_slots
         control['field_slots'] = piece_model_field_slots(material)
         if include_authoring_constraints:
-            constraints = _authoring_constraints(prepared, source_request, control['field_slots'])
+            constraints, selection = _authoring_constraints(
+                prepared, source_request, control['field_slots'])
+            if selection is not None:
+                control['content_selection'] = selection
             if constraints:
                 control['authoring_constraints'] = dict(
                     instruction='各欄に対応する原文で成立した条件です。評価の本人・対象・述語・肯否・時点・留保を本文に保持し、named_peopleの氏名は同じ行のpublic_roleへ抽象化してください。他の欄やsourceへ条件を移さず、条件にない意味を補わないでください。',
@@ -451,3 +551,4 @@ async def call_piece_model_source(source, prepared, *, source_request=None):
     if type(source) is _ApplicationPieceModelSource:
         return await source(prepared, source_request=source_request)
     return await source(prepared)
+

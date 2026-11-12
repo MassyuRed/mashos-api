@@ -2137,6 +2137,15 @@ SEMANTIC_MAP_RELATION_KINDS = frozenset({'SELF_OUTSIDE_GAP', 'CRITERION_EXPRESSI
 
 SEMANTIC_MAP_MAX_RESPONSE_BYTES = 262144
 
+# Keep frozen v1 prepared messages reproducible. Only newly prepared maps
+# opt into the source duties; the public map and model response schemas stay
+# unchanged and old saved projections are read without regenerating them.
+SEMANTIC_MAP_SOURCE_DUTIES_PROFILE = 'semantic_map.source_duties.v2'
+_SEMANTIC_MAP_SOURCE_DUTIES_INSTRUCTION = '''
+source_dutiesは既存の原文読取で確認できた前提と、その確認範囲です。claimsの主体・否定・時点・希望・可能性を、元のfield全文と一緒に保持します。unassessed_source_rangesに残る内容も読み、機械で読めたclaimsだけへ地図を縮めません。
+同じ行動でも場面・担当・負荷・時点などの条件を見比べ、条件が同じと確認できない記録を同じ傾向へ一括しません。結果や非行動から意図を確定せず、書かれた希望を実行済みの事実にしません。
+written_relationsのOBSERVED_ORDERは明示された順序、REPEATED_COOCCURRENCEは併記の繰返しだけです。原因・動機・固定人格へ読み替えません。claimsの前提が確認できても、nodeの解釈全体や関係線が確認済みになったことにはしません。分類名・claim_ref・field番号・内部判定は表示文へ出しません。'''
+
 
 class AnalysisSemanticMapError(ValueError):
     """Fixed public-safe reason codes only; never include input/model content."""
@@ -2234,17 +2243,24 @@ class AnalysisSemanticMapInput:
     response: object = None
     source_request: object = None
     source_snapshot_json: str = ''
+    source_duties_json: str = ''
 
     def messages(self):
-        return [dict(role='system', content=_SEMANTIC_MAP_INSTRUCTION + '\n参照辞書（本人の事実ではない）:\n' + self.dictionary_json),
+        instruction = _SEMANTIC_MAP_INSTRUCTION
+        if self.prompt_version == SEMANTIC_MAP_SOURCE_DUTIES_PROFILE:
+            instruction += _SEMANTIC_MAP_SOURCE_DUTIES_INSTRUCTION
+        return [dict(role='system', content=instruction + '\n参照辞書（本人の事実ではない）:\n' + self.dictionary_json),
                 dict(role='user', content=self.material_json)]
 
 
-def prepare_analysis_semantic_map(request, snapshot):
+def prepare_analysis_semantic_map(request, snapshot, *,
+        prompt_version=SEMANTIC_MAP_PROFILE):
     """Admit original sources and exact source metadata before model acquisition."""
     from cocolon_meaning_experience_engine.cores.analysis.semantic_admission import AnalysisSemanticError
     from cocolon_meaning_experience_engine.cores.analysis.source_adapter import freeze_analysis_sources, AnalysisSourceError
     _semantic_map_require(type(request) is AnalysisObservedMapRequest, 'analysis_semantic_input_invalid')
+    _semantic_map_require(prompt_version in {SEMANTIC_MAP_PROFILE,
+        SEMANTIC_MAP_SOURCE_DUTIES_PROFILE}, 'analysis_semantic_input_invalid')
     source_request = request
     _semantic_map_require(type(snapshot.get('guard')) is str and re.fullmatch(
         r'analysis-db-cumulative-v1:[0-9a-f]{64}', snapshot['guard']), 'analysis_model_guard_invalid')
@@ -2318,11 +2334,20 @@ def prepare_analysis_semantic_map(request, snapshot):
             selected_categories=original['category'], selected_emotions=original['emotions'],
             emotion_details=original['emotion_details']))
     material = dict(analysis_as_of=frozen.period[1], records=records, fields=material_fields)
+    source_duties_json = ''
+    if prompt_version == SEMANTIC_MAP_SOURCE_DUTIES_PROFILE:
+        from .intent_compiler import (analysis_semantic_source_duties,
+            analysis_semantic_source_duties_material)
+        duties = analysis_semantic_source_duties(frozen, tuple(stored_fields))
+        source_duties_json = semantic_map_canonical(duties)
+        material['source_duties'] = analysis_semantic_source_duties_material(duties)
     material_json, dictionary_json = semantic_map_canonical(material), semantic_map_canonical(_semantic_map_foundation())
     request_ref = 'analysis-semantic-request:' + semantic_map_hash([
-        SEMANTIC_MAP_PROFILE, frozen.owner_scope, frozen.source_set_ref, snapshot['guard'], material_json, dictionary_json])
+        prompt_version, frozen.owner_scope, frozen.source_set_ref, snapshot['guard'], material_json, dictionary_json])
     return AnalysisSemanticMapInput(request, snapshot['guard'], request_ref, material_json,
-        dictionary_json, tuple(stored_fields), frozen, len(snapshot['members']), semantic_map_canonical(dict(reasons)), stale, source_request=source_request, source_snapshot_json=semantic_map_canonical(snapshot))
+        dictionary_json, tuple(stored_fields), frozen, len(snapshot['members']), semantic_map_canonical(dict(reasons)), stale,
+        prompt_version=prompt_version, source_request=source_request,
+        source_snapshot_json=semantic_map_canonical(snapshot), source_duties_json=source_duties_json)
 
 
 def _semantic_map_evidence(prepared, value):
@@ -2374,7 +2399,7 @@ def generate_analysis_semantic_map(request, model_input):
         _semantic_map_require(type(model_input) is AnalysisSemanticMapInput,
             'analysis_semantic_input_invalid')
         expected = prepare_analysis_semantic_map(model_input.source_request,
-            json.loads(model_input.source_snapshot_json))
+            json.loads(model_input.source_snapshot_json), prompt_version=model_input.prompt_version)
         _semantic_map_require(expected.request == request
             and expected == replace(model_input, response=None), 'analysis_semantic_input_unbound')
         packet = _admit_analysis_semantic_map_response(expected, model_input.response)
@@ -2392,3 +2417,4 @@ def generate_analysis_semantic_map(request, model_input):
             trace = trace.tb_next
         logging.getLogger(__name__).warning('analysis_semantic_rejected stage=%s', '>'.join(locations))
         return AnalysisSemanticMapOutcome(EngineStatus.REJECTED, (str(exc),))
+

@@ -5,7 +5,7 @@ selects another provider, trains a model, or treats its reply as user evidence.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import json
 import re
 from urllib.parse import urlsplit
@@ -46,6 +46,20 @@ MEANING_SUPPORT_MAX_WITNESS_BYTES = 600
 MEANING_SUPPORT_MAX_BYTES = 1600
 MEANING_SUPPORT_MESSAGES_MAX_BYTES = 5800
 
+# The existing thread owner chooses the purpose before calling the one
+# configured author. Questions stay separately bound QUESTION events;
+# neither a model response nor this private annotation creates a question.
+_RESPONSE_STAGES = {"FINAL", "PRE_QUESTION", "REFINED"}
+_RESPONSE_PURPOSE_MESSAGES = {
+    "PRE_QUESTION": "\nこの返事の後には、既存の問い処理で選ばれた一点の問いを別に表示します。今回は記録への短い受け止めを返してください。まだ本人に確かめる内容の結論や動機を補わず、回答後に行う詳しい応答を先に完成させないでください。問い自体や回答の誘導は本文に入れないでください。",
+    "REFINED": "\n今回は本人の回答を受けた後の返事です。current_answersの回答と対応するai_question_contextを合わせて読み、本人が答えた範囲で原入力の読みを更新してください。原入力と補足は別の本人情報です。回答していない事情や意図を埋めず、訂正されていない出来事・時点・感情は残してください。内部の更新説明ではなく、今の有効な本人情報に対する自然な返事を返してください。",
+}
+
+_ANSWER_MEANING_MESSAGE = """
+answer_meaningは既存の本人回答更新処理で確認した、今回の回答の反映範囲です。active_claimsは有効な本人記述の読取補助であり、全部を復唱する指示ではありません。inactive_claimsとinactive_relationsは訂正・撤回で現在の読みから外れた内容です。元入力に字面が残っていても、現在の事実や本人特徴として復活させないでください。
+claim_anchorがその読取の対象で、source_fragmentsは位置を確かめるための原文の周辺です。周辺に一緒に書かれた別の気持ちや関係まで有効だと扱わないでください。選択されたカテゴリ・感情は別の入力情報であり、本人が書いた出来事・反応のclaimではありません。
+assessmentがRESOLVEDでない部分やunresolved_partsは、既存処理で読みを確定できていません。「はい」だけから理由や気持ちを埋めたり、処理の未対応を本人の説明不足と決めたりしないでください。原入力・回答の原文を優先し、更新対象以外の意味と、出来事当時／回答時点の違いを保って返事をしてください。内部の識別子や判定名は本文へ出さないでください。"""
+
 
 def _compact_json(value):
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
@@ -64,13 +78,21 @@ def system_message_for(request):
     try:
         material = request if type(request) is dict else json.loads(
             request if isinstance(request, str) else request.material_json)
+        message = SYSTEM_MESSAGE
+        purpose = material.get("response_purpose")
+        if (type(purpose) is dict and set(purpose) == {"stage"}
+                and purpose["stage"] in _RESPONSE_PURPOSE_MESSAGES):
+            message += _RESPONSE_PURPOSE_MESSAGES[purpose["stage"]]
+        if material.get("answer_meaning", {}).get("schema_version") == "natural_answer_meaning.v1":
+            message += _ANSWER_MEANING_MESSAGE
         support = material.get("source_meaning_support")
         if not (type(support) is dict and isinstance(support.get("witnesses"), list)
                 and support["witnesses"]):
-            return SYSTEM_MESSAGE
+            return message
         from .natural_reply_meaning import SUPPORT_SCHEMA
         if support.get("schema_version") == SUPPORT_SCHEMA:
-            return SYSTEM_MESSAGE + MEANING_SUPPORT_MESSAGE
+            return message + MEANING_SUPPORT_MESSAGE
+        return message
     except Exception:
         pass
     return SYSTEM_MESSAGE
@@ -187,8 +209,76 @@ class NaturalReply:
     schema_version: str = ARTIFACT_SCHEMA
 
 
-def prepare_natural_reply(request, *, use_meaning_support=False):
+def _answer_meaning_material(prepared, admitted):
+    """Project the existing answer owner's active/withdrawn source readings.
+
+    Source leaves are read through the existing qualified locator, never from
+    the preceding AI reply. The supplied object is internal, not public input.
+    """
+    from .emlis_answer_update import PreparedEmlisMeaning
+    if (type(prepared) is not PreparedEmlisMeaning or not admitted.answers
+            or prepared.thread.original != admitted.original
+            or prepared.thread.answers != admitted.answers
+            or prepared.thread.source_prefix_ref != admitted.source_prefix_ref
+            or prepared.checkpoint.source_prefix_ref != admitted.source_prefix_ref
+            or replace(prepared.thread.control, prepared_meaning_checkpoint_ref=None)
+                != replace(admitted.control, prepared_meaning_checkpoint_ref=None)):
+        raise NaturalReplyError('natural_reply_answer_meaning_binding_invalid')
+    checkpoint = prepared.checkpoint
+    update = checkpoint.answer_update
+    if update is None:
+        raise NaturalReplyError('natural_reply_answer_meaning_binding_invalid')
+    resolver = admitted.resolver()
+    from emlis_ai_grounded_human_reception import final_reception_source_anchor_text
+    envelopes = {admitted.original.envelope.envelope_id: (admitted.original.envelope, None)}
+    envelopes.update({a.envelope.envelope_id: (a.envelope, a.source.answer_id) for a in admitted.answers})
+
+    def fragments(span_ids):
+        rows = []
+        for span_id in span_ids:
+            evidence = resolver.qualified_ref(span_id).evidence
+            envelope, answer_id = envelopes[evidence.source_envelope_id]
+            row = {"source_role": envelope.source_role, "field": evidence.field_path,
+                "scalar_start": evidence.scalar_start, "scalar_end": evidence.scalar_end,
+                "text": envelope.raw_utf8[evidence.utf8_start:evidence.utf8_end].decode('utf-8')}
+            if answer_id is not None:
+                row["answer_id"] = answer_id
+            if row not in rows:
+                rows.append(row)
+        return rows
+
+    inactive = set(checkpoint.inactive_claim_refs)
+    nuclei = {n.nucleus_id: n for n in (*prepared.original_plan.nuclei, *prepared.accepted_nuclei)}
+    active_claims, inactive_claims = [], []
+    for nucleus in nuclei.values():
+        if (not nucleus.source_fields
+                or not set(nucleus.source_fields) <= {"memo", "memo_action", "answer_text_private"}):
+            # Category/emotion selections remain in the original material;
+            # they never become written event/reaction claims in this view.
+            continue
+        frame = nucleus.semantic_frame
+        anchor = final_reception_source_anchor_text(nucleus.nucleus_id, nuclei, resolver)
+        if not anchor:
+            raise NaturalReplyError('natural_reply_answer_meaning_anchor_missing')
+        row = {"kind": nucleus.kind, "claim_anchor": anchor,
+            "source_fragments": fragments(nucleus.source_span_ids),
+            "actor": frame.actor, "polarity": frame.polarity, "modality": frame.modality,
+            "time_scope": frame.time_scope}
+        (inactive_claims if nucleus.nucleus_id in inactive else active_claims).append(row)
+    inactive_relations = [{"relation": r.type, "source_fragments": fragments(r.source_span_ids),
+        "from_claim_anchor": final_reception_source_anchor_text(r.from_nucleus_id, nuclei, resolver),
+        "to_claim_anchor": final_reception_source_anchor_text(r.to_nucleus_id, nuclei, resolver)}
+        for r in prepared.original_plan.relations if r.relation_id in inactive]
+    return {"schema_version": "natural_answer_meaning.v1", "assessment": checkpoint.assessment_status,
+        "disposition": update.disposition, "active_claims": active_claims,
+        "inactive_claims": inactive_claims, "inactive_relations": inactive_relations,
+        "unresolved_parts": [part.reason_code for part in checkpoint.unresolved_parts]}
+
+
+def prepare_natural_reply(request, *, use_meaning_support=False, response_stage="FINAL", prepared_meaning=None):
     """Return admitted user material and the existing independent Safety result."""
+    if response_stage not in _RESPONSE_STAGES:
+        raise NaturalReplyError('natural_reply_response_stage_invalid')
     admitted = admit_emlis_thread(request)
     original = request.current_input_bundle.raw_current_input
     current_id = original.get('id')
@@ -221,6 +311,14 @@ def prepare_natural_reply(request, *, use_meaning_support=False):
                     'input_id': f.source_emotion_id, 'status': f.status, 'correction_text': f.correction_text,
                     'version': f.version, 'updated_at': f.updated_at}
                     for f in feedback if f.source_emotion_id in included_ids]}
+    if response_stage == "REFINED" and not material["current_answers"]:
+        raise NaturalReplyError('natural_reply_refined_answer_missing')
+    if response_stage != "FINAL":
+        # Keep the ordinary first/final request byte-for-byte compatible.
+        # This control is derived by the service, never copied from input.
+        material["response_purpose"] = {"stage": response_stage}
+    if prepared_meaning is not None:
+        material["answer_meaning"] = _answer_meaning_material(prepared_meaning, admitted)
     # Development comparisons showed mixed quality. Normal generation keeps
     # the original prompt/material; only an explicit research call adds hints.
     # The independent post-generation reader still uses the original sources.
@@ -305,3 +403,4 @@ class SelfHostedNaturalReplySource:
             raise
         except Exception:
             raise NaturalReplyError("natural_reply_provider_unavailable") from None
+

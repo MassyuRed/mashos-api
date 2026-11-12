@@ -93,13 +93,22 @@ class SelfHostedSemanticAnalysisModelSource(SelfHostedAnalysisModelSource):
     Uses the same private self-hosted endpoint, without the old quotation-only
     parser. An invalid or interrupted synthesis never becomes a finite map.
     """
-    prompt_version = 'semantic_map.v1'
+    def __init__(self, *, endpoint, model, api_key, transport=None,
+            semantic_prompt_version='semantic_map.v1'):
+        from cocolon_meaning_experience_engine.cores.analysis.semantic_admission import (
+            SEMANTIC_MAP_PROFILE, SEMANTIC_MAP_SOURCE_DUTIES_PROFILE)
+        if type(semantic_prompt_version) is not str or semantic_prompt_version not in {
+                SEMANTIC_MAP_PROFILE, SEMANTIC_MAP_SOURCE_DUTIES_PROFILE}:
+            raise ValueError('analysis_model_configuration_invalid')
+        super().__init__(endpoint=endpoint, model=model, api_key=api_key, transport=transport)
+        self._prompt_version = semantic_prompt_version
 
     async def __call__(self, prepared):
         from analysis_semantic_map import SemanticMapInput
         from cocolon_meaning_experience_engine.cores.analysis.semantic_admission import (
             AnalysisModelQuotedParentUnitsResponse, digest, require)
-        require(type(prepared) is SemanticMapInput, 'analysis_semantic_input_invalid')
+        require(type(prepared) is SemanticMapInput and prepared.prompt_version == self.prompt_version,
+            'analysis_semantic_input_invalid')
         messages = prepared.messages()
         try:
             async with httpx.AsyncClient(transport=self._transport, follow_redirects=False,
@@ -145,7 +154,7 @@ def analysis_model_prompt_version(source):
     The application factory and its environment/settings identity stay v4.
     """
     if is_semantic_analysis_model_source(source):
-        return 'semantic_map.v1'
+        return source.prompt_version if type(source) is SelfHostedSemanticAnalysisModelSource else 'semantic_map.v1'
     return source.prompt_version if type(source) is SelfHostedAnalysisModelSource else DEFAULT_PROMPT_VERSION
 
 
@@ -217,3 +226,4 @@ def application_analysis_model_source():
 def require_current_analysis_model_source(source):
     if type(source) in {_ApplicationAnalysisSource, _ApplicationSemanticAnalysisSource}:
         source.require_current()
+

@@ -34,9 +34,15 @@ DTO_SCHEMA = "cocolon.emlis_thread.application.v1"
 RUNTIME_PROFILE = "q2.free.one_round.v1"
 Q3_PROFILE = "q3.plan.sequential.v1"
 NATURAL_REPLY_PROFILE = "natural_reply.v1"
+NATURAL_QUESTION_POLICY = "native_bound_question.v1"
 
 def question_limit(t, tier):
     started = t.get("started_question_limit", 1)
+    data = t.get("data", {})
+    if (data.get("runtime_profile") == Q3_PROFILE
+            and data.get("response_profile") == NATURAL_REPLY_PROFILE
+            and data.get("natural_question_policy") == NATURAL_QUESTION_POLICY):
+        return min(started, 3)
     return min(started, 3 if tier == "premium" else 1)
 RETRYABLE_FAILURES = {"storage_temporarily_unavailable", "worker_interrupted"}
 
@@ -240,7 +246,7 @@ def thread_dto(snapshot, *, requested_attempt_id=None, can_write=True):
 class EmlisThreadService:
     def __init__(self, store=None, engine=None, *, runtime_profile=RUNTIME_PROFILE, enforce_application_policy=False,
                  semantic_profile=None, offline_candidate_source=None, offline_model_attempt_seconds=None,
-                 natural_reply_source=None, response_profile=None):
+                 natural_reply_source=None, response_profile=None, natural_questions_enabled=True):
         if runtime_profile not in {RUNTIME_PROFILE, Q3_PROFILE}:
             raise ValueError("unsupported_thread_profile")
         if natural_reply_source is not None:
@@ -251,6 +257,9 @@ class EmlisThreadService:
             raise ValueError("unsupported_response_profile")
         self.response_profile = response_profile
         self.natural_reply_source = natural_reply_source
+        if type(natural_questions_enabled) is not bool:
+            raise ValueError("natural_question_setting_invalid")
+        self.natural_questions_enabled = natural_questions_enabled
         if semantic_profile is not None or offline_candidate_source is not None:
             from cocolon_meaning_experience_engine.emlis_semantic_admission import PROFILE, PROFILE_V2, MODEL_PROFILE
             if semantic_profile not in {PROFILE, PROFILE_V2, MODEL_PROFILE} or not callable(offline_candidate_source) or enforce_application_policy:
@@ -295,9 +304,12 @@ class EmlisThreadService:
         dto = thread_dto(snapshot, can_write=self._writable() and self._semantic_writable(snapshot), **kwargs)
         t = snapshot.get("thread")
         if t and t["data"].get("response_profile") == NATURAL_REPLY_PROFILE:
-            # An unknown provider result never permits another acquisition.
+            # A saved receipt may resume without acquisition. An interrupted
+            # source/update preparation with no call marker may also resume;
+            # a started call without a receipt remains an unknown result.
             received = self._natural_receipt(snapshot, "NATURAL_REPLY_RECEIVED")
-            dto["can_retry"] = bool(dto.get("can_retry") and received)
+            started = self._natural_receipt(snapshot, "NATURAL_REPLY_CALL_STARTED")
+            dto["can_retry"] = bool(dto.get("can_retry") and (received or not started))
         return dto
 
     async def get(self, user_id, input_id):
@@ -334,7 +346,8 @@ class EmlisThreadService:
         if _check(snapshot):
             return self._dto(snapshot)
         t = {"id": str(uuid4()), "state": "INITIALIZING", "issued_count": 0,
-            "started_question_limit": 3 if self.runtime_profile == Q3_PROFILE and snapshot["tier"] == "premium" else 1,
+            "started_question_limit": 3 if self.runtime_profile == Q3_PROFILE and (
+                snapshot["tier"] == "premium" or self.response_profile == NATURAL_REPLY_PROFILE) else 1,
             "data": {"runtime_profile": self.runtime_profile, "execution_mode": APPLICATION_EXECUTION_MODE,
                      "started_tier": snapshot["tier"],
                      "body_state": "UNAVAILABLE", "answer_assessment": "NOT_APPLICABLE"}}
@@ -342,6 +355,9 @@ class EmlisThreadService:
             t["data"].update(semantic_profile=self.semantic_profile, execution_mode=ExecutionMode.OFFLINE_CANDIDATE.value)
         if self.response_profile:
             t["data"].update(response_profile=self.response_profile, analysis_state="NOT_GENERATED")
+            if self.runtime_profile == Q3_PROFILE:
+                t["data"].update(natural_question_policy=NATURAL_QUESTION_POLICY,
+                    natural_questions_enabled=self.natural_questions_enabled)
         self._begin(t, snapshot)
         if self.runtime_profile == Q3_PROFILE:
             t["data"].update(context_guards=[h["guard"] for h in snapshot["context"]["history"]],
@@ -484,6 +500,31 @@ class EmlisThreadService:
             if not (t["state"] == "AWAITING_CONTINUE" and action == "stop") and (
                     t["state"] != "AWAITING_ANSWER" or not q or q["question_id"] != question_id):
                 raise ThreadStoreError("question_conflict", 409)
+            if (t["data"].get("response_profile") == NATURAL_REPLY_PROFILE
+                    and t["data"].get("natural_question_policy") == NATURAL_QUESTION_POLICY):
+                # The saved pre-question acknowledgement is not a completed
+                # reply. An explicit skip/end asks the same sole provider for
+                # a final response over the current admitted sources. This is
+                # a distinct purpose, never a retry of an unknown acquisition.
+                snapshot = await self._hydrate(user_id, snapshot, fresh=True)
+                t = copy.deepcopy(snapshot["thread"])
+                t["data"].update(natural_question_stop=action, natural_response_stage="FINAL")
+                t["state"] = "REFINING" if t.get("latest_answer_event_id") else "INITIALIZING"
+                self._begin(t, snapshot)
+                proposed = {**snapshot, "thread": t}
+                t["source_prefix_ref"] = admit_emlis_thread(_request(proposed)).source_prefix_ref
+                event = _event("OPERATION", {"status": "RUNNING", "stage": "NATURAL_FINAL_REQUESTED",
+                    "question_ending": action, "request_fingerprint": fingerprint}, t, key=idempotency_key)
+                try:
+                    saved = await self._commit(user_id, snapshot, t, [event])
+                except ThreadStoreError as exc:
+                    if exc.status == 409:
+                        replay = self._replay(await self._hydrate(user_id, await self.store.read(
+                            user_id, thread_id=thread_id)), idempotency_key, fingerprint)
+                        if replay:
+                            return replay
+                    raise
+                return await self._process(user_id, saved)
             t["state"] = "COMPLETED"
             if t["data"]["body_state"] == "PRE_QUESTION":
                 t["data"]["body_state"] = "FINAL"
@@ -601,10 +642,79 @@ class EmlisThreadService:
     @staticmethod
     def _natural_receipt(snapshot, stage):
         t = snapshot["thread"]
+        purpose = t["data"].get("natural_response_stage", "FINAL")
         return next((e for e in reversed(snapshot["events"]) if e["kind"] == "OPERATION"
             and e["payload"].get("stage") == stage
             and e["payload"].get("source_prefix_ref") == t["source_prefix_ref"]
-            and e["payload"].get("context_ref") == _context_ref(snapshot)), None)
+            and e["payload"].get("context_ref") == _context_ref(snapshot)
+            and e["payload"].get("response_stage", "FINAL") == purpose), None)
+
+    async def _prepare_natural_question(self, user_id, snapshot):
+        """Reuse the source-bound question/update owners, without an old author.
+
+        Unsupported initial prose remains a natural reply, not a compulsory
+        finite checkpoint or an invented question. A persisted answer, on the
+        other hand, is rebound to its actual issued question by the existing
+        update owner before a new meaning checkpoint is committed.
+        """
+        t = snapshot["thread"]
+        if t["data"].get("natural_question_policy") != NATURAL_QUESTION_POLICY:
+            return snapshot, None, None
+        from cocolon_meaning_experience_engine.emlis_question import (
+            original_meaning_plan, question_candidate)
+        request = _request(snapshot)
+        admitted = admit_emlis_thread(request)
+        prepared = None
+        if admitted.answers:
+            from cocolon_meaning_experience_engine.emlis_answer_update import (
+                prepare_emlis_meaning, build_updated_grounded_plan)
+            saved = _find(snapshot, t.get("current_meaning_event_id"))
+            checkpoint_ref = (saved["payload"]["checkpoint_id"] if saved and
+                t.get("evaluated_prefix_ref") == t["source_prefix_ref"] else None)
+            prepared = await asyncio.to_thread(prepare_emlis_meaning,
+                _request(snapshot, checkpoint_ref=checkpoint_ref))
+            checkpoint = _json(prepared.checkpoint)
+            if checkpoint_ref is not None:
+                if saved["payload"] != checkpoint:
+                    raise ValueError("natural_answer_checkpoint_changed")
+            else:
+                next_thread = copy.deepcopy(t)
+                event = _event("MEANING_UPDATE", checkpoint, next_thread)
+                update = prepared.checkpoint.answer_update
+                next_thread.update(current_meaning_event_id=event["id"],
+                    evaluated_prefix_ref=prepared.checkpoint.source_prefix_ref)
+                next_thread["data"].update(evaluated_tier=snapshot["tier"],
+                    answer_assessment=prepared.checkpoint.assessment_status,
+                    meaning_updated=bool(update and update.updates),
+                    body_state="MEANING_UPDATED_BODY_UNAVAILABLE" if update and update.updates
+                        else "ANSWER_UNREFLECTED")
+                snapshot = await self._commit(user_id, snapshot, next_thread, [event],
+                    finishing_attempt=t["active_attempt_id"])
+                t = snapshot["thread"]
+            if prepared.checkpoint.assessment_status != "RESOLVED":
+                return snapshot, None, prepared
+            plan = await asyncio.to_thread(build_updated_grounded_plan, prepared)
+        else:
+            # Source/Safety admission has already succeeded in the caller.
+            # This optional old finite adapter cannot manufacture a missing
+            # dimension from a parser failure or block ordinary free prose.
+            try:
+                plan = await asyncio.to_thread(original_meaning_plan, admitted)
+            except Exception:
+                return snapshot, None, None
+        if (not t["data"].get("natural_questions_enabled", True)
+                or t["data"].get("natural_question_stop")
+                or t["issued_count"] >= question_limit(t, snapshot["tier"])):
+            return snapshot, None, prepared
+        try:
+            decision, question = await asyncio.to_thread(question_candidate,
+                prepared.thread if prepared is not None else admitted, plan,
+                parent_request_id=request.request_id)
+        except Exception:
+            if prepared is not None:
+                raise
+            return snapshot, None, None
+        return snapshot, question if decision.disposition == "ASK" else None, prepared
 
     async def _process_natural(self, user_id, snapshot):
         from cocolon_meaning_experience_engine.natural_reply import (
@@ -612,6 +722,7 @@ class EmlisThreadService:
         from cocolon_meaning_experience_engine.natural_reply_meaning import (
             SCHEMA as MEANING_REVIEW_SCHEMA, compare_reply_meaning)
         t = snapshot["thread"]
+        # Admit and triage before consulting the optional question adapter.
         material, safety = prepare_natural_reply(_request(snapshot))
         if material.source_prefix_ref != t["source_prefix_ref"]:
             raise ValueError("natural_reply_source_changed")
@@ -620,6 +731,16 @@ class EmlisThreadService:
             # support/emergency. Neither is sent to the ordinary provider.
             code = "safe_state_answer_owner_required" if safety.safe_state_answer_allowed else "separate_safety_owner_required"
             return await self._finish(user_id, snapshot, body_state="UNAVAILABLE", state="COMPLETED", failure=code)
+        snapshot, next_question, prepared_meaning = await self._prepare_natural_question(user_id, snapshot)
+        t = snapshot["thread"]
+        response_stage = ("FINAL" if t["data"].get("natural_question_stop") else
+            "REFINED" if t.get("latest_answer_event_id") else
+            "PRE_QUESTION" if next_question else "FINAL")
+        snapshot = copy.deepcopy(snapshot)
+        snapshot["thread"]["data"]["natural_response_stage"] = response_stage
+        t = snapshot["thread"]
+        material, safety = prepare_natural_reply(_request(snapshot), response_stage=response_stage,
+            prepared_meaning=prepared_meaning)
         received = self._natural_receipt(snapshot, "NATURAL_REPLY_RECEIVED")
         if received:
             candidate = validate_reply(NaturalReply(**received["payload"]["reply"]), material)
@@ -628,7 +749,8 @@ class EmlisThreadService:
                 return await self._finish(user_id, snapshot, body_state="UNAVAILABLE", state="RESPONSE_FAILED",
                                           failure="natural_reply_result_unknown")
             event = _event("OPERATION", {"stage": "NATURAL_REPLY_CALL_STARTED",
-                "source_prefix_ref": t["source_prefix_ref"], "context_ref": _context_ref(snapshot)}, t)
+                "source_prefix_ref": t["source_prefix_ref"], "context_ref": _context_ref(snapshot),
+                "response_stage": response_stage}, t)
             snapshot = await self._commit(user_id, snapshot, copy.deepcopy(t), [event], finishing_attempt=t["active_attempt_id"])
             t = snapshot["thread"]
             remaining = (parse_iso_utc(t["processing_deadline_at"]) - _now(snapshot)).total_seconds() - 3
@@ -645,7 +767,7 @@ class EmlisThreadService:
                                           failure="natural_reply_unavailable")
             event = _event("OPERATION", {"stage": "NATURAL_REPLY_RECEIVED",
                 "source_prefix_ref": t["source_prefix_ref"], "context_ref": _context_ref(snapshot),
-                "reply": asdict(candidate)}, t)
+                "response_stage": response_stage, "reply": asdict(candidate)}, t)
             try:
                 snapshot = await self._commit(user_id, snapshot, copy.deepcopy(t), [event], finishing_attempt=t["active_attempt_id"])
             except ThreadStoreError as exc:
@@ -675,13 +797,24 @@ class EmlisThreadService:
                 "material_sha256": hashlib.sha256(material.material_json.encode("utf-8")).hexdigest(),
                 "reply_sha256": hashlib.sha256(candidate.text.encode("utf-8")).hexdigest(),
                 "reason_codes": ["CHECKER_ERROR"], "full_reply_semantic_coverage": False}
-        observation = _event("OBSERVATION", {"text": candidate.text, "stage": "INITIAL",
+        observation = _event("OBSERVATION", {"text": candidate.text,
+            "stage": "REFINED" if t.get("latest_answer_event_id") else "INITIAL",
             "source_prefix_ref": t["source_prefix_ref"], "context_ref": _context_ref(snapshot),
             "context_guards": t["data"].get("context_guards", []),
             "artifact": {"schema_version": ARTIFACT_SCHEMA, "text": candidate.text,
                          "model": candidate.model, "analysis_state": "NOT_GENERATED",
                          "meaning_comparison": meaning_review}}, t)
-        return await self._finish(user_id, snapshot, body_state="FINAL", state="COMPLETED", observation=observation)
+        followup = bool(next_question and t.get("latest_answer_event_id"))
+        question = (_event("QUESTION", next_question, t, question_id=next_question.question_id)
+                    if next_question and not followup else None)
+        if followup:
+            snapshot = copy.deepcopy(snapshot)
+            snapshot["thread"]["data"]["continuation_question"] = _json(next_question)
+        body_state = ("PRE_QUESTION" if question else
+            "REFINED" if t.get("latest_answer_event_id") and t["data"].get("meaning_updated") else "FINAL")
+        return await self._finish(user_id, snapshot, body_state=body_state,
+            state="AWAITING_ANSWER" if question else "AWAITING_CONTINUE" if followup else "COMPLETED",
+            observation=observation, question=question)
 
     async def _process(self, user_id, snapshot):
         t, attempt = snapshot["thread"], snapshot["thread"]["active_attempt_id"]
@@ -837,3 +970,4 @@ class EmlisThreadService:
             saved = await self.store.commit(user_id, snapshot, t, events, finishing_attempt=attempt)
             return self._dto(saved)
         return self._dto(await self._commit(user_id, snapshot, t, events, finishing_attempt=attempt))
+

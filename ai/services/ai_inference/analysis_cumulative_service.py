@@ -738,7 +738,9 @@ async def _ensure_map(user_id, *, ensure=True, force=False, monthly=False, model
                 if semantic_source:
                     from analysis_semantic_map import prepare_semantic_map, build_semantic_map, SemanticMapNoMaterial
                     try:
-                        prepared = await asyncio.to_thread(prepare_semantic_map, owner, snapshot)
+                        from analysis_model_source import analysis_model_prompt_version
+                        prepared = await asyncio.to_thread(prepare_semantic_map, owner, snapshot,
+                            prompt_version=analysis_model_prompt_version(model_source))
                     except SemanticMapNoMaterial as excluded:
                         artifact, coverage = None, _checked_coverage(excluded.coverage)
                     else:
@@ -953,5 +955,6 @@ def _project_evidence(owner, raw):
             memo=original['memo'], memo_action=original['memo_action'],
             answers=answers, version_state='CURRENT' if unchanged else 'EDITED_SINCE_ANALYSIS'))
     return items
+
 
 

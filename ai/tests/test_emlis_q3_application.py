@@ -15,6 +15,9 @@ class Q3Database(Database):
         sql=(Path(__file__).parents[2]/'supabase/migrations/20261101010000_emlis_natural_related_context.sql').read_text()
         self.proc.stdin.write(json.dumps(dict(sql=sql,script=True))+'\n'); self.proc.stdin.flush()
         result=json.loads(self.proc.stdout.readline()); assert 'code' not in result,result
+        sql=(Path(__file__).parents[2]/'supabase/migrations/20261112080628_emlis_natural_bound_questions.sql').read_text()
+        self.proc.stdin.write(json.dumps(dict(sql=sql,script=True))+'\n'); self.proc.stdin.flush()
+        result=json.loads(self.proc.stdout.readline()); assert 'code' not in result,result
     async def rpc(self,name,payload,**kwargs):
         assert name in {'emlis_thread_read','emlis_thread_commit','emlis_thread_context','emlis_thread_related_context'}
         args=','.join(f'{k} => ${i}' for i,k in enumerate(payload,1))
@@ -273,3 +276,4 @@ def test_start_conflict_returns_paid_current_view(qcase,qdb,monkeypatch):
     monkeypatch.setattr(s.store,'commit',other_start)
     actual=run(s.start(user,parent));assert actual==expected
     assert actual['interpretive_frames'] and actual['current_observation']
+

@@ -31,9 +31,10 @@ from cocolon_meaning_experience_engine.cores.analysis.observed_route_realizer im
 )
 
 
-def prepare_semantic_map(owner, snapshot):
+def prepare_semantic_map(owner, snapshot, *, prompt_version=PROFILE):
     from analysis_cumulative_service import _cumulative_model_request
-    return _prepare_analysis_semantic_map(_cumulative_model_request(owner, snapshot), snapshot)
+    return _prepare_analysis_semantic_map(_cumulative_model_request(owner, snapshot), snapshot,
+        prompt_version=prompt_version)
 
 
 def build_semantic_map(prepared, response):
@@ -44,3 +45,4 @@ def build_semantic_map(prepared, response):
     if outcome.artifact is None:
         raise SemanticMapError(outcome.reason_codes[0])
     return outcome.artifact, outcome.coverage
+
