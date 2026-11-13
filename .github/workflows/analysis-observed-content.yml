@@ -53,6 +53,8 @@ name: Analysis observed content
       - ai/tests/test_analysis_cumulative*.py
       - ai/tests/test_analysis_semantic*.py
       - ai/tests/test_emlis_natural_reply_probe_http.py
+      - ai/tests/test_emlis_interpretation_correction.py
+      - supabase/migrations/*_emlis_interpretation_correction_history.sql
       - ai/tests/test_emlis_natural_question_application.py
       - ai/tests/test_emlis_natural_reply_response_purpose.py
       - ai/tests/test_analysis_semantic_source_duties.py
@@ -221,6 +223,7 @@ jobs:
           ai/tests/piece_v2/test_b05_refined_preview_saved_pipeline.py
           ai/tests/piece_v2/test_b05_refined_source_fence_sql.py
           ai/tests/test_emlis_natural_reply_application.py
+          ai/tests/test_emlis_interpretation_correction.py
           ai/tests/test_emlis_natural_question_application.py
           ai/tests/test_emlis_natural_reply_response_purpose.py
           ai/tests/test_emlis_natural_reply_meaning_reuse.py

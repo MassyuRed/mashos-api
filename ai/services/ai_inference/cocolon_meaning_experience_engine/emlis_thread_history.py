@@ -66,6 +66,10 @@ def admitted_history_plans(thread):
         request = source.request
         if request.emlis_thread.admitted_history or request.emlis_thread.original_source_ref == thread.control.original_source_ref:
             raise ValueError('owned_history_recursive_or_current')
+        if request.emlis_thread.interpretation_corrections:
+            # This finite interpreter cannot resolve free-form corrections.
+            # Natural history still receives the original and user explanation.
+            continue
         try:
             prepared = prepare_emlis_meaning(request)
         except ValueError:

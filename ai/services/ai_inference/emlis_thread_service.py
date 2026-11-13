@@ -24,7 +24,7 @@ from cocolon_meaning_experience_engine.source_kernel import freeze_text_source
 from cocolon_meaning_experience_engine.emlis_thread_source import admit_emlis_thread, identity
 from cocolon_meaning_experience_engine.emlis_thread_contracts import (
     EmlisThreadInputV1, EmlisQuestionControlV1, EmlisClarificationV1,
-    EmlisQuestionDecisionV1, SupplementalAnswerSource, SEMANTIC_SCHEMA,
+    EmlisQuestionDecisionV1, SupplementalAnswerSource, InterpretationCorrectionSource, SEMANTIC_SCHEMA,
 )
 from emlis_thread_store import EmlisThreadStore, ThreadStoreError
 from emlis_thread_config import APPLICATION_EXECUTION_MODE, MAX_ANSWER_CHARS, writes_enabled
@@ -72,6 +72,19 @@ def _event(kind, payload, thread, *, key=None, question_id=None, event_id=None):
 
 def _find(snapshot, event_id):
     return next((e for e in snapshot["events"] if e["id"] == event_id), None)
+
+
+def _corrections(snapshot):
+    return tuple(InterpretationCorrectionSource(**e["payload"]["source"])
+        for e in snapshot["events"] if e["kind"] == "OPERATION"
+        and e["payload"].get("stage") == "INTERPRETATION_CORRECTION")
+
+
+def _needs_correction_detail(text):
+    import re
+    value = re.sub(r"[\s。．.!！?？、,]+", "", text)
+    return value in {"違う", "違います", "そうではありません", "そうじゃない",
+                     "なんか違う", "わからない", "分からない"}
 
 
 def _request(snapshot, *, checkpoint_ref=None, include_context=True, analysis_source_only=False):
@@ -128,7 +141,8 @@ def _request(snapshot, *, checkpoint_ref=None, include_context=True, analysis_so
         current_round=len(answers), question_control_context=control, admitted_history=tuple(history),
         rejected_frame_keys=rejected, frame_feedback_sources=feedback_sources,
         capability_snapshot="Q3_" + snapshot["tier"].upper() if q3 else "FREE_Q1",
-        prepared_meaning_checkpoint_ref=checkpoint_ref))
+        prepared_meaning_checkpoint_ref=checkpoint_ref,
+        interpretation_corrections=_corrections(snapshot)))
 
 
 def _check(snapshot):
@@ -196,12 +210,21 @@ def thread_dto(snapshot, *, requested_attempt_id=None, can_write=True):
     expired = bool(t["active_attempt_id"] and parse_iso_utc(t["processing_deadline_at"]) <= _now(snapshot))
     state = "RESPONSE_FAILED" if expired else t["state"]
     body_state = d.get("body_state", "UNAVAILABLE")
+    latest_body = _find(snapshot, t.get("last_observation_event_id"))
+    target_visible = bool(latest_body and _generation_current(snapshot)
+        and _context_current(snapshot, latest_body["payload"].get("context_guards", []))
+        and latest_body["payload"].get("context_ref") == _context_ref(snapshot))
     current = _find(snapshot, t.get("last_observation_event_id")) if body_state in {
         "PRE_QUESTION", "FINAL", "REFINED", "PARTIALLY_REFINED", "UNCHANGED"} else None
-    if current and not _generation_current(snapshot):
+    if current and (not _generation_current(snapshot)
+            or current["payload"].get("artifact", {}).get("schema_version") == "cocolon.emlis.recipient_reply.v1"
+                and not target_visible):
         current = None
         body_state = "CONTEXT_CHANGED"
     timeline = []
+    correction_events = [e for e in snapshot["events"] if e["kind"] == "OPERATION"
+        and e["payload"].get("stage") == "INTERPRETATION_CORRECTION"]
+    disputed = {e["payload"]["source"]["target_event_id"] for e in correction_events}
     for event in snapshot["events"]:
         p = event["payload"]
         common = {"event_id": event["id"], "kind": event["kind"], "recorded_at": event.get("recorded_at"),
@@ -215,12 +238,18 @@ def thread_dto(snapshot, *, requested_attempt_id=None, can_write=True):
                 # Do not leak a stale paid/deleted source through the timeline.
                 continue
             timeline.append({**common, "text": _observation_text(snapshot,p), "stage": p["stage"],
-                "is_current": bool(current and current["id"] == event["id"])})
+                "is_current": bool(current and current["id"] == event["id"]),
+                **({"is_disputed": True} if event["id"] in disputed else {})})
         elif event["kind"] == "QUESTION":
             timeline.append({**common, "question_id": event["question_id"], "text": p["prompt_private"]})
         elif event["kind"] == "ANSWER":
             timeline.append({**common, "text": p["source"]["answer_text_private"], "question_id": event["question_id"],
                 "authored_at": p["source"]["authored_at"]})
+        elif event in correction_events:
+            source = p["source"]
+            timeline.append({**common, "kind": "CORRECTION", "text": source["explanation"],
+                "target_event_id": source["target_event_id"], "target_text": source["target_text"],
+                "assessment": p["assessment"], "operation_key": event["idempotency_key"]})
     q = next((e for e in reversed(timeline) if e["kind"] == "QUESTION"), None)
     failure = "save_result_unknown" if expired else d.get("failure_code")
     return {"schema_version": DTO_SCHEMA, "thread_id": t["id"], "revision": t["revision"],
@@ -240,6 +269,15 @@ def thread_dto(snapshot, *, requested_attempt_id=None, can_write=True):
         "issued_count": t["issued_count"], "question_limit": question_limit(t, snapshot["tier"]),
         "started_question_limit": t.get("started_question_limit", 1),
         "processing_deadline_at": t.get("processing_deadline_at"),
+        "correction_saved": bool(correction_events),
+        "correction_assessment": correction_events[-1]["payload"]["assessment"] if correction_events else None,
+        "can_correct": bool(can_write and state == "COMPLETED" and not failure
+            and d.get("response_profile") == NATURAL_REPLY_PROFILE and _generation_current(snapshot)
+            and (current or body_state == "CORRECTION_UNREFLECTED" and target_visible)),
+        "correction_target": ({"event_id": t["last_observation_event_id"],
+            "text": _find(snapshot, t["last_observation_event_id"])["payload"]["text"]}
+            if body_state == "CORRECTION_UNREFLECTED" and target_visible
+            and t.get("last_observation_event_id") else None),
         **({"interpretive_frames":_public_frames(snapshot)} if d["runtime_profile"] == Q3_PROFILE else {})}
 
 
@@ -459,6 +497,78 @@ class EmlisThreadService:
                     return replay
             raise
         return await self._process(user_id, snapshot)
+
+    async def correct_interpretation(self, user_id, thread_id, *, target_event_id, target_text,
+                                     explanation, expected_revision, idempotency_key):
+        self._require_write()
+        if any(not isinstance(value, str) or not value.strip() or len(value) > 2000
+               for value in (target_text, explanation)):
+            raise ThreadStoreError("correction_fields_required", 422)
+        snapshot = await self._hydrate(user_id, await self.store.read(user_id, thread_id=thread_id))
+        t = _check(snapshot)
+        self._require_thread_write(snapshot)
+        fingerprint = identity("interpretation-correction-request", target_event_id, target_text, explanation)
+        replay = self._replay(snapshot, idempotency_key, fingerprint)
+        if replay:
+            return replay
+        dto = self._dto(snapshot)
+        target = dto.get("current_observation") or dto.get("correction_target")
+        if (t["revision"] != expected_revision or not dto.get("can_correct")
+                or t["active_attempt_id"] or not target or target["event_id"] != target_event_id):
+            raise ThreadStoreError("correction_target_changed", 409)
+        first = target["text"].find(target_text)
+        if first < 0 or target["text"].find(target_text, first + 1) >= 0:
+            raise ThreadStoreError("correction_target_must_be_unique_excerpt", 422)
+        # Recheck the saved cohort rather than selecting different history for
+        # a correction of this exact reply. A changed source cannot reappear
+        # through the target preview while the normal timeline hides it.
+        snapshot = await self._hydrate(user_id, snapshot)
+        refreshed = self._dto(snapshot)
+        if (refreshed.get("current_observation") or refreshed.get("correction_target")) != target:
+            raise ThreadStoreError("correction_target_changed", 409)
+        t = copy.deepcopy(snapshot["thread"])
+        detail_needed = _needs_correction_detail(explanation)
+        t["state"] = "COMPLETED" if detail_needed else "REFINING"
+        if not detail_needed:
+            self._begin(t, snapshot)
+        correction_id = str(uuid4())
+        source = InterpretationCorrectionSource(correction_id, thread_id, t["data"]["original_source_ref"],
+            target_event_id, target_text, explanation, _now(snapshot).isoformat())
+        event = _event("OPERATION", {"stage": "INTERPRETATION_CORRECTION", "status": "SAVED",
+            "source": source, "assessment": "NEEDS_DETAIL" if detail_needed else "UNASSESSED",
+            "request_fingerprint": fingerprint}, t, key=idempotency_key, event_id=correction_id)
+        t["data"].update(body_state="CORRECTION_UNREFLECTED", meaning_updated=False,
+            natural_response_stage="FINAL", failure_code=None,
+            context_guards=[h["guard"] for h in snapshot["context"]["history"]],
+            context_feedback=[[f["frame_key"], f["version"]] for f in snapshot["context"]["feedback"]])
+        t["data"].pop("continuation_question", None)
+        t["current_meaning_event_id"] = None
+        t["evaluated_prefix_ref"] = None
+        proposed = {**snapshot, "thread": t, "events": snapshot["events"] + [event]}
+        t["source_prefix_ref"] = admit_emlis_thread(_request(proposed)).source_prefix_ref
+        try:
+            saved = await self._commit(user_id, snapshot, t, [event])
+        except ThreadStoreError as exc:
+            if exc.code == "save_result_unknown":
+                # A lost admission ACK is not permission to repeat the write
+                # or acquire the provider twice. Read the exact saved command.
+                fresh = await self._hydrate(user_id, await self.store.read(user_id, thread_id=thread_id))
+                admitted = _find(fresh, correction_id)
+                if not admitted or admitted["payload"] != _json(event["payload"]):
+                    raise
+                if (fresh["thread"].get("active_attempt_id") != t.get("active_attempt_id")
+                        or fresh["thread"]["source_prefix_ref"] != t["source_prefix_ref"]):
+                    return self._replay(fresh, idempotency_key, fingerprint)
+                saved = fresh
+            elif exc.status == 409:
+                replay = self._replay(await self._hydrate(user_id, await self.store.read(
+                    user_id, thread_id=thread_id)), idempotency_key, fingerprint)
+                if replay:
+                    return replay
+                raise
+            else:
+                raise
+        return self._dto(saved) if detail_needed else await self._process(user_id, saved)
 
     async def frame_feedback(self,user_id,thread_id,*,frame_ref,status,correction_text,
                              expected_revision,idempotency_key):
@@ -755,9 +865,14 @@ class EmlisThreadService:
             # support/emergency. Neither is sent to the ordinary provider.
             code = "safe_state_answer_owner_required" if safety.safe_state_answer_allowed else "separate_safety_owner_required"
             return await self._finish(user_id, snapshot, body_state="UNAVAILABLE", state="COMPLETED", failure=code)
-        snapshot, next_question, prepared_meaning = await self._prepare_natural_question(user_id, snapshot)
+        correcting = bool(_corrections(snapshot))
+        if correcting:
+            # Free-form correction is not a finite answer checkpoint or a new question.
+            next_question, prepared_meaning = None, None
+        else:
+            snapshot, next_question, prepared_meaning = await self._prepare_natural_question(user_id, snapshot)
         t = snapshot["thread"]
-        response_stage = ("FINAL" if t["data"].get("natural_question_stop") else
+        response_stage = ("FINAL" if correcting or t["data"].get("natural_question_stop") else
             "REFINED" if t.get("latest_answer_event_id") else
             "PRE_QUESTION" if next_question else "FINAL")
         snapshot = copy.deepcopy(snapshot)
@@ -808,6 +923,8 @@ class EmlisThreadService:
                 snapshot = fresh
             t = snapshot["thread"]
         try:
+            if correcting:
+                raise NotImplementedError("interpretation_correction_not_assessed_by_finite_reader")
             meaning_review = compare_reply_meaning(material.material_json, candidate.text,
                                                    material.source_prefix_ref).as_private_dict()
         except ValueError:
@@ -820,9 +937,10 @@ class EmlisThreadService:
                 "source_prefix_ref": material.source_prefix_ref, "verdict": "UNASSESSED",
                 "material_sha256": hashlib.sha256(material.material_json.encode("utf-8")).hexdigest(),
                 "reply_sha256": hashlib.sha256(candidate.text.encode("utf-8")).hexdigest(),
-                "reason_codes": ["CHECKER_ERROR"], "full_reply_semantic_coverage": False}
+                "reason_codes": ["INTERPRETATION_CORRECTION_UNASSESSED" if correcting else "CHECKER_ERROR"],
+                "full_reply_semantic_coverage": False}
         observation = _event("OBSERVATION", {"text": candidate.text,
-            "stage": "REFINED" if t.get("latest_answer_event_id") else "INITIAL",
+            "stage": "CORRECTED" if correcting else "REFINED" if t.get("latest_answer_event_id") else "INITIAL",
             "source_prefix_ref": t["source_prefix_ref"], "context_ref": _context_ref(snapshot),
             "context_guards": t["data"].get("context_guards", []),
             "artifact": {"schema_version": ARTIFACT_SCHEMA, "text": candidate.text,
@@ -834,7 +952,7 @@ class EmlisThreadService:
         if followup:
             snapshot = copy.deepcopy(snapshot)
             snapshot["thread"]["data"]["continuation_question"] = _json(next_question)
-        body_state = ("PRE_QUESTION" if question else
+        body_state = ("FINAL" if correcting else "PRE_QUESTION" if question else
             "REFINED" if t.get("latest_answer_event_id") and t["data"].get("meaning_updated") else "FINAL")
         return await self._finish(user_id, snapshot, body_state=body_state,
             state="AWAITING_ANSWER" if question else "AWAITING_CONTINUE" if followup else "COMPLETED",

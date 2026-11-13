@@ -345,6 +345,9 @@ def _source_witnesses(material):
         raise ValueError("natural_meaning_material_invalid")
     changed = {item.get("input_id") for item in feedback
                if item.get("status") in {"REVISED", "REJECTED"}}
+    if material.get("interpretation_corrections"):
+        changed.add(material.get("current_input_id"))
+    changed.update(item.get("input_id") for item in histories if item.get("interpretation_corrections"))
     witnesses, excluded = [], 0
     for path, group, identity, original, answers in records:
         if not isinstance(answers, list):
@@ -385,6 +388,7 @@ def prepare_meaning_support(material: dict) -> dict:
                           and item.get("status") in {"REVISED", "REJECTED"}
                           for item in material.get("user_frame_feedback", []))
     qualified = (not material.get("current_answers", []) and not current_changed
+                 and not material.get("interpretation_corrections")
                  and not any(_SOURCE_UPDATE.search(text) for text in texts)
                  and source_context_allows_finite_hints(*texts))
     # The broad v1 finite-role generation hints regressed actual output.

@@ -16,7 +16,7 @@ from emlis_ai_types import EvidenceSpan
 from .contracts import EvidenceRef, GenerationRequest, SourceEnvelope
 from .emlis_thread_contracts import (
     ANSWER_FIELD, THREAD_SCHEMA, EmlisThreadInputV1, EmlisQuestionControlV1,
-    QualifiedEvidenceRef, SupplementalAnswerSource,
+    QualifiedEvidenceRef, SupplementalAnswerSource, InterpretationCorrectionSource,
 )
 from .source_kernel import (
     AdmittedTextSource, SourceAdmissionError, _evidence_id,
@@ -241,4 +241,24 @@ def admit_emlis_thread(request: GenerationRequest) -> AdmittedEmlisThread:
                       tuple(answer.envelope.envelope_id for answer in answers))
     if q3:
         prefix = identity("emlis-q3-source-prefix", prefix, thread.capability_snapshot, history_guards, thread.rejected_frame_keys, tuple(f.evidence_ref for f in thread.frame_feedback_sources))
+    corrections = thread.interpretation_corrections
+    if type(corrections) is not tuple:
+        raise SourceAdmissionError("emlis_interpretation_corrections_invalid")
+    seen = set()
+    for item in corrections:
+        if (type(item) is not InterpretationCorrectionSource
+                or item.source_role != "USER_INTERPRETATION_CORRECTION"
+                or item.thread_id != thread.thread_id
+                or item.original_source_ref != thread.original_source_ref
+                or any(type(x) is not str or not x.strip() for x in (
+                    item.correction_id, item.target_event_id, item.target_text, item.explanation))
+                or max(len(item.target_text), len(item.explanation)) > 2000
+                or item.correction_id in seen):
+            raise SourceAdmissionError("emlis_interpretation_correction_binding_invalid")
+        _timestamp(item.recorded_at)
+        seen.add(item.correction_id)
+    if corrections:
+        # The AI excerpt is a target locator, never a user-evidence span.
+        prefix = identity("emlis-corrected-source-prefix", prefix,
+                          tuple(asdict(item) for item in corrections))
     return AdmittedEmlisThread(original, thread, answers, prefix)

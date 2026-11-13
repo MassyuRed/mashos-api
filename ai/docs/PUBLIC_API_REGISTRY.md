@@ -11,6 +11,7 @@ Deprecated rows remain listed until their compatibility window is closed.
 | POST | `/emlis/threads/{thread_id}/answers` | `emlis.thread.answer.v1` | `false` |  | Q4 admitted writes only; one answer per issued question, meaning before body |
 | POST | `/emlis/threads/{thread_id}/actions` | `emlis.thread.action.v1` | `false` |  | Q4 admitted writes only; skip/stop or confirmed transient failure retry; Q3 explicit continuation within server budget |
 | POST | `/emlis/threads/{thread_id}/frames` | `emlis.thread.frame_feedback.v1` | `false` |  | Q4 admitted writes only; owned tentative frame confirmation, rejection or correction; no question budget |
+| POST | `/emlis/threads/{thread_id}/corrections` | `emlis.thread.interpretation_correction.v1` | `false` |  | Owned completed natural reply; exact target excerpt and required user explanation; separate correction source and unchanged question budget |
 | GET | `/app/bootstrap` | `app.bootstrap.v1` | `false` |  | Runtime guardrail / maintenance switch |
 | GET | `/app/startup` | `app.startup.v1` | `false` |  | Auth-required startup bundle for unread / popup / lightweight prefetch only; Home hydration moved to /home/state |
 | GET | `/home/state` | `home.state.v1` | `false` |  | Auth-required Home hydration bundle (input summary + global summary + notices + today question + reflection quota); app.startup intentionally excludes heavy Home counters |

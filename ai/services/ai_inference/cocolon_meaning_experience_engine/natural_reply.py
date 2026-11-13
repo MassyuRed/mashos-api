@@ -69,6 +69,11 @@ _SCOPED_HISTORY_ANSWER_MEANING_MESSAGE = """
 _HISTORY_ANSWER_MEANING_SCHEMA = "natural_history_answer_meaning.v1"
 _COMPACT_HISTORY_ANSWER_MEANING_SCHEMA = "natural_history_answer_meaning.v2"
 
+_INTERPRETATION_CORRECTION_MESSAGE = """
+interpretation_correctionsは本人がAI応答の読みを訂正した記録です。target_ai_interpretationは否定・訂正の対象を示すAIの文章で、本人が述べた事実でも、現在有効な本人特徴でもありません。user_explanationだけが本人の説明です。
+本人の説明が示す範囲だけ読み直し、対象外の出来事・時点・気持ちは残してください。同じ対象への追加説明は記録順に読み、後の訂正と両立しない古い読みを復活させないでください。過去の記録の訂正を今回の場面に移さないでください。
+assessmentはUNASSESSEDです。説明を受け取っただけで正しい理由・意図まで確定したと扱わず、単なる否定や曖昧な部分から反対の意味・動機を補わないでください。否定された解釈や別の確認済みフレームで本人の説明を上書きしないでください。今回は新しい問いを出さず、分かっている範囲で本人へ自然に返してください。内部の訂正処理や判定名を本文に出さないでください。"""
+
 
 def _compact_json(value):
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
@@ -88,6 +93,9 @@ def system_message_for(request):
         material = request if type(request) is dict else json.loads(
             request if isinstance(request, str) else request.material_json)
         message = SYSTEM_MESSAGE
+        if material.get("interpretation_corrections") or any(
+                record.get("interpretation_corrections") for record in material.get("past_user_records", ())):
+            message += _INTERPRETATION_CORRECTION_MESSAGE
         purpose = material.get("response_purpose")
         if (type(purpose) is dict and set(purpose) == {"stage"}
                 and purpose["stage"] in _RESPONSE_PURPOSE_MESSAGES):
@@ -204,7 +212,17 @@ def _source_safety(original, admitted, feedback=()):
                      for item in admitted.answers)
     decisions.extend(build_emlis_safety_triage_decision(current_input=f.correction_text)
                      for f in feedback if f.status == 'REVISED')
+    decisions.extend(build_emlis_safety_triage_decision(current_input=item.explanation)
+                     for item in admitted.control.interpretation_corrections)
     return merge_emlis_safety_triage_decisions(decisions, source='natural_reply_user_sources')
+
+
+def _interpretation_corrections(admitted):
+    return [{"source_role": item.source_role, "correction_id": item.correction_id,
+             "recorded_at": item.recorded_at, "target_event_id": item.target_event_id,
+             "target_ai_interpretation": item.target_text, "user_explanation": item.explanation,
+             "assessment": "UNASSESSED"}
+            for item in admitted.control.interpretation_corrections]
 
 
 class NaturalReplyError(ValueError):
@@ -417,7 +435,9 @@ def prepare_natural_reply(request, *, use_meaning_support=False, response_stage=
         record = {"recorded_at": source.recorded_at,
                         "input_id": source.source_guard[0], "original": _material(past_original),
                         "answers": _answers(past)}
-        if use_meaning_support and past.answers:
+        if past.control.interpretation_corrections:
+            record["interpretation_corrections"] = _interpretation_corrections(past)
+        if use_meaning_support and past.answers and not past.control.interpretation_corrections:
             prepared = history_meanings.get(source.source_guard)
             record["answer_meaning"] = (_answer_meaning_material(prepared, past,
                 include_active_relations=use_history_answer_plan)
@@ -437,6 +457,8 @@ def prepare_natural_reply(request, *, use_meaning_support=False, response_stage=
                     'input_id': f.source_emotion_id, 'status': f.status, 'correction_text': f.correction_text,
                     'version': f.version, 'updated_at': f.updated_at}
                     for f in feedback if f.source_emotion_id in included_ids]}
+    if admitted.control.interpretation_corrections:
+        material["interpretation_corrections"] = _interpretation_corrections(admitted)
     if response_stage == "REFINED" and not material["current_answers"]:
         raise NaturalReplyError('natural_reply_refined_answer_missing')
     if response_stage != "FINAL":

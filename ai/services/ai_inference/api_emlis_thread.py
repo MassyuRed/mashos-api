@@ -50,6 +50,19 @@ class ThreadFrameFeedbackBody(ThreadOperationBody):
     status: Literal["CONFIRMED","REJECTED","REVISED"]
     correction_text: str | None = Field(default=None,min_length=1,max_length=2000)
 
+
+class ThreadInterpretationCorrectionBody(ThreadOperationBody):
+    target_event_id: UUID
+    target_text: str = Field(min_length=1, max_length=2000, strict=True)
+    explanation: str = Field(min_length=1, max_length=2000, strict=True)
+
+    @field_validator("target_text", "explanation")
+    @classmethod
+    def nonblank(cls, value):
+        if not value.strip():
+            raise ValueError("correction_fields_required")
+        return value
+
 class ThreadFrame(BaseModel):
     model_config = ConfigDict(extra="forbid")
     frame_key: str
@@ -83,13 +96,18 @@ class ThreadTimelineItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
     event_id: UUID
     round_index: int = Field(default=0, ge=0, le=3)
-    kind: Literal["OBSERVATION", "QUESTION", "ANSWER"]
+    kind: Literal["OBSERVATION", "QUESTION", "ANSWER", "CORRECTION"]
     recorded_at: str | None = None
     text: str
     stage: str | None = None
     is_current: bool | None = None
     question_id: str | None = None
     authored_at: str | None = None
+    is_disputed: bool | None = None
+    target_event_id: UUID | None = None
+    target_text: str | None = None
+    assessment: Literal["NEEDS_DETAIL", "UNASSESSED"] | None = None
+    operation_key: str | None = None
 
 
 class ThreadObservation(BaseModel):
@@ -126,6 +144,10 @@ class ThreadResponse(BaseModel):
     processing_deadline_at: str | None = None
     interpretive_frames: list[ThreadFrame] = Field(default_factory=list)
     requested_operation: ThreadOperationReceipt | None = None
+    correction_saved: bool = False
+    correction_assessment: Literal["NEEDS_DETAIL", "UNASSESSED"] | None = None
+    can_correct: bool = False
+    correction_target: ThreadObservation | None = None
 
 
 def register_emlis_thread_routes(app: FastAPI, *, service=None):
@@ -173,3 +195,11 @@ def register_emlis_thread_routes(app: FastAPI, *, service=None):
     async def frame_feedback(thread_id: UUID,body: ThreadFrameFeedbackBody,response: Response,authorization: str | None = Header(default=None)):
         me = await user(authorization,response,write=True)
         return await call(owner().frame_feedback(me,str(thread_id),**body.model_dump()))
+
+    @app.post("/emlis/threads/{thread_id}/corrections", response_model=ThreadResponse, response_model_exclude_unset=True)
+    async def interpretation_correction(thread_id: UUID, body: ThreadInterpretationCorrectionBody,
+                                        response: Response, authorization: str | None = Header(default=None)):
+        me = await user(authorization, response, write=True)
+        values = body.model_dump()
+        values["target_event_id"] = str(body.target_event_id)
+        return await call(owner().correct_interpretation(me, str(thread_id), **values))

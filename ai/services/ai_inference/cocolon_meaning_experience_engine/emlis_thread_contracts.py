@@ -55,6 +55,18 @@ class AnswerTemporalBindingV1:
 
 
 @dataclass(frozen=True, slots=True, repr=False)
+class InterpretationCorrectionSource:
+    correction_id: str
+    thread_id: str
+    original_source_ref: str
+    target_event_id: str
+    target_text: str
+    explanation: str
+    recorded_at: str
+    source_role: str = "USER_INTERPRETATION_CORRECTION"
+
+
+@dataclass(frozen=True, slots=True, repr=False)
 class EmlisQuestionDecisionV1:
     disposition: str
     target_ref: str | None = None
@@ -104,6 +116,7 @@ class EmlisThreadInputV1:
     schema_version: str = THREAD_SCHEMA
     rejected_frame_keys: tuple[str, ...] = ()
     frame_feedback_sources: tuple[Any, ...] = ()
+    interpretation_corrections: tuple[InterpretationCorrectionSource, ...] = ()
 
 
 @dataclass(frozen=True, slots=True, repr=False)
