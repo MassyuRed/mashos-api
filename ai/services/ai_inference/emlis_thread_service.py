@@ -185,9 +185,35 @@ def _observation_text(snapshot, payload):
     return payload["text"]
 
 
+def _natural_interpretive_frames(snapshot, material):
+    """Reuse owned history frames without interpreting the model's reply.
+
+    Only histories included by natural admission/Safety may contribute. Free
+    form corrections remain outside the finite frame owner's capability.
+    """
+    t = snapshot["thread"]
+    if (snapshot["tier"] != "premium" or t["data"].get("runtime_profile") != Q3_PROFILE
+            or _corrections(snapshot)):
+        return ()
+    from cocolon_meaning_experience_engine.emlis_thread_history import derive_interpretive_frames
+    try:
+        admitted = admit_emlis_thread(_request(snapshot))
+        included = {row["input_id"] for row in json.loads(material.material_json)["past_user_records"]}
+        admitted = replace(admitted, control=replace(admitted.control,
+            admitted_history=tuple(source for source in admitted.control.admitted_history
+                if source.source_guard[0] in included)))
+        return tuple(frame for frame in derive_interpretive_frames(admitted)
+                     if frame.frame_key not in admitted.control.rejected_frame_keys)
+    except ValueError:
+        # Optional finite interpretation must not erase a valid natural reply.
+        return ()
+
+
 def _public_frames(snapshot):
     t = snapshot.get("thread")
     if not t or snapshot["tier"] != "premium" or t["data"].get("runtime_profile") != Q3_PROFILE:
+        return []
+    if t["data"].get("response_profile") == NATURAL_REPLY_PROFILE and _corrections(snapshot):
         return []
     body = _find(snapshot,t.get("last_observation_event_id"))
     if not body or not _context_current(snapshot,body["payload"].get("context_guards",[])):
@@ -937,13 +963,15 @@ class EmlisThreadService:
                 "reply_sha256": hashlib.sha256(candidate.text.encode("utf-8")).hexdigest(),
                 "reason_codes": ["CHECKER_ERROR"],
                 "full_reply_semantic_coverage": False}
+        frames = await asyncio.to_thread(_natural_interpretive_frames, snapshot, material)
         observation = _event("OBSERVATION", {"text": candidate.text,
             "stage": "CORRECTED" if correcting else "REFINED" if t.get("latest_answer_event_id") else "INITIAL",
             "source_prefix_ref": t["source_prefix_ref"], "context_ref": _context_ref(snapshot),
             "context_guards": t["data"].get("context_guards", []),
             "artifact": {"schema_version": ARTIFACT_SCHEMA, "text": candidate.text,
                          "model": candidate.model, "analysis_state": "NOT_GENERATED",
-                         "meaning_comparison": meaning_review}}, t)
+                         "meaning_comparison": meaning_review,
+                         **({"interpretive_frames": _json(frames)} if frames else {})}}, t)
         followup = bool(next_question and t.get("latest_answer_event_id"))
         question = (_event("QUESTION", next_question, t, question_id=next_question.question_id)
                     if next_question and not followup else None)

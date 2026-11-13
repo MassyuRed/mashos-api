@@ -62,6 +62,7 @@ name: Analysis observed content
       - ai/tests/test_emlis_natural_reply_meaning_reuse.py
       - ai/tests/test_emlis_natural_reply_meaning_budget.py
       - ai/tests/test_emlis_natural_reply_cognition.py
+      - ai/tests/test_emlis_natural_frames_application.py
       - ai/tests/test_analysis_observed_api.py
       - ai/tests/analysis_cumulative_sql.cjs
       - supabase/migrations/20261101080144_cumulative_watashi_map.sql
@@ -226,6 +227,7 @@ jobs:
           ai/tests/piece_v2/test_b05_natural_refined_saved_pipeline.py
           ai/tests/piece_v2/test_b05_refined_source_fence_sql.py
           ai/tests/test_emlis_natural_reply_application.py
+          ai/tests/test_emlis_natural_frames_application.py
           ai/tests/test_emlis_interpretation_correction.py
           ai/tests/test_emlis_natural_question_application.py
           ai/tests/test_emlis_natural_reply_response_purpose.py
