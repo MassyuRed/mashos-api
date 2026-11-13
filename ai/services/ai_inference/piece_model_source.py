@@ -112,6 +112,9 @@ def _piece_content_selection(parts, plans, sources, slots, *, include_editorial_
             # or expose expected body prose; the owner may compare its short
             # evaluation expressions internally to decline duplicates.
             omitted_topics = _adjacent_self_continuations(part, plan)
+            from piece_v2_content_policy import _piece_model_topic_continuations
+            model_topics, model_omissions = _piece_model_topic_continuations(part, plan)
+            omitted_topics = omitted_topics | model_omissions
             evaluations = {row.node_id: row for row in part.personal_evaluations}
         ordered = [node_id for group in plan.block_node_ids for node_id in group]
         if (len(duties) != len(plan.duties) or len(ordered) != len(set(ordered))
@@ -173,11 +176,20 @@ def _piece_content_selection(parts, plans, sources, slots, *, include_editorial_
                     # The native owner proves adjacency, exact first-person
                     # spelling, referent and paragraph boundaries. Only the
                     # redundant topic can disappear, never its proposition.
-                    choices.append(dict(node_id=node_id,
+                    choice = dict(node_id=node_id,
                         antecedent_node_id=ordered[ordered.index(node_id) - 1],
                         scalar_start=ref.scalar_start, scalar_end=ref.scalar_end,
                         operation='OMIT_REPEATED_SELF_TOPIC',
-                        instruction='直前から同じ本人の語りが続くと確認できた箇所です。繰り返す本人主語だけを省き、対象・述語・否定・時点と命題そのものは残せます。'))
+                        instruction='直前から同じ本人の語りが続くと確認できた箇所です。繰り返す本人主語だけを省き、対象・述語・否定・時点と命題そのものは残せます。')
+                    if node_id in model_omissions:
+                        # Bind the optional topic to this exact source/field;
+                        # refined children may reuse the same local node IDs.
+                        choice.update(source_id=source['source_id'], source_role=source['role'],
+                            field_path=ref.field_path,
+                            topic_scalar_span=[ref.scalar_start,
+                                ref.scalar_start + model_topics[node_id]['topic_end']],
+                            instruction='同じ欄の直前から同じ本人の語りが続く箇所です。topic_scalar_spanの繰り返す本人主語と直後の読点だけは省けます。命題の省略ではありません。残る内容・条件・留保・肯否・時点・本人の表記は保ち、この許可のない本人主語や別欄の主語を省かないでください。')
+                    choices.append(choice)
                 if choices:
                     field.setdefault('editorial_choices', []).extend(choices)
         for group in plan.block_node_ids:

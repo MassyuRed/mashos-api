@@ -554,6 +554,104 @@ def _piece_model_source_blocks(meaning, plan):
     return tuple(blocks)
 
 
+def _piece_model_topic_continuations(meaning, plan):
+    """Source-only, bounded narrator continuity for the model editorial arm.
+
+    Closed impression/denial hosts prove the written narrator's stance,
+    never the actor of their retained inner content. Unknown KEEP material
+    cannot supply a narrator. This does not change source admission or the
+    native author's more conservative editorial decisions.
+    """
+    from cocolon_meaning_experience_engine.piece_source import (
+        piece_source_text, piece_text_nodes, _qualified_self_topic,
+        _direct_transitive_expression,
+    )
+    from cocolon_meaning_experience_engine import natural_reply_meaning as reader
+    from piece_v2_expression import _SELF_TOPIC
+    from piece_v2_generation import _FOCUS
+
+    _piece_model_source_blocks(meaning, plan)
+    original = piece_source_text(meaning)
+    nodes = {node.node_id: node for node in piece_text_nodes(meaning)}
+    spans = {span.node_id: span for span in meaning.sentences}
+    duties = {d.node_id: d.operation for d in plan.duties}
+    scopes = {scope.node_id for scope in meaning.expression_scopes}
+    evaluations = {frame.node_id: frame for frame in meaning.personal_evaluations}
+    positions = {node_id: index for index, node_id in enumerate(nodes)}
+    topics = {}
+    for node_id, node in nodes.items():
+        value = node.value
+        if (node_id in scopes or not value.endswith('。')
+                or any(c in value for c in '「」『』"\'“”（）()【】;；\r\n')):
+            continue
+        topic = _SELF_TOPIC.fullmatch(value)
+        speaker = None
+        operation = duties[node_id]
+        if operation == 'SOURCE_PERSONAL_EVALUATION':
+            frame = evaluations.get(node_id)
+            if frame is not None:
+                speaker = original[slice(*frame.scalar_parts[0])]
+        elif operation == 'SOURCE_FOCAL_TO_FIRST_PERSON':
+            focus = _FOCUS.fullmatch(value)
+            if focus is not None:
+                speaker = focus['speaker']
+        elif operation in {'SOURCE_FIRST_PERSON_TOPIC', 'SOURCE_TRANSITIVE_SELF_TOPIC'}:
+            qualified = (_qualified_self_topic(value) if operation == 'SOURCE_FIRST_PERSON_TOPIC'
+                         else _direct_transitive_expression(value))
+            if qualified is not None:
+                speaker = qualified['speaker']
+        elif operation == 'KEEP_COMPLETE_SOURCE_CONTEXT' and topic is not None:
+            tree = _piece_model_operator_tree(value)
+            root = tree[0] if tree is not None else None
+            if root is None:
+                continue
+            if root[0] in {'FINITE_WITH_RETAINED_PREFIX', 'TE_STATE_WITH_RETAINED_PREFIX'}:
+                prefix = root[1]
+                # Consume the entire known predicate's prefix, not a nearby
+                # SELF label. A nested subject/report or an opaque adjunct
+                # fails the old complete argument grammar.
+                if not prefix.startswith(value[:topic.start('body')]):
+                    continue
+                arguments = prefix[topic.start('body'):]
+                day = reader._DAY.match(arguments)
+                arguments = arguments[day.end():] if day else arguments
+                parsed = reader._arguments(arguments)
+                if parsed is not None and parsed:
+                    speaker = topic['speaker']
+            elif root[0] in {'IMPRESSION_HOST', 'NEGATED_INTERPRETATION_HOST'}:
+                content = root[1]
+                head = value[:topic.start('body')]
+                if not content.startswith(head):
+                    continue
+                content = content[len(head):]
+                # The outer host owns 気が / わけでは. Other written topics,
+                # subjects or SELF viewpoints are not resolved here. なくても
+                # remains literal; its も is not a participant inferred by us.
+                if (content and not re.search(r'[はが]', content)
+                        and not re.search(r'(?:私|わたし|僕|ぼく|俺|おれ)(?:は|が|も|にとって)', content)):
+                    speaker = topic['speaker']
+        if speaker in reader._SELF:
+            topics[node_id] = dict(narrator=speaker,
+                topic_end=topic.start('body') if topic is not None and topic['speaker'] == speaker else None)
+
+    continuations = set()
+    for group in plan.block_node_ids:
+        for previous, current in zip(group, group[1:]):
+            before, after = topics.get(previous), topics.get(current)
+            if (before is None or after is None or after['topic_end'] is None
+                    or before['narrator'] != after['narrator']
+                    or positions[current] != positions[previous] + 1
+                    or re.search(r'[\r\n]', original[spans[previous].source_end:spans[current].source_start])):
+                continue
+            # Repetition of a proposition remains a required occurrence;
+            # this optional style choice does not collapse duplicate meaning.
+            if (before['topic_end'] is not None
+                    and nodes[previous].value[before['topic_end']:] == nodes[current].value[after['topic_end']:]):
+                continue
+            continuations.add(current)
+    return topics, frozenset(continuations)
+
+
 def validate_piece_model_preservation(meaning, plan, artifact):
     """Author-free whole-body review for the bounded model Piece arm.
 
@@ -929,6 +1027,8 @@ def validate_source_meaning_preservation(meaning, plan, artifact, *, _model_regi
     duties = {d.node_id: d.operation for d in plan.duties}
     source_nodes = {n.node_id: n for n in nodes}
     positions = {node_id: i for i, node_id in enumerate(ids)}
+    model_topics, model_continuations = (_piece_model_topic_continuations(meaning, plan)
+                                        if _model_register else ({}, frozenset()))
 
     def arguments(node_id, expression):
         stop = re.escape(source_nodes[node_id].value[-1])
@@ -987,6 +1087,18 @@ def validate_source_meaning_preservation(meaning, plan, artifact, *, _model_regi
             if (node_id in scopes and _scoped_finite_self_person_action(node.value) is not None
                     and operation != 'KEEP_COMPLETE_SOURCE_CONTEXT'):
                 reject()
+            topic = model_topics.get(node_id)
+            if (_model_register and node_id in model_continuations and topic is not None
+                    and previous_id is not None and previous_author == topic['narrator']
+                    and positions[node_id] == positions[previous_id] + 1):
+                # Only an accepted same-narrator chain supplies this private
+                # parse view. Restore the exact source topic, not an inferred
+                # actor; the raw visible sentence is never changed.
+                view = node.value[:topic['topic_end']] + visible
+                if (same_literal_self_register(node.value, view)
+                        or same_operator_tree(node.value, view)):
+                    previous_id, previous_author = node_id, topic['narrator']
+                    continue
             if operation == 'KEEP_COMPLETE_SOURCE_CONTEXT':
                 if (re.fullmatch(anchor(node.value), visible) is None
                         and not (_model_register and (
@@ -996,7 +1108,8 @@ def validate_source_meaning_preservation(meaning, plan, artifact, *, _model_regi
                             or same_literal_reason_value(node_id, node.value, visible)
                             or same_operator_tree(node.value, visible)))):
                     reject()
-                previous_id, previous_author = node_id, None
+                previous_id = node_id
+                previous_author = topic['narrator'] if topic is not None else None
                 continue
             if operation not in {
                     'SOURCE_FIRST_PERSON_TOPIC', 'SOURCE_TRANSITIVE_SELF_TOPIC',
