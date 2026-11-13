@@ -135,7 +135,8 @@ def _request(snapshot, *, checkpoint_ref=None, include_context=True, analysis_so
     rejected = tuple(sorted(f["frame_key"] for f in snapshot.get("context", {}).get("feedback", [])
                             if f["status"] == "REJECTED")) if q3 else ()
     from cocolon_meaning_experience_engine.emlis_thread_history import FrameFeedbackSourceV1
-    feedback_sources = tuple(FrameFeedbackSourceV1(**{k:f[k] for k in ("frame_key","frame_ref","source_emotion_id","status","correction_text","version","updated_at")})
+    feedback_sources = tuple(FrameFeedbackSourceV1(**{k:f[k] for k in ("frame_key","frame_ref","source_emotion_id","status","correction_text","version","updated_at")},
+        target_context_json=_saved_frame_target(snapshot, f) if t['data'].get('response_profile') == NATURAL_REPLY_PROFILE else None)
         for f in snapshot.get("context",{}).get("feedback",[])) if q3 and include_context else ()
     return replace(req, emlis_thread=EmlisThreadInputV1(t["id"], ref, answers=answers,
         current_round=len(answers), question_control_context=control, admitted_history=tuple(history),
@@ -143,6 +144,29 @@ def _request(snapshot, *, checkpoint_ref=None, include_context=True, analysis_so
         capability_snapshot="Q3_" + snapshot["tier"].upper() if q3 else "FREE_Q1",
         prepared_meaning_checkpoint_ref=checkpoint_ref,
         interpretation_corrections=_corrections(snapshot)))
+
+
+def _saved_frame_target(snapshot, feedback):
+    """Recover only a target captured by this thread's exact saved command.
+
+    Other threads and old operations without a captured view remain unresolved;
+    the latest feedback row cannot reconstruct a previous person's wording.
+    """
+    matches = []
+    for event in snapshot['events']:
+        payload = event['payload']
+        saved = payload.get('frame_feedback_target')
+        if (event['kind'] != 'OPERATION' or type(saved) is not dict
+                or payload.get('status') != 'FRAME_' + feedback['status']
+                or payload.get('request_fingerprint') != identity('frame-feedback-request',
+                    feedback['frame_ref'], feedback['status'], feedback['correction_text'])):
+            continue
+        if (saved.get('feedback_version') == feedback['version']
+                and saved.get('frame_key') == feedback['frame_key']
+                and saved.get('frame_ref') == feedback['frame_ref']
+                and saved.get('input_id') == feedback['source_emotion_id']):
+            matches.append(saved)
+    return json.dumps(matches[0], ensure_ascii=False, sort_keys=True) if len(matches) == 1 else None
 
 
 def _check(snapshot):
@@ -621,7 +645,28 @@ class EmlisThreadService:
         t["data"]["context_feedback"] = [[f["frame_key"],f["version"]] for f in snapshot["context"]["feedback"]]
         t["data"]["frame_feedback_write"] = {"frame_key":frame["frame_key"],"frame_ref":frame_ref,
             "source_emotion_id":frame["input_id"],"status":status,"correction_text":correction_text}
-        event = _event("OPERATION",{"status":"FRAME_"+status,"request_fingerprint":fingerprint},t,key=idempotency_key)
+        payload = {"status":"FRAME_"+status,"request_fingerprint":fingerprint}
+        if t['data'].get('response_profile') == NATURAL_REPLY_PROFILE:
+            body = _find(snapshot, t.get('last_observation_event_id'))
+            artifacts = body['payload'].get('artifact', {}).get('interpretive_frames', []) if body else []
+            source = next((h for h in snapshot['context']['history']
+                           if h['guard'][0] == frame['input_id']), None)
+            prior = next((f for f in snapshot['context']['feedback']
+                          if f['frame_key'] == frame['frame_key']), None)
+            targets = [row for row in artifacts if row['frame_key'] == frame['frame_key']
+                       and row['input_id'] == frame['input_id']
+                       and (identity('frame-view', row['frame_ref'], prior['version'])
+                            if prior else row['frame_ref']) == frame_ref]
+            if source and len(targets) == 1 and targets[0].get('evidence_refs'):
+                # This is exactly the text shown by FrameEditor, including a
+                # previous user revision, rather than the old AI wording.
+                payload['frame_feedback_target'] = dict(
+                    frame_key=frame['frame_key'], frame_ref=frame_ref, input_id=frame['input_id'],
+                    feedback_version=(prior['version'] if prior else 0) + 1,
+                    source_guard=source['guard'], trigger=frame['trigger'],
+                    received_meaning=frame['correction_text'] if frame['status'] == 'REVISED' else frame['received_meaning'],
+                    displayed_status=frame['status'], evidence_refs=targets[0]['evidence_refs'])
+        event = _event("OPERATION",payload,t,key=idempotency_key)
         saved = await self._commit(user_id,snapshot,t,[event])
         return self._dto(await self._hydrate(user_id,saved))
 

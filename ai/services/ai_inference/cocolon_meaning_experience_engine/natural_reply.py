@@ -429,8 +429,40 @@ def _frame_feedback_material(admitted, included_ids):
         matches = [f for f in frames if f.input_id == source.source_emotion_id
                    and f.frame_key == source.frame_key and f.frame_ref == source.frame_ref]
         if len(matches) != 1 or not matches[0].evidence_refs:
-            # In particular a later frame-view may refer to a previous user
-            # revision which the latest feedback row no longer retains.
+            # Later views require their exact captured display. Never infer a
+            # previous revision from the latest, overwriting feedback row.
+            try:
+                target = json.loads(source.target_context_json) if source.target_context_json else None
+                candidates = [f for f in frames if f.input_id == source.source_emotion_id
+                              and f.frame_key == source.frame_key]
+                guards = [h.source_guard for h in original.control.admitted_history
+                          if h.source_guard[0] == source.source_emotion_id]
+                if (type(target) is not dict or len(candidates) != 1 or len(guards) != 1
+                        or target.get('frame_key') != source.frame_key
+                        or target.get('frame_ref') != source.frame_ref
+                        or target.get('input_id') != source.source_emotion_id
+                        or target.get('feedback_version') != source.version
+                        or target.get('source_guard') != list(guards[0])
+                        or target.get('trigger') != candidates[0].trigger
+                        or target.get('displayed_status') not in {'TENTATIVE', 'CONFIRMED', 'REVISED', 'REJECTED'}
+                        or type(target.get('received_meaning')) is not str or not target['received_meaning'].strip()
+                        or type(target.get('evidence_refs')) is not list
+                        or not set(candidates[0].evidence_refs).issubset(target['evidence_refs'])):
+                    continue
+                if not build_emlis_safety_triage_decision(
+                        current_input=target['received_meaning']).normal_observation_allowed:
+                    continue
+                target_field = ('target_user_revision' if target['displayed_status'] == 'REVISED'
+                                else 'target_ai_interpretation')
+                row.update(target_binding='BOUND')
+                row[target_field] = {
+                    'source_role': 'USER_FRAME_REVISION_CONTEXT' if target['displayed_status'] == 'REVISED'
+                        else 'AI_INTERPRETATION_CONTEXT',
+                    'scope': 'PAST_RECORD_FRAME', 'source_recorded_at': candidates[0].recorded_at,
+                    'trigger': target['trigger'], 'received_meaning': target['received_meaning'],
+                    'evidence_refs': target['evidence_refs']}
+            except (TypeError, ValueError):
+                pass
             continue
         frame = matches[0]
         row.update(target_binding='BOUND', target_ai_interpretation={

@@ -28,10 +28,15 @@ class FrameFeedbackSourceV1:
     version: int
     updated_at: str
     schema_version: str = 'cocolon.cmee.frame_feedback.v1'
+    target_context_json: str | None = None
 
     @property
     def evidence_ref(self):
-        return identity('frame-feedback-source',asdict(self))
+        # The displayed target is context, not another user statement. Keep
+        # the existing feedback/source identity and saved-prefix compatibility.
+        fields = asdict(self)
+        fields.pop('target_context_json')
+        return identity('frame-feedback-source',fields)
 
 @dataclass(frozen=True, slots=True, repr=False)
 class InterpretationFrameV1:

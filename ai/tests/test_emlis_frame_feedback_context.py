@@ -70,7 +70,7 @@ def test_exact_original_frame_context_stays_separate_from_person_feedback(natura
 
 
 @pytest.mark.parametrize('status,text', [('REJECTED', None), ('REVISED', 'ほめ方への戸惑いでした。')])
-def test_later_frame_view_cannot_be_reconstructed_from_original_mapping(natural_case, qdb, status, text):
+def test_later_frame_view_keeps_exact_previously_displayed_person_revision(natural_case, qdb, status, text):
     user, parent, service, calls, _, _ = _case(natural_case, qdb)
     initial = run(service.start(user, parent))
     frame, = initial['interpretive_frames']
@@ -80,9 +80,82 @@ def test_later_frame_view_cannot_be_reconstructed_from_original_mapping(natural_
     changed = _feedback(service, user, revised, view, status, text, 'second-frame-context')
     run(answer(service, user, changed, '今は、私は嬉しい。'))
     feedback, = json.loads(calls[-1].material_json)['user_frame_feedback']
-    assert feedback['target_binding'] == 'UNRESOLVED'
+    assert feedback['target_binding'] == 'BOUND'
+    target = feedback['target_user_revision']
+    assert target['source_role'] == 'USER_FRAME_REVISION_CONTEXT'
     assert 'target_ai_interpretation' not in feedback
+    assert target['received_meaning'] == REVISION
+    assert target['received_meaning'] != frame['received_meaning']
     assert feedback['status'] == status and feedback['correction_text'] == text and feedback['version'] == 2
+    assert len(calls) == 2
+    fetched = run(service.get(user, parent))
+    assert len(calls) == 2 and 'frame_feedback_target' not in json.dumps(fetched)
+
+
+@pytest.mark.parametrize('mutation', ['missing', 'version', 'frame_ref', 'input_id', 'guard', 'duplicate'])
+def test_uncaptured_or_mismatched_later_target_remains_unresolved(natural_case, qdb, mutation):
+    user, parent, service, calls, _, _ = _case(natural_case, qdb)
+    initial = run(service.start(user, parent))
+    revised = _feedback(service, user, initial, initial['interpretive_frames'][0], 'REVISED', REVISION)
+    _feedback(service, user, revised, revised['interpretive_frames'][0], 'REJECTED', key='later-target')
+    snapshot = run(service._hydrate(user, run(service.store.read(user, input_id=parent))))
+    event = next(e for e in snapshot['events'] if e.get('idempotency_key') == 'later-target')
+    context = event['payload']['frame_feedback_target']
+    if mutation == 'missing':
+        event['payload'].pop('frame_feedback_target')
+    elif mutation == 'duplicate':
+        snapshot['events'].append(dict(event))
+    elif mutation == 'guard':
+        context['source_guard'][1] = 'foreign'
+    else:
+        context[{'version':'feedback_version'}.get(mutation, mutation)] = 'foreign'
+    material, _ = prepare_natural_reply(_request(snapshot))
+    feedback, = json.loads(material.material_json)['user_frame_feedback']
+    assert feedback['target_binding'] == 'UNRESOLVED' and 'target_ai_interpretation' not in feedback
+
+
+def test_other_thread_does_not_guess_missing_prior_revision(natural_case, qdb):
+    user, parent, service, calls, _, _ = _case(natural_case, qdb)
+    initial = run(service.start(user, parent))
+    revised = _feedback(service, user, initial, initial['interpretive_frames'][0], 'REVISED', REVISION)
+    _feedback(service, user, revised, revised['interpretive_frames'][0], 'REJECTED', key='later-target')
+    run(service.start(user, _fresh(qdb, user)))
+    feedback, = json.loads(calls[-1].material_json)['user_frame_feedback']
+    assert feedback['target_binding'] == 'UNRESOLVED' and 'target_ai_interpretation' not in feedback
+
+
+def test_new_context_does_not_change_feedback_evidence_identity(natural_case, qdb):
+    user, parent, service, calls, _, _, _, _, _ = _after(natural_case, qdb, 'REVISED', REVISION)
+    snapshot = run(service._hydrate(user, run(service.store.read(user, input_id=parent))))
+    feedback, = _request(snapshot).emlis_thread.frame_feedback_sources
+    assert feedback.target_context_json
+    assert feedback.evidence_ref == replace(feedback, target_context_json=None).evidence_ref
+
+
+def test_refined_saved_frame_then_second_revision_keeps_displayed_text(natural_case, qdb):
+    user, parent, service, calls, _, _, _, _, final = _after(natural_case, qdb, 'REVISED', REVISION)
+    frame, = final['interpretive_frames']
+    assert frame['received_meaning'] == frame['correction_text'] == REVISION
+    _feedback(service, user, final, frame, 'REVISED', '周りの評価より、自分の納得が大切だった。', key='after-refined')
+    snapshot = run(service._hydrate(user, run(service.store.read(user, input_id=parent))))
+    material, _ = prepare_natural_reply(_request(snapshot))
+    feedback, = json.loads(material.material_json)['user_frame_feedback']
+    assert feedback['target_binding'] == 'BOUND'
+    assert feedback['target_user_revision']['received_meaning'] == REVISION
+    assert feedback['target_user_revision']['source_role'] == 'USER_FRAME_REVISION_CONTEXT'
+    assert 'target_ai_interpretation' not in feedback
+    assert len(calls) == 2
+
+
+def test_previous_unsafe_revision_does_not_reenter_as_target_context(natural_case, qdb):
+    user, parent, service, calls, _, _ = _case(natural_case, qdb)
+    initial = run(service.start(user, parent))
+    revised = _feedback(service, user, initial, initial['interpretive_frames'][0], 'REVISED', '自分には価値がない。')
+    changed = _feedback(service, user, revised, revised['interpretive_frames'][0], 'REVISED', REVISION, key='safe-revision')
+    run(answer(service, user, changed, '今は、私は嬉しい。'))
+    feedback, = json.loads(calls[-1].material_json)['user_frame_feedback']
+    assert feedback['target_binding'] == 'UNRESOLVED' and 'target_ai_interpretation' not in feedback
+    assert feedback['correction_text'] == REVISION
 
 
 def test_changed_past_source_does_not_bind_old_frame_version(natural_case, qdb):
