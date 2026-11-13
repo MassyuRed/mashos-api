@@ -232,7 +232,9 @@ def _finish_refined_pipeline(db, monkeypatch, state, *, visual_change=False,
     assert final_row['lifecycle_status'] == detail['lifecycle_status'] == 'saved'
     assert db.query('SELECT count(*)::int AS n FROM public.piece_quota_consumptions WHERE owner_user_id=$1',
                     [owner])['rows'][0]['n'] == 1
-    assert counts == dict(q2_start=1, q2_answer=1, piece_generation_entry=1,
+    assert counts == dict(q2_start=1,
+                         q2_answer=sum(e['kind'] == 'ANSWER' for e in snapshot_before['events']),
+                         piece_generation_entry=1,
                          piece_review=2 if visual_change else 1,
                          preview_rpc=1, visual_rpc=1 if visual_change else 0,
                          save_rpc=2, external_model_provider=0)

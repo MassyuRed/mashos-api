@@ -311,7 +311,7 @@ class PieceSavedSourceAdapter:
         self, authorization: str | None, saved_input_id: str, *,
         supplemental_answer_identity: str, opted_in: bool,
     ) -> PieceSavedRefinedHandoff:
-        """Read one explicitly selected, committed first-round answer.
+        """Read one explicitly selected, committed additive answer.
 
         A caller must opt into the exact saved answer. Its separate source is
         returned only after the existing owner, retention, source and context
@@ -686,6 +686,8 @@ def _natural_refined_observation_handoff(saved: PieceSavedOriginal, snapshot: di
     Reply text proves completion only. The original and frozen ANSWER remain
     the only Piece meaning sources; no synthetic checkpoint is put on an OBS.
     """
+    if snapshot['thread']['issued_count'] in (2, 3):
+        return _natural_later_add_handoff(saved, snapshot, answer_id)
     from dataclasses import replace
     from emlis_thread_service import (
         _context_ref, _json, _request, NATURAL_QUESTION_POLICY,
@@ -904,6 +906,176 @@ def _natural_refined_observation_handoff(saved: PieceSavedOriginal, snapshot: di
             'decision': 'eligible', 'reason_codes': []},
         'body_free': True}
     return PieceSavedRefinedHandoff(saved, frozen.source, thread_id, t['revision'], canonical_json_bytes(lineage))
+
+
+def _natural_later_add_handoff(saved, snapshot, answer_id):
+    """Select the last independent ADD, after validating every real round.
+
+    Earlier answers prove eligibility only. They never become extra Piece
+    partitions and cannot silently revise the retained original input.
+    """
+    from dataclasses import replace
+    from emlis_thread_service import (_context_ref, _json, _request,
+        NATURAL_QUESTION_POLICY, NATURAL_REPLY_PROFILE, Q3_PROFILE)
+    from cocolon_meaning_experience_engine.emlis_answer_update import prepare_emlis_meaning
+    from cocolon_meaning_experience_engine.emlis_thread_contracts import SEMANTIC_SCHEMA
+    from cocolon_meaning_experience_engine.emlis_thread_source import admit_emlis_thread
+    from cocolon_meaning_experience_engine.natural_reply import ARTIFACT_SCHEMA
+
+    def require(value):
+        if not value:
+            raise _error('PIECE_SOURCE_NOT_ELIGIBLE')
+
+    t, events = snapshot['thread'], snapshot['events']
+    d, n = t['data'], t['issued_count']
+    tid = _uuid(t['id'], 'PIECE_SOURCE_NOT_ELIGIBLE')
+    require(type(n) is int and n in (2, 3) and type(t['revision']) is int and t['revision'] > 0)
+    require(t['state']=='COMPLETED' and d.get('body_state')=='REFINED'
+        and d.get('runtime_profile')==Q3_PROFILE and d.get('response_profile')==NATURAL_REPLY_PROFILE
+        and d.get('natural_question_policy')==NATURAL_QUESTION_POLICY
+        and d.get('semantic_profile') is None and d.get('analysis_state')=='NOT_GENERATED'
+        and d.get('answer_assessment')=='RESOLVED' and d.get('meaning_updated') is True
+        and d.get('natural_response_stage')=='REFINED' and d.get('failure_code') is None
+        and 'continuation_question' not in d)
+    require(all(t[k] is None for k in ('active_operation_id','active_attempt_id','processing_deadline_at')))
+    require(canonical_json_bytes(t['source_snapshot'])==saved._original_json
+        and t['latest_answer_event_id']==answer_id and type(events) is list and bool(events))
+    ids, seqs = set(), []
+    for event in events:
+        eid = _uuid(event['id'],'PIECE_SOURCE_NOT_ELIGIBLE')
+        require(event.get('thread_id')==tid and eid not in ids
+            and type(event['seq']) is int and event['seq']>0 and type(event['payload']) is dict
+            and event['kind'] in {'OPERATION','MEANING_UPDATE','OBSERVATION','QUESTION','ANSWER','TERMINAL'}
+            and not (event['kind']=='OPERATION' and event['payload'].get('stage')=='INTERPRETATION_CORRECTION'))
+        ids.add(eid); seqs.append(event['seq'])
+    require(seqs==sorted(set(seqs)))
+    by_kind = {kind:[e for e in events if e['kind']==kind]
+        for kind in ('QUESTION','ANSWER','MEANING_UPDATE','OBSERVATION','TERMINAL','OPERATION')}
+    qs, answers, cps, bodies = (by_kind[k] for k in ('QUESTION','ANSWER','MEANING_UPDATE','OBSERVATION'))
+    require(len(qs)==len(answers)==len(cps)==n and len(bodies)==n+1)
+    require([e['round_index'] for e in qs]==[e['round_index'] for e in answers]
+        ==[e['round_index'] for e in cps]==list(range(1,n+1))
+        and [e['round_index'] for e in bodies]==list(range(n+1)))
+    require(answers[-1]['id']==answer_id and cps[-1]['id']==t['current_meaning_event_id']
+        and bodies[-1]['id']==t['last_observation_event_id'])
+    request = _request(snapshot)
+    admitted = admit_emlis_thread(request)
+    require(len(admitted.answers)==n and t['source_prefix_ref']==t['evaluated_prefix_ref']==admitted.source_prefix_ref)
+    controls = by_kind['OPERATION']
+    require(sum(e['payload'].get('stage') in {'NATURAL_REPLY_CALL_STARTED','NATURAL_REPLY_RECEIVED'}
+        for e in controls)==2*(n+1))
+    context_ref = _context_ref(snapshot)
+
+    def receipt(body, prefix, stage):
+        payload = body['payload']; artifact = payload.get('artifact')
+        require(payload.get('source_prefix_ref')==prefix and payload.get('context_ref')==context_ref
+            and payload.get('context_guards')==d.get('context_guards', [])
+            and payload.get('stage')==('INITIAL' if stage=='PRE_QUESTION' else 'REFINED')
+            and 'meaning_checkpoint_ref' not in payload
+            and type(artifact) is dict and artifact.get('schema_version')==ARTIFACT_SCHEMA
+            and artifact.get('analysis_state')=='NOT_GENERATED'
+            and type(payload.get('text')) is str and bool(payload['text'].strip())
+            and artifact.get('text')==payload['text']
+            and type(artifact.get('model')) is str and bool(artifact['model'].strip()))
+        for k in ('operation_id','attempt_id'):
+            _uuid(body[k],'PIECE_SOURCE_NOT_ELIGIBLE')
+        pair=[]
+        for name in ('NATURAL_REPLY_CALL_STARTED','NATURAL_REPLY_RECEIVED'):
+            matches=[e for e in controls if e['payload'].get('stage')==name
+                and e['payload'].get('source_prefix_ref')==prefix]
+            require(len(matches)==1); e=matches[0]
+            require(all(e[k]==body[k] for k in ('operation_id','attempt_id','round_index'))
+                and e['payload'].get('context_ref')==context_ref and e['payload'].get('response_stage')==stage)
+            pair.append(e)
+        started, received=pair
+        require(started['seq']<received['seq']<body['seq']
+            and received['payload'].get('reply')==dict(text=payload['text'],model=artifact['model'],
+                source_prefix_ref=prefix,schema_version=ARTIFACT_SCHEMA))
+        return started
+
+    original_request=replace(request,emlis_thread=replace(request.emlis_thread,answers=(),current_round=0))
+    original_prefix=admit_emlis_thread(original_request).source_prefix_ref
+    receipt(bodies[0],original_prefix,'PRE_QUESTION')
+    initial_finishes=[e for e in controls if all(e[k]==bodies[0][k] for k in ('operation_id','attempt_id'))
+        and e['payload'].get('status')=='AWAITING_ANSWER' and e['payload'].get('failure_code') is None]
+    require(len(initial_finishes)==1)
+    previous_finish=initial_finishes[0]
+    require(bodies[0]['seq']<qs[0]['seq']<previous_finish['seq']<answers[0]['seq']
+        and all(qs[0][k]==bodies[0][k] for k in ('operation_id','attempt_id')))
+    continued=[e for e in controls if e['payload'].get('status')=='CONTINUED']
+    require(len(continued)==n-1)
+    for i,(q,a,cp,body,frozen) in enumerate(zip(qs,answers,cps,bodies[1:],admitted.answers),1):
+        qp=q['payload']; payload=cp['payload']
+        require(frozen.source.answer_id==a['id'] and frozen.source.question_id==a['question_id']==q['question_id']
+            and qp.get('schema_version')=='cocolon.cmee.emlis_clarification.v1'
+            and qp.get('question_id')==q['question_id'] and qp.get('thread_id')==tid
+            and qp.get('original_source_ref')==d['original_source_ref']
+            and type(qp.get('decision')) is dict and qp['decision'].get('disposition')=='ASK')
+        if i>1:
+            c=continued[i-2]
+            require(previous_finish['payload'].get('status')=='AWAITING_CONTINUE'
+                and previous_finish['seq']<q['seq']<c['seq']<a['seq'] and c['round_index']==i
+                and all(q[k] is None and c[k] is None for k in ('operation_id','attempt_id')))
+        answer_opened = previous_finish if i == 1 else c
+        ctrl=request.emlis_thread.question_control_context
+        prefix_request=replace(request,emlis_thread=replace(request.emlis_thread,
+            answers=request.emlis_thread.answers[:i],current_round=i,
+            prepared_meaning_checkpoint_ref=payload.get('checkpoint_id'),
+            question_control_context=replace(ctrl,pending_question=ctrl.issued_questions[i-1],
+                asked_target_refs=ctrl.asked_target_refs[:i],issued_count=i,issued_questions=ctrl.issued_questions[:i])))
+        prefix=admit_emlis_thread(prefix_request).source_prefix_ref
+        prepared=prepare_emlis_meaning(prefix_request)
+        require(_json(prepared.checkpoint)==payload and payload.get('semantic_schema_version')==SEMANTIC_SCHEMA
+            and payload.get('source_prefix_ref')==prefix and payload.get('assessment_status')=='RESOLVED'
+            and payload.get('unresolved_parts')==[])
+        update=payload.get('answer_update')
+        require(type(update) is dict and update.get('disposition')=='MATERIAL_UPDATE'
+            and update.get('answer_source_ref')==frozen.envelope.envelope_id
+            and update.get('question_ref')==q['question_id'] and update.get('unresolved_parts')==[]
+            and type(update.get('updates')) is list and bool(update['updates'])
+            and all(type(x) is dict and x.get('operation')=='ADD' and x.get('superseded_claim_refs')==[]
+                and x.get('affected_dependency_refs')==[] for x in update['updates']))
+        require(all(a[k]==cp[k]==body[k] for k in ('operation_id','attempt_id'))
+            and q['seq']<a['seq']<cp['seq']<body['seq'])
+        started=receipt(body,prefix,'REFINED'); require(cp['seq']<started['seq'])
+        finishes=[e for e in controls if all(e[k]==body[k] for k in ('operation_id','attempt_id'))
+            and e['payload'].get('status') in {'COMPLETED','AWAITING_CONTINUE'}
+            and e['payload'].get('failure_code') is None]
+        require(len(finishes)==1); previous_finish=finishes[0]
+        require(body['seq']<previous_finish['seq'] and previous_finish['round_index']==i
+            and parse_iso_utc(answer_opened['recorded_at'])<=parse_iso_utc(frozen.source.recorded_at)
+            <=parse_iso_utc(a['recorded_at']))
+    require(all(bodies[-1][k]==d.get(k) for k in ('operation_id','attempt_id')))
+    terminals=by_kind['TERMINAL']
+    if d.get('natural_question_stop')=='stop':
+        require(len(terminals)==1); terminal=terminals[0]
+        require(previous_finish['payload']['status']=='AWAITING_CONTINUE'
+            and terminal['payload'].get('reason')=='stop' and terminal['round_index']==n
+            and all(terminal[k] is None for k in ('operation_id','attempt_id'))
+            and previous_finish['seq']<terminal['seq']==events[-1]['seq'])
+    else:
+        require(d.get('natural_question_stop') is None and not terminals
+            and previous_finish['payload']['status']=='COMPLETED' and previous_finish['seq']==events[-1]['seq'])
+    stamps=[parse_iso_utc(saved.recorded_at),*[parse_iso_utc(e['recorded_at']) for e in events],parse_iso_utc(snapshot['now'])]
+    require(all(x is not None for x in stamps) and all(a<=b for a,b in zip(stamps,stamps[1:])))
+    frozen=admitted.answers[-1]; answer_commitment='sha256:'+frozen.envelope.raw_sha256
+    require(saved.record_commitment!=answer_commitment and saved.saved_input_id!=answer_id)
+    lineage={
+        'handoff_contract_version':'cocolon.cross_core.source_handoff.v1','piece_source_lineage_version':'piece.source_lineage.v1',
+        'source_input':dict(source_input_id=saved.saved_input_id,source_input_version=saved.source_input_version,
+            source_input_bundle_commitment=saved.input_bundle_commitment,source_input_record_commitment=saved.record_commitment,
+            source_owner_user_id=saved.authenticated_owner_id,source_recorded_at=parse_iso_utc(saved.recorded_at).isoformat()),
+        'observation':dict(emlis_observation_stage='refined_observation',emlis_observation_result_identity=bodies[-1]['id'],
+            emlis_observation_result_state='terminal_success',question_need_decision_identity=qs[-1]['id'],
+            supplemental_answer_identity=answer_id,supplemental_answer_version=frozen.source.source_version,
+            supplemental_answer_bundle_commitment=answer_commitment,source_prefix_ref=admitted.source_prefix_ref),
+        'semantic_source_roles':['original_input','supplemental_answer'],
+        'lineage_control_roles':['emlis_observation_result','question_need_decision'],
+        'refined_result_source_binding':dict(emlis_observation_result_identity=bodies[-1]['id'],
+            original_record_commitment=saved.record_commitment,supplemental_answer_bundle_commitment=answer_commitment),
+        'piece_generation_eligibility':dict(contract_version='piece.generation_eligibility.v1',decision='eligible',reason_codes=[]),
+        'body_free':True}
+    return PieceSavedRefinedHandoff(saved,frozen.source,tid,t['revision'],canonical_json_bytes(lineage))
 
 
 def _refined_observation_handoff(saved: PieceSavedOriginal, snapshot: dict,

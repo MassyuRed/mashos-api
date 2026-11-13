@@ -125,7 +125,8 @@ def piece_model_material(source, *, expected_owner_id: str, tier: str = 'free') 
                 or source.supplemental_owner_id != expected_owner_id
                 or source.original_commitment != sources[0]['source_commitment']
                 or source.supplemental_commitment != 'sha256:' + frozen.envelope.raw_sha256
-                or source.supplemental.round_index != 1
+                or type(source.supplemental.round_index) is not int
+                or not 1 <= source.supplemental.round_index <= 3
                 or source.supplemental.answer_id == original.saved_input_id
                 or any(type(v) is not str or not v.strip() for v in (
                     source.question_need_decision_identity, source.refined_result_identity))):

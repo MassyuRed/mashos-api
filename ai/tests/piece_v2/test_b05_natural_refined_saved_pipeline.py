@@ -48,6 +48,9 @@ def natural_refined_db(refined_pipeline_db):
     target_fence = ROOT/'supabase/migrations/20261113120502_piece_frame_target_dependency_fence.sql'
     db.proc.stdin.write(json.dumps(dict(sql=target_fence.read_text(),script=True))+'\n');db.proc.stdin.flush()
     assert 'code' not in json.loads(db.proc.stdout.readline())
+    later_fence = ROOT/'supabase/migrations/20261113131810_piece_natural_later_add_answer.sql'
+    db.proc.stdin.write(json.dumps(dict(sql=later_fence.read_text(),script=True))+'\n');db.proc.stdin.flush()
+    assert 'code' not in json.loads(db.proc.stdout.readline())
     db.natural_refined_catalog = (before, _catalog(db))
     db.proc.stdin.write(json.dumps(dict(script=True,sql="""
         CREATE FUNCTION pg_temp.refined_try_rpc(statement text) RETURNS jsonb
@@ -70,12 +73,12 @@ def _bind(db, monkeypatch, owner, token):
 
 
 def _prepare_natural(db, monkeypatch, *, tier='premium', stopped=False, case_id='natural', with_history=False,
-                     with_frame_target=False):
+                     with_frame_target=False, rounds=1):
     owner, parent = str(uuid4()), str(uuid4())
     token = 'synthetic-natural-refined-owner'
     _update(db, 'insert into auth.users values ($1)', [owner])
     _update(db, 'insert into public.profiles values ($1,$2)', [owner,tier])
-    memo = THREE if stopped else ONE
+    memo = THREE if stopped or rounds == 3 else ONE+'誘われたのに、悲しかった。' if rounds == 2 else ONE
     _update(db, "insert into public.emotions values ($1,$2,now() at time zone 'UTC',$3,'',array['仕事'],array['不安'],$4::jsonb)",
         [parent,owner,memo,json.dumps([dict(type='不安',strength='medium')],ensure_ascii=False)])
     past = str(uuid4()) if with_history else None
@@ -97,7 +100,16 @@ def _prepare_natural(db, monkeypatch, *, tier='premium', stopped=False, case_id=
         service.natural_reply_source = provider
     initial = run(service.start(owner,parent))
     assert initial['state']=='AWAITING_ANSWER' and initial['issued_count']==1
-    completed = run(answer_question(service,owner,initial,ANSWER))
+    completed = initial
+    texts = (ANSWER, '今は、私は怖い。', '今は、私は寂しい。')
+    for index in range(rounds):
+        authored = db.query('select clock_timestamp() as authored')['rows'][0]['authored']
+        completed = run(service.answer(owner,completed['thread_id'],
+            question_id=completed['pending_question']['question_id'],expected_revision=completed['revision'],
+            idempotency_key='natural-answer-'+str(index+1),answer_text=texts[index],authored_at=authored))
+        if index < rounds-1:
+            completed = run(service.action(owner,completed['thread_id'],action='continue',
+                expected_revision=completed['revision'],idempotency_key='natural-continue-'+str(index+1)))
     if stopped:
         assert completed['state']=='AWAITING_CONTINUE'
         before_stop = completed['current_observation']
@@ -106,7 +118,7 @@ def _prepare_natural(db, monkeypatch, *, tier='premium', stopped=False, case_id=
         assert completed['current_observation']==before_stop
     assert completed['state']=='COMPLETED' and completed['body_state']=='REFINED'
     assert completed['meaning_updated'] and completed['answer_assessment']=='RESOLVED'
-    assert len(calls)==2 and calls[-1]['response_purpose']=={'stage':'REFINED'}
+    assert len(calls)==rounds+1 and calls[-1]['response_purpose']=={'stage':'REFINED'}
     snapshot = run(service.store.read(owner,input_id=parent))
     if past:
         assert [row['input_id'] for row in calls[0]['past_user_records']]==[past]
@@ -129,13 +141,13 @@ def _prepare_natural(db, monkeypatch, *, tier='premium', stopped=False, case_id=
     reference = run(adapter.resolve_refined_source_ref('Bearer '+token,parent,
         supplemental_answer_identity=answer_id,opted_in=True))
     state = dict(case_id=case_id,tier=tier,owner=owner,source_id=parent,token=token,frame_target_origin=frame_origin,
-        answer_text=ANSWER,original=snapshot['original'],source_ref=reference,
+        answer_text=texts[rounds-1],original=snapshot['original'],source_ref=reference,
         request=dict(source_ref=reference,requested_format=None,
             visual_selection=dict(theme_id=None,aspect_ratio=None,branding_mode=None)),
         initial_dto=initial,completed_dto=completed,snapshot_before=snapshot,
         # The retained workflow helper has historical counter names; evidence
         # below explicitly relabels these two real natural lifecycle calls.
-        counts=dict(q2_start=1,q2_answer=1,piece_generation_entry=0,piece_review=0,
+        counts=dict(q2_start=1,q2_answer=rounds,piece_generation_entry=0,piece_review=0,
             preview_rpc=0,visual_rpc=0,save_rpc=0,external_model_provider=0))
     return state,handoff,calls
 
@@ -151,6 +163,29 @@ def test_cross_frame_target_refined_reaches_piece_save_and_same_saved_artifact(n
         visual_change=True,expected_blocks=blocks)
     assert len(calls)==2 and len(seen)==1
     assert result['quota_consumptions']==1 and result['source_unchanged'] and result['emlis_unchanged']
+
+
+@pytest.mark.parametrize('rounds,stopped', [(2, False), (2, True), (3, False)])
+@pytest.mark.parametrize('tier', ['free', 'plus', 'premium'])
+def test_later_last_add_answer_is_the_only_selected_piece_source(natural_refined_db,monkeypatch,rounds,stopped,tier):
+    state,handoff,calls=_prepare_natural(natural_refined_db,monkeypatch,tier=tier,
+        stopped=stopped,rounds=rounds,case_id=f'later-{rounds}-{stopped}-{tier}')
+    assert handoff.supplemental.round_index==rounds
+    assert handoff.supplemental.answer_text_private==state['answer_text']
+    from piece_v2_source_adapter import project_saved_refined_source
+    from cocolon_meaning_experience_engine.piece_refined import build_refined_meaning
+    from cocolon_meaning_experience_engine.piece_v1c import PieceGenerationRequest
+    source=project_saved_refined_source(handoff,opted_in=True)
+    meaning=build_refined_meaning(PieceGenerationRequest('later-add',source,state['owner'],
+        state['source_id'],source.original.source_version))
+    assert meaning.supplemental.frozen_answer.source.answer_id==state['source_ref']['supplemental_answer_identity']
+    assert len(calls)==rounds+1
+    blocks=[state['original']['memo'],state['answer_text']]
+    seen=_provider(monkeypatch,state['case_id'],blocks)
+    result=_finish_refined_pipeline(natural_refined_db,monkeypatch,state,
+        visual_change=tier!='free',expected_blocks=blocks)
+    assert len(seen)==1 and result['quota_consumptions']==1
+    assert result['source_unchanged'] and result['emlis_unchanged']
 
 
 @pytest.mark.parametrize('operation',['issue','visual','save'])
@@ -222,6 +257,73 @@ def natural_sql_case(natural_refined_db):
 CHANGES=('refined_received_text','refined_received_model','refined_started_context',
     'initial_received_prefix','initial_context_chain','checkpoint_answer','checkpoint_replace',
     'unknown_profile','wrong_policy','finish_failure','duplicate_receipt','second_question','edited_original')
+
+
+@pytest.fixture(scope='module',params=[2,3])
+def later_sql_case(natural_refined_db,request):
+    with pytest.MonkeyPatch.context() as setup:
+        state,handoff,_=_prepare_natural(natural_refined_db,setup,rounds=request.param,
+            case_id='later-fence-'+str(request.param))
+    line=_canonical_lineage(handoff); record=_RECORD();record['source_lineage']=line
+    return dict(owner=state['owner'],parent=state['source_id'],snapshot=state['snapshot_before'],
+        token=state['token'],handoff=handoff,record=record,expected=dict(original=state['original'],
+        thread_id=state['snapshot_before']['thread']['id'],thread_revision=state['snapshot_before']['thread']['revision'],lineage=line))
+
+
+LATER_CHANGES=('prior_revise','prior_answer_text','prior_prefix','prior_reply','missing_continue','answer_before_continue')
+
+
+def _change_prior_round(db,case,change):
+    events=case['snapshot']['events']
+    cp=next(e for e in events if e['kind']=='MEANING_UPDATE' and e['round_index']==1)
+    answer=next(e for e in events if e['kind']=='ANSWER' and e['round_index']==1)
+    event=cp; value=deepcopy(cp['payload'])
+    if change=='prior_revise':value['answer_update']['updates'][0]['operation']='REVISE'
+    elif change=='prior_prefix':value['source_prefix_ref']='foreign-prefix'
+    elif change=='prior_answer_text':
+        event=answer;value=deepcopy(answer['payload']);value['source']['answer_text_private']+='変更'
+    elif change=='prior_reply':
+        event=next(e for e in events if e['payload'].get('stage')=='NATURAL_REPLY_RECEIVED' and e['round_index']==1)
+        value=deepcopy(event['payload']);value['reply']['text']='別の本文'
+    elif change in {'missing_continue','answer_before_continue'}:
+        event=next(e for e in events if e['payload'].get('status')=='CONTINUED' and e['round_index']==2)
+        if change=='missing_continue':_update(db,'delete from public.emlis_thread_events where id=$1',[event['id']])
+        else:
+            answer=next(e for e in events if e['kind']=='ANSWER' and e['round_index']==2)
+            _update(db,"update public.emlis_thread_events set recorded_at=$2::timestamptz+interval '1 microsecond' where id=$1",
+                [event['id'],answer['payload']['source']['recorded_at']])
+        return
+    else:raise AssertionError(change)
+    _update(db,'update public.emlis_thread_events set payload=$2::jsonb where id=$1',[event['id'],json.dumps(value)])
+
+
+@pytest.mark.parametrize('change',LATER_CHANGES)
+def test_later_answer_adapter_rejects_invalid_prior_round(natural_refined_db,later_sql_case,monkeypatch,change):
+    db=natural_refined_db;case=later_sql_case;_bind(db,monkeypatch,case['owner'],case['token'])
+    assert 'code' not in db.query('BEGIN')
+    try:
+        _change_prior_round(db,case,change)
+        with pytest.raises(PieceContractError):
+            run(PieceSavedSourceAdapter().resolve_refined_handoff('Bearer '+case['token'],case['parent'],
+                supplemental_answer_identity=case['snapshot']['thread']['latest_answer_event_id'],opted_in=True))
+    finally:db.query('ROLLBACK')
+
+
+@pytest.mark.parametrize('operation',['issue','visual','save'])
+@pytest.mark.parametrize('change',LATER_CHANGES)
+def test_later_answer_sql_rejects_invalid_prior_round_without_side_effects(natural_refined_db,later_sql_case,operation,change):
+    db=natural_refined_db;case=later_sql_case
+    assert 'code' not in db.query('BEGIN')
+    try:
+        args=_issue_args(case)
+        if operation!='issue':
+            preview=rpc(db,'piece_issue_preview_v2',args);assert 'code' not in preview,preview
+            args=_mutation_args(db,case,preview) if operation=='visual' else _saved_args(case,preview)
+        _change_prior_round(db,case,change);before=_piece_state(db)
+        outcome=rpc(db,{'issue':'piece_issue_preview_v2','visual':'piece_mutate_preview_visual_v2','save':'piece_save_v2'}[operation],args)
+        assert 'code' in outcome and outcome['message']=='PIECE_CONFLICT',outcome
+        assert _piece_state(db)==before
+    finally:db.query('ROLLBACK')
 
 def _change(db,case,change):
     snap=case['snapshot'];thread=snap['thread'];events=snap['events']

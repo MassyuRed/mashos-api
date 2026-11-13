@@ -214,7 +214,8 @@ def build_refined_meaning(request):
         and bool(source.question_need_decision_identity.strip()),
         'piece_refined_question_binding')
     _require(type(source.refined_result_identity) is str and bool(source.refined_result_identity.strip()))
-    _require(answer.round_index == 1 and answer.answer_id != original.saved_input_id,
+    _require(type(answer.round_index) is int and 1 <= answer.round_index <= 3
+             and answer.answer_id != original.saved_input_id,
              'piece_refined_answer_binding')
     _require(type(original.saved_original_json) is bytes,
              'piece_refined_saved_original_required')

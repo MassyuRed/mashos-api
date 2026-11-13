@@ -80,6 +80,7 @@ name: Piece B2-B/B3/B4/B5 isolated PostgreSQL
       - ai/tests/piece_v2/test_b05_refined_preview_saved_pipeline.py
       - ai/tests/piece_v2/test_b05_natural_refined_saved_pipeline.py
       - supabase/migrations/*_piece_natural_refined_source_fence.sql
+      - supabase/migrations/*_piece_natural_later_add_answer.sql
       - ai/tests/test_cmee_piece_request_saved_pipeline.py
       - ai/tests/test_emlis_q2_application.py
       - ai/tests/helpers/emlis_q2_postgres.cjs
