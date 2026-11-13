@@ -187,3 +187,106 @@ def test_quote_internal_stops_keep_complete_cpu_text_through_sql_save_and_restar
     assert result['source_unchanged'] and result['emlis_unchanged']
     assert result['quota_consumptions'] == 1
     _evidence(case_id + '-' + tier, result, seen)
+
+
+def test_qualified_normal_checkpoint_preserves_source_and_application_messages_before_save(tmp_path, monkeypatch):
+    """CPU fixed prose; a new qualified source is frozen before acquisition.
+
+    This is not a recorded GPU result rebound to a different UUID or time.
+    Closing the SQL process also proves thread/events are restored, not seeded
+    again before the ordinary application provider and save owners execute.
+    """
+    import asyncio
+    from test_emlis_q3_application import Q3Database
+    from test_cmee_piece_request_saved_pipeline import (
+        _prepare_saved_request, _finish_saved_request, _bind_saved_request_io)
+    from piece_v2_source_adapter import PieceSavedSourceAdapter
+    from piece_v2_preview_service import _prepare_model_inputs
+    from piece_model_source import build_piece_model_messages
+
+    fixture = saved_piece_db.__wrapped__()
+    db = next(fixture)
+    checkpoint = tmp_path / 'qualified-normal.tgz'
+    try:
+        record = dict(id='qualified-normal-checkpoint',
+            created_at=db.query('SELECT now()::text AS stamp')['rows'][0]['stamp'],
+            memo='', memo_action='私は同僚に資料の確認を頼みました。',
+            category=['仕事'], emotions=['自己理解'],
+            emotion_details=[dict(type='自己理解', strength='medium')])
+        with monkeypatch.context() as before:
+            state = _prepare_saved_request(db, before, record, tier='free')
+            handoff = asyncio.run(PieceSavedSourceAdapter().resolve_original_handoff(
+                'Bearer ' + state['token'], state['source_id']))
+            source, prepared = _prepare_model_inputs(handoff, state['request'])
+            messages = build_piece_model_messages(prepared,
+                include_authoring_constraints=True, source_request=source)
+            frozen_state = json.dumps(state, ensure_ascii=False, sort_keys=True)
+            assert state['counts'] == dict(synthetic_emlis_provider=1,
+                piece_author=0, piece_review=0, preview_rpc=0, save_rpc=0)
+            assert db.query('SELECT count(*)::int AS n FROM public.piece_records')['rows'][0]['n'] == 0
+            dumped = db.dump_checkpoint(checkpoint)
+            assert dumped['bytes'] == checkpoint.stat().st_size
+    finally:
+        fixture.close()
+
+    # The restore path skips initial DDL/migrations: all qualified rows,
+    # timestamps and observation identities come from the saved database.
+    restored = Q3Database(checkpoint_path=checkpoint)
+    try:
+        with monkeypatch.context() as after:
+            _bind_saved_request_io(restored, after, state['owner'], state['token'])
+            handoff_after = asyncio.run(PieceSavedSourceAdapter().resolve_original_handoff(
+                'Bearer ' + state['token'], state['source_id']))
+            source_after, prepared_after = _prepare_model_inputs(handoff_after, state['request'])
+            assert handoff_after == handoff
+            assert prepared_after == prepared
+            assert build_piece_model_messages(prepared_after,
+                include_authoring_constraints=True, source_request=source_after) == messages
+            seen = []
+            fixed_body = '私は同僚に資料の確認を頼んだ。'
+
+            def transport(request):
+                body = json.loads(request.content)
+                assert body['messages'] == messages
+                material = json.loads(body['messages'][1]['content'])
+                # This runs the actual configured Application source, so its
+                # trusted source_request must reach the existing author input.
+                assert material['control']['authoring_constraints']
+                seen.append(body)
+                keys = list(material['control']['field_slots'])
+                assert len(keys) == 1
+                return httpx.Response(200, json=dict(model=body['model'],
+                    candidate_format='piece.field_slots.v1', choices=[dict(finish_reason='stop',
+                        message=dict(role='assistant', content=json.dumps(
+                            {'field_blocks': {keys[0]: fixed_body}}, ensure_ascii=False)))]))
+
+            client = httpx.AsyncClient
+            def local_client(*args, **kwargs):
+                return client(*args, **dict(kwargs, transport=httpx.MockTransport(transport)))
+            after.setattr('piece_model_source.httpx.AsyncClient', local_client)
+            after.setenv('PIECE_MODEL_SOURCE', 'shared_4b.v1')
+            after.setenv('EMLIS_NATURAL_REPLY_ENDPOINT', 'https://piece.example/v1/chat/completions')
+            after.setenv('EMLIS_NATURAL_REPLY_MODEL', 'piece-checkpoint-test')
+            after.setenv('EMLIS_NATURAL_REPLY_API_KEY', 'synthetic-checkpoint-key-not-a-secret')
+
+            changed = json.loads(frozen_state)
+            changed['original']['memo_action'] += '別の記録。'
+            with pytest.raises(AssertionError, match='prepared saved original changed'):
+                _finish_saved_request(restored, after, changed)
+            changed = json.loads(frozen_state)
+            changed['source_ref']['emlis_observation_result_identity'] = 'different-observation'
+            with pytest.raises(AssertionError, match='prepared saved source reference changed'):
+                _finish_saved_request(restored, after, changed)
+            assert not seen, 'source mismatch must stop before provider acquisition'
+            result = _finish_saved_request(restored, after, json.loads(frozen_state))
+            assert len(seen) == 1
+            assert result['original'] == state['original']
+            assert result['source_ref'] == state['source_ref']
+            assert result['detail']['piece_text'] == fixed_body
+            assert result['detail']['piece_text'] != state['original']['memo_action']
+            assert result['source_unchanged'] and result['emlis_unchanged']
+            assert result['quota_consumptions'] == 1
+            assert json.dumps(state, ensure_ascii=False, sort_keys=True) == frozen_state
+    finally:
+        restored.proc.stdin.close()
+        restored.proc.wait(timeout=10)

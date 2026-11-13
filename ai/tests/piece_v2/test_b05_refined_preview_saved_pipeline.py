@@ -32,9 +32,13 @@ def refined_pipeline_db(saved_piece_db):
     return db
 
 
-def _run_refined_pipeline(db, monkeypatch, answer_text, case_id, *, visual_change=False,
-                          original_memo='褒められたのに、嬉しくなかった。', tier='free',
-                          expected_blocks=None, expected_safety_state='ready'):
+def _prepare_refined_pipeline(db, monkeypatch, answer_text, case_id, *,
+                             original_memo='褒められたのに、嬉しくなかった。', tier='free'):
+    """Commit a genuine synthetic Q2 ADD before any Piece acquisition.
+
+    The returned JSON state belongs with the same database checkpoint. It is
+    not a fabricated qualified source or permission to rebind recorded raw.
+    """
     import api_account_visibility
     import emlis_thread_store
     import piece_v2_preview_service as preview_module
@@ -77,6 +81,52 @@ def _run_refined_pipeline(db, monkeypatch, answer_text, case_id, *, visual_chang
         supplemental_answer_identity=answer_id, opted_in=True))
     request = dict(source_ref=reference, requested_format=None,
         visual_selection=dict(theme_id=None, aspect_ratio=None, branding_mode=None))
+
+    return json.loads(json.dumps(dict(case_id=case_id, tier=tier, owner=owner,
+        source_id=source_id, token=token, answer_text=answer_text, original=original,
+        source_ref=reference, request=request, initial_dto=started,
+        completed_dto=completed, snapshot_before=snapshot_before, counts=counts),
+        ensure_ascii=False))
+
+
+def _finish_refined_pipeline(db, monkeypatch, state, *, visual_change=False,
+                             expected_blocks=None, expected_safety_state='ready'):
+    """Resume the same qualified source; never create another Q2 operation."""
+    import api_account_visibility
+    import emlis_thread_store
+    import piece_v2_preview_service as preview_module
+    import piece_v2_safety_review as safety_module
+    from emlis_thread_service import EmlisThreadService
+    from piece_v2_source_adapter import PieceSavedSourceAdapter
+    from piece_v2_preview_service import PiecePreviewService
+    from piece_v2_save_service import PieceSaveService
+    from piece_v2_owner_service import PieceOwnerService, _COLUMNS
+
+    start = time.monotonic()
+    state = json.loads(json.dumps(state, ensure_ascii=False))
+    owner, source_id, token = (state[key] for key in ('owner', 'source_id', 'token'))
+    case_id, tier, answer_text = (state[key] for key in ('case_id', 'tier', 'answer_text'))
+    original, snapshot_before = state['original'], state['snapshot_before']
+    reference, request, counts = state['source_ref'], state['request'], state['counts']
+    started, completed = state['initial_dto'], state['completed_dto']
+    answer_id = snapshot_before['thread']['latest_answer_event_id']
+
+    async def verify(value):
+        assert value == token
+        return owner
+    monkeypatch.setattr(api_account_visibility, '_resolve_user_id_from_token', verify)
+    monkeypatch.setattr(emlis_thread_store, 'sb_post_rpc', db.rpc)
+    emlis = EmlisThreadService()
+    current = asyncio.run(emlis.store.read(owner, input_id=source_id))
+    assert set(original) == {'id', 'created_at', 'memo', 'memo_action', 'category',
+                             'emotions', 'emotion_details'}
+    assert current['original'] == original
+    for key in ('original', 'thread', 'events'):
+        assert current[key] == snapshot_before[key], 'qualified source changed after checkpoint'
+    adapter = PieceSavedSourceAdapter()
+    assert asyncio.run(adapter.resolve_refined_source_ref('Bearer ' + token, source_id,
+        supplemental_answer_identity=answer_id, opted_in=True)) == reference
+    assert request['source_ref'] == reference
 
     async def load_record(who, pid):
         rows = db.query('SELECT to_jsonb(r) AS row FROM public.piece_records r WHERE owner_user_id=$1 AND id=$2',
@@ -200,6 +250,19 @@ def _run_refined_pipeline(db, monkeypatch, answer_text, case_id, *, visual_chang
         output = Path(destination)
         output.mkdir(parents=True, exist_ok=True)
         (output / (case_id + '.private.json')).write_text(json.dumps(evidence, ensure_ascii=False, indent=2) + '\n')
+    return evidence
+
+
+def _run_refined_pipeline(db, monkeypatch, answer_text, case_id, *, visual_change=False,
+                          original_memo='褒められたのに、嬉しくなかった。', tier='free',
+                          expected_blocks=None, expected_safety_state='ready'):
+    start = time.monotonic()
+    state = _prepare_refined_pipeline(db, monkeypatch, answer_text, case_id,
+        original_memo=original_memo, tier=tier)
+    evidence = _finish_refined_pipeline(db, monkeypatch, state,
+        visual_change=visual_change, expected_blocks=expected_blocks,
+        expected_safety_state=expected_safety_state)
+    evidence['seconds'] = time.monotonic() - start
     return evidence
 
 

@@ -62,16 +62,29 @@ def saved_piece_db():
         db.proc.wait(timeout=10)
 
 
-def _run_saved_request(db, monkeypatch, record, *, tier):
-    """One test case, including explicit replay and non-generating owner read."""
+def _bind_saved_request_io(db, monkeypatch, owner, token):
+    """Bind synthetic Auth/SQL IO without changing an existing source."""
     import api_account_visibility
     import emlis_thread_store
+
+    async def verify(value):
+        assert value == token
+        return owner
+
+    monkeypatch.setattr(api_account_visibility, '_resolve_user_id_from_token', verify)
+    monkeypatch.setattr(emlis_thread_store, 'sb_post_rpc', db.rpc)
+
+
+def _prepare_saved_request(db, monkeypatch, record, *, tier):
+    """Qualify a newly saved original before acquiring any Piece candidate.
+
+    The JSON state retains the SQL-returned seven fields and real Emlis
+    control rows. A checkpoint can preserve them across a separate model run;
+    an old recorded raw is never rebound to newly invented source identities.
+    """
     from emlis_thread_service import EmlisThreadService, Q3_PROFILE
     from cocolon_meaning_experience_engine.natural_reply import NaturalReply
     from piece_v2_source_adapter import PieceSavedSourceAdapter
-    from piece_v2_preview_service import PiecePreviewService
-    from piece_v2_save_service import PieceSaveService
-    from piece_v2_owner_service import PieceOwnerService
 
     owner, source_id = str(uuid4()), str(uuid4())
     token = 'ar04-synthetic-owner'
@@ -88,16 +101,11 @@ def _run_saved_request(db, monkeypatch, record, *, tier):
     assert set(original) == set(record)
     assert all(original[k] == record[k] for k in record if k not in ('id', 'created_at'))
 
-    async def verify(value):
-        assert value == token
-        return owner
-
     async def preceding_emlis(material):
         counts['synthetic_emlis_provider'] += 1
         return NaturalReply('記録を受け取りました。', 'synthetic-provider', material.source_prefix_ref)
 
-    monkeypatch.setattr(api_account_visibility, '_resolve_user_id_from_token', verify)
-    monkeypatch.setattr(emlis_thread_store, 'sb_post_rpc', db.rpc)
+    _bind_saved_request_io(db, monkeypatch, owner, token)
     emlis = EmlisThreadService(runtime_profile=Q3_PROFILE, natural_reply_source=preceding_emlis)
     dto = asyncio.run(emlis.start(owner, source_id))
     assert dto['body_state'] == 'FINAL', dto
@@ -107,6 +115,42 @@ def _run_saved_request(db, monkeypatch, record, *, tier):
     reference = asyncio.run(adapter.resolve_original_source_ref('Bearer ' + token, source_id))
     request = dict(source_ref=reference, requested_format=None,
                    visual_selection=dict(theme_id=None, aspect_ratio=None, branding_mode=None))
+    snapshot = asyncio.run(emlis.store.read(owner, input_id=source_id))
+    assert snapshot['original'] == original
+    return dict(case_id=record['id'], owner=owner, source_id=source_id, token=token,
+                tier=tier, original=original, source_ref=reference, request=request,
+                initial_dto=dto, emlis_snapshot_before=snapshot,
+                emlis_before=emlis_before, events_before=events_before, counts=counts)
+
+
+def _finish_saved_request(db, monkeypatch, state):
+    """Resume the same qualified source through preview/save/owner reread.
+
+    All source and lineage checks happen before candidate acquisition. The
+    frozen preparation state remains unchanged, including IDs and timestamps.
+    """
+    from emlis_thread_store import EmlisThreadStore
+    from piece_v2_source_adapter import PieceSavedSourceAdapter
+    from piece_v2_preview_service import PiecePreviewService
+    from piece_v2_save_service import PieceSaveService
+    from piece_v2_owner_service import PieceOwnerService
+
+    state = json.loads(json.dumps(state, ensure_ascii=False, allow_nan=False))
+    owner, source_id, token, tier = (state[key] for key in ('owner', 'source_id', 'token', 'tier'))
+    original, reference, request = (state[key] for key in ('original', 'source_ref', 'request'))
+    dto, emlis_before, events_before = (state[key] for key in ('initial_dto', 'emlis_before', 'events_before'))
+    counts = state['counts']
+    _bind_saved_request_io(db, monkeypatch, owner, token)
+    current = db.query('SELECT public.emlis_parent_source(e) AS original FROM public.emotions e WHERE id=$1',
+                       [source_id])['rows'][0]['original']
+    assert current == original, 'prepared saved original changed'
+    snapshot = asyncio.run(EmlisThreadStore().read(owner, input_id=source_id))
+    for key in ('original', 'thread', 'events', 'tier'):
+        assert snapshot[key] == state['emlis_snapshot_before'][key], 'prepared Emlis source state changed'
+    adapter = PieceSavedSourceAdapter()
+    assert asyncio.run(adapter.resolve_original_source_ref('Bearer ' + token, source_id)) == reference, \
+        'prepared saved source reference changed'
+    assert request['source_ref'] == reference
 
     async def load_record(who, pid):
         rows = db.query('SELECT to_jsonb(r) AS row FROM public.piece_records r WHERE owner_user_id=$1 AND id=$2',
@@ -202,10 +246,16 @@ def _run_saved_request(db, monkeypatch, record, *, tier):
     assert db.query('SELECT public.emlis_parent_source(e) AS original FROM public.emotions e WHERE id=$1', [source_id])['rows'][0]['original'] == original
     assert emlis_before == db.query('SELECT to_jsonb(t) AS row FROM public.emlis_input_threads t WHERE user_id=$1', [owner])
     assert events_before == db.query('SELECT to_jsonb(e) AS row FROM public.emlis_thread_events e WHERE thread_id=$1 ORDER BY seq', [dto['thread_id']])
-    return dict(case_id=record['id'], tier=tier, original=original, source_ref=reference,
+    return dict(case_id=state['case_id'], tier=tier, original=original, source_ref=reference,
                 preview=first, replay=replay, save=committed, save_replay=committed_again,
                 detail=detail, persisted_row=row, counts=counts,
                 source_unchanged=True, emlis_unchanged=True, quota_consumptions=1)
+
+
+def _run_saved_request(db, monkeypatch, record, *, tier):
+    """The existing one-shot helper keeps its original default behavior."""
+    return _finish_saved_request(db, monkeypatch,
+        _prepare_saved_request(db, monkeypatch, record, tier=tier))
 
 
 @pytest.mark.parametrize('tier', ['free', 'plus', 'premium'])

@@ -23,11 +23,27 @@ ANSWER = '次も同じ成果を求められるようで、重かった。'
 CORRECTION = '相手が嫌なのではなく、自分ではまだ納得していなかった。'
 
 class Database:
-    def __init__(self):
+    def __init__(self, *, checkpoint_path=None):
         self.lock = threading.Lock()
-        self.proc = subprocess.Popen(['node', str(Path(__file__).parent / 'helpers/emlis_q2_postgres.cjs')],
+        command = ['node', str(Path(__file__).parent / 'helpers/emlis_q2_postgres.cjs')]
+        if checkpoint_path is not None:
+            command.extend(['--restore-checkpoint', str(Path(checkpoint_path).resolve())])
+        self.proc = subprocess.Popen(command,
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
         assert json.loads(self.proc.stdout.readline()) == {'ready': True}
+
+    def dump_checkpoint(self, path):
+        """Freeze this disposable SQL state before external candidate work.
+
+        This never writes model raw into a new source or regenerates Emlis.
+        The bridge creates a new private file and refuses overwriting one.
+        """
+        with self.lock:
+            self.proc.stdin.write(json.dumps(dict(checkpointDump=str(Path(path).resolve()))) + '\n')
+            self.proc.stdin.flush()
+            result = json.loads(self.proc.stdout.readline())
+        assert result.get('checkpointWritten') is True and result.get('bytes', 0) > 0, result
+        return result
 
     def query(self, sql, params=(), role=None, *, error_message=False):
         with self.lock:
