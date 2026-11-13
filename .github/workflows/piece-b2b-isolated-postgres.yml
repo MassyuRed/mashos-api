@@ -70,6 +70,11 @@ name: Piece B2-B/B3/B4/B5 isolated PostgreSQL
       - ai/tools/analysis_semantic_generation_requirements.txt
       - ai/tests/piece_v2/test_b05_piece_model_concurrency.py
       - ai/tests/piece_v2/test_b05_piece_model_saved_pipeline.py
+      - ai/tests/piece_v2/test_b05_piece_qualified_checkpoint.py
+      - ai/tests/piece_v2/test_b05_refined_preview_saved_pipeline.py
+      - ai/tests/test_cmee_piece_request_saved_pipeline.py
+      - ai/tests/test_emlis_q2_application.py
+      - ai/tests/helpers/emlis_q2_postgres.cjs
       - ai/tests/piece_v2/test_b05_piece_model_evaluation_pipeline.py
       - ai/services/ai_inference/piece_v2_safety_review.py
       - ai/tests/piece_v2/db/test_b05_reviewed_preview_issuance.py
@@ -445,6 +450,7 @@ jobs:
             ai/tests/test_piece_model_mixed_keep_register.py \
             ai/tests/piece_v2/test_b05_piece_model_concurrency.py \
             ai/tests/piece_v2/test_b05_piece_model_saved_pipeline.py \
+            ai/tests/piece_v2/test_b05_piece_qualified_checkpoint.py \
             ai/tests/piece_v2/test_b05_piece_model_evaluation_pipeline.py
           python -m pytest -q --tb=short -ra -p no:cacheprovider \
             -c /dev/null --rootdir=. --noconftest \
