@@ -405,6 +405,41 @@ def _compact_history_answer_meaning(meaning):
             < len(_compact_json(meaning).encode('utf-8')) else meaning)
 
 
+def _frame_feedback_material(admitted, included_ids):
+    feedback = tuple(f for f in admitted.control.frame_feedback_sources
+                     if f.source_emotion_id in included_ids)
+    rows = [{'source_role': 'USER_FRAME_FEEDBACK',
+             'input_id': f.source_emotion_id, 'status': f.status, 'correction_text': f.correction_text,
+             'version': f.version, 'updated_at': f.updated_at} for f in feedback]
+    if not feedback or admitted.control.capability_snapshot != 'Q3_PREMIUM':
+        return rows
+    from .emlis_thread_history import derive_interpretive_frames
+    try:
+        # Recover the original mapping only as the feedback's AI context.
+        # A rejected/revised mapping must not return as an active user claim.
+        original = replace(admitted, control=replace(admitted.control,
+            admitted_history=tuple(source for source in admitted.control.admitted_history
+                if source.source_guard[0] in included_ids),
+            frame_feedback_sources=(), rejected_frame_keys=()))
+        frames = derive_interpretive_frames(original)
+    except ValueError:
+        frames = ()
+    for source, row in zip(feedback, rows):
+        row.update(frame_key=source.frame_key, frame_ref=source.frame_ref, target_binding='UNRESOLVED')
+        matches = [f for f in frames if f.input_id == source.source_emotion_id
+                   and f.frame_key == source.frame_key and f.frame_ref == source.frame_ref]
+        if len(matches) != 1 or not matches[0].evidence_refs:
+            # In particular a later frame-view may refer to a previous user
+            # revision which the latest feedback row no longer retains.
+            continue
+        frame = matches[0]
+        row.update(target_binding='BOUND', target_ai_interpretation={
+            'source_role': 'AI_INTERPRETATION_CONTEXT', 'scope': 'PAST_RECORD_FRAME',
+            'source_recorded_at': frame.recorded_at, 'trigger': frame.trigger,
+            'received_meaning': frame.received_meaning, 'evidence_refs': list(frame.evidence_refs)})
+    return rows
+
+
 def prepare_natural_reply(request, *, use_meaning_support=False, response_stage="FINAL", prepared_meaning=None,
                           use_history_answer_plan=False):
     """Return admitted user material and the existing independent Safety result."""
@@ -461,10 +496,7 @@ def prepare_natural_reply(request, *, use_meaning_support=False, response_stage=
         included_ids.add(source.source_guard[0])
     material = {"current": _material(original), "current_input_id": current_id,
                 "current_answers": _answers(admitted), "past_user_records": history,
-                "user_frame_feedback": [{'source_role': 'USER_FRAME_FEEDBACK',
-                    'input_id': f.source_emotion_id, 'status': f.status, 'correction_text': f.correction_text,
-                    'version': f.version, 'updated_at': f.updated_at}
-                    for f in feedback if f.source_emotion_id in included_ids]}
+                "user_frame_feedback": _frame_feedback_material(admitted, included_ids)}
     if admitted.control.interpretation_corrections:
         material["interpretation_corrections"] = _interpretation_corrections(admitted)
     if response_stage == "REFINED" and not material["current_answers"]:
