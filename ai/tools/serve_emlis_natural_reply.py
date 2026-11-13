@@ -155,9 +155,64 @@ def piece_json_parser(messages, alphabet):
         config=CharacterLevelParserConfig(alphabet=alphabet, force_json_field_order=True))
 
 
+def _correction_target_context_messages_valid(messages):
+    """Admit only a complete, locator-bound AI target context, never arbitrary history."""
+    try:
+        if (type(messages) is not list or len(messages) != 3
+                or any(type(row) is not dict or set(row) != {'role', 'content'} for row in messages)
+                or [row['role'] for row in messages] != ['system', 'assistant', 'user']
+                or any(type(row['content']) is not str or not row['content'] for row in messages)):
+            return False
+        context = json.loads(messages[1]['content'])
+        material = json.loads(messages[2]['content'])
+        if (type(context) is not dict or set(context) != {'ai_interpretation_targets'}
+                or type(context['ai_interpretation_targets']) is not list
+                or not context['ai_interpretation_targets'] or type(material) is not dict):
+            return False
+        targets = context['ai_interpretation_targets']
+        histories = material.get('past_user_records', [])
+        if type(histories) is not list or any(type(row) is not dict for row in histories):
+            return False
+        records = [('', material.get('current_input_id'), material)]
+        records.extend((f'past_user_records[{index}].', row.get('input_id'), row)
+                       for index, row in enumerate(histories))
+        target_fields = {'source_role', 'context_ref', 'parent_input_id', 'correction_source_path',
+                         'correction_id', 'target_event_id', 'target_ai_interpretation'}
+        count = 0
+        for prefix, parent_id, record in records:
+            corrections = record.get('interpretation_corrections', [])
+            if type(corrections) is not list:
+                return False
+            for index, correction in enumerate(corrections):
+                if (type(correction) is not dict or count >= len(targets)
+                        or correction.get('source_role') != 'USER_INTERPRETATION_CORRECTION'
+                        or 'target_ai_interpretation' in correction
+                        or type(parent_id) is not str or not parent_id.strip()):
+                    return False
+                target = targets[count]
+                reference = f'ai_interpretation_targets[{count}]'
+                if (type(target) is not dict or set(target) != target_fields
+                        or any(type(value) is not str or not value.strip() for value in target.values())
+                        or target['source_role'] != 'AI_INTERPRETATION_TARGET'
+                        or target['context_ref'] != reference
+                        or correction.get('target_ai_context_ref') != reference
+                        or target['parent_input_id'] != parent_id
+                        or target['correction_source_path'] != prefix + f'interpretation_corrections[{index}]'
+                        or any(target[key] != correction.get(key) for key in ('correction_id', 'target_event_id'))):
+                    return False
+                count += 1
+        return count == len(targets)
+    except (ValueError, TypeError, KeyError):
+        return False
+
+
 def make_handler(generate, *, api_key, model_name, deadline, max_requests,
                  max_new_tokens=2048, request_seconds=23, max_request_bytes=65536,
-                 natural_reply=None, natural_queue_seconds=210, piece_revision=None):
+                 natural_reply=None, natural_queue_seconds=210, piece_revision=None,
+                 correction_target_context=False):
+    if (type(correction_target_context) is not bool
+            or correction_target_context and not natural_reply):
+        raise ValueError('correction_target_context_configuration_invalid')
     if piece_revision is not None and (type(piece_revision) is not str
             or not re.fullmatch(r'piece-lora:[0-9a-f]{64}', piece_revision)):
         raise ValueError('piece_adapter_revision_invalid')
@@ -205,15 +260,18 @@ def make_handler(generate, *, api_key, model_name, deadline, max_requests,
                 self.connection.settimeout(5)
                 request = json.loads(self.rfile.read(length))
                 messages = request["messages"]
+                piece = 'candidate_format' in request
+                ordinary_messages = (isinstance(messages, list) and len(messages) == 2
+                    and [m["role"] for m in messages] == ["system", "user"]
+                    and all(isinstance(m["content"], str) and m["content"] for m in messages))
+                correction_messages = (correction_target_context and natural and not piece
+                    and _correction_target_context_messages_valid(messages))
                 if (request.get("model") != selected_model or request.get("stream") is not False
                         or type(request.get("max_tokens")) is not int
                         or request["max_tokens"] != selected_tokens or request.get("temperature") != 0
                         or request.get("chat_template_kwargs") != {"enable_thinking": False}
-                        or not isinstance(messages, list) or len(messages) != 2
-                        or [m["role"] for m in messages] != ["system", "user"]
-                        or any(not isinstance(m["content"], str) or not m["content"] for m in messages)):
+                        or not (ordinary_messages or correction_messages)):
                     raise ValueError
-                piece = 'candidate_format' in request
                 if piece:
                     if not natural or request['candidate_format'] != PIECE_CANDIDATE_FORMAT:
                         raise ValueError
@@ -507,6 +565,8 @@ def main():
     parser.add_argument("--analysis-service", action="store_true",
                         help="Serve ordinary Analysis until SIGTERM/SIGINT; no probe-count expiry.")
     parser.add_argument('--natural-reply-model', help='Also serve the existing base natural-reply profile with its separate API key.')
+    parser.add_argument('--natural-reply-correction-target-context', action='store_true',
+                        help='Admit locator-bound AI correction context for the shared natural profile only.')
     parser.add_argument('--semantic-json', action='store_true', help='Constrain Analysis JSON/source-quote pairs and explicit Piece field slots during generation.')
     parser.add_argument("--max-new-tokens", type=int)
     parser.add_argument("--context-tokens", type=int)
@@ -514,6 +574,8 @@ def main():
     args = parser.parse_args()
     if args.natural_reply_model and not args.analysis_service:
         parser.error('shared natural reply requires explicit analysis service mode')
+    if args.natural_reply_correction_target_context and not args.natural_reply_model:
+        parser.error('AI correction context requires the shared natural reply profile')
     natural_reply = None
     if args.natural_reply_model:
         natural_key = os.environ.get("EMLIS_NATURAL_REPLY_API_KEY", "")
@@ -582,6 +644,7 @@ def main():
         max_new_tokens=max_new_tokens, request_seconds=request_seconds,
         max_request_bytes=262144 if args.analysis_service else 65536,
         natural_reply=natural_reply,
+        correction_target_context=args.natural_reply_correction_target_context,
         piece_revision='piece-lora:' + args.piece_adapter_weights_sha256 if piece_options else None))
     server.timeout = 1
     try:

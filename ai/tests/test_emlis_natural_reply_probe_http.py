@@ -1,6 +1,8 @@
 """Actual local HTTP probe protocol with a synthetic generator; no GPU."""
 import importlib.util
+from copy import deepcopy
 import hashlib
+import json
 import os
 from pathlib import Path
 import signal
@@ -16,6 +18,119 @@ import pytest
 spec = importlib.util.spec_from_file_location("natural_probe", Path(__file__).parents[1] / "tools/serve_emlis_natural_reply.py")
 probe = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(probe)
+
+
+def _correction_context_messages():
+    from cocolon_meaning_experience_engine.natural_reply import NaturalReplyInput, build_natural_reply_messages
+    def correction(identity, target, explanation):
+        return dict(source_role='USER_INTERPRETATION_CORRECTION', correction_id=identity,
+            target_event_id='event-' + identity, target_ai_interpretation=target,
+            recorded_at='2026-11-13T04:00:00+09:00', user_explanation=explanation, assessment='UNASSESSED')
+    material = dict(current_input_id='current-input', current=dict(memo='本人の原文。'),
+        interpretation_corrections=[correction('current-correction', '先生が姉を呼び止めた', '違います。')],
+        past_user_records=[dict(input_id='past-input', original=dict(memo='昔の原文。'),
+            interpretation_corrections=[correction('past-correction', '先に説明した', '後から説明しました。')])])
+    request = NaturalReplyInput('same-source-prefix', json.dumps(material, ensure_ascii=False))
+    return build_natural_reply_messages(request, correction_target_context=True)
+
+
+@pytest.mark.parametrize('enabled', [False, True])
+def test_correction_context_http_admission_is_explicit_natural_only_and_locator_bound(enabled):
+    calls = []
+    def generate(messages, deadline, *, profile=None):
+        calls.append((deepcopy(messages), profile))
+        return '合成の返事です。', 'stop'
+    server = ThreadingHTTPServer(('127.0.0.1', 0), probe.make_handler(generate,
+        api_key='analysis-test-key', model_name='analysis', deadline=float('inf'), max_requests=0,
+        max_new_tokens=4096, request_seconds=210,
+        natural_reply={'api_key':'natural-test-key', 'model_name':'natural'},
+        correction_target_context=enabled))
+    worker = threading.Thread(target=server.serve_forever, daemon=True); worker.start()
+    candidate = _correction_context_messages()
+    def packet(messages, *, model='natural', tokens=2048, **extra):
+        return dict(model=model, messages=messages, max_tokens=tokens, temperature=0,
+            stream=False, chat_template_kwargs={'enable_thinking':False}, **extra)
+    try:
+        with httpx.Client(trust_env=False, timeout=5) as client:
+            url = f'http://127.0.0.1:{server.server_port}/v1/chat/completions'
+            def post(body, key='natural-test-key'):
+                return client.post(url, json=body, headers={'Authorization':'Bearer ' + key})
+            assert post(packet(candidate), key='wrong-private-key').status_code == 401
+            assert not calls
+            assert post(packet(candidate)).status_code == (200 if enabled else 400)
+            assert len(calls) == int(enabled)
+            if enabled:
+                assert calls[0] == (candidate, 'natural')
+            count = len(calls)
+            # Neither another profile nor a Piece request may use the new shape.
+            assert post(packet(candidate, model='analysis', tokens=4096), key='analysis-test-key').status_code == 400
+            assert post(packet(candidate, candidate_format=probe.PIECE_CANDIDATE_FORMAT)).status_code == 400
+            for mutation in ('extra-context', 'extra-target-field', 'spoof-role', 'parent', 'event', 'path',
+                             'duplicate-ref', 'dangling-ref', 'source-target', 'blank-target',
+                             'extra-target', 'missing-target', 'extra-message', 'wrong-message-role', 'invalid-json'):
+                messages = deepcopy(candidate)
+                context = json.loads(messages[1]['content'])
+                person = json.loads(messages[2]['content'])
+                targets = context['ai_interpretation_targets']
+                if mutation == 'extra-context': context['other_assistant_history'] = 'unsupported'
+                elif mutation == 'extra-target-field': targets[0]['other'] = 'unsupported'
+                elif mutation == 'spoof-role': targets[0]['source_role'] = 'USER_INTERPRETATION_CORRECTION'
+                elif mutation == 'parent': targets[0]['parent_input_id'] = 'another-input'
+                elif mutation == 'event': targets[0]['target_event_id'] = 'another-event'
+                elif mutation == 'path': targets[0]['correction_source_path'] = 'past_user_records[0].interpretation_corrections[0]'
+                elif mutation == 'duplicate-ref': targets[1]['context_ref'] = targets[0]['context_ref']
+                elif mutation == 'dangling-ref': person['interpretation_corrections'][0]['target_ai_context_ref'] = 'ai_interpretation_targets[99]'
+                elif mutation == 'source-target': person['interpretation_corrections'][0]['target_ai_interpretation'] = targets[0]['target_ai_interpretation']
+                elif mutation == 'blank-target': targets[0]['target_ai_interpretation'] = ' '
+                elif mutation == 'extra-target': targets.append(deepcopy(targets[0]))
+                elif mutation == 'missing-target': targets.pop()
+                messages[1]['content'] = json.dumps(context, ensure_ascii=False)
+                messages[2]['content'] = json.dumps(person, ensure_ascii=False)
+                if mutation == 'extra-message': messages.insert(2, dict(role='assistant', content='extra context'))
+                elif mutation == 'wrong-message-role': messages[1]['role'] = 'user'
+                elif mutation == 'invalid-json': messages[1]['content'] = '{'
+                assert post(packet(messages)).status_code == 400, mutation
+            assert len(calls) == count
+            ordinary = [dict(role='system',content='synthetic'), dict(role='user',content='synthetic')]
+            assert post(packet(ordinary)).status_code == 200
+            assert post(packet(ordinary, model='analysis', tokens=4096), key='analysis-test-key').status_code == 200
+            piece = [ordinary[0], dict(role='user', content=json.dumps(dict(core='piece', task='PIECE_MODEL_BODY',
+                control=dict(field_slots={'memo_0':{}}))))]
+            assert post(packet(piece, candidate_format=probe.PIECE_CANDIDATE_FORMAT)).status_code == 200
+            assert calls[count:] == [(ordinary, 'natural'), (ordinary, None), (piece, 'piece')]
+    finally:
+        server.shutdown(); server.server_close(); worker.join(3)
+
+
+def test_correction_context_cli_requires_shared_profile_and_forwards_explicit_option(monkeypatch):
+    monkeypatch.setattr(sys, 'argv', ['serve','--model-name','analysis','--analysis-service',
+        '--natural-reply-correction-target-context'])
+    with pytest.raises(SystemExit) as error:
+        probe.main()
+    assert error.value.code == 2
+    captured = {}
+    def load(adapter, stop, **kwargs):
+        captured['stop'] = stop
+        return lambda *_args, **_kwargs: None
+    def handler(generator, **kwargs):
+        captured.update(kwargs)
+        return object()
+    class Server:
+        def __init__(self, address, handler): pass
+        def handle_request(self): captured['stop'].set()
+        def server_close(self): captured['closed'] = True
+    monkeypatch.setattr(probe, 'load_generator', load)
+    monkeypatch.setattr(probe, 'make_handler', handler)
+    monkeypatch.setattr(probe, 'ThreadingHTTPServer', Server)
+    monkeypatch.setattr(probe.signal, 'signal', lambda *_args: None)
+    monkeypatch.setenv('COCOLON_ANALYSIS_MODEL_API_KEY', 'synthetic-analysis-private-key')
+    monkeypatch.setenv('EMLIS_NATURAL_REPLY_API_KEY', 'synthetic-natural-private-key')
+    monkeypatch.setattr(sys, 'argv', ['serve','--model-name','analysis','--analysis-service',
+        '--natural-reply-model','natural','--natural-reply-correction-target-context'])
+    probe.main()
+    assert captured['correction_target_context'] is True
+    assert captured['natural_reply'] == dict(api_key='synthetic-natural-private-key',model_name='natural')
+    assert captured['closed'] and captured['max_new_tokens'] == 4096 and captured['request_seconds'] == 210
 
 
 def test_selected_saved_candidate_requires_matching_pair_and_detects_later_change(tmp_path):

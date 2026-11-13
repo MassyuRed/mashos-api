@@ -10,10 +10,142 @@ from test_emlis_q2_application import run
 from test_emlis_q3_application import qdb
 from test_emlis_natural_reply_application import natural_case, BODY
 from emlis_thread_store import ThreadStoreError
-from cocolon_meaning_experience_engine.natural_reply import NaturalReply, system_message_for
+from cocolon_meaning_experience_engine.natural_reply import (
+    NaturalReply, NaturalReplyError, NaturalReplyInput, SelfHostedNaturalReplySource,
+    build_natural_reply_messages, system_message_for,
+)
 
 EXPLANATION = "安心したのではなく、終わってもまだ心配が残っています。資料を読み直したことは合っています。"
 REPLY = "会議が終わっても心配は残っているのですね。資料を読み直したことと、今の気持ちは分けて受け取りました。"
+
+
+def _target_context_request():
+    def correction(identity, target, explanation):
+        return dict(source_role="USER_INTERPRETATION_CORRECTION", correction_id=identity,
+            recorded_at="2026-11-13T04:00:00+09:00", target_event_id="event-" + identity,
+            target_ai_interpretation=target, user_explanation=explanation, assessment="UNASSESSED")
+
+    target = "先生が姉を呼び止めた"
+    material = dict(current_input_id="current-record",
+        current=dict(memo='AIには「' + target + '」と書かれたが違った。',
+                     memo_action="姉が先生を呼び止めた。"),
+        interpretation_corrections=[correction("current-vague", target, "違います。"),
+            correction("current-detail", target, '「' + target + '」ではなく、姉が先に声をかけました。')],
+        current_answers=[], user_frame_feedback=[],
+        past_user_records=[dict(input_id="past-record", original=dict(memo="資料を渡した。"),
+            answers=[], interpretation_corrections=[correction("past-correction", "資料を受け取った",
+                "受け取ったのではなく、私から渡しました。")])])
+    return NaturalReplyInput("unchanged-correction-prefix", json.dumps(material, ensure_ascii=False, indent=2))
+
+
+def test_target_context_projection_preserves_sources_and_all_current_past_corrections():
+    request = _target_context_request()
+    original = request.material_json
+    source = json.loads(original)
+    baseline = build_natural_reply_messages(request)
+    projected = build_natural_reply_messages(request, correction_target_context=True)
+    assert baseline == [dict(role="system", content=system_message_for(request)),
+                        dict(role="user", content=original)]
+    assert [row["role"] for row in projected] == ["system", "assistant", "user"]
+    assert projected[0] == baseline[0]
+    targets = json.loads(projected[1]["content"])["ai_interpretation_targets"]
+    person = json.loads(projected[2]["content"])
+    assert [row["correction_id"] for row in targets] == ["current-vague", "current-detail", "past-correction"]
+    assert [row["parent_input_id"] for row in targets] == ["current-record", "current-record", "past-record"]
+    assert [row["correction_source_path"] for row in targets] == [
+        "interpretation_corrections[0]", "interpretation_corrections[1]",
+        "past_user_records[0].interpretation_corrections[0]"]
+    assert all(row["source_role"] == "AI_INTERPRETATION_TARGET" and "recorded_at" not in row
+               for row in targets)
+    person_rows = person["interpretation_corrections"] + person["past_user_records"][0]["interpretation_corrections"]
+    original_rows = source["interpretation_corrections"] + source["past_user_records"][0]["interpretation_corrections"]
+    assert len(targets) == len(person_rows) == len(original_rows) == 3
+    for index, (row, ai, old) in enumerate(zip(person_rows, targets, original_rows)):
+        reference = f"ai_interpretation_targets[{index}]"
+        assert row.pop("target_ai_context_ref") == ai["context_ref"] == reference
+        assert "target_ai_interpretation" not in row
+        assert ai["target_event_id"] == old["target_event_id"]
+        assert ai["target_ai_interpretation"] == old["target_ai_interpretation"]
+        row["target_ai_interpretation"] = ai["target_ai_interpretation"]
+    # This also proves that literal user quotations and all vague/multiple
+    # explanations survived: no global text removal or opposite meaning.
+    assert person == source
+    assert request.material_json == original and request.source_prefix_ref == "unchanged-correction-prefix"
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_target_context_option_reaches_only_the_existing_http_message_owner(enabled):
+    request = _target_context_request()
+    before = request.material_json
+    calls = []
+
+    def handler(sent):
+        body = json.loads(sent.content)
+        calls.append(body)
+        assert body == dict(model="configured-only",
+            messages=build_natural_reply_messages(request, correction_target_context=enabled),
+            temperature=0, max_tokens=2048, stream=False, chat_template_kwargs={"enable_thinking": False})
+        return httpx.Response(200, json={"model": "configured-only", "choices": [{"finish_reason": "stop",
+            "message": {"role": "assistant", "content": "本人の説明を受け取る合成の返事です。"}}]})
+
+    options = {"correction_target_context": True} if enabled else {}
+    provider = SelfHostedNaturalReplySource(endpoint="https://provider.example/v1/chat/completions",
+        model="configured-only", api_key="synthetic", transport=httpx.MockTransport(handler), **options)
+    reply = run(provider(request))
+    assert reply.source_prefix_ref == request.source_prefix_ref
+    assert request.material_json == before and len(calls) == 1
+    assert [row["role"] for row in calls[0]["messages"]] == (
+        ["system", "assistant", "user"] if enabled else ["system", "user"])
+
+
+def test_target_context_no_correction_keeps_original_message_bytes_through_http():
+    material = '{ "current": {"memo":"普通の記録。"}, "past_user_records": [] }'
+    request = NaturalReplyInput("ordinary-prefix", material)
+    expected = build_natural_reply_messages(request)
+    calls = []
+
+    def handler(sent):
+        calls.append(json.loads(sent.content))
+        assert calls[0]["messages"] == expected
+        assert calls[0]["messages"][1]["content"] == material
+        return httpx.Response(200, json={"model": "configured-only", "choices": [{"finish_reason": "stop",
+            "message": {"role": "assistant", "content": "普通の合成の返事です。"}}]})
+
+    provider = SelfHostedNaturalReplySource(endpoint="https://provider.example/v1/chat/completions",
+        model="configured-only", api_key="synthetic", transport=httpx.MockTransport(handler),
+        correction_target_context=True)
+    assert run(provider(request)).source_prefix_ref == "ordinary-prefix"
+    assert len(calls) == 1 and request.material_json == material
+
+
+@pytest.mark.parametrize("mutation", ["target", "parent", "reference", "list"])
+def test_target_context_malformed_later_record_rejects_before_http_without_partial_projection(mutation):
+    original = _target_context_request()
+    material = json.loads(original.material_json)
+    past = material["past_user_records"][0]
+    if mutation == "target":
+        past["interpretation_corrections"][0]["target_ai_interpretation"] = None
+    elif mutation == "parent":
+        past["input_id"] = ""
+    elif mutation == "reference":
+        past["interpretation_corrections"][0]["target_ai_context_ref"] = "foreign-context"
+    else:
+        past["interpretation_corrections"] = {}
+    request = NaturalReplyInput(original.source_prefix_ref, json.dumps(material, ensure_ascii=False))
+    before = request.material_json
+    calls = []
+
+    def handler(sent):
+        calls.append(sent)
+        raise AssertionError("malformed projection must not reach provider")
+
+    provider = SelfHostedNaturalReplySource(endpoint="https://provider.example/v1/chat/completions",
+        model="configured-only", api_key="synthetic", transport=httpx.MockTransport(handler),
+        correction_target_context=True)
+    with pytest.raises(NaturalReplyError, match="natural_reply_correction_context_invalid"):
+        run(provider(request))
+    assert not calls and request.material_json == before
+    assert build_natural_reply_messages(request)[1]["content"] == before
 
 
 def test_correction_roles_reach_research_author_and_independent_saved_comparison(natural_case):

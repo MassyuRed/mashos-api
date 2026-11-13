@@ -537,17 +537,71 @@ def validate_reply(reply, request):
     return reply
 
 
+def build_natural_reply_messages(request, *, correction_target_context=False):
+    """Keep the saved material intact; optionally frame AI targets as AI context.
+
+    This explicit research projection changes only message provenance. It does
+    not interpret a correction, qualify evidence, or create an active meaning.
+    All targets remain available, including targets of vague explanations.
+    """
+    messages = [{"role": "system", "content": system_message_for(request)},
+                {"role": "user", "content": request.material_json}]
+    if type(correction_target_context) is not bool:
+        raise NaturalReplyError("natural_reply_correction_context_invalid")
+    if not correction_target_context:
+        return messages
+    try:
+        material = json.loads(request.material_json)
+        if type(material) is not dict:
+            raise ValueError
+        histories = material.get("past_user_records", [])
+        if type(histories) is not list or any(type(row) is not dict for row in histories):
+            raise ValueError
+        records = [("", material.get("current_input_id"), material)]
+        records.extend((f"past_user_records[{index}].", row.get("input_id"), row)
+                       for index, row in enumerate(histories))
+        targets = []
+        for prefix, parent_id, record in records:
+            corrections = record.get("interpretation_corrections", [])
+            if type(corrections) is not list:
+                raise ValueError
+            for index, row in enumerate(corrections):
+                if (type(row) is not dict or row.get("source_role") != "USER_INTERPRETATION_CORRECTION"
+                        or type(parent_id) is not str or not parent_id.strip()
+                        or any(type(row.get(key)) is not str or not row[key].strip()
+                               for key in ("correction_id", "target_event_id", "target_ai_interpretation"))
+                        or "target_ai_context_ref" in row):
+                    raise ValueError
+                reference = f"ai_interpretation_targets[{len(targets)}]"
+                targets.append({"source_role": "AI_INTERPRETATION_TARGET",
+                    "context_ref": reference, "parent_input_id": parent_id,
+                    "correction_source_path": prefix + f"interpretation_corrections[{index}]",
+                    "correction_id": row["correction_id"], "target_event_id": row["target_event_id"],
+                    "target_ai_interpretation": row.pop("target_ai_interpretation")})
+                row["target_ai_context_ref"] = reference
+        if not targets:
+            return messages
+        return [messages[0],
+                {"role": "assistant", "content": _compact_json({"ai_interpretation_targets": targets})},
+                {"role": "user", "content": _compact_json(material)}]
+    except (ValueError, TypeError, KeyError):
+        # A malformed later row cannot send a partially projected request.
+        raise NaturalReplyError("natural_reply_correction_context_invalid") from None
+
+
 class SelfHostedNaturalReplySource:
     """A single authenticated OpenAI-compatible HTTP call, with no retry."""
-    def __init__(self, *, endpoint, model, api_key, transport=None):
+    def __init__(self, *, endpoint, model, api_key, transport=None, correction_target_context=False):
         parsed = urlsplit(endpoint)
         if (parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password
                 or parsed.query or parsed.fragment or not parsed.path.endswith("/chat/completions")
                 or not isinstance(model, str) or not model.strip()
-                or not isinstance(api_key, str) or not api_key.strip()):
+                or not isinstance(api_key, str) or not api_key.strip()
+                or type(correction_target_context) is not bool):
             raise NaturalReplyError("natural_reply_configuration_invalid")
         self.endpoint, self.model, self._api_key = endpoint, model, api_key
         self._transport = transport
+        self._correction_target_context = correction_target_context
 
     async def __call__(self, request):
         try:
@@ -555,9 +609,8 @@ class SelfHostedNaturalReplySource:
                     timeout=httpx.Timeout(REQUEST_SECONDS, connect=5.0)) as client:
                 response = await client.post(self.endpoint,
                     headers={"Authorization": "Bearer " + self._api_key},
-                    json={"model": self.model, "messages": [
-                        {"role": "system", "content": system_message_for(request)},
-                        {"role": "user", "content": request.material_json}],
+                    json={"model": self.model, "messages": build_natural_reply_messages(
+                        request, correction_target_context=self._correction_target_context),
                         "temperature": 0, "max_tokens": 2048, "stream": False,
                         "chat_template_kwargs": {"enable_thinking": False}})
             if response.status_code != 200 or len(response.content) > 262144:
