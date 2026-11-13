@@ -343,6 +343,36 @@ def _piece_model_operator_tree(sentence):
     from cocolon_meaning_experience_engine.natural_reply_meaning import _FORMS
     from cocolon_meaning_experience_engine.piece_source import _EVALUATIVE_FINITE
 
+    # Piece-only inflection knowledge, not completed source/candidate pairs.
+    # Keep the shared Emlis/Analysis grammar and source admission unchanged.
+    # A conjugation class is explicit: guessing it from a polite suffix can
+    # conflate distinct verbs (e.g. 降りる / 降る).
+    finite_forms = set(_FORMS)
+    for lemma, stem, conjugation in (('気づく', '気づ', 'k'),
+                                    ('できる', 'でき', 'vowel'),
+                                    ('考える', '考え', 'vowel')):
+        polite, negative, past = {
+            'k': (stem + 'き', stem + 'か', stem + 'いた'),
+            'vowel': (stem, stem, stem + 'た'),
+        }[conjugation]
+        for surface, polarity in ((past, 'positive'),
+                (polite + 'ました', 'positive'),
+                (negative + 'なかった', 'negative'),
+                (polite + 'ませんでした', 'negative')):
+            finite_forms.add((surface, lemma, polarity, 'fact', 'past', 'active', False))
+
+    # The te/de form comes from a known active plain past, never a generic
+    # kana stem. Aspect stays separate from a completed or negated action.
+    state_forms = set()
+    for surface, lemma, polarity, modality, time, voice, receiving in finite_forms:
+        if ((polarity, modality, time, voice, receiving) ==
+                ('positive', 'fact', 'past', 'active', False)
+                and not surface.endswith('ました') and surface[-1] in 'ただ'):
+            connective = surface[:-1] + ('て' if surface[-1] == 'た' else 'で')
+            for suffix, state_polarity in (('います', 'positive'), ('いる', 'positive'),
+                    ('いません', 'negative'), ('いない', 'negative')):
+                state_forms.add((connective + suffix, connective, lemma, state_polarity))
+
     if (type(sentence) is not str or not sentence or len(sentence) > 420
             or sentence[-1] not in '。！!'
             or any(c in sentence[:-1] for c in '。！？!?\r\n「」『』"“”（）()【】')):
@@ -417,7 +447,11 @@ def _piece_model_operator_tree(sentence):
         if interpretation is not None and explicit_topic(value):
             content = interpretation['content']
             ending = _WISH_END.search(content)
-            if ending is not None and ending.end() == len(content):
+            # Content with a plain past/copular ending remains literal;
+            # no inner proposition is interpreted. Denying an interpretation
+            # never denies the embedded action.
+            if ((ending is not None and ending.end() == len(content))
+                    or content.endswith(('た', 'だ'))):
                 options.add(('NEGATED_INTERPRETATION_HOST', content,
                              'わけでは', 'negative', 'nonpast'))
 
@@ -426,7 +460,7 @@ def _piece_model_operator_tree(sentence):
             # including every case, nested nominal, condition and negation
             # is a literal leaf; it is never parsed as a new SELF assertion.
             matches = []
-            for surface, lemma, polarity, modality, time, voice, receiving in _FORMS:
+            for surface, lemma, polarity, modality, time, voice, receiving in finite_forms:
                 if (modality == 'fact' and time == 'past' and voice == 'active'
                         and not receiving and value.endswith(surface)):
                     prefix = value[:-len(surface)]
@@ -436,6 +470,17 @@ def _piece_model_operator_tree(sentence):
             if matches:
                 longest = max(size for size, _ in matches)
                 options.update(key for size, key in matches if size == longest)
+
+            states = []
+            for surface, connective, lemma, polarity in state_forms:
+                if value.endswith(surface):
+                    prefix = value[:-len(surface)]
+                    if prefix:
+                        states.append((len(surface), ('TE_STATE_WITH_RETAINED_PREFIX',
+                            prefix, connective, lemma, polarity, 'nonpast', 'active')))
+            if states:
+                longest = max(size for size, _ in states)
+                options.update(key for size, key in states if size == longest)
 
             # The source owner already licenses this verbal-noun grammar.
             # Derive its lemma and complete inflection, without adding a
@@ -728,12 +773,35 @@ def validate_source_meaning_preservation(meaning, plan, artifact, *, _model_regi
         return re.fullmatch(anchor(bare) + r'(?:です)?' + re.escape(source[-1]), visible) is not None
 
     def same_operator_tree(source, visible):
-        # Name abstraction and dependency binding retain their existing S7
-        # owners. The new tree may compare only unchanged public literals.
-        if anchor(source) != re.escape(source):
-            return False
+        # Parse untouched source/output independently. Only literal leaves
+        # can use S7's already-proved public alias; typed operators, narrator,
+        # inflection axes, order and punctuation must remain identical.
+        # Never publicize the source first and reparse a manufactured view.
+        literal_fields = {
+            ('RETAINED', 2): (1,),
+            ('TARGET_FEELING', 3): (1,),
+            ('IMPRESSION_HOST', 5): (1,),
+            ('NEGATED_INTERPRETATION_HOST', 5): (1,),
+            ('FINITE_WITH_RETAINED_PREFIX', 7): (1,),
+            ('TE_STATE_WITH_RETAINED_PREFIX', 7): (1,),
+            ('LITERAL_SELF_END', 3): (1,),
+            ('EVALUATION', 11): (4,),
+        }
+
+        def same(left, right):
+            if type(left) is not type(right):
+                return False
+            if type(left) is not tuple:
+                return left == right
+            if len(left) != len(right):
+                return False
+            fields = literal_fields.get((left[0], len(left)), ()) if left and type(left[0]) is str else ()
+            return all(re.fullmatch(anchor(a), b) is not None if i in fields
+                       else same(a, b) for i, (a, b) in enumerate(zip(left, right, strict=True)))
+
         source_tree = _piece_model_operator_tree(source)
-        return source_tree is not None and source_tree == _piece_model_operator_tree(visible)
+        visible_tree = _piece_model_operator_tree(visible)
+        return source_tree is not None and visible_tree is not None and same(source_tree, visible_tree)
 
     def same_finite_model_context(node_id, source, visible):
         # A mixed original can retain an opaque KEEP clause while another
