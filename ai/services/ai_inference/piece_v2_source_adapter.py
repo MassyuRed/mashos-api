@@ -321,15 +321,22 @@ class PieceSavedSourceAdapter:
         if opted_in is not True:
             raise _error('PIECE_SOURCE_NOT_ELIGIBLE')
         answer_id = _uuid(supplemental_answer_identity, 'PIECE_REQUEST_INVALID')
-        from emlis_thread_service import _check, _generation_current, Q3_PROFILE
+        from emlis_thread_service import _check, _generation_current, Q3_PROFILE, NATURAL_REPLY_PROFILE
         saved, snapshot = await self._resolve_original_with_snapshot(authorization, saved_input_id)
         try:
             thread = _check(snapshot)
             if thread is None:
                 raise _error('PIECE_SOURCE_NOT_ELIGIBLE')
+            if thread['data'].get('response_profile') not in {None, NATURAL_REPLY_PROFILE}:
+                raise _error('PIECE_SOURCE_NOT_ELIGIBLE')
             if thread['data']['runtime_profile'] == Q3_PROFILE:
-                snapshot['context'] = await self._store.context(
-                    saved.authenticated_owner_id, saved.saved_input_id)
+                if thread['data'].get('response_profile') == NATURAL_REPLY_PROFILE:
+                    snapshot['context'] = await self._store.related_context(
+                        saved.authenticated_owner_id, saved.saved_input_id,
+                        context_guards=thread['data'].get('context_guards', []))
+                else:
+                    snapshot['context'] = await self._store.context(
+                        saved.authenticated_owner_id, saved.saved_input_id)
             if not _generation_current(snapshot):
                 raise _error('PIECE_SOURCE_NOT_ELIGIBLE')
             return _refined_observation_handoff(saved, snapshot, answer_id)
@@ -672,9 +679,242 @@ def _original_observation_handoff(saved: PieceSavedOriginal, snapshot: dict) -> 
     return PieceSavedHandoff(saved, thread_id, t['revision'], canonical_json_bytes(lineage))
 
 
+def _natural_refined_observation_handoff(saved: PieceSavedOriginal, snapshot: dict,
+                                         answer_id: str) -> PieceSavedRefinedHandoff:
+    """Bind one current natural ADD to real sources and saved reply receipts.
+
+    Reply text proves completion only. The original and frozen ANSWER remain
+    the only Piece meaning sources; no synthetic checkpoint is put on an OBS.
+    """
+    from dataclasses import replace
+    from emlis_thread_service import (
+        _context_ref, _json, _request, NATURAL_QUESTION_POLICY,
+        NATURAL_REPLY_PROFILE, Q3_PROFILE,
+    )
+    from cocolon_meaning_experience_engine.emlis_answer_update import prepare_emlis_meaning
+    from cocolon_meaning_experience_engine.emlis_thread_contracts import SEMANTIC_SCHEMA
+    from cocolon_meaning_experience_engine.emlis_thread_source import admit_emlis_thread
+    from cocolon_meaning_experience_engine.natural_reply import ARTIFACT_SCHEMA
+
+    def require(value):
+        if not value:
+            raise _error('PIECE_SOURCE_NOT_ELIGIBLE')
+
+    t, events = snapshot['thread'], snapshot['events']
+    d = t['data']
+    thread_id = _uuid(t['id'], 'PIECE_SOURCE_NOT_ELIGIBLE')
+    require(type(t['revision']) is int and t['revision'] > 0)
+    require(d.get('runtime_profile') == Q3_PROFILE
+            and d.get('response_profile') == NATURAL_REPLY_PROFILE
+            and d.get('natural_question_policy') == NATURAL_QUESTION_POLICY
+            and d.get('semantic_profile') is None and d.get('analysis_state') == 'NOT_GENERATED')
+    require(t['state'] == 'COMPLETED' and d.get('body_state') == 'REFINED'
+            and d.get('answer_assessment') == 'RESOLVED' and d.get('meaning_updated') is True
+            and d.get('failure_code') is None and d.get('natural_response_stage') == 'REFINED')
+    require(all(t[k] is None for k in ('active_operation_id', 'active_attempt_id', 'processing_deadline_at')))
+    require(canonical_json_bytes(t['source_snapshot']) == saved._original_json)
+    require(t['latest_answer_event_id'] == answer_id
+            and type(t['issued_count']) is int and t['issued_count'] == 1)
+    require(type(events) is list and bool(events))
+    by_id, seqs = {}, []
+    for event in events:
+        require(type(event) is dict and event.get('thread_id') == thread_id)
+        eid = _uuid(event['id'], 'PIECE_SOURCE_NOT_ELIGIBLE')
+        require(eid not in by_id and type(event['seq']) is int and event['seq'] > 0)
+        require(type(event['payload']) is dict and event['kind'] in {
+            'OPERATION', 'MEANING_UPDATE', 'OBSERVATION', 'QUESTION', 'ANSWER', 'TERMINAL'})
+        require(not (event['kind'] == 'OPERATION'
+            and event['payload'].get('stage') == 'INTERPRETATION_CORRECTION'))
+        by_id[eid] = event
+        seqs.append(event['seq'])
+    require(seqs == sorted(set(seqs)))
+    answers = [e for e in events if e['kind'] == 'ANSWER']
+    questions = [e for e in events if e['kind'] == 'QUESTION']
+    observations = [e for e in events if e['kind'] == 'OBSERVATION']
+    checkpoints = [e for e in events if e['kind'] == 'MEANING_UPDATE']
+    terminals = [e for e in events if e['kind'] == 'TERMINAL']
+    require(len(answers) == len(questions) == len(checkpoints) == 1 and len(observations) == 2)
+    answer, question, checkpoint = answers[0], questions[0], checkpoints[0]
+    initial, observation = observations
+    require(answer['id'] == answer_id
+            and type(answer['round_index']) is int and type(question['round_index']) is int
+            and answer['round_index'] == question['round_index'] == 1)
+    require(type(initial['round_index']) is int and initial['round_index'] == 0
+            and initial['payload'].get('stage') == 'INITIAL'
+            and type(observation['round_index']) is int and observation['round_index'] == 1
+            and observation['payload'].get('stage') == 'REFINED')
+    require(t['current_meaning_event_id'] == checkpoint['id']
+            and t['last_observation_event_id'] == observation['id'])
+    request = _request(snapshot)
+    admitted = admit_emlis_thread(request)
+    require(len(admitted.answers) == 1)
+    frozen = admitted.answers[0]
+    require(frozen.source.answer_id == answer_id
+            and frozen.source.question_id == answer['question_id'] == question['question_id'])
+    require(t['source_prefix_ref'] == t['evaluated_prefix_ref'] == admitted.source_prefix_ref)
+    qp = question['payload']
+    require(qp.get('schema_version') == 'cocolon.cmee.emlis_clarification.v1'
+            and qp.get('thread_id') == thread_id and qp.get('question_id') == question['question_id']
+            and qp.get('original_source_ref') == d.get('original_source_ref')
+            and type(qp.get('decision')) is dict and qp['decision'].get('disposition') == 'ASK')
+    original_request = replace(request, emlis_thread=replace(request.emlis_thread, answers=(), current_round=0))
+    original_prefix = admit_emlis_thread(original_request).source_prefix_ref
+    require(initial['payload'].get('source_prefix_ref') == original_prefix
+            and original_prefix != admitted.source_prefix_ref)
+    require(all(question[key] == initial[key] for key in ('operation_id', 'attempt_id')))
+    cp, op = checkpoint['payload'], observation['payload']
+    require(cp.get('semantic_schema_version') == SEMANTIC_SCHEMA
+            and cp.get('source_prefix_ref') == admitted.source_prefix_ref
+            and cp.get('assessment_status') == 'RESOLVED' and cp.get('unresolved_parts') == [])
+    update = cp.get('answer_update')
+    require(type(update) is dict and update.get('disposition') == 'MATERIAL_UPDATE'
+            and update.get('answer_source_ref') == frozen.envelope.envelope_id
+            and update.get('question_ref') == frozen.source.question_id
+            and type(update.get('updates')) is list and bool(update['updates'])
+            and update.get('unresolved_parts') == [])
+    require(all(type(item) is dict and item.get('operation') == 'ADD'
+        and item.get('superseded_claim_refs') == [] and item.get('affected_dependency_refs') == []
+        for item in update['updates']))
+    # Re-derive the existing semantic owner's checkpoint from the saved real
+    # original/QUESTION/ANSWER/history. This is CPU admission, never authoring.
+    prepared = prepare_emlis_meaning(_request(snapshot, checkpoint_ref=cp['checkpoint_id']))
+    require(_json(prepared.checkpoint) == cp)
+    require(op.get('source_prefix_ref') == admitted.source_prefix_ref
+            and op.get('context_ref') == _context_ref(snapshot)
+            and op.get('context_guards') == d.get('context_guards', []))
+    require(all(answer[key] == checkpoint[key] == observation[key] == d.get(key)
+                for key in ('operation_id', 'attempt_id')))
+    require(initial['seq'] < question['seq'] < answer['seq'] < checkpoint['seq'] < observation['seq'])
+
+    def receipt_chain(body, prefix, response_stage):
+        payload = body['payload']
+        context_ref = payload.get('context_ref')
+        require(type(context_ref) is str and bool(context_ref)
+                and not any(c.isspace() for c in context_ref)
+                and context_ref == _context_ref(snapshot)
+                and payload.get('context_guards') == d.get('context_guards', []))
+        artifact = payload.get('artifact')
+        require(type(artifact) is dict and artifact.get('schema_version') == ARTIFACT_SCHEMA
+                and artifact.get('analysis_state') == 'NOT_GENERATED'
+                and type(payload.get('text')) is str and bool(payload['text'].strip())
+                and artifact.get('text') == payload['text']
+                and type(artifact.get('model')) is str and bool(artifact['model'].strip()))
+        for key in ('operation_id', 'attempt_id'):
+            _uuid(body[key], 'PIECE_SOURCE_NOT_ELIGIBLE')
+        pair = []
+        for stage in ('NATURAL_REPLY_CALL_STARTED', 'NATURAL_REPLY_RECEIVED'):
+            matches = [e for e in events if e['kind'] == 'OPERATION'
+                and e['payload'].get('stage') == stage
+                and e['payload'].get('source_prefix_ref') == prefix]
+            require(len(matches) == 1)
+            event = matches[0]
+            require(all(event[key] == body[key] for key in ('operation_id', 'attempt_id'))
+                    and event['round_index'] == body['round_index']
+                    and event['payload'].get('context_ref') == context_ref
+                    and event['payload'].get('response_stage') == response_stage)
+            pair.append(event)
+        started, received = pair
+        require(started['seq'] < received['seq'] < body['seq'])
+        require(received['payload'].get('reply') == {
+            'text': payload['text'], 'model': artifact['model'],
+            'source_prefix_ref': prefix, 'schema_version': ARTIFACT_SCHEMA})
+        return started, received
+
+    initial_started, initial_received = receipt_chain(initial, original_prefix, 'PRE_QUESTION')
+    started, received = receipt_chain(observation, admitted.source_prefix_ref, 'REFINED')
+    require(checkpoint['seq'] < started['seq'])
+    # Reject hidden extra calls/corrections, rather than picking a convenient
+    # matching receipt from a broader or subsequently changed conversation.
+    require(sum(e['kind'] == 'OPERATION' and e['payload'].get('stage') in {
+        'NATURAL_REPLY_CALL_STARTED', 'NATURAL_REPLY_RECEIVED'} for e in events) == 4)
+    initial_finishes = [e for e in events if e['kind'] == 'OPERATION'
+        and all(e[key] == initial[key] for key in ('operation_id', 'attempt_id'))
+        and e['payload'].get('status') == 'AWAITING_ANSWER'
+        and e['payload'].get('failure_code') is None]
+    require(len(initial_finishes) == 1)
+    initial_finish = initial_finishes[0]
+    require(question['seq'] < initial_finish['seq'] < answer['seq'])
+    stopped = d.get('natural_question_stop') == 'stop'
+    require('continuation_question' not in d)
+    if stopped:
+        require(len(terminals) == 1)
+        terminal = terminals[0]
+        require(terminal['payload'].get('reason') == 'stop'
+                and type(terminal['round_index']) is int and terminal['round_index'] == 1
+                and terminal['operation_id'] is None and terminal['attempt_id'] is None)
+        status = 'AWAITING_CONTINUE'
+    else:
+        require(d.get('natural_question_stop') is None and not terminals)
+        terminal, status = None, 'COMPLETED'
+    finishes = [e for e in events if e['kind'] == 'OPERATION'
+        and all(e[key] == observation[key] for key in ('operation_id', 'attempt_id'))
+        and e['payload'].get('status') in {'COMPLETED', 'AWAITING_CONTINUE'}
+        and e['payload'].get('failure_code') is None]
+    require(len(finishes) == 1)
+    finish = finishes[0]
+    require(finish['payload'].get('status') == status and observation['seq'] < finish['seq'])
+    if terminal is not None:
+        require(finish['seq'] < terminal['seq'] == events[-1]['seq'])
+    else:
+        require(finish['seq'] == events[-1]['seq'])
+    # Source/context references on the retained OBS and receipts were checked
+    # against the same current snapshot above, including the stop-reuse arm.
+    chain = [initial_started, initial_received, initial, question, initial_finish,
+             answer, checkpoint, started, received, observation, finish]
+    if terminal is not None:
+        chain.append(terminal)
+    stamps = [parse_iso_utc(saved.recorded_at)]
+    stamps.extend(parse_iso_utc(e['recorded_at']) for e in chain)
+    stamps.append(parse_iso_utc(snapshot['now']))
+    require(all(stamp is not None for stamp in stamps)
+            and all(a <= b for a, b in zip(stamps, stamps[1:])))
+    answer_stamp = parse_iso_utc(frozen.source.recorded_at)
+    require(answer_stamp is not None
+            and parse_iso_utc(initial_finish['recorded_at']) <= answer_stamp
+            <= parse_iso_utc(answer['recorded_at']))
+    answer_commitment = 'sha256:' + frozen.envelope.raw_sha256
+    require(saved.record_commitment != answer_commitment and saved.saved_input_id != answer_id)
+    lineage = {
+        'handoff_contract_version': 'cocolon.cross_core.source_handoff.v1',
+        'piece_source_lineage_version': 'piece.source_lineage.v1',
+        'source_input': {
+            'source_input_id': saved.saved_input_id,
+            'source_input_version': saved.source_input_version,
+            'source_input_bundle_commitment': saved.input_bundle_commitment,
+            'source_input_record_commitment': saved.record_commitment,
+            'source_owner_user_id': saved.authenticated_owner_id,
+            'source_recorded_at': parse_iso_utc(saved.recorded_at).isoformat()},
+        'observation': {
+            'emlis_observation_stage': 'refined_observation',
+            'emlis_observation_result_identity': observation['id'],
+            'emlis_observation_result_state': 'terminal_success',
+            'question_need_decision_identity': question['id'],
+            'supplemental_answer_identity': answer_id,
+            'supplemental_answer_version': frozen.source.source_version,
+            'supplemental_answer_bundle_commitment': answer_commitment,
+            'source_prefix_ref': admitted.source_prefix_ref},
+        'semantic_source_roles': ['original_input', 'supplemental_answer'],
+        'lineage_control_roles': ['emlis_observation_result', 'question_need_decision'],
+        'refined_result_source_binding': {
+            'emlis_observation_result_identity': observation['id'],
+            'original_record_commitment': saved.record_commitment,
+            'supplemental_answer_bundle_commitment': answer_commitment},
+        'piece_generation_eligibility': {
+            'contract_version': 'piece.generation_eligibility.v1',
+            'decision': 'eligible', 'reason_codes': []},
+        'body_free': True}
+    return PieceSavedRefinedHandoff(saved, frozen.source, thread_id, t['revision'], canonical_json_bytes(lineage))
+
+
 def _refined_observation_handoff(saved: PieceSavedOriginal, snapshot: dict,
                                  answer_id: str) -> PieceSavedRefinedHandoff:
     """Validate current saved control without reading generated prose as source."""
+    from emlis_thread_service import NATURAL_REPLY_PROFILE
+    profile = snapshot['thread']['data'].get('response_profile')
+    if profile == NATURAL_REPLY_PROFILE:
+        return _natural_refined_observation_handoff(saved, snapshot, answer_id)
+    if profile is not None:
+        raise _error('PIECE_SOURCE_NOT_ELIGIBLE')
     from dataclasses import replace
     from emlis_thread_service import _request, NATURAL_REPLY_PROFILE
     from cocolon_meaning_experience_engine.emlis_thread_contracts import SEMANTIC_SCHEMA
