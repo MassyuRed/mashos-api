@@ -124,6 +124,10 @@ class MeaningWitness:
     recipient_acknowledgement: bool
     source_context_complete: bool = False
     source_construction: str = "PLAIN_FINITE"
+    source_role: str = ""
+    source_id: str = ""
+    parent_input_id: str = ""
+    source_recorded_at: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -136,6 +140,10 @@ class MeaningCheck:
     verdict: str
     assessed_axes: tuple[str, ...]
     reason_codes: tuple[str, ...]
+    source_role: str = ""
+    source_id: str = ""
+    parent_input_id: str = ""
+    source_recorded_at: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -327,6 +335,43 @@ def _clauses(text, path, group, *, reply=False):
                  for row in witnesses), len(rows)
 
 
+def _correction_reader_sources(material):
+    """Yield only a single, independently qualified explanation per record.
+
+    The source admission owner authenticates these rows. The AI target stays
+    outside this reader, and recorded_at identifies the explanation without
+    supplying an event time. Multiple revisions need an active-meaning owner
+    before any of them can provide finite witnesses.
+    """
+    from .natural_reply_cognition import source_context_allows_finite_hints
+
+    records = [("", "CURRENT", material.get("current_input_id"), material)]
+    records.extend((f"past_user_records[{index}].", "PAST", row.get("input_id"), row)
+                   for index, row in enumerate(material.get("past_user_records", [])))
+    result = []
+    for prefix, group, parent_id, record in records:
+        corrections = record.get("interpretation_corrections", [])
+        if not isinstance(corrections, list):
+            raise ValueError("natural_meaning_material_invalid")
+        for item in corrections:
+            if (type(item) is not dict
+                    or item.get("source_role") != "USER_INTERPRETATION_CORRECTION"
+                    or any(type(item.get(key)) is not str or not item[key].strip()
+                           for key in ("correction_id", "recorded_at", "user_explanation"))
+                    or type(parent_id) is not str or not parent_id):
+                raise ValueError("natural_meaning_material_invalid")
+        if len(corrections) != 1:
+            continue
+        item = corrections[0]
+        text = item["user_explanation"]
+        if _SOURCE_UPDATE.search(text) or not source_context_allows_finite_hints(text):
+            continue
+        result.append((prefix + "interpretation_corrections[0].user_explanation", group, text,
+                       dict(source_role=item["source_role"], source_id=item["correction_id"],
+                            parent_input_id=parent_id, source_recorded_at=item["recorded_at"])))
+    return tuple(result)
+
+
 def _source_witnesses(material):
     if type(material) is not dict or type(material.get("current")) is not dict:
         raise ValueError("natural_meaning_material_invalid")
@@ -370,6 +415,12 @@ def _source_witnesses(material):
             context_complete = context_complete and len(rows) == segment_count
         witnesses.extend(replace(row, source_context_complete=context_complete)
                          for row in record_witnesses)
+    # The old record remains excluded. Only the person's separately authored
+    # explanation supplies these facts; no target-AI prose or original clause
+    # is revived as a substitute for a correction we cannot read.
+    for path, group, text, binding in _correction_reader_sources(material):
+        rows, _ = _clauses(text, path, group)
+        witnesses.extend(replace(row, **binding) for row in rows)
     return tuple(witnesses), excluded
 
 
@@ -395,8 +446,10 @@ def prepare_meaning_support(material: dict) -> dict:
     # Keep their source witnesses for comparison, but only the new explicit
     # focus and separately ranged cognition shapes are eligible as hints.
     generation = [{**asdict(row), "support_kind": "EXPLICIT_ROLE_FOCUS"}
-                  for row in witnesses if qualified and row.source_group == "CURRENT"
-                  and row.source_construction == "EXPLICIT_FOCUS"]
+                  for row in witnesses if row.source_group == "CURRENT"
+                  and row.source_construction == "EXPLICIT_FOCUS"
+                  and (qualified or (row.source_role == "USER_INTERPRETATION_CORRECTION"
+                                     and row.source_context_complete))]
     cognition = []
     if qualified:
         for field, text in zip(("memo", "memo_action"), texts):
@@ -406,6 +459,16 @@ def prepare_meaning_support(material: dict) -> dict:
                 if row is not None:
                     cognition.append(row)
                     generation.append({**row, "support_kind": "COGNITION_SCOPES"})
+    for path, group, text, binding in _correction_reader_sources(material):
+        for span in _split_source_text(text, max_len=max(1, len(text))):
+            row = read_cognition_clause(text, span.start, span.end,
+                                        source_path=path, source_group=group)
+            if row is not None:
+                row = {**row, **binding}
+                cognition.append(row)
+                # The actual paired correction trial invented a later
+                # knowledge event. Keep the source ranges available for
+                # review, but do not project this rejected hint to the author.
     return {"schema_version": SUPPORT_SCHEMA, "reused_assets": list(REUSED_ASSETS),
             "witnesses": [asdict(row) for row in witnesses],
             "cognition_witnesses": cognition, "generation_witnesses": generation,
@@ -492,7 +555,8 @@ def compare_reply_meaning(material_json: str, reply_text: str, source_prefix_ref
             source.scalar_start, source.scalar_end,
             "CONFLICT" if reasons else "NO_CONFLICT_IN_CHECKED_SCOPE",
             tuple(axes),
-            tuple(reasons)))
+            tuple(reasons), source_role=source.source_role, source_id=source.source_id,
+            parent_input_id=source.parent_input_id, source_recorded_at=source.source_recorded_at))
     verdict = ("CONFLICT" if any(row.verdict == "CONFLICT" for row in checks)
                else "NO_CONFLICT_IN_CHECKED_SCOPE" if checks else "UNASSESSED")
     return MeaningComparison(SCHEMA, source_prefix_ref,

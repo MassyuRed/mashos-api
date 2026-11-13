@@ -923,8 +923,6 @@ class EmlisThreadService:
                 snapshot = fresh
             t = snapshot["thread"]
         try:
-            if correcting:
-                raise NotImplementedError("interpretation_correction_not_assessed_by_finite_reader")
             meaning_review = compare_reply_meaning(material.material_json, candidate.text,
                                                    material.source_prefix_ref).as_private_dict()
         except ValueError:
@@ -937,7 +935,7 @@ class EmlisThreadService:
                 "source_prefix_ref": material.source_prefix_ref, "verdict": "UNASSESSED",
                 "material_sha256": hashlib.sha256(material.material_json.encode("utf-8")).hexdigest(),
                 "reply_sha256": hashlib.sha256(candidate.text.encode("utf-8")).hexdigest(),
-                "reason_codes": ["INTERPRETATION_CORRECTION_UNASSESSED" if correcting else "CHECKER_ERROR"],
+                "reason_codes": ["CHECKER_ERROR"],
                 "full_reply_semantic_coverage": False}
         observation = _event("OBSERVATION", {"text": candidate.text,
             "stage": "CORRECTED" if correcting else "REFINED" if t.get("latest_answer_event_id") else "INITIAL",

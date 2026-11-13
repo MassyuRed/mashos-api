@@ -162,6 +162,28 @@ def test_rejected_broad_finite_hints_are_not_silently_reactivated():
     assert system_message_for(original) == SYSTEM_MESSAGE
 
 
+def test_correction_focus_retains_all_sources_within_existing_message_budget():
+    original = material('母から妹の話を聞いた。')
+    original['interpretation_corrections'] = [{
+        'source_role': 'USER_INTERPRETATION_CORRECTION', 'correction_id': 'correction-1',
+        'recorded_at': '2026-11-13T06:00:00Z', 'target_event_id': 'old-reply',
+        'target_ai_interpretation': '妹が先生を呼び止めた',
+        'user_explanation': '先生から呼び止められたのは妹だった。', 'assessment': 'UNASSESSED'}]
+    before = deepcopy(original)
+    supported = material_with_meaning_support(original)
+    hint, = supported['source_meaning_support']['witnesses']
+    assert hint['source_role'] == 'USER_INTERPRETATION_CORRECTION'
+    assert hint['行為者'] == '原文の人物表記：先生' and hint['相手'] == '原文の人物表記：妹'
+    assert {k:v for k,v in supported.items() if k!='source_meaning_support'} == before
+    assert original == before
+    assert len(encoded(messages(supported)).encode()) <= MEANING_SUPPORT_MESSAGES_MAX_BYTES
+    original['current']['memo'] *= 100
+    assert material_with_meaning_support(original) is original
+    original = before
+    original['interpretation_corrections'][0]['user_explanation'] = '昨日の朝、今日の午後に休館すると知った。'
+    assert material_with_meaning_support(original) is original, 'rejected correction cognition hint stays withdrawn'
+
+
 @pytest.mark.parametrize("qualifier", [
     "これは仮の話だ。", "その話は撤回した。", "本当かはわからない。",
     "事実かは未確認だ。", "本当かは確かめていない。", "起きたとは断定できない。",

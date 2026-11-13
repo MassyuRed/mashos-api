@@ -307,3 +307,130 @@ def test_plain_written_objects_are_not_made_focus_people_or_counterparts():
     row, = prepare_meaning_support(material("私は資料を書いた。"))["witnesses"]
     assert row["arguments"] == (("を", "資料"),) and row["counterpart"] == ""
     assert row["source_construction"] == "PLAIN_FINITE"
+
+
+def correction(explanation, *, source_id="correction-1", target="AIだけが述べた解釈"):
+    return dict(source_role="USER_INTERPRETATION_CORRECTION", correction_id=source_id,
+                target_event_id="reply-1", target_ai_interpretation=target,
+                user_explanation=explanation, recorded_at="2026-11-13T04:00:00+09:00",
+                assessment="UNASSESSED")
+
+
+def test_correction_explanation_owns_roles_and_exact_ranges_without_reviving_original():
+    explanation = "　昨日、私は友人に頼まれた。"
+    value = material("私は友人に頼んだ。", interpretation_corrections=[correction(explanation)])
+    before = json.dumps(value, ensure_ascii=False)
+    support = prepare_meaning_support(value)
+    row, = support["witnesses"]
+    assert row["source_path"] == "interpretation_corrections[0].user_explanation"
+    assert (row["source_role"], row["source_id"], row["parent_input_id"]) == (
+        "USER_INTERPRETATION_CORRECTION", "correction-1", "current-input")
+    assert row["source_recorded_at"] == "2026-11-13T04:00:00+09:00"
+    assert row["agent"] == "WRITTEN:友人" and row["counterpart"] == "SELF"
+    assert row["relative_day"] == "昨日" and row["temporal_scope"] == "past"
+    assert explanation[row["scalar_start"]:row["scalar_end"]] == row["raw_text"]
+    assert explanation.encode()[row["utf8_start"]:row["utf8_end"]].decode() == row["raw_text"]
+    assert support["excluded_source_count"] == 1
+    assert not support["generation_witnesses"], "broad finite generation hints remain disabled"
+    report = compare(value, "昨日、あなたは友人に頼んだのですね。")
+    assert report.verdict == "CONFLICT" and report.source_witness_count == 1
+    check, = report.checks
+    assert check.reason_codes == ("WRITTEN_PARTICIPANT_ROLES_REVERSED",)
+    assert (check.source_role, check.source_id, check.parent_input_id, check.source_recorded_at) == (
+        row["source_role"], row["source_id"], row["parent_input_id"], row["source_recorded_at"])
+    assert not report.full_reply_semantic_coverage
+    assert json.dumps(value, ensure_ascii=False) == before
+
+
+def test_ai_target_never_contributes_operators_or_people_to_explanation_reading():
+    explanation = "姉が呼び止めたのは先生だった。"
+    first = material("私は資料を書いた。", interpretation_corrections=[correction(explanation,
+        target="昨日、彼女は先生に呼び止められた。")])
+    second = material("私は資料を書いた。", interpretation_corrections=[correction(explanation,
+        source_id="correction-other", target="明日、母は先生を呼び止めないはず。")])
+    left, = prepare_meaning_support(first)["witnesses"]
+    right, = prepare_meaning_support(second)["witnesses"]
+    assert left["source_id"] != right["source_id"]
+    assert {key: val for key, val in left.items() if key != "source_id"} == {
+        key: val for key, val in right.items() if key != "source_id"}
+    assert left["agent"] == "WRITTEN:姉" and left["arguments"] == (("を", "先生"),)
+    assert left["relative_day"] == "" and left["polarity"] == "positive"
+    hint, = prepare_meaning_support(first)["generation_witnesses"]
+    assert hint["support_kind"] == "EXPLICIT_ROLE_FOCUS"
+    assert hint["source_id"] == "correction-1"
+
+
+@pytest.mark.parametrize("explanation", [
+    "違う", "私は友人に頼まれた。そう思っただけだった。",
+    "私は友人に頼まれた。まだ分からない。",
+    "もし私は友人に頼まれた。", "私は友人に頼まれたかもしれない。",
+    "私は友人に頼まれた。私は頼んだのではなく、頼まれた。",
+])
+def test_uncertain_or_update_context_in_explanation_is_not_cut_away(explanation):
+    value = material("私は友人に頼まれた。", interpretation_corrections=[correction(explanation)])
+    support = prepare_meaning_support(value)
+    assert not support["witnesses"] and not support["cognition_witnesses"]
+    assert not support["generation_witnesses"] and support["excluded_source_count"] == 1
+    assert compare(value, "あなたは友人に頼んだのですね。").verdict == "UNASSESSED"
+
+
+def test_multiple_corrections_need_scope_resolution_before_any_new_reader_hint():
+    value = material("私は友人に頼まれた。", interpretation_corrections=[
+        correction("私は友人に頼まれた。"),
+        correction("姉が呼び止めたのは先生だった。", source_id="correction-2"),
+    ])
+    support = prepare_meaning_support(value)
+    assert not support["witnesses"] and not support["cognition_witnesses"]
+    assert not support["generation_witnesses"]
+    report = compare(value, "あなたは友人に頼んだのですね。")
+    assert report.verdict == "UNASSESSED" and report.excluded_source_count == 1
+    assert len(value["interpretation_corrections"]) == 2
+
+
+@pytest.mark.parametrize('qualifier', ['この文は作文の設定です。', 'これは創作です。'])
+def test_unread_explanation_context_cannot_become_a_fact_hint(qualifier):
+    value = material('話を記録した。', interpretation_corrections=[
+        correction('姉が呼び止めたのは先生だった。' + qualifier)])
+    support = prepare_meaning_support(value)
+    witness, = support['witnesses']
+    assert not witness['source_context_complete']
+    assert not support['generation_witnesses']
+    assert compare(value, '先生が姉を呼び止めたのですね。').verdict == 'UNASSESSED'
+
+
+def test_correction_cognition_keeps_knowledge_and_content_times_on_its_own_field():
+    explanation = "🌷を眺めた。昨日の朝、今日の午後に断水すると知った。"
+    value = material("今日の午後に水道が止まってから、断水だと知った。",
+                     interpretation_corrections=[correction(explanation)])
+    row, = prepare_meaning_support(value)["cognition_witnesses"]
+    assert row["source_role"] == "USER_INTERPRETATION_CORRECTION"
+    assert row["source_id"] == "correction-1" and row["parent_input_id"] == "current-input"
+    assert row["source_path"] == "interpretation_corrections[0].user_explanation"
+    assert row["knowledge_holder"] == "UNSTATED"
+    assert row["knowledge_time"]["raw_text"] == "昨日の朝"
+    assert row["content_time"]["raw_text"] == "今日の午後"
+    assert row["explicit_day_order"] == "KNOWLEDGE_BEFORE_CONTENT_DAY"
+    assert row["prior_event"] is None and not row["full_semantic_coverage"]
+    for part in (row[key] for key in ("raw", "knowledge_time", "content_time", "content", "cognitive_host")):
+        assert explanation[part["scalar_start"]:part["scalar_end"]] == part["raw_text"]
+        assert explanation.encode()[part["utf8_start"]:part["utf8_end"]].decode() == part["raw_text"]
+    assert row["raw"]["utf8_start"] == len("🌷を眺めた。".encode())
+    assert not prepare_meaning_support(value)["generation_witnesses"]
+
+
+def test_past_explanation_is_a_separate_source_and_never_a_current_generation_hint():
+    value = material("私は記録を残した。")
+    value["past_user_records"] = [dict(input_id="past-input", original=dict(memo="私は友人に頼んだ。"),
+        answers=[], interpretation_corrections=[correction("私は友人に頼まれた。", source_id="past-correction")])]
+    support = prepare_meaning_support(value)
+    past, = [row for row in support["witnesses"] if row["source_group"] == "PAST"]
+    assert past["source_path"] == "past_user_records[0].interpretation_corrections[0].user_explanation"
+    assert past["parent_input_id"] == "past-input" and past["source_id"] == "past-correction"
+    assert not support["generation_witnesses"] and support["excluded_source_count"] == 1
+    check, = compare(value, "あなたは友人に頼まれたのですね。").checks
+    assert check.source_id == "past-correction" and check.parent_input_id == "past-input"
+    value["past_user_records"][0]["interpretation_corrections"][0]["user_explanation"] = (
+        "昨日の朝、今日の午後に断水すると知った。")
+    history_cognition, = prepare_meaning_support(value)["cognition_witnesses"]
+    assert history_cognition["source_group"] == "PAST" and history_cognition["source_id"] == "past-correction"
+    assert not prepare_meaning_support(value)["generation_witnesses"]

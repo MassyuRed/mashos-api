@@ -37,6 +37,9 @@ source_meaning_supportは原文の一部を限られた文法で読んだ補助�
 「明記された格」は原文の動作の項です。「を」はその動作の対象で、行為者と入れ替えないでください。認識した時点と認識内容の時点は別に保ち、予告された内容を既に起きた事実や本人の意図へ変えないでください。認識した人が省略されている場合、補助だけから人物を確定しないでください。
 omitted_witness_countは載せていない読取件数です。補助や役割の解説は返答へ出さず、本人に自然に話しかけてください。「お前」など乱暴な呼称は使わず、呼びかけは省略して構いません。原文にない動機・理由・知った経緯は補わないでください。"""
 
+_CORRECTION_MEANING_SUPPORT_MESSAGE = """
+source_meaning_supportは本人の訂正説明の補助です。行為者はした人、相手は受けた人です。原文を優先し、補助を解説しないでください。"""
+
 # These bounds apply only to optional hints. The original source and prompt
 # are never shortened to make hints fit. A 5800-byte complete messages array
 # leaves conservative room below the server's 6144 input-token budget for
@@ -115,6 +118,9 @@ def system_message_for(request):
             return message
         from .natural_reply_meaning import SUPPORT_SCHEMA
         if support.get("schema_version") == SUPPORT_SCHEMA:
+            if all(row.get("source_role") == "USER_INTERPRETATION_CORRECTION"
+                   for row in support["witnesses"]):
+                return message + _CORRECTION_MEANING_SUPPORT_MESSAGE
             return message + MEANING_SUPPORT_MESSAGE
         return message
     except Exception:
@@ -173,6 +179,8 @@ def material_with_meaning_support(material):
                 if witness["arguments"]:
                     compact["明記された格"] = [{"格": case, "原文": noun}
                                               for case, noun in witness["arguments"]]
+            if witness.get("source_role") == "USER_INTERPRETATION_CORRECTION":
+                compact["source_role"] = witness["source_role"]
             if len(_compact_json(compact).encode("utf-8")) > MEANING_SUPPORT_MAX_WITNESS_BYTES:
                 continue
             proposed = [*selected, compact]
@@ -467,9 +475,9 @@ def prepare_natural_reply(request, *, use_meaning_support=False, response_stage=
         material["response_purpose"] = {"stage": response_stage}
     if prepared_meaning is not None:
         material["answer_meaning"] = _answer_meaning_material(prepared_meaning, admitted)
-    # Development comparisons showed mixed quality. Normal generation keeps
-    # the original prompt/material; only an explicit research call adds hints.
-    # The independent post-generation reader still uses the original sources.
+    # Actual correction trials also regressed with the optional role/cognition
+    # projections. Keep all generation hints in the explicit research path;
+    # normal generation and the saved original material remain unchanged.
     if use_meaning_support:
         # Try a lossless locator view before omitting a resolved history.
         # Do not change an already fitting prompt or any admitted source.

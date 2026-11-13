@@ -16,6 +16,44 @@ EXPLANATION = "安心したのではなく、終わってもまだ心配が残�
 REPLY = "会議が終わっても心配は残っているのですね。資料を読み直したことと、今の気持ちは分けて受け取りました。"
 
 
+def test_correction_roles_reach_research_author_and_independent_saved_comparison(natural_case):
+    user, parent, service, calls = natural_case
+    dto = run(service.start(user, parent))
+    explanation = "先生から呼び止められたのは妹だった。"
+
+    async def source(material):
+        calls.append(material)
+        assert 'source_meaning_support' not in json.loads(material.material_json)
+        from emlis_thread_service import _request
+        from cocolon_meaning_experience_engine.natural_reply import prepare_natural_reply
+        snapshot = await service.store.read(user, input_id=parent)
+        research, safety = prepare_natural_reply(_request(snapshot), use_meaning_support=True)
+        assert safety.normal_observation_allowed and research.source_prefix_ref == material.source_prefix_ref
+        data = json.loads(research.material_json)
+        hint, = data['source_meaning_support']['witnesses']
+        assert hint['source_role'] == 'USER_INTERPRETATION_CORRECTION'
+        assert hint['source_path'] == 'interpretation_corrections[0].user_explanation'
+        assert hint['行為者'] == '原文の人物表記：先生'
+        assert hint['相手'] == '原文の人物表記：妹'
+        assert data['interpretation_corrections'][0]['user_explanation'] == explanation
+        return NaturalReply('先生が妹を呼び止めたのですね。', 'synthetic-correction', material.source_prefix_ref)
+
+    service.natural_reply_source = source
+    after = run(correct(service, user, dto, explanation=explanation))
+    saved = run(service.store.read(user, input_id=parent))
+    event = [e for e in saved['events'] if e['kind'] == 'OBSERVATION'][-1]
+    report = event['payload']['artifact']['meaning_comparison']
+    assert report['verdict'] == 'NO_CONFLICT_IN_CHECKED_SCOPE'
+    check, = report['checks']
+    assert check['source_role'] == 'USER_INTERPRETATION_CORRECTION'
+    assert check['parent_input_id'] == parent
+    assert not report['full_reply_semantic_coverage']
+    assert after['correction_assessment'] == 'UNASSESSED' and not after['meaning_updated']
+    assert run(service.get(user, parent))['current_observation'] == after['current_observation']
+    assert len(calls) == 2
+    assert 'meaning_comparison' not in json.dumps(after)
+
+
 def correct(service, user, dto, *, text="少し安心できた", explanation=EXPLANATION, key="correction-1", target=None):
     return service.correct_interpretation(user, dto["thread_id"],
         expected_revision=dto["revision"], idempotency_key=key,
