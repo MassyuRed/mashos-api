@@ -147,13 +147,21 @@ def _request(snapshot, *, checkpoint_ref=None, include_context=True, analysis_so
 
 
 def _saved_frame_target(snapshot, feedback):
-    """Recover only a target captured by this thread's exact saved command.
-
-    Other threads and old operations without a captured view remain unresolved;
-    the latest feedback row cannot reconstruct a previous person's wording.
-    """
+    """Use exact saved commands; cross-thread commands need frozen dependencies."""
     matches = []
-    for event in snapshot['events']:
+    events = list(snapshot['events'])
+    if 'frame_target_dependencies' in snapshot['thread']['data']:
+        targets = feedback.get('target_operations', [])
+        if len(targets) > 1:
+            return None
+        events.extend(targets)
+    seen = {}
+    for event in events:
+        if event['id'] in seen:
+            if seen[event['id']] != event['payload']:
+                return None
+            continue
+        seen[event['id']] = event['payload']
         payload = event['payload']
         saved = payload.get('frame_feedback_target')
         if (event['kind'] != 'OPERATION' or type(saved) is not dict
@@ -193,13 +201,17 @@ def _generation_current(snapshot):
     if not t or t["data"].get("runtime_profile") != Q3_PROFILE:
         return True
     feedback = [[f["frame_key"], f["version"]] for f in snapshot.get("context", {}).get("feedback", [])]
-    return (_context_current(snapshot) and t["data"].get("evaluated_tier",snapshot["tier"]) == snapshot["tier"]
+    targets_current = ('frame_target_dependencies' not in t['data'] or
+        t['data']['frame_target_dependencies'] == snapshot.get('context', {}).get('frame_target_dependencies', []))
+    return (targets_current and _context_current(snapshot) and t["data"].get("evaluated_tier",snapshot["tier"]) == snapshot["tier"]
             and t["data"].get("context_feedback",[]) == feedback)
 
 
 def _context_ref(snapshot):
-    return identity("context", snapshot["tier"], snapshot["thread"]["data"].get("context_guards", []),
+    base = identity("context", snapshot["tier"], snapshot["thread"]["data"].get("context_guards", []),
                     snapshot["thread"]["data"].get("context_feedback", []))
+    targets = snapshot['thread']['data'].get('frame_target_dependencies', [])
+    return identity('context-frame-targets', base, [':'.join(map(str, row)) for row in targets]) if targets else base
 
 
 def _observation_text(snapshot, payload):
@@ -419,6 +431,8 @@ class EmlisThreadService:
         if t and fresh:
             t["data"]["context_guards"] = [h["guard"] for h in context["history"]]
             t["data"]["context_feedback"] = [[f["frame_key"],f["version"]] for f in context["feedback"]]
+            if profile == NATURAL_REPLY_PROFILE and 'frame_target_dependencies' in context:
+                t['data']['frame_target_dependencies'] = context['frame_target_dependencies']
         return snapshot
 
     async def _commit(self, user_id, snapshot, next_state, events, **kwargs):
@@ -457,6 +471,8 @@ class EmlisThreadService:
         if self.runtime_profile == Q3_PROFILE:
             t["data"].update(context_guards=[h["guard"] for h in snapshot["context"]["history"]],
                 context_feedback=[[f["frame_key"],f["version"]] for f in snapshot["context"]["feedback"]])
+            if self.response_profile == NATURAL_REPLY_PROFILE and 'frame_target_dependencies' in snapshot['context']:
+                t['data']['frame_target_dependencies'] = snapshot['context']['frame_target_dependencies']
         initial = {**snapshot, "thread": t}
         req = _request(initial)
         t["data"]["original_source_ref"] = req.emlis_thread.original_source_ref

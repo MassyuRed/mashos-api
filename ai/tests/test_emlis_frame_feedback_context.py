@@ -104,7 +104,7 @@ def test_uncaptured_or_mismatched_later_target_remains_unresolved(natural_case, 
     if mutation == 'missing':
         event['payload'].pop('frame_feedback_target')
     elif mutation == 'duplicate':
-        snapshot['events'].append(dict(event))
+        snapshot['events'].append(dict(event, id=str(uuid4())))
     elif mutation == 'guard':
         context['source_guard'][1] = 'foreign'
     else:
@@ -114,14 +114,157 @@ def test_uncaptured_or_mismatched_later_target_remains_unresolved(natural_case, 
     assert feedback['target_binding'] == 'UNRESOLVED' and 'target_ai_interpretation' not in feedback
 
 
-def test_other_thread_does_not_guess_missing_prior_revision(natural_case, qdb):
+def test_other_thread_uses_captured_prior_revision(natural_case, qdb):
     user, parent, service, calls, _, _ = _case(natural_case, qdb)
     initial = run(service.start(user, parent))
     revised = _feedback(service, user, initial, initial['interpretive_frames'][0], 'REVISED', REVISION)
     _feedback(service, user, revised, revised['interpretive_frames'][0], 'REJECTED', key='later-target')
     run(service.start(user, _fresh(qdb, user)))
     feedback, = json.loads(calls[-1].material_json)['user_frame_feedback']
-    assert feedback['target_binding'] == 'UNRESOLVED' and 'target_ai_interpretation' not in feedback
+    assert feedback['target_binding'] == 'BOUND'
+    assert feedback['target_user_revision']['received_meaning'] == REVISION
+
+
+def _cross_frame(natural_case, qdb, *, second_status='REJECTED', second_text=None):
+    user, parent, service, calls, past, _ = _case(natural_case, qdb)
+    # B can find A, while C's words match A and not B. B must not consume an
+    # extra history slot or become an unrequested source body in C.
+    qdb.query('update public.emotions set memo=$2 where id=$1', [parent, '嬉しくない。'])
+    initial = run(service.start(user, parent))
+    revised = _feedback(service, user, initial, initial['interpretive_frames'][0], 'REVISED', REVISION)
+    changed = _feedback(service, user, revised, revised['interpretive_frames'][0], second_status, second_text, key='cross-target')
+    current = _fresh(qdb, user)
+    qdb.query('update public.emotions set memo=$2 where id=$1', [current, '褒められたのに、悲しかった。'])
+    return user, parent, current, past, service, calls, changed
+
+
+def test_cross_frame_target_reaches_new_saved_reply_and_non_generating_get(natural_case, qdb):
+    user, parent, current, past, service, calls, _ = _cross_frame(natural_case, qdb)
+    dto = run(service.start(user, current))
+    material = json.loads(calls[-1].material_json)
+    assert [r['input_id'] for r in material['past_user_records']] == [past]
+    feedback, = material['user_frame_feedback']
+    assert feedback['target_binding'] == 'BOUND'
+    assert feedback['target_user_revision']['received_meaning'] == REVISION
+    snapshot = run(service._hydrate(user, run(service.store.read(user, input_id=current))))
+    deps, = snapshot['thread']['data']['frame_target_dependencies']
+    assert deps[2] == parent and len(deps) == 6
+    assert snapshot['thread']['data']['context_guards'][0][0] == past
+    for _ in range(2):
+        assert run(service.get(user, current)) == dto
+    assert len(calls) == 2
+    assert 'target_operations' not in json.dumps(dto) and 'frame_target_dependencies' not in json.dumps(dto)
+
+
+def test_cross_frame_can_be_revised_again_in_the_consuming_record(natural_case, qdb):
+    previous='ほめ方への戸惑いでした。'
+    user, parent, current, past, service, calls, _ = _cross_frame(natural_case, qdb,
+        second_status='REVISED',second_text=previous)
+    dto=run(service.start(user,current))
+    frame,=dto['interpretive_frames']
+    changed=_feedback(service,user,dto,frame,'REVISED','その場の受け取り方を言い直します。',key='third-frame-change')
+    assert changed['interpretive_frames'][0]['correction_text']=='その場の受け取り方を言い直します。'
+    run(answer(service,user,changed,'今は、私は嬉しい。'))
+    assert json.loads(calls[-1].material_json)['user_frame_feedback'][0]['target_user_revision']['received_meaning']==previous
+    assert len(calls)==3
+
+
+@pytest.mark.parametrize('change', ['edited', 'deleted', 'foreign', 'duplicate', 'duplicate_bad_fingerprint', 'version', 'uncaptured'])
+def test_cross_frame_invalid_origin_is_not_bound(natural_case, qdb, change):
+    user, parent, current, past, service, calls, _ = _cross_frame(natural_case, qdb)
+    if change == 'edited':
+        qdb.query('update public.emotions set memo=$2 where id=$1', [parent, '書き直した記録。'])
+    elif change == 'deleted':
+        qdb.query('delete from public.emotions where id=$1', [parent])
+    elif change == 'foreign':
+        other = str(uuid4()); qdb.query('insert into auth.users values ($1)', [other])
+        qdb.query('update public.emlis_input_threads set user_id=$2 where original_emotion_id=$1', [parent, other])
+    elif change.startswith('duplicate'):
+        qdb.query("insert into public.emlis_thread_events(id,thread_id,seq,kind,round_index,payload) select $1,thread_id,seq+100,kind,round_index,case when $3 then jsonb_set(payload,'{request_fingerprint}','\"invalid\"'::jsonb) else payload end from public.emlis_thread_events where idempotency_key='cross-target' and thread_id=(select id from public.emlis_input_threads where original_emotion_id=$2)", [str(uuid4()), parent, change=='duplicate_bad_fingerprint'])
+    elif change == 'version':
+        qdb.query('update public.emlis_frame_feedback set version=version+1 where user_id=$1', [user])
+    else:
+        qdb.query("update public.emlis_thread_events set payload=payload-'frame_feedback_target' where idempotency_key='cross-target' and thread_id=(select id from public.emlis_input_threads where original_emotion_id=$1)", [parent])
+    run(service.start(user, current))
+    feedback, = json.loads(calls[-1].material_json)['user_frame_feedback']
+    assert feedback['target_binding'] == 'UNRESOLVED'
+    assert 'target_user_revision' not in feedback and 'target_ai_interpretation' not in feedback
+
+
+@pytest.mark.parametrize('change', ['edited', 'deleted', 'operation'])
+def test_cross_frame_origin_change_hides_saved_reply_without_generation(natural_case, qdb, change):
+    user, parent, current, past, service, calls, _ = _cross_frame(natural_case, qdb)
+    dto = run(service.start(user, current))
+    assert dto['current_observation']
+    if change == 'edited':
+        qdb.query('update public.emotions set memo=$2 where id=$1', [parent, '書き直した記録。'])
+    elif change == 'deleted':
+        qdb.query('delete from public.emotions where id=$1', [parent])
+    else:
+        qdb.query("delete from public.emlis_thread_events where idempotency_key='cross-target' and thread_id=(select id from public.emlis_input_threads where original_emotion_id=$1)", [parent])
+    fetched = run(service.get(user, current))
+    assert fetched['current_observation'] is None and fetched['body_state'] == 'CONTEXT_CHANGED'
+    assert not any(e['kind'] == 'OBSERVATION' for e in fetched['timeline'])
+    assert len(calls) == 2
+
+
+def test_cross_frame_unrelated_origin_operation_preserves_saved_reply(natural_case,qdb):
+    user,parent,current,past,service,calls,_=_cross_frame(natural_case,qdb)
+    dto=run(service.start(user,current))
+    qdb.query('update public.emlis_input_threads set revision=revision+1 where original_emotion_id=$1',[parent])
+    assert run(service.get(user,current))==dto and len(calls)==2
+
+
+def test_cross_frame_origin_change_during_provider_cannot_save_reply(natural_case, qdb):
+    user, parent, current, past, service, calls, _ = _cross_frame(natural_case, qdb)
+    original_provider = service.natural_reply_source
+    async def racing_provider(material):
+        reply = await original_provider(material)
+        qdb.query('update public.emotions set memo=$2 where id=$1', [parent, '生成中に変更した記録。'])
+        return reply
+    service.natural_reply_source = racing_provider
+    from emlis_thread_store import ThreadStoreError
+    with pytest.raises(ThreadStoreError, match='thread_conflict'):
+        run(service.start(user, current))
+    snapshot = run(service.store.read(user, input_id=current))
+    assert not any(e['kind'] == 'OBSERVATION' for e in snapshot['events'])
+    assert len(calls) == 2
+
+
+@pytest.mark.parametrize('downgrade', ['free','plus'])
+def test_cross_frame_target_does_not_expand_lower_plan_material(natural_case, qdb, downgrade):
+    user, parent, current, past, service, calls, _ = _cross_frame(natural_case, qdb)
+    qdb.query('update public.profiles set subscription_tier=$2 where id=$1',[user,downgrade])
+    run(service.start(user,current))
+    material=json.loads(calls[-1].material_json)
+    assert material['user_frame_feedback']==[]
+    snapshot=run(service.store.read(user,input_id=current))
+    assert snapshot['thread']['data']['frame_target_dependencies']==[]
+
+
+@pytest.mark.parametrize('changed', [False, True])
+def test_cross_frame_received_receipt_restarts_without_acquiring_again(natural_case,qdb,monkeypatch,changed):
+    import httpx
+    import emlis_thread_store
+    user, parent, current, past, service, calls, _ = _cross_frame(natural_case,qdb)
+    failed=False
+    async def rpc(name,payload,**kwargs):
+        nonlocal failed
+        if not failed and any(e['kind']=='OBSERVATION' for e in payload.get('p_events',[])):
+            failed=True
+            return httpx.Response(503,json={'code':'57P03'})
+        return await qdb.rpc(name,payload,**kwargs)
+    monkeypatch.setattr(emlis_thread_store,'sb_post_rpc',rpc)
+    dto=run(service.start(user,current))
+    assert dto['can_retry'] and len(calls)==2
+    if changed:
+        qdb.query('update public.emotions set memo=$2 where id=$1',[parent,'再開前に変更した記録。'])
+        fetched=run(service.get(user,current))
+        assert not fetched['can_retry'] and fetched['current_observation'] is None
+    else:
+        result=run(service.action(user,dto['thread_id'],action='retry_response',
+            expected_revision=dto['revision'],idempotency_key='cross-receipt-restart',operation_id=dto['operation_id']))
+        assert result['current_observation'] and len(calls)==2
 
 
 def test_new_context_does_not_change_feedback_evidence_identity(natural_case, qdb):

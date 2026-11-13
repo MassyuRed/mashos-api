@@ -64,6 +64,8 @@ name: Analysis observed content
       - ai/tests/test_emlis_natural_reply_cognition.py
       - ai/tests/test_emlis_natural_frames_application.py
       - ai/tests/test_emlis_frame_feedback_context.py
+      - supabase/migrations/*_emlis_frame_feedback_target_context.sql
+      - supabase/migrations/*_piece_frame_target_dependency_fence.sql
       - ai/tests/test_analysis_observed_api.py
       - ai/tests/analysis_cumulative_sql.cjs
       - supabase/migrations/20261101080144_cumulative_watashi_map.sql

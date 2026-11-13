@@ -45,6 +45,9 @@ def natural_refined_db(refined_pipeline_db):
         db.proc.stdin.write(json.dumps(dict(sql=sql,script=True))+'\n');db.proc.stdin.flush()
         applied = json.loads(db.proc.stdout.readline())
         assert 'code' not in applied, applied
+    target_fence = ROOT/'supabase/migrations/20261113120502_piece_frame_target_dependency_fence.sql'
+    db.proc.stdin.write(json.dumps(dict(sql=target_fence.read_text(),script=True))+'\n');db.proc.stdin.flush()
+    assert 'code' not in json.loads(db.proc.stdout.readline())
     db.natural_refined_catalog = (before, _catalog(db))
     db.proc.stdin.write(json.dumps(dict(script=True,sql="""
         CREATE FUNCTION pg_temp.refined_try_rpc(statement text) RETURNS jsonb
@@ -66,7 +69,8 @@ def _bind(db, monkeypatch, owner, token):
     monkeypatch.setattr(emlis_thread_store, 'sb_post_rpc', db.rpc)
 
 
-def _prepare_natural(db, monkeypatch, *, tier='premium', stopped=False, case_id='natural', with_history=False):
+def _prepare_natural(db, monkeypatch, *, tier='premium', stopped=False, case_id='natural', with_history=False,
+                     with_frame_target=False):
     owner, parent = str(uuid4()), str(uuid4())
     token = 'synthetic-natural-refined-owner'
     _update(db, 'insert into auth.users values ($1)', [owner])
@@ -85,6 +89,12 @@ def _prepare_natural(db, monkeypatch, *, tier='premium', stopped=False, case_id=
         calls.append(data)
         return NaturalReply('記録を受け取る合成の返事です。', 'synthetic-natural-provider', material.source_prefix_ref)
     service = EmlisThreadService(runtime_profile=Q3_PROFILE,natural_reply_source=provider)
+    frame_origin = None
+    if with_frame_target:
+        from test_emlis_frame_feedback_context import _cross_frame
+        _, frame_origin, parent, _, service, calls, _ = _cross_frame((owner,parent,service,calls), db)
+        calls.clear()
+        service.natural_reply_source = provider
     initial = run(service.start(owner,parent))
     assert initial['state']=='AWAITING_ANSWER' and initial['issued_count']==1
     completed = run(answer_question(service,owner,initial,ANSWER))
@@ -118,7 +128,7 @@ def _prepare_natural(db, monkeypatch, *, tier='premium', stopped=False, case_id=
         supplemental_answer_identity=answer_id,opted_in=True))
     reference = run(adapter.resolve_refined_source_ref('Bearer '+token,parent,
         supplemental_answer_identity=answer_id,opted_in=True))
-    state = dict(case_id=case_id,tier=tier,owner=owner,source_id=parent,token=token,
+    state = dict(case_id=case_id,tier=tier,owner=owner,source_id=parent,token=token,frame_target_origin=frame_origin,
         answer_text=ANSWER,original=snapshot['original'],source_ref=reference,
         request=dict(source_ref=reference,requested_format=None,
             visual_selection=dict(theme_id=None,aspect_ratio=None,branding_mode=None)),
@@ -128,6 +138,43 @@ def _prepare_natural(db, monkeypatch, *, tier='premium', stopped=False, case_id=
         counts=dict(q2_start=1,q2_answer=1,piece_generation_entry=0,piece_review=0,
             preview_rpc=0,visual_rpc=0,save_rpc=0,external_model_provider=0))
     return state,handoff,calls
+
+
+def test_cross_frame_target_refined_reaches_piece_save_and_same_saved_artifact(natural_refined_db, monkeypatch):
+    state, handoff, calls = _prepare_natural(natural_refined_db,monkeypatch,
+        case_id='cross-frame-refined-piece',with_frame_target=True)
+    assert state['snapshot_before']['thread']['data']['frame_target_dependencies']
+    assert state['frame_target_origin'] not in [g[0] for g in state['snapshot_before']['thread']['data']['context_guards']]
+    blocks=[state['original']['memo'],ANSWER]
+    seen=_provider(monkeypatch,'cross-frame-refined-piece',blocks)
+    result=_finish_refined_pipeline(natural_refined_db,monkeypatch,state,
+        visual_change=True,expected_blocks=blocks)
+    assert len(calls)==2 and len(seen)==1
+    assert result['quota_consumptions']==1 and result['source_unchanged'] and result['emlis_unchanged']
+
+
+@pytest.mark.parametrize('operation',['issue','visual','save'])
+@pytest.mark.parametrize('change',['edited','deleted'])
+def test_cross_frame_target_piece_sql_rejects_changed_origin(natural_refined_db,monkeypatch,operation,change):
+    db=natural_refined_db
+    state,handoff,_=_prepare_natural(db,monkeypatch,with_frame_target=True)
+    record=_RECORD();record['source_lineage']=_canonical_lineage(handoff)
+    case=dict(owner=state['owner'],parent=state['source_id'],snapshot=state['snapshot_before'],
+        token=state['token'],handoff=handoff,record=record,
+        expected=dict(original=state['original'],thread_id=state['snapshot_before']['thread']['id'],
+            thread_revision=state['snapshot_before']['thread']['revision'],lineage=record['source_lineage']))
+    args=_issue_args(case)
+    if operation!='issue':
+        preview=rpc(db,'piece_issue_preview_v2',args); assert 'code' not in preview,preview
+        args=_mutation_args(db,case,preview) if operation=='visual' else _saved_args(case,preview)
+    if change=='edited':
+        _update(db,'update public.emotions set memo=$2 where id=$1',[state['frame_target_origin'],'書き直した記録。'])
+    else:
+        _update(db,'delete from public.emotions where id=$1',[state['frame_target_origin']])
+    before=_piece_state(db)
+    result=rpc(db,{'issue':'piece_issue_preview_v2','visual':'piece_mutate_preview_visual_v2','save':'piece_save_v2'}[operation],args)
+    assert 'code' in result and result['message']=='PIECE_CONTEXT_CHANGED',result
+    assert _piece_state(db)==before
 
 
 @pytest.mark.parametrize('tier',['free','plus','premium'])

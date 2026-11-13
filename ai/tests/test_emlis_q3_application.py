@@ -24,6 +24,9 @@ class Q3Database(Database):
         sql=(Path(__file__).parents[2]/'supabase/migrations/20261113041739_emlis_interpretation_correction_history.sql').read_text()
         self.proc.stdin.write(json.dumps(dict(sql=sql,script=True))+'\n'); self.proc.stdin.flush()
         result=json.loads(self.proc.stdout.readline()); assert 'code' not in result,result
+        sql=(Path(__file__).parents[2]/'supabase/migrations/20261113120241_emlis_frame_feedback_target_context.sql').read_text()
+        self.proc.stdin.write(json.dumps(dict(sql=sql,script=True))+'\n'); self.proc.stdin.flush()
+        result=json.loads(self.proc.stdout.readline()); assert 'code' not in result,result
     async def rpc(self,name,payload,**kwargs):
         assert name in {'emlis_thread_read','emlis_thread_commit','emlis_thread_context','emlis_thread_related_context'}
         args=','.join(f'{k} => ${i}' for i,k in enumerate(payload,1))

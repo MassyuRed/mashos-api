@@ -34,6 +34,8 @@ name: Piece B2-B/B3/B4/B5 isolated PostgreSQL
       - ai/tests/test_emlis_natural_reply_application.py
       - ai/tests/test_emlis_natural_frames_application.py
       - ai/tests/test_emlis_frame_feedback_context.py
+      - supabase/migrations/*_emlis_frame_feedback_target_context.sql
+      - supabase/migrations/*_piece_frame_target_dependency_fence.sql
       - ai/tests/test_emlis_interpretation_correction.py
       - supabase/migrations/*_emlis_interpretation_correction_history.sql
       - ai/tests/test_emlis_natural_question_application.py
