@@ -250,7 +250,7 @@ def _if_parser_accepts(messages, raw):
 
 
 def test_if_dispatcher_real_grammar_raw_and_existing_meaning_owner(packet):
-    from ai.tools.serve_emlis_natural_reply import semantic_output_schema, IF_CANDIDATE_SCHEMA
+    from ai.tools.serve_emlis_natural_reply import semantic_output_schema, semantic_json_parser, IF_CANDIDATE_SCHEMA
     from analysis_if_route_service import _restore_prepared
     from cocolon_meaning_experience_engine.engine import MeaningExperienceEngine
     from cocolon_meaning_experience_engine.cores.analysis.semantic_admission import (
@@ -261,6 +261,7 @@ def test_if_dispatcher_real_grammar_raw_and_existing_meaning_owner(packet):
     messages = prepared.messages()
     schema = semantic_output_schema(messages)
     assert schema['properties']['schema_version']['enum'] == [IF_CANDIDATE_SCHEMA]
+    assert semantic_json_parser(messages, 'abc').config.force_json_field_order is True
 
     def admit(value):
         raw = json.dumps(value, ensure_ascii=False, separators=(',', ':'))
@@ -399,7 +400,7 @@ def test_if_marker_requires_exact_prepared_shape(packet, change):
 
 
 def test_if_dispatch_leaves_legacy_map_schema_exact_bytes_and_unmarked_fields_unchanged():
-    from ai.tools.serve_emlis_natural_reply import semantic_output_schema
+    from ai.tools.serve_emlis_natural_reply import semantic_output_schema, semantic_json_parser
     messages = [dict(role='system', content='synthetic'), dict(role='user', content=json.dumps(
         dict(fields=[dict(field=1, text='部屋を整えた。')]), ensure_ascii=False))]
     schema = semantic_output_schema(messages)
@@ -409,3 +410,4 @@ def test_if_dispatch_leaves_legacy_map_schema_exact_bytes_and_unmarked_fields_un
     material['model_schema'] = 'different.owner.v1'
     messages[1]['content'] = json.dumps(material, ensure_ascii=False)
     assert semantic_output_schema(messages) == schema
+    assert semantic_json_parser(messages, 'abc').config.force_json_field_order is False

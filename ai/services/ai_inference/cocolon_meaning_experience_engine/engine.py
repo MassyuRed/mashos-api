@@ -35,7 +35,7 @@ class MeaningExperienceEngine:
                 generate_if_set, prepare_if_model_request, admit_if_model_response)
             if semantic_input is None:
                 return generate_if_set(request)
-            prepared = prepare_if_model_request(request)
+            prepared = prepare_if_model_request(request, response=semantic_input)
             if type(prepared) is AnalysisIfRouteOutcome:
                 return prepared
             return admit_if_model_response(prepared, semantic_input)

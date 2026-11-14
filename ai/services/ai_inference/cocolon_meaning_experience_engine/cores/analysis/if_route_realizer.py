@@ -701,7 +701,7 @@ compile_saved_route_intent = save_route_intent
 
 
 IF_MODEL_SCHEMA = 'cocolon.analysis.if-candidates.model.v1'
-_IF_MODEL_INSTRUCTION = '''あなたはCocolonのAnalysis IF候補を作ります。結果は仮説であり、未来予測、成功保証、正解、おすすめ順位ではありません。
+_IF_MODEL_INSTRUCTION_LEGACY = '''あなたはCocolonのAnalysis IF候補を作ります。結果は仮説であり、未来予測、成功保証、正解、おすすめ順位ではありません。
 base_mapは保存されたAIの読み取りです。本人の確定事実や新しい原入力ではありません。OBSERVED_ANCHORのtextは渡されたanchorのvisible_labelを完全に保ちます。
 本人のbranch_intentとconstraintsは別の真正なsourceです。USER_CHOICEのtextは一つのfieldの全文と完全一致させ、source_refsもそのfield一つだけにします。否定・条件・留保を落とす部分引用や複数fieldの合成を本人選択にしません。AIが考えた別の行動、言い換え、必要条件はSIMULATED_EXTENSIONとして明示します。本人が選択済み、実行済み、結果が生じたとは書きません。
 意味の異なる候補を要求数だけ並列に作り、rank/score/probability/best/optimalityは出しません。各候補には元mapのanchor、仮の選択、結果不明のUNKNOWNを含め、必要条件・引っかかり・分からない要因を表示します。共起や元の関係線を因果や順序へ変換しません。
@@ -712,8 +712,13 @@ nodeはnode_id,step_kind,origin,text,anchor_ref,source_refs,unknown_reasons。or
 edgeはedge_id,from,to,condition_refs。required_conditionsはcondition_id,text,source_refsのobject配列、condition_refsはそのcondition_id。edgesは仮想上の接続だけです。
 frictions,unmodelled_factorsは文字列配列。各候補にUNKNOWN nodeとunmodelled_factorsを必ず含めます。clarificationはnull、またはreason_codeとpromptのobjectです。その場合scenariosは空配列です。'''
 
+_IF_MODEL_INSTRUCTION = _IF_MODEL_INSTRUCTION_LEGACY + '''
+各scenarioのnodesは、最初に渡された元mapのanchorをOBSERVED_ANCHORとしてそのまま置き、その後に今回の仮の選択や手順、最後に結果不明のUNKNOWNを置きます。元mapのanchorを省略しません。
+PERSON_ALTERNATIVEがある場合、本人が提示した各代替案を別々のscenarioへ対応させます。複数案を比べる行為自体を一つの代替案にせず、本人がその案の実行を決めたとも書きません。
+UNKNOWNには、その仮の進め方で分からない条件や結果を記します。「実行したか不明」という反復だけで代用しません。指定されたJSON field順を保ち、次のobjectの構文やkey名を説明用文字列へ混ぜません。'''
 
-def prepare_if_model_request(request):
+
+def prepare_if_model_request(request, *, response=None):
     """Freeze owned material before the application makes one model request."""
     try:
         _require(type(request) is AnalysisIfRouteRequest and _text(request.request_id, 200)
@@ -766,9 +771,17 @@ def prepare_if_model_request(request):
             constraints_confirmed=request.constraints_confirmed, model_schema=IF_MODEL_SCHEMA)
         seed = dict(projection=projection, private=private, anchors=anchors, sources=sources,
                     intent_ref=_source_ref(intent), constraint_refs=[_source_ref(source) for source in constraints])
-        messages = [dict(role='system', content=_IF_MODEL_INSTRUCTION), dict(role='user', content=_json(material))]
-        request_ref = 'analysis-if-request:' + commitment([asdict(request), seed, messages])[7:]
-        return AnalysisIfModelPrepared(request, request_ref, _json(messages), _json(seed))
+        if response is not None:
+            from .semantic_admission import AnalysisModelQuotedParentUnitsResponse
+            _require(type(response) is AnalysisModelQuotedParentUnitsResponse,
+                     'analysis_if_model_response_unbound')
+        for instruction in (_IF_MODEL_INSTRUCTION, _IF_MODEL_INSTRUCTION_LEGACY):
+            messages = [dict(role='system', content=instruction), dict(role='user', content=_json(material))]
+            request_ref = 'analysis-if-request:' + commitment([asdict(request), seed, messages])[7:]
+            if response is None or (response.request_ref == request_ref
+                    and response.messages_sha256 == commitment(messages)[7:]):
+                return AnalysisIfModelPrepared(request, request_ref, _json(messages), _json(seed))
+        raise AnalysisIfRouteError('analysis_if_model_response_unbound')
     except AnalysisIfRouteError as exc:
         return AnalysisIfRouteOutcome(EngineStatus.REJECTED, (str(exc),))
     except (KeyError, TypeError, ValueError, IndexError, AttributeError):
@@ -786,9 +799,6 @@ def admit_if_model_response(prepared, response):
     """Admit a bound proposal as hypothetical, with no model-to-user promotion."""
     try:
         _require(type(prepared) is AnalysisIfModelPrepared, 'analysis_if_model_input_invalid')
-        expected = prepare_if_model_request(prepared.request)
-        _require(type(expected) is AnalysisIfModelPrepared and expected == prepared,
-                 'analysis_if_model_input_unbound')
         from .semantic_admission import AnalysisModelQuotedParentUnitsResponse
         _require(type(response) is AnalysisModelQuotedParentUnitsResponse
                  and response.request_ref == prepared.request_ref
@@ -797,6 +807,9 @@ def admit_if_model_response(prepared, response):
                  and len(response.raw.encode('utf-8')) <= 262144
                  and response.raw_sha256 == hashlib.sha256(response.raw.encode('utf-8')).hexdigest(),
                  'analysis_if_model_response_unbound')
+        expected = prepare_if_model_request(prepared.request, response=response)
+        _require(type(expected) is AnalysisIfModelPrepared and expected == prepared,
+                 'analysis_if_model_input_unbound')
         packet = _load(response.raw)
         _require(_keys(packet, 'schema_version scenarios clarification')
                  and packet['schema_version'] == IF_MODEL_SCHEMA and type(packet['scenarios']) is list,

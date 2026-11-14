@@ -226,7 +226,7 @@ async def create_scenario_set(owner, request, *, model_source=None):
                 if received != {'received':True}:
                     raise HTTPException(503,'analysis_if_receipt_unconfirmed')
             _require_write()
-            if _pure().prepare_if_model_request(prepared.request) != prepared:
+            if _pure().prepare_if_model_request(prepared.request, response=response) != prepared:
                 raise ValueError('analysis_if_operation_invalid')
             outcome = _engine().generate(prepared.request,semantic_input=response)
             pending = _outcome(outcome)

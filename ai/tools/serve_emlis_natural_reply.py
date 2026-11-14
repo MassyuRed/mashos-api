@@ -263,6 +263,7 @@ def semantic_json_parser(messages, alphabet):
     schema = semantic_output_schema(messages)
     config = CharacterLevelParserConfig(alphabet=alphabet)
     if schema['properties']['schema_version'].get('enum') == [IF_CANDIDATE_SCHEMA]:
+        config.force_json_field_order = True
         return _if_json_schema_parser(schema, config)
     return JsonSchemaParser(schema, config=config)
 

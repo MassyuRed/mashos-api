@@ -1,7 +1,7 @@
 """Real IF compiler/service with synthetic authenticated storage and model I/O."""
 import asyncio
 import copy
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from datetime import datetime, timezone
 import json
 import importlib.util
@@ -527,3 +527,49 @@ async def test_reclaim_fences_original_service_before_its_start_claim(setup,monk
     assert new_model.await_count==1 and len(rpc.rows['scenario_set'])==1
     again=await service.create_scenario_set(OWNER,request_body(base),model_source=old_model)
     assert again['id']==completed['id'] and again['idempotency_replayed']
+
+
+def old_instruction_prepared(prepared):
+    from cocolon_meaning_experience_engine.cores.analysis.if_route_realizer import _IF_MODEL_INSTRUCTION_LEGACY
+    from cocolon_meaning_experience_engine.cores.analysis.source_adapter import commitment
+    messages=prepared.messages()
+    messages[0]['content']=_IF_MODEL_INSTRUCTION_LEGACY
+    ref='analysis-if-request:'+commitment([asdict(prepared.request),json.loads(prepared.base_seed_json),messages])[7:]
+    return replace(prepared,request_ref=ref,messages_json=json.dumps(messages,ensure_ascii=False,sort_keys=True,separators=(',',':')))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('state',['RESERVED','RECEIVED'])
+async def test_prior_instruction_operation_keeps_its_exact_material_and_raw(setup,state):
+    base,rpc=setup;body=request_body(base);key,request_hash=service._identity(OWNER,body)
+    current=service._pure().prepare_if_model_request(service._request(OWNER,body,base_context(base),key))
+    legacy=old_instruction_prepared(current)
+    assert legacy.request_ref!=current.request_ref and legacy.messages()!=current.messages()
+    op=await store.reserve(OWNER,key,request_hash,base_ref=body['base_observed_map_ref'],
+        guard=base_context(base)['base_source_guard'],material=service._freeze_prepared(legacy))
+    receipt=response(legacy)
+    if state=='RECEIVED':
+        assert await store.start(OWNER,key,op['call_token'])=={'started':True}
+        assert await store.receive(OWNER,key,op['call_token'],asdict(receipt))=={'received':True}
+        model=AsyncMock(side_effect=AssertionError('received raw was regenerated'))
+    else:
+        async def old_provider(prepared):
+            assert prepared==legacy and prepared.messages_json==legacy.messages_json
+            return receipt
+        model=AsyncMock(side_effect=old_provider)
+    result=await service.create_scenario_set(OWNER,body,model_source=model)
+    assert result['status']=='GENERATED' and model.await_count==(state=='RESERVED')
+    stored=rpc.rows['scenario_set'][0]['storage']
+    assert stored['model_receipt']==asdict(receipt)
+    assert stored['model_receipt']['request_ref']==legacy.request_ref
+
+
+def test_if_prior_instruction_admission_refuses_mixed_or_unrecognized_bindings():
+    from cocolon_meaning_experience_engine.cores.analysis.semantic_admission import digest
+    base=base_fixture();body=request_body(base);key,_=service._identity(OWNER,body)
+    current=service._pure().prepare_if_model_request(service._request(OWNER,body,base_context(base),key))
+    legacy=old_instruction_prepared(current);receipt=response(legacy)
+    assert service._engine().generate(legacy.request,semantic_input=receipt).status.value=='GENERATED'
+    mixed=replace(receipt,messages_sha256=digest(current.messages()))
+    assert service._engine().generate(legacy.request,semantic_input=mixed).status.value=='REJECTED'
+    assert service._engine().generate(legacy.request,semantic_input=replace(receipt,request_ref='invented')).status.value=='REJECTED'
