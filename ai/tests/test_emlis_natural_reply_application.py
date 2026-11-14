@@ -5,6 +5,8 @@ These checks prove storage/lifecycle behavior, never real-model quality.
 import asyncio
 from dataclasses import replace
 import json
+import re
+import time
 from uuid import uuid4
 
 import httpx
@@ -143,12 +145,93 @@ def test_source_integrity_failure_is_not_swallowed_as_reader_unknown(natural_cas
     assert len(calls) == 1
 
 
+def _natural_failure_diagnostics(service, owner, parent, dto, calls, phases, *, phase, case_id, tier, rounds, stopped, snapshot=None):
+    """Body-free failure context; a successful helper performs no extra read."""
+    diagnostic = dict(phase=phase, case_id=case_id, tier=tier, rounds=rounds, stopped=stopped,
+        provider_calls=len(calls), natural_phases=phases,
+        dto={key: dto.get(key) for key in ('state', 'body_state', 'failure_code', 'issued_count',
+            'revision', 'answer_assessment', 'meaning_updated', 'processing_deadline_at')})
+    try:
+        if snapshot is None:
+            snapshot = run(service.store.read(owner, input_id=parent))
+        thread = snapshot.get('thread') or {}
+        data = thread.get('data') or {}
+        diagnostic['snapshot_now'] = snapshot.get('now')
+        diagnostic['source_clock'] = dict(created_at=snapshot.get('original', {}).get('created_at'),
+            natural_meaning_as_of=data.get('natural_meaning_as_of'), snapshot_now=snapshot.get('now'))
+        diagnostic['saved_thread'] = dict(state=thread.get('state'), revision=thread.get('revision'),
+            issued_count=thread.get('issued_count'), processing_deadline_at=thread.get('processing_deadline_at'),
+            active_attempt=bool(thread.get('active_attempt_id')), active_operation=bool(thread.get('active_operation_id')),
+            body_state=data.get('body_state'), failure_code=data.get('failure_code'),
+            response_profile=data.get('response_profile'), response_stage=data.get('natural_response_stage'))
+        diagnostic['event_phases'] = [dict(kind=event.get('kind'), round_index=event.get('round_index'),
+            **{key: event.get('payload', {}).get(key) for key in ('stage', 'status', 'failure_code')
+               if key in event.get('payload', {})}) for event in snapshot.get('events', [])]
+    except Exception as exc:
+        diagnostic['diagnostic_read_error'] = type(exc).__name__
+    return diagnostic
+
+
+
+def _observe_initial_natural_failures(service, monkeypatch, calls):
+    """Observe a fictional fixture without changing acquisition or clock behavior."""
+    phases = []
+    process_natural, start = service._process_natural, service.start
+    count = calls if callable(calls) else lambda: len(calls)
+
+    async def observed_natural(user_id, snapshot):
+        began = time.monotonic()
+        phases.append(dict(phase='_process_natural', event='ENTER',
+            created_at=snapshot['original']['created_at'], snapshot_now=snapshot['now'],
+            natural_meaning_as_of=snapshot['thread']['data'].get('natural_meaning_as_of')))
+        try:
+            dto = await process_natural(user_id, snapshot)
+        except asyncio.CancelledError:
+            phases.append(dict(phase='_process_natural', event='CANCELLED',
+                elapsed_seconds=time.monotonic()-began, exception_type='CancelledError', code=None))
+            raise
+        except Exception as exc:
+            code = getattr(exc, 'code', None) or str(exc)
+            if not isinstance(code, str) or not re.fullmatch(
+                    r'(?:natural_|thread_|analysis_|emlis_|semantic_|source_|safe_state_|separate_safety_|meaning_)[a-z0-9_]{1,120}', code):
+                code = None
+            phases.append(dict(phase='_process_natural', event='EXCEPTION',
+                elapsed_seconds=time.monotonic()-began, exception_type=type(exc).__name__, code=code))
+            raise
+        phases.append(dict(phase='_process_natural', event='RETURN', elapsed_seconds=time.monotonic()-began,
+            state=dto.get('state'), failure_code=dto.get('failure_code')))
+        return dto
+
+    async def observed_start(user_id, input_id):
+        owner, parent = user_id, input_id
+        began, first_phase, before_calls = time.monotonic(), len(phases), count()
+        dto = await start(owner, parent)
+        if dto.get('state') == 'RESPONSE_FAILED':
+            try:
+                snapshot = await service.store.read(owner, input_id=parent)
+                diagnostic = _natural_failure_diagnostics(service, owner, parent, dto,
+                    [None] * count(), phases[first_phase:], phase='initial_start',
+                    case_id='saved-natural-fixture', tier=snapshot.get('tier'), rounds=1,
+                    stopped=False, snapshot=snapshot)
+                diagnostic.update(elapsed_seconds=time.monotonic()-began,
+                    provider_calls_this_start=count()-before_calls)
+            except Exception as exc:
+                diagnostic = dict(phase='initial_start', state=dto.get('state'),
+                    failure_code=dto.get('failure_code'), diagnostic_read_error=type(exc).__name__)
+            print('SAVED_NATURAL_INITIAL_FAILURE ' + json.dumps(diagnostic, ensure_ascii=False))
+        return dto
+
+    monkeypatch.setattr(service, '_process_natural', observed_natural)
+    monkeypatch.setattr(service, 'start', observed_start)
+    return phases
+
+
 @pytest.fixture
 def natural_case(qdb, monkeypatch):
     user, parent = str(uuid4()), str(uuid4())
     qdb.query("insert into auth.users values ($1)", [user])
     qdb.query("insert into public.profiles values ($1,'free')", [user])
-    qdb.query("insert into public.emotions values ($1,$2,now() at time zone 'UTC',$3,'',array['仕事'],array['平穏'],$4)",
+    qdb.query("insert into public.emotions values ($1,$2,(now()-interval '5 seconds') at time zone 'UTC',$3,'',array['仕事'],array['平穏'],$4)",
         [parent, user, "会議の資料を読み直した。終わって少し安心した。",
          json.dumps([dict(type="平穏", strength="medium")], ensure_ascii=False)])
     monkeypatch.setattr(emlis_thread_store, "sb_post_rpc", qdb.rpc)
@@ -161,6 +244,7 @@ def natural_case(qdb, monkeypatch):
         return NaturalReply(BODY, "self-hosted-test-4b", material.source_prefix_ref)
 
     service = EmlisThreadService(runtime_profile=Q3_PROFILE, natural_reply_source=source)
+    _observe_initial_natural_failures(service, monkeypatch, calls)
     return user, parent, service, calls
 
 

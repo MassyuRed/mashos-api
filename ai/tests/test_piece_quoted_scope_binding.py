@@ -155,7 +155,7 @@ def test_cpu_quote_scope_candidate_saves_once_and_replays_without_generation(
         saved_piece_db, monkeypatch, tier, case_id, text):
     seen = _provider(monkeypatch, case_id, [text])
     record = dict(id=case_id, created_at=saved_piece_db.query(
-        'SELECT now()::text AS stamp')['rows'][0]['stamp'], memo=text, memo_action='',
+        "SELECT (now()-interval '5 seconds')::text AS stamp")['rows'][0]['stamp'], memo=text, memo_action='',
         category=['生活'], emotions=['喜び'], emotion_details=[dict(type='喜び', strength='strong')])
     result = _run_saved_request(saved_piece_db, monkeypatch, record, tier=tier)
     assert result['detail']['piece_text'] == text

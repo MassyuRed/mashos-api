@@ -107,6 +107,8 @@ def _prepare_saved_request(db, monkeypatch, record, *, tier):
 
     _bind_saved_request_io(db, monkeypatch, owner, token)
     emlis = EmlisThreadService(runtime_profile=Q3_PROFILE, natural_reply_source=preceding_emlis)
+    from test_emlis_natural_reply_application import _observe_initial_natural_failures
+    _observe_initial_natural_failures(emlis, monkeypatch, lambda: counts['synthetic_emlis_provider'])
     dto = asyncio.run(emlis.start(owner, source_id))
     assert dto['body_state'] == 'FINAL', dto
     emlis_before = db.query('SELECT to_jsonb(t) AS row FROM public.emlis_input_threads t WHERE user_id=$1', [owner])
@@ -265,7 +267,7 @@ def _run_saved_request(db, monkeypatch, record, *, tier):
     '私は司書から展示の設営を伝えられなかった。',
 ])
 def test_finite_request_reaches_saved_artifact_without_second_author(saved_piece_db, monkeypatch, tier, action):
-    now = saved_piece_db.query('SELECT now()::text AS stamp')['rows'][0]['stamp']
+    now = saved_piece_db.query("SELECT (now()-interval '5 seconds')::text AS stamp")['rows'][0]['stamp']
     record = dict(id='ar04-public-regression', created_at=now,
                   memo='まだ、決めていません。', memo_action=action,
                   category=['仕事', '生活'], emotions=['自己理解'],

@@ -75,7 +75,7 @@ def test_default_initial_shared_meaning_reaches_new_piece_profile_and_saved_deta
     text = '私は、静かに考える時間を大切にしたい。私は、返事の前にメモを見返したい。'
     seen = configured_piece(monkeypatch, [text])
     record = dict(id='shared-initial-'+tier,
-        created_at=db.query('select clock_timestamp()::text as stamp')['rows'][0]['stamp'],
+        created_at=db.query("select (clock_timestamp()-interval '5 seconds')::text as stamp")['rows'][0]['stamp'],
         memo=text, memo_action='', category=['生活'], emotions=['自己理解'],
         emotion_details=[dict(type='自己理解', strength='medium')])
     state = _prepare_saved_request(db, monkeypatch, record, tier=tier)
@@ -183,7 +183,7 @@ def test_unread_material_keeps_active_original_without_claiming_piece_meaning(
     db = natural_refined_db
     text = 'くるくるした余韻だけが残った。'
     record = dict(id='shared-unread',
-        created_at=db.query('select clock_timestamp()::text as stamp')['rows'][0]['stamp'],
+        created_at=db.query("select (clock_timestamp()-interval '5 seconds')::text as stamp")['rows'][0]['stamp'],
         memo=text, memo_action='', category=['生活'], emotions=['自己理解'],
         emotion_details=[dict(type='自己理解', strength='medium')])
     state = _prepare_saved_request(db, monkeypatch, record, tier='premium')

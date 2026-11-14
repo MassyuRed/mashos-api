@@ -15,6 +15,7 @@ from test_emlis_q3_application import qdb
 from cocolon_meaning_experience_engine.natural_reply import NaturalReply
 from emlis_thread_service import EmlisThreadService, Q3_PROFILE
 from emlis_thread_store import ThreadStoreError
+from test_emlis_natural_reply_application import _observe_initial_natural_failures
 import emlis_thread_store
 
 
@@ -30,7 +31,7 @@ def natural_questions(qdb, monkeypatch):
         user, parent = str(uuid4()), str(uuid4())
         qdb.query('insert into auth.users values ($1)', [user])
         qdb.query('insert into public.profiles values ($1,$2)', [user, tier])
-        qdb.query("insert into public.emotions values ($1,$2,now() at time zone 'UTC',$3,'',"
+        qdb.query("insert into public.emotions values ($1,$2,(now()-interval '5 seconds') at time zone 'UTC',$3,'',"
                   "array['仕事'],array['不安'],$4)",
                   [parent, user, memo, json.dumps([dict(type='不安', strength='medium')])])
         calls = []
@@ -54,6 +55,7 @@ def natural_questions(qdb, monkeypatch):
 
         service = EmlisThreadService(runtime_profile=Q3_PROFILE,
             natural_reply_source=provider, natural_questions_enabled=enabled)
+        _observe_initial_natural_failures(service, monkeypatch, calls)
         return user, parent, service, calls
 
     monkeypatch.setattr(emlis_thread_store, 'sb_post_rpc', qdb.rpc)
@@ -179,9 +181,10 @@ def test_two_resolved_targets_end_after_two_questions(natural_questions):
     assert not dto['can_continue'] and len(calls) == 3
 
 
-def test_old_q2_natural_constructor_keeps_its_saved_single_reply_contract(natural_questions):
+def test_old_q2_natural_constructor_keeps_its_saved_single_reply_contract(natural_questions, monkeypatch):
     user, parent, service, calls = natural_questions()
     legacy = EmlisThreadService(natural_reply_source=service.natural_reply_source)
+    _observe_initial_natural_failures(legacy, monkeypatch, calls)
     dto = run(legacy.start(user, parent))
     assert dto['state'] == 'COMPLETED' and dto['question_limit'] == 1
     saved = run(legacy.store.read(user, input_id=parent))
@@ -396,7 +399,7 @@ def test_research_history_uses_latest_owned_answer_meaning_without_changing_norm
     past_snapshot = run(service.store.read(user, input_id=past))
     parent = str(uuid4())
     qdb.query('update public.profiles set subscription_tier=$2 where id=$1', [user, tier])
-    qdb.query("insert into public.emotions values ($1,$2,now() at time zone 'UTC',$3,'',"
+    qdb.query("insert into public.emotions values ($1,$2,(now()-interval '5 seconds') at time zone 'UTC',$3,'',"
               "array['仕事'],array['不安'],$4)",
               [parent, user, ONE, json.dumps([dict(type='不安', strength='medium')])])
     current = run(service.start(user, parent))
@@ -511,7 +514,7 @@ def test_resolved_history_fits_without_dropping_withdrawal_or_raw_sources(
     assert completed['state'] == 'COMPLETED' and completed['meaning_updated']
     saved = run(service.store.read(user, input_id=past))
     parent = str(uuid4())
-    qdb.query("insert into public.emotions values ($1,$2,now() at time zone 'UTC',$3,$4,"
+    qdb.query("insert into public.emotions values ($1,$2,(now()-interval '5 seconds') at time zone 'UTC',$3,$4,"
               "array['趣味','人間関係'],array['悲しみ'],$5)",
               [parent, user, current_memo, current_action,
                json.dumps([dict(type='悲しみ', strength='medium')])])
@@ -565,7 +568,7 @@ def test_optin_history_plan_preserves_the_evaluation_target_and_its_owned_time(
     completed = run(answer(service, user, initial, answer_text))
     assert completed['state'] == 'COMPLETED' and completed['meaning_updated']
     parent = str(uuid4())
-    qdb.query("insert into public.emotions values ($1,$2,now() at time zone 'UTC',$3,'',"
+    qdb.query("insert into public.emotions values ($1,$2,(now()-interval '5 seconds') at time zone 'UTC',$3,'',"
               "array['仕事'],array['不安'],$4)",
               [parent, user, ONE, json.dumps([dict(type='不安', strength='medium')])])
     run(service.start(user, parent))
@@ -631,7 +634,7 @@ def test_scoped_history_never_recovers_earlier_resolved_meaning_after_latest_unk
             expected_revision=dto['revision'], idempotency_key='history-stop'))
     assert dto['state'] == 'COMPLETED'
     parent = str(uuid4())
-    qdb.query("insert into public.emotions values ($1,$2,now() at time zone 'UTC',$3,'',"
+    qdb.query("insert into public.emotions values ($1,$2,(now()-interval '5 seconds') at time zone 'UTC',$3,'',"
               "array['仕事'],array['不安'],$4)",
               [parent, user, ONE, json.dumps([dict(type='不安', strength='medium')])])
     service.natural_questions_enabled = False

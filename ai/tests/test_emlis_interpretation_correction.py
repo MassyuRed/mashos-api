@@ -341,7 +341,7 @@ def test_later_natural_history_preserves_correction_only_with_existing_entitleme
     original = run(service.start(user, parent))
     run(correct(service, user, original, explanation="違う"))
     later = str(uuid4())
-    qdb.query("insert into public.emotions values ($1,$2,now() at time zone 'UTC',$3,'',array['仕事'],array['平穏'],$4)",
+    qdb.query("insert into public.emotions values ($1,$2,(now()-interval '5 seconds') at time zone 'UTC',$3,'',array['仕事'],array['平穏'],$4)",
         [later, user, "会議の資料をもう一度読み直した。", json.dumps([dict(type="平穏", strength="medium")])])
     run(service.start(user, later))
     history = json.loads(calls[-1].material_json)["past_user_records"]
@@ -361,7 +361,7 @@ def test_correction_invalidates_a_reply_already_using_that_history(natural_case,
     qdb.query("update public.emotions set created_at=(now()-interval '1 minute') at time zone 'UTC' where id=$1", [parent])
     original = run(service.start(user, parent))
     later = str(uuid4())
-    qdb.query("insert into public.emotions values ($1,$2,now() at time zone 'UTC',$3,'',array['仕事'],array['平穏'],$4)",
+    qdb.query("insert into public.emotions values ($1,$2,(now()-interval '5 seconds') at time zone 'UTC',$3,'',array['仕事'],array['平穏'],$4)",
         [later, user, "会議の資料を読み直した。", json.dumps([dict(type="平穏", strength="medium")])])
     before = run(service.start(user, later))
     assert before["current_observation"]

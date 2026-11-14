@@ -20,7 +20,7 @@ def test_source_focal_evaluation_register_survives_save_and_non_generated_reread
     from unittest.mock import patch
     seen = _provider(monkeypatch, case_id, [body])
     record = dict(id=case_id,
-        created_at=saved_piece_db.query('SELECT now()::text AS stamp')['rows'][0]['stamp'],
+        created_at=saved_piece_db.query("SELECT (now()-interval '5 seconds')::text AS stamp")['rows'][0]['stamp'],
         memo=memo, memo_action='', category=['生活'], emotions=['平穏'],
         emotion_details=[dict(type='平穏', strength='weak')])
     with ExitStack() as stack:
@@ -47,7 +47,7 @@ def test_source_focal_evaluation_register_survives_save_and_non_generated_reread
 def test_evaluation_receipt_stays_fixed_through_save_retry_and_new_owner_read(
         saved_piece_db, monkeypatch, tier, case_id, memo, body):
     seen = _provider(monkeypatch, case_id, [body])
-    record = dict(id=case_id, created_at=saved_piece_db.query('SELECT now()::text AS stamp')['rows'][0]['stamp'],
+    record = dict(id=case_id, created_at=saved_piece_db.query("SELECT (now()-interval '5 seconds')::text AS stamp")['rows'][0]['stamp'],
         memo=memo, memo_action=None, category=['生活', '価値観'], emotions=['自己理解'],
         emotion_details=[dict(type='自己理解', strength='medium')])
     value = _run_saved_request(saved_piece_db, monkeypatch, record, tier=tier)
@@ -62,7 +62,7 @@ def test_original_focal_surface_can_be_saved_without_forcing_the_old_author_word
     body='私が選びたいのは、版画です。'
     seen=_provider(monkeypatch,'focal-source-surface',[body])
     record=dict(id='focal-source-surface',
-        created_at=saved_piece_db.query('SELECT now()::text AS stamp')['rows'][0]['stamp'],
+        created_at=saved_piece_db.query("SELECT (now()-interval '5 seconds')::text AS stamp")['rows'][0]['stamp'],
         memo=body,memo_action=None,category=['趣味','価値観'],emotions=['自己理解'],
         emotion_details=[dict(type='自己理解',strength='medium')])
     value=_run_saved_request(saved_piece_db,monkeypatch,record,tier=tier)

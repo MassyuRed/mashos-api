@@ -232,7 +232,7 @@ def test_configured_realization_is_saved_and_reread_without_model_reacquisition(
     monkeypatch.setattr(model, 'Shared4BPieceModelSource',
         lambda **kwargs: real(**kwargs, transport=httpx.MockTransport(handler)))
     record = dict(id='fictional-private-realization-save',
-        created_at=saved_piece_db.query('SELECT now()::text AS stamp')['rows'][0]['stamp'],
+        created_at=saved_piece_db.query("SELECT (now()-interval '5 seconds')::text AS stamp")['rows'][0]['stamp'],
         memo=text, memo_action=None, category=['生活'], emotions=['自己理解'],
         emotion_details=[dict(type='自己理解', strength='medium')])
     result = _run_saved_request(saved_piece_db, monkeypatch, record, tier=tier)

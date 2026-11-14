@@ -21,6 +21,7 @@ from piece_v2_contract import PieceContractError
 from piece_v2_source_adapter import PieceSavedSourceAdapter, project_saved_refined_fence
 from test_b05_natural_refined_saved_pipeline import (
     natural_refined_db, refined_pipeline_db, saved_piece_db, _bind, _natural_failure_diagnostics,
+    _observe_initial_natural_failures,
 )
 from test_b05_refined_preview_saved_pipeline import _finish_refined_pipeline
 from test_b05_piece_model_saved_pipeline import _provider
@@ -252,22 +253,36 @@ def prepare_later_update(answer_update_db, monkeypatch, rounds, operation, tier,
         calls.append(material)
         return NaturalReply('記録を受け取る合成の返事です。','synthetic-natural-provider',material.source_prefix_ref)
     service = EmlisThreadService(runtime_profile=Q3_PROFILE,natural_reply_source=provider)
+    phases = _observe_initial_natural_failures(service, monkeypatch, calls)
     initial = dto = run(service.start(owner,parent))
     texts = (['今は、私は嬉しい。', '今は、私は怖い。'][:rounds-1] + [ANSWERS[operation]]
              if answer_texts is None else answer_texts)
     assert len(texts) == rounds
+    last_answer_authored_at = None
     for index,text in enumerate(texts):
         if index:
             dto = run(service.action(owner,dto['thread_id'],action='continue',
                 expected_revision=dto['revision'],idempotency_key='continue-'+str(index)))
-        assert dto['state']=='AWAITING_ANSWER', dto
+        assert dto['state']=='AWAITING_ANSWER', {
+            **_natural_failure_diagnostics(service, owner, parent, dto, calls, phases,
+                phase='before_answer', case_id=f'later-update-{rounds}-{operation}-{tier}',
+                tier=tier, rounds=rounds, stopped=False),
+            'round_index': index+1, 'answer_authored_at': None,
+            'previous_answer_authored_at': last_answer_authored_at,
+        }
         stamp=db.query('select clock_timestamp() as stamp')['rows'][0]['stamp']
+        last_answer_authored_at = stamp
         dto = run(service.answer(owner,dto['thread_id'],question_id=dto['pending_question']['question_id'],
             expected_revision=dto['revision'],idempotency_key='answer-'+str(index),answer_text=text,authored_at=stamp))
     if dto['state']=='AWAITING_CONTINUE':
         dto=run(service.action(owner,dto['thread_id'],action='stop',
             expected_revision=dto['revision'],idempotency_key='stop'))
-    assert dto['state']=='COMPLETED' and dto['body_state']=='REFINED', dto
+    assert dto['state']=='COMPLETED' and dto['body_state']=='REFINED', {
+        **_natural_failure_diagnostics(service, owner, parent, dto, calls, phases,
+            phase='final_assert', case_id=f'later-update-{rounds}-{operation}-{tier}',
+            tier=tier, rounds=rounds, stopped=False),
+        'round_index': rounds, 'answer_authored_at': last_answer_authored_at,
+    }
     snap=run(service.store.read(owner,input_id=parent))
     ref=run(PieceSavedSourceAdapter().resolve_refined_source_ref('Bearer '+token,parent,
         supplemental_answer_identity=snap['thread']['latest_answer_event_id'],opted_in=True))

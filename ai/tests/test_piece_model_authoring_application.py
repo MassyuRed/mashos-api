@@ -173,7 +173,7 @@ def test_configured_author_conditions_reach_saved_body_and_never_regenerate_on_r
     seen = []
     configured(monkeypatch, lambda r: response_for(r, seen))
     record = dict(id='configured-source-authoring',
-        created_at=saved_piece_db.query('SELECT now()::text AS stamp')['rows'][0]['stamp'],
+        created_at=saved_piece_db.query("SELECT (now()-interval '5 seconds')::text AS stamp")['rows'][0]['stamp'],
         memo=ORIGINAL, memo_action=None, category=['生活', '価値観'], emotions=['自己理解'],
         emotion_details=[dict(type='自己理解', strength='medium')])
     result = _run_saved_request(saved_piece_db, monkeypatch, record, tier=tier)

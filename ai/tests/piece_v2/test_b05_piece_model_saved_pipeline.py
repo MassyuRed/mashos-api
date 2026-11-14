@@ -63,7 +63,7 @@ def test_canonical_self_fronted_model_register_survives_saved_owner_reread(
     from unittest.mock import patch
     seen = _provider(monkeypatch, case_id, [body])
     record = dict(id=case_id,
-        created_at=saved_piece_db.query('SELECT now()::text AS stamp')['rows'][0]['stamp'],
+        created_at=saved_piece_db.query("SELECT (now()-interval '5 seconds')::text AS stamp")['rows'][0]['stamp'],
         memo=memo, memo_action='', category=['生活'], emotions=['平穏'],
         emotion_details=[dict(type='平穏', strength='weak')])
     with ExitStack() as stack:
@@ -97,7 +97,7 @@ def test_model_body_differs_from_old_author_and_remains_fixed_after_sql_save(sav
     body = '私は同僚に資料の確認を頼んだ。'
     seen = _provider(monkeypatch, 'normal-request', [body])
     record = dict(id='piece-model-normal',
-        created_at=saved_piece_db.query('SELECT now()::text AS stamp')['rows'][0]['stamp'],
+        created_at=saved_piece_db.query("SELECT (now()-interval '5 seconds')::text AS stamp")['rows'][0]['stamp'],
         memo='', memo_action='私は同僚に資料の確認を頼みました。',
         category=['仕事'], emotions=['自己理解'],
         emotion_details=[dict(type='自己理解', strength='medium')])
@@ -177,7 +177,7 @@ def test_quote_internal_stops_keep_complete_cpu_text_through_sql_save_and_restar
     blocks = memo.split('\n')
     seen = _provider(monkeypatch, case_id, blocks)
     record = dict(id=case_id, created_at=saved_piece_db.query(
-        'SELECT now()::text AS stamp')['rows'][0]['stamp'], memo=memo, memo_action='',
+        "SELECT (now()-interval '5 seconds')::text AS stamp")['rows'][0]['stamp'], memo=memo, memo_action='',
         category=['生活'], emotions=['喜び'],
         emotion_details=[dict(type='喜び', strength='strong')])
     result = _run_saved_request(saved_piece_db, monkeypatch, record, tier=tier)
@@ -209,7 +209,7 @@ def test_qualified_normal_checkpoint_preserves_source_and_application_messages_b
     checkpoint = tmp_path / 'qualified-normal.tgz'
     try:
         record = dict(id='qualified-normal-checkpoint',
-            created_at=db.query('SELECT now()::text AS stamp')['rows'][0]['stamp'],
+            created_at=db.query("SELECT (now()-interval '5 seconds')::text AS stamp")['rows'][0]['stamp'],
             memo='', memo_action='私は同僚に資料の確認を頼みました。',
             category=['仕事'], emotions=['自己理解'],
             emotion_details=[dict(type='自己理解', strength='medium')])

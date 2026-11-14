@@ -21,7 +21,7 @@ from test_emlis_q3_application import qdb
 
 def _fresh(qdb, user):
     parent = str(uuid4())
-    qdb.query("insert into public.emotions values ($1,$2,now() at time zone 'UTC',$3,'',array['仕事'],array['不安'],$4)",
+    qdb.query("insert into public.emotions values ($1,$2,(now()-interval '5 seconds') at time zone 'UTC',$3,'',array['仕事'],array['不安'],$4)",
         [parent, user, MEMO, json.dumps([dict(type='不安', strength='medium')])])
     return parent
 

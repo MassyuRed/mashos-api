@@ -7,7 +7,6 @@ import asyncio
 from copy import deepcopy
 import json
 from pathlib import Path
-import re
 from unittest.mock import patch
 from uuid import uuid4
 
@@ -19,6 +18,9 @@ from emlis_thread_service import EmlisThreadService, Q3_PROFILE
 from piece_v2_contract import PieceContractError
 from piece_v2_source_adapter import PieceSavedSourceAdapter
 from test_emlis_q2_application import answer as answer_question
+from test_emlis_natural_reply_application import (
+    _natural_failure_diagnostics, _observe_initial_natural_failures,
+)
 from test_cmee_piece_request_saved_pipeline import saved_piece_db
 from test_b05_piece_model_saved_pipeline import _provider
 from test_b05_refined_preview_saved_pipeline import (
@@ -76,28 +78,6 @@ def _bind(db, monkeypatch, owner, token):
     monkeypatch.setattr(emlis_thread_store, 'sb_post_rpc', db.rpc)
 
 
-def _natural_failure_diagnostics(service, owner, parent, dto, calls, phases, *, phase, case_id, tier, rounds, stopped):
-    """Body-free failure context; a successful helper performs no extra read."""
-    diagnostic = dict(phase=phase, case_id=case_id, tier=tier, rounds=rounds, stopped=stopped,
-        provider_calls=len(calls), natural_phases=phases,
-        dto={key: dto.get(key) for key in ('state', 'body_state', 'failure_code', 'issued_count',
-            'revision', 'answer_assessment', 'meaning_updated', 'processing_deadline_at')})
-    try:
-        snapshot = run(service.store.read(owner, input_id=parent))
-        thread = snapshot.get('thread') or {}
-        data = thread.get('data') or {}
-        diagnostic['snapshot_now'] = snapshot.get('now')
-        diagnostic['saved_thread'] = dict(state=thread.get('state'), revision=thread.get('revision'),
-            issued_count=thread.get('issued_count'), processing_deadline_at=thread.get('processing_deadline_at'),
-            active_attempt=bool(thread.get('active_attempt_id')), active_operation=bool(thread.get('active_operation_id')),
-            body_state=data.get('body_state'), failure_code=data.get('failure_code'),
-            response_profile=data.get('response_profile'), response_stage=data.get('natural_response_stage'))
-        diagnostic['event_phases'] = [dict(kind=event.get('kind'), round_index=event.get('round_index'),
-            **{key: event.get('payload', {}).get(key) for key in ('stage', 'status', 'failure_code')
-               if key in event.get('payload', {})}) for event in snapshot.get('events', [])]
-    except Exception as exc:
-        diagnostic['diagnostic_read_error'] = type(exc).__name__
-    return diagnostic
 
 
 def _prepare_natural(db, monkeypatch, *, tier='premium', stopped=False, case_id='natural', with_history=False,
@@ -107,7 +87,7 @@ def _prepare_natural(db, monkeypatch, *, tier='premium', stopped=False, case_id=
     _update(db, 'insert into auth.users values ($1)', [owner])
     _update(db, 'insert into public.profiles values ($1,$2)', [owner,tier])
     memo = THREE if stopped or rounds == 3 else ONE+'誘われたのに、悲しかった。' if rounds == 2 else ONE
-    _update(db, "insert into public.emotions values ($1,$2,now() at time zone 'UTC',$3,'',array['仕事'],array['不安'],$4::jsonb)",
+    _update(db, "insert into public.emotions values ($1,$2,(now()-interval '5 seconds') at time zone 'UTC',$3,'',array['仕事'],array['不安'],$4::jsonb)",
         [parent,owner,memo,json.dumps([dict(type='不安',strength='medium')],ensure_ascii=False)])
     past = str(uuid4()) if with_history else None
     if past:
@@ -120,31 +100,13 @@ def _prepare_natural(db, monkeypatch, *, tier='premium', stopped=False, case_id=
         calls.append(data)
         return NaturalReply('記録を受け取る合成の返事です。', 'synthetic-natural-provider', material.source_prefix_ref)
     service = EmlisThreadService(runtime_profile=Q3_PROFILE,natural_reply_source=provider)
+    phases = _observe_initial_natural_failures(service, monkeypatch, calls)
     frame_origin = None
     if with_frame_target:
         from test_emlis_frame_feedback_context import _cross_frame
         _, frame_origin, parent, _, service, calls, _ = _cross_frame((owner,parent,service,calls), db)
         calls.clear()
         service.natural_reply_source = provider
-    phases = []
-    process_natural = service._process_natural
-    async def observed_natural(user_id, snapshot):
-        phases.append(dict(phase='_process_natural', event='ENTER'))
-        try:
-            dto = await process_natural(user_id, snapshot)
-        except asyncio.CancelledError:
-            phases.append(dict(phase='_process_natural', event='CANCELLED', exception_type='CancelledError', code=None))
-            raise
-        except Exception as exc:
-            code = getattr(exc, 'code', None) or str(exc)
-            if not isinstance(code, str) or not re.fullmatch(
-                    r'(?:natural_|thread_|analysis_|emlis_|semantic_|source_|safe_state_|separate_safety_|meaning_)[a-z0-9_]{1,120}', code):
-                code = None
-            phases.append(dict(phase='_process_natural', event='EXCEPTION', exception_type=type(exc).__name__, code=code))
-            raise
-        phases.append(dict(phase='_process_natural', event='RETURN', state=dto.get('state'), failure_code=dto.get('failure_code')))
-        return dto
-    monkeypatch.setattr(service, '_process_natural', observed_natural)
     initial = run(service.start(owner,parent))
     assert initial['state']=='AWAITING_ANSWER' and initial['issued_count']==1, _natural_failure_diagnostics(
         service, owner, parent, initial, calls, phases, phase='initial_start', case_id=case_id,
@@ -468,7 +430,7 @@ def test_zero_answer_natural_control_still_reaches_same_saved_piece(
     memo='私は同僚に資料の確認を頼みました。'
     seen=_provider(monkeypatch,'original-control',[memo])
     result=_run_saved_request(natural_refined_db,monkeypatch,dict(id='original-control',
-        created_at=natural_refined_db.query('select now()::text as stamp')['rows'][0]['stamp'],
+        created_at=natural_refined_db.query("select (now()-interval '5 seconds')::text as stamp")['rows'][0]['stamp'],
         memo=memo,memo_action='',category=['仕事'],emotions=['自己理解'],
         emotion_details=[dict(type='自己理解',strength='medium')]),tier='premium')
     assert len(seen)==1 and result['quota_consumptions']==1
