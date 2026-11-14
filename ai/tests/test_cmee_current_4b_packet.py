@@ -354,8 +354,16 @@ def test_if_generation_binds_origins_without_dropping_escaped_source_text(packet
         'unknown_reasons'] = ['結果を確かめる材料がありません。']
     assert not accepts(changed)
     chosen.update(origin='USER_CHOICE', text=material['fields'][0]['text'], source_refs=[1])
+    assert not accepts(value)  # Intent repeated in each graph is not a proposed action.
+    # A partial authentic option remains eligible, independently of the intent.
+    number = len(material['fields']) + 1
+    option = '話が終わったら、自分の意見を一つ伝えたい。'
+    material['fields'].append(dict(field=number, source_role='SIMULATION_SESSION_MATERIAL',
+        purpose='PERSON_ALTERNATIVE', text=option))
+    messages[1]['content'] = json.dumps(material, ensure_ascii=False)
+    chosen.update(text=option, source_refs=[number])
     assert accepts(value)
-    for key, bad in [('text', material['fields'][0]['text'][:-1]), ('source_refs', [2])]:
+    for key, bad in [('text', option[:-1]), ('source_refs', [2])]:
         changed = copy.deepcopy(value)
         next(n for n in changed['scenarios'][0]['nodes'] if n['origin'] == 'USER_CHOICE')[key] = bad
         assert not accepts(changed)

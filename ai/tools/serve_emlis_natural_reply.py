@@ -126,7 +126,7 @@ def _if_output_schema(material):
             or len({field['text'] for field in alternatives}) != material['requested_candidate_count']):
         alternatives = []
     choice_fields = alternatives or [field for field in material['fields']
-        if field['purpose'] != 'CONSTRAINT']
+        if field['purpose'] == 'PERSON_ALTERNATIVE']
     variants += [node_variant('USER_CHOICE', quoted(field['text']), dict(type='null'),
         array(dict(type='integer', enum=[field['field']]), 1, 1), array(text(200)))
         for field in choice_fields]
@@ -185,7 +185,7 @@ def _if_output_schema(material):
         scenario = dict(oneOf=scenarios)
     else:
         # Standard RN supplies an intent, not a completed list of choices.
-        # Proposal content remains generated. A partial person option can still
+        # Proposal content remains generated. Intent is not a person option. A partial option can still
         # be quoted as USER_CHOICE; constraints cannot become that choice.
         choices = [fixed_node('choice', 'POSSIBLE_CHOICE', 'USER_CHOICE',
             quoted(field['text']), dict(type='null'),
