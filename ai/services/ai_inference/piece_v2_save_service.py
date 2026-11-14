@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 
 from piece_v2_content_policy import choose_format
 from piece_v2_contract import PieceContractError, canonical_json_bytes
-from piece_v2_source_adapter import PieceSavedSourceAdapter
+from piece_v2_source_adapter import PieceSavedSourceAdapter, project_saved_refined_fence
 from piece_v2_preview_service import (
     _HANDOFF_TYPES, _resolve_handoff, _source_ref_from_lineage, _canonical_handoff_lineage,
 )
@@ -165,7 +165,8 @@ class PieceSaveService:
                 idempotency_key=idempotency_key, rpc=self._rpc, expected_subscription_tier=tier,
                 expected_source_state={'original': current.original.original_payload(),
                     'thread_id': current.thread_id, 'thread_revision': current.thread_revision,
-                    'lineage': _canonical_handoff_lineage(current)})
+                    'lineage': _canonical_handoff_lineage(current),
+                    **project_saved_refined_fence(current)})
         except PieceContractError as exc:
             _fail(exc.code if exc.code in SAVE_STATUS else 'PIECE_TEMPORARILY_UNAVAILABLE')
         except Exception:

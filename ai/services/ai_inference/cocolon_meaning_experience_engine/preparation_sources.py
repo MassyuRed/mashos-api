@@ -121,7 +121,8 @@ def piece_model_material(source, *, expected_owner_id: str, tier: str = 'free') 
     sources = material['sources']
     if refined:
         frozen = freeze_supplemental_answer(source.supplemental)
-        if (source.opted_in is not True or source.supplemental_update_operation != 'ADD'
+        operation = source.supplemental_update_operation
+        if (source.opted_in is not True or operation not in {'ADD', 'REVISE', 'WITHDRAW'}
                 or source.supplemental_owner_id != expected_owner_id
                 or source.original_commitment != sources[0]['source_commitment']
                 or source.supplemental_commitment != 'sha256:' + frozen.envelope.raw_sha256
@@ -152,7 +153,42 @@ def piece_model_material(source, *, expected_owner_id: str, tier: str = 'free') 
             'owner': expected_owner_id, 'source_stage': source.source_stage,
             'source': sources[0]})).hexdigest()
     partition = []
-    for item in sources:
+    active_update = refined and source.supplemental_update_operation in {'REVISE', 'WITHDRAW'}
+    if active_update:
+        ranges = source.original_active_ranges
+        answer_range = source.supplemental_active_range
+        if (type(ranges) is not tuple or not ranges
+                or any(type(row) is not tuple or len(row) != 3 for row in ranges)
+                or (source.supplemental_update_operation == 'REVISE') != (answer_range is not None)):
+            raise ValueError('piece_model_refined_binding')
+        for item in sources:
+            by_field = {}
+            selected = (ranges if item['role'] == 'ORIGINAL_INPUT' else
+                        (() if answer_range is None else (('answer_text_private', *answer_range),)))
+            for field, start, end in selected:
+                text = item['text_fields'].get(field)
+                allowed = ('memo', 'memo_action') if item['role'] == 'ORIGINAL_INPUT' else ('answer_text_private',)
+                if (field not in allowed or type(text) is not str
+                        or type(start) is not int or type(end) is not int
+                        or not 0 <= start < end <= len(text) or not text[start:end].strip()
+                        or '\n' in text[start:end] or '\r' in text[start:end]):
+                    raise ValueError('piece_model_refined_binding')
+                previous = by_field.setdefault(field, [])
+                if previous and previous[-1][1] > start:
+                    raise ValueError('piece_model_refined_binding')
+                previous.append([start, end])
+            for field in item['text_fields']:
+                if field in by_field:
+                    groups = []
+                    text = item['text_fields'][field]
+                    for start, end in by_field[field]:
+                        if (not groups or '\n' in text[groups[-1][-1][1]:start]
+                                or '\r' in text[groups[-1][-1][1]:start]):
+                            groups.append([])
+                        groups[-1].append([start, end])
+                    partition.extend(dict(source_id=item['source_id'], field_path=field,
+                                          scalar_ranges=group) for group in groups)
+    for item in (() if active_update else sources):
         for field, text in item['text_fields'].items():
             if not isinstance(text, str):
                 continue
@@ -172,6 +208,8 @@ def piece_model_material(source, *, expected_owner_id: str, tier: str = 'free') 
         'authorship': 'USER_OWNED_COCOLON_SHAPED',
         'source_selections_are_not_written_propositions': True,
     })
+    if active_update:
+        material['control']['active_source_update'] = source.supplemental_update_operation
     return material
 
 
@@ -196,13 +234,36 @@ def piece_model_field_slots(material):
             raise ValueError
         slots = {}
         for index, item in enumerate(partition):
-            if type(item) is not dict or set(item) != {
-                    'source_id', 'field_path', 'scalar_start', 'scalar_end'}:
+            active = control.get('active_source_update') in {'REVISE', 'WITHDRAW'}
+            expected_keys = ({'source_id', 'field_path', 'scalar_ranges'} if active else
+                             {'source_id', 'field_path', 'scalar_start', 'scalar_end'})
+            if type(item) is not dict or set(item) != expected_keys:
                 raise ValueError
             source = by_id[item['source_id']]
             field = item['field_path']
             allowed = ('memo', 'memo_action') if source['role'] == 'ORIGINAL_INPUT' else ('answer_text_private',)
             text = source['text_fields'][field]
+            if active:
+                ranges = item['scalar_ranges']
+                if type(ranges) is not list or not ranges:
+                    raise ValueError
+                literals = []
+                for row in ranges:
+                    if type(row) is not list or len(row) != 2:
+                        raise ValueError
+                    start, end = row
+                    if (field not in allowed or type(text) is not str
+                            or type(start) is not int or type(end) is not int
+                            or not 0 <= start < end <= len(text) or not text[start:end].strip()
+                            or (literals and literals[-1]['scalar_end'] > start)):
+                        raise ValueError
+                    literals.append(dict(scalar_start=start, scalar_end=end,
+                        utf8_start=len(text[:start].encode('utf-8')),
+                        utf8_end=len(text[:end].encode('utf-8')), literal=text[start:end]))
+                slots[field + '_' + str(index)] = dict(item, source_role=source['role'],
+                    scalar_start=literals[0]['scalar_start'], scalar_end=literals[-1]['scalar_end'],
+                    field_sha256=hashlib.sha256(text.encode('utf-8')).hexdigest(), literal_ranges=literals)
+                continue
             start, end = item['scalar_start'], item['scalar_end']
             if (field not in allowed or type(text) is not str
                     or type(start) is not int or type(end) is not int

@@ -84,6 +84,10 @@ name: Analysis observed content
       - ai/tests/piece_v2/test_b05_refined_preview_services.py
       - ai/tests/piece_v2/test_b05_refined_preview_saved_pipeline.py
       - ai/tests/piece_v2/test_b05_natural_refined_saved_pipeline.py
+      - ai/tests/test_cmee_piece_answer_updates.py
+      - ai/tests/test_piece_model_active_ranges.py
+      - ai/tests/piece_v2/test_b05_piece_answer_update_saved_pipeline.py
+      - supabase/migrations/*_piece_natural_answer_active_source.sql
       - supabase/migrations/*_piece_natural_refined_source_fence.sql
       - ai/tests/piece_v2/test_b05_refined_source_fence_sql.py
       - supabase/migrations/*_piece_refined_source_fence.sql
@@ -231,6 +235,9 @@ jobs:
           ai/tests/piece_v2/test_b05_refined_preview_services.py
           ai/tests/piece_v2/test_b05_refined_preview_saved_pipeline.py
           ai/tests/piece_v2/test_b05_natural_refined_saved_pipeline.py
+          ai/tests/test_cmee_piece_answer_updates.py
+          ai/tests/test_piece_model_active_ranges.py
+          ai/tests/piece_v2/test_b05_piece_answer_update_saved_pipeline.py
           ai/tests/piece_v2/test_b05_refined_source_fence_sql.py
           ai/tests/test_emlis_natural_reply_application.py
           ai/tests/test_emlis_natural_frames_application.py

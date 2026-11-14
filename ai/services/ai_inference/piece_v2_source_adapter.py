@@ -8,7 +8,7 @@ Original and explicitly selected supplemental partitions retain separate owners.
 All saved fields remain separate. The original state-bound path admits only
 an already committed, current INITIAL observation: normal or pre-question,
 without answers. A separate explicitly opted-in refined reader admits
-one resolved additive answer without extending original stage eligibility.
+one resolved answer without extending original stage eligibility.
 The earlier explicit-stage method remains an offline probe, not authority.
 A frozen object is not ongoing access; later operations revalidate current state.
 """
@@ -98,6 +98,10 @@ class PieceSavedRefinedHandoff:
     thread_id: str
     thread_revision: int
     _lineage_json: bytes = field(repr=False)
+    supplemental_update_operation: str = 'ADD'
+    original_active_ranges: tuple[tuple[str, int, int], ...] = ()
+    supplemental_active_range: tuple[int, int] | None = None
+    _meaning_checkpoint_json: bytes | None = field(default=None, repr=False)
 
     def lineage_payload(self) -> dict:
         return json.loads(self._lineage_json)
@@ -681,7 +685,7 @@ def _original_observation_handoff(saved: PieceSavedOriginal, snapshot: dict) -> 
 
 def _natural_refined_observation_handoff(saved: PieceSavedOriginal, snapshot: dict,
                                          answer_id: str) -> PieceSavedRefinedHandoff:
-    """Bind one current natural ADD to real sources and saved reply receipts.
+    """Bind one current natural answer to real sources and saved reply receipts.
 
     Reply text proves completion only. The original and frozen ANSWER remain
     the only Piece meaning sources; no synthetic checkpoint is put on an OBS.
@@ -774,13 +778,17 @@ def _natural_refined_observation_handoff(saved: PieceSavedOriginal, snapshot: di
             and update.get('question_ref') == frozen.source.question_id
             and type(update.get('updates')) is list and bool(update['updates'])
             and update.get('unresolved_parts') == [])
-    require(all(type(item) is dict and item.get('operation') == 'ADD'
-        and item.get('superseded_claim_refs') == [] and item.get('affected_dependency_refs') == []
-        for item in update['updates']))
     # Re-derive the existing semantic owner's checkpoint from the saved real
     # original/QUESTION/ANSWER/history. This is CPU admission, never authoring.
     prepared = prepare_emlis_meaning(_request(snapshot, checkpoint_ref=cp['checkpoint_id']))
     require(_json(prepared.checkpoint) == cp)
+    operation, original_ranges, answer_range = 'ADD', (), None
+    if all(type(item) is dict and item.get('operation') == 'ADD'
+            and item.get('superseded_claim_refs') == []
+            and item.get('affected_dependency_refs') == [] for item in update['updates']):
+        pass
+    else:
+        operation, original_ranges, answer_range = _natural_active_answer_ranges(saved, prepared)
     require(op.get('source_prefix_ref') == admitted.source_prefix_ref
             and op.get('context_ref') == _context_ref(snapshot)
             and op.get('context_guards') == d.get('context_guards', []))
@@ -905,7 +913,110 @@ def _natural_refined_observation_handoff(saved: PieceSavedOriginal, snapshot: di
             'contract_version': 'piece.generation_eligibility.v1',
             'decision': 'eligible', 'reason_codes': []},
         'body_free': True}
-    return PieceSavedRefinedHandoff(saved, frozen.source, thread_id, t['revision'], canonical_json_bytes(lineage))
+    return PieceSavedRefinedHandoff(saved, frozen.source, thread_id, t['revision'],
+        canonical_json_bytes(lineage), operation, original_ranges, answer_range,
+        canonical_json_bytes(cp) if operation != 'ADD' else None)
+
+
+def _natural_active_answer_ranges(saved, prepared):
+    """Project one shared-owner exact clause update, without changing sources.
+
+    A partial semantic projection, an explicit relation crossing the removed
+    clause, or normalization that loses raw coordinates is not this capability.
+    The Piece owner still rederives its complete active graph from these ranges.
+    """
+    from cocolon_meaning_experience_engine.emlis_answer_update import _REPLACEMENT, _WITHDRAWAL
+
+    def require(value):
+        if not value:
+            raise _error('PIECE_SOURCE_NOT_ELIGIBLE')
+
+    cp, original = prepared.checkpoint, prepared.original_plan
+    updates = cp.answer_update.updates
+    require(len(updates) == 1)
+    update = updates[0]
+    require(update.operation in {'REVISE', 'WITHDRAW'}
+        and update.binding_kind == 'EXPLICIT_CORRECTION'
+        and update.temporal_binding.about_time == 'ORIGINAL_OCCASION'
+        and len(update.target_meaning_refs) == 1
+        and update.superseded_claim_refs == update.target_meaning_refs
+        and set(cp.inactive_claim_refs) == {
+            *update.superseded_claim_refs, *update.affected_dependency_refs})
+    answer_text = prepared.thread.answers[0].source.answer_text_private
+    correction = (_REPLACEMENT if update.operation == 'REVISE' else _WITHDRAWAL).fullmatch(
+        answer_text.strip().rstrip('。．.'))
+    require(correction is not None)
+    targets = tuple(n for n in original.nuclei if n.nucleus_id in update.target_meaning_refs)
+    require(len(targets) == 1)
+    target = targets[0]
+    require(target.semantic_frame.actor == 'current_user'
+        and len(target.source_fields) == len(target.source_span_ids) == 1
+        and target.source_fields[0] in {'memo', 'memo_action'})
+    span_id = target.source_span_ids[0]
+    require(tuple(n.nucleus_id for n in original.nuclei if span_id in n.source_span_ids)
+            == update.target_meaning_refs)
+    dependencies = tuple(r for r in original.relations
+                         if r.relation_id in update.affected_dependency_refs)
+    require(len(dependencies) == len(update.affected_dependency_refs)
+        and all(r.grounding_kind == 'bounded_structural_inference' for r in dependencies))
+    resolver = prepared.thread.resolver()
+    target_ref = resolver.qualified_ref(span_id).evidence
+    original_source = prepared.thread.original.envelope.envelope_id
+    require(target_ref.source_envelope_id == original_source
+        and update.temporal_binding.anchor_source_ref == original_source
+        and not update.temporal_binding.time_expression_evidence_refs)
+    require(resolver.resolve(span_id).raw_text.rstrip('。．.')
+            == correction.group('old').rstrip('。．.'))
+    raw = saved.original_payload()
+    ranges = []
+    for field_path in ('memo', 'memo_action'):
+        text = raw[field_path] or ''
+        spans = [resolver.resolve(sid) for sid in resolver.span_ids
+                 if resolver.qualified_ref(sid).source_envelope_id == original_source
+                 and resolver.qualified_ref(sid).evidence.field_path == field_path]
+        spans.sort(key=lambda s: s.start_index)
+        cursor = 0
+        for span in spans:
+            start, end = span.start_index, span.end_index
+            require(0 <= cursor <= start < end <= len(text)
+                and not text[cursor:start].strip()
+                and text[start:end] == span.raw_text)
+            # Include only punctuation that is physically present in this
+            # field; never manufacture a sentence boundary in saved evidence.
+            if end < len(text) and text[end] in '。．.!！?？':
+                end += 1
+            if span.span_id != span_id:
+                ranges.append((field_path, start, end))
+            cursor = end
+        require(not text[cursor:].strip())
+    require(bool(ranges))
+    answer_range = None
+    if update.operation == 'WITHDRAW':
+        require(not prepared.accepted_nuclei and not update.changed_claim_refs)
+    else:
+        require(len(prepared.accepted_nuclei) == 1)
+        accepted = prepared.accepted_nuclei[0]
+        require(update.changed_claim_refs == (accepted.nucleus_id,)
+            and accepted.semantic_frame.actor == 'current_user'
+            and accepted.source_fields == ('answer_text_private',)
+            and len(accepted.source_span_ids) == 1)
+        markers = tuple(c for c in accepted.semantic_frame.attribute_codes
+                        if c.startswith('source_fragment_scalar_range:'))
+        require(len(markers) == 1)
+        try:
+            a, b = map(int, markers[0].split(':')[1:])
+        except (ValueError, TypeError):
+            raise _error('PIECE_SOURCE_NOT_ELIGIBLE') from None
+        span = resolver.resolve(accepted.source_span_ids[0])
+        ref = resolver.qualified_ref(accepted.source_span_ids[0]).evidence
+        text = prepared.thread.answers[0].source.answer_text_private
+        require(ref.source_envelope_id == prepared.thread.answers[0].envelope.envelope_id
+            and re.sub(r'\s+', ' ', span.raw_text.replace('\u3000', ' ')).strip() == span.raw_text
+            and 0 <= a < b <= len(span.raw_text)
+            and text[span.start_index:span.end_index] == span.raw_text)
+        answer_range = (span.start_index + a, span.start_index + b)
+        require(text[answer_range[0]:answer_range[1]] == correction.group('new'))
+    return update.operation, tuple(ranges), answer_range
 
 
 def _natural_later_add_handoff(saved, snapshot, answer_id):
@@ -1286,7 +1397,9 @@ def project_saved_refined_source(handoff: PieceSavedRefinedHandoff, *, opted_in:
         original=project_saved_original_source(handoff.original, source_stage='normal_observation'),
         supplemental=handoff.supplemental,
         supplemental_owner_id=handoff.original.authenticated_owner_id,
-        supplemental_update_operation='ADD',
+        supplemental_update_operation=handoff.supplemental_update_operation,
+        original_active_ranges=handoff.original_active_ranges,
+        supplemental_active_range=handoff.supplemental_active_range,
         question_need_decision_identity=observation['question_need_decision_identity'],
         refined_result_identity=observation['emlis_observation_result_identity'],
         original_commitment=handoff.original.record_commitment,
@@ -1307,3 +1420,39 @@ def project_saved_refined_lineage(handoff: PieceSavedRefinedHandoff, *, opted_in
     del line['observation']['source_prefix_ref']
     del line['refined_result_source_binding']
     return line
+
+
+def project_saved_refined_fence(handoff) -> dict:
+    """Pin an active update to its admitted checkpoint inside the existing RPC.
+
+    This private expectation never enters source_ref, persisted lineage or the
+    Piece body. Old original/ADD calls retain their exact four-key state.
+    """
+    if type(handoff) is PieceSavedHandoff:
+        return {}
+    if type(handoff) is not PieceSavedRefinedHandoff:
+        raise _error('PIECE_CONFLICT')
+    if handoff.supplemental_update_operation == 'ADD':
+        if (handoff.original_active_ranges or handoff.supplemental_active_range is not None
+                or handoff._meaning_checkpoint_json is not None):
+            raise _error('PIECE_CONFLICT')
+        return {}
+    project_saved_refined_source(handoff, opted_in=True)
+    try:
+        cp = json.loads(handoff._meaning_checkpoint_json)
+    except (ValueError, TypeError, UnicodeError):
+        raise _error('PIECE_CONFLICT') from None
+    if type(cp) is not dict:
+        raise _error('PIECE_CONFLICT')
+    update = cp.get('answer_update')
+    if (canonical_json_bytes(cp) != handoff._meaning_checkpoint_json
+            or handoff.supplemental_update_operation not in {'REVISE', 'WITHDRAW'}
+            or cp.get('source_prefix_ref') != handoff.lineage_payload()['observation']['source_prefix_ref']
+            or cp.get('assessment_status') != 'RESOLVED' or cp.get('unresolved_parts') != []
+            or type(update) is not dict or update.get('disposition') != 'MATERIAL_UPDATE'
+            or update.get('question_ref') != handoff.supplemental.question_id
+            or type(update.get('updates')) is not list or len(update['updates']) != 1
+            or type(update['updates'][0]) is not dict
+            or update['updates'][0].get('operation') != handoff.supplemental_update_operation):
+        raise _error('PIECE_CONFLICT')
+    return {'meaning_checkpoint': cp}

@@ -539,6 +539,11 @@ def _piece_model_source_blocks(meaning, plan):
     text = piece_source_text(meaning)
     if set(spans) != set(ids):
         raise unavailable('piece_model_source_binding')
+    from cocolon_meaning_experience_engine.piece_refined import (
+        PieceActiveOriginalMeaning, PieceSupplementalMeaning, supplemental_statement_view)
+    active = type(meaning) is PieceActiveOriginalMeaning
+    replacement = type(meaning) is PieceSupplementalMeaning and meaning.active_range is not None
+    by_node = {node.node_id: node for node in nodes}
     blocks = []
     for group in plan.block_node_ids:
         if not group:
@@ -547,7 +552,9 @@ def _piece_model_source_blocks(meaning, plan):
         if positions != list(range(min(positions), max(positions) + 1)):
             raise unavailable('piece_model_plan_binding')
         a, b = spans[group[0]].source_start, spans[group[-1]].source_end
-        block = text[a:b]
+        block = (''.join(by_node[node_id].value for node_id in group) if active else
+                 ''.join(supplemental_statement_view(meaning, by_node[node_id]) for node_id in group)
+                 if replacement else text[a:b])
         if '\n' in block or '\r' in block:
             raise unavailable('piece_model_source_partition')
         blocks.append(block)
@@ -663,7 +670,7 @@ def validate_piece_model_preservation(meaning, plan, artifact):
     from collections import Counter
     from cocolon_meaning_experience_engine.piece_v1c import PieceArtifact
     from cocolon_meaning_experience_engine.piece_refined import (
-        PieceRefinedMeaning, PieceRefinedPlan, refined_source_ref,
+        PieceRefinedMeaning, PieceRefinedPlan, refined_source_ref, refined_meaning_parts,
     )
     from piece_v2_contract import validate_piece_text_binding
     if (type(artifact) is not PieceArtifact or artifact.format_type != 'short_essay'
@@ -677,7 +684,7 @@ def validate_piece_model_preservation(meaning, plan, artifact):
                 or plan.source_roles != ('ORIGINAL_USER_INPUT', 'SUPPLEMENTAL_ANSWER')
                 or plan.eligible_formats != ('short_essay',)):
             raise unavailable('piece_model_source_binding')
-        parts = ((meaning.original, plan.original_plan), (meaning.supplemental, plan.supplemental_plan))
+        parts = refined_meaning_parts(meaning, plan)
     else:
         parts = ((meaning, plan),)
     offset = 0
@@ -763,8 +770,10 @@ def validate_source_meaning_preservation(meaning, plan, artifact, *, _model_regi
     def reject():
         raise unavailable('piece_meaning_not_preserved')
 
-    from cocolon_meaning_experience_engine.piece_refined import PieceSupplementalMeaning
-    if (type(meaning) not in (PieceSourceMeaning, PieceSupplementalMeaning) or type(plan) is not PieceArtifactPlan
+    from cocolon_meaning_experience_engine.piece_refined import (
+        PieceSupplementalMeaning, PieceActiveOriginalMeaning, supplemental_complete_self_account,
+        supplemental_statement_view)
+    if (type(meaning) not in (PieceSourceMeaning, PieceSupplementalMeaning, PieceActiveOriginalMeaning) or type(plan) is not PieceArtifactPlan
             or type(artifact) is not PieceArtifact):
         reject()
     validate_piece_saved_fields(meaning)
@@ -1073,9 +1082,10 @@ def validate_source_meaning_preservation(meaning, plan, artifact, *, _model_regi
         covered = ''.join(sentences)
         final_id = group[-1]
         if (covered != block and block.startswith(covered)
-                and meaning.saved_snapshot is not None
                 and duties[final_id] == 'KEEP_COMPLETE_SOURCE_CONTEXT'
-                and _is_unpunctuated_account(source_nodes[final_id].value)):
+                and ((meaning.saved_snapshot is not None
+                      and _is_unpunctuated_account(source_nodes[final_id].value))
+                     or supplemental_complete_self_account(meaning))):
             # A source-bound paragraph may end in its complete action line
             # without a stop. The exact KEEP check still rejects text edits.
             sentences.append(block[len(covered):])
@@ -1100,7 +1110,20 @@ def validate_source_meaning_preservation(meaning, plan, artifact, *, _model_regi
                     previous_id, previous_author = node_id, topic['narrator']
                     continue
             if operation == 'KEEP_COMPLETE_SOURCE_CONTEXT':
+                # A selected, shared-proof replacement may end at its quote
+                # without a written stop. Its existing SELF grammar was
+                # qualified on a temporary complete-statement view; source
+                # node/evidence remain the exact unpunctuated answer range.
+                # The author may add only the existing topic pause and stop.
+                replacement_statement = False
+                if supplemental_complete_self_account(meaning):
+                    statement = supplemental_statement_view(meaning, node)
+                    replacement_topic = _qualified_self_topic(statement)
+                    replacement_statement = (statement != node.value and replacement_topic is not None
+                        and re.fullmatch(re.escape(replacement_topic['speaker'] + 'は') + '[、，,]?'
+                            + anchor(replacement_topic['body']) + '。', visible) is not None)
                 if (re.fullmatch(anchor(node.value), visible) is None
+                        and not replacement_statement
                         and not (_model_register and (
                             same_undecided(node.value, visible)
                             or same_finite_model_context(node_id, node.value, visible)

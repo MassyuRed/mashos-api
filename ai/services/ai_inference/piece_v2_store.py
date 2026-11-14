@@ -150,11 +150,12 @@ async def save_piece(*, authenticated_user_id: str, request: Mapping[str, Any],
         from piece_v2_contract import canonical_json_bytes
         try:
             value = json.loads(canonical_json_bytes(_request(expected_source_state,
-                {'original', 'thread_id', 'thread_revision', 'lineage'})))
+                {'original', 'thread_id', 'thread_revision', 'lineage'}, {'meaning_checkpoint'})))
             value['thread_id'] = _uuid(value['thread_id'])
             _positive(value['thread_revision'])
             if (expected_subscription_tier is None or type(value['original']) is not dict
                     or type(value['lineage']) is not dict
+                    or ('meaning_checkpoint' in value and type(value['meaning_checkpoint']) is not dict)
                     or value['lineage']['source_input']['source_owner_user_id'] != args['p_owner_user_id']
                     or value['original']['id'] != value['lineage']['source_input']['source_input_id']):
                 raise ValueError
@@ -271,10 +272,11 @@ async def issue_piece_preview(*, authenticated_user_id: str, record: Mapping[str
                     or expected_subscription_tier not in ('free', 'plus', 'premium')):
                 raise ValueError
             expected = json.loads(canonical_json_bytes(_request(expected_source_state,
-                {'original', 'thread_id', 'thread_revision', 'lineage'})))
+                {'original', 'thread_id', 'thread_revision', 'lineage'}, {'meaning_checkpoint'})))
             expected['thread_id'] = _uuid(expected['thread_id'])
             _positive(expected['thread_revision'])
             if (type(expected['original']) is not dict or type(expected['lineage']) is not dict
+                    or ('meaning_checkpoint' in expected and type(expected['meaning_checkpoint']) is not dict)
                     or expected['lineage']['source_input']['source_owner_user_id'] != owner
                     or expected['original']['id'] != expected['lineage']['source_input']['source_input_id']
                     or canonical_json_bytes(expected['lineage']) != canonical_json_bytes(value['source_lineage'])):
@@ -354,7 +356,7 @@ async def mutate_piece_preview_visual(*, authenticated_user_id: str, preview_id:
     try:
         row = json.loads(canonical_json_bytes(_request(expected_record, set(_REPLAY_COLUMNS))))
         source = json.loads(canonical_json_bytes(_request(expected_source_state,
-            {'original', 'thread_id', 'thread_revision', 'lineage'})))
+            {'original', 'thread_id', 'thread_revision', 'lineage'}, {'meaning_checkpoint'})))
         recipe = json.loads(canonical_json_bytes(visual_recipe))
         if (UUID(owner).int == 0 or UUID(pid).int == 0
                 or row['id'] != pid or row['owner_user_id'] != owner
@@ -362,6 +364,7 @@ async def mutate_piece_preview_visual(*, authenticated_user_id: str, preview_id:
                 or row['lifecycle_status'] != 'preview_draft' or row['visibility_scope'] != 'private'
                 or _positive(row['preview_revision']) != revision
                 or expected_subscription_tier not in ('free', 'plus', 'premium')
+                or ('meaning_checkpoint' in source and type(source['meaning_checkpoint']) is not dict)
                 or source['lineage'] != row['source_lineage']
                 or source['lineage']['source_input']['source_owner_user_id'] != owner
                 or source['original']['id'] != source['lineage']['source_input']['source_input_id']):

@@ -402,9 +402,9 @@ def compile_piece_artifact_plan(meaning: PieceSourceMeaning) -> PieceArtifactPla
         # feeling without carrying the original's hidden selection. Keep its
         # source words through the existing duty/author; this grants neither
         # a selected state, a wish nor declaration eligibility.
-        from .piece_refined import supplemental_feeling_account
+        from .piece_refined import supplemental_feeling_account, supplemental_complete_self_account
         if not (feeling_account or self_insight_account or literal_account or scoped_action_account
-                or supplemental_feeling_account(meaning)):
+                or supplemental_feeling_account(meaning) or supplemental_complete_self_account(meaning)):
             raise unavailable('expression_meaning_not_admitted')
     ids = tuple(node.node_id for node in text_nodes)
     # A newly admitted temporal context must not be moved behind a later wish.

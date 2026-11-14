@@ -1573,7 +1573,11 @@ def validate_piece_saved_fields(meaning: PieceSourceMeaning) -> None:
     if type(meaning) is PieceSemanticSnapshotV1:
         validate_snapshot_self(meaning)
         return
-    from .piece_refined import PieceSupplementalMeaning, validate_supplemental_meaning
+    from .piece_refined import (PieceSupplementalMeaning, validate_supplemental_meaning,
+        PieceActiveOriginalMeaning, validate_active_original_meaning)
+    if type(meaning) is PieceActiveOriginalMeaning:
+        validate_active_original_meaning(meaning)
+        return
     if type(meaning) is PieceSupplementalMeaning:
         validate_supplemental_meaning(meaning)
         return

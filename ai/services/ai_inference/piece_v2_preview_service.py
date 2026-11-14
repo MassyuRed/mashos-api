@@ -29,7 +29,7 @@ from piece_v2_generation import generate_piece_candidate
 from piece_v2_source_adapter import (
     PieceSavedHandoff, PieceSavedRefinedHandoff, PieceSavedSourceAdapter,
     project_saved_original_source, project_saved_refined_source,
-    project_saved_refined_lineage,
+    project_saved_refined_lineage, project_saved_refined_fence,
 )
 from piece_v2_visual import build_visual_recipe, require_piece_theme, validate_visual_recipe
 
@@ -554,7 +554,8 @@ class PiecePreviewService:
                 expected_subscription_tier=expected_subscription_tier,
                 expected_source_state={'original': handoff.original.original_payload(),
                     'thread_id': handoff.thread_id, 'thread_revision': handoff.thread_revision,
-                    'lineage': _canonical_handoff_lineage(handoff)}, rpc=rpc)
+                    'lineage': _canonical_handoff_lineage(handoff),
+                    **project_saved_refined_fence(handoff)}, rpc=rpc)
         except PieceContractError as exc:
             raise _error(exc.code if exc.code in errors else 'PIECE_TEMPORARILY_UNAVAILABLE') from None
         except Exception:
@@ -675,7 +676,7 @@ class PiecePreviewService:
                 expected_subscription_tier=handoff.original.subscription_tier,
                 expected_source_state={'original': handoff.original.original_payload(),
                     'thread_id': handoff.thread_id, 'thread_revision': handoff.thread_revision,
-                    'lineage': lineage})
+                    'lineage': lineage, **project_saved_refined_fence(handoff)})
             if allowed_renderers is not None and result['renderer_version'] not in allowed_renderers:
                 raise _error('PIECE_REQUEST_INVALID')
             return result
