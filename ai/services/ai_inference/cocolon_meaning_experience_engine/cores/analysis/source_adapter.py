@@ -87,6 +87,8 @@ class AnalysisSource:
     normalized: dict = field(repr=False)
     spans: tuple = field(repr=False)
     evidence: tuple[EvidenceRef, ...] = field(repr=False)
+    # Parser view only; the envelope and field bounds remain the full source.
+    scoped_memo_range: tuple[int, int] | None = None
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -221,7 +223,7 @@ def scoped_source_view(source: AnalysisSource, start: int, end: int) -> Analysis
             utf8_end=base.field_utf8_start + len(raw[:b].encode('utf-8')),
             literal_sha256=hashlib.sha256(raw[a:b].encode('utf-8')).hexdigest()))
     return replace(source, normalized=normalized, spans=spans,
-                   evidence=tuple(evidence))
+                   evidence=tuple(evidence), scoped_memo_range=(start, end))
 
 
 def freeze_analysis_sources(request: AnalysisObservedMapRequest) -> AnalysisSourceSet:

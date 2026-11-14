@@ -523,7 +523,7 @@ class AnalysisModelFieldsInput:
                 {'role':'user', 'content':canonical(material)}]
 
 
-def _model_fields_source(request, *, allow_supplements=False):
+def _model_fields_source(request, *, allow_supplements=False, allow_source_updates=False):
     from emlis_ai_grounded_observation_plan import build_final_stage1_grounded_observation_plan
     from .intent_compiler import _active_sources
     frozen = freeze_analysis_sources(request)
@@ -533,7 +533,8 @@ def _model_fields_source(request, *, allow_supplements=False):
         raise AnalysisSemanticUnsupported('analysis_model_fields_scope_unsupported')
     # Preserve the normal active-source and COMPLETE-source Safety boundary.
     active, excluded, updates, replacements = _active_sources(frozen)
-    require(not excluded and not updates and not replacements)
+    if not allow_source_updates:
+        require(not excluded and not updates and not replacements)
     fields = []
     for source in active:
         plan = build_final_stage1_grounded_observation_plan(source.normalized, evidence_spans=source.spans)
@@ -541,7 +542,8 @@ def _model_fields_source(request, *, allow_supplements=False):
             raise AnalysisSourceError('analysis_separate_safety_required')
         # Answers remain separate envelopes and may only supply their own memo.
         # Never fall back to a parent's memo_action for an empty answer field.
-        source_fields = ('memo',) if source.envelope.source_role == 'SUPPLEMENTAL_ANSWER' else ('memo', 'memo_action')
+        source_fields = (('memo', 'memo_action') if source.envelope.source_role == 'ORIGINAL_INPUT'
+                         else ('memo',))
         for field in source_fields:
             first = next((e for e in source.evidence if e.field_path == field), None)
             if first is None:
@@ -551,16 +553,48 @@ def _model_fields_source(request, *, allow_supplements=False):
                 if raw.strip():
                     raise AnalysisSemanticUnsupported('analysis_model_field_unbound')
                 continue
-            text = source_field_text(source, field)
-            if not text.strip():
-                continue
-            ref = 'field:' + digest([source.envelope.envelope_id, field, text])
-            evidence = replace(first, evidence_id='analysis-evidence:' + digest([ref, 0, len(text)]),
-                source_span_id=ref, scalar_start=0, scalar_end=len(text),
-                utf8_start=first.field_utf8_start, utf8_end=first.field_utf8_end,
-                literal_sha256=hashlib.sha256(text.encode('utf-8')).hexdigest())
-            fields.append(dict(field_ref=ref, field_path=field, text=text,
-                source=source, evidence=evidence))
+            raw = source_field_text(source, field)
+            ranges = [(0, len(raw))]
+            if allow_source_updates and source.scoped_memo_range is not None:
+                require(field == 'memo')
+                ranges = [source.scoped_memo_range]
+            elif allow_source_updates and excluded.get(source.envelope.envelope_id):
+                removed = sorted({(e.scalar_start, e.scalar_end) for e in source.evidence
+                    if e.field_path == field and e.source_span_id in excluded[source.envelope.envelope_id]})
+                ranges, cursor = [], 0
+                for start, end in removed:
+                    require(cursor <= start < end <= len(raw))
+                    if cursor < start:
+                        ranges.append((cursor, start))
+                    cursor = end
+                if cursor < len(raw):
+                    ranges.append((cursor, len(raw)))
+                # Separate surviving ranges stay separate fields. Trim only
+                # boundary separators; never concatenate across a removal.
+                trimmed = []
+                for start, end in ranges:
+                    while start < end and raw[start] in ' \t\r\n\u3000。．.!！?？':
+                        start += 1
+                    if raw[start:end].strip(' \t\r\n\u3000。．.!！?？'):
+                        trimmed.append((start, end))
+                ranges = trimmed
+                if not removed:
+                    ranges = [(0, len(raw))]
+            for start, end in ranges:
+                text = raw[start:end]
+                if not text.strip():
+                    continue
+                identity = [source.envelope.envelope_id, field, text]
+                if (start, end) != (0, len(raw)):
+                    identity.append([start, end])
+                ref = 'field:' + digest(identity)
+                evidence = replace(first, evidence_id='analysis-evidence:' + digest([ref, start, end]),
+                    source_span_id=ref, scalar_start=start, scalar_end=end,
+                    utf8_start=first.field_utf8_start + len(raw[:start].encode('utf-8')),
+                    utf8_end=first.field_utf8_start + len(raw[:end].encode('utf-8')),
+                    literal_sha256=hashlib.sha256(text.encode('utf-8')).hexdigest())
+                fields.append(dict(field_ref=ref, field_path=field, text=text,
+                    source=source, evidence=evidence))
     if not fields:
         raise AnalysisSemanticUnsupported('analysis_model_fields_empty')
     return frozen, fields
@@ -2244,11 +2278,20 @@ class AnalysisSemanticMapInput:
     source_request: object = None
     source_snapshot_json: str = ''
     source_duties_json: str = ''
+    active_source_updates: bool = False
 
     def messages(self):
         instruction = _SEMANTIC_MAP_INSTRUCTION
         if self.prompt_version == SEMANTIC_MAP_SOURCE_DUTIES_PROFILE:
             instruction += _SEMANTIC_MAP_SOURCE_DUTIES_INSTRUCTION
+        if self.active_source_updates:
+            instruction += ('\nfieldsには本人の明示した訂正・撤回後の有効部分だけを提示しています。'
+                '同じrecordの複数fieldは原欄の離れた有効部分を含み、隣接・連続・因果の根拠にしません。'
+                '提示されていない撤回済み部分やAI解釈を復元せず、quoteは一つのfield内の連続文字列だけから取ります。')
+        if any('source_recorded_at' in f for f in json.loads(self.material_json)['fields']):
+            instruction += ('\nUSER_INTERPRETATION_CORRECTIONのtextは本人が明示的に訂正した有効部分です。'
+                'source_recorded_atは本人説明の記録日時で、親recordsのrecorded_atとは別です。'
+                'どちらの記録日時も出来事日時とは決めず、昨日・今などの語を別のsourceの時点へ移しません。')
         return [dict(role='system', content=instruction + '\n参照辞書（本人の事実ではない）:\n' + self.dictionary_json),
                 dict(role='user', content=self.material_json)]
 
@@ -2276,7 +2319,7 @@ def prepare_analysis_semantic_map(request, snapshot, *,
     for member in request.members:
         single = replace(request, members=(member,))
         try:
-            _, member_fields = _model_fields_source(single, allow_supplements=True)
+            _, member_fields = _model_fields_source(single, allow_supplements=True, allow_source_updates=True)
         except AnalysisSourceError as exc:
             if str(exc) not in known_exclusions:
                 raise
@@ -2309,6 +2352,9 @@ def prepare_analysis_semantic_map(request, snapshot, *,
     request = replace(request, members=tuple(accepted))
     frozen = freeze_analysis_sources(request)
     source_order = {source.envelope.envelope_id: index for index, source in enumerate(frozen.sources)}
+    from .intent_compiler import _active_sources
+    active_source_updates = (bool(_active_sources(frozen)[2])
+        if any(m.supplements or m.interpretation_corrections for m in request.members) else False)
     fields.sort(key=lambda field: (source_order[field['source'].envelope.envelope_id],
                                   ('memo', 'memo_action').index(field['field_path'])))
     originals = {m.saved_record_ref: json.loads(m.original_json) for m in request.members}
@@ -2327,6 +2373,10 @@ def prepare_analysis_semantic_map(request, snapshot, *,
             supplement = supplements[key]
         material_fields.append(dict(field=index, record=ordinals[source.record_ref],
             field_path=field['field_path'], source_role=role, supplement=supplement, text=field['text']))
+        if role == 'USER_INTERPRETATION_CORRECTION':
+            correction = next(c for m in request.members if m.saved_record_ref == source.record_ref
+                for c in m.interpretation_corrections if c.correction_id == source.envelope.source_record_id)
+            material_fields[-1]['source_recorded_at'] = correction.recorded_at
         stored_fields.append((index, field['text'], source.record_ref, field['evidence']))
     records = []
     for ref, ordinal in ordinals.items():
@@ -2348,7 +2398,8 @@ def prepare_analysis_semantic_map(request, snapshot, *,
     return AnalysisSemanticMapInput(request, snapshot['guard'], request_ref, material_json,
         dictionary_json, tuple(stored_fields), frozen, len(snapshot['members']), semantic_map_canonical(dict(reasons)), stale,
         prompt_version=prompt_version, source_request=source_request,
-        source_snapshot_json=semantic_map_canonical(snapshot), source_duties_json=source_duties_json)
+        source_snapshot_json=semantic_map_canonical(snapshot), source_duties_json=source_duties_json,
+        active_source_updates=active_source_updates)
 
 
 def _semantic_map_evidence(prepared, value):
@@ -2359,10 +2410,11 @@ def _semantic_map_evidence(prepared, value):
     quote = value['quote']
     _semantic_map_require(text.count(quote) == 1, 'analysis_semantic_evidence_unbound')
     start, end = text.index(quote), text.index(quote) + len(quote)
-    ref = replace(base, evidence_id='analysis-evidence:' + semantic_map_hash([base.source_envelope_id, base.field_path, start, end]),
-        scalar_start=start, scalar_end=end,
-        utf8_start=base.field_utf8_start + len(text[:start].encode('utf-8')),
-        utf8_end=base.field_utf8_start + len(text[:end].encode('utf-8')),
+    absolute_start, absolute_end = base.scalar_start + start, base.scalar_start + end
+    ref = replace(base, evidence_id='analysis-evidence:' + semantic_map_hash([base.source_envelope_id, base.field_path, absolute_start, absolute_end]),
+        scalar_start=absolute_start, scalar_end=absolute_end,
+        utf8_start=base.utf8_start + len(text[:start].encode('utf-8')),
+        utf8_end=base.utf8_start + len(text[:end].encode('utf-8')),
         literal_sha256=hashlib.sha256(quote.encode('utf-8')).hexdigest())
     return record_ref, asdict(ref)
 

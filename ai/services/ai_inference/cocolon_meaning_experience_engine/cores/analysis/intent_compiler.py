@@ -3656,8 +3656,6 @@ def analysis_semantic_source_duties(frozen, fields):
     """
     from dataclasses import asdict
     ordered = {m.saved_record_ref: i for i, m in enumerate(frozen.members, 1)}
-    field_index = {(base.source_envelope_id, base.field_path): (number, text)
-        for number, text, _, base in fields}
     claims, relations = [], []
     covered = {number: set() for number, *_ in fields}
     for member in frozen.members:
@@ -3672,11 +3670,17 @@ def analysis_semantic_source_duties(frozen, fields):
                 continue
             proposition = node.proposition
             for evidence in node.evidence_refs:
-                field = field_index.get((evidence.source_envelope_id, evidence.field_path))
-                if field is None:
+                matches = [(number, text, base) for number, text, _, base in fields
+                    if base.source_envelope_id == evidence.source_envelope_id
+                    and base.field_path == evidence.field_path
+                    and base.scalar_start <= evidence.scalar_start
+                    and evidence.scalar_end <= base.scalar_end]
+                if not matches:
                     continue
-                number, text = field
-                start, end = evidence.scalar_start, evidence.scalar_end
+                if len(matches) != 1:
+                    raise AnalysisSourceError('analysis_semantic_input_unbound')
+                number, text, base = matches[0]
+                start, end = evidence.scalar_start - base.scalar_start, evidence.scalar_end - base.scalar_start
                 quote = text[start:end]
                 if not quote:
                     continue
@@ -3759,11 +3763,12 @@ def _semantic_map_duty_root(prepared, claim):
     _, text, _, base = field
     start, end = claim['scalar_start'], claim['scalar_end']
     _semantic_map_require(text[start:end] == claim['quote'], 'analysis_semantic_input_unbound')
+    absolute_start, absolute_end = base.scalar_start + start, base.scalar_start + end
     ref = replace(base, evidence_id='analysis-evidence:' + semantic_map_hash([
-        base.source_envelope_id, base.field_path, start, end]),
-        scalar_start=start, scalar_end=end,
-        utf8_start=base.field_utf8_start + len(text[:start].encode('utf-8')),
-        utf8_end=base.field_utf8_start + len(text[:end].encode('utf-8')),
+        base.source_envelope_id, base.field_path, absolute_start, absolute_end]),
+        scalar_start=absolute_start, scalar_end=absolute_end,
+        utf8_start=base.utf8_start + len(text[:start].encode('utf-8')),
+        utf8_end=base.utf8_start + len(text[:end].encode('utf-8')),
         literal_sha256=hashlib.sha256(claim['quote'].encode('utf-8')).hexdigest())
     return asdict(ref)
 
