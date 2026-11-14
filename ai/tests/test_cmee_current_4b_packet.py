@@ -313,13 +313,14 @@ def test_if_generation_binds_origins_without_dropping_escaped_source_text(packet
     changed = copy.deepcopy(value)
     next(n for n in changed['scenarios'][0]['nodes'] if n['origin'] == 'UNKNOWN')['unknown_reasons'] = []
     assert not accepts(changed)
-    # Pinned LMFE can admit the first item even for maxItems=0. The
-    # independent owner must still reject a nonempty UNKNOWN source list.
+    # IF's isolated grammar now enforces the empty list, while the independent
+    # owner still refuses a direct receipt which bypassed generation constraints.
     changed = copy.deepcopy(value)
     next(n for n in changed['scenarios'][0]['nodes'] if n['origin'] == 'UNKNOWN')['source_refs'] = [1]
     from cocolon_meaning_experience_engine import MeaningExperienceEngine
     from cocolon_meaning_experience_engine.cores.analysis.semantic_admission import AnalysisModelQuotedParentUnitsResponse, digest
     raw = json.dumps(changed, ensure_ascii=False, separators=(',', ':'))
+    assert not accepts(changed)
     assert MeaningExperienceEngine().generate(prepared.request, semantic_input=
         AnalysisModelQuotedParentUnitsResponse(prepared.request_ref, digest(messages),
             tool.sha(raw), 'stop', raw)).status.value == 'REJECTED'
@@ -330,6 +331,29 @@ def test_if_generation_binds_origins_without_dropping_escaped_source_text(packet
         changed = copy.deepcopy(value)
         next(n for n in changed['scenarios'][0]['nodes'] if n['origin'] == 'USER_CHOICE')[key] = bad
         assert not accepts(changed)
+
+
+@pytest.mark.parametrize('text', ['一行目\n二行目', '「引用」 "語"', 'path\\file',
+    '前\t後', '前\r後', '前\x00後', '補足🙂'])
+def test_if_exact_enum_preserves_json_escaped_text_without_changing_upstream(text):
+    from ai.tools.serve_emlis_natural_reply import _if_json_schema_parser
+    from lmformatenforcer import CharacterLevelParserConfig, jsonschemaparser
+    original = (jsonschemaparser.StringParsingState, jsonschemaparser.ListParsingState)
+    schema = {'type': 'object', 'properties': {'quote': {'type': 'string', 'enum': [text]}},
+        'required': ['quote'], 'additionalProperties': False}
+
+    def accepts(value):
+        raw = json.dumps({'quote': value}, ensure_ascii=False, separators=(',', ':'))
+        parser = _if_json_schema_parser(schema, CharacterLevelParserConfig(alphabet=''.join(dict.fromkeys(raw))))
+        for char in raw:
+            if char not in parser.get_allowed_characters():
+                return False
+            parser = parser.add_character(char)
+        return parser.can_end()
+
+    assert accepts(text)
+    assert not accepts(text + '別文')
+    assert (jsonschemaparser.StringParsingState, jsonschemaparser.ListParsingState) == original
 
 
 def test_if_real_serving_closure_selects_mask_and_returns_exact_raw_to_owner(packet, monkeypatch):

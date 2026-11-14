@@ -110,9 +110,7 @@ def _if_output_schema(material):
 
     refs = array(dict(type='integer', enum=fields), maximum=len(fields))
     def quoted(value):
-        # The pinned LMFE enum parser does not round-trip JSON escapes. Keep
-        # those valid texts generatable and let the CPU owner check equality.
-        return text() if re.search(r'["\\\x00-\x1f]', value) else dict(type='string', enum=[value])
+        return dict(type='string', enum=[value])
 
     def node_variant(origin, body, anchor, sources, reasons):
         return obj(dict(node_id=text(100), step_kind=text(100),
@@ -193,12 +191,80 @@ def semantic_output_schema(messages):
         edges=dict(type='array', items=edge, maxItems=48)))
 
 
+def _if_json_schema_parser(schema, config):
+    """Keep exact JSON-escaped source quotes inside the existing IF grammar.
+
+    The pinned upstream parser compares decoded enum strings to raw JSON
+    characters. Isolate its namespace so this correction cannot change the
+    ordinary Analysis or Piece parsers. No generated text is rewritten.
+    """
+    import importlib.util
+    from lmformatenforcer import jsonschemaparser as upstream
+    from lmformatenforcer.characterlevelparser import StringParser, UnionParser
+
+    spec = importlib.util.spec_from_file_location('lmformatenforcer._cocolon_if_jsonschema', upstream.__file__)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    class ExactJsonEnum(module.StringParsingState):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.exact = (UnionParser([StringParser(json.dumps(value, ensure_ascii=False))
+                for value in self.allowed_strings]) if self.allowed_strings
+                and self.require_opening_quote and self.require_closing_quote else None)
+            self.raw_prefix = ''
+
+        def _clone(self):
+            result = type(self)(self.root, self.allowed_strings, self.require_opening_quote,
+                self.require_closing_quote, self.min_length, self.max_length, self.pattern, self.regex_parser)
+            for key in ('parsed_string', 'seen_opening_quote', 'seen_closing_quote', 'exact', 'raw_prefix'):
+                setattr(result, key, getattr(self, key))
+            return result
+
+        def add_character(self, char):
+            if self.exact is None:
+                return super().add_character(char)
+            if (not self.seen_opening_quote or self.seen_closing_quote) and char in module.WHITESPACE_CHARACTERS:
+                return self
+            result = self._clone()
+            result.exact = self.exact.add_character(char)
+            result.raw_prefix += char
+            result.seen_opening_quote = True
+            result.seen_closing_quote = result.exact.can_end()
+            result.parsed_string = json.loads(result.raw_prefix) if result.seen_closing_quote else result.raw_prefix[1:]
+            return result
+
+        def get_allowed_characters(self):
+            if self.exact is None:
+                return super().get_allowed_characters()
+            if self.seen_closing_quote:
+                return module.WHITESPACE_CHARACTERS
+            return self.exact.get_allowed_characters() + (module.WHITESPACE_CHARACTERS if not self.seen_opening_quote else '')
+
+    class EmptyAwareList(module.ListParsingState):
+        def add_character(self, char):
+            if char == '[' and self.max_items == 0 and not self.seen_list_opener:
+                # Upstream otherwise pushes an item parser even for maxItems=0.
+                result = self._clone()
+                result.parsed_string += char
+                result.seen_list_opener = True
+                return result
+            return super().add_character(char)
+
+    module.StringParsingState = ExactJsonEnum
+    module.ListParsingState = EmptyAwareList
+    return module.JsonSchemaParser(schema, config=config)
+
+
 def semantic_json_parser(messages, alphabet):
     from lmformatenforcer import CharacterLevelParserConfig, JsonSchemaParser
     # LMFE snapshots alphabet_without_quotes while constructing its context.
     # Updating parser.config later leaves that initial snapshot unchanged.
-    return JsonSchemaParser(semantic_output_schema(messages),
-        config=CharacterLevelParserConfig(alphabet=alphabet))
+    schema = semantic_output_schema(messages)
+    config = CharacterLevelParserConfig(alphabet=alphabet)
+    if schema['properties']['schema_version'].get('enum') == [IF_CANDIDATE_SCHEMA]:
+        return _if_json_schema_parser(schema, config)
+    return JsonSchemaParser(schema, config=config)
 
 
 def piece_output_schema(messages):
