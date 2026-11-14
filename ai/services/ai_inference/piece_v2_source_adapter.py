@@ -942,7 +942,7 @@ def _natural_active_answer_ranges(saved, prepared):
         and update.superseded_claim_refs == update.target_meaning_refs
         and set(cp.inactive_claim_refs) == {
             *update.superseded_claim_refs, *update.affected_dependency_refs})
-    answer_text = prepared.thread.answers[0].source.answer_text_private
+    answer_text = prepared.thread.answers[-1].source.answer_text_private
     correction = (_REPLACEMENT if update.operation == 'REVISE' else _WITHDRAWAL).fullmatch(
         answer_text.strip().rstrip('。．.'))
     require(correction is not None)
@@ -1009,8 +1009,8 @@ def _natural_active_answer_ranges(saved, prepared):
             raise _error('PIECE_SOURCE_NOT_ELIGIBLE') from None
         span = resolver.resolve(accepted.source_span_ids[0])
         ref = resolver.qualified_ref(accepted.source_span_ids[0]).evidence
-        text = prepared.thread.answers[0].source.answer_text_private
-        require(ref.source_envelope_id == prepared.thread.answers[0].envelope.envelope_id
+        text = prepared.thread.answers[-1].source.answer_text_private
+        require(ref.source_envelope_id == prepared.thread.answers[-1].envelope.envelope_id
             and re.sub(r'\s+', ' ', span.raw_text.replace('\u3000', ' ')).strip() == span.raw_text
             and 0 <= a < b <= len(span.raw_text)
             and text[span.start_index:span.end_index] == span.raw_text)
@@ -1020,7 +1020,7 @@ def _natural_active_answer_ranges(saved, prepared):
 
 
 def _natural_later_add_handoff(saved, snapshot, answer_id):
-    """Select the last independent ADD, after validating every real round.
+    """Select the last independent answer, after validating every real round.
 
     Earlier answers prove eligibility only. They never become extra Piece
     partitions and cannot silently revise the retained original input.
@@ -1144,8 +1144,9 @@ def _natural_later_add_handoff(saved, snapshot, answer_id):
             and update.get('answer_source_ref')==frozen.envelope.envelope_id
             and update.get('question_ref')==q['question_id'] and update.get('unresolved_parts')==[]
             and type(update.get('updates')) is list and bool(update['updates'])
-            and all(type(x) is dict and x.get('operation')=='ADD' and x.get('superseded_claim_refs')==[]
-                and x.get('affected_dependency_refs')==[] for x in update['updates']))
+            and (i == n or all(type(x) is dict and x.get('operation')=='ADD'
+                and x.get('superseded_claim_refs')==[] and x.get('affected_dependency_refs')==[]
+                for x in update['updates'])))
         require(all(a[k]==cp[k]==body[k] for k in ('operation_id','attempt_id'))
             and q['seq']<a['seq']<cp['seq']<body['seq'])
         started=receipt(body,prefix,'REFINED'); require(cp['seq']<started['seq'])
@@ -1186,7 +1187,16 @@ def _natural_later_add_handoff(saved, snapshot, answer_id):
             original_record_commitment=saved.record_commitment,supplemental_answer_bundle_commitment=answer_commitment),
         'piece_generation_eligibility':dict(contract_version='piece.generation_eligibility.v1',decision='eligible',reason_codes=[]),
         'body_free':True}
-    return PieceSavedRefinedHandoff(saved,frozen.source,tid,t['revision'],canonical_json_bytes(lineage))
+    operation, original_ranges, answer_range = 'ADD', (), None
+    if not all(type(x) is dict and x.get('operation') == 'ADD'
+            and x.get('superseded_claim_refs') == [] and x.get('affected_dependency_refs') == []
+            for x in update['updates']):
+        # Prior rounds were independent ADDs. Only the latest exact update
+        # may remove an original clause; previous answers remain unselected.
+        operation, original_ranges, answer_range = _natural_active_answer_ranges(saved, prepared)
+    return PieceSavedRefinedHandoff(saved,frozen.source,tid,t['revision'],canonical_json_bytes(lineage),
+        operation, original_ranges, answer_range,
+        canonical_json_bytes(_json(prepared.checkpoint)) if operation != 'ADD' else None)
 
 
 def _refined_observation_handoff(saved: PieceSavedOriginal, snapshot: dict,

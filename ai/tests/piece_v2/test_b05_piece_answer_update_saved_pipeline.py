@@ -47,6 +47,11 @@ def answer_update_db(natural_refined_db):
     db.proc.stdin.flush()
     result = json.loads(db.proc.stdout.readline())
     assert 'code' not in result, result
+    for latest in (ROOT/'supabase/migrations').glob('*_piece_natural_latest_answer_update.sql'):
+        db.proc.stdin.write(json.dumps(dict(sql=latest.read_text(), script=True))+'\n')
+        db.proc.stdin.flush()
+        result=json.loads(db.proc.stdout.readline())
+        assert 'code' not in result, result
     return db
 
 
@@ -188,3 +193,124 @@ def test_update_source_fence_rejects_modified_input_without_piece_side_effects(
         assert _piece_state(db)==before
     finally:
         db.query('ROLLBACK')
+
+
+def prepare_later_update(answer_update_db, monkeypatch, rounds, operation, tier):
+    db = answer_update_db
+    owner, parent = str(uuid4()), str(uuid4())
+    token = 'synthetic-later-update'
+    memo = RETAINED + '誘われたのに、悲しかった。頼まれたのに、寂しかった。私は仕事を続けたい。'
+    _update(db, 'insert into auth.users values ($1)', [owner])
+    _update(db, 'insert into public.profiles values ($1,$2)', [owner,tier])
+    _update(db, "insert into public.emotions values ($1,$2,now() at time zone 'UTC',$3,$4,array['仕事'],array['不安'],$5::jsonb)",
+        [parent,owner,memo,ACTION,json.dumps([dict(type='不安',strength='medium')])])
+    _bind(db,monkeypatch,owner,token)
+    calls = []
+    async def provider(material):
+        calls.append(material)
+        return NaturalReply('記録を受け取る合成の返事です。','synthetic-natural-provider',material.source_prefix_ref)
+    service = EmlisThreadService(runtime_profile=Q3_PROFILE,natural_reply_source=provider)
+    initial = dto = run(service.start(owner,parent))
+    texts = ['今は、私は嬉しい。', '今は、私は怖い。'][:rounds-1] + [ANSWERS[operation]]
+    for index,text in enumerate(texts):
+        if index:
+            dto = run(service.action(owner,dto['thread_id'],action='continue',
+                expected_revision=dto['revision'],idempotency_key='continue-'+str(index)))
+        assert dto['state']=='AWAITING_ANSWER', dto
+        stamp=db.query('select clock_timestamp() as stamp')['rows'][0]['stamp']
+        dto = run(service.answer(owner,dto['thread_id'],question_id=dto['pending_question']['question_id'],
+            expected_revision=dto['revision'],idempotency_key='answer-'+str(index),answer_text=text,authored_at=stamp))
+    if dto['state']=='AWAITING_CONTINUE':
+        dto=run(service.action(owner,dto['thread_id'],action='stop',
+            expected_revision=dto['revision'],idempotency_key='stop'))
+    assert dto['state']=='COMPLETED' and dto['body_state']=='REFINED', dto
+    snap=run(service.store.read(owner,input_id=parent))
+    ref=run(PieceSavedSourceAdapter().resolve_refined_source_ref('Bearer '+token,parent,
+        supplemental_answer_identity=snap['thread']['latest_answer_event_id'],opted_in=True))
+    state=dict(case_id=f'later-update-{rounds}-{operation}-{tier}',tier=tier,owner=owner,source_id=parent,
+        token=token,answer_text=texts[-1],original=snap['original'],initial_dto=initial,completed_dto=dto,
+        snapshot_before=snap,source_ref=ref,
+        request=dict(source_ref=ref,requested_format=None,
+            visual_selection=dict(theme_id=None,aspect_ratio=None,branding_mode=None)),
+        counts=dict(q2_start=1,q2_answer=rounds,piece_generation_entry=0,piece_review=0,
+            preview_rpc=0,visual_rpc=0,save_rpc=0,external_model_provider=0))
+    blocks=[RETAINED+'誘われたのに、悲しかった。頼まれたのに、寂しかった。',ACTION]
+    if operation=='REVISE': blocks.append('私は家族を守りたい。')
+    return state, blocks, calls
+
+
+@pytest.mark.parametrize('rounds', [2, 3])
+@pytest.mark.parametrize('operation', ['REVISE', 'WITHDRAW'])
+@pytest.mark.parametrize('tier', ['free', 'plus', 'premium'])
+def test_latest_later_exact_update_keeps_one_selected_answer(answer_update_db, monkeypatch, rounds, operation, tier):
+    db=answer_update_db
+    state,blocks,calls=prepare_later_update(db,monkeypatch,rounds,operation,tier)
+    seen=_provider(monkeypatch,state['case_id'],blocks)
+    result=_finish_refined_pipeline(db,monkeypatch,state,visual_change=tier!='free',expected_blocks=blocks)
+    assert len(calls)==rounds+1 and len(seen)==1
+    assert result['source_unchanged'] and result['emlis_unchanged'] and result['quota_consumptions']==1
+    wire=json.dumps(seen[0]['prepared'],ensure_ascii=False)
+    assert '仕事を続けたい' not in wire
+    assert '今は、私は嬉しい。' not in wire and '今は、私は怖い。' not in wire
+    assert result['detail']['piece_text']=='\n\n'.join(blocks)
+
+
+@pytest.mark.parametrize('operation',['issue','visual','save'])
+@pytest.mark.parametrize('change',['prior_update','refs_missing','refs_extra','refs_reordered','expected_checkpoint','source_edit'])
+def test_later_update_sql_refuses_changed_chain_without_effects(answer_update_db,monkeypatch,operation,change):
+    db=answer_update_db
+    state,blocks,_=prepare_later_update(db,monkeypatch,3,'REVISE','premium')
+    snap=state['snapshot_before'];thread=snap['thread']
+    handoff=run(PieceSavedSourceAdapter().resolve_refined_handoff('Bearer '+state['token'],state['source_id'],
+        supplemental_answer_identity=thread['latest_answer_event_id'],opted_in=True))
+    record=_RECORD();record['source_lineage']=_canonical_lineage(handoff)
+    case=dict(owner=state['owner'],parent=state['source_id'],snapshot=snap,token=state['token'],handoff=handoff,
+        record=record,expected=dict(original=state['original'],thread_id=thread['id'],thread_revision=thread['revision'],
+            lineage=record['source_lineage'],**project_saved_refined_fence(handoff)))
+    args=_issue_args(case)
+    if operation!='issue':
+        preview=rpc(db,'piece_issue_preview_v2',args);assert 'code' not in preview,preview
+        args=_mutation_args(db,case,preview) if operation=='visual' else _saved_args(case,preview)
+    if change=='expected_checkpoint':
+        args['p_expected_source_state']['meaning_checkpoint']['accepted_update_refs']=[]
+    elif change=='source_edit':
+        _update(db,"update public.emotions set memo=memo||'変更' where id=$1",[state['source_id']])
+    else:
+        cps=[e for e in snap['events'] if e['kind']=='MEANING_UPDATE']
+        event=cps[0] if change=='prior_update' else cps[-1]
+        value=deepcopy(event['payload'])
+        if change=='prior_update':value['answer_update']['updates'][0]['operation']='REVISE'
+        elif change=='refs_missing':value['accepted_update_refs']=value['accepted_update_refs'][1:]
+        elif change=='refs_extra':value['accepted_update_refs']+=['foreign-update']
+        else:value['accepted_update_refs'].reverse()
+        _update(db,'update public.emlis_thread_events set payload=$2::jsonb where id=$1',[event['id'],json.dumps(value)])
+        # A caller cannot authorize a changed checkpoint by echoing it back.
+        if change!='prior_update':args['p_expected_source_state']['meaning_checkpoint']=deepcopy(value)
+        with pytest.raises(PieceContractError):
+            run(PieceSavedSourceAdapter().resolve_refined_handoff('Bearer '+state['token'],state['source_id'],
+                supplemental_answer_identity=thread['latest_answer_event_id'],opted_in=True))
+    before=_piece_state(db)
+    outcome=rpc(db,{'issue':'piece_issue_preview_v2','visual':'piece_mutate_preview_visual_v2','save':'piece_save_v2'}[operation],args)
+    assert 'code' in outcome,outcome
+    assert _piece_state(db)==before
+
+
+@pytest.mark.parametrize('operation',['REVISE','WITHDRAW'])
+def test_later_update_uses_normal_existing_author_with_selector_off(answer_update_db,monkeypatch,operation):
+    from piece_v2_source_adapter import project_saved_refined_source
+    state,blocks,_=prepare_later_update(answer_update_db,monkeypatch,3,operation,'free')
+    handoff=run(PieceSavedSourceAdapter().resolve_refined_handoff('Bearer '+state['token'],state['source_id'],
+        supplemental_answer_identity=state['snapshot_before']['thread']['latest_answer_event_id'],opted_in=True))
+    from cocolon_meaning_experience_engine.piece_refined import generate_refined_piece
+    from cocolon_meaning_experience_engine.piece_v1c import PieceGenerationRequest
+    source=project_saved_refined_source(handoff,opted_in=True)
+    outcome=generate_refined_piece(PieceGenerationRequest('normal-later',source,state['owner'],state['source_id'],source.original.source_version))
+    assert outcome.artifact, outcome.reason_codes
+    text=outcome.artifact.piece_text
+    assert '仕事を続けたい' not in text and ACTION in text
+    assert ('家族を守りたい' in text)==(operation=='REVISE')
+    monkeypatch.setenv('PIECE_MODEL_SOURCE','off')
+    from piece_model_source import application_piece_model_source
+    assert application_piece_model_source() is None
+    result=_finish_refined_pipeline(answer_update_db,monkeypatch,state,expected_blocks=list(outcome.artifact.body_blocks))
+    assert result['source_unchanged'] and result['quota_consumptions']==1

@@ -369,7 +369,6 @@ def build_refined_meaning(request):
             expected_source_version=request.expected_source_version)
         supplemental = _supplemental_meaning(answer, original.owner_id)
     else:
-        _require(answer.round_index == 1, 'piece_refined_update_not_supported')
         original_meaning = _active_original_meaning(original, source.original_active_ranges)
         if source.supplemental_update_operation == 'REVISE':
             _require(type(source.supplemental_active_range) is tuple
