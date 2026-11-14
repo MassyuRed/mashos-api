@@ -121,16 +121,23 @@ def _if_output_schema(material):
     variants = [node_variant('OBSERVED_ANCHOR', quoted(anchor['visible_label']),
         dict(type='string', enum=[anchor['node_ref']]), empty, array(text(200)))
         for anchor in material['anchors']]
+    alternatives = [field for field in material['fields'] if field['purpose'] == 'PERSON_ALTERNATIVE']
+    if (len(alternatives) != material['requested_candidate_count']
+            or len({field['text'] for field in alternatives}) != material['requested_candidate_count']):
+        alternatives = []
+    choice_fields = alternatives or material['fields']
     variants += [node_variant('USER_CHOICE', quoted(field['text']), dict(type='null'),
         array(dict(type='integer', enum=[field['field']]), 1, 1), array(text(200)))
-        for field in material['fields']]
-    variants += [node_variant('SIMULATED_EXTENSION', text(), dict(type='null'), refs, array(text(200), maximum=0)),
-        node_variant('UNKNOWN', text(), dict(type='null'), empty, array(text(200), 1))]
+        for field in choice_fields]
+    if not alternatives:
+        variants.append(node_variant('SIMULATED_EXTENSION', text(), dict(type='null'), refs, array(text(200), maximum=0)))
+    variants.append(node_variant('UNKNOWN', text(), dict(type='null'), empty, array(text(200), 1)))
     node = dict(oneOf=variants)
     edge = obj({'edge_id': text(100), 'from': text(100), 'to': text(100),
         'condition_refs': array(text(100), maximum=12)})
     condition = obj(dict(condition_id=text(100), text=text(), source_refs=refs))
-    scenario = obj(dict(scenario_id=text(100), label=text(), nodes=array(node, 1, 24),
+    label = dict(type='string', enum=[field['text'] for field in alternatives]) if alternatives else text()
+    scenario = obj(dict(scenario_id=text(100), label=label, nodes=array(node, 1, 24),
         edges=array(edge, 1, 48), required_conditions=array(condition, maximum=12),
         frictions=array(text(), maximum=12), unmodelled_factors=array(text(), 1, 12)))
     clarification = obj(dict(reason_code=dict(type='string', enum=[

@@ -717,10 +717,13 @@ _IF_MODEL_INSTRUCTION_PERSON_ALTERNATIVES = _IF_MODEL_INSTRUCTION_LEGACY + '''
 PERSON_ALTERNATIVEがある場合、本人が提示した各代替案を別々のscenarioへ対応させます。複数案を比べる行為自体を一つの代替案にせず、本人がその案の実行を決めたとも書きません。
 UNKNOWNには、その仮の進め方で分からない条件や結果を記します。「実行したか不明」という反復だけで代用しません。指定されたJSON field順を保ち、次のobjectの構文やkey名を説明用文字列へ混ぜません。'''
 
-_IF_MODEL_INSTRUCTION = _IF_MODEL_INSTRUCTION_PERSON_ALTERNATIVES + '''
+_IF_MODEL_INSTRUCTION_UNKNOWN_ORDER = _IF_MODEL_INSTRUCTION_PERSON_ALTERNATIVES + '''
 不明・未観測の内容を述べるnodeはoriginをUNKNOWNにし、source_refsは空、unknown_reasonsには分からない理由を一つ以上置きます。SIMULATED_EXTENSIONはAIが仮に加える具体的な手順であり、不明や未記載の説明を入れる場所ではありません。そのunknown_reasonsは空配列にします。
 本人案に明示された作業、先後関係、時間配分、否定や条件は既知の材料として保ちます。資料の内容・量や到達できる結果が不明でも、書かれた作業や順序そのものを「未提示」「明示されていない」と説明しません。既知の手順と未知の条件・結果を分けます。
 本人案の全文を一つのUSER_CHOICE nodeで表せる場合、手順を重ねて分解したり、同じ内容の補助nodeを増やす必要はありません。各scenarioは元mapのanchor、その本人案、結果や条件が不明なUNKNOWNを含めます。'''
+
+_IF_MODEL_INSTRUCTION = _IF_MODEL_INSTRUCTION_UNKNOWN_ORDER + '''
+要求数と同数の異なるPERSON_ALTERNATIVEがある場合だけ、各scenarioのlabelとUSER_CHOICEを対応する本人案の全文にします。既知の手順を言い換えたSIMULATED_EXTENSIONは作りません。本人案をそのまま示した上で、未知の条件・結果だけをUNKNOWN、必要条件、frictions、unmodelled_factorsに分けます。それ以外の仮の手順生成や必要確認とは区別します。'''
 
 
 def prepare_if_model_request(request, *, response=None):
@@ -780,7 +783,8 @@ def prepare_if_model_request(request, *, response=None):
             from .semantic_admission import AnalysisModelQuotedParentUnitsResponse
             _require(type(response) is AnalysisModelQuotedParentUnitsResponse,
                      'analysis_if_model_response_unbound')
-        for instruction in (_IF_MODEL_INSTRUCTION, _IF_MODEL_INSTRUCTION_PERSON_ALTERNATIVES,
+        for instruction in (_IF_MODEL_INSTRUCTION, _IF_MODEL_INSTRUCTION_UNKNOWN_ORDER,
+                            _IF_MODEL_INSTRUCTION_PERSON_ALTERNATIVES,
                             _IF_MODEL_INSTRUCTION_LEGACY):
             messages = [dict(role='system', content=instruction), dict(role='user', content=_json(material))]
             request_ref = 'analysis-if-request:' + commitment([asdict(request), seed, messages])[7:]

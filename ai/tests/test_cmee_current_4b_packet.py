@@ -339,6 +339,48 @@ def test_if_generation_binds_origins_without_dropping_escaped_source_text(packet
         assert not accepts(changed)
 
 
+def test_person_authored_if_labels_and_choices_remain_exact_without_duplicate_steps(packet):
+    from analysis_if_route_service import _restore_prepared
+    from test_analysis_if_routes import packet as if_packet
+    prepared = _restore_prepared(packet['cases'][-1]['prepared'])
+    messages = prepared.messages()
+    material = json.loads(messages[1]['content'])
+    choices = ['資料を20分読んでから、残り10分で要点を書く。',
+        '最初の10分で疑問点を書き、残り20分で読む。',
+        '資料を15分読み、残り15分で明日の作業順を書く。']
+    numbers = []
+    for text in choices:
+        number = len(material['fields']) + 1
+        material['fields'].append(dict(field=number, source_role='SIMULATION_SESSION_MATERIAL',
+            purpose='PERSON_ALTERNATIVE', text=text))
+        numbers.append(number)
+    material['requested_candidate_count'] = 3
+    messages[1]['content'] = json.dumps(material, ensure_ascii=False)
+    value = if_packet(prepared, count=3)
+    for index, scenario in enumerate(value['scenarios']):
+        scenario['label'] = choices[index]
+        scenario['nodes'][1].update(origin='USER_CHOICE', text=choices[index], source_refs=[numbers[index]])
+    def accepts(candidate):
+        return _if_parser_accepts(messages, json.dumps(candidate, ensure_ascii=False, separators=(',', ':')))
+    assert accepts(value)
+    changed = copy.deepcopy(value)
+    changed['scenarios'][2]['label'] = '資料を半分読み、作業順を書く。'
+    assert not accepts(changed)
+    changed = copy.deepcopy(value)
+    changed['scenarios'][0]['nodes'][1].update(origin='SIMULATED_EXTENSION',
+        text='午前の30分で20分読み、残り10点を要点に配分する。')
+    assert not accepts(changed)
+    # Partial or repeated person options do not collapse three requested
+    # hypothetical choices into a single allowed label.
+    for remaining in ([material['fields'][-3]], [material['fields'][-3]] * 3):
+        partial = copy.deepcopy(messages)
+        fields = [f for f in material['fields'] if f['purpose'] != 'PERSON_ALTERNATIVE']
+        fields += [dict(f, field=len(fields) + i + 1) for i, f in enumerate(remaining)]
+        partial[1]['content'] = json.dumps(dict(material, fields=fields), ensure_ascii=False)
+        generic = if_packet(prepared, count=3)
+        assert _if_parser_accepts(partial, json.dumps(generic, ensure_ascii=False, separators=(',', ':')))
+
+
 @pytest.mark.parametrize('text', ['一行目\n二行目', '「引用」 "語"', 'path\\file',
     '前\t後', '前\r後', '前\x00後', '補足🙂'])
 def test_if_exact_enum_preserves_json_escaped_text_without_changing_upstream(text):
