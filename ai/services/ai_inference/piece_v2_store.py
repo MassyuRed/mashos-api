@@ -150,12 +150,17 @@ async def save_piece(*, authenticated_user_id: str, request: Mapping[str, Any],
         from piece_v2_contract import canonical_json_bytes
         try:
             value = json.loads(canonical_json_bytes(_request(expected_source_state,
-                {'original', 'thread_id', 'thread_revision', 'lineage'}, {'meaning_checkpoint'})))
+                {'original', 'thread_id', 'thread_revision', 'lineage'}, {'meaning_checkpoint', 'meaning_checkpoints'})))
             value['thread_id'] = _uuid(value['thread_id'])
             _positive(value['thread_revision'])
             if (expected_subscription_tier is None or type(value['original']) is not dict
                     or type(value['lineage']) is not dict
                     or ('meaning_checkpoint' in value and type(value['meaning_checkpoint']) is not dict)
+                    or ('meaning_checkpoints' in value and (
+                        'meaning_checkpoint' in value
+                        or type(value['meaning_checkpoints']) is not list
+                        or len(value['meaning_checkpoints']) not in (2, 3)
+                        or any(type(cp) is not dict for cp in value['meaning_checkpoints'])))
                     or value['lineage']['source_input']['source_owner_user_id'] != args['p_owner_user_id']
                     or value['original']['id'] != value['lineage']['source_input']['source_input_id']):
                 raise ValueError
@@ -272,11 +277,16 @@ async def issue_piece_preview(*, authenticated_user_id: str, record: Mapping[str
                     or expected_subscription_tier not in ('free', 'plus', 'premium')):
                 raise ValueError
             expected = json.loads(canonical_json_bytes(_request(expected_source_state,
-                {'original', 'thread_id', 'thread_revision', 'lineage'}, {'meaning_checkpoint'})))
+                {'original', 'thread_id', 'thread_revision', 'lineage'}, {'meaning_checkpoint', 'meaning_checkpoints'})))
             expected['thread_id'] = _uuid(expected['thread_id'])
             _positive(expected['thread_revision'])
             if (type(expected['original']) is not dict or type(expected['lineage']) is not dict
                     or ('meaning_checkpoint' in expected and type(expected['meaning_checkpoint']) is not dict)
+                    or ('meaning_checkpoints' in expected and (
+                        'meaning_checkpoint' in expected
+                        or type(expected['meaning_checkpoints']) is not list
+                        or len(expected['meaning_checkpoints']) not in (2, 3)
+                        or any(type(cp) is not dict for cp in expected['meaning_checkpoints'])))
                     or expected['lineage']['source_input']['source_owner_user_id'] != owner
                     or expected['original']['id'] != expected['lineage']['source_input']['source_input_id']
                     or canonical_json_bytes(expected['lineage']) != canonical_json_bytes(value['source_lineage'])):
@@ -356,7 +366,7 @@ async def mutate_piece_preview_visual(*, authenticated_user_id: str, preview_id:
     try:
         row = json.loads(canonical_json_bytes(_request(expected_record, set(_REPLAY_COLUMNS))))
         source = json.loads(canonical_json_bytes(_request(expected_source_state,
-            {'original', 'thread_id', 'thread_revision', 'lineage'}, {'meaning_checkpoint'})))
+            {'original', 'thread_id', 'thread_revision', 'lineage'}, {'meaning_checkpoint', 'meaning_checkpoints'})))
         recipe = json.loads(canonical_json_bytes(visual_recipe))
         if (UUID(owner).int == 0 or UUID(pid).int == 0
                 or row['id'] != pid or row['owner_user_id'] != owner
@@ -365,6 +375,11 @@ async def mutate_piece_preview_visual(*, authenticated_user_id: str, preview_id:
                 or _positive(row['preview_revision']) != revision
                 or expected_subscription_tier not in ('free', 'plus', 'premium')
                 or ('meaning_checkpoint' in source and type(source['meaning_checkpoint']) is not dict)
+                    or ('meaning_checkpoints' in source and (
+                        'meaning_checkpoint' in source
+                        or type(source['meaning_checkpoints']) is not list
+                        or len(source['meaning_checkpoints']) not in (2, 3)
+                        or any(type(cp) is not dict for cp in source['meaning_checkpoints'])))
                 or source['lineage'] != row['source_lineage']
                 or source['lineage']['source_input']['source_owner_user_id'] != owner
                 or source['original']['id'] != source['lineage']['source_input']['source_input_id']):

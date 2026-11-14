@@ -6,6 +6,7 @@ GPU output is compared separately against the same frozen source.
 import asyncio
 from copy import deepcopy
 import json
+import hashlib
 import os
 from pathlib import Path
 from uuid import uuid4
@@ -51,6 +52,11 @@ def answer_update_db(natural_refined_db):
         db.proc.stdin.write(json.dumps(dict(sql=latest.read_text(), script=True))+'\n')
         db.proc.stdin.flush()
         result=json.loads(db.proc.stdout.readline())
+        assert 'code' not in result, result
+    for effective in (ROOT/'supabase/migrations').glob('*_piece_natural_effective_round_sources.sql'):
+        db.proc.stdin.write(json.dumps(dict(sql=effective.read_text(), script=True))+'\n')
+        db.proc.stdin.flush()
+        result = json.loads(db.proc.stdout.readline())
         assert 'code' not in result, result
     return db
 
@@ -195,7 +201,8 @@ def test_update_source_fence_rejects_modified_input_without_piece_side_effects(
         db.query('ROLLBACK')
 
 
-def prepare_later_update(answer_update_db, monkeypatch, rounds, operation, tier):
+def prepare_later_update(answer_update_db, monkeypatch, rounds, operation, tier, *,
+                         answer_texts=None, action_text=ACTION):
     db = answer_update_db
     owner, parent = str(uuid4()), str(uuid4())
     token = 'synthetic-later-update'
@@ -203,7 +210,7 @@ def prepare_later_update(answer_update_db, monkeypatch, rounds, operation, tier)
     _update(db, 'insert into auth.users values ($1)', [owner])
     _update(db, 'insert into public.profiles values ($1,$2)', [owner,tier])
     _update(db, "insert into public.emotions values ($1,$2,now() at time zone 'UTC',$3,$4,array['仕事'],array['不安'],$5::jsonb)",
-        [parent,owner,memo,ACTION,json.dumps([dict(type='不安',strength='medium')])])
+        [parent,owner,memo,action_text,json.dumps([dict(type='不安',strength='medium')])])
     _bind(db,monkeypatch,owner,token)
     calls = []
     async def provider(material):
@@ -211,7 +218,9 @@ def prepare_later_update(answer_update_db, monkeypatch, rounds, operation, tier)
         return NaturalReply('記録を受け取る合成の返事です。','synthetic-natural-provider',material.source_prefix_ref)
     service = EmlisThreadService(runtime_profile=Q3_PROFILE,natural_reply_source=provider)
     initial = dto = run(service.start(owner,parent))
-    texts = ['今は、私は嬉しい。', '今は、私は怖い。'][:rounds-1] + [ANSWERS[operation]]
+    texts = (['今は、私は嬉しい。', '今は、私は怖い。'][:rounds-1] + [ANSWERS[operation]]
+             if answer_texts is None else answer_texts)
+    assert len(texts) == rounds
     for index,text in enumerate(texts):
         if index:
             dto = run(service.action(owner,dto['thread_id'],action='continue',
@@ -237,6 +246,133 @@ def prepare_later_update(answer_update_db, monkeypatch, rounds, operation, tier)
     blocks=[RETAINED+'誘われたのに、悲しかった。頼まれたのに、寂しかった。',ACTION]
     if operation=='REVISE': blocks.append('私は家族を守りたい。')
     return state, blocks, calls
+
+
+@pytest.mark.parametrize('texts,action,expected_fragments,removed', [
+    ([ANSWERS['REVISE'], ANSWERS['ADD']], '',
+     ['家族を守りたい', '今は、私は嬉しい。'], ['仕事を続けたい']),
+    ([ANSWERS['WITHDRAW'], ANSWERS['ADD']], ACTION,
+     [ACTION, '今は、私は嬉しい。'], ['仕事を続けたい']),
+    ([ANSWERS['REVISE'], '「私は家族を守りたい」ではなく「私は資料を読みたい」です。'], ACTION,
+     [ACTION, '資料を読みたい'], ['仕事を続けたい', '家族を守りたい']),
+    ([ANSWERS['REVISE'], '「私は家族を守りたい」は取り消します。'], ACTION,
+     [ACTION], ['仕事を続けたい', '家族を守りたい']),
+])
+def test_effective_prior_updates_reach_normal_author_and_saved_pipeline(
+        answer_update_db, monkeypatch, texts, action, expected_fragments, removed):
+    from piece_v2_source_adapter import project_saved_refined_source
+    from cocolon_meaning_experience_engine.piece_refined import generate_refined_piece
+    from cocolon_meaning_experience_engine.piece_v1c import PieceGenerationRequest
+    state, _, calls = prepare_later_update(answer_update_db, monkeypatch, len(texts), 'ADD',
+        'free', answer_texts=texts, action_text=action)
+    state['case_id'] = 'effective-prior-' + hashlib.sha256(
+        json.dumps(texts, ensure_ascii=False).encode()).hexdigest()[:12]
+    handoff = run(PieceSavedSourceAdapter().resolve_refined_handoff('Bearer '+state['token'],
+        state['source_id'], supplemental_answer_identity=state['snapshot_before']['thread']['latest_answer_event_id'],
+        opted_in=True))
+    source = project_saved_refined_source(handoff, opted_in=True)
+    assert source.effective_round_sources is True
+    assert len(project_saved_refined_fence(handoff)['meaning_checkpoints']) == len(texts)
+    outcome = generate_refined_piece(PieceGenerationRequest('effective-prior', source,
+        state['owner'], state['source_id'], source.original.source_version))
+    assert outcome.artifact is not None, outcome.reason_codes
+    text = outcome.artifact.piece_text
+    for value in expected_fragments:
+        assert value in text
+    for value in removed:
+        assert value not in text
+    monkeypatch.setenv('PIECE_MODEL_SOURCE', 'off')
+    result = _finish_refined_pipeline(answer_update_db, monkeypatch, state,
+        expected_blocks=list(outcome.artifact.body_blocks))
+    assert len(calls) == len(texts)+1
+    assert result['source_unchanged'] and result['emlis_unchanged'] and result['quota_consumptions'] == 1
+    assert result['detail']['piece_text'] == text
+
+
+def test_effective_prior_revision_has_separate_model_sources_and_no_withdrawn_author_text(
+        answer_update_db, monkeypatch):
+    from piece_v2_source_adapter import project_saved_refined_source
+    from cocolon_meaning_experience_engine.piece_refined import generate_refined_piece
+    from cocolon_meaning_experience_engine.piece_v1c import PieceGenerationRequest
+    from cocolon_meaning_experience_engine.piece_semantic_admission import prepare_piece_model_request
+    from piece_model_source import build_piece_model_messages
+    texts = [ANSWERS['REVISE'], ANSWERS['ADD']]
+    state, _, _ = prepare_later_update(answer_update_db, monkeypatch, 2, 'ADD', 'free',
+        answer_texts=texts, action_text='')
+    state['case_id'] = 'synthetic-model-effective-prior'
+    handoff = run(PieceSavedSourceAdapter().resolve_refined_handoff('Bearer '+state['token'],
+        state['source_id'], supplemental_answer_identity=state['snapshot_before']['thread']['latest_answer_event_id'],
+        opted_in=True))
+    source = project_saved_refined_source(handoff, opted_in=True)
+    request = PieceGenerationRequest('model-effective-prior', source, state['owner'],
+        state['source_id'], source.original.source_version)
+    prepared = prepare_piece_model_request(request)
+    frozen = prepared.private_json
+    messages = build_piece_model_messages(prepared, include_authoring_constraints=True, source_request=request)
+    material = json.loads(messages[1]['content'])
+    assert len(material['sources']) == 3
+    assert len({item['source_id'] for item in material['sources']}) == 3
+    assert [item['role'] for item in material['sources']] == ['ORIGINAL_INPUT', 'SUPPLEMENTAL_ANSWER', 'SUPPLEMENTAL_ANSWER']
+    assert len(material['control']['block_partition']) == 3
+    wire = messages[1]['content']
+    assert '仕事を続けたい' not in wire and 'ではなく' not in wire
+    assert '家族を守りたい' in wire and '今は、私は嬉しい。' in wire
+    assert prepared.private_json == frozen
+    ordinary = generate_refined_piece(request)
+    assert ordinary.artifact is not None
+    seen = _provider(monkeypatch, 'synthetic-effective-prior', list(ordinary.artifact.body_blocks))
+    result = _finish_refined_pipeline(answer_update_db, monkeypatch, state,
+        expected_blocks=list(ordinary.artifact.body_blocks))
+    assert len(seen) == 1 and result['quota_consumptions'] == 1
+    assert result['source_unchanged'] and result['emlis_unchanged']
+
+
+@pytest.mark.parametrize('operation', ['issue', 'visual', 'save'])
+@pytest.mark.parametrize('change', ['missing_prefix', 'reordered_prefix', 'stale_prefix',
+                                    'earlier_answer', 'earlier_target', 'inactive_refs'])
+def test_effective_round_fence_rejects_changed_prefix_without_piece_side_effects(
+        answer_update_db, monkeypatch, operation, change):
+    db = answer_update_db
+    state, _, _ = prepare_later_update(db, monkeypatch, 2, 'ADD', 'premium',
+        answer_texts=[ANSWERS['REVISE'], '「私は家族を守りたい」は取り消します。'])
+    snap = state['snapshot_before']; thread = snap['thread']
+    handoff = run(PieceSavedSourceAdapter().resolve_refined_handoff('Bearer '+state['token'],
+        state['source_id'], supplemental_answer_identity=thread['latest_answer_event_id'], opted_in=True))
+    record = _RECORD(); record['source_lineage'] = _canonical_lineage(handoff)
+    case = dict(owner=state['owner'], parent=state['source_id'], snapshot=snap, token=state['token'],
+        handoff=handoff, record=record, expected=dict(original=state['original'], thread_id=thread['id'],
+            thread_revision=thread['revision'], lineage=record['source_lineage'], **project_saved_refined_fence(handoff)))
+    args = _issue_args(case)
+    if operation != 'issue':
+        preview = rpc(db, 'piece_issue_preview_v2', args); assert 'code' not in preview, preview
+        args = _mutation_args(db, case, preview) if operation == 'visual' else _saved_args(case, preview)
+    expectation = args['p_expected_source_state']['meaning_checkpoints']
+    if change == 'missing_prefix':
+        expectation.pop(0)
+    elif change == 'reordered_prefix':
+        expectation.reverse()
+    elif change == 'stale_prefix':
+        expectation[0]['source_prefix_ref'] = 'source-prefix:stale'
+    else:
+        event = next(e for e in snap['events'] if e['kind'] == ('ANSWER' if change == 'earlier_answer' else 'MEANING_UPDATE'))
+        value = deepcopy(event['payload'])
+        if change == 'earlier_answer':
+            value['source']['answer_text_private'] = '私は資料を読んだ。'
+        elif change == 'earlier_target':
+            value['answer_update']['updates'][0]['target_meaning_refs'] = ['nucleus:s999']
+            expectation[0] = deepcopy(value)
+        else:
+            value['inactive_claim_refs'] = []
+            expectation[0] = deepcopy(value)
+        _update(db, 'update public.emlis_thread_events set payload=$2::jsonb where id=$1',
+            [event['id'], json.dumps(value)])
+        with pytest.raises(PieceContractError):
+            run(PieceSavedSourceAdapter().resolve_refined_handoff('Bearer '+state['token'], state['source_id'],
+                supplemental_answer_identity=thread['latest_answer_event_id'], opted_in=True))
+    before = _piece_state(db)
+    outcome = rpc(db, {'issue':'piece_issue_preview_v2','visual':'piece_mutate_preview_visual_v2','save':'piece_save_v2'}[operation], args)
+    assert 'code' in outcome and outcome['message'] in {'PIECE_CONFLICT', 'PIECE_REQUEST_INVALID'}, outcome
+    assert _piece_state(db) == before
 
 
 @pytest.mark.parametrize('rounds', [2, 3])

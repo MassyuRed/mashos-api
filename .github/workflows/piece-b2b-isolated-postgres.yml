@@ -99,9 +99,12 @@ name: Piece B2-B/B3/B4/B5 isolated PostgreSQL
       - ai/tests/test_cmee_piece_answer_updates.py
       - ai/tests/test_piece_model_active_ranges.py
       - ai/tests/piece_v2/test_b05_piece_answer_update_saved_pipeline.py
+      - ai/tests/piece_v2/test_b05_effective_round_source_contract.py
+      - ai/tests/piece_v2/test_b05_effective_round_sql_fence.py
       - supabase/migrations/*_piece_natural_answer_active_source.sql
       - supabase/migrations/*_piece_natural_refined_source_fence.sql
       - supabase/migrations/*_piece_natural_later_add_answer.sql
+      - supabase/migrations/*_piece_natural_effective_round_sources.sql
       - ai/tests/test_cmee_piece_request_saved_pipeline.py
       - ai/tests/test_emlis_q2_application.py
       - ai/tests/helpers/emlis_q2_postgres.cjs
@@ -158,7 +161,7 @@ jobs:
   b2b-foundation:
     if: github.repository == 'MassyuRed/mashos-api'
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 20
     services:
       postgres:
         image: postgres:16
@@ -185,6 +188,19 @@ jobs:
           ref: ${{ github.sha }}
           fetch-depth: 1
           persist-credentials: false
+      - name: Read the fixed pre-change Piece source for byte compatibility
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: 7f51a64e6cb58668ad5d418480b7de4499bfe6fa
+          path: .compatibility/piece-7f51
+          fetch-depth: 1
+          persist-credentials: false
+          sparse-checkout: |
+            ai/services/ai_inference/cocolon_meaning_experience_engine/piece_refined.py
+            ai/services/ai_inference/cocolon_meaning_experience_engine/preparation_sources.py
+            ai/services/ai_inference/piece_v2_source_adapter.py
+            ai/services/ai_inference/piece_model_source.py
+          sparse-checkout-cone-mode: false
       - name: Set up Python
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
@@ -459,6 +475,7 @@ jobs:
         run: python -m pip install --quiet --disable-pip-version-check -r ai/tools/analysis_semantic_generation_requirements.txt
       - name: Verify Piece model receipt, mutations, cancellation and saved reuse
         env:
+          PIECE_ADD_COMPAT_BASE_REPOSITORY: ${{ github.workspace }}/.compatibility/piece-7f51
           PYTHONPATH: .:ai/services:ai/services/ai_inference:ai/tests:ai/tests/piece_v2
           Q2_PGLITE_MODULE: ${{ runner.temp }}/shared-input-postgres/node_modules/@electric-sql/pglite
         shell: bash
@@ -495,7 +512,9 @@ jobs:
             ai/tests/piece_v2/test_b05_natural_refined_saved_pipeline.py \
             ai/tests/test_cmee_piece_answer_updates.py \
             ai/tests/test_piece_model_active_ranges.py \
-            ai/tests/piece_v2/test_b05_piece_answer_update_saved_pipeline.py
+            ai/tests/piece_v2/test_b05_piece_answer_update_saved_pipeline.py \
+            ai/tests/piece_v2/test_b05_effective_round_source_contract.py \
+            ai/tests/piece_v2/test_b05_effective_round_sql_fence.py
           python -m pytest -q --tb=short -ra -p no:cacheprovider \
             -c /dev/null --rootdir=. --noconftest \
             ai/tests/piece_v2/test_b08_piece_bare_finite_evaluation.py \

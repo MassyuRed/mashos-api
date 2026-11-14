@@ -102,6 +102,8 @@ class PieceSavedRefinedHandoff:
     original_active_ranges: tuple[tuple[str, int, int], ...] = ()
     supplemental_active_range: tuple[int, int] | None = None
     _meaning_checkpoint_json: bytes | None = field(default=None, repr=False)
+    prior_revisions: tuple[tuple[SupplementalAnswerSource, tuple[int, int]], ...] = ()
+    _effective_checkpoints_json: bytes | None = field(default=None, repr=False)
 
     def lineage_payload(self) -> dict:
         return json.loads(self._lineage_json)
@@ -1166,6 +1168,7 @@ def _natural_later_add_handoff(saved, snapshot, answer_id):
         and all(qs[0][k]==bodies[0][k] for k in ('operation_id','attempt_id')))
     continued=[e for e in controls if e['payload'].get('status')=='CONTINUED']
     require(len(continued)==n-1)
+    prepared_rounds = []
     for i,(q,a,cp,body,frozen) in enumerate(zip(qs,answers,cps,bodies[1:],admitted.answers),1):
         qp=q['payload']; payload=cp['payload']
         require(frozen.source.answer_id==a['id'] and frozen.source.question_id==a['question_id']==q['question_id']
@@ -1187,6 +1190,7 @@ def _natural_later_add_handoff(saved, snapshot, answer_id):
                 asked_target_refs=ctrl.asked_target_refs[:i],issued_count=i,issued_questions=ctrl.issued_questions[:i])))
         prefix=admit_emlis_thread(prefix_request).source_prefix_ref
         prepared=prepare_emlis_meaning(prefix_request)
+        prepared_rounds.append(prepared)
         require(_json(prepared.checkpoint)==payload and payload.get('semantic_schema_version')==SEMANTIC_SCHEMA
             and payload.get('source_prefix_ref')==prefix and payload.get('assessment_status')=='RESOLVED'
             and payload.get('unresolved_parts')==[])
@@ -1194,10 +1198,7 @@ def _natural_later_add_handoff(saved, snapshot, answer_id):
         require(type(update) is dict and update.get('disposition')=='MATERIAL_UPDATE'
             and update.get('answer_source_ref')==frozen.envelope.envelope_id
             and update.get('question_ref')==q['question_id'] and update.get('unresolved_parts')==[]
-            and type(update.get('updates')) is list and bool(update['updates'])
-            and (i == n or all(type(x) is dict and x.get('operation')=='ADD'
-                and x.get('superseded_claim_refs')==[] and x.get('affected_dependency_refs')==[]
-                for x in update['updates'])))
+            and type(update.get('updates')) is list and bool(update['updates']))
         require(all(a[k]==cp[k]==body[k] for k in ('operation_id','attempt_id'))
             and q['seq']<a['seq']<cp['seq']<body['seq'])
         started=receipt(body,prefix,'REFINED',prefix_request); require(cp['seq']<started['seq'])
@@ -1238,8 +1239,17 @@ def _natural_later_add_handoff(saved, snapshot, answer_id):
             original_record_commitment=saved.record_commitment,supplemental_answer_bundle_commitment=answer_commitment),
         'piece_generation_eligibility':dict(contract_version='piece.generation_eligibility.v1',decision='eligible',reason_codes=[]),
         'body_free':True}
+    prior_update = (any(any(item.operation != 'ADD' for item in p.checkpoint.answer_update.updates)
+                        for p in prepared_rounds[:-1])
+        or any(ref.startswith('answer:') for item in prepared.checkpoint.answer_update.updates
+               for ref in item.target_meaning_refs))
     operation, original_ranges, answer_range = 'ADD', (), None
-    if not all(type(x) is dict and x.get('operation') == 'ADD'
+    prior_revisions, effective_checkpoints = (), None
+    if prior_update:
+        operation, original_ranges, answer_range, prior_revisions = _natural_effective_round_ranges(
+            saved, prepared_rounds)
+        effective_checkpoints = canonical_json_bytes([_json(p.checkpoint) for p in prepared_rounds])
+    elif not all(type(x) is dict and x.get('operation') == 'ADD'
             and x.get('superseded_claim_refs') == [] and x.get('affected_dependency_refs') == []
             for x in update['updates']):
         # Prior rounds were independent ADDs. Only the latest exact update
@@ -1247,7 +1257,137 @@ def _natural_later_add_handoff(saved, snapshot, answer_id):
         operation, original_ranges, answer_range = _natural_active_answer_ranges(saved, prepared)
     return PieceSavedRefinedHandoff(saved,frozen.source,tid,t['revision'],canonical_json_bytes(lineage),
         operation, original_ranges, answer_range,
-        canonical_json_bytes(_json(prepared.checkpoint)) if operation != 'ADD' else None)
+        canonical_json_bytes(_json(prepared.checkpoint)) if operation != 'ADD' and not prior_update else None,
+        prior_revisions, effective_checkpoints)
+
+
+def _natural_effective_round_ranges(saved, prepared_rounds):
+    """Project genuine shared Emlis updates without requiring Analysis typing.
+
+    Piece receives only surviving original clauses, still-active prior exact
+    replacements and the selected latest answer. Every prefix/checkpoint was
+    rederived above; quoted locators and unselected independent ADDs are not
+    appended as source. Source envelopes and raw coordinates stay unchanged.
+    """
+    from cocolon_meaning_experience_engine.emlis_answer_update import _REPLACEMENT, _WITHDRAWAL
+
+    def require(value):
+        if not value:
+            raise _error('PIECE_SOURCE_NOT_ELIGIBLE')
+
+    resolver = prepared_rounds[-1].thread.resolver()
+    original_source = prepared_rounds[-1].thread.original.envelope.envelope_id
+    removed_original_spans = set()
+    replacements = []
+
+    def replacement_range(prepared, match):
+        require(len(prepared.accepted_nuclei) == 1)
+        accepted = prepared.accepted_nuclei[0]
+        require(accepted.semantic_frame.actor == 'current_user'
+            and accepted.source_fields == ('answer_text_private',)
+            and len(accepted.source_span_ids) == 1)
+        markers = [c for c in accepted.semantic_frame.attribute_codes
+                   if c.startswith('source_fragment_scalar_range:')]
+        require(len(markers) == 1)
+        a, b = map(int, markers[0].split(':')[1:])
+        span = resolver.resolve(accepted.source_span_ids[0])
+        ref = resolver.qualified_ref(accepted.source_span_ids[0]).evidence
+        answer = prepared.thread.answers[-1]
+        require(ref.source_envelope_id == answer.envelope.envelope_id
+            and 0 <= a < b <= len(span.raw_text)
+            and answer.source.answer_text_private[span.start_index:span.end_index] == span.raw_text)
+        result = (span.start_index+a, span.start_index+b)
+        require(answer.source.answer_text_private[result[0]:result[1]] == match.group('new'))
+        return accepted.nucleus_id, result
+
+    for prepared in prepared_rounds:
+        update = prepared.checkpoint.answer_update
+        require(update.disposition == 'MATERIAL_UPDATE' and not update.unresolved_parts)
+        for item in update.updates:
+            require(item.operation in {'ADD', 'REVISE', 'WITHDRAW'})
+            if item.operation == 'ADD':
+                require(not item.superseded_claim_refs and not item.affected_dependency_refs)
+                continue
+            require(len(update.updates) == 1 and item.binding_kind == 'EXPLICIT_CORRECTION'
+                and len(item.target_meaning_refs) == 1
+                and item.superseded_claim_refs == item.target_meaning_refs
+                and item.temporal_binding.about_time in {'ORIGINAL_OCCASION', 'ANSWER_TIME'})
+            raw = prepared.thread.answers[-1].source.answer_text_private
+            match = (_REPLACEMENT if item.operation == 'REVISE' else _WITHDRAWAL).fullmatch(
+                raw.strip().rstrip('。．.'))
+            require(match is not None)
+            targets = [n for n in prepared.original_plan.nuclei if n.nucleus_id in item.target_meaning_refs]
+            require(len(targets) == 1)
+            target = targets[0]
+            require(target.semantic_frame.actor == 'current_user'
+                and len(target.source_span_ids) == len(target.source_fields) == 1)
+            dependencies = [r for r in prepared.original_plan.relations
+                            if r.relation_id in item.affected_dependency_refs]
+            require(len(dependencies) == len(item.affected_dependency_refs)
+                and all(r.grounding_kind == 'bounded_structural_inference' for r in dependencies))
+            sid = target.source_span_ids[0]
+            ref, span = resolver.qualified_ref(sid).evidence, resolver.resolve(sid)
+            if ref.source_envelope_id == original_source:
+                require(target.source_fields[0] in {'memo', 'memo_action'}
+                    and tuple(n.nucleus_id for n in prepared.original_plan.nuclei
+                              if sid in n.source_span_ids) == item.target_meaning_refs
+                    and span.raw_text.rstrip('。．.') == match.group('old').rstrip('。．.'))
+                removed_original_spans.add(sid)
+            else:
+                # This target must be an actually introduced, still-active
+                # prior answer claim, not the old quote in correction syntax.
+                previous = [p for p in prepared_rounds if p.thread.answers[-1].source.round_index
+                            < prepared.thread.answers[-1].source.round_index
+                            and any(n.nucleus_id == target.nucleus_id for n in p.accepted_nuclei)]
+                require(len(previous) == 1 and target.source_fields == ('answer_text_private',)
+                    and ref.source_envelope_id == previous[0].thread.answers[-1].envelope.envelope_id)
+                old_markers = [c for c in target.semantic_frame.attribute_codes
+                               if c.startswith('source_fragment_scalar_range:')]
+                if old_markers:
+                    require(len(old_markers) == 1)
+                    x, y = map(int, old_markers[0].split(':')[1:])
+                    literal = span.raw_text[x:y]
+                else:
+                    literal = span.raw_text
+                require(literal.rstrip('。．.') == match.group('old').rstrip('。．.'))
+            if item.operation == 'REVISE':
+                changed, active_range = replacement_range(prepared, match)
+                require(item.changed_claim_refs == (changed,))
+                replacements.append((prepared.thread.answers[-1].source, changed, active_range))
+            else:
+                require(not prepared.accepted_nuclei and not item.changed_claim_refs)
+
+    raw = saved.original_payload()
+    original_ranges = []
+    for field in ('memo', 'memo_action'):
+        text = raw[field] or ''
+        spans = [resolver.resolve(sid) for sid in resolver.span_ids
+                 if resolver.qualified_ref(sid).evidence.source_envelope_id == original_source
+                 and resolver.qualified_ref(sid).evidence.field_path == field]
+        cursor = 0
+        for span in sorted(spans, key=lambda s:s.start_index):
+            start, end = span.start_index, span.end_index
+            require(cursor <= start < end <= len(text) and not text[cursor:start].strip()
+                and text[start:end] == span.raw_text)
+            if end < len(text) and text[end] in '。．.!！?？':
+                end += 1
+            if span.span_id not in removed_original_spans:
+                original_ranges.append((field, start, end))
+            cursor = end
+        require(not text[cursor:].strip())
+    require(bool(original_ranges))
+    latest = prepared_rounds[-1]
+    inactive = set(latest.checkpoint.inactive_claim_refs)
+    prior = tuple((answer, active_range) for answer, claim, active_range in replacements
+                  if answer.round_index < latest.thread.answers[-1].source.round_index and claim not in inactive)
+    updates = latest.checkpoint.answer_update.updates
+    operation = updates[0].operation
+    require(all(item.operation == operation for item in updates))
+    answer_range = None
+    if operation == 'REVISE':
+        answer_range = next(r for answer, _, r in replacements
+                            if answer.answer_id == latest.thread.answers[-1].source.answer_id)
+    return operation, tuple(original_ranges), answer_range, prior
 
 
 def _refined_observation_handoff(saved: PieceSavedOriginal, snapshot: dict,
@@ -1461,6 +1601,8 @@ def project_saved_refined_source(handoff: PieceSavedRefinedHandoff, *, opted_in:
         supplemental_update_operation=handoff.supplemental_update_operation,
         original_active_ranges=handoff.original_active_ranges,
         supplemental_active_range=handoff.supplemental_active_range,
+        prior_revisions=handoff.prior_revisions,
+        effective_round_sources=handoff._effective_checkpoints_json is not None,
         question_need_decision_identity=observation['question_need_decision_identity'],
         refined_result_identity=observation['emlis_observation_result_identity'],
         original_commitment=handoff.original.record_commitment,
@@ -1492,6 +1634,21 @@ def project_saved_refined_fence(handoff) -> dict:
     if type(handoff) is PieceSavedHandoff:
         return {}
     if type(handoff) is not PieceSavedRefinedHandoff:
+        raise _error('PIECE_CONFLICT')
+    if handoff._effective_checkpoints_json is not None:
+        project_saved_refined_source(handoff, opted_in=True)
+        try:
+            checkpoints = json.loads(handoff._effective_checkpoints_json)
+        except (ValueError, TypeError, UnicodeError):
+            raise _error('PIECE_CONFLICT') from None
+        if (type(checkpoints) is not list or len(checkpoints) != handoff.supplemental.round_index
+                or canonical_json_bytes(checkpoints) != handoff._effective_checkpoints_json
+                or any(type(cp) is not dict or cp.get('assessment_status') != 'RESOLVED'
+                       or cp.get('unresolved_parts') != [] for cp in checkpoints)
+                or checkpoints[-1].get('source_prefix_ref') != handoff.lineage_payload()['observation']['source_prefix_ref']):
+            raise _error('PIECE_CONFLICT')
+        return {'meaning_checkpoints': checkpoints}
+    if handoff.prior_revisions:
         raise _error('PIECE_CONFLICT')
     if handoff.supplemental_update_operation == 'ADD':
         if (handoff.original_active_ranges or handoff.supplemental_active_range is not None

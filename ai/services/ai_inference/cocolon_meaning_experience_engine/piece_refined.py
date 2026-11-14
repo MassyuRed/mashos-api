@@ -1,9 +1,10 @@
-"""Bounded private refined Piece: two qualified sources, the existing author.
+"""Bounded private refined Piece sources through the existing author.
 
-This slice composes an original and one explicitly opted-in real answer.
-Saved-source admission owns the shared one-round update proof; this module
-keeps its active complete-clause ranges without resolving a new target or
-rewriting either source. It does not authenticate a caller or issue a preview.
+This slice composes an original, its effective prior replacement fragments,
+and one explicitly selected real answer. Saved-source admission owns the
+shared update proof; this module retains source-qualified complete-clause
+ranges without resolving another target or rewriting the source envelopes.
+It does not authenticate a caller or issue a preview.
 """
 from __future__ import annotations
 
@@ -35,10 +36,14 @@ class PieceRefinedSourceSnapshot:
     supplemental_commitment: str
     opted_in: bool
     supplemental_update_operation: str
-    # Populated only by the saved one-round answer-update owner. These are
+    # Populated only by the saved answer-update source owner. These are
     # exact scalar ranges of the unchanged original fields and real answer.
     original_active_ranges: tuple[tuple[str, int, int], ...] = ()
     supplemental_active_range: tuple[int, int] | None = None
+    # Current, source-bound replacement fragments from preceding rounds.
+    # Independent unselected ADD answers are not included here.
+    prior_revisions: tuple[tuple[SupplementalAnswerSource, tuple[int, int]], ...] = ()
+    effective_round_sources: bool = False
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -54,6 +59,7 @@ class PieceSupplementalMeaning(PieceSourceMeaning):
 @dataclass(frozen=True, slots=True, repr=False)
 class PieceActiveOriginalMeaning(PieceSourceMeaning):
     active_ranges: tuple[tuple[str, int, int], ...] = ()
+    effective_round_sources: bool = False
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -62,6 +68,7 @@ class PieceRefinedMeaning:
     source_ref: str
     original: PieceSourceMeaning
     supplemental: PieceSupplementalMeaning | None
+    prior_revisions: tuple[PieceSupplementalMeaning, ...] = ()
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -73,6 +80,7 @@ class PieceRefinedPlan:
     # then the answer blocks, with explicit source boundaries in private state.
     source_roles: tuple[str, str] = ('ORIGINAL_USER_INPUT', 'SUPPLEMENTAL_ANSWER')
     eligible_formats: tuple[str, ...] = ('short_essay',)
+    prior_revision_plans: tuple[object, ...] = ()
 
 
 def _sha(raw: bytes) -> str:
@@ -102,6 +110,13 @@ def _source_payload(source):
         result['original_active_ranges'] = [list(row) for row in source.original_active_ranges]
     if source.supplemental_active_range is not None:
         result['supplemental_active_range'] = list(source.supplemental_active_range)
+    if not source.effective_round_sources:
+        _require(not source.prior_revisions, 'piece_refined_active_range_binding')
+        del result['prior_revisions']
+        del result['effective_round_sources']
+    else:
+        result['prior_revisions'] = [dict(answer=asdict(answer), active_range=list(active_range))
+                                     for answer, active_range in source.prior_revisions]
     return result
 
 
@@ -190,7 +205,7 @@ def validate_supplemental_meaning(meaning):
 
 
 
-def _active_original_meaning(source, ranges):
+def _active_original_meaning(source, ranges, *, effective_round_sources=False):
     """Keep complete surviving nodes at their original field/envelope offsets.
 
     Saved-source admission supplies the shared Emlis update proof. This view
@@ -212,15 +227,16 @@ def _active_original_meaning(source, ranges):
     _require(tuple((ref.field_path, ref.scalar_start, ref.scalar_end) for ref in evidence) == ranges,
              'piece_refined_active_range_binding')
     removed = tuple(node for node in piece_text_nodes(full) if node.node_id not in chosen)
-    _require(len(removed) == 1 and _qualified_self_topic(removed[0].value) is not None,
+    _require((effective_round_sources or len(removed) == 1)
+        and all(_qualified_self_topic(node.value) is not None for node in removed),
              'piece_refined_update_not_supported')
     # An antecedent or its dependent may not be silently reattached after
     # removal. Within-node conditions/evaluations survive only in full.
     _require(not full.role_bindings
-        and not any(row.node_id == removed[0].node_id
+        and not any(row.node_id in {node.node_id for node in removed}
                     for row in (*full.expression_scopes, *full.personal_evaluations))
-        and not any(removed[0].node_id in
-        (ref.antecedent_node_id, ref.reference_node_id) for ref in full.nominal_references),
+        and not any(node.node_id in (ref.antecedent_node_id, ref.reference_node_id)
+                    for node in removed for ref in full.nominal_references),
         'piece_refined_update_dependency_not_supported')
     sentences = tuple(row for row in full.sentences if row.node_id in chosen)
     edges = tuple(row for row in full.graph.edges
@@ -242,12 +258,14 @@ def _active_original_meaning(source, ranges):
         expression_scopes=tuple(row for row in full.expression_scopes if row.node_id in chosen),
         selected_feelings=selected, selection_evidence=selection_evidence,
         selection_contexts=selection_contexts)
-    return PieceActiveOriginalMeaning(**values, active_ranges=ranges)
+    return PieceActiveOriginalMeaning(**values, active_ranges=ranges,
+                                      effective_round_sources=effective_round_sources)
 
 
 def validate_active_original_meaning(meaning):
     _require(type(meaning) is PieceActiveOriginalMeaning
-             and meaning == _active_original_meaning(meaning.saved_snapshot, meaning.active_ranges),
+             and meaning == _active_original_meaning(meaning.saved_snapshot, meaning.active_ranges,
+                 effective_round_sources=meaning.effective_round_sources),
              'piece_refined_active_range_binding')
 
 
@@ -270,6 +288,9 @@ def supplemental_complete_self_account(meaning):
 
 def refined_meaning_parts(meaning, plan):
     parts = ((meaning.original, plan.original_plan),)
+    _require(len(meaning.prior_revisions) == len(plan.prior_revision_plans),
+             'piece_refined_plan_binding')
+    parts += tuple(zip(meaning.prior_revisions, plan.prior_revision_plans, strict=True))
     if meaning.supplemental is not None:
         _require(plan.supplemental_plan is not None, 'piece_refined_plan_binding')
         parts += ((meaning.supplemental, plan.supplemental_plan),)
@@ -358,7 +379,39 @@ def build_refined_meaning(request):
     _require(source.supplemental_commitment == 'sha256:' + frozen.envelope.raw_sha256
         and source.original_commitment != source.supplemental_commitment,
         'piece_refined_answer_commitment')
-    if source.supplemental_update_operation == 'ADD':
+    _require(type(source.effective_round_sources) is bool
+        and type(source.prior_revisions) is tuple, 'piece_refined_active_range_binding')
+    if source.effective_round_sources:
+        _require(bool(source.original_active_ranges)
+            and len(source.prior_revisions) < answer.round_index,
+            'piece_refined_active_range_binding')
+        original_meaning = _active_original_meaning(original, source.original_active_ranges,
+                                                   effective_round_sources=True)
+        prior = []
+        rounds, ids = [], []
+        for previous, active_range in source.prior_revisions:
+            _require(type(previous) is SupplementalAnswerSource
+                and previous.thread_id == answer.thread_id
+                and previous.original_source_ref == answer.original_source_ref
+                and 0 < previous.round_index < answer.round_index
+                and previous.answer_id not in {original.saved_input_id, answer.answer_id},
+                'piece_refined_answer_binding')
+            rounds.append(previous.round_index); ids.append(previous.answer_id)
+            prior.append(_supplemental_meaning(previous, original.owner_id, active_range))
+        _require(rounds == sorted(set(rounds)) and len(ids) == len(set(ids)),
+                 'piece_refined_answer_binding')
+        prior_revisions = tuple(prior)
+        if source.supplemental_update_operation == 'WITHDRAW':
+            _require(source.supplemental_active_range is None, 'piece_refined_active_range_binding')
+            supplemental = None
+        else:
+            _require((source.supplemental_update_operation == 'REVISE')
+                     == (source.supplemental_active_range is not None),
+                     'piece_refined_active_range_binding')
+            supplemental = _supplemental_meaning(answer, original.owner_id,
+                                                  source.supplemental_active_range)
+    elif source.supplemental_update_operation == 'ADD':
+        _require(not source.prior_revisions, 'piece_refined_active_range_binding')
         _require(not source.original_active_ranges and source.supplemental_active_range is None,
                  'piece_refined_active_range_binding')
         _require(not re.search(r'訂正|撤回|ではなく|じゃなく|違います|違った', answer.answer_text_private),
@@ -383,13 +436,15 @@ def build_refined_meaning(request):
                              r'(?:私|わたし|僕|ぼく|俺|おれ)(?:は|が|にとって)', n.value)
                      or supplemental_feeling_time_span(supplemental, n) is not None
                      for n in supplemental.graph.nodes), 'piece_refined_answer_not_self_contained')
-    return PieceRefinedMeaning(source, refined_source_ref(source), original_meaning, supplemental)
+    return PieceRefinedMeaning(source, refined_source_ref(source), original_meaning, supplemental,
+                              prior_revisions if source.effective_round_sources else ())
 
 
 def _plans(meaning):
     from .piece_v1c import compile_piece_artifact_plan
     return PieceRefinedPlan(meaning.source_ref, compile_piece_artifact_plan(meaning.original),
-                             compile_piece_artifact_plan(meaning.supplemental) if meaning.supplemental is not None else None)
+        compile_piece_artifact_plan(meaning.supplemental) if meaning.supplemental is not None else None,
+        prior_revision_plans=tuple(compile_piece_artifact_plan(part) for part in meaning.prior_revisions))
 
 
 def validate_refined_preservation(meaning, plan, artifact):
@@ -410,7 +465,7 @@ def validate_refined_preservation(meaning, plan, artifact):
         and artifact.piece_text_hash == _sha(artifact.piece_text.encode()),
         'piece_refined_artifact_binding')
     count = len(plan.original_plan.block_node_ids)
-    extra = len(plan.supplemental_plan.block_node_ids) if plan.supplemental_plan is not None else 0
+    extra = sum(len(child.block_node_ids) for _, child in refined_meaning_parts(meaning, plan)[1:])
     _require(len(artifact.body_blocks) == count + extra,
              'piece_refined_artifact_binding')
     offset = 0
@@ -465,6 +520,8 @@ def serialize_refined_piece(outcome):
         source_ref=outcome.source_meaning.source_ref,
         sources=_source_payload(outcome.source_meaning.source),
         plan=asdict(outcome.artifact_plan), artifact=asdict(outcome.artifact))
+    if not outcome.source_meaning.source.effective_round_sources:
+        del state['plan']['prior_revision_plans']
     # Private dataclass tuples become JSON arrays; the existing canonical
     # contract deliberately rejects Python tuples as public request values.
     return canonical_json_bytes(json.loads(json.dumps(state, ensure_ascii=False, allow_nan=False)))

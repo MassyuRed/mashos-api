@@ -145,6 +145,30 @@ def piece_model_material(source, *, expected_owner_id: str, tier: str = 'free') 
                 ref.utf8_start:ref.utf8_end].decode('utf-8'), coordinate_space='SOURCE_ENVELOPE')
                 for ref in frozen.evidence_refs],
         })
+        if source.effective_round_sources:
+            # Retain each prior replacement's own answer envelope. It is not
+            # appended to the latest answer or disguised as original input.
+            latest = sources.pop()
+            seen_rounds = []
+            for answer, active_range in source.prior_revisions:
+                previous = freeze_supplemental_answer(answer)
+                if (answer.thread_id != source.supplemental.thread_id
+                        or answer.original_source_ref != source.supplemental.original_source_ref
+                        or not 0 < answer.round_index < source.supplemental.round_index):
+                    raise ValueError('piece_model_refined_binding')
+                seen_rounds.append(answer.round_index)
+                sources.append(dict(source_id=answer.answer_id, source_version=answer.source_version,
+                    source_commitment='sha256:' + previous.envelope.raw_sha256,
+                    role='SUPPLEMENTAL_ANSWER', original=None,
+                    text_fields={'answer_text_private': answer.answer_text_private},
+                    envelope_id=previous.envelope.envelope_id, recorded_at=answer.recorded_at,
+                    parent_record_id=original.saved_input_id,
+                    evidence=[dict(asdict(ref), literal=previous.envelope.raw_utf8[
+                        ref.utf8_start:ref.utf8_end].decode('utf-8'), coordinate_space='SOURCE_ENVELOPE')
+                        for ref in previous.evidence_refs]))
+            if seen_rounds != sorted(set(seen_rounds)):
+                raise ValueError('piece_model_refined_binding')
+            sources.append(latest)
         source_ref = refined_source_ref(source)
     else:
         if type(source) is not PieceSourceSnapshot:
@@ -153,7 +177,8 @@ def piece_model_material(source, *, expected_owner_id: str, tier: str = 'free') 
             'owner': expected_owner_id, 'source_stage': source.source_stage,
             'source': sources[0]})).hexdigest()
     partition = []
-    active_update = refined and source.supplemental_update_operation in {'REVISE', 'WITHDRAW'}
+    active_update = refined and (source.supplemental_update_operation in {'REVISE', 'WITHDRAW'}
+                                 or source.effective_round_sources)
     if active_update:
         ranges = source.original_active_ranges
         answer_range = source.supplemental_active_range
@@ -163,8 +188,18 @@ def piece_model_material(source, *, expected_owner_id: str, tier: str = 'free') 
             raise ValueError('piece_model_refined_binding')
         for item in sources:
             by_field = {}
-            selected = (ranges if item['role'] == 'ORIGINAL_INPUT' else
-                        (() if answer_range is None else (('answer_text_private', *answer_range),)))
+            if item['role'] == 'ORIGINAL_INPUT':
+                selected = ranges
+            elif item['source_id'] == source.supplemental.answer_id:
+                if source.effective_round_sources and source.supplemental_update_operation == 'ADD':
+                    selected = (('answer_text_private', 0, len(source.supplemental.answer_text_private)),)
+                else:
+                    selected = (() if answer_range is None else (('answer_text_private', *answer_range),))
+            else:
+                matches = [r for answer, r in source.prior_revisions if answer.answer_id == item['source_id']]
+                if len(matches) != 1:
+                    raise ValueError('piece_model_refined_binding')
+                selected = (('answer_text_private', *matches[0]),)
             for field, start, end in selected:
                 text = item['text_fields'].get(field)
                 allowed = ('memo', 'memo_action') if item['role'] == 'ORIGINAL_INPUT' else ('answer_text_private',)
@@ -210,6 +245,8 @@ def piece_model_material(source, *, expected_owner_id: str, tier: str = 'free') 
     })
     if active_update:
         material['control']['active_source_update'] = source.supplemental_update_operation
+    if refined and source.effective_round_sources:
+        material['control']['effective_round_sources'] = True
     return material
 
 
@@ -225,8 +262,11 @@ def piece_model_field_slots(material):
         partition = control['block_partition']
         if (material['core'] != 'piece' or material['task'] != 'PIECE_MODEL_BODY'
                 or control['model_body_only'] is not True or type(sources) is not list
-                or [s['role'] for s in sources] not in (
+                or ([s['role'] for s in sources] not in (
                     ['ORIGINAL_INPUT'], ['ORIGINAL_INPUT', 'SUPPLEMENTAL_ANSWER'])
+                    and not (control.get('effective_round_sources') is True
+                        and 2 <= len(sources) <= 4 and sources[0]['role'] == 'ORIGINAL_INPUT'
+                        and all(s['role'] == 'SUPPLEMENTAL_ANSWER' for s in sources[1:])))
                 or type(partition) is not list or not 1 <= len(partition) <= 3):
             raise ValueError
         by_id = {s['source_id']: s for s in sources}
@@ -234,7 +274,8 @@ def piece_model_field_slots(material):
             raise ValueError
         slots = {}
         for index, item in enumerate(partition):
-            active = control.get('active_source_update') in {'REVISE', 'WITHDRAW'}
+            active = (control.get('active_source_update') in {'REVISE', 'WITHDRAW'}
+                      or control.get('effective_round_sources') is True)
             expected_keys = ({'source_id', 'field_path', 'scalar_ranges'} if active else
                              {'source_id', 'field_path', 'scalar_start', 'scalar_end'})
             if type(item) is not dict or set(item) != expected_keys:
