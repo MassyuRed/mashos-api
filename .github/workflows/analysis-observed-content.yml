@@ -51,6 +51,8 @@ name: Analysis observed content
       - ai/tests/test_analysis_parallel_emotion_chronology.py
       - ai/tests/test_analysis_legacy_report_source_integrity.py
       - ai/tests/test_analysis_cumulative*.py
+      - ai/tests/test_analysis_interpretation_correction_sources.py
+      - supabase/migrations/*_analysis_interpretation_correction_sources.sql
       - ai/tests/test_analysis_semantic*.py
       - ai/tests/test_emlis_natural_reply_probe_http.py
       - ai/tests/test_emlis_interpretation_correction.py
