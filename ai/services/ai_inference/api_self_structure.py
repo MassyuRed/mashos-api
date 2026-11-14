@@ -1338,8 +1338,42 @@ SelfStructureMonthlyEnsureBody = MyProfileMonthlyEnsureBody
 SelfStructureMonthlyEnsureResponse = MyProfileMonthlyEnsureResponse
 
 
+class AnalysisMapCorrectionBody(BaseModel):
+    artifact_ref: str = Field(min_length=1, max_length=128)
+    kind: Literal['overview', 'node', 'edge']
+    ref: str = Field(min_length=1, max_length=128)
+    field: str = Field(min_length=1, max_length=64)
+    target_text: str = Field(min_length=1, max_length=2000)
+    explanation: str = Field(min_length=1, max_length=2000)
+    idempotency_key: str = Field(min_length=1, max_length=128)
+    model_config = {'extra': 'forbid'}
+
+
 def register_self_structure_routes(app: FastAPI) -> None:
     """Register current Self Structure routes on the given FastAPI app."""
+
+    async def map_correction_owner(authorization):
+        token = _extract_bearer_token(authorization)
+        if not token:
+            raise HTTPException(401, 'Authorization header with Bearer token is required')
+        owner = await _resolve_user_id_from_token(token)
+        if not owner:
+            raise HTTPException(401, 'Failed to resolve user id')
+        return str(owner)
+
+    @app.post('/self-structure/map-corrections')
+    async def post_analysis_map_correction(body: AnalysisMapCorrectionBody,
+            authorization: Optional[str] = Header(default=None, alias='Authorization')) -> dict:
+        from analysis_map_correction_service import submit_map_correction
+        owner = await map_correction_owner(authorization)
+        return await submit_map_correction(owner, body.model_dump())
+
+    @app.get('/self-structure/map-corrections')
+    async def get_analysis_map_correction(idempotency_key: str = Query(min_length=1, max_length=128),
+            authorization: Optional[str] = Header(default=None, alias='Authorization')) -> dict:
+        from analysis_map_correction_service import read_map_correction
+        owner = await map_correction_owner(authorization)
+        return await read_map_correction(owner, idempotency_key=idempotency_key)
 
     @app.get("/self-structure/latest/status", response_model=SelfStructureLatestStatusResponse)
     async def get_self_structure_latest_status(

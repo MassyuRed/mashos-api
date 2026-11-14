@@ -184,6 +184,14 @@ async def create_scenario_set(owner, request, *, model_source=None):
                 return _outcome(prepared)
             operation = await store.reserve(owner,key_hash,request_hash,
                 base_ref=request['base_observed_map_ref'],guard=base['base_source_guard'],material=_freeze_prepared(prepared))
+        if operation['state']=='RESERVED' and operation['call_token'] is None:
+            if observed_mode()!='development':
+                return _pending_operation(operation)
+            _require_write()
+            operation=await store.reserve(owner,key_hash,request_hash,reclaim=True)
+            # The frozen original request belongs to the reservation. Do not
+            # recompute it from a newer map or the retrying process's context.
+            prepared=None
         if operation['state'] == 'COMPLETED':
             result = await get_artifact(owner,'scenario_set',operation['artifact_id'])
             result['idempotency_replayed'] = True
@@ -200,7 +208,7 @@ async def create_scenario_set(owner, request, *, model_source=None):
             else:
                 _require_write()
                 if prepared is None:
-                    raise ValueError('analysis_if_operation_invalid')
+                    prepared=_restore_prepared(operation['material'])
                 if model_source is None:
                     from analysis_if_model_source import application_analysis_if_model_source
                     model_source = application_analysis_if_model_source()
@@ -208,7 +216,7 @@ async def create_scenario_set(owner, request, *, model_source=None):
                     raise HTTPException(503, 'analysis_if_model_source_unavailable')
                 started = await store.start(owner,key_hash,token)
                 if started != {'started':True}:
-                    return _pending_operation(dict(operation,state='CALL_STARTED'))
+                    return _pending_operation(operation)
                 _require_write()
                 async with asyncio.timeout(215.0) as deadline:
                     response = await model_source(prepared)

@@ -2441,6 +2441,7 @@ class AnalysisSemanticMapInput:
     source_snapshot_json: str = ''
     source_duties_json: str = ''
     active_source_updates: bool = False
+    map_correction_sources_json: str = ''
 
     def messages(self):
         instruction = _SEMANTIC_MAP_INSTRUCTION
@@ -2458,7 +2459,14 @@ class AnalysisSemanticMapInput:
                 'coverage内のfieldはsource_material_fieldで、field_bindingsにより今回のfieldへ対応します。'
                 'source_node_bindingsと注記のtarget_refは同じrecord/material内の読取り参照で、出力node_idではありません。'
                 'recordがnullの未確定sourceは有効事実・node根拠にせず、推測で補いません。')
-        if any('source_recorded_at' in f for f in material['fields']):
+        if material.get('map_corrections'):
+            instruction += ('\nmap_correctionsは保存されたAIの読みへの本人訂正です。target_contextはAI対象を指す制御情報で、本人の根拠ではありません。'
+                '本人説明だけをUSER_ANALYSIS_MAP_CORRECTIONのfieldとして提示しています。そのfieldは根拠として引用できます。'
+                '本人訂正の根拠quoteはfield全文を保ち、否定や留保を切り落としません。各有効訂正のfieldを少なくとも一項目の根拠へ実際に使います。'
+                '訂正対象の読みを確定した本人特徴として引き継がず、説明が示す範囲で読み直し、説明されていない理由を補いません。'
+                'record_refsは対象分析の元記録との依存関係で、本人説明をその元記録の文や当時の出来事へ変更するものではありません。')
+        if any(f['source_role'] == 'USER_INTERPRETATION_CORRECTION'
+               and 'source_recorded_at' in f for f in material['fields']):
             instruction += ('\nUSER_INTERPRETATION_CORRECTIONのtextは本人が明示的に訂正した有効部分です。'
                 'source_recorded_atは本人説明の記録日時で、親recordsのrecorded_atとは別です。'
                 'どちらの記録日時も出来事日時とは決めず、昨日・今などの語を別のsourceの時点へ移しません。')
@@ -2479,6 +2487,9 @@ def prepare_analysis_semantic_map(request, snapshot, *,
         r'analysis-db-cumulative-v1:[0-9a-f]{64}', snapshot['guard']), 'analysis_model_guard_invalid')
     refs = [member.saved_record_ref for member in request.members]
     _semantic_map_require(len(refs) == len(set(refs)), 'analysis_semantic_duplicate_record')
+    from .source_adapter import analysis_map_correction_sources
+    corrections = analysis_map_correction_sources(request.authenticated_owner_scope,
+        snapshot.get('map_corrections', ()), record_refs=refs, as_of=snapshot['now'])
     # One old safety-routed/unresolved supplement cannot erase every other
     # eligible original in the complete history. Ownership/version errors are
     # never treated as this narrow, known exclusion policy.
@@ -2567,6 +2578,23 @@ def prepare_analysis_semantic_map(request, snapshot, *,
                 for c in m.interpretation_corrections if c.correction_id == source.envelope.source_record_id)
             material_fields[-1]['source_recorded_at'] = correction.recorded_at
         stored_fields.append((index, field['text'], source.record_ref, field['evidence']))
+    correction_material, correction_private = [], []
+    for row, source in corrections:
+        eligible = set(source.cohort_refs) <= set(ordinals)
+        number = len(material_fields) + 1 if eligible else None
+        correction_material.append(dict(correction_id=source.correction_id,
+            target_context=source.target_context, field=number,
+            source_role=source.envelope.source_role, recorded_at=source.recorded_at,
+            source_state='ACTIVE', evidence_eligible=eligible))
+        if not eligible:
+            continue
+        material_fields.append(dict(field=number, record=None,
+            record_refs=[ordinals[ref] for ref in source.cohort_refs],
+            field_path='explanation', source_role=source.envelope.source_role,
+            supplement=None, text=source.explanation, source_recorded_at=source.recorded_at))
+        stored_fields.append((number, source.explanation, source.cohort_refs, source.evidence))
+        correction_private.append(dict(source=row, cohort_refs=list(source.cohort_refs),
+            source_envelope_id=source.envelope.envelope_id, evidence=asdict(source.evidence)))
     records = []
     for ref, ordinal in ordinals.items():
         original = originals[ref]
@@ -2574,6 +2602,8 @@ def prepare_analysis_semantic_map(request, snapshot, *,
             selected_categories=original['category'], selected_emotions=original['emotions'],
             emotion_details=original['emotion_details']))
     material = dict(analysis_as_of=frozen.period[1], records=records, fields=material_fields)
+    if correction_material:
+        material['map_corrections'] = correction_material
     if handoffs:
         # State/coverage and typed update/unknown responsibilities accompany
         # the actual active fields. This is expressly an Analysis-owned
@@ -2608,7 +2638,8 @@ def prepare_analysis_semantic_map(request, snapshot, *,
         dictionary_json, tuple(stored_fields), frozen, len(snapshot['members']), semantic_map_canonical(dict(reasons)), stale,
         prompt_version=prompt_version, source_request=source_request,
         source_snapshot_json=semantic_map_canonical(snapshot), source_duties_json=source_duties_json,
-        active_source_updates=active_source_updates)
+        active_source_updates=active_source_updates,
+        map_correction_sources_json=semantic_map_canonical(correction_private) if correction_private else '')
 
 
 def _semantic_map_evidence(prepared, value):
@@ -2617,6 +2648,8 @@ def _semantic_map_evidence(prepared, value):
     _semantic_map_require(field is not None and _semantic_map_text(value['quote'], 4000))
     _, text, record_ref, base = field
     quote = value['quote']
+    if type(record_ref) is tuple:
+        _semantic_map_require(quote == text, 'analysis_map_correction_evidence_incomplete')
     _semantic_map_require(text.count(quote) == 1, 'analysis_semantic_evidence_unbound')
     start, end = text.index(quote), text.index(quote) + len(quote)
     absolute_start, absolute_end = base.scalar_start + start, base.scalar_start + end

@@ -185,6 +185,31 @@ def test_profile_is_frozen_in_preparation_receipt_and_configured_transport(monke
         configured.require_current()
 
 
+def test_explicit_realization_authoring_reuses_frozen_profile_without_env_rebinding(monkeypatch):
+    from cocolon_meaning_experience_engine.piece_semantic_admission import (
+        PieceSemanticError, validate_piece_model_input,
+    )
+
+    text = '私は、静かな時間を大切にしたい。私は、自分で確かめたい。'
+    raw = json.dumps({'field_blocks': {'memo_0': text}}, ensure_ascii=False)
+    req, old = fixed_input(monkeypatch, source(text, field='memo'), raw, new=False)
+    build = lambda prepared: model.build_piece_model_messages(prepared,
+        include_authoring_constraints=True, source_request=req, include_editorial_choices=True)
+    old_messages = build(old.prepared)
+    old_bytes = old.prepared.private_json, old.receipt
+    monkeypatch.setenv('PIECE_MODEL_SOURCE', 'off')
+    explicit = prepare_piece_model_request(req, realization_profile=MODEL_REALIZATION_PROFILE)
+    frozen = explicit.private_json
+    messages = build(explicit)
+    assert json.loads(messages[1]['content'])['control']['realization_profile'] == MODEL_REALIZATION_PROFILE
+    assert explicit.private_json == frozen
+    assert build(old.prepared) == old_messages
+    assert (old.prepared.private_json, old.receipt) == old_bytes
+    monkeypatch.setenv('PIECE_MODEL_SOURCE', model.CMEE_SELECTOR)
+    with pytest.raises(PieceSemanticError, match='piece_model_input_binding'):
+        validate_piece_model_input(req, old)
+
+
 @pytest.mark.parametrize('tier', ['free', 'plus', 'premium'])
 def test_configured_realization_is_saved_and_reread_without_model_reacquisition(
         saved_piece_db, monkeypatch, tier):

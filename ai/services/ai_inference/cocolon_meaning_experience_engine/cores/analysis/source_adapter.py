@@ -416,3 +416,36 @@ def emlis_analysis_source_request(request, *, owner_scope, original_record, as_o
     freeze_analysis_sources(projected)
     return admitted, projected
 
+
+def analysis_map_correction_sources(owner_scope, rows, *, record_refs, as_of):
+    """Admit independent person explanations, never artificial saved inputs.
+
+    SQL owns the current cohort check. Here the existing source boundary binds
+    its owner-resolved rows to this request and freezes only explanation bytes;
+    the old AI field and target excerpt remain separate control metadata.
+    """
+    from .map_interpretation_correction import checked_map_correction, qualify_map_correction
+    if type(rows) not in (list, tuple):
+        raise AnalysisSourceError('analysis_map_correction_source_invalid')
+    qualified, seen = [], set()
+    for raw in rows:
+        try:
+            row = checked_map_correction(owner_scope, raw)
+            if row['correction_id'] in seen or _time(row['recorded_at']) > _time(as_of):
+                raise ValueError
+            seen.add(row['correction_id'])
+            if row['source_state'] != 'ACTIVE':
+                continue
+            source = qualify_map_correction(owner_scope, row)
+            if not set(source.cohort_refs) <= set(record_refs):
+                raise ValueError
+            from emlis_ai_safety_triage import classify_emlis_safety_triage_text
+            if not classify_emlis_safety_triage_text(source.explanation).normal_observation_allowed:
+                raise AnalysisSourceError('analysis_map_correction_separate_safety_required')
+            qualified.append((row, source))
+        except AnalysisSourceError:
+            raise
+        except (ValueError, TypeError, KeyError, AttributeError):
+            raise AnalysisSourceError('analysis_map_correction_source_invalid') from None
+    return tuple(qualified)
+

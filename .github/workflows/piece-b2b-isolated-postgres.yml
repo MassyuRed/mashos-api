@@ -47,6 +47,21 @@ name: Piece B2-B/B3/B4/B5 isolated PostgreSQL
       - ai/services/ai_inference/piece_v2_preview_service.py
       - ai/services/ai_inference/piece_model_source.py
       - ai/services/ai_inference/cocolon_meaning_experience_engine/piece_semantic_admission.py
+      - ai/services/ai_inference/cocolon_meaning_experience_engine/piece_v1c.py
+      - ai/services/ai_inference/cocolon_meaning_experience_engine/engine.py
+      - ai/services/ai_inference/cocolon_meaning_experience_engine/natural_reply.py
+      - ai/services/ai_inference/cocolon_meaning_experience_engine/cores/analysis/source_adapter.py
+      - ai/services/ai_inference/cocolon_meaning_experience_engine/cores/analysis/semantic_admission.py
+      - ai/services/ai_inference/emlis_thread_service.py
+      - ai/services/ai_inference/piece_v2_source_adapter.py
+      - ai/tests/test_emlis_active_meaning_application.py
+      - ai/tests/test_emlis_analysis_material.py
+      - ai/tests/test_analysis_emlis_material_handoff.py
+      - ai/tests/test_piece_cmee_realization.py
+      - ai/tests/fixtures/piece_cmee_realization_recorded.json
+      - ai/tests/piece_v2/test_b05_shared_meaning_piece_pipeline.py
+      - supabase/migrations/*_analysis_emlis_material_handoff.sql
+      - supabase/migrations/*_piece_shared_analysis_material_fence.sql
       - ai/services/ai_inference/cocolon_meaning_experience_engine/preparation_sources.py
       - ai/tests/test_piece_model_source.py
       - ai/tests/test_piece_model_candidate_independent.py
@@ -427,6 +442,9 @@ jobs:
           python -m pytest -q --tb=short -ra -p no:cacheprovider \
             -c /dev/null --rootdir=. --noconftest \
             ai/tests/test_emlis_natural_reply_application.py \
+            ai/tests/test_emlis_active_meaning_application.py \
+            ai/tests/test_emlis_analysis_material.py \
+            ai/tests/test_analysis_emlis_material_handoff.py \
             ai/tests/test_emlis_natural_frames_application.py \
             ai/tests/test_emlis_frame_feedback_context.py \
             ai/tests/test_emlis_interpretation_correction.py \
@@ -448,6 +466,8 @@ jobs:
           python -m pytest -q --tb=short -ra -p no:cacheprovider \
             -c /dev/null --rootdir=. --noconftest \
             ai/tests/test_piece_model_source.py \
+            ai/tests/test_piece_cmee_realization.py \
+            ai/tests/piece_v2/test_b05_shared_meaning_piece_pipeline.py \
             ai/tests/test_piece_model_candidate_independent.py \
             ai/tests/test_piece_model_finite_scope.py \
             ai/tests/test_piece_model_evaluation_reuse.py \

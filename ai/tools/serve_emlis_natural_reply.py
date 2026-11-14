@@ -29,6 +29,7 @@ FIT38_CONFIG = "ef4b1aef621fb4e234ce6a05601efb62a987c3cf5d40f3995ca1b72200bab145
 PINS = {"transformers": "5.19.0", "peft": "0.21.2", "accelerate": "1.15.0", "safetensors": "0.8.0"}
 SEMANTIC_FORMAT_SOURCE = '817f944fcc8851917c40300a47f62d1defc3ffc3'
 PIECE_CANDIDATE_FORMAT = 'piece.field_slots.v1'
+IF_CANDIDATE_SCHEMA = 'cocolon.analysis.if-candidates.model.v1'
 PIECE_ADAPTER_NAME = 'piece'
 
 
@@ -63,12 +64,76 @@ def semantic_free_text_tokens(prefix, batch, sent, blocked, invalid_json_tokens=
     return allowed
 
 
+def _if_output_schema(material):
+    """Constrain only the versioned IF protocol; the IF owner admits meaning."""
+    if (set(material) != {'model_schema', 'base_map_kind', 'branch_point_ref', 'anchors',
+            'fields', 'requested_candidate_count', 'constraints_confirmed'}
+            or material['model_schema'] != IF_CANDIDATE_SCHEMA
+            or material['base_map_kind'] != 'DERIVED_AI_MAP_ANCHOR'
+            or type(material['branch_point_ref']) is not str or not material['branch_point_ref']
+            or type(material['requested_candidate_count']) is not int
+            or not 1 <= material['requested_candidate_count'] <= 3
+            or type(material['constraints_confirmed']) is not bool
+            or type(material['anchors']) is not list or not material['anchors']
+            or type(material['fields']) is not list or not material['fields']):
+        raise ValueError('if_material_invalid')
+    anchors = []
+    for anchor in material['anchors']:
+        if (type(anchor) is not dict or set(anchor) != {'node_ref', 'visible_label'}
+                or any(type(anchor[k]) is not str or not anchor[k] for k in anchor)):
+            raise ValueError('if_material_invalid')
+        anchors.append(anchor['node_ref'])
+    if len(set(anchors)) != len(anchors):
+        raise ValueError('if_material_invalid')
+    fields = []
+    for index, field in enumerate(material['fields'], 1):
+        if (type(field) is not dict or set(field) != {'field', 'source_role', 'purpose', 'text'}
+                or type(field['field']) is not int or field['field'] != index
+                or field['source_role'] != 'SIMULATION_SESSION_MATERIAL'
+                or field['purpose'] not in {'BRANCH_INTENT', 'CONSTRAINT', 'PERSON_ALTERNATIVE'}
+                or (field['purpose'] == 'BRANCH_INTENT') != (index == 1)
+                or type(field['text']) is not str or not field['text'].strip()):
+            raise ValueError('if_material_invalid')
+        fields.append(index)
+
+    def text(maximum=1000):
+        return dict(type='string', minLength=1, maxLength=maximum)
+
+    def obj(properties):
+        return dict(type='object', properties=properties, required=list(properties), additionalProperties=False)
+
+    def array(items, minimum=0, maximum=None):
+        result = dict(type='array', items=items, minItems=minimum)
+        if maximum is not None:
+            result['maxItems'] = maximum
+        return result
+
+    refs = array(dict(type='integer', enum=fields), maximum=len(fields))
+    node = obj(dict(node_id=text(100), step_kind=text(100),
+        origin=dict(type='string', enum=['OBSERVED_ANCHOR', 'USER_CHOICE', 'SIMULATED_EXTENSION', 'UNKNOWN']),
+        text=text(), anchor_ref=dict(anyOf=[dict(type='null'), dict(type='string', enum=anchors)]),
+        source_refs=refs, unknown_reasons=array(text(200))))
+    edge = obj({'edge_id': text(100), 'from': text(100), 'to': text(100),
+        'condition_refs': array(text(100), maximum=12)})
+    condition = obj(dict(condition_id=text(100), text=text(), source_refs=refs))
+    scenario = obj(dict(scenario_id=text(100), label=text(), nodes=array(node, 1, 24),
+        edges=array(edge, 1, 48), required_conditions=array(condition, maximum=12),
+        frictions=array(text(), maximum=12), unmodelled_factors=array(text(), 1, 12)))
+    clarification = obj(dict(reason_code=dict(type='string', enum=[
+        'BRANCH_INTENT_UNCLEAR', 'CONSTRAINT_UNCLEAR', 'ALTERNATIVES_UNCLEAR']), prompt=text(300)))
+    return obj(dict(schema_version=dict(type='string', enum=[IF_CANDIDATE_SCHEMA]),
+        scenarios=array(scenario, maximum=material['requested_candidate_count']),
+        clarification=dict(anyOf=[dict(type='null'), clarification])))
+
+
 def semantic_output_schema(messages):
     """Constrain protocol and source quotes; meanings remain model-generated."""
     if (type(messages) is not list or len(messages) != 2
             or messages[1].get('role') != 'user'):
         raise ValueError('semantic_material_invalid')
     material = json.loads(messages[1]['content'])
+    if type(material) is dict and material.get('model_schema') == IF_CANDIDATE_SCHEMA:
+        return _if_output_schema(material)
     fields = material.get('fields')
     if type(fields) is not list or not fields:
         raise ValueError('semantic_fields_invalid')

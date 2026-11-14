@@ -115,6 +115,16 @@ Deprecated rows remain listed until their compatibility window is closed.
 | GET | `/ranking/mymodel_resonances` | `ranking.mymodel_resonances.v1` | `true` | /ranking/piece_resonances |  |
 | GET | `/ranking/mymodel_discoveries` | `ranking.mymodel_discoveries.v1` | `true` |  | Retired compatibility route |
 | GET | `/subscription/bootstrap` | `subscription.bootstrap.v1` | `false` |  | Runtime subscription sales / plan config; plans may include additive emlis_ai metadata and marketing lines |
+| POST | `/analysis/if-route/scenario-sets` | `analysis.if_route.scenario_sets.create.v1` | `false` |  | Authenticated Premium owner; immutable IF or explicit Saved intent; no generated observation facts |
+| GET | `/analysis/if-route/scenario-sets` | `analysis.if_route.scenario_sets.list.v1` | `false` |  | Authenticated Premium owner; immutable IF or explicit Saved intent; no generated observation facts |
+| GET | `/analysis/if-route/scenario-sets/{artifact_id}` | `analysis.if_route.scenario_sets.read.v1` | `false` |  | Authenticated Premium owner; immutable IF or explicit Saved intent; no generated observation facts |
+| DELETE | `/analysis/if-route/scenario-sets/{artifact_id}` | `analysis.if_route.scenario_sets.delete.v1` | `false` |  | Authenticated Premium owner; immutable IF or explicit Saved intent; no generated observation facts |
+| POST | `/analysis/saved-route-intents` | `analysis.saved_route_intents.create.v1` | `false` |  | Authenticated Premium owner; immutable IF or explicit Saved intent; no generated observation facts |
+| GET | `/analysis/saved-route-intents` | `analysis.saved_route_intents.list.v1` | `false` |  | Authenticated Premium owner; immutable IF or explicit Saved intent; no generated observation facts |
+| GET | `/analysis/saved-route-intents/{artifact_id}` | `analysis.saved_route_intents.read.v1` | `false` |  | Authenticated Premium owner; immutable IF or explicit Saved intent; no generated observation facts |
+| DELETE | `/analysis/saved-route-intents/{artifact_id}` | `analysis.saved_route_intents.delete.v1` | `false` |  | Authenticated Premium owner; immutable IF or explicit Saved intent; no generated observation facts |
+| POST | `/self-structure/map-corrections` | `self_structure.map_corrections.create.v1` | `false` |  | Authenticated owner exact map target and separate person explanation; immutable source, next current-map refresh |
+| GET | `/self-structure/map-corrections` | `self_structure.map_corrections.read.v1` | `false` |  | Authenticated owner exact map target and separate person explanation; immutable source, next current-map refresh |
 | GET | `/analysis/home-summary` | `analysis.home_summary.v1` | `false` |  |  |
 | GET | `/analysis/kokoro-weather` | `analysis.kokoro_weather.live.v1` | `false` |  | Owner-only input aggregation; JST today/week/month, existing history retention, no generated report |
 | POST | `/analysis/reports/ensure` | `analysis.reports.ensure.v1` | `false` |  | Analysis core reportValidity meta is additive under content_json.reportValidity; no diagnosis or overclaim output |

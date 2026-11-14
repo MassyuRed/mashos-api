@@ -7,6 +7,7 @@ import asyncio
 from copy import deepcopy
 import json
 from pathlib import Path
+import re
 from unittest.mock import patch
 from uuid import uuid4
 
@@ -75,6 +76,30 @@ def _bind(db, monkeypatch, owner, token):
     monkeypatch.setattr(emlis_thread_store, 'sb_post_rpc', db.rpc)
 
 
+def _natural_failure_diagnostics(service, owner, parent, dto, calls, phases, *, phase, case_id, tier, rounds, stopped):
+    """Body-free failure context; a successful helper performs no extra read."""
+    diagnostic = dict(phase=phase, case_id=case_id, tier=tier, rounds=rounds, stopped=stopped,
+        provider_calls=len(calls), natural_phases=phases,
+        dto={key: dto.get(key) for key in ('state', 'body_state', 'failure_code', 'issued_count',
+            'revision', 'answer_assessment', 'meaning_updated', 'processing_deadline_at')})
+    try:
+        snapshot = run(service.store.read(owner, input_id=parent))
+        thread = snapshot.get('thread') or {}
+        data = thread.get('data') or {}
+        diagnostic['snapshot_now'] = snapshot.get('now')
+        diagnostic['saved_thread'] = dict(state=thread.get('state'), revision=thread.get('revision'),
+            issued_count=thread.get('issued_count'), processing_deadline_at=thread.get('processing_deadline_at'),
+            active_attempt=bool(thread.get('active_attempt_id')), active_operation=bool(thread.get('active_operation_id')),
+            body_state=data.get('body_state'), failure_code=data.get('failure_code'),
+            response_profile=data.get('response_profile'), response_stage=data.get('natural_response_stage'))
+        diagnostic['event_phases'] = [dict(kind=event.get('kind'), round_index=event.get('round_index'),
+            **{key: event.get('payload', {}).get(key) for key in ('stage', 'status', 'failure_code')
+               if key in event.get('payload', {})}) for event in snapshot.get('events', [])]
+    except Exception as exc:
+        diagnostic['diagnostic_read_error'] = type(exc).__name__
+    return diagnostic
+
+
 def _prepare_natural(db, monkeypatch, *, tier='premium', stopped=False, case_id='natural', with_history=False,
                      with_frame_target=False, rounds=1):
     owner, parent = str(uuid4()), str(uuid4())
@@ -101,8 +126,29 @@ def _prepare_natural(db, monkeypatch, *, tier='premium', stopped=False, case_id=
         _, frame_origin, parent, _, service, calls, _ = _cross_frame((owner,parent,service,calls), db)
         calls.clear()
         service.natural_reply_source = provider
+    phases = []
+    process_natural = service._process_natural
+    async def observed_natural(user_id, snapshot):
+        phases.append(dict(phase='_process_natural', event='ENTER'))
+        try:
+            dto = await process_natural(user_id, snapshot)
+        except asyncio.CancelledError:
+            phases.append(dict(phase='_process_natural', event='CANCELLED', exception_type='CancelledError', code=None))
+            raise
+        except Exception as exc:
+            code = getattr(exc, 'code', None) or str(exc)
+            if not isinstance(code, str) or not re.fullmatch(
+                    r'(?:natural_|thread_|analysis_|emlis_|semantic_|source_|safe_state_|separate_safety_|meaning_)[a-z0-9_]{1,120}', code):
+                code = None
+            phases.append(dict(phase='_process_natural', event='EXCEPTION', exception_type=type(exc).__name__, code=code))
+            raise
+        phases.append(dict(phase='_process_natural', event='RETURN', state=dto.get('state'), failure_code=dto.get('failure_code')))
+        return dto
+    monkeypatch.setattr(service, '_process_natural', observed_natural)
     initial = run(service.start(owner,parent))
-    assert initial['state']=='AWAITING_ANSWER' and initial['issued_count']==1
+    assert initial['state']=='AWAITING_ANSWER' and initial['issued_count']==1, _natural_failure_diagnostics(
+        service, owner, parent, initial, calls, phases, phase='initial_start', case_id=case_id,
+        tier=tier, rounds=rounds, stopped=stopped)
     completed = initial
     texts = (ANSWER, '今は、私は怖い。', '今は、私は寂しい。')
     for index in range(rounds):

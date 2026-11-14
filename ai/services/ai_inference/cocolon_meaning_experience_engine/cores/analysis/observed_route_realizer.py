@@ -1116,6 +1116,8 @@ class AnalysisSemanticMapArtifact:
     def private_evidence(self):
         graph = dict(nodes=json.loads(self.graph.nodes_json),
             edges=json.loads(self.graph.edges_json))
+        if self.graph.map_correction_sources_json:
+            graph['map_correction_sources'] = json.loads(self.graph.map_correction_sources_json)
         review = json.loads(self.graph.meaning_review_json)
         if review:
             # The private report records a bounded body read. It is neither

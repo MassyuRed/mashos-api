@@ -258,7 +258,8 @@ def _authoring_constraints(prepared, source_request, slots, *, include_editorial
     from piece_v2_contract import PieceContractError
     from emlis_ai_grounded_sentence_surface import _body_primary_quote_spans
 
-    if prepare_piece_model_request(source_request) != prepared:
+    profile = prepared.payload()['control'].get('realization_profile')
+    if prepare_piece_model_request(source_request, realization_profile=profile) != prepared:
         raise ValueError('piece_model_authoring_source_mismatch')
     try:
         meaning, plan = piece_model_source_plan(source_request)

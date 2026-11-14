@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 from collections import Counter
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import date
 import inspect
 import json
@@ -935,13 +935,35 @@ def _project_evidence(owner, raw):
     from astor_material_snapshots import _analysis_saved_member
     from cocolon_meaning_experience_engine.cores.analysis.source_adapter import (
         commitment, _time, AnalysisObservedMapRequest, freeze_analysis_sources, source_field_text)
+    correction_evidence = []
+    if raw.get('map_corrections'):
+        from cocolon_meaning_experience_engine.cores.analysis.map_interpretation_correction import qualify_map_correction
+        for pair in raw['map_corrections']:
+            saved = pair['saved']
+            source = qualify_map_correction(owner, saved['source'], allow_stale=True)
+            current = qualify_map_correction(owner, pair['current'], allow_stale=True)
+            if (current != source or saved['source_envelope_id'] != source.envelope.envelope_id
+                    or saved['evidence'] != asdict(source.evidence)
+                    or saved['cohort_refs'] != list(source.cohort_refs)):
+                raise ValueError('analysis_map_correction_evidence_changed')
+            target = source.target_context
+            correction_evidence.append((source.cohort_refs, dict(
+                correction_id=source.correction_id, text=source.explanation,
+                recorded_at=source.recorded_at, target_artifact_ref=target['artifact_ref'],
+                target_kind=target['kind'], target_ref=target['ref'],
+                version_state='CURRENT' if pair['current']['source_state'] == 'ACTIVE'
+                    else 'EDITED_SINCE_ANALYSIS')))
     items = []
     for row in raw['items']:
         original = row['original']
+        corrections = [value for refs, value in correction_evidence if original['id'] in refs]
+        extra = ({'map_corrections': corrections,
+            **({'evidence_scope': 'MAP_CORRECTION_CONTEXT'} if not row['expected_envelopes'] else {})}
+            if corrections else {})
         if commitment(original) != row['analyzed_version']:
             items.append(dict(id=original['id'], created_at=original['created_at'],
                 memo=original['memo'], memo_action=original['memo_action'], answers=[],
-                version_state='EDITED_SINCE_ANALYSIS'))
+                version_state='EDITED_SINCE_ANALYSIS', **extra))
             continue
         member, _ = _analysis_saved_member(dict(row, tier=raw['tier'], now=raw['now']),
             owner=owner, input_id=original['id'], tier=raw['tier'],
@@ -955,7 +977,7 @@ def _project_evidence(owner, raw):
             and s.envelope.envelope_id in row['expected_envelopes']]
         items.append(dict(id=original['id'], created_at=original['created_at'],
             memo=original['memo'], memo_action=original['memo_action'],
-            answers=answers, version_state='CURRENT' if unchanged else 'EDITED_SINCE_ANALYSIS'))
+            answers=answers, version_state='CURRENT' if unchanged else 'EDITED_SINCE_ANALYSIS', **extra))
     return items
 
 

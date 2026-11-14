@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 import json
 import importlib.util
 from unittest.mock import AsyncMock, patch
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import httpx
 import pytest
@@ -77,6 +77,7 @@ class MemoryRpc:
         self.operations = {}
         self.commit_failures = 0
         self.receive_ack_failure = False
+        self.reserve_ack_failure = False
 
     async def __call__(self, name, p):
         self.calls.append((name, copy.deepcopy(p)))
@@ -89,6 +90,10 @@ class MemoryRpc:
             if operation is not None:
                 if operation['request_hash'] != p['p_request_hash']:
                     raise HTTPException(409,'analysis_if_request_conflict')
+                if p.get('p_reclaim') is True and operation['state']=='RESERVED':
+                    operation['token']=str(uuid4())
+                    return dict(state='RESERVED',operation_id=operation['id'],call_token=operation['token'],
+                        material=copy.deepcopy(operation['material']),receipt=None,artifact_id=None)
                 return dict(state=operation['state'],operation_id=operation['id'],call_token=None,
                     material=copy.deepcopy(operation['material']) if operation['state']=='RECEIVED' else None,
                     receipt=copy.deepcopy(operation['receipt']) if operation['state']=='RECEIVED' else None,
@@ -99,17 +104,22 @@ class MemoryRpc:
                 token=str(UUID(int=600+len(self.operations))),request_hash=p['p_request_hash'],
                 material=copy.deepcopy(p['p_material']),receipt=None)
             self.operations[p['p_key_hash']]=operation
+            if self.reserve_ack_failure:
+                self.reserve_ack_failure=False
+                raise HTTPException(503,'synthetic_reserve_ack_lost')
             return dict(state='RESERVED',operation_id=operation['id'],call_token=operation['token'],
                 material=None,receipt=None,artifact_id=None)
         if name in {'analysis_if_operation_start','analysis_if_operation_receive','analysis_if_operation_fail'}:
             operation=self.operations[p['p_key_hash']]
-            assert p['p_token']==operation['token']
+            valid_token=p['p_token']==operation['token']
             if name=='analysis_if_operation_start':
-                started=operation['state']=='RESERVED'
+                started=valid_token and operation['state']=='RESERVED'
                 if started:
                     operation['state']='CALL_STARTED'
                 return dict(started=started)
             if name=='analysis_if_operation_receive':
+                if not valid_token:
+                    return dict(received=False)
                 if operation['state']=='CALL_STARTED':
                     operation['state']='RECEIVED'
                     operation['receipt']=copy.deepcopy(p['p_receipt'])
@@ -117,7 +127,7 @@ class MemoryRpc:
                     self.receive_ack_failure=False
                     raise HTTPException(503,'synthetic_ack_lost')
                 return dict(received=operation['state']=='RECEIVED')
-            failed=operation['state'] in {'RESERVED','CALL_STARTED'}
+            failed=valid_token and operation['state'] in {'RESERVED','CALL_STARTED'}
             if failed:
                 operation['state']='FAILED'
             return dict(failed=failed)
@@ -278,6 +288,60 @@ async def test_actual_if_transport_is_one_bounded_request_with_bound_receipt(set
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize('selector,budget', [('self_hosted.v1', 2048),
+    ('self_hosted.semantic.v1', 4096)])
+async def test_configured_if_transport_matches_existing_analysis_server_budget(setup, monkeypatch,
+        selector, budget):
+    """Use the real request handler in memory: no socket, GPU or model call."""
+    from io import BytesIO
+    from types import SimpleNamespace
+    import time
+    import analysis_if_model_source as source
+    from ai.tools.serve_emlis_natural_reply import make_handler
+
+    base, rpc = setup
+    frozen_settings = (selector, 'https://synthetic.invalid/v1/chat/completions',
+        'existing-analysis-4b', 'fictional-key-only')
+    monkeypatch.setattr(source, '_settings', lambda: frozen_settings)
+    model = source.application_analysis_if_model_source()
+    seen = []
+    key, _ = service._identity(OWNER, request_body(base))
+    prepared = service._pure().prepare_if_model_request(service._request(OWNER,
+        request_body(base), base_context(base), key))
+
+    def generate(messages, deadline):
+        seen.append(messages)
+        return json.dumps(packet(prepared), ensure_ascii=False), 'stop'
+
+    handler_type = make_handler(generate, api_key=frozen_settings[3],
+        model_name=frozen_settings[2], deadline=time.monotonic() + 20,
+        max_requests=1, max_new_tokens=budget)
+
+    def handle(request):
+        body = json.loads(request.content)
+        assert body['max_tokens'] == budget
+        assert body['model'] == frozen_settings[2]
+        assert body['messages'] == prepared.messages()
+        handler = handler_type.__new__(handler_type)
+        handler.path = '/v1/chat/completions'
+        handler.headers = dict(request.headers)
+        handler.headers['Content-Length'] = str(len(request.content))
+        handler.headers['Authorization'] = request.headers['authorization']
+        handler.rfile = BytesIO(request.content)
+        handler.connection = SimpleNamespace(settimeout=lambda seconds: None)
+        captured = []
+        handler.reply = lambda status, value: captured.append((status, value))
+        handler.do_POST()
+        status, value = captured[0]
+        return httpx.Response(status, json=value)
+
+    model._transport = httpx.MockTransport(handle)
+    result = await service.create_scenario_set(OWNER, request_body(base), model_source=model)
+    assert result['status'] == 'GENERATED' and len(seen) == 1
+    assert len(rpc.rows['scenario_set']) == 1
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize('failure',['status','truncated','wrong_model','tool'])
 async def test_transport_failure_never_retries_or_saves(setup,failure):
     base,rpc=setup
@@ -396,3 +460,70 @@ async def test_read_only_during_start_claim_does_not_call_provider(setup,monkeyp
     key,_=service._identity(OWNER,request_body(base))
     assert rpc.operations[key]['state']=='FAILED'
     no_provider.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_lost_reservation_ack_reclaims_frozen_material_without_refresh(setup,monkeypatch):
+    base,rpc=setup
+    rpc.reserve_ack_failure=True
+    model=AsyncMock(side_effect=lambda p:response(p))
+    with pytest.raises(HTTPException) as caught:
+        await service.create_scenario_set(OWNER,request_body(base),model_source=model)
+    assert caught.value.status_code==503
+    key,_=service._identity(OWNER,request_body(base))
+    old_token=rpc.operations[key]['token']
+    original_material=copy.deepcopy(rpc.operations[key]['material'])
+    monkeypatch.setattr(store,'base_context',AsyncMock(side_effect=AssertionError('reclaim refreshed base')))
+    result=await service.create_scenario_set(OWNER,request_body(base),model_source=model)
+    assert result['status']=='GENERATED' and model.await_count==1
+    assert model.await_args.args[0]==service._restore_prepared(original_material)
+    assert rpc.operations[key]['token']!=old_token
+    assert await store.start(OWNER,key,old_token)=={'started':False}
+
+
+@pytest.mark.asyncio
+async def test_read_only_reserved_lookup_does_not_replace_token_or_material(setup,monkeypatch):
+    base,rpc=setup
+    body=request_body(base)
+    key,request_hash=service._identity(OWNER,body)
+    prepared=service._pure().prepare_if_model_request(service._request(OWNER,body,base_context(base),key))
+    await store.reserve(OWNER,key,request_hash,base_ref=body['base_observed_map_ref'],
+        guard=base_context(base)['base_source_guard'],material=service._freeze_prepared(prepared))
+    before=copy.deepcopy(rpc.operations[key])
+    monkeypatch.setenv('COCOLON_ANALYSIS_OBSERVED_MODE','read_only')
+    model=AsyncMock(side_effect=AssertionError('read-only lookup called provider'))
+    result=await service.create_scenario_set(OWNER,body,model_source=model)
+    assert result['status']=='PENDING' and result['state']=='RESERVED'
+    assert rpc.operations[key]==before
+    assert all(not p.get('p_reclaim') for name,p in rpc.calls if name=='analysis_if_operation_reserve')
+    model.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_reclaim_fences_original_service_before_its_start_claim(setup,monkeypatch):
+    base,rpc=setup
+    spec=importlib.util.spec_from_file_location('analysis_if_reclaim_service',service.__file__)
+    other=importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(other)
+    original_start=store.start
+    paused,release=asyncio.Event(),asyncio.Event()
+    old_tokens=[]
+    async def delayed_start(*args):
+        if not old_tokens:
+            old_tokens.append(args[2])
+            paused.set()
+            await release.wait()
+        return await original_start(*args)
+    monkeypatch.setattr(store,'start',delayed_start)
+    old_model=AsyncMock(side_effect=AssertionError('fenced original token called provider'))
+    original=asyncio.create_task(service.create_scenario_set(OWNER,request_body(base),model_source=old_model))
+    await paused.wait()
+    new_model=AsyncMock(side_effect=lambda p:response(p))
+    completed=await other.create_scenario_set(OWNER,request_body(base),model_source=new_model)
+    release.set()
+    pending=await original
+    assert pending['status']=='PENDING' and completed['status']=='GENERATED'
+    old_model.assert_not_awaited()
+    assert new_model.await_count==1 and len(rpc.rows['scenario_set'])==1
+    again=await service.create_scenario_set(OWNER,request_body(base),model_source=old_model)
+    assert again['id']==completed['id'] and again['idempotency_replayed']

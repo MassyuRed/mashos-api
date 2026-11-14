@@ -146,7 +146,7 @@ $$;
 -- A lost reserve/start ACK never issues a second token; RECEIVED replays the
 -- exact prepared material and receipt, so admission/commit can resume offline.
 create function public.analysis_if_operation_reserve(p_user_id uuid,p_key_hash text,p_request_hash text,
-  p_base_ref text default null,p_guard text default null,p_material jsonb default null)
+  p_base_ref text default null,p_guard text default null,p_material jsonb default null,p_reclaim boolean default false)
 returns jsonb language plpgsql volatile security definer set search_path='' as $$
 declare old public.analysis_if_scenario_sets; base jsonb; operation_id uuid; token uuid;
 begin
@@ -163,6 +163,16 @@ begin
     if old.deleted_at is not null then raise sqlstate 'P0002' using message='analysis_if_request_deleted'; end if;
     if not public.analysis_if_sources_current(p_user_id,old.base_source_guard,old.source_record_refs) then
       raise sqlstate '40001' using message='analysis_if_source_changed'; end if;
+    -- Only an explicit, write-enabled application retry may reclaim work
+    -- that has NOT started a provider call. Ordinary lookup changes no row.
+    -- The same owner lock serializes this handoff against operation_start:
+    -- either the old token starts first, or only the replacement can start.
+    if p_reclaim is true and old.operation_state='RESERVED' then
+      token:=gen_random_uuid();
+      update public.analysis_if_scenario_sets set call_token=token where id=old.id;
+      return jsonb_build_object('state','RESERVED','operation_id',old.id,'call_token',token,
+        'material',old.operation_material,'receipt',null,'artifact_id',null);
+    end if;
     return jsonb_build_object('state',old.operation_state,'operation_id',old.id,'call_token',null,
       'material',case when old.operation_state='RECEIVED' then old.operation_material else null end,
       'receipt',case when old.operation_state='RECEIVED' then old.provider_receipt else null end,
@@ -432,13 +442,13 @@ revoke all on function public.analysis_if_source_deleted() from public,anon,auth
 
 revoke all on function public.analysis_if_require_premium(uuid), public.analysis_if_sources_current(uuid,text,jsonb),
   public.analysis_if_base_context(uuid,text),public.analysis_if_artifacts_read(uuid,text,uuid,integer,integer,text,text,text),
-  public.analysis_if_operation_reserve(uuid,text,text,text,text,jsonb),public.analysis_if_operation_start(uuid,text,uuid),
+  public.analysis_if_operation_reserve(uuid,text,text,text,text,jsonb,boolean),public.analysis_if_operation_start(uuid,text,uuid),
   public.analysis_if_operation_receive(uuid,text,uuid,jsonb),public.analysis_if_operation_fail(uuid,text,uuid),
   public.analysis_if_set_commit(uuid,text,text,text,text,jsonb),public.analysis_if_intent_commit(uuid,text,text,text,jsonb),
   public.analysis_if_artifact_delete(uuid,text,uuid) from public,anon,authenticated;
 grant execute on function public.analysis_if_require_premium(uuid), public.analysis_if_sources_current(uuid,text,jsonb),
   public.analysis_if_base_context(uuid,text),public.analysis_if_artifacts_read(uuid,text,uuid,integer,integer,text,text,text),
-  public.analysis_if_operation_reserve(uuid,text,text,text,text,jsonb),public.analysis_if_operation_start(uuid,text,uuid),
+  public.analysis_if_operation_reserve(uuid,text,text,text,text,jsonb,boolean),public.analysis_if_operation_start(uuid,text,uuid),
   public.analysis_if_operation_receive(uuid,text,uuid,jsonb),public.analysis_if_operation_fail(uuid,text,uuid),
   public.analysis_if_set_commit(uuid,text,text,text,text,jsonb),public.analysis_if_intent_commit(uuid,text,text,text,jsonb),
   public.analysis_if_artifact_delete(uuid,text,uuid) to service_role;

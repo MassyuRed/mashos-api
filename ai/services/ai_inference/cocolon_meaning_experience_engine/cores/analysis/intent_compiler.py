@@ -3643,6 +3643,7 @@ class AnalysisSemanticMapGraph:
     source_members_json: str
     coverage_json: str
     meaning_review_json: str = '{}'
+    map_correction_sources_json: str = ''
 
 
 def analysis_semantic_source_duties(frozen, fields):
@@ -3945,9 +3946,22 @@ def compile_analysis_semantic_map(prepared, packet, *, response_sha256):
         and _semantic_map_text(overview['summary'], 2000))
     _semantic_map_require(type(packet['nodes']) is list and 1 <= len(packet['nodes']) <= 24
         and type(packet['edges']) is list and len(packet['edges']) <= 48)
+    correction_sources = json.loads(prepared.map_correction_sources_json or '[]')
+    def correction_field_scope(kind, row, refs, original_quotes):
+        for correction in correction_sources:
+            target = correction['source']['target_context']
+            field = target['field']
+            # An unrelated source or a verbatim original premise is not the
+            # rejected AI inference. Structured source context is preserved.
+            if (target['kind'] != kind or '.' in field
+                    or not set(correction['cohort_refs']) & set(refs)
+                    or target['field_text'] in original_quotes):
+                continue
+            _semantic_map_require(row.get(field) != target['field_text'],
+                'analysis_map_correction_target_reused')
     public_nodes, private_nodes, referenced = [], [], set()
     source_conditions = {}
-    source_roots, node_reviews, edge_reviews = {}, [], []
+    source_roots, node_reviews, edge_reviews, original_quotes_by_node = {}, [], [], {}
     for index, node in enumerate(packet['nodes'], 1):
         _semantic_map_require(_semantic_map_keys(node, {'node_id', 'node_kind', 'title', 'summary', 'explanation', 'perspective', 'unknowns', 'evidence'})
             and node['node_id'] == 'n' + str(index)
@@ -3959,12 +3973,21 @@ def compile_analysis_semantic_map(prepared, packet, *, response_sha256):
         roots = [_semantic_map_evidence(prepared, value) for value in node['evidence']]
         ids = [root['evidence_id'] for _, root in roots]
         _semantic_map_require(len(ids) == len(set(ids)))
-        refs = list(dict.fromkeys(ref for ref, _ in roots))
+        # A map correction is an independent source whose target may depend
+        # on several original records. It never becomes a fabricated input.
+        refs = list(dict.fromkeys(ref for dependency, _ in roots
+            for ref in (dependency if type(dependency) is tuple else (dependency,))))
+        original_quotes = [value['quote'] for value, (dependency, _) in zip(node['evidence'], roots)
+                           if type(dependency) is str]
+        original_quotes_by_node[node['node_id']] = original_quotes
+        correction_field_scope('node', node, refs, original_quotes)
         referenced.update(refs)
         source_notes, conditions, support = _semantic_map_source_context(prepared,
             refs, [root for _, root in roots])
         source_conditions['n' + str(index)] = (conditions, frozenset(refs))
         context = list(dict.fromkeys([*_semantic_map_context(prepared, refs), *source_notes]))
+        if any(type(dependency) is tuple for dependency, _ in roots):
+            context.append('本人のマップ訂正で述べた説明を参照しています。')
         source_roots['n' + str(index)] = [root for _, root in roots]
         node_reviews.append(_semantic_map_visible_review(prepared,
             source_roots['n' + str(index)],
@@ -3972,11 +3995,19 @@ def compile_analysis_semantic_map(prepared, packet, *, response_sha256):
         public_nodes.append(dict(node_ref='n' + str(index), node_kind=node['node_kind'],
             title=node['title'], summary=node['summary'], explanation=node['explanation'],
             perspective=node['perspective'], context=context, unknowns=node['unknowns'],
-            evidence_badge_count=len(refs)))
+            evidence_badge_count=(len({ref for dependency, _ in roots
+                if type(dependency) is str for ref in (dependency,)})
+                + len({root['source_envelope_id'] for dependency, root in roots
+                       if type(dependency) is tuple}))))
         all_roots = {root['evidence_id']: root for root in [*(root for _, root in roots), *support]}
         private_nodes.append(dict(public_nodes[-1],
             record_refs=refs, evidence_refs=list(all_roots.values())))
     # Separate roots do not turn one repeated generic description into a map.
+    used_envelopes = {root['source_envelope_id'] for roots in source_roots.values() for root in roots}
+    _semantic_map_require(all(c['source_envelope_id'] in used_envelopes for c in correction_sources),
+        'analysis_map_correction_not_applied')
+    correction_field_scope('overview', overview, referenced,
+        [quote for quotes in original_quotes_by_node.values() for quote in quotes])
     _semantic_map_require(len({(node['title'], node['summary'], node['explanation'])
                   for node in public_nodes}) == len(public_nodes))
     public_edges, seen = [], set()
@@ -3994,6 +4025,8 @@ def compile_analysis_semantic_map(prepared, packet, *, response_sha256):
         explanation = edge['explanation']
         left, left_records = source_conditions[edge['from']]
         right, right_records = source_conditions[edge['to']]
+        correction_field_scope('edge', edge, left_records | right_records,
+            original_quotes_by_node[edge['from']] + original_quotes_by_node[edge['to']])
         if (edge['relation_kind'] in {'CONTEXT_CONTRAST', 'SHARED_MEANING'}
                 and left and right and left != right and left_records.isdisjoint(right_records)):
             # These are independent source premises, not a claim that the
@@ -4028,5 +4061,6 @@ def compile_analysis_semantic_map(prepared, packet, *, response_sha256):
         semantic_map_canonical(overview), semantic_map_canonical(private_nodes),
         semantic_map_canonical(public_edges),
         semantic_map_canonical([asdict(m) for m in prepared.frozen.members]),
-        semantic_map_canonical(coverage), semantic_map_canonical(review))
+        semantic_map_canonical(coverage), semantic_map_canonical(review),
+        prepared.map_correction_sources_json)
 

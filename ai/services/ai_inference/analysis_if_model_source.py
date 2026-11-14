@@ -15,8 +15,12 @@ from analysis_model_source import (SelfHostedAnalysisModelSource, _settings,
 
 
 class SelfHostedAnalysisIfModelSource(SelfHostedAnalysisModelSource):
-    def __init__(self, *, endpoint, model, api_key, transport=None, settings_snapshot=None):
+    def __init__(self, *, endpoint, model, api_key, transport=None, settings_snapshot=None,
+                 max_tokens=2048):
         super().__init__(endpoint=endpoint, model=model, api_key=api_key, transport=transport)
+        if type(max_tokens) is not int or max_tokens not in {2048, 4096}:
+            raise ValueError('analysis_if_model_configuration_invalid')
+        self._max_tokens = max_tokens
         self._settings_snapshot = settings_snapshot
 
     def _current(self):
@@ -37,7 +41,7 @@ class SelfHostedAnalysisIfModelSource(SelfHostedAnalysisModelSource):
                 async with client.stream('POST', self.endpoint,
                         headers={'Authorization': 'Bearer ' + self._api_key},
                         json=dict(model=self.model, messages=messages, temperature=0,
-                            max_tokens=2048, stream=False,
+                            max_tokens=self._max_tokens, stream=False,
                             chat_template_kwargs={'enable_thinking': False})) as response:
                     if response.status_code != 200:
                         raise RuntimeError('analysis_if_model_source_unavailable')
@@ -77,4 +81,4 @@ def application_analysis_if_model_source():
     if selector not in {SELECTOR, SEMANTIC_SELECTOR}:
         raise RuntimeError('analysis_if_model_configuration_invalid')
     return SelfHostedAnalysisIfModelSource(endpoint=endpoint, model=model, api_key=api_key,
-        settings_snapshot=settings)
+        settings_snapshot=settings, max_tokens=4096 if selector == SEMANTIC_SELECTOR else 2048)

@@ -77,7 +77,7 @@ def register_analysis_if_routes(app: FastAPI, *, service=None) -> None:
         body: IfScenarioSetBody,
         response: Response,
         authorization: str | None = Header(default=None, alias="Authorization"),
-    ):
+    ) -> dict:
         return await call(response, authorization, service.create_scenario_set,
                           body.model_dump())
 
@@ -87,7 +87,7 @@ def register_analysis_if_routes(app: FastAPI, *, service=None) -> None:
         limit: int = Query(default=60, ge=1, le=100),
         offset: int = Query(default=0, ge=0, le=10000),
         authorization: str | None = Header(default=None, alias="Authorization"),
-    ):
+    ) -> dict:
         return await call(response, authorization, service.list_artifacts,
                           kind="scenario_set", limit=limit, offset=offset)
 
@@ -96,7 +96,7 @@ def register_analysis_if_routes(app: FastAPI, *, service=None) -> None:
         artifact_id: UUID,
         response: Response,
         authorization: str | None = Header(default=None, alias="Authorization"),
-    ):
+    ) -> dict:
         return await call(response, authorization, service.get_artifact,
                           "scenario_set", str(artifact_id))
 
@@ -105,7 +105,7 @@ def register_analysis_if_routes(app: FastAPI, *, service=None) -> None:
         artifact_id: UUID,
         response: Response,
         authorization: str | None = Header(default=None, alias="Authorization"),
-    ):
+    ) -> dict:
         return await call(response, authorization, service.delete_artifact,
                           "scenario_set", str(artifact_id))
 
@@ -114,7 +114,7 @@ def register_analysis_if_routes(app: FastAPI, *, service=None) -> None:
         body: SavedRouteIntentBody,
         response: Response,
         authorization: str | None = Header(default=None, alias="Authorization"),
-    ):
+    ) -> dict:
         return await call(response, authorization, service.save_intent,
                           body.model_dump())
 
@@ -124,7 +124,7 @@ def register_analysis_if_routes(app: FastAPI, *, service=None) -> None:
         limit: int = Query(default=60, ge=1, le=100),
         offset: int = Query(default=0, ge=0, le=10000),
         authorization: str | None = Header(default=None, alias="Authorization"),
-    ):
+    ) -> dict:
         return await call(response, authorization, service.list_artifacts,
                           kind="saved_intent", limit=limit, offset=offset)
 
@@ -133,7 +133,7 @@ def register_analysis_if_routes(app: FastAPI, *, service=None) -> None:
         artifact_id: UUID,
         response: Response,
         authorization: str | None = Header(default=None, alias="Authorization"),
-    ):
+    ) -> dict:
         return await call(response, authorization, service.get_artifact,
                           "saved_intent", str(artifact_id))
 
@@ -142,6 +142,6 @@ def register_analysis_if_routes(app: FastAPI, *, service=None) -> None:
         artifact_id: UUID,
         response: Response,
         authorization: str | None = Header(default=None, alias="Authorization"),
-    ):
+    ) -> dict:
         return await call(response, authorization, service.delete_artifact,
                           "saved_intent", str(artifact_id))

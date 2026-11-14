@@ -37,9 +37,9 @@ async def commit_set(owner, base_ref, guard, key_hash, request_hash, storage):
         p_guard=guard,p_key_hash=key_hash,p_request_hash=request_hash,p_storage=storage))
 
 
-async def reserve(owner,key_hash,request_hash,*,base_ref=None,guard=None,material=None):
+async def reserve(owner,key_hash,request_hash,*,base_ref=None,guard=None,material=None,reclaim=False):
     result = await _rpc('analysis_if_operation_reserve',dict(p_user_id=owner_id(owner),p_key_hash=key_hash,
-        p_request_hash=request_hash,p_base_ref=base_ref,p_guard=guard,p_material=material))
+        p_request_hash=request_hash,p_base_ref=base_ref,p_guard=guard,p_material=material,p_reclaim=reclaim))
     if result is None:
         return None
     try:
@@ -55,6 +55,9 @@ async def reserve(owner,key_hash,request_hash,*,base_ref=None,guard=None,materia
                 raise ValueError
         if state=='RECEIVED':
             if type(result['material']) is not dict or type(result['receipt']) is not dict:
+                raise ValueError
+        elif state=='RESERVED' and result['call_token'] is not None:
+            if (result['material'] is not None and type(result['material']) is not dict) or result['receipt'] is not None:
                 raise ValueError
         elif result['material'] is not None or result['receipt'] is not None:
             raise ValueError

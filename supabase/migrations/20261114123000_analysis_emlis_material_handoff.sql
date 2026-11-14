@@ -61,7 +61,7 @@ begin
       from public.emlis_thread_events v where v.thread_id=t.id and v.kind='OBSERVATION'
       order by v.seq desc limit 1) b on true
     where e.user_id=p_user_id and e.created_at < instant at time zone 'UTC';
-  select coalesce(jsonb_agg(m #- '{thread,revision}' order by ord),'[]'::jsonb) into identity_members
+  select coalesce(jsonb_agg(m #- '{thread,revision}' #- '{context,now}' order by ord),'[]'::jsonb) into identity_members
     from jsonb_array_elements(members) with ordinality as x(m,ord);
   return jsonb_build_object('tier',tier,'now',instant,'members',members,
     'period_start',coalesce(first_at,instant-interval '1 second'),'period_end',instant,

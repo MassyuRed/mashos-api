@@ -12,8 +12,17 @@ name: Analysis observed content
       - ai/services/ai_inference/analysis_observed_service.py
       - ai/services/ai_inference/analysis_cumulative_service.py
       - ai/services/ai_inference/analysis_model_source.py
+      - ai/services/ai_inference/analysis_if_model_source.py
+      - ai/services/ai_inference/analysis_map_correction_service.py
+      - ai/services/ai_inference/analysis_if_route_service.py
+      - ai/services/ai_inference/analysis_if_route_store.py
+      - ai/services/ai_inference/api_analysis_if_routes.py
+      - ai/services/ai_inference/app.py
+      - ai/services/ai_inference/emlis_thread_service.py
       - ai/services/ai_inference/analysis_semantic_map.py
       - ai/tools/serve_emlis_natural_reply.py
+      - ai/tools/cmee_current_4b_packet.py
+      - ai/tools/analysis_semantic_generation_requirements.txt
       - ai/tools/analysis_jupyter_bridge.py
       - ai/services/ai_inference/supabase_client.py
       - ai/services/ai_inference/today_question_store.py
@@ -51,6 +60,24 @@ name: Analysis observed content
       - ai/tests/test_analysis_parallel_emotion_chronology.py
       - ai/tests/test_analysis_legacy_report_source_integrity.py
       - ai/tests/test_analysis_cumulative*.py
+      - ai/tests/test_emlis_active_meaning_application.py
+      - ai/tests/test_emlis_analysis_material.py
+      - ai/tests/test_analysis_emlis_material_handoff.py
+      - ai/tests/test_analysis_if_routes.py
+      - ai/tests/test_analysis_if_api.py
+      - ai/tests/test_analysis_map_correction_application.py
+      - ai/tests/test_analysis_map_correction_sql.py
+      - ai/tests/test_analysis_map_correction_handoff.py
+      - ai/tests/analysis_map_correction_sql.cjs
+      - supabase/migrations/*_analysis_map_interpretation_corrections.sql
+      - supabase/migrations/*_analysis_map_correction_handoff.sql
+      - ai/tests/test_analysis_if_service.py
+      - ai/tests/test_cmee_current_4b_packet.py
+      - ai/tests/fixtures/cmee_current_4b_packet_20261114.json
+      - ai/tests/test_piece_model_server_constraints.py
+      - ai/tests/analysis_if_route_sql.cjs
+      - supabase/migrations/*_analysis_if_route_artifacts.sql
+      - supabase/migrations/*_analysis_emlis_material_handoff.sql
       - ai/tests/test_analysis_interpretation_correction_sources.py
       - ai/tests/test_analysis_active_update_material.py
       - supabase/migrations/*_analysis_interpretation_correction_sources.sql
@@ -131,6 +158,7 @@ jobs:
           python -m pip install --quiet --disable-pip-version-check
           pytest==8.4.1 pytest-subtests==0.14.2 pytest-asyncio==1.2.0
           fastapi==0.142.2 pydantic==2.13.5 httpx==0.28.1 PyJWT==2.13.0 tornado==6.5.2
+          -r ai/tools/analysis_semantic_generation_requirements.txt
       - name: Record tested source and runtime
         run: |
           git rev-parse HEAD
@@ -240,6 +268,16 @@ jobs:
           ai/tests/piece_v2/test_b05_piece_answer_update_saved_pipeline.py
           ai/tests/piece_v2/test_b05_refined_source_fence_sql.py
           ai/tests/test_emlis_natural_reply_application.py
+          ai/tests/test_emlis_active_meaning_application.py
+          ai/tests/test_emlis_analysis_material.py
+          ai/tests/test_analysis_emlis_material_handoff.py
+          ai/tests/test_analysis_if_routes.py
+          ai/tests/test_analysis_if_api.py
+          ai/tests/test_analysis_map_correction_application.py
+          ai/tests/test_analysis_map_correction_sql.py
+          ai/tests/test_analysis_map_correction_handoff.py
+          ai/tests/test_analysis_if_service.py
+          ai/tests/test_cmee_current_4b_packet.py
           ai/tests/test_emlis_natural_frames_application.py
           ai/tests/test_emlis_frame_feedback_context.py
           ai/tests/test_emlis_interpretation_correction.py
@@ -261,6 +299,7 @@ jobs:
       - name: Verify monthly rank, immutable re-read and source deletion SQL
         env:
           NODE_PATH: ${{ runner.temp }}/analysis-postgres/node_modules
+          Q2_PGLITE_MODULE: ${{ runner.temp }}/analysis-postgres/node_modules/@electric-sql/pglite
         run: |
           python - <<'PY'
           import json, os
@@ -269,6 +308,14 @@ jobs:
               json.dump(sql_fixture(), out, ensure_ascii=False)
           PY
           node ai/tests/analysis_cumulative_sql.cjs "$RUNNER_TEMP/analysis-cumulative.json"
+          python - <<'PY'
+          import json, os, subprocess, sys
+          from test_analysis_if_service import sql_fixture
+          path = os.path.join(os.environ['RUNNER_TEMP'], 'analysis-if-route.json')
+          with open(path, 'w') as out:
+              json.dump(sql_fixture(), out, ensure_ascii=False)
+          subprocess.run(['node', 'ai/tests/analysis_if_route_sql.cjs', path, sys.executable], check=True)
+          PY
       - name: Verify report facts, complete input sources and safe legacy recovery
         env:
           Q2_PGLITE_MODULE: ${{ runner.temp }}/analysis-postgres/node_modules/@electric-sql/pglite

@@ -40,9 +40,9 @@ async function read(kind, id = null, { limit = 60, offset = 0, key = null, reque
 async function context(baseRef, user = owner) {
   return value('select public.analysis_if_base_context($1,$2) as v', [user, baseRef]);
 }
-async function reserve({ key = setKey, request = setRequest, user = owner, baseRef = null, guard = null, material = null } = {}) {
-  return value('select public.analysis_if_operation_reserve($1,$2,$3,$4,$5,$6) as v',
-    [user, key, request, baseRef, guard, material]);
+async function reserve({ key = setKey, request = setRequest, user = owner, baseRef = null, guard = null, material = null, reclaim = false } = {}) {
+  return value('select public.analysis_if_operation_reserve($1,$2,$3,$4,$5,$6,$7) as v',
+    [user, key, request, baseRef, guard, material, reclaim]);
 }
 async function start(token, key = setKey, user = owner) {
   return value('select public.analysis_if_operation_start($1,$2,$3) as v', [user, key, token]);
@@ -152,24 +152,37 @@ async function run() {
   assert.equal(operation.state, 'RESERVED');
   assert.match(operation.call_token, /^[0-9a-f-]{36}$/);
   assert.equal(operation.material, null);
+  const beforeLookup = await value('select to_jsonb(s) as v from public.analysis_if_scenario_sets s where id=$1', [operation.operation_id]);
   const sameReservation = await reserve({ baseRef, guard: snap.guard, material: fx.operation_material });
   assert.equal(sameReservation.operation_id, operation.operation_id);
   assert.equal(sameReservation.call_token, null);
   assert.equal(sameReservation.material, null);
+  assert.deepEqual(await value('select to_jsonb(s) as v from public.analysis_if_scenario_sets s where id=$1', [operation.operation_id]), beforeLookup);
   assert.equal((await read('scenario_set')).items.length, 0);
   await conflict(() => reserve({ request: differentRequest }));
   assert.deepEqual(await start(other), { started: false });
   assert.deepEqual(await receive(operation.call_token, fx.provider_receipt), { received: false });
   await changed(() => setCommit(fx.set_storage, baseRef, snap.guard));
-  assert.deepEqual(await start(operation.call_token), { started: true });
+  // A lost pre-call reservation ACK is recoverable. Atomic token handoff
+  // fences both the original holder and a competing reclaim; only the final
+  // token can start. Once started, no later reclaim receives a call token.
+  const reclaimed = await reserve({ reclaim: true });
+  assert.notEqual(reclaimed.call_token, operation.call_token);
+  assert.deepEqual(reclaimed.material, fx.operation_material);
   assert.deepEqual(await start(operation.call_token), { started: false });
-  const inFlight = await reserve();
+  const reclaimedAgain = await reserve({ reclaim: true });
+  assert.notEqual(reclaimedAgain.call_token, reclaimed.call_token);
+  assert.deepEqual(await start(reclaimed.call_token), { started: false });
+  const activeToken = reclaimedAgain.call_token;
+  assert.deepEqual(await start(activeToken), { started: true });
+  assert.deepEqual(await start(activeToken), { started: false });
+  const inFlight = await reserve({ reclaim: true });
   assert.equal(inFlight.state, 'CALL_STARTED');
   assert.equal(inFlight.call_token, null);
   assert.equal(inFlight.material, null);
-  assert.deepEqual(await receive(operation.call_token, fx.provider_receipt), { received: true });
-  assert.deepEqual(await receive(operation.call_token, fx.provider_receipt), { received: true });
-  await conflict(() => receive(operation.call_token, {
+  assert.deepEqual(await receive(activeToken, fx.provider_receipt), { received: true });
+  assert.deepEqual(await receive(activeToken, fx.provider_receipt), { received: true });
+  await conflict(() => receive(activeToken, {
     ...fx.provider_receipt, raw: fx.provider_receipt.raw + '\n',
   }));
   const received = await reserve();
@@ -178,7 +191,7 @@ async function run() {
   assert.equal(received.call_token, null);
   assert.deepEqual(received.material, fx.operation_material);
   assert.deepEqual(received.receipt, fx.provider_receipt);
-  assert.deepEqual(await fail(operation.call_token), { failed: false });
+  assert.deepEqual(await fail(activeToken), { failed: false });
   const otherReceipt = structuredClone(fx.set_storage);
   otherReceipt.model_receipt = { ...fx.provider_receipt, raw: fx.provider_receipt.raw + '\n' };
   await assert.rejects(() => setCommit(otherReceipt, baseRef, snap.guard), error => error.code === '22023');
