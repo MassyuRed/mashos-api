@@ -192,7 +192,7 @@ async def test_batch_deadline_stops_new_posts_and_health(packet, monkeypatch, tm
 
 def test_unchanged_raw_returns_to_existing_cpu_owners(packet):
     from analysis_if_route_service import _restore_prepared
-    from test_analysis_if_routes import packet as if_packet
+    if_packet = _if_slot_packet
     from analysis_semantic_map import MODEL_SCHEMA
     recorded = json.loads((Path(__file__).parent / 'fixtures/piece_cmee_realization_recorded.json').read_text())
     piece_raw = {'PIECE-' + row['case_id']: row['raw_output'] for row in recorded['rows']}
@@ -235,6 +235,28 @@ def test_unchanged_raw_returns_to_existing_cpu_owners(packet):
         tool.admit_results(packet, results)
 
 
+def _if_slot_packet(prepared, count=None, material=None):
+    """Fictional proposal with the current serving slots, admitted independently."""
+    from test_analysis_if_routes import packet as original_packet
+    value = original_packet(prepared, count=count)
+    material = material or json.loads(prepared.messages()[1]['content'])
+    for scenario in value['scenarios']:
+        choice, unknown = scenario['nodes'][1:]
+        choice.update(node_id='choice', step_kind='POSSIBLE_CHOICE')
+        unknown.update(node_id='unknown', step_kind='UNKNOWN_AFTERMATH')
+        anchors = [dict(node_id='anchor_' + str(i), step_kind='BASE_MAP_ANCHOR', origin='OBSERVED_ANCHOR',
+            text=anchor['visible_label'], anchor_ref=anchor['node_ref'], source_refs=[], unknown_reasons=[])
+            for i, anchor in enumerate(material['anchors'], 1)]
+        scenario['nodes'] = anchors + [choice, unknown]
+        scenario['required_conditions'] = [dict(condition_id='constraint_' + str(i), text=f['text'],
+            source_refs=[f['field']]) for i, f in enumerate(
+                [f for f in material['fields'] if f['purpose'] == 'CONSTRAINT'], 1)]
+        scenario['edges'] = [dict(edge_id='anchor_' + str(i) + '_to_choice', **{'from': a['node_id'],
+            'to': 'choice'}, condition_refs=[]) for i, a in enumerate(anchors, 1)] + [
+                dict(edge_id='choice_to_unknown', **{'from':'choice','to':'unknown'}, condition_refs=[])]
+    return value
+
+
 def _if_parser_accepts(messages, raw):
     from ai.tools.serve_emlis_natural_reply import semantic_json_parser
     # Use the same pinned parser and initial Unicode alphabet as serving.
@@ -255,7 +277,7 @@ def test_if_dispatcher_real_grammar_raw_and_existing_meaning_owner(packet):
     from cocolon_meaning_experience_engine.engine import MeaningExperienceEngine
     from cocolon_meaning_experience_engine.cores.analysis.semantic_admission import (
         AnalysisModelQuotedParentUnitsResponse, digest)
-    from test_analysis_if_routes import packet as if_packet
+    if_packet = _if_slot_packet
     case = packet['cases'][-1]
     prepared = _restore_prepared(case['prepared'])
     messages = prepared.messages()
@@ -295,7 +317,7 @@ def test_if_dispatcher_real_grammar_raw_and_existing_meaning_owner(packet):
 
 def test_if_generation_binds_origins_without_dropping_escaped_source_text(packet):
     from analysis_if_route_service import _restore_prepared
-    from test_analysis_if_routes import packet as if_packet
+    if_packet = _if_slot_packet
     prepared = _restore_prepared(packet['cases'][-1]['prepared'])
     messages = prepared.messages()
     material = json.loads(messages[1]['content'])
@@ -342,7 +364,7 @@ def test_if_generation_binds_origins_without_dropping_escaped_source_text(packet
 @pytest.mark.parametrize('anchor_count', [1, 2])
 def test_person_authored_if_labels_and_choices_remain_exact_without_duplicate_steps(packet, anchor_count):
     from analysis_if_route_service import _restore_prepared
-    from test_analysis_if_routes import packet as if_packet
+    if_packet = _if_slot_packet
     prepared = _restore_prepared(packet['cases'][-1]['prepared'])
     messages = prepared.messages()
     material = json.loads(messages[1]['content'])
@@ -402,7 +424,7 @@ def test_person_authored_if_labels_and_choices_remain_exact_without_duplicate_st
         fields = [f for f in material['fields'] if f['purpose'] != 'PERSON_ALTERNATIVE']
         fields += [dict(f, field=len(fields) + i + 1) for i, f in enumerate(remaining)]
         partial[1]['content'] = json.dumps(dict(material, fields=fields), ensure_ascii=False)
-        generic = if_packet(prepared, count=3)
+        generic = if_packet(prepared, count=3, material=json.loads(partial[1]['content']))
         assert _if_parser_accepts(partial, json.dumps(generic, ensure_ascii=False, separators=(',', ':')))
 
 
@@ -432,7 +454,7 @@ def test_if_exact_enum_preserves_json_escaped_text_without_changing_upstream(tex
 def test_if_real_serving_closure_selects_mask_and_returns_exact_raw_to_owner(packet, monkeypatch):
     import time
     from analysis_if_route_service import _restore_prepared
-    from test_analysis_if_routes import packet as if_packet
+    if_packet = _if_slot_packet
     from test_piece_model_server_constraints import synthetic_generator
     from cocolon_meaning_experience_engine.engine import MeaningExperienceEngine
     from cocolon_meaning_experience_engine.cores.analysis.semantic_admission import (
@@ -483,3 +505,30 @@ def test_if_dispatch_leaves_legacy_map_schema_exact_bytes_and_unmarked_fields_un
     messages[1]['content'] = json.dumps(material, ensure_ascii=False)
     assert semantic_output_schema(messages) == schema
     assert semantic_json_parser(messages, 'abc').config.force_json_field_order is False
+
+
+def test_standard_if_keeps_all_anchors_and_known_conditions_in_decoding(packet):
+    from analysis_if_route_service import _restore_prepared
+    prepared = _restore_prepared(packet['cases'][-1]['prepared'])
+    messages = prepared.messages()
+    material = json.loads(messages[1]['content'])
+    material['anchors'].append(dict(node_ref='second-anchor', visible_label='二つ目の基点。'))
+    material['fields'].append(dict(field=3, source_role='SIMULATION_SESSION_MATERIAL',
+        purpose='CONSTRAINT', text='追加費用はかけません。'))
+    material['requested_candidate_count'] = 3
+    messages[1]['content'] = json.dumps(material, ensure_ascii=False)
+    value = _if_slot_packet(prepared, count=3, material=material)
+    def accepts(v):
+        return _if_parser_accepts(messages, json.dumps(v, ensure_ascii=False, separators=(',', ':')))
+    assert accepts(value)
+    for key, changed in [('required_conditions', []), ('nodes', value['scenarios'][0]['nodes'][1:])]:
+        broken = copy.deepcopy(value)
+        broken['scenarios'][0][key] = changed
+        assert not accepts(broken)
+    broken = copy.deepcopy(value)
+    broken['scenarios'][0]['required_conditions'][1]['text'] = '費用をかけてもよい。'
+    assert not accepts(broken)
+    broken = copy.deepcopy(value)
+    broken['scenarios'][0]['nodes'][-2].update(origin='USER_CHOICE',
+        text=material['fields'][1]['text'], source_refs=[2])
+    assert not accepts(broken)

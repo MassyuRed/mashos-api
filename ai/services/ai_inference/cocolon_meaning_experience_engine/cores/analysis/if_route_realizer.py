@@ -725,8 +725,14 @@ _IF_MODEL_INSTRUCTION_UNKNOWN_ORDER = _IF_MODEL_INSTRUCTION_PERSON_ALTERNATIVES 
 _IF_MODEL_INSTRUCTION_PERSON_OPTIONS = _IF_MODEL_INSTRUCTION_UNKNOWN_ORDER + '''
 要求数と同数の異なるPERSON_ALTERNATIVEがある場合だけ、各scenarioのlabelとUSER_CHOICEを対応する本人案の全文にします。既知の手順を言い換えたSIMULATED_EXTENSIONは作りません。本人案をそのまま示した上で、未知の条件・結果だけをUNKNOWN、必要条件、frictions、unmodelled_factorsに分けます。それ以外の仮の手順生成や必要確認とは区別します。'''
 
-_IF_MODEL_INSTRUCTION = _IF_MODEL_INSTRUCTION_PERSON_OPTIONS + '''
+_IF_MODEL_INSTRUCTION_FIXED_PERSON = _IF_MODEL_INSTRUCTION_PERSON_OPTIONS + '''
 本人案が要求数そろう場合、nodesは渡された全anchorをanchor_1等として置き、choiceにその本人案、unknownにUNKNOWN_AFTERMATHを置きます。edgesは各anchorからchoice、choiceからunknownへの仮想上の接続です。UNKNOWNのtextは「何が分からないか」の説明にし、本人の意向文を貼り付けません。各候補のUNKNOWN・必要条件・frictions・unmodelled_factorsには、その案の手順と共通制約だけを使い、別の本人案の行動・目的を混ぜません。'''
+
+
+_IF_MODEL_INSTRUCTION = _IF_MODEL_INSTRUCTION_FIXED_PERSON + '''
+本人案が要求数そろわない通常入力では、本人の意向と制約に沿う、意味の異なる具体的な進め方を要求数だけ作ります。本人が書いていない提案はSIMULATED_EXTENSIONです。意向文の反復だけを複数の案にせず、同じ内容のlabelだけを変えて水増ししません。本人の条件文は行動の選択ではありません。
+どの経路でも、全anchorの後にchoice、最後にunknownを置き、各anchorからchoice、choiceからunknownへ仮に接続します。既知のCONSTRAINTは全文とfield番号をrequired_conditionsにそのまま保持します。追加で必要かもしれない条件や負荷はUNKNOWN、frictions、unmodelled_factorsに分け、本人が既に書いた条件を不明と扱いません。
+labelはその案の具体的な進め方を簡潔な日本語で表します。UNKNOWNには案を試したときに分からない結果や条件を具体的に記し、「未定」や「不明」の単語だけ、本人の意向文のコピー、他の候補の作業で代用しません。'''
 
 
 def prepare_if_model_request(request, *, response=None):
@@ -786,7 +792,8 @@ def prepare_if_model_request(request, *, response=None):
             from .semantic_admission import AnalysisModelQuotedParentUnitsResponse
             _require(type(response) is AnalysisModelQuotedParentUnitsResponse,
                      'analysis_if_model_response_unbound')
-        for instruction in (_IF_MODEL_INSTRUCTION, _IF_MODEL_INSTRUCTION_PERSON_OPTIONS,
+        for instruction in (_IF_MODEL_INSTRUCTION, _IF_MODEL_INSTRUCTION_FIXED_PERSON,
+                            _IF_MODEL_INSTRUCTION_PERSON_OPTIONS,
                             _IF_MODEL_INSTRUCTION_UNKNOWN_ORDER,
                             _IF_MODEL_INSTRUCTION_PERSON_ALTERNATIVES,
                             _IF_MODEL_INSTRUCTION_LEGACY):

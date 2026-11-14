@@ -532,20 +532,20 @@ async def test_reclaim_fences_original_service_before_its_start_claim(setup,monk
 def old_instruction_prepared(prepared, instruction_version='legacy'):
     from cocolon_meaning_experience_engine.cores.analysis.if_route_realizer import (
         _IF_MODEL_INSTRUCTION_LEGACY, _IF_MODEL_INSTRUCTION_PERSON_ALTERNATIVES,
-        _IF_MODEL_INSTRUCTION_UNKNOWN_ORDER, _IF_MODEL_INSTRUCTION_PERSON_OPTIONS)
+        _IF_MODEL_INSTRUCTION_UNKNOWN_ORDER, _IF_MODEL_INSTRUCTION_PERSON_OPTIONS, _IF_MODEL_INSTRUCTION_FIXED_PERSON)
     from cocolon_meaning_experience_engine.cores.analysis.source_adapter import commitment
     messages=prepared.messages()
     messages[0]['content']=({'legacy':_IF_MODEL_INSTRUCTION_LEGACY,
         'person_alternatives':_IF_MODEL_INSTRUCTION_PERSON_ALTERNATIVES,
         'unknown_order':_IF_MODEL_INSTRUCTION_UNKNOWN_ORDER,
-        'person_options':_IF_MODEL_INSTRUCTION_PERSON_OPTIONS}[instruction_version])
+        'person_options':_IF_MODEL_INSTRUCTION_PERSON_OPTIONS, 'fixed_person':_IF_MODEL_INSTRUCTION_FIXED_PERSON}[instruction_version])
     ref='analysis-if-request:'+commitment([asdict(prepared.request),json.loads(prepared.base_seed_json),messages])[7:]
     return replace(prepared,request_ref=ref,messages_json=json.dumps(messages,ensure_ascii=False,sort_keys=True,separators=(',',':')))
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize('state',['RESERVED','RECEIVED'])
-@pytest.mark.parametrize('instruction_version',['legacy','person_alternatives','unknown_order','person_options'])
+@pytest.mark.parametrize('instruction_version',['legacy','person_alternatives','unknown_order','person_options','fixed_person'])
 async def test_prior_instruction_operation_keeps_its_exact_material_and_raw(setup,state,instruction_version):
     base,rpc=setup;body=request_body(base);key,request_hash=service._identity(OWNER,body)
     current=service._pure().prepare_if_model_request(service._request(OWNER,body,base_context(base),key))
@@ -570,7 +570,7 @@ async def test_prior_instruction_operation_keeps_its_exact_material_and_raw(setu
     assert stored['model_receipt']['request_ref']==legacy.request_ref
 
 
-@pytest.mark.parametrize('instruction_version',['legacy','person_alternatives','unknown_order','person_options'])
+@pytest.mark.parametrize('instruction_version',['legacy','person_alternatives','unknown_order','person_options','fixed_person'])
 def test_if_prior_instruction_admission_refuses_mixed_or_unrecognized_bindings(instruction_version):
     from cocolon_meaning_experience_engine.cores.analysis.semantic_admission import digest
     base=base_fixture();body=request_body(base);key,_=service._identity(OWNER,body)

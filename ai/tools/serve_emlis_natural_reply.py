@@ -125,7 +125,8 @@ def _if_output_schema(material):
     if (len(alternatives) != material['requested_candidate_count']
             or len({field['text'] for field in alternatives}) != material['requested_candidate_count']):
         alternatives = []
-    choice_fields = alternatives or material['fields']
+    choice_fields = alternatives or [field for field in material['fields']
+        if field['purpose'] != 'CONSTRAINT']
     variants += [node_variant('USER_CHOICE', quoted(field['text']), dict(type='null'),
         array(dict(type='integer', enum=[field['field']]), 1, 1), array(text(200)))
         for field in choice_fields]
@@ -140,40 +141,60 @@ def _if_output_schema(material):
     scenario = obj(dict(scenario_id=text(100), label=label, nodes=array(node, 1, 24),
         edges=array(edge, 1, 48), required_conditions=array(condition, maximum=12),
         frictions=array(text(), maximum=12), unmodelled_factors=array(text(), 1, 12)))
+    # Keep authored conditions visible in every candidate. Additional uncertain
+    # requirements remain model-authored UNKNOWN/frictions/factors, never a
+    # silently omitted or reworded person constraint.
+    constraints = [field for field in material['fields'] if field['purpose'] == 'CONSTRAINT']
+    def object_tuple(items):
+        return dict(type='array', prefixItems=items, items=False,
+            minItems=len(items), maxItems=len(items))
+    if constraints:
+        scenario['properties']['required_conditions'] = object_tuple([
+            obj(dict(condition_id=quoted('constraint_' + str(i)), text=quoted(field['text']),
+                source_refs=array(dict(type='integer', enum=[field['field']]), 1, 1)))
+            for i, field in enumerate(constraints, 1)])
+
+    def fixed_node(node_id, kind, origin, body, anchor, sources, reasons):
+        value = node_variant(origin, body, anchor, sources, reasons)
+        value['properties'].update(node_id=quoted(node_id), step_kind=quoted(kind))
+        return value
+
+    anchor_nodes = [fixed_node('anchor_' + str(i), 'BASE_MAP_ANCHOR',
+        'OBSERVED_ANCHOR', quoted(anchor['visible_label']), quoted(anchor['node_ref']),
+        empty, array(text(200), maximum=0))
+        for i, anchor in enumerate(material['anchors'], 1)]
+    def fixed_edge(edge_id, start, end):
+        return obj({'edge_id': quoted(edge_id), 'from': quoted(start), 'to': quoted(end),
+            'condition_refs': array(text(100), maximum=12)})
+
+    edges = [fixed_edge('anchor_' + str(i) + '_to_choice', 'anchor_' + str(i), 'choice')
+        for i in range(1, len(anchor_nodes) + 1)]
+    edges.append(fixed_edge('choice_to_unknown', 'choice', 'unknown'))
+    unknown = fixed_node('unknown', 'UNKNOWN_AFTERMATH', 'UNKNOWN', text(),
+        dict(type='null'), empty, array(text(200), 1))
     if alternatives:
-        # A complete person-authored set already supplies its actions. Keep
-        # every map anchor, that exact option and a separately generated unknown.
-        # These are decoding slots, not a rewrite of a received model result.
-        def fixed_node(node_id, kind, origin, body, anchor, sources, reasons):
-            value = node_variant(origin, body, anchor, sources, reasons)
-            value['properties'].update(node_id=quoted(node_id), step_kind=quoted(kind))
-            return value
-
-        anchor_nodes = [fixed_node('anchor_' + str(i), 'BASE_MAP_ANCHOR',
-            'OBSERVED_ANCHOR', quoted(anchor['visible_label']), quoted(anchor['node_ref']),
-            empty, array(text(200), maximum=0))
-            for i, anchor in enumerate(material['anchors'], 1)]
-        def fixed_edge(edge_id, start, end):
-            return obj({'edge_id': quoted(edge_id), 'from': quoted(start), 'to': quoted(end),
-                'condition_refs': array(text(100), maximum=12)})
-
-        edges = [fixed_edge('anchor_' + str(i) + '_to_choice', 'anchor_' + str(i), 'choice')
-            for i in range(1, len(anchor_nodes) + 1)]
-        edges.append(fixed_edge('choice_to_unknown', 'choice', 'unknown'))
-        def object_tuple(items):
-            return dict(type='array', prefixItems=items, items=False,
-                minItems=len(items), maxItems=len(items))
+        # Complete person-authored options retain their exact source slots.
         scenarios = []
         for field in alternatives:
-            nodes = anchor_nodes + [fixed_node('choice', 'POSSIBLE_CHOICE', 'USER_CHOICE',
+            choice = fixed_node('choice', 'POSSIBLE_CHOICE', 'USER_CHOICE',
                 quoted(field['text']), dict(type='null'),
-                array(dict(type='integer', enum=[field['field']]), 1, 1), array(text(200), maximum=0)),
-                fixed_node('unknown', 'UNKNOWN_AFTERMATH', 'UNKNOWN', text(), dict(type='null'),
-                    empty, array(text(200), 1))]
+                array(dict(type='integer', enum=[field['field']]), 1, 1), array(text(200), maximum=0))
             properties = dict(scenario['properties'], label=quoted(field['text']),
-                nodes=object_tuple(nodes), edges=object_tuple(edges))
+                nodes=object_tuple(anchor_nodes + [choice, unknown]), edges=object_tuple(edges))
             scenarios.append(obj(properties))
         scenario = dict(oneOf=scenarios)
+    else:
+        # Standard RN supplies an intent, not a completed list of choices.
+        # Proposal content remains generated. A partial person option can still
+        # be quoted as USER_CHOICE; constraints cannot become that choice.
+        choices = [fixed_node('choice', 'POSSIBLE_CHOICE', 'USER_CHOICE',
+            quoted(field['text']), dict(type='null'),
+            array(dict(type='integer', enum=[field['field']]), 1, 1), array(text(200), maximum=0))
+            for field in choice_fields]
+        choices.append(fixed_node('choice', 'POSSIBLE_CHOICE', 'SIMULATED_EXTENSION',
+            text(), dict(type='null'), refs, array(text(200), maximum=0)))
+        scenario['properties'].update(nodes=object_tuple(anchor_nodes + [dict(oneOf=choices), unknown]),
+            edges=object_tuple(edges))
     clarification = obj(dict(reason_code=dict(type='string', enum=[
         'BRANCH_INTENT_UNCLEAR', 'CONSTRAINT_UNCLEAR', 'ALTERNATIVES_UNCLEAR']), prompt=text(300)))
     return obj(dict(schema_version=dict(type='string', enum=[IF_CANDIDATE_SCHEMA]),
@@ -282,12 +303,16 @@ def _if_json_schema_parser(schema, config):
                 return module.WHITESPACE_CHARACTERS
             return self.exact.get_allowed_characters() + (module.WHITESPACE_CHARACTERS if not self.seen_opening_quote else '')
 
+    def is_object_slot(item):
+        return item.type == 'object' or bool(item.oneOf) and all(
+            part.type == 'object' for part in item.oneOf)
+
     class EmptyAwareList(module.ListParsingState):
         def add_character(self, char):
             if isinstance(self.list_member_type, list):
                 # Only IF's fixed prefixItems object tuples use this path;
                 # nested values keep upstream behavior.
-                if not self.list_member_type or any(item.type != 'object' for item in self.list_member_type):
+                if not self.list_member_type or any(not is_object_slot(item) for item in self.list_member_type):
                     raise ValueError('if_object_tuple_invalid')
                 result = module.PrimitiveParsingState.add_character(self, char)
                 if char == '[':
@@ -319,7 +344,7 @@ def _if_json_schema_parser(schema, config):
                     or value.minItems != len(prefix) or value.maxItems != len(prefix)):
                 raise ValueError('if_object_tuple_invalid')
             members = [module.JsonSchemaObject(**item) for item in prefix]
-            if any(item.type != 'object' for item in members):
+            if any(not is_object_slot(item) for item in members):
                 raise ValueError('if_object_tuple_invalid')
             return EmptyAwareList(root, members, len(members), len(members))
         return generic_get_parser(root, value)
