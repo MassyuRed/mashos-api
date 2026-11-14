@@ -274,17 +274,62 @@ def test_if_dispatcher_real_grammar_raw_and_existing_meaning_owner(packet):
     assert valid.status.value == 'GENERATED' and valid.artifact is not None
     assert valid.artifact.to_storage()['model_receipt']['raw'] == json.dumps(
         value, ensure_ascii=False, separators=(',', ':'))
-    # Well-formed JSON with an invented person choice still fails the owner.
+    # Generation forbids an invented person choice; direct receipts still
+    # fail the independent owner rather than being repaired by the mask.
     changed = copy.deepcopy(value)
     chosen = changed['scenarios'][0]['nodes'][1]
     chosen.update(origin='USER_CHOICE', text='本人が選んだと勝手に決めた別の案。')
-    assert admit(changed).status.value == 'REJECTED'
+    changed_raw = json.dumps(changed, ensure_ascii=False, separators=(',', ':'))
+    assert not _if_parser_accepts(messages, changed_raw)
+    assert MeaningExperienceEngine().generate(prepared.request, semantic_input=
+        AnalysisModelQuotedParentUnitsResponse(prepared.request_ref, digest(messages),
+            tool.sha(changed_raw), 'stop', changed_raw)).status.value == 'REJECTED'
     pending = admit(dict(schema_version=IF_CANDIDATE_SCHEMA, scenarios=[],
         clarification=dict(reason_code='CONSTRAINT_UNCLEAR', prompt='大切な条件を教えてください。')))
     assert pending.status.value == 'QUESTION_PENDING' and pending.artifact is None
     invalid = copy.deepcopy(value)
     invalid['scenarios'][0]['extra'] = 'unexpected'
     assert not _if_parser_accepts(messages, json.dumps(invalid, ensure_ascii=False))
+
+
+def test_if_generation_binds_origins_without_dropping_escaped_source_text(packet):
+    from analysis_if_route_service import _restore_prepared
+    from test_analysis_if_routes import packet as if_packet
+    prepared = _restore_prepared(packet['cases'][-1]['prepared'])
+    messages = prepared.messages()
+    material = json.loads(messages[1]['content'])
+    value = if_packet(prepared)
+
+    def accepts(candidate):
+        return _if_parser_accepts(messages, json.dumps(candidate, ensure_ascii=False, separators=(',', ':')))
+
+    assert accepts(value)  # Includes a genuine anchor with an escaped newline.
+    anchor = next(n for n in value['scenarios'][0]['nodes'] if n['origin'] == 'OBSERVED_ANCHOR')
+    assert '\n' in anchor['text']
+    changed = copy.deepcopy(value)
+    wrong = next(n for n in changed['scenarios'][0]['nodes'] if n['origin'] == 'OBSERVED_ANCHOR')
+    wrong.update(text=material['fields'][1]['text'], anchor_ref=None, source_refs=[2])
+    assert not accepts(changed)
+    changed = copy.deepcopy(value)
+    next(n for n in changed['scenarios'][0]['nodes'] if n['origin'] == 'UNKNOWN')['unknown_reasons'] = []
+    assert not accepts(changed)
+    # Pinned LMFE can admit the first item even for maxItems=0. The
+    # independent owner must still reject a nonempty UNKNOWN source list.
+    changed = copy.deepcopy(value)
+    next(n for n in changed['scenarios'][0]['nodes'] if n['origin'] == 'UNKNOWN')['source_refs'] = [1]
+    from cocolon_meaning_experience_engine import MeaningExperienceEngine
+    from cocolon_meaning_experience_engine.cores.analysis.semantic_admission import AnalysisModelQuotedParentUnitsResponse, digest
+    raw = json.dumps(changed, ensure_ascii=False, separators=(',', ':'))
+    assert MeaningExperienceEngine().generate(prepared.request, semantic_input=
+        AnalysisModelQuotedParentUnitsResponse(prepared.request_ref, digest(messages),
+            tool.sha(raw), 'stop', raw)).status.value == 'REJECTED'
+    chosen = next(n for n in value['scenarios'][0]['nodes'] if n['origin'] == 'SIMULATED_EXTENSION')
+    chosen.update(origin='USER_CHOICE', text=material['fields'][0]['text'], source_refs=[1])
+    assert accepts(value)
+    for key, bad in [('text', material['fields'][0]['text'][:-1]), ('source_refs', [2])]:
+        changed = copy.deepcopy(value)
+        next(n for n in changed['scenarios'][0]['nodes'] if n['origin'] == 'USER_CHOICE')[key] = bad
+        assert not accepts(changed)
 
 
 def test_if_real_serving_closure_selects_mask_and_returns_exact_raw_to_owner(packet, monkeypatch):

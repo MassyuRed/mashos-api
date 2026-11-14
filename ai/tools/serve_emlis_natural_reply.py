@@ -109,10 +109,26 @@ def _if_output_schema(material):
         return result
 
     refs = array(dict(type='integer', enum=fields), maximum=len(fields))
-    node = obj(dict(node_id=text(100), step_kind=text(100),
-        origin=dict(type='string', enum=['OBSERVED_ANCHOR', 'USER_CHOICE', 'SIMULATED_EXTENSION', 'UNKNOWN']),
-        text=text(), anchor_ref=dict(anyOf=[dict(type='null'), dict(type='string', enum=anchors)]),
-        source_refs=refs, unknown_reasons=array(text(200))))
+    def quoted(value):
+        # The pinned LMFE enum parser does not round-trip JSON escapes. Keep
+        # those valid texts generatable and let the CPU owner check equality.
+        return text() if re.search(r'["\\\x00-\x1f]', value) else dict(type='string', enum=[value])
+
+    def node_variant(origin, body, anchor, sources, reasons):
+        return obj(dict(node_id=text(100), step_kind=text(100),
+            origin=dict(type='string', enum=[origin]), text=body,
+            anchor_ref=anchor, source_refs=sources, unknown_reasons=reasons))
+
+    empty = array(dict(type='integer', enum=fields), maximum=0)
+    variants = [node_variant('OBSERVED_ANCHOR', quoted(anchor['visible_label']),
+        dict(type='string', enum=[anchor['node_ref']]), empty, array(text(200)))
+        for anchor in material['anchors']]
+    variants += [node_variant('USER_CHOICE', quoted(field['text']), dict(type='null'),
+        array(dict(type='integer', enum=[field['field']]), 1, 1), array(text(200)))
+        for field in material['fields']]
+    variants += [node_variant('SIMULATED_EXTENSION', text(), dict(type='null'), refs, array(text(200))),
+        node_variant('UNKNOWN', text(), dict(type='null'), empty, array(text(200), 1))]
+    node = dict(oneOf=variants)
     edge = obj({'edge_id': text(100), 'from': text(100), 'to': text(100),
         'condition_refs': array(text(100), maximum=12)})
     condition = obj(dict(condition_id=text(100), text=text(), source_refs=refs))
