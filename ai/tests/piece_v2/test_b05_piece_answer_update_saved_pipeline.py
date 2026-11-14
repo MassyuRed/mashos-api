@@ -9,6 +9,8 @@ import json
 import hashlib
 import os
 from pathlib import Path
+import re
+import time
 from uuid import uuid4
 
 import pytest
@@ -18,7 +20,7 @@ from emlis_thread_service import EmlisThreadService, Q3_PROFILE
 from piece_v2_contract import PieceContractError
 from piece_v2_source_adapter import PieceSavedSourceAdapter, project_saved_refined_fence
 from test_b05_natural_refined_saved_pipeline import (
-    natural_refined_db, refined_pipeline_db, saved_piece_db, _bind,
+    natural_refined_db, refined_pipeline_db, saved_piece_db, _bind, _natural_failure_diagnostics,
 )
 from test_b05_refined_preview_saved_pipeline import _finish_refined_pipeline
 from test_b05_piece_model_saved_pipeline import _provider
@@ -77,8 +79,40 @@ def prepare_answer_update(db, monkeypatch, operation, *, tier='premium', resolve
         return NaturalReply('記録を受け取る合成の返事です。',
             'synthetic-natural-provider',material.source_prefix_ref)
     service = EmlisThreadService(runtime_profile=Q3_PROFILE,natural_reply_source=provider)
+    phases = []
+    process_natural = service._process_natural
+    async def observed_natural(user_id, snapshot):
+        started = time.monotonic()
+        phases.append(dict(phase='_process_natural', event='ENTER',
+            original_created_at=snapshot['original']['created_at'], snapshot_now=snapshot['now'],
+            natural_meaning_as_of=snapshot['thread']['data'].get('natural_meaning_as_of')))
+        try:
+            dto = await process_natural(user_id, snapshot)
+        except asyncio.CancelledError:
+            phases.append(dict(phase='_process_natural', event='CANCELLED',
+                elapsed_seconds=time.monotonic()-started, exception_type='CancelledError', code=None))
+            raise
+        except Exception as exc:
+            code = getattr(exc, 'code', None) or str(exc)
+            if not isinstance(code, str) or not re.fullmatch(
+                    r'(?:natural_|thread_|analysis_|emlis_|semantic_|source_|safe_state_|separate_safety_|meaning_)[a-z0-9_]{1,120}', code):
+                code = None
+            phases.append(dict(phase='_process_natural', event='EXCEPTION',
+                elapsed_seconds=time.monotonic()-started, exception_type=type(exc).__name__, code=code))
+            raise
+        phases.append(dict(phase='_process_natural', event='RETURN', elapsed_seconds=time.monotonic()-started,
+            state=dto.get('state'), failure_code=dto.get('failure_code')))
+        return dto
+    monkeypatch.setattr(service, '_process_natural', observed_natural)
+    initial_started = time.monotonic()
     initial = run(service.start(owner,parent))
-    assert initial['state'] == 'AWAITING_ANSWER' and initial['issued_count'] == 1
+    initial_elapsed = time.monotonic()-initial_started
+    assert initial['state'] == 'AWAITING_ANSWER' and initial['issued_count'] == 1, {
+        **_natural_failure_diagnostics(service, owner, parent, initial, replies, phases,
+            phase='initial_start', case_id=case_id or 'one-answer-'+operation.lower()+'-'+tier,
+            tier=tier, rounds=1, stopped=False),
+        'initial_start_elapsed_seconds': initial_elapsed,
+    }
     answer_text = ANSWERS[operation] if answer_text is None else answer_text
     stamp = db.query('select clock_timestamp() as stamp')['rows'][0]['stamp']
     completed = run(service.answer(owner,initial['thread_id'],
