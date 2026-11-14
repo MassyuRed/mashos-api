@@ -712,10 +712,15 @@ nodeはnode_id,step_kind,origin,text,anchor_ref,source_refs,unknown_reasons。or
 edgeはedge_id,from,to,condition_refs。required_conditionsはcondition_id,text,source_refsのobject配列、condition_refsはそのcondition_id。edgesは仮想上の接続だけです。
 frictions,unmodelled_factorsは文字列配列。各候補にUNKNOWN nodeとunmodelled_factorsを必ず含めます。clarificationはnull、またはreason_codeとpromptのobjectです。その場合scenariosは空配列です。'''
 
-_IF_MODEL_INSTRUCTION = _IF_MODEL_INSTRUCTION_LEGACY + '''
+_IF_MODEL_INSTRUCTION_PERSON_ALTERNATIVES = _IF_MODEL_INSTRUCTION_LEGACY + '''
 各scenarioのnodesは、最初に渡された元mapのanchorをOBSERVED_ANCHORとしてそのまま置き、その後に今回の仮の選択や手順、最後に結果不明のUNKNOWNを置きます。元mapのanchorを省略しません。
 PERSON_ALTERNATIVEがある場合、本人が提示した各代替案を別々のscenarioへ対応させます。複数案を比べる行為自体を一つの代替案にせず、本人がその案の実行を決めたとも書きません。
 UNKNOWNには、その仮の進め方で分からない条件や結果を記します。「実行したか不明」という反復だけで代用しません。指定されたJSON field順を保ち、次のobjectの構文やkey名を説明用文字列へ混ぜません。'''
+
+_IF_MODEL_INSTRUCTION = _IF_MODEL_INSTRUCTION_PERSON_ALTERNATIVES + '''
+不明・未観測の内容を述べるnodeはoriginをUNKNOWNにし、source_refsは空、unknown_reasonsには分からない理由を一つ以上置きます。SIMULATED_EXTENSIONはAIが仮に加える具体的な手順であり、不明や未記載の説明を入れる場所ではありません。そのunknown_reasonsは空配列にします。
+本人案に明示された作業、先後関係、時間配分、否定や条件は既知の材料として保ちます。資料の内容・量や到達できる結果が不明でも、書かれた作業や順序そのものを「未提示」「明示されていない」と説明しません。既知の手順と未知の条件・結果を分けます。
+本人案の全文を一つのUSER_CHOICE nodeで表せる場合、手順を重ねて分解したり、同じ内容の補助nodeを増やす必要はありません。各scenarioは元mapのanchor、その本人案、結果や条件が不明なUNKNOWNを含めます。'''
 
 
 def prepare_if_model_request(request, *, response=None):
@@ -775,7 +780,8 @@ def prepare_if_model_request(request, *, response=None):
             from .semantic_admission import AnalysisModelQuotedParentUnitsResponse
             _require(type(response) is AnalysisModelQuotedParentUnitsResponse,
                      'analysis_if_model_response_unbound')
-        for instruction in (_IF_MODEL_INSTRUCTION, _IF_MODEL_INSTRUCTION_LEGACY):
+        for instruction in (_IF_MODEL_INSTRUCTION, _IF_MODEL_INSTRUCTION_PERSON_ALTERNATIVES,
+                            _IF_MODEL_INSTRUCTION_LEGACY):
             messages = [dict(role='system', content=instruction), dict(role='user', content=_json(material))]
             request_ref = 'analysis-if-request:' + commitment([asdict(request), seed, messages])[7:]
             if response is None or (response.request_ref == request_ref

@@ -326,6 +326,11 @@ def test_if_generation_binds_origins_without_dropping_escaped_source_text(packet
         AnalysisModelQuotedParentUnitsResponse(prepared.request_ref, digest(messages),
             tool.sha(raw), 'stop', raw)).status.value == 'REJECTED'
     chosen = next(n for n in value['scenarios'][0]['nodes'] if n['origin'] == 'SIMULATED_EXTENSION')
+    # An unknown explanation belongs to UNKNOWN, never an invented action.
+    changed = copy.deepcopy(value)
+    next(n for n in changed['scenarios'][0]['nodes'] if n['origin'] == 'SIMULATED_EXTENSION')[
+        'unknown_reasons'] = ['結果を確かめる材料がありません。']
+    assert not accepts(changed)
     chosen.update(origin='USER_CHOICE', text=material['fields'][0]['text'], source_refs=[1])
     assert accepts(value)
     for key, bad in [('text', material['fields'][0]['text'][:-1]), ('source_refs', [2])]:

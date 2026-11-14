@@ -529,21 +529,24 @@ async def test_reclaim_fences_original_service_before_its_start_claim(setup,monk
     assert again['id']==completed['id'] and again['idempotency_replayed']
 
 
-def old_instruction_prepared(prepared):
-    from cocolon_meaning_experience_engine.cores.analysis.if_route_realizer import _IF_MODEL_INSTRUCTION_LEGACY
+def old_instruction_prepared(prepared, instruction_version='legacy'):
+    from cocolon_meaning_experience_engine.cores.analysis.if_route_realizer import (
+        _IF_MODEL_INSTRUCTION_LEGACY, _IF_MODEL_INSTRUCTION_PERSON_ALTERNATIVES)
     from cocolon_meaning_experience_engine.cores.analysis.source_adapter import commitment
     messages=prepared.messages()
-    messages[0]['content']=_IF_MODEL_INSTRUCTION_LEGACY
+    messages[0]['content']=({'legacy':_IF_MODEL_INSTRUCTION_LEGACY,
+        'person_alternatives':_IF_MODEL_INSTRUCTION_PERSON_ALTERNATIVES}[instruction_version])
     ref='analysis-if-request:'+commitment([asdict(prepared.request),json.loads(prepared.base_seed_json),messages])[7:]
     return replace(prepared,request_ref=ref,messages_json=json.dumps(messages,ensure_ascii=False,sort_keys=True,separators=(',',':')))
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize('state',['RESERVED','RECEIVED'])
-async def test_prior_instruction_operation_keeps_its_exact_material_and_raw(setup,state):
+@pytest.mark.parametrize('instruction_version',['legacy','person_alternatives'])
+async def test_prior_instruction_operation_keeps_its_exact_material_and_raw(setup,state,instruction_version):
     base,rpc=setup;body=request_body(base);key,request_hash=service._identity(OWNER,body)
     current=service._pure().prepare_if_model_request(service._request(OWNER,body,base_context(base),key))
-    legacy=old_instruction_prepared(current)
+    legacy=old_instruction_prepared(current,instruction_version)
     assert legacy.request_ref!=current.request_ref and legacy.messages()!=current.messages()
     op=await store.reserve(OWNER,key,request_hash,base_ref=body['base_observed_map_ref'],
         guard=base_context(base)['base_source_guard'],material=service._freeze_prepared(legacy))
@@ -564,11 +567,12 @@ async def test_prior_instruction_operation_keeps_its_exact_material_and_raw(setu
     assert stored['model_receipt']['request_ref']==legacy.request_ref
 
 
-def test_if_prior_instruction_admission_refuses_mixed_or_unrecognized_bindings():
+@pytest.mark.parametrize('instruction_version',['legacy','person_alternatives'])
+def test_if_prior_instruction_admission_refuses_mixed_or_unrecognized_bindings(instruction_version):
     from cocolon_meaning_experience_engine.cores.analysis.semantic_admission import digest
     base=base_fixture();body=request_body(base);key,_=service._identity(OWNER,body)
     current=service._pure().prepare_if_model_request(service._request(OWNER,body,base_context(base),key))
-    legacy=old_instruction_prepared(current);receipt=response(legacy)
+    legacy=old_instruction_prepared(current,instruction_version);receipt=response(legacy)
     assert service._engine().generate(legacy.request,semantic_input=receipt).status.value=='GENERATED'
     mixed=replace(receipt,messages_sha256=digest(current.messages()))
     assert service._engine().generate(legacy.request,semantic_input=mixed).status.value=='REJECTED'

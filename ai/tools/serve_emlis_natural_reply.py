@@ -124,7 +124,7 @@ def _if_output_schema(material):
     variants += [node_variant('USER_CHOICE', quoted(field['text']), dict(type='null'),
         array(dict(type='integer', enum=[field['field']]), 1, 1), array(text(200)))
         for field in material['fields']]
-    variants += [node_variant('SIMULATED_EXTENSION', text(), dict(type='null'), refs, array(text(200))),
+    variants += [node_variant('SIMULATED_EXTENSION', text(), dict(type='null'), refs, array(text(200), maximum=0)),
         node_variant('UNKNOWN', text(), dict(type='null'), empty, array(text(200), 1))]
     node = dict(oneOf=variants)
     edge = obj({'edge_id': text(100), 'from': text(100), 'to': text(100),
