@@ -140,6 +140,40 @@ def _if_output_schema(material):
     scenario = obj(dict(scenario_id=text(100), label=label, nodes=array(node, 1, 24),
         edges=array(edge, 1, 48), required_conditions=array(condition, maximum=12),
         frictions=array(text(), maximum=12), unmodelled_factors=array(text(), 1, 12)))
+    if alternatives:
+        # A complete person-authored set already supplies its actions. Keep
+        # every map anchor, that exact option and a separately generated unknown.
+        # These are decoding slots, not a rewrite of a received model result.
+        def fixed_node(node_id, kind, origin, body, anchor, sources, reasons):
+            value = node_variant(origin, body, anchor, sources, reasons)
+            value['properties'].update(node_id=quoted(node_id), step_kind=quoted(kind))
+            return value
+
+        anchor_nodes = [fixed_node('anchor_' + str(i), 'BASE_MAP_ANCHOR',
+            'OBSERVED_ANCHOR', quoted(anchor['visible_label']), quoted(anchor['node_ref']),
+            empty, array(text(200), maximum=0))
+            for i, anchor in enumerate(material['anchors'], 1)]
+        def fixed_edge(edge_id, start, end):
+            return obj({'edge_id': quoted(edge_id), 'from': quoted(start), 'to': quoted(end),
+                'condition_refs': array(text(100), maximum=12)})
+
+        edges = [fixed_edge('anchor_' + str(i) + '_to_choice', 'anchor_' + str(i), 'choice')
+            for i in range(1, len(anchor_nodes) + 1)]
+        edges.append(fixed_edge('choice_to_unknown', 'choice', 'unknown'))
+        def object_tuple(items):
+            return dict(type='array', prefixItems=items, items=False,
+                minItems=len(items), maxItems=len(items))
+        scenarios = []
+        for field in alternatives:
+            nodes = anchor_nodes + [fixed_node('choice', 'POSSIBLE_CHOICE', 'USER_CHOICE',
+                quoted(field['text']), dict(type='null'),
+                array(dict(type='integer', enum=[field['field']]), 1, 1), array(text(200), maximum=0)),
+                fixed_node('unknown', 'UNKNOWN_AFTERMATH', 'UNKNOWN', text(), dict(type='null'),
+                    empty, array(text(200), 1))]
+            properties = dict(scenario['properties'], label=quoted(field['text']),
+                nodes=object_tuple(nodes), edges=object_tuple(edges))
+            scenarios.append(obj(properties))
+        scenario = dict(oneOf=scenarios)
     clarification = obj(dict(reason_code=dict(type='string', enum=[
         'BRANCH_INTENT_UNCLEAR', 'CONSTRAINT_UNCLEAR', 'ALTERNATIVES_UNCLEAR']), prompt=text(300)))
     return obj(dict(schema_version=dict(type='string', enum=[IF_CANDIDATE_SCHEMA]),
@@ -250,6 +284,23 @@ def _if_json_schema_parser(schema, config):
 
     class EmptyAwareList(module.ListParsingState):
         def add_character(self, char):
+            if isinstance(self.list_member_type, list):
+                # Only IF's fixed prefixItems object tuples use this path;
+                # nested values keep upstream behavior.
+                if not self.list_member_type or any(item.type != 'object' for item in self.list_member_type):
+                    raise ValueError('if_object_tuple_invalid')
+                result = module.PrimitiveParsingState.add_character(self, char)
+                if char == '[':
+                    result.seen_list_opener = True
+                    result.root.context.active_parser.object_stack.append(
+                        module.get_parser(result.root, result.list_member_type[0]))
+                elif char == ',' and not result.seen_list_closer:
+                    result.num_items_seen += 1
+                    result.root.context.active_parser.object_stack.append(
+                        module.get_parser(result.root, result.list_member_type[result.num_items_seen]))
+                elif char == ']':
+                    result.seen_list_closer = True
+                return result
             if char == '[' and self.max_items == 0 and not self.seen_list_opener:
                 # Upstream otherwise pushes an item parser even for maxItems=0.
                 result = self._clone()
@@ -260,6 +311,19 @@ def _if_json_schema_parser(schema, config):
 
     module.StringParsingState = ExactJsonEnum
     module.ListParsingState = EmptyAwareList
+    generic_get_parser = module.get_parser
+    def if_get_parser(root, value):
+        prefix = value.extras.get('prefixItems') if value.type == 'array' else None
+        if prefix is not None:
+            if (type(prefix) is not list or not prefix
+                    or value.minItems != len(prefix) or value.maxItems != len(prefix)):
+                raise ValueError('if_object_tuple_invalid')
+            members = [module.JsonSchemaObject(**item) for item in prefix]
+            if any(item.type != 'object' for item in members):
+                raise ValueError('if_object_tuple_invalid')
+            return EmptyAwareList(root, members, len(members), len(members))
+        return generic_get_parser(root, value)
+    module.get_parser = if_get_parser
     return module.JsonSchemaParser(schema, config=config)
 
 

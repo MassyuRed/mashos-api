@@ -722,8 +722,11 @@ _IF_MODEL_INSTRUCTION_UNKNOWN_ORDER = _IF_MODEL_INSTRUCTION_PERSON_ALTERNATIVES 
 本人案に明示された作業、先後関係、時間配分、否定や条件は既知の材料として保ちます。資料の内容・量や到達できる結果が不明でも、書かれた作業や順序そのものを「未提示」「明示されていない」と説明しません。既知の手順と未知の条件・結果を分けます。
 本人案の全文を一つのUSER_CHOICE nodeで表せる場合、手順を重ねて分解したり、同じ内容の補助nodeを増やす必要はありません。各scenarioは元mapのanchor、その本人案、結果や条件が不明なUNKNOWNを含めます。'''
 
-_IF_MODEL_INSTRUCTION = _IF_MODEL_INSTRUCTION_UNKNOWN_ORDER + '''
+_IF_MODEL_INSTRUCTION_PERSON_OPTIONS = _IF_MODEL_INSTRUCTION_UNKNOWN_ORDER + '''
 要求数と同数の異なるPERSON_ALTERNATIVEがある場合だけ、各scenarioのlabelとUSER_CHOICEを対応する本人案の全文にします。既知の手順を言い換えたSIMULATED_EXTENSIONは作りません。本人案をそのまま示した上で、未知の条件・結果だけをUNKNOWN、必要条件、frictions、unmodelled_factorsに分けます。それ以外の仮の手順生成や必要確認とは区別します。'''
+
+_IF_MODEL_INSTRUCTION = _IF_MODEL_INSTRUCTION_PERSON_OPTIONS + '''
+本人案が要求数そろう場合、nodesは渡された全anchorをanchor_1等として置き、choiceにその本人案、unknownにUNKNOWN_AFTERMATHを置きます。edgesは各anchorからchoice、choiceからunknownへの仮想上の接続です。UNKNOWNのtextは「何が分からないか」の説明にし、本人の意向文を貼り付けません。各候補のUNKNOWN・必要条件・frictions・unmodelled_factorsには、その案の手順と共通制約だけを使い、別の本人案の行動・目的を混ぜません。'''
 
 
 def prepare_if_model_request(request, *, response=None):
@@ -783,7 +786,8 @@ def prepare_if_model_request(request, *, response=None):
             from .semantic_admission import AnalysisModelQuotedParentUnitsResponse
             _require(type(response) is AnalysisModelQuotedParentUnitsResponse,
                      'analysis_if_model_response_unbound')
-        for instruction in (_IF_MODEL_INSTRUCTION, _IF_MODEL_INSTRUCTION_UNKNOWN_ORDER,
+        for instruction in (_IF_MODEL_INSTRUCTION, _IF_MODEL_INSTRUCTION_PERSON_OPTIONS,
+                            _IF_MODEL_INSTRUCTION_UNKNOWN_ORDER,
                             _IF_MODEL_INSTRUCTION_PERSON_ALTERNATIVES,
                             _IF_MODEL_INSTRUCTION_LEGACY):
             messages = [dict(role='system', content=instruction), dict(role='user', content=_json(material))]

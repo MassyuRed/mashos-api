@@ -339,7 +339,8 @@ def test_if_generation_binds_origins_without_dropping_escaped_source_text(packet
         assert not accepts(changed)
 
 
-def test_person_authored_if_labels_and_choices_remain_exact_without_duplicate_steps(packet):
+@pytest.mark.parametrize('anchor_count', [1, 2])
+def test_person_authored_if_labels_and_choices_remain_exact_without_duplicate_steps(packet, anchor_count):
     from analysis_if_route_service import _restore_prepared
     from test_analysis_if_routes import packet as if_packet
     prepared = _restore_prepared(packet['cases'][-1]['prepared'])
@@ -355,19 +356,43 @@ def test_person_authored_if_labels_and_choices_remain_exact_without_duplicate_st
             purpose='PERSON_ALTERNATIVE', text=text))
         numbers.append(number)
     material['requested_candidate_count'] = 3
+    if anchor_count == 2:
+        material['anchors'].append(dict(node_ref='second-anchor', visible_label='別の観測項目です。'))
     messages[1]['content'] = json.dumps(material, ensure_ascii=False)
     value = if_packet(prepared, count=3)
     for index, scenario in enumerate(value['scenarios']):
         scenario['label'] = choices[index]
-        scenario['nodes'][1].update(origin='USER_CHOICE', text=choices[index], source_refs=[numbers[index]])
+        choice = scenario['nodes'][1]
+        choice.update(node_id='choice', origin='USER_CHOICE', text=choices[index], source_refs=[numbers[index]])
+        unknown = scenario['nodes'][2]
+        unknown['node_id'] = 'unknown'
+        anchors = [dict(node_id='anchor_' + str(i), step_kind='BASE_MAP_ANCHOR', origin='OBSERVED_ANCHOR',
+            text=anchor['visible_label'], anchor_ref=anchor['node_ref'], source_refs=[], unknown_reasons=[])
+            for i, anchor in enumerate(material['anchors'], 1)]
+        scenario['nodes'] = anchors + [choice, unknown]
+        scenario['edges'] = [dict(edge_id='anchor_' + str(i) + '_to_choice', **{'from':'anchor_' + str(i),
+            'to':'choice'}, condition_refs=[]) for i in range(1, anchor_count + 1)]
+        scenario['edges'].append(dict(edge_id='choice_to_unknown', **{'from':'choice','to':'unknown'}, condition_refs=[]))
     def accepts(candidate):
         return _if_parser_accepts(messages, json.dumps(candidate, ensure_ascii=False, separators=(',', ':')))
     assert accepts(value)
+    assert _if_parser_accepts(messages, json.dumps(value, ensure_ascii=False, indent=1))
+    for transform in [lambda nodes: nodes[:-1], lambda nodes: nodes + [nodes[-1]],
+                      lambda nodes: nodes[:-2] + [nodes[-1], nodes[-2]]]:
+        changed = copy.deepcopy(value)
+        changed['scenarios'][0]['nodes'] = transform(changed['scenarios'][0]['nodes'])
+        assert not accepts(changed)
+    changed = copy.deepcopy(value)
+    changed['scenarios'][0]['edges'][-1]['to'] = 'absent'
+    assert not accepts(changed)
+    changed = copy.deepcopy(value)
+    changed['scenarios'][0]['label'] = choices[1]
+    assert not accepts(changed)  # Label and USER_CHOICE must bind to the same option.
     changed = copy.deepcopy(value)
     changed['scenarios'][2]['label'] = '資料を半分読み、作業順を書く。'
     assert not accepts(changed)
     changed = copy.deepcopy(value)
-    changed['scenarios'][0]['nodes'][1].update(origin='SIMULATED_EXTENSION',
+    changed['scenarios'][0]['nodes'][anchor_count].update(origin='SIMULATED_EXTENSION',
         text='午前の30分で20分読み、残り10点を要点に配分する。')
     assert not accepts(changed)
     # Partial or repeated person options do not collapse three requested
