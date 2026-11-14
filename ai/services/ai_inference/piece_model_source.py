@@ -19,6 +19,7 @@ import httpx
 from cocolon_meaning_experience_engine.preparation import PreparedRequest
 
 SELECTOR = 'shared_4b.v1'
+CMEE_SELECTOR = 'shared_4b.cmee.v2'
 REQUEST_SECONDS = 240.0
 MAX_REQUEST_BYTES = 65536
 MAX_RESPONSE_BYTES = 262144
@@ -492,7 +493,8 @@ def _unique_object(pairs):
 
 class Shared4BPieceModelSource:
     """A single authenticated HTTPS request; no automatic reacquisition."""
-    def __init__(self, *, endpoint, model, api_key, transport=None, use_editorial_choices=False):
+    def __init__(self, *, endpoint, model, api_key, transport=None, use_editorial_choices=False,
+                 realization_profile=None):
         try:
             if (any(type(value) is not str for value in (endpoint, model, api_key))
                     or type(use_editorial_choices) is not bool):
@@ -515,6 +517,10 @@ class Shared4BPieceModelSource:
         # A bounded research candidate only. The configured application source
         # keeps the existing default until actual output justifies adoption.
         self._use_editorial_choices = use_editorial_choices
+        from cocolon_meaning_experience_engine.piece_v1c import MODEL_REALIZATION_PROFILE
+        if realization_profile not in (None, MODEL_REALIZATION_PROFILE):
+            raise ValueError('piece_model_realization_profile')
+        self._realization_profile = realization_profile
 
     async def __call__(self, prepared, *, source_request=None):
         from cocolon_meaning_experience_engine.piece_semantic_admission import (
@@ -528,7 +534,8 @@ class Shared4BPieceModelSource:
         def receipt(raw=None, finish='error', *, usage=None, revision=None):
             return receive_piece_model_candidate(prepared, raw_output=raw, finish_reason=finish,
                 provider=PROVIDER, model=self.model, revision=revision, usage=usage,
-                elapsed_seconds=time.monotonic() - started, candidate_format=PIECE_FIELD_SLOTS_FORMAT)
+                elapsed_seconds=time.monotonic() - started, candidate_format=PIECE_FIELD_SLOTS_FORMAT,
+                realization_profile=self._realization_profile)
 
         body = _json(dict(model=self.model, messages=messages, temperature=0,
             max_tokens=2048, stream=False, candidate_format=PIECE_FIELD_SLOTS_FORMAT,
@@ -606,10 +613,14 @@ class _ApplicationPieceModelSource:
     async def __call__(self, prepared, *, source_request=None):
         self.require_current()
         selector, endpoint, model, api_key = self._settings
-        if selector != SELECTOR:
+        if selector not in (SELECTOR, CMEE_SELECTOR):
             raise RuntimeError('piece_model_configuration_invalid')
         try:
-            source = Shared4BPieceModelSource(endpoint=endpoint, model=model, api_key=api_key)
+            options = {}
+            if selector == CMEE_SELECTOR:
+                from cocolon_meaning_experience_engine.piece_v1c import MODEL_REALIZATION_PROFILE
+                options = dict(realization_profile=MODEL_REALIZATION_PROFILE, use_editorial_choices=True)
+            source = Shared4BPieceModelSource(endpoint=endpoint, model=model, api_key=api_key, **options)
         except ValueError:
             raise RuntimeError('piece_model_configuration_invalid') from None
         result = await source(prepared, **({'source_request': source_request}
@@ -632,6 +643,14 @@ def application_piece_model_source():
     # Saved preview/save reads never need provider configuration. Defer an
     # enabled malformed configuration to actual candidate acquisition.
     return _configured_source(settings)
+
+
+def application_piece_realization_profile():
+    """An explicit private profile; legacy raw=canonical is unchanged."""
+    if _settings()[0] == CMEE_SELECTOR:
+        from cocolon_meaning_experience_engine.piece_v1c import MODEL_REALIZATION_PROFILE
+        return MODEL_REALIZATION_PROFILE
+    return None
 
 
 def require_current_piece_model_source(source):

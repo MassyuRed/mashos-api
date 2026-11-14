@@ -523,7 +523,8 @@ class AnalysisModelFieldsInput:
                 {'role':'user', 'content':canonical(material)}]
 
 
-def _model_fields_source(request, *, allow_supplements=False, allow_source_updates=False):
+def _model_fields_source(request, *, allow_supplements=False, allow_source_updates=False,
+                         allow_empty=False):
     from emlis_ai_grounded_observation_plan import build_final_stage1_grounded_observation_plan
     from .intent_compiler import _active_sources
     frozen = freeze_analysis_sources(request)
@@ -595,9 +596,170 @@ def _model_fields_source(request, *, allow_supplements=False, allow_source_updat
                     literal_sha256=hashlib.sha256(text.encode('utf-8')).hexdigest())
                 fields.append(dict(field_ref=ref, field_path=field, text=text,
                     source=source, evidence=evidence))
-    if not fields:
+    if not fields and not allow_empty:
         raise AnalysisSemanticUnsupported('analysis_model_fields_empty')
     return frozen, fields
+
+
+EMLIS_ANALYSIS_MATERIAL_SCHEMA = 'cocolon.cmee.emlis_analysis_material.v1'
+
+
+def prepare_emlis_analysis_material(request, *, owner_scope, original_record, as_of):
+    """Reuse the saved Analysis owners for one private, source-bound material.
+
+    Active text and finite interpretation are independent results. An unread
+    original remains active text; a wholly withdrawn original has no active
+    text but does have a proved source update. This does not read Emlis output,
+    promote an Analysis interpretation to a person's fact, or promise a full
+    interpretation of arbitrary text. The caller owns authentication and saves
+    this material and its state at the same observation commit boundary.
+    """
+    from .source_adapter import emlis_analysis_source_request
+    from .intent_compiler import (compile_observed_graph,
+        analysis_semantic_source_duties)
+
+    admitted, projected = emlis_analysis_source_request(request,
+        owner_scope=owner_scope, original_record=original_record, as_of=as_of)
+    frozen = freeze_analysis_sources(projected)
+    member = projected.members[0]
+    answer_times = {a.source.answer_id: dict(recorded_at=a.source.recorded_at,
+        authored_at=a.source.authored_at) for a in admitted.answers}
+    correction_times = {c.correction_id: dict(recorded_at=c.recorded_at)
+        for c in admitted.control.interpretation_corrections}
+    sources = []
+    for source in frozen.sources:
+        source_id = source.envelope.source_record_id
+        if source.envelope.source_role == 'ORIGINAL_INPUT':
+            text_fields = {name: original_record[name] or ''
+                           for name in ('memo', 'memo_action')}
+            clock = dict(recorded_at=original_record['created_at'])
+        else:
+            text_fields = {'memo': next((a.source.answer_text_private
+                for a in admitted.answers if a.source.answer_id == source_id), None)}
+            if text_fields['memo'] is None:
+                text_fields['memo'] = next(c.explanation for c in
+                    admitted.control.interpretation_corrections if c.correction_id == source_id)
+            clock = answer_times.get(source_id, correction_times.get(source_id, {}))
+        sources.append(dict(source_id=source_id,
+            source_envelope_id=source.envelope.envelope_id,
+            source_role=source.envelope.source_role, record_ref=source.record_ref,
+            record_version=source.record_version, fields=text_fields,
+            evidence=[asdict(e) for e in source.evidence], **clock))
+
+    pending_reasons = {'analysis_separate_safety_required',
+        'analysis_supplement_interpretation_pending',
+        'analysis_interpretation_correction_pending',
+        'analysis_correction_target_unresolved',
+        'analysis_correction_replacement_unsupported'}
+    reason_codes, active_fields, graph, duties = [], [], None, None
+    try:
+        _, fields = _model_fields_source(projected, allow_supplements=True,
+            allow_source_updates=True, allow_empty=True)
+        graph = compile_observed_graph(frozen)
+        stored_fields = []
+        for number, field in enumerate(fields, 1):
+            source, evidence = field['source'], field['evidence']
+            active_fields.append(dict(field=number, field_ref=field['field_ref'],
+                source_id=source.envelope.source_record_id,
+                source_envelope_id=source.envelope.envelope_id,
+                source_role=source.envelope.source_role,
+                record_ref=source.record_ref, record_version=source.record_version,
+                field_path=field['field_path'], text=field['text'],
+                scalar_start=evidence.scalar_start, scalar_end=evidence.scalar_end,
+                evidence=asdict(evidence)))
+            stored_fields.append((number, field['text'], source.record_ref, evidence))
+        duties = analysis_semantic_source_duties(frozen, tuple(stored_fields))
+    except AnalysisSourceError as exc:
+        if str(exc) not in pending_reasons:
+            raise
+        # A pending explanation must not resurrect the superseded original as
+        # current author material. Full original and explanation remain above.
+        reason_codes.append(str(exc))
+        active_fields, graph = [], None
+
+    resolved = graph is not None
+    generated = bool(resolved and (duties['claims'] or graph.annotations
+        or graph.conflicts or graph.source_updates))
+    if resolved and not generated:
+        reason_codes.append('analysis_no_supported_meaning')
+    unread = [] if resolved else [dict(source_id=s['source_id'],
+        source_envelope_id=s['source_envelope_id'], source_role=s['source_role'],
+        field_path=name, scalar_start=0, scalar_end=len(text))
+        for s in sources for name, text in s['fields'].items() if text.strip()]
+    residual = duties['unassessed_source_ranges'] if duties else []
+    payload = dict(schema_version=EMLIS_ANALYSIS_MATERIAL_SCHEMA,
+        state='GENERATED' if generated else 'NOT_GENERATED',
+        source_prefix_ref=admitted.source_prefix_ref, owner_scope=owner_scope,
+        record_ref=member.saved_record_ref, record_version=member.saved_record_version,
+        as_of=as_of, source_set_ref=frozen.source_set_ref,
+        original_record=json.loads(member.original_json), sources=sources,
+        active_fields=active_fields, graph=asdict(graph) if resolved else None,
+        graph_scope='ANALYSIS_SOURCE_GROUNDED_INTERPRETATION',
+        source_duties=duties,
+        coverage=dict(active_state='RESOLVED' if resolved else 'PENDING',
+            active_field_count=len(active_fields),
+            typed_claim_count=len(duties['claims']) if duties else 0,
+            source_update_count=len(graph.source_updates) if resolved else 0,
+            unassessed_source_ranges=residual, pending_source_ranges=unread,
+            active_text_status=('PENDING_SOURCE_UPDATE' if not resolved else
+                'NO_ACTIVE_TEXT' if not active_fields else
+                'PARTIAL' if residual else 'ALL_ACTIVE_RANGES_COVERED'),
+            full_source_semantic_coverage=False,
+            interpretation_status='UNASSESSED'), reason_codes=reason_codes)
+    # Use the same JSON value before save and after reread, including tuple
+    # coordinates in the existing graph. The ref commits every private leaf.
+    payload = json.loads(canonical(payload))
+    payload['material_ref'] = 'emlis-analysis-material:' + digest(payload)
+    return payload
+
+
+def admit_saved_emlis_analysis_material(raw, *, owner_scope, tier, as_of):
+    """Rebind a latest private handoff to its still-authoritative sources.
+
+    A saved material is a derivative, not a new source. Old/mid-operation or
+    stale source/context records use the ordinary Analysis source path. A
+    supplied, current pair of thread/OBS materials must match complete
+    rederivation before any of its active text or typed duties is consumed.
+    """
+    from emlis_thread_service import _request, _generation_current
+    from .source_adapter import _time
+    from ...natural_reply import ACTIVE_MEANING_PROFILE
+    thread = raw.get('thread')
+    if (not thread or thread.get('source_snapshot') != raw['original']
+            or type(thread.get('data', {}).get('analysis_material')) is not dict):
+        return None
+    observations = [e for e in raw['events'] if e['kind'] == 'OBSERVATION']
+    if not observations:
+        return None
+    latest = observations[-1]['payload']
+    artifact = latest.get('artifact', {})
+    saved = artifact.get('analysis_material')
+    if type(saved) is not dict:
+        return None
+    # Missing context means the existing entitled context owner could not
+    # supply this old observation. Canonical cumulative sources remain usable.
+    if raw.get('context') is None:
+        return None
+    snapshot = dict(raw, tier=tier, now=as_of)
+    if not _generation_current(snapshot):
+        return None
+    data = thread['data']
+    valid = (thread.get('user_id') == owner_scope
+        and data['analysis_material'] == saved
+        and data.get('analysis_state') == artifact.get('analysis_state') == saved.get('state')
+        and data.get('natural_meaning_profile') == artifact.get('meaning_profile') == ACTIVE_MEANING_PROFILE
+        and data.get('natural_meaning_as_of') == saved.get('as_of')
+        and thread.get('source_prefix_ref') == latest.get('source_prefix_ref') == saved.get('source_prefix_ref')
+        and saved.get('schema_version') == EMLIS_ANALYSIS_MATERIAL_SCHEMA)
+    if not valid:
+        raise AnalysisSourceError('analysis_emlis_material_binding_invalid')
+    if _time(saved['as_of']) > _time(as_of):
+        raise AnalysisSourceError('analysis_emlis_material_binding_invalid')
+    expected = prepare_emlis_analysis_material(_request(snapshot), owner_scope=owner_scope,
+        original_record=raw['original'], as_of=saved['as_of'])
+    if expected != saved:
+        raise AnalysisSourceError('analysis_emlis_material_binding_invalid')
+    return saved
 
 
 def _model_fields_ref(request, frozen, source_guard):
@@ -2282,13 +2444,21 @@ class AnalysisSemanticMapInput:
 
     def messages(self):
         instruction = _SEMANTIC_MAP_INSTRUCTION
+        material = json.loads(self.material_json)
         if self.prompt_version == SEMANTIC_MAP_SOURCE_DUTIES_PROFILE:
             instruction += _SEMANTIC_MAP_SOURCE_DUTIES_INSTRUCTION
         if self.active_source_updates:
             instruction += ('\nfieldsには本人の明示した訂正・撤回後の有効部分だけを提示しています。'
                 '同じrecordの複数fieldは原欄の離れた有効部分を含み、隣接・連続・因果の根拠にしません。'
                 '提示されていない撤回済み部分やAI解釈を復元せず、quoteは一つのfield内の連続文字列だけから取ります。')
-        if any('source_recorded_at' in f for f in json.loads(self.material_json)['fields']):
+        if material.get('emlis_source_materials'):
+            instruction += ('\nemlis_source_materialsは同じ原記録・本人回答・本人訂正から導いたAnalysisの読み取り材料です。'
+                '本人が新しく述べた事実や、生成応答の正しさを保証する情報ではありません。'
+                'GENERATEDでも全文理解済みとはせず、coverageとunknown_gapsを保ちます。'
+                'coverage内のfieldはsource_material_fieldで、field_bindingsにより今回のfieldへ対応します。'
+                'source_node_bindingsと注記のtarget_refは同じrecord/material内の読取り参照で、出力node_idではありません。'
+                'recordがnullの未確定sourceは有効事実・node根拠にせず、推測で補いません。')
+        if any('source_recorded_at' in f for f in material['fields']):
             instruction += ('\nUSER_INTERPRETATION_CORRECTIONのtextは本人が明示的に訂正した有効部分です。'
                 'source_recorded_atは本人説明の記録日時で、親recordsのrecorded_atとは別です。'
                 'どちらの記録日時も出来事日時とは決めず、昨日・今などの語を別のsourceの時点へ移しません。')
@@ -2313,13 +2483,31 @@ def prepare_analysis_semantic_map(request, snapshot, *,
     # eligible original in the complete history. Ownership/version errors are
     # never treated as this narrow, known exclusion policy.
     accepted, fields, reasons = [], [], Counter()
+    handoffs = {}
+    for raw in snapshot['members']:
+        handoff = admit_saved_emlis_analysis_material(raw,
+            owner_scope=request.authenticated_owner_scope, tier=snapshot['tier'], as_of=snapshot['now'])
+        if handoff is not None:
+            handoffs[raw['original']['id']] = handoff
     known_exclusions = {'analysis_separate_safety_required', 'analysis_supplement_interpretation_pending',
         'analysis_interpretation_correction_pending',
         'analysis_correction_target_unresolved', 'analysis_correction_replacement_unsupported'}
     for member in request.members:
         single = replace(request, members=(member,))
         try:
-            _, member_fields = _model_fields_source(single, allow_supplements=True, allow_source_updates=True)
+            handoff = handoffs.get(member.saved_record_ref)
+            if handoff is not None and handoff['coverage']['active_state'] == 'RESOLVED':
+                # The saved fields are consumed only after complete source
+                # rederivation above. Their envelopes are still the original
+                # Analysis sources; no Emlis/Analysis prose becomes a source.
+                from ...contracts import EvidenceRef
+                local = freeze_analysis_sources(single)
+                by_envelope = {s.envelope.envelope_id: s for s in local.sources}
+                member_fields = [dict(field_ref=f['field_ref'], field_path=f['field_path'],
+                    text=f['text'], source=by_envelope[f['source_envelope_id']],
+                    evidence=EvidenceRef(**f['evidence'])) for f in handoff['active_fields']]
+            else:
+                _, member_fields = _model_fields_source(single, allow_supplements=True, allow_source_updates=True)
         except AnalysisSourceError as exc:
             if str(exc) not in known_exclusions:
                 raise
@@ -2359,9 +2547,10 @@ def prepare_analysis_semantic_map(request, snapshot, *,
                                   ('memo', 'memo_action').index(field['field_path'])))
     originals = {m.saved_record_ref: json.loads(m.original_json) for m in request.members}
     ordinals = {m.saved_record_ref: i for i, m in enumerate(frozen.members, 1)}
-    material_fields, stored_fields = [], []
+    material_fields, stored_fields, field_numbers = [], [], {}
     supplements = {}
     for index, field in enumerate(fields, 1):
+        field_numbers[field['field_ref']] = index
         source = field['source']
         role = source.envelope.source_role
         supplement = None
@@ -2385,6 +2574,26 @@ def prepare_analysis_semantic_map(request, snapshot, *,
             selected_categories=original['category'], selected_emotions=original['emotions'],
             emotion_details=original['emotion_details']))
     material = dict(analysis_as_of=frozen.period[1], records=records, fields=material_fields)
+    if handoffs:
+        # State/coverage and typed update/unknown responsibilities accompany
+        # the actual active fields. This is expressly an Analysis-owned
+        # interpretation; the sole writer must not promote it to person fact.
+        material['emlis_source_materials'] = [dict(record=ordinals.get(ref),
+            record_ref=ref, material_ref=h['material_ref'], state=h['state'],
+            graph_scope=h['graph_scope'], source_prefix_ref=h['source_prefix_ref'],
+            field_bindings=[dict(source_material_field=f['field'],
+                field=field_numbers[f['field_ref']]) for f in h['active_fields']
+                if f['field_ref'] in field_numbers],
+            coverage=h['coverage'], reason_codes=h['reason_codes'],
+            source_updates=(h['graph'] or {}).get('source_updates', []),
+            source_node_bindings=[dict(source_node_ref=n['node_ref'],
+                evidence_refs=n['evidence_refs']) for n in (h['graph'] or {}).get('nodes', [])],
+            unknown_gaps=(h['graph'] or {}).get('unknown_gaps', []),
+            annotations=(h['graph'] or {}).get('annotations', []),
+            conflicts=(h['graph'] or {}).get('conflicts', []),
+            **({'unresolved_sources': h['sources']}
+               if h['coverage']['active_state'] == 'PENDING' else {}))
+            for ref, h in handoffs.items()]
     source_duties_json = ''
     if prompt_version == SEMANTIC_MAP_SOURCE_DUTIES_PROFILE:
         from .intent_compiler import (analysis_semantic_source_duties,

@@ -60,8 +60,8 @@ class PieceModelInputV1:
     receipt: CandidateReceipt
 
 
-def prepare_piece_model_request(request):
-    from .piece_v1c import PieceGenerationRequest
+def prepare_piece_model_request(request, *, realization_profile=None):
+    from .piece_v1c import PieceGenerationRequest, MODEL_REALIZATION_PROFILE
     from .piece_refined import PieceRefinedSourceSnapshot
     from piece_v2_generation import PieceSourceSnapshot
     from .preparation import _prepare
@@ -76,10 +76,18 @@ def prepare_piece_model_request(request):
             and source.saved_input_id == request.expected_saved_input_id
             and source.source_version == request.expected_source_version,
             'piece_model_source_binding')
-    if request.requested_format not in (None, 'short_essay'):
+    if realization_profile is None:
+        from piece_model_source import application_piece_realization_profile
+        realization_profile = application_piece_realization_profile()
+    require(realization_profile in (None, MODEL_REALIZATION_PROFILE), 'piece_model_realization_profile')
+    if realization_profile is None and request.requested_format not in (None, 'short_essay'):
         raise PieceSemanticUnsupported('piece_model_format_not_supported')
-    return _prepare(piece_model_material(request.source,
-        expected_owner_id=request.expected_owner_id, tier=request.tier))
+    material = piece_model_material(request.source,
+        expected_owner_id=request.expected_owner_id, tier=request.tier)
+    if realization_profile is not None:
+        material['control']['realization_profile'] = realization_profile
+        material['control']['requested_format'] = request.requested_format
+    return _prepare(material)
 
 
 PIECE_FIELD_SLOTS_FORMAT = 'piece.field_slots.v1'
@@ -110,7 +118,7 @@ def _piece_model_body(raw, *, prepared=None, candidate_format=None):
 
 def receive_piece_model_candidate(prepared, *, raw_output, finish_reason, request_id=None,
         provider=None, model=None, revision=None, usage=None, elapsed_seconds=None, adapter_revision=None,
-        candidate_format=None):
+        candidate_format=None, realization_profile=None):
     """Retain an exact body-only response; never repair it or grant adoption."""
     request_id = prepared.request_id if request_id is None and type(prepared) is PreparedRequest else request_id
     require(type(prepared) is PreparedRequest and request_id == prepared.request_id
@@ -124,6 +132,10 @@ def receive_piece_model_candidate(prepared, *, raw_output, finish_reason, reques
     require(usage is None or (type(usage) is dict and all(type(k) is str
             and (v is None or (type(v) is int and v >= 0)) for k, v in usage.items())), 'piece_model_usage')
     require(candidate_format in (None, PIECE_FIELD_SLOTS_FORMAT), 'piece_model_candidate_format')
+    from .piece_v1c import MODEL_REALIZATION_PROFILE
+    require(realization_profile in (None, MODEL_REALIZATION_PROFILE)
+            and prepared.payload()['control'].get('realization_profile') == realization_profile,
+            'piece_model_realization_profile')
     packet = None
     status = 'EMPTY'
     if raw_output is not None and raw_output.strip():
@@ -143,13 +155,18 @@ def receive_piece_model_candidate(prepared, *, raw_output, finish_reason, reques
         metadata['adapter_revision'] = adapter_revision
     if candidate_format is not None:
         metadata['candidate_format'] = candidate_format
+    if realization_profile is not None:
+        metadata['realization_profile'] = realization_profile
     return CandidateReceipt(request_id, status, raw_output,
         canonical(packet) if packet is not None else None, canonical(metadata))
 
 
 def validate_piece_model_input(request, value):
     """Rebind the immutable receipt and source; acquisition is never replayed."""
-    prepared = prepare_piece_model_request(request)
+    require(type(value) is PieceModelInputV1 and type(value.receipt) is CandidateReceipt,
+            'piece_model_input_binding')
+    profile = json.loads(value.receipt.metadata_json).get('realization_profile')
+    prepared = prepare_piece_model_request(request, realization_profile=profile)
     require(type(value) is PieceModelInputV1 and type(value.prepared) is PreparedRequest
             and value.prepared == prepared and type(value.receipt) is CandidateReceipt,
             'piece_model_input_binding')
@@ -158,7 +175,7 @@ def validate_piece_model_input(request, value):
     base_keys = {'provider', 'model', 'revision', 'usage',
                  'finish_reason', 'elapsed_seconds', 'evidence_check'}
     require(type(metadata) is dict and base_keys <= set(metadata)
-        <= base_keys | {'adapter_revision', 'candidate_format'}
+        <= base_keys | {'adapter_revision', 'candidate_format', 'realization_profile'}
         and metadata['evidence_check'] == 'BODY_UNREVIEWED_NOT_SEMANTIC_ADMISSION', 'piece_model_metadata_binding')
     options = {k: v for k, v in metadata.items() if k != 'evidence_check'}
     require(receive_piece_model_candidate(prepared, request_id=receipt.request_id,
@@ -191,7 +208,8 @@ def generate_piece_model(request, value):
         blocks = validate_piece_model_input(request, value)
         meaning, plan = piece_model_source_plan(request)
         artifact = realize_piece_model_artifact(meaning, plan, body_blocks=blocks,
-            tier=request.tier, requested_format=request.requested_format)
+            tier=request.tier, requested_format=request.requested_format,
+            realization_profile=json.loads(value.receipt.metadata_json).get('realization_profile'))
         return PieceEngineOutcome(EngineStatus.GENERATED, (), meaning, plan, artifact)
     except PieceSemanticUnsupported as exc:
         return PieceEngineOutcome(EngineStatus.UNAVAILABLE, (str(exc),))

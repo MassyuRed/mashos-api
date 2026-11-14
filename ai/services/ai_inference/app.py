@@ -171,6 +171,7 @@ from api_report_reads import register_report_reads_routes
 from api_analysis_reads import register_analysis_read_routes
 from api_self_structure import register_self_structure_routes
 from api_self_structure_reports import register_self_structure_report_routes
+from api_analysis_if_routes import register_analysis_if_routes
 from api_profile_create import register_profile_create_routes
 from api_piece_runtime import register_piece_runtime_routes
 from api_nexus import register_nexus_routes
@@ -318,6 +319,7 @@ def create_application(*, piece_preview_configuration: Optional[Dict[str, Any]] 
     register_analysis_read_routes(app)
     register_self_structure_routes(app)
     register_self_structure_report_routes(app)
+    register_analysis_if_routes(app)
     register_profile_create_routes(app)
     register_piece_runtime_routes(app)
     register_nexus_routes(app)

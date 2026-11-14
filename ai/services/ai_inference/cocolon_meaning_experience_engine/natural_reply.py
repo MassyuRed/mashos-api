@@ -16,6 +16,7 @@ from emlis_ai_safety_triage import build_emlis_safety_triage_decision, merge_eml
 from .emlis_thread_source import admit_emlis_thread
 
 PROFILE = "natural_reply.v1"
+ACTIVE_MEANING_PROFILE = "source_grounded_active_meaning.v1"
 REQUEST_SECONDS = 240
 ARTIFACT_SCHEMA = "cocolon.emlis.recipient_reply.v1"
 SYSTEM_MESSAGE = """あなたはEmlisです。本人の記録を読み、本人に向けた自然な日本語の返事だけを返してください。
@@ -241,6 +242,9 @@ class NaturalReplyError(ValueError):
 class NaturalReplyInput:
     source_prefix_ref: str
     material_json: str
+    meaning_profile: str | None = None
+    writer_material_json: str | None = None
+    analysis_material_json: str | None = None
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -473,7 +477,8 @@ def _frame_feedback_material(admitted, included_ids):
 
 
 def prepare_natural_reply(request, *, use_meaning_support=False, response_stage="FINAL", prepared_meaning=None,
-                          use_history_answer_plan=False):
+                          use_history_answer_plan=False, meaning_profile=None, owner_scope=None,
+                          original_record=None, as_of=None):
     """Return admitted user material and the existing independent Safety result."""
     if response_stage not in _RESPONSE_STAGES:
         raise NaturalReplyError('natural_reply_response_stage_invalid')
@@ -562,8 +567,128 @@ def prepare_natural_reply(request, *, use_meaning_support=False, response_stage=
                 break
             record.pop("answer_meaning", None)
         material = material_with_meaning_support(material)
-    return NaturalReplyInput(admitted.source_prefix_ref,
-        _compact_json(material)), safety
+    if meaning_profile is None:
+        return NaturalReplyInput(admitted.source_prefix_ref, _compact_json(material)), safety
+    if meaning_profile != ACTIVE_MEANING_PROFILE:
+        raise NaturalReplyError('natural_reply_meaning_profile_invalid')
+    from .cores.analysis.semantic_admission import prepare_emlis_analysis_material
+    active = prepare_emlis_analysis_material(request, owner_scope=owner_scope,
+        original_record=original_record, as_of=as_of)
+    records = [_active_writer_record(active, original, scope='CURRENT_INPUT',
+        correction_targets=admitted.control.interpretation_corrections)]
+    record_numbers = {current_id: 1}
+    for source in histories:
+        if source.source_guard[0] not in included_ids:
+            continue
+        past_original = source.request.current_input_bundle.raw_current_input
+        past_active = prepare_emlis_analysis_material(source.request, owner_scope=owner_scope,
+            original_record=past_original, as_of=as_of)
+        records.append(_active_writer_record(past_active, past_original, scope='PAST_RECORD',
+            correction_targets=source.request.emlis_thread.interpretation_corrections))
+        record_numbers[source.source_guard[0]] = len(records)
+    # The full original view remains the input to existing Safety, comparison
+    # and frame owners. Only the sole writer receives the effective source
+    # ranges; disjoint ranges are never joined into a synthetic original.
+    writer = {'schema_version': ACTIVE_MEANING_PROFILE, 'records': records,
+        'user_frame_feedback': _active_writer_feedback(material['user_frame_feedback'], record_numbers)}
+    if 'response_purpose' in material:
+        writer['response_purpose'] = material['response_purpose']
+    return NaturalReplyInput(admitted.source_prefix_ref, _compact_json(material), meaning_profile,
+        _compact_json(writer), _compact_json(active)), safety
+
+
+def _active_writer_record(active, original, *, scope, correction_targets=()):
+    """Realization view of one source-derived meaning, never an AI reply.
+
+    The shared owner retains every unparsed range. A pending source update is
+    not an active fact; its complete user sources stay available as unresolved
+    material instead of silently reverting to the uncorrected original.
+    """
+    metadata = {key: value for key, value in _material(original).items()
+                if key not in {'memo', 'memo_action'}}
+    from .cores.analysis.intent_compiler import analysis_semantic_source_duties_material
+    sources = {source['source_id']: source for source in active['sources']}
+    fields = active['active_fields']
+    pending = active['coverage']['active_state'] == 'PENDING'
+    value = {'scope': scope, 'metadata': metadata,
+        'meaning_state': active['state'], 'active_state': active['coverage']['active_state'],
+        'active_fields': [dict(field=field['field'], source_role=field['source_role'],
+            field_path=field['field_path'], text=field['text'],
+            **{key: sources[field['source_id']][key] for key in ('recorded_at', 'authored_at')
+               if sources[field['source_id']].get(key) is not None}) for field in fields],
+        'source_duties': (analysis_semantic_source_duties_material(active['source_duties'])
+                          if active.get('source_duties') is not None else None)}
+    if pending:
+        # Every unresolved original/explanation is retained once, without the
+        # private evidence hashes or a second copy of its original envelope.
+        value['unresolved_sources'] = [dict(source_role=source['source_role'],
+            fields=source['fields'], **{key: source[key] for key in ('recorded_at', 'authored_at')
+                if source.get(key) is not None}) for source in active['sources']]
+        if correction_targets:
+            value['correction_targets'] = [dict(source_role='AI_INTERPRETATION_TARGET',
+                explanation_source=next(i for i, source in enumerate(active['sources'], 1)
+                    if source['source_id'] == correction.correction_id), text=correction.target_text)
+                for correction in correction_targets]
+        return value
+
+    def positions(evidence_rows):
+        result = []
+        for evidence in evidence_rows:
+            for field in fields:
+                if (field['source_envelope_id'] == evidence['source_envelope_id']
+                    and field['field_path'] == evidence['field_path']
+                    and field['scalar_start'] <= evidence['scalar_start']
+                    and evidence['scalar_end'] <= field['scalar_end']):
+                    row = {'field': field['field'], 'span': [
+                        evidence['scalar_start'] - field['scalar_start'],
+                        evidence['scalar_end'] - field['scalar_start']]}
+                    if row not in result:
+                        result.append(row)
+        return result
+
+    graph = active.get('graph') or {}
+    nodes = {node['node_ref']: node for node in graph.get('nodes', [])}
+    unknowns = []
+    for gap in graph.get('unknown_gaps', []):
+        row = {'scope': gap['missing_scope'], 'reason': gap['reason_code'],
+            'parts': positions([e for ref in gap['between_node_refs']
+                for e in nodes[ref]['evidence_refs']])}
+        if row not in unknowns:
+            unknowns.append(row)
+    value['unknowns'] = unknowns
+    value['conflicts'] = [dict(parts=positions(row['evidence_refs']), reason=row['reason_code'])
+        for row in graph.get('conflicts', [])]
+    value['annotations'] = [dict(parts=positions(row['evidence_refs']),
+        predicate=row['predicate_lemma'], uncertainty=row['uncertainty'],
+        forbidden_promotions=row['forbidden_promotions']) for row in graph.get('annotations', [])]
+    updates = []
+    for update in graph.get('source_updates', []):
+        target = update['target_evidence']
+        source = next(source for source in active['sources']
+                      if source['source_envelope_id'] == target['source_envelope_id'])
+        # Withdrawn wording appears only as a correction target, never as an
+        # active field. The replacement points into the single active copy.
+        updates.append(dict(operation=update['operation'],
+            target_text=source['fields'][target['field_path']][target['scalar_start']:target['scalar_end']],
+            replacement_parts=positions(update['replacement_evidence_refs'])))
+    value['source_updates'] = updates
+    return value
+
+
+def _active_writer_feedback(feedback, record_numbers):
+    rows = []
+    for source in feedback:
+        row = {'record': record_numbers[source['input_id']], 'source_role': source['source_role'],
+            'status': source['status'], 'correction_text': source['correction_text'],
+            'updated_at': source['updated_at']}
+        if 'target_binding' in source:
+            row['target_binding'] = source['target_binding']
+        for key in ('target_ai_interpretation', 'target_user_revision'):
+            if key in source:
+                row[key] = {name: source[key][name] for name in (
+                    'source_role', 'scope', 'source_recorded_at', 'trigger', 'received_meaning')}
+        rows.append(row)
+    return rows
 
 
 def _material(original):
@@ -608,6 +733,25 @@ def build_natural_reply_messages(request, *, correction_target_context=False):
     not interpret a correction, qualify evidence, or create an active meaning.
     All targets remain available, including targets of vague explanations.
     """
+    if request.meaning_profile is not None:
+        if request.meaning_profile != ACTIVE_MEANING_PROFILE or not request.writer_material_json:
+            raise NaturalReplyError('natural_reply_meaning_profile_invalid')
+        # This is a versioned author input, not optional hints alongside old
+        # current facts. The shared active fields and graph own what is valid;
+        # unparsed user text remains explicitly unassessed, never discarded.
+        # The new writer view has no legacy answer_meaning/hint dictionaries.
+        # Do not carry instructions for those absent protocols into this one.
+        writer = json.loads(request.writer_material_json)
+        message = SYSTEM_MESSAGE
+        purpose = writer.get('response_purpose')
+        if (type(purpose) is dict and set(purpose) == {'stage'}
+                and purpose['stage'] in _RESPONSE_PURPOSE_MESSAGES):
+            message += _RESPONSE_PURPOSE_MESSAGES[purpose['stage']]
+        message += """
+recordsのCURRENT_INPUTが今回、PAST_RECORDは別の過去記録です。active_fieldsの原文は現在有効で、source_dutiesは同じfield内の範囲に対応する主体・否定・時点・関係の読みです。本文へ自然に実現し、内部番号や分類の説明をしないでください。
+source_updatesのtarget_textは訂正・撤回された対象で、現在の事実へ戻しません。unassessed_source_rangesとunresolved_sourcesの本人原文も読み、未確定部分やunknownsを補わず、別の出来事を結び付けないでください。correction_targetsとuser_frame_feedbackのAI対象は本人判断の文脈で、本人が述べた事実ではありません。"""
+        return [{'role': 'system', 'content': message},
+                {'role': 'user', 'content': request.writer_material_json}]
     messages = [{"role": "system", "content": system_message_for(request)},
                 {"role": "user", "content": request.material_json}]
     if type(correction_target_context) is not bool:

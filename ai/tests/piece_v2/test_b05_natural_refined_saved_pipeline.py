@@ -52,6 +52,9 @@ def natural_refined_db(refined_pipeline_db):
     db.proc.stdin.write(json.dumps(dict(sql=later_fence.read_text(),script=True))+'\n');db.proc.stdin.flush()
     assert 'code' not in json.loads(db.proc.stdout.readline())
     db.natural_refined_catalog = (before, _catalog(db))
+    shared_material_fence = ROOT/'supabase/migrations/20261114124000_piece_shared_analysis_material_fence.sql'
+    db.proc.stdin.write(json.dumps(dict(sql=shared_material_fence.read_text(),script=True))+'\n');db.proc.stdin.flush()
+    assert 'code' not in json.loads(db.proc.stdout.readline())
     db.proc.stdin.write(json.dumps(dict(script=True,sql="""
         CREATE FUNCTION pg_temp.refined_try_rpc(statement text) RETURNS jsonb
         LANGUAGE plpgsql SECURITY INVOKER SET search_path=pg_catalog AS $$

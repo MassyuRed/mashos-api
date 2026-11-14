@@ -528,6 +528,54 @@ def project_saved_original_source(saved: PieceSavedOriginal, *, source_stage: st
         saved_original_json=saved._original_json)
 
 
+def _latest_natural_analysis_state(snapshot):
+    """The latest saved observation owns its Analysis state, not a constant."""
+    latest = snapshot['thread'].get('last_observation_event_id')
+    rows = [event for event in snapshot['events']
+            if event.get('id') == latest and event.get('kind') == 'OBSERVATION']
+    if len(rows) != 1:
+        return 'INVALID'
+    state = rows[0].get('payload', {}).get('artifact', {}).get('analysis_state')
+    return state if state in {'GENERATED', 'NOT_GENERATED'} else 'INVALID'
+
+
+def _natural_analysis_material_matches(saved, snapshot, body, request):
+    """Admit the same source-grounded material without using reply prose.
+
+    Old saved receipts keep their NOT_GENERATED contract. New observations may
+    contain the shared private material, including a partial/unknown result;
+    rederive it from this observation's exact source prefix, never from its
+    generated text or from a later answer in the thread.
+    """
+    from cocolon_meaning_experience_engine.cores.analysis.semantic_admission import (
+        prepare_emlis_analysis_material,
+    )
+    artifact = body.get('payload', {}).get('artifact')
+    if type(artifact) is not dict:
+        return False
+    material = artifact.get('analysis_material')
+    profile = artifact.get('meaning_profile')
+    if material is None:
+        return (profile is None and artifact.get('analysis_state') == 'NOT_GENERATED')
+    if (profile != 'source_grounded_active_meaning.v1' or type(material) is not dict
+            or artifact.get('analysis_state') not in {'GENERATED', 'NOT_GENERATED'}
+            or artifact.get('analysis_state') != material.get('state')
+            or material.get('source_prefix_ref') != body['payload'].get('source_prefix_ref')):
+        return False
+    try:
+        instant = parse_iso_utc(material.get('as_of'))
+        recorded = parse_iso_utc(body.get('recorded_at'))
+        now = parse_iso_utc(snapshot.get('now'))
+        if instant is None or recorded is None or now is None or not instant <= recorded <= now:
+            return False
+        expected = prepare_emlis_analysis_material(request,
+            owner_scope=saved.authenticated_owner_id,
+            original_record=saved.original_payload(), as_of=material['as_of'])
+        return canonical_json_bytes(expected) == canonical_json_bytes(material)
+    except (ValueError, TypeError, KeyError):
+        return False
+
+
 def _original_observation_handoff(saved: PieceSavedOriginal, snapshot: dict) -> PieceSavedHandoff:
     """Bind the existing PCE-2 envelope to persisted Q2/Q3 INITIAL controls.
 
@@ -538,7 +586,7 @@ def _original_observation_handoff(saved: PieceSavedOriginal, snapshot: dict) -> 
     """
     from cocolon_meaning_experience_engine.emlis_thread_contracts import SEMANTIC_SCHEMA
     from cocolon_meaning_experience_engine.natural_reply import ARTIFACT_SCHEMA, PROFILE
-    from emlis_thread_service import Q3_PROFILE, _context_ref
+    from emlis_thread_service import Q3_PROFILE, _context_ref, _request
 
     def require(condition):
         if not condition:
@@ -581,7 +629,7 @@ def _original_observation_handoff(saved: PieceSavedOriginal, snapshot: dict) -> 
     if natural:
         # A recipient reply deliberately has no semantic checkpoint. Its saved
         # receipt is completion evidence only, never Piece's semantic material.
-        require(d.get('runtime_profile') == Q3_PROFILE and d.get('analysis_state') == 'NOT_GENERATED')
+        require(d.get('runtime_profile') == Q3_PROFILE)
         require(t['state'] == 'COMPLETED' and d.get('body_state') == 'FINAL')
         require(t['current_meaning_event_id'] is None and t['issued_count'] == 0)
         require(not any(e['kind'] in {'MEANING_UPDATE', 'QUESTION', 'TERMINAL'} for e in events))
@@ -589,7 +637,8 @@ def _original_observation_handoff(saved: PieceSavedOriginal, snapshot: dict) -> 
         require(op.get('context_guards') == d.get('context_guards', []))
         artifact = op.get('artifact')
         require(type(artifact) is dict and artifact.get('schema_version') == ARTIFACT_SCHEMA
-            and artifact.get('analysis_state') == 'NOT_GENERATED'
+            and d.get('analysis_state') == artifact.get('analysis_state')
+            and _natural_analysis_material_matches(saved, snapshot, observation, _request(snapshot))
             and type(op.get('text')) is str and bool(op['text'].strip())
             and artifact.get('text') == op['text'] and ref(artifact.get('model')))
         received = [e for e in events if e['kind'] == 'OPERATION'
@@ -713,7 +762,8 @@ def _natural_refined_observation_handoff(saved: PieceSavedOriginal, snapshot: di
     require(d.get('runtime_profile') == Q3_PROFILE
             and d.get('response_profile') == NATURAL_REPLY_PROFILE
             and d.get('natural_question_policy') == NATURAL_QUESTION_POLICY
-            and d.get('semantic_profile') is None and d.get('analysis_state') == 'NOT_GENERATED')
+            and d.get('semantic_profile') is None
+            and d.get('analysis_state') == _latest_natural_analysis_state(snapshot))
     require(t['state'] == 'COMPLETED' and d.get('body_state') == 'REFINED'
             and d.get('answer_assessment') == 'RESOLVED' and d.get('meaning_updated') is True
             and d.get('failure_code') is None and d.get('natural_response_stage') == 'REFINED')
@@ -796,7 +846,7 @@ def _natural_refined_observation_handoff(saved: PieceSavedOriginal, snapshot: di
                 for key in ('operation_id', 'attempt_id')))
     require(initial['seq'] < question['seq'] < answer['seq'] < checkpoint['seq'] < observation['seq'])
 
-    def receipt_chain(body, prefix, response_stage):
+    def receipt_chain(body, prefix, response_stage, source_request):
         payload = body['payload']
         context_ref = payload.get('context_ref')
         require(type(context_ref) is str and bool(context_ref)
@@ -805,7 +855,7 @@ def _natural_refined_observation_handoff(saved: PieceSavedOriginal, snapshot: di
                 and payload.get('context_guards') == d.get('context_guards', []))
         artifact = payload.get('artifact')
         require(type(artifact) is dict and artifact.get('schema_version') == ARTIFACT_SCHEMA
-                and artifact.get('analysis_state') == 'NOT_GENERATED'
+                and _natural_analysis_material_matches(saved, snapshot, body, source_request)
                 and type(payload.get('text')) is str and bool(payload['text'].strip())
                 and artifact.get('text') == payload['text']
                 and type(artifact.get('model')) is str and bool(artifact['model'].strip()))
@@ -830,8 +880,8 @@ def _natural_refined_observation_handoff(saved: PieceSavedOriginal, snapshot: di
             'source_prefix_ref': prefix, 'schema_version': ARTIFACT_SCHEMA})
         return started, received
 
-    initial_started, initial_received = receipt_chain(initial, original_prefix, 'PRE_QUESTION')
-    started, received = receipt_chain(observation, admitted.source_prefix_ref, 'REFINED')
+    initial_started, initial_received = receipt_chain(initial, original_prefix, 'PRE_QUESTION', original_request)
+    started, received = receipt_chain(observation, admitted.source_prefix_ref, 'REFINED', request)
     require(checkpoint['seq'] < started['seq'])
     # Reject hidden extra calls/corrections, rather than picking a convenient
     # matching receipt from a broader or subsequently changed conversation.
@@ -1044,7 +1094,8 @@ def _natural_later_add_handoff(saved, snapshot, answer_id):
     require(t['state']=='COMPLETED' and d.get('body_state')=='REFINED'
         and d.get('runtime_profile')==Q3_PROFILE and d.get('response_profile')==NATURAL_REPLY_PROFILE
         and d.get('natural_question_policy')==NATURAL_QUESTION_POLICY
-        and d.get('semantic_profile') is None and d.get('analysis_state')=='NOT_GENERATED'
+        and d.get('semantic_profile') is None
+        and d.get('analysis_state')==_latest_natural_analysis_state(snapshot)
         and d.get('answer_assessment')=='RESOLVED' and d.get('meaning_updated') is True
         and d.get('natural_response_stage')=='REFINED' and d.get('failure_code') is None
         and 'continuation_question' not in d)
@@ -1077,14 +1128,14 @@ def _natural_later_add_handoff(saved, snapshot, answer_id):
         for e in controls)==2*(n+1))
     context_ref = _context_ref(snapshot)
 
-    def receipt(body, prefix, stage):
+    def receipt(body, prefix, stage, source_request):
         payload = body['payload']; artifact = payload.get('artifact')
         require(payload.get('source_prefix_ref')==prefix and payload.get('context_ref')==context_ref
             and payload.get('context_guards')==d.get('context_guards', [])
             and payload.get('stage')==('INITIAL' if stage=='PRE_QUESTION' else 'REFINED')
             and 'meaning_checkpoint_ref' not in payload
             and type(artifact) is dict and artifact.get('schema_version')==ARTIFACT_SCHEMA
-            and artifact.get('analysis_state')=='NOT_GENERATED'
+            and _natural_analysis_material_matches(saved, snapshot, body, source_request)
             and type(payload.get('text')) is str and bool(payload['text'].strip())
             and artifact.get('text')==payload['text']
             and type(artifact.get('model')) is str and bool(artifact['model'].strip()))
@@ -1106,7 +1157,7 @@ def _natural_later_add_handoff(saved, snapshot, answer_id):
 
     original_request=replace(request,emlis_thread=replace(request.emlis_thread,answers=(),current_round=0))
     original_prefix=admit_emlis_thread(original_request).source_prefix_ref
-    receipt(bodies[0],original_prefix,'PRE_QUESTION')
+    receipt(bodies[0],original_prefix,'PRE_QUESTION',original_request)
     initial_finishes=[e for e in controls if all(e[k]==bodies[0][k] for k in ('operation_id','attempt_id'))
         and e['payload'].get('status')=='AWAITING_ANSWER' and e['payload'].get('failure_code') is None]
     require(len(initial_finishes)==1)
@@ -1149,7 +1200,7 @@ def _natural_later_add_handoff(saved, snapshot, answer_id):
                 for x in update['updates'])))
         require(all(a[k]==cp[k]==body[k] for k in ('operation_id','attempt_id'))
             and q['seq']<a['seq']<cp['seq']<body['seq'])
-        started=receipt(body,prefix,'REFINED'); require(cp['seq']<started['seq'])
+        started=receipt(body,prefix,'REFINED',prefix_request); require(cp['seq']<started['seq'])
         finishes=[e for e in controls if all(e[k]==body[k] for k in ('operation_id','attempt_id'))
             and e['payload'].get('status') in {'COMPLETED','AWAITING_CONTINUE'}
             and e['payload'].get('failure_code') is None]

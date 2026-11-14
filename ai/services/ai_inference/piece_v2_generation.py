@@ -327,6 +327,17 @@ def generate_piece_candidate(source: PieceSourceSnapshot, *, authenticated_owner
         # The actual model bytes, rather than a finite-author replay, are the
         # canonical body. Rehashed substitutions must still match the bound
         # receipt and pass complete independent source/body preservation.
+        import json
+        profile = json.loads(model_candidate.receipt.metadata_json).get('realization_profile')
+        if profile is not None:
+            from cocolon_meaning_experience_engine.piece_v1c import (
+                realize_piece_model_artifact, PieceModelRealizedArtifact)
+            expected_artifact = realize_piece_model_artifact(expected_meaning, expected_plan,
+                body_blocks=blocks, tier=tier, requested_format=requested_format,
+                realization_profile=profile)
+            if type(outcome.artifact) is not PieceModelRealizedArtifact or outcome.artifact != expected_artifact:
+                raise unavailable('piece_engine_artifact_binding')
+            return outcome.artifact.as_candidate()
         if (type(outcome.artifact) is not PieceArtifact
                 or outcome.artifact.body_blocks != blocks):
             raise unavailable('piece_engine_artifact_binding')

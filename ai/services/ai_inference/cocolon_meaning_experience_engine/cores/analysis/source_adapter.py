@@ -356,3 +356,63 @@ def freeze_analysis_sources(request: AnalysisObservedMapRequest) -> AnalysisSour
     return AnalysisSourceSet(source_set_ref, request.authenticated_owner_scope,
                              period, tuple(members), tuple(sources), category_records)
 
+
+def emlis_analysis_source_request(request, *, owner_scope, original_record, as_of):
+    """Project one admitted thread to the existing saved-source owner.
+
+    The caller supplies its owner-resolved saved seven fields and real snapshot
+    clock.  The Emlis source identity is rederived before the saved record is
+    accepted; generated observations, question text and AI correction targets
+    are never members of this source request.  History is projected separately
+    by its caller, rather than joined into the current person's statement.
+    """
+    from emlis_ai_current_input_bundle import build_emlis_current_input_bundle
+    from ...contracts import GenerationRequest
+    from ...emlis_thread_source import admit_emlis_thread
+    from ...source_kernel import freeze_text_source
+
+    if (type(request) is not GenerationRequest or type(owner_scope) is not str
+            or not owner_scope.strip() or type(original_record) is not dict
+            or set(original_record) != ORIGINAL_FIELDS):
+        raise AnalysisSourceError('emlis_analysis_source_binding_invalid')
+    # Canonical serialization also makes this a detached copy. Do not adapt
+    # nullable leaves or the saved date in the version that will be committed.
+    try:
+        original_json = canonical_bytes(original_record).decode('utf-8')
+        original = json.loads(original_json)
+    except (ValueError, TypeError, UnicodeError):
+        raise AnalysisSourceError('emlis_analysis_source_binding_invalid') from None
+    admitted = admit_emlis_thread(request)
+    adapted = dict(original)
+    adapted['created_at'] = _time(original['created_at'], saved_utc=True).isoformat()
+    for name in ('memo', 'memo_action'):
+        if adapted.get(name) is None:
+            adapted[name] = ''
+    rebound = freeze_text_source(replace(request,
+        current_input_bundle=build_emlis_current_input_bundle(adapted)))
+    if (original['id'] != request.expected_source_record_id
+            or rebound.envelope != admitted.original.envelope):
+        raise AnalysisSourceError('emlis_analysis_source_binding_invalid')
+    start, end = _time(original['created_at'], saved_utc=True), _time(as_of)
+    if start >= end:
+        # No artificial one-day/microsecond period is introduced to make a
+        # record fit. The source owner uses its actual half-open clock scope.
+        raise AnalysisSourceError('emlis_analysis_as_of_not_after_source')
+    for source in (*[a.source for a in admitted.answers],
+                   *admitted.control.interpretation_corrections):
+        if _time(source.recorded_at) > end:
+            raise AnalysisSourceError('emlis_analysis_future_source')
+    version = commitment(original)
+    answers = tuple(AnalysisSupplement(a.source.answer_id, owner_scope,
+        original['id'], version, a.source.answer_text_private,
+        commitment(a.source.answer_text_private)) for a in admitted.answers)
+    member = AnalysisSavedRecord(owner_scope, original['id'], version,
+        original_json, answers,
+        interpretation_corrections=admitted.control.interpretation_corrections)
+    projected = AnalysisObservedMapRequest(request.request_id + ':analysis-material',
+        owner_scope, start.isoformat(), end.isoformat(), (member,),
+        selected_category_context=True)
+    # Validate the existing saved-source and correction-parent contracts now.
+    freeze_analysis_sources(projected)
+    return admitted, projected
+

@@ -22,6 +22,7 @@ from cocolon_meaning_experience_engine import MeaningExperienceEngine
 from cocolon_meaning_experience_engine.contracts import GenerationRequest, EngineStatus, ExecutionMode
 from cocolon_meaning_experience_engine.source_kernel import freeze_text_source
 from cocolon_meaning_experience_engine.emlis_thread_source import admit_emlis_thread, identity
+from cocolon_meaning_experience_engine.natural_reply import ACTIVE_MEANING_PROFILE
 from cocolon_meaning_experience_engine.emlis_thread_contracts import (
     EmlisThreadInputV1, EmlisQuestionControlV1, EmlisClarificationV1,
     EmlisQuestionDecisionV1, SupplementalAnswerSource, InterpretationCorrectionSource, SEMANTIC_SCHEMA,
@@ -346,7 +347,8 @@ def thread_dto(snapshot, *, requested_attempt_id=None, can_write=True):
 class EmlisThreadService:
     def __init__(self, store=None, engine=None, *, runtime_profile=RUNTIME_PROFILE, enforce_application_policy=False,
                  semantic_profile=None, offline_candidate_source=None, offline_model_attempt_seconds=None,
-                 natural_reply_source=None, response_profile=None, natural_questions_enabled=True):
+                 natural_reply_source=None, response_profile=None, natural_questions_enabled=True,
+                 natural_meaning_profile=ACTIVE_MEANING_PROFILE):
         if runtime_profile not in {RUNTIME_PROFILE, Q3_PROFILE}:
             raise ValueError("unsupported_thread_profile")
         if natural_reply_source is not None:
@@ -360,6 +362,9 @@ class EmlisThreadService:
         if type(natural_questions_enabled) is not bool:
             raise ValueError("natural_question_setting_invalid")
         self.natural_questions_enabled = natural_questions_enabled
+        if natural_meaning_profile not in {None, ACTIVE_MEANING_PROFILE}:
+            raise ValueError('natural_reply_meaning_profile_invalid')
+        self.natural_meaning_profile = natural_meaning_profile
         if semantic_profile is not None or offline_candidate_source is not None:
             from cocolon_meaning_experience_engine.emlis_semantic_admission import PROFILE, PROFILE_V2, MODEL_PROFILE
             if semantic_profile not in {PROFILE, PROFILE_V2, MODEL_PROFILE} or not callable(offline_candidate_source) or enforce_application_policy:
@@ -464,6 +469,8 @@ class EmlisThreadService:
             t["data"]["receive_emlis_questions"] = receive_questions
         if self.response_profile:
             t["data"].update(response_profile=self.response_profile, analysis_state="NOT_GENERATED")
+            if self.natural_meaning_profile is not None:
+                t['data']['natural_meaning_profile'] = self.natural_meaning_profile
             if self.runtime_profile == Q3_PROFILE:
                 t["data"].update(natural_question_policy=NATURAL_QUESTION_POLICY,
                     natural_questions_enabled=self.natural_questions_enabled and receive_questions)
@@ -508,6 +515,12 @@ class EmlisThreadService:
         t["active_attempt_id"] = str(uuid4())
         t["processing_deadline_at"] = (_now(snapshot) + timedelta(seconds=self._attempt_seconds(t))).isoformat()
         t["data"].update(failure_code=None, operation_id=t["active_operation_id"], attempt_id=t["active_attempt_id"])
+        if operation_id is None and t['data'].get('natural_meaning_profile') == ACTIVE_MEANING_PROFILE:
+            # A new generation fixes its source interpretation time. A retry
+            # of the same operation keeps the original material identity.
+            t['data']['natural_meaning_as_of'] = _now(snapshot).isoformat()
+            t['data']['analysis_state'] = 'NOT_GENERATED'
+            t['data'].pop('analysis_material', None)
 
     def _replay(self, snapshot, key, fingerprint):
         found = next((e for e in snapshot["events"] if e.get("idempotency_key") == key), None)
@@ -593,6 +606,10 @@ class EmlisThreadService:
         if (refreshed.get("current_observation") or refreshed.get("correction_target")) != target:
             raise ThreadStoreError("correction_target_changed", 409)
         t = copy.deepcopy(snapshot["thread"])
+        if self.natural_meaning_profile is not None:
+            # A new correction is a new source/generation. Existing receipts
+            # and checkpoints keep the profile with which they were created.
+            t['data']['natural_meaning_profile'] = self.natural_meaning_profile
         detail_needed = _needs_correction_detail(explanation)
         t["state"] = "COMPLETED" if detail_needed else "REFINING"
         if not detail_needed:
@@ -607,6 +624,8 @@ class EmlisThreadService:
             natural_response_stage="FINAL", failure_code=None,
             context_guards=[h["guard"] for h in snapshot["context"]["history"]],
             context_feedback=[[f["frame_key"], f["version"]] for f in snapshot["context"]["feedback"]])
+        t['data']['analysis_state'] = 'NOT_GENERATED'
+        t['data'].pop('analysis_material', None)
         t["data"].pop("continuation_question", None)
         t["current_meaning_event_id"] = None
         t["evaluated_prefix_ref"] = None
@@ -939,7 +958,8 @@ class EmlisThreadService:
 
     async def _process_natural(self, user_id, snapshot):
         from cocolon_meaning_experience_engine.natural_reply import (
-            ARTIFACT_SCHEMA, NaturalReply, NaturalReplyError, prepare_natural_reply, validate_reply)
+            ARTIFACT_SCHEMA, NaturalReply, NaturalReplyError, prepare_natural_reply, validate_reply,
+            build_natural_reply_messages)
         from cocolon_meaning_experience_engine.natural_reply_meaning import (
             SCHEMA as MEANING_REVIEW_SCHEMA, compare_reply_meaning)
         t = snapshot["thread"]
@@ -966,17 +986,34 @@ class EmlisThreadService:
         snapshot["thread"]["data"]["natural_response_stage"] = response_stage
         t = snapshot["thread"]
         material, safety = prepare_natural_reply(_request(snapshot), response_stage=response_stage,
-            prepared_meaning=prepared_meaning)
+            prepared_meaning=prepared_meaning,
+            meaning_profile=t['data'].get('natural_meaning_profile'), owner_scope=user_id,
+            original_record=snapshot['original'], as_of=t['data'].get('natural_meaning_as_of'))
+        writer_identity = {}
+        if material.meaning_profile is not None:
+            writer_identity = {'meaning_profile': material.meaning_profile,
+                'writer_messages_sha256': hashlib.sha256(json.dumps(build_natural_reply_messages(material),
+                    ensure_ascii=False, separators=(',', ':')).encode('utf-8')).hexdigest()}
+
+        def check_writer_identity(event):
+            payload = event['payload']
+            if ({key: payload[key] for key in writer_identity if key in payload} != writer_identity
+                    or payload.get('meaning_profile') != material.meaning_profile):
+                raise NaturalReplyError('natural_reply_writer_identity_changed')
+
         received = self._natural_receipt(snapshot, "NATURAL_REPLY_RECEIVED")
         if received:
+            check_writer_identity(received)
             candidate = validate_reply(NaturalReply(**received["payload"]["reply"]), material)
         else:
-            if self._natural_receipt(snapshot, "NATURAL_REPLY_CALL_STARTED"):
+            started = self._natural_receipt(snapshot, "NATURAL_REPLY_CALL_STARTED")
+            if started:
+                check_writer_identity(started)
                 return await self._finish(user_id, snapshot, body_state="UNAVAILABLE", state="RESPONSE_FAILED",
                                           failure="natural_reply_result_unknown")
             event = _event("OPERATION", {"stage": "NATURAL_REPLY_CALL_STARTED",
                 "source_prefix_ref": t["source_prefix_ref"], "context_ref": _context_ref(snapshot),
-                "response_stage": response_stage}, t)
+                "response_stage": response_stage, **writer_identity}, t)
             snapshot = await self._commit(user_id, snapshot, copy.deepcopy(t), [event], finishing_attempt=t["active_attempt_id"])
             t = snapshot["thread"]
             remaining = (parse_iso_utc(t["processing_deadline_at"]) - _now(snapshot)).total_seconds() - 3
@@ -993,7 +1030,7 @@ class EmlisThreadService:
                                           failure="natural_reply_unavailable")
             event = _event("OPERATION", {"stage": "NATURAL_REPLY_RECEIVED",
                 "source_prefix_ref": t["source_prefix_ref"], "context_ref": _context_ref(snapshot),
-                "response_stage": response_stage, "reply": asdict(candidate)}, t)
+                "response_stage": response_stage, "reply": asdict(candidate), **writer_identity}, t)
             try:
                 snapshot = await self._commit(user_id, snapshot, copy.deepcopy(t), [event], finishing_attempt=t["active_attempt_id"])
             except ThreadStoreError as exc:
@@ -1025,12 +1062,24 @@ class EmlisThreadService:
                 "reason_codes": ["CHECKER_ERROR"],
                 "full_reply_semantic_coverage": False}
         frames = await asyncio.to_thread(_natural_interpretive_frames, snapshot, material)
+        analysis_material = (json.loads(material.analysis_material_json)
+            if material.analysis_material_json is not None else None)
+        analysis_state = analysis_material['state'] if analysis_material is not None else 'NOT_GENERATED'
+        if analysis_state not in {'GENERATED', 'NOT_GENERATED'}:
+            raise NaturalReplyError('natural_reply_analysis_material_invalid')
+        t['data']['analysis_state'] = analysis_state
+        if analysis_material is not None:
+            t['data']['analysis_material'] = analysis_material
         observation = _event("OBSERVATION", {"text": candidate.text,
             "stage": "CORRECTED" if correcting else "REFINED" if t.get("latest_answer_event_id") else "INITIAL",
             "source_prefix_ref": t["source_prefix_ref"], "context_ref": _context_ref(snapshot),
             "context_guards": t["data"].get("context_guards", []),
             "artifact": {"schema_version": ARTIFACT_SCHEMA, "text": candidate.text,
-                         "model": candidate.model, "analysis_state": "NOT_GENERATED",
+                         "model": candidate.model, "analysis_state": analysis_state,
+                         **({'analysis_material': analysis_material,
+                             'meaning_profile': material.meaning_profile,
+                             'writer_messages_sha256': writer_identity['writer_messages_sha256']}
+                            if analysis_material is not None else {}),
                          "meaning_comparison": meaning_review,
                          **({"interpretive_frames": _json(frames)} if frames else {})}}, t)
         followup = bool(next_question and t.get("latest_answer_event_id"))
@@ -1167,6 +1216,11 @@ class EmlisThreadService:
             if str(exc) == "separate_safety_owner_required":
                 return await self._finish(user_id, snapshot, body_state="ANSWER_UNREFLECTED",
                     state="COMPLETED", failure="separate_safety_owner_required")
+            if str(exc) in {'natural_reply_writer_identity_changed', 'natural_reply_meaning_profile_invalid'}:
+                # An old receipt is neither a new-source candidate nor a
+                # transient acquisition failure. Preserve it without offering
+                # an automatic attempt over different author material.
+                return await self._record_failure(user_id, snapshot, attempt, str(exc))
             return await self._record_failure(user_id, snapshot, attempt, "meaning_or_body_unavailable")
         except Exception:
             return await self._record_failure(user_id, snapshot, attempt, "meaning_or_body_unavailable")

@@ -121,6 +121,18 @@ class PieceArtifact:
 
 
 @dataclass(frozen=True, slots=True, repr=False)
+class PieceModelRealizedArtifact(PieceArtifact):
+    """Explicit private v2 provenance; legacy artifact serialization is exact.
+
+    Public payload/hash/recipe remain the realized work. Raw provider prose is
+    separately retained, never replaced or relabelled as a new model response.
+    """
+    realization_profile: str
+    model_body_blocks: tuple[str, ...]
+    realization_edits: tuple[tuple[str, str, int, str, str], ...]
+
+
+@dataclass(frozen=True, slots=True, repr=False)
 class PieceEngineOutcome:
     status: EngineStatus
     reason_codes: tuple[str, ...]
@@ -924,7 +936,98 @@ def _paired_self_continuations(meaning: PieceSourceMeaning,
     return frozenset(continuations)
 
 
-def realize_piece_model_artifact(meaning, plan, *, body_blocks, tier, requested_format):
+MODEL_REALIZATION_PROFILE = 'piece.cmee_realization.v2'
+
+
+def _model_realization_clauses(text):
+    # Do not guess sentence boundaries inside retained discourse or quotes.
+    if any(c in text for c in '「」『』\"\'“”（）()【】\r\n'):
+        return None
+    clauses = tuple(re.findall(r'[^。！？!?]+[。！？!?]', text))
+    return clauses if clauses and ''.join(clauses) == text else None
+
+
+def _model_realization_key(text):
+    from piece_v2_content_policy import _piece_model_read_block, _piece_model_operator_tree
+    read = _piece_model_read_block(text)
+    if read is not None:
+        return ('finite', repr(read))
+    tree = _piece_model_operator_tree(text)
+    return ('operator', repr(tree)) if tree is not None else ('literal', text)
+
+
+def _realize_admitted_model_blocks(meaning, plan, blocks):
+    """Apply existing source-owned editorial decisions to an admitted body.
+
+    This is not recovery for a failed model candidate. The caller first runs
+    the unchanged whole-body S7. Each edited occurrence then has a unique,
+    ordered source/model correspondence; duplicates/unknown correspondence,
+    quote boundaries and already changed discourse keep their model text.
+    """
+    from .piece_refined import PieceRefinedMeaning, refined_meaning_parts
+    from piece_v2_content_policy import _piece_model_topic_continuations
+    pairs = refined_meaning_parts(meaning, plan) if type(meaning) is PieceRefinedMeaning else ((meaning, plan),)
+    result, edits, offset = [], [], 0
+    eligible = None
+    for part, child in pairs:
+        # This is the existing author's source-bound editorial realization,
+        # used as a decision reference, never as a replacement for a failed raw.
+        try:
+            reference = realize_piece_artifact(part, child, tier='premium', requested_format='short_essay')
+        except PieceContractError:
+            # The admitted raw remains a short essay when the finite source
+            # author cannot supply an editorial reference. Do not infer a
+            # rewrite or award another format from an unavailable reference.
+            count = len(child.block_node_ids)
+            result.extend(blocks[offset:offset + count])
+            offset += count
+            eligible = ('short_essay',)
+            continue
+        eligible = reference.eligible_formats if eligible is None else ('short_essay',)
+        topics, omissions = _piece_model_topic_continuations(part, child)
+        nodes = {node.node_id: node for node in piece_text_nodes(part)}
+        for group, authored in zip(child.block_node_ids, reference.body_blocks, strict=True):
+            raw = blocks[offset]
+            before = _model_realization_clauses(raw)
+            after = _model_realization_clauses(authored)
+            original = tuple(nodes[node_id].value for node_id in group)
+            keys = tuple(_model_realization_key(_publicize_source_sentence(value, part))
+                         for value in original)
+            if (before is None or after is None or len(before) != len(group)
+                    or len(after) != len(group)):
+                result.append(raw)
+                offset += 1
+                continue
+            visible_keys = tuple(_model_realization_key(value) for value in before)
+            realized = []
+            for index, (node_id, source, visible, native) in enumerate(
+                    zip(group, original, before, after, strict=True)):
+                key = keys[index]
+                if (key != visible_keys[index] or keys.count(key) != 1
+                        or visible_keys.count(key) != 1):
+                    realized.append(visible)
+                    continue
+                public_source = _publicize_source_sentence(source, part)
+                # A role already realized by the model must not make us undo
+                # its independently admitted register just to repeat that edit.
+                value = native if native != public_source else visible
+                if node_id in omissions and topics[node_id]['topic_end'] is not None:
+                    speaker = topics[node_id]['narrator']
+                    topic = re.match(re.escape(speaker) + r'は[、，,]?', value)
+                    if topic is not None:
+                        value = value[topic.end():]
+                if value != visible:
+                    edits.append((part.envelope.source_record_id, node_id, offset, visible, value))
+                realized.append(value)
+            result.append(''.join(realized))
+            offset += 1
+    if offset != len(blocks):
+        raise unavailable('piece_model_block_partition')
+    return tuple(result), tuple(edits), eligible or ('short_essay',)
+
+
+def realize_piece_model_artifact(meaning, plan, *, body_blocks, tier, requested_format,
+                                 realization_profile=None):
     """Adopt one fixed model body through the existing Piece artifact owner.
 
     The model supplies no format, language, plan, recipe or safety verdict.
@@ -934,12 +1037,37 @@ def realize_piece_model_artifact(meaning, plan, *, body_blocks, tier, requested_
     from piece_v2_content_policy import validate_piece_model_preservation
     if type(body_blocks) is not tuple or not body_blocks or any(type(b) is not str for b in body_blocks):
         raise unavailable('piece_model_body_shape')
-    selected = choose_format(tier=tier, requested=requested_format,
-        eligible=('short_essay',), recommended='short_essay')
     text = '\n\n'.join(body_blocks)
     artifact = PieceArtifact(body_blocks, text, hashlib.sha256(text.encode()).hexdigest(),
-                             selected, ('short_essay',))
+                             'short_essay', ('short_essay',))
     validate_piece_model_preservation(meaning, plan, artifact)
+    if realization_profile == MODEL_REALIZATION_PROFILE:
+        blocks, edits, source_formats = _realize_admitted_model_blocks(meaning, plan, body_blocks)
+        text = '\n\n'.join(blocks)
+        review = PieceArtifact(blocks, text, hashlib.sha256(text.encode()).hexdigest(),
+                              'short_essay', ('short_essay',))
+        validate_piece_model_preservation(meaning, plan, review)
+        # The source author's established eligibility is necessary. The model
+        # cannot award quote/declaration eligibility or override plan rules.
+        formats = []
+        for fmt in source_formats:
+            candidate = PieceArtifact(blocks, text, review.piece_text_hash, fmt, source_formats)
+            try:
+                validate_candidate_text(candidate.content_payload())
+            except ValueError:
+                continue
+            formats.append(fmt)
+        recommended = ('declaration' if 'declaration' in formats else
+                       'quote' if 'quote' in formats else 'short_essay')
+        selected = choose_format(tier=tier, requested=requested_format,
+            eligible=tuple(formats), recommended=recommended)
+        return PieceModelRealizedArtifact(blocks, text, review.piece_text_hash, selected, tuple(formats),
+            realization_profile, body_blocks, edits)
+    if realization_profile is not None:
+        raise unavailable('piece_model_realization_profile')
+    selected = choose_format(tier=tier, requested=requested_format,
+        eligible=('short_essay',), recommended='short_essay')
+    artifact = PieceArtifact(body_blocks, text, artifact.piece_text_hash, selected, ('short_essay',))
     return artifact
 
 

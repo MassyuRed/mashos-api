@@ -16,6 +16,7 @@ from .emlis_v1a import CMEEVerticalError, build_text_grounded_limited_artifact
 from .source_kernel import SourceAdmissionError, freeze_text_source
 from .piece_v1c import PieceEngineOutcome, PieceGenerationRequest, generate_piece_artifact
 from .cores.analysis.source_adapter import AnalysisObservedMapRequest
+from .cores.analysis.if_route_contracts import AnalysisIfRouteRequest, AnalysisIfRouteOutcome
 from .cores.analysis.observed_route_realizer import (
     AnalysisEngineOutcome, AnalysisSemanticMapOutcome, generate_observed_map)
 
@@ -28,7 +29,16 @@ class MeaningExperienceEngine:
     belongs to the application config, not this pure meaning engine.
     """
 
-    def generate(self, request: GenerationRequest | PieceGenerationRequest | AnalysisObservedMapRequest, *, semantic_input=None) -> EngineOutcome | PieceEngineOutcome | AnalysisEngineOutcome | AnalysisSemanticMapOutcome:
+    def generate(self, request: GenerationRequest | PieceGenerationRequest | AnalysisObservedMapRequest | AnalysisIfRouteRequest, *, semantic_input=None) -> EngineOutcome | PieceEngineOutcome | AnalysisEngineOutcome | AnalysisSemanticMapOutcome | AnalysisIfRouteOutcome:
+        if type(request) is AnalysisIfRouteRequest:
+            from .cores.analysis.if_route_realizer import (
+                generate_if_set, prepare_if_model_request, admit_if_model_response)
+            if semantic_input is None:
+                return generate_if_set(request)
+            prepared = prepare_if_model_request(request)
+            if type(prepared) is AnalysisIfRouteOutcome:
+                return prepared
+            return admit_if_model_response(prepared, semantic_input)
         if semantic_input is not None and type(request) is AnalysisObservedMapRequest:
             from .cores.analysis.semantic_admission import (
                 AnalysisSemanticMapInput, generate_analysis_semantic_map)
@@ -183,6 +193,11 @@ class MeaningExperienceEngine:
             raise ValueError("emlis_update_request_out_of_scope")
         from .emlis_answer_update import prepare_emlis_meaning
         return (prepare_emlis_meaning(request, semantic_input=semantic_input) if semantic_input is not None else prepare_emlis_meaning(request)).checkpoint
+
+    def save_analysis_route_intent(self, scenario_set, **selection):
+        """Compile an explicit person selection; lifecycle I/O stays outside."""
+        from .cores.analysis.if_route_realizer import save_route_intent
+        return save_route_intent(scenario_set, **selection)
 
 
 __all__ = ["MeaningExperienceEngine"]
