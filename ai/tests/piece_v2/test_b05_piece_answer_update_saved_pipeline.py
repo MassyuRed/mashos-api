@@ -69,7 +69,8 @@ def prepare_answer_update(db, monkeypatch, operation, *, tier='premium', resolve
     token = 'synthetic-one-answer-piece-update'
     _update(db, 'insert into auth.users values ($1)', [owner])
     _update(db, 'insert into public.profiles values ($1,$2)', [owner,tier])
-    _update(db, "insert into public.emotions values ($1,$2,now() at time zone 'UTC',"
+    # This saved input precedes analysis; it is not an equal-clock admission case.
+    _update(db, "insert into public.emotions values ($1,$2,(now()-interval '1 hour') at time zone 'UTC',"
         "$3,$4,array['仕事'],array['不安'],$5::jsonb)",
         [parent,owner,MEMO,ACTION,json.dumps([dict(type='不安',strength='medium')])])
     _bind(db,monkeypatch,owner,token)
@@ -243,7 +244,7 @@ def prepare_later_update(answer_update_db, monkeypatch, rounds, operation, tier,
     memo = RETAINED + '誘われたのに、悲しかった。頼まれたのに、寂しかった。私は仕事を続けたい。'
     _update(db, 'insert into auth.users values ($1)', [owner])
     _update(db, 'insert into public.profiles values ($1,$2)', [owner,tier])
-    _update(db, "insert into public.emotions values ($1,$2,now() at time zone 'UTC',$3,$4,array['仕事'],array['不安'],$5::jsonb)",
+    _update(db, "insert into public.emotions values ($1,$2,(now()-interval '1 hour') at time zone 'UTC',$3,$4,array['仕事'],array['不安'],$5::jsonb)",
         [parent,owner,memo,action_text,json.dumps([dict(type='不安',strength='medium')])])
     _bind(db,monkeypatch,owner,token)
     calls = []
@@ -280,6 +281,29 @@ def prepare_later_update(answer_update_db, monkeypatch, rounds, operation, tier,
     blocks=[RETAINED+'誘われたのに、悲しかった。頼まれたのに、寂しかった。',ACTION]
     if operation=='REVISE': blocks.append('私は家族を守りたい。')
     return state, blocks, calls
+
+
+def test_update_fixture_sources_precede_their_initial_fixed_analysis_clock(answer_update_db, monkeypatch):
+    from publish_governance import parse_iso_utc
+
+    initial_clocks = []
+    process_natural = EmlisThreadService._process_natural
+    async def observed_natural(service, owner, snapshot):
+        if snapshot['thread'].get('latest_answer_event_id') is None:
+            initial_clocks.append(dict(source_id=snapshot['original']['id'],
+                created_at=snapshot['original']['created_at'], now=snapshot['now'],
+                as_of=snapshot['thread']['data'].get('natural_meaning_as_of')))
+        return await process_natural(service, owner, snapshot)
+
+    monkeypatch.setattr(EmlisThreadService, '_process_natural', observed_natural)
+    states = [prepare_answer_update(answer_update_db, monkeypatch, 'REVISE'),
+        prepare_later_update(answer_update_db, monkeypatch, 2, 'REVISE', 'premium')[0]]
+    assert len(initial_clocks) == 2
+    for state, clocks in zip(states, initial_clocks):
+        assert clocks['source_id'] == state['source_id']
+        created, as_of, now = (parse_iso_utc(clocks[key]) for key in ('created_at', 'as_of', 'now'))
+        assert created is not None and as_of is not None and now is not None
+        assert created < as_of <= now, clocks
 
 
 @pytest.mark.parametrize('texts,action,expected_fragments,removed', [
