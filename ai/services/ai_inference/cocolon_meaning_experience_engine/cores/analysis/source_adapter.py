@@ -15,6 +15,7 @@ from emlis_ai_current_input_bundle import normalize_emlis_current_input
 from emlis_ai_evidence_ledger_service import build_evidence_ledger
 from ...contracts import EvidenceRef, SourceEnvelope
 from ...source_kernel import _text_span_raw_subrange
+from ...emlis_thread_contracts import InterpretationCorrectionSource
 
 POLICY = 'cocolon.cmee.analysis.observed.offline.v1'
 ORIGINAL_FIELDS = frozenset(('id', 'created_at', 'memo', 'memo_action',
@@ -54,6 +55,9 @@ class AnalysisSavedRecord:
     original_json: str
     supplements: tuple[AnalysisSupplement, ...] = ()
     record_state: str = 'LIVE'
+    # AI target text stays control metadata. Only the person's explanation
+    # becomes a separately qualified evidence envelope.
+    interpretation_corrections: tuple[InterpretationCorrectionSource, ...] = ()
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -260,6 +264,11 @@ def freeze_analysis_sources(request: AnalysisObservedMapRequest) -> AnalysisSour
             [s.source_id, s.owner_scope, s.parent_record_ref, s.parent_record_version,
              s.text, s.source_version, s.source_role] for s in member.supplements
              if type(s) is AnalysisSupplement]])
+        if type(member.interpretation_corrections) is not tuple:
+            raise AnalysisSourceError('analysis_correction_binding_invalid')
+        if member.interpretation_corrections:
+            identity = commitment([identity, [asdict(c) for c in member.interpretation_corrections
+                if type(c) is InterpretationCorrectionSource]])
         if member.saved_record_ref in versions:
             if versions[member.saved_record_ref] != identity:
                 raise AnalysisSourceError('analysis_duplicate_record_conflict')
@@ -283,6 +292,36 @@ def freeze_analysis_sources(request: AnalysisObservedMapRequest) -> AnalysisSour
                     supplement.source_version != commitment(supplement.text)):
                 raise AnalysisSourceError('analysis_supplement_binding_invalid')
             supplements.add(supplement.source_id)
+        for correction in member.interpretation_corrections:
+            if (type(correction) is not InterpretationCorrectionSource
+                    or correction.source_role != 'USER_INTERPRETATION_CORRECTION'
+                    or any(type(value) is not str or not value.strip() for value in (
+                        correction.correction_id, correction.thread_id,
+                        correction.original_source_ref, correction.target_event_id,
+                        correction.target_text, correction.explanation, correction.recorded_at))
+                    or max(len(correction.target_text), len(correction.explanation)) > 2000
+                    or correction.correction_id in supplements):
+                raise AnalysisSourceError('analysis_correction_binding_invalid')
+            _time(correction.recorded_at)
+            # Re-derive the Emlis original identity, including its saved UTC
+            # adaptation, so an internal request cannot transplant a valid
+            # correction from another record or an earlier edited version.
+            from emlis_ai_current_input_bundle import build_emlis_current_input_bundle
+            from ...contracts import GenerationRequest
+            from ...source_kernel import freeze_text_source, SourceAdmissionError
+            original_input = dict(original)
+            original_input['created_at'] = _time(original['created_at'], saved_utc=True).isoformat()
+            for name in ('memo', 'memo_action'):
+                if original_input.get(name) is None:
+                    original_input[name] = ''
+            try:
+                expected_original = freeze_text_source(GenerationRequest('analysis-correction-binding',
+                    build_emlis_current_input_bundle(original_input), ref)).envelope.envelope_id
+            except (SourceAdmissionError, ValueError, TypeError):
+                raise AnalysisSourceError('analysis_correction_binding_invalid') from None
+            if correction.original_source_ref != expected_original:
+                raise AnalysisSourceError('analysis_correction_binding_invalid')
+            supplements.add(correction.correction_id)
         if included:
             child = _source(member, 'ORIGINAL_INPUT', ref,
                             member.saved_record_version, original)
@@ -291,6 +330,11 @@ def freeze_analysis_sources(request: AnalysisObservedMapRequest) -> AnalysisSour
             for supplement in member.supplements:
                 child = _source(member, 'SUPPLEMENTAL_ANSWER', supplement.source_id,
                     supplement.source_version, {'id': ref, 'memo': supplement.text})
+                sources.append(child)
+                children.append(child.envelope.envelope_id)
+            for correction in member.interpretation_corrections:
+                child = _source(member, correction.source_role, correction.correction_id,
+                    commitment(asdict(correction)), {'id': ref, 'memo': correction.explanation})
                 sources.append(child)
                 children.append(child.envelope.envelope_id)
         members.append(AnalysisSourceMember(ref, member.saved_record_version,

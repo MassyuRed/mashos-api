@@ -2271,6 +2271,7 @@ def prepare_analysis_semantic_map(request, snapshot, *,
     # never treated as this narrow, known exclusion policy.
     accepted, fields, reasons = [], [], Counter()
     known_exclusions = {'analysis_separate_safety_required', 'analysis_supplement_interpretation_pending',
+        'analysis_interpretation_correction_pending',
         'analysis_correction_target_unresolved', 'analysis_correction_replacement_unsupported'}
     for member in request.members:
         single = replace(request, members=(member,))

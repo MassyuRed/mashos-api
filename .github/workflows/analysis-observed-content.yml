@@ -240,6 +240,7 @@ jobs:
           ai/tests/test_emlis_natural_reply_cognition.py
           ai/tests/test_analysis_model_fields.py
           ai/tests/test_analysis_cumulative.py
+          ai/tests/test_analysis_interpretation_correction_sources.py
           ai/tests/test_analysis_cumulative_model_source.py
           ai/tests/test_analysis_semantic_integration.py
           ai/tests/test_analysis_semantic_source_duties.py

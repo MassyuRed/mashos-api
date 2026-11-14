@@ -3137,7 +3137,7 @@ def _active_sources(source_set):
                  if s.envelope.source_role == 'ORIGINAL_INPUT'}
     excluded, views, updates, replacement_updates = {}, [], [], {}
     for answer in source_set.sources:
-        if answer.envelope.source_role != 'SUPPLEMENTAL_ANSWER':
+        if answer.envelope.source_role not in {'SUPPLEMENTAL_ANSWER', 'USER_INTERPRETATION_CORRECTION'}:
             views.append(answer)
             continue
         raw = source_field_text(answer, 'memo')
@@ -3148,6 +3148,11 @@ def _active_sources(source_set):
         if original is None:
             raise AnalysisSourceError('analysis_supplement_parent_missing')
         if match is None:
+            if answer.envelope.source_role == 'USER_INTERPRETATION_CORRECTION':
+                # An AI excerpt is not a claim in the original. Only an exact
+                # person-authored whole-clause update can use the existing
+                # correction proof below; other explanations remain pending.
+                raise AnalysisSourceError('analysis_interpretation_correction_pending')
             earlier = tuple(source for source in views if source.record_ref == answer.record_ref)
             _admit_ordinary_supplement(answer, earlier, excluded)
             views.append(answer)

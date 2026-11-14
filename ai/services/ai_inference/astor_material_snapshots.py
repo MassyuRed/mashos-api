@@ -136,7 +136,7 @@ def _analysis_saved_member(snapshot, *, owner, input_id, tier, start, end, cumul
         if thread is None:
             if events:
                 raise AnalysisSavedSourceError('analysis_saved_source_invalid')
-            answers, guard = (), None
+            answers, corrections, guard = (), (), None
         else:
             if (thread['user_id'] != owner or thread['original_emotion_id'] != input_id
                     or type(thread['revision']) is not int or thread['revision'] < 1
@@ -145,6 +145,20 @@ def _analysis_saved_member(snapshot, *, owner, input_id, tier, start, end, cumul
             answer_events = [e for e in events if e['kind'] == 'ANSWER']
             request = _request(snapshot, include_context=False, analysis_source_only=True) if cumulative else _request(snapshot, include_context=False)
             admitted = admit_emlis_thread(request)
+            corrections = admitted.control.interpretation_corrections
+            correction_events = [e for e in events if e['kind'] == 'OPERATION'
+                and e['payload'].get('stage') == 'INTERPRETATION_CORRECTION']
+            if len(corrections) != len(correction_events):
+                raise AnalysisSavedSourceError('analysis_saved_source_invalid')
+            for correction, event in zip(corrections, correction_events):
+                targets = [e for e in events if e['id'] == correction.target_event_id]
+                target = targets[0] if len(targets) == 1 else None
+                if (event['id'] != correction.correction_id or target is None
+                        or target['kind'] != 'OBSERVATION'
+                        or type(target['payload'].get('text')) is not str
+                        or target['payload']['text'].count(correction.target_text) != 1
+                        or events.index(target) >= events.index(event)):
+                    raise AnalysisSavedSourceError('analysis_saved_source_invalid')
             question_events = [e for e in events if e['kind'] == 'QUESTION']
             question_ids = [e['question_id'] for e in question_events]
             if (len(set(question_ids)) != len(question_ids)
@@ -163,12 +177,15 @@ def _analysis_saved_member(snapshot, *, owner, input_id, tier, start, end, cumul
                 raise AnalysisSavedSourceError('analysis_saved_source_invalid')
             guard = commitment([thread['id'], thread['revision'], question_events,
                                 [e['payload']['source'] for e in answer_events]])
+            if corrections:
+                guard = commitment([guard, correction_events])
         record_version = commitment(original)
         supplements = tuple(AnalysisSupplement(a.answer_id, owner, input_id,
             record_version, a.answer_text_private, commitment(a.answer_text_private), a.source_role)
             for a in answers)
         member = AnalysisSavedRecord(owner, input_id, record_version,
-            canonical_bytes(original).decode('utf-8'), supplements)
+            canonical_bytes(original).decode('utf-8'), supplements,
+            interpretation_corrections=corrections)
         return member, (input_id, record_version, guard)
     except AnalysisSavedSourceError:
         raise

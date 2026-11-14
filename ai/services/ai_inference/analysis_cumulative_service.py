@@ -611,6 +611,7 @@ def build_cumulative_map(owner, snapshot, *, model_input=None):
         except AnalysisSourceError as exc:
             code = str(exc)
             if code not in {'analysis_separate_safety_required', 'analysis_supplement_interpretation_pending',
+                    'analysis_interpretation_correction_pending',
                     'analysis_correction_target_unresolved', 'analysis_correction_replacement_unsupported'}:
                 raise
             reasons[code] += 1
@@ -950,7 +951,8 @@ def _project_evidence(owner, raw):
         envelopes = {s.envelope.envelope_id for s in sources}
         unchanged = commitment(original) == row['analyzed_version'] and set(row['expected_envelopes']) <= envelopes
         answers = [source_field_text(s, 'memo') for s in sources
-            if s.envelope.source_role == 'SUPPLEMENTAL_ANSWER' and s.envelope.envelope_id in row['expected_envelopes']]
+            if s.envelope.source_role in {'SUPPLEMENTAL_ANSWER', 'USER_INTERPRETATION_CORRECTION'}
+            and s.envelope.envelope_id in row['expected_envelopes']]
         items.append(dict(id=original['id'], created_at=original['created_at'],
             memo=original['memo'], memo_action=original['memo_action'],
             answers=answers, version_state='CURRENT' if unchanged else 'EDITED_SINCE_ANALYSIS'))
