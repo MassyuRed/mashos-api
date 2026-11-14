@@ -428,7 +428,10 @@ def build_piece_model_messages(prepared, *, include_authoring_constraints=False,
                         ['ORIGINAL_INPUT', 'SUPPLEMENTAL_ANSWER']))
                     or (control.get('effective_round_sources') is True
                         and 2 <= len(sources) <= 4 and sources[0].get('role') == 'ORIGINAL_INPUT'
-                        and all(item.get('role') == 'SUPPLEMENTAL_ANSWER' for item in sources[1:])))):
+                        and all(item.get('role') == 'SUPPLEMENTAL_ANSWER' for item in sources[1:]))
+                    or (control.get('interpretation_correction') is True
+                        and [item.get('role') for item in sources] ==
+                            ['ORIGINAL_INPUT', 'USER_INTERPRETATION_CORRECTION']))):
             raise ValueError
         original = sources[0].get('original')
         if (type(original) is not dict or set(original) != {
@@ -481,6 +484,13 @@ def build_piece_model_messages(prepared, *, include_authoring_constraints=False,
                 '記載順に一つの本文へまとめてください。範囲間の空白には撤回済みの内容があり、'
                 'その内容を復元したり、範囲の間へ新たな関係を加えたりしないでください。'
                 '本文欄のないSUPPLEMENTAL_ANSWERは訂正・撤回の来歴だけです。')
+            if control.get('interpretation_correction') is True:
+                control['correction_control'] = {key: value
+                    for key, value in control['correction_control'].items()
+                    if key not in {'target_text', 'explanation'}}
+                instruction += ('\nUSER_INTERPRETATION_CORRECTIONは本人の説明を原入力と別の出所で保持します。'
+                    '訂正されたAIの文章は来歴であり、本人の事実でも本文材料でもありません。'
+                    '本文欄のない訂正sourceは撤回の来歴だけで、旧引用を本文へ戻さないでください。')
         # payload() is detached. Private sources/private_json/request_id are
         # unchanged; every transmitted slice still uses its raw coordinates.
         return [dict(role='system', content=instruction),

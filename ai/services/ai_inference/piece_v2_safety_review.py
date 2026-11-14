@@ -26,7 +26,7 @@ from piece_v2_contract import (
     validate_piece_text_binding,
 )
 from piece_v2_preview_service import PreparedPiecePreview, _HANDOFF_TYPES, _project_handoff_source
-from piece_v2_source_adapter import PieceSavedHandoff, PieceSavedRefinedHandoff
+from piece_v2_source_adapter import PieceSavedHandoff, PieceSavedRefinedHandoff, PieceSavedCorrectedHandoff
 from cocolon_meaning_experience_engine.piece_source import build_piece_source_meaning
 from cocolon_meaning_experience_engine.piece_v1c import (
     PieceArtifact, compile_piece_artifact_plan, _has_topic_qualification,
@@ -131,7 +131,7 @@ async def review_prepared_original(prepared: PreparedPiecePreview) -> str:
         payload, artifact = _artifact(prepared)
         handoff = prepared.handoff
         source = _project_handoff_source(handoff)
-        if type(handoff) is PieceSavedRefinedHandoff:
+        if type(handoff) in (PieceSavedRefinedHandoff, PieceSavedCorrectedHandoff):
             from cocolon_meaning_experience_engine.piece_refined import (
                 build_refined_meaning, _plans, validate_refined_preservation,
             )
@@ -139,7 +139,9 @@ async def review_prepared_original(prepared: PreparedPiecePreview) -> str:
             # Scan both admitted fields before their existing public-role
             # abstraction, without treating Emlis prose or frame metadata as
             # the user's semantic material.
-            if _scan(source.original.original_text) or _scan(source.supplemental.answer_text_private):
+            person_text = (source.correction.explanation if type(handoff) is PieceSavedCorrectedHandoff
+                else source.supplemental.answer_text_private)
+            if _scan(source.original.original_text) or _scan(person_text):
                 return 'blocked'
             meaning = build_refined_meaning(PieceGenerationRequest(
                 'piece-refined-safety-review', source, handoff.original.authenticated_owner_id,

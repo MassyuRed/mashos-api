@@ -27,9 +27,10 @@ from piece_v2_contract import (
 )
 from piece_v2_generation import generate_piece_candidate
 from piece_v2_source_adapter import (
-    PieceSavedHandoff, PieceSavedRefinedHandoff, PieceSavedSourceAdapter,
+    PieceSavedHandoff, PieceSavedRefinedHandoff, PieceSavedCorrectedHandoff, PieceSavedSourceAdapter,
     project_saved_original_source, project_saved_refined_source,
     project_saved_refined_lineage, project_saved_refined_fence,
+    project_saved_corrected_source,
 )
 from piece_v2_visual import build_visual_recipe, require_piece_theme, validate_visual_recipe
 
@@ -51,7 +52,7 @@ _SERVICE_ERRORS = frozenset({
     'PIECE_VISUAL_SELECTION_NOT_ALLOWED', 'PIECE_SAFETY_UNAVAILABLE',
     'PIECE_HASH_MISMATCH', 'PIECE_CONFLICT', 'PIECE_TEMPORARILY_UNAVAILABLE',
 })
-_HANDOFF_TYPES = (PieceSavedHandoff, PieceSavedRefinedHandoff)
+_HANDOFF_TYPES = (PieceSavedHandoff, PieceSavedRefinedHandoff, PieceSavedCorrectedHandoff)
 _APPLICATION_MODEL = object()
 # Request-private acquisition only. Entries disappear when the last waiter
 # exits; this is neither a persisted preview reservation nor a result cache.
@@ -139,6 +140,9 @@ def _source_ref_from_lineage(lineage: dict) -> dict:
 
 
 def _canonical_handoff_lineage(handoff) -> dict:
+    if type(handoff) is PieceSavedCorrectedHandoff:
+        project_saved_corrected_source(handoff)
+        return handoff.lineage_payload()
     if type(handoff) is PieceSavedRefinedHandoff:
         return project_saved_refined_lineage(handoff, opted_in=True)
     if type(handoff) is PieceSavedHandoff:
@@ -147,6 +151,8 @@ def _canonical_handoff_lineage(handoff) -> dict:
 
 
 def _project_handoff_source(handoff):
+    if type(handoff) is PieceSavedCorrectedHandoff:
+        return project_saved_corrected_source(handoff)
     if type(handoff) is PieceSavedRefinedHandoff:
         return project_saved_refined_source(handoff, opted_in=True)
     if type(handoff) is PieceSavedHandoff:
@@ -157,7 +163,13 @@ def _project_handoff_source(handoff):
 
 async def _resolve_handoff(adapter, authorization, source_ref):
     """Only an explicitly selected answer enters the refined source owner."""
-    if source_ref['emlis_observation_stage'] == 'refined_observation':
+    if source_ref['emlis_observation_stage'] == 'corrected_observation':
+        if any(source_ref.get(key) is not None for key in
+               ('question_need_decision_identity', 'supplemental_answer_identity')):
+            raise _error('PIECE_SOURCE_NOT_ELIGIBLE')
+        handoff = await adapter.resolve_corrected_handoff(authorization, source_ref['source_input_id'])
+        expected_type = PieceSavedCorrectedHandoff
+    elif source_ref['emlis_observation_stage'] == 'refined_observation':
         if not source_ref.get('supplemental_answer_identity') or not source_ref.get('question_need_decision_identity'):
             raise _error('PIECE_SOURCE_NOT_ELIGIBLE')
         handoff = await adapter.resolve_refined_handoff(authorization, source_ref['source_input_id'],
@@ -175,6 +187,8 @@ async def _resolve_handoff(adapter, authorization, source_ref):
 
 
 async def _revalidate_handoff(adapter, authorization, handoff):
+    if type(handoff) is PieceSavedCorrectedHandoff:
+        return await adapter.revalidate_corrected_handoff(authorization, handoff)
     if type(handoff) is PieceSavedRefinedHandoff:
         return await adapter.revalidate_refined_handoff(authorization, handoff, opted_in=True)
     if type(handoff) is PieceSavedHandoff:
@@ -206,6 +220,8 @@ def _request_snapshot(request: object) -> dict:
         if (source['source_input_version'] != EMLIS_CURRENT_INPUT_BUNDLE_SCHEMA_VERSION or not (
                 stage in ('normal_observation', 'pre_question_observation')
                 and source['supplemental_answer_identity'] is None
+                or stage == 'corrected_observation' and source['supplemental_answer_identity'] is None
+                and source['question_need_decision_identity'] is None
                 or stage == 'refined_observation' and source['supplemental_answer_identity'] is not None
                 and source['question_need_decision_identity'] is not None)):
             raise _error('PIECE_SOURCE_NOT_ELIGIBLE')
@@ -289,7 +305,7 @@ class PreparedPiecePreview:
     owner. artifact_payload returns a copy containing neither source identity
     nor raw source fields. This object asserts no native layout or safety PASS.
     """
-    handoff: PieceSavedHandoff | PieceSavedRefinedHandoff = field(repr=False)
+    handoff: PieceSavedHandoff | PieceSavedRefinedHandoff | PieceSavedCorrectedHandoff = field(repr=False)
     _artifact_json: bytes = field(repr=False)
 
     def artifact_payload(self) -> dict:

@@ -20,7 +20,7 @@ from piece_v2_content_policy import (
 )
 from piece_v2_contract import canonical_json_bytes
 from .contracts import EngineStatus
-from .emlis_thread_contracts import SupplementalAnswerSource
+from .emlis_thread_contracts import SupplementalAnswerSource, InterpretationCorrectionSource
 from .emlis_thread_source import FrozenSupplementalAnswer, freeze_supplemental_answer
 from .piece_source import PieceSourceMeaning, build_piece_source_meaning
 
@@ -47,6 +47,27 @@ class PieceRefinedSourceSnapshot:
 
 
 @dataclass(frozen=True, slots=True, repr=False)
+class PieceCorrectedSourceSnapshot:
+    original: object
+    correction: InterpretationCorrectionSource
+    original_commitment: str
+    correction_commitment: str
+    corrected_result_identity: str
+    opted_in: bool
+    original_active_ranges: tuple[tuple[str, int, int], ...]
+    correction_active_range: tuple[int, int] | None
+    correction_update_operation: str
+    as_of: str
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class PieceCorrectionMeaning(PieceSourceMeaning):
+    source_snapshot: PieceCorrectedSourceSnapshot | None = None
+    frozen_correction: object | None = None
+    active_range: tuple[int, int] | None = None
+
+
+@dataclass(frozen=True, slots=True, repr=False)
 class PieceSupplementalMeaning(PieceSourceMeaning):
     # A real answer envelope, never an original-input identity. Local grammar
     # coordinates address answer_text_private; UTF-8 evidence addresses this
@@ -64,10 +85,10 @@ class PieceActiveOriginalMeaning(PieceSourceMeaning):
 
 @dataclass(frozen=True, slots=True, repr=False)
 class PieceRefinedMeaning:
-    source: PieceRefinedSourceSnapshot
+    source: PieceRefinedSourceSnapshot | PieceCorrectedSourceSnapshot
     source_ref: str
     original: PieceSourceMeaning
-    supplemental: PieceSupplementalMeaning | None
+    supplemental: PieceSupplementalMeaning | PieceCorrectionMeaning | None
     prior_revisions: tuple[PieceSupplementalMeaning, ...] = ()
 
 
@@ -94,7 +115,7 @@ def _require(value, code='piece_refined_source_binding'):
 
 def _source_payload(source):
     from piece_v2_generation import PieceSourceSnapshot
-    _require(type(source) is PieceRefinedSourceSnapshot)
+    _require(type(source) in (PieceRefinedSourceSnapshot, PieceCorrectedSourceSnapshot))
     _require(type(source.original) is PieceSourceSnapshot)
     original = asdict(source.original)
     raw = original.pop('saved_original_json')
@@ -102,6 +123,12 @@ def _source_payload(source):
     original['saved_original_base64'] = base64.b64encode(raw).decode('ascii')
     result = asdict(source)
     result['original'] = original
+    if type(source) is PieceCorrectedSourceSnapshot:
+        result['source_kind'] = 'USER_INTERPRETATION_CORRECTION'
+        result['original_active_ranges'] = [list(row) for row in source.original_active_ranges]
+        result['correction_active_range'] = (None if source.correction_active_range is None
+                                             else list(source.correction_active_range))
+        return result
     # Existing ADD source identities and private saved bytes remain exact.
     if not source.original_active_ranges and source.supplemental_active_range is None:
         del result['original_active_ranges']
@@ -121,7 +148,147 @@ def _source_payload(source):
 
 
 def refined_source_ref(source) -> str:
-    return 'piece-refined:' + _sha(canonical_json_bytes(_source_payload(source)))
+    prefix = 'piece-corrected:' if type(source) is PieceCorrectedSourceSnapshot else 'piece-refined:'
+    payload = _source_payload(source)
+    if type(source) is PieceCorrectedSourceSnapshot:
+        # Qualification is checked at each read; a moving read clock is not
+        # a new source or a new author request. Actual source dates stay bound.
+        del payload['as_of']
+    return prefix + _sha(canonical_json_bytes(payload))
+
+
+def _corrected_source_set(original, correction, *, as_of):
+    """Reuse the shared source freezer; no Analysis graph or AI text is read."""
+    from piece_v2_generation import PieceSourceSnapshot
+    from .cores.analysis.source_adapter import (
+        AnalysisSavedRecord, AnalysisObservedMapRequest, freeze_analysis_sources,
+        commitment, _time,
+    )
+    _require(type(original) is PieceSourceSnapshot
+        and type(original.saved_original_json) is bytes
+        and type(correction) is InterpretationCorrectionSource,
+        'piece_correction_source_binding')
+    raw = json.loads(original.saved_original_json)
+    _require(type(raw) is dict and raw.get('id') == original.saved_input_id
+        and correction.source_role == 'USER_INTERPRETATION_CORRECTION'
+        and correction.correction_id != original.saved_input_id
+        and all(type(value) is str and bool(value.strip()) for value in (
+            correction.thread_id, correction.target_event_id, correction.correction_id,
+            correction.original_source_ref, correction.target_text, correction.explanation,
+            correction.recorded_at, as_of)), 'piece_correction_source_binding')
+    start, end, stamp = _time(raw['created_at'], saved_utc=True), _time(as_of), _time(correction.recorded_at)
+    _require(start < end and start <= stamp <= end, 'piece_correction_source_clock')
+    member = AnalysisSavedRecord(original.owner_id, original.saved_input_id,
+        commitment(raw), original.saved_original_json.decode('utf-8'),
+        interpretation_corrections=(correction,))
+    request = AnalysisObservedMapRequest('piece-corrected-source', original.owner_id,
+        start.isoformat(), end.isoformat(), (member,))
+    return freeze_analysis_sources(request)
+
+
+def corrected_active_ranges(original, correction, *, as_of):
+    """Derive exact whole-clause source updates, independently of caller ranges."""
+    from .cores.analysis.intent_compiler import _active_sources
+    frozen = _corrected_source_set(original, correction, as_of=as_of)
+    active, excluded, updates, _ = _active_sources(frozen)
+    _require(len(updates) == 1 and updates[0].operation in {'REVISE', 'WITHDRAW'},
+        'piece_correction_update_not_supported')
+    original_source = next(s for s in frozen.sources if s.envelope.source_role == 'ORIGINAL_INPUT')
+    correction_source = next(s for s in frozen.sources
+        if s.envelope.source_role == 'USER_INTERPRETATION_CORRECTION')
+    removed = [e for e in original_source.evidence
+        if e.source_span_id in excluded.get(original_source.envelope.envelope_id, set())]
+    _require(len(removed) == 1, 'piece_correction_active_range_binding')
+    full = build_piece_source_meaning(original, expected_owner_id=original.owner_id,
+        expected_saved_input_id=original.saved_input_id, expected_source_version=original.source_version)
+    raw = json.loads(original.saved_original_json)
+    target = removed[0]
+    matches = [ref for ref in full.evidence if ref.field_path == target.field_path
+        and ref.scalar_start == target.scalar_start
+        and raw[ref.field_path][ref.scalar_start:ref.scalar_end].rstrip('。．.!！?？')
+            == raw[target.field_path][target.scalar_start:target.scalar_end].rstrip('。．.!！?？')]
+    _require(len(matches) == 1, 'piece_correction_active_range_binding')
+    ranges = tuple((ref.field_path, ref.scalar_start, ref.scalar_end)
+        for ref in full.evidence if ref != matches[0])
+    _require(bool(ranges), 'piece_correction_active_range_binding')
+    replacements = [s for s in active
+        if s.envelope.source_role == 'USER_INTERPRETATION_CORRECTION']
+    if updates[0].operation == 'REVISE':
+        _require(len(replacements) == 1 and replacements[0].scoped_memo_range is not None,
+            'piece_correction_active_range_binding')
+        active_range = replacements[0].scoped_memo_range
+    else:
+        _require(not replacements, 'piece_correction_active_range_binding')
+        active_range = None
+    return updates[0].operation, ranges, active_range, 'sha256:' + correction_source.envelope.raw_sha256
+
+
+def _validate_corrected_source(source):
+    _require(type(source) is PieceCorrectedSourceSnapshot and source.opted_in is True,
+        'piece_correction_opt_in_required')
+    _require(source.original_commitment == 'sha256:' + _sha(source.original.saved_original_json)
+        and type(source.corrected_result_identity) is str and bool(source.corrected_result_identity.strip())
+        and source.corrected_result_identity not in {
+            source.original.saved_input_id, source.correction.correction_id, source.correction.target_event_id},
+        'piece_correction_source_binding')
+    expected = corrected_active_ranges(source.original, source.correction, as_of=source.as_of)
+    _require(expected == (source.correction_update_operation, source.original_active_ranges,
+        source.correction_active_range, source.correction_commitment), 'piece_correction_active_range_binding')
+    return next(s for s in _corrected_source_set(source.original, source.correction, as_of=source.as_of).sources
+        if s.envelope.source_role == 'USER_INTERPRETATION_CORRECTION')
+
+
+def _correction_meaning(source):
+    """Bind the qualified replacement to its real correction envelope."""
+    from piece_v2_generation import PieceSourceSnapshot
+    from .source_kernel import _evidence_id
+    frozen = _validate_corrected_source(source)
+    start, end = source.correction_active_range
+    raw, owner = source.correction.explanation, source.original.owner_id
+    literal = raw[start:end]
+    from .piece_source import _qualified_self_topic, _literal_self_account
+    statement = literal if literal.endswith(tuple('。！？!?')) else literal + '。'
+    _require(_qualified_self_topic(statement) is not None and _literal_self_account(statement),
+        'piece_correction_replacement_not_self_contained')
+    parsed = build_piece_source_meaning(PieceSourceSnapshot(owner, source.correction.correction_id,
+        frozen.envelope.source_schema_version, statement), expected_owner_id=owner,
+        expected_saved_input_id=source.correction.correction_id,
+        expected_source_version=frozen.envelope.source_schema_version)
+    _require(len(parsed.graph.nodes) == 1 and not parsed.role_bindings
+        and not parsed.nominal_references and not parsed.personal_evaluations and not parsed.expression_scopes,
+        'piece_correction_replacement_not_self_contained')
+    field = next(e for e in frozen.evidence if e.field_path == 'memo')
+    refs, ids = [], {}
+    for local in parsed.evidence:
+        a, b = start + local.scalar_start, start + min(local.scalar_end, len(literal))
+        values = dict(source_span_id=local.source_span_id, field_path=field.field_path,
+            element_index=field.element_index, field_utf8_start=field.field_utf8_start,
+            field_utf8_end=field.field_utf8_end, scalar_start=a, scalar_end=b,
+            utf8_start=field.field_utf8_start + len(raw[:a].encode('utf-8')),
+            utf8_end=field.field_utf8_start + len(raw[:b].encode('utf-8')),
+            field_sha256=field.field_sha256, literal_sha256=_sha(raw[a:b].encode('utf-8')))
+        eid = _evidence_id(envelope_id=frozen.envelope.envelope_id, **values)
+        ids[local.evidence_id] = eid
+        refs.append(replace(local, evidence_id=eid, source_envelope_id=frozen.envelope.envelope_id, **values))
+    graph = replace(parsed.graph, source_envelope_id=frozen.envelope.envelope_id,
+        graph_id='piece-graph:' + _sha(canonical_json_bytes([frozen.envelope.envelope_id,
+            parsed.graph.graph_id, list(source.correction_active_range)])),
+        nodes=tuple(replace(n, value=literal, evidence_ids=tuple(ids[e] for e in n.evidence_ids))
+            for n in parsed.graph.nodes),
+        edges=tuple(replace(e, evidence_ids=tuple(ids[r] for r in e.evidence_ids)) for e in parsed.graph.edges),
+        owner_dispositions=tuple(replace(o, evidence_refs=tuple(ids[e] for e in o.evidence_refs))
+            for o in parsed.graph.owner_dispositions))
+    values = {f.name: getattr(parsed, f.name) for f in fields(PieceSourceMeaning)}
+    values.update(envelope=frozen.envelope, graph=graph, evidence=tuple(refs),
+        sentences=tuple(replace(s, evidence_id=ids[s.evidence_id], source_start=start+s.source_start,
+            source_end=start+min(s.source_end, len(literal))) for s in parsed.sentences))
+    return PieceCorrectionMeaning(**values, source_snapshot=source, frozen_correction=frozen,
+        active_range=source.correction_active_range)
+
+
+def validate_correction_meaning(meaning):
+    _require(type(meaning) is PieceCorrectionMeaning and meaning == _correction_meaning(meaning.source_snapshot),
+        'piece_correction_evidence_binding')
 
 
 def _supplemental_meaning(answer, owner_id, active_range=None):
@@ -271,7 +438,7 @@ def validate_active_original_meaning(meaning):
 
 def supplemental_statement_view(meaning, node):
     """A grammar-only terminator for one already qualified replacement."""
-    if (type(meaning) is PieceSupplementalMeaning and meaning.active_range is not None
+    if (type(meaning) in (PieceSupplementalMeaning, PieceCorrectionMeaning) and meaning.active_range is not None
             and node in meaning.graph.nodes and not node.value.endswith(tuple('。！？!?'))):
         return node.value + '。'
     return node.value
@@ -279,7 +446,7 @@ def supplemental_statement_view(meaning, node):
 
 def supplemental_complete_self_account(meaning):
     from .piece_source import _qualified_self_topic, _literal_self_account
-    return (type(meaning) is PieceSupplementalMeaning and meaning.active_range is not None
+    return (type(meaning) in (PieceSupplementalMeaning, PieceCorrectionMeaning) and meaning.active_range is not None
         and len(meaning.graph.nodes) == 1 and all(
             _qualified_self_topic(supplemental_statement_view(meaning, node)) is not None
             and _literal_self_account(supplemental_statement_view(meaning, node))
@@ -295,7 +462,9 @@ def refined_meaning_parts(meaning, plan):
         _require(plan.supplemental_plan is not None, 'piece_refined_plan_binding')
         parts += ((meaning.supplemental, plan.supplemental_plan),)
     else:
-        _require(plan.supplemental_plan is None and meaning.source.supplemental_update_operation == 'WITHDRAW',
+        operation = (meaning.source.correction_update_operation if type(meaning.source) is PieceCorrectedSourceSnapshot
+                     else meaning.source.supplemental_update_operation)
+        _require(plan.supplemental_plan is None and operation == 'WITHDRAW',
                  'piece_refined_plan_binding')
     return parts
 
@@ -354,6 +523,15 @@ def supplemental_feeling_account(meaning):
 def build_refined_meaning(request):
     from piece_v2_generation import PieceSourceSnapshot
     source = request.source
+    if type(source) is PieceCorrectedSourceSnapshot:
+        _validate_corrected_source(source)
+        original = source.original
+        _require(original.owner_id == request.expected_owner_id
+            and original.saved_input_id == request.expected_saved_input_id
+            and original.source_version == request.expected_source_version, 'piece_correction_source_binding')
+        active = _active_original_meaning(original, source.original_active_ranges)
+        correction = (_correction_meaning(source) if source.correction_update_operation == 'REVISE' else None)
+        return PieceRefinedMeaning(source, refined_source_ref(source), active, correction)
     _require(type(source) is PieceRefinedSourceSnapshot)
     original, answer = source.original, source.supplemental
     _require(type(original) is PieceSourceSnapshot and type(answer) is SupplementalAnswerSource)
@@ -444,6 +622,9 @@ def _plans(meaning):
     from .piece_v1c import compile_piece_artifact_plan
     return PieceRefinedPlan(meaning.source_ref, compile_piece_artifact_plan(meaning.original),
         compile_piece_artifact_plan(meaning.supplemental) if meaning.supplemental is not None else None,
+        source_roles=(('ORIGINAL_USER_INPUT', 'USER_INTERPRETATION_CORRECTION')
+            if type(meaning.source) is PieceCorrectedSourceSnapshot
+            else ('ORIGINAL_USER_INPUT', 'SUPPLEMENTAL_ANSWER')),
         prior_revision_plans=tuple(compile_piece_artifact_plan(part) for part in meaning.prior_revisions))
 
 
@@ -452,7 +633,9 @@ def validate_refined_preservation(meaning, plan, artifact):
     _require(type(meaning) is PieceRefinedMeaning and type(plan) is PieceRefinedPlan
         and type(artifact) is PieceArtifact and plan.source_ref == meaning.source_ref
         and meaning.source_ref == refined_source_ref(meaning.source)
-        and plan.source_roles == ('ORIGINAL_USER_INPUT', 'SUPPLEMENTAL_ANSWER')
+        and plan.source_roles == (('ORIGINAL_USER_INPUT', 'USER_INTERPRETATION_CORRECTION')
+            if type(meaning.source) is PieceCorrectedSourceSnapshot
+            else ('ORIGINAL_USER_INPUT', 'SUPPLEMENTAL_ANSWER'))
         and plan.eligible_formats == ('short_essay',), 'piece_refined_artifact_binding')
     source = meaning.source.original
     expected = build_refined_meaning(PieceGenerationRequest(
@@ -520,7 +703,8 @@ def serialize_refined_piece(outcome):
         source_ref=outcome.source_meaning.source_ref,
         sources=_source_payload(outcome.source_meaning.source),
         plan=asdict(outcome.artifact_plan), artifact=asdict(outcome.artifact))
-    if not outcome.source_meaning.source.effective_round_sources:
+    if (type(outcome.source_meaning.source) is PieceCorrectedSourceSnapshot
+            or not outcome.source_meaning.source.effective_round_sources):
         del state['plan']['prior_revision_plans']
     # Private dataclass tuples become JSON arrays; the existing canonical
     # contract deliberately rejects Python tuples as public request values.

@@ -100,7 +100,7 @@ _ENUMS = {
     "platform": {"ios", "android", "unknown"},
     "safety_state": {"ready", "adjusted", "unavailable", "not_applicable"},
     "source_layer": {"rn", "api", "service", "store", "db_rpc", "renderer", "migration"},
-    "source_stage": {"normal_observation", "pre_question_observation", "refined_observation", "not_applicable"},
+    "source_stage": {"normal_observation", "pre_question_observation", "refined_observation", "corrected_observation", "not_applicable"},
     "stage": {"source_resolve", "preview", "preview_mutation", "save", "owner_read", "visibility", "public_read", "resonance", "export", "delete", "migration", "rollback"},
     "subscription_tier": {"free", "plus", "premium", "unknown"},
     "theme_id": {"soft_paper", "quiet_night",

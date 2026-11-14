@@ -62,7 +62,7 @@ class PieceModelInputV1:
 
 def prepare_piece_model_request(request, *, realization_profile=None):
     from .piece_v1c import PieceGenerationRequest, MODEL_REALIZATION_PROFILE
-    from .piece_refined import PieceRefinedSourceSnapshot
+    from .piece_refined import PieceRefinedSourceSnapshot, PieceCorrectedSourceSnapshot
     from piece_v2_generation import PieceSourceSnapshot
     from .preparation import _prepare
     from .preparation_sources import piece_model_material
@@ -71,7 +71,7 @@ def prepare_piece_model_request(request, *, realization_profile=None):
             and request.core_id == 'piece' and request.product_job == 'EXPRESS_AND_SHARE'
             and type(request.request_id) is str and bool(request.request_id.strip()),
             'piece_model_request_binding')
-    source = request.source.original if type(request.source) is PieceRefinedSourceSnapshot else request.source
+    source = request.source.original if type(request.source) in (PieceRefinedSourceSnapshot, PieceCorrectedSourceSnapshot) else request.source
     require(type(source) is PieceSourceSnapshot
             and source.saved_input_id == request.expected_saved_input_id
             and source.source_version == request.expected_source_version,
@@ -189,10 +189,10 @@ def validate_piece_model_input(request, value):
 
 
 def piece_model_source_plan(request):
-    from .piece_refined import PieceRefinedSourceSnapshot, build_refined_meaning, _plans
+    from .piece_refined import PieceRefinedSourceSnapshot, PieceCorrectedSourceSnapshot, build_refined_meaning, _plans
     from .piece_source import build_piece_source_meaning
     from .piece_v1c import compile_piece_artifact_plan
-    if type(request.source) is PieceRefinedSourceSnapshot:
+    if type(request.source) in (PieceRefinedSourceSnapshot, PieceCorrectedSourceSnapshot):
         meaning = build_refined_meaning(request)
         return meaning, _plans(meaning)
     meaning = build_piece_source_meaning(request.source, expected_owner_id=request.expected_owner_id,

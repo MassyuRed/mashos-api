@@ -1043,6 +1043,10 @@ def realize_piece_model_artifact(meaning, plan, *, body_blocks, tier, requested_
     validate_piece_model_preservation(meaning, plan, artifact)
     if realization_profile == MODEL_REALIZATION_PROFILE:
         blocks, edits, source_formats = _realize_admitted_model_blocks(meaning, plan, body_blocks)
+        from .piece_refined import PieceRefinedMeaning, PieceCorrectedSourceSnapshot
+        if (type(meaning) is PieceRefinedMeaning
+                and type(meaning.source) is PieceCorrectedSourceSnapshot):
+            source_formats = tuple(fmt for fmt in source_formats if fmt in plan.eligible_formats)
         text = '\n\n'.join(blocks)
         review = PieceArtifact(blocks, text, hashlib.sha256(text.encode()).hexdigest(),
                               'short_essay', ('short_essay',))
@@ -1338,8 +1342,8 @@ def generate_piece_artifact(request: PieceGenerationRequest) -> PieceEngineOutco
             or request.execution_mode != ExecutionMode.OFFLINE_CANDIDATE.value
             or not isinstance(request.request_id, str) or not request.request_id.strip()):
         return PieceEngineOutcome(EngineStatus.REJECTED, ('piece_request_out_of_scope',))
-    from .piece_refined import PieceRefinedSourceSnapshot, generate_refined_piece
-    if type(request.source) is PieceRefinedSourceSnapshot:
+    from .piece_refined import PieceRefinedSourceSnapshot, PieceCorrectedSourceSnapshot, generate_refined_piece
+    if type(request.source) in (PieceRefinedSourceSnapshot, PieceCorrectedSourceSnapshot):
         return generate_refined_piece(request)
     meaning = None
     plan = None

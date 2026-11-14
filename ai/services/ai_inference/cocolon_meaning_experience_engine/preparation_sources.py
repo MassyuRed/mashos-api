@@ -103,6 +103,46 @@ def piece_material(source, *, expected_owner_id: str, tier: str = 'free') -> dic
     }
 
 
+def _corrected_piece_model_material(source, *, expected_owner_id, tier):
+    from dataclasses import asdict
+    from .piece_refined import _validate_corrected_source, refined_source_ref
+    from .cores.analysis.source_adapter import commitment
+    frozen = _validate_corrected_source(source)
+    material = piece_material(source.original, expected_owner_id=expected_owner_id, tier=tier)
+    original = material['sources'][0]
+    material['sources'].append(dict(source_id=source.correction.correction_id,
+        source_version=commitment(asdict(source.correction)), source_commitment=source.correction_commitment,
+        role='USER_INTERPRETATION_CORRECTION', original=None,
+        text_fields={'memo': source.correction.explanation}, envelope_id=frozen.envelope.envelope_id,
+        recorded_at=source.correction.recorded_at, parent_record_id=source.original.saved_input_id,
+        evidence=[dict(asdict(ref), literal=frozen.envelope.raw_utf8[ref.utf8_start:ref.utf8_end].decode('utf-8'),
+            coordinate_space='SOURCE_ENVELOPE') for ref in frozen.evidence]))
+    partition = []
+    for item in material['sources']:
+        selected = (source.original_active_ranges if item is original else
+            (() if source.correction_active_range is None else (('memo', *source.correction_active_range),)))
+        for field in item['text_fields']:
+            groups = []
+            text = item['text_fields'][field]
+            for name, start, end in selected:
+                if name != field:
+                    continue
+                if not groups or any(c in text[groups[-1][-1][1]:start] for c in '\r\n'):
+                    groups.append([])
+                groups[-1].append([start, end])
+            partition.extend(dict(source_id=item['source_id'], field_path=field, scalar_ranges=group)
+                for group in groups)
+    if not partition or len(partition) > 3:
+        raise ValueError('piece_model_block_partition')
+    material.update(task='PIECE_MODEL_BODY', control=dict(source_stage='corrected_observation',
+        source_ref=refined_source_ref(source), block_partition=partition, format_type='short_essay',
+        language='ja', model_body_only=True, authorship='USER_OWNED_COCOLON_SHAPED',
+        source_selections_are_not_written_propositions=True,
+        interpretation_correction=True, active_source_update=source.correction_update_operation,
+        correction_control=asdict(source.correction)))
+    return material
+
+
 def piece_model_material(source, *, expected_owner_id: str, tier: str = 'free') -> dict:
     """Source-only material for one explicitly selected Piece model attempt.
 
@@ -112,9 +152,11 @@ def piece_model_material(source, *, expected_owner_id: str, tier: str = 'free') 
     """
     from piece_v2_contract import canonical_json_bytes
     from piece_v2_generation import PieceSourceSnapshot
-    from .piece_refined import PieceRefinedSourceSnapshot, refined_source_ref
+    from .piece_refined import PieceRefinedSourceSnapshot, PieceCorrectedSourceSnapshot, refined_source_ref
     from .emlis_thread_source import freeze_supplemental_answer
 
+    if type(source) is PieceCorrectedSourceSnapshot:
+        return _corrected_piece_model_material(source, expected_owner_id=expected_owner_id, tier=tier)
     refined = type(source) is PieceRefinedSourceSnapshot
     original = source.original if refined else source
     material = piece_material(original, expected_owner_id=expected_owner_id, tier=tier)
@@ -264,6 +306,8 @@ def piece_model_field_slots(material):
                 or control['model_body_only'] is not True or type(sources) is not list
                 or ([s['role'] for s in sources] not in (
                     ['ORIGINAL_INPUT'], ['ORIGINAL_INPUT', 'SUPPLEMENTAL_ANSWER'])
+                    and not (control.get('interpretation_correction') is True
+                        and [s['role'] for s in sources] == ['ORIGINAL_INPUT', 'USER_INTERPRETATION_CORRECTION'])
                     and not (control.get('effective_round_sources') is True
                         and 2 <= len(sources) <= 4 and sources[0]['role'] == 'ORIGINAL_INPUT'
                         and all(s['role'] == 'SUPPLEMENTAL_ANSWER' for s in sources[1:])))
@@ -282,7 +326,8 @@ def piece_model_field_slots(material):
                 raise ValueError
             source = by_id[item['source_id']]
             field = item['field_path']
-            allowed = ('memo', 'memo_action') if source['role'] == 'ORIGINAL_INPUT' else ('answer_text_private',)
+            allowed = (('memo', 'memo_action') if source['role'] == 'ORIGINAL_INPUT' else
+                ('memo',) if source['role'] == 'USER_INTERPRETATION_CORRECTION' else ('answer_text_private',))
             text = source['text_fields'][field]
             if active:
                 ranges = item['scalar_ranges']

@@ -83,6 +83,22 @@ def test_exact_seven_fields_current_input_and_no_store(setup, pre):
     assert OWNER not in response.text and 'synthetic-session' not in response.text
 
 
+def test_corrected_stage_keeps_seven_references_and_no_question_or_answer(setup):
+    setup['result']['emlis_observation_stage'] = 'corrected_observation'
+    response = setup['send']()
+    assert response.status_code == 200 and response.json() == setup['result']
+    assert set(response.json()) == set(source_ref())
+    assert response.headers['cache-control'] == 'no-store'
+
+
+@pytest.mark.parametrize('key', ['question_need_decision_identity', 'supplemental_answer_identity'])
+def test_corrected_stage_cannot_relabel_a_question_or_answer(setup, key):
+    setup['result']['emlis_observation_stage'] = 'corrected_observation'
+    setup['result'][key] = 'foreign-source'
+    response = setup['send']()
+    assert response.status_code == 503 and response.json() == {'code': 'PIECE_TEMPORARILY_UNAVAILABLE'}
+
+
 @pytest.mark.parametrize('headers', [{}, {'Authorization': 'Basic private'},
     {'Authorization': 'Bearer'}, [('Authorization', AUTH), ('Authorization', AUTH)]])
 def test_missing_invalid_or_duplicate_auth_does_not_resolve(setup, headers):

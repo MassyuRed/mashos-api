@@ -280,10 +280,10 @@ def generate_piece_candidate(source: PieceSourceSnapshot, *, authenticated_owner
     )
     from cocolon_meaning_experience_engine.contracts import EngineStatus
     from cocolon_meaning_experience_engine.piece_refined import (
-        PieceRefinedSourceSnapshot, build_refined_meaning, _plans,
+        PieceRefinedSourceSnapshot, PieceCorrectedSourceSnapshot, build_refined_meaning, _plans,
         realize_refined_piece_artifact, validate_refined_preservation,
     )
-    refined = type(source) is PieceRefinedSourceSnapshot
+    refined = type(source) in (PieceRefinedSourceSnapshot, PieceCorrectedSourceSnapshot)
     if type(source) is not PieceSourceSnapshot and not refined:
         raise unavailable('source_type')
     original = source.original if refined else source

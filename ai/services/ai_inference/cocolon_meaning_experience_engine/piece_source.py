@@ -136,7 +136,9 @@ class PieceSourceMeaning:
 
 def piece_source_text(meaning: PieceSourceMeaning) -> str:
     """Text coordinates belong to the source field, not its metadata frame."""
-    from .piece_refined import PieceSupplementalMeaning
+    from .piece_refined import PieceSupplementalMeaning, PieceCorrectionMeaning
+    if type(meaning) is PieceCorrectionMeaning:
+        return meaning.source_snapshot.correction.explanation
     if type(meaning) is PieceSupplementalMeaning:
         return meaning.frozen_answer.source.answer_text_private
     return meaning.envelope.raw_utf8.decode('utf-8')
@@ -1574,7 +1576,11 @@ def validate_piece_saved_fields(meaning: PieceSourceMeaning) -> None:
         validate_snapshot_self(meaning)
         return
     from .piece_refined import (PieceSupplementalMeaning, validate_supplemental_meaning,
-        PieceActiveOriginalMeaning, validate_active_original_meaning)
+        PieceActiveOriginalMeaning, validate_active_original_meaning,
+        PieceCorrectionMeaning, validate_correction_meaning)
+    if type(meaning) is PieceCorrectionMeaning:
+        validate_correction_meaning(meaning)
+        return
     if type(meaning) is PieceActiveOriginalMeaning:
         validate_active_original_meaning(meaning)
         return
