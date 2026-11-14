@@ -200,8 +200,14 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
           sparse-checkout: |
+            ai/services/ai_inference/piece_v2_contract.py
+            ai/services/ai_inference/piece_v2_content_policy.py
+            ai/services/ai_inference/piece_v2_generation.py
+            ai/services/ai_inference/cocolon_meaning_experience_engine/piece_source.py
+            ai/services/ai_inference/cocolon_meaning_experience_engine/piece_v1c.py
             ai/services/ai_inference/cocolon_meaning_experience_engine/piece_refined.py
             ai/services/ai_inference/cocolon_meaning_experience_engine/preparation_sources.py
+            ai/services/ai_inference/cocolon_meaning_experience_engine/piece_semantic_admission.py
             ai/services/ai_inference/piece_v2_source_adapter.py
             ai/services/ai_inference/piece_model_source.py
           sparse-checkout-cone-mode: false

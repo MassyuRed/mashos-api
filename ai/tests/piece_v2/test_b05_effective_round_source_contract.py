@@ -119,11 +119,19 @@ def test_model_candidate_cannot_revive_or_drop_a_prior_replacement(
 
 
 # These exact blobs were independently fetched at API 7f51a64e6cb58668ad5d418480b7de4499bfe6fa.
-# They are also present in the local object database. The test never networks,
-# checks out another tree, or changes the running product files.
+# They are also present in the local object database. Load the full changed
+# source/author/reader dependency closure in dependency order: a four-module
+# overlay would bind the old author to current classes and current S7 imports.
+# The test never networks, checks out another tree, or changes product files.
 _BASE_7F51_BLOBS = (
+    ('piece_v2_contract', '3b4a3eda5fd423d6566967a7852ad559db5c0f44'),
+    ('piece_v2_content_policy', 'a3c7832160bad4ec8c908f574a2cbcaa93622333'),
+    ('cocolon_meaning_experience_engine.piece_source', 'e4959504e59493a2ab7d9ebff363972993247803'),
+    ('piece_v2_generation', '6bc5451717798c0031e5080678a280555be409a0'),
+    ('cocolon_meaning_experience_engine.piece_v1c', 'b51d34a8622b53767681a5d520f65b4b36a309b2'),
     ('cocolon_meaning_experience_engine.piece_refined', '37e4be3c327077668d573f0b61cb992e5eaaf47a'),
     ('cocolon_meaning_experience_engine.preparation_sources', 'cb6681f9b12f37002c6ffa93599291f177a39105'),
+    ('cocolon_meaning_experience_engine.piece_semantic_admission', '25c81255d011510e93bf8a997434f4062550db13'),
     ('piece_model_source', '79e9fc3a6fcd54e87db7e7131e28415ad3317b0e'),
     ('piece_v2_source_adapter', '424eaddda5a2ebb1b05e4ba79004d00720a003b7'),
 )
@@ -144,7 +152,7 @@ def test_independent_add_chain_keeps_exact_7f51_prepared_messages_and_private_sa
     root = Path(__file__).resolve().parents[3]
     baseline_repo = Path(os.environ.get('PIECE_ADD_COMPAT_BASE_REPOSITORY', root))
     with monkeypatch.context() as baseline:
-        modules = {}
+        modules, sources = {}, {}
         for name, blob in _BASE_7F51_BLOBS:
             raw = subprocess.check_output(['git', 'cat-file', 'blob', blob], cwd=baseline_repo)
             assert subprocess.check_output(['git', 'hash-object', '--stdin'], input=raw,
@@ -153,8 +161,13 @@ def test_independent_add_chain_keeps_exact_7f51_prepared_messages_and_private_sa
             module.__package__ = name.rpartition('.')[0]
             module.__file__ = str(root / '7f51-reference' / (name.replace('.', '/') + '.py'))
             baseline.setitem(sys.modules, name, module)
-            exec(compile(raw, module.__file__, 'exec'), module.__dict__)
+            if module.__package__:
+                baseline.setattr(sys.modules[module.__package__], name.rsplit('.', 1)[1], module)
             modules[name] = module
+            sources[name] = raw
+        for name, _ in _BASE_7F51_BLOBS:
+            module = modules[name]
+            exec(compile(sources[name], module.__file__, 'exec'), module.__dict__)
         old_adapter = modules['piece_v2_source_adapter']
         old_original = old_adapter.PieceSavedOriginal(**{
             field.name: getattr(handoff.original, field.name)
@@ -162,12 +175,13 @@ def test_independent_add_chain_keeps_exact_7f51_prepared_messages_and_private_sa
         old_handoff = old_adapter._natural_later_add_handoff(old_original,
             state['snapshot_before'], handoff.supplemental.answer_id)
         old_source = old_adapter.project_saved_refined_source(old_handoff, opted_in=True)
-        old_request = PieceGenerationRequest(request.request_id, old_source,
+        old_request = modules['cocolon_meaning_experience_engine.piece_v1c'].PieceGenerationRequest(
+            request.request_id, old_source,
             state['owner'], state['source_id'], old_source.original.source_version)
         old_refined = modules['cocolon_meaning_experience_engine.piece_refined']
         old_outcome = old_refined.generate_refined_piece(old_request)
         assert old_outcome.status is EngineStatus.GENERATED, old_outcome.reason_codes
-        old_prepared = prepare_piece_model_request(old_request)
+        old_prepared = modules['cocolon_meaning_experience_engine.piece_semantic_admission'].prepare_piece_model_request(old_request)
         expected = (old_prepared.private_json,
                     modules['piece_model_source'].build_piece_model_messages(old_prepared,
                         include_authoring_constraints=True, source_request=old_request),
