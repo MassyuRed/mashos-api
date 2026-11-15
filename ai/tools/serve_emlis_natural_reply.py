@@ -331,11 +331,17 @@ def _if_json_schema_parser(schema, config):
     spec = importlib.util.spec_from_file_location('lmformatenforcer._cocolon_if_jsonschema', upstream.__file__)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
+    alphabet = frozenset(config.alphabet)
+
+    def enum_literal(value):
+        raw = json.dumps(value, ensure_ascii=False)
+        return ''.join(char if char != '\ufffd' and (ord(char) < 128 or char in alphabet)
+            else json.dumps(char, ensure_ascii=True)[1:-1] for char in raw)
 
     class ExactJsonEnum(module.StringParsingState):
         def __init__(self, *args, **kwargs):
             super().__init__(*args, **kwargs)
-            self.exact = (UnionParser([StringParser(json.dumps(value, ensure_ascii=False))
+            self.exact = (UnionParser([StringParser(enum_literal(value))
                 for value in self.allowed_strings]) if self.allowed_strings
                 and self.require_opening_quote and self.require_closing_quote else None)
             self.raw_prefix = ''
@@ -439,7 +445,7 @@ def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None):
 
     def enum_literal(value):
         raw = json.dumps(value, ensure_ascii=False)
-        return ''.join(char if ord(char) < 128 or char in alphabet
+        return ''.join(char if char != '\ufffd' and (ord(char) < 128 or char in alphabet)
             else json.dumps(char, ensure_ascii=True)[1:-1] for char in raw)
 
     class ExactJsonEnum(module.StringParsingState):
@@ -1056,6 +1062,7 @@ def load_generator(adapter, process_stop, *, weights_sha256=None, config_sha256=
     tokenizer_data = None
     blocked_free_text = set()
     invalid_json_tokens = set()
+    unsupported_unicode_tokens = set()
     if semantic_json:
         private_log_filter = SourcePrivateConstraintLog()
         logging.getLogger().addFilter(private_log_filter)
@@ -1072,6 +1079,14 @@ def load_generator(adapter, process_stop, *, weights_sha256=None, config_sha256=
             if not decoded.strip() or any(ord(char) < 32 for char in decoded)}
         invalid_json_tokens = {token for token, decoded, _ in tokenizer_data.regular_tokens
             if not decoded or any(ord(char) < 32 for char in decoded)}
+        # LMFE's prose shortcut can admit partial UTF-8 or interior characters
+        # outside its parser alphabet. Its incremental decoder cannot roll back
+        # a replacement character when later bytes complete it. Keep these
+        # token spellings out of Analysis/IF; JSON Unicode escapes retain the
+        # same decoded text, including exact source quotes.
+        tokenizer_alphabet = frozenset(tokenizer_data.tokenizer_alphabet)
+        unsupported_unicode_tokens = {token for token, decoded, _ in tokenizer_data.regular_tokens
+            if '\ufffd' in decoded or any(char not in tokenizer_alphabet for char in decoded)}
 
     class Deadline(StoppingCriteria):
         def __init__(self, end):
@@ -1118,6 +1133,8 @@ def load_generator(adapter, process_stop, *, weights_sha256=None, config_sha256=
                 # The pinned integration replaces parser.config. Restore the
                 # Analysis/IF order before the first token is explored.
                 allowed_prefix.token_enforcer.root_parser.config.force_json_field_order = True
+            profile_invalid_json_tokens = (invalid_json_tokens if profile == 'piece' else
+                invalid_json_tokens | unsupported_unicode_tokens)
             previous_allowed = None
             def private_prefix(batch, sent):
                 nonlocal previous_allowed
@@ -1125,13 +1142,13 @@ def load_generator(adapter, process_stop, *, weights_sha256=None, config_sha256=
                 measured = progress % 128 == 0
                 if measured:
                     generation_stage('prefix_enter_' + str(progress))
-                if progress and int(sent[-1]) in invalid_json_tokens:
+                if progress and int(sent[-1]) in profile_invalid_json_tokens:
                     raise ValueError('semantic_nontext_token_generated')
                 if progress and previous_allowed is not None and int(sent[-1]) not in previous_allowed:
                     generation_stage('prefix_constraint_violation')
                     raise ValueError('semantic_prefix_constraint_violation')
                 allowed = semantic_free_text_tokens(allowed_prefix, batch, sent,
-                    set() if profile == "piece" else blocked_free_text, invalid_json_tokens)
+                    set() if profile == "piece" else blocked_free_text, profile_invalid_json_tokens)
                 previous_allowed = allowed
                 if measured:
                     parser = allowed_prefix.token_enforcer.prefix_states[tuple(sent.tolist())].parser

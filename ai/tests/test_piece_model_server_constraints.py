@@ -9,7 +9,7 @@ import sys
 import threading
 import time
 from http.server import ThreadingHTTPServer
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 
 import httpx
 import pytest
@@ -236,15 +236,15 @@ def synthetic_generator(monkeypatch, *, constrained, input_count=1, with_piece_a
     # environment. Production still keeps its own Piece configuration.
     monkeypatch.setenv('LMFE_STRICT_JSON_FIELD_ORDER', 'false')
     from lmformatenforcer.tokenenforcer import TokenEnforcer, TokenEnforcerTokenizerData
-    import lmformatenforcer.tokenenforcer as integration
-    original_config = integration.CharacterLevelParserConfig
+    config_globals = TokenEnforcer.__init__.__globals__
+    original_config = config_globals['CharacterLevelParserConfig']
     def reset_config(*args, **kwargs):
-        # Its dataclass default may have been captured when another suite
-        # imported LMFE with strict ordering enabled. Exercise the real
-        # constructor's false-reset case independently of that import order.
+        # Exercise the real constructor's false-reset branch explicitly.
+        # Patch the factory it actually resolves, which need not belong to
+        # a stale module reachable through the parent package attribute.
         kwargs['force_json_field_order'] = False
         return original_config(*args, **kwargs)
-    monkeypatch.setattr(integration, 'CharacterLevelParserConfig', reset_config)
+    monkeypatch.setitem(config_globals, 'CharacterLevelParserConfig', reset_config)
     raw = (raw_output if raw_output is not None else
         '{"field_blocks":{"answer_text_private_1":"別の文章。","memo_0":"私 の文章。"}}')
     if with_piece_adapter:
@@ -396,6 +396,44 @@ def test_analysis_order_survives_the_actual_token_enforcer_configuration_reset(m
     prefix = captured['format_prefix']
     assert captured['integration_reset_order'] is False
     assert prefix.token_enforcer.root_parser.config.force_json_field_order is True
+
+
+@pytest.mark.parametrize('profile', ['piece', 'analysis'])
+def test_integration_reset_fixture_reaches_constructor_with_a_stale_package_module(monkeypatch, profile):
+    import importlib
+    import lmformatenforcer
+    integration = importlib.import_module('lmformatenforcer.tokenenforcer')
+    constructor = integration.TokenEnforcer.__init__
+    constructor_globals = constructor.__globals__
+    config_type = constructor_globals['CharacterLevelParserConfig']
+    def strict_default_config(*args, **kwargs):
+        # Make a missed constructor patch observable even when this local
+        # LMFE copy reads the fixture's false environment dynamically.
+        kwargs.setdefault('force_json_field_order', True)
+        return config_type(*args, **kwargs)
+    monkeypatch.setitem(constructor_globals, 'CharacterLevelParserConfig', strict_default_config)
+    # A sys.modules restoration may leave the parent package's child
+    # attribute pointing at an older module. Reproduce that identity split:
+    # from-import still finds the real class, while dotted import-as follows
+    # this detached package attribute. Do not replace the actual constructor.
+    stale = ModuleType(integration.__name__)
+    stale.__dict__.update(vars(integration))
+    monkeypatch.setattr(lmformatenforcer, 'tokenenforcer', stale)
+    if profile == 'analysis':
+        from test_analysis_semantic_generation_schema import graph_document
+        raw = graph_document(['n1'], [])
+        selected = [dict(role='system', content='synthetic'), dict(role='user', content=json.dumps(
+            dict(fields=[dict(field=1, text='本人の記録です。補足です。')]), ensure_ascii=False))]
+    else:
+        raw, selected = None, messages()
+    generator, captured, expected, _ = synthetic_generator(monkeypatch,
+        constrained=True, raw_output=raw)
+    assert generator(selected, time.monotonic() + 210,
+        profile='piece' if profile == 'piece' else None) == (expected, 'stop')
+    assert integration.TokenEnforcer.__init__ is constructor
+    assert integration.TokenEnforcer.__init__.__globals__ is constructor_globals
+    assert captured['integration_reset_order'] is False
+    assert captured['format_prefix'].token_enforcer.root_parser.config.force_json_field_order is (profile == 'analysis')
 
 
 def test_piece_mask_unavailable_fails_before_tokenization_or_generation(monkeypatch):

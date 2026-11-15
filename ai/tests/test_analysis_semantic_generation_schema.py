@@ -1,7 +1,10 @@
 """Source-copy decoding constraints; no model or semantic-quality acceptance."""
 from copy import deepcopy
+import ast
+import inspect
 import json
 import logging
+import string
 import sys
 from types import SimpleNamespace
 import pytest
@@ -482,6 +485,158 @@ def test_raw_control_tokens_are_excluded_also_when_upstream_is_in_a_union_or_esc
         def __call__(self, batch, sent):
             return [1, 2, 3]
     assert probe.semantic_free_text_tokens(Prefix(), 0, Sent(), {1, 2}, {1}) == [2, 3]
+
+
+def runtime_token_filters(tokenizer_data, profile=None):
+    """Run the actual startup/profile assignments without loading a model."""
+    function = ast.parse(inspect.getsource(probe.load_generator)).body[0]
+    startup = next(node for node in function.body if isinstance(node, ast.If)
+        and isinstance(node.test, ast.Name) and node.test.id == 'semantic_json')
+    names = {'blocked_free_text', 'invalid_json_tokens', 'tokenizer_alphabet',
+        'unsupported_unicode_tokens', 'profile_invalid_json_tokens'}
+    assignments = [node for node in startup.body if isinstance(node, ast.Assign)
+        and any(isinstance(target, ast.Name) and target.id in names for target in node.targets)]
+    assignments.append(next(node for node in ast.walk(function) if isinstance(node, ast.Assign)
+        and any(isinstance(target, ast.Name) and target.id == 'profile_invalid_json_tokens'
+            for target in node.targets)))
+    namespace = dict(tokenizer_data=tokenizer_data, profile=profile)
+    exec(compile(ast.fix_missing_locations(ast.Module(body=assignments, type_ignores=[])),
+        '<native-token-filter-assignments>', 'exec'), namespace)
+    return namespace['blocked_free_text'], namespace['profile_invalid_json_tokens']
+
+
+def unicode_prose_runtime(rare, owner='analysis'):
+    """Synthetic byte segmentation, not a reconstruction of model token IDs."""
+    from lmformatenforcer.tokenenforcer import TokenEnforcer, TokenEnforcerTokenizerData
+    if owner == 'analysis':
+        packet = json.loads(graph_document(['n1'], []))
+        packet['nodes'][0].update(explanation=rare + 'を置く。',
+            evidence=[dict(quote=rare + 'を置く。', field=1)])
+        material = dict(fields=[dict(field=1, text=rare + 'を置く。')])
+        marker = '"explanation":"'
+    else:
+        packet = dict(schema_version=probe.IF_CANDIDATE_SCHEMA, scenarios=[],
+            clarification=dict(reason_code='BRANCH_INTENT_UNCLEAR', prompt=rare + 'を置く。'))
+        material = dict(model_schema=probe.IF_CANDIDATE_SCHEMA,
+            base_map_kind='DERIVED_AI_MAP_ANCHOR', branch_point_ref='branch',
+            anchors=[dict(node_ref='anchor', visible_label=rare + 'を置く。')],
+            fields=[dict(field=1, source_role='SIMULATION_SESSION_MATERIAL',
+                purpose='BRANCH_INTENT', text='試す。')], requested_candidate_count=1,
+            constraints_confirmed=False)
+        marker = '"prompt":"'
+    escaped = json.dumps(rare, ensure_ascii=True)[1:-1]
+    text = json.dumps(packet, ensure_ascii=False, separators=(',', ':')).replace(
+        '"quote":"' + rare, '"quote":"' + escaped)
+    head, tail = text.split(marker)
+    beginning = head + marker
+    alphabet = ''.join(dict.fromkeys(beginning + tail.replace(rare, '') + string.printable + '\ufffd'))
+    vocabulary = list(alphabet) + ['\ufffd', '\ufffd', 'て' + rare, ':"\ufffd', ':"' + rare]
+    first, last, composite, crossing, crossing_raw = range(len(vocabulary) - 5, len(vocabulary))
+    eos = len(vocabulary)
+    ids = {char: i for i, char in enumerate(alphabet)}
+
+    def decoder(tokens):
+        decoded, i = [], 0
+        while i < len(tokens):
+            token = tokens[i]
+            if token in (first, crossing) and i + 1 < len(tokens) and tokens[i + 1] == last:
+                decoded.append((':' + '"' if token == crossing else '') + rare)
+                i += 2
+            else:
+                if token < eos:
+                    decoded.append(vocabulary[token])
+                i += 1
+        # Same trailing replacement cleanup as the pinned Transformers integration.
+        return ''.join(decoded).rstrip('\ufffd')
+
+    data = TokenEnforcerTokenizerData([(i, value, False) for i, value in enumerate(vocabulary)],
+        decoder, eos, False, eos + 1)
+    assert rare == '\ufffd' or rare not in data.tokenizer_alphabet
+    messages = [dict(role='system', content='synthetic'), dict(role='user',
+        content=json.dumps(material, ensure_ascii=False))]
+    parser = probe.semantic_json_parser(messages, data.tokenizer_alphabet)
+    enforcer = TokenEnforcer(data, parser)
+    enforcer.root_parser.config.force_json_field_order = True
+    class Sent(list):
+        def tolist(self):
+            return list(self)
+    class Prefix:
+        token_enforcer = enforcer
+        def __call__(self, batch, sent):
+            return self.token_enforcer.get_allowed_tokens(sent.tolist()).allowed_tokens
+    prefix = Prefix()
+    blocked, invalid = runtime_token_filters(data)
+    def follow(sent, characters):
+        branch = Sent(sent)
+        for char in characters:
+            assert ids[char] in probe.semantic_free_text_tokens(prefix, 0, branch, blocked, invalid)
+            branch.append(ids[char])
+        prefix(0, branch)
+        return branch
+    return SimpleNamespace(packet=packet, data=data, enforcer=enforcer, prefix=prefix,
+        sent=Sent([ids['P']]), follow=follow, beginning=beginning, tail=tail,
+        escaped=escaped, first=first, last=last, composite=composite, crossing=crossing,
+        crossing_raw=crossing_raw, blocked=blocked, invalid=invalid, eos=eos, decoder=decoder)
+
+
+@pytest.mark.parametrize('owner', ['analysis', 'if'])
+@pytest.mark.parametrize('rare', ['鞄', '🪴'])
+def test_native_unicode_protocol_tokens_cannot_empty_an_open_json_parser(rare, owner):
+    pytest.importorskip('lmformatenforcer')
+    runtime = unicode_prose_runtime(rare, owner)
+    sent = runtime.follow(runtime.sent, runtime.beginning)
+    assert runtime.enforcer.prefix_states[tuple(sent)].parser.shortcut_key()[0] == 'json_freetext'
+    raw_allowed = runtime.prefix(0, sent)
+    assert {runtime.first, runtime.composite}.issubset(raw_allowed)
+    filtered = probe.semantic_free_text_tokens(runtime.prefix, 0, sent, runtime.blocked, runtime.invalid)
+    assert not {runtime.first, runtime.last, runtime.composite}.intersection(filtered)
+    # Both uncontrolled paths reproduce LMFE's empty-stack/premature-EOS failure.
+    for tokens in ([runtime.first, runtime.last], [runtime.composite]):
+        branch = type(sent)(sent)
+        for token in tokens:
+            assert token in runtime.prefix(0, branch)
+            branch.append(token)
+        assert runtime.eos in runtime.prefix(0, branch)
+        assert runtime.enforcer.prefix_states[tuple(branch)].parser.object_stack == []
+    # A token can start outside prose and end with a partial UTF-8 character.
+    before = runtime.follow(runtime.sent, runtime.beginning[:-2])
+    assert runtime.enforcer.prefix_states[tuple(before)].parser.shortcut_key() is None
+    assert runtime.crossing in runtime.prefix(0, before)
+    assert runtime.crossing_raw not in runtime.prefix(0, before)
+    assert runtime.crossing not in probe.semantic_free_text_tokens(
+        runtime.prefix, 0, before, runtime.blocked, runtime.invalid)
+    _, piece_invalid = runtime_token_filters(runtime.data, 'piece')
+    assert runtime.crossing in probe.semantic_free_text_tokens(
+        runtime.prefix, 0, before, set(), piece_invalid)
+    # The same immutable prefix still closes legally through JSON Unicode escapes.
+    complete = runtime.follow(sent, runtime.escaped + runtime.tail[len(rare):])
+    assert runtime.eos in runtime.prefix(0, complete)
+    assert json.loads(runtime.decoder(complete[1:])) == runtime.packet
+
+
+@pytest.mark.parametrize('owner', ['analysis', 'if'])
+def test_native_literal_source_replacement_character_is_preserved_by_json_escape(owner):
+    pytest.importorskip('lmformatenforcer')
+    import lmformatenforcer as package
+    source = '\ufffdを置く。'
+    alphabet = string.printable + 'を置く。\ufffd'
+    schema = dict(type='object', properties=dict(text=dict(type='string', enum=[source])),
+        required=['text'], additionalProperties=False)
+    make_parser = (probe._semantic_unique_json_schema_parser if owner == 'analysis'
+        else probe._if_json_schema_parser)
+    parser = make_parser(schema, package.CharacterLevelParserConfig(
+        alphabet=alphabet, force_json_field_order=True))
+    text = r'{"text":"\ufffdを置く。"}'
+    assert unique_evidence_accept(parser, text)
+    assert not unique_evidence_accept(parser, json.dumps(dict(text=source), ensure_ascii=False,
+        separators=(',', ':')))
+    assert json.loads(text)['text'] == source
+    runtime = unicode_prose_runtime('\ufffd', owner)
+    before = deepcopy(runtime.packet)
+    sent = runtime.follow(runtime.sent, runtime.beginning)
+    complete = runtime.follow(sent, runtime.escaped + runtime.tail[1:])
+    assert runtime.eos in runtime.prefix(0, complete)
+    assert json.loads(runtime.decoder(complete[1:])) == before
 
 
 def test_actual_pinned_parser_empty_decoder_root_loop_is_removed_before_generation():
