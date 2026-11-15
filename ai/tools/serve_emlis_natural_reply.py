@@ -47,6 +47,15 @@ def generation_stage(stage):
     print('analysis_generation_stage=' + stage + ' monotonic=' + str(round(time.monotonic(), 3)), flush=True)
 
 
+def generation_failure(exc):
+    """Locate a serving failure without logging source, prefixes or messages."""
+    generation_stage('failed_' + type(exc).__name__)
+    trace = exc.__traceback__
+    while trace is not None:
+        generation_stage('failure_location_' + trace.tb_frame.f_code.co_name + '_' + str(trace.tb_lineno))
+        trace = trace.tb_next
+
+
 def semantic_free_text_tokens(prefix, batch, sent, blocked, invalid_json_tokens=frozenset()):
     """Exclude raw-control/blank loops only from generated prose, not quotes."""
     allowed = prefix(batch, sent)
@@ -755,7 +764,7 @@ def make_handler(generate, *, api_key, model_name, deadline, max_requests,
                         body['revision'] = piece_revision
             except Exception as exc:
                 if not max_requests:
-                    generation_stage('failed_' + type(exc).__name__)
+                    generation_failure(exc)
                 status, body = 503, {"error": "generation_unavailable"}
             finally:
                 lock.release()
@@ -964,6 +973,10 @@ def load_generator(adapter, process_stop, *, weights_sha256=None, config_sha256=
             allowed_prefix = build_transformers_prefix_allowed_tokens_fn(
                 tokenizer_data, (piece_json_parser if profile == "piece" else semantic_json_parser)(
                     messages, tokenizer_data.tokenizer_alphabet))
+            if profile != 'piece':
+                # The pinned integration replaces parser.config. Restore the
+                # Analysis/IF order before the first token is explored.
+                allowed_prefix.token_enforcer.root_parser.config.force_json_field_order = True
             previous_allowed = None
             def private_prefix(batch, sent):
                 nonlocal previous_allowed

@@ -339,6 +339,8 @@ def synthetic_generator(monkeypatch, *, constrained, input_count=1, with_piece_a
         def __init__(self, selected_data, parser):
             assert selected_data is data
             self.token_enforcer = TokenEnforcer(data, parser)
+            captured['integration_reset_order'] = parser.config.force_json_field_order
+            captured['format_prefix'] = self
         def __call__(self, batch, sent):
             return self.token_enforcer.get_allowed_tokens(sent.tolist()).allowed_tokens
     monkeypatch.setitem(sys.modules, 'torch', torch_stub)
@@ -366,8 +368,22 @@ def test_piece_generation_uses_actual_mask_single_generate_base_budget_and_mask_
     assert options['max_new_tokens'] == 2048 and options['eos_token_id'] == eos
     assert options['do_sample'] is False and options['num_beams'] == 1
     assert callable(options['prefix_allowed_tokens_fn'])
+    assert captured['integration_reset_order'] is False
+    assert captured['format_prefix'].token_enforcer.root_parser.config.force_json_field_order is False
     assert captured['tokenize'][0] == (messages(), dict(enable_thinking=False,
         add_generation_prompt=True, tokenize=True, return_dict=True, return_tensors='pt', truncation=False))
+
+
+def test_analysis_order_survives_the_actual_token_enforcer_configuration_reset(monkeypatch):
+    from test_analysis_semantic_generation_schema import graph_document
+    raw = graph_document(['n1'], [])
+    generator, captured, _, _ = synthetic_generator(monkeypatch, constrained=True, raw_output=raw)
+    source = [dict(role='system', content='synthetic'), dict(role='user', content=json.dumps(
+        dict(fields=[dict(field=1, text='本人の記録です。補足です。')]), ensure_ascii=False))]
+    assert generator(source, time.monotonic() + 210) == (raw, 'stop')
+    prefix = captured['format_prefix']
+    assert captured['integration_reset_order'] is False
+    assert prefix.token_enforcer.root_parser.config.force_json_field_order is True
 
 
 def test_piece_mask_unavailable_fails_before_tokenization_or_generation(monkeypatch):
