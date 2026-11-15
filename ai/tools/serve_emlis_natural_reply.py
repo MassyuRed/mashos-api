@@ -250,7 +250,10 @@ def semantic_output_schema(messages):
     fields = material.get('fields')
     if type(fields) is not list or not fields:
         raise ValueError('semantic_fields_invalid')
+    stage = material.get('history_stage', {}).get('kind')
+    history, leaf = stage in {'LEAF', 'MERGE'}, stage == 'LEAF'
     pairs, seen = [], set()
+    quoted_records, correction_fields = set(), 0
     for field in fields:
         number, original = field.get('field'), field.get('text')
         if type(number) is not int or number < 1 or number in seen or type(original) is not str:
@@ -266,27 +269,39 @@ def semantic_output_schema(messages):
         # A map correction requires its complete explanation at admission.
         # Other fields can quote a unique sentence inside a long paragraph.
         if field.get('source_role') != 'USER_ANALYSIS_MAP_CORRECTION':
-            spans.extend(_semantic_sentence_quotes(original))
+            sentences = _semantic_sentence_quotes(original)
+            short = [span for span in sentences if len(span) <= 160] if leaf else []
+            # Only the private leaf reading is compact. Its complete input is
+            # unchanged, and fields without a short sentence keep old options.
+            spans = short if short else spans + sentences
         spans = list(dict.fromkeys(span for span in spans if span and original.count(span) == 1
             and not re.search(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', span)))
         if spans:
             pairs.append(dict(type='object', properties=dict(quote=dict(type='string', enum=spans),
                 field=dict(type='integer', enum=[number])), required=['quote', 'field'], additionalProperties=False))
+            if type(field.get('record')) is int and field['record'] > 0:
+                quoted_records.add(field['record'])
+            if field.get('source_role') == 'USER_ANALYSIS_MAP_CORRECTION':
+                correction_fields += 1
     if not pairs:
         raise ValueError('semantic_quotes_unavailable')
     def text(maximum):
         return dict(type='string', minLength=1, maxLength=maximum)
     def obj(properties):
         return dict(type='object', properties=properties, required=list(properties), additionalProperties=False)
-    history = material.get('history_stage', {}).get('kind') in {'LEAF', 'MERGE'}
+    # Keep enough slots for every original-record anchor and every mandatory
+    # whole correction, with two roots per leaf node. This is not final layout.
+    node_limit = (min(24, max(2, len(quoted_records),
+        (len(quoted_records) + correction_fields + 1) // 2)) if leaf else 24)
+    title_limit = 36 if leaf else 60 if history else 80
     node_ids = ['n' + str(i) for i in range(1, 25)]
     node = obj(dict(node_id=dict(type='string', enum=node_ids),
         node_kind=dict(type='string', enum=['SELF_POSITION', 'TARGET_MEANING', 'CHOICE_OUTPUT', 'STATE_CONTEXT']),
-        title=text(60 if history else 80), summary=text(160 if history else 400),
-        explanation=text(420 if history else 3000),
+        title=text(title_limit), summary=text(100 if leaf else 160 if history else 400),
+        explanation=text(240 if leaf else 420 if history else 3000),
         perspective=dict(type='string', enum=['SELF', 'OBSERVED_INTERACTION']),
-        unknowns=dict(type='array', items=text(240 if history else 500), maxItems=4),
-        evidence=dict(type='array', items=dict(oneOf=pairs), minItems=1, maxItems=4)))
+        unknowns=dict(type='array', items=text(160 if leaf else 240 if history else 500), maxItems=4),
+        evidence=dict(type='array', items=dict(oneOf=pairs), minItems=1, maxItems=2 if leaf else 4)))
     if history:
         # Select a real source before interpreting it. Receiver keys and the
         # full source text stay unchanged; this is private decoding order.
@@ -297,9 +312,9 @@ def semantic_output_schema(messages):
         'relation_kind': dict(type='string', enum=['SELF_OUTSIDE_GAP', 'CRITERION_EXPRESSION', 'CONTEXT_CONTRAST', 'SHARED_MEANING']),
         'label': text(60 if history else 80), 'explanation': text(360 if history else 1800)})
     return obj(dict(schema_version=dict(type='string', enum=['cocolon.analysis.semantic_map.model.v2']),
-        overview=obj(dict(title=text(60 if history else 80), summary=text(480 if history else 2000))),
-        nodes=dict(type='array', items=node, minItems=1, maxItems=24),
-        edges=dict(type='array', items=edge, maxItems=48)))
+        overview=obj(dict(title=text(title_limit), summary=text(160 if leaf else 480 if history else 2000))),
+        nodes=dict(type='array', items=node, minItems=1, maxItems=node_limit),
+        edges=dict(type='array', items=edge, maxItems=0 if leaf else 48)))
 
 
 def _if_json_schema_parser(schema, config):

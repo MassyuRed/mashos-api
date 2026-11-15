@@ -142,10 +142,11 @@ def test_native_history_detail_budget_stops_repetition_without_changing_source(s
             node = value['nodes'][0]
             value['nodes'][0] = dict(evidence=node.pop('evidence'), **node)
         return json.dumps(value, ensure_ascii=False, separators=(',', ':'))
+    limit = 240 if stage == 'LEAF' else 420
     alphabet = ''.join(dict.fromkeys(document(421)))
     before = deepcopy(messages)
-    assert unique_evidence_accept(probe.semantic_json_parser(messages, alphabet), document(420))
-    assert not unique_evidence_accept(probe.semantic_json_parser(messages, alphabet), document(421))
+    assert unique_evidence_accept(probe.semantic_json_parser(messages, alphabet), document(limit))
+    assert not unique_evidence_accept(probe.semantic_json_parser(messages, alphabet), document(limit + 1))
     ordinary = deepcopy(messages)
     ordinary[1]['content'] = json.dumps(dict(fields=material['fields']), ensure_ascii=False)
     assert unique_evidence_accept(probe.semantic_json_parser(ordinary, alphabet), document(421, source_first=False))
@@ -156,7 +157,8 @@ def test_native_history_detail_budget_stops_repetition_without_changing_source(s
     ([[1], [2]], True), ([[2], [1]], True), ([[1, 2]], True),
     ([[1], [2], [1]], True), ([[1], [2, 1]], True), ([[1], [1, 2]], False),
     ([[1, 3]], False)])
-def test_history_source_first_cannot_finish_before_each_quoted_record_is_represented(roots, expected):
+@pytest.mark.parametrize('stage', ['LEAF', 'MERGE'])
+def test_history_source_first_cannot_finish_before_each_quoted_record_is_represented(roots, expected, stage):
     pytest.importorskip('lmformatenforcer')
     fields = [dict(field=1, record=9, text='一つ目の原文。'),
         dict(field=2, record=37, text='もう一つの原文。'),
@@ -169,7 +171,11 @@ def test_history_source_first_cannot_finish_before_each_quoted_record_is_represe
         if k != 'evidence'}) for node in packet['nodes']]
     text = json.dumps(packet, ensure_ascii=False, separators=(',', ':'))
     messages = [dict(role='system', content='synthetic'), dict(role='user',
-        content=json.dumps(dict(fields=fields, history_stage=dict(kind='LEAF')), ensure_ascii=False))]
+        content=json.dumps(dict(fields=fields, history_stage=dict(kind=stage)), ensure_ascii=False))]
+    if stage == 'LEAF' and len(roots) > 2:
+        # Both records are covered, but a third node exceeds this leaf's
+        # provisional reading budget. The final merge still allows it.
+        expected = False
     alphabet = ''.join(dict.fromkeys(text + ''.join(f['text'] for f in fields)))
     assert unique_evidence_accept(probe.semantic_json_parser(messages, alphabet), text) == expected
     from lmformatenforcer.tokenenforcer import TokenEnforcer, TokenEnforcerTokenizerData
@@ -559,7 +565,9 @@ def evidence_schema(schema):
 def allowed(schema, packet):
     package = pytest.importorskip('lmformatenforcer')
     encoded = json.dumps(packet, ensure_ascii=False)
-    config = package.CharacterLevelParserConfig()
+    # These cases check the receiver's key-order-independent JSON schema.
+    # Native decoding order is exercised separately with its actual enforcer.
+    config = package.CharacterLevelParserConfig(force_json_field_order=False)
     config.alphabet += encoded  # The real token enforcer supplies tokenizer Unicode.
     parser = package.JsonSchemaParser(schema, config=config)
     for char in encoded:
@@ -699,3 +707,139 @@ def test_sentence_evidence_passes_existing_cmee_with_the_complete_source_unchang
     artifact, _ = semantic.build_semantic_map(prepared, response(prepared, packet))
     assert artifact.safe_projection(authenticated_owner_scope=OWNER)['wire_kind'] == 'watashi.map.v3'
     assert (prepared.messages(), prepared.source_guard) == before
+
+
+def compact_leaf_wire(fields, groups, *, stage='LEAF', quotes=None, edges=()):
+    messages = [dict(role='system', content='synthetic'), dict(role='user',
+        content=json.dumps(dict(fields=fields, history_stage=dict(kind=stage)), ensure_ascii=False))]
+    packet = json.loads(graph_document([f'n{i}' for i in range(1, len(groups) + 1)], []))
+    originals = {field['field']: field['text'] for field in fields}
+    for node, numbers in zip(packet['nodes'], groups):
+        node['evidence'] = [dict(quote=(quotes or {}).get(number, originals[number]), field=number)
+            for number in numbers]
+    packet['nodes'] = [dict(evidence=node['evidence'], **{key: value for key, value in node.items()
+        if key != 'evidence'}) for node in packet['nodes']]
+    packet['edges'] = [dict(zip(('from', 'to', 'relation_kind', 'label', 'explanation'),
+        (start, end, 'CONTEXT_CONTRAST', '比較', '説明'))) for start, end in edges]
+    text = json.dumps(packet, ensure_ascii=False, separators=(',', ':'))
+    return messages, text
+
+
+def assert_compact_leaf_native(messages, text, expected):
+    pytest.importorskip('lmformatenforcer')
+    from lmformatenforcer.tokenenforcer import TokenEnforcer, TokenEnforcerTokenizerData
+    before = deepcopy(messages), deepcopy(probe.semantic_output_schema(messages))
+    alphabet = ''.join(dict.fromkeys(text + 'P '))
+    assert unique_evidence_accept(probe.semantic_json_parser(messages, alphabet), text) == expected
+    vocabulary = list(alphabet) + ['[]', ']}']
+    ids = {value: index for index, value in enumerate(vocabulary)}
+    eos = len(vocabulary)
+    data = TokenEnforcerTokenizerData([(i, value, False) for i, value in enumerate(vocabulary)],
+        lambda tokens: ''.join(vocabulary[i] for i in tokens if i < eos), eos, False, eos + 1)
+    enforcer = TokenEnforcer(data, probe.semantic_json_parser(messages, alphabet))
+    enforcer.root_parser.config.force_json_field_order = True
+    sent = unique_edge_token_follow(enforcer, ids, [ids['P']], text)
+    assert (sent is not None and eos in enforcer.get_allowed_tokens(sent).allowed_tokens) == expected
+    assert before == (messages, probe.semantic_output_schema(messages))
+
+
+@pytest.mark.parametrize('groups,expected', [([[1]], True), ([[1], [1]], True),
+    ([[1], [1], [1]], False), ([[1, 2]], True), ([[1, 2, 3]], False)])
+def test_compact_leaf_allows_two_meanings_for_one_record_and_two_roots_per_node(groups, expected):
+    fields = [dict(field=i, record=37, text=f'原文{i}。') for i in range(1, 4)]
+    messages, text = compact_leaf_wire(fields, groups)
+    schema = probe.semantic_output_schema(messages)
+    assert schema['properties']['nodes']['maxItems'] == 2
+    assert_compact_leaf_native(messages, text, expected)
+
+
+@pytest.mark.parametrize('groups,expected', [([[1], [2], [3]], True),
+    ([[1, 2], [3]], True), ([[1]], False)])
+def test_compact_leaf_keeps_distinct_record_coverage_without_fixed_final_node_assignment(groups, expected):
+    fields = [dict(field=i, record=i * 37, text=f'別記録{i}。') for i in range(1, 4)]
+    messages, text = compact_leaf_wire(fields, groups)
+    assert probe.semantic_output_schema(messages)['properties']['nodes']['maxItems'] == 3
+    assert_compact_leaf_native(messages, text, expected)
+
+
+@pytest.mark.parametrize('stage,expected', [('LEAF', False), ('MERGE', True)])
+def test_only_provisional_leaves_omit_edges(stage, expected):
+    fields = [dict(field=i, record=i, text=f'別記録{i}。') for i in range(1, 3)]
+    messages, text = compact_leaf_wire(fields, [[1], [2]], stage=stage, edges=[('n1', 'n2')])
+    assert_compact_leaf_native(messages, text, expected)
+
+
+def test_compact_leaf_reserves_capacity_for_eight_whole_map_corrections():
+    fields = [dict(field=1, record=37, text='本人の原記録。')]
+    fields += [dict(field=i + 2, record=None, record_refs=[37],
+        source_role='USER_ANALYSIS_MAP_CORRECTION', text=f'訂正{i}。' + '長い本人説明' * 30 + '。')
+        for i in range(8)]
+    messages, text = compact_leaf_wire(fields, [[1, 2], [3, 4], [5, 6], [7, 8], [9]])
+    schema = probe.semantic_output_schema(messages)
+    assert schema['properties']['nodes']['maxItems'] == 5  # ceil((1 + 8) / 2)
+    pairs = evidence_schema(schema)['oneOf']
+    by_field = {part['properties']['field']['enum'][0]: part['properties']['quote']['enum'] for part in pairs}
+    assert all(by_field[field['field']] == [field['text']] for field in fields[1:])
+    assert_compact_leaf_native(messages, text, True)
+    shortened = json.loads(text)
+    shortened['nodes'][0]['evidence'][1]['quote'] = fields[1]['text'][:160]
+    assert_compact_leaf_native(messages,
+        json.dumps(shortened, ensure_ascii=False, separators=(',', ':')), False)
+
+
+def test_compact_leaf_record_none_corrections_do_not_invent_record_counts():
+    fields = [dict(field=i + 1, record=None, record_refs=[9, 37],
+        source_role='USER_ANALYSIS_MAP_CORRECTION', text=f'本人訂正{i}。') for i in range(8)]
+    messages, text = compact_leaf_wire(fields, [[1, 2], [3, 4], [5, 6], [7, 8]])
+    assert probe.semantic_output_schema(messages)['properties']['nodes']['maxItems'] == 4
+    assert_compact_leaf_native(messages, text, True)
+
+
+@pytest.mark.parametrize('original,expected_quotes', [
+    ('長' * 180 + '。短い根拠。', ['短い根拠。']),
+    ('長' * 180 + '。', ['長' * 180 + '。']),
+])
+def test_compact_leaf_selects_real_short_sentences_or_retains_legal_long_fallback(original, expected_quotes):
+    fields = [dict(field=17, record=37, text=original)]
+    messages, text = compact_leaf_wire(fields, [[17]], quotes={17: expected_quotes[0]})
+    before = deepcopy(messages)
+    quotes = evidence_schema(probe.semantic_output_schema(messages))['oneOf'][0]['properties']['quote']['enum']
+    assert quotes == expected_quotes and all(original.count(quote) == 1 for quote in quotes)
+    assert_compact_leaf_native(messages, text, True)
+    assert messages == before and json.loads(messages[1]['content'])['fields'][0]['text'] == original
+
+
+def test_compact_leaf_preserves_existing_partial_coverage_above_twenty_four_records():
+    fields = [dict(field=i, record=i * 37, text=f'原記録{i}。') for i in range(1, 26)]
+    messages, text = compact_leaf_wire(fields, [[1]])
+    assert probe.semantic_output_schema(messages)['properties']['nodes']['maxItems'] == 24
+    assert_compact_leaf_native(messages, text, True)
+
+
+@pytest.mark.parametrize('stage,title,summary,explanation,unknown,overview,roots,edges', [
+    (None, 80, 400, 3000, 500, 2000, 4, 48),
+    ('MERGE', 60, 160, 420, 240, 480, 4, 48),
+    ('LEAF', 36, 100, 240, 160, 160, 2, 0),
+])
+def test_leaf_budgets_leave_ordinary_and_final_merge_limits_unchanged(
+        stage, title, summary, explanation, unknown, overview, roots, edges):
+    fields = [dict(field=17, record=37, text='長' * 180 + '。短い根拠。')]
+    material = dict(fields=fields)
+    if stage is not None:
+        material['history_stage'] = dict(kind=stage)
+    messages = [dict(role='system', content='synthetic'), dict(role='user',
+        content=json.dumps(material, ensure_ascii=False))]
+    before = deepcopy(messages)
+    schema = probe.semantic_output_schema(messages)
+    node = schema['properties']['nodes']['items']['properties']
+    assert (node['title']['maxLength'], node['summary']['maxLength'], node['explanation']['maxLength'],
+        node['unknowns']['items']['maxLength']) == (title, summary, explanation, unknown)
+    assert schema['properties']['overview']['properties']['summary']['maxLength'] == overview
+    assert node['evidence']['maxItems'] == roots and schema['properties']['edges']['maxItems'] == edges
+    quotes = evidence_schema(schema)['oneOf'][0]['properties']['quote']['enum']
+    if stage == 'LEAF':
+        assert quotes == ['短い根拠。']
+    else:
+        assert fields[0]['text'] in quotes and '長' * 180 + '。' in quotes
+        assert schema['properties']['nodes']['maxItems'] == 24
+    assert messages == before

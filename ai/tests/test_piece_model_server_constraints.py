@@ -236,6 +236,15 @@ def synthetic_generator(monkeypatch, *, constrained, input_count=1, with_piece_a
     # environment. Production still keeps its own Piece configuration.
     monkeypatch.setenv('LMFE_STRICT_JSON_FIELD_ORDER', 'false')
     from lmformatenforcer.tokenenforcer import TokenEnforcer, TokenEnforcerTokenizerData
+    import lmformatenforcer.tokenenforcer as integration
+    original_config = integration.CharacterLevelParserConfig
+    def reset_config(*args, **kwargs):
+        # Its dataclass default may have been captured when another suite
+        # imported LMFE with strict ordering enabled. Exercise the real
+        # constructor's false-reset case independently of that import order.
+        kwargs['force_json_field_order'] = False
+        return original_config(*args, **kwargs)
+    monkeypatch.setattr(integration, 'CharacterLevelParserConfig', reset_config)
     raw = (raw_output if raw_output is not None else
         '{"field_blocks":{"answer_text_private_1":"別の文章。","memo_0":"私 の文章。"}}')
     if with_piece_adapter:

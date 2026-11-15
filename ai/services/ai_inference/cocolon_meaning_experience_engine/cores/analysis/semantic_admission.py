@@ -2722,6 +2722,9 @@ def generate_analysis_semantic_map(request, model_input):
 SEMANTIC_HISTORY_PROFILE = 'semantic_map.history_synthesis.v1'
 SEMANTIC_HISTORY_MAX_LEAVES = 16
 SEMANTIC_HISTORY_CONTEXT_SCALARS = 160
+# Matches the existing transport envelope. This is an exact serialized-byte
+# bound, not a tokenizer/context estimate; native serving checks tokens too.
+SEMANTIC_HISTORY_MERGE_MAX_PROMPT_BYTES = 98304
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -2766,10 +2769,11 @@ class AnalysisSemanticMapStageInput:
                 '省略された記録や意味を反対・不存在・一般的傾向へ変換しません。'
                 '全有効map_correctionsの本人説明は全文を少なくとも一項目で根拠に使用し、AI対象文を根拠にしません。')
         else:
-            instruction += ('\n提示された全recordの独立した話題を残し、関係づける根拠がなければ別の項目にします。'
-                '同じ読みへまとめる場合も、各記録の根拠と条件差を残します。'
+            instruction += ('\nこれは完成図ではなく、後段へ引き継ぐ簡潔な仮読みです。'
+                '各独立recordの主な意味を短く示し、根拠に書かれた主体・対象・時間順・条件・留保を保ちます。'
                 '一つの記録だけを詳述して他の記録を落とさず、overviewだけに別記録の内容を追加しません。'
-                '項目内では同じ内容を繰り返さず、必要な説明と根拠に絞ります。')
+                '全ての意味を網羅したとは扱わず、同じ内容の反復を避け、必要な根拠と説明に絞ります。'
+                'この段階のedgesは空配列[]にし、関係は後段のMERGEで元根拠を見比べて構成します。')
         return [dict(role='system', content=instruction), dict(role='user', content=self.material_json)]
 
 
@@ -2859,11 +2863,11 @@ def _semantic_history_leaf_packet(stage, response):
 
 
 def prepare_semantic_merge(parent, leaves):
-    """Admit every leaf and expose bounded original excerpts to the same author.
+    """Admit every leaf and prefer complete original fields within the envelope.
 
-    A field has at most one contiguous excerpt: no ellipsis joins separated
-    source ranges and the existing hosted JSON grammar retains unique global
-    field IDs. A caller must measure this actual material before acquisition.
+    Otherwise a field has at most one contiguous excerpt: no ellipsis joins
+    separated source ranges and global field IDs remain unique. The transport
+    and native serving owner still admit the actual request independently.
     """
     _semantic_history_parent(parent)
     _semantic_map_require(type(leaves) is tuple and 2 <= len(leaves) <= SEMANTIC_HISTORY_MAX_LEAVES,
@@ -2932,6 +2936,16 @@ def prepare_semantic_merge(parent, leaves):
         leaf_unrepresented_records=[i for i, member in enumerate(parent.frozen.members, 1)
             if member.saved_record_ref not in represented],
         fragment_semantics='UNASSESSED', full_source_semantic_coverage=False)
+    # Preserve every qualified active parent field when the complete request
+    # fits. All other source/control material is identical to the excerpt
+    # candidate; no raw snapshot or withdrawn source is reintroduced here.
+    full_material = dict(material, fields=[dict(by_number[number],
+        fragment_scalar_range=[0, len(text)], fragment_is_complete_field=True,
+        semantic_coverage='UNASSESSED') for number, text, _, _ in parent.fields],
+        omitted_ranges=[])
+    full_stage = _semantic_history_stage(parent, 'MERGE', ordered, leaves, full_material)
+    if len(semantic_map_canonical(full_stage.messages()).encode('utf-8')) <= SEMANTIC_HISTORY_MERGE_MAX_PROMPT_BYTES:
+        return full_stage
     return _semantic_history_stage(parent, 'MERGE', ordered, leaves, material)
 
 

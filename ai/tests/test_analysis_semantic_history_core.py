@@ -160,11 +160,72 @@ def test_unknowns_do_not_cross_unrelated_source_scopes_and_above_four_is_rejecte
     assert packet == original and json.loads(receipt.raw) == original
 
 
-def test_unshown_exact_parent_quote_and_fragment_tampering_are_rejected():
+def test_complete_merge_fields_use_the_exact_message_budget_and_preserve_unquoted_source(monkeypatch):
+    import analysis_model_source as sources
+    assert core.SEMANTIC_HISTORY_MERGE_MAX_PROMPT_BYTES == sources.SEMANTIC_MERGE_MAX_PROMPT_BYTES == 98304
+    snapshot = source_snapshot(2)
+    snapshot['members'][0]['original'].update(memo='私は返事を待った。', memo_action='返事の前に資料を見た。')
+    snapshot['members'][1]['original'].update(memo='私は話した。', memo_action='')
+    prepared = parent(snapshot)
+    original = deepcopy(prepared)
+    leaves = []
+    for member in prepared.frozen.members:
+        leaf = core.prepare_semantic_leaf(prepared, (member.saved_record_ref,))
+        field = json.loads(leaf.material_json)['fields'][0]
+        leaves.append((leaf, response(leaf, packet_for([dict(field=field['field'], quote=field['text'])]))))
+    leaves = tuple(leaves)
+    merge = core.prepare_semantic_merge(prepared, leaves)
+    material = json.loads(merge.material_json)
+    originals = json.loads(prepared.material_json)['fields']
+    assert [{k: v for k, v in field.items() if k not in {
+        'fragment_scalar_range', 'fragment_is_complete_field', 'semantic_coverage'}}
+        for field in material['fields']] == originals
+    assert all(field['fragment_scalar_range'] == [0, len(field['text'])]
+        and field['fragment_is_complete_field'] and field['semantic_coverage'] == 'UNASSESSED'
+        for field in material['fields'])
+    assert material['omitted_ranges'] == []
+    assert material['history_coverage']['full_source_semantic_coverage'] is False
+    # The complete source includes a field that no leaf selected as evidence.
+    packet = packet_for([dict(field=2, quote='返事の前に資料を見た。')])
+    result = core.build_semantic_stage(merge, response(merge, packet))
+    assert result.coverage['mapped_count'] == 1 and result.coverage['unparsed_count'] == 1
+    assert result.artifact.private_evidence()['graph']['meaning_review']['history_synthesis'][
+        'full_source_semantic_coverage'] is False
+    byte_count = sources._semantic_message_bytes(merge)
+    assert byte_count == len(core.semantic_map_canonical(merge.messages()).encode('utf-8'))
+    # Pad only the system control text. Person source stays short and intact;
+    # receipts are rebound after each instruction change, before consumption.
+    instruction = core._SEMANTIC_MAP_INSTRUCTION
+    padded = instruction + 'x' * (sources.SEMANTIC_MERGE_MAX_PROMPT_BYTES - byte_count)
+    monkeypatch.setattr(core, '_SEMANTIC_MAP_INSTRUCTION', padded)
+    boundary_leaves = tuple((leaf, response(leaf, json.loads(receipt.raw))) for leaf, receipt in leaves)
+    boundary = core.prepare_semantic_merge(prepared, boundary_leaves)
+    assert sources._semantic_message_bytes(boundary) == sources.SEMANTIC_MERGE_MAX_PROMPT_BYTES
+    assert json.loads(boundary.material_json)['omitted_ranges'] == []
+    core.build_semantic_stage(boundary, response(boundary, packet))
+    monkeypatch.setattr(core, '_SEMANTIC_MAP_INSTRUCTION', padded + 'x')
+    fallback_leaves = tuple((leaf, response(leaf, json.loads(receipt.raw))) for leaf, receipt in leaves)
+    fallback = core.prepare_semantic_merge(prepared, fallback_leaves)
+    assert sources._semantic_message_bytes(fallback) <= sources.SEMANTIC_MERGE_MAX_PROMPT_BYTES
+    fallback_material = json.loads(fallback.material_json)
+    assert [field['field'] for field in fallback_material['fields']] == [1, 3]
+    assert fallback_material['omitted_ranges'] == [dict(field=2,
+        ranges=[[0, len(originals[1]['text'])]], reason='NO_LEAF_EVIDENCE')]
+    assert fallback_material['history_coverage'] == material['history_coverage']
+    with pytest.raises(core.AnalysisSemanticMapError, match='evidence_not_shown'):
+        core.build_semantic_stage(fallback, response(fallback, packet))
+    forged = replace(fallback, material_json=boundary.material_json)
+    with pytest.raises(core.AnalysisSemanticMapError, match='stage_unbound'):
+        core.build_semantic_stage(forged, response(forged, packet))
+    assert prepared == original
+
+
+def test_complete_or_excerpt_merge_preserves_actual_shown_source_and_rejects_tampering(monkeypatch):
     snapshot = source_snapshot(2)
     hidden = '未提示の前提を確認したとは扱わない。'
     quote = 'この場面で私は返事を待った。'
-    snapshot['members'][0]['original'].update(memo=hidden + 'あ' * 800 + quote + 'い' * 800, memo_action='')
+    context = 'その日の資料を読み、内容をノートへ書き留めた。' * 35
+    snapshot['members'][0]['original'].update(memo=hidden + context + quote + context, memo_action='')
     snapshot['members'][1]['original'].update(memo='別の場面で私は話した。', memo_action='')
     prepared = parent(snapshot)
     leaves = []
@@ -175,12 +236,12 @@ def test_unshown_exact_parent_quote_and_fragment_tampering_are_rejected():
     merge = core.prepare_semantic_merge(prepared, tuple(leaves))
     material = json.loads(merge.material_json)
     fragment = material['fields'][0]
-    assert quote in fragment['text'] and hidden not in fragment['text']
-    assert fragment['fragment_is_complete_field'] is False
-    assert material['omitted_ranges']
+    assert quote in fragment['text'] and hidden in fragment['text']
+    assert fragment['fragment_is_complete_field'] is True
+    assert material['omitted_ranges'] == []
+    assert material['history_coverage']['full_source_semantic_coverage'] is False
     packet = packet_for([dict(field=1, quote=hidden)])
-    with pytest.raises(core.AnalysisSemanticMapError, match='evidence_not_shown'):
-        core.build_semantic_stage(merge, response(merge, packet))
+    assert core.build_semantic_stage(merge, response(merge, packet)).coverage['mapped_count'] == 1
     material['fields'][0]['text'] = hidden
     forged = replace(merge, material_json=core.semantic_map_canonical(material))
     with pytest.raises(core.AnalysisSemanticMapError, match='stage_unbound'):
@@ -188,6 +249,23 @@ def test_unshown_exact_parent_quote_and_fragment_tampering_are_rejected():
     good = core.build_semantic_stage(merge, response(merge, packet_for([dict(field=1, quote=quote)])))
     assert good.coverage['source_count'] == 2 and good.coverage['mapped_count'] == 1
     assert good.coverage['unparsed_count'] == 1
+    full_bytes = len(core.semantic_map_canonical(merge.messages()).encode('utf-8'))
+    monkeypatch.setattr(core, '_SEMANTIC_MAP_INSTRUCTION', core._SEMANTIC_MAP_INSTRUCTION
+        + 'x' * (core.SEMANTIC_HISTORY_MERGE_MAX_PROMPT_BYTES - full_bytes + 1))
+    rebound = tuple((leaf, response(leaf, json.loads(receipt.raw))) for leaf, receipt in leaves)
+    excerpt = core.prepare_semantic_merge(prepared, rebound)
+    material = json.loads(excerpt.material_json)
+    shown = material['fields'][0]
+    text = prepared.fields[0][1]
+    start = text.index(quote)
+    assert shown['fragment_scalar_range'] == [start - 160, start + len(quote) + 160]
+    assert shown['text'] == text[start - 160:start + len(quote) + 160]
+    assert shown['fragment_is_complete_field'] is False and hidden not in shown['text']
+    assert material['omitted_ranges'] and material['history_coverage']['full_source_semantic_coverage'] is False
+    assert len(core.semantic_map_canonical(excerpt.messages()).encode('utf-8')) <= core.SEMANTIC_HISTORY_MERGE_MAX_PROMPT_BYTES
+    with pytest.raises(core.AnalysisSemanticMapError, match='evidence_not_shown'):
+        core.build_semantic_stage(excerpt, response(excerpt, packet_for([dict(field=1, quote=hidden)])))
+    core.build_semantic_stage(excerpt, response(excerpt, packet_for([dict(field=1, quote=quote)])))
 
 
 def correction_snapshot():
