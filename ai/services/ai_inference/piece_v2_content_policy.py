@@ -670,7 +670,7 @@ def validate_piece_model_preservation(meaning, plan, artifact):
     from collections import Counter
     from cocolon_meaning_experience_engine.piece_v1c import PieceArtifact
     from cocolon_meaning_experience_engine.piece_refined import (
-        PieceRefinedMeaning, PieceRefinedPlan, PieceCorrectedSourceSnapshot, refined_source_ref, refined_meaning_parts,
+        PieceRefinedMeaning, PieceRefinedPlan, PieceCorrectedSourceSnapshot, refined_source_ref, refined_meaning_parts, refined_source_roles,
     )
     from piece_v2_contract import validate_piece_text_binding
     if (type(artifact) is not PieceArtifact or artifact.format_type != 'short_essay'
@@ -681,9 +681,7 @@ def validate_piece_model_preservation(meaning, plan, artifact):
     if type(meaning) is PieceRefinedMeaning:
         if (type(plan) is not PieceRefinedPlan or plan.source_ref != meaning.source_ref
                 or meaning.source_ref != refined_source_ref(meaning.source)
-                or plan.source_roles != (('ORIGINAL_USER_INPUT', 'USER_INTERPRETATION_CORRECTION')
-                    if type(meaning.source) is PieceCorrectedSourceSnapshot
-                    else ('ORIGINAL_USER_INPUT', 'SUPPLEMENTAL_ANSWER'))
+                or plan.source_roles != refined_source_roles(meaning.source)
                 or plan.eligible_formats != ('short_essay',)):
             raise unavailable('piece_model_source_binding')
         if type(meaning.source) is PieceCorrectedSourceSnapshot:

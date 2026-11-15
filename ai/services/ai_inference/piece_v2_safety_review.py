@@ -140,6 +140,7 @@ async def review_prepared_original(prepared: PreparedPiecePreview) -> str:
             # abstraction, without treating Emlis prose or frame metadata as
             # the user's semantic material.
             person_texts = ([c.explanation for c in (*source.prior_corrections, source.correction)]
+                + [a.answer_text_private for a in source.answer_sources]
                 if type(handoff) is PieceSavedCorrectedHandoff else [source.supplemental.answer_text_private])
             if _scan(source.original.original_text) or any(_scan(text) for text in person_texts):
                 return 'blocked'

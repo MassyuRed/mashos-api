@@ -59,6 +59,9 @@ class PieceCorrectedSourceSnapshot:
     correction_update_operation: str
     as_of: str
     prior_corrections: tuple[InterpretationCorrectionSource, ...] = ()
+    answer_sources: tuple[SupplementalAnswerSource, ...] = ()
+    selected_answer_id: str | None = None
+    question_need_decision_identity: str | None = None
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -100,7 +103,7 @@ class PieceRefinedPlan:
     supplemental_plan: object
     # No relation is invented across sources. Preserve the original blocks,
     # then the answer blocks, with explicit source boundaries in private state.
-    source_roles: tuple[str, str] = ('ORIGINAL_USER_INPUT', 'SUPPLEMENTAL_ANSWER')
+    source_roles: tuple[str, ...] = ('ORIGINAL_USER_INPUT', 'SUPPLEMENTAL_ANSWER')
     eligible_formats: tuple[str, ...] = ('short_essay',)
     prior_revision_plans: tuple[object, ...] = ()
 
@@ -129,6 +132,11 @@ def _source_payload(source):
             del result['prior_corrections']
         else:
             result['prior_corrections'] = [asdict(c) for c in source.prior_corrections]
+        if source.answer_sources:
+            result['answer_sources'] = [asdict(a) for a in source.answer_sources]
+        else:
+            for key in ('answer_sources', 'selected_answer_id', 'question_need_decision_identity'):
+                del result[key]
         result['source_kind'] = 'USER_INTERPRETATION_CORRECTION'
         result['original_active_ranges'] = [list(row) for row in source.original_active_ranges]
         result['correction_active_range'] = (None if source.correction_active_range is None
@@ -162,11 +170,11 @@ def refined_source_ref(source) -> str:
     return prefix + _sha(canonical_json_bytes(payload))
 
 
-def _corrected_source_set(original, correction, *, as_of, prior_corrections=()):
+def _corrected_source_set(original, correction, *, as_of, prior_corrections=(), answer_sources=()):
     """Reuse the shared source freezer; no Analysis graph or AI text is read."""
     from piece_v2_generation import PieceSourceSnapshot
     from .cores.analysis.source_adapter import (
-        AnalysisSavedRecord, AnalysisObservedMapRequest, freeze_analysis_sources,
+        AnalysisSavedRecord, AnalysisSupplement, AnalysisObservedMapRequest, freeze_analysis_sources,
         commitment, _time,
     )
     _require(type(original) is PieceSourceSnapshot
@@ -185,15 +193,18 @@ def _corrected_source_set(original, correction, *, as_of, prior_corrections=()):
     _require(start < end and start <= stamp <= end, 'piece_correction_source_clock')
     member = AnalysisSavedRecord(original.owner_id, original.saved_input_id,
         commitment(raw), original.saved_original_json.decode('utf-8'),
+        supplements=tuple(AnalysisSupplement(a.answer_id, original.owner_id, original.saved_input_id,
+            commitment(raw), a.answer_text_private, commitment(a.answer_text_private)) for a in answer_sources),
         interpretation_corrections=(*prior_corrections, correction))
     request = AnalysisObservedMapRequest('piece-corrected-source', original.owner_id,
         start.isoformat(), end.isoformat(), (member,))
     return freeze_analysis_sources(request)
 
 
-def corrected_history_ranges(original, correction, *, as_of, prior_corrections=()):
-    """Use the complete proper-source history; an old withdrawal never revives."""
-    from .cores.analysis.intent_compiler import _active_sources
+def _corrected_projection(original, correction, *, as_of, prior_corrections=(), answer_sources=()):
+    """Apply the shared original-clause updates without selecting every ADD."""
+    from .cores.analysis.intent_compiler import _active_sources, _REPLACEMENT, _WITHDRAWAL, _self_propositions
+    from .cores.analysis.source_adapter import _time, source_field_text
     _require(type(prior_corrections) is tuple
         and all(type(c) is InterpretationCorrectionSource for c in prior_corrections),
         'piece_correction_source_binding')
@@ -201,50 +212,118 @@ def corrected_history_ranges(original, correction, *, as_of, prior_corrections=(
     _require(len({c.correction_id for c in history}) == len(history)
         and all(c.thread_id == correction.thread_id and c.original_source_ref == correction.original_source_ref
             for c in history), 'piece_correction_source_binding')
-    from .cores.analysis.source_adapter import _time
     stamps = [_time(c.recorded_at) for c in history]
     raw_original = json.loads(original.saved_original_json)
-    _require(stamps == sorted(stamps) and _time(raw_original['created_at'], saved_utc=True) <= stamps[0]
+    start = _time(raw_original['created_at'], saved_utc=True)
+    _require(stamps == sorted(stamps) and start <= stamps[0]
         and stamps[-1] <= _time(as_of), 'piece_correction_source_clock')
-    frozen = _corrected_source_set(original, correction, as_of=as_of, prior_corrections=prior_corrections)
-    active, excluded, updates, _ = _active_sources(frozen)
-    _require(len(updates) == len(history) and all(u.operation in {'REVISE', 'WITHDRAW'} for u in updates),
-        'piece_correction_update_not_supported')
+    _require(type(answer_sources) is tuple and len(answer_sources) <= 3
+        and all(type(a) is SupplementalAnswerSource for a in answer_sources),
+        'piece_correction_answer_binding')
+    if answer_sources:
+        _require([a.round_index for a in answer_sources] == list(range(1,len(answer_sources)+1))
+            and len({a.answer_id for a in answer_sources}) == len(answer_sources)
+            and all(a.thread_id == correction.thread_id and a.original_source_ref == correction.original_source_ref
+                and a.answer_id not in {original.saved_input_id, *[c.correction_id for c in history]}
+                for a in answer_sources), 'piece_correction_answer_binding')
+        astamps = [_time(a.recorded_at) for a in answer_sources]
+        _require(start <= astamps[0] and astamps == sorted(astamps) and astamps[-1] <= stamps[0],
+            'piece_correction_source_clock')
+        for a in answer_sources:
+            freeze_supplemental_answer(a)
+    frozen = _corrected_source_set(original, correction, as_of=as_of,
+        prior_corrections=prior_corrections, answer_sources=answer_sources)
+    # The full freezer retains every real answer. Fully read ADD claims
+    # participate in the existing compatibility checks. An unselected,
+    # unread prior ADD qualifies history only; it cannot supply a new claim.
+    ordinary_answer_ids = {a.answer_id for a in answer_sources if not (
+        _REPLACEMENT.fullmatch(a.answer_text_private.strip().rstrip('。．.'))
+        or _WITHDRAWAL.fullmatch(a.answer_text_private.strip().rstrip('。．.')))}
+    opaque_ids=set()
+    from .cores.analysis.source_adapter import AnalysisSourceError
+    for view in frozen.sources:
+        if view.envelope.source_record_id not in ordinary_answer_ids:
+            continue
+        try:
+            _self_propositions(view,require_complete=True)
+        except AnalysisSourceError as exc:
+            if str(exc) != 'analysis_supplement_interpretation_pending':
+                raise
+            opaque_ids.add(view.envelope.source_record_id)
+    _require(not answer_sources or answer_sources[-1].answer_id not in opaque_ids,
+        'piece_correction_selected_answer_pending')
+    update_view = replace(frozen,sources=tuple(v for v in frozen.sources
+        if v.envelope.source_record_id not in opaque_ids)) if opaque_ids else frozen
+    active, excluded, updates, _ = _active_sources(update_view)
+    by_id = {s.envelope.source_record_id:s for s in frozen.sources}
     original_source = next(s for s in frozen.sources if s.envelope.source_role == 'ORIGINAL_INPUT')
-    corrections = [s for s in frozen.sources if s.envelope.source_role == 'USER_INTERPRETATION_CORRECTION']
-    _require(len(corrections) == len(history), 'piece_correction_source_binding')
     removed = [e for e in original_source.evidence
         if e.source_span_id in excluded.get(original_source.envelope.envelope_id, set())]
-    _require(len(removed) == len(history), 'piece_correction_active_range_binding')
+    _require(len(removed) == len(updates), 'piece_correction_active_range_binding')
     full = build_piece_source_meaning(original, expected_owner_id=original.owner_id,
         expected_saved_input_id=original.saved_input_id, expected_source_version=original.source_version)
-    raw = json.loads(original.saved_original_json)
     removed_refs = []
     for target in removed:
         matches = [ref for ref in full.evidence if ref.field_path == target.field_path
             and ref.scalar_start == target.scalar_start
-            and raw[ref.field_path][ref.scalar_start:ref.scalar_end].rstrip('。．.!！?？')
-                == raw[target.field_path][target.scalar_start:target.scalar_end].rstrip('。．.!！?？')]
+            and raw_original[ref.field_path][ref.scalar_start:ref.scalar_end].rstrip('。．.!！?？')
+                == raw_original[target.field_path][target.scalar_start:target.scalar_end].rstrip('。．.!！?？')]
         _require(len(matches) == 1, 'piece_correction_active_range_binding')
         removed_refs.extend(matches)
     ranges = tuple((r.field_path, r.scalar_start, r.scalar_end) for r in full.evidence if r not in removed_refs)
     _require(bool(ranges), 'piece_correction_active_range_binding')
-    rows = []
-    for proper, frozen_source, update in zip(history, corrections, updates, strict=True):
-        replacements = [s for s in active if s.envelope.envelope_id == frozen_source.envelope.envelope_id]
-        if update.operation == 'REVISE':
-            _require(len(replacements) == 1 and replacements[0].scoped_memo_range is not None,
-                'piece_correction_active_range_binding')
-            active_range = replacements[0].scoped_memo_range
+    if answer_sources:
+        # A quote cannot silently choose ORIGINAL when an active answer says
+        # the same thing. AI target excerpts are not person-source selectors.
+        for update in updates:
+            ref = update.target_evidence
+            literal = raw_original[ref.field_path][ref.scalar_start:ref.scalar_end].strip().rstrip('。．.')
+            _require(all(literal not in a.answer_text_private for a in answer_sources
+                if a.answer_id in ordinary_answer_ids), 'piece_correction_ambiguous_person_source')
+            for view in active:
+                if view.envelope.source_role != 'SUPPLEMENTAL_ANSWER':
+                    continue
+                text = source_field_text(view, 'memo')
+                if view.scoped_memo_range is not None:
+                    text = text[slice(*view.scoped_memo_range)]
+                _require(literal not in text, 'piece_correction_ambiguous_person_source')
+    def row(proper, *, correction_role):
+        fs = by_id.get(proper.correction_id if correction_role else proper.answer_id)
+        _require(fs is not None, 'piece_correction_source_binding')
+        changes = [u for u in updates if u.answer_evidence_refs
+            and u.answer_evidence_refs[0].source_envelope_id == fs.envelope.envelope_id]
+        _require(len(changes) <= 1 and (not correction_role or len(changes) == 1),
+            'piece_correction_update_not_supported')
+        views = [v for v in active if v.envelope.envelope_id == fs.envelope.envelope_id]
+        operation = changes[0].operation if changes else 'ADD'
+        if not correction_role and proper.answer_id in opaque_ids:
+            _require(not changes and not views, 'piece_correction_active_range_binding'); active_range = None
+        elif operation == 'WITHDRAW':
+            _require(not views, 'piece_correction_active_range_binding'); active_range = None
         else:
-            _require(not replacements, 'piece_correction_active_range_binding')
-            active_range = None
-        rows.append((proper, update.operation, active_range, 'sha256:' + frozen_source.envelope.raw_sha256, frozen_source))
-    return ranges, tuple(rows)
+            _require(len(views) == 1, 'piece_correction_active_range_binding')
+            active_range = views[0].scoped_memo_range
+            _require((operation == 'REVISE') == (active_range is not None),
+                'piece_correction_active_range_binding')
+        return proper,operation,active_range,'sha256:'+fs.envelope.raw_sha256,fs
+    return ranges,tuple(row(c,correction_role=True) for c in history),tuple(
+        row(a,correction_role=False) for a in answer_sources)
 
 
-def corrected_active_ranges(original, correction, *, as_of, prior_corrections=()):
-    ranges, rows = corrected_history_ranges(original, correction, as_of=as_of, prior_corrections=prior_corrections)
+def corrected_history_ranges(original, correction, *, as_of, prior_corrections=(), answer_sources=()):
+    ranges, rows, _ = _corrected_projection(original,correction,as_of=as_of,
+        prior_corrections=prior_corrections,answer_sources=answer_sources)
+    return ranges,rows
+
+
+def corrected_answer_ranges(source):
+    _,_,rows = _corrected_projection(source.original,source.correction,as_of=source.as_of,
+        prior_corrections=source.prior_corrections,answer_sources=source.answer_sources)
+    return rows
+
+
+def corrected_active_ranges(original, correction, *, as_of, prior_corrections=(), answer_sources=()):
+    ranges, rows = corrected_history_ranges(original, correction, as_of=as_of, prior_corrections=prior_corrections, answer_sources=answer_sources)
     _, operation, active_range, commitment, _ = rows[-1]
     return operation, ranges, active_range, commitment
 
@@ -257,12 +336,17 @@ def _validate_corrected_source(source):
         and source.corrected_result_identity not in {
             source.original.saved_input_id, source.correction.correction_id, source.correction.target_event_id},
         'piece_correction_source_binding')
+    _require((not source.answer_sources and source.selected_answer_id is None
+            and source.question_need_decision_identity is None)
+        or (bool(source.answer_sources) and source.selected_answer_id == source.answer_sources[-1].answer_id
+            and type(source.question_need_decision_identity) is str
+            and bool(source.question_need_decision_identity.strip())), 'piece_correction_answer_opt_in')
     expected = corrected_active_ranges(source.original, source.correction, as_of=source.as_of,
-        prior_corrections=source.prior_corrections)
+        prior_corrections=source.prior_corrections, answer_sources=source.answer_sources)
     _require(expected == (source.correction_update_operation, source.original_active_ranges,
         source.correction_active_range, source.correction_commitment), 'piece_correction_active_range_binding')
     return next(s for s in _corrected_source_set(source.original, source.correction, as_of=source.as_of,
-            prior_corrections=source.prior_corrections).sources
+            prior_corrections=source.prior_corrections, answer_sources=source.answer_sources).sources
         if s.envelope.source_role == 'USER_INTERPRETATION_CORRECTION'
         and s.envelope.source_record_id == source.correction.correction_id)
 
@@ -559,12 +643,15 @@ def build_refined_meaning(request):
             and original.saved_input_id == request.expected_saved_input_id
             and original.source_version == request.expected_source_version, 'piece_correction_source_binding')
         active = _active_original_meaning(original, source.original_active_ranges,
-            effective_round_sources=bool(source.prior_corrections))
+            effective_round_sources=bool(source.prior_corrections or source.answer_sources))
         prior = []
+        for answer,operation,active_range,_,_ in corrected_answer_ranges(source):
+            if operation != 'WITHDRAW' and (operation == 'REVISE' or answer.answer_id == source.selected_answer_id):
+                prior.append(_supplemental_meaning(answer, original.owner_id, active_range))
         for i, previous in enumerate(source.prior_corrections):
             prefix = source.prior_corrections[:i]
             op, ranges, active_range, commitment = corrected_active_ranges(
-                original, previous, as_of=source.as_of, prior_corrections=prefix)
+                original, previous, as_of=source.as_of, prior_corrections=prefix, answer_sources=source.answer_sources)
             if op == 'REVISE':
                 child = replace(source, correction=previous, prior_corrections=prefix,
                     original_active_ranges=ranges, correction_update_operation=op,
@@ -658,13 +745,18 @@ def build_refined_meaning(request):
                               prior_revisions if source.effective_round_sources else ())
 
 
+def refined_source_roles(source):
+    if type(source) is PieceCorrectedSourceSnapshot:
+        return (('ORIGINAL_USER_INPUT','SUPPLEMENTAL_ANSWER','USER_INTERPRETATION_CORRECTION')
+            if source.answer_sources else ('ORIGINAL_USER_INPUT','USER_INTERPRETATION_CORRECTION'))
+    return ('ORIGINAL_USER_INPUT','SUPPLEMENTAL_ANSWER')
+
+
 def _plans(meaning):
     from .piece_v1c import compile_piece_artifact_plan
     return PieceRefinedPlan(meaning.source_ref, compile_piece_artifact_plan(meaning.original),
         compile_piece_artifact_plan(meaning.supplemental) if meaning.supplemental is not None else None,
-        source_roles=(('ORIGINAL_USER_INPUT', 'USER_INTERPRETATION_CORRECTION')
-            if type(meaning.source) is PieceCorrectedSourceSnapshot
-            else ('ORIGINAL_USER_INPUT', 'SUPPLEMENTAL_ANSWER')),
+        source_roles=refined_source_roles(meaning.source),
         prior_revision_plans=tuple(compile_piece_artifact_plan(part) for part in meaning.prior_revisions))
 
 
@@ -673,9 +765,7 @@ def validate_refined_preservation(meaning, plan, artifact):
     _require(type(meaning) is PieceRefinedMeaning and type(plan) is PieceRefinedPlan
         and type(artifact) is PieceArtifact and plan.source_ref == meaning.source_ref
         and meaning.source_ref == refined_source_ref(meaning.source)
-        and plan.source_roles == (('ORIGINAL_USER_INPUT', 'USER_INTERPRETATION_CORRECTION')
-            if type(meaning.source) is PieceCorrectedSourceSnapshot
-            else ('ORIGINAL_USER_INPUT', 'SUPPLEMENTAL_ANSWER'))
+        and plan.source_roles == refined_source_roles(meaning.source)
         and plan.eligible_formats == ('short_essay',), 'piece_refined_artifact_binding')
     source = meaning.source.original
     expected = build_refined_meaning(PieceGenerationRequest(
@@ -744,7 +834,8 @@ def serialize_refined_piece(outcome):
         sources=_source_payload(outcome.source_meaning.source),
         plan=asdict(outcome.artifact_plan), artifact=asdict(outcome.artifact))
     if ((type(outcome.source_meaning.source) is PieceCorrectedSourceSnapshot
-            and not outcome.source_meaning.source.prior_corrections)
+            and not outcome.source_meaning.source.prior_corrections
+            and not outcome.source_meaning.source.answer_sources)
             or (type(outcome.source_meaning.source) is PieceRefinedSourceSnapshot
                 and not outcome.source_meaning.source.effective_round_sources)):
         del state['plan']['prior_revision_plans']

@@ -517,3 +517,64 @@ def test_multiple_correction_model_review_keeps_each_proper_partition():
         with pytest.raises(PieceContractError):
             from piece_v2_content_policy import validate_piece_model_preservation
             validate_piece_model_preservation(grafted,native.artifact_plan,native.artifact)
+
+
+def mixed_source(*, answers=('私は寂しかった。',), operation='REVISE'):
+    from cocolon_meaning_experience_engine.emlis_thread_contracts import SupplementalAnswerSource
+    original=original_source(); correction=correction_source(original,explanation=(
+        '「私は資料を調べた」ではなく「私は約束を守りたい」です。' if operation=='REVISE'
+        else '「私は資料を調べた」は取り消します。'))
+    sources=tuple(SupplementalAnswerSource('mixed-answer-'+str(i),correction.thread_id,'logical-question-'+str(i),i,
+        correction.original_source_ref,text,f'2026-11-14T03:04:0{i}+00:00') for i,text in enumerate(answers,1))
+    op,ranges,active,commitment=refined.corrected_active_ranges(original,correction,as_of=AS_OF,answer_sources=sources)
+    return replace(corrected_source(original=original,correction=correction),answer_sources=sources,
+        selected_answer_id=sources[-1].answer_id,question_need_decision_identity='mixed-question-event',
+        correction_update_operation=op,original_active_ranges=ranges,correction_active_range=active,correction_commitment=commitment)
+
+
+@pytest.mark.parametrize('rounds',[1,2,3])
+@pytest.mark.parametrize('operation',['REVISE','WITHDRAW'])
+@pytest.mark.parametrize('tier',['free','plus','premium'])
+def test_selected_real_answer_and_proper_correction_keep_separate_sources(rounds,operation,tier):
+    texts=('私は怖かった。',)*(rounds-1)+('私は嬉しかった。',)
+    source=mixed_source(answers=texts,operation=operation)
+    out=produce(source,tier=tier)
+    assert out.status is EngineStatus.GENERATED,out.reason_codes
+    assert texts[-1] in out.artifact.piece_text
+    assert all(text not in out.artifact.piece_text for text in texts[:-1])
+    assert '私は資料を調べた' not in out.artifact.piece_text
+    assert ('私は約束を守りたい' in out.artifact.piece_text)==(operation=='REVISE')
+    prepared=prepare_piece_model_request(request(source,tier=tier))
+    assert len(piece_model_field_slots(prepared.payload()))==len(out.artifact.body_blocks)
+    assert model_result(source,out.artifact.body_blocks).status is EngineStatus.GENERATED
+    raw=refined.serialize_refined_piece(out)
+    assert refined.read_saved_refined_artifact(raw,expected_state_sha256=hashlib.sha256(raw).hexdigest())==out.artifact
+
+
+@pytest.mark.parametrize('answer_operation',['REVISE','WITHDRAW'])
+@pytest.mark.parametrize('correction_operation',['REVISE','WITHDRAW'])
+def test_original_clause_answer_update_and_later_proper_correction_compose(answer_operation,correction_operation):
+    text=('「私は仕事を続けたい」ではなく「私は家族を守りたい」です。' if answer_operation=='REVISE'
+        else '「私は仕事を続けたい」は取り消します。')
+    source=mixed_source(answers=(text,),operation=correction_operation)
+    out=produce(source)
+    assert out.status is EngineStatus.GENERATED,out.reason_codes
+    assert '私は仕事を続けたい' not in out.artifact.piece_text
+    assert '私は資料を調べた' not in out.artifact.piece_text
+    assert ('私は家族を守りたい' in out.artifact.piece_text)==(answer_operation=='REVISE')
+    assert ('私は約束を守りたい' in out.artifact.piece_text)==(correction_operation=='REVISE')
+
+
+def test_same_quoted_clause_in_an_answer_is_not_silently_an_original_only_correction():
+    with pytest.raises((PieceContractError,ValueError)):
+        mixed_source(answers=('私は資料を調べた。',),operation='WITHDRAW')
+
+
+def test_unread_selected_answer_keeps_mixed_source_pending():
+    with pytest.raises((PieceContractError,ValueError)):
+        mixed_source(answers=('私は怖かった。',))
+
+
+def test_readable_answer_and_new_proper_replacement_cannot_contradict():
+    with pytest.raises((PieceContractError,ValueError)):
+        mixed_source(answers=('私は約束を守りたくない。',))

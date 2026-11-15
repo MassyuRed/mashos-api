@@ -105,14 +105,27 @@ def piece_material(source, *, expected_owner_id: str, tier: str = 'free') -> dic
 
 def _corrected_piece_model_material(source, *, expected_owner_id, tier):
     from dataclasses import asdict
-    from .piece_refined import _validate_corrected_source, refined_source_ref, corrected_history_ranges
+    from .piece_refined import _validate_corrected_source, refined_source_ref, corrected_history_ranges, corrected_answer_ranges
     from .cores.analysis.source_adapter import commitment
     frozen = _validate_corrected_source(source)
     material = piece_material(source.original, expected_owner_id=expected_owner_id, tier=tier)
     original = material['sources'][0]
     _, rows = corrected_history_ranges(source.original, source.correction, as_of=source.as_of,
-        prior_corrections=source.prior_corrections)
+        prior_corrections=source.prior_corrections,answer_sources=source.answer_sources)
     selected_ranges = {}
+    from .emlis_thread_source import freeze_supplemental_answer
+    for answer,operation,active_range,_,_ in corrected_answer_ranges(source):
+        frozen_answer = freeze_supplemental_answer(answer)
+        selected = operation == 'REVISE' or answer.answer_id == source.selected_answer_id
+        ranges = (() if operation == 'WITHDRAW' or not selected else
+            (('answer_text_private',*(active_range if active_range is not None else (0,len(answer.answer_text_private)))),))
+        material['sources'].append(dict(source_id=answer.answer_id,source_version=answer.source_version,
+            source_commitment='sha256:'+frozen_answer.envelope.raw_sha256,role='SUPPLEMENTAL_ANSWER',original=None,
+            text_fields={'answer_text_private':answer.answer_text_private},envelope_id=frozen_answer.envelope.envelope_id,
+            recorded_at=answer.recorded_at,parent_record_id=source.original.saved_input_id,
+            evidence=[dict(asdict(ref),literal=frozen_answer.envelope.raw_utf8[ref.utf8_start:ref.utf8_end].decode('utf-8'),
+                coordinate_space='SOURCE_ENVELOPE') for ref in frozen_answer.evidence_refs]))
+        selected_ranges[answer.answer_id] = ranges
     for correction, _, active_range, commitment_value, frozen in rows:
         material['sources'].append(dict(source_id=correction.correction_id,
             source_version=commitment(asdict(correction)), source_commitment=commitment_value,
@@ -314,7 +327,8 @@ def piece_model_field_slots(material):
                     ['ORIGINAL_INPUT'], ['ORIGINAL_INPUT', 'SUPPLEMENTAL_ANSWER'])
                     and not (control.get('interpretation_correction') is True
                         and len(sources) >= 2 and sources[0]['role'] == 'ORIGINAL_INPUT'
-                        and all(s['role'] == 'USER_INTERPRETATION_CORRECTION' for s in sources[1:]))
+                        and all(s['role'] in {'USER_INTERPRETATION_CORRECTION','SUPPLEMENTAL_ANSWER'} for s in sources[1:])
+                        and any(s['role'] == 'USER_INTERPRETATION_CORRECTION' for s in sources[1:]))
                     and not (control.get('effective_round_sources') is True
                         and 2 <= len(sources) <= 4 and sources[0]['role'] == 'ORIGINAL_INPUT'
                         and all(s['role'] == 'SUPPLEMENTAL_ANSWER' for s in sources[1:])))

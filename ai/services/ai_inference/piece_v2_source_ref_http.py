@@ -57,7 +57,7 @@ def _source_ref_response(value: object, saved_input_id: str, *, selected_answer:
                     stage == 'normal_observation' and question is None
                     or stage == 'corrected_observation' and question is None
                     or stage == 'pre_question_observation' and reference(question)))
-                or (selected_answer is not None and stage == 'refined_observation'
+                or (selected_answer is not None and stage in {'refined_observation','corrected_observation'}
                     and reference(question) and answer == selected_answer)):
             raise ValueError
         # Exact scalar-only projection; no private handoff, body, owner or tier.

@@ -106,6 +106,9 @@ name: Piece B2-B/B3/B4/B5 isolated PostgreSQL
       - ai/tests/piece_v2/test_b05_interpretation_correction_sql_fence.py
       - supabase/migrations/*_piece_interpretation_correction_source.sql
       - supabase/migrations/*_piece_multiple_interpretation_corrections.sql
+      - supabase/migrations/*_piece_answer_and_interpretation_corrections.sql
+      - ai/tests/piece_v2/test_b05_answer_correction_application.py
+      - ai/tests/piece_v2/test_b05_answer_correction_sql_fence.py
       - supabase/migrations/*_piece_natural_answer_active_source.sql
       - supabase/migrations/*_piece_natural_refined_source_fence.sql
       - supabase/migrations/*_piece_natural_later_add_answer.sql
@@ -528,7 +531,9 @@ jobs:
             ai/tests/piece_v2/test_b05_effective_round_sql_fence.py \
             ai/tests/test_cmee_piece_interpretation_correction.py \
             ai/tests/piece_v2/test_b05_interpretation_correction_application.py \
-            ai/tests/piece_v2/test_b05_interpretation_correction_sql_fence.py
+            ai/tests/piece_v2/test_b05_interpretation_correction_sql_fence.py \
+            ai/tests/piece_v2/test_b05_answer_correction_application.py \
+            ai/tests/piece_v2/test_b05_answer_correction_sql_fence.py
           python -m pytest -q --tb=short -ra -p no:cacheprovider \
             -c /dev/null --rootdir=. --noconftest \
             ai/tests/piece_v2/test_b08_piece_bare_finite_evaluation.py \

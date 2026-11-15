@@ -124,6 +124,7 @@ class PieceSavedCorrectedHandoff:
     correction_active_range: tuple[int, int] | None
 
     prior_corrections: tuple[InterpretationCorrectionSource, ...] = ()
+    answer_sources: tuple[SupplementalAnswerSource, ...] = ()
 
     def lineage_payload(self) -> dict:
         return json.loads(self._lineage_json)
@@ -297,7 +298,7 @@ class PieceSavedSourceAdapter:
 
     async def resolve_original_handoff(
         self, authorization: str | None, saved_input_id: str,
-        *, include_corrected: bool = False,
+        *, include_corrected: bool = False, selected_corrected_answer: str | None = None,
     ) -> PieceSavedHandoff | PieceSavedCorrectedHandoff:
         """Derive stage from the saved result, never from a client stage/bool.
 
@@ -325,7 +326,7 @@ class PieceSavedSourceAdapter:
             if include_corrected and any(e.get('kind') == 'OPERATION'
                     and e.get('payload', {}).get('stage') == 'INTERPRETATION_CORRECTION'
                     for e in snapshot['events']):
-                return _corrected_observation_handoff(saved, snapshot)
+                return _corrected_observation_handoff(saved, snapshot, selected_corrected_answer)
             return _original_observation_handoff(saved, snapshot)
         except PieceContractError:
             raise
@@ -338,8 +339,11 @@ class PieceSavedSourceAdapter:
         except (ValueError, TypeError, KeyError, AttributeError, UnicodeError):
             raise _error('PIECE_SOURCE_NOT_ELIGIBLE') from None
 
-    async def resolve_corrected_handoff(self, authorization, saved_input_id):
-        result = await self.resolve_original_handoff(authorization, saved_input_id, include_corrected=True)
+    async def resolve_corrected_handoff(self, authorization, saved_input_id, *, supplemental_answer_identity=None):
+        if supplemental_answer_identity is not None:
+            _uuid(supplemental_answer_identity, 'PIECE_REQUEST_INVALID')
+        result = await self.resolve_original_handoff(authorization, saved_input_id, include_corrected=True,
+            selected_corrected_answer=supplemental_answer_identity)
         if type(result) is not PieceSavedCorrectedHandoff:
             raise _error('PIECE_SOURCE_NOT_ELIGIBLE')
         return result
@@ -347,7 +351,8 @@ class PieceSavedSourceAdapter:
     async def revalidate_corrected_handoff(self, authorization, previous):
         if type(previous) is not PieceSavedCorrectedHandoff:
             raise _error('PIECE_REQUEST_INVALID')
-        current = await self.resolve_corrected_handoff(authorization, previous.original.saved_input_id)
+        current = await self.resolve_corrected_handoff(authorization, previous.original.saved_input_id,
+            supplemental_answer_identity=previous.answer_sources[-1].answer_id if previous.answer_sources else None)
         # The source clock advances on every read. It qualifies the immutable
         # sources but is not a new version of those sources.
         from dataclasses import replace
@@ -358,7 +363,7 @@ class PieceSavedSourceAdapter:
     async def resolve_refined_handoff(
         self, authorization: str | None, saved_input_id: str, *,
         supplemental_answer_identity: str, opted_in: bool,
-    ) -> PieceSavedRefinedHandoff:
+    ) -> PieceSavedRefinedHandoff | PieceSavedCorrectedHandoff:
         """Read one explicitly selected, committed additive answer.
 
         A caller must opt into the exact saved answer. Its separate source is
@@ -387,6 +392,9 @@ class PieceSavedSourceAdapter:
                         saved.authenticated_owner_id, saved.saved_input_id)
             if not _generation_current(snapshot):
                 raise _error('PIECE_SOURCE_NOT_ELIGIBLE')
+            if any(e.get('kind') == 'OPERATION' and e.get('payload', {}).get('stage') == 'INTERPRETATION_CORRECTION'
+                    for e in snapshot['events']):
+                return _corrected_observation_handoff(saved, snapshot, answer_id)
             return _refined_observation_handoff(saved, snapshot, answer_id)
         except PieceContractError:
             raise
@@ -400,8 +408,12 @@ class PieceSavedSourceAdapter:
             raise _error('PIECE_SOURCE_NOT_ELIGIBLE') from None
 
     async def revalidate_refined_handoff(
-        self, authorization: str | None, previous: PieceSavedRefinedHandoff, *, opted_in: bool,
-    ) -> PieceSavedRefinedHandoff:
+        self, authorization: str | None, previous: PieceSavedRefinedHandoff | PieceSavedCorrectedHandoff, *, opted_in: bool,
+    ) -> PieceSavedRefinedHandoff | PieceSavedCorrectedHandoff:
+        if opted_in is not True:
+            raise _error('PIECE_SOURCE_NOT_ELIGIBLE')
+        if type(previous) is PieceSavedCorrectedHandoff:
+            return await self.revalidate_corrected_handoff(authorization, previous)
         if type(previous) is not PieceSavedRefinedHandoff:
             raise _error('PIECE_REQUEST_INVALID')
         current = await self.resolve_refined_handoff(
@@ -471,7 +483,11 @@ class PieceSavedSourceAdapter:
             handoff = await self.resolve_refined_handoff(
                 authorization, saved_input_id,
                 supplemental_answer_identity=supplemental_answer_identity, opted_in=opted_in)
-            lineage = project_saved_refined_lineage(handoff, opted_in=opted_in)
+            if type(handoff) is PieceSavedCorrectedHandoff:
+                project_saved_corrected_source(handoff)
+                lineage = handoff.lineage_payload()
+            else:
+                lineage = project_saved_refined_lineage(handoff, opted_in=opted_in)
             source, observation = lineage['source_input'], lineage['observation']
             result = {key: source[key] for key in (
                 'source_input_id', 'source_input_version', 'source_input_bundle_commitment')}
@@ -778,7 +794,7 @@ def _original_observation_handoff(saved: PieceSavedOriginal, snapshot: dict) -> 
     return PieceSavedHandoff(saved, thread_id, t['revision'], canonical_json_bytes(lineage))
 
 
-def _corrected_observation_handoff(saved, snapshot):
+def _corrected_observation_handoff(saved, snapshot, answer_id=None):
     """Bind every proper correction and its actual completed FINAL receipt."""
     from dataclasses import asdict, replace
     from emlis_thread_service import _context_ref, _request, NATURAL_REPLY_PROFILE, Q3_PROFILE
@@ -792,23 +808,27 @@ def _corrected_observation_handoff(saved, snapshot):
 
     t, events = snapshot['thread'], snapshot['events']
     d = t['data']
+    mixed=answer_id is not None
+    n=t['issued_count']
+    answer_history=(_natural_later_add_handoff(saved,snapshot,answer_id,correction_prefix=True) if mixed else None)
     thread_id = _uuid(t['id'], 'PIECE_SOURCE_NOT_ELIGIBLE')
     require(type(t['revision']) is int and t['revision'] > 0
-        and t['state'] == 'COMPLETED' and type(t['issued_count']) is int and t['issued_count'] == 0
+        and t['state'] == 'COMPLETED' and type(n) is int and (1<=n<=3 if mixed else n==0)
         and d.get('runtime_profile') == Q3_PROFILE and d.get('response_profile') == NATURAL_REPLY_PROFILE
         and d.get('semantic_profile') is None and d.get('body_state') == 'FINAL'
-        and d.get('answer_assessment') == 'NOT_APPLICABLE' and d.get('natural_response_stage') == 'FINAL'
+        and d.get('answer_assessment') == ('RESOLVED' if mixed else 'NOT_APPLICABLE') and d.get('natural_response_stage') == 'FINAL'
         and d.get('failure_code') is None and d.get('meaning_updated') is False)
     require(all(t[key] is None for key in ('active_operation_id', 'active_attempt_id',
-        'processing_deadline_at', 'latest_answer_event_id', 'current_meaning_event_id', 'evaluated_prefix_ref')))
+        'processing_deadline_at', 'current_meaning_event_id', 'evaluated_prefix_ref')))
+    require(t['latest_answer_event_id']==answer_id)
     require(canonical_json_bytes(t['source_snapshot']) == saved._original_json)
     require(type(events) is list and bool(events))
     by_id, seqs = {}, []
     for event in events:
         require(type(event) is dict and event.get('thread_id') == thread_id
-            and event.get('kind') in {'OPERATION', 'OBSERVATION'} and type(event.get('payload')) is dict
+            and event.get('kind') in ({'OPERATION','OBSERVATION','QUESTION','ANSWER','MEANING_UPDATE','TERMINAL'} if mixed else {'OPERATION','OBSERVATION'}) and type(event.get('payload')) is dict
             and type(event.get('seq')) is int and event['seq'] > 0
-            and type(event.get('round_index')) is int and event['round_index'] == 0)
+            and type(event.get('round_index')) is int and 0<=event['round_index']<=n)
         eid = _uuid(event['id'], 'PIECE_SOURCE_NOT_ELIGIBLE')
         require(eid not in by_id)
         by_id[eid] = event
@@ -816,18 +836,27 @@ def _corrected_observation_handoff(saved, snapshot):
     require(seqs == sorted(set(seqs)))
     corrections = [e for e in events if e['kind'] == 'OPERATION'
         and e['payload'].get('stage') == 'INTERPRETATION_CORRECTION']
-    observations = [e for e in events if e['kind'] == 'OBSERVATION']
+    observations = [e for e in events if e['kind'] == 'OBSERVATION'
+        and (not mixed or e['payload'].get('stage')=='CORRECTED')]
+    if mixed:
+        observations.insert(0,answer_history['observation'])
     require(bool(corrections) and len(observations) == len(corrections) + 1)
     request = _request(snapshot)
     admitted = admit_emlis_thread(request)
     sources = admitted.control.interpretation_corrections
-    require(not admitted.answers and len(sources) == len(corrections))
+    require(len(admitted.answers)==n and len(sources)==len(corrections))
+    answers=tuple(a.source for a in admitted.answers)
+    require(not mixed or answers==answer_history['answers'])
     now = parse_iso_utc(snapshot['now'])
     require(now is not None and t['last_observation_event_id'] == observations[-1]['id']
         and t['source_prefix_ref'] == admitted.source_prefix_ref
         and d.get('analysis_state') == _latest_natural_analysis_state(snapshot))
     previous_finish = None
     for i, body in enumerate(observations):
+        if mixed and i==0:
+            previous_finish=answer_history['end_event']
+            continue
+        require(body['round_index']==n)
         prefix_request = replace(request, emlis_thread=replace(request.emlis_thread,
             interpretation_corrections=sources[:i]))
         prefix = admit_emlis_thread(prefix_request).source_prefix_ref
@@ -890,7 +919,7 @@ def _corrected_observation_handoff(saved, snapshot):
     # cannot change this completed correction's artifact identity.
     source_as_of = observation['recorded_at']
     operation, ranges, replacement_range, commitment = corrected_active_ranges(
-        original_source, correction, as_of=source_as_of, prior_corrections=sources[:-1])
+        original_source, correction, as_of=source_as_of, prior_corrections=sources[:-1],answer_sources=answers)
     source_binding = dict(correction_id=correction.correction_id,
         source_version='sha256:' + canonical_sha256_hex(asdict(correction)),
         explanation_commitment=commitment, target_event_id=correction.target_event_id)
@@ -902,18 +931,24 @@ def _corrected_observation_handoff(saved, snapshot):
             source_recorded_at=parse_iso_utc(saved.recorded_at).isoformat()),
         observation=dict(emlis_observation_stage='corrected_observation',
             emlis_observation_result_identity=observation['id'], emlis_observation_result_state='terminal_success',
-            question_need_decision_identity=None, supplemental_answer_identity=None,
-            supplemental_answer_version=None, supplemental_answer_bundle_commitment=None),
-        semantic_source_roles=['original_input', 'interpretation_correction'],
-        lineage_control_roles=['emlis_observation_result', 'ai_interpretation_target'],
+            question_need_decision_identity=answer_history['question_event_id'] if mixed else None,
+            supplemental_answer_identity=answer_id,
+            supplemental_answer_version=answers[-1].source_version if mixed else None,
+            supplemental_answer_bundle_commitment='sha256:'+admitted.answers[-1].envelope.raw_sha256 if mixed else None),
+        semantic_source_roles=(['original_input','supplemental_answer','interpretation_correction'] if mixed
+            else ['original_input','interpretation_correction']),
+        lineage_control_roles=(['emlis_observation_result','question_need_decision','ai_interpretation_target'] if mixed
+            else ['emlis_observation_result','ai_interpretation_target']),
         piece_generation_eligibility=dict(contract_version='piece.generation_eligibility.v1', decision='eligible', reason_codes=[]),
         interpretation_correction_source=source_binding, body_free=True)
     fence = dict(source=asdict(correction), source_prefix_ref=admitted.source_prefix_ref,
         events=events, thread_data=d)
     if sources[:-1]:
         fence['prior_sources'] = [asdict(c) for c in sources[:-1]]
+    if mixed:
+        fence.update(answer_sources=[asdict(a) for a in answers],answer_checkpoints=list(answer_history['checkpoints']))
     return PieceSavedCorrectedHandoff(saved, correction, thread_id, t['revision'],
-        canonical_json_bytes(lineage), canonical_json_bytes(fence), source_as_of, operation, ranges, replacement_range, sources[:-1])
+        canonical_json_bytes(lineage), canonical_json_bytes(fence), source_as_of, operation, ranges, replacement_range, sources[:-1], answers)
 
 
 def project_saved_corrected_source(handoff):
@@ -925,11 +960,22 @@ def project_saved_corrected_source(handoff):
         raise _error('PIECE_SOURCE_NOT_ELIGIBLE')
     source = project_saved_original_source(handoff.original, source_stage='normal_observation')
     operation, ranges, replacement_range, commitment = corrected_active_ranges(
-        source, handoff.correction, as_of=handoff.as_of, prior_corrections=handoff.prior_corrections)
+        source, handoff.correction, as_of=handoff.as_of, prior_corrections=handoff.prior_corrections,answer_sources=handoff.answer_sources)
     line, control = handoff.lineage_payload(), json.loads(handoff._correction_state_json)
     binding = dict(correction_id=handoff.correction.correction_id,
         source_version='sha256:' + canonical_sha256_hex(asdict(handoff.correction)),
         explanation_commitment=commitment, target_event_id=handoff.correction.target_event_id)
+    mixed=bool(handoff.answer_sources)
+    question=None
+    selected=handoff.answer_sources[-1] if mixed else None
+    if mixed:
+        from cocolon_meaning_experience_engine.emlis_thread_source import freeze_supplemental_answer
+        matches=[e for e in control.get('events',[]) if e.get('kind')=='QUESTION'
+            and e.get('round_index')==selected.round_index and e.get('question_id')==selected.question_id]
+        if len(matches)!=1: raise _error('PIECE_CONFLICT')
+        question=matches[0]['id']
+        _uuid(question,'PIECE_CONFLICT')
+        answer_commitment='sha256:'+freeze_supplemental_answer(selected).envelope.raw_sha256
     observation = line.get('observation', {})
     _uuid(observation.get('emlis_observation_result_identity'), 'PIECE_CONFLICT')
     expected_source = dict(source_input_id=handoff.original.saved_input_id,
@@ -943,23 +989,30 @@ def project_saved_corrected_source(handoff):
             or line.get('handoff_contract_version') != 'cocolon.cross_core.source_handoff.v1'
             or line.get('piece_source_lineage_version') != 'piece.source_lineage.v1'
             or line.get('source_input') != expected_source
-            or line.get('semantic_source_roles') != ['original_input', 'interpretation_correction']
-            or line.get('lineage_control_roles') != ['emlis_observation_result', 'ai_interpretation_target']
+            or line.get('semantic_source_roles') != (['original_input','supplemental_answer','interpretation_correction'] if mixed
+                else ['original_input','interpretation_correction'])
+            or line.get('lineage_control_roles') != (['emlis_observation_result','question_need_decision','ai_interpretation_target'] if mixed
+                else ['emlis_observation_result','ai_interpretation_target'])
             or line.get('body_free') is not True
             or line.get('piece_generation_eligibility') != dict(
                 contract_version='piece.generation_eligibility.v1', decision='eligible', reason_codes=[])
             or observation != dict(emlis_observation_stage='corrected_observation',
                 emlis_observation_result_identity=observation.get('emlis_observation_result_identity'),
-                emlis_observation_result_state='terminal_success', question_need_decision_identity=None,
-                supplemental_answer_identity=None, supplemental_answer_version=None,
-                supplemental_answer_bundle_commitment=None)
+                emlis_observation_result_state='terminal_success', question_need_decision_identity=question,
+                supplemental_answer_identity=selected.answer_id if mixed else None,
+                supplemental_answer_version=selected.source_version if mixed else None,
+                supplemental_answer_bundle_commitment=answer_commitment if mixed else None)
             or line.get('interpretation_correction_source') != binding
             or canonical_json_bytes(line) != handoff._lineage_json
             or type(control) is not dict or set(control) != ({'source', 'source_prefix_ref', 'events', 'thread_data'}
-                | ({'prior_sources'} if handoff.prior_corrections else set()))
+                | ({'prior_sources'} if handoff.prior_corrections else set())
+                | ({'answer_sources','answer_checkpoints'} if mixed else set()))
             or canonical_json_bytes(control) != handoff._correction_state_json
             or control.get('source') != asdict(handoff.correction)
             or (control.get('prior_sources', []) != [asdict(c) for c in handoff.prior_corrections])
+            or control.get('answer_sources',[]) != [asdict(a) for a in handoff.answer_sources]
+            or (mixed and control.get('answer_checkpoints') != [e['payload'] for e in control.get('events',[])
+                if e.get('kind')=='MEANING_UPDATE'])
             or (operation, ranges, replacement_range) != (handoff.correction_update_operation,
                 handoff.original_active_ranges, handoff.correction_active_range)
             or handoff.thread_id != handoff.correction.thread_id
@@ -969,7 +1022,9 @@ def project_saved_corrected_source(handoff):
         original_commitment=handoff.original.record_commitment, correction_commitment=commitment,
         corrected_result_identity=line['observation']['emlis_observation_result_identity'],
         opted_in=True, original_active_ranges=ranges, correction_active_range=replacement_range,
-        correction_update_operation=operation, as_of=handoff.as_of, prior_corrections=handoff.prior_corrections)
+        correction_update_operation=operation, as_of=handoff.as_of, prior_corrections=handoff.prior_corrections,
+        answer_sources=handoff.answer_sources,selected_answer_id=selected.answer_id if mixed else None,
+        question_need_decision_identity=question)
 
 
 def _natural_refined_observation_handoff(saved: PieceSavedOriginal, snapshot: dict,
@@ -1309,7 +1364,7 @@ def _natural_active_answer_ranges(saved, prepared):
     return update.operation, tuple(ranges), answer_range
 
 
-def _natural_later_add_handoff(saved, snapshot, answer_id):
+def _natural_later_add_handoff(saved, snapshot, answer_id, *, correction_prefix=False):
     """Select the last independent answer, after validating every real round.
 
     Earlier answers prove eligibility only. They never become extra Piece
@@ -1330,14 +1385,14 @@ def _natural_later_add_handoff(saved, snapshot, answer_id):
     t, events = snapshot['thread'], snapshot['events']
     d, n = t['data'], t['issued_count']
     tid = _uuid(t['id'], 'PIECE_SOURCE_NOT_ELIGIBLE')
-    require(type(n) is int and n in (2, 3) and type(t['revision']) is int and t['revision'] > 0)
-    require(t['state']=='COMPLETED' and d.get('body_state')=='REFINED'
+    require(type(n) is int and n in ((1,2,3) if correction_prefix else (2,3)) and type(t['revision']) is int and t['revision'] > 0)
+    require(t['state']=='COMPLETED' and d.get('body_state')==('FINAL' if correction_prefix else 'REFINED')
         and d.get('runtime_profile')==Q3_PROFILE and d.get('response_profile')==NATURAL_REPLY_PROFILE
         and d.get('natural_question_policy')==NATURAL_QUESTION_POLICY
         and d.get('semantic_profile') is None
         and d.get('analysis_state')==_latest_natural_analysis_state(snapshot)
-        and d.get('answer_assessment')=='RESOLVED' and d.get('meaning_updated') is True
-        and d.get('natural_response_stage')=='REFINED' and d.get('failure_code') is None
+        and d.get('answer_assessment')=='RESOLVED' and d.get('meaning_updated') is (False if correction_prefix else True)
+        and d.get('natural_response_stage')==('FINAL' if correction_prefix else 'REFINED') and d.get('failure_code') is None
         and 'continuation_question' not in d)
     require(all(t[k] is None for k in ('active_operation_id','active_attempt_id','processing_deadline_at')))
     require(canonical_json_bytes(t['source_snapshot'])==saved._original_json
@@ -1348,22 +1403,31 @@ def _natural_later_add_handoff(saved, snapshot, answer_id):
         require(event.get('thread_id')==tid and eid not in ids
             and type(event['seq']) is int and event['seq']>0 and type(event['payload']) is dict
             and event['kind'] in {'OPERATION','MEANING_UPDATE','OBSERVATION','QUESTION','ANSWER','TERMINAL'}
-            and not (event['kind']=='OPERATION' and event['payload'].get('stage')=='INTERPRETATION_CORRECTION'))
+            and (correction_prefix or not (event['kind']=='OPERATION' and event['payload'].get('stage')=='INTERPRETATION_CORRECTION')))
         ids.add(eid); seqs.append(event['seq'])
     require(seqs==sorted(set(seqs)))
     by_kind = {kind:[e for e in events if e['kind']==kind]
         for kind in ('QUESTION','ANSWER','MEANING_UPDATE','OBSERVATION','TERMINAL','OPERATION')}
     qs, answers, cps, bodies = (by_kind[k] for k in ('QUESTION','ANSWER','MEANING_UPDATE','OBSERVATION'))
+    correction_events=[e for e in by_kind['OPERATION'] if e['payload'].get('stage')=='INTERPRETATION_CORRECTION']
+    if correction_prefix:
+        require(bool(correction_events))
+        prefix_end_seq=correction_events[0]['seq']
+        bodies=[e for e in bodies if e['seq']<prefix_end_seq]
+        require(all(e['seq']<prefix_end_seq for e in (*qs,*answers,*cps,*by_kind['TERMINAL'])))
     require(len(qs)==len(answers)==len(cps)==n and len(bodies)==n+1)
     require([e['round_index'] for e in qs]==[e['round_index'] for e in answers]
         ==[e['round_index'] for e in cps]==list(range(1,n+1))
         and [e['round_index'] for e in bodies]==list(range(n+1)))
-    require(answers[-1]['id']==answer_id and cps[-1]['id']==t['current_meaning_event_id']
-        and bodies[-1]['id']==t['last_observation_event_id'])
+    require(answers[-1]['id']==answer_id and (correction_prefix or
+        cps[-1]['id']==t['current_meaning_event_id'] and bodies[-1]['id']==t['last_observation_event_id']))
     request = _request(snapshot)
+    if correction_prefix:
+        request=replace(request,emlis_thread=replace(request.emlis_thread,interpretation_corrections=()))
     admitted = admit_emlis_thread(request)
-    require(len(admitted.answers)==n and t['source_prefix_ref']==t['evaluated_prefix_ref']==admitted.source_prefix_ref)
-    controls = by_kind['OPERATION']
+    require(len(admitted.answers)==n and (correction_prefix or
+        t['source_prefix_ref']==t['evaluated_prefix_ref']==admitted.source_prefix_ref))
+    controls = [e for e in by_kind['OPERATION'] if not correction_prefix or e['seq']<prefix_end_seq]
     require(sum(e['payload'].get('stage') in {'NATURAL_REPLY_CALL_STARTED','NATURAL_REPLY_RECEIVED'}
         for e in controls)==2*(n+1))
     context_ref = _context_ref(snapshot)
@@ -1447,19 +1511,28 @@ def _natural_later_add_handoff(saved, snapshot, answer_id):
         require(body['seq']<previous_finish['seq'] and previous_finish['round_index']==i
             and parse_iso_utc(answer_opened['recorded_at'])<=parse_iso_utc(frozen.source.recorded_at)
             <=parse_iso_utc(a['recorded_at']))
-    require(all(bodies[-1][k]==d.get(k) for k in ('operation_id','attempt_id')))
+    require(correction_prefix or all(bodies[-1][k]==d.get(k) for k in ('operation_id','attempt_id')))
     terminals=by_kind['TERMINAL']
-    if d.get('natural_question_stop')=='stop':
+    if (bool(terminals) if correction_prefix else d.get('natural_question_stop')=='stop'):
         require(len(terminals)==1); terminal=terminals[0]
         require(previous_finish['payload']['status']=='AWAITING_CONTINUE'
             and terminal['payload'].get('reason')=='stop' and terminal['round_index']==n
             and all(terminal[k] is None for k in ('operation_id','attempt_id'))
-            and previous_finish['seq']<terminal['seq']==events[-1]['seq'])
+            and previous_finish['seq']<terminal['seq']
+            and (terminal['seq']<prefix_end_seq if correction_prefix else terminal['seq']==events[-1]['seq']))
     else:
-        require(d.get('natural_question_stop') is None and not terminals
-            and previous_finish['payload']['status']=='COMPLETED' and previous_finish['seq']==events[-1]['seq'])
+        require((correction_prefix or d.get('natural_question_stop') is None) and not terminals
+            and previous_finish['payload']['status']=='COMPLETED'
+            and (previous_finish['seq']<prefix_end_seq if correction_prefix else previous_finish['seq']==events[-1]['seq']))
     stamps=[parse_iso_utc(saved.recorded_at),*[parse_iso_utc(e['recorded_at']) for e in events],parse_iso_utc(snapshot['now'])]
     require(all(x is not None for x in stamps) and all(a<=b for a,b in zip(stamps,stamps[1:])))
+    if correction_prefix:
+        end_event=terminals[0] if terminals else previous_finish
+        require(end_event['seq']<prefix_end_seq and parse_iso_utc(end_event['recorded_at'])
+            <=parse_iso_utc(correction_events[0]['payload']['source']['recorded_at']))
+        return dict(answers=tuple(a.source for a in admitted.answers),question_event_id=qs[-1]['id'],
+            checkpoints=tuple(_json(p.checkpoint) for p in prepared_rounds),
+            observation=bodies[-1],end_event=end_event,source_prefix_ref=admitted.source_prefix_ref)
     frozen=admitted.answers[-1]; answer_commitment='sha256:'+frozen.envelope.raw_sha256
     require(saved.record_commitment!=answer_commitment and saved.saved_input_id!=answer_id)
     lineage={

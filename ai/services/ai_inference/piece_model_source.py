@@ -431,7 +431,8 @@ def build_piece_model_messages(prepared, *, include_authoring_constraints=False,
                         and all(item.get('role') == 'SUPPLEMENTAL_ANSWER' for item in sources[1:]))
                     or (control.get('interpretation_correction') is True
                         and len(sources) >= 2 and sources[0].get('role') == 'ORIGINAL_INPUT'
-                        and all(item.get('role') == 'USER_INTERPRETATION_CORRECTION' for item in sources[1:])))):
+                        and all(item.get('role') in {'USER_INTERPRETATION_CORRECTION','SUPPLEMENTAL_ANSWER'} for item in sources[1:])
+                        and any(item.get('role') == 'USER_INTERPRETATION_CORRECTION' for item in sources[1:])))):
             raise ValueError
         original = sources[0].get('original')
         if (type(original) is not dict or set(original) != {

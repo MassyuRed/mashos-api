@@ -164,10 +164,13 @@ def _project_handoff_source(handoff):
 async def _resolve_handoff(adapter, authorization, source_ref):
     """Only an explicitly selected answer enters the refined source owner."""
     if source_ref['emlis_observation_stage'] == 'corrected_observation':
-        if any(source_ref.get(key) is not None for key in
-               ('question_need_decision_identity', 'supplemental_answer_identity')):
+        if (source_ref.get('question_need_decision_identity') is None) != (source_ref.get('supplemental_answer_identity') is None):
             raise _error('PIECE_SOURCE_NOT_ELIGIBLE')
-        handoff = await adapter.resolve_corrected_handoff(authorization, source_ref['source_input_id'])
+        if source_ref.get('supplemental_answer_identity') is None:
+            handoff = await adapter.resolve_corrected_handoff(authorization, source_ref['source_input_id'])
+        else:
+            handoff = await adapter.resolve_corrected_handoff(authorization, source_ref['source_input_id'],
+                supplemental_answer_identity=source_ref['supplemental_answer_identity'])
         expected_type = PieceSavedCorrectedHandoff
     elif source_ref['emlis_observation_stage'] == 'refined_observation':
         if not source_ref.get('supplemental_answer_identity') or not source_ref.get('question_need_decision_identity'):
@@ -220,8 +223,8 @@ def _request_snapshot(request: object) -> dict:
         if (source['source_input_version'] != EMLIS_CURRENT_INPUT_BUNDLE_SCHEMA_VERSION or not (
                 stage in ('normal_observation', 'pre_question_observation')
                 and source['supplemental_answer_identity'] is None
-                or stage == 'corrected_observation' and source['supplemental_answer_identity'] is None
-                and source['question_need_decision_identity'] is None
+                or stage == 'corrected_observation' and
+                    (source['supplemental_answer_identity'] is None)==(source['question_need_decision_identity'] is None)
                 or stage == 'refined_observation' and source['supplemental_answer_identity'] is not None
                 and source['question_need_decision_identity'] is not None)):
             raise _error('PIECE_SOURCE_NOT_ELIGIBLE')
