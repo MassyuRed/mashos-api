@@ -112,13 +112,19 @@ GRAPH_CASES = [
 
 
 def graph_document(ids, edges):
-    return json.dumps(dict(schema_version='cocolon.analysis.semantic_map.model.v2',
+    value = dict(schema_version='cocolon.analysis.semantic_map.model.v2',
         overview=dict(title='題', summary='要旨'), nodes=[dict(node_id=id,
             node_kind='SELF_POSITION', title='題', summary='要旨', explanation='説明',
             perspective='SELF', unknowns=[], evidence=[dict(quote='本人の記録です。', field=1)])
             for id in ids], edges=[dict(zip(('from', 'to', 'relation_kind', 'label', 'explanation'),
-                (a, b, 'CONTEXT_CONTRAST', '比較', '説明'))) for a, b in edges]),
-        ensure_ascii=False, separators=(',', ':'))
+                (a, b, 'CONTEXT_CONTRAST', '比較', '説明'))) for a, b in edges])
+    for node in value['nodes']:
+        evidence = node.pop('evidence')
+        node_fields = dict(node)
+        node.clear()
+        node.update(evidence=evidence, **node_fields)
+    value = {key: value[key] for key in ('schema_version', 'nodes', 'edges', 'overview')}
+    return json.dumps(value, ensure_ascii=False, separators=(',', ':'))
 
 
 def graph_parser():
@@ -153,8 +159,8 @@ def test_native_history_detail_budget_stops_repetition_without_changing_source(s
     assert not unique_evidence_accept(probe.semantic_json_parser(messages, alphabet), document(limit + 1))
     ordinary = deepcopy(messages)
     ordinary[1]['content'] = json.dumps(dict(fields=material['fields']), ensure_ascii=False)
-    assert unique_evidence_accept(probe.semantic_json_parser(ordinary, alphabet), document(420, source_first=False))
-    assert not unique_evidence_accept(probe.semantic_json_parser(ordinary, alphabet), document(421, source_first=False))
+    assert unique_evidence_accept(probe.semantic_json_parser(ordinary, alphabet), document(3000, source_first=False))
+    assert not unique_evidence_accept(probe.semantic_json_parser(ordinary, alphabet), document(3001, source_first=False))
     assert messages == before and json.loads(messages[1]['content'])['fields'][0]['text'] == original
 
 
@@ -232,7 +238,7 @@ def test_native_semantic_graph_decoder_branches_do_not_share_node_ids():
     first = graph_document(['n1', 'n2'], [('n1', 'n2')])
     second = graph_document(['n1', 'n2', 'n3'], [('n1', 'n3')])
     invalid = graph_document(['n1', 'n2'], [('n1', 'n3')])
-    split = first.index(',{"node_id":"n2"') + 1
+    split = first.index('},{"evidence":') + 2
     parser = graph_parser()[0]
     for char in first[:split]:
         assert char in parser.get_allowed_characters()
@@ -317,11 +323,12 @@ def test_native_edges_can_close_early_and_must_close_after_all_pairs_are_used():
     sent = unique_edge_token_follow(enforcer, ids, [ids['P']], empty)
     assert sent is not None and eos in enforcer.get_allowed_tokens(sent).allowed_tokens
     parser = probe.semantic_json_parser(graph_parser()[2], exhausted)
-    for char in exhausted[:-2]:
+    before_close = exhausted.rsplit('],"overview":', 1)[0]
+    for char in before_close:
         assert char in parser.get_allowed_characters()
         parser = parser.add_character(char)
     assert ']' in parser.get_allowed_characters() and ',' not in parser.get_allowed_characters()
-    sent = unique_edge_token_follow(enforcer, ids, [ids['P']], exhausted[:-2])
+    sent = unique_edge_token_follow(enforcer, ids, [ids['P']], before_close)
     allowed = enforcer.get_allowed_tokens(sent).allowed_tokens
     assert ids[']'] in allowed and ids[','] not in allowed
 
@@ -447,9 +454,11 @@ def test_native_rare_unicode_field_branches_and_installed_parser_remain_isolated
     for char in prefix:
         assert char in parser.get_allowed_characters()
         parser = parser.add_character(char)
-    assert unique_evidence_accept(parser, r'{"quote":"\u9784を置く。","field":17}]}],"edges":[]}')
-    assert unique_evidence_accept(parser, r'{"quote":"\u9784を置く。","field":18}]}],"edges":[]}')
-    assert not unique_evidence_accept(parser, r'{"quote":"\u9784を移す。","field":18}]}],"edges":[]}')
+    for field, quote, expected in [(17, '鞄を置く。', True), (18, '鞄を置く。', True),
+            (18, '鞄を移す。', False)]:
+        branch = rare_encoded(rare_packet([[(field, quote)]]))
+        assert branch.startswith(prefix)
+        assert unique_evidence_accept(parser, branch[len(prefix):]) == expected
     assert before == (upstream.StringParsingState, upstream.ListParsingState, upstream.ObjectParsingState)
 
 
@@ -665,8 +674,11 @@ def test_runtime_parser_initializes_unicode_before_context_and_does_not_end_on_f
     package = pytest.importorskip('lmformatenforcer')
     from lmformatenforcer.tokenenforcer import TokenEnforcer, TokenEnforcerTokenizerData
     messages = [{'role': 'system', 'content': 'synthetic'}, {'role': 'user',
-        'content': json.dumps({'fields': [{'field': 1, 'text': '部屋を整えた。'}]}, ensure_ascii=False)}]
-    beginning = '{"schema_version":"cocolon.analysis.semantic_map.model.v2","overview":{"title":"部屋'
+        'content': json.dumps({'fields': [{'field': 1, 'text': 'source'}]}, ensure_ascii=False)}]
+    packet = json.loads(graph_document(['n1'], []))
+    packet['nodes'][0].update(title='部屋を整えた。', evidence=[dict(quote='source', field=1)])
+    beginning = json.dumps(packet, ensure_ascii=False, separators=(',', ':')).split(
+        '"title":"', 1)[0] + '"title":"部屋'
     alphabet = ''.join(dict.fromkeys(beginning + 'を整えた。P'))
     data = TokenEnforcerTokenizerData([(index, char, False) for index, char in enumerate(alphabet)],
         lambda tokens: ''.join(alphabet[index] for index in tokens), len(alphabet), False, len(alphabet) + 1)
@@ -974,11 +986,11 @@ def test_compact_leaf_preserves_existing_partial_coverage_above_twenty_four_reco
 
 
 @pytest.mark.parametrize('stage,title,summary,explanation,unknown,overview,roots,edges', [
-    (None, 60, 160, 420, 240, 480, 4, 1),
+    (None, 80, 400, 3000, 500, 2000, 4, 48),
     ('MERGE', 60, 160, 420, 240, 480, 4, 48),
     ('LEAF', 36, 100, 240, 160, 160, 2, 0),
 ])
-def test_generation_budgets_keep_history_and_bound_complete_ordinary_maps(
+def test_generation_budgets_preserve_ordinary_and_history_profiles(
         stage, title, summary, explanation, unknown, overview, roots, edges):
     fields = [dict(field=17, record=37, text='長' * 180 + '。短い根拠。')]
     material = dict(fields=fields)
@@ -994,7 +1006,7 @@ def test_generation_budgets_keep_history_and_bound_complete_ordinary_maps(
     assert schema['properties']['overview']['properties']['summary']['maxLength'] == overview
     assert node['evidence']['maxItems'] == roots and schema['properties']['edges']['maxItems'] == edges
     quotes = evidence_schema(schema)['oneOf'][0]['properties']['quote']['enum']
-    if stage != 'MERGE':
+    if stage == 'LEAF':
         assert quotes == ['短い根拠。']
         assert schema['properties']['nodes']['maxItems'] == 2
     else:
@@ -1003,35 +1015,48 @@ def test_generation_budgets_keep_history_and_bound_complete_ordinary_maps(
     assert messages == before
 
 
-@pytest.mark.parametrize('stage,expected_sha256', [
-    ('LEAF', '05849d591f871e08795e351802ded921c32b1911b3c63d56bdc6d283afe4c6cc'),
-    ('MERGE', 'f1125f1997f2403f2bc40929528951a062379ff95b46bff52c21b93f05851ebb'),
+@pytest.mark.parametrize('stage,expected_sha256,prior_sha256', [
+    (None, '87f4da00e006085117d293e52878d3ca422a2d609d21050e1eb3d7b6bcbb92ee',
+        'ecb0919848b64b7369c28dc97cbe9342621b5b4d742249f401f2241fd6e11e29'),
+    ('LEAF', '45fee182cd6fdaad2d82144593f9c7b2735d95c9c70c0cdc2a221f44df5197b3',
+        '05849d591f871e08795e351802ded921c32b1911b3c63d56bdc6d283afe4c6cc'),
+    ('MERGE', 'cbb785e9355b6e2b8fa262f8cfacbeab0647c34eec2d465dc8d3ab304c1a45b2',
+        'f1125f1997f2403f2bc40929528951a062379ff95b46bff52c21b93f05851ebb'),
 ])
-def test_ordinary_budget_change_preserves_exact_history_schema(stage, expected_sha256):
-    # Bind the existing grammar across long input, short source and a whole
-    # correction; the ordinary change must not invalidate retained raw stages.
+def test_schema_sequence_changes_only_order_not_source_options_or_capacity(stage, expected_sha256, prior_sha256):
+    # Pin the new decoding order and compare all other schema bytes against
+    # the original grammar, including long input and a whole map correction.
     fields = [dict(field=1, record=9, text='長' * 180 + '。短い根拠。'),
         dict(field=2, record=37, text='別の原文。'),
         dict(field=3, record=None, record_refs=[9, 37],
             source_role='USER_ANALYSIS_MAP_CORRECTION',
             text='その意味ではありません。' + '本人説明' * 60 + '。')]
+    material = dict(fields=fields)
+    if stage is not None:
+        material['history_stage'] = dict(kind=stage)
     messages = [dict(role='system', content='synthetic'), dict(role='user',
-        content=json.dumps(dict(fields=fields, history_stage=dict(kind=stage)), ensure_ascii=False))]
+        content=json.dumps(material, ensure_ascii=False))]
     schema = probe.semantic_output_schema(messages)
     raw = json.dumps(schema, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode()
     assert hashlib.sha256(raw).hexdigest() == expected_sha256
+    schema['required'] = ['schema_version', 'overview', 'nodes', 'edges']
+    if stage is None:
+        schema['properties']['nodes']['items']['required'] = ['node_id', 'node_kind', 'title',
+            'summary', 'explanation', 'perspective', 'unknowns', 'evidence']
+    prior_raw = json.dumps(schema, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode()
+    assert hashlib.sha256(prior_raw).hexdigest() == prior_sha256
 
 
 @pytest.mark.parametrize('fields,nodes,edges', [
-    ([dict(field=i, record=(9 if i < 3 else 37), text=f'原文{i}。') for i in range(1, 5)], 2, 1),
+    ([dict(field=i, record=(9 if i < 3 else 37), text=f'原文{i}。') for i in range(1, 5)], 24, 48),
     ([dict(field=1, record=37, text='本人の原記録。')] + [
         dict(field=i + 2, record=None, record_refs=[37], source_role='USER_ANALYSIS_MAP_CORRECTION',
-            text=f'訂正{i}。' + '長い本人説明' * 30 + '。') for i in range(8)], 5, 10),
+            text=f'訂正{i}。' + '長い本人説明' * 30 + '。') for i in range(8)], 24, 48),
     ([dict(field=i + 1, record=None, record_refs=[9, 37],
-        source_role='USER_ANALYSIS_MAP_CORRECTION', text=f'本人訂正{i}。') for i in range(8)], 4, 6),
+        source_role='USER_ANALYSIS_MAP_CORRECTION', text=f'本人訂正{i}。') for i in range(8)], 24, 48),
     ([dict(field=1, text='記録番号のない原文。')], 24, 48),
 ])
-def test_ordinary_slots_count_records_once_and_reserve_whole_corrections(fields, nodes, edges):
+def test_ordinary_capacity_preserves_independent_meanings_and_whole_corrections(fields, nodes, edges):
     before = deepcopy(fields)
     schema = schema_for(fields)
     assert schema['properties']['nodes']['maxItems'] == nodes
@@ -1046,19 +1071,99 @@ def test_ordinary_slots_count_records_once_and_reserve_whole_corrections(fields,
     assert fields == before
 
 
-@pytest.mark.parametrize('ids,relations,expected', [
-    (['n1', 'n2'], [('n1', 'n2', 'CONTEXT_CONTRAST')], True),
-    (['n1', 'n2', 'n3'], [('n1', 'n2', 'CONTEXT_CONTRAST')], False),
-    (['n1', 'n2'], [('n1', 'n2', 'CONTEXT_CONTRAST'), ('n2', 'n1', 'SHARED_MEANING')], False),
-])
-def test_ordinary_record_budget_is_enforced_during_native_decode(ids, relations, expected):
-    fields = [dict(field=1, record=9, text='本人の記録です。補足です。'),
-        dict(field=2, record=37, text='本人の記録です。別欄です。')]
+def test_single_record_keeps_multiple_meanings_long_root_and_distinct_relation_kinds():
+    # One record can contain separate meanings. A short sentence must not
+    # remove a longer root needed to support one of them, nor cap its graph
+    # at two nodes or one relation kind per pair.
+    roots = ['長い事情' * 45 + 'を考えて保留した。',
+        '私は本を読んだ。', '私は友人への返事をまだ送っていない。']
+    original = ''.join(roots)
+    fields = [dict(field=1, record=37, text=original)]
     messages = [dict(role='system', content='synthetic'), dict(role='user',
         content=json.dumps(dict(fields=fields), ensure_ascii=False))]
-    packet = json.loads(graph_document(ids, []))
-    packet['nodes'][1]['evidence'][0]['field'] = 2
+    before = deepcopy(messages)
+    schema = probe.semantic_output_schema(messages)
+    quotes = evidence_schema(schema)['oneOf'][0]['properties']['quote']['enum']
+    assert len(roots[0]) > 160 and all(root in quotes for root in roots)
+    assert original in quotes
+    packet = json.loads(graph_document(['n1', 'n2', 'n3'], []))
+    for index, (node, quote) in enumerate(zip(packet['nodes'], roots), 1):
+        node['title'] = f'独立した意味{index}'
+        node['evidence'] = [dict(quote=quote, field=1)]
     packet['edges'] = [dict(zip(('from', 'to', 'relation_kind', 'label', 'explanation'),
-        (start, end, kind, '比較', '説明'))) for start, end, kind in relations]
+        ('n1', 'n2', kind, '比較', '両項目の関係'))) for kind in (
+            'CONTEXT_CONTRAST', 'SHARED_MEANING')]
     text = json.dumps(packet, ensure_ascii=False, separators=(',', ':'))
-    assert_compact_leaf_native(messages, text, expected)
+    assert allowed(schema, packet)
+    assert_compact_leaf_native(messages, text, True)
+    assert messages == before
+
+
+@pytest.mark.parametrize('stage', [None, 'LEAF', 'MERGE'])
+def test_native_selects_evidence_then_meanings_and_relations_before_overview(stage):
+    fields = [dict(field=1, record=9, text='本人の記録です。補足です。'),
+        dict(field=2, record=37, text='本人の記録です。別欄です。')]
+    material = dict(fields=fields)
+    if stage is not None:
+        material['history_stage'] = dict(kind=stage)
+    messages = [dict(role='system', content='synthetic'), dict(role='user',
+        content=json.dumps(material, ensure_ascii=False))]
+    before = deepcopy(messages)
+    packet = json.loads(graph_document(['n1', 'n2'], [] if stage == 'LEAF' else [('n1', 'n2')]))
+    packet['nodes'][1]['evidence'][0]['field'] = 2
+    def encoded(value):
+        return json.dumps(value, ensure_ascii=False, separators=(',', ':'))
+    assert list(packet) == ['schema_version', 'nodes', 'edges', 'overview']
+    assert all(next(iter(node)) == 'evidence' for node in packet['nodes'])
+    assert_compact_leaf_native(messages, encoded(packet), True)
+    overview_first = {key: packet[key] for key in ('schema_version', 'overview', 'nodes', 'edges')}
+    assert_compact_leaf_native(messages, encoded(overview_first), False)
+    evidence_last = deepcopy(packet)
+    node = evidence_last['nodes'][0]
+    evidence_last['nodes'][0] = {**{key: value for key, value in node.items() if key != 'evidence'},
+        'evidence': node['evidence']}
+    assert_compact_leaf_native(messages, encoded(evidence_last), False)
+    schema = probe.semantic_output_schema(messages)
+    assert set(schema['properties']) == {'schema_version', 'overview', 'nodes', 'edges'}
+    assert set(schema['properties']['nodes']['items']['properties']) == {
+        'node_id', 'node_kind', 'title', 'summary', 'explanation', 'perspective', 'unknowns', 'evidence'}
+    assert messages == before
+
+
+def test_prior_and_new_raw_key_orders_keep_exact_receipt_binding_and_same_map_text():
+    import analysis_semantic_map as semantic
+    from test_analysis_semantic_map import sample, candidate, response, OWNER
+    prepared = semantic.prepare_semantic_map(OWNER, sample())
+    before = deepcopy(prepared.messages()), prepared.source_guard, prepared.request_ref
+    prior = candidate()
+    fields = {field['field']: field['text'] for field in json.loads(prepared.material_json)['fields']}
+    for node in prior['nodes']:
+        for root in node['evidence']:
+            root['quote'] = fields[root['field']]
+    ordered = deepcopy(prior)
+    ordered['nodes'] = [dict(evidence=node['evidence'], **{key: value for key, value in node.items()
+        if key != 'evidence'}) for node in ordered['nodes']]
+    ordered = {key: ordered[key] for key in ('schema_version', 'nodes', 'edges', 'overview')}
+    texts, public_keys = [], []
+    for packet in (prior, ordered):
+        receipt = response(prepared, raw=json.dumps(packet, ensure_ascii=False, separators=(',', ':')))
+        artifact, _ = semantic.build_semantic_map(prepared, receipt)
+        assert artifact.private_evidence()['response_sha256'] == receipt.raw_sha256
+        projection = artifact.safe_projection(authenticated_owner_scope=OWNER)
+        assert not {'fields', 'source_guard', 'messages_sha256', 'raw'} & set(projection)
+        public_keys.append(set(projection))
+        texts.append(artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text'])
+    assert public_keys[0] == public_keys[1] and texts[0] == texts[1]
+    assert (prepared.messages(), prepared.source_guard, prepared.request_ref) == before
+
+
+def test_instruction_format_example_matches_native_generation_sequence():
+    import analysis_semantic_map as semantic
+    from test_analysis_semantic_map import sample, OWNER
+    prepared = semantic.prepare_semantic_map(OWNER, sample())
+    messages = prepared.messages()
+    exemplar = json.loads(messages[0]['content'].split('厳密な形式:\n', 1)[1].splitlines()[0])
+    schema = probe.semantic_output_schema(messages)
+    assert list(exemplar) == list(schema['properties']) == ['schema_version', 'nodes', 'edges', 'overview']
+    assert list(exemplar['nodes'][0]) == list(schema['properties']['nodes']['items']['properties'])
+    assert next(iter(exemplar['nodes'][0])) == 'evidence'

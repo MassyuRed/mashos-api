@@ -271,11 +271,8 @@ def semantic_output_schema(messages):
         if field.get('source_role') != 'USER_ANALYSIS_MAP_CORRECTION':
             sentences = _semantic_sentence_quotes(original)
             short = [span for span in sentences if len(span) <= 160] if leaf else []
-            if not history:
-                # A complete ordinary map shares the final synthesis budget.
-                # Prefer short exact roots; the full original stays in input.
-                # Keep the existing fallback when no short literal is legal.
-                short = [span for span in spans + sentences if len(span) <= 160]
+            # Only the private leaf reading is compact. Its complete input is
+            # unchanged, and fields without a short sentence keep old options.
             spans = short if short else spans + sentences
         spans = list(dict.fromkeys(span for span in spans if span and original.count(span) == 1
             and not re.search(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', span)))
@@ -292,39 +289,35 @@ def semantic_output_schema(messages):
         return dict(type='string', minLength=1, maxLength=maximum)
     def obj(properties):
         return dict(type='object', properties=properties, required=list(properties), additionalProperties=False)
-    # Count original records once across their input fields. Whole map
-    # corrections need their own quote slots even when record is null.
-    # Unknown record metadata cannot supply an invented record count.
-    known_slots = bool(quoted_records or correction_fields)
+    # Keep enough slots for every original-record anchor and every mandatory
+    # whole correction, with two roots per leaf node. This is not final layout.
     node_limit = (min(24, max(2, len(quoted_records),
-        (len(quoted_records) + correction_fields + 1) // 2))
-        if leaf or not history and known_slots else 24)
-    title_limit = 36 if leaf else 60
+        (len(quoted_records) + correction_fields + 1) // 2)) if leaf else 24)
+    title_limit = 36 if leaf else 60 if history else 80
     node_ids = ['n' + str(i) for i in range(1, 25)]
     node = obj(dict(node_id=dict(type='string', enum=node_ids),
         node_kind=dict(type='string', enum=['SELF_POSITION', 'TARGET_MEANING', 'CHOICE_OUTPUT', 'STATE_CONTEXT']),
-        title=text(title_limit), summary=text(100 if leaf else 160),
-        explanation=text(240 if leaf else 420),
+        title=text(title_limit), summary=text(100 if leaf else 160 if history else 400),
+        explanation=text(240 if leaf else 420 if history else 3000),
         perspective=dict(type='string', enum=['SELF', 'OBSERVED_INTERACTION']),
-        unknowns=dict(type='array', items=text(160 if leaf else 240), maxItems=4),
+        unknowns=dict(type='array', items=text(160 if leaf else 240 if history else 500), maxItems=4),
         evidence=dict(type='array', items=dict(oneOf=pairs), minItems=1, maxItems=2 if leaf else 4)))
-    if history:
-        # Select a real source before interpreting it. Receiver keys and the
-        # full source text stay unchanged; this is private decoding order.
-        properties = node['properties']
-        node = obj(dict(evidence=properties['evidence'], **{
-            key: value for key, value in properties.items() if key != 'evidence'}))
+    # Select a real source before interpreting it. Receiver keys and the
+    # full source text stay unchanged; this is private decoding order.
+    properties = node['properties']
+    node = obj(dict(evidence=properties['evidence'], **{
+        key: value for key, value in properties.items() if key != 'evidence'}))
     edge = obj({'from': dict(type='string', enum=node_ids), 'to': dict(type='string', enum=node_ids),
         'relation_kind': dict(type='string', enum=['SELF_OUTSIDE_GAP', 'CRITERION_EXPRESSION', 'CONTEXT_CONTRAST', 'SHARED_MEANING']),
-        'label': text(60), 'explanation': text(360)})
-    # Cap ordinary relationship slots by the number of available node pairs.
-    # History synthesis and the receiver's broader acceptance stay unchanged.
-    edge_limit = (0 if leaf else min(48, node_limit * (node_limit - 1) // 2)
-        if not history and known_slots else 48)
-    return obj(dict(schema_version=dict(type='string', enum=['cocolon.analysis.semantic_map.model.v2']),
-        overview=obj(dict(title=text(title_limit), summary=text(160 if leaf else 480))),
+        'label': text(60 if history else 80), 'explanation': text(360 if history else 1800)})
+    properties = dict(schema_version=dict(type='string', enum=['cocolon.analysis.semantic_map.model.v2']),
+        overview=obj(dict(title=text(title_limit), summary=text(160 if leaf else 480 if history else 2000))),
         nodes=dict(type='array', items=node, minItems=1, maxItems=node_limit),
-        edges=dict(type='array', items=edge, maxItems=edge_limit)))
+        edges=dict(type='array', items=edge, maxItems=0 if leaf else 48))
+    # A summary can condition on the completed meanings and relations.
+    # All receiver keys, source options and profile capacities stay unchanged.
+    properties = {key: properties[key] for key in ('schema_version', 'nodes', 'edges', 'overview')}
+    return obj(properties)
 
 
 def _if_json_schema_parser(schema, config):
