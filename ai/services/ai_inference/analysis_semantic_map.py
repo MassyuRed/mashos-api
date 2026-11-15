@@ -46,3 +46,13 @@ def build_semantic_map(prepared, response):
         raise SemanticMapError(outcome.reason_codes[0])
     return outcome.artifact, outcome.coverage
 
+
+def build_semantic_history_stage(prepared, response):
+    """The shared engine compiles leaves and realizes the sole final map."""
+    from cocolon_meaning_experience_engine.cores.analysis.semantic_admission import (
+        AnalysisSemanticMapStageInput)
+    _require(type(prepared) is AnalysisSemanticMapStageInput,
+        'analysis_semantic_history_stage_unbound')
+    return MeaningExperienceEngine().generate(prepared.request,
+        semantic_input=replace(prepared, response=response))
+

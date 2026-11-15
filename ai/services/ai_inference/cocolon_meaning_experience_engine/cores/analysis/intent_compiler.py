@@ -3928,6 +3928,118 @@ def _semantic_map_context(prepared, refs):
     return result
 
 
+def compile_analysis_semantic_stage(stage, packet, *, response_sha256):
+    """Use the original compiler with an additional shown-source boundary.
+
+    A full-parent quote match alone is insufficient for a shortened synthesis
+    request. Both authored roots and compiler-added support roots must have
+    actually been shown in that request. AI leaf text supplies no roots.
+    """
+    from .semantic_admission import (AnalysisSemanticMapStageInput,
+        _semantic_map_require, _semantic_map_evidence, semantic_map_canonical,
+        semantic_map_hash, _semantic_history_corrections)
+    _semantic_map_require(type(stage) is AnalysisSemanticMapStageInput
+        and stage.kind in {'LEAF', 'MERGE'}, 'analysis_semantic_history_stage_unbound')
+    parent = stage.parent
+    material = json.loads(stage.material_json)
+    originals = {f[0]: f for f in parent.fields}
+    shown = {}
+    for field in material['fields']:
+        number = field['field']
+        _semantic_map_require(number in originals and number not in shown,
+            'analysis_semantic_history_field_unbound')
+        text = originals[number][1]
+        start, end = field.get('fragment_scalar_range', [0, len(text)])
+        _semantic_map_require(type(start) is int and type(end) is int
+            and 0 <= start < end <= len(text) and field['text'] == text[start:end],
+            'analysis_semantic_history_field_unbound')
+        shown[number] = (start, end)
+
+    def root_is_shown(root):
+        for number, (_, text, _, base) in originals.items():
+            if number not in shown:
+                continue
+            start, end = shown[number]
+            if (root['source_envelope_id'] == base.source_envelope_id
+                    and root['field_path'] == base.field_path
+                    and base.scalar_start + start <= root['scalar_start']
+                    and root['scalar_end'] <= base.scalar_start + end):
+                return True
+        return False
+
+    # Existing strict map/schema admission follows below. Check only the
+    # evidence structure here so unsupported output remains a typed rejection.
+    _semantic_map_require(type(packet) is dict and type(packet.get('nodes')) is list,
+        'analysis_semantic_map_invalid')
+    final_roots = []
+    for node in packet['nodes']:
+        _semantic_map_require(type(node) is dict and type(node.get('evidence')) is list,
+            'analysis_semantic_map_invalid')
+        roots = [_semantic_map_evidence(parent, e)[1] for e in node['evidence']]
+        _semantic_map_require(all(root_is_shown(root) for root in roots),
+            'analysis_semantic_history_evidence_not_shown')
+        final_roots.append(roots)
+    corrections = (_semantic_history_corrections(parent, stage.record_refs)
+        if stage.kind == 'LEAF' else json.loads(parent.map_correction_sources_json or '[]'))
+    view = replace(parent, map_correction_sources_json=semantic_map_canonical(corrections) if corrections else '')
+    graph = compile_analysis_semantic_map(view, packet, response_sha256=response_sha256)
+    nodes = json.loads(graph.nodes_json)
+    _semantic_map_require(all(root_is_shown(root) for node in nodes
+        for root in node['evidence_refs']), 'analysis_semantic_history_evidence_not_shown')
+    inherited_unknowns = []
+    if stage.kind == 'MERGE':
+        # Keep the model's raw/receipt/packet intact. Like source context, a
+        # previously admitted AI unknown is a derived graph constraint, not a
+        # new person fact. Literal paraphrases need not match to retain it.
+        # Include compiler-added support roots in the original-scope match.
+        for node in nodes:
+            values = list(node['unknowns'])
+            for unknown in material['scoped_unknowns']:
+                scopes = [_semantic_map_evidence(parent, e)[1] for e in unknown['evidence']]
+                matched = [root['evidence_id'] for root in node['evidence_refs']
+                    if any(root['source_envelope_id'] == scope['source_envelope_id']
+                        and root['field_path'] == scope['field_path']
+                        and max(root['scalar_start'], scope['scalar_start']) < min(root['scalar_end'], scope['scalar_end'])
+                        for scope in scopes)]
+                if not matched:
+                    continue
+                for text in unknown['unknowns']:
+                    added = text not in values
+                    if added:
+                        values.append(text)
+                    inherited_unknowns.append(dict(node_ref=node['node_ref'],
+                        leaf_request_ref=unknown['leaf_request_ref'], leaf_node_id=unknown['node_id'],
+                        text=text, added_to_final=added, status='INHERITED_AI_UNASSESSED',
+                        source_evidence_refs=scopes,
+                        matched_final_evidence_ids=list(dict.fromkeys(matched))))
+            _semantic_map_require(len(values) <= 4, 'analysis_semantic_history_unknown_capacity_exceeded')
+            node['unknowns'] = values
+        graph = replace(graph, nodes_json=semantic_map_canonical(nodes))
+    review = json.loads(graph.meaning_review_json)
+    review['history_synthesis'] = dict(profile='semantic_map.history_synthesis.v1', kind=stage.kind,
+        parent_request_ref=parent.request_ref, full_source_semantic_coverage=False,
+        leaf_receipts=[{key: leaf[key] for key in ('leaf_request_ref', 'messages_sha256', 'response_sha256')}
+            for leaf in material.get('leaf_interpretations', [])],
+        field_manifest=material.get('field_manifest', []),
+        omitted_ranges=material.get('omitted_ranges', []),
+        scoped_unknowns=material.get('scoped_unknowns', []),
+        inherited_unknowns=inherited_unknowns,
+        unknown_handling='INHERIT_WITHOUT_RESOLUTION',
+        history_coverage=material.get('history_coverage', {}))
+    coverage = json.loads(graph.coverage_json)
+    if stage.kind == 'LEAF':
+        count = len(stage.record_refs)
+        snapshot = json.loads(parent.source_snapshot_json)
+        stale = sum(sum(event.get('kind') == 'ANSWER' for event in row.get('events', []))
+            for row in snapshot['members'] if row['original']['id'] in stage.record_refs
+            and row.get('thread') and row['thread'].get('source_snapshot') != row['original'])
+        coverage.update(source_count=count, processed_count=count,
+            unparsed_count=count - coverage['mapped_count'], excluded_count=0,
+            exclusion_reasons={}, stale_supplement_count=stale)
+    return replace(graph, request_ref=stage.request_ref, messages_sha256=semantic_map_hash(stage.messages()),
+        coverage_json=semantic_map_canonical(coverage), meaning_review_json=semantic_map_canonical(review))
+
+
 def compile_analysis_semantic_map(prepared, packet, *, response_sha256):
     from .semantic_admission import (AnalysisSemanticMapInput,
         SEMANTIC_MAP_MODEL_SCHEMA, SEMANTIC_MAP_NODE_KINDS, SEMANTIC_MAP_PERSPECTIVES,

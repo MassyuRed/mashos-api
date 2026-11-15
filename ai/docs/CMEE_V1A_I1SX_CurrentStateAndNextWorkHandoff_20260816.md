@@ -1,3 +1,5 @@
+> **2026-11-15・長履歴分割／全体統合の実装候補（実4B・通常反映は未完）。** 現semanticへ完全な親sourceから2〜3leafと最終MERGEを接続し、既存engine／compiler／realizer・一回commitを維持した。小材料は旧1call。本人訂正cohort、同原根拠の未知継承、提示断片と原根拠の二重束縛、月次不変を実装。通常API／workerは24bc228d Liveのまま。実4B用の既存Pod送付が具体承認不足として自動審査で拒否され、新GPU／転送／学習／配置0。実装と再開内容は本file末尾およびCocolon補助設計§9.73。候補を長履歴の実モデル品質完了・通常採用へ換算しない。
+
 > **2026-11-14 current — 共有有効意味・map本人訂正・IF／Savedの実装。** 原入力・回答・訂正／撤回の同じ有効意味をEmlis作者・Piece source・Analysisの実生成へ接続し、mapの対象本文＋本人説明を独立根拠として新currentへ反映する経路を実装した。旧月次・Saved当時版と旧profileを維持する。IF／SavedはAPI・durable保存・RNまで接続し、同keyの未開始予約回収・受領後保存再開・所有者／依存消去を扱う。Pieceは旧raw＝canonicalを保持し、明示shared_4b.cmee.v2だけ既存CMEE作者のsource-proven編集を使う。新server grammarはIF marker専用を追加し、旧map/nativeを保持する。通常DB／API反映は最終確認中、Runpod受口反映と新実4B品質は未確認。詳細の現ownerはCocolonの [補助設計§9.62](https://github.com/MassyuRed/Cocolon/blob/agent/three-core-cmee-current-structure-20260815/Cocolon_前提資料/designs/cmee/Cocolon_CMEE_AuxiliaryAsset_Reuse_ImplementationDesign_20261108.md#shared-active-meaning-three-core-if-saved-20261114) と全機能現在地。build／TestFlight／本人実機はMash指示で保留し、補助全体完了とは判定しない。以下の過去checkpointを今回の完了状態へ読み替えない。
 
 > 2026-10-19最新差分：u355。安堵・寂しさと併記された元の経験に未明示の「同時」を足す表現を、原文の接続詞を保つ既存経験文へ修復。意味・選択・Reception不変。対象技術検証321件、保存DTO18件再表示。PRODUCT_NOT_CLEAR／正式Product Read0/3は維持。詳細は[u355監査](https://github.com/MassyuRed/Cocolon/blob/agent/three-core-cmee-current-structure-20260815/Cocolon_前提資料/audits/emlis_ai/Cocolon_EmlisAI_u355_MixedReceivedTimeNeutral_20261019.md)。
@@ -23045,3 +23047,20 @@ Mash承認c97d6794、再試行指示でJupyter直接接続が復旧。API4002b45
 新native6/実意味と本文/token長/4試行履歴/最終pytest/旧互換hash/CPU runner/source manifestはCocolon `Cocolon_前提資料/observation_learning/training/2026-10-26-unconnected-native/`、全file地図01A・共有設計01/02/05・current maps/全体00/weekly§56を同単位で同期。BOOK/SHOP回答target3178/3561は旧2560出力上限超過だが全context内、今回上限変更や新GPUplanを自動開始せず次の具体条件へ残す。旧adapter45779/旧API/native9不変。
 
 限定TECHNICAL_CREDIT/STRUCTURE_MAP_DELTA_PRESENT、新dataclass0、商品0/正式0/3/54.50％/candidate_ready=false/automatic_progression=false。実4B model読込/forward/学習/生成0、新観測会は本件不要。root華恋/Codex Work/GPT-6が単一writer、2agent read-only補助で正式Pro/Ultra/human承認ではない。Render/Supabase/本人DB/通常app/merge/deploy/管理console/一覧/API/Stop/再起動/削除/新Pod/charge0。GPU稼働保持指示・保持料金は継続。
+
+
+## 2026-11-15 — semantic全蓄積の容量分割・記録間統合候補
+
+既存quoted-onlyのoffline plannerを通常semanticへそのまま流用せず、同じ完全親sourceの資格・global field番号・guardを保つLEAF/MERGEを現ownerへ追加した。`analysis_cumulative_service.prepare_semantic_history_batches/_semantic_history_map`が2〜3leaf→最終1callを扱い、通常の`ensure_map`から既存`analysis_cumulative_commit`へ最終artifactだけを一回保存する。小材料は元messagesの1callを維持。
+
+`analysis_model_source.semantic_analysis_input_fits`は49152 message UTF-8 bytesの分割目安で、実token計測や文脈保証ではない。既存提供側が実token＋4096出力のcontextを検査する。要求body262144bytes・全pipeline215秒・最大4call・最終24node／48edge等を維持し、超過・途中失敗では部分mapや直近N件を保存しない。
+
+原記録二欄・適格3ANSWER・有効訂正／撤回は不可分。複数原記録へ依存するmap本人訂正はcohortを統合し、最終図でも本人説明全文を根拠へ使用する。MERGEは各leafのAI仮解釈、元fieldの連続断片・カテゴリ／感情／強度／日時、全field manifest・未提示範囲・unknown等を受ける。AI文を本人sourceへ昇格しない。最終引用とcompiler追加support根拠の両方を実提示範囲へ再束縛する。
+
+leaf未知は最終rawを修補せず、同じ元envelope／field／scalarに基づくcompiled nodeへ安定順で継承する。完全一致のみ重複除去し、4件超を切捨てない。元unknownの解消や全文理解を認定せず、由来と省略範囲を既存private meaning_review.history_synthesisへ保持。公開watashi.map.v3・既存SQL・RNは同じ最終graphを使い、新table／migration／公開型／renderer／重み／selector変更0。
+
+新core26・planner9・実SQL application22の57固有caseが成功。201記録／402欄の3leaf、跨ぐ根拠、0/部分保存拒否、同時要求共有、取消しを飲んだ遅延provider、本人訂正cohort、当月固定、非生成再読を確認。既存関連回帰376成功は修復前後の重複と混同しない。RN semantic／累積／map訂正の既存38case成功。合成provider／隔離SQLの技術結果であり、新実4Bの本文・関係品質の証拠ではない。
+
+架空12記録（memo合計17314字）を実SQLから固定した親66329bytesを8記録／4記録の2leaf（46087／26182bytes）へ分割して実行準備済み。7,074,085byteの初回ZIPは外部送信の具体承認不足として自動審査で拒否され、転送・生成0。回避送信せず、現callで実際に使う依存96file＋driver／架空inputの98file・1,534,208byteへ必要範囲を縮小した。新ZIP SHA256 b65352e0f67b35b274fbff8661a669391fe005af74aed8d2abd0327f1b5457ac、まだ未送信。
+
+次は具体承認後に既存Pod f1lle4xwq3wjlnで2leaf＋MERGEの最大3応答と前後health2GETを一回取得し、同rawを生成前のSQL source／guardへ保って保存・再読・現RNへ通し、採用できる本文／図だけを通常API／workerへ反映する。caller pipeline215秒、取消し後の提供側既存210秒上限を含め最大8分を開示する。学習・再試行・再起動・新GPUレンタルは行わず、既存分析鍵1本は同Pod内の認証だけに用いる。実行後の意味品質確認・通常反映と本単位／補助全体は未完。

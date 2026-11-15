@@ -19,6 +19,22 @@ MAX_RESPONSE_BYTES = 262144
 DEFAULT_PROMPT_VERSION = 'selected_material.v4'
 EXPLICIT_PROMPT_VERSIONS = frozenset({DEFAULT_PROMPT_VERSION, 'selected_material.v7'})
 
+# Bound the material carried by each cumulative acquisition without adding a
+# tokenizer dependency or a measurement request. This is a byte budget, NOT a
+# token estimate. The existing serving owner independently enforces the real
+# tokenizer/context budget (including its 4096-token output reservation).
+SEMANTIC_MAX_PROMPT_BYTES = 49152
+SEMANTIC_MAX_REQUEST_BYTES = 262144
+SEMANTIC_HISTORY_MAX_LEAVES = 3
+SEMANTIC_PIPELINE_TIMEOUT_SECONDS = 215.0
+
+
+def semantic_analysis_input_fits(prepared):
+    """Message-byte admission; the serving owner still checks actual tokens."""
+    encoded = json.dumps(prepared.messages(), ensure_ascii=False,
+        separators=(',', ':'), allow_nan=False).encode('utf-8')
+    return len(encoded) <= SEMANTIC_MAX_PROMPT_BYTES
+
 
 class SelfHostedAnalysisModelSource:
     def __init__(self, *, endpoint, model, api_key, transport=None, prompt_version=DEFAULT_PROMPT_VERSION):
@@ -88,7 +104,7 @@ class SelfHostedAnalysisModelSource:
 
 
 class SelfHostedSemanticAnalysisModelSource(SelfHostedAnalysisModelSource):
-    """One source-bound synthesis call for the complete semantic map.
+    """One source-bound acquisition, including admitted cumulative stages.
 
     Uses the same private self-hosted endpoint, without the old quotation-only
     parser. An invalid or interrupted synthesis never becomes a finite map.
@@ -106,18 +122,25 @@ class SelfHostedSemanticAnalysisModelSource(SelfHostedAnalysisModelSource):
     async def __call__(self, prepared):
         from analysis_semantic_map import SemanticMapInput
         from cocolon_meaning_experience_engine.cores.analysis.semantic_admission import (
-            AnalysisModelQuotedParentUnitsResponse, digest, require)
-        require(type(prepared) is SemanticMapInput and prepared.prompt_version == self.prompt_version,
+            AnalysisModelQuotedParentUnitsResponse, AnalysisSemanticMapStageInput,
+            digest, require)
+        require(type(prepared) in {SemanticMapInput, AnalysisSemanticMapStageInput}
+            and prepared.prompt_version == self.prompt_version,
             'analysis_semantic_input_invalid')
         messages = prepared.messages()
+        require(semantic_analysis_input_fits(prepared), 'analysis_semantic_history_capacity_exceeded')
+        body = dict(model=self.model, messages=messages, temperature=0,
+            max_tokens=4096, stream=False,
+            chat_template_kwargs={'enable_thinking': False})
+        require(len(json.dumps(body, ensure_ascii=False, separators=(',', ':'),
+            allow_nan=False).encode('utf-8')) <= SEMANTIC_MAX_REQUEST_BYTES,
+            'analysis_semantic_history_capacity_exceeded')
         try:
             async with httpx.AsyncClient(transport=self._transport, follow_redirects=False,
                     trust_env=False, timeout=httpx.Timeout(210.0, connect=15.0)) as client:
                 async with client.stream('POST', self.endpoint,
                         headers={'Authorization': 'Bearer ' + self._api_key},
-                        json=dict(model=self.model, messages=messages, temperature=0,
-                            max_tokens=4096, stream=False,
-                            chat_template_kwargs={'enable_thinking': False})) as response:
+                        json=body) as response:
                     if response.status_code != 200:
                         raise RuntimeError('analysis_model_source_unavailable')
                     body = bytearray()

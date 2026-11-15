@@ -2713,3 +2713,227 @@ def generate_analysis_semantic_map(request, model_input):
         logging.getLogger(__name__).warning('analysis_semantic_rejected stage=%s', '>'.join(locations))
         return AnalysisSemanticMapOutcome(EngineStatus.REJECTED, (str(exc),))
 
+
+# Bounded history synthesis is a private extension of the same semantic
+# author. A child never acquires a new snapshot/guard, and a model reading is
+# never admitted as an additional person source.
+SEMANTIC_HISTORY_PROFILE = 'semantic_map.history_synthesis.v1'
+SEMANTIC_HISTORY_MAX_LEAVES = 3
+SEMANTIC_HISTORY_CONTEXT_SCALARS = 160
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class AnalysisSemanticMapStageInput:
+    parent: AnalysisSemanticMapInput
+    kind: str
+    record_refs: tuple
+    leaves: tuple
+    material_json: str
+    request_ref: str
+    response: object = None
+
+    @property
+    def request(self):
+        return self.parent.request
+
+    @property
+    def source_guard(self):
+        return self.parent.source_guard
+
+    @property
+    def prompt_version(self):
+        return self.parent.prompt_version
+
+    def messages(self):
+        instruction = self.parent.messages()[0]['content']
+        instruction += ('\n現在は全履歴の' + self.kind + '段階です。field番号は親の番号を保持しています。'
+            'history_stage、field_manifest、leaf_interpretations、scoped_unknownsは制御情報で、本人の新しい発言ではありません。')
+        if self.kind == 'MERGE':
+            instruction += ('\n各leaf_interpretationsは原記録を読んだAIの仮の読みであり、本人事実や根拠にしません。'
+                '各葉の関係を並べるだけでなく、異なる葉の根拠を見比べて一つのマップへ構成してください。'
+                '根拠にはfieldsに実際に提示された連続文字列だけを引用します。fieldsのtextは元fieldの一連続断片で、'
+                'field_manifestの全長やomitted_rangesにある未提示本文を読んだとは扱いません。'
+                '周辺断片や引用が意味を完全に保つとの保証はありません。主体・否定・時点・条件・留保を推測で補わず、'
+                'scoped_unknownsの同じ根拠に付く未確認事項をその根拠を使う項目のunknownsに保持します。'
+                '省略された記録や意味を反対・不存在・一般的傾向へ変換しません。'
+                '全有効map_correctionsの本人説明は全文を少なくとも一項目で根拠に使用し、AI対象文を根拠にしません。')
+        return [dict(role='system', content=instruction), dict(role='user', content=self.material_json)]
+
+
+def _semantic_history_parent(parent, *, rederive=True):
+    _semantic_map_require(type(parent) is AnalysisSemanticMapInput and parent.response is None,
+        'analysis_semantic_history_parent_invalid')
+    if rederive:
+        expected = prepare_analysis_semantic_map(parent.source_request,
+            json.loads(parent.source_snapshot_json), prompt_version=parent.prompt_version)
+        _semantic_map_require(expected == parent, 'analysis_semantic_input_unbound')
+    return parent
+
+
+def _semantic_history_corrections(parent, refs):
+    selected = set(refs)
+    corrections = json.loads(parent.map_correction_sources_json or '[]')
+    result = []
+    for correction in corrections:
+        cohort = set(correction['cohort_refs'])
+        _semantic_map_require(not cohort & selected or cohort <= selected,
+            'analysis_semantic_history_correction_cohort_split')
+        if cohort <= selected:
+            result.append(correction)
+    return result
+
+
+def _semantic_history_stage(parent, kind, refs, leaves, material):
+    material['history_stage'] = dict(profile=SEMANTIC_HISTORY_PROFILE, kind=kind,
+        parent_request_ref=parent.request_ref,
+        records=[i for i, member in enumerate(parent.frozen.members, 1)
+                 if member.saved_record_ref in refs])
+    body = semantic_map_canonical(material)
+    request_ref = 'analysis-semantic-stage:' + semantic_map_hash([
+        SEMANTIC_HISTORY_PROFILE, parent.request_ref, parent.source_guard, kind, refs, body])
+    return AnalysisSemanticMapStageInput(parent, kind, refs, leaves, body, request_ref)
+
+
+def prepare_semantic_leaf(parent, record_refs):
+    """Derive a complete-record view, retaining global parent field numbers."""
+    # Budget planning may probe many complete-record groups. The parent was
+    # already qualified by prepare_analysis_semantic_map; rederive it when an
+    # external leaf response is admitted, rather than for every pure probe.
+    _semantic_history_parent(parent, rederive=False)
+    ordered = tuple(member.saved_record_ref for member in parent.frozen.members)
+    _semantic_map_require(type(record_refs) is tuple and bool(record_refs)
+        and all(type(ref) is str for ref in record_refs)
+        and len(record_refs) == len(set(record_refs))
+        and record_refs == tuple(ref for ref in ordered if ref in record_refs),
+        'analysis_semantic_history_partition_invalid')
+    corrections = _semantic_history_corrections(parent, record_refs)
+    correction_ids = {c['source']['correction_id'] for c in corrections}
+    ordinals = {i for i, member in enumerate(parent.frozen.members, 1)
+                if member.saved_record_ref in record_refs}
+    material = json.loads(parent.material_json)
+    material['records'] = [row for row in material['records'] if row['record'] in ordinals]
+    material['fields'] = [f for f in material['fields']
+        if f['record'] in ordinals or (f['record'] is None
+            and set(f.get('record_refs', ())) <= ordinals)]
+    numbers = {f['field'] for f in material['fields']}
+    if 'map_corrections' in material:
+        material['map_corrections'] = [c for c in material['map_corrections']
+            if c['correction_id'] in correction_ids]
+    if 'emlis_source_materials' in material:
+        material['emlis_source_materials'] = [h for h in material['emlis_source_materials']
+            if h['record'] in ordinals]
+    if 'source_duties' in material:
+        # Relations remain control metadata; only claims/ranges of this leaf
+        # are displayed. The final merge receives the complete parent duties.
+        duties = material['source_duties']
+        duties['claims'] = [c for c in duties['claims'] if c['field'] in numbers]
+        duties['written_relations'] = [r for r in duties['written_relations'] if r['record'] in ordinals]
+        duties['unassessed_source_ranges'] = [r for r in duties['unassessed_source_ranges']
+            if r['field'] in numbers]
+    return _semantic_history_stage(parent, 'LEAF', record_refs, (), material)
+
+
+def _semantic_history_leaf_packet(stage, response):
+    from .intent_compiler import compile_analysis_semantic_stage
+    _semantic_map_require(type(stage) is AnalysisSemanticMapStageInput and stage.kind == 'LEAF'
+        and stage.response is None, 'analysis_semantic_history_leaf_invalid')
+    _semantic_history_parent(stage.parent)
+    expected = prepare_semantic_leaf(stage.parent, stage.record_refs)
+    _semantic_map_require(stage == expected, 'analysis_semantic_history_stage_unbound')
+    packet = _admit_analysis_semantic_map_response(stage, response)
+    graph = compile_analysis_semantic_stage(stage, packet, response_sha256=response.raw_sha256)
+    return packet, graph
+
+
+def prepare_semantic_merge(parent, leaves):
+    """Admit every leaf and expose bounded original excerpts to the same author.
+
+    A field has at most one contiguous excerpt: no ellipsis joins separated
+    source ranges and the existing hosted JSON grammar retains unique global
+    field IDs. A caller must measure this actual material before acquisition.
+    """
+    _semantic_history_parent(parent)
+    _semantic_map_require(type(leaves) is tuple and 2 <= len(leaves) <= SEMANTIC_HISTORY_MAX_LEAVES,
+        'analysis_semantic_history_partition_invalid')
+    material = json.loads(parent.material_json)
+    by_number = {f['field']: f for f in material['fields']}
+    by_stored = {f[0]: f for f in parent.fields}
+    ranges, interpretations, unknowns, refs, represented = {}, [], [], [], set()
+    for item in leaves:
+        _semantic_map_require(type(item) is tuple and len(item) == 2,
+            'analysis_semantic_history_leaf_invalid')
+        stage, response = item
+        _semantic_map_require(type(stage) is AnalysisSemanticMapStageInput and stage.parent == parent,
+            'analysis_semantic_history_parent_invalid')
+        packet, graph = _semantic_history_leaf_packet(stage, response)
+        refs.extend(stage.record_refs)
+        represented.update(ref for node in json.loads(graph.nodes_json) for ref in node['record_refs'])
+        interpretations.append(dict(leaf_request_ref=stage.request_ref,
+            messages_sha256=response.messages_sha256, response_sha256=response.raw_sha256,
+            packet=packet, coverage=json.loads(graph.coverage_json)))
+        for node in packet['nodes']:
+            for evidence in node['evidence']:
+                number, quote = evidence['field'], evidence['quote']
+                text = by_stored[number][1]
+                start = text.index(quote)
+                ranges.setdefault(number, []).append((start, start + len(quote)))
+            if node['unknowns']:
+                unknowns.append(dict(leaf_request_ref=stage.request_ref, node_id=node['node_id'],
+                    evidence=node['evidence'], unknowns=node['unknowns']))
+    ordered = tuple(member.saved_record_ref for member in parent.frozen.members)
+    first_positions = [ordered.index(stage.record_refs[0]) for stage, _ in leaves]
+    _semantic_map_require(len(refs) == len(ordered) and len(set(refs)) == len(refs)
+        and set(refs) == set(ordered) and first_positions == sorted(first_positions),
+        'analysis_semantic_history_partition_invalid')
+    # Source-owned duties can add proved scene/context roots during final
+    # compilation. Show their literal ranges too; otherwise a support root
+    # could be stored even though the synthesis author never received it.
+    for claim in json.loads(parent.source_duties_json or '{}').get('claims', []):
+        ranges.setdefault(claim['field'], []).append((claim['scalar_start'], claim['scalar_end']))
+    for number, text, dependency, _ in parent.fields:
+        if type(dependency) is tuple:
+            ranges[number] = [(0, len(text))]
+    fragments, manifest, omitted = [], [], []
+    for number, text, dependency, base in parent.fields:
+        original = by_number[number]
+        manifest.append(dict(field=number, **{k: v for k, v in original.items()
+            if k not in {'field', 'text'}}, scalar_length=len(text),
+            text_sha256=hashlib.sha256(text.encode('utf-8')).hexdigest()))
+        spans = ranges.get(number)
+        if not spans:
+            omitted.append(dict(field=number, ranges=[[0, len(text)]], reason='NO_LEAF_EVIDENCE'))
+            continue
+        start = max(0, min(span[0] for span in spans) - SEMANTIC_HISTORY_CONTEXT_SCALARS)
+        end = min(len(text), max(span[1] for span in spans) + SEMANTIC_HISTORY_CONTEXT_SCALARS)
+        fragments.append(dict(original, text=text[start:end], fragment_scalar_range=[start, end],
+            fragment_is_complete_field=start == 0 and end == len(text), semantic_coverage='UNASSESSED'))
+        missing = ([[0, start]] if start else []) + ([[end, len(text)]] if end < len(text) else [])
+        if missing:
+            omitted.append(dict(field=number, ranges=missing, reason='OUTSIDE_SHOWN_CONTEXT'))
+    material['fields'] = fragments
+    material['field_manifest'] = manifest
+    material['omitted_ranges'] = omitted
+    material['leaf_interpretations'] = interpretations
+    material['scoped_unknowns'] = unknowns
+    material['history_coverage'] = dict(leaf_source_processed_count=len(ordered),
+        leaf_unrepresented_records=[i for i, member in enumerate(parent.frozen.members, 1)
+            if member.saved_record_ref not in represented],
+        fragment_semantics='UNASSESSED', full_source_semantic_coverage=False)
+    return _semantic_history_stage(parent, 'MERGE', ordered, leaves, material)
+
+
+def build_semantic_stage(stage, response):
+    """Compile leaves without artifacts; realize only the final parent map."""
+    from .intent_compiler import compile_analysis_semantic_stage
+    from .observed_route_realizer import realize_analysis_semantic_map
+    _semantic_map_require(type(stage) is AnalysisSemanticMapStageInput and stage.response is None,
+        'analysis_semantic_history_stage_unbound')
+    if stage.kind == 'LEAF':
+        return _semantic_history_leaf_packet(stage, response)[1]
+    _semantic_map_require(stage.kind == 'MERGE', 'analysis_semantic_history_stage_unbound')
+    expected = prepare_semantic_merge(stage.parent, stage.leaves)
+    _semantic_map_require(expected == stage, 'analysis_semantic_history_stage_unbound')
+    packet = _admit_analysis_semantic_map_response(stage, response)
+    graph = compile_analysis_semantic_stage(stage, packet, response_sha256=response.raw_sha256)
+    return realize_analysis_semantic_map(graph)
+

@@ -293,6 +293,9 @@ jobs:
           ai/tests/test_analysis_cumulative_model_source.py
           ai/tests/test_analysis_semantic_integration.py
           ai/tests/test_analysis_semantic_source_duties.py
+          ai/tests/test_analysis_semantic_history_core.py
+          ai/tests/test_analysis_semantic_history_planner.py
+          ai/tests/test_analysis_semantic_history_service.py
           ai/tests/test_analysis_cumulative_model_batches.py
           ai/tests/test_analysis_cumulative_jobs.py
           ai/tests/test_analysis_observed_api.py

@@ -41,7 +41,14 @@ class MeaningExperienceEngine:
             return admit_if_model_response(prepared, semantic_input)
         if semantic_input is not None and type(request) is AnalysisObservedMapRequest:
             from .cores.analysis.semantic_admission import (
-                AnalysisSemanticMapInput, generate_analysis_semantic_map)
+                AnalysisSemanticMapInput, AnalysisSemanticMapStageInput,
+                build_semantic_stage, generate_analysis_semantic_map)
+            if type(semantic_input) is AnalysisSemanticMapStageInput:
+                from dataclasses import replace
+                from .cores.analysis.semantic_admission import _semantic_map_require
+                _semantic_map_require(semantic_input.request == request,
+                    'analysis_semantic_history_stage_unbound')
+                return build_semantic_stage(replace(semantic_input, response=None), semantic_input.response)
             if type(semantic_input) is AnalysisSemanticMapInput:
                 return generate_analysis_semantic_map(request, semantic_input)
             from .cores.analysis.semantic_admission import (AnalysisModelFieldsInput,

@@ -688,6 +688,100 @@ async def _model_response(model_source, prepared):
         raise HTTPException(503, 'analysis_model_source_unavailable') from None
 
 
+def prepare_semantic_history_batches(parent):
+    """Partition the admitted history, never a latest-N window or DB subset.
+
+    A record, all its active fields/answers and map-correction dependencies
+    stay together. The parent guard and original field IDs remain authoritative.
+    """
+    from analysis_model_source import (semantic_analysis_input_fits,
+        SEMANTIC_HISTORY_MAX_LEAVES)
+    from cocolon_meaning_experience_engine.cores.analysis.semantic_admission import (
+        AnalysisSemanticMapInput, prepare_semantic_leaf, _semantic_map_require)
+    _semantic_map_require(type(parent) is AnalysisSemanticMapInput,
+        'analysis_semantic_input_invalid')
+    if semantic_analysis_input_fits(parent):
+        return ()
+    refs = tuple(m.saved_record_ref for m in parent.frozen.members)
+    groups = {ref: ref for ref in refs}
+
+    def root(ref):
+        while groups[ref] != ref:
+            groups[ref] = groups[groups[ref]]
+            ref = groups[ref]
+        return ref
+
+    # A relationship correction may depend on several original records.
+    # Splitting that cohort would silently remove its explanation field.
+    for correction in json.loads(parent.map_correction_sources_json or '[]'):
+        cohort = correction['cohort_refs']
+        for ref in cohort:
+            _semantic_map_require(ref in groups, 'analysis_semantic_input_unbound')
+        for ref in cohort[1:]:
+            groups[root(ref)] = root(cohort[0])
+    cohorts = {}
+    for ref in refs:
+        cohorts.setdefault(root(ref), []).append(ref)
+    stages, pending = [], ()
+
+    def ordered(selected):
+        values = set(selected)
+        return tuple(ref for ref in refs if ref in values)
+
+    for cohort in cohorts.values():
+        candidate = ordered((*pending, *cohort))
+        stage = prepare_semantic_leaf(parent, candidate)
+        if semantic_analysis_input_fits(stage):
+            pending = candidate
+            continue
+        _semantic_map_require(bool(pending), 'analysis_semantic_history_capacity_exceeded')
+        stages.append(prepare_semantic_leaf(parent, pending))
+        pending = tuple(cohort)
+        _semantic_map_require(semantic_analysis_input_fits(prepare_semantic_leaf(parent, pending)),
+            'analysis_semantic_history_capacity_exceeded')
+        _semantic_map_require(len(stages) < SEMANTIC_HISTORY_MAX_LEAVES,
+            'analysis_semantic_history_capacity_exceeded')
+    if pending:
+        stages.append(prepare_semantic_leaf(parent, pending))
+    _semantic_map_require(2 <= len(stages) <= SEMANTIC_HISTORY_MAX_LEAVES,
+        'analysis_semantic_history_capacity_exceeded')
+    return tuple(stages)
+
+
+async def _semantic_history_map(source, parent):
+    from analysis_model_source import (semantic_analysis_input_fits,
+        SEMANTIC_PIPELINE_TIMEOUT_SECONDS)
+    from analysis_semantic_map import build_semantic_map, build_semantic_history_stage
+    from cocolon_meaning_experience_engine.cores.analysis.semantic_admission import (
+        prepare_semantic_merge, _semantic_map_require)
+    stages = await asyncio.to_thread(prepare_semantic_history_batches, parent)
+    if not stages:
+        # The existing prepared messages and single acquisition are unchanged.
+        response = await _model_response(source, parent)
+        return await asyncio.to_thread(build_semantic_map, parent, response)
+    try:
+        # One existing request deadline, not 215 seconds for every stage.
+        async with asyncio.timeout(SEMANTIC_PIPELINE_TIMEOUT_SECONDS) as deadline:
+            receipts = []
+            for stage in stages:
+                response = await _model_response(source, stage)
+                await asyncio.to_thread(build_semantic_history_stage, stage, response)
+                receipts.append((stage, response))
+            merged = await asyncio.to_thread(prepare_semantic_merge, parent, tuple(receipts))
+            _semantic_map_require(semantic_analysis_input_fits(merged),
+                'analysis_semantic_history_capacity_exceeded')
+            response = await _model_response(source, merged)
+            outcome = await asyncio.to_thread(build_semantic_history_stage, merged, response)
+        if deadline.expired():
+            raise TimeoutError
+        _require_model_write_active()
+        if outcome.artifact is None:
+            raise ValueError(outcome.reason_codes[0])
+        return outcome.artifact, outcome.coverage
+    except TimeoutError:
+        raise HTTPException(504, 'analysis_model_source_timeout') from None
+
+
 def _require_model_write_active():
     if asyncio.current_task().cancelling():
         raise asyncio.CancelledError
@@ -737,7 +831,7 @@ async def _ensure_map(user_id, *, ensure=True, force=False, monthly=False, model
         else:
             try:
                 if semantic_source:
-                    from analysis_semantic_map import prepare_semantic_map, build_semantic_map, SemanticMapNoMaterial
+                    from analysis_semantic_map import prepare_semantic_map, SemanticMapNoMaterial
                     try:
                         from analysis_model_source import analysis_model_prompt_version
                         prepared = await asyncio.to_thread(prepare_semantic_map, owner, snapshot,
@@ -745,8 +839,7 @@ async def _ensure_map(user_id, *, ensure=True, force=False, monthly=False, model
                     except SemanticMapNoMaterial as excluded:
                         artifact, coverage = None, _checked_coverage(excluded.coverage)
                     else:
-                        response = await _model_response(model_source, prepared)
-                        artifact, coverage = await asyncio.to_thread(build_semantic_map, prepared, response)
+                        artifact, coverage = await _semantic_history_map(model_source, prepared)
                 elif model_source is None:
                     artifact, coverage = await asyncio.to_thread(build_cumulative_map, owner, snapshot)
                 else:
