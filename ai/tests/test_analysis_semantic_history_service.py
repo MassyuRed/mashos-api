@@ -113,6 +113,40 @@ def force_synthetic_partition(monkeypatch, *, records_per_leaf=1):
         count = len(refs) if refs is not None else len(prepared.request.members)
         return count <= records_per_leaf
     monkeypatch.setattr(model_sources, 'semantic_analysis_input_fits', fits)
+    monkeypatch.setattr(model_sources, 'semantic_history_leaf_target_fits', fits)
+
+
+def test_long_history_smaller_leaf_budget_preserves_every_complete_source():
+    snapshot = source_snapshot(12, tier='premium')
+    for index, row in enumerate(snapshot['members']):
+        row['original']['memo'] = ('私は移動する前に条件を確かめた。' * 60
+            + f'今回の確認は{index + 1}回目の記録に書いた。')
+        row['original']['memo_action'] = '確認した内容を紙に書いて持って出た。' * 30
+    parent = semantic.prepare_semantic_map(OWNER, snapshot)
+    assert not model_sources.semantic_analysis_input_fits(parent)
+    leaves = cumulative.prepare_semantic_history_batches(parent)
+    assert 2 < len(leaves) <= 6
+    assert tuple(ref for leaf in leaves for ref in leaf.record_refs) == tuple(
+        member.saved_record_ref for member in parent.frozen.members)
+    actual = [field for leaf in leaves for field in json.loads(leaf.material_json)['fields']]
+    assert actual == json.loads(parent.material_json)['fields']
+    assert all(model_sources.semantic_analysis_input_fits(leaf) for leaf in leaves)
+    assert all(len(json.dumps(leaf.messages(), ensure_ascii=False, separators=(',', ':')).encode())
+        <= model_sources.SEMANTIC_LEAF_MAX_PROMPT_BYTES for leaf in leaves)
+
+
+def test_indivisible_record_above_leaf_target_keeps_existing_transport_capacity():
+    snapshot = source_snapshot(2, tier='premium')
+    for row in snapshot['members']:
+        row['original']['memo'] = '記' * 9000
+    parent = semantic.prepare_semantic_map(OWNER, snapshot)
+    assert not model_sources.semantic_analysis_input_fits(parent)
+    leaves = cumulative.prepare_semantic_history_batches(parent)
+    assert [len(leaf.record_refs) for leaf in leaves] == [1, 1]
+    assert all(not model_sources.semantic_history_leaf_target_fits(leaf) for leaf in leaves)
+    assert all(model_sources.semantic_analysis_input_fits(leaf) for leaf in leaves)
+    assert [f for leaf in leaves for f in json.loads(leaf.material_json)['fields']] == json.loads(
+        parent.material_json)['fields']
 
 
 def stage_material(request):
@@ -274,10 +308,10 @@ def test_forced_history_refresh_preserves_first_month_and_new_current_reentry(hi
     assert stored_private(db, initial['report_id']) == initial_private
 
 
-@pytest.mark.parametrize('impossible', ['four_leaves', 'one_record_group', 'single_leaf_plan'])
+@pytest.mark.parametrize('impossible', ['seven_leaves', 'one_record_group', 'single_leaf_plan'])
 def test_history_unplannable_complete_input_refuses_before_provider_call(history_db, monkeypatch, impossible):
     db, _, calls = history_db
-    insert_history(db, 4 if impossible == 'four_leaves' else 1)
+    insert_history(db, 7 if impossible == 'seven_leaves' else 1)
     force_synthetic_partition(monkeypatch)
     if impossible == 'one_record_group':
         monkeypatch.setattr(model_sources, 'semantic_analysis_input_fits', lambda prepared: False)

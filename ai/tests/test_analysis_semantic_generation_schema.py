@@ -127,6 +127,28 @@ def graph_parser():
     return probe.semantic_json_parser(messages, alphabet), alphabet, messages
 
 
+@pytest.mark.parametrize('stage', ['LEAF', 'MERGE'])
+def test_native_history_detail_budget_stops_repetition_without_changing_source(stage):
+    pytest.importorskip('lmformatenforcer')
+    original = '本人の記録です。補足です。'
+    material = dict(fields=[dict(field=1, text=original)],
+        history_stage=dict(kind=stage))
+    messages = [dict(role='system', content='synthetic'), dict(role='user',
+        content=json.dumps(material, ensure_ascii=False))]
+    def document(length):
+        value = json.loads(graph_document(['n1'], []))
+        value['nodes'][0]['explanation'] = '説' * length
+        return json.dumps(value, ensure_ascii=False, separators=(',', ':'))
+    alphabet = ''.join(dict.fromkeys(document(421)))
+    before = deepcopy(messages)
+    assert unique_evidence_accept(probe.semantic_json_parser(messages, alphabet), document(420))
+    assert not unique_evidence_accept(probe.semantic_json_parser(messages, alphabet), document(421))
+    ordinary = deepcopy(messages)
+    ordinary[1]['content'] = json.dumps(dict(fields=material['fields']), ensure_ascii=False)
+    assert unique_evidence_accept(probe.semantic_json_parser(ordinary, alphabet), document(421))
+    assert messages == before and json.loads(messages[1]['content'])['fields'][0]['text'] == original
+
+
 @pytest.mark.parametrize('ids,edges,expected', GRAPH_CASES)
 def test_native_semantic_graph_references_only_completed_distinct_nodes(ids, edges, expected):
     parser, alphabet, messages = graph_parser()

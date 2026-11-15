@@ -24,23 +24,32 @@ EXPLICIT_PROMPT_VERSIONS = frozenset({DEFAULT_PROMPT_VERSION, 'selected_material
 # token estimate. The existing serving owner independently enforces the real
 # tokenizer/context budget (including its 4096-token output reservation).
 SEMANTIC_MAX_PROMPT_BYTES = 49152
+SEMANTIC_LEAF_MAX_PROMPT_BYTES = 24576
 SEMANTIC_MAX_REQUEST_BYTES = 262144
-SEMANTIC_HISTORY_MAX_LEAVES = 3
+SEMANTIC_HISTORY_MAX_LEAVES = 6
 # Leave response/serialization time after the native 210s generation limit
 # and the bridge's 215s upstream limit. These are independent of output quality.
 SEMANTIC_HTTP_TIMEOUT_SECONDS = 220.0
 SEMANTIC_REQUEST_TIMEOUT_SECONDS = 225.0
 # One absolute pipeline limit, below the worker's default 900s stale lease.
-# Four stages may exhaust this cap before every stage uses its individual cap.
+# Stages may exhaust this cap before every stage uses its individual cap.
 # Deployment must also allow for source loading and final persistence outside it.
 SEMANTIC_PIPELINE_TIMEOUT_SECONDS = 840.0
 
 
+def _semantic_message_bytes(prepared):
+    return len(json.dumps(prepared.messages(), ensure_ascii=False,
+        separators=(',', ':'), allow_nan=False).encode('utf-8'))
+
+
 def semantic_analysis_input_fits(prepared):
     """Message-byte admission; the serving owner still checks actual tokens."""
-    encoded = json.dumps(prepared.messages(), ensure_ascii=False,
-        separators=(',', ':'), allow_nan=False).encode('utf-8')
-    return len(encoded) <= SEMANTIC_MAX_PROMPT_BYTES
+    return _semantic_message_bytes(prepared) <= SEMANTIC_MAX_PROMPT_BYTES
+
+
+def semantic_history_leaf_target_fits(prepared):
+    """Packing target only; an indivisible cohort keeps the transport limit."""
+    return _semantic_message_bytes(prepared) <= SEMANTIC_LEAF_MAX_PROMPT_BYTES
 
 
 class SelfHostedAnalysisModelSource:

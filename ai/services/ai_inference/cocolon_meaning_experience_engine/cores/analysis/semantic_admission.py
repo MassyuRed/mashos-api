@@ -2720,7 +2720,7 @@ def generate_analysis_semantic_map(request, model_input):
 # author. A child never acquires a new snapshot/guard, and a model reading is
 # never admitted as an additional person source.
 SEMANTIC_HISTORY_PROFILE = 'semantic_map.history_synthesis.v1'
-SEMANTIC_HISTORY_MAX_LEAVES = 3
+SEMANTIC_HISTORY_MAX_LEAVES = 6
 SEMANTIC_HISTORY_CONTEXT_SCALARS = 160
 
 
@@ -2750,6 +2750,10 @@ class AnalysisSemanticMapStageInput:
         instruction = self.parent.messages()[0]['content']
         instruction += ('\n現在は全履歴の' + self.kind + '段階です。field番号は親の番号を保持しています。'
             'history_stage、field_manifest、leaf_interpretations、scoped_unknownsは制御情報で、本人の新しい発言ではありません。')
+        instruction += ('\nまず独立した意味を選んで項目を作り、その意味に合うnode_kindを一つ付けます。'
+            '四つのnode_kindを埋める必要はありません。同じ出来事や説明を分類ごとに複製しません。'
+            '図のsummaryは短い一文、詳細のexplanationは根拠と読みのつながりを簡潔に示し、原文全文を復唱しません。'
+            '相手の尊重・納得・理解は、本人が確認して記した範囲だけに留め、不明な相手の認識を項目へ作りません。')
         if self.kind == 'MERGE':
             instruction += ('\n各leaf_interpretationsは原記録を読んだAIの仮の読みであり、本人事実や根拠にしません。'
                 '各葉の関係を並べるだけでなく、異なる葉の根拠を見比べて一つのマップへ構成してください。'

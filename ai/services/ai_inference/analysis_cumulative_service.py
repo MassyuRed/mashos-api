@@ -696,7 +696,7 @@ def prepare_semantic_history_batches(parent):
     A record, all its active fields/answers and map-correction dependencies
     stay together. The parent guard and original field IDs remain authoritative.
     """
-    from analysis_model_source import (semantic_analysis_input_fits,
+    from analysis_model_source import (semantic_analysis_input_fits, semantic_history_leaf_target_fits,
         SEMANTIC_HISTORY_MAX_LEAVES)
     from cocolon_meaning_experience_engine.cores.analysis.semantic_admission import (
         AnalysisSemanticMapInput, prepare_semantic_leaf, _semantic_map_require)
@@ -733,7 +733,8 @@ def prepare_semantic_history_batches(parent):
     for cohort in cohorts.values():
         candidate = ordered((*pending, *cohort))
         stage = prepare_semantic_leaf(parent, candidate)
-        if semantic_analysis_input_fits(stage):
+        if (semantic_analysis_input_fits(stage)
+                and (semantic_history_leaf_target_fits(stage) or not pending)):
             pending = candidate
             continue
         _semantic_map_require(bool(pending), 'analysis_semantic_history_capacity_exceeded')

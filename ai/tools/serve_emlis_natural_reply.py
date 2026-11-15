@@ -278,18 +278,20 @@ def semantic_output_schema(messages):
         return dict(type='string', minLength=1, maxLength=maximum)
     def obj(properties):
         return dict(type='object', properties=properties, required=list(properties), additionalProperties=False)
+    history = material.get('history_stage', {}).get('kind') in {'LEAF', 'MERGE'}
     node_ids = ['n' + str(i) for i in range(1, 25)]
     node = obj(dict(node_id=dict(type='string', enum=node_ids),
         node_kind=dict(type='string', enum=['SELF_POSITION', 'TARGET_MEANING', 'CHOICE_OUTPUT', 'STATE_CONTEXT']),
-        title=text(80), summary=text(400), explanation=text(3000),
+        title=text(60 if history else 80), summary=text(160 if history else 400),
+        explanation=text(420 if history else 3000),
         perspective=dict(type='string', enum=['SELF', 'OBSERVED_INTERACTION']),
-        unknowns=dict(type='array', items=text(500), maxItems=4),
+        unknowns=dict(type='array', items=text(240 if history else 500), maxItems=4),
         evidence=dict(type='array', items=dict(oneOf=pairs), minItems=1, maxItems=4)))
     edge = obj({'from': dict(type='string', enum=node_ids), 'to': dict(type='string', enum=node_ids),
         'relation_kind': dict(type='string', enum=['SELF_OUTSIDE_GAP', 'CRITERION_EXPRESSION', 'CONTEXT_CONTRAST', 'SHARED_MEANING']),
-        'label': text(80), 'explanation': text(1800)})
+        'label': text(60 if history else 80), 'explanation': text(360 if history else 1800)})
     return obj(dict(schema_version=dict(type='string', enum=['cocolon.analysis.semantic_map.model.v2']),
-        overview=obj(dict(title=text(80), summary=text(2000))),
+        overview=obj(dict(title=text(60 if history else 80), summary=text(480 if history else 2000))),
         nodes=dict(type='array', items=node, minItems=1, maxItems=24),
         edges=dict(type='array', items=edge, maxItems=48)))
 
