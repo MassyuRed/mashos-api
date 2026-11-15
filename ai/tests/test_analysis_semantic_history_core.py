@@ -106,19 +106,25 @@ def test_merge_requires_all_parent_records_once_and_bounded_order(selection):
         core.prepare_semantic_merge(prepared, selection(standard_leaves(prepared)))
 
 
-@pytest.mark.parametrize('profile, hashes', [
+@pytest.mark.parametrize('profile, hashes, prior_hashes', [
     (core.SEMANTIC_MAP_PROFILE, (
+        '169708c3c1c19f89407acec363600f0d92423a05d39fd7ace5627a3440157139',
+        'e128c644d042e3884a3cdedf3ec989956957f441f68cee9093666b29c7caab3b'), (
         '0ed9e6c3dcb9b436f13c4418575dc9237762d1e4edd4f18426b217a975c49b99',
         'f574cab50cfc085e3978b9eef12b626541309d6ef1b913edaf06c55532241798')),
     (core.SEMANTIC_MAP_SOURCE_DUTIES_PROFILE, (
+        'ef0a65338332b6143abd3714c7c77ffe059b30afdba0751aa06de9dbb556292d',
+        '40d6b508ec5c8571435fc91d95e54e4d13766e96758598f42cba663a7d953a77'), (
         '8d11d9426788eaccaea3c70fe68c55483d7f1aaac8eb339d1f4abee880108087',
         '2068408ed06947b40a94eb169901101a0afe7cc1a4550403ff679c99c8e0ab9a')),
 ])
-def test_leaf_v1_messages_stay_byte_identical_when_merge_changes_to_v2(profile, hashes):
+def test_history_receipts_bind_current_reading_prompt_and_reject_prior_prompt(profile, hashes, prior_hashes):
     prepared = parent(profile=profile)
     leaves = standard_leaves(prepared)
     assert tuple(core.semantic_map_hash(stage.messages()) for stage, _ in leaves) == hashes
-    for stage, receipt in leaves:
+    for (stage, receipt), prior_hash in zip(leaves, prior_hashes):
+        with pytest.raises(core.AnalysisSemanticMapError, match='analysis_semantic_response_unbound'):
+            core.build_semantic_stage(stage, replace(receipt, messages_sha256=prior_hash))
         assert json.loads(stage.material_json)['history_stage']['profile'] == 'semantic_map.history_synthesis.v1'
         core.build_semantic_stage(stage, receipt)
     merge = core.prepare_semantic_merge(prepared, leaves)
