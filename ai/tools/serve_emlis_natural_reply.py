@@ -385,7 +385,7 @@ def _if_json_schema_parser(schema, config):
 
 
 def _semantic_unique_json_schema_parser(schema, config):
-    """Exclude only already selected source/quote pairs within each node.
+    """Bind graph references and unique source/quote pairs while decoding.
 
     The pinned parser does not enforce JSON Schema uniqueItems. Use an isolated
     namespace, as for IF, so evidence selection stays immutable across decoder
@@ -405,11 +405,31 @@ def _semantic_unique_json_schema_parser(schema, config):
             and props['field'].type == 'integer' and len(props['field'].enum or []) == 1
             and props['quote'].type == 'string' and bool(props['quote'].enum))
 
+    def node_type(value):
+        props = value.properties or {}
+        return value.type == 'object' and 'node_id' in props and 'evidence' in props
+
+    def graph_type(value):
+        props = value.properties or {}
+        return value.type == 'object' and 'nodes' in props and 'edges' in props
+
+    def edge_type(value):
+        props = value.properties or {}
+        return value.type == 'object' and set(props) == {
+            'from', 'to', 'relation_kind', 'label', 'explanation'}
+
+    def graph_state(active):
+        for index, value in enumerate(active.object_stack):
+            if isinstance(value, EvidenceObject) and graph_type(value.schema_object):
+                return index, value
+        raise ValueError('semantic_graph_unbound')
+
     class UniqueEvidenceList(module.ListParsingState):
         def __init__(self, *args, **kwargs):
             super().__init__(*args, **kwargs)
             parts = self.list_member_type.oneOf
             self.is_evidence = bool(parts) and all(evidence_pair(p) for p in parts)
+            self.is_nodes = node_type(self.list_member_type)
             self.used_pairs = frozenset()
 
         def _clone(self):
@@ -435,9 +455,20 @@ def _semantic_unique_json_schema_parser(schema, config):
             if self.is_evidence and not any((part.properties['field'].enum[0], q) not in self.used_pairs
                     for part in self.list_member_type.oneOf for q in part.properties['quote'].enum):
                 chars = chars.replace(',', '')
+            if self.is_nodes:
+                _, graph = graph_state(self.root.context.active_parser)
+                if not any(value not in graph.generated_node_ids
+                        for value in self.list_member_type.properties['node_id'].enum):
+                    chars = chars.replace(',', '')
             return chars
 
         def add_character(self, char):
+            if char == '[' and self.max_items == 0 and not self.seen_list_opener:
+                # Upstream otherwise pushes an item parser for an empty array.
+                result = self._clone()
+                result.parsed_string += char
+                result.seen_list_opener = True
+                return result
             result = super().add_character(char)
             if self.is_evidence and char == ',' and not result.seen_list_closer:
                 remaining = result.remaining_type()
@@ -447,10 +478,63 @@ def _semantic_unique_json_schema_parser(schema, config):
             return result
 
     class EvidenceObject(module.ObjectParsingState):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.generated_node_ids = ()
+            self.selected_node_id = self.selected_from = None
+
+        def clone(self):
+            result = super().clone()
+            result.generated_node_ids = self.generated_node_ids
+            result.selected_node_id = self.selected_node_id
+            result.selected_from = self.selected_from
+            return result
+
         def add_character(self, char):
+            prior_key = self.current_key
             result = super().add_character(char)
+            active = result.root.context.active_parser
+            if char in ',}' and self.current_stage in (
+                    module.ObjectParsingStage.PARSING_VALUE,
+                    module.ObjectParsingStage.PARSING_SEPARATOR_OR_END):
+                if node_type(result.schema_object) and prior_key == 'node_id':
+                    result.selected_node_id = active.last_parsed_string
+                if edge_type(result.schema_object) and prior_key == 'from':
+                    result.selected_from = active.last_parsed_string
+            if char == ':' and result.current_stage == module.ObjectParsingStage.PARSING_VALUE:
+                key = result.current_key
+                value = None
+                if node_type(result.schema_object) and key == 'node_id':
+                    _, graph = graph_state(active)
+                    value = deepcopy(result.schema_object.properties[key])
+                    value.enum = [item for item in value.enum if item not in graph.generated_node_ids]
+                    if not value.enum:
+                        raise ValueError('semantic_node_ids_exhausted')
+                elif graph_type(result.schema_object) and key == 'edges':
+                    value = deepcopy(result.schema_object.properties[key])
+                    ids = list(result.generated_node_ids)
+                    if len(ids) < 2:
+                        value.minItems = value.maxItems = 0
+                    else:
+                        value.items.properties['from'].enum = ids
+                        value.items.properties['to'].enum = ids
+                elif edge_type(result.schema_object) and key == 'to':
+                    _, graph = graph_state(active)
+                    value = deepcopy(result.schema_object.properties[key])
+                    value.enum = [item for item in graph.generated_node_ids
+                        if item != result.selected_from]
+                    if not value.enum:
+                        raise ValueError('semantic_edge_targets_exhausted')
+                if value is not None:
+                    active.object_stack[-1] = module.get_parser(result.root, value)
+            if char == '}' and result.can_end() and node_type(result.schema_object):
+                index, graph = graph_state(active)
+                graph = graph.clone()
+                if result.selected_node_id is None or result.selected_node_id in graph.generated_node_ids:
+                    raise ValueError('semantic_node_id_unbound')
+                graph.generated_node_ids += (result.selected_node_id,)
+                active.object_stack[index] = graph
             if char == '}' and result.can_end() and evidence_pair(result.schema_object):
-                active = result.root.context.active_parser
                 pair = (result.schema_object.properties['field'].enum[0], active.last_parsed_string)
                 for index in range(len(active.object_stack) - 1, -1, -1):
                     parent = active.object_stack[index]

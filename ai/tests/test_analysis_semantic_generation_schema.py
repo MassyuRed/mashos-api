@@ -90,6 +90,84 @@ def test_native_semantic_evidence_branches_and_other_parsers_are_isolated():
     assert before == (upstream.ListParsingState, upstream.ObjectParsingState, upstream.get_parser)
 
 
+GRAPH_CASES = [
+    (['n1'], [], True),
+    (['n1'], [('n1', 'n1')], False),
+    (['n1'], [('n1', 'n2')], False),
+    (['n1', 'n2'], [('n1', 'n2')], True),
+    (['n1', 'n2'], [('n2', 'n1')], True),
+    (['n1', 'n2'], [('n1', 'n1')], False),
+    (['n1', 'n2'], [('n1', 'n14')], False),
+    (['n1', 'n2'], [('n14', 'n2')], False),
+    (['n1', 'n1'], [], False),
+    (['n14', 'n2'], [('n14', 'n2')], True),
+    (['n1', 'n2', 'n14'], [('n1', 'n14'), ('n2', 'n1')], True),
+    (['n' + str(i) for i in range(1, 25)], [('n24', 'n1')], True),
+    (['n' + str(i) for i in range(1, 25)] + ['n1'], [], False),
+]
+
+
+def graph_document(ids, edges):
+    return json.dumps(dict(schema_version='cocolon.analysis.semantic_map.model.v2',
+        overview=dict(title='題', summary='要旨'), nodes=[dict(node_id=id,
+            node_kind='SELF_POSITION', title='題', summary='要旨', explanation='説明',
+            perspective='SELF', unknowns=[], evidence=[dict(field=1, quote='本人の記録です。')])
+            for id in ids], edges=[dict(zip(('from', 'to', 'relation_kind', 'label', 'explanation'),
+                (a, b, 'CONTEXT_CONTRAST', '比較', '説明'))) for a, b in edges]),
+        ensure_ascii=False, separators=(',', ':'))
+
+
+def graph_parser():
+    pytest.importorskip('lmformatenforcer')
+    messages = [dict(role='system', content='synthetic'), dict(role='user',
+        content=json.dumps(dict(fields=[dict(field=1, text='本人の記録です。補足です。'),
+            dict(field=2, text='本人の記録です。別欄です。')]), ensure_ascii=False))]
+    alphabet = ''.join(dict.fromkeys(''.join(graph_document(ids, edges)
+        for ids, edges, _ in GRAPH_CASES) + 'P '))
+    return probe.semantic_json_parser(messages, alphabet), alphabet, messages
+
+
+@pytest.mark.parametrize('ids,edges,expected', GRAPH_CASES)
+def test_native_semantic_graph_references_only_completed_distinct_nodes(ids, edges, expected):
+    parser, alphabet, messages = graph_parser()
+    original = deepcopy(messages), deepcopy(probe.semantic_output_schema(messages))
+    text = graph_document(ids, edges)
+    assert unique_evidence_accept(parser, text) == expected
+    from lmformatenforcer.tokenenforcer import TokenEnforcer, TokenEnforcerTokenizerData
+    vocabulary = list(alphabet) + ['[]', '[{']
+    tokens = {char: i for i, char in enumerate(vocabulary)}
+    eos = len(vocabulary)
+    data = TokenEnforcerTokenizerData([(i, char, False) for i, char in enumerate(vocabulary)],
+        lambda ids: ''.join(vocabulary[i] for i in ids if i < eos), eos, False, eos + 1)
+    enforcer, sent, accepted = TokenEnforcer(data, graph_parser()[0]), [tokens['P']], True
+    for char in text:
+        if tokens[char] not in enforcer.get_allowed_tokens(sent).allowed_tokens:
+            accepted = False
+            break
+        sent.append(tokens[char])
+    if accepted:
+        accepted = eos in enforcer.get_allowed_tokens(sent).allowed_tokens
+    assert accepted == expected
+    assert original == (messages, probe.semantic_output_schema(messages))
+
+
+def test_native_semantic_graph_decoder_branches_do_not_share_node_ids():
+    from lmformatenforcer import jsonschemaparser as upstream
+    before = upstream.ListParsingState, upstream.ObjectParsingState, upstream.get_parser
+    first = graph_document(['n1', 'n2'], [('n1', 'n2')])
+    second = graph_document(['n1', 'n14'], [('n1', 'n14')])
+    invalid = graph_document(['n1', 'n2'], [('n1', 'n14')])
+    split = first.index(',{"node_id":"n2"') + 1
+    parser = graph_parser()[0]
+    for char in first[:split]:
+        assert char in parser.get_allowed_characters()
+        parser = parser.add_character(char)
+    assert unique_evidence_accept(parser, first[split:])
+    assert unique_evidence_accept(parser, second[split:])
+    assert not unique_evidence_accept(parser, invalid[split:])
+    assert before == (upstream.ListParsingState, upstream.ObjectParsingState, upstream.get_parser)
+
+
 def test_upstream_constraint_exception_log_cannot_reveal_source_or_generated_prefix():
     record = logging.LogRecord('root', logging.ERROR, '/vendor/lmformatenforcer/tokenenforcer.py',
         130, 'Prefix: %s', ('SYNTHETIC_PRIVATE_SOURCE',),
