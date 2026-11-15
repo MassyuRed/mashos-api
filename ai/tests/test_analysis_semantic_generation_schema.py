@@ -100,8 +100,8 @@ GRAPH_CASES = [
     (['n1', 'n2'], [('n1', 'n14')], False),
     (['n1', 'n2'], [('n14', 'n2')], False),
     (['n1', 'n1'], [], False),
-    (['n14', 'n2'], [('n14', 'n2')], True),
-    (['n1', 'n2', 'n14'], [('n1', 'n14'), ('n2', 'n1')], True),
+    (['n14', 'n2'], [('n14', 'n2')], False),
+    (['n1', 'n2', 'n3'], [('n1', 'n3'), ('n2', 'n1')], True),
     (['n' + str(i) for i in range(1, 25)], [('n24', 'n1')], True),
     (['n' + str(i) for i in range(1, 25)] + ['n1'], [], False),
 ]
@@ -111,7 +111,7 @@ def graph_document(ids, edges):
     return json.dumps(dict(schema_version='cocolon.analysis.semantic_map.model.v2',
         overview=dict(title='題', summary='要旨'), nodes=[dict(node_id=id,
             node_kind='SELF_POSITION', title='題', summary='要旨', explanation='説明',
-            perspective='SELF', unknowns=[], evidence=[dict(field=1, quote='本人の記録です。')])
+            perspective='SELF', unknowns=[], evidence=[dict(quote='本人の記録です。', field=1)])
             for id in ids], edges=[dict(zip(('from', 'to', 'relation_kind', 'label', 'explanation'),
                 (a, b, 'CONTEXT_CONTRAST', '比較', '説明'))) for a, b in edges]),
         ensure_ascii=False, separators=(',', ':'))
@@ -155,8 +155,8 @@ def test_native_semantic_graph_decoder_branches_do_not_share_node_ids():
     from lmformatenforcer import jsonschemaparser as upstream
     before = upstream.ListParsingState, upstream.ObjectParsingState, upstream.get_parser
     first = graph_document(['n1', 'n2'], [('n1', 'n2')])
-    second = graph_document(['n1', 'n14'], [('n1', 'n14')])
-    invalid = graph_document(['n1', 'n2'], [('n1', 'n14')])
+    second = graph_document(['n1', 'n2', 'n3'], [('n1', 'n3')])
+    invalid = graph_document(['n1', 'n2'], [('n1', 'n3')])
     split = first.index(',{"node_id":"n2"') + 1
     parser = graph_parser()[0]
     for char in first[:split]:
@@ -166,6 +166,29 @@ def test_native_semantic_graph_decoder_branches_do_not_share_node_ids():
     assert unique_evidence_accept(parser, second[split:])
     assert not unique_evidence_accept(parser, invalid[split:])
     assert before == (upstream.ListParsingState, upstream.ObjectParsingState, upstream.get_parser)
+
+
+@pytest.mark.parametrize('evidence,expected', [
+    ([('補足です。', 1)], True),
+    ([('補足です。', 2)], False),
+    ([('別欄です。', 1)], False),
+    ([('別欄です。', 2)], True),
+    ([('架空です。', 1)], False),
+    ([('本人の記録です。', 1), ('本人の記録です。', 2)], True),
+    ([('本人の記録です。', 1), ('本人の記録です。', 1)], False),
+    ([('本人の記録です。', 1), ('補足です。', 1), ('本人の記録です。', 2), ('別欄です。', 2)], True),
+    ([('本人の記録です。', 1), ('補足です。', 1), ('本人の記録です。', 2), ('別欄です。', 2),
+      ('本人の記録です。補足です。', 1)], False),
+])
+def test_native_semantic_quote_first_binds_its_source_and_bounds_composition(evidence, expected):
+    _, alphabet, messages = graph_parser()
+    packet = json.loads(graph_document(['n1'], []))
+    packet['nodes'][0]['evidence'] = [dict(quote=q, field=f) for q, f in evidence]
+    text = json.dumps(packet, ensure_ascii=False, separators=(',', ':'))
+    before = deepcopy(messages)
+    parser = probe.semantic_json_parser(messages, alphabet + text)
+    assert unique_evidence_accept(parser, text) == expected
+    assert messages == before
 
 
 def test_upstream_constraint_exception_log_cannot_reveal_source_or_generated_prefix():

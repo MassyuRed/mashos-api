@@ -261,8 +261,8 @@ def semantic_output_schema(messages):
         spans = list(dict.fromkeys(span for span in spans if span and original.count(span) == 1
             and not re.search(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', span)))
         if spans:
-            pairs.append(dict(type='object', properties=dict(field=dict(type='integer', enum=[number]),
-                quote=dict(type='string', enum=spans)), required=['field', 'quote'], additionalProperties=False))
+            pairs.append(dict(type='object', properties=dict(quote=dict(type='string', enum=spans),
+                field=dict(type='integer', enum=[number])), required=['quote', 'field'], additionalProperties=False))
     if not pairs:
         raise ValueError('semantic_quotes_unavailable')
     def text(maximum):
@@ -275,7 +275,7 @@ def semantic_output_schema(messages):
         title=text(80), summary=text(400), explanation=text(3000),
         perspective=dict(type='string', enum=['SELF', 'OBSERVED_INTERACTION']),
         unknowns=dict(type='array', items=text(500), maxItems=4),
-        evidence=dict(type='array', items=dict(oneOf=pairs), minItems=1, maxItems=24)))
+        evidence=dict(type='array', items=dict(oneOf=pairs), minItems=1, maxItems=4)))
     edge = obj({'from': dict(type='string', enum=node_ids), 'to': dict(type='string', enum=node_ids),
         'relation_kind': dict(type='string', enum=['SELF_OUTSIDE_GAP', 'CRITERION_EXPRESSION', 'CONTEXT_CONTRAST', 'SHARED_MEANING']),
         'label': text(80), 'explanation': text(1800)})
@@ -482,12 +482,14 @@ def _semantic_unique_json_schema_parser(schema, config):
             super().__init__(*args, **kwargs)
             self.generated_node_ids = ()
             self.selected_node_id = self.selected_from = None
+            self.selected_quote = None
 
         def clone(self):
             result = super().clone()
             result.generated_node_ids = self.generated_node_ids
             result.selected_node_id = self.selected_node_id
             result.selected_from = self.selected_from
+            result.selected_quote = self.selected_quote
             return result
 
         def add_character(self, char):
@@ -501,13 +503,16 @@ def _semantic_unique_json_schema_parser(schema, config):
                     result.selected_node_id = active.last_parsed_string
                 if edge_type(result.schema_object) and prior_key == 'from':
                     result.selected_from = active.last_parsed_string
+                if evidence_pair(result.schema_object) and prior_key == 'quote':
+                    result.selected_quote = active.last_parsed_string
             if char == ':' and result.current_stage == module.ObjectParsingStage.PARSING_VALUE:
                 key = result.current_key
                 value = None
                 if node_type(result.schema_object) and key == 'node_id':
                     _, graph = graph_state(active)
                     value = deepcopy(result.schema_object.properties[key])
-                    value.enum = [item for item in value.enum if item not in graph.generated_node_ids]
+                    next_id = 'n' + str(len(graph.generated_node_ids) + 1)
+                    value.enum = [next_id] if next_id in value.enum else []
                     if not value.enum:
                         raise ValueError('semantic_node_ids_exhausted')
                 elif graph_type(result.schema_object) and key == 'edges':
@@ -535,7 +540,9 @@ def _semantic_unique_json_schema_parser(schema, config):
                 graph.generated_node_ids += (result.selected_node_id,)
                 active.object_stack[index] = graph
             if char == '}' and result.can_end() and evidence_pair(result.schema_object):
-                pair = (result.schema_object.properties['field'].enum[0], active.last_parsed_string)
+                if result.selected_quote is None:
+                    raise ValueError('semantic_evidence_quote_unbound')
+                pair = (result.schema_object.properties['field'].enum[0], result.selected_quote)
                 for index in range(len(active.object_stack) - 1, -1, -1):
                     parent = active.object_stack[index]
                     if isinstance(parent, UniqueEvidenceList) and parent.is_evidence:
@@ -561,8 +568,8 @@ def semantic_json_parser(messages, alphabet):
     if schema['properties']['schema_version'].get('enum') == [IF_CANDIDATE_SCHEMA]:
         config.force_json_field_order = True
         return _if_json_schema_parser(schema, config)
-    # Select the node's meaning before its supporting quotes. Field then quote
-    # order also gives the evidence parser an unambiguous completed pair.
+    # Select meaning, then its literal support, then the support's field ID.
+    # Record ordinals cannot force a quote from an unrelated original field.
     config.force_json_field_order = True
     return _semantic_unique_json_schema_parser(schema, config)
 

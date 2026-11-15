@@ -2417,8 +2417,9 @@ _SEMANTIC_MAP_INSTRUCTION = '''本人の記録から、自己理解につなが�
 全体を一主題へ押し込めず、複数の受け取りや独立した話題を保持します。似た言葉だけで関係線を作りません。同じ行動でも何を大切にして何に関わったかを見比べ、本人の希望と外へ出した内容の距離や、その場面で価値を認めたものを説明します。本人の基準が出来事の原因だと決めません。各項目に書けない新事実をoverviewにも入れません。
 図に短いtitle／summary、詳細にexplanationを返します。内部分類名やfield番号、辞書の抽象語を表示文へ並べず、復唱だけで終えません。unknownsは読みを確定するのに本当に必要な未確認だけ、なければ[]です。unknownsにも、原文で起きたと確認できない出来事や他者の非行動を前提として追加しません。
 厳密な形式:
-{"schema_version":"cocolon.analysis.semantic_map.model.v2","overview":{"title":"全体の短い題名","summary":"記録全体の読み"},"nodes":[{"node_id":"n1","node_kind":"SELF_POSITION","title":"短い見出し","summary":"その項目の読み","explanation":"本人の記述とそこからの読みをつなぐ説明","perspective":"SELF","unknowns":[],"evidence":[{"field":1,"quote":"そのfieldに完全一致する連続引用"}]}],"edges":[]}
+{"schema_version":"cocolon.analysis.semantic_map.model.v2","overview":{"title":"全体の短い題名","summary":"記録全体の読み"},"nodes":[{"node_id":"n1","node_kind":"SELF_POSITION","title":"短い見出し","summary":"その項目の読み","explanation":"本人の記述とそこからの読みをつなぐ説明","perspective":"SELF","unknowns":[],"evidence":[{"quote":"そのfieldに完全一致する連続引用","field":1}]}],"edges":[]}
 node_kindはSELF_POSITION/TARGET_MEANING/CHOICE_OUTPUT/STATE_CONTEXT、perspectiveはSELF/OBSERVED_INTERACTIONだけ。nodesは1〜24、node_idはn1,n2,...の連番です。各nodeにevidenceを1つ以上付け、助詞や時点を含め引用を一文字も変更しません。
+recordsのrecordは記録の番号、fieldsのfieldは各原文欄の番号で、別の番号です。根拠にする原文を先に選び、その原文が入っているfieldsのfieldをevidence.fieldへ使います。項目のnode_idや記録番号を原文欄の番号に置き換えません。各項目の主張と比較を支える短い連続引用を選び、同じ内容の一文とそれを含む長い段落を重ねて列挙しません。引用の件数を埋めるために、その項目を支えない別の話題を追加しません。
 edgesは両端のnodeの内容・根拠が結べる関係だけで、なければ[]です。形式は{"from":"n1","to":"n2","relation_kind":"CONTEXT_CONTRAST","label":"関係の短い名前","explanation":"両項目を見比べる意味とその根拠"}。relation_kindはSELF_OUTSIDE_GAP/CRITERION_EXPRESSION/CONTEXT_CONTRAST/SHARED_MEANINGだけ。from/toには実在するnode_id文字列を使い、入力のfield整数を入れません。線の説明へ新しい事実や原因を追加しません。
 Markdown・前置き・後書きなし。最初の文字は{、最後の文字は}です。'''
 

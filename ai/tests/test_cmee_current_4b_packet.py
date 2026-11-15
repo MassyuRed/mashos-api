@@ -506,13 +506,15 @@ def test_if_dispatch_leaves_legacy_map_schema_exact_bytes_and_unmarked_fields_un
     messages = [dict(role='system', content='synthetic'), dict(role='user', content=json.dumps(
         dict(fields=[dict(field=1, text='部屋を整えた。')]), ensure_ascii=False))]
     schema = semantic_output_schema(messages)
-    assert len(tool.canonical(schema).encode()) == 2276
-    assert tool.sha(tool.canonical(schema)) == '0234036789f0cf9c879e03c68a153cd5ea0cea338a8d040927651ceff1198075'
+    assert len(tool.canonical(schema).encode()) == 2275
+    assert tool.sha(tool.canonical(schema)) == '9a13e789168204bcd59cd101d972e3cde5d510324961d966054f5a5fe67de829'
+    unmarked_parser = semantic_json_parser(messages, 'abc')
     material = json.loads(messages[1]['content'])
     material['model_schema'] = 'different.owner.v1'
     messages[1]['content'] = json.dumps(material, ensure_ascii=False)
     assert semantic_output_schema(messages) == schema
-    assert semantic_json_parser(messages, 'abc').config.force_json_field_order is False
+    assert (semantic_json_parser(messages, 'abc').config.force_json_field_order
+        == unmarked_parser.config.force_json_field_order)
 
 
 def test_standard_if_keeps_all_anchors_and_known_conditions_in_decoding(packet):
