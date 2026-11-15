@@ -13,6 +13,83 @@ def schema_for(fields):
         {'role': 'user', 'content': json.dumps({'fields': fields}, ensure_ascii=False)}])
 
 
+UNIQUE_EVIDENCE_CASES = [
+    ([[(1, '同じ。')]], True),
+    ([[(1, '同じ。'), (1, '同じ。')]], False),
+    ([[(1, '同じ。'), (2, '同じ。')]], True),
+    ([[(1, '同じ。'), (1, '別の根拠。')]], True),
+    ([[(1, '同じ。'), (2, 'さらに。'), (1, '同じ。')]], False),
+    ([[(1, '同じ。')], [(1, '同じ。')]], True),
+    ([[(1, '同じ。'), (1, '別の根拠。'), (2, '同じ。'), (2, 'さらに。')]], True),
+    ([[(1, '同じ。'), (1, '別の根拠。'), (2, '同じ。'), (2, 'さらに。'), (2, 'さらに。')]], False),
+    ([[(1, '同じ。'), (1, '別の根拠。'), (2, '同じ。'), (2, 'さらに。')], [(2, '同じ。'), (1, '同じ。')]], True),
+]
+
+
+def unique_evidence_document(rows):
+    return json.dumps(dict(nodes=[dict(title='題', evidence=[dict(field=f, quote=q)
+        for f, q in row]) for row in rows]), ensure_ascii=False, separators=(',', ':'))
+
+
+def unique_evidence_parser():
+    package = pytest.importorskip('lmformatenforcer')
+    def pair(field, quotes):
+        return dict(type='object', properties=dict(field=dict(type='integer', enum=[field]),
+            quote=dict(type='string', enum=quotes)), required=['field', 'quote'], additionalProperties=False)
+    evidence = dict(type='array', items=dict(oneOf=[pair(1, ['同じ。', '別の根拠。']),
+        pair(2, ['同じ。', 'さらに。'])]), minItems=1, maxItems=24)
+    node = dict(type='object', properties=dict(title=dict(type='string', minLength=1, maxLength=20),
+        evidence=evidence), required=['title', 'evidence'], additionalProperties=False)
+    schema = dict(type='object', properties=dict(nodes=dict(type='array', items=node,
+        minItems=1, maxItems=24)), required=['nodes'], additionalProperties=False)
+    alphabet = ''.join(dict.fromkeys(''.join(unique_evidence_document(rows)
+        for rows, _ in UNIQUE_EVIDENCE_CASES) + 'P '))
+    parser = probe._semantic_unique_json_schema_parser(schema,
+        package.CharacterLevelParserConfig(alphabet=alphabet, force_json_field_order=True))
+    return parser, alphabet
+
+
+def unique_evidence_accept(parser, text):
+    for char in text:
+        if char not in parser.get_allowed_characters():
+            return False
+        parser = parser.add_character(char)
+    return parser.can_end()
+
+
+@pytest.mark.parametrize('rows,expected', UNIQUE_EVIDENCE_CASES)
+def test_native_semantic_evidence_pairs_are_unique_per_node(rows, expected):
+    parser, alphabet = unique_evidence_parser()
+    assert unique_evidence_accept(parser, unique_evidence_document(rows)) == expected
+    from lmformatenforcer.tokenenforcer import TokenEnforcer, TokenEnforcerTokenizerData
+    vocabulary = list(alphabet)
+    ids = {char: index for index, char in enumerate(vocabulary)}
+    eos = len(vocabulary)
+    data = TokenEnforcerTokenizerData([(i, char, False) for i, char in enumerate(vocabulary)],
+        lambda tokens: ''.join(vocabulary[i] for i in tokens if i < eos), eos, False, eos + 1)
+    enforcer = TokenEnforcer(data, unique_evidence_parser()[0])
+    sent, accepted = [ids['P']], True
+    for char in unique_evidence_document(rows):
+        if ids[char] not in enforcer.get_allowed_tokens(sent).allowed_tokens:
+            accepted = False
+            break
+        sent.append(ids[char])
+    if accepted:
+        accepted = eos in enforcer.get_allowed_tokens(sent).allowed_tokens
+    assert accepted == expected
+
+
+def test_native_semantic_evidence_branches_and_other_parsers_are_isolated():
+    from lmformatenforcer import jsonschemaparser as upstream
+    before = upstream.ListParsingState, upstream.ObjectParsingState, upstream.get_parser
+    parser, _ = unique_evidence_parser()
+    for char in '{"nodes":[{"title":"題","evidence":[':
+        parser = parser.add_character(char)
+    assert unique_evidence_accept(parser, '{"field":1,"quote":"同じ。"}]}]}')
+    assert unique_evidence_accept(parser, '{"field":1,"quote":"別の根拠。"}]}]}')
+    assert before == (upstream.ListParsingState, upstream.ObjectParsingState, upstream.get_parser)
+
+
 def test_upstream_constraint_exception_log_cannot_reveal_source_or_generated_prefix():
     record = logging.LogRecord('root', logging.ERROR, '/vendor/lmformatenforcer/tokenenforcer.py',
         130, 'Prefix: %s', ('SYNTHETIC_PRIVATE_SOURCE',),
@@ -74,7 +151,7 @@ def test_runtime_parser_initializes_unicode_before_context_and_does_not_end_on_f
     from lmformatenforcer.tokenenforcer import TokenEnforcer, TokenEnforcerTokenizerData
     messages = [{'role': 'system', 'content': 'synthetic'}, {'role': 'user',
         'content': json.dumps({'fields': [{'field': 1, 'text': '部屋を整えた。'}]}, ensure_ascii=False)}]
-    beginning = '{"schema_version":"cocolon.analysis.semantic_map.model.v2","overview":{"summary":"部屋'
+    beginning = '{"schema_version":"cocolon.analysis.semantic_map.model.v2","overview":{"title":"部屋'
     alphabet = ''.join(dict.fromkeys(beginning + 'を整えた。P'))
     data = TokenEnforcerTokenizerData([(index, char, False) for index, char in enumerate(alphabet)],
         lambda tokens: ''.join(alphabet[index] for index in tokens), len(alphabet), False, len(alphabet) + 1)

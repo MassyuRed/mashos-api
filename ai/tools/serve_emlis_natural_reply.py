@@ -384,6 +384,90 @@ def _if_json_schema_parser(schema, config):
     return module.JsonSchemaParser(schema, config=config)
 
 
+def _semantic_unique_json_schema_parser(schema, config):
+    """Exclude only already selected source/quote pairs within each node.
+
+    The pinned parser does not enforce JSON Schema uniqueItems. Use an isolated
+    namespace, as for IF, so evidence selection stays immutable across decoder
+    branches and cannot change ordinary Piece/IF or the installed library.
+    """
+    import importlib.util
+    from copy import deepcopy
+    from lmformatenforcer import jsonschemaparser as upstream
+    spec = importlib.util.spec_from_file_location(
+        'lmformatenforcer._cocolon_semantic_unique_jsonschema', upstream.__file__)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    def evidence_pair(value):
+        props = value.properties or {}
+        return (value.type == 'object' and set(props) == {'field', 'quote'}
+            and props['field'].type == 'integer' and len(props['field'].enum or []) == 1
+            and props['quote'].type == 'string' and bool(props['quote'].enum))
+
+    class UniqueEvidenceList(module.ListParsingState):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            parts = self.list_member_type.oneOf
+            self.is_evidence = bool(parts) and all(evidence_pair(p) for p in parts)
+            self.used_pairs = frozenset()
+
+        def _clone(self):
+            result = super()._clone()
+            result.used_pairs = self.used_pairs
+            return result
+
+        def remaining_type(self):
+            remaining = []
+            for part in self.list_member_type.oneOf:
+                field = part.properties['field'].enum[0]
+                quotes = [q for q in part.properties['quote'].enum if (field, q) not in self.used_pairs]
+                if quotes:
+                    part = deepcopy(part)
+                    part.properties['quote'].enum = quotes
+                    remaining.append(part)
+            result = deepcopy(self.list_member_type)
+            result.oneOf = remaining
+            return result if remaining else None
+
+        def get_allowed_control_characters(self):
+            chars = super().get_allowed_control_characters()
+            if self.is_evidence and not any((part.properties['field'].enum[0], q) not in self.used_pairs
+                    for part in self.list_member_type.oneOf for q in part.properties['quote'].enum):
+                chars = chars.replace(',', '')
+            return chars
+
+        def add_character(self, char):
+            result = super().add_character(char)
+            if self.is_evidence and char == ',' and not result.seen_list_closer:
+                remaining = result.remaining_type()
+                if remaining is None:
+                    raise ValueError('semantic_evidence_options_exhausted')
+                result.root.context.active_parser.object_stack[-1] = module.get_parser(result.root, remaining)
+            return result
+
+    class EvidenceObject(module.ObjectParsingState):
+        def add_character(self, char):
+            result = super().add_character(char)
+            if char == '}' and result.can_end() and evidence_pair(result.schema_object):
+                active = result.root.context.active_parser
+                pair = (result.schema_object.properties['field'].enum[0], active.last_parsed_string)
+                for index in range(len(active.object_stack) - 1, -1, -1):
+                    parent = active.object_stack[index]
+                    if isinstance(parent, UniqueEvidenceList) and parent.is_evidence:
+                        parent = parent._clone()
+                        parent.used_pairs = parent.used_pairs | {pair}
+                        active.object_stack[index] = parent
+                        break
+                else:
+                    raise ValueError('semantic_evidence_array_unbound')
+            return result
+
+    module.ListParsingState = UniqueEvidenceList
+    module.ObjectParsingState = EvidenceObject
+    return module.JsonSchemaParser(schema, config=config)
+
+
 def semantic_json_parser(messages, alphabet):
     from lmformatenforcer import CharacterLevelParserConfig, JsonSchemaParser
     # LMFE snapshots alphabet_without_quotes while constructing its context.
@@ -393,7 +477,10 @@ def semantic_json_parser(messages, alphabet):
     if schema['properties']['schema_version'].get('enum') == [IF_CANDIDATE_SCHEMA]:
         config.force_json_field_order = True
         return _if_json_schema_parser(schema, config)
-    return JsonSchemaParser(schema, config=config)
+    # Select the node's meaning before its supporting quotes. Field then quote
+    # order also gives the evidence parser an unambiguous completed pair.
+    config.force_json_field_order = True
+    return _semantic_unique_json_schema_parser(schema, config)
 
 
 def piece_output_schema(messages):
