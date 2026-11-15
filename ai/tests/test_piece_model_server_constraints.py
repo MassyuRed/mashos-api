@@ -232,6 +232,9 @@ def test_piece_adapter_revision_is_server_owned_and_never_added_to_other_profile
 def synthetic_generator(monkeypatch, *, constrained, input_count=1, with_piece_adapter=False,
                         raw_output=None):
     """Load the real serving closure with a CPU-only deterministic stand-in."""
+    # Exercise the observed integration reset independently of other suites'
+    # environment. Production still keeps its own Piece configuration.
+    monkeypatch.setenv('LMFE_STRICT_JSON_FIELD_ORDER', 'false')
     from lmformatenforcer.tokenenforcer import TokenEnforcer, TokenEnforcerTokenizerData
     raw = (raw_output if raw_output is not None else
         '{"field_blocks":{"answer_text_private_1":"別の文章。","memo_0":"私 の文章。"}}')

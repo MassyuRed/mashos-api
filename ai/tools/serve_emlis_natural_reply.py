@@ -408,6 +408,49 @@ def _semantic_unique_json_schema_parser(schema, config):
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
 
+    from copy import copy
+    from lmformatenforcer.characterlevelparser import StringParser, UnionParser
+    alphabet = frozenset(config.alphabet)
+
+    def enum_literal(value):
+        raw = json.dumps(value, ensure_ascii=False)
+        return ''.join(char if ord(char) < 128 or char in alphabet
+            else json.dumps(char, ensure_ascii=True)[1:-1] for char in raw)
+
+    class ExactJsonEnum(module.StringParsingState):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.exact = (UnionParser([StringParser(enum_literal(value))
+                for value in self.allowed_strings]) if self.allowed_strings
+                and self.require_opening_quote and self.require_closing_quote else None)
+            self.raw_prefix = ''
+
+        def _clone(self):
+            # Enum branches and string states are immutable across transitions.
+            return copy(self)
+
+        def add_character(self, char):
+            if self.exact is None:
+                return super().add_character(char)
+            if (not self.seen_opening_quote or self.seen_closing_quote) and char in module.WHITESPACE_CHARACTERS:
+                return self
+            result = self._clone()
+            result.exact = self.exact.add_character(char)
+            result.raw_prefix += char
+            result.seen_opening_quote = True
+            result.seen_closing_quote = result.exact.can_end()
+            result.parsed_string = json.loads(result.raw_prefix) if result.seen_closing_quote else result.raw_prefix[1:]
+            return result
+
+        def get_allowed_characters(self):
+            if self.exact is None:
+                return super().get_allowed_characters()
+            if self.seen_closing_quote:
+                return module.WHITESPACE_CHARACTERS
+            return self.exact.get_allowed_characters() + (module.WHITESPACE_CHARACTERS if not self.seen_opening_quote else '')
+
+    module.StringParsingState = ExactJsonEnum
+
     def evidence_pair(value):
         props = value.properties or {}
         return (value.type == 'object' and set(props) == {'field', 'quote'}

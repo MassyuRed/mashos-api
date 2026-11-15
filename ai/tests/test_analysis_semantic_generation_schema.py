@@ -191,6 +191,87 @@ def test_native_semantic_quote_first_binds_its_source_and_bounds_composition(evi
     assert messages == before
 
 
+RARE_CASES = [
+    ([[(17, '鞄を置く。')]], True),
+    ([[(18, '🪴を置いた。')]], True),
+    ([[(17, '鞄を置く。'), (17, '鞄を置く。')]], False),
+    ([[(17, '鞄を置く。'), (18, '鞄を置く。')]], True),
+    ([[(17, '鞄を置く。'), (17, '鞄を移す。')]], True),
+    ([[(17, '鞄を置く。')], [(17, '鞄を置く。')]], True),
+    ([[(17, '🪴を置いた。')]], False),
+    ([[(17, '鞄を消した。')]], False),
+]
+
+
+def rare_packet(rows):
+    value = json.loads(graph_document(['n' + str(i) for i in range(1, len(rows) + 1)], []))
+    for node, roots in zip(value['nodes'], rows):
+        node['evidence'] = [dict(quote=q, field=f) for f, q in roots]
+    return value
+
+
+def rare_encoded(value):
+    return json.dumps(value, ensure_ascii=False, separators=(',', ':')).replace(
+        '鞄', r'\u9784').replace('🪴', r'\ud83e\udeb4')
+
+
+def rare_fixture():
+    import string
+    pytest.importorskip('lmformatenforcer')
+    messages = [dict(role='system', content='synthetic'), dict(role='user', content=json.dumps(
+        dict(fields=[dict(field=17, text='鞄を置く。鞄を移す。'),
+            dict(field=18, text='鞄を置く。🪴を置いた。')]), ensure_ascii=False))]
+    alphabet = ''.join(dict.fromkeys(''.join(rare_encoded(rare_packet(rows))
+        for rows, _ in RARE_CASES) + string.printable + 'P '))
+    assert '鞄' not in alphabet and '🪴' not in alphabet
+    return messages, alphabet
+
+
+@pytest.mark.parametrize('rows,expected', RARE_CASES)
+def test_native_rare_unicode_quotes_keep_original_pairs_through_json_escapes(rows, expected):
+    from lmformatenforcer.tokenenforcer import TokenEnforcer, TokenEnforcerTokenizerData
+    messages, alphabet = rare_fixture()
+    before = deepcopy(messages), deepcopy(probe.semantic_output_schema(messages))
+    text = rare_encoded(rare_packet(rows))
+    parser = probe.semantic_json_parser(messages, alphabet)
+    assert unique_evidence_accept(parser, text) == expected
+    if expected:
+        assert json.loads(text) == rare_packet(rows)
+    vocabulary = list(alphabet) + [r'\u9784', r'\ud83e', r'\udeb4', r'\ud83e\udeb4']
+    ids = {value: i for i, value in enumerate(vocabulary)}
+    eos = len(vocabulary)
+    data = TokenEnforcerTokenizerData([(i, value, False) for i, value in enumerate(vocabulary)],
+        lambda tokens: ''.join(vocabulary[i] for i in tokens if i < eos), eos, False, eos + 1)
+    parser = probe.semantic_json_parser(messages, alphabet)
+    enforcer = TokenEnforcer(data, parser)
+    parser.config.force_json_field_order = True
+    sent, accepted = [ids['P']], True
+    for char in text:
+        if ids[char] not in enforcer.get_allowed_tokens(sent).allowed_tokens:
+            accepted = False
+            break
+        sent.append(ids[char])
+    if accepted:
+        accepted = eos in enforcer.get_allowed_tokens(sent).allowed_tokens
+    assert accepted == expected
+    assert before == (messages, probe.semantic_output_schema(messages))
+
+
+def test_native_rare_unicode_field_branches_and_installed_parser_remain_isolated():
+    from lmformatenforcer import jsonschemaparser as upstream
+    before = upstream.StringParsingState, upstream.ListParsingState, upstream.ObjectParsingState
+    messages, alphabet = rare_fixture()
+    prefix = rare_encoded(rare_packet([[(17, '鞄を置く。')]])).split('"evidence":[')[0] + '"evidence":['
+    parser = probe.semantic_json_parser(messages, alphabet)
+    for char in prefix:
+        assert char in parser.get_allowed_characters()
+        parser = parser.add_character(char)
+    assert unique_evidence_accept(parser, r'{"quote":"\u9784を置く。","field":17}]}],"edges":[]}')
+    assert unique_evidence_accept(parser, r'{"quote":"\u9784を置く。","field":18}]}],"edges":[]}')
+    assert not unique_evidence_accept(parser, r'{"quote":"\u9784を移す。","field":18}]}],"edges":[]}')
+    assert before == (upstream.StringParsingState, upstream.ListParsingState, upstream.ObjectParsingState)
+
+
 def test_upstream_constraint_exception_log_cannot_reveal_source_or_generated_prefix():
     record = logging.LogRecord('root', logging.ERROR, '/vendor/lmformatenforcer/tokenenforcer.py',
         130, 'Prefix: %s', ('SYNTHETIC_PRIVATE_SOURCE',),
