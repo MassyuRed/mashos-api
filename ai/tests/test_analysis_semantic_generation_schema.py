@@ -1,6 +1,7 @@
 """Source-copy decoding constraints; no model or semantic-quality acceptance."""
 from copy import deepcopy
 import ast
+import hashlib
 import inspect
 import json
 import logging
@@ -152,7 +153,8 @@ def test_native_history_detail_budget_stops_repetition_without_changing_source(s
     assert not unique_evidence_accept(probe.semantic_json_parser(messages, alphabet), document(limit + 1))
     ordinary = deepcopy(messages)
     ordinary[1]['content'] = json.dumps(dict(fields=material['fields']), ensure_ascii=False)
-    assert unique_evidence_accept(probe.semantic_json_parser(ordinary, alphabet), document(421, source_first=False))
+    assert unique_evidence_accept(probe.semantic_json_parser(ordinary, alphabet), document(420, source_first=False))
+    assert not unique_evidence_accept(probe.semantic_json_parser(ordinary, alphabet), document(421, source_first=False))
     assert messages == before and json.loads(messages[1]['content'])['fields'][0]['text'] == original
 
 
@@ -972,11 +974,11 @@ def test_compact_leaf_preserves_existing_partial_coverage_above_twenty_four_reco
 
 
 @pytest.mark.parametrize('stage,title,summary,explanation,unknown,overview,roots,edges', [
-    (None, 80, 400, 3000, 500, 2000, 4, 48),
+    (None, 60, 160, 420, 240, 480, 4, 1),
     ('MERGE', 60, 160, 420, 240, 480, 4, 48),
     ('LEAF', 36, 100, 240, 160, 160, 2, 0),
 ])
-def test_leaf_budgets_leave_ordinary_and_final_merge_limits_unchanged(
+def test_generation_budgets_keep_history_and_bound_complete_ordinary_maps(
         stage, title, summary, explanation, unknown, overview, roots, edges):
     fields = [dict(field=17, record=37, text='長' * 180 + '。短い根拠。')]
     material = dict(fields=fields)
@@ -992,9 +994,71 @@ def test_leaf_budgets_leave_ordinary_and_final_merge_limits_unchanged(
     assert schema['properties']['overview']['properties']['summary']['maxLength'] == overview
     assert node['evidence']['maxItems'] == roots and schema['properties']['edges']['maxItems'] == edges
     quotes = evidence_schema(schema)['oneOf'][0]['properties']['quote']['enum']
-    if stage == 'LEAF':
+    if stage != 'MERGE':
         assert quotes == ['短い根拠。']
+        assert schema['properties']['nodes']['maxItems'] == 2
     else:
         assert fields[0]['text'] in quotes and '長' * 180 + '。' in quotes
         assert schema['properties']['nodes']['maxItems'] == 24
     assert messages == before
+
+
+@pytest.mark.parametrize('stage,expected_sha256', [
+    ('LEAF', '05849d591f871e08795e351802ded921c32b1911b3c63d56bdc6d283afe4c6cc'),
+    ('MERGE', 'f1125f1997f2403f2bc40929528951a062379ff95b46bff52c21b93f05851ebb'),
+])
+def test_ordinary_budget_change_preserves_exact_history_schema(stage, expected_sha256):
+    # Bind the existing grammar across long input, short source and a whole
+    # correction; the ordinary change must not invalidate retained raw stages.
+    fields = [dict(field=1, record=9, text='長' * 180 + '。短い根拠。'),
+        dict(field=2, record=37, text='別の原文。'),
+        dict(field=3, record=None, record_refs=[9, 37],
+            source_role='USER_ANALYSIS_MAP_CORRECTION',
+            text='その意味ではありません。' + '本人説明' * 60 + '。')]
+    messages = [dict(role='system', content='synthetic'), dict(role='user',
+        content=json.dumps(dict(fields=fields, history_stage=dict(kind=stage)), ensure_ascii=False))]
+    schema = probe.semantic_output_schema(messages)
+    raw = json.dumps(schema, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode()
+    assert hashlib.sha256(raw).hexdigest() == expected_sha256
+
+
+@pytest.mark.parametrize('fields,nodes,edges', [
+    ([dict(field=i, record=(9 if i < 3 else 37), text=f'原文{i}。') for i in range(1, 5)], 2, 1),
+    ([dict(field=1, record=37, text='本人の原記録。')] + [
+        dict(field=i + 2, record=None, record_refs=[37], source_role='USER_ANALYSIS_MAP_CORRECTION',
+            text=f'訂正{i}。' + '長い本人説明' * 30 + '。') for i in range(8)], 5, 10),
+    ([dict(field=i + 1, record=None, record_refs=[9, 37],
+        source_role='USER_ANALYSIS_MAP_CORRECTION', text=f'本人訂正{i}。') for i in range(8)], 4, 6),
+    ([dict(field=1, text='記録番号のない原文。')], 24, 48),
+])
+def test_ordinary_slots_count_records_once_and_reserve_whole_corrections(fields, nodes, edges):
+    before = deepcopy(fields)
+    schema = schema_for(fields)
+    assert schema['properties']['nodes']['maxItems'] == nodes
+    assert schema['properties']['edges']['maxItems'] == edges
+    by_field = {part['properties']['field']['enum'][0]: part['properties']['quote']['enum']
+        for part in evidence_schema(schema)['oneOf']}
+    for field in fields:
+        if field.get('source_role') == 'USER_ANALYSIS_MAP_CORRECTION':
+            assert by_field[field['field']] == [field['text']]
+            assert allowed(evidence_schema(schema), dict(field=field['field'], quote=field['text']))
+            assert not allowed(evidence_schema(schema), dict(field=field['field'], quote=field['text'][:5]))
+    assert fields == before
+
+
+@pytest.mark.parametrize('ids,relations,expected', [
+    (['n1', 'n2'], [('n1', 'n2', 'CONTEXT_CONTRAST')], True),
+    (['n1', 'n2', 'n3'], [('n1', 'n2', 'CONTEXT_CONTRAST')], False),
+    (['n1', 'n2'], [('n1', 'n2', 'CONTEXT_CONTRAST'), ('n2', 'n1', 'SHARED_MEANING')], False),
+])
+def test_ordinary_record_budget_is_enforced_during_native_decode(ids, relations, expected):
+    fields = [dict(field=1, record=9, text='本人の記録です。補足です。'),
+        dict(field=2, record=37, text='本人の記録です。別欄です。')]
+    messages = [dict(role='system', content='synthetic'), dict(role='user',
+        content=json.dumps(dict(fields=fields), ensure_ascii=False))]
+    packet = json.loads(graph_document(ids, []))
+    packet['nodes'][1]['evidence'][0]['field'] = 2
+    packet['edges'] = [dict(zip(('from', 'to', 'relation_kind', 'label', 'explanation'),
+        (start, end, kind, '比較', '説明'))) for start, end, kind in relations]
+    text = json.dumps(packet, ensure_ascii=False, separators=(',', ':'))
+    assert_compact_leaf_native(messages, text, expected)
