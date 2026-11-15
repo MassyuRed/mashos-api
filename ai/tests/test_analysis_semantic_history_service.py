@@ -369,6 +369,50 @@ def test_history_one_pipeline_deadline_prevents_per_call_budget_reset(history_db
     assert_no_new_artifacts(db)
 
 
+def test_history_call_count_allows_the_sequential_stages_to_outlast_one_call(history_db, monkeypatch):
+    db, _, calls = history_db
+    insert_history(db)
+    force_synthetic_partition(monkeypatch)
+    monkeypatch.setattr(model_sources, 'SEMANTIC_REQUEST_TIMEOUT_SECONDS', 0.5)
+    monkeypatch.setattr(model_sources, 'SEMANTIC_PIPELINE_TIMEOUT_SECONDS', 2.0)
+    received = []
+
+    async def handler(request):
+        material = stage_material(request)
+        received.append(material)
+        await asyncio.sleep(0.16)
+        return provider_response(map_packet(material['fields']))
+
+    payload = run(cumulative.ensure_map(OWNER, model_source=provider(handler)))
+    assert len(received) == 4 and payload['refreshed']
+    assert len(generation_commits(calls)) == 1
+    assert_no_new_artifacts(db, 1)
+
+
+@pytest.mark.parametrize('limit', ['pipeline_cap', 'single_call_after_planning'])
+def test_history_batch_preparation_is_inside_the_absolute_deadline(history_db, monkeypatch, limit):
+    import time
+    db, _, calls = history_db
+    insert_history(db)
+    planner = cumulative.prepare_semantic_history_batches
+    force_synthetic_partition(monkeypatch)
+
+    def delayed(parent):
+        time.sleep(0.08)
+        return planner(parent) if limit == 'pipeline_cap' else ()
+
+    monkeypatch.setattr(cumulative, 'prepare_semantic_history_batches', delayed)
+    monkeypatch.setattr(model_sources, 'SEMANTIC_REQUEST_TIMEOUT_SECONDS', 0.02)
+    monkeypatch.setattr(model_sources, 'SEMANTIC_PIPELINE_TIMEOUT_SECONDS',
+        0.02 if limit == 'pipeline_cap' else 0.4)
+    received = []
+    with pytest.raises(HTTPException) as error:
+        run(cumulative.ensure_map(OWNER, model_source=successful_history_source(received)))
+    assert error.value.status_code == 504
+    assert received == [] and generation_commits(calls) == []
+    assert_no_new_artifacts(db)
+
+
 def test_overlapping_history_requests_share_one_pipeline_and_one_sql_save(history_db, monkeypatch):
     db, _, calls = history_db
     insert_history(db)

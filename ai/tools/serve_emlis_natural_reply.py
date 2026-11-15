@@ -202,6 +202,34 @@ def _if_output_schema(material):
         clarification=dict(anyOf=[dict(type='null'), clarification])))
 
 
+def _semantic_sentence_quotes(original):
+    """Additional unique sentences; never rewrite or replace the full source.
+
+    Keep paired Japanese quotations intact. Ambiguous quotation boundaries or
+    JSON enum escape characters yield no new sentence spanning that boundary.
+    ASCII periods are deliberately not sentence boundaries (URLs/decimals).
+    """
+    pairs = {'「': '」', '『': '』'}
+    stack, candidates, start = [], [], 0
+    terminal = '。！？!?'
+    for index, char in enumerate(original):
+        if char in pairs:
+            stack.append(pairs[char])
+        elif char in pairs.values():
+            if not stack or stack.pop() != char:
+                return []
+        elif not stack and (char in terminal or char in '\r\n'):
+            if char in terminal and index + 1 < len(original) and original[index + 1] in terminal:
+                continue
+            candidates.append(original[start:index + 1].strip())
+            start = index + 1
+    if stack:
+        return []
+    candidates.append(original[start:].strip())
+    return [span for span in candidates if span and len(span) <= 4000
+        and original.count(span) == 1 and not re.search(r'["\\\x00-\x1f]', span)]
+
+
 def semantic_output_schema(messages):
     """Constrain protocol and source quotes; meanings remain model-generated."""
     if (type(messages) is not list or len(messages) != 2
@@ -226,6 +254,10 @@ def semantic_output_schema(messages):
         fragments = re.findall(r'[^"\\\x00-\x1f]+', original)
         spans = [fragment[start:start + 4000].strip() for fragment in fragments
             for start in range(0, len(fragment), 2000)]
+        # A map correction requires its complete explanation at admission.
+        # Other fields can quote a unique sentence inside a long paragraph.
+        if field.get('source_role') != 'USER_ANALYSIS_MAP_CORRECTION':
+            spans.extend(_semantic_sentence_quotes(original))
         spans = list(dict.fromkeys(span for span in spans if span and original.count(span) == 1
             and not re.search(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', span)))
         if spans:

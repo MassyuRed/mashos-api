@@ -85,6 +85,26 @@ def setup_store(monkeypatch, store):
         (_ for _ in ()).throw(AssertionError('finite fallback')))
 
 
+def test_semantic_transport_can_receive_the_bridge_response_before_its_watchdog():
+    import ast
+    bridge = ast.parse((Path(__file__).parents[1] / 'tools/analysis_jupyter_bridge.py').read_text())
+    handler_class = next(node for node in bridge.body
+        if isinstance(node, ast.ClassDef) and node.name == 'AnalysisBridge')
+    bridge_seconds = next(ast.literal_eval(node.value) for node in handler_class.body
+        if isinstance(node, ast.Assign) and any(isinstance(target, ast.Name)
+            and target.id == 'request_seconds' for target in node.targets))
+    prepared = semantic.prepare_semantic_map(OWNER, sample())
+
+    def handler(request):
+        timeout = request.extensions['timeout']
+        assert timeout['connect'] == 15.0
+        assert bridge_seconds < timeout['read'] < sources.SEMANTIC_REQUEST_TIMEOUT_SECONDS
+        return httpx.Response(200, json=completion())
+
+    result = asyncio.run(semantic_source(handler)(prepared))
+    assert result.finish_reason == 'stop'
+
+
 def test_semantic_http_save_non_generating_reread_and_compatibility(monkeypatch):
     store = OwnedStore()
     setup_store(monkeypatch, store)

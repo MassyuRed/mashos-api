@@ -150,6 +150,64 @@ def test_evidence_field_and_literal_are_one_pair_and_cannot_cross():
     assert not allowed(schema, {'field': 1, 'quote': '自分で選びたくない。'})
 
 
+def test_paragraph_can_quote_a_unique_sentence_without_replacing_its_context():
+    original = '私は参加した。というわけではありません。費用が整えば、進めたい。'
+    fields = [{'field': 1, 'text': original}, {'field': 2, 'text': '別の内容を記録した。'}]
+    before = deepcopy(fields)
+    schema = evidence_schema(schema_for(fields))
+    assert fields == before
+    assert allowed(schema, {'field': 1, 'quote': original})
+    assert allowed(schema, {'field': 1, 'quote': 'というわけではありません。'})
+    assert allowed(schema, {'field': 1, 'quote': '費用が整えば、進めたい。'})
+    assert not allowed(schema, {'field': 2, 'quote': '費用が整えば、進めたい。'})
+    assert not allowed(schema, {'field': 1, 'quote': '費用が整ったので、進めた。'})
+    # A quote option is not a declaration of semantic independence. The full
+    # denial/condition stays in the source for the unchanged CMEE checks.
+
+
+@pytest.mark.parametrize('original', [
+    '「行った。『良かった！』」とは言わなかった。実際は不参加だった。',
+    '同じ文です。同じ文です。別の内容です。',
+    'URLはhttps://example.test/a.b。値は1.25です。',
+])
+def test_additional_sentence_quotes_preserve_nesting_uniqueness_and_ascii_periods(original):
+    schema = evidence_schema(schema_for([{'field': 1, 'text': original}]))
+    quotes = schema['oneOf'][0]['properties']['quote']['enum']
+    assert all(original.count(quote) == 1 for quote in quotes)
+    if original.startswith('「'):
+        assert '「行った。『良かった！』」とは言わなかった。' in quotes
+        assert '行った。' not in quotes and '良かった！' not in quotes
+    elif original.startswith('同じ'):
+        assert '同じ文です。' not in quotes and '別の内容です。' in quotes
+    else:
+        assert 'URLはhttps://example.test/a.b。' in quotes
+        assert '値は1.25です。' in quotes
+    assert all(allowed(schema, {'field': 1, 'quote': quote}) for quote in quotes)
+
+
+@pytest.mark.parametrize('original', ['先の文です。「閉じない。次の文です。',
+    '先の文です。『組が違う」。次の文です。'])
+def test_unbalanced_quotes_only_keep_the_legacy_full_candidate(original):
+    schema = evidence_schema(schema_for([{'field': 1, 'text': original}]))
+    assert schema['oneOf'][0]['properties']['quote']['enum'] == [original]
+
+
+def test_map_correction_still_requires_its_complete_explanation():
+    original = 'その意味ではありません。今回の条件を伝えたいです。'
+    schema = evidence_schema(schema_for([{'field': 7, 'text': original,
+        'source_role': 'USER_ANALYSIS_MAP_CORRECTION'}]))
+    assert allowed(schema, {'field': 7, 'quote': original})
+    assert not allowed(schema, {'field': 7, 'quote': 'その意味ではありません。'})
+
+
+def test_new_sentences_do_not_join_across_escaped_source_fragments():
+    original = 'まず"引用した。続き"です。C:\\tmpです。別の文です。'
+    quotes = evidence_schema(schema_for([{'field': 1, 'text': original}]))['oneOf'][0]['properties']['quote']['enum']
+    assert '別の文です。' in quotes
+    assert 'まず引用した。' not in quotes and 'C:tmpです。' not in quotes
+    assert all(original.count(quote) == 1 and '"' not in quote and '\\' not in quote for quote in quotes)
+
+
 @pytest.mark.parametrize('original', ['日本語の"引用"', r'C:\tmp\file', '一行目\r\n二行目',
     '前半\t後半', 'あ' * 3999 + 'イ' + 'あ' * 3999 + 'ウ'])
 def test_escaped_or_long_source_remains_complete_and_quotes_are_real_unique_substrings(original):
@@ -193,3 +251,22 @@ def test_a_source_constrained_complete_map_is_still_admitted_by_the_same_cmee():
     artifact, _ = semantic.build_semantic_map(prepared, response(prepared, packet))
     assert artifact.safe_projection(authenticated_owner_scope=OWNER)['wire_kind'] == 'watashi.map.v3'
     assert prepared.messages() == original_messages
+
+
+def test_sentence_evidence_passes_existing_cmee_with_the_complete_source_unchanged():
+    import analysis_semantic_map as semantic
+    from test_analysis_semantic_map import sample, candidate, response, OWNER
+    prepared = semantic.prepare_semantic_map(OWNER, sample())
+    before = deepcopy(prepared.messages()), prepared.source_guard
+    fields = {field['field']: field['text']
+        for field in json.loads(prepared.messages()[1]['content'])['fields']}
+    packet = candidate()
+    for node in packet['nodes']:
+        for root in node['evidence']:
+            text = fields[root['field']]
+            root['quote'] = text if root['field'] == 1 else (
+                text.split('。')[0] + '。' if root['field'] == 2 else '私は意見を言わなかった。')
+    assert allowed(probe.semantic_output_schema(prepared.messages()), packet)
+    artifact, _ = semantic.build_semantic_map(prepared, response(prepared, packet))
+    assert artifact.safe_projection(authenticated_owner_scope=OWNER)['wire_kind'] == 'watashi.map.v3'
+    assert (prepared.messages(), prepared.source_guard) == before

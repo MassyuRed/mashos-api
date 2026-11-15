@@ -26,7 +26,14 @@ EXPLICIT_PROMPT_VERSIONS = frozenset({DEFAULT_PROMPT_VERSION, 'selected_material
 SEMANTIC_MAX_PROMPT_BYTES = 49152
 SEMANTIC_MAX_REQUEST_BYTES = 262144
 SEMANTIC_HISTORY_MAX_LEAVES = 3
-SEMANTIC_PIPELINE_TIMEOUT_SECONDS = 215.0
+# Leave response/serialization time after the native 210s generation limit
+# and the bridge's 215s upstream limit. These are independent of output quality.
+SEMANTIC_HTTP_TIMEOUT_SECONDS = 220.0
+SEMANTIC_REQUEST_TIMEOUT_SECONDS = 225.0
+# One absolute pipeline limit, below the worker's default 900s stale lease.
+# Four stages may exhaust this cap before every stage uses its individual cap.
+# Deployment must also allow for source loading and final persistence outside it.
+SEMANTIC_PIPELINE_TIMEOUT_SECONDS = 840.0
 
 
 def semantic_analysis_input_fits(prepared):
@@ -137,7 +144,7 @@ class SelfHostedSemanticAnalysisModelSource(SelfHostedAnalysisModelSource):
             'analysis_semantic_history_capacity_exceeded')
         try:
             async with httpx.AsyncClient(transport=self._transport, follow_redirects=False,
-                    trust_env=False, timeout=httpx.Timeout(210.0, connect=15.0)) as client:
+                    trust_env=False, timeout=httpx.Timeout(SEMANTIC_HTTP_TIMEOUT_SECONDS, connect=15.0)) as client:
                 async with client.stream('POST', self.endpoint,
                         headers={'Authorization': 'Bearer ' + self._api_key},
                         json=body) as response:

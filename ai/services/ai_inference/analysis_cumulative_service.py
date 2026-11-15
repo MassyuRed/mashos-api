@@ -672,8 +672,10 @@ def _consume_model_map_completion(task):
 async def _model_response(model_source, prepared):
     _require_model_write_active()
     try:
-        from analysis_model_source import is_semantic_analysis_model_source
-        timeout = 215.0 if is_semantic_analysis_model_source(model_source) else MODEL_SOURCE_TIMEOUT_SECONDS
+        from analysis_model_source import (is_semantic_analysis_model_source,
+            SEMANTIC_REQUEST_TIMEOUT_SECONDS)
+        timeout = (SEMANTIC_REQUEST_TIMEOUT_SECONDS if is_semantic_analysis_model_source(model_source)
+            else MODEL_SOURCE_TIMEOUT_SECONDS)
         async with asyncio.timeout(timeout) as deadline:
             response = await model_source(prepared)
         # A cooperative provider may catch cancellation to finish its cleanup.
@@ -750,34 +752,45 @@ def prepare_semantic_history_batches(parent):
 
 async def _semantic_history_map(source, parent):
     from analysis_model_source import (semantic_analysis_input_fits,
-        SEMANTIC_PIPELINE_TIMEOUT_SECONDS)
+        SEMANTIC_PIPELINE_TIMEOUT_SECONDS, SEMANTIC_REQUEST_TIMEOUT_SECONDS)
     from analysis_semantic_map import build_semantic_map, build_semantic_history_stage
     from cocolon_meaning_experience_engine.cores.analysis.semantic_admission import (
         prepare_semantic_merge, _semantic_map_require)
-    stages = await asyncio.to_thread(prepare_semantic_history_batches, parent)
-    if not stages:
-        # The existing prepared messages and single acquisition are unchanged.
-        response = await _model_response(source, parent)
-        return await asyncio.to_thread(build_semantic_map, parent, response)
+    started = asyncio.get_running_loop().time()
     try:
-        # One existing request deadline, not 215 seconds for every stage.
+        # Preparation and every stage share one finite clock. Allocate for the
+        # actual call count, without restarting the clock after each leaf.
         async with asyncio.timeout(SEMANTIC_PIPELINE_TIMEOUT_SECONDS) as deadline:
-            receipts = []
-            for stage in stages:
-                response = await _model_response(source, stage)
-                await asyncio.to_thread(build_semantic_history_stage, stage, response)
-                receipts.append((stage, response))
-            merged = await asyncio.to_thread(prepare_semantic_merge, parent, tuple(receipts))
-            _semantic_map_require(semantic_analysis_input_fits(merged),
-                'analysis_semantic_history_capacity_exceeded')
-            response = await _model_response(source, merged)
-            outcome = await asyncio.to_thread(build_semantic_history_stage, merged, response)
+            stages = await asyncio.to_thread(prepare_semantic_history_batches, parent)
+            calls = len(stages) + 1 if stages else 1
+            deadline.reschedule(started + min(SEMANTIC_PIPELINE_TIMEOUT_SECONDS,
+                calls * SEMANTIC_REQUEST_TIMEOUT_SECONDS))
+            # Rescheduling into the past cancels on the next loop tick. Do not
+            # enter a provider (and potentially send a POST) in that interval.
+            if asyncio.get_running_loop().time() >= deadline.when():
+                raise TimeoutError
+            if not stages:
+                # Prepared messages and the sole acquisition remain unchanged.
+                response = await _model_response(source, parent)
+                result = await asyncio.to_thread(build_semantic_map, parent, response)
+            else:
+                receipts = []
+                for stage in stages:
+                    response = await _model_response(source, stage)
+                    await asyncio.to_thread(build_semantic_history_stage, stage, response)
+                    receipts.append((stage, response))
+                merged = await asyncio.to_thread(prepare_semantic_merge, parent, tuple(receipts))
+                _semantic_map_require(semantic_analysis_input_fits(merged),
+                    'analysis_semantic_history_capacity_exceeded')
+                response = await _model_response(source, merged)
+                outcome = await asyncio.to_thread(build_semantic_history_stage, merged, response)
+                if outcome.artifact is None:
+                    raise ValueError(outcome.reason_codes[0])
+                result = outcome.artifact, outcome.coverage
         if deadline.expired():
             raise TimeoutError
         _require_model_write_active()
-        if outcome.artifact is None:
-            raise ValueError(outcome.reason_codes[0])
-        return outcome.artifact, outcome.coverage
+        return result
     except TimeoutError:
         raise HTTPException(504, 'analysis_model_source_timeout') from None
 
