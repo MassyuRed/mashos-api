@@ -501,13 +501,17 @@ def test_if_marker_requires_exact_prepared_shape(packet, change):
         semantic_output_schema(messages)
 
 
-def test_if_dispatch_leaves_legacy_map_schema_exact_bytes_and_unmarked_fields_unchanged():
+def test_if_dispatch_preserves_current_map_sequence_and_unmarked_fields():
     from ai.tools.serve_emlis_natural_reply import semantic_output_schema, semantic_json_parser
     messages = [dict(role='system', content='synthetic'), dict(role='user', content=json.dumps(
         dict(fields=[dict(field=1, text='部屋を整えた。')]), ensure_ascii=False))]
     schema = semantic_output_schema(messages)
     assert len(tool.canonical(schema).encode()) == 2275
-    assert tool.sha(tool.canonical(schema)) == '9a13e789168204bcd59cd101d972e3cde5d510324961d966054f5a5fe67de829'
+    # The intentional semantic-map sequence is evidence before meaning and
+    # overview after nodes/edges. IF dispatch must not modify that grammar.
+    assert schema['required'] == ['schema_version', 'nodes', 'edges', 'overview']
+    assert schema['properties']['nodes']['items']['required'][0] == 'evidence'
+    assert tool.sha(tool.canonical(schema)) == 'ac39c4f1c4638abba9f7b3d3a4c6b55ecd9ceb3a6d78d55f881f6a98d257d742'
     unmarked_parser = semantic_json_parser(messages, 'abc')
     material = json.loads(messages[1]['content'])
     material['model_schema'] = 'different.owner.v1'
