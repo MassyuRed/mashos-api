@@ -113,13 +113,14 @@ def test_proved_conditions_survive_on_actual_map_edge_text_and_private_roots():
     assert 'source_envelope_id' not in json.dumps(projection)
 
 
-def test_v1_prepared_messages_and_map_remain_unchanged_and_replay_through_same_engine():
+def test_v1_prepared_source_and_map_remain_bound_with_the_current_author_lesson():
     snapshot, packet = condition_sample(), condition_candidate()
     prepared, artifact, _ = build(snapshot, packet, legacy=True)
     assert prepared.prompt_version == 'semantic_map.v1'
     assert 'source_duties' not in json.loads(prepared.material_json)
     assert prepared.messages() == [
         dict(role='system', content=admission._SEMANTIC_MAP_INSTRUCTION +
+             admission._semantic_map_lesson_instruction() +
              '\n参照辞書（本人の事実ではない）:\n' + prepared.dictionary_json),
         dict(role='user', content=prepared.material_json)]
     expected_ref = 'analysis-semantic-request:' + admission.semantic_map_hash([

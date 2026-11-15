@@ -1272,7 +1272,7 @@ def test_instruction_format_example_matches_native_generation_sequence():
     from test_analysis_semantic_map import sample, OWNER
     prepared = semantic.prepare_semantic_map(OWNER, sample())
     messages = prepared.messages()
-    exemplar = json.loads(messages[0]['content'].split('厳密な形式:\n', 1)[1].splitlines()[0])
+    exemplar = json.loads(messages[0]['content'].split('\n例の出力:', 1)[1].splitlines()[0])
     schema = probe.semantic_output_schema(messages)
     assert list(exemplar) == list(schema['properties']) == ['schema_version', 'nodes', 'edges', 'overview']
     assert list(exemplar['nodes'][0]) == list(schema['properties']['nodes']['items']['properties'])
