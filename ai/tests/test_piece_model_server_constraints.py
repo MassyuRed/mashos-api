@@ -70,8 +70,13 @@ def test_three_slots_force_answer_then_original_index_order_independent_of_input
 def test_piece_order_constraint_does_not_change_the_analysis_parser_config():
     selected = [dict(role='system', content='合成の指示'), dict(role='user',
         content=json.dumps({'fields': [{'field': 1, 'text': '合成の記録。'}]}, ensure_ascii=False))]
-    assert probe.piece_json_parser(messages(), 'abc').config.force_json_field_order is True
-    assert probe.semantic_json_parser(selected, 'abc').config.force_json_field_order is False
+    analysis = probe.semantic_json_parser(selected, 'abc')
+    assert analysis.config.force_json_field_order is True
+    piece = probe.piece_json_parser(messages(), 'xyz')
+    assert piece.config.force_json_field_order is True
+    assert piece.config is not analysis.config
+    assert analysis.config.alphabet == 'abc'
+    assert probe.semantic_json_parser(selected, 'abc').config == analysis.config
 
 
 @pytest.mark.parametrize('packet', [
