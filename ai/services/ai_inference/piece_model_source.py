@@ -430,8 +430,8 @@ def build_piece_model_messages(prepared, *, include_authoring_constraints=False,
                         and 2 <= len(sources) <= 4 and sources[0].get('role') == 'ORIGINAL_INPUT'
                         and all(item.get('role') == 'SUPPLEMENTAL_ANSWER' for item in sources[1:]))
                     or (control.get('interpretation_correction') is True
-                        and [item.get('role') for item in sources] ==
-                            ['ORIGINAL_INPUT', 'USER_INTERPRETATION_CORRECTION']))):
+                        and len(sources) >= 2 and sources[0].get('role') == 'ORIGINAL_INPUT'
+                        and all(item.get('role') == 'USER_INTERPRETATION_CORRECTION' for item in sources[1:])))):
             raise ValueError
         original = sources[0].get('original')
         if (type(original) is not dict or set(original) != {
@@ -488,6 +488,9 @@ def build_piece_model_messages(prepared, *, include_authoring_constraints=False,
                 control['correction_control'] = {key: value
                     for key, value in control['correction_control'].items()
                     if key not in {'target_text', 'explanation'}}
+                if 'prior_correction_controls' in control:
+                    control['prior_correction_controls'] = [{key: value for key, value in row.items()
+                        if key not in {'target_text', 'explanation'}} for row in control['prior_correction_controls']]
                 instruction += ('\nUSER_INTERPRETATION_CORRECTIONは本人の説明を原入力と別の出所で保持します。'
                     '訂正されたAIの文章は来歴であり、本人の事実でも本文材料でもありません。'
                     '本文欄のない訂正sourceは撤回の来歴だけで、旧引用を本文へ戻さないでください。')

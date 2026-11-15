@@ -105,22 +105,26 @@ def piece_material(source, *, expected_owner_id: str, tier: str = 'free') -> dic
 
 def _corrected_piece_model_material(source, *, expected_owner_id, tier):
     from dataclasses import asdict
-    from .piece_refined import _validate_corrected_source, refined_source_ref
+    from .piece_refined import _validate_corrected_source, refined_source_ref, corrected_history_ranges
     from .cores.analysis.source_adapter import commitment
     frozen = _validate_corrected_source(source)
     material = piece_material(source.original, expected_owner_id=expected_owner_id, tier=tier)
     original = material['sources'][0]
-    material['sources'].append(dict(source_id=source.correction.correction_id,
-        source_version=commitment(asdict(source.correction)), source_commitment=source.correction_commitment,
-        role='USER_INTERPRETATION_CORRECTION', original=None,
-        text_fields={'memo': source.correction.explanation}, envelope_id=frozen.envelope.envelope_id,
-        recorded_at=source.correction.recorded_at, parent_record_id=source.original.saved_input_id,
-        evidence=[dict(asdict(ref), literal=frozen.envelope.raw_utf8[ref.utf8_start:ref.utf8_end].decode('utf-8'),
-            coordinate_space='SOURCE_ENVELOPE') for ref in frozen.evidence]))
+    _, rows = corrected_history_ranges(source.original, source.correction, as_of=source.as_of,
+        prior_corrections=source.prior_corrections)
+    selected_ranges = {}
+    for correction, _, active_range, commitment_value, frozen in rows:
+        material['sources'].append(dict(source_id=correction.correction_id,
+            source_version=commitment(asdict(correction)), source_commitment=commitment_value,
+            role='USER_INTERPRETATION_CORRECTION', original=None,
+            text_fields={'memo': correction.explanation}, envelope_id=frozen.envelope.envelope_id,
+            recorded_at=correction.recorded_at, parent_record_id=source.original.saved_input_id,
+            evidence=[dict(asdict(ref), literal=frozen.envelope.raw_utf8[ref.utf8_start:ref.utf8_end].decode('utf-8'),
+                coordinate_space='SOURCE_ENVELOPE') for ref in frozen.evidence]))
+        selected_ranges[correction.correction_id] = (() if active_range is None else (('memo', *active_range),))
     partition = []
     for item in material['sources']:
-        selected = (source.original_active_ranges if item is original else
-            (() if source.correction_active_range is None else (('memo', *source.correction_active_range),)))
+        selected = source.original_active_ranges if item is original else selected_ranges[item['source_id']]
         for field in item['text_fields']:
             groups = []
             text = item['text_fields'][field]
@@ -140,6 +144,8 @@ def _corrected_piece_model_material(source, *, expected_owner_id, tier):
         source_selections_are_not_written_propositions=True,
         interpretation_correction=True, active_source_update=source.correction_update_operation,
         correction_control=asdict(source.correction)))
+    if source.prior_corrections:
+        material['control']['prior_correction_controls'] = [asdict(c) for c in source.prior_corrections]
     return material
 
 
@@ -307,7 +313,8 @@ def piece_model_field_slots(material):
                 or ([s['role'] for s in sources] not in (
                     ['ORIGINAL_INPUT'], ['ORIGINAL_INPUT', 'SUPPLEMENTAL_ANSWER'])
                     and not (control.get('interpretation_correction') is True
-                        and [s['role'] for s in sources] == ['ORIGINAL_INPUT', 'USER_INTERPRETATION_CORRECTION'])
+                        and len(sources) >= 2 and sources[0]['role'] == 'ORIGINAL_INPUT'
+                        and all(s['role'] == 'USER_INTERPRETATION_CORRECTION' for s in sources[1:]))
                     and not (control.get('effective_round_sources') is True
                         and 2 <= len(sources) <= 4 and sources[0]['role'] == 'ORIGINAL_INPUT'
                         and all(s['role'] == 'SUPPLEMENTAL_ANSWER' for s in sources[1:])))

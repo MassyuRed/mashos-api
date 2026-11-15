@@ -105,6 +105,7 @@ name: Piece B2-B/B3/B4/B5 isolated PostgreSQL
       - ai/tests/piece_v2/test_b05_interpretation_correction_application.py
       - ai/tests/piece_v2/test_b05_interpretation_correction_sql_fence.py
       - supabase/migrations/*_piece_interpretation_correction_source.sql
+      - supabase/migrations/*_piece_multiple_interpretation_corrections.sql
       - supabase/migrations/*_piece_natural_answer_active_source.sql
       - supabase/migrations/*_piece_natural_refined_source_fence.sql
       - supabase/migrations/*_piece_natural_later_add_answer.sql

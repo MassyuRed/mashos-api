@@ -5,6 +5,7 @@ coherent edits below deliberately corrupt saved controls and never claim new
 semantic admission, real-model quality, hosted writes or native rendering.
 """
 from copy import deepcopy
+from datetime import datetime, timedelta
 import json
 
 import pytest
@@ -30,6 +31,7 @@ def corrected_sql_db(effective_fence_db):
     db = effective_fence_db
     before = _catalog(db)
     _apply(db, MIGRATION)
+    _apply(db, '20261114235041_piece_multiple_interpretation_corrections.sql')
     db.corrected_catalog = (before, _catalog(db))
     return db
 
@@ -290,3 +292,108 @@ def test_previous_source_states_keep_all_three_writer_paths(corrected_sql_db, mo
     assert 'code' not in visual, visual
     saved = rpc(db, 'piece_save_v2', _saved_args(case, visual))
     assert 'code' not in saved, saved
+
+
+@pytest.mark.parametrize('operation', ['issue', 'visual', 'save'])
+@pytest.mark.parametrize('change', ['missing_prior', 'swapped_history', 'duplicate_prior',
+    'missing_middle_receipt', 'middle_finish_clock', 'middle_prefix', 'latest_only_prefix',
+    'earlier_target', 'prior_written_before_finish'])
+def test_all_writers_rederive_complete_multi_correction_history(corrected_sql_db, monkeypatch, operation, change):
+    from test_b05_interpretation_correction_application import corrected_case
+    db = corrected_sql_db
+    case = corrected_case(None, db, monkeypatch, tier='premium', memo_action='私は資料を調べた。',
+        extra_explanations=('「私は資料を調べた」ではなく「私は約束を守りたい」です。',))
+    row = case['record']
+    keys = ('source_lineage','format_type','content_payload','content_payload_hash',
+        'piece_text','piece_text_hash','safety_state','visual_recipe','visual_recipe_hash','renderer_version')
+    case['record'] = {key: deepcopy(row[key]) for key in keys}
+    case['record']['eligible_formats'] = deepcopy(row['preview_eligible_formats'])
+    args = (_issue_args(case) if operation=='issue' else
+        _mutation_args(db, case, case['issued']) if operation=='visual' else _saved_args(case, case['issued']))
+    frozen = args['p_expected_source_state']['interpretation_correction']
+    events = deepcopy(frozen['events'])
+    bodies = [e for e in events if e['kind']=='OBSERVATION']
+    first_source = frozen['prior_sources'][0]
+    middle, latest = bodies[1:]
+    first_correction = next(e for e in events if e['id']==first_source['correction_id'])
+    first_finish = next(e for e in events if e['operation_id']==bodies[0]['operation_id']
+        and e['kind']=='OPERATION' and e['payload'].get('status')=='COMPLETED')
+    assert 'code' not in db.query('BEGIN')
+    try:
+        if change=='missing_prior':
+            del frozen['prior_sources']
+        elif change=='swapped_history':
+            frozen['source'],frozen['prior_sources'][0] = first_source,frozen['source']
+        elif change=='duplicate_prior':
+            frozen['prior_sources'].append(deepcopy(first_source))
+        elif change=='missing_middle_receipt':
+            receipt = next(e for e in events if e['operation_id']==middle['operation_id']
+                and e['payload'].get('stage')=='NATURAL_REPLY_RECEIVED')
+            _update(db, 'DELETE FROM public.emlis_thread_events WHERE id=$1', [receipt['id']])
+        elif change=='middle_finish_clock':
+            finish = next(e for e in events if e['operation_id']==middle['operation_id']
+                and e['payload'].get('status')=='COMPLETED')
+            _update(db, 'UPDATE public.emlis_thread_events SET recorded_at=$2 WHERE id=$1',
+                [finish['id'], bodies[0]['recorded_at']])
+        elif change in ('middle_prefix','latest_only_prefix'):
+            old = middle['payload']['source_prefix_ref'] if change=='middle_prefix' else frozen['source_prefix_ref']
+            forged = ('emlis-corrected-source-prefix-'+'e'*64 if change=='middle_prefix' else
+                identity('emlis-corrected-source-prefix',bodies[0]['payload']['source_prefix_ref'],(frozen['source'],)))
+            def substitute(value):
+                if isinstance(value, dict): return {k:substitute(v) for k,v in value.items()}
+                if isinstance(value, list): return [substitute(v) for v in value]
+                return forged if value==old else value
+            for event in events:
+                changed = substitute(event)
+                if changed!=event: _write_event(db,changed)
+            if change=='latest_only_prefix':
+                _update(db, 'UPDATE public.emlis_input_threads SET source_prefix_ref=$2,data=$3::jsonb WHERE id=$1',
+                    [case['snapshot']['thread']['id'],forged,json.dumps(substitute(frozen['thread_data']))])
+                frozen['source_prefix_ref']=forged
+        elif change=='earlier_target':
+            event = next(e for e in events if e['id']==frozen['source']['correction_id'])
+            event['payload']['source']['target_event_id']=bodies[0]['id']
+            frozen['source']=deepcopy(event['payload']['source'])
+            _write_event(db,event)
+        elif change=='prior_written_before_finish':
+            # Keep the whole chain, prefix and all saved source headers coherent.
+            # Move only the claimed person-write clock to before the prior FINISH.
+            initial_written = first_source['recorded_at']
+            earlier = bodies[0]['recorded_at']
+            # The disposable SQL clock may stamp OBS and FINISH in one millisecond.
+            # Put FINISH one microsecond after OBS, still before the real person write.
+            finish_clock=(datetime.fromisoformat(earlier)+timedelta(microseconds=1)).isoformat()
+            assert datetime.fromisoformat(finish_clock) <= datetime.fromisoformat(initial_written)
+            _update(db,'UPDATE public.emlis_thread_events SET recorded_at=$2 WHERE id=$1',[first_finish['id'],finish_clock])
+            first_source['recorded_at']=earlier
+            first_correction['payload']['source']=deepcopy(first_source)
+            _write_event(db,first_correction)
+            for i,body in enumerate(bodies[1:],1):
+                sources=[first_source] + ([frozen['source']] if i==2 else [])
+                prefix=identity('emlis-corrected-source-prefix',bodies[0]['payload']['source_prefix_ref'],tuple(sources))
+                for event in events:
+                    if event['operation_id']==body['operation_id'] and event['kind'] in ('OPERATION','OBSERVATION'):
+                        if 'source_prefix_ref' in event['payload']:
+                            event['payload']['source_prefix_ref']=prefix
+                            if 'reply' in event['payload']: event['payload']['reply']['source_prefix_ref']=prefix
+                            _write_event(db,event)
+                if i==2:
+                    frozen['source_prefix_ref']=prefix
+                    data=deepcopy(frozen['thread_data'])
+                    # In current Q3 data this is a control identity, not semantic text.
+                    def replace_prefix(value):
+                        if isinstance(value,dict): return {k:replace_prefix(v) for k,v in value.items()}
+                        if isinstance(value,list): return [replace_prefix(v) for v in value]
+                        return prefix if value==case['snapshot']['thread']['source_prefix_ref'] else value
+                    _update(db,'UPDATE public.emlis_input_threads SET source_prefix_ref=$2,data=$3::jsonb WHERE id=$1',
+                        [case['snapshot']['thread']['id'],prefix,json.dumps(replace_prefix(data))])
+        _sync_expected(db,case,args)
+        # Expected events equal the saved locked events: rejection must derive
+        # history independently, not merely detect an expected-state mismatch.
+        before = _piece_state(db)
+        result = rpc(db, {'issue':'piece_issue_preview_v2','visual':'piece_mutate_preview_visual_v2',
+            'save':'piece_save_v2'}[operation],args)
+        assert result == {'code':'P0001','message':'PIECE_CONFLICT'},result
+        assert _piece_state(db)==before
+    finally:
+        assert 'code' not in db.query('ROLLBACK')

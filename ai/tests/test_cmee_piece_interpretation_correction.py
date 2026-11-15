@@ -426,3 +426,94 @@ def test_corrected_withdrawal_realization_profile_keeps_the_composite_format_bou
         assert result.artifact.eligible_formats == ('short_essay',)
     else:
         assert result.status is not EngineStatus.GENERATED and result.artifact is None
+
+
+@pytest.mark.parametrize('first,second', [(a,b) for a in ('REVISE','WITHDRAW') for b in ('REVISE','WITHDRAW')])
+@pytest.mark.parametrize('tier', ['free','plus','premium'])
+def test_distinct_original_corrections_keep_all_effective_sources(first, second, tier):
+    original = original_source()
+    a = correction_source(original, operation=first)
+    explanation = ('「私は資料を調べた」ではなく「私は約束を守りたい」です。'
+        if second == 'REVISE' else '「私は資料を調べた」は取り消します。')
+    b = replace(correction_source(original, explanation=explanation),
+        correction_id='piece-correction-event-2', target_event_id='piece-corrected-observation-1',
+        recorded_at='2026-11-14T03:05:30+00:00')
+    op, ranges, active, commitment = refined.corrected_active_ranges(original, b, as_of=AS_OF, prior_corrections=(a,))
+    source = replace(corrected_source(original=original, correction=b), prior_corrections=(a,),
+        correction_update_operation=op, original_active_ranges=ranges,
+        correction_active_range=active, correction_commitment=commitment)
+    outcome = produce(source, tier=tier)
+    assert outcome.status is EngineStatus.GENERATED, outcome.reason_codes
+    text = outcome.artifact.piece_text
+    assert RETAINED in text
+    assert ('私は家族を守りたい' in text) == (first == 'REVISE')
+    assert ('私は約束を守りたい' in text) == (second == 'REVISE')
+    assert '私は仕事を続けたい' not in text and '私は資料を調べた' not in text
+    assert 'ではなく' not in text and AI_TARGET not in text
+    prepared = prepare_piece_model_request(request(source, tier=tier))
+    slots = piece_model_field_slots(prepared.payload())
+    assert len(slots) == 1 + (first == 'REVISE') + (second == 'REVISE')
+    messages = build_piece_model_messages(prepared, include_authoring_constraints=True, source_request=request(source, tier=tier))
+    sent = json.dumps(messages, ensure_ascii=False)
+    assert AI_TARGET not in sent and '私は仕事を続けたい' not in sent and '私は資料を調べた' not in sent
+    raw = refined.serialize_refined_piece(outcome)
+    assert refined.read_saved_refined_artifact(raw, expected_state_sha256=hashlib.sha256(raw).hexdigest()) == outcome.artifact
+    assert len(json.loads(raw)['plan']['prior_revision_plans']) == (first == 'REVISE')
+
+
+@pytest.mark.parametrize('change', ['thread','parent','after_latest','before_original','order','repeat_target','prior_replacement'])
+def test_correction_history_cannot_graft_or_revive_a_source(change):
+    original = original_source()
+    a = correction_source(original)
+    b = replace(a, correction_id='second-event', target_event_id='second-target',
+        recorded_at='2026-11-14T03:05:30+00:00', explanation='「私は資料を調べた」は取り消します。')
+    if change == 'thread': a = replace(a, thread_id='another-thread')
+    if change == 'parent': a = replace(a, original_source_ref='another-original')
+    if change == 'after_latest': a = replace(a, recorded_at='2026-11-14T03:07:00+00:00')
+    if change == 'before_original': a = replace(a, recorded_at='2026-11-14T02:59:00+00:00')
+    if change == 'order': a,b = b,a
+    if change == 'repeat_target': b = replace(b, explanation='「私は仕事を続けたい」は取り消します。')
+    if change == 'prior_replacement': b = replace(b, explanation='「私は家族を守りたい」は取り消します。')
+    with pytest.raises((PieceContractError,ValueError)):
+        refined.corrected_active_ranges(original,b,as_of=AS_OF,prior_corrections=(a,))
+
+
+def test_correction_count_is_not_question_round_limit():
+    original = original_source(memo='私は仕事を続けたい。私は資料を調べた。私は計画を作った。',
+        action='私はメモを書いた。私は記録を残した。')
+    clauses = ['私は資料を調べた','私は計画を作った','私はメモを書いた','私は記録を残した']
+    corrections = tuple(replace(correction_source(original,explanation=f'「{text}」は取り消します。'),
+        correction_id=f'withdraw-{i}',target_event_id=f'target-{i}',recorded_at=f'2026-11-14T03:05:0{i}+00:00')
+        for i,text in enumerate(clauses))
+    last,prior = corrections[-1],corrections[:-1]
+    op,ranges,active,commitment = refined.corrected_active_ranges(original,last,as_of=AS_OF,prior_corrections=prior)
+    source = replace(corrected_source(original=original,correction=last),prior_corrections=prior,
+        correction_update_operation=op,original_active_ranges=ranges,correction_active_range=active,correction_commitment=commitment)
+    outcome = produce(source)
+    assert outcome.status is EngineStatus.GENERATED,outcome.reason_codes
+    assert outcome.artifact.piece_text == '私は、仕事を続けたい。'
+
+
+def test_multiple_correction_model_review_keeps_each_proper_partition():
+    original = original_source()
+    prior = correction_source(original)
+    latest = replace(prior, correction_id='latest-proper-explanation',target_event_id='previous-corrected-observation',
+        recorded_at='2026-11-14T03:05:30+00:00',
+        explanation='「私は資料を調べた」ではなく「私は約束を守りたい」です。')
+    op,ranges,active,commitment = refined.corrected_active_ranges(original,latest,as_of=AS_OF,prior_corrections=(prior,))
+    source = replace(corrected_source(original=original,correction=latest),prior_corrections=(prior,),
+        correction_update_operation=op,original_active_ranges=ranges,correction_active_range=active,correction_commitment=commitment)
+    native = produce(source)
+    assert native.status is EngineStatus.GENERATED,native.reason_codes
+    blocks = native.artifact.body_blocks
+    with patch('cocolon_meaning_experience_engine.piece_v1c.realize_piece_artifact',
+               side_effect=AssertionError('model S7 must not replay the author')):
+        assert model_result(source,blocks).status is EngineStatus.GENERATED
+        for altered in ((blocks[0],blocks[2],blocks[1]), (blocks[0],OLD,blocks[2]),
+            (blocks[0],blocks[1],ACTION), (AI_TARGET,blocks[1],blocks[2])):
+            result = model_result(source,altered)
+            assert result.status is not EngineStatus.GENERATED and result.artifact is None
+        grafted = replace(native.source_meaning,prior_revisions=(native.source_meaning.supplemental,))
+        with pytest.raises(PieceContractError):
+            from piece_v2_content_policy import validate_piece_model_preservation
+            validate_piece_model_preservation(grafted,native.artifact_plan,native.artifact)

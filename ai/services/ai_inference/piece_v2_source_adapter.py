@@ -123,6 +123,8 @@ class PieceSavedCorrectedHandoff:
     original_active_ranges: tuple[tuple[str, int, int], ...]
     correction_active_range: tuple[int, int] | None
 
+    prior_corrections: tuple[InterpretationCorrectionSource, ...] = ()
+
     def lineage_payload(self) -> dict:
         return json.loads(self._lineage_json)
 
@@ -777,16 +779,9 @@ def _original_observation_handoff(saved: PieceSavedOriginal, snapshot: dict) -> 
 
 
 def _corrected_observation_handoff(saved, snapshot):
-    """Bind one completed two-input correction to its actual saved receipt.
-
-    Only the person's exact explanation can change meaning. The AI excerpt
-    locates a reply, and is retained exclusively in private control state.
-    Answer-bearing or repeated corrections remain outside this admission.
-    """
+    """Bind every proper correction and its actual completed FINAL receipt."""
     from dataclasses import asdict, replace
-    from emlis_thread_service import (
-        _context_ref, _request, NATURAL_REPLY_PROFILE, Q3_PROFILE,
-    )
+    from emlis_thread_service import _context_ref, _request, NATURAL_REPLY_PROFILE, Q3_PROFILE
     from cocolon_meaning_experience_engine.emlis_thread_source import admit_emlis_thread
     from cocolon_meaning_experience_engine.natural_reply import ARTIFACT_SCHEMA
     from cocolon_meaning_experience_engine.piece_refined import corrected_active_ranges
@@ -800,12 +795,10 @@ def _corrected_observation_handoff(saved, snapshot):
     thread_id = _uuid(t['id'], 'PIECE_SOURCE_NOT_ELIGIBLE')
     require(type(t['revision']) is int and t['revision'] > 0
         and t['state'] == 'COMPLETED' and type(t['issued_count']) is int and t['issued_count'] == 0
-        and d.get('runtime_profile') == Q3_PROFILE
-        and d.get('response_profile') == NATURAL_REPLY_PROFILE
+        and d.get('runtime_profile') == Q3_PROFILE and d.get('response_profile') == NATURAL_REPLY_PROFILE
         and d.get('semantic_profile') is None and d.get('body_state') == 'FINAL'
-        and d.get('answer_assessment') == 'NOT_APPLICABLE'
-        and d.get('natural_response_stage') == 'FINAL' and d.get('failure_code') is None
-        and d.get('meaning_updated') is False)
+        and d.get('answer_assessment') == 'NOT_APPLICABLE' and d.get('natural_response_stage') == 'FINAL'
+        and d.get('failure_code') is None and d.get('meaning_updated') is False)
     require(all(t[key] is None for key in ('active_operation_id', 'active_attempt_id',
         'processing_deadline_at', 'latest_answer_event_id', 'current_meaning_event_id', 'evaluated_prefix_ref')))
     require(canonical_json_bytes(t['source_snapshot']) == saved._original_json)
@@ -813,8 +806,7 @@ def _corrected_observation_handoff(saved, snapshot):
     by_id, seqs = {}, []
     for event in events:
         require(type(event) is dict and event.get('thread_id') == thread_id
-            and event.get('kind') in {'OPERATION', 'OBSERVATION'}
-            and type(event.get('payload')) is dict
+            and event.get('kind') in {'OPERATION', 'OBSERVATION'} and type(event.get('payload')) is dict
             and type(event.get('seq')) is int and event['seq'] > 0
             and type(event.get('round_index')) is int and event['round_index'] == 0)
         eid = _uuid(event['id'], 'PIECE_SOURCE_NOT_ELIGIBLE')
@@ -825,107 +817,80 @@ def _corrected_observation_handoff(saved, snapshot):
     corrections = [e for e in events if e['kind'] == 'OPERATION'
         and e['payload'].get('stage') == 'INTERPRETATION_CORRECTION']
     observations = [e for e in events if e['kind'] == 'OBSERVATION']
-    require(len(corrections) == 1 and len(observations) == 2)
-    correction_event = corrections[0]
-    initial, observation = observations
-    cp, op = correction_event['payload'], observation['payload']
-    require(cp.get('status') == 'SAVED' and cp.get('assessment') == 'UNASSESSED'
-        and correction_event.get('question_id') is None
-        and type(correction_event.get('idempotency_key')) is str
-        and bool(correction_event['idempotency_key'].strip())
-        and initial['payload'].get('stage') == 'INITIAL' and op.get('stage') == 'CORRECTED'
-        and t['last_observation_event_id'] == observation['id']
-        and initial['seq'] < correction_event['seq'] < observation['seq'])
+    require(bool(corrections) and len(observations) == len(corrections) + 1)
     request = _request(snapshot)
     admitted = admit_emlis_thread(request)
-    require(not admitted.answers and len(admitted.control.interpretation_corrections) == 1)
-    correction = admitted.control.interpretation_corrections[0]
-    require(cp.get('source') == asdict(correction)
-        and correction.correction_id == correction_event['id']
-        and correction.target_event_id == initial['id']
-        and correction.thread_id == thread_id and correction.original_source_ref == d.get('original_source_ref'))
-    target = initial['payload'].get('text')
-    require(type(target) is str and target.count(correction.target_text) == 1)
-    original_request = replace(request, emlis_thread=replace(request.emlis_thread, interpretation_corrections=()))
-    require(initial['payload'].get('source_prefix_ref') == admit_emlis_thread(original_request).source_prefix_ref
-        and t['source_prefix_ref'] == admitted.source_prefix_ref
-        and op.get('source_prefix_ref') == admitted.source_prefix_ref
-        and op.get('context_ref') == _context_ref(snapshot)
-        and op.get('context_guards') == d.get('context_guards', []))
-    artifact = op.get('artifact')
-    require(type(artifact) is dict and artifact.get('schema_version') == ARTIFACT_SCHEMA
-        and type(op.get('text')) is str and bool(op['text'].strip())
-        and artifact.get('text') == op['text']
-        and type(artifact.get('model')) is str and bool(artifact['model'].strip())
-        and d.get('analysis_state') == _latest_natural_analysis_state(snapshot)
-        and _natural_analysis_material_matches(saved, snapshot, observation, request))
-    for key in ('operation_id', 'attempt_id'):
-        _uuid(observation[key], 'PIECE_SOURCE_NOT_ELIGIBLE')
-        require(observation[key] == d.get(key) == correction_event[key])
-    current = [e for e in events if e['operation_id'] == observation['operation_id']
-        and e['attempt_id'] == observation['attempt_id'] and e['kind'] == 'OPERATION']
-    starts = [e for e in current if e['payload'].get('stage') == 'NATURAL_REPLY_CALL_STARTED']
-    receipts = [e for e in current if e['payload'].get('stage') == 'NATURAL_REPLY_RECEIVED']
-    finishes = [e for e in current if e['payload'].get('status') == 'COMPLETED'
-        and e['payload'].get('failure_code') is None]
-    require(len(starts) == len(receipts) == len(finishes) == 1)
-    start, receipt, finish = starts[0], receipts[0], finishes[0]
-    require(correction_event['seq'] < start['seq'] < receipt['seq'] < observation['seq'] < finish['seq'])
-    for event in (start, receipt):
-        require(event['payload'].get('source_prefix_ref') == admitted.source_prefix_ref
-            and event['payload'].get('context_ref') == op['context_ref']
-            and event['payload'].get('response_stage') == 'FINAL')
-    require(receipt['payload'].get('reply') == dict(text=op['text'], model=artifact['model'],
-        source_prefix_ref=admitted.source_prefix_ref, schema_version=ARTIFACT_SCHEMA))
+    sources = admitted.control.interpretation_corrections
+    require(not admitted.answers and len(sources) == len(corrections))
     now = parse_iso_utc(snapshot['now'])
-    require(now is not None and parse_iso_utc(saved.recorded_at) <= parse_iso_utc(initial['recorded_at'])
-        <= parse_iso_utc(correction.recorded_at)
-        <= parse_iso_utc(observation['recorded_at']) <= now)
-    # Reject impossible saved controls before acquiring a Piece author, not
-    # only in the later transactional writer. Check both actual receipts.
-    for body in (initial, observation):
+    require(now is not None and t['last_observation_event_id'] == observations[-1]['id']
+        and t['source_prefix_ref'] == admitted.source_prefix_ref
+        and d.get('analysis_state') == _latest_natural_analysis_state(snapshot))
+    previous_finish = None
+    for i, body in enumerate(observations):
+        prefix_request = replace(request, emlis_thread=replace(request.emlis_thread,
+            interpretation_corrections=sources[:i]))
+        prefix = admit_emlis_thread(prefix_request).source_prefix_ref
         bp = body['payload']
+        require(bp.get('stage') == ('INITIAL' if i == 0 else 'CORRECTED')
+            and bp.get('source_prefix_ref') == prefix and body.get('question_id') is None
+            and bp.get('context_ref') == _context_ref(snapshot)
+            and bp.get('context_guards') == d.get('context_guards', []))
         for key in ('operation_id', 'attempt_id'):
             _uuid(body.get(key), 'PIECE_SOURCE_NOT_ELIGIBLE')
-        require(body.get('question_id') is None and bp.get('context_ref') == op['context_ref']
-            and bp.get('context_guards') == d.get('context_guards', []))
         ba = bp.get('artifact')
         require(type(ba) is dict and ba.get('schema_version') == ARTIFACT_SCHEMA
-            and type(bp.get('text')) is str and bool(bp['text'].strip())
-            and ba.get('text') == bp['text'] and type(ba.get('model')) is str and bool(ba['model'].strip())
-            and _natural_analysis_material_matches(saved, snapshot, body,
-                original_request if body is initial else request))
+            and type(bp.get('text')) is str and bool(bp['text'].strip()) and ba.get('text') == bp['text']
+            and type(ba.get('model')) is str and bool(ba['model'].strip())
+            and _natural_analysis_material_matches(saved, snapshot, body, prefix_request))
         paired = [e for e in events if e['kind'] == 'OPERATION'
             and e['operation_id'] == body['operation_id'] and e['attempt_id'] == body['attempt_id']]
         groups = ([e for e in paired if e['payload'].get('stage') == 'NATURAL_REPLY_CALL_STARTED'],
-                  [e for e in paired if e['payload'].get('stage') == 'NATURAL_REPLY_RECEIVED'],
-                  [e for e in paired if e['payload'].get('status') == 'COMPLETED'
-                      and e['payload'].get('failure_code') is None])
+            [e for e in paired if e['payload'].get('stage') == 'NATURAL_REPLY_RECEIVED'],
+            [e for e in paired if e['payload'].get('status') == 'COMPLETED'
+                and e['payload'].get('failure_code') is None])
         require(all(len(rows) == 1 for rows in groups))
         bs, br, bf = (rows[0] for rows in groups)
         require(bs['seq'] < br['seq'] < body['seq'] < bf['seq'])
         for event in (bs, br):
-            require(event['payload'].get('source_prefix_ref') == bp['source_prefix_ref']
+            require(event['payload'].get('source_prefix_ref') == prefix
                 and event['payload'].get('context_ref') == bp['context_ref']
                 and event['payload'].get('response_stage') == 'FINAL')
         require(br['payload'].get('reply') == dict(text=bp['text'], model=ba['model'],
-            source_prefix_ref=bp['source_prefix_ref'], schema_version=ARTIFACT_SCHEMA))
+            source_prefix_ref=prefix, schema_version=ARTIFACT_SCHEMA))
         stamps = [parse_iso_utc(saved.recorded_at)] + [parse_iso_utc(e.get('recorded_at'))
             for e in (bs, br, body, bf)] + [now]
         require(all(stamp is not None for stamp in stamps) and stamps == sorted(stamps))
-        correction_stamp = parse_iso_utc(correction_event.get('recorded_at'))
-        require(correction_stamp is not None and parse_iso_utc(correction.recorded_at) <= correction_stamp)
-        if body is initial:
-            require(bf['seq'] < correction_event['seq'] and stamps[-2] <= correction_stamp)
-        else:
-            require(correction_event['seq'] < bs['seq'] and correction_stamp <= stamps[1])
+        if i:
+            correction_event, correction = corrections[i-1], sources[i-1]
+            cp, target = correction_event['payload'], observations[i-1]
+            require(cp.get('status') == 'SAVED' and cp.get('assessment') == 'UNASSESSED'
+                and correction_event.get('question_id') is None
+                and type(correction_event.get('idempotency_key')) is str
+                and bool(correction_event['idempotency_key'].strip()) and cp.get('source') == asdict(correction)
+                and correction.correction_id == correction_event['id']
+                and correction.target_event_id == target['id'] and correction.thread_id == thread_id
+                and correction.original_source_ref == d.get('original_source_ref')
+                and type(target['payload'].get('text')) is str
+                and target['payload']['text'].count(correction.target_text) == 1
+                and correction_event['operation_id'] == body['operation_id']
+                and correction_event['attempt_id'] == body['attempt_id']
+                and previous_finish['seq'] < correction_event['seq'] < bs['seq'])
+            cstamp, written = parse_iso_utc(correction_event.get('recorded_at')), parse_iso_utc(correction.recorded_at)
+            require(cstamp is not None and written is not None
+                and parse_iso_utc(target['recorded_at']) <= written <= cstamp <= stamps[1]
+                and parse_iso_utc(previous_finish['recorded_at']) <= written)
+        previous_finish = bf
+    observation, correction = observations[-1], sources[-1]
+    for key in ('operation_id', 'attempt_id'):
+        require(observation[key] == d.get(key))
     original_source = project_saved_original_source(saved, source_stage='normal_observation')
     # The saved completion time is an actual, stable source horizon. Fresh
     # access above still uses the DB's current clock; advancing that clock
     # cannot change this completed correction's artifact identity.
     source_as_of = observation['recorded_at']
     operation, ranges, replacement_range, commitment = corrected_active_ranges(
-        original_source, correction, as_of=source_as_of)
+        original_source, correction, as_of=source_as_of, prior_corrections=sources[:-1])
     source_binding = dict(correction_id=correction.correction_id,
         source_version='sha256:' + canonical_sha256_hex(asdict(correction)),
         explanation_commitment=commitment, target_event_id=correction.target_event_id)
@@ -945,8 +910,10 @@ def _corrected_observation_handoff(saved, snapshot):
         interpretation_correction_source=source_binding, body_free=True)
     fence = dict(source=asdict(correction), source_prefix_ref=admitted.source_prefix_ref,
         events=events, thread_data=d)
+    if sources[:-1]:
+        fence['prior_sources'] = [asdict(c) for c in sources[:-1]]
     return PieceSavedCorrectedHandoff(saved, correction, thread_id, t['revision'],
-        canonical_json_bytes(lineage), canonical_json_bytes(fence), source_as_of, operation, ranges, replacement_range)
+        canonical_json_bytes(lineage), canonical_json_bytes(fence), source_as_of, operation, ranges, replacement_range, sources[:-1])
 
 
 def project_saved_corrected_source(handoff):
@@ -958,7 +925,7 @@ def project_saved_corrected_source(handoff):
         raise _error('PIECE_SOURCE_NOT_ELIGIBLE')
     source = project_saved_original_source(handoff.original, source_stage='normal_observation')
     operation, ranges, replacement_range, commitment = corrected_active_ranges(
-        source, handoff.correction, as_of=handoff.as_of)
+        source, handoff.correction, as_of=handoff.as_of, prior_corrections=handoff.prior_corrections)
     line, control = handoff.lineage_payload(), json.loads(handoff._correction_state_json)
     binding = dict(correction_id=handoff.correction.correction_id,
         source_version='sha256:' + canonical_sha256_hex(asdict(handoff.correction)),
@@ -988,9 +955,11 @@ def project_saved_corrected_source(handoff):
                 supplemental_answer_bundle_commitment=None)
             or line.get('interpretation_correction_source') != binding
             or canonical_json_bytes(line) != handoff._lineage_json
-            or type(control) is not dict or set(control) != {'source', 'source_prefix_ref', 'events', 'thread_data'}
+            or type(control) is not dict or set(control) != ({'source', 'source_prefix_ref', 'events', 'thread_data'}
+                | ({'prior_sources'} if handoff.prior_corrections else set()))
             or canonical_json_bytes(control) != handoff._correction_state_json
             or control.get('source') != asdict(handoff.correction)
+            or (control.get('prior_sources', []) != [asdict(c) for c in handoff.prior_corrections])
             or (operation, ranges, replacement_range) != (handoff.correction_update_operation,
                 handoff.original_active_ranges, handoff.correction_active_range)
             or handoff.thread_id != handoff.correction.thread_id
@@ -1000,7 +969,7 @@ def project_saved_corrected_source(handoff):
         original_commitment=handoff.original.record_commitment, correction_commitment=commitment,
         corrected_result_identity=line['observation']['emlis_observation_result_identity'],
         opted_in=True, original_active_ranges=ranges, correction_active_range=replacement_range,
-        correction_update_operation=operation, as_of=handoff.as_of)
+        correction_update_operation=operation, as_of=handoff.as_of, prior_corrections=handoff.prior_corrections)
 
 
 def _natural_refined_observation_handoff(saved: PieceSavedOriginal, snapshot: dict,

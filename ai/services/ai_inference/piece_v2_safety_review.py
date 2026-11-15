@@ -139,9 +139,9 @@ async def review_prepared_original(prepared: PreparedPiecePreview) -> str:
             # Scan both admitted fields before their existing public-role
             # abstraction, without treating Emlis prose or frame metadata as
             # the user's semantic material.
-            person_text = (source.correction.explanation if type(handoff) is PieceSavedCorrectedHandoff
-                else source.supplemental.answer_text_private)
-            if _scan(source.original.original_text) or _scan(person_text):
+            person_texts = ([c.explanation for c in (*source.prior_corrections, source.correction)]
+                if type(handoff) is PieceSavedCorrectedHandoff else [source.supplemental.answer_text_private])
+            if _scan(source.original.original_text) or any(_scan(text) for text in person_texts):
                 return 'blocked'
             meaning = build_refined_meaning(PieceGenerationRequest(
                 'piece-refined-safety-review', source, handoff.original.authenticated_owner_id,

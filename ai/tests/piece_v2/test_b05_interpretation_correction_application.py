@@ -29,6 +29,7 @@ from test_b05_refined_source_fence_sql import _update, rpc
 
 run = asyncio.run
 MIGRATION = '20261114213309_piece_interpretation_correction_source.sql'
+HISTORY_MIGRATION = '20261114235041_piece_multiple_interpretation_corrections.sql'
 MEMO = '私は本を読みたい。私は仕事を続けたい。'
 EXPLANATIONS = {
     'REVISE': '「私は仕事を続けたい」ではなく「私は家族を守りたい」です。',
@@ -39,15 +40,16 @@ EXPLANATIONS = {
 @pytest.fixture(scope='module')
 def corrected_db(effective_fence_db):
     _apply(effective_fence_db, MIGRATION)
+    _apply(effective_fence_db, HISTORY_MIGRATION)
     return effective_fence_db
 
 
-def corrected_case(natural_case, db, monkeypatch, *, operation='REVISE', tier='free', issue=True, memo_action=''):
+def corrected_case(natural_case, db, monkeypatch, *, operation='REVISE', tier='free', issue=True, memo_action='', memo=MEMO, extra_explanations=()):
     owner, parent, token = str(uuid4()), str(uuid4()), 'synthetic-corrected-piece'
     _update(db, 'insert into auth.users values ($1)', [owner])
     _update(db, 'insert into public.profiles values ($1,$2)', [owner, tier])
     _update(db, "insert into public.emotions values ($1,$2,(now()-interval '5 seconds') at time zone 'UTC',$3,$4,array['仕事'],array['平穏'],$5::jsonb)",
-        [parent, owner, MEMO, memo_action, json.dumps([dict(type='平穏', strength='medium')], ensure_ascii=False)])
+        [parent, owner, memo, memo_action, json.dumps([dict(type='平穏', strength='medium')], ensure_ascii=False)])
     _bind(db, monkeypatch, owner, token)
     calls = []
     async def provider(material):
@@ -62,6 +64,12 @@ def corrected_case(natural_case, db, monkeypatch, *, operation='REVISE', tier='f
         explanation=EXPLANATIONS[operation]))
     assert updated['state'] == 'COMPLETED' and updated['body_state'] == 'FINAL', updated
     assert updated['correction_saved'] and updated['correction_assessment'] == 'UNASSESSED'
+    for i, explanation in enumerate(extra_explanations, 2):
+        updated = run(service.correct_interpretation(owner, initial['thread_id'],
+            expected_revision=updated['revision'], idempotency_key=f'corrected-piece-explanation-{i}',
+            target_event_id=updated['current_observation']['event_id'], target_text='少し安心できた',
+            explanation=explanation))
+        assert updated['correction_saved'] and updated['state'] == 'COMPLETED', updated
     snapshot = run(service.store.read(owner, input_id=parent))
     adapter = PieceSavedSourceAdapter()
     handoff = run(adapter.resolve_corrected_handoff('Bearer '+token, parent))
@@ -211,3 +219,52 @@ def test_impossible_saved_controls_reject_before_piece_author(corrected_db, monk
         with pytest.raises(PieceContractError, match='PIECE_SOURCE_NOT_ELIGIBLE'):
             run(case['adapter'].resolve_original_source_ref('Bearer '+case['token'], case['parent']))
 
+
+
+@pytest.mark.parametrize('tier', ['free','plus','premium'])
+@pytest.mark.parametrize('first,second', [(a,b) for a in ('REVISE','WITHDRAW') for b in ('REVISE','WITHDRAW')])
+def test_complete_correction_history_reaches_saved_piece(corrected_db, monkeypatch, tier, first, second, tmp_path):
+    explanation = ('「私は資料を調べた」ではなく「私は約束を守りたい」です。'
+        if second == 'REVISE' else '「私は資料を調べた」は取り消します。')
+    case = corrected_case(None, corrected_db, monkeypatch, operation=first, tier=tier,
+        memo=MEMO,
+        memo_action='私は資料を調べた。', extra_explanations=(explanation,))
+    owner, token, preview = case['owner'], case['token'], case['issued']
+    text = preview['piece_text']
+    assert '私は本を読みたい。' in text
+    assert ('私は家族を守りたい' in text) == (first == 'REVISE')
+    assert ('私は約束を守りたい' in text) == (second == 'REVISE')
+    assert '私は仕事を続けたい' not in text and '私は資料を調べた' not in text
+    assert 'ではなく' not in text and '少し安心できた' not in text
+    assert len(case['handoff'].prior_corrections) == 1 and len(case['calls']) == 3
+    visual = run(case['preview'].mutate_original_visual('Bearer '+token,
+        authenticated_user_id=owner, preview_id=preview['preview_id'],
+        request=dict(expected_preview_revision=preview['preview_revision'],
+            visual_selection=dict(theme_id='quiet_night', aspect_ratio=None, branding_mode=None)),
+        expected_subscription_tier=tier, load_record=case['load_preview'], rpc=case['rpc'],
+        allowed_renderers=('piece.rn_bitmap_renderer.ios.v2',)))
+    assert visual['piece_text'] == text
+    request = dict(preview_id=visual['preview_id'], expected_preview_revision=visual['preview_revision'],
+        **{k:visual[k] for k in ('piece_text_hash','content_payload_hash','visual_recipe_hash')})
+    with patch('piece_v2_preview_service.generate_piece_candidate', side_effect=AssertionError('reread generated')):
+        replay = run(PiecePreviewService(model_source=None).issue_original('Bearer '+token,
+            case['request'], **case['issue_args']))
+        assert replay['piece_text'] == text and replay['idempotency_replayed']
+        saver = PieceSaveService(load_record=case['load_record'], rpc=case['rpc'])
+        kwargs = dict(authenticated_user_id=owner, request=request, idempotency_key='multi-corrected-save',
+            allowed_renderers=('piece.rn_bitmap_renderer.ios.v2',))
+        saved = run(saver.save('Bearer '+token, **kwargs))
+        assert run(saver.save('Bearer '+token, **kwargs)) == dict(saved,idempotency_replayed=True)
+        async def load(params):
+            row = await case['load_record'](owner,params['id'][3:])
+            return [{k:row[k] for k in _COLUMNS}] if row and row['lifecycle_status']=='saved' else []
+        detail = run(PieceOwnerService(load_records=load).detail(authenticated_user_id=owner,piece_id=saved['piece_id']))
+        for key in ('piece_text','piece_text_hash','content_payload','content_payload_hash','visual_recipe','visual_recipe_hash','renderer_version'):
+            assert detail[key] == visual[key]
+    after = run(case['service'].store.read(owner,input_id=case['parent']))
+    assert all(after[k] == case['snapshot'][k] for k in ('original','thread','events'))
+    assert len(case['calls']) == 3
+    assert corrected_db.query('select count(*)::int as n from public.piece_quota_consumptions where owner_user_id=$1',[owner])['rows'][0]['n']==1
+    (tmp_path/'multi_corrected_piece.json').write_text(json.dumps(dict(tier=tier,operations=[first,second],
+        original=after['original'],explanations=[EXPLANATIONS[first],explanation],preview=preview,selected=visual,
+        detail=detail,original_and_emlis_unchanged=True,quota=1,provider_calls=3),ensure_ascii=False,indent=2))
