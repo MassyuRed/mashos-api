@@ -2720,7 +2720,7 @@ def generate_analysis_semantic_map(request, model_input):
 # author. A child never acquires a new snapshot/guard, and a model reading is
 # never admitted as an additional person source.
 SEMANTIC_HISTORY_PROFILE = 'semantic_map.history_synthesis.v1'
-SEMANTIC_HISTORY_MAX_LEAVES = 6
+SEMANTIC_HISTORY_MAX_LEAVES = 16
 SEMANTIC_HISTORY_CONTEXT_SCALARS = 160
 
 

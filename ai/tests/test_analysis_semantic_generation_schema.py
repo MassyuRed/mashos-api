@@ -232,6 +232,112 @@ def test_native_semantic_graph_decoder_branches_do_not_share_node_ids():
     assert before == (upstream.ListParsingState, upstream.ObjectParsingState, upstream.get_parser)
 
 
+EDGE_KINDS = ['SELF_OUTSIDE_GAP', 'CRITERION_EXPRESSION', 'CONTEXT_CONTRAST', 'SHARED_MEANING']
+EDGE_UNIQUENESS_CASES = [
+    (2, [], True),
+    (2, [('n1', 'n2', 'CONTEXT_CONTRAST')], True),
+    (2, [('n1', 'n2', 'CONTEXT_CONTRAST')] * 2, False),
+    (2, [('n1', 'n2', 'CONTEXT_CONTRAST'), ('n2', 'n1', 'CONTEXT_CONTRAST')], False),
+    (2, [('n1', 'n2', 'CONTEXT_CONTRAST'), ('n1', 'n2', 'SHARED_MEANING')], True),
+    (2, [('n1', 'n2', 'CONTEXT_CONTRAST'), ('n2', 'n1', 'SHARED_MEANING')], True),
+    (2, [('n1', 'n2', kind) for kind in EDGE_KINDS], True),
+    (2, [('n1', 'n2', kind) for kind in EDGE_KINDS] + [('n2', 'n1', EDGE_KINDS[0])], False),
+    (3, [('n1', 'n2', 'CONTEXT_CONTRAST'), ('n2', 'n3', 'CONTEXT_CONTRAST')], True),
+    (3, [('n1', 'n2', kind) for kind in EDGE_KINDS]
+        + [('n2', 'n1', 'SHARED_MEANING')], False),
+    (3, [('n1', 'n2', kind) for kind in EDGE_KINDS]
+        + [('n2', 'n3', 'SHARED_MEANING')], True),
+    (3, [('n1', target, kind) for target in ['n2', 'n3'] for kind in EDGE_KINDS]
+        + [('n1', 'n2', 'SHARED_MEANING')], False),
+    (3, [('n1', target, kind) for target in ['n2', 'n3'] for kind in EDGE_KINDS]
+        + [('n2', 'n3', 'SHARED_MEANING')], True),
+]
+
+
+def unique_edge_document(node_count, edges):
+    packet = json.loads(graph_document([f'n{i}' for i in range(1, node_count + 1)], []))
+    packet['edges'] = [dict(zip(('from', 'to', 'relation_kind', 'label', 'explanation'),
+        (start, end, kind, '比較', '説明'))) for start, end, kind in edges]
+    return json.dumps(packet, ensure_ascii=False, separators=(',', ':'))
+
+
+def unique_edge_runtime(texts):
+    from lmformatenforcer.tokenenforcer import TokenEnforcer, TokenEnforcerTokenizerData
+    messages = graph_parser()[2]
+    alphabet = ''.join(dict.fromkeys(''.join(texts) + 'P '))
+    vocabulary = list(alphabet) + [',{', ']}', '"from":"n1"']
+    ids = {value: index for index, value in enumerate(vocabulary)}
+    eos = len(vocabulary)
+    data = TokenEnforcerTokenizerData([(i, value, False) for i, value in enumerate(vocabulary)],
+        lambda tokens: ''.join(vocabulary[i] for i in tokens if i < eos), eos, False, eos + 1)
+    parser = probe.semantic_json_parser(messages, alphabet)
+    enforcer = TokenEnforcer(data, parser)
+    enforcer.root_parser.config.force_json_field_order = True
+    return enforcer, ids, eos
+
+
+def unique_edge_token_follow(enforcer, ids, sent, text):
+    sent = list(sent)
+    for char in text:
+        if ids[char] not in enforcer.get_allowed_tokens(sent).allowed_tokens:
+            return None
+        sent.append(ids[char])
+    return sent
+
+
+@pytest.mark.parametrize('node_count,edges,expected', EDGE_UNIQUENESS_CASES)
+def test_native_edges_match_unordered_pair_and_relation_uniqueness(node_count, edges, expected):
+    pytest.importorskip('lmformatenforcer')
+    text = unique_edge_document(node_count, edges)
+    messages = graph_parser()[2]
+    before = deepcopy(messages), deepcopy(probe.semantic_output_schema(messages))
+    assert unique_evidence_accept(probe.semantic_json_parser(messages, text), text) == expected
+    enforcer, ids, eos = unique_edge_runtime([text])
+    sent = unique_edge_token_follow(enforcer, ids, [ids['P']], text)
+    assert (sent is not None and eos in enforcer.get_allowed_tokens(sent).allowed_tokens) == expected
+    assert before == (messages, probe.semantic_output_schema(messages))
+
+
+def test_native_edges_can_close_early_and_must_close_after_all_pairs_are_used():
+    pytest.importorskip('lmformatenforcer')
+    empty = unique_edge_document(2, [])
+    exhausted = unique_edge_document(2, [('n1', 'n2', kind) for kind in EDGE_KINDS])
+    enforcer, ids, eos = unique_edge_runtime([empty, exhausted])
+    sent = unique_edge_token_follow(enforcer, ids, [ids['P']], empty)
+    assert sent is not None and eos in enforcer.get_allowed_tokens(sent).allowed_tokens
+    parser = probe.semantic_json_parser(graph_parser()[2], exhausted)
+    for char in exhausted[:-2]:
+        assert char in parser.get_allowed_characters()
+        parser = parser.add_character(char)
+    assert ']' in parser.get_allowed_characters() and ',' not in parser.get_allowed_characters()
+    sent = unique_edge_token_follow(enforcer, ids, [ids['P']], exhausted[:-2])
+    allowed = enforcer.get_allowed_tokens(sent).allowed_tokens
+    assert ids[']'] in allowed and ids[','] not in allowed
+
+
+def test_native_edge_keys_are_immutable_across_decoder_branches():
+    pytest.importorskip('lmformatenforcer')
+    first_edge = ('n1', 'n2', 'CONTEXT_CONTRAST')
+    branch_a = unique_edge_document(3, [first_edge, ('n1', 'n3', 'SHARED_MEANING'),
+        ('n1', 'n2', 'SHARED_MEANING')])
+    branch_b = unique_edge_document(3, [first_edge, ('n2', 'n3', 'SHARED_MEANING'),
+        ('n1', 'n3', 'SHARED_MEANING')])
+    invalid = unique_edge_document(3, [first_edge, ('n2', 'n1', 'CONTEXT_CONTRAST')])
+    split = branch_a.index(',{"from":"n1","to":"n3"') + 1
+    parser = probe.semantic_json_parser(graph_parser()[2], branch_a + branch_b + invalid)
+    for char in branch_a[:split]:
+        assert char in parser.get_allowed_characters()
+        parser = parser.add_character(char)
+    assert unique_evidence_accept(parser, branch_a[split:])
+    assert unique_evidence_accept(parser, branch_b[split:])
+    assert not unique_evidence_accept(parser, invalid[split:])
+    enforcer, ids, eos = unique_edge_runtime([branch_a, branch_b, invalid])
+    common = unique_edge_token_follow(enforcer, ids, [ids['P']], branch_a[:split])
+    for text, expected in [(branch_a, True), (branch_b, True), (invalid, False)]:
+        sent = unique_edge_token_follow(enforcer, ids, common, text[split:])
+        assert (sent is not None and eos in enforcer.get_allowed_tokens(sent).allowed_tokens) == expected
+
+
 @pytest.mark.parametrize('evidence,expected', [
     ([('補足です。', 1)], True),
     ([('補足です。', 2)], False),

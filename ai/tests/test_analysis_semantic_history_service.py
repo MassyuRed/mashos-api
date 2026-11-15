@@ -125,7 +125,7 @@ def test_long_history_smaller_leaf_budget_preserves_every_complete_source():
     parent = semantic.prepare_semantic_map(OWNER, snapshot)
     assert not model_sources.semantic_analysis_input_fits(parent)
     leaves = cumulative.prepare_semantic_history_batches(parent)
-    assert 2 < len(leaves) <= 6
+    assert 2 < len(leaves) <= 16
     assert tuple(ref for leaf in leaves for ref in leaf.record_refs) == tuple(
         member.saved_record_ref for member in parent.frozen.members)
     actual = [field for leaf in leaves for field in json.loads(leaf.material_json)['fields']]
@@ -321,10 +321,10 @@ def test_forced_history_refresh_preserves_first_month_and_new_current_reentry(hi
     assert stored_private(db, initial['report_id']) == initial_private
 
 
-@pytest.mark.parametrize('impossible', ['seven_leaves', 'one_record_group', 'single_leaf_plan'])
+@pytest.mark.parametrize('impossible', ['seventeen_leaves', 'one_record_group', 'single_leaf_plan'])
 def test_history_unplannable_complete_input_refuses_before_provider_call(history_db, monkeypatch, impossible):
     db, _, calls = history_db
-    insert_history(db, 7 if impossible == 'seven_leaves' else 1)
+    insert_history(db, 17 if impossible == 'seventeen_leaves' else 1)
     force_synthetic_partition(monkeypatch)
     if impossible == 'one_record_group':
         monkeypatch.setattr(model_sources, 'semantic_analysis_input_fits', lambda prepared: False)

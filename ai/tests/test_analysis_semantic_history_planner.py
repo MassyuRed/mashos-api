@@ -212,9 +212,9 @@ def test_overlapping_noncontiguous_correction_cohorts_stay_united_in_parent_orde
     assert parent == before and snapshot == original
 
 
-@pytest.mark.parametrize('case', ['seven_leaves', 'indivisible_record', 'indivisible_correction_cohort'])
+@pytest.mark.parametrize('case', ['seventeen_leaves', 'indivisible_record', 'indivisible_correction_cohort'])
 def test_unrepresentable_history_is_rejected_before_provider_or_sql(case, monkeypatch):
-    snapshot = history(7 if case == 'seven_leaves' else 4)
+    snapshot = history(17 if case == 'seventeen_leaves' else 4)
     if case == 'indivisible_correction_cohort':
         add_correction(snapshot, 3, (0, 2, 3))
     parent = prepare(snapshot)

@@ -486,12 +486,28 @@ def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None):
                 return index, value
         raise ValueError('semantic_graph_unbound')
 
+    def edge_key(start, end, kind):
+        return min(start, end), max(start, end), kind
+
+    def remaining_edges(graph, *, start=None, end=None):
+        kinds = schema['properties']['edges']['items']['properties']['relation_kind']['enum']
+        for left in graph.generated_node_ids:
+            if start is not None and left != start:
+                continue
+            for right in graph.generated_node_ids:
+                if left == right or end is not None and right != end:
+                    continue
+                for kind in kinds:
+                    if edge_key(left, right, kind) not in graph.generated_edge_keys:
+                        yield left, right, kind
+
     class UniqueEvidenceList(module.ListParsingState):
         def __init__(self, *args, **kwargs):
             super().__init__(*args, **kwargs)
             parts = self.list_member_type.oneOf
             self.is_evidence = bool(parts) and all(evidence_pair(p) for p in parts)
             self.is_nodes = node_type(self.list_member_type)
+            self.is_edges = edge_type(self.list_member_type)
             self.used_pairs = frozenset()
 
         def _clone(self):
@@ -524,6 +540,10 @@ def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None):
                 if not any(value not in graph.generated_node_ids
                         for value in self.list_member_type.properties['node_id'].enum):
                     chars = chars.replace(',', '')
+            if self.is_edges:
+                _, graph = graph_state(self.root.context.active_parser)
+                if not any(remaining_edges(graph)):
+                    chars = chars.replace(',', '')
             return chars
 
         def add_character(self, char):
@@ -554,16 +574,21 @@ def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None):
         def __init__(self, *args, **kwargs):
             super().__init__(*args, **kwargs)
             self.generated_node_ids = ()
+            self.generated_edge_keys = frozenset()
             self.covered_records = frozenset()
             self.selected_node_id = self.selected_from = None
+            self.selected_to = self.selected_relation_kind = None
             self.selected_quote = None
 
         def clone(self):
             result = super().clone()
             result.generated_node_ids = self.generated_node_ids
+            result.generated_edge_keys = self.generated_edge_keys
             result.covered_records = self.covered_records
             result.selected_node_id = self.selected_node_id
             result.selected_from = self.selected_from
+            result.selected_to = self.selected_to
+            result.selected_relation_kind = self.selected_relation_kind
             result.selected_quote = self.selected_quote
             return result
 
@@ -578,6 +603,10 @@ def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None):
                     result.selected_node_id = active.last_parsed_string
                 if edge_type(result.schema_object) and prior_key == 'from':
                     result.selected_from = active.last_parsed_string
+                if edge_type(result.schema_object) and prior_key == 'to':
+                    result.selected_to = active.last_parsed_string
+                if edge_type(result.schema_object) and prior_key == 'relation_kind':
+                    result.selected_relation_kind = active.last_parsed_string
                 if evidence_pair(result.schema_object) and prior_key == 'quote':
                     result.selected_quote = active.last_parsed_string
             if char == ':' and result.current_stage == module.ObjectParsingStage.PARSING_VALUE:
@@ -598,13 +627,17 @@ def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None):
                     else:
                         value.items.properties['from'].enum = ids
                         value.items.properties['to'].enum = ids
-                elif edge_type(result.schema_object) and key == 'to':
+                elif edge_type(result.schema_object) and key in {'from', 'to', 'relation_kind'}:
                     _, graph = graph_state(active)
                     value = deepcopy(result.schema_object.properties[key])
-                    value.enum = [item for item in graph.generated_node_ids
-                        if item != result.selected_from]
+                    options = tuple(remaining_edges(graph,
+                        start=result.selected_from if key != 'from' else None,
+                        end=result.selected_to if key == 'relation_kind' else None))
+                    position = {'from': 0, 'to': 1, 'relation_kind': 2}[key]
+                    available = {option[position] for option in options}
+                    value.enum = [item for item in value.enum if item in available]
                     if not value.enum:
-                        raise ValueError('semantic_edge_targets_exhausted')
+                        raise ValueError('semantic_edge_options_exhausted')
                 if value is not None:
                     active.object_stack[-1] = module.get_parser(result.root, value)
             if char == '}' and result.can_end() and node_type(result.schema_object):
@@ -613,6 +646,17 @@ def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None):
                 if result.selected_node_id is None or result.selected_node_id in graph.generated_node_ids:
                     raise ValueError('semantic_node_id_unbound')
                 graph.generated_node_ids += (result.selected_node_id,)
+                active.object_stack[index] = graph
+            if char == '}' and result.can_end() and edge_type(result.schema_object):
+                index, graph = graph_state(active)
+                if any(value is None for value in (result.selected_from,
+                        result.selected_to, result.selected_relation_kind)):
+                    raise ValueError('semantic_edge_unbound')
+                key = edge_key(result.selected_from, result.selected_to, result.selected_relation_kind)
+                if key in graph.generated_edge_keys:
+                    raise ValueError('semantic_edge_duplicate')
+                graph = graph.clone()
+                graph.generated_edge_keys = graph.generated_edge_keys | {key}
                 active.object_stack[index] = graph
             if char == '}' and result.can_end() and evidence_pair(result.schema_object):
                 if result.selected_quote is None:
