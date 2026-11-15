@@ -287,6 +287,12 @@ def semantic_output_schema(messages):
         perspective=dict(type='string', enum=['SELF', 'OBSERVED_INTERACTION']),
         unknowns=dict(type='array', items=text(240 if history else 500), maxItems=4),
         evidence=dict(type='array', items=dict(oneOf=pairs), minItems=1, maxItems=4)))
+    if history:
+        # Select a real source before interpreting it. Receiver keys and the
+        # full source text stay unchanged; this is private decoding order.
+        properties = node['properties']
+        node = obj(dict(evidence=properties['evidence'], **{
+            key: value for key, value in properties.items() if key != 'evidence'}))
     edge = obj({'from': dict(type='string', enum=node_ids), 'to': dict(type='string', enum=node_ids),
         'relation_kind': dict(type='string', enum=['SELF_OUTSIDE_GAP', 'CRITERION_EXPRESSION', 'CONTEXT_CONTRAST', 'SHARED_MEANING']),
         'label': text(60 if history else 80), 'explanation': text(360 if history else 1800)})
@@ -395,7 +401,7 @@ def _if_json_schema_parser(schema, config):
     return module.JsonSchemaParser(schema, config=config)
 
 
-def _semantic_unique_json_schema_parser(schema, config):
+def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None):
     """Bind graph references and unique source/quote pairs while decoding.
 
     The pinned parser does not enforce JSON Schema uniqueItems. Use an isolated
@@ -413,6 +419,8 @@ def _semantic_unique_json_schema_parser(schema, config):
     from copy import copy
     from lmformatenforcer.characterlevelparser import StringParser, UnionParser
     alphabet = frozenset(config.alphabet)
+    record_fields = dict(record_fields or {})
+    required_records = frozenset(record_fields.values())
 
     def enum_literal(value):
         raw = json.dumps(value, ensure_ascii=False)
@@ -511,6 +519,8 @@ def _semantic_unique_json_schema_parser(schema, config):
                 chars = chars.replace(',', '')
             if self.is_nodes:
                 _, graph = graph_state(self.root.context.active_parser)
+                if required_records - graph.covered_records:
+                    chars = chars.replace(']', '')
                 if not any(value not in graph.generated_node_ids
                         for value in self.list_member_type.properties['node_id'].enum):
                     chars = chars.replace(',', '')
@@ -524,6 +534,15 @@ def _semantic_unique_json_schema_parser(schema, config):
                 result.seen_list_opener = True
                 return result
             result = super().add_character(char)
+            if self.is_evidence and required_records and char == '[' and not self.seen_list_opener:
+                active = result.root.context.active_parser
+                _, graph = graph_state(active)
+                remaining_records = required_records - graph.covered_records
+                if remaining_records:
+                    value = deepcopy(self.list_member_type)
+                    value.oneOf = [part for part in value.oneOf
+                        if record_fields.get(part.properties['field'].enum[0]) in remaining_records]
+                    active.object_stack[-1] = module.get_parser(result.root, value)
             if self.is_evidence and char == ',' and not result.seen_list_closer:
                 remaining = result.remaining_type()
                 if remaining is None:
@@ -535,12 +554,14 @@ def _semantic_unique_json_schema_parser(schema, config):
         def __init__(self, *args, **kwargs):
             super().__init__(*args, **kwargs)
             self.generated_node_ids = ()
+            self.covered_records = frozenset()
             self.selected_node_id = self.selected_from = None
             self.selected_quote = None
 
         def clone(self):
             result = super().clone()
             result.generated_node_ids = self.generated_node_ids
+            result.covered_records = self.covered_records
             result.selected_node_id = self.selected_node_id
             result.selected_from = self.selected_from
             result.selected_quote = self.selected_quote
@@ -597,6 +618,12 @@ def _semantic_unique_json_schema_parser(schema, config):
                 if result.selected_quote is None:
                     raise ValueError('semantic_evidence_quote_unbound')
                 pair = (result.schema_object.properties['field'].enum[0], result.selected_quote)
+                record = record_fields.get(pair[0])
+                if record is not None:
+                    index, graph = graph_state(active)
+                    graph = graph.clone()
+                    graph.covered_records = graph.covered_records | {record}
+                    active.object_stack[index] = graph
                 for index in range(len(active.object_stack) - 1, -1, -1):
                     parent = active.object_stack[index]
                     if isinstance(parent, UniqueEvidenceList) and parent.is_evidence:
@@ -622,10 +649,20 @@ def semantic_json_parser(messages, alphabet):
     if schema['properties']['schema_version'].get('enum') == [IF_CANDIDATE_SCHEMA]:
         config.force_json_field_order = True
         return _if_json_schema_parser(schema, config)
-    # Select meaning, then its literal support, then the support's field ID.
-    # Record ordinals cannot force a quote from an unrelated original field.
+    # History selects a real source before its meaning. Ordinary maps keep
+    # their decoding order; record IDs never substitute for field IDs.
     config.force_json_field_order = True
-    return _semantic_unique_json_schema_parser(schema, config)
+    material = json.loads(messages[1]['content'])
+    quoted_fields = {part['properties']['field']['enum'][0] for part in
+        schema['properties']['nodes']['items']['properties']['evidence']['items']['oneOf']}
+    records = ({field['field']: field['record'] for field in material['fields']
+        if field['field'] in quoted_fields and type(field.get('record')) is int and field['record'] > 0}
+        if material.get('history_stage', {}).get('kind') in {'LEAF', 'MERGE'} else {})
+    # Native output has at most 24 meaning nodes. Larger histories retain the
+    # existing explicitly partial coverage rather than becoming a new refusal.
+    if len(set(records.values())) > 24:
+        records = {}
+    return _semantic_unique_json_schema_parser(schema, config, record_fields=records)
 
 
 def piece_output_schema(messages):

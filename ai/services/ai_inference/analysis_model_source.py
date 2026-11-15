@@ -25,6 +25,9 @@ EXPLICIT_PROMPT_VERSIONS = frozenset({DEFAULT_PROMPT_VERSION, 'selected_material
 # tokenizer/context budget (including its 4096-token output reservation).
 SEMANTIC_MAX_PROMPT_BYTES = 49152
 SEMANTIC_LEAF_MAX_PROMPT_BYTES = 24576
+# A merge also carries the admitted leaf readings and source manifest. Its
+# larger byte envelope does not increase native tokenizer/context capacity.
+SEMANTIC_MERGE_MAX_PROMPT_BYTES = 98304
 SEMANTIC_MAX_REQUEST_BYTES = 262144
 SEMANTIC_HISTORY_MAX_LEAVES = 6
 # Leave response/serialization time after the native 210s generation limit
@@ -44,7 +47,9 @@ def _semantic_message_bytes(prepared):
 
 def semantic_analysis_input_fits(prepared):
     """Message-byte admission; the serving owner still checks actual tokens."""
-    return _semantic_message_bytes(prepared) <= SEMANTIC_MAX_PROMPT_BYTES
+    maximum = (SEMANTIC_MERGE_MAX_PROMPT_BYTES if getattr(prepared, 'kind', None) == 'MERGE'
+        else SEMANTIC_MAX_PROMPT_BYTES)
+    return _semantic_message_bytes(prepared) <= maximum
 
 
 def semantic_history_leaf_target_fits(prepared):

@@ -73,6 +73,7 @@ def synthetic_record_budget(monkeypatch, maximum):
 
     # The planner imports the current source owner's function at call time.
     monkeypatch.setattr(sources, 'semantic_analysis_input_fits', fits)
+    monkeypatch.setattr(sources, 'semantic_history_leaf_target_fits', fits)
     return calls
 
 
@@ -146,7 +147,8 @@ def test_all_history_including_oldest_and_beyond_one_hundred_is_an_exact_partiti
     no_acquisition_or_sql(monkeypatch)
     synthetic_record_budget(monkeypatch, maximum)
     stages = service.prepare_semantic_history_batches(parent)
-    assert len(stages) == sources.SEMANTIC_HISTORY_MAX_LEAVES == 3
+    assert len(stages) == 3 <= sources.SEMANTIC_HISTORY_MAX_LEAVES
+    assert sources.SEMANTIC_HISTORY_MAX_LEAVES == admission.SEMANTIC_HISTORY_MAX_LEAVES
     assert [len(stage.record_refs) for stage in stages] == sizes
     assert_complete_partition(parent, stages)
     assert stages[0].record_refs[0] == snapshot['members'][0]['original']['id']
@@ -210,9 +212,9 @@ def test_overlapping_noncontiguous_correction_cohorts_stay_united_in_parent_orde
     assert parent == before and snapshot == original
 
 
-@pytest.mark.parametrize('case', ['four_leaves', 'indivisible_record', 'indivisible_correction_cohort'])
+@pytest.mark.parametrize('case', ['seven_leaves', 'indivisible_record', 'indivisible_correction_cohort'])
 def test_unrepresentable_history_is_rejected_before_provider_or_sql(case, monkeypatch):
-    snapshot = history(4)
+    snapshot = history(7 if case == 'seven_leaves' else 4)
     if case == 'indivisible_correction_cohort':
         add_correction(snapshot, 3, (0, 2, 3))
     parent = prepare(snapshot)

@@ -2752,6 +2752,8 @@ class AnalysisSemanticMapStageInput:
             'history_stage、field_manifest、leaf_interpretations、scoped_unknownsは制御情報で、本人の新しい発言ではありません。')
         instruction += ('\nまず独立した意味を選んで項目を作り、その意味に合うnode_kindを一つ付けます。'
             '四つのnode_kindを埋める必要はありません。同じ出来事や説明を分類ごとに複製しません。'
+            '各項目はevidenceから始め、実際に提示された元fieldの本文と条件を読んで、根拠に対応する意味を説明します。'
+            '提示された各recordを少なくとも一項目の根拠に実際に使い、関係のない別recordの根拠を件数合わせに添えません。'
             '図のsummaryは短い一文、詳細のexplanationは根拠と読みのつながりを簡潔に示し、原文全文を復唱しません。'
             '相手の尊重・納得・理解は、本人が確認して記した範囲だけに留め、不明な相手の認識を項目へ作りません。')
         if self.kind == 'MERGE':

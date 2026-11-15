@@ -135,9 +135,12 @@ def test_native_history_detail_budget_stops_repetition_without_changing_source(s
         history_stage=dict(kind=stage))
     messages = [dict(role='system', content='synthetic'), dict(role='user',
         content=json.dumps(material, ensure_ascii=False))]
-    def document(length):
+    def document(length, *, source_first=True):
         value = json.loads(graph_document(['n1'], []))
         value['nodes'][0]['explanation'] = '説' * length
+        if source_first:
+            node = value['nodes'][0]
+            value['nodes'][0] = dict(evidence=node.pop('evidence'), **node)
         return json.dumps(value, ensure_ascii=False, separators=(',', ':'))
     alphabet = ''.join(dict.fromkeys(document(421)))
     before = deepcopy(messages)
@@ -145,8 +148,47 @@ def test_native_history_detail_budget_stops_repetition_without_changing_source(s
     assert not unique_evidence_accept(probe.semantic_json_parser(messages, alphabet), document(421))
     ordinary = deepcopy(messages)
     ordinary[1]['content'] = json.dumps(dict(fields=material['fields']), ensure_ascii=False)
-    assert unique_evidence_accept(probe.semantic_json_parser(ordinary, alphabet), document(421))
+    assert unique_evidence_accept(probe.semantic_json_parser(ordinary, alphabet), document(421, source_first=False))
     assert messages == before and json.loads(messages[1]['content'])['fields'][0]['text'] == original
+
+
+@pytest.mark.parametrize('roots,expected', [([[1]], False), ([[1], [1]], False),
+    ([[1], [2]], True), ([[2], [1]], True), ([[1, 2]], True),
+    ([[1], [2], [1]], True), ([[1], [2, 1]], True), ([[1], [1, 2]], False),
+    ([[1, 3]], False)])
+def test_history_source_first_cannot_finish_before_each_quoted_record_is_represented(roots, expected):
+    pytest.importorskip('lmformatenforcer')
+    fields = [dict(field=1, record=9, text='一つ目の原文。'),
+        dict(field=2, record=37, text='もう一つの原文。'),
+        dict(field=3, record=None, text='本人訂正。', record_refs=[9, 37])]
+    packet = json.loads(graph_document([f'n{i}' for i in range(1, len(roots) + 1)], []))
+    for node, numbers in zip(packet['nodes'], roots):
+        node['evidence'] = [dict(quote=fields[n - 1]['text'], field=n) for n in numbers]
+    # Rebuild insertion order: evidence is selected before any interpretation.
+    packet['nodes'] = [dict(evidence=node['evidence'], **{k: v for k, v in node.items()
+        if k != 'evidence'}) for node in packet['nodes']]
+    text = json.dumps(packet, ensure_ascii=False, separators=(',', ':'))
+    messages = [dict(role='system', content='synthetic'), dict(role='user',
+        content=json.dumps(dict(fields=fields, history_stage=dict(kind='LEAF')), ensure_ascii=False))]
+    alphabet = ''.join(dict.fromkeys(text + ''.join(f['text'] for f in fields)))
+    assert unique_evidence_accept(probe.semantic_json_parser(messages, alphabet), text) == expected
+    from lmformatenforcer.tokenenforcer import TokenEnforcer, TokenEnforcerTokenizerData
+    vocabulary = list(alphabet) + ['P']
+    ids = {char: index for index, char in enumerate(vocabulary)}
+    eos = len(vocabulary)
+    data = TokenEnforcerTokenizerData([(i, char, False) for i, char in enumerate(vocabulary)],
+        lambda tokens: ''.join(vocabulary[i] for i in tokens if i < eos), eos, False, eos + 1)
+    enforcer = TokenEnforcer(data, probe.semantic_json_parser(messages, alphabet))
+    enforcer.root_parser.config.force_json_field_order = True
+    sent, accepted = [ids['P']], True
+    for char in text:
+        if ids[char] not in enforcer.get_allowed_tokens(sent).allowed_tokens:
+            accepted = False
+            break
+        sent.append(ids[char])
+    if accepted:
+        accepted = eos in enforcer.get_allowed_tokens(sent).allowed_tokens
+    assert accepted == expected
 
 
 @pytest.mark.parametrize('ids,edges,expected', GRAPH_CASES)
