@@ -27,7 +27,7 @@ SEMANTIC_MAX_PROMPT_BYTES = 49152
 SEMANTIC_LEAF_MAX_PROMPT_BYTES = 16384
 # A merge also carries the admitted leaf readings and source manifest. Its
 # larger byte envelope does not increase native tokenizer/context capacity.
-SEMANTIC_MERGE_MAX_PROMPT_BYTES = 98304
+SEMANTIC_MERGE_MAX_PROMPT_BYTES = 131072
 SEMANTIC_MAX_REQUEST_BYTES = 262144
 SEMANTIC_HISTORY_MAX_LEAVES = 16
 # Leave response/serialization time after the native 210s generation limit

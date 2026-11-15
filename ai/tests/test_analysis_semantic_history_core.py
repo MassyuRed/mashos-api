@@ -162,7 +162,7 @@ def test_unknowns_do_not_cross_unrelated_source_scopes_and_above_four_is_rejecte
 
 def test_complete_merge_fields_use_the_exact_message_budget_and_preserve_unquoted_source(monkeypatch):
     import analysis_model_source as sources
-    assert core.SEMANTIC_HISTORY_MERGE_MAX_PROMPT_BYTES == sources.SEMANTIC_MERGE_MAX_PROMPT_BYTES == 98304
+    assert core.SEMANTIC_HISTORY_MERGE_MAX_PROMPT_BYTES == sources.SEMANTIC_MERGE_MAX_PROMPT_BYTES == 131072
     snapshot = source_snapshot(2)
     snapshot['members'][0]['original'].update(memo='私は返事を待った。', memo_action='返事の前に資料を見た。')
     snapshot['members'][1]['original'].update(memo='私は話した。', memo_action='')

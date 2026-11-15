@@ -2724,7 +2724,7 @@ SEMANTIC_HISTORY_MAX_LEAVES = 16
 SEMANTIC_HISTORY_CONTEXT_SCALARS = 160
 # Matches the existing transport envelope. This is an exact serialized-byte
 # bound, not a tokenizer/context estimate; native serving checks tokens too.
-SEMANTIC_HISTORY_MERGE_MAX_PROMPT_BYTES = 98304
+SEMANTIC_HISTORY_MERGE_MAX_PROMPT_BYTES = 131072
 
 
 @dataclass(frozen=True, slots=True, repr=False)

@@ -158,7 +158,7 @@ def test_merge_envelope_accepts_source_and_leaf_context_without_expanding_parent
     assert not model_sources.semantic_analysis_input_fits(parent)
     assert not model_sources.semantic_analysis_input_fits(leaf)
     assert model_sources.semantic_analysis_input_fits(merge)
-    messages[1]['content'] = '記' * 33000
+    messages[1]['content'] = '記' * 44000
     assert not model_sources.semantic_analysis_input_fits(merge)
 
 
