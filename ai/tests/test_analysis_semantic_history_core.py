@@ -106,9 +106,55 @@ def test_merge_requires_all_parent_records_once_and_bounded_order(selection):
         core.prepare_semantic_merge(prepared, selection(standard_leaves(prepared)))
 
 
-def test_merge_inherits_scoped_unknowns_without_rewriting_a_correct_paraphrase_or_raw():
+@pytest.mark.parametrize('profile, hashes', [
+    (core.SEMANTIC_MAP_PROFILE, (
+        '0ed9e6c3dcb9b436f13c4418575dc9237762d1e4edd4f18426b217a975c49b99',
+        'f574cab50cfc085e3978b9eef12b626541309d6ef1b913edaf06c55532241798')),
+    (core.SEMANTIC_MAP_SOURCE_DUTIES_PROFILE, (
+        '8d11d9426788eaccaea3c70fe68c55483d7f1aaac8eb339d1f4abee880108087',
+        '2068408ed06947b40a94eb169901101a0afe7cc1a4550403ff679c99c8e0ab9a')),
+])
+def test_leaf_v1_messages_stay_byte_identical_when_merge_changes_to_v2(profile, hashes):
+    prepared = parent(profile=profile)
+    leaves = standard_leaves(prepared)
+    assert tuple(core.semantic_map_hash(stage.messages()) for stage, _ in leaves) == hashes
+    for stage, receipt in leaves:
+        assert json.loads(stage.material_json)['history_stage']['profile'] == 'semantic_map.history_synthesis.v1'
+        core.build_semantic_stage(stage, receipt)
+    merge = core.prepare_semantic_merge(prepared, leaves)
+    assert json.loads(merge.material_json)['history_stage']['profile'] == 'semantic_map.history_synthesis.v2'
+
+
+def test_merge_sources_only_keep_exact_leaf_raw_and_unassessed_unknowns_private():
     prepared = parent()
-    merge = core.prepare_semantic_merge(prepared, standard_leaves(prepared))
+    leaves = []
+    for index, (stage, receipt) in enumerate(standard_leaves(prepared)):
+        leaf_packet = json.loads(receipt.raw)
+        leaf_packet['overview'] = dict(title='葉だけの見出し' + str(index), summary='葉だけの概要' + str(index))
+        for node in leaf_packet['nodes']:
+            node.update(title='葉だけの項目' + str(index), summary='葉だけの要約' + str(index),
+                explanation='葉だけの説明' + str(index), unknowns=['葉だけの未検証事項' + str(index)])
+        if index == 0:
+            # Repeated use of one literal in two AI nodes yields one flat
+            # source-index entry, without carrying that node grouping forward.
+            duplicate = deepcopy(leaf_packet['nodes'][0])
+            duplicate.update(node_id='n2', title='葉だけの別項目', summary='葉だけの別要約',
+                explanation='葉だけの別説明')
+            leaf_packet['nodes'].append(duplicate)
+        leaves.append((stage, response(stage, leaf_packet)))
+    leaves = tuple(leaves)
+    merge = core.prepare_semantic_merge(prepared, leaves)
+    material = json.loads(merge.material_json)
+    assert 'leaf_interpretations' not in material and 'scoped_unknowns' not in material
+    assert len(material['leaf_receipts']) == 2 and len(material['leaf_source_index']) == 3
+    assert all(set(receipt) == {'leaf_request_ref', 'messages_sha256', 'response_sha256'}
+        for receipt in material['leaf_receipts'])
+    originals = {field[0]: field[1] for field in prepared.fields}
+    for entry in material['leaf_source_index']:
+        assert set(entry) == {'field', 'quote', 'scalar_range'}
+        start, end = entry['scalar_range']
+        assert originals[entry['field']][start:end] == entry['quote']
+    assert '葉だけの' not in core.semantic_map_canonical(merge.messages())
     packet = candidate()
     paraphrase = 'その場で黙っていた理由はまだ分からない'
     packet['nodes'][1]['unknowns'] = [paraphrase]
@@ -118,31 +164,27 @@ def test_merge_inherits_scoped_unknowns_without_rewriting_a_correct_paraphrase_o
     result = core.build_semantic_stage(merge, receipt)
     assert packet == original and receipt.raw == raw
     projection = result.artifact.safe_projection(authenticated_owner_scope=OWNER)
-    old_unknown = 'その場で意見を伝えなかった理由'
-    assert projection['nodes'][1]['unknowns'] == [paraphrase, old_unknown]
+    assert projection['nodes'][1]['unknowns'] == [paraphrase]
     visible = result.artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text']
-    assert paraphrase in visible and old_unknown in visible
+    assert paraphrase in visible and '葉だけの' not in visible
     private = result.artifact.private_evidence()
     assert private['response_sha256'] == receipt.raw_sha256
     assert private['messages_sha256'] == receipt.messages_sha256
     retained = result.artifact.private_evidence()['graph']['meaning_review']['history_synthesis']
-    assert retained['scoped_unknowns'][0]['unknowns'] == [old_unknown]
+    assert retained['profile'] == 'semantic_map.history_synthesis.v2'
+    assert retained['unknown_handling'] == 'PRIVATE_ONLY_UNASSESSED'
+    assert retained['scoped_unknowns'][0]['unknowns'] == ['葉だけの未検証事項0']
     assert retained['full_source_semantic_coverage'] is False
-    inherited, = retained['inherited_unknowns']
-    assert inherited['text'] == old_unknown and inherited['added_to_final']
-    assert inherited['node_ref'] == 'n2' and inherited['status'] == 'INHERITED_AI_UNASSESSED'
-    node = private['graph']['nodes'][1]
-    assert set(inherited['matched_final_evidence_ids']) <= {r['evidence_id'] for r in node['evidence_refs']}
-    assert inherited['source_evidence_refs'] == [core._semantic_map_evidence(prepared, e)[1]
-        for e in retained['scoped_unknowns'][0]['evidence']]
-    assert 'INHERITED_AI_UNASSESSED' not in core.semantic_map_canonical(projection)
-    # An exact existing unknown is retained once; no synonym guess or cutoff.
-    exact = core.build_semantic_stage(merge, response(merge))
-    assert exact.artifact.safe_projection(authenticated_owner_scope=OWNER)['nodes'][1]['unknowns'] == [old_unknown]
-    assert not exact.artifact.private_evidence()['graph']['meaning_review']['history_synthesis']['inherited_unknowns'][0]['added_to_final']
+    assert retained['inherited_unknowns'] == []
+    assert retained['leaf_source_index'] == material['leaf_source_index']
+    for entry, (stage, leaf_receipt) in zip(retained['leaf_candidates'], leaves):
+        assert entry['leaf_request_ref'] == stage.request_ref
+        assert entry['raw'] == leaf_receipt.raw and entry['packet'] == json.loads(leaf_receipt.raw)
+        assert entry['messages_sha256'] == leaf_receipt.messages_sha256
+        assert entry['response_sha256'] == leaf_receipt.raw_sha256
 
 
-def test_unknowns_do_not_cross_unrelated_source_scopes_and_above_four_is_rejected():
+def test_leaf_unknowns_never_expand_final_unknowns_or_the_existing_four_item_limit():
     prepared = parent()
     merge = core.prepare_semantic_merge(prepared, standard_leaves(prepared))
     packet = candidate()
@@ -155,9 +197,12 @@ def test_unknowns_do_not_cross_unrelated_source_scopes_and_above_four_is_rejecte
     packet['nodes'][1]['unknowns'] = ['追加の未確認' + str(i) for i in range(4)]
     original = deepcopy(packet)
     receipt = response(merge, packet)
-    with pytest.raises(core.AnalysisSemanticMapError, match='unknown_capacity_exceeded'):
-        core.build_semantic_stage(merge, receipt)
+    result = core.build_semantic_stage(merge, receipt)
+    assert result.artifact.safe_projection(authenticated_owner_scope=OWNER)['nodes'][1]['unknowns'] == packet['nodes'][1]['unknowns']
     assert packet == original and json.loads(receipt.raw) == original
+    packet['nodes'][1]['unknowns'].append('五つ目の未確認')
+    with pytest.raises(core.AnalysisSemanticMapError, match='analysis_semantic_map_invalid'):
+        core.build_semantic_stage(merge, response(merge, packet))
 
 
 def test_complete_merge_fields_use_the_exact_message_budget_and_preserve_unquoted_source(monkeypatch):
@@ -372,7 +417,7 @@ def test_final_compiler_added_source_context_roots_are_also_shown():
     assert '私は会議にいた' in result.artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text']
 
 
-def test_compiler_added_context_inherits_its_leaf_unknown_without_editing_raw():
+def test_compiler_added_source_context_keeps_leaf_unknown_private_without_editing_raw():
     from test_analysis_semantic_source_duties import condition_sample, condition_candidate
     prepared = parent(condition_sample(), core.SEMANTIC_MAP_SOURCE_DUTIES_PROFILE)
     first = core.prepare_semantic_leaf(prepared, (prepared.frozen.members[0].saved_record_ref,))
@@ -386,10 +431,44 @@ def test_compiler_added_context_inherits_its_leaf_unknown_without_editing_raw():
     receipt = response(merge, packet)
     result = core.build_semantic_stage(merge, receipt)
     assert packet == original and json.loads(receipt.raw) == original
-    assert result.artifact.safe_projection(authenticated_owner_scope=OWNER)['nodes'][0]['unknowns'] == [unknown]
+    assert result.artifact.safe_projection(authenticated_owner_scope=OWNER)['nodes'][0]['unknowns'] == []
     private = result.artifact.private_evidence()
-    audit, = private['graph']['meaning_review']['history_synthesis']['inherited_unknowns']
+    history = private['graph']['meaning_review']['history_synthesis']
+    assert history['inherited_unknowns'] == []
+    assert history['scoped_unknowns'][0]['unknowns'] == [unknown]
+    assert history['leaf_candidates'][0]['raw'] == first_receipt.raw
     root = core._semantic_map_evidence(prepared, dict(field=1, quote='私は会議にいた'))[1]
-    assert root in audit['source_evidence_refs']
-    assert root['evidence_id'] in audit['matched_final_evidence_ids']
+    assert root in private['graph']['nodes'][0]['evidence_refs']
     assert private['response_sha256'] == receipt.raw_sha256
+
+
+def test_later_recorded_confirmation_is_not_forced_back_into_a_leaf_unknown():
+    snapshot = source_snapshot(2)
+    snapshot['members'][0]['original'].update(
+        memo='私は母に予定を伝えた。母から「了解しました」と返信があった。返事の理由までは分からない。',
+        memo_action='')
+    snapshot['members'][1]['original'].update(memo='私は資料を確認した。', memo_action='')
+    prepared = parent(snapshot)
+    leaves = []
+    false_unknown = '母から返信があったかは分からない。'
+    for index, member in enumerate(prepared.frozen.members):
+        leaf = core.prepare_semantic_leaf(prepared, (member.saved_record_ref,))
+        field = json.loads(leaf.material_json)['fields'][0]
+        leaves.append((leaf, response(leaf, packet_for([dict(field=field['field'],
+            quote='私は母に予定を伝えた。' if index == 0 else field['text'])],
+            unknowns=[false_unknown] if index == 0 else []))))
+    merge = core.prepare_semantic_merge(prepared, tuple(leaves))
+    packet = packet_for([dict(field=1, quote='母から「了解しました」と返信があった。')],
+        unknowns=['返事の理由までは分からない。'])
+    packet['nodes'][0].update(summary='母から「了解しました」と返信があったと記録されています。',
+        explanation='予定を伝えた後の返信が書かれています。返事の理由までは分からないと記されています。')
+    baseline = application.build_semantic_map(prepared, response(prepared, packet))[0]
+    result = core.build_semantic_stage(merge, response(merge, packet))
+    assert result.artifact.safe_projection(authenticated_owner_scope=OWNER)['nodes'] == baseline.safe_projection(
+        authenticated_owner_scope=OWNER)['nodes']
+    visible = result.artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text']
+    assert '了解しました' in visible and '返事の理由までは分からない。' in visible
+    assert false_unknown not in visible and false_unknown not in core.semantic_map_canonical(merge.messages())
+    history = result.artifact.private_evidence()['graph']['meaning_review']['history_synthesis']
+    assert history['scoped_unknowns'][0]['unknowns'] == [false_unknown]
+    assert history['leaf_candidates'][0]['packet']['nodes'][0]['unknowns'] == [false_unknown]

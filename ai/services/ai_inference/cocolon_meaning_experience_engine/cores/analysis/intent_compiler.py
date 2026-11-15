@@ -3937,11 +3937,15 @@ def compile_analysis_semantic_stage(stage, packet, *, response_sha256):
     """
     from .semantic_admission import (AnalysisSemanticMapStageInput,
         _semantic_map_require, _semantic_map_evidence, semantic_map_canonical,
-        semantic_map_hash, _semantic_history_corrections)
+        semantic_map_hash, _semantic_history_corrections, _semantic_history_leaf_packet,
+        SEMANTIC_HISTORY_PROFILE, SEMANTIC_HISTORY_MERGE_PROFILE)
     _semantic_map_require(type(stage) is AnalysisSemanticMapStageInput
         and stage.kind in {'LEAF', 'MERGE'}, 'analysis_semantic_history_stage_unbound')
     parent = stage.parent
     material = json.loads(stage.material_json)
+    history_profile = SEMANTIC_HISTORY_MERGE_PROFILE if stage.kind == 'MERGE' else SEMANTIC_HISTORY_PROFILE
+    _semantic_map_require(material.get('history_stage', {}).get('profile') == history_profile,
+        'analysis_semantic_history_stage_unbound')
     originals = {f[0]: f for f in parent.fields}
     shown = {}
     for field in material['fields']:
@@ -3986,46 +3990,33 @@ def compile_analysis_semantic_stage(stage, packet, *, response_sha256):
     nodes = json.loads(graph.nodes_json)
     _semantic_map_require(all(root_is_shown(root) for node in nodes
         for root in node['evidence_refs']), 'analysis_semantic_history_evidence_not_shown')
-    inherited_unknowns = []
+    leaf_candidates, scoped_unknowns = [], []
     if stage.kind == 'MERGE':
-        # Keep the model's raw/receipt/packet intact. Like source context, a
-        # previously admitted AI unknown is a derived graph constraint, not a
-        # new person fact. Literal paraphrases need not match to retain it.
-        # Include compiler-added support roots in the original-scope match.
-        for node in nodes:
-            values = list(node['unknowns'])
-            for unknown in material['scoped_unknowns']:
-                scopes = [_semantic_map_evidence(parent, e)[1] for e in unknown['evidence']]
-                matched = [root['evidence_id'] for root in node['evidence_refs']
-                    if any(root['source_envelope_id'] == scope['source_envelope_id']
-                        and root['field_path'] == scope['field_path']
-                        and max(root['scalar_start'], scope['scalar_start']) < min(root['scalar_end'], scope['scalar_end'])
-                        for scope in scopes)]
-                if not matched:
-                    continue
-                for text in unknown['unknowns']:
-                    added = text not in values
-                    if added:
-                        values.append(text)
-                    inherited_unknowns.append(dict(node_ref=node['node_ref'],
-                        leaf_request_ref=unknown['leaf_request_ref'], leaf_node_id=unknown['node_id'],
-                        text=text, added_to_final=added, status='INHERITED_AI_UNASSESSED',
-                        source_evidence_refs=scopes,
-                        matched_final_evidence_ids=list(dict.fromkeys(matched))))
-            _semantic_map_require(len(values) <= 4, 'analysis_semantic_history_unknown_capacity_exceeded')
-            node['unknowns'] = values
-        graph = replace(graph, nodes_json=semantic_map_canonical(nodes))
+        # Leaf candidates are retained as unassessed private history. They
+        # neither become new person source nor add words to the final graph.
+        # Rederive them from the bound receipts, never from model material.
+        for leaf, receipt in stage.leaves:
+            leaf_packet, leaf_graph = _semantic_history_leaf_packet(leaf, receipt)
+            leaf_candidates.append(dict(leaf_request_ref=leaf.request_ref,
+                messages_sha256=receipt.messages_sha256, response_sha256=receipt.raw_sha256,
+                raw=receipt.raw, packet=leaf_packet, coverage=json.loads(leaf_graph.coverage_json)))
+            for node in leaf_packet['nodes']:
+                if node['unknowns']:
+                    scoped_unknowns.append(dict(leaf_request_ref=leaf.request_ref, node_id=node['node_id'],
+                        evidence=node['evidence'], unknowns=node['unknowns']))
     review = json.loads(graph.meaning_review_json)
-    review['history_synthesis'] = dict(profile='semantic_map.history_synthesis.v1', kind=stage.kind,
+    review['history_synthesis'] = dict(profile=history_profile, kind=stage.kind,
         parent_request_ref=parent.request_ref, full_source_semantic_coverage=False,
-        leaf_receipts=[{key: leaf[key] for key in ('leaf_request_ref', 'messages_sha256', 'response_sha256')}
-            for leaf in material.get('leaf_interpretations', [])],
+        leaf_receipts=material.get('leaf_receipts', []),
         field_manifest=material.get('field_manifest', []),
         omitted_ranges=material.get('omitted_ranges', []),
-        scoped_unknowns=material.get('scoped_unknowns', []),
-        inherited_unknowns=inherited_unknowns,
-        unknown_handling='INHERIT_WITHOUT_RESOLUTION',
+        scoped_unknowns=scoped_unknowns,
+        inherited_unknowns=[],
+        unknown_handling='PRIVATE_ONLY_UNASSESSED' if stage.kind == 'MERGE' else 'INHERIT_WITHOUT_RESOLUTION',
         history_coverage=material.get('history_coverage', {}))
+    if stage.kind == 'MERGE':
+        review['history_synthesis'].update(leaf_candidates=leaf_candidates,
+            leaf_source_index=material['leaf_source_index'])
     coverage = json.loads(graph.coverage_json)
     if stage.kind == 'LEAF':
         count = len(stage.record_refs)

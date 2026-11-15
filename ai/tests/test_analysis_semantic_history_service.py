@@ -194,7 +194,16 @@ def test_three_leaf_semantic_history_saves_once_and_cross_boundary_evidence_rere
     originals = insert_history(db)
     force_synthetic_partition(monkeypatch)
     received = []
-    current = run(cumulative.ensure_map(OWNER, model_source=successful_history_source(received)))
+    leaf_packets = []
+
+    def retain_leaf_candidate(material, packet, number):
+        if material['history_stage']['kind'] == 'LEAF':
+            packet['nodes'][0]['explanation'] = f'補助候補{number}だけに残す説明です。'
+            packet['nodes'][0]['unknowns'] = [f'補助候補{number}の未評価事項です。']
+            leaf_packets.append(deepcopy(packet))
+
+    current = run(cumulative.ensure_map(OWNER,
+        model_source=successful_history_source(received, mutate=retain_leaf_candidate)))
     assert [m['history_stage']['kind'] for m in received] == ['LEAF', 'LEAF', 'LEAF', 'MERGE']
     leaves, merge = received[:3], received[3]
     assert all(len(m['records']) == 1 and len(m['fields']) == 2 for m in leaves)
@@ -215,13 +224,43 @@ def test_three_leaf_semantic_history_saves_once_and_cross_boundary_evidence_rere
     for node in graph['nodes']:
         evidence = run(cumulative.map_evidence(OWNER, current['report_id'], node['node_ref']))['items']
         assert evidence and all(item['version_state'] == 'CURRENT' for item in evidence)
-    assert merge['leaf_interpretations'] and merge['field_manifest']
+    assert merge['history_stage']['profile'] == 'semantic_map.history_synthesis.v2'
+    assert 'leaf_interpretations' not in merge and 'scoped_unknowns' not in merge
+    receipts = merge['leaf_receipts']
+    assert len(receipts) == 3 and merge['field_manifest']
+    assert all(set(receipt) == {'leaf_request_ref', 'messages_sha256', 'response_sha256'}
+        for receipt in receipts)
+    assert merge['leaf_source_index'] == [dict(field=field['field'], quote=field['text'],
+        scalar_range=[0, len(field['text'])]) for leaf in leaves for field in leaf['fields']]
+    history = graph['meaning_review']['history_synthesis']
+    assert history['profile'] == 'semantic_map.history_synthesis.v2'
+    assert history['leaf_receipts'] == receipts
+    assert history['leaf_source_index'] == merge['leaf_source_index']
+    assert history['unknown_handling'] == 'PRIVATE_ONLY_UNASSESSED'
+    assert history['inherited_unknowns'] == []
+    assert all(node['unknowns'] == [] for node in graph['nodes'])
+    assert len(history['leaf_candidates']) == 3
+    for candidate, packet, receipt in zip(history['leaf_candidates'], leaf_packets, receipts):
+        raw = json.dumps(packet, ensure_ascii=False)
+        assert {key: candidate[key] for key in receipt} == receipt
+        assert candidate['raw'] == raw and candidate['packet'] == packet
+        assert candidate['response_sha256'] == hashlib.sha256(raw.encode()).hexdigest()
+        assert candidate['coverage']['source_count'] == candidate['coverage']['mapped_count'] == 1
+        for text in (packet['nodes'][0]['explanation'], *packet['nodes'][0]['unknowns']):
+            assert text not in json.dumps(merge, ensure_ascii=False)
+            assert text not in json.dumps(current, ensure_ascii=False)
+    assert history['scoped_unknowns'] == [dict(leaf_request_ref=receipt['leaf_request_ref'],
+        node_id=packet['nodes'][0]['node_id'], evidence=packet['nodes'][0]['evidence'],
+        unknowns=packet['nodes'][0]['unknowns']) for packet, receipt in zip(leaf_packets, receipts)]
     # The same current and pinned month are ordinary non-generating reads.
     forbidden = provider(lambda request: (_ for _ in ()).throw(AssertionError('saved read generated')))
     for kwargs in (dict(ensure=False), dict(monthly=True, force=True)):
         saved = run(cumulative.ensure_map(OWNER, model_source=forbidden, **kwargs))
         assert saved['report_id'] == current['report_id'] and saved['content_text'] == current['content_text']
+        assert saved['meta'] == current['meta'] and saved['map_context'] == current['map_context']
+        assert not saved['refreshed']
     assert len(generation_commits(calls)) == 1
+    assert stored_private(db, current['report_id']) == private
 
 
 def test_history_final_coverage_counts_unmapped_records_without_losing_source_manifest(history_db, monkeypatch):

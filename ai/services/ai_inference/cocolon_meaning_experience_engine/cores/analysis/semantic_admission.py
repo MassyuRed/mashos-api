@@ -2720,6 +2720,7 @@ def generate_analysis_semantic_map(request, model_input):
 # author. A child never acquires a new snapshot/guard, and a model reading is
 # never admitted as an additional person source.
 SEMANTIC_HISTORY_PROFILE = 'semantic_map.history_synthesis.v1'
+SEMANTIC_HISTORY_MERGE_PROFILE = 'semantic_map.history_synthesis.v2'
 SEMANTIC_HISTORY_MAX_LEAVES = 16
 SEMANTIC_HISTORY_CONTEXT_SCALARS = 160
 # Matches the existing transport envelope. This is an exact serialized-byte
@@ -2760,12 +2761,16 @@ class AnalysisSemanticMapStageInput:
             '図のsummaryは短い一文、詳細のexplanationは根拠と読みのつながりを簡潔に示し、原文全文を復唱しません。'
             '相手の尊重・納得・理解は、本人が確認して記した範囲だけに留め、不明な相手の認識を項目へ作りません。')
         if self.kind == 'MERGE':
-            instruction += ('\n各leaf_interpretationsは原記録を読んだAIの仮の読みであり、本人事実や根拠にしません。'
-                '各葉の関係を並べるだけでなく、異なる葉の根拠を見比べて一つのマップへ構成してください。'
+            instruction += ('\nleaf_receiptsは受領の対応記録、leaf_source_indexは元fieldへ照合済みの引用位置です。'
+                '引用位置の一致は、その意味を確認済みという保証ではありません。'
+                'LEAFの自然文候補や未検証のunknownは提示していません。fieldsの原文を独立に読み直し、'
+                '本人・他者・対象・書かれた時点・条件・留保と、記録間の違いや関係を根拠から構成してください。'
+                '葉の数を項目数にせず、一つの記録の独立した意味も必要に応じて分けます。'
+                '関係のない別記録の根拠を件数合わせで束ねず、関係づける根拠がなければ別の項目にします。'
                 '根拠にはfieldsに実際に提示された連続文字列だけを引用します。fieldsのtextは元fieldの一連続断片で、'
                 'field_manifestの全長やomitted_rangesにある未提示本文を読んだとは扱いません。'
                 '周辺断片や引用が意味を完全に保つとの保証はありません。主体・否定・時点・条件・留保を推測で補わず、'
-                'scoped_unknownsの同じ根拠に付く未確認事項をその根拠を使う項目のunknownsに保持します。'
+                '本人が不明と記したことは残し、後の記録で確認された内容を以前の未確認へ戻しません。'
                 '省略された記録や意味を反対・不存在・一般的傾向へ変換しません。'
                 '全有効map_correctionsの本人説明は全文を少なくとも一項目で根拠に使用し、AI対象文を根拠にしません。')
         else:
@@ -2801,13 +2806,14 @@ def _semantic_history_corrections(parent, refs):
 
 
 def _semantic_history_stage(parent, kind, refs, leaves, material):
-    material['history_stage'] = dict(profile=SEMANTIC_HISTORY_PROFILE, kind=kind,
+    profile = SEMANTIC_HISTORY_MERGE_PROFILE if kind == 'MERGE' else SEMANTIC_HISTORY_PROFILE
+    material['history_stage'] = dict(profile=profile, kind=kind,
         parent_request_ref=parent.request_ref,
         records=[i for i, member in enumerate(parent.frozen.members, 1)
                  if member.saved_record_ref in refs])
     body = semantic_map_canonical(material)
     request_ref = 'analysis-semantic-stage:' + semantic_map_hash([
-        SEMANTIC_HISTORY_PROFILE, parent.request_ref, parent.source_guard, kind, refs, body])
+        profile, parent.request_ref, parent.source_guard, kind, refs, body])
     return AnalysisSemanticMapStageInput(parent, kind, refs, leaves, body, request_ref)
 
 
@@ -2875,7 +2881,7 @@ def prepare_semantic_merge(parent, leaves):
     material = json.loads(parent.material_json)
     by_number = {f['field']: f for f in material['fields']}
     by_stored = {f[0]: f for f in parent.fields}
-    ranges, interpretations, unknowns, refs, represented = {}, [], [], [], set()
+    ranges, receipts, quote_index, refs, represented = {}, [], {}, [], set()
     for item in leaves:
         _semantic_map_require(type(item) is tuple and len(item) == 2,
             'analysis_semantic_history_leaf_invalid')
@@ -2885,18 +2891,18 @@ def prepare_semantic_merge(parent, leaves):
         packet, graph = _semantic_history_leaf_packet(stage, response)
         refs.extend(stage.record_refs)
         represented.update(ref for node in json.loads(graph.nodes_json) for ref in node['record_refs'])
-        interpretations.append(dict(leaf_request_ref=stage.request_ref,
-            messages_sha256=response.messages_sha256, response_sha256=response.raw_sha256,
-            packet=packet, coverage=json.loads(graph.coverage_json)))
+        receipts.append(dict(leaf_request_ref=stage.request_ref,
+            messages_sha256=response.messages_sha256, response_sha256=response.raw_sha256))
         for node in packet['nodes']:
             for evidence in node['evidence']:
                 number, quote = evidence['field'], evidence['quote']
                 text = by_stored[number][1]
                 start = text.index(quote)
                 ranges.setdefault(number, []).append((start, start + len(quote)))
-            if node['unknowns']:
-                unknowns.append(dict(leaf_request_ref=stage.request_ref, node_id=node['node_id'],
-                    evidence=node['evidence'], unknowns=node['unknowns']))
+                # Coordinates are relative to this qualified parent field,
+                # including when that field is an active source fragment.
+                quote_index[(number, start, start + len(quote))] = dict(
+                    field=number, quote=quote, scalar_range=[start, start + len(quote)])
     ordered = tuple(member.saved_record_ref for member in parent.frozen.members)
     first_positions = [ordered.index(stage.record_refs[0]) for stage, _ in leaves]
     _semantic_map_require(len(refs) == len(ordered) and len(set(refs)) == len(refs)
@@ -2930,8 +2936,8 @@ def prepare_semantic_merge(parent, leaves):
     material['fields'] = fragments
     material['field_manifest'] = manifest
     material['omitted_ranges'] = omitted
-    material['leaf_interpretations'] = interpretations
-    material['scoped_unknowns'] = unknowns
+    material['leaf_receipts'] = receipts
+    material['leaf_source_index'] = [quote_index[key] for key in sorted(quote_index)]
     material['history_coverage'] = dict(leaf_source_processed_count=len(ordered),
         leaf_unrepresented_records=[i for i, member in enumerate(parent.frozen.members, 1)
             if member.saved_record_ref not in represented],
