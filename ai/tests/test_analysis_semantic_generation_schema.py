@@ -5,6 +5,7 @@ import hashlib
 import inspect
 import json
 import logging
+from pathlib import Path
 import string
 import sys
 from types import SimpleNamespace
@@ -851,11 +852,18 @@ def test_a_source_constrained_complete_map_is_still_admitted_by_the_same_cmee():
     fields = {field['field']: field['text'] for field in material['fields']}
     packet = candidate()
     for node in packet['nodes']:
-        for root in node['evidence']:
-            root['quote'] = fields[root['field']].strip()
+        evidence = [dict(quote=fields[root['field']].strip(), field=root['field'])
+            for root in node['evidence']]
+        values = dict(node)
+        node.clear()
+        node.update(evidence=evidence, **{key: value for key, value in values.items() if key != 'evidence'})
+    packet = {key: packet[key] for key in ('schema_version', 'nodes', 'edges', 'overview')}
+    raw = json.dumps(packet, ensure_ascii=False, separators=(',', ':'))
     assert allowed(probe.semantic_output_schema(original_messages), packet)
-    artifact, _ = semantic.build_semantic_map(prepared, response(prepared, packet))
+    assert_compact_leaf_native(original_messages, raw, True)
+    artifact, coverage = semantic.build_semantic_map(prepared, response(prepared, raw=raw))
     assert artifact.safe_projection(authenticated_owner_scope=OWNER)['wire_kind'] == 'watashi.map.v3'
+    assert coverage['mapped_count'] == 2 and coverage['unparsed_count'] == 0
     assert prepared.messages() == original_messages
 
 
@@ -879,8 +887,11 @@ def test_sentence_evidence_passes_existing_cmee_with_the_complete_source_unchang
 
 
 def compact_leaf_wire(fields, groups, *, stage='LEAF', quotes=None, edges=()):
+    material = dict(fields=fields)
+    if stage is not None:
+        material['history_stage'] = dict(kind=stage)
     messages = [dict(role='system', content='synthetic'), dict(role='user',
-        content=json.dumps(dict(fields=fields, history_stage=dict(kind=stage)), ensure_ascii=False))]
+        content=json.dumps(material, ensure_ascii=False))]
     packet = json.loads(graph_document([f'n{i}' for i in range(1, len(groups) + 1)], []))
     originals = {field['field']: field['text'] for field in fields}
     for node, numbers in zip(packet['nodes'], groups):
@@ -910,6 +921,105 @@ def assert_compact_leaf_native(messages, text, expected):
     sent = unique_edge_token_follow(enforcer, ids, [ids['P']], text)
     assert (sent is not None and eos in enforcer.get_allowed_tokens(sent).allowed_tokens) == expected
     assert before == (messages, probe.semantic_output_schema(messages))
+
+
+def test_received_ordinary_record_omission_is_blocked_without_rewriting_the_raw():
+    from lmformatenforcer import CharacterLevelParserConfig
+    fixture = json.loads((Path(__file__).parent / 'fixtures/'
+        'analysis_semantic_ordinary_record_coverage_received_20261116.json').read_text())
+    assert fixture['all_fictional'] is True
+    messages, body = fixture['messages'], fixture['http_body']
+    assert hashlib.sha256(body.encode()).hexdigest() == fixture['http_body_sha256']
+    canonical = json.dumps(messages, ensure_ascii=False, sort_keys=True, separators=(',', ':'))
+    assert hashlib.sha256(canonical.encode()).hexdigest() == fixture['messages_sha256']
+    choice = json.loads(body)['choices'][0]
+    raw = choice['message']['content']
+    assert choice['finish_reason'] == 'stop'
+    assert fixture['raw_sha256'] == '027349625e534fb0e91dbbfb678dd0a40e9e6790988e7a0ae293dd6d94fda1e1'
+    assert hashlib.sha256(raw.encode()).hexdigest() == fixture['raw_sha256']
+    packet, material = json.loads(raw), json.loads(messages[1]['content'])
+    records = {field['field']: field['record'] for field in material['fields']}
+    assert set(records.values()) == {1, 2}
+    assert {records[root['field']] for node in packet['nodes'] for root in node['evidence']} == {1}
+    before = deepcopy(messages), deepcopy(probe.semantic_output_schema(messages)), raw
+    alphabet = ''.join(dict.fromkeys(raw))
+    # The old ordinary dispatcher passed no record mapping. Reproduce that
+    # behavior with the same helper and the unchanged received document.
+    legacy = probe._semantic_unique_json_schema_parser(before[1],
+        CharacterLevelParserConfig(alphabet=alphabet, force_json_field_order=True))
+    assert unique_evidence_accept(legacy, raw)
+    assert allowed(before[1], packet)
+    assert not unique_evidence_accept(probe.semantic_json_parser(messages, alphabet), raw)
+    assert before == (messages, probe.semantic_output_schema(messages), raw)
+
+
+@pytest.mark.parametrize('groups,expected', [
+    ([[17]], False), ([[17], [19]], False), ([[17], [19], [201]], False),
+    ([[17], [201]], True), ([[201], [17]], True), ([[17, 201]], True),
+    ([[17], [201], [19]], True),
+])
+def test_ordinary_covers_sparse_record_ids_before_reusing_a_record(groups, expected):
+    fields = [dict(field=17, record=9, text='一つ目の原欄。'),
+        dict(field=19, record=9, text='同じ記録の別欄。'),
+        dict(field=201, record=37, text='後の記録の原欄。')]
+    messages, text = compact_leaf_wire(fields, groups, stage=None)
+    schema = probe.semantic_output_schema(messages)
+    assert schema['properties']['nodes']['maxItems'] == 24
+    assert schema['properties']['edges']['maxItems'] == 48
+    assert_compact_leaf_native(messages, text, expected)
+
+
+def test_ordinary_one_record_keeps_more_than_two_independent_meanings():
+    fields = [dict(field=number, record=37, text=f'独立した原欄{number}。')
+        for number in (17, 61, 201)]
+    messages, text = compact_leaf_wire(fields, [[17], [61], [201]], stage=None)
+    assert_compact_leaf_native(messages, text, True)
+
+
+@pytest.mark.parametrize('record', [None, 0, -1, True, '37'])
+def test_ordinary_unmarked_or_unknown_record_identity_keeps_legacy_generation(record):
+    fields = [dict(field=17, record=record, text='記録番号の未確定な原欄。'),
+        dict(field=201, text='記録番号を持たない原欄。')]
+    messages, text = compact_leaf_wire(fields, [[201]], stage=None)
+    assert_compact_leaf_native(messages, text, True)
+
+
+def test_ordinary_only_quoteable_positive_records_require_coverage():
+    fields = [dict(field=17, record=9, text='引用できる原文。'),
+        dict(field=61, record=37, text='"\\\n'),
+        dict(field=201, record=None, text='記録番号の未確定な原文。')]
+    messages, text = compact_leaf_wire(fields, [[17], [201]], stage=None)
+    assert_compact_leaf_native(messages, text, True)
+    _, missing = compact_leaf_wire(fields, [[201]], stage=None)
+    assert_compact_leaf_native(messages, missing, False)
+
+
+def test_ordinary_whole_correction_does_not_stand_in_for_original_record_coverage():
+    correction = '本人が保存した読みへの訂正です。' + '説明を途中で切りません。' * 20
+    fields = [dict(field=17, record=9, text='一つ目の原記録。'),
+        dict(field=201, record=37, text='別の原記録。'),
+        dict(field=905, record=None, record_refs=[9, 37],
+            source_role='USER_ANALYSIS_MAP_CORRECTION', text=correction)]
+    for groups, expected in (([[17, 905], [201]], True), ([[17], [201], [905]], True),
+            ([[905]], False), ([[17, 905]], False)):
+        messages, text = compact_leaf_wire(fields, groups, stage=None)
+        assert_compact_leaf_native(messages, text, expected)
+    messages, shortened = compact_leaf_wire(fields, [[17], [201], [905]], stage=None,
+        quotes={905: correction[:160]})
+    assert_compact_leaf_native(messages, shortened, False)
+
+
+@pytest.mark.parametrize('count,partial', [(24, False), (25, True)])
+def test_ordinary_keeps_existing_partial_behavior_only_above_twenty_four_records(count, partial):
+    fields = [dict(field=number * 17, record=number * 37, text=f'原記録{number}。')
+        for number in range(1, count + 1)]
+    messages, text = compact_leaf_wire(fields, [[17]], stage=None)
+    assert_compact_leaf_native(messages, text, partial)
+    if count == 24:
+        groups = [[number * 17 for number in range(start, start + 4)]
+            for start in range(1, 25, 4)]
+        _, complete = compact_leaf_wire(fields, groups, stage=None)
+        assert_compact_leaf_native(messages, complete, True)
 
 
 @pytest.mark.parametrize('groups,expected', [([[1]], True), ([[1], [1]], True),

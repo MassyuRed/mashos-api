@@ -717,16 +717,15 @@ def semantic_json_parser(messages, alphabet):
     if schema['properties']['schema_version'].get('enum') == [IF_CANDIDATE_SCHEMA]:
         config.force_json_field_order = True
         return _if_json_schema_parser(schema, config)
-    # History selects a real source before its meaning. Ordinary maps keep
-    # their decoding order; record IDs never substitute for field IDs.
+    # Every map selects a real source before its meaning. Record IDs bind
+    # coverage only; they never substitute for evidence field IDs.
     config.force_json_field_order = True
     material = json.loads(messages[1]['content'])
     quoted_fields = {part['properties']['field']['enum'][0] for part in
         schema['properties']['nodes']['items']['properties']['evidence']['items']['oneOf']}
-    records = ({field['field']: field['record'] for field in material['fields']
+    records = {field['field']: field['record'] for field in material['fields']
         if field['field'] in quoted_fields and type(field.get('record')) is int and field['record'] > 0}
-        if material.get('history_stage', {}).get('kind') in {'LEAF', 'MERGE'} else {})
-    # Native output has at most 24 meaning nodes. Larger histories retain the
+    # Native output has at most 24 meaning nodes. Larger source sets retain the
     # existing explicitly partial coverage rather than becoming a new refusal.
     if len(set(records.values())) > 24:
         records = {}
