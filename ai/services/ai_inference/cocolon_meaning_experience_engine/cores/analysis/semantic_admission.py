@@ -2314,6 +2314,9 @@ from collections import Counter
 from copy import deepcopy
 import re
 SEMANTIC_MAP_PROFILE = 'semantic_map.v1'
+# Isolated author candidate; no normal configuration selects this profile.
+SEMANTIC_MAP_EVENT_PLAN_PROFILE = 'semantic_map.event_plan.v1'
+SEMANTIC_MAP_EVENT_PLAN_SCHEMA = 'cocolon.analysis.semantic_map.event_plan.model.v1'
 
 
 SEMANTIC_MAP_SCHEMA = 'cocolon.analysis.semantic_map.v1'
@@ -2425,6 +2428,17 @@ edgesは関係がなければ[]です。各edgeはfrom,to,relation_kind,label,ex
 Markdown・前置き・後書きなし。最初の文字は{、最後の文字は}です。'''
 
 
+_SEMANTIC_MAP_EVENT_PLAN_INSTRUCTION = """本人の全提示記録から、具体的な選択と条件、対象との関わり、記録間の共通点・違い・変化をわたしマップへまとめます。fieldsの全文が本人原文です。辞書・制御情報・AI候補は本人の事実ではありません。
+この私的形式では、事実文をeventsで一度だけ作り、項目・関係線・概要は同じeventを参照します。事実とその読みを別々に示します。
+eventsの各項目はevidence,event_id,fact,unknownsです。evidenceは原文fieldの一意な連続引用quoteとfield番号です。原文の前後も読み、誰が、何について、いつ、どこで、何をどこまで行ったかを、条件・否定・留保と一緒にfactの日本語一文へ保持します。日時・場所・対象・版・主体が異なる出来事は別eventです。同じ対象の前の状態と後の確認・実行も別eventに残し、記録日時だけで上書きしません。unknownsはそのeventについて原文に残る未確認事項だけです。確認済みの行動・返信を不明へ戻しません。event_idはe1,e2,...の連番です。
+readingsはreading_id,event_refs,meaningです。reading_idはr1,r2,...の連番、event_refsは既出event_idです。meaningにはその出来事から読める意味や、同じ対象の前後・異なる条件の関係を日本語で示します。本人の選択と関わりを読み、結果や非行動から意図・固定人格・動機を決めません。新しい出来事や未知の確認結果を足しません。読みがなければreadingsは[]です。
+nodesはnode_id,node_kind,perspective,title,event_refs,reading_refsです。node_idはn1,n2,...の連番。node_kindはSELF_POSITION/TARGET_MEANING/CHOICE_OUTPUT/STATE_CONTEXT、perspectiveはSELF/OBSERVED_INTERACTIONです。titleはその項目の短い見出し。event_refsは項目の事実、reading_refsはその事実だけを根拠にした読みです。一つの意味に合う分類を選び、四分類を埋めるために同じ意味を繰り返しません。
+edgesはfrom,to,relation_kind,label,event_refs,reading_refsです。from/toは既出node_id、relation_kindはSELF_OUTSIDE_GAP/CRITERION_EXPRESSION/CONTEXT_CONTRAST/SHARED_MEANINGです。両端に含まれるeventと、それらを根拠にしたreadingだけを参照します。関係がなければ[]です。
+overviewはtitle,event_refs,reading_refsです。項目へ含めたeventとreadingから、概要へ表示するものを順に選びます。各参照配列は重複させず、全eventを少なくとも一項目で使用し、全readingを対応する項目・関係線・概要のいずれかで使用します。未使用の仮説を出力しません。summaryやexplanationの別の事実文は作らず、参照した同じ文が表示されます。
+選択カテゴリ・感情・強度は各記録の条件です。memoとmemo_actionは同じ記録の別欄、本人回答・訂正は提示されたsourceと時点のまま扱います。本人訂正の根拠は説明全文を使い、AI対象文を根拠にしません。内部IDや作成手順を表示文へ書きません。
+rootはschema_version,events,readings,nodes,edges,overviewの6keyです。schema_versionはcocolon.analysis.semantic_map.event_plan.model.v1。Markdownや前後文を付けず、JSONだけを返します。"""
+
+
 def _semantic_map_lesson_instruction(stage=None):
     """ROOT_AUTHORED_SYNTHETIC: a paired lesson, not an accepted model teacher.
 
@@ -2511,7 +2525,9 @@ class AnalysisSemanticMapInput:
     map_correction_sources_json: str = ''
 
     def messages(self, *, _lesson_stage=None):
-        instruction = _SEMANTIC_MAP_INSTRUCTION + _semantic_map_lesson_instruction(_lesson_stage)
+        instruction = (_SEMANTIC_MAP_EVENT_PLAN_INSTRUCTION
+            if self.prompt_version == SEMANTIC_MAP_EVENT_PLAN_PROFILE else
+            _SEMANTIC_MAP_INSTRUCTION + _semantic_map_lesson_instruction(_lesson_stage))
         material = json.loads(self.material_json)
         if self.prompt_version == SEMANTIC_MAP_SOURCE_DUTIES_PROFILE:
             instruction += _SEMANTIC_MAP_SOURCE_DUTIES_INSTRUCTION
@@ -2548,7 +2564,7 @@ def prepare_analysis_semantic_map(request, snapshot, *,
     from cocolon_meaning_experience_engine.cores.analysis.source_adapter import freeze_analysis_sources, AnalysisSourceError
     _semantic_map_require(type(request) is AnalysisObservedMapRequest, 'analysis_semantic_input_invalid')
     _semantic_map_require(prompt_version in {SEMANTIC_MAP_PROFILE,
-        SEMANTIC_MAP_SOURCE_DUTIES_PROFILE}, 'analysis_semantic_input_invalid')
+        SEMANTIC_MAP_SOURCE_DUTIES_PROFILE, SEMANTIC_MAP_EVENT_PLAN_PROFILE}, 'analysis_semantic_input_invalid')
     source_request = request
     _semantic_map_require(type(snapshot.get('guard')) is str and re.fullmatch(
         r'analysis-db-cumulative-v1:[0-9a-f]{64}', snapshot['guard']), 'analysis_model_guard_invalid')
@@ -2691,6 +2707,8 @@ def prepare_analysis_semantic_map(request, snapshot, *,
             **({'unresolved_sources': h['sources']}
                if h['coverage']['active_state'] == 'PENDING' else {}))
             for ref, h in handoffs.items()]
+    if prompt_version == SEMANTIC_MAP_EVENT_PLAN_PROFILE:
+        material['model_schema'] = SEMANTIC_MAP_EVENT_PLAN_SCHEMA
     source_duties_json = ''
     if prompt_version == SEMANTIC_MAP_SOURCE_DUTIES_PROFILE:
         from .intent_compiler import (analysis_semantic_source_duties,
@@ -2817,8 +2835,10 @@ class AnalysisSemanticMapStageInput:
 
     def messages(self):
         instruction = self.parent.messages(_lesson_stage=self.kind)[0]['content']
-        instruction += ('\n現在は全履歴の' + self.kind + '段階です。field番号は親の原文欄番号のままです。'
-            '各項目はevidenceから始め、提示された各recordを少なくとも一項目の根拠に実際に使います。'
+        instruction += ('\n現在は全履歴の' + self.kind + '段階です。field番号は親の原文欄番号のままです。' +
+            ('eventsのevidenceで提示された各recordを使い、そのeventを少なくとも一項目へ結び付けます。'
+             if self.prompt_version == SEMANTIC_MAP_EVENT_PLAN_PROFILE else
+             '各項目はevidenceから始め、提示された各recordを少なくとも一項目の根拠に実際に使います。') +
             '一つの意味に合うnode_kindを選びます。四分類を埋める帳票ではありません。'
             '独立した話題は別の項目にし、関係のある記録は両方の根拠と条件を見比べます。')
         if self.kind == 'MERGE':
@@ -2922,7 +2942,8 @@ def _semantic_history_leaf_packet(stage, response):
     _semantic_map_require(stage == expected, 'analysis_semantic_history_stage_unbound')
     packet = _admit_analysis_semantic_map_response(stage, response)
     graph = compile_analysis_semantic_stage(stage, packet, response_sha256=response.raw_sha256)
-    return packet, graph
+    from .intent_compiler import expand_analysis_semantic_event_plan
+    return expand_analysis_semantic_event_plan(stage.parent, packet), graph
 
 
 def prepare_semantic_merge(parent, leaves):

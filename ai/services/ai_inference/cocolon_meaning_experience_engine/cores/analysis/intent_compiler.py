@@ -6,6 +6,7 @@ Emlis response. Analysis decides its own node kinds, edges and missing scopes.
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from copy import deepcopy
 import hashlib
 import json
 import re
@@ -3928,6 +3929,118 @@ def _semantic_map_context(prepared, refs):
     return result
 
 
+def expand_analysis_semantic_event_plan(prepared, packet):
+    """Compile an opt-in reference author contract, never repair authored prose.
+
+    Each factual clause is authored once. This validates source binding and
+    reference scope only; model facts and interpretations remain unassessed.
+    Legacy profiles retain their original packet and compiler behavior.
+    """
+    from .semantic_admission import (_semantic_map_require, _semantic_map_keys,
+        _semantic_map_text, _semantic_map_evidence, SEMANTIC_MAP_MODEL_SCHEMA)
+    profile = 'semantic_map.event_plan.v1'
+    schema = 'cocolon.analysis.semantic_map.event_plan.model.v1'
+    selected = getattr(prepared, 'prompt_version', None) == profile
+    is_plan = type(packet) is dict and packet.get('schema_version') == schema
+    _semantic_map_require(selected == is_plan, 'analysis_semantic_event_plan_profile_unbound')
+    if not selected:
+        return packet
+    require = _semantic_map_require
+    reason = 'analysis_semantic_event_plan_invalid'
+    require(_semantic_map_keys(packet, {'schema_version', 'events', 'readings', 'nodes', 'edges', 'overview'}), reason)
+    def rows(value, maximum, minimum=0):
+        require(type(value) is list and minimum <= len(value) <= maximum, reason)
+        return value
+    def refs(value, known, maximum, minimum=0):
+        rows(value, maximum, minimum)
+        require(all(type(ref) is str and ref in known for ref in value)
+            and len(value) == len(set(value)), reason)
+        return value
+    def text(value, maximum):
+        require(_semantic_map_text(value, maximum), reason)
+        return value
+    events = {}
+    for index, event in enumerate(rows(packet['events'], 24, 1), 1):
+        require(_semantic_map_keys(event, {'evidence', 'event_id', 'fact', 'unknowns'})
+            and event['event_id'] == 'e' + str(index), reason)
+        roots = rows(event['evidence'], 4, 1)
+        # Reuse exact source/field/correction admission, not a second reader.
+        bound = [_semantic_map_evidence(prepared, root)[1] for root in roots]
+        require(len({root['evidence_id'] for root in bound}) == len(bound), reason)
+        text(event['fact'], 160)
+        unknowns = rows(event['unknowns'], 4)
+        for unknown in unknowns:
+            text(unknown, 240)
+        require(len(set(unknowns)) == len(unknowns), reason)
+        events[event['event_id']] = event
+    readings = {}
+    for index, reading in enumerate(rows(packet['readings'], 24), 1):
+        require(_semantic_map_keys(reading, {'reading_id', 'event_refs', 'meaning'})
+            and reading['reading_id'] == 'r' + str(index), reason)
+        refs(reading['event_refs'], events, 4, 1)
+        text(reading['meaning'], 240)
+        readings[reading['reading_id']] = reading
+    used_events, used_readings = set(), set()
+    def selected_parts(row, event_max, reading_max, allowed_events=None):
+        event_refs = refs(row['event_refs'], events, event_max, 1)
+        reading_refs = refs(row['reading_refs'], readings, reading_max)
+        scope = set(event_refs)
+        require(allowed_events is None or scope <= allowed_events, reason)
+        require(all(set(readings[ref]['event_refs']) <= scope for ref in reading_refs), reason)
+        used_events.update(scope)
+        used_readings.update(reading_refs)
+        facts = [events[ref]['fact'] for ref in event_refs]
+        meanings = [readings[ref]['meaning'] for ref in reading_refs]
+        return facts, meanings
+    nodes, node_scopes = [], {}
+    for index, node in enumerate(rows(packet['nodes'], 24, 1), 1):
+        require(_semantic_map_keys(node, {'node_id', 'node_kind', 'perspective', 'title', 'event_refs', 'reading_refs'})
+            and node['node_id'] == 'n' + str(index), reason)
+        facts, meanings = selected_parts(node, 4, 4)
+        evidence, unknowns = [], []
+        for ref in node['event_refs']:
+            for root in events[ref]['evidence']:
+                if root not in evidence:
+                    evidence.append(deepcopy(root))
+            for unknown in events[ref]['unknowns']:
+                if unknown not in unknowns:
+                    unknowns.append(unknown)
+        node_scopes[node['node_id']] = set(node['event_refs'])
+        nodes.append(dict(evidence=evidence, node_id=node['node_id'],
+            node_kind=node['node_kind'], title=text(node['title'], 80),
+            summary='\n'.join(facts), explanation='\n'.join(facts + meanings),
+            perspective=node['perspective'], unknowns=unknowns))
+    reachable = set().union(*node_scopes.values())
+    require(reachable == set(events), 'analysis_semantic_event_plan_orphan')
+    edges = []
+    for edge in rows(packet['edges'], 48):
+        require(_semantic_map_keys(edge, {'from', 'to', 'relation_kind', 'label', 'event_refs', 'reading_refs'})
+            and type(edge['from']) is str and edge['from'] in node_scopes
+            and type(edge['to']) is str and edge['to'] in node_scopes, reason)
+        facts, meanings = selected_parts(edge, 6, 4,
+            node_scopes[edge['from']] | node_scopes[edge['to']])
+        edges.append(dict(**{key: edge[key] for key in ('from', 'to', 'relation_kind')},
+            label=text(edge['label'], 80), explanation='\n'.join(facts + meanings)))
+    overview = packet['overview']
+    require(_semantic_map_keys(overview, {'title', 'event_refs', 'reading_refs'}), reason)
+    facts, meanings = selected_parts(overview, 24, 8, reachable)
+    require(used_events == set(events) and used_readings == set(readings),
+        'analysis_semantic_event_plan_orphan')
+    return dict(schema_version=SEMANTIC_MAP_MODEL_SCHEMA, nodes=nodes, edges=edges,
+        overview=dict(title=text(overview['title'], 80), summary='\n'.join(facts + meanings)))
+
+
+def _semantic_event_plan_review(graph, prepared, original, expanded):
+    if getattr(prepared, 'prompt_version', None) != 'semantic_map.event_plan.v1':
+        return graph
+    from .semantic_admission import semantic_map_canonical, semantic_map_hash
+    review = json.loads(graph.meaning_review_json)
+    review['event_plan'] = dict(profile=prepared.prompt_version, plan=deepcopy(original),
+        expanded_packet_sha256=semantic_map_hash(expanded),
+        meaning_status='UNASSESSED', realization='SHARED_AUTHORED_REFERENCES')
+    return replace(graph, meaning_review_json=semantic_map_canonical(review))
+
+
 def compile_analysis_semantic_stage(stage, packet, *, response_sha256):
     """Use the original compiler with an additional shown-source boundary.
 
@@ -3942,6 +4055,8 @@ def compile_analysis_semantic_stage(stage, packet, *, response_sha256):
     _semantic_map_require(type(stage) is AnalysisSemanticMapStageInput
         and stage.kind in {'LEAF', 'MERGE'}, 'analysis_semantic_history_stage_unbound')
     parent = stage.parent
+    original_packet = packet
+    packet = expand_analysis_semantic_event_plan(parent, packet)
     material = json.loads(stage.material_json)
     history_profile = SEMANTIC_HISTORY_MERGE_PROFILE if stage.kind == 'MERGE' else SEMANTIC_HISTORY_PROFILE
     _semantic_map_require(material.get('history_stage', {}).get('profile') == history_profile,
@@ -3986,7 +4101,8 @@ def compile_analysis_semantic_stage(stage, packet, *, response_sha256):
     corrections = (_semantic_history_corrections(parent, stage.record_refs)
         if stage.kind == 'LEAF' else json.loads(parent.map_correction_sources_json or '[]'))
     view = replace(parent, map_correction_sources_json=semantic_map_canonical(corrections) if corrections else '')
-    graph = compile_analysis_semantic_map(view, packet, response_sha256=response_sha256)
+    graph = _compile_analysis_semantic_map_v2(view, packet, response_sha256=response_sha256)
+    graph = _semantic_event_plan_review(graph, view, original_packet, packet)
     nodes = json.loads(graph.nodes_json)
     _semantic_map_require(all(root_is_shown(root) for node in nodes
         for root in node['evidence_refs']), 'analysis_semantic_history_evidence_not_shown')
@@ -4032,6 +4148,12 @@ def compile_analysis_semantic_stage(stage, packet, *, response_sha256):
 
 
 def compile_analysis_semantic_map(prepared, packet, *, response_sha256):
+    expanded = expand_analysis_semantic_event_plan(prepared, packet)
+    graph = _compile_analysis_semantic_map_v2(prepared, expanded, response_sha256=response_sha256)
+    return _semantic_event_plan_review(graph, prepared, packet, expanded)
+
+
+def _compile_analysis_semantic_map_v2(prepared, packet, *, response_sha256):
     from .semantic_admission import (AnalysisSemanticMapInput,
         SEMANTIC_MAP_MODEL_SCHEMA, SEMANTIC_MAP_NODE_KINDS, SEMANTIC_MAP_PERSPECTIVES,
         SEMANTIC_MAP_RELATION_KINDS, _semantic_map_require, _semantic_map_keys,

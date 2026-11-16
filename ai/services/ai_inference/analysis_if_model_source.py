@@ -11,7 +11,8 @@ import json
 import httpx
 
 from analysis_model_source import (SelfHostedAnalysisModelSource, _settings,
-    SELECTOR, SEMANTIC_SELECTOR, MAX_RESPONSE_BYTES)
+    SELECTOR, SEMANTIC_SELECTOR, MAX_RESPONSE_BYTES,
+    SEMANTIC_EVENT_PLAN_MODEL, SEMANTIC_EVENT_PLAN_BASE_MODEL)
 
 
 class SelfHostedAnalysisIfModelSource(SelfHostedAnalysisModelSource):
@@ -80,5 +81,10 @@ def application_analysis_if_model_source():
         return None
     if selector not in {SELECTOR, SEMANTIC_SELECTOR}:
         raise RuntimeError('analysis_if_model_configuration_invalid')
+    # The event-plan alias selects only the observed-map candidate. IF keeps
+    # the existing 120u identity while its freshness guard watches the original
+    # four application settings; no fallback or live setting change occurs.
+    if selector == SEMANTIC_SELECTOR and model == SEMANTIC_EVENT_PLAN_MODEL:
+        model = SEMANTIC_EVENT_PLAN_BASE_MODEL
     return SelfHostedAnalysisIfModelSource(endpoint=endpoint, model=model, api_key=api_key,
         settings_snapshot=settings, max_tokens=4096 if selector == SEMANTIC_SELECTOR else 2048)

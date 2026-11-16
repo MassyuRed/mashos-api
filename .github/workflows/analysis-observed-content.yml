@@ -88,6 +88,10 @@ name: Analysis observed content
       - ai/tests/test_emlis_natural_question_application.py
       - ai/tests/test_emlis_natural_reply_response_purpose.py
       - ai/tests/test_analysis_semantic_source_duties.py
+      - ai/tests/test_analysis_semantic_event_plan_compiler.py
+      - ai/tests/test_analysis_event_plan_decoder.py
+      - ai/tests/test_analysis_event_plan_model_alias.py
+      - ai/tests/test_analysis_event_plan_runtime.py
       - supabase/migrations/*_emlis_natural_bound_questions.sql
       - ai/tests/test_emlis_natural_reply_meaning_reuse.py
       - ai/tests/test_emlis_natural_reply_meaning_budget.py
@@ -293,6 +297,10 @@ jobs:
           ai/tests/test_analysis_cumulative_model_source.py
           ai/tests/test_analysis_semantic_integration.py
           ai/tests/test_analysis_semantic_source_duties.py
+          ai/tests/test_analysis_semantic_event_plan_compiler.py
+          ai/tests/test_analysis_event_plan_decoder.py
+          ai/tests/test_analysis_event_plan_model_alias.py
+          ai/tests/test_analysis_event_plan_runtime.py
           ai/tests/test_analysis_semantic_history_core.py
           ai/tests/test_analysis_semantic_history_planner.py
           ai/tests/test_analysis_semantic_history_service.py

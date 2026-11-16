@@ -15,6 +15,8 @@ import httpx
 
 SELECTOR = 'self_hosted.v1'
 SEMANTIC_SELECTOR = 'self_hosted.semantic.v1'
+SEMANTIC_EVENT_PLAN_MODEL = 'cocolon-qwen3.5-4b-analysis-event-plan-v1'
+SEMANTIC_EVENT_PLAN_BASE_MODEL = 'cocolon-qwen3.5-4b-analysis-semantic-120u'
 MAX_RESPONSE_BYTES = 262144
 DEFAULT_PROMPT_VERSION = 'selected_material.v4'
 EXPLICIT_PROMPT_VERSIONS = frozenset({DEFAULT_PROMPT_VERSION, 'selected_material.v7'})
@@ -133,9 +135,9 @@ class SelfHostedSemanticAnalysisModelSource(SelfHostedAnalysisModelSource):
     def __init__(self, *, endpoint, model, api_key, transport=None,
             semantic_prompt_version='semantic_map.v1'):
         from cocolon_meaning_experience_engine.cores.analysis.semantic_admission import (
-            SEMANTIC_MAP_PROFILE, SEMANTIC_MAP_SOURCE_DUTIES_PROFILE)
+            SEMANTIC_MAP_PROFILE, SEMANTIC_MAP_SOURCE_DUTIES_PROFILE, SEMANTIC_MAP_EVENT_PLAN_PROFILE)
         if type(semantic_prompt_version) is not str or semantic_prompt_version not in {
-                SEMANTIC_MAP_PROFILE, SEMANTIC_MAP_SOURCE_DUTIES_PROFILE}:
+                SEMANTIC_MAP_PROFILE, SEMANTIC_MAP_SOURCE_DUTIES_PROFILE, SEMANTIC_MAP_EVENT_PLAN_PROFILE}:
             raise ValueError('analysis_model_configuration_invalid')
         super().__init__(endpoint=endpoint, model=model, api_key=api_key, transport=transport)
         self._prompt_version = semantic_prompt_version
@@ -190,15 +192,27 @@ class SelfHostedSemanticAnalysisModelSource(SelfHostedAnalysisModelSource):
             raise RuntimeError('analysis_model_source_unavailable') from None
 
 
+def _configured_semantic_prompt_version(model):
+    """Only the exact candidate identity opts the application into its contract.
+
+    This does not activate a model or change settings. Existing/default model
+    identities retain the legacy profile, including otherwise unknown aliases.
+    """
+    from cocolon_meaning_experience_engine.cores.analysis.semantic_admission import (
+        SEMANTIC_MAP_PROFILE, SEMANTIC_MAP_EVENT_PLAN_PROFILE)
+    return SEMANTIC_MAP_EVENT_PLAN_PROFILE if model == SEMANTIC_EVENT_PLAN_MODEL else SEMANTIC_MAP_PROFILE
+
+
 def analysis_model_prompt_version(source):
     """Only an explicitly constructed transport opts in; callbacks stay v4.
 
     Avoid generic attribute lookup: AsyncMock and other callback objects may
     synthesize attributes that are not a declared transport configuration.
-    The application factory and its environment/settings identity stay v4.
+    Quotation-only application sources stay v4. Semantic application sources
+    use the exact configured model identity; their four-setting identity is unchanged.
     """
     if is_semantic_analysis_model_source(source):
-        return source.prompt_version if type(source) is SelfHostedSemanticAnalysisModelSource else 'semantic_map.v1'
+        return source.prompt_version
     return source.prompt_version if type(source) is SelfHostedAnalysisModelSource else DEFAULT_PROMPT_VERSION
 
 
@@ -232,13 +246,18 @@ class _ApplicationAnalysisSource:
 
 
 class _ApplicationSemanticAnalysisSource(_ApplicationAnalysisSource):
+    @property
+    def prompt_version(self):
+        return _configured_semantic_prompt_version(self._settings[2])
+
     async def __call__(self, prepared):
         self.require_current()
         selector, endpoint, model, api_key = self._settings
         if selector != SEMANTIC_SELECTOR:
             raise RuntimeError('analysis_model_configuration_invalid')
         try:
-            source = SelfHostedSemanticAnalysisModelSource(endpoint=endpoint, model=model, api_key=api_key)
+            source = SelfHostedSemanticAnalysisModelSource(endpoint=endpoint, model=model, api_key=api_key,
+                semantic_prompt_version=self.prompt_version)
         except ValueError:
             raise RuntimeError('analysis_model_configuration_invalid') from None
         response = await source(prepared)

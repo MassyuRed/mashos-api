@@ -29,8 +29,11 @@ FIT38_CONFIG = "ef4b1aef621fb4e234ce6a05601efb62a987c3cf5d40f3995ca1b72200bab145
 PINS = {"transformers": "5.19.0", "peft": "0.21.2", "accelerate": "1.15.0", "safetensors": "0.8.0"}
 SEMANTIC_FORMAT_SOURCE = '817f944fcc8851917c40300a47f62d1defc3ffc3'
 PIECE_CANDIDATE_FORMAT = 'piece.field_slots.v1'
+EVENT_PLAN_SCHEMA = 'cocolon.analysis.semantic_map.event_plan.model.v1'
+
 IF_CANDIDATE_SCHEMA = 'cocolon.analysis.if-candidates.model.v1'
 PIECE_ADAPTER_NAME = 'piece'
+EVENT_PLAN_ADAPTER_NAME = 'event_plan'
 
 
 class SourcePrivateConstraintLog(logging.Filter):
@@ -239,6 +242,36 @@ def _semantic_sentence_quotes(original):
         and original.count(span) == 1 and not re.search(r'["\\\x00-\x1f]', span)]
 
 
+def _semantic_event_plan_schema(pairs, *, leaf=False):
+    """One authored fact, reference selections for every display surface."""
+    def text(n):
+        return dict(type='string', minLength=1, maxLength=n)
+    def obj(props):
+        return dict(type='object', properties=props, required=list(props), additionalProperties=False)
+    def refs(prefix, minimum, maximum):
+        return dict(type='array', items=dict(type='string', enum=[prefix + str(i) for i in range(1,25)]),
+            minItems=minimum, maxItems=maximum)
+    event = obj(dict(evidence=dict(type='array', items=dict(oneOf=pairs), minItems=1, maxItems=4),
+        event_id=dict(type='string', enum=['e'+str(i) for i in range(1,25)]),
+        fact=text(160), unknowns=dict(type='array', items=text(240), maxItems=4)))
+    reading = obj(dict(reading_id=dict(type='string', enum=['r'+str(i) for i in range(1,25)]),
+        event_refs=refs('e',1,4), meaning=text(240)))
+    node = obj(dict(node_id=dict(type='string', enum=['n'+str(i) for i in range(1,25)]),
+        node_kind=dict(type='string', enum=['SELF_POSITION','TARGET_MEANING','CHOICE_OUTPUT','STATE_CONTEXT']),
+        perspective=dict(type='string', enum=['SELF','OBSERVED_INTERACTION']), title=text(80),
+        event_refs=refs('e',1,4), reading_refs=refs('r',0,4)))
+    edge = obj({'from':dict(type='string',enum=['n'+str(i) for i in range(1,25)]),
+        'to':dict(type='string',enum=['n'+str(i) for i in range(1,25)]),
+        'relation_kind':dict(type='string',enum=['SELF_OUTSIDE_GAP','CRITERION_EXPRESSION','CONTEXT_CONTRAST','SHARED_MEANING']),
+        'label':text(80), 'event_refs':refs('e',1,6), 'reading_refs':refs('r',0,4)})
+    return obj(dict(schema_version=dict(type='string',enum=[EVENT_PLAN_SCHEMA]),
+        events=dict(type='array',items=event,minItems=1,maxItems=24),
+        readings=dict(type='array',items=reading,maxItems=24),
+        nodes=dict(type='array',items=node,minItems=1,maxItems=24),
+        edges=dict(type='array',items=edge,maxItems=0 if leaf else 48),
+        overview=obj(dict(title=text(80),event_refs=refs('e',1,24),reading_refs=refs('r',0,8)))))
+
+
 def semantic_output_schema(messages):
     """Constrain protocol and source quotes; meanings remain model-generated."""
     if (type(messages) is not list or len(messages) != 2
@@ -285,6 +318,8 @@ def semantic_output_schema(messages):
                 correction_fields += 1
     if not pairs:
         raise ValueError('semantic_quotes_unavailable')
+    if material.get('model_schema') == EVENT_PLAN_SCHEMA:
+        return _semantic_event_plan_schema(pairs, leaf=leaf)
     def text(maximum):
         return dict(type='string', minLength=1, maxLength=maximum)
     def obj(properties):
@@ -493,7 +528,13 @@ def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None):
 
     def node_type(value):
         props = value.properties or {}
-        return value.type == 'object' and 'node_id' in props and 'evidence' in props
+        return value.type == 'object' and 'node_id' in props and ('evidence' in props or 'event_refs' in props)
+
+    def event_type(value):
+        return value.type == 'object' and 'event_id' in (value.properties or {})
+
+    def reading_type(value):
+        return value.type == 'object' and 'reading_id' in (value.properties or {})
 
     def graph_type(value):
         props = value.properties or {}
@@ -501,8 +542,9 @@ def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None):
 
     def edge_type(value):
         props = value.properties or {}
-        return value.type == 'object' and set(props) == {
-            'from', 'to', 'relation_kind', 'label', 'explanation'}
+        return value.type == 'object' and set(props) in ({
+            'from', 'to', 'relation_kind', 'label', 'explanation'},
+            {'from','to','relation_kind','label','event_refs','reading_refs'})
 
     def graph_state(active):
         for index, value in enumerate(active.object_stack):
@@ -531,6 +573,8 @@ def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None):
             parts = self.list_member_type.oneOf
             self.is_evidence = bool(parts) and all(evidence_pair(p) for p in parts)
             self.is_nodes = node_type(self.list_member_type)
+            self.is_events = event_type(self.list_member_type)
+            self.is_readings = reading_type(self.list_member_type)
             self.is_edges = edge_type(self.list_member_type)
             self.used_pairs = frozenset()
 
@@ -557,12 +601,14 @@ def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None):
             if self.is_evidence and not any((part.properties['field'].enum[0], q) not in self.used_pairs
                     for part in self.list_member_type.oneOf for q in part.properties['quote'].enum):
                 chars = chars.replace(',', '')
-            if self.is_nodes:
+            if self.is_nodes or self.is_events:
                 _, graph = graph_state(self.root.context.active_parser)
-                if required_records - graph.covered_records:
+                if (self.is_events or 'events' not in schema['properties']) and required_records - graph.covered_records:
                     chars = chars.replace(']', '')
-                if not any(value not in graph.generated_node_ids
-                        for value in self.list_member_type.properties['node_id'].enum):
+                generated = graph.generated_event_ids if self.is_events else graph.generated_node_ids
+                key = 'event_id' if self.is_events else 'node_id'
+                if not any(value not in generated
+                        for value in self.list_member_type.properties[key].enum):
                     chars = chars.replace(',', '')
             if self.is_edges:
                 _, graph = graph_state(self.root.context.active_parser)
@@ -598,6 +644,9 @@ def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None):
         def __init__(self, *args, **kwargs):
             super().__init__(*args, **kwargs)
             self.generated_node_ids = ()
+            self.generated_event_ids = ()
+            self.generated_reading_ids = ()
+            self.selected_plan_id = None
             self.generated_edge_keys = frozenset()
             self.covered_records = frozenset()
             self.selected_node_id = self.selected_from = None
@@ -607,6 +656,9 @@ def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None):
         def clone(self):
             result = super().clone()
             result.generated_node_ids = self.generated_node_ids
+            result.generated_event_ids = self.generated_event_ids
+            result.generated_reading_ids = self.generated_reading_ids
+            result.selected_plan_id = self.selected_plan_id
             result.generated_edge_keys = self.generated_edge_keys
             result.covered_records = self.covered_records
             result.selected_node_id = self.selected_node_id
@@ -623,6 +675,9 @@ def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None):
             if char in ',}' and self.current_stage in (
                     module.ObjectParsingStage.PARSING_VALUE,
                     module.ObjectParsingStage.PARSING_SEPARATOR_OR_END):
+                if (event_type(result.schema_object) and prior_key == 'event_id'
+                        or reading_type(result.schema_object) and prior_key == 'reading_id'):
+                    result.selected_plan_id = active.last_parsed_string
                 if node_type(result.schema_object) and prior_key == 'node_id':
                     result.selected_node_id = active.last_parsed_string
                 if edge_type(result.schema_object) and prior_key == 'from':
@@ -636,7 +691,21 @@ def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None):
             if char == ':' and result.current_stage == module.ObjectParsingStage.PARSING_VALUE:
                 key = result.current_key
                 value = None
-                if node_type(result.schema_object) and key == 'node_id':
+                if ((event_type(result.schema_object) and key == 'event_id')
+                        or (reading_type(result.schema_object) and key == 'reading_id')):
+                    _, graph = graph_state(active)
+                    generated = graph.generated_event_ids if key == 'event_id' else graph.generated_reading_ids
+                    value = deepcopy(result.schema_object.properties[key])
+                    value.enum = [('e' if key == 'event_id' else 'r') + str(len(generated)+1)]
+                elif key in {'event_refs', 'reading_refs'} and 'events' in schema['properties']:
+                    _, graph = graph_state(active)
+                    value = deepcopy(result.schema_object.properties[key])
+                    available = graph.generated_event_ids if key == 'event_refs' else graph.generated_reading_ids
+                    if not available:
+                        value.minItems = value.maxItems = 0
+                    else:
+                        value.items.enum = list(available)
+                elif node_type(result.schema_object) and key == 'node_id':
                     _, graph = graph_state(active)
                     value = deepcopy(result.schema_object.properties[key])
                     next_id = 'n' + str(len(graph.generated_node_ids) + 1)
@@ -664,6 +733,15 @@ def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None):
                         raise ValueError('semantic_edge_options_exhausted')
                 if value is not None:
                     active.object_stack[-1] = module.get_parser(result.root, value)
+            if char == '}' and result.can_end() and (event_type(result.schema_object) or reading_type(result.schema_object)):
+                index, graph = graph_state(active)
+                graph = graph.clone()
+                attr = 'generated_event_ids' if event_type(result.schema_object) else 'generated_reading_ids'
+                generated = getattr(graph, attr)
+                if result.selected_plan_id is None or result.selected_plan_id in generated:
+                    raise ValueError('semantic_plan_id_unbound')
+                setattr(graph, attr, generated + (result.selected_plan_id,))
+                active.object_stack[index] = graph
             if char == '}' and result.can_end() and node_type(result.schema_object):
                 index, graph = graph_state(active)
                 graph = graph.clone()
@@ -721,8 +799,9 @@ def semantic_json_parser(messages, alphabet):
     # coverage only; they never substitute for evidence field IDs.
     config.force_json_field_order = True
     material = json.loads(messages[1]['content'])
+    anchor_key = 'events' if 'events' in schema['properties'] else 'nodes'
     quoted_fields = {part['properties']['field']['enum'][0] for part in
-        schema['properties']['nodes']['items']['properties']['evidence']['items']['oneOf']}
+        schema['properties'][anchor_key]['items']['properties']['evidence']['items']['oneOf']}
     records = {field['field']: field['record'] for field in material['fields']
         if field['field'] in quoted_fields and type(field.get('record')) is int and field['record'] > 0}
     # Native output has at most 24 meaning nodes. Larger source sets retain the
@@ -821,13 +900,17 @@ def _correction_target_context_messages_valid(messages):
 def make_handler(generate, *, api_key, model_name, deadline, max_requests,
                  max_new_tokens=2048, request_seconds=23, max_request_bytes=65536,
                  natural_reply=None, natural_queue_seconds=210, piece_revision=None,
-                 correction_target_context=False):
+                 correction_target_context=False, event_plan_model=None):
     if (type(correction_target_context) is not bool
             or correction_target_context and not natural_reply):
         raise ValueError('correction_target_context_configuration_invalid')
     if piece_revision is not None and (type(piece_revision) is not str
             or not re.fullmatch(r'piece-lora:[0-9a-f]{64}', piece_revision)):
         raise ValueError('piece_adapter_revision_invalid')
+    if event_plan_model is not None and (type(event_plan_model) is not str
+            or not event_plan_model.strip() or event_plan_model == model_name
+            or natural_reply and event_plan_model == natural_reply['model_name']):
+        raise ValueError('event_plan_model_configuration_invalid')
     lock = threading.Lock()
     served = 0
 
@@ -873,6 +956,10 @@ def make_handler(generate, *, api_key, model_name, deadline, max_requests,
                 request = json.loads(self.rfile.read(length))
                 messages = request["messages"]
                 piece = 'candidate_format' in request
+                event_plan = bool(not natural and event_plan_model is not None
+                    and request.get('model') == event_plan_model)
+                if event_plan:
+                    selected_model = event_plan_model
                 ordinary_messages = (isinstance(messages, list) and len(messages) == 2
                     and [m["role"] for m in messages] == ["system", "user"]
                     and all(isinstance(m["content"], str) and m["content"] for m in messages))
@@ -884,6 +971,13 @@ def make_handler(generate, *, api_key, model_name, deadline, max_requests,
                         or request.get("chat_template_kwargs") != {"enable_thinking": False}
                         or not (ordinary_messages or correction_messages)):
                     raise ValueError
+                if not natural:
+                    try:
+                        material = json.loads(messages[1]['content'])
+                    except (ValueError, TypeError):
+                        material = None
+                    if (type(material) is dict and material.get('model_schema') == EVENT_PLAN_SCHEMA) != event_plan:
+                        raise ValueError
                 if piece:
                     if not natural or request['candidate_format'] != PIECE_CANDIDATE_FORMAT:
                         raise ValueError
@@ -901,7 +995,8 @@ def make_handler(generate, *, api_key, model_name, deadline, max_requests,
                     generation_stage('admitted')
                 end = min(deadline, time.monotonic() + selected_seconds)
                 text, finish = (generate(messages, end, profile="piece" if piece else "natural")
-                                if natural else generate(messages, end))
+                                if natural else generate(messages, end, profile='event_plan')
+                                if event_plan else generate(messages, end))
                 if finish not in {"stop", "length"} or not isinstance(text, str):
                     raise ValueError
                 status, body = 200, {"model": selected_model, "choices": [{
@@ -951,13 +1046,13 @@ def base_inference_context(model):
 
 
 @contextmanager
-def piece_inference_context(model, process_stop):
+def piece_inference_context(model, process_stop, *, adapter_name=PIECE_ADAPTER_NAME):
     """Use only the separately loaded Piece adapter, then restore Analysis."""
     previous = model.active_adapter
     if previous != 'default':
         raise ValueError('piece_adapter_state_invalid')
     try:
-        model.set_adapter(PIECE_ADAPTER_NAME, inference_mode=True)
+        model.set_adapter(adapter_name, inference_mode=True)
         model.eval()
         model.requires_grad_(False)
         yield
@@ -973,7 +1068,7 @@ def piece_inference_context(model, process_stop):
 
 
 def load_piece_adapter(model, path, *, weights_sha256, config_sha256,
-                       analysis_config, analysis_weights):
+                       analysis_config, analysis_weights, adapter_name=PIECE_ADAPTER_NAME):
     """Load an opt-in independent LoRA; never replace or combine adapters."""
     from peft import PeftConfig, get_peft_model_state_dict
     from safetensors.torch import load_file
@@ -992,9 +1087,9 @@ def load_piece_adapter(model, path, *, weights_sha256, config_sha256,
             or sum(t.numel() for t in expected.values()) != 3833856
             or any(expected[key].shape != analysis_weights[key].shape for key in expected)):
         raise ValueError('piece_adapter_saved_weights_scope_changed')
-    model.load_adapter(path, adapter_name=PIECE_ADAPTER_NAME,
+    model.load_adapter(path, adapter_name=adapter_name,
                        is_trainable=False, local_files_only=True)
-    actual = get_peft_model_state_dict(model, adapter_name=PIECE_ADAPTER_NAME)
+    actual = get_peft_model_state_dict(model, adapter_name=adapter_name)
     original = get_peft_model_state_dict(model)
     if (set(actual) != set(expected) or len(actual) != 112
             or sum(t.numel() for t in actual.values()) != 3833856
@@ -1009,7 +1104,8 @@ def load_piece_adapter(model, path, *, weights_sha256, config_sha256,
 
 def load_generator(adapter, process_stop, *, weights_sha256=None, config_sha256=None,
                    max_new_tokens=2048, context_tokens=8192, semantic_json=False,
-                   piece_adapter=None, piece_weights_sha256=None, piece_config_sha256=None):
+                   piece_adapter=None, piece_weights_sha256=None, piece_config_sha256=None,
+                   event_plan_adapter=None, event_plan_weights_sha256=None, event_plan_config_sha256=None):
     if (type(max_new_tokens) is not int or type(context_tokens) is not int
             or not 1 <= max_new_tokens < context_tokens <= 32768):
         raise ValueError("model_token_budget_invalid")
@@ -1027,6 +1123,14 @@ def load_generator(adapter, process_stop, *, weights_sha256=None, config_sha256=
                 or piece_weights_sha256 == selected_identity[0]):
             raise ValueError('piece_adapter_must_be_separate')
         adapter_identity(piece_adapter, piece_weights_sha256, piece_config_sha256)
+    if any(value is not None for value in (event_plan_adapter, event_plan_weights_sha256, event_plan_config_sha256)):
+        if (not adapter or not event_plan_adapter or not semantic_json
+                or event_plan_weights_sha256 is None or event_plan_config_sha256 is None):
+            raise ValueError('event_plan_adapter_configuration_invalid')
+        if (Path(event_plan_adapter).resolve() == Path(adapter).resolve()
+                or event_plan_weights_sha256 == selected_identity[0]):
+            raise ValueError('event_plan_adapter_must_be_separate')
+        adapter_identity(event_plan_adapter, event_plan_weights_sha256, event_plan_config_sha256)
     import torch
     from transformers import AutoTokenizer, Qwen3_5ForConditionalGeneration, StoppingCriteria, StoppingCriteriaList
     if not torch.cuda.is_available() or torch.cuda.device_count() != 1:
@@ -1055,6 +1159,10 @@ def load_generator(adapter, process_stop, *, weights_sha256=None, config_sha256=
             load_piece_adapter(model, piece_adapter,
                 weights_sha256=piece_weights_sha256, config_sha256=piece_config_sha256,
                 analysis_config=config, analysis_weights=expected)
+        if event_plan_adapter is not None:
+            load_piece_adapter(model, event_plan_adapter,
+                weights_sha256=event_plan_weights_sha256, config_sha256=event_plan_config_sha256,
+                analysis_config=config, analysis_weights=expected, adapter_name=EVENT_PLAN_ADAPTER_NAME)
     model.eval()
     model.requires_grad_(False)
     if model.training or any(p.requires_grad for p in model.parameters()):
@@ -1099,19 +1207,22 @@ def load_generator(adapter, process_stop, *, weights_sha256=None, config_sha256=
             return self.expired
 
     def generate(messages, end, *, profile=None):
-        if piece_adapter is not None and process_stop.is_set():
+        if (piece_adapter is not None or event_plan_adapter is not None) and process_stop.is_set():
             raise ValueError('generation_stopping')
-        if profile not in (None, "natural", "piece"):
+        if profile not in (None, "natural", "piece", "event_plan"):
             raise ValueError("generation_profile_invalid")
         if profile == "piece" and (not semantic_json or tokenizer_data is None):
             raise ValueError("piece_constraint_unavailable")
+        if profile == 'event_plan' and (event_plan_adapter is None or not semantic_json or tokenizer_data is None):
+            raise ValueError('event_plan_adapter_unavailable')
         use_semantic_json = semantic_json and profile != "natural"
         base_profile = profile in ("natural", "piece")
         output_budget = 2048 if base_profile else max_new_tokens
         context_budget = 8192 if base_profile else context_tokens
         # Preserve the base identity previously connected for natural replies.
         # The analysis adapter stays loaded; its state is restored on context exit.
-        adapter_context = (piece_inference_context(model, process_stop)
+        adapter_context = (piece_inference_context(model, process_stop, adapter_name=EVENT_PLAN_ADAPTER_NAME)
+            if profile == 'event_plan' else piece_inference_context(model, process_stop)
             if profile == 'piece' and piece_adapter is not None else
             base_inference_context(model) if base_profile and adapter else nullcontext())
         if use_semantic_json:
@@ -1182,6 +1293,10 @@ def main():
     parser.add_argument("--adapter")
     parser.add_argument("--adapter-weights-sha256")
     parser.add_argument("--adapter-config-sha256")
+    parser.add_argument('--event-plan-model')
+    parser.add_argument('--event-plan-adapter')
+    parser.add_argument('--event-plan-adapter-weights-sha256')
+    parser.add_argument('--event-plan-adapter-config-sha256')
     parser.add_argument('--piece-adapter')
     parser.add_argument('--piece-adapter-weights-sha256')
     parser.add_argument('--piece-adapter-config-sha256')
@@ -1244,6 +1359,18 @@ def main():
         piece_options = dict(piece_adapter=args.piece_adapter,
             piece_weights_sha256=args.piece_adapter_weights_sha256,
             piece_config_sha256=args.piece_adapter_config_sha256)
+    event_plan_options = {}
+    if any(value is not None for value in (args.event_plan_model, args.event_plan_adapter,
+            args.event_plan_adapter_weights_sha256, args.event_plan_adapter_config_sha256)):
+        if (not args.analysis_service or not args.semantic_json or not args.adapter
+                or not args.event_plan_model or args.event_plan_model == args.model_name
+                or args.event_plan_model == args.natural_reply_model or not args.event_plan_adapter
+                or not re.fullmatch(r'[0-9a-f]{64}', args.event_plan_adapter_weights_sha256 or '')
+                or not re.fullmatch(r'[0-9a-f]{64}', args.event_plan_adapter_config_sha256 or '')):
+            parser.error('Event plan requires its separate model alias, constrained adapter and both SHA256 values')
+        event_plan_options = dict(event_plan_adapter=args.event_plan_adapter,
+            event_plan_weights_sha256=args.event_plan_adapter_weights_sha256,
+            event_plan_config_sha256=args.event_plan_adapter_config_sha256)
     key = (os.environ.get("COCOLON_ANALYSIS_MODEL_API_KEY", "") if args.analysis_service
            else os.environ.get("EMLIS_NATURAL_REPLY_API_KEY", ""))
     if len(key) < 24:
@@ -1264,13 +1391,13 @@ def main():
                        if args.analysis_service else {})
     if args.semantic_json:
         runtime_options['semantic_json'] = True
-    generator = load_generator(args.adapter, stop, **identity_options, **runtime_options, **piece_options)
+    generator = load_generator(args.adapter, stop, **identity_options, **runtime_options, **piece_options, **event_plan_options)
     server = ThreadingHTTPServer(("0.0.0.0", args.port), make_handler(generator,
         api_key=key, model_name=args.model_name, deadline=deadline,
         max_requests=0 if args.analysis_service else args.max_requests,
         max_new_tokens=max_new_tokens, request_seconds=request_seconds,
         max_request_bytes=262144 if args.analysis_service else 65536,
-        natural_reply=natural_reply,
+        natural_reply=natural_reply, event_plan_model=args.event_plan_model,
         correction_target_context=args.natural_reply_correction_target_context,
         piece_revision='piece-lora:' + args.piece_adapter_weights_sha256 if piece_options else None))
     server.timeout = 1
