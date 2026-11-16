@@ -2450,10 +2450,102 @@ readingsはr連番、event_refs=e1〜4件、meaning240字以内、なければ[]
 nodesはn連番、node_kind=SELF_POSITION/TARGET_MEANING/CHOICE_OUTPUT/STATE_CONTEXT、perspective=SELF/OBSERVED_INTERACTION。titleは同時点/状態。unit_refsは表示e/r1〜4件(先頭が要点)。r.event_refsは根拠のみ。全eをnode根拠へ、全rを表示。
 edges={from,to,relation_kind,label,unit_refs}、relation_kind=SELF_OUTSIDE_GAP/CRITERION_EXPRESSION/CONTEXT_CONTRAST/SHARED_MEANING、関係なしは[]。unit_refs=e/r1〜6件、その全根拠は両端nodeの根拠和集合内。overviewもnode根拠内。重複参照/別summary/explanationは禁止。
 カテゴリ/感情/強度は記録条件、memo/memo_actionは別欄。回答/訂正はsource/時点を保持し、訂正根拠は本人説明全文、unknownsは内側留保。AI対象文の根拠利用と内部ID/手順表示は禁止。
-架空完成例（本人事実でない）。
-例入力={"fields":[{"field":1,"text":"私は講座に申込み、返信を待った。"},{"field":2,"text":"翌日、受付完了の返信を読んだ。兄は費用を払うと言ったが、払ったかは不明だ。"}]}
-例出力={"schema_version":"cocolon.analysis.semantic_map.event_plan.model.v2","events":[{"evidence":[{"quote":"私は講座に申込み、返信を待った。","field":1}],"event_id":"e1","source_mode":"RECORDED","fact":"申し込み、返信を待った。","unknowns":[]},{"evidence":[{"quote":"翌日、受付完了の返信を読んだ。","field":2}],"event_id":"e2","source_mode":"RECORDED","fact":"翌日、受付を確認した。","unknowns":[]},{"evidence":[{"quote":"兄は費用を払うと言ったが、払ったかは不明だ。","field":2}],"event_id":"e3","source_mode":"RECORDED","fact":"兄は費用を払うと言った。","unknowns":[{"source_quote":"兄は費用を払うと言ったが、払ったかは不明だ。","source_field":2}]}],"readings":[{"reading_id":"r1","event_refs":["e1","e2"],"meaning":"返信待ちから翌日の受付確認へ。"}],"nodes":[{"node_id":"n1","node_kind":"CHOICE_OUTPUT","perspective":"SELF","title":"返信待ちと受付確認","unit_refs":["r1"]},{"node_id":"n2","node_kind":"STATE_CONTEXT","perspective":"OBSERVED_INTERACTION","title":"兄の支払いは未確認","unit_refs":["e3"]}],"edges":[],"overview":{"title":"受付確認と支払い","unit_refs":["r1","e3"]}}
 原文を同形式のJSONのみで返す。"""
+
+
+def _semantic_event_plan_v2_lesson_instruction(stage=None):
+    """ROOT_AUTHORED_SYNTHETIC: demonstrate the current author's whole task.
+
+    The lesson is independent of runtime records and frozen evaluation cases.
+    A leaf gets a complete single-record lesson, without a later event that
+    its source does not contain. Whole/merge lessons show the later resolution,
+    separate actors and qualified choices before selecting a sparse graph.
+    This is instruction pedagogy, not an admitted model result or a raw repair.
+    """
+    def event(index, field, quote, fact, mode='RECORDED', unknowns=()):
+        return dict(evidence=[dict(quote=quote, field=field)],
+            event_id='e' + str(index), source_mode=mode, fact=fact,
+            unknowns=[dict(source_quote=q, source_field=field) for q in unknowns])
+
+    def node(index, kind, perspective, title, *refs):
+        return dict(node_id='n' + str(index), node_kind=kind,
+            perspective=perspective, title=title, unit_refs=list(refs))
+
+    if stage == 'LEAF':
+        fields = [dict(field=1, record=1, field_path='memo',
+            text='私は測定器の貸出を問い合わせ、回答を待った。'),
+            dict(field=2, record=1, field_path='memo_action',
+                text='葵は受取用ケースを洗った。')]
+        events = [event(1, 1, fields[0]['text'], '本人は貸出を問い合わせ、回答を待ちました。'),
+            event(2, 2, fields[1]['text'], '葵は受取用ケースを洗いました。')]
+        readings, edges = [], []
+        nodes = [node(1, 'CHOICE_OUTPUT', 'SELF', '貸出の問い合わせ', 'e1'),
+            node(2, 'STATE_CONTEXT', 'OBSERVED_INTERACTION', '葵のケース洗浄', 'e2')]
+        overview = dict(title='問い合わせと受取準備', unit_refs=['e1', 'e2'])
+    else:
+        fields = [dict(field=1, record=1, field_path='memo', text=(
+            '私は水質調査の測定器を借りるため窓口へ問い合わせ、回答を待っていた。'
+            '葵は受取用ケースを洗った。'
+            '私は受取時に駅で葵と合流したいが、その希望はまだ伝えていない。')),
+            dict(field=2, record=1, field_path='memo_action',
+                text='私は問い合わせを送り、葵はケースを洗った。'),
+            dict(field=3, record=2, field_path='memo', text=(
+                '翌日、私は窓口の「金曜夕方に貸出可能」という回答を読んだ。'
+                '私は金曜夕方に取りに行くと決めたが、まだ受け取っていない。'
+                '私は葵へ受取予定を送った。'
+                '葵からは「了解」と返信があり、私は読んだ。'
+                '他の調査員が予定を読んだかは確認していない。'
+                '貸出可能と分かったので、私は別の受取方法を探す必要はなくなったと考えた。')),
+            dict(field=4, record=2, field_path='memo_action',
+                text='葵の了解は読んだ。測定器はまだ受け取っていない。')]
+        events = [
+            event(1, 1, '私は水質調査の測定器を借りるため窓口へ問い合わせ、回答を待っていた。',
+                '本人は測定器の貸出を問い合わせ、この時点では回答を待っていました。'),
+            event(2, 3, '翌日、私は窓口の「金曜夕方に貸出可能」という回答を読んだ。',
+                '翌日、本人は金曜夕方に貸出可能との窓口の回答を読みました。'),
+            event(3, 1, '私は受取時に駅で葵と合流したいが、その希望はまだ伝えていない。',
+                '本人は駅で葵と合流したいと思い、この時点ではまだ伝えていませんでした。', 'PERSON_WISH'),
+            event(4, 2, '私は問い合わせを送り、葵はケースを洗った。',
+                '葵は受取用ケースを洗いました。'),
+            event(5, 3, '私は金曜夕方に取りに行くと決めたが、まだ受け取っていない。',
+                '本人は金曜夕方に取りに行くと決めましたが、受取自体はまだです。', 'DECIDED_PLAN'),
+            event(6, 3, '私は葵へ受取予定を送った。', '本人は葵へ受取予定を送りました。'),
+            event(7, 3, '葵からは「了解」と返信があり、私は読んだ。',
+                '本人は葵からの了解の返信を読みました。'),
+            event(8, 3, '他の調査員が予定を読んだかは確認していない。',
+                '他の調査員の既読は未確認です。',
+                unknowns=('他の調査員が予定を読んだかは確認していない。',)),
+            event(9, 3, '貸出可能と分かったので、私は別の受取方法を探す必要はなくなったと考えた。',
+                '貸出可能と分かり、本人は別の受取方法を探す必要はなくなったと考えました。',
+                'PERSON_JUDGMENT')]
+        # The two fields can corroborate one event without duplicating it.
+        events[3]['evidence'].append(dict(quote='葵は受取用ケースを洗った。', field=1))
+        events[6]['evidence'].append(dict(quote='葵の了解は読んだ。', field=4))
+        readings = [dict(reading_id='r1', event_refs=['e1', 'e2', 'e5'], meaning=(
+            '回答を待つ段階から、金曜夕方に貸出可能と確認し、その時間に取りに行くと決める段階へ'
+            '移っています。受取自体はまだです。')),
+            dict(reading_id='r2', event_refs=['e7', 'e8'], meaning=(
+                '葵の了解を読んだことと、他の調査員の既読が未確認であることは、別の確認範囲です。'))]
+        nodes = [node(1, 'CHOICE_OUTPUT', 'SELF', '回答後に決めた未実行の受取予定', 'r1'),
+            node(2, 'STATE_CONTEXT', 'OBSERVED_INTERACTION', '葵が済ませたケース洗浄', 'e4'),
+            node(3, 'TARGET_MEANING', 'SELF', 'その時点では未伝達の合流希望', 'e3'),
+            node(4, 'CHOICE_OUTPUT', 'SELF', '予定の送信と確認できた返信の範囲', 'e6', 'r2'),
+            node(5, 'SELF_POSITION', 'SELF', '回答を受けた本人の判断', 'e9')]
+        edges = [dict(**{'from': 'n1', 'to': 'n4'}, relation_kind='SHARED_MEANING',
+            label='受取予定の決定と伝達', unit_refs=['e5', 'e6']),
+            dict(**{'from': 'n1', 'to': 'n5'}, relation_kind='CRITERION_EXPRESSION',
+                label='貸出回答を受けた本人の判断', unit_refs=['e2', 'e9'])]
+        overview = dict(title='受取予定と本人・相手の異なる状態',
+            unit_refs=['r1', 'e4', 'e3', 'e6', 'r2', 'e9'])
+    material = dict(fields=fields)
+    if stage in {'LEAF', 'MERGE'}:
+        material['history_stage'] = dict(kind=stage)
+    packet = dict(schema_version=SEMANTIC_MAP_EVENT_PLAN_V2_SCHEMA, events=events,
+        readings=readings, nodes=nodes, edges=edges, overview=overview)
+    return ('\n架空完成例（今回の本人事実ではない）。'
+        '\n例入力=' + json.dumps(material, ensure_ascii=False, separators=(',', ':'), allow_nan=False)
+        + '\n例出力=' + json.dumps(packet, ensure_ascii=False, separators=(',', ':'), allow_nan=False)
+        + '\n例はここまで。今回のfields全文から同形式のJSONだけを返す。')
 
 
 def _semantic_map_lesson_instruction(stage=None):
@@ -2542,7 +2634,7 @@ class AnalysisSemanticMapInput:
     map_correction_sources_json: str = ''
 
     def messages(self, *, _lesson_stage=None):
-        instruction = (_SEMANTIC_MAP_EVENT_PLAN_V2_INSTRUCTION
+        instruction = (_SEMANTIC_MAP_EVENT_PLAN_V2_INSTRUCTION + _semantic_event_plan_v2_lesson_instruction(_lesson_stage)
             if self.prompt_version == SEMANTIC_MAP_EVENT_PLAN_V2_PROFILE else
             _SEMANTIC_MAP_EVENT_PLAN_INSTRUCTION
             if self.prompt_version == SEMANTIC_MAP_EVENT_PLAN_PROFILE else

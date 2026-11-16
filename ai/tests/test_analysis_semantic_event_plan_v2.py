@@ -58,22 +58,26 @@ def compile_plan(packet=None, prepared=None):
         plan() if packet is None else packet,response_sha256='a'*64)
 
 
-def authored_lesson():
+def authored_lesson(stage=None):
     """Exercise the actual author's example through the existing source path."""
-    instruction = core._SEMANTIC_MAP_EVENT_PLAN_V2_INSTRUCTION
+    instruction = core._semantic_event_plan_v2_lesson_instruction(stage)
     decoder = json.JSONDecoder()
     inputs, _ = decoder.raw_decode(instruction.split('例入力=', 1)[1])
     packet, _ = decoder.raw_decode(instruction.split('例出力=', 1)[1])
     snapshot = sample()
-    for member, field in zip(snapshot['members'], inputs['fields'], strict=True):
-        member['original'].update(memo=field['text'], memo_action='')
+    by_record = {}
+    for field in inputs['fields']:
+        by_record.setdefault(field['record'], {})[field['field_path']] = field['text']
+    snapshot['members'] = snapshot['members'][:len(by_record)]
+    for member, fields in zip(snapshot['members'], by_record.values(), strict=True):
+        member['original'].update(memo=fields.get('memo', ''), memo_action=fields.get('memo_action', ''))
     prepared = application.prepare_semantic_map(OWNER, snapshot, prompt_version=PROFILE)
     assert [f['text'] for f in json.loads(prepared.material_json)['fields']] == [
         f['text'] for f in inputs['fields']]
     return prepared, packet
 
 
-def test_authored_lesson_realizes_later_confirmation_and_separate_remaining_unknown():
+def test_authored_lesson_realizes_later_confirmation_actors_qualifications_and_remaining_unknown():
     prepared, packet = authored_lesson()
     before = deepcopy(packet)
     artifact, counts = application.build_semantic_map(prepared, response(prepared, packet))
@@ -81,28 +85,45 @@ def test_authored_lesson_realizes_later_confirmation_and_separate_remaining_unkn
     text = artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text']
     assert counts['mapped_count'] == 2 and counts['unparsed_count'] == 0
     assert projection['wire_kind'] == 'watashi.map.v3'
-    confirmed, separate = projection['nodes']
+    confirmed, other_action, wish, acknowledged, judgment = projection['nodes']
     reading = packet['readings'][0]['meaning']
     assert confirmed['summary'] == confirmed['explanation'] == reading
     assert confirmed['unknowns'] == []
-    assert separate['unknowns'] == [packet['events'][2]['unknowns'][0]['source_quote']]
-    assert separate['explanation'] == packet['events'][2]['fact']
-    assert reading in text and separate['explanation'] in text
+    assert other_action['explanation'] == '葵は受取用ケースを洗いました。'
+    assert wish['explanation'] == packet['events'][2]['fact']
+    assert acknowledged['unknowns'] == [packet['events'][7]['unknowns'][0]['source_quote']]
+    assert judgment['explanation'] == packet['events'][8]['fact']
+    assert reading in text and other_action['explanation'] in text
     graph = compile_plan(packet, prepared)
     roots = json.loads(graph.nodes_json)
-    assert len(roots[0]['evidence_refs']) == 2 and len(roots[1]['evidence_refs']) == 1
+    assert len(roots[0]['evidence_refs']) == 3 and len(roots[1]['evidence_refs']) == 2
+    assert len(projection['edges']) == 2
+    assert all(event['source_mode'] in {'RECORDED', 'PERSON_WISH', 'DECIDED_PLAN', 'PERSON_JUDGMENT'}
+        for event in packet['events'])
     assert accepts(packet, prepared)
     assert packet == before
 
 
 def test_authored_lesson_rejects_unused_reading_even_when_all_events_are_reachable():
     prepared, packet = authored_lesson()
-    packet['nodes'][0]['unit_refs'] = ['e1', 'e2']
-    packet['overview']['unit_refs'] = ['e1', 'e2', 'e3']
+    packet['nodes'][0]['unit_refs'] = ['e1', 'e4', 'e5']
+    packet['overview']['unit_refs'] = ['e1', 'e4', 'e5', 'e3', 'r2', 'e9']
     before = deepcopy(packet)
     with pytest.raises(core.AnalysisSemanticMapError, match='event_plan_orphan'):
         compile_plan(packet, prepared)
     assert packet == before
+
+
+def test_leaf_lesson_does_not_invent_the_unseen_following_record():
+    prepared, packet = authored_lesson('LEAF')
+    artifact, counts = application.build_semantic_map(prepared, response(prepared, packet))
+    assert counts['mapped_count'] == 1
+    assert packet['readings'] == packet['edges'] == []
+    assert len(packet['events']) == len(packet['nodes']) == 2
+    assert {root['evidence'][0]['field'] for root in packet['events']} == {1, 2}
+    text = artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text']
+    assert '翌日' not in text and '金曜' not in text
+    assert accepts(packet, prepared)
 
 
 def test_reading_dependencies_are_derived_once_but_not_added_as_visible_prose():
