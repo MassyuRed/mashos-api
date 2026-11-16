@@ -2441,20 +2441,19 @@ overviewはtitle,event_refs,reading_refsです。項目へ含めたeventとreadi
 rootはschema_version,events,readings,nodes,edges,overviewの6keyです。schema_versionはcocolon.analysis.semantic_map.event_plan.model.v1。Markdownや前後文を付けず、JSONだけを返します。"""
 
 
-_SEMANTIC_MAP_EVENT_PLAN_V2_INSTRUCTION = """全提示記録から選択・条件・対象との関わり、記録間の共通点・違い・変化をわたしマップへ。fields全文は本人原文、辞書・制御情報・形式例は本人事実ではありません。
-eventsはevidence,event_id,source_mode,fact,unknowns。evidence={quote,field}は一意な連続原文。主体・宛先・対象・時点・場所・否定・留保を保持し、版・主体・状態・時点が異なる出来事、前の状態と後の確認・実行は別eventです。event_id=e1,e2,...。
-source_modeはRECORDED（経験・行動・結果・発言）、PERSON_JUDGMENT（本人の評価・解釈・扱い）、PERSON_WISH（希望・意向）、DECIDED_PLAN（決めた未実行予定）。先に資格を選び、factも同資格の160字以内。
-unknowns={source_quote,source_field}は原文に残る未確認事項だけを0〜4件。確認済みの行動・返信・結果や、本人の判断・非行動自体を不明へ戻さず、なければ[]。event根拠内・同fieldの一意な連続原文を240字以内でそのまま表示します。主体・向き・否定・留保と指示語の先行主体を保持。本人訂正の根拠は説明全文、unknownsはその中の留保です。
-readingsはreading_id=r1,r2,...,event_refs=既出e（1〜4件）,meaning=出来事からの読み（240字以内）。前後変化・条件差を示し、結果・非行動から意図・固定人格・動機を決めません。なければ[]。
-nodesはnode_id（n1,n2,...）,node_kind,perspective,title,unit_refs。node_kindはSELF_POSITION/TARGET_MEANING/CHOICE_OUTPUT/STATE_CONTEXT、perspectiveはSELF/OBSERVED_INTERACTION。titleは同じ時点・達成状態の見出し。独立した意味は別項目にし、同じ意味を分類や見出しを変えて繰り返さず、必要な項目で配列を閉じます。
-unit_refsは表示する既出e番号・r番号を順に選びます。node内で1〜4件、先頭が要点、選択文が詳細です。rのevent_refsは根拠だけを引き継ぎ、未選択の文は表示しません。
-edgesはfrom,to,relation_kind,label,unit_refs。両端nodeの選択eと選択r.event_refsの和集合が線の根拠範囲です。線で選ぶ全eとr.event_refsもその範囲内に限ります（1〜6件）。relation_kindはSELF_OUTSIDE_GAP/CRITERION_EXPRESSION/CONTEXT_CONTRAST/SHARED_MEANING。関係がなければ[]。overviewはtitle,unit_refsで、項目の根拠内から選びます。別のsummaryやexplanationは作りません。参照は重複させず、全eventを項目の根拠に、全readingを表示に使い、未使用の仮説は出しません。
-架空例（本人の根拠ではありません）：
-「同僚は工房へ図面を送ると言ったが、送信したか私は聞いていない。」は発言がRECORDED、留保のsource_quoteは全文。
-「新しい靴は丈夫だと勧められたが、長持ちの保証とは扱わなかった。」はPERSON_JUDGMENT。不明ではなく判断をfactへ。
-「教室へ申込み、選んだ理由を説明できて満足した。」はRECORDEDの達成。「次は自分で選びたい」はPERSON_WISH、「明日窓口へ行くと決めた」は未実行のDECIDED_PLAN。
-カテゴリ・感情・強度は各記録の条件、memoとmemo_actionは別欄。本人回答・訂正は提示sourceと時点を保ち、AI対象文は根拠にせず、内部IDや作成手順は表示しません。
-rootはschema_version,events,readings,nodes,edges,overview。schema_version=cocolon.analysis.semantic_map.event_plan.model.v2。JSONのみ。"""
+_SEMANTIC_MAP_EVENT_PLAN_V2_INSTRUCTION = """fields原文から選択・条件・関わり・記録間の変化をわたしマップへ。辞書・例は本人事実ではない。
+記録の対象・主体・時点・場所・版・状態を照合→独立事実events→readings→nodes/edges→overview。異なる前後・主体等は別event。同じ事実・意味を繰り返しません。
+eventsは例の形、e連番。fact160字以内。一意な連続原文quote/fieldで支え、主体・宛先・否定・留保を保持。
+source_mode=RECORDED(経験/行動/結果/発言)、PERSON_JUDGMENT(本人評価/解釈/扱い)、PERSON_WISH(希望)、DECIDED_PLAN(決めた未実行予定)。資格を保持。
+unknownsは現時点の未確認0〜4件、なければ[]。後続で同事項を確認済みなら昔の未確認は当時のfactへ、不明へ戻しません。判断・非行動自体も不明ではありません。source_quoteはevent根拠内・同field・240字以内の原文、先行主体も保持。
+readingsはr連番、event_refsはe1〜4件、meaning240字以内。条件差・前後を読み、結果・非行動から意図・原因・動機・人格を決めません。なければ[]。
+nodesはn連番、node_kind=SELF_POSITION/TARGET_MEANING/CHOICE_OUTPUT/STATE_CONTEXT、perspective=SELF/OBSERVED_INTERACTION。titleは同時点・状態。unit_refsは表示e/r1〜4件、先頭が要点。r.event_refsは根拠だけ。全eを項目根拠へ、全rをunit_refsへ。
+edges={from,to,relation_kind,label,unit_refs}、relation_kind=SELF_OUTSIDE_GAP/CRITERION_EXPRESSION/CONTEXT_CONTRAST/SHARED_MEANING、関係なしは[]。参照e/rの全根拠は両端nodeの根拠和集合内、1〜6件。overviewも項目根拠から選びます。重複参照・別summary/explanationは作りません。
+カテゴリ/感情/強度は記録条件、memo/memo_actionは別欄。回答/訂正のsource・時点を保持。訂正根拠は本人説明全文、unknownsは内側留保。AI対象文は根拠不可、内部ID/手順は表示しません。
+架空の完成例（本人事実ではない）。
+例入力={"fields":[{"field":1,"text":"私は講座に申し込み、返信を待った。"},{"field":2,"text":"翌日、受付完了の返信を読んだ。兄は費用を払うと言ったが、払ったかは不明だ。"}]}
+例出力={"schema_version":"cocolon.analysis.semantic_map.event_plan.model.v2","events":[{"evidence":[{"quote":"私は講座に申し込み、返信を待った。","field":1}],"event_id":"e1","source_mode":"RECORDED","fact":"申し込み、返信を待った。","unknowns":[]},{"evidence":[{"quote":"翌日、受付完了の返信を読んだ。","field":2}],"event_id":"e2","source_mode":"RECORDED","fact":"翌日、受付を確認した。","unknowns":[]},{"evidence":[{"quote":"兄は費用を払うと言ったが、払ったかは不明だ。","field":2}],"event_id":"e3","source_mode":"RECORDED","fact":"兄は費用を払うと言った。","unknowns":[{"source_quote":"兄は費用を払うと言ったが、払ったかは不明だ。","source_field":2}]}],"readings":[{"reading_id":"r1","event_refs":["e1","e2"],"meaning":"返信待ちから翌日の受付確認へ進んだ。"}],"nodes":[{"node_id":"n1","node_kind":"CHOICE_OUTPUT","perspective":"SELF","title":"返信待ちから受付確認へ","unit_refs":["r1"]},{"node_id":"n2","node_kind":"STATE_CONTEXT","perspective":"OBSERVED_INTERACTION","title":"兄の支払いは未確認","unit_refs":["e3"]}],"edges":[],"overview":{"title":"受付確認と兄の支払い","unit_refs":["r1","e3"]}}
+原文を同形式のJSONだけで返します。"""
 
 
 def _semantic_map_lesson_instruction(stage=None):
