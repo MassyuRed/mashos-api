@@ -2441,20 +2441,20 @@ overviewはtitle,event_refs,reading_refsです。項目へ含めたeventとreadi
 rootはschema_version,events,readings,nodes,edges,overviewの6keyです。schema_versionはcocolon.analysis.semantic_map.event_plan.model.v1。Markdownや前後文を付けず、JSONだけを返します。"""
 
 
-_SEMANTIC_MAP_EVENT_PLAN_V2_INSTRUCTION = """全提示記録から選択・条件・対象との関わりと記録間の共通点・違い・変化を読み、わたしマップを作ります。fields全文は本人原文。辞書・制御情報・形式例は本人の事実ではありません。
-eventsはevidence,event_id,source_mode,fact,unknowns。evidence={quote,field}は主体・宛先・対象・時点・場所・否定・留保を保つ一意な連続原文。出来事や資格が違えば分け、event_id=e1,e2,...。
-source_modeはRECORDED（記述された経験・行動・結果・発言）、PERSON_JUDGMENT（本人の評価・解釈・扱い）、PERSON_WISH（希望・意向）、DECIDED_PLAN（決めた未実行の予定）。資格を先に選び、factも同じ資格で160字以内。
-unknowns={source_quote,source_field}を0〜4件。eventの根拠内・同fieldに一意な連続原文（240字以内）で、そのまま表示します。主体・向き・否定・判断・未確認範囲を残し、指示語は先行する主体を含めます。本人訂正の根拠は説明全文、unknownsはその中の留保です。
-readingsはreading_id（r1,r2,...）,event_refs（1〜4件）,meaning（240字以内）。対応eventから意味・前後変化・条件差を読み、結果・非行動から意図・固定人格・動機を決めません。なければ[]。
-nodesはnode_id（n1,n2,...）,node_kind,perspective,title,unit_refs。node_kindはSELF_POSITION/TARGET_MEANING/CHOICE_OUTPUT/STATE_CONTEXT、perspectiveはSELF/OBSERVED_INTERACTION。titleは同じ時点・達成状態の見出し。分類埋めの反復は不要です。
+_SEMANTIC_MAP_EVENT_PLAN_V2_INSTRUCTION = """全提示記録から選択・条件・対象との関わり、記録間の共通点・違い・変化をわたしマップへ。fields全文は本人原文、辞書・制御情報・形式例は本人事実ではありません。
+eventsはevidence,event_id,source_mode,fact,unknowns。evidence={quote,field}は一意な連続原文。主体・宛先・対象・時点・場所・否定・留保を保持し、版・主体・状態・時点が異なる出来事、前の状態と後の確認・実行は別eventです。event_id=e1,e2,...。
+source_modeはRECORDED（経験・行動・結果・発言）、PERSON_JUDGMENT（本人の評価・解釈・扱い）、PERSON_WISH（希望・意向）、DECIDED_PLAN（決めた未実行予定）。先に資格を選び、factも同資格の160字以内。
+unknowns={source_quote,source_field}は原文に残る未確認事項だけを0〜4件。確認済みの行動・返信・結果や、本人の判断・非行動自体を不明へ戻さず、なければ[]。event根拠内・同fieldの一意な連続原文を240字以内でそのまま表示します。主体・向き・否定・留保と指示語の先行主体を保持。本人訂正の根拠は説明全文、unknownsはその中の留保です。
+readingsはreading_id=r1,r2,...,event_refs=既出e（1〜4件）,meaning=出来事からの読み（240字以内）。前後変化・条件差を示し、結果・非行動から意図・固定人格・動機を決めません。なければ[]。
+nodesはnode_id（n1,n2,...）,node_kind,perspective,title,unit_refs。node_kindはSELF_POSITION/TARGET_MEANING/CHOICE_OUTPUT/STATE_CONTEXT、perspectiveはSELF/OBSERVED_INTERACTION。titleは同じ時点・達成状態の見出し。独立した意味は別項目にし、同じ意味を分類や見出しを変えて繰り返さず、必要な項目で配列を閉じます。
 unit_refsは表示する既出e番号・r番号を順に選びます。node内で1〜4件、先頭が要点、選択文が詳細です。rのevent_refsは根拠だけを引き継ぎ、未選択の文は表示しません。
-edgesはfrom,to,relation_kind,label,unit_refs。両端nodeの根拠内から1〜6件を選びます。relation_kindはSELF_OUTSIDE_GAP/CRITERION_EXPRESSION/CONTEXT_CONTRAST/SHARED_MEANING。関係がなければ[]です。overviewはtitle,unit_refsで、項目の根拠内から選びます。別のsummaryやexplanationは作りません。参照は重複させず、全eventを項目の根拠に、全readingを表示に使います。
+edgesはfrom,to,relation_kind,label,unit_refs。両端nodeの選択eと選択r.event_refsの和集合が線の根拠範囲です。線で選ぶ全eとr.event_refsもその範囲内に限ります（1〜6件）。relation_kindはSELF_OUTSIDE_GAP/CRITERION_EXPRESSION/CONTEXT_CONTRAST/SHARED_MEANING。関係がなければ[]。overviewはtitle,unit_refsで、項目の根拠内から選びます。別のsummaryやexplanationは作りません。参照は重複させず、全eventを項目の根拠に、全readingを表示に使い、未使用の仮説は出しません。
 架空例（本人の根拠ではありません）：
-「同僚は工房へ図面を送ると言っていたが、実際に送信したか私は聞いていない。」は、発言がRECORDED、留保は全文をsource_quoteへ。
-「新しい靴は丈夫だと勧められたが、その説明を長く使える保証としては扱わなかった。」はPERSON_JUDGMENTのfact。保証として扱わない判断を不明へ変えません。
-「教室の申込みを終え、選んだ理由を説明できたことに満足した。」はRECORDEDの達成経験。「次は自分で選びたい。」はPERSON_WISH、「明日窓口へ行くと決めた。」はDECIDED_PLANで、実行済みとは別です。
-カテゴリ・感情・強度は各記録の条件、memoとmemo_actionは別欄です。本人回答・訂正は提示sourceと時点を保ち、AI対象文を本人の根拠にしません。内部IDや作成手順は表示文へ出しません。
-rootはschema_version,events,readings,nodes,edges,overview、schema_versionはcocolon.analysis.semantic_map.event_plan.model.v2。JSONのみ、前後文・Markdownなし。"""
+「同僚は工房へ図面を送ると言ったが、送信したか私は聞いていない。」は発言がRECORDED、留保のsource_quoteは全文。
+「新しい靴は丈夫だと勧められたが、長持ちの保証とは扱わなかった。」はPERSON_JUDGMENT。不明ではなく判断をfactへ。
+「教室へ申込み、選んだ理由を説明できて満足した。」はRECORDEDの達成。「次は自分で選びたい」はPERSON_WISH、「明日窓口へ行くと決めた」は未実行のDECIDED_PLAN。
+カテゴリ・感情・強度は各記録の条件、memoとmemo_actionは別欄。本人回答・訂正は提示sourceと時点を保ち、AI対象文は根拠にせず、内部IDや作成手順は表示しません。
+rootはschema_version,events,readings,nodes,edges,overview。schema_version=cocolon.analysis.semantic_map.event_plan.model.v2。JSONのみ。"""
 
 
 def _semantic_map_lesson_instruction(stage=None):
