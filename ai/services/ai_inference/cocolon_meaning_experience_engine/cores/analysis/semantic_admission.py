@@ -2458,14 +2458,106 @@ edges={from,to,relation_kind,label,unit_refs}、relation_kind=SELF_OUTSIDE_GAP/C
 _SEMANTIC_MAP_NODE_LOCAL_V3_INSTRUCTION = """本人のfields全文から、選択と条件、対象との関わり、記録間の共通点・違い・変化をわたしマップへまとめます。辞書・作成例・制御情報は本人の事実ではありません。
 各nodeの中で、根拠を選んだunitsを先に作り、その全unitsだけを根拠にmeaningを書きます。本人と他者、対象・場所・版・時点・希望・予定・実行・完了・中止・否定・留保を、それぞれの出来事と組にして保持します。同じ対象の後続確認は以前の状態と対応させ、確認済みを現在の不明へ戻しません。
 rootはschema_version,nodes,edges,overviewのみ。schema_versionはcocolon.analysis.semantic_map.node_local.model.v3。nodesは1〜12件、各nodeはunits,node_kind,perspective,title,meaningを持ちます。nodeの番号は配列順のn1,n2,...としてCMEEが付けます。node_id、event_id、reading_id、独立events/readings表、unit_refsは書きません。
-unitsは各nodeに1〜2件で、全件がそのnodeへ表示されます。各unitはevidence,source_mode,fact,unknownsです。evidenceはquoteとfieldを持つ1〜4件の配列で、提示された同field内の一意な連続原文を一字も変えずに引用します。主体や留保を含む前後も読みます。factは誰が、何を、いつ、どこまでしたかを保持した160字以内の一文です。異なる出来事は別unitで、一つの事実を別の意味として繰返しません。
-source_modeはRECORDED（経験・行動・結果・発言）、PERSON_JUDGMENT（本人評価・解釈・扱い）、PERSON_WISH（本人の希望）、DECIDED_PLAN（決めた未実行予定）のいずれかです。資格を変えず、希望や判断を実行済みの事実にしません。
+unitsは各nodeに1〜2件で、全件がそのnodeへ表示されます。各unitはevidence,source_mode,fact,unknownsです。evidenceはquoteとfieldを持つ1〜4件の配列で、提示された同field内の一意な連続原文を一字も変えずに引用します。主体や留保を含む前後も読みます。factは誰が、何を、いつ、どこまでしたかを保持した160字以内の一文です。一つのunitは一つの時点・場面での出来事とその条件を扱い、別の日や別の出来事へ同じ動詞を配りません。記録間の変化は、前後を別unitに残して同じnodeのmeaningで比較します。同じ記録のmemoとmemo_actionは同じ出来事を補えますが、離れた箇所を隣接した行動や原因にはしません。本人訂正はその説明全文と対象範囲を保ちます。一つの事実を別の意味として繰返しません。
+source_modeはRECORDED（経験・行動・結果・発言）、PERSON_JUDGMENT（本人評価・解釈・扱い）、PERSON_WISH（本人の希望）、DECIDED_PLAN（決めた未実行予定）のいずれかです。資格を変えず、希望や判断を実行済みの事実にしません。非行動と、本人が明示した「したくない・するつもりはない」という意向は区別し、否定された意向を肯定の予定に変えません。titleとmeaningも同じ時点・肯否・資格を保持します。
 unknownsはそのunitの根拠に原文のまま残る未確認範囲0〜2件で、なければ[]です。各件はsource_quote,source_fieldのみ。source_quoteは同unitのevidence引用の内側にある同fieldの一意な連続原文240字以内で、必要な先行主体も保持します。本人判断、非行動、確認済みの行動や返信そのものを不明へ置き換えません。
-node_kindはSELF_POSITION/TARGET_MEANING/CHOICE_OUTPUT/STATE_CONTEXT、perspectiveはSELF/OBSERVED_INTERACTION。titleは80字以内。meaningはそのnodeのunitsから読める意味を240字以内で示し、読みがなければ空文字です。結果や非行動から意図・原因・動機・人格を決めず、新しい事実を足しません。summary/explanationは別作文せず、同じfactとmeaningからCMEEが作ります。
+node_kindはSELF_POSITION/TARGET_MEANING/CHOICE_OUTPUT/STATE_CONTEXT、perspectiveはSELF/OBSERVED_INTERACTION。titleは80字以内。meaningはそのnodeのunitsだけから読める条件差や関わりを240字以内で示します。factをそのまま並べ直すだけなら空文字にし、独立した読みがある時だけ書きます。結果や非行動から意図・原因・動機・人格を決めず、新しい事実を足しません。summary/explanationは別作文せず、同じfactとmeaningからCMEEが作ります。
 edgesは関係がなければ[]です。各edgeはfrom,to,relation_kind,labelのみで、from/toは既に完成したnodeのn番号。relation_kindはSELF_OUTSIDE_GAP/CRITERION_EXPRESSION/CONTEXT_CONTRAST/SHARED_MEANING、labelは80字以内で両端のunitsだけが示す関係です。両端以外の根拠や独立した説明文は加えません。
 overviewはtitle,node_refsのみ。titleは80字以内、node_refsは完成nodeのn番号1〜8件で重複させません。概要本文は選んだnodeの同じ要点からCMEEが作るので、別の事実文は書きません。
 選択カテゴリ・感情・強度は各記録の条件で、memoとmemo_actionは別欄です。同時の感情は同時のまま、自己理解は強度表示なし、空欄は空欄です。本人回答・訂正・撤回は提示されたsourceと時点のまま扱い、本人訂正の根拠quoteは説明全文、unknownsはその内側の留保とします。AI対象文を本人の根拠にせず、全提示recordと有効な本人訂正をnode根拠に実際に使います。内部番号や作成手順は表示文へ書きません。
 Markdownや前後文を付けず、この形式のJSONだけを返します。"""
+
+
+def _semantic_node_local_v3_lesson_instruction(stage=None):
+    """One independently authored fictional episode in the current private wire.
+
+    This is instruction only, never a runtime source or accepted model result.
+    The leaf uses only the earlier record; it cannot borrow later confirmation.
+    """
+    early_play = '私はチェロの開放弦を弓で弾いた。'
+    early_condition = '隣室で試験をしているので、重音の練習は始めなかった。'
+    wish = '私は次回は重音をきれいに響かせたいが、速い曲を通して弾くつもりはない。'
+    question = '私は講師に左手の指を置く順序を尋ねた。'
+    waiting = '講師からの返答はまだ来ていない。'
+    later_play = '翌週、隣室の試験が終わった日に、私は重音を八回試した。'
+    result = '二本の弦が同時に鳴ったのは三回だった。'
+    other_wish = '奏は自分の弓を張り替えたいと言った。'
+    other_unknown = '奏が実際に弓を張り替えたかは聞いていない。'
+    confirmation = '翌週、私は講師の返答を読み、低い弦の指を先に置く手順だと確かめた。'
+    plan = '私は次の火曜に弓の角度を練習すると決めたが、まだその練習はしていない。'
+    judgment = '私は八回の結果だけで、重音を身につけたとは判断していない。'
+
+    def field(number, record, path, text):
+        return dict(field=number, record=record, field_path=path,
+            source_role='ORIGINAL_INPUT', supplement=None, text=text)
+
+    def unit(roots, fact, mode='RECORDED', unknowns=()):
+        return dict(evidence=[dict(quote=quote, field=number) for number, quote in roots],
+            source_mode=mode, fact=fact,
+            unknowns=[dict(source_quote=quote, source_field=number) for number, quote in unknowns])
+
+    def node(kind, title, units, meaning='', perspective='SELF'):
+        return dict(units=units, node_kind=kind, perspective=perspective,
+            title=title, meaning=meaning)
+
+    fields = [field(1, 1, 'memo', early_play + early_condition + wish),
+        field(2, 1, 'memo_action', question + waiting)]
+    records = [dict(record=1, recorded_at='2026-07-01T10:00:00',
+        selected_categories=['趣味'], selected_emotions=['平穏'],
+        emotion_details=[dict(type='平穏', strength='medium')])]
+    earlier = unit([(1, early_play), (1, early_condition)],
+        '試験のある日は、本人は開放弦を弾き、重音の練習はまだ始めませんでした。')
+    waiting_unit = unit([(2, question), (2, waiting)],
+        '本人は講師へ指を置く順序を尋ね、この時点では返答を待っていました。',
+        unknowns=[(2, waiting)] if stage == 'LEAF' else [])
+    own_wish = node('TARGET_MEANING', '響かせたい希望と、通して弾くつもりのない曲',
+        [unit([(1, wish)],
+            '本人は次回に重音をきれいに響かせたいと考えていますが、速い曲を通して弾くつもりはありません。',
+            mode='PERSON_WISH')])
+    nodes = [node('CHOICE_OUTPUT', '試験中に重音の練習を始めなかった日', [earlier]),
+        node('STATE_CONTEXT', '講師へ尋ねて返答を待っていた時点', [waiting_unit]), own_wish]
+    edges = []
+    if stage != 'LEAF':
+        fields.extend([field(3, 2, 'memo', later_play + result + other_wish + other_unknown),
+            field(4, 2, 'memo_action', confirmation + plan + judgment)])
+        records.append(dict(record=2, recorded_at='2026-07-08T10:00:00',
+            selected_categories=['趣味'], selected_emotions=['平穏'],
+            emotion_details=[dict(type='平穏', strength='medium')]))
+        nodes[0] = node('CHOICE_OUTPUT', '試験のある日と終わった日の、重音への取り組み',
+            [earlier, unit([(3, later_play), (3, result)],
+                '翌週、隣室の試験が終わった日に重音を八回試し、二本の弦が同時に鳴ったのは三回でした。')],
+            '重音を始めなかった日と実際に試した日では、隣室の試験という条件が変わっています。'
+            '試せたことと、八回中三回だった結果を分けて捉えられます。')
+        nodes[1] = node('STATE_CONTEXT', '返答待ちから、本人が手順を確かめた段階へ',
+            [waiting_unit, unit([(4, confirmation)],
+                '翌週、本人は講師の返答を読み、低い弦の指を先に置く手順だと確かめました。')],
+            '尋ねた時点の返答待ちは、翌週には手順を確かめる状態へ進んでいます。')
+        nodes.extend([
+            node('STATE_CONTEXT', '奏の弓についての希望と、実施の未確認',
+                [unit([(3, other_wish), (3, other_unknown)],
+                    '奏には自分の弓を張り替えたいという希望がありますが、実施したかは本人には分かっていません。',
+                    unknowns=[(3, other_unknown)])], perspective='OBSERVED_INTERACTION'),
+            node('CHOICE_OUTPUT', '決めたが、まだ行っていない角度の練習',
+                [unit([(4, plan)], '本人は次の火曜に弓の角度を練習すると決めていますが、その練習はまだです。',
+                    mode='DECIDED_PLAN')]),
+            node('SELF_POSITION', '八回の結果だけで習得したとは判断していない',
+                [unit([(4, judgment)], '本人は今回の八回の結果だけで、重音を身につけたとは判断していません。',
+                    mode='PERSON_JUDGMENT')])])
+        edges = [dict(**{'from': 'n1', 'to': 'n6'}, relation_kind='CRITERION_EXPRESSION',
+            label='今回の試行結果だけで、習得を決めない判断')]
+    material = dict(model_schema=SEMANTIC_MAP_NODE_LOCAL_V3_SCHEMA, records=records,
+        fields=fields, analysis_as_of='2026-07-01T12:00:00+00:00' if stage == 'LEAF'
+            else '2026-07-08T12:00:00+00:00')
+    if stage in {'LEAF', 'MERGE'}:
+        material['history_stage'] = dict(kind=stage)
+    packet = dict(schema_version=SEMANTIC_MAP_NODE_LOCAL_V3_SCHEMA, nodes=nodes,
+        edges=edges, overview=dict(title='試験中の練習と本人の希望、講師への問い合わせ' if stage == 'LEAF'
+            else '練習の条件変化と、本人・奏の異なる状態',
+            node_refs=['n' + str(index) for index in range(1, len(nodes) + 1)]))
+    return ('\n架空完成例（今回の本人事実ではない）。'
+        '\n例入力=' + semantic_map_canonical(material)
+        + '\n例出力=' + json.dumps(packet, ensure_ascii=False, separators=(',', ':'), allow_nan=False)
+        + '\n例はここまで。今回のfields全文だけを根拠に、この形式のJSONを返します。')
 
 
 def _semantic_event_plan_v2_lesson_instruction(stage=None):
@@ -2649,7 +2741,7 @@ class AnalysisSemanticMapInput:
     map_correction_sources_json: str = ''
 
     def messages(self, *, _lesson_stage=None):
-        instruction = (_SEMANTIC_MAP_NODE_LOCAL_V3_INSTRUCTION
+        instruction = (_SEMANTIC_MAP_NODE_LOCAL_V3_INSTRUCTION + _semantic_node_local_v3_lesson_instruction(_lesson_stage)
             if self.prompt_version == SEMANTIC_MAP_NODE_LOCAL_V3_PROFILE else
             _SEMANTIC_MAP_EVENT_PLAN_V2_INSTRUCTION + _semantic_event_plan_v2_lesson_instruction(_lesson_stage)
             if self.prompt_version == SEMANTIC_MAP_EVENT_PLAN_V2_PROFILE else

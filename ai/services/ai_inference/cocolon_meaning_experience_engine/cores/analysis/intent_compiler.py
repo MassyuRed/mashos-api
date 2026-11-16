@@ -4221,7 +4221,12 @@ def _expand_analysis_semantic_node_local_v3(prepared, packet):
                 if quote not in unknowns:
                     unknowns.append(quote)
         meaning = text(node['meaning'], 240, empty=True)
-        body = '\n'.join(facts + ([meaning] if meaning else []))
+        # A derived view may remove byte-identical authored repetitions, but
+        # cannot decide that a paraphrase or a qualified statement is redundant.
+        # Keep the original meaning in the summary and private authored plan.
+        repeated_facts = meaning in facts or meaning in ('\n'.join(facts), ''.join(facts))
+        visible = facts + ([meaning] if meaning and not repeated_facts else [])
+        body = '\n'.join(dict.fromkeys(paragraph for part in visible for paragraph in part.split('\n')))
         summary = meaning or facts[0]
         node_id = 'n' + str(index)
         bodies[node_id], summaries[node_id] = body, summary

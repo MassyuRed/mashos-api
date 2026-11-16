@@ -91,7 +91,7 @@ def test_every_local_fact_is_visible_and_all_views_share_the_same_graph(monkeypa
         assert visible['summary'] == (authored['meaning'] or authored['units'][0]['fact'])
         assert visible['unknowns'] == list(dict.fromkeys(
             unknown['source_quote'] for fact in authored['units'] for unknown in fact['unknowns']))
-        assert visible['explanation'] in text
+        assert all(paragraph in text for paragraph in visible['explanation'].split('\n'))
     assert artifact.private_evidence()['response_sha256'] == receipt.raw_sha256
     assert artifact.private_evidence()['messages_sha256'] == receipt.messages_sha256
     assert receipt.raw == application._canonical(original) and value == original

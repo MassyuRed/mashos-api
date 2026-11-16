@@ -1190,8 +1190,8 @@ def validate_analysis_semantic_projection(projection, report_id):
     return deepcopy(projection)
 
 
-def analysis_semantic_projection_text(projection):
-    """The saved accessible text is generated from the same visible graph."""
+def analysis_semantic_projection_text_legacy(projection):
+    """Exact pre-compact text, retained only to validate immutable saved rows."""
     lines = [projection['overview']['title'], projection['overview']['summary']]
     index = {node['node_ref']: node for node in projection['nodes']}
     for node in projection['nodes']:
@@ -1201,6 +1201,44 @@ def analysis_semantic_projection_text(projection):
     for edge in projection['edges']:
         lines.extend(['', index[edge['from_ref']]['title'] + ' ／ ' + index[edge['to_ref']]['title'],
             edge['label'], edge['explanation']])
+    return '\n'.join(lines)
+
+
+def analysis_semantic_projection_text(projection):
+    """Render every v3 graph without multiplying its node bodies by its edges.
+
+    Only byte-identical paragraphs are coalesced within a node. Overview
+    paragraphs already present verbatim in a node are displayed there instead.
+    Distinct wording, qualifiers and context remain, without substring or
+    semantic matching. Relation details and all roots remain in the graph;
+    the linear view names each endpoint and relation rather than repeating
+    the complete endpoint bodies for every edge. Independently authored edge
+    qualifications remain when they are not verbatim node text or the label.
+    """
+    def paragraphs(*texts):
+        return list(dict.fromkeys(line for text in texts for line in text.split('\n') if line))
+
+    node_bodies = {}
+    for node in projection['nodes']:
+        detail = paragraphs(node['explanation'])
+        # A summary that is exactly the authored detail concatenation adds no
+        # text. This is byte equality, not substring or semantic comparison.
+        node_bodies[node['node_ref']] = (detail if node['summary'] == ''.join(detail)
+            else paragraphs(node['summary'], node['explanation']))
+    displayed = {line for body in node_bodies.values() for line in body}
+    displayed.update(node['summary'] for node in projection['nodes'])
+    lines = [projection['overview']['title']]
+    lines.extend(line for line in paragraphs(projection['overview']['summary']) if line not in displayed)
+    index = {node['node_ref']: node for node in projection['nodes']}
+    for node in projection['nodes']:
+        lines.extend(['', node['title'], *node_bodies[node['node_ref']]])
+        lines.extend(node['context'])
+        lines.extend('まだ記録にないこと：' + item for item in node['unknowns'])
+    for edge in projection['edges']:
+        lines.extend(['', index[edge['from_ref']]['title'] + ' ／ ' + index[edge['to_ref']]['title'],
+            edge['label']])
+        lines.extend(line for line in paragraphs(edge['explanation'])
+            if line not in displayed and line != edge['label'])
     return '\n'.join(lines)
 
 

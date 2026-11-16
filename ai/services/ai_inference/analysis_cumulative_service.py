@@ -80,6 +80,23 @@ def _projection_text(projection):
     return ObservedSelfStructureMap._text_from_visual(projection)['text']
 
 
+def _saved_projection_text_matches(projection, text):
+    """Accept only exact current or exact historical text for the same graph.
+
+    Saved rows retain their original text on every read. This finite view
+    compatibility is not regeneration, rewriting, or arbitrary-text admission.
+    """
+    if type(text) is not str:
+        return False
+    if text == _projection_text(projection):
+        return True
+    if projection.get('wire_kind') == 'watashi.map.v3':
+        from cocolon_meaning_experience_engine.cores.analysis.observed_route_realizer import (
+            analysis_semantic_projection_text_legacy)
+        return text == analysis_semantic_projection_text_legacy(projection)
+    return False
+
+
 def _legacy_semantic_projection(projection):
     """Keep installed v2 clients readable while a diagram-capable build ships.
 
@@ -164,7 +181,7 @@ async def read_maps(user_id, *, report_id=None, history=False, limit=60, offset=
                     or row['content_json']['report_mode'] != 'standard'):
                 raise ValueError
             projection = _checked_projection(row['content_json']['watashiMap'], row['id'])
-            if row['content_text'] != _projection_text(projection):
+            if not _saved_projection_text_matches(projection, row['content_text']):
                 raise ValueError
             _checked_coverage(row['content_json']['map_context'])
         return result

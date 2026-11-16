@@ -1,3 +1,15 @@
+## 2026-11-17 — A15実意味不適合後の作者・表示・保存互換の修正候補
+
+A15は新Podの固定環境・基礎モデル・120u提供・GPU数値照合を成立させてから一回実行した。6 POST試行のうち受領は前対照2と分析3。第4分析は送信済み・未受領、第5分析と後対照は未送信。実rawに確認済みと未確認の混同、否定意向の逆転、時点・主体・原事実の欠落があり、rootと独立担当が不適合と判断した。取得子processへの意図的な停止でCancelledErrorとなったもので、native期限超過とは区別する。462.028秒で同じnative・argv/env/cwd・120uへ復元、別確認でhealth200と候補port閉鎖を確認した。B・SQL保存／再読・通常採用0。原本はprivateな継続記録に保持し、A15及び従前の一回枠を再実行しない。
+
+新候補は同じprivate node-local v3・同じfresh32・同じnativeを保持し、既存作者へ入力全文と完成v3の架空例を対応させる。出来事の時点・主体・資格、確認済みと残る不明、否定意向を保持し、LEAFへ後続情報を持ち込まない。凍結5入力を例にしていない。compilerはfactとmeaningの完全同文／厳密な連結だけを重複追加しない。本文表示も完全同文だけを整理し、関係線で両端本文を再掲しない一方、独自の関係説明・留保は残す。旧保存本文は現行又は旧formatterの完全一致で検証し、書き換え・再生成せず返す。公開graph・DB／DTO／RN・重み・native・既存の拒否／byte・token・期限は変更しない。
+
+ローカル統合607件が成功し、最終のLEAF限定修正は重複する13件で再確認した。件数は合算しない。これらは実意味の合格ではなく、新候補の実4B照合は未実施。新5入力は14,416〜22,838byteで通常上限内、同12記録の既存plannerは12 LEAF＋MERGEの13 model callとなる。A16/B16は新source・messages・全量plan・現在CIと新Pod実状態を結び直す。元の入力／SQL checkpoint・guard／as_ofを保ち、全5件が適切な場合だけ全12の実生成と独立照合、同じ最終rawの一回保存・別process非生成再読へ進む。
+
+通常API／workerは24bc228dの既存Liveで、新Podへの接続・候補の通常配置は未成立。採用できた同版だけmap専用alias／IF120u／natural・Piece既存profileの分離と実設定・期限を確認して通常反映する。Renderの変数更新toolはlinked branchのdeployを伴うため、固定版の配置には対象値のSave onlyと指定commit配置を使う。新service・migration・build／TestFlight／本人実機は含めない。通常反映を含む元単位と補助活用全体は未完。
+
+---
+
 > **2026-11-15・長履歴分割／全体統合の実装候補（実4B・通常反映は未完）。** 現semanticへ完全な親sourceから2〜3leafと最終MERGEを接続し、既存engine／compiler／realizer・一回commitを維持した。小材料は旧1call。本人訂正cohort、同原根拠の未知継承、提示断片と原根拠の二重束縛、月次不変を実装。通常API／workerは24bc228d Liveのまま。実4B用の既存Pod送付が具体承認不足として自動審査で拒否され、新GPU／転送／学習／配置0。実装と再開内容は本file末尾およびCocolon補助設計§9.73。候補を長履歴の実モデル品質完了・通常採用へ換算しない。
 
 > **2026-11-14 current — 共有有効意味・map本人訂正・IF／Savedの実装。** 原入力・回答・訂正／撤回の同じ有効意味をEmlis作者・Piece source・Analysisの実生成へ接続し、mapの対象本文＋本人説明を独立根拠として新currentへ反映する経路を実装した。旧月次・Saved当時版と旧profileを維持する。IF／SavedはAPI・durable保存・RNまで接続し、同keyの未開始予約回収・受領後保存再開・所有者／依存消去を扱う。Pieceは旧raw＝canonicalを保持し、明示shared_4b.cmee.v2だけ既存CMEE作者のsource-proven編集を使う。新server grammarはIF marker専用を追加し、旧map/nativeを保持する。通常DB／API反映は最終確認中、Runpod受口反映と新実4B品質は未確認。詳細の現ownerはCocolonの [補助設計§9.62](https://github.com/MassyuRed/Cocolon/blob/agent/three-core-cmee-current-structure-20260815/Cocolon_前提資料/designs/cmee/Cocolon_CMEE_AuxiliaryAsset_Reuse_ImplementationDesign_20261108.md#shared-active-meaning-three-core-if-saved-20261114) と全機能現在地。build／TestFlight／本人実機はMash指示で保留し、補助全体完了とは判定しない。以下の過去checkpointを今回の完了状態へ読み替えない。

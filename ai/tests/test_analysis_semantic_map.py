@@ -89,7 +89,10 @@ def test_same_graph_gives_rich_details_relationships_accessible_text_and_private
     assert counts['mapped_count'] == 2 and counts['unparsed_count'] == 0
     text = artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text']
     assert all(node['explanation'] in text for node in projection['nodes'])
-    assert projection['edges'][0]['explanation'] in text
+    edge = projection['edges'][0]
+    assert edge['label'] in text
+    assert projection['nodes'][0]['title'] + ' ／ ' + projection['nodes'][1]['title'] in text
+    assert edge['explanation'] == candidate()['edges'][0]['explanation']
     private = artifact.private_evidence()
     assert len(private['source_members']) == 2
     assert len(private['graph']['nodes'][1]['record_refs']) == 1
