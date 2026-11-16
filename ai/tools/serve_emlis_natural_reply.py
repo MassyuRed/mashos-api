@@ -35,6 +35,7 @@ EVENT_PLAN_V2_MODEL = 'cocolon-qwen3.5-4b-analysis-event-plan-v2'
 EVENT_PLAN_V2_BASE_MODEL = 'cocolon-qwen3.5-4b-analysis-event-plan-v2-base-851bf6e'
 NODE_LOCAL_V3_SCHEMA = 'cocolon.analysis.semantic_map.node_local.model.v3'
 NODE_LOCAL_V3_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v3'
+NODE_LOCAL_V3_BASE_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v3-base-851bf6e'
 
 IF_CANDIDATE_SCHEMA = 'cocolon.analysis.if-candidates.model.v1'
 PIECE_ADAPTER_NAME = 'piece'
@@ -1121,7 +1122,8 @@ def make_handler(generate, *, api_key, model_name, deadline, max_requests,
                 piece = 'candidate_format' in request
                 event_plan = bool(not natural and event_plan_model is not None
                     and request.get('model') == event_plan_model)
-                event_plan_base = event_plan and event_plan_model == EVENT_PLAN_V2_BASE_MODEL
+                event_plan_base = event_plan and event_plan_model in {
+                    EVENT_PLAN_V2_BASE_MODEL, NODE_LOCAL_V3_BASE_MODEL}
                 if event_plan:
                     selected_model = event_plan_model
                 ordinary_messages = (isinstance(messages, list) and len(messages) == 2
@@ -1141,7 +1143,8 @@ def make_handler(generate, *, api_key, model_name, deadline, max_requests,
                     except (ValueError, TypeError):
                         material = None
                     marker = material.get('model_schema') if type(material) is dict else None
-                    expected_marker = (NODE_LOCAL_V3_SCHEMA if event_plan_model == NODE_LOCAL_V3_MODEL
+                    expected_marker = (NODE_LOCAL_V3_SCHEMA if event_plan_model in {
+                            NODE_LOCAL_V3_MODEL, NODE_LOCAL_V3_BASE_MODEL}
                         else EVENT_PLAN_V2_SCHEMA if event_plan_model in {
                             EVENT_PLAN_V2_MODEL, EVENT_PLAN_V2_BASE_MODEL} else EVENT_PLAN_SCHEMA)
                     if (event_plan and marker != expected_marker

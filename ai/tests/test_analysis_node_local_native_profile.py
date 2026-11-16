@@ -15,6 +15,7 @@ from test_emlis_natural_reply_probe_http import probe
 PROFILE = 'semantic_map.node_local.v3'
 SCHEMA = 'cocolon.analysis.semantic_map.node_local.model.v3'
 ALIAS = 'cocolon-qwen3.5-4b-analysis-node-local-v3'
+BASE_ALIAS = 'cocolon-qwen3.5-4b-analysis-node-local-v3-base-851bf6e'
 SAVED = '私は図面を保存した。'
 REPAIRED = '妹は棚を直した。'
 UNKNOWN = '塗装を終えたかは聞いていない。'
@@ -166,7 +167,9 @@ def test_large_source_retains_the_existing_explicit_partial_coverage_exception()
 
 @pytest.mark.parametrize('model, expected', [
     (ALIAS, PROFILE),
+    (BASE_ALIAS, PROFILE),
     (ALIAS + '-unconfigured', 'semantic_map.v1'),
+    (BASE_ALIAS + '-unconfigured', 'semantic_map.v1'),
     (sources.SEMANTIC_EVENT_PLAN_V2_MODEL, 'semantic_map.event_plan.v2'),
     (sources.SEMANTIC_EVENT_PLAN_V2_BASE_MODEL, 'semantic_map.event_plan.v2'),
     (sources.SEMANTIC_EVENT_PLAN_MODEL, 'semantic_map.event_plan.v1'),
@@ -180,9 +183,12 @@ def test_exact_model_identity_selects_the_map_contract_and_keeps_if_on_120u(monk
     assert sources.analysis_model_prompt_version(selected) == expected
     actual_if = if_sources.application_analysis_if_model_source()
     assert actual_if.model == (model if model.endswith('-unconfigured') else sources.SEMANTIC_EVENT_PLAN_BASE_MODEL)
+    assert actual_if._max_tokens == 4096
+    assert actual_if._settings_snapshot == sources._settings()
 
 
-def test_application_node_local_transport_uses_the_existing_long_semantic_budgets(monkeypatch):
+@pytest.mark.parametrize('alias', [ALIAS, BASE_ALIAS])
+def test_application_node_local_transport_uses_the_existing_long_semantic_budgets(monkeypatch, alias):
     from test_analysis_semantic_map import OWNER, sample
     import analysis_semantic_map as app
     from cocolon_meaning_experience_engine.cores.analysis import semantic_admission as core
@@ -191,14 +197,14 @@ def test_application_node_local_transport_uses_the_existing_long_semantic_budget
     def handler(request):
         body = json.loads(request.content)
         calls.append(body)
-        assert body['model'] == ALIAS and body['max_tokens'] == 4096
+        assert body['model'] == alias and body['max_tokens'] == 4096
         assert body['messages'] == prepared.messages()
         assert request.extensions['timeout']['read'] == 220.0
         assert request.extensions['timeout']['connect'] == 15.0
-        return httpx.Response(200, json=dict(model=ALIAS, choices=[dict(finish_reason='stop',
+        return httpx.Response(200, json=dict(model=alias, choices=[dict(finish_reason='stop',
             message=dict(role='assistant', content='fictional-raw-transport-check'))]))
     source = sources.SelfHostedSemanticAnalysisModelSource(endpoint='https://private.invalid/v1/chat/completions',
-        model=ALIAS, api_key='synthetic-private-key', semantic_prompt_version=PROFILE,
+        model=alias, api_key='synthetic-private-key', semantic_prompt_version=PROFILE,
         transport=httpx.MockTransport(handler))
     result = asyncio.run(source(prepared))
     assert result.finish_reason == 'stop' and len(calls) == 1
@@ -207,7 +213,8 @@ def test_application_node_local_transport_uses_the_existing_long_semantic_budget
     assert sources.SEMANTIC_PIPELINE_TIMEOUT_SECONDS == 840.0
 
 
-def test_native_admits_only_the_configured_node_local_alias_and_schema():
+@pytest.mark.parametrize('alias, expected_profile', [(ALIAS, 'event_plan'), (BASE_ALIAS, 'event_plan_base')])
+def test_native_admits_only_the_configured_node_local_alias_and_schema(alias, expected_profile):
     calls = []
     def generate(selected, end, *, profile=None):
         calls.append(profile)
@@ -215,7 +222,7 @@ def test_native_admits_only_the_configured_node_local_alias_and_schema():
     server = ThreadingHTTPServer(('127.0.0.1', 0), probe.make_handler(generate,
         api_key='analysis-test-key', model_name=sources.SEMANTIC_EVENT_PLAN_BASE_MODEL,
         deadline=float('inf'), max_requests=0, max_new_tokens=4096, request_seconds=210,
-        natural_reply=dict(api_key='natural-test-key', model_name='natural'), event_plan_model=ALIAS))
+        natural_reply=dict(api_key='natural-test-key', model_name='natural'), event_plan_model=alias))
     worker = threading.Thread(target=server.serve_forever, daemon=True)
     worker.start()
     try:
@@ -227,14 +234,16 @@ def test_native_admits_only_the_configured_node_local_alias_and_schema():
                 return client.post(url, headers={'Authorization': 'Bearer ' + key},
                     json=dict(model=model, messages=selected, max_tokens=tokens, temperature=0,
                         stream=False, chat_template_kwargs={'enable_thinking': False}))
-            assert post(ALIAS, probe.EVENT_PLAN_V2_SCHEMA).status_code == 400
+            assert post(alias, probe.EVENT_PLAN_V2_SCHEMA).status_code == 400
             assert post(sources.SEMANTIC_EVENT_PLAN_BASE_MODEL, SCHEMA).status_code == 400
-            assert post(ALIAS + '-other', SCHEMA).status_code == 400
+            assert post(alias + '-other', SCHEMA).status_code == 400
+            assert post(BASE_ALIAS if alias == ALIAS else ALIAS, SCHEMA).status_code == 400
             assert calls == []
-            assert post(ALIAS, SCHEMA).status_code == 200
+            response = post(alias, SCHEMA)
+            assert response.status_code == 200 and response.json()['model'] == alias
             assert post(sources.SEMANTIC_EVENT_PLAN_BASE_MODEL, probe.IF_CANDIDATE_SCHEMA).status_code == 200
             assert post('natural', None, key='natural-test-key', tokens=2048).status_code == 200
-            assert calls == ['event_plan', None, 'natural']
+            assert calls == [expected_profile, None, 'natural']
     finally:
         server.shutdown()
         server.server_close()

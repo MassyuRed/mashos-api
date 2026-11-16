@@ -1,3 +1,13 @@
+## 2026-11-17 — A16の不適合終了と、同4B基礎モデルを明示する比較候補
+
+A16はAPI88c0ce02・同fresh32・同5入力で一回実行し、前対照2＋分析2の4POSTを受領した。読書会は92.788605秒／GENERATEDで送信・一人返信／全員既読不明を保持へ改善したが、予約済み→予約できるの変異、端点外の関係label、未開催の欠落があり不適合。照明は171.101109秒／HTTP200／stop後、同じtitle／summary／explanationを持つnodeの既存拒否でanalysis_semantic_map_invalid。12node中の重複と、後日購入・設置・配線調整・一晩限定の使用結果の欠落を原文照合した。残3件・後対照・B16・SQL保存／再読・通常採用0。379.343597秒で元native eec418d3・同argv/env/cwd・120uへPID5836/start242598228で復元し、別processでhealth200・18008閉鎖・B16不存在を確認した。scope7ab99d89とA16は消費済み。最終result SHA f3e154079dd1744e04f54d6aa7bf98c1a519abfe19fe35a1aaa2cc915ee654f5。88c0のAnalysis43960506943／Piece43960507276は両successであるが、意味採用へ換算しない。
+
+次の候補は、既存v2のbase比較選択能力をv3へ移し、同4B基礎モデル851bf6eと学習済み部分の寄与を切り分ける。明示alias cocolon-qwen3.5-4b-analysis-node-local-v3-base-851bf6e を既存native／map factory／IF factoryの対応setへ追加した。既存v3 aliasは同fresh32選択のまま、新base aliasだけが既存disable_adapter経路を選ぶ。fresh32のロードとSHA照合を保持し、IF120u・natural／Piece・v2base・4096出力／32768context・期限・公開graph／DB／RNは維持する。新重み・追加学習・別controller・意味の後修復はない。関連138検査成功、独立reviewとdiff check成功。新native SHA d502b3c547e55a959a6dfe3081e24b4bb2fd5d517b9deff64d0f6ddc15657355、数学的generator／base context／kernel loaderは前nativeとAST一致で、今回の差は明示選択だけである。
+
+A17/B17は新source head／local検査／当該CI実状態と復元後の実GPUへ束縛し、同5入力の独立全文照合が適切な場合だけ同12記録・同raw一回保存／別process非生成再読へ進む。隔離評価では関連local検査完了と当該新CI開始を実値で保持し、進行中を成功としない。通常反映には両CI成功と実意味・保存再読を別に満たす。通常API／workerは24bc228dのままで、新Pod向け設定・指定候補配置・通常生成は未成立。新Podの既存bridge local復元、Render管理画面への認証は成立したが、GPU自身から公開URLへの403をRender疎通へ代用しない。build／TestFlight／本人実機は保留し、通常反映を含む元単位と補助全体は未完。
+
+---
+
 ## 2026-11-17 — A15実意味不適合後の作者・表示・保存互換の修正候補
 
 A15は新Podの固定環境・基礎モデル・120u提供・GPU数値照合を成立させてから一回実行した。6 POST試行のうち受領は前対照2と分析3。第4分析は送信済み・未受領、第5分析と後対照は未送信。実rawに確認済みと未確認の混同、否定意向の逆転、時点・主体・原事実の欠落があり、rootと独立担当が不適合と判断した。取得子processへの意図的な停止でCancelledErrorとなったもので、native期限超過とは区別する。462.028秒で同じnative・argv/env/cwd・120uへ復元、別確認でhealth200と候補port閉鎖を確認した。B・SQL保存／再読・通常採用0。原本はprivateな継続記録に保持し、A15及び従前の一回枠を再実行しない。

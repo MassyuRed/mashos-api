@@ -444,7 +444,8 @@ def test_event_plan_base_alias_requires_its_explicit_configuration(configured):
         server.shutdown(); server.server_close(); worker.join(3)
 
 
-def test_event_plan_base_cli_keeps_explicit_event_adapter_and_existing_budgets(monkeypatch):
+@pytest.mark.parametrize('alias', [probe.EVENT_PLAN_V2_BASE_MODEL, probe.NODE_LOCAL_V3_BASE_MODEL])
+def test_event_plan_base_cli_keeps_explicit_event_adapter_and_existing_budgets(monkeypatch, alias):
     captured = {}
     def load(adapter, stop, **options):
         captured.update(adapter=adapter, stop=stop, options=options)
@@ -464,7 +465,7 @@ def test_event_plan_base_cli_keeps_explicit_event_adapter_and_existing_budgets(m
     monkeypatch.setattr(sys, 'argv', ['serve', '--analysis-service', '--semantic-json',
         '--model-name', 'analysis', '--adapter', 'original-120u',
         '--adapter-weights-sha256', 'a' * 64, '--adapter-config-sha256', 'b' * 64,
-        '--context-tokens', '32768', '--event-plan-model', probe.EVENT_PLAN_V2_BASE_MODEL,
+        '--context-tokens', '32768', '--event-plan-model', alias,
         '--event-plan-adapter', 'same-event-34u', '--event-plan-adapter-weights-sha256', 'c' * 64,
         '--event-plan-adapter-config-sha256', 'd' * 64])
     probe.main()
@@ -473,7 +474,7 @@ def test_event_plan_base_cli_keeps_explicit_event_adapter_and_existing_budgets(m
         max_new_tokens=4096, context_tokens=32768, semantic_json=True,
         event_plan_adapter='same-event-34u', event_plan_weights_sha256='c' * 64,
         event_plan_config_sha256='d' * 64)
-    assert captured['handler']['event_plan_model'] == probe.EVENT_PLAN_V2_BASE_MODEL
+    assert captured['handler']['event_plan_model'] == alias
     assert captured['handler']['model_name'] == 'analysis'
 
 
@@ -486,11 +487,16 @@ def test_event_plan_base_without_loaded_event_adapter_never_falls_back(monkeypat
     assert captured == {'generate':[], 'tokenize':[]}
 
 
-def _event_plan_comparison_generator(monkeypatch, *, input_count):
+def _event_plan_comparison_generator(monkeypatch, *, input_count, node_local=False):
     """Reuse the existing CPU loader stand-in and the real serving/LMFE closure."""
     from test_piece_model_server_constraints import synthetic_generator
-    from test_analysis_semantic_event_plan_v2 import authored_lesson
-    prepared, packet = authored_lesson()
+    if node_local:
+        from test_analysis_node_local_native_profile import messages, packet as node_local_packet
+        selected, packet = messages(), node_local_packet()
+    else:
+        from test_analysis_semantic_event_plan_v2 import authored_lesson
+        prepared, packet = authored_lesson()
+        selected = prepared.messages()
     raw = json.dumps(packet, ensure_ascii=False, separators=(',', ':'))
     original_loader = probe.load_generator
     event_loads = []
@@ -520,12 +526,14 @@ def _event_plan_comparison_generator(monkeypatch, *, input_count):
             original_select(name, inference_mode=inference_mode)
     monkeypatch.setattr(model, 'set_adapter', select)
     assert event_loads == [('event-plan-cpu', 'c' * 64, 'd' * 64)]
-    return generate, captured, prepared.messages(), raw, eos
+    return generate, captured, selected, raw, eos
 
 
 @pytest.mark.parametrize('forward_failure', [False, True])
-def test_event_plan_base_real_loader_preserves_v2_mask_budget_and_restores_all_adapters(monkeypatch, forward_failure):
-    generate, captured, messages, raw, eos = _event_plan_comparison_generator(monkeypatch, input_count=28672)
+@pytest.mark.parametrize('node_local', [False, True])
+def test_event_plan_base_real_loader_preserves_schema_budget_and_restores_all_adapters(monkeypatch, forward_failure, node_local):
+    generate, captured, messages, raw, eos = _event_plan_comparison_generator(
+        monkeypatch, input_count=28672, node_local=node_local)
     model = captured['model']
     if forward_failure:
         original_generate = model.generate

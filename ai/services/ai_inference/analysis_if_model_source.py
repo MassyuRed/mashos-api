@@ -13,7 +13,8 @@ import httpx
 from analysis_model_source import (SelfHostedAnalysisModelSource, _settings,
     SELECTOR, SEMANTIC_SELECTOR, MAX_RESPONSE_BYTES,
     SEMANTIC_EVENT_PLAN_MODEL, SEMANTIC_EVENT_PLAN_V2_MODEL,
-    SEMANTIC_EVENT_PLAN_V2_BASE_MODEL, SEMANTIC_EVENT_PLAN_BASE_MODEL, SEMANTIC_NODE_LOCAL_V3_MODEL)
+    SEMANTIC_EVENT_PLAN_V2_BASE_MODEL, SEMANTIC_EVENT_PLAN_BASE_MODEL,
+    SEMANTIC_NODE_LOCAL_V3_MODEL, SEMANTIC_NODE_LOCAL_V3_BASE_MODEL)
 
 
 class SelfHostedAnalysisIfModelSource(SelfHostedAnalysisModelSource):
@@ -86,7 +87,8 @@ def application_analysis_if_model_source():
     # the existing 120u identity while its freshness guard watches the original
     # four application settings; no fallback or live setting change occurs.
     if selector == SEMANTIC_SELECTOR and model in {SEMANTIC_EVENT_PLAN_MODEL,
-            SEMANTIC_EVENT_PLAN_V2_MODEL, SEMANTIC_EVENT_PLAN_V2_BASE_MODEL, SEMANTIC_NODE_LOCAL_V3_MODEL}:
+            SEMANTIC_EVENT_PLAN_V2_MODEL, SEMANTIC_EVENT_PLAN_V2_BASE_MODEL,
+            SEMANTIC_NODE_LOCAL_V3_MODEL, SEMANTIC_NODE_LOCAL_V3_BASE_MODEL}:
         model = SEMANTIC_EVENT_PLAN_BASE_MODEL
     return SelfHostedAnalysisIfModelSource(endpoint=endpoint, model=model, api_key=api_key,
         settings_snapshot=settings, max_tokens=4096 if selector == SEMANTIC_SELECTOR else 2048)
