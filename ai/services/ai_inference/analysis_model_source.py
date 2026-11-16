@@ -18,6 +18,7 @@ SEMANTIC_SELECTOR = 'self_hosted.semantic.v1'
 SEMANTIC_EVENT_PLAN_MODEL = 'cocolon-qwen3.5-4b-analysis-event-plan-v1'
 SEMANTIC_EVENT_PLAN_V2_MODEL = 'cocolon-qwen3.5-4b-analysis-event-plan-v2'
 SEMANTIC_EVENT_PLAN_V2_BASE_MODEL = 'cocolon-qwen3.5-4b-analysis-event-plan-v2-base-851bf6e'
+SEMANTIC_NODE_LOCAL_V3_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v3'
 SEMANTIC_EVENT_PLAN_BASE_MODEL = 'cocolon-qwen3.5-4b-analysis-semantic-120u'
 MAX_RESPONSE_BYTES = 262144
 DEFAULT_PROMPT_VERSION = 'selected_material.v4'
@@ -138,10 +139,10 @@ class SelfHostedSemanticAnalysisModelSource(SelfHostedAnalysisModelSource):
             semantic_prompt_version='semantic_map.v1'):
         from cocolon_meaning_experience_engine.cores.analysis.semantic_admission import (
             SEMANTIC_MAP_PROFILE, SEMANTIC_MAP_SOURCE_DUTIES_PROFILE, SEMANTIC_MAP_EVENT_PLAN_PROFILE,
-            SEMANTIC_MAP_EVENT_PLAN_V2_PROFILE)
+            SEMANTIC_MAP_EVENT_PLAN_V2_PROFILE, SEMANTIC_MAP_NODE_LOCAL_V3_PROFILE)
         if type(semantic_prompt_version) is not str or semantic_prompt_version not in {
                 SEMANTIC_MAP_PROFILE, SEMANTIC_MAP_SOURCE_DUTIES_PROFILE, SEMANTIC_MAP_EVENT_PLAN_PROFILE,
-                SEMANTIC_MAP_EVENT_PLAN_V2_PROFILE}:
+                SEMANTIC_MAP_EVENT_PLAN_V2_PROFILE, SEMANTIC_MAP_NODE_LOCAL_V3_PROFILE}:
             raise ValueError('analysis_model_configuration_invalid')
         super().__init__(endpoint=endpoint, model=model, api_key=api_key, transport=transport)
         self._prompt_version = semantic_prompt_version
@@ -203,7 +204,10 @@ def _configured_semantic_prompt_version(model):
     identities retain the legacy profile, including otherwise unknown aliases.
     """
     from cocolon_meaning_experience_engine.cores.analysis.semantic_admission import (
-        SEMANTIC_MAP_PROFILE, SEMANTIC_MAP_EVENT_PLAN_PROFILE, SEMANTIC_MAP_EVENT_PLAN_V2_PROFILE)
+        SEMANTIC_MAP_PROFILE, SEMANTIC_MAP_EVENT_PLAN_PROFILE, SEMANTIC_MAP_EVENT_PLAN_V2_PROFILE,
+        SEMANTIC_MAP_NODE_LOCAL_V3_PROFILE)
+    if model == SEMANTIC_NODE_LOCAL_V3_MODEL:
+        return SEMANTIC_MAP_NODE_LOCAL_V3_PROFILE
     if model in {SEMANTIC_EVENT_PLAN_V2_MODEL, SEMANTIC_EVENT_PLAN_V2_BASE_MODEL}:
         return SEMANTIC_MAP_EVENT_PLAN_V2_PROFILE
     return SEMANTIC_MAP_EVENT_PLAN_PROFILE if model == SEMANTIC_EVENT_PLAN_MODEL else SEMANTIC_MAP_PROFILE

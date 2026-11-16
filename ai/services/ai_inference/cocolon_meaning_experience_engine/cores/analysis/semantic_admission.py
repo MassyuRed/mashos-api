@@ -2319,6 +2319,8 @@ SEMANTIC_MAP_EVENT_PLAN_PROFILE = 'semantic_map.event_plan.v1'
 SEMANTIC_MAP_EVENT_PLAN_SCHEMA = 'cocolon.analysis.semantic_map.event_plan.model.v1'
 SEMANTIC_MAP_EVENT_PLAN_V2_PROFILE = 'semantic_map.event_plan.v2'
 SEMANTIC_MAP_EVENT_PLAN_V2_SCHEMA = 'cocolon.analysis.semantic_map.event_plan.model.v2'
+SEMANTIC_MAP_NODE_LOCAL_V3_PROFILE = 'semantic_map.node_local.v3'
+SEMANTIC_MAP_NODE_LOCAL_V3_SCHEMA = 'cocolon.analysis.semantic_map.node_local.model.v3'
 
 
 SEMANTIC_MAP_SCHEMA = 'cocolon.analysis.semantic_map.v1'
@@ -2451,6 +2453,19 @@ nodesはn連番、node_kind=SELF_POSITION/TARGET_MEANING/CHOICE_OUTPUT/STATE_CON
 edges={from,to,relation_kind,label,unit_refs}、relation_kind=SELF_OUTSIDE_GAP/CRITERION_EXPRESSION/CONTEXT_CONTRAST/SHARED_MEANING、関係なしは[]。unit_refs=e/r1〜6件、その全根拠は両端nodeの根拠和集合内。overviewもnode根拠内。重複参照/別summary/explanationは禁止。
 カテゴリ/感情/強度は記録条件、memo/memo_actionは別欄。回答/訂正はsource/時点を保持し、訂正根拠は本人説明全文、unknownsは内側留保。AI対象文の根拠利用と内部ID/手順表示は禁止。
 原文を同形式のJSONのみで返す。"""
+
+
+_SEMANTIC_MAP_NODE_LOCAL_V3_INSTRUCTION = """本人のfields全文から、選択と条件、対象との関わり、記録間の共通点・違い・変化をわたしマップへまとめます。辞書・作成例・制御情報は本人の事実ではありません。
+各nodeの中で、根拠を選んだunitsを先に作り、その全unitsだけを根拠にmeaningを書きます。本人と他者、対象・場所・版・時点・希望・予定・実行・完了・中止・否定・留保を、それぞれの出来事と組にして保持します。同じ対象の後続確認は以前の状態と対応させ、確認済みを現在の不明へ戻しません。
+rootはschema_version,nodes,edges,overviewのみ。schema_versionはcocolon.analysis.semantic_map.node_local.model.v3。nodesは1〜12件、各nodeはunits,node_kind,perspective,title,meaningを持ちます。nodeの番号は配列順のn1,n2,...としてCMEEが付けます。node_id、event_id、reading_id、独立events/readings表、unit_refsは書きません。
+unitsは各nodeに1〜2件で、全件がそのnodeへ表示されます。各unitはevidence,source_mode,fact,unknownsです。evidenceはquoteとfieldを持つ1〜4件の配列で、提示された同field内の一意な連続原文を一字も変えずに引用します。主体や留保を含む前後も読みます。factは誰が、何を、いつ、どこまでしたかを保持した160字以内の一文です。異なる出来事は別unitで、一つの事実を別の意味として繰返しません。
+source_modeはRECORDED（経験・行動・結果・発言）、PERSON_JUDGMENT（本人評価・解釈・扱い）、PERSON_WISH（本人の希望）、DECIDED_PLAN（決めた未実行予定）のいずれかです。資格を変えず、希望や判断を実行済みの事実にしません。
+unknownsはそのunitの根拠に原文のまま残る未確認範囲0〜2件で、なければ[]です。各件はsource_quote,source_fieldのみ。source_quoteは同unitのevidence引用の内側にある同fieldの一意な連続原文240字以内で、必要な先行主体も保持します。本人判断、非行動、確認済みの行動や返信そのものを不明へ置き換えません。
+node_kindはSELF_POSITION/TARGET_MEANING/CHOICE_OUTPUT/STATE_CONTEXT、perspectiveはSELF/OBSERVED_INTERACTION。titleは80字以内。meaningはそのnodeのunitsから読める意味を240字以内で示し、読みがなければ空文字です。結果や非行動から意図・原因・動機・人格を決めず、新しい事実を足しません。summary/explanationは別作文せず、同じfactとmeaningからCMEEが作ります。
+edgesは関係がなければ[]です。各edgeはfrom,to,relation_kind,labelのみで、from/toは既に完成したnodeのn番号。relation_kindはSELF_OUTSIDE_GAP/CRITERION_EXPRESSION/CONTEXT_CONTRAST/SHARED_MEANING、labelは80字以内で両端のunitsだけが示す関係です。両端以外の根拠や独立した説明文は加えません。
+overviewはtitle,node_refsのみ。titleは80字以内、node_refsは完成nodeのn番号1〜8件で重複させません。概要本文は選んだnodeの同じ要点からCMEEが作るので、別の事実文は書きません。
+選択カテゴリ・感情・強度は各記録の条件で、memoとmemo_actionは別欄です。同時の感情は同時のまま、自己理解は強度表示なし、空欄は空欄です。本人回答・訂正・撤回は提示されたsourceと時点のまま扱い、本人訂正の根拠quoteは説明全文、unknownsはその内側の留保とします。AI対象文を本人の根拠にせず、全提示recordと有効な本人訂正をnode根拠に実際に使います。内部番号や作成手順は表示文へ書きません。
+Markdownや前後文を付けず、この形式のJSONだけを返します。"""
 
 
 def _semantic_event_plan_v2_lesson_instruction(stage=None):
@@ -2634,7 +2649,9 @@ class AnalysisSemanticMapInput:
     map_correction_sources_json: str = ''
 
     def messages(self, *, _lesson_stage=None):
-        instruction = (_SEMANTIC_MAP_EVENT_PLAN_V2_INSTRUCTION + _semantic_event_plan_v2_lesson_instruction(_lesson_stage)
+        instruction = (_SEMANTIC_MAP_NODE_LOCAL_V3_INSTRUCTION
+            if self.prompt_version == SEMANTIC_MAP_NODE_LOCAL_V3_PROFILE else
+            _SEMANTIC_MAP_EVENT_PLAN_V2_INSTRUCTION + _semantic_event_plan_v2_lesson_instruction(_lesson_stage)
             if self.prompt_version == SEMANTIC_MAP_EVENT_PLAN_V2_PROFILE else
             _SEMANTIC_MAP_EVENT_PLAN_INSTRUCTION
             if self.prompt_version == SEMANTIC_MAP_EVENT_PLAN_PROFILE else
@@ -2676,7 +2693,7 @@ def prepare_analysis_semantic_map(request, snapshot, *,
     _semantic_map_require(type(request) is AnalysisObservedMapRequest, 'analysis_semantic_input_invalid')
     _semantic_map_require(prompt_version in {SEMANTIC_MAP_PROFILE,
         SEMANTIC_MAP_SOURCE_DUTIES_PROFILE, SEMANTIC_MAP_EVENT_PLAN_PROFILE,
-        SEMANTIC_MAP_EVENT_PLAN_V2_PROFILE}, 'analysis_semantic_input_invalid')
+        SEMANTIC_MAP_EVENT_PLAN_V2_PROFILE, SEMANTIC_MAP_NODE_LOCAL_V3_PROFILE}, 'analysis_semantic_input_invalid')
     source_request = request
     _semantic_map_require(type(snapshot.get('guard')) is str and re.fullmatch(
         r'analysis-db-cumulative-v1:[0-9a-f]{64}', snapshot['guard']), 'analysis_model_guard_invalid')
@@ -2823,6 +2840,8 @@ def prepare_analysis_semantic_map(request, snapshot, *,
         material['model_schema'] = SEMANTIC_MAP_EVENT_PLAN_SCHEMA
     elif prompt_version == SEMANTIC_MAP_EVENT_PLAN_V2_PROFILE:
         material['model_schema'] = SEMANTIC_MAP_EVENT_PLAN_V2_SCHEMA
+    elif prompt_version == SEMANTIC_MAP_NODE_LOCAL_V3_PROFILE:
+        material['model_schema'] = SEMANTIC_MAP_NODE_LOCAL_V3_SCHEMA
     source_duties_json = ''
     if prompt_version == SEMANTIC_MAP_SOURCE_DUTIES_PROFILE:
         from .intent_compiler import (analysis_semantic_source_duties,
@@ -2950,7 +2969,9 @@ class AnalysisSemanticMapStageInput:
     def messages(self):
         instruction = self.parent.messages(_lesson_stage=self.kind)[0]['content']
         instruction += ('\n現在は全履歴の' + self.kind + '段階です。field番号は親の原文欄番号のままです。' +
-            ('eventsのevidenceで提示された各recordを使い、そのeventを少なくとも一項目へ結び付けます。'
+            ('各nodeはunitsのevidenceから読み、提示された全recordを実際にnode根拠へ使います。'
+             if self.prompt_version == SEMANTIC_MAP_NODE_LOCAL_V3_PROFILE else
+             'eventsのevidenceで提示された各recordを使い、そのeventを少なくとも一項目へ結び付けます。'
              if self.prompt_version in {SEMANTIC_MAP_EVENT_PLAN_PROFILE, SEMANTIC_MAP_EVENT_PLAN_V2_PROFILE} else
              '各項目はevidenceから始め、提示された各recordを少なくとも一項目の根拠に実際に使います。') +
             '一つの意味に合うnode_kindを選びます。四分類を埋める帳票ではありません。'
@@ -3057,7 +3078,9 @@ def _semantic_history_leaf_packet(stage, response):
     packet = _admit_analysis_semantic_map_response(stage, response)
     graph = compile_analysis_semantic_stage(stage, packet, response_sha256=response.raw_sha256)
     from .intent_compiler import expand_analysis_semantic_event_plan
-    return expand_analysis_semantic_event_plan(stage.parent, packet), graph
+    expansion_view = (replace(stage.parent, material_json=stage.material_json)
+        if stage.prompt_version == SEMANTIC_MAP_NODE_LOCAL_V3_PROFILE else stage.parent)
+    return expand_analysis_semantic_event_plan(expansion_view, packet), graph
 
 
 def prepare_semantic_merge(parent, leaves):

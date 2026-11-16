@@ -3936,6 +3936,9 @@ def expand_analysis_semantic_event_plan(prepared, packet):
     reference scope only; model facts and interpretations remain unassessed.
     Legacy profiles retain their original packet and compiler behavior.
     """
+    if (getattr(prepared, 'prompt_version', None) == 'semantic_map.node_local.v3'
+            or type(packet) is dict and packet.get('schema_version') == 'cocolon.analysis.semantic_map.node_local.model.v3'):
+        return _expand_analysis_semantic_node_local_v3(prepared, packet)
     if (getattr(prepared, 'prompt_version', None) == 'semantic_map.event_plan.v2'
             or type(packet) is dict and packet.get('schema_version') == 'cocolon.analysis.semantic_map.event_plan.model.v2'):
         return _expand_analysis_semantic_event_plan_v2(prepared, packet)
@@ -4148,7 +4151,128 @@ def _expand_analysis_semantic_event_plan_v2(prepared, packet):
         overview=dict(title=text(overview['title'], 80), summary='\n'.join(visible)))
 
 
+def _expand_analysis_semantic_node_local_v3(prepared, packet):
+    """Compile node-owned authored units, not a repair of a reference plan.
+
+    There is no independently authored fact/reading registry to relink. All
+    declared local facts are rendered with their original qualifications;
+    only deterministic positional IDs and views are derived here. The normal
+    quoted-map compiler still owns source/cohort/correction and public bounds.
+    """
+    from .semantic_admission import (_semantic_map_require as require,
+        _semantic_map_keys as keys, _semantic_map_text, _semantic_map_evidence,
+        SEMANTIC_MAP_MODEL_SCHEMA, SEMANTIC_MAP_NODE_LOCAL_V3_PROFILE,
+        SEMANTIC_MAP_NODE_LOCAL_V3_SCHEMA, SEMANTIC_MAP_NODE_KINDS,
+        SEMANTIC_MAP_PERSPECTIVES, SEMANTIC_MAP_RELATION_KINDS)
+    require(getattr(prepared, 'prompt_version', None) == SEMANTIC_MAP_NODE_LOCAL_V3_PROFILE
+        and type(packet) is dict and packet.get('schema_version') == SEMANTIC_MAP_NODE_LOCAL_V3_SCHEMA,
+        'analysis_semantic_node_local_profile_unbound')
+    reason = 'analysis_semantic_node_local_invalid'
+    require(keys(packet, {'schema_version', 'nodes', 'edges', 'overview'}), reason)
+
+    def rows(value, maximum, minimum=0):
+        require(type(value) is list and minimum <= len(value) <= maximum, reason)
+        return value
+
+    def text(value, maximum, *, empty=False):
+        require(empty and value == '' or _semantic_map_text(value, maximum), reason)
+        return value
+
+    material = json.loads(prepared.material_json)
+    field_records = {field['field']: field['record'] for field in material['fields']}
+    required_records = {row['record'] for row in material['records']}
+    covered_records = set()
+    nodes, bodies, summaries = [], {}, {}
+    for index, node in enumerate(rows(packet['nodes'], 12, 1), 1):
+        require(keys(node, {'units', 'node_kind', 'perspective', 'title', 'meaning'})
+            and type(node['node_kind']) is str and node['node_kind'] in SEMANTIC_MAP_NODE_KINDS
+            and type(node['perspective']) is str and node['perspective'] in SEMANTIC_MAP_PERSPECTIVES, reason)
+        roots, unknowns, facts = [], [], []
+        for unit in rows(node['units'], 2, 1):
+            require(keys(unit, {'evidence', 'source_mode', 'fact', 'unknowns'})
+                and type(unit['source_mode']) is str and unit['source_mode'] in {
+                    'RECORDED', 'PERSON_JUDGMENT', 'PERSON_WISH', 'DECIDED_PLAN'}, reason)
+            evidence = rows(unit['evidence'], 4, 1)
+            bound = [_semantic_map_evidence(prepared, root)[1] for root in evidence]
+            require(len({root['evidence_id'] for root in bound}) == len(bound), reason)
+            facts.append(text(unit['fact'], 160))
+            for root in evidence:
+                # A map-correction cohort is not a substitute citation of the
+                # original records. Its complete explanation remains a root.
+                record = field_records.get(root['field'])
+                if type(record) is int and record > 0:
+                    covered_records.add(record)
+                if root not in roots:
+                    roots.append(deepcopy(root))
+            qualifications = set()
+            for unknown in rows(unit['unknowns'], 2):
+                require(keys(unknown, {'source_quote', 'source_field'})
+                    and type(unknown['source_field']) is int, reason)
+                quote = text(unknown['source_quote'], 240)
+                require(any(root['field'] == unknown['source_field']
+                    and root['quote'].count(quote) == 1 for root in evidence),
+                    'analysis_semantic_node_local_unknown_unbound')
+                field = next((field for field in prepared.fields if field[0] == unknown['source_field']), None)
+                require(field is not None and field[1].count(quote) == 1,
+                    'analysis_semantic_node_local_unknown_unbound')
+                qualification = (unknown['source_field'], quote)
+                require(qualification not in qualifications, reason)
+                qualifications.add(qualification)
+                if quote not in unknowns:
+                    unknowns.append(quote)
+        meaning = text(node['meaning'], 240, empty=True)
+        body = '\n'.join(facts + ([meaning] if meaning else []))
+        summary = meaning or facts[0]
+        node_id = 'n' + str(index)
+        bodies[node_id], summaries[node_id] = body, summary
+        nodes.append(dict(evidence=roots, node_id=node_id, node_kind=node['node_kind'],
+            perspective=node['perspective'], title=text(node['title'], 80),
+            summary=summary, explanation=body, unknowns=unknowns))
+    # Preserve the existing large-cohort partial-coverage exception rather
+    # than introducing a new source-count cap or dropping input records. The
+    # regular graph coverage below still reports mapped/unparsed explicitly.
+    if len(required_records) <= 24:
+        require(required_records <= covered_records, 'analysis_semantic_node_local_coverage_incomplete')
+    edges = []
+    for edge in rows(packet['edges'], 48):
+        require(keys(edge, {'from', 'to', 'relation_kind', 'label'})
+            and type(edge['from']) is str and edge['from'] in bodies
+            and type(edge['to']) is str and edge['to'] in bodies and edge['from'] != edge['to']
+            and type(edge['relation_kind']) is str and edge['relation_kind'] in SEMANTIC_MAP_RELATION_KINDS, reason)
+        edges.append(dict(**{key: edge[key] for key in ('from', 'to', 'relation_kind')},
+            label=text(edge['label'], 80), explanation=bodies[edge['from']] + '\n' + bodies[edge['to']]))
+    overview = packet['overview']
+    require(keys(overview, {'title', 'node_refs'}), reason)
+    refs = rows(overview['node_refs'], 8, 1)
+    require(all(type(ref) is str and ref in summaries for ref in refs)
+        and len(refs) == len(set(refs)), reason)
+    return dict(schema_version=SEMANTIC_MAP_MODEL_SCHEMA, nodes=nodes, edges=edges,
+        overview=dict(title=text(overview['title'], 80), summary='\n'.join(summaries[ref] for ref in refs)))
+
+
+def _semantic_node_local_review(graph, prepared, original, expanded):
+    from .semantic_admission import semantic_map_canonical, semantic_map_hash
+    units = {('n' + str(index)): ['n' + str(index) + '.u' + str(unit_index)
+        for unit_index, _ in enumerate(node['units'], 1)]
+        for index, node in enumerate(original['nodes'], 1)}
+    review = json.loads(graph.meaning_review_json)
+    review.setdefault('interpretation_status', 'UNASSESSED')
+    review.setdefault('unknowns_status', 'UNASSESSED')
+    review['node_local_plan'] = dict(profile=prepared.prompt_version, plan=deepcopy(original),
+        assigned_unit_ids=units,
+        node_meaning_roots='ALL_AND_ONLY_NODE_OWNED_UNITS',
+        edge_unit_closures=[dict(from_ref=edge['from'], to_ref=edge['to'],
+            unit_refs=units[edge['from']] + units[edge['to']]) for edge in original['edges']],
+        overview_node_refs=list(original['overview']['node_refs']),
+        expanded_packet_sha256=semantic_map_hash(expanded),
+        source_modes_status='UNASSESSED_MODEL_QUALIFICATIONS', meaning_status='UNASSESSED',
+        full_source_semantic_coverage=False, realization='NODE_OWNED_AUTHORED_UNITS')
+    return replace(graph, meaning_review_json=semantic_map_canonical(review))
+
+
 def _semantic_event_plan_review(graph, prepared, original, expanded):
+    if getattr(prepared, 'prompt_version', None) == 'semantic_map.node_local.v3':
+        return _semantic_node_local_review(graph, prepared, original, expanded)
     if getattr(prepared, 'prompt_version', None) not in {'semantic_map.event_plan.v1', 'semantic_map.event_plan.v2'}:
         return graph
     from .semantic_admission import semantic_map_canonical, semantic_map_hash
@@ -4174,7 +4298,9 @@ def compile_analysis_semantic_stage(stage, packet, *, response_sha256):
         and stage.kind in {'LEAF', 'MERGE'}, 'analysis_semantic_history_stage_unbound')
     parent = stage.parent
     original_packet = packet
-    packet = expand_analysis_semantic_event_plan(parent, packet)
+    expansion_view = (replace(parent, material_json=stage.material_json)
+        if stage.prompt_version == 'semantic_map.node_local.v3' else parent)
+    packet = expand_analysis_semantic_event_plan(expansion_view, packet)
     material = json.loads(stage.material_json)
     history_profile = SEMANTIC_HISTORY_MERGE_PROFILE if stage.kind == 'MERGE' else SEMANTIC_HISTORY_PROFILE
     _semantic_map_require(material.get('history_stage', {}).get('profile') == history_profile,
