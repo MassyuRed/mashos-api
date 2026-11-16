@@ -220,15 +220,51 @@ def test_new_profile_keeps_source_material_and_metadata_unchanged():
     assert probe.semantic_output_schema(p.messages())['properties']['schema_version']['enum']==[SCHEMA]
 
 
-def test_exact_v2_alias_selects_new_profile_but_if_retains_original_identity(monkeypatch):
-    settings=environment(monkeypatch,model=ALIAS)
+@pytest.mark.parametrize('alias', [ALIAS, sources.SEMANTIC_EVENT_PLAN_V2_BASE_MODEL])
+def test_exact_v2_alias_selects_new_profile_but_if_retains_original_identity(monkeypatch, alias):
+    settings=environment(monkeypatch,model=alias)
     source=sources.application_analysis_model_source()
     assert sources.analysis_model_prompt_version(source)==PROFILE
     assert source._settings==settings
     if_source=if_sources.application_analysis_if_model_source()
     assert if_source.model==sources.SEMANTIC_EVENT_PLAN_BASE_MODEL
     assert if_source._settings_snapshot==settings
-    assert sources._configured_semantic_prompt_version(ALIAS+'-unknown')==core.SEMANTIC_MAP_PROFILE
+    assert sources._configured_semantic_prompt_version(alias+'-unknown')==core.SEMANTIC_MAP_PROFILE
+
+
+def test_base_alias_keeps_identical_v2_messages_but_if_wire_still_uses_120u(monkeypatch):
+    import asyncio
+    from test_analysis_event_plan_model_alias import if_prepared
+    from test_analysis_if_routes import packet as if_packet
+    settings=environment(monkeypatch,model=sources.SEMANTIC_EVENT_PLAN_V2_BASE_MODEL)
+    source=sources.application_analysis_model_source()
+    prepared=material()
+    packets=[]
+    def receive(request):
+        body=json.loads(request.content);packets.append(body)
+        return httpx.Response(200,json=dict(model=body['model'],choices=[dict(
+            finish_reason='stop',message=dict(role='assistant',content='synthetic transport only'))]))
+    original_client=httpx.AsyncClient
+    monkeypatch.setattr(sources.httpx,'AsyncClient',lambda **kwargs:
+        original_client(**{**kwargs,'transport':kwargs.get('transport') or httpx.MockTransport(receive)}))
+    receipt=asyncio.run(source(prepared))
+    assert packets==[dict(model=sources.SEMANTIC_EVENT_PLAN_V2_BASE_MODEL,
+        messages=prepared.messages(),temperature=0,max_tokens=4096,stream=False,
+        chat_template_kwargs={'enable_thinking':False})]
+    assert receipt.messages_sha256==core.semantic_map_hash(prepared.messages())
+    assert source._settings==settings
+    candidate_if=if_sources.application_analysis_if_model_source()
+    bound_if=if_prepared()
+    wire=[]
+    def receive_if(request):
+        body=json.loads(request.content);wire.append(body)
+        return httpx.Response(200,json=dict(model=body['model'],choices=[dict(
+            finish_reason='stop',message=dict(role='assistant',content=json.dumps(if_packet(bound_if))))]))
+    candidate_if._transport=httpx.MockTransport(receive_if)
+    asyncio.run(candidate_if(bound_if))
+    assert wire[0]['model']==sources.SEMANTIC_EVENT_PLAN_BASE_MODEL
+    assert wire[0]['max_tokens']==4096 and wire[0]['messages']==bound_if.messages()
+    assert candidate_if._settings_snapshot==settings
 
 
 def test_native_alias_binds_exact_v2_marker_and_keeps_legacy_control():

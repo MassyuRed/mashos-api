@@ -17,6 +17,7 @@ SELECTOR = 'self_hosted.v1'
 SEMANTIC_SELECTOR = 'self_hosted.semantic.v1'
 SEMANTIC_EVENT_PLAN_MODEL = 'cocolon-qwen3.5-4b-analysis-event-plan-v1'
 SEMANTIC_EVENT_PLAN_V2_MODEL = 'cocolon-qwen3.5-4b-analysis-event-plan-v2'
+SEMANTIC_EVENT_PLAN_V2_BASE_MODEL = 'cocolon-qwen3.5-4b-analysis-event-plan-v2-base-851bf6e'
 SEMANTIC_EVENT_PLAN_BASE_MODEL = 'cocolon-qwen3.5-4b-analysis-semantic-120u'
 MAX_RESPONSE_BYTES = 262144
 DEFAULT_PROMPT_VERSION = 'selected_material.v4'
@@ -203,7 +204,7 @@ def _configured_semantic_prompt_version(model):
     """
     from cocolon_meaning_experience_engine.cores.analysis.semantic_admission import (
         SEMANTIC_MAP_PROFILE, SEMANTIC_MAP_EVENT_PLAN_PROFILE, SEMANTIC_MAP_EVENT_PLAN_V2_PROFILE)
-    if model == SEMANTIC_EVENT_PLAN_V2_MODEL:
+    if model in {SEMANTIC_EVENT_PLAN_V2_MODEL, SEMANTIC_EVENT_PLAN_V2_BASE_MODEL}:
         return SEMANTIC_MAP_EVENT_PLAN_V2_PROFILE
     return SEMANTIC_MAP_EVENT_PLAN_PROFILE if model == SEMANTIC_EVENT_PLAN_MODEL else SEMANTIC_MAP_PROFILE
 

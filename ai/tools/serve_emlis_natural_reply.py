@@ -32,6 +32,7 @@ PIECE_CANDIDATE_FORMAT = 'piece.field_slots.v1'
 EVENT_PLAN_SCHEMA = 'cocolon.analysis.semantic_map.event_plan.model.v1'
 EVENT_PLAN_V2_SCHEMA = 'cocolon.analysis.semantic_map.event_plan.model.v2'
 EVENT_PLAN_V2_MODEL = 'cocolon-qwen3.5-4b-analysis-event-plan-v2'
+EVENT_PLAN_V2_BASE_MODEL = 'cocolon-qwen3.5-4b-analysis-event-plan-v2-base-851bf6e'
 
 IF_CANDIDATE_SCHEMA = 'cocolon.analysis.if-candidates.model.v1'
 PIECE_ADAPTER_NAME = 'piece'
@@ -1052,6 +1053,7 @@ def make_handler(generate, *, api_key, model_name, deadline, max_requests,
                 piece = 'candidate_format' in request
                 event_plan = bool(not natural and event_plan_model is not None
                     and request.get('model') == event_plan_model)
+                event_plan_base = event_plan and event_plan_model == EVENT_PLAN_V2_BASE_MODEL
                 if event_plan:
                     selected_model = event_plan_model
                 ordinary_messages = (isinstance(messages, list) and len(messages) == 2
@@ -1071,7 +1073,8 @@ def make_handler(generate, *, api_key, model_name, deadline, max_requests,
                     except (ValueError, TypeError):
                         material = None
                     marker = material.get('model_schema') if type(material) is dict else None
-                    expected_marker = EVENT_PLAN_V2_SCHEMA if event_plan_model == EVENT_PLAN_V2_MODEL else EVENT_PLAN_SCHEMA
+                    expected_marker = EVENT_PLAN_V2_SCHEMA if event_plan_model in {
+                        EVENT_PLAN_V2_MODEL, EVENT_PLAN_V2_BASE_MODEL} else EVENT_PLAN_SCHEMA
                     if (event_plan and marker != expected_marker
                             or not event_plan and marker in {EVENT_PLAN_SCHEMA, EVENT_PLAN_V2_SCHEMA}):
                         raise ValueError
@@ -1092,7 +1095,8 @@ def make_handler(generate, *, api_key, model_name, deadline, max_requests,
                     generation_stage('admitted')
                 end = min(deadline, time.monotonic() + selected_seconds)
                 text, finish = (generate(messages, end, profile="piece" if piece else "natural")
-                                if natural else generate(messages, end, profile='event_plan')
+                                if natural else generate(messages, end,
+                                    profile='event_plan_base' if event_plan_base else 'event_plan')
                                 if event_plan else generate(messages, end))
                 if finish not in {"stop", "length"} or not isinstance(text, str):
                     raise ValueError
@@ -1306,11 +1310,11 @@ def load_generator(adapter, process_stop, *, weights_sha256=None, config_sha256=
     def generate(messages, end, *, profile=None):
         if (piece_adapter is not None or event_plan_adapter is not None) and process_stop.is_set():
             raise ValueError('generation_stopping')
-        if profile not in (None, "natural", "piece", "event_plan"):
+        if profile not in (None, "natural", "piece", "event_plan", "event_plan_base"):
             raise ValueError("generation_profile_invalid")
         if profile == "piece" and (not semantic_json or tokenizer_data is None):
             raise ValueError("piece_constraint_unavailable")
-        if profile == 'event_plan' and (event_plan_adapter is None or not semantic_json or tokenizer_data is None):
+        if profile in ('event_plan', 'event_plan_base') and (event_plan_adapter is None or not semantic_json or tokenizer_data is None):
             raise ValueError('event_plan_adapter_unavailable')
         use_semantic_json = semantic_json and profile != "natural"
         base_profile = profile in ("natural", "piece")
@@ -1321,7 +1325,7 @@ def load_generator(adapter, process_stop, *, weights_sha256=None, config_sha256=
         adapter_context = (piece_inference_context(model, process_stop, adapter_name=EVENT_PLAN_ADAPTER_NAME)
             if profile == 'event_plan' else piece_inference_context(model, process_stop)
             if profile == 'piece' and piece_adapter is not None else
-            base_inference_context(model) if base_profile and adapter else nullcontext())
+            base_inference_context(model) if (base_profile or profile == 'event_plan_base') and adapter else nullcontext())
         if use_semantic_json:
             generation_stage('tokenize')
         encoded = tokenizer.apply_chat_template(messages, enable_thinking=False,

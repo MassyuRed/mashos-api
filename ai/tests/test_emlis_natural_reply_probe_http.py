@@ -365,3 +365,199 @@ def test_natural_waits_for_existing_analysis_without_repeating_either_generation
         assert sorted(replies)==[200,200] and calls==[None,'natural']
     finally:
         release.set();server.shutdown();server.server_close();worker.join(3)
+
+
+@pytest.mark.parametrize('configured,expected_profile', [
+    (probe.EVENT_PLAN_V2_MODEL, 'event_plan'), (probe.EVENT_PLAN_V2_BASE_MODEL, 'event_plan_base')])
+def test_event_plan_v2_alias_keeps_authentication_profiles_and_shared_nine_call_limit(configured, expected_profile):
+    calls = []
+    def generate(messages, deadline, *, profile=None):
+        calls.append((deepcopy(messages), profile))
+        return 'unchanged synthetic raw', 'stop'
+    server = ThreadingHTTPServer(('127.0.0.1', 0), probe.make_handler(generate,
+        api_key='analysis-test-key', model_name='analysis', deadline=float('inf'), max_requests=9,
+        max_new_tokens=4096, request_seconds=210,
+        natural_reply={'api_key':'natural-test-key', 'model_name':'natural'},
+        event_plan_model=configured))
+    worker = threading.Thread(target=server.serve_forever, daemon=True); worker.start()
+    def messages(material):
+        return [dict(role='system', content='same synthetic instruction'),
+            dict(role='user', content=json.dumps(material))]
+    selected = messages(dict(model_schema=probe.EVENT_PLAN_V2_SCHEMA))
+    ordinary = messages(dict(model_schema=probe.IF_CANDIDATE_SCHEMA))
+    piece = messages(dict(core='piece', task='PIECE_MODEL_BODY', control=dict(field_slots={'memo_0':{}})))
+    def packet(model, source=selected, *, tokens=4096, **extra):
+        return dict(model=model, messages=source, max_tokens=tokens, temperature=0, stream=False,
+            chat_template_kwargs={'enable_thinking':False}, **extra)
+    try:
+        with httpx.Client(trust_env=False, timeout=5) as client:
+            url = f'http://127.0.0.1:{server.server_port}/v1/chat/completions'
+            def post(payload, key='analysis-test-key'):
+                return client.post(url, json=payload, headers={'Authorization':'Bearer ' + key})
+            base = packet(configured)
+            assert post(base, key='wrong-key').status_code == 401
+            assert post(base, key='natural-test-key').status_code == 400
+            for marker in (probe.EVENT_PLAN_SCHEMA, probe.IF_CANDIDATE_SCHEMA, None):
+                assert post(packet(configured,
+                    messages(dict(model_schema=marker)))).status_code == 400
+            other_alias = (probe.EVENT_PLAN_V2_MODEL if configured == probe.EVENT_PLAN_V2_BASE_MODEL
+                else probe.EVENT_PLAN_V2_BASE_MODEL)
+            assert post(packet(other_alias)).status_code == 400
+            assert post(packet('analysis')).status_code == 400
+            assert post({**base, 'max_tokens':2048}).status_code == 400
+            assert not calls
+            routes = [
+                (packet('analysis', ordinary), 'analysis-test-key', ordinary, None),
+                (packet('natural', ordinary, tokens=2048), 'natural-test-key', ordinary, 'natural'),
+                (packet('natural', piece, tokens=2048, candidate_format=probe.PIECE_CANDIDATE_FORMAT),
+                    'natural-test-key', piece, 'piece'),
+                (base, 'analysis-test-key', selected, expected_profile),
+            ]
+            routes += [(base, 'analysis-test-key', selected, expected_profile)] * 5
+            for payload, key, source, profile in routes:
+                result = post(payload, key)
+                assert result.status_code == 200 and result.json()['model'] == payload['model']
+                assert result.json()['choices'][0]['message']['content'] == 'unchanged synthetic raw'
+            assert calls == [(source, profile) for _, _, source, profile in routes]
+            for payload in (base, packet('analysis', ordinary)):
+                assert post(payload).status_code == 429
+            assert len(calls) == 9
+    finally:
+        server.shutdown(); server.server_close(); worker.join(3)
+
+
+@pytest.mark.parametrize('configured', [None, 'cocolon-qwen3.5-4b-analysis-event-plan-v1', probe.EVENT_PLAN_V2_MODEL])
+def test_event_plan_base_alias_requires_its_explicit_configuration(configured):
+    server = ThreadingHTTPServer(('127.0.0.1', 0), probe.make_handler(
+        lambda *_args, **_kwargs: pytest.fail('unconfigured base profile must not generate'),
+        api_key='analysis-test-key', model_name='analysis', deadline=float('inf'), max_requests=9,
+        max_new_tokens=4096, event_plan_model=configured))
+    worker = threading.Thread(target=server.serve_forever, daemon=True); worker.start()
+    try:
+        result = httpx.post(f'http://127.0.0.1:{server.server_port}/v1/chat/completions', trust_env=False,
+            headers={'Authorization':'Bearer analysis-test-key'}, json=dict(model=probe.EVENT_PLAN_V2_BASE_MODEL,
+                messages=[dict(role='system', content='same instruction'), dict(role='user',
+                    content=json.dumps(dict(model_schema=probe.EVENT_PLAN_V2_SCHEMA)))],
+                max_tokens=4096, temperature=0, stream=False, chat_template_kwargs={'enable_thinking':False}))
+        assert result.status_code == 400
+    finally:
+        server.shutdown(); server.server_close(); worker.join(3)
+
+
+def test_event_plan_base_cli_keeps_explicit_event_adapter_and_existing_budgets(monkeypatch):
+    captured = {}
+    def load(adapter, stop, **options):
+        captured.update(adapter=adapter, stop=stop, options=options)
+        return object()
+    def handler(generate, **options):
+        captured['handler'] = options
+        return object()
+    class Server:
+        def __init__(self, *_args): pass
+        def handle_request(self): captured['stop'].set()
+        def server_close(self): pass
+    monkeypatch.setattr(probe, 'load_generator', load)
+    monkeypatch.setattr(probe, 'make_handler', handler)
+    monkeypatch.setattr(probe, 'ThreadingHTTPServer', Server)
+    monkeypatch.setattr(probe.signal, 'signal', lambda *_args: None)
+    monkeypatch.setenv('COCOLON_ANALYSIS_MODEL_API_KEY', 'synthetic-analysis-private-key')
+    monkeypatch.setattr(sys, 'argv', ['serve', '--analysis-service', '--semantic-json',
+        '--model-name', 'analysis', '--adapter', 'original-120u',
+        '--adapter-weights-sha256', 'a' * 64, '--adapter-config-sha256', 'b' * 64,
+        '--context-tokens', '32768', '--event-plan-model', probe.EVENT_PLAN_V2_BASE_MODEL,
+        '--event-plan-adapter', 'same-event-34u', '--event-plan-adapter-weights-sha256', 'c' * 64,
+        '--event-plan-adapter-config-sha256', 'd' * 64])
+    probe.main()
+    assert captured['adapter'] == 'original-120u'
+    assert captured['options'] == dict(weights_sha256='a' * 64, config_sha256='b' * 64,
+        max_new_tokens=4096, context_tokens=32768, semantic_json=True,
+        event_plan_adapter='same-event-34u', event_plan_weights_sha256='c' * 64,
+        event_plan_config_sha256='d' * 64)
+    assert captured['handler']['event_plan_model'] == probe.EVENT_PLAN_V2_BASE_MODEL
+    assert captured['handler']['model_name'] == 'analysis'
+
+
+@pytest.mark.parametrize('constrained', [False, True])
+def test_event_plan_base_without_loaded_event_adapter_never_falls_back(monkeypatch, constrained):
+    from test_piece_model_server_constraints import synthetic_generator
+    generate, captured, _, _ = synthetic_generator(monkeypatch, constrained=constrained)
+    with pytest.raises(ValueError, match='event_plan_adapter_unavailable'):
+        generate([], time.monotonic() + 210, profile='event_plan_base')
+    assert captured == {'generate':[], 'tokenize':[]}
+
+
+def _event_plan_comparison_generator(monkeypatch, *, input_count):
+    """Reuse the existing CPU loader stand-in and the real serving/LMFE closure."""
+    from test_piece_model_server_constraints import synthetic_generator
+    from test_analysis_semantic_event_plan_v2 import authored_lesson
+    prepared, packet = authored_lesson()
+    raw = json.dumps(packet, ensure_ascii=False, separators=(',', ':'))
+    original_loader = probe.load_generator
+    event_loads = []
+    def load(adapter, stop, **kwargs):
+        original_adapter_loader = probe.load_piece_adapter
+        def load_named(model, path, **options):
+            if options.get('adapter_name') == probe.EVENT_PLAN_ADAPTER_NAME:
+                event_loads.append((path, options['weights_sha256'], options['config_sha256']))
+                assert path == 'event-plan-cpu'
+                options.pop('adapter_name')
+                # Existing fixture checks the same structural config and frozen weights.
+                return original_adapter_loader(model, 'piece-cpu', **options)
+            return original_adapter_loader(model, path, **options)
+        monkeypatch.setattr(probe, 'load_piece_adapter', load_named)
+        return original_loader(adapter, stop, **{**kwargs, 'context_tokens':32768,
+            'event_plan_adapter':'event-plan-cpu', 'event_plan_weights_sha256':'c' * 64,
+            'event_plan_config_sha256':'d' * 64})
+    monkeypatch.setattr(probe, 'load_generator', load)
+    generate, captured, _, eos = synthetic_generator(monkeypatch, constrained=True,
+        input_count=input_count, with_piece_adapter=True, raw_output=raw)
+    model = captured['model']
+    original_select = model.set_adapter
+    def select(name, *, inference_mode=False):
+        if name == probe.EVENT_PLAN_ADAPTER_NAME:
+            model.active_adapter, model.grads = name, not inference_mode
+        else:
+            original_select(name, inference_mode=inference_mode)
+    monkeypatch.setattr(model, 'set_adapter', select)
+    assert event_loads == [('event-plan-cpu', 'c' * 64, 'd' * 64)]
+    return generate, captured, prepared.messages(), raw, eos
+
+
+@pytest.mark.parametrize('forward_failure', [False, True])
+def test_event_plan_base_real_loader_preserves_v2_mask_budget_and_restores_all_adapters(monkeypatch, forward_failure):
+    generate, captured, messages, raw, eos = _event_plan_comparison_generator(monkeypatch, input_count=28672)
+    model = captured['model']
+    if forward_failure:
+        original_generate = model.generate
+        def fail(**options):
+            assert not model.adapter_enabled and model.active_adapter == 'default'
+            assert options['max_new_tokens'] == 4096 and callable(options['prefix_allowed_tokens_fn'])
+            raise RuntimeError('synthetic forward failure')
+        monkeypatch.setattr(model, 'generate', fail)
+        with pytest.raises(RuntimeError, match='synthetic forward failure'):
+            generate(messages, time.monotonic() + 210, profile='event_plan_base')
+        monkeypatch.setattr(model, 'generate', original_generate)
+    else:
+        assert generate(messages, time.monotonic() + 210, profile='event_plan_base') == (raw, 'stop')
+        assert captured['adapter_states'] == [('default', False, False, False)]
+        options = captured['generate'][0]
+        assert options['max_new_tokens'] == 4096 and options['eos_token_id'] == eos
+        assert options['do_sample'] is False and options['num_beams'] == 1 and options['use_cache'] is True
+        assert captured['format_prefix'].token_enforcer.root_parser.config.force_json_field_order is True
+        assert captured['tokenize'][0] == (messages, dict(enable_thinking=False,
+            add_generation_prompt=True, tokenize=True, return_dict=True, return_tensors='pt', truncation=False))
+    assert model.adapter_enabled and model.active_adapter == 'default'
+    assert model.training is False and model.grads is False
+    # The same closure and loaded event adapter still serve the original alias afterwards.
+    assert generate(messages, time.monotonic() + 210, profile='event_plan') == (raw, 'stop')
+    assert captured['adapter_states'][-1] == ('event_plan', True, False, False)
+    assert model.adapter_enabled and model.active_adapter == 'default'
+    assert model.training is False and model.grads is False
+
+
+def test_event_plan_base_cannot_exceed_existing_32768_context(monkeypatch):
+    generate, captured, messages, _, _ = _event_plan_comparison_generator(monkeypatch, input_count=28673)
+    with pytest.raises(ValueError, match='context_or_deadline_exceeded'):
+        generate(messages, time.monotonic() + 210, profile='event_plan_base')
+    assert captured['generate'] == [] and captured['adapter_states'] == []
+    assert captured['model'].adapter_enabled and captured['model'].active_adapter == 'default'
