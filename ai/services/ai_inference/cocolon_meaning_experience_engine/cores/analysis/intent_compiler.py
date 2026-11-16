@@ -3936,6 +3936,9 @@ def expand_analysis_semantic_event_plan(prepared, packet):
     reference scope only; model facts and interpretations remain unassessed.
     Legacy profiles retain their original packet and compiler behavior.
     """
+    if (getattr(prepared, 'prompt_version', None) == 'semantic_map.event_plan.v2'
+            or type(packet) is dict and packet.get('schema_version') == 'cocolon.analysis.semantic_map.event_plan.model.v2'):
+        return _expand_analysis_semantic_event_plan_v2(prepared, packet)
     from .semantic_admission import (_semantic_map_require, _semantic_map_keys,
         _semantic_map_text, _semantic_map_evidence, SEMANTIC_MAP_MODEL_SCHEMA)
     profile = 'semantic_map.event_plan.v1'
@@ -4030,8 +4033,123 @@ def expand_analysis_semantic_event_plan(prepared, packet):
         overview=dict(title=text(overview['title'], 80), summary='\n'.join(facts + meanings)))
 
 
+def _expand_analysis_semantic_event_plan_v2(prepared, packet):
+    """Realize selected authored units; dependencies supply source scope only.
+
+    This is a distinct author contract, not a conversion or repair of v1 raw.
+    Source modes remain unassessed model interpretations. Quoted qualifications
+    are kept verbatim inside their already-admitted event evidence.
+    """
+    from .semantic_admission import (_semantic_map_require as require,
+        _semantic_map_keys as keys, _semantic_map_text, _semantic_map_evidence,
+        SEMANTIC_MAP_MODEL_SCHEMA, SEMANTIC_MAP_EVENT_PLAN_V2_PROFILE,
+        SEMANTIC_MAP_EVENT_PLAN_V2_SCHEMA)
+    require(getattr(prepared, 'prompt_version', None) == SEMANTIC_MAP_EVENT_PLAN_V2_PROFILE
+        and type(packet) is dict and packet.get('schema_version') == SEMANTIC_MAP_EVENT_PLAN_V2_SCHEMA,
+        'analysis_semantic_event_plan_profile_unbound')
+    reason = 'analysis_semantic_event_plan_invalid'
+    require(keys(packet, {'schema_version', 'events', 'readings', 'nodes', 'edges', 'overview'}), reason)
+
+    def rows(value, maximum, minimum=0):
+        require(type(value) is list and minimum <= len(value) <= maximum, reason)
+        return value
+
+    def text(value, maximum):
+        require(_semantic_map_text(value, maximum), reason)
+        return value
+
+    def refs(value, known, maximum, minimum=0):
+        rows(value, maximum, minimum)
+        require(all(type(ref) is str and ref in known for ref in value)
+            and len(value) == len(set(value)), reason)
+        return value
+
+    events, units, dependencies, quotations = {}, {}, {}, {}
+    for index, event in enumerate(rows(packet['events'], 24, 1), 1):
+        require(keys(event, {'evidence', 'event_id', 'source_mode', 'fact', 'unknowns'})
+            and event['event_id'] == 'e' + str(index)
+            and type(event['source_mode']) is str and event['source_mode'] in {
+                'RECORDED', 'PERSON_JUDGMENT', 'PERSON_WISH', 'DECIDED_PLAN'}, reason)
+        roots = rows(event['evidence'], 4, 1)
+        bound = [_semantic_map_evidence(prepared, root)[1] for root in roots]
+        require(len({root['evidence_id'] for root in bound}) == len(bound), reason)
+        units[event['event_id']] = text(event['fact'], 160)
+        dependencies[event['event_id']] = [event['event_id']]
+        qualifications = []
+        for unknown in rows(event['unknowns'], 4):
+            require(keys(unknown, {'source_quote', 'source_field'})
+                and type(unknown['source_field']) is int, reason)
+            quote = text(unknown['source_quote'], 240)
+            # The whole correction has already been admitted above. A
+            # qualification is a range within that root, not a partial root.
+            require(any(root['field'] == unknown['source_field']
+                and root['quote'].count(quote) == 1 for root in roots),
+                'analysis_semantic_event_plan_unknown_unbound')
+            field = next((f for f in prepared.fields if f[0] == unknown['source_field']), None)
+            require(field is not None and field[1].count(quote) == 1,
+                'analysis_semantic_event_plan_unknown_unbound')
+            pair = (unknown['source_field'], quote)
+            require(pair not in qualifications, reason)
+            qualifications.append(pair)
+        quotations[event['event_id']] = qualifications
+        events[event['event_id']] = event
+    readings = {}
+    for index, reading in enumerate(rows(packet['readings'], 24), 1):
+        require(keys(reading, {'reading_id', 'event_refs', 'meaning'})
+            and reading['reading_id'] == 'r' + str(index), reason)
+        dependencies[reading['reading_id']] = refs(reading['event_refs'], events, 4, 1)
+        units[reading['reading_id']] = text(reading['meaning'], 240)
+        readings[reading['reading_id']] = reading
+    used_units = set()
+
+    def selected(row, unit_max, event_max, reading_max, allowed_events=None):
+        selected_units = refs(row['unit_refs'], units, unit_max, 1)
+        require(sum(ref in readings for ref in selected_units) <= reading_max, reason)
+        closure = list(dict.fromkeys(event for ref in selected_units for event in dependencies[ref]))
+        require(len(closure) <= event_max
+            and (allowed_events is None or set(closure) <= allowed_events), reason)
+        used_units.update(selected_units)
+        # Only explicitly selected authored units become prose. In particular,
+        # a reading's evidence closure does not append more factual sentences.
+        return [units[ref] for ref in selected_units], closure
+
+    nodes, node_scopes = [], {}
+    for index, node in enumerate(rows(packet['nodes'], 24, 1), 1):
+        require(keys(node, {'node_id', 'node_kind', 'perspective', 'title', 'unit_refs'})
+            and node['node_id'] == 'n' + str(index), reason)
+        visible, closure = selected(node, 4, 24, 4)
+        evidence, unknowns = [], []
+        for ref in closure:
+            for root in events[ref]['evidence']:
+                if root not in evidence:
+                    evidence.append(deepcopy(root))
+            for _, quote in quotations[ref]:
+                if quote not in unknowns:
+                    unknowns.append(quote)
+        node_scopes[node['node_id']] = set(closure)
+        nodes.append(dict(evidence=evidence, node_id=node['node_id'], node_kind=node['node_kind'],
+            perspective=node['perspective'], title=text(node['title'], 80),
+            summary=visible[0], explanation='\n'.join(visible), unknowns=unknowns))
+    reachable = set().union(*node_scopes.values())
+    require(reachable == set(events), 'analysis_semantic_event_plan_orphan')
+    edges = []
+    for edge in rows(packet['edges'], 48):
+        require(keys(edge, {'from', 'to', 'relation_kind', 'label', 'unit_refs'})
+            and type(edge['from']) is str and edge['from'] in node_scopes
+            and type(edge['to']) is str and edge['to'] in node_scopes, reason)
+        visible, _ = selected(edge, 6, 24, 4, node_scopes[edge['from']] | node_scopes[edge['to']])
+        edges.append(dict(**{key: edge[key] for key in ('from', 'to', 'relation_kind')},
+            label=text(edge['label'], 80), explanation='\n'.join(visible)))
+    overview = packet['overview']
+    require(keys(overview, {'title', 'unit_refs'}), reason)
+    visible, _ = selected(overview, 32, 24, 8, reachable)
+    require(set(readings) <= used_units, 'analysis_semantic_event_plan_orphan')
+    return dict(schema_version=SEMANTIC_MAP_MODEL_SCHEMA, nodes=nodes, edges=edges,
+        overview=dict(title=text(overview['title'], 80), summary='\n'.join(visible)))
+
+
 def _semantic_event_plan_review(graph, prepared, original, expanded):
-    if getattr(prepared, 'prompt_version', None) != 'semantic_map.event_plan.v1':
+    if getattr(prepared, 'prompt_version', None) not in {'semantic_map.event_plan.v1', 'semantic_map.event_plan.v2'}:
         return graph
     from .semantic_admission import semantic_map_canonical, semantic_map_hash
     review = json.loads(graph.meaning_review_json)

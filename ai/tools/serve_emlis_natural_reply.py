@@ -30,6 +30,8 @@ PINS = {"transformers": "5.19.0", "peft": "0.21.2", "accelerate": "1.15.0", "saf
 SEMANTIC_FORMAT_SOURCE = '817f944fcc8851917c40300a47f62d1defc3ffc3'
 PIECE_CANDIDATE_FORMAT = 'piece.field_slots.v1'
 EVENT_PLAN_SCHEMA = 'cocolon.analysis.semantic_map.event_plan.model.v1'
+EVENT_PLAN_V2_SCHEMA = 'cocolon.analysis.semantic_map.event_plan.model.v2'
+EVENT_PLAN_V2_MODEL = 'cocolon-qwen3.5-4b-analysis-event-plan-v2'
 
 IF_CANDIDATE_SCHEMA = 'cocolon.analysis.if-candidates.model.v1'
 PIECE_ADAPTER_NAME = 'piece'
@@ -272,6 +274,40 @@ def _semantic_event_plan_schema(pairs, *, leaf=False):
         overview=obj(dict(title=text(80),event_refs=refs('e',1,24),reading_refs=refs('r',0,8)))))
 
 
+def _semantic_event_plan_v2_schema(pairs, unknown_pairs, *, leaf=False):
+    """Select source-qualified authored units without redeclaring their roots."""
+    def text(n):
+        return dict(type='string', minLength=1, maxLength=n)
+    def obj(props):
+        return dict(type='object', properties=props, required=list(props), additionalProperties=False)
+    def refs(prefixes, minimum, maximum):
+        return dict(type='array', items=dict(type='string',
+            enum=[prefix + str(i) for prefix in prefixes for i in range(1,25)]),
+            minItems=minimum, maxItems=maximum)
+    unknowns = (dict(type='array', items=dict(oneOf=unknown_pairs), maxItems=4)
+        if unknown_pairs else dict(type='array', items=dict(type='object'), maxItems=0))
+    event = obj(dict(evidence=dict(type='array', items=dict(oneOf=pairs), minItems=1, maxItems=4),
+        event_id=dict(type='string', enum=['e'+str(i) for i in range(1,25)]),
+        source_mode=dict(type='string', enum=['RECORDED','PERSON_JUDGMENT','PERSON_WISH','DECIDED_PLAN']),
+        fact=text(160), unknowns=unknowns))
+    reading = obj(dict(reading_id=dict(type='string', enum=['r'+str(i) for i in range(1,25)]),
+        event_refs=refs('e',1,4), meaning=text(240)))
+    node = obj(dict(node_id=dict(type='string', enum=['n'+str(i) for i in range(1,25)]),
+        node_kind=dict(type='string', enum=['SELF_POSITION','TARGET_MEANING','CHOICE_OUTPUT','STATE_CONTEXT']),
+        perspective=dict(type='string', enum=['SELF','OBSERVED_INTERACTION']), title=text(80),
+        unit_refs=refs('er',1,4)))
+    edge = obj({'from':dict(type='string', enum=['n'+str(i) for i in range(1,25)]),
+        'to':dict(type='string', enum=['n'+str(i) for i in range(1,25)]),
+        'relation_kind':dict(type='string', enum=['SELF_OUTSIDE_GAP','CRITERION_EXPRESSION','CONTEXT_CONTRAST','SHARED_MEANING']),
+        'label':text(80), 'unit_refs':refs('er',1,6)})
+    return obj(dict(schema_version=dict(type='string',enum=[EVENT_PLAN_V2_SCHEMA]),
+        events=dict(type='array',items=event,minItems=1,maxItems=24),
+        readings=dict(type='array',items=reading,maxItems=24),
+        nodes=dict(type='array',items=node,minItems=1,maxItems=24),
+        edges=dict(type='array',items=edge,maxItems=0 if leaf else 48),
+        overview=obj(dict(title=text(80),unit_refs=refs('er',1,32)))))
+
+
 def semantic_output_schema(messages):
     """Constrain protocol and source quotes; meanings remain model-generated."""
     if (type(messages) is not list or len(messages) != 2
@@ -285,7 +321,8 @@ def semantic_output_schema(messages):
         raise ValueError('semantic_fields_invalid')
     stage = material.get('history_stage', {}).get('kind')
     history, leaf = stage in {'LEAF', 'MERGE'}, stage == 'LEAF'
-    pairs, seen = [], set()
+    pairs, seen, unknown_pairs = [], set(), []
+    event_v2 = material.get('model_schema') == EVENT_PLAN_V2_SCHEMA
     quoted_records, correction_fields = set(), 0
     for field in fields:
         number, original = field.get('field'), field.get('text')
@@ -307,6 +344,30 @@ def semantic_output_schema(messages):
             # Only the private leaf reading is compact. Its complete input is
             # unchanged, and fields without a short sentence keep old options.
             spans = short if short else spans + sentences
+            if event_v2:
+                # Reuse sentence boundaries rather than asking for whole
+                # paragraphs repeatedly. Full source remains in messages.
+                compact = [span for span in sentences if len(span) <= 240]
+                spans = compact if compact else spans
+        if event_v2:
+            sentences = _semantic_sentence_quotes(original)
+            qualifications = list(sentences)
+            for left, right in zip(sentences, sentences[1:]):
+                start = original.index(left)
+                end = original.index(right) + len(right)
+                qualifications.append(original[start:end])
+            qualifications = list(dict.fromkeys(span for span in qualifications
+                if 0 < len(span) <= 240 and original.count(span) == 1
+                and not re.search(r'["\\\x00-\x1f]', span)))
+            if field.get('source_role') != 'USER_ANALYSIS_MAP_CORRECTION':
+                # A qualification that retains its antecedent must also be
+                # selectable as one enclosing event root, not two fragments.
+                spans = list(dict.fromkeys(spans + qualifications))
+            if qualifications:
+                unknown_pairs.append(dict(type='object', properties=dict(
+                    source_quote=dict(type='string',enum=qualifications),
+                    source_field=dict(type='integer',enum=[number])),
+                    required=['source_quote','source_field'],additionalProperties=False))
         spans = list(dict.fromkeys(span for span in spans if span and original.count(span) == 1
             and not re.search(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', span)))
         if spans:
@@ -320,6 +381,8 @@ def semantic_output_schema(messages):
         raise ValueError('semantic_quotes_unavailable')
     if material.get('model_schema') == EVENT_PLAN_SCHEMA:
         return _semantic_event_plan_schema(pairs, leaf=leaf)
+    if event_v2:
+        return _semantic_event_plan_v2_schema(pairs, unknown_pairs, leaf=leaf)
     def text(maximum):
         return dict(type='string', minLength=1, maxLength=maximum)
     def obj(properties):
@@ -528,7 +591,8 @@ def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None):
 
     def node_type(value):
         props = value.properties or {}
-        return value.type == 'object' and 'node_id' in props and ('evidence' in props or 'event_refs' in props)
+        return value.type == 'object' and 'node_id' in props and (
+            'evidence' in props or 'event_refs' in props or 'unit_refs' in props)
 
     def event_type(value):
         return value.type == 'object' and 'event_id' in (value.properties or {})
@@ -544,7 +608,8 @@ def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None):
         props = value.properties or {}
         return value.type == 'object' and set(props) in ({
             'from', 'to', 'relation_kind', 'label', 'explanation'},
-            {'from','to','relation_kind','label','event_refs','reading_refs'})
+            {'from','to','relation_kind','label','event_refs','reading_refs'},
+            {'from','to','relation_kind','label','unit_refs'})
 
     def graph_state(active):
         for index, value in enumerate(active.object_stack):
@@ -652,6 +717,7 @@ def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None):
             self.selected_node_id = self.selected_from = None
             self.selected_to = self.selected_relation_kind = None
             self.selected_quote = None
+            self.selected_event_roots = ()
 
         def clone(self):
             result = super().clone()
@@ -666,6 +732,7 @@ def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None):
             result.selected_to = self.selected_to
             result.selected_relation_kind = self.selected_relation_kind
             result.selected_quote = self.selected_quote
+            result.selected_event_roots = self.selected_event_roots
             return result
 
         def add_character(self, char):
@@ -697,14 +764,33 @@ def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None):
                     generated = graph.generated_event_ids if key == 'event_id' else graph.generated_reading_ids
                     value = deepcopy(result.schema_object.properties[key])
                     value.enum = [('e' if key == 'event_id' else 'r') + str(len(generated)+1)]
-                elif key in {'event_refs', 'reading_refs'} and 'events' in schema['properties']:
+                elif key in {'event_refs', 'reading_refs', 'unit_refs'} and 'events' in schema['properties']:
                     _, graph = graph_state(active)
                     value = deepcopy(result.schema_object.properties[key])
-                    available = graph.generated_event_ids if key == 'event_refs' else graph.generated_reading_ids
+                    available = (graph.generated_event_ids if key == 'event_refs' else
+                        graph.generated_reading_ids if key == 'reading_refs' else
+                        graph.generated_event_ids + graph.generated_reading_ids)
                     if not available:
                         value.minItems = value.maxItems = 0
                     else:
                         value.items.enum = list(available)
+                elif (event_type(result.schema_object) and key == 'unknowns'
+                        and schema['properties']['schema_version'].get('enum') == [EVENT_PLAN_V2_SCHEMA]):
+                    value = deepcopy(result.schema_object.properties[key])
+                    options = []
+                    for part in value.items.oneOf or []:
+                        number = part.properties['source_field'].enum[0]
+                        quotes = [quote for quote in part.properties['source_quote'].enum
+                            if any(field == number and original.count(quote) == 1
+                                for field, original in result.selected_event_roots)]
+                        if quotes:
+                            part = deepcopy(part)
+                            part.properties['source_quote'].enum = quotes
+                            options.append(part)
+                    if options:
+                        value.items.oneOf = options
+                    else:
+                        value.minItems = value.maxItems = 0
                 elif node_type(result.schema_object) and key == 'node_id':
                     _, graph = graph_state(active)
                     value = deepcopy(result.schema_object.properties[key])
@@ -764,6 +850,14 @@ def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None):
                 if result.selected_quote is None:
                     raise ValueError('semantic_evidence_quote_unbound')
                 pair = (result.schema_object.properties['field'].enum[0], result.selected_quote)
+                if schema.get('properties', {}).get('schema_version', {}).get('enum') == [EVENT_PLAN_V2_SCHEMA]:
+                    for index in range(len(active.object_stack) - 1, -1, -1):
+                        parent = active.object_stack[index]
+                        if isinstance(parent, EvidenceObject) and event_type(parent.schema_object):
+                            parent = parent.clone()
+                            parent.selected_event_roots += (pair,)
+                            active.object_stack[index] = parent
+                            break
                 record = record_fields.get(pair[0])
                 if record is not None:
                     index, graph = graph_state(active)
@@ -976,7 +1070,10 @@ def make_handler(generate, *, api_key, model_name, deadline, max_requests,
                         material = json.loads(messages[1]['content'])
                     except (ValueError, TypeError):
                         material = None
-                    if (type(material) is dict and material.get('model_schema') == EVENT_PLAN_SCHEMA) != event_plan:
+                    marker = material.get('model_schema') if type(material) is dict else None
+                    expected_marker = EVENT_PLAN_V2_SCHEMA if event_plan_model == EVENT_PLAN_V2_MODEL else EVENT_PLAN_SCHEMA
+                    if (event_plan and marker != expected_marker
+                            or not event_plan and marker in {EVENT_PLAN_SCHEMA, EVENT_PLAN_V2_SCHEMA}):
                         raise ValueError
                 if piece:
                     if not natural or request['candidate_format'] != PIECE_CANDIDATE_FORMAT:
