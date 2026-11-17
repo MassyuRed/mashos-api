@@ -21,6 +21,116 @@ REPAIRED = '妹は棚を直した。'
 UNKNOWN = '塗装を終えたかは聞いていない。'
 
 
+def _capacity_fields(count):
+    return [dict(field=i, record=i, text='記録' + str(i) + 'を保存した。記入を終えた。棚を閉じた。時計を見た。')
+        for i in range(1, count + 1)]
+
+
+def _capacity_unit(fields, numbers):
+    return dict(evidence=[dict(quote=fields[i - 1]['text'].split('。', 1)[0] + '。', field=i) for i in numbers],
+        source_mode='RECORDED', fact='記録を参照した。', unknowns=[])
+
+
+def _capacity_node(fields, numbers, index):
+    return dict(units=[_capacity_unit(fields, numbers[i:i + 4]) for i in range(0, len(numbers), 4)],
+        node_kind='STATE_CONTEXT', perspective='SELF', title='記録' + str(index), meaning='')
+
+
+@pytest.mark.parametrize('missing', [1, 2, 4, 5, 8])
+def test_last_node_can_cover_remaining_records_without_premature_list_closure(missing):
+    fields = _capacity_fields(missing + 1)
+    selected = messages(fields)
+    nodes = [_capacity_node(fields, [missing + 1], i) for i in range(1, 12)]
+    nodes.append(_capacity_node(fields, list(range(1, missing + 1)), 12))
+    value = dict(schema_version=SCHEMA, nodes=nodes, edges=[],
+        overview=dict(title='記録の一覧', node_refs=['n12']))
+    assert accepts(value, selected)
+
+
+def test_last_node_reserves_uncovered_records_before_closing_units_and_evidence():
+    fields = _capacity_fields(3)
+    selected = messages(fields)
+    nodes = [_capacity_node(fields, [3], i) for i in range(1, 12)]
+    last = _capacity_node(fields, [3, 1, 2], 12)
+    first_unit = _capacity_unit(fields, [3])
+    last['units'] = [first_unit, _capacity_unit(fields, [1, 2])]
+    value = dict(schema_version=SCHEMA, nodes=nodes + [last], edges=[],
+        overview=dict(title='記録の一覧', node_refs=['n12']))
+    compact = lambda v: json.dumps(v, ensure_ascii=False, separators=(',', ':'))
+    raw = compact(value)
+    alphabet = ''.join(dict.fromkeys(raw + json.dumps(selected, ensure_ascii=False)))
+    prefix = '{"schema_version":' + compact(SCHEMA) + ',"nodes":['
+    prefix += ','.join(compact(n) for n in nodes) + ',{"units":[' + compact(first_unit)
+    state = advance(probe.semantic_json_parser(selected, alphabet), prefix)
+    assert ']' not in state.get_allowed_characters()
+    assert ',' in state.get_allowed_characters()
+    state = advance(state, ',{"evidence":[' + compact(_capacity_unit(fields, [1])['evidence'][0]))
+    # Closing after just record1 would strand record2. There is still a free
+    # root in this unit, so a comma remains legal without ending the request.
+    assert ']' not in state.get_allowed_characters()
+    assert ',' in state.get_allowed_characters()
+    assert accepts(value, selected)
+
+
+def test_final_evidence_slot_selects_a_missing_record_but_earlier_slots_keep_freedom():
+    fields = _capacity_fields(2)
+    selected = messages(fields)
+    prior = [_capacity_node(fields, [1], i) for i in range(1, 12)]
+    quote = '記録1を保存した。記入を終えた。'
+    repeats = [dict(quote=q, field=1) for q in [quote, '記録1を保存した。', '記入を終えた。']]
+    first = _capacity_unit(fields, [1])
+    second = dict(evidence=repeats + [dict(quote='記録2を保存した。', field=2)],
+        source_mode='RECORDED', fact='記録を参照した。', unknowns=[])
+    last = dict(_capacity_node(fields, [1], 12), units=[first, second])
+    value = dict(schema_version=SCHEMA, nodes=prior + [last], edges=[],
+        overview=dict(title='記録の一覧', node_refs=['n12']))
+    compact = lambda v: json.dumps(v, ensure_ascii=False, separators=(',', ':'))
+    raw = compact(value)
+    alphabet = ''.join(dict.fromkeys(raw + json.dumps(selected, ensure_ascii=False)))
+    prefix = '{"schema_version":' + compact(SCHEMA) + ',"nodes":['
+    prefix += ','.join(compact(n) for n in prior) + ',{"units":[' + compact(first)
+    prefix += ',{"evidence":[' + ','.join(compact(pair) for pair in repeats) + ','
+    state = advance(probe.semantic_json_parser(selected, alphabet), prefix)
+    good = compact(dict(quote='記録2を保存した。', field=2))
+    advance(state, good)
+    state = advance(probe.semantic_json_parser(selected, alphabet), prefix)
+    with pytest.raises(ValueError):
+        advance(state, compact(dict(quote='棚を閉じた。', field=1)))
+    assert accepts(value, selected)
+
+
+@pytest.mark.parametrize('count', [13, 24])
+def test_slot_reservation_preserves_multi_record_nodes_beyond_twelve_records(count):
+    fields = _capacity_fields(count)
+    selected = messages(fields)
+    numbers = list(range(1, count + 1))
+    nodes = [_capacity_node(fields, numbers[i:i + 8], i // 8 + 1) for i in range(0, count, 8)]
+    value = dict(schema_version=SCHEMA, nodes=nodes, edges=[],
+        overview=dict(title='記録の一覧', node_refs=['n' + str(i) for i in range(1, len(nodes) + 1)]))
+    assert accepts(value, selected)
+
+
+def test_missing_record_capacity_remains_independent_across_decoder_branches():
+    fields = _capacity_fields(3)
+    selected = messages(fields)
+    prior = [_capacity_node(fields, [3], i) for i in range(1, 12)]
+    first = _capacity_unit(fields, [3])
+    repeats = [dict(quote='記録3を保存した。', field=3), dict(quote='記入を終えた。', field=3)]
+    compact = lambda v: json.dumps(v, ensure_ascii=False, separators=(',', ':'))
+    prefix = '{"schema_version":' + compact(SCHEMA) + ',"nodes":['
+    prefix += ','.join(compact(n) for n in prior) + ',{"units":[' + compact(first)
+    prefix += ',{"evidence":[' + ','.join(compact(pair) for pair in repeats) + ','
+    pair1, pair2 = [_capacity_unit(fields, [i])['evidence'][0] for i in (1, 2)]
+    alphabet = ''.join(dict.fromkeys(prefix + compact(pair1) + compact(pair2)
+        + json.dumps(selected, ensure_ascii=False)))
+    state = advance(probe.semantic_json_parser(selected, alphabet), prefix)
+    for left, right in ((pair1, pair2), (pair2, pair1), (pair1, pair2)):
+        branch = advance(state, compact(left) + ',')
+        advance(branch, compact(right))
+        with pytest.raises(ValueError):
+            advance(branch, compact(dict(quote='棚を閉じた。', field=left['field'])))
+
+
 def messages(fields=None, *, leaf=False):
     material = dict(model_schema=SCHEMA, fields=fields or [
         dict(field=1, record=1, text=SAVED + 'まだ送っていない。'),
@@ -248,3 +358,4 @@ def test_native_admits_only_the_configured_node_local_alias_and_schema(alias, ex
         server.shutdown()
         server.server_close()
         worker.join(3)
+

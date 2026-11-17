@@ -677,6 +677,7 @@ def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None):
             super().__init__(*args, **kwargs)
             parts = self.list_member_type.oneOf
             self.is_evidence = bool(parts) and all(evidence_pair(p) for p in parts)
+            self.is_units = local_unit_type(self.list_member_type)
             self.is_nodes = node_type(self.list_member_type)
             self.is_events = event_type(self.list_member_type)
             self.is_readings = reading_type(self.list_member_type)
@@ -693,10 +694,37 @@ def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None):
             result.used_node_refs = self.used_node_refs
             return result
 
+        def future_root_capacity(self, *, after_item=False):
+            # Count only still-selectable evidence roots in this branch. Closing
+            # a list may discard slots, so reserve coverage before that choice,
+            # while source selection can still choose a missing record.
+            active = self.root.context.active_parser
+            _, graph = graph_state(active)
+            node = schema['properties']['nodes']
+            units = node['items']['properties']['units']
+            evidence = units['items']['properties']['evidence']
+            future_nodes = node['maxItems'] - len(graph.generated_node_ids) - 1
+            capacity = future_nodes * units['maxItems'] * evidence['maxItems']
+            if self.is_evidence:
+                parent = next(value for value in reversed(active.object_stack)
+                    if isinstance(value, UniqueEvidenceList) and value.is_units)
+                capacity += (units['maxItems'] - parent.num_items_seen - 1) * evidence['maxItems']
+                if after_item:
+                    capacity += self.max_items - self.num_items_seen - 1
+            return capacity
+
         def remaining_type(self):
             remaining = []
+            missing = frozenset()
+            if node_local and required_records:
+                _, graph = graph_state(self.root.context.active_parser)
+                uncovered = required_records - graph.covered_records
+                if len(uncovered) > self.future_root_capacity(after_item=True):
+                    missing = uncovered
             for part in self.list_member_type.oneOf:
                 field = part.properties['field'].enum[0]
+                if missing and record_fields.get(field) not in missing:
+                    continue
                 quotes = [q for q in part.properties['quote'].enum if (field, q) not in self.used_pairs]
                 if quotes:
                     part = deepcopy(part)
@@ -711,6 +739,10 @@ def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None):
             if self.is_evidence and not any((part.properties['field'].enum[0], q) not in self.used_pairs
                     for part in self.list_member_type.oneOf for q in part.properties['quote'].enum):
                 chars = chars.replace(',', '')
+            if node_local and required_records and (self.is_evidence or self.is_units):
+                _, graph = graph_state(self.root.context.active_parser)
+                if len(required_records - graph.covered_records) > self.future_root_capacity():
+                    chars = chars.replace(']', '')
             if self.is_nodes or self.is_events:
                 _, graph = graph_state(self.root.context.active_parser)
                 if (self.is_events or 'events' not in schema['properties']) and required_records - graph.covered_records:
@@ -735,6 +767,12 @@ def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None):
                 result.seen_list_opener = True
                 return result
             result = super().add_character(char)
+            if (self.is_evidence and node_local and required_records
+                    and char == '[' and not self.seen_list_opener):
+                remaining = result.remaining_type()
+                if remaining is None:
+                    raise ValueError('semantic_evidence_options_exhausted')
+                result.root.context.active_parser.object_stack[-1] = module.get_parser(result.root, remaining)
             if (self.is_evidence and not node_local and required_records
                     and char == '[' and not self.seen_list_opener):
                 active = result.root.context.active_parser
