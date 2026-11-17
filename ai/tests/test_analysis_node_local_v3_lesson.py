@@ -103,13 +103,36 @@ def test_leaf_lesson_keeps_only_its_earlier_state_and_cannot_borrow_later_confir
     # objects, results, or confirmation into an earlier single-record leaf.
     leaf = core.semantic_map_canonical(dict(input=material, output=authored))
     assert all(later not in leaf for later in (
-        '奏', '張り替え', '低い弦の指', '八回', '三回', '次の火曜', '確かめた'))
+        '奏', '張り替え', '低い弦の指', '八回', '三回', '次の火曜', '確かめた',
+        '樹脂', '青い', '交換した'))
     source = app.prepare_semantic_map(OWNER, lesson_source(material), prompt_version=PROFILE)
     source = core.prepare_semantic_leaf(source, (source.frozen.members[0].saved_record_ref,))
     value = deepcopy(authored)
     value['nodes'][1]['units'].append(lesson()[1]['nodes'][1]['units'][1])
     with pytest.raises(core.AnalysisSemanticMapError):
         core.build_semantic_stage(source, response(source, value))
+
+
+def test_lesson_grounds_updated_understanding_and_actual_replacement_separately():
+    material, authored = lesson()
+    source = app.prepare_semantic_map(OWNER, lesson_source(material), prompt_version=PROFILE)
+    artifact, _ = app.build_semantic_map(source, response(source, authored))
+    belief, replacement = authored['nodes'][6:8]
+    visible = artifact.safe_projection(authenticated_owner_scope=OWNER)['nodes']
+    assert belief['units'][0]['source_mode'] == 'PERSON_JUDGMENT'
+    assert belief['units'][1]['source_mode'] == 'RECORDED'
+    assert '金属だと思った' in belief['units'][0]['evidence'][0]['quote']
+    assert '同じ支柱が樹脂製だと確かめた' in belief['units'][1]['evidence'][0]['quote']
+    assert '見立て' in visible[6]['summary'] and '理解へ更新' in visible[6]['summary']
+    assert '金属から樹脂' not in visible[6]['explanation']
+    assert all(unit['source_mode'] == 'RECORDED' for unit in replacement['units'])
+    assert '赤い留め具が付いていた' in replacement['units'][0]['evidence'][0]['quote']
+    assert '外し、青い留め具へ交換した' in replacement['units'][1]['evidence'][0]['quote']
+    assert '交換した状態へ変わっています' in visible[7]['summary']
+    for node in (belief, replacement):
+        assert [unit['evidence'][0]['field'] for unit in node['units']] == [1, 3]
+    assert authored['edges'][1]['from'] == 'n7' and authored['edges'][1]['to'] == 'n8'
+    assert artifact.private_evidence()['graph']['meaning_review']['node_local_plan']['meaning_status'] == 'UNASSESSED'
 
 
 def test_worked_example_is_instruction_only_and_cannot_be_cited_as_the_person_source():

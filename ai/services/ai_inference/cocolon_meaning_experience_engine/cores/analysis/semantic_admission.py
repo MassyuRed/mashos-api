@@ -2486,6 +2486,10 @@ def _semantic_node_local_v3_lesson_instruction(stage=None):
     confirmation = '翌週、私は講師の返答を読み、低い弦の指を先に置く手順だと確かめた。'
     plan = '私は次の火曜に弓の角度を練習すると決めたが、まだその練習はしていない。'
     judgment = '私は八回の結果だけで、重音を身につけたとは判断していない。'
+    stand_belief = '私は譜面台の支柱の光沢を見て金属だと思ったが、材質表示はまだ見ていない。'
+    stand_checked = '翌週、私は材質表示を読み、同じ支柱が樹脂製だと確かめた。'
+    clip_before = '譜面台には赤い留め具が付いていた。'
+    clip_changed = '私は赤い留め具を外し、青い留め具へ交換した。'
 
     def field(number, record, path, text):
         return dict(field=number, record=record, field_path=path,
@@ -2500,7 +2504,7 @@ def _semantic_node_local_v3_lesson_instruction(stage=None):
         return dict(units=units, node_kind=kind, perspective=perspective,
             title=title, meaning=meaning)
 
-    fields = [field(1, 1, 'memo', early_play + early_condition + wish),
+    fields = [field(1, 1, 'memo', early_play + early_condition + wish + stand_belief + clip_before),
         field(2, 1, 'memo_action', question + waiting)]
     records = [dict(record=1, recorded_at='2026-07-01T10:00:00',
         selected_categories=['趣味'], selected_emotions=['平穏'],
@@ -2516,9 +2520,14 @@ def _semantic_node_local_v3_lesson_instruction(stage=None):
             mode='PERSON_WISH')])
     nodes = [node('CHOICE_OUTPUT', '試験中に重音の練習を始めなかった日', [earlier]),
         node('STATE_CONTEXT', '講師へ尋ねて返答を待っていた時点', [waiting_unit]), own_wish]
+    belief_unit = unit([(1, stand_belief)],
+        '本人は光沢から譜面台の支柱を金属だと思いましたが、この時点では材質表示を見ていません。',
+        mode='PERSON_JUDGMENT')
+    clip_unit = unit([(1, clip_before)], '譜面台には赤い留め具が付いていました。')
     edges = []
     if stage != 'LEAF':
-        fields.extend([field(3, 2, 'memo', later_play + result + other_wish + other_unknown),
+        fields.extend([field(3, 2, 'memo', later_play + result + other_wish + other_unknown
+                + stand_checked + clip_changed),
             field(4, 2, 'memo_action', confirmation + plan + judgment)])
         records.append(dict(record=2, recorded_at='2026-07-08T10:00:00',
             selected_categories=['趣味'], selected_emotions=['平穏'],
@@ -2542,9 +2551,24 @@ def _semantic_node_local_v3_lesson_instruction(stage=None):
                     mode='DECIDED_PLAN')]),
             node('SELF_POSITION', '八回の結果だけで習得したとは判断していない',
                 [unit([(4, judgment)], '本人は今回の八回の結果だけで、重音を身につけたとは判断していません。',
-                    mode='PERSON_JUDGMENT')])])
+                    mode='PERSON_JUDGMENT')]),
+            node('SELF_POSITION', '光沢からの見立てと、材質表示での確認',
+                [belief_unit, unit([(3, stand_checked)],
+                    '翌週、本人は材質表示を読み、同じ支柱が樹脂製だと確かめました。')],
+                '支柱について、光沢からの見立てを材質表示で確かめた理解へ更新しています。'
+                '金属だという先の見立てと、表示を読んだ確認を区別できます。'),
+            node('CHOICE_OUTPUT', '赤い留め具から青い留め具への実際の交換',
+                [clip_unit, unit([(3, clip_changed)],
+                    '本人は赤い留め具を外し、青い留め具へ交換しました。')],
+                '留め具は、赤い物が付いた状態から、本人が外して青い物へ交換した状態へ変わっています。')])
         edges = [dict(**{'from': 'n1', 'to': 'n6'}, relation_kind='CRITERION_EXPRESSION',
-            label='今回の試行結果だけで、習得を決めない判断')]
+            label='今回の試行結果だけで、習得を決めない判断'),
+            dict(**{'from': 'n7', 'to': 'n8'}, relation_kind='CONTEXT_CONTRAST',
+                label='支柱の材質の理解を更新したことと、留め具を実際に交換したこと')]
+    else:
+        nodes.extend([
+            node('SELF_POSITION', '光沢から金属だと思っていた支柱', [belief_unit]),
+            node('STATE_CONTEXT', '赤い留め具が付いた譜面台', [clip_unit])])
     material = dict(model_schema=SEMANTIC_MAP_NODE_LOCAL_V3_SCHEMA, records=records,
         fields=fields, analysis_as_of='2026-07-01T12:00:00+00:00' if stage == 'LEAF'
             else '2026-07-08T12:00:00+00:00')
