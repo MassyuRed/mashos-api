@@ -6,6 +6,7 @@ The normal application remains finite unless its own server setting opts in.
 from __future__ import annotations
 
 from functools import lru_cache
+import asyncio
 import hashlib
 import json
 import os
@@ -20,6 +21,7 @@ SEMANTIC_EVENT_PLAN_V2_MODEL = 'cocolon-qwen3.5-4b-analysis-event-plan-v2'
 SEMANTIC_EVENT_PLAN_V2_BASE_MODEL = 'cocolon-qwen3.5-4b-analysis-event-plan-v2-base-851bf6e'
 SEMANTIC_NODE_LOCAL_V3_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v3'
 SEMANTIC_NODE_LOCAL_V3_BASE_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v3-base-851bf6e'
+SEMANTIC_NODE_LOCAL_V4_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v4'
 SEMANTIC_EVENT_PLAN_BASE_MODEL = 'cocolon-qwen3.5-4b-analysis-semantic-120u'
 MAX_RESPONSE_BYTES = 262144
 DEFAULT_PROMPT_VERSION = 'selected_material.v4'
@@ -39,6 +41,7 @@ SEMANTIC_HISTORY_MAX_LEAVES = 16
 # Leave response/serialization time after the native 210s generation limit
 # and the bridge's 215s upstream limit. These are independent of output quality.
 SEMANTIC_HTTP_TIMEOUT_SECONDS = 220.0
+SEMANTIC_V4_RESPONSE_RESERVE_SECONDS = 5.0
 SEMANTIC_REQUEST_TIMEOUT_SECONDS = 225.0
 # One absolute pipeline limit, below the worker's default 900s stale lease.
 # Stages may exhaust this cap before every stage uses its individual cap.
@@ -140,13 +143,102 @@ class SelfHostedSemanticAnalysisModelSource(SelfHostedAnalysisModelSource):
             semantic_prompt_version='semantic_map.v1'):
         from cocolon_meaning_experience_engine.cores.analysis.semantic_admission import (
             SEMANTIC_MAP_PROFILE, SEMANTIC_MAP_SOURCE_DUTIES_PROFILE, SEMANTIC_MAP_EVENT_PLAN_PROFILE,
-            SEMANTIC_MAP_EVENT_PLAN_V2_PROFILE, SEMANTIC_MAP_NODE_LOCAL_V3_PROFILE)
+            SEMANTIC_MAP_EVENT_PLAN_V2_PROFILE, SEMANTIC_MAP_NODE_LOCAL_V3_PROFILE,
+            SEMANTIC_MAP_NODE_LOCAL_V4_PROFILE)
         if type(semantic_prompt_version) is not str or semantic_prompt_version not in {
                 SEMANTIC_MAP_PROFILE, SEMANTIC_MAP_SOURCE_DUTIES_PROFILE, SEMANTIC_MAP_EVENT_PLAN_PROFILE,
-                SEMANTIC_MAP_EVENT_PLAN_V2_PROFILE, SEMANTIC_MAP_NODE_LOCAL_V3_PROFILE}:
+                SEMANTIC_MAP_EVENT_PLAN_V2_PROFILE, SEMANTIC_MAP_NODE_LOCAL_V3_PROFILE,
+                SEMANTIC_MAP_NODE_LOCAL_V4_PROFILE}:
             raise ValueError('analysis_model_configuration_invalid')
         super().__init__(endpoint=endpoint, model=model, api_key=api_key, transport=transport)
         self._prompt_version = semantic_prompt_version
+
+    async def _node_local_v4(self, prepared):
+        """Exactly three acquisitions under one existing absolute deadline.
+
+        All unmodified raw/finish/message hashes survive in the final private
+        artifact. This is structural assembly, not one sequence or a repair.
+        Failure/cancellation never starts a later phase, retry or fallback.
+        """
+        from cocolon_meaning_experience_engine.cores.analysis import semantic_admission as core
+        core.require(semantic_analysis_input_fits(prepared), 'analysis_semantic_history_capacity_exceeded')
+        loop = asyncio.get_running_loop()
+        end = loop.time() + SEMANTIC_HTTP_TIMEOUT_SECONDS
+        receipts, plan, nodes = [], None, None
+        remaining_tokens = core.SEMANTIC_MAP_NODE_LOCAL_V4_TOKEN_BUDGET
+        maximum = SEMANTIC_MERGE_MAX_PROMPT_BYTES if getattr(prepared, 'kind', None) == 'MERGE' else SEMANTIC_MAX_PROMPT_BYTES
+        try:
+            async with asyncio.timeout_at(end), httpx.AsyncClient(transport=self._transport, follow_redirects=False,
+                    trust_env=False) as client:
+                for phase in core.SEMANTIC_MAP_NODE_LOCAL_V4_PHASES:
+                    if remaining_tokens <= 0:
+                        raise RuntimeError('analysis_model_source_token_budget_exhausted')
+                    tokens = remaining_tokens
+                    messages = core.semantic_node_local_v4_messages(prepared, phase, plan=plan, nodes=nodes)
+                    core.require(len(core.semantic_map_canonical(messages).encode()) <= maximum,
+                        'analysis_semantic_history_capacity_exceeded')
+                    remaining = end - loop.time()
+                    if remaining <= SEMANTIC_V4_RESPONSE_RESERVE_SECONDS:
+                        raise TimeoutError('analysis_model_source_timeout')
+                    body = dict(model=self.model, messages=messages, temperature=0, max_tokens=tokens,
+                        stream=False, chat_template_kwargs={'enable_thinking': False},
+                        generation_seconds=min(210.0, remaining - SEMANTIC_V4_RESPONSE_RESERVE_SECONDS))
+                    core.require(len(core.semantic_map_canonical(body).encode()) <= SEMANTIC_MAX_REQUEST_BYTES,
+                        'analysis_semantic_history_capacity_exceeded')
+                    async with client.stream('POST', self.endpoint,
+                            headers={'Authorization': 'Bearer ' + self._api_key}, json=body,
+                            timeout=httpx.Timeout(remaining, connect=min(15.0, remaining))) as response:
+                        if response.status_code != 200:
+                            raise RuntimeError('analysis_model_source_unavailable')
+                        payload = bytearray()
+                        async for chunk in response.aiter_bytes(chunk_size=16384):
+                            payload.extend(chunk)
+                            if len(payload) > MAX_RESPONSE_BYTES:
+                                raise ValueError('phase_response_too_large')
+                    data = json.loads(payload)
+                    if type(data) is not dict or data.get('model') != self.model:
+                        raise ValueError('phase_model_changed')
+                    choices = data.get('choices')
+                    if type(choices) is not list or len(choices) != 1 or type(choices[0]) is not dict:
+                        raise ValueError('phase_choice_invalid')
+                    choice, message = choices[0], choices[0].get('message')
+                    if (choice.get('finish_reason') != 'stop' or type(message) is not dict
+                            or message.get('role') != 'assistant' or message.get('tool_calls')
+                            or message.get('function_call') or message.get('reasoning_content')
+                            or type(message.get('content')) is not str or not message['content'].strip()):
+                        raise ValueError('phase_not_complete')
+                    raw = message['content']
+                    usage = data.get('usage')
+                    completion = usage.get('completion_tokens') if type(usage) is dict else None
+                    if type(completion) is not int or not 1 <= completion <= tokens:
+                        raise ValueError('phase_usage_invalid')
+                    remaining_tokens -= completion
+                    receipts.append(dict(phase=phase, messages_sha256=core.semantic_map_hash(messages),
+                        raw=raw, raw_sha256=hashlib.sha256(raw.encode()).hexdigest(),
+                        finish_reason='stop', completion_tokens=completion))
+                    value = core._load(raw)
+                    if phase == 'PLAN':
+                        plan = core.semantic_node_local_v4_plan(prepared, value)
+                    elif phase == 'NODES':
+                        nodes = core.semantic_node_local_v4_nodes(prepared, plan, value)
+                    else:
+                        core.semantic_node_local_v4_relations(prepared, plan, nodes, value)
+            artifact = dict(schema_version=core.SEMANTIC_MAP_NODE_LOCAL_V4_SCHEMA, phases=receipts)
+            core.assemble_semantic_node_local_v4(prepared, artifact)
+            if loop.time() >= end:
+                raise TimeoutError('analysis_model_source_timeout')
+            raw = core.semantic_map_canonical(artifact)
+            if len(raw.encode()) > MAX_RESPONSE_BYTES:
+                raise ValueError('artifact_too_large')
+            result = core.AnalysisModelQuotedParentUnitsResponse(prepared.request_ref,
+                core.semantic_map_hash(prepared.messages()), hashlib.sha256(raw.encode()).hexdigest(), 'stop', raw)
+            if loop.time() >= end:
+                raise TimeoutError('analysis_model_source_timeout')
+            return result
+        except (httpx.TimeoutException, TimeoutError):
+            raise TimeoutError('analysis_model_source_timeout') from None
+        except (httpx.HTTPError, ValueError, TypeError, KeyError, UnicodeError, RuntimeError):
+            raise RuntimeError('analysis_model_source_unavailable') from None
 
     async def __call__(self, prepared):
         from analysis_semantic_map import SemanticMapInput
@@ -156,6 +248,8 @@ class SelfHostedSemanticAnalysisModelSource(SelfHostedAnalysisModelSource):
         require(type(prepared) in {SemanticMapInput, AnalysisSemanticMapStageInput}
             and prepared.prompt_version == self.prompt_version,
             'analysis_semantic_input_invalid')
+        if self.prompt_version == 'semantic_map.node_local.v4':
+            return await self._node_local_v4(prepared)
         messages = prepared.messages()
         require(semantic_analysis_input_fits(prepared), 'analysis_semantic_history_capacity_exceeded')
         body = dict(model=self.model, messages=messages, temperature=0,
@@ -206,7 +300,9 @@ def _configured_semantic_prompt_version(model):
     """
     from cocolon_meaning_experience_engine.cores.analysis.semantic_admission import (
         SEMANTIC_MAP_PROFILE, SEMANTIC_MAP_EVENT_PLAN_PROFILE, SEMANTIC_MAP_EVENT_PLAN_V2_PROFILE,
-        SEMANTIC_MAP_NODE_LOCAL_V3_PROFILE)
+        SEMANTIC_MAP_NODE_LOCAL_V3_PROFILE, SEMANTIC_MAP_NODE_LOCAL_V4_PROFILE)
+    if model == SEMANTIC_NODE_LOCAL_V4_MODEL:
+        return SEMANTIC_MAP_NODE_LOCAL_V4_PROFILE
     if model in {SEMANTIC_NODE_LOCAL_V3_MODEL, SEMANTIC_NODE_LOCAL_V3_BASE_MODEL}:
         return SEMANTIC_MAP_NODE_LOCAL_V3_PROFILE
     if model in {SEMANTIC_EVENT_PLAN_V2_MODEL, SEMANTIC_EVENT_PLAN_V2_BASE_MODEL}:

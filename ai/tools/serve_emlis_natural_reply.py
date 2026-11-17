@@ -34,6 +34,9 @@ EVENT_PLAN_V2_SCHEMA = 'cocolon.analysis.semantic_map.event_plan.model.v2'
 EVENT_PLAN_V2_MODEL = 'cocolon-qwen3.5-4b-analysis-event-plan-v2'
 EVENT_PLAN_V2_BASE_MODEL = 'cocolon-qwen3.5-4b-analysis-event-plan-v2-base-851bf6e'
 NODE_LOCAL_V3_SCHEMA = 'cocolon.analysis.semantic_map.node_local.model.v3'
+NODE_LOCAL_V4_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v4'
+NODE_LOCAL_V4_SCHEMA = 'cocolon.analysis.semantic_map.node_local.model.v4'
+NODE_LOCAL_V4_PHASES = ('PLAN', 'NODES', 'RELATIONS')
 NODE_LOCAL_V3_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v3'
 NODE_LOCAL_V3_BASE_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v3-base-851bf6e'
 
@@ -337,6 +340,116 @@ def _semantic_node_local_v3_schema(pairs, unknown_pairs, *, leaf=False):
         overview=obj(dict(title=text(80), node_refs=dict(type='array', items=node_ref, minItems=1, maxItems=8)))))
 
 
+def _semantic_node_local_v4_schema(material, pairs, unknown_pairs, *, leaf=False):
+    """Three private author shapes; no text repair or semantic certification."""
+    from copy import deepcopy
+    def obj(props):
+        return dict(type='object', properties=props, required=list(props), additionalProperties=False)
+    def text(maximum, minimum=1):
+        return dict(type='string', minLength=minimum, maxLength=maximum)
+    def signature(value):
+        return hashlib.sha256(json.dumps(value, ensure_ascii=False, sort_keys=True,
+            separators=(',', ':'), allow_nan=False).encode()).hexdigest()
+    def root(phase, props):
+        return obj(dict(schema_version=dict(type='string',
+            enum=[NODE_LOCAL_V4_SCHEMA + '.' + phase.lower()]), **props))
+    phase = material.get('author_phase')
+    if phase == 'PLAN':
+        unit = obj(dict(evidence=dict(type='array', items=dict(oneOf=pairs), minItems=1, maxItems=4)))
+        node = obj(dict(node_id=dict(type='string', enum=['n' + str(i) for i in range(1, 13)]),
+            units=dict(type='array', items=unit, minItems=1, maxItems=2)))
+        return root(phase, dict(nodes=dict(type='array', items=node, minItems=1, maxItems=12)))
+    plan = material.get('plan')
+    if (phase not in {'NODES', 'RELATIONS'} or type(plan) is not dict
+            or plan.get('schema_version') != NODE_LOCAL_V4_SCHEMA + '.plan'
+            or type(plan.get('nodes')) is not list or not 1 <= len(plan['nodes']) <= 12):
+        raise ValueError('semantic_v4_plan_invalid')
+    ids, node_properties = [], {}
+    options = {(p['properties']['field']['enum'][0], quote)
+        for p in pairs for quote in p['properties']['quote']['enum']}
+    for i, node in enumerate(plan['nodes'], 1):
+        if (type(node) is not dict or set(node) != {'node_id', 'units'}
+                or node['node_id'] != 'n' + str(i) or type(node['units']) is not list
+                or not 1 <= len(node['units']) <= 2):
+            raise ValueError('semantic_v4_node_invalid')
+        ids.append(node['node_id'])
+        units = {}
+        for j, unit in enumerate(node['units'], 1):
+            if (type(unit) is not dict or set(unit) != {'evidence'}
+                    or type(unit['evidence']) is not list or not 1 <= len(unit['evidence']) <= 4):
+                raise ValueError('semantic_v4_unit_invalid')
+            roots = []
+            for pair in unit['evidence']:
+                if (type(pair) is not dict or set(pair) != {'field', 'quote'}
+                        or type(pair['field']) is not int or type(pair['quote']) is not str
+                        or (pair['field'], pair['quote']) not in options
+                        or pair in roots):
+                    raise ValueError('semantic_v4_root_invalid')
+                roots.append(pair)
+            qualifications = []
+            for part in unknown_pairs:
+                number = part['properties']['source_field']['enum'][0]
+                quotes = [q for q in part['properties']['source_quote']['enum']
+                    if any(p['field'] == number and p['quote'].count(q) == 1 for p in roots)]
+                if quotes:
+                    part = deepcopy(part)
+                    part['properties']['source_quote']['enum'] = quotes
+                    qualifications.append(part)
+            unknowns = (dict(type='array', items=dict(oneOf=qualifications), maxItems=2)
+                if qualifications else dict(type='array', items=dict(type='object'), maxItems=0))
+            units['u' + str(j)] = obj(dict(source_mode=dict(type='string', enum=[
+                'RECORDED', 'PERSON_JUDGMENT', 'PERSON_WISH', 'DECIDED_PLAN']),
+                fact=text(160), unknowns=unknowns))
+        node_properties[node['node_id']] = obj(dict(units=obj(units),
+            node_kind=dict(type='string', enum=['SELF_POSITION', 'TARGET_MEANING', 'CHOICE_OUTPUT', 'STATE_CONTEXT']),
+            perspective=dict(type='string', enum=['SELF', 'OBSERVED_INTERACTION']),
+            title=text(80), meaning=text(240, 0)))
+    if phase == 'NODES':
+        return root(phase, dict(plan_sha256=dict(type='string', enum=[signature(plan)]),
+            nodes=obj(node_properties)))
+    registry = material.get('candidate_nodes')
+    if (type(registry) is not list or len(registry) != len(ids)
+            or any(type(n) is not dict for n in registry)
+            or [n.get('node_id') for n in registry] != ids):
+        raise ValueError('semantic_v4_registry_invalid')
+    for planned, candidate in zip(plan['nodes'], registry, strict=True):
+        if (set(candidate) != {'node_id', 'units', 'node_kind', 'perspective', 'title', 'meaning'}
+                or type(candidate['units']) is not list
+                or len(candidate['units']) != len(planned['units'])
+                or candidate['node_kind'] not in ['SELF_POSITION', 'TARGET_MEANING', 'CHOICE_OUTPUT', 'STATE_CONTEXT']
+                or candidate['perspective'] not in ['SELF', 'OBSERVED_INTERACTION']
+                or type(candidate['title']) is not str or not 1 <= len(candidate['title']) <= 80
+                or type(candidate['meaning']) is not str or len(candidate['meaning']) > 240):
+            raise ValueError('semantic_v4_registry_invalid')
+        for roots, unit in zip(planned['units'], candidate['units'], strict=True):
+            if (type(unit) is not dict or set(unit) != {'evidence', 'source_mode', 'fact', 'unknowns'}
+                    or unit['evidence'] != roots['evidence']
+                    or unit['source_mode'] not in ['RECORDED', 'PERSON_JUDGMENT', 'PERSON_WISH', 'DECIDED_PLAN']
+                    or type(unit['fact']) is not str or not 1 <= len(unit['fact']) <= 160
+                    or type(unit['unknowns']) is not list or len(unit['unknowns']) > 2):
+                raise ValueError('semantic_v4_registry_invalid')
+            seen = set()
+            for unknown in unit['unknowns']:
+                if (type(unknown) is not dict or set(unknown) != {'source_quote', 'source_field'}
+                        or type(unknown['source_field']) is not int
+                        or type(unknown['source_quote']) is not str
+                        or not 1 <= len(unknown['source_quote']) <= 240):
+                    raise ValueError('semantic_v4_registry_invalid')
+                pair = unknown['source_field'], unknown['source_quote']
+                if (pair in seen or not any(r['field'] == pair[0]
+                        and r['quote'].count(pair[1]) == 1 for r in roots['evidence'])):
+                    raise ValueError('semantic_v4_registry_invalid')
+                seen.add(pair)
+    ref = dict(type='string', enum=ids)
+    edge = obj({'from': ref, 'to': ref, 'label': text(80),
+        'relation_kind': dict(type='string', enum=[
+            'SELF_OUTSIDE_GAP', 'CRITERION_EXPRESSION', 'CONTEXT_CONTRAST', 'SHARED_MEANING'])})
+    return root(phase, dict(nodes_sha256=dict(type='string', enum=[signature(registry)]),
+        edges=dict(type='array', items=edge, maxItems=0 if leaf else 48),
+        overview=obj(dict(title=text(80), node_refs=dict(type='array', items=ref,
+            minItems=1, maxItems=min(8, len(ids)))))))
+
+
 def semantic_output_schema(messages):
     """Constrain protocol and source quotes; meanings remain model-generated."""
     if (type(messages) is not list or len(messages) != 2
@@ -352,7 +465,7 @@ def semantic_output_schema(messages):
     history, leaf = stage in {'LEAF', 'MERGE'}, stage == 'LEAF'
     pairs, seen, unknown_pairs = [], set(), []
     event_v2 = material.get('model_schema') == EVENT_PLAN_V2_SCHEMA
-    node_local = material.get('model_schema') == NODE_LOCAL_V3_SCHEMA
+    node_local = material.get('model_schema') in {NODE_LOCAL_V3_SCHEMA, NODE_LOCAL_V4_SCHEMA}
     source_qualified = event_v2 or node_local
     quoted_records, correction_fields = set(), 0
     for field in fields:
@@ -414,6 +527,8 @@ def semantic_output_schema(messages):
         return _semantic_event_plan_schema(pairs, leaf=leaf)
     if event_v2:
         return _semantic_event_plan_v2_schema(pairs, unknown_pairs, leaf=leaf)
+    if material.get('model_schema') == NODE_LOCAL_V4_SCHEMA:
+        return _semantic_node_local_v4_schema(material, pairs, unknown_pairs, leaf=leaf)
     if node_local:
         return _semantic_node_local_v3_schema(pairs, unknown_pairs, leaf=leaf)
     def text(maximum):
@@ -556,7 +671,7 @@ def _if_json_schema_parser(schema, config):
     return module.JsonSchemaParser(schema, config=config)
 
 
-def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None):
+def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None, bound_node_ids=()):
     """Bind graph references and unique source/quote pairs while decoding.
 
     The pinned parser does not enforce JSON Schema uniqueItems. Use an isolated
@@ -576,7 +691,10 @@ def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None):
     alphabet = frozenset(config.alphabet)
     record_fields = dict(record_fields or {})
     required_records = frozenset(record_fields.values())
-    node_local = schema.get('properties', {}).get('schema_version', {}).get('enum') == [NODE_LOCAL_V3_SCHEMA]
+    marker = schema.get('properties', {}).get('schema_version', {}).get('enum')
+    plan_only = marker == [NODE_LOCAL_V4_SCHEMA + '.plan']
+    relations_only = marker == [NODE_LOCAL_V4_SCHEMA + '.relations']
+    node_local = marker == [NODE_LOCAL_V3_SCHEMA] or plan_only or relations_only
 
     def enum_literal(value):
         raw = json.dumps(value, ensure_ascii=False)
@@ -627,11 +745,13 @@ def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None):
         props = value.properties or {}
         return value.type == 'object' and (('node_id' in props and (
             'evidence' in props or 'event_refs' in props or 'unit_refs' in props))
-            or node_local and set(props) == {'units', 'node_kind', 'perspective', 'title', 'meaning'})
+            or node_local and set(props) == {'units', 'node_kind', 'perspective', 'title', 'meaning'}
+            or plan_only and set(props) == {'node_id', 'units'})
 
     def local_unit_type(value):
-        return node_local and value.type == 'object' and set(value.properties or {}) == {
-            'evidence', 'source_mode', 'fact', 'unknowns'}
+        return node_local and value.type == 'object' and (
+            set(value.properties or {}) == {'evidence', 'source_mode', 'fact', 'unknowns'}
+            or plan_only and set(value.properties or {}) == {'evidence'})
 
     def event_type(value):
         return value.type == 'object' and 'event_id' in (value.properties or {})
@@ -641,7 +761,9 @@ def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None):
 
     def graph_type(value):
         props = value.properties or {}
-        return value.type == 'object' and 'nodes' in props and 'edges' in props
+        return value.type == 'object' and (
+            'nodes' in props and 'edges' in props or plan_only and 'nodes' in props
+            or relations_only and {'edges', 'overview'} <= set(props))
 
     def edge_type(value):
         props = value.properties or {}
@@ -805,7 +927,7 @@ def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None):
     class EvidenceObject(module.ObjectParsingState):
         def __init__(self, *args, **kwargs):
             super().__init__(*args, **kwargs)
-            self.generated_node_ids = ()
+            self.generated_node_ids = tuple(bound_node_ids) if graph_type(self.schema_object) else ()
             self.generated_event_ids = ()
             self.generated_reading_ids = ()
             self.selected_plan_id = None
@@ -934,7 +1056,7 @@ def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None):
             if char == '}' and result.can_end() and node_type(result.schema_object):
                 index, graph = graph_state(active)
                 graph = graph.clone()
-                if node_local:
+                if node_local and not plan_only:
                     result.selected_node_id = 'n' + str(len(graph.generated_node_ids) + 1)
                 if result.selected_node_id is None or result.selected_node_id in graph.generated_node_ids:
                     raise ValueError('semantic_node_id_unbound')
@@ -999,8 +1121,12 @@ def semantic_json_parser(messages, alphabet):
     # coverage only; they never substitute for evidence field IDs.
     config.force_json_field_order = True
     material = json.loads(messages[1]['content'])
+    if material.get('model_schema') == NODE_LOCAL_V4_SCHEMA and material.get('author_phase') != 'PLAN':
+        ids = tuple(n['node_id'] for n in material.get('candidate_nodes', ()))
+        return _semantic_unique_json_schema_parser(schema, config, bound_node_ids=ids)
     anchor_key = 'events' if 'events' in schema['properties'] else 'nodes'
-    node_local = schema['properties']['schema_version'].get('enum') == [NODE_LOCAL_V3_SCHEMA]
+    node_local = schema['properties']['schema_version'].get('enum') in (
+        [NODE_LOCAL_V3_SCHEMA], [NODE_LOCAL_V4_SCHEMA + '.plan'])
     item = schema['properties'][anchor_key]['items']['properties']
     evidence = item['units']['items']['properties']['evidence'] if node_local else item['evidence']
     quoted_fields = {part['properties']['field']['enum'][0] for part in evidence['items']['oneOf']}
@@ -1164,6 +1290,18 @@ def make_handler(generate, *, api_key, model_name, deadline, max_requests,
                     EVENT_PLAN_V2_BASE_MODEL, NODE_LOCAL_V3_BASE_MODEL}
                 if event_plan:
                     selected_model = event_plan_model
+                staged = event_plan and event_plan_model == NODE_LOCAL_V4_MODEL
+                if staged:
+                    material = json.loads(messages[1]['content'])
+                    if material.get('author_phase') not in NODE_LOCAL_V4_PHASES:
+                        raise ValueError
+                    selected_tokens = request.get('max_tokens')
+                    if type(selected_tokens) is not int or not 1 <= selected_tokens <= min(4096, max_new_tokens):
+                        raise ValueError
+                    seconds = request.get('generation_seconds')
+                    if type(seconds) not in (int, float) or not 0 < seconds <= 210:
+                        raise ValueError
+                    selected_seconds = min(selected_seconds, seconds)
                 ordinary_messages = (isinstance(messages, list) and len(messages) == 2
                     and [m["role"] for m in messages] == ["system", "user"]
                     and all(isinstance(m["content"], str) and m["content"] for m in messages))
@@ -1181,13 +1319,17 @@ def make_handler(generate, *, api_key, model_name, deadline, max_requests,
                     except (ValueError, TypeError):
                         material = None
                     marker = material.get('model_schema') if type(material) is dict else None
-                    expected_marker = (NODE_LOCAL_V3_SCHEMA if event_plan_model in {
+                    expected_marker = (NODE_LOCAL_V4_SCHEMA if event_plan_model == NODE_LOCAL_V4_MODEL
+                        else NODE_LOCAL_V3_SCHEMA if event_plan_model in {
                             NODE_LOCAL_V3_MODEL, NODE_LOCAL_V3_BASE_MODEL}
                         else EVENT_PLAN_V2_SCHEMA if event_plan_model in {
                             EVENT_PLAN_V2_MODEL, EVENT_PLAN_V2_BASE_MODEL} else EVENT_PLAN_SCHEMA)
                     if (event_plan and marker != expected_marker
-                            or not event_plan and marker in {EVENT_PLAN_SCHEMA, EVENT_PLAN_V2_SCHEMA, NODE_LOCAL_V3_SCHEMA}):
+                            or not event_plan and marker in {EVENT_PLAN_SCHEMA, EVENT_PLAN_V2_SCHEMA,
+                                NODE_LOCAL_V3_SCHEMA, NODE_LOCAL_V4_SCHEMA}):
                         raise ValueError
+                    if staged:
+                        semantic_output_schema(messages)
                 if piece:
                     if not natural or request['candidate_format'] != PIECE_CANDIDATE_FORMAT:
                         raise ValueError
@@ -1204,10 +1346,18 @@ def make_handler(generate, *, api_key, model_name, deadline, max_requests,
                 if not max_requests:
                     generation_stage('admitted')
                 end = min(deadline, time.monotonic() + selected_seconds)
-                text, finish = (generate(messages, end, profile="piece" if piece else "natural")
+                generated = (generate(messages, end, profile='event_plan', output_tokens=selected_tokens)
+                                if staged else generate(messages, end, profile="piece" if piece else "natural")
                                 if natural else generate(messages, end,
                                     profile='event_plan_base' if event_plan_base else 'event_plan')
                                 if event_plan else generate(messages, end))
+                if staged:
+                    text, finish, usage = generated
+                    if (type(usage) is not dict or type(usage.get('completion_tokens')) is not int
+                            or not 1 <= usage['completion_tokens'] <= selected_tokens):
+                        raise ValueError('semantic_phase_usage_invalid')
+                else:
+                    text, finish = generated
                 if finish not in {"stop", "length"} or not isinstance(text, str):
                     raise ValueError
                 status, body = 200, {"model": selected_model, "choices": [{
@@ -1217,8 +1367,10 @@ def make_handler(generate, *, api_key, model_name, deadline, max_requests,
                     body['candidate_format'] = PIECE_CANDIDATE_FORMAT
                     if piece_revision is not None:
                         body['revision'] = piece_revision
+                if staged:
+                    body['usage'] = usage
             except Exception as exc:
-                if not max_requests:
+                if staged or not max_requests:
                     generation_failure(exc)
                 status, body = 503, {"error": "generation_unavailable"}
             finally:
@@ -1417,7 +1569,7 @@ def load_generator(adapter, process_stop, *, weights_sha256=None, config_sha256=
             self.expired = process_stop.is_set() or time.monotonic() >= self.end
             return self.expired
 
-    def generate(messages, end, *, profile=None):
+    def generate(messages, end, *, profile=None, output_tokens=None):
         if (piece_adapter is not None or event_plan_adapter is not None) and process_stop.is_set():
             raise ValueError('generation_stopping')
         if profile not in (None, "natural", "piece", "event_plan", "event_plan_base"):
@@ -1429,6 +1581,14 @@ def load_generator(adapter, process_stop, *, weights_sha256=None, config_sha256=
         use_semantic_json = semantic_json and profile != "natural"
         base_profile = profile in ("natural", "piece")
         output_budget = 2048 if base_profile else max_new_tokens
+        if output_tokens is not None:
+            material = json.loads(messages[1]['content'])
+            if (profile != 'event_plan' or material.get('model_schema') != NODE_LOCAL_V4_SCHEMA
+                    or type(output_tokens) is not int
+                    or material.get('author_phase') not in NODE_LOCAL_V4_PHASES
+                    or not 1 <= output_tokens <= min(4096, max_new_tokens)):
+                raise ValueError('semantic_phase_budget_invalid')
+            output_budget = output_tokens
         context_budget = 8192 if base_profile else context_tokens
         # Preserve the base identity previously connected for natural replies.
         # The analysis adapter stays loaded; its state is restored on context exit.
@@ -1495,7 +1655,10 @@ def load_generator(adapter, process_stop, *, weights_sha256=None, config_sha256=
             generation_stage('complete_' + finish)
             special = set(tokenizer.all_special_ids) | {token for token, value in tokenizer.added_tokens_decoder.items() if value.special}
             generation_stage('special_count_' + str(sum(int(token) in special for token in tokens)))
-        return tokenizer.decode(tokens, skip_special_tokens=True, clean_up_tokenization_spaces=False), finish
+        text = tokenizer.decode(tokens, skip_special_tokens=True, clean_up_tokenization_spaces=False)
+        if output_tokens is not None:
+            return text, finish, dict(prompt_tokens=count, completion_tokens=len(tokens), total_tokens=count + len(tokens))
+        return text, finish
     return generate
 
 

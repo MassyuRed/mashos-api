@@ -3936,6 +3936,16 @@ def expand_analysis_semantic_event_plan(prepared, packet):
     reference scope only; model facts and interpretations remain unassessed.
     Legacy profiles retain their original packet and compiler behavior.
     """
+    if (getattr(prepared, 'prompt_version', None) == 'semantic_map.node_local.v4'
+            or type(packet) is dict and packet.get('schema_version') == 'cocolon.analysis.semantic_map.node_local.model.v4'):
+        from .semantic_admission import (assemble_semantic_node_local_v4,
+            SEMANTIC_MAP_NODE_LOCAL_V3_PROFILE)
+        joined = assemble_semantic_node_local_v4(prepared, packet)
+        # Exact phase assembly: roots/prose/IDs were fixed and checked before
+        # this projection. No rejected sentence, edge or partial raw is fixed.
+        joined['nodes'] = [{k: v for k, v in n.items() if k != 'node_id'} for n in joined['nodes']]
+        return _expand_analysis_semantic_node_local_v3(
+            replace(prepared, prompt_version=SEMANTIC_MAP_NODE_LOCAL_V3_PROFILE), joined)
     if (getattr(prepared, 'prompt_version', None) == 'semantic_map.node_local.v3'
             or type(packet) is dict and packet.get('schema_version') == 'cocolon.analysis.semantic_map.node_local.model.v3'):
         return _expand_analysis_semantic_node_local_v3(prepared, packet)
@@ -4276,6 +4286,18 @@ def _semantic_node_local_review(graph, prepared, original, expanded):
 
 
 def _semantic_event_plan_review(graph, prepared, original, expanded):
+    if getattr(prepared, 'prompt_version', None) == 'semantic_map.node_local.v4':
+        from .semantic_admission import (assemble_semantic_node_local_v4,
+            semantic_map_canonical, semantic_map_hash)
+        joined = assemble_semantic_node_local_v4(prepared, original)
+        graph = _semantic_node_local_review(graph, prepared, joined, expanded)
+        review = json.loads(graph.meaning_review_json)
+        review['node_local_plan']['phase_artifact'] = deepcopy(original)
+        review['node_local_plan']['phase_count'] = 3
+        review['node_local_plan']['phase_raw_hashes'] = [p['raw_sha256'] for p in original['phases']]
+        review['node_local_plan']['final_artifact_sha256'] = semantic_map_hash(original)
+        review['node_local_plan']['realization'] = 'PLANNED_ROOTS_THEN_NODE_PROSE_THEN_ACTUAL_NODE_RELATIONS'
+        return replace(graph, meaning_review_json=semantic_map_canonical(review))
     if getattr(prepared, 'prompt_version', None) == 'semantic_map.node_local.v3':
         return _semantic_node_local_review(graph, prepared, original, expanded)
     if getattr(prepared, 'prompt_version', None) not in {'semantic_map.event_plan.v1', 'semantic_map.event_plan.v2'}:
@@ -4304,7 +4326,7 @@ def compile_analysis_semantic_stage(stage, packet, *, response_sha256):
     parent = stage.parent
     original_packet = packet
     expansion_view = (replace(parent, material_json=stage.material_json)
-        if stage.prompt_version == 'semantic_map.node_local.v3' else parent)
+        if stage.prompt_version in {'semantic_map.node_local.v3', 'semantic_map.node_local.v4'} else parent)
     packet = expand_analysis_semantic_event_plan(expansion_view, packet)
     material = json.loads(stage.material_json)
     history_profile = SEMANTIC_HISTORY_MERGE_PROFILE if stage.kind == 'MERGE' else SEMANTIC_HISTORY_PROFILE
@@ -4350,6 +4372,8 @@ def compile_analysis_semantic_stage(stage, packet, *, response_sha256):
     corrections = (_semantic_history_corrections(parent, stage.record_refs)
         if stage.kind == 'LEAF' else json.loads(parent.map_correction_sources_json or '[]'))
     view = replace(parent, map_correction_sources_json=semantic_map_canonical(corrections) if corrections else '')
+    if stage.prompt_version == 'semantic_map.node_local.v4':
+        view = replace(view, material_json=stage.material_json)
     graph = _compile_analysis_semantic_map_v2(view, packet, response_sha256=response_sha256)
     graph = _semantic_event_plan_review(graph, view, original_packet, packet)
     nodes = json.loads(graph.nodes_json)

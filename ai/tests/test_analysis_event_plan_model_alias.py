@@ -126,6 +126,7 @@ def test_if_original_identity_matches_existing_current_4b_fixture():
 
 
 @pytest.mark.parametrize('selector,alias,expected,budget', [
+    (sources.SEMANTIC_SELECTOR, sources.SEMANTIC_NODE_LOCAL_V4_MODEL, sources.SEMANTIC_EVENT_PLAN_BASE_MODEL, 4096),
     (sources.SEMANTIC_SELECTOR, ALIAS, 'cocolon-qwen3.5-4b-analysis-semantic-120u', 4096),
     (sources.SEMANTIC_SELECTOR, ALIAS + '-unknown', ALIAS + '-unknown', 4096),
     (sources.SEMANTIC_SELECTOR, 'existing-analysis-4b', 'existing-analysis-4b', 4096),
@@ -148,14 +149,15 @@ def if_prepared():
     return if_route.prepare_if_model_request(request(count=2, legacy=True))
 
 
-def test_if_wire_uses_original_120u_under_map_candidate_and_native_does_not_switch_adapter(monkeypatch):
+@pytest.mark.parametrize('map_alias', [ALIAS, sources.SEMANTIC_NODE_LOCAL_V4_MODEL])
+def test_if_wire_uses_original_120u_under_map_candidate_and_native_does_not_switch_adapter(monkeypatch, map_alias):
     from io import BytesIO
     from types import SimpleNamespace
     import time
     import analysis_if_model_source as if_source
     from test_emlis_natural_reply_probe_http import probe
     from test_analysis_if_routes import packet as if_packet
-    settings = environment(monkeypatch)
+    settings = environment(monkeypatch, model=map_alias)
     source = if_source.application_analysis_if_model_source()
     prepared = if_prepared()
     authored = json.dumps(if_packet(prepared), ensure_ascii=False)
@@ -165,7 +167,7 @@ def test_if_wire_uses_original_120u_under_map_candidate_and_native_does_not_swit
         assert messages == prepared.messages()
         return authored, 'stop'
     handler_type = probe.make_handler(generate, api_key=KEY,
-        model_name=sources.SEMANTIC_EVENT_PLAN_BASE_MODEL, event_plan_model=ALIAS,
+        model_name=sources.SEMANTIC_EVENT_PLAN_BASE_MODEL, event_plan_model=map_alias,
         deadline=time.monotonic() + 30, max_requests=1, max_new_tokens=4096)
     def receive(request):
         body = json.loads(request.content)
@@ -204,3 +206,4 @@ def test_if_candidate_remap_still_rejects_configuration_changes_before_request(m
         pytest.fail('changed configuration must not acquire IF response'))
     with pytest.raises(RuntimeError, match='analysis_if_model_configuration_changed'):
         asyncio.run(source(prepared))
+
