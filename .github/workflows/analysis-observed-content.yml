@@ -97,6 +97,8 @@ name: Analysis observed content
       - ai/tests/test_analysis_node_local_v3_lesson.py
       - ai/tests/test_analysis_semantic_text_views.py
       - ai/tests/test_analysis_node_local_native_profile.py
+      - ai/tests/test_analysis_node_local_v4_phases.py
+      - ai/tests/test_analysis_node_local_bound_roots.py
       - supabase/migrations/*_emlis_natural_bound_questions.sql
       - ai/tests/test_emlis_natural_reply_meaning_reuse.py
       - ai/tests/test_emlis_natural_reply_meaning_budget.py
@@ -311,6 +313,8 @@ jobs:
           ai/tests/test_analysis_node_local_v3_lesson.py
           ai/tests/test_analysis_semantic_text_views.py
           ai/tests/test_analysis_node_local_native_profile.py
+          ai/tests/test_analysis_node_local_v4_phases.py
+          ai/tests/test_analysis_node_local_bound_roots.py
           ai/tests/test_analysis_semantic_history_core.py
           ai/tests/test_analysis_semantic_history_planner.py
           ai/tests/test_analysis_semantic_history_service.py

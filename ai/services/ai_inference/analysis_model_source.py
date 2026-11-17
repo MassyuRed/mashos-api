@@ -22,6 +22,7 @@ SEMANTIC_EVENT_PLAN_V2_BASE_MODEL = 'cocolon-qwen3.5-4b-analysis-event-plan-v2-b
 SEMANTIC_NODE_LOCAL_V3_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v3'
 SEMANTIC_NODE_LOCAL_V3_BASE_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v3-base-851bf6e'
 SEMANTIC_NODE_LOCAL_V4_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v4'
+SEMANTIC_NODE_LOCAL_V4_BOUND_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v4-bound-roots'
 SEMANTIC_EVENT_PLAN_BASE_MODEL = 'cocolon-qwen3.5-4b-analysis-semantic-120u'
 MAX_RESPONSE_BYTES = 262144
 DEFAULT_PROMPT_VERSION = 'selected_material.v4'
@@ -144,11 +145,11 @@ class SelfHostedSemanticAnalysisModelSource(SelfHostedAnalysisModelSource):
         from cocolon_meaning_experience_engine.cores.analysis.semantic_admission import (
             SEMANTIC_MAP_PROFILE, SEMANTIC_MAP_SOURCE_DUTIES_PROFILE, SEMANTIC_MAP_EVENT_PLAN_PROFILE,
             SEMANTIC_MAP_EVENT_PLAN_V2_PROFILE, SEMANTIC_MAP_NODE_LOCAL_V3_PROFILE,
-            SEMANTIC_MAP_NODE_LOCAL_V4_PROFILE)
+            SEMANTIC_MAP_NODE_LOCAL_V4_PROFILES)
         if type(semantic_prompt_version) is not str or semantic_prompt_version not in {
                 SEMANTIC_MAP_PROFILE, SEMANTIC_MAP_SOURCE_DUTIES_PROFILE, SEMANTIC_MAP_EVENT_PLAN_PROFILE,
                 SEMANTIC_MAP_EVENT_PLAN_V2_PROFILE, SEMANTIC_MAP_NODE_LOCAL_V3_PROFILE,
-                SEMANTIC_MAP_NODE_LOCAL_V4_PROFILE}:
+                *SEMANTIC_MAP_NODE_LOCAL_V4_PROFILES}:
             raise ValueError('analysis_model_configuration_invalid')
         super().__init__(endpoint=endpoint, model=model, api_key=api_key, transport=transport)
         self._prompt_version = semantic_prompt_version
@@ -223,7 +224,7 @@ class SelfHostedSemanticAnalysisModelSource(SelfHostedAnalysisModelSource):
                         nodes = core.semantic_node_local_v4_nodes(prepared, plan, value)
                     else:
                         core.semantic_node_local_v4_relations(prepared, plan, nodes, value)
-            artifact = dict(schema_version=core.SEMANTIC_MAP_NODE_LOCAL_V4_SCHEMA, phases=receipts)
+            artifact = dict(schema_version=core.semantic_node_local_v4_artifact_schema(prepared), phases=receipts)
             core.assemble_semantic_node_local_v4(prepared, artifact)
             if loop.time() >= end:
                 raise TimeoutError('analysis_model_source_timeout')
@@ -248,7 +249,7 @@ class SelfHostedSemanticAnalysisModelSource(SelfHostedAnalysisModelSource):
         require(type(prepared) in {SemanticMapInput, AnalysisSemanticMapStageInput}
             and prepared.prompt_version == self.prompt_version,
             'analysis_semantic_input_invalid')
-        if self.prompt_version == 'semantic_map.node_local.v4':
+        if self.prompt_version in {'semantic_map.node_local.v4', 'semantic_map.node_local.v4.bound_roots.v1'}:
             return await self._node_local_v4(prepared)
         messages = prepared.messages()
         require(semantic_analysis_input_fits(prepared), 'analysis_semantic_history_capacity_exceeded')
@@ -300,7 +301,10 @@ def _configured_semantic_prompt_version(model):
     """
     from cocolon_meaning_experience_engine.cores.analysis.semantic_admission import (
         SEMANTIC_MAP_PROFILE, SEMANTIC_MAP_EVENT_PLAN_PROFILE, SEMANTIC_MAP_EVENT_PLAN_V2_PROFILE,
-        SEMANTIC_MAP_NODE_LOCAL_V3_PROFILE, SEMANTIC_MAP_NODE_LOCAL_V4_PROFILE)
+        SEMANTIC_MAP_NODE_LOCAL_V3_PROFILE, SEMANTIC_MAP_NODE_LOCAL_V4_PROFILE,
+        SEMANTIC_MAP_NODE_LOCAL_V4_BOUND_PROFILE)
+    if model == SEMANTIC_NODE_LOCAL_V4_BOUND_MODEL:
+        return SEMANTIC_MAP_NODE_LOCAL_V4_BOUND_PROFILE
     if model == SEMANTIC_NODE_LOCAL_V4_MODEL:
         return SEMANTIC_MAP_NODE_LOCAL_V4_PROFILE
     if model in {SEMANTIC_NODE_LOCAL_V3_MODEL, SEMANTIC_NODE_LOCAL_V3_BASE_MODEL}:

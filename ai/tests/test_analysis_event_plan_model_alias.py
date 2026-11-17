@@ -126,6 +126,7 @@ def test_if_original_identity_matches_existing_current_4b_fixture():
 
 
 @pytest.mark.parametrize('selector,alias,expected,budget', [
+    (sources.SEMANTIC_SELECTOR, sources.SEMANTIC_NODE_LOCAL_V4_BOUND_MODEL, sources.SEMANTIC_EVENT_PLAN_BASE_MODEL, 4096),
     (sources.SEMANTIC_SELECTOR, sources.SEMANTIC_NODE_LOCAL_V4_MODEL, sources.SEMANTIC_EVENT_PLAN_BASE_MODEL, 4096),
     (sources.SEMANTIC_SELECTOR, ALIAS, 'cocolon-qwen3.5-4b-analysis-semantic-120u', 4096),
     (sources.SEMANTIC_SELECTOR, ALIAS + '-unknown', ALIAS + '-unknown', 4096),
@@ -149,7 +150,7 @@ def if_prepared():
     return if_route.prepare_if_model_request(request(count=2, legacy=True))
 
 
-@pytest.mark.parametrize('map_alias', [ALIAS, sources.SEMANTIC_NODE_LOCAL_V4_MODEL])
+@pytest.mark.parametrize('map_alias', [ALIAS, sources.SEMANTIC_NODE_LOCAL_V4_MODEL, sources.SEMANTIC_NODE_LOCAL_V4_BOUND_MODEL])
 def test_if_wire_uses_original_120u_under_map_candidate_and_native_does_not_switch_adapter(monkeypatch, map_alias):
     from io import BytesIO
     from types import SimpleNamespace

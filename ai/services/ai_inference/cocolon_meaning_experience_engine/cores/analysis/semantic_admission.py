@@ -2322,6 +2322,10 @@ SEMANTIC_MAP_EVENT_PLAN_V2_SCHEMA = 'cocolon.analysis.semantic_map.event_plan.mo
 SEMANTIC_MAP_NODE_LOCAL_V3_PROFILE = 'semantic_map.node_local.v3'
 SEMANTIC_MAP_NODE_LOCAL_V3_SCHEMA = 'cocolon.analysis.semantic_map.node_local.model.v3'
 SEMANTIC_MAP_NODE_LOCAL_V4_PROFILE = 'semantic_map.node_local.v4'
+SEMANTIC_MAP_NODE_LOCAL_V4_BOUND_PROFILE = 'semantic_map.node_local.v4.bound_roots.v1'
+SEMANTIC_MAP_NODE_LOCAL_V4_PROFILES = frozenset({SEMANTIC_MAP_NODE_LOCAL_V4_PROFILE,
+    SEMANTIC_MAP_NODE_LOCAL_V4_BOUND_PROFILE})
+SEMANTIC_MAP_NODE_LOCAL_V4_BOUND_SCHEMA = 'cocolon.analysis.semantic_map.node_local.model.v4.bound_roots.v1'
 SEMANTIC_MAP_NODE_LOCAL_V4_SCHEMA = 'cocolon.analysis.semantic_map.node_local.model.v4'
 SEMANTIC_MAP_NODE_LOCAL_V4_PHASES = ('PLAN', 'NODES', 'RELATIONS')
 SEMANTIC_MAP_NODE_LOCAL_V4_TOKEN_BUDGET = 4096
@@ -2594,6 +2598,17 @@ def _semantic_v4_schema(phase):
     return SEMANTIC_MAP_NODE_LOCAL_V4_SCHEMA + '.' + phase.lower()
 
 
+def semantic_node_local_v4_artifact_schema(prepared):
+    return (SEMANTIC_MAP_NODE_LOCAL_V4_BOUND_SCHEMA
+        if prepared.prompt_version == SEMANTIC_MAP_NODE_LOCAL_V4_BOUND_PROFILE
+        else SEMANTIC_MAP_NODE_LOCAL_V4_SCHEMA)
+
+
+def _semantic_v4_assigned_evidence(roots):
+    return {'e' + str(i): dict(source_quote=root['quote'], source_field=root['field'])
+        for i, root in enumerate(roots['evidence'], 1)}
+
+
 def _semantic_v4_view(prepared):
     return (replace(prepared.parent, material_json=prepared.material_json)
         if type(prepared) is AnalysisSemanticMapStageInput else prepared)
@@ -2656,7 +2671,13 @@ def semantic_node_local_v4_nodes(prepared, plan, packet):
             and (node['meaning'] == '' or _semantic_map_text(node['meaning'], 240)), reason)
         for i, roots in enumerate(planned['units'], 1):
             unit = node['units']['u' + str(i)]
-            r(_semantic_map_keys(unit, {'source_mode', 'fact', 'unknowns'})
+            bound = prepared.prompt_version == SEMANTIC_MAP_NODE_LOCAL_V4_BOUND_PROFILE
+            keys = {'source_mode', 'fact', 'unknowns'} | ({'assigned_evidence'} if bound else set())
+            if bound:
+                r(type(unit) is dict and type(unit.get('assigned_evidence')) is dict
+                    and semantic_map_canonical(unit['assigned_evidence']) == semantic_map_canonical(
+                        _semantic_v4_assigned_evidence(roots)), reason)
+            r(_semantic_map_keys(unit, keys)
                 and type(unit['source_mode']) is str
                 and unit['source_mode'] in {'RECORDED', 'PERSON_JUDGMENT', 'PERSON_WISH', 'DECIDED_PLAN'}
                 and _semantic_map_text(unit['fact'], 160) and type(unit['unknowns']) is list
@@ -2682,7 +2703,8 @@ def _semantic_v4_join(plan, bodies):
     nodes = []
     for planned in plan['nodes']:
         body = bodies['nodes'][planned['node_id']]
-        units = [dict(evidence=roots['evidence'], **body['units']['u' + str(i)])
+        units = [dict(evidence=roots['evidence'], **{k: body['units']['u' + str(i)][k]
+            for k in ('source_mode', 'fact', 'unknowns')})
             for i, roots in enumerate(planned['units'], 1)]
         nodes.append(dict(node_id=planned['node_id'], units=units,
             **{k: body[k] for k in ('node_kind', 'perspective', 'title', 'meaning')}))
@@ -2727,15 +2749,24 @@ titleは80字、meaningは240字以内。そのnodeの全unitだけから読め�
 source_dutiesは既存読取りの確認範囲で、一般理解の保証ではありません。未評価範囲もfields全文から読みます。candidate_nodesは前段のAI文章であり、本人事実へ昇格せず、原文根拠へ戻って関係を判断します。"""
 
 
-def _semantic_v4_instruction(phase):
-    return _SEMANTIC_V4_COMMON + '\n' + {
+def _semantic_v4_instruction(phase, *, bound=False):
+    instruction = _SEMANTIC_V4_COMMON + '\n' + {
         'PLAN': '今は根拠と全体構成だけを選びます。rootはschema_version,nodes。各nodeは本文より前にnode_id=n1,n2,...を確定し、unitsを1〜2件配置します。unitはevidenceのみ、quoteとfieldの一意な連続原文1〜4件です。nodesは1〜12件。fact・title・meaning・関係線はまだ書きません。全体の根拠配置を先に完了します。',
         'NODES': '今は確定planの項目を文章化します。根拠・unit数・IDは再選択しません。rootはschema_version,plan_sha256,nodes。nodesはn1等をkeyとするobject、各nodeのunitsもu1等をkeyとするobjectです。unitはsource_mode,fact,unknowns。nodeはunits,node_kind,perspective,title,meaning。node_kindはSELF_POSITION/TARGET_MEANING/CHOICE_OUTPUT/STATE_CONTEXT、perspectiveはSELF/OBSERVED_INTERACTION。unknownはsource_quote,source_fieldで、そのunit引用内の留保です。別unitの状態は借りません。',
         'RELATIONS': '今は完成candidate_nodesの実IDと原文根拠から関係と概要を選びます。rootはschema_version,nodes_sha256,edges,overview。edgeはfrom,to,label,relation_kindの順です。両端原文が示す関係内容をlabel80字以内へ書いてから、SELF_OUTSIDE_GAP/CRITERION_EXPRESSION/CONTEXT_CONTRAST/SHARED_MEANINGへ分類します。関係なしはedges=[]。種別を埋めるため同じ関係を繰返しません。overviewはtitle80字以内,node_refs1〜8件で重複なし。別の事実文は作りません。'
     }[phase] + '\nMarkdownや前後文を付けず、この段階のJSONだけを返します。'
+    if bound and phase == 'NODES':
+        instruction = instruction.replace('unitはsource_mode,fact,unknowns。',
+            'unitはassigned_evidence,source_mode,fact,unknowns。')
+        instruction += ('\n各unitはassigned_evidenceを先頭に置きます。e1等のsource_quote/source_fieldは'
+            '確定planの当該unit原根拠をそのまま再掲する固定値です。根拠ごとの主体・対象・時点を保ち、'
+            'その直後のsource_mode/fact/unknownsに使う事実は当該unit引用からだけ取り出します。'
+            '複数引用があっても引用一件ごとに次のnodeへ順送りしません。'
+            '別の出来事を同一の対象や因果関係へまとめる説明は加えません。')
+    return instruction
 
 
-def _semantic_v4_lesson(stage, phase):
+def _semantic_v4_lesson(stage, phase, *, bound=False):
     material, old = _semantic_node_local_v3_lesson_instruction(stage, _parts=True)
     plan = dict(schema_version=_semantic_v4_schema('PLAN'), nodes=[
         dict(node_id='n' + str(i), units=[dict(evidence=u['evidence']) for u in n['units']])
@@ -2745,12 +2776,20 @@ def _semantic_v4_lesson(stage, phase):
             for k in ('source_mode', 'fact', 'unknowns')} for j, u in enumerate(n['units'], 1)},
             **{k: n[k] for k in ('node_kind', 'perspective', 'title', 'meaning')})
             for i, n in enumerate(old['nodes'], 1)})
+    if bound:
+        for node in plan['nodes']:
+            for i, roots in enumerate(node['units'], 1):
+                units = bodies['nodes'][node['node_id']]['units']
+                key = 'u' + str(i)
+                units[key] = dict(assigned_evidence=_semantic_v4_assigned_evidence(roots), **units[key])
     registry = _semantic_v4_join(plan, bodies)
     relations = dict(schema_version=_semantic_v4_schema('RELATIONS'),
         nodes_sha256=semantic_map_hash(registry),
         edges=[{k: edge[k] for k in ('from', 'to', 'label', 'relation_kind')} for edge in old['edges']],
         overview=old['overview'])
     material.update(model_schema=SEMANTIC_MAP_NODE_LOCAL_V4_SCHEMA, author_phase=phase)
+    if bound:
+        material['author_profile'] = SEMANTIC_MAP_NODE_LOCAL_V4_BOUND_PROFILE
     if phase != 'PLAN':
         material['plan'] = plan
     if phase == 'RELATIONS':
@@ -2762,10 +2801,13 @@ def _semantic_v4_lesson(stage, phase):
 
 
 def semantic_node_local_v4_messages(prepared, phase='PLAN', *, plan=None, nodes=None):
-    _semantic_map_require(prepared.prompt_version == SEMANTIC_MAP_NODE_LOCAL_V4_PROFILE
+    _semantic_map_require(prepared.prompt_version in SEMANTIC_MAP_NODE_LOCAL_V4_PROFILES
         and phase in SEMANTIC_MAP_NODE_LOCAL_V4_PHASES, 'analysis_semantic_node_local_v4_phase_invalid')
     material = json.loads(prepared.material_json)
+    bound = prepared.prompt_version == SEMANTIC_MAP_NODE_LOCAL_V4_BOUND_PROFILE
     material.update(model_schema=SEMANTIC_MAP_NODE_LOCAL_V4_SCHEMA, author_phase=phase)
+    if bound:
+        material['author_profile'] = SEMANTIC_MAP_NODE_LOCAL_V4_BOUND_PROFILE
     if phase != 'PLAN':
         semantic_node_local_v4_plan(prepared, plan)
         material['plan'] = json.loads(semantic_map_canonical(plan))
@@ -2773,7 +2815,7 @@ def semantic_node_local_v4_messages(prepared, phase='PLAN', *, plan=None, nodes=
         semantic_node_local_v4_nodes(prepared, plan, nodes)
         material['candidate_nodes'] = _semantic_v4_join(plan, nodes)
     stage = material.get('history_stage', {}).get('kind')
-    instruction = _semantic_v4_instruction(phase) + _semantic_v4_lesson(stage, phase)
+    instruction = _semantic_v4_instruction(phase, bound=bound) + _semantic_v4_lesson(stage, phase, bound=bound)
     instruction = _semantic_v4_view(prepared)._source_instruction(instruction, material)
     if stage == 'LEAF':
         instruction += '\n今はLEAFです。提示recordのみを扱い、edgesは[]です。'
@@ -2787,9 +2829,9 @@ def semantic_node_local_v4_messages(prepared, phase='PLAN', *, plan=None, nodes=
 def assemble_semantic_node_local_v4(prepared, packet):
     """Recheck three unmodified raw/finish/message receipts before projection."""
     r, reason = _semantic_map_require, 'analysis_semantic_node_local_v4_lineage_invalid'
-    r(prepared.prompt_version == SEMANTIC_MAP_NODE_LOCAL_V4_PROFILE
+    r(prepared.prompt_version in SEMANTIC_MAP_NODE_LOCAL_V4_PROFILES
         and _semantic_map_keys(packet, {'schema_version', 'phases'})
-        and packet['schema_version'] == SEMANTIC_MAP_NODE_LOCAL_V4_SCHEMA
+        and packet['schema_version'] == semantic_node_local_v4_artifact_schema(prepared)
         and type(packet['phases']) is list and len(packet['phases']) == 3, reason)
     plan = nodes = joined = None
     used_tokens = 0
@@ -2997,7 +3039,7 @@ class AnalysisSemanticMapInput:
     map_correction_sources_json: str = ''
 
     def messages(self, *, _lesson_stage=None):
-        if self.prompt_version == SEMANTIC_MAP_NODE_LOCAL_V4_PROFILE:
+        if self.prompt_version in SEMANTIC_MAP_NODE_LOCAL_V4_PROFILES:
             return semantic_node_local_v4_messages(self)
         instruction = (_SEMANTIC_MAP_NODE_LOCAL_V3_INSTRUCTION + _semantic_node_local_v3_lesson_instruction(_lesson_stage)
             if self.prompt_version == SEMANTIC_MAP_NODE_LOCAL_V3_PROFILE else
@@ -3012,7 +3054,7 @@ class AnalysisSemanticMapInput:
 
     def _source_instruction(self, instruction, material):
         if (self.prompt_version == SEMANTIC_MAP_SOURCE_DUTIES_PROFILE
-                or self.prompt_version == SEMANTIC_MAP_NODE_LOCAL_V4_PROFILE and 'source_duties' in material):
+                or self.prompt_version in SEMANTIC_MAP_NODE_LOCAL_V4_PROFILES and 'source_duties' in material):
             instruction += _SEMANTIC_MAP_SOURCE_DUTIES_INSTRUCTION
         if self.active_source_updates:
             instruction += ('\nfieldsには本人の明示した訂正・撤回後の有効部分だけを提示しています。'
@@ -3048,7 +3090,7 @@ def prepare_analysis_semantic_map(request, snapshot, *,
     _semantic_map_require(prompt_version in {SEMANTIC_MAP_PROFILE,
         SEMANTIC_MAP_SOURCE_DUTIES_PROFILE, SEMANTIC_MAP_EVENT_PLAN_PROFILE,
         SEMANTIC_MAP_EVENT_PLAN_V2_PROFILE, SEMANTIC_MAP_NODE_LOCAL_V3_PROFILE,
-        SEMANTIC_MAP_NODE_LOCAL_V4_PROFILE}, 'analysis_semantic_input_invalid')
+        *SEMANTIC_MAP_NODE_LOCAL_V4_PROFILES}, 'analysis_semantic_input_invalid')
     source_request = request
     _semantic_map_require(type(snapshot.get('guard')) is str and re.fullmatch(
         r'analysis-db-cumulative-v1:[0-9a-f]{64}', snapshot['guard']), 'analysis_model_guard_invalid')
@@ -3197,10 +3239,12 @@ def prepare_analysis_semantic_map(request, snapshot, *,
         material['model_schema'] = SEMANTIC_MAP_EVENT_PLAN_V2_SCHEMA
     elif prompt_version == SEMANTIC_MAP_NODE_LOCAL_V3_PROFILE:
         material['model_schema'] = SEMANTIC_MAP_NODE_LOCAL_V3_SCHEMA
-    elif prompt_version == SEMANTIC_MAP_NODE_LOCAL_V4_PROFILE:
+    elif prompt_version in SEMANTIC_MAP_NODE_LOCAL_V4_PROFILES:
         material['model_schema'] = SEMANTIC_MAP_NODE_LOCAL_V4_SCHEMA
+        if prompt_version == SEMANTIC_MAP_NODE_LOCAL_V4_BOUND_PROFILE:
+            material['author_profile'] = SEMANTIC_MAP_NODE_LOCAL_V4_BOUND_PROFILE
     source_duties_json = ''
-    if prompt_version in {SEMANTIC_MAP_SOURCE_DUTIES_PROFILE, SEMANTIC_MAP_NODE_LOCAL_V4_PROFILE}:
+    if prompt_version in {SEMANTIC_MAP_SOURCE_DUTIES_PROFILE, *SEMANTIC_MAP_NODE_LOCAL_V4_PROFILES}:
         from .intent_compiler import (analysis_semantic_source_duties,
             analysis_semantic_source_duties_material)
         duties = analysis_semantic_source_duties(frozen, tuple(stored_fields))
@@ -3324,7 +3368,7 @@ class AnalysisSemanticMapStageInput:
         return self.parent.prompt_version
 
     def messages(self):
-        if self.prompt_version == SEMANTIC_MAP_NODE_LOCAL_V4_PROFILE:
+        if self.prompt_version in SEMANTIC_MAP_NODE_LOCAL_V4_PROFILES:
             return semantic_node_local_v4_messages(self)
         instruction = self.parent.messages(_lesson_stage=self.kind)[0]['content']
         instruction += ('\n現在は全履歴の' + self.kind + '段階です。field番号は親の原文欄番号のままです。' +
@@ -3439,7 +3483,7 @@ def _semantic_history_leaf_packet(stage, response):
     from .intent_compiler import expand_analysis_semantic_event_plan
     expansion_view = (replace(stage.parent, material_json=stage.material_json)
         if stage.prompt_version in {SEMANTIC_MAP_NODE_LOCAL_V3_PROFILE,
-            SEMANTIC_MAP_NODE_LOCAL_V4_PROFILE} else stage.parent)
+            *SEMANTIC_MAP_NODE_LOCAL_V4_PROFILES} else stage.parent)
     return expand_analysis_semantic_event_plan(expansion_view, packet), graph
 
 

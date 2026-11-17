@@ -35,6 +35,8 @@ EVENT_PLAN_V2_MODEL = 'cocolon-qwen3.5-4b-analysis-event-plan-v2'
 EVENT_PLAN_V2_BASE_MODEL = 'cocolon-qwen3.5-4b-analysis-event-plan-v2-base-851bf6e'
 NODE_LOCAL_V3_SCHEMA = 'cocolon.analysis.semantic_map.node_local.model.v3'
 NODE_LOCAL_V4_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v4'
+NODE_LOCAL_V4_BOUND_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v4-bound-roots'
+NODE_LOCAL_V4_BOUND_PROFILE = 'semantic_map.node_local.v4.bound_roots.v1'
 NODE_LOCAL_V4_SCHEMA = 'cocolon.analysis.semantic_map.node_local.model.v4'
 NODE_LOCAL_V4_PHASES = ('PLAN', 'NODES', 'RELATIONS')
 NODE_LOCAL_V3_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v3'
@@ -354,6 +356,10 @@ def _semantic_node_local_v4_schema(material, pairs, unknown_pairs, *, leaf=False
         return obj(dict(schema_version=dict(type='string',
             enum=[NODE_LOCAL_V4_SCHEMA + '.' + phase.lower()]), **props))
     phase = material.get('author_phase')
+    author_profile = material.get('author_profile')
+    if author_profile not in (None, NODE_LOCAL_V4_BOUND_PROFILE):
+        raise ValueError('semantic_v4_profile_invalid')
+    bound = author_profile == NODE_LOCAL_V4_BOUND_PROFILE
     if phase == 'PLAN':
         unit = obj(dict(evidence=dict(type='array', items=dict(oneOf=pairs), minItems=1, maxItems=4)))
         node = obj(dict(node_id=dict(type='string', enum=['n' + str(i) for i in range(1, 13)]),
@@ -397,9 +403,16 @@ def _semantic_node_local_v4_schema(material, pairs, unknown_pairs, *, leaf=False
                     qualifications.append(part)
             unknowns = (dict(type='array', items=dict(oneOf=qualifications), maxItems=2)
                 if qualifications else dict(type='array', items=dict(type='object'), maxItems=0))
-            units['u' + str(j)] = obj(dict(source_mode=dict(type='string', enum=[
+            properties = dict(source_mode=dict(type='string', enum=[
                 'RECORDED', 'PERSON_JUDGMENT', 'PERSON_WISH', 'DECIDED_PLAN']),
-                fact=text(160), unknowns=unknowns))
+                fact=text(160), unknowns=unknowns)
+            if bound:
+                assigned = {'e' + str(k): obj(dict(
+                    source_quote=dict(type='string', enum=[p['quote']]),
+                    source_field=dict(type='integer', enum=[p['field']])))
+                    for k, p in enumerate(roots, 1)}
+                properties = dict(assigned_evidence=obj(assigned), **properties)
+            units['u' + str(j)] = obj(properties)
         node_properties[node['node_id']] = obj(dict(units=obj(units),
             node_kind=dict(type='string', enum=['SELF_POSITION', 'TARGET_MEANING', 'CHOICE_OUTPUT', 'STATE_CONTEXT']),
             perspective=dict(type='string', enum=['SELF', 'OBSERVED_INTERACTION']),
@@ -1290,7 +1303,7 @@ def make_handler(generate, *, api_key, model_name, deadline, max_requests,
                     EVENT_PLAN_V2_BASE_MODEL, NODE_LOCAL_V3_BASE_MODEL}
                 if event_plan:
                     selected_model = event_plan_model
-                staged = event_plan and event_plan_model == NODE_LOCAL_V4_MODEL
+                staged = event_plan and event_plan_model in {NODE_LOCAL_V4_MODEL, NODE_LOCAL_V4_BOUND_MODEL}
                 if staged:
                     material = json.loads(messages[1]['content'])
                     if material.get('author_phase') not in NODE_LOCAL_V4_PHASES:
@@ -1319,7 +1332,7 @@ def make_handler(generate, *, api_key, model_name, deadline, max_requests,
                     except (ValueError, TypeError):
                         material = None
                     marker = material.get('model_schema') if type(material) is dict else None
-                    expected_marker = (NODE_LOCAL_V4_SCHEMA if event_plan_model == NODE_LOCAL_V4_MODEL
+                    expected_marker = (NODE_LOCAL_V4_SCHEMA if event_plan_model in {NODE_LOCAL_V4_MODEL, NODE_LOCAL_V4_BOUND_MODEL}
                         else NODE_LOCAL_V3_SCHEMA if event_plan_model in {
                             NODE_LOCAL_V3_MODEL, NODE_LOCAL_V3_BASE_MODEL}
                         else EVENT_PLAN_V2_SCHEMA if event_plan_model in {
@@ -1329,6 +1342,10 @@ def make_handler(generate, *, api_key, model_name, deadline, max_requests,
                                 NODE_LOCAL_V3_SCHEMA, NODE_LOCAL_V4_SCHEMA}):
                         raise ValueError
                     if staged:
+                        expected_profile = (NODE_LOCAL_V4_BOUND_PROFILE
+                            if event_plan_model == NODE_LOCAL_V4_BOUND_MODEL else None)
+                        if material.get('author_profile') != expected_profile:
+                            raise ValueError
                         semantic_output_schema(messages)
                 if piece:
                     if not natural or request['candidate_format'] != PIECE_CANDIDATE_FORMAT:
