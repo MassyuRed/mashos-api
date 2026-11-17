@@ -2324,8 +2324,10 @@ SEMANTIC_MAP_NODE_LOCAL_V3_SCHEMA = 'cocolon.analysis.semantic_map.node_local.mo
 SEMANTIC_MAP_NODE_LOCAL_V4_PROFILE = 'semantic_map.node_local.v4'
 SEMANTIC_MAP_NODE_LOCAL_V4_BOUND_PROFILE = 'semantic_map.node_local.v4.bound_roots.v1'
 SEMANTIC_MAP_NODE_LOCAL_V4_BOUND_V2_PROFILE = 'semantic_map.node_local.v4.bound_roots.v2'
+SEMANTIC_MAP_OCCURRENCE_PROFILE = 'semantic_map.node_local.v4.occurrence.v1'
+SEMANTIC_MAP_OCCURRENCE_SCHEMA = 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v1'
 SEMANTIC_MAP_NODE_LOCAL_V4_BOUND_PROFILES = frozenset({SEMANTIC_MAP_NODE_LOCAL_V4_BOUND_PROFILE,
-    SEMANTIC_MAP_NODE_LOCAL_V4_BOUND_V2_PROFILE})
+    SEMANTIC_MAP_NODE_LOCAL_V4_BOUND_V2_PROFILE, SEMANTIC_MAP_OCCURRENCE_PROFILE})
 SEMANTIC_MAP_NODE_LOCAL_V4_PROFILES = frozenset({SEMANTIC_MAP_NODE_LOCAL_V4_PROFILE,
     *SEMANTIC_MAP_NODE_LOCAL_V4_BOUND_PROFILES})
 SEMANTIC_MAP_NODE_LOCAL_V4_BOUND_V2_SCHEMA = 'cocolon.analysis.semantic_map.node_local.model.v4.bound_roots.v2'
@@ -2603,6 +2605,8 @@ def _semantic_v4_schema(phase):
 
 
 def semantic_node_local_v4_artifact_schema(prepared):
+    if prepared.prompt_version == SEMANTIC_MAP_OCCURRENCE_PROFILE:
+        return SEMANTIC_MAP_OCCURRENCE_SCHEMA
     if prepared.prompt_version == SEMANTIC_MAP_NODE_LOCAL_V4_BOUND_V2_PROFILE:
         return SEMANTIC_MAP_NODE_LOCAL_V4_BOUND_V2_SCHEMA
     return (SEMANTIC_MAP_NODE_LOCAL_V4_BOUND_SCHEMA
@@ -2776,8 +2780,45 @@ def _semantic_v4_instruction(phase, *, bound=False, refs_first=False):
     return instruction
 
 
+def _semantic_occurrence_message(material):
+    """Place original record dates by original fields and the current phase's inputs last."""
+    dates = {row['record']: row['recorded_at'] for row in material['records']}
+    fields = []
+    for field in material['fields']:
+        if field['source_role'] == 'ORIGINAL_INPUT':
+            field = dict(field, original_recorded_at=dates[field['record']])
+        fields.append(field)
+    # Keep correction clocks and cohort refs as supplied. Neither is an event date.
+    ordered = {key: value for key, value in material.items()
+               if key not in {'records', 'fields', 'plan', 'candidate_nodes'}}
+    ordered.update(records=material['records'], fields=fields)
+    for key in ('plan', 'candidate_nodes'):
+        if key in material:
+            ordered[key] = material[key]
+    return json.dumps(ordered, ensure_ascii=False, separators=(',', ':'), allow_nan=False)
+
+
+def _semantic_occurrence_lesson_material(stage):
+    material, packet = _semantic_node_local_v3_lesson_instruction(stage, _parts=True)
+    if stage != 'LEAF':
+        # This is the same event recalled in a later record, distinct from that week's playing.
+        recall = '先週、隣室の試験中に私が弓で弾いたのは、あの開放弦の練習のことです。'
+        material['fields'][2]['text'] += recall
+        earlier = packet['nodes'][0]['units'][0]
+        earlier['evidence'].append(dict(quote=recall, field=3))
+        # Read the judgement towards its observed basis; the arrow here is non-temporal.
+        packet['edges'][0] = {
+            'from': 'n6', 'to': 'n1', 'relation_kind': 'CRITERION_EXPRESSION',
+            'label': '八回で習得したとは決めておらず、その試行で二本の弦が同時に鳴ったのは三回'}
+        packet['overview'] = dict(node_refs=['n1', 'n2', 'n7', 'n8'],
+            title='重音の練習と講師の返答、譜面台で確かめた材質と交換した留め具')
+    return material, packet
+
+
 def _semantic_v4_lesson(stage, phase, *, bound=False, author_profile=None):
-    material, old = _semantic_node_local_v3_lesson_instruction(stage, _parts=True)
+    occurrence = author_profile == SEMANTIC_MAP_OCCURRENCE_PROFILE
+    material, old = (_semantic_occurrence_lesson_material(stage) if occurrence
+        else _semantic_node_local_v3_lesson_instruction(stage, _parts=True))
     plan = dict(schema_version=_semantic_v4_schema('PLAN'), nodes=[
         dict(node_id='n' + str(i), units=[dict(evidence=u['evidence']) for u in n['units']])
         for i, n in enumerate(old['nodes'], 1)])
@@ -2798,7 +2839,7 @@ def _semantic_v4_lesson(stage, phase, *, bound=False, author_profile=None):
         edges=[{k: edge[k] for k in ('from', 'to', 'label', 'relation_kind')} for edge in old['edges']],
         overview=old['overview'])
     material.update(model_schema=SEMANTIC_MAP_NODE_LOCAL_V4_SCHEMA, author_phase=phase)
-    if author_profile == SEMANTIC_MAP_NODE_LOCAL_V4_BOUND_V2_PROFILE:
+    if author_profile in {SEMANTIC_MAP_NODE_LOCAL_V4_BOUND_V2_PROFILE, SEMANTIC_MAP_OCCURRENCE_PROFILE}:
         relations['overview'] = dict(node_refs=relations['overview']['node_refs'],
             title=relations['overview']['title'])
     if bound:
@@ -2808,7 +2849,8 @@ def _semantic_v4_lesson(stage, phase, *, bound=False, author_profile=None):
     if phase == 'RELATIONS':
         material['candidate_nodes'] = registry
     output = {'PLAN': plan, 'NODES': bodies, 'RELATIONS': relations}[phase]
-    return ('\n架空完成例（今回の本人事実ではない）。\n例入力=' + semantic_map_canonical(material)
+    lesson_input = _semantic_occurrence_message(material) if occurrence else semantic_map_canonical(material)
+    return ('\n架空完成例（今回の本人事実ではない）。\n例入力=' + lesson_input
         + '\n例出力=' + json.dumps(output, ensure_ascii=False, separators=(',', ':'))
         + '\n例はここまで。今回の原文と確定した段階材料だけを扱います。')
 
@@ -2828,17 +2870,36 @@ def semantic_node_local_v4_messages(prepared, phase='PLAN', *, plan=None, nodes=
         semantic_node_local_v4_nodes(prepared, plan, nodes)
         material['candidate_nodes'] = _semantic_v4_join(plan, nodes)
     stage = material.get('history_stage', {}).get('kind')
-    refs_first = prepared.prompt_version == SEMANTIC_MAP_NODE_LOCAL_V4_BOUND_V2_PROFILE
+    refs_first = prepared.prompt_version in {SEMANTIC_MAP_NODE_LOCAL_V4_BOUND_V2_PROFILE, SEMANTIC_MAP_OCCURRENCE_PROFILE}
     instruction = _semantic_v4_instruction(phase, bound=bound, refs_first=refs_first) + _semantic_v4_lesson(
         stage, phase, bound=bound, author_profile=prepared.prompt_version if refs_first else None)
     instruction = _semantic_v4_view(prepared)._source_instruction(instruction, material)
+    if prepared.prompt_version == SEMANTIC_MAP_OCCURRENCE_PROFILE and phase == 'NODES':
+        instruction += ('\n各unitで発言者、発言に登場する行為者、その行為について誰がどこまで知っているかを'
+            'それぞれ引用に結びます。架空例で奏が自分の弓を張り替えたいと言い、本人は実施を聞いていない場合、'
+            '確認できるのは奏の発言で、未確認なのは奏が弓を張り替えたかです。'
+            '本人の「次回は重音をきれいに響かせたい」は本人の希望です。'
+            'fact・title・meaningでも、望んだ行動を実施したことへ変えません。')
     if stage == 'LEAF':
         instruction += '\n今はLEAFです。提示recordのみを扱い、edgesは[]です。'
     if stage == 'MERGE':
         instruction += ('\n今はMERGEです。leafのAI文章を根拠にせず、fieldsへ提示された連続原文へ戻ります。'
             'leaf_receiptsは受領対応で意味確認ではなく、field_manifestとomitted_rangesは提示範囲です。'
             '未提示本文を読み取ったものとせず、本人訂正は提示された説明全文を使います。')
-    return [dict(role='system', content=instruction), dict(role='user', content=semantic_map_canonical(material))]
+    if prepared.prompt_version == SEMANTIC_MAP_OCCURRENCE_PROFILE:
+        instruction += ('\noriginal_recorded_atは本人がその原記録を書いた日時です。出来事の時点は原文から読みます。'
+            '同じ記録でも別々の場面は別unitに置きます。別の記録の引用を一unitに結ぶのは、'
+            '原文が同じ一回の出来事を指す場合です。同じ対象を後で試した場合や、知った内容が変わった場合は、'
+            '比較する出来事を別unitに置きます。共通点のない場面は別nodeに置きます。'
+            '訂正の説明・対象範囲・記録日時はそれぞれの出典に従います。')
+        if phase == 'RELATIONS':
+            instruction += ('\nlabelはfromとtoの引用だけで説明します。矢印は関係を読む向きです。'
+                '時間の推移を書くときは、両端の原文でその順を確かめます。'
+                '概要の題は選んだnode_refsの引用だけで説明できる範囲に収めます。')
+        content = _semantic_occurrence_message(material)
+    else:
+        content = semantic_map_canonical(material)
+    return [dict(role='system', content=instruction), dict(role='user', content=content)]
 
 
 def assemble_semantic_node_local_v4(prepared, packet):

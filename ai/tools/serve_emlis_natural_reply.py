@@ -37,6 +37,8 @@ NODE_LOCAL_V3_SCHEMA = 'cocolon.analysis.semantic_map.node_local.model.v3'
 NODE_LOCAL_V4_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v4'
 NODE_LOCAL_V4_BOUND_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v4-bound-roots'
 NODE_LOCAL_V4_BOUND_PROFILE = 'semantic_map.node_local.v4.bound_roots.v1'
+OCCURRENCE_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v4-occurrence-v1'
+OCCURRENCE_PROFILE = 'semantic_map.node_local.v4.occurrence.v1'
 NODE_LOCAL_V4_BOUND_V2_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v4-bound-roots-v2'
 NODE_LOCAL_V4_BOUND_V2_PROFILE = 'semantic_map.node_local.v4.bound_roots.v2'
 NODE_LOCAL_V4_SCHEMA = 'cocolon.analysis.semantic_map.node_local.model.v4'
@@ -359,9 +361,9 @@ def _semantic_node_local_v4_schema(material, pairs, unknown_pairs, *, leaf=False
             enum=[NODE_LOCAL_V4_SCHEMA + '.' + phase.lower()]), **props))
     phase = material.get('author_phase')
     author_profile = material.get('author_profile')
-    if author_profile not in (None, NODE_LOCAL_V4_BOUND_PROFILE, NODE_LOCAL_V4_BOUND_V2_PROFILE):
+    if author_profile not in (None, NODE_LOCAL_V4_BOUND_PROFILE, NODE_LOCAL_V4_BOUND_V2_PROFILE, OCCURRENCE_PROFILE):
         raise ValueError('semantic_v4_profile_invalid')
-    bound = author_profile in {NODE_LOCAL_V4_BOUND_PROFILE, NODE_LOCAL_V4_BOUND_V2_PROFILE}
+    bound = author_profile in {NODE_LOCAL_V4_BOUND_PROFILE, NODE_LOCAL_V4_BOUND_V2_PROFILE, OCCURRENCE_PROFILE}
     if phase == 'PLAN':
         unit = obj(dict(evidence=dict(type='array', items=dict(oneOf=pairs), minItems=1, maxItems=4)))
         node = obj(dict(node_id=dict(type='string', enum=['n' + str(i) for i in range(1, 13)]),
@@ -461,7 +463,7 @@ def _semantic_node_local_v4_schema(material, pairs, unknown_pairs, *, leaf=False
             'SELF_OUTSIDE_GAP', 'CRITERION_EXPRESSION', 'CONTEXT_CONTRAST', 'SHARED_MEANING'])})
     overview = dict(title=text(80), node_refs=dict(type='array', items=ref,
         minItems=1, maxItems=min(8, len(ids))))
-    if author_profile == NODE_LOCAL_V4_BOUND_V2_PROFILE:
+    if author_profile in {NODE_LOCAL_V4_BOUND_V2_PROFILE, OCCURRENCE_PROFILE}:
         overview = dict(node_refs=overview['node_refs'], title=overview['title'])
     return root(phase, dict(nodes_sha256=dict(type='string', enum=[signature(registry)]),
         edges=dict(type='array', items=edge, maxItems=0 if leaf else 48),
@@ -689,7 +691,7 @@ def _if_json_schema_parser(schema, config):
     return module.JsonSchemaParser(schema, config=config)
 
 
-def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None, bound_node_ids=()):
+def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None, bound_node_ids=(), unique_qualifications=False):
     """Bind graph references and unique source/quote pairs while decoding.
 
     The pinned parser does not enforce JSON Schema uniqueItems. Use an isolated
@@ -759,6 +761,13 @@ def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None, b
             and props['field'].type == 'integer' and len(props['field'].enum or []) == 1
             and props['quote'].type == 'string' and bool(props['quote'].enum))
 
+    def qualification_pair(value):
+        props = value.properties or {}
+        return (unique_qualifications and value.type == 'object'
+            and set(props) == {'source_field', 'source_quote'}
+            and props['source_field'].type == 'integer' and len(props['source_field'].enum or []) == 1
+            and props['source_quote'].type == 'string' and bool(props['source_quote'].enum))
+
     def node_type(value):
         props = value.properties or {}
         return value.type == 'object' and (('node_id' in props and (
@@ -817,6 +826,8 @@ def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None, b
             super().__init__(*args, **kwargs)
             parts = self.list_member_type.oneOf
             self.is_evidence = bool(parts) and all(evidence_pair(p) for p in parts)
+            self.is_qualification = bool(parts) and all(qualification_pair(p) for p in parts)
+            self.field_key, self.quote_key = ('source_field', 'source_quote') if self.is_qualification else ('field', 'quote')
             self.is_units = local_unit_type(self.list_member_type)
             self.is_nodes = node_type(self.list_member_type)
             self.is_events = event_type(self.list_member_type)
@@ -862,13 +873,13 @@ def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None, b
                 if len(uncovered) > self.future_root_capacity(after_item=True):
                     missing = uncovered
             for part in self.list_member_type.oneOf:
-                field = part.properties['field'].enum[0]
+                field = part.properties[self.field_key].enum[0]
                 if missing and record_fields.get(field) not in missing:
                     continue
-                quotes = [q for q in part.properties['quote'].enum if (field, q) not in self.used_pairs]
+                quotes = [q for q in part.properties[self.quote_key].enum if (field, q) not in self.used_pairs]
                 if quotes:
                     part = deepcopy(part)
-                    part.properties['quote'].enum = quotes
+                    part.properties[self.quote_key].enum = quotes
                     remaining.append(part)
             result = deepcopy(self.list_member_type)
             result.oneOf = remaining
@@ -876,8 +887,9 @@ def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None, b
 
         def get_allowed_control_characters(self):
             chars = super().get_allowed_control_characters()
-            if self.is_evidence and not any((part.properties['field'].enum[0], q) not in self.used_pairs
-                    for part in self.list_member_type.oneOf for q in part.properties['quote'].enum):
+            if (self.is_evidence or self.is_qualification) and not any(
+                    (part.properties[self.field_key].enum[0], q) not in self.used_pairs
+                    for part in self.list_member_type.oneOf for q in part.properties[self.quote_key].enum):
                 chars = chars.replace(',', '')
             if node_local and required_records and (self.is_evidence or self.is_units):
                 _, graph = graph_state(self.root.context.active_parser)
@@ -923,7 +935,7 @@ def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None, b
                     value.oneOf = [part for part in value.oneOf
                         if record_fields.get(part.properties['field'].enum[0]) in remaining_records]
                     active.object_stack[-1] = module.get_parser(result.root, value)
-            if self.is_evidence and char == ',' and not result.seen_list_closer:
+            if (self.is_evidence or self.is_qualification) and char == ',' and not result.seen_list_closer:
                 remaining = result.remaining_type()
                 if remaining is None:
                     raise ValueError('semantic_evidence_options_exhausted')
@@ -990,7 +1002,8 @@ def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None, b
                     result.selected_to = active.last_parsed_string
                 if edge_type(result.schema_object) and prior_key == 'relation_kind':
                     result.selected_relation_kind = active.last_parsed_string
-                if evidence_pair(result.schema_object) and prior_key == 'quote':
+                if (evidence_pair(result.schema_object) and prior_key == 'quote'
+                        or qualification_pair(result.schema_object) and prior_key == 'source_quote'):
                     result.selected_quote = active.last_parsed_string
             if char == ':' and result.current_stage == module.ObjectParsingStage.PARSING_VALUE:
                 key = result.current_key
@@ -1091,6 +1104,20 @@ def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None, b
                 graph = graph.clone()
                 graph.generated_edge_keys = graph.generated_edge_keys | {key}
                 active.object_stack[index] = graph
+            if char == '}' and result.can_end() and qualification_pair(result.schema_object):
+                # Assigned evidence has the same object shape, but only a
+                # qualification array consumes this choice. Scoping the set to
+                # its array preserves identical quotations in other units.
+                for index in range(len(active.object_stack) - 1, -1, -1):
+                    parent = active.object_stack[index]
+                    if isinstance(parent, UniqueEvidenceList) and parent.is_qualification:
+                        pair = (result.schema_object.properties['source_field'].enum[0], result.selected_quote)
+                        if result.selected_quote is None or pair in parent.used_pairs:
+                            raise ValueError('semantic_qualification_unbound')
+                        parent = parent._clone()
+                        parent.used_pairs = parent.used_pairs | {pair}
+                        active.object_stack[index] = parent
+                        break
             if char == '}' and result.can_end() and evidence_pair(result.schema_object):
                 if result.selected_quote is None:
                     raise ValueError('semantic_evidence_quote_unbound')
@@ -1141,7 +1168,9 @@ def semantic_json_parser(messages, alphabet):
     material = json.loads(messages[1]['content'])
     if material.get('model_schema') == NODE_LOCAL_V4_SCHEMA and material.get('author_phase') != 'PLAN':
         ids = tuple(n['node_id'] for n in material.get('candidate_nodes', ()))
-        return _semantic_unique_json_schema_parser(schema, config, bound_node_ids=ids)
+        return _semantic_unique_json_schema_parser(schema, config, bound_node_ids=ids,
+            unique_qualifications=material.get('author_phase') == 'NODES'
+                and material.get('author_profile') == OCCURRENCE_PROFILE)
     anchor_key = 'events' if 'events' in schema['properties'] else 'nodes'
     node_local = schema['properties']['schema_version'].get('enum') in (
         [NODE_LOCAL_V3_SCHEMA], [NODE_LOCAL_V4_SCHEMA + '.plan'])
@@ -1308,7 +1337,7 @@ def make_handler(generate, *, api_key, model_name, deadline, max_requests,
                     EVENT_PLAN_V2_BASE_MODEL, NODE_LOCAL_V3_BASE_MODEL}
                 if event_plan:
                     selected_model = event_plan_model
-                staged = event_plan and event_plan_model in {NODE_LOCAL_V4_MODEL, NODE_LOCAL_V4_BOUND_MODEL, NODE_LOCAL_V4_BOUND_V2_MODEL}
+                staged = event_plan and event_plan_model in {NODE_LOCAL_V4_MODEL, NODE_LOCAL_V4_BOUND_MODEL, NODE_LOCAL_V4_BOUND_V2_MODEL, OCCURRENCE_MODEL}
                 if staged:
                     material = json.loads(messages[1]['content'])
                     if material.get('author_phase') not in NODE_LOCAL_V4_PHASES:
@@ -1337,7 +1366,7 @@ def make_handler(generate, *, api_key, model_name, deadline, max_requests,
                     except (ValueError, TypeError):
                         material = None
                     marker = material.get('model_schema') if type(material) is dict else None
-                    expected_marker = (NODE_LOCAL_V4_SCHEMA if event_plan_model in {NODE_LOCAL_V4_MODEL, NODE_LOCAL_V4_BOUND_MODEL, NODE_LOCAL_V4_BOUND_V2_MODEL}
+                    expected_marker = (NODE_LOCAL_V4_SCHEMA if event_plan_model in {NODE_LOCAL_V4_MODEL, NODE_LOCAL_V4_BOUND_MODEL, NODE_LOCAL_V4_BOUND_V2_MODEL, OCCURRENCE_MODEL}
                         else NODE_LOCAL_V3_SCHEMA if event_plan_model in {
                             NODE_LOCAL_V3_MODEL, NODE_LOCAL_V3_BASE_MODEL}
                         else EVENT_PLAN_V2_SCHEMA if event_plan_model in {
@@ -1347,7 +1376,8 @@ def make_handler(generate, *, api_key, model_name, deadline, max_requests,
                                 NODE_LOCAL_V3_SCHEMA, NODE_LOCAL_V4_SCHEMA}):
                         raise ValueError
                     if staged:
-                        expected_profile = (NODE_LOCAL_V4_BOUND_V2_PROFILE
+                        expected_profile = (OCCURRENCE_PROFILE if event_plan_model == OCCURRENCE_MODEL
+                            else NODE_LOCAL_V4_BOUND_V2_PROFILE
                             if event_plan_model == NODE_LOCAL_V4_BOUND_V2_MODEL else NODE_LOCAL_V4_BOUND_PROFILE
                             if event_plan_model == NODE_LOCAL_V4_BOUND_MODEL else None)
                         if material.get('author_profile') != expected_profile:
