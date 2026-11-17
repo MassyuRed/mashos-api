@@ -23,6 +23,7 @@ SEMANTIC_NODE_LOCAL_V3_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v3'
 SEMANTIC_NODE_LOCAL_V3_BASE_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v3-base-851bf6e'
 SEMANTIC_NODE_LOCAL_V4_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v4'
 SEMANTIC_NODE_LOCAL_V4_BOUND_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v4-bound-roots'
+SEMANTIC_NODE_LOCAL_V4_BOUND_V2_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v4-bound-roots-v2'
 SEMANTIC_EVENT_PLAN_BASE_MODEL = 'cocolon-qwen3.5-4b-analysis-semantic-120u'
 MAX_RESPONSE_BYTES = 262144
 DEFAULT_PROMPT_VERSION = 'selected_material.v4'
@@ -249,7 +250,8 @@ class SelfHostedSemanticAnalysisModelSource(SelfHostedAnalysisModelSource):
         require(type(prepared) in {SemanticMapInput, AnalysisSemanticMapStageInput}
             and prepared.prompt_version == self.prompt_version,
             'analysis_semantic_input_invalid')
-        if self.prompt_version in {'semantic_map.node_local.v4', 'semantic_map.node_local.v4.bound_roots.v1'}:
+        if self.prompt_version in {'semantic_map.node_local.v4', 'semantic_map.node_local.v4.bound_roots.v1',
+                'semantic_map.node_local.v4.bound_roots.v2'}:
             return await self._node_local_v4(prepared)
         messages = prepared.messages()
         require(semantic_analysis_input_fits(prepared), 'analysis_semantic_history_capacity_exceeded')
@@ -302,7 +304,9 @@ def _configured_semantic_prompt_version(model):
     from cocolon_meaning_experience_engine.cores.analysis.semantic_admission import (
         SEMANTIC_MAP_PROFILE, SEMANTIC_MAP_EVENT_PLAN_PROFILE, SEMANTIC_MAP_EVENT_PLAN_V2_PROFILE,
         SEMANTIC_MAP_NODE_LOCAL_V3_PROFILE, SEMANTIC_MAP_NODE_LOCAL_V4_PROFILE,
-        SEMANTIC_MAP_NODE_LOCAL_V4_BOUND_PROFILE)
+        SEMANTIC_MAP_NODE_LOCAL_V4_BOUND_PROFILE, SEMANTIC_MAP_NODE_LOCAL_V4_BOUND_V2_PROFILE)
+    if model == SEMANTIC_NODE_LOCAL_V4_BOUND_V2_MODEL:
+        return SEMANTIC_MAP_NODE_LOCAL_V4_BOUND_V2_PROFILE
     if model == SEMANTIC_NODE_LOCAL_V4_BOUND_MODEL:
         return SEMANTIC_MAP_NODE_LOCAL_V4_BOUND_PROFILE
     if model == SEMANTIC_NODE_LOCAL_V4_MODEL:
