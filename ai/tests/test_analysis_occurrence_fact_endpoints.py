@@ -140,3 +140,69 @@ def test_fictional_demonstration_uses_real_protocol_for_its_own_sources(leaf):
     assert relation_input['relation_units'] == json.loads(messages[1]['content'])['relation_units']
     assert bool(relations['edges']) != leaf
     assert core.semantic_node_local_v4_relations(p, plan, nodes, relations)['edges'] == relations['edges']
+
+
+def overview_with_opposite_events(profile, title, selected, *, history_leaf=False):
+    statements = ('私は資料を調べなかった。', '私は資料を調べた。')
+    snapshot = source_snapshot(2)
+    for member, text in zip(snapshot['members'], statements):
+        member['original'].update(memo=text, memo_action='')
+    prepared = app.prepare_semantic_map(OWNER, snapshot, prompt_version=profile)
+    if history_leaf:
+        refs = tuple(member.saved_record_ref for member in prepared.frozen.members)
+        prepared = core.prepare_semantic_leaf(prepared, refs)
+    plan = dict(schema_version=core._semantic_v4_schema('PLAN'), nodes=[])
+    node_map = {}
+    for number, text in enumerate(statements, 1):
+        ref = f'n{number}'
+        plan['nodes'].append(dict(node_id=ref, units=[dict(evidence=[dict(field=number, quote=text)])]))
+        unit = dict(evidence_ref=ref + '.u1', source_mode='RECORDED', unknowns=[])
+        if profile == core.SEMANTIC_MAP_OCCURRENCE_V6_PROFILE:
+            unit['fact_parts'] = dict(e1=text)
+        else:
+            unit['fact'] = text
+        node_map[ref] = dict(units=dict(u1=unit), node_kind='CHOICE_OUTPUT',
+            perspective='SELF', title=text, meaning='')
+    nodes = dict(schema_version=core._semantic_v4_schema('NODES'),
+        plan_sha256=core.semantic_map_hash(plan), nodes=node_map)
+    relations = dict(schema_version=core._semantic_v4_schema('RELATIONS'), edges=[],
+        nodes_sha256=core.semantic_map_hash(core._semantic_v4_join(plan, nodes)),
+        overview=dict(node_refs=selected, title=title))
+    packet = phases.artifact(prepared, (plan, nodes, relations))
+    packet['schema_version'] = core.semantic_node_local_v4_artifact_schema(prepared)
+    reply = phases.response(prepared, packet)
+    if history_leaf:
+        graph = core.build_semantic_stage(prepared, reply)
+        return json.loads(graph.meaning_review_json)['overview']['fields']
+    artifact, _ = app.build_semantic_map(prepared, reply)
+    return artifact.private_evidence()['graph']['meaning_review']['overview']['fields']
+
+
+@pytest.mark.parametrize('history_leaf', [False, True])
+def test_overview_cannot_borrow_opposite_event_from_unselected_node(history_leaf):
+    profile = core.SEMANTIC_MAP_OCCURRENCE_V6_PROFILE
+    with pytest.raises((core.AnalysisSemanticMapError, app.SemanticMapError), match='analysis_semantic_meaning_conflict'):
+        overview_with_opposite_events(profile, '私は資料を調べた。', ['n1'], history_leaf=history_leaf)
+    fields = overview_with_opposite_events(profile, '私は資料を調べた。', ['n2'], history_leaf=history_leaf)
+    assert all(row['source_claims'] == ['c2'] and row['verdict'] == 'NO_CONFLICT_IN_CHECKED_SCOPE' for row in fields)
+
+
+@pytest.mark.parametrize('profile,selected,title,claims', [
+    (core.SEMANTIC_MAP_OCCURRENCE_V6_PROFILE, ['n1', 'n2'], '私は資料を調べた。', ['c1', 'c2']),
+    (core.SEMANTIC_MAP_OCCURRENCE_V6_PROFILE, ['n1'], 'このときは資料の確認を見送った', []),
+    (core.SEMANTIC_MAP_OCCURRENCE_V5_PROFILE, ['n1'], '私は資料を調べた。', ['c1', 'c2']),
+])
+def test_ambiguous_sources_unparsed_paraphrases_and_prior_profile_keep_existing_verdict(profile, selected, title, claims):
+    fields = overview_with_opposite_events(profile, title, selected)
+    row = next(field for field in fields if field['field'] == 'title')
+    assert row['verdict'] == 'UNASSESSED' and row['source_claims'] == claims
+
+
+def test_expanded_v6_material_alone_has_no_overview_selection():
+    from cocolon_meaning_experience_engine.cores.analysis import intent_compiler
+    prepared, plan, nodes, relations = authored()
+    packet = phases.artifact(prepared, (plan, nodes, relations))
+    packet['schema_version'] = core.SEMANTIC_MAP_OCCURRENCE_V6_SCHEMA
+    expanded = intent_compiler.expand_analysis_semantic_event_plan(prepared, packet)
+    with pytest.raises(core.AnalysisSemanticMapError, match='analysis_semantic_node_local_v4_lineage_invalid'):
+        intent_compiler._compile_analysis_semantic_map_v2(prepared, expanded, response_sha256='a' * 64)

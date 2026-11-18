@@ -4394,7 +4394,8 @@ def compile_analysis_semantic_stage(stage, packet, *, response_sha256):
     view = replace(parent, map_correction_sources_json=semantic_map_canonical(corrections) if corrections else '')
     if stage.prompt_version in SEMANTIC_MAP_NODE_LOCAL_V4_PROFILES:
         view = replace(view, material_json=stage.material_json)
-    graph = _compile_analysis_semantic_map_v2(view, packet, response_sha256=response_sha256)
+    graph = _compile_analysis_semantic_map_v2(view, packet, response_sha256=response_sha256,
+        author_packet=original_packet)
     graph = _semantic_event_plan_review(graph, view, original_packet, packet)
     nodes = json.loads(graph.nodes_json)
     _semantic_map_require(all(root_is_shown(root) for node in nodes
@@ -4442,11 +4443,12 @@ def compile_analysis_semantic_stage(stage, packet, *, response_sha256):
 
 def compile_analysis_semantic_map(prepared, packet, *, response_sha256):
     expanded = expand_analysis_semantic_event_plan(prepared, packet)
-    graph = _compile_analysis_semantic_map_v2(prepared, expanded, response_sha256=response_sha256)
+    graph = _compile_analysis_semantic_map_v2(prepared, expanded, response_sha256=response_sha256,
+        author_packet=packet)
     return _semantic_event_plan_review(graph, prepared, packet, expanded)
 
 
-def _compile_analysis_semantic_map_v2(prepared, packet, *, response_sha256):
+def _compile_analysis_semantic_map_v2(prepared, packet, *, response_sha256, author_packet=None):
     from .semantic_admission import (AnalysisSemanticMapInput,
         SEMANTIC_MAP_MODEL_SCHEMA, SEMANTIC_MAP_NODE_KINDS, SEMANTIC_MAP_PERSPECTIVES,
         SEMANTIC_MAP_RELATION_KINDS, SEMANTIC_MAP_OCCURRENCE_V6_PROFILE, _semantic_map_require, _semantic_map_keys,
@@ -4587,9 +4589,16 @@ def _compile_analysis_semantic_map_v2(prepared, packet, *, response_sha256):
     coverage = dict(profile='cumulative.v1', source_count=prepared.source_count, processed_count=count,
         mapped_count=len(referenced), unparsed_count=count - len(referenced), excluded_count=sum(reasons.values()),
         exclusion_reasons=reasons, stale_supplement_count=prepared.stale_supplement_count)
+    overview_refs = source_roots.keys()
+    if prepared.prompt_version == SEMANTIC_MAP_OCCURRENCE_V6_PROFILE:
+        # Expansion has checked all three raw receipts, including the selected
+        # node IDs in RELATIONS. An unselected, similar event is not a second
+        # interpretation of the premise that this overview actually cites.
+        _semantic_map_require(author_packet is not None, 'analysis_semantic_node_local_v4_lineage_invalid')
+        overview_refs = json.loads(author_packet['phases'][-1]['raw'])['overview']['node_refs']
     review = (dict(schema_version='analysis.semantic-visible-review.v1',
         overview=_semantic_map_visible_review(prepared,
-            [root for roots in source_roots.values() for root in roots], list(overview.items())),
+            [root for ref in overview_refs for root in source_roots[ref]], list(overview.items())),
         nodes=node_reviews, edges=edge_reviews,
         unknowns_status='UNASSESSED', interpretation_status='UNASSESSED')
         if json.loads(prepared.material_json).get('source_duties') is not None else {})
