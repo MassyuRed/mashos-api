@@ -2328,7 +2328,9 @@ SEMANTIC_MAP_OCCURRENCE_PROFILE = 'semantic_map.node_local.v4.occurrence.v1'
 SEMANTIC_MAP_OCCURRENCE_SCHEMA = 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v1'
 SEMANTIC_MAP_OCCURRENCE_V2_PROFILE = 'semantic_map.node_local.v4.occurrence.v2'
 SEMANTIC_MAP_OCCURRENCE_V2_SCHEMA = 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v2'
-SEMANTIC_MAP_OCCURRENCE_PROFILES = frozenset({SEMANTIC_MAP_OCCURRENCE_PROFILE, SEMANTIC_MAP_OCCURRENCE_V2_PROFILE})
+SEMANTIC_MAP_OCCURRENCE_V3_PROFILE = 'semantic_map.node_local.v4.occurrence.v3'
+SEMANTIC_MAP_OCCURRENCE_V3_SCHEMA = 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v3'
+SEMANTIC_MAP_OCCURRENCE_PROFILES = frozenset({SEMANTIC_MAP_OCCURRENCE_PROFILE, SEMANTIC_MAP_OCCURRENCE_V2_PROFILE, SEMANTIC_MAP_OCCURRENCE_V3_PROFILE})
 SEMANTIC_MAP_NODE_LOCAL_V4_BOUND_PROFILES = frozenset({SEMANTIC_MAP_NODE_LOCAL_V4_BOUND_PROFILE,
     SEMANTIC_MAP_NODE_LOCAL_V4_BOUND_V2_PROFILE, *SEMANTIC_MAP_OCCURRENCE_PROFILES})
 SEMANTIC_MAP_NODE_LOCAL_V4_PROFILES = frozenset({SEMANTIC_MAP_NODE_LOCAL_V4_PROFILE,
@@ -2621,6 +2623,8 @@ def _semantic_v4_schema(phase):
 
 
 def semantic_node_local_v4_artifact_schema(prepared):
+    if prepared.prompt_version == SEMANTIC_MAP_OCCURRENCE_V3_PROFILE:
+        return SEMANTIC_MAP_OCCURRENCE_V3_SCHEMA
     if prepared.prompt_version == SEMANTIC_MAP_OCCURRENCE_V2_PROFILE:
         return SEMANTIC_MAP_OCCURRENCE_V2_SCHEMA
     if prepared.prompt_version == SEMANTIC_MAP_OCCURRENCE_PROFILE:
@@ -2679,6 +2683,49 @@ def semantic_node_local_v4_plan(prepared, plan):
     return plan
 
 
+_SEMANTIC_OCCURRENCE_TRAILING_SYNTAX = re.compile(r'[。！？!?][ \t]*[}\]]+[ \t]*,[ \t]*$', re.MULTILINE)
+
+
+def _semantic_occurrence_check_prose(text, quotes):
+    # A quoted literal (including code) may legitimately end this way.
+    # Compare with this field's evidence and leave both strings untouched.
+    for match in _SEMANTIC_OCCURRENCE_TRAILING_SYNTAX.finditer(text):
+        _semantic_map_require(any(match.group().rstrip() in quote for quote in quotes),
+            'analysis_semantic_authored_serialization_residue')
+
+
+def _semantic_occurrence_check_nodes(nodes):
+    readings = {}
+    for node in nodes.values():
+        roots = set()
+        for unit in node['units'].values():
+            unit_roots = {(root['source_field'], root['source_quote'])
+                for root in unit['assigned_evidence'].values()}
+            _semantic_occurrence_check_prose(unit['fact'], [quote for _, quote in unit_roots])
+            roots.update(unit_roots)
+        quotes = [quote for _, quote in roots]
+        _semantic_occurrence_check_prose(node['title'], quotes)
+        _semantic_occurrence_check_prose(node['meaning'], quotes)
+        if node['meaning']:
+            # The same authored title and reading with only more citations
+            # repeats that reading. A shared topic or citation alone is valid.
+            key = (node['node_kind'], node['perspective'], node['title'], node['meaning'])
+            previous = readings.setdefault(key, [])
+            _semantic_map_require(all(not (roots <= other or other <= roots) for other in previous),
+                'analysis_semantic_repeated_authored_reading')
+            previous.append(roots)
+
+
+def _semantic_occurrence_check_relations(nodes, relations):
+    quotes_by_node = {node['node_id']: [root['quote'] for unit in node['units'] for root in unit['evidence']]
+        for node in nodes}
+    for edge in relations['edges']:
+        _semantic_occurrence_check_prose(edge['label'], quotes_by_node[edge['from']] + quotes_by_node[edge['to']])
+    selected = relations['overview']['node_refs']
+    _semantic_occurrence_check_prose(relations['overview']['title'],
+        [quote for ref in selected for quote in quotes_by_node[ref]])
+
+
 def semantic_node_local_v4_nodes(prepared, plan, packet):
     """Freeze every ID/unit/root; classifications and prose remain authored."""
     semantic_node_local_v4_plan(prepared, plan)
@@ -2723,6 +2770,8 @@ def semantic_node_local_v4_nodes(prepared, plan, packet):
                 r(original is not None and original.count(pair[1]) == 1,
                     'analysis_semantic_node_local_unknown_unbound')
                 seen.add(pair)
+    if prepared.prompt_version == SEMANTIC_MAP_OCCURRENCE_V3_PROFILE:
+        _semantic_occurrence_check_nodes(packet['nodes'])
     return packet
 
 
@@ -2765,6 +2814,8 @@ def semantic_node_local_v4_relations(prepared, plan, bodies, packet):
         and type(overview['node_refs']) is list and 1 <= len(overview['node_refs']) <= 8
         and all(type(ref) is str and ref in ids for ref in overview['node_refs'])
         and len(overview['node_refs']) == len(set(overview['node_refs'])), reason)
+    if prepared.prompt_version == SEMANTIC_MAP_OCCURRENCE_V3_PROFILE:
+        _semantic_occurrence_check_relations(nodes, packet)
     return dict(schema_version=SEMANTIC_MAP_NODE_LOCAL_V3_SCHEMA,
         nodes=nodes, edges=packet['edges'], overview=overview)
 
@@ -2816,9 +2867,18 @@ def _semantic_occurrence_message(material):
     return json.dumps(ordered, ensure_ascii=False, separators=(',', ':'), allow_nan=False)
 
 
-def _semantic_occurrence_lesson_material(stage, *, same_subject=False):
+def _semantic_occurrence_lesson_material(stage, *, same_subject=False, written_object=False):
     material, packet = _semantic_node_local_v3_lesson_instruction(stage, _parts=True, same_subject=same_subject)
     if stage != 'LEAF':
+        if written_object:
+            # A calendar entry and the practice it names are different objects of action.
+            notation = '私は練習日を移すつもりはなかった。練習帳に「木曜」と書き間違えたので、欄の曜日を「火曜」に直した。'
+            material['fields'][3]['text'] += notation
+            practice = packet['nodes'][4]
+            practice['units'].append(dict(evidence=[dict(quote=notation, field=4)], source_mode='RECORDED',
+                fact='本人は練習日を移すつもりはなく、練習帳に書き間違えた曜日欄の記載を「木曜」から「火曜」に直しました。', unknowns=[]))
+            practice.update(title='練習日を移す意図はなく、練習帳の曜日欄を訂正',
+                meaning='弓の角度の練習は火曜の予定で、本人に練習日を移す意図はありません。本人が実際に直したのは練習帳の曜日欄の記載です。')
         # This is the same event recalled in a later record, distinct from that week's playing.
         recall = '先週、隣室の試験中に私が弓で弾いたのは、あの開放弦の練習のことです。'
         material['fields'][2]['text'] += recall
@@ -2837,7 +2897,8 @@ def _semantic_occurrence_lesson_material(stage, *, same_subject=False):
 def _semantic_v4_lesson(stage, phase, *, bound=False, author_profile=None):
     occurrence = author_profile in SEMANTIC_MAP_OCCURRENCE_PROFILES
     material, old = (_semantic_occurrence_lesson_material(stage,
-        same_subject=author_profile == SEMANTIC_MAP_OCCURRENCE_V2_PROFILE) if occurrence
+        same_subject=author_profile in {SEMANTIC_MAP_OCCURRENCE_V2_PROFILE, SEMANTIC_MAP_OCCURRENCE_V3_PROFILE},
+        written_object=author_profile == SEMANTIC_MAP_OCCURRENCE_V3_PROFILE) if occurrence
         else _semantic_node_local_v3_lesson_instruction(stage, _parts=True))
     plan = dict(schema_version=_semantic_v4_schema('PLAN'), nodes=[
         dict(node_id='n' + str(i), units=[dict(evidence=u['evidence']) for u in n['units']])
@@ -2919,7 +2980,7 @@ def semantic_node_local_v4_messages(prepared, phase='PLAN', *, plan=None, nodes=
         content = _semantic_occurrence_message(material)
     else:
         content = semantic_map_canonical(material)
-    if prepared.prompt_version == SEMANTIC_MAP_OCCURRENCE_V2_PROFILE:
+    if prepared.prompt_version in {SEMANTIC_MAP_OCCURRENCE_V2_PROFILE, SEMANTIC_MAP_OCCURRENCE_V3_PROFILE}:
         instruction += '\n' + {
             'PLAN': '一項目が表すことを一つ選んでから次へ進みます。例えば材質の推測、確認、交換が原文にあれば、'
                 '見立てと確認で一項目、同じ確認と実際の交換でもう一項目にできます。'
@@ -2929,6 +2990,16 @@ def semantic_node_local_v4_messages(prepared, phase='PLAN', *, plan=None, nodes=
                 '同じ対象の以前と以後の状態、または変更の実行が原文にあれば、その範囲で実際の変化を書けます。',
             'RELATIONS': '短いlabelと概要の題にも、引用が示す当時の推測と後の確認の区別を残します。'
                 '本人の見立てを、交換前の実際の材質として扱うと、原文にない変更が生まれます。'
+        }[phase]
+    if prepared.prompt_version == SEMANTIC_MAP_OCCURRENCE_V3_PROFILE:
+        instruction += '\n' + {
+            'PLAN': '各nodeで読者が初めて分かる事実・判断を一つ選びます。すでに選んだ出来事に留保や裏付けを添えるときは、'
+                'そのnodeに必要な引用だけを足します。根拠は、各記録の判断・条件・留保が読み取れる短い連続原文を選びます。'
+                '同じ引用から別のことが分かるなら、行為・対象・判断のどこが違うかを確かめて別nodeにします。',
+            'NODES': '誰が何をどうしたか、または何をする意図がなかったかを、title・meaningでも保ちます。'
+                '記入や訂正では、記録上の表記と、その表記が指す予定・対象を区別します。'
+                '否定は元の動詞にかけ、別の行為や道具を含む言葉に縮めず、引用にある動詞で簡潔に書きます。',
+            'RELATIONS': 'labelと概要も、両端の引用が示す誰の行為か、対象と肯定・否定を保ちます。'
         }[phase]
     return [dict(role='system', content=instruction), dict(role='user', content=content)]
 

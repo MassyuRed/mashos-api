@@ -313,9 +313,11 @@ def test_occurrence_rel_overview_uses_supporting_refs_and_preserves_frozen_v2_le
         assert hashlib.sha256(frozen.encode()).hexdigest() == old_hash
 
 
-def test_occurrence_v2_alias_preserves_existing_if_and_user_projection(monkeypatch):
-    alias = sources.SEMANTIC_OCCURRENCE_V2_MODEL
-    profile = core.SEMANTIC_MAP_OCCURRENCE_V2_PROFILE
+@pytest.mark.parametrize('alias, profile, schema', [
+    (sources.SEMANTIC_OCCURRENCE_V2_MODEL, core.SEMANTIC_MAP_OCCURRENCE_V2_PROFILE, core.SEMANTIC_MAP_OCCURRENCE_V2_SCHEMA),
+    (sources.SEMANTIC_OCCURRENCE_V3_MODEL, core.SEMANTIC_MAP_OCCURRENCE_V3_PROFILE, core.SEMANTIC_MAP_OCCURRENCE_V3_SCHEMA),
+])
+def test_occurrence_alias_preserves_existing_if_and_user_projection(monkeypatch, alias, profile, schema):
     environment(monkeypatch, model=alias)
     assert sources.application_analysis_model_source().prompt_version == profile
     assert if_sources.application_analysis_if_model_source().model == sources.SEMANTIC_EVENT_PLAN_BASE_MODEL
@@ -324,7 +326,7 @@ def test_occurrence_v2_alias_preserves_existing_if_and_user_projection(monkeypat
     assert current.frozen == prior.frozen and current.request_ref != prior.request_ref
     for prepared_map, expected_schema in (
             (prior, core.SEMANTIC_MAP_OCCURRENCE_SCHEMA),
-            (current, core.SEMANTIC_MAP_OCCURRENCE_V2_SCHEMA)):
+            (current, schema)):
         packet = old.artifact(prepared_map, phase_packets(prepared_map))
         packet['schema_version'] = expected_schema
         artifact, coverage = app.build_semantic_map(prepared_map, old.response(prepared_map, packet))
@@ -341,10 +343,13 @@ def test_occurrence_v2_alias_preserves_existing_if_and_user_projection(monkeypat
 
 @pytest.mark.parametrize('alias, marker, status', [
     (sources.SEMANTIC_OCCURRENCE_V2_MODEL, core.SEMANTIC_MAP_OCCURRENCE_V2_PROFILE, 200),
+    (sources.SEMANTIC_OCCURRENCE_V3_MODEL, core.SEMANTIC_MAP_OCCURRENCE_V3_PROFILE, 200),
+    (sources.SEMANTIC_OCCURRENCE_V2_MODEL, core.SEMANTIC_MAP_OCCURRENCE_V3_PROFILE, 400),
+    (sources.SEMANTIC_OCCURRENCE_V3_MODEL, core.SEMANTIC_MAP_OCCURRENCE_V2_PROFILE, 400),
     (sources.SEMANTIC_OCCURRENCE_MODEL, core.SEMANTIC_MAP_OCCURRENCE_V2_PROFILE, 400),
     (sources.SEMANTIC_OCCURRENCE_V2_MODEL, core.SEMANTIC_MAP_OCCURRENCE_PROFILE, 400),
 ])
-def test_native_occurrence_v2_accepts_only_its_own_profile(alias, marker, status):
+def test_native_occurrence_accepts_only_its_own_profile(alias, marker, status):
     bound.test_native_exact_alias_marker_pair_and_actual_phase_usage(alias, marker, status)
 
 
@@ -383,6 +388,7 @@ def test_occurrence_v2_leaf_cannot_borrow_the_later_actual_replacement():
     (core.SEMANTIC_MAP_OCCURRENCE_PROFILE, 'NODES', False),
     (core.SEMANTIC_MAP_OCCURRENCE_V2_PROFILE, 'PLAN', False),
     (core.SEMANTIC_MAP_OCCURRENCE_V2_PROFILE, 'NODES', True),
+    (core.SEMANTIC_MAP_OCCURRENCE_V3_PROFILE, 'NODES', True),
 ])
 def test_occurrence_filter_reaches_single_greedy_model_generate(monkeypatch, profile, phase, filtered):
     import time
@@ -456,3 +462,79 @@ def test_occurrence_duplicate_comparison_ignores_only_terminal_padding_and_repea
     assert signature(first, '支柱の確認　', '支柱の表示を確かめた。。　') == expected
     assert signature(first, '支柱の確認', '支柱の表示を確かめた？') != expected
     assert signature(first, '支柱の確認', '樹脂製と確かめた。') != expected
+
+
+@pytest.mark.parametrize('stage', [None, 'MERGE'])
+def test_occurrence_v3_models_the_object_of_a_written_correction(stage):
+    material, packet = core._semantic_occurrence_lesson_material(stage, same_subject=True, written_object=True)
+    practice = packet['nodes'][4]
+    plan, notation = practice['units']
+    source = next(row['text'] for row in material['fields'] if row['field'] == 4)
+    for unit in (plan, notation):
+        assert all(e['quote'] in source for e in unit['evidence'])
+    assert plan['source_mode'] == 'DECIDED_PLAN' and 'まだその練習はしていない' in plan['evidence'][0]['quote']
+    assert notation['source_mode'] == 'RECORDED' and '欄の曜日' in notation['evidence'][0]['quote']
+    assert '移すつもりはなかった' in notation['evidence'][0]['quote']
+    assert '移すつもりはなく' in notation['fact'] and '練習日を移す意図はなく' in practice['title']
+    assert '移す意図はありません' in practice['meaning'] and '曜日欄の記載' in practice['meaning']
+    # The material check and the later actual replacement still share one root.
+    belief, replacement = packet['nodes'][6:8]
+    assert belief['units'][1]['evidence'] == replacement['units'][0]['evidence']
+
+
+@pytest.mark.parametrize('field', ['title', 'meaning', 'fact', 'edge', 'overview'])
+def test_occurrence_v3_rejects_unquoted_serialization_in_authored_public_fields(field):
+    p = app.prepare_semantic_map(OWNER,
+        json.loads(old.prepared().source_snapshot_json), prompt_version=core.SEMANTIC_MAP_OCCURRENCE_V3_PROFILE)
+    plan, nodes, relations = phase_packets(p)
+    residue = '本人は図面を保存しました。},'
+    if field in {'title','meaning','fact'}:
+        target = nodes['nodes']['n1']
+        if field == 'fact':
+            target = target['units']['u1']
+        target[field] = residue
+        with pytest.raises(core.AnalysisSemanticMapError, match='authored_serialization_residue'):
+            core.semantic_node_local_v4_nodes(p, plan, nodes)
+    else:
+        if field == 'edge':
+            relations['edges'] = [{'from':'n1', 'to':'n2',
+                'relation_kind': sorted(core.SEMANTIC_MAP_RELATION_KINDS)[0], 'label':residue}]
+        else:
+            relations['overview']['title'] = residue
+        with pytest.raises(core.AnalysisSemanticMapError, match='authored_serialization_residue'):
+            core.semantic_node_local_v4_relations(p, plan, nodes, relations)
+
+
+def test_occurrence_v3_preserves_quoted_code_and_reports_without_rewriting():
+    literal = '入力例は「完了。},」です。'
+    code = '完了。},'
+    for prose in (literal, code, '例の最終行\n' + code, 'コードは {"status": "ok"},'):
+        assert core._semantic_occurrence_check_prose(prose, [literal]) is None
+    with pytest.raises(core.AnalysisSemanticMapError, match='authored_serialization_residue'):
+        core._semantic_occurrence_check_prose('私が保存しました。},\n翌朝に確かめました。', ['保存した。'])
+
+
+def test_occurrence_v3_allows_shared_evidence_with_distinct_claims():
+    p = app.prepare_semantic_map(OWNER,
+        json.loads(old.prepared().source_snapshot_json), prompt_version=core.SEMANTIC_MAP_OCCURRENCE_V3_PROFILE)
+    _, nodes, _ = phase_packets(p)
+    first = nodes['nodes']['n1']
+    first['meaning'] = '用意した図面は保存済みです。'
+    second = deepcopy(first)
+    second['meaning'] = '保存した時点では、送信は済んでいません。'
+    core._semantic_occurrence_check_nodes({'n1': first, 'n2': second})
+    second['meaning'] = first['meaning']
+    with pytest.raises(core.AnalysisSemanticMapError, match='repeated_authored_reading'):
+        core._semantic_occurrence_check_nodes({'n1': first, 'n2': second})
+
+
+
+def test_occurrence_v3_general_nodes_instruction_keeps_example_subject_in_the_lesson():
+    p = app.prepare_semantic_map(OWNER,
+        json.loads(old.prepared().source_snapshot_json), prompt_version=core.SEMANTIC_MAP_OCCURRENCE_V3_PROFILE)
+    plan, _, _ = phase_packets(p)
+    instruction = core.semantic_node_local_v4_messages(p, 'NODES', plan=plan)[0]['content']
+    lesson, general = instruction.rsplit('例はここまで。', 1)
+    assert '練習帳' in lesson and '練習日' in lesson
+    assert '練習帳' not in general and '練習日' not in general
+    assert '記録上の表記と、その表記が指す予定・対象' in general

@@ -41,7 +41,9 @@ OCCURRENCE_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v4-occurrence-v1'
 OCCURRENCE_PROFILE = 'semantic_map.node_local.v4.occurrence.v1'
 OCCURRENCE_V2_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v4-occurrence-v2'
 OCCURRENCE_V2_PROFILE = 'semantic_map.node_local.v4.occurrence.v2'
-OCCURRENCE_PROFILES = frozenset({OCCURRENCE_PROFILE, OCCURRENCE_V2_PROFILE})
+OCCURRENCE_V3_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v4-occurrence-v3'
+OCCURRENCE_V3_PROFILE = 'semantic_map.node_local.v4.occurrence.v3'
+OCCURRENCE_PROFILES = frozenset({OCCURRENCE_PROFILE, OCCURRENCE_V2_PROFILE, OCCURRENCE_V3_PROFILE})
 NODE_LOCAL_V4_BOUND_V2_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v4-bound-roots-v2'
 NODE_LOCAL_V4_BOUND_V2_PROFILE = 'semantic_map.node_local.v4.bound_roots.v2'
 NODE_LOCAL_V4_SCHEMA = 'cocolon.analysis.semantic_map.node_local.model.v4'
@@ -1424,7 +1426,7 @@ def make_handler(generate, *, api_key, model_name, deadline, max_requests,
                     EVENT_PLAN_V2_BASE_MODEL, NODE_LOCAL_V3_BASE_MODEL}
                 if event_plan:
                     selected_model = event_plan_model
-                staged = event_plan and event_plan_model in {NODE_LOCAL_V4_MODEL, NODE_LOCAL_V4_BOUND_MODEL, NODE_LOCAL_V4_BOUND_V2_MODEL, OCCURRENCE_MODEL, OCCURRENCE_V2_MODEL}
+                staged = event_plan and event_plan_model in {NODE_LOCAL_V4_MODEL, NODE_LOCAL_V4_BOUND_MODEL, NODE_LOCAL_V4_BOUND_V2_MODEL, OCCURRENCE_MODEL, OCCURRENCE_V2_MODEL, OCCURRENCE_V3_MODEL}
                 if staged:
                     material = json.loads(messages[1]['content'])
                     if material.get('author_phase') not in NODE_LOCAL_V4_PHASES:
@@ -1453,7 +1455,7 @@ def make_handler(generate, *, api_key, model_name, deadline, max_requests,
                     except (ValueError, TypeError):
                         material = None
                     marker = material.get('model_schema') if type(material) is dict else None
-                    expected_marker = (NODE_LOCAL_V4_SCHEMA if event_plan_model in {NODE_LOCAL_V4_MODEL, NODE_LOCAL_V4_BOUND_MODEL, NODE_LOCAL_V4_BOUND_V2_MODEL, OCCURRENCE_MODEL, OCCURRENCE_V2_MODEL}
+                    expected_marker = (NODE_LOCAL_V4_SCHEMA if event_plan_model in {NODE_LOCAL_V4_MODEL, NODE_LOCAL_V4_BOUND_MODEL, NODE_LOCAL_V4_BOUND_V2_MODEL, OCCURRENCE_MODEL, OCCURRENCE_V2_MODEL, OCCURRENCE_V3_MODEL}
                         else NODE_LOCAL_V3_SCHEMA if event_plan_model in {
                             NODE_LOCAL_V3_MODEL, NODE_LOCAL_V3_BASE_MODEL}
                         else EVENT_PLAN_V2_SCHEMA if event_plan_model in {
@@ -1463,7 +1465,8 @@ def make_handler(generate, *, api_key, model_name, deadline, max_requests,
                                 NODE_LOCAL_V3_SCHEMA, NODE_LOCAL_V4_SCHEMA}):
                         raise ValueError
                     if staged:
-                        expected_profile = (OCCURRENCE_V2_PROFILE if event_plan_model == OCCURRENCE_V2_MODEL
+                        expected_profile = (OCCURRENCE_V3_PROFILE if event_plan_model == OCCURRENCE_V3_MODEL
+                            else OCCURRENCE_V2_PROFILE if event_plan_model == OCCURRENCE_V2_MODEL
                             else OCCURRENCE_PROFILE if event_plan_model == OCCURRENCE_MODEL
                             else NODE_LOCAL_V4_BOUND_V2_PROFILE
                             if event_plan_model == NODE_LOCAL_V4_BOUND_V2_MODEL else NODE_LOCAL_V4_BOUND_PROFILE
@@ -1784,7 +1787,7 @@ def load_generator(adapter, process_stop, *, weights_sha256=None, config_sha256=
                 return allowed
             if profile == 'event_plan':
                 material=json.loads(messages[1]['content'])
-                if material.get('author_profile')==OCCURRENCE_V2_PROFILE and material.get('author_phase')=='NODES':
+                if material.get('author_profile') in {OCCURRENCE_V2_PROFILE, OCCURRENCE_V3_PROFILE} and material.get('author_phase')=='NODES':
                     format_options['logits_processor']=[_occurrence_greedy_node_filter(tokenizer,count)]
             format_options['prefix_allowed_tokens_fn'] = private_prefix
             format_options['eos_token_id'] = tokenizer_data.eos_token_id
