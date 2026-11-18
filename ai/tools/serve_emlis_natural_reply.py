@@ -44,10 +44,12 @@ OCCURRENCE_V2_PROFILE = 'semantic_map.node_local.v4.occurrence.v2'
 OCCURRENCE_V3_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v4-occurrence-v3'
 OCCURRENCE_V4_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v4-occurrence-v4'
 OCCURRENCE_V5_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v4-occurrence-v5'
+OCCURRENCE_V6_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v4-occurrence-v6'
 OCCURRENCE_V3_PROFILE = 'semantic_map.node_local.v4.occurrence.v3'
 OCCURRENCE_V4_PROFILE = 'semantic_map.node_local.v4.occurrence.v4'
 OCCURRENCE_V5_PROFILE = 'semantic_map.node_local.v4.occurrence.v5'
-OCCURRENCE_PROFILES = frozenset({OCCURRENCE_PROFILE, OCCURRENCE_V2_PROFILE, OCCURRENCE_V3_PROFILE, OCCURRENCE_V4_PROFILE, OCCURRENCE_V5_PROFILE})
+OCCURRENCE_V6_PROFILE = 'semantic_map.node_local.v4.occurrence.v6'
+OCCURRENCE_PROFILES = frozenset({OCCURRENCE_PROFILE, OCCURRENCE_V2_PROFILE, OCCURRENCE_V3_PROFILE, OCCURRENCE_V4_PROFILE, OCCURRENCE_V5_PROFILE, OCCURRENCE_V6_PROFILE})
 NODE_LOCAL_V4_BOUND_V2_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v4-bound-roots-v2'
 NODE_LOCAL_V4_BOUND_V2_PROFILE = 'semantic_map.node_local.v4.bound_roots.v2'
 NODE_LOCAL_V4_SCHEMA = 'cocolon.analysis.semantic_map.node_local.model.v4'
@@ -99,7 +101,15 @@ def _occurrence_visible_signature(units, title, meaning):
     def comparison(text):
         return '\n'.join(re.sub(r'。(?:[ \t\u3000]*。)+$', '。', line.rstrip(' \t\u3000')) for line in text.split('\n'))
     title, meaning = comparison(title), comparison(meaning)
-    facts = [comparison(units['u' + str(i)]['fact']) for i in range(1, len(units)+1)]
+    facts = []
+    for i in range(1, len(units)+1):
+        unit = units['u' + str(i)]
+        if 'fact_parts' in unit:
+            parts = unit['fact_parts']
+            fact = ''.join(parts['e' + str(j)] for j in range(1, len(parts)+1))
+        else:
+            fact = unit['fact']
+        facts.append(comparison(fact))
     repeated = meaning in facts or meaning in ('\n'.join(facts), ''.join(facts))
     parts = facts + ([meaning] if meaning and not repeated else [])
     body = '\n'.join(dict.fromkeys(line for part in parts for line in part.split('\n')))
@@ -164,6 +174,39 @@ def _occurrence_greedy_node_filter(tokenizer, prompt_tokens):
             if not _occurrence_duplicate_prefix(wire):
                 return scores
             scores[0,picked] = float('-inf')
+    return choose
+
+
+def _occurrence_greedy_relation_filter(prefix):
+    """Validate a greedy token against the exact title rule before it is emitted."""
+    enforcer = prefix.token_enforcer
+    enforcer.root_parser.context.guard_endpoint_label_tokens = True
+    def choose(input_ids, scores):
+        if len(scores) != 1 or len(input_ids) != 1:
+            raise ValueError('occurrence_single_greedy_sequence_required')
+        state = enforcer.prefix_states[tuple(input_ids[0].tolist())]
+        stack = getattr(state.parser, 'object_stack', ())
+        if not stack or not getattr(stack[-1], 'guarded_shortcut', False):
+            return scores
+        while True:
+            token = int(scores[0].argmax().item())
+            if float(scores[0,token]) == float('-inf'):
+                raise ValueError('occurrence_no_distinct_edge_label_continuation')
+            # Decode the same incremental spelling as the pinned token enforcer,
+            # including multi-character tokens and context-dependent token joins.
+            if token in enforcer.tokenizer_tree.new_word_tokens:
+                suffix = enforcer.tokenizer_tree.tokens_to_strs[token]
+            else:
+                prior = state.current_word_tokens
+                suffix = enforcer.decoder(prior + [token])[len(enforcer.decoder(prior)):]
+            parser = state.parser
+            for char in suffix:
+                if char not in parser.get_allowed_characters():
+                    break
+                parser = parser.add_character(char)
+            else:
+                return scores
+            scores[0,token] = float('-inf')
     return choose
 
 
@@ -527,7 +570,24 @@ def _semantic_node_local_v4_schema(material, pairs, unknown_pairs, *, leaf=False
             properties = dict(source_mode=dict(type='string', enum=[
                 'RECORDED', 'PERSON_JUDGMENT', 'PERSON_WISH', 'DECIDED_PLAN']),
                 fact=text(160), unknowns=unknowns)
-            if author_profile == OCCURRENCE_V5_PROFILE:
+            if author_profile == OCCURRENCE_V6_PROFILE:
+                lengths = [len(root['quote']) for root in roots]
+                count = len(lengths)
+                total = sum(lengths)
+                if total <= 160:
+                    extra, remainder = divmod(160 - total, count)
+                    limits = [length + extra + (i < remainder) for i, length in enumerate(lengths)]
+                else:
+                    # Reserve a character per root, then apportion the rest
+                    # by largest remainder. The PLAN order breaks exact ties.
+                    shares = [divmod((160 - count) * (length - 1), total - count) for length in lengths]
+                    limits = [1 + whole for whole, _ in shares]
+                    order = sorted(range(count), key=lambda i: -shares[i][1])
+                    for i in order[:160-sum(limits)]:
+                        limits[i] += 1
+                parts = {'e' + str(index): text(limit) for index, limit in enumerate(limits, 1)}
+                properties = dict(source_mode=properties['source_mode'], fact_parts=obj(parts), unknowns=unknowns)
+            if author_profile in {OCCURRENCE_V5_PROFILE, OCCURRENCE_V6_PROFILE}:
                 # The plan digest identifies the roots of this unit. Each
                 # reference binds its complete list, including order and field.
                 binding = dict(type='string', enum=[f"{node['node_id']}.u{j}"])
@@ -580,9 +640,13 @@ def _semantic_node_local_v4_schema(material, pairs, unknown_pairs, *, leaf=False
                     raise ValueError('semantic_v4_registry_invalid')
                 seen.add(pair)
     ref = dict(type='string', enum=ids)
-    edge = obj({'from': ref, 'to': ref, 'label': text(80),
-        'relation_kind': dict(type='string', enum=[
-            'SELF_OUTSIDE_GAP', 'CRITERION_EXPRESSION', 'CONTEXT_CONTRAST', 'SHARED_MEANING'])})
+    endpoints = {'from': ref, 'to': ref}
+    if author_profile == OCCURRENCE_V6_PROFILE:
+        unit_ref = dict(type='string', enum=[f"{n['node_id']}.u{i}"
+            for n in registry for i in range(1, len(n['units']) + 1)])
+        endpoints.update(from_unit=unit_ref, to_unit=unit_ref)
+    edge = obj(dict(**endpoints, label=text(80), relation_kind=dict(type='string', enum=[
+        'SELF_OUTSIDE_GAP', 'CRITERION_EXPRESSION', 'CONTEXT_CONTRAST', 'SHARED_MEANING'])))
     overview = dict(title=text(80), node_refs=dict(type='array', items=ref,
         minItems=1, maxItems=min(8, len(ids))))
     if author_profile in {NODE_LOCAL_V4_BOUND_V2_PROFILE, *OCCURRENCE_PROFILES}:
@@ -649,7 +713,7 @@ def semantic_output_schema(messages):
                 # A qualification that retains its antecedent must also be
                 # selectable as one enclosing event root, not two fragments.
                 spans = list(dict.fromkeys(spans + qualifications))
-            if (material.get('author_profile') in {OCCURRENCE_V4_PROFILE, OCCURRENCE_V5_PROFILE}
+            if (material.get('author_profile') in {OCCURRENCE_V4_PROFILE, OCCURRENCE_V5_PROFILE, OCCURRENCE_V6_PROFILE}
                     and material.get('author_phase') == 'NODES'):
                 # Add only possible unknowns. PLAN/assigned_evidence keeps the
                 # full root containing the known context and its qualification.
@@ -819,7 +883,8 @@ def _if_json_schema_parser(schema, config):
     return module.JsonSchemaParser(schema, config=config)
 
 
-def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None, bound_node_ids=(), unique_qualifications=False):
+def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None, bound_node_ids=(),
+                                        unique_qualifications=False, endpoint_nodes=()):
     """Bind graph references and unique source/quote pairs while decoding.
 
     The pinned parser does not enforce JSON Schema uniqueItems. Use an isolated
@@ -843,6 +908,8 @@ def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None, b
     plan_only = marker == [NODE_LOCAL_V4_SCHEMA + '.plan']
     relations_only = marker == [NODE_LOCAL_V4_SCHEMA + '.relations']
     node_local = marker == [NODE_LOCAL_V3_SCHEMA] or plan_only or relations_only
+    endpoint_titles = {node['node_id']: node['title'] for node in endpoint_nodes}
+    label_alphabet = ''.join(c for c in config.alphabet if ord(c) >= 32 and c not in '"\\') if endpoint_titles else ''
 
     def enum_literal(value):
         raw = json.dumps(value, ensure_ascii=False)
@@ -882,6 +949,101 @@ def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None, b
             return self.exact.get_allowed_characters() + (module.WHITESPACE_CHARACTERS if not self.seen_opening_quote else '')
 
     module.StringParsingState = ExactJsonEnum
+
+    class EndpointLabel(module.PrimitiveParsingState):
+        """Keep both endpoint titles out of this label, including JSON escape spellings."""
+        def __init__(self, root, titles, maximum):
+            super().__init__(root)
+            self.titles = titles
+            self.maximum = maximum
+            self.opened = self.closed = False
+            self.raw = self.text = self.escape = ''
+
+        def can_end(self):
+            return self.closed
+
+        @property
+        def guarded_shortcut(self):
+            return (self.opened and not self.closed and not self.escape
+                    and len(self.text) < self.maximum and not (self.text and '\ud800' <= self.text[-1] <= '\udbff')
+                    and getattr(self.root.context, 'guard_endpoint_label_tokens', False))
+
+        def get_allowed_characters(self):
+            if self.closed:
+                return ''
+            if not self.opened:
+                return '"' + module.WHITESPACE_CHARACTERS
+            if self.escape:
+                if self.escape == '\\':
+                    choices = '"\\/bfnrtu'
+                else:
+                    choices = '0123456789abcdefABCDEF'
+                # A high surrogate at the length limit only has room for its
+                # low surrogate. Prefixes of that second escape stay viable.
+                if self.text and '\ud800' <= self.text[-1] <= '\udbff' and len(self.text) == self.maximum:
+                    if self.escape == '\\':
+                        return 'u'
+                    if self.escape == '\\u':
+                        return 'dD'
+                    if len(self.escape) == 3:
+                        return 'cCdDeEfF'
+                if self.escape == '\\' or len(self.escape) == 5:
+                    for char in choices:
+                        if self.escape == '\\' and char == 'u':
+                            continue
+                        decoded = json.loads('"' + self.raw + char + '"')
+                        if len(decoded) > self.maximum or len(decoded) == self.maximum and decoded in self.titles:
+                            choices = choices.replace(char, '')
+                return choices
+            chars = '"' if self.text and self.text not in self.titles else ''
+            if len(self.text) < self.maximum:
+                content = label_alphabet
+                if len(self.text) + 1 == self.maximum:
+                    for title in self.titles:
+                        if len(title) == self.maximum and title[:-1] == self.text:
+                            content = content.replace(title[-1], '')
+                chars += content + '\\'
+            elif self.text and '\ud800' <= self.text[-1] <= '\udbff':
+                chars += '\\'
+            return chars
+
+        def add_character(self, char):
+            result = copy(self)
+            if not result.opened:
+                result.opened = char == '"'
+                return result
+            if not result.escape and char == '"':
+                result.closed = True
+                return result
+            result.raw += char
+            if result.escape:
+                result.escape += char
+                if result.escape.startswith('\\u') and len(result.escape) < 6:
+                    return result
+                result.escape = ''
+            elif char == '\\':
+                result.escape = char
+                return result
+            result.text = json.loads('"' + result.raw + '"')
+            if any(title.startswith(result.text) for title in result.titles):
+                return result
+            if result.text and '\ud800' <= result.text[-1] <= '\udbff':
+                return result
+            # Further characters cannot turn a different prefix into a title.
+            # Only here may the ordinary LMFE free-text shortcut resume.
+            ordinary = module.StringParsingState(result.root, [], True, True, 1, result.maximum)
+            ordinary.seen_opening_quote = True
+            ordinary.parsed_string = result.text
+            return ordinary
+
+    if endpoint_titles:
+        ordinary_shortcut = module.JsonSchemaParser.shortcut_key
+        def shortcut(parser):
+            current = parser.object_stack[-1] if parser.object_stack else None
+            if isinstance(current, EndpointLabel) and current.guarded_shortcut:
+                return ('json_freetext', len(current.text), 1, current.maximum)
+            return ordinary_shortcut(parser)
+        module.JsonSchemaParser.shortcut_key = shortcut
 
     def evidence_pair(value):
         props = value.properties or {}
@@ -926,7 +1088,8 @@ def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None, b
             'from', 'to', 'relation_kind', 'label', 'explanation'},
             {'from','to','relation_kind','label','event_refs','reading_refs'},
             {'from','to','relation_kind','label','unit_refs'})
-            or node_local and set(props) == {'from', 'to', 'relation_kind', 'label'})
+            or node_local and set(props) in ({'from', 'to', 'relation_kind', 'label'},
+                {'from', 'to', 'from_unit', 'to_unit', 'relation_kind', 'label'}))
 
     def graph_state(active):
         for index, value in enumerate(active.object_stack):
@@ -1201,6 +1364,16 @@ def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None, b
                     value.enum = [item for item in value.enum if item in available]
                     if not value.enum:
                         raise ValueError('semantic_edge_options_exhausted')
+                elif endpoint_titles and edge_type(result.schema_object) and key in {'from_unit','to_unit'}:
+                    endpoint = result.selected_from if key == 'from_unit' else result.selected_to
+                    value = deepcopy(result.schema_object.properties[key])
+                    value.enum = [ref for ref in value.enum if ref.partition('.')[0] == endpoint]
+                    if not value.enum:
+                        raise ValueError('semantic_edge_unit_unbound')
+                elif endpoint_titles and edge_type(result.schema_object) and key == 'label':
+                    titles = (endpoint_titles[result.selected_from], endpoint_titles[result.selected_to])
+                    active.object_stack[-1] = EndpointLabel(result.root, titles,
+                        result.schema_object.properties[key].maxLength)
                 if value is not None:
                     active.object_stack[-1] = module.get_parser(result.root, value)
             if char == '}' and result.can_end() and (event_type(result.schema_object) or reading_type(result.schema_object)):
@@ -1297,6 +1470,8 @@ def semantic_json_parser(messages, alphabet):
     if material.get('model_schema') == NODE_LOCAL_V4_SCHEMA and material.get('author_phase') != 'PLAN':
         ids = tuple(n['node_id'] for n in material.get('candidate_nodes', ()))
         return _semantic_unique_json_schema_parser(schema, config, bound_node_ids=ids,
+            endpoint_nodes=material['candidate_nodes'] if material.get('author_phase') == 'RELATIONS'
+                and material.get('author_profile') == OCCURRENCE_V6_PROFILE else (),
             unique_qualifications=material.get('author_phase') == 'NODES'
                 and material.get('author_profile') in OCCURRENCE_PROFILES)
     anchor_key = 'events' if 'events' in schema['properties'] else 'nodes'
@@ -1465,7 +1640,7 @@ def make_handler(generate, *, api_key, model_name, deadline, max_requests,
                     EVENT_PLAN_V2_BASE_MODEL, NODE_LOCAL_V3_BASE_MODEL}
                 if event_plan:
                     selected_model = event_plan_model
-                staged = event_plan and event_plan_model in {NODE_LOCAL_V4_MODEL, NODE_LOCAL_V4_BOUND_MODEL, NODE_LOCAL_V4_BOUND_V2_MODEL, OCCURRENCE_MODEL, OCCURRENCE_V2_MODEL, OCCURRENCE_V3_MODEL, OCCURRENCE_V4_MODEL, OCCURRENCE_V5_MODEL}
+                staged = event_plan and event_plan_model in {NODE_LOCAL_V4_MODEL, NODE_LOCAL_V4_BOUND_MODEL, NODE_LOCAL_V4_BOUND_V2_MODEL, OCCURRENCE_MODEL, OCCURRENCE_V2_MODEL, OCCURRENCE_V3_MODEL, OCCURRENCE_V4_MODEL, OCCURRENCE_V5_MODEL, OCCURRENCE_V6_MODEL}
                 if staged:
                     material = json.loads(messages[1]['content'])
                     if material.get('author_phase') not in NODE_LOCAL_V4_PHASES:
@@ -1494,7 +1669,7 @@ def make_handler(generate, *, api_key, model_name, deadline, max_requests,
                     except (ValueError, TypeError):
                         material = None
                     marker = material.get('model_schema') if type(material) is dict else None
-                    expected_marker = (NODE_LOCAL_V4_SCHEMA if event_plan_model in {NODE_LOCAL_V4_MODEL, NODE_LOCAL_V4_BOUND_MODEL, NODE_LOCAL_V4_BOUND_V2_MODEL, OCCURRENCE_MODEL, OCCURRENCE_V2_MODEL, OCCURRENCE_V3_MODEL, OCCURRENCE_V4_MODEL, OCCURRENCE_V5_MODEL}
+                    expected_marker = (NODE_LOCAL_V4_SCHEMA if event_plan_model in {NODE_LOCAL_V4_MODEL, NODE_LOCAL_V4_BOUND_MODEL, NODE_LOCAL_V4_BOUND_V2_MODEL, OCCURRENCE_MODEL, OCCURRENCE_V2_MODEL, OCCURRENCE_V3_MODEL, OCCURRENCE_V4_MODEL, OCCURRENCE_V5_MODEL, OCCURRENCE_V6_MODEL}
                         else NODE_LOCAL_V3_SCHEMA if event_plan_model in {
                             NODE_LOCAL_V3_MODEL, NODE_LOCAL_V3_BASE_MODEL}
                         else EVENT_PLAN_V2_SCHEMA if event_plan_model in {
@@ -1504,7 +1679,8 @@ def make_handler(generate, *, api_key, model_name, deadline, max_requests,
                                 NODE_LOCAL_V3_SCHEMA, NODE_LOCAL_V4_SCHEMA}):
                         raise ValueError
                     if staged:
-                        expected_profile = (OCCURRENCE_V5_PROFILE if event_plan_model == OCCURRENCE_V5_MODEL
+                        expected_profile = (OCCURRENCE_V6_PROFILE if event_plan_model == OCCURRENCE_V6_MODEL
+                            else OCCURRENCE_V5_PROFILE if event_plan_model == OCCURRENCE_V5_MODEL
                             else OCCURRENCE_V4_PROFILE if event_plan_model == OCCURRENCE_V4_MODEL
                             else OCCURRENCE_V3_PROFILE if event_plan_model == OCCURRENCE_V3_MODEL
                             else OCCURRENCE_V2_PROFILE if event_plan_model == OCCURRENCE_V2_MODEL
@@ -1828,8 +2004,10 @@ def load_generator(adapter, process_stop, *, weights_sha256=None, config_sha256=
                 return allowed
             if profile == 'event_plan':
                 material=json.loads(messages[1]['content'])
-                if material.get('author_profile') in {OCCURRENCE_V2_PROFILE, OCCURRENCE_V3_PROFILE, OCCURRENCE_V4_PROFILE, OCCURRENCE_V5_PROFILE} and material.get('author_phase')=='NODES':
+                if material.get('author_profile') in {OCCURRENCE_V2_PROFILE, OCCURRENCE_V3_PROFILE, OCCURRENCE_V4_PROFILE, OCCURRENCE_V5_PROFILE, OCCURRENCE_V6_PROFILE} and material.get('author_phase')=='NODES':
                     format_options['logits_processor']=[_occurrence_greedy_node_filter(tokenizer,count)]
+                elif material.get('author_profile') == OCCURRENCE_V6_PROFILE and material.get('author_phase') == 'RELATIONS':
+                    format_options['logits_processor']=[_occurrence_greedy_relation_filter(allowed_prefix)]
             format_options['prefix_allowed_tokens_fn'] = private_prefix
             format_options['eos_token_id'] = tokenizer_data.eos_token_id
             generation_stage('decode')

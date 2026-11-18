@@ -3936,19 +3936,21 @@ def expand_analysis_semantic_event_plan(prepared, packet):
     reference scope only; model facts and interpretations remain unassessed.
     Legacy profiles retain their original packet and compiler behavior.
     """
-    if (getattr(prepared, 'prompt_version', None) in {'semantic_map.node_local.v4', 'semantic_map.node_local.v4.bound_roots.v1', 'semantic_map.node_local.v4.bound_roots.v2', 'semantic_map.node_local.v4.occurrence.v1', 'semantic_map.node_local.v4.occurrence.v2', 'semantic_map.node_local.v4.occurrence.v3', 'semantic_map.node_local.v4.occurrence.v4', 'semantic_map.node_local.v4.occurrence.v5'}
+    from .semantic_admission import SEMANTIC_MAP_NODE_LOCAL_V4_PROFILES
+    if (getattr(prepared, 'prompt_version', None) in SEMANTIC_MAP_NODE_LOCAL_V4_PROFILES
             or type(packet) is dict and packet.get('schema_version') in {'cocolon.analysis.semantic_map.node_local.model.v4',
                 'cocolon.analysis.semantic_map.node_local.model.v4.bound_roots.v1',
                 'cocolon.analysis.semantic_map.node_local.model.v4.bound_roots.v2', 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v1',
-                'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v2', 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v3', 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v4', 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v5'}):
+                'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v2', 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v3', 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v4', 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v5', 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v6'}):
         from .semantic_admission import (assemble_semantic_node_local_v4,
-            SEMANTIC_MAP_NODE_LOCAL_V3_PROFILE)
+            SEMANTIC_MAP_NODE_LOCAL_V3_PROFILE, SEMANTIC_MAP_OCCURRENCE_V6_PROFILE)
         joined = assemble_semantic_node_local_v4(prepared, packet)
         # Exact phase assembly: roots/prose/IDs were fixed and checked before
         # this projection. No rejected sentence, edge or partial raw is fixed.
         joined['nodes'] = [{k: v for k, v in n.items() if k != 'node_id'} for n in joined['nodes']]
         return _expand_analysis_semantic_node_local_v3(
-            replace(prepared, prompt_version=SEMANTIC_MAP_NODE_LOCAL_V3_PROFILE), joined)
+            replace(prepared, prompt_version=SEMANTIC_MAP_NODE_LOCAL_V3_PROFILE), joined,
+            fact_endpoints=prepared.prompt_version == SEMANTIC_MAP_OCCURRENCE_V6_PROFILE)
     if (getattr(prepared, 'prompt_version', None) == 'semantic_map.node_local.v3'
             or type(packet) is dict and packet.get('schema_version') == 'cocolon.analysis.semantic_map.node_local.model.v3'):
         return _expand_analysis_semantic_node_local_v3(prepared, packet)
@@ -4164,7 +4166,7 @@ def _expand_analysis_semantic_event_plan_v2(prepared, packet):
         overview=dict(title=text(overview['title'], 80), summary='\n'.join(visible)))
 
 
-def _expand_analysis_semantic_node_local_v3(prepared, packet):
+def _expand_analysis_semantic_node_local_v3(prepared, packet, *, fact_endpoints=False):
     """Compile node-owned authored units, not a repair of a reference plan.
 
     There is no independently authored fact/reading registry to relink. All
@@ -4252,13 +4254,25 @@ def _expand_analysis_semantic_node_local_v3(prepared, packet):
     if len(required_records) <= 24:
         require(required_records <= covered_records, 'analysis_semantic_node_local_coverage_incomplete')
     edges = []
+    expected_keys = {'from', 'to', 'relation_kind', 'label'}
+    if fact_endpoints:
+        expected_keys |= {'from_unit', 'to_unit'}
+        by_unit = {f'n{i}.u{j}': unit for i, node in enumerate(packet['nodes'], 1)
+                   for j, unit in enumerate(node['units'], 1)}
     for edge in rows(packet['edges'], 48):
-        require(keys(edge, {'from', 'to', 'relation_kind', 'label'})
+        require(keys(edge, expected_keys)
             and type(edge['from']) is str and edge['from'] in bodies
             and type(edge['to']) is str and edge['to'] in bodies and edge['from'] != edge['to']
             and type(edge['relation_kind']) is str and edge['relation_kind'] in SEMANTIC_MAP_RELATION_KINDS, reason)
-        edges.append(dict(**{key: edge[key] for key in ('from', 'to', 'relation_kind')},
-            label=text(edge['label'], 80), explanation=bodies[edge['from']] + '\n' + bodies[edge['to']]))
+        result = {key: edge[key] for key in ('from', 'to', 'relation_kind')}
+        result['label'] = text(edge['label'], 80)
+        if fact_endpoints:
+            selected = [by_unit[edge[key]] for key in ('from_unit', 'to_unit')]
+            result['explanation'] = '\n'.join(unit['fact'] for unit in selected)
+            result['unit_evidence'] = [unit['evidence'] for unit in selected]
+        else:
+            result['explanation'] = bodies[edge['from']] + '\n' + bodies[edge['to']]
+        edges.append(result)
     overview = packet['overview']
     require(keys(overview, {'title', 'node_refs'}), reason)
     refs = rows(overview['node_refs'], 8, 1)
@@ -4280,7 +4294,8 @@ def _semantic_node_local_review(graph, prepared, original, expanded):
         assigned_unit_ids=units,
         node_meaning_roots='ALL_AND_ONLY_NODE_OWNED_UNITS',
         edge_unit_closures=[dict(from_ref=edge['from'], to_ref=edge['to'],
-            unit_refs=units[edge['from']] + units[edge['to']]) for edge in original['edges']],
+            unit_refs=[edge['from_unit'], edge['to_unit']] if 'from_unit' in edge else
+                      units[edge['from']] + units[edge['to']]) for edge in original['edges']],
         overview_node_refs=list(original['overview']['node_refs']),
         expanded_packet_sha256=semantic_map_hash(expanded),
         source_modes_status='UNASSESSED_MODEL_QUALIFICATIONS', meaning_status='UNASSESSED',
@@ -4289,7 +4304,8 @@ def _semantic_node_local_review(graph, prepared, original, expanded):
 
 
 def _semantic_event_plan_review(graph, prepared, original, expanded):
-    if getattr(prepared, 'prompt_version', None) in {'semantic_map.node_local.v4', 'semantic_map.node_local.v4.bound_roots.v1', 'semantic_map.node_local.v4.bound_roots.v2', 'semantic_map.node_local.v4.occurrence.v1', 'semantic_map.node_local.v4.occurrence.v2', 'semantic_map.node_local.v4.occurrence.v3', 'semantic_map.node_local.v4.occurrence.v4', 'semantic_map.node_local.v4.occurrence.v5'}:
+    from .semantic_admission import SEMANTIC_MAP_NODE_LOCAL_V4_PROFILES
+    if getattr(prepared, 'prompt_version', None) in SEMANTIC_MAP_NODE_LOCAL_V4_PROFILES:
         from .semantic_admission import (assemble_semantic_node_local_v4,
             semantic_map_canonical, semantic_map_hash)
         joined = assemble_semantic_node_local_v4(prepared, original)
@@ -4323,14 +4339,14 @@ def compile_analysis_semantic_stage(stage, packet, *, response_sha256):
     from .semantic_admission import (AnalysisSemanticMapStageInput,
         _semantic_map_require, _semantic_map_evidence, semantic_map_canonical,
         semantic_map_hash, _semantic_history_corrections, _semantic_history_leaf_packet,
-        SEMANTIC_HISTORY_PROFILE, SEMANTIC_HISTORY_MERGE_PROFILE)
+        SEMANTIC_HISTORY_PROFILE, SEMANTIC_HISTORY_MERGE_PROFILE, SEMANTIC_MAP_NODE_LOCAL_V3_PROFILE,
+        SEMANTIC_MAP_NODE_LOCAL_V4_PROFILES)
     _semantic_map_require(type(stage) is AnalysisSemanticMapStageInput
         and stage.kind in {'LEAF', 'MERGE'}, 'analysis_semantic_history_stage_unbound')
     parent = stage.parent
     original_packet = packet
     expansion_view = (replace(parent, material_json=stage.material_json)
-        if stage.prompt_version in {'semantic_map.node_local.v3', 'semantic_map.node_local.v4',
-            'semantic_map.node_local.v4.bound_roots.v1', 'semantic_map.node_local.v4.bound_roots.v2', 'semantic_map.node_local.v4.occurrence.v1', 'semantic_map.node_local.v4.occurrence.v2', 'semantic_map.node_local.v4.occurrence.v3', 'semantic_map.node_local.v4.occurrence.v4', 'semantic_map.node_local.v4.occurrence.v5'} else parent)
+        if stage.prompt_version in {SEMANTIC_MAP_NODE_LOCAL_V3_PROFILE, *SEMANTIC_MAP_NODE_LOCAL_V4_PROFILES} else parent)
     packet = expand_analysis_semantic_event_plan(expansion_view, packet)
     material = json.loads(stage.material_json)
     history_profile = SEMANTIC_HISTORY_MERGE_PROFILE if stage.kind == 'MERGE' else SEMANTIC_HISTORY_PROFILE
@@ -4376,7 +4392,7 @@ def compile_analysis_semantic_stage(stage, packet, *, response_sha256):
     corrections = (_semantic_history_corrections(parent, stage.record_refs)
         if stage.kind == 'LEAF' else json.loads(parent.map_correction_sources_json or '[]'))
     view = replace(parent, map_correction_sources_json=semantic_map_canonical(corrections) if corrections else '')
-    if stage.prompt_version in {'semantic_map.node_local.v4', 'semantic_map.node_local.v4.bound_roots.v1', 'semantic_map.node_local.v4.bound_roots.v2', 'semantic_map.node_local.v4.occurrence.v1', 'semantic_map.node_local.v4.occurrence.v2', 'semantic_map.node_local.v4.occurrence.v3', 'semantic_map.node_local.v4.occurrence.v4', 'semantic_map.node_local.v4.occurrence.v5'}:
+    if stage.prompt_version in SEMANTIC_MAP_NODE_LOCAL_V4_PROFILES:
         view = replace(view, material_json=stage.material_json)
     graph = _compile_analysis_semantic_map_v2(view, packet, response_sha256=response_sha256)
     graph = _semantic_event_plan_review(graph, view, original_packet, packet)
@@ -4433,7 +4449,7 @@ def compile_analysis_semantic_map(prepared, packet, *, response_sha256):
 def _compile_analysis_semantic_map_v2(prepared, packet, *, response_sha256):
     from .semantic_admission import (AnalysisSemanticMapInput,
         SEMANTIC_MAP_MODEL_SCHEMA, SEMANTIC_MAP_NODE_KINDS, SEMANTIC_MAP_PERSPECTIVES,
-        SEMANTIC_MAP_RELATION_KINDS, _semantic_map_require, _semantic_map_keys,
+        SEMANTIC_MAP_RELATION_KINDS, SEMANTIC_MAP_OCCURRENCE_V6_PROFILE, _semantic_map_require, _semantic_map_keys,
         _semantic_map_text, _semantic_map_strings, _semantic_map_evidence,
         semantic_map_canonical, semantic_map_hash)
     from .source_adapter import freeze_analysis_sources
@@ -4512,9 +4528,13 @@ def _compile_analysis_semantic_map_v2(prepared, packet, *, response_sha256):
         [quote for quotes in original_quotes_by_node.values() for quote in quotes])
     _semantic_map_require(len({(node['title'], node['summary'], node['explanation'])
                   for node in public_nodes}) == len(public_nodes))
+    fact_endpoints = prepared.prompt_version == SEMANTIC_MAP_OCCURRENCE_V6_PROFILE
+    edge_keys = {'from', 'to', 'relation_kind', 'label', 'explanation'}
+    if fact_endpoints:
+        edge_keys.add('unit_evidence')
     public_edges, seen = [], set()
     for index, edge in enumerate(packet['edges'], 1):
-        _semantic_map_require(_semantic_map_keys(edge, {'from', 'to', 'relation_kind', 'label', 'explanation'})
+        _semantic_map_require(_semantic_map_keys(edge, edge_keys)
             and type(edge['from']) is str and type(edge['to']) is str
             and edge['from'] in {node['node_ref'] for node in public_nodes}
             and edge['to'] in {node['node_ref'] for node in public_nodes}
@@ -4525,10 +4545,27 @@ def _compile_analysis_semantic_map_v2(prepared, packet, *, response_sha256):
         _semantic_map_require(key not in seen)
         seen.add(key)
         explanation = edge['explanation']
-        left, left_records = source_conditions[edge['from']]
-        right, right_records = source_conditions[edge['to']]
-        correction_field_scope('edge', edge, left_records | right_records,
-            original_quotes_by_node[edge['from']] + original_quotes_by_node[edge['to']])
+        if fact_endpoints:
+            # Source conditions, corrections and private meaning review refer to
+            # the same two units the author actually used for this relation.
+            conditions, edge_quotes, edge_roots = [], [], []
+            for side, evidence in zip(('from', 'to'), edge['unit_evidence'], strict=True):
+                resolved = [_semantic_map_evidence(prepared, item) for item in evidence]
+                roots = [root for _, root in resolved]
+                refs = frozenset(ref for dependency, _ in resolved
+                    for ref in (dependency if type(dependency) is tuple else (dependency,)))
+                _semantic_map_require(all(root in source_roots[edge[side]] for root in roots))
+                edge_roots.extend(roots)
+                edge_quotes.extend(item['quote'] for item, (dependency, _) in zip(evidence, resolved)
+                    if type(dependency) is str)
+                conditions.append((_semantic_map_source_context(prepared, refs, roots)[1], refs))
+            (left, left_records), (right, right_records) = conditions
+        else:
+            left, left_records = source_conditions[edge['from']]
+            right, right_records = source_conditions[edge['to']]
+            edge_quotes = original_quotes_by_node[edge['from']] + original_quotes_by_node[edge['to']]
+            edge_roots = [*source_roots[edge['from']], *source_roots[edge['to']]]
+        correction_field_scope('edge', edge, left_records | right_records, edge_quotes)
         if (edge['relation_kind'] in {'CONTEXT_CONTRAST', 'SHARED_MEANING'}
                 and left and right and left != right and left_records.isdisjoint(right_records)):
             # These are independent source premises, not a claim that the
@@ -4543,8 +4580,7 @@ def _compile_analysis_semantic_map_v2(prepared, packet, *, response_sha256):
         public_edges.append(dict(edge_ref='e' + str(index), from_ref=edge['from'],
             to_ref=edge['to'], relation_kind=edge['relation_kind'],
             label=edge['label'], explanation=explanation))
-        edge_reviews.append(_semantic_map_visible_review(prepared,
-            [*source_roots[edge['from']], *source_roots[edge['to']]],
+        edge_reviews.append(_semantic_map_visible_review(prepared, edge_roots,
             [(key, edge[key]) for key in ('label', 'explanation')]))
     count = len(prepared.frozen.members)
     reasons = json.loads(prepared.exclusion_reasons_json)
