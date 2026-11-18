@@ -2334,13 +2334,15 @@ SEMANTIC_MAP_OCCURRENCE_V5_PROFILE = 'semantic_map.node_local.v4.occurrence.v5'
 SEMANTIC_MAP_OCCURRENCE_V6_PROFILE = 'semantic_map.node_local.v4.occurrence.v6'
 SEMANTIC_MAP_OCCURRENCE_V7_PROFILE = 'semantic_map.node_local.v4.occurrence.v7'
 SEMANTIC_MAP_OCCURRENCE_V8_PROFILE = 'semantic_map.node_local.v4.occurrence.v8'
+SEMANTIC_MAP_OCCURRENCE_V9_PROFILE = 'semantic_map.node_local.v4.occurrence.v9'
 SEMANTIC_MAP_OCCURRENCE_V3_SCHEMA = 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v3'
 SEMANTIC_MAP_OCCURRENCE_V4_SCHEMA = 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v4'
 SEMANTIC_MAP_OCCURRENCE_V5_SCHEMA = 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v5'
 SEMANTIC_MAP_OCCURRENCE_V6_SCHEMA = 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v6'
 SEMANTIC_MAP_OCCURRENCE_V7_SCHEMA = 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v7'
 SEMANTIC_MAP_OCCURRENCE_V8_SCHEMA = 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v8'
-SEMANTIC_MAP_FACT_ENDPOINT_PROFILES = frozenset({SEMANTIC_MAP_OCCURRENCE_V6_PROFILE, SEMANTIC_MAP_OCCURRENCE_V7_PROFILE, SEMANTIC_MAP_OCCURRENCE_V8_PROFILE})
+SEMANTIC_MAP_OCCURRENCE_V9_SCHEMA = 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v9'
+SEMANTIC_MAP_FACT_ENDPOINT_PROFILES = frozenset({SEMANTIC_MAP_OCCURRENCE_V6_PROFILE, SEMANTIC_MAP_OCCURRENCE_V7_PROFILE, SEMANTIC_MAP_OCCURRENCE_V8_PROFILE, SEMANTIC_MAP_OCCURRENCE_V9_PROFILE})
 _SEMANTIC_COMPACT_UNIT_PROFILES = {SEMANTIC_MAP_OCCURRENCE_V5_PROFILE, *SEMANTIC_MAP_FACT_ENDPOINT_PROFILES}
 SEMANTIC_MAP_OCCURRENCE_PROFILES = frozenset({SEMANTIC_MAP_OCCURRENCE_PROFILE, SEMANTIC_MAP_OCCURRENCE_V2_PROFILE, SEMANTIC_MAP_OCCURRENCE_V3_PROFILE, SEMANTIC_MAP_OCCURRENCE_V4_PROFILE, *_SEMANTIC_COMPACT_UNIT_PROFILES})
 SEMANTIC_MAP_NODE_LOCAL_V4_BOUND_PROFILES = frozenset({SEMANTIC_MAP_NODE_LOCAL_V4_BOUND_PROFILE,
@@ -2635,6 +2637,8 @@ def _semantic_v4_schema(phase):
 
 
 def semantic_node_local_v4_artifact_schema(prepared):
+    if prepared.prompt_version == SEMANTIC_MAP_OCCURRENCE_V9_PROFILE:
+        return SEMANTIC_MAP_OCCURRENCE_V9_SCHEMA
     if prepared.prompt_version == SEMANTIC_MAP_OCCURRENCE_V8_PROFILE:
         return SEMANTIC_MAP_OCCURRENCE_V8_SCHEMA
     if prepared.prompt_version == SEMANTIC_MAP_OCCURRENCE_V7_PROFILE:
@@ -2677,6 +2681,7 @@ def semantic_node_local_v4_plan(prepared, plan):
     material = json.loads(prepared.material_json)
     shown = {f['field']: f for f in material['fields']}
     covered, cited = set(), set()
+    previous_allocations = set()
     for i, node in enumerate(plan['nodes'], 1):
         r(_semantic_map_keys(node, {'node_id', 'units'}) and node['node_id'] == 'n' + str(i)
             and type(node['units']) is list and 1 <= len(node['units']) <= 2, reason)
@@ -2696,6 +2701,11 @@ def semantic_node_local_v4_plan(prepared, plan):
                 record = shown[root['field']].get('record')
                 if type(record) is int and record > 0:
                     covered.add(record)
+        if prepared.prompt_version == SEMANTIC_MAP_OCCURRENCE_V9_PROFILE:
+            allocation = tuple(tuple((root['field'], root['quote']) for root in unit['evidence'])
+                for unit in node['units'])
+            r(allocation not in previous_allocations, 'analysis_semantic_node_allocation_repeated')
+            previous_allocations.add(allocation)
     required = {row['record'] for row in material['records']}
     if len(required) <= 24:
         r(required <= covered, 'analysis_semantic_node_local_coverage_incomplete')
@@ -2716,11 +2726,33 @@ def _semantic_occurrence_check_prose(text, quotes):
             'analysis_semantic_authored_serialization_residue')
 
 
+def _semantic_source_cues(quote):
+    # Keep a verbatim, bounded beginning or ending next to the prose it grounds.
+    # The complete selected quote remains in the input and in the saved PLAN.
+    return tuple(dict.fromkeys((quote[:16], quote[-16:])))
+
+
+def _semantic_fact_part_key(evidence, index):
+    # Put a short piece of this source immediately before its authored value.
+    # Prefer a span that distinguishes siblings with the same opening words.
+    quote = evidence[index]['quote']
+    others = [root['quote'] for i, root in enumerate(evidence) if i != index]
+    width = min(8, len(quote))
+    cue = quote[:width]
+    for start in range(len(quote) - width + 1):
+        span = quote[start:start + width]
+        if all(span not in other for other in others):
+            cue = span
+            break
+    return f'e{index + 1}/{cue}'
+
+
 def _semantic_unit_fact(unit):
     if 'fact' in unit:
         return unit['fact']
     parts = unit['fact_parts']
-    return ''.join(parts['e' + str(i)] for i in range(1, len(parts) + 1))
+    # Each of the at most four private keys begins with its e1..e4 position.
+    return ''.join(parts[key] for key in sorted(parts))
 
 
 def _semantic_occurrence_check_nodes(nodes, plan=None):
@@ -2801,11 +2833,13 @@ def semantic_node_local_v4_nodes(prepared, plan, packet):
             if fact_parts:
                 count = len(roots['evidence'])
                 parts = unit.get('fact_parts')
-                r(_semantic_map_keys(parts, {'e' + str(j) for j in range(1, count + 1)})
-                    and all(type(parts['e' + str(j)]) is str
-                        and len(parts['e' + str(j)]) <= limit
-                        and _semantic_map_text(parts['e' + str(j)].strip(), 160)
-                        for j, limit in enumerate(_semantic_fact_part_limits(roots['evidence']), 1)), reason)
+                keys_by_root = [_semantic_fact_part_key(roots['evidence'], j)
+                    if prepared.prompt_version == SEMANTIC_MAP_OCCURRENCE_V9_PROFILE else f'e{j + 1}'
+                    for j in range(count)]
+                r(_semantic_map_keys(parts, set(keys_by_root)), reason)
+                for key, limit in zip(keys_by_root, _semantic_fact_part_limits(roots['evidence']), strict=True):
+                    piece = parts[key]
+                    r(type(piece) is str and len(piece) <= limit and _semantic_map_text(piece.strip(), 160), reason)
             r(_semantic_map_keys(unit, keys)
                 and type(unit['source_mode']) is str
                 and unit['source_mode'] in {'RECORDED', 'PERSON_JUDGMENT', 'PERSON_WISH', 'DECIDED_PLAN'}
@@ -2934,7 +2968,7 @@ def semantic_node_local_v4_relations(prepared, plan, bodies, packet):
     nodes = _semantic_v4_join(plan, bodies)
     ids = {node['node_id'] for node in nodes}
     r, reason = _semantic_map_require, 'analysis_semantic_node_local_v4_relations_invalid'
-    review_qualifications = prepared.prompt_version in {SEMANTIC_MAP_OCCURRENCE_V7_PROFILE, SEMANTIC_MAP_OCCURRENCE_V8_PROFILE}
+    review_qualifications = prepared.prompt_version in {SEMANTIC_MAP_OCCURRENCE_V7_PROFILE, SEMANTIC_MAP_OCCURRENCE_V8_PROFILE, SEMANTIC_MAP_OCCURRENCE_V9_PROFILE}
     relation_keys = {'schema_version', 'nodes_sha256', 'edges', 'overview'}
     if review_qualifications:
         relation_keys.add('qualification_review')
@@ -2948,6 +2982,9 @@ def semantic_node_local_v4_relations(prepared, plan, bodies, packet):
     fact_endpoints = prepared.prompt_version in SEMANTIC_MAP_FACT_ENDPOINT_PROFILES
     public_edge_keys = ('from', 'to', 'label', 'relation_kind')
     wire_edge_keys = set(public_edge_keys) | ({'from_unit', 'to_unit'} if fact_endpoints else set())
+    source_cued = prepared.prompt_version == SEMANTIC_MAP_OCCURRENCE_V9_PROFILE
+    if source_cued:
+        wire_edge_keys.update({'from_source', 'to_source'})
     for edge in packet['edges']:
         r(_semantic_map_keys(edge, wire_edge_keys)
             and type(edge['from']) is str and edge['from'] in ids
@@ -2960,6 +2997,11 @@ def semantic_node_local_v4_relations(prepared, plan, bodies, packet):
                 ref = edge[side + '_unit']
                 r(type(ref) is str and ref in {edge[side] + '.' + unit for unit in node['units']}
                     and edge['label'] != node['title'], reason)
+                if source_cued:
+                    index = int(ref.split('.u')[1]) - 1
+                    roots = plan['nodes'][int(edge[side][1:]) - 1]['units'][index]['evidence']
+                    r(any(edge[side + '_source'] in _semantic_source_cues(root['quote'])
+                          for root in roots), reason)
         key = (min(edge['from'], edge['to']), max(edge['from'], edge['to']), edge['relation_kind'])
         r(key not in seen, reason)
         seen.add(key)
@@ -2972,8 +3014,12 @@ def semantic_node_local_v4_relations(prepared, plan, bodies, packet):
         _semantic_occurrence_check_relations(nodes, packet)
     if review_qualifications:
         _apply_semantic_qualification_review(prepared, nodes, packet['qualification_review'])
+    # Source cues stay private in the raw receipt. The existing compiler uses
+    # the selected units to bind public edge evidence, exactly as before.
+    edges = [{k: v for k, v in edge.items() if k not in {'from_source', 'to_source'}}
+             for edge in packet['edges']] if source_cued else packet['edges']
     return dict(schema_version=SEMANTIC_MAP_NODE_LOCAL_V3_SCHEMA,
-        nodes=nodes, edges=packet['edges'], overview=overview)
+        nodes=nodes, edges=edges, overview=overview)
 
 
 _SEMANTIC_V4_COMMON = """本人のfields全文から、選択・条件・関わりと記録間の変化をわたしマップへ構成します。辞書・架空例・AI候補は本人事実ではありません。カテゴリを役割や意図へ置き換えません。カテゴリ・感情・強度は各記録の条件です。同時の感情は同時のまま、自己理解に強度表示を足さず、空欄は空欄のまま扱います。
@@ -3152,7 +3198,7 @@ def _semantic_fact_part_limits(evidence):
     return limits
 
 
-def _semantic_occurrence_v6_example(phase, *, leaf, review_qualifications=False):
+def _semantic_occurrence_v6_example(phase, *, leaf, review_qualifications=False, source_cued=False):
     # The three demonstrations all use one unrelated, fictional episode and
     # the exact digests of its PLAN and authored units, just like real requests.
     bag = '月曜、乾いた種を紙袋に入れた。'
@@ -3160,6 +3206,8 @@ def _semantic_occurrence_v6_example(phase, *, leaf, review_qualifications=False)
     moved = '金曜、湿った種を布袋に移した。'
     uncertain = '布袋の種が発芽したかは確かめていない。'
     wish = '次も湿った種には布袋を使いたい。'
+    if source_cued:
+        moved = '金曜、担当者から「湿った種を布袋に移した」と連絡が来た。'
     fields = [bag + open_lid] if leaf else [bag + open_lid, moved + uncertain + wish]
     def source(field, *quotes):
         return dict(evidence=[dict(quote=q, field=field) for q in quotes])
@@ -3179,6 +3227,15 @@ def _semantic_occurrence_v6_example(phase, *, leaf, review_qualifications=False)
                 [dict(source_quote=uncertain, source_field=2)]),
             'u2': unit('n2.u2', 'PERSON_WISH', ('次も湿った種には布袋を使いたいと考えています。',))},
             node_kind='SELF_POSITION', perspective='SELF', title='湿った種を布袋に移し、次も使いたい', meaning='')
+    if source_cued:
+        if not leaf:
+            entries['n2']['units']['u1']['fact_parts']['e1'] = '金曜、湿った種を布袋に移したと担当者から連絡がありました。'
+            entries['n2']['title'] = '担当者が布袋に移したと聞き、本人も次は布袋を使いたい'
+        for planned in allocations:
+            for i, allocation in enumerate(planned['units'], 1):
+                parts = entries[planned['node_id']]['units'][f'u{i}']['fact_parts']
+                for j in range(len(allocation['evidence'])):
+                    parts[_semantic_fact_part_key(allocation['evidence'], j)] = parts.pop(f'e{j + 1}')
     if review_qualifications:
         # A complete non-action can reach NODES as an unknown candidate.
         # This is an example of the independent decision made in RELATIONS.
@@ -3187,9 +3244,16 @@ def _semantic_occurrence_v6_example(phase, *, leaf, review_qualifications=False)
     actual_nodes = _semantic_v4_join(plan, nodes)
     edges = [] if leaf else [{'from':'n1', 'to':'n2', 'from_unit':'n1.u1', 'to_unit':'n2.u1',
         'label':'月曜は乾いた種を紙袋に入れ、金曜は湿った種を布袋に移した', 'relation_kind':'CONTEXT_CONTRAST'}]
+    if source_cued and edges:
+        edges[0] = {'from': 'n1', 'to': 'n2', 'from_unit': 'n1.u1', 'to_unit': 'n2.u1',
+            'from_source': _semantic_source_cues(bag)[0], 'to_source': _semantic_source_cues(moved)[0],
+            'label': '本人は乾いた種を紙袋に入れ、担当者からは湿った種を布袋に移したと聞いた',
+            'relation_kind': 'CONTEXT_CONTRAST'}
     relations = dict(schema_version=_semantic_v4_schema('RELATIONS'), nodes_sha256=semantic_map_hash(actual_nodes),
         edges=edges, overview=dict(node_refs=list(entries), title='乾いた種を入れた紙袋の口は閉じなかった'
             if leaf else '紙袋に入れた乾いた種と、布袋に移した湿った種'))
+    if source_cued and not leaf:
+        relations['overview']['title'] = '本人が種を入れた紙袋と、担当者から聞いた布袋への移し替え'
     inputs = dict(fields={i:t for i,t in enumerate(fields,1)})
     if phase == 'NODES':
         inputs['plan'] = plan
@@ -3226,7 +3290,9 @@ def _semantic_evidence_parts_by_unit(plan, bodies):
                 ref = 'e' + str(j)
                 entry = dict(field=root['field'], quote=root['quote'])
                 if bodies is not None:
-                    entry['fact_part'] = bodies['nodes'][node_id]['units'][unit_id]['fact_parts'][ref]
+                    authored = bodies['nodes'][node_id]['units'][unit_id]['fact_parts']
+                    key = ref if ref in authored else _semantic_fact_part_key(unit['evidence'], j - 1)
+                    entry['fact_part'] = authored[key]
                 entries[ref] = entry
             parts[node_id + '.' + unit_id] = entries
     return parts
@@ -3282,7 +3348,7 @@ def _semantic_occurrence_v6_messages(prepared, material, phase, bodies=None):
             'CRITERION_EXPRESSION、CONTEXT_CONTRAST、SHARED_MEANING。概要はnode_refsを1〜8件選び、その事実文と'
             '原文にある事柄からtitleを80字以内で書きます。二つの別対象なら各々の動作、同じ対象なら時点ごとの違いを残します。')
     }[phase]
-    review_qualifications = prepared.prompt_version in {SEMANTIC_MAP_OCCURRENCE_V7_PROFILE, SEMANTIC_MAP_OCCURRENCE_V8_PROFILE}
+    review_qualifications = prepared.prompt_version in {SEMANTIC_MAP_OCCURRENCE_V7_PROFILE, SEMANTIC_MAP_OCCURRENCE_V8_PROFILE, SEMANTIC_MAP_OCCURRENCE_V9_PROFILE}
     if review_qualifications:
         if phase == 'PLAN':
             guidance += (' 話題が同じでも、発言したこと、実行したこと、その後に本人が確認したことを区別し、'
@@ -3308,7 +3374,7 @@ def _semantic_occurrence_v6_messages(prepared, material, phase, bodies=None):
                     '{"status":"EARLIER"}、既に残す同じ範囲の候補は{"status":"DUPLICATE"}。'
                     '今も不明なら{"status":"OPEN","source_quote":"本人の原文"}とし、候補内かつ元の欄内で一意な連続部分を'
                     '意味が通る長さでそのまま選びます。確定済みの同居文を不明へ広げません。候補なしは{}です。')
-    if prepared.prompt_version == SEMANTIC_MAP_OCCURRENCE_V8_PROFILE and phase == 'PLAN':
+    if prepared.prompt_version in {SEMANTIC_MAP_OCCURRENCE_V8_PROFILE, SEMANTIC_MAP_OCCURRENCE_V9_PROFILE} and phase == 'PLAN':
         # Point back to all effective original segments, including split fields.
         # This is a reading order, never a requirement to quote every field.
         refs_by_record = {row['record']: {} for row in material['records']}
@@ -3322,7 +3388,7 @@ def _semantic_occurrence_v6_messages(prepared, material, phase, bodies=None):
             '同じ対象を後日に再び扱ったなら、最初の状態、後日に本人が取った行動、その後の他者の反応、'
             'まだ確認できない範囲を原文でたどり、経過が読み取れる引用を優先します。'
             '各欄の冒頭を拾うだけで済ませず、同じ行動の再記述は一度にまとめます。原文にない段階は足しません。')
-    if prepared.prompt_version == SEMANTIC_MAP_OCCURRENCE_V8_PROFILE and phase == 'NODES':
+    if prepared.prompt_version in {SEMANTIC_MAP_OCCURRENCE_V8_PROFILE, SEMANTIC_MAP_OCCURRENCE_V9_PROFILE} and phase == 'NODES':
         original_records = {f['field']: f['record'] for f in material['fields'] if f['source_role'] == 'ORIGINAL_INPUT'}
         for roots in parts.values():
             for root in roots.values():
@@ -3332,21 +3398,39 @@ def _semantic_occurrence_v6_messages(prepared, material, phase, bodies=None):
             '本文片に場所・道具・時間・数量を入れるなら、そのe番号の引用にある組合せを保ちます。'
             'titleで一回の行為を表すときも、その条件と結果を一つの場面から取ります。'
             '複数場面の違いを題にするときは、それぞれの条件と行為を明示します。')
-    if phase == 'RELATIONS' and prepared.prompt_version == SEMANTIC_MAP_OCCURRENCE_V8_PROFILE:
+    if phase == 'RELATIONS' and prepared.prompt_version in {SEMANTIC_MAP_OCCURRENCE_V8_PROFILE, SEMANTIC_MAP_OCCURRENCE_V9_PROFILE}:
         # Every PLAN root and every relation fact is already in candidate_nodes.
         # Keep its PLAN receipt so the native decoder can verify exact reconstruction.
         material['plan_sha256'] = semantic_map_hash(material.pop('plan'))
         del material['relation_units']
         guidance = guidance.replace('relation_unitsはこの試行で実際にできた各unitの事実文です。',
             'candidate_nodesの各項目のunitsはu1、u2の順で、factはその単位で実際にできた事実文です。')
+    if phase == 'PLAN' and prepared.prompt_version == SEMANTIC_MAP_OCCURRENCE_V9_PROFILE:
+        guidance += (' 同じ行為を別の日や条件で記録していたら、各回に実際にしたこと、場所・道具、'
+            '続けた時間や結果を原文で照合し、違いを伝える引用を選びます。条件が変わった理由だけで'
+            '行動そのものを省きません。別の出来事の理解に必要な引用は共有できます。'
+            '同じ根拠で同じ場面を繰り返さず、記録にある場面を示し終えたらそこで計画を閉じます。')
     stage = material.get('history_stage', {}).get('kind')
     if stage == 'LEAF':
         guidance += ' 今はLEAFです。この記録だけを扱い、edgesは[]です。'
     elif stage == 'MERGE':
         guidance += (' 今はMERGEです。fieldsに提示された連続原文と本人訂正の全文を根拠にし、'
             'leaf_receiptsとAIが書いた文、omitted_rangesを本人が述べた事実にしません。')
+    source_cued = prepared.prompt_version == SEMANTIC_MAP_OCCURRENCE_V9_PROFILE
+    if source_cued and phase == 'NODES':
+        guidance = guidance.replace('同じ出来事の引用が重なれば同じ内容を繰り返さず、一つの自然な文の前後に分けて書けます。',
+            'fact_partsの各キーはe番号/原文の短い一節です。その一節が指す同じe番号の引用全文を読み、'
+            'そこで分かることをその値に書きます。直前の引用の続きを次の番号へ送りません。')
+        guidance += ' 過去に未確認だったことには当時の時制を使い、他者から聞いた行動を本人の実行に変えません。'
+    if source_cued and phase == 'RELATIONS':
+        guidance = guidance.replace('from,to,from_unit,to_unit,label,relation_kind',
+            'from,to,from_unit,to_unit,from_source,to_source,label,relation_kind')
+        guidance += (' from_sourceとto_sourceで両端のunitごとに、使う原引用の先頭か末尾の16文字以内を選びます。'
+            'labelはその両端の原文にある話者・行為者と時点を区別して書きます。別unitの事実が必要ならそのunitを選びます。'
+            '概要でも、他者の行為を本人が後から知ったことと、本人が行ったことを区別します。')
     guidance = (_SEMANTIC_V4_COMMON + '\n' + guidance
-                + _semantic_occurrence_v6_example(phase, leaf=stage == 'LEAF', review_qualifications=review_qualifications))
+                + _semantic_occurrence_v6_example(phase, leaf=stage == 'LEAF',
+                    review_qualifications=review_qualifications, source_cued=source_cued and phase != 'PLAN'))
     guidance = _semantic_v4_view(prepared)._source_instruction(guidance, material)
     return [dict(role='system', content=guidance), dict(role='user', content=_semantic_occurrence_message(material))]
 

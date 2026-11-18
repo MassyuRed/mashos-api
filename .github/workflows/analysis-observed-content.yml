@@ -101,6 +101,8 @@ name: Analysis observed content
       - ai/tests/test_analysis_occurrence_v7_qualifications.py
       - ai/tests/test_analysis_occurrence_v8_source_reading.py
       - ai/tests/test_analysis_occurrence_v8_relation_transport.py
+      - ai/tests/test_analysis_occurrence_v9_plan.py
+      - ai/tests/test_analysis_occurrence_v9_source_cues.py
       - ai/tests/test_analysis_node_local_bound_roots.py
       - ai/tests/test_analysis_bound_roots_v2_selection.py
       - supabase/migrations/*_emlis_natural_bound_questions.sql
@@ -321,6 +323,8 @@ jobs:
           ai/tests/test_analysis_occurrence_v7_qualifications.py
           ai/tests/test_analysis_occurrence_v8_source_reading.py
           ai/tests/test_analysis_occurrence_v8_relation_transport.py
+          ai/tests/test_analysis_occurrence_v9_plan.py
+          ai/tests/test_analysis_occurrence_v9_source_cues.py
           ai/tests/test_analysis_node_local_bound_roots.py
           ai/tests/test_analysis_bound_roots_v2_selection.py
           ai/tests/test_analysis_semantic_history_core.py
