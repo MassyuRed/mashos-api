@@ -2332,11 +2332,14 @@ SEMANTIC_MAP_OCCURRENCE_V3_PROFILE = 'semantic_map.node_local.v4.occurrence.v3'
 SEMANTIC_MAP_OCCURRENCE_V4_PROFILE = 'semantic_map.node_local.v4.occurrence.v4'
 SEMANTIC_MAP_OCCURRENCE_V5_PROFILE = 'semantic_map.node_local.v4.occurrence.v5'
 SEMANTIC_MAP_OCCURRENCE_V6_PROFILE = 'semantic_map.node_local.v4.occurrence.v6'
+SEMANTIC_MAP_OCCURRENCE_V7_PROFILE = 'semantic_map.node_local.v4.occurrence.v7'
 SEMANTIC_MAP_OCCURRENCE_V3_SCHEMA = 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v3'
 SEMANTIC_MAP_OCCURRENCE_V4_SCHEMA = 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v4'
 SEMANTIC_MAP_OCCURRENCE_V5_SCHEMA = 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v5'
 SEMANTIC_MAP_OCCURRENCE_V6_SCHEMA = 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v6'
-_SEMANTIC_COMPACT_UNIT_PROFILES = {SEMANTIC_MAP_OCCURRENCE_V5_PROFILE, SEMANTIC_MAP_OCCURRENCE_V6_PROFILE}
+SEMANTIC_MAP_OCCURRENCE_V7_SCHEMA = 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v7'
+SEMANTIC_MAP_FACT_ENDPOINT_PROFILES = frozenset({SEMANTIC_MAP_OCCURRENCE_V6_PROFILE, SEMANTIC_MAP_OCCURRENCE_V7_PROFILE})
+_SEMANTIC_COMPACT_UNIT_PROFILES = {SEMANTIC_MAP_OCCURRENCE_V5_PROFILE, *SEMANTIC_MAP_FACT_ENDPOINT_PROFILES}
 SEMANTIC_MAP_OCCURRENCE_PROFILES = frozenset({SEMANTIC_MAP_OCCURRENCE_PROFILE, SEMANTIC_MAP_OCCURRENCE_V2_PROFILE, SEMANTIC_MAP_OCCURRENCE_V3_PROFILE, SEMANTIC_MAP_OCCURRENCE_V4_PROFILE, *_SEMANTIC_COMPACT_UNIT_PROFILES})
 SEMANTIC_MAP_NODE_LOCAL_V4_BOUND_PROFILES = frozenset({SEMANTIC_MAP_NODE_LOCAL_V4_BOUND_PROFILE,
     SEMANTIC_MAP_NODE_LOCAL_V4_BOUND_V2_PROFILE, *SEMANTIC_MAP_OCCURRENCE_PROFILES})
@@ -2630,6 +2633,8 @@ def _semantic_v4_schema(phase):
 
 
 def semantic_node_local_v4_artifact_schema(prepared):
+    if prepared.prompt_version == SEMANTIC_MAP_OCCURRENCE_V7_PROFILE:
+        return SEMANTIC_MAP_OCCURRENCE_V7_SCHEMA
     if prepared.prompt_version == SEMANTIC_MAP_OCCURRENCE_V6_PROFILE:
         return SEMANTIC_MAP_OCCURRENCE_V6_SCHEMA
     if prepared.prompt_version == SEMANTIC_MAP_OCCURRENCE_V5_PROFILE:
@@ -2767,7 +2772,7 @@ def semantic_node_local_v4_nodes(prepared, plan, packet):
         and packet['plan_sha256'] == semantic_map_hash(plan)
         and type(packet['nodes']) is dict
         and set(packet['nodes']) == {n['node_id'] for n in plan['nodes']}, reason)
-    fact_parts = prepared.prompt_version == SEMANTIC_MAP_OCCURRENCE_V6_PROFILE
+    fact_parts = prepared.prompt_version in SEMANTIC_MAP_FACT_ENDPOINT_PROFILES
     for planned in plan['nodes']:
         node = packet['nodes'][planned['node_id']]
         r(_semantic_map_keys(node, {'units', 'node_kind', 'perspective', 'title', 'meaning'})
@@ -2835,19 +2840,108 @@ def _semantic_v4_join(plan, bodies):
     return json.loads(semantic_map_canonical(nodes))
 
 
+def _semantic_qualification_candidates(nodes):
+    return {f"{node['node_id']}.u{i}.q{j}": unknown
+            for node in nodes for i, unit in enumerate(node['units'], 1)
+            for j, unknown in enumerate(unit['unknowns'], 1)}
+
+
+def _semantic_qualification_spans(original, *, qualification_tails=False):
+    """Boundary choices shared by contract with the separately deployed native decoder."""
+    pairs = {'「': '」', '『': '』'}
+    if qualification_tails:
+        pairs.update({'“': '”', '‘': '’', '"': '"', "'": "'", '`': '`', '（': '）', '(': ')',
+            '【': '】', '〈': '〉', '《': '》', '[': ']', '{': '}'})
+    escaped = False
+    stack, candidates = [], []
+    starts = [] if qualification_tails else [0]
+    terminal = '。！？!?'
+    for index, char in enumerate(original):
+        if qualification_tails and stack and stack[-1] in ('"', "'", '`'):
+            if escaped:
+                escaped = False
+            elif char == '\\':
+                escaped = True
+            elif char == stack[-1]:
+                stack.pop()
+            continue
+        if stack and char == stack[-1]:
+            stack.pop()
+        elif char in pairs:
+            stack.append(pairs[char])
+        elif char in pairs.values():
+            return []
+        elif qualification_tails and not stack and char in '、，':
+            starts.append(index + 1)
+        elif not stack and (char in terminal or char in '\r\n'):
+            if char in terminal and index + 1 < len(original) and original[index + 1] in terminal:
+                continue
+            candidates.extend(original[start:index + 1].strip() for start in starts
+                if not qualification_tails or index + 1 - start <= 240)
+            starts = [] if qualification_tails else [index + 1]
+    if stack:
+        return []
+    candidates.extend(original[start:].strip() for start in starts
+        if not qualification_tails or len(original) - start <= 240)
+    if qualification_tails:
+        # Keep the completing predicate, with exactly one location in the
+        # original field. The stage later checks containment in its chosen root.
+        return [span for span in candidates if 0 < len(span) <= 240
+            and original.find(span) == original.rfind(span)
+            and not re.search(r'["\\\x00-\x1f]', span)]
+    return [span for span in candidates if span and len(span) <= 4000
+        and original.count(span) == 1 and not re.search(r'["\\\x00-\x1f]', span)]
+
+
+
+def _apply_semantic_qualification_review(prepared, nodes, review):
+    """Narrow only the projected unknowns. Original NODES/RELATIONS receipts stay intact."""
+    reason = 'analysis_semantic_qualification_review_invalid'
+    require = _semantic_map_require
+    require(_semantic_map_keys(review, _semantic_qualification_candidates(nodes)), reason)
+    originals = {number: text for number, text, *_ in _semantic_v4_view(prepared).fields}
+    for node in nodes:
+        for i, unit in enumerate(node['units'], 1):
+            retained = []
+            for j, candidate in enumerate(unit['unknowns'], 1):
+                decision = review[f"{node['node_id']}.u{i}.q{j}"]
+                require(type(decision) is dict, reason)
+                status = decision.get('status')
+                if status == 'OPEN':
+                    require(_semantic_map_keys(decision, {'status', 'source_quote'}), reason)
+                    quote = decision['source_quote']
+                    require(_semantic_map_text(quote, 240), reason)
+                    field = candidate['source_field']
+                    candidate_quote = candidate['source_quote']
+                    require(quote == candidate_quote or quote in _semantic_qualification_spans(candidate_quote)
+                        or quote in _semantic_qualification_spans(candidate_quote, qualification_tails=True), reason)
+                    for source in (candidate_quote, originals[field]):
+                        # rfind catches overlapping matches that count would miss.
+                        require(0 <= source.find(quote) == source.rfind(quote), reason)
+                    retained.append(dict(source_field=field, source_quote=quote))
+                else:
+                    require(_semantic_map_keys(decision, {'status'})
+                        and status in ('STATED', 'EARLIER', 'DUPLICATE'), reason)
+            unit['unknowns'] = retained
+
+
 def semantic_node_local_v4_relations(prepared, plan, bodies, packet):
     semantic_node_local_v4_nodes(prepared, plan, bodies)
     nodes = _semantic_v4_join(plan, bodies)
     ids = {node['node_id'] for node in nodes}
     r, reason = _semantic_map_require, 'analysis_semantic_node_local_v4_relations_invalid'
-    r(_semantic_map_keys(packet, {'schema_version', 'nodes_sha256', 'edges', 'overview'})
+    review_qualifications = prepared.prompt_version == SEMANTIC_MAP_OCCURRENCE_V7_PROFILE
+    relation_keys = {'schema_version', 'nodes_sha256', 'edges', 'overview'}
+    if review_qualifications:
+        relation_keys.add('qualification_review')
+    r(_semantic_map_keys(packet, relation_keys)
         and packet['schema_version'] == _semantic_v4_schema('RELATIONS')
         and packet['nodes_sha256'] == semantic_map_hash(nodes)
         and type(packet['edges']) is list and len(packet['edges']) <= 48, reason)
     if json.loads(prepared.material_json).get('history_stage', {}).get('kind') == 'LEAF':
         r(not packet['edges'], reason)
     seen = set()
-    fact_endpoints = prepared.prompt_version == SEMANTIC_MAP_OCCURRENCE_V6_PROFILE
+    fact_endpoints = prepared.prompt_version in SEMANTIC_MAP_FACT_ENDPOINT_PROFILES
     public_edge_keys = ('from', 'to', 'label', 'relation_kind')
     wire_edge_keys = set(public_edge_keys) | ({'from_unit', 'to_unit'} if fact_endpoints else set())
     for edge in packet['edges']:
@@ -2872,6 +2966,8 @@ def semantic_node_local_v4_relations(prepared, plan, bodies, packet):
         and len(overview['node_refs']) == len(set(overview['node_refs'])), reason)
     if prepared.prompt_version in {SEMANTIC_MAP_OCCURRENCE_V3_PROFILE, SEMANTIC_MAP_OCCURRENCE_V4_PROFILE, *_SEMANTIC_COMPACT_UNIT_PROFILES}:
         _semantic_occurrence_check_relations(nodes, packet)
+    if review_qualifications:
+        _apply_semantic_qualification_review(prepared, nodes, packet['qualification_review'])
     return dict(schema_version=SEMANTIC_MAP_NODE_LOCAL_V3_SCHEMA,
         nodes=nodes, edges=packet['edges'], overview=overview)
 
@@ -3052,7 +3148,7 @@ def _semantic_fact_part_limits(evidence):
     return limits
 
 
-def _semantic_occurrence_v6_example(phase, *, leaf):
+def _semantic_occurrence_v6_example(phase, *, leaf, review_qualifications=False):
     # The three demonstrations all use one unrelated, fictional episode and
     # the exact digests of its PLAN and authored units, just like real requests.
     bag = '月曜、乾いた種を紙袋に入れた。'
@@ -3079,6 +3175,10 @@ def _semantic_occurrence_v6_example(phase, *, leaf):
                 [dict(source_quote=uncertain, source_field=2)]),
             'u2': unit('n2.u2', 'PERSON_WISH', ('次も湿った種には布袋を使いたいと考えています。',))},
             node_kind='SELF_POSITION', perspective='SELF', title='湿った種を布袋に移し、次も使いたい', meaning='')
+    if review_qualifications:
+        # A complete non-action can reach NODES as an unknown candidate.
+        # This is an example of the independent decision made in RELATIONS.
+        entries['n1']['units']['u1']['unknowns'] = [dict(source_quote=open_lid, source_field=1)]
     nodes = dict(schema_version=_semantic_v4_schema('NODES'), plan_sha256=semantic_map_hash(plan), nodes=entries)
     actual_nodes = _semantic_v4_join(plan, nodes)
     edges = [] if leaf else [{'from':'n1', 'to':'n2', 'from_unit':'n1.u1', 'to_unit':'n2.u1',
@@ -3091,6 +3191,15 @@ def _semantic_occurrence_v6_example(phase, *, leaf):
         inputs['plan'] = plan
     elif phase == 'RELATIONS':
         inputs['relation_units'] = _semantic_relation_units(actual_nodes)
+    if review_qualifications and phase != 'PLAN':
+        inputs['evidence_parts_by_unit'] = _semantic_evidence_parts_by_unit(plan, nodes if phase == 'RELATIONS' else None)
+        if phase == 'RELATIONS':
+            inputs['qualification_candidates'] = _semantic_qualification_candidates(actual_nodes)
+            decisions = {'n1.u1.q1': dict(status='STATED')}
+            if not leaf:
+                decisions['n2.u1.q1'] = dict(status='OPEN', source_quote=uncertain)
+            relations = dict(schema_version=relations['schema_version'], nodes_sha256=relations['nodes_sha256'],
+                qualification_review=decisions, edges=edges, overview=relations['overview'])
     output = {'PLAN':plan, 'NODES':nodes, 'RELATIONS':relations}[phase]
     compact = lambda value: json.dumps(value, ensure_ascii=False, separators=(',', ':'))
     return ('\n別の架空記録での書き方。今回の原文には含めません。\n例入力=' + compact(inputs)
@@ -3102,7 +3211,39 @@ def _semantic_relation_units(nodes):
             for node in nodes for i, unit in enumerate(node['units'], 1)}
 
 
-def _semantic_occurrence_v6_messages(prepared, material, phase):
+def _semantic_evidence_parts_by_unit(plan, bodies):
+    parts = {}
+    for node in plan['nodes']:
+        node_id = node['node_id']
+        for i, unit in enumerate(node['units'], 1):
+            unit_id = 'u' + str(i)
+            entries = {}
+            for j, root in enumerate(unit['evidence'], 1):
+                ref = 'e' + str(j)
+                entry = dict(field=root['field'], quote=root['quote'])
+                if bodies is not None:
+                    entry['fact_part'] = bodies['nodes'][node_id]['units'][unit_id]['fact_parts'][ref]
+                entries[ref] = entry
+            parts[node_id + '.' + unit_id] = entries
+    return parts
+
+
+def _semantic_recorded_at_index(material, parts):
+    from .source_adapter import _time
+    # Supplements and corrections have their own source clocks. Do not date
+    # them at the time of the original emotion record or its correction cohort.
+    source_records = {f['field']: f['record'] for f in material['fields']
+        if f['source_role'] == 'ORIGINAL_INPUT'}
+    units_by_record = {row['record']: [] for row in material['records']}
+    for unit_ref, entries in parts.items():
+        for record in {source_records[e['field']] for e in entries.values() if e['field'] in source_records}:
+            units_by_record[record].append(unit_ref)
+    ordered = sorted(material['records'], key=lambda row: (_time(row['recorded_at'], saved_utc=True), row['record']))
+    return [dict(record=row['record'], recorded_at=row['recorded_at'], units=units_by_record[row['record']])
+            for row in ordered]
+
+
+def _semantic_occurrence_v6_messages(prepared, material, phase, bodies=None):
     # The same originals and correction cohorts remain available in all phases.
     # Give the relation author a direct address for each *actual* prior fact.
     if phase == 'RELATIONS':
@@ -3137,6 +3278,32 @@ def _semantic_occurrence_v6_messages(prepared, material, phase):
             'CRITERION_EXPRESSION、CONTEXT_CONTRAST、SHARED_MEANING。概要はnode_refsを1〜8件選び、その事実文と'
             '原文にある事柄からtitleを80字以内で書きます。二つの別対象なら各々の動作、同じ対象なら時点ごとの違いを残します。')
     }[phase]
+    review_qualifications = prepared.prompt_version == SEMANTIC_MAP_OCCURRENCE_V7_PROFILE
+    if review_qualifications:
+        if phase == 'PLAN':
+            guidance += (' 話題が同じでも、発言したこと、実行したこと、その後に本人が確認したことを区別し、'
+                '初め・途中・最後で変わった対象や判断を別々の引用で残します。')
+        else:
+            parts = _semantic_evidence_parts_by_unit(material['plan'], bodies if phase == 'RELATIONS' else None)
+            material['evidence_parts_by_unit'] = parts
+            if phase == 'NODES':
+                guidance += (' evidence_parts_by_unitの同じunit・e番号の原引用と欄を読み、その番号のfact_partsへ'
+                    '対応する意味を書きます。文を番号の個数に機械的に切らず、各引用の主体・動作・対象・時点、'
+                    '発言、未実行、完了のどれかを取り違えない自然な本文にします。unknownsは再点検する候補です。')
+            else:
+                material['recorded_at_index'] = _semantic_recorded_at_index(material, parts)
+                material['qualification_candidates'] = _semantic_qualification_candidates(material['candidate_nodes'])
+                guidance = guidance.replace('nodes_sha256,edges,overview', 'nodes_sha256,qualification_review,edges,overview')
+                guidance += (' evidence_parts_by_unitのfact_partは前段のAIによる本文片です。同じe番号の原引用と欄へ戻ります。'
+                    'recorded_at_indexは原記録の記録日時順と各記録を引用するunitです。補足・訂正は各fieldの時点を使います。'
+                    '選んだ両端の間に別の行動、後でわかったこと、反証がないか、選外の記録も確認します。'
+                    '記録日時の順だけで出来事の順や因果を決めません。途中の実行を飛ばすと意味が変わる線は作りません。'
+                    '概要でも、選んだ項目だけで説明できる内容かを確かめます。'
+                    'qualification_candidates全件を原文と後の記録で再点検し、同じ候補IDへ判定を一つずつ書きます。'
+                    '明記された事実・非行動は{"status":"STATED"}、当時は不明でも後に同じ対象について解消したものは'
+                    '{"status":"EARLIER"}、既に残す同じ範囲の候補は{"status":"DUPLICATE"}。'
+                    '今も不明なら{"status":"OPEN","source_quote":"本人の原文"}とし、候補内かつ元の欄内で一意な連続部分を'
+                    '意味が通る長さでそのまま選びます。確定済みの同居文を不明へ広げません。候補なしは{}です。')
     stage = material.get('history_stage', {}).get('kind')
     if stage == 'LEAF':
         guidance += ' 今はLEAFです。この記録だけを扱い、edgesは[]です。'
@@ -3144,7 +3311,7 @@ def _semantic_occurrence_v6_messages(prepared, material, phase):
         guidance += (' 今はMERGEです。fieldsに提示された連続原文と本人訂正の全文を根拠にし、'
             'leaf_receiptsとAIが書いた文、omitted_rangesを本人が述べた事実にしません。')
     guidance = (_SEMANTIC_V4_COMMON + '\n' + guidance
-                + _semantic_occurrence_v6_example(phase, leaf=stage == 'LEAF'))
+                + _semantic_occurrence_v6_example(phase, leaf=stage == 'LEAF', review_qualifications=review_qualifications))
     guidance = _semantic_v4_view(prepared)._source_instruction(guidance, material)
     return [dict(role='system', content=guidance), dict(role='user', content=_semantic_occurrence_message(material))]
 
@@ -3163,8 +3330,8 @@ def semantic_node_local_v4_messages(prepared, phase='PLAN', *, plan=None, nodes=
     if phase == 'RELATIONS':
         semantic_node_local_v4_nodes(prepared, plan, nodes)
         material['candidate_nodes'] = _semantic_v4_join(plan, nodes)
-    if prepared.prompt_version == SEMANTIC_MAP_OCCURRENCE_V6_PROFILE:
-        return _semantic_occurrence_v6_messages(prepared, material, phase)
+    if prepared.prompt_version in SEMANTIC_MAP_FACT_ENDPOINT_PROFILES:
+        return _semantic_occurrence_v6_messages(prepared, material, phase, nodes)
     stage = material.get('history_stage', {}).get('kind')
     refs_first = prepared.prompt_version in {SEMANTIC_MAP_NODE_LOCAL_V4_BOUND_V2_PROFILE, *SEMANTIC_MAP_OCCURRENCE_PROFILES}
     instruction = _semantic_v4_instruction(phase, bound=bound, refs_first=refs_first,

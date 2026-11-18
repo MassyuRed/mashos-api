@@ -3941,16 +3941,17 @@ def expand_analysis_semantic_event_plan(prepared, packet):
             or type(packet) is dict and packet.get('schema_version') in {'cocolon.analysis.semantic_map.node_local.model.v4',
                 'cocolon.analysis.semantic_map.node_local.model.v4.bound_roots.v1',
                 'cocolon.analysis.semantic_map.node_local.model.v4.bound_roots.v2', 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v1',
-                'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v2', 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v3', 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v4', 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v5', 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v6'}):
+                'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v2', 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v3', 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v4', 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v5', 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v6',
+                'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v7'}):
         from .semantic_admission import (assemble_semantic_node_local_v4,
-            SEMANTIC_MAP_NODE_LOCAL_V3_PROFILE, SEMANTIC_MAP_OCCURRENCE_V6_PROFILE)
+            SEMANTIC_MAP_NODE_LOCAL_V3_PROFILE, SEMANTIC_MAP_FACT_ENDPOINT_PROFILES)
         joined = assemble_semantic_node_local_v4(prepared, packet)
         # Exact phase assembly: roots/prose/IDs were fixed and checked before
         # this projection. No rejected sentence, edge or partial raw is fixed.
         joined['nodes'] = [{k: v for k, v in n.items() if k != 'node_id'} for n in joined['nodes']]
         return _expand_analysis_semantic_node_local_v3(
             replace(prepared, prompt_version=SEMANTIC_MAP_NODE_LOCAL_V3_PROFILE), joined,
-            fact_endpoints=prepared.prompt_version == SEMANTIC_MAP_OCCURRENCE_V6_PROFILE)
+            fact_endpoints=prepared.prompt_version in SEMANTIC_MAP_FACT_ENDPOINT_PROFILES)
     if (getattr(prepared, 'prompt_version', None) == 'semantic_map.node_local.v3'
             or type(packet) is dict and packet.get('schema_version') == 'cocolon.analysis.semantic_map.node_local.model.v3'):
         return _expand_analysis_semantic_node_local_v3(prepared, packet)
@@ -4451,7 +4452,7 @@ def compile_analysis_semantic_map(prepared, packet, *, response_sha256):
 def _compile_analysis_semantic_map_v2(prepared, packet, *, response_sha256, author_packet=None):
     from .semantic_admission import (AnalysisSemanticMapInput,
         SEMANTIC_MAP_MODEL_SCHEMA, SEMANTIC_MAP_NODE_KINDS, SEMANTIC_MAP_PERSPECTIVES,
-        SEMANTIC_MAP_RELATION_KINDS, SEMANTIC_MAP_OCCURRENCE_V6_PROFILE, _semantic_map_require, _semantic_map_keys,
+        SEMANTIC_MAP_RELATION_KINDS, SEMANTIC_MAP_FACT_ENDPOINT_PROFILES, _semantic_map_require, _semantic_map_keys,
         _semantic_map_text, _semantic_map_strings, _semantic_map_evidence,
         semantic_map_canonical, semantic_map_hash)
     from .source_adapter import freeze_analysis_sources
@@ -4530,7 +4531,7 @@ def _compile_analysis_semantic_map_v2(prepared, packet, *, response_sha256, auth
         [quote for quotes in original_quotes_by_node.values() for quote in quotes])
     _semantic_map_require(len({(node['title'], node['summary'], node['explanation'])
                   for node in public_nodes}) == len(public_nodes))
-    fact_endpoints = prepared.prompt_version == SEMANTIC_MAP_OCCURRENCE_V6_PROFILE
+    fact_endpoints = prepared.prompt_version in SEMANTIC_MAP_FACT_ENDPOINT_PROFILES
     edge_keys = {'from', 'to', 'relation_kind', 'label', 'explanation'}
     if fact_endpoints:
         edge_keys.add('unit_evidence')
@@ -4590,7 +4591,7 @@ def _compile_analysis_semantic_map_v2(prepared, packet, *, response_sha256, auth
         mapped_count=len(referenced), unparsed_count=count - len(referenced), excluded_count=sum(reasons.values()),
         exclusion_reasons=reasons, stale_supplement_count=prepared.stale_supplement_count)
     overview_refs = source_roots.keys()
-    if prepared.prompt_version == SEMANTIC_MAP_OCCURRENCE_V6_PROFILE:
+    if fact_endpoints:
         # Expansion has checked all three raw receipts, including the selected
         # node IDs in RELATIONS. An unselected, similar event is not a second
         # interpretation of the premise that this overview actually cites.
