@@ -2333,12 +2333,14 @@ SEMANTIC_MAP_OCCURRENCE_V4_PROFILE = 'semantic_map.node_local.v4.occurrence.v4'
 SEMANTIC_MAP_OCCURRENCE_V5_PROFILE = 'semantic_map.node_local.v4.occurrence.v5'
 SEMANTIC_MAP_OCCURRENCE_V6_PROFILE = 'semantic_map.node_local.v4.occurrence.v6'
 SEMANTIC_MAP_OCCURRENCE_V7_PROFILE = 'semantic_map.node_local.v4.occurrence.v7'
+SEMANTIC_MAP_OCCURRENCE_V8_PROFILE = 'semantic_map.node_local.v4.occurrence.v8'
 SEMANTIC_MAP_OCCURRENCE_V3_SCHEMA = 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v3'
 SEMANTIC_MAP_OCCURRENCE_V4_SCHEMA = 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v4'
 SEMANTIC_MAP_OCCURRENCE_V5_SCHEMA = 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v5'
 SEMANTIC_MAP_OCCURRENCE_V6_SCHEMA = 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v6'
 SEMANTIC_MAP_OCCURRENCE_V7_SCHEMA = 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v7'
-SEMANTIC_MAP_FACT_ENDPOINT_PROFILES = frozenset({SEMANTIC_MAP_OCCURRENCE_V6_PROFILE, SEMANTIC_MAP_OCCURRENCE_V7_PROFILE})
+SEMANTIC_MAP_OCCURRENCE_V8_SCHEMA = 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v8'
+SEMANTIC_MAP_FACT_ENDPOINT_PROFILES = frozenset({SEMANTIC_MAP_OCCURRENCE_V6_PROFILE, SEMANTIC_MAP_OCCURRENCE_V7_PROFILE, SEMANTIC_MAP_OCCURRENCE_V8_PROFILE})
 _SEMANTIC_COMPACT_UNIT_PROFILES = {SEMANTIC_MAP_OCCURRENCE_V5_PROFILE, *SEMANTIC_MAP_FACT_ENDPOINT_PROFILES}
 SEMANTIC_MAP_OCCURRENCE_PROFILES = frozenset({SEMANTIC_MAP_OCCURRENCE_PROFILE, SEMANTIC_MAP_OCCURRENCE_V2_PROFILE, SEMANTIC_MAP_OCCURRENCE_V3_PROFILE, SEMANTIC_MAP_OCCURRENCE_V4_PROFILE, *_SEMANTIC_COMPACT_UNIT_PROFILES})
 SEMANTIC_MAP_NODE_LOCAL_V4_BOUND_PROFILES = frozenset({SEMANTIC_MAP_NODE_LOCAL_V4_BOUND_PROFILE,
@@ -2633,6 +2635,8 @@ def _semantic_v4_schema(phase):
 
 
 def semantic_node_local_v4_artifact_schema(prepared):
+    if prepared.prompt_version == SEMANTIC_MAP_OCCURRENCE_V8_PROFILE:
+        return SEMANTIC_MAP_OCCURRENCE_V8_SCHEMA
     if prepared.prompt_version == SEMANTIC_MAP_OCCURRENCE_V7_PROFILE:
         return SEMANTIC_MAP_OCCURRENCE_V7_SCHEMA
     if prepared.prompt_version == SEMANTIC_MAP_OCCURRENCE_V6_PROFILE:
@@ -2930,7 +2934,7 @@ def semantic_node_local_v4_relations(prepared, plan, bodies, packet):
     nodes = _semantic_v4_join(plan, bodies)
     ids = {node['node_id'] for node in nodes}
     r, reason = _semantic_map_require, 'analysis_semantic_node_local_v4_relations_invalid'
-    review_qualifications = prepared.prompt_version == SEMANTIC_MAP_OCCURRENCE_V7_PROFILE
+    review_qualifications = prepared.prompt_version in {SEMANTIC_MAP_OCCURRENCE_V7_PROFILE, SEMANTIC_MAP_OCCURRENCE_V8_PROFILE}
     relation_keys = {'schema_version', 'nodes_sha256', 'edges', 'overview'}
     if review_qualifications:
         relation_keys.add('qualification_review')
@@ -3278,7 +3282,7 @@ def _semantic_occurrence_v6_messages(prepared, material, phase, bodies=None):
             'CRITERION_EXPRESSION、CONTEXT_CONTRAST、SHARED_MEANING。概要はnode_refsを1〜8件選び、その事実文と'
             '原文にある事柄からtitleを80字以内で書きます。二つの別対象なら各々の動作、同じ対象なら時点ごとの違いを残します。')
     }[phase]
-    review_qualifications = prepared.prompt_version == SEMANTIC_MAP_OCCURRENCE_V7_PROFILE
+    review_qualifications = prepared.prompt_version in {SEMANTIC_MAP_OCCURRENCE_V7_PROFILE, SEMANTIC_MAP_OCCURRENCE_V8_PROFILE}
     if review_qualifications:
         if phase == 'PLAN':
             guidance += (' 話題が同じでも、発言したこと、実行したこと、その後に本人が確認したことを区別し、'
@@ -3304,6 +3308,37 @@ def _semantic_occurrence_v6_messages(prepared, material, phase, bodies=None):
                     '{"status":"EARLIER"}、既に残す同じ範囲の候補は{"status":"DUPLICATE"}。'
                     '今も不明なら{"status":"OPEN","source_quote":"本人の原文"}とし、候補内かつ元の欄内で一意な連続部分を'
                     '意味が通る長さでそのまま選びます。確定済みの同居文を不明へ広げません。候補なしは{}です。')
+    if prepared.prompt_version == SEMANTIC_MAP_OCCURRENCE_V8_PROFILE and phase == 'PLAN':
+        # Point back to all effective original segments, including split fields.
+        # This is a reading order, never a requirement to quote every field.
+        refs_by_record = {row['record']: {} for row in material['records']}
+        for field in material['fields']:
+            if field['source_role'] == 'ORIGINAL_INPUT':
+                refs_by_record[field['record']].setdefault(field['field_path'], []).append(field['field'])
+        for row in material['records']:
+            row['original_field_refs'] = refs_by_record[row['record']]
+        guidance += (' 各recordのoriginal_field_refsから、行動欄memo_actionに実行・見送り・予定のどれが書かれ、'
+            '思考欄memoのどの場面・条件・結果に対応するかを読みます。欄名だけで実行と決めません。'
+            '同じ対象を後日に再び扱ったなら、最初の状態、後日に本人が取った行動、その後の他者の反応、'
+            'まだ確認できない範囲を原文でたどり、経過が読み取れる引用を優先します。'
+            '各欄の冒頭を拾うだけで済ませず、同じ行動の再記述は一度にまとめます。原文にない段階は足しません。')
+    if prepared.prompt_version == SEMANTIC_MAP_OCCURRENCE_V8_PROFILE and phase == 'NODES':
+        original_records = {f['field']: f['record'] for f in material['fields'] if f['source_role'] == 'ORIGINAL_INPUT'}
+        for roots in parts.values():
+            for root in roots.values():
+                if root['field'] in original_records:
+                    root['original_record'] = original_records[root['field']]
+        guidance += (' 各e番号のoriginal_recordはその原文を書いた記録番号です。起きた時刻は引用で確かめます。'
+            '本文片に場所・道具・時間・数量を入れるなら、そのe番号の引用にある組合せを保ちます。'
+            'titleで一回の行為を表すときも、その条件と結果を一つの場面から取ります。'
+            '複数場面の違いを題にするときは、それぞれの条件と行為を明示します。')
+    if phase == 'RELATIONS' and prepared.prompt_version == SEMANTIC_MAP_OCCURRENCE_V8_PROFILE:
+        # Every PLAN root and every relation fact is already in candidate_nodes.
+        # Keep its PLAN receipt so the native decoder can verify exact reconstruction.
+        material['plan_sha256'] = semantic_map_hash(material.pop('plan'))
+        del material['relation_units']
+        guidance = guidance.replace('relation_unitsはこの試行で実際にできた各unitの事実文です。',
+            'candidate_nodesの各項目のunitsはu1、u2の順で、factはその単位で実際にできた事実文です。')
     stage = material.get('history_stage', {}).get('kind')
     if stage == 'LEAF':
         guidance += ' 今はLEAFです。この記録だけを扱い、edgesは[]です。'

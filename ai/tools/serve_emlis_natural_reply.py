@@ -46,12 +46,14 @@ OCCURRENCE_V4_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v4-occurrence-v4'
 OCCURRENCE_V5_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v4-occurrence-v5'
 OCCURRENCE_V6_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v4-occurrence-v6'
 OCCURRENCE_V7_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v4-occurrence-v7'
+OCCURRENCE_V8_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v4-occurrence-v8'
 OCCURRENCE_V3_PROFILE = 'semantic_map.node_local.v4.occurrence.v3'
 OCCURRENCE_V4_PROFILE = 'semantic_map.node_local.v4.occurrence.v4'
 OCCURRENCE_V5_PROFILE = 'semantic_map.node_local.v4.occurrence.v5'
 OCCURRENCE_V6_PROFILE = 'semantic_map.node_local.v4.occurrence.v6'
 OCCURRENCE_V7_PROFILE = 'semantic_map.node_local.v4.occurrence.v7'
-OCCURRENCE_PROFILES = frozenset({OCCURRENCE_PROFILE, OCCURRENCE_V2_PROFILE, OCCURRENCE_V3_PROFILE, OCCURRENCE_V4_PROFILE, OCCURRENCE_V5_PROFILE, OCCURRENCE_V6_PROFILE, OCCURRENCE_V7_PROFILE})
+OCCURRENCE_V8_PROFILE = 'semantic_map.node_local.v4.occurrence.v8'
+OCCURRENCE_PROFILES = frozenset({OCCURRENCE_PROFILE, OCCURRENCE_V2_PROFILE, OCCURRENCE_V3_PROFILE, OCCURRENCE_V4_PROFILE, OCCURRENCE_V5_PROFILE, OCCURRENCE_V6_PROFILE, OCCURRENCE_V7_PROFILE, OCCURRENCE_V8_PROFILE})
 NODE_LOCAL_V4_BOUND_V2_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v4-bound-roots-v2'
 NODE_LOCAL_V4_BOUND_V2_PROFILE = 'semantic_map.node_local.v4.bound_roots.v2'
 NODE_LOCAL_V4_SCHEMA = 'cocolon.analysis.semantic_map.node_local.model.v4'
@@ -531,7 +533,24 @@ def _semantic_node_local_v4_schema(material, pairs, unknown_pairs, *, leaf=False
         node = obj(dict(node_id=dict(type='string', enum=['n' + str(i) for i in range(1, 13)]),
             units=dict(type='array', items=unit, minItems=1, maxItems=2)))
         return root(phase, dict(nodes=dict(type='array', items=node, minItems=1, maxItems=12)))
-    plan = material.get('plan')
+    if phase == 'RELATIONS' and author_profile == OCCURRENCE_V8_PROFILE:
+        # The model sees one ordered copy of the evidence. Reconstruct the
+        # PLAN used by the schema without re-expanding the tokenizer input.
+        registry = material.get('candidate_nodes')
+        if ('plan' in material or 'relation_units' in material or type(registry) is not list
+                or not 1 <= len(registry) <= 12):
+            raise ValueError('semantic_v8_compact_registry_invalid')
+        try:
+            planned_nodes = [
+                dict(node_id=node['node_id'], units=[dict(evidence=unit['evidence']) for unit in node['units']])
+                for node in registry]
+        except (TypeError, KeyError) as exc:
+            raise ValueError('semantic_v8_compact_registry_invalid') from exc
+        plan = dict(schema_version=NODE_LOCAL_V4_SCHEMA + '.plan', nodes=planned_nodes)
+        if signature(plan) != material.get('plan_sha256'):
+            raise ValueError('semantic_v8_compact_plan_unbound')
+    else:
+        plan = material.get('plan')
     if (phase not in {'NODES', 'RELATIONS'} or type(plan) is not dict
             or plan.get('schema_version') != NODE_LOCAL_V4_SCHEMA + '.plan'
             or type(plan.get('nodes')) is not list or not 1 <= len(plan['nodes']) <= 12):
@@ -572,7 +591,7 @@ def _semantic_node_local_v4_schema(material, pairs, unknown_pairs, *, leaf=False
             properties = dict(source_mode=dict(type='string', enum=[
                 'RECORDED', 'PERSON_JUDGMENT', 'PERSON_WISH', 'DECIDED_PLAN']),
                 fact=text(160), unknowns=unknowns)
-            if author_profile in {OCCURRENCE_V6_PROFILE, OCCURRENCE_V7_PROFILE}:
+            if author_profile in {OCCURRENCE_V6_PROFILE, OCCURRENCE_V7_PROFILE, OCCURRENCE_V8_PROFILE}:
                 lengths = [len(root['quote']) for root in roots]
                 count = len(lengths)
                 total = sum(lengths)
@@ -589,7 +608,7 @@ def _semantic_node_local_v4_schema(material, pairs, unknown_pairs, *, leaf=False
                         limits[i] += 1
                 parts = {'e' + str(index): text(limit) for index, limit in enumerate(limits, 1)}
                 properties = dict(source_mode=properties['source_mode'], fact_parts=obj(parts), unknowns=unknowns)
-            if author_profile in {OCCURRENCE_V5_PROFILE, OCCURRENCE_V6_PROFILE, OCCURRENCE_V7_PROFILE}:
+            if author_profile in {OCCURRENCE_V5_PROFILE, OCCURRENCE_V6_PROFILE, OCCURRENCE_V7_PROFILE, OCCURRENCE_V8_PROFILE}:
                 # The plan digest identifies the roots of this unit. Each
                 # reference binds its complete list, including order and field.
                 binding = dict(type='string', enum=[f"{node['node_id']}.u{j}"])
@@ -643,7 +662,7 @@ def _semantic_node_local_v4_schema(material, pairs, unknown_pairs, *, leaf=False
                 seen.add(pair)
     ref = dict(type='string', enum=ids)
     endpoints = {'from': ref, 'to': ref}
-    if author_profile in {OCCURRENCE_V6_PROFILE, OCCURRENCE_V7_PROFILE}:
+    if author_profile in {OCCURRENCE_V6_PROFILE, OCCURRENCE_V7_PROFILE, OCCURRENCE_V8_PROFILE}:
         unit_ref = dict(type='string', enum=[f"{n['node_id']}.u{i}"
             for n in registry for i in range(1, len(n['units']) + 1)])
         endpoints.update(from_unit=unit_ref, to_unit=unit_ref)
@@ -654,7 +673,7 @@ def _semantic_node_local_v4_schema(material, pairs, unknown_pairs, *, leaf=False
     if author_profile in {NODE_LOCAL_V4_BOUND_V2_PROFILE, *OCCURRENCE_PROFILES}:
         overview = dict(node_refs=overview['node_refs'], title=overview['title'])
     properties = dict(nodes_sha256=dict(type='string', enum=[signature(registry)]))
-    if author_profile == OCCURRENCE_V7_PROFILE:
+    if author_profile in {OCCURRENCE_V7_PROFILE, OCCURRENCE_V8_PROFILE}:
         # Keep the same order as the original NODES receipt, even when the
         # request serializer sorts dictionary keys (n10 precedes n2 there).
         candidates = {f"{n['node_id']}.u{i}.q{j}": candidate
@@ -738,7 +757,7 @@ def semantic_output_schema(messages):
                 # A qualification that retains its antecedent must also be
                 # selectable as one enclosing event root, not two fragments.
                 spans = list(dict.fromkeys(spans + qualifications))
-            if (material.get('author_profile') in {OCCURRENCE_V4_PROFILE, OCCURRENCE_V5_PROFILE, OCCURRENCE_V6_PROFILE, OCCURRENCE_V7_PROFILE}
+            if (material.get('author_profile') in {OCCURRENCE_V4_PROFILE, OCCURRENCE_V5_PROFILE, OCCURRENCE_V6_PROFILE, OCCURRENCE_V7_PROFILE, OCCURRENCE_V8_PROFILE}
                     and material.get('author_phase') == 'NODES'):
                 # Add only possible unknowns. PLAN/assigned_evidence keeps the
                 # full root containing the known context and its qualification.
@@ -1496,7 +1515,7 @@ def semantic_json_parser(messages, alphabet):
         ids = tuple(n['node_id'] for n in material.get('candidate_nodes', ()))
         return _semantic_unique_json_schema_parser(schema, config, bound_node_ids=ids,
             endpoint_nodes=material['candidate_nodes'] if material.get('author_phase') == 'RELATIONS'
-                and material.get('author_profile') in {OCCURRENCE_V6_PROFILE, OCCURRENCE_V7_PROFILE} else (),
+                and material.get('author_profile') in {OCCURRENCE_V6_PROFILE, OCCURRENCE_V7_PROFILE, OCCURRENCE_V8_PROFILE} else (),
             unique_qualifications=material.get('author_phase') == 'NODES'
                 and material.get('author_profile') in OCCURRENCE_PROFILES)
     anchor_key = 'events' if 'events' in schema['properties'] else 'nodes'
@@ -1665,7 +1684,7 @@ def make_handler(generate, *, api_key, model_name, deadline, max_requests,
                     EVENT_PLAN_V2_BASE_MODEL, NODE_LOCAL_V3_BASE_MODEL}
                 if event_plan:
                     selected_model = event_plan_model
-                staged = event_plan and event_plan_model in {NODE_LOCAL_V4_MODEL, NODE_LOCAL_V4_BOUND_MODEL, NODE_LOCAL_V4_BOUND_V2_MODEL, OCCURRENCE_MODEL, OCCURRENCE_V2_MODEL, OCCURRENCE_V3_MODEL, OCCURRENCE_V4_MODEL, OCCURRENCE_V5_MODEL, OCCURRENCE_V6_MODEL, OCCURRENCE_V7_MODEL}
+                staged = event_plan and event_plan_model in {NODE_LOCAL_V4_MODEL, NODE_LOCAL_V4_BOUND_MODEL, NODE_LOCAL_V4_BOUND_V2_MODEL, OCCURRENCE_MODEL, OCCURRENCE_V2_MODEL, OCCURRENCE_V3_MODEL, OCCURRENCE_V4_MODEL, OCCURRENCE_V5_MODEL, OCCURRENCE_V6_MODEL, OCCURRENCE_V7_MODEL, OCCURRENCE_V8_MODEL}
                 if staged:
                     material = json.loads(messages[1]['content'])
                     if material.get('author_phase') not in NODE_LOCAL_V4_PHASES:
@@ -1694,7 +1713,7 @@ def make_handler(generate, *, api_key, model_name, deadline, max_requests,
                     except (ValueError, TypeError):
                         material = None
                     marker = material.get('model_schema') if type(material) is dict else None
-                    expected_marker = (NODE_LOCAL_V4_SCHEMA if event_plan_model in {NODE_LOCAL_V4_MODEL, NODE_LOCAL_V4_BOUND_MODEL, NODE_LOCAL_V4_BOUND_V2_MODEL, OCCURRENCE_MODEL, OCCURRENCE_V2_MODEL, OCCURRENCE_V3_MODEL, OCCURRENCE_V4_MODEL, OCCURRENCE_V5_MODEL, OCCURRENCE_V6_MODEL, OCCURRENCE_V7_MODEL}
+                    expected_marker = (NODE_LOCAL_V4_SCHEMA if event_plan_model in {NODE_LOCAL_V4_MODEL, NODE_LOCAL_V4_BOUND_MODEL, NODE_LOCAL_V4_BOUND_V2_MODEL, OCCURRENCE_MODEL, OCCURRENCE_V2_MODEL, OCCURRENCE_V3_MODEL, OCCURRENCE_V4_MODEL, OCCURRENCE_V5_MODEL, OCCURRENCE_V6_MODEL, OCCURRENCE_V7_MODEL, OCCURRENCE_V8_MODEL}
                         else NODE_LOCAL_V3_SCHEMA if event_plan_model in {
                             NODE_LOCAL_V3_MODEL, NODE_LOCAL_V3_BASE_MODEL}
                         else EVENT_PLAN_V2_SCHEMA if event_plan_model in {
@@ -1704,7 +1723,8 @@ def make_handler(generate, *, api_key, model_name, deadline, max_requests,
                                 NODE_LOCAL_V3_SCHEMA, NODE_LOCAL_V4_SCHEMA}):
                         raise ValueError
                     if staged:
-                        expected_profile = (OCCURRENCE_V7_PROFILE if event_plan_model == OCCURRENCE_V7_MODEL
+                        expected_profile = (OCCURRENCE_V8_PROFILE if event_plan_model == OCCURRENCE_V8_MODEL
+                            else OCCURRENCE_V7_PROFILE if event_plan_model == OCCURRENCE_V7_MODEL
                             else OCCURRENCE_V6_PROFILE if event_plan_model == OCCURRENCE_V6_MODEL
                             else OCCURRENCE_V5_PROFILE if event_plan_model == OCCURRENCE_V5_MODEL
                             else OCCURRENCE_V4_PROFILE if event_plan_model == OCCURRENCE_V4_MODEL
@@ -2030,9 +2050,9 @@ def load_generator(adapter, process_stop, *, weights_sha256=None, config_sha256=
                 return allowed
             if profile == 'event_plan':
                 material=json.loads(messages[1]['content'])
-                if material.get('author_profile') in {OCCURRENCE_V2_PROFILE, OCCURRENCE_V3_PROFILE, OCCURRENCE_V4_PROFILE, OCCURRENCE_V5_PROFILE, OCCURRENCE_V6_PROFILE, OCCURRENCE_V7_PROFILE} and material.get('author_phase')=='NODES':
+                if material.get('author_profile') in {OCCURRENCE_V2_PROFILE, OCCURRENCE_V3_PROFILE, OCCURRENCE_V4_PROFILE, OCCURRENCE_V5_PROFILE, OCCURRENCE_V6_PROFILE, OCCURRENCE_V7_PROFILE, OCCURRENCE_V8_PROFILE} and material.get('author_phase')=='NODES':
                     format_options['logits_processor']=[_occurrence_greedy_node_filter(tokenizer,count)]
-                elif material.get('author_profile') in {OCCURRENCE_V6_PROFILE, OCCURRENCE_V7_PROFILE} and material.get('author_phase') == 'RELATIONS':
+                elif material.get('author_profile') in {OCCURRENCE_V6_PROFILE, OCCURRENCE_V7_PROFILE, OCCURRENCE_V8_PROFILE} and material.get('author_phase') == 'RELATIONS':
                     format_options['logits_processor']=[_occurrence_greedy_relation_filter(allowed_prefix)]
             format_options['prefix_allowed_tokens_fn'] = private_prefix
             format_options['eos_token_id'] = tokenizer_data.eos_token_id
