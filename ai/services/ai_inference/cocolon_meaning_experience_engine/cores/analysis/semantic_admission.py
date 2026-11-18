@@ -2326,8 +2326,11 @@ SEMANTIC_MAP_NODE_LOCAL_V4_BOUND_PROFILE = 'semantic_map.node_local.v4.bound_roo
 SEMANTIC_MAP_NODE_LOCAL_V4_BOUND_V2_PROFILE = 'semantic_map.node_local.v4.bound_roots.v2'
 SEMANTIC_MAP_OCCURRENCE_PROFILE = 'semantic_map.node_local.v4.occurrence.v1'
 SEMANTIC_MAP_OCCURRENCE_SCHEMA = 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v1'
+SEMANTIC_MAP_OCCURRENCE_V2_PROFILE = 'semantic_map.node_local.v4.occurrence.v2'
+SEMANTIC_MAP_OCCURRENCE_V2_SCHEMA = 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v2'
+SEMANTIC_MAP_OCCURRENCE_PROFILES = frozenset({SEMANTIC_MAP_OCCURRENCE_PROFILE, SEMANTIC_MAP_OCCURRENCE_V2_PROFILE})
 SEMANTIC_MAP_NODE_LOCAL_V4_BOUND_PROFILES = frozenset({SEMANTIC_MAP_NODE_LOCAL_V4_BOUND_PROFILE,
-    SEMANTIC_MAP_NODE_LOCAL_V4_BOUND_V2_PROFILE, SEMANTIC_MAP_OCCURRENCE_PROFILE})
+    SEMANTIC_MAP_NODE_LOCAL_V4_BOUND_V2_PROFILE, *SEMANTIC_MAP_OCCURRENCE_PROFILES})
 SEMANTIC_MAP_NODE_LOCAL_V4_PROFILES = frozenset({SEMANTIC_MAP_NODE_LOCAL_V4_PROFILE,
     *SEMANTIC_MAP_NODE_LOCAL_V4_BOUND_PROFILES})
 SEMANTIC_MAP_NODE_LOCAL_V4_BOUND_V2_SCHEMA = 'cocolon.analysis.semantic_map.node_local.model.v4.bound_roots.v2'
@@ -2482,7 +2485,7 @@ overviewはtitle,node_refsのみ。titleは80字以内、node_refsは完成node�
 Markdownや前後文を付けず、この形式のJSONだけを返します。"""
 
 
-def _semantic_node_local_v3_lesson_instruction(stage=None, *, _parts=False):
+def _semantic_node_local_v3_lesson_instruction(stage=None, *, _parts=False, same_subject=False):
     """One independently authored fictional episode in the current private wire.
 
     This is instruction only, never a runtime source or accepted model result.
@@ -2502,8 +2505,11 @@ def _semantic_node_local_v3_lesson_instruction(stage=None, *, _parts=False):
     judgment = '私は八回の結果だけで、重音を身につけたとは判断していない。'
     stand_belief = '私は譜面台の支柱の光沢を見て金属だと思ったが、材質表示はまだ見ていない。'
     stand_checked = '翌週、私は材質表示を読み、同じ支柱が樹脂製だと確かめた。'
-    clip_before = '譜面台には赤い留め具が付いていた。'
-    clip_changed = '私は赤い留め具を外し、青い留め具へ交換した。'
+    hardware_before = '譜面台には赤い留め具が付いていた。'
+    hardware_change = '私は赤い留め具を外し、青い留め具へ交換した。'
+    if same_subject:
+        hardware_before = '交換用の木製の支柱は、まだ取り付けていない。'
+        hardware_change = '表示を確かめた後、私は樹脂製の支柱を外し、木製の支柱を取り付けた。'
 
     def field(number, record, path, text):
         return dict(field=number, record=record, field_path=path,
@@ -2518,7 +2524,7 @@ def _semantic_node_local_v3_lesson_instruction(stage=None, *, _parts=False):
         return dict(units=units, node_kind=kind, perspective=perspective,
             title=title, meaning=meaning)
 
-    fields = [field(1, 1, 'memo', early_play + early_condition + wish + stand_belief + clip_before),
+    fields = [field(1, 1, 'memo', early_play + early_condition + wish + stand_belief + hardware_before),
         field(2, 1, 'memo_action', question + waiting)]
     records = [dict(record=1, recorded_at='2026-07-01T10:00:00',
         selected_categories=['趣味'], selected_emotions=['平穏'],
@@ -2537,11 +2543,12 @@ def _semantic_node_local_v3_lesson_instruction(stage=None, *, _parts=False):
     belief_unit = unit([(1, stand_belief)],
         '本人は光沢から譜面台の支柱を金属だと思いましたが、この時点では材質表示を見ていません。',
         mode='PERSON_JUDGMENT')
-    clip_unit = unit([(1, clip_before)], '譜面台には赤い留め具が付いていました。')
+    initial_hardware = unit([(1, hardware_before)], '本人は交換用の木製の支柱をまだ取り付けていません。'
+        if same_subject else '譜面台には赤い留め具が付いていました。')
     edges = []
     if stage != 'LEAF':
         fields.extend([field(3, 2, 'memo', later_play + result + other_wish + other_unknown
-                + stand_checked + clip_changed),
+                + stand_checked + hardware_change),
             field(4, 2, 'memo_action', confirmation + plan + judgment)])
         records.append(dict(record=2, recorded_at='2026-07-08T10:00:00',
             selected_categories=['趣味'], selected_emotions=['平穏'],
@@ -2570,19 +2577,28 @@ def _semantic_node_local_v3_lesson_instruction(stage=None, *, _parts=False):
                 [belief_unit, unit([(3, stand_checked)],
                     '翌週、本人は材質表示を読み、同じ支柱が樹脂製だと確かめました。')],
                 '支柱について、光沢からの見立てを材質表示で確かめた理解へ更新しています。'
-                '金属だという先の見立てと、表示を読んだ確認を区別できます。'),
-            node('CHOICE_OUTPUT', '赤い留め具から青い留め具への実際の交換',
-                [clip_unit, unit([(3, clip_changed)],
+                '金属だという先の見立てと、表示を読んだ確認を区別できます。')])
+        if same_subject:
+            # The same observation concludes the inference and establishes the state before replacement.
+            checked_material = nodes[-1]['units'][1]
+            nodes.append(node('CHOICE_OUTPUT', '樹脂製と確認した支柱を木製に取り替えた',
+                [checked_material, unit([(3, hardware_change)],
+                    '材質表示を確かめた後、本人は樹脂製の支柱を外し、木製の支柱を取り付けました。')]))
+        else:
+            nodes.append(node('CHOICE_OUTPUT', '赤い留め具から青い留め具への実際の交換',
+                [initial_hardware, unit([(3, hardware_change)],
                     '本人は赤い留め具を外し、青い留め具へ交換しました。')],
-                '留め具は、赤い物が付いた状態から、本人が外して青い物へ交換した状態へ変わっています。')])
+                '留め具は、赤い物が付いた状態から、本人が外して青い物へ交換した状態へ変わっています。'))
         edges = [dict(**{'from': 'n1', 'to': 'n6'}, relation_kind='CRITERION_EXPRESSION',
             label='今回の試行結果だけで、習得を決めない判断'),
             dict(**{'from': 'n7', 'to': 'n8'}, relation_kind='CONTEXT_CONTRAST',
-                label='支柱の材質の理解を更新したことと、留め具を実際に交換したこと')]
+                label=('支柱が樹脂製だと確かめ、その後に木製の支柱へ交換した' if same_subject else
+                       '支柱の材質の理解を更新したことと、留め具を実際に交換したこと'))]
     else:
         nodes.extend([
             node('SELF_POSITION', '光沢から金属だと思っていた支柱', [belief_unit]),
-            node('STATE_CONTEXT', '赤い留め具が付いた譜面台', [clip_unit])])
+            node('STATE_CONTEXT', '交換用の支柱はまだ取り付けていない' if same_subject
+                else '赤い留め具が付いた譜面台', [initial_hardware])])
     material = dict(model_schema=SEMANTIC_MAP_NODE_LOCAL_V3_SCHEMA, records=records,
         fields=fields, analysis_as_of='2026-07-01T12:00:00+00:00' if stage == 'LEAF'
             else '2026-07-08T12:00:00+00:00')
@@ -2605,6 +2621,8 @@ def _semantic_v4_schema(phase):
 
 
 def semantic_node_local_v4_artifact_schema(prepared):
+    if prepared.prompt_version == SEMANTIC_MAP_OCCURRENCE_V2_PROFILE:
+        return SEMANTIC_MAP_OCCURRENCE_V2_SCHEMA
     if prepared.prompt_version == SEMANTIC_MAP_OCCURRENCE_PROFILE:
         return SEMANTIC_MAP_OCCURRENCE_SCHEMA
     if prepared.prompt_version == SEMANTIC_MAP_NODE_LOCAL_V4_BOUND_V2_PROFILE:
@@ -2798,8 +2816,8 @@ def _semantic_occurrence_message(material):
     return json.dumps(ordered, ensure_ascii=False, separators=(',', ':'), allow_nan=False)
 
 
-def _semantic_occurrence_lesson_material(stage):
-    material, packet = _semantic_node_local_v3_lesson_instruction(stage, _parts=True)
+def _semantic_occurrence_lesson_material(stage, *, same_subject=False):
+    material, packet = _semantic_node_local_v3_lesson_instruction(stage, _parts=True, same_subject=same_subject)
     if stage != 'LEAF':
         # This is the same event recalled in a later record, distinct from that week's playing.
         recall = '先週、隣室の試験中に私が弓で弾いたのは、あの開放弦の練習のことです。'
@@ -2811,13 +2829,15 @@ def _semantic_occurrence_lesson_material(stage):
             'from': 'n6', 'to': 'n1', 'relation_kind': 'CRITERION_EXPRESSION',
             'label': '八回で習得したとは決めておらず、その試行で二本の弦が同時に鳴ったのは三回'}
         packet['overview'] = dict(node_refs=['n1', 'n2', 'n7', 'n8'],
-            title='重音の練習と講師の返答、譜面台で確かめた材質と交換した留め具')
+            title=('重音の練習と講師の返答、樹脂製と確かめてから交換した支柱' if same_subject else
+                   '重音の練習と講師の返答、譜面台で確かめた材質と交換した留め具'))
     return material, packet
 
 
 def _semantic_v4_lesson(stage, phase, *, bound=False, author_profile=None):
-    occurrence = author_profile == SEMANTIC_MAP_OCCURRENCE_PROFILE
-    material, old = (_semantic_occurrence_lesson_material(stage) if occurrence
+    occurrence = author_profile in SEMANTIC_MAP_OCCURRENCE_PROFILES
+    material, old = (_semantic_occurrence_lesson_material(stage,
+        same_subject=author_profile == SEMANTIC_MAP_OCCURRENCE_V2_PROFILE) if occurrence
         else _semantic_node_local_v3_lesson_instruction(stage, _parts=True))
     plan = dict(schema_version=_semantic_v4_schema('PLAN'), nodes=[
         dict(node_id='n' + str(i), units=[dict(evidence=u['evidence']) for u in n['units']])
@@ -2839,7 +2859,7 @@ def _semantic_v4_lesson(stage, phase, *, bound=False, author_profile=None):
         edges=[{k: edge[k] for k in ('from', 'to', 'label', 'relation_kind')} for edge in old['edges']],
         overview=old['overview'])
     material.update(model_schema=SEMANTIC_MAP_NODE_LOCAL_V4_SCHEMA, author_phase=phase)
-    if author_profile in {SEMANTIC_MAP_NODE_LOCAL_V4_BOUND_V2_PROFILE, SEMANTIC_MAP_OCCURRENCE_PROFILE}:
+    if author_profile in {SEMANTIC_MAP_NODE_LOCAL_V4_BOUND_V2_PROFILE, *SEMANTIC_MAP_OCCURRENCE_PROFILES}:
         relations['overview'] = dict(node_refs=relations['overview']['node_refs'],
             title=relations['overview']['title'])
     if bound:
@@ -2870,11 +2890,11 @@ def semantic_node_local_v4_messages(prepared, phase='PLAN', *, plan=None, nodes=
         semantic_node_local_v4_nodes(prepared, plan, nodes)
         material['candidate_nodes'] = _semantic_v4_join(plan, nodes)
     stage = material.get('history_stage', {}).get('kind')
-    refs_first = prepared.prompt_version in {SEMANTIC_MAP_NODE_LOCAL_V4_BOUND_V2_PROFILE, SEMANTIC_MAP_OCCURRENCE_PROFILE}
+    refs_first = prepared.prompt_version in {SEMANTIC_MAP_NODE_LOCAL_V4_BOUND_V2_PROFILE, *SEMANTIC_MAP_OCCURRENCE_PROFILES}
     instruction = _semantic_v4_instruction(phase, bound=bound, refs_first=refs_first) + _semantic_v4_lesson(
         stage, phase, bound=bound, author_profile=prepared.prompt_version if refs_first else None)
     instruction = _semantic_v4_view(prepared)._source_instruction(instruction, material)
-    if prepared.prompt_version == SEMANTIC_MAP_OCCURRENCE_PROFILE and phase == 'NODES':
+    if prepared.prompt_version in SEMANTIC_MAP_OCCURRENCE_PROFILES and phase == 'NODES':
         instruction += ('\n各unitで発言者、発言に登場する行為者、その行為について誰がどこまで知っているかを'
             'それぞれ引用に結びます。架空例で奏が自分の弓を張り替えたいと言い、本人は実施を聞いていない場合、'
             '確認できるのは奏の発言で、未確認なのは奏が弓を張り替えたかです。'
@@ -2886,7 +2906,7 @@ def semantic_node_local_v4_messages(prepared, phase='PLAN', *, plan=None, nodes=
         instruction += ('\n今はMERGEです。leafのAI文章を根拠にせず、fieldsへ提示された連続原文へ戻ります。'
             'leaf_receiptsは受領対応で意味確認ではなく、field_manifestとomitted_rangesは提示範囲です。'
             '未提示本文を読み取ったものとせず、本人訂正は提示された説明全文を使います。')
-    if prepared.prompt_version == SEMANTIC_MAP_OCCURRENCE_PROFILE:
+    if prepared.prompt_version in SEMANTIC_MAP_OCCURRENCE_PROFILES:
         instruction += ('\noriginal_recorded_atは本人がその原記録を書いた日時です。出来事の時点は原文から読みます。'
             '同じ記録でも別々の場面は別unitに置きます。別の記録の引用を一unitに結ぶのは、'
             '原文が同じ一回の出来事を指す場合です。同じ対象を後で試した場合や、知った内容が変わった場合は、'
@@ -2899,6 +2919,17 @@ def semantic_node_local_v4_messages(prepared, phase='PLAN', *, plan=None, nodes=
         content = _semantic_occurrence_message(material)
     else:
         content = semantic_map_canonical(material)
+    if prepared.prompt_version == SEMANTIC_MAP_OCCURRENCE_V2_PROFILE:
+        instruction += '\n' + {
+            'PLAN': '一項目が表すことを一つ選んでから次へ進みます。例えば材質の推測、確認、交換が原文にあれば、'
+                '見立てと確認で一項目、同じ確認と実際の交換でもう一項目にできます。'
+                '根拠も言いたいことも同じ項目は一度で足ります。',
+            'NODES': '初めの値を本人が推測し、後の値だけを確かめたとき、変わったのは本人の理解です。'
+                'factだけでなくtitleとmeaningにも「何を予想し、何を確かめたか」を残します。'
+                '同じ対象の以前と以後の状態、または変更の実行が原文にあれば、その範囲で実際の変化を書けます。',
+            'RELATIONS': '短いlabelと概要の題にも、引用が示す当時の推測と後の確認の区別を残します。'
+                '本人の見立てを、交換前の実際の材質として扱うと、原文にない変更が生まれます。'
+        }[phase]
     return [dict(role='system', content=instruction), dict(role='user', content=content)]
 
 

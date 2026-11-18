@@ -311,3 +311,148 @@ def test_occurrence_rel_overview_uses_supporting_refs_and_preserves_frozen_v2_le
         assert expected['n8'] not in set().union(*(roots[ref] for ref in foil_refs))
         _, _, frozen = _rel_example(stage, PROFILE)
         assert hashlib.sha256(frozen.encode()).hexdigest() == old_hash
+
+
+def test_occurrence_v2_alias_preserves_existing_if_and_user_projection(monkeypatch):
+    alias = sources.SEMANTIC_OCCURRENCE_V2_MODEL
+    profile = core.SEMANTIC_MAP_OCCURRENCE_V2_PROFILE
+    environment(monkeypatch, model=alias)
+    assert sources.application_analysis_model_source().prompt_version == profile
+    assert if_sources.application_analysis_if_model_source().model == sources.SEMANTIC_EVENT_PLAN_BASE_MODEL
+    prior = occurrence_prepared()
+    current = app.prepare_semantic_map(OWNER, json.loads(prior.source_snapshot_json), prompt_version=profile)
+    assert current.frozen == prior.frozen and current.request_ref != prior.request_ref
+    for prepared_map, expected_schema in (
+            (prior, core.SEMANTIC_MAP_OCCURRENCE_SCHEMA),
+            (current, core.SEMANTIC_MAP_OCCURRENCE_V2_SCHEMA)):
+        packet = old.artifact(prepared_map, phase_packets(prepared_map))
+        packet['schema_version'] = expected_schema
+        artifact, coverage = app.build_semantic_map(prepared_map, old.response(prepared_map, packet))
+        assert artifact.safe_projection(authenticated_owner_scope=OWNER)['wire_kind'] == 'watashi.map.v3'
+        assert coverage['mapped_count'] == len(prepared_map.frozen.members)
+        opposite = current if prepared_map is prior else prior
+        with pytest.raises(core.AnalysisSemanticMapError, match='lineage_invalid'):
+            core.assemble_semantic_node_local_v4(opposite, packet)
+    monkeypatch.setattr(old, 'PROFILE', profile)
+    monkeypatch.setattr(old, 'ALIAS', alias)
+    monkeypatch.setattr(old, 'phase_packets', phase_packets)
+    old.test_real_three_transport_requests_keep_original_raw_and_freeze_actual_registry()
+
+
+@pytest.mark.parametrize('alias, marker, status', [
+    (sources.SEMANTIC_OCCURRENCE_V2_MODEL, core.SEMANTIC_MAP_OCCURRENCE_V2_PROFILE, 200),
+    (sources.SEMANTIC_OCCURRENCE_MODEL, core.SEMANTIC_MAP_OCCURRENCE_V2_PROFILE, 400),
+    (sources.SEMANTIC_OCCURRENCE_V2_MODEL, core.SEMANTIC_MAP_OCCURRENCE_PROFILE, 400),
+])
+def test_native_occurrence_v2_accepts_only_its_own_profile(alias, marker, status):
+    bound.test_native_exact_alias_marker_pair_and_actual_phase_usage(alias, marker, status)
+
+
+@pytest.mark.parametrize('stage', [None, 'MERGE'])
+def test_occurrence_v2_distinguishes_revised_belief_from_replacing_the_same_object(stage):
+    material, example = core._semantic_occurrence_lesson_material(stage, same_subject=True)
+    original = {field['field']: field['text'] for field in material['fields']}
+    inferred, confirmed = example['nodes'][6]['units']
+    before_exchange, replacement = example['nodes'][7]['units']
+    assert [inferred['source_mode'], confirmed['source_mode']] == ['PERSON_JUDGMENT', 'RECORDED']
+    assert confirmed == before_exchange and replacement['source_mode'] == 'RECORDED'
+    assert '金属だと思った' in inferred['evidence'][0]['quote']
+    assert '同じ支柱が樹脂製だと確かめた' in confirmed['evidence'][0]['quote']
+    assert '樹脂製の支柱を外し、木製の支柱を取り付けた' in replacement['evidence'][0]['quote']
+    assert all(original[root['field']].count(root['quote']) == 1
+               for unit in (inferred, confirmed, replacement) for root in unit['evidence'])
+    belief, action = example['nodes'][6:8]
+    assert '見立て' in belief['title'] and '交換' not in belief['title']
+    assert '樹脂製と確認した支柱を木製に取り替えた' == action['title']
+    assert example['edges'][1]['label'] == '支柱が樹脂製だと確かめ、その後に木製の支柱へ交換した'
+    assert example['overview']['node_refs'][-2:] == ['n7', 'n8']
+    assert '樹脂製と確かめてから交換した支柱' in example['overview']['title']
+    assert '金属から' not in action['title'] + example['overview']['title']
+
+
+def test_occurrence_v2_leaf_cannot_borrow_the_later_actual_replacement():
+    _, example = core._semantic_occurrence_lesson_material('LEAF', same_subject=True)
+    inferred, uninstalled = example['nodes'][3:]
+    assert inferred['units'][0]['source_mode'] == 'PERSON_JUDGMENT'
+    assert uninstalled['units'][0]['evidence'][0]['quote'] == '交換用の木製の支柱は、まだ取り付けていない。'
+    assert all(root['field'] <= 2 for n in example['nodes'] for unit in n['units'] for root in unit['evidence'])
+    assert '樹脂製' not in json.dumps(example, ensure_ascii=False)
+
+
+@pytest.mark.parametrize('profile, phase, filtered', [
+    (core.SEMANTIC_MAP_OCCURRENCE_PROFILE, 'NODES', False),
+    (core.SEMANTIC_MAP_OCCURRENCE_V2_PROFILE, 'PLAN', False),
+    (core.SEMANTIC_MAP_OCCURRENCE_V2_PROFILE, 'NODES', True),
+])
+def test_occurrence_filter_reaches_single_greedy_model_generate(monkeypatch, profile, phase, filtered):
+    import time
+    from test_piece_model_server_constraints import synthetic_generator
+
+    prepared_map = app.prepare_semantic_map(OWNER, json.loads(old.prepared().source_snapshot_json),
+        prompt_version=profile)
+    plan, nodes, _ = phase_packets(prepared_map)
+    messages = core.semantic_node_local_v4_messages(prepared_map, phase, plan=plan)
+    raw = json.dumps(plan if phase == 'PLAN' else nodes, ensure_ascii=False, separators=(',', ':'))
+    real_loader = probe.load_generator
+
+    def load_event_fixture(adapter, stop, **options):
+        # Use the CPU fixture's second synthetic LoRA for the event-plan branch.
+        mock_load = probe.load_piece_adapter
+        def load_adapter(model, path, *, adapter_name, **verified):
+            assert adapter_name == probe.EVENT_PLAN_ADAPTER_NAME
+            mock_load(model, path, **verified)
+        monkeypatch.setattr(probe, 'load_piece_adapter', load_adapter)
+        for key in ('adapter', 'weights_sha256', 'config_sha256'):
+            options['event_plan_' + key] = options.pop('piece_' + key)
+        return real_loader(adapter, stop, **options)
+
+    monkeypatch.setattr(probe, 'load_generator', load_event_fixture)
+    generator, seen, _, _ = synthetic_generator(monkeypatch, constrained=True,
+        with_piece_adapter=True, raw_output=raw)
+    model = seen['model']
+    def select_adapter(name, *, inference_mode=False):
+        assert name in {'default', probe.EVENT_PLAN_ADAPTER_NAME}
+        model.active_adapter, model.grads = name, not inference_mode
+    monkeypatch.setattr(model, 'set_adapter', select_adapter)
+    result, finish, usage = generator(messages, time.monotonic() + 60, profile='event_plan', output_tokens=4096)
+    assert result == raw and finish == 'stop' and usage['completion_tokens'] > 0
+    assert len(seen['generate']) == 1
+    options = seen['generate'][0]
+    assert options['num_beams'] == 1 and options['do_sample'] is False
+    assert ('logits_processor' in options) is filtered
+    assert model.active_adapter == 'default'
+
+
+def test_occurrence_public_duplicate_filter_preserves_related_but_distinct_nodes():
+    p = occurrence_prepared()
+    plan, bodies, _ = phase_packets(p)
+    first = bodies['nodes']['n1']
+    repeated = deepcopy(first)
+    repeated['perspective'] = 'OBSERVED_INTERACTION'
+    bodies['nodes'] = {'n1': first, 'n2': repeated}
+    assert probe._occurrence_duplicate_prefix(json.dumps(bodies, ensure_ascii=False))
+    repeated['title'] = '同じ記録にある別の判断'
+    assert not probe._occurrence_duplicate_prefix(json.dumps(bodies, ensure_ascii=False))
+
+
+def test_occurrence_duplicate_at_meaning_limit_keeps_distinct_last_character():
+    p = occurrence_prepared()
+    _, bodies, _ = phase_packets(p)
+    first = bodies['nodes']['n1']
+    first['meaning'] = '灯' * 240
+    second = deepcopy(first)
+    bodies['nodes'] = {'n1': first, 'n2': second}
+    encoded = json.dumps(bodies, ensure_ascii=False, separators=(',', ':'))
+    last = encoded.rindex('灯' * 240) + 240
+    assert not probe._occurrence_duplicate_prefix(encoded[:last-1])
+    assert probe._occurrence_duplicate_prefix(encoded[:last])
+    assert not probe._occurrence_duplicate_prefix(encoded[:last-1] + '別')
+
+
+def test_occurrence_duplicate_comparison_ignores_only_terminal_padding_and_repeat_stops():
+    first = dict(u1=dict(fact='支柱の表示を確かめた。'))
+    signature = probe._occurrence_visible_signature
+    expected = signature(first, '支柱の確認', first['u1']['fact'])
+    assert signature(first, '支柱の確認　', '支柱の表示を確かめた。。　') == expected
+    assert signature(first, '支柱の確認', '支柱の表示を確かめた？') != expected
+    assert signature(first, '支柱の確認', '樹脂製と確かめた。') != expected

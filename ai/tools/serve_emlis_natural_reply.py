@@ -39,6 +39,9 @@ NODE_LOCAL_V4_BOUND_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v4-bound-roo
 NODE_LOCAL_V4_BOUND_PROFILE = 'semantic_map.node_local.v4.bound_roots.v1'
 OCCURRENCE_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v4-occurrence-v1'
 OCCURRENCE_PROFILE = 'semantic_map.node_local.v4.occurrence.v1'
+OCCURRENCE_V2_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v4-occurrence-v2'
+OCCURRENCE_V2_PROFILE = 'semantic_map.node_local.v4.occurrence.v2'
+OCCURRENCE_PROFILES = frozenset({OCCURRENCE_PROFILE, OCCURRENCE_V2_PROFILE})
 NODE_LOCAL_V4_BOUND_V2_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v4-bound-roots-v2'
 NODE_LOCAL_V4_BOUND_V2_PROFILE = 'semantic_map.node_local.v4.bound_roots.v2'
 NODE_LOCAL_V4_SCHEMA = 'cocolon.analysis.semantic_map.node_local.model.v4'
@@ -72,6 +75,90 @@ def generation_failure(exc):
     while trace is not None:
         generation_stage('failure_location_' + trace.tb_frame.f_code.co_name + '_' + str(trace.tb_lineno))
         trace = trace.tb_next
+
+
+# Match the fixed, ordered v4 NODES envelope, including JSON whitespace.
+_OCCURRENCE_NODES_OPEN = re.compile(
+    r'\s*\{\s*"schema_version"\s*:\s*"[^"]+"\s*,\s*"plan_sha256"\s*:\s*"[0-9a-f]{64}"\s*,\s*"nodes"\s*:\s*\{')
+_OCCURRENCE_NODE_OPEN = re.compile(r'\s*(?:,\s*)?"n[1-9][0-9]*"\s*:\s*\{')
+_OCCURRENCE_NODE_KEYS = tuple(re.compile(r'\s*' + ('' if name=='units' else r',\s*') +
+    '"' + name + r'"\s*:\s*') for name in ('units','node_kind','perspective','title','meaning'))
+_OCCURRENCE_ESCAPE = re.compile(r'\\(?:u[0-9A-Fa-f]{4}|["\\/bfnrt])')
+
+
+def _occurrence_visible_signature(units, title, meaning):
+    # Use the compiler's projection order. Comparison alone ignores trailing
+    # horizontal padding and repeated terminal Japanese full stops. Every
+    # original string remains untouched, including quotations and questions.
+    def comparison(text):
+        return '\n'.join(re.sub(r'。(?:[ \t\u3000]*。)+$', '。', line.rstrip(' \t\u3000')) for line in text.split('\n'))
+    title, meaning = comparison(title), comparison(meaning)
+    facts = [comparison(units['u' + str(i)]['fact']) for i in range(1, len(units)+1)]
+    repeated = meaning in facts or meaning in ('\n'.join(facts), ''.join(facts))
+    parts = facts + ([meaning] if meaning and not repeated else [])
+    body = '\n'.join(dict.fromkeys(line for part in parts for line in part.split('\n')))
+    return title, meaning or facts[0], body
+
+
+def _occurrence_duplicate_prefix(wire):
+    """Reject an irrevocably duplicate public node before its token is emitted."""
+    opener = _OCCURRENCE_NODES_OPEN.match(wire)
+    if opener is None:
+        return False
+    position = opener.end()
+    decoder = json.JSONDecoder()
+    seen = set()
+    while node := _OCCURRENCE_NODE_OPEN.match(wire,position):
+        position = node.end()
+        values = []
+        for key in _OCCURRENCE_NODE_KEYS:
+            prop = key.match(wire,position)
+            if prop is None:
+                return False
+            position = prop.end()
+            try:
+                value, position = decoder.raw_decode(wire,position)
+            except json.JSONDecodeError:
+                # LMFE gives an unfinished meaning at its 240-character limit
+                # only a closing quote. Prevent that dead end one token earlier.
+                if len(values)==4 and seen and wire[position:position+1]=='"':
+                    encoded = wire[position+1:]
+                    if len(encoded)>=240 and len(_OCCURRENCE_ESCAPE.sub('x',encoded))>=240:
+                        try:
+                            value = json.loads(wire[position:]+'"')
+                        except json.JSONDecodeError:
+                            return False
+                        return _occurrence_visible_signature(values[0],values[3],value) in seen
+                return False
+            values.append(value)
+        identity = _occurrence_visible_signature(values[0],values[3],values[4])
+        if identity in seen:
+            return True
+        seen.add(identity)
+        while position<len(wire) and wire[position] in ' \r\t\n':
+            position += 1
+        if wire[position:position+1]!='}':
+            return False
+        position += 1
+    return False
+
+
+def _occurrence_greedy_node_filter(tokenizer, prompt_tokens):
+    """Filter actual greedy choices after the pinned LMFE prefix mask."""
+    def choose(input_ids, scores):
+        if len(scores)!=1 or len(input_ids)!=1:
+            raise ValueError('occurrence_single_greedy_sequence_required')
+        accepted = input_ids[0][prompt_tokens:].tolist()
+        while True:
+            picked = int(scores[0].argmax().item())
+            if float(scores[0,picked])==float('-inf'):
+                raise ValueError('occurrence_no_distinct_node_continuation')
+            wire = tokenizer.decode([*accepted,picked],skip_special_tokens=False,
+                clean_up_tokenization_spaces=False)
+            if not _occurrence_duplicate_prefix(wire):
+                return scores
+            scores[0,picked] = float('-inf')
+    return choose
 
 
 def semantic_free_text_tokens(prefix, batch, sent, blocked, invalid_json_tokens=frozenset()):
@@ -361,9 +448,9 @@ def _semantic_node_local_v4_schema(material, pairs, unknown_pairs, *, leaf=False
             enum=[NODE_LOCAL_V4_SCHEMA + '.' + phase.lower()]), **props))
     phase = material.get('author_phase')
     author_profile = material.get('author_profile')
-    if author_profile not in (None, NODE_LOCAL_V4_BOUND_PROFILE, NODE_LOCAL_V4_BOUND_V2_PROFILE, OCCURRENCE_PROFILE):
+    if author_profile not in (None, NODE_LOCAL_V4_BOUND_PROFILE, NODE_LOCAL_V4_BOUND_V2_PROFILE, *OCCURRENCE_PROFILES):
         raise ValueError('semantic_v4_profile_invalid')
-    bound = author_profile in {NODE_LOCAL_V4_BOUND_PROFILE, NODE_LOCAL_V4_BOUND_V2_PROFILE, OCCURRENCE_PROFILE}
+    bound = author_profile in {NODE_LOCAL_V4_BOUND_PROFILE, NODE_LOCAL_V4_BOUND_V2_PROFILE, *OCCURRENCE_PROFILES}
     if phase == 'PLAN':
         unit = obj(dict(evidence=dict(type='array', items=dict(oneOf=pairs), minItems=1, maxItems=4)))
         node = obj(dict(node_id=dict(type='string', enum=['n' + str(i) for i in range(1, 13)]),
@@ -463,7 +550,7 @@ def _semantic_node_local_v4_schema(material, pairs, unknown_pairs, *, leaf=False
             'SELF_OUTSIDE_GAP', 'CRITERION_EXPRESSION', 'CONTEXT_CONTRAST', 'SHARED_MEANING'])})
     overview = dict(title=text(80), node_refs=dict(type='array', items=ref,
         minItems=1, maxItems=min(8, len(ids))))
-    if author_profile in {NODE_LOCAL_V4_BOUND_V2_PROFILE, OCCURRENCE_PROFILE}:
+    if author_profile in {NODE_LOCAL_V4_BOUND_V2_PROFILE, *OCCURRENCE_PROFILES}:
         overview = dict(node_refs=overview['node_refs'], title=overview['title'])
     return root(phase, dict(nodes_sha256=dict(type='string', enum=[signature(registry)]),
         edges=dict(type='array', items=edge, maxItems=0 if leaf else 48),
@@ -1170,7 +1257,7 @@ def semantic_json_parser(messages, alphabet):
         ids = tuple(n['node_id'] for n in material.get('candidate_nodes', ()))
         return _semantic_unique_json_schema_parser(schema, config, bound_node_ids=ids,
             unique_qualifications=material.get('author_phase') == 'NODES'
-                and material.get('author_profile') == OCCURRENCE_PROFILE)
+                and material.get('author_profile') in OCCURRENCE_PROFILES)
     anchor_key = 'events' if 'events' in schema['properties'] else 'nodes'
     node_local = schema['properties']['schema_version'].get('enum') in (
         [NODE_LOCAL_V3_SCHEMA], [NODE_LOCAL_V4_SCHEMA + '.plan'])
@@ -1337,7 +1424,7 @@ def make_handler(generate, *, api_key, model_name, deadline, max_requests,
                     EVENT_PLAN_V2_BASE_MODEL, NODE_LOCAL_V3_BASE_MODEL}
                 if event_plan:
                     selected_model = event_plan_model
-                staged = event_plan and event_plan_model in {NODE_LOCAL_V4_MODEL, NODE_LOCAL_V4_BOUND_MODEL, NODE_LOCAL_V4_BOUND_V2_MODEL, OCCURRENCE_MODEL}
+                staged = event_plan and event_plan_model in {NODE_LOCAL_V4_MODEL, NODE_LOCAL_V4_BOUND_MODEL, NODE_LOCAL_V4_BOUND_V2_MODEL, OCCURRENCE_MODEL, OCCURRENCE_V2_MODEL}
                 if staged:
                     material = json.loads(messages[1]['content'])
                     if material.get('author_phase') not in NODE_LOCAL_V4_PHASES:
@@ -1366,7 +1453,7 @@ def make_handler(generate, *, api_key, model_name, deadline, max_requests,
                     except (ValueError, TypeError):
                         material = None
                     marker = material.get('model_schema') if type(material) is dict else None
-                    expected_marker = (NODE_LOCAL_V4_SCHEMA if event_plan_model in {NODE_LOCAL_V4_MODEL, NODE_LOCAL_V4_BOUND_MODEL, NODE_LOCAL_V4_BOUND_V2_MODEL, OCCURRENCE_MODEL}
+                    expected_marker = (NODE_LOCAL_V4_SCHEMA if event_plan_model in {NODE_LOCAL_V4_MODEL, NODE_LOCAL_V4_BOUND_MODEL, NODE_LOCAL_V4_BOUND_V2_MODEL, OCCURRENCE_MODEL, OCCURRENCE_V2_MODEL}
                         else NODE_LOCAL_V3_SCHEMA if event_plan_model in {
                             NODE_LOCAL_V3_MODEL, NODE_LOCAL_V3_BASE_MODEL}
                         else EVENT_PLAN_V2_SCHEMA if event_plan_model in {
@@ -1376,7 +1463,8 @@ def make_handler(generate, *, api_key, model_name, deadline, max_requests,
                                 NODE_LOCAL_V3_SCHEMA, NODE_LOCAL_V4_SCHEMA}):
                         raise ValueError
                     if staged:
-                        expected_profile = (OCCURRENCE_PROFILE if event_plan_model == OCCURRENCE_MODEL
+                        expected_profile = (OCCURRENCE_V2_PROFILE if event_plan_model == OCCURRENCE_V2_MODEL
+                            else OCCURRENCE_PROFILE if event_plan_model == OCCURRENCE_MODEL
                             else NODE_LOCAL_V4_BOUND_V2_PROFILE
                             if event_plan_model == NODE_LOCAL_V4_BOUND_V2_MODEL else NODE_LOCAL_V4_BOUND_PROFILE
                             if event_plan_model == NODE_LOCAL_V4_BOUND_MODEL else None)
@@ -1694,6 +1782,10 @@ def load_generator(adapter, process_stop, *, weights_sha256=None, config_sha256=
                     generation_stage('prefix_exit_' + str(progress) + '_' + type(parser).__name__
                         + '_' + mode + '_allowed_' + str(len(allowed)))
                 return allowed
+            if profile == 'event_plan':
+                material=json.loads(messages[1]['content'])
+                if material.get('author_profile')==OCCURRENCE_V2_PROFILE and material.get('author_phase')=='NODES':
+                    format_options['logits_processor']=[_occurrence_greedy_node_filter(tokenizer,count)]
             format_options['prefix_allowed_tokens_fn'] = private_prefix
             format_options['eos_token_id'] = tokenizer_data.eos_token_id
             generation_stage('decode')
