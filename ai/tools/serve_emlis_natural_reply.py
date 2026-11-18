@@ -42,8 +42,10 @@ OCCURRENCE_PROFILE = 'semantic_map.node_local.v4.occurrence.v1'
 OCCURRENCE_V2_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v4-occurrence-v2'
 OCCURRENCE_V2_PROFILE = 'semantic_map.node_local.v4.occurrence.v2'
 OCCURRENCE_V3_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v4-occurrence-v3'
+OCCURRENCE_V4_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v4-occurrence-v4'
 OCCURRENCE_V3_PROFILE = 'semantic_map.node_local.v4.occurrence.v3'
-OCCURRENCE_PROFILES = frozenset({OCCURRENCE_PROFILE, OCCURRENCE_V2_PROFILE, OCCURRENCE_V3_PROFILE})
+OCCURRENCE_V4_PROFILE = 'semantic_map.node_local.v4.occurrence.v4'
+OCCURRENCE_PROFILES = frozenset({OCCURRENCE_PROFILE, OCCURRENCE_V2_PROFILE, OCCURRENCE_V3_PROFILE, OCCURRENCE_V4_PROFILE})
 NODE_LOCAL_V4_BOUND_V2_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v4-bound-roots-v2'
 NODE_LOCAL_V4_BOUND_V2_PROFILE = 'semantic_map.node_local.v4.bound_roots.v2'
 NODE_LOCAL_V4_SCHEMA = 'cocolon.analysis.semantic_map.node_local.model.v4'
@@ -318,7 +320,7 @@ def _if_output_schema(material):
         clarification=dict(anyOf=[dict(type='null'), clarification])))
 
 
-def _semantic_sentence_quotes(original):
+def _semantic_sentence_quotes(original, *, qualification_tails=False):
     """Additional unique sentences; never rewrite or replace the full source.
 
     Keep paired Japanese quotations intact. Ambiguous quotation boundaries or
@@ -326,22 +328,46 @@ def _semantic_sentence_quotes(original):
     ASCII periods are deliberately not sentence boundaries (URLs/decimals).
     """
     pairs = {'「': '」', '『': '』'}
-    stack, candidates, start = [], [], 0
+    if qualification_tails:
+        pairs.update({'“': '”', '‘': '’', '"': '"', "'": "'", '`': '`', '（': '）', '(': ')',
+            '【': '】', '〈': '〉', '《': '》', '[': ']', '{': '}'})
+    escaped = False
+    stack, candidates = [], []
+    starts = [] if qualification_tails else [0]
     terminal = '。！？!?'
     for index, char in enumerate(original):
-        if char in pairs:
+        if qualification_tails and stack and stack[-1] in ('"', "'", '`'):
+            if escaped:
+                escaped = False
+            elif char == '\\':
+                escaped = True
+            elif char == stack[-1]:
+                stack.pop()
+            continue
+        if stack and char == stack[-1]:
+            stack.pop()
+        elif char in pairs:
             stack.append(pairs[char])
         elif char in pairs.values():
-            if not stack or stack.pop() != char:
-                return []
+            return []
+        elif qualification_tails and not stack and char in '、，':
+            starts.append(index + 1)
         elif not stack and (char in terminal or char in '\r\n'):
             if char in terminal and index + 1 < len(original) and original[index + 1] in terminal:
                 continue
-            candidates.append(original[start:index + 1].strip())
-            start = index + 1
+            candidates.extend(original[start:index + 1].strip() for start in starts
+                if not qualification_tails or index + 1 - start <= 240)
+            starts = [] if qualification_tails else [index + 1]
     if stack:
         return []
-    candidates.append(original[start:].strip())
+    candidates.extend(original[start:].strip() for start in starts
+        if not qualification_tails or len(original) - start <= 240)
+    if qualification_tails:
+        # Keep the completing predicate, with exactly one location in the
+        # original field. The stage later checks containment in its chosen root.
+        return [span for span in candidates if 0 < len(span) <= 240
+            and original.find(span) == original.rfind(span)
+            and not re.search(r'["\\\x00-\x1f]', span)]
     return [span for span in candidates if span and len(span) <= 4000
         and original.count(span) == 1 and not re.search(r'["\\\x00-\x1f]', span)]
 
@@ -616,6 +642,12 @@ def semantic_output_schema(messages):
                 # A qualification that retains its antecedent must also be
                 # selectable as one enclosing event root, not two fragments.
                 spans = list(dict.fromkeys(spans + qualifications))
+            if (material.get('author_profile') == OCCURRENCE_V4_PROFILE
+                    and material.get('author_phase') == 'NODES'):
+                # Add only possible unknowns. PLAN/assigned_evidence keeps the
+                # full root containing the known context and its qualification.
+                qualifications = list(dict.fromkeys(qualifications
+                    + _semantic_sentence_quotes(original, qualification_tails=True)))
             if qualifications:
                 unknown_pairs.append(dict(type='object', properties=dict(
                     source_quote=dict(type='string',enum=qualifications),
@@ -1426,7 +1458,7 @@ def make_handler(generate, *, api_key, model_name, deadline, max_requests,
                     EVENT_PLAN_V2_BASE_MODEL, NODE_LOCAL_V3_BASE_MODEL}
                 if event_plan:
                     selected_model = event_plan_model
-                staged = event_plan and event_plan_model in {NODE_LOCAL_V4_MODEL, NODE_LOCAL_V4_BOUND_MODEL, NODE_LOCAL_V4_BOUND_V2_MODEL, OCCURRENCE_MODEL, OCCURRENCE_V2_MODEL, OCCURRENCE_V3_MODEL}
+                staged = event_plan and event_plan_model in {NODE_LOCAL_V4_MODEL, NODE_LOCAL_V4_BOUND_MODEL, NODE_LOCAL_V4_BOUND_V2_MODEL, OCCURRENCE_MODEL, OCCURRENCE_V2_MODEL, OCCURRENCE_V3_MODEL, OCCURRENCE_V4_MODEL}
                 if staged:
                     material = json.loads(messages[1]['content'])
                     if material.get('author_phase') not in NODE_LOCAL_V4_PHASES:
@@ -1455,7 +1487,7 @@ def make_handler(generate, *, api_key, model_name, deadline, max_requests,
                     except (ValueError, TypeError):
                         material = None
                     marker = material.get('model_schema') if type(material) is dict else None
-                    expected_marker = (NODE_LOCAL_V4_SCHEMA if event_plan_model in {NODE_LOCAL_V4_MODEL, NODE_LOCAL_V4_BOUND_MODEL, NODE_LOCAL_V4_BOUND_V2_MODEL, OCCURRENCE_MODEL, OCCURRENCE_V2_MODEL, OCCURRENCE_V3_MODEL}
+                    expected_marker = (NODE_LOCAL_V4_SCHEMA if event_plan_model in {NODE_LOCAL_V4_MODEL, NODE_LOCAL_V4_BOUND_MODEL, NODE_LOCAL_V4_BOUND_V2_MODEL, OCCURRENCE_MODEL, OCCURRENCE_V2_MODEL, OCCURRENCE_V3_MODEL, OCCURRENCE_V4_MODEL}
                         else NODE_LOCAL_V3_SCHEMA if event_plan_model in {
                             NODE_LOCAL_V3_MODEL, NODE_LOCAL_V3_BASE_MODEL}
                         else EVENT_PLAN_V2_SCHEMA if event_plan_model in {
@@ -1465,7 +1497,8 @@ def make_handler(generate, *, api_key, model_name, deadline, max_requests,
                                 NODE_LOCAL_V3_SCHEMA, NODE_LOCAL_V4_SCHEMA}):
                         raise ValueError
                     if staged:
-                        expected_profile = (OCCURRENCE_V3_PROFILE if event_plan_model == OCCURRENCE_V3_MODEL
+                        expected_profile = (OCCURRENCE_V4_PROFILE if event_plan_model == OCCURRENCE_V4_MODEL
+                            else OCCURRENCE_V3_PROFILE if event_plan_model == OCCURRENCE_V3_MODEL
                             else OCCURRENCE_V2_PROFILE if event_plan_model == OCCURRENCE_V2_MODEL
                             else OCCURRENCE_PROFILE if event_plan_model == OCCURRENCE_MODEL
                             else NODE_LOCAL_V4_BOUND_V2_PROFILE
@@ -1787,7 +1820,7 @@ def load_generator(adapter, process_stop, *, weights_sha256=None, config_sha256=
                 return allowed
             if profile == 'event_plan':
                 material=json.loads(messages[1]['content'])
-                if material.get('author_profile') in {OCCURRENCE_V2_PROFILE, OCCURRENCE_V3_PROFILE} and material.get('author_phase')=='NODES':
+                if material.get('author_profile') in {OCCURRENCE_V2_PROFILE, OCCURRENCE_V3_PROFILE, OCCURRENCE_V4_PROFILE} and material.get('author_phase')=='NODES':
                     format_options['logits_processor']=[_occurrence_greedy_node_filter(tokenizer,count)]
             format_options['prefix_allowed_tokens_fn'] = private_prefix
             format_options['eos_token_id'] = tokenizer_data.eos_token_id

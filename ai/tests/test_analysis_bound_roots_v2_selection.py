@@ -316,6 +316,7 @@ def test_occurrence_rel_overview_uses_supporting_refs_and_preserves_frozen_v2_le
 @pytest.mark.parametrize('alias, profile, schema', [
     (sources.SEMANTIC_OCCURRENCE_V2_MODEL, core.SEMANTIC_MAP_OCCURRENCE_V2_PROFILE, core.SEMANTIC_MAP_OCCURRENCE_V2_SCHEMA),
     (sources.SEMANTIC_OCCURRENCE_V3_MODEL, core.SEMANTIC_MAP_OCCURRENCE_V3_PROFILE, core.SEMANTIC_MAP_OCCURRENCE_V3_SCHEMA),
+    (sources.SEMANTIC_OCCURRENCE_V4_MODEL, core.SEMANTIC_MAP_OCCURRENCE_V4_PROFILE, core.SEMANTIC_MAP_OCCURRENCE_V4_SCHEMA),
 ])
 def test_occurrence_alias_preserves_existing_if_and_user_projection(monkeypatch, alias, profile, schema):
     environment(monkeypatch, model=alias)
@@ -344,6 +345,9 @@ def test_occurrence_alias_preserves_existing_if_and_user_projection(monkeypatch,
 @pytest.mark.parametrize('alias, marker, status', [
     (sources.SEMANTIC_OCCURRENCE_V2_MODEL, core.SEMANTIC_MAP_OCCURRENCE_V2_PROFILE, 200),
     (sources.SEMANTIC_OCCURRENCE_V3_MODEL, core.SEMANTIC_MAP_OCCURRENCE_V3_PROFILE, 200),
+    (sources.SEMANTIC_OCCURRENCE_V4_MODEL, core.SEMANTIC_MAP_OCCURRENCE_V4_PROFILE, 200),
+    (sources.SEMANTIC_OCCURRENCE_V4_MODEL, core.SEMANTIC_MAP_OCCURRENCE_V3_PROFILE, 400),
+    (sources.SEMANTIC_OCCURRENCE_V3_MODEL, core.SEMANTIC_MAP_OCCURRENCE_V4_PROFILE, 400),
     (sources.SEMANTIC_OCCURRENCE_V2_MODEL, core.SEMANTIC_MAP_OCCURRENCE_V3_PROFILE, 400),
     (sources.SEMANTIC_OCCURRENCE_V3_MODEL, core.SEMANTIC_MAP_OCCURRENCE_V2_PROFILE, 400),
     (sources.SEMANTIC_OCCURRENCE_MODEL, core.SEMANTIC_MAP_OCCURRENCE_V2_PROFILE, 400),
@@ -538,3 +542,95 @@ def test_occurrence_v3_general_nodes_instruction_keeps_example_subject_in_the_le
     assert '練習帳' in lesson and '練習日' in lesson
     assert '練習帳' not in general and '練習日' not in general
     assert '記録上の表記と、その表記が指す予定・対象' in general
+
+
+def test_occurrence_v4_unknown_can_keep_only_the_locally_qualified_clause():
+    tail = '登録されたかはまだ分からない。'
+    root = '本人は検査票を受け取ったが、' + tail
+    snapshot = json.loads(old.prepared().source_snapshot_json)
+    snapshot['members'][0]['original']['memo'] = root + '封筒を渡したが、到着時刻は未確認。'
+    for profile, expected in ((core.SEMANTIC_MAP_OCCURRENCE_V3_PROFILE, False),
+                              (core.SEMANTIC_MAP_OCCURRENCE_V4_PROFILE, True)):
+        current = app.prepare_semantic_map(OWNER, snapshot, prompt_version=profile)
+        plan, nodes, _ = phase_packets(current)
+        first_unit = plan['nodes'][0]['units'][0]
+        first_unit['evidence'][0]['quote'] = root
+        nodes['plan_sha256'] = core.semantic_map_hash(plan)
+        unit = nodes['nodes']['n1']['units']['u1']
+        unit['assigned_evidence'] = core._semantic_v4_assigned_evidence(first_unit)
+        messages = core.semantic_node_local_v4_messages(current, 'NODES', plan=plan)
+
+        unit['unknowns'] = [dict(source_quote=root, source_field=1)]
+        assert accepts(nodes, messages)
+        unit['unknowns'] = [dict(source_quote=tail, source_field=1)]
+        assert accepts(nodes, messages) == expected
+        assert core.semantic_node_local_v4_nodes(current, plan, nodes) is nodes
+
+        for wrong_quote, wrong_field in ((tail, 2), ('到着時刻は未確認。', 1), ('登録済み。', 1)):
+            unit['unknowns'] = [dict(source_quote=wrong_quote, source_field=wrong_field)]
+            assert not accepts(nodes, messages)
+            with pytest.raises(core.AnalysisSemanticMapError):
+                core.semantic_node_local_v4_nodes(current, plan, nodes)
+
+
+@pytest.mark.parametrize('quoted', ['「まず、内側。次、最後」', '『「内、側」。次』', '“内、側。”',
+                                    '（参照、未確定。）', '"内、側。"', '`内、側。`'])
+def test_occurrence_v4_qualification_preserves_quoted_commas(quoted):
+    text = quoted + 'と書いたが、結果はまだ届いていない。'
+    assert probe._semantic_sentence_quotes(text, qualification_tails=True) == ['結果はまだ届いていない。']
+
+
+def test_occurrence_v4_qualification_preserves_length_uniqueness_and_boundary_ambiguity():
+    options = lambda text: probe._semantic_sentence_quotes(text, qualification_tails=True)
+    valid = '未' * 239 + '。'
+    assert options('前段、' + valid) == [valid]
+    assert options('前段、未' + valid) == []
+    assert options('前段、その後は不明。別件、その後は不明。') == []
+    assert options('「前段、その後は不明。') == []
+    assert options('前段、その後は不明。】') == []
+
+
+@pytest.mark.parametrize('stage', [None, 'LEAF', 'MERGE'])
+def test_occurrence_v4_reporting_contrast_is_phase_local_and_outside_source(stage):
+    def lesson(phase, profile):
+        return core._semantic_v4_lesson(stage, phase, bound=True, author_profile=profile)
+    current = core.SEMANTIC_MAP_OCCURRENCE_V4_PROFILE
+    previous = core.SEMANTIC_MAP_OCCURRENCE_V3_PROFILE
+    for phase in ('PLAN', 'NODES', 'RELATIONS'):
+        text = lesson(phase, current)
+        example, full_lesson = text.split('架空完成例', 1)
+        assert '藍布' not in full_lesson and '藍布' not in lesson(phase, previous)
+        if phase == 'PLAN':
+            assert not example.strip()
+            continue
+        assert '染め終えたと返事' in example and '染められると返事' in example
+        assert example.count('私は伝票で枚数を確かめた') == 2
+        if phase == 'NODES':
+            assert '工房からの染色完了の知らせ' in example
+            assert '染色が可能だという工房の返事' in example
+            assert example.count('本人の枚数確認') == 2
+        else:
+            assert '染色完了の知らせを受け、枚数を照合' in example
+            assert '染色できるという返事を受け、枚数を照合' in example
+            assert ('知らせと照合が線の両端なら' in example) is (stage != 'LEAF')
+
+
+def test_occurrence_v4_plan_example_keeps_occurrences_and_shared_referent_in_their_source():
+    profile = core.SEMANTIC_MAP_OCCURRENCE_V4_PROFILE
+    caption = '別の架空例（今回の本人事実ではない）。原文欄='
+    for stage in (None, 'LEAF', 'MERGE'):
+        for phase in ('PLAN', 'NODES', 'RELATIONS'):
+            text = core._semantic_v4_lesson(stage, phase, bound=True, author_profile=profile)
+            assert (caption in text) is (stage is None and phase == 'PLAN')
+
+    lesson = core._semantic_v4_lesson(None, 'PLAN', bound=True, author_profile=profile)
+    field_line, plan_line, _ = lesson.split(caption, 1)[1].split('\n', 2)
+    fields = json.loads(field_line)
+    plan = json.loads(plan_line.removeprefix('根拠選択例='))
+    evidence = [node['units'][0]['evidence'] for node in plan['nodes']]
+    for unit in evidence:
+        for quote in unit:
+            assert fields[str(quote['field'])].count(quote['quote']) == 1
+    first, later, applied, recorded = evidence
+    assert first[0]['field'] != later[0]['field']
+    assert applied[0] == recorded[0] and applied[1] != recorded[1]
