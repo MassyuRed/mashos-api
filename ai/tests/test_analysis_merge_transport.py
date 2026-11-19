@@ -203,3 +203,93 @@ def test_v3_nodes_reconstructs_only_the_roots_bound_to_its_request():
     display['plan']['nodes'][0]['units'][0]['evidence'] = 2
     with pytest.raises(ValueError):
         wire.legacy_messages([wire_nodes[0], dict(wire_nodes[1], content=wire.compact_json(display))])
+
+
+def test_relation_fact_keeps_the_exact_selected_parts_and_qualifications():
+    messages = fixture('RELATIONS')
+    material = json.loads(messages[1]['content'])
+    roots = [dict(field=3, quote='返事が来るか未確認だった。'), dict(field=4, quote='翌日返事が届いた。')]
+    unit = dict(evidence=roots, fact='来るか未確認だった。翌日返事が届いた。', source_mode='RECORDED',
+                unknowns=[dict(source_quote='返事が来るか未確認だった。', source_field=3)])
+    material.update(fact_part_overrides={'n1.u1.e1': '来るか未確認だった。'},
+                    candidate_nodes=[dict(node_id='n1', units=[unit])])
+    messages[1]['content'] = wire.compact_json(material)
+    physical = wire.prepare_messages(messages)
+    view = json.loads(physical[1]['content'])
+    assert view['candidate_nodes'][0]['units'][0] == {**unit, 'fact': 0}
+    assert wire.legacy_messages(physical) == messages
+    view['fact_part_overrides']['n1.u1.e1'] = '返事が来た。'
+    with pytest.raises(ValueError):
+        wire.legacy_messages([physical[0], dict(physical[1], content=wire.compact_json(view))])
+    unit['fact'] = '作者による別の本文'
+    messages[1]['content'] = wire.compact_json(material)
+    physical = wire.prepare_messages(messages)
+    assert json.loads(physical[1]['content'])['candidate_nodes'][0]['units'][0] == unit
+    assert wire.legacy_messages(physical) == messages
+
+
+def test_source_ranges_qualifications_and_unread_spans_round_trip_without_changing_owners():
+    quote = '市役所に確認を依頼したが、返事が戻ったかはまだ分からない。'
+    start = 19
+    text = '本人のメモ。' + quote + '同じ日に別の話をした。'
+    fields = {i: dict(text=text, fragment_scalar_range=[start, start + len(text)]) for i in (3, 7)}
+    first = dict(source_field=3, source_quote=quote)
+    second = dict(source_field=7, source_quote=quote)
+    unit = dict(evidence=[dict(field=3, quote=quote)], unknowns=[first, second])
+    material = dict(author_phase='RELATIONS', candidate_nodes=[dict(node_id='n1', units=[unit])],
+                    qualification_candidates={'first': dict(first), 'second': dict(second)})
+    original = deepcopy(material)
+    wire._visible_sources(material, fields)
+    ref = unit['evidence'][0]['quote']
+    assert ref[:2] == [start + text.index(quote), start + text.index(quote) + len(quote)]
+    assert material['qualification_candidates'] == {'first': [1, 1, 1], 'second': [1, 1, 2]}
+    corrupt = deepcopy(material)
+    corrupt['candidate_nodes'][0]['units'][0]['unknowns'][0]['source_quote'][2] = 'changed'
+    with pytest.raises(ValueError):
+        wire._visible_sources(corrupt, fields, unpack=True)
+    wire._visible_sources(material, fields, unpack=True)
+    assert material == original
+
+    ranges = [[i*6, i*6+5] for i in range(30)] + [[181, 185], [185, 187]]
+    duties = dict(source_duties=dict(unassessed_source_ranges=[dict(field=7, ranges=ranges)]))
+    original = deepcopy(duties)
+    wire._range_lengths(duties)
+    assert duties['source_duties']['unassessed_source_ranges'][0]['ranges']['gaps'] == [[30, 2], [31, 0]]
+    wire._range_lengths(duties, unpack=True)
+    assert duties == original
+
+
+def test_relation_review_references_bind_each_open_quote_and_closed_decision():
+    import analysis_plan_source_choices as choices
+    a = '返答がないので実施日を知らない。予定変更の理由も不明だった。'
+    b = '二番目の資料を受け取ったかはその時点で分からなかった。'
+    registry = [{'node_id': 'n1'}, {'node_id': 'n2'}]
+    material = dict(author_phase='RELATIONS', candidate_nodes=registry, qualification_candidates={
+        'q1/時点': {'source_quote': a}, 'q2/受取': {'source_quote': b}, 'q3/保留': {'source_quote': a},
+        'q4/既往': {'source_quote': b}, 'q5/重複': {'source_quote': b}})
+    codec = wire.ResponseCodec(material, choices, None)
+    later = '予定変更の理由も不明だった。'
+    logical = dict(schema_version=wire.MODEL_SCHEMA+'.relations', nodes_sha256=codec.binding,
+        qualification_review={'q1/時点': dict(status='OPEN', source_quote=later),
+            'q2/受取': dict(status='OPEN', source_quote=b), 'q3/保留': dict(status='STATED'),
+            'q4/既往': dict(status='EARLIER'), 'q5/重複': dict(status='DUPLICATE')},
+        edges=[], overview=dict(node_refs=['n1', 'n2'], title='検証'))
+    compact = codec.encode(logical)
+    assert compact['qualification_review'] == [[codec.quote_code(later)], [0], 'STATED', 'EARLIER', 'DUPLICATE']
+    assert codec.decode(compact) == logical
+    for bad in ([True], [1], [codec.quote_code(b)], [], 'OPEN', 'UNKNOWN'):
+        changed = deepcopy(compact)
+        changed['qualification_review'][1] = bad
+        with pytest.raises(ValueError):
+            codec.decode(changed)
+    broken = {**compact, 'qualification_review': compact['qualification_review'][:-1]}
+    with pytest.raises(ValueError):
+        codec.decode(broken)
+
+
+def test_qualification_ordinals_survive_sorted_request_keys():
+    import analysis_plan_source_choices as choices
+    items = {f'q{i}/留保': dict(source_quote=f'{i}番の留保。') for i in range(1, 13)}
+    material = dict(author_phase='RELATIONS', candidate_nodes=[], qualification_candidates=dict(sorted(items.items())))
+    codec = wire.ResponseCodec(material, choices, None)
+    assert list(dict(codec.qualification_items)) == list(items)

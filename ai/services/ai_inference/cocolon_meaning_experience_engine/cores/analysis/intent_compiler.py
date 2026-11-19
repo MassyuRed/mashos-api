@@ -3957,10 +3957,10 @@ def expand_analysis_semantic_event_plan(prepared, packet):
                 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v16',
                 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v17',
                 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v18', 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v19', 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v20', 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v21', 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v22', 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v23', 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v24'}):
-        from .semantic_admission import (assemble_semantic_node_local_v4,
+        from .semantic_admission import (assemble_semantic_node_local_v4_with_node_choices,
             SEMANTIC_MAP_NODE_LOCAL_V3_PROFILE, SEMANTIC_MAP_FACT_ENDPOINT_PROFILES, SEMANTIC_MAP_CONTENT_PLAN_PROFILES,
             SEMANTIC_MAP_VISIBLE_SOURCE_PROFILES, SEMANTIC_MAP_FACT_PROSE_PROFILES)
-        joined = assemble_semantic_node_local_v4(prepared, packet)
+        joined, authored_nodes = assemble_semantic_node_local_v4_with_node_choices(prepared, packet)
         fixed_record_units = set()
         if prepared.prompt_version in SEMANTIC_MAP_VISIBLE_SOURCE_PROFILES:
             from .semantic_admission import _semantic_node_fact_sources
@@ -3973,7 +3973,6 @@ def expand_analysis_semantic_event_plan(prepared, packet):
             if prepared.prompt_version in SEMANTIC_MAP_FACT_PROSE_PROFILES:
                 from .semantic_admission import _semantic_fact_part_key, _semantic_fact_sentence_choices
                 choices = _semantic_fact_sentence_choices(joined, json.loads(prepared.material_json), prepared.prompt_version)
-                wire = json.loads(packet['phases'][1]['raw'])['nodes']
                 selected = {}
                 for n in joined['nodes']:
                     nid = n['node_id']
@@ -3983,7 +3982,7 @@ def expand_analysis_semantic_event_plan(prepared, packet):
                         for j, evidence in enumerate(u['evidence']):
                             key = _semantic_fact_part_key(u['evidence'], j)
                             slot = (nid, uid, key)
-                            ref = wire[nid]['units'][uid]['fact_parts'][key]
+                            ref = authored_nodes['nodes'][nid]['units'][uid]['fact_parts'][key]
                             phrase = sources[slot][1] if slot in sources else choices.get(slot, {}).get(ref)
                             if phrase is None:
                                 break

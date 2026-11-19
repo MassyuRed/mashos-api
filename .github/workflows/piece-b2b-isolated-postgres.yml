@@ -75,6 +75,7 @@ name: Piece B2-B/B3/B4/B5 isolated PostgreSQL
       - ai/tests/test_piece_model_field_slots.py
       - ai/tests/test_cmee_piece_supplemental_then_feeling.py
       - ai/tools/serve_emlis_natural_reply.py
+      - ai/services/ai_inference/analysis_merge_response_parser.py
       - ai/tests/test_piece_model_server_constraints.py
       - ai/tests/test_analysis_merge_constraint_prefix.py
       - ai/tools/training/train_piece_model_adapter.py

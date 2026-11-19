@@ -77,6 +77,17 @@ def response_parser(logical, codec):
         out.append(_literal(']', '}'))
         return tuple(out)
 
+    if codec.phase == 'RELATIONS':
+        def qualification(index):
+            key, source = codec.qualification_items[index - 1]
+            return (('review', quoted(key) + ':{"status":', source),)
+        header = ('{"schema_version":"cocolon.analysis.semantic_map.node_local.model.v4.relations",'
+                  '"nodes_sha256":' + quoted(codec.binding) + ',"qualification_review":')
+        count = len(codec.qualification_items)
+        return ResponseParser(logical, codec, quoted,
+            (_literal(header + '[', header + '{'), _series(qualification, count, count, '}'),
+             ('passthrough',)))
+
     plan = codec.phase == 'PLAN'
     count = len(codec.plan_units)
     logical_header = ('{"schema_version":"cocolon.analysis.semantic_map.node_local.model.v4.'
@@ -136,12 +147,22 @@ class ResponseParser(CharacterLevelParser):
                     comma = (_literal(','),) if count else ()
                     remaining = (_series(factory, minimum, maximum, closing, count + 1),)
                     options.update(self._next(comma + factory(count + 1) + remaining + tail)._choices())
+            elif kind == 'review':
+                prefix, source = op[1:]
+                closed = [(self.quoted(status), prefix + self.quoted(status) + '}')
+                          for status in ('STATED', 'EARLIER', 'DUPLICATE')]
+                options.update(self._next((('spelling', closed),) + tail)._choices())
+                opened = (_literal('[', prefix + '"OPEN","source_quote":'), ('alias', source),
+                          _literal(']', '}'))
+                options.update(self._next(opened + tail)._choices())
             elif kind in ('alias', 'spelling'):
                 if kind == 'alias':
                     strings = set(_enum_strings(self.logical))
                     if not strings:
                         raise ValueError('analysis_merge_native_quote_options_missing')
-                    choices = [(self.quoted(self.codec.quote_code(q)), self.quoted(q)) for q in strings]
+                    primary = op[1] if len(op) > 1 else None
+                    choices = [('0' if q == primary else self.quoted(self.codec.quote_code(q)), self.quoted(q))
+                               for q in strings]
                 else:
                     choices = op[1]
                 buckets = {}
@@ -171,11 +192,15 @@ class ResponseParser(CharacterLevelParser):
         return ''.join(c for c in chars if c in '"-0123456789')
 
     def get_allowed_characters(self):
+        if self.ops and self.ops[0][0] == 'passthrough':
+            return self.logical.get_allowed_characters()
         if self.ops and self.ops[0][0] == 'scalar':
             return self._scalar_chars()
         return ''.join(self._choices())
 
     def add_character(self, char):
+        if self.ops and self.ops[0][0] == 'passthrough':
+            return self._next(self.ops, self.logical.add_character(char), char)
         if not self.ops or self.ops[0][0] != 'scalar':
             return self._choices()[char]
         _, name, mode, escaped = self.ops[0]
@@ -190,9 +215,11 @@ class ResponseParser(CharacterLevelParser):
         return self._next((('scalar', name, next_mode, escaped),) + tail, parser, char)
 
     def can_end(self):
-        return not self.ops and self.logical.can_end()
+        return (not self.ops or self.ops[0][0] == 'passthrough') and self.logical.can_end()
 
     def shortcut_key(self):
+        if self.ops and self.ops[0][0] == 'passthrough':
+            return self.logical.shortcut_key()
         if self.ops and self.ops[0][0] == 'scalar' and self.ops[0][2] == 'string':
             return self.logical.shortcut_key()
         return None

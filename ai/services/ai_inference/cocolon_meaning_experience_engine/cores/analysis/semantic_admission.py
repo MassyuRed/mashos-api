@@ -4236,7 +4236,12 @@ def semantic_node_local_v4_wire_messages(prepared, phase='PLAN', *, plan=None, n
 
 
 def assemble_semantic_node_local_v4(prepared, packet):
-    """Recheck three unmodified raw/finish/message receipts before projection."""
+    joined, _ = assemble_semantic_node_local_v4_with_node_choices(prepared, packet)
+    return joined
+
+
+def assemble_semantic_node_local_v4_with_node_choices(prepared, packet):
+    """Verify all raw receipts and retain the author's source selections for projection."""
     r, reason = _semantic_map_require, 'analysis_semantic_node_local_v4_lineage_invalid'
     compact = type(packet) is dict and 'merge_wire_version' in packet
     packet_keys = {'schema_version', 'phases'}
@@ -4252,7 +4257,7 @@ def assemble_semantic_node_local_v4(prepared, packet):
         and _semantic_map_keys(packet, packet_keys)
         and packet['schema_version'] == semantic_node_local_v4_artifact_schema(prepared)
         and type(packet['phases']) is list and len(packet['phases']) == 3, reason)
-    plan = nodes = joined = None
+    plan = nodes = joined = authored_nodes = None
     used_tokens = 0
     for phase, row in zip(SEMANTIC_MAP_NODE_LOCAL_V4_PHASES, packet['phases'], strict=True):
         r(_semantic_map_keys(row, phase_keys)
@@ -4280,9 +4285,10 @@ def assemble_semantic_node_local_v4(prepared, packet):
                 merge_action_sources=compact and packet['merge_wire_version'] == VERSION)
         elif phase == 'NODES':
             nodes = admit_semantic_node_local_v4_nodes_response(prepared, plan, value)
+            authored_nodes = value
         else:
             joined = semantic_node_local_v4_relations(prepared, plan, nodes, value)
-    return joined
+    return joined, authored_nodes
 
 
 def _semantic_event_plan_v2_lesson_instruction(stage=None):

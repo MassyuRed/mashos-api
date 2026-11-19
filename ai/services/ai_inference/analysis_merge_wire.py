@@ -39,7 +39,12 @@ RESPONSE_GUIDANCE = {
         '根拠名は順序で決まり、符号 ~先頭…末尾 は完全な原文を指します。'
         '未確認は確認済みに変えず、他の出来事や別人の発言を本人の行動にしません。'
         '別々の根拠にある出来事を同時とせず、後の記録や返答で判明したことを前の時点の確定事項にしません。'),
-    'RELATIONS': '',
+    'RELATIONS': ('\n各単位でfactが0なら、同じ単位のevidenceを順番に読み、各引用をそのままつないだ本文です。'
+        'fact_part_overridesに同じn番号.u番号.e番号がある箇所だけ、その本文片を引用に代えて読みます。'
+        'qualification_candidatesの[n,u,k]は番号nの項目、u番目の単位のunknownsのk番目と同じ留保です。'
+        'unknownsとqualification_candidatesの留保は、それぞれの原文と時点を確認します。'
+        '返すqualification_reviewは候補順の配列です。STATED、EARLIER、DUPLICATEは文字列で、'
+        'OPENは[0]で候補の原文全体、許可された別の原文範囲なら[引用符号]で選びます。'),
 }
 
 
@@ -49,6 +54,10 @@ def instruction(version, phase):
     if version in (RECORD_VERSION, VERSION):
         guidance += RECORD_GUIDANCE
     if version == VERSION:
+        guidance += ('\n原欄はfieldsに全文があります。根拠・留保の引用値が[開始,終了,読取り句]なら、'
+            '対応する欄のその範囲の全文です。読取り句は両端の手掛かりで、途中の否定や条件を含む元の範囲を読みます。'
+            '未読範囲の圧縮表示ではstartから各lengthsの長さだけ進み、次までの間隔は1、'
+            'gapsにある番号だけ指定間隔です。')
         guidance += RESPONSE_GUIDANCE[phase]
     return guidance
 
@@ -183,6 +192,99 @@ def unpack_manifest(manifest, fields):
     return result
 
 
+def _range_lengths(material, *, unpack=False):
+    for row in (material.get('source_duties') or {}).get('unassessed_source_ranges', ()):
+        ranges = row['ranges']
+        if unpack:
+            if type(ranges) is not dict:
+                continue
+            require(set(ranges) == {'start', 'lengths', 'gaps'})
+            start, lengths, gaps = ranges['start'], ranges['lengths'], ranges['gaps']
+            require(type(start) is int and start >= 0 and type(lengths) is list and lengths
+                    and type(gaps) is list)
+            gap_at = {}
+            for pair in gaps:
+                require(type(pair) is list and len(pair) == 2)
+                index, gap = pair
+                require(type(index) is int and 1 <= index < len(lengths) and index not in gap_at
+                        and type(gap) is int and gap >= 0 and gap != 1)
+                gap_at[index] = gap
+            expanded = []
+            for i, length in enumerate(lengths):
+                require(type(length) is int and length > 0)
+                expanded.append([start, start + length])
+                start += length + gap_at.get(i + 1, 1)
+            row['ranges'] = expanded
+        elif (type(ranges) is list and len(ranges) >= 4
+                and all(type(pair) is list and len(pair) == 2 and all(type(n) is int for n in pair)
+                        and 0 <= pair[0] < pair[1] for pair in ranges)
+                and all(prev[1] <= nxt[0] for prev, nxt in zip(ranges, ranges[1:]))):
+            packed = dict(start=ranges[0][0], lengths=[hi-lo for lo, hi in ranges],
+                gaps=[[i, right[0]-left[1]] for i, (left, right) in enumerate(zip(ranges, ranges[1:]), 1)
+                      if right[0]-left[1] != 1])
+            if len(compact_json(packed)) < len(compact_json(ranges)):
+                row['ranges'] = packed
+
+
+def _source_spelling(row, fields, field_key, quote_key, *, unpack):
+    field = fields.get(row.get(field_key))
+    if not field or quote_key not in row:
+        return
+    quote = row[quote_key]
+    if unpack and type(quote) is list:
+        require(len(quote) == 3)
+        start, end, cue = quote
+        literal = source_slice(fields, row[field_key], start, end)
+        require(cue == literal[:4] + '…' + literal[-4:])
+        row[quote_key] = literal
+    elif not unpack and type(quote) is str and len(quote) > 12:
+        span = field.get('fragment_scalar_range')
+        if type(span) is not list or len(span) != 2:
+            return
+        start = field['text'].find(quote)
+        if start >= 0 and start == field['text'].rfind(quote):
+            begin = span[0] + start
+            packed = [begin, begin + len(quote), quote[:4] + '…' + quote[-4:]]
+            if len(compact_json(packed).encode()) < len(compact_json(quote).encode()):
+                row[quote_key] = packed
+
+
+def _visible_sources(material, fields, *, unpack=False):
+    """Preserve every source/qualification, including duplicates with different field owners."""
+    if material['author_phase'] == 'NODES':
+        for entries in material.get('evidence_parts_by_unit', {}).values():
+            for root in entries.values():
+                _source_spelling(root, fields, 'field', 'quote', unpack=unpack)
+        return
+    if material['author_phase'] != 'RELATIONS':
+        return
+    registry = material.get('candidate_nodes', ())
+    candidates = material.get('qualification_candidates', {})
+    by_indices, by_source = {}, {}
+    for n, node in enumerate(registry, 1):
+        for u, unit in enumerate(node['units'], 1):
+            for root in unit['evidence']:
+                _source_spelling(root, fields, 'field', 'quote', unpack=unpack)
+            for k, source in enumerate(unit.get('unknowns', ()), 1):
+                if unpack:
+                    _source_spelling(source, fields, 'source_field', 'source_quote', unpack=True)
+                ref = (n, u, k)
+                by_indices[ref] = source
+                by_source.setdefault(compact_json(source), ref)
+                if not unpack:
+                    _source_spelling(source, fields, 'source_field', 'source_quote', unpack=False)
+    for key, candidate in candidates.items():
+        if unpack and type(candidate) is list:
+            require(len(candidate) == 3 and all(type(i) is int for i in candidate))
+            ref = tuple(candidate)
+            require(ref in by_indices)
+            candidates[key] = dict(by_indices[ref])
+        elif not unpack and (ref := by_source.get(compact_json(candidate))) is not None:
+            candidates[key] = list(ref)
+        elif type(candidate) is dict:
+            _source_spelling(candidate, fields, 'source_field', 'source_quote', unpack=unpack)
+
+
 def _node_plan_references(material, *, unpack=False):
     """Keep exactly one visible copy of every selected quote and its fact references."""
     if material['author_phase'] != 'NODES' or 'plan' not in material or 'evidence_parts_by_unit' not in material:
@@ -201,6 +303,23 @@ def _node_plan_references(material, *, unpack=False):
                 unit['evidence'] = len(sources)
 
 
+def _relation_fact_references(material, *, unpack=False):
+    """The ordered roots and explicit overrides already carry the author's entire unit fact."""
+    if material['author_phase'] != 'RELATIONS' or 'fact_part_overrides' not in material:
+        return
+    overrides = material['fact_part_overrides']
+    for node in material.get('candidate_nodes', ()):
+        for index, unit in enumerate(node['units'], 1):
+            ref = f"{node['node_id']}.u{index}"
+            fact = ''.join(overrides.get(f'{ref}.e{i}', root['quote'])
+                           for i, root in enumerate(unit['evidence'], 1))
+            if unpack and type(unit['fact']) is int:
+                require(unit['fact'] == 0 and bool(fact))
+                unit['fact'] = fact
+            elif not unpack and fact and unit['fact'] == fact:
+                unit['fact'] = 0
+
+
 def prepare_messages(messages, *, version=VERSION):
     material = json.loads(messages[1]['content'])
     if isinstance(material, dict):
@@ -213,6 +332,9 @@ def prepare_messages(messages, *, version=VERSION):
     material['field_manifest'] = pack_manifest(material['field_manifest'], fields)
     if version == VERSION:
         _node_plan_references(material)
+        _relation_fact_references(material)
+        _visible_sources(material, fields)
+        _range_lengths(material)
     material['merge_wire_version'] = version
     material['merge_original_messages_sha256'] = messages_digest(messages)
     return [dict(messages[0], content=messages[0]['content'] + instruction(version, material['author_phase'])),
@@ -231,7 +353,10 @@ def legacy_messages(messages):
         material['leaf_source_index'] = unpack_index(material['leaf_source_index'], fields)
         material['field_manifest'] = unpack_manifest(material['field_manifest'], fields)
         if version == VERSION:
+            _range_lengths(material, unpack=True)
+            _visible_sources(material, fields, unpack=True)
             _node_plan_references(material, unpack=True)
+            _relation_fact_references(material, unpack=True)
         result = [dict(messages[0], content=messages[0]['content'][:-len(suffix)]),
                   dict(messages[1], content=compact_json(material))]
         require(messages_digest(result) == binding)
@@ -269,6 +394,7 @@ class ResponseCodec:
     def __init__(self, material, choice_module, fact_key):
         self.phase = material['author_phase']
         self.plan_units = ()
+        self.qualification_items = ()
         if self.phase == 'PLAN':
             _, aliases, allowed = choice_module.restore_view(material)
             assigned = {(field, quote) for (field, _), quote in aliases.items()}
@@ -291,6 +417,19 @@ class ResponseCodec:
                         # retain their complete spelling and pass through the same admission.
                         _, parts = choice_module.choices_for_field(dict(text=quote, source_role='ORIGINAL_INPUT'))
                         literals.update(parts)
+        elif self.phase == 'RELATIONS':
+            self.binding = messages_digest(material['candidate_nodes'])
+            candidates = material['qualification_candidates']
+            # Request serialization can place q10 before q2. The authored NODES
+            # registry numbers qualifications by node, unit and unknown ordinal.
+            numbered = sorted(candidates, key=lambda ref: int(ref.partition('/')[0][1:]))
+            require(all(ref.startswith(f'q{i}/') for i, ref in enumerate(numbered, 1)))
+            self.qualification_items = tuple((ref, candidates[ref]['source_quote']) for ref in numbered)
+            literals = set()
+            for _, source in self.qualification_items:
+                _, parts = choice_module.choices_for_field(dict(text=source, source_role='ORIGINAL_INPUT'))
+                literals.update(parts)
+                literals.add(source)
         else:
             raise ValueError('analysis_merge_wire_phase_invalid')
         self._codes = _quote_codes(literals)
@@ -304,7 +443,7 @@ class ResponseCodec:
         require(type(code) is str)
         if code in self.quotes:
             return self.quotes[code]
-        require(self.phase == 'NODES')
+        require(self.phase in ('NODES', 'RELATIONS'))
         original = code[1:] if code.startswith('~~') else code
         require(self.quote_code(original) == code)
         return original
@@ -314,7 +453,47 @@ class ResponseCodec:
         q, field = self._quote(pair[0]), pair[1]
         return dict(source_quote=q, source_field=field) if qualification else dict(quote=q, field=field)
 
+    def _relation_values(self, value, *, unpack):
+        keys = {'schema_version', 'nodes_sha256', 'qualification_review', 'edges', 'overview'}
+        require(type(value) is dict and set(value) == keys and value['nodes_sha256'] == self.binding
+                and value['schema_version'] == MODEL_SCHEMA + '.relations')
+        source = value['qualification_review']
+        closed = ('STATED', 'EARLIER', 'DUPLICATE')
+        if unpack:
+            require(type(source) is list and len(source) == len(self.qualification_items))
+            review = {}
+            for (key, original), choice in zip(self.qualification_items, source, strict=True):
+                if type(choice) is str:
+                    require(choice in closed)
+                    review[key] = dict(status=choice)
+                else:
+                    require(type(choice) is list and len(choice) == 1)
+                    ref = choice[0]
+                    if type(ref) is int:
+                        require(ref == 0)
+                        quote = original
+                    else:
+                        quote = self._quote(ref)
+                        require(quote != original)
+                    review[key] = dict(status='OPEN', source_quote=quote)
+        else:
+            require(type(source) is dict and set(source) == {key for key, _ in self.qualification_items})
+            review = []
+            for key, original in self.qualification_items:
+                item = source[key]
+                require(type(item) is dict)
+                if set(item) == {'status', 'source_quote'} and item['status'] == 'OPEN':
+                    quote = item['source_quote']
+                    review.append([0 if quote == original else self.quote_code(quote)])
+                else:
+                    require(set(item) == {'status'} and item['status'] in closed)
+                    review.append(item['status'])
+        return dict(schema_version=value['schema_version'], nodes_sha256=self.binding,
+                    qualification_review=review, edges=value['edges'], overview=value['overview'])
+
     def decode(self, raw):
+        if self.phase == 'RELATIONS':
+            return self._relation_values(raw, unpack=True)
         require(type(raw) is dict and set(raw) == {'h', 'n'} and raw['h'] == self.binding
                 and type(raw['n']) is list)
         version = MODEL_SCHEMA + '.' + self.phase.lower()
@@ -348,6 +527,10 @@ class ResponseCodec:
 
     def encode(self, value):
         """Inverse, used to check that no model selection is lost in a physical response."""
+        if self.phase == 'RELATIONS':
+            raw = self._relation_values(value, unpack=False)
+            require(messages_digest(self.decode(raw)) == messages_digest(value))
+            return raw
         if self.phase == 'PLAN':
             rows = [[[[self.quote_code(root['quote']), root['field']] for root in unit['evidence']]
                       for unit in node['units']] for node in value['nodes']]
@@ -372,7 +555,7 @@ def response_codec(messages, *, choice_module=None, fact_key=None):
     if not is_compact(messages):
         return None
     material = json.loads(messages[1]['content'])
-    if material['merge_wire_version'] != VERSION or material['author_phase'] == 'RELATIONS':
+    if material['merge_wire_version'] != VERSION:
         return None
     logical = json.loads(legacy_messages(messages)[1]['content'])
     if choice_module is None:
