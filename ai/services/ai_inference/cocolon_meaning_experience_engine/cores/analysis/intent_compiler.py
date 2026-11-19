@@ -3946,7 +3946,8 @@ def expand_analysis_semantic_event_plan(prepared, packet):
                 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v8',
                 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v9',
                 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v10',
-                'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v11'}):
+                'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v11',
+                'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v12'}):
         from .semantic_admission import (assemble_semantic_node_local_v4,
             SEMANTIC_MAP_NODE_LOCAL_V3_PROFILE, SEMANTIC_MAP_FACT_ENDPOINT_PROFILES)
         joined = assemble_semantic_node_local_v4(prepared, packet)

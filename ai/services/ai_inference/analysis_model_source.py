@@ -34,6 +34,7 @@ SEMANTIC_OCCURRENCE_V8_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v4-occurr
 SEMANTIC_OCCURRENCE_V9_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v4-occurrence-v9'
 SEMANTIC_OCCURRENCE_V10_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v4-occurrence-v10'
 SEMANTIC_OCCURRENCE_V11_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v4-occurrence-v11'
+SEMANTIC_OCCURRENCE_V12_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v4-occurrence-v12'
 SEMANTIC_NODE_LOCAL_V4_BOUND_V2_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v4-bound-roots-v2'
 SEMANTIC_EVENT_PLAN_BASE_MODEL = 'cocolon-qwen3.5-4b-analysis-semantic-120u'
 MAX_RESPONSE_BYTES = 262144
@@ -233,7 +234,7 @@ class SelfHostedSemanticAnalysisModelSource(SelfHostedAnalysisModelSource):
                     if phase == 'PLAN':
                         plan = core.admit_semantic_node_local_v4_plan_response(prepared, value)
                     elif phase == 'NODES':
-                        nodes = core.semantic_node_local_v4_nodes(prepared, plan, value)
+                        nodes = core.admit_semantic_node_local_v4_nodes_response(prepared, plan, value)
                     else:
                         core.semantic_node_local_v4_relations(prepared, plan, nodes, value)
             artifact = dict(schema_version=core.semantic_node_local_v4_artifact_schema(prepared), phases=receipts)
@@ -318,7 +319,9 @@ def _configured_semantic_prompt_version(model):
         SEMANTIC_MAP_OCCURRENCE_PROFILE, SEMANTIC_MAP_OCCURRENCE_V2_PROFILE, SEMANTIC_MAP_OCCURRENCE_V3_PROFILE,
         SEMANTIC_MAP_OCCURRENCE_V4_PROFILE, SEMANTIC_MAP_OCCURRENCE_V5_PROFILE, SEMANTIC_MAP_OCCURRENCE_V6_PROFILE,
         SEMANTIC_MAP_OCCURRENCE_V7_PROFILE, SEMANTIC_MAP_OCCURRENCE_V8_PROFILE, SEMANTIC_MAP_OCCURRENCE_V9_PROFILE,
-        SEMANTIC_MAP_OCCURRENCE_V10_PROFILE, SEMANTIC_MAP_OCCURRENCE_V11_PROFILE)
+        SEMANTIC_MAP_OCCURRENCE_V10_PROFILE, SEMANTIC_MAP_OCCURRENCE_V11_PROFILE, SEMANTIC_MAP_OCCURRENCE_V12_PROFILE)
+    if model == SEMANTIC_OCCURRENCE_V12_MODEL:
+        return SEMANTIC_MAP_OCCURRENCE_V12_PROFILE
     if model == SEMANTIC_OCCURRENCE_V11_MODEL:
         return SEMANTIC_MAP_OCCURRENCE_V11_PROFILE
     if model == SEMANTIC_OCCURRENCE_V10_MODEL:
