@@ -3955,7 +3955,7 @@ def expand_analysis_semantic_event_plan(prepared, packet):
                 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v15',
                 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v16',
                 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v17',
-                'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v18', 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v19', 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v20'}):
+                'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v18', 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v19', 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v20', 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v21'}):
         from .semantic_admission import (assemble_semantic_node_local_v4,
             SEMANTIC_MAP_NODE_LOCAL_V3_PROFILE, SEMANTIC_MAP_FACT_ENDPOINT_PROFILES, SEMANTIC_MAP_CONTENT_PLAN_PROFILES,
             SEMANTIC_MAP_VISIBLE_SOURCE_PROFILES, SEMANTIC_MAP_FACT_PROSE_PROFILES)
@@ -3998,11 +3998,12 @@ def expand_analysis_semantic_event_plan(prepared, packet):
             fact_endpoints=prepared.prompt_version in SEMANTIC_MAP_FACT_ENDPOINT_PROFILES,
             mark_record_ownership=prepared.prompt_version in SEMANTIC_MAP_CONTENT_PLAN_PROFILES,
             fixed_record_units=fixed_record_units,
-            whole_map_overview=prepared.prompt_version == 'semantic_map.node_local.v4.occurrence.v20',
-            per_root_fact_limit=prepared.prompt_version == 'semantic_map.node_local.v4.occurrence.v20',
+            deduplicate_source_sentences=prepared.prompt_version == 'semantic_map.node_local.v4.occurrence.v21',
+            whole_map_overview=prepared.prompt_version in {'semantic_map.node_local.v4.occurrence.v20', 'semantic_map.node_local.v4.occurrence.v21'},
+            per_root_fact_limit=prepared.prompt_version in {'semantic_map.node_local.v4.occurrence.v20', 'semantic_map.node_local.v4.occurrence.v21'},
             use_attributed_captions=prepared.prompt_version in SEMANTIC_MAP_FACT_PROSE_PROFILES,
-            deduplicate_node_evidence=prepared.prompt_version in {'semantic_map.node_local.v4.occurrence.v18', 'semantic_map.node_local.v4.occurrence.v19', 'semantic_map.node_local.v4.occurrence.v20'},
-            scope_earlier_unknowns=prepared.prompt_version in {'semantic_map.node_local.v4.occurrence.v18', 'semantic_map.node_local.v4.occurrence.v19', 'semantic_map.node_local.v4.occurrence.v20'})
+            deduplicate_node_evidence=prepared.prompt_version in {'semantic_map.node_local.v4.occurrence.v18', 'semantic_map.node_local.v4.occurrence.v19', 'semantic_map.node_local.v4.occurrence.v20', 'semantic_map.node_local.v4.occurrence.v21'},
+            scope_earlier_unknowns=prepared.prompt_version in {'semantic_map.node_local.v4.occurrence.v18', 'semantic_map.node_local.v4.occurrence.v19', 'semantic_map.node_local.v4.occurrence.v20', 'semantic_map.node_local.v4.occurrence.v21'})
     if (getattr(prepared, 'prompt_version', None) == 'semantic_map.node_local.v3'
             or type(packet) is dict and packet.get('schema_version') == 'cocolon.analysis.semantic_map.node_local.model.v3'):
         return _expand_analysis_semantic_node_local_v3(prepared, packet)
@@ -4218,20 +4219,33 @@ def _expand_analysis_semantic_event_plan_v2(prepared, packet):
         overview=dict(title=text(overview['title'], 80), summary='\n'.join(visible)))
 
 
-def _node_unique_fixed_facts(units, fixed_parts, original_records):
+def _node_unique_fixed_facts(units, fixed_parts, original_records, *, source_sentences=None):
     """Remove repeated bound phrases within one single-record explanation."""
     records = {original_records.get(root['field']) for unit in units for root in unit['evidence']}
     if None in records or len(records) != 1 or not all(fixed_parts):
         return [unit['fact'] for unit in units]
     seen = set()
+    covered = set()
     displayed = []
     for unit, phrases in zip(units, fixed_parts, strict=True):
         retained = []
         for root, phrase in zip(unit['evidence'], phrases, strict=True):
             slot = (root['field'], root['quote'], phrase, unit['source_mode'])
-            if slot not in seen:
-                retained.append(phrase)
-                seen.add(slot)
+            if slot in seen:
+                continue
+            seen.add(slot)
+            if source_sentences is not None and phrase in root['quote']:
+                from analysis_plan_source_choices import _sentences
+                sentences = _sentences(phrase, original_for_overview=True)
+                if (sentences and ''.join(sentences) == phrase
+                        and all(s in source_sentences.get(root['field'], ()) for s in sentences)):
+                    # The same original sentence can be cited alone and within a longer root.
+                    # Keep the whole selection if it supplies even one new source sentence.
+                    keys = {(root['field'], unit['source_mode'], s) for s in sentences}
+                    if keys <= covered:
+                        continue
+                    covered.update(keys)
+            retained.append(phrase)
         if retained:
             displayed.append(''.join(retained))
     return displayed
@@ -4239,7 +4253,8 @@ def _node_unique_fixed_facts(units, fixed_parts, original_records):
 
 def _expand_analysis_semantic_node_local_v3(prepared, packet, *, fact_endpoints=False, mark_record_ownership=False,
                                            fixed_record_units=(), use_attributed_captions=False, deduplicate_node_evidence=False,
-                                           scope_earlier_unknowns=False, whole_map_overview=False, per_root_fact_limit=False):
+                                           scope_earlier_unknowns=False, whole_map_overview=False, per_root_fact_limit=False,
+                                           deduplicate_source_sentences=False):
     """Compile node-owned authored units, not a repair of a reference plan.
 
     There is no independently authored fact/reading registry to relink. All
@@ -4288,6 +4303,12 @@ def _expand_analysis_semantic_node_local_v3(prepared, packet, *, fact_endpoints=
         unknown_clocks = earlier_unknown_fields(material)
     original_records = {field['field']: field['record'] for field in material['fields']
                         if field['source_role'] == 'ORIGINAL_INPUT'} if deduplicate_node_evidence else {}
+    source_sentences = None
+    if deduplicate_source_sentences:
+        from analysis_plan_source_choices import _sentences
+        source_sentences = {f['field']: {s for s in _sentences(f['text'], original_for_overview=True)
+                                        if f['text'].count(s) == 1}
+                            for f in material['fields'] if f['field'] in original_records}
     field_records = {field['field']: field['record'] for field in material['fields']}
     required_records = {row['record'] for row in material['records']}
     covered_records = set()
@@ -4343,7 +4364,8 @@ def _expand_analysis_semantic_node_local_v3(prepared, packet, *, fact_endpoints=
         explanation_facts = displayed_facts
         if deduplicate_node_evidence and fixed_record_units and len(facts) > 1 and not record_labels:
             parts = [fixed_record_units.get(f'{node_id}.u{i}') for i in range(1, len(facts) + 1)]
-            explanation_facts = _node_unique_fixed_facts(node['units'], parts, original_records)
+            explanation_facts = _node_unique_fixed_facts(node['units'], parts, original_records,
+                                                       source_sentences=source_sentences)
         visible = explanation_facts + ([meaning] if meaning and not repeated_facts else [])
         body = '\n'.join(dict.fromkeys(paragraph for part in visible for paragraph in part.split('\n')))
         summary = '\n'.join(displayed_facts) if record_labels else meaning or facts[0]
@@ -4438,7 +4460,7 @@ def _semantic_event_plan_review(graph, prepared, original, expanded):
         review['node_local_plan']['final_artifact_sha256'] = semantic_map_hash(original)
         review['node_local_plan']['realization'] = 'PLANNED_ROOTS_THEN_NODE_PROSE_THEN_ACTUAL_NODE_RELATIONS'
         return replace(graph, meaning_review_json=semantic_map_canonical(review),
-            record_scoped_unknowns=prepared.prompt_version in {'semantic_map.node_local.v4.occurrence.v18', 'semantic_map.node_local.v4.occurrence.v19', 'semantic_map.node_local.v4.occurrence.v20'})
+            record_scoped_unknowns=prepared.prompt_version in {'semantic_map.node_local.v4.occurrence.v18', 'semantic_map.node_local.v4.occurrence.v19', 'semantic_map.node_local.v4.occurrence.v20', 'semantic_map.node_local.v4.occurrence.v21'})
     if getattr(prepared, 'prompt_version', None) == 'semantic_map.node_local.v3':
         return _semantic_node_local_review(graph, prepared, original, expanded)
     if getattr(prepared, 'prompt_version', None) not in {'semantic_map.event_plan.v1', 'semantic_map.event_plan.v2'}:

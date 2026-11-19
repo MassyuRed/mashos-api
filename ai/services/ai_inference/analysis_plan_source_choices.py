@@ -9,7 +9,7 @@ import unicodedata
 _CONTENT_PLAN_PROFILES = frozenset({
     'semantic_map.node_local.v4.occurrence.v13', 'semantic_map.node_local.v4.occurrence.v14',
     'semantic_map.node_local.v4.occurrence.v15', 'semantic_map.node_local.v4.occurrence.v16',
-    'semantic_map.node_local.v4.occurrence.v17', 'semantic_map.node_local.v4.occurrence.v18', 'semantic_map.node_local.v4.occurrence.v19', 'semantic_map.node_local.v4.occurrence.v20'})
+    'semantic_map.node_local.v4.occurrence.v17', 'semantic_map.node_local.v4.occurrence.v18', 'semantic_map.node_local.v4.occurrence.v19', 'semantic_map.node_local.v4.occurrence.v20', 'semantic_map.node_local.v4.occurrence.v21'})
 
 
 _CLOSED_TAG = re.compile(r'</?[A-Za-z_][\w:.-]*(?:\s+[^<>]*)?/?>|/>')
@@ -190,7 +190,7 @@ def choice_scope(request_ref, choices, material=None):
     return hashlib.sha256(raw.encode()).hexdigest()
 
 
-def _sentences(text, *, original_for_overview=False):
+def _outer_sentences(text, *, original_for_overview=False):
     ends = {'「': '」', '『': '』'}
     if original_for_overview:
         ends.update({'（': '）', '(': ')', '［': '］', '[': ']', '【': '】', '〈': '〉',
@@ -223,7 +223,12 @@ def _sentences(text, *, original_for_overview=False):
     if stack:
         return []
     spans.append(text[start:].strip())
-    return [q for q in spans if q and len(q) <= 4000 and (original_for_overview or text.count(q) == 1)
+    return [q for q in spans if q]
+
+
+def _sentences(text, *, original_for_overview=False):
+    spans = _outer_sentences(text, original_for_overview=original_for_overview)
+    return [q for q in spans if len(q) <= 4000 and (original_for_overview or text.count(q) == 1)
             and not re.search(r'["\\\x00-\x1f]', q)]
 
 
@@ -346,7 +351,7 @@ def record_plan_owners(material, available=None):
     flexible allocation if source coverage or available nodes do not permit it.
     """
     if (material.get('author_profile') not in {
-            'semantic_map.node_local.v4.occurrence.v17', 'semantic_map.node_local.v4.occurrence.v18', 'semantic_map.node_local.v4.occurrence.v19', 'semantic_map.node_local.v4.occurrence.v20'}
+            'semantic_map.node_local.v4.occurrence.v17', 'semantic_map.node_local.v4.occurrence.v18', 'semantic_map.node_local.v4.occurrence.v19', 'semantic_map.node_local.v4.occurrence.v20', 'semantic_map.node_local.v4.occurrence.v21'}
             or material.get('history_stage')):
         return ()
     records = [row['record'] for row in material.get('records', ())]
@@ -381,7 +386,7 @@ def compact_action_pairs(material):
     and history have separate provenance and allocation rules. Preserve their
     existing author choices. Never infer that two acts or actors are identical.
     """
-    if (material.get('author_profile') not in {'semantic_map.node_local.v4.occurrence.v18', 'semantic_map.node_local.v4.occurrence.v19', 'semantic_map.node_local.v4.occurrence.v20'}
+    if (material.get('author_profile') not in {'semantic_map.node_local.v4.occurrence.v18', 'semantic_map.node_local.v4.occurrence.v19', 'semantic_map.node_local.v4.occurrence.v20', 'semantic_map.node_local.v4.occurrence.v21'}
             or material.get('history_stage') or material.get('map_corrections')
             or not 1 <= len(material.get('records', ())) <= 12):
         return {}
@@ -431,8 +436,9 @@ def compact_action_pairs(material):
 class PlanReadingRegions:
     """Index complete original sentences in bounded, independently selectable source regions."""
 
-    def __init__(self, field, groups, allowed):
+    def __init__(self, field, groups, allowed, *, open_reports=()):
         self.field = field['field']
+        self.open_reports = tuple(open_reports)
         text = field['text']
         positions = {quote: text.index(quote) for quote in allowed}
         self.intervals = {q: (start, start + len(q)) for q, start in positions.items()}
@@ -456,6 +462,12 @@ class PlanReadingRegions:
             self.minimum_roots[missing] = 1 + min(self.minimum_roots[missing & ~mask]
                 for mask in available if mask & missing)
 
+    def description(self):
+        row = dict(field=self.field, scalar_ranges=self.ranges, opening_cues=self.openings)
+        if self.open_reports:
+            row['unconfirmed_report_ranges'] = [list(self.intervals[q]) for q in self.open_reports]
+        return row
+
     def missing(self, units):
         mask = self.required
         for unit in units:
@@ -463,6 +475,14 @@ class PlanReadingRegions:
                 if field == self.field:
                     mask &= ~self.coverage.get(quote, 0)
         return mask
+
+    def can_reuse(self, completed_units, current, field, quote):
+        if not self.open_reports or not any((field, quote) in unit for unit in completed_units):
+            return True
+        # The model may choose an entirely different focus or reuse a genuinely
+        # necessary source after the separate reported status is represented.
+        cited = [s for unit in (*completed_units, current) for f, s in unit if f == self.field]
+        return all(any(sentence in s for s in cited) for sentence in self.open_reports)
 
     def adds_text(self, unit, field, quote):
         if field != self.field or quote not in self.intervals:
@@ -478,9 +498,35 @@ class PlanReadingRegions:
         return True
 
 
+# An explicit, linked schedule and current state belongs to one original account.
+# Match the stated calendar construction, never a subject, event, or domain word.
+_FUTURE_TIME = (r'(?:明日|あした|明後日|あさって|来週|翌週|来月|翌月|来年|翌年|'
+                r'次の(?:週|月曜|火曜|水曜|木曜|金曜|土曜|日曜)(?:日)?|'
+                r'[0-9０-９一二三四五六七八九十]+(?:日|週間|か月|ヶ月|年)後)')
+_LINKED_SCHEDULE = re.compile(_FUTURE_TIME + r'(?:の予定)?(?:なので|だから|だが|のため|'
+    r'(?:に|と)(?:決めた|決まった|定めた)(?:が|ので|けれど(?:も)?))$')
+_STILL_NOW = re.compile(r'^(?:まだ|いまだに).*(?:て|で)(?:いない|いません|おらず)|'
+    r'^(?:今は|いまは|現在は|現時点では).+(?:ある|いる|ない|います|あります|いません)')
+
+
+_UNCONFIRMED_REPORT = re.compile(r'(?:た|だ|る)か(?:どうか)?(?:は|を|も)?(?:まだ)?'
+    r'(?:聞いて|確認して|確かめて|尋ねて)(?:いない|いません|いなかった)(?:。|！|!)$')
+
+
+def _scheduled_current_state(sentence):
+    # Include a reported claim only with its speaker when selected normally. We
+    # reserve no source slot for quoted dialogue, guesses, hypotheticals, or a
+    # wish. The binding below spans the full original sentence, not the clause.
+    if any(mark in sentence for mark in ('「', '」', '『', '』', '？', '?', 'もし', '仮に')):
+        return False
+    parts = re.split('[、，,]', sentence)
+    return any(_LINKED_SCHEDULE.search(left) and _STILL_NOW.match(right)
+               for left, right in zip(parts, parts[1:]))
+
+
 def plan_reading_regions(material, pairs):
     """Reserve a few separated portions of an ordinary original, without assigning their meaning."""
-    if (material.get('author_profile') != 'semantic_map.node_local.v4.occurrence.v20'
+    if (material.get('author_profile') not in {'semantic_map.node_local.v4.occurrence.v20', 'semantic_map.node_local.v4.occurrence.v21'}
             or material.get('history_stage') or material.get('map_corrections') or not record_plan_owners(material)):
         return {}
     if any(f['source_role'] != 'ORIGINAL_INPUT' or f.get('fragment_scalar_range')
@@ -490,6 +536,8 @@ def plan_reading_regions(material, pairs):
            for k in ('source_updates', 'conflicts', 'unresolved_sources')):
         return {}
     regions = {}
+    prioritized = {}
+    extra_wire_bytes = 0
     # Bound the shortest complete route for every record together, including existing action transcriptions.
     def wire_size(field, quote):
         return len(json.dumps(dict(quote=quote, field=field), ensure_ascii=False, separators=(',', ':')).encode('utf-8')) + 1
@@ -529,7 +577,27 @@ def plan_reading_regions(material, pairs):
             continue
         wire_bytes += sum(cheapest(group) for group in groups)
         regions[record] = PlanReadingRegions(memo, groups, allowed)
-    return regions if wire_bytes <= 4096 // 4 else {}
+        if material.get('author_profile') == 'semantic_map.node_local.v4.occurrence.v21':
+            # Prefer the whole temporal statement within its existing reading
+            # portion. Competing statements leave the choice within that portion free.
+            preferred = []
+            for group in groups:
+                linked = [sentence for sentence in group if _scheduled_current_state(sentence)]
+                preferred.append(linked if len(linked) == 1 else group)
+            open_reports = [s for s in independent if _UNCONFIRMED_REPORT.search(s)
+                            and not any(mark in s for mark in ('「', '」', '『', '』', '?', '？'))]
+            # A second unit accepts four roots. Keep room for a distinct event
+            # and a repeated source when asking for outstanding report evidence.
+            if len(open_reports) > 2:
+                open_reports = []
+            if preferred != groups or open_reports:
+                extra_wire_bytes += sum(cheapest(g) for g in preferred) - sum(cheapest(g) for g in groups)
+                prioritized[record] = PlanReadingRegions(memo, preferred, allowed, open_reports=open_reports)
+    if wire_bytes > 4096 // 4:
+        return {}
+    if wire_bytes + extra_wire_bytes <= 4096 // 4:
+        regions.update(prioritized)
+    return regions
 
 
 def paired_original_root(pair, preceding, field, quote):
@@ -640,8 +708,7 @@ def prepare(material):
             if row['record'] in pairs else row for row in material['records']]
     regions = plan_reading_regions(material, pairs)
     if regions:
-        view['records'] = [dict(row, memo_reading_regions=dict(field=regions[row['record']].field,
-            scalar_ranges=regions[row['record']].ranges, opening_cues=regions[row['record']].openings))
+        view['records'] = [dict(row, memo_reading_regions=regions[row['record']].description())
             if row['record'] in regions else row for row in view['records']]
     view['fields'] = []
     for f in material['fields']:
@@ -657,10 +724,10 @@ def prepare(material):
 def _restore_view(material):
     """Recover the exact input and validate the displayed table before constrained decoding."""
     original = dict(material)
-    if material.get('author_profile') in {'semantic_map.node_local.v4.occurrence.v18', 'semantic_map.node_local.v4.occurrence.v19', 'semantic_map.node_local.v4.occurrence.v20'} and 'records' in material:
+    if material.get('author_profile') in {'semantic_map.node_local.v4.occurrence.v18', 'semantic_map.node_local.v4.occurrence.v19', 'semantic_map.node_local.v4.occurrence.v20', 'semantic_map.node_local.v4.occurrence.v21'} and 'records' in material:
         original['records'] = [{k: v for k, v in row.items() if k != 'paired_original_fields'}
                                for row in material['records']]
-    if material.get('author_profile') == 'semantic_map.node_local.v4.occurrence.v20' and 'records' in original:
+    if material.get('author_profile') in {'semantic_map.node_local.v4.occurrence.v20', 'semantic_map.node_local.v4.occurrence.v21'} and 'records' in original:
         original['records'] = [{k: v for k, v in row.items() if k != 'memo_reading_regions'} for row in original['records']]
     original['fields'] = []
     for field in material['fields']:
@@ -980,3 +1047,43 @@ class WholeMapTitle:
             return ''
         missing = [word for i, word in enumerate(self.witnesses) if not mask & (1 << i)]
         return ('・' if text else '') + '・'.join(missing) if all(missing) else None
+
+    def authored_choices(self, proposal, material, nodes):
+        """Offer the exact proposed heading only when it represents the complete map."""
+        if (not proposal or proposal == self.neutral or proposal != proposal.strip()
+                or len(proposal) > 80 or any(ord(char) < 32 for char in proposal)
+                or not self.accepts(proposal)):
+            return [self.neutral]
+        spans = _outer_sentences(proposal, original_for_overview=True)
+        if not spans:
+            return [self.neutral]
+        if len(spans) > 1:
+            # A copied sentence with its attribution or qualification cut off cannot
+            # carry a different record. Likewise a fragment after a sentence stop
+            # cannot supply that record just by listing terms. Complete quotations
+            # and independently worded passages retain their own source support.
+            originals = [field['text'] for field in material['fields']
+                if field['source_role'] == 'ORIGINAL_INPUT' and field.get('fragment_is_complete_field') is not False]
+            complete = {sentence.rstrip('。！？!?') for text in originals
+                for sentence in _outer_sentences(text, original_for_overview=True)}
+            supported = 0
+            for span in spans:
+                body = span.rstrip('。！？!?')
+                if body not in complete:
+                    if any(body in text for text in originals):
+                        continue
+                    terms = body.split('・')
+                    if (span == body and len(terms) > 1
+                            and all(term and any(term in text for text in originals) for term in terms)):
+                        continue
+                supported |= self.mask(span)
+            if supported != self.required:
+                return [self.neutral]
+        units = [unit for node in nodes for unit in node['units']]
+        quotes = [root['quote'] for unit in units for root in unit['evidence']]
+        forbidden = one_sided_source_titles(material, units, compare_end_marks=True)
+        phrases = OverviewSourcePhrases(material, units, restricted_titles=forbidden, include_original_fields=True)
+        if (source_title_key(proposal) in (phrases.restricted_titles or ())
+                or phrases.omits_record(proposal) or not visible_closers_bound(proposal, source_closer_runs(quotes))):
+            return [self.neutral]
+        return [proposal, self.neutral]

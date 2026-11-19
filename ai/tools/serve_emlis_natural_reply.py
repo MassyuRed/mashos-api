@@ -60,6 +60,7 @@ OCCURRENCE_V17_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v4-occurrence-v17
 OCCURRENCE_V18_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v4-occurrence-v18'
 OCCURRENCE_V19_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v4-occurrence-v19'
 OCCURRENCE_V20_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v4-occurrence-v20'
+OCCURRENCE_V21_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v4-occurrence-v21'
 OCCURRENCE_V3_PROFILE = 'semantic_map.node_local.v4.occurrence.v3'
 OCCURRENCE_V4_PROFILE = 'semantic_map.node_local.v4.occurrence.v4'
 OCCURRENCE_V5_PROFILE = 'semantic_map.node_local.v4.occurrence.v5'
@@ -78,8 +79,9 @@ OCCURRENCE_V17_PROFILE = 'semantic_map.node_local.v4.occurrence.v17'
 OCCURRENCE_V18_PROFILE = 'semantic_map.node_local.v4.occurrence.v18'
 OCCURRENCE_V19_PROFILE = 'semantic_map.node_local.v4.occurrence.v19'
 OCCURRENCE_V20_PROFILE = 'semantic_map.node_local.v4.occurrence.v20'
-FACT_PROSE_PROFILES = frozenset({OCCURRENCE_V16_PROFILE, OCCURRENCE_V17_PROFILE, OCCURRENCE_V18_PROFILE, OCCURRENCE_V19_PROFILE, OCCURRENCE_V20_PROFILE})
-VISIBLE_SOURCE_PROFILES = frozenset({OCCURRENCE_V14_PROFILE, OCCURRENCE_V15_PROFILE, OCCURRENCE_V16_PROFILE, OCCURRENCE_V17_PROFILE, OCCURRENCE_V18_PROFILE, OCCURRENCE_V19_PROFILE, OCCURRENCE_V20_PROFILE})
+OCCURRENCE_V21_PROFILE = 'semantic_map.node_local.v4.occurrence.v21'
+FACT_PROSE_PROFILES = frozenset({OCCURRENCE_V16_PROFILE, OCCURRENCE_V17_PROFILE, OCCURRENCE_V18_PROFILE, OCCURRENCE_V19_PROFILE, OCCURRENCE_V20_PROFILE, OCCURRENCE_V21_PROFILE})
+VISIBLE_SOURCE_PROFILES = frozenset({OCCURRENCE_V14_PROFILE, OCCURRENCE_V15_PROFILE, OCCURRENCE_V16_PROFILE, OCCURRENCE_V17_PROFILE, OCCURRENCE_V18_PROFILE, OCCURRENCE_V19_PROFILE, OCCURRENCE_V20_PROFILE, OCCURRENCE_V21_PROFILE})
 CONTENT_PLAN_PROFILES = frozenset({OCCURRENCE_V13_PROFILE, *VISIBLE_SOURCE_PROFILES})
 FACT_REFERENCE_PROFILES = frozenset({OCCURRENCE_V12_PROFILE, *CONTENT_PLAN_PROFILES})
 SOURCE_CUED_PROFILES = frozenset({OCCURRENCE_V9_PROFILE, OCCURRENCE_V10_PROFILE, OCCURRENCE_V11_PROFILE, *FACT_REFERENCE_PROFILES})
@@ -774,7 +776,7 @@ def _semantic_node_local_v4_schema(material, pairs, unknown_pairs, *, leaf=False
                     for (key, part), source in zip(parts.items(), roots, strict=True):
                         fact_ordinal += 1
                         quote = source['quote']
-                        if author_profile == OCCURRENCE_V20_PROFILE:
+                        if author_profile in {OCCURRENCE_V20_PROFILE, OCCURRENCE_V21_PROFILE}:
                             choices = _semantic_choice_module().source_fact_ranges(quote)
                             parts[key] = (dict(type='string', enum=list(choices), **{'x-fact-sentences': choices})
                                           if choices else dict(type='integer', enum=[fact_ordinal]))
@@ -788,15 +790,15 @@ def _semantic_node_local_v4_schema(material, pairs, unknown_pairs, *, leaf=False
                                 handles = _semantic_choice_module().literal_fact_handles(quote)
                                 choices = _semantic_choice_module().fact_sentence_choices(
                                     quote, display_sentences.get(source['field'], ()), part['maxLength'])
-                                if author_profile in {OCCURRENCE_V19_PROFILE, OCCURRENCE_V20_PROFILE} and '@0' in choices:
+                                if author_profile in {OCCURRENCE_V19_PROFILE, OCCURRENCE_V20_PROFILE, OCCURRENCE_V21_PROFILE} and '@0' in choices:
                                     parts[key] = dict(type='string', enum=list(choices), **{'x-fact-sentences': choices})
                                     continue
-                                if author_profile in {OCCURRENCE_V19_PROFILE, OCCURRENCE_V20_PROFILE}:
+                                if author_profile in {OCCURRENCE_V19_PROFILE, OCCURRENCE_V20_PROFILE, OCCURRENCE_V21_PROFILE}:
                                     part['x-source-bound-members'] = True
                                 if choices:
                                     part['x-fact-sentences'] = choices
                                 part['x-fact-source'] = quote
-                                if author_profile in {OCCURRENCE_V18_PROFILE, OCCURRENCE_V19_PROFILE, OCCURRENCE_V20_PROFILE}:
+                                if author_profile in {OCCURRENCE_V18_PROFILE, OCCURRENCE_V19_PROFILE, OCCURRENCE_V20_PROFILE, OCCURRENCE_V21_PROFILE}:
                                     part['x-source-bound-keys'] = True
                                 handles.update(choices)
                             part['description'] = 'source-at-ids:' + ','.join(sorted(handles))
@@ -822,7 +824,7 @@ def _semantic_node_local_v4_schema(material, pairs, unknown_pairs, *, leaf=False
                 if forbidden:
                     title['not'] = dict(enum=forbidden)
         meaning = text(240, 0)
-        if author_profile == OCCURRENCE_V20_PROFILE and phase == 'NODES':
+        if author_profile in {OCCURRENCE_V20_PROFILE, OCCURRENCE_V21_PROFILE} and phase == 'NODES':
             choices = _semantic_choice_module().paired_node_meanings(
                 material['fields'], node['units'], display_sentences)
             if choices:
@@ -870,7 +872,7 @@ def _semantic_node_local_v4_schema(material, pairs, unknown_pairs, *, leaf=False
                     or unit['evidence'] != roots['evidence']
                     or unit['source_mode'] not in ['RECORDED', 'PERSON_JUDGMENT', 'PERSON_WISH', 'DECIDED_PLAN']
                     or type(unit['fact']) is not str or not 1 <= len(unit['fact']) <= (
-                        160 * len(roots['evidence']) if author_profile == OCCURRENCE_V20_PROFILE else 160)
+                        160 * len(roots['evidence']) if author_profile in {OCCURRENCE_V20_PROFILE, OCCURRENCE_V21_PROFILE} else 160)
                     or type(unit['unknowns']) is not list or len(unit['unknowns']) > 2):
                 raise ValueError('semantic_v4_registry_invalid')
             seen = set()
@@ -903,12 +905,14 @@ def _semantic_node_local_v4_schema(material, pairs, unknown_pairs, *, leaf=False
     edge = obj(dict(**endpoints, label=text(80), relation_kind=dict(type='string', enum=[
         'SELF_OUTSIDE_GAP', 'CRITERION_EXPRESSION', 'CONTEXT_CONTRAST', 'SHARED_MEANING'])))
     whole = (_semantic_choice_module().WholeMapTitle(material, registry)
-             if author_profile == OCCURRENCE_V20_PROFILE else None)
+             if author_profile in {OCCURRENCE_V20_PROFILE, OCCURRENCE_V21_PROFILE} else None)
     full_scope = whole is not None and whole.count >= 2
     overview = dict(title=text(80), node_refs=dict(type='array', items=ref,
         minItems=len(ids) if full_scope else 1, maxItems=len(ids) if full_scope else min(8, len(ids))))
     if author_profile in {NODE_LOCAL_V4_BOUND_V2_PROFILE, *OCCURRENCE_PROFILES}:
         overview = dict(node_refs=overview['node_refs'], title=overview['title'])
+    if full_scope and author_profile == OCCURRENCE_V21_PROFILE:
+        overview = dict(node_refs=overview['node_refs'], title_proposal=text(80, 0), title=text(80))
     properties = dict(nodes_sha256=dict(type='string', enum=[signature(registry)]))
     if author_profile in {OCCURRENCE_V7_PROFILE, OCCURRENCE_V8_PROFILE, *SOURCE_CUED_PROFILES}:
         # Keep the same order as the original NODES receipt, even when the
@@ -925,7 +929,7 @@ def _semantic_node_local_v4_schema(material, pairs, unknown_pairs, *, leaf=False
         review = {}
         closed = obj(dict(status=dict(type='string', enum=['STATED', 'EARLIER', 'DUPLICATE'])))
         stated = _semantic_recorded_actions(material) if author_profile in {OCCURRENCE_V11_PROFILE, *FACT_REFERENCE_PROFILES} else set()
-        if author_profile in {OCCURRENCE_V17_PROFILE, OCCURRENCE_V18_PROFILE, OCCURRENCE_V19_PROFILE, OCCURRENCE_V20_PROFILE}:
+        if author_profile in {OCCURRENCE_V17_PROFILE, OCCURRENCE_V18_PROFILE, OCCURRENCE_V19_PROFILE, OCCURRENCE_V20_PROFILE, OCCURRENCE_V21_PROFILE}:
             stated.update(_semantic_choice_module().recorded_non_actions(material))
         for ref, candidate in candidates.items():
             source = originals[candidate['source_field']]
@@ -998,7 +1002,7 @@ def semantic_output_schema(messages):
     source_qualified = event_v2 or node_local
     quoted_records, correction_fields = set(), 0
     full_actions = ({field: text for field, text, _ in _semantic_choice_module().compact_action_pairs(material).values()}
-                    if material.get('author_profile') in {OCCURRENCE_V18_PROFILE, OCCURRENCE_V19_PROFILE, OCCURRENCE_V20_PROFILE} else {})
+                    if material.get('author_profile') in {OCCURRENCE_V18_PROFILE, OCCURRENCE_V19_PROFILE, OCCURRENCE_V20_PROFILE, OCCURRENCE_V21_PROFILE} else {})
     for field in fields:
         number, original = field.get('field'), field.get('text')
         if type(number) is not int or number < 1 or number in seen or type(original) is not str:
@@ -1511,6 +1515,20 @@ def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None, b
             result.required_tail = UnionParser([StringParser(enum_literal(value)[1:]) for value in choices])
             return result
 
+    class OverviewProposal(EndpointLabel):
+        """Retain the decoded private proposal for the following final title choice."""
+        def still_guarded(self, text):
+            return True
+
+        def add_character(self, char):
+            result = super().add_character(char)
+            if result.closed:
+                stack = result.root.context.active_parser.object_stack
+                overview = stack[-2].clone()
+                overview.title_proposal = result.text
+                stack[-2] = overview
+            return result
+
     class FactProse(EndpointLabel):
         """Only intercept a whole unmatched numeric handle. Ordinary prose stays free."""
         assigned_source = None
@@ -1783,7 +1801,9 @@ def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None, b
                     def fits(q):
                         f, quote = evidence_pair_key(field, q)
                         added = region.coverage.get(quote, 0) if f == region.field else 0
-                        return region.adds_text(allocation[-1], f, quote) and region.minimum_roots[missing_regions & ~added] <= remaining_slots
+                        return (region.can_reuse(allocation[:-1], allocation[-1], f, quote)
+                                and region.adds_text(allocation[-1], f, quote)
+                                and region.minimum_roots[missing_regions & ~added] <= remaining_slots)
                     quotes = [q for q in quotes if fits(q)]
                 if previous:
                     quotes = [q for q in quotes if can_finish(
@@ -1925,6 +1945,7 @@ def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None, b
             self.generated_edge_keys = frozenset()
             self.covered_records = frozenset()
             self.selected_overview_refs = frozenset()
+            self.title_proposal = None
             self.previous_allocations = frozenset()
             self.plan_allocation = ()
             self.selected_node_id = self.selected_from = None
@@ -1942,6 +1963,7 @@ def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None, b
             result.generated_edge_keys = self.generated_edge_keys
             result.covered_records = self.covered_records
             result.selected_overview_refs = self.selected_overview_refs
+            result.title_proposal = self.title_proposal
             result.previous_allocations = self.previous_allocations
             result.plan_allocation = self.plan_allocation
             result.selected_node_id = self.selected_node_id
@@ -2064,6 +2086,14 @@ def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None, b
                     fact.source_bound_keys = bool(part.extras.get('x-source-bound-keys'))
                     fact.source_bound_members = bool(part.extras.get('x-source-bound-members'))
                     active.object_stack[-1] = fact
+                elif key == 'title_proposal':
+                    proposal = OverviewProposal(result.root, (), result.schema_object.properties[key].maxLength)
+                    proposal.minimum = 0
+                    active.object_stack[-1] = proposal
+                elif key == 'title' and 'title_proposal' in result.schema_object.properties:
+                    scope = closer_rules.WholeMapTitle(overview_sources, endpoint_nodes)
+                    value = deepcopy(result.schema_object.properties[key])
+                    value.enum = scope.authored_choices(result.title_proposal, overview_sources, endpoint_nodes)
                 elif key == 'title':
                     forbidden = result.schema_object.properties[key].extras.get('not', {}).get('enum', ())
                     phrases = None
@@ -2073,13 +2103,13 @@ def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None, b
                                  for unit in node['units']]
                         forbidden = _semantic_choice_module().one_sided_source_titles(overview_sources, units,
                             compare_end_marks=compare_title_end_marks)
-                        if (overview_sources.get('author_profile') in {OCCURRENCE_V18_PROFILE, OCCURRENCE_V19_PROFILE, OCCURRENCE_V20_PROFILE}
+                        if (overview_sources.get('author_profile') in {OCCURRENCE_V18_PROFILE, OCCURRENCE_V19_PROFILE, OCCURRENCE_V20_PROFILE, OCCURRENCE_V21_PROFILE}
                                 and len(graph.selected_overview_refs) > 1):
                             phrases = closer_rules.OverviewSourcePhrases(overview_sources, units, restricted_titles=forbidden,
-                                include_original_fields=overview_sources.get('author_profile') in {OCCURRENCE_V19_PROFILE, OCCURRENCE_V20_PROFILE})
+                                include_original_fields=overview_sources.get('author_profile') in {OCCURRENCE_V19_PROFILE, OCCURRENCE_V20_PROFILE, OCCURRENCE_V21_PROFILE})
                             forbidden = phrases.restricted_titles
                     if phrases is not None and phrases.required:
-                        if overview_sources.get('author_profile') == OCCURRENCE_V20_PROFILE:
+                        if overview_sources.get('author_profile') in {OCCURRENCE_V20_PROFILE, OCCURRENCE_V21_PROFILE}:
                             scope = closer_rules.WholeMapTitle(overview_sources, endpoint_nodes)
                             active.object_stack[-1] = GroundedOverview(result.root, forbidden or (),
                                 result.schema_object.properties[key].maxLength, phrases, scope)
@@ -2411,7 +2441,7 @@ def make_handler(generate, *, api_key, model_name, deadline, max_requests,
                     EVENT_PLAN_V2_BASE_MODEL, NODE_LOCAL_V3_BASE_MODEL}
                 if event_plan:
                     selected_model = event_plan_model
-                staged = event_plan and event_plan_model in {NODE_LOCAL_V4_MODEL, NODE_LOCAL_V4_BOUND_MODEL, NODE_LOCAL_V4_BOUND_V2_MODEL, OCCURRENCE_MODEL, OCCURRENCE_V2_MODEL, OCCURRENCE_V3_MODEL, OCCURRENCE_V4_MODEL, OCCURRENCE_V5_MODEL, OCCURRENCE_V6_MODEL, OCCURRENCE_V7_MODEL, OCCURRENCE_V8_MODEL, OCCURRENCE_V9_MODEL, OCCURRENCE_V10_MODEL, OCCURRENCE_V11_MODEL, OCCURRENCE_V12_MODEL, OCCURRENCE_V13_MODEL, OCCURRENCE_V14_MODEL, OCCURRENCE_V15_MODEL, OCCURRENCE_V16_MODEL, OCCURRENCE_V17_MODEL, OCCURRENCE_V18_MODEL, OCCURRENCE_V19_MODEL, OCCURRENCE_V20_MODEL}
+                staged = event_plan and event_plan_model in {NODE_LOCAL_V4_MODEL, NODE_LOCAL_V4_BOUND_MODEL, NODE_LOCAL_V4_BOUND_V2_MODEL, OCCURRENCE_MODEL, OCCURRENCE_V2_MODEL, OCCURRENCE_V3_MODEL, OCCURRENCE_V4_MODEL, OCCURRENCE_V5_MODEL, OCCURRENCE_V6_MODEL, OCCURRENCE_V7_MODEL, OCCURRENCE_V8_MODEL, OCCURRENCE_V9_MODEL, OCCURRENCE_V10_MODEL, OCCURRENCE_V11_MODEL, OCCURRENCE_V12_MODEL, OCCURRENCE_V13_MODEL, OCCURRENCE_V14_MODEL, OCCURRENCE_V15_MODEL, OCCURRENCE_V16_MODEL, OCCURRENCE_V17_MODEL, OCCURRENCE_V18_MODEL, OCCURRENCE_V19_MODEL, OCCURRENCE_V20_MODEL, OCCURRENCE_V21_MODEL}
                 if staged:
                     material = json.loads(messages[1]['content'])
                     if material.get('author_phase') not in NODE_LOCAL_V4_PHASES:
@@ -2440,7 +2470,7 @@ def make_handler(generate, *, api_key, model_name, deadline, max_requests,
                     except (ValueError, TypeError):
                         material = None
                     marker = material.get('model_schema') if type(material) is dict else None
-                    expected_marker = (NODE_LOCAL_V4_SCHEMA if event_plan_model in {NODE_LOCAL_V4_MODEL, NODE_LOCAL_V4_BOUND_MODEL, NODE_LOCAL_V4_BOUND_V2_MODEL, OCCURRENCE_MODEL, OCCURRENCE_V2_MODEL, OCCURRENCE_V3_MODEL, OCCURRENCE_V4_MODEL, OCCURRENCE_V5_MODEL, OCCURRENCE_V6_MODEL, OCCURRENCE_V7_MODEL, OCCURRENCE_V8_MODEL, OCCURRENCE_V9_MODEL, OCCURRENCE_V10_MODEL, OCCURRENCE_V11_MODEL, OCCURRENCE_V12_MODEL, OCCURRENCE_V13_MODEL, OCCURRENCE_V14_MODEL, OCCURRENCE_V15_MODEL, OCCURRENCE_V16_MODEL, OCCURRENCE_V17_MODEL, OCCURRENCE_V18_MODEL, OCCURRENCE_V19_MODEL, OCCURRENCE_V20_MODEL}
+                    expected_marker = (NODE_LOCAL_V4_SCHEMA if event_plan_model in {NODE_LOCAL_V4_MODEL, NODE_LOCAL_V4_BOUND_MODEL, NODE_LOCAL_V4_BOUND_V2_MODEL, OCCURRENCE_MODEL, OCCURRENCE_V2_MODEL, OCCURRENCE_V3_MODEL, OCCURRENCE_V4_MODEL, OCCURRENCE_V5_MODEL, OCCURRENCE_V6_MODEL, OCCURRENCE_V7_MODEL, OCCURRENCE_V8_MODEL, OCCURRENCE_V9_MODEL, OCCURRENCE_V10_MODEL, OCCURRENCE_V11_MODEL, OCCURRENCE_V12_MODEL, OCCURRENCE_V13_MODEL, OCCURRENCE_V14_MODEL, OCCURRENCE_V15_MODEL, OCCURRENCE_V16_MODEL, OCCURRENCE_V17_MODEL, OCCURRENCE_V18_MODEL, OCCURRENCE_V19_MODEL, OCCURRENCE_V20_MODEL, OCCURRENCE_V21_MODEL}
                         else NODE_LOCAL_V3_SCHEMA if event_plan_model in {
                             NODE_LOCAL_V3_MODEL, NODE_LOCAL_V3_BASE_MODEL}
                         else EVENT_PLAN_V2_SCHEMA if event_plan_model in {
@@ -2450,7 +2480,8 @@ def make_handler(generate, *, api_key, model_name, deadline, max_requests,
                                 NODE_LOCAL_V3_SCHEMA, NODE_LOCAL_V4_SCHEMA}):
                         raise ValueError
                     if staged:
-                        expected_profile = (OCCURRENCE_V20_PROFILE if event_plan_model == OCCURRENCE_V20_MODEL
+                        expected_profile = (OCCURRENCE_V21_PROFILE if event_plan_model == OCCURRENCE_V21_MODEL
+                            else OCCURRENCE_V20_PROFILE if event_plan_model == OCCURRENCE_V20_MODEL
                             else OCCURRENCE_V19_PROFILE if event_plan_model == OCCURRENCE_V19_MODEL
                             else OCCURRENCE_V18_PROFILE if event_plan_model == OCCURRENCE_V18_MODEL
                             else OCCURRENCE_V17_PROFILE if event_plan_model == OCCURRENCE_V17_MODEL
