@@ -3947,7 +3947,8 @@ def expand_analysis_semantic_event_plan(prepared, packet):
                 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v9',
                 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v10',
                 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v11',
-                'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v12'}):
+                'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v12',
+                'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v13'}):
         from .semantic_admission import (assemble_semantic_node_local_v4,
             SEMANTIC_MAP_NODE_LOCAL_V3_PROFILE, SEMANTIC_MAP_FACT_ENDPOINT_PROFILES)
         joined = assemble_semantic_node_local_v4(prepared, packet)
@@ -3956,7 +3957,8 @@ def expand_analysis_semantic_event_plan(prepared, packet):
         joined['nodes'] = [{k: v for k, v in n.items() if k != 'node_id'} for n in joined['nodes']]
         return _expand_analysis_semantic_node_local_v3(
             replace(prepared, prompt_version=SEMANTIC_MAP_NODE_LOCAL_V3_PROFILE), joined,
-            fact_endpoints=prepared.prompt_version in SEMANTIC_MAP_FACT_ENDPOINT_PROFILES)
+            fact_endpoints=prepared.prompt_version in SEMANTIC_MAP_FACT_ENDPOINT_PROFILES,
+            mark_record_ownership=prepared.prompt_version == 'semantic_map.node_local.v4.occurrence.v13')
     if (getattr(prepared, 'prompt_version', None) == 'semantic_map.node_local.v3'
             or type(packet) is dict and packet.get('schema_version') == 'cocolon.analysis.semantic_map.node_local.model.v3'):
         return _expand_analysis_semantic_node_local_v3(prepared, packet)
@@ -4172,7 +4174,7 @@ def _expand_analysis_semantic_event_plan_v2(prepared, packet):
         overview=dict(title=text(overview['title'], 80), summary='\n'.join(visible)))
 
 
-def _expand_analysis_semantic_node_local_v3(prepared, packet, *, fact_endpoints=False):
+def _expand_analysis_semantic_node_local_v3(prepared, packet, *, fact_endpoints=False, mark_record_ownership=False):
     """Compile node-owned authored units, not a repair of a reference plan.
 
     There is no independently authored fact/reading registry to relink. All
@@ -4200,6 +4202,14 @@ def _expand_analysis_semantic_node_local_v3(prepared, packet, *, fact_endpoints=
         return value
 
     material = json.loads(prepared.material_json)
+    def display_facts(units, facts):
+        if mark_record_ownership:
+            from analysis_plan_source_choices import separate_record_labels
+            labels = separate_record_labels(material, units)
+            if labels:
+                return labels, [label + '：' + fact for label, fact in zip(labels, facts, strict=True)]
+        return (), facts
+
     field_records = {field['field']: field['record'] for field in material['fields']}
     required_records = {row['record'] for row in material['records']}
     covered_records = set()
@@ -4246,11 +4256,13 @@ def _expand_analysis_semantic_node_local_v3(prepared, packet, *, fact_endpoints=
         # cannot decide that a paraphrase or a qualified statement is redundant.
         # Keep the original meaning in the summary and private authored plan.
         repeated_facts = meaning in facts or meaning in ('\n'.join(facts), ''.join(facts))
-        visible = facts + ([meaning] if meaning and not repeated_facts else [])
+        record_labels, displayed_facts = display_facts(node['units'], facts)
+        visible = displayed_facts + ([meaning] if meaning and not repeated_facts else [])
         body = '\n'.join(dict.fromkeys(paragraph for part in visible for paragraph in part.split('\n')))
-        summary = meaning or facts[0]
+        summary = '\n'.join(displayed_facts) if record_labels else meaning or facts[0]
         node_id = 'n' + str(index)
-        bodies[node_id], summaries[node_id] = body, summary
+        bodies[node_id] = body
+        summaries[node_id] = '・'.join(record_labels) + '：' + node['title'] if record_labels else summary
         nodes.append(dict(evidence=roots, node_id=node_id, node_kind=node['node_kind'],
             perspective=node['perspective'], title=text(node['title'], 80),
             summary=summary, explanation=body, unknowns=unknowns))
@@ -4274,7 +4286,8 @@ def _expand_analysis_semantic_node_local_v3(prepared, packet, *, fact_endpoints=
         result['label'] = text(edge['label'], 80)
         if fact_endpoints:
             selected = [by_unit[edge[key]] for key in ('from_unit', 'to_unit')]
-            result['explanation'] = '\n'.join(unit['fact'] for unit in selected)
+            _, display = display_facts(selected, [unit['fact'] for unit in selected])
+            result['explanation'] = '\n'.join(display)
             result['unit_evidence'] = [unit['evidence'] for unit in selected]
         else:
             result['explanation'] = bodies[edge['from']] + '\n' + bodies[edge['to']]
