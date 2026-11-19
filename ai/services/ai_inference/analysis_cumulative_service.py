@@ -94,6 +94,7 @@ def _saved_projection_text_matches(projection, text):
         from cocolon_meaning_experience_engine.cores.analysis.observed_route_realizer import (
             analysis_semantic_projection_text, analysis_semantic_projection_text_legacy)
         return (text == analysis_semantic_projection_text(projection, compact_source_captions=True) or
+                text == analysis_semantic_projection_text(projection, compact_source_captions=True, source_ordered_detail=True) or
                 text == analysis_semantic_projection_text_legacy(projection) or
                 text == analysis_semantic_projection_text(projection, record_scoped_unknowns=False))
     return False

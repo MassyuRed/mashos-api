@@ -112,7 +112,7 @@ def test_greedy_filter_compares_completed_public_nodes_through_the_compact_prefi
     assert len(inspected) == 1 and inspected[0]['nodes']['n1']['units']['u1']['evidence_ref'] == 'n1.u1'
 
 
-def test_normal_compiler_keeps_raw_receipts_and_projects_v1_v2_and_v3_fact_references_identically():
+def test_normal_compiler_keeps_raw_receipts_and_projects_each_supported_wire_version():
     from hashlib import sha256
     from dataclasses import replace
     from cocolon_meaning_experience_engine.cores.analysis import intent_compiler as compiler
@@ -132,7 +132,7 @@ def test_normal_compiler_keeps_raw_receipts_and_projects_v1_v2_and_v3_fact_refer
                qualification_review={},edges=[],overview=dict(node_refs=['n1'],title='図面の問い合わせ'))
     projections = []
     compiled_nodes = []
-    for version in (wire.LEGACY_VERSION, wire.RECORD_VERSION, wire.VERSION):
+    for version in wire.VERSIONS:
         receipt = dict(schema_version=core.semantic_node_local_v4_artifact_schema(stage),merge_wire_version=version,phases=[])
         for phase, value, opts in [('PLAN',plan_packet,{}),('NODES',node_packet,dict(plan=plan)),
                                    ('RELATIONS',rel,dict(plan=plan,nodes=admitted))]:
@@ -151,9 +151,9 @@ def test_normal_compiler_keeps_raw_receipts_and_projects_v1_v2_and_v3_fact_refer
         joined, choices = core.assemble_semantic_node_local_v4_with_node_choices(view,receipt)
         assert choices == node_packet and joined['nodes'][0]['units'][0]['evidence'] == plan['nodes'][0]['units'][0]['evidence']
         assert all(sha256(row['raw'].encode()).hexdigest()==row['raw_sha256'] for row in receipt['phases'])
-        assert ('h' in json.loads(receipt['phases'][1]['raw'])) == (version==wire.VERSION)
-    assert projections[0] == projections[1] == projections[2]
-    assert compiled_nodes[0] == compiled_nodes[1] == compiled_nodes[2]
+        assert ('h' in json.loads(receipt['phases'][1]['raw'])) == (version in wire.OUTPUT_VERSIONS)
+    assert all(view == projections[0] for view in projections)
+    assert all(nodes == compiled_nodes[0] for nodes in compiled_nodes)
     assert OUTCOME in projections[0]['nodes'][0]['explanation'] and NONACTION in projections[0]['nodes'][0]['explanation']
 
 
@@ -191,3 +191,53 @@ def test_relation_reviewer_can_keep_narrow_or_close_the_same_bound_qualification
     for review in ([], [[1]], [[True]], [['~未登録']], ['OPEN'], [[0],[0]], [[codec.quote_code(original)]]):
         with pytest.raises(ValueError):
             advance(native,wire.compact_json(dict(physical,qualification_review=review)))
+
+
+def test_new_merge_rejects_a_condition_or_actor_added_to_a_node_title():
+    from test_analysis_merge_transport import source_merge
+
+    first = '担当者が予定を電話で伝えた。'
+    second = '設置できるかは翌週に確認する。'
+    extra = '別の棚は注文済みだった。'
+    stage = source_merge([first + second + extra])
+    plan = core.admit_semantic_node_local_v4_plan_response(
+        stage, packet(stage, [[[(1, first + second)]]]), merge_anchors=True)
+    for version in wire.OUTPUT_VERSIONS:
+        messages = core.semantic_node_local_v4_wire_messages(stage, 'NODES', plan=plan, wire_version=version)
+        codec = wire.response_codec(messages)
+        root = codec.plan_units[0][0][0]
+        entry = dict(units={'u1': dict(evidence_ref='n1.u1', source_mode='RECORDED',
+            fact_parts={root: 1}, unknowns=[])}, node_kind='STATE_CONTEXT', perspective='SELF',
+            title=second, meaning='')
+        node = dict(schema_version=core._semantic_v4_schema('NODES'), plan_sha256=codec.binding, nodes={'n1': entry})
+        candidates = (second, '担当者が設置できるのは翌週だけだ。', '本人が予定を電話で伝えた。', extra)
+        alphabet = ''.join(dict.fromkeys(wire.compact_json(messages) + wire.compact_json(node) + ''.join(candidates)))
+        for title in candidates:
+            entry['title'] = title
+            raw = wire.compact_json(codec.encode(node))
+            parser = probe.semantic_json_parser(messages, alphabet)
+            if version == wire.VERSION and title != second:
+                with pytest.raises(ValueError):
+                    advance(parser, raw)
+                with pytest.raises(core.AnalysisSemanticMapError, match='merge_title_not_in_source'):
+                    core.admit_semantic_node_local_v4_nodes_response(stage, plan, node, bound_titles=True)
+            else:
+                assert advance(parser, raw).can_end()
+                assert core.admit_semantic_node_local_v4_nodes_response(
+                    stage, plan, node, bound_titles=version == wire.VERSION)['nodes']['n1']['title'] == title
+
+
+def test_title_choices_preserve_quotation_scope_fragment_boundaries_and_record_owners():
+    fields = [
+        dict(field=1, record=1, text='「明日は休む。」と友人が言った。明日は店が開く。'),
+        dict(field=2, record=2, text='前日から予定していた。'),
+    ]
+    material = dict(fields=fields)
+    def headings(*roots):
+        from analysis_plan_source_choices import source_node_titles
+        return source_node_titles(material, [dict(evidence=[dict(field=f, quote=q) for f,q in roots])], ())
+    assert headings((1, '明日は休む。')) == ['記録にある場面']
+    assert headings((1, fields[0]['text'])) == ['「明日は休む。」と友人が言った。', '明日は店が開く。']
+    assert headings((1, fields[0]['text']), (2, fields[1]['text'])) == ['記録を比べて']
+    fields[1]['fragment_is_complete_field'] = False
+    assert headings((2, fields[1]['text'])) == ['記録にある場面']

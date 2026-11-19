@@ -89,3 +89,19 @@ def test_does_not_impose_incomplete_superseded_or_unavailable_source(change):
         material['history_stage']['kind']='LEAF'
     owners=choices.record_plan_owners(material,merge_anchors=True)
     assert choices.merge_action_sources(material,owners)=={}
+
+
+def test_single_leaf_descriptions_only_use_complete_selected_thought_sentences():
+    earlier = '場所の条件を先にメモした。'
+    later = '店で試すと、角度を変えれば届くと分かった。'
+    action = '試した商品を購入した。'
+    fields = [dict(field=1, record=1, source_role='ORIGINAL_INPUT', field_path='memo', text=earlier + later),
+              dict(field=2, record=1, source_role='ORIGINAL_INPUT', field_path='memo_action', text=action)]
+    material = dict(history_stage=dict(kind='LEAF'), fields=fields)
+    assert choices.single_original_leaf(material)
+    selected = [dict(evidence=[dict(field=1, quote=later), dict(field=2, quote=action)])]
+    sentences = {1: {earlier, later}, 2: {action}}
+    assert choices.leaf_meanings(fields, selected, sentences) == ['', later]
+    assert not choices.single_original_leaf(dict(material, history_stage=dict(kind='MERGE')))
+    for change in (dict(source_role='PERSON_SUPPLEMENT'), dict(fragment_is_complete_field=False), dict(record=2)):
+        assert not choices.single_original_leaf(dict(material, fields=[fields[0], dict(fields[1], **change)]))

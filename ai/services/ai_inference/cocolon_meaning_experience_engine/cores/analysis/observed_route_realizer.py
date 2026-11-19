@@ -1117,7 +1117,8 @@ class AnalysisSemanticMapArtifact:
             # A previously saved person's literal can itself look like a dated label.
             return {'text': analysis_semantic_projection_text(projection, record_scoped_unknowns=False)}
         if self.graph.compact_source_captions:
-            return {'text': analysis_semantic_projection_text(projection, compact_source_captions=True)}
+            return {'text': analysis_semantic_projection_text(projection, compact_source_captions=True,
+                source_ordered_detail=self.graph.source_ordered_detail)}
         return {'text': analysis_semantic_projection_text(projection)}
 
     def private_evidence(self):
@@ -1224,7 +1225,8 @@ def _unknown_line(quote, prefix, *, record_scoped_unknowns):
     return prefix + quote
 
 
-def analysis_semantic_projection_text(projection, *, record_scoped_unknowns=True, compact_source_captions=False):
+def analysis_semantic_projection_text(projection, *, record_scoped_unknowns=True, compact_source_captions=False,
+                                      source_ordered_detail=False):
     """Render every v3 graph without multiplying its node bodies by its edges.
 
     Only byte-identical paragraphs are coalesced within a node. Overview
@@ -1243,8 +1245,15 @@ def analysis_semantic_projection_text(projection, *, record_scoped_unknowns=True
         detail = paragraphs(node['explanation'])
         # A summary that is exactly the authored detail concatenation adds no
         # text. This is byte equality, not substring or semantic comparison.
-        node_bodies[node['node_ref']] = (detail if node['summary'] == ''.join(detail)
-            else paragraphs(node['summary'], node['explanation']))
+        if source_ordered_detail:
+            # A summary can quote a later step. Keep it in the detail sequence
+            # instead of moving its only appearance to the top of the node.
+            leading = [] if node['summary'] == ''.join(detail) else [
+                line for line in paragraphs(node['summary']) if line not in detail and line != node['title']]
+            node_bodies[node['node_ref']] = leading + detail
+        else:
+            node_bodies[node['node_ref']] = (detail if node['summary'] == ''.join(detail)
+                else paragraphs(node['summary'], node['explanation']))
     displayed = {line for body in node_bodies.values() for line in body}
     displayed.update(node['summary'] for node in projection['nodes'])
     lines = [projection['overview']['title']]
@@ -1252,7 +1261,12 @@ def analysis_semantic_projection_text(projection, *, record_scoped_unknowns=True
     index = {node['node_ref']: node for node in projection['nodes']}
     for node in projection['nodes']:
         body = node_bodies[node['node_ref']]
-        if compact_source_captions:
+        if source_ordered_detail:
+            # A later source sentence may also be the heading. Its second
+            # appearance keeps the sequence readable below that heading.
+            if body[:1] == [node['title']]:
+                body = body[1:]
+        elif compact_source_captions:
             body = [paragraph for paragraph in body if paragraph != node['title']]
         lines.extend(['', node['title'], *body])
         lines.extend(node['context'])

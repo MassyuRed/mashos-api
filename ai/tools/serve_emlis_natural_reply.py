@@ -691,7 +691,7 @@ def _semantic_relation_fact_parts(material):
     return parts
 
 
-def _semantic_node_local_v4_schema(material, pairs, unknown_pairs, *, leaf=False, record_owners=()):
+def _semantic_node_local_v4_schema(material, pairs, unknown_pairs, *, leaf=False, record_owners=(), bound_titles=False):
     """Three private author shapes; no text repair or semantic certification."""
     from copy import deepcopy
     def obj(props):
@@ -857,10 +857,17 @@ def _semantic_node_local_v4_schema(material, pairs, unknown_pairs, *, leaf=False
                 title = text(80)
                 if forbidden:
                     title['not'] = dict(enum=forbidden)
+        fresh_leaf = (author_profile == OCCURRENCE_V24_PROFILE and phase == 'NODES'
+                      and _semantic_choice_module().single_original_leaf(material))
+        if (bound_titles or fresh_leaf) and phase == 'NODES':
+            title_choices = _semantic_choice_module().source_node_titles(material, node['units'], title.get('enum', ()))
+            title = dict(type='string', enum=title_choices)
         meaning = text(240, 0)
         if author_profile in {OCCURRENCE_V20_PROFILE, OCCURRENCE_V21_PROFILE, OCCURRENCE_V22_PROFILE, OCCURRENCE_V23_PROFILE, OCCURRENCE_V24_PROFILE} and phase == 'NODES':
             choices = _semantic_choice_module().paired_node_meanings(
                 material['fields'], node['units'], display_sentences)
+            if fresh_leaf and not choices:
+                choices = _semantic_choice_module().leaf_meanings(material['fields'], node['units'], display_sentences)
             if choices:
                 meaning = dict(type='string', enum=choices)
         node_properties[node['node_id']] = obj(dict(units=obj(units),
@@ -1018,10 +1025,10 @@ def _semantic_merge_prefix_offset(profile, material, messages, prompt_tokens):
     return 0
 
 
-def _semantic_merge_wire_v3(messages):
+def _semantic_merge_tuple_output(messages):
     material = json.loads(messages[1]['content'])
     return (isinstance(material, dict) and 'merge_wire_version' in material
-            and material['merge_wire_version'] == _semantic_merge_wire_module().VERSION)
+            and material['merge_wire_version'] in _semantic_merge_wire_module().OUTPUT_VERSIONS)
 
 
 def _merge_record_anchors(messages):
@@ -1029,7 +1036,7 @@ def _merge_record_anchors(messages):
     if not isinstance(material, dict) or 'merge_wire_version' not in material:
         return False
     wire = _semantic_merge_wire_module()
-    return material['merge_wire_version'] in (wire.RECORD_VERSION, wire.VERSION)
+    return material['merge_wire_version'] in (wire.RECORD_VERSION, *wire.OUTPUT_VERSIONS)
 
 
 def _semantic_constraint_messages(messages):
@@ -1046,6 +1053,8 @@ def semantic_output_schema(messages):
     if (type(messages) is not list or len(messages) != 2
             or messages[1].get('role') != 'user'):
         raise ValueError('semantic_material_invalid')
+    wire_version = json.loads(messages[1]['content']).get('merge_wire_version')
+    bound_titles = wire_version is not None and wire_version == _semantic_merge_wire_module().VERSION
     merge_anchors = _merge_record_anchors(messages)
     messages = _semantic_constraint_messages(messages)
     material = json.loads(messages[1]['content'])
@@ -1148,7 +1157,7 @@ def semantic_output_schema(messages):
     if event_v2:
         return _semantic_event_plan_v2_schema(pairs, unknown_pairs, leaf=leaf)
     if material.get('model_schema') == NODE_LOCAL_V4_SCHEMA:
-        return _semantic_node_local_v4_schema(material, pairs, unknown_pairs, leaf=leaf)
+        return _semantic_node_local_v4_schema(material, pairs, unknown_pairs, leaf=leaf, bound_titles=bound_titles)
     if node_local:
         return _semantic_node_local_v3_schema(pairs, unknown_pairs, leaf=leaf)
     def text(maximum):
@@ -2357,7 +2366,7 @@ def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None, b
 
 def semantic_json_parser(messages, alphabet):
     logical = _semantic_logical_json_parser(messages, alphabet)
-    if not _semantic_merge_wire_v3(messages):
+    if not _semantic_merge_tuple_output(messages):
         return logical
     codec = _semantic_merge_wire_module().response_codec(messages,
         choice_module=_semantic_choice_module(), fact_key=_semantic_fact_part_key)
@@ -2372,7 +2381,7 @@ def semantic_json_parser(messages, alphabet):
 
 
 def _semantic_logical_json_parser(messages, alphabet):
-    merge_action_sources_enabled = _semantic_merge_wire_v3(messages)
+    merge_action_sources_enabled = _semantic_merge_tuple_output(messages)
     from lmformatenforcer import CharacterLevelParserConfig, JsonSchemaParser
     # LMFE snapshots alphabet_without_quotes while constructing its context.
     # Updating parser.config later leaves that initial snapshot unchanged.
@@ -2980,7 +2989,7 @@ def load_generator(adapter, process_stop, *, weights_sha256=None, config_sha256=
                 if material.get('author_profile') in {OCCURRENCE_V2_PROFILE, OCCURRENCE_V3_PROFILE, OCCURRENCE_V4_PROFILE, OCCURRENCE_V5_PROFILE, OCCURRENCE_V6_PROFILE, OCCURRENCE_V7_PROFILE, OCCURRENCE_V8_PROFILE, *SOURCE_CUED_PROFILES} and material.get('author_phase')=='NODES':
                     visible_filter = (_occurrence_greedy_relation_filter(allowed_prefix, prompt_tokens=prefix_offset)
                         if material.get('author_profile') in VISIBLE_SOURCE_PROFILES else None)
-                    compact_prefix = allowed_prefix if _semantic_merge_wire_v3(messages) else None
+                    compact_prefix = allowed_prefix if _semantic_merge_tuple_output(messages) else None
                     format_options['logits_processor']=[_occurrence_greedy_node_filter(tokenizer,count,
                         _semantic_wire_fact_sources(messages),visible_filter,compact_prefix)]
                 elif material.get('author_profile') in {OCCURRENCE_V6_PROFILE, OCCURRENCE_V7_PROFILE, OCCURRENCE_V8_PROFILE, *SOURCE_CUED_PROFILES} and material.get('author_phase') == 'RELATIONS':

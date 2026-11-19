@@ -7,8 +7,10 @@ import json
 
 LEGACY_VERSION = 'cocolon.analysis.merge_wire.v1'
 RECORD_VERSION = 'cocolon.analysis.merge_wire.v2'
-VERSION = 'cocolon.analysis.merge_wire.v3'
-VERSIONS = (LEGACY_VERSION, RECORD_VERSION, VERSION)
+OUTPUT_VERSION = 'cocolon.analysis.merge_wire.v3'
+VERSION = 'cocolon.analysis.merge_wire.v4'
+OUTPUT_VERSIONS = (OUTPUT_VERSION, VERSION)
+VERSIONS = (LEGACY_VERSION, RECORD_VERSION, *OUTPUT_VERSIONS)
 PROFILE = 'semantic_map.node_local.v4.occurrence.v24'
 MODEL_SCHEMA = 'cocolon.analysis.semantic_map.node_local.model.v4'
 WIRE_FIELDS = {'merge_wire_version', 'merge_original_messages_sha256'}
@@ -51,14 +53,27 @@ RESPONSE_GUIDANCE = {
 def instruction(version, phase):
     require(version in VERSIONS)
     guidance = INSTRUCTION
-    if version in (RECORD_VERSION, VERSION):
+    if version in (RECORD_VERSION, *OUTPUT_VERSIONS):
         guidance += RECORD_GUIDANCE
-    if version == VERSION:
+    if version in OUTPUT_VERSIONS:
         guidance += ('\n原欄はfieldsに全文があります。根拠・留保の引用値が[開始,終了,読取り句]なら、'
             '対応する欄のその範囲の全文です。読取り句は両端の手掛かりで、途中の否定や条件を含む元の範囲を読みます。'
             '未読範囲の圧縮表示ではstartから各lengthsの長さだけ進み、次までの間隔は1、'
             'gapsにある番号だけ指定間隔です。')
         guidance += RESPONSE_GUIDANCE[phase]
+    if version == VERSION and phase == 'NODES':
+        guidance += (' この項目の見出しは、選んだ根拠にある一文を条件・主体・留保ごと残して選びます。'
+            '文の一部を切り出して別の事実にはしません。選べる一文がないときは記録を指す見出しを使います。')
+    if version == VERSION and phase == 'PLAN':
+        guidance += (' 行動欄の「話した・聞いた・伝えた・確認した」だけで、誰が何を望み、'
+            '何を話したかが分からない場面では、同じ記録の思考欄全文から話者と発言内容が一緒に分かる原文を選びます。'
+            '葉の引用以外の原文も選べます。別の日に同じ対象への判断が変わった場合は、'
+            'それぞれの日の判断と、その時に分かっていた条件を各記録の単位に残します。')
+    if version == VERSION and phase == 'RELATIONS':
+        guidance += (' 線を選ぶ前に、同じ対象が再び出た日の単位を突き合わせます。'
+            '両方の原引用から、どの条件で何を選び、後にどの条件で何を選んだか説明できる組は、'
+            'その二つの単位を選び、具体的な条件と行動を線の文にします。'
+            '対象の一致や条件差を両端で確かめられず、他にも説明できる関係がなければedges=[]です。')
     return guidance
 
 
@@ -330,7 +345,7 @@ def prepare_messages(messages, *, version=VERSION):
     fields = displayed_fields(material)
     material['leaf_source_index'] = pack_index(material['leaf_source_index'], fields)
     material['field_manifest'] = pack_manifest(material['field_manifest'], fields)
-    if version == VERSION:
+    if version in OUTPUT_VERSIONS:
         _node_plan_references(material)
         _relation_fact_references(material)
         _visible_sources(material, fields)
@@ -352,7 +367,7 @@ def legacy_messages(messages):
         fields = displayed_fields(material)
         material['leaf_source_index'] = unpack_index(material['leaf_source_index'], fields)
         material['field_manifest'] = unpack_manifest(material['field_manifest'], fields)
-        if version == VERSION:
+        if version in OUTPUT_VERSIONS:
             _range_lengths(material, unpack=True)
             _visible_sources(material, fields, unpack=True)
             _node_plan_references(material, unpack=True)
@@ -555,7 +570,7 @@ def response_codec(messages, *, choice_module=None, fact_key=None):
     if not is_compact(messages):
         return None
     material = json.loads(messages[1]['content'])
-    if material['merge_wire_version'] != VERSION:
+    if material['merge_wire_version'] not in OUTPUT_VERSIONS:
         return None
     logical = json.loads(legacy_messages(messages)[1]['content'])
     if choice_module is None:

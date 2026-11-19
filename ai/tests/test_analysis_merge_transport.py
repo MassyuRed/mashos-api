@@ -16,7 +16,7 @@ def packets(monkeypatch, version=wire.RECORD_VERSION):
     stage = SimpleNamespace(kind='MERGE', prompt_version=core.SEMANTIC_MAP_OCCURRENCE_V24_PROFILE)
     monkeypatch.setattr(core, 'semantic_node_local_v4_messages', lambda _, phase='PLAN', **kwargs: fixture(phase))
     monkeypatch.setattr(core, 'admit_semantic_node_local_v4_plan_response', lambda _, value, **kwargs: value)
-    monkeypatch.setattr(core, 'admit_semantic_node_local_v4_nodes_response', lambda _, plan, value: value)
+    monkeypatch.setattr(core, 'admit_semantic_node_local_v4_nodes_response', lambda _, plan, value, **kwargs: value)
     monkeypatch.setattr(core, 'semantic_node_local_v4_relations', lambda _, plan, nodes, value: (plan, nodes, value))
     compact = dict(merge_wire_version=version, schema_version=core.semantic_node_local_v4_artifact_schema(stage), phases=[])
     historical = dict(schema_version=compact['schema_version'], phases=[])

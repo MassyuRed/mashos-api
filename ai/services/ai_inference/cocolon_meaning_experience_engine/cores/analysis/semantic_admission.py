@@ -2994,7 +2994,7 @@ def _semantic_fact_sentence_choices(plan, material, profile=None):
     return options
 
 
-def admit_semantic_node_local_v4_nodes_response(prepared, plan, packet):
+def admit_semantic_node_local_v4_nodes_response(prepared, plan, packet, *, bound_titles=False):
     if prepared.prompt_version not in SEMANTIC_MAP_FACT_REFERENCE_PROFILES:
         return semantic_node_local_v4_nodes(prepared, plan, packet)
     semantic_node_local_v4_plan(prepared, plan)
@@ -3026,7 +3026,7 @@ def admit_semantic_node_local_v4_nodes_response(prepared, plan, packet):
             except (KeyError, TypeError):
                 raise AnalysisSemanticMapError(reason) from None
     canonical['plan_sha256'] = semantic_map_hash(plan)
-    return semantic_node_local_v4_nodes(prepared, plan, canonical)
+    return semantic_node_local_v4_nodes(prepared, plan, canonical, bound_titles=bound_titles)
 
 
 def _semantic_v14_visible_text(prepared, texts, quotes):
@@ -3037,7 +3037,7 @@ def _semantic_v14_visible_text(prepared, texts, quotes):
             'analysis_semantic_authored_serialization_residue')
 
 
-def semantic_node_local_v4_nodes(prepared, plan, packet):
+def semantic_node_local_v4_nodes(prepared, plan, packet, *, bound_titles=False):
     """Freeze every ID/unit/root; classifications and prose remain authored."""
     semantic_node_local_v4_plan(prepared, plan)
     r, reason = _semantic_map_require, 'analysis_semantic_node_local_v4_nodes_invalid'
@@ -3070,11 +3070,19 @@ def semantic_node_local_v4_nodes(prepared, plan, packet):
                 title = source_title_key(node['title']) if compare_end_marks else node['title']
                 r(title not in forbidden, reason)
                 titles = set()
+        if bound_titles:
+            from analysis_plan_source_choices import source_node_titles
+            titles = source_node_titles(source_material, planned['units'], titles)
+            r(node['title'] in titles, 'analysis_semantic_merge_title_not_in_source')
         r(not titles or node['title'] in titles, reason)
         if prepared.prompt_version in {SEMANTIC_MAP_OCCURRENCE_V20_PROFILE, SEMANTIC_MAP_OCCURRENCE_V21_PROFILE, SEMANTIC_MAP_OCCURRENCE_V22_PROFILE, SEMANTIC_MAP_OCCURRENCE_V23_PROFILE, SEMANTIC_MAP_OCCURRENCE_V24_PROFILE}:
             from analysis_plan_source_choices import paired_node_meanings
             choices = paired_node_meanings(source_material['fields'],
                 planned['units'], display_sentences)
+            if bound_titles and not choices:
+                from analysis_plan_source_choices import single_original_leaf, leaf_meanings
+                if single_original_leaf(source_material):
+                    choices = leaf_meanings(source_material['fields'], planned['units'], display_sentences)
             r(not choices or node['meaning'] in choices, 'analysis_semantic_node_meaning_not_in_source')
         _semantic_v14_visible_text(prepared, (node['title'], node['meaning']),
             (root['quote'] for unit in planned['units'] for root in unit['evidence']))
@@ -4247,7 +4255,7 @@ def assemble_semantic_node_local_v4_with_node_choices(prepared, packet):
     packet_keys = {'schema_version', 'phases'}
     phase_keys = {'phase', 'messages_sha256', 'raw', 'raw_sha256', 'finish_reason', 'completion_tokens'}
     if compact:
-        from analysis_merge_wire import RECORD_VERSION, VERSION, VERSIONS, legacy_messages, response_codec
+        from analysis_merge_wire import RECORD_VERSION, OUTPUT_VERSIONS, VERSION, VERSIONS, legacy_messages, response_codec
         r(packet['merge_wire_version'] in VERSIONS and semantic_node_local_v4_uses_compact_merge(prepared), reason)
         packet_keys.add('merge_wire_version')
         phase_keys.add('logical_messages_sha256')
@@ -4281,10 +4289,11 @@ def assemble_semantic_node_local_v4_with_node_choices(prepared, packet):
                 value = codec.decode(value)
         if phase == 'PLAN':
             plan = admit_semantic_node_local_v4_plan_response(prepared, value,
-                merge_anchors=compact and packet['merge_wire_version'] in (RECORD_VERSION, VERSION),
-                merge_action_sources=compact and packet['merge_wire_version'] == VERSION)
+                merge_anchors=compact and packet['merge_wire_version'] in (RECORD_VERSION, *OUTPUT_VERSIONS),
+                merge_action_sources=compact and packet['merge_wire_version'] in OUTPUT_VERSIONS)
         elif phase == 'NODES':
-            nodes = admit_semantic_node_local_v4_nodes_response(prepared, plan, value)
+            nodes = admit_semantic_node_local_v4_nodes_response(prepared, plan, value,
+                bound_titles=compact and packet['merge_wire_version'] == VERSION)
             authored_nodes = value
         else:
             joined = semantic_node_local_v4_relations(prepared, plan, nodes, value)

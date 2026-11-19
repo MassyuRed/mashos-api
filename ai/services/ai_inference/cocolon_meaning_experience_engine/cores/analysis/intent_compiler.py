@@ -3648,6 +3648,7 @@ class AnalysisSemanticMapGraph:
     map_correction_sources_json: str = ''
     record_scoped_unknowns: bool = False
     compact_source_captions: bool = False
+    source_ordered_detail: bool = False
 
 
 def analysis_semantic_source_duties(frozen, fields):
@@ -3998,6 +3999,7 @@ def expand_analysis_semantic_event_plan(prepared, packet):
             fact_endpoints=prepared.prompt_version in SEMANTIC_MAP_FACT_ENDPOINT_PROFILES,
             mark_record_ownership=prepared.prompt_version in SEMANTIC_MAP_CONTENT_PLAN_PROFILES,
             fixed_record_units=fixed_record_units,
+            preserve_action_sentence_order=packet.get('merge_wire_version') == 'cocolon.analysis.merge_wire.v4',
             record_scoped_captions=prepared.prompt_version in {'semantic_map.node_local.v4.occurrence.v23', 'semantic_map.node_local.v4.occurrence.v24'},
             compact_source_captions=prepared.prompt_version in {'semantic_map.node_local.v4.occurrence.v22', 'semantic_map.node_local.v4.occurrence.v23', 'semantic_map.node_local.v4.occurrence.v24'},
             deduplicate_source_sentences=prepared.prompt_version in {'semantic_map.node_local.v4.occurrence.v21', 'semantic_map.node_local.v4.occurrence.v22', 'semantic_map.node_local.v4.occurrence.v23', 'semantic_map.node_local.v4.occurrence.v24'},
@@ -4221,7 +4223,8 @@ def _expand_analysis_semantic_event_plan_v2(prepared, packet):
         overview=dict(title=text(overview['title'], 80), summary='\n'.join(visible)))
 
 
-def _node_unique_fixed_facts(units, fixed_parts, original_records, *, source_sentences=None, separate_sentences=False):
+def _node_unique_fixed_facts(units, fixed_parts, original_records, *, source_sentences=None,
+                             separate_sentences=False, action_sentence_order=None):
     """Remove repeated bound phrases within one single-record explanation."""
     records = {original_records.get(root['field']) for unit in units for root in unit['evidence']}
     if None in records or len(records) != 1 or not all(fixed_parts):
@@ -4229,6 +4232,7 @@ def _node_unique_fixed_facts(units, fixed_parts, original_records, *, source_sen
     seen = set()
     covered = set()
     displayed = []
+    action_slots = {}
     for unit, phrases in zip(units, fixed_parts, strict=True):
         retained = []
         for root, phrase in zip(unit['evidence'], phrases, strict=True):
@@ -4252,6 +4256,10 @@ def _node_unique_fixed_facts(units, fixed_parts, original_records, *, source_sen
                                 if retained:
                                     displayed.append(''.join(retained))
                                     retained = []
+                                field = root['field']
+                                order = (action_sentence_order or {}).get(field, {})
+                                if sentence in order:
+                                    action_slots.setdefault(field, []).append((len(displayed), order[sentence]))
                                 displayed.append(sentence)
                                 covered.add(key)
                         continue
@@ -4262,6 +4270,16 @@ def _node_unique_fixed_facts(units, fixed_parts, original_records, *, source_sen
             retained.append(phrase)
         if retained:
             displayed.append(''.join(retained))
+    # Only permute slots occupied by whole, uniquely located sentences of one
+    # original action field. Keep the authors' other fields, readings, and
+    # qualifications in place; source position expresses no inferred event time.
+    if len(units) == 1 and action_sentence_order and all(
+            all(a[1] <= b[1] for a, b in zip(slots, slots[1:])) for slots in action_slots.values()):
+        return [units[0]['fact']]
+    for slots in action_slots.values():
+        ordered = [displayed[index] for index, _ in sorted(slots, key=lambda item: item[1])]
+        for (index, _), sentence in zip(slots, ordered, strict=True):
+            displayed[index] = sentence
     return displayed
 
 
@@ -4269,7 +4287,7 @@ def _expand_analysis_semantic_node_local_v3(prepared, packet, *, fact_endpoints=
                                            fixed_record_units=(), use_attributed_captions=False, deduplicate_node_evidence=False,
                                            scope_earlier_unknowns=False, whole_map_overview=False, per_root_fact_limit=False,
                                            deduplicate_source_sentences=False, compact_source_captions=False,
-                                           record_scoped_captions=False):
+                                           record_scoped_captions=False, preserve_action_sentence_order=False):
     """Compile node-owned authored units, not a repair of a reference plan.
 
     There is no independently authored fact/reading registry to relink. All
@@ -4319,11 +4337,21 @@ def _expand_analysis_semantic_node_local_v3(prepared, packet, *, fact_endpoints=
     original_records = {field['field']: field['record'] for field in material['fields']
                         if field['source_role'] == 'ORIGINAL_INPUT'} if deduplicate_node_evidence else {}
     source_sentences = None
+    action_sentence_order = {}
     if deduplicate_source_sentences:
         from analysis_plan_source_choices import _sentences
         source_sentences = {f['field']: {s for s in _sentences(f['text'], original_for_overview=True)
                                         if f['text'].count(s) == 1}
                             for f in material['fields'] if f['field'] in original_records}
+        if preserve_action_sentence_order:
+            for field in material['fields']:
+                number = field['field']
+                if (number in original_records and field['field_path'] == 'memo_action'
+                        and field.get('supplement') is None and field.get('fragment_is_complete_field') is True
+                        and field.get('fragment_scalar_range') == [0, len(field['text'])]):
+                    action_sentence_order[number] = {sentence: field['text'].index(sentence)
+                        for sentence in source_sentences[number]
+                        if field['text'].find(sentence) == field['text'].rfind(sentence)}
     field_records = {field['field']: field['record'] for field in material['fields']}
     required_records = {row['record'] for row in material['records']}
     covered_records = set()
@@ -4382,10 +4410,11 @@ def _expand_analysis_semantic_node_local_v3(prepared, packet, *, fact_endpoints=
         record_labels, displayed_facts = display_facts(node['units'], facts,
             [f'{node_id}.u{i}' for i in range(1, len(facts) + 1)])
         explanation_facts = displayed_facts
-        if deduplicate_node_evidence and fixed_record_units and len(facts) > 1 and not record_labels:
+        if deduplicate_node_evidence and fixed_record_units and (len(facts) > 1 or action_sentence_order) and not record_labels:
             parts = [fixed_record_units.get(f'{node_id}.u{i}') for i in range(1, len(facts) + 1)]
             explanation_facts = _node_unique_fixed_facts(node['units'], parts, original_records,
-                                                       source_sentences=source_sentences, separate_sentences=compact_source_captions)
+                                                       source_sentences=source_sentences, separate_sentences=compact_source_captions,
+                                                       action_sentence_order=action_sentence_order)
         visible = explanation_facts + ([meaning] if meaning and not repeated_facts else [])
         body = '\n'.join(dict.fromkeys(paragraph for part in visible for paragraph in part.split('\n')))
         summary = '\n'.join(displayed_facts) if record_labels else meaning or facts[0]
@@ -4426,8 +4455,15 @@ def _expand_analysis_semantic_node_local_v3(prepared, packet, *, fact_endpoints=
         result['label'] = text(edge['label'], 80)
         if fact_endpoints:
             selected = [by_unit[edge[key]] for key in ('from_unit', 'to_unit')]
-            _, display = display_facts(selected, [unit['fact'] for unit in selected],
-                                       [edge['from_unit'], edge['to_unit']])
+            refs = [edge['from_unit'], edge['to_unit']]
+            facts = [unit['fact'] for unit in selected]
+            if action_sentence_order and isinstance(fixed_record_units, dict):
+                # Endpoint facts retain their own evidence closure. Do not sort
+                # across endpoints, even when the edge connects the same record.
+                facts = [''.join(_node_unique_fixed_facts([unit], [fixed_record_units.get(ref)], original_records,
+                             source_sentences=source_sentences, separate_sentences=True, action_sentence_order=action_sentence_order))
+                         for unit, ref in zip(selected, refs, strict=True)]
+            _, display = display_facts(selected, facts, refs)
             result['explanation'] = '\n'.join(display)
             result['unit_evidence'] = [unit['evidence'] for unit in selected]
         else:
@@ -4496,6 +4532,7 @@ def _semantic_event_plan_review(graph, prepared, original, expanded):
         review['node_local_plan']['final_artifact_sha256'] = semantic_map_hash(original)
         review['node_local_plan']['realization'] = 'PLANNED_ROOTS_THEN_NODE_PROSE_THEN_ACTUAL_NODE_RELATIONS'
         return replace(graph, meaning_review_json=semantic_map_canonical(review),
+            source_ordered_detail=original.get('merge_wire_version') == 'cocolon.analysis.merge_wire.v4',
             compact_source_captions=prepared.prompt_version in {'semantic_map.node_local.v4.occurrence.v22', 'semantic_map.node_local.v4.occurrence.v23', 'semantic_map.node_local.v4.occurrence.v24'},
             record_scoped_unknowns=prepared.prompt_version in {'semantic_map.node_local.v4.occurrence.v18', 'semantic_map.node_local.v4.occurrence.v19', 'semantic_map.node_local.v4.occurrence.v20', 'semantic_map.node_local.v4.occurrence.v21', 'semantic_map.node_local.v4.occurrence.v22', 'semantic_map.node_local.v4.occurrence.v23', 'semantic_map.node_local.v4.occurrence.v24'})
     if getattr(prepared, 'prompt_version', None) == 'semantic_map.node_local.v3':

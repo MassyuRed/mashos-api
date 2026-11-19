@@ -1272,6 +1272,55 @@ def paired_node_meanings(fields, units, sentences):
     return choices
 
 
+def single_original_leaf(material):
+    """Two complete fields from one source, with no corrections or other speakers' records."""
+    fields = material.get('fields', ())
+    return (material.get('history_stage', {}).get('kind') == 'LEAF'
+            and len(fields) == 2
+            and {f.get('field_path') for f in fields} == {'memo', 'memo_action'}
+            and all(f.get('source_role') == 'ORIGINAL_INPUT'
+                    and f.get('fragment_is_complete_field') is not False for f in fields)
+            and fields[0].get('record') is not None and fields[0]['record'] == fields[1].get('record'))
+
+
+def leaf_meanings(fields, units, sentences):
+    """Choose one complete selected thought, or leave the intermediate description empty."""
+    thought = next(field for field in fields if field['field_path'] == 'memo')
+    selected = [root['quote'] for unit in units for root in unit['evidence']
+                if root['field'] == thought['field']]
+    return [''] + sorted(
+        (s for s in sentences.get(thought['field'], ()) if len(s) <= 240
+         and thought['text'].count(s) == 1 and any(s in quote for quote in selected)),
+        key=thought['text'].index)
+
+
+def source_node_titles(material, units, literal_titles):
+    """Offer a complete source sentence scoped to this node, or a nonfactual heading."""
+    if literal_titles:
+        return sorted(set(literal_titles))
+    fields = {field['field']: field for field in material['fields']}
+    quotes = {}
+    for unit in units:
+        for root in unit['evidence']:
+            quotes.setdefault(root['field'], []).append(root['quote'])
+    owners = {fields[number].get('record') for number in quotes}
+    # A sentence owned by just one record cannot stand for a comparison.
+    if len(owners) > 1:
+        return ['記録を比べて']
+    titles = []
+    for number, selected in quotes.items():
+        field = fields[number]
+        if field.get('fragment_is_complete_field') is False:
+            continue
+        source = field['text']
+        for text in _sentences(source, original_for_overview=True):
+            if (len(text) <= 80 and text.endswith(('。', '！', '？', '!', '?'))
+                    and source.count(text) == 1 and any(text in quote for quote in selected)
+                    and text not in titles):
+                titles.append(text)
+    return titles or ['記録にある場面']
+
+
 def source_title_key(title):
     """Ignore only trailing sentence separators when comparing original records."""
     return title.rstrip(TITLE_END_MARKS)
