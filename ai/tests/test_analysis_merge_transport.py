@@ -1,6 +1,8 @@
 """Require the stored v24 history MERGE receipt to match the exact phase transport."""
 from copy import deepcopy
+from dataclasses import replace
 import hashlib
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -51,3 +53,19 @@ def test_saved_merge_rejects_changed_raw_or_message_binding(monkeypatch, index, 
     compact['phases'][index][key] += 'x'
     with pytest.raises(ValueError):
         core.assemble_semantic_node_local_v4(stage, compact)
+
+
+def test_compiler_parent_view_reconstructs_the_merge_transport(monkeypatch):
+    from test_analysis_occurrence_v17_record_owners import prepared
+    parent = prepared(['朝、庭で土を見た。', '夕方、鉢に水を足した。'], core.SEMANTIC_MAP_OCCURRENCE_V24_PROFILE)
+    leaf = core.prepare_semantic_leaf(parent, (parent.frozen.members[0].saved_record_ref,))
+    material = json.loads(leaf.material_json)
+    material['history_stage']['kind'] = 'MERGE'
+    stage = replace(leaf, kind='MERGE', material_json=core.semantic_map_canonical(material))
+    compiler_view = core._semantic_v4_view(stage)
+    assert not hasattr(compiler_view, 'kind') and compiler_view.request_ref == stage.request_ref
+    _, old, compact = packets(monkeypatch)
+    assert core.assemble_semantic_node_local_v4(compiler_view, old) == core.assemble_semantic_node_local_v4(compiler_view, compact)
+    assert not core.semantic_node_local_v4_uses_compact_merge(parent)
+    assert not core.semantic_node_local_v4_uses_compact_merge(replace(parent, material_json=stage.material_json))
+    assert not core.semantic_node_local_v4_uses_compact_merge(core._semantic_v4_view(leaf))

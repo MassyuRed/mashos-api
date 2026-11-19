@@ -4199,8 +4199,14 @@ def semantic_node_local_v4_messages(prepared, phase='PLAN', *, plan=None, nodes=
 
 
 def semantic_node_local_v4_uses_compact_merge(prepared):
-    return (getattr(prepared, 'prompt_version', None) == SEMANTIC_MAP_OCCURRENCE_V24_PROFILE
-            and getattr(prepared, 'kind', None) == 'MERGE')
+    if getattr(prepared, 'prompt_version', None) != SEMANTIC_MAP_OCCURRENCE_V24_PROFILE:
+        return False
+    kind = getattr(prepared, 'kind', None)
+    if (kind is None and type(prepared) is AnalysisSemanticMapInput
+            and prepared.request_ref.startswith('analysis-semantic-stage:')):
+        # Stage compilation retains the exact stage material in a parent-typed evidence view.
+        kind = json.loads(prepared.material_json).get('history_stage', {}).get('kind')
+    return kind == 'MERGE'
 
 
 def semantic_node_local_v4_wire_messages(prepared, phase='PLAN', *, plan=None, nodes=None):
