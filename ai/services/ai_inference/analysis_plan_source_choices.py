@@ -1,4 +1,5 @@
 """Lossless, request-local abbreviations for PLAN evidence. All offsets are Unicode scalars."""
+from bisect import bisect_left
 import hashlib
 import json
 import re
@@ -8,7 +9,7 @@ import unicodedata
 _CONTENT_PLAN_PROFILES = frozenset({
     'semantic_map.node_local.v4.occurrence.v13', 'semantic_map.node_local.v4.occurrence.v14',
     'semantic_map.node_local.v4.occurrence.v15', 'semantic_map.node_local.v4.occurrence.v16',
-    'semantic_map.node_local.v4.occurrence.v17', 'semantic_map.node_local.v4.occurrence.v18', 'semantic_map.node_local.v4.occurrence.v19'})
+    'semantic_map.node_local.v4.occurrence.v17', 'semantic_map.node_local.v4.occurrence.v18', 'semantic_map.node_local.v4.occurrence.v19', 'semantic_map.node_local.v4.occurrence.v20'})
 
 
 _CLOSED_TAG = re.compile(r'</?[A-Za-z_][\w:.-]*(?:\s+[^<>]*)?/?>|/>')
@@ -100,6 +101,39 @@ def fact_sentence_choices(quote, sentences, limit):
         ref = '@' + str(index)
         if len(value) <= limit and ref not in quote and source_fact_text(value, quote):
             choices[ref] = value
+    return choices
+
+
+def source_fact_ranges(quote):
+    """Partition an overlong PLAN root into bounded, contiguous source excerpts.
+
+    Prefer complete sentence boundaries. When a single sentence exceeds a
+    display part, mark both cut ends explicitly. Wire ranges count Unicode
+    scalars from the start of this root, regardless of its enclosing field.
+    """
+    if len(quote) <= 160:
+        return {}
+    stops = {0, len(quote)}
+    position = 0
+    for sentence in _sentences(quote, original_for_overview=True):
+        start = quote.find(sentence, position)
+        if start < 0 or quote[position:start].strip():
+            # An unparsed enclosure or unsupported sentence is not a boundary.
+            break
+        position = start + len(sentence)
+        stops.add(position)
+    choices = {}
+    start = 0
+    while start < len(quote):
+        prefix = '' if start in stops else '…'
+        limit = start + 160 - len(prefix)
+        ends = [end for end in stops if start < end <= limit]
+        end = max(ends) if ends else limit - 1
+        suffix = '' if end in stops else '…'
+        text = quote[start:end].strip()
+        if text:
+            choices[f'@{start}:{end}'] = prefix + text + suffix
+        start = end
     return choices
 
 
@@ -312,7 +346,7 @@ def record_plan_owners(material, available=None):
     flexible allocation if source coverage or available nodes do not permit it.
     """
     if (material.get('author_profile') not in {
-            'semantic_map.node_local.v4.occurrence.v17', 'semantic_map.node_local.v4.occurrence.v18', 'semantic_map.node_local.v4.occurrence.v19'}
+            'semantic_map.node_local.v4.occurrence.v17', 'semantic_map.node_local.v4.occurrence.v18', 'semantic_map.node_local.v4.occurrence.v19', 'semantic_map.node_local.v4.occurrence.v20'}
             or material.get('history_stage')):
         return ()
     records = [row['record'] for row in material.get('records', ())]
@@ -347,7 +381,7 @@ def compact_action_pairs(material):
     and history have separate provenance and allocation rules. Preserve their
     existing author choices. Never infer that two acts or actors are identical.
     """
-    if (material.get('author_profile') not in {'semantic_map.node_local.v4.occurrence.v18', 'semantic_map.node_local.v4.occurrence.v19'}
+    if (material.get('author_profile') not in {'semantic_map.node_local.v4.occurrence.v18', 'semantic_map.node_local.v4.occurrence.v19', 'semantic_map.node_local.v4.occurrence.v20'}
             or material.get('history_stage') or material.get('map_corrections')
             or not 1 <= len(material.get('records', ())) <= 12):
         return {}
@@ -392,6 +426,110 @@ def compact_action_pairs(material):
             return {}
         pairs[record] = (action['field'], text, thought['field'])
     return pairs if pairs and record_plan_owners(material) else {}
+
+
+class PlanReadingRegions:
+    """Index complete original sentences in bounded, independently selectable source regions."""
+
+    def __init__(self, field, groups, allowed):
+        self.field = field['field']
+        text = field['text']
+        positions = {quote: text.index(quote) for quote in allowed}
+        self.intervals = {q: (start, start + len(q)) for q, start in positions.items()}
+        self.ranges = [[positions[group[0]], positions[group[-1]] + len(group[-1])] for group in groups]
+        self.openings = [group[0][:12] for group in groups]
+        self.required = (1 << len(groups)) - 1
+        # A two-sentence citation can genuinely cover both sides of a boundary.
+        # Index only the few boundaries, without rescanning the source for every candidate.
+        self.coverage = {}
+        endpoints = [([positions[s] for s in group], [positions[s] + len(s) for s in group]) for group in groups]
+        for quote, (start, end) in self.intervals.items():
+            mask = 0
+            for index, (starts, ends) in enumerate(endpoints):
+                first = bisect_left(starts, start)
+                if first < len(ends) and ends[first] <= end:
+                    mask |= 1 << index
+            self.coverage[quote] = mask
+        available = set(self.coverage.values()) - {0}
+        self.minimum_roots = {0: 0}
+        for missing in range(1, self.required + 1):
+            self.minimum_roots[missing] = 1 + min(self.minimum_roots[missing & ~mask]
+                for mask in available if mask & missing)
+
+    def missing(self, units):
+        mask = self.required
+        for unit in units:
+            for field, quote in unit:
+                if field == self.field:
+                    mask &= ~self.coverage.get(quote, 0)
+        return mask
+
+    def adds_text(self, unit, field, quote):
+        if field != self.field or quote not in self.intervals:
+            return True
+        start, end = self.intervals[quote]
+        for left, right in sorted(self.intervals[prior] for f, prior in unit
+                                  if f == field and prior in self.intervals):
+            if left > start:
+                break
+            start = max(start, right)
+            if start >= end:
+                return False
+        return True
+
+
+def plan_reading_regions(material, pairs):
+    """Reserve a few separated portions of an ordinary original, without assigning their meaning."""
+    if (material.get('author_profile') != 'semantic_map.node_local.v4.occurrence.v20'
+            or material.get('history_stage') or material.get('map_corrections') or not record_plan_owners(material)):
+        return {}
+    if any(f['source_role'] != 'ORIGINAL_INPUT' or f.get('fragment_scalar_range')
+           or f.get('fragment_is_complete_field') is False for f in material['fields']):
+        return {}
+    if any(entry.get(k) for entry in material.get('emlis_source_materials', ())
+           for k in ('source_updates', 'conflicts', 'unresolved_sources')):
+        return {}
+    regions = {}
+    # Bound the shortest complete route for every record together, including existing action transcriptions.
+    def wire_size(field, quote):
+        return len(json.dumps(dict(quote=quote, field=field), ensure_ascii=False, separators=(',', ':')).encode('utf-8')) + 1
+
+    wire_bytes = sum(wire_size(field, action) for field, action, _ in pairs.values())
+    for row in material['records']:
+        record = row['record']
+        fields = [f for f in material['fields'] if f['record'] == record]
+        paths = {f['field_path']: f for f in fields}
+        if len(fields) != 2 or set(paths) != {'memo', 'memo_action'} or not paths['memo_action']['text']:
+            continue
+        memo, action = paths['memo'], paths['memo_action']
+        simple, allowed = choices_for_field(memo)
+        distinct = set(simple)
+        independent = [s for s in _sentences(memo['text'], original_for_overview=True)
+                       if s in distinct and s not in action['text'] and s.endswith(('。', '!', '?', '！', '？'))]
+        count = min(3, len(independent) // 2)
+        # Each abridged cue must be one that the ordinary PLAN source table actually exposes.
+        def cheapest(group):
+            return min(wire_size(memo['field'], cue) for q in group
+                for cue in (_content_choices(memo['text'], q, allowed, {}, memo['field']) or [q]))
+
+        if count < 2:
+            if record in pairs:
+                wire_bytes += cheapest([s for s in simple if s not in action['text']])
+            continue
+        # Prefer real paragraph boundaries. A single paragraph can still contain several complete observations.
+        paragraphs = [paragraph for paragraph in re.split(r'\n\s*\n', memo['text']) if paragraph]
+        blocks = [[s for s in independent if s in paragraph] for paragraph in paragraphs]
+        blocks = [block for block in blocks if block]
+        if len(blocks) < count:
+            blocks = [[s] for s in independent]
+        groups = [sum(blocks[i*len(blocks)//count:(i+1)*len(blocks)//count], []) for i in range(count)]
+        if any(len(group) < 2 for group in groups):
+            if record in pairs:
+                wire_bytes += cheapest(independent)
+            continue
+        wire_bytes += sum(cheapest(group) for group in groups)
+        regions[record] = PlanReadingRegions(memo, groups, allowed)
+    return regions if wire_bytes <= 4096 // 4 else {}
 
 
 def paired_original_root(pair, preceding, field, quote):
@@ -500,6 +638,11 @@ def prepare(material):
         view['records'] = [
             dict(row, paired_original_fields=[pairs[row['record']][0], pairs[row['record']][2]])
             if row['record'] in pairs else row for row in material['records']]
+    regions = plan_reading_regions(material, pairs)
+    if regions:
+        view['records'] = [dict(row, memo_reading_regions=dict(field=regions[row['record']].field,
+            scalar_ranges=regions[row['record']].ranges, opening_cues=regions[row['record']].openings))
+            if row['record'] in regions else row for row in view['records']]
     view['fields'] = []
     for f in material['fields']:
         if f['field'] in numbered:
@@ -514,9 +657,11 @@ def prepare(material):
 def _restore_view(material):
     """Recover the exact input and validate the displayed table before constrained decoding."""
     original = dict(material)
-    if material.get('author_profile') in {'semantic_map.node_local.v4.occurrence.v18', 'semantic_map.node_local.v4.occurrence.v19'} and 'records' in material:
+    if material.get('author_profile') in {'semantic_map.node_local.v4.occurrence.v18', 'semantic_map.node_local.v4.occurrence.v19', 'semantic_map.node_local.v4.occurrence.v20'} and 'records' in material:
         original['records'] = [{k: v for k, v in row.items() if k != 'paired_original_fields'}
                                for row in material['records']]
+    if material.get('author_profile') == 'semantic_map.node_local.v4.occurrence.v20' and 'records' in original:
+        original['records'] = [{k: v for k, v in row.items() if k != 'memo_reading_regions'} for row in original['records']]
     original['fields'] = []
     for field in material['fields']:
         if 'passages' in field:
@@ -646,6 +791,33 @@ def mixed_record_facts(material, units, fixed_units):
 TITLE_END_MARKS = '。！？!?、，,'
 
 
+def paired_node_meanings(fields, units, sentences):
+    """Retain a person's complete, qualified thought alongside their own action."""
+    by_number = {f['field']: f for f in fields}
+    roots = [root for unit in units for root in unit['evidence']]
+    selected = [by_number[root['field']] for root in roots]
+    if (not selected or any(f.get('source_role') != 'ORIGINAL_INPUT' for f in selected)
+            or len({f.get('record') for f in selected}) != 1 or not selected[0].get('record')
+            or {f.get('field_path') for f in selected} != {'memo', 'memo_action'}):
+        return []
+    record = selected[0]['record']
+    if any(f.get('source_role') != 'ORIGINAL_INPUT' and f.get('record') in (record, None)
+            for f in fields):
+        return []
+    choices = []
+    for root, field in zip(roots, selected, strict=True):
+        if field['field_path'] != 'memo':
+            continue
+        # Only a whole source sentence selected in this PLAN can qualify the
+        # action. Do not attach another sentence from the surrounding record.
+        for sentence in sorted(sentences.get(root['field'], ()), key=field['text'].index):
+            if (len(sentence) <= 240 and sentence in root['quote']
+                    and any(mark in sentence for mark in ('、', '，', ','))
+                    and sentence not in choices):
+                choices.append(sentence)
+    return choices
+
+
 def source_title_key(title):
     """Ignore only trailing sentence separators when comparing original records."""
     return title.rstrip(TITLE_END_MARKS)
@@ -746,3 +918,65 @@ class OverviewSourcePhrases:
                         masks[end] = masks.get(end, 0) | masks[start] | owner_bits
         covered = masks.get(len(title), 0)
         return bool(covered) and covered != self.required
+
+
+class WholeMapTitle:
+    """Ground a topical overview in the independent original records it summarizes."""
+
+    def __init__(self, material, nodes):
+        fields = _original_field_records(material)
+        sources = {}
+        for node in nodes:
+            for unit in node['units']:
+                owner = _unit_record(fields, unit)
+                if owner is not None:
+                    sources.setdefault(owner, []).extend(root['quote'] for root in unit['evidence'])
+        self.count = len(sources)
+        self.neutral = f'{self.count}件の記録を振り返って'
+        self.words = {}
+        self.witnesses = []
+        if self.count < 2:
+            return
+        # Compare source text, never the generated node title or meaning. A shared
+        # word (e.g. a repeated object name) cannot stand in for distinct episodes.
+        complete = {owner: list(quotes) for owner, quotes in sources.items()}
+        for field in material['fields']:
+            owner = fields.get(field['field'])
+            if owner in complete and field.get('fragment_is_complete_field') is not False:
+                complete[owner].append(field['text'])
+        for index, (owner, quotes) in enumerate(sources.items()):
+            other = '\n'.join(q for key, group in complete.items() if key != owner for q in group)
+            candidates = {}
+            for quote in quotes:
+                for match in re.finditer(r'[一-鿿々ァ-ヺー]{2,}|[A-Za-z0-9]+', quote):
+                    word = match[0]
+                    if 2 <= len(word) <= 12 and word not in other:
+                        candidates[word] = None
+                for start in range(len(quote) - 3):
+                    word = quote[start:start + 4]
+                    if (sum(c.isalnum() for c in word) == 4 and
+                            any('一' <= c <= '鿿' or 'ァ' <= c <= 'ヺ' for c in word) and word not in other):
+                        candidates[word] = None
+            for word in candidates:
+                self.words[word] = 1 << index
+            self.witnesses.append(min(candidates, key=len) if candidates else '')
+        self.lengths = tuple(sorted({len(word) for word in self.words}))
+        self.required = (1 << self.count) - 1
+
+    def mask(self, text):
+        bits = 0
+        for length in self.lengths:
+            for pos in range(len(text) - length + 1):
+                bits |= self.words.get(text[pos:pos + length], 0)
+        return bits
+
+    def accepts(self, text):
+        return self.count < 2 or text == self.neutral or self.mask(text) == self.required
+
+    def completion(self, text):
+        """One bounded continuation, or None if only the neutral title was possible."""
+        mask = self.mask(text)
+        if mask == self.required:
+            return ''
+        missing = [word for i, word in enumerate(self.witnesses) if not mask & (1 << i)]
+        return ('・' if text else '') + '・'.join(missing) if all(missing) else None

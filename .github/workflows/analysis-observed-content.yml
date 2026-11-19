@@ -126,6 +126,10 @@ name: Analysis observed content
       - ai/tests/test_analysis_v18_historical_unknowns.py
       - ai/tests/test_analysis_v19_source_facts.py
       - ai/tests/test_analysis_v19_overview_original_record.py
+      - ai/tests/test_analysis_v20_bound_fact_ranges.py
+      - ai/tests/test_analysis_v20_paired_node_meaning.py
+      - ai/tests/test_analysis_v20_plan_reading_regions.py
+      - ai/tests/test_analysis_v20_whole_map_overview.py
       - ai/tests/test_analysis_node_local_bound_roots.py
       - ai/tests/test_analysis_bound_roots_v2_selection.py
       - supabase/migrations/*_emlis_natural_bound_questions.sql
@@ -370,6 +374,10 @@ jobs:
           ai/tests/test_analysis_v18_historical_unknowns.py
           ai/tests/test_analysis_v19_source_facts.py
           ai/tests/test_analysis_v19_overview_original_record.py
+          ai/tests/test_analysis_v20_bound_fact_ranges.py
+          ai/tests/test_analysis_v20_paired_node_meaning.py
+          ai/tests/test_analysis_v20_plan_reading_regions.py
+          ai/tests/test_analysis_v20_whole_map_overview.py
           ai/tests/test_analysis_node_local_bound_roots.py
           ai/tests/test_analysis_bound_roots_v2_selection.py
           ai/tests/test_analysis_semantic_history_core.py

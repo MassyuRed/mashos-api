@@ -53,6 +53,8 @@ def test_exact_alias_selects_new_profile_with_existing_four_setting_identity(mon
      core.SEMANTIC_MAP_OCCURRENCE_V18_SCHEMA),
     (sources.SEMANTIC_OCCURRENCE_V19_MODEL, core.SEMANTIC_MAP_OCCURRENCE_V19_PROFILE,
      core.SEMANTIC_MAP_OCCURRENCE_V19_SCHEMA),
+    (sources.SEMANTIC_OCCURRENCE_V20_MODEL, core.SEMANTIC_MAP_OCCURRENCE_V20_PROFILE,
+     core.SEMANTIC_MAP_OCCURRENCE_V20_SCHEMA),
 ])
 def test_content_plan_alias_binds_version_for_generation_and_replay(monkeypatch, model, profile, artifact_schema):
     environment(monkeypatch, model)
@@ -159,6 +161,7 @@ def test_if_original_identity_matches_existing_current_4b_fixture():
     (sources.SEMANTIC_SELECTOR, sources.SEMANTIC_OCCURRENCE_V17_MODEL, sources.SEMANTIC_EVENT_PLAN_BASE_MODEL, 4096),
     (sources.SEMANTIC_SELECTOR, sources.SEMANTIC_OCCURRENCE_V18_MODEL, sources.SEMANTIC_EVENT_PLAN_BASE_MODEL, 4096),
     (sources.SEMANTIC_SELECTOR, sources.SEMANTIC_OCCURRENCE_V19_MODEL, sources.SEMANTIC_EVENT_PLAN_BASE_MODEL, 4096),
+    (sources.SEMANTIC_SELECTOR, sources.SEMANTIC_OCCURRENCE_V20_MODEL, sources.SEMANTIC_EVENT_PLAN_BASE_MODEL, 4096),
     (sources.SEMANTIC_SELECTOR, sources.SEMANTIC_NODE_LOCAL_V4_BOUND_MODEL, sources.SEMANTIC_EVENT_PLAN_BASE_MODEL, 4096),
     (sources.SEMANTIC_SELECTOR, sources.SEMANTIC_NODE_LOCAL_V4_MODEL, sources.SEMANTIC_EVENT_PLAN_BASE_MODEL, 4096),
     (sources.SEMANTIC_SELECTOR, ALIAS, 'cocolon-qwen3.5-4b-analysis-semantic-120u', 4096),

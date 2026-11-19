@@ -3955,7 +3955,7 @@ def expand_analysis_semantic_event_plan(prepared, packet):
                 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v15',
                 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v16',
                 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v17',
-                'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v18', 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v19'}):
+                'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v18', 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v19', 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v20'}):
         from .semantic_admission import (assemble_semantic_node_local_v4,
             SEMANTIC_MAP_NODE_LOCAL_V3_PROFILE, SEMANTIC_MAP_FACT_ENDPOINT_PROFILES, SEMANTIC_MAP_CONTENT_PLAN_PROFILES,
             SEMANTIC_MAP_VISIBLE_SOURCE_PROFILES, SEMANTIC_MAP_FACT_PROSE_PROFILES)
@@ -3964,14 +3964,14 @@ def expand_analysis_semantic_event_plan(prepared, packet):
         if prepared.prompt_version in SEMANTIC_MAP_VISIBLE_SOURCE_PROFILES:
             from .semantic_admission import _semantic_node_fact_sources
             # Only the already bound, independently restored whole-sentence slots carry a source date.
-            sources = _semantic_node_fact_sources(joined, json.loads(prepared.material_json))
+            sources = _semantic_node_fact_sources(joined, json.loads(prepared.material_json), prepared.prompt_version)
             counts = Counter((node, unit) for node, unit, _ in sources)
             fixed_record_units = {f"{n['node_id']}.u{i}" for n in joined['nodes']
                                   for i, u in enumerate(n['units'], 1)
                                   if counts[n['node_id'], f'u{i}'] == len(u['evidence'])}
             if prepared.prompt_version in SEMANTIC_MAP_FACT_PROSE_PROFILES:
                 from .semantic_admission import _semantic_fact_part_key, _semantic_fact_sentence_choices
-                choices = _semantic_fact_sentence_choices(joined, json.loads(prepared.material_json))
+                choices = _semantic_fact_sentence_choices(joined, json.loads(prepared.material_json), prepared.prompt_version)
                 wire = json.loads(packet['phases'][1]['raw'])['nodes']
                 selected = {}
                 for n in joined['nodes']:
@@ -3998,9 +3998,11 @@ def expand_analysis_semantic_event_plan(prepared, packet):
             fact_endpoints=prepared.prompt_version in SEMANTIC_MAP_FACT_ENDPOINT_PROFILES,
             mark_record_ownership=prepared.prompt_version in SEMANTIC_MAP_CONTENT_PLAN_PROFILES,
             fixed_record_units=fixed_record_units,
+            whole_map_overview=prepared.prompt_version == 'semantic_map.node_local.v4.occurrence.v20',
+            per_root_fact_limit=prepared.prompt_version == 'semantic_map.node_local.v4.occurrence.v20',
             use_attributed_captions=prepared.prompt_version in SEMANTIC_MAP_FACT_PROSE_PROFILES,
-            deduplicate_node_evidence=prepared.prompt_version in {'semantic_map.node_local.v4.occurrence.v18', 'semantic_map.node_local.v4.occurrence.v19'},
-            scope_earlier_unknowns=prepared.prompt_version in {'semantic_map.node_local.v4.occurrence.v18', 'semantic_map.node_local.v4.occurrence.v19'})
+            deduplicate_node_evidence=prepared.prompt_version in {'semantic_map.node_local.v4.occurrence.v18', 'semantic_map.node_local.v4.occurrence.v19', 'semantic_map.node_local.v4.occurrence.v20'},
+            scope_earlier_unknowns=prepared.prompt_version in {'semantic_map.node_local.v4.occurrence.v18', 'semantic_map.node_local.v4.occurrence.v19', 'semantic_map.node_local.v4.occurrence.v20'})
     if (getattr(prepared, 'prompt_version', None) == 'semantic_map.node_local.v3'
             or type(packet) is dict and packet.get('schema_version') == 'cocolon.analysis.semantic_map.node_local.model.v3'):
         return _expand_analysis_semantic_node_local_v3(prepared, packet)
@@ -4237,7 +4239,7 @@ def _node_unique_fixed_facts(units, fixed_parts, original_records):
 
 def _expand_analysis_semantic_node_local_v3(prepared, packet, *, fact_endpoints=False, mark_record_ownership=False,
                                            fixed_record_units=(), use_attributed_captions=False, deduplicate_node_evidence=False,
-                                           scope_earlier_unknowns=False):
+                                           scope_earlier_unknowns=False, whole_map_overview=False, per_root_fact_limit=False):
     """Compile node-owned authored units, not a repair of a reference plan.
 
     There is no independently authored fact/reading registry to relink. All
@@ -4302,7 +4304,7 @@ def _expand_analysis_semantic_node_local_v3(prepared, packet, *, fact_endpoints=
             evidence = rows(unit['evidence'], 4, 1)
             bound = [_semantic_map_evidence(prepared, root)[1] for root in evidence]
             require(len({root['evidence_id'] for root in bound}) == len(bound), reason)
-            facts.append(text(unit['fact'], 160))
+            facts.append(text(unit['fact'], 160 * len(evidence) if per_root_fact_limit else 160))
             for root in evidence:
                 # A map-correction cohort is not a substitute citation of the
                 # original records. Its complete explanation remains a root.
@@ -4353,7 +4355,7 @@ def _expand_analysis_semantic_node_local_v3(prepared, packet, *, fact_endpoints=
         # The full dated pieces always remain in the explanation. A dense node
         # can exceed the public summary limit once provenance labels are added.
         if fixed_record_units and len(summary) > 400:
-            summary = caption
+            summary = node['title'] if per_root_fact_limit and len(caption) > 400 else caption
         bodies[node_id] = body
         # Eight selected summaries share the public overview's 2,000 characters.
         summaries[node_id] = node['title'] if fixed_record_units and len(caption) > 249 else caption
@@ -4389,9 +4391,14 @@ def _expand_analysis_semantic_node_local_v3(prepared, packet, *, fact_endpoints=
         edges.append(result)
     overview = packet['overview']
     require(keys(overview, {'title', 'node_refs'}), reason)
-    refs = rows(overview['node_refs'], 8, 1)
+    refs = rows(overview['node_refs'], len(nodes) if whole_map_overview else 8, 1)
     require(all(type(ref) is str and ref in summaries for ref in refs)
         and len(refs) == len(set(refs)), reason)
+    if whole_map_overview and sum(len(summaries[ref]) for ref in refs) + len(refs) - 1 > 2000:
+        # Keep a whole caption per item. All longer explanations remain on the nodes.
+        titles = {node['node_id']: node['title'] for node in nodes}
+        per_item = (2000 - len(refs) + 1) // len(refs)
+        summaries = {ref: summaries[ref] if len(summaries[ref]) <= per_item else titles[ref] for ref in refs}
     return dict(schema_version=SEMANTIC_MAP_MODEL_SCHEMA, nodes=nodes, edges=edges,
         overview=dict(title=text(overview['title'], 80), summary='\n'.join(summaries[ref] for ref in refs)))
 
@@ -4431,7 +4438,7 @@ def _semantic_event_plan_review(graph, prepared, original, expanded):
         review['node_local_plan']['final_artifact_sha256'] = semantic_map_hash(original)
         review['node_local_plan']['realization'] = 'PLANNED_ROOTS_THEN_NODE_PROSE_THEN_ACTUAL_NODE_RELATIONS'
         return replace(graph, meaning_review_json=semantic_map_canonical(review),
-            record_scoped_unknowns=prepared.prompt_version in {'semantic_map.node_local.v4.occurrence.v18', 'semantic_map.node_local.v4.occurrence.v19'})
+            record_scoped_unknowns=prepared.prompt_version in {'semantic_map.node_local.v4.occurrence.v18', 'semantic_map.node_local.v4.occurrence.v19', 'semantic_map.node_local.v4.occurrence.v20'})
     if getattr(prepared, 'prompt_version', None) == 'semantic_map.node_local.v3':
         return _semantic_node_local_review(graph, prepared, original, expanded)
     if getattr(prepared, 'prompt_version', None) not in {'semantic_map.event_plan.v1', 'semantic_map.event_plan.v2'}:
