@@ -113,6 +113,7 @@ name: Analysis observed content
       - ai/tests/test_analysis_v13_separate_record_titles.py
       - ai/tests/test_analysis_occurrence_v14_visible_closers.py
       - ai/tests/test_analysis_v14_mixed_record_dates.py
+      - ai/tests/test_analysis_occurrence_v15_record_plan.py
       - ai/tests/test_analysis_node_local_bound_roots.py
       - ai/tests/test_analysis_bound_roots_v2_selection.py
       - supabase/migrations/*_emlis_natural_bound_questions.sql
@@ -344,6 +345,7 @@ jobs:
           ai/tests/test_analysis_v13_separate_record_titles.py
           ai/tests/test_analysis_occurrence_v14_visible_closers.py
           ai/tests/test_analysis_v14_mixed_record_dates.py
+          ai/tests/test_analysis_occurrence_v15_record_plan.py
           ai/tests/test_analysis_node_local_bound_roots.py
           ai/tests/test_analysis_bound_roots_v2_selection.py
           ai/tests/test_analysis_semantic_history_core.py

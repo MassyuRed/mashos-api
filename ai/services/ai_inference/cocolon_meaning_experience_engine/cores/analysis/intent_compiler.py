@@ -3950,12 +3950,14 @@ def expand_analysis_semantic_event_plan(prepared, packet):
                 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v11',
                 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v12',
                 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v13',
-                'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v14'}):
+                'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v14',
+                'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v15'}):
         from .semantic_admission import (assemble_semantic_node_local_v4,
-            SEMANTIC_MAP_NODE_LOCAL_V3_PROFILE, SEMANTIC_MAP_FACT_ENDPOINT_PROFILES, SEMANTIC_MAP_CONTENT_PLAN_PROFILES)
+            SEMANTIC_MAP_NODE_LOCAL_V3_PROFILE, SEMANTIC_MAP_FACT_ENDPOINT_PROFILES, SEMANTIC_MAP_CONTENT_PLAN_PROFILES,
+            SEMANTIC_MAP_VISIBLE_SOURCE_PROFILES)
         joined = assemble_semantic_node_local_v4(prepared, packet)
         fixed_record_units = set()
-        if prepared.prompt_version == 'semantic_map.node_local.v4.occurrence.v14':
+        if prepared.prompt_version in SEMANTIC_MAP_VISIBLE_SOURCE_PROFILES:
             from .semantic_admission import _semantic_node_fact_sources
             # Only the already bound, independently restored whole-sentence slots carry a source date.
             sources = _semantic_node_fact_sources(joined, json.loads(prepared.material_json))

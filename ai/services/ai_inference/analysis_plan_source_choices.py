@@ -5,7 +5,8 @@ import re
 
 
 _CONTENT_PLAN_PROFILES = frozenset({
-    'semantic_map.node_local.v4.occurrence.v13', 'semantic_map.node_local.v4.occurrence.v14'})
+    'semantic_map.node_local.v4.occurrence.v13', 'semantic_map.node_local.v4.occurrence.v14',
+    'semantic_map.node_local.v4.occurrence.v15'})
 
 
 def source_closer_runs(quotes):
