@@ -4198,24 +4198,51 @@ def semantic_node_local_v4_messages(prepared, phase='PLAN', *, plan=None, nodes=
     return [dict(role='system', content=instruction), dict(role='user', content=content)]
 
 
+def semantic_node_local_v4_uses_compact_merge(prepared):
+    return (getattr(prepared, 'prompt_version', None) == SEMANTIC_MAP_OCCURRENCE_V24_PROFILE
+            and getattr(prepared, 'kind', None) == 'MERGE')
+
+
+def semantic_node_local_v4_wire_messages(prepared, phase='PLAN', *, plan=None, nodes=None):
+    logical = semantic_node_local_v4_messages(prepared, phase, plan=plan, nodes=nodes)
+    if not semantic_node_local_v4_uses_compact_merge(prepared):
+        return logical
+    from analysis_merge_wire import is_compact, legacy_messages, prepare_messages
+    wire = prepare_messages(logical)
+    _semantic_map_require(is_compact(wire) and legacy_messages(wire) == logical,
+        'analysis_semantic_merge_message_binding_invalid')
+    return wire
+
+
 def assemble_semantic_node_local_v4(prepared, packet):
     """Recheck three unmodified raw/finish/message receipts before projection."""
     r, reason = _semantic_map_require, 'analysis_semantic_node_local_v4_lineage_invalid'
+    compact = type(packet) is dict and 'merge_wire_version' in packet
+    packet_keys = {'schema_version', 'phases'}
+    phase_keys = {'phase', 'messages_sha256', 'raw', 'raw_sha256', 'finish_reason', 'completion_tokens'}
+    if compact:
+        from analysis_merge_wire import VERSION, legacy_messages
+        r(packet['merge_wire_version'] == VERSION and semantic_node_local_v4_uses_compact_merge(prepared), reason)
+        packet_keys.add('merge_wire_version')
+        phase_keys.add('logical_messages_sha256')
+    make_messages = semantic_node_local_v4_wire_messages if compact else semantic_node_local_v4_messages
     r(prepared.prompt_version in SEMANTIC_MAP_NODE_LOCAL_V4_PROFILES
-        and _semantic_map_keys(packet, {'schema_version', 'phases'})
+        and _semantic_map_keys(packet, packet_keys)
         and packet['schema_version'] == semantic_node_local_v4_artifact_schema(prepared)
         and type(packet['phases']) is list and len(packet['phases']) == 3, reason)
     plan = nodes = joined = None
     used_tokens = 0
     for phase, row in zip(SEMANTIC_MAP_NODE_LOCAL_V4_PHASES, packet['phases'], strict=True):
-        r(_semantic_map_keys(row, {'phase', 'messages_sha256', 'raw', 'raw_sha256', 'finish_reason', 'completion_tokens'})
+        r(_semantic_map_keys(row, phase_keys)
             and row['phase'] == phase and row['finish_reason'] == 'stop'
             and type(row['raw']) is str and bool(row['raw'])
             and row['raw_sha256'] == hashlib.sha256(row['raw'].encode()).hexdigest()
             and type(row['completion_tokens']) is int and row['completion_tokens'] > 0, reason)
         used_tokens += row['completion_tokens']
         r(used_tokens <= SEMANTIC_MAP_NODE_LOCAL_V4_TOKEN_BUDGET, reason)
-        messages = semantic_node_local_v4_messages(prepared, phase, plan=plan, nodes=nodes)
+        messages = make_messages(prepared, phase, plan=plan, nodes=nodes)
+        if compact:
+            r(row['logical_messages_sha256'] == semantic_map_hash(legacy_messages(messages)), reason)
         r(row['messages_sha256'] == semantic_map_hash(messages), reason)
         try:
             value = _load(row['raw'])

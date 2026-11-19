@@ -224,6 +224,7 @@ def _occurrence_duplicate_prefix(wire, fact_sources=None):
 
 
 def _semantic_wire_fact_sources(messages):
+    messages = _semantic_constraint_messages(messages)
     material = json.loads(messages[1]['content'])
     if material.get('author_profile') not in FACT_REFERENCE_PROFILES:
         return None
@@ -972,11 +973,31 @@ def _semantic_plan_choice_view(material):
     return _semantic_choice_module().restore_view(material)
 
 
+@lru_cache(maxsize=1)
+def _semantic_merge_wire_module():
+    from importlib.util import module_from_spec, spec_from_file_location
+    path = Path(__file__).resolve().parents[1] / 'services/ai_inference/analysis_merge_wire.py'
+    spec = spec_from_file_location('cocolon_analysis_merge_wire', path)
+    module = module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _semantic_constraint_messages(messages):
+    """Check the original source bindings while the model reads the compact request."""
+    material = json.loads(messages[1]['content'])
+    if isinstance(material, dict) and (
+            'merge_wire_version' in material or 'merge_original_messages_sha256' in material):
+        return _semantic_merge_wire_module().legacy_messages(messages)
+    return messages
+
+
 def semantic_output_schema(messages):
     """Constrain protocol and source quotes; meanings remain model-generated."""
     if (type(messages) is not list or len(messages) != 2
             or messages[1].get('role') != 'user'):
         raise ValueError('semantic_material_invalid')
+    messages = _semantic_constraint_messages(messages)
     material = json.loads(messages[1]['content'])
     if type(material) is dict and material.get('model_schema') == IF_CANDIDATE_SCHEMA:
         return _if_output_schema(material)
@@ -2262,6 +2283,7 @@ def semantic_json_parser(messages, alphabet):
     from lmformatenforcer import CharacterLevelParserConfig, JsonSchemaParser
     # LMFE snapshots alphabet_without_quotes while constructing its context.
     # Updating parser.config later leaves that initial snapshot unchanged.
+    messages = _semantic_constraint_messages(messages)
     schema = semantic_output_schema(messages)
     config = CharacterLevelParserConfig(alphabet=alphabet)
     if schema['properties']['schema_version'].get('enum') == [IF_CANDIDATE_SCHEMA]:

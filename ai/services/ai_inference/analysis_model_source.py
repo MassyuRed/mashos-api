@@ -82,6 +82,11 @@ def semantic_analysis_input_fits(prepared):
     """Message-byte admission; the serving owner still checks actual tokens."""
     maximum = (SEMANTIC_MERGE_MAX_PROMPT_BYTES if getattr(prepared, 'kind', None) == 'MERGE'
         else SEMANTIC_MAX_PROMPT_BYTES)
+    if getattr(prepared, 'kind', None) == 'MERGE':
+        from cocolon_meaning_experience_engine.cores.analysis import semantic_admission as core
+        if core.semantic_node_local_v4_uses_compact_merge(prepared):
+            messages = core.semantic_node_local_v4_wire_messages(prepared)
+            return len(core.semantic_map_canonical(messages).encode()) <= maximum
     return _semantic_message_bytes(prepared) <= maximum
 
 
@@ -189,6 +194,9 @@ class SelfHostedSemanticAnalysisModelSource(SelfHostedAnalysisModelSource):
         loop = asyncio.get_running_loop()
         end = loop.time() + SEMANTIC_HTTP_TIMEOUT_SECONDS
         receipts, plan, nodes = [], None, None
+        compact_merge = core.semantic_node_local_v4_uses_compact_merge(prepared)
+        if compact_merge:
+            from analysis_merge_wire import VERSION, legacy_messages
         remaining_tokens = core.SEMANTIC_MAP_NODE_LOCAL_V4_TOKEN_BUDGET
         maximum = SEMANTIC_MERGE_MAX_PROMPT_BYTES if getattr(prepared, 'kind', None) == 'MERGE' else SEMANTIC_MAX_PROMPT_BYTES
         try:
@@ -198,7 +206,7 @@ class SelfHostedSemanticAnalysisModelSource(SelfHostedAnalysisModelSource):
                     if remaining_tokens <= 0:
                         raise RuntimeError('analysis_model_source_token_budget_exhausted')
                     tokens = remaining_tokens
-                    messages = core.semantic_node_local_v4_messages(prepared, phase, plan=plan, nodes=nodes)
+                    messages = core.semantic_node_local_v4_wire_messages(prepared, phase, plan=plan, nodes=nodes)
                     core.require(len(core.semantic_map_canonical(messages).encode()) <= maximum,
                         'analysis_semantic_history_capacity_exceeded')
                     remaining = end - loop.time()
@@ -240,6 +248,8 @@ class SelfHostedSemanticAnalysisModelSource(SelfHostedAnalysisModelSource):
                     receipts.append(dict(phase=phase, messages_sha256=core.semantic_map_hash(messages),
                         raw=raw, raw_sha256=hashlib.sha256(raw.encode()).hexdigest(),
                         finish_reason='stop', completion_tokens=completion))
+                    if compact_merge:
+                        receipts[-1]['logical_messages_sha256'] = core.semantic_map_hash(legacy_messages(messages))
                     value = core._load(raw)
                     if phase == 'PLAN':
                         plan = core.admit_semantic_node_local_v4_plan_response(prepared, value)
@@ -248,6 +258,8 @@ class SelfHostedSemanticAnalysisModelSource(SelfHostedAnalysisModelSource):
                     else:
                         core.semantic_node_local_v4_relations(prepared, plan, nodes, value)
             artifact = dict(schema_version=core.semantic_node_local_v4_artifact_schema(prepared), phases=receipts)
+            if compact_merge:
+                artifact['merge_wire_version'] = VERSION
             core.assemble_semantic_node_local_v4(prepared, artifact)
             if loop.time() >= end:
                 raise TimeoutError('analysis_model_source_timeout')
