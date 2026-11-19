@@ -2,11 +2,51 @@
 import hashlib
 import json
 import re
+import unicodedata
 
 
 _CONTENT_PLAN_PROFILES = frozenset({
     'semantic_map.node_local.v4.occurrence.v13', 'semantic_map.node_local.v4.occurrence.v14',
-    'semantic_map.node_local.v4.occurrence.v15'})
+    'semantic_map.node_local.v4.occurrence.v15', 'semantic_map.node_local.v4.occurrence.v16'})
+
+
+_CLOSED_TAG = re.compile(r'</?[A-Za-z_][\w:.-]*(?:\s+[^<>]*)?/?>|/>')
+_UNFINISHED_CLOSING_TAG = re.compile(r'</[A-Za-z_][\w:.-]*$')
+
+
+def source_markup_bound(text, quote):
+    return all(m[0] in quote for m in _CLOSED_TAG.finditer(text))
+
+
+def source_fact_text(text, quote):
+    """A fact needs visible content; markup and symbolic facts must have a source."""
+    value = text.strip()
+    if not value or not source_markup_bound(value, quote):
+        return False
+    unfinished = _UNFINISHED_CLOSING_TAG.search(value)
+    if unfinished and unfinished[0] not in quote:
+        return False
+    if any(char.isalnum() for char in value):
+        return True
+    return value == quote.strip() or (value in quote and
+        any(unicodedata.category(char).startswith('S') for char in value))
+
+
+def literal_fact_handles(quote):
+    return set(re.findall(r'(?<![A-Za-z0-9_.%+@-])@[0-9]+(?![A-Za-z0-9_@-])', quote))
+
+
+def fact_sentence_choices(quote, sentences, limit):
+    """Expose only complete contiguous sentences within this exact PLAN root."""
+    parts = sorted((s for s in sentences if s in quote), key=quote.index)
+    if len(parts) < 2 or ''.join(parts) != quote:
+        return {}
+    choices = {}
+    for index, value in enumerate([quote, *parts]):
+        ref = '@' + str(index)
+        if len(value) <= limit and ref not in quote and source_fact_text(value, quote):
+            choices[ref] = value
+    return choices
 
 
 def source_closer_runs(quotes):
@@ -294,11 +334,13 @@ def mixed_record_facts(material, units, fixed_units):
         roots = unit['evidence']
         records = [owners.get(r['field']) for r in roots]
         quotes = [r['quote'] for r in roots]
+        # An explicit sentence choice carries its own original field and clock.
+        shown = fixed if isinstance(fixed, tuple) else quotes
         if (fixed and None not in records and len(set(records)) > 1 and len(set(quotes)) > 1
-                and ''.join(quotes) == unit['fact']):
+                and ''.join(shown) == unit['fact']):
             mixed = True
             pieces = []
-            for record, quote in zip(records, quotes, strict=True):
+            for record, quote in zip(records, shown, strict=True):
                 # Group only consecutive pieces from the same source. Never reorder facts.
                 if pieces and pieces[-1][0] == record:
                     pieces[-1][1] += quote
@@ -316,7 +358,15 @@ def mixed_record_facts(material, units, fixed_units):
     return labels, [by_record[record] + '：' + body if record is not None else body for record, body in groups]
 
 
-def one_sided_source_titles(material, units):
+TITLE_END_MARKS = '。！？!?、，,'
+
+
+def source_title_key(title):
+    """Ignore only trailing sentence separators when comparing original records."""
+    return title.rstrip(TITLE_END_MARKS)
+
+
+def one_sided_source_titles(material, units, *, compare_end_marks=False):
     """Filter literal titles only when independent facts have distinct original owners."""
     field_records = _original_field_records(material)
     owners = {_unit_record(field_records, unit) for unit in units} - {None}
@@ -329,6 +379,7 @@ def one_sided_source_titles(material, units):
             owner = field_records.get(root['field'])
             if owner in by_owner:
                 quote = root['quote']
-                by_owner[owner].update(title for title in (quote, quote.rstrip('。！？!?')) if 0 < len(title) <= 80)
+                titles = (source_title_key(quote),) if compare_end_marks else (quote, quote.rstrip('。！？!?'))
+                by_owner[owner].update(title for title in titles if 0 < len(title) <= 80)
     shared = set.intersection(*by_owner.values())
     return sorted(set.union(*by_owner.values()) - shared)
