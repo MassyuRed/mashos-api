@@ -52,6 +52,7 @@ OCCURRENCE_V10_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v4-occurrence-v10
 OCCURRENCE_V11_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v4-occurrence-v11'
 OCCURRENCE_V12_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v4-occurrence-v12'
 OCCURRENCE_V13_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v4-occurrence-v13'
+OCCURRENCE_V14_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v4-occurrence-v14'
 OCCURRENCE_V3_PROFILE = 'semantic_map.node_local.v4.occurrence.v3'
 OCCURRENCE_V4_PROFILE = 'semantic_map.node_local.v4.occurrence.v4'
 OCCURRENCE_V5_PROFILE = 'semantic_map.node_local.v4.occurrence.v5'
@@ -63,7 +64,9 @@ OCCURRENCE_V10_PROFILE = 'semantic_map.node_local.v4.occurrence.v10'
 OCCURRENCE_V11_PROFILE = 'semantic_map.node_local.v4.occurrence.v11'
 OCCURRENCE_V12_PROFILE = 'semantic_map.node_local.v4.occurrence.v12'
 OCCURRENCE_V13_PROFILE = 'semantic_map.node_local.v4.occurrence.v13'
-FACT_REFERENCE_PROFILES = frozenset({OCCURRENCE_V12_PROFILE, OCCURRENCE_V13_PROFILE})
+OCCURRENCE_V14_PROFILE = 'semantic_map.node_local.v4.occurrence.v14'
+CONTENT_PLAN_PROFILES = frozenset({OCCURRENCE_V13_PROFILE, OCCURRENCE_V14_PROFILE})
+FACT_REFERENCE_PROFILES = frozenset({OCCURRENCE_V12_PROFILE, *CONTENT_PLAN_PROFILES})
 SOURCE_CUED_PROFILES = frozenset({OCCURRENCE_V9_PROFILE, OCCURRENCE_V10_PROFILE, OCCURRENCE_V11_PROFILE, *FACT_REFERENCE_PROFILES})
 OCCURRENCE_PROFILES = frozenset({OCCURRENCE_PROFILE, OCCURRENCE_V2_PROFILE, OCCURRENCE_V3_PROFILE, OCCURRENCE_V4_PROFILE, OCCURRENCE_V5_PROFILE, OCCURRENCE_V6_PROFILE, OCCURRENCE_V7_PROFILE, OCCURRENCE_V8_PROFILE, *SOURCE_CUED_PROFILES})
 NODE_LOCAL_V4_BOUND_V2_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v4-bound-roots-v2'
@@ -215,13 +218,15 @@ def _semantic_wire_fact_sources(messages):
     return sources
 
 
-def _occurrence_greedy_node_filter(tokenizer, prompt_tokens, fact_sources=None):
+def _occurrence_greedy_node_filter(tokenizer, prompt_tokens, fact_sources=None, visible_filter=None):
     """Filter actual greedy choices after the pinned LMFE prefix mask."""
     def choose(input_ids, scores):
         if len(scores)!=1 or len(input_ids)!=1:
             raise ValueError('occurrence_single_greedy_sequence_required')
         accepted = input_ids[0][prompt_tokens:].tolist()
         while True:
+            if visible_filter is not None:
+                scores = visible_filter(input_ids, scores)
             picked = int(scores[0].argmax().item())
             if float(scores[0,picked])==float('-inf'):
                 raise ValueError('occurrence_no_distinct_node_continuation')
@@ -686,6 +691,8 @@ def _semantic_node_local_v4_schema(material, pairs, unknown_pairs, *, leaf=False
             or type(plan.get('nodes')) is not list or not 1 <= len(plan['nodes']) <= 12):
         raise ValueError('semantic_v4_plan_invalid')
     ids, node_properties = [], {}
+    source_runs = (_semantic_choice_module().source_closer_runs
+        if author_profile == OCCURRENCE_V14_PROFILE and phase == 'NODES' else None)
     options = {(p['properties']['field']['enum'][0], quote)
         for p in pairs for quote in p['properties']['quote']['enum']}
     display_sentences = _semantic_display_sentences(material) if author_profile in {OCCURRENCE_V11_PROFILE, *FACT_REFERENCE_PROFILES} else {}
@@ -769,7 +776,7 @@ def _semantic_node_local_v4_schema(material, pairs, unknown_pairs, *, leaf=False
                 properties = dict(assigned_evidence=obj(assigned), **properties)
             units['u' + str(j)] = obj(properties)
         title = dict(type='string', enum=list(dict.fromkeys(titles))) if titles else text(80)
-        if author_profile == OCCURRENCE_V13_PROFILE and phase == 'NODES':
+        if author_profile in CONTENT_PLAN_PROFILES and phase == 'NODES':
             forbidden = _semantic_choice_module().one_sided_source_titles(material, node['units'])
             if forbidden is not None:
                 title = text(80)
@@ -779,6 +786,17 @@ def _semantic_node_local_v4_schema(material, pairs, unknown_pairs, *, leaf=False
             node_kind=dict(type='string', enum=['SELF_POSITION', 'TARGET_MEANING', 'CHOICE_OUTPUT', 'STATE_CONTEXT']),
             perspective=dict(type='string', enum=['SELF', 'OBSERVED_INTERACTION']),
             title=title, meaning=text(240, 0)))
+        if source_runs is not None:
+            properties = node_properties[node['node_id']]['properties']
+            runs = source_runs(root['quote'] for unit in node['units'] for root in unit['evidence'])
+            for name in ('title', 'meaning'):
+                if 'enum' not in properties[name]:
+                    properties[name]['x-source-closers'] = runs
+            for index, unit in enumerate(node['units'], 1):
+                props = units[f'u{index}']['properties']['fact_parts']['properties']
+                for prop, evidence in zip(props.values(), unit['evidence'], strict=True):
+                    if 'enum' not in prop:
+                        prop['x-source-closers'] = source_runs([evidence['quote']])
     if phase == 'NODES':
         digest = signature(plan)
         if author_profile in FACT_REFERENCE_PROFILES:
@@ -1137,7 +1155,7 @@ def _if_json_schema_parser(schema, config):
 
 def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None, bound_node_ids=(),
                                         unique_qualifications=False, endpoint_nodes=(), unique_allocations=False,
-                                        plan_source_texts=None, plan_choice_quotes=None, overview_sources=None):
+                                        plan_source_texts=None, plan_choice_quotes=None, overview_sources=None, protect_visible=False):
     """Bind graph references and unique source/quote pairs while decoding.
 
     The pinned parser does not enforce JSON Schema uniqueItems. Use an isolated
@@ -1198,6 +1216,7 @@ def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None, b
     unit_cues = {f"{node['node_id']}.u{i}": list(dict.fromkeys(cue for root in unit['evidence']
                  for cue in _semantic_source_cues(root['quote'])))
                  for node in endpoint_nodes for i, unit in enumerate(node['units'], 1)} if cue_edges else {}
+    closer_rules = _semantic_choice_module() if protect_visible else None
     label_alphabet = ''.join(c for c in config.alphabet if ord(c) >= 32 and c not in '"\\')
 
     def enum_literal(value):
@@ -1245,11 +1264,16 @@ def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None, b
             super().__init__(root)
             self.titles = titles
             self.maximum = maximum
+            self.minimum = 1
+            self.source_runs = None
             self.opened = self.closed = False
             self.raw = self.text = self.escape = ''
 
         def can_end(self):
             return self.closed
+
+        def bound(self, text):
+            return self.source_runs is None or closer_rules.visible_closers_bound(text, self.source_runs)
 
         def forbidden(self, text):
             return text in self.titles
@@ -1293,12 +1317,17 @@ def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None, b
                         if self.escape == '\\' and char == 'u':
                             continue
                         decoded = json.loads('"' + self.raw + char + '"')
-                        if len(decoded) > self.maximum or len(decoded) == self.maximum and self.forbidden(decoded):
+                        if (len(decoded) > self.maximum or len(decoded) == self.maximum and self.forbidden(decoded)
+                                or decoded[-1:] in ('}', ']') and not self.bound(decoded)):
                             choices = choices.replace(char, '')
                 return choices
-            chars = '"' if self.text and not self.forbidden(self.text) else ''
+            chars = '"' if len(self.text) >= self.minimum and not self.forbidden(self.text) else ''
             if len(self.text) < self.maximum:
                 content = label_alphabet
+                if self.source_runs is not None:
+                    for closer in '}]':
+                        if not self.bound(self.text + closer):
+                            content = content.replace(closer, '')
                 if len(self.text) + 1 == self.maximum:
                     content = self.final_content(self.text, content)
                 chars += content + '\\'
@@ -1324,7 +1353,7 @@ def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None, b
                 result.escape = char
                 return result
             result.text = json.loads('"' + result.raw + '"')
-            if result.still_guarded(result.text):
+            if result.source_runs is not None or result.still_guarded(result.text):
                 return result
             if result.text and '\ud800' <= result.text[-1] <= '\udbff':
                 return result
@@ -1348,12 +1377,12 @@ def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None, b
         def final_content(self, text, alphabet):
             return ''.join(c for c in alphabet if not self.forbidden(text + c))
 
-    if endpoint_titles:
+    if endpoint_titles or protect_visible:
         ordinary_shortcut = module.JsonSchemaParser.shortcut_key
         def shortcut(parser):
             current = parser.object_stack[-1] if parser.object_stack else None
             if isinstance(current, EndpointLabel) and current.guarded_shortcut:
-                return ('json_freetext', len(current.text), 1, current.maximum)
+                return ('json_freetext', len(current.text), current.minimum, current.maximum)
             return ordinary_shortcut(parser)
         module.JsonSchemaParser.shortcut_key = shortcut
 
@@ -1753,6 +1782,24 @@ def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None, b
                         result.schema_object.properties[key].maxLength)
                 if value is not None:
                     active.object_stack[-1] = module.get_parser(result.root, value)
+                if protect_visible and key in result.schema_object.properties:
+                    prop = result.schema_object.properties[key]
+                    runs = prop.extras.get('x-source-closers')
+                    if key == 'title' and set(result.schema_object.properties) == {'node_refs', 'title'}:
+                        _, graph = graph_state(active)
+                        runs = closer_rules.source_closer_runs(root['quote'] for node in endpoint_nodes
+                            if node['node_id'] in graph.selected_overview_refs for unit in node['units'] for root in unit['evidence'])
+                    elif key == 'label' and edge_type(result.schema_object):
+                        refs = (result.selected_from_unit, result.selected_to_unit)
+                        runs = closer_rules.source_closer_runs(root['quote'] for node in endpoint_nodes
+                            for i, unit in enumerate(node['units'], 1) if f"{node['node_id']}.u{i}" in refs for root in unit['evidence'])
+                    if runs is not None:
+                        inner = active.object_stack[-1]
+                        if not isinstance(inner, EndpointLabel):
+                            inner = EndpointLabel(result.root, (), prop.maxLength)
+                            active.object_stack[-1] = inner
+                        inner.source_runs = runs
+                        inner.minimum = prop.minLength or 0
             if char == '}' and result.can_end() and (event_type(result.schema_object) or reading_type(result.schema_object)):
                 index, graph = graph_state(active)
                 graph = graph.clone()
@@ -1856,8 +1903,9 @@ def semantic_json_parser(messages, alphabet):
     if material.get('model_schema') == NODE_LOCAL_V4_SCHEMA and material.get('author_phase') != 'PLAN':
         ids = tuple(n['node_id'] for n in material.get('candidate_nodes', ()))
         return _semantic_unique_json_schema_parser(schema, config, bound_node_ids=ids,
+            protect_visible=material.get('author_profile') == OCCURRENCE_V14_PROFILE,
             overview_sources=material if material.get('author_phase') == 'RELATIONS'
-                and material.get('author_profile') == OCCURRENCE_V13_PROFILE else None,
+                and material.get('author_profile') in CONTENT_PLAN_PROFILES else None,
             endpoint_nodes=material['candidate_nodes'] if material.get('author_phase') == 'RELATIONS'
                 and material.get('author_profile') in {OCCURRENCE_V6_PROFILE, OCCURRENCE_V7_PROFILE, OCCURRENCE_V8_PROFILE, *SOURCE_CUED_PROFILES} else (),
             unique_qualifications=material.get('author_phase') == 'NODES'
@@ -2035,7 +2083,7 @@ def make_handler(generate, *, api_key, model_name, deadline, max_requests,
                     EVENT_PLAN_V2_BASE_MODEL, NODE_LOCAL_V3_BASE_MODEL}
                 if event_plan:
                     selected_model = event_plan_model
-                staged = event_plan and event_plan_model in {NODE_LOCAL_V4_MODEL, NODE_LOCAL_V4_BOUND_MODEL, NODE_LOCAL_V4_BOUND_V2_MODEL, OCCURRENCE_MODEL, OCCURRENCE_V2_MODEL, OCCURRENCE_V3_MODEL, OCCURRENCE_V4_MODEL, OCCURRENCE_V5_MODEL, OCCURRENCE_V6_MODEL, OCCURRENCE_V7_MODEL, OCCURRENCE_V8_MODEL, OCCURRENCE_V9_MODEL, OCCURRENCE_V10_MODEL, OCCURRENCE_V11_MODEL, OCCURRENCE_V12_MODEL, OCCURRENCE_V13_MODEL}
+                staged = event_plan and event_plan_model in {NODE_LOCAL_V4_MODEL, NODE_LOCAL_V4_BOUND_MODEL, NODE_LOCAL_V4_BOUND_V2_MODEL, OCCURRENCE_MODEL, OCCURRENCE_V2_MODEL, OCCURRENCE_V3_MODEL, OCCURRENCE_V4_MODEL, OCCURRENCE_V5_MODEL, OCCURRENCE_V6_MODEL, OCCURRENCE_V7_MODEL, OCCURRENCE_V8_MODEL, OCCURRENCE_V9_MODEL, OCCURRENCE_V10_MODEL, OCCURRENCE_V11_MODEL, OCCURRENCE_V12_MODEL, OCCURRENCE_V13_MODEL, OCCURRENCE_V14_MODEL}
                 if staged:
                     material = json.loads(messages[1]['content'])
                     if material.get('author_phase') not in NODE_LOCAL_V4_PHASES:
@@ -2064,7 +2112,7 @@ def make_handler(generate, *, api_key, model_name, deadline, max_requests,
                     except (ValueError, TypeError):
                         material = None
                     marker = material.get('model_schema') if type(material) is dict else None
-                    expected_marker = (NODE_LOCAL_V4_SCHEMA if event_plan_model in {NODE_LOCAL_V4_MODEL, NODE_LOCAL_V4_BOUND_MODEL, NODE_LOCAL_V4_BOUND_V2_MODEL, OCCURRENCE_MODEL, OCCURRENCE_V2_MODEL, OCCURRENCE_V3_MODEL, OCCURRENCE_V4_MODEL, OCCURRENCE_V5_MODEL, OCCURRENCE_V6_MODEL, OCCURRENCE_V7_MODEL, OCCURRENCE_V8_MODEL, OCCURRENCE_V9_MODEL, OCCURRENCE_V10_MODEL, OCCURRENCE_V11_MODEL, OCCURRENCE_V12_MODEL, OCCURRENCE_V13_MODEL}
+                    expected_marker = (NODE_LOCAL_V4_SCHEMA if event_plan_model in {NODE_LOCAL_V4_MODEL, NODE_LOCAL_V4_BOUND_MODEL, NODE_LOCAL_V4_BOUND_V2_MODEL, OCCURRENCE_MODEL, OCCURRENCE_V2_MODEL, OCCURRENCE_V3_MODEL, OCCURRENCE_V4_MODEL, OCCURRENCE_V5_MODEL, OCCURRENCE_V6_MODEL, OCCURRENCE_V7_MODEL, OCCURRENCE_V8_MODEL, OCCURRENCE_V9_MODEL, OCCURRENCE_V10_MODEL, OCCURRENCE_V11_MODEL, OCCURRENCE_V12_MODEL, OCCURRENCE_V13_MODEL, OCCURRENCE_V14_MODEL}
                         else NODE_LOCAL_V3_SCHEMA if event_plan_model in {
                             NODE_LOCAL_V3_MODEL, NODE_LOCAL_V3_BASE_MODEL}
                         else EVENT_PLAN_V2_SCHEMA if event_plan_model in {
@@ -2074,7 +2122,8 @@ def make_handler(generate, *, api_key, model_name, deadline, max_requests,
                                 NODE_LOCAL_V3_SCHEMA, NODE_LOCAL_V4_SCHEMA}):
                         raise ValueError
                     if staged:
-                        expected_profile = (OCCURRENCE_V13_PROFILE if event_plan_model == OCCURRENCE_V13_MODEL
+                        expected_profile = (OCCURRENCE_V14_PROFILE if event_plan_model == OCCURRENCE_V14_MODEL
+                            else OCCURRENCE_V13_PROFILE if event_plan_model == OCCURRENCE_V13_MODEL
                             else OCCURRENCE_V12_PROFILE if event_plan_model == OCCURRENCE_V12_MODEL
                             else OCCURRENCE_V11_PROFILE if event_plan_model == OCCURRENCE_V11_MODEL
                             else OCCURRENCE_V10_PROFILE if event_plan_model == OCCURRENCE_V10_MODEL
@@ -2407,7 +2456,9 @@ def load_generator(adapter, process_stop, *, weights_sha256=None, config_sha256=
             if profile == 'event_plan':
                 material=json.loads(messages[1]['content'])
                 if material.get('author_profile') in {OCCURRENCE_V2_PROFILE, OCCURRENCE_V3_PROFILE, OCCURRENCE_V4_PROFILE, OCCURRENCE_V5_PROFILE, OCCURRENCE_V6_PROFILE, OCCURRENCE_V7_PROFILE, OCCURRENCE_V8_PROFILE, *SOURCE_CUED_PROFILES} and material.get('author_phase')=='NODES':
-                    format_options['logits_processor']=[_occurrence_greedy_node_filter(tokenizer,count,_semantic_wire_fact_sources(messages))]
+                    visible_filter = (_occurrence_greedy_relation_filter(allowed_prefix)
+                        if material.get('author_profile') == OCCURRENCE_V14_PROFILE else None)
+                    format_options['logits_processor']=[_occurrence_greedy_node_filter(tokenizer,count,_semantic_wire_fact_sources(messages),visible_filter)]
                 elif material.get('author_profile') in {OCCURRENCE_V6_PROFILE, OCCURRENCE_V7_PROFILE, OCCURRENCE_V8_PROFILE, *SOURCE_CUED_PROFILES} and material.get('author_phase') == 'RELATIONS':
                     format_options['logits_processor']=[_occurrence_greedy_relation_filter(allowed_prefix)]
             format_options['prefix_allowed_tokens_fn'] = private_prefix

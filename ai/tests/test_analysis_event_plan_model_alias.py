@@ -38,6 +38,23 @@ def test_exact_alias_selects_new_profile_with_existing_four_setting_identity(mon
     assert source._settings == settings
 
 
+@pytest.mark.parametrize('model, profile, artifact_schema', [
+    (sources.SEMANTIC_OCCURRENCE_V13_MODEL, core.SEMANTIC_MAP_OCCURRENCE_V13_PROFILE,
+     core.SEMANTIC_MAP_OCCURRENCE_V13_SCHEMA),
+    (sources.SEMANTIC_OCCURRENCE_V14_MODEL, core.SEMANTIC_MAP_OCCURRENCE_V14_PROFILE,
+     core.SEMANTIC_MAP_OCCURRENCE_V14_SCHEMA),
+])
+def test_content_plan_alias_binds_version_for_generation_and_replay(monkeypatch, model, profile, artifact_schema):
+    environment(monkeypatch, model)
+    source = sources.application_analysis_model_source()
+    assert sources.analysis_model_prompt_version(source) == profile
+    prepared = application.prepare_semantic_map(OWNER, sample(), prompt_version=profile)
+    assert core.semantic_node_local_v4_artifact_schema(prepared) == artifact_schema
+    material = json.loads(prepared.messages()[1]['content'])
+    assert material['author_profile'] == profile
+    assert material['source_choices_sha256']
+
+
 @pytest.mark.parametrize('alias', ['', 'synthetic-analysis-4b',
     'cocolon-qwen3.5-4b-analysis-semantic-120u', ALIAS.upper(), ALIAS + '-unknown', ' ' + ALIAS])
 def test_old_default_unknown_and_near_matching_aliases_stay_legacy(alias, monkeypatch):
@@ -126,6 +143,7 @@ def test_if_original_identity_matches_existing_current_4b_fixture():
 
 
 @pytest.mark.parametrize('selector,alias,expected,budget', [
+    (sources.SEMANTIC_SELECTOR, sources.SEMANTIC_OCCURRENCE_V14_MODEL, sources.SEMANTIC_EVENT_PLAN_BASE_MODEL, 4096),
     (sources.SEMANTIC_SELECTOR, sources.SEMANTIC_NODE_LOCAL_V4_BOUND_MODEL, sources.SEMANTIC_EVENT_PLAN_BASE_MODEL, 4096),
     (sources.SEMANTIC_SELECTOR, sources.SEMANTIC_NODE_LOCAL_V4_MODEL, sources.SEMANTIC_EVENT_PLAN_BASE_MODEL, 4096),
     (sources.SEMANTIC_SELECTOR, ALIAS, 'cocolon-qwen3.5-4b-analysis-semantic-120u', 4096),

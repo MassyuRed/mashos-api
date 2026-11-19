@@ -6,6 +6,7 @@ Emlis response. Analysis decides its own node kinds, edges and missing scopes.
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from collections import Counter
 from copy import deepcopy
 import hashlib
 import json
@@ -3948,17 +3949,28 @@ def expand_analysis_semantic_event_plan(prepared, packet):
                 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v10',
                 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v11',
                 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v12',
-                'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v13'}):
+                'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v13',
+                'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v14'}):
         from .semantic_admission import (assemble_semantic_node_local_v4,
-            SEMANTIC_MAP_NODE_LOCAL_V3_PROFILE, SEMANTIC_MAP_FACT_ENDPOINT_PROFILES)
+            SEMANTIC_MAP_NODE_LOCAL_V3_PROFILE, SEMANTIC_MAP_FACT_ENDPOINT_PROFILES, SEMANTIC_MAP_CONTENT_PLAN_PROFILES)
         joined = assemble_semantic_node_local_v4(prepared, packet)
+        fixed_record_units = set()
+        if prepared.prompt_version == 'semantic_map.node_local.v4.occurrence.v14':
+            from .semantic_admission import _semantic_node_fact_sources
+            # Only the already bound, independently restored whole-sentence slots carry a source date.
+            sources = _semantic_node_fact_sources(joined, json.loads(prepared.material_json))
+            counts = Counter((node, unit) for node, unit, _ in sources)
+            fixed_record_units = {f"{n['node_id']}.u{i}" for n in joined['nodes']
+                                  for i, u in enumerate(n['units'], 1)
+                                  if counts[n['node_id'], f'u{i}'] == len(u['evidence'])}
         # Exact phase assembly: roots/prose/IDs were fixed and checked before
         # this projection. No rejected sentence, edge or partial raw is fixed.
         joined['nodes'] = [{k: v for k, v in n.items() if k != 'node_id'} for n in joined['nodes']]
         return _expand_analysis_semantic_node_local_v3(
             replace(prepared, prompt_version=SEMANTIC_MAP_NODE_LOCAL_V3_PROFILE), joined,
             fact_endpoints=prepared.prompt_version in SEMANTIC_MAP_FACT_ENDPOINT_PROFILES,
-            mark_record_ownership=prepared.prompt_version == 'semantic_map.node_local.v4.occurrence.v13')
+            mark_record_ownership=prepared.prompt_version in SEMANTIC_MAP_CONTENT_PLAN_PROFILES,
+            fixed_record_units=fixed_record_units)
     if (getattr(prepared, 'prompt_version', None) == 'semantic_map.node_local.v3'
             or type(packet) is dict and packet.get('schema_version') == 'cocolon.analysis.semantic_map.node_local.model.v3'):
         return _expand_analysis_semantic_node_local_v3(prepared, packet)
@@ -4174,7 +4186,8 @@ def _expand_analysis_semantic_event_plan_v2(prepared, packet):
         overview=dict(title=text(overview['title'], 80), summary='\n'.join(visible)))
 
 
-def _expand_analysis_semantic_node_local_v3(prepared, packet, *, fact_endpoints=False, mark_record_ownership=False):
+def _expand_analysis_semantic_node_local_v3(prepared, packet, *, fact_endpoints=False, mark_record_ownership=False,
+                                           fixed_record_units=()):
     """Compile node-owned authored units, not a repair of a reference plan.
 
     There is no independently authored fact/reading registry to relink. All
@@ -4202,7 +4215,12 @@ def _expand_analysis_semantic_node_local_v3(prepared, packet, *, fact_endpoints=
         return value
 
     material = json.loads(prepared.material_json)
-    def display_facts(units, facts):
+    def display_facts(units, facts, refs):
+        if fixed_record_units:
+            from analysis_plan_source_choices import mixed_record_facts
+            labels, shown = mixed_record_facts(material, units, [ref in fixed_record_units for ref in refs])
+            if labels:
+                return labels, shown
         if mark_record_ownership:
             from analysis_plan_source_choices import separate_record_labels
             labels = separate_record_labels(material, units)
@@ -4256,13 +4274,20 @@ def _expand_analysis_semantic_node_local_v3(prepared, packet, *, fact_endpoints=
         # cannot decide that a paraphrase or a qualified statement is redundant.
         # Keep the original meaning in the summary and private authored plan.
         repeated_facts = meaning in facts or meaning in ('\n'.join(facts), ''.join(facts))
-        record_labels, displayed_facts = display_facts(node['units'], facts)
+        node_id = 'n' + str(index)
+        record_labels, displayed_facts = display_facts(node['units'], facts,
+            [f'{node_id}.u{i}' for i in range(1, len(facts) + 1)])
         visible = displayed_facts + ([meaning] if meaning and not repeated_facts else [])
         body = '\n'.join(dict.fromkeys(paragraph for part in visible for paragraph in part.split('\n')))
         summary = '\n'.join(displayed_facts) if record_labels else meaning or facts[0]
-        node_id = 'n' + str(index)
+        caption = '・'.join(record_labels) + '：' + node['title'] if record_labels else summary
+        # The full dated pieces always remain in the explanation. A dense node
+        # can exceed the public summary limit once provenance labels are added.
+        if fixed_record_units and len(summary) > 400:
+            summary = caption
         bodies[node_id] = body
-        summaries[node_id] = '・'.join(record_labels) + '：' + node['title'] if record_labels else summary
+        # Eight selected summaries share the public overview's 2,000 characters.
+        summaries[node_id] = node['title'] if fixed_record_units and len(caption) > 249 else caption
         nodes.append(dict(evidence=roots, node_id=node_id, node_kind=node['node_kind'],
             perspective=node['perspective'], title=text(node['title'], 80),
             summary=summary, explanation=body, unknowns=unknowns))
@@ -4286,7 +4311,8 @@ def _expand_analysis_semantic_node_local_v3(prepared, packet, *, fact_endpoints=
         result['label'] = text(edge['label'], 80)
         if fact_endpoints:
             selected = [by_unit[edge[key]] for key in ('from_unit', 'to_unit')]
-            _, display = display_facts(selected, [unit['fact'] for unit in selected])
+            _, display = display_facts(selected, [unit['fact'] for unit in selected],
+                                       [edge['from_unit'], edge['to_unit']])
             result['explanation'] = '\n'.join(display)
             result['unit_evidence'] = [unit['evidence'] for unit in selected]
         else:

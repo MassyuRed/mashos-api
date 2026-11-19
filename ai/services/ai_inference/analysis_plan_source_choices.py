@@ -4,12 +4,52 @@ import json
 import re
 
 
+_CONTENT_PLAN_PROFILES = frozenset({
+    'semantic_map.node_local.v4.occurrence.v13', 'semantic_map.node_local.v4.occurrence.v14'})
+
+
+def source_closer_runs(quotes):
+    """Only a run present verbatim in the assigned evidence may close an unopened delimiter."""
+    return sorted({run for quote in quotes for run in re.findall(r'[]}]+', quote)})
+
+
+def visible_closers_bound(text, source_runs):
+    if '}' not in text and ']' not in text:
+        return True
+    stack, unmatched = [], ''
+    quote = None
+    escaped = False
+    for index, char in enumerate(text):
+        if quote:
+            if escaped:
+                escaped = False
+            elif char == '\\':
+                escaped = True
+            elif char == quote:
+                quote = None
+            continue
+        if stack and char in ('"', "'", '`') and not text[index - 1].isalnum():
+            quote = char
+        elif char in '{[':
+            stack.append('}' if char == '{' else ']')
+        elif char in '}]':
+            if stack and stack[-1] == char:
+                stack.pop()
+            else:
+                unmatched += char
+                if not any(unmatched in run for run in source_runs):
+                    return False
+                continue
+        unmatched = ''
+    return True
+
+
 def choice_scope(request_ref, choices, material=None):
     if type(request_ref) is not str or not request_ref:
         raise ValueError('semantic_plan_request_ref_invalid')
     rows = [[field, key, text] for (field, key), text in choices.items()]
     binding = ['plan-source-choices.v1', request_ref, rows]
-    if material and material.get('author_profile') == 'semantic_map.node_local.v4.occurrence.v13':
+    if material and material.get('author_profile') in _CONTENT_PLAN_PROFILES:
         # The same words may occur in records, answers and corrections. Bind the
         # actual field text, source role, record/cohort and shown scalar range.
         fields = [{k: v for k, v in field.items() if k not in {'unassessed_passage_cues', 'original_recorded_at'}}
@@ -100,7 +140,7 @@ def _mark_content_choices(quote, cues):
 
 def prepare(material):
     """Keep each original once. In MERGE add labels only to existing leaf citations."""
-    content_cued = material.get('author_profile') == 'semantic_map.node_local.v4.occurrence.v13'
+    content_cued = material.get('author_profile') in _CONTENT_PLAN_PROFILES
     fields = {}
     for field in material['fields']:
         number = field.get('field')
@@ -174,7 +214,7 @@ def _restore_view(material):
                 raise ValueError('semantic_plan_sources_ambiguous')
             field = dict(field)
             passages = field.pop('passages')
-            if material.get('author_profile') == 'semantic_map.node_local.v4.occurrence.v13':
+            if material.get('author_profile') in _CONTENT_PLAN_PROFILES:
                 field['text'] = ''.join(part if isinstance(part, str) else ''.join(
                     piece if isinstance(piece, str) else piece[0] for piece in part) for part in passages)
             else:
@@ -211,14 +251,18 @@ def _unit_record(field_records, unit):
 
 def separate_record_labels(material, units):
     """Date the source record only when it owns the whole fact."""
-    from datetime import datetime, timedelta, timezone
-
     if len(units) != 2:
         return ()
     field_records = _original_field_records(material)
     records = [_unit_record(field_records, unit) for unit in units]
     if None in records or records[0] == records[1]:
         return ()
+    return _source_date_labels(material, records)
+
+
+def _source_date_labels(material, records):
+    from datetime import datetime, timedelta, timezone
+
     timestamps = {row['record']: row['recorded_at'] for row in material['records']}
     local = []
     for record in records:
@@ -227,18 +271,48 @@ def separate_record_labels(material, units):
         if stamp.tzinfo is None:
             stamp = stamp.replace(tzinfo=timezone.utc)
         local.append(stamp.astimezone(timezone(timedelta(hours=9))))
+    dates = [stamp.date() for stamp in local]
+    across_years = len({stamp.year for stamp in local}) > 1
     labels = []
     for stamp in local:
         label = f'{stamp.month}月{stamp.day}日'
-        if local[0].year != local[1].year:
+        if across_years:
             label = f'{stamp.year}年' + label
-        if local[0].date() == local[1].date():
+        if dates.count(stamp.date()) > 1:
             label += stamp.strftime(' %H:%M')
         labels.append(label)
-    if labels[0] == labels[1]:
-        # Distinct records may share an observation minute (or the entire timestamp).
-        return tuple(f'記録{record}（{label}）' for record, label in zip(records, labels, strict=True))
-    return tuple(label + 'の記録' for label in labels)
+    return tuple(f'記録{record}（{label}）' if labels.count(label) > 1 else label + 'の記録'
+                 for record, label in zip(records, labels, strict=True))
+
+
+def mixed_record_facts(material, units, fixed_units):
+    """Attribute independently restored source sentences without dating a jointly authored fact."""
+    owners = _original_field_records(material)
+    groups, mixed = [], False
+    for unit, fixed in zip(units, fixed_units, strict=True):
+        roots = unit['evidence']
+        records = [owners.get(r['field']) for r in roots]
+        quotes = [r['quote'] for r in roots]
+        if (fixed and None not in records and len(set(records)) > 1 and len(set(quotes)) > 1
+                and ''.join(quotes) == unit['fact']):
+            mixed = True
+            pieces = []
+            for record, quote in zip(records, quotes, strict=True):
+                # Group only consecutive pieces from the same source. Never reorder facts.
+                if pieces and pieces[-1][0] == record:
+                    pieces[-1][1] += quote
+                else:
+                    pieces.append([record, quote])
+            groups.extend(pieces)
+        else:
+            # Supplements and free facts from several sources have no single original clock.
+            groups.append([_unit_record(owners, unit), unit['fact']])
+    if not mixed:
+        return (), []
+    records = list(dict.fromkeys(record for record, _ in groups if record is not None))
+    labels = _source_date_labels(material, records)
+    by_record = dict(zip(records, labels, strict=True))
+    return labels, [by_record[record] + '：' + body if record is not None else body for record, body in groups]
 
 
 def one_sided_source_titles(material, units):
