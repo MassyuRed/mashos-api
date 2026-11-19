@@ -487,3 +487,49 @@ def test_later_recorded_confirmation_is_not_forced_back_into_a_leaf_unknown():
     history = result.artifact.private_evidence()['graph']['meaning_review']['history_synthesis']
     assert history['scoped_unknowns'][0]['unknowns'] == [false_unknown]
     assert history['leaf_candidates'][0]['packet']['nodes'][0]['unknowns'] == [false_unknown]
+
+
+def test_history_qualification_is_detached_and_limited_to_one_call(monkeypatch):
+    import asyncio
+
+    prepared = parent()
+    other = parent(source_snapshot(3))
+    derive = core.prepare_analysis_semantic_map
+    derivations = []
+
+    def tracked(*args, **kwargs):
+        derivations.append(args[0])
+        return derive(*args, **kwargs)
+
+    monkeypatch.setattr(core, 'prepare_analysis_semantic_map', tracked)
+
+    async def check():
+        with core.semantic_history_parent_scope():
+            await asyncio.to_thread(core._semantic_history_parent, prepared)
+            await asyncio.to_thread(core._semantic_history_parent, deepcopy(prepared))
+            assert len(derivations) == 1
+            await asyncio.to_thread(core._semantic_history_parent, other)
+            assert len(derivations) == 2
+            prepared.frozen.sources[0].normalized['extra'] = 'changed'
+            with pytest.raises(core.AnalysisSemanticMapError, match='input_unbound'):
+                await asyncio.to_thread(core._semantic_history_parent, prepared)
+            assert len(derivations) == 3
+            del prepared.frozen.sources[0].normalized['extra']
+            with core.semantic_history_parent_scope():
+                await asyncio.to_thread(core._semantic_history_parent, prepared)
+                assert len(derivations) == 4
+            await asyncio.to_thread(core._semantic_history_parent, prepared)
+            assert len(derivations) == 4
+            wrong_type = replace(prepared.source_request,
+                selected_category_context=int(prepared.source_request.selected_category_context))
+            assert wrong_type == prepared.source_request
+            with pytest.raises((core.AnalysisSemanticMapError, core.AnalysisSourceError)):
+                core._semantic_history_parent(replace(prepared, source_request=wrong_type))
+            assert len(derivations) == 5
+            leaf, receipt = standard_leaves(prepared)[0]
+            with pytest.raises(core.AnalysisSemanticMapError):
+                core.build_semantic_stage(leaf, replace(receipt, raw_sha256='0' * 64))
+        await asyncio.to_thread(core._semantic_history_parent, prepared)
+        assert len(derivations) == 6
+
+    asyncio.run(check())

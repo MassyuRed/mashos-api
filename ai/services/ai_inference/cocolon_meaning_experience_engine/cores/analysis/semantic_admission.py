@@ -6,6 +6,9 @@ public/Safety acceptance. Source ownership is not an authentication service.
 """
 from __future__ import annotations
 
+from contextlib import contextmanager
+from contextvars import ContextVar
+from copy import deepcopy
 from dataclasses import asdict, dataclass, replace
 import hashlib
 import json
@@ -4803,13 +4806,35 @@ class AnalysisSemanticMapStageInput:
         return [dict(role='system', content=instruction), dict(role='user', content=self.material_json)]
 
 
+_qualified_history_parent = ContextVar('analysis_qualified_history_parent', default=None)
+
+
+@contextmanager
+def semantic_history_parent_scope():
+    # to_thread copies the context. A single shared slot lasts for one history map.
+    token = _qualified_history_parent.set([None])
+    try:
+        yield
+    finally:
+        _qualified_history_parent.reset(token)
+
+
 def _semantic_history_parent(parent, *, rederive=True):
     _semantic_map_require(type(parent) is AnalysisSemanticMapInput and parent.response is None,
         'analysis_semantic_history_parent_invalid')
     if rederive:
+        slot = _qualified_history_parent.get()
+        if slot is not None and slot[0] is not None:
+            qualified, request_bytes = slot[0]
+            # Dataclass equality alone equates bools with integers.
+            if qualified == parent and canonical_bytes(asdict(parent.source_request)) == request_bytes:
+                return parent
         expected = prepare_analysis_semantic_map(parent.source_request,
             json.loads(parent.source_snapshot_json), prompt_version=parent.prompt_version)
         _semantic_map_require(expected == parent, 'analysis_semantic_input_unbound')
+        if slot is not None and slot[0] is None:
+            # Nested source maps can be mutable. Never compare the live input to itself.
+            slot[0] = deepcopy(expected), canonical_bytes(asdict(expected.source_request))
     return parent
 
 
