@@ -133,6 +133,9 @@ name: Analysis observed content
       - ai/tests/test_analysis_v21_authored_overview.py
       - ai/tests/test_analysis_v21_overlapping_source_facts.py
       - ai/tests/test_analysis_v21_recorded_schedule.py
+      - ai/tests/test_analysis_v22_plan_source_coverage.py
+      - ai/tests/test_analysis_v22_prior_evidence.py
+      - ai/tests/test_analysis_v22_record_overview.py
       - ai/tests/test_analysis_node_local_bound_roots.py
       - ai/tests/test_analysis_bound_roots_v2_selection.py
       - supabase/migrations/*_emlis_natural_bound_questions.sql
@@ -384,6 +387,9 @@ jobs:
           ai/tests/test_analysis_v21_authored_overview.py
           ai/tests/test_analysis_v21_overlapping_source_facts.py
           ai/tests/test_analysis_v21_recorded_schedule.py
+          ai/tests/test_analysis_v22_plan_source_coverage.py
+          ai/tests/test_analysis_v22_prior_evidence.py
+          ai/tests/test_analysis_v22_record_overview.py
           ai/tests/test_analysis_node_local_bound_roots.py
           ai/tests/test_analysis_bound_roots_v2_selection.py
           ai/tests/test_analysis_semantic_history_core.py

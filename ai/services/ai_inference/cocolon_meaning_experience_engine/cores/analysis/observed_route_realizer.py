@@ -1116,7 +1116,7 @@ class AnalysisSemanticMapArtifact:
                 for node in projection['nodes'] for item in node['unknowns']):
             # A previously saved person's literal can itself look like a dated label.
             return {'text': analysis_semantic_projection_text(projection, record_scoped_unknowns=False)}
-        return {'text': analysis_semantic_projection_text(projection)}
+        return {'text': analysis_semantic_projection_text(projection, compact_source_captions=self.graph.compact_source_captions)}
 
     def private_evidence(self):
         graph = dict(nodes=json.loads(self.graph.nodes_json),
@@ -1222,7 +1222,7 @@ def _unknown_line(quote, prefix, *, record_scoped_unknowns):
     return prefix + quote
 
 
-def analysis_semantic_projection_text(projection, *, record_scoped_unknowns=True):
+def analysis_semantic_projection_text(projection, *, record_scoped_unknowns=True, compact_source_captions=False):
     """Render every v3 graph without multiplying its node bodies by its edges.
 
     Only byte-identical paragraphs are coalesced within a node. Overview
@@ -1249,7 +1249,10 @@ def analysis_semantic_projection_text(projection, *, record_scoped_unknowns=True
     lines.extend(line for line in paragraphs(projection['overview']['summary']) if line not in displayed)
     index = {node['node_ref']: node for node in projection['nodes']}
     for node in projection['nodes']:
-        lines.extend(['', node['title'], *node_bodies[node['node_ref']]])
+        body = node_bodies[node['node_ref']]
+        if compact_source_captions:
+            body = [paragraph for paragraph in body if paragraph != node['title']]
+        lines.extend(['', node['title'], *body])
         lines.extend(node['context'])
         lines.extend(_unknown_line(item, 'まだ記録にないこと：', record_scoped_unknowns=record_scoped_unknowns)
                      for item in node['unknowns'])

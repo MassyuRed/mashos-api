@@ -93,7 +93,8 @@ def _saved_projection_text_matches(projection, text):
     if projection.get('wire_kind') == 'watashi.map.v3':
         from cocolon_meaning_experience_engine.cores.analysis.observed_route_realizer import (
             analysis_semantic_projection_text, analysis_semantic_projection_text_legacy)
-        return (text == analysis_semantic_projection_text_legacy(projection) or
+        return (text == analysis_semantic_projection_text(projection, compact_source_captions=True) or
+                text == analysis_semantic_projection_text_legacy(projection) or
                 text == analysis_semantic_projection_text(projection, record_scoped_unknowns=False))
     return False
 

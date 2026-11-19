@@ -3647,6 +3647,7 @@ class AnalysisSemanticMapGraph:
     meaning_review_json: str = '{}'
     map_correction_sources_json: str = ''
     record_scoped_unknowns: bool = False
+    compact_source_captions: bool = False
 
 
 def analysis_semantic_source_duties(frozen, fields):
@@ -3955,7 +3956,7 @@ def expand_analysis_semantic_event_plan(prepared, packet):
                 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v15',
                 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v16',
                 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v17',
-                'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v18', 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v19', 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v20', 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v21'}):
+                'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v18', 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v19', 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v20', 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v21', 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v22'}):
         from .semantic_admission import (assemble_semantic_node_local_v4,
             SEMANTIC_MAP_NODE_LOCAL_V3_PROFILE, SEMANTIC_MAP_FACT_ENDPOINT_PROFILES, SEMANTIC_MAP_CONTENT_PLAN_PROFILES,
             SEMANTIC_MAP_VISIBLE_SOURCE_PROFILES, SEMANTIC_MAP_FACT_PROSE_PROFILES)
@@ -3998,12 +3999,13 @@ def expand_analysis_semantic_event_plan(prepared, packet):
             fact_endpoints=prepared.prompt_version in SEMANTIC_MAP_FACT_ENDPOINT_PROFILES,
             mark_record_ownership=prepared.prompt_version in SEMANTIC_MAP_CONTENT_PLAN_PROFILES,
             fixed_record_units=fixed_record_units,
-            deduplicate_source_sentences=prepared.prompt_version == 'semantic_map.node_local.v4.occurrence.v21',
-            whole_map_overview=prepared.prompt_version in {'semantic_map.node_local.v4.occurrence.v20', 'semantic_map.node_local.v4.occurrence.v21'},
-            per_root_fact_limit=prepared.prompt_version in {'semantic_map.node_local.v4.occurrence.v20', 'semantic_map.node_local.v4.occurrence.v21'},
+            compact_source_captions=prepared.prompt_version == 'semantic_map.node_local.v4.occurrence.v22',
+            deduplicate_source_sentences=prepared.prompt_version in {'semantic_map.node_local.v4.occurrence.v21', 'semantic_map.node_local.v4.occurrence.v22'},
+            whole_map_overview=prepared.prompt_version in {'semantic_map.node_local.v4.occurrence.v20', 'semantic_map.node_local.v4.occurrence.v21', 'semantic_map.node_local.v4.occurrence.v22'},
+            per_root_fact_limit=prepared.prompt_version in {'semantic_map.node_local.v4.occurrence.v20', 'semantic_map.node_local.v4.occurrence.v21', 'semantic_map.node_local.v4.occurrence.v22'},
             use_attributed_captions=prepared.prompt_version in SEMANTIC_MAP_FACT_PROSE_PROFILES,
-            deduplicate_node_evidence=prepared.prompt_version in {'semantic_map.node_local.v4.occurrence.v18', 'semantic_map.node_local.v4.occurrence.v19', 'semantic_map.node_local.v4.occurrence.v20', 'semantic_map.node_local.v4.occurrence.v21'},
-            scope_earlier_unknowns=prepared.prompt_version in {'semantic_map.node_local.v4.occurrence.v18', 'semantic_map.node_local.v4.occurrence.v19', 'semantic_map.node_local.v4.occurrence.v20', 'semantic_map.node_local.v4.occurrence.v21'})
+            deduplicate_node_evidence=prepared.prompt_version in {'semantic_map.node_local.v4.occurrence.v18', 'semantic_map.node_local.v4.occurrence.v19', 'semantic_map.node_local.v4.occurrence.v20', 'semantic_map.node_local.v4.occurrence.v21', 'semantic_map.node_local.v4.occurrence.v22'},
+            scope_earlier_unknowns=prepared.prompt_version in {'semantic_map.node_local.v4.occurrence.v18', 'semantic_map.node_local.v4.occurrence.v19', 'semantic_map.node_local.v4.occurrence.v20', 'semantic_map.node_local.v4.occurrence.v21', 'semantic_map.node_local.v4.occurrence.v22'})
     if (getattr(prepared, 'prompt_version', None) == 'semantic_map.node_local.v3'
             or type(packet) is dict and packet.get('schema_version') == 'cocolon.analysis.semantic_map.node_local.model.v3'):
         return _expand_analysis_semantic_node_local_v3(prepared, packet)
@@ -4219,7 +4221,7 @@ def _expand_analysis_semantic_event_plan_v2(prepared, packet):
         overview=dict(title=text(overview['title'], 80), summary='\n'.join(visible)))
 
 
-def _node_unique_fixed_facts(units, fixed_parts, original_records, *, source_sentences=None):
+def _node_unique_fixed_facts(units, fixed_parts, original_records, *, source_sentences=None, separate_sentences=False):
     """Remove repeated bound phrases within one single-record explanation."""
     records = {original_records.get(root['field']) for unit in units for root in unit['evidence']}
     if None in records or len(records) != 1 or not all(fixed_parts):
@@ -4241,6 +4243,18 @@ def _node_unique_fixed_facts(units, fixed_parts, original_records, *, source_sen
                         and all(s in source_sentences.get(root['field'], ()) for s in sentences)):
                     # The same original sentence can be cited alone and within a longer root.
                     # Keep the whole selection if it supplies even one new source sentence.
+                    if separate_sentences:
+                        # All sentences occur exactly once in this original field. Preserve
+                        # different record, source mode and qualified quotations independently.
+                        for sentence in sentences:
+                            key = (root['field'], unit['source_mode'], sentence)
+                            if key not in covered:
+                                if retained:
+                                    displayed.append(''.join(retained))
+                                    retained = []
+                                displayed.append(sentence)
+                                covered.add(key)
+                        continue
                     keys = {(root['field'], unit['source_mode'], s) for s in sentences}
                     if keys <= covered:
                         continue
@@ -4254,7 +4268,7 @@ def _node_unique_fixed_facts(units, fixed_parts, original_records, *, source_sen
 def _expand_analysis_semantic_node_local_v3(prepared, packet, *, fact_endpoints=False, mark_record_ownership=False,
                                            fixed_record_units=(), use_attributed_captions=False, deduplicate_node_evidence=False,
                                            scope_earlier_unknowns=False, whole_map_overview=False, per_root_fact_limit=False,
-                                           deduplicate_source_sentences=False):
+                                           deduplicate_source_sentences=False, compact_source_captions=False):
     """Compile node-owned authored units, not a repair of a reference plan.
 
     There is no independently authored fact/reading registry to relink. All
@@ -4354,6 +4368,11 @@ def _expand_analysis_semantic_node_local_v3(prepared, packet, *, fact_endpoints=
                 if quote not in unknowns:
                     unknowns.append(quote)
         meaning = text(node['meaning'], 240, empty=True)
+        if compact_source_captions and 'どう' in meaning and meaning.endswith(('かが書かれています。', 'かが記されています。')):
+            # Authored descriptions of a document can promise detail absent from the record.
+            # A person's own description of what a document says remains valid evidence.
+            if not any(meaning in root['quote'] for root in roots):
+                meaning = ''
         # A derived view may remove byte-identical authored repetitions, but
         # cannot decide that a paraphrase or a qualified statement is redundant.
         # Keep the original meaning in the summary and private authored plan.
@@ -4365,10 +4384,12 @@ def _expand_analysis_semantic_node_local_v3(prepared, packet, *, fact_endpoints=
         if deduplicate_node_evidence and fixed_record_units and len(facts) > 1 and not record_labels:
             parts = [fixed_record_units.get(f'{node_id}.u{i}') for i in range(1, len(facts) + 1)]
             explanation_facts = _node_unique_fixed_facts(node['units'], parts, original_records,
-                                                       source_sentences=source_sentences)
+                                                       source_sentences=source_sentences, separate_sentences=compact_source_captions)
         visible = explanation_facts + ([meaning] if meaning and not repeated_facts else [])
         body = '\n'.join(dict.fromkeys(paragraph for part in visible for paragraph in part.split('\n')))
         summary = '\n'.join(displayed_facts) if record_labels else meaning or facts[0]
+        if compact_source_captions and not record_labels and (not meaning or meaning == node['title']):
+            summary = next((line for line in explanation_facts if line != node['title'] and len(line) <= 240), summary)
         if use_attributed_captions and record_labels:
             # Keep each record date with its own fact. The authored title may describe only one record.
             caption = summary if len(summary) <= 249 else node['title']
@@ -4421,8 +4442,13 @@ def _expand_analysis_semantic_node_local_v3(prepared, packet, *, fact_endpoints=
         titles = {node['node_id']: node['title'] for node in nodes}
         per_item = (2000 - len(refs) + 1) // len(refs)
         summaries = {ref: summaries[ref] if len(summaries[ref]) <= per_item else titles[ref] for ref in refs}
+    heading = text(overview['title'], 80)
+    overview_text = '\n'.join(summaries[ref] for ref in refs)
+    if compact_source_captions:
+        from analysis_plan_source_choices import selected_record_overview
+        overview_text = selected_record_overview(material, packet['nodes'], fixed_record_units, heading) or overview_text
     return dict(schema_version=SEMANTIC_MAP_MODEL_SCHEMA, nodes=nodes, edges=edges,
-        overview=dict(title=text(overview['title'], 80), summary='\n'.join(summaries[ref] for ref in refs)))
+        overview=dict(title=heading, summary=overview_text))
 
 
 def _semantic_node_local_review(graph, prepared, original, expanded):
@@ -4460,7 +4486,8 @@ def _semantic_event_plan_review(graph, prepared, original, expanded):
         review['node_local_plan']['final_artifact_sha256'] = semantic_map_hash(original)
         review['node_local_plan']['realization'] = 'PLANNED_ROOTS_THEN_NODE_PROSE_THEN_ACTUAL_NODE_RELATIONS'
         return replace(graph, meaning_review_json=semantic_map_canonical(review),
-            record_scoped_unknowns=prepared.prompt_version in {'semantic_map.node_local.v4.occurrence.v18', 'semantic_map.node_local.v4.occurrence.v19', 'semantic_map.node_local.v4.occurrence.v20', 'semantic_map.node_local.v4.occurrence.v21'})
+            compact_source_captions=prepared.prompt_version == 'semantic_map.node_local.v4.occurrence.v22',
+            record_scoped_unknowns=prepared.prompt_version in {'semantic_map.node_local.v4.occurrence.v18', 'semantic_map.node_local.v4.occurrence.v19', 'semantic_map.node_local.v4.occurrence.v20', 'semantic_map.node_local.v4.occurrence.v21', 'semantic_map.node_local.v4.occurrence.v22'})
     if getattr(prepared, 'prompt_version', None) == 'semantic_map.node_local.v3':
         return _semantic_node_local_review(graph, prepared, original, expanded)
     if getattr(prepared, 'prompt_version', None) not in {'semantic_map.event_plan.v1', 'semantic_map.event_plan.v2'}:
