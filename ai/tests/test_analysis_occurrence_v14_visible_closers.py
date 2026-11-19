@@ -122,7 +122,8 @@ def test_selected_overview_nodes_and_edge_endpoints_delimit_the_allowed_sources(
 
 
 @pytest.mark.parametrize('phase', ['NODES', 'RELATIONS'])
-def test_greedy_shortcut_rechecks_a_multichar_token_before_emission(phase):
+@pytest.mark.parametrize('prefix_offset', [0, 1])
+def test_greedy_shortcut_rechecks_a_multichar_token_before_emission(phase, prefix_offset):
     from types import SimpleNamespace
     np = pytest.importorskip('numpy')
     prepared, plan, bodies = stages('結果を待つ')
@@ -142,12 +143,13 @@ def test_greedy_shortcut_rechecks_a_multichar_token_before_emission(phase):
     tokens = {0: '続き}}', 1: '続き'}
     enforcer = SimpleNamespace(root_parser=parser, prefix_states={},
         tokenizer_tree=SimpleNamespace(new_word_tokens=tokens.keys(), tokens_to_strs=tokens))
-    model_filter = probe._occurrence_greedy_relation_filter(SimpleNamespace(token_enforcer=enforcer))
+    model_filter = probe._occurrence_greedy_relation_filter(SimpleNamespace(token_enforcer=enforcer),
+                                                        prompt_tokens=prefix_offset)
     step = advance(parser, raw_prefix)
     assert step.shortcut_key()[0] == 'json_freetext'
-    enforcer.prefix_states[(7,)] = SimpleNamespace(parser=step)
+    enforcer.prefix_states[(7, 8)[prefix_offset:]] = SimpleNamespace(parser=step)
     if phase == 'NODES':
         tokenizer = SimpleNamespace(decode=lambda ids, **kwargs: raw_prefix + tokens[ids[-1]])
         model_filter = probe._occurrence_greedy_node_filter(tokenizer, 1, visible_filter=model_filter)
-    scores = model_filter(np.array([[7]]), np.array([[1., .5]]))
+    scores = model_filter(np.array([[7, 8]]), np.array([[1., .5]]))
     assert scores.tolist() == [[float('-inf'), .5]]

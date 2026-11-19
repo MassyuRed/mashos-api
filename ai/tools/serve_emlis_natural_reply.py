@@ -264,14 +264,22 @@ def _occurrence_greedy_node_filter(tokenizer, prompt_tokens, fact_sources=None, 
     return choose
 
 
-def _occurrence_greedy_relation_filter(prefix):
+def _semantic_prefix_input(sent, prompt_tokens):
+    # A fresh pinned enforcer treats its first input as the parser root. For a
+    # single greedy MERGE the prompt is fixed, so every branch is identified by
+    # its full generated token history, including the initial empty history.
+    return sent[prompt_tokens:] if prompt_tokens else sent
+
+
+def _occurrence_greedy_relation_filter(prefix, *, prompt_tokens=0):
     """Validate a greedy token against the exact title rule before it is emitted."""
     enforcer = prefix.token_enforcer
     enforcer.root_parser.context.guard_endpoint_label_tokens = True
     def choose(input_ids, scores):
         if len(scores) != 1 or len(input_ids) != 1:
             raise ValueError('occurrence_single_greedy_sequence_required')
-        state = enforcer.prefix_states[tuple(input_ids[0].tolist())]
+        history = _semantic_prefix_input(input_ids[0], prompt_tokens)
+        state = enforcer.prefix_states[tuple(history.tolist())]
         stack = getattr(state.parser, 'object_stack', ())
         if not stack or not getattr(stack[-1], 'guarded_shortcut', False):
             return scores
@@ -981,6 +989,14 @@ def _semantic_merge_wire_module():
     module = module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def _semantic_merge_prefix_offset(profile, material, messages, prompt_tokens):
+    if (profile == 'event_plan' and isinstance(material, dict)
+            and 'merge_wire_version' in material
+            and _semantic_merge_wire_module().is_compact(messages)):
+        return prompt_tokens
+    return 0
 
 
 def _semantic_constraint_messages(messages):
@@ -2851,9 +2867,13 @@ def load_generator(adapter, process_stop, *, weights_sha256=None, config_sha256=
                 allowed_prefix.token_enforcer.root_parser.config.force_json_field_order = True
             profile_invalid_json_tokens = (invalid_json_tokens if profile == 'piece' else
                 invalid_json_tokens | unsupported_unicode_tokens)
+            material = json.loads(messages[1]['content']) if profile == 'event_plan' else None
+            prefix_offset = _semantic_merge_prefix_offset(profile, material, messages, count)
             previous_allowed = None
             def private_prefix(batch, sent):
                 nonlocal previous_allowed
+                if prefix_offset and batch != 0:
+                    raise ValueError('semantic_merge_single_greedy_sequence_required')
                 progress = len(sent) - count
                 measured = progress % 128 == 0
                 if measured:
@@ -2863,24 +2883,24 @@ def load_generator(adapter, process_stop, *, weights_sha256=None, config_sha256=
                 if progress and previous_allowed is not None and int(sent[-1]) not in previous_allowed:
                     generation_stage('prefix_constraint_violation')
                     raise ValueError('semantic_prefix_constraint_violation')
-                allowed = semantic_free_text_tokens(allowed_prefix, batch, sent,
+                history = _semantic_prefix_input(sent, prefix_offset)
+                allowed = semantic_free_text_tokens(allowed_prefix, batch, history,
                     set() if profile == "piece" else blocked_free_text, profile_invalid_json_tokens)
                 previous_allowed = allowed
                 if measured:
-                    parser = allowed_prefix.token_enforcer.prefix_states[tuple(sent.tolist())].parser
+                    parser = allowed_prefix.token_enforcer.prefix_states[tuple(history.tolist())].parser
                     key = parser.shortcut_key()
                     mode = 'free' if isinstance(key, tuple) and key[0] == 'json_freetext' else 'other'
                     generation_stage('prefix_exit_' + str(progress) + '_' + type(parser).__name__
                         + '_' + mode + '_allowed_' + str(len(allowed)))
                 return allowed
             if profile == 'event_plan':
-                material=json.loads(messages[1]['content'])
                 if material.get('author_profile') in {OCCURRENCE_V2_PROFILE, OCCURRENCE_V3_PROFILE, OCCURRENCE_V4_PROFILE, OCCURRENCE_V5_PROFILE, OCCURRENCE_V6_PROFILE, OCCURRENCE_V7_PROFILE, OCCURRENCE_V8_PROFILE, *SOURCE_CUED_PROFILES} and material.get('author_phase')=='NODES':
-                    visible_filter = (_occurrence_greedy_relation_filter(allowed_prefix)
+                    visible_filter = (_occurrence_greedy_relation_filter(allowed_prefix, prompt_tokens=prefix_offset)
                         if material.get('author_profile') in VISIBLE_SOURCE_PROFILES else None)
                     format_options['logits_processor']=[_occurrence_greedy_node_filter(tokenizer,count,_semantic_wire_fact_sources(messages),visible_filter)]
                 elif material.get('author_profile') in {OCCURRENCE_V6_PROFILE, OCCURRENCE_V7_PROFILE, OCCURRENCE_V8_PROFILE, *SOURCE_CUED_PROFILES} and material.get('author_phase') == 'RELATIONS':
-                    format_options['logits_processor']=[_occurrence_greedy_relation_filter(allowed_prefix)]
+                    format_options['logits_processor']=[_occurrence_greedy_relation_filter(allowed_prefix, prompt_tokens=prefix_offset)]
             format_options['prefix_allowed_tokens_fn'] = private_prefix
             format_options['eos_token_id'] = tokenizer_data.eos_token_id
             generation_stage('decode')
