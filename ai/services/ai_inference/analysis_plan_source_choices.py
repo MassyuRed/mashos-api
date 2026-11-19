@@ -10,7 +10,7 @@ import unicodedata
 _CONTENT_PLAN_PROFILES = frozenset({
     'semantic_map.node_local.v4.occurrence.v13', 'semantic_map.node_local.v4.occurrence.v14',
     'semantic_map.node_local.v4.occurrence.v15', 'semantic_map.node_local.v4.occurrence.v16',
-    'semantic_map.node_local.v4.occurrence.v17', 'semantic_map.node_local.v4.occurrence.v18', 'semantic_map.node_local.v4.occurrence.v19', 'semantic_map.node_local.v4.occurrence.v20', 'semantic_map.node_local.v4.occurrence.v21', 'semantic_map.node_local.v4.occurrence.v22'})
+    'semantic_map.node_local.v4.occurrence.v17', 'semantic_map.node_local.v4.occurrence.v18', 'semantic_map.node_local.v4.occurrence.v19', 'semantic_map.node_local.v4.occurrence.v20', 'semantic_map.node_local.v4.occurrence.v21', 'semantic_map.node_local.v4.occurrence.v22', 'semantic_map.node_local.v4.occurrence.v23'})
 
 
 _CLOSED_TAG = re.compile(r'</?[A-Za-z_][\w:.-]*(?:\s+[^<>]*)?/?>|/>')
@@ -352,7 +352,7 @@ def record_plan_owners(material, available=None):
     flexible allocation if source coverage or available nodes do not permit it.
     """
     if (material.get('author_profile') not in {
-            'semantic_map.node_local.v4.occurrence.v17', 'semantic_map.node_local.v4.occurrence.v18', 'semantic_map.node_local.v4.occurrence.v19', 'semantic_map.node_local.v4.occurrence.v20', 'semantic_map.node_local.v4.occurrence.v21', 'semantic_map.node_local.v4.occurrence.v22'}
+            'semantic_map.node_local.v4.occurrence.v17', 'semantic_map.node_local.v4.occurrence.v18', 'semantic_map.node_local.v4.occurrence.v19', 'semantic_map.node_local.v4.occurrence.v20', 'semantic_map.node_local.v4.occurrence.v21', 'semantic_map.node_local.v4.occurrence.v22', 'semantic_map.node_local.v4.occurrence.v23'}
             or material.get('history_stage')):
         return ()
     records = [row['record'] for row in material.get('records', ())]
@@ -387,7 +387,7 @@ def compact_action_pairs(material):
     and history have separate provenance and allocation rules. Preserve their
     existing author choices. Never infer that two acts or actors are identical.
     """
-    if (material.get('author_profile') not in {'semantic_map.node_local.v4.occurrence.v18', 'semantic_map.node_local.v4.occurrence.v19', 'semantic_map.node_local.v4.occurrence.v20', 'semantic_map.node_local.v4.occurrence.v21', 'semantic_map.node_local.v4.occurrence.v22'}
+    if (material.get('author_profile') not in {'semantic_map.node_local.v4.occurrence.v18', 'semantic_map.node_local.v4.occurrence.v19', 'semantic_map.node_local.v4.occurrence.v20', 'semantic_map.node_local.v4.occurrence.v21', 'semantic_map.node_local.v4.occurrence.v22', 'semantic_map.node_local.v4.occurrence.v23'}
             or material.get('history_stage') or material.get('map_corrections')
             or not 1 <= len(material.get('records', ())) <= 12):
         return {}
@@ -553,7 +553,7 @@ def _limits_current_inference(sentence):
 
 def prior_evidence_limits(material):
     """Return a unique selectable prior/current qualification per complete original record."""
-    if (material.get('author_profile') != 'semantic_map.node_local.v4.occurrence.v22'
+    if (material.get('author_profile') not in {'semantic_map.node_local.v4.occurrence.v22', 'semantic_map.node_local.v4.occurrence.v23'}
             or material.get('history_stage') or material.get('map_corrections')
             or any(entry.get(key) for entry in material.get('emlis_source_materials', ())
                    for key in ('source_updates', 'conflicts', 'unresolved_sources'))):
@@ -678,7 +678,7 @@ def _paired_measurements(fields):
 
 def plan_reading_regions(material, pairs):
     """Reserve a few separated portions of an ordinary original, without assigning their meaning."""
-    if (material.get('author_profile') not in {'semantic_map.node_local.v4.occurrence.v20', 'semantic_map.node_local.v4.occurrence.v21', 'semantic_map.node_local.v4.occurrence.v22'}
+    if (material.get('author_profile') not in {'semantic_map.node_local.v4.occurrence.v20', 'semantic_map.node_local.v4.occurrence.v21', 'semantic_map.node_local.v4.occurrence.v22', 'semantic_map.node_local.v4.occurrence.v23'}
             or material.get('history_stage') or material.get('map_corrections') or not record_plan_owners(material)):
         return {}
     if any(f['source_role'] != 'ORIGINAL_INPUT' or f.get('fragment_scalar_range')
@@ -729,7 +729,7 @@ def plan_reading_regions(material, pairs):
             continue
         wire_bytes += sum(cheapest(group) for group in groups)
         regions[record] = PlanReadingRegions(memo, groups, allowed)
-        if material.get('author_profile') in {'semantic_map.node_local.v4.occurrence.v21', 'semantic_map.node_local.v4.occurrence.v22'}:
+        if material.get('author_profile') in {'semantic_map.node_local.v4.occurrence.v21', 'semantic_map.node_local.v4.occurrence.v22', 'semantic_map.node_local.v4.occurrence.v23'}:
             # Prefer the whole temporal statement within its existing reading
             # portion. Competing statements leave the choice within that portion free.
             preferred = []
@@ -754,7 +754,7 @@ def plan_reading_regions(material, pairs):
 
 def whole_plan_sources(material, owners):
     """Find independently representable complete source sentences anywhere in an ordinary PLAN."""
-    if (material.get('author_profile') != 'semantic_map.node_local.v4.occurrence.v22'
+    if (material.get('author_profile') not in {'semantic_map.node_local.v4.occurrence.v22', 'semantic_map.node_local.v4.occurrence.v23'}
             or not owners or len(owners) > 12 or material.get('history_stage') or material.get('map_corrections')):
         return {}
     fields = material['fields']
@@ -946,7 +946,7 @@ def prepare(material):
     if regions:
         view['records'] = [dict(row, memo_reading_regions=regions[row['record']].description())
             if row['record'] in regions else row for row in view['records']]
-    if material.get('author_profile') == 'semantic_map.node_local.v4.occurrence.v22':
+    if material.get('author_profile') in {'semantic_map.node_local.v4.occurrence.v22', 'semantic_map.node_local.v4.occurrence.v23'}:
         required = whole_plan_sources(material, record_plan_owners(material))
         if required:
             view['whole_plan_source_ranges'] = [
@@ -967,12 +967,12 @@ def prepare(material):
 def _restore_view(material):
     """Recover the exact input and validate the displayed table before constrained decoding."""
     original = dict(material)
-    if material.get('author_profile') == 'semantic_map.node_local.v4.occurrence.v22':
+    if material.get('author_profile') in {'semantic_map.node_local.v4.occurrence.v22', 'semantic_map.node_local.v4.occurrence.v23'}:
         original.pop('whole_plan_source_ranges', None)
-    if material.get('author_profile') in {'semantic_map.node_local.v4.occurrence.v18', 'semantic_map.node_local.v4.occurrence.v19', 'semantic_map.node_local.v4.occurrence.v20', 'semantic_map.node_local.v4.occurrence.v21', 'semantic_map.node_local.v4.occurrence.v22'} and 'records' in material:
+    if material.get('author_profile') in {'semantic_map.node_local.v4.occurrence.v18', 'semantic_map.node_local.v4.occurrence.v19', 'semantic_map.node_local.v4.occurrence.v20', 'semantic_map.node_local.v4.occurrence.v21', 'semantic_map.node_local.v4.occurrence.v22', 'semantic_map.node_local.v4.occurrence.v23'} and 'records' in material:
         original['records'] = [{k: v for k, v in row.items() if k != 'paired_original_fields'}
                                for row in material['records']]
-    if material.get('author_profile') in {'semantic_map.node_local.v4.occurrence.v20', 'semantic_map.node_local.v4.occurrence.v21', 'semantic_map.node_local.v4.occurrence.v22'} and 'records' in original:
+    if material.get('author_profile') in {'semantic_map.node_local.v4.occurrence.v20', 'semantic_map.node_local.v4.occurrence.v21', 'semantic_map.node_local.v4.occurrence.v22', 'semantic_map.node_local.v4.occurrence.v23'} and 'records' in original:
         original['records'] = [{k: v for k, v in row.items() if k != 'memo_reading_regions'} for row in original['records']]
     original['fields'] = []
     for field in material['fields']:
@@ -1232,11 +1232,31 @@ class OverviewSourcePhrases:
         return bool(covered) and covered != self.required
 
 
-def selected_record_overview(material, nodes, fixed_parts, heading):
-    """Summarize a count-only heading from complete sentences actually selected from each record."""
+def repeated_record_node_dates(material, nodes):
+    """Date separate nodes from one record only when every root belongs to that original."""
     from collections import Counter
+
+    fields = _original_field_records(material)
+    owners = []
+    for node in nodes:
+        source_records = {fields.get(root['field']) for unit in node['units'] for root in unit['evidence']}
+        owners.append(source_records.pop() if len(source_records) == 1 else None)
+    counts = Counter(owner for owner in owners if owner is not None)
     records = [row['record'] for row in material['records']]
-    if len(records) < 2 or heading != f'{len(records)}件の記録を振り返って':
+    if len(records) < 2 or not any(count > 1 for count in counts.values()):
+        return {}
+    labels = dict(zip(records, _source_date_labels(material, records), strict=True))
+    return {index: labels[owner] for index, owner in enumerate(owners) if owner in counts}
+
+
+def selected_record_overview(material, nodes, fixed_parts, heading, *, include_authored_titles=False):
+    """Summarize selected complete original sentences for a whole-map heading."""
+    from collections import Counter
+    rows = material['records']
+    if include_authored_titles:
+        rows = sorted(rows, key=lambda row: _source_timestamp(row['recorded_at']))
+    records = [row['record'] for row in rows]
+    if len(records) < 2 or (not include_authored_titles and heading != f'{len(records)}件の記録を振り返って'):
         return ''
     single_clock = len({_source_timestamp(row['recorded_at']) for row in material['records']}) == 1
     chosen = {}
@@ -1295,6 +1315,128 @@ def selected_record_overview(material, nodes, fixed_parts, heading):
     summary = '\n'.join(lines + details)
     return summary if len(summary) <= 2000 else ''
 
+
+
+# Each title atom is a complete statement or a grammatical variant of
+# one original source. Do not build new relations by matching loose words.
+_TITLE_NOUN_PART = r'[一-鿿々ァ-ヺーA-Za-z0-9０-９]+(?:(?![がをにでへはものと])[ぁ-ゖ]){0,3}'
+_TITLE_NOUN = _TITLE_NOUN_PART + r'(?:の' + _TITLE_NOUN_PART + r'){0,3}'
+_TITLE_ACTION = re.compile(r'(?P<context>(?:' + _TITLE_NOUN + r'[にでへ]){0,2})'
+    + r'(?P<object>' + _TITLE_NOUN + r')を(?P<process>(?:[一-鿿々]+して){0,2})'
+    + r'(?P<verb>[一-鿿々]+)(?P<form>[ぁ-ゖ]{0,5}[ただ]|し)$')
+_TITLE_INCOMING = re.compile(r'(?P<sender>' + _TITLE_NOUN + r')から'
+    + r'(?P<topic>' + _TITLE_NOUN + r')が(?P<event>[一-鿿々]+[ぁ-ゖ]{0,4}[ただ])と'
+    + r'(?P<notice>' + _TITLE_NOUN + r')が(?:あった|来た|届いた)$')
+
+
+def _title_atom_choices(sentence, *, original_action):
+    """Preserve the object, arguments, source and polarity while shortening a sentence."""
+    if not sentence.endswith(('。', '！', '!', '？', '?')):
+        return set()
+    if sentence[-1] != '。':
+        # A question or exclamation can only be used with its own end mark.
+        return {sentence} if len(sentence) <= 80 else set()
+    body = sentence[:-1].strip()
+    if not body:
+        return set()
+    choices = {body}
+    # Parse an entire explicit report, not its nested proposition or speaker
+    # in isolation. The resulting relative clause still names the report.
+    incoming = _TITLE_INCOMING.fullmatch(body)
+    if incoming and not incoming['event'].endswith(('なかった', 'たかった', 'そうだった')):
+        choices.add(incoming['sender'] + 'から' + incoming['notice'] + 'を受けた' + incoming['topic'])
+    clauses = [body]
+    if original_action:
+        # Only a list of directly written actions with a final finite verb
+        # can contribute separate parts of a compound action field.
+        parts = re.split('[、，,]', body)
+        matches = [_TITLE_ACTION.fullmatch(part) for part in parts]
+        if (len(parts) > 1 and all(matches) and all(m['form'] == 'し' for m in matches[:-1])
+                and matches[-1]['form'].endswith(('た', 'だ')) and 'なかっ' not in matches[-1]['form']):
+            clauses = [part + 'た' for part in parts[:-1]] + [parts[-1]]
+    for clause in clauses:
+        m = _TITLE_ACTION.fullmatch(clause)
+        if not m or m['form'] == 'し':
+            continue
+        choices.add(clause)
+        if m['form'].endswith(('なかった', 'たかった', 'そうだった')):
+            continue
+        choices.add(clause + '日')
+        if m['process']:
+            continue
+        # Japanese can move an object into the head of a relative clause.
+        # Keep each original adjunct in that same clause.
+        choices.add(m['context'] + m['verb'] + m['form'] + m['object'])
+        if not m['context'] and m['form'] == 'した':
+            choices.add(m['object'] + 'の' + m['verb'])
+            choices.add(m['object'])
+    return {q for q in choices if q and len(q) <= 80}
+
+
+def _title_atoms(material, nodes):
+    fields = {f['field']: f for f in material['fields'] if f['source_role'] == 'ORIGINAL_INPUT'}
+    selected = {}
+    for node in nodes:
+        for unit in node['units']:
+            for root in unit['evidence']:
+                if root['field'] in fields:
+                    selected.setdefault(root['field'], set()).add(root['quote'])
+    index = {}
+    for number, quotations in selected.items():
+        f = fields[number]
+        # In a history fragment require a complete, admitted original
+        # sentence; no unbound text nearby is admitted as a heading.
+        for sentence in _outer_sentences(f['text'], original_for_overview=True):
+            if not any(sentence in quote for quote in quotations):
+                continue
+            for atom in _title_atom_choices(sentence, original_action=f.get('field_path') == 'memo_action'):
+                index.setdefault(atom, set()).add(f['record'])
+    return index
+
+
+def _source_composed_title(proposal, material, nodes):
+    """Read every character as an intact per-record atom or a neutral connective."""
+    index = _title_atoms(material, nodes)
+    refs = {f['field']: f['record'] for f in material['fields'] if f['source_role'] == 'ORIGINAL_INPUT'}
+    required = {owner for node in nodes for unit in node['units']
+                if (owner := _unit_record(refs, unit)) is not None}
+    if len(required) < 2:
+        return False
+    # Use only a complete ending. Question marks, quotes and negative forms
+    # belong to their original statement and are not interchangeable punctuation.
+    body = proposal[:-1] if proposal.endswith('。') else proposal
+    # The composed order may be thematic. The chronological construction
+    # additionally requires increasing actual record timestamps.
+    records = {r['record']: r.get('recorded_at') for r in material.get('records', ())}
+    def matches(text, *, chronological=False):
+        pending = [(0, frozenset(), None)]
+        visited = set()
+        while pending:
+            at, covered, previous = pending.pop()
+            state = at, covered, previous
+            if state in visited:
+                continue
+            visited.add(state)
+            for atom, owners in index.items():
+                if not text.startswith(atom, at):
+                    continue
+                end = at + len(atom)
+                for owner in owners:
+                    if (owner in covered or chronological and previous is not None
+                            and (not records.get(owner) or not records.get(previous)
+                                 or _source_timestamp(records[owner]) <= _source_timestamp(records[previous]))):
+                        continue
+                    reached = covered | {owner}
+                    if end == len(text):
+                        if reached == required:
+                            return True
+                        continue
+                    separators = ('から',) if chronological else ('と、', 'と', '。', '／', '・')
+                    for sep in separators:
+                        if text.startswith(sep, end):
+                            pending.append((end + len(sep), reached, owner))
+        return False
+    return matches(body) or (body.endswith('まで') and matches(body[:-2], chronological=True))
 
 
 class WholeMapTitle:
@@ -1389,6 +1531,9 @@ class WholeMapTitle:
                 supported |= self.mask(span)
             if supported != self.required:
                 return [self.neutral]
+        if (material.get('author_profile') == 'semantic_map.node_local.v4.occurrence.v23'
+                and not _source_composed_title(proposal, material, nodes)):
+            return [self.neutral]
         units = [unit for node in nodes for unit in node['units']]
         quotes = [root['quote'] for unit in units for root in unit['evidence']]
         forbidden = one_sided_source_titles(material, units, compare_end_marks=True)
