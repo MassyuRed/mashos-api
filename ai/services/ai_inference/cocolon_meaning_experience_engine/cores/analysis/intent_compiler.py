@@ -3945,7 +3945,8 @@ def expand_analysis_semantic_event_plan(prepared, packet):
                 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v7',
                 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v8',
                 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v9',
-                'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v10'}):
+                'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v10',
+                'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v11'}):
         from .semantic_admission import (assemble_semantic_node_local_v4,
             SEMANTIC_MAP_NODE_LOCAL_V3_PROFILE, SEMANTIC_MAP_FACT_ENDPOINT_PROFILES)
         joined = assemble_semantic_node_local_v4(prepared, packet)
@@ -4344,12 +4345,12 @@ def compile_analysis_semantic_stage(stage, packet, *, response_sha256):
         _semantic_map_require, _semantic_map_evidence, semantic_map_canonical,
         semantic_map_hash, _semantic_history_corrections, _semantic_history_leaf_packet,
         SEMANTIC_HISTORY_PROFILE, SEMANTIC_HISTORY_MERGE_PROFILE, SEMANTIC_MAP_NODE_LOCAL_V3_PROFILE,
-        SEMANTIC_MAP_NODE_LOCAL_V4_PROFILES)
+        SEMANTIC_MAP_NODE_LOCAL_V4_PROFILES, _semantic_v4_view)
     _semantic_map_require(type(stage) is AnalysisSemanticMapStageInput
         and stage.kind in {'LEAF', 'MERGE'}, 'analysis_semantic_history_stage_unbound')
     parent = stage.parent
     original_packet = packet
-    expansion_view = (replace(parent, material_json=stage.material_json)
+    expansion_view = (_semantic_v4_view(stage)
         if stage.prompt_version in {SEMANTIC_MAP_NODE_LOCAL_V3_PROFILE, *SEMANTIC_MAP_NODE_LOCAL_V4_PROFILES} else parent)
     packet = expand_analysis_semantic_event_plan(expansion_view, packet)
     material = json.loads(stage.material_json)
@@ -4397,7 +4398,7 @@ def compile_analysis_semantic_stage(stage, packet, *, response_sha256):
         if stage.kind == 'LEAF' else json.loads(parent.map_correction_sources_json or '[]'))
     view = replace(parent, map_correction_sources_json=semantic_map_canonical(corrections) if corrections else '')
     if stage.prompt_version in SEMANTIC_MAP_NODE_LOCAL_V4_PROFILES:
-        view = replace(view, material_json=stage.material_json)
+        view = replace(view, material_json=stage.material_json, request_ref=expansion_view.request_ref)
     graph = _compile_analysis_semantic_map_v2(view, packet, response_sha256=response_sha256,
         author_packet=original_packet)
     graph = _semantic_event_plan_review(graph, view, original_packet, packet)

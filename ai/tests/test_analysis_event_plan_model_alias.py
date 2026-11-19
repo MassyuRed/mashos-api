@@ -150,7 +150,8 @@ def if_prepared():
     return if_route.prepare_if_model_request(request(count=2, legacy=True))
 
 
-@pytest.mark.parametrize('map_alias', [ALIAS, sources.SEMANTIC_NODE_LOCAL_V4_MODEL, sources.SEMANTIC_NODE_LOCAL_V4_BOUND_MODEL])
+@pytest.mark.parametrize('map_alias', [ALIAS, sources.SEMANTIC_NODE_LOCAL_V4_MODEL,
+    sources.SEMANTIC_NODE_LOCAL_V4_BOUND_MODEL, sources.SEMANTIC_OCCURRENCE_V11_MODEL])
 def test_if_wire_uses_original_120u_under_map_candidate_and_native_does_not_switch_adapter(monkeypatch, map_alias):
     from io import BytesIO
     from types import SimpleNamespace

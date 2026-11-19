@@ -33,6 +33,7 @@ SEMANTIC_OCCURRENCE_V7_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v4-occurr
 SEMANTIC_OCCURRENCE_V8_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v4-occurrence-v8'
 SEMANTIC_OCCURRENCE_V9_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v4-occurrence-v9'
 SEMANTIC_OCCURRENCE_V10_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v4-occurrence-v10'
+SEMANTIC_OCCURRENCE_V11_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v4-occurrence-v11'
 SEMANTIC_NODE_LOCAL_V4_BOUND_V2_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v4-bound-roots-v2'
 SEMANTIC_EVENT_PLAN_BASE_MODEL = 'cocolon-qwen3.5-4b-analysis-semantic-120u'
 MAX_RESPONSE_BYTES = 262144
@@ -230,7 +231,7 @@ class SelfHostedSemanticAnalysisModelSource(SelfHostedAnalysisModelSource):
                         finish_reason='stop', completion_tokens=completion))
                     value = core._load(raw)
                     if phase == 'PLAN':
-                        plan = core.semantic_node_local_v4_plan(prepared, value)
+                        plan = core.admit_semantic_node_local_v4_plan_response(prepared, value)
                     elif phase == 'NODES':
                         nodes = core.semantic_node_local_v4_nodes(prepared, plan, value)
                     else:
@@ -317,7 +318,9 @@ def _configured_semantic_prompt_version(model):
         SEMANTIC_MAP_OCCURRENCE_PROFILE, SEMANTIC_MAP_OCCURRENCE_V2_PROFILE, SEMANTIC_MAP_OCCURRENCE_V3_PROFILE,
         SEMANTIC_MAP_OCCURRENCE_V4_PROFILE, SEMANTIC_MAP_OCCURRENCE_V5_PROFILE, SEMANTIC_MAP_OCCURRENCE_V6_PROFILE,
         SEMANTIC_MAP_OCCURRENCE_V7_PROFILE, SEMANTIC_MAP_OCCURRENCE_V8_PROFILE, SEMANTIC_MAP_OCCURRENCE_V9_PROFILE,
-        SEMANTIC_MAP_OCCURRENCE_V10_PROFILE)
+        SEMANTIC_MAP_OCCURRENCE_V10_PROFILE, SEMANTIC_MAP_OCCURRENCE_V11_PROFILE)
+    if model == SEMANTIC_OCCURRENCE_V11_MODEL:
+        return SEMANTIC_MAP_OCCURRENCE_V11_PROFILE
     if model == SEMANTIC_OCCURRENCE_V10_MODEL:
         return SEMANTIC_MAP_OCCURRENCE_V10_PROFILE
     if model == SEMANTIC_OCCURRENCE_V9_MODEL:

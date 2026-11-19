@@ -12,6 +12,7 @@ name: Analysis observed content
       - ai/services/ai_inference/analysis_observed_service.py
       - ai/services/ai_inference/analysis_cumulative_service.py
       - ai/services/ai_inference/analysis_model_source.py
+      - ai/services/ai_inference/analysis_plan_source_choices.py
       - ai/services/ai_inference/analysis_if_model_source.py
       - ai/services/ai_inference/analysis_map_correction_service.py
       - ai/services/ai_inference/analysis_if_route_service.py
@@ -106,6 +107,7 @@ name: Analysis observed content
       - ai/tests/test_analysis_occurrence_v10_plan_leads.py
       - ai/tests/test_analysis_occurrence_v10_plan_reading.py
       - ai/tests/test_analysis_occurrence_v10_record_time.py
+      - ai/tests/test_analysis_occurrence_v11_*.py
       - ai/tests/test_analysis_node_local_bound_roots.py
       - ai/tests/test_analysis_bound_roots_v2_selection.py
       - supabase/migrations/*_emlis_natural_bound_questions.sql
@@ -331,6 +333,7 @@ jobs:
           ai/tests/test_analysis_occurrence_v10_plan_leads.py
           ai/tests/test_analysis_occurrence_v10_plan_reading.py
           ai/tests/test_analysis_occurrence_v10_record_time.py
+          ai/tests/test_analysis_occurrence_v11_*.py
           ai/tests/test_analysis_node_local_bound_roots.py
           ai/tests/test_analysis_bound_roots_v2_selection.py
           ai/tests/test_analysis_semantic_history_core.py
