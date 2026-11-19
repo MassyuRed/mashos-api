@@ -7,7 +7,8 @@ import unicodedata
 
 _CONTENT_PLAN_PROFILES = frozenset({
     'semantic_map.node_local.v4.occurrence.v13', 'semantic_map.node_local.v4.occurrence.v14',
-    'semantic_map.node_local.v4.occurrence.v15', 'semantic_map.node_local.v4.occurrence.v16'})
+    'semantic_map.node_local.v4.occurrence.v15', 'semantic_map.node_local.v4.occurrence.v16',
+    'semantic_map.node_local.v4.occurrence.v17'})
 
 
 _CLOSED_TAG = re.compile(r'</?[A-Za-z_][\w:.-]*(?:\s+[^<>]*)?/?>|/>')
@@ -125,6 +126,92 @@ def _sentences(text):
             and not re.search(r'["\\\x00-\x1f]', q)]
 
 
+# The finite reporting verbs already used by the analysis reader. Only the outer
+# communication act is classified here; its topic never becomes an occurred event.
+_SPEECH_ACT_NEGATIVE = (r'(?:言って|話して|語って|述べて|書いて|伝えて|答えて|説明して)'
+                        r'(?:いない(?:です)?|いません(?:でした)?|いなかった(?:です)?)')
+_NOMINAL_ARGUMENT = r'[一-鿿々ァ-ヺーA-Za-z0-9]{1,48}(?:の[一-鿿々ァ-ヺーA-Za-z0-9]{1,48}){0,2}'
+_RECIPIENT = _NOMINAL_ARGUMENT + r'(?:に|へ)(?:は|も)?'
+_SPEECH_TOPIC = _NOMINAL_ARGUMENT + r'を'
+# A suru-form with the nominal head 話 is an act of communication. The
+# written topic may be a deverbal noun (e.g. a kanji mixed with okurigana).
+_TALK_NOUN = r'(?:[一-鿿々ァ-ヺー][ぁ-ゖ]{0,3}){1,24}'
+_UNPERFORMED_TALK = r'(?:(?:' + _TALK_NOUN + r'の){1,2})?話をして(?:いない(?:です)?|いません(?:でした)?|いなかった(?:です)?)'
+_NONACTION_SPEECH = re.compile(
+    r'(?P<self>(?:私|わたし|僕|ぼく|俺|おれ)(?:は|が))?(?:まだ)?'
+    + '(?:(?P<recipient>' + _RECIPIENT + ')(?:まだ)?(?:(?:' + _SPEECH_TOPIC
+    + ')?(?:まだ)?' + _SPEECH_ACT_NEGATIVE + '|' + _UNPERFORMED_TALK + ')'
+    + '|' + _SPEECH_TOPIC + '(?:まだ)?' + _SPEECH_ACT_NEGATIVE + ')')
+# A conjunct ending in -sezu supplies a second known non-action, not an
+# epistemic or conditional host. Leave arbitrary comma prefixes unclassified.
+_NONACTION_CONJUNCT = re.compile(
+    '(?:' + _NOMINAL_ARGUMENT + '(?:には|では|は|も|を)){0,2}' + _NOMINAL_ARGUMENT + 'せず')
+
+
+def recorded_non_actions(material):
+    """Verbatim facts that cannot themselves be an OPEN result; never supply a missing actor."""
+    fields = {f['field']: f for f in material['fields']}
+    result = set()
+    for claim in material.get('source_duties', {}).get('claims', ()):
+        reading = claim['reading']
+        field = fields.get(claim['field'])
+        if (not field or reading.get('actor') != 'SELF' or reading.get('modality') != 'fact'
+                or reading.get('polarity') != 'negative' or reading.get('time') != 'past'
+                or any(reading.get(k) for k in ('possible_content', 'dependent', 'sequence'))):
+            continue
+        offset = field.get('fragment_scalar_range', [0])[0]
+        start, end = (position - offset for position in claim['span'])
+        if 0 <= start < end <= len(field['text']):
+            result.add((field['field'], field['text'][start:end]))
+    direct_recipients = set()
+    contextual = []
+    for number, field in fields.items():
+        if (field.get('source_role') != 'ORIGINAL_INPUT' or field.get('field_path') not in {'memo', 'memo_action'}
+                or field.get('fragment_is_complete_field') is False):
+            continue
+        source = field['text'].strip()
+        # Quoted/reported text, a question, or an introduction can frame the
+        # following line as someone else's account. Keep these readings open.
+        if re.search(r'[「」『』“”‘’"（）()【】!?！？:：]|(?:仮に|もし|例えば|たとえば|例として|によると|によれば|曰く)', source):
+            continue
+        if re.search(r'(?:言った|話した|語った|説明した|伝えた|言いました|話しました)[。．]\s*'
+                     r'|[。．]\s*(?:と|って)|(?:例文|仮定|仮の話|仮説|架空|転記|引用)', source):
+            continue
+        # An enclosing or later sentence can withdraw the apparent fact.
+        # Process only the final complete source statement and never choose
+        # the last *returned* candidate if a nonunique or quoted tail was skipped.
+        sentences = _sentences(source)
+        if not sentences or not source.endswith(sentences[-1]):
+            continue
+        sentence = sentences[-1]
+        clause = sentence.removesuffix('。')
+        parts = re.split('[、，]', clause)
+        coordinated = len(parts) == 2 and _NONACTION_CONJUNCT.fullmatch(parts[0]) is not None
+        if len(parts) != 1 and not coordinated:
+            continue
+        speech = parts[-1]
+        match = _NONACTION_SPEECH.fullmatch(speech)
+        if not match:
+            continue
+        recipient = re.sub(r'(?:に|へ)(?:は|も)?$', '', match['recipient'] or '')
+        # A single independent sentence needs no discourse actor. If previous
+        # sentences exist, require an explicit SELF or the paired non-action
+        # in the action field; do not carry a third person's subject across a stop.
+        direct = source == sentence or bool(match['self']) or (coordinated and field['field_path'] == 'memo_action')
+        if direct:
+            result.update(((number, clause), (number, speech)))
+            if recipient and field['field_path'] == 'memo_action' and field.get('record') is not None:
+                direct_recipients.add((field['record'], recipient))
+        elif recipient and field['field_path'] == 'memo' and field.get('record') is not None:
+            contextual.append((field['record'], recipient, number, clause))
+    # Use a paired original entry only to recognize an outward communication
+    # reading to the same addressee. Never substitute its topic, words or date.
+    for record, recipient, number, clause in contextual:
+        if (record, recipient) in direct_recipients:
+            result.add((number, clause))
+    return result
+
+
 def choices_for_field(field):
     """Use the same unique bounded literals as the staged native quote menu."""
     text = field['text']
@@ -147,6 +234,41 @@ def choices_for_field(field):
     literals = {q for q in literals if q and text.count(q) == 1}
     return [q for q in sentences if q in literals], literals
 
+
+
+
+def record_plan_owners(material, available=None):
+    """Return (original fields, local fields) per independently representable record.
+
+    A correction's record_refs name its dependencies, never its original author.
+    Keep room to represent unowned sources separately. Fall back to ordinary
+    flexible allocation if source coverage or available nodes do not permit it.
+    """
+    if (material.get('author_profile') != 'semantic_map.node_local.v4.occurrence.v17'
+            or material.get('history_stage')):
+        return ()
+    records = [row['record'] for row in material.get('records', ())]
+    if not 1 <= len(records) <= 12:
+        return ()
+    fields = material['fields']
+    if available is None:
+        available = {f['field'] for f in fields if choices_for_field(f)[1]}
+    originals = {record: set() for record in records}
+    locals_by_record = {record: set() for record in records}
+    unowned = set()
+    for f in fields:
+        number, record = f['field'], f.get('record')
+        if number not in available:
+            continue
+        if record not in originals:
+            unowned.add(number)
+            continue
+        locals_by_record[record].add(number)
+        if f['source_role'] == 'ORIGINAL_INPUT':
+            originals[record].add(number)
+    if not all(originals.values()) or len(records) + len(unowned) > 12:
+        return ()
+    return tuple((frozenset(originals[r]), frozenset(locals_by_record[r])) for r in records)
 
 
 def _content_choices(text, quote, literals, choices, number):

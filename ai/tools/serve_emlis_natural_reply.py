@@ -56,6 +56,7 @@ OCCURRENCE_V13_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v4-occurrence-v13
 OCCURRENCE_V14_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v4-occurrence-v14'
 OCCURRENCE_V15_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v4-occurrence-v15'
 OCCURRENCE_V16_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v4-occurrence-v16'
+OCCURRENCE_V17_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v4-occurrence-v17'
 OCCURRENCE_V3_PROFILE = 'semantic_map.node_local.v4.occurrence.v3'
 OCCURRENCE_V4_PROFILE = 'semantic_map.node_local.v4.occurrence.v4'
 OCCURRENCE_V5_PROFILE = 'semantic_map.node_local.v4.occurrence.v5'
@@ -70,7 +71,9 @@ OCCURRENCE_V13_PROFILE = 'semantic_map.node_local.v4.occurrence.v13'
 OCCURRENCE_V14_PROFILE = 'semantic_map.node_local.v4.occurrence.v14'
 OCCURRENCE_V15_PROFILE = 'semantic_map.node_local.v4.occurrence.v15'
 OCCURRENCE_V16_PROFILE = 'semantic_map.node_local.v4.occurrence.v16'
-VISIBLE_SOURCE_PROFILES = frozenset({OCCURRENCE_V14_PROFILE, OCCURRENCE_V15_PROFILE, OCCURRENCE_V16_PROFILE})
+OCCURRENCE_V17_PROFILE = 'semantic_map.node_local.v4.occurrence.v17'
+FACT_PROSE_PROFILES = frozenset({OCCURRENCE_V16_PROFILE, OCCURRENCE_V17_PROFILE})
+VISIBLE_SOURCE_PROFILES = frozenset({OCCURRENCE_V14_PROFILE, OCCURRENCE_V15_PROFILE, OCCURRENCE_V16_PROFILE, OCCURRENCE_V17_PROFILE})
 CONTENT_PLAN_PROFILES = frozenset({OCCURRENCE_V13_PROFILE, *VISIBLE_SOURCE_PROFILES})
 FACT_REFERENCE_PROFILES = frozenset({OCCURRENCE_V12_PROFILE, *CONTENT_PLAN_PROFILES})
 SOURCE_CUED_PROFILES = frozenset({OCCURRENCE_V9_PROFILE, OCCURRENCE_V10_PROFILE, OCCURRENCE_V11_PROFILE, *FACT_REFERENCE_PROFILES})
@@ -646,7 +649,7 @@ def _semantic_relation_fact_parts(material):
     return parts
 
 
-def _semantic_node_local_v4_schema(material, pairs, unknown_pairs, *, leaf=False):
+def _semantic_node_local_v4_schema(material, pairs, unknown_pairs, *, leaf=False, record_owners=()):
     """Three private author shapes; no text repair or semantic certification."""
     from copy import deepcopy
     def obj(props):
@@ -674,7 +677,7 @@ def _semantic_node_local_v4_schema(material, pairs, unknown_pairs, *, leaf=False
             if type(scope) is not str or not re.fullmatch(r'[0-9a-f]{64}', scope):
                 raise ValueError('semantic_plan_choice_scope_invalid')
             props['source_choices_sha256'] = dict(type='string', enum=[scope])
-        props['nodes'] = dict(type='array', items=node, minItems=1, maxItems=12)
+        props['nodes'] = dict(type='array', items=node, minItems=max(1, len(record_owners)), maxItems=12)
         return root(phase, props)
     if phase == 'RELATIONS' and author_profile in {OCCURRENCE_V8_PROFILE, *SOURCE_CUED_PROFILES}:
         # The model sees one ordered copy of the evidence. Reconstruct the
@@ -761,7 +764,7 @@ def _semantic_node_local_v4_schema(material, pairs, unknown_pairs, *, leaf=False
                 if author_profile in SOURCE_CUED_PROFILES:
                     parts = {_semantic_fact_part_key(roots, index): text(limit)
                              for index, limit in enumerate(limits)}
-                if display_sentences or author_profile == OCCURRENCE_V16_PROFILE:
+                if display_sentences or author_profile in FACT_PROSE_PROFILES:
                     for (key, part), source in zip(parts.items(), roots, strict=True):
                         fact_ordinal += 1
                         quote = source['quote']
@@ -770,7 +773,7 @@ def _semantic_node_local_v4_schema(material, pairs, unknown_pairs, *, leaf=False
                                 if author_profile in FACT_REFERENCE_PROFILES else dict(type='string', enum=[quote]))
                         elif author_profile in FACT_REFERENCE_PROFILES:
                             handles = _semantic_literal_handles(quote)
-                            if author_profile == OCCURRENCE_V16_PROFILE:
+                            if author_profile in FACT_PROSE_PROFILES:
                                 handles = _semantic_choice_module().literal_fact_handles(quote)
                                 choices = _semantic_choice_module().fact_sentence_choices(
                                     quote, display_sentences.get(source['field'], ()), part['maxLength'])
@@ -795,7 +798,7 @@ def _semantic_node_local_v4_schema(material, pairs, unknown_pairs, *, leaf=False
         title = dict(type='string', enum=list(dict.fromkeys(titles))) if titles else text(80)
         if author_profile in CONTENT_PLAN_PROFILES and phase == 'NODES':
             forbidden = _semantic_choice_module().one_sided_source_titles(material, node['units'],
-                compare_end_marks=author_profile == OCCURRENCE_V16_PROFILE)
+                compare_end_marks=author_profile in FACT_PROSE_PROFILES)
             if forbidden is not None:
                 title = text(80)
                 if forbidden:
@@ -894,6 +897,8 @@ def _semantic_node_local_v4_schema(material, pairs, unknown_pairs, *, leaf=False
         review = {}
         closed = obj(dict(status=dict(type='string', enum=['STATED', 'EARLIER', 'DUPLICATE'])))
         stated = _semantic_recorded_actions(material) if author_profile in {OCCURRENCE_V11_PROFILE, *FACT_REFERENCE_PROFILES} else set()
+        if author_profile == OCCURRENCE_V17_PROFILE:
+            stated.update(_semantic_choice_module().recorded_non_actions(material))
         for ref, candidate in candidates.items():
             source = originals[candidate['source_field']]
             quote = candidate['source_quote']
@@ -951,7 +956,9 @@ def semantic_output_schema(messages):
                     field=dict(type='integer', enum=[number])), required=['quote', 'field'], additionalProperties=False))
         if not pairs:
             raise ValueError('semantic_quotes_unavailable')
-        return _semantic_node_local_v4_schema(material, pairs, [])
+        owners = _semantic_choice_module().record_plan_owners(original,
+            {field for field, options in allowed.items() if options})
+        return _semantic_node_local_v4_schema(material, pairs, [], record_owners=owners)
     fields = material.get('fields')
     if type(fields) is not list or not fields:
         raise ValueError('semantic_fields_invalid')
@@ -1188,7 +1195,7 @@ def _fact_escape_examples(start, end):
 def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None, bound_node_ids=(),
                                         unique_qualifications=False, endpoint_nodes=(), unique_allocations=False,
                                         plan_source_texts=None, plan_choice_quotes=None, overview_sources=None, protect_visible=False,
-                                        compare_title_end_marks=False):
+                                        compare_title_end_marks=False, record_owners=()):
     """Bind graph references and unique source/quote pairs while decoding.
 
     The pinned parser does not enforce JSON Schema uniqueItems. Use an isolated
@@ -1607,20 +1614,31 @@ def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None, b
                     capacity += self.max_items - self.num_items_seen - 1
             return capacity
 
+        def owner_fields(self, graph):
+            index = len(graph.generated_node_ids)
+            if not self.is_evidence or index >= len(record_owners):
+                return None
+            original, local = record_owners[index]
+            return original if graph.plan_allocation == ((),) else local
+
         def remaining_type(self):
             remaining = []
+            owner_fields = None
             missing = frozenset()
             previous = frozenset()
             if unique_allocations:
                 _, graph = graph_state(self.root.context.active_parser)
                 allocation, previous = graph.plan_allocation, graph.previous_allocations
-            if node_local and required_records:
+                owner_fields = self.owner_fields(graph)
+            if node_local and required_records and owner_fields is None:
                 _, graph = graph_state(self.root.context.active_parser)
                 uncovered = required_records - graph.covered_records
                 if len(uncovered) > self.future_root_capacity(after_item=True):
                     missing = uncovered
             for part in self.list_member_type.oneOf:
                 field = part.properties[self.field_key].enum[0]
+                if owner_fields is not None and field not in owner_fields:
+                    continue
                 if missing and record_fields.get(field) not in missing:
                     continue
                 quotes = [q for q in part.properties[self.quote_key].enum if evidence_pair_key(field, q) not in self.used_pairs]
@@ -1653,13 +1671,19 @@ def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None, b
                             chars = chars.replace(']', '')
                         if ',' in chars and not can_add_root(allocation, previous):
                             chars = chars.replace(',', '')
+            if record_owners and self.is_evidence and ',' in chars:
+                _, graph = graph_state(self.root.context.active_parser)
+                owned = self.owner_fields(graph)
+                if owned is not None and not any(pair[0] in owned and pair not in self.used_pairs for pair in plan_roots):
+                    chars = chars.replace(',', '')
             if (self.is_evidence or self.is_qualification) and not any(
                     evidence_pair_key(part.properties[self.field_key].enum[0], q) not in self.used_pairs
                     for part in self.list_member_type.oneOf for q in part.properties[self.quote_key].enum):
                 chars = chars.replace(',', '')
             if node_local and required_records and (self.is_evidence or self.is_units):
                 _, graph = graph_state(self.root.context.active_parser)
-                if len(required_records - graph.covered_records) > self.future_root_capacity():
+                if (len(graph.generated_node_ids) >= len(record_owners)
+                        and len(required_records - graph.covered_records) > self.future_root_capacity()):
                     chars = chars.replace(']', '')
             if self.is_nodes or self.is_events:
                 _, graph = graph_state(self.root.context.active_parser)
@@ -2018,7 +2042,7 @@ def semantic_json_parser(messages, alphabet):
         ids = tuple(n['node_id'] for n in material.get('candidate_nodes', ()))
         return _semantic_unique_json_schema_parser(schema, config, bound_node_ids=ids,
             protect_visible=material.get('author_profile') in VISIBLE_SOURCE_PROFILES,
-            compare_title_end_marks=material.get('author_profile') == OCCURRENCE_V16_PROFILE,
+            compare_title_end_marks=material.get('author_profile') in FACT_PROSE_PROFILES,
             overview_sources=material if material.get('author_phase') == 'RELATIONS'
                 and material.get('author_profile') in CONTENT_PLAN_PROFILES else None,
             endpoint_nodes=material['candidate_nodes'] if material.get('author_phase') == 'RELATIONS'
@@ -2039,9 +2063,16 @@ def semantic_json_parser(messages, alphabet):
         records = {}
     distinct_leads = material.get('author_profile') in {OCCURRENCE_V10_PROFILE, OCCURRENCE_V11_PROFILE, *FACT_REFERENCE_PROFILES} and material.get('author_phase') == 'PLAN'
     choices = None
+    owners = ()
     if distinct_leads and material.get('author_profile') in {OCCURRENCE_V11_PROFILE, *FACT_REFERENCE_PROFILES}:
         material, choices, _ = _semantic_plan_choice_view(material)
-    return _semantic_unique_json_schema_parser(schema, config, record_fields=records, plan_choice_quotes=choices,
+        owners = _semantic_choice_module().record_plan_owners(material, quoted_fields)
+        if owners:
+            # Map corrections have no original record, even for a one-record
+            # dependency cohort. Reserve free evidence slots for their own text.
+            records.update({f['field']: -f['field'] for f in material['fields']
+                if f['source_role'] == 'USER_ANALYSIS_MAP_CORRECTION' and f['field'] in quoted_fields})
+    return _semantic_unique_json_schema_parser(schema, config, record_fields=records, record_owners=owners, plan_choice_quotes=choices,
         plan_source_texts={f['field']: f['text'] for f in material['fields']} if distinct_leads else None,
         unique_allocations=material.get('author_profile') in SOURCE_CUED_PROFILES
             and material.get('author_phase') == 'PLAN')
@@ -2198,7 +2229,7 @@ def make_handler(generate, *, api_key, model_name, deadline, max_requests,
                     EVENT_PLAN_V2_BASE_MODEL, NODE_LOCAL_V3_BASE_MODEL}
                 if event_plan:
                     selected_model = event_plan_model
-                staged = event_plan and event_plan_model in {NODE_LOCAL_V4_MODEL, NODE_LOCAL_V4_BOUND_MODEL, NODE_LOCAL_V4_BOUND_V2_MODEL, OCCURRENCE_MODEL, OCCURRENCE_V2_MODEL, OCCURRENCE_V3_MODEL, OCCURRENCE_V4_MODEL, OCCURRENCE_V5_MODEL, OCCURRENCE_V6_MODEL, OCCURRENCE_V7_MODEL, OCCURRENCE_V8_MODEL, OCCURRENCE_V9_MODEL, OCCURRENCE_V10_MODEL, OCCURRENCE_V11_MODEL, OCCURRENCE_V12_MODEL, OCCURRENCE_V13_MODEL, OCCURRENCE_V14_MODEL, OCCURRENCE_V15_MODEL, OCCURRENCE_V16_MODEL}
+                staged = event_plan and event_plan_model in {NODE_LOCAL_V4_MODEL, NODE_LOCAL_V4_BOUND_MODEL, NODE_LOCAL_V4_BOUND_V2_MODEL, OCCURRENCE_MODEL, OCCURRENCE_V2_MODEL, OCCURRENCE_V3_MODEL, OCCURRENCE_V4_MODEL, OCCURRENCE_V5_MODEL, OCCURRENCE_V6_MODEL, OCCURRENCE_V7_MODEL, OCCURRENCE_V8_MODEL, OCCURRENCE_V9_MODEL, OCCURRENCE_V10_MODEL, OCCURRENCE_V11_MODEL, OCCURRENCE_V12_MODEL, OCCURRENCE_V13_MODEL, OCCURRENCE_V14_MODEL, OCCURRENCE_V15_MODEL, OCCURRENCE_V16_MODEL, OCCURRENCE_V17_MODEL}
                 if staged:
                     material = json.loads(messages[1]['content'])
                     if material.get('author_phase') not in NODE_LOCAL_V4_PHASES:
@@ -2227,7 +2258,7 @@ def make_handler(generate, *, api_key, model_name, deadline, max_requests,
                     except (ValueError, TypeError):
                         material = None
                     marker = material.get('model_schema') if type(material) is dict else None
-                    expected_marker = (NODE_LOCAL_V4_SCHEMA if event_plan_model in {NODE_LOCAL_V4_MODEL, NODE_LOCAL_V4_BOUND_MODEL, NODE_LOCAL_V4_BOUND_V2_MODEL, OCCURRENCE_MODEL, OCCURRENCE_V2_MODEL, OCCURRENCE_V3_MODEL, OCCURRENCE_V4_MODEL, OCCURRENCE_V5_MODEL, OCCURRENCE_V6_MODEL, OCCURRENCE_V7_MODEL, OCCURRENCE_V8_MODEL, OCCURRENCE_V9_MODEL, OCCURRENCE_V10_MODEL, OCCURRENCE_V11_MODEL, OCCURRENCE_V12_MODEL, OCCURRENCE_V13_MODEL, OCCURRENCE_V14_MODEL, OCCURRENCE_V15_MODEL, OCCURRENCE_V16_MODEL}
+                    expected_marker = (NODE_LOCAL_V4_SCHEMA if event_plan_model in {NODE_LOCAL_V4_MODEL, NODE_LOCAL_V4_BOUND_MODEL, NODE_LOCAL_V4_BOUND_V2_MODEL, OCCURRENCE_MODEL, OCCURRENCE_V2_MODEL, OCCURRENCE_V3_MODEL, OCCURRENCE_V4_MODEL, OCCURRENCE_V5_MODEL, OCCURRENCE_V6_MODEL, OCCURRENCE_V7_MODEL, OCCURRENCE_V8_MODEL, OCCURRENCE_V9_MODEL, OCCURRENCE_V10_MODEL, OCCURRENCE_V11_MODEL, OCCURRENCE_V12_MODEL, OCCURRENCE_V13_MODEL, OCCURRENCE_V14_MODEL, OCCURRENCE_V15_MODEL, OCCURRENCE_V16_MODEL, OCCURRENCE_V17_MODEL}
                         else NODE_LOCAL_V3_SCHEMA if event_plan_model in {
                             NODE_LOCAL_V3_MODEL, NODE_LOCAL_V3_BASE_MODEL}
                         else EVENT_PLAN_V2_SCHEMA if event_plan_model in {
@@ -2237,7 +2268,8 @@ def make_handler(generate, *, api_key, model_name, deadline, max_requests,
                                 NODE_LOCAL_V3_SCHEMA, NODE_LOCAL_V4_SCHEMA}):
                         raise ValueError
                     if staged:
-                        expected_profile = (OCCURRENCE_V16_PROFILE if event_plan_model == OCCURRENCE_V16_MODEL
+                        expected_profile = (OCCURRENCE_V17_PROFILE if event_plan_model == OCCURRENCE_V17_MODEL
+                            else OCCURRENCE_V16_PROFILE if event_plan_model == OCCURRENCE_V16_MODEL
                             else OCCURRENCE_V15_PROFILE if event_plan_model == OCCURRENCE_V15_MODEL
                             else OCCURRENCE_V14_PROFILE if event_plan_model == OCCURRENCE_V14_MODEL
                             else OCCURRENCE_V13_PROFILE if event_plan_model == OCCURRENCE_V13_MODEL

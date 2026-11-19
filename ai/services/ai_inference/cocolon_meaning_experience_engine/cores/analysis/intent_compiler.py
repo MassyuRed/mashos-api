@@ -3952,10 +3952,11 @@ def expand_analysis_semantic_event_plan(prepared, packet):
                 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v13',
                 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v14',
                 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v15',
-                'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v16'}):
+                'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v16',
+                'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v17'}):
         from .semantic_admission import (assemble_semantic_node_local_v4,
             SEMANTIC_MAP_NODE_LOCAL_V3_PROFILE, SEMANTIC_MAP_FACT_ENDPOINT_PROFILES, SEMANTIC_MAP_CONTENT_PLAN_PROFILES,
-            SEMANTIC_MAP_VISIBLE_SOURCE_PROFILES)
+            SEMANTIC_MAP_VISIBLE_SOURCE_PROFILES, SEMANTIC_MAP_FACT_PROSE_PROFILES)
         joined = assemble_semantic_node_local_v4(prepared, packet)
         fixed_record_units = set()
         if prepared.prompt_version in SEMANTIC_MAP_VISIBLE_SOURCE_PROFILES:
@@ -3966,7 +3967,7 @@ def expand_analysis_semantic_event_plan(prepared, packet):
             fixed_record_units = {f"{n['node_id']}.u{i}" for n in joined['nodes']
                                   for i, u in enumerate(n['units'], 1)
                                   if counts[n['node_id'], f'u{i}'] == len(u['evidence'])}
-            if prepared.prompt_version == 'semantic_map.node_local.v4.occurrence.v16':
+            if prepared.prompt_version in SEMANTIC_MAP_FACT_PROSE_PROFILES:
                 from .semantic_admission import _semantic_fact_part_key, _semantic_fact_sentence_choices
                 choices = _semantic_fact_sentence_choices(joined, json.loads(prepared.material_json))
                 wire = json.loads(packet['phases'][1]['raw'])['nodes']
@@ -3995,7 +3996,7 @@ def expand_analysis_semantic_event_plan(prepared, packet):
             fact_endpoints=prepared.prompt_version in SEMANTIC_MAP_FACT_ENDPOINT_PROFILES,
             mark_record_ownership=prepared.prompt_version in SEMANTIC_MAP_CONTENT_PLAN_PROFILES,
             fixed_record_units=fixed_record_units,
-            use_attributed_captions=prepared.prompt_version == 'semantic_map.node_local.v4.occurrence.v16')
+            use_attributed_captions=prepared.prompt_version in SEMANTIC_MAP_FACT_PROSE_PROFILES)
     if (getattr(prepared, 'prompt_version', None) == 'semantic_map.node_local.v3'
             or type(packet) is dict and packet.get('schema_version') == 'cocolon.analysis.semantic_map.node_local.model.v3'):
         return _expand_analysis_semantic_node_local_v3(prepared, packet)
