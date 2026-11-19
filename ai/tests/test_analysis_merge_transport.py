@@ -12,7 +12,7 @@ from cocolon_meaning_experience_engine.cores.analysis import semantic_admission 
 from test_analysis_merge_wire import fixture
 
 
-def packets(monkeypatch, version=wire.VERSION):
+def packets(monkeypatch, version=wire.RECORD_VERSION):
     stage = SimpleNamespace(kind='MERGE', prompt_version=core.SEMANTIC_MAP_OCCURRENCE_V24_PROFILE)
     monkeypatch.setattr(core, 'semantic_node_local_v4_messages', lambda _, phase='PLAN', **kwargs: fixture(phase))
     monkeypatch.setattr(core, 'admit_semantic_node_local_v4_plan_response', lambda _, value, **kwargs: value)
@@ -32,7 +32,7 @@ def packets(monkeypatch, version=wire.VERSION):
     return stage, historical, compact
 
 
-@pytest.mark.parametrize('version', wire.VERSIONS)
+@pytest.mark.parametrize('version', [wire.LEGACY_VERSION, wire.RECORD_VERSION])
 def test_v24_merge_reads_original_and_compact_phase_artifacts(monkeypatch, version):
     stage, historical, compact = packets(monkeypatch, version)
     assert core.assemble_semantic_node_local_v4(stage, historical) == core.assemble_semantic_node_local_v4(stage, compact)
@@ -101,13 +101,14 @@ def test_merge_wire_record_anchors_preserve_comparisons_and_old_receipts():
     compared = packet(merge, anchors + [[[(1, detail)], [(2, condition)]]])
     mixed = packet(merge, [[[(1, first), (2, condition)]], [[(2, later)]]])
     mixed_unit = packet(merge, anchors + [[[(1, detail), (2, condition)]]])
-    for version in (wire.LEGACY_VERSION, wire.VERSION):
+    for version in wire.VERSIONS:
         messages = core.semantic_node_local_v4_wire_messages(merge, wire_version=version)
-        strict = version == wire.VERSION
-        assert accepts(compared, messages)
+        strict = version != wire.LEGACY_VERSION
+        codec = wire.response_codec(messages)
+        assert accepts(codec.encode(compared) if codec else compared, messages)
         assert core.admit_semantic_node_local_v4_plan_response(merge, compared, merge_anchors=strict)
         for raw in (mixed, mixed_unit):
-            assert accepts(raw, messages) is not strict
+            assert accepts(codec.encode(raw) if codec else raw, messages) is not strict
             if strict:
                 with pytest.raises(core.AnalysisSemanticMapError, match='record_owner_invalid'):
                     core.admit_semantic_node_local_v4_plan_response(merge, raw, merge_anchors=True)
@@ -137,5 +138,68 @@ def test_larger_merge_can_group_original_evidence_beyond_node_capacity():
     merge = source_merge(notes)
     groups = [[[(1, notes[0]), (2, notes[1])]]] + [[[(i, notes[i - 1])]] for i in range(3, 14)]
     raw = packet(merge, groups)
-    assert accepts(raw, core.semantic_node_local_v4_wire_messages(merge))
+    messages = core.semantic_node_local_v4_wire_messages(merge)
+    assert accepts(wire.response_codec(messages).encode(raw), messages)
     assert core.admit_semantic_node_local_v4_plan_response(merge, raw, merge_anchors=True)
+
+
+def test_v3_response_binding_and_original_text_collisions():
+    quotes = ['~同じ語', '~同…語', '朝の計画で道具を運ばなかった。',
+              '朝の計画でメモを運ばなかった。', '朝の別件で道具を運ばなかった。']
+    codes = wire._quote_codes(quotes)
+    assert len(set(codes.values())) == len(quotes)
+    assert codes['~同…語'] == '~~同…語'
+    assert codes == wire._quote_codes(reversed(quotes))
+    assert any('…' in code for quote, code in codes.items() if len(quote) > 8)
+
+    from test_analysis_occurrence_v17_record_owners import packet
+    quote = '隣の畑で照明を点検した。'
+    stage = source_merge([quote])
+    messages = core.semantic_node_local_v4_wire_messages(stage)
+    codec = wire.response_codec(messages)
+    original = packet(stage, [[[(1, quote)]]])
+    raw = codec.encode(original)
+    assert codec.decode(raw) == original
+    assert list(raw) == ['h', 'n']
+    for bad in ({'h': '0' * 64, 'n': raw['n']}, {**raw, 'extra': True},
+                {**raw, 'n': [[[[codec.quote_code(quote), True]]]]},
+                {**raw, 'n': [[[['~does-not-exist', 1]]]]}):
+        with pytest.raises(ValueError):
+            codec.decode(bad)
+    for version in (wire.LEGACY_VERSION, wire.RECORD_VERSION):
+        assert wire.response_codec(core.semantic_node_local_v4_wire_messages(stage, wire_version=version)) is None
+
+
+def test_v3_nodes_reconstructs_only_the_roots_bound_to_its_request():
+    from test_analysis_occurrence_v17_record_owners import packet
+    quote, other = '隣の畑で照明を点検した。', '同じ日に別の店で机を選んだ。'
+    stage = source_merge([quote, other])
+    plan = core.admit_semantic_node_local_v4_plan_response(stage, packet(stage, [[[(1, quote)]], [[(2, other)]]]),
+                                                            merge_anchors=True)
+    original = core.semantic_node_local_v4_messages(stage, 'NODES', plan=plan)
+    wire_nodes = core.semantic_node_local_v4_wire_messages(stage, 'NODES', plan=plan)
+    codec = wire.response_codec(wire_nodes)
+    display = json.loads(wire_nodes[1]['content'])
+    assert display['plan']['nodes'][0]['units'][0]['evidence'] == 1
+    assert display['evidence_parts_by_unit']['n1.u1']['e1']['quote'] == quote
+    assert wire.legacy_messages(wire_nodes) == original
+    raw = dict(h=codec.binding, n=[[[['RECORDED', [i], []]], 'STATE_CONTEXT', 'SELF', q, '']
+                                   for i, q in enumerate((quote, other), 1)])
+    logical = codec.decode(raw)
+    assert codec.encode(logical) == raw
+    for n, q in enumerate((quote, other), 1):
+        unit = logical['nodes'][f'n{n}']['units']['u1']
+        assert unit['evidence_ref'] == f'n{n}.u1'
+        assert list(unit['fact_parts'].values()) == [n]
+        assert list(unit['fact_parts'])[0].startswith('e1/')
+    swapped = deepcopy(logical)
+    swapped['nodes']['n1']['units']['u1']['evidence_ref'] = 'n2.u1'
+    with pytest.raises(ValueError):
+        codec.encode(swapped)
+    missing = deepcopy(raw)
+    missing['n'][0][0][0][1].clear()
+    with pytest.raises(ValueError):
+        codec.decode(missing)
+    display['plan']['nodes'][0]['units'][0]['evidence'] = 2
+    with pytest.raises(ValueError):
+        wire.legacy_messages([wire_nodes[0], dict(wire_nodes[1], content=wire.compact_json(display))])

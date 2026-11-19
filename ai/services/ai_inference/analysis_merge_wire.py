@@ -1,4 +1,4 @@
-"""A lossless transport view of v24 history MERGE inputs. Model outputs retain the v24 schema."""
+"""Reversible private transport for v24 history MERGE. Saved receipts retain the bytes received."""
 from __future__ import annotations
 
 import hashlib
@@ -6,8 +6,9 @@ import json
 
 
 LEGACY_VERSION = 'cocolon.analysis.merge_wire.v1'
-VERSION = 'cocolon.analysis.merge_wire.v2'
-VERSIONS = (LEGACY_VERSION, VERSION)
+RECORD_VERSION = 'cocolon.analysis.merge_wire.v2'
+VERSION = 'cocolon.analysis.merge_wire.v3'
+VERSIONS = (LEGACY_VERSION, RECORD_VERSION, VERSION)
 PROFILE = 'semantic_map.node_local.v4.occurrence.v24'
 MODEL_SCHEMA = 'cocolon.analysis.semantic_map.node_local.model.v4'
 WIRE_FIELDS = {'merge_wire_version', 'merge_original_messages_sha256'}
@@ -24,9 +25,32 @@ RECORD_GUIDANCE = ('\n記録ごとの項目を並べられる場合、先頭の�
     '別項目の関連はRELATIONSで具体的な根拠を一つずつ選びます。別の対象や未確認事項を同じ出来事として扱いません。')
 
 
-def instruction(version):
+RESPONSE_GUIDANCE = {
+    'PLAN': ('\n今回のMERGEの応答は {"h":"source_choices_sha256の値","n":[項目,…]} です。'
+        '項目は単位の配列、単位は根拠の配列、一つの根拠は[原文の短い符号,欄番号]です。'
+        '符号 ~先頭…末尾 はその範囲と完全に同じ原文を指します。'
+        '記録ごとに本人の行動欄と経過の末尾を読み、最初の予定・検討と、実行したこと、'
+        '見送ったこと、未確認のことを時点・対象とともに選びます。別の出来事には別の単位を使います。'
+        '事実に必要な根拠を選び、同じ内容の繰り返しを避けます。'),
+    'NODES': ('\n今回のMERGEの応答は {"h":"plan_sha256の値","n":[項目,…]} です。'
+        '入力のplanの各単位の数値は、evidence_parts_by_unitに示した根拠の個数です。'
+        '同じ項目・単位順で、項目は[単位の配列,node_kind,perspective,title,meaning]、'
+        '単位は[source_mode,根拠順のfact値の配列,留保の配列]、留保は[原文の符号,欄番号]です。'
+        '根拠名は順序で決まり、符号 ~先頭…末尾 は完全な原文を指します。'
+        '未確認は確認済みに変えず、他の出来事や別人の発言を本人の行動にしません。'
+        '別々の根拠にある出来事を同時とせず、後の記録や返答で判明したことを前の時点の確定事項にしません。'),
+    'RELATIONS': '',
+}
+
+
+def instruction(version, phase):
     require(version in VERSIONS)
-    return INSTRUCTION + (RECORD_GUIDANCE if version == VERSION else '')
+    guidance = INSTRUCTION
+    if version in (RECORD_VERSION, VERSION):
+        guidance += RECORD_GUIDANCE
+    if version == VERSION:
+        guidance += RESPONSE_GUIDANCE[phase]
+    return guidance
 
 
 def require(ok):
@@ -159,6 +183,24 @@ def unpack_manifest(manifest, fields):
     return result
 
 
+def _node_plan_references(material, *, unpack=False):
+    """Keep exactly one visible copy of every selected quote and its fact references."""
+    if material['author_phase'] != 'NODES' or 'plan' not in material or 'evidence_parts_by_unit' not in material:
+        return
+    parts = material['evidence_parts_by_unit']
+    for node in material['plan']['nodes']:
+        for u, unit in enumerate(node['units'], 1):
+            entries = parts.get(f"{node['node_id']}.u{u}", {})
+            sources = [dict(field=entries[f'e{i}']['field'], quote=entries[f'e{i}']['quote'])
+                       for i in range(1, len(entries) + 1)]
+            evidence = unit['evidence']
+            if unpack and type(evidence) is int:
+                require(evidence == len(sources) and 1 <= evidence <= 4)
+                unit['evidence'] = sources
+            elif not unpack and evidence == sources and sources:
+                unit['evidence'] = len(sources)
+
+
 def prepare_messages(messages, *, version=VERSION):
     material = json.loads(messages[1]['content'])
     if isinstance(material, dict):
@@ -169,9 +211,11 @@ def prepare_messages(messages, *, version=VERSION):
     fields = displayed_fields(material)
     material['leaf_source_index'] = pack_index(material['leaf_source_index'], fields)
     material['field_manifest'] = pack_manifest(material['field_manifest'], fields)
+    if version == VERSION:
+        _node_plan_references(material)
     material['merge_wire_version'] = version
     material['merge_original_messages_sha256'] = messages_digest(messages)
-    return [dict(messages[0], content=messages[0]['content'] + instruction(version)),
+    return [dict(messages[0], content=messages[0]['content'] + instruction(version, material['author_phase'])),
             dict(messages[1], content=compact_json(material))]
 
 
@@ -180,12 +224,14 @@ def legacy_messages(messages):
         material = json.loads(messages[1]['content'])
         require(eligible(material))
         version = material.pop('merge_wire_version', None)
-        suffix = instruction(version)
+        suffix = instruction(version, material['author_phase'])
         binding = material.pop('merge_original_messages_sha256')
         require(messages[0]['content'].endswith(suffix))
         fields = displayed_fields(material)
         material['leaf_source_index'] = unpack_index(material['leaf_source_index'], fields)
         material['field_manifest'] = unpack_manifest(material['field_manifest'], fields)
+        if version == VERSION:
+            _node_plan_references(material, unpack=True)
         result = [dict(messages[0], content=messages[0]['content'][:-len(suffix)]),
                   dict(messages[1], content=compact_json(material))]
         require(messages_digest(result) == binding)
@@ -194,3 +240,144 @@ def legacy_messages(messages):
         return result
     except (KeyError, TypeError, IndexError) as exc:
         raise ValueError('analysis_merge_wire_invalid') from exc
+
+
+def _quote_codes(literals):
+    """Visible beginnings and endings identify one complete source value in this request."""
+    from collections import Counter
+
+    literals = set(literals)
+    # An original tilde is escaped, so even literal text resembling a code is unambiguous.
+    result = {s: ('~' + s if s.startswith('~') else s) for s in literals}
+    longer = [s for s in literals if len(s) > 8]
+    pending = set(longer)
+    for width in (2, 3, 4, 6, 8, 12):
+        if not pending:
+            break
+        codes = {s: '~' + s[:width] + '…' + s[-width:] for s in pending}
+        counts = Counter(codes.values())
+        for source, code in codes.items():
+            if counts[code] == 1 and len(code) < len(source) and not code.startswith('~~'):
+                result[source] = code
+                pending.remove(source)
+    require(len(set(result.values())) == len(result))
+    return result
+
+
+class ResponseCodec:
+    """Project only deterministic positions. Every authored choice remains in the raw receipt."""
+    def __init__(self, material, choice_module, fact_key):
+        self.phase = material['author_phase']
+        self.plan_units = ()
+        if self.phase == 'PLAN':
+            _, aliases, allowed = choice_module.restore_view(material)
+            assigned = {(field, quote) for (field, _), quote in aliases.items()}
+            literals = {quote for field, texts in allowed.items() for quote in texts
+                        if (field, quote) not in assigned}
+            literals.update(alias for _, alias in aliases)
+            self.binding = material['source_choices_sha256']
+        elif self.phase == 'NODES':
+            plan = material['plan']
+            self.binding = messages_digest(['analysis.node-facts.v1', 'NODES', material['fact_source_request_ref'], plan])
+            self.plan_units = tuple(tuple(tuple(fact_key(unit['evidence'], i)
+                for i in range(len(unit['evidence']))) for unit in node['units']) for node in plan['nodes'])
+            literals = set()
+            for node in plan['nodes']:
+                for unit in node['units']:
+                    for root in unit['evidence']:
+                        quote = root['quote']
+                        literals.add(quote)
+                        # Shorten common bound qualifications. Other valid original literals
+                        # retain their complete spelling and pass through the same admission.
+                        _, parts = choice_module.choices_for_field(dict(text=quote, source_role='ORIGINAL_INPUT'))
+                        literals.update(parts)
+        else:
+            raise ValueError('analysis_merge_wire_phase_invalid')
+        self._codes = _quote_codes(literals)
+        self.quotes = {code: quote for quote, code in self._codes.items()}
+
+    def quote_code(self, quote):
+        require(type(quote) is str)
+        return self._codes.get(quote, '~' + quote if quote.startswith('~') else quote)
+
+    def _quote(self, code):
+        require(type(code) is str)
+        if code in self.quotes:
+            return self.quotes[code]
+        require(self.phase == 'NODES')
+        original = code[1:] if code.startswith('~~') else code
+        require(self.quote_code(original) == code)
+        return original
+
+    def _root(self, pair, *, qualification=False):
+        require(type(pair) is list and len(pair) == 2 and type(pair[1]) is int)
+        q, field = self._quote(pair[0]), pair[1]
+        return dict(source_quote=q, source_field=field) if qualification else dict(quote=q, field=field)
+
+    def decode(self, raw):
+        require(type(raw) is dict and set(raw) == {'h', 'n'} and raw['h'] == self.binding
+                and type(raw['n']) is list)
+        version = MODEL_SCHEMA + '.' + self.phase.lower()
+        if self.phase == 'PLAN':
+            nodes = []
+            require(1 <= len(raw['n']) <= 12)
+            for n, row in enumerate(raw['n'], 1):
+                require(type(row) is list and 1 <= len(row) <= 2)
+                units = []
+                for unit in row:
+                    require(type(unit) is list and 1 <= len(unit) <= 4)
+                    units.append(dict(evidence=[self._root(pair) for pair in unit]))
+                nodes.append(dict(node_id=f'n{n}', units=units))
+            return dict(schema_version=version, source_choices_sha256=self.binding, nodes=nodes)
+        require(len(raw['n']) == len(self.plan_units))
+        nodes = {}
+        for n, (row, layout) in enumerate(zip(raw['n'], self.plan_units, strict=True), 1):
+            require(type(row) is list and len(row) == 5 and type(row[0]) is list and len(row[0]) == len(layout))
+            entries, kind, perspective, title, meaning = row
+            units = {}
+            for u, (entry, keys) in enumerate(zip(entries, layout, strict=True), 1):
+                require(type(entry) is list and len(entry) == 3)
+                mode, parts, unknowns = entry
+                require(type(parts) is list and len(parts) == len(keys) and type(unknowns) is list
+                        and len(unknowns) <= 2)
+                units[f'u{u}'] = dict(evidence_ref=f'n{n}.u{u}', source_mode=mode,
+                    fact_parts=dict(zip(keys, parts, strict=True)),
+                    unknowns=[self._root(pair, qualification=True) for pair in unknowns])
+            nodes[f'n{n}'] = dict(units=units, node_kind=kind, perspective=perspective, title=title, meaning=meaning)
+        return dict(schema_version=version, plan_sha256=self.binding, nodes=nodes)
+
+    def encode(self, value):
+        """Inverse, used to check that no model selection is lost in a physical response."""
+        if self.phase == 'PLAN':
+            rows = [[[[self.quote_code(root['quote']), root['field']] for root in unit['evidence']]
+                      for unit in node['units']] for node in value['nodes']]
+        else:
+            rows = []
+            for n, layout in enumerate(self.plan_units, 1):
+                node = value['nodes'][f'n{n}']
+                entries = []
+                for u, keys in enumerate(layout, 1):
+                    unit = node['units'][f'u{u}']
+                    entries.append([unit['source_mode'], [unit['fact_parts'][k] for k in keys],
+                        [[self.quote_code(q['source_quote']), q['source_field']] for q in unit['unknowns']]])
+                rows.append([entries, node['node_kind'], node['perspective'], node['title'], node['meaning']])
+        raw = dict(h=self.binding, n=rows)
+        # Canonical JSON also distinguishes booleans from identically valued integers.
+        require(messages_digest(self.decode(raw)) == messages_digest(value))
+        return raw
+
+
+def response_codec(messages, *, choice_module=None, fact_key=None):
+    """Construct a request-local v3 output view after checking the logical message binding."""
+    if not is_compact(messages):
+        return None
+    material = json.loads(messages[1]['content'])
+    if material['merge_wire_version'] != VERSION or material['author_phase'] == 'RELATIONS':
+        return None
+    logical = json.loads(legacy_messages(messages)[1]['content'])
+    if choice_module is None:
+        import analysis_plan_source_choices as choice_module
+    if logical['author_phase'] == 'NODES' and fact_key is None:
+        from cocolon_meaning_experience_engine.cores.analysis.semantic_admission import _semantic_fact_part_key
+        fact_key = _semantic_fact_part_key
+    return ResponseCodec(logical, choice_module, fact_key)

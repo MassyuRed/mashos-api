@@ -244,7 +244,7 @@ def _semantic_wire_fact_sources(messages):
     return sources
 
 
-def _occurrence_greedy_node_filter(tokenizer, prompt_tokens, fact_sources=None, visible_filter=None):
+def _occurrence_greedy_node_filter(tokenizer, prompt_tokens, fact_sources=None, visible_filter=None, compact_prefix=None):
     """Filter actual greedy choices after the pinned LMFE prefix mask."""
     def choose(input_ids, scores):
         if len(scores)!=1 or len(input_ids)!=1:
@@ -256,8 +256,24 @@ def _occurrence_greedy_node_filter(tokenizer, prompt_tokens, fact_sources=None, 
             picked = int(scores[0].argmax().item())
             if float(scores[0,picked])==float('-inf'):
                 raise ValueError('occurrence_no_distinct_node_continuation')
-            wire = tokenizer.decode([*accepted,picked],skip_special_tokens=False,
-                clean_up_tokenization_spaces=False)
+            if compact_prefix is None:
+                wire = tokenizer.decode([*accepted,picked],skip_special_tokens=False,
+                    clean_up_tokenization_spaces=False)
+            else:
+                enforcer = compact_prefix.token_enforcer
+                state = enforcer.prefix_states[tuple(accepted)]
+                parser = state.parser
+                if parser.can_end():
+                    return scores
+                for char in _semantic_token_suffix(enforcer, state, picked):
+                    if char not in parser.get_allowed_characters():
+                        break
+                    parser = parser.add_character(char)
+                else:
+                    if not _occurrence_duplicate_prefix(parser.projected_prefix(), fact_sources):
+                        return scores
+                scores[0,picked] = float('-inf')
+                continue
             if not _occurrence_duplicate_prefix(wire, fact_sources):
                 return scores
             scores[0,picked] = float('-inf')
@@ -269,6 +285,13 @@ def _semantic_prefix_input(sent, prompt_tokens):
     # single greedy MERGE the prompt is fixed, so every branch is identified by
     # its full generated token history, including the initial empty history.
     return sent[prompt_tokens:] if prompt_tokens else sent
+
+
+def _semantic_token_suffix(enforcer, state, token):
+    if token in enforcer.tokenizer_tree.new_word_tokens:
+        return enforcer.tokenizer_tree.tokens_to_strs[token]
+    prior = state.current_word_tokens
+    return enforcer.decoder(prior + [token])[len(enforcer.decoder(prior)):]
 
 
 def _occurrence_greedy_relation_filter(prefix, *, prompt_tokens=0):
@@ -289,11 +312,7 @@ def _occurrence_greedy_relation_filter(prefix, *, prompt_tokens=0):
                 raise ValueError('occurrence_no_distinct_edge_label_continuation')
             # Decode the same incremental spelling as the pinned token enforcer,
             # including multi-character tokens and context-dependent token joins.
-            if token in enforcer.tokenizer_tree.new_word_tokens:
-                suffix = enforcer.tokenizer_tree.tokens_to_strs[token]
-            else:
-                prior = state.current_word_tokens
-                suffix = enforcer.decoder(prior + [token])[len(enforcer.decoder(prior)):]
+            suffix = _semantic_token_suffix(enforcer, state, token)
             parser = state.parser
             for char in suffix:
                 if char not in parser.get_allowed_characters():
@@ -999,10 +1018,18 @@ def _semantic_merge_prefix_offset(profile, material, messages, prompt_tokens):
     return 0
 
 
-def _merge_record_anchors(messages):
+def _semantic_merge_wire_v3(messages):
     material = json.loads(messages[1]['content'])
     return (isinstance(material, dict) and 'merge_wire_version' in material
             and material['merge_wire_version'] == _semantic_merge_wire_module().VERSION)
+
+
+def _merge_record_anchors(messages):
+    material = json.loads(messages[1]['content'])
+    if not isinstance(material, dict) or 'merge_wire_version' not in material:
+        return False
+    wire = _semantic_merge_wire_module()
+    return material['merge_wire_version'] in (wire.RECORD_VERSION, wire.VERSION)
 
 
 def _semantic_constraint_messages(messages):
@@ -1282,7 +1309,7 @@ def _fact_escape_examples(start, end, *, numeric=False):
 def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None, bound_node_ids=(),
                                         unique_qualifications=False, endpoint_nodes=(), unique_allocations=False,
                                         plan_source_texts=None, plan_choice_quotes=None, overview_sources=None, protect_visible=False,
-                                        compare_title_end_marks=False, record_owners=(), compact_pairs=(), reading_regions=(), required_sources=None, merge_anchors=False):
+                                        compare_title_end_marks=False, record_owners=(), compact_pairs=(), reading_regions=(), required_sources=None, merge_anchors=False, action_sources=()):
     """Bind graph references and unique source/quote pairs while decoding.
 
     The pinned parser does not enforce JSON Schema uniqueItems. Use an isolated
@@ -1827,6 +1854,7 @@ def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None, b
         def remaining_type(self):
             remaining = []
             owner_fields = pair = region = None
+            action = None
             preceding = ()
             missing_sources = {}
             missing = frozenset()
@@ -1836,6 +1864,12 @@ def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None, b
                 allocation, previous = graph.plan_allocation, graph.previous_allocations
                 owner_fields = self.owner_fields(graph)
                 index = len(graph.generated_node_ids)
+                if self.is_evidence and index < len(action_sources):
+                    action = action_sources[index]
+                    if action:
+                        missing_action = action.missing(root for unit in allocation for root in unit)
+                        future_units = units_schema['maxItems'] - len(allocation)
+                        action_slots = (future_units + 1) * roots_schema['maxItems'] - len(allocation[-1]) - 1
                 if required_sources and self.is_evidence and index >= len(record_owners):
                     outstanding = uncovered_sources(graph)
                     if len(outstanding) > self.future_root_capacity(after_item=True):
@@ -1866,6 +1900,9 @@ def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None, b
                               and missing_sources[field] in evidence_pair_key(field, q)[1]]
                 if pair:
                     quotes = [q for q in quotes if paired_check(pair, preceding, *evidence_pair_key(field, q))]
+                if action and missing_action:
+                    quotes = [q for q in quotes if action.minimum_roots[
+                        missing_action & ~action.coverage(*evidence_pair_key(field, q))] <= action_slots]
                 if region:
                     def fits(q):
                         f, quote = evidence_pair_key(field, q)
@@ -1928,6 +1965,16 @@ def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None, b
                 roots = tuple(root for unit in graph.plan_allocation for root in unit)
                 if pair and len(roots) == 1 and roots[0][0] == pair[0]:
                     chars = chars.replace(']', '')
+            if action_sources and ']' in chars and (self.is_evidence or self.is_units):
+                _, graph = graph_state(self.root.context.active_parser)
+                index = len(graph.generated_node_ids)
+                action = action_sources[index] if index < len(action_sources) else None
+                allocation = graph.plan_allocation
+                if action:
+                    missing = action.missing(root for unit in allocation for root in unit)
+                    future_units = 0 if self.is_units else units_schema['maxItems'] - len(allocation)
+                    if action.minimum_roots[missing] > future_units * roots_schema['maxItems']:
+                        chars = chars.replace(']', '')
             if record_owners and self.is_evidence and ',' in chars:
                 _, graph = graph_state(self.root.context.active_parser)
                 owned = self.owner_fields(graph)
@@ -2309,6 +2356,23 @@ def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None, b
 
 
 def semantic_json_parser(messages, alphabet):
+    logical = _semantic_logical_json_parser(messages, alphabet)
+    if not _semantic_merge_wire_v3(messages):
+        return logical
+    codec = _semantic_merge_wire_module().response_codec(messages,
+        choice_module=_semantic_choice_module(), fact_key=_semantic_fact_part_key)
+    if codec is None:
+        return logical
+    from importlib.util import module_from_spec, spec_from_file_location
+    path = Path(__file__).resolve().parents[1] / 'services/ai_inference/analysis_merge_response_parser.py'
+    spec = spec_from_file_location('cocolon_merge_response_parser', path)
+    module = module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.response_parser(logical, codec)
+
+
+def _semantic_logical_json_parser(messages, alphabet):
+    merge_action_sources_enabled = _semantic_merge_wire_v3(messages)
     from lmformatenforcer import CharacterLevelParserConfig, JsonSchemaParser
     # LMFE snapshots alphabet_without_quotes while constructing its context.
     # Updating parser.config later leaves that initial snapshot unchanged.
@@ -2348,7 +2412,7 @@ def semantic_json_parser(messages, alphabet):
         records = {}
     distinct_leads = material.get('author_profile') in {OCCURRENCE_V10_PROFILE, OCCURRENCE_V11_PROFILE, *FACT_REFERENCE_PROFILES} and material.get('author_phase') == 'PLAN'
     choices = None
-    owners = pairs = regions = ()
+    owners = pairs = regions = actions = ()
     required_sources = None
     if distinct_leads and material.get('author_profile') in {OCCURRENCE_V11_PROFILE, *FACT_REFERENCE_PROFILES}:
         material, choices, _ = _semantic_plan_choice_view(material)
@@ -2359,6 +2423,10 @@ def semantic_json_parser(messages, alphabet):
             if by_record:
                 pairs = tuple(by_record.get(r['record']) for r in material['records'])
             choice_rules = _semantic_choice_module()
+            if merge_action_sources_enabled:
+                by_record_action = choice_rules.merge_action_sources(material, owners)
+                if by_record_action:
+                    actions = tuple(by_record_action.get(row['record']) for row in material['records'])
             by_region = choice_rules.owner_source_regions(material, owners, choice_rules.plan_reading_regions(material, by_record), required_sources)
             if by_region:
                 regions = tuple(by_region.get(row['record']) for row in material['records'])
@@ -2366,7 +2434,7 @@ def semantic_json_parser(messages, alphabet):
             # dependency cohort. Reserve free evidence slots for their own text.
             records.update({f['field']: -f['field'] for f in material['fields']
                 if f['source_role'] == 'USER_ANALYSIS_MAP_CORRECTION' and f['field'] in quoted_fields})
-    return _semantic_unique_json_schema_parser(schema, config, record_fields=records, record_owners=owners, merge_anchors=merge_anchors, compact_pairs=pairs, reading_regions=regions, required_sources=required_sources, plan_choice_quotes=choices,
+    return _semantic_unique_json_schema_parser(schema, config, record_fields=records, record_owners=owners, merge_anchors=merge_anchors, compact_pairs=pairs, reading_regions=regions, required_sources=required_sources, plan_choice_quotes=choices, action_sources=actions,
         plan_source_texts={f['field']: f['text'] for f in material['fields']} if distinct_leads else None,
         unique_allocations=material.get('author_profile') in SOURCE_CUED_PROFILES
             and material.get('author_phase') == 'PLAN')
@@ -2912,7 +2980,9 @@ def load_generator(adapter, process_stop, *, weights_sha256=None, config_sha256=
                 if material.get('author_profile') in {OCCURRENCE_V2_PROFILE, OCCURRENCE_V3_PROFILE, OCCURRENCE_V4_PROFILE, OCCURRENCE_V5_PROFILE, OCCURRENCE_V6_PROFILE, OCCURRENCE_V7_PROFILE, OCCURRENCE_V8_PROFILE, *SOURCE_CUED_PROFILES} and material.get('author_phase')=='NODES':
                     visible_filter = (_occurrence_greedy_relation_filter(allowed_prefix, prompt_tokens=prefix_offset)
                         if material.get('author_profile') in VISIBLE_SOURCE_PROFILES else None)
-                    format_options['logits_processor']=[_occurrence_greedy_node_filter(tokenizer,count,_semantic_wire_fact_sources(messages),visible_filter)]
+                    compact_prefix = allowed_prefix if _semantic_merge_wire_v3(messages) else None
+                    format_options['logits_processor']=[_occurrence_greedy_node_filter(tokenizer,count,
+                        _semantic_wire_fact_sources(messages),visible_filter,compact_prefix)]
                 elif material.get('author_profile') in {OCCURRENCE_V6_PROFILE, OCCURRENCE_V7_PROFILE, OCCURRENCE_V8_PROFILE, *SOURCE_CUED_PROFILES} and material.get('author_phase') == 'RELATIONS':
                     format_options['logits_processor']=[_occurrence_greedy_relation_filter(allowed_prefix, prompt_tokens=prefix_offset)]
             format_options['prefix_allowed_tokens_fn'] = private_prefix

@@ -196,7 +196,7 @@ class SelfHostedSemanticAnalysisModelSource(SelfHostedAnalysisModelSource):
         receipts, plan, nodes = [], None, None
         compact_merge = core.semantic_node_local_v4_uses_compact_merge(prepared)
         if compact_merge:
-            from analysis_merge_wire import VERSION, legacy_messages
+            from analysis_merge_wire import VERSION, legacy_messages, response_codec
         remaining_tokens = core.SEMANTIC_MAP_NODE_LOCAL_V4_TOKEN_BUDGET
         maximum = SEMANTIC_MERGE_MAX_PROMPT_BYTES if getattr(prepared, 'kind', None) == 'MERGE' else SEMANTIC_MAX_PROMPT_BYTES
         try:
@@ -251,8 +251,13 @@ class SelfHostedSemanticAnalysisModelSource(SelfHostedAnalysisModelSource):
                     if compact_merge:
                         receipts[-1]['logical_messages_sha256'] = core.semantic_map_hash(legacy_messages(messages))
                     value = core._load(raw)
+                    if compact_merge:
+                        codec = response_codec(messages)
+                        if codec is not None:
+                            value = codec.decode(value)
                     if phase == 'PLAN':
-                        plan = core.admit_semantic_node_local_v4_plan_response(prepared, value, merge_anchors=compact_merge)
+                        plan = core.admit_semantic_node_local_v4_plan_response(prepared, value,
+                            merge_anchors=compact_merge, merge_action_sources=compact_merge)
                     elif phase == 'NODES':
                         nodes = core.admit_semantic_node_local_v4_nodes_response(prepared, plan, value)
                     else:

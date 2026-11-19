@@ -13,6 +13,7 @@ name: Analysis observed content
       - ai/services/ai_inference/analysis_cumulative_service.py
       - ai/services/ai_inference/analysis_model_source.py
       - ai/services/ai_inference/analysis_merge_wire.py
+      - ai/services/ai_inference/analysis_merge_response_parser.py
       - ai/services/ai_inference/analysis_plan_source_choices.py
       - ai/services/ai_inference/analysis_if_model_source.py
       - ai/services/ai_inference/analysis_map_correction_service.py
@@ -142,6 +143,8 @@ name: Analysis observed content
       - ai/tests/test_analysis_v24_distinct_participants.py
       - ai/tests/test_analysis_merge_wire.py
       - ai/tests/test_analysis_merge_transport.py
+      - ai/tests/test_analysis_merge_action_sources.py
+      - ai/tests/test_analysis_merge_response_parser.py
       - ai/tests/test_analysis_merge_constraint_prefix.py
       - ai/tests/test_analysis_node_local_bound_roots.py
       - ai/tests/test_analysis_bound_roots_v2_selection.py
@@ -402,6 +405,8 @@ jobs:
           ai/tests/test_analysis_v24_distinct_participants.py
           ai/tests/test_analysis_merge_wire.py
           ai/tests/test_analysis_merge_transport.py
+          ai/tests/test_analysis_merge_action_sources.py
+          ai/tests/test_analysis_merge_response_parser.py
           ai/tests/test_analysis_merge_constraint_prefix.py
           ai/tests/test_analysis_node_local_bound_roots.py
           ai/tests/test_analysis_bound_roots_v2_selection.py

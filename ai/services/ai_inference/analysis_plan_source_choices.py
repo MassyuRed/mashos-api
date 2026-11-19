@@ -380,6 +380,87 @@ def record_plan_owners(material, available=None, *, merge_anchors=False):
     return tuple((frozenset(originals[r]), frozenset(locals_by_record[r])) for r in records)
 
 
+class MergeActionSources:
+    """Cover the short original action literally, alongside its own independent account."""
+
+    def __init__(self, action, memo, sentences, allowed):
+        self.action_field = action['field']
+        self.memo_field = memo['field']
+        self.action_text = action['text']
+        self.memo_bit = 1 << len(sentences)
+        self.required = (self.memo_bit << 1) - 1
+        self.action_masks = {q: sum(1 << i for i, s in enumerate(sentences) if s in q)
+                             for q in allowed}
+        masks = set(self.action_masks.values()) | {self.memo_bit}
+        self.minimum_roots = [0]
+        for missing in range(1, self.required + 1):
+            self.minimum_roots.append(1 + min(self.minimum_roots[missing & ~mask]
+                                              for mask in masks if missing & mask))
+
+    def coverage(self, field, quote):
+        if field == self.action_field:
+            return self.action_masks.get(quote, 0)
+        if field == self.memo_field and quote not in self.action_text:
+            return self.memo_bit
+        return 0
+
+    def missing(self, roots):
+        missing = self.required
+        for field, quote in roots:
+            missing &= ~self.coverage(field, quote)
+        return missing
+
+def merge_action_sources(material, owners):
+    """For the new MERGE only, reserve already selectable original sentences.
+
+    A passage can record proposed, declined, completed or reported actions, even
+    with different actors. Preserve its exact text without classifying any of them.
+    Five roots suffice for four sentences and one separate reading of the memo.
+    """
+    if (not owners or material.get('history_stage', {}).get('kind') != 'MERGE'
+            or material.get('author_profile') != 'semantic_map.node_local.v4.occurrence.v24'
+            or material.get('map_corrections')):
+        return {}
+    records = {row['record']: [] for row in material['records']}
+    excluded = {row.get('record') for row in material.get('emlis_source_materials', ())
+                if any(row.get(k) for k in ('source_updates', 'conflicts', 'unresolved_sources'))}
+    for field in material['fields']:
+        record = field.get('record')
+        if record not in records:
+            # An unowned later correction may relate to more than one original.
+            return {}
+        records[record].append(field)
+    manifest = {f['field']: f for f in material.get('field_manifest', ())}
+    for item in manifest.values():
+        if item.get('record') not in records:
+            return {}
+        if item.get('source_role') != 'ORIGINAL_INPUT' or item.get('field_path') not in {'memo', 'memo_action'}:
+            excluded.add(item['record'])
+    result = {}
+    for record, fields in records.items():
+        if record in excluded or len(fields) != 2:
+            continue
+        by_path = {f['field_path']: f for f in fields}
+        if set(by_path) != {'memo', 'memo_action'}:
+            continue
+        if any(f['source_role'] != 'ORIGINAL_INPUT' or f.get('supplement') is not None
+               or f.get('fragment_is_complete_field') is not True
+               or f.get('fragment_scalar_range') != [0, len(f['text'])]
+               or manifest.get(f['field'], {}).get('text_sha256') != hashlib.sha256(f['text'].encode()).hexdigest()
+               for f in fields):
+            continue
+        action, memo = by_path['memo_action'], by_path['memo']
+        if not 0 < len(action['text']) <= 160 < len(memo['text']):
+            continue
+        sentences, allowed = choices_for_field(action)
+        if (not 1 <= len(sentences) <= 4 or ''.join(sentences) != action['text']
+                or not all(s.endswith(('。', '!', '?', '！', '？')) and any(c.isalnum() for c in s) for s in sentences)):
+            continue
+        if any(s not in action['text'] for s in choices_for_field(memo)[0]):
+            result[record] = MergeActionSources(action, memo, sentences, allowed)
+    return result
+
+
 
 def compact_action_pairs(material):
     """Keep a bounded original action available beside a longer original account.
