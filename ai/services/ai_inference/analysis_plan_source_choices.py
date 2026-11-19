@@ -344,7 +344,7 @@ def choices_for_field(field):
 
 
 
-def record_plan_owners(material, available=None):
+def record_plan_owners(material, available=None, *, merge_anchors=False):
     """Return (original fields, local fields) per independently representable record.
 
     A correction's record_refs name its dependencies, never its original author.
@@ -353,7 +353,8 @@ def record_plan_owners(material, available=None):
     """
     if (material.get('author_profile') not in {
             'semantic_map.node_local.v4.occurrence.v17', 'semantic_map.node_local.v4.occurrence.v18', 'semantic_map.node_local.v4.occurrence.v19', 'semantic_map.node_local.v4.occurrence.v20', 'semantic_map.node_local.v4.occurrence.v21', 'semantic_map.node_local.v4.occurrence.v22', 'semantic_map.node_local.v4.occurrence.v23', 'semantic_map.node_local.v4.occurrence.v24'}
-            or material.get('history_stage')):
+            or (material.get('history_stage') and not (merge_anchors
+                and material['history_stage'].get('kind') == 'MERGE'))):
         return ()
     records = [row['record'] for row in material.get('records', ())]
     if not 1 <= len(records) <= 12:

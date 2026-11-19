@@ -999,6 +999,12 @@ def _semantic_merge_prefix_offset(profile, material, messages, prompt_tokens):
     return 0
 
 
+def _merge_record_anchors(messages):
+    material = json.loads(messages[1]['content'])
+    return (isinstance(material, dict) and 'merge_wire_version' in material
+            and material['merge_wire_version'] == _semantic_merge_wire_module().VERSION)
+
+
 def _semantic_constraint_messages(messages):
     """Check the original source bindings while the model reads the compact request."""
     material = json.loads(messages[1]['content'])
@@ -1013,6 +1019,7 @@ def semantic_output_schema(messages):
     if (type(messages) is not list or len(messages) != 2
             or messages[1].get('role') != 'user'):
         raise ValueError('semantic_material_invalid')
+    merge_anchors = _merge_record_anchors(messages)
     messages = _semantic_constraint_messages(messages)
     material = json.loads(messages[1]['content'])
     if type(material) is dict and material.get('model_schema') == IF_CANDIDATE_SCHEMA:
@@ -1032,7 +1039,7 @@ def semantic_output_schema(messages):
         if not pairs:
             raise ValueError('semantic_quotes_unavailable')
         owners = _semantic_choice_module().record_plan_owners(original,
-            {field for field, options in allowed.items() if options})
+            {field for field, options in allowed.items() if options}, merge_anchors=merge_anchors)
         return _semantic_node_local_v4_schema(material, pairs, [], record_owners=owners)
     fields = material.get('fields')
     if type(fields) is not list or not fields:
@@ -1275,7 +1282,7 @@ def _fact_escape_examples(start, end, *, numeric=False):
 def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None, bound_node_ids=(),
                                         unique_qualifications=False, endpoint_nodes=(), unique_allocations=False,
                                         plan_source_texts=None, plan_choice_quotes=None, overview_sources=None, protect_visible=False,
-                                        compare_title_end_marks=False, record_owners=(), compact_pairs=(), reading_regions=(), required_sources=None):
+                                        compare_title_end_marks=False, record_owners=(), compact_pairs=(), reading_regions=(), required_sources=None, merge_anchors=False):
     """Bind graph references and unique source/quote pairs while decoding.
 
     The pinned parser does not enforce JSON Schema uniqueItems. Use an isolated
@@ -1806,10 +1813,16 @@ def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None, b
 
         def owner_fields(self, graph):
             index = len(graph.generated_node_ids)
-            if not self.is_evidence or index >= len(record_owners):
+            if not self.is_evidence:
                 return None
-            original, local = record_owners[index]
-            return original if graph.plan_allocation == ((),) else local
+            if index < len(record_owners):
+                original, local = record_owners[index]
+                return original if graph.plan_allocation == ((),) else local
+            if merge_anchors and record_owners and graph.plan_allocation and graph.plan_allocation[-1]:
+                first_field = graph.plan_allocation[-1][0][0]
+                origin = record_fields.get(first_field, -first_field)
+                return {field for field in plan_source_texts if record_fields.get(field, -field) == origin}
+            return None
 
         def remaining_type(self):
             remaining = []
@@ -2299,8 +2312,9 @@ def semantic_json_parser(messages, alphabet):
     from lmformatenforcer import CharacterLevelParserConfig, JsonSchemaParser
     # LMFE snapshots alphabet_without_quotes while constructing its context.
     # Updating parser.config later leaves that initial snapshot unchanged.
-    messages = _semantic_constraint_messages(messages)
+    merge_anchors = _merge_record_anchors(messages)
     schema = semantic_output_schema(messages)
+    messages = _semantic_constraint_messages(messages)
     config = CharacterLevelParserConfig(alphabet=alphabet)
     if schema['properties']['schema_version'].get('enum') == [IF_CANDIDATE_SCHEMA]:
         config.force_json_field_order = True
@@ -2338,7 +2352,7 @@ def semantic_json_parser(messages, alphabet):
     required_sources = None
     if distinct_leads and material.get('author_profile') in {OCCURRENCE_V11_PROFILE, *FACT_REFERENCE_PROFILES}:
         material, choices, _ = _semantic_plan_choice_view(material)
-        owners = _semantic_choice_module().record_plan_owners(material, quoted_fields)
+        owners = _semantic_choice_module().record_plan_owners(material, quoted_fields, merge_anchors=merge_anchors)
         if owners:
             required_sources = _semantic_choice_module().whole_plan_sources(material, owners)
             by_record = _semantic_choice_module().compact_action_pairs(material)
@@ -2352,7 +2366,7 @@ def semantic_json_parser(messages, alphabet):
             # dependency cohort. Reserve free evidence slots for their own text.
             records.update({f['field']: -f['field'] for f in material['fields']
                 if f['source_role'] == 'USER_ANALYSIS_MAP_CORRECTION' and f['field'] in quoted_fields})
-    return _semantic_unique_json_schema_parser(schema, config, record_fields=records, record_owners=owners, compact_pairs=pairs, reading_regions=regions, required_sources=required_sources, plan_choice_quotes=choices,
+    return _semantic_unique_json_schema_parser(schema, config, record_fields=records, record_owners=owners, merge_anchors=merge_anchors, compact_pairs=pairs, reading_regions=regions, required_sources=required_sources, plan_choice_quotes=choices,
         plan_source_texts={f['field']: f['text'] for f in material['fields']} if distinct_leads else None,
         unique_allocations=material.get('author_profile') in SOURCE_CUED_PROFILES
             and material.get('author_phase') == 'PLAN')

@@ -252,7 +252,7 @@ class SelfHostedSemanticAnalysisModelSource(SelfHostedAnalysisModelSource):
                         receipts[-1]['logical_messages_sha256'] = core.semantic_map_hash(legacy_messages(messages))
                     value = core._load(raw)
                     if phase == 'PLAN':
-                        plan = core.admit_semantic_node_local_v4_plan_response(prepared, value)
+                        plan = core.admit_semantic_node_local_v4_plan_response(prepared, value, merge_anchors=compact_merge)
                     elif phase == 'NODES':
                         nodes = core.admit_semantic_node_local_v4_nodes_response(prepared, plan, value)
                     else:

@@ -2745,7 +2745,7 @@ def _semantic_v4_view(prepared):
     return replace(prepared.parent, material_json=prepared.material_json, request_ref=request_ref)
 
 
-def semantic_node_local_v4_plan(prepared, plan):
+def semantic_node_local_v4_plan(prepared, plan, *, merge_anchors=False):
     """Bind the complete allocation before prose; allow cross-record roots."""
     r, reason = _semantic_map_require, 'analysis_semantic_node_local_v4_plan_invalid'
     r(_semantic_map_keys(plan, {'schema_version', 'nodes'})
@@ -2758,7 +2758,7 @@ def semantic_node_local_v4_plan(prepared, plan):
     previous_leads = set()
     from analysis_plan_source_choices import compact_action_pairs, paired_original_root, plan_reading_regions, record_plan_owners
     from analysis_plan_source_choices import missing_plan_sources, owner_source_regions, whole_plan_sources
-    owners = record_plan_owners(material)
+    owners = record_plan_owners(material, merge_anchors=merge_anchors)
     pairs = compact_action_pairs(material) if owners else {}
     required_sources = whole_plan_sources(material, owners)
     regions = owner_source_regions(material, owners, plan_reading_regions(material, pairs), required_sources) if owners else {}
@@ -2775,11 +2775,16 @@ def semantic_node_local_v4_plan(prepared, plan):
             r(_semantic_map_keys(unit, {'evidence'}) and type(unit['evidence']) is list
                 and 1 <= len(unit['evidence']) <= 4, reason)
             seen = set()
+            unit_records = set()
             for root in unit['evidence']:
                 r(_semantic_map_keys(root, {'field', 'quote'}) and type(root['field']) is int
                     and root['field'] in shown and type(root['quote']) is str
                     and bool(root['quote']) and shown[root['field']]['text'].count(root['quote']) == 1, reason)
                 _semantic_map_evidence(_semantic_v4_view(prepared), root)
+                if merge_anchors and owners and i > len(owners):
+                    field = shown[root['field']]
+                    unit_records.add(field.get('record') or -field['field'])
+                    r(len(unit_records) == 1, 'analysis_semantic_plan_record_owner_invalid')
                 if i <= len(owners):
                     original_fields, local_fields = owners[i - 1]
                     first_root = unit_index == 0 and not seen
@@ -3747,9 +3752,9 @@ def _semantic_plan_choices(prepared, material):
     return view, choices, allowed
 
 
-def admit_semantic_node_local_v4_plan_response(prepared, value):
+def admit_semantic_node_local_v4_plan_response(prepared, value, *, merge_anchors=False):
     if prepared.prompt_version not in {SEMANTIC_MAP_OCCURRENCE_V11_PROFILE, *SEMANTIC_MAP_FACT_REFERENCE_PROFILES}:
-        return semantic_node_local_v4_plan(prepared, value)
+        return semantic_node_local_v4_plan(prepared, value, merge_anchors=merge_anchors)
     reason = 'analysis_semantic_plan_choice_invalid'
     view, choices, allowed = _semantic_plan_choices(prepared, json.loads(prepared.material_json))
     _semantic_map_require(_semantic_map_keys(value, {'schema_version', 'source_choices_sha256', 'nodes'})
@@ -3772,7 +3777,7 @@ def admit_semantic_node_local_v4_plan_response(prepared, value):
                     _semantic_map_require(key in allowed.get(field, ()) and (field, key) not in numbered, reason)
                     quote = key
                 root['quote'] = quote
-    return semantic_node_local_v4_plan(prepared, plan)
+    return semantic_node_local_v4_plan(prepared, plan, merge_anchors=merge_anchors)
 
 
 def _semantic_plan_reading_fields(material):
@@ -4212,12 +4217,12 @@ def semantic_node_local_v4_uses_compact_merge(prepared):
     return kind == 'MERGE'
 
 
-def semantic_node_local_v4_wire_messages(prepared, phase='PLAN', *, plan=None, nodes=None):
+def semantic_node_local_v4_wire_messages(prepared, phase='PLAN', *, plan=None, nodes=None, wire_version=None):
     logical = semantic_node_local_v4_messages(prepared, phase, plan=plan, nodes=nodes)
     if not semantic_node_local_v4_uses_compact_merge(prepared):
         return logical
-    from analysis_merge_wire import is_compact, legacy_messages, prepare_messages
-    wire = prepare_messages(logical)
+    from analysis_merge_wire import VERSION, is_compact, legacy_messages, prepare_messages
+    wire = prepare_messages(logical, version=VERSION if wire_version is None else wire_version)
     _semantic_map_require(is_compact(wire) and legacy_messages(wire) == logical,
         'analysis_semantic_merge_message_binding_invalid')
     return wire
@@ -4230,11 +4235,12 @@ def assemble_semantic_node_local_v4(prepared, packet):
     packet_keys = {'schema_version', 'phases'}
     phase_keys = {'phase', 'messages_sha256', 'raw', 'raw_sha256', 'finish_reason', 'completion_tokens'}
     if compact:
-        from analysis_merge_wire import VERSION, legacy_messages
-        r(packet['merge_wire_version'] == VERSION and semantic_node_local_v4_uses_compact_merge(prepared), reason)
+        from analysis_merge_wire import VERSION, VERSIONS, legacy_messages
+        r(packet['merge_wire_version'] in VERSIONS and semantic_node_local_v4_uses_compact_merge(prepared), reason)
         packet_keys.add('merge_wire_version')
         phase_keys.add('logical_messages_sha256')
     make_messages = semantic_node_local_v4_wire_messages if compact else semantic_node_local_v4_messages
+    wire_options = {'wire_version': packet['merge_wire_version']} if compact else {}
     r(prepared.prompt_version in SEMANTIC_MAP_NODE_LOCAL_V4_PROFILES
         and _semantic_map_keys(packet, packet_keys)
         and packet['schema_version'] == semantic_node_local_v4_artifact_schema(prepared)
@@ -4249,7 +4255,7 @@ def assemble_semantic_node_local_v4(prepared, packet):
             and type(row['completion_tokens']) is int and row['completion_tokens'] > 0, reason)
         used_tokens += row['completion_tokens']
         r(used_tokens <= SEMANTIC_MAP_NODE_LOCAL_V4_TOKEN_BUDGET, reason)
-        messages = make_messages(prepared, phase, plan=plan, nodes=nodes)
+        messages = make_messages(prepared, phase, plan=plan, nodes=nodes, **wire_options)
         if compact:
             r(row['logical_messages_sha256'] == semantic_map_hash(legacy_messages(messages)), reason)
         r(row['messages_sha256'] == semantic_map_hash(messages), reason)
@@ -4258,7 +4264,8 @@ def assemble_semantic_node_local_v4(prepared, packet):
         except ValueError:
             r(False, reason)
         if phase == 'PLAN':
-            plan = admit_semantic_node_local_v4_plan_response(prepared, value)
+            plan = admit_semantic_node_local_v4_plan_response(prepared, value,
+                merge_anchors=compact and packet['merge_wire_version'] == VERSION)
         elif phase == 'NODES':
             nodes = admit_semantic_node_local_v4_nodes_response(prepared, plan, value)
         else:
