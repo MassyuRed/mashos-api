@@ -1116,7 +1116,9 @@ class AnalysisSemanticMapArtifact:
                 for node in projection['nodes'] for item in node['unknowns']):
             # A previously saved person's literal can itself look like a dated label.
             return {'text': analysis_semantic_projection_text(projection, record_scoped_unknowns=False)}
-        return {'text': analysis_semantic_projection_text(projection, compact_source_captions=self.graph.compact_source_captions)}
+        if self.graph.compact_source_captions:
+            return {'text': analysis_semantic_projection_text(projection, compact_source_captions=True)}
+        return {'text': analysis_semantic_projection_text(projection)}
 
     def private_evidence(self):
         graph = dict(nodes=json.loads(self.graph.nodes_json),
