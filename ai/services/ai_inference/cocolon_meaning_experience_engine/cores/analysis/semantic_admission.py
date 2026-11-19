@@ -3559,6 +3559,29 @@ def _semantic_plan_reading_fields(material):
     return fields
 
 
+def _semantic_compact_relation_message(material, messages, maximum):
+    """Keep every displayed source, prior fact and qualification in a bounded RELATIONS prompt."""
+    if len(semantic_map_canonical(messages).encode()) <= maximum:
+        return messages
+    compact = dict(material)
+    # The assigned field/quote already occur in candidate_nodes.units.evidence,
+    # in the same unit/root order. Only paraphrases need separate spelling.
+    parts = compact.pop('evidence_parts_by_unit')
+    exceptions = {}
+    for unit, entries in parts.items():
+        for key, entry in entries.items():
+            if entry['fact_part'] != entry['quote']:
+                exceptions[unit + '.' + key] = entry['fact_part']
+    compact['fact_part_overrides'] = exceptions
+    compact['evidence_parts_sha256'] = semantic_map_hash(parts)
+    guidance = messages[0]['content'] + (
+        '\n今回の実入力では、各unitのevidence配列の1番目からe1、e2の順です。'
+        '各根拠に対応する本文片はそのquoteと同じ原文です。fact_part_overridesに同じ'
+        'n番号.u番号.e番号がある場合だけ、その値が実際に書かれた本文片です。'
+        'unitのfactはこれらを順につなげた全文です。判断に使う本人原文は同じevidenceとfieldsで読みます。')
+    return [dict(role='system', content=guidance), dict(role='user', content=_semantic_occurrence_message(compact))]
+
+
 def _semantic_occurrence_v6_messages(prepared, material, phase, bodies=None):
     # The same originals and correction cohorts remain available in all phases.
     # Give the relation author a direct address for each *actual* prior fact.
@@ -3726,7 +3749,11 @@ def _semantic_occurrence_v6_messages(prepared, material, phase, bodies=None):
                     compact_facts=prepared.prompt_version == SEMANTIC_MAP_OCCURRENCE_V12_PROFILE and phase == 'NODES',
                     numbered_plan=prepared.prompt_version in {SEMANTIC_MAP_OCCURRENCE_V11_PROFILE, SEMANTIC_MAP_OCCURRENCE_V12_PROFILE} and phase == 'PLAN'))
     guidance = _semantic_v4_view(prepared)._source_instruction(guidance, material)
-    return [dict(role='system', content=guidance), dict(role='user', content=_semantic_occurrence_message(material))]
+    messages = [dict(role='system', content=guidance), dict(role='user', content=_semantic_occurrence_message(material))]
+    if prepared.prompt_version == SEMANTIC_MAP_OCCURRENCE_V12_PROFILE and phase == 'RELATIONS':
+        maximum = SEMANTIC_HISTORY_MERGE_MAX_PROMPT_BYTES if stage == 'MERGE' else SEMANTIC_MAP_MAX_PROMPT_BYTES
+        return _semantic_compact_relation_message(material, messages, maximum)
+    return messages
 
 
 def semantic_node_local_v4_messages(prepared, phase='PLAN', *, plan=None, nodes=None):
@@ -4318,6 +4345,7 @@ SEMANTIC_HISTORY_MAX_LEAVES = 16
 SEMANTIC_HISTORY_CONTEXT_SCALARS = 160
 # Matches the existing transport envelope. This is an exact serialized-byte
 # bound, not a tokenizer/context estimate; native serving checks tokens too.
+SEMANTIC_MAP_MAX_PROMPT_BYTES = 49152
 SEMANTIC_HISTORY_MERGE_MAX_PROMPT_BYTES = 131072
 
 

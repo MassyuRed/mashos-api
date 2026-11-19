@@ -14,6 +14,11 @@ from urllib.parse import urlsplit
 
 import httpx
 
+from cocolon_meaning_experience_engine.cores.analysis.semantic_admission import (
+    SEMANTIC_MAP_MAX_PROMPT_BYTES as SEMANTIC_MAX_PROMPT_BYTES,
+    SEMANTIC_HISTORY_MERGE_MAX_PROMPT_BYTES as SEMANTIC_MERGE_MAX_PROMPT_BYTES,
+)
+
 SELECTOR = 'self_hosted.v1'
 SEMANTIC_SELECTOR = 'self_hosted.semantic.v1'
 SEMANTIC_EVENT_PLAN_MODEL = 'cocolon-qwen3.5-4b-analysis-event-plan-v1'
@@ -41,15 +46,8 @@ MAX_RESPONSE_BYTES = 262144
 DEFAULT_PROMPT_VERSION = 'selected_material.v4'
 EXPLICIT_PROMPT_VERSIONS = frozenset({DEFAULT_PROMPT_VERSION, 'selected_material.v7'})
 
-# Bound the material carried by each cumulative acquisition without adding a
-# tokenizer dependency or a measurement request. This is a byte budget, NOT a
-# token estimate. The existing serving owner independently enforces the real
-# tokenizer/context budget (including its 4096-token output reservation).
-SEMANTIC_MAX_PROMPT_BYTES = 49152
+# These transport byte limits are separate from the native tokenizer/context limit.
 SEMANTIC_LEAF_MAX_PROMPT_BYTES = 16384
-# A merge also carries the admitted leaf readings and source manifest. Its
-# larger byte envelope does not increase native tokenizer/context capacity.
-SEMANTIC_MERGE_MAX_PROMPT_BYTES = 131072
 SEMANTIC_MAX_REQUEST_BYTES = 262144
 SEMANTIC_HISTORY_MAX_LEAVES = 16
 # Leave response/serialization time after the native 210s generation limit

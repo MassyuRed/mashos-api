@@ -157,3 +157,67 @@ def test_free_slot_numeric_handle_requires_its_exact_original(source_text,prose,
     else:
         with pytest.raises(core.AnalysisSemanticMapError):
             core.admit_semantic_node_local_v4_nodes_response(p,plan,wire)
+
+
+def relation_views():
+    old,plan,body=map_stages('私は備品を数えた。','倉庫の前に置かれた棚')
+    p=app.prepare_semantic_map(OWNER,json.loads(old.source_snapshot_json),
+        prompt_version=core.SEMANTIC_MAP_OCCURRENCE_V12_PROFILE)
+    unit=body['nodes']['n2']['units']['u1']
+    key=next(iter(unit['fact_parts']))
+    unit['fact_parts'][key]='記載された場所は倉庫の前です。'
+    full=core.semantic_node_local_v4_messages(p,'RELATIONS',plan=plan,nodes=body)
+    original=json.loads(full[1]['content'])
+    reduced=core._semantic_compact_relation_message(original,full,1)
+    return full,original,reduced,json.loads(reduced[1]['content'])
+
+
+def test_large_relation_view_preserves_every_source_and_fact_and_fits_small_views_verbatim():
+    full,original,reduced,packed=relation_views()
+    size=len(core.semantic_map_canonical(full).encode())
+    assert core._semantic_compact_relation_message(original,full,size) is full
+    assert 'evidence_parts_by_unit' not in packed
+    assert packed['fact_part_overrides']=={'n2.u1.e1':'記載された場所は倉庫の前です。'}
+    assert probe._semantic_relation_fact_parts(packed)==original['evidence_parts_by_unit']
+    for key in original.keys()-{'evidence_parts_by_unit'}:
+        assert packed[key]==original[key]
+    assert probe.semantic_output_schema(full)==probe.semantic_output_schema(reduced)
+
+
+@pytest.mark.parametrize('fault',['unbound_key','missing_override','redundant_override','forged_body','missing_hash','missing_both','wrong_digest','two_tables'])
+def test_relation_transport_rejects_damaged_or_forged_fact_parts(fault):
+    _,original,messages,m=relation_views()
+    values=m['fact_part_overrides']
+    if fault=='unbound_key': values['n3.u1.e1']='別の根拠'
+    elif fault=='missing_override': values.clear()
+    elif fault=='redundant_override': values['n1.u1.e1']=original['candidate_nodes'][0]['units'][0]['fact']
+    elif fault=='forged_body': values['n2.u1.e1']='別のところにあります。'
+    elif fault=='missing_hash': del m['evidence_parts_sha256']
+    elif fault=='missing_both': del m['fact_part_overrides'],m['evidence_parts_sha256']
+    elif fault=='wrong_digest': m['evidence_parts_sha256']='0'*64
+    else: m['evidence_parts_by_unit']=original['evidence_parts_by_unit']
+    messages[1]['content']=json.dumps(m,ensure_ascii=False)
+    with pytest.raises(ValueError,match='semantic_relation_fact_parts_unbound'):
+        probe.semantic_output_schema(messages)
+
+
+def test_relation_checks_evidence_part_boundaries_even_when_the_joined_fact_is_identical():
+    _,_,_,m=relation_views()
+    unit=m['candidate_nodes'][0]['units'][0]
+    unit['evidence']=[dict(field=1,quote='根拠甲。'),dict(field=1,quote='根拠乙。')]
+    unit['fact']='一二三四'
+    m['fact_part_overrides'].update({'n1.u1.e1':'一二','n1.u1.e2':'三四'})
+    # Bind the actual two authored parts. The digest also covers every other
+    # unit's field, quote and complete original fact text.
+    covered={}
+    for node in m['candidate_nodes']:
+        for i,u in enumerate(node['units'],1):
+            uid=f"{node['node_id']}.u{i}"
+            covered[uid]={f'e{j}':dict(field=r['field'],quote=r['quote'],
+                fact_part=m['fact_part_overrides'].get(f'{uid}.e{j}',r['quote']))
+                for j,r in enumerate(u['evidence'],1)}
+    m['evidence_parts_sha256']=core.semantic_map_hash(covered)
+    assert probe._semantic_relation_fact_parts(m)==covered
+    m['fact_part_overrides'].update({'n1.u1.e1':'一','n1.u1.e2':'二三四'})
+    with pytest.raises(ValueError,match='semantic_relation_fact_parts_unbound'):
+        probe._semantic_relation_fact_parts(m)

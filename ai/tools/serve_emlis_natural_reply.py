@@ -599,6 +599,37 @@ def _semantic_display_sentences(material):
     return choices
 
 
+def _semantic_relation_fact_parts(material):
+    """Recover exactly the per-root fact text retained by the preceding NODES receipt."""
+    error = 'semantic_relation_fact_parts_unbound'
+    if ('evidence_parts_by_unit' in material or type(material.get('fact_part_overrides')) is not dict
+            or material.get('author_profile') != OCCURRENCE_V12_PROFILE or material.get('author_phase') != 'RELATIONS'):
+        raise ValueError(error)
+    overrides = dict(material['fact_part_overrides'])
+    parts = {}
+    for node in material['candidate_nodes']:
+        for i, unit in enumerate(node['units'], 1):
+            ref = f"{node['node_id']}.u{i}"
+            entries = {}
+            for j, root in enumerate(unit['evidence'], 1):
+                key = f'e{j}'
+                path = ref + '.' + key
+                part = root['quote']
+                if path in overrides:
+                    part = overrides.pop(path)
+                    if type(part) is not str or not part.strip() or part == root['quote']:
+                        raise ValueError(error)
+                entries[key] = dict(field=root['field'], quote=root['quote'], fact_part=part)
+            if ''.join(e['fact_part'] for e in entries.values()) != unit['fact']:
+                raise ValueError(error)
+            parts[ref] = entries
+    digest = hashlib.sha256(json.dumps(parts, ensure_ascii=False, sort_keys=True,
+        separators=(',', ':'), allow_nan=False).encode()).hexdigest()
+    if overrides or material.get('evidence_parts_sha256') != digest:
+        raise ValueError(error)
+    return parts
+
+
 def _semantic_node_local_v4_schema(material, pairs, unknown_pairs, *, leaf=False):
     """Three private author shapes; no text repair or semantic certification."""
     from copy import deepcopy
@@ -780,6 +811,10 @@ def _semantic_node_local_v4_schema(material, pairs, unknown_pairs, *, leaf=False
                         and r['quote'].count(pair[1]) == 1 for r in roots['evidence'])):
                     raise ValueError('semantic_v4_registry_invalid')
                 seen.add(pair)
+    if 'fact_part_overrides' in material or 'evidence_parts_sha256' in material:
+        _semantic_relation_fact_parts(material)
+    elif author_profile == OCCURRENCE_V12_PROFILE and 'evidence_parts_by_unit' not in material:
+        raise ValueError('semantic_relation_fact_parts_unbound')
     ref = dict(type='string', enum=ids)
     endpoints = {'from': ref, 'to': ref}
     if author_profile in {OCCURRENCE_V6_PROFILE, OCCURRENCE_V7_PROFILE, OCCURRENCE_V8_PROFILE, *SOURCE_CUED_PROFILES}:
