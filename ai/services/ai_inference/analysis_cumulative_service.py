@@ -92,21 +92,27 @@ def _saved_projection_text_matches(projection, text):
         return True
     if projection.get('wire_kind') == 'watashi.map.v3':
         from cocolon_meaning_experience_engine.cores.analysis.observed_route_realizer import (
-            analysis_semantic_projection_text_legacy)
-        return text == analysis_semantic_projection_text_legacy(projection)
+            analysis_semantic_projection_text, analysis_semantic_projection_text_legacy)
+        return (text == analysis_semantic_projection_text_legacy(projection) or
+                text == analysis_semantic_projection_text(projection, record_scoped_unknowns=False))
     return False
 
 
-def _legacy_semantic_projection(projection):
+def _legacy_semantic_projection(projection, saved_text=None):
     """Keep installed v2 clients readable while a diagram-capable build ships.
 
     Meaning relations are not mislabeled as repeated occurrence or causation.
     The new client receives the actual v3 graph; old clients receive the same
     interpretations as clearly identified text, with the same evidence IDs.
     """
+    from cocolon_meaning_experience_engine.cores.analysis.observed_route_realizer import (
+        analysis_semantic_projection_text, _unknown_line)
+    scoped = (isinstance(saved_text, str) and '当時の未確認（' in saved_text and
+              saved_text == analysis_semantic_projection_text(projection, record_scoped_unknowns=True))
     def label(node):
         return '\n'.join(['読み取り：' + node['title'], node['summary'], node['explanation'],
-            *node['context'], *['この記録では決められないこと：' + x for x in node['unknowns']]])
+            *node['context'], *[_unknown_line(x, 'この記録では決められないこと：', record_scoped_unknowns=scoped)
+                               for x in node['unknowns']]])
     return dict(schema_version='cocolon.cmee.analysis_watashi_map_safe_projection.v1alpha1',
         wire_kind='watashi.map.v2', projection_of=projection['projection_of'],
         artifact_version=1, period_label=projection['period_label'],
@@ -125,13 +131,13 @@ def map_response_for_renderer(payload, renderer):
     meta = payload.get('meta')
     if type(meta) is dict and meta.get('wire_kind') == 'watashi.map.v3':
         payload = deepcopy(payload)
-        payload['meta'] = _legacy_semantic_projection(meta)
+        payload['meta'] = _legacy_semantic_projection(meta, payload.get('content_text'))
         payload['content_text'] = _projection_text(payload['meta'])
     item = payload.get('item')
     if type(item) is dict and item.get('content_json', {}).get('watashiMap', {}).get('wire_kind') == 'watashi.map.v3':
         payload = deepcopy(payload)
         row = payload['item']
-        row['content_json']['watashiMap'] = _legacy_semantic_projection(row['content_json']['watashiMap'])
+        row['content_json']['watashiMap'] = _legacy_semantic_projection(row['content_json']['watashiMap'], row.get('content_text'))
         row['content_text'] = _projection_text(row['content_json']['watashiMap'])
     return payload
 

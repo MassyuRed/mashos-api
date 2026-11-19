@@ -8,7 +8,7 @@ import unicodedata
 _CONTENT_PLAN_PROFILES = frozenset({
     'semantic_map.node_local.v4.occurrence.v13', 'semantic_map.node_local.v4.occurrence.v14',
     'semantic_map.node_local.v4.occurrence.v15', 'semantic_map.node_local.v4.occurrence.v16',
-    'semantic_map.node_local.v4.occurrence.v17'})
+    'semantic_map.node_local.v4.occurrence.v17', 'semantic_map.node_local.v4.occurrence.v18'})
 
 
 _CLOSED_TAG = re.compile(r'</?[A-Za-z_][\w:.-]*(?:\s+[^<>]*)?/?>|/>')
@@ -17,6 +17,15 @@ _UNFINISHED_CLOSING_TAG = re.compile(r'</[A-Za-z_][\w:.-]*$')
 
 def source_markup_bound(text, quote):
     return all(m[0] in quote for m in _CLOSED_TAG.finditer(text))
+
+
+_FACT_KEY_PREFIX = re.compile(r"(?<![A-Za-z0-9_./-])e[1-4]/")
+
+
+def source_fact_keys_bound(text, quote):
+    """Wire labels such as e2/ are metadata unless the selected source literally uses them."""
+    matches = _FACT_KEY_PREFIX.findall(text)
+    return not matches or set(matches).issubset(_FACT_KEY_PREFIX.findall(quote))
 
 
 def source_fact_text(text, quote):
@@ -244,7 +253,8 @@ def record_plan_owners(material, available=None):
     Keep room to represent unowned sources separately. Fall back to ordinary
     flexible allocation if source coverage or available nodes do not permit it.
     """
-    if (material.get('author_profile') != 'semantic_map.node_local.v4.occurrence.v17'
+    if (material.get('author_profile') not in {
+            'semantic_map.node_local.v4.occurrence.v17', 'semantic_map.node_local.v4.occurrence.v18'}
             or material.get('history_stage')):
         return ()
     records = [row['record'] for row in material.get('records', ())]
@@ -269,6 +279,72 @@ def record_plan_owners(material, available=None):
     if not all(originals.values()) or len(records) + len(unowned) > 12:
         return ()
     return tuple((frozenset(originals[r]), frozenset(locals_by_record[r])) for r in records)
+
+
+
+def compact_action_pairs(material):
+    """Keep a bounded original action available beside a longer original account.
+
+    A short pair may simply restate the same observation. Updates, excerpts
+    and history have separate provenance and allocation rules. Preserve their
+    existing author choices. Never infer that two acts or actors are identical.
+    """
+    if (material.get('author_profile') != 'semantic_map.node_local.v4.occurrence.v18'
+            or material.get('history_stage') or material.get('map_corrections')
+            or not 1 <= len(material.get('records', ())) <= 12):
+        return {}
+    fields_by_record = {}
+    for field in material['fields']:
+        record = field.get('record')
+        if record is None:
+            return {}
+        fields_by_record.setdefault(record, []).append(field)
+    for entry in material.get('emlis_source_materials', ()):
+        if entry.get('conflicts') or entry.get('unresolved_sources') or entry.get('source_updates'):
+            fields_by_record.pop(entry.get('record'), None)
+    pairs = {}
+    wire_bytes = 0
+    for record, fields in fields_by_record.items():
+        if len(fields) != 2 or any(f['source_role'] != 'ORIGINAL_INPUT'
+                or f.get('fragment_scalar_range') or f.get('fragment_is_complete_field') is False for f in fields):
+            continue
+        by_path = {f['field_path']: f for f in fields}
+        if set(by_path) != {'memo_action', 'memo'}:
+            continue
+        action, thought = by_path['memo_action'], by_path['memo']
+        text = action['text']
+        if not 0 < len(text) <= 160 < len(thought['text']):
+            continue
+        sentences = _sentences(text)
+        if (not 1 <= len(sentences) <= 4 or ''.join(sentences) != text
+                or not all(q.endswith(('。', '!', '?', '！', '？')) and any(c.isalnum() for c in q) for q in sentences)):
+            continue
+        thought_parts = [q for q in _sentences(thought['text']) if len(q) <= 240]
+        alternatives = [q for q in thought_parts if q not in text]
+        if len(thought_parts) < 2 or not alternatives:
+            continue
+        # The three replies share 4096 tokens. UTF-8 byte lengths upper-bound
+        # the tokenizer cost of a literal. Keep an ordinary completion path
+        # without requiring a large cohort to transcribe every compact field.
+        shortest = min(alternatives, key=lambda q: len(q.encode('utf-8')))
+        extra = json.dumps({'quote': shortest, 'field': thought['field']},
+                           separators=(',', ':'), ensure_ascii=False)
+        wire_bytes += len(text.encode('utf-8')) + len(extra.encode('utf-8')) + 1
+        if wire_bytes > 4096 // 4:
+            return {}
+        pairs[record] = (action['field'], text, thought['field'])
+    return pairs if pairs and record_plan_owners(material) else {}
+
+
+def paired_original_root(pair, preceding, field, quote):
+    """The first root covers the complete action; the next supplies its own original account."""
+    action_field, action, thought_field = pair
+    if not preceding:
+        return (field == action_field and quote == action
+                or field == thought_field and action in quote)
+    if len(preceding) == 1 and preceding[0][0] == action_field:
+        return field == thought_field and quote not in action
+    return True
 
 
 def _content_choices(text, quote, literals, choices, number):
@@ -336,6 +412,12 @@ def prepare(material):
             if at < len(text):
                 pieces.append(text[at:])
             numbered[number] = pieces
+    # A bounded entire action is also a literal source choice. Existing sentence
+    # cues continue to name precisely the same passages.
+    pairs = compact_action_pairs(material)
+    for number, full_action, _ in pairs.values():
+        allowed[number].add(full_action)
+        choices[number, full_action] = full_action
     if sparse:
         for entry in material.get('leaf_source_index', []):
             number, quote = entry['field'], entry['quote']
@@ -356,6 +438,10 @@ def prepare(material):
                     entry = dict(entry, choice=key)
             index.append(entry)
     view = dict(material)
+    if pairs:
+        view['records'] = [
+            dict(row, paired_original_fields=[pairs[row['record']][0], pairs[row['record']][2]])
+            if row['record'] in pairs else row for row in material['records']]
     view['fields'] = []
     for f in material['fields']:
         if f['field'] in numbered:
@@ -370,6 +456,9 @@ def prepare(material):
 def _restore_view(material):
     """Recover the exact input and validate the displayed table before constrained decoding."""
     original = dict(material)
+    if material.get('author_profile') == 'semantic_map.node_local.v4.occurrence.v18' and 'records' in material:
+        original['records'] = [{k: v for k, v in row.items() if k != 'paired_original_fields'}
+                               for row in material['records']]
     original['fields'] = []
     for field in material['fields']:
         if 'passages' in field:
@@ -423,28 +512,44 @@ def separate_record_labels(material, units):
     return _source_date_labels(material, records)
 
 
+def _source_timestamp(value):
+    from datetime import datetime, timezone
+
+    stamp = datetime.fromisoformat(value.replace('Z', '+00:00'))
+    # Stored timestamps without an offset are UTC, as in source_adapter.
+    return stamp if stamp.tzinfo is not None else stamp.replace(tzinfo=timezone.utc)
+
+
+def earlier_unknown_fields(material):
+    """Bind an original field to its record clock only when a strictly later record exists."""
+    stamps = {row['record']: _source_timestamp(row['recorded_at']) for row in material['records']}
+    if len(stamps) < 2:
+        return {}
+    last = max(stamps.values())
+    labels = dict(zip(stamps, _source_date_labels(material, stamps), strict=True))
+    return {field: labels[record] for field, record in _original_field_records(material).items()
+            if record in stamps and stamps[record] < last}
+
+
 def _source_date_labels(material, records):
-    from datetime import datetime, timedelta, timezone
+    from collections import Counter
+    from datetime import timedelta, timezone
 
     timestamps = {row['record']: row['recorded_at'] for row in material['records']}
-    local = []
-    for record in records:
-        stamp = datetime.fromisoformat(timestamps[record].replace('Z', '+00:00'))
-        # Stored timestamps without an offset are UTC, as in source_adapter.
-        if stamp.tzinfo is None:
-            stamp = stamp.replace(tzinfo=timezone.utc)
-        local.append(stamp.astimezone(timezone(timedelta(hours=9))))
-    dates = [stamp.date() for stamp in local]
+    local = [_source_timestamp(timestamps[record]).astimezone(timezone(timedelta(hours=9)))
+             for record in records]
+    date_counts = Counter(stamp.date() for stamp in local)
     across_years = len({stamp.year for stamp in local}) > 1
     labels = []
     for stamp in local:
         label = f'{stamp.month}月{stamp.day}日'
         if across_years:
             label = f'{stamp.year}年' + label
-        if dates.count(stamp.date()) > 1:
+        if date_counts[stamp.date()] > 1:
             label += stamp.strftime(' %H:%M')
         labels.append(label)
-    return tuple(f'記録{record}（{label}）' if labels.count(label) > 1 else label + 'の記録'
+    label_counts = Counter(labels)
+    return tuple(f'記録{record}（{label}）' if label_counts[label] > 1 else label + 'の記録'
                  for record, label in zip(records, labels, strict=True))
 
 
@@ -505,3 +610,55 @@ def one_sided_source_titles(material, units, *, compare_end_marks=False):
                 by_owner[owner].update(title for title in titles if 0 < len(title) <= 80)
     shared = set.intersection(*by_owner.values())
     return sorted(set.union(*by_owner.values()) - shared)
+
+
+# Separators are recognized only *between* complete source phrases. Embedded
+# punctuation (a decimal point, a quotation, etc.) remains part of the phrase.
+_OVERVIEW_SEPARATORS = frozenset(TITLE_END_MARKS + '・／/：:；;―—…　 ')
+
+
+class OverviewSourcePhrases:
+    """Identify a literal collage of selected evidence that omits a selected record."""
+
+    def __init__(self, material, units):
+        fields = _original_field_records(material)
+        owners = {_unit_record(fields, unit) for unit in units} - {None}
+        bits = {owner: 1 << index for index, owner in enumerate(sorted(owners))}
+        self.required = (1 << len(owners)) - 1
+        self.by_initial = {}
+        self.end_chars = set(_OVERVIEW_SEPARATORS)
+        if len(owners) < 2:
+            self.required = 0
+            return
+        for unit in units:
+            for root in unit['evidence']:
+                owner = fields.get(root['field'])
+                # Supplementary or corroborating text without an independent
+                # owner cannot establish that a selected record is missing.
+                mask = bits.get(owner, self.required)
+                quote = root['quote']
+                for phrase in (quote, *_sentences(quote)):
+                    phrase = source_title_key(phrase)
+                    if not 0 < len(phrase) <= 80 or not any(c.isalnum() for c in phrase):
+                        continue
+                    choices = self.by_initial.setdefault(phrase[0], {})
+                    choices[phrase] = choices.get(phrase, 0) | mask
+                    self.end_chars.add(phrase[-1])
+
+    def omits_record(self, title):
+        if not self.required:
+            return False
+        # Each offset retains the union of all defensible source attributions
+        # for that prefix. A shared phrase does not force a single attribution.
+        masks = {0: 0}
+        for start, char in enumerate(title):
+            if start not in masks:
+                continue
+            if char in _OVERVIEW_SEPARATORS:
+                masks[start + 1] = masks.get(start + 1, 0) | masks[start]
+            for phrase, owner_bits in self.by_initial.get(char, {}).items():
+                if title.startswith(phrase, start):
+                    end = start + len(phrase)
+                    masks[end] = masks.get(end, 0) | masks[start] | owner_bits
+        covered = masks.get(len(title))
+        return bool(covered) and covered != self.required

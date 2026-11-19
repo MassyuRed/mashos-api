@@ -2343,6 +2343,7 @@ SEMANTIC_MAP_OCCURRENCE_V14_PROFILE = 'semantic_map.node_local.v4.occurrence.v14
 SEMANTIC_MAP_OCCURRENCE_V15_PROFILE = 'semantic_map.node_local.v4.occurrence.v15'
 SEMANTIC_MAP_OCCURRENCE_V16_PROFILE = 'semantic_map.node_local.v4.occurrence.v16'
 SEMANTIC_MAP_OCCURRENCE_V17_PROFILE = 'semantic_map.node_local.v4.occurrence.v17'
+SEMANTIC_MAP_OCCURRENCE_V18_PROFILE = 'semantic_map.node_local.v4.occurrence.v18'
 SEMANTIC_MAP_OCCURRENCE_V3_SCHEMA = 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v3'
 SEMANTIC_MAP_OCCURRENCE_V4_SCHEMA = 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v4'
 SEMANTIC_MAP_OCCURRENCE_V5_SCHEMA = 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v5'
@@ -2358,8 +2359,9 @@ SEMANTIC_MAP_OCCURRENCE_V14_SCHEMA = 'cocolon.analysis.semantic_map.node_local.m
 SEMANTIC_MAP_OCCURRENCE_V15_SCHEMA = 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v15'
 SEMANTIC_MAP_OCCURRENCE_V16_SCHEMA = 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v16'
 SEMANTIC_MAP_OCCURRENCE_V17_SCHEMA = 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v17'
-SEMANTIC_MAP_FACT_PROSE_PROFILES = frozenset({SEMANTIC_MAP_OCCURRENCE_V16_PROFILE, SEMANTIC_MAP_OCCURRENCE_V17_PROFILE})
-SEMANTIC_MAP_VISIBLE_SOURCE_PROFILES = frozenset({SEMANTIC_MAP_OCCURRENCE_V14_PROFILE, SEMANTIC_MAP_OCCURRENCE_V15_PROFILE, SEMANTIC_MAP_OCCURRENCE_V16_PROFILE, SEMANTIC_MAP_OCCURRENCE_V17_PROFILE})
+SEMANTIC_MAP_OCCURRENCE_V18_SCHEMA = 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v18'
+SEMANTIC_MAP_FACT_PROSE_PROFILES = frozenset({SEMANTIC_MAP_OCCURRENCE_V16_PROFILE, SEMANTIC_MAP_OCCURRENCE_V17_PROFILE, SEMANTIC_MAP_OCCURRENCE_V18_PROFILE})
+SEMANTIC_MAP_VISIBLE_SOURCE_PROFILES = frozenset({SEMANTIC_MAP_OCCURRENCE_V14_PROFILE, SEMANTIC_MAP_OCCURRENCE_V15_PROFILE, SEMANTIC_MAP_OCCURRENCE_V16_PROFILE, SEMANTIC_MAP_OCCURRENCE_V17_PROFILE, SEMANTIC_MAP_OCCURRENCE_V18_PROFILE})
 SEMANTIC_MAP_CONTENT_PLAN_PROFILES = frozenset({SEMANTIC_MAP_OCCURRENCE_V13_PROFILE, *SEMANTIC_MAP_VISIBLE_SOURCE_PROFILES})
 SEMANTIC_MAP_FACT_REFERENCE_PROFILES = frozenset({SEMANTIC_MAP_OCCURRENCE_V12_PROFILE, *SEMANTIC_MAP_CONTENT_PLAN_PROFILES})
 SEMANTIC_MAP_SOURCE_CUED_PROFILES = frozenset({SEMANTIC_MAP_OCCURRENCE_V9_PROFILE, SEMANTIC_MAP_OCCURRENCE_V10_PROFILE, SEMANTIC_MAP_OCCURRENCE_V11_PROFILE, *SEMANTIC_MAP_FACT_REFERENCE_PROFILES})
@@ -2658,6 +2660,8 @@ def _semantic_v4_schema(phase):
 
 
 def semantic_node_local_v4_artifact_schema(prepared):
+    if prepared.prompt_version == SEMANTIC_MAP_OCCURRENCE_V18_PROFILE:
+        return SEMANTIC_MAP_OCCURRENCE_V18_SCHEMA
     if prepared.prompt_version == SEMANTIC_MAP_OCCURRENCE_V17_PROFILE:
         return SEMANTIC_MAP_OCCURRENCE_V17_SCHEMA
     if prepared.prompt_version == SEMANTIC_MAP_OCCURRENCE_V16_PROFILE:
@@ -2725,11 +2729,14 @@ def semantic_node_local_v4_plan(prepared, plan):
     covered, cited = set(), set()
     previous_allocations = set()
     previous_leads = set()
-    from analysis_plan_source_choices import record_plan_owners
+    from analysis_plan_source_choices import compact_action_pairs, paired_original_root, record_plan_owners
     owners = record_plan_owners(material)
+    pairs = compact_action_pairs(material) if owners else {}
     if owners:
         r(len(plan['nodes']) >= len(owners), 'analysis_semantic_plan_original_record_missing')
     for i, node in enumerate(plan['nodes'], 1):
+        pair = pairs.get(material['records'][i - 1]['record']) if i <= len(owners) else None
+        preceding = []
         r(_semantic_map_keys(node, {'node_id', 'units'}) and node['node_id'] == 'n' + str(i)
             and type(node['units']) is list and 1 <= len(node['units']) <= 2, reason)
         for unit_index, unit in enumerate(node['units']):
@@ -2746,13 +2753,19 @@ def semantic_node_local_v4_plan(prepared, plan):
                     first_root = unit_index == 0 and not seen
                     r(root['field'] in (original_fields if first_root else local_fields),
                         'analysis_semantic_plan_record_owner_invalid')
-                pair = (root['field'], root['quote'])
-                r(pair not in seen, reason)
-                seen.add(pair)
+                if pair:
+                    r(paired_original_root(pair, preceding, root['field'], root['quote']),
+                        'analysis_semantic_plan_paired_original_invalid')
+                    preceding.append((root['field'], root['quote']))
+                evidence_key = (root['field'], root['quote'])
+                r(evidence_key not in seen, reason)
+                seen.add(evidence_key)
                 cited.add(root['field'])
                 record = shown[root['field']].get('record')
                 if type(record) is int and record > 0:
                     covered.add(record)
+        if pair and len(preceding) == 1:
+            r(preceding[0][0] == pair[2], 'analysis_semantic_plan_paired_original_invalid')
         if prepared.prompt_version in SEMANTIC_MAP_SOURCE_CUED_PROFILES:
             allocation = tuple(tuple((root['field'], root['quote']) for root in unit['evidence'])
                 for unit in node['units'])
@@ -3029,6 +3042,9 @@ def semantic_node_local_v4_nodes(prepared, plan, packet):
                     if prepared.prompt_version in SEMANTIC_MAP_FACT_PROSE_PROFILES:
                         from analysis_plan_source_choices import literal_fact_handles, source_fact_text
                         r(source_fact_text(piece, quote), 'analysis_semantic_fact_content_missing')
+                        if prepared.prompt_version == SEMANTIC_MAP_OCCURRENCE_V18_PROFILE:
+                            from analysis_plan_source_choices import source_fact_keys_bound
+                            r(source_fact_keys_bound(piece, quote), 'analysis_semantic_fact_key_unbound')
                         if re.fullmatch(r'@[0-9]+', piece.strip()):
                             r(piece.strip() in literal_fact_handles(quote), reason)
                     if len(quote) <= limit and quote in display_sentences.get(root['field'], ()):
@@ -3145,7 +3161,7 @@ def _apply_semantic_qualification_review(prepared, nodes, review):
     originals = {number: text for number, text, *_ in _semantic_v4_view(prepared).fields}
     stated = (_semantic_recorded_actions(json.loads(prepared.material_json))
         if prepared.prompt_version in {SEMANTIC_MAP_OCCURRENCE_V11_PROFILE, *SEMANTIC_MAP_FACT_REFERENCE_PROFILES} else set())
-    if prepared.prompt_version == SEMANTIC_MAP_OCCURRENCE_V17_PROFILE:
+    if prepared.prompt_version in {SEMANTIC_MAP_OCCURRENCE_V17_PROFILE, SEMANTIC_MAP_OCCURRENCE_V18_PROFILE}:
         from analysis_plan_source_choices import recorded_non_actions
         stated.update(recorded_non_actions(json.loads(prepared.material_json)))
     for node in nodes:
@@ -3235,6 +3251,10 @@ def semantic_node_local_v4_relations(prepared, plan, bodies, packet):
             compare_end_marks=compare_end_marks)
         title = source_title_key(overview['title']) if compare_end_marks else overview['title']
         r(not forbidden or title not in forbidden, reason)
+        if prepared.prompt_version == SEMANTIC_MAP_OCCURRENCE_V18_PROFILE and len(overview['node_refs']) > 1:
+            from analysis_plan_source_choices import OverviewSourcePhrases
+            phrases = OverviewSourcePhrases(json.loads(prepared.material_json), units)
+            r(not phrases.omits_record(overview['title']), reason)
     if prepared.prompt_version in {SEMANTIC_MAP_OCCURRENCE_V3_PROFILE, SEMANTIC_MAP_OCCURRENCE_V4_PROFILE, *_SEMANTIC_COMPACT_UNIT_PROFILES}:
         _semantic_occurrence_check_relations(nodes, packet)
     if review_qualifications:
@@ -3893,6 +3913,11 @@ def _semantic_occurrence_v6_messages(prepared, material, phase, bodies=None):
                 '追加の項目を使って同じ一回の出来事を別の原記録が明示的に裏付ける根拠や、'
                 '複数記録に関わる本人訂正を扱えます。別項目に置いた関係は後の段階で原文を照合します。'
                 + _SEMANTIC_RECORD_PLAN_FORMAT)
+            if any('paired_original_fields' in row for row in material['records']):
+                guidance += (' paired_original_fieldsのある記録では、行動欄の全文を最初のquoteにそのまま書き、'
+                    '次に同じ記録の思考欄から原文を一つ選びます。思考側の引用が行動欄全文を逐語で含む場合は'
+                    'その一つを先頭に置けます。別の場面は別unitに分け、思考欄で何が実際に起きたか、'
+                    'その条件・長さや結果、何がまだ確かめられていないかを補います。')
     if stage == 'LEAF':
         guidance += ' 今はLEAFです。この記録だけを扱い、edgesは[]です。'
     elif stage == 'MERGE':
@@ -3933,6 +3958,9 @@ def _semantic_occurrence_v6_messages(prepared, material, phase, bodies=None):
         guidance += (' 別々の記録をまとめる題では、各場面で誰が何をしたかを確かめます。'
             '一方の文だけで他方の出来事を代表させず、関係の根拠がある場合はその経過を自然な題にできます。'
             '日付だけの題にはせず、記入日は出来事が起きた日と区別します。')
+    if prepared.prompt_version == SEMANTIC_MAP_OCCURRENCE_V18_PROFILE and phase == 'RELATIONS':
+        guidance += (' 概要に複数の記録を選ぶときは、それぞれの項目を含めた理由が伝わる題にします。'
+            '同じ出来事を別の日に振り返った場合は、二度起きたことにしません。')
     if grounded_display and phase == 'RELATIONS':
         guidance += (' 判定キーq番号/末尾の原文は候補の引用を指します。各引用を最後の述語まで読み、'
             'そこで確定した話と、まだ答えが書かれていない問いの対象を区別します。'

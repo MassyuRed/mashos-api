@@ -9,6 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 import json
 import logging
+import re
 from uuid import uuid4
 
 from ...contracts import EngineStatus
@@ -1110,8 +1111,12 @@ class AnalysisSemanticMapArtifact:
             str(UUID(self.artifact_id[9:])))
 
     def safe_text_projection(self, *, authenticated_owner_scope):
-        return {'text': analysis_semantic_projection_text(self.safe_projection(
-            authenticated_owner_scope=authenticated_owner_scope))}
+        projection = self.safe_projection(authenticated_owner_scope=authenticated_owner_scope)
+        if not self.graph.record_scoped_unknowns and any(_DATED_UNKNOWN.match(item)
+                for node in projection['nodes'] for item in node['unknowns']):
+            # A previously saved person's literal can itself look like a dated label.
+            return {'text': analysis_semantic_projection_text(projection, record_scoped_unknowns=False)}
+        return {'text': analysis_semantic_projection_text(projection)}
 
     def private_evidence(self):
         graph = dict(nodes=json.loads(self.graph.nodes_json),
@@ -1204,7 +1209,20 @@ def analysis_semantic_projection_text_legacy(projection):
     return '\n'.join(lines)
 
 
-def analysis_semantic_projection_text(projection):
+# The source date formatter also distinguishes same-minute records by ordinal.
+_RECORD_DATE = r'(?:[0-9]{4}年)?[0-9]{1,2}月[0-9]{1,2}日(?: [0-9]{2}:[0-9]{2})?'
+_DATED_UNKNOWN = re.compile(rf'当時の未確認（(?:{_RECORD_DATE}の記録|記録[1-9][0-9]*（{_RECORD_DATE}）)）：')
+
+
+def _unknown_line(quote, prefix, *, record_scoped_unknowns):
+    # This concerns the display label only. The OPEN has already been admitted
+    # against its exact source field and the raw quotation stays verbatim.
+    if record_scoped_unknowns and _DATED_UNKNOWN.match(quote):
+        return quote
+    return prefix + quote
+
+
+def analysis_semantic_projection_text(projection, *, record_scoped_unknowns=True):
     """Render every v3 graph without multiplying its node bodies by its edges.
 
     Only byte-identical paragraphs are coalesced within a node. Overview
@@ -1233,7 +1251,8 @@ def analysis_semantic_projection_text(projection):
     for node in projection['nodes']:
         lines.extend(['', node['title'], *node_bodies[node['node_ref']]])
         lines.extend(node['context'])
-        lines.extend('まだ記録にないこと：' + item for item in node['unknowns'])
+        lines.extend(_unknown_line(item, 'まだ記録にないこと：', record_scoped_unknowns=record_scoped_unknowns)
+                     for item in node['unknowns'])
     for edge in projection['edges']:
         lines.extend(['', index[edge['from_ref']]['title'] + ' ／ ' + index[edge['to_ref']]['title'],
             edge['label']])
