@@ -213,7 +213,7 @@ jobs:
       - name: Install isolated-test dependencies
         run: >-
           python -m pip install --quiet --disable-pip-version-check
-          pytest==8.4.1 pytest-subtests==0.14.2 pytest-asyncio==1.2.0
+          pytest==8.4.1 pytest-subtests==0.14.2 pytest-asyncio==1.2.0 numpy==2.3.5
           fastapi==0.142.2 pydantic==2.13.5 httpx==0.28.1 PyJWT==2.13.0 tornado==6.5.2
           -r ai/tools/analysis_semantic_generation_requirements.txt
       - name: Record tested source and runtime

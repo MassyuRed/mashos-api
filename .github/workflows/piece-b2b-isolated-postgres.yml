@@ -76,6 +76,7 @@ name: Piece B2-B/B3/B4/B5 isolated PostgreSQL
       - ai/tests/test_cmee_piece_supplemental_then_feeling.py
       - ai/tools/serve_emlis_natural_reply.py
       - ai/tests/test_piece_model_server_constraints.py
+      - ai/tests/test_analysis_merge_constraint_prefix.py
       - ai/tools/training/train_piece_model_adapter.py
       - ai/tests/test_piece_model_adapter_training.py
       - ai/tests/test_piece_model_prose_register.py
@@ -485,8 +486,8 @@ jobs:
             ai/tests/test_subscription_purchase_owner_hint.py \
             ai/tests/test_subscription_live_console_readiness.py \
             ai/tests/test_follow_private_visibility_failure.py
-      - name: Install existing pinned GPU JSON parser for CPU protocol tests
-        run: python -m pip install --quiet --disable-pip-version-check -r ai/tools/analysis_semantic_generation_requirements.txt
+      - name: Install the pinned parser and NumPy for CPU protocol tests
+        run: python -m pip install --quiet --disable-pip-version-check numpy==2.3.5 -r ai/tools/analysis_semantic_generation_requirements.txt
       - name: Verify Piece model receipt, mutations, cancellation and saved reuse
         env:
           PIECE_ADD_COMPAT_BASE_REPOSITORY: ${{ github.workspace }}/.compatibility/piece-7f51
@@ -505,6 +506,7 @@ jobs:
             ai/tests/test_piece_model_field_slots.py \
             ai/tests/test_cmee_piece_supplemental_then_feeling.py \
             ai/tests/test_piece_model_server_constraints.py \
+            ai/tests/test_analysis_merge_constraint_prefix.py \
             ai/tests/test_piece_model_adapter_training.py \
             ai/tests/test_piece_model_prose_register.py \
             ai/tests/test_piece_model_operator_tree.py \
