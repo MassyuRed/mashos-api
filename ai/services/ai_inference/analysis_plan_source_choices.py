@@ -8,7 +8,7 @@ import unicodedata
 _CONTENT_PLAN_PROFILES = frozenset({
     'semantic_map.node_local.v4.occurrence.v13', 'semantic_map.node_local.v4.occurrence.v14',
     'semantic_map.node_local.v4.occurrence.v15', 'semantic_map.node_local.v4.occurrence.v16',
-    'semantic_map.node_local.v4.occurrence.v17', 'semantic_map.node_local.v4.occurrence.v18'})
+    'semantic_map.node_local.v4.occurrence.v17', 'semantic_map.node_local.v4.occurrence.v18', 'semantic_map.node_local.v4.occurrence.v19'})
 
 
 _CLOSED_TAG = re.compile(r'</?[A-Za-z_][\w:.-]*(?:\s+[^<>]*)?/?>|/>')
@@ -26,6 +26,50 @@ def source_fact_keys_bound(text, quote):
     """Wire labels such as e2/ are metadata unless the selected source literally uses them."""
     matches = _FACT_KEY_PREFIX.findall(text)
     return not matches or set(matches).issubset(_FACT_KEY_PREFIX.findall(quote))
+
+
+# A leading object separator plus a quoted member or collection begins a
+# serialized fragment. A genuine example copied from this source remains legal.
+_FACT_MEMBER_START = re.compile(r"""^\s*,\s*['"{\[]""")
+_FACT_MEMBER = re.compile(r"""(['"])([^'"\n]*)\1\s*:""")
+_FACT_NUMBER_COLLECTION = re.compile(r'(?:\{\s*\d+(?:\s*,\s*\d+)+\s*\}|\[\s*\d+(?:\s*,\s*\d+)+\s*\])')
+
+
+def fact_starts_with_member(text):
+    return bool(_FACT_MEMBER_START.match(text))
+
+
+def source_fact_members_bound(text, quote):
+    """A serialized member or numeric collection needs evidence in this exact root."""
+    if fact_starts_with_member(text):
+        return text.lstrip() in quote
+    if not all(match[0].strip() in quote for match in _FACT_MEMBER.finditer(text)):
+        return False
+    for match in _FACT_NUMBER_COLLECTION.finditer(text):
+        # Insignificant spaces may differ in a displayed mathematical set.
+        source = ''.join(quote.split())
+        if ''.join(match[0].split()) not in source:
+            return False
+    return True
+
+
+def fact_member_suffixes(text, quote, maximum):
+    """Possible source continuations after a literal serialized prefix."""
+    value = text.lstrip()
+    offset = quote.find(value)
+    while offset >= 0:
+        end = offset + len(value)
+        yield quote[end:end + maximum - len(text)]
+        offset = quote.find(value, offset + 1)
+
+
+def source_fact_numeric_bound(text, quote):
+    """When the complete fact is purely numeric notation, ground that expression too."""
+    if any(c.isalpha() for c in text) or not any(c.isdigit() for c in text):
+        return True
+    value = ''.join(unicodedata.normalize('NFKC', text).split())
+    source = ''.join(unicodedata.normalize('NFKC', quote).split())
+    return re.search(r'(?<![0-9])' + re.escape(value) + r'(?![0-9])', source) is not None
 
 
 def source_fact_text(text, quote):
@@ -112,11 +156,25 @@ def choice_scope(request_ref, choices, material=None):
     return hashlib.sha256(raw.encode()).hexdigest()
 
 
-def _sentences(text):
+def _sentences(text, *, original_for_overview=False):
     ends = {'「': '」', '『': '』'}
+    if original_for_overview:
+        ends.update({'（': '）', '(': ')', '［': '］', '[': ']', '【': '】', '〈': '〉',
+            '《': '》', '｛': '｝', '{': '}', '“': '”', '‘': '’', '"': '"', "'": "'", '`': '`'})
     stack, spans = [], []
+    escaped = False
     start = 0
     for i, char in enumerate(text):
+        if original_for_overview and stack and stack[-1] in ('"', "'", '`'):
+            if escaped:
+                escaped = False
+            elif char == '\\':
+                escaped = True
+            elif char == stack[-1]:
+                stack.pop()
+            continue
+        if original_for_overview and char == "'" and text[i-1:i].isalnum() and text[i+1:i+2].isalnum():
+            continue
         if stack and char == stack[-1]:
             stack.pop()
         elif char in ends:
@@ -131,7 +189,7 @@ def _sentences(text):
     if stack:
         return []
     spans.append(text[start:].strip())
-    return [q for q in spans if q and len(q) <= 4000 and text.count(q) == 1
+    return [q for q in spans if q and len(q) <= 4000 and (original_for_overview or text.count(q) == 1)
             and not re.search(r'["\\\x00-\x1f]', q)]
 
 
@@ -254,7 +312,7 @@ def record_plan_owners(material, available=None):
     flexible allocation if source coverage or available nodes do not permit it.
     """
     if (material.get('author_profile') not in {
-            'semantic_map.node_local.v4.occurrence.v17', 'semantic_map.node_local.v4.occurrence.v18'}
+            'semantic_map.node_local.v4.occurrence.v17', 'semantic_map.node_local.v4.occurrence.v18', 'semantic_map.node_local.v4.occurrence.v19'}
             or material.get('history_stage')):
         return ()
     records = [row['record'] for row in material.get('records', ())]
@@ -289,7 +347,7 @@ def compact_action_pairs(material):
     and history have separate provenance and allocation rules. Preserve their
     existing author choices. Never infer that two acts or actors are identical.
     """
-    if (material.get('author_profile') != 'semantic_map.node_local.v4.occurrence.v18'
+    if (material.get('author_profile') not in {'semantic_map.node_local.v4.occurrence.v18', 'semantic_map.node_local.v4.occurrence.v19'}
             or material.get('history_stage') or material.get('map_corrections')
             or not 1 <= len(material.get('records', ())) <= 12):
         return {}
@@ -456,7 +514,7 @@ def prepare(material):
 def _restore_view(material):
     """Recover the exact input and validate the displayed table before constrained decoding."""
     original = dict(material)
-    if material.get('author_profile') == 'semantic_map.node_local.v4.occurrence.v18' and 'records' in material:
+    if material.get('author_profile') in {'semantic_map.node_local.v4.occurrence.v18', 'semantic_map.node_local.v4.occurrence.v19'} and 'records' in material:
         original['records'] = [{k: v for k, v in row.items() if k != 'paired_original_fields'}
                                for row in material['records']]
     original['fields'] = []
@@ -620,30 +678,52 @@ _OVERVIEW_SEPARATORS = frozenset(TITLE_END_MARKS + '・／/：:；;―—…　 
 class OverviewSourcePhrases:
     """Identify a literal collage of selected evidence that omits a selected record."""
 
-    def __init__(self, material, units):
+    def __init__(self, material, units, *, include_original_fields=False, restricted_titles=()):
         fields = _original_field_records(material)
         owners = {_unit_record(fields, unit) for unit in units} - {None}
         bits = {owner: 1 << index for index, owner in enumerate(sorted(owners))}
-        self.required = (1 << len(owners)) - 1
+        self.required = (1 << len(owners)) - 1 if len(owners) >= 2 else 0
+        self.restricted_titles = restricted_titles
+        original_title_owners = dict.fromkeys(restricted_titles or (), 0) if include_original_fields else {}
         self.by_initial = {}
         self.end_chars = set(_OVERVIEW_SEPARATORS)
-        if len(owners) < 2:
-            self.required = 0
+        if not self.required:
             return
+
+        def index(phrase, owner):
+            phrase = source_title_key(phrase)
+            if 0 < len(phrase) <= 80 and any(c.isalnum() for c in phrase):
+                mask = bits.get(owner, self.required)
+                if phrase in original_title_owners and owner in bits:
+                    original_title_owners[phrase] |= bits[owner]
+                by_length = self.by_initial.setdefault(phrase[0], {})
+                same_length = by_length.setdefault(len(phrase), {})
+                same_length[phrase] = same_length.get(phrase, 0) | mask
+                self.end_chars.add(phrase[-1])
+
         for unit in units:
             for root in unit['evidence']:
-                owner = fields.get(root['field'])
                 # Supplementary or corroborating text without an independent
                 # owner cannot establish that a selected record is missing.
-                mask = bits.get(owner, self.required)
+                owner = fields.get(root['field'])
                 quote = root['quote']
                 for phrase in (quote, *_sentences(quote)):
-                    phrase = source_title_key(phrase)
-                    if not 0 < len(phrase) <= 80 or not any(c.isalnum() for c in phrase):
-                        continue
-                    choices = self.by_initial.setdefault(phrase[0], {})
-                    choices[phrase] = choices.get(phrase, 0) | mask
-                    self.end_chars.add(phrase[-1])
+                    index(phrase, owner)
+        if include_original_fields:
+            for field in material['fields']:
+                owner = fields.get(field['field'])
+                if owner not in bits or field.get('fragment_is_complete_field') is False:
+                    continue
+                # Only complete outer sentences contribute source ownership.
+                # Repetition within a single physical record keeps that owner.
+                for phrase in _sentences(field['text'], original_for_overview=True):
+                    if phrase.endswith(('。', '！', '？', '!', '?')):
+                        index(phrase, owner)
+
+        if original_title_owners:
+            # A legacy restriction can be lifted only with positive, complete
+            # original-record support. A supplement never supplies that support.
+            self.restricted_titles = [title for title, mask in original_title_owners.items() if mask != self.required]
 
     def omits_record(self, title):
         if not self.required:
@@ -656,9 +736,13 @@ class OverviewSourcePhrases:
                 continue
             if char in _OVERVIEW_SEPARATORS:
                 masks[start + 1] = masks.get(start + 1, 0) | masks[start]
-            for phrase, owner_bits in self.by_initial.get(char, {}).items():
-                if title.startswith(phrase, start):
-                    end = start + len(phrase)
-                    masks[end] = masks.get(end, 0) | masks[start] | owner_bits
-        covered = masks.get(len(title))
+            # A title has at most 80 characters. Unrelated equal-initial
+            # originals never make this loop scale with the source vocabulary.
+            for length, phrases in self.by_initial.get(char, {}).items():
+                end = start + length
+                if end <= len(title):
+                    owner_bits = phrases.get(title[start:end])
+                    if owner_bits is not None:
+                        masks[end] = masks.get(end, 0) | masks[start] | owner_bits
+        covered = masks.get(len(title), 0)
         return bool(covered) and covered != self.required

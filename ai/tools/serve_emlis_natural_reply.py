@@ -58,6 +58,7 @@ OCCURRENCE_V15_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v4-occurrence-v15
 OCCURRENCE_V16_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v4-occurrence-v16'
 OCCURRENCE_V17_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v4-occurrence-v17'
 OCCURRENCE_V18_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v4-occurrence-v18'
+OCCURRENCE_V19_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v4-occurrence-v19'
 OCCURRENCE_V3_PROFILE = 'semantic_map.node_local.v4.occurrence.v3'
 OCCURRENCE_V4_PROFILE = 'semantic_map.node_local.v4.occurrence.v4'
 OCCURRENCE_V5_PROFILE = 'semantic_map.node_local.v4.occurrence.v5'
@@ -74,8 +75,9 @@ OCCURRENCE_V15_PROFILE = 'semantic_map.node_local.v4.occurrence.v15'
 OCCURRENCE_V16_PROFILE = 'semantic_map.node_local.v4.occurrence.v16'
 OCCURRENCE_V17_PROFILE = 'semantic_map.node_local.v4.occurrence.v17'
 OCCURRENCE_V18_PROFILE = 'semantic_map.node_local.v4.occurrence.v18'
-FACT_PROSE_PROFILES = frozenset({OCCURRENCE_V16_PROFILE, OCCURRENCE_V17_PROFILE, OCCURRENCE_V18_PROFILE})
-VISIBLE_SOURCE_PROFILES = frozenset({OCCURRENCE_V14_PROFILE, OCCURRENCE_V15_PROFILE, OCCURRENCE_V16_PROFILE, OCCURRENCE_V17_PROFILE, OCCURRENCE_V18_PROFILE})
+OCCURRENCE_V19_PROFILE = 'semantic_map.node_local.v4.occurrence.v19'
+FACT_PROSE_PROFILES = frozenset({OCCURRENCE_V16_PROFILE, OCCURRENCE_V17_PROFILE, OCCURRENCE_V18_PROFILE, OCCURRENCE_V19_PROFILE})
+VISIBLE_SOURCE_PROFILES = frozenset({OCCURRENCE_V14_PROFILE, OCCURRENCE_V15_PROFILE, OCCURRENCE_V16_PROFILE, OCCURRENCE_V17_PROFILE, OCCURRENCE_V18_PROFILE, OCCURRENCE_V19_PROFILE})
 CONTENT_PLAN_PROFILES = frozenset({OCCURRENCE_V13_PROFILE, *VISIBLE_SOURCE_PROFILES})
 FACT_REFERENCE_PROFILES = frozenset({OCCURRENCE_V12_PROFILE, *CONTENT_PLAN_PROFILES})
 SOURCE_CUED_PROFILES = frozenset({OCCURRENCE_V9_PROFILE, OCCURRENCE_V10_PROFILE, OCCURRENCE_V11_PROFILE, *FACT_REFERENCE_PROFILES})
@@ -779,10 +781,15 @@ def _semantic_node_local_v4_schema(material, pairs, unknown_pairs, *, leaf=False
                                 handles = _semantic_choice_module().literal_fact_handles(quote)
                                 choices = _semantic_choice_module().fact_sentence_choices(
                                     quote, display_sentences.get(source['field'], ()), part['maxLength'])
+                                if author_profile == OCCURRENCE_V19_PROFILE and '@0' in choices:
+                                    parts[key] = dict(type='string', enum=list(choices), **{'x-fact-sentences': choices})
+                                    continue
+                                if author_profile == OCCURRENCE_V19_PROFILE:
+                                    part['x-source-bound-members'] = True
                                 if choices:
                                     part['x-fact-sentences'] = choices
                                 part['x-fact-source'] = quote
-                                if author_profile == OCCURRENCE_V18_PROFILE:
+                                if author_profile in {OCCURRENCE_V18_PROFILE, OCCURRENCE_V19_PROFILE}:
                                     part['x-source-bound-keys'] = True
                                 handles.update(choices)
                             part['description'] = 'source-at-ids:' + ','.join(sorted(handles))
@@ -901,7 +908,7 @@ def _semantic_node_local_v4_schema(material, pairs, unknown_pairs, *, leaf=False
         review = {}
         closed = obj(dict(status=dict(type='string', enum=['STATED', 'EARLIER', 'DUPLICATE'])))
         stated = _semantic_recorded_actions(material) if author_profile in {OCCURRENCE_V11_PROFILE, *FACT_REFERENCE_PROFILES} else set()
-        if author_profile in {OCCURRENCE_V17_PROFILE, OCCURRENCE_V18_PROFILE}:
+        if author_profile in {OCCURRENCE_V17_PROFILE, OCCURRENCE_V18_PROFILE, OCCURRENCE_V19_PROFILE}:
             stated.update(_semantic_choice_module().recorded_non_actions(material))
         for ref, candidate in candidates.items():
             source = originals[candidate['source_field']]
@@ -974,7 +981,7 @@ def semantic_output_schema(messages):
     source_qualified = event_v2 or node_local
     quoted_records, correction_fields = set(), 0
     full_actions = ({field: text for field, text, _ in _semantic_choice_module().compact_action_pairs(material).values()}
-                    if material.get('author_profile') == OCCURRENCE_V18_PROFILE else {})
+                    if material.get('author_profile') in {OCCURRENCE_V18_PROFILE, OCCURRENCE_V19_PROFILE} else {})
     for field in fields:
         number, original = field.get('field'), field.get('text')
         if type(number) is not int or number < 1 or number in seen or type(original) is not str:
@@ -1187,15 +1194,16 @@ def _if_json_schema_parser(schema, config):
 
 
 @lru_cache(maxsize=512)
-def _fact_escape_examples(start, end):
+def _fact_escape_examples(start, end, *, numeric=False):
     """ASCII controls syntax. Other scalars affect a fact as a word, space, or symbol."""
     ascii_values = list(range(start, min(end, 127) + 1))
     examples = {}
     for code in range(max(start, 128), end + 1):
         char = chr(code)
-        kind = (char.isalnum(), char.isspace())
+        kind = ((char.isalpha(), char.isdigit(), char.isalnum(), char.isspace()) if numeric
+                else (char.isalnum(), char.isspace()))
         examples.setdefault(kind, code)
-        if len(examples) == 3:
+        if len(examples) == (5 if numeric else 3):
             break
     return tuple(ascii_values + list(examples.values()))
 
@@ -1449,6 +1457,7 @@ def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None, b
         """Only intercept a whole unmatched numeric handle. Ordinary prose stays free."""
         assigned_source = None
         source_bound_keys = False
+        source_bound_members = False
 
         def forbidden(self, text):
             value = text.strip()
@@ -1458,14 +1467,21 @@ def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None, b
                         return False
                     return text != value or value not in self.titles
                 return (not closer_rules.source_fact_text(text, self.assigned_source)
-                        or self.source_bound_keys and not closer_rules.source_fact_keys_bound(text, self.assigned_source))
+                        or self.source_bound_keys and not closer_rules.source_fact_keys_bound(text, self.assigned_source)
+                        or self.source_bound_members and not (closer_rules.source_fact_members_bound(text, self.assigned_source)
+                            and closer_rules.source_fact_numeric_bound(text, self.assigned_source)))
             return re.fullmatch(r'@[1-9][0-9]*', value) is not None and value not in self.titles
 
         def bound(self, text):
+            if self.source_bound_members and closer_rules.fact_starts_with_member(text):
+                return any(not self.forbidden(text + tail[:i])
+                           for tail in closer_rules.fact_member_suffixes(text, self.assigned_source, self.maximum)
+                           for i in range(len(tail) + 1))
             return (super().bound(text) and (self.assigned_source is None or not text.endswith('>')
                     or closer_rules.source_markup_bound(text, self.assigned_source))
                     and (not self.source_bound_keys or not text.endswith('/')
-                         or closer_rules.source_fact_keys_bound(text, self.assigned_source)))
+                         or closer_rules.source_fact_keys_bound(text, self.assigned_source))
+                    and (not self.source_bound_members or closer_rules.source_fact_members_bound(text, self.assigned_source)))
 
         def get_allowed_characters(self):
             if self.assigned_source is None or not self.opened or self.closed:
@@ -1475,7 +1491,8 @@ def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None, b
                 return '\\'
             if high and self.escape == '\\':
                 return 'u'
-            if self.escape.startswith('\\u') and (high or self.escape[2:3].lower() == 'd'
+            quoted_member = self.source_bound_members and closer_rules.fact_starts_with_member(self.text)
+            if self.escape.startswith('\\u') and (quoted_member or high or self.escape[2:3].lower() == 'd'
                                                        or len(self.text) + 1 == self.maximum):
                 # Keep an escape prefix only if a completed scalar can still end
                 # the field at its limit. A surrogate pair consumes one scalar.
@@ -1489,6 +1506,25 @@ def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None, b
                 allowed = allowed.replace('/', '')
             if not self.escape and '>' in allowed and not self.bound(self.text + '>'):
                 allowed = allowed.replace('>', '')
+            if self.source_bound_members:
+                if not self.escape:
+                    if quoted_member:
+                        # The prefix is now a source quotation. Keep only actual next
+                        # characters; closing the JSON string is handled by forbidden().
+                        subsequent = {tail[0] for tail in closer_rules.fact_member_suffixes(
+                            self.text, self.assigned_source, self.maximum) if tail}
+                        viable = {c for c in subsequent if self.bound(self.text + c)}
+                        if viable:
+                            viable.add('\\')
+                        viable.add('"')  # The closing delimiter was checked by forbidden().
+                        allowed = ''.join(c for c in allowed if c in viable)
+                    else:
+                        for c in "':{[}]":
+                            if c in allowed and not self.bound(self.text + c):
+                                allowed = allowed.replace(c, '')
+                elif self.escape == '\\':
+                    escaped = {'"': '"', '/': '/', '\\': '\\', 'b': '\b', 'f': '\f', 'n': '\n', 'r': '\r', 't': '\t'}
+                    allowed = ''.join(c for c in allowed if c == 'u' or self.bound(self.text + escaped[c]))
             return allowed
 
         def escape_can_finish(self, digits, high):
@@ -1509,7 +1545,7 @@ def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None, b
                 # Literal source characters can also complete a source-supported
                 # tag or symbol. Other non-ASCII characters of one class are
                 # equivalent for this upper-bound check.
-                samples = _fact_escape_examples(start, end)
+                samples = _fact_escape_examples(start, end, numeric=self.source_bound_members)
                 source = (ord(c) for c in self.assigned_source if start <= ord(c) <= end)
                 for code in (*samples, *source):
                     value = base + chr(code)
@@ -1946,6 +1982,7 @@ def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None, b
                     fact = FactProse(result.root, handles, part.maxLength)
                     fact.assigned_source = part.extras.get('x-fact-source')
                     fact.source_bound_keys = bool(part.extras.get('x-source-bound-keys'))
+                    fact.source_bound_members = bool(part.extras.get('x-source-bound-members'))
                     active.object_stack[-1] = fact
                 elif key == 'title':
                     forbidden = result.schema_object.properties[key].extras.get('not', {}).get('enum', ())
@@ -1956,9 +1993,11 @@ def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None, b
                                  for unit in node['units']]
                         forbidden = _semantic_choice_module().one_sided_source_titles(overview_sources, units,
                             compare_end_marks=compare_title_end_marks)
-                        if (overview_sources.get('author_profile') == OCCURRENCE_V18_PROFILE
+                        if (overview_sources.get('author_profile') in {OCCURRENCE_V18_PROFILE, OCCURRENCE_V19_PROFILE}
                                 and len(graph.selected_overview_refs) > 1):
-                            phrases = closer_rules.OverviewSourcePhrases(overview_sources, units)
+                            phrases = closer_rules.OverviewSourcePhrases(overview_sources, units, restricted_titles=forbidden,
+                                include_original_fields=overview_sources.get('author_profile') == OCCURRENCE_V19_PROFILE)
+                            forbidden = phrases.restricted_titles
                     if phrases is not None and phrases.required:
                         active.object_stack[-1] = OverviewTitle(result.root, forbidden or (),
                             result.schema_object.properties[key].maxLength, phrases)
@@ -2284,7 +2323,7 @@ def make_handler(generate, *, api_key, model_name, deadline, max_requests,
                     EVENT_PLAN_V2_BASE_MODEL, NODE_LOCAL_V3_BASE_MODEL}
                 if event_plan:
                     selected_model = event_plan_model
-                staged = event_plan and event_plan_model in {NODE_LOCAL_V4_MODEL, NODE_LOCAL_V4_BOUND_MODEL, NODE_LOCAL_V4_BOUND_V2_MODEL, OCCURRENCE_MODEL, OCCURRENCE_V2_MODEL, OCCURRENCE_V3_MODEL, OCCURRENCE_V4_MODEL, OCCURRENCE_V5_MODEL, OCCURRENCE_V6_MODEL, OCCURRENCE_V7_MODEL, OCCURRENCE_V8_MODEL, OCCURRENCE_V9_MODEL, OCCURRENCE_V10_MODEL, OCCURRENCE_V11_MODEL, OCCURRENCE_V12_MODEL, OCCURRENCE_V13_MODEL, OCCURRENCE_V14_MODEL, OCCURRENCE_V15_MODEL, OCCURRENCE_V16_MODEL, OCCURRENCE_V17_MODEL, OCCURRENCE_V18_MODEL}
+                staged = event_plan and event_plan_model in {NODE_LOCAL_V4_MODEL, NODE_LOCAL_V4_BOUND_MODEL, NODE_LOCAL_V4_BOUND_V2_MODEL, OCCURRENCE_MODEL, OCCURRENCE_V2_MODEL, OCCURRENCE_V3_MODEL, OCCURRENCE_V4_MODEL, OCCURRENCE_V5_MODEL, OCCURRENCE_V6_MODEL, OCCURRENCE_V7_MODEL, OCCURRENCE_V8_MODEL, OCCURRENCE_V9_MODEL, OCCURRENCE_V10_MODEL, OCCURRENCE_V11_MODEL, OCCURRENCE_V12_MODEL, OCCURRENCE_V13_MODEL, OCCURRENCE_V14_MODEL, OCCURRENCE_V15_MODEL, OCCURRENCE_V16_MODEL, OCCURRENCE_V17_MODEL, OCCURRENCE_V18_MODEL, OCCURRENCE_V19_MODEL}
                 if staged:
                     material = json.loads(messages[1]['content'])
                     if material.get('author_phase') not in NODE_LOCAL_V4_PHASES:
@@ -2313,7 +2352,7 @@ def make_handler(generate, *, api_key, model_name, deadline, max_requests,
                     except (ValueError, TypeError):
                         material = None
                     marker = material.get('model_schema') if type(material) is dict else None
-                    expected_marker = (NODE_LOCAL_V4_SCHEMA if event_plan_model in {NODE_LOCAL_V4_MODEL, NODE_LOCAL_V4_BOUND_MODEL, NODE_LOCAL_V4_BOUND_V2_MODEL, OCCURRENCE_MODEL, OCCURRENCE_V2_MODEL, OCCURRENCE_V3_MODEL, OCCURRENCE_V4_MODEL, OCCURRENCE_V5_MODEL, OCCURRENCE_V6_MODEL, OCCURRENCE_V7_MODEL, OCCURRENCE_V8_MODEL, OCCURRENCE_V9_MODEL, OCCURRENCE_V10_MODEL, OCCURRENCE_V11_MODEL, OCCURRENCE_V12_MODEL, OCCURRENCE_V13_MODEL, OCCURRENCE_V14_MODEL, OCCURRENCE_V15_MODEL, OCCURRENCE_V16_MODEL, OCCURRENCE_V17_MODEL, OCCURRENCE_V18_MODEL}
+                    expected_marker = (NODE_LOCAL_V4_SCHEMA if event_plan_model in {NODE_LOCAL_V4_MODEL, NODE_LOCAL_V4_BOUND_MODEL, NODE_LOCAL_V4_BOUND_V2_MODEL, OCCURRENCE_MODEL, OCCURRENCE_V2_MODEL, OCCURRENCE_V3_MODEL, OCCURRENCE_V4_MODEL, OCCURRENCE_V5_MODEL, OCCURRENCE_V6_MODEL, OCCURRENCE_V7_MODEL, OCCURRENCE_V8_MODEL, OCCURRENCE_V9_MODEL, OCCURRENCE_V10_MODEL, OCCURRENCE_V11_MODEL, OCCURRENCE_V12_MODEL, OCCURRENCE_V13_MODEL, OCCURRENCE_V14_MODEL, OCCURRENCE_V15_MODEL, OCCURRENCE_V16_MODEL, OCCURRENCE_V17_MODEL, OCCURRENCE_V18_MODEL, OCCURRENCE_V19_MODEL}
                         else NODE_LOCAL_V3_SCHEMA if event_plan_model in {
                             NODE_LOCAL_V3_MODEL, NODE_LOCAL_V3_BASE_MODEL}
                         else EVENT_PLAN_V2_SCHEMA if event_plan_model in {
@@ -2323,7 +2362,8 @@ def make_handler(generate, *, api_key, model_name, deadline, max_requests,
                                 NODE_LOCAL_V3_SCHEMA, NODE_LOCAL_V4_SCHEMA}):
                         raise ValueError
                     if staged:
-                        expected_profile = (OCCURRENCE_V18_PROFILE if event_plan_model == OCCURRENCE_V18_MODEL
+                        expected_profile = (OCCURRENCE_V19_PROFILE if event_plan_model == OCCURRENCE_V19_MODEL
+                            else OCCURRENCE_V18_PROFILE if event_plan_model == OCCURRENCE_V18_MODEL
                             else OCCURRENCE_V17_PROFILE if event_plan_model == OCCURRENCE_V17_MODEL
                             else OCCURRENCE_V16_PROFILE if event_plan_model == OCCURRENCE_V16_MODEL
                             else OCCURRENCE_V15_PROFILE if event_plan_model == OCCURRENCE_V15_MODEL
