@@ -3956,7 +3956,7 @@ def expand_analysis_semantic_event_plan(prepared, packet):
                 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v15',
                 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v16',
                 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v17',
-                'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v18', 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v19', 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v20', 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v21', 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v22', 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v23'}):
+                'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v18', 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v19', 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v20', 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v21', 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v22', 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v23', 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v24'}):
         from .semantic_admission import (assemble_semantic_node_local_v4,
             SEMANTIC_MAP_NODE_LOCAL_V3_PROFILE, SEMANTIC_MAP_FACT_ENDPOINT_PROFILES, SEMANTIC_MAP_CONTENT_PLAN_PROFILES,
             SEMANTIC_MAP_VISIBLE_SOURCE_PROFILES, SEMANTIC_MAP_FACT_PROSE_PROFILES)
@@ -3999,14 +3999,14 @@ def expand_analysis_semantic_event_plan(prepared, packet):
             fact_endpoints=prepared.prompt_version in SEMANTIC_MAP_FACT_ENDPOINT_PROFILES,
             mark_record_ownership=prepared.prompt_version in SEMANTIC_MAP_CONTENT_PLAN_PROFILES,
             fixed_record_units=fixed_record_units,
-            record_scoped_captions=prepared.prompt_version == 'semantic_map.node_local.v4.occurrence.v23',
-            compact_source_captions=prepared.prompt_version in {'semantic_map.node_local.v4.occurrence.v22', 'semantic_map.node_local.v4.occurrence.v23'},
-            deduplicate_source_sentences=prepared.prompt_version in {'semantic_map.node_local.v4.occurrence.v21', 'semantic_map.node_local.v4.occurrence.v22', 'semantic_map.node_local.v4.occurrence.v23'},
-            whole_map_overview=prepared.prompt_version in {'semantic_map.node_local.v4.occurrence.v20', 'semantic_map.node_local.v4.occurrence.v21', 'semantic_map.node_local.v4.occurrence.v22', 'semantic_map.node_local.v4.occurrence.v23'},
-            per_root_fact_limit=prepared.prompt_version in {'semantic_map.node_local.v4.occurrence.v20', 'semantic_map.node_local.v4.occurrence.v21', 'semantic_map.node_local.v4.occurrence.v22', 'semantic_map.node_local.v4.occurrence.v23'},
+            record_scoped_captions=prepared.prompt_version in {'semantic_map.node_local.v4.occurrence.v23', 'semantic_map.node_local.v4.occurrence.v24'},
+            compact_source_captions=prepared.prompt_version in {'semantic_map.node_local.v4.occurrence.v22', 'semantic_map.node_local.v4.occurrence.v23', 'semantic_map.node_local.v4.occurrence.v24'},
+            deduplicate_source_sentences=prepared.prompt_version in {'semantic_map.node_local.v4.occurrence.v21', 'semantic_map.node_local.v4.occurrence.v22', 'semantic_map.node_local.v4.occurrence.v23', 'semantic_map.node_local.v4.occurrence.v24'},
+            whole_map_overview=prepared.prompt_version in {'semantic_map.node_local.v4.occurrence.v20', 'semantic_map.node_local.v4.occurrence.v21', 'semantic_map.node_local.v4.occurrence.v22', 'semantic_map.node_local.v4.occurrence.v23', 'semantic_map.node_local.v4.occurrence.v24'},
+            per_root_fact_limit=prepared.prompt_version in {'semantic_map.node_local.v4.occurrence.v20', 'semantic_map.node_local.v4.occurrence.v21', 'semantic_map.node_local.v4.occurrence.v22', 'semantic_map.node_local.v4.occurrence.v23', 'semantic_map.node_local.v4.occurrence.v24'},
             use_attributed_captions=prepared.prompt_version in SEMANTIC_MAP_FACT_PROSE_PROFILES,
-            deduplicate_node_evidence=prepared.prompt_version in {'semantic_map.node_local.v4.occurrence.v18', 'semantic_map.node_local.v4.occurrence.v19', 'semantic_map.node_local.v4.occurrence.v20', 'semantic_map.node_local.v4.occurrence.v21', 'semantic_map.node_local.v4.occurrence.v22', 'semantic_map.node_local.v4.occurrence.v23'},
-            scope_earlier_unknowns=prepared.prompt_version in {'semantic_map.node_local.v4.occurrence.v18', 'semantic_map.node_local.v4.occurrence.v19', 'semantic_map.node_local.v4.occurrence.v20', 'semantic_map.node_local.v4.occurrence.v21', 'semantic_map.node_local.v4.occurrence.v22', 'semantic_map.node_local.v4.occurrence.v23'})
+            deduplicate_node_evidence=prepared.prompt_version in {'semantic_map.node_local.v4.occurrence.v18', 'semantic_map.node_local.v4.occurrence.v19', 'semantic_map.node_local.v4.occurrence.v20', 'semantic_map.node_local.v4.occurrence.v21', 'semantic_map.node_local.v4.occurrence.v22', 'semantic_map.node_local.v4.occurrence.v23', 'semantic_map.node_local.v4.occurrence.v24'},
+            scope_earlier_unknowns=prepared.prompt_version in {'semantic_map.node_local.v4.occurrence.v18', 'semantic_map.node_local.v4.occurrence.v19', 'semantic_map.node_local.v4.occurrence.v20', 'semantic_map.node_local.v4.occurrence.v21', 'semantic_map.node_local.v4.occurrence.v22', 'semantic_map.node_local.v4.occurrence.v23', 'semantic_map.node_local.v4.occurrence.v24'})
     if (getattr(prepared, 'prompt_version', None) == 'semantic_map.node_local.v3'
             or type(packet) is dict and packet.get('schema_version') == 'cocolon.analysis.semantic_map.node_local.model.v3'):
         return _expand_analysis_semantic_node_local_v3(prepared, packet)
@@ -4497,8 +4497,8 @@ def _semantic_event_plan_review(graph, prepared, original, expanded):
         review['node_local_plan']['final_artifact_sha256'] = semantic_map_hash(original)
         review['node_local_plan']['realization'] = 'PLANNED_ROOTS_THEN_NODE_PROSE_THEN_ACTUAL_NODE_RELATIONS'
         return replace(graph, meaning_review_json=semantic_map_canonical(review),
-            compact_source_captions=prepared.prompt_version in {'semantic_map.node_local.v4.occurrence.v22', 'semantic_map.node_local.v4.occurrence.v23'},
-            record_scoped_unknowns=prepared.prompt_version in {'semantic_map.node_local.v4.occurrence.v18', 'semantic_map.node_local.v4.occurrence.v19', 'semantic_map.node_local.v4.occurrence.v20', 'semantic_map.node_local.v4.occurrence.v21', 'semantic_map.node_local.v4.occurrence.v22', 'semantic_map.node_local.v4.occurrence.v23'})
+            compact_source_captions=prepared.prompt_version in {'semantic_map.node_local.v4.occurrence.v22', 'semantic_map.node_local.v4.occurrence.v23', 'semantic_map.node_local.v4.occurrence.v24'},
+            record_scoped_unknowns=prepared.prompt_version in {'semantic_map.node_local.v4.occurrence.v18', 'semantic_map.node_local.v4.occurrence.v19', 'semantic_map.node_local.v4.occurrence.v20', 'semantic_map.node_local.v4.occurrence.v21', 'semantic_map.node_local.v4.occurrence.v22', 'semantic_map.node_local.v4.occurrence.v23', 'semantic_map.node_local.v4.occurrence.v24'})
     if getattr(prepared, 'prompt_version', None) == 'semantic_map.node_local.v3':
         return _semantic_node_local_review(graph, prepared, original, expanded)
     if getattr(prepared, 'prompt_version', None) not in {'semantic_map.event_plan.v1', 'semantic_map.event_plan.v2'}:

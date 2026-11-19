@@ -10,7 +10,7 @@ import unicodedata
 _CONTENT_PLAN_PROFILES = frozenset({
     'semantic_map.node_local.v4.occurrence.v13', 'semantic_map.node_local.v4.occurrence.v14',
     'semantic_map.node_local.v4.occurrence.v15', 'semantic_map.node_local.v4.occurrence.v16',
-    'semantic_map.node_local.v4.occurrence.v17', 'semantic_map.node_local.v4.occurrence.v18', 'semantic_map.node_local.v4.occurrence.v19', 'semantic_map.node_local.v4.occurrence.v20', 'semantic_map.node_local.v4.occurrence.v21', 'semantic_map.node_local.v4.occurrence.v22', 'semantic_map.node_local.v4.occurrence.v23'})
+    'semantic_map.node_local.v4.occurrence.v17', 'semantic_map.node_local.v4.occurrence.v18', 'semantic_map.node_local.v4.occurrence.v19', 'semantic_map.node_local.v4.occurrence.v20', 'semantic_map.node_local.v4.occurrence.v21', 'semantic_map.node_local.v4.occurrence.v22', 'semantic_map.node_local.v4.occurrence.v23', 'semantic_map.node_local.v4.occurrence.v24'})
 
 
 _CLOSED_TAG = re.compile(r'</?[A-Za-z_][\w:.-]*(?:\s+[^<>]*)?/?>|/>')
@@ -352,7 +352,7 @@ def record_plan_owners(material, available=None):
     flexible allocation if source coverage or available nodes do not permit it.
     """
     if (material.get('author_profile') not in {
-            'semantic_map.node_local.v4.occurrence.v17', 'semantic_map.node_local.v4.occurrence.v18', 'semantic_map.node_local.v4.occurrence.v19', 'semantic_map.node_local.v4.occurrence.v20', 'semantic_map.node_local.v4.occurrence.v21', 'semantic_map.node_local.v4.occurrence.v22', 'semantic_map.node_local.v4.occurrence.v23'}
+            'semantic_map.node_local.v4.occurrence.v17', 'semantic_map.node_local.v4.occurrence.v18', 'semantic_map.node_local.v4.occurrence.v19', 'semantic_map.node_local.v4.occurrence.v20', 'semantic_map.node_local.v4.occurrence.v21', 'semantic_map.node_local.v4.occurrence.v22', 'semantic_map.node_local.v4.occurrence.v23', 'semantic_map.node_local.v4.occurrence.v24'}
             or material.get('history_stage')):
         return ()
     records = [row['record'] for row in material.get('records', ())]
@@ -387,7 +387,7 @@ def compact_action_pairs(material):
     and history have separate provenance and allocation rules. Preserve their
     existing author choices. Never infer that two acts or actors are identical.
     """
-    if (material.get('author_profile') not in {'semantic_map.node_local.v4.occurrence.v18', 'semantic_map.node_local.v4.occurrence.v19', 'semantic_map.node_local.v4.occurrence.v20', 'semantic_map.node_local.v4.occurrence.v21', 'semantic_map.node_local.v4.occurrence.v22', 'semantic_map.node_local.v4.occurrence.v23'}
+    if (material.get('author_profile') not in {'semantic_map.node_local.v4.occurrence.v18', 'semantic_map.node_local.v4.occurrence.v19', 'semantic_map.node_local.v4.occurrence.v20', 'semantic_map.node_local.v4.occurrence.v21', 'semantic_map.node_local.v4.occurrence.v22', 'semantic_map.node_local.v4.occurrence.v23', 'semantic_map.node_local.v4.occurrence.v24'}
             or material.get('history_stage') or material.get('map_corrections')
             or not 1 <= len(material.get('records', ())) <= 12):
         return {}
@@ -553,7 +553,7 @@ def _limits_current_inference(sentence):
 
 def prior_evidence_limits(material):
     """Return a unique selectable prior/current qualification per complete original record."""
-    if (material.get('author_profile') not in {'semantic_map.node_local.v4.occurrence.v22', 'semantic_map.node_local.v4.occurrence.v23'}
+    if (material.get('author_profile') not in {'semantic_map.node_local.v4.occurrence.v22', 'semantic_map.node_local.v4.occurrence.v23', 'semantic_map.node_local.v4.occurrence.v24'}
             or material.get('history_stage') or material.get('map_corrections')
             or any(entry.get(key) for entry in material.get('emlis_source_materials', ())
                    for key in ('source_updates', 'conflicts', 'unresolved_sources'))):
@@ -676,9 +676,53 @@ def _paired_measurements(fields):
     return result
 
 
+# A repeated topic is only a reason to keep the person's exact words visible.
+# It is never used to identify a person, resolve a pronoun, or infer an event.
+_SOURCE_TOPIC = re.compile(r'^([一-鿿々ァ-ヺーぁ-ゖA-Za-z0-9]{1,32}?)(?:は|が)')
+_SOURCE_LIMIT = re.compile(r'(?:いない|いません|なかった|していなかった|わからない|分からない|わかりません|分かりません|不明|未確認|ではない|ではありません)(?:です)?。$')
+
+
+def repeated_qualified_topics(fields):
+    """Return complete accounts whose named topic and qualification recur in paired records."""
+    by_record = {}
+    for field in fields:
+        by_record.setdefault(field['record'], {})[field['field_path']] = field
+    by_topic = {}
+    for record, paths in by_record.items():
+        if set(paths) != {'memo', 'memo_action'}:
+            continue
+        action = paths['memo_action']['text']
+        action_notes = _outer_sentences(action, original_for_overview=True)
+        memo = paths['memo']
+        for sentence in _sentences(memo['text'], original_for_overview=True):
+            match = _SOURCE_TOPIC.match(sentence)
+            if (not match or not _SOURCE_LIMIT.search(sentence)
+                    or any(mark in sentence for mark in ('「', '」', '『', '』', '?', '？', 'もし', '仮に'))):
+                continue
+            topic = match[1]
+            if topic in ('私', 'わたし', '僕', 'ぼく', '俺', 'おれ', '自分', '本人', 'これ', 'それ', 'あれ'):
+                continue
+            if any(note.startswith((topic + 'の', topic + 'は', topic + 'が'))
+                   and _SOURCE_LIMIT.search(note) for note in action_notes):
+                by_topic.setdefault(topic, {}).setdefault(record, set()).add(sentence)
+    # Multiple possible accounts in a field leave its focus with the author.
+    # Never enforce only the uncomplicated side of such an ambiguous pair.
+    candidates = {}
+    for records in by_topic.values():
+        if len(records) < 2:
+            continue
+        for record, sentences in records.items():
+            candidates.setdefault(record, set()).update(sentences)
+    result = {}
+    for records in by_topic.values():
+        if len(records) >= 2 and all(len(candidates[record]) == 1 for record in records):
+            result.update((record, next(iter(sentences))) for record, sentences in records.items())
+    return result
+
+
 def plan_reading_regions(material, pairs):
     """Reserve a few separated portions of an ordinary original, without assigning their meaning."""
-    if (material.get('author_profile') not in {'semantic_map.node_local.v4.occurrence.v20', 'semantic_map.node_local.v4.occurrence.v21', 'semantic_map.node_local.v4.occurrence.v22', 'semantic_map.node_local.v4.occurrence.v23'}
+    if (material.get('author_profile') not in {'semantic_map.node_local.v4.occurrence.v20', 'semantic_map.node_local.v4.occurrence.v21', 'semantic_map.node_local.v4.occurrence.v22', 'semantic_map.node_local.v4.occurrence.v23', 'semantic_map.node_local.v4.occurrence.v24'}
             or material.get('history_stage') or material.get('map_corrections') or not record_plan_owners(material)):
         return {}
     if any(f['source_role'] != 'ORIGINAL_INPUT' or f.get('fragment_scalar_range')
@@ -729,7 +773,7 @@ def plan_reading_regions(material, pairs):
             continue
         wire_bytes += sum(cheapest(group) for group in groups)
         regions[record] = PlanReadingRegions(memo, groups, allowed)
-        if material.get('author_profile') in {'semantic_map.node_local.v4.occurrence.v21', 'semantic_map.node_local.v4.occurrence.v22', 'semantic_map.node_local.v4.occurrence.v23'}:
+        if material.get('author_profile') in {'semantic_map.node_local.v4.occurrence.v21', 'semantic_map.node_local.v4.occurrence.v22', 'semantic_map.node_local.v4.occurrence.v23', 'semantic_map.node_local.v4.occurrence.v24'}:
             # Prefer the whole temporal statement within its existing reading
             # portion. Competing statements leave the choice within that portion free.
             preferred = []
@@ -754,7 +798,7 @@ def plan_reading_regions(material, pairs):
 
 def whole_plan_sources(material, owners):
     """Find independently representable complete source sentences anywhere in an ordinary PLAN."""
-    if (material.get('author_profile') not in {'semantic_map.node_local.v4.occurrence.v22', 'semantic_map.node_local.v4.occurrence.v23'}
+    if (material.get('author_profile') not in {'semantic_map.node_local.v4.occurrence.v22', 'semantic_map.node_local.v4.occurrence.v23', 'semantic_map.node_local.v4.occurrence.v24'}
             or not owners or len(owners) > 12 or material.get('history_stage') or material.get('map_corrections')):
         return {}
     fields = material['fields']
@@ -763,6 +807,14 @@ def whole_plan_sources(material, owners):
             or any(entry.get(k) for entry in material.get('emlis_source_materials', ())
                    for k in ('source_updates', 'conflicts', 'unresolved_sources'))):
         return {}
+    def selectable(field, sentence):
+        simple, allowed = choices_for_field(field)
+        # Every legal root that covers the witness must keep it visible in
+        # NODES. A different root may not consume the same leading position.
+        return (sentence in simple and not any(
+            (sentence in quote and len(quote) > 160)
+            or (quote != sentence and sentence.startswith(quote)) for quote in allowed))
+
     measured = _paired_measurements(fields)
     limits = prior_evidence_limits(material)
     required, qualified_limits, selected_measurements = {}, {}, set()
@@ -775,17 +827,7 @@ def whole_plan_sources(material, owners):
         if len(found) != 1:
             continue
         sentence, = found
-        simple, allowed = choices_for_field(field)
-        if sentence not in simple:
-            continue
-        # Longer roots are independently excerpted by NODES. Keep author
-        # freedom for those records: ordinary witnesses guarantee that any
-        # covering PLAN citation carries the entire source to the displayed fact.
-        if any(sentence in quote and len(quote) > 160 for quote in allowed):
-            continue
-        # If a different legal lead can consume the same position without
-        # covering the sentence, a later independent node is not guaranteed.
-        if any(quote != sentence and sentence.startswith(quote) for quote in allowed):
+        if not selectable(field, sentence):
             continue
         number = field['field']
         required[number] = sentence
@@ -797,11 +839,29 @@ def whole_plan_sources(material, owners):
     # as though the two original observations were both represented.
     if selected_measurements != set(measured):
         required = qualified_limits
-    wire_bytes = sum(len(json.dumps(dict(quote=q, field=f), ensure_ascii=False).encode('utf-8')) + 1
-                     for f, q in required.items())
-    # The additional citations fit in a single unit. Limit the worst
-    # additional literal cost independently of the existing 1,024-byte region budget.
-    return required if len(required) <= 4 and wire_bytes <= 4096 // 8 else {}
+    def fits(sources):
+        # At most one extra unit, within the existing shared completion budget.
+        return len(sources) <= 4 and sum(
+            len(json.dumps(dict(quote=q, field=f), ensure_ascii=False).encode('utf-8')) + 1
+            for f, q in sources.items()) <= 4096 // 8
+
+    required = required if fits(required) else {}
+    if material.get('author_profile') == 'semantic_map.node_local.v4.occurrence.v24':
+        topics = repeated_qualified_topics(fields)
+        combined = dict(required)
+        for field in fields:
+            sentence = topics.get(field['record'])
+            if field['field_path'] != 'memo' or sentence is None:
+                continue
+            number = field['field']
+            if number in required and required[number] != sentence:
+                return required
+            if not selectable(field, sentence):
+                return required
+            combined[number] = sentence
+        if fits(combined):
+            return combined
+    return required
 
 
 def owner_source_regions(material, owners, regions, required):
@@ -946,7 +1006,7 @@ def prepare(material):
     if regions:
         view['records'] = [dict(row, memo_reading_regions=regions[row['record']].description())
             if row['record'] in regions else row for row in view['records']]
-    if material.get('author_profile') in {'semantic_map.node_local.v4.occurrence.v22', 'semantic_map.node_local.v4.occurrence.v23'}:
+    if material.get('author_profile') in {'semantic_map.node_local.v4.occurrence.v22', 'semantic_map.node_local.v4.occurrence.v23', 'semantic_map.node_local.v4.occurrence.v24'}:
         required = whole_plan_sources(material, record_plan_owners(material))
         if required:
             view['whole_plan_source_ranges'] = [
@@ -967,12 +1027,12 @@ def prepare(material):
 def _restore_view(material):
     """Recover the exact input and validate the displayed table before constrained decoding."""
     original = dict(material)
-    if material.get('author_profile') in {'semantic_map.node_local.v4.occurrence.v22', 'semantic_map.node_local.v4.occurrence.v23'}:
+    if material.get('author_profile') in {'semantic_map.node_local.v4.occurrence.v22', 'semantic_map.node_local.v4.occurrence.v23', 'semantic_map.node_local.v4.occurrence.v24'}:
         original.pop('whole_plan_source_ranges', None)
-    if material.get('author_profile') in {'semantic_map.node_local.v4.occurrence.v18', 'semantic_map.node_local.v4.occurrence.v19', 'semantic_map.node_local.v4.occurrence.v20', 'semantic_map.node_local.v4.occurrence.v21', 'semantic_map.node_local.v4.occurrence.v22', 'semantic_map.node_local.v4.occurrence.v23'} and 'records' in material:
+    if material.get('author_profile') in {'semantic_map.node_local.v4.occurrence.v18', 'semantic_map.node_local.v4.occurrence.v19', 'semantic_map.node_local.v4.occurrence.v20', 'semantic_map.node_local.v4.occurrence.v21', 'semantic_map.node_local.v4.occurrence.v22', 'semantic_map.node_local.v4.occurrence.v23', 'semantic_map.node_local.v4.occurrence.v24'} and 'records' in material:
         original['records'] = [{k: v for k, v in row.items() if k != 'paired_original_fields'}
                                for row in material['records']]
-    if material.get('author_profile') in {'semantic_map.node_local.v4.occurrence.v20', 'semantic_map.node_local.v4.occurrence.v21', 'semantic_map.node_local.v4.occurrence.v22', 'semantic_map.node_local.v4.occurrence.v23'} and 'records' in original:
+    if material.get('author_profile') in {'semantic_map.node_local.v4.occurrence.v20', 'semantic_map.node_local.v4.occurrence.v21', 'semantic_map.node_local.v4.occurrence.v22', 'semantic_map.node_local.v4.occurrence.v23', 'semantic_map.node_local.v4.occurrence.v24'} and 'records' in original:
         original['records'] = [{k: v for k, v in row.items() if k != 'memo_reading_regions'} for row in original['records']]
     original['fields'] = []
     for field in material['fields']:
@@ -1531,7 +1591,7 @@ class WholeMapTitle:
                 supported |= self.mask(span)
             if supported != self.required:
                 return [self.neutral]
-        if (material.get('author_profile') == 'semantic_map.node_local.v4.occurrence.v23'
+        if (material.get('author_profile') in {'semantic_map.node_local.v4.occurrence.v23', 'semantic_map.node_local.v4.occurrence.v24'}
                 and not _source_composed_title(proposal, material, nodes)):
             return [self.neutral]
         units = [unit for node in nodes for unit in node['units']]
