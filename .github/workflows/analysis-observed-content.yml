@@ -12,6 +12,7 @@ name: Analysis observed content
       - ai/services/ai_inference/analysis_observed_service.py
       - ai/services/ai_inference/analysis_cumulative_service.py
       - ai/services/ai_inference/analysis_model_source.py
+      - ai/services/ai_inference/analysis_job_progress.py
       - ai/services/ai_inference/analysis_merge_wire.py
       - ai/services/ai_inference/analysis_merge_response_parser.py
       - ai/services/ai_inference/analysis_plan_source_choices.py
@@ -63,6 +64,9 @@ name: Analysis observed content
       - ai/tests/test_analysis_parallel_emotion_chronology.py
       - ai/tests/test_analysis_legacy_report_source_integrity.py
       - ai/tests/test_analysis_cumulative*.py
+      - ai/tests/test_analysis_v24_progress_history.py
+      - ai/tests/test_analysis_v24_progress_transport.py
+      - ai/tests/test_analysis_worker_progress.py
       - ai/tests/test_emlis_active_meaning_application.py
       - ai/tests/test_emlis_analysis_material.py
       - ai/tests/test_analysis_emlis_material_handoff.py
@@ -415,6 +419,9 @@ jobs:
           ai/tests/test_analysis_semantic_history_service.py
           ai/tests/test_analysis_cumulative_model_batches.py
           ai/tests/test_analysis_cumulative_jobs.py
+          ai/tests/test_analysis_v24_progress_history.py
+          ai/tests/test_analysis_v24_progress_transport.py
+          ai/tests/test_analysis_worker_progress.py
           ai/tests/test_analysis_observed_api.py
       - name: Verify monthly rank, immutable re-read and source deletion SQL
         env:

@@ -67,9 +67,8 @@ SEMANTIC_HISTORY_MAX_LEAVES = 16
 SEMANTIC_HTTP_TIMEOUT_SECONDS = 220.0
 SEMANTIC_V4_RESPONSE_RESERVE_SECONDS = 5.0
 SEMANTIC_REQUEST_TIMEOUT_SECONDS = 225.0
-# One absolute pipeline limit, below the worker's default 900s stale lease.
-# Stages may exhaust this cap before every stage uses its individual cap.
-# Deployment must also allow for source loading and final persistence outside it.
+# The shared deadline for all profiles except multi-stage v24 history.
+# Long v24 histories bound source operations and each of at most 51 native phases.
 SEMANTIC_PIPELINE_TIMEOUT_SECONDS = 840.0
 
 
@@ -182,8 +181,8 @@ class SelfHostedSemanticAnalysisModelSource(SelfHostedAnalysisModelSource):
         super().__init__(endpoint=endpoint, model=model, api_key=api_key, transport=transport)
         self._prompt_version = semantic_prompt_version
 
-    async def _node_local_v4(self, prepared, *, pipeline_deadline=None):
-        """Exactly three acquisitions under one absolute deadline.
+    async def _node_local_v4(self, prepared, *, pipeline_deadline=None, per_phase=False):
+        """Exactly three acquisitions, with a bounded deadline for every HTTP call.
 
         All unmodified raw/finish/message hashes survive in the final private
         artifact. This is structural assembly, not one sequence or a repair.
@@ -194,9 +193,13 @@ class SelfHostedSemanticAnalysisModelSource(SelfHostedAnalysisModelSource):
         loop = asyncio.get_running_loop()
         receipts, plan, nodes = [], None, None
         compact_merge = core.semantic_node_local_v4_uses_compact_merge(prepared)
-        # Only the final multi-record merge can spend time remaining from the
-        # history clock. Each stream is still bound by its own HTTP deadline.
-        end = loop.time() + SEMANTIC_HTTP_TIMEOUT_SECONDS
+        # Legacy callers may pass the remaining history clock to a compact merge.
+        # Long v24 histories instead start a finite stream clock at each admitted phase.
+        if per_phase:
+            core.require(prepared.prompt_version == core.SEMANTIC_MAP_OCCURRENCE_V24_PROFILE
+                and getattr(prepared, 'kind', None) in ('LEAF', 'MERGE') and pipeline_deadline is None,
+                'analysis_semantic_phase_scope_invalid')
+        end = None if per_phase else loop.time() + SEMANTIC_HTTP_TIMEOUT_SECONDS
         if compact_merge:
             from analysis_merge_wire import VERSION, legacy_messages, response_codec
             from analysis_plan_source_choices import uses_attributed_context, uses_speaker_context
@@ -209,13 +212,18 @@ class SelfHostedSemanticAnalysisModelSource(SelfHostedAnalysisModelSource):
             async with asyncio.timeout_at(end), httpx.AsyncClient(transport=self._transport, follow_redirects=False,
                     trust_env=False) as client:
                 for phase in core.SEMANTIC_MAP_NODE_LOCAL_V4_PHASES:
+                    if per_phase:
+                        if asyncio.current_task().cancelling():
+                            raise asyncio.CancelledError
+                        phase_end = loop.time() + SEMANTIC_HTTP_TIMEOUT_SECONDS
                     if remaining_tokens <= 0:
                         raise RuntimeError('analysis_model_source_token_budget_exhausted')
                     tokens = remaining_tokens
                     messages = core.semantic_node_local_v4_wire_messages(prepared, phase, plan=plan, nodes=nodes)
                     core.require(len(core.semantic_map_canonical(messages).encode()) <= maximum,
                         'analysis_semantic_history_capacity_exceeded')
-                    phase_end = min(end, loop.time() + SEMANTIC_HTTP_TIMEOUT_SECONDS)
+                    if not per_phase:
+                        phase_end = min(end, loop.time() + SEMANTIC_HTTP_TIMEOUT_SECONDS)
                     remaining = phase_end - loop.time()
                     if remaining <= SEMANTIC_V4_RESPONSE_RESERVE_SECONDS:
                         raise TimeoutError('analysis_model_source_timeout')
@@ -278,18 +286,28 @@ class SelfHostedSemanticAnalysisModelSource(SelfHostedAnalysisModelSource):
                             prepared, plan, value, bound_titles=compact_merge or fresh_leaf, ordered_titles=compact_merge)
                     else:
                         core.semantic_node_local_v4_relations(prepared, plan, nodes, value, ordered_titles=compact_merge)
+                    if per_phase:
+                        if loop.time() >= phase_end:
+                            raise TimeoutError('analysis_model_source_timeout')
+                        from analysis_job_progress import checkpoint_v24_phase
+                        async with asyncio.timeout(SEMANTIC_REQUEST_TIMEOUT_SECONDS):
+                            await checkpoint_v24_phase()
             artifact = dict(schema_version=core.semantic_node_local_v4_artifact_schema(prepared), phases=receipts)
             if compact_merge:
                 artifact['merge_wire_version'] = VERSION
-            core.assemble_semantic_node_local_v4(prepared, artifact)
-            if loop.time() >= end:
+            if per_phase:
+                async with asyncio.timeout(SEMANTIC_REQUEST_TIMEOUT_SECONDS):
+                    await asyncio.to_thread(core.assemble_semantic_node_local_v4, prepared, artifact)
+            else:
+                core.assemble_semantic_node_local_v4(prepared, artifact)
+            if end is not None and loop.time() >= end:
                 raise TimeoutError('analysis_model_source_timeout')
             raw = core.semantic_map_canonical(artifact)
             if len(raw.encode()) > MAX_RESPONSE_BYTES:
                 raise ValueError('artifact_too_large')
             result = core.AnalysisModelQuotedParentUnitsResponse(prepared.request_ref,
                 core.semantic_map_hash(prepared.messages()), hashlib.sha256(raw.encode()).hexdigest(), 'stop', raw)
-            if loop.time() >= end:
+            if end is not None and loop.time() >= end:
                 raise TimeoutError('analysis_model_source_timeout')
             return result
         except (httpx.TimeoutException, TimeoutError):
@@ -297,16 +315,19 @@ class SelfHostedSemanticAnalysisModelSource(SelfHostedAnalysisModelSource):
         except (httpx.HTTPError, ValueError, TypeError, KeyError, UnicodeError, RuntimeError):
             raise RuntimeError('analysis_model_source_unavailable') from None
 
-    async def __call__(self, prepared, *, pipeline_deadline=None):
+    async def __call__(self, prepared, *, pipeline_deadline=None, per_phase=False):
         from analysis_semantic_map import SemanticMapInput
         from cocolon_meaning_experience_engine.cores.analysis.semantic_admission import (
             AnalysisModelQuotedParentUnitsResponse, AnalysisSemanticMapStageInput,
-            SEMANTIC_MAP_NODE_LOCAL_V4_PROFILES, digest, require)
+            SEMANTIC_MAP_NODE_LOCAL_V4_PROFILES, SEMANTIC_MAP_OCCURRENCE_V24_PROFILE, digest, require)
+        if per_phase:
+            require(self.prompt_version == SEMANTIC_MAP_OCCURRENCE_V24_PROFILE,
+                'analysis_semantic_phase_scope_invalid')
         require(type(prepared) in {SemanticMapInput, AnalysisSemanticMapStageInput}
             and prepared.prompt_version == self.prompt_version,
             'analysis_semantic_input_invalid')
         if self.prompt_version in SEMANTIC_MAP_NODE_LOCAL_V4_PROFILES:
-            return await self._node_local_v4(prepared, pipeline_deadline=pipeline_deadline)
+            return await self._node_local_v4(prepared, pipeline_deadline=pipeline_deadline, per_phase=per_phase)
         messages = prepared.messages()
         require(semantic_analysis_input_fits(prepared), 'analysis_semantic_history_capacity_exceeded')
         body = dict(model=self.model, messages=messages, temperature=0,
@@ -471,7 +492,7 @@ class _ApplicationSemanticAnalysisSource(_ApplicationAnalysisSource):
     def prompt_version(self):
         return _configured_semantic_prompt_version(self._settings[2])
 
-    async def __call__(self, prepared, *, pipeline_deadline=None):
+    async def __call__(self, prepared, *, pipeline_deadline=None, per_phase=False):
         self.require_current()
         selector, endpoint, model, api_key = self._settings
         if selector != SEMANTIC_SELECTOR:
@@ -481,7 +502,7 @@ class _ApplicationSemanticAnalysisSource(_ApplicationAnalysisSource):
                 semantic_prompt_version=self.prompt_version)
         except ValueError:
             raise RuntimeError('analysis_model_configuration_invalid') from None
-        response = await source(prepared, pipeline_deadline=pipeline_deadline)
+        response = await source(prepared, pipeline_deadline=pipeline_deadline, per_phase=per_phase)
         self.require_current()
         return response
 

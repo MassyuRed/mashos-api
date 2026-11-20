@@ -29,6 +29,7 @@ heavy tasks out-of-process, improving API stability.
 from __future__ import annotations
 
 import asyncio
+from functools import partial
 import json
 import logging
 import math
@@ -119,7 +120,9 @@ def _install_optional_perf_runtime_stubs() -> None:
 
 _install_optional_perf_runtime_stubs()
 
+from analysis_job_progress import MapJobClaimChanged, MapJobClaimUnavailable, map_job_progress
 from astor_job_queue import (
+    MAP_JOB_TYPES, check_map_job_owner, renew_map_job_progress,
     fetch_next_queued_job,
     claim_job,
     enqueue_job,
@@ -3923,6 +3926,11 @@ async def _handle_send_fcm_push_v1(*, user_id: str, payload: Dict[str, Any]) -> 
     }
 
 
+async def _run_map_job(claimed, handler, **kwargs):
+    with map_job_progress(partial(renew_map_job_progress, claimed), partial(check_map_job_owner, claimed)):
+        return await handler(user_id=claimed.user_id, **kwargs)
+
+
 async def _worker_loop() -> None:
     hostname = ""
     try:
@@ -4004,7 +4012,7 @@ async def _worker_loop() -> None:
             continue
 
         try:
-            claimed = await claim_job(job_key=job.job_key, worker_id=worker_id, attempts=job.attempts)
+            claimed = await claim_job(job_key=job.job_key, worker_id=worker_id, attempts=job.attempts, candidate=job)
             consecutive_poll_errors = 0
         except Exception as exc:
             consecutive_poll_errors += 1
@@ -4023,11 +4031,13 @@ async def _worker_loop() -> None:
             await asyncio.sleep(0)
             continue
 
+        # Only a MAP claimant may settle its running generation.
+        map_claim = claimed if claimed.job_type in MAP_JOB_TYPES else None
         # Process claimed job
         try:
             if claimed.job_type == "myprofile_latest_refresh_v1":
-                res = await refresh_myprofile_latest_report(
-                    user_id=claimed.user_id,
+                res = await _run_map_job(
+                    claimed, refresh_myprofile_latest_report,
                     trigger=(claimed.payload or {}).get("trigger") or "worker",
                     force=bool((claimed.payload or {}).get("force", False)),
                 )
@@ -4035,19 +4045,19 @@ async def _worker_loop() -> None:
                 status = str((res or {}).get("status") or "")
                 if status == "skipped_locked":
                     # Another generator is running; retry shortly.
-                    await requeue(job_key=claimed.job_key, worker_id=worker_id, error="locked", delay_seconds=10)
+                    await requeue(job_key=claimed.job_key, worker_id=worker_id, claim=claimed, error="locked", delay_seconds=10)
                 else:
                     done = await mark_done_if_unchanged(
                         job_key=claimed.job_key,
                         worker_id=worker_id,
-                        expected_updated_at=claimed.updated_at,
+                        expected_updated_at=claimed.updated_at, claim=claimed,
                     )
                     if not done:
                         # The job was updated while running; queue it again for a fresh run.
                         await requeue(
                             job_key=claimed.job_key,
                             worker_id=worker_id,
-                            error="updated_while_running",
+                            error="updated_while_running", claim=claimed,
                             delay_seconds=1,
                         )
                 logger.info("job done. key=%s type=%s user=%s res=%s", claimed.job_key, claimed.job_type, claimed.user_id, res)
@@ -4313,20 +4323,20 @@ async def _worker_loop() -> None:
                     analysis_res,
                 )
             elif claimed.job_type == "analyze_self_structure_standard_v1":
-                analysis_res = await _handle_analyze_self_structure_standard_v1(
-                    user_id=claimed.user_id,
+                analysis_res = await _run_map_job(
+                    claimed, _handle_analyze_self_structure_standard_v1,
                     payload=(claimed.payload or {}),
                 )
                 done = await mark_done_if_unchanged(
                     job_key=claimed.job_key,
                     worker_id=worker_id,
-                    expected_updated_at=claimed.updated_at,
+                    expected_updated_at=claimed.updated_at, claim=claimed,
                 )
                 if not done:
                     await requeue(
                         job_key=claimed.job_key,
                         worker_id=worker_id,
-                        error="updated_while_running",
+                        error="updated_while_running", claim=claimed,
                         delay_seconds=1,
                     )
                 else:
@@ -4356,20 +4366,20 @@ async def _worker_loop() -> None:
                     analysis_res,
                 )
             elif claimed.job_type == "analyze_self_structure_deep_v1":
-                analysis_res = await _handle_analyze_self_structure_deep_v1(
-                    user_id=claimed.user_id,
+                analysis_res = await _run_map_job(
+                    claimed, _handle_analyze_self_structure_deep_v1,
                     payload=(claimed.payload or {}),
                 )
                 done = await mark_done_if_unchanged(
                     job_key=claimed.job_key,
                     worker_id=worker_id,
-                    expected_updated_at=claimed.updated_at,
+                    expected_updated_at=claimed.updated_at, claim=claimed,
                 )
                 if not done:
                     await requeue(
                         job_key=claimed.job_key,
                         worker_id=worker_id,
-                        error="updated_while_running",
+                        error="updated_while_running", claim=claimed,
                         delay_seconds=1,
                     )
                 else:
@@ -4842,6 +4852,18 @@ async def _worker_loop() -> None:
             else:
                 await mark_failed(job_key=claimed.job_key, worker_id=worker_id, error=f"Unknown job_type: {claimed.job_type}")
                 logger.warning("unknown job_type. key=%s type=%s", claimed.job_key, claimed.job_type)
+        except MapJobClaimChanged:
+            # An enqueue on this still-owned generation needs another pass. A
+            # replacement worker has a different lease and must not be touched.
+            try:
+                await requeue(job_key=claimed.job_key, worker_id=worker_id, claim=map_claim,
+                              error='map_claim_changed', delay_seconds=1)
+            except Exception:
+                logger.warning('MAP claimant could not confirm requeue; awaiting stale recovery')
+        except MapJobClaimUnavailable:
+            # A missing PATCH acknowledgement could mean the lease changed.
+            # Stop local work. The conditional stale recovery owns the decision.
+            logger.warning('MAP progress acknowledgement unavailable; awaiting stale recovery')
         except Exception as exc:
             # Retry with backoff, then fail
             try:
@@ -4899,11 +4921,11 @@ async def _worker_loop() -> None:
                                 )
                     except Exception:
                         pass
-                    await mark_failed(job_key=claimed.job_key, worker_id=worker_id, error=str(exc))
+                    await mark_failed(job_key=claimed.job_key, worker_id=worker_id, error=str(exc), claim=map_claim)
                 else:
                     # simple backoff: 5s, 10s, 20s, 40s... capped
                     delay = min(120, max(5, 5 * (2 ** max(0, attempts - 1))))
-                    await requeue(job_key=claimed.job_key, worker_id=worker_id, error=str(exc), delay_seconds=int(delay))
+                    await requeue(job_key=claimed.job_key, worker_id=worker_id, error=str(exc), delay_seconds=int(delay), claim=map_claim)
             except Exception:
                 pass
             logger.exception("job failed. key=%s type=%s err=%s", claimed.job_key, claimed.job_type, exc)

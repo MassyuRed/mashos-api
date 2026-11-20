@@ -39,12 +39,16 @@ from dataclasses import dataclass
 from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional
 
+from analysis_job_progress import MapJobClaimChanged, MapJobClaimUnavailable
 from supabase_client import ensure_supabase_config, sb_get, sb_post, sb_patch
 
 logger = logging.getLogger("astor_job_queue")
 
 JOBS_TABLE = (os.getenv("ASTOR_JOBS_TABLE", "astor_jobs") or "astor_jobs").strip() or "astor_jobs"
 QUEUE_STATS_LIMIT = int(os.getenv("ASTOR_QUEUE_STATS_LIMIT", "5000") or "5000")
+
+MAP_JOB_TYPES = frozenset({'myprofile_latest_refresh_v1', 'analyze_self_structure_standard_v1',
+                           'analyze_self_structure_deep_v1'})
 
 
 def _now_iso_z() -> str:
@@ -191,6 +195,8 @@ async def enqueue_job(
         "updated_at": now_iso,
         # keep status=running, keep run_after as-is
     }
+    if jt in MAP_JOB_TYPES:
+        patch_running["last_error"] = "map_updated_while_running"
     resp = await sb_patch(
         f"/rest/v1/{JOBS_TABLE}",
         json=patch_running,
@@ -312,6 +318,7 @@ async def claim_job(
     job_key: str,
     worker_id: str,
     attempts: int,
+    candidate: Optional[AstorJob] = None,
 ) -> Optional[AstorJob]:
     """Try to claim the job by patching status queued -> running.
 
@@ -331,13 +338,21 @@ async def claim_job(
         "attempts": int(attempts or 0) + 1,
     }
 
+    params = {"job_key": f"eq.{jk}", "status": "eq.queued"}
+    if candidate is not None and candidate.job_type in MAP_JOB_TYPES:
+        if candidate.job_key != jk or candidate.attempts != attempts:
+            return None
+        params.update(attempts=f'eq.{candidate.attempts}', max_attempts=f'eq.{candidate.max_attempts}',
+                      updated_at='eq.' + candidate.updated_at if candidate.updated_at else 'is.null')
+        if candidate.attempts >= candidate.max_attempts:
+            # An exhausted legacy queued row terminates without acquiring a model.
+            patch = dict(status='failed', last_error='map_attempts_exhausted',
+                         finished_at=now_iso, updated_at=now_iso)
+        else:
+            patch.update(run_after=now_iso, last_error=None, attempts=candidate.attempts + 1)
     resp = await sb_patch(
-        f"/rest/v1/{JOBS_TABLE}",
-        json=patch,
-        params={"job_key": f"eq.{jk}", "status": "eq.queued"},
-        prefer="return=representation",
-        timeout=8.0,
-    )
+        f"/rest/v1/{JOBS_TABLE}", json=patch, params=params,
+        prefer="return=representation", timeout=8.0)
     if resp.status_code not in (200, 204):
         logger.error("claim_job failed: %s %s", resp.status_code, (resp.text or "")[:500])
         return None
@@ -349,7 +364,49 @@ async def claim_job(
         return None
     if not (isinstance(data, list) and data and isinstance(data[0], dict)):
         return None
-    return _row_to_job(data[0])
+    return _row_to_job(data[0]) if data[0].get("status") == "running" else None
+
+
+def _map_claim_params(job: AstorJob) -> Dict[str, str]:
+    if (job.job_type not in MAP_JOB_TYPES or not job.worker_id or job.attempts < 1
+            or not job.started_at or not job.updated_at):
+        raise MapJobClaimUnavailable('map_claim_incomplete')
+    return {'job_key': 'eq.' + job.job_key, 'status': 'eq.running',
+            'worker_id': 'eq.' + job.worker_id, 'attempts': f'eq.{job.attempts}',
+            'started_at': 'eq.' + job.started_at,
+            'run_after': 'eq.' + job.run_after if job.run_after else 'is.null'}
+
+
+async def renew_map_job_progress(job: AstorJob) -> None:
+    # run_after schedules queued rows only. While running it holds the last
+    # accepted phase; started_at continues to report the original claim time.
+    # CAS the enqueue revision before accepting the database's returned revision.
+    params = {**_map_claim_params(job), 'updated_at': 'eq.' + job.updated_at,
+              'select': 'run_after,updated_at'}
+    try:
+        stamp = _now_iso_z()
+        response = await sb_patch(f'/rest/v1/{JOBS_TABLE}', params=params,
+            json={'run_after': stamp}, prefer='return=representation', timeout=8.0)
+        if response.status_code != 200:
+            raise MapJobClaimUnavailable('map_progress_unavailable')
+        rows = response.json()
+        if rows == []:
+            raise MapJobClaimChanged('map_claim_changed')
+        if (not isinstance(rows, list) or len(rows) != 1 or not isinstance(rows[0], dict)
+                or _parse_iso_z(rows[0].get('run_after')) != _parse_iso_z(stamp)
+                or _parse_iso_z(rows[0].get('updated_at')) is None):
+            raise MapJobClaimUnavailable('map_progress_unavailable')
+        job.run_after, job.updated_at = rows[0]['run_after'], rows[0]['updated_at']
+    except (MapJobClaimChanged, MapJobClaimUnavailable):
+        raise
+    except Exception:
+        raise MapJobClaimUnavailable('map_progress_unavailable') from None
+
+
+async def check_map_job_owner(job: AstorJob) -> None:
+    # Final artifact assembly is verified progress. Renew and confirm ownership
+    # immediately before persistence, so a stale scan cannot reclaim this commit.
+    await renew_map_job_progress(job)
 
 
 async def mark_done_if_unchanged(
@@ -357,6 +414,7 @@ async def mark_done_if_unchanged(
     job_key: str,
     worker_id: Optional[str] = None,
     expected_updated_at: Optional[str] = None,
+    claim: Optional[AstorJob] = None,
 ) -> bool:
     """Mark done only if updated_at matches the expected value.
 
@@ -370,6 +428,8 @@ async def mark_done_if_unchanged(
     now_iso = _now_iso_z()
 
     params: Dict[str, str] = {"job_key": f"eq.{jk}", "status": "eq.running"}
+    if claim is not None:
+        params.update(_map_claim_params(claim))
     if expected_updated_at:
         params["updated_at"] = f"eq.{expected_updated_at}"
 
@@ -401,12 +461,35 @@ async def mark_done_if_unchanged(
     return bool(isinstance(data, list) and len(data) > 0)
 
 
+async def _settle_map_retry(job: AstorJob, patch: Dict[str, Any], *, now: str) -> None:
+    # Settle only the revision which ran. A new input (same still-owned claim,
+    # different revision) gets its own budget without undoing a replacement claim.
+    owner = _map_claim_params(job)
+    if job.attempts >= job.max_attempts:
+        patch.update(status='failed', finished_at=now)
+    response = await sb_patch(f'/rest/v1/{JOBS_TABLE}', json=patch,
+        params={**owner, 'updated_at': 'eq.' + job.updated_at, 'select': 'job_key'},
+        prefer='return=representation', timeout=8.0)
+    if response.status_code != 200:
+        raise MapJobClaimUnavailable('map_retry_unavailable')
+    rows = response.json()
+    if not isinstance(rows, list) or len(rows) > 1:
+        raise MapJobClaimUnavailable('map_retry_unavailable')
+    if not rows:
+        response = await sb_patch(f'/rest/v1/{JOBS_TABLE}',
+            json=dict(status='queued', attempts=0, run_after=now, updated_at=now, last_error=None),
+            params={**owner, 'updated_at': 'neq.' + job.updated_at}, prefer='return=minimal', timeout=8.0)
+        if response.status_code not in (200, 204):
+            raise MapJobClaimUnavailable('map_retry_unavailable')
+
+
 async def requeue(
     *,
     job_key: str,
     worker_id: Optional[str] = None,
     error: Optional[str] = None,
     delay_seconds: int = 15,
+    claim: Optional[AstorJob] = None,
 ) -> None:
     ensure_supabase_config()
     jk = str(job_key or "").strip()
@@ -424,6 +507,8 @@ async def requeue(
         "last_error": (str(error)[:1500] if error else None),
         "updated_at": now_iso,
     }
+    if claim is not None:
+        return await _settle_map_retry(claim, patch, now=now_iso)
     resp = await sb_patch(
         f"/rest/v1/{JOBS_TABLE}",
         json=patch,
@@ -440,6 +525,7 @@ async def mark_failed(
     job_key: str,
     worker_id: Optional[str] = None,
     error: Optional[str] = None,
+    claim: Optional[AstorJob] = None,
 ) -> None:
     ensure_supabase_config()
     jk = str(job_key or "").strip()
@@ -453,6 +539,8 @@ async def mark_failed(
         "last_error": (str(error)[:1500] if error else None),
         "updated_at": now_iso,
     }
+    if claim is not None:
+        return await _settle_map_retry(claim, patch, now=now_iso)
     resp = await sb_patch(
         f"/rest/v1/{JOBS_TABLE}",
         json=patch,
@@ -462,6 +550,16 @@ async def mark_failed(
     )
     if resp.status_code not in (200, 204):
         logger.error("mark_failed failed: %s %s", resp.status_code, (resp.text or "")[:500])
+
+
+def _running_idle_seconds(row, now):
+    start = row.get('started_at') or row.get('updated_at')
+    age = _age_seconds(start, now_dt=now)
+    if row.get('job_type') in MAP_JOB_TYPES:
+        last_progress = _age_seconds(row.get('run_after'), now_dt=now)
+        if age is not None and last_progress is not None:
+            return min(age, last_progress)
+    return age
 
 
 async def fetch_queue_stats(
@@ -525,13 +623,15 @@ async def fetch_queue_stats(
             age = _age_seconds(row.get("started_at") or row.get("updated_at"), now_dt=now_dt)
             if age is not None:
                 oldest_running_age = age if oldest_running_age is None else max(oldest_running_age, age)
-                if stale_running_seconds > 0 and age >= stale_running_seconds:
+                idle = _running_idle_seconds(row, now_dt)
+                if stale_running_seconds > 0 and idle is not None and idle >= stale_running_seconds:
                     stale_running.append(
                         {
                             "job_key": str(row.get("job_key") or ""),
                             "job_type": job_type,
                             "worker_id": row.get("worker_id"),
                             "age_seconds": int(age),
+                            **({"idle_seconds": int(idle)} if job_type in MAP_JOB_TYPES else {}),
                             "started_at": row.get("started_at"),
                             "updated_at": row.get("updated_at"),
                         }
@@ -563,8 +663,8 @@ async def requeue_stale_running_jobs(
 ) -> int:
     """Requeue running jobs that look abandoned by a dead worker process.
 
-    The default threshold is intentionally conservative. Long-running jobs should
-    either finish before this threshold or set a larger ASTOR_WORKER_STALE_RUNNING_SECONDS.
+    MAP jobs retain their claim time and renew run_after on accepted work. Other
+    jobs use the original claim age and configured stale-running threshold.
     """
     ensure_supabase_config()
     threshold = max(60, int(stale_running_seconds or 900))
@@ -572,11 +672,15 @@ async def requeue_stale_running_jobs(
     now_dt = datetime.now(timezone.utc)
 
     params: Dict[str, str] = {
-        "select": "job_key,job_type,status,worker_id,started_at,updated_at",
+        "select": "job_key,job_type,status,worker_id,started_at,updated_at,run_after,attempts,max_attempts,last_error",
         "status": "eq.running",
         "order": "started_at.asc,updated_at.asc",
         "limit": str(max_rows * 4),
     }
+    # Prevent very old but actively progressing MAPs from occupying the entire
+    # limited scan ahead of genuinely abandoned jobs.
+    cutoff = (now_dt - timedelta(seconds=threshold)).isoformat()
+    params['or'] = f'(job_type.not.{_in_list(sorted(MAP_JOB_TYPES))},run_after.is.null,run_after.lte.{cutoff})'
     if job_types:
         params["job_type"] = _in_list(job_types)
 
@@ -595,7 +699,7 @@ async def requeue_stale_running_jobs(
     for row in rows:
         if not isinstance(row, dict):
             continue
-        age = _age_seconds(row.get("started_at") or row.get("updated_at"), now_dt=now_dt)
+        age = _running_idle_seconds(row, now_dt)
         if age is None or age < threshold:
             continue
         jk = str(row.get("job_key") or "").strip()
@@ -618,24 +722,38 @@ async def requeue_stale_running_jobs(
             "last_error": "stale_running_requeued",
             "updated_at": now_iso,
         }
+        filters = {"job_key": f"eq.{jk}", "status": "eq.running"}
+        if row.get('job_type') in MAP_JOB_TYPES:
+            # A phase heartbeat, a new enqueue, or another claim after this
+            # scan must win. A dead final attempt must not be launched again.
+            for field in ('worker_id', 'started_at', 'run_after', 'updated_at', 'attempts', 'max_attempts'):
+                value = row.get(field)
+                filters[field] = 'is.null' if value is None else f'eq.{value}'
+            started, revised, progress = (_parse_iso_z(row.get(key)) for key in ('started_at', 'updated_at', 'run_after'))
+            # New MAP claims mark run_after == started_at. A database-updated
+            # revision on claim alone is not evidence of another input.
+            legacy_dirty = started and revised and revised > started and (progress is None or progress < started)
+            if row.get('last_error') == 'map_updated_while_running' or legacy_dirty:
+                patch.update(attempts=0, last_error=None)
+            elif int(row.get('attempts') or 0) >= int(row.get('max_attempts') or 8):
+                patch.update(status='failed', finished_at=now_iso, last_error='map_progress_stalled')
         try:
             r = await sb_patch(
                 f"/rest/v1/{JOBS_TABLE}",
                 json=patch,
-                params={"job_key": f"eq.{jk}", "status": "eq.running"},
+                params=filters,
                 prefer="return=representation",
                 timeout=8.0,
             )
-            if r.status_code in (200, 204):
-                if r.status_code == 204:
-                    requeued += 1
-                else:
-                    try:
-                        data = r.json()
-                    except Exception:
-                        data = []
-                    if isinstance(data, list) and data:
+            if r.status_code == 200:
+                changed = r.json()
+                if isinstance(changed, list) and changed:
+                    if patch['status'] == 'failed':
+                        logger.warning('Stalled MAP generation exhausted its attempts')
+                    else:
                         requeued += 1
+            elif r.status_code == 204 and row.get('job_type') not in MAP_JOB_TYPES:
+                requeued += 1
         except Exception as exc:
             logger.error("requeue stale running job failed. key=%s err=%s", jk, exc)
     return requeued

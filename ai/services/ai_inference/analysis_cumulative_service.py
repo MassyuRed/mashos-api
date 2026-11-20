@@ -695,7 +695,7 @@ def _consume_model_map_completion(task):
         task.exception()
 
 
-async def _model_response(model_source, prepared, *, merge_deadline=None):
+async def _model_response(model_source, prepared, *, merge_deadline=None, per_phase=False):
     _require_model_write_active()
     try:
         from analysis_model_source import (is_semantic_analysis_model_source,
@@ -704,7 +704,13 @@ async def _model_response(model_source, prepared, *, merge_deadline=None):
         expires = asyncio.get_running_loop().time() + (SEMANTIC_REQUEST_TIMEOUT_SECONDS if semantic
             else MODEL_SOURCE_TIMEOUT_SECONDS)
         options = {}
-        if semantic and merge_deadline is not None:
+        if per_phase:
+            if not semantic or merge_deadline is not None:
+                raise RuntimeError('analysis_semantic_phase_scope_invalid')
+            # The v24 transport enforces deadlines independently for its three phases.
+            expires = None
+            options['per_phase'] = True
+        elif semantic and merge_deadline is not None:
             expires = merge_deadline
             options['pipeline_deadline'] = expires
         async with asyncio.timeout_at(expires) as deadline:
@@ -782,43 +788,73 @@ def prepare_semantic_history_batches(parent):
     return tuple(stages)
 
 
-async def _semantic_history_map(source, parent):
+async def _v24_history_uses_per_phase(source, parent):
+    from analysis_model_source import (is_semantic_analysis_model_source, semantic_analysis_input_fits,
+        SEMANTIC_REQUEST_TIMEOUT_SECONDS)
+    from cocolon_meaning_experience_engine.cores.analysis.semantic_admission import SEMANTIC_MAP_OCCURRENCE_V24_PROFILE
+    if (not is_semantic_analysis_model_source(source) or parent.prompt_version != SEMANTIC_MAP_OCCURRENCE_V24_PROFILE
+            or len(parent.frozen.members) < 2):
+        return False
+    try:
+        async with asyncio.timeout(SEMANTIC_REQUEST_TIMEOUT_SECONDS):
+            return not await asyncio.to_thread(semantic_analysis_input_fits, parent)
+    except TimeoutError:
+        raise HTTPException(504, 'analysis_model_source_timeout') from None
+
+
+async def _semantic_history_map(source, parent, *, per_phase=None):
     from analysis_model_source import (semantic_analysis_input_fits,
         SEMANTIC_PIPELINE_TIMEOUT_SECONDS, SEMANTIC_REQUEST_TIMEOUT_SECONDS)
     from analysis_semantic_map import build_semantic_map, build_semantic_history_stage
     from cocolon_meaning_experience_engine.cores.analysis.semantic_admission import (
         prepare_semantic_merge, semantic_history_parent_scope, semantic_node_local_v4_uses_compact_merge,
         _semantic_map_require)
+    if per_phase is None:
+        per_phase = await _v24_history_uses_per_phase(source, parent)
+    options = {'per_phase': True} if per_phase else {}
+    # Server-side preparation and validation are bounded even when the model
+    # refreshes its deadline after an accepted phase.
+    async def cpu_step(function, *args):
+        if not per_phase:
+            return await asyncio.to_thread(function, *args)
+        loop = asyncio.get_running_loop()
+        expires = loop.time() + SEMANTIC_REQUEST_TIMEOUT_SECONDS
+        async with asyncio.timeout_at(expires):
+            result = await asyncio.to_thread(function, *args)
+        if loop.time() >= expires:
+            raise TimeoutError
+        return result
+
     started = asyncio.get_running_loop().time()
     try:
-        # Preparation and every stage share one finite clock. Allocate for the
-        # actual call count, without restarting the clock after each leaf.
-        async with asyncio.timeout(SEMANTIC_PIPELINE_TIMEOUT_SECONDS) as deadline:
-            stages = await asyncio.to_thread(prepare_semantic_history_batches, parent)
-            calls = len(stages) + 1 if stages else 1
-            deadline.reschedule(started + min(SEMANTIC_PIPELINE_TIMEOUT_SECONDS,
-                calls * SEMANTIC_REQUEST_TIMEOUT_SECONDS))
-            # Rescheduling into the past cancels on the next loop tick. Do not
-            # enter a provider (and potentially send a POST) in that interval.
-            if asyncio.get_running_loop().time() >= deadline.when():
-                raise TimeoutError
+        # The original profile shares one finite clock. Long v24 histories instead
+        # advance only after a bounded local step or a fully admitted provider phase.
+        async with asyncio.timeout(None if per_phase else SEMANTIC_PIPELINE_TIMEOUT_SECONDS) as deadline:
+            stages = await cpu_step(prepare_semantic_history_batches, parent)
+            if not per_phase:
+                calls = len(stages) + 1 if stages else 1
+                deadline.reschedule(started + min(SEMANTIC_PIPELINE_TIMEOUT_SECONDS,
+                    calls * SEMANTIC_REQUEST_TIMEOUT_SECONDS))
+                # Do not send a new POST while cancellation is scheduled for the next tick.
+                if asyncio.get_running_loop().time() >= deadline.when():
+                    raise TimeoutError
             if not stages:
                 # Prepared messages and the sole acquisition remain unchanged.
                 response = await _model_response(source, parent)
-                result = await asyncio.to_thread(build_semantic_map, parent, response)
+                result = await cpu_step(build_semantic_map, parent, response)
             else:
                 with semantic_history_parent_scope():
                     receipts = []
                     for stage in stages:
-                        response = await _model_response(source, stage)
-                        await asyncio.to_thread(build_semantic_history_stage, stage, response)
+                        response = await _model_response(source, stage, **options)
+                        await cpu_step(build_semantic_history_stage, stage, response)
                         receipts.append((stage, response))
-                    merged = await asyncio.to_thread(prepare_semantic_merge, parent, tuple(receipts))
+                    merged = await cpu_step(prepare_semantic_merge, parent, tuple(receipts))
                     _semantic_map_require(semantic_analysis_input_fits(merged),
                         'analysis_semantic_history_capacity_exceeded')
                     merge_deadline = deadline.when() if semantic_node_local_v4_uses_compact_merge(merged) else None
-                    response = await _model_response(source, merged, merge_deadline=merge_deadline)
-                    outcome = await asyncio.to_thread(build_semantic_history_stage, merged, response)
+                    response = await _model_response(source, merged, merge_deadline=merge_deadline, **options)
+                    outcome = await cpu_step(build_semantic_history_stage, merged, response)
                     if outcome.artifact is None:
                         raise ValueError(outcome.reason_codes[0])
                     result = outcome.artifact, outcome.coverage
@@ -877,6 +913,7 @@ async def _ensure_map(user_id, *, ensure=True, force=False, monthly=False, model
             rid = await _rpc('analysis_cumulative_commit', dict(p_user_id=owner, p_guard=snapshot['guard'],
                 p_existing_id=current_row['id']))
         else:
+            per_phase = False
             try:
                 if semantic_source:
                     from analysis_semantic_map import prepare_semantic_map, SemanticMapNoMaterial
@@ -887,7 +924,8 @@ async def _ensure_map(user_id, *, ensure=True, force=False, monthly=False, model
                     except SemanticMapNoMaterial as excluded:
                         artifact, coverage = None, _checked_coverage(excluded.coverage)
                     else:
-                        artifact, coverage = await _semantic_history_map(model_source, prepared)
+                        per_phase = await _v24_history_uses_per_phase(model_source, prepared)
+                        artifact, coverage = await _semantic_history_map(model_source, prepared, per_phase=per_phase)
                 elif model_source is None:
                     artifact, coverage = await asyncio.to_thread(build_cumulative_map, owner, snapshot)
                 else:
@@ -929,6 +967,10 @@ async def _ensure_map(user_id, *, ensure=True, force=False, monthly=False, model
             private['coverage'] = coverage
             private['source_record_refs'] = [s['original']['id'] for s in snapshot['members']]
             _checked_projection(projection, str(UUID(artifact.artifact_id[9:])))
+            if per_phase:
+                from analysis_job_progress import check_map_job_owner
+                await check_map_job_owner()
+                _require_model_write_active()
             rid = await _rpc('analysis_cumulative_commit', dict(p_user_id=owner, p_guard=snapshot['guard'],
                 p_artifact_id=artifact.artifact_id, p_private_evidence=private, p_projection=projection,
                 p_text=text, p_start=snapshot['period_start'], p_end=snapshot['period_end'],
