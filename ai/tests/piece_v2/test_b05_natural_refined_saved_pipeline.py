@@ -81,14 +81,14 @@ def _bind(db, monkeypatch, owner, token):
 
 
 def _prepare_natural(db, monkeypatch, *, tier='premium', stopped=False, case_id='natural', with_history=False,
-                     with_frame_target=False, rounds=1):
+                     with_frame_target=False, rounds=1, action_text='', first_answer=ANSWER):
     owner, parent = str(uuid4()), str(uuid4())
     token = 'synthetic-natural-refined-owner'
     _update(db, 'insert into auth.users values ($1)', [owner])
     _update(db, 'insert into public.profiles values ($1,$2)', [owner,tier])
     memo = THREE if stopped or rounds == 3 else ONE+'誘われたのに、悲しかった。' if rounds == 2 else ONE
-    _update(db, "insert into public.emotions values ($1,$2,(now()-interval '5 seconds') at time zone 'UTC',$3,'',array['仕事'],array['不安'],$4::jsonb)",
-        [parent,owner,memo,json.dumps([dict(type='不安',strength='medium')],ensure_ascii=False)])
+    _update(db, "insert into public.emotions values ($1,$2,(now()-interval '5 seconds') at time zone 'UTC',$3,$5,array['仕事'],array['不安'],$4::jsonb)",
+        [parent,owner,memo,json.dumps([dict(type='不安',strength='medium')],ensure_ascii=False),action_text])
     past = str(uuid4()) if with_history else None
     if past:
         _update(db, "insert into public.emotions values ($1,$2,(now()-interval '1 day') at time zone 'UTC',$3,'',array['仕事'],array['不安'],$4::jsonb)",
@@ -112,7 +112,7 @@ def _prepare_natural(db, monkeypatch, *, tier='premium', stopped=False, case_id=
         service, owner, parent, initial, calls, phases, phase='initial_start', case_id=case_id,
         tier=tier, rounds=rounds, stopped=stopped)
     completed = initial
-    texts = (ANSWER, '今は、私は怖い。', '今は、私は寂しい。')
+    texts = (first_answer, '今は、私は怖い。', '今は、私は寂しい。')
     for index in range(rounds):
         authored = db.query('select clock_timestamp() as authored')['rows'][0]['authored']
         completed = run(service.answer(owner,completed['thread_id'],
@@ -161,6 +161,34 @@ def _prepare_natural(db, monkeypatch, *, tier='premium', stopped=False, case_id=
         counts=dict(q2_start=1,q2_answer=rounds,piece_generation_entry=0,piece_review=0,
             preview_rpc=0,visual_rpc=0,save_rpc=0,external_model_provider=0))
     return state,handoff,calls
+
+
+def test_answer_owned_relative_feeling_keeps_three_field_source(natural_refined_db, monkeypatch):
+    from dataclasses import replace
+    from cocolon_meaning_experience_engine.piece_refined import (
+        build_refined_meaning, supplemental_feeling_account)
+    from cocolon_meaning_experience_engine.piece_v1c import PieceGenerationRequest
+    from piece_v2_source_adapter import project_saved_refined_source
+
+    reply = 'その時は重かった。'
+    action = '会議で発表した。'
+    state, handoff, calls = _prepare_natural(natural_refined_db, monkeypatch,
+        tier='free', case_id='selected-relative-feeling', action_text=action, first_answer=reply)
+    assert handoff.feeling_question_id == handoff.supplemental.question_id
+    source = project_saved_refined_source(handoff, opted_in=True)
+    def meaning(snapshot):
+        return build_refined_meaning(PieceGenerationRequest('bound-feeling', snapshot, state['owner'],
+            state['source_id'], source.original.source_version))
+    assert supplemental_feeling_account(meaning(source).supplemental)
+    with pytest.raises(PieceContractError, match='piece_refined_answer_not_self_contained'):
+        meaning(replace(source, feeling_question_id=None))
+    with pytest.raises(PieceContractError, match='piece_refined'):
+        meaning(replace(source, feeling_question_id=str(uuid4())))
+    blocks = [ONE, action, reply]
+    seen = _provider(monkeypatch, state['case_id'], blocks)
+    result = _finish_refined_pipeline(natural_refined_db, monkeypatch, state, expected_blocks=blocks)
+    assert len(calls) == 2 and len(seen) == 1
+    assert result['quota_consumptions'] == 1 and result['source_unchanged'] and result['emlis_unchanged']
 
 
 def test_cross_frame_target_refined_reaches_piece_save_and_same_saved_artifact(natural_refined_db, monkeypatch):

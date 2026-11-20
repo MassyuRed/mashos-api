@@ -424,7 +424,8 @@ def test_source_ref_is_detached_and_does_not_mutate_saved_original_or_control():
 @pytest.mark.parametrize('failure', ['raw', 'unknown_code', 'not_found', 'malformed'])
 def test_source_ref_sanitizes_errors_and_never_returns_a_partial_mapping(failure):
     adapter = adapter_type()(store=Store(snapshot()))
-    async def fail(*args):
+    async def fail(*args, include_corrected):
+        assert include_corrected is True
         if failure == 'raw': raise RuntimeError('PRIVATE SOURCE AND TOKEN')
         if failure == 'unknown_code': raise mod.PieceContractError('PRIVATE_INTERNAL_CODE')
         if failure == 'not_found': raise mod.PieceContractError('PIECE_SOURCE_NOT_FOUND')
@@ -438,7 +439,9 @@ def test_source_ref_sanitizes_errors_and_never_returns_a_partial_mapping(failure
 
 def test_source_ref_cancellation_propagates_without_a_fake_result():
     adapter = adapter_type()(store=Store(snapshot()))
-    async def cancel(*args): raise asyncio.CancelledError()
+    async def cancel(*args, include_corrected):
+        assert include_corrected is True
+        raise asyncio.CancelledError()
     adapter.resolve_original_handoff = cancel
     with pytest.raises(asyncio.CancelledError):
         run(adapter.resolve_original_source_ref(AUTH, INPUT))

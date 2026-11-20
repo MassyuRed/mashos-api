@@ -104,6 +104,7 @@ class PieceSavedRefinedHandoff:
     _meaning_checkpoint_json: bytes | None = field(default=None, repr=False)
     prior_revisions: tuple[tuple[SupplementalAnswerSource, tuple[int, int]], ...] = ()
     _effective_checkpoints_json: bytes | None = field(default=None, repr=False)
+    feeling_question_id: str | None = None
 
     def lineage_payload(self) -> dict:
         return json.loads(self._lineage_json)
@@ -638,6 +639,124 @@ def _natural_analysis_material_matches(saved, snapshot, body, request):
         return False
 
 
+def _natural_unanswered_question(saved, snapshot, observation):
+    """A bound question is control only. The latest genuine reply anchors the original."""
+    from cocolon_meaning_experience_engine.emlis_thread_source import admit_emlis_thread
+    from cocolon_meaning_experience_engine.natural_reply import ARTIFACT_SCHEMA
+    from emlis_thread_service import NATURAL_QUESTION_POLICY, Q3_PROFILE, RETRYABLE_FAILURES, _context_ref, _request
+
+    def require(ok):
+        if not ok:
+            raise _error('PIECE_SOURCE_NOT_ELIGIBLE')
+
+    t, events = snapshot['thread'], snapshot['events']
+    d = t['data']
+    request = _request(snapshot)
+    admitted = admit_emlis_thread(request)
+    require(d.get('runtime_profile') == Q3_PROFILE and d.get('natural_question_policy') == NATURAL_QUESTION_POLICY
+            and d.get('semantic_profile') is None and not admitted.answers and not admitted.control.interpretation_corrections
+            and t['current_meaning_event_id'] is None
+            and type(t['issued_count']) is int and t['issued_count'] == 1
+            and admitted.source_prefix_ref == t['source_prefix_ref'])
+    ended = t['state'] == 'COMPLETED'
+    expected_stage = 'FINAL' if ended else 'PRE_QUESTION'
+    require(d.get('natural_response_stage') == expected_stage and d.get('body_state') == expected_stage
+            and (d.get('natural_question_stop') in ('skip', 'stop') if ended else d.get('natural_question_stop') is None)
+            and d.get('analysis_state') == _latest_natural_analysis_state(snapshot))
+    require(all(e['kind'] in {'OBSERVATION', 'OPERATION', 'QUESTION'} for e in events))
+    qs = [e for e in events if e['kind'] == 'QUESTION']
+    bodies = [e for e in events if e['kind'] == 'OBSERVATION']
+    require(len(qs) == 1 and len(bodies) == (2 if ended else 1) and bodies[-1] == observation)
+    q = qs[0]
+    qp = q['payload']
+    require(q['round_index'] == 1 and isinstance(q['question_id'], str) and bool(q['question_id'].strip())
+            and qp.get('thread_id') == t['id'] and qp.get('question_id') == q['question_id']
+            and qp.get('schema_version') == 'cocolon.cmee.emlis_clarification.v1'
+            and qp.get('original_source_ref') == d['original_source_ref'] and qp['decision']['disposition'] == 'ASK')
+    def attempt(row):
+        return row['operation_id'], row['attempt_id']
+
+    def stage_rows(stage):
+        return [e for e in events if e['kind'] == 'OPERATION' and e['payload'].get('stage') == stage]
+
+    def same_operation(earlier, later):
+        if earlier['operation_id'] != later['operation_id']:
+            return False
+        if earlier['attempt_id'] == later['attempt_id']:
+            return True
+        # A saved reply may be reused after a storage failure in the same
+        # operation. Keep its original attempt and verify the explicit retry.
+        between = [e for e in events if e['kind'] == 'OPERATION'
+                   and e['operation_id'] == later['operation_id'] and earlier['seq'] < e['seq'] < later['seq']]
+        failures = [e for e in between if e['attempt_id'] == earlier['attempt_id']
+                    and e['payload'].get('status') == 'RESPONSE_FAILED'
+                    and e['payload'].get('failure_code') in RETRYABLE_FAILURES]
+        retries = [e for e in between if e['attempt_id'] == later['attempt_id']
+                   and e['payload'].get('status') == 'RUNNING' and e['payload'].get('request_fingerprint')]
+        return len(failures) == len(retries) == 1 and failures[0]['seq'] < retries[0]['seq']
+
+    requests = stage_rows('NATURAL_FINAL_REQUESTED')
+    require(len(requests) == int(ended) and attempt(q) == attempt(bodies[0]))
+    for stage in ('NATURAL_REPLY_CALL_STARTED', 'NATURAL_REPLY_RECEIVED'):
+        require(len(stage_rows(stage)) == len(bodies))
+    finish = None
+    current_context = _context_ref(snapshot)
+    for index, body in enumerate(bodies):
+        op = body['payload']
+        artifact = op['artifact']
+        purpose = 'FINAL' if index else 'PRE_QUESTION'
+        status = 'COMPLETED' if index else 'AWAITING_ANSWER'
+        ids = attempt(body)
+        for key in ids:
+            _uuid(key, 'PIECE_SOURCE_NOT_ELIGIBLE')
+        require(body['round_index'] == index and op.get('stage') == 'INITIAL'
+                and artifact.get('schema_version') == ARTIFACT_SCHEMA and artifact.get('text') == op['text']
+                and isinstance(op['text'], str) and bool(op['text'].strip())
+                and isinstance(artifact.get('model'), str) and bool(artifact['model'].strip()))
+        # A skip can refresh revoked paid history. Only the current context can
+        # be reconstructed; its source prefix must match the admitted original.
+        if op.get('context_ref') == current_context:
+            require(op.get('source_prefix_ref') == admitted.source_prefix_ref
+                    and op.get('context_guards') == d.get('context_guards', [])
+                    and _natural_analysis_material_matches(saved, snapshot, body, request))
+        pair = []
+        for stage in ('NATURAL_REPLY_CALL_STARTED', 'NATURAL_REPLY_RECEIVED'):
+            rows = [e for e in stage_rows(stage) if e['operation_id'] == body['operation_id']]
+            require(len(rows) == 1)
+            row = rows[0]
+            require(row['round_index'] == index and row['payload'].get('response_stage') == purpose
+                    and row['payload'].get('source_prefix_ref') == op['source_prefix_ref']
+                    and row['payload'].get('context_ref') == op['context_ref']
+                    and all(row['payload'].get(key) == artifact.get(key)
+                            for key in ('meaning_profile', 'writer_messages_sha256')))
+            pair.append(row)
+        started, received = pair
+        require(started['seq'] < received['seq'] < body['seq']
+                and attempt(started) == attempt(received) and same_operation(received, body)
+                and received['payload'].get('reply') == dict(text=op['text'], model=artifact['model'],
+                    source_prefix_ref=op['source_prefix_ref'], schema_version=ARTIFACT_SCHEMA))
+        finishes = [e for e in events if e['kind'] == 'OPERATION' and attempt(e) == ids
+                    and e['payload'].get('status') in ('COMPLETED', 'AWAITING_ANSWER')]
+        require(len(finishes) == 1 and finishes[0]['payload'].get('failure_code') is None
+                and finishes[0]['payload']['status'] == status and body['seq'] < finishes[0]['seq'])
+        if index:
+            final_request = requests[0]
+            require(finish['seq'] < final_request['seq'] < started['seq'] and same_operation(final_request, started)
+                    and bodies[0]['operation_id'] != body['operation_id'] and final_request['round_index'] == 1
+                    and final_request['payload'].get('status') == 'RUNNING'
+                    and final_request['payload'].get('question_ending') == d['natural_question_stop'])
+        else:
+            require(body['seq'] < q['seq'] < finishes[0]['seq'])
+        finish = finishes[0]
+    op = observation['payload']
+    require(attempt(observation) == (d.get('operation_id'), d.get('attempt_id'))
+            and op.get('source_prefix_ref') == admitted.source_prefix_ref
+            and op.get('context_ref') == current_context)
+    stamp = parse_iso_utc(observation['recorded_at'])
+    require(stamp is not None and parse_iso_utc(saved.recorded_at) <= stamp <= parse_iso_utc(snapshot['now']))
+    return q['id']
+
+
 def _original_observation_handoff(saved: PieceSavedOriginal, snapshot: dict) -> PieceSavedHandoff:
     """Bind the existing PCE-2 envelope to persisted Q2/Q3 INITIAL controls.
 
@@ -684,6 +803,9 @@ def _original_observation_handoff(saved: PieceSavedOriginal, snapshot: dict) -> 
     require(seqs == sorted(set(seqs)))
     observation = by_id[t['last_observation_event_id']]
     require(observation['kind'] == 'OBSERVATION')
+    if natural and t['issued_count'] == 1:
+        question = _natural_unanswered_question(saved, snapshot, observation)
+        return _original_piece_lineage(saved, t, observation, 'pre_question_observation', question)
     require(sum(e['kind'] == 'OBSERVATION' for e in events) == 1)
     op = observation['payload']
     require(op.get('stage') == 'INITIAL' and observation['round_index'] == 0)
@@ -767,6 +889,11 @@ def _original_observation_handoff(saved: PieceSavedOriginal, snapshot: dict) -> 
         require(t['state'] == 'COMPLETED' and d['body_state'] == 'FINAL')
         require(finishes[0]['payload']['status'] == 'COMPLETED')
         stage = 'normal_observation'
+    return _original_piece_lineage(saved, t, observation, stage, question_identity)
+
+
+def _original_piece_lineage(saved, t, observation, stage, question_identity):
+    thread_id = _uuid(t['id'], 'PIECE_SOURCE_NOT_ELIGIBLE')
     lineage = {
         'handoff_contract_version': 'cocolon.cross_core.source_handoff.v1',
         'piece_source_lineage_version': 'piece.source_lineage.v1',
@@ -1260,7 +1387,41 @@ def _natural_refined_observation_handoff(saved: PieceSavedOriginal, snapshot: di
         'body_free': True}
     return PieceSavedRefinedHandoff(saved, frozen.source, thread_id, t['revision'],
         canonical_json_bytes(lineage), operation, original_ranges, answer_range,
-        canonical_json_bytes(cp) if operation != 'ADD' else None)
+        canonical_json_bytes(cp) if operation != 'ADD' else None,
+        feeling_question_id=_saved_personal_feeling_question(prepared, qp['decision'], frozen))
+
+
+def _saved_personal_feeling_question(prepared, decision, frozen):
+    """Bind the omitted speaker only to this resolved, answer-owned feeling."""
+    from cocolon_meaning_experience_engine.emlis_answer_update import _THEN, _FEELING
+    text = frozen.source.answer_text_private
+    then = _THEN.match(text)
+    update = prepared.checkpoint.answer_update
+    if (not then or not text.endswith('。') or text[then.end():].startswith(('私', '自分', '僕'))
+            or not _FEELING.fullmatch(text[then.end():-1])
+            or decision.get('target_kind') != 'PERSONAL_RECEIVED_MEANING'
+            or decision.get('missing_dimension') != 'personal_received_meaning'
+            or update.question_ref != frozen.source.question_id
+            or update.answer_source_ref != frozen.envelope.envelope_id or len(update.updates) != 1):
+        return None
+    item = update.updates[0]
+    if (item.operation != 'ADD' or item.binding_kind != 'QUESTION_FOCUS'
+            or item.temporal_binding.about_time != 'ORIGINAL_OCCASION'
+            or item.temporal_binding.anchor_source_ref != prepared.thread.original.envelope.envelope_id
+            or len(item.changed_claim_refs) != 1):
+        return None
+    accepted = [n for n in prepared.accepted_nuclei if n.nucleus_id == item.changed_claim_refs[0]]
+    if len(accepted) != 1:
+        return None
+    claim = accepted[0]
+    if (claim.semantic_frame.actor != 'current_user' or claim.semantic_frame.predicate_kind != 'feeling'
+            or claim.source_fields != ('answer_text_private',) or len(claim.source_span_ids) != 1):
+        return None
+    ref = prepared.thread.resolver().qualified_ref(claim.source_span_ids[0])
+    if (ref.source_envelope_id == frozen.envelope.envelope_id
+            and ref.evidence.evidence_id in item.evidence_refs):
+        return frozen.source.question_id
+    return None
 
 
 def _natural_active_answer_ranges(saved, prepared):
@@ -1569,7 +1730,9 @@ def _natural_later_add_handoff(saved, snapshot, answer_id, *, correction_prefix=
     return PieceSavedRefinedHandoff(saved,frozen.source,tid,t['revision'],canonical_json_bytes(lineage),
         operation, original_ranges, answer_range,
         canonical_json_bytes(_json(prepared.checkpoint)) if operation != 'ADD' and not prior_update else None,
-        prior_revisions, effective_checkpoints)
+        prior_revisions, effective_checkpoints,
+        feeling_question_id=_saved_personal_feeling_question(prepared, qs[-1]['payload']['decision'], frozen)
+            if not prior_update else None)
 
 
 def _natural_effective_round_ranges(saved, prepared_rounds):
@@ -1914,6 +2077,7 @@ def project_saved_refined_source(handoff: PieceSavedRefinedHandoff, *, opted_in:
         supplemental_active_range=handoff.supplemental_active_range,
         prior_revisions=handoff.prior_revisions,
         effective_round_sources=handoff._effective_checkpoints_json is not None,
+        feeling_question_id=handoff.feeling_question_id,
         question_need_decision_identity=observation['question_need_decision_identity'],
         refined_result_identity=observation['emlis_observation_result_identity'],
         original_commitment=handoff.original.record_commitment,

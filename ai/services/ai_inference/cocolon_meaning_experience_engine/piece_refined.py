@@ -44,6 +44,7 @@ class PieceRefinedSourceSnapshot:
     # Independent unselected ADD answers are not included here.
     prior_revisions: tuple[tuple[SupplementalAnswerSource, tuple[int, int]], ...] = ()
     effective_round_sources: bool = False
+    feeling_question_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -78,6 +79,7 @@ class PieceSupplementalMeaning(PieceSourceMeaning):
     # metadata-framed envelope from the existing answer-source owner.
     frozen_answer: FrozenSupplementalAnswer | None = None
     grammar_owner_id: str = ''
+    feeling_question_id: str | None = None
     active_range: tuple[int, int] | None = None
 
 
@@ -143,6 +145,8 @@ def _source_payload(source):
                                              else list(source.correction_active_range))
         return result
     # Existing ADD source identities and private saved bytes remain exact.
+    if source.feeling_question_id is None:
+        del result['feeling_question_id']
     if not source.original_active_ranges and source.supplemental_active_range is None:
         del result['original_active_ranges']
         del result['supplemental_active_range']
@@ -404,7 +408,7 @@ def validate_correction_meaning(meaning):
         'piece_correction_evidence_binding')
 
 
-def _supplemental_meaning(answer, owner_id, active_range=None):
+def _supplemental_meaning(answer, owner_id, active_range=None, *, feeling_question_id=None):
     """Adapt existing finite grammar, then bind every node to its answer source.
 
     The temporary text view is only a parser input. It is not retained as
@@ -414,6 +418,8 @@ def _supplemental_meaning(answer, owner_id, active_range=None):
     from piece_v2_generation import PieceSourceSnapshot
     from .source_kernel import _evidence_id
     frozen = freeze_supplemental_answer(answer)
+    _require(feeling_question_id is None or (feeling_question_id == answer.question_id and active_range is None),
+             'piece_refined_question_binding')
     raw = answer.answer_text_private
     start, end = (0, len(raw)) if active_range is None else active_range
     _require(type(start) is int and type(end) is int and 0 <= start < end <= len(raw))
@@ -470,7 +476,7 @@ def _supplemental_meaning(answer, owner_id, active_range=None):
             source_start=start + s.source_start, source_end=start + min(s.source_end, len(literal)))
             for s in parsed.sentences))
     return PieceSupplementalMeaning(**values, frozen_answer=frozen, grammar_owner_id=owner_id,
-                                    active_range=active_range)
+                                    active_range=active_range, feeling_question_id=feeling_question_id)
 
 
 def validate_supplemental_meaning(meaning):
@@ -479,7 +485,8 @@ def validate_supplemental_meaning(meaning):
     # Re-derive parser/evidence only, never the author. Saved re-read below
     # does not enter this function; this is generation-time source validation.
     _require(type(meaning.grammar_owner_id) is str and bool(meaning.grammar_owner_id.strip()))
-    expected = _supplemental_meaning(meaning.frozen_answer.source, meaning.grammar_owner_id, meaning.active_range)
+    expected = _supplemental_meaning(meaning.frozen_answer.source, meaning.grammar_owner_id, meaning.active_range,
+                                     feeling_question_id=meaning.feeling_question_id)
     # The grammar's local owner is not part of its graph/source identity.
     _require(meaning == expected, 'piece_refined_answer_evidence_binding')
 
@@ -582,7 +589,7 @@ def refined_meaning_parts(meaning, plan):
     return parts
 
 
-def _supplemental_feeling_prefix_end(text):
+def _supplemental_feeling_prefix_end(text, *, bound_answer=False):
     """Read a complete SELF feeling without changing its written time.
 
     The answer owner's NOW/THEN grammar supplies only a parse boundary. The
@@ -597,6 +604,8 @@ def _supplemental_feeling_prefix_end(text):
     prefix = _NOW.match(text) or _THEN.match(text)
     end = prefix.end() if prefix is not None else 0
     body = text[end:]
+    if bound_answer and _THEN.match(text) and _FEELING.fullmatch(body[:-1]):
+        return end
     topic = _SELF_TOPIC.fullmatch(body)
     if topic is None or not (
             _FEELING.fullmatch('私は' + topic['body'])
@@ -615,7 +624,7 @@ def supplemental_feeling_time_span(meaning, node):
     if type(meaning) is not PieceSupplementalMeaning or node not in meaning.graph.nodes:
         return None
     prefix = _THEN.match(node.value)
-    end = _supplemental_feeling_prefix_end(node.value)
+    end = _supplemental_feeling_prefix_end(node.value, bound_answer=meaning.feeling_question_id is not None)
     return (0, end) if prefix is not None and end == prefix.end() else None
 
 
@@ -628,7 +637,7 @@ def supplemental_feeling_account(meaning):
     if type(meaning) is not PieceSupplementalMeaning or not meaning.graph.nodes:
         return False
     for node in meaning.graph.nodes:
-        if _supplemental_feeling_prefix_end(node.value) is None:
+        if _supplemental_feeling_prefix_end(node.value, bound_answer=meaning.feeling_question_id is not None) is None:
             return False
     return True
 
@@ -725,7 +734,8 @@ def build_refined_meaning(request):
             expected_owner_id=request.expected_owner_id,
             expected_saved_input_id=request.expected_saved_input_id,
             expected_source_version=request.expected_source_version)
-        supplemental = _supplemental_meaning(answer, original.owner_id)
+        supplemental = _supplemental_meaning(answer, original.owner_id,
+                                            feeling_question_id=source.feeling_question_id)
     else:
         original_meaning = _active_original_meaning(original, source.original_active_ranges)
         if source.supplemental_update_operation == 'REVISE':
