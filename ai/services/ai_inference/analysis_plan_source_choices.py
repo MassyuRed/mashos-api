@@ -627,7 +627,7 @@ def _distinct_context_groups(action, simple, allowed, selected, leaf_quotes):
 
 
 def uses_speaker_context(version):
-    return version == 'cocolon.analysis.merge_wire.v8'
+    return version in ('cocolon.analysis.merge_wire.v8', 'cocolon.analysis.merge_wire.v9')
 
 
 _NARRATOR = frozenset(('私', 'わたし', '僕', 'ぼく', '俺', 'おれ', '自分'))
@@ -692,7 +692,50 @@ def _speaker_context_groups(memo, action, selected, allowed):
     return (reply, referent) if referent and referent != reply else (reply,)
 
 
-def merge_action_sources(material, owners, *, context_sources=False, distinct_context_sources=False, speaker_context_sources=False):
+def uses_attributed_context(version):
+    return version == 'cocolon.analysis.merge_wire.v9'
+
+
+_NARRATOR_SUBJECT = r'(?:私|わたし|僕|ぼく|俺|おれ)(?:は|が)'
+_NAMED_ACCOUNT = re.compile(r'^(' + _NOMINAL_ARGUMENT + r')(?:は|が)[、，]?[^。！？]+と' + _FINITE_REPORT + r'。$')
+_RECEIVED_ACCOUNT = re.compile(r'^' + _NARRATOR_SUBJECT + r'[、，]?(?:その|この)(?:言葉|発言|説明|意見|感想|話)'
+                               r'を(?:聞|聴|読|受け)')
+
+
+def _attributed_account_groups(selected, leaf_quotes, allowed, memo):
+    """Preserve a separately attributed remark and the narrator's uncertainty about it.
+
+    The first-person account already selected for the short action is independent
+    of the other person's actual words. A same-paragraph leaf passage must state
+    both those words and the narrator's own explicitly unresolved interpretation
+    of the named speaker. Keep the two sentences together in their original order.
+    """
+    if not any(_SELF_ACCOUNT_LINE.fullmatch(q) for q in selected):
+        return ()
+    candidates = set()
+    for quote in leaf_quotes:
+        if (len(quote) > 160 or quote not in allowed
+                or any(mark in quote for mark in '「」『』“”‘’？?\r\n')):
+            continue
+        parts = _outer_sentences(quote, original_for_overview=True)
+        if len(parts) != 2 or ''.join(parts) != quote:
+            continue
+        words, response = parts
+        speaker = _NAMED_ACCOUNT.fullmatch(words)
+        if (not speaker or speaker[1] in _NARRATOR or not _RECEIVED_ACCOUNT.match(response)
+                or re.search(r'もし|仮に|たとえば|例えば|と仮定|と(?:言った|述べた|話した)と', words)):
+            continue
+        # An unresolved question about this named speaker's meaning anchors
+        # the uptake. An unrelated person's uncertainty is not interchangeable.
+        if (re.search(r'[、，]' + re.escape(speaker[1]) + r'(?:は|が)[^。]+'
+                      r'(?:のか|かどうか|意図|真意)[^。]*(?:分からない|わからない|不明だ)。$', response)
+                and memo.count(quote) == 1):
+            candidates.add(quote)
+    return (tuple(candidates),) if len(candidates) == 1 else ()
+
+
+def merge_action_sources(material, owners, *, context_sources=False, distinct_context_sources=False,
+                         speaker_context_sources=False, attributed_context_sources=False):
     """For the new MERGE only, reserve already selectable original sentences.
 
     A passage can record proposed, declined, completed or reported actions, even
@@ -753,13 +796,16 @@ def merge_action_sources(material, owners, *, context_sources=False, distinct_co
             row = MergeActionSources(action, memo, sentences, allowed, selected, groups, memo_allowed)
             if groups and row.minimum_roots[row.required] > 8:
                 row = MergeActionSources(action, memo, sentences, allowed, selected)
+            extra = ()
             if speaker_context_sources:
                 extra = _speaker_context_groups(memo['text'], action['text'], selected, memo_allowed)
-                if extra:
-                    expanded = MergeActionSources(action, memo, sentences, allowed, selected,
-                                                  (*row.context_groups[1:], *extra), memo_allowed)
-                    if expanded.minimum_roots[expanded.required] <= 8:
-                        row = expanded
+            if attributed_context_sources and distinct_context_sources:
+                extra += _attributed_account_groups(selected, leaf_quotes, memo_allowed, memo['text'])
+            if extra:
+                expanded = MergeActionSources(action, memo, sentences, allowed, selected,
+                                              (*row.context_groups[1:], *extra), memo_allowed)
+                if expanded.minimum_roots[expanded.required] <= 8:
+                    row = expanded
             result[record] = row
     return result
 
@@ -1598,7 +1644,7 @@ def leaf_meanings(fields, units, sentences):
 
 
 def source_ordered_merge(wire_version):
-    return wire_version in ('cocolon.analysis.merge_wire.v6', 'cocolon.analysis.merge_wire.v7', 'cocolon.analysis.merge_wire.v8')
+    return wire_version in ('cocolon.analysis.merge_wire.v6', 'cocolon.analysis.merge_wire.v7', 'cocolon.analysis.merge_wire.v8', 'cocolon.analysis.merge_wire.v9')
 
 
 def ordered_record_sections(fields, units, fixed_parts=None):

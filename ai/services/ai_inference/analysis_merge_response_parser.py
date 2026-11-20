@@ -102,7 +102,7 @@ def response_parser(logical, codec):
                 accept = (_literal('["COMPARE",', edge), _scalar('label'),
                           _literal(',', ',"relation_kind":'), _scalar(), _literal(']', '}'))
                 if codec.paired:
-                    spells = [('['+','.join(quoted(part) for part in action)+']',edge+quoted(label)+',"relation_kind":"CONTEXT_CONTRAST"}')
+                    spells = [('['+','.join(quoted(part) for part in action)+']',edge+quoted(label)+',"relation_kind":'+quoted(codec.paired_kind(action))+'}')
                               for action,label in codec.paired_choices[index]]
                     accept = (('spelling',spells),)
                 skip = (('spelling', [(quoted(reason), '') for reason in codec.comparison_skips]),)

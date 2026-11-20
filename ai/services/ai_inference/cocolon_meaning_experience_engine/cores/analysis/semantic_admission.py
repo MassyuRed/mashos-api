@@ -2745,7 +2745,7 @@ def _semantic_v4_view(prepared):
     return replace(prepared.parent, material_json=prepared.material_json, request_ref=request_ref)
 
 
-def semantic_node_local_v4_plan(prepared, plan, *, merge_anchors=False, merge_action_sources=False, context_sources=False, distinct_context_sources=False, speaker_context_sources=False):
+def semantic_node_local_v4_plan(prepared, plan, *, merge_anchors=False, merge_action_sources=False, context_sources=False, distinct_context_sources=False, speaker_context_sources=False, attributed_context_sources=False):
     """Bind the complete allocation before prose; allow cross-record roots."""
     r, reason = _semantic_map_require, 'analysis_semantic_node_local_v4_plan_invalid'
     r(_semantic_map_keys(plan, {'schema_version', 'nodes'})
@@ -2760,7 +2760,7 @@ def semantic_node_local_v4_plan(prepared, plan, *, merge_anchors=False, merge_ac
     from analysis_plan_source_choices import missing_plan_sources, owner_source_regions, whole_plan_sources
     from analysis_plan_source_choices import merge_action_sources as action_rules
     owners = record_plan_owners(material, merge_anchors=merge_anchors or merge_action_sources)
-    actions = action_rules(material, owners, context_sources=context_sources, distinct_context_sources=distinct_context_sources, speaker_context_sources=speaker_context_sources) if merge_action_sources else {}
+    actions = action_rules(material, owners, context_sources=context_sources, distinct_context_sources=distinct_context_sources, speaker_context_sources=speaker_context_sources, attributed_context_sources=attributed_context_sources) if merge_action_sources else {}
     pairs = compact_action_pairs(material) if owners else {}
     required_sources = whole_plan_sources(material, owners)
     regions = owner_source_regions(material, owners, plan_reading_regions(material, pairs), required_sources) if owners else {}
@@ -3771,9 +3771,9 @@ def _semantic_plan_choices(prepared, material):
     return view, choices, allowed
 
 
-def admit_semantic_node_local_v4_plan_response(prepared, value, *, merge_anchors=False, merge_action_sources=False, context_sources=False, distinct_context_sources=False, speaker_context_sources=False):
+def admit_semantic_node_local_v4_plan_response(prepared, value, *, merge_anchors=False, merge_action_sources=False, context_sources=False, distinct_context_sources=False, speaker_context_sources=False, attributed_context_sources=False):
     if prepared.prompt_version not in {SEMANTIC_MAP_OCCURRENCE_V11_PROFILE, *SEMANTIC_MAP_FACT_REFERENCE_PROFILES}:
-        return semantic_node_local_v4_plan(prepared, value, merge_anchors=merge_anchors, merge_action_sources=merge_action_sources, context_sources=context_sources, distinct_context_sources=distinct_context_sources, speaker_context_sources=speaker_context_sources)
+        return semantic_node_local_v4_plan(prepared, value, merge_anchors=merge_anchors, merge_action_sources=merge_action_sources, context_sources=context_sources, distinct_context_sources=distinct_context_sources, speaker_context_sources=speaker_context_sources, attributed_context_sources=attributed_context_sources)
     reason = 'analysis_semantic_plan_choice_invalid'
     view, choices, allowed = _semantic_plan_choices(prepared, json.loads(prepared.material_json))
     _semantic_map_require(_semantic_map_keys(value, {'schema_version', 'source_choices_sha256', 'nodes'})
@@ -3796,7 +3796,7 @@ def admit_semantic_node_local_v4_plan_response(prepared, value, *, merge_anchors
                     _semantic_map_require(key in allowed.get(field, ()) and (field, key) not in numbered, reason)
                     quote = key
                 root['quote'] = quote
-    return semantic_node_local_v4_plan(prepared, plan, merge_anchors=merge_anchors, merge_action_sources=merge_action_sources, context_sources=context_sources, distinct_context_sources=distinct_context_sources, speaker_context_sources=speaker_context_sources)
+    return semantic_node_local_v4_plan(prepared, plan, merge_anchors=merge_anchors, merge_action_sources=merge_action_sources, context_sources=context_sources, distinct_context_sources=distinct_context_sources, speaker_context_sources=speaker_context_sources, attributed_context_sources=attributed_context_sources)
 
 
 def _semantic_plan_reading_fields(material):
@@ -4267,7 +4267,7 @@ def assemble_semantic_node_local_v4_with_node_choices(prepared, packet, *, compa
         packet_keys.add('merge_wire_version')
         phase_keys.add('logical_messages_sha256')
     make_messages = semantic_node_local_v4_wire_messages if compact else semantic_node_local_v4_messages
-    from analysis_plan_source_choices import source_ordered_merge, uses_speaker_context
+    from analysis_plan_source_choices import source_ordered_merge, uses_attributed_context, uses_speaker_context
     ordered_titles = compact and source_ordered_merge(packet['merge_wire_version'])
     wire_options = {'wire_version': packet['merge_wire_version']} if compact else {}
     r(prepared.prompt_version in SEMANTIC_MAP_NODE_LOCAL_V4_PROFILES
@@ -4302,7 +4302,8 @@ def assemble_semantic_node_local_v4_with_node_choices(prepared, packet, *, compa
                 merge_action_sources=compact and packet['merge_wire_version'] in OUTPUT_VERSIONS,
                 context_sources=compact and packet['merge_wire_version'] in COMPARISON_VERSIONS,
                 distinct_context_sources=compact and packet['merge_wire_version'] in PAIRED_VERSIONS,
-                speaker_context_sources=compact and uses_speaker_context(packet['merge_wire_version']))
+                speaker_context_sources=compact and uses_speaker_context(packet['merge_wire_version']),
+                attributed_context_sources=compact and uses_attributed_context(packet['merge_wire_version']))
         elif phase == 'NODES':
             nodes = admit_semantic_node_local_v4_nodes_response(prepared, plan, value,
                 bound_titles=compact and packet['merge_wire_version'] in TITLE_VERSIONS, ordered_titles=ordered_titles)

@@ -199,7 +199,7 @@ class SelfHostedSemanticAnalysisModelSource(SelfHostedAnalysisModelSource):
         end = loop.time() + SEMANTIC_HTTP_TIMEOUT_SECONDS
         if compact_merge:
             from analysis_merge_wire import VERSION, legacy_messages, response_codec
-            from analysis_plan_source_choices import uses_speaker_context
+            from analysis_plan_source_choices import uses_attributed_context, uses_speaker_context
             if pipeline_deadline is not None:
                 end = min(pipeline_deadline, loop.time() +
                     len(core.SEMANTIC_MAP_NODE_LOCAL_V4_PHASES) * SEMANTIC_HTTP_TIMEOUT_SECONDS)
@@ -267,7 +267,8 @@ class SelfHostedSemanticAnalysisModelSource(SelfHostedAnalysisModelSource):
                     if phase == 'PLAN':
                         plan = core.admit_semantic_node_local_v4_plan_response(prepared, value,
                             merge_anchors=compact_merge, merge_action_sources=compact_merge, context_sources=compact_merge,
-                            distinct_context_sources=compact_merge, speaker_context_sources=compact_merge and uses_speaker_context(VERSION))
+                            distinct_context_sources=compact_merge, speaker_context_sources=compact_merge and uses_speaker_context(VERSION),
+                            attributed_context_sources=compact_merge and uses_attributed_context(VERSION))
                     elif phase == 'NODES':
                         from analysis_plan_source_choices import single_original_leaf
                         fresh_leaf = (prepared.prompt_version == core.SEMANTIC_MAP_OCCURRENCE_V24_PROFILE

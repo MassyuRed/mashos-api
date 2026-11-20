@@ -545,3 +545,67 @@ def test_different_documents_for_same_recipient_are_not_one_subject_even_if_anot
                left=dict(record=1, quote=first, sentences=[first]), right=dict(record=2, quote=second, sentences=[second]))
     originals = {1:[(1, first, first), (1, other, other)], 2:[(3, next_day, next_day)]}
     assert wire._decision_endpoints(row, originals, named_requests=True) is None
+
+
+def test_same_request_can_progress_to_a_report_without_claiming_delivery():
+    first = '案内所への部品依頼を提案したが、渡したかは確認していない。'
+    second = '同僚の交換部品の依頼連絡に返事をした。'
+    context = '壊れた器具の交換の部品も頼みたいと提案した。担当者はその依頼を案内所へ送ると言った。'
+    update = '同僚から交換部品を案内所へ頼んだと連絡があった。'
+    material = recurring_sources()
+    for field, node, quote, text in zip(material['fields'][:2], material['candidate_nodes'][:2],
+                     (first, second), (context+first, update+second), strict=True):
+        field['text'] = text
+        node['units'][0]['evidence'][0]['quote'] = quote
+    material['records'] = [dict(record=1, recorded_at='2026-10-05T09:00:00'),
+                           dict(record=2, recorded_at='2026-10-13T09:00:00')]
+    enabled = dict(decision_sources=True, named_requests=True, request_progress=True)
+    candidate, = wire.paired_comparison_candidates(material, None, **enabled)
+    progress, = candidate['request_progress_choices']
+    assert progress == ['FOLLOW_REQUEST','交換部品',1,'後の記録では、',1]
+    codec = wire.ResponseCodec(material, None, None, paired=True, comparisons=[candidate], **enabled)
+    logical = dict(schema_version=wire.MODEL_SCHEMA + '.relations', nodes_sha256=codec.binding,
+                   qualification_review={}, edges=[], overview={})
+    raw = codec.encode(logical)
+    sources = {}
+    selected = dict(raw, comparisons=[progress])
+    result = codec.decode(selected, comparison_sources=sources)
+    edge, = result['edges']
+    assert edge['relation_kind'] == 'SHARED_MEANING' and edge['label'] == first + progress[3] + second
+    assert sources[(edge['from_unit'], edge['to_unit'], edge['label'])] == ((1,first,first),(2,second,second))
+    assert codec.encode(result, comparison_decisions=[progress]) == selected
+    compare = ['COMPARE','交換部品',1,'一方、',1]
+    assert codec.decode(dict(raw,comparisons=[compare]))['edges'][0]['relation_kind'] == 'CONTEXT_CONTRAST'
+    for skip in wire.COMPARISON_SKIPS:
+        assert not codec.decode(dict(raw, comparisons=[skip]))['edges']
+    for fake in (['FOLLOW_REQUEST','案内所',1,'後の記録では、',1],['FOLLOW_REQUEST','交換部品',1,'届いて、',1]):
+        with pytest.raises(ValueError):
+            codec.decode(dict(raw, comparisons=[fake]))
+    old, = wire.paired_comparison_candidates(material, None, decision_sources=True, named_requests=True)
+    assert 'request_progress_choices' not in old
+    for same_time in ('2026-10-05T17:00:00','2026-09-30T09:00:00',None):
+        changed = deepcopy(material)
+        changed['records'][1]['recorded_at'] = same_time
+        row, = wire.paired_comparison_candidates(changed, None, **enabled)
+        assert 'request_progress_choices' not in row
+    unrelated = deepcopy(material)
+    unrelated['fields'][1]['text'] = '別件の' + unrelated['fields'][1]['text']
+    separate, = wire.paired_comparison_candidates(unrelated, None, **enabled)
+    assert 'request_progress_choices' not in separate
+
+    # An additional authored relation can cite the same sources in either reading order.
+    free = wire.ResponseCodec(material, None, None, paired=True, **enabled)
+    blank = free.encode(logical)
+    for row, join in ((candidate,'後の記録では、'),
+                      (dict(candidate,left=candidate['right'],right=candidate['left']),'先の記録では、')):
+        left, right = row['left'], row['right']
+        endpoint = dict(wire.comparison_endpoints(row), relation_kind='SHARED_MEANING',
+                        label=left['sentences'][0]+join+right['sentences'][0])
+        roots = {}
+        assert free.decode(dict(blank,edges=[endpoint]),comparison_sources=roots)['edges']==[endpoint]
+        assert [q[-1] for q in roots[(endpoint['from_unit'],endpoint['to_unit'],endpoint['label'])]] == [left['sentences'][0],right['sentences'][0]]
+        with pytest.raises(ValueError):
+            free.decode(dict(blank,edges=[dict(endpoint, label=left['sentences'][0]+join+'部品を受け取った。')]))
+    # The reserved pair cannot be restored through the free edges array after the author declined it.
+    with pytest.raises(ValueError):
+        codec.decode(dict(raw,comparisons=['DIFFERENT_SUBJECT'],edges=[edge]))

@@ -5,6 +5,7 @@ import hashlib
 import json
 import re
 from collections import defaultdict
+from datetime import date
 from itertools import combinations
 
 
@@ -16,8 +17,10 @@ COMPARISON_VERSION = 'cocolon.analysis.merge_wire.v5'
 PAIRED_VERSION = 'cocolon.analysis.merge_wire.v6'
 DECISION_VERSION = 'cocolon.analysis.merge_wire.v7'
 REQUEST_SUBJECT_VERSION = 'cocolon.analysis.merge_wire.v8'
-VERSION = REQUEST_SUBJECT_VERSION
-REQUEST_SUBJECT_VERSIONS = (REQUEST_SUBJECT_VERSION,)
+REQUEST_PROGRESS_VERSION = 'cocolon.analysis.merge_wire.v9'
+VERSION = REQUEST_PROGRESS_VERSION
+REQUEST_PROGRESS_VERSIONS = (REQUEST_PROGRESS_VERSION,)
+REQUEST_SUBJECT_VERSIONS = (REQUEST_SUBJECT_VERSION, *REQUEST_PROGRESS_VERSIONS)
 DECISION_VERSIONS = (DECISION_VERSION, *REQUEST_SUBJECT_VERSIONS)
 PAIRED_VERSIONS = (PAIRED_VERSION, *DECISION_VERSIONS)
 COMPARISON_VERSIONS = (COMPARISON_VERSION, *PAIRED_VERSIONS)
@@ -119,6 +122,13 @@ def instruction(version, phase):
             '同じ物についての提案と後日の連絡は話者や行動が違っても比較できます。'
             '未送信と送信未確認、依頼と納品は区別します。物が違う時は DIFFERENT_SUBJECT、'
             '同じ物か確認できない時は INSUFFICIENT_EVIDENCE を選びます。')
+    if version in REQUEST_PROGRESS_VERSIONS and phase == 'RELATIONS':
+        guidance += (' request_progress_choices は同じ物の依頼がどこまで進んだかを二つの記録でたどる選択肢です。'
+            '提案した時の未確認と、後の記録で受け取った連絡や本人の返答は、判断が対照的でなくても結べます。'
+            '左右の原文を読み、同じ依頼の段階なら、comparisonsのその位置に対応するFOLLOW_REQUESTの配列を選びます。'
+            '判断や条件の違いを比べる場合はCOMPAREを選びます。別の案件にはDIFFERENT_SUBJECT、'
+            '同じ依頼か判断できないときはINSUFFICIENT_EVIDENCEを使います。'
+            '連絡を受けたことから、自分で送信や受領を確認したとは書きません。')
     return guidance
 
 
@@ -389,7 +399,8 @@ def _memo_context_menu(material, fields, choice_module, *, version):
     owners = choice_module.record_plan_owners(source, merge_anchors=True)
     rows = choice_module.merge_action_sources(source, owners, context_sources=True,
                                               distinct_context_sources=version in PAIRED_VERSIONS,
-                                              speaker_context_sources=choice_module.uses_speaker_context(version))
+                                              speaker_context_sources=choice_module.uses_speaker_context(version),
+                                              attributed_context_sources=choice_module.uses_attributed_context(version))
     return [[row.memo_field, list(group)] for row in rows.values() for group in row.context_groups if group]
 
 
@@ -710,12 +721,50 @@ def _comparison_originals(material, choice_module):
     return originals
 
 
-def paired_comparison_candidates(material, choice_module, *, limit=2, decision_sources=False, named_requests=False):
+_REQUEST_INITIATED = re.compile(r'(?:依頼|申請|発注|注文|照会|問い合わせ|申込)(?:を|することを)?(?:提案|打診|検討|相談|予定|したい)|(?:頼み|申し込み)たい')
+_REQUEST_UPDATE = re.compile(r'(?:連絡|回答|返事|返答|知らせ|報告)(?:が(?:あった|来た|届)|を(?:受け|聞|読|返)|に(?:返事|回答|返答|応え))')
+_DIFFERENT_REQUEST = re.compile(r'別件|別の(?:依頼|案件|申請|注文|見積り)|無関係な')
+
+
+def _request_progress_options(row, days):
+    """Offer an authored trace only between dated records with supported request and update passages."""
+    witness = row['subject_witness']
+    if witness['kind'] != 'requested_object':
+        return []
+    left_day, right_day = (days.get(row[side]['record']) for side in ('left', 'right'))
+    if left_day is None or right_day is None or left_day >= right_day:
+        return []
+    if any(_DIFFERENT_REQUEST.search(witness[side]['quote']) for side in ('left', 'right')):
+        return []
+    options = []
+    # Reuse the same source-bound, distinct sentences that qualify for a comparison.
+    pairs = dict.fromkeys((action[2], action[4]) for action, _ in paired_decisions(row))
+    for li, ri in pairs:
+        first, second = row['left']['sentences'][li - 1], row['right']['sentences'][ri - 1]
+        if (_REQUEST_INITIATED.search(first) and _REQUEST_UPDATE.search(second)
+                and not any(_DIFFERENT_REQUEST.search(sentence) for sentence in (first, second))
+                and len(first + '後の記録では、' + second) <= 80):
+            options.append(['FOLLOW_REQUEST', row['subject'], li, '後の記録では、', ri])
+    return options
+
+
+def _record_days(material):
+    days = {}
+    for field in material.get('records', ()):
+        try:
+            days[field['record']] = date.fromisoformat(field['recorded_at'][:10])
+        except (KeyError, TypeError, ValueError):
+            continue
+    return days
+
+
+def paired_comparison_candidates(material, choice_module, *, limit=2, decision_sources=False, named_requests=False, request_progress=False):
     if material['author_phase'] != 'RELATIONS' or material.get('map_corrections'):
         return []
     if choice_module is None:
         import analysis_plan_source_choices as choice_module
     originals = _comparison_originals(material, choice_module) if decision_sources else {}
+    days = _record_days(material) if request_progress else {}
     roots = _comparison_record_roots(material, choice_module)
     owners = defaultdict(set)
     for ep, _, terms, _, _ in roots:
@@ -753,6 +802,10 @@ def paired_comparison_candidates(material, choice_module, *, limit=2, decision_s
                 row = _decision_endpoints(row, originals, named_requests=named_requests)
                 if row is None:
                     continue
+            if request_progress:
+                progress = _request_progress_options(row, days)
+                if progress:
+                    row['request_progress_choices'] = progress
             allowed = paired_decisions(row)
             if not allowed:
                 continue
@@ -769,7 +822,8 @@ def paired_decisions(candidate):
     left, right = candidate['left'],candidate['right']
     topic = candidate['subject']
     relevant = (topic,*candidate['wording'])
-    options = []
+    options = [(action, left['sentences'][action[2] - 1] + action[3] + right['sentences'][action[4] - 1])
+               for action in candidate.get('request_progress_choices', ())]
     for li, first in enumerate(left['sentences'],1):
         for ri, second in enumerate(right['sentences'],1):
             if 'decision_pairs' in candidate and [li, ri] not in candidate['decision_pairs']:
@@ -807,7 +861,8 @@ def prepare_messages(messages, *, version=VERSION, choice_module=None):
         return messages
     require(compact_json(material) == messages[1]['content'])
     comparisons = (paired_comparison_candidates(material, choice_module, decision_sources=version in DECISION_VERSIONS,
-                                                named_requests=version in REQUEST_SUBJECT_VERSIONS) if version in PAIRED_VERSIONS
+                                                named_requests=version in REQUEST_SUBJECT_VERSIONS,
+                                                request_progress=version in REQUEST_PROGRESS_VERSIONS) if version in PAIRED_VERSIONS
                    else comparison_candidates(material) if version == COMPARISON_VERSION else [])
     fields = displayed_fields(material)
     if version in COMPARISON_VERSIONS and material['author_phase'] == 'PLAN':
@@ -883,9 +938,10 @@ def _quote_codes(literals):
 
 class ResponseCodec:
     """Project only deterministic positions. Every authored choice remains in the raw receipt."""
-    def __init__(self, material, choice_module, fact_key, *, comparisons=(), paired=False, decision_sources=False, named_requests=False):
+    def __init__(self, material, choice_module, fact_key, *, comparisons=(), paired=False, decision_sources=False, named_requests=False, request_progress=False):
         self._decision_sources = decision_sources
         self._named_requests = named_requests
+        self._request_progress = request_progress
         self.paired_material = material if paired and material['author_phase'] == 'RELATIONS' else None
         self._comparison_source_module = choice_module
         self._extra_comparisons = None
@@ -964,6 +1020,34 @@ class ResponseCodec:
         q, field = self._quote(pair[0]), pair[1]
         return dict(source_quote=q, source_field=field) if qualification else dict(quote=q, field=field)
 
+    @staticmethod
+    def paired_kind(action):
+        return 'SHARED_MEANING' if action[0] == 'FOLLOW_REQUEST' else 'CONTEXT_CONTRAST'
+
+    def _extra_pair_choices(self, endpoint_key):
+        if self._extra_comparisons is None:
+            # Unoffered supported pairs remain available through the ordinary edge array.
+            # The two explicit author decisions may not be contradicted or duplicated here.
+            offered = {frozenset((row['left']['node'],row['right']['node'])) for row in self.comparisons}
+            self._extra_comparisons = {}
+            extra = paired_comparison_candidates(self.paired_material, self._comparison_source_module, limit=None,
+                decision_sources=self._decision_sources, named_requests=self._named_requests, request_progress=self._request_progress)
+            for row in extra:
+                if frozenset((row['left']['node'],row['right']['node'])) in offered:
+                    continue
+                reverse = dict(row, left=row['right'], right=row['left'])
+                if 'decision_pairs' in row:
+                    reverse['decision_pairs'] = [[right, left] for left, right in row['decision_pairs']]
+                if row.get('request_progress_choices'):
+                    reverse['request_progress_choices'] = [[action, subject, ri, '先の記録では、', li]
+                        for action, subject, li, _, ri in row['request_progress_choices']]
+                for candidate in (row, reverse):
+                    key = tuple(comparison_endpoints(candidate).values())
+                    self._extra_comparisons[key] = {
+                        (self.paired_kind(decision), label): _comparison_sources(candidate, decision) if self._decision_sources else None
+                        for decision, label in paired_decisions(candidate)}
+        return self._extra_comparisons.get(endpoint_key, {})
+
     def free_comparisons_allowed(self, edges, *, comparison_sources=None):
         if self.paired_material is None:
             return True
@@ -974,47 +1058,34 @@ class ResponseCodec:
             r = self._owners.get(edge.get('to'),set())
             if not l or not r or l & r or None in l or None in r:
                 continue
-            if edge.get('relation_kind') != 'CONTEXT_CONTRAST':
-                # Every additional cross-record relation must identify something
-                # distinctive from the selected quotation at each endpoint. The
-                # author still chooses the relation kind and writes the full label.
-                sources = []
-                for side in ('from','to'):
-                    unit, cue = edge.get(side+'_unit'), edge.get(side+'_source')
-                    if not isinstance(unit,str) or not isinstance(cue,str):
-                        return False
-                    quotes = self._unit_evidence.get((edge[side],unit),())
-                    sources.append(tuple(q for q in quotes if cue in (q[:16],q[-16:])))
-                label = edge['label']
-                if not all(_label_binds_source(label,origins,sources[1-side]) for side,origins in enumerate(sources)):
-                    return False
-                continue
-            if self._extra_comparisons is None:
-                # Unoffered supported pairs remain available through the ordinary edge array.
-                # The two explicit author decisions may not be contradicted or duplicated here.
-                offered = {frozenset((row['left']['node'],row['right']['node'])) for row in self.comparisons}
-                self._extra_comparisons = {}
-                for row in paired_comparison_candidates(self.paired_material, self._comparison_source_module,
-                                                        limit=None, decision_sources=self._decision_sources, named_requests=self._named_requests):
-                    if frozenset((row['left']['node'],row['right']['node'])) in offered:
-                        continue
-                    reverse = dict(row, left=row['right'], right=row['left'])
-                    if 'decision_pairs' in row:
-                        reverse['decision_pairs'] = [[right, left] for left, right in row['decision_pairs']]
-                    for candidate in (row, reverse):
-                        key = tuple(comparison_endpoints(candidate).values())
-                        self._extra_comparisons[key] = {
-                            label: _comparison_sources(candidate, decision) if self._decision_sources else None
-                            for decision, label in paired_decisions(candidate)}
-            key = tuple(edge.get(k) for k in ('from','to','from_unit','to_unit','from_source','to_source'))
-            if not all(type(x) is str for x in key):
-                return False
-            choices = self._extra_comparisons.get(key, {})
+            kind = edge.get('relation_kind')
             label = edge['label']
-            if label not in choices:
+            progress_label = (self._request_progress and kind == 'SHARED_MEANING'
+                              and any(join in label for join in ('後の記録では、', '先の記録では、')))
+            if kind == 'CONTEXT_CONTRAST' or progress_label:
+                key = tuple(edge.get(k) for k in ('from','to','from_unit','to_unit','from_source','to_source'))
+                if not all(type(x) is str for x in key):
+                    return False
+                choices = self._extra_pair_choices(key)
+                # Other freely authored relations still use the ordinary two-source check below.
+                if kind == 'CONTEXT_CONTRAST' or any(option[0] == 'SHARED_MEANING' for option in choices):
+                    if (kind, label) not in choices:
+                        return False
+                    if self._decision_sources and comparison_sources is not None:
+                        comparison_sources[(edge['from_unit'], edge['to_unit'], label)] = choices[(kind, label)]
+                    continue
+            # Every additional cross-record relation must identify something
+            # distinctive from the selected quotation at each endpoint. The
+            # author still chooses the relation kind and writes the full label.
+            sources = []
+            for side in ('from','to'):
+                unit, cue = edge.get(side+'_unit'), edge.get(side+'_source')
+                if not isinstance(unit,str) or not isinstance(cue,str):
+                    return False
+                quotes = self._unit_evidence.get((edge[side],unit),())
+                sources.append(tuple(q for q in quotes if cue in (q[:16],q[-16:])))
+            if not all(_label_binds_source(label,origins,sources[1-side]) for side,origins in enumerate(sources)):
                 return False
-            if self._decision_sources and comparison_sources is not None:
-                comparison_sources[(edge['from_unit'], edge['to_unit'], label)] = choices[label]
         return True
 
     def _relation_values(self, value, *, unpack, comparison_decisions=None, comparison_sources=None):
@@ -1076,7 +1147,7 @@ class ResponseCodec:
                         label = next((label for action,label in self.paired_choices[index]
                                       if compact_json(action)==compact_json(decision)),None)
                         require(label is not None)
-                        authored.append(dict(endpoints,label=label,relation_kind='CONTEXT_CONTRAST'))
+                        authored.append(dict(endpoints,label=label,relation_kind=self.paired_kind(decision)))
                         if self._decision_sources and comparison_sources is not None:
                             key = (endpoints['from_unit'], endpoints['to_unit'], label)
                             comparison_sources[key] = _comparison_sources(self.comparisons[index], decision)
@@ -1102,7 +1173,7 @@ class ResponseCodec:
                         edge = edges.pop(0)
                         if self.paired:
                             action = next((a for a,label in self.paired_choices[index] if edge['label']==label
-                                           and edge['relation_kind']=='CONTEXT_CONTRAST'),None)
+                                           and edge['relation_kind']==self.paired_kind(a)),None)
                             require(action is not None)
                             result['comparisons'].append(action)
                         else:
@@ -1193,4 +1264,5 @@ def response_codec(messages, *, choice_module=None, fact_key=None):
     return ResponseCodec(logical, choice_module, fact_key, comparisons=comparisons,
                          paired=material['merge_wire_version'] in PAIRED_VERSIONS,
                          decision_sources=material['merge_wire_version'] in DECISION_VERSIONS,
-                         named_requests=material['merge_wire_version'] in REQUEST_SUBJECT_VERSIONS)
+                         named_requests=material['merge_wire_version'] in REQUEST_SUBJECT_VERSIONS,
+                         request_progress=material['merge_wire_version'] in REQUEST_PROGRESS_VERSIONS)
