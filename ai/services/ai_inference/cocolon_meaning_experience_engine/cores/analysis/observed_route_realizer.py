@@ -1118,7 +1118,7 @@ class AnalysisSemanticMapArtifact:
             return {'text': analysis_semantic_projection_text(projection, record_scoped_unknowns=False)}
         if self.graph.compact_source_captions:
             return {'text': analysis_semantic_projection_text(projection, compact_source_captions=True,
-                source_ordered_detail=self.graph.source_ordered_detail)}
+                source_ordered_detail=self.graph.source_ordered_detail, original_field_sections=self.graph.original_field_sections)}
         return {'text': analysis_semantic_projection_text(projection)}
 
     def private_evidence(self):
@@ -1226,7 +1226,7 @@ def _unknown_line(quote, prefix, *, record_scoped_unknowns):
 
 
 def analysis_semantic_projection_text(projection, *, record_scoped_unknowns=True, compact_source_captions=False,
-                                      source_ordered_detail=False):
+                                      source_ordered_detail=False, original_field_sections=False):
     """Render every v3 graph without multiplying its node bodies by its edges.
 
     Only byte-identical paragraphs are coalesced within a node. Overview
@@ -1266,6 +1266,13 @@ def analysis_semantic_projection_text(projection, *, record_scoped_unknowns=True
             # appearance keeps the sequence readable below that heading.
             if body[:1] == [node['title']]:
                 body = body[1:]
+            elif (original_field_sections and len(body) > 1 and body[0] in ('考えたこと・感じたこと', '出来事・行動')
+                    and body[1] == node['title']):
+                # The first source sentence already serves as the heading.
+                # Its following field label still introduces the remaining passages.
+                body = body[:1] + body[2:]
+                if len(body) == 1 or body[1] in ('考えたこと・感じたこと', '出来事・行動'):
+                    body = body[1:]
         elif compact_source_captions:
             body = [paragraph for paragraph in body if paragraph != node['title']]
         lines.extend(['', node['title'], *body])

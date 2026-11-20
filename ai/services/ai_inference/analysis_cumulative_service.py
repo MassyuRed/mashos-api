@@ -95,6 +95,7 @@ def _saved_projection_text_matches(projection, text):
             analysis_semantic_projection_text, analysis_semantic_projection_text_legacy)
         return (text == analysis_semantic_projection_text(projection, compact_source_captions=True) or
                 text == analysis_semantic_projection_text(projection, compact_source_captions=True, source_ordered_detail=True) or
+                text == analysis_semantic_projection_text(projection, compact_source_captions=True, source_ordered_detail=True, original_field_sections=True) or
                 text == analysis_semantic_projection_text_legacy(projection) or
                 text == analysis_semantic_projection_text(projection, record_scoped_unknowns=False))
     return False

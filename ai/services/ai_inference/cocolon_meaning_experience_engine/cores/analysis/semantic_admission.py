@@ -2745,7 +2745,7 @@ def _semantic_v4_view(prepared):
     return replace(prepared.parent, material_json=prepared.material_json, request_ref=request_ref)
 
 
-def semantic_node_local_v4_plan(prepared, plan, *, merge_anchors=False, merge_action_sources=False, context_sources=False):
+def semantic_node_local_v4_plan(prepared, plan, *, merge_anchors=False, merge_action_sources=False, context_sources=False, distinct_context_sources=False):
     """Bind the complete allocation before prose; allow cross-record roots."""
     r, reason = _semantic_map_require, 'analysis_semantic_node_local_v4_plan_invalid'
     r(_semantic_map_keys(plan, {'schema_version', 'nodes'})
@@ -2760,7 +2760,7 @@ def semantic_node_local_v4_plan(prepared, plan, *, merge_anchors=False, merge_ac
     from analysis_plan_source_choices import missing_plan_sources, owner_source_regions, whole_plan_sources
     from analysis_plan_source_choices import merge_action_sources as action_rules
     owners = record_plan_owners(material, merge_anchors=merge_anchors or merge_action_sources)
-    actions = action_rules(material, owners, context_sources=context_sources) if merge_action_sources else {}
+    actions = action_rules(material, owners, context_sources=context_sources, distinct_context_sources=distinct_context_sources) if merge_action_sources else {}
     pairs = compact_action_pairs(material) if owners else {}
     required_sources = whole_plan_sources(material, owners)
     regions = owner_source_regions(material, owners, plan_reading_regions(material, pairs), required_sources) if owners else {}
@@ -2994,7 +2994,7 @@ def _semantic_fact_sentence_choices(plan, material, profile=None):
     return options
 
 
-def admit_semantic_node_local_v4_nodes_response(prepared, plan, packet, *, bound_titles=False):
+def admit_semantic_node_local_v4_nodes_response(prepared, plan, packet, *, bound_titles=False, ordered_titles=False):
     if prepared.prompt_version not in SEMANTIC_MAP_FACT_REFERENCE_PROFILES:
         return semantic_node_local_v4_nodes(prepared, plan, packet)
     semantic_node_local_v4_plan(prepared, plan)
@@ -3026,7 +3026,7 @@ def admit_semantic_node_local_v4_nodes_response(prepared, plan, packet, *, bound
             except (KeyError, TypeError):
                 raise AnalysisSemanticMapError(reason) from None
     canonical['plan_sha256'] = semantic_map_hash(plan)
-    return semantic_node_local_v4_nodes(prepared, plan, canonical, bound_titles=bound_titles)
+    return semantic_node_local_v4_nodes(prepared, plan, canonical, bound_titles=bound_titles, ordered_titles=ordered_titles)
 
 
 def _semantic_v14_visible_text(prepared, texts, quotes):
@@ -3037,7 +3037,7 @@ def _semantic_v14_visible_text(prepared, texts, quotes):
             'analysis_semantic_authored_serialization_residue')
 
 
-def semantic_node_local_v4_nodes(prepared, plan, packet, *, bound_titles=False):
+def semantic_node_local_v4_nodes(prepared, plan, packet, *, bound_titles=False, ordered_titles=False):
     """Freeze every ID/unit/root; classifications and prose remain authored."""
     semantic_node_local_v4_plan(prepared, plan)
     r, reason = _semantic_map_require, 'analysis_semantic_node_local_v4_nodes_invalid'
@@ -3070,9 +3070,13 @@ def semantic_node_local_v4_nodes(prepared, plan, packet, *, bound_titles=False):
                 title = source_title_key(node['title']) if compare_end_marks else node['title']
                 r(title not in forbidden, reason)
                 titles = set()
-        if bound_titles:
+        opening = None
+        if ordered_titles:
+            from analysis_plan_source_choices import record_opening_choices
+            opening = record_opening_choices(source_material['fields'], planned['units'])
+        if bound_titles or opening:
             from analysis_plan_source_choices import source_node_titles
-            titles = source_node_titles(source_material, planned['units'], titles)
+            titles = opening or source_node_titles(source_material, planned['units'], titles)
             r(node['title'] in titles, 'analysis_semantic_merge_title_not_in_source')
         r(not titles or node['title'] in titles, reason)
         if prepared.prompt_version in {SEMANTIC_MAP_OCCURRENCE_V20_PROFILE, SEMANTIC_MAP_OCCURRENCE_V21_PROFILE, SEMANTIC_MAP_OCCURRENCE_V22_PROFILE, SEMANTIC_MAP_OCCURRENCE_V23_PROFILE, SEMANTIC_MAP_OCCURRENCE_V24_PROFILE}:
@@ -3278,8 +3282,8 @@ def _apply_semantic_qualification_review(prepared, nodes, review):
             unit['unknowns'] = retained
 
 
-def semantic_node_local_v4_relations(prepared, plan, bodies, packet):
-    semantic_node_local_v4_nodes(prepared, plan, bodies)
+def semantic_node_local_v4_relations(prepared, plan, bodies, packet, *, ordered_titles=False):
+    semantic_node_local_v4_nodes(prepared, plan, bodies, ordered_titles=ordered_titles)
     nodes = _semantic_v4_join(plan, bodies)
     ids = {node['node_id'] for node in nodes}
     r, reason = _semantic_map_require, 'analysis_semantic_node_local_v4_relations_invalid'
@@ -3767,9 +3771,9 @@ def _semantic_plan_choices(prepared, material):
     return view, choices, allowed
 
 
-def admit_semantic_node_local_v4_plan_response(prepared, value, *, merge_anchors=False, merge_action_sources=False, context_sources=False):
+def admit_semantic_node_local_v4_plan_response(prepared, value, *, merge_anchors=False, merge_action_sources=False, context_sources=False, distinct_context_sources=False):
     if prepared.prompt_version not in {SEMANTIC_MAP_OCCURRENCE_V11_PROFILE, *SEMANTIC_MAP_FACT_REFERENCE_PROFILES}:
-        return semantic_node_local_v4_plan(prepared, value, merge_anchors=merge_anchors, merge_action_sources=merge_action_sources, context_sources=context_sources)
+        return semantic_node_local_v4_plan(prepared, value, merge_anchors=merge_anchors, merge_action_sources=merge_action_sources, context_sources=context_sources, distinct_context_sources=distinct_context_sources)
     reason = 'analysis_semantic_plan_choice_invalid'
     view, choices, allowed = _semantic_plan_choices(prepared, json.loads(prepared.material_json))
     _semantic_map_require(_semantic_map_keys(value, {'schema_version', 'source_choices_sha256', 'nodes'})
@@ -3792,7 +3796,7 @@ def admit_semantic_node_local_v4_plan_response(prepared, value, *, merge_anchors
                     _semantic_map_require(key in allowed.get(field, ()) and (field, key) not in numbered, reason)
                     quote = key
                 root['quote'] = quote
-    return semantic_node_local_v4_plan(prepared, plan, merge_anchors=merge_anchors, merge_action_sources=merge_action_sources, context_sources=context_sources)
+    return semantic_node_local_v4_plan(prepared, plan, merge_anchors=merge_anchors, merge_action_sources=merge_action_sources, context_sources=context_sources, distinct_context_sources=distinct_context_sources)
 
 
 def _semantic_plan_reading_fields(material):
@@ -4148,7 +4152,7 @@ def _semantic_occurrence_v6_messages(prepared, material, phase, bodies=None):
     return messages
 
 
-def semantic_node_local_v4_messages(prepared, phase='PLAN', *, plan=None, nodes=None):
+def semantic_node_local_v4_messages(prepared, phase='PLAN', *, plan=None, nodes=None, ordered_titles=False):
     _semantic_map_require(prepared.prompt_version in SEMANTIC_MAP_NODE_LOCAL_V4_PROFILES
         and phase in SEMANTIC_MAP_NODE_LOCAL_V4_PHASES, 'analysis_semantic_node_local_v4_phase_invalid')
     material = json.loads(prepared.material_json)
@@ -4162,7 +4166,7 @@ def semantic_node_local_v4_messages(prepared, phase='PLAN', *, plan=None, nodes=
     if phase == 'NODES' and prepared.prompt_version in SEMANTIC_MAP_FACT_REFERENCE_PROFILES:
         material['fact_source_request_ref'] = prepared.request_ref
     if phase == 'RELATIONS':
-        semantic_node_local_v4_nodes(prepared, plan, nodes)
+        semantic_node_local_v4_nodes(prepared, plan, nodes, ordered_titles=ordered_titles)
         material['candidate_nodes'] = _semantic_v4_join(plan, nodes)
     if prepared.prompt_version in SEMANTIC_MAP_FACT_ENDPOINT_PROFILES:
         return _semantic_occurrence_v6_messages(prepared, material, phase, nodes)
@@ -4233,11 +4237,14 @@ def semantic_node_local_v4_uses_compact_merge(prepared):
 
 
 def semantic_node_local_v4_wire_messages(prepared, phase='PLAN', *, plan=None, nodes=None, wire_version=None):
-    logical = semantic_node_local_v4_messages(prepared, phase, plan=plan, nodes=nodes)
     if not semantic_node_local_v4_uses_compact_merge(prepared):
-        return logical
+        return semantic_node_local_v4_messages(prepared, phase, plan=plan, nodes=nodes)
     from analysis_merge_wire import VERSION, is_compact, legacy_messages, prepare_messages
-    wire = prepare_messages(logical, version=VERSION if wire_version is None else wire_version)
+    from analysis_plan_source_choices import source_ordered_merge
+    version = VERSION if wire_version is None else wire_version
+    logical = semantic_node_local_v4_messages(prepared, phase, plan=plan, nodes=nodes,
+        **({'ordered_titles': True} if source_ordered_merge(version) else {}))
+    wire = prepare_messages(logical, version=version)
     _semantic_map_require(is_compact(wire) and legacy_messages(wire) == logical,
         'analysis_semantic_merge_message_binding_invalid')
     return wire
@@ -4255,11 +4262,13 @@ def assemble_semantic_node_local_v4_with_node_choices(prepared, packet):
     packet_keys = {'schema_version', 'phases'}
     phase_keys = {'phase', 'messages_sha256', 'raw', 'raw_sha256', 'finish_reason', 'completion_tokens'}
     if compact:
-        from analysis_merge_wire import RECORD_VERSION, OUTPUT_VERSIONS, TITLE_VERSIONS, VERSION, VERSIONS, legacy_messages, response_codec
+        from analysis_merge_wire import RECORD_VERSION, OUTPUT_VERSIONS, TITLE_VERSIONS, COMPARISON_VERSIONS, VERSION, VERSIONS, legacy_messages, response_codec
         r(packet['merge_wire_version'] in VERSIONS and semantic_node_local_v4_uses_compact_merge(prepared), reason)
         packet_keys.add('merge_wire_version')
         phase_keys.add('logical_messages_sha256')
     make_messages = semantic_node_local_v4_wire_messages if compact else semantic_node_local_v4_messages
+    from analysis_plan_source_choices import source_ordered_merge
+    ordered_titles = compact and source_ordered_merge(packet['merge_wire_version'])
     wire_options = {'wire_version': packet['merge_wire_version']} if compact else {}
     r(prepared.prompt_version in SEMANTIC_MAP_NODE_LOCAL_V4_PROFILES
         and _semantic_map_keys(packet, packet_keys)
@@ -4291,13 +4300,14 @@ def assemble_semantic_node_local_v4_with_node_choices(prepared, packet):
             plan = admit_semantic_node_local_v4_plan_response(prepared, value,
                 merge_anchors=compact and packet['merge_wire_version'] in (RECORD_VERSION, *OUTPUT_VERSIONS),
                 merge_action_sources=compact and packet['merge_wire_version'] in OUTPUT_VERSIONS,
-                context_sources=compact and packet['merge_wire_version'] == VERSION)
+                context_sources=compact and packet['merge_wire_version'] in COMPARISON_VERSIONS,
+                distinct_context_sources=compact and packet['merge_wire_version'] == VERSION)
         elif phase == 'NODES':
             nodes = admit_semantic_node_local_v4_nodes_response(prepared, plan, value,
-                bound_titles=compact and packet['merge_wire_version'] in TITLE_VERSIONS)
+                bound_titles=compact and packet['merge_wire_version'] in TITLE_VERSIONS, ordered_titles=ordered_titles)
             authored_nodes = value
         else:
-            joined = semantic_node_local_v4_relations(prepared, plan, nodes, value)
+            joined = semantic_node_local_v4_relations(prepared, plan, nodes, value, ordered_titles=ordered_titles)
     return joined, authored_nodes
 
 

@@ -423,16 +423,27 @@ def record_plan_owners(material, available=None, *, merge_anchors=False):
 class MergeActionSources:
     """Cover the short original action literally, alongside its own independent account."""
 
-    def __init__(self, action, memo, sentences, allowed, memo_choices=()):
+    def __init__(self, action, memo, sentences, allowed, memo_choices=(), context_groups=(), memo_allowed=()):
         self.action_field = action['field']
         self.memo_field = memo['field']
         self.memo_choices = tuple(memo_choices)
         self.action_text = action['text']
-        self.memo_bit = 1 << len(sentences)
-        self.required = (self.memo_bit << 1) - 1
         self.action_masks = {q: sum(1 << i for i, s in enumerate(sentences) if s in q)
                              for q in allowed}
-        masks = set(self.action_masks.values()) | {self.memo_bit}
+        self.memo_bit = 1 << len(sentences)
+        # Alternatives in one group express the same retrieval obligation. Two
+        # groups can share one bit-covering quote if the source itself joins them.
+        self.context_groups = (self.memo_choices, *context_groups)
+        if context_groups:
+            self.memo_masks = {
+                q: self.memo_bit * sum(1 << i for i, group in enumerate(self.context_groups)
+                                      if any(witness in q for witness in group))
+                for q in memo_allowed if len(q) <= 160 and q not in self.action_text}
+        else:
+            self.memo_masks = None
+        self.required = (self.memo_bit << len(self.context_groups)) - 1
+        memo_masks = self.memo_masks.values() if self.memo_masks is not None else (self.memo_bit,)
+        masks = set(self.action_masks.values()).union(memo_masks)
         self.minimum_roots = [0]
         for missing in range(1, self.required + 1):
             self.minimum_roots.append(1 + min(self.minimum_roots[missing & ~mask]
@@ -442,6 +453,8 @@ class MergeActionSources:
         if field == self.action_field:
             return self.action_masks.get(quote, 0)
         if field == self.memo_field and quote not in self.action_text:
+            if self.memo_masks is not None:
+                return self.memo_masks.get(quote, 0)
             if not self.memo_choices or (len(quote) <= 160 and any(q in quote for q in self.memo_choices)):
                 return self.memo_bit
         return 0
@@ -524,12 +537,102 @@ def _action_context_choices(memo, action, simple, allowed, leaf_index):
     return sorted(choices, key=memo['text'].index) if len(choices) <= 4 else []
 
 
-def merge_action_sources(material, owners, *, context_sources=False):
+_DIRECT_SUGGESTION = re.compile(r'(?:よう|[こごそぞとのぼもろ]う|ましょう)と' + _FINITE_REPORT + r'。$')
+_CORRECTED_ACTION = re.compile(r'(説明|回答|記述|記載|認識|見解|記録)を(?:修正した|訂正した|直した)。')
+_CHECK_TOPIC = re.compile(r'([一-鿿々ァ-ヺー]{2,12}?)(?:の予定|予定|の結果)')
+_DEFERRED_RESULT = re.compile(r'(?:かどうか|可否|可能か|できるか)[^。]{0,30}(?:確定|判明|決定|分かる|わかる)')
+_UNKNOWN_MOTIVE = re.compile(r'(?:気持ち|理由|意図|動機|事情|考え)[^。]{0,36}(?:分からない|わからない|不明だ|確かめていない)。$')
+
+
+def _distinct_context_groups(action, simple, allowed, selected, leaf_quotes):
+    """Return independent sets of source quotes for decisions and corrections.
+
+    Retain an earlier attributed proposal only when the account explicitly
+    identifies its proposer. For a correction, locate the source statement
+    being corrected and distinguish it from the motive still left open.
+    """
+    eligible = {q for q in allowed if len(q) <= 160 and q not in action and q.endswith('。')
+                and not any(c in q for c in '「」『』“”‘’？?')}
+    groups = []
+
+    def add(candidates):
+        group = tuple(dict.fromkeys(q for q in candidates if q in eligible))
+        if group and len(group) <= 4 and group not in groups:
+            groups.append(group)
+
+    # An acknowledged answer and the earlier request have different chronology.
+    # Match the explicitly named subject in both, with a leaf supporting the
+    # response; a pending reply or an expected future result cannot satisfy it.
+    if re.search(r'(?:返答|回答|返事|返信)(?:の)?後に', action):
+        topics = set()
+        for request in selected:
+            if re.search(r'(?:尋ねた|問い合わせた|聞いた)。$', request):
+                topics.update(re.findall(r'([一-鿿々ァ-ヺー]{2,16})を(?:確認|確かめ|照会|教え)', request))
+        for topic in sorted(topics):
+            if topic not in action:
+                continue
+            received = re.compile(re.escape(topic) + r'(?:の[一-鿿々ァ-ヺー]{1,16})?が'
+                                  r'(?:届き|届いた|知らされ|分かり|判明し)(?:[。、，]|た。)')
+            add(q for q in simple if received.search(q) and any(q in witness for witness in leaf_quotes))
+
+    # The stated wish to retain an explanation needs the explanation and its
+    # explicit reason. A complete adjacent quote was already selected by LEAF.
+    retained = re.search(r'(?:残したい|留めたい|保ちたい)[^。]{0,30}?(説明|記述|解説|文章)を'
+                         r'(?:伝えた|話した|述べた)。', action)
+    if retained:
+        content = re.compile(r'(?:削られた|省かれた|省略された|外された)のは[、，][^。]+'
+                             + re.escape(retained[1]) + r'だった。$')
+        add(q for q in leaf_quotes if len(parts := _sentences(q)) == 2 and ''.join(parts) == q
+            and content.search(parts[0]) and re.search(r'(?:なので|から|ため)[、，][^。]{0,48}'
+                r'(?:残したかった|留めたかった|保ちたかった)。$', parts[1]))
+
+    for participant in dict.fromkeys(_ASKED_WHO.findall(action)):
+        # A reply already bound to its addressee is required. The relative
+        # clause, rather than shared spelling, attributes another proposal.
+        if not any(participant in q and re.search(r'(?:返事|回答|返答)だった。$', q) for q in selected):
+            continue
+        role = re.escape(participant.removesuffix('本人') or participant)
+        proposer = re.compile(r'(?:先に|最初に|初めに|以前に)[^。！？]{1,36}'
+                              r'(?:勧めた|薦めた|提案した|推した)' + role + r'(?:が|は|も)')
+        followup = [line for line in simple if proposer.search(line) and _DIRECT_SUGGESTION.search(line)]
+        if followup:
+            original = re.compile(r'(?:^|[、，])' + role + r'(?:は|が)')
+            before = simple.index(followup[0])
+            earlier = [q for q in simple[:before] if original.search(q) and _DIRECT_SUGGESTION.search(q)]
+            if len(earlier) == 1:
+                add(earlier)
+            add(followup)
+        topics = _CHECK_TOPIC.findall(action)
+        add(q for q in simple if any(topic in q for topic in topics) and _DEFERRED_RESULT.search(q))
+
+    for correction in dict.fromkeys(_CORRECTED_ACTION.findall(action)):
+        changed = re.compile(re.escape(correction) + r'を(?:直した|訂正した|修正した)。$')
+        for position, (before, current) in enumerate(zip(simple, simple[1:]), 2):
+            if not (changed.search(current) and re.search(r'(?:そこ|その|これ|この|それ|指摘)', current)
+                    and re.search(r'(?:が話題になった|と指摘された|との指摘があった)。$', before)):
+                continue
+            passage = before + current
+            if passage not in eligible:
+                continue
+            add([passage])
+            after = simple[position] if position < len(simple) else ''
+            if re.search(r'(?:^|[、，])(?:その|この)', after) and _UNKNOWN_MOTIVE.search(after):
+                # A demonstrative must point to wording in the corrected
+                # account. An unrelated unknown in the next topic is optional.
+                head = re.search(r'(?:その|この)([一-鿿々ァ-ヺー]{1,20})(?:が|は|を|の)', after)
+                if head and head[1] in passage:
+                    add([after])
+    # Never force a subset chosen by iteration order in a crowded record.
+    return tuple(groups) if len(groups) <= 4 else ()
+
+
+def merge_action_sources(material, owners, *, context_sources=False, distinct_context_sources=False):
     """For the new MERGE only, reserve already selectable original sentences.
 
     A passage can record proposed, declined, completed or reported actions, even
     with different actors. Preserve its exact text without classifying any of them.
-    Five roots suffice for four sentences and one separate reading of the memo.
+    A node has two units of four roots. Extra contexts reserve only literals
+    that can fit alongside all action sentences in these eight slots.
     """
     if (not owners or material.get('history_stage', {}).get('kind') != 'MERGE'
             or material.get('author_profile') != 'semantic_map.node_local.v4.occurrence.v24'
@@ -574,7 +677,17 @@ def merge_action_sources(material, owners, *, context_sources=False):
         if any(s not in action['text'] for s in memo_sentences):
             selected = (_action_context_choices(memo, action, memo_sentences, memo_allowed,
                         material.get('leaf_source_index', ())) if context_sources else ())
-            result[record] = MergeActionSources(action, memo, sentences, allowed, selected)
+            groups = ()
+            if distinct_context_sources:
+                leaf_quotes = [row['quote'] for row in material.get('leaf_source_index', ())
+                               if isinstance(row, dict) and row.get('field') == memo['field'] and isinstance(row.get('quote'), str)]
+                groups = _distinct_context_groups(action['text'], memo_sentences, memo_allowed, selected, leaf_quotes)
+                if groups and not any(q not in action['text'] for q in selected):
+                    selected, groups = groups[0], groups[1:]
+            row = MergeActionSources(action, memo, sentences, allowed, selected, groups, memo_allowed)
+            if groups and row.minimum_roots[row.required] > 8:
+                row = MergeActionSources(action, memo, sentences, allowed, selected)
+            result[record] = row
     return result
 
 
@@ -1409,6 +1522,73 @@ def leaf_meanings(fields, units, sentences):
         (s for s in sentences.get(thought['field'], ()) if len(s) <= 240
          and thought['text'].count(s) == 1 and any(s in quote for quote in selected)),
         key=thought['text'].index)
+
+
+def source_ordered_merge(wire_version):
+    return wire_version == 'cocolon.analysis.merge_wire.v6'
+
+
+def ordered_record_sections(fields, units, fixed_parts=None):
+    """Order original excerpts by field and scalar position, without inferring an inter-field event time."""
+    by_id = {f['field']: f for f in fields}
+    roots = [r for u in units for r in u['evidence']]
+    owners = {by_id[r['field']].get('record') for r in roots}
+    if len(owners) != 1 or None in owners:
+        return None
+    owner = next(iter(owners))
+    if any(f.get('source_role') != 'ORIGINAL_INPUT' and f.get('record') in (owner, None) for f in fields):
+        return None
+    groups = {}
+    numbers = {}
+    for i, unit in enumerate(units):
+        if fixed_parts is not None and (not fixed_parts[i] or len(fixed_parts[i]) != len(unit['evidence'])):
+            return None
+        for j, root in enumerate(unit['evidence']):
+            field = by_id[root['field']]
+            path, original, quote = field.get('field_path'), field['text'], root['quote']
+            if (path not in ('memo', 'memo_action') or field.get('source_role') != 'ORIGINAL_INPUT'
+                    or field.get('supplement') is not None or field.get('fragment_is_complete_field') is not True
+                    or field.get('fragment_scalar_range') != [0, len(original)] or original.count(quote) != 1
+                    or numbers.setdefault(path, root['field']) != root['field']):
+                return None
+            start = original.index(quote)
+            phrase = fixed_parts[i][j] if fixed_parts is not None else quote
+            if phrase != quote:
+                # Literal display ranges are the sole other v24 fact form. Keep cut
+                # markers and use the assigned root's scalar offset for ordering.
+                ranges = [key for key, text in source_fact_ranges(quote).items() if text == phrase]
+                if len(ranges) != 1:
+                    return None
+                start += int(ranges[0][1:].split(':')[0])
+            sentences = _outer_sentences(phrase, original_for_overview=True)
+            parts = sentences if sentences and ''.join(sentences) == phrase else [phrase]
+            group = groups.setdefault(path, {})
+            for part in parts:
+                if any(line in ('考えたこと・感じたこと', '出来事・行動') for line in part.splitlines()):
+                    return None
+                group[start, part] = part
+                start += len(part)
+    return [(path, [group[k] for k in sorted(group)])
+            for path in ('memo', 'memo_action') if (group := groups.get(path))]
+
+
+def record_opening_choices(fields, units):
+    """Offer the first selected original sentence, including one inside a multi-sentence root."""
+    sections = ordered_record_sections(fields, units)
+    if not sections:
+        return None
+    path, lines = sections[0]
+    first = lines[0]
+    selected = {r['field'] for u in units for r in u['evidence']}
+    field = next(f for f in fields if f.get('field_path') == path and f['field'] in selected)
+    # Overlong roots can be shortened by the author during NODES. No heading
+    # anticipates a passage whose display range has not yet been chosen.
+    if (len(first) <= 80 and field['text'].count(first) == 1
+            and first in _sentences(field['text'], original_for_overview=True)
+            and any(r['field'] == field['field'] and len(r['quote']) <= 160 and first in r['quote']
+                    for u in units for r in u['evidence'])):
+        return [first, '記録にある場面']
+    return ['記録にある場面']
 
 
 def source_node_titles(material, units, literal_titles):

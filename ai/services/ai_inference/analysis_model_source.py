@@ -257,16 +257,17 @@ class SelfHostedSemanticAnalysisModelSource(SelfHostedAnalysisModelSource):
                             value = codec.decode(value)
                     if phase == 'PLAN':
                         plan = core.admit_semantic_node_local_v4_plan_response(prepared, value,
-                            merge_anchors=compact_merge, merge_action_sources=compact_merge, context_sources=compact_merge)
+                            merge_anchors=compact_merge, merge_action_sources=compact_merge, context_sources=compact_merge,
+                            distinct_context_sources=compact_merge)
                     elif phase == 'NODES':
                         from analysis_plan_source_choices import single_original_leaf
                         fresh_leaf = (prepared.prompt_version == core.SEMANTIC_MAP_OCCURRENCE_V24_PROFILE
                                       and getattr(prepared, 'kind', None) == 'LEAF'
                                       and single_original_leaf(json.loads(prepared.material_json)))
                         nodes = core.admit_semantic_node_local_v4_nodes_response(
-                            prepared, plan, value, bound_titles=compact_merge or fresh_leaf)
+                            prepared, plan, value, bound_titles=compact_merge or fresh_leaf, ordered_titles=compact_merge)
                     else:
-                        core.semantic_node_local_v4_relations(prepared, plan, nodes, value)
+                        core.semantic_node_local_v4_relations(prepared, plan, nodes, value, ordered_titles=compact_merge)
             artifact = dict(schema_version=core.semantic_node_local_v4_artifact_schema(prepared), phases=receipts)
             if compact_merge:
                 artifact['merge_wire_version'] = VERSION

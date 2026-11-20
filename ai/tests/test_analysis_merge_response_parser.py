@@ -152,8 +152,12 @@ def test_normal_compiler_keeps_raw_receipts_and_projects_each_supported_wire_ver
         assert choices == node_packet and joined['nodes'][0]['units'][0]['evidence'] == plan['nodes'][0]['units'][0]['evidence']
         assert all(sha256(row['raw'].encode()).hexdigest()==row['raw_sha256'] for row in receipt['phases'])
         assert ('h' in json.loads(receipt['phases'][1]['raw'])) == (version in wire.OUTPUT_VERSIONS)
-    assert all(view == projections[0] for view in projections)
-    assert all(nodes == compiled_nodes[0] for nodes in compiled_nodes)
+    assert all(view == projections[0] for view, version in zip(projections, wire.VERSIONS) if version != wire.VERSION)
+    assert all(body == compiled_nodes[0] for body, version in zip(compiled_nodes, wire.VERSIONS) if version != wire.VERSION)
+    current = projections[wire.VERSIONS.index(wire.VERSION)]['nodes'][0]
+    assert current['explanation'].splitlines() == [
+        '考えたこと・感じたこと', OPENING, '出来事・行動', OUTCOME, NONACTION, UNCONFIRMED, WISH]
+    assert current['evidence'] == projections[0]['nodes'][0]['evidence']
     assert OUTCOME in projections[0]['nodes'][0]['explanation'] and NONACTION in projections[0]['nodes'][0]['explanation']
 
 
@@ -210,21 +214,21 @@ def test_new_merge_rejects_a_condition_or_actor_added_to_a_node_title():
             fact_parts={root: 1}, unknowns=[])}, node_kind='STATE_CONTEXT', perspective='SELF',
             title=second, meaning='')
         node = dict(schema_version=core._semantic_v4_schema('NODES'), plan_sha256=codec.binding, nodes={'n1': entry})
-        candidates = (second, '担当者が設置できるのは翌週だけだ。', '本人が予定を電話で伝えた。', extra)
+        candidates = (first, second, '担当者が設置できるのは翌週だけだ。', '本人が予定を電話で伝えた。', extra)
         alphabet = ''.join(dict.fromkeys(wire.compact_json(messages) + wire.compact_json(node) + ''.join(candidates)))
         for title in candidates:
             entry['title'] = title
             raw = wire.compact_json(codec.encode(node))
             parser = probe.semantic_json_parser(messages, alphabet)
-            if version in wire.TITLE_VERSIONS and title != second:
+            if version in wire.TITLE_VERSIONS and title not in ((first,) if version == wire.VERSION else (first, second)):
                 with pytest.raises(ValueError):
                     advance(parser, raw)
                 with pytest.raises(core.AnalysisSemanticMapError, match='merge_title_not_in_source'):
-                    core.admit_semantic_node_local_v4_nodes_response(stage, plan, node, bound_titles=True)
+                    core.admit_semantic_node_local_v4_nodes_response(stage, plan, node, bound_titles=True, ordered_titles=version == wire.VERSION)
             else:
                 assert advance(parser, raw).can_end()
                 assert core.admit_semantic_node_local_v4_nodes_response(
-                    stage, plan, node, bound_titles=version in wire.TITLE_VERSIONS)['nodes']['n1']['title'] == title
+                    stage, plan, node, bound_titles=version in wire.TITLE_VERSIONS, ordered_titles=version == wire.VERSION)['nodes']['n1']['title'] == title
 
 
 def test_title_choices_preserve_quotation_scope_fragment_boundaries_and_record_owners():

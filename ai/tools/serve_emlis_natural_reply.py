@@ -691,7 +691,7 @@ def _semantic_relation_fact_parts(material):
     return parts
 
 
-def _semantic_node_local_v4_schema(material, pairs, unknown_pairs, *, leaf=False, record_owners=(), bound_titles=False):
+def _semantic_node_local_v4_schema(material, pairs, unknown_pairs, *, leaf=False, record_owners=(), bound_titles=False, ordered_titles=False):
     """Three private author shapes; no text repair or semantic certification."""
     from copy import deepcopy
     def obj(props):
@@ -859,9 +859,11 @@ def _semantic_node_local_v4_schema(material, pairs, unknown_pairs, *, leaf=False
                     title['not'] = dict(enum=forbidden)
         fresh_leaf = (author_profile == OCCURRENCE_V24_PROFILE and phase == 'NODES'
                       and _semantic_choice_module().single_original_leaf(material))
+        opening = (_semantic_choice_module().record_opening_choices(material['fields'], node['units'])
+                   if ordered_titles and phase == 'NODES' else None)
         if (bound_titles or fresh_leaf) and phase == 'NODES':
             title_choices = _semantic_choice_module().source_node_titles(material, node['units'], title.get('enum', ()))
-            title = dict(type='string', enum=title_choices)
+            title = dict(type='string', enum=opening or title_choices)
         meaning = text(240, 0)
         if author_profile in {OCCURRENCE_V20_PROFILE, OCCURRENCE_V21_PROFILE, OCCURRENCE_V22_PROFILE, OCCURRENCE_V23_PROFILE, OCCURRENCE_V24_PROFILE} and phase == 'NODES':
             choices = _semantic_choice_module().paired_node_meanings(
@@ -1157,7 +1159,8 @@ def semantic_output_schema(messages):
     if event_v2:
         return _semantic_event_plan_v2_schema(pairs, unknown_pairs, leaf=leaf)
     if material.get('model_schema') == NODE_LOCAL_V4_SCHEMA:
-        return _semantic_node_local_v4_schema(material, pairs, unknown_pairs, leaf=leaf, bound_titles=bound_titles)
+        return _semantic_node_local_v4_schema(material, pairs, unknown_pairs, leaf=leaf, bound_titles=bound_titles,
+            ordered_titles=_semantic_choice_module().source_ordered_merge(wire_version))
     if node_local:
         return _semantic_node_local_v3_schema(pairs, unknown_pairs, leaf=leaf)
     def text(maximum):
@@ -2382,7 +2385,9 @@ def semantic_json_parser(messages, alphabet):
 
 def _semantic_logical_json_parser(messages, alphabet):
     merge_action_sources_enabled = _semantic_merge_tuple_output(messages)
-    context_sources = (merge_action_sources_enabled and json.loads(messages[1]['content'])['merge_wire_version'] == _semantic_merge_wire_module().VERSION)
+    wire_version = json.loads(messages[1]['content'])['merge_wire_version'] if merge_action_sources_enabled else None
+    context_sources = wire_version in _semantic_merge_wire_module().COMPARISON_VERSIONS if wire_version else False
+    distinct_context_sources = wire_version == _semantic_merge_wire_module().VERSION if wire_version else False
     from lmformatenforcer import CharacterLevelParserConfig, JsonSchemaParser
     # LMFE snapshots alphabet_without_quotes while constructing its context.
     # Updating parser.config later leaves that initial snapshot unchanged.
@@ -2434,7 +2439,8 @@ def _semantic_logical_json_parser(messages, alphabet):
                 pairs = tuple(by_record.get(r['record']) for r in material['records'])
             choice_rules = _semantic_choice_module()
             if merge_action_sources_enabled:
-                by_record_action = choice_rules.merge_action_sources(material, owners, context_sources=context_sources)
+                by_record_action = choice_rules.merge_action_sources(material, owners, context_sources=context_sources,
+                    distinct_context_sources=distinct_context_sources)
                 if by_record_action:
                     actions = tuple(by_record_action.get(row['record']) for row in material['records'])
             by_region = choice_rules.owner_source_regions(material, owners, choice_rules.plan_reading_regions(material, by_record), required_sources)

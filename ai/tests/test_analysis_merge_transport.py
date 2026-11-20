@@ -17,7 +17,7 @@ def packets(monkeypatch, version=wire.RECORD_VERSION):
     monkeypatch.setattr(core, 'semantic_node_local_v4_messages', lambda _, phase='PLAN', **kwargs: fixture(phase))
     monkeypatch.setattr(core, 'admit_semantic_node_local_v4_plan_response', lambda _, value, **kwargs: value)
     monkeypatch.setattr(core, 'admit_semantic_node_local_v4_nodes_response', lambda _, plan, value, **kwargs: value)
-    monkeypatch.setattr(core, 'semantic_node_local_v4_relations', lambda _, plan, nodes, value: (plan, nodes, value))
+    monkeypatch.setattr(core, 'semantic_node_local_v4_relations', lambda _, plan, nodes, value, **kwargs: (plan, nodes, value))
     compact = dict(merge_wire_version=version, schema_version=core.semantic_node_local_v4_artifact_schema(stage), phases=[])
     historical = dict(schema_version=compact['schema_version'], phases=[])
     for phase in core.SEMANTIC_MAP_NODE_LOCAL_V4_PHASES:
@@ -356,3 +356,57 @@ def test_comparison_choices_keep_model_prose_and_each_original_skip_reason():
         reversed_edge[left], reversed_edge[right] = reversed_edge[right], reversed_edge[left]
     with pytest.raises(ValueError):
         codec.decode(dict(empty, edges=[reversed_edge]))
+
+
+def test_paired_comparison_binds_the_subject_and_both_complete_source_sentences():
+    sources = recurring_sources()
+    pairs = wire.paired_comparison_candidates(sources, None)
+    pair, = pairs
+    assert pair['subject'] == '録音機の電源'
+    assert (pair['left']['record'], pair['right']['record']) == (1, 2)
+    codec = wire.ResponseCodec(sources, None, None, comparisons=pairs, paired=True)
+    logical = dict(schema_version=wire.MODEL_SCHEMA + '.relations', nodes_sha256=codec.binding,
+                   qualification_review={}, edges=[], overview={})
+    skipped = codec.encode(logical)
+    assert codec.decode(skipped) == logical
+    for action, label in wire.paired_decisions(pair):
+        selected = {**skipped, 'comparisons': [action]}
+        value = codec.decode(selected)
+        assert value['edges'][0]['label'] == label
+        assert label == sources['fields'][0]['text'] + action[3] + sources['fields'][1]['text']
+        assert codec.encode(value, comparison_decisions=[action]) == selected
+    for invalid in (['COMPARE', '電源', 1, '一方、', 1], ['COMPARE', pair['subject'], True, '一方、', 1],
+                    ['COMPARE', pair['subject'], 1, 'その結果、', 1],
+                    ['COMPARE', sources['fields'][0]['text'], 'CONTEXT_CONTRAST']):
+        with pytest.raises(ValueError):
+            codec.decode({**skipped, 'comparisons': [invalid]})
+    for role in ('SUPPLEMENT', 'CORRECTION'):
+        sources['fields'][1]['source_role'] = role
+        assert not wire.paired_comparison_candidates(sources, None)
+
+
+def test_two_different_objects_and_a_within_day_time_phrase_are_not_a_recurring_subject():
+    sources = recurring_sources()
+    for index, note in enumerate(('夕食前に封筒の寸法を測った。', '出発前に脚立の寸法を測った。')):
+        sources['fields'][index]['text'] = note
+        sources['candidate_nodes'][index]['units'][0]['evidence'][0]['quote'] = note
+    assert not wire.paired_comparison_candidates(sources, None)
+    codec = wire.ResponseCodec(sources, None, None, paired=True)
+    logical = dict(schema_version=wire.MODEL_SCHEMA + '.relations', nodes_sha256=codec.binding,
+                   qualification_review={}, edges=[], overview={})
+    accepted = codec.encode(logical)
+    first, second = [r['text'] for r in sources['fields'][:2]]
+    edge = dict(from_unit='n1.u1', to_unit='n2.u1', from_source=first[:16], to_source=second[:16],
+                label=first+'一方、'+second, relation_kind='CONTEXT_CONTRAST')
+    edge.update({'from':'n1','to':'n2'})
+    with pytest.raises(ValueError):
+        codec.decode({**accepted, 'edges': [edge]})
+
+    for label,accepted_label in [(first + 'と考えた。',False), (first + '脚立。',False),
+            ('封筒と脚立を調べた。',False), ('封筒の寸法を測ったことと、脚立の寸法を測ったことを読み分けた。',True)]:
+        candidate = dict(edge,relation_kind='SHARED_MEANING',label=label)
+        if accepted_label:
+            assert codec.decode({**accepted, 'edges':[candidate]})['edges']==[candidate]
+        else:
+            with pytest.raises(ValueError):
+                codec.decode({**accepted, 'edges':[candidate]})

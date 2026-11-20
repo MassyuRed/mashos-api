@@ -84,15 +84,16 @@ def response_parser(logical, codec):
         header = ('{"schema_version":"cocolon.analysis.semantic_map.node_local.model.v4.relations",'
                   '"nodes_sha256":' + quoted(codec.binding) + ',"qualification_review":')
         count = len(codec.qualification_items)
-        tail = (('passthrough',),)
+        tail = (('passthrough',0) if codec.paired else ('passthrough',),)
         if codec.comparisons:
             # A COMPARE row supplies a logical edge; a declined candidate
             # supplies no edge. Both remain explicit in the received bytes.
             def candidates(index, has_edge):
                 if index == len(codec.comparison_endpoints):
+                    rest = ('passthrough',has_edge) if codec.paired else ('passthrough',)
                     extra = (('alternatives', (
-                        (_literal(']', ']'), ('passthrough',)),
-                        (_literal('{', ',{'), ('passthrough',)))),) if has_edge else (('passthrough',),)
+                        (_literal(']', ']'), rest),
+                        (_literal('{', ',{'), rest))),) if has_edge else (rest,)
                     return (_literal('],"edges":[', ''),) + extra
                 ep = codec.comparison_endpoints[index]
                 comma = (_literal(',', ''),) if index else ()
@@ -100,8 +101,12 @@ def response_parser(logical, codec):
                     quoted(key) + ':' + quoted(value) for key, value in ep.items()) + ',"label":'
                 accept = (_literal('["COMPARE",', edge), _scalar('label'),
                           _literal(',', ',"relation_kind":'), _scalar(), _literal(']', '}'))
+                if codec.paired:
+                    spells = [('['+','.join(quoted(part) for part in action)+']',edge+quoted(label)+',"relation_kind":"CONTEXT_CONTRAST"}')
+                              for action,label in codec.paired_choices[index]]
+                    accept = (('spelling',spells),)
                 skip = (('spelling', [(quoted(reason), '') for reason in codec.comparison_skips]),)
-                return comma + (('alternatives', (accept + candidates(index + 1, True),
+                return comma + (('alternatives', (accept + candidates(index + 1, has_edge + 1),
                                                    skip + candidates(index + 1, has_edge))),)
             tail = (_literal(',"comparisons":[', ',"edges":['),) + candidates(0, False)
         return ResponseParser(logical, codec, quoted,
@@ -220,7 +225,18 @@ class ResponseParser(CharacterLevelParser):
 
     def get_allowed_characters(self):
         if self.ops and self.ops[0][0] == 'passthrough':
-            return self.logical.get_allowed_characters()
+            allowed = self.logical.get_allowed_characters()
+            if '}' in allowed and len(self.ops[0])>1:
+                # At the end of an ordinary edge check the same two source bindings as API admission.
+                # Other nested/outer object endings do not parse as a completed edge prefix.
+                try:
+                    current = json.loads(self.projected_prefix() + '}],"overview":{}}')['edges']
+                except (ValueError,KeyError):
+                    pass
+                else:
+                    if not self.codec.free_comparisons_allowed(current[self.ops[0][1]:]):
+                        return ''.join(c for c in allowed if c!='}')
+            return allowed
         if self.ops and self.ops[0][0] == 'scalar':
             return self._scalar_chars()
         return ''.join(self._choices())
