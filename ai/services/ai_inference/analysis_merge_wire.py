@@ -857,6 +857,11 @@ def comparison_endpoints(candidate):
             'from_source': left['cue'], 'to_source': right['cue']}
 
 
+def _comparison_source_pair(edge):
+    return tuple((edge.get(side), edge.get(side + '_unit'), edge.get(side + '_source'))
+                 for side in ('from', 'to'))
+
+
 def _comparison_sources(candidate, decision):
     # Root identity keeps overlapping quotations from widening the chosen sentence.
     return tuple((endpoint['field'], endpoint['quote'], endpoint['sentences'][position - 1])
@@ -968,6 +973,8 @@ class ResponseCodec:
         self.paired_choices = [paired_decisions(c) for c in comparisons] if paired else []
         self.comparisons = comparisons
         self.comparison_endpoints = tuple(comparison_endpoints(c) for c in comparisons)
+        pairs = tuple(_comparison_source_pair(edge) for edge in self.comparison_endpoints)
+        self._reserved_source_pairs = pairs + tuple(pair[::-1] for pair in pairs)
         self.comparison_skips = COMPARISON_SKIPS
         self.phase = material['author_phase']
         self.plan_units = ()
@@ -1064,6 +1071,9 @@ class ResponseCodec:
             return True
         for edge in edges:
             if any(type(edge.get(key)) is not str for key in ('from','to','label')):
+                return False
+            # The explicit decision owns these exact source choices in either direction.
+            if self._request_progress and _comparison_source_pair(edge) in self._reserved_source_pairs:
                 return False
             l = self._owners.get(edge.get('from'),set())
             r = self._owners.get(edge.get('to'),set())
@@ -1167,14 +1177,8 @@ class ResponseCodec:
                         authored.append(dict(endpoints, label=decision[1], relation_kind=decision[2]))
                 # A skipped or already authored pair cannot be reintroduced
                 # with exactly those same source choices in the free array.
-                def source_pair(edge):
-                    return tuple((edge.get(side), edge.get(side + '_unit'), edge.get(side + '_source'))
-                                 for side in ('from', 'to'))
-                reserved = [source_pair(ep) for ep in bindings]
                 for edge in edges:
-                    require(type(edge) is dict)
-                    selected = source_pair(edge)
-                    require(selected not in reserved and selected[::-1] not in reserved)
+                    require(type(edge) is dict and _comparison_source_pair(edge) not in self._reserved_source_pairs)
                 edges = authored + edges
             else:
                 result['comparisons'] = []
