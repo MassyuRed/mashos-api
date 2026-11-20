@@ -627,7 +627,7 @@ def _distinct_context_groups(action, simple, allowed, selected, leaf_quotes):
 
 
 def uses_speaker_context(version):
-    return version in ('cocolon.analysis.merge_wire.v8', 'cocolon.analysis.merge_wire.v9')
+    return version in ('cocolon.analysis.merge_wire.v8', 'cocolon.analysis.merge_wire.v9', 'cocolon.analysis.merge_wire.v10')
 
 
 _NARRATOR = frozenset(('私', 'わたし', '僕', 'ぼく', '俺', 'おれ', '自分'))
@@ -693,7 +693,7 @@ def _speaker_context_groups(memo, action, selected, allowed):
 
 
 def uses_attributed_context(version):
-    return version == 'cocolon.analysis.merge_wire.v9'
+    return version in ('cocolon.analysis.merge_wire.v9', 'cocolon.analysis.merge_wire.v10')
 
 
 _NARRATOR_SUBJECT = r'(?:私|わたし|僕|ぼく|俺|おれ)(?:は|が)'
@@ -1651,7 +1651,7 @@ def leaf_meanings(fields, units, sentences):
 
 
 def source_ordered_merge(wire_version):
-    return wire_version in ('cocolon.analysis.merge_wire.v6', 'cocolon.analysis.merge_wire.v7', 'cocolon.analysis.merge_wire.v8', 'cocolon.analysis.merge_wire.v9')
+    return wire_version in ('cocolon.analysis.merge_wire.v6', 'cocolon.analysis.merge_wire.v7', 'cocolon.analysis.merge_wire.v8', 'cocolon.analysis.merge_wire.v9', 'cocolon.analysis.merge_wire.v10')
 
 
 def ordered_record_sections(fields, units, fixed_parts=None):

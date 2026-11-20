@@ -103,7 +103,7 @@ def test_real_generator_keeps_the_full_model_prompt_and_one_greedy_sequence(monk
     assert captured['tokenize'][0][0] == messages
 
 
-def _request_relation_messages(first, second, report, third):
+def _request_relation_messages(first, second, report, third, *, version=wire.REQUEST_PROGRESS_VERSION):
     from cocolon_meaning_experience_engine.cores.analysis import semantic_admission as core
     from test_analysis_merge_transport import _request_progress_material, source_merge
     from test_analysis_occurrence_v17_record_owners import packet
@@ -125,7 +125,7 @@ def _request_relation_messages(first, second, report, third):
     nodes = core.admit_semantic_node_local_v4_nodes_response(stage, plan, dict(
         schema_version=core._semantic_v4_schema('NODES'), plan_sha256=codec.binding, nodes=entries))
     return core.semantic_node_local_v4_wire_messages(stage, 'RELATIONS', plan=plan, nodes=nodes,
-                                                      wire_version=wire.REQUEST_PROGRESS_VERSION)
+                                                      wire_version=version)
 
 
 @pytest.mark.parametrize('proposal,report,reply,can_follow', [
@@ -211,3 +211,77 @@ def test_native_plan_retains_the_prior_speakers_evidence_at_eight_slots():
             first_unit = list(units[0])
             first_unit[position] = (1, WORDS+RECEPTION)
             assert not native_accepts([first_unit, units[1]])
+
+
+@pytest.mark.parametrize('proposal,update,reply,follows', [
+    ('提案したが、送ったかは確認していない', 'があった', 'に返事をし、注文はしていない', True),
+    ('提案した', 'が届いた', 'が届いたが、まだ返事はしていない', True),
+    ('提案しなかった', 'が届いた', 'が届いた', False),
+    ('提案した', 'が届いたら確認する', 'に返事をする予定だ', False),
+])
+def test_native_judgments_share_one_prefix_and_bind_the_reported_request(proposal, update, reply, follows):
+    from test_analysis_node_local_native_profile import advance
+
+    left = '案内所への部品依頼を' + proposal + '。'
+    right = '同僚の交換部品の依頼連絡' + reply + '。'
+    witness = '同僚から交換部品を案内所へ頼んだと連絡' + update + '。'
+    messages = _request_relation_messages(left, right, witness, '雑誌の記事を整理した。', version=wire.JUDGMENT_VERSION)
+    codec = wire.response_codec(messages)
+    candidate, = json.loads(messages[1]['content'])['comparison_candidates']
+    assert [candidate[key]['sentences'] for key in ('left', 'right')] == [[left], [right]]
+    assert candidate['left']['recorded_on'] < candidate['right']['recorded_on']
+    assert candidate['subject'] == '交換部品' and candidate['subject_witness']['recipient'] == '案内所'
+    assert candidate['subject_witness']['right']['quote'] == witness
+    menu = candidate['judgment_choices']
+    kinds = {'対照': 'CONTEXT_CONTRAST', '別件': None, '材料不足': None}
+    if follows:
+        kinds['同じ依頼の経過'] = 'SHARED_MEANING'
+    assert {row[0] for row in menu} == set(kinds)
+    assert all(len(row) == 5 and row[1:3] == ['交換部品', 1] and row[4] == 1 for row in menu)
+    overview = dict(node_refs=['n1', 'n2', 'n3'], title_proposal='', title='3件の記録を振り返って')
+    blank = codec.encode(dict(schema_version=wire.MODEL_SCHEMA + '.relations', nodes_sha256=codec.binding,
+                              qualification_review={}, edges=[], overview=overview))
+    alphabet = ''.join(dict.fromkeys(wire.compact_json(messages) + wire.compact_json(blank) +
+                                    '対同別材先の記録では、別の宛先123 '))
+    native = probe.semantic_json_parser(messages, alphabet)
+    start = wire.compact_json(blank).split('"comparisons":[', 1)[0] + '"comparisons":[["'
+    assert set(advance(native, start).get_allowed_characters()) == {name[0] for name in kinds}
+    for choice in menu:
+        physical = dict(blank, comparisons=[choice])
+        completed = advance(native, wire.compact_json(physical))
+        assert completed.can_end()
+        logical = codec.decode(physical)
+        assert json.loads(completed.projected_prefix()) == logical
+        assert codec.encode(logical, comparison_decisions=[choice]) == physical
+        kind = kinds[choice[0]]
+        assert [(e['relation_kind'], e['from'], e['to'], e['label'])
+                for e in logical['edges']] == ([(kind, 'n1', 'n2', left + choice[3] + right)] if kind else [])
+    for forged in (['同じ依頼の経過','別の宛先',1,'後の記録では、',1],
+                   ['同じ依頼の経過','交換部品',1,'先の記録では、',1],
+                   ['別件','交換部品',1,'線なし',2], 'DIFFERENT_SUBJECT'):
+        physical = dict(blank, comparisons=[forged])
+        with pytest.raises(ValueError):
+            advance(native, wire.compact_json(physical))
+        with pytest.raises(ValueError):
+            codec.decode(physical)
+
+
+def test_a_different_addressee_does_not_get_a_shared_request_judgment():
+    from test_analysis_node_local_native_profile import advance
+
+    messages = _request_relation_messages('案内所への部品依頼を提案した。', '同僚の交換部品の依頼連絡に返事をした。',
+        '同僚から交換部品を救護班へ頼んだと連絡があった。', '雑誌の記事を整理した。', version=wire.JUDGMENT_VERSION)
+    codec = wire.response_codec(messages)
+    assert not codec.comparisons
+    blank = codec.encode(dict(schema_version=wire.MODEL_SCHEMA + '.relations', nodes_sha256=codec.binding,
+        qualification_review={}, edges=[], overview=dict(node_refs=['n1', 'n2', 'n3'], title_proposal='', title='3件の記録を振り返って')))
+    false_review = dict(blank)
+    false_review['comparisons'] = [['同じ依頼の経過','交換部品',1,'後の記録では、',1]]
+    good, bad = wire.compact_json(blank), wire.compact_json(false_review)
+    alphabet = ''.join(dict.fromkeys(wire.compact_json(messages) + good + bad + ' '))
+    native = probe.semantic_json_parser(messages, alphabet)
+    assert advance(native, good).can_end()
+    with pytest.raises(ValueError):
+        advance(native, bad)
+    with pytest.raises(ValueError):
+        codec.decode(false_review)

@@ -99,6 +99,20 @@ def response_parser(logical, codec):
                 comma = (_literal(',', ''),) if index else ()
                 edge = (',' if has_edge else '') + '{' + ','.join(
                     quoted(key) + ':' + quoted(value) for key, value in ep.items()) + ',"label":'
+                if codec.judgments:
+                    kept = candidates(index + 1, has_edge + 1)
+                    skipped = candidates(index + 1, has_edge)
+                    labels = {tuple(action): label for action, label in codec.paired_choices[index]}
+                    choices = []
+                    for choice in codec.judgments[index]:
+                        decision = codec.judgment_decision(index, choice)
+                        spelling = '[' + ','.join(quoted(part) for part in choice) + ']'
+                        if isinstance(decision, str):
+                            choices.append((spelling, '', skipped))
+                        else:
+                            logical = edge + quoted(labels[tuple(decision)]) + ',"relation_kind":' + quoted(codec.paired_kind(decision)) + '}'
+                            choices.append((spelling, logical, kept))
+                    return comma + (('spelling', choices),)
                 accept = (_literal('["COMPARE",', edge), _scalar('label'),
                           _literal(',', ',"relation_kind":'), _scalar(), _literal(']', '}'))
                 if codec.paired:
@@ -198,17 +212,18 @@ class ResponseParser(CharacterLevelParser):
                 else:
                     choices = op[1]
                 buckets = {}
-                for physical, logical in choices:
-                    buckets.setdefault(physical[0], []).append((physical[1:], logical))
+                for physical, logical, *continuation in choices:
+                    buckets.setdefault(physical[0], []).append((physical[1:], logical, *continuation))
                 for char, values in buckets.items():
                     if values[0][0]:
                         options[char] = self._next((('spelling', values),) + tail)
                     else:
                         assert len(values) == 1
-                        logical = values[0][1]
+                        _, logical, *continuation = values[0]
                         parser = _advance(self.logical, logical)
                         if parser is not None:
-                            options[char] = self._next(tail, parser, logical)
+                            rest = continuation[0] if continuation else ()
+                            options[char] = self._next(rest + tail, parser, logical)
             else:
                 raise ValueError('analysis_merge_native_step_invalid')
         self._options = options

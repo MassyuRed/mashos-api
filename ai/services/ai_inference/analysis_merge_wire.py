@@ -18,8 +18,9 @@ PAIRED_VERSION = 'cocolon.analysis.merge_wire.v6'
 DECISION_VERSION = 'cocolon.analysis.merge_wire.v7'
 REQUEST_SUBJECT_VERSION = 'cocolon.analysis.merge_wire.v8'
 REQUEST_PROGRESS_VERSION = 'cocolon.analysis.merge_wire.v9'
-VERSION = REQUEST_PROGRESS_VERSION
-REQUEST_PROGRESS_VERSIONS = (REQUEST_PROGRESS_VERSION,)
+JUDGMENT_VERSION = 'cocolon.analysis.merge_wire.v10'
+VERSION = JUDGMENT_VERSION
+REQUEST_PROGRESS_VERSIONS = (REQUEST_PROGRESS_VERSION, JUDGMENT_VERSION)
 REQUEST_SUBJECT_VERSIONS = (REQUEST_SUBJECT_VERSION, *REQUEST_PROGRESS_VERSIONS)
 DECISION_VERSIONS = (DECISION_VERSION, *REQUEST_SUBJECT_VERSIONS)
 PAIRED_VERSIONS = (PAIRED_VERSION, *DECISION_VERSIONS)
@@ -85,7 +86,7 @@ def instruction(version, phase):
             '何を話したかが分からない場面では、同じ記録の思考欄全文から話者と発言内容が一緒に分かる原文を選びます。'
             '葉の引用以外の原文も選べます。別の日に同じ対象への判断が変わった場合は、'
             'それぞれの日の判断と、その時に分かっていた条件を各記録の単位に残します。')
-    if version in TITLE_VERSIONS and phase == 'RELATIONS':
+    if version in TITLE_VERSIONS and phase == 'RELATIONS' and version != JUDGMENT_VERSION:
         guidance += (' 線を選ぶ前に、同じ対象が再び出た日の単位を突き合わせます。'
             '両方の原引用から、どの条件で何を選び、後にどの条件で何を選んだか説明できる組は、'
             'その二つの単位を選び、具体的な条件と行動を線の文にします。'
@@ -107,6 +108,15 @@ def instruction(version, phase):
     if version in PAIRED_VERSIONS and phase == 'PLAN':
         guidance += (' 同じ思考欄に複数の行があれば、それぞれ別の発言・条件・訂正です。'
             '各行から少なくとも一候補を原文のまま含めます。一つの引用で複数行を満たせます。')
+    if version == JUDGMENT_VERSION and phase == 'RELATIONS':
+        return guidance + (' comparison_candidatesごとに左右の記録日、sentencesの各原文とsubject_witnessを読みます。'
+            '依頼物とrecipient（宛先）が一致しても、発言した人・伝えた人・自分で確かめたことは別々に扱います。'
+            '各組のjudgment_choicesから、両方の文に沿う一行をそのままcomparisonsの同じ位置に書きます。'
+            '形は[判断,対象,左の文番号,接続語,右の文番号]です。判断の条件や選択の違いは「対照」、'
+            '同じ依頼物を同じ宛先へ頼む提案とその後の連絡・応答は「同じ依頼の経過」です。'
+            '両日から対象や案件の違いを読み取れるときは「別件」、対応を判断する材料が足りないときは「材料不足」。'
+            '進行を選んでも、本人が送信したことや納品までを意味しません。別題の否定や返事の有無も含め原文どおり残します。'
+            '判断した組はedgesへ重ねません。ほかに説明できる関係は両端の原文を選んで書き、なければedgesは空配列です。')
     if version in PAIRED_VERSIONS and phase == 'RELATIONS':
         difference = '判断の対象が違う場合は' if version in REQUEST_SUBJECT_VERSIONS else '別の物や判断なら'
         guidance += (' comparison_candidatesは対象を照合するための原文です。subjectとsubject_witnessの'
@@ -407,6 +417,8 @@ def _memo_context_menu(material, fields, choice_module, *, version):
 # Recurring spelling is a retrieval cue, never a determination that events
 # have the same object, actor, conditions, or outcome.
 COMPARISON_SKIPS = ('DIFFERENT_SUBJECT', 'INSUFFICIENT_EVIDENCE')
+JUDGMENT_CODES = {'対照': 'COMPARE', '同じ依頼の経過': 'FOLLOW_REQUEST',
+                  '別件': 'DIFFERENT_SUBJECT', '材料不足': 'INSUFFICIENT_EVIDENCE'}
 
 
 def comparison_candidates(material):
@@ -832,8 +844,11 @@ def paired_decisions(candidate):
     left, right = candidate['left'],candidate['right']
     topic = candidate['subject']
     relevant = (topic,*candidate['wording'])
+    progress = candidate.get('request_progress_choices', ())
+    if 'judgment_choices' in candidate:
+        progress = [['FOLLOW_REQUEST', *choice[1:]] for choice in candidate['judgment_choices'] if choice[0] == '同じ依頼の経過']
     options = [(action, left['sentences'][action[2] - 1] + action[3] + right['sentences'][action[4] - 1])
-               for action in candidate.get('request_progress_choices', ())]
+               for action in progress]
     for li, first in enumerate(left['sentences'],1):
         for ri, second in enumerate(right['sentences'],1):
             if 'decision_pairs' in candidate and [li, ri] not in candidate['decision_pairs']:
@@ -849,6 +864,24 @@ def paired_decisions(candidate):
                 if len(label) <= 80:
                     options.append((['COMPARE',topic,li,join,ri],label))
     return options
+
+
+def _judgment_candidate(row, days):
+    # Every answer names the same subject and an authorized pair of original sentences.
+    # Choosing to omit a line retains the exact material the author has reviewed.
+    decisions = [action for action, _ in paired_decisions(row)]
+    names = {code: text for text, code in JUDGMENT_CODES.items()}
+    choices = [[names[action[0]], *action[1:]] for action in decisions]
+    pairs = dict.fromkeys((action[2], action[4]) for action in decisions)
+    choices.extend([names[code], row['subject'], li, '線なし', ri]
+                   for li, ri in pairs for code in COMPARISON_SKIPS)
+    result = dict(row, judgment_choices=choices)
+    result.pop('request_progress_choices', None)
+    for side in ('left', 'right'):
+        ep = row[side]
+        day = days.get(ep['record'])
+        result[side] = dict(ep, recorded_on=day.isoformat() if day is not None else None)
+    return result
 
 
 def comparison_endpoints(candidate):
@@ -892,6 +925,9 @@ def prepare_messages(messages, *, version=VERSION, choice_module=None):
         _visible_sources(material, fields)
         _range_lengths(material)
     if comparisons:
+        if version == JUDGMENT_VERSION:
+            days = _record_days(material)
+            comparisons = [_judgment_candidate(row, days) for row in comparisons]
         material['comparison_candidates'] = comparisons
     material['merge_wire_version'] = version
     material['merge_original_messages_sha256'] = messages_digest(messages)
@@ -972,6 +1008,7 @@ class ResponseCodec:
         self.paired = paired
         self.paired_choices = [paired_decisions(c) for c in comparisons] if paired else []
         self.comparisons = comparisons
+        self.judgments = [row['judgment_choices'] for row in comparisons if 'judgment_choices' in row]
         self.comparison_endpoints = tuple(comparison_endpoints(c) for c in comparisons)
         pairs = tuple(_comparison_source_pair(edge) for edge in self.comparison_endpoints)
         self._reserved_source_pairs = pairs + tuple(pair[::-1] for pair in pairs)
@@ -1202,8 +1239,18 @@ class ResponseCodec:
         result.update(edges=edges, overview=value['overview'])
         return result
 
+    def judgment_decision(self, index, choice):
+        # JSON scalar types matter here: true is not sentence one.
+        require(any(compact_json(item) == compact_json(choice) for item in self.judgments[index]))
+        code = JUDGMENT_CODES[choice[0]]
+        return code if code in COMPARISON_SKIPS else [code, *choice[1:]]
+
     def decode(self, raw, *, comparison_sources=None):
         if self.phase == 'RELATIONS':
+            if self.judgments:
+                decisions = raw.get('comparisons') if type(raw) is dict else None
+                require(type(decisions) is list and len(decisions) == len(self.judgments))
+                raw = dict(raw, comparisons=[self.judgment_decision(i, choice) for i, choice in enumerate(decisions)])
             return self._relation_values(raw, unpack=True, comparison_sources=comparison_sources)
         require(type(raw) is dict and set(raw) == {'h', 'n'} and raw['h'] == self.binding
                 and type(raw['n']) is list)
@@ -1239,7 +1286,15 @@ class ResponseCodec:
     def encode(self, value, *, comparison_decisions=None):
         """Inverse, used to check that no model selection is lost in a physical response."""
         if self.phase == 'RELATIONS':
-            raw = self._relation_values(value, unpack=False, comparison_decisions=comparison_decisions)
+            selected = comparison_decisions
+            if self.judgments and selected is not None:
+                require(type(selected) is list and len(selected) == len(self.judgments))
+                selected = [self.judgment_decision(i, choice) for i, choice in enumerate(selected)]
+            raw = self._relation_values(value, unpack=False, comparison_decisions=selected)
+            if self.judgments:
+                raw['comparisons'] = comparison_decisions if comparison_decisions is not None else [
+                    next(choice for choice in self.judgments[i] if self.judgment_decision(i, choice) == decision)
+                    for i, decision in enumerate(raw['comparisons'])]
             require(messages_digest(self.decode(raw)) == messages_digest(value))
             return raw
         require(comparison_decisions is None)
