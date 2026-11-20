@@ -432,8 +432,33 @@ def test_decision_comparisons_use_the_object_of_the_action_and_allow_skipping():
     for skip in wire.COMPARISON_SKIPS:
         assert codec.decode(dict(compact, comparisons=[skip]))['edges'] == []
     for decision, label in wire.paired_decisions(candidate):
-        edge, = codec.decode(dict(compact, comparisons=[decision]))['edges']
+        sources = {}
+        physical = dict(compact, comparisons=[decision])
+        edge, = codec.decode(physical, comparison_sources=sources)['edges']
         assert edge['label'] == label and notes[1] in label
+        left, right = sources[(edge['from_unit'], edge['to_unit'], label)]
+        assert left == (1, notes[0], '条件が合わず購入せず、記録だけ残した。')
+        assert right == (2, notes[1], notes[1])
+        old_codec = wire.ResponseCodec(material, None, None, comparisons=[candidate], paired=True)
+        prior_sources = {}
+        assert old_codec.decode(physical, comparison_sources=prior_sources)['edges'] == [edge]
+        assert prior_sources == {}
+    # A supported pair outside the offered decisions also binds its two chosen sentences in either direction.
+    free = wire.ResponseCodec(material, None, None, paired=True, decision_sources=True)
+    for swapped in (False, True):
+        row = dict(candidate, left=candidate['right'], right=candidate['left']) if swapped else candidate
+        decision, label = wire.paired_decisions(row)[0]
+        edge = dict(wire.comparison_endpoints(row), label=label, relation_kind='CONTEXT_CONTRAST')
+        sources = {}
+        physical = dict(free.encode(logical), edges=[edge])
+        assert free.decode(physical, comparison_sources=sources)['edges'] == [edge]
+        left, right = sources[(edge['from_unit'], edge['to_unit'], label)]
+        assert (left, right) == tuple((row[side]['field'], row[side]['quote'], row[side]['sentences'][0])
+                                      for side in ('left', 'right'))
+        with pytest.raises(ValueError):
+            free.decode(dict(physical, edges=[dict(edge, label='別の内容')]))
+        with pytest.raises(ValueError):
+            codec.decode(dict(compact, comparisons=['INSUFFICIENT_EVIDENCE'], edges=[edge]))
     other = '顕微鏡の状態を調べた。条件が合わず容器を購入せず、記録だけ残した。'
     material['fields'][0]['text'] = other
     material['candidate_nodes'][0]['units'][0]['evidence'][0]['quote'] = other

@@ -47,3 +47,36 @@ def test_long_selected_range_stays_with_bound_original_offset_and_keeps_its_cut_
     chosen=list(choices.source_fact_ranges(quote).values())[-1]
     assert choices.ordered_record_sections([field],roots,[[late,chosen]]) == [('memo',[chosen,late])]
     assert choices.record_opening_choices([field],roots) == ['記録にある場面']
+
+
+def test_comparison_detail_uses_the_two_chosen_sentences_and_keeps_the_complete_node():
+    from dataclasses import replace
+    from cocolon_meaning_experience_engine.cores.analysis import intent_compiler, semantic_admission as core
+    from test_analysis_v13_separate_record_titles import stages
+    context = '帰宅して机の上を片付けた。'
+    asked = '原稿の提出先を問い合わせた。'
+    replied = '翌日、提出先の返事が来た。'
+    after = '昼食は家で食べた。'
+    _, prepared, plan, bodies = stages(context + asked, replied + after)
+    nodes = core._semantic_v4_join(plan, bodies)
+    for node in nodes:
+        del node['node_id']
+    left, right = [n['units'][0] for n in nodes]
+    left_root, right_root = left['evidence'][0], right['evidence'][0]
+    label = asked + '一方、' + replied
+    edge = {'from': 'n1', 'to': 'n2', 'from_unit': 'n1.u1', 'to_unit': 'n2.u1',
+            'label': label, 'relation_kind': 'CONTEXT_CONTRAST'}
+    packet = dict(schema_version=core.SEMANTIC_MAP_NODE_LOCAL_V3_SCHEMA, nodes=nodes, edges=[edge],
+                  overview=dict(node_refs=['n1', 'n2'], title='原稿の提出先について'))
+    prepared = replace(prepared, prompt_version=core.SEMANTIC_MAP_NODE_LOCAL_V3_PROFILE)
+    render = intent_compiler._expand_analysis_semantic_node_local_v3
+    options = dict(fact_endpoints=True, mark_record_ownership=True)
+    old = render(prepared, packet, **options)
+    source = {('n1.u1', 'n2.u1', label): ((left_root['field'], left_root['quote'], asked),
+                                           (right_root['field'], right_root['quote'], replied))}
+    actual = render(prepared, packet, comparison_sources=source, **options)
+    assert actual['nodes'] == old['nodes'] and actual['overview'] == old['overview']
+    assert actual['edges'][0]['label'] == old['edges'][0]['label']
+    detail = actual['edges'][0]['explanation']
+    assert asked in detail and replied in detail and context not in detail and after not in detail
+    assert context in old['edges'][0]['explanation'] and after in old['edges'][0]['explanation']

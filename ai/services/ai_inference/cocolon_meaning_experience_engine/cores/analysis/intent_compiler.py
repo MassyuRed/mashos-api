@@ -3962,7 +3962,9 @@ def expand_analysis_semantic_event_plan(prepared, packet):
         from .semantic_admission import (assemble_semantic_node_local_v4_with_node_choices,
             SEMANTIC_MAP_NODE_LOCAL_V3_PROFILE, SEMANTIC_MAP_FACT_ENDPOINT_PROFILES, SEMANTIC_MAP_CONTENT_PLAN_PROFILES,
             SEMANTIC_MAP_VISIBLE_SOURCE_PROFILES, SEMANTIC_MAP_FACT_PROSE_PROFILES)
-        joined, authored_nodes = assemble_semantic_node_local_v4_with_node_choices(prepared, packet)
+        comparison_sources = {}
+        joined, authored_nodes = assemble_semantic_node_local_v4_with_node_choices(
+            prepared, packet, comparison_sources=comparison_sources)
         fixed_record_units = set()
         if prepared.prompt_version in SEMANTIC_MAP_VISIBLE_SOURCE_PROFILES:
             from .semantic_admission import _semantic_node_fact_sources
@@ -3999,7 +4001,7 @@ def expand_analysis_semantic_event_plan(prepared, packet):
             replace(prepared, prompt_version=SEMANTIC_MAP_NODE_LOCAL_V3_PROFILE), joined,
             fact_endpoints=prepared.prompt_version in SEMANTIC_MAP_FACT_ENDPOINT_PROFILES,
             mark_record_ownership=prepared.prompt_version in SEMANTIC_MAP_CONTENT_PLAN_PROFILES,
-            fixed_record_units=fixed_record_units,
+            fixed_record_units=fixed_record_units, comparison_sources=comparison_sources,
             preserve_action_sentence_order=packet.get('merge_wire_version') in ('cocolon.analysis.merge_wire.v4', 'cocolon.analysis.merge_wire.v5', 'cocolon.analysis.merge_wire.v6', 'cocolon.analysis.merge_wire.v7'),
             original_field_sections=packet.get('merge_wire_version') in ('cocolon.analysis.merge_wire.v6', 'cocolon.analysis.merge_wire.v7'),
             record_scoped_captions=prepared.prompt_version in {'semantic_map.node_local.v4.occurrence.v23', 'semantic_map.node_local.v4.occurrence.v24'},
@@ -4289,7 +4291,8 @@ def _expand_analysis_semantic_node_local_v3(prepared, packet, *, fact_endpoints=
                                            fixed_record_units=(), use_attributed_captions=False, deduplicate_node_evidence=False,
                                            scope_earlier_unknowns=False, whole_map_overview=False, per_root_fact_limit=False,
                                            deduplicate_source_sentences=False, compact_source_captions=False,
-                                           record_scoped_captions=False, preserve_action_sentence_order=False, original_field_sections=False):
+                                           record_scoped_captions=False, preserve_action_sentence_order=False, original_field_sections=False,
+                                           comparison_sources=None):
     """Compile node-owned authored units, not a repair of a reference plan.
 
     There is no independently authored fact/reading registry to relink. All
@@ -4470,8 +4473,15 @@ def _expand_analysis_semantic_node_local_v3(prepared, packet, *, fact_endpoints=
         if fact_endpoints:
             selected = [by_unit[edge[key]] for key in ('from_unit', 'to_unit')]
             refs = [edge['from_unit'], edge['to_unit']]
+            chosen = (comparison_sources or {}).get((*refs, result['label']))
+            evidence = [unit['evidence'] for unit in selected]
             facts = [unit['fact'] for unit in selected]
-            if action_sentence_order and isinstance(fixed_record_units, dict):
+            if chosen and result['relation_kind'] == 'CONTEXT_CONTRAST':
+                facts = [sentence for _, _, sentence in chosen]
+                evidence = [[r for r in roots if r['field'] == field and r['quote'] == quote and sentence in quote]
+                            for roots, (field, quote, sentence) in zip(evidence, chosen, strict=True)]
+                require(all(evidence), reason)
+            elif action_sentence_order and isinstance(fixed_record_units, dict):
                 # Endpoint facts retain their own evidence closure. Do not sort
                 # across endpoints, even when the edge connects the same record.
                 facts = [''.join(_node_unique_fixed_facts([unit], [fixed_record_units.get(ref)], original_records,
@@ -4479,7 +4489,7 @@ def _expand_analysis_semantic_node_local_v3(prepared, packet, *, fact_endpoints=
                          for unit, ref in zip(selected, refs, strict=True)]
             _, display = display_facts(selected, facts, refs)
             result['explanation'] = '\n'.join(display)
-            result['unit_evidence'] = [unit['evidence'] for unit in selected]
+            result['unit_evidence'] = evidence
         else:
             result['explanation'] = bodies[edge['from']] + '\n' + bodies[edge['to']]
         edges.append(result)

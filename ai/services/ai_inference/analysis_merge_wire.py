@@ -726,6 +726,12 @@ def comparison_endpoints(candidate):
             'from_source': left['cue'], 'to_source': right['cue']}
 
 
+def _comparison_sources(candidate, decision):
+    # Root identity keeps overlapping quotations from widening the chosen sentence.
+    return tuple((endpoint['field'], endpoint['quote'], endpoint['sentences'][position - 1])
+                 for endpoint, position in ((candidate['left'], decision[2]), (candidate['right'], decision[4])))
+
+
 def prepare_messages(messages, *, version=VERSION, choice_module=None):
     material = json.loads(messages[1]['content'])
     if isinstance(material, dict):
@@ -889,7 +895,7 @@ class ResponseCodec:
         q, field = self._quote(pair[0]), pair[1]
         return dict(source_quote=q, source_field=field) if qualification else dict(quote=q, field=field)
 
-    def free_comparisons_allowed(self, edges):
+    def free_comparisons_allowed(self, edges, *, comparison_sources=None):
         if self.paired_material is None:
             return True
         for edge in edges:
@@ -928,13 +934,21 @@ class ResponseCodec:
                         reverse['decision_pairs'] = [[right, left] for left, right in row['decision_pairs']]
                     for candidate in (row, reverse):
                         key = tuple(comparison_endpoints(candidate).values())
-                        self._extra_comparisons[key] = {label for _,label in paired_decisions(candidate)}
+                        self._extra_comparisons[key] = {
+                            label: _comparison_sources(candidate, decision) if self._decision_sources else None
+                            for decision, label in paired_decisions(candidate)}
             key = tuple(edge.get(k) for k in ('from','to','from_unit','to_unit','from_source','to_source'))
-            if not all(type(x) is str for x in key) or edge.get('label') not in self._extra_comparisons.get(key,()):
+            if not all(type(x) is str for x in key):
                 return False
+            choices = self._extra_comparisons.get(key, {})
+            label = edge['label']
+            if label not in choices:
+                return False
+            if self._decision_sources and comparison_sources is not None:
+                comparison_sources[(edge['from_unit'], edge['to_unit'], label)] = choices[label]
         return True
 
-    def _relation_values(self, value, *, unpack, comparison_decisions=None):
+    def _relation_values(self, value, *, unpack, comparison_decisions=None, comparison_sources=None):
         keys = {'schema_version', 'nodes_sha256', 'qualification_review', 'edges', 'overview'}
         if self.comparisons and unpack:
             keys.add('comparisons')
@@ -973,7 +987,8 @@ class ResponseCodec:
                     review.append(item['status'])
         edges = value['edges']
         if self.paired and unpack:
-            require(type(edges) is list and all(type(edge) is dict for edge in edges) and self.free_comparisons_allowed(edges))
+            require(type(edges) is list and all(type(edge) is dict for edge in edges)
+                    and self.free_comparisons_allowed(edges, comparison_sources=comparison_sources))
         result = dict(schema_version=value['schema_version'], nodes_sha256=self.binding, qualification_review=review)
         if comparison_decisions is not None:
             require(not unpack and self.comparisons and type(comparison_decisions) is list
@@ -993,6 +1008,9 @@ class ResponseCodec:
                                       if compact_json(action)==compact_json(decision)),None)
                         require(label is not None)
                         authored.append(dict(endpoints,label=label,relation_kind='CONTEXT_CONTRAST'))
+                        if self._decision_sources and comparison_sources is not None:
+                            key = (endpoints['from_unit'], endpoints['to_unit'], label)
+                            comparison_sources[key] = _comparison_sources(self.comparisons[index], decision)
                     else:
                         require(type(decision) is list and len(decision) == 3 and decision[0] == 'COMPARE')
                         authored.append(dict(endpoints, label=decision[1], relation_kind=decision[2]))
@@ -1029,9 +1047,9 @@ class ResponseCodec:
         result.update(edges=edges, overview=value['overview'])
         return result
 
-    def decode(self, raw):
+    def decode(self, raw, *, comparison_sources=None):
         if self.phase == 'RELATIONS':
-            return self._relation_values(raw, unpack=True)
+            return self._relation_values(raw, unpack=True, comparison_sources=comparison_sources)
         require(type(raw) is dict and set(raw) == {'h', 'n'} and raw['h'] == self.binding
                 and type(raw['n']) is list)
         version = MODEL_SCHEMA + '.' + self.phase.lower()

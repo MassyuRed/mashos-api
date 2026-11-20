@@ -4255,7 +4255,7 @@ def assemble_semantic_node_local_v4(prepared, packet):
     return joined
 
 
-def assemble_semantic_node_local_v4_with_node_choices(prepared, packet):
+def assemble_semantic_node_local_v4_with_node_choices(prepared, packet, *, comparison_sources=None):
     """Verify all raw receipts and retain the author's source selections for projection."""
     r, reason = _semantic_map_require, 'analysis_semantic_node_local_v4_lineage_invalid'
     compact = type(packet) is dict and 'merge_wire_version' in packet
@@ -4295,7 +4295,7 @@ def assemble_semantic_node_local_v4_with_node_choices(prepared, packet):
         if compact:
             codec = response_codec(messages)
             if codec is not None:
-                value = codec.decode(value)
+                value = codec.decode(value, comparison_sources=comparison_sources)
         if phase == 'PLAN':
             plan = admit_semantic_node_local_v4_plan_response(prepared, value,
                 merge_anchors=compact and packet['merge_wire_version'] in (RECORD_VERSION, *OUTPUT_VERSIONS),
