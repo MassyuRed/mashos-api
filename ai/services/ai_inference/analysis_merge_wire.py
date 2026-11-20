@@ -14,8 +14,12 @@ OUTPUT_VERSION = 'cocolon.analysis.merge_wire.v3'
 SOURCE_TITLE_VERSION = 'cocolon.analysis.merge_wire.v4'
 COMPARISON_VERSION = 'cocolon.analysis.merge_wire.v5'
 PAIRED_VERSION = 'cocolon.analysis.merge_wire.v6'
-VERSION = 'cocolon.analysis.merge_wire.v7'
-PAIRED_VERSIONS = (PAIRED_VERSION, VERSION)
+DECISION_VERSION = 'cocolon.analysis.merge_wire.v7'
+REQUEST_SUBJECT_VERSION = 'cocolon.analysis.merge_wire.v8'
+VERSION = REQUEST_SUBJECT_VERSION
+REQUEST_SUBJECT_VERSIONS = (REQUEST_SUBJECT_VERSION,)
+DECISION_VERSIONS = (DECISION_VERSION, *REQUEST_SUBJECT_VERSIONS)
+PAIRED_VERSIONS = (PAIRED_VERSION, *DECISION_VERSIONS)
 COMPARISON_VERSIONS = (COMPARISON_VERSION, *PAIRED_VERSIONS)
 TITLE_VERSIONS = (SOURCE_TITLE_VERSION, *COMPARISON_VERSIONS)
 OUTPUT_VERSIONS = (OUTPUT_VERSION, *TITLE_VERSIONS)
@@ -101,12 +105,20 @@ def instruction(version, phase):
         guidance += (' 同じ思考欄に複数の行があれば、それぞれ別の発言・条件・訂正です。'
             '各行から少なくとも一候補を原文のまま含めます。一つの引用で複数行を満たせます。')
     if version in PAIRED_VERSIONS and phase == 'RELATIONS':
+        difference = '判断の対象が違う場合は' if version in REQUEST_SUBJECT_VERSIONS else '別の物や判断なら'
         guidance += (' comparison_candidatesは対象を照合するための原文です。subjectとsubject_witnessの'
-            '記録・主体・対象・条件を左右で確認します。別の物や判断なら"DIFFERENT_SUBJECT"、'
+            f'記録・主体・対象・条件を左右で確認します。{difference}"DIFFERENT_SUBJECT"、'
             '不足なら"INSUFFICIENT_EVIDENCE"を選びます。両資料から同じ対象への判断差を説明できる時だけ、'
             'comparisonsに["COMPARE",subject,左のsentencesの1始まり番号,"一方、"または"別の記録では、",右の番号]。'
             'あなたが選んだ左の一文・接続語・右の一文がその順で一本の比較文になります。'
             '別記録を別日と決めず、留保や伝聞を保ちます。同じ候補の組はedgesに重ねません。別の記録間の線も、指定した両端の原引用に固有の内容を左右から一つずつ文に残します。')
+    if version in REQUEST_SUBJECT_VERSIONS and phase == 'RELATIONS':
+        guidance += (' subject_witness.kind が requested_object の組では、subject は依頼された物、'
+            'recipient は依頼先です。left と right は依頼物と依頼先を照合した各記録の原文です。'
+            '誰が提案し、誰が依頼し、誰がその連絡に応えたかを両端の sentences と一緒に読みます。'
+            '同じ物についての提案と後日の連絡は話者や行動が違っても比較できます。'
+            '未送信と送信未確認、依頼と納品は区別します。物が違う時は DIFFERENT_SUBJECT、'
+            '同じ物か確認できない時は INSUFFICIENT_EVIDENCE を選びます。')
     return guidance
 
 
@@ -368,7 +380,7 @@ def _relation_fact_references(material, *, unpack=False):
                 unit['fact'] = 0
 
 
-def _memo_context_menu(material, fields, choice_module, *, distinct_context_sources=False):
+def _memo_context_menu(material, fields, choice_module, *, version):
     if not material.get('records'):
         return []
     if choice_module is None:
@@ -376,7 +388,8 @@ def _memo_context_menu(material, fields, choice_module, *, distinct_context_sour
     source = dict(material, fields=list(fields.values()))
     owners = choice_module.record_plan_owners(source, merge_anchors=True)
     rows = choice_module.merge_action_sources(source, owners, context_sources=True,
-                                              distinct_context_sources=distinct_context_sources)
+                                              distinct_context_sources=version in PAIRED_VERSIONS,
+                                              speaker_context_sources=choice_module.uses_speaker_context(version))
     return [[row.memo_field, list(group)] for row in rows.values() for group in row.context_groups if group]
 
 
@@ -568,7 +581,50 @@ def _recurring_object_witness(first_objects, second_objects, endpoints, subject,
     return None
 
 
-def _decision_endpoints(row, originals):
+_REQUEST_VERB = r'(?:依頼|頼[みむんまめも]|申請|発注|注文|照会|問[い合])'
+_REQUEST_REFERENCE = r'(?:その|この|同じ)(?:依頼|申請|発注|注文|照会)'
+
+
+def _request_context(originals, record, obj, recipient):
+    """Read the request and its recipient in one clause or an explicit continuation."""
+    recipient_to = re.escape(recipient) + r'(?:へ|に)'
+    object_name = r'(?:の)?'.join(map(re.escape, obj))
+    target = object_name + r'(?:の|を|も|について)?'
+    verb = r'(?:もう一度|改めて|直接)?' + _REQUEST_VERB
+    requested = re.compile(target + verb)
+    addressed = re.compile(r'(?:' + recipient_to + r'(?:の)?' + target + '|' + target + recipient_to + ')' + verb)
+    continued = re.compile(_REQUEST_REFERENCE + r'(?:を|は)?' + recipient_to + r'(?:送|伝|渡|' + _REQUEST_VERB + ')')
+    for field, first, span in originals.get(record, ()):
+        if addressed.search(first):
+            return dict(field=field, quote=first)
+        following = span[len(first):]
+        if requested.search(first) and '\n\n' not in following and continued.search(following):
+            return dict(field=field, quote=span)
+    return None
+
+
+def _requested_subject(left_objects, right_objects, endpoints, recipient, originals):
+    """A shared addressee qualifies only when both records actually request the same item."""
+    def names_item(obj, terms, witness):
+        # A common final character in e.g. two document names cannot identify a document.
+        # A more general name can be bound by a literal modifier and its noun head in the record.
+        for term in terms:
+            if term == obj or (len(term) >= 2 and obj.endswith(term)):
+                return True
+            for split in range(1, len(obj)):
+                modifier, head = obj[:split], obj[split:]
+                if term.startswith(head) and modifier + 'の' + head in witness['quote']:
+                    return True
+        return False
+
+    for obj in sorted(left_objects | right_objects, key=lambda word: (-len(word), word)):
+        left, right = (_request_context(originals, ep['record'], obj, recipient) for ep in endpoints)
+        if left and right and names_item(obj, left_objects, left) and names_item(obj, right_objects, right):
+            return dict(object=obj, kind='requested_object', recipient=recipient, left=left, right=right)
+    return None
+
+
+def _decision_endpoints(row, originals, *, named_requests=False):
     subject = row['subject']
     endpoints = row['left'], row['right']
     direct_object = tuple(subject + suffix for suffix in ('を', 'について', 'に対し'))
@@ -598,7 +654,8 @@ def _decision_endpoints(row, originals):
                 left_objects, right_objects = (_request_objects(s, actions) for s in (first, second))
                 if not left_objects or not right_objects:
                     continue
-                witness = _recurring_object_witness(left_objects, right_objects, endpoints, subject, originals)
+                witness_for = _requested_subject if named_requests else _recurring_object_witness
+                witness = witness_for(left_objects, right_objects, endpoints, subject, originals)
                 if witness:
                     candidates.append((first, second, witness))
     # Keep the authorized pairings, including when two unrelated operations
@@ -606,13 +663,23 @@ def _decision_endpoints(row, originals):
     # source sentences shown in this request.
     if not candidates:
         return None
+    if named_requests and any(w for _, _, w in candidates):
+        topics = {w['object'] for _, _, w in candidates if w}
+        if len(topics) != 1:
+            return None
+        candidates = [(first, second, w) for first, second, w in candidates if w]
     left = list(dict.fromkeys(first for first, _, _ in candidates))
     right = list(dict.fromkeys(second for _, second, _ in candidates))
     result = dict(row, left=dict(row['left'], sentences=left), right=dict(row['right'], sentences=right),
                   decision_pairs=[[left.index(first) + 1, right.index(second) + 1]
                                   for first, second, _ in candidates])
     witnesses = [w for _, _, w in candidates if w]
-    if witnesses:
+    if witnesses and named_requests:
+        # One pair of original passages supports the shared object for every offered sentence pair.
+        witness = dict(witnesses[0])
+        result['subject'] = witness.pop('object')
+        result['subject_witness'] = witness
+    elif witnesses:
         result['object_witnesses'] = list({compact_json(w): w for w in witnesses}.values())
     return result
 
@@ -643,7 +710,7 @@ def _comparison_originals(material, choice_module):
     return originals
 
 
-def paired_comparison_candidates(material, choice_module, *, limit=2, decision_sources=False):
+def paired_comparison_candidates(material, choice_module, *, limit=2, decision_sources=False, named_requests=False):
     if material['author_phase'] != 'RELATIONS' or material.get('map_corrections'):
         return []
     if choice_module is None:
@@ -683,7 +750,7 @@ def paired_comparison_candidates(material, choice_module, *, limit=2, decision_s
                 continue
             row = dict(left=a,right=b,subject=word,subject_witness=dict(side=side,**witness),wording=sorted(overlap))
             if decision_sources:
-                row = _decision_endpoints(row, originals)
+                row = _decision_endpoints(row, originals, named_requests=named_requests)
                 if row is None:
                     continue
             allowed = paired_decisions(row)
@@ -739,11 +806,12 @@ def prepare_messages(messages, *, version=VERSION, choice_module=None):
     if not eligible(material):
         return messages
     require(compact_json(material) == messages[1]['content'])
-    comparisons = (paired_comparison_candidates(material, choice_module, decision_sources=version == VERSION) if version in PAIRED_VERSIONS
+    comparisons = (paired_comparison_candidates(material, choice_module, decision_sources=version in DECISION_VERSIONS,
+                                                named_requests=version in REQUEST_SUBJECT_VERSIONS) if version in PAIRED_VERSIONS
                    else comparison_candidates(material) if version == COMPARISON_VERSION else [])
     fields = displayed_fields(material)
     if version in COMPARISON_VERSIONS and material['author_phase'] == 'PLAN':
-        menu = _memo_context_menu(material, fields, choice_module, distinct_context_sources=version in PAIRED_VERSIONS)
+        menu = _memo_context_menu(material, fields, choice_module, version=version)
         if menu:
             material['memo_context_choices'] = menu
     material['leaf_source_index'] = pack_index(material['leaf_source_index'], fields)
@@ -815,8 +883,9 @@ def _quote_codes(literals):
 
 class ResponseCodec:
     """Project only deterministic positions. Every authored choice remains in the raw receipt."""
-    def __init__(self, material, choice_module, fact_key, *, comparisons=(), paired=False, decision_sources=False):
+    def __init__(self, material, choice_module, fact_key, *, comparisons=(), paired=False, decision_sources=False, named_requests=False):
         self._decision_sources = decision_sources
+        self._named_requests = named_requests
         self.paired_material = material if paired and material['author_phase'] == 'RELATIONS' else None
         self._comparison_source_module = choice_module
         self._extra_comparisons = None
@@ -926,7 +995,7 @@ class ResponseCodec:
                 offered = {frozenset((row['left']['node'],row['right']['node'])) for row in self.comparisons}
                 self._extra_comparisons = {}
                 for row in paired_comparison_candidates(self.paired_material, self._comparison_source_module,
-                                                        limit=None, decision_sources=self._decision_sources):
+                                                        limit=None, decision_sources=self._decision_sources, named_requests=self._named_requests):
                     if frozenset((row['left']['node'],row['right']['node'])) in offered:
                         continue
                     reverse = dict(row, left=row['right'], right=row['left'])
@@ -1123,4 +1192,5 @@ def response_codec(messages, *, choice_module=None, fact_key=None):
     comparisons = material.get('comparison_candidates', ()) if material['merge_wire_version'] in COMPARISON_VERSIONS else ()
     return ResponseCodec(logical, choice_module, fact_key, comparisons=comparisons,
                          paired=material['merge_wire_version'] in PAIRED_VERSIONS,
-                         decision_sources=material['merge_wire_version'] == VERSION)
+                         decision_sources=material['merge_wire_version'] in DECISION_VERSIONS,
+                         named_requests=material['merge_wire_version'] in REQUEST_SUBJECT_VERSIONS)

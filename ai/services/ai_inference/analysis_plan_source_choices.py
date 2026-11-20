@@ -626,7 +626,73 @@ def _distinct_context_groups(action, simple, allowed, selected, leaf_quotes):
     return tuple(groups) if len(groups) <= 4 else ()
 
 
-def merge_action_sources(material, owners, *, context_sources=False, distinct_context_sources=False):
+def uses_speaker_context(version):
+    return version == 'cocolon.analysis.merge_wire.v8'
+
+
+_NARRATOR = frozenset(('私', 'わたし', '僕', 'ぼく', '俺', 'おれ', '自分'))
+_NAMED_SUBJECT = re.compile(r'(?:^|[、，])(' + _CONTEXT_NOUN + r')(?:は|が|も)')
+_TURN = re.compile(r'と(?:' + _FINITE_REPORT + r'|聞いた|尋ねた|頼んだ|返した)|と(?:いう|の)(?:回答|返事|返答)だった')
+_SELF_REPLY = re.compile(r'^(?:そこで[、，]?|それに対して[、，]?|一方[、，]?)?(?:私|わたし|僕|ぼく|俺|おれ)(?:は|が)[^。！？]*と' + _FINITE_REPORT + r'。$')
+_POSITION = re.compile(r'希望|望ん|望む|願い|願って|意向|要望|ほしい|欲し|たい|たくない|つもり|賛成|同意|引き受け|了承|勝手に決め|落ち着かな')
+_QUALIFIED_POSITION = re.compile(r'ことと|ことは別|わけではな|だけではな|とは限ら|一方|ただ[、，]|条件|場合')
+_REPORTED_INTERPRETATION = re.compile(r'(?:そう|そういう意味に|そのように|その意味で)(?:受け取|受け止め|捉え|とらえ|解釈|理解)')
+
+
+def _speaker_context_groups(memo, action, selected, allowed):
+    """Keep the narrator's own qualified reply beside a reported participant's wish.
+
+    Bind only full quotations in the same paragraph. An explicit interpretation
+    of the narrator's stance needs the statement immediately before it. These
+    are source passages, not assertions about the other person's intentions.
+    """
+    partner_wishes = {name: [q for q in selected if _WISH_REPORT.search(q)
+                      and re.search(r'(?:^|[、，])' + re.escape(name) + r'(?:は|が|も)', q)]
+                      for name in set(_PARTNER.findall(action))}
+    speakers = [name for name, wishes in partner_wishes.items() if wishes]
+    if len(speakers) != 1:
+        return ()
+    partner, = speakers
+    replies = set()
+    references = set()
+    for paragraph in memo.splitlines():
+        lines = _outer_sentences(paragraph, original_for_overview=True)
+        pending = False
+        for i, line in enumerate(lines):
+            if line in partner_wishes[partner]:
+                pending = not re.search(r'仮に|もしも|例えば|たとえば|仮定', line)
+            elif pending and _SELF_REPLY.fullmatch(line):
+                following = lines[i+1] if i+1 < len(lines) else ''
+                if (_POSITION.search(line) and _POSITION.search(following)
+                        and _QUALIFIED_POSITION.search(following)
+                        and not any(name not in _NARRATOR for name in _NAMED_SUBJECT.findall(following))):
+                    replies.add(line + following)
+                elif _POSITION.search(line):
+                    replies.add(line)
+                pending = False
+            elif _TURN.search(line):
+                pending = False
+            if (i and re.search(r'(?:^|[、，])'+re.escape(partner)+r'(?:は|が|も)', line)
+                    and _REPORTED_INTERPRETATION.search(line) and _POSITION.search(lines[i-1])
+                    and not any(name not in _NARRATOR for name in _NAMED_SUBJECT.findall(lines[i-1]))
+                    and (not _TURN.search(lines[i-1]) or _SELF_REPLY.fullmatch(lines[i-1]))):
+                references.add(lines[i-1] + line)
+
+    def unique_passage(candidates):
+        if len(candidates) == 1:
+            q, = candidates
+            if len(q) <= 160 and q in allowed and q not in action and not any(c in q for c in '「」『』“”‘’？?'):
+                return (q,)
+        return ()
+
+    reply = unique_passage(replies)
+    if not reply:
+        return ()
+    referent = unique_passage(references)
+    return (reply, referent) if referent and referent != reply else (reply,)
+
+
+def merge_action_sources(material, owners, *, context_sources=False, distinct_context_sources=False, speaker_context_sources=False):
     """For the new MERGE only, reserve already selectable original sentences.
 
     A passage can record proposed, declined, completed or reported actions, even
@@ -687,6 +753,13 @@ def merge_action_sources(material, owners, *, context_sources=False, distinct_co
             row = MergeActionSources(action, memo, sentences, allowed, selected, groups, memo_allowed)
             if groups and row.minimum_roots[row.required] > 8:
                 row = MergeActionSources(action, memo, sentences, allowed, selected)
+            if speaker_context_sources:
+                extra = _speaker_context_groups(memo['text'], action['text'], selected, memo_allowed)
+                if extra:
+                    expanded = MergeActionSources(action, memo, sentences, allowed, selected,
+                                                  (*row.context_groups[1:], *extra), memo_allowed)
+                    if expanded.minimum_roots[expanded.required] <= 8:
+                        row = expanded
             result[record] = row
     return result
 
@@ -1525,7 +1598,7 @@ def leaf_meanings(fields, units, sentences):
 
 
 def source_ordered_merge(wire_version):
-    return wire_version in ('cocolon.analysis.merge_wire.v6', 'cocolon.analysis.merge_wire.v7')
+    return wire_version in ('cocolon.analysis.merge_wire.v6', 'cocolon.analysis.merge_wire.v7', 'cocolon.analysis.merge_wire.v8')
 
 
 def ordered_record_sections(fields, units, fixed_parts=None):

@@ -2440,7 +2440,7 @@ def _semantic_logical_json_parser(messages, alphabet):
             choice_rules = _semantic_choice_module()
             if merge_action_sources_enabled:
                 by_record_action = choice_rules.merge_action_sources(material, owners, context_sources=context_sources,
-                    distinct_context_sources=distinct_context_sources)
+                    distinct_context_sources=distinct_context_sources, speaker_context_sources=choice_rules.uses_speaker_context(wire_version))
                 if by_record_action:
                     actions = tuple(by_record_action.get(row['record']) for row in material['records'])
             by_region = choice_rules.owner_source_regions(material, owners, choice_rules.plan_reading_regions(material, by_record), required_sources)

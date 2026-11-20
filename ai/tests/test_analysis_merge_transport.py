@@ -487,3 +487,61 @@ def test_comparison_witness_preserves_original_inter_sentence_spacing():
     windows = wire._comparison_originals(source, choices)[1]
     assert (1, first, first + '\n  ' + second) in windows
     assert all(span in source['fields'][0]['text'] for _, _, span in windows)
+
+
+def test_same_requested_item_is_named_instead_of_the_recipient_and_witnesses_keep_both_roles():
+    left = '窓口への部品依頼を提案したが、渡したかは確認していない。'
+    right = '同僚の交換部品の依頼連絡に返事をした。'
+    context = '壊れた器具の交換の部品も頼みたいと提案した。'
+    follow = '担当者はその依頼を窓口へ送ると言った。'
+    response = '同僚から交換部品を窓口へ頼んだと連絡があった。'
+    candidate = dict(subject='窓口', wording=['依頼'], subject_witness=dict(kind='companion'),
+                     left=dict(record=1, quote=left, sentences=[left]), right=dict(record=2, quote=right, sentences=[right]))
+    originals = {1: [(1, context, context + '\n ' + follow)], 2: [(3, response, response)]}
+    row = wire._decision_endpoints(candidate, originals, named_requests=True)
+    assert row['subject'] == '交換部品' and row['decision_pairs'] == [[1, 1]]
+    assert row['subject_witness'] == dict(kind='requested_object', recipient='窓口',
+        left=dict(field=1, quote=context + '\n ' + follow), right=dict(field=3, quote=response))
+    options = wire.paired_decisions(row)
+    assert options and all(a[1] == '交換部品' and a[1] != '窓口' and left in label and right in label for a,label in options)
+    assert wire._decision_endpoints(candidate, originals)['subject'] == '窓口'
+
+    material = recurring_sources()
+    for field, node, quote, text in zip(material['fields'][:2], material['candidate_nodes'][:2],
+                (left, right), (context + '\n ' + follow + left, response + right), strict=True):
+        field['text'] = text
+        node['units'][0]['evidence'][0]['quote'] = quote
+    captured, = wire.paired_comparison_candidates(material, None, decision_sources=True, named_requests=True)
+    assert (captured['subject'], captured['subject_witness']['recipient']) == ('交換部品', '窓口')
+    assert all(side['quote'] in material['fields'][side['field']-1]['text'] for side in
+               (captured['subject_witness']['left'], captured['subject_witness']['right']))
+    codec = wire.ResponseCodec(material, None, None, comparisons=[captured], paired=True,
+                               decision_sources=True, named_requests=True)
+    logical = dict(schema_version=wire.MODEL_SCHEMA + '.relations', nodes_sha256=codec.binding,
+                   qualification_review={}, edges=[], overview={})
+    blank = codec.encode(logical)
+    for skip in wire.COMPARISON_SKIPS:
+        assert codec.decode(dict(blank, comparisons=[skip]))['edges'] == []
+    for action, label in wire.paired_decisions(captured):
+        edge, = codec.decode(dict(blank, comparisons=[action]))['edges']
+        assert edge['label'] == label
+        with pytest.raises(ValueError):
+            codec.decode(dict(blank, comparisons=[['COMPARE', '窓口', *action[2:]]]))
+
+    # A mention and a separate request for another item do not establish what was requested.
+    wrong = '交換の部品を調べた。'
+    originals[1] = [(1, wrong, wrong + '担当者は別の申請を窓口へ送った。')]
+    assert wire._decision_endpoints(candidate, originals, named_requests=True) is None
+    originals[1] = [(1, context, context + '\n\n' + follow)]
+    assert wire._decision_endpoints(candidate, originals, named_requests=True) is None
+
+
+def test_different_documents_for_same_recipient_are_not_one_subject_even_if_another_request_mentions_both():
+    first = '印刷会社への契約書依頼を提案したが、送信したかは分からない。'
+    second = '同僚の請求書の依頼連絡に返事をした。'
+    other = '別件の請求書を印刷会社に頼んだ。'
+    next_day = '同僚から請求書を印刷会社に頼んだと聞いた。'
+    row = dict(subject='印刷会社', wording=['依頼'], subject_witness=dict(kind='companion'),
+               left=dict(record=1, quote=first, sentences=[first]), right=dict(record=2, quote=second, sentences=[second]))
+    originals = {1:[(1, first, first), (1, other, other)], 2:[(3, next_day, next_day)]}
+    assert wire._decision_endpoints(row, originals, named_requests=True) is None
