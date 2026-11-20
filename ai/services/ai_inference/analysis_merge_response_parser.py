@@ -84,9 +84,28 @@ def response_parser(logical, codec):
         header = ('{"schema_version":"cocolon.analysis.semantic_map.node_local.model.v4.relations",'
                   '"nodes_sha256":' + quoted(codec.binding) + ',"qualification_review":')
         count = len(codec.qualification_items)
+        tail = (('passthrough',),)
+        if codec.comparisons:
+            # A COMPARE row supplies a logical edge; a declined candidate
+            # supplies no edge. Both remain explicit in the received bytes.
+            def candidates(index, has_edge):
+                if index == len(codec.comparison_endpoints):
+                    extra = (('alternatives', (
+                        (_literal(']', ']'), ('passthrough',)),
+                        (_literal('{', ',{'), ('passthrough',)))),) if has_edge else (('passthrough',),)
+                    return (_literal('],"edges":[', ''),) + extra
+                ep = codec.comparison_endpoints[index]
+                comma = (_literal(',', ''),) if index else ()
+                edge = (',' if has_edge else '') + '{' + ','.join(
+                    quoted(key) + ':' + quoted(value) for key, value in ep.items()) + ',"label":'
+                accept = (_literal('["COMPARE",', edge), _scalar('label'),
+                          _literal(',', ',"relation_kind":'), _scalar(), _literal(']', '}'))
+                skip = (('spelling', [(quoted(reason), '') for reason in codec.comparison_skips]),)
+                return comma + (('alternatives', (accept + candidates(index + 1, True),
+                                                   skip + candidates(index + 1, has_edge))),)
+            tail = (_literal(',"comparisons":[', ',"edges":['),) + candidates(0, False)
         return ResponseParser(logical, codec, quoted,
-            (_literal(header + '[', header + '{'), _series(qualification, count, count, '}'),
-             ('passthrough',)))
+            (_literal(header + '[', header + '{'), _series(qualification, count, count, '}')) + tail)
 
     plan = codec.phase == 'PLAN'
     count = len(codec.plan_units)
@@ -133,7 +152,15 @@ class ResponseParser(CharacterLevelParser):
         if self.ops:
             op, tail = self.ops[0], self.ops[1:]
             kind = op[0]
-            if kind == 'literal':
+            if kind == 'alternatives':
+                # Physical branches begin with different characters. Each
+                # keeps its own immutable logical prefix and parser history.
+                for branch in op[1]:
+                    extra = self._next(branch + tail)._choices()
+                    if options.keys() & extra.keys():
+                        raise ValueError('analysis_merge_ambiguous_branch')
+                    options.update(extra)
+            elif kind == 'literal':
                 physical, logical = op[1:]
                 parser = _advance(self.logical, logical)
                 if parser is not None:

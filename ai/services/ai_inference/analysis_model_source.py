@@ -257,7 +257,7 @@ class SelfHostedSemanticAnalysisModelSource(SelfHostedAnalysisModelSource):
                             value = codec.decode(value)
                     if phase == 'PLAN':
                         plan = core.admit_semantic_node_local_v4_plan_response(prepared, value,
-                            merge_anchors=compact_merge, merge_action_sources=compact_merge)
+                            merge_anchors=compact_merge, merge_action_sources=compact_merge, context_sources=compact_merge)
                     elif phase == 'NODES':
                         from analysis_plan_source_choices import single_original_leaf
                         fresh_leaf = (prepared.prompt_version == core.SEMANTIC_MAP_OCCURRENCE_V24_PROFILE

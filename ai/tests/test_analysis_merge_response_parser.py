@@ -216,7 +216,7 @@ def test_new_merge_rejects_a_condition_or_actor_added_to_a_node_title():
             entry['title'] = title
             raw = wire.compact_json(codec.encode(node))
             parser = probe.semantic_json_parser(messages, alphabet)
-            if version == wire.VERSION and title != second:
+            if version in wire.TITLE_VERSIONS and title != second:
                 with pytest.raises(ValueError):
                     advance(parser, raw)
                 with pytest.raises(core.AnalysisSemanticMapError, match='merge_title_not_in_source'):
@@ -224,7 +224,7 @@ def test_new_merge_rejects_a_condition_or_actor_added_to_a_node_title():
             else:
                 assert advance(parser, raw).can_end()
                 assert core.admit_semantic_node_local_v4_nodes_response(
-                    stage, plan, node, bound_titles=version == wire.VERSION)['nodes']['n1']['title'] == title
+                    stage, plan, node, bound_titles=version in wire.TITLE_VERSIONS)['nodes']['n1']['title'] == title
 
 
 def test_title_choices_preserve_quotation_scope_fragment_boundaries_and_record_owners():

@@ -293,3 +293,66 @@ def test_qualification_ordinals_survive_sorted_request_keys():
     material = dict(author_phase='RELATIONS', candidate_nodes=[], qualification_candidates=dict(sorted(items.items())))
     codec = wire.ResponseCodec(material, choices, None)
     assert list(dict(codec.qualification_items)) == list(items)
+
+
+def recurring_sources():
+    notes = ['録音機の電源を点検した。', '録音機の電源を交換した。', '植木鉢に水を注いだ。']
+    fields = [dict(field=i, field_path='memo_action', record=i, source_role='ORIGINAL_INPUT',
+                   text=text, fragment_is_complete_field=True) for i, text in enumerate(notes, 1)]
+    nodes = [dict(node_id=f'n{i}', units=[dict(evidence=[dict(field=i, quote=text)])])
+             for i, text in enumerate(notes, 1)]
+    return dict(author_phase='RELATIONS', fields=fields, candidate_nodes=nodes, qualification_candidates={})
+
+
+def test_recurring_sources_require_two_records_and_unambiguous_selected_cues():
+    sources = recurring_sources()
+    first, second, _ = sources['fields']
+    pair, = wire.comparison_candidates(sources)
+    assert pair['wording'] == ['録音機', '電源']
+    assert [pair[side]['record'] for side in ['left', 'right']] == [1, 2]
+    for key, value in [('source_role', 'SUPPLEMENT'), ('fragment_is_complete_field', False),
+                       ('field_path', 'other'), ('record', first['record']), ('supplement', 3)]:
+        changed = deepcopy(sources)
+        changed['fields'][1][key] = value
+        assert not wire.comparison_candidates(changed)
+    mixed = deepcopy(sources)
+    mixed['candidate_nodes'][1]['units'][0]['evidence'].append(dict(field=3, quote=sources['fields'][2]['text']))
+    assert not wire.comparison_candidates(mixed)
+    duplicated = deepcopy(sources)
+    duplicated['candidate_nodes'][1]['units'][0]['evidence'].append(dict(field=2, quote=second['text']))
+    assert not wire.comparison_candidates(duplicated)
+    assert not wire.comparison_candidates({**sources, 'map_corrections': ['訂正']})
+    assert not wire.comparison_candidates({**sources, 'author_phase': 'NODES'})
+
+
+def test_comparison_choices_keep_model_prose_and_each_original_skip_reason():
+    sources = recurring_sources()
+    pairs = wire.comparison_candidates(sources)
+    codec = wire.ResponseCodec(sources, None, None, comparisons=pairs)
+    logical = dict(schema_version=wire.MODEL_SCHEMA+'.relations', nodes_sha256=codec.binding,
+                   qualification_review={}, edges=[], overview={})
+    empty = codec.encode(logical)
+    for skip in ('INSUFFICIENT_EVIDENCE', 'DIFFERENT_SUBJECT'):
+        raw = dict(empty, comparisons=[skip])
+        assert codec.decode(raw) == logical
+        assert codec.encode(logical, comparison_decisions=raw['comparisons']) == raw
+    accepted = dict(empty, comparisons=[['COMPARE', '電源の点検から交換へ進んだ。', 'CONTEXT_CONTRAST']])
+    compared = codec.decode(accepted)
+    assert compared['edges'] == [dict(wire.comparison_endpoints(pairs[0]), label='電源の点検から交換へ進んだ。',
+                                     relation_kind='CONTEXT_CONTRAST')]
+    assert codec.encode(compared, comparison_decisions=accepted['comparisons']) == accepted
+    extra = dict(compared['edges'][0], to='n3', to_unit='n3.u1', to_source='植木鉢')
+    assert codec.decode(dict(accepted, edges=[extra]))['edges'] == [*compared['edges'], extra]
+    for decisions in ([], ['MAYBE'], ['DIFFERENT_SUBJECT'] * 2, [['COMPARE', '説明']]):
+        with pytest.raises(ValueError):
+            codec.decode(dict(empty, comparisons=decisions))
+    with pytest.raises(ValueError):
+        codec.encode(compared, comparison_decisions=empty['comparisons'])
+    with pytest.raises(ValueError):
+        codec.decode(dict(empty, edges=compared['edges']))
+    reversed_edge = dict(compared['edges'][0])
+    for suffix in ('', '_unit', '_source'):
+        left, right = 'from' + suffix, 'to' + suffix
+        reversed_edge[left], reversed_edge[right] = reversed_edge[right], reversed_edge[left]
+    with pytest.raises(ValueError):
+        codec.decode(dict(empty, edges=[reversed_edge]))

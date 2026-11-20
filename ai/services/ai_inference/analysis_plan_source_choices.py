@@ -233,6 +233,46 @@ def _sentences(text, *, original_for_overview=False):
             and not re.search(r'["\\\x00-\x1f]', q)]
 
 
+_SELF_ACCOUNT_ACTION = re.compile(
+    r'(?:自分|自身|私|わたし|僕|ぼく|俺|おれ)の(?:読み|解釈|理解|考え|意見|見方|受け取り方)'
+    r'[^。！？]{0,40}?(?:話した|伝えた|述べた|説明した)。')
+_SELF_ACCOUNT_LINE = re.compile(
+    r'^(?:私|わたし|僕|ぼく|俺|おれ)(?:は|が)[^。！？]+と(?:話した|伝えた|述べた|説明した)。$')
+_ASKED_WHO = re.compile(
+    r'(?<![一-鿿々ァ-ヺーA-Za-z0-9])([一-鿿々ァ-ヺーA-Za-z0-9]{1,24})の'
+    r'(?:希望|意向|要望|意見)を(?:聞いた|聞いて|尋ねた|尋ねて)(?=[。、，])')
+
+
+def _reported_content_choices(action, memo_sentences, allowed, leaf_quotes):
+    """Retrieve what someone actually said, preserving the addressee of a reply.
+
+    A person's own reported account must already be cited by the leaf. For a
+    reply without a named speaker, require the immediately preceding contact
+    with the participant named in the short action. Return only source quotes.
+    """
+    results = set()
+    action = ''.join(s for s in _sentences(action) if s.endswith('。')
+        and not re.search(r'[「」『』“”‘’？?]|(?:予定|つもり|仮に|もし|例えば|たとえば)', s))
+    if _SELF_ACCOUNT_ACTION.search(action):
+        for sentence in memo_sentences:
+            if (_SELF_ACCOUNT_LINE.fullmatch(sentence) and len(sentence) <= 160
+                    and not any(mark in sentence for mark in '「」『』“”‘’？?')
+                    and any(sentence in quote for quote in leaf_quotes)):
+                results.add(sentence)
+    participants = _ASKED_WHO.findall(action)
+    if participants:
+        for contact, reply in zip(memo_sentences, memo_sentences[1:]):
+            if not any(re.search(r'(?<![一-鿿々ァ-ヺーA-Za-z0-9])' + re.escape(person) + r'(?:に|へ)(?:連絡した|尋ねた|電話した|聞いた)。$',
+                                 contact) for person in participants):
+                continue
+            if re.search(r'(?:という|との)(?:返事|回答|返答)だった。$', reply):
+                passage = contact + reply
+                if (len(passage) <= 160 and passage in allowed
+                        and not any(mark in passage for mark in '「」『』“”‘’？?')):
+                    results.add(passage)
+    return results
+
+
 # The finite reporting verbs already used by the analysis reader. Only the outer
 # communication act is classified here; its topic never becomes an occurred event.
 _SPEECH_ACT_NEGATIVE = (r'(?:言って|話して|語って|述べて|書いて|伝えて|答えて|説明して)'
@@ -383,9 +423,10 @@ def record_plan_owners(material, available=None, *, merge_anchors=False):
 class MergeActionSources:
     """Cover the short original action literally, alongside its own independent account."""
 
-    def __init__(self, action, memo, sentences, allowed):
+    def __init__(self, action, memo, sentences, allowed, memo_choices=()):
         self.action_field = action['field']
         self.memo_field = memo['field']
+        self.memo_choices = tuple(memo_choices)
         self.action_text = action['text']
         self.memo_bit = 1 << len(sentences)
         self.required = (self.memo_bit << 1) - 1
@@ -401,7 +442,8 @@ class MergeActionSources:
         if field == self.action_field:
             return self.action_masks.get(quote, 0)
         if field == self.memo_field and quote not in self.action_text:
-            return self.memo_bit
+            if not self.memo_choices or (len(quote) <= 160 and any(q in quote for q in self.memo_choices)):
+                return self.memo_bit
         return 0
 
     def missing(self, roots):
@@ -410,7 +452,79 @@ class MergeActionSources:
             missing &= ~self.coverage(field, quote)
         return missing
 
-def merge_action_sources(material, owners):
+# These are source-retrieval cues for complete quotations. They never assign a
+# speaker, label an action as performed, or fabricate a paraphrase or conclusion.
+_CONTEXT_NOUN = r'[一-鿿々ァ-ヺーA-Za-z0-9]{1,32}(?:さん|くん|ちゃん)?'
+_NAME_START = r'(?<![一-鿿々ァ-ヺーA-Za-z0-9])'
+_HEARD_TOPIC = re.compile(_NAME_START + '(' + _CONTEXT_NOUN + r'の(?:話|説明|意見))を(?:聞いた|聴いた|聞きました|聴きました|尋ねた|聞いて|聴いて|尋ねて)(?=[。、，])')
+_PARTNER = re.compile(_NAME_START + '(' + _CONTEXT_NOUN + r')(?:と|から|へ|に)'
+    + r'(?:' + _CONTEXT_NOUN + r'(?:について|を))?(?:話|相談|聞|聴|伝え|尋ね|語|答え)')
+_FINITE_REPORT = r'(?:言った|話した|伝えた|答えた|語った|述べた|説明した|言いました|話しました)'
+_WISH_REPORT = re.compile(r'(?:たい|たくない|ほしい|欲しい|ほしくない)と' + _FINITE_REPORT + r'。$')
+_TIMED_RECIPIENT = re.compile(_NAME_START + '(' + _CONTEXT_NOUN + r'(?:へ|に))(' + _CONTEXT_NOUN
+                              + r')(?:した|して|し)(?=[。、，])')
+_TIME_BOUNDARY = re.compile(r'(?:して|えて|って|いて|んで|けて)から|(?:の後|の前|中|直後|直前)に')
+_TRIAL_END = re.compile(r'(?:試した|試してみた|試しました|試してみました)。$')
+_TRIAL_OBSERVATION = re.compile(r'[^。！？]+と[^。！？]+(?:た|だ)。$')
+
+
+def _action_context_choices(memo, action, simple, allowed, leaf_index):
+    """Locate complete original passages that qualify a condensed action field.
+
+    Two readings can support the same condensed action. Keep the author's
+    choice between them. When the menu is not small, retain ordinary free
+    allocation. An immutable prior leaf quote is required for trial results.
+    """
+    text = action['text']
+    topics = set()
+    partners = set()
+    timed_links = set()
+    for line in _sentences(text):
+        if re.search(r'[「」『』“”？?]|もし|仮に|(?:予定|つもり)(?:だった|です|だ)', line):
+            continue
+        topics.update(_HEARD_TOPIC.findall(line))
+        if re.search(r'希望|意向|要望|願い|望み|ほしい|したい|たいと', line):
+            partners.update(_PARTNER.findall(line))
+        timed_links.update(_TIMED_RECIPIENT.findall(line))
+    leaf_quotes = [row['quote'] for row in leaf_index if isinstance(row, dict)
+                   and row.get('field') == memo['field'] and isinstance(row.get('quote'), str)]
+    choices = _reported_content_choices(text, simple, allowed, leaf_quotes)
+    for line in simple:
+        if (len(line) > 160 or line in text or not line.endswith('。')
+                or any(symbol in line for symbol in '「」『』“”‘’？?')):
+            continue
+        # The two fields literally share the named topic. The memoir sentence
+        # must contain the outward act, not a guess about what was said.
+        if (any(topic + 'を' in line for topic in topics) and
+                re.search(r'(?:話|説明|意見)を(?:した|聞いた|述べた|話した)。$', line)):
+            choices.add(line)
+        # The explicitly named participant in the action recurs at a clause
+        # boundary. Keep the entire utterance including its subordinate subject.
+        if _WISH_REPORT.search(line) and any(re.search(r'(?:^|[、，])' + re.escape(name)
+                + r'(?:は|が|も)', line) for name in partners):
+            choices.add(line)
+        for recipient, noun in timed_links:
+            before, sep, after = line.partition(recipient)
+            if sep and _TIME_BOUNDARY.search(before) and noun in after:
+                choices.add(line)
+    # A recorded trial can supply the outcome of the action's stated check.
+    # A leaf that discusses an unrelated trial is insufficient on its own.
+    checks = re.search(r'(?:を(?:確認|検証|検査)(?:し|した)|を確かめ(?:て|た)|を試(?:し|した))', text)
+    for quote in leaf_quotes if checks else ():
+        if len(quote) > 160 or quote not in allowed:
+            continue
+        # A trial and the immediately following recorded observation need their
+        # common source. An open question, future trial or truncated quote does
+        # not establish a result, and no part is rewritten as a precondition.
+        parts = _outer_sentences(quote, original_for_overview=True)
+        if (len(parts) == 2 and ''.join(parts) == quote and _TRIAL_END.search(parts[0])
+                and _TRIAL_OBSERVATION.fullmatch(parts[1])
+                and not any(mark in quote for mark in ('「', '」', '『', '』', 'かもしれ', 'と思', 'と言', 'と聞'))):
+            choices.add(quote)
+    return sorted(choices, key=memo['text'].index) if len(choices) <= 4 else []
+
+
+def merge_action_sources(material, owners, *, context_sources=False):
     """For the new MERGE only, reserve already selectable original sentences.
 
     A passage can record proposed, declined, completed or reported actions, even
@@ -456,8 +570,11 @@ def merge_action_sources(material, owners):
         if (not 1 <= len(sentences) <= 4 or ''.join(sentences) != action['text']
                 or not all(s.endswith(('。', '!', '?', '！', '？')) and any(c.isalnum() for c in s) for s in sentences)):
             continue
-        if any(s not in action['text'] for s in choices_for_field(memo)[0]):
-            result[record] = MergeActionSources(action, memo, sentences, allowed)
+        memo_sentences, memo_allowed = choices_for_field(memo)
+        if any(s not in action['text'] for s in memo_sentences):
+            selected = (_action_context_choices(memo, action, memo_sentences, memo_allowed,
+                        material.get('leaf_source_index', ())) if context_sources else ())
+            result[record] = MergeActionSources(action, memo, sentences, allowed, selected)
     return result
 
 

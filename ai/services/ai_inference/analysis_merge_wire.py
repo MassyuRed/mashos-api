@@ -3,13 +3,19 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
+from collections import defaultdict
+from itertools import combinations
 
 
 LEGACY_VERSION = 'cocolon.analysis.merge_wire.v1'
 RECORD_VERSION = 'cocolon.analysis.merge_wire.v2'
 OUTPUT_VERSION = 'cocolon.analysis.merge_wire.v3'
-VERSION = 'cocolon.analysis.merge_wire.v4'
-OUTPUT_VERSIONS = (OUTPUT_VERSION, VERSION)
+SOURCE_TITLE_VERSION = 'cocolon.analysis.merge_wire.v4'
+COMPARISON_VERSION = 'cocolon.analysis.merge_wire.v5'
+VERSION = COMPARISON_VERSION
+TITLE_VERSIONS = (SOURCE_TITLE_VERSION, VERSION)
+OUTPUT_VERSIONS = (OUTPUT_VERSION, *TITLE_VERSIONS)
 VERSIONS = (LEGACY_VERSION, RECORD_VERSION, *OUTPUT_VERSIONS)
 PROFILE = 'semantic_map.node_local.v4.occurrence.v24'
 MODEL_SCHEMA = 'cocolon.analysis.semantic_map.node_local.model.v4'
@@ -61,19 +67,30 @@ def instruction(version, phase):
             '未読範囲の圧縮表示ではstartから各lengthsの長さだけ進み、次までの間隔は1、'
             'gapsにある番号だけ指定間隔です。')
         guidance += RESPONSE_GUIDANCE[phase]
-    if version == VERSION and phase == 'NODES':
+    if version in TITLE_VERSIONS and phase == 'NODES':
         guidance += (' この項目の見出しは、選んだ根拠にある一文を条件・主体・留保ごと残して選びます。'
             '文の一部を切り出して別の事実にはしません。選べる一文がないときは記録を指す見出しを使います。')
-    if version == VERSION and phase == 'PLAN':
+    if version in TITLE_VERSIONS and phase == 'PLAN':
         guidance += (' 行動欄の「話した・聞いた・伝えた・確認した」だけで、誰が何を望み、'
             '何を話したかが分からない場面では、同じ記録の思考欄全文から話者と発言内容が一緒に分かる原文を選びます。'
             '葉の引用以外の原文も選べます。別の日に同じ対象への判断が変わった場合は、'
             'それぞれの日の判断と、その時に分かっていた条件を各記録の単位に残します。')
-    if version == VERSION and phase == 'RELATIONS':
+    if version in TITLE_VERSIONS and phase == 'RELATIONS':
         guidance += (' 線を選ぶ前に、同じ対象が再び出た日の単位を突き合わせます。'
             '両方の原引用から、どの条件で何を選び、後にどの条件で何を選んだか説明できる組は、'
             'その二つの単位を選び、具体的な条件と行動を線の文にします。'
             '対象の一致や条件差を両端で確かめられず、他にも説明できる関係がなければedges=[]です。')
+    if version == VERSION and phase == 'PLAN':
+        guidance += (' memo_context_choicesは、行動の要約にない発言の内容・実行時点・確かめた結果を照合するための'
+            '[思考欄番号,同じ欄で選べる原文の候補]です。該当する項目でいずれかを原文のまま含む根拠を選びます。'
+            '誰が話したか、意向と実行、予定と実際の順序は原文で確かめます。候補自体は意味の判定ではありません。')
+    if version == COMPARISON_VERSION and phase == 'RELATIONS':
+        guidance += (' comparison_candidatesがある時は、qualification_reviewの次に、その順でcomparisonsを答えます。'
+            'wordingは同じ綴りで、同じ物や理由の証拠ではありません。左右の原引用を実際に読み、'
+            '同じ対象について条件と行動の違いを説明できる時は["COMPARE",自分で書いた具体的な比較文,relation_kind]。'
+            '異なる対象は"DIFFERENT_SUBJECT"、共通性や違いの根拠が足りない時は"INSUFFICIENT_EVIDENCE"です。'
+            '同じ綴りだけで対象や主体が同じと決めず、否定・希望・未確認を残します。別記録でも同日や時間順が不明なら、別日や時系列変化を断定しません。'
+            '比較を選んだ組はそのまま線になるので、次のedgesはほかに原文から説明できる関係だけにします。')
     return guidance
 
 
@@ -335,14 +352,98 @@ def _relation_fact_references(material, *, unpack=False):
                 unit['fact'] = 0
 
 
-def prepare_messages(messages, *, version=VERSION):
+def _memo_context_menu(material, fields, choice_module):
+    if not material.get('records'):
+        return []
+    if choice_module is None:
+        import analysis_plan_source_choices as choice_module
+    source = dict(material, fields=list(fields.values()))
+    owners = choice_module.record_plan_owners(source, merge_anchors=True)
+    rows = choice_module.merge_action_sources(source, owners, context_sources=True)
+    return [[row.memo_field, list(row.memo_choices)] for row in rows.values() if row.memo_choices]
+
+
+# Recurring spelling is a retrieval cue, never a determination that events
+# have the same object, actor, conditions, or outcome.
+COMPARISON_SKIPS = ('DIFFERENT_SUBJECT', 'INSUFFICIENT_EVIDENCE')
+
+
+def comparison_candidates(material):
+    if material['author_phase'] != 'RELATIONS' or material.get('map_corrections'):
+        return []
+    fields = displayed_fields(material)
+    by_record = defaultdict(set)
+    units = []
+    word = re.compile(r'[一-鿿々ァ-ヺー]{2,}|[A-Za-z][A-Za-z0-9-]{2,}')
+    for node in material.get('candidate_nodes', []):
+        roots = [root for unit in node['units'] for root in unit['evidence']]
+        owners = {fields.get(root['field'], {}).get('record') for root in roots}
+        if len(owners) != 1 or None in owners:
+            continue
+        record, = owners
+        if any(fields[root['field']].get('source_role') != 'ORIGINAL_INPUT' for root in roots):
+            continue
+        for index, unit in enumerate(node['units'], 1):
+            for root in unit['evidence']:
+                field, quote = fields[root['field']], root['quote']
+                if (field.get('supplement') is not None or field.get('fragment_is_complete_field') is not True
+                        or field.get('field_path') not in ('memo', 'memo_action')
+                        or not 2 <= len(quote) <= 160 or quote not in field['text']):
+                    continue
+                terms = {t for t in word.findall(quote) if 2 <= len(t) <= 32}
+                if terms:
+                    others = [r['quote'] for r in unit['evidence'] if r is not root]
+                    used_cues = {cue for text in others for cue in (text[:16], text[-16:])}
+                    cue = next((c for c in (quote[:16], quote[-16:]) if c not in used_cues), None)
+                    if cue is None:
+                        continue
+                    by_record[record].update(terms)
+                    units.append((record, node['node_id'], index, root['field'], quote,
+                                  field['field_path'] == 'memo_action', cue, terms))
+    owners = defaultdict(set)
+    for record, terms in by_record.items():
+        for term in terms:
+            owners[term].add(record)
+    pairs = {}
+    for left, right in combinations(units, 2):
+        if left[0] == right[0] or left[1] == right[1] or left[4] == right[4]:
+            continue
+        terms = sorted(t for t in left[-1] & right[-1] if len(owners[t]) == 2)
+        if not terms:
+            continue
+        # Require two independent recurring terms for a short commonplace word.
+        if len(terms) == 1 and len(terms[0]) < 3:
+            continue
+        key = (left[1], right[1])
+        score = (len(terms), int(left[5])+int(right[5]), sum(min(len(t), 8) for t in terms))
+        if key not in pairs or score > pairs[key][0]:
+            def endpoint(entry):
+                return dict(node=entry[1], unit=f'{entry[1]}.u{entry[2]}', record=entry[0],
+                            field=entry[3], quote=entry[4], cue=entry[6])
+            pairs[key] = (score, dict(left=endpoint(left), right=endpoint(right), wording=terms[:4]))
+    # Bound both the context cost and the number of mandatory author decisions.
+    return [pair for _, pair in sorted(pairs.values(), key=lambda item: item[0], reverse=True)[:2]]
+
+
+def comparison_endpoints(candidate):
+    left, right = candidate['left'], candidate['right']
+    return {'from': left['node'], 'to': right['node'], 'from_unit': left['unit'], 'to_unit': right['unit'],
+            'from_source': left['cue'], 'to_source': right['cue']}
+
+
+def prepare_messages(messages, *, version=VERSION, choice_module=None):
     material = json.loads(messages[1]['content'])
     if isinstance(material, dict):
-        require(not WIRE_FIELDS.intersection(material))
+        require(not WIRE_FIELDS.intersection(material) and not {'comparison_candidates', 'memo_context_choices'}.intersection(material))
     if not eligible(material):
         return messages
     require(compact_json(material) == messages[1]['content'])
+    comparisons = comparison_candidates(material) if version == COMPARISON_VERSION else []
     fields = displayed_fields(material)
+    if version == VERSION and material['author_phase'] == 'PLAN':
+        menu = _memo_context_menu(material, fields, choice_module)
+        if menu:
+            material['memo_context_choices'] = menu
     material['leaf_source_index'] = pack_index(material['leaf_source_index'], fields)
     material['field_manifest'] = pack_manifest(material['field_manifest'], fields)
     if version in OUTPUT_VERSIONS:
@@ -350,20 +451,26 @@ def prepare_messages(messages, *, version=VERSION):
         _relation_fact_references(material)
         _visible_sources(material, fields)
         _range_lengths(material)
+    if comparisons:
+        material['comparison_candidates'] = comparisons
     material['merge_wire_version'] = version
     material['merge_original_messages_sha256'] = messages_digest(messages)
     return [dict(messages[0], content=messages[0]['content'] + instruction(version, material['author_phase'])),
             dict(messages[1], content=compact_json(material))]
 
 
-def legacy_messages(messages):
+def legacy_messages(messages, *, choice_module=None):
     try:
         material = json.loads(messages[1]['content'])
         require(eligible(material))
         version = material.pop('merge_wire_version', None)
         suffix = instruction(version, material['author_phase'])
         binding = material.pop('merge_original_messages_sha256')
+        if version == COMPARISON_VERSION:
+            material.pop('comparison_candidates', None)  # Canonical round-trip below checks the whole table.
         require(messages[0]['content'].endswith(suffix))
+        if version == VERSION and material['author_phase'] == 'PLAN':
+            material.pop('memo_context_choices', None)
         fields = displayed_fields(material)
         material['leaf_source_index'] = unpack_index(material['leaf_source_index'], fields)
         material['field_manifest'] = unpack_manifest(material['field_manifest'], fields)
@@ -376,7 +483,7 @@ def legacy_messages(messages):
                   dict(messages[1], content=compact_json(material))]
         require(messages_digest(result) == binding)
         # Ensure the sender used the canonical representation, including the menu layout.
-        require(prepare_messages(result, version=version) == messages)
+        require(prepare_messages(result, version=version, choice_module=choice_module) == messages)
         return result
     except (KeyError, TypeError, IndexError) as exc:
         raise ValueError('analysis_merge_wire_invalid') from exc
@@ -406,7 +513,10 @@ def _quote_codes(literals):
 
 class ResponseCodec:
     """Project only deterministic positions. Every authored choice remains in the raw receipt."""
-    def __init__(self, material, choice_module, fact_key):
+    def __init__(self, material, choice_module, fact_key, *, comparisons=()):
+        self.comparisons = comparisons
+        self.comparison_endpoints = tuple(comparison_endpoints(c) for c in comparisons)
+        self.comparison_skips = COMPARISON_SKIPS
         self.phase = material['author_phase']
         self.plan_units = ()
         self.qualification_items = ()
@@ -468,8 +578,10 @@ class ResponseCodec:
         q, field = self._quote(pair[0]), pair[1]
         return dict(source_quote=q, source_field=field) if qualification else dict(quote=q, field=field)
 
-    def _relation_values(self, value, *, unpack):
+    def _relation_values(self, value, *, unpack, comparison_decisions=None):
         keys = {'schema_version', 'nodes_sha256', 'qualification_review', 'edges', 'overview'}
+        if self.comparisons and unpack:
+            keys.add('comparisons')
         require(type(value) is dict and set(value) == keys and value['nodes_sha256'] == self.binding
                 and value['schema_version'] == MODEL_SCHEMA + '.relations')
         source = value['qualification_review']
@@ -503,8 +615,50 @@ class ResponseCodec:
                 else:
                     require(set(item) == {'status'} and item['status'] in closed)
                     review.append(item['status'])
-        return dict(schema_version=value['schema_version'], nodes_sha256=self.binding,
-                    qualification_review=review, edges=value['edges'], overview=value['overview'])
+        edges = value['edges']
+        result = dict(schema_version=value['schema_version'], nodes_sha256=self.binding, qualification_review=review)
+        if comparison_decisions is not None:
+            require(not unpack and self.comparisons and type(comparison_decisions) is list
+                    and len(comparison_decisions) == len(self.comparisons))
+        if self.comparisons:
+            require(type(edges) is list)
+            bindings = self.comparison_endpoints
+            if unpack:
+                decisions = value['comparisons']
+                require(type(decisions) is list and len(decisions) == len(bindings))
+                authored = []
+                for decision, endpoints in zip(decisions, bindings, strict=True):
+                    if type(decision) is str:
+                        require(decision in COMPARISON_SKIPS)
+                    else:
+                        require(type(decision) is list and len(decision) == 3 and decision[0] == 'COMPARE')
+                        authored.append(dict(endpoints, label=decision[1], relation_kind=decision[2]))
+                # A skipped or already authored pair cannot be reintroduced
+                # with exactly those same source choices in the free array.
+                def source_pair(edge):
+                    return tuple((edge.get(side), edge.get(side + '_unit'), edge.get(side + '_source'))
+                                 for side in ('from', 'to'))
+                reserved = [source_pair(ep) for ep in bindings]
+                for edge in edges:
+                    require(type(edge) is dict)
+                    selected = source_pair(edge)
+                    require(selected not in reserved and selected[::-1] not in reserved)
+                edges = authored + edges
+            else:
+                result['comparisons'] = []
+                edges = list(edges)
+                for index, endpoints in enumerate(bindings):
+                    if edges and all(edges[0].get(k) == v for k, v in endpoints.items()):
+                        edge = edges.pop(0)
+                        result['comparisons'].append(['COMPARE', edge['label'], edge['relation_kind']])
+                    else:
+                        skip = 'INSUFFICIENT_EVIDENCE' if comparison_decisions is None else comparison_decisions[index]
+                        require(type(skip) is str and skip in COMPARISON_SKIPS)
+                        result['comparisons'].append(skip)
+                if comparison_decisions is not None:
+                    require(result['comparisons'] == comparison_decisions)
+        result.update(edges=edges, overview=value['overview'])
+        return result
 
     def decode(self, raw):
         if self.phase == 'RELATIONS':
@@ -540,12 +694,13 @@ class ResponseCodec:
             nodes[f'n{n}'] = dict(units=units, node_kind=kind, perspective=perspective, title=title, meaning=meaning)
         return dict(schema_version=version, plan_sha256=self.binding, nodes=nodes)
 
-    def encode(self, value):
+    def encode(self, value, *, comparison_decisions=None):
         """Inverse, used to check that no model selection is lost in a physical response."""
         if self.phase == 'RELATIONS':
-            raw = self._relation_values(value, unpack=False)
+            raw = self._relation_values(value, unpack=False, comparison_decisions=comparison_decisions)
             require(messages_digest(self.decode(raw)) == messages_digest(value))
             return raw
+        require(comparison_decisions is None)
         if self.phase == 'PLAN':
             rows = [[[[self.quote_code(root['quote']), root['field']] for root in unit['evidence']]
                       for unit in node['units']] for node in value['nodes']]
@@ -572,10 +727,11 @@ def response_codec(messages, *, choice_module=None, fact_key=None):
     material = json.loads(messages[1]['content'])
     if material['merge_wire_version'] not in OUTPUT_VERSIONS:
         return None
-    logical = json.loads(legacy_messages(messages)[1]['content'])
+    logical = json.loads(legacy_messages(messages, choice_module=choice_module)[1]['content'])
     if choice_module is None:
         import analysis_plan_source_choices as choice_module
     if logical['author_phase'] == 'NODES' and fact_key is None:
         from cocolon_meaning_experience_engine.cores.analysis.semantic_admission import _semantic_fact_part_key
         fact_key = _semantic_fact_part_key
-    return ResponseCodec(logical, choice_module, fact_key)
+    comparisons = material.get('comparison_candidates', ()) if material['merge_wire_version'] == COMPARISON_VERSION else ()
+    return ResponseCodec(logical, choice_module, fact_key, comparisons=comparisons)

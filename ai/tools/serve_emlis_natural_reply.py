@@ -1044,7 +1044,7 @@ def _semantic_constraint_messages(messages):
     material = json.loads(messages[1]['content'])
     if isinstance(material, dict) and (
             'merge_wire_version' in material or 'merge_original_messages_sha256' in material):
-        return _semantic_merge_wire_module().legacy_messages(messages)
+        return _semantic_merge_wire_module().legacy_messages(messages, choice_module=_semantic_choice_module())
     return messages
 
 
@@ -1054,7 +1054,7 @@ def semantic_output_schema(messages):
             or messages[1].get('role') != 'user'):
         raise ValueError('semantic_material_invalid')
     wire_version = json.loads(messages[1]['content']).get('merge_wire_version')
-    bound_titles = wire_version is not None and wire_version == _semantic_merge_wire_module().VERSION
+    bound_titles = wire_version is not None and wire_version in _semantic_merge_wire_module().TITLE_VERSIONS
     merge_anchors = _merge_record_anchors(messages)
     messages = _semantic_constraint_messages(messages)
     material = json.loads(messages[1]['content'])
@@ -2382,6 +2382,7 @@ def semantic_json_parser(messages, alphabet):
 
 def _semantic_logical_json_parser(messages, alphabet):
     merge_action_sources_enabled = _semantic_merge_tuple_output(messages)
+    context_sources = (merge_action_sources_enabled and json.loads(messages[1]['content'])['merge_wire_version'] == _semantic_merge_wire_module().VERSION)
     from lmformatenforcer import CharacterLevelParserConfig, JsonSchemaParser
     # LMFE snapshots alphabet_without_quotes while constructing its context.
     # Updating parser.config later leaves that initial snapshot unchanged.
@@ -2433,7 +2434,7 @@ def _semantic_logical_json_parser(messages, alphabet):
                 pairs = tuple(by_record.get(r['record']) for r in material['records'])
             choice_rules = _semantic_choice_module()
             if merge_action_sources_enabled:
-                by_record_action = choice_rules.merge_action_sources(material, owners)
+                by_record_action = choice_rules.merge_action_sources(material, owners, context_sources=context_sources)
                 if by_record_action:
                     actions = tuple(by_record_action.get(row['record']) for row in material['records'])
             by_region = choice_rules.owner_source_regions(material, owners, choice_rules.plan_reading_regions(material, by_record), required_sources)
