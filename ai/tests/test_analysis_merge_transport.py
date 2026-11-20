@@ -547,11 +547,8 @@ def test_different_documents_for_same_recipient_are_not_one_subject_even_if_anot
     assert wire._decision_endpoints(row, originals, named_requests=True) is None
 
 
-def test_same_request_can_progress_to_a_report_without_claiming_delivery():
-    first = '案内所への部品依頼を提案したが、渡したかは確認していない。'
-    second = '同僚の交換部品の依頼連絡に返事をした。'
+def _request_progress_material(first, second, update):
     context = '壊れた器具の交換の部品も頼みたいと提案した。担当者はその依頼を案内所へ送ると言った。'
-    update = '同僚から交換部品を案内所へ頼んだと連絡があった。'
     material = recurring_sources()
     for field, node, quote, text in zip(material['fields'][:2], material['candidate_nodes'][:2],
                      (first, second), (context+first, update+second), strict=True):
@@ -559,6 +556,13 @@ def test_same_request_can_progress_to_a_report_without_claiming_delivery():
         node['units'][0]['evidence'][0]['quote'] = quote
     material['records'] = [dict(record=1, recorded_at='2026-10-05T09:00:00'),
                            dict(record=2, recorded_at='2026-10-13T09:00:00')]
+    return material
+
+
+def test_same_request_can_progress_to_a_report_without_claiming_delivery():
+    first = '案内所への部品依頼を提案したが、渡したかは確認していない。'
+    second = '同僚の交換部品の依頼連絡に返事をした。'
+    material = _request_progress_material(first, second, '同僚から交換部品を案内所へ頼んだと連絡があった。')
     enabled = dict(decision_sources=True, named_requests=True, request_progress=True)
     candidate, = wire.paired_comparison_candidates(material, None, **enabled)
     progress, = candidate['request_progress_choices']
@@ -609,3 +613,38 @@ def test_same_request_can_progress_to_a_report_without_claiming_delivery():
     # The reserved pair cannot be restored through the free edges array after the author declined it.
     with pytest.raises(ValueError):
         codec.decode(dict(raw,comparisons=['DIFFERENT_SUBJECT'],edges=[edge]))
+
+
+@pytest.mark.parametrize('proposal,update,reply,trace', [
+    ('提案したが、送信したかは確認していない', 'があった', 'に返事をし、家具は注文していない', True),
+    ('提案した', 'が届いた', 'が届いたが、まだ返事はしていない', True),
+    ('提案した', 'があったかは分からない', 'に返事をしたかは分からない', False),
+    ('提案した', 'があったら確認する', 'に返事をする予定だ', False),
+    ('提案した', 'は来ていない', 'に返事をしていない', False),
+    ('提案した', 'があったら確認する', 'が届いたら返事をする', False),
+    ('提案しなかった', 'が届いた', 'が届いた', False),
+    ('提案したかは覚えていない', 'が届いた', 'が届いた', False),
+    ('提案したがっている', 'が届いた', 'が届いた', False),
+])
+def test_request_trace_binds_the_status_of_each_selected_action(proposal, update, reply, trace):
+    first = '案内所への部品依頼を' + proposal + '。'
+    second = '同僚の交換部品の依頼連絡' + reply + '。'
+    material = _request_progress_material(first, second, '同僚から交換部品を案内所へ頼んだと連絡' + update + '。')
+    options = dict(decision_sources=True, named_requests=True, request_progress=True)
+    candidate, = wire.paired_comparison_candidates(material, None, **options)
+    progress = candidate.get('request_progress_choices', [])
+    assert bool(progress) is trace
+    if trace:
+        codec = wire.ResponseCodec(material, None, None, paired=True, comparisons=[candidate], **options)
+        raw = codec.encode(dict(schema_version=wire.MODEL_SCHEMA + '.relations', nodes_sha256=codec.binding,
+                                qualification_review={}, edges=[], overview={}))
+        sources = {}
+        edge, = codec.decode(dict(raw, comparisons=[progress[0]]), comparison_sources=sources)['edges']
+        assert edge['label'] == first + '後の記録では、' + second
+        assert sources[(edge['from_unit'], edge['to_unit'], edge['label'])] == ((1, first, first), (2, second, second))
+    else:
+        free = wire.ResponseCodec(material, None, None, paired=True, **options)
+        for row, label in ((candidate, first + '後の記録では、' + second),
+                           (dict(candidate, left=candidate['right'], right=candidate['left']), second + '先の記録では、' + first)):
+            assert not free.free_comparisons_allowed([dict(wire.comparison_endpoints(row),
+                                                           relation_kind='SHARED_MEANING', label=label)])

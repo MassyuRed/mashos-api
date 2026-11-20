@@ -721,8 +721,18 @@ def _comparison_originals(material, choice_module):
     return originals
 
 
-_REQUEST_INITIATED = re.compile(r'(?:依頼|申請|発注|注文|照会|問い合わせ|申込)(?:を|することを)?(?:提案|打診|検討|相談|予定|したい)|(?:頼み|申し込み)たい')
-_REQUEST_UPDATE = re.compile(r'(?:連絡|回答|返事|返答|知らせ|報告)(?:が(?:あった|来た|届)|を(?:受け|聞|読|返)|に(?:返事|回答|返答|応え))')
+# Require the selected predicate to finish its own clause. A proposed request
+# may still be unsent, and receiving news need not mean the author replied.
+_STATED_CLAUSE = r'(?=$|[。．.!！]|[、,](?!\s*と(?:仮定|想定))|(?:が|けれど(?:も)?|ものの)(?:[、,]|(?=[一-鿿々])))'
+_DID = r'(?:した|しました|し(?=[、,]))'
+_REQUEST_INITIATED = re.compile(
+    r'(?:(?:依頼|申請|発注|注文|照会|問い合わせ|申込)(?:を|することを)?'
+    r'(?:(?:提案|打診|検討|相談|予定)(?:を)?' + _DID + r'|したい)'
+    r'|(?:頼み|申し込み)たい(?:と(?:提案|相談)' + _DID + r')?)' + _STATED_CLAUSE)
+_REQUEST_UPDATE = re.compile(
+    r'(?:連絡|回答|返事|返答|知らせ|報告)(?:が(?:あった|ありました|来た|来ました|届いた|届きました|(?:あり|届き)(?=[、,]))'
+    r'|を(?:受け(?:取った|取りました|た|ました)|聞いた|聞きました|読んだ|読みました|返した|返しました|(?:受け|受け取り|聞き|読み|返し)(?=[、,]))'
+    r'|に(?:(?:返事|回答|返答)(?:を)?' + _DID + r'|応え(?:た|ました|(?=[、,]))))' + _STATED_CLAUSE)
 _DIFFERENT_REQUEST = re.compile(r'別件|別の(?:依頼|案件|申請|注文|見積り)|無関係な')
 
 
@@ -1043,10 +1053,11 @@ class ResponseCodec:
                         for action, subject, li, _, ri in row['request_progress_choices']]
                 for candidate in (row, reverse):
                     key = tuple(comparison_endpoints(candidate).values())
-                    self._extra_comparisons[key] = {
+                    choices = {
                         (self.paired_kind(decision), label): _comparison_sources(candidate, decision) if self._decision_sources else None
                         for decision, label in paired_decisions(candidate)}
-        return self._extra_comparisons.get(endpoint_key, {})
+                    self._extra_comparisons[key] = (choices, candidate['subject_witness']['kind'] == 'requested_object')
+        return self._extra_comparisons.get(endpoint_key, ({}, False))
 
     def free_comparisons_allowed(self, edges, *, comparison_sources=None):
         if self.paired_material is None:
@@ -1066,9 +1077,9 @@ class ResponseCodec:
                 key = tuple(edge.get(k) for k in ('from','to','from_unit','to_unit','from_source','to_source'))
                 if not all(type(x) is str for x in key):
                     return False
-                choices = self._extra_pair_choices(key)
+                choices, named_request = self._extra_pair_choices(key)
                 # Other freely authored relations still use the ordinary two-source check below.
-                if kind == 'CONTEXT_CONTRAST' or any(option[0] == 'SHARED_MEANING' for option in choices):
+                if kind == 'CONTEXT_CONTRAST' or named_request:
                     if (kind, label) not in choices:
                         return False
                     if self._decision_sources and comparison_sources is not None:

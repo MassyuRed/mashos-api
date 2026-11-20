@@ -68,3 +68,35 @@ def test_requires_both_leaf_witnesses_and_a_unique_exchange():
     second = pair.replace('講師', '奏者')
     stage = stage_with_action(MEMO + SELF + pair + second, ACTION, (SELF, pair, second))
     assert rules(stage, True).context_groups == ((SELF,),)
+
+
+def test_another_participants_wish_cannot_replace_the_writers_own_words():
+    from test_analysis_merge_speaker_context import WISH
+    action = '監督と希望を話し、自分の解釈を説明した。'
+    pair = WORDS + RECEPTION
+    stage = stage_with_action(MEMO + WISH + '\n\n' + SELF + '\n\n' + pair, action, (SELF, pair))
+    old, new = rules(stage, False), rules(stage, True)
+    assert old.context_groups == ((WISH, SELF),)
+    assert new.context_groups == ((WISH, SELF), (SELF,), (pair,))
+    roots = [(2, action), (1, WISH), (1, pair)]
+    assert not old.missing(roots)
+    assert new.missing(roots)
+    assert not new.missing([*roots,(1, SELF)])
+
+
+def test_eight_slots_preserve_prior_narrator_reply_and_its_explicit_referent():
+    from test_analysis_merge_speaker_context import WISH, REPLY, LIMIT, STANCE, REFERENCE
+    before = '途中で、係員が小さな合図を返したことが話題になった。'
+    corrected = '私はそこを見落としていたので、返事がなかったという説明を直した。'
+    hold = 'ただ、その合図がどんな意図で送られたのかはまだ分からない。'
+    contact = '準備を終えてから車掌へ短い報告を送り、駅名を確認できるか尋ねた。'
+    received = '昼過ぎに駅名が届き、候補の表を作り直した。'
+    memo = '\n\n'.join((WISH+REPLY+LIMIT, STANCE+REFERENCE, SELF, WORDS+RECEPTION,
+                        before+corrected+hold, contact, received))
+    action = '監督と希望を話し、自分の解釈を説明した。駅名について車掌へ報告した。返答後に表を書き直した。途中で事実の説明を修正した。'
+    stage = stage_with_action(memo, action, (SELF, WORDS+RECEPTION, received))
+    old, new = rules(stage, False), rules(stage, True)
+    assert old.minimum_roots[old.required] == 8
+    assert old.context_groups[-2:] == ((REPLY+LIMIT,), (STANCE+REFERENCE,))
+    assert new.context_groups == old.context_groups
+    assert new.minimum_roots[new.required] == 8

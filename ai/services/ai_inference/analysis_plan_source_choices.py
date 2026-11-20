@@ -710,7 +710,8 @@ def _attributed_account_groups(selected, leaf_quotes, allowed, memo):
     both those words and the narrator's own explicitly unresolved interpretation
     of the named speaker. Keep the two sentences together in their original order.
     """
-    if not any(_SELF_ACCOUNT_LINE.fullmatch(q) for q in selected):
+    own = tuple(q for q in selected if _SELF_ACCOUNT_LINE.fullmatch(q))
+    if len(own) != 1:
         return ()
     candidates = set()
     for quote in leaf_quotes:
@@ -731,7 +732,10 @@ def _attributed_account_groups(selected, leaf_quotes, allowed, memo):
                       r'(?:のか|かどうか|意図|真意)[^。]*(?:分からない|わからない|不明だ)。$', response)
                 and memo.count(quote) == 1):
             candidates.add(quote)
-    return (tuple(candidates),) if len(candidates) == 1 else ()
+    if len(candidates) != 1:
+        return ()
+    other = (tuple(candidates),)
+    return other if len(selected) == 1 else (own, *other)
 
 
 def merge_action_sources(material, owners, *, context_sources=False, distinct_context_sources=False,
@@ -796,16 +800,19 @@ def merge_action_sources(material, owners, *, context_sources=False, distinct_co
             row = MergeActionSources(action, memo, sentences, allowed, selected, groups, memo_allowed)
             if groups and row.minimum_roots[row.required] > 8:
                 row = MergeActionSources(action, memo, sentences, allowed, selected)
-            extra = ()
+            additional_groups = []
             if speaker_context_sources:
-                extra = _speaker_context_groups(memo['text'], action['text'], selected, memo_allowed)
+                additional_groups.append(_speaker_context_groups(memo['text'], action['text'], selected, memo_allowed))
             if attributed_context_sources and distinct_context_sources:
-                extra += _attributed_account_groups(selected, leaf_quotes, memo_allowed, memo['text'])
-            if extra:
-                expanded = MergeActionSources(action, memo, sentences, allowed, selected,
-                                              (*row.context_groups[1:], *extra), memo_allowed)
-                if expanded.minimum_roots[expanded.required] <= 8:
-                    row = expanded
+                additional_groups.append(_attributed_account_groups(selected, leaf_quotes, memo_allowed, memo['text']))
+            # Each newer rule can use only the capacity left by earlier source
+            # obligations. An indivisible pair that cannot fit leaves them intact.
+            for extra in additional_groups:
+                if extra:
+                    expanded = MergeActionSources(action, memo, sentences, allowed, selected,
+                                                  (*row.context_groups[1:], *extra), memo_allowed)
+                    if expanded.minimum_roots[expanded.required] <= 8:
+                        row = expanded
             result[record] = row
     return result
 
