@@ -2387,7 +2387,7 @@ def _semantic_logical_json_parser(messages, alphabet):
     merge_action_sources_enabled = _semantic_merge_tuple_output(messages)
     wire_version = json.loads(messages[1]['content'])['merge_wire_version'] if merge_action_sources_enabled else None
     context_sources = wire_version in _semantic_merge_wire_module().COMPARISON_VERSIONS if wire_version else False
-    distinct_context_sources = wire_version == _semantic_merge_wire_module().VERSION if wire_version else False
+    distinct_context_sources = wire_version in _semantic_merge_wire_module().PAIRED_VERSIONS if wire_version else False
     from lmformatenforcer import CharacterLevelParserConfig, JsonSchemaParser
     # LMFE snapshots alphabet_without_quotes while constructing its context.
     # Updating parser.config later leaves that initial snapshot unchanged.

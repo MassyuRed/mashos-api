@@ -695,15 +695,20 @@ def _consume_model_map_completion(task):
         task.exception()
 
 
-async def _model_response(model_source, prepared):
+async def _model_response(model_source, prepared, *, merge_deadline=None):
     _require_model_write_active()
     try:
         from analysis_model_source import (is_semantic_analysis_model_source,
             SEMANTIC_REQUEST_TIMEOUT_SECONDS)
-        timeout = (SEMANTIC_REQUEST_TIMEOUT_SECONDS if is_semantic_analysis_model_source(model_source)
+        semantic = is_semantic_analysis_model_source(model_source)
+        expires = asyncio.get_running_loop().time() + (SEMANTIC_REQUEST_TIMEOUT_SECONDS if semantic
             else MODEL_SOURCE_TIMEOUT_SECONDS)
-        async with asyncio.timeout(timeout) as deadline:
-            response = await model_source(prepared)
+        options = {}
+        if semantic and merge_deadline is not None:
+            expires = merge_deadline
+            options['pipeline_deadline'] = expires
+        async with asyncio.timeout_at(expires) as deadline:
+            response = await model_source(prepared, **options)
         # A cooperative provider may catch cancellation to finish its cleanup.
         # A response returned after that deadline must still never be committed.
         if deadline.expired():
@@ -782,7 +787,8 @@ async def _semantic_history_map(source, parent):
         SEMANTIC_PIPELINE_TIMEOUT_SECONDS, SEMANTIC_REQUEST_TIMEOUT_SECONDS)
     from analysis_semantic_map import build_semantic_map, build_semantic_history_stage
     from cocolon_meaning_experience_engine.cores.analysis.semantic_admission import (
-        prepare_semantic_merge, semantic_history_parent_scope, _semantic_map_require)
+        prepare_semantic_merge, semantic_history_parent_scope, semantic_node_local_v4_uses_compact_merge,
+        _semantic_map_require)
     started = asyncio.get_running_loop().time()
     try:
         # Preparation and every stage share one finite clock. Allocate for the
@@ -810,7 +816,8 @@ async def _semantic_history_map(source, parent):
                     merged = await asyncio.to_thread(prepare_semantic_merge, parent, tuple(receipts))
                     _semantic_map_require(semantic_analysis_input_fits(merged),
                         'analysis_semantic_history_capacity_exceeded')
-                    response = await _model_response(source, merged)
+                    merge_deadline = deadline.when() if semantic_node_local_v4_uses_compact_merge(merged) else None
+                    response = await _model_response(source, merged, merge_deadline=merge_deadline)
                     outcome = await asyncio.to_thread(build_semantic_history_stage, merged, response)
                     if outcome.artifact is None:
                         raise ValueError(outcome.reason_codes[0])

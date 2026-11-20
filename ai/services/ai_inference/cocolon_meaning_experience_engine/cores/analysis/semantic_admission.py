@@ -4262,7 +4262,7 @@ def assemble_semantic_node_local_v4_with_node_choices(prepared, packet):
     packet_keys = {'schema_version', 'phases'}
     phase_keys = {'phase', 'messages_sha256', 'raw', 'raw_sha256', 'finish_reason', 'completion_tokens'}
     if compact:
-        from analysis_merge_wire import RECORD_VERSION, OUTPUT_VERSIONS, TITLE_VERSIONS, COMPARISON_VERSIONS, VERSION, VERSIONS, legacy_messages, response_codec
+        from analysis_merge_wire import RECORD_VERSION, OUTPUT_VERSIONS, TITLE_VERSIONS, COMPARISON_VERSIONS, PAIRED_VERSIONS, VERSIONS, legacy_messages, response_codec
         r(packet['merge_wire_version'] in VERSIONS and semantic_node_local_v4_uses_compact_merge(prepared), reason)
         packet_keys.add('merge_wire_version')
         phase_keys.add('logical_messages_sha256')
@@ -4301,7 +4301,7 @@ def assemble_semantic_node_local_v4_with_node_choices(prepared, packet):
                 merge_anchors=compact and packet['merge_wire_version'] in (RECORD_VERSION, *OUTPUT_VERSIONS),
                 merge_action_sources=compact and packet['merge_wire_version'] in OUTPUT_VERSIONS,
                 context_sources=compact and packet['merge_wire_version'] in COMPARISON_VERSIONS,
-                distinct_context_sources=compact and packet['merge_wire_version'] == VERSION)
+                distinct_context_sources=compact and packet['merge_wire_version'] in PAIRED_VERSIONS)
         elif phase == 'NODES':
             nodes = admit_semantic_node_local_v4_nodes_response(prepared, plan, value,
                 bound_titles=compact and packet['merge_wire_version'] in TITLE_VERSIONS, ordered_titles=ordered_titles)

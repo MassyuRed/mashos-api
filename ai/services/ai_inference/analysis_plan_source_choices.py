@@ -1525,7 +1525,7 @@ def leaf_meanings(fields, units, sentences):
 
 
 def source_ordered_merge(wire_version):
-    return wire_version == 'cocolon.analysis.merge_wire.v6'
+    return wire_version in ('cocolon.analysis.merge_wire.v6', 'cocolon.analysis.merge_wire.v7')
 
 
 def ordered_record_sections(fields, units, fixed_parts=None):

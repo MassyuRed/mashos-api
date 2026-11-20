@@ -182,8 +182,8 @@ class SelfHostedSemanticAnalysisModelSource(SelfHostedAnalysisModelSource):
         super().__init__(endpoint=endpoint, model=model, api_key=api_key, transport=transport)
         self._prompt_version = semantic_prompt_version
 
-    async def _node_local_v4(self, prepared):
-        """Exactly three acquisitions under one existing absolute deadline.
+    async def _node_local_v4(self, prepared, *, pipeline_deadline=None):
+        """Exactly three acquisitions under one absolute deadline.
 
         All unmodified raw/finish/message hashes survive in the final private
         artifact. This is structural assembly, not one sequence or a repair.
@@ -192,11 +192,16 @@ class SelfHostedSemanticAnalysisModelSource(SelfHostedAnalysisModelSource):
         from cocolon_meaning_experience_engine.cores.analysis import semantic_admission as core
         core.require(semantic_analysis_input_fits(prepared), 'analysis_semantic_history_capacity_exceeded')
         loop = asyncio.get_running_loop()
-        end = loop.time() + SEMANTIC_HTTP_TIMEOUT_SECONDS
         receipts, plan, nodes = [], None, None
         compact_merge = core.semantic_node_local_v4_uses_compact_merge(prepared)
+        # Only the final multi-record merge can spend time remaining from the
+        # history clock. Each stream is still bound by its own HTTP deadline.
+        end = loop.time() + SEMANTIC_HTTP_TIMEOUT_SECONDS
         if compact_merge:
             from analysis_merge_wire import VERSION, legacy_messages, response_codec
+            if pipeline_deadline is not None:
+                end = min(pipeline_deadline, loop.time() +
+                    len(core.SEMANTIC_MAP_NODE_LOCAL_V4_PHASES) * SEMANTIC_HTTP_TIMEOUT_SECONDS)
         remaining_tokens = core.SEMANTIC_MAP_NODE_LOCAL_V4_TOKEN_BUDGET
         maximum = SEMANTIC_MERGE_MAX_PROMPT_BYTES if getattr(prepared, 'kind', None) == 'MERGE' else SEMANTIC_MAX_PROMPT_BYTES
         try:
@@ -209,7 +214,8 @@ class SelfHostedSemanticAnalysisModelSource(SelfHostedAnalysisModelSource):
                     messages = core.semantic_node_local_v4_wire_messages(prepared, phase, plan=plan, nodes=nodes)
                     core.require(len(core.semantic_map_canonical(messages).encode()) <= maximum,
                         'analysis_semantic_history_capacity_exceeded')
-                    remaining = end - loop.time()
+                    phase_end = min(end, loop.time() + SEMANTIC_HTTP_TIMEOUT_SECONDS)
+                    remaining = phase_end - loop.time()
                     if remaining <= SEMANTIC_V4_RESPONSE_RESERVE_SECONDS:
                         raise TimeoutError('analysis_model_source_timeout')
                     body = dict(model=self.model, messages=messages, temperature=0, max_tokens=tokens,
@@ -217,7 +223,7 @@ class SelfHostedSemanticAnalysisModelSource(SelfHostedAnalysisModelSource):
                         generation_seconds=min(210.0, remaining - SEMANTIC_V4_RESPONSE_RESERVE_SECONDS))
                     core.require(len(core.semantic_map_canonical(body).encode()) <= SEMANTIC_MAX_REQUEST_BYTES,
                         'analysis_semantic_history_capacity_exceeded')
-                    async with client.stream('POST', self.endpoint,
+                    async with asyncio.timeout_at(phase_end), client.stream('POST', self.endpoint,
                             headers={'Authorization': 'Bearer ' + self._api_key}, json=body,
                             timeout=httpx.Timeout(remaining, connect=min(15.0, remaining))) as response:
                         if response.status_code != 200:
@@ -227,6 +233,8 @@ class SelfHostedSemanticAnalysisModelSource(SelfHostedAnalysisModelSource):
                             payload.extend(chunk)
                             if len(payload) > MAX_RESPONSE_BYTES:
                                 raise ValueError('phase_response_too_large')
+                    if loop.time() >= phase_end:
+                        raise TimeoutError('analysis_model_source_timeout')
                     data = json.loads(payload)
                     if type(data) is not dict or data.get('model') != self.model:
                         raise ValueError('phase_model_changed')
@@ -287,7 +295,7 @@ class SelfHostedSemanticAnalysisModelSource(SelfHostedAnalysisModelSource):
         except (httpx.HTTPError, ValueError, TypeError, KeyError, UnicodeError, RuntimeError):
             raise RuntimeError('analysis_model_source_unavailable') from None
 
-    async def __call__(self, prepared):
+    async def __call__(self, prepared, *, pipeline_deadline=None):
         from analysis_semantic_map import SemanticMapInput
         from cocolon_meaning_experience_engine.cores.analysis.semantic_admission import (
             AnalysisModelQuotedParentUnitsResponse, AnalysisSemanticMapStageInput,
@@ -296,7 +304,7 @@ class SelfHostedSemanticAnalysisModelSource(SelfHostedAnalysisModelSource):
             and prepared.prompt_version == self.prompt_version,
             'analysis_semantic_input_invalid')
         if self.prompt_version in SEMANTIC_MAP_NODE_LOCAL_V4_PROFILES:
-            return await self._node_local_v4(prepared)
+            return await self._node_local_v4(prepared, pipeline_deadline=pipeline_deadline)
         messages = prepared.messages()
         require(semantic_analysis_input_fits(prepared), 'analysis_semantic_history_capacity_exceeded')
         body = dict(model=self.model, messages=messages, temperature=0,
@@ -461,7 +469,7 @@ class _ApplicationSemanticAnalysisSource(_ApplicationAnalysisSource):
     def prompt_version(self):
         return _configured_semantic_prompt_version(self._settings[2])
 
-    async def __call__(self, prepared):
+    async def __call__(self, prepared, *, pipeline_deadline=None):
         self.require_current()
         selector, endpoint, model, api_key = self._settings
         if selector != SEMANTIC_SELECTOR:
@@ -471,7 +479,7 @@ class _ApplicationSemanticAnalysisSource(_ApplicationAnalysisSource):
                 semantic_prompt_version=self.prompt_version)
         except ValueError:
             raise RuntimeError('analysis_model_configuration_invalid') from None
-        response = await source(prepared)
+        response = await source(prepared, pipeline_deadline=pipeline_deadline)
         self.require_current()
         return response
 

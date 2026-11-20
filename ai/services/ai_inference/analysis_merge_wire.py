@@ -13,8 +13,10 @@ RECORD_VERSION = 'cocolon.analysis.merge_wire.v2'
 OUTPUT_VERSION = 'cocolon.analysis.merge_wire.v3'
 SOURCE_TITLE_VERSION = 'cocolon.analysis.merge_wire.v4'
 COMPARISON_VERSION = 'cocolon.analysis.merge_wire.v5'
-VERSION = 'cocolon.analysis.merge_wire.v6'
-COMPARISON_VERSIONS = (COMPARISON_VERSION, VERSION)
+PAIRED_VERSION = 'cocolon.analysis.merge_wire.v6'
+VERSION = 'cocolon.analysis.merge_wire.v7'
+PAIRED_VERSIONS = (PAIRED_VERSION, VERSION)
+COMPARISON_VERSIONS = (COMPARISON_VERSION, *PAIRED_VERSIONS)
 TITLE_VERSIONS = (SOURCE_TITLE_VERSION, *COMPARISON_VERSIONS)
 OUTPUT_VERSIONS = (OUTPUT_VERSION, *TITLE_VERSIONS)
 VERSIONS = (LEGACY_VERSION, RECORD_VERSION, *OUTPUT_VERSIONS)
@@ -92,13 +94,13 @@ def instruction(version, phase):
             '異なる対象は"DIFFERENT_SUBJECT"、共通性や違いの根拠が足りない時は"INSUFFICIENT_EVIDENCE"です。'
             '同じ綴りだけで対象や主体が同じと決めず、否定・希望・未確認を残します。別記録でも同日や時間順が不明なら、別日や時系列変化を断定しません。'
             '比較を選んだ組はそのまま線になるので、次のedgesはほかに原文から説明できる関係だけにします。')
-    if version == VERSION and phase == 'NODES':
+    if version in PAIRED_VERSIONS and phase == 'NODES':
         guidance += (' 同じ記録の原欄はそれぞれ原文順に読みます。見出しには最初に表示する原文か'
                      '記録を示す見出しを選び、後の出来事を先に見せません。')
-    if version == VERSION and phase == 'PLAN':
+    if version in PAIRED_VERSIONS and phase == 'PLAN':
         guidance += (' 同じ思考欄に複数の行があれば、それぞれ別の発言・条件・訂正です。'
             '各行から少なくとも一候補を原文のまま含めます。一つの引用で複数行を満たせます。')
-    if version == VERSION and phase == 'RELATIONS':
+    if version in PAIRED_VERSIONS and phase == 'RELATIONS':
         guidance += (' comparison_candidatesは対象を照合するための原文です。subjectとsubject_witnessの'
             '記録・主体・対象・条件を左右で確認します。別の物や判断なら"DIFFERENT_SUBJECT"、'
             '不足なら"INSUFFICIENT_EVIDENCE"を選びます。両資料から同じ対象への判断差を説明できる時だけ、'
@@ -532,11 +534,121 @@ def _comparison_record_roots(material, choice_module):
     return roots
 
 
-def paired_comparison_candidates(material, choice_module, *, limit=2):
+# The same noun may name a participant or a background condition. Compare
+# decisions only when both source sentences concern the recurring object or
+# independently express the same action. Source text is never synthesized.
+_NOMINAL_ACTION = re.compile(r'([一-鿿々]{2,})(?:した|しな|しました|せず|する|を(?:提案|決定|依頼|予定|断念))')
+
+
+def _candidate_actions(sentence):
+    return {term for noun in _NOMINAL_ACTION.findall(sentence)
+            for term in (noun, noun[-2:])}
+
+
+def _request_objects(sentence, actions):
+    """Return complete noun modifiers of the requested action, without its recipient."""
+    objects = set()
+    for action in actions:
+        for mention in re.finditer(re.escape(action), sentence):
+            noun = re.search(r'([一-鿿々ァ-ヺー]{2,})(?:の)?$', sentence[:mention.start()])
+            if noun:
+                objects.add(noun[1])
+    return objects
+
+
+def _recurring_object_witness(first_objects, second_objects, endpoints, subject, originals):
+    # An object absent from a selected sentence may be grounded in its full
+    # original record. Keep the actual wording (including particles) visible.
+    for side, objs, ep in (('left', second_objects, endpoints[0]), ('right', first_objects, endpoints[1])):
+        for obj in sorted(objs, key=lambda w: (-len(w), w)):
+            for number, first, context in originals.get(ep['record'], ()):
+                if (subject in context and obj in context.replace('の', '')
+                        and (subject in first or obj in first.replace('の', ''))):
+                    return dict(side=side, field=number, quote=context, object=obj)
+    return None
+
+
+def _decision_endpoints(row, originals):
+    subject = row['subject']
+    endpoints = row['left'], row['right']
+    direct_object = tuple(subject + suffix for suffix in ('を', 'について', 'に対し'))
+    recipient = tuple(subject + suffix for suffix in ('へ', 'に'))
+    candidates = []
+    for first in endpoints[0]['sentences']:
+        for second in endpoints[1]['sentences']:
+            direct = [any(term in s for term in direct_object) for s in (first, second)]
+            if row['subject_witness']['kind'] == 'same_phrase':
+                if all(direct):
+                    candidates.append((first, second, None))
+                continue
+            shared = _overlap_words(first) & _overlap_words(second)
+            actions = {a for a in (_candidate_actions(first) | _candidate_actions(second)) & shared
+                       if a not in subject}
+            if not actions:
+                continue
+            bound_actions = {action for action in actions if any(
+                re.search(re.escape(term) + r'[^、。をが]{0,12}' + re.escape(action), sentence)
+                for sentence in (first, second) for term in direct_object)}
+            if bound_actions:
+                explicit_objects = {m[1] for action in bound_actions for sentence in (first, second)
+                                    for m in re.finditer(r'([一-鿿々ァ-ヺー]{2,})を' + re.escape(action), sentence)}
+                if explicit_objects <= {subject}:
+                    candidates.append((first, second, None))
+            elif any(term in s for term in recipient for s in (first, second)):
+                left_objects, right_objects = (_request_objects(s, actions) for s in (first, second))
+                if not left_objects or not right_objects:
+                    continue
+                witness = _recurring_object_witness(left_objects, right_objects, endpoints, subject, originals)
+                if witness:
+                    candidates.append((first, second, witness))
+    # Keep the authorized pairings, including when two unrelated operations
+    # occur in the same selected passage. Sentence numbers refer to the exact
+    # source sentences shown in this request.
+    if not candidates:
+        return None
+    left = list(dict.fromkeys(first for first, _, _ in candidates))
+    right = list(dict.fromkeys(second for _, second, _ in candidates))
+    result = dict(row, left=dict(row['left'], sentences=left), right=dict(row['right'], sentences=right),
+                  decision_pairs=[[left.index(first) + 1, right.index(second) + 1]
+                                  for first, second, _ in candidates])
+    witnesses = [w for _, _, w in candidates if w]
+    if witnesses:
+        result['object_witnesses'] = list({compact_json(w): w for w in witnesses}.values())
+    return result
+
+
+def _comparison_originals(material, choice_module):
+    originals = defaultdict(list)
+    for number, field in displayed_fields(material).items():
+        if (field.get('source_role') != 'ORIGINAL_INPUT' or field.get('supplement') is not None
+                or field.get('fragment_is_complete_field') is not True
+                or field.get('field_path') not in ('memo', 'memo_action')):
+            continue
+        sentences = choice_module._sentences(field['text'], original_for_overview=True)
+        cursor = 0
+        previous = None
+        for sentence in sentences:
+            start = field['text'].find(sentence, cursor)
+            if start < 0:
+                continue
+            end = start + len(sentence)
+            if len(sentence) <= 160:
+                originals[field['record']].append((number, sentence, sentence))
+            if previous is not None:
+                prior_start, prior_end, prior_sentence = previous
+                if end-prior_start <= 160 and not field['text'][prior_end:start].strip():
+                    originals[field['record']].append((number, prior_sentence, field['text'][prior_start:end]))
+            previous = start, end, sentence
+            cursor = end
+    return originals
+
+
+def paired_comparison_candidates(material, choice_module, *, limit=2, decision_sources=False):
     if material['author_phase'] != 'RELATIONS' or material.get('map_corrections'):
         return []
     if choice_module is None:
         import analysis_plan_source_choices as choice_module
+    originals = _comparison_originals(material, choice_module) if decision_sources else {}
     roots = _comparison_record_roots(material, choice_module)
     owners = defaultdict(set)
     for ep, _, terms, _, _ in roots:
@@ -570,6 +682,10 @@ def paired_comparison_candidates(material, choice_module, *, limit=2):
             if not any(len(x)+len(y)+3 <= 80 for x in a['sentences'] for y in b['sentences']):
                 continue
             row = dict(left=a,right=b,subject=word,subject_witness=dict(side=side,**witness),wording=sorted(overlap))
+            if decision_sources:
+                row = _decision_endpoints(row, originals)
+                if row is None:
+                    continue
             allowed = paired_decisions(row)
             if not allowed:
                 continue
@@ -589,6 +705,8 @@ def paired_decisions(candidate):
     options = []
     for li, first in enumerate(left['sentences'],1):
         for ri, second in enumerate(right['sentences'],1):
+            if 'decision_pairs' in candidate and [li, ri] not in candidate['decision_pairs']:
+                continue
             if (first in second or second in first or not (topic in first or topic in second)
                     or not any(t in first and t in second for t in relevant)):
                 continue
@@ -615,11 +733,11 @@ def prepare_messages(messages, *, version=VERSION, choice_module=None):
     if not eligible(material):
         return messages
     require(compact_json(material) == messages[1]['content'])
-    comparisons = (paired_comparison_candidates(material, choice_module) if version == VERSION
+    comparisons = (paired_comparison_candidates(material, choice_module, decision_sources=version == VERSION) if version in PAIRED_VERSIONS
                    else comparison_candidates(material) if version == COMPARISON_VERSION else [])
     fields = displayed_fields(material)
     if version in COMPARISON_VERSIONS and material['author_phase'] == 'PLAN':
-        menu = _memo_context_menu(material, fields, choice_module, distinct_context_sources=version == VERSION)
+        menu = _memo_context_menu(material, fields, choice_module, distinct_context_sources=version in PAIRED_VERSIONS)
         if menu:
             material['memo_context_choices'] = menu
     material['leaf_source_index'] = pack_index(material['leaf_source_index'], fields)
@@ -691,7 +809,8 @@ def _quote_codes(literals):
 
 class ResponseCodec:
     """Project only deterministic positions. Every authored choice remains in the raw receipt."""
-    def __init__(self, material, choice_module, fact_key, *, comparisons=(), paired=False):
+    def __init__(self, material, choice_module, fact_key, *, comparisons=(), paired=False, decision_sources=False):
+        self._decision_sources = decision_sources
         self.paired_material = material if paired and material['author_phase'] == 'RELATIONS' else None
         self._comparison_source_module = choice_module
         self._extra_comparisons = None
@@ -800,10 +919,14 @@ class ResponseCodec:
                 # The two explicit author decisions may not be contradicted or duplicated here.
                 offered = {frozenset((row['left']['node'],row['right']['node'])) for row in self.comparisons}
                 self._extra_comparisons = {}
-                for row in paired_comparison_candidates(self.paired_material,self._comparison_source_module,limit=None):
+                for row in paired_comparison_candidates(self.paired_material, self._comparison_source_module,
+                                                        limit=None, decision_sources=self._decision_sources):
                     if frozenset((row['left']['node'],row['right']['node'])) in offered:
                         continue
-                    for candidate in (row,dict(row,left=row['right'],right=row['left'])):
+                    reverse = dict(row, left=row['right'], right=row['left'])
+                    if 'decision_pairs' in row:
+                        reverse['decision_pairs'] = [[right, left] for left, right in row['decision_pairs']]
+                    for candidate in (row, reverse):
                         key = tuple(comparison_endpoints(candidate).values())
                         self._extra_comparisons[key] = {label for _,label in paired_decisions(candidate)}
             key = tuple(edge.get(k) for k in ('from','to','from_unit','to_unit','from_source','to_source'))
@@ -980,4 +1103,6 @@ def response_codec(messages, *, choice_module=None, fact_key=None):
         from cocolon_meaning_experience_engine.cores.analysis.semantic_admission import _semantic_fact_part_key
         fact_key = _semantic_fact_part_key
     comparisons = material.get('comparison_candidates', ()) if material['merge_wire_version'] in COMPARISON_VERSIONS else ()
-    return ResponseCodec(logical, choice_module, fact_key, comparisons=comparisons, paired=material['merge_wire_version'] == VERSION)
+    return ResponseCodec(logical, choice_module, fact_key, comparisons=comparisons,
+                         paired=material['merge_wire_version'] in PAIRED_VERSIONS,
+                         decision_sources=material['merge_wire_version'] == VERSION)

@@ -410,3 +410,55 @@ def test_two_different_objects_and_a_within_day_time_phrase_are_not_a_recurring_
         else:
             with pytest.raises(ValueError):
                 codec.decode({**accepted, 'edges':[candidate]})
+
+
+def test_decision_comparisons_use_the_object_of_the_action_and_allow_skipping():
+    previous = '前に調べた顕微鏡についてもう一度考えた。'
+    notes = ['顕微鏡の状態を調べた。条件が合わず購入せず、記録だけ残した。',
+             '設置台の準備を済ませて顕微鏡を購入した。', '薬品の価格を記録した。']
+    material = recurring_sources()
+    for field, node, note in zip(material['fields'], material['candidate_nodes'], notes):
+        field['text'] = note
+        node['units'][0]['evidence'][0]['quote'] = note
+    material['fields'][1]['text'] = previous + notes[1]
+    candidate, = wire.paired_comparison_candidates(material, None, decision_sources=True)
+    assert candidate['subject'] == '顕微鏡'
+    assert candidate['left']['sentences'] == ['条件が合わず購入せず、記録だけ残した。']
+    assert candidate['right']['sentences'] == [notes[1]]
+    codec = wire.ResponseCodec(material, None, None, comparisons=[candidate], paired=True, decision_sources=True)
+    logical = dict(schema_version=wire.MODEL_SCHEMA + '.relations', nodes_sha256=codec.binding,
+                   qualification_review={}, edges=[], overview={})
+    compact = codec.encode(logical)
+    for skip in wire.COMPARISON_SKIPS:
+        assert codec.decode(dict(compact, comparisons=[skip]))['edges'] == []
+    for decision, label in wire.paired_decisions(candidate):
+        edge, = codec.decode(dict(compact, comparisons=[decision]))['edges']
+        assert edge['label'] == label and notes[1] in label
+    other = '顕微鏡の状態を調べた。条件が合わず容器を購入せず、記録だけ残した。'
+    material['fields'][0]['text'] = other
+    material['candidate_nodes'][0]['units'][0]['evidence'][0]['quote'] = other
+    assert not wire.paired_comparison_candidates(material, None, decision_sources=True)
+
+
+def test_same_recipient_and_partial_spelling_need_the_same_requested_object_in_both_records():
+    message = '受付への部品依頼を提案したが、送信したかは分からない。'
+    reply = '家族から食品の依頼連絡に返事をした。'
+    row = dict(subject='受付', subject_witness=dict(kind='companion', quote='家族から食品を受付へ頼んだと聞いた。'),
+               left=dict(record=1, sentences=[message]), right=dict(record=2, sentences=[reply]))
+    original = {1: [(1, message, message)], 2: [(3, reply, '家族から食品を受付へ頼んだと聞いた。' + reply)]}
+    assert wire._decision_endpoints(row, original) is None
+    row['right']['sentences'] = ['家族から交換部品の依頼連絡に返事をした。']
+    original[1].append((1, '欲しいのは交換の部品だと伝えた。', '欲しいのは交換の部品だと伝えた。\n 家族はその依頼を受付へ送ると答えた。'))
+    result = wire._decision_endpoints(row, original)
+    assert result['object_witnesses'][0]['object'] == '交換部品'
+    assert result['object_witnesses'][0]['quote'] == original[1][1][2]
+
+
+def test_comparison_witness_preserves_original_inter_sentence_spacing():
+    source = recurring_sources()
+    first, second = '受付用の資料をそろえた。', '受付へ知らせた。'
+    source['fields'][0]['text'] = first + '\n  ' + second
+    import analysis_plan_source_choices as choices
+    windows = wire._comparison_originals(source, choices)[1]
+    assert (1, first, first + '\n  ' + second) in windows
+    assert all(span in source['fields'][0]['text'] for _, _, span in windows)
