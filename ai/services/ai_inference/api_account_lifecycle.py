@@ -162,7 +162,7 @@ async def _is_display_name_available(
     return True
 
 
-def _raise_profile_update_error(resp: Any, *, operation: str) -> None:
+def _raise_profile_update_error(resp: Any, *, operation: str, redact_body: bool) -> None:
     try:
         payload = resp.json()
     except Exception:
@@ -175,7 +175,7 @@ def _raise_profile_update_error(resp: Any, *, operation: str) -> None:
         "account/profile/me %s failed: status=%s body=%s",
         operation,
         getattr(resp, "status_code", "?"),
-        str(getattr(resp, "text", ""))[:1500],
+        "[redacted]" if redact_body else str(getattr(resp, "text", ""))[:1500],
     )
     raise HTTPException(status_code=502, detail="Failed to update profile")
 
@@ -297,7 +297,7 @@ async def _update_or_create_profile_me(
             timeout=8.0,
         )
         if resp.status_code not in (200, 204):
-            _raise_profile_update_error(resp, operation="patch")
+            _raise_profile_update_error(resp, operation="patch", redact_body=push_token is not _UNSET)
         return _pick_row(resp) or await _fetch_profile_me(user_id)
 
     insert_payload: Dict[str, Any] = {
@@ -317,7 +317,7 @@ async def _update_or_create_profile_me(
         timeout=8.0,
     )
     if resp.status_code not in (200, 201):
-        _raise_profile_update_error(resp, operation="insert")
+        _raise_profile_update_error(resp, operation="insert", redact_body=push_token is not _UNSET)
 
     return _pick_row(resp) or await _fetch_profile_me(user_id)
 

@@ -192,7 +192,7 @@ def test_theme_notification_is_explicit_private_opt_in(api_harness):
     assert client.patch(path, headers=AUTH, json={"enabled": False}).json() == {"enabled": False}
 
 
-def test_profile_registers_deep_insight_capability_only_with_the_current_token(monkeypatch):
+def test_profile_registers_deep_insight_capability_only_with_the_current_token(monkeypatch, caplog):
     from unittest.mock import AsyncMock
 
     import api_account_lifecycle as lifecycle
@@ -226,6 +226,14 @@ def test_profile_registers_deep_insight_capability_only_with_the_current_token(m
     assert client.patch(path, headers=AUTH,
         json={"push_token": None, "push_deep_insight_supported": True}).status_code == 200
     assert patch.await_args.kwargs["json"] == {"push_token": None, "push_deep_insight_token_sha256": None}
+
+    diagnostic = "backend error echoed a private synthetic token"
+    patch.side_effect = None
+    patch.return_value = httpx.Response(400, json={"message": diagnostic})
+    response = client.patch(path, headers=AUTH,
+        json={"push_token": "private-synthetic-token", "push_deep_insight_supported": True})
+    assert response.status_code == 502
+    assert diagnostic not in response.text and diagnostic not in caplog.text
 
 
 @pytest.mark.asyncio
