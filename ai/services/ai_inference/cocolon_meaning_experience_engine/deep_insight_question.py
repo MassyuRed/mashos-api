@@ -214,6 +214,17 @@ new_informationは、同じ場面について有効な回答・訂正・原文�
 
 READ_SYSTEM_MESSAGE = _reading_system_message(answer=False)
 ANSWER_READ_SYSTEM_MESSAGE = _reading_system_message(answer=True)
+_RECORD_ALTERNATIVE_READ_MESSAGE = f"""完成した一問questionが原資料materialに沿っているか独立に読みます。日本語のJSONだけを返します。
+{_DATA_BOUNDARY}
+quoteは完成文の先頭の「」に表示された文字だけをそのまま写します。原文の理由や文末の句点を補いません。sourceはmaterial.sourcesのうち、抜き出した文字が一意に見つかるキーです。
+引用で述べた過去の行動と、引用の後で質問している行動を区別します。その質問が別の行動を先にする場合の条件を尋ねていれば、focusはCONDITIONです。
+その別の行動が同じ原文にあり、仮定として尋ねていて、実際に先にしたとは述べていない場合はpremise_supportedをtrueにできます。原文にない別の行動を足したり、過去に先にしたと決めつけたりしたら拒否します。
+conditionは質問部分が明示する既知の限定条件だけです。「同じような場面で」は限定条件を追加しないため、空文字です。原文に書かれた過去の理由をconditionに補いません。
+new_informationは、原文や有効な本人回答で答えが分からず、既出の問いや本人が回答を見送った問いと同じ判断を尋ねていないときだけtrueです。先にした行動の既知の理由と、別の行動を先にする条件を混同しません。マップと過去の問いは本人の事実や回答にしません。
+例：r2.actionが「返送の締切が近かったので、荷物の梱包を先に済ませた。帳簿の整理はまだ途中だった。」で、完成文が「荷物の梱包を先に済ませた」と書いていましたが、同じような場面で、帳簿の整理を先にするのはどんなときですか？ なら、本人の新しい判断を尋ねています。
+その答えも既出・見送りもなければ {{"verdict":"accept","focus":"CONDITION","source":"r2.action","quote":"荷物の梱包を先に済ませた","condition":"","premise_supported":true,"new_information":true}} を返します。
+同じ原文で、記録にない献立を考える行動を持ち出した場合は {{"verdict":"reject","reason":"unsupported_premise"}} です。
+本人が「帳簿の締切が当日なら帳簿を先に整理する」と答えていた場合や、既知の梱包を先にした理由を聞く場合は {{"verdict":"reject","reason":"already_answered"}} です。引用元や判断を確かめられない場合は {{"verdict":"reject","reason":"unclear"}} を返します。"""
 _SKIPPED_EMLIS_QUESTIONS_GUIDANCE = (
     "\nskipped_emlis_questionsは、sourcesに示す同じ記録で本人が回答を見送った問いです。"
     "その記録について、同じ内容を別の言い方で聞き直しません。見送った問い自体は本人の事実や回答ではありません。"
@@ -950,7 +961,9 @@ async def generate_question(prepared, sources, *, material, generate):
         return QuestionRun(None, "rejected")
     # Give the reader the exact final text and original author material only.
     # It has no access to the selected plan, its label or its acceptance result.
-    if plan.is_record_reason:
+    if alternative is not None:
+        reader = _RECORD_ALTERNATIVE_READ_MESSAGE
+    elif plan.is_record_reason:
         reader = RECORD_REASON_READ_SYSTEM_MESSAGE
     elif plan.anchor and plan.anchor.source.field == "answer":
         reader = ANSWER_READ_SYSTEM_MESSAGE

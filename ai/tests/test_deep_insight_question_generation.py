@@ -10,7 +10,7 @@ from cocolon_meaning_experience_engine import deep_insight_question
 from cocolon_meaning_experience_engine.deep_insight_question import (
     ANSWER_READ_SYSTEM_MESSAGE, PLAN_SYSTEM_MESSAGE, READ_SYSTEM_MESSAGE,
     RECORD_REASON_READ_SYSTEM_MESSAGE, WRITE_SYSTEM_MESSAGE,
-    _RECORD_ALTERNATIVE_PLAN_MESSAGE, _RECORD_ALTERNATIVE_WRITE_MESSAGE,
+    _RECORD_ALTERNATIVE_PLAN_MESSAGE, _RECORD_ALTERNATIVE_READ_MESSAGE, _RECORD_ALTERNATIVE_WRITE_MESSAGE,
     _THEME_COMPARE_PAIR_SYSTEM_MESSAGE, _THEME_COMPARE_SYSTEM_MESSAGE,
     _THEME_PLAN_SYSTEM_MESSAGE, _THEME_READ_SYSTEM_MESSAGE,
     _THEME_REPAIR_SYSTEM_MESSAGE, _THEME_WRITE_SYSTEM_MESSAGE,
@@ -71,7 +71,10 @@ def run(original, plan, question=BODY, *, reading=None, alternative=None):
         elif system in (WRITE_SYSTEM_MESSAGE, _RECORD_ALTERNATIVE_WRITE_MESSAGE):
             response = {"question": question}
         else:
-            assert system.startswith((READ_SYSTEM_MESSAGE, ANSWER_READ_SYSTEM_MESSAGE, RECORD_REASON_READ_SYSTEM_MESSAGE))
+            assert system.startswith((
+                READ_SYSTEM_MESSAGE, ANSWER_READ_SYSTEM_MESSAGE, RECORD_REASON_READ_SYSTEM_MESSAGE,
+                _RECORD_ALTERNATIVE_READ_MESSAGE,
+            ))
             selected_plan = plan if alternative is None else {**ask(), **alternative}
             response = reading if reading is not None else read(
                 selected_plan, record_reason=system.startswith(RECORD_REASON_READ_SYSTEM_MESSAGE))
@@ -153,7 +156,8 @@ def test_explicit_reason_is_replaced_only_by_a_supported_new_condition(reason_qu
     result, calls = run(original, invalid_plan, question, alternative=condition)
     assert result.disposition == "selected"
     assert [system for system, _ in calls] == [
-        PLAN_SYSTEM_MESSAGE, _RECORD_ALTERNATIVE_PLAN_MESSAGE, _RECORD_ALTERNATIVE_WRITE_MESSAGE, READ_SYSTEM_MESSAGE,
+        PLAN_SYSTEM_MESSAGE, _RECORD_ALTERNATIVE_PLAN_MESSAGE,
+        _RECORD_ALTERNATIVE_WRITE_MESSAGE, _RECORD_ALTERNATIVE_READ_MESSAGE,
     ]
     assert result.candidate.text == f"「{QUOTE}」と書いていましたが、{question}"
     assert calls[1][1] == {"action": QUOTE, "alternatives": ["自分の仕事はまだ途中だった"], "material": calls[0][1]}
@@ -161,7 +165,7 @@ def test_explicit_reason_is_replaced_only_by_a_supported_new_condition(reason_qu
         "lane": "records", "theme": None, "focus": "CONDITION", "quote": QUOTE,
         "condition": "", "ask": condition["ask"], "alternatives": ["自分の仕事はまだ途中だった"],
     }
-    assert calls[3][1]["material"] == calls[0][1]
+    assert calls[3][1] == {"question": result.candidate.text, "material": calls[0][1]}
     receipt = result.candidate.receipt
     assert original["records"][0]["thought"][receipt["start"]:receipt["end"]] == QUOTE
 
@@ -183,11 +187,49 @@ def test_alternative_writer_reversing_the_choice_is_still_rejected_by_the_reader
         },
     )
     assert result.disposition == "rejected" and result.candidate is None
-    assert calls[-1][0] == READ_SYSTEM_MESSAGE
+    assert calls[-1][0] == _RECORD_ALTERNATIVE_READ_MESSAGE
     assert calls[-1][1] == {
         "question": f"「{QUOTE}」と書いていましたが、頼まれたことを先にすることの条件は、どんなときですか？",
         "material": calls[0][1],
     }
+
+
+@pytest.mark.parametrize("overrides", [
+    {
+        # Raw fields returned by the general 4B reader for a correct alternate question.
+        "quote": "相手が困っていたので、" + QUOTE, "condition": "相手が困っていたとき",
+        "premise_supported": False, "new_information": False,
+    },
+    {"quote": "相手が困っていたので、" + QUOTE},
+    {"source": "r2.thought"},
+    {"condition": "相手が困っていたとき"},
+    {"premise_supported": False},
+    {"new_information": False},
+    {"verdict": "reject", "reason": "already_answered"},
+])
+def test_alternative_reader_must_return_exact_citation_condition_and_new_evidence(overrides):
+    original = material(source("相手が困っていたので、" + QUOTE + "。自分の仕事はまだ途中だった。"))
+    question = "同じような場面で、自分の仕事を先にするのはどんなときですか？"
+    result, calls = run(
+        original, ask(), question,
+        alternative={"decision": "ask", "focus": "CONDITION", "ask": "同じような場面で自分の仕事を先にする条件"},
+        reading=read(ask(focus="CONDITION"), **overrides),
+    )
+    assert result.disposition == "rejected" and result.candidate is None and len(calls) == 4
+    assert calls[-1] == (_RECORD_ALTERNATIVE_READ_MESSAGE, {
+        "question": f"「{QUOTE}」と書いていましたが、{question}", "material": calls[0][1],
+    })
+
+
+def test_alternative_reader_can_reject_an_undocumented_action():
+    original = material(source("相手が困っていたので、" + QUOTE + "。自分の仕事はまだ途中だった。"))
+    result, calls = run(
+        original, ask(), "同じような場面で、翌日の献立を先に考えるのはどんなときですか？",
+        alternative={"decision": "ask", "focus": "CONDITION", "ask": "同じような場面で自分の仕事を先にする条件"},
+        reading={"verdict": "reject", "reason": "unsupported_premise"},
+    )
+    assert result.disposition == "rejected" and result.candidate is None and len(calls) == 4
+    assert calls[-1][0] == _RECORD_ALTERNATIVE_READ_MESSAGE
 
 
 @pytest.mark.parametrize("response,disposition", [
