@@ -192,6 +192,42 @@ def test_theme_notification_is_explicit_private_opt_in(api_harness):
     assert client.patch(path, headers=AUTH, json={"enabled": False}).json() == {"enabled": False}
 
 
+def test_profile_registers_deep_insight_capability_only_with_the_current_token(monkeypatch):
+    from unittest.mock import AsyncMock
+
+    import api_account_lifecycle as lifecycle
+
+    async def patch_profile(path, **kwargs):
+        assert path == "/rest/v1/profiles"
+        assert kwargs["params"] == {"id": f"eq.{OWNER}"}
+        return httpx.Response(200, json=[kwargs["json"]])
+
+    patch = AsyncMock(side_effect=patch_profile)
+    monkeypatch.setattr(lifecycle, "_require_user_id", AsyncMock(return_value=OWNER))
+    monkeypatch.setattr(lifecycle, "_fetch_profile_me", AsyncMock(return_value={"display_name": "架空"}))
+    monkeypatch.setattr(lifecycle, "sb_patch", patch)
+    app = FastAPI()
+    lifecycle.register_account_lifecycle_routes(app)
+    client = TestClient(app)
+    path = "/account/profile/me"
+
+    response = client.patch(path, headers=AUTH,
+        json={"push_token": "  new-device  ", "push_deep_insight_supported": True})
+    assert response.status_code == 200
+    assert "push_deep_insight_token_sha256" not in response.json()
+    assert patch.await_args.kwargs["json"] == {
+        "push_token": "new-device", "push_deep_insight_token_sha256": sha256(b"new-device").hexdigest(),
+    }
+
+    assert client.patch(path, headers=AUTH, json={"push_enabled": False}).status_code == 200
+    assert patch.await_args.kwargs["json"] == {"push_enabled": False}
+    assert client.patch(path, headers=AUTH, json={"push_token": "old-device"}).status_code == 200
+    assert patch.await_args.kwargs["json"] == {"push_token": "old-device", "push_deep_insight_token_sha256": None}
+    assert client.patch(path, headers=AUTH,
+        json={"push_token": None, "push_deep_insight_supported": True}).status_code == 200
+    assert patch.await_args.kwargs["json"] == {"push_token": None, "push_deep_insight_token_sha256": None}
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("lane,body", [
     ("record", "「わたしを知る問い」に新しいふりかえりの問いが届きました"),
@@ -206,9 +242,9 @@ async def test_question_notification_delivery_claim_and_owner(monkeypatch, lane,
     data = dict(type=event, target="deep_insight", user_id=OWNER, question_id=QUESTION)
     payload = dict(recipient_mode="user_ids", recipient_user_ids=[OWNER], exclude_user_ids=[],
         actor_user_id=OWNER, event_type=event, title="Emlis", body=body, data=data)
-    tokens = AsyncMock(return_value={OWNER: "test-device"})
+    tokens = AsyncMock(return_value={OWNER: "legacy-device"})
     send = AsyncMock(return_value={"status": "sent"})
-    rpc = AsyncMock(side_effect=[httpx.Response(200, json={"eligible": True}),
+    rpc = AsyncMock(side_effect=[httpx.Response(200, json={"eligible": True, "token": "compatible-device"}),
                                 httpx.Response(200, json={"eligible": False})])
     monkeypatch.setattr(worker, "_fetch_push_tokens_for_users", tokens)
     monkeypatch.setattr(worker, "_send_fcm_push", send)
@@ -227,21 +263,20 @@ async def test_question_notification_delivery_claim_and_owner(monkeypatch, lane,
     assert result["status"] == "sent"
     rpc.assert_awaited_once_with(f"deep_insight_{lane}_notification_can_send",
         {"p_user_id": OWNER, "p_question_id": QUESTION}, timeout=5.0)
-    send.assert_awaited_once_with(tokens=["test-device"], title="Emlis", body=body, data=data)
+    send.assert_awaited_once_with(tokens=["compatible-device"], title="Emlis", body=body, data=data)
+    tokens.assert_not_awaited()
 
     replay = await worker._handle_send_fcm_push_v1(user_id=OWNER, payload=payload)
     assert replay["status"] == f"skipped_stale_deep_insight_{lane}_notification"
     assert send.await_count == 1
 
-    tokens.return_value = {}
-    no_device = await worker._handle_send_fcm_push_v1(user_id=OWNER, payload=payload)
-    assert no_device["status"] == "skipped_no_token"
-    assert rpc.await_count == 2
-    assert send.await_count == 1
-
-    tokens.return_value = {OWNER: "test-device"}
     rpc.side_effect = None
     rpc.return_value = httpx.Response(200, json={"eligible": True})
+    with pytest.raises(RuntimeError, match="^deep_insight_worker_storage_response_invalid$"):
+        await worker._handle_send_fcm_push_v1(user_id=OWNER, payload=payload)
+    assert send.await_count == 1
+
+    rpc.return_value = httpx.Response(200, json={"eligible": True, "token": "rotated-compatible-device"})
     send.return_value = {"status": "failed", "errors": ["sensitive-provider-diagnostic"]}
     with pytest.raises(RuntimeError, match="^deep_insight_notification_delivery_unavailable$"):
         await worker._handle_send_fcm_push_v1(user_id=OWNER, payload=payload)

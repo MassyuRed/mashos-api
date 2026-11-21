@@ -19,6 +19,7 @@ begin
   from public.profiles p
   where p.id=new.user_id and p.subscription_tier='premium' and p.push_enabled is true
     and nullif(btrim(p.push_token),'') is not null
+    and p.push_deep_insight_token_sha256=encode(sha256(convert_to(btrim(p.push_token),'UTF8')),'hex')
   on conflict(job_key) do nothing;
   return null;
 end;
@@ -31,14 +32,21 @@ create trigger deep_insight_record_ready
 
 create function public.deep_insight_record_notification_can_send(p_user_id uuid,p_question_id uuid)
 returns jsonb language plpgsql volatile security invoker set search_path='' as $$
+declare
+  delivery_token text;
 begin
   update public.deep_insight_questions q set record_ready_push_started_at=clock_timestamp()
     from public.profiles p
     where p.id=q.user_id and q.user_id=p_user_id and q.id=p_question_id and q.lane='records'
       and q.grounding_receipt is not null and q.answer_text is null and q.record_ready_push_started_at is null
       and p.subscription_tier='premium' and p.push_enabled is true
-      and nullif(btrim(p.push_token),'') is not null;
-  return jsonb_build_object('eligible',found);
+      and nullif(btrim(p.push_token),'') is not null
+      and p.push_deep_insight_token_sha256=encode(sha256(convert_to(btrim(p.push_token),'UTF8')),'hex')
+    returning btrim(p.push_token) into delivery_token;
+  if not found then
+    return jsonb_build_object('eligible',false);
+  end if;
+  return jsonb_build_object('eligible',true,'token',delivery_token);
 end;
 $$;
 

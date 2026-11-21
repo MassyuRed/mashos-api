@@ -1,6 +1,10 @@
 -- Private opt-in for notifying the owner when the next theme question is available.
 begin;
 
+-- Capability belongs to the registered token, not the account. An older
+-- installation may register a different token for the same owner.
+alter table public.profiles add column push_deep_insight_token_sha256 text;
+
 create table public.deep_insight_theme_notification_settings (
   user_id uuid primary key references auth.users(id) on delete cascade,
   enabled boolean not null default false
@@ -53,6 +57,7 @@ returns jsonb language sql volatile security invoker set search_path='' as $$
       order by q.issued_at desc,q.id limit 1
     ) latest
     where pref.enabled and p.push_enabled is true and nullif(btrim(p.push_token),'') is not null
+      and p.push_deep_insight_token_sha256=encode(sha256(convert_to(btrim(p.push_token),'UTF8')),'hex')
       and latest.theme_ready_push_started_at is null
       and latest.issued_at+public.deep_insight_theme_cooldown(p.subscription_tier)<=statement_timestamp()
       and not exists (
@@ -85,6 +90,7 @@ returns jsonb language plpgsql volatile security invoker set search_path='' as $
 declare
   checked_at timestamptz;
   available_at timestamptz;
+  delivery_token text;
 begin
   if p_user_id is null or p_question_id is null then
     return jsonb_build_object('eligible',false);
@@ -98,6 +104,7 @@ begin
   where q.id=p_question_id and q.user_id=p_user_id and q.lane='theme'
     and q.theme_ready_push_started_at is null and pref.enabled and p.push_enabled is true
     and nullif(btrim(p.push_token),'') is not null
+    and p.push_deep_insight_token_sha256=encode(sha256(convert_to(btrim(p.push_token),'UTF8')),'hex')
     and q.id=(
       select latest.id from public.deep_insight_questions latest
       where latest.user_id=p_user_id and latest.lane='theme'
@@ -109,9 +116,16 @@ begin
   if available_at>checked_at then
     return jsonb_build_object('eligible',false,'defer_until',available_at);
   end if;
-  update public.deep_insight_questions set theme_ready_push_started_at=checked_at
-    where id=p_question_id and user_id=p_user_id and theme_ready_push_started_at is null;
-  return jsonb_build_object('eligible',found);
+  update public.deep_insight_questions q set theme_ready_push_started_at=checked_at
+    from public.profiles p
+    where q.id=p_question_id and q.user_id=p_user_id and q.theme_ready_push_started_at is null
+      and p.id=q.user_id and p.push_enabled is true and nullif(btrim(p.push_token),'') is not null
+      and p.push_deep_insight_token_sha256=encode(sha256(convert_to(btrim(p.push_token),'UTF8')),'hex')
+    returning btrim(p.push_token) into delivery_token;
+  if not found then
+    return jsonb_build_object('eligible',false);
+  end if;
+  return jsonb_build_object('eligible',true,'token',delivery_token);
 end;
 $$;
 

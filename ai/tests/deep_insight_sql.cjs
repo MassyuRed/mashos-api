@@ -18,6 +18,9 @@ const answerEventId = '00000000-0000-0000-0000-000000000007';
 const mapId = '00000000-0000-0000-0000-000000000008';
 const sha256 = (s) => createHash('sha256').update(s).digest('hex');
 const value = async (sql, args = []) => (await db.query(sql, args)).rows[0].v;
+const registerPush = (user, token) => db.query(
+  'update public.profiles set push_token=$2,push_deep_insight_token_sha256=$3 where id=$1',
+  [user, token, sha256(token)]);
 const state = (user) => value('select public.deep_insight_state($1) as v', [user]);
 const context = (user) => value('select public.deep_insight_candidate_context($1) as v', [user]);
 const themeContext = (user, theme) => value('select public.deep_insight_theme_candidate_context($1,$2) as v', [user, theme]);
@@ -73,6 +76,10 @@ async function verifyThemeNotifications() {
   assert.deepEqual(await preference(paidUser, true), {enabled: true});
   assert.deepEqual(await preference(freeUser, true), {enabled: true});
   assert.equal((await state(paidUser)).theme_notification_enabled, true);
+  assert.deepEqual(await alerts(), {queued: 0});
+  assert.deepEqual(await claim(paidUser, paidQuestion), {eligible: false});
+  await registerPush(freeUser, 'free-device');
+  await registerPush(paidUser, 'paid-device');
   assert.deepEqual(await alerts(), {queued: 1});
   assert.deepEqual(await alerts(), {queued: 0});
   const queued = await job(paidQuestion);
@@ -80,6 +87,7 @@ async function verifyThemeNotifications() {
     type: 'deep_insight_theme_ready', target: 'deep_insight', user_id: paidUser, question_id: paidQuestion,
   });
   assert.equal(JSON.stringify(queued.payload).includes('個人情報を含めない問い'), false);
+  assert.equal(JSON.stringify(queued.payload).includes('paid-device'), false);
   assert.deepEqual(await claim(freeUser, paidQuestion), {eligible: false});
   assert.deepEqual(await claim(freeUser, priorFreeQuestion), {eligible: false});
 
@@ -100,7 +108,10 @@ async function verifyThemeNotifications() {
   await db.query('update public.profiles set push_enabled=false where id=$1', [paidUser]);
   assert.deepEqual(await claim(paidUser, paidQuestion), {eligible: false});
   await db.query('update public.profiles set push_enabled=true where id=$1', [paidUser]);
-  assert.deepEqual(await claim(paidUser, paidQuestion), {eligible: true});
+  await db.query("update public.profiles set push_token='legacy-device' where id=$1", [paidUser]);
+  assert.deepEqual(await claim(paidUser, paidQuestion), {eligible: false});
+  await registerPush(paidUser, 'rotated-compatible-device');
+  assert.deepEqual(await claim(paidUser, paidQuestion), {eligible: true, token: 'rotated-compatible-device'});
   assert.deepEqual(await claim(paidUser, paidQuestion), {eligible: false});
   await db.query('delete from public.astor_jobs where job_key=$1', [queued.job_key]);
   assert.deepEqual(await alerts(), {queued: 0});
@@ -200,11 +211,11 @@ async function verifyThemePrivacyAndRecordsPlan(themeGrounding) {
 
 async function verifyRecordsNotifications() {
   const memo = '記録に残した本人の判断';
-  async function seedUser(pushEnabled, token) {
+  async function seedUser(pushEnabled, token, capable = true) {
     await db.exec('reset role');
     const user = await value('insert into auth.users values(gen_random_uuid()) returning id as v');
-    await db.query(`insert into public.profiles(id,subscription_tier,push_enabled,push_token)
-      values($1,'premium',$2,$3)`, [user, pushEnabled, token]);
+    await db.query(`insert into public.profiles(id,subscription_tier,push_enabled,push_token,push_deep_insight_token_sha256)
+      values($1,'premium',$2,$3,$4)`, [user, pushEnabled, token, capable && token ? sha256(token) : null]);
     await db.query(`insert into public.emotions(id,user_id,created_at,memo,memo_action)
       values(gen_random_uuid(),$1,now() at time zone 'UTC' - interval '1 minute',$2,'')`, [user, memo]);
     await db.exec('set role service_role');
@@ -235,6 +246,7 @@ async function verifyRecordsNotifications() {
   });
   assert.equal(JSON.stringify(job.payload).includes(question.question_text), false);
   assert.equal(JSON.stringify(job.payload).includes(memo), false);
+  assert.equal(JSON.stringify(job.payload).includes('synthetic-device'), false);
   assert.deepEqual(await claim(free, question.id), {eligible: false});
 
   await db.query("update public.profiles set subscription_tier='plus' where id=$1", [owner]);
@@ -242,7 +254,10 @@ async function verifyRecordsNotifications() {
   await db.query("update public.profiles set subscription_tier='premium',push_enabled=false where id=$1", [owner]);
   assert.deepEqual(await claim(owner, question.id), {eligible: false});
   await db.query('update public.profiles set push_enabled=true where id=$1', [owner]);
-  assert.deepEqual(await claim(owner, question.id), {eligible: true});
+  await db.query("update public.profiles set push_token='legacy-device' where id=$1", [owner]);
+  assert.deepEqual(await claim(owner, question.id), {eligible: false});
+  await registerPush(owner, 'rotated-compatible-device');
+  assert.deepEqual(await claim(owner, question.id), {eligible: true, token: 'rotated-compatible-device'});
   assert.deepEqual(await claim(owner, question.id), {eligible: false});
 
   const answeredOwner = await seedUser(true, 'synthetic-second-device');
@@ -258,6 +273,12 @@ async function verifyRecordsNotifications() {
   const noDevice = await seedUser(true, null);
   assert.equal((await issueRecord(noDevice)).status, 'issued');
   assert.deepEqual(await jobRows(noDevice), []);
+
+  const legacy = await seedUser(true, 'old-client-device', false);
+  const legacyOutcome = await issueRecord(legacy);
+  assert.equal(legacyOutcome.status, 'issued');
+  assert.deepEqual(await jobRows(legacy), []);
+  assert.deepEqual(await claim(legacy, legacyOutcome.question.id), {eligible: false});
 
   const ungroundedOwner = await seedUser(true, 'synthetic-third-device');
   assert.equal((await issue(ungroundedOwner, 'records', 'no-grounding')).status, 'issued');
@@ -345,7 +366,7 @@ async function verifyRecordAssessmentAfterMap() {
   await saveMap(owner);
   assert.deepEqual(await job(owner), failed);
 
-  await db.query("update public.profiles set push_token='synthetic-device' where id=$1", [owner]);
+  await registerPush(owner, 'synthetic-device');
   const current = await context(owner);
   const source = current.material.records[0];
   const grounded = receipt(source, 'thought', source.thought, 0, [...source.thought].length);

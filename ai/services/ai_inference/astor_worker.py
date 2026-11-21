@@ -3465,7 +3465,25 @@ async def _handle_send_fcm_push_v1(*, user_id: str, payload: Dict[str, Any]) -> 
 
     tokens: List[str] = []
     recipient_count = 0
-    if mode == "tokens":
+    if notice_lane:
+        # Claim and read the exact compatible token together. The normal
+        # profile token reader could see a different installation's token.
+        readiness = await _deep_insight_worker_rpc(
+            f"deep_insight_{notice_lane}_notification_can_send",
+            {"p_user_id": owner, "p_question_id": question_id}, "eligible", bool)
+        if not readiness["eligible"]:
+            if notice_lane == "theme" and "defer_until" in readiness:
+                next_due = datetime.fromisoformat(readiness["defer_until"].replace("Z", "+00:00"))
+                if next_due.tzinfo is None:
+                    raise RuntimeError("deep_insight_theme_notification_time_invalid")
+                return {"status": "deferred_deep_insight_theme_notification", "run_after": next_due.isoformat()}
+            return {"status": f"skipped_stale_deep_insight_{notice_lane}_notification"}
+        token = readiness.get("token")
+        if not isinstance(token, str) or not token.strip():
+            raise RuntimeError("deep_insight_worker_storage_response_invalid")
+        tokens = [token.strip()]
+        recipient_count = 1
+    elif mode == "tokens":
         raw_tokens = (payload or {}).get("tokens") or []
         token_values = raw_tokens if isinstance(raw_tokens, list) else []
         seen = set()
@@ -3530,20 +3548,6 @@ async def _handle_send_fcm_push_v1(*, user_id: str, payload: Dict[str, Any]) -> 
             "recipient_count": recipient_count,
             "event_type": str((payload or {}).get("event_type") or ""),
         }
-
-    if notice_lane:
-        # A current preference, plan and latest question are required at send
-        # time. Once claimed, an unknown provider result must not be retried.
-        readiness = await _deep_insight_worker_rpc(
-            f"deep_insight_{notice_lane}_notification_can_send",
-            {"p_user_id": owner, "p_question_id": question_id}, "eligible", bool)
-        if not readiness["eligible"]:
-            if notice_lane == "theme" and "defer_until" in readiness:
-                next_due = datetime.fromisoformat(readiness["defer_until"].replace("Z", "+00:00"))
-                if next_due.tzinfo is None:
-                    raise RuntimeError("deep_insight_theme_notification_time_invalid")
-                return {"status": "deferred_deep_insight_theme_notification", "run_after": next_due.isoformat()}
-            return {"status": f"skipped_stale_deep_insight_{notice_lane}_notification"}
 
     try:
         send_res = await _send_fcm_push(tokens=tokens, title=title, body=body, data=data_payload)

@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import logging
+from hashlib import sha256
 from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, Header, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StrictBool
 
 from api_account_visibility import _get_profile_row, _pick_row, _require_user_id
 from account_delete_service import execute_account_delete
@@ -33,6 +34,7 @@ class AccountProfileMePatchBody(BaseModel):
     push_platform: Optional[str] = None
     push_token: Optional[str] = None
     push_token_updated_at: Optional[str] = None
+    push_deep_insight_supported: StrictBool = False
     tutorial_completed: Optional[bool] = None
     tutorial_skipped: Optional[bool] = None
     tutorial_completed_at: Optional[str] = None
@@ -250,6 +252,7 @@ async def _update_or_create_profile_me(
     push_platform: Any = _UNSET,
     push_token: Any = _UNSET,
     push_token_updated_at: Any = _UNSET,
+    push_deep_insight_supported: bool = False,
     tutorial_completed: Any = _UNSET,
     tutorial_skipped: Any = _UNSET,
     tutorial_completed_at: Any = _UNSET,
@@ -268,7 +271,11 @@ async def _update_or_create_profile_me(
     if push_platform is not _UNSET:
         update_fields["push_platform"] = _coerce_optional_text(push_platform)
     if push_token is not _UNSET:
-        update_fields["push_token"] = _coerce_optional_text(push_token)
+        token = _coerce_optional_text(push_token)
+        update_fields["push_token"] = token
+        update_fields["push_deep_insight_token_sha256"] = (
+            sha256(token.encode()).hexdigest() if token and push_deep_insight_supported else None
+        )
     if push_token_updated_at is not _UNSET:
         update_fields["push_token_updated_at"] = _coerce_optional_text(push_token_updated_at)
     if tutorial_completed is not _UNSET:
@@ -366,6 +373,7 @@ def register_account_lifecycle_routes(app: FastAPI) -> None:
             push_platform=payload.get("push_platform", _UNSET),
             push_token=payload.get("push_token", _UNSET),
             push_token_updated_at=payload.get("push_token_updated_at", _UNSET),
+            push_deep_insight_supported=body.push_deep_insight_supported,
             tutorial_completed=payload.get("tutorial_completed", _UNSET),
             tutorial_skipped=payload.get("tutorial_skipped", _UNSET),
             tutorial_completed_at=payload.get("tutorial_completed_at", _UNSET),
