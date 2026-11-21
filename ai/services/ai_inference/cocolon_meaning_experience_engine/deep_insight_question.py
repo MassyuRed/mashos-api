@@ -28,7 +28,7 @@ from .emlis_thread_source import identity
 _FOCUSES = frozenset({"REASON", "CONDITION", "VALUE", "CHANGE", "RELATIONSHIP", "PREFERENCE", "MEANING"})
 _QUESTION_PUNCTUATION = re.compile(r"[。！？!?\n\r]")
 _THEME_QUESTION_WORD = re.compile(
-    r"何から|誰から|何(?!か)|どんな|どの|どう|どちら|どれ|どこ|"
+    r"何から|誰から|何(?!か)|どんな|どの|どう(?!か)|どちら|どれ|どこ|"
     r"いつ(?!も|でも|か(?!ら)|の間にか)|いくつ|いくら|誰(?!か)"
 )
 _THEME_QUESTION_END = re.compile(r"(?:ます|です|でしょう|ません)か[？?]\Z")
@@ -918,9 +918,10 @@ async def _theme_has_new_answer(question, history, generate):
         if not pair or set(pair) != {"previous_answer", "question_answer", "verdict"} or pair["verdict"] != "distinct":
             return False
         answers = pair["previous_answer"], pair["question_answer"]
-        if any(not isinstance(answer, str) or not answer.strip() for answer in answers):
+        if any(not isinstance(answer, str) for answer in answers):
             return False
-        if _normal(answers[0]) == _normal(answers[1]):
+        previous_answer, question_answer = map(_normal, answers)
+        if not previous_answer or not question_answer or previous_answer == question_answer:
             return False
         remaining_rechecks -= 1
         # Repeated false nominations from a broad batch warrant smaller

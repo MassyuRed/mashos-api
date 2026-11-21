@@ -700,6 +700,7 @@ def test_theme_checks_cited_wording_then_rechecks_the_rest_of_the_history():
 @pytest.mark.parametrize("pair", [
     {"verdict": "distinct"},
     {**theme_pair_result(), "question_answer": " "},
+    {**theme_pair_result(), "question_answer": "、。？"},
     {**theme_pair_result(), "question_answer": theme_pair_result()["previous_answer"]},
 ])
 def test_theme_does_not_clear_a_matched_question_without_two_distinct_answer_targets(pair):
@@ -1063,7 +1064,7 @@ def test_theme_does_not_release_a_rewrite_that_still_asks_how_to_judge():
 def test_theme_questions_about_trying_an_environment_keep_the_choice_unmade():
     open_question = "試すかどうかを決めるには、その環境のどんな条件を確かめますか？"
     result, calls = theme_run(
-        "これからのこと", "試す前に確かめたい条件はありますか？", repair=open_question,
+        "これからのこと", "試すかどうかを決める前に確かめたい具体的な条件はありますか？", repair=open_question,
         choose_theme=select_theme_angle("trial", "cue"),
     )
     writer, repair, reader = [payload for _, payload in calls]
