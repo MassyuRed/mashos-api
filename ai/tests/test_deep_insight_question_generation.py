@@ -1,15 +1,21 @@
 import asyncio
 import hashlib
 import json
+import random
 
 import pytest
 
 from cocolon_meaning_experience_engine.deep_insight_question import (
     ANSWER_READ_SYSTEM_MESSAGE, PLAN_SYSTEM_MESSAGE, READ_SYSTEM_MESSAGE,
     RECORD_REASON_READ_SYSTEM_MESSAGE, WRITE_SYSTEM_MESSAGE,
-    _THEME_PLAN_SYSTEM_MESSAGE, _THEME_READ_SYSTEM_MESSAGE, _THEME_WRITE_SYSTEM_MESSAGE,
-    _bind_anchor, _display_citation_matches, generate_question, prepare_question_material,
+    _THEME_PLAN_SYSTEM_MESSAGE, _THEME_READ_SYSTEM_MESSAGE,
+    _THEME_PREVIOUS_QUESTIONS_GUIDE,
+    _THEME_REPAIR_SYSTEM_MESSAGE, _THEME_WRITE_SYSTEM_MESSAGE,
+    _bind_anchor, _display_citation_matches, _review_theme_candidate, _theme_position_key,
+    generate_question, prepare_question_material,
 )
+
+from cocolon_meaning_experience_engine.deep_insight_theme import THEME_SCENES
 
 
 RECORD_ID = "00000000-0000-0000-0000-000000000123"
@@ -45,18 +51,16 @@ def read(plan, *, record_reason=False, **changes):
     return {**result, **changes}
 
 
-def run(original, plan, question=BODY, *, reading=None, lane="records", theme=None):
-    prepared, sources = prepare_question_material(original, lane=lane, theme=theme)
+def run(original, plan, question=BODY, *, reading=None):
+    prepared, sources = prepare_question_material(original, lane="records", theme=None)
     calls = []
 
     async def generate(system, payload):
         calls.append((system, payload))
-        if system in (PLAN_SYSTEM_MESSAGE, _THEME_PLAN_SYSTEM_MESSAGE):
+        if system == PLAN_SYSTEM_MESSAGE:
             response = plan
-        elif system in (WRITE_SYSTEM_MESSAGE, _THEME_WRITE_SYSTEM_MESSAGE):
+        elif system == WRITE_SYSTEM_MESSAGE:
             response = {"question": question}
-        elif system == _THEME_READ_SYSTEM_MESSAGE:
-            response = reading if reading is not None else {"fits_theme": True, "asks_something_new": True}
         else:
             assert system in (READ_SYSTEM_MESSAGE, ANSWER_READ_SYSTEM_MESSAGE,
                               RECORD_REASON_READ_SYSTEM_MESSAGE)
@@ -219,76 +223,216 @@ def test_answer_alone_has_private_provenance_and_can_supply_a_follow_up():
     assert rejected.disposition == "rejected"
 
 
+def theme_run(theme, question, *, questions=(), reading=None, extra=None, scene=None, target=None, repair=None,
+              choose_theme=lambda values: values[0]):
+    original = {"questions": questions, **(extra or {})}
+    prepared, sources = prepare_question_material(
+        original, lane="theme", theme=theme, choose_theme=choose_theme,
+    )
+    calls = []
+
+    async def generate(system, payload):
+        calls.append((system, payload))
+        if system == _THEME_PLAN_SYSTEM_MESSAGE:
+            return json.dumps({"scene": scene, "target": target}, ensure_ascii=False)
+        if system == _THEME_WRITE_SYSTEM_MESSAGE:
+            return json.dumps({"question": question}, ensure_ascii=False)
+        if system == _THEME_REPAIR_SYSTEM_MESSAGE:
+            return json.dumps({"question": repair or question}, ensure_ascii=False)
+        return json.dumps(reading if reading is not None
+                          else {"verdict": "accept"})
+
+    result = asyncio.run(generate_question(prepared, sources, material=original, generate=generate))
+    return result, calls
+
+
 def test_theme_needs_no_history_but_an_unrelated_meal_is_rejected():
-    original = material()
-    prepared, _ = prepare_question_material(original, lane="theme", theme="人間関係")
-    plan = ask(focus="VALUE", source="", quote="", ask=prepared["theme_lenses"][0])
-    result, _ = run(original, plan, "どんなときに、この人は友達だなと感じますか？",
-                    lane="theme", theme="人間関係")
+    theme = "人間関係"
+    question = "最初にどんな話題を出しますか？"
+    result, calls = theme_run(theme, question)
     assert result.disposition == "selected"
     assert result.candidate.receipt["source_id"] is None
-    result, calls = run(original, plan, "朝ごはんに何を食べたいですか？",
-                        lane="theme", theme="人間関係")
+    assert result.candidate.text == f"初対面の人と話すとき、{question}"
+    assert [system for system, _ in calls] == [_THEME_WRITE_SYSTEM_MESSAGE, _THEME_READ_SYSTEM_MESSAGE]
+    result, calls = theme_run(theme, "朝ごはんに何を食べたいですか？")
     assert result.disposition == "rejected" and len(calls) == 2
 
 
-def test_theme_lenses_reach_planner_and_independent_reader():
-    past_answer = {
-        "id": ANSWER_ID, "source_version": VERSION, "theme": "人間関係",
-        "question_text": "人と距離を縮めたいと思うのはどんな場面ですか？",
-        "answer_text": "一緒に笑える話題が見つかったときです。", "answered_at": STAMP,
+def test_theme_provider_sees_only_selected_direction_and_previous_question_wording():
+    theme = "人間関係"
+    previous = "人と距離を縮めたいと思うのはどんな場面ですか？"
+    result, calls = theme_run(theme, "最初にどんな話題を出しますか？",
+        questions=[{"question_key": "prior", "question_text": previous,
+                    "answer_text": "回答は渡さない", "answered_at": STAMP}],
+        extra={"records": [source("本人記録は渡さない")], "map": {"summary": "マップは渡さない"}})
+    assert result.disposition == "selected"
+    writer, reader = [payload for _, payload in calls]
+    direction = {"target": "会話の話題", "angle": "最初に取る行動"}
+    assert writer == {**direction, "form": "何から始めるかを聞く。文型「〜するために、まず何をしますか？」"}
+    assert reader == {
+        **direction, "theme": theme, "scene": "初対面の人と話すとき",
+        "question": result.candidate.text, "previous_questions": [previous],
     }
-    cases = (
-        ("人間関係",
-         "意見が分かれたとき、相手のどんな姿勢に信頼を感じますか？"),
-        ("自分の価値観",
-         "大切な予定が二つ重なったとき、何を基準に順番を決めますか？"),
-        ("仕事・学び",
-         "勉強でつまずいたとき、誰かに聞こうと決める目安は何ですか？"),
-        ("日々の過ごし方",
-         "忙しい日でも確保しておきたい時間はどんな時間ですか？"),
-        ("これからのこと",
-         "新しいことを始めるか迷ったとき、何があれば一歩踏み出せますか？"),
-    )
-    lens_sets = set()
-    for theme, question in cases:
-        original = material(prior=[past_answer]) if theme == past_answer["theme"] else material()
-        prepared, _ = prepare_question_material(original, lane="theme", theme=theme)
-        plan = ask(focus="VALUE", source="", quote="", ask=prepared["theme_lenses"][0])
-        result, calls = run(original, plan, question, lane="theme", theme=theme)
-        assert result.disposition == "selected"
-        assert [system for system, _ in calls] == [
-            _THEME_PLAN_SYSTEM_MESSAGE, _THEME_WRITE_SYSTEM_MESSAGE, _THEME_READ_SYSTEM_MESSAGE,
-        ]
-        planned = calls[0][1]
-        assert planned["theme"] == theme and planned["theme_lenses"]
-        lens_sets.add(frozenset(planned["theme_lenses"]))
-        assert calls[2][1] == {"question": question, "material": planned}
-        if theme == past_answer["theme"]:
-            previous, = planned["previous_questions"]
-            assert previous == {"question": past_answer["question_text"], "answer_source": "a1",
-                                "answered": True, "theme": theme}
-            assert planned["sources"]["a1"]["text"] == past_answer["answer_text"]
-
-    assert len(lens_sets) == len(cases)
+    assert calls[1][0] == _THEME_READ_SYSTEM_MESSAGE + _THEME_PREVIOUS_QUESTIONS_GUIDE
 
 
-def test_theme_uses_an_unasked_lens_and_requires_an_open_question():
+@pytest.mark.parametrize("reason", ["surface", "angle", "repeat"])
+def test_theme_reader_must_accept_scene_angle_and_no_paraphrase(reason):
+    reading = {"verdict": "reject", "reason": reason}
+    result, calls = theme_run("人間関係", "最初にどんな話題を出しますか？",
+                              reading=reading)
+    assert result.disposition == "rejected"
+    assert len(calls) == (2 if reason == "repeat" else 4)
+
+
+@pytest.mark.parametrize("theme", THEME_SCENES)
+def test_theme_selection_does_not_reuse_an_issued_position_over_fifty_draws(theme):
+    questions = []
+    scenes, angles, keys = set(), set(), set()
+    for index in range(50):
+        prepared, sources = prepare_question_material(
+            {"questions": questions}, lane="theme", theme=theme, choose_theme=random.Random(index).choice,
+        )
+        key = prepared["question_key"]
+        assert not sources and key and key not in keys
+        if index < len(THEME_SCENES[theme]):
+            assert prepared["scene"] not in scenes
+        scenes.add(prepared["scene"])
+        angles.add(prepared["angle"])
+        keys.add(key)
+        questions.insert(0, {"question_key": key, "question_text": f"第{index}回は何を選びますか？"})
+        if index >= 30:
+            assert len(prepared["previous_questions"]) == 30
+            questions[30].pop("question_text", None)
+    assert len(scenes) == len(THEME_SCENES[theme]) and len(angles) > 1
+
+
+def test_theme_will_try_new_situations_after_all_catalog_positions():
+    from cocolon_meaning_experience_engine.deep_insight_theme import THEME_ANGLES
+
     theme = "仕事・学び"
-    prepared, _ = prepare_question_material(material(), lane="theme", theme=theme)
-    used, other, *_ = prepared["theme_lenses"]
-    prior_plan = ask(focus="VALUE", source="", quote="", ask=used)
-    prior, _ = run(material(), prior_plan, "新しいやり方を覚えるとき、最初に何をしますか？",
-                   lane="theme", theme=theme)
-    prior_question = {"question_key": prior.candidate.question_key, "theme": theme,
-        "question_text": prior.candidate.text, "answer_text": None, "answered_at": None}
-    original = material(prior=[prior_question])
-    repeated, calls = run(original, prior_plan, lane="theme", theme=theme)
+    issued = [{"question_key": _theme_position_key(theme, scene_id, angle_id)}
+              for scene_id in THEME_SCENES[theme] for angle_id in THEME_ANGLES]
+    result, calls = theme_run(theme, "最初に何を確認しますか？",
+        questions=issued, scene="学んだ手順が通じない現場に出会ったとき", target="別の手順を選ぶかどうか")
+    assert result.disposition == "selected"
+    assert result.candidate.question_key not in {row["question_key"] for row in issued}
+    assert [system for system, _ in calls] == [
+        _THEME_PLAN_SYSTEM_MESSAGE, _THEME_WRITE_SYSTEM_MESSAGE, _THEME_READ_SYSTEM_MESSAGE,
+    ]
+
+
+def test_theme_rejects_old_exact_text_key_and_closed_question():
+    theme = "仕事・学び"
+    question = "最初に何をしますか？"
+    prior, _ = theme_run(theme, question)
+    assert prior.candidate is not None
+    issued = {"question_key": "other-position", "text_key": prior.candidate.text_key}
+    result, calls = theme_run(theme, question, questions=[issued])
+    assert result.disposition == "rejected" and len(calls) == 1
+    result, calls = theme_run(theme, "手が止まるときはありますか？")
+    assert result.disposition == "rejected" and len(calls) == 2
+
+
+@pytest.mark.parametrize("body", [
+    "最初に何をするか？",
+    "どんなときに変えますか？",
+    "何を基準に決めますか？",
+    "Emlis、最初に何をしますか？",
+    "仕事や勉強で新しいやり方を試すとき、何ですか？",
+])
+def test_theme_rejects_non_polite_endings_and_unbound_questions(body):
+    result, calls = theme_run("仕事・学び", body)
+    assert result.disposition == "rejected" and len(calls) == 2
+
+
+@pytest.mark.parametrize(("theme", "seed", "draft", "expected"), [
+    ("人間関係", 20261121109,
+     "誰かに助けを求めるかどうか、何を基準に決めますか？", "何を基準に決めますか？"),
+    ("自分の価値観", 20261121201,
+     "勧めを断るか受けるか、何を基準に決めますか？", "何を基準に決めますか？"),
+    ("自分の価値観", 20261121209,
+     "感謝や評価を伝える際、まず何をしますか？", "まず何をしますか？"),
+    ("仕事・学び", 20261121309,
+     "一区切りついた振り返りでは、次の作業の進め方を変えるのはどんなときですか？",
+     "次の作業の進め方を変えるのはどんなときですか？"),
+    ("日々の過ごし方", 20261121409,
+     "体を動かす時間を日常に組み込むために、まず何をしますか？", "まず何をしますか？"),
+    ("これからのこと", 20261121509,
+     "新しい暮らしの中で、習慣を変えるのはどんなときですか？",
+     "新しい暮らしの中で、習慣を変えるのはどんなときですか？"),
+])
+def test_theme_removes_only_the_verified_opening_before_reading(theme, seed, draft, expected):
+    result, calls = theme_run(theme, draft, choose_theme=random.Random(seed).choice)
+    assert result.candidate.text == f"{calls[1][1]['scene']}、{expected}"
+    assert calls[1][1]["question"] == result.candidate.text
+
+
+def test_theme_preserves_a_qualifier_that_makes_a_repeated_opening_a_different_condition():
+    draft = "朝に体を動かす時間を日常に組み込むために、まず何をしますか？"
+    result, calls = theme_run("日々の過ごし方", draft, choose_theme=random.Random(20261121409).choice)
+    assert result.candidate.text == f"{calls[1][1]['scene']}、{draft}"
+
+
+def test_theme_checks_repeat_against_the_displayed_text_after_removing_an_opening():
+    draft = "誰かに助けを求めるかどうか、何を基準に決めますか？"
+    result, _ = theme_run("人間関係", draft, choose_theme=random.Random(20261121109).choice)
+    prior = {"question_key": "old-slot", "text_key": result.candidate.text_key}
+    repeated, calls = theme_run("人間関係", draft, questions=[prior],
+                                choose_theme=random.Random(20261121109).choice)
     assert repeated.disposition == "rejected" and len(calls) == 1
-    assert used not in calls[0][1]["theme_lenses"]
-    different_plan = {**prior_plan, "ask": other}
-    closed, calls = run(original, different_plan, "手が止まるときはありますか？", lane="theme", theme=theme)
-    assert closed.disposition == "rejected" and len(calls) == 2
+
+
+def test_theme_reader_receives_older_same_scene_angles_without_guessing_their_text():
+    theme = "人間関係"
+    recent = [{"question_key": f"recent-{index}", "question_text": f"{index}回目は何を選びますか？"}
+              for index in range(30)]
+    archived = [{"question_key": _theme_position_key(theme, scene_id, "first_action")}
+                for scene_id in THEME_SCENES[theme]]
+    result, calls = theme_run(
+        theme, "会話の話題は何を基準に選びますか？", questions=recent + archived,
+        reading={"verdict": "reject", "reason": "repeat"},
+    )
+    assert result.disposition == "rejected" and len(calls) == 2
+    assert calls[1][1]["previous_questions"] == [row["question_text"] for row in recent]
+    assert calls[1][1]["previous_angles"] == ["最初に取る行動"]
+
+
+def test_theme_refuses_a_matching_older_answer_target_before_the_model_reads_it():
+    async def unexpected_read(*args):
+        pytest.fail("A known repeated angle should be declined before model review")
+
+    candidate, reason = asyncio.run(_review_theme_candidate(
+        '{"question":"取りかかる順番は何を基準に決めますか？"}',
+        plan=None, direction={"angle": "始めたいことに取りかかる順番を決める基準"},
+        scene="始めてみたいことがいくつかあるとき", key="new-slot", material={"questions": []},
+        previous_questions=[], previous_angles=["始めたいことに取りかかる順番を決める基準"],
+        generate=unexpected_read,
+    ))
+    assert candidate is None and reason == "repeat"
+
+
+def test_theme_reviews_a_repaired_question_without_changing_its_issued_key():
+    repaired = "夜の予定を切り上げるのは、どんなときですか？"
+    direct, _ = theme_run("日々の過ごし方", repaired)
+    result, calls = theme_run("日々の過ごし方", "どんなときに変えますか？", repair=repaired)
+    assert result.candidate == direct.candidate
+    assert [system for system, _ in calls] == [
+        _THEME_WRITE_SYSTEM_MESSAGE, _THEME_REPAIR_SYSTEM_MESSAGE, _THEME_READ_SYSTEM_MESSAGE,
+    ]
+    assert calls[1][1]["reason"] == "surface"
+    assert calls[2][1]["question"] == result.candidate.text
+
+
+def test_theme_allows_an_interrogative_condition_opening():
+    result, _ = theme_run("日々の過ごし方", "どんなとき、予定を減らして早く休みますか？")
+    assert result.disposition == "selected"
+
+
+@pytest.mark.parametrize("mark", ["", "。"])
+def test_theme_restores_only_the_question_mark_on_a_complete_polite_question(mark):
+    result, _ = theme_run("人間関係", "最初にどんな話題を出しますか" + mark)
+    assert result.candidate.text == "初対面の人と話すとき、最初にどんな話題を出しますか？"
 
 
 def test_two_conditions_do_not_collapse_from_surface_similarity():

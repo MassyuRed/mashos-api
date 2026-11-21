@@ -74,6 +74,7 @@ PUBLIC_API_CONTRACTS: Tuple[ApiContractEntry, ...] = (
     ApiContractEntry('GET', '/mymodel/qna/discoveries/history', 'mymodel.qna.discoveries.history.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, deprecated=True, notes='Retired compatibility route'),
     ApiContractEntry('POST', '/activity/login', 'activity.login.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Client login heartbeat / streak touch'),
     ApiContractEntry('GET', '/deep-insight', 'deep_insight.state.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY),
+    ApiContractEntry('PATCH', '/deep-insight/theme-notification', 'deep_insight.theme_notification.update.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY),
     ApiContractEntry('POST', '/deep-insight/questions', 'deep_insight.questions.issue.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY),
     ApiContractEntry('POST', '/deep-insight/answers', 'deep_insight.answers.submit.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY),
     ApiContractEntry('GET', '/notices/current', 'notice.current.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY),

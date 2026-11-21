@@ -77,7 +77,8 @@ def api_harness(monkeypatch):
 
     answers = {PLAN_SYSTEM_MESSAGE: REFLECTION_PLAN, WRITE_SYSTEM_MESSAGE: REFLECTION_TEXT,
                RECORD_REASON_READ_SYSTEM_MESSAGE: REFLECTION_READ}
-    input_material = {"value": material(records=[RECORD]), "guard": "source-guard"}
+    input_material = {"value": material(records=[RECORD]), "guard": "source-guard",
+                      "theme_value": {"questions": []}, "theme_guard": "theme-guard"}
 
     async def storage_rpc(name, payload, *, timeout):
         assert payload["p_user_id"] == OWNER
@@ -86,11 +87,18 @@ def api_harness(monkeypatch):
             return httpx.Response(200, json=state)
         if name == "deep_insight_candidate_context":
             return httpx.Response(200, json={"material": input_material["value"], "guard": input_material["guard"]})
+        if name == "deep_insight_theme_candidate_context":
+            assert set(payload) == {"p_user_id", "p_theme"}
+            return httpx.Response(200, json={"material": input_material["theme_value"],
+                                             "guard": input_material["theme_guard"]})
         if name == "deep_insight_issue_grounded":
             return httpx.Response(200, json={"status": "issued", "question": {**Q, "question_text": payload["p_question_text"]}})
         if name == "deep_insight_answer":
             return httpx.Response(200, json={"inserted": True, "question": {
                 **Q, "answer_text": payload["p_answer_text"], "answered_at": "2026-11-21T10:00:00Z"}})
+        if name == "deep_insight_theme_notification_write":
+            state["theme_notification_enabled"] = payload["p_enabled"]
+            return httpx.Response(200, json={"enabled": payload["p_enabled"]})
         raise AssertionError(name)
 
     async def generate(system, payload):
@@ -118,7 +126,7 @@ def api_harness(monkeypatch):
     return TestClient(app), state, calls, answers, input_material
 
 
-def test_read_and_repeat_never_generate_and_free_cannot_issue_a_theme(api_harness):
+def test_read_and_repeat_never_generate_and_legacy_theme_entitlement_is_supported(api_harness):
     client, state, calls, _, _ = api_harness
     assert client.get("/deep-insight").status_code == 401
     response = client.get("/deep-insight", headers=AUTH)
@@ -127,8 +135,40 @@ def test_read_and_repeat_never_generate_and_free_cannot_issue_a_theme(api_harnes
     assert client.post("/deep-insight/questions", headers=AUTH, json={"lane": "theme", "theme": "人間関係"}).status_code == 403
     state["records"] = Q
     assert client.post("/deep-insight/questions", headers=AUTH, json={"lane": "records"}).json() == {
-        "status": "existing", "question": Q}
+        "status": "existing", "question": Q, "theme_next_available_at": None}
     assert [name for name, _ in calls] == ["deep_insight_state"] * 3
+
+
+def test_free_can_revisit_theme_during_cooldown_and_answer_preexisting_records(api_harness):
+    client, state, calls, _, _ = api_harness
+    available_at = "2026-11-28T10:00:00Z"
+    theme = {**Q, "lane": "theme", "theme": "人間関係"}
+    state.update(can_use_theme=True, can_use_records=False, record_available_today=False,
+                 theme=theme, theme_next_available_at=available_at)
+    response = client.get("/deep-insight", headers=AUTH)
+    assert response.json()["theme_next_available_at"] == available_at
+    assert not response.json()["can_use_records"]
+    response = client.post("/deep-insight/questions", headers=AUTH, json={"lane": "theme", "theme": "仕事・学び"})
+    assert response.json() == {"status": "existing", "question": theme, "theme_next_available_at": available_at}
+    assert client.post("/deep-insight/questions", headers=AUTH, json={"lane": "records"}).status_code == 403
+    state["records"] = Q
+    response = client.post("/deep-insight/questions", headers=AUTH, json={"lane": "records"})
+    assert response.json()["question"] == Q
+    assert [name for name, _ in calls] == ["deep_insight_state"] * 4
+
+
+def test_theme_notification_is_explicit_private_opt_in(api_harness):
+    client, _, calls, _, _ = api_harness
+    path = "/deep-insight/theme-notification"
+    assert not client.get("/deep-insight", headers=AUTH).json()["theme_notification_enabled"]
+    assert client.patch(path, json={"enabled": True}).status_code == 401
+    assert client.patch(path, headers=AUTH, json={"enabled": "true"}).status_code == 422
+    assert client.patch(path, headers=AUTH, json={"enabled": True, "user_id": OWNER}).status_code == 422
+    response = client.patch(path, headers=AUTH, json={"enabled": True})
+    assert response.json() == {"enabled": True} and response.headers["cache-control"] == "no-store"
+    assert calls[-1] == ("deep_insight_theme_notification_write", {"p_user_id": OWNER, "p_enabled": True})
+    assert client.get("/deep-insight", headers=AUTH).json()["theme_notification_enabled"]
+    assert client.patch(path, headers=AUTH, json={"enabled": False}).json() == {"enabled": False}
 
 
 def test_issue_and_exact_answer_pass_verified_owner_to_the_store(api_harness):
@@ -155,7 +195,7 @@ def test_no_merit_is_reused_for_same_material_but_rechecked_after_edit(api_harne
     answers[PLAN_SYSTEM_MESSAGE] = {"decision": "skip"}
     for _ in range(2):
         response = client.post("/deep-insight/questions", headers=AUTH, json={"lane": "records"})
-        assert response.json() == {"status": "no_question", "question": None}
+        assert response.json() == {"status": "no_question", "question": None, "theme_next_available_at": None}
     assert len([row for row in calls if row[0] == "4B"]) == 1
     context["guard"] = "no-merit-2"
     assert client.post("/deep-insight/questions", headers=AUTH, json={"lane": "records"}).status_code == 200
@@ -167,7 +207,7 @@ def test_independent_rejection_stops_before_storage(api_harness):
     context["guard"] = "reader-rejection"
     answers[RECORD_REASON_READ_SYSTEM_MESSAGE] = {"verdict": "reject", "reason": "unsupported_premise"}
     response = client.post("/deep-insight/questions", headers=AUTH, json={"lane": "records"})
-    assert response.json() == {"status": "no_question", "question": None}
+    assert response.json() == {"status": "no_question", "question": None, "theme_next_available_at": None}
     assert not [row for row in calls if row[0] == "deep_insight_issue_grounded"]
 
 
@@ -215,7 +255,7 @@ def test_same_revision_requests_share_one_issue_and_receive_the_same_question(ap
     assert len([row for row in calls if row[0] == "deep_insight_issue_grounded"]) == 1
 
 
-def test_theme_recovers_when_the_record_entrance_issues_concurrently(api_harness, monkeypatch):
+def test_record_issuance_does_not_change_concurrent_theme_material(api_harness, monkeypatch):
     client, state, _, _, context = api_harness
     state.update(can_use_theme=True, theme_available_today=True)
     context["guard"] = "before-record-issue"
@@ -250,8 +290,7 @@ def test_theme_recovers_when_the_record_entrance_issues_concurrently(api_harness
             assert payload["p_user_id"] == OWNER and payload["p_day"] == state["day"]
             lane, guard, theme = (payload[k] for k in ("p_lane", "p_material_guard", "p_theme"))
             writes.append((lane, guard, theme))
-            if guard != context["guard"]:
-                return httpx.Response(200, json={"status": "no_question", "question": None})
+            assert guard == context["theme_guard" if lane == "theme" else "guard"]
             question = {**Q, "lane": lane, "theme": theme, "question_text": payload["p_question_text"]}
             if lane == "records":
                 state["records"] = question
@@ -278,13 +317,10 @@ def test_theme_recovers_when_the_record_entrance_issues_concurrently(api_harness
     records, theme, revisit = asyncio.run(asyncio.wait_for(both(), timeout=5))
     assert records.json()["status"] == theme.json()["status"] == "issued"
     assert theme.json()["question"]["theme"] == "仕事・学び"
-    assert revisit.json() == {"status": "existing", "question": theme.json()["question"]}
-    assert theme_inputs[0] == ("仕事・学び", [])
-    assert theme_inputs[1][0] == "仕事・学び"
-    assert theme_inputs[1][1][0]["question"] == records.json()["question"]["question_text"]
-    assert writes == [("records", "before-record-issue", None), ("theme", "before-record-issue", "仕事・学び"),
-                      ("theme", "after-record-issue", "仕事・学び")]
-    assert len(theme_deadlines) == 2 and theme_deadlines[0] == theme_deadlines[1]
+    assert revisit.json() == {"status": "existing", "question": theme.json()["question"], "theme_next_available_at": None}
+    assert theme_inputs == [("仕事・学び", [])]
+    assert writes == [("records", "before-record-issue", None), ("theme", "theme-guard", "仕事・学び")]
+    assert len(theme_deadlines) == 1
 
 
 @pytest.mark.parametrize(("change", "http_status", "result", "attempts"), [
@@ -298,7 +334,7 @@ def test_theme_recovery_rechecks_day_entitlement_slot_and_guard(api_harness, mon
                                                           change, http_status, result, attempts):
     client, state, _, _, context = api_harness
     state.update(can_use_theme=True, theme_available_today=True)
-    context["guard"] = change
+    context["theme_guard"] = change
     storage = api.sb_post_rpc
     generations = []
     writes = []
@@ -314,7 +350,7 @@ def test_theme_recovery_rechecks_day_entitlement_slot_and_guard(api_harness, mon
             return await storage(name, payload, timeout=timeout)
         writes.append(payload["p_material_guard"])
         if change != "same_guard":
-            context["guard"] = f"{change}-{len(writes)}"
+            context["theme_guard"] = f"{change}-{len(writes)}"
         if change == "next_day":
             state["day"] = "2026-11-22"
         if change == "entitlement_lost":
@@ -340,6 +376,7 @@ def test_normal_app_routes_expose_only_deep_insight_as_active_question_feature()
 
     paths = create_application().openapi()["paths"]
     assert "get" in paths["/deep-insight"]
+    assert "patch" in paths["/deep-insight/theme-notification"]
     assert "post" in paths["/deep-insight/questions"]
     assert "post" in paths["/deep-insight/answers"]
     assert not any(path.startswith("/today-question/") for path in paths)

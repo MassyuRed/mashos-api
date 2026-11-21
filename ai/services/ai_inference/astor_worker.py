@@ -122,7 +122,7 @@ _install_optional_perf_runtime_stubs()
 
 from analysis_job_progress import MapJobClaimChanged, MapJobClaimUnavailable, map_job_progress
 from astor_job_queue import (
-    MAP_JOB_TYPES, check_map_job_owner, renew_map_job_progress,
+    JOBS_TABLE, MAP_JOB_TYPES, check_map_job_owner, renew_map_job_progress,
     fetch_next_queued_job,
     claim_job,
     enqueue_job,
@@ -132,7 +132,7 @@ from astor_job_queue import (
     fetch_queue_stats,
     requeue_stale_running_jobs,
 )
-from supabase_client import sb_get, sb_patch, sb_post  # type: ignore
+from supabase_client import sb_get, sb_patch, sb_post, sb_post_rpc  # type: ignore
 
 
 # NOTE:
@@ -523,6 +523,16 @@ def _format_queue_stats_for_log(stats: Dict[str, Any]) -> str:
     )
 
 
+async def _deep_insight_theme_notification_rpc(name, parameters, result_key, result_type):
+    response = await sb_post_rpc(name, parameters, timeout=5.0)
+    if response.status_code != 200:
+        raise RuntimeError("deep_insight_theme_notification_unavailable")
+    result = response.json()
+    if type(result) is not dict or type(result.get(result_key)) is not result_type:
+        raise RuntimeError("deep_insight_theme_notification_response_invalid")
+    return result
+
+
 async def _run_worker_maintenance(
     *,
     logger: logging.Logger,
@@ -550,6 +560,15 @@ async def _run_worker_maintenance(
                 )
         except Exception as exc:
             logger.warning("stale running maintenance failed. worker_id=%s err=%s", worker_id, exc)
+
+    if "send_fcm_push_v1" in job_types:
+        try:
+            result = await _deep_insight_theme_notification_rpc(
+                "deep_insight_theme_notification_enqueue_due", {"p_limit": 50}, "queued", int)
+            if result["queued"]:
+                logger.info("DeepInsight theme reminders queued. count=%s", result["queued"])
+        except Exception:
+            logger.warning("DeepInsight theme reminder scheduling unavailable")
 
     if stats_enabled:
         try:
@@ -3384,6 +3403,25 @@ async def _handle_send_fcm_push_v1(*, user_id: str, payload: Dict[str, Any]) -> 
     if (payload or {}).get("event_type") == "myweb_report_ready" or data_payload.get("type") == "myweb_report":
         return {"status": "skipped_retired_emotion_report"}
 
+    themes_event = "deep_insight_theme_ready"
+    is_theme_notice = payload.get("event_type") == themes_event or data_payload.get("type") == themes_event
+    if is_theme_notice:
+        from uuid import UUID
+        owner = str(user_id or "").strip()
+        question_id = str(data_payload.get("question_id") or "")
+        try:
+            valid = (str(UUID(owner)) == owner and str(UUID(question_id)) == question_id
+                     and mode == "user_ids" and payload.get("recipient_user_ids") == [owner]
+                     and not payload.get("exclude_user_ids") and payload.get("actor_user_id") == owner
+                     and payload.get("event_type") == themes_event
+                     and title == "Emlis" and body == "「わたしを知る問い」で新しいテーマの問いを受け取れます"
+                     and data_payload == {"type": themes_event, "target": "deep_insight",
+                                          "user_id": owner, "question_id": question_id})
+        except (ValueError, TypeError, AttributeError):
+            valid = False
+        if not valid:
+            return {"status": "skipped_invalid_deep_insight_theme_notification"}
+
     if ((payload or {}).get('event_type') == 'watashi_map_updated'
             or data_payload.get('type') == 'watashi_map_updated'):
         from uuid import UUID
@@ -3484,6 +3522,20 @@ async def _handle_send_fcm_push_v1(*, user_id: str, payload: Dict[str, Any]) -> 
             "recipient_count": recipient_count,
             "event_type": str((payload or {}).get("event_type") or ""),
         }
+
+    if is_theme_notice:
+        # A current preference, plan and latest question are required at send
+        # time. Once claimed, an unknown provider result must not be retried.
+        readiness = await _deep_insight_theme_notification_rpc(
+            "deep_insight_theme_notification_can_send",
+            {"p_user_id": owner, "p_question_id": question_id}, "eligible", bool)
+        if not readiness["eligible"]:
+            if "defer_until" in readiness:
+                next_due = datetime.fromisoformat(readiness["defer_until"].replace("Z", "+00:00"))
+                if next_due.tzinfo is None:
+                    raise RuntimeError("deep_insight_theme_notification_time_invalid")
+                return {"status": "deferred_deep_insight_theme_notification", "run_after": next_due.isoformat()}
+            return {"status": "skipped_stale_deep_insight_theme_notification"}
 
     send_res = await _send_fcm_push(tokens=tokens, title=title, body=body, data=data_payload)
     send_status = str((send_res or {}).get("status") or "failed")
@@ -4310,6 +4362,21 @@ async def _worker_loop() -> None:
                     user_id=claimed.user_id,
                     payload=(claimed.payload or {}),
                 )
+                if push_res["status"] == "deferred_deep_insight_theme_notification":
+                    # A plan downgrade delayed eligibility. Keep this same
+                    # durable job and leave the send retry budget untouched.
+                    response = await sb_patch(
+                        f"/rest/v1/{JOBS_TABLE}",
+                        params={"job_key": "eq." + claimed.job_key, "status": "eq.running",
+                                "worker_id": "eq." + worker_id, "updated_at": "eq." + claimed.updated_at},
+                        json={"status": "queued", "worker_id": None, "run_after": push_res["run_after"],
+                              "attempts": max(0, claimed.attempts - 1),
+                              "updated_at": datetime.now(timezone.utc).isoformat()},
+                        timeout=5.0,
+                    )
+                    if response.status_code not in (200, 204):
+                        raise RuntimeError("deep_insight_theme_notification_defer_failed")
+                    continue
                 done = await mark_done_if_unchanged(
                     job_key=claimed.job_key,
                     worker_id=worker_id,

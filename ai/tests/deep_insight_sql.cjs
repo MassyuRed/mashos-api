@@ -20,16 +20,17 @@ const sha256 = (s) => createHash('sha256').update(s).digest('hex');
 const value = async (sql, args = []) => (await db.query(sql, args)).rows[0].v;
 const state = (user) => value('select public.deep_insight_state($1) as v', [user]);
 const context = (user) => value('select public.deep_insight_candidate_context($1) as v', [user]);
-const issue = async (user, lane, key, { day, guard } = {}) => value(
+const themeContext = (user, theme) => value('select public.deep_insight_theme_candidate_context($1,$2) as v', [user, theme]);
+const issue = async (user, lane, key, { day, guard, theme = '人間関係' } = {}) => value(
   'select public.deep_insight_issue($1,$2,$3,$4,$5,$6,$7,$8) as v',
-  [user, day ?? (await state(user)).day, lane, lane === 'theme' ? '人間関係' : null,
+  [user, day ?? (await state(user)).day, lane, lane === 'theme' ? theme : null,
     '大切にしていることは何ですか？ ' + key, key, 'question-' + key, guard ?? (await context(user)).guard]);
 const answer = (user, row, text) => value('select public.deep_insight_answer($1,$2,$3) as v', [user, row.id, text]);
 const fail = (code, run) => assert.rejects(run, error => error.code === code);
 
-const groundedIssue = async (user, receipt, { day, guard } = {}) => value(
+const groundedIssue = async (user, receipt, { day, guard, theme = '人間関係' } = {}) => value(
   'select public.deep_insight_issue_grounded($1,$2,$3,$4,$5,$6,$7,$8,$9) as v',
-  [user, day ?? (await state(user)).day, receipt.lane, receipt.lane === 'theme' ? '人間関係' : null,
+  [user, day ?? (await state(user)).day, receipt.lane, receipt.lane === 'theme' ? theme : null,
     '大切にしていることは何ですか？', 'deep-insight-target-' + receipt.target_key,
     'question-' + receipt.target_key, guard ?? (await context(user)).guard, JSON.stringify(receipt)]);
 
@@ -42,14 +43,172 @@ function receipt(source, field, text, start, end) {
   };
 }
 
+async function verifyThemeNotifications() {
+  const freeUser = '00000000-0000-0000-0000-000000000011';
+  const paidUser = '00000000-0000-0000-0000-000000000012';
+  const alerts = () => value('select public.deep_insight_theme_notification_enqueue_due() as v');
+  const preference = (user, enabled) => value(
+    'select public.deep_insight_theme_notification_write($1,$2) as v', [user, enabled]);
+  const claim = (user, question) => value(
+    'select public.deep_insight_theme_notification_can_send($1,$2) as v', [user, question]);
+  const seed = (user, age, key) => value(`insert into public.deep_insight_questions
+    (user_id,lane,theme,question_text,issued_on,issued_at,question_key,text_key)
+    values($1,'theme','人間関係','個人情報を含めない問い',((now()-$2::interval) at time zone 'Asia/Tokyo')::date,
+      now()-$2::interval,$3,$3) returning id as v`, [user, age, key]);
+  const changeTier = (tier) => db.query('update public.profiles set subscription_tier=$1 where id=$2', [tier, paidUser]);
+  const job = (question) => value('select to_jsonb(j) as v from public.astor_jobs j where job_key=$1',
+    ['deep_insight_theme_ready:' + question]);
+
+  await db.exec('reset role');
+  await db.query('insert into auth.users values($1),($2)', [freeUser, paidUser]);
+  await db.query(`insert into public.profiles(id,subscription_tier,push_enabled,push_token)
+    values($1,'free',true,'free-device'),($2,'plus',true,'paid-device')`, [freeUser, paidUser]);
+  const priorFreeQuestion = await seed(freeUser, '200 hours', 'prior-free-notification');
+  const freeQuestion = await seed(freeUser, '167 hours', 'free-notification');
+  const paidQuestion = await seed(paidUser, '25 hours', 'paid-notification');
+  await db.exec('set role service_role');
+
+  assert.equal((await state(paidUser)).theme_notification_enabled, false);
+  assert.deepEqual(await alerts(), {queued: 0});
+  assert.deepEqual(await preference(paidUser, true), {enabled: true});
+  assert.deepEqual(await preference(freeUser, true), {enabled: true});
+  assert.equal((await state(paidUser)).theme_notification_enabled, true);
+  assert.deepEqual(await alerts(), {queued: 1});
+  assert.deepEqual(await alerts(), {queued: 0});
+  const queued = await job(paidQuestion);
+  assert.deepEqual(queued.payload.data, {
+    type: 'deep_insight_theme_ready', target: 'deep_insight', user_id: paidUser, question_id: paidQuestion,
+  });
+  assert.equal(JSON.stringify(queued.payload).includes('個人情報を含めない問い'), false);
+  assert.deepEqual(await claim(freeUser, paidQuestion), {eligible: false});
+  assert.deepEqual(await claim(freeUser, priorFreeQuestion), {eligible: false});
+
+  await changeTier('free');
+  const deferred = await claim(paidUser, paidQuestion);
+  assert.equal(deferred.eligible, false);
+  assert.equal(deferred.defer_until, (await state(paidUser)).theme_next_available_at);
+  await db.query('update public.astor_jobs set run_after=$1 where job_key=$2', [deferred.defer_until, queued.job_key]);
+  assert.deepEqual(await alerts(), {queued: 0});
+  await changeTier('premium');
+  assert.deepEqual(await alerts(), {queued: 1});
+  assert.ok(Date.parse((await job(paidQuestion)).run_after) < Date.parse(deferred.defer_until));
+  assert.equal((await job(paidQuestion)).job_key, queued.job_key);
+
+  await preference(paidUser, false);
+  assert.deepEqual(await claim(paidUser, paidQuestion), {eligible: false});
+  await preference(paidUser, true);
+  await db.query('update public.profiles set push_enabled=false where id=$1', [paidUser]);
+  assert.deepEqual(await claim(paidUser, paidQuestion), {eligible: false});
+  await db.query('update public.profiles set push_enabled=true where id=$1', [paidUser]);
+  assert.deepEqual(await claim(paidUser, paidQuestion), {eligible: true});
+  assert.deepEqual(await claim(paidUser, paidQuestion), {eligible: false});
+  await db.query('delete from public.astor_jobs where job_key=$1', [queued.job_key]);
+  assert.deepEqual(await alerts(), {queued: 0});
+
+  await db.exec('reset role');
+  await db.query(`update public.deep_insight_questions set issued_at=now()-interval '169 hours',
+    issued_on=((now()-interval '169 hours') at time zone 'Asia/Tokyo')::date where id=$1`, [freeQuestion]);
+  await db.exec('set role service_role');
+  assert.deepEqual(await alerts(), {queued: 1});
+  assert.equal((await job(freeQuestion)).user_id, freeUser);
+  assert.equal((await issue(freeUser, 'theme', 'replacement-notification')).status, 'issued');
+  assert.deepEqual(await claim(freeUser, freeQuestion), {eligible: false});
+  assert.deepEqual(await alerts(), {queued: 0});
+}
+
+async function verifyThemePrivacyAndRecordsPlan(themeGrounding) {
+  const owner = '00000000-0000-0000-0000-000000000013';
+  const other = '00000000-0000-0000-0000-000000000014';
+  const selected = '人間関係';
+  const different = '仕事・学び';
+
+  await db.exec('reset role');
+  await db.query('insert into auth.users values($1),($2)', [owner, other]);
+  await db.query("insert into public.profiles(id,subscription_tier) values($1,'plus'),($2,'free')", [owner, other]);
+  await db.query(`insert into public.emotions(id,user_id,created_at,memo,memo_action)
+    values(gen_random_uuid(),$1,now() at time zone 'UTC' - interval '1 minute','個人の思考','個人の行動')`, [owner]);
+  await db.query(`insert into public.deep_insight_questions
+    (user_id,lane,theme,question_text,issued_on,issued_at,question_key,text_key)
+    select $1,'theme',$2,'既出の問い '||n,((now()-make_interval(days=>n+10)) at time zone 'Asia/Tokyo')::date,
+      now()-make_interval(days=>n+10),'prior-question-'||n,'prior-text-'||n from generate_series(1,34) n`, [owner, selected]);
+  const firstHistoryId = await value(`select id as v from public.deep_insight_questions
+    where user_id=$1 and question_key='prior-question-1'`, [owner]);
+  const seedOtherTheme = (user, theme) => db.query(`insert into public.deep_insight_questions
+    (user_id,lane,theme,question_text,issued_on,issued_at,question_key,text_key,answer_text,answered_at)
+    values($1,'theme',$2,'範囲外の問い',((now()-interval '9 days') at time zone 'Asia/Tokyo')::date,
+      now()-interval '9 days','other-theme-question','other-theme-text','範囲外の回答',now()-interval '9 days')`, [user, theme]);
+  await seedOtherTheme(owner, different);
+  await seedOtherTheme(other, selected);
+  await db.exec('set role service_role');
+  assert.equal((await state(owner)).can_use_records, true);
+  const pending = (await issue(owner, 'records', 'old-records')).question;
+  assert.ok(pending);
+
+  await db.exec('reset role');
+  await db.exec(fs.readFileSync(path.join(root, 'supabase/migrations',
+    '20261121190000_deep_insight_theme_candidate_context.sql'), 'utf8'));
+  await db.exec('set role service_role');
+
+  const narrow = await themeContext(owner, selected);
+  assert.match(narrow.guard, /^deep-insight-theme-v1:[0-9a-f]{64}$/);
+  assert.deepEqual(Object.keys(narrow.material), ['questions']);
+  assert.equal(narrow.material.questions.length, 34);
+  narrow.material.questions.forEach((question, index) => {
+    const n = index + 1;
+    assert.deepEqual(question, {
+      question_key: `prior-question-${n}`,
+      text_key: `prior-text-${n}`,
+      ...(n <= 30 ? {question_text: `既出の問い ${n}`} : {}),
+    });
+  });
+  assert.notEqual((await themeContext(other, selected)).guard, narrow.guard);
+  assert.notEqual((await themeContext(owner, different)).guard, narrow.guard);
+  assert.deepEqual((await themeContext(other, different)).material, {questions: []});
+
+  assert.equal((await state(owner)).can_use_records, false);
+  assert.equal((await state(owner)).record_available_today, false);
+  assert.equal((await state(owner)).records.id, pending.id);
+  assert.equal((await issue(owner, 'records', 'old-record-retry')).question.id, pending.id);
+  const saved = await answer(owner, pending, '記録への本人回答');
+  await answer(owner, {id: firstHistoryId}, '個人の過去回答');
+  assert.deepEqual(await themeContext(owner, selected), narrow);
+  assert.ok((await state(owner)).history.some((question) => question.id === pending.id));
+  const snapshot = await value("select public.analysis_cumulative_source_snapshot($1)->'members' as v", [owner]);
+  assert.ok(snapshot.some((member) => member.original.id === pending.id
+    && member.original.memo === saved.question.answer_text));
+  await assert.rejects(() => issue(owner, 'records', 'new-plus-record'),
+    {code: '42501', message: 'deep_insight_records_locked'});
+  assert.equal((await state(premium)).can_use_records, true);
+
+  assert.equal((await groundedIssue(owner, themeGrounding, {theme: different, guard: narrow.guard})).status, 'no_question');
+  await db.query(`insert into public.deep_insight_questions
+    (user_id,lane,theme,question_text,issued_on,issued_at,question_key,text_key)
+    values($1,'theme',$2,'以前に発行した問い',((now()-interval '50 days') at time zone 'Asia/Tokyo')::date,
+      now()-interval '50 days','prior-question-35','prior-text-35')`, [owner, selected]);
+  assert.equal((await groundedIssue(owner, themeGrounding, {guard: narrow.guard})).status, 'no_question');
+  const refreshed = await themeContext(owner, selected);
+  assert.equal((await issue(owner, 'theme', 'prior-question-34', {guard: refreshed.guard})).status, 'no_question');
+  const issued = await groundedIssue(owner, themeGrounding, {guard: refreshed.guard});
+  assert.equal(issued.status, 'issued');
+  assert.equal(issued.question.theme, selected);
+  assert.equal((await state(owner)).theme_next_available_at, issued.theme_next_available_at);
+  assert.notEqual((await themeContext(owner, selected)).guard, refreshed.guard);
+
+  // The deployed pre-transition API can still use its original material guard.
+  assert.equal((await groundedIssue(other, themeGrounding)).status, 'issued');
+}
+
 async function run() {
   await db.exec(`create role anon; create role authenticated; create role service_role bypassrls;
     create schema auth; create table auth.users(id uuid primary key);
-    create table public.profiles(id uuid primary key references auth.users(id) on delete cascade,subscription_tier text);
+    create table public.profiles(id uuid primary key references auth.users(id) on delete cascade,subscription_tier text,
+      push_enabled boolean default true,push_token text);
     create table public.emotions(id uuid primary key,user_id uuid references auth.users(id) on delete cascade,
       created_at timestamp,memo text,memo_action text,category text[],emotions text[],emotion_details jsonb);
+    create table public.astor_jobs(job_key text primary key,job_type text,user_id uuid,payload jsonb,priority integer,
+      run_after timestamptz,updated_at timestamptz default now(),status text default 'queued');
     grant usage on schema public to anon,authenticated,service_role;
-    grant all on public.profiles,public.emotions to service_role;`);
+    grant all on public.profiles,public.emotions,public.astor_jobs to service_role;`);
   for (const file of [
     '20260911020509_emlis_input_threads_q2.sql',
     '20260911041749_emlis_q3_plan_rounds.sql',
@@ -69,7 +228,8 @@ async function run() {
   ]) await db.exec(fs.readFileSync(path.join(root, 'supabase/migrations', file), 'utf8'));
 
   await db.query('insert into auth.users values($1),($2),($3)', [free, plus, premium]);
-  await db.query("insert into public.profiles values($1,'free'),($2,'plus'),($3,'premium')", [free, plus, premium]);
+  await db.query("insert into public.profiles(id,subscription_tier) values($1,'free'),($2,'plus'),($3,'premium')",
+    [free, plus, premium]);
   await db.query("insert into public.emotions values($1,$2,now() at time zone 'UTC' - interval '1 minute','🧪本人の記録',null,null,null,null)",
     [recordId, free]);
   await db.query(`insert into public.emlis_input_threads(id,user_id,original_emotion_id,revision,state,issued_count,source_snapshot,data)
@@ -167,10 +327,64 @@ async function run() {
   const answerGrounding = receipt(answeredPrior, 'answer', answeredPrior.answer_text, 0, 6);
   assert.equal((await groundedIssue(premium, answerGrounding)).status, 'issued');
 
+  await db.exec('reset role');
+  await db.exec(fs.readFileSync(path.join(root, 'supabase/migrations',
+    '20261121185000_deep_insight_theme_cooldown.sql'), 'utf8'));
+  await db.exec('set role service_role');
+  assert.equal((await state(free)).can_use_theme, true);
+  assert.equal((await state(free)).theme_next_available_at, null);
+  await fail('42501', () => issue(free, 'records', 'free-no-new-record'));
+  assert.deepEqual((await state(free)).history, [saved.question]);
+  assert.equal((await groundedIssue(free, themeGrounding, { guard: 'wrong' })).status, 'no_question');
+  assert.equal((await state(free)).theme_next_available_at, null);
+  const freeTheme = await groundedIssue(free, themeGrounding);
+  assert.equal(freeTheme.status, 'issued');
+  assert.equal((await state(free)).theme_next_available_at, freeTheme.theme_next_available_at);
+  assert.deepEqual(await issue(free, 'theme', 'other-theme', { theme: '仕事・学び' }), {
+    ...freeTheme, status: 'existing',
+  });
+  for (const [owner, hours] of [[free, 168], [plus, 24], [premium, 24]]) {
+    const t = (await state(owner)).theme_next_available_at;
+    const at = (date) => value('select public.deep_insight_state_at($1,$2) as v', [owner, date]);
+    const earlier = new Date(Date.parse(t) - 1).toISOString();
+    assert.equal((await at(earlier)).theme_available_today, false);
+    const available = await at(t);
+    assert.equal(available.theme_available_today, true);
+    assert.equal(available.theme, null);
+    const elapsed = await value(`select extract(epoch from ($2::timestamptz-issued_at))::int as v
+      from public.deep_insight_questions where user_id=$1 and lane='theme' order by issued_at desc limit 1`, [owner, t]);
+    assert.equal(elapsed, hours * 60 * 60);
+  }
+  await db.exec('reset role');
+  await db.query(`update public.deep_insight_questions set issued_at=now()-interval '169 hours',
+    issued_on=((now()-interval '169 hours') at time zone 'Asia/Tokyo')::date where id=$1`, [freeTheme.question.id]);
+  await db.query("update public.profiles set subscription_tier='free' where id=$1", [plus]);
+  await db.exec('set role service_role');
+  assert.equal((await state(free)).theme_available_today, true);
+  assert.ok((await state(free)).history.some((q) => q.id === freeTheme.question.id));
+  assert.equal((await issue(free, 'theme', 'after-cooldown')).status, 'issued');
+  const existingRecord = (await state(plus)).records;
+  assert.equal((await state(plus)).can_use_records, false);
+  assert.equal((await issue(plus, 'records', 'recovery')).question.id, existingRecord.id);
+  assert.equal((await answer(plus, existingRecord, '切替前の問いへの回答')).inserted, true);
+  await fail('42501', () => issue(plus, 'records', 'downgraded'));
+
+  await db.exec('reset role');
+  await db.exec(fs.readFileSync(path.join(root, 'supabase/migrations',
+    '20261121185100_deep_insight_theme_ready_notifications.sql'), 'utf8'));
+  await verifyThemeNotifications();
+  await verifyThemePrivacyAndRecordsPlan(themeGrounding);
+
   for (const role of ['anon', 'authenticated']) {
     await db.exec('set role ' + role);
     await fail('42501', () => state(free));
+    await fail('42501', () => themeContext(free, '人間関係'));
     await fail('42501', () => db.query('select * from public.deep_insight_questions'));
+    await fail('42501', () => db.query('select * from public.deep_insight_theme_notification_settings'));
+    await fail('42501', () => value('select public.deep_insight_theme_notification_write($1,true) as v', [free]));
+    await fail('42501', () => value('select public.deep_insight_theme_notification_enqueue_due() as v'));
+    await fail('42501', () => value('select public.deep_insight_theme_notification_can_send($1,$2) as v',
+      [free, freeTheme.question.id]));
     await fail('42501', () => answer(free, first, saved.question.answer_text));
     await fail('42501', () => value('select public.deep_insight_issue_grounded($1,current_date,$2,$3,$4,$5,$6,$7,$8) as v',
       [free, 'records', null, 'x', 'x', 'x', 'x', JSON.stringify(grounding)]));

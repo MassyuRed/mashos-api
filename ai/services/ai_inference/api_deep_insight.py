@@ -12,7 +12,7 @@ from uuid import UUID
 
 import httpx
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Response
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, ValidationError, field_validator, model_validator
 
 from api_emotion_submit import _extract_bearer_token, _resolve_user_id_from_token
 from cocolon_meaning_experience_engine.deep_insight_question import (
@@ -43,10 +43,13 @@ class Question(BaseModel):
 
 class DeepInsightState(BaseModel):
     can_use_theme: bool
+    can_use_records: bool = True
     records: Question | None
     theme: Question | None
     record_available_today: bool
     theme_available_today: bool
+    theme_next_available_at: datetime | None = None
+    theme_notification_enabled: bool = False
     history: list[Question]
 
 
@@ -73,6 +76,7 @@ class QuestionCommand(BaseModel):
 class QuestionResult(BaseModel):
     status: QuestionStatus
     question: Question | None = None
+    theme_next_available_at: datetime | None = None
 
 
 @dataclass(frozen=True)
@@ -99,6 +103,11 @@ class AnswerResult(BaseModel):
     question: Question
 
 
+class ThemeNotification(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    enabled: StrictBool
+
+
 class _StoredAnswer(AnswerResult):
     inserted: bool
 
@@ -122,6 +131,8 @@ async def _rpc(name, payload):
         raise HTTPException(503, "deep_insight_storage_unavailable") from None
     if response.status_code >= 300:
         code = result.get("code") if isinstance(result, dict) else None
+        if code == "42501" and result.get("message") == "deep_insight_records_locked":
+            raise HTTPException(403, "deep_insight_records_locked")
         error = {
             "P0002": (404, "deep_insight_question_unavailable"),
             "23505": (409, "deep_insight_answer_conflict"),
@@ -189,16 +200,19 @@ async def _issue_state(owner: str, lane: Lane):
     if lane == "theme" and not state.can_use_theme:
         raise HTTPException(403, "deep_insight_theme_locked")
     question = state.records if lane == "records" else state.theme
+    next_available = state.theme_next_available_at if lane == "theme" else None
     if question is not None:
-        return state, QuestionResult(status="existing", question=question)
+        return state, QuestionResult(status="existing", question=question, theme_next_available_at=next_available)
+    if lane == "records" and not state.can_use_records:
+        raise HTTPException(403, "deep_insight_records_locked")
     available = state.record_available_today if lane == "records" else state.theme_available_today
-    return state, None if available else QuestionResult(status="daily_limit")
+    return state, None if available else QuestionResult(status="daily_limit", theme_next_available_at=next_available)
 
 
 async def _issue_from_material(owner, command, day, guard, material, prepared, sources):
     # A different theme still uses the same owner's single theme slot.
     lock_key = build_lock_key(namespace="deep-insight", user_id=owner, report_type=command.lane,
-                              period_start=day, period_end=guard)
+                              period_start=day, period_end="theme-slot" if command.lane == "theme" else guard)
     try:
         lease = await try_acquire_lock(lock_key=lock_key, ttl_seconds=120)
     except (HTTPException, httpx.HTTPError, RuntimeError, ValueError):
@@ -233,8 +247,13 @@ async def _issue_from_material(owner, command, day, guard, material, prepared, s
         await release_lock(lock_key=lease.lock_key, owner_id=lease.owner_id)
 
 
-async def _candidate_context(owner):
-    context = await _rpc("deep_insight_candidate_context", {"p_user_id": owner})
+async def _candidate_context(owner, command):
+    if command.lane == "theme":
+        context = await _rpc("deep_insight_theme_candidate_context", {
+            "p_user_id": owner, "p_theme": command.theme,
+        })
+    else:
+        context = await _rpc("deep_insight_candidate_context", {"p_user_id": owner})
     try:
         guard, material = context["guard"], context["material"]
         if not isinstance(guard, str) or not guard:
@@ -276,20 +295,19 @@ async def _issue_question(owner, command, deadline):
         return _Attempt(previous.status, previous)
 
     day = state.day.isoformat()
-    guard, material = await _candidate_context(owner)
+    guard, material = await _candidate_context(owner, command)
     outcome = await _try_issue(owner, command, day, guard, material, deadline)
     if outcome.disposition != "source_changed_or_duplicate":
         return outcome
 
-    # Issuing the other entrance can advance the owner's shared material
-    # version. Re-read this slot before trying once with current material.
+    # Re-read eligibility and the lane's own material after a conflicting write.
     refreshed_state, previous = await _issue_state(owner, command.lane)
     if refreshed_state.day != state.day:
         return _Attempt("source_changed", outcome.result)
     if previous is not None:
         return _Attempt(previous.status, previous)
 
-    refreshed_guard, refreshed_material = await _candidate_context(owner)
+    refreshed_guard, refreshed_material = await _candidate_context(owner, command)
     if refreshed_guard == guard:
         return outcome
     return await _try_issue(owner, command, day, refreshed_guard, refreshed_material, deadline)
@@ -302,6 +320,15 @@ def register_deep_insight_routes(app: FastAPI) -> None:
     async def read_deep_insight(response: Response, owner: str = Depends(_owner)):
         response.headers["Cache-Control"] = "no-store"
         return _stored(_StoredState, await _rpc("deep_insight_state", {"p_user_id": owner}))
+
+    @router.patch("/theme-notification", response_model=ThemeNotification)
+    async def update_deep_insight_theme_notification(command: ThemeNotification, response: Response,
+                                                     owner: str = Depends(_owner)):
+        response.headers["Cache-Control"] = "no-store"
+        saved = await _rpc("deep_insight_theme_notification_write", {
+            "p_user_id": owner, "p_enabled": command.enabled,
+        })
+        return _stored(ThemeNotification, saved)
 
     @router.post("/questions", response_model=QuestionResult)
     async def issue_deep_insight_question(command: QuestionCommand, response: Response, owner: str = Depends(_owner)):
