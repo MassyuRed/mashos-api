@@ -423,6 +423,31 @@ def test_theme_checks_cited_wording_then_rechecks_the_rest_of_the_history():
     ]
 
 
+@pytest.mark.parametrize("final_verdict", [{"verdict": "distinct"}, {"verdict": "repeat", "id": 3}])
+def test_theme_checks_two_cited_questions_before_the_remaining_history(final_verdict):
+    question = {"question": "新しい方法を試すとしたら、どのくらいの負担を引き受けますか？"}
+    history = [
+        {"id": 1, "question": "約束を守るためにはどこまで負担を引き受けますか？"},
+        {"id": 2, "question": "人からの勧めを試すとき、どこまで負担を引き受けますか？"},
+        {"id": 3, "question": "慣れた手順を変える前に、試すことにどのくらい負担をかけますか？"},
+    ]
+    responses = iter([
+        {"verdict": "repeat", "id": 1}, {"verdict": "distinct"},
+        {"verdict": "repeat", "id": 2}, {"verdict": "distinct"},
+        final_verdict,
+    ])
+    calls = []
+
+    async def generate(system, payload):
+        calls.append((system, payload))
+        return json.dumps(next(responses))
+
+    assert asyncio.run(_theme_has_new_answer(question, history, generate)) is (final_verdict["verdict"] == "distinct")
+    assert [payload["history"] for system, payload in calls if system == _THEME_COMPARE_SYSTEM_MESSAGE] == [
+        history, history[1:], history[2:],
+    ]
+
+
 @pytest.mark.parametrize("theme", THEME_SCENES)
 def test_theme_selection_does_not_reuse_an_issued_position_over_fifty_draws(theme):
     questions = []

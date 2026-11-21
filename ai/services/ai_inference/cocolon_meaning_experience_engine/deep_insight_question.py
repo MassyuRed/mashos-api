@@ -30,6 +30,7 @@ _THEME_UNMARKED_QUESTION_END = re.compile(r"(?:ます|です|でしょう|ませ
 _THEME_QUOTED_QUESTION = re.compile(r"「([^「」\r\n]+)」")
 _THEME_SINGLE_QUOTED_QUESTION = re.compile(r"\{[ \t]*'question'[ \t]*:[ \t]*'([^'\r\n]+)'[ \t]*\}")
 _THEME_ASSISTANT_NAME = re.compile(r"emlis|エムリス", re.IGNORECASE)
+_THEME_MAX_PAIR_RECHECKS = 2
 _THEME_UNBOUND_CHANGE = re.compile(r"^(?:どんな(?:とき|時|場合)|どういう(?:とき|時|場合)|いつ)に?(?:変え|切り替え)ますか[？?]$")
 _THEME_UNBOUND_DECISION = re.compile(
     r"^(?:何を(?:目安|基準|決め手)に|どうやって)(?:して)?[、,]?決めますか[？?]$"
@@ -723,28 +724,28 @@ async def _generate_theme(prepared, material, generate):
 
 
 async def _theme_has_new_answer(question, history, generate):
-    if not history:
-        return True
-    check = _json_object(await generate(_THEME_COMPARE_SYSTEM_MESSAGE, {**question, "history": history}))
-    if check == {"verdict": "distinct"}:
-        return True
-    if not check or set(check) != {"verdict", "id"} or check["verdict"] != "repeat" or type(check["id"]) is not int:
-        return False
-    repeated_id = check["id"]
-    repeated = next((row for row in history if row["id"] == repeated_id), None)
-    if not repeated or not repeated.get("question"):
-        return False
-    # Check the exact cited wording without the other history. If it asks
-    # something different, the remaining history must still clear comparison.
-    pair = _json_object(await generate(_THEME_COMPARE_PAIR_SYSTEM_MESSAGE, {
-        "question": question["question"], "previous": repeated["question"],
-    }))
-    if pair != {"verdict": "distinct"}:
-        return False
-    remaining = [row for row in history if row["id"] != repeated_id]
-    return not remaining or _json_object(await generate(
-        _THEME_COMPARE_SYSTEM_MESSAGE, {**question, "history": remaining},
-    )) == {"verdict": "distinct"}
+    for rechecks in range(_THEME_MAX_PAIR_RECHECKS + 1):
+        if not history:
+            return True
+        check = _json_object(await generate(_THEME_COMPARE_SYSTEM_MESSAGE, {**question, "history": history}))
+        if check == {"verdict": "distinct"}:
+            return True
+        if rechecks == _THEME_MAX_PAIR_RECHECKS:
+            return False
+        if not check or set(check) != {"verdict", "id"} or check["verdict"] != "repeat" or type(check["id"]) is not int:
+            return False
+        repeated_id = check["id"]
+        repeated = next((row for row in history if row["id"] == repeated_id), None)
+        if not repeated or not repeated.get("question"):
+            return False
+        # Remove only the cited wording after a distinct pair verdict. Check
+        # the rest of the history even if the model cited two different rows.
+        pair = _json_object(await generate(_THEME_COMPARE_PAIR_SYSTEM_MESSAGE, {
+            "question": question["question"], "previous": repeated["question"],
+        }))
+        if pair != {"verdict": "distinct"}:
+            return False
+        history = [row for row in history if row["id"] != repeated_id]
 
 
 async def _review_theme_candidate(raw, *, plan, direction, scene, key, material, generate,
