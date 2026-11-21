@@ -16,7 +16,7 @@ from emlis_ai_safety_triage import build_emlis_safety_triage_decision
 
 from .deep_insight_theme import (
     THEME_ANGLES, THEME_DECISION_IN_SCENE, THEME_DECISION_TARGETS, THEME_QUESTION_FORMS,
-    THEME_REPEATED_INTRODUCTIONS, THEME_SCENES, THEME_TARGET_ANGLES, THEME_TARGET_FORMS,
+    THEME_REPEATED_INTRODUCTIONS, THEME_SCENES, THEME_SCENE_WORDING, THEME_TARGET_ANGLES, THEME_TARGET_FORMS,
 )
 from .deep_insight_theme_intents import THEME_SCENE_ANGLE_TARGETS
 from .emlis_thread_source import identity
@@ -24,7 +24,7 @@ from .emlis_thread_source import identity
 
 _FOCUSES = frozenset({"REASON", "CONDITION", "VALUE", "CHANGE", "RELATIONSHIP", "PREFERENCE", "MEANING"})
 _QUESTION_PUNCTUATION = re.compile(r"[。！？!?\n\r]")
-_THEME_QUESTION_WORD = re.compile(r"何(?!か)|どんな|どの|どう|どちら|どれ|どこ|いつ|いくつ|誰(?!か)")
+_THEME_QUESTION_WORD = re.compile(r"何(?!か)|どんな|どの|どう|どちら|どれ|どこ|いつ|いくつ|いくら|誰(?!か)")
 _THEME_QUESTION_END = re.compile(r"(?:ます|です|でしょう|ません)か[？?]\Z")
 _THEME_UNMARKED_QUESTION_END = re.compile(r"(?:ます|です|でしょう|ません)か。?\Z")
 _THEME_ASSISTANT_NAME = re.compile(r"emlis|エムリス", re.IGNORECASE)
@@ -71,10 +71,10 @@ targetは、その場面で本人が判断する具体的な物事です。「�
 
 _THEME_WRITE_SYSTEM_MESSAGE = f"""日本語の短い質問を一つ返してください。
 {_DATA_BOUNDARY}
-targetは質問の対象、angleは知りたいこと、formは答えを引き出す文型です。文型の「〜」に対象に合う普段の言葉を入れ、知りたいことを一つだけ尋ねます。
-formが完成した質問の例なら、対象と求める答えを保って使います。「確認しますか？」のような二択にせず、確かめたい事実自体を聞きます。複数の候補を選ぶ場合、その選択を「この作業」のように一つに狭めません。
-angleやtargetを長いまま写さず、同じ言葉は繰り返しません。挨拶や場面の前置きは付けません。「〜する際、」から始めません。経験済みとは決めつけません。
-返すのは {{"question":"丁寧な質問文？"}} の形だけです。"""
+sceneは問いの前に表示する場面です。sceneの直後に続く一節だけ書き、場面は繰り返しません。
+targetは本人が考える具体的なもの、angleは本人の答えで知りたいことです。どの行動・選択について、何を聞くかが伝わるようにします。
+formが例文なら、対象と聞く点を守って参考にします。「何を」「どんなとき」「どこまで」などで本人の考えを聞き、経験を決めつけません。
+返すのは {{"question":"〜ですか？"}} の形だけです。疑問文を「ですか？」か「ますか？」などで結びます。"""
 
 _THEME_READ_SYSTEM_MESSAGE = f"""Emlisの「テーマから考える」の完成文questionを確認します。日本語のJSONだけを返します。
 {_DATA_BOUNDARY}
@@ -83,14 +83,14 @@ targetは判断する物事です。その物事が自然な形で伝わり、an
 上限を尋ねる問いを、続けられる条件にすり替えません。複数の候補から選ぶ問いを、特定の一つの行動に置き換えません。場面にある選択肢が伝わる「どれから」「どちら」などの聞き方は自然です。
 「最初に取る行動」なら行動を聞き、「選択の決め手」なら基準を聞く文が合います。続けたいと思う目安と、すでに経験した感想は区別します。
 同じ場面を別の言い方で前置きしているだけならsurfaceです。時点や対象を絞る実質的な条件が増える場合は、その条件が場面や聞く点に合うかを見ます。
-previous_questionsと実質的に同じ内容なら、ほかの条件にかかわらず {{"verdict":"reject","reason":"repeat"}} です。
 場面が消えた、不自然、質問が二つ、または前提の決めつけならrejectでreasonはsurfaceです。"""
 
-_THEME_PREVIOUS_QUESTIONS_GUIDE = """
-previous_questionsとは、同じ状況で同じ判断や行動を答えるかを比べます。「何を基準に」などの聞き方が共通でも、判断対象や時点が違うならrepeatではありません。始めたいことの順番を選ぶ基準と、新しい暮らしに残す習慣を選ぶ基準は別です。使う手順を決める前に確かめる事実と、試した手順を続ける目安も別です。"""
-
-_THEME_PREVIOUS_ANGLES_GUIDE = """
-previous_anglesは同じ場面で以前に出した問いの観点です。文面はありません。同じ観点や同じ内容の答えを求めるときはrepeat、別の点を尋ねるときはほかの条件で判定します。"""
+_THEME_COMPARE_SYSTEM_MESSAGE = f"""questionが、historyの既出の問いと同じ答えを求めているか照合します。JSONだけを返します。
+{_DATA_BOUNDARY}
+本人が想定する場面・行動や判断の対象・求める答えが実質的に一致する場合だけ重複です。同じ話題や聞き方があるだけで、答える内容が違うなら別の問いです。
+文面のない古い既出は、記録された場面と観点を使います。文面のある既出は、実際に何を聞いたかを読みます。
+たとえば、始めたいことの順番を決める基準と、次の暮らしに残す習慣を選ぶ基準では答えが異なります。
+重複がなければ {{"verdict":"distinct"}}、あれば該当する既出のidを一つ示し {{"verdict":"repeat","id":1}} の形で返します。"""
 
 _THEME_REPAIR_SYSTEM_MESSAGE = f"""日本語の短い質問を一つ書き直してください。
 {_DATA_BOUNDARY}
@@ -513,9 +513,19 @@ def _prepare_theme(material, theme, choose):
     previous = [text for row in past[:30] if (text := _excerpt(row.get("question_text"), 280))]
     previous_angles = []
     options = []
+    known_positions = {}
     for scene_id, scene in THEME_SCENES.get(theme, {}).items():
         targets = THEME_SCENE_ANGLE_TARGETS[theme][scene_id]
         issued = {angle_id: _theme_position_key(theme, scene_id, angle_id) for angle_id in THEME_ANGLES}
+        for angle_id, key in issued.items():
+            if key in used:
+                old_target, old_angle = targets.get(
+                    angle_id, (THEME_DECISION_TARGETS[theme][scene_id], THEME_ANGLES[angle_id]),
+                )
+                known_positions[key] = {
+                    "scene": THEME_SCENE_WORDING.get((theme, scene_id, angle_id), scene),
+                    "target": old_target, "angle": old_angle,
+                }
         available = [(angle_id, issued[angle_id]) for angle_id in targets if issued[angle_id] not in used]
         if available:
             times_used = sum(key in used for key in issued.values())
@@ -527,6 +537,7 @@ def _prepare_theme(material, theme, choose):
         scene_id, scene, available, _ = choose([item for item in options if item[3] == fewest_issued])
         angle_id, key = choose(available)
         position = (theme, scene_id, angle_id)
+        scene = THEME_SCENE_WORDING.get(position, scene)
         target, angle = THEME_SCENE_ANGLE_TARGETS[theme][scene_id][angle_id]
         form = THEME_TARGET_FORMS.get(position, THEME_QUESTION_FORMS[angle_id])
         archived_keys = {row["question_key"] for row in past[30:]}
@@ -548,7 +559,21 @@ def _prepare_theme(material, theme, choose):
         "repeated_introductions": THEME_REPEATED_INTRODUCTIONS.get(position, ()),
         "decision_in_scene": position in THEME_DECISION_IN_SCENE,
         "previous_angles": previous_angles,
+        "theme_history": _theme_history(past, known_positions),
     }
+
+
+def _theme_history(past, known_positions):
+    history = []
+    for index, row in enumerate(past):
+        wording = _excerpt(row.get("question_text"), 280) if index < 30 else None
+        intent = known_positions.get(row["question_key"])
+        if wording or intent:
+            item = {"id": len(history) + 1, **(intent or {})}
+            if wording:
+                item["question"] = wording
+            history.append(item)
+    return history
 
 
 def _candidate(question, *, plan, lane, material, question_key=None):
@@ -607,25 +632,34 @@ async def _generate_theme(prepared, material, generate):
 
     direction = {"theme": theme, "target": target, "angle": angle}
     plan = _Plan("VALUE", "", "", "", angle, None)
-    writing = {"target": target, "angle": angle, "form": prepared["form"]}
+    writing = {"scene": scene, "target": target, "angle": angle, "form": prepared["form"]}
     raw = await generate(_THEME_WRITE_SYSTEM_MESSAGE, writing)
     for attempt in range(2):
         candidate, reason = await _review_theme_candidate(
             raw, plan=plan, direction=direction, scene=scene, key=key, material=material,
-            previous_questions=prepared["previous_questions"], generate=generate,
+            generate=generate,
             repeated_introductions=prepared["repeated_introductions"], decision_in_scene=prepared["decision_in_scene"],
             previous_angles=prepared["previous_angles"],
         )
         if candidate is not None:
+            history = prepared["theme_history"]
+            if history:
+                # Compare the admitted display text without asking a single
+                # model response to judge both meaning and repetition.
+                check = _json_object(await generate(_THEME_COMPARE_SYSTEM_MESSAGE, {
+                    **direction, "scene": scene, "question": candidate.text, "history": history,
+                }))
+                if check != {"verdict": "distinct"}:
+                    return QuestionRun(None, "rejected")
             return QuestionRun(candidate, "selected")
         if attempt or reason == "repeat":
             return QuestionRun(None, "rejected")
         raw = await generate(_THEME_REPAIR_SYSTEM_MESSAGE, {
-            **writing, "scene": scene, "draft": raw[:400], "reason": reason,
+            **writing, "draft": raw[:400], "reason": reason,
         })
 
 
-async def _review_theme_candidate(raw, *, plan, direction, scene, key, material, previous_questions, generate,
+async def _review_theme_candidate(raw, *, plan, direction, scene, key, material, generate,
                                   repeated_introductions=(), decision_in_scene=False, previous_angles=()):
     if direction["angle"] in previous_angles:
         return None, "repeat"
@@ -643,20 +677,13 @@ async def _review_theme_candidate(raw, *, plan, direction, scene, key, material,
     candidate = _candidate(question, plan=plan, lane="theme", material=material, question_key=key)
     if candidate is None:
         return None, "repeat"
-    review_prompt = _THEME_READ_SYSTEM_MESSAGE
-    review_material = {
-        **direction, "scene": scene, "question": question, "previous_questions": previous_questions,
-    }
-    if previous_questions:
-        review_prompt += _THEME_PREVIOUS_QUESTIONS_GUIDE
-    if previous_angles:
-        review_prompt += _THEME_PREVIOUS_ANGLES_GUIDE
-        review_material["previous_angles"] = previous_angles
-    check = _json_object(await generate(review_prompt, review_material))
+    check = _json_object(await generate(_THEME_READ_SYSTEM_MESSAGE, {
+        **direction, "scene": scene, "question": question,
+    }))
     if check == {"verdict": "accept"}:
         return candidate, None
     reason = check.get("reason") if check and check.get("verdict") == "reject" else None
-    return None, reason if reason in ("repeat", "angle") else "surface"
+    return None, "angle" if reason == "angle" else "surface"
 
 
 def _without_repeated_introduction(body, scene, repeated_introductions):

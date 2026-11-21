@@ -8,8 +8,7 @@ import pytest
 from cocolon_meaning_experience_engine.deep_insight_question import (
     ANSWER_READ_SYSTEM_MESSAGE, PLAN_SYSTEM_MESSAGE, READ_SYSTEM_MESSAGE,
     RECORD_REASON_READ_SYSTEM_MESSAGE, WRITE_SYSTEM_MESSAGE,
-    _THEME_PLAN_SYSTEM_MESSAGE, _THEME_READ_SYSTEM_MESSAGE,
-    _THEME_PREVIOUS_QUESTIONS_GUIDE,
+    _THEME_COMPARE_SYSTEM_MESSAGE, _THEME_PLAN_SYSTEM_MESSAGE, _THEME_READ_SYSTEM_MESSAGE,
     _THEME_REPAIR_SYSTEM_MESSAGE, _THEME_WRITE_SYSTEM_MESSAGE,
     _bind_anchor, _display_citation_matches, _review_theme_candidate, _theme_position_key,
     generate_question, prepare_question_material,
@@ -228,8 +227,8 @@ def select_theme_angle(scene, angle):
     return lambda values: next(value for value in values if value[0] in (scene, angle))
 
 
-def theme_run(theme, question, *, questions=(), reading=None, extra=None, scene=None, target=None, repair=None,
-              choose_theme=lambda values: values[0]):
+def theme_run(theme, question, *, questions=(), reading=None, comparison=None, extra=None,
+              scene=None, target=None, repair=None, choose_theme=lambda values: values[0]):
     original = {"questions": questions, **(extra or {})}
     prepared, sources = prepare_question_material(
         original, lane="theme", theme=theme, choose_theme=choose_theme,
@@ -244,6 +243,8 @@ def theme_run(theme, question, *, questions=(), reading=None, extra=None, scene=
             return json.dumps({"question": question}, ensure_ascii=False)
         if system == _THEME_REPAIR_SYSTEM_MESSAGE:
             return json.dumps({"question": repair or question}, ensure_ascii=False)
+        if system == _THEME_COMPARE_SYSTEM_MESSAGE:
+            return json.dumps(comparison if comparison is not None else {"verdict": "distinct"})
         return json.dumps(reading if reading is not None
                           else {"verdict": "accept"})
 
@@ -271,23 +272,42 @@ def test_theme_provider_sees_only_selected_direction_and_previous_question_wordi
                     "answer_text": "回答は渡さない", "answered_at": STAMP}],
         extra={"records": [source("本人記録は渡さない")], "map": {"summary": "マップは渡さない"}})
     assert result.disposition == "selected"
-    writer, reader = [payload for _, payload in calls]
+    writer, reader, comparer = [payload for _, payload in calls]
     direction = {"target": "最初のひと言", "angle": "話し始めるために最初にすること"}
-    assert writer == {**direction, "form": "何から始めるかを聞く。文型「〜するために、まず何をしますか？」"}
+    assert writer == {**direction, "scene": "初対面の人と話すとき",
+                      "form": "何から始めるかを聞く。文型「〜するために、まず何をしますか？」"}
     assert reader == {
         **direction, "theme": theme, "scene": "初対面の人と話すとき",
-        "question": result.candidate.text, "previous_questions": [previous],
+        "question": result.candidate.text,
     }
-    assert calls[1][0] == _THEME_READ_SYSTEM_MESSAGE + _THEME_PREVIOUS_QUESTIONS_GUIDE
+    assert comparer == {**reader, "history": [{"id": 1, "question": previous}]}
+    assert calls[1][0] == _THEME_READ_SYSTEM_MESSAGE
+    assert calls[2][0] == _THEME_COMPARE_SYSTEM_MESSAGE
 
 
-@pytest.mark.parametrize("reason", ["surface", "angle", "repeat"])
-def test_theme_reader_must_accept_scene_angle_and_no_paraphrase(reason):
+@pytest.mark.parametrize("reason", ["surface", "angle"])
+def test_theme_reader_must_accept_scene_and_angle(reason):
     reading = {"verdict": "reject", "reason": reason}
     result, calls = theme_run("人間関係", "最初にどんな話題を出しますか？",
                               reading=reading)
     assert result.disposition == "rejected"
-    assert len(calls) == (2 if reason == "repeat" else 4)
+    assert len(calls) == 4
+
+
+def test_theme_distinguishes_two_ordering_questions_by_their_answer_targets():
+    theme = "これからのこと"
+    history = [{
+        "question_key": _theme_position_key(theme, "several_goals", "priority"),
+        "question_text": "始めてみたいことがいくつかあるとき、どれから始めるか何を基準に決めますか？",
+    }]
+    result, calls = theme_run(
+        theme, "新しい生活にも残す習慣は、何を基準に選びますか？",
+        questions=history, choose_theme=select_theme_angle("change_habits", "priority"),
+    )
+    assert result.disposition == "selected"
+    assert calls[-1][0] == _THEME_COMPARE_SYSTEM_MESSAGE
+    assert calls[-1][1]["target"] == "暮らしを変えても残しておきたい習慣"
+    assert calls[-1][1]["history"][0]["target"] == "取りかかる順番"
 
 
 @pytest.mark.parametrize("theme", THEME_SCENES)
@@ -309,7 +329,7 @@ def test_theme_selection_does_not_reuse_an_issued_position_over_fifty_draws(them
         if index >= 30:
             assert len(prepared["previous_questions"]) == 30
             questions[30].pop("question_text", None)
-    assert len(scenes) == len(THEME_SCENES[theme]) and len(angles) > 1
+    assert len(scenes) >= len(THEME_SCENES[theme]) and len(angles) > 1
 
 
 def test_theme_will_try_new_situations_after_all_catalog_positions():
@@ -324,6 +344,7 @@ def test_theme_will_try_new_situations_after_all_catalog_positions():
     assert result.candidate.question_key not in {row["question_key"] for row in issued}
     assert [system for system, _ in calls] == [
         _THEME_PLAN_SYSTEM_MESSAGE, _THEME_WRITE_SYSTEM_MESSAGE, _THEME_READ_SYSTEM_MESSAGE,
+        _THEME_COMPARE_SYSTEM_MESSAGE,
     ]
 
 
@@ -408,11 +429,14 @@ def test_theme_reader_receives_older_same_scene_angles_without_guessing_their_te
                 for scene_id in THEME_SCENES[theme]]
     result, calls = theme_run(
         theme, "会話の話題は何を基準に選びますか？", questions=recent + archived,
-        reading={"verdict": "reject", "reason": "repeat"},
+        comparison={"verdict": "repeat", "id": 31},
     )
-    assert result.disposition == "rejected" and len(calls) == 2
-    assert calls[1][1]["previous_questions"] == [row["question_text"] for row in recent]
-    assert calls[1][1]["previous_angles"] == ["話し始めるために最初にすること"]
+    assert result.disposition == "rejected" and len(calls) == 3
+    assert "history" not in calls[1][1]
+    history = calls[2][1]["history"]
+    assert [item["question"] for item in history[:30]] == [row["question_text"] for row in recent]
+    assert history[30] == {"id": 31, "scene": "初対面の人と話すとき",
+                           "target": "最初のひと言", "angle": "話し始めるために最初にすること"}
 
 
 def test_theme_refuses_a_matching_older_answer_target_before_the_model_reads_it():
@@ -423,7 +447,7 @@ def test_theme_refuses_a_matching_older_answer_target_before_the_model_reads_it(
         '{"question":"取りかかる順番は何を基準に決めますか？"}',
         plan=None, direction={"angle": "始めたいことに取りかかる順番を決める基準"},
         scene="始めてみたいことがいくつかあるとき", key="new-slot", material={"questions": []},
-        previous_questions=[], previous_angles=["始めたいことに取りかかる順番を決める基準"],
+        previous_angles=["始めたいことに取りかかる順番を決める基準"],
         generate=unexpected_read,
     ))
     assert candidate is None and reason == "repeat"

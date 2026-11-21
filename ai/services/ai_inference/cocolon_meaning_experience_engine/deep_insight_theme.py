@@ -200,6 +200,11 @@ THEME_DECISION_TARGETS = {
 }
 
 # These pairs need a more precise answer target than the general angle.
+THEME_SCENE_WORDING = {
+    ("人間関係", "thanks", "boundary"): "助けてもらった相手に、お礼の品を贈ろうと思ったとき",
+    ("日々の過ごし方", "screen", "change"): "ふだんの生活でスマートフォンを見る時間が決まっているとき",
+}
+
 THEME_TARGET_ANGLES = {
     ("人間関係", "personal_topic", "outcome"): "話した場合に打ち明けてよかったと思える相手の反応",
     ("自分の価値観", "ownership", "priority"): "人からの勧めに応じるかどうかを自分で決める基準",
@@ -226,14 +231,15 @@ THEME_TARGET_FORMS = {
     ("仕事・学び", "deadlines", "boundary"): "一つの作業をいったん終えて次に移る目安を聞く。",
     ("日々の過ごし方", "screen", "boundary"): "見る時間の上限や切り上げる目安を一つ聞く。",
     ("これからのこと", "milestone", "boundary"): "一つの区切りまでに進める範囲の決め方を聞く。",
-    ("人間関係", "thanks", "boundary"): "お礼の品にかける金額の上限は、どう決めますか？",
+    ("人間関係", "thanks", "boundary"): "品物にどのくらいまでなら無理なくお金を使えますか？",
     ("自分の価値観", "ownership", "boundary"): "勧めを試すなら、どの程度の負担まで引き受けられますか？",
     ("自分の価値観", "measure", "change"): "どんなことがあれば、自分の評価の基準を見直しますか？",
     ("仕事・学び", "new_method", "cue"): "試す前に、慣れたやり方と何を比べておきますか？",
     ("仕事・学び", "experiment", "priority"): "どちらのやり方を使うか、何を基準に決めますか？",
-    ("日々の過ごし方", "screen", "change"): "どんなことがあれば、スマートフォンを見る時間帯をずらしますか？",
+    ("仕事・学び", "finish", "priority"): "進め方と結果のどちらから振り返るか、何を目安に決めますか？",
+    ("日々の過ごし方", "screen", "change"): "どんな変化があれば、今と違う時間帯に見るようにしますか？",
     ("これからのこと", "several_goals", "priority"): "どれから取りかかるか、何を基準に決めますか？",
-    ("これからのこと", "change_habits", "priority"): "新しい暮らしに残す習慣は、何を目安に選びますか？",
+    ("これからのこと", "change_habits", "priority"): "今の習慣のうち、新しい暮らしでも続けるものは何を目安に選びますか？",
 }
 
 # These openings only repeat the authored scene for the specified angle.
