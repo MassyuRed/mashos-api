@@ -10,8 +10,9 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
-from fastapi import FastAPI, Header, HTTPException, Query
+from fastapi import FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 
 from api_self_structure import (
     FOLLOW_REQUESTS_TABLE,
@@ -48,6 +49,17 @@ from api_self_structure import (
     logger,
 )
 
+from follow_content_visibility import (
+    CONTENT_VISIBILITY_FIELDS,
+    NO_STORE,
+    canonical_user_id,
+    follower_sharing_enabled,
+    hidden_share_code_owner_ids,
+    list_author_follower_visibility,
+    patch_author_follower_visibility,
+)
+
+
 FollowGraphListItem = MyProfileFollowListItem
 FollowGraphListResponse = MyProfileFollowListResponse
 FollowGraphRequestCancelBody = MyProfileFollowRequestCancelBody
@@ -60,8 +72,57 @@ FollowGraphOutgoingRequestItem = MyProfileOutgoingFollowRequestItem
 FollowGraphOutgoingRequestsResponse = MyProfileOutgoingFollowRequestsResponse
 FollowGraphRemoveFollowerBody = MyProfileRemoveFollowerBody
 
+class FollowerContentVisibilityItem(BaseModel):
+    follower_user_id: str
+    can_view_pieces: bool
+    can_receive_emotion_notifications: bool
+
+
+class FollowerContentVisibilityList(BaseModel):
+    items: list[FollowerContentVisibilityItem]
+
+
+async def _require_sharing_author(request: Request) -> str:
+    headers = request.headers.getlist("Authorization")
+    access_token = _extract_bearer_token(headers[0]) if len(headers) == 1 else None
+    if not access_token:
+        raise HTTPException(status_code=401, detail="Missing bearer token", headers=NO_STORE)
+    try:
+        author_id = canonical_user_id(await _resolve_user_id_from_token(access_token))
+    except ValueError:
+        raise HTTPException(status_code=401, detail="Invalid bearer token", headers=NO_STORE) from None
+    if not follower_sharing_enabled():
+        raise HTTPException(status_code=503, detail="Follower sharing unavailable", headers=NO_STORE)
+    return author_id
+
+
 def register_follow_graph_routes(app: FastAPI) -> None:
     """Register current Follow graph routes on the given FastAPI app."""
+
+    @app.get("/follow/followers/content-visibility", response_model=FollowerContentVisibilityList)
+    async def get_my_follower_content_visibility(request: Request) -> JSONResponse:
+        author_id = await _require_sharing_author(request)
+        rows = await list_author_follower_visibility(author_id)
+        return JSONResponse({"items": rows}, headers=NO_STORE)
+
+    @app.patch("/follow/followers/{follower_user_id}/content-visibility", response_model=FollowerContentVisibilityItem)
+    async def patch_my_follower_content_visibility(follower_user_id: str, request: Request) -> JSONResponse:
+        author_id = await _require_sharing_author(request)
+        try:
+            follower_id = canonical_user_id(follower_user_id)
+            changes = await request.json()
+            if (follower_id == author_id or request.query_params
+                    or type(changes) is not dict or not changes or not changes.keys() <= CONTENT_VISIBILITY_FIELDS
+                    or any(type(value) is not bool for value in changes.values())):
+                raise ValueError
+        except (ValueError, UnicodeError):
+            raise HTTPException(status_code=400, detail="Invalid sharing options", headers=NO_STORE) from None
+        row = await patch_author_follower_visibility(author_id, follower_id, changes)
+        if "can_receive_emotion_notifications" in changes:
+            from api_emotion_submit import _invalidate_emotion_log_receiver_caches
+
+            await _invalidate_emotion_log_receiver_caches([follower_id])
+        return JSONResponse(row, headers=NO_STORE)
 
     @app.post("/follow/create", response_model=MyProfileLinkActionResponse)
     async def follow_myprofile(
@@ -540,6 +601,9 @@ def register_follow_graph_routes(app: FastAPI) -> None:
         if not isinstance(data, list):
             data = []
 
+        hidden_code_owners = await hidden_share_code_owner_ids({
+            row["id"] for row in data if isinstance(row, dict) and isinstance(row.get("id"), str)
+        })
         ordered: list[MyProfileFollowListItem] = []
         for r in data:
             if not isinstance(r, dict):
@@ -547,12 +611,13 @@ def register_follow_graph_routes(app: FastAPI) -> None:
             pid = str(r.get("id") or "").strip()
             if not pid:
                 continue
+            friend_code = r.get("friend_code") if pid not in hidden_code_owners else None
             ordered.append(
                 MyProfileFollowListItem(
                     id=pid,
                     display_name=(r.get("display_name") if isinstance(r.get("display_name"), str) else None),
-                    share_code=(r.get("friend_code") if isinstance(r.get("friend_code"), str) else None),
-                    friend_code=(r.get("friend_code") if isinstance(r.get("friend_code"), str) else None),
+                    share_code=friend_code if isinstance(friend_code, str) else None,
+                    friend_code=friend_code if isinstance(friend_code, str) else None,
                     connect_code=(r.get("myprofile_code") if isinstance(r.get("myprofile_code"), str) else None),
                     myprofile_code=(r.get("myprofile_code") if isinstance(r.get("myprofile_code"), str) else None),
                     is_private_account=bool(r.get("is_private_account") or False),

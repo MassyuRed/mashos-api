@@ -16,6 +16,7 @@ from fastapi.encoders import jsonable_encoder
 from pydantic import BaseModel, Field
 
 from api_emotion_submit import _extract_bearer_token, _resolve_user_id_from_token
+from follow_content_visibility import hidden_share_code_owner_ids
 from piece_v2_runtime_control import piece_feature_flags_for_app
 from piece_public_read_service import (
     EMOTION_GENERATED_SOURCE_TYPE,
@@ -251,11 +252,12 @@ async def _build_nexus_recommend_users_payload(
     candidate_ids = candidate_ids[:safe_limit]
 
     profiles_map = await _fetch_profiles_by_ids(candidate_ids)
+    hidden_codes = await hidden_share_code_owner_ids(set(candidate_ids))
     users: List[NexusRecommendUser] = []
     for uid in candidate_ids:
         profile = profiles_map.get(str(uid)) or {}
         display_name = profile.get("display_name") if isinstance(profile, dict) else None
-        friend_code = profile.get("friend_code") if isinstance(profile, dict) else None
+        friend_code = profile.get("friend_code") if isinstance(profile, dict) and uid not in hidden_codes else None
         myprofile_code = profile.get("myprofile_code") if isinstance(profile, dict) else None
         users.append(
             NexusRecommendUser(

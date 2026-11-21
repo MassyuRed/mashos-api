@@ -45,10 +45,7 @@ from api_emotion_submit import (
     _resolve_user_id_from_token,
     _fetch_profile_display_name,
 )
-from astor_emotion_log_feed_store import (
-    fetch_latest_ready_emotion_log_feed_summary,
-    select_emotion_log_feed_items,
-)
+from emotion_follower_visibility import fetch_visible_emotion_log_feed
 from response_microcache import get_or_compute, invalidate_prefix
 from supabase_client import sb_count, sb_delete, sb_get, sb_patch, sb_post
 
@@ -57,7 +54,6 @@ logger = logging.getLogger("friends_api")
 SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
 SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
 FRIENDS_MANAGE_CACHE_TTL_SECONDS = 5.0
-FRIENDS_UNREAD_CACHE_TTL_SECONDS = 5.0
 FOLLOW_REQUESTS_TABLE = (os.getenv("COCOLON_FOLLOW_REQUESTS_TABLE", "follow_requests") or "follow_requests").strip()
 LEGACY_FRIEND_REQUESTS_TABLE = "friend_requests"
 
@@ -68,15 +64,6 @@ EMOTION_NOTIFICATION_SETTINGS_READ_TABLE = (
     or os.getenv("COCOLON_FRIEND_NOTIFICATION_SETTINGS_READ_TABLE")
     or "emotion_notification_settings"
 ).strip() or "emotion_notification_settings"
-
-EMOTION_LOG_FEED_READ_TABLE = (
-    os.getenv("COCOLON_EMOTION_LOG_FEED_READ_TABLE")
-    or os.getenv("EMOTION_LOG_FEED_READ_TABLE")
-    or os.getenv("COCOLON_FRIEND_EMOTION_FEED_READ_TABLE")
-    or os.getenv("FRIEND_EMOTION_FEED_READ_TABLE")
-    or "emotion_log_feed"
-).strip() or "emotion_log_feed"
-
 
 # ----------------------------
 # Pydantic models
@@ -394,28 +381,35 @@ async def _fetch_latest_pending_request_head_and_count(user_id: str) -> Tuple[Op
 
 async def get_friend_unread_status_payload_for_user(user_id: str) -> Dict[str, Any]:
     uid = str(user_id or "").strip()
-    cache_key = f"friends:unread:{uid}"
 
-    async def _build_payload() -> Dict[str, Any]:
-        feed_last_read_at, requests_last_read_at, latest_feed_created_at, pending_request_head = await asyncio.gather(
-            _fetch_last_read_at("friend_feed_reads", uid),
-            _fetch_last_read_at("friend_request_reads", uid),
-            _emotion_log_feed_head_created_at_for_viewer(uid),
-            _fetch_latest_pending_request_head_and_count(uid),
-        )
+    feed_last_read_at, requests_last_read_at, latest_feed_created_at, pending_request_head = await asyncio.gather(
+        _fetch_last_read_at("friend_feed_reads", uid),
+        _fetch_last_read_at("friend_request_reads", uid),
+        _emotion_log_feed_head_created_at_for_viewer(uid),
+        _fetch_latest_pending_request_head_and_count(uid),
+    )
 
-        latest_request_created_at, incoming_pending_count = pending_request_head
+    latest_request_created_at, incoming_pending_count = pending_request_head
 
-        response = FriendUnreadStatusResponse(
-            feed_unread=_has_newer_iso(latest_feed_created_at, feed_last_read_at),
-            requests_unread=_has_newer_iso(latest_request_created_at, requests_last_read_at),
-            incoming_pending_count=int(incoming_pending_count or 0),
-            feed_last_read_at=feed_last_read_at,
-            requests_last_read_at=requests_last_read_at,
-        )
-        return jsonable_encoder(response)
+    response = FriendUnreadStatusResponse(
+        feed_unread=_has_newer_iso(latest_feed_created_at, feed_last_read_at),
+        requests_unread=_has_newer_iso(latest_request_created_at, requests_last_read_at),
+        incoming_pending_count=int(incoming_pending_count or 0),
+        feed_last_read_at=feed_last_read_at,
+        requests_last_read_at=requests_last_read_at,
+    )
+    return jsonable_encoder(response)
 
-    return await get_or_compute(cache_key, FRIENDS_UNREAD_CACHE_TTL_SECONDS, _build_payload)
+
+async def get_current_emotion_log_unread_for_user(user_id: str) -> Dict[str, Any]:
+    last_read_at, feed_head = await asyncio.gather(
+        _fetch_last_read_at("friend_feed_reads", user_id),
+        _latest_emotion_log_feed_created_at(user_id),
+    )
+    return {
+        "feed_unread": _has_newer_iso(feed_head, last_read_at),
+        "feed_last_read_at": last_read_at,
+    }
 
 
 async def _lookup_profile_by_friend_code(friend_code: str) -> Optional[Dict[str, Any]]:
@@ -649,39 +643,15 @@ def _summary_latest_emotion_log_feed_created_at(summary: Optional[Dict[str, Any]
 
 
 async def _emotion_log_feed_head_created_at_for_viewer(user_id: str) -> Optional[str]:
-    """Return the canonical feed freshness head for the current viewer.
-
-    Canonical EmotionLog read for current clients is artifact-first. We therefore
-    prefer the latest READY summary head and only fall back to the live table
-    when no READY artifact is available yet.
-    """
-    try:
-        summary = await fetch_latest_ready_emotion_log_feed_summary(user_id)
-    except Exception as exc:
-        logger.warning("Failed to fetch ready emotion log feed summary head: %s", exc)
-        summary = None
-
-    summary_latest_created_at = _summary_latest_emotion_log_feed_created_at(summary)
-    if summary_latest_created_at:
-        return summary_latest_created_at
+    """Read the newest row that the author currently shares with this viewer."""
     return await _latest_emotion_log_feed_created_at(user_id)
 
 
 async def _fetch_live_emotion_log_feed_rows(viewer_user_id: str, *, limit: int = 20) -> List[Dict[str, Any]]:
-    resp = await _sb_get(
-        f"/rest/v1/{EMOTION_LOG_FEED_READ_TABLE}",
-        params={
-            "select": "id,owner_user_id,owner_name,items,created_at",
-            "viewer_user_id": f"eq.{viewer_user_id}",
-            "order": "created_at.desc",
-            "limit": str(max(1, min(int(limit or 20), 50))),
-        },
-    )
-    if resp.status_code >= 300:
-        logger.error("Supabase friend_emotion_feed select failed (emotion log feed): %s %s", resp.status_code, resp.text[:1500])
-        raise HTTPException(status_code=502, detail="Failed to query emotion log feed")
-    rows = resp.json()
-    return rows if isinstance(rows, list) else []
+    try:
+        return await fetch_visible_emotion_log_feed(viewer_user_id, limit=max(1, min(int(limit or 20), 50)))
+    except RuntimeError:
+        raise HTTPException(status_code=503, detail="Failed to query emotion log feed") from None
 
 
 async def _fetch_profiles_map(user_ids: List[str]) -> Dict[str, Dict[str, Any]]:
@@ -968,23 +938,10 @@ async def _upsert_last_read_at(table_name: str, user_id: str, last_read_at: str)
 
 
 async def _latest_emotion_log_feed_created_at(user_id: str) -> Optional[str]:
-    resp = await _sb_get(
-        f"/rest/v1/{EMOTION_LOG_FEED_READ_TABLE}",
-        params={
-            "select": "created_at",
-            "viewer_user_id": f"eq.{user_id}",
-            "order": "created_at.desc",
-            "limit": "1",
-        },
-    )
-    if resp.status_code >= 300:
-        logger.warning("Supabase friend_emotion_feed latest failed (emotion log): %s %s", resp.status_code, resp.text[:1500])
+    rows = await _fetch_live_emotion_log_feed_rows(user_id, limit=1)
+    if not rows:
         return None
-    rows = resp.json()
-    if isinstance(rows, list) and rows and isinstance(rows[0], dict):
-        value = rows[0].get("created_at")
-        return str(value).strip() if value else None
-    return None
+    return str(rows[0].get("created_at") or "").strip() or None
 
 
 async def _latest_friend_request_created_at(user_id: str) -> Optional[str]:
@@ -1038,21 +995,7 @@ async def _latest_friend_request_created_at(user_id: str) -> Optional[str]:
 
 
 async def _has_newer_emotion_log_feed(user_id: str, last_read_at: str) -> bool:
-    resp = await _sb_get(
-        f"/rest/v1/{EMOTION_LOG_FEED_READ_TABLE}",
-        params={
-            "select": "id,created_at",
-            "viewer_user_id": f"eq.{user_id}",
-            "created_at": f"gt.{last_read_at}",
-            "order": "created_at.desc",
-            "limit": "1",
-        },
-    )
-    if resp.status_code >= 300:
-        logger.warning("Supabase friend_emotion_feed unread failed (emotion log): %s %s", resp.status_code, resp.text[:1500])
-        return False
-    rows = resp.json()
-    return bool(isinstance(rows, list) and rows)
+    return _has_newer_iso(await _latest_emotion_log_feed_created_at(user_id), last_read_at)
 
 
 async def _has_newer_friend_requests(user_id: str, last_read_at: str) -> bool:

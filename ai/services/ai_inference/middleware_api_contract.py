@@ -24,6 +24,11 @@ def install_api_contract_middleware(app: FastAPI, *, piece_preview: bool = False
         response = await call_next(request)
         response.headers.setdefault(REQUEST_ID_HEADER, request_id)
         response.headers.setdefault(POLICY_VERSION_HEADER, API_CONTRACT_POLICY_VERSION)
+        path = request.url.path
+        if (path.startswith(("/nexus/", "/piece/", "/mymodel/qna/", "/emotion-log/",
+                             "/follow/followers/", "/friends/feed", "/friends/unread"))
+                or path in {"/nexus", "/app/startup", "/follow/list", "/myprofile/follow-list"}):
+            response.headers["Cache-Control"] = "private, no-store"
 
         contract = find_contract_entry_for_request(request, piece_preview=piece_preview)
         if contract is not None:

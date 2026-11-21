@@ -38,6 +38,7 @@ from api_emotion_submit import (
     _resolve_user_id_from_token,
 )
 from astor_ranking_enqueue import enqueue_ranking_board_refresh_many
+from follow_content_visibility import NO_STORE, follower_sharing_enabled
 
 logger = logging.getLogger("account_visibility_api")
 
@@ -252,6 +253,10 @@ def register_account_visibility_routes(app: FastAPI) -> None:
         authorization: Optional[str] = Header(default=None, alias="Authorization"),
     ) -> Any:
         me = await _require_user_id(authorization)
+
+        if follower_sharing_enabled():
+            return JSONResponse(status_code=410, headers=NO_STORE,
+                                content={"code": "ACCOUNT_VISIBILITY_RETIRED", "detail": "公開範囲はフォロワーごとに設定できます。"})
 
         payload: Dict[str, Any] = {}
         if body.is_share_code_public is not None:

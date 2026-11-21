@@ -512,3 +512,131 @@ def test_publication_feed_orders_and_limits_the_published_rows(database):
             p_expected_row_version=saved['row_version'], p_visibility_scope='public'))
     assert [p['public_id'] for p in _read_public_feed(conn, _OWNER, limit=1)] == ['piece:' + str(newer['id'])]
     assert [p['public_id'] for p in _read_public_feed(conn, _OWNER, order='oldest', limit=1)] == ['piece:' + str(older['id'])]
+
+
+_FOLLOW_VISIBILITY = _ROOT / 'supabase/migrations/20261121111000_follow_author_content_visibility.sql'
+
+
+def _author_visibility_schema(conn, other_author):
+    _publication_schema(conn)
+    conn.execute('''
+        CREATE SCHEMA auth;
+        CREATE TABLE auth.users(id uuid PRIMARY KEY);
+        CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql AS
+            $$ SELECT nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$;
+        GRANT USAGE ON SCHEMA auth TO anon, authenticated;
+        CREATE TABLE public.friend_emotion_feed(
+            id bigint PRIMARY KEY, viewer_user_id uuid, owner_user_id uuid,
+            owner_name text, items jsonb, created_at timestamptz);
+        ALTER TABLE public.friend_emotion_feed ENABLE ROW LEVEL SECURITY;
+        GRANT SELECT ON public.friend_emotion_feed TO anon, authenticated;
+        CREATE POLICY viewer_can_select_own_feed ON public.friend_emotion_feed
+            FOR SELECT USING (viewer_user_id=auth.uid());
+    ''')
+    conn.execute('INSERT INTO auth.users VALUES (%s),(%s),(%s)', (_OWNER,_VIEWER,other_author))
+    conn.execute(_FOLLOW_VISIBILITY.read_text())
+
+
+def _author_visibility_patch(conn, *, author=_OWNER, follower=_VIEWER, pieces=None, emotions=None,
+                             role='service_role'):
+    return _rpc(conn, 'follow_author_visibility_patch_v1', dict(
+        p_author_user_id=author, p_follower_user_id=follower, p_can_view_pieces=pieces,
+        p_can_receive_emotion_notifications=emotions), role=role)
+
+
+def _author_visibility(conn, *, author=_OWNER):
+    return _rpc(conn, 'follow_author_visibility_list_v1', dict(p_author_user_id=author))
+
+
+def _visible_piece_owners(conn, viewer, authors):
+    return _rpc(conn, 'follow_piece_visible_owner_ids_v1', dict(p_viewer_user_id=viewer,p_owner_user_ids=authors))
+
+
+def _emotion_recipients(conn, author, viewers):
+    return _rpc(conn, 'emotion_notification_recipients_allowed', dict(p_owner_user_id=author,p_viewer_user_ids=viewers))
+
+
+def _emotion_feed_rows(conn, viewer, limit=20):
+    return _rpc(conn, 'emotion_log_feed_for_viewer', dict(p_viewer_user_id=viewer,p_limit=limit))
+
+
+def _direct_emotion_feed_ids(conn, viewer):
+    with conn.transaction():
+        conn.execute('SET LOCAL ROLE authenticated')
+        conn.execute("SELECT set_config('request.jwt.claim.sub', %s, true)", (str(viewer),))
+        return [row[0] for row in conn.execute('SELECT id FROM public.friend_emotion_feed ORDER BY id').fetchall()]
+
+
+def test_author_follow_visibility_defaults_preserves_two_independent_choices_and_requires_current_link(database):
+    conn, pg, _ = database
+    other_author = uuid4()
+    _author_visibility_schema(conn, other_author)
+    conn.execute('INSERT INTO public.myprofile_links VALUES (%s,%s)', (_OWNER, _VIEWER))
+    assert _author_visibility(conn) == []
+    with pytest.raises(pg.errors.RaiseException, match='(?m)^FOLLOW_RELATION_NOT_FOUND$'):
+        _author_visibility_patch(conn, pieces=False)
+    conn.execute('INSERT INTO public.myprofile_links VALUES (%s,%s),(%s,%s)',
+        (_VIEWER,_OWNER,_VIEWER,other_author))
+    default = {'follower_user_id': str(_VIEWER), 'can_view_pieces': True,
+               'can_receive_emotion_notifications': True}
+    assert _author_visibility(conn) == [default]
+    assert _author_visibility(conn,author=other_author) == [default]
+    assert conn.execute('SELECT count(*) FROM public.follow_author_visibility_overrides').fetchone()==(0,)
+    with pytest.raises(pg.errors.InsufficientPrivilege):
+        _author_visibility_patch(conn, pieces=True, role='authenticated')
+    with pytest.raises(pg.errors.InsufficientPrivilege):
+        _rpc(conn, 'follow_author_visibility_list_v1', dict(p_author_user_id=_OWNER), role='anon')
+    with pytest.raises(pg.errors.RaiseException, match='(?m)^FOLLOW_VISIBILITY_INVALID$'):
+        _author_visibility_patch(conn)
+
+    assert _author_visibility_patch(conn, pieces=False) == dict(default,can_view_pieces=False)
+    assert _author_visibility_patch(conn, emotions=False) == dict(default,can_view_pieces=False,
+                                                                 can_receive_emotion_notifications=False)
+    assert _author_visibility_patch(conn, pieces=True) == dict(default,can_receive_emotion_notifications=False)
+    assert _author_visibility(conn,author=other_author) == [default]
+    conn.execute('DELETE FROM public.myprofile_links WHERE viewer_user_id=%s AND owner_user_id=%s', (_VIEWER,_OWNER))
+    assert _author_visibility(conn) == []
+    assert _visible_piece_owners(conn,_VIEWER,[_OWNER])==[]
+    assert _emotion_recipients(conn,_OWNER,[_VIEWER])==[]
+    conn.execute('INSERT INTO public.myprofile_links VALUES (%s,%s)', (_VIEWER,_OWNER))
+    assert _author_visibility(conn) == [dict(default,can_receive_emotion_notifications=False)]
+    assert _visible_piece_owners(conn,_VIEWER,[_OWNER])==[str(_OWNER)]
+    assert _emotion_recipients(conn,_OWNER,[_VIEWER])==[]
+    conn.execute('DELETE FROM auth.users WHERE id=%s', (_VIEWER,))
+    assert conn.execute('SELECT count(*) FROM public.follow_author_visibility_overrides').fetchone()==(0,)
+
+
+def test_author_follow_visibility_bounds_native_legacy_emotion_and_direct_rows(database):
+    conn, _, _ = database
+    other_author = uuid4()
+    _author_visibility_schema(conn, other_author)
+    conn.execute('INSERT INTO public.myprofile_links VALUES (%s,%s),(%s,%s)',
+        (_VIEWER,_OWNER,_VIEWER,other_author))
+    _, piece, saved = _publication_save(conn)
+    _rpc(conn, 'piece_set_visibility_v2', dict(p_owner_user_id=_OWNER, p_piece_id=piece['id'],
+        p_expected_row_version=saved['row_version'], p_visibility_scope='public'))
+    assert _read_public_feed(conn,_VIEWER,target=_OWNER)[0]['body']==piece['piece_text']
+    assert set(_visible_piece_owners(conn,_VIEWER,[_OWNER,other_author,_VIEWER]))=={
+        str(_OWNER), str(other_author), str(_VIEWER)}
+    conn.execute('''
+        INSERT INTO public.friend_emotion_feed VALUES
+          (1,%s,%s,'synthetic author','[]'::jsonb,'2026-11-21T10:00:00Z'),
+          (2,%s,%s,'another synthetic author','[]'::jsonb,'2026-11-21T09:00:00Z'),
+          (3,%s,%s,'not the active viewer','[]'::jsonb,'2026-11-21T11:00:00Z')
+    ''', (_VIEWER,_OWNER,_VIEWER,other_author,_OWNER,_VIEWER))
+    assert _emotion_feed_rows(conn,_VIEWER,limit=1)[0]['id']==1
+    assert _direct_emotion_feed_ids(conn,_VIEWER)==[1,2]
+    _author_visibility_patch(conn,pieces=False)
+    assert _read_public_feed(conn,_VIEWER,target=_OWNER)==[]
+    assert _read_public_feed(conn,_OWNER,target=_OWNER)[0]['body']==piece['piece_text']
+    assert _visible_piece_owners(conn,_VIEWER,[_OWNER,other_author])==[str(other_author)]
+    assert _emotion_recipients(conn,_OWNER,[_VIEWER])==[str(_VIEWER)]
+    assert _emotion_feed_rows(conn,_VIEWER,limit=1)[0]['id']==1
+    _author_visibility_patch(conn,emotions=False)
+    assert _emotion_recipients(conn,_OWNER,[_VIEWER])==[]
+    assert _emotion_feed_rows(conn,_VIEWER,limit=1)[0]['id']==2
+    assert _direct_emotion_feed_ids(conn,_VIEWER)==[2]
+    assert conn.execute('SELECT count(*) FROM public.friend_emotion_feed').fetchone()==(3,)
+    _author_visibility_patch(conn,pieces=True)
+    assert _read_public_feed(conn,_VIEWER,target=_OWNER)[0]['body']==piece['piece_text']
+    assert _direct_emotion_feed_ids(conn,_VIEWER)==[2]

@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 from api_emotion_submit import _extract_bearer_token, _resolve_user_id_from_token
 from client_compat import extract_client_meta
 from emlis_thread_config import read_enabled
+from follow_content_visibility import follower_sharing_enabled
 from piece_v2_runtime_control import (
     PIECE_PUBLICATION_FEATURES, PIECE_PUBLICATION_HEADER, piece_feature_flags_for_app,
     wants_piece_publication,
@@ -39,6 +40,7 @@ def _feature_flags(app: Optional[FastAPI] = None, *, piece_publication: bool = F
     return {
         **piece_flags,
         "account_delete_enabled": True,
+        "follower_sharing_enabled": follower_sharing_enabled(),
         "emlis_threads_enabled": read_enabled(),
         "myweb_mock_enabled": False,
         "today_question_enabled": True,

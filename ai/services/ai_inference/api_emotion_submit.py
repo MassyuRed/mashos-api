@@ -82,6 +82,7 @@ from supabase_client import (
     sb_post as _sb_post_shared,
 )
 from supabase_auth_token_cache import resolve_user_id_verified_cached
+from emotion_follower_visibility import permitted_emotion_recipients
 from response_microcache import invalidate_prefix
 
 logger = logging.getLogger("emotion_submit")
@@ -1032,6 +1033,7 @@ async def _filter_viewer_ids_by_emotion_notification_settings(
     *,
     viewer_user_ids: List[str],
     owner_user_id: str,
+    require_read: bool = False,
 ) -> List[str]:
     """Apply per-viewer emotion notification mute settings.
 
@@ -1048,8 +1050,8 @@ async def _filter_viewer_ids_by_emotion_notification_settings(
         - Global text sentinels are not sent through owner_user_id filters because
           current read views may type owner_user_id as uuid. This keeps submit
           notification filtering from emitting uuid syntax warnings.
-    Backward compatibility:
-        - If the table/columns are missing, filtering is skipped (treat as all enabled).
+    Legacy compatibility skips unavailable tables. The author-controlled
+    dispatch path requires a current read so a receiver mute is not bypassed.
     """
     _ensure_supabase_config()
     if not owner_user_id:
@@ -1066,6 +1068,8 @@ async def _filter_viewer_ids_by_emotion_notification_settings(
     queryable_viewer_ids = [uid for uid in ids if _is_uuid_like(uid)]
     owner_filter_ids = _emotion_notification_owner_filter_ids(owner_user_id)
     if not queryable_viewer_ids or not owner_filter_ids:
+        if require_read:
+            raise RuntimeError("Emotion notification preferences unavailable")
         logger.debug(
             "Skip %s filtering because ids are not uuid-filter-safe: owner_uuid_like=%s viewer_count=%s queryable_viewer_count=%s",
             EMOTION_NOTIFICATION_SETTINGS_READ_TABLE,
@@ -1092,8 +1096,10 @@ async def _filter_viewer_ids_by_emotion_notification_settings(
             timeout=5.0,
         )
 
-        # If table doesn't exist / columns missing, skip filtering (treat as enabled)
+        # Unavailable settings can only fall back in the unchanged legacy path.
         if resp.status_code >= 300:
+            if require_read:
+                raise RuntimeError("Emotion notification preferences unavailable")
             logger.warning(
                 "Supabase select %s failed (skip emotion filtering): status=%s body=%s",
                 EMOTION_NOTIFICATION_SETTINGS_READ_TABLE,
@@ -1103,6 +1109,11 @@ async def _filter_viewer_ids_by_emotion_notification_settings(
             return ids
 
         rows = resp.json()
+        if require_read and (type(rows) is not list or any(
+            not isinstance(row, dict) or not _is_uuid_like(row.get("viewer_user_id"))
+            for row in rows
+        )):
+            raise RuntimeError("Emotion notification preferences unavailable")
         disabled = set()
         if isinstance(rows, list):
             for r in rows:
@@ -1115,9 +1126,23 @@ async def _filter_viewer_ids_by_emotion_notification_settings(
             return ids
         return [uid for uid in ids if uid not in disabled]
     except Exception as exc:
+        if require_read:
+            raise RuntimeError("Emotion notification preferences unavailable") from None
         logger.warning("Failed to apply %s (skip emotion filtering): %s", EMOTION_NOTIFICATION_SETTINGS_READ_TABLE, exc)
         return ids
 
+
+async def _filter_current_emotion_recipients(*, owner_user_id: str, viewer_user_ids: List[str]) -> List[str]:
+    # A receiver preference can narrow delivery, but never grant a missing sender permission.
+    approved = await permitted_emotion_recipients(owner_user_id, viewer_user_ids)
+    recipients = []
+    for start in range(0, len(approved), 100):
+        recipients.extend(await _filter_viewer_ids_by_emotion_notification_settings(
+            viewer_user_ids=approved[start:start + 100],
+            owner_user_id=owner_user_id,
+            require_read=True,
+        ))
+    return recipients
 
 
 async def _fetch_profile_display_name(user_id: str) -> str:
@@ -1714,6 +1739,13 @@ async def _push_notify_followers_about_emotion(
         if isinstance(token, str) and token.strip()
     }
 
+    # Tokens are server-private. Authorize recipients against the latest
+    # relation and receiver preferences just before contacting FCM.
+    current = await _filter_current_emotion_recipients(
+        viewer_user_ids=list(token_map), owner_user_id=owner_user_id,
+    )
+    token_map = {uid: token_map[uid] for uid in current if uid in token_map}
+
     tokens: List[str] = []
     seen_tokens = set()
     filtered_owner_token_count = 0
@@ -1841,8 +1873,7 @@ async def _notify_follow_viewers_about_emotion(
         # フォロー viewer がいない場合は何もしない
         return
 
-    # Per-viewer emotion notification settings (viewer-side mute)
-    viewer_user_ids = await _filter_viewer_ids_by_emotion_notification_settings(
+    viewer_user_ids = await _filter_current_emotion_recipients(
         viewer_user_ids=viewer_user_ids,
         owner_user_id=owner_user_id,
     )

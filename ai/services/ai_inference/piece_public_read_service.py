@@ -10,6 +10,7 @@ from access_policy.viewer_access_policy import resolve_piece_view_tiers
 from astor_account_status_enqueue import enqueue_account_status_refresh
 from astor_global_summary_enqueue import enqueue_global_summary_refresh
 from astor_ranking_enqueue import enqueue_ranking_board_refresh
+from follow_content_visibility import hidden_share_code_owner_ids
 from piece_generated_display import get_public_generated_reflection_text
 from piece_generated_identity import generated_instance_aliases
 from piece_generated_access import (
@@ -127,6 +128,7 @@ async def _build_public_piece_items(*, viewer_user_id: str, rows: List[Dict[str,
         if str((row or {}).get("owner_user_id") or "").strip()
     }
     profiles_map = await fetch_profiles_by_ids(list(owner_ids))
+    hidden_codes = await hidden_share_code_owner_ids(owner_ids - {str(viewer_user_id)})
     alias_groups = _generated_alias_groups(rows)
     q_instance_ids = set(alias_groups)
     metrics_task = asyncio.create_task(fetch_instance_metrics(q_instance_ids, alias_groups=alias_groups))
@@ -163,7 +165,8 @@ async def _build_public_piece_items(*, viewer_user_id: str, rows: List[Dict[str,
                 "owner": {
                     "user_id": owner_user_id,
                     "display_name": str(owner_profile.get("display_name") or "").strip() or None,
-                    "friend_code": str(owner_profile.get("friend_code") or "").strip() or None,
+                    "friend_code": None if owner_user_id in hidden_codes else
+                        str(owner_profile.get("friend_code") or "").strip() or None,
                 },
                 "question": {"q_key": q_key, "title": question_text},
                 "body": body,

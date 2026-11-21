@@ -303,7 +303,25 @@ async def get_startup_snapshot(
     async def _producer() -> Dict[str, Any]:
         return await _build_startup_snapshot_payload(uid, client_meta=client_meta, timezone_name=timezone_name)
 
-    return await get_or_compute(cache_key, STARTUP_SNAPSHOT_CACHE_TTL_SECONDS, _producer)
+    snapshot = await get_or_compute(cache_key, STARTUP_SNAPSHOT_CACHE_TTL_SECONDS, _producer)
+    # The cached startup snapshot cannot establish an unchanged sender permission.
+    from api_follow import get_current_emotion_log_unread_for_user
+    try:
+        current_feed = await get_current_emotion_log_unread_for_user(uid)
+    except Exception:
+        logger.warning("Current EmotionLog unread unavailable at startup")
+        current_feed = {"feed_unread": False}
+
+    sections = dict(snapshot.get("sections") or {})
+    for key in ("emotion_log_unread", "friends_unread"):
+        sections[key] = {**(sections.get(key) or {}), **current_feed}
+    unread = bool(current_feed["feed_unread"] or sections["emotion_log_unread"].get("requests_unread"))
+    flags = {
+        **(snapshot.get("flags") or {}),
+        "has_any_emotion_log_unread": unread,
+        "has_any_friends_unread": unread,
+    }
+    return {**snapshot, "sections": sections, "flags": flags}
 
 
 async def refresh_startup_snapshot_if_due(

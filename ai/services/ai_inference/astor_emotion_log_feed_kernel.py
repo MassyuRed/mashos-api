@@ -3,12 +3,12 @@
 
 Purpose
 -------
-既存の `friend_emotion_feed` を source log として、そのまま viewer 単位の
+既存の `friend_emotion_feed` を現在の閲覧権限で絞り、viewer 単位の
 EmotionLog feed summary payload を生成する。
 
 Phase 1 policy
 --------------
-- feed source は `friend_emotion_feed` をそのまま利用する（物理テーブル名は legacy 維持）
+- feed source は `emotion_log_feed_for_viewer` RPC で絞った `friend_emotion_feed` を利用する
 - snapshot から再構成しない
 - request / accept / reject / cancel / remove / mute はここでは扱わない
 - push notification は live のまま残し、本 module は表示用 feed payload だけを作る
@@ -25,11 +25,10 @@ Design notes
 from __future__ import annotations
 
 import json
-import logging
 import os
 from typing import Any, Dict, Iterable, List, Mapping
 
-from supabase_client import ensure_supabase_config, sb_get
+from emotion_follower_visibility import fetch_visible_emotion_log_feed
 from astor_emotion_log_feed_store import (
     EMOTION_LOG_FEED_MAX_ITEMS,
     EMOTION_LOG_FEED_VERSION,
@@ -41,20 +40,8 @@ FRIEND_FEED_MAX_ITEMS = EMOTION_LOG_FEED_MAX_ITEMS
 FRIEND_FEED_VERSION = EMOTION_LOG_FEED_VERSION
 normalize_friend_feed_payload = normalize_emotion_log_feed_payload
 
-logger = logging.getLogger("astor_emotion_log_feed_kernel")
-
-
-# The source table is SELECT-only in this kernel. Use the current bridge view by
-# default; legacy physical table names remain available via explicit READ envs.
-FRIEND_FEED_SOURCE_TABLE = (
-    os.getenv("ASTOR_EMOTION_LOG_FEED_SOURCE_READ_TABLE")
-    or os.getenv("EMOTION_LOG_FEED_SOURCE_READ_TABLE")
-    or os.getenv("COCOLON_EMOTION_LOG_FEED_READ_TABLE")
-    or os.getenv("ASTOR_FRIEND_FEED_SOURCE_READ_TABLE")
-    or os.getenv("FRIEND_FEED_SOURCE_READ_TABLE")
-    or os.getenv("COCOLON_FRIEND_EMOTION_FEED_READ_TABLE")
-    or "emotion_log_feed"
-).strip() or "emotion_log_feed"
+# The visibility RPC owns this physical source and cannot use an unfiltered override.
+FRIEND_FEED_SOURCE_TABLE = "friend_emotion_feed"
 
 FRIEND_FEED_TIMEZONE = (
     os.getenv("ASTOR_EMOTION_LOG_FEED_TIMEZONE")
@@ -118,44 +105,9 @@ async def _fetch_friend_feed_rows(viewer_user_id: str, *, limit: int = FRIEND_FE
     if not viewer_id:
         raise ValueError("viewer_user_id is required")
 
-    ensure_supabase_config()
     p_limit = max(1, int(limit or FRIEND_FEED_MAX_ITEMS or 20))
-
-    resp = await sb_get(
-        f"/rest/v1/{EMOTION_LOG_FEED_SOURCE_TABLE}",
-        params={
-            "select": "id,viewer_user_id,owner_user_id,owner_name,items,created_at",
-            "viewer_user_id": f"eq.{viewer_id}",
-            "order": "created_at.desc,id.desc",
-            "limit": str(p_limit),
-        },
-        timeout=8.0,
-    )
-    if resp.status_code not in (200, 206):
-        body = (resp.text or "")[:1500]
-        logger.error(
-            "friend feed source fetch failed: table=%s viewer=%s status=%s body=%s",
-            EMOTION_LOG_FEED_SOURCE_TABLE,
-            viewer_id,
-            resp.status_code,
-            body,
-        )
-        raise RuntimeError(f"emotion log feed source fetch failed: {EMOTION_LOG_FEED_SOURCE_TABLE} ({resp.status_code})")
-
-    try:
-        data = resp.json()
-    except Exception as exc:
-        logger.error(
-            "friend feed source returned non-json: table=%s viewer=%s err=%s",
-            EMOTION_LOG_FEED_SOURCE_TABLE,
-            viewer_id,
-            exc,
-        )
-        raise RuntimeError(f"friend feed source returned invalid json: {FRIEND_FEED_SOURCE_TABLE}") from exc
-
-    if not isinstance(data, list):
-        return []
-    return [_normalize_source_row(row) for row in data if isinstance(row, dict)]
+    rows = await fetch_visible_emotion_log_feed(viewer_id, limit=p_limit)
+    return [_normalize_source_row(row) for row in rows]
 
 
 def _build_friend_feed_payload(viewer_user_id: str, rows: Iterable[Mapping[str, Any]]) -> Dict[str, Any]:

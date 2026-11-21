@@ -45,6 +45,7 @@ from api_emotion_submit import (
 )
 from api_profile_create import _fetch_answers as _fetch_profile_answers
 from api_profile_create import _fetch_questions as _fetch_profile_questions
+from follow_content_visibility import filter_piece_visible_owner_ids, hidden_share_code_owner_ids
 from piece_generated_display import get_public_generated_reflection_text
 from piece_generated_identity import compute_generated_question_q_key, generated_instance_aliases
 from piece_generated_access import resolve_generated_reflection_access
@@ -719,25 +720,8 @@ def _quoted_in(values: Set[str]) -> str:
 
 
 async def _has_myprofile_link(*, viewer_user_id: str, owner_user_id: str) -> bool:
-    """viewer -> owner のアクセス許可があるか（myprofile_links で判定）。"""
-    resp = await _sb_get(
-        "/rest/v1/myprofile_links",
-        params={
-            "select": "viewer_user_id",
-            "viewer_user_id": f"eq.{viewer_user_id}",
-            "owner_user_id": f"eq.{owner_user_id}",
-            "limit": "1",
-        },
-    )
-    if resp.status_code >= 300:
-        logger.error(
-            "Supabase myprofile_links select failed: %s %s",
-            resp.status_code,
-            resp.text[:1500],
-        )
-        raise HTTPException(status_code=502, detail="Failed to check myprofile link")
-    rows = resp.json()
-    return bool(isinstance(rows, list) and rows)
+    """viewer -> owner のピース閲覧許可を確認。"""
+    return bool(await filter_piece_visible_owner_ids(viewer_user_id, {owner_user_id}))
 
 async def _fetch_profiles_by_ids(user_ids: List[str]) -> Dict[str, Dict[str, Any]]:
     """Bulk fetch profiles by ids (service_role)."""
@@ -861,6 +845,11 @@ async def _fetch_followed_owner_ids(*, viewer_user_id: str, limit: int = 5000) -
             if oid:
                 out.add(oid)
     return out
+
+
+async def _fetch_visible_piece_owner_ids(*, viewer_user_id: str, limit: int = 5000) -> Set[str]:
+    followed = await _fetch_followed_owner_ids(viewer_user_id=viewer_user_id, limit=limit)
+    return await filter_piece_visible_owner_ids(viewer_user_id, followed)
 
 
 async def _fetch_active_user_ids(*, since_iso: str, scan_limit: int) -> Set[str]:
@@ -1258,7 +1247,7 @@ async def _ensure_piece_resonance_allowed(*, viewer_user_id: str, target_user_id
     if target == viewer:
         raise HTTPException(status_code=400, detail="Self resonance is not allowed")
 
-    followed_owner_ids = await _fetch_followed_owner_ids(viewer_user_id=viewer, limit=5000)
+    followed_owner_ids = await _fetch_visible_piece_owner_ids(viewer_user_id=viewer, limit=5000)
     if target not in followed_owner_ids:
         raise HTTPException(
             status_code=403,
@@ -1628,7 +1617,7 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:
             )
 
         # Only reflections currently accessible to the viewer.
-        followed_set = await _fetch_followed_owner_ids(viewer_user_id=str(viewer_user_id))
+        followed_set = await _fetch_visible_piece_owner_ids(viewer_user_id=str(viewer_user_id))
         if not followed_set:
             return QnaSavedReflectionsResponse(
                 status="ok",
@@ -2208,7 +2197,7 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:
             )
 
         # Only reflections currently accessible to the viewer.
-        followed_set = await _fetch_followed_owner_ids(viewer_user_id=str(viewer_user_id))
+        followed_set = await _fetch_visible_piece_owner_ids(viewer_user_id=str(viewer_user_id))
         if not followed_set:
             return QnaSavedReflectionsResponse(
                 status="ok",
@@ -3302,7 +3291,9 @@ async def _build_saved_generated_items(
     prepared_rows, rows_map = normalized, canonical_rows
     ids = set(rows_map)
     alias_groups = {iid: set(generated_instance_aliases(row)) for iid, row in rows_map.items()}
-    profiles_map = await _fetch_profiles_by_ids(list({owner for _, owner, _ in prepared_rows}))
+    profile_owner_ids = {owner for _, owner, _ in prepared_rows}
+    profiles_map = await _fetch_profiles_by_ids(list(profile_owner_ids))
+    hidden_codes = await hidden_share_code_owner_ids(profile_owner_ids - {str(viewer_user_id)})
     metrics_task = asyncio.create_task(_fetch_instance_metrics(ids, alias_groups=alias_groups))
     reads_task = asyncio.create_task(_fetch_reads(str(viewer_user_id or "").strip(), ids, alias_groups=alias_groups))
     metrics_map, read_set = await asyncio.gather(metrics_task, reads_task)
@@ -3325,7 +3316,7 @@ async def _build_saved_generated_items(
         p = profiles_map.get(str(owner_uid)) or {}
         dn = p.get("display_name") if isinstance(p, dict) else None
         dn_s = dn.strip() if isinstance(dn, str) else None
-        friend_code_raw = p.get("friend_code") if isinstance(p, dict) else None
+        friend_code_raw = p.get("friend_code") if isinstance(p, dict) and owner_uid not in hidden_codes else None
         friend_code = friend_code_raw.strip() if isinstance(friend_code_raw, str) else None
         q_key = _build_generated_q_key(row)
         metric_row = metrics_map.get(iid) or {}
@@ -3444,7 +3435,9 @@ async def _build_saved_create_items(
     metrics_task = asyncio.create_task(_fetch_instance_metrics(q_instance_ids))
     reads_task = asyncio.create_task(_fetch_reads(str(viewer_user_id or "").strip(), q_instance_ids))
     metrics_map, read_set = await asyncio.gather(metrics_task, reads_task)
-    profiles_map = await _fetch_profiles_by_ids(list({row[1] for row in visible_rows}))
+    profile_owner_ids = {row[1] for row in visible_rows}
+    profiles_map = await _fetch_profiles_by_ids(list(profile_owner_ids))
+    hidden_codes = await hidden_share_code_owner_ids(profile_owner_ids - {str(viewer_user_id)})
     followed_set = set(followed_owner_ids or set())
     viewer_id = str(viewer_user_id or "").strip()
 
@@ -3453,7 +3446,7 @@ async def _build_saved_create_items(
         p = profiles_map.get(str(owner_uid)) or {}
         dn = p.get("display_name") if isinstance(p, dict) else None
         dn_s = dn.strip() if isinstance(dn, str) else None
-        friend_code_raw = p.get("friend_code") if isinstance(p, dict) else None
+        friend_code_raw = p.get("friend_code") if isinstance(p, dict) and owner_uid not in hidden_codes else None
         friend_code = friend_code_raw.strip() if isinstance(friend_code_raw, str) else None
         body = body_by_pair.get((str(owner_uid), int(qid_val))) or ""
         metric_row = metrics_map.get(iid) or {}
@@ -3849,7 +3842,7 @@ def register_piece_runtime_routes(app: FastAPI) -> None:
             require_active=True,
             require_ready=True,
         )
-        followed_set = await _fetch_followed_owner_ids(viewer_user_id=str(viewer_user_id))
+        followed_set = await _fetch_visible_piece_owner_ids(viewer_user_id=str(viewer_user_id))
 
         generated_prepared: List[Tuple[str, str, str]] = []
         create_prepared: List[Tuple[str, str, int, str, str]] = []

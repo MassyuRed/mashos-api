@@ -8,6 +8,8 @@ from uuid import UUID
 
 from fastapi import HTTPException
 
+from follow_content_visibility import filter_piece_visible_owner_ids
+
 from supabase_client import (
     sb_delete as _sb_delete_shared,
     sb_get as _sb_get_shared,
@@ -81,24 +83,7 @@ async def sb_get_json(path: str, *, params: Dict[str, str]) -> List[Dict[str, An
 
 
 async def has_myprofile_link(*, viewer_user_id: str, owner_user_id: str) -> bool:
-    resp = await sb_get(
-        "/rest/v1/myprofile_links",
-        params={
-            "select": "viewer_user_id",
-            "viewer_user_id": f"eq.{viewer_user_id}",
-            "owner_user_id": f"eq.{owner_user_id}",
-            "limit": "1",
-        },
-    )
-    if resp.status_code >= 300:
-        logger.error(
-            "Supabase myprofile_links select failed: %s %s",
-            resp.status_code,
-            (resp.text or "")[:1500],
-        )
-        raise HTTPException(status_code=502, detail="Failed to check myprofile link")
-    rows = resp.json()
-    return bool(isinstance(rows, list) and rows)
+    return bool(await filter_piece_visible_owner_ids(viewer_user_id, {owner_user_id}))
 
 
 async def fetch_native_public_piece_posts(*, viewer_user_id: str, target_user_id: Optional[str],
@@ -192,7 +177,7 @@ async def fetch_followed_owner_ids(*, viewer_user_id: str, limit: int = 5000) ->
         oid = str((r or {}).get("owner_user_id") or "").strip()
         if oid:
             out.add(oid)
-    return out
+    return await filter_piece_visible_owner_ids(viewer_user_id, out)
 
 
 def _instance_alias_owners(

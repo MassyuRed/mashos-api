@@ -152,7 +152,11 @@ from astor_material_snapshots import (
 )  # type: ignore
 
 from api_analysis_reports import _build_analysis_target_period
-from api_emotion_submit import _fetch_push_tokens_for_users, _send_fcm_push  # type: ignore
+from api_emotion_submit import (  # type: ignore
+    _fetch_push_tokens_for_users,
+    _filter_current_emotion_recipients,
+    _send_fcm_push,
+)
 
 # Generation lock (avoid concurrent snapshot generation per user/scope)
 from generation_lock import build_lock_key, make_owner_id, release_lock, try_acquire_lock  # type: ignore
@@ -3408,6 +3412,11 @@ async def _handle_send_fcm_push_v1(*, user_id: str, payload: Dict[str, Any]) -> 
         if not current['items'] or current['items'][0]['id'] != rid:
             return {'status': 'skipped_stale_map_notification'}
 
+    managed_emotion = payload.get("event_type") == "emotion_log"
+    actor_user_id = str(payload.get("actor_user_id") or "").strip() if managed_emotion else ""
+    if managed_emotion and (mode != "user_ids" or not actor_user_id or actor_user_id != str(user_id).strip()):
+        return {"status": "skipped_invalid_emotion_notification"}
+
     tokens: List[str] = []
     recipient_count = 0
     if mode == "tokens":
@@ -3452,6 +3461,14 @@ async def _handle_send_fcm_push_v1(*, user_id: str, payload: Dict[str, Any]) -> 
         token_map = await _fetch_push_tokens_for_users(recipient_ids)
         exclude_token_map = await _fetch_push_tokens_for_users(exclude_ids) if exclude_ids else {}
         exclude_tokens = {str(t or "").strip() for t in (exclude_token_map or {}).values() if str(t or "").strip()}
+        if managed_emotion:
+            recipient_ids = await _filter_current_emotion_recipients(
+                viewer_user_ids=recipient_ids, owner_user_id=actor_user_id,
+            )
+            recipient_count = len(recipient_ids)
+            if not recipient_ids:
+                return {"status": "skipped_no_recipient", "user_id": str(user_id or "").strip()}
+            token_map = {uid: token_map[uid] for uid in recipient_ids if uid in token_map}
         seen_tokens = set()
         for raw_token in (token_map or {}).values():
             tok = str(raw_token or "").strip()

@@ -148,6 +148,8 @@ Deprecated rows remain listed until their compatibility window is closed.
 | POST | `/follow/remove-follower` | `follow.remove_follower.v1` | `false` |  |  |
 | GET | `/follow/stats` | `follow.stats.v1` | `false` |  |  |
 | GET | `/follow/list` | `follow.list.v1` | `false` |  |  |
+| GET | `/follow/followers/content-visibility` | `follow.followers.content_visibility.v1` | `false` |  | Authenticated author reads independent sharing choices for accepted followers. |
+| PATCH | `/follow/followers/{follower_user_id}/content-visibility` | `follow.followers.content_visibility.patch.v1` | `false` |  | Authenticated author updates either sharing field for one accepted follower. |
 | GET | `/follow/requests/incoming` | `follow.requests.incoming.v1` | `false` |  |  |
 | GET | `/follow/requests/outgoing` | `follow.requests.outgoing.v1` | `false` |  |  |
 | POST | `/follow/request/cancel` | `follow.request.cancel.v1` | `false` |  |  |
@@ -181,6 +183,16 @@ Deprecated rows remain listed until their compatibility window is closed.
 | GET | `/ranking/piece_views` | `ranking.piece_views.v1` | `false` |  |  |
 | GET | `/subscription/me` | `subscription.me.v1` | `false` |  |  |
 | POST | `/subscription/update` | `subscription.update.v1` | `false` |  | Client purchase sync / tier refresh |
+
+## Follower-specific sharing
+
+Deploy the follower-visibility SQL before the API and worker. Current approved
+relationships are required for both kinds of sharing. Missing choices allow
+both kinds, and explicit choices survive an unfollow. Piece and emotion reads,
+queued delivery, and the withdrawal of access use stored choices even when
+management is disabled. `FOLLOWER_SHARING_ENABLED=true` exposes the management
+routes and bootstrap capability and retires the legacy account-visibility PATCH
+with 410. The existing account setting GET preserves its stored values.
 
 ## Shared Piece v2 composition
 
