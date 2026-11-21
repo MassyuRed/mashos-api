@@ -44,25 +44,30 @@ PLAN_SYSTEM_MESSAGE = f"""Emlisの「わたしを知る問い」で、本人に�
 {_DATA_BOUNDARY}
 記録の入口では、同じ場面について思考・行動・有効な本人回答を照合し、まだ本人が説明していない観点を一つ選びます。
 既に書いた理由、別表現の既出質問、スキップしたEmlisの問いを繰り返しません。理由が確認済みでも別の条件が有用ならCONDITIONにします。
-記録を使うとき、sourceはsourcesのキー、quoteは本人の原文に一度だけ現れる連続した6〜70文字です。別人の意図・過去の事実を推定しません。
+記録のsourceはsourcesに実在するキーを一字ずつ写します。キーがa1ならa1です。キーにtext、sources、配列番号などを足しません。
+quoteはそのキーのtextに一度だけ現れる連続した6〜70文字です。理由と行動をまとめず、確認する行動・判断・状態を含む箇所を選び、文末の「。」「！」「？」と空白は含めません。別人の意図・過去の事実を推定しません。
 テーマの入口では、選択したテーマ内で、自分の基準や捉え方が分かる一点を選びます。関連記録がなくても生成し、sourceとquoteは空文字です。
 conditionは対象を限定する既知の短い条件をそのまま書きます。記録では原文にある語だけを使います。限定がなければ空文字です。
 askは何を知りたいかの短い日本語で、表示する質問文ではありません。資料から確認点を作れなければ {{"decision":"skip"}} を返します。
 {_FOCUS_GUIDE}
-出力例 {{"decision":"ask","focus":"REASON","source":"r1.thought","quote":"頼まれたことを先にした","condition":"","ask":"先に引き受けた理由"}}"""
+記録の出力例 {{"decision":"ask","focus":"REASON","source":"r1.thought","quote":"頼まれたことを先にした","condition":"","ask":"先に引き受けた理由"}}
+前の回答a1から聞く例 {{"decision":"ask","focus":"CONDITION","source":"a1","quote":"意見が違っても本音を言える","condition":"","ask":"本音を言いやすい相手の反応"}}
+テーマの出力例 {{"decision":"ask","focus":"RELATIONSHIP","source":"","quote":"","condition":"","ask":"友達だと感じる場面"}}"""
 
-WRITE_SYSTEM_MESSAGE = f"""採用された確認点を本人に尋ねる自然な日本語の一問にします。{{"question":"一問だけ？"}} のJSONだけを返します。
+WRITE_SYSTEM_MESSAGE = f"""採用された確認点を、本人に丁寧に尋ねる自然な日本語の一問にします。questionだけを持つJSONを返します。
 {_DATA_BOUNDARY}
 focus、ask、conditionは別の観点に変えません。引用があれば一度だけ「」で囲み、字面を一文字も変えません。
 引用と既知の条件のほかに出来事・時点・真意・原因・評価を前提として足しません。既知の条件は問いの中に短く残します。
 テーマの入口では本人の出来事を前提にせず、選択したテーマで本人が自由に答えられる形にします。
-条件を聞くときは「どんなとき／どんな条件で」を使っても構いません。励まし、回答の誘導、二つ目の質問は加えません。"""
+末尾は必ず「ですか？」または「ますか？」などの、全角の疑問符「？」で終える質問にします。「のか」で終わる見出し、疑問符の省略、助言、誘導、二つ目の質問は使いません。
+記録の出力例 {{"question":"「頼まれたことを先にした」のは、どんな理由からですか？"}}
+人間関係の出力例 {{"question":"どんなときに、この人は友達だなと感じますか？"}}"""
 
 READ_SYSTEM_MESSAGE = f"""Emlisの完成した一問を、渡された原資料から独立に読みます。日本語のJSONだけを返します。
 {_DATA_BOUNDARY}
 作成者が何を意図したかではなく、完成文が実際に本人の何を尋ね、どの出来事・主体・時点・否定・留保・条件を前提に置くかを読んでください。
 focusは意味から選びます。{_FOCUS_GUIDE}
-記録入口では、文面で「」に入れた引用を、本人の原文sourcesのどのキーから取ったか照合します。該当が一つに確定しなければ拒否します。
+記録入口では、文面の「」内をquoteとし、本人の原文sourcesのどのキーにあるか照合します。sourceはsourcesのキーだけを一字ずつ写します。キーがa1ならa1で、a1.textは使いません。該当が一つに確定しなければ拒否します。
 テーマ入口ではsourceとquoteを空にし、選択テーマと問いの観点が実際に一致するか確かめます。
 conditionは文面が明示した既知の短い限定条件をそのまま書き、限定がなければ空文字です。推測して補わないでください。
 premise_supportedは、引用外も含めて原文にない出来事・主体・時点・評価・原因を前提にせず、テーマにも合う時だけtrueにします。
@@ -272,7 +277,7 @@ def _stated_reason(anchor):
     text = anchor.source.text
     prefix = re.split(r"[。！？!?\n\r]", text[:anchor.start])[-1]
     suffix = re.split(r"[。！？!?\n\r]", text[anchor.end:])[0]
-    return bool(_STATED_REASON.search(prefix) or _REASON_FINISH.search(suffix.strip()))
+    return bool(_STATED_REASON.search(prefix + anchor.quote) or _REASON_FINISH.search(suffix.strip()))
 
 
 def _accept_plan(value, *, lane, sources):

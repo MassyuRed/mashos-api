@@ -92,11 +92,13 @@ async function run() {
   await db.query(`insert into public.emlis_thread_events(id,thread_id,seq,kind,round_index,question_id,payload)
     values($1,$2,2,'ANSWER',1,'emlis-question',$3)`, [answerEventId, threadId,
     JSON.stringify({ source: { answer_id: answerEventId, thread_id: threadId, question_id: 'emlis-question',
-      round_index: 1, original_source_ref: 'original', answer_text_private: '本人が答えた材料' } })]);
+      round_index: 1, original_source_ref: 'original', answer_text_private: '本人が答えた材料',
+      source_role: 'SUPPLEMENTAL_ANSWER', source_version: 'cocolon.cmee.supplemental_answer.v1' } })]);
   original = (await context(free)).material.records[0];
   const emlisAnswer = original.emlis_answered_questions[0];
   assert.equal(emlisAnswer.id, answerEventId);
   assert.equal(emlisAnswer.question_id, 'emlis-question');
+  assert.ok(Number.isFinite(Date.parse(emlisAnswer.answered_at)));
   assert.match(emlisAnswer.source_version, /^[0-9a-f]{64}$/);
   assert.equal(emlisAnswer.answer, '本人が答えた材料');
   const mapGuard = await value("select public.analysis_cumulative_source_snapshot($1)->>'guard' as v", [free]);

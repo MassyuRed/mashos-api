@@ -129,7 +129,8 @@ def test_answer_updates_normal_v24_map_through_provider_and_database(sql_source,
 
     before = snapshot()['guard']
     for name in ('20261121132000_deep_insight_questions.sql',
-                 '20261121133000_analysis_deep_insight_answer_handoff.sql'):
+                 '20261121133000_analysis_deep_insight_answer_handoff.sql',
+                 '20261121134000_deep_insight_grounded_questions.sql'):
         sql_script(db, name)
     assert snapshot()['guard'] == before
     calls = []

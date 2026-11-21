@@ -33,7 +33,7 @@ returns jsonb language sql stable security invoker set search_path='' as $$
       order by q.seq desc limit 1
     ) pending on true
     left join lateral (
-      select jsonb_agg(jsonb_build_object('id',a.id,'question_id',q.question_id,
+      select jsonb_agg(jsonb_build_object('id',a.id,'question_id',q.question_id,'answered_at',a.recorded_at,
         'source_version',encode(sha256(convert_to((a.payload->'source')::text,'UTF8')),'hex'),
         'question',q.payload->>'prompt_private','answer',a.payload#>>'{source,answer_text_private}')
         order by q.seq) as items
@@ -48,6 +48,8 @@ returns jsonb language sql stable security invoker set search_path='' as $$
         and a.payload#>>'{source,question_id}'=q.question_id
         and a.payload#>>'{source,round_index}'=a.round_index::text
         and a.payload#>>'{source,original_source_ref}'=t.data->>'original_source_ref'
+        and a.payload#>>'{source,source_role}'='SUPPLEMENTAL_ANSWER'
+        and a.payload#>>'{source,source_version}'='cocolon.cmee.supplemental_answer.v1'
         and a.payload#>>'{source,answer_text_private}' ~ '[^[:space:]]'
         -- Multi-answer and corrected threads need the Emlis effective-meaning
         -- reader. Never put an unqualified historical answer back into a prompt.
@@ -66,14 +68,18 @@ returns jsonb language sql stable security invoker set search_path='' as $$
         q.id,q.question_text,q.answer_text,q.answered_at)::text,'UTF8')),'hex') end as source_version
     from public.deep_insight_questions q where q.user_id=p_user_id
     order by q.issued_at desc,q.id limit 30
+  ), map_guard as materialized (
+    select case when profile.available and exists(select 1 from public.analysis_observed_artifacts
+      where user_id=p_user_id and source_profile='cumulative.v1')
+      then public.analysis_cumulative_source_snapshot(p_user_id)->>'guard' end as value
+    from profile
   ), map as (
     select jsonb_build_object('id',a.id,'generated_at',a.generated_at,
       'source_version',encode(sha256(convert_to(a.source_guard,'UTF8')),'hex'),
       'summary',left(a.content_text,1800)) as item
-    from public.analysis_observed_artifacts a cross join profile
+    from public.analysis_observed_artifacts a cross join map_guard
     where a.user_id=p_user_id and a.source_profile='cumulative.v1'
-      and a.source_guard=case when profile.available
-        then public.analysis_cumulative_source_snapshot(p_user_id)->>'guard' end
+      and a.source_guard=map_guard.value
     order by a.generated_at desc,a.id desc limit 1
   )
   select jsonb_build_object(
