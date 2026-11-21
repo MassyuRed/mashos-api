@@ -2,6 +2,7 @@ import asyncio
 import hashlib
 import json
 import random
+from itertools import islice, product
 
 import pytest
 
@@ -518,6 +519,67 @@ def test_theme_checks_two_cited_questions_before_the_remaining_history(final_ver
     ]
 
 
+@pytest.mark.parametrize("control", ["distinct", "semantic_repeat", "exact_repeat"])
+def test_theme_resolves_three_cited_questions_with_archived_history(control):
+    theme = "自分の価値観"
+    current_position = (theme, "risk", "boundary")
+    archived_position = (theme, "ownership", "boundary")
+    current_body = THEME_VERIFIED_BODIES[current_position][-1]
+    previous_position = current_position if control == "exact_repeat" else archived_position
+    previous, _ = theme_run(
+        theme, THEME_VERIFIED_BODIES[previous_position][-1],
+        choose_theme=select_theme_angle(*previous_position[1:]),
+    )
+    # An older issuance supplied by SQL has only its position and text keys.
+    archived = {"question_key": previous.candidate.question_key, "text_key": previous.candidate.text_key}
+    if control == "exact_repeat":
+        # A historic wording collision should still block a different position.
+        archived["question_key"] = _theme_position_key(theme, *archived_position[1:])
+    scenes_and_questions = product(THEME_SCENES[theme].values(), (
+        "何を基準に選びますか？", "最初に何をしますか？",
+    ))
+    recent = [
+        {"question_key": f"recent-{i}", "question_text": f"{scene}、{body}"}
+        for i, (scene, body) in enumerate(islice(scenes_and_questions, 30))
+    ]
+    original = {"questions": recent + [archived]}
+    prepared, sources = prepare_question_material(
+        original, lane="theme", theme=theme, choose_theme=select_theme_angle(*current_position[1:]),
+    )
+    # Match the order in which the actual 4B retest cited distinct history.
+    cited_ids = iter((21, 30, 17, None))
+    comparisons = []
+    pairs = []
+    calls = []
+
+    async def generate(system, payload):
+        calls.append(system)
+        if system.startswith(_THEME_WRITE_SYSTEM_MESSAGE):
+            return json.dumps({"question": current_body})
+        if system.startswith(_THEME_READ_SYSTEM_MESSAGE):
+            return '{"verdict":"accept"}'
+        if system == _THEME_COMPARE_SYSTEM_MESSAGE:
+            comparisons.append([row["id"] for row in payload["history"]])
+            cited = next(cited_ids)
+            return json.dumps({"verdict": "repeat", "id": cited} if cited else {"verdict": "distinct"})
+        assert system == _THEME_COMPARE_PAIR_SYSTEM_MESSAGE
+        pairs.append(payload["previous"])
+        answer = "repeat" if len(pairs) == 3 and control == "semantic_repeat" else "distinct"
+        return json.dumps({"verdict": answer})
+
+    result = asyncio.run(generate_question(prepared, sources, material=original, generate=generate))
+    assert len(original["questions"]) == 31
+    assert result.disposition == ("selected" if control == "distinct" else "rejected")
+    if control == "exact_repeat":
+        assert len(calls) == 1
+        return
+    assert pairs == [recent[i - 1]["question_text"] for i in (21, 30, 17)]
+    expected = [[i for i in range(1, 31) if i not in removed] for removed in ((), (21,), (21, 30))]
+    if control == "distinct":
+        expected.append([i for i in range(1, 31) if i not in (21, 30, 17)])
+    assert comparisons == expected
+
+
 @pytest.mark.parametrize("theme", THEME_SCENES)
 def test_theme_selection_does_not_reuse_an_issued_position_over_fifty_draws(theme):
     questions = []
@@ -579,6 +641,31 @@ def test_theme_rejects_old_exact_text_key_and_closed_question():
 def test_theme_rejects_non_polite_endings_and_unbound_questions(body):
     result, calls = theme_run("仕事・学び", body)
     assert result.disposition == "rejected" and len(calls) == 2
+
+
+@pytest.mark.parametrize(("theme", "scene", "angle", "draft", "revised"), [
+    ("人間関係", "cancel", "first_action",
+     "約束の変更連絡を始める際、まず何をすべきでしょうか？",
+     "約束を変えることを伝えるとき、まずどんな言葉をかけますか？"),
+    ("人間関係", "group", "priority",
+     "複数の案から一つを選ぶ基準は、何を基準に決めますか？",
+     "複数の案から一つを選ぶ基準は何ですか？"),
+    ("自分の価値観", "giving_credit", "priority",
+     "誰のどんな働きを言葉にするかを選ぶ基準を、何を基準に決めますか？",
+     "誰のどんな働きを言葉にするか、何を目安に決めますか？"),
+    ("自分の価値観", "public_private", "priority",
+     "何を基準に自分のルールを守るべきですか？",
+     "自分のルールを守るべきか、何を基準に決めますか？"),
+])
+def test_theme_repairs_advice_and_repeated_decision_criteria_before_reading(theme, scene, angle, draft, revised):
+    result, calls = theme_run(theme, draft, repair=revised, choose_theme=select_theme_angle(scene, angle))
+
+    assert [system for system, _ in calls] == [
+        _THEME_WRITE_SYSTEM_MESSAGE, _THEME_REPAIR_SYSTEM_MESSAGE, _THEME_READ_SYSTEM_MESSAGE,
+    ]
+    assert calls[1][1]["reason"] == "surface" and "draft" not in calls[1][1]
+    assert result.candidate.text == f"{calls[0][1]['scene']}、{revised}"
+    assert calls[2][1]["question"] == result.candidate.text
 
 
 def test_theme_allows_asking_where_to_start_without_treating_it_as_a_yes_no_question():
