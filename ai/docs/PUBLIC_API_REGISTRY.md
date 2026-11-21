@@ -182,18 +182,21 @@ Deprecated rows remain listed until their compatibility window is closed.
 | GET | `/subscription/me` | `subscription.me.v1` | `false` |  |  |
 | POST | `/subscription/update` | `subscription.update.v1` | `false` |  | Client purchase sync / tier refresh |
 
-## Prepared shared Piece preview composition (isolated use only)
+## Shared Piece v2 composition
 
 `app.create_application(piece_preview_configuration=...)` can explicitly compose
 the existing preview factory into the shared API. The dictionary is passed to
-`create_piece_preview_application`; it is application-owned configuration, never
-a request parameter. An empty dictionary selects the candidate with all Piece
-flags OFF. Enabled preview still requires the existing requested/ready checks
-and valid TTL/renderer configuration. Test values are not deployment settings.
+`create_piece_preview_application`; it is application-owned configuration. Enabled
+preview still requires the existing requested/ready checks and valid
+TTL/renderer configuration. Test values are not deployment settings.
 
 The module-level `app` and `create_application()` retain the legacy composition
-and the default registry above. No environment switch or deployment entrypoint
-is added. Input submission, bootstrap and other shared routes/middleware remain
+and the default registry above. The existing explicit shared composition can
+activate Piece publication with both `PIECE_V2_PUBLICATION_ENABLED=true` and
+`PIECE_V2_PUBLICATION_READY=true`. Verify the publication migration and access
+rules before marking this pair ready. Explicit factory settings take precedence.
+The three publication flags are advertised by bootstrap/startup only to clients
+sending `X-Piece-Publication: 1`. The five private Piece flags are independent. Input submission, bootstrap and other shared routes/middleware remain
 on the same application. In the explicit candidate, only one owner is registered
 for each preview/source-ref route, and the contract middleware uses a registry
 captured for that application:
@@ -203,6 +206,8 @@ captured for that application:
 | POST | `/emotion/piece/preview` | `emotion.piece.preview.v2` | Existing `piece.api.v2` saved-source request, Idempotency-Key and response; no raw-input fallback |
 | GET | `/emotion/piece/source-ref/{saved_input_id}` | `emotion.piece.source_ref.v2` | Authenticated seven-field saved-source reference; optional exact `supplemental_answer_identity` canonical UUID query explicitly selects one eligible saved additive answer; no query retains the original-only read |
 | POST | `/emotion/reflection/preview` | none | Not registered (404); its legacy DTO must not delegate to the v2 owner |
+| PATCH | `/emotion/piece/{piece_id}/visibility` | `emotion.piece.visibility.v2` | Authenticated exact owner and saved row version with `X-Piece-Publication: 1`; public transitions require current non-Secret source and permission. Private transitions withdraw the post. |
+| GET | `/nexus/pieces?include_piece_v2=true` | `nexus.pieces.list.v1` | Active publication read includes Piece v2 cards with the canonical body, date, author, and public Piece ID for the owner and approved followers. The legacy default feed is unchanged. |
 
 The source-ref query accepts no answer text, owner, tier, stage or eligibility
 flag. Duplicate and unknown query fields are rejected. Its seven-field response

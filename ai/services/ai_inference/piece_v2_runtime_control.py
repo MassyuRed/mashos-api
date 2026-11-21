@@ -1,10 +1,9 @@
-"""Single Piece v2 feature resolver (PCE-7); no activation or environment IO.
+"""Single Piece v2 feature resolver (PCE-7); no environment IO.
 
 An admitted server composition may supply app.state.piece_v2_runtime with
 requested and ready boolean maps using the eight existing feature names.
 Readiness means the corresponding PCE-7 prerequisites have been established
 by that composition; requesting a feature never establishes readiness.
-No production composition supplies this state in this development slice.
 The projection is advisory to RN; affected operations check this owner again.
 """
 from __future__ import annotations
@@ -21,6 +20,19 @@ PIECE_FEATURE_NAMES = (
     'piece_v2_export_enabled',
     'piece_v2_delete_enabled',
 )
+
+
+PIECE_PUBLICATION_HEADER = "X-Piece-Publication"
+PIECE_PUBLICATION_FEATURES = (
+    'piece_v2_public_read_enabled',
+    'piece_v2_public_write_enabled',
+    'piece_v2_visibility_toggle_enabled',
+)
+
+
+def wants_piece_publication(request) -> bool:
+    """Recognize the current app without enabling a server feature."""
+    return request.headers.getlist(PIECE_PUBLICATION_HEADER) == ["1"]
 
 
 def resolve_piece_feature_flags(configuration: object = None) -> dict[str, bool]:
@@ -91,7 +103,13 @@ def create_piece_preview_application(*, preview_requested: bool = False,
                                      export_ready: bool = False,
                                      export_receipt_ready: bool = False,
                                      owner_delete_requested: bool = False,
-                                     owner_delete_ready: bool = False):
+                                     owner_delete_ready: bool = False,
+                                     public_read_requested: bool = False,
+                                     public_read_ready: bool = False,
+                                     public_write_requested: bool = False,
+                                     public_write_ready: bool = False,
+                                     visibility_toggle_requested: bool = False,
+                                     visibility_toggle_ready: bool = False):
     """Compose existing preview, owner recovery, source and bootstrap handlers.
 
     This is NOT production app.py, a deployed service, or a clean-cutover
@@ -113,7 +131,9 @@ def create_piece_preview_application(*, preview_requested: bool = False,
     read. It returns the existing saved artifact, never a regenerated image.
     Receipt readiness stays off until its storage is independently admitted;
     the opt-in native client then requires a receipt before the OS handoff.
-    No public write, visibility mutation or public read can be enabled here.
+    The public flags require separate explicit requests and readiness.
+    Visibility uses the saved-owner terminal. Public reading is provided
+    by the shared Nexus composition, not by this isolated factory.
     Actual Auth/DB/device admission and production cutover remain separate.
     """
     requested = dict.fromkeys(PIECE_FEATURE_NAMES, False)
@@ -128,10 +148,17 @@ def create_piece_preview_application(*, preview_requested: bool = False,
     ready['piece_v2_export_enabled'] = export_ready is True
     requested['piece_v2_delete_enabled'] = owner_delete_requested is True
     ready['piece_v2_delete_enabled'] = owner_delete_ready is True
+    requested['piece_v2_public_read_enabled'] = public_read_requested is True
+    ready['piece_v2_public_read_enabled'] = public_read_ready is True
+    requested['piece_v2_public_write_enabled'] = public_write_requested is True
+    ready['piece_v2_public_write_enabled'] = public_write_ready is True
+    requested['piece_v2_visibility_toggle_enabled'] = visibility_toggle_requested is True
+    ready['piece_v2_visibility_toggle_enabled'] = visibility_toggle_ready is True
     configuration = {'requested': requested, 'ready': ready}
+    flags = resolve_piece_feature_flags(configuration)
     values = None
     if (preview_runtime is not None
-            or resolve_piece_feature_flags(configuration)['piece_v2_preview_enabled']):
+            or flags['piece_v2_preview_enabled']):
         values = validate_piece_preview_runtime(preview_runtime)
 
     # Imports and application construction occur only on an explicit call,
@@ -139,7 +166,8 @@ def create_piece_preview_application(*, preview_requested: bool = False,
     from fastapi import FastAPI
     from api_app_bootstrap import register_app_bootstrap_routes
     from api_piece_v2 import (read_quota, create_preview, mutate_preview_visual, cancel_preview, save_preview,
-                             owner_history, owner_detail, owner_export, owner_export_receipt, owner_delete)
+                             owner_history, owner_detail, owner_export, owner_export_receipt, owner_delete,
+                             owner_visibility)
     from piece_v2_source_ref_http import read_original_source_ref
 
     app = FastAPI(openapi_url=None, docs_url=None, redoc_url=None)
@@ -171,4 +199,5 @@ def create_piece_preview_application(*, preview_requested: bool = False,
     # preserves its additional static legacy paths before this same route.
     app.add_api_route('/emotion/piece/{piece_id}', owner_detail, methods=['GET'])
     app.add_api_route('/emotion/piece/{piece_id}', owner_delete, methods=['DELETE'])
+    app.add_api_route('/emotion/piece/{piece_id}/visibility', owner_visibility, methods=['PATCH'])
     return app

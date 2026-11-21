@@ -9,13 +9,14 @@ from __future__ import annotations
 import asyncio
 import inspect
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Literal, Optional, Set, Tuple, Union
 
-from fastapi import FastAPI, Header, HTTPException, Query
+from fastapi import FastAPI, Header, HTTPException, Query, Response
 from fastapi.encoders import jsonable_encoder
 from pydantic import BaseModel, Field
 
 from api_emotion_submit import _extract_bearer_token, _resolve_user_id_from_token
+from piece_v2_runtime_control import piece_feature_flags_for_app
 from piece_public_read_service import (
     EMOTION_GENERATED_SOURCE_TYPE,
     build_nexus_reflections_payload,
@@ -64,12 +65,25 @@ class NexusReflectionItem(BaseModel):
     viewer_state: NexusViewerState
 
 
+class NexusNativePieceOwner(BaseModel):
+    user_id: str
+    display_name: Optional[str] = None
+
+
+class NexusNativePieceItem(BaseModel):
+    q_instance_id: str
+    source_type: Literal["piece_v2"]
+    owner: NexusNativePieceOwner
+    body: str
+    created_at: str
+
+
 class NexusReflectionResponse(BaseModel):
     status: str = Field(default="ok")
     sort: str = Field(default="latest")
     total_items: int = 0
     has_more: bool = False
-    items: List[NexusReflectionItem] = Field(default_factory=list)
+    items: List[Union[NexusNativePieceItem, NexusReflectionItem]] = Field(default_factory=list)
 
 
 
@@ -266,10 +280,12 @@ async def _build_nexus_recommend_users_payload(
 def register_nexus_routes(app: FastAPI) -> None:
     @app.get("/nexus/pieces", response_model=NexusReflectionResponse)
     async def nexus_reflections(
+        response: Response,
         sort: str = Query(default="latest", description="latest | oldest | views | resonance"),
         limit: int = Query(default=20, ge=1, le=100),
         user_id: Optional[str] = Query(default=None, description="Optional followed user filter"),
         following_only: bool = Query(default=True),
+        include_piece_v2: bool = Query(default=False),
         authorization: Optional[str] = Header(default=None, alias="Authorization"),
     ) -> NexusReflectionResponse:
         token = _extract_bearer_token(authorization) if authorization else None
@@ -280,13 +296,20 @@ def register_nexus_routes(app: FastAPI) -> None:
         if not viewer_user_id:
             raise HTTPException(status_code=401, detail="Invalid token")
 
+        native_read = include_piece_v2 and piece_feature_flags_for_app(app)['piece_v2_public_read_enabled']
+        if include_piece_v2:
+            response.headers["Cache-Control"] = "private, no-store"
         payload = await build_nexus_reflections_payload(
             viewer_user_id=str(viewer_user_id),
             target_user_id=str(user_id or "").strip() or None,
             sort=str(sort or "latest"),
             limit=int(limit),
             following_only=bool(following_only),
+            **({"include_piece_v2": True} if native_read else {}),
         )
+        if native_read and not piece_feature_flags_for_app(app)['piece_v2_public_read_enabled']:
+            raise HTTPException(status_code=503, detail="Piece publication unavailable",
+                                headers={"Cache-Control": "private, no-store"})
         return NexusReflectionResponse(**payload)
 
     @app.get("/nexus/pieces/unread-status", response_model=NexusReflectionsUnreadStatusResponse)

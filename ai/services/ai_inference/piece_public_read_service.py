@@ -28,6 +28,7 @@ from piece_public_read_store import (
     delete_piece_related_state,
     fetch_followed_owner_ids,
     fetch_instance_metrics,
+    fetch_native_public_piece_posts,
     fetch_profiles_by_ids,
     fetch_reads,
     fetch_resonated_instances,
@@ -334,6 +335,7 @@ async def build_nexus_reflections_payload(
     sort: str,
     limit: int,
     following_only: bool,
+    include_piece_v2: bool = False,
 ) -> Dict[str, Any]:
     viewer_id = str(viewer_user_id or "").strip()
     if not viewer_id:
@@ -351,7 +353,7 @@ async def build_nexus_reflections_payload(
     else:
         target_owner_ids = set(followed_owner_ids)
         target_owner_ids.add(viewer_id)
-    if not target_owner_ids:
+    if not target_owner_ids and not include_piece_v2:
         return {"status": "ok", "sort": _normalize_public_sort(sort), "total_items": 0, "has_more": False, "items": []}
     fetch_oldest_first = _normalize_public_sort(sort) == "oldest"
     owner_tasks = [
@@ -371,6 +373,25 @@ async def build_nexus_reflections_payload(
                 merged[pid] = row
     rows = sorted(list(merged.values()), key=generated_row_sort_key, reverse=(not fetch_oldest_first))
     items = await _build_public_piece_items(viewer_user_id=viewer_id, rows=rows)
+    if include_piece_v2:
+        native_rows = await fetch_native_public_piece_posts(
+            viewer_user_id=viewer_id,
+            target_user_id=owner_filter or None,
+            following_only=following_only,
+            sort="oldest" if fetch_oldest_first else "latest",
+            limit=int(limit) + 1,
+        )
+        native_profiles = await fetch_profiles_by_ids(sorted({row["owner_user_id"] for row in native_rows}))
+        items.extend({
+            "q_instance_id": row["public_id"],
+            "source_type": "piece_v2",
+            "owner": {
+                "user_id": row["owner_user_id"],
+                "display_name": (native_profiles.get(row["owner_user_id"]) or {}).get("display_name"),
+            },
+            "body": row["body"],
+            "created_at": row["published_at"],
+        } for row in native_rows)
     sorted_items = _sort_nexus_items(items, sort)
     total_items = len(sorted_items)
     return {

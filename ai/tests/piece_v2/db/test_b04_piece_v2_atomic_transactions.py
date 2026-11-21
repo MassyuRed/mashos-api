@@ -409,3 +409,106 @@ def test_b04_store_masks_provider_body_and_rejects_open_response():
         with pytest.raises(PieceContractError) as exc:
             asyncio.run(save_piece(authenticated_user_id=str(_OWNER),request=_request_for(row),idempotency_key='test',rpc=rpc))
         assert str(exc.value)=='PIECE_TEMPORARILY_UNAVAILABLE'
+
+
+_PUBLIC_FEED = _ROOT / 'supabase/migrations/20261121095000_piece_v2_public_feed.sql'
+
+
+def _publication_schema(conn):
+    conn.execute('CREATE TABLE public.emotions (id uuid PRIMARY KEY, user_id uuid, is_secret boolean NOT NULL)')
+    conn.execute('''CREATE TABLE public.myprofile_links (
+        viewer_user_id uuid NOT NULL, owner_user_id uuid NOT NULL,
+        PRIMARY KEY(viewer_user_id,owner_user_id))''')
+    conn.execute(_PUBLIC_FEED.read_text())
+
+
+def _publication_save(conn, *, source_owner=_OWNER, secret=False, include_source=True, key='publish-piece'):
+    source_id = uuid4()
+    row = _B2['_record'](fmt='short_essay')
+    row['expires_at'] = conn.execute("SELECT clock_timestamp()+interval '10 minutes'").fetchone()[0]
+    row['source_input_id'] = str(source_id)
+    row['source_lineage']['source_input']['source_input_id'] = str(source_id)
+    if include_source:
+        conn.execute('INSERT INTO public.emotions VALUES (%s,%s,%s)', (source_id, source_owner, secret))
+    _B2['_insert'](conn, 'piece_records', row)
+    saved = _save(conn, row, key=key)
+    return source_id, row, saved
+
+
+def _read_public_feed(conn, viewer, *, target=None, follows_only=False, order='latest', limit=20,
+                      role='service_role'):
+    return _rpc(conn, 'piece_read_public_feed_v2', dict(p_viewer_user_id=viewer,
+        p_target_owner_user_id=target, p_following_only=follows_only, p_sort=order, p_limit=limit), role=role)
+
+
+def test_public_feed_uses_current_direction_and_visibility_without_consuming_quota(database):
+    conn, pg, _ = database
+    _publication_schema(conn)
+    source_id, row, saved = _publication_save(conn)
+    owner_params = dict(p_owner_user_id=_OWNER, p_piece_id=row['id'],
+                        p_expected_row_version=saved['row_version'], p_visibility_scope='public')
+    conn.execute('INSERT INTO public.myprofile_links VALUES (%s,%s)', (_OWNER, _VIEWER))
+    assert _read_public_feed(conn, _OWNER) == []
+    assert _read_public_feed(conn, _VIEWER, target=_OWNER) == []
+    with pytest.raises(pg.errors.RaiseException, match='(?m)^PIECE_NOT_FOUND$'):
+        _rpc(conn, 'piece_set_visibility_v2', dict(owner_params, p_owner_user_id=_VIEWER))
+
+    published = _rpc(conn, 'piece_set_visibility_v2', owner_params)
+    owner_feed = _read_public_feed(conn, _OWNER)
+    assert len(owner_feed) == 1
+    assert set(owner_feed[0]) == {'public_id', 'owner_user_id', 'body', 'published_at'}
+    assert owner_feed[0]['public_id'] == 'piece:' + str(row['id'])
+    assert owner_feed[0]['owner_user_id'] == str(_OWNER)
+    assert owner_feed[0]['body'] == row['piece_text']
+    assert _read_public_feed(conn, _OWNER, follows_only=True) == []
+    assert _read_public_feed(conn, _OWNER, target=_OWNER, follows_only=True) == owner_feed
+    assert _read_public_feed(conn, _VIEWER) == []
+    assert _read_public_feed(conn, _VIEWER, target=_OWNER) == []
+    conn.execute('INSERT INTO public.myprofile_links VALUES (%s,%s)', (_VIEWER, _OWNER))
+    assert _read_public_feed(conn, _VIEWER, follows_only=True) == owner_feed
+
+    for role in ('anon', 'authenticated'):
+        with pytest.raises(pg.errors.InsufficientPrivilege):
+            _read_public_feed(conn, _OWNER, role=role)
+        with pytest.raises(pg.errors.InsufficientPrivilege):
+            _rpc(conn, 'piece_set_visibility_v2', owner_params, role=role)
+
+    conn.execute('DELETE FROM public.myprofile_links WHERE viewer_user_id = %s', (_VIEWER,))
+    assert _read_public_feed(conn, _VIEWER, target=_OWNER) == []
+    conn.execute('INSERT INTO public.myprofile_links VALUES (%s,%s)', (_VIEWER, _OWNER))
+    conn.execute('UPDATE public.emotions SET is_secret=true WHERE id=%s', (source_id,))
+    assert _read_public_feed(conn, _VIEWER, target=_OWNER) == []
+    assert _read_public_feed(conn, _OWNER) == []
+    withdrawn = _rpc(conn, 'piece_set_visibility_v2',
+        dict(owner_params, p_expected_row_version=published['row_version'], p_visibility_scope='private'))
+    assert withdrawn['visibility_scope'] == 'private'
+    conn.execute('UPDATE public.emotions SET is_secret=false WHERE id=%s', (source_id,))
+    assert _read_public_feed(conn, _VIEWER, target=_OWNER) == []
+    assert conn.execute('SELECT piece_text FROM public.piece_records WHERE id=%s', (row['id'],)).fetchone()[0] == row['piece_text']
+    assert _used(conn) == 1
+
+
+@pytest.mark.parametrize('source_owner,secret,include_source', [
+    (_OWNER, True, True), (_VIEWER, False, True), (_OWNER, False, False),
+])
+def test_publication_rejects_secret_other_owner_or_missing_original(database, source_owner, secret, include_source):
+    conn, pg, _ = database
+    _publication_schema(conn)
+    _, row, saved = _publication_save(conn, source_owner=source_owner, secret=secret, include_source=include_source)
+    with pytest.raises(pg.errors.RaiseException, match='(?m)^PIECE_PUBLICATION_NOT_ALLOWED$'):
+        _rpc(conn, 'piece_set_visibility_v2', dict(p_owner_user_id=_OWNER, p_piece_id=row['id'],
+            p_expected_row_version=saved['row_version'], p_visibility_scope='public'))
+    assert conn.execute('SELECT visibility_scope,row_version FROM public.piece_records WHERE id=%s',
+                        (row['id'],)).fetchone() == ('private', saved['row_version'])
+
+
+def test_publication_feed_orders_and_limits_the_published_rows(database):
+    conn, _, _ = database
+    _publication_schema(conn)
+    _, older, first = _publication_save(conn, key='publish-earlier-piece')
+    _, newer, second = _publication_save(conn, key='publish-later-piece')
+    for row, saved in ((older, first), (newer, second)):
+        _rpc(conn, 'piece_set_visibility_v2', dict(p_owner_user_id=_OWNER, p_piece_id=row['id'],
+            p_expected_row_version=saved['row_version'], p_visibility_scope='public'))
+    assert [p['public_id'] for p in _read_public_feed(conn, _OWNER, limit=1)] == ['piece:' + str(newer['id'])]
+    assert [p['public_id'] for p in _read_public_feed(conn, _OWNER, order='oldest', limit=1)] == ['piece:' + str(older['id'])]

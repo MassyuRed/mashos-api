@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from fastapi import FastAPI, Header, Path, Query, Request
+from fastapi import FastAPI, Header, Path, Query, Request, Response
 
 from api_emotion_piece import (
     EmotionReflectionCancelRequest,
@@ -110,6 +110,7 @@ def register_piece_compat_routes(app: FastAPI, *, include_preview: bool = True,
 
     @app.get('/nexus/reflections', response_model=NexusReflectionResponse)
     async def compat_nexus_reflections(
+        response: Response,
         sort: str = Query(default='latest'),
         limit: int = Query(default=20, ge=1, le=100),
         user_id: Optional[str] = Query(default=None),
@@ -120,6 +121,7 @@ def register_piece_compat_routes(app: FastAPI, *, include_preview: bool = True,
             app,
             path='/nexus/pieces',
             detail='Legacy /nexus/reflections compat failed',
+            response=response,
             sort=sort,
             limit=limit,
             user_id=user_id,

@@ -4,6 +4,7 @@ import logging
 import os
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Set
+from uuid import UUID
 
 from fastapi import HTTPException
 
@@ -98,6 +99,56 @@ async def has_myprofile_link(*, viewer_user_id: str, owner_user_id: str) -> bool
         raise HTTPException(status_code=502, detail="Failed to check myprofile link")
     rows = resp.json()
     return bool(isinstance(rows, list) and rows)
+
+
+async def fetch_native_public_piece_posts(*, viewer_user_id: str, target_user_id: Optional[str],
+                                         following_only: bool, sort: str, limit: int) -> list[dict]:
+    """The service RPC projects only pieces visible in the current follower feed."""
+    try:
+        viewer_id = str(UUID(viewer_user_id))
+    except (ValueError, AttributeError):
+        raise HTTPException(status_code=401, detail="Invalid token") from None
+    try:
+        target_id = str(UUID(target_user_id)) if target_user_id else None
+    except (ValueError, AttributeError):
+        raise HTTPException(status_code=422, detail="Invalid Piece author") from None
+
+    try:
+        response = await _sb_post_rpc_shared("piece_read_public_feed_v2", {
+            "p_viewer_user_id": viewer_id,
+            "p_target_owner_user_id": target_id,
+            "p_following_only": following_only,
+            "p_sort": sort,
+            "p_limit": limit,
+        }, timeout=8.0)
+        if response.status_code != 200:
+            raise ValueError
+        rows = response.json()
+        if type(rows) is not list or len(rows) > limit:
+            raise ValueError
+        result = []
+        seen = set()
+        for row in rows:
+            if type(row) is not dict or set(row) != {"public_id", "owner_user_id", "body", "published_at"}:
+                raise ValueError
+            public_id = row["public_id"]
+            owner_id = str(UUID(row["owner_user_id"]))
+            published = datetime.fromisoformat(row["published_at"])
+            if (type(public_id) is not str or not public_id.startswith("piece:")
+                    or public_id != f"piece:{UUID(public_id[6:])}" or public_id in seen
+                    or (target_id is not None and owner_id != target_id)
+                    or (target_id is None and following_only and owner_id == viewer_id)
+                    or type(row["body"]) is not str or not row["body"].strip()
+                    or published.utcoffset() is None):
+                raise ValueError
+            seen.add(public_id)
+            result.append({"public_id": public_id, "owner_user_id": owner_id, "body": row["body"],
+                           "published_at": published.astimezone(timezone.utc).isoformat()})
+        return result
+    except Exception:
+        # Do not pass raw Supabase errors, diagnostics or unverified rows to the client.
+        raise HTTPException(status_code=503, detail="Piece publication unavailable",
+                            headers={"Cache-Control": "private, no-store"}) from None
 
 
 async def fetch_profiles_by_ids(user_ids: List[str]) -> Dict[str, Dict[str, Any]]:

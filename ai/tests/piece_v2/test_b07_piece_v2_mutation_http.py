@@ -78,6 +78,8 @@ def harness(monkeypatch):
         url = '/emotion/piece/' + path_id + suffix + query
         if headers is None:
             headers = {'Authorization': 'Bearer synthetic', 'Idempotency-Key': KEY}
+            if op == 'visibility':
+                headers['X-Piece-Publication'] = '1'
         if body is None:
             body = {'expected_row_version': 7}
             if op == 'visibility':

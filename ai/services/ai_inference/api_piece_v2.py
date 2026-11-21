@@ -15,7 +15,9 @@ from fastapi.responses import JSONResponse
 from piece_v2_contract import PieceContractError, normalize_visibility_scope
 from piece_v2_store import cancel_piece_preview
 from piece_v2_visual import LEGACY_THEME_IDS, require_piece_theme
-from piece_v2_runtime_control import require_piece_feature_enabled, validate_piece_preview_runtime
+from piece_v2_runtime_control import (
+    require_piece_feature_enabled, validate_piece_preview_runtime, wants_piece_publication,
+)
 
 router = APIRouter(prefix='/emotion/piece')
 _CANCEL_STATUS = {
@@ -189,6 +191,7 @@ async def save_preview(request: Request) -> JSONResponse:
         args = save_request_arguments(owner, value, keys[0])
         if args['p_visibility_scope'] == 'public':
             features.require('piece_v2_public_write_enabled')
+            raise PieceContractError('PIECE_REQUEST_INVALID')
         features.require()
         result = await features.wrap(PieceSaveService(load_record=features.wrap(load_owned_preview),
             rpc=features.wrap(save_rpc)).save)(request.headers['authorization'],
@@ -369,6 +372,8 @@ _OWNER_MUTATION_STATUS = {
     'PIECE_AUTH_REQUIRED': 401,
     'PIECE_NOT_FOUND': 404,
     'PIECE_CONFLICT': 409,
+    'PIECE_PUBLICATION_NOT_ALLOWED': 422,
+    'PIECE_FEATURE_DISABLED': 503,
     'PIECE_TEMPORARILY_UNAVAILABLE': 503,
 }
 
@@ -411,6 +416,8 @@ async def _mutate_saved_piece(piece_id: str, request: Request,
         if operation == 'visibility' else 'piece_v2_delete_enabled')
     try:
         owner = await _authenticated_owner(request)
+        if operation == 'visibility' and not wants_piece_publication(request):
+            raise PieceContractError('PIECE_FEATURE_DISABLED')
         features.require()
         if request.query_params:
             raise PieceContractError('PIECE_REQUEST_INVALID')

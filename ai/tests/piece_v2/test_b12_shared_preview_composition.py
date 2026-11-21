@@ -169,6 +169,7 @@ def test_candidate_reuses_factory_without_changing_default_routes_or_registry(sh
     expected[('POST', '/emotion/piece/{piece_id}/export-receipt')] = 1
     expected[('GET', '/emotion/piece/{piece_id}')] = 1
     expected[('DELETE', '/emotion/piece/{piece_id}')] = 1
+    expected[('PATCH', '/emotion/piece/{piece_id}/visibility')] = 1
     assert counts == expected
     assert [(m, p, r.endpoint) for m, p, r in routes(shared.app)] == default_routes
     assert iter_public_api_contracts() is registry
@@ -228,6 +229,43 @@ def test_default_factory_keeps_legacy_draft_writes_and_contracts(shared_env):
         assert not any(runtime.piece_feature_flags_for_app(default).values())
     assert [(m, p, r.endpoint) for m, p, r in routes(shared.app)] == before
     assert iter_public_api_contracts() is registry
+
+
+def test_publication_flags_require_ready_runtime_and_current_client(shared_env, monkeypatch):
+    import startup_snapshot_store
+
+    async def snapshot(*args, **kwargs):
+        return {}
+
+    monkeypatch.setattr(startup_snapshot_store, 'get_startup_snapshot', snapshot)
+    monkeypatch.setenv('PIECE_V2_PUBLICATION_ENABLED', 'true')
+    monkeypatch.delenv('PIECE_V2_PUBLICATION_READY', raising=False)
+    current = {'Authorization': AUTH, 'X-Piece-Publication': '1'}
+    private = dict(save_requested=True, save_ready=True, owner_read_requested=True, owner_read_ready=True)
+    public_flags = runtime.PIECE_PUBLICATION_FEATURES
+    staged = candidate(**private)
+    assert not any(send(staged, 'GET', '/app/bootstrap', headers=current).json()['feature_flags'][key]
+                   for key in public_flags)
+
+    monkeypatch.setenv('PIECE_V2_PUBLICATION_READY', 'true')
+    active = candidate(**private)
+    for path in ('/app/bootstrap', '/app/startup'):
+        for headers, enabled in ((current, True), ({'Authorization': AUTH}, False),
+                                 ({'Authorization': AUTH, 'X-Piece-Publication': '2'}, False)):
+            response = send(active, 'GET', path, headers=headers)
+            assert response.status_code == 200
+            flags = response.json()['feature_flags']
+            assert all(flags[key] is enabled for key in public_flags)
+            assert flags['piece_v2_owner_read_enabled'] is True
+            assert 'x-piece-publication' in response.headers['vary'].lower()
+
+    absent = send(active, 'PATCH', '/emotion/piece/' + INPUT + '/visibility',
+                  headers={'Authorization': AUTH}, json={'expected_row_version': 2, 'visibility_scope': 'public'})
+    assert absent.status_code == 503 and absent.json() == DISABLED
+    assert get_contract_entry(method='PATCH', path='/emotion/piece/{piece_id}/visibility') is None
+    assert not any(runtime.piece_feature_flags_for_app(shared.create_application()).values())
+    explicit_off = candidate(**private, public_read_requested=False)
+    assert not any(runtime.piece_feature_flags_for_app(explicit_off)[key] for key in public_flags)
 
 
 def test_same_api_base_serves_submit_bootstrap_source_then_explicit_preview(shared_env):
@@ -525,7 +563,9 @@ def test_composed_owner_history_detail_preserve_artifact_with_generation_off(own
     denied_save = send(app, 'POST', '/emotion/piece/save',
                        headers={'Authorization': 'Bearer synthetic-owner'})
     assert denied_save.status_code == 503 and denied_save.json() == DISABLED
-    assert send(app, 'PATCH', '/emotion/piece/' + private['id'] + '/visibility').status_code == 404
+    blocked = send(app, 'PATCH', '/emotion/piece/' + private['id'] + '/visibility',
+                   headers={'Authorization': 'Bearer synthetic-owner', 'X-Piece-Publication': '1'})
+    assert blocked.status_code == 503 and blocked.json() == DISABLED
     denied_delete = send(app, 'DELETE', '/emotion/piece/' + private['id'],
                          headers={'Authorization': 'Bearer synthetic-owner'})
     assert denied_delete.status_code == 503 and denied_delete.json() == DISABLED

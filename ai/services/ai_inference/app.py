@@ -247,10 +247,10 @@ JST = timezone(timedelta(hours=9))
 def create_application(*, piece_preview_configuration: Optional[Dict[str, Any]] = None) -> FastAPI:
     """Build the shared API; the deployed/default entry remains legacy.
 
-    An explicit dict selects the existing Piece preview factory for isolated
-    cutover preparation only (an empty dict stays OFF). This is not an env
-    switch or M5 admission. TTL/renderer and requested/ready retain their
-    existing validation; no readiness is inferred from the live DB.
+    An explicit dict selects the Piece v2 factory. For this composition only,
+    a deployment can request and mark publication ready with the two dedicated
+    environment settings. Explicit caller options take precedence. No readiness
+    is inferred from the live DB, and default app:app retains the legacy setup.
     Other shared routes, middleware and shutdown behavior use this same owner.
     The candidate omits old reflection preview/quota aliases and the four
     legacy Piece/reflection publish/cancel writes, without redirecting them
@@ -259,7 +259,13 @@ def create_application(*, piece_preview_configuration: Optional[Dict[str, Any]] 
     preview_candidate = piece_preview_configuration is not None
     if preview_candidate:
         from piece_v2_runtime_control import create_piece_preview_application
-        app = create_piece_preview_application(**piece_preview_configuration)
+        configuration = dict(piece_preview_configuration)
+        publication_requested = os.getenv("PIECE_V2_PUBLICATION_ENABLED") == "true"
+        publication_ready = os.getenv("PIECE_V2_PUBLICATION_READY") == "true"
+        for feature in ("public_read", "public_write", "visibility_toggle"):
+            configuration.setdefault(f"{feature}_requested", publication_requested)
+            configuration.setdefault(f"{feature}_ready", publication_ready)
+        app = create_piece_preview_application(**configuration)
         app.title = APP_NAME
         app.version = "1.0.0"
     else:
