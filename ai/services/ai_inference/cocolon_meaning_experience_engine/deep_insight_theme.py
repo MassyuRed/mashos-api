@@ -600,7 +600,14 @@ THEME_TARGET_FORMS = {
 # These openings only repeat the authored scene for the specified angle.
 # Match the entire leading clause, so a new time, place, or condition survives.
 THEME_REPEATED_INTRODUCTIONS = {
-    ("人間関係", "asking_help", "priority"): ("誰かに助けを求めるかどうか", "誰かに助けを求めるかどうかは", "誰かに助けを求める際"),
+    ("人間関係", "asking_help", "priority"): (
+        "誰かに助けを求めるかどうか",
+        "誰かに助けを求めるかどうかは",
+        "誰かに助けを求めるかどうかを決める際",
+        "誰かに助けを求める際",
+    ),
+    ("人間関係", "disagreement", "priority"): ("意見が分かれたとき",),
+    ("人間関係", "feedback", "first_action"): ("改善してほしいことを伝えるとき",),
     ("自分の価値観", "ownership", "priority"): ("勧めを断るか受けるか",),
     ("自分の価値観", "ownership", "boundary"): ("勧められたことを試す際",),
     ("自分の価値観", "giving_credit", "first_action"): ("感謝や評価を伝える際",),

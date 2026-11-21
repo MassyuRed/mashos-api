@@ -12,7 +12,7 @@ from cocolon_meaning_experience_engine.deep_insight_question import (
     RECORD_REASON_READ_SYSTEM_MESSAGE, WRITE_SYSTEM_MESSAGE,
     _RECORD_ALTERNATIVE_PLAN_MESSAGE, _RECORD_ALTERNATIVE_READ_MESSAGE, _RECORD_ALTERNATIVE_WRITE_MESSAGE,
     _THEME_COMPARE_PAIR_SYSTEM_MESSAGE, _THEME_COMPARE_SYSTEM_MESSAGE,
-    _THEME_PLAN_SYSTEM_MESSAGE, _THEME_READ_SYSTEM_MESSAGE,
+    _THEME_PLAN_SYSTEM_MESSAGE, _THEME_READ_RETRY_SYSTEM_MESSAGE, _THEME_READ_SYSTEM_MESSAGE,
     _THEME_REPAIR_SYSTEM_MESSAGE, _THEME_WRITE_SYSTEM_MESSAGE,
     _bind_anchor, _display_citation_matches, _review_theme_candidate, _theme_has_new_answer, _theme_position_key,
     generate_question, prepare_question_material,
@@ -396,7 +396,8 @@ def select_theme_angle(scene, angle):
 
 
 def theme_run(theme, question, *, questions=(), reading=None, comparison=None, extra=None,
-              scene=None, target=None, repair=None, raw_write=False, choose_theme=lambda values: values[0]):
+              scene=None, target=None, repair=None, rereading=None, raw_write=False,
+              choose_theme=lambda values: values[0]):
     original = {"questions": questions, **(extra or {})}
     prepared, sources = prepare_question_material(
         original, lane="theme", theme=theme, choose_theme=choose_theme,
@@ -411,6 +412,8 @@ def theme_run(theme, question, *, questions=(), reading=None, comparison=None, e
             return question if raw_write else json.dumps({"question": question}, ensure_ascii=False)
         if system.startswith(_THEME_REPAIR_SYSTEM_MESSAGE):
             return json.dumps({"question": repair or question}, ensure_ascii=False)
+        if system.startswith(_THEME_READ_RETRY_SYSTEM_MESSAGE) and rereading is not None:
+            return json.dumps(rereading, ensure_ascii=False)
         if system == _THEME_COMPARE_SYSTEM_MESSAGE:
             return json.dumps(comparison if comparison is not None else {"verdict": "distinct"})
         return json.dumps(reading if reading is not None
@@ -477,6 +480,24 @@ def test_theme_reader_must_accept_scene_and_angle(reason):
     assert result.disposition == "rejected"
     assert len(calls) == 4
     assert calls[2][1]["reason"] == reason
+
+
+@pytest.mark.parametrize("corrected_read", [None, {"verdict": "accept"}])
+def test_theme_retries_only_the_reader_when_it_echoes_the_scene_and_body(corrected_read):
+    draft = "一度伝え方を決めた後、どんなときにもう一方の方法に切り替えますか？"
+    result, calls = theme_run(
+        "人間関係", draft, choose_theme=select_theme_angle("contact_channel", "change"),
+        reading={"scene": "大切な話をメッセージにするか直接伝えるか迷ったとき", "body": draft},
+        rereading=corrected_read,
+    )
+    assert [system for system, _ in calls] == [
+        _THEME_WRITE_SYSTEM_MESSAGE, _THEME_READ_SYSTEM_MESSAGE, _THEME_READ_RETRY_SYSTEM_MESSAGE,
+    ]
+    assert calls[1][1] == calls[2][1]
+    if corrected_read is None:
+        assert result.disposition == "rejected" and result.candidate is None
+    else:
+        assert result.candidate.text == f"{calls[1][1]['scene']}、{draft}"
 
 
 def test_theme_preserves_an_unmade_choice_in_the_independent_review():
@@ -641,6 +662,27 @@ def test_theme_checks_two_cited_questions_before_the_remaining_history(final_ver
     assert [payload["history"] for system, payload in calls if system == _THEME_COMPARE_SYSTEM_MESSAGE] == [
         history, history[1:], history[2:],
     ]
+
+
+def test_theme_checks_the_fifth_suspected_repeat_in_long_history():
+    question = {"question": "久しぶりに連絡するとしたら、最初に何を伝えますか？"}
+    history = [{"id": i, "question": f"{i}回目は何を選びますか？"} for i in range(1, 32)]
+    suspects = iter((4, 7, 10, 12, 30, None))
+    cleared = []
+
+    async def generate(system, payload):
+        if system == _THEME_COMPARE_SYSTEM_MESSAGE:
+            suspect = next(suspects)
+            if suspect is None:
+                assert len(payload["history"]) == 26
+                return '{"verdict":"distinct"}'
+            return json.dumps({"verdict": "repeat", "id": suspect})
+        assert system == _THEME_COMPARE_PAIR_SYSTEM_MESSAGE
+        cleared.append(payload["previous"])
+        return '{"verdict":"distinct"}'
+
+    assert asyncio.run(_theme_has_new_answer(question, history, generate))
+    assert cleared == [history[i - 1]["question"] for i in (4, 7, 10, 12, 30)]
 
 
 @pytest.mark.parametrize("control", ["distinct", "semantic_repeat", "exact_repeat"])
@@ -826,6 +868,15 @@ def test_theme_rejects_non_polite_endings_and_unbound_questions(body):
     ("人間関係", "asking_help", "priority",
      "誰かに助けを求めるかどうかを決める際、どのような手がかりに決めますか？",
      "どんなことを手がかりに決めますか？"),
+    ("人間関係", "thanks", "priority",
+     "どの助けについて感謝の言葉を伝えるべきか、どのような基準で選ぶのが適切でしょうか？",
+     "どの助けについてお礼を伝えるか、何を目安に選びますか？"),
+    ("人間関係", "listening", "change",
+     "相手の話を聞いていて、自分の考えを伝えるべきタイミングはどんなときですか？",
+     "相手のどんな様子を見て、自分の考えも伝えようと思いますか？"),
+    ("人間関係", "contact_channel", "priority",
+     "二つの伝え方から選ぶ基準は何を手がかりにしますか？",
+     "メッセージにするか直接話すか、どんなことを手がかりに決めますか？"),
     ("自分の価値観", "giving_credit", "priority",
      "誰のどんな働きを言葉にするかを選ぶ基準を、何を基準に決めますか？",
      "誰のどんな働きを言葉にするか、何を目安に決めますか？"),
@@ -869,6 +920,14 @@ def test_theme_reader_checks_the_amount_without_a_redundant_upper_limit(draft, e
 @pytest.mark.parametrize(("theme", "scene", "angle", "draft", "expected"), [
     ("人間関係", "asking_help", "priority",
      "誰かに助けを求めるかどうか、何を基準に決めますか？", "何を基準に決めますか？"),
+    ("人間関係", "asking_help", "priority",
+     "誰かに助けを求めるかどうかを決める際、どんなことを手がかりにしますか？",
+     "どんなことを手がかりにしますか？"),
+    ("人間関係", "disagreement", "priority",
+     "意見が分かれたとき、お互いの意見をすり合わせるうえで何を大事にしますか？",
+     "お互いの意見をすり合わせるうえで何を大事にしますか？"),
+    ("人間関係", "feedback", "first_action",
+     "改善してほしいことを伝えるとき、まず何を伝えますか？", "まず何を伝えますか？"),
     ("自分の価値観", "ownership", "priority",
      "勧めを断るか受けるか、何を基準に決めますか？", "何を基準に決めますか？"),
     ("自分の価値観", "giving_credit", "first_action",
@@ -898,6 +957,13 @@ def test_theme_preserves_a_qualifier_that_makes_a_repeated_opening_a_different_c
     draft = "朝に体を動かす時間を日常に組み込むために、まず何をしますか？"
     result, calls = theme_run("日々の過ごし方", draft, choose_theme=select_theme_angle("move", "first_action"))
     assert result.candidate.text == f"{calls[1][1]['scene']}、{draft}"
+
+
+def test_theme_preserves_a_new_scope_in_an_opening_about_asking_for_help():
+    draft = "人にしかできない作業で誰かに助けを求めるかどうかを決める際、どんなことを手がかりにしますか？"
+    result, calls = theme_run("人間関係", draft, choose_theme=select_theme_angle("asking_help", "priority"))
+    assert result.candidate.text == f"{calls[1][1]['scene']}、{draft}"
+    assert calls[1][1]["body"] == draft
 
 
 def test_theme_checks_repeat_against_the_displayed_text_after_removing_an_opening():

@@ -36,6 +36,7 @@ _MODEL_PHASES = (
     (question._THEME_PLAN_SYSTEM_MESSAGE, "scene_plan"),
     (question._THEME_WRITE_SYSTEM_MESSAGE, "write"),
     (question._THEME_READ_SYSTEM_MESSAGE, "read"),
+    (question._THEME_READ_RETRY_SYSTEM_MESSAGE, "read_retry"),
     (question._THEME_REPAIR_SYSTEM_MESSAGE, "repair"),
     (question._THEME_COMPARE_SYSTEM_MESSAGE, "history_batch"),
     (question._THEME_COMPARE_PAIR_SYSTEM_MESSAGE, "history_pair"),
@@ -145,7 +146,7 @@ async def evaluate(selected, output, *, generate: Generate | None = None, transp
                   }),
                   "fictional": True, "transport": transport if generate is not None else "dry_run",
                   "provider_calls": generate is not None,
-                  "max_provider_calls": (5 + max_history_batches + 2 * question._THEME_MAX_PAIR_RECHECKS) * len(selected),
+                  "max_provider_calls": (7 + max_history_batches + 2 * question._THEME_MAX_PAIR_RECHECKS) * len(selected),
                   "same_input_retries": 0})
     if generate is None:
         for case in selected:
