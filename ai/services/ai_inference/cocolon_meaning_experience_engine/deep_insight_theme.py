@@ -11,6 +11,16 @@ THEME_ANGLES = {
     "outcome": "後でその選択に納得できる手がかり",
 }
 
+# Each pattern specifies what kind of answer the question must elicit.
+THEME_QUESTION_FORMS = {
+    "first_action": "何から始めるかを聞く。文型「〜するために、まず何をしますか？」",
+    "priority": "選ぶ基準を聞く。文型「〜は、何を基準に決めますか？」",
+    "change": "行動を変える条件を聞く。文型「〜するのは、どんなときですか？」",
+    "boundary": "どこまで許容するかを聞く。金額・時間・内容など、対象に合う上限を尋ねる。",
+    "cue": "判断前に確認したいことを聞く。文型「〜について、何を確かめておきますか？」",
+    "outcome": "あとで納得できる手がかりを聞く。文型「どんなことがあれば、〜してよかったと思いますか？」",
+}
+
 THEME_SCENES = {
     "人間関係": {
         "new_people": "初対面の人と話すとき",

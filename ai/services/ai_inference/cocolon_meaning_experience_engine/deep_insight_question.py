@@ -16,7 +16,7 @@ from emlis_ai_safety_triage import build_emlis_safety_triage_decision
 
 from .deep_insight_theme import (
     THEME_ANGLES, THEME_CHOICE_PREMISES, THEME_DECISION_IN_SCENE, THEME_DECISION_TARGETS,
-    THEME_DISTINCT_POSITIONS, THEME_EQUIVALENT_POSITIONS,
+    THEME_DISTINCT_POSITIONS, THEME_EQUIVALENT_POSITIONS, THEME_QUESTION_FORMS,
     THEME_REPEATED_INTRODUCTIONS, THEME_SCENES, THEME_SCENE_WORDING, THEME_TARGET_ANGLES, THEME_TARGET_FORMS,
     THEME_VERIFIED_BODIES,
 )
@@ -78,8 +78,8 @@ _THEME_WRITE_SYSTEM_MESSAGE = f"""日本語の短い質問を一つ返してく�
 {_DATA_BOUNDARY}
 sceneは問いの前に表示する場面です。sceneの直後に続く一節だけ書き、場面は繰り返しません。
 targetは本人が考える具体的なもの、angleは本人の答えで知りたいことです。どの行動・選択について、何を聞くかが伝わるようにします。
-formがあれば、対象と聞く点を守って例文を参考にします。「何を」「どんなとき」「どこまで」などで本人の考えを聞き、経験を決めつけません。
-作った問いをquestionという一つの項目に入れたJSONだけを返します。疑問文を「ですか？」か「ますか？」などで結びます。"""
+formが例文なら、対象と聞く点を守って参考にします。「何を」「どんなとき」「どこまで」などで本人の考えを聞き、経験を決めつけません。
+返すのは {{"question":"〜ですか？"}} の形だけです。疑問文を「ですか？」か「ますか？」などで結びます。"""
 
 _THEME_READ_SYSTEM_MESSAGE = f"""Emlisの「テーマから考える」の完成文questionを確認します。日本語のJSONだけを返します。
 {_DATA_BOUNDARY}
@@ -105,8 +105,8 @@ _THEME_COMPARE_PAIR_SYSTEM_MESSAGE = """新しいquestionと以前のpreviousの
 _THEME_REPAIR_SYSTEM_MESSAGE = f"""日本語の短い質問を一つ書き直してください。
 {_DATA_BOUNDARY}
 sceneは表示済みです。同じ場面を繰り返さず、angleへの答えを得るためにtargetをどう聞くか考えます。
-formがあれば、例文が何についてどんな答えを求めるかを保ちます。基準なら目安、条件なら行動を変えるきっかけを聞きます。
-丁寧な日本語の問いをquestionという一つの項目に入れたJSONだけを返します。"""
+formが例文なら、何についてどんな答えを求めるかを保ちます。基準なら目安、条件なら行動を変えるきっかけを聞きます。
+問いだけを、丁寧な日本語の {{"question":"〜ますか？"}} の形で返します。"""
 
 _THEME_WRITE_PREMISE = (
     "\npremiseは問いの内容を決める条件です。場面の時点と、どの選択が未確定かを保ち、formの例に沿って一問を書きます。"
@@ -606,9 +606,7 @@ def _prepare_theme(material, theme, choose):
         angle_id = choose(tuple(THEME_ANGLES))
         angle = THEME_ANGLES[angle_id]
     examples = THEME_VERIFIED_BODIES.get(position, ())
-    form = examples[0] if examples else THEME_TARGET_FORMS.get(position)
-    if form and (not form.endswith("？") or "〜" in form or "～" in form):
-        form = None
+    form = examples[0] if examples else THEME_TARGET_FORMS.get(position, THEME_QUESTION_FORMS[angle_id])
     distinct_text_keys = _theme_distinct_text_keys(position)
     history, distinct_ids = _theme_history(past, known_positions, distinct_text_keys)
     return {
@@ -741,9 +739,7 @@ async def _generate_theme(prepared, material, generate):
 
     direction = {"theme": theme, "target": target, "angle": angle}
     plan = _Plan("VALUE", "", "", "", angle, None)
-    writing = {"scene": scene, "target": target, "angle": angle}
-    if prepared["form"]:
-        writing["form"] = prepared["form"]
+    writing = {"scene": scene, "target": target, "angle": angle, "form": prepared["form"]}
     premise = prepared["premise"]
     if premise is not None:
         writing["premise"] = premise

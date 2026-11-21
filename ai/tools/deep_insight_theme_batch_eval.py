@@ -127,6 +127,7 @@ async def evaluate(selected, output, *, generate: Generate | None = None, transp
                       "equivalent_positions": question.THEME_EQUIVALENT_POSITIONS,
                       "distinct_positions": question.THEME_DISTINCT_POSITIONS,
                       "verified_bodies": sorted(question.THEME_VERIFIED_BODIES.items()),
+                      "forms": question.THEME_QUESTION_FORMS,
                       "overrides": sorted(question.THEME_TARGET_ANGLES.items()),
                       "form_overrides": sorted(question.THEME_TARGET_FORMS.items()),
                       "choice_premises": sorted(question.THEME_CHOICE_PREMISES.items()),

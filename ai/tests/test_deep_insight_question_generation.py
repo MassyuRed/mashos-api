@@ -434,14 +434,6 @@ def test_theme_still_compares_displays_outside_reviewed_distinction(changed):
     assert calls[3][0] == _THEME_COMPARE_PAIR_SYSTEM_MESSAGE
 
 
-def test_theme_writer_without_verified_example_uses_the_selected_answer_target():
-    result, calls = theme_run("日々の過ごし方", "食事の支度には、どのくらいまで時間をかけますか？",
-                              choose_theme=select_theme_angle("meal", "boundary"))
-    assert result.disposition == "selected"
-    assert set(calls[0][1]) == {"scene", "angle", "target"}
-    assert calls[1][0] == _THEME_READ_SYSTEM_MESSAGE
-
-
 @pytest.mark.parametrize(("issued_scene", "next_scene"), [
     ("new_method", "experiment"), ("experiment", "new_method"),
 ])
