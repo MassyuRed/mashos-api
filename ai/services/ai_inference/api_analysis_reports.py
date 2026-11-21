@@ -43,7 +43,7 @@ from access_policy.viewer_access_policy import (
     resolve_viewer_tier_str as _resolve_viewer_tier_str_from_policy,
 )
 
-from response_microcache import build_cache_key, get_or_compute, invalidate_prefix
+from response_microcache import build_cache_key, get_or_compute
 from supabase_client import sb_get, sb_post
 from emlis_context_anchor_service import (
     attach_emlis_context_anchors,
@@ -60,23 +60,6 @@ from api_emotion_submit import (
     _extract_bearer_token,
     _resolve_user_id_from_token,
 )
-# Phase10: generation lock (dedupe concurrent generation)
-try:
-    from generation_lock import (
-        build_lock_key,
-        make_owner_id,
-        poll_until,
-        release_lock,
-        try_acquire_lock,
-    )
-except Exception:  # pragma: no cover
-    build_lock_key = None  # type: ignore
-    make_owner_id = None  # type: ignore
-    poll_until = None  # type: ignore
-    release_lock = None  # type: ignore
-    try_acquire_lock = None  # type: ignore
-
-
 # Optional: enrich weekly/monthly with ASTOR insight (structure patterns based)
 try:
     from astor_analysis_insight import generate_myweb_insight_payload
@@ -140,9 +123,7 @@ ANALYSIS_RESULTS_TABLE = (os.getenv("ANALYSIS_RESULTS_TABLE") or "analysis_resul
 MATERIAL_SNAPSHOTS_TABLE = (os.getenv("MATERIAL_SNAPSHOTS_TABLE") or "material_snapshots").strip() or "material_snapshots"
 SNAPSHOT_SCOPE_DEFAULT = (os.getenv("SNAPSHOT_SCOPE_DEFAULT") or "global").strip() or "global"
 
-# Phase10 lock tuning (env)
-MYWEB_LOCK_TTL_SECONDS = int(os.getenv("GENERATION_LOCK_TTL_SECONDS_MYWEB", "120") or "120")
-MYWEB_LOCK_WAIT_SECONDS = float(os.getenv("GENERATION_LOCK_WAIT_SECONDS_MYWEB", "25") or "25")
+# Legacy report read caches
 MYWEB_READY_CACHE_TTL_SECONDS = float(os.getenv("MYWEB_READY_CACHE_TTL_SECONDS", "60") or "60")
 MYWEB_DETAIL_CACHE_TTL_SECONDS = float(os.getenv("MYWEB_DETAIL_CACHE_TTL_SECONDS", "30") or "30")
 
@@ -4957,261 +4938,7 @@ def register_analysis_report_routes(app: FastAPI) -> None:
         if not user_id:
             raise HTTPException(status_code=401, detail="Invalid authorization token")
 
-        now_utc = _parse_now_utc(req.now_iso)
-
-        types = req.types or ["weekly", "monthly"]
-        cleaned: List[str] = []
-        for t in types:
-            if t not in ("daily", "weekly", "monthly"):
-                continue
-            if t not in cleaned:
-                cleaned.append(t)
-        if not cleaned:
-            cleaned = ["weekly", "monthly"]
-
-        results: List[MyWebEnsureItem] = []
-
-        for rt in cleaned:
-            try:
-                target = _build_target_period(rt, now_utc)
-                existing_id = await _report_exists(
-                    user_id, rt, target.period_start_iso, target.period_end_iso
-                )
-                if existing_id is not None and not req.force:
-                    results.append(
-                        MyWebEnsureItem(
-                            report_type=rt,
-                            status="exists",
-                            period_start=target.period_start_iso,
-                            period_end=target.period_end_iso,
-                            title=target.title,
-                            report_id=existing_id,
-                        )
-                    )
-                    continue
-
-                lock_acquired = True
-                lock_owner = None
-                lock_key = None
-                if build_lock_key is not None and try_acquire_lock is not None:
-                    try:
-                        lock_key = build_lock_key(
-                            namespace="myweb",
-                            user_id=user_id,
-                            report_type=rt,
-                            period_start=target.period_start_iso,
-                            period_end=target.period_end_iso,
-                        )
-                        lock_owner = (make_owner_id("myweb") if make_owner_id is not None else None)
-                        lr = await try_acquire_lock(
-                            lock_key=lock_key,
-                            ttl_seconds=MYWEB_LOCK_TTL_SECONDS,
-                            owner_id=lock_owner,
-                            context={
-                                "namespace": "myweb",
-                                "user_id": user_id,
-                                "report_type": rt,
-                                "period_start": target.period_start_iso,
-                                "period_end": target.period_end_iso,
-                                "source": "on_demand_myweb_reports_ensure",
-                            },
-                        )
-                        lock_acquired = bool(getattr(lr, "acquired", False))
-                        lock_owner = getattr(lr, "owner_id", lock_owner)
-                    except Exception:
-                        lock_acquired = True
-
-                if not lock_acquired:
-                    waited_id = None
-                    if poll_until is not None and MYWEB_LOCK_WAIT_SECONDS > 0:
-                        waited_id = await poll_until(
-                            lambda: _report_exists(
-                                user_id,
-                                rt,
-                                target.period_start_iso,
-                                target.period_end_iso,
-                            ),
-                            timeout_seconds=MYWEB_LOCK_WAIT_SECONDS,
-                        )
-                    if waited_id is not None:
-                        results.append(
-                            MyWebEnsureItem(
-                                report_type=rt,
-                                status="exists",
-                                period_start=target.period_start_iso,
-                                period_end=target.period_end_iso,
-                                title=target.title,
-                                report_id=waited_id,
-                            )
-                        )
-                        continue
-                    raise HTTPException(status_code=409, detail="Report generation is in progress")
-
-                meta = None
-                try:
-                    if rt in ("daily", "weekly", "monthly"):
-                        if rt == "daily":
-                            start_jst = target.period_start_utc.astimezone(JST)
-                            scope = f"emotion_daily:{start_jst.year:04d}-{start_jst.month:02d}-{start_jst.day:02d}"
-                        elif rt == "weekly":
-                            dist_jst = target.dist_utc.astimezone(JST)
-                            scope = f"emotion_weekly:{dist_jst.year:04d}-{dist_jst.month:02d}-{dist_jst.day:02d}"
-                        else:
-                            end_jst = target.period_end_utc.astimezone(JST)
-                            scope = f"emotion_monthly:{end_jst.year:04d}-{end_jst.month:02d}"
-
-                        try:
-                            _text, _cjson, _astor_text, meta = await _generate_and_save_from_snapshot(
-                                user_id,
-                                scope=scope,
-                                include_astor=req.include_astor,
-                            )
-                        except HTTPException as he:
-                            alignment_missing = (int(getattr(he, "status_code", 0) or 0) == 409
-                                and he.detail == "analysis_snapshot_alignment_missing")
-                            recovery_deep = getattr(he, "_analysis_recover_deep_alignment", None) if alignment_missing else None
-                            if int(getattr(he, "status_code", 0) or 0) == 404 or alignment_missing:
-                                recovery_enqueued = False
-                                try:
-                                    from astor_job_queue import enqueue_job as _enqueue_job
-
-                                    await _enqueue_job(
-                                        job_key=f"snapshot_generate_v1:{user_id}:{scope}",
-                                        job_type="snapshot_generate_v1",
-                                        user_id=user_id,
-                                        payload={
-                                            "scope": scope,
-                                            "trigger": "on_demand_myweb_reports_ensure",
-                                            "requested_at": datetime.now(timezone.utc)
-                                            .isoformat(timespec="seconds")
-                                            .replace("+00:00", "Z"),
-                                            **({"recover_deep_alignment": recovery_deep}
-                                                if isinstance(recovery_deep, dict) else {}),
-                                        },
-                                        priority=12,
-                                        debounce_seconds=10,
-                                    )
-                                    recovery_enqueued = True
-                                except Exception as exc:
-                                    logger.error("Failed to enqueue snapshot_generate_v1: %s", exc)
-                                    if alignment_missing:
-                                        raise HTTPException(503, "analysis_snapshot_alignment_enqueue_failed") from exc
-
-                                if poll_until is not None and MYWEB_LOCK_WAIT_SECONDS > 0:
-                                    try:
-                                        await poll_until(
-                                            lambda: _fetch_latest_snapshot_row(
-                                                user_id, scope=scope, snapshot_type="public"
-                                            ),
-                                            timeout_seconds=MYWEB_LOCK_WAIT_SECONDS,
-                                        )
-                                    except Exception:
-                                        pass
-
-                                try:
-                                    _text, _cjson, _astor_text, meta = await _generate_and_save_from_snapshot(
-                                        user_id,
-                                        scope=scope,
-                                        include_astor=req.include_astor,
-                                    )
-                                except HTTPException as he2:
-                                    if (recovery_enqueued
-                                            and int(getattr(he2, "status_code", 0) or 0) == 409
-                                            and he2.detail == "analysis_snapshot_alignment_missing"):
-                                        # The unchanged snapshot job still re-enqueues
-                                        # standard/deep derivation. Keep the existing
-                                        # response schema while it is being refreshed.
-                                        meta = {"status": "skipped", "report_type": rt,
-                                            "report_id": None,
-                                            "skip_reason": "analysis_snapshot_alignment_pending"}
-                                    elif int(getattr(he2, "status_code", 0) or 0) == 404 and callable(get_emotion_period_public_input_status):
-                                        status = await get_emotion_period_public_input_status(user_id=user_id, scope=scope)
-                                        if not bool((status or {}).get("has_public_input")):
-                                            meta = _build_myweb_skip_meta(report_type=rt, scope=scope)
-                                        else:
-                                            raise
-                                    else:
-                                        raise
-                            else:
-                                raise
-
-                        try:
-                            meta_status = str((meta or {}).get("status") or "generated") if isinstance(meta, dict) else "generated"
-                            rid = (meta or {}).get("report_id") if isinstance(meta, dict) else None
-                            expected_public_hash = (meta or {}).get("public_source_hash") if isinstance(meta, dict) else None
-                            if meta_status == "generated" and rid:
-                                from astor_job_queue import enqueue_job as _enqueue_job
-
-                                await _enqueue_job(
-                                    job_key=f"inspect_emotion_report:{rid}",
-                                    job_type="inspect_emotion_report_v1",
-                                    user_id=user_id,
-                                    payload={
-                                        "report_id": rid,
-                                        "report_type": rt,
-                                        "period_start": target.period_start_iso,
-                                        "period_end": target.period_end_iso,
-                                        "scope": scope,
-                                        "expected_public_source_hash": expected_public_hash,
-                                    },
-                                    priority=10,
-                                )
-                        except Exception as exc:
-                            logger.error("Failed to enqueue inspect_emotion_report_v1: %s", exc)
-                    else:
-                        _text, _cjson, _astor_text, meta = await _generate_and_save(
-                            user_id,
-                            target,
-                            include_astor=req.include_astor,
-                        )
-                finally:
-                    if lock_key and release_lock is not None:
-                        await release_lock(lock_key=lock_key, owner_id=lock_owner)
-                meta_dict = dict(meta) if isinstance(meta, dict) else {}
-                item_status = "skipped" if str(meta_dict.get("status") or "generated") == "skipped" else "generated"
-                results.append(
-                    MyWebEnsureItem(
-                        report_type=rt,
-                        status=item_status,
-                        period_start=target.period_start_iso,
-                        period_end=target.period_end_iso,
-                        title=target.title,
-                        report_id=meta_dict.get("report_id"),
-                        skip_reason=meta_dict.get("skip_reason"),
-                    )
-                )
-            except HTTPException as he:
-                results.append(
-                    MyWebEnsureItem(
-                        report_type=rt,
-                        status="error",
-                        period_start="",
-                        period_end="",
-                        title="",
-                        error=str(he.detail),
-                    )
-                )
-            except Exception as e:
-                results.append(
-                    MyWebEnsureItem(
-                        report_type=rt,
-                        status="error",
-                        period_start="",
-                        period_end="",
-                        title="",
-                        error=str(e),
-                    )
-                )
-
-        await invalidate_prefix(f"myweb:ready:{user_id}")
-        await invalidate_prefix(f"myweb:detail:{user_id}")
-        await invalidate_prefix(f"report_reads:analysis_unread:{user_id}")
-        await invalidate_prefix(f"report_reads:myweb_unread:{user_id}")
-        return AnalysisEnsureResponse(
-            user_id=user_id,
-            now_iso=now_utc.isoformat(timespec="seconds").replace("+00:00", "Z"),
-            results=results,
-        )
+        raise HTTPException(status_code=410, detail="kokoro_graph_reports_retired")
 
     @app.get("/analysis/reports/ready", response_model=AnalysisReadyReportsResponse)
     async def analysis_reports_ready(
