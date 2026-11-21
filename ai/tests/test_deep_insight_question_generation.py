@@ -10,7 +10,7 @@ from cocolon_meaning_experience_engine import deep_insight_question
 from cocolon_meaning_experience_engine.deep_insight_question import (
     ANSWER_READ_SYSTEM_MESSAGE, PLAN_SYSTEM_MESSAGE, READ_SYSTEM_MESSAGE,
     RECORD_REASON_READ_SYSTEM_MESSAGE, WRITE_SYSTEM_MESSAGE,
-    _RECORD_ALTERNATIVE_PLAN_MESSAGE,
+    _RECORD_ALTERNATIVE_PLAN_MESSAGE, _RECORD_ALTERNATIVE_WRITE_MESSAGE,
     _THEME_COMPARE_PAIR_SYSTEM_MESSAGE, _THEME_COMPARE_SYSTEM_MESSAGE,
     _THEME_PLAN_SYSTEM_MESSAGE, _THEME_READ_SYSTEM_MESSAGE,
     _THEME_REPAIR_SYSTEM_MESSAGE, _THEME_WRITE_SYSTEM_MESSAGE,
@@ -68,7 +68,7 @@ def run(original, plan, question=BODY, *, reading=None, alternative=None):
         elif system.startswith(_RECORD_ALTERNATIVE_PLAN_MESSAGE):
             assert alternative is not None
             response = alternative
-        elif system == WRITE_SYSTEM_MESSAGE:
+        elif system in (WRITE_SYSTEM_MESSAGE, _RECORD_ALTERNATIVE_WRITE_MESSAGE):
             response = {"question": question}
         else:
             assert system.startswith((READ_SYSTEM_MESSAGE, ANSWER_READ_SYSTEM_MESSAGE, RECORD_REASON_READ_SYSTEM_MESSAGE))
@@ -153,16 +153,41 @@ def test_explicit_reason_is_replaced_only_by_a_supported_new_condition(reason_qu
     result, calls = run(original, invalid_plan, question, alternative=condition)
     assert result.disposition == "selected"
     assert [system for system, _ in calls] == [
-        PLAN_SYSTEM_MESSAGE, _RECORD_ALTERNATIVE_PLAN_MESSAGE, WRITE_SYSTEM_MESSAGE, READ_SYSTEM_MESSAGE,
+        PLAN_SYSTEM_MESSAGE, _RECORD_ALTERNATIVE_PLAN_MESSAGE, _RECORD_ALTERNATIVE_WRITE_MESSAGE, READ_SYSTEM_MESSAGE,
     ]
     assert result.candidate.text == f"「{QUOTE}」と書いていましたが、{question}"
     assert calls[1][1] == {"action": QUOTE, "alternatives": ["自分の仕事はまだ途中だった"], "material": calls[0][1]}
-    assert calls[2][1]["quote"] == QUOTE
+    assert calls[2][1] == {
+        "lane": "records", "theme": None, "focus": "CONDITION", "quote": QUOTE,
+        "condition": "", "ask": condition["ask"], "alternatives": ["自分の仕事はまだ途中だった"],
+    }
     assert calls[3][1]["material"] == calls[0][1]
+    receipt = result.candidate.receipt
+    assert original["records"][0]["thought"][receipt["start"]:receipt["end"]] == QUOTE
 
     result, calls = run(original, invalid_plan, "自分の仕事を先にしたとき、どんな条件がありましたか？",
                         reading={"verdict": "reject", "reason": "unsupported_premise"}, alternative=condition)
     assert result.disposition == "rejected" and len(calls) == 4
+
+
+def test_alternative_writer_reversing_the_choice_is_still_rejected_by_the_reader():
+    causal_sentence = "相手が困っていたので、" + QUOTE
+    original = material(source(causal_sentence + "。自分の仕事はまだ途中だった。"))
+    result, calls = run(
+        original, ask(quote=causal_sentence, ask="相手が困っていた理由"),
+        "頼まれたことを先にすることの条件は、どんなときですか？",
+        alternative={"decision": "ask", "focus": "CONDITION", "ask": "同じような場面で自分の仕事を先にする条件"},
+        reading={
+            "verdict": "accept", "focus": "CONDITION", "source": "r1.thought", "quote": QUOTE,
+            "condition": "相手が困っていた", "premise_supported": False, "new_information": True,
+        },
+    )
+    assert result.disposition == "rejected" and result.candidate is None
+    assert calls[-1][0] == READ_SYSTEM_MESSAGE
+    assert calls[-1][1] == {
+        "question": f"「{QUOTE}」と書いていましたが、頼まれたことを先にすることの条件は、どんなときですか？",
+        "material": calls[0][1],
+    }
 
 
 @pytest.mark.parametrize("response,disposition", [

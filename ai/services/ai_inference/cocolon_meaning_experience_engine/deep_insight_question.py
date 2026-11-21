@@ -161,6 +161,13 @@ askが「引用した内容の理由」の場合は、quoteで示された内容
 引用の後で相手の反応を聞く出力例 {{"question":"相手がどんな反応をすると、安心して話を続けられますか？"}}
 テーマで基準を聞く出力例 {{"question":"新しいことを学ぶとき、どんなことを大切にしますか？"}}"""
 
+_RECORD_ALTERNATIVE_WRITE_MESSAGE = f"""同じような場面で本人が別の作業を先にするのはどんなときか、自然な日本語で一問だけ尋ねます。questionだけを持つJSONを返します。
+{_DATA_BOUNDARY}
+quoteは本人が以前に先にした行動で、表示側が引用します。その行動を先にした理由や条件は聞きません。
+尋ねる対象はaskにある、alternativesの中の未完了だった作業です。その作業を文面に明示し、同じような場面で先にする条件を仮定として尋ねます。実際に先にしたとは書かず、原文にない出来事や限定条件も加えません。
+例：quoteが「借りた本の返却を先に済ませた」、alternativesが「書いていた原稿はまだ途中だった」、askが「同じような場面で原稿を書くのを先にする条件」なら {{"question":"同じような場面で、原稿を書くのを先にするのはどんなときですか？"}} を返します。
+quoteは繰り返さず、質問を全角の疑問符「？」で終えます。"""
+
 
 def _reading_system_message(*, answer):
     focus_intro = "focusは意味から選びます。"
@@ -906,6 +913,7 @@ async def generate_question(prepared, sources, *, material, generate):
     if plan is None:
         return QuestionRun(None, "rejected")
     known_reason = plan.focus == "REASON" and _stated_reason(plan.anchor)
+    alternative = None
     if known_reason or (plan.focus == "REASON" and _FOREIGN_ACTOR.match(plan.quote)):
         alternative = _record_alternative(plan) if known_reason and plan.is_record_reason else None
         if alternative is None:
@@ -924,11 +932,16 @@ async def generate_question(prepared, sources, *, material, generate):
         if plan is None:
             return QuestionRun(None, "rejected")
 
-    question = _accept_surface(await generate(WRITE_SYSTEM_MESSAGE, {
+    writing = {
         "lane": lane, "theme": theme, "focus": plan.focus,
         "quote": plan.quote, "condition": plan.condition,
         "ask": "引用した内容の理由" if plan.is_record_reason else plan.ask,
-    }), plan=plan, theme=theme)
+    }
+    writer = WRITE_SYSTEM_MESSAGE
+    if alternative is not None:
+        writer = _RECORD_ALTERNATIVE_WRITE_MESSAGE
+        writing["alternatives"] = alternative["alternatives"]
+    question = _accept_surface(await generate(writer, writing), plan=plan, theme=theme)
     if question is None:
         return QuestionRun(None, "rejected")
 
