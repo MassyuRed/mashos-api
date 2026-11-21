@@ -216,11 +216,7 @@ async def _issue_from_material(owner, command, day, guard, material, prepared, s
         if state.day.isoformat() != day:
             return _Attempt("source_changed", QuestionResult(status="no_question"))
 
-        try:
-            async with asyncio.timeout(_GENERATION_BUDGET_SECONDS):
-                run = await generate_question(prepared, sources, material=material, generate=_generate_candidate)
-        except TimeoutError:
-            raise HTTPException(503, "deep_insight_question_unavailable") from None
+        run = await generate_question(prepared, sources, material=material, generate=_generate_candidate)
         candidate = run.candidate
         if candidate is None:
             return _Attempt(run.disposition, QuestionResult(status="no_question"))
@@ -237,6 +233,68 @@ async def _issue_from_material(owner, command, day, guard, material, prepared, s
         await release_lock(lock_key=lease.lock_key, owner_id=lease.owner_id)
 
 
+async def _candidate_context(owner):
+    context = await _rpc("deep_insight_candidate_context", {"p_user_id": owner})
+    try:
+        guard, material = context["guard"], context["material"]
+        if not isinstance(guard, str) or not guard:
+            raise ValueError
+        return guard, material
+    except (ValueError, KeyError, TypeError):
+        raise HTTPException(503, "deep_insight_storage_unavailable") from None
+
+
+async def _try_issue(owner, command, day, guard, material, deadline):
+    try:
+        prepared, sources = prepare_question_material(material, lane=command.lane, theme=command.theme)
+    except (ValueError, KeyError, TypeError):
+        raise HTTPException(503, "deep_insight_storage_unavailable") from None
+    if command.lane == "records" and not sources:
+        return _Attempt("no_material", QuestionResult(status="no_question"))
+
+    cache_key = build_lock_key(namespace="deep-insight-v2", user_id=owner, report_type=command.lane,
+                               period_start=day, period_end=guard + ":" + (command.theme or ""))
+
+    async def attempt():
+        try:
+            async with asyncio.timeout_at(deadline):
+                return await _issue_from_material(owner, command, day, guard, material, prepared, sources)
+        except TimeoutError:
+            return _Attempt("unavailable", error=(503, "deep_insight_question_unavailable", None))
+        except HTTPException as exc:
+            return _Attempt("unavailable", error=(exc.status_code, exc.detail, exc.headers))
+
+    # A caller timing out must not cancel a shared microcache result. The
+    # producer has its own timeout at the same absolute deadline.
+    return await asyncio.shield(get_or_compute(cache_key, 0, attempt,
+        ttl_resolver=lambda row: _NO_MERIT_CACHE_SECONDS if row.disposition == "no_merit" else 0))
+
+
+async def _issue_question(owner, command, deadline):
+    state, previous = await _issue_state(owner, command.lane)
+    if previous is not None:
+        return _Attempt(previous.status, previous)
+
+    day = state.day.isoformat()
+    guard, material = await _candidate_context(owner)
+    outcome = await _try_issue(owner, command, day, guard, material, deadline)
+    if outcome.disposition != "source_changed_or_duplicate":
+        return outcome
+
+    # Issuing the other entrance can advance the owner's shared material
+    # version. Re-read this slot before trying once with current material.
+    refreshed_state, previous = await _issue_state(owner, command.lane)
+    if refreshed_state.day != state.day:
+        return _Attempt("source_changed", outcome.result)
+    if previous is not None:
+        return _Attempt(previous.status, previous)
+
+    refreshed_guard, refreshed_material = await _candidate_context(owner)
+    if refreshed_guard == guard:
+        return outcome
+    return await _try_issue(owner, command, day, refreshed_guard, refreshed_material, deadline)
+
+
 def register_deep_insight_routes(app: FastAPI) -> None:
     router = APIRouter(prefix="/deep-insight")
 
@@ -248,35 +306,12 @@ def register_deep_insight_routes(app: FastAPI) -> None:
     @router.post("/questions", response_model=QuestionResult)
     async def issue_deep_insight_question(command: QuestionCommand, response: Response, owner: str = Depends(_owner)):
         response.headers["Cache-Control"] = "no-store"
-        state, previous = await _issue_state(owner, command.lane)
-        if previous is not None:
-            return previous
-
-        context = await _rpc("deep_insight_candidate_context", {"p_user_id": owner})
+        deadline = asyncio.get_running_loop().time() + _GENERATION_BUDGET_SECONDS
         try:
-            material = context["material"]
-            guard = context["guard"]
-            if not isinstance(guard, str) or not guard:
-                raise ValueError
-            prepared, sources = prepare_question_material(material, lane=command.lane, theme=command.theme)
-        except (ValueError, KeyError, TypeError):
-            raise HTTPException(503, "deep_insight_storage_unavailable") from None
-        if command.lane == "records" and not sources:
-            return QuestionResult(status="no_question")
-
-        day = state.day.isoformat()
-        cache_key = build_lock_key(namespace="deep-insight-v2", user_id=owner, report_type=command.lane,
-                                   period_start=day, period_end=guard + ":" + (command.theme or ""))
-
-        async def attempt():
-            try:
-                return await _issue_from_material(owner, command, day, guard, material, prepared, sources)
-            except HTTPException as exc:
-                # Failed requests remain retryable. Use the status only, never source text, in telemetry.
-                return _Attempt("unavailable", error=(exc.status_code, exc.detail, exc.headers))
-
-        outcome = await get_or_compute(cache_key, 0, attempt,
-            ttl_resolver=lambda row: _NO_MERIT_CACHE_SECONDS if row.disposition == "no_merit" else 0)
+            async with asyncio.timeout_at(deadline):
+                outcome = await _issue_question(owner, command, deadline)
+        except TimeoutError:
+            outcome = _Attempt("unavailable", error=(503, "deep_insight_question_unavailable", None))
         logger.info("DeepInsight generation %s %s", command.lane, outcome.disposition)
         if outcome.error is not None:
             raise HTTPException(*outcome.error)

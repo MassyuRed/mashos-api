@@ -20,6 +20,14 @@ _FOCUSES = frozenset({"REASON", "CONDITION", "VALUE", "CHANGE", "RELATIONSHIP", 
 _QUESTION_PUNCTUATION = re.compile(r"[。！？!?\n\r]")
 _PREMISE_MARKERS = re.compile(r"はず|に違いない|ということですよね|させられた|診断|性格タイプ")
 _REASON_QUESTION = re.compile(r"なぜ|どうして|理由(?:は|から|で|を|が)|どういう理由")
+_RECORD_REASON_BODY = re.compile(
+    r"(?:どうして|なぜ)(?:そうした)?(?:の)?(?:ですか|でしょうか)|"
+    r"(?:どんな|どういう|どのような)理由(?:から(?:ですか|でしょうか)|"
+    r"でそうした(?:のですか|のでしょうか)|が(?:ありましたか|あったのですか|あったのでしょうか))|"
+    r"そうしたのは(?:どうして|なぜ|(?:どんな|どういう|どのような)理由から)(?:ですか|でしょうか)|"
+    r"(?:そうした|その)理由は(?:何|なん)(?:ですか|でしたか|でしょうか)"
+)
+_CITATION_JOIN = "」と書いていましたが、"
 _CONDITION_QUESTION = re.compile(r"どんな(?:とき|時|場合|条件|場面)|どういう(?:とき|場合|条件)")
 _STATED_REASON = re.compile(r"(?:した|いた|った|だった|くて|なので|なくて)(?:ので|から)|だったため|するため|のため")
 _REASON_FINISH = re.compile(r"(?:から|ため|ので)(?:です|だ|でした)?[。！？!?]?\Z")
@@ -49,8 +57,9 @@ quoteはそのキーのtextに一度だけ現れる連続した6〜70文字で�
 テーマの入口では、選択したテーマ内で、自分の基準や捉え方が分かる一点を選びます。関連記録がなくても生成し、sourceとquoteは空文字です。
 conditionは対象を限定する既知の短い条件をそのまま書きます。記録では原文にある語だけを使います。限定がなければ空文字です。
 askは何を知りたいかの短い日本語で、表示する質問文ではありません。資料から確認点を作れなければ {{"decision":"skip"}} を返します。
+思考・行動欄の出来事の理由を選ぶときは、askを「引用した内容の理由」とし、記録の動作を別の動作に言い換えません。
 {_FOCUS_GUIDE}
-記録の出力例 {{"decision":"ask","focus":"REASON","source":"r1.thought","quote":"頼まれたことを先にした","condition":"","ask":"先に引き受けた理由"}}
+記録の出力例 {{"decision":"ask","focus":"REASON","source":"r1.thought","quote":"夕方までに道具を片づけた","condition":"","ask":"引用した内容の理由"}}
 前の回答a1から聞く例 {{"decision":"ask","focus":"CONDITION","source":"a1","quote":"意見が違っても本音を言える","condition":"","ask":"本音を言いやすい相手の反応"}}
 テーマの出力例 {{"decision":"ask","focus":"RELATIONSHIP","source":"","quote":"","condition":"","ask":"友達だと感じる場面"}}"""
 
@@ -59,6 +68,7 @@ WRITE_SYSTEM_MESSAGE = f"""確認点askを、本人に丁寧に尋ねる自然�
 記録の入口では引用が質問の直前に表示されます。questionには引用を繰り返さず、引用後に続く質問だけを書きます。
 askにある確認対象を文面で明示します。「相手の反応」を確認するなら、どんな反応かを聞きます。「どんなときですか」だけに縮めません。conditionが空でなければその語を文面に残します。
 引用と既知の条件のほかに出来事・時点・真意・原因・評価を前提として足しません。
+askが「引用した内容の理由」の場合は、quoteで示された内容に対して、動作や対象を言い換えず理由だけを尋ねます。「どんな理由からですか？」「そうしたのはなぜですか？」のように書き、他の動作を足しません。conditionがあれば「conditionのときに、そうしたのはなぜですか？」のように、実際の条件の語を先頭に置きます。
 テーマの入口では特定の人や本人の出来事を前提にせず、選択したテーマで本人が自由に答えられる形にします。
 末尾は必ず「ですか？」または「ますか？」などの、全角の疑問符「？」で終える質問にします。「のか」で終わる見出し、疑問符の省略、助言、誘導、二つ目の質問は使いません。
 引用の後で理由を聞く出力例 {{"question":"どういう理由で、そうしたのですか？"}}
@@ -111,6 +121,17 @@ new_informationは、同じ場面について有効な回答・訂正・原文�
 
 READ_SYSTEM_MESSAGE = _reading_system_message(answer=False)
 ANSWER_READ_SYSTEM_MESSAGE = _reading_system_message(answer=True)
+RECORD_REASON_READ_SYSTEM_MESSAGE = f"""Emlisの一問を、渡された原資料から独立に読みます。日本語のJSONだけを返します。
+{_DATA_BOUNDARY}
+完成文は、原文から抜き出した「」内と、その内容について尋ねる文で構成されます。先頭の引用を含め、主体、動作、時点、否定、留保、条件を原資料と照合してください。
+引用の字面と出典をプログラムが照合します。応答にはsourceやquoteの欄を作らず、引用や文面をコピーしません。
+focusは完成文が答えとして求める内容から選びます。{_FOCUS_GUIDE}
+conditionは引用後の問いが明示する限定条件の短い語をそのまま返します。問いが条件を明示しない場合は空文字です。
+premise_supportedは、引用後も含めて原文にない動作・主体・時点・評価・原因を前提にせず、引用の内容を尋ねていると確認できる時だけtrueにします。
+new_informationは、同じ場面について有効な明記・回答・訂正と照合し、確認済みの内容や既出・スキップと同じ観点を繰り返さず、本人の判断を知る助けになる時だけtrueにします。
+マップと過去の問い自体は本人の答えや事実ではありません。別人や別の時点の答えを本人の答えにせず、前提や重複を確かめられなければ拒否します。
+採用例 {{"verdict":"accept","focus":"REASON","condition":"","premise_supported":true,"new_information":true}}。
+拒否例 {{"verdict":"reject","reason":"already_answered"}}。reasonはalready_answered、unsupported_premise、no_new_information、unclearのいずれかです。"""
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -140,6 +161,10 @@ class _Plan:
     condition: str
     ask: str
     anchor: _Anchor | None
+
+    @property
+    def is_record_reason(self):
+        return self.focus == "REASON" and self.anchor is not None and self.anchor.source.field in {"thought", "action"}
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -329,7 +354,13 @@ def _accept_plan(value, *, lane, sources):
         return None
     anchor = None
     if lane == "records":
-        anchor = _bind_anchor(sources.get(source), quote)
+        selected = sources.get(source)
+        if (focus == "REASON" and selected and selected.field in {"thought", "action"}
+                and quote.endswith("。") and quote in selected.text):
+            # A literal sentence-ending mark may be present in the model's
+            # selection, while the ledger span ends at the last content scalar.
+            quote = quote[:-1]
+        anchor = _bind_anchor(selected, quote)
         if anchor is None or (condition and condition not in anchor.source.text):
             return None
         if focus == "REASON" and (_stated_reason(anchor) or _FOREIGN_ACTOR.match(quote)):
@@ -346,6 +377,10 @@ def _accept_surface(raw, *, plan, theme):
     body = value["question"].strip()
     if not 7 <= len(body) <= 280 or body[-1:] not in "？?" or not _safe_text(body):
         return None
+    if plan.is_record_reason:
+        # The server already displays this exact, ledger-bound citation. Also
+        # allow the writer to repeat it once in the ordinary Japanese のは form.
+        body = body.removeprefix(f"{plan.quote}のは、")
     if ("「" in body or "」" in body or _QUESTION_PUNCTUATION.search(body[:-1]) or _PREMISE_MARKERS.search(body)
             or (plan.condition and plan.condition not in body)):
         return None
@@ -355,10 +390,33 @@ def _accept_surface(raw, *, plan, theme):
         return None
     if plan.focus == "REASON" and not _REASON_QUESTION.search(body) and _CONDITION_QUESTION.search(body):
         return None
+    if plan.is_record_reason and not _record_reason_body(body, plan.condition):
+        return None
     if theme and "人間関係" in _normal(theme) and _FOOD_ROUTINE.search(body) and not _RELATIONAL_CONTEXT.search(body):
         return None
-    question = f"「{plan.quote}」と書いていましたが、{body}" if plan.anchor else body
+    question = f"「{plan.quote}{_CITATION_JOIN}{body}" if plan.anchor else body
+    if plan.anchor and not _display_citation_matches(question, plan.anchor):
+        return None
     return question if len(question) <= 280 else None
+
+
+def _record_reason_body(body, condition):
+    body = _normal(body)
+    if condition:
+        # The writer may state the already admitted scope before the question.
+        # Everything after that scope must still be an anaphoric reason question.
+        scope = re.escape(_normal(condition))
+        match = re.match(rf"{scope}(?:のときに|のときは|の場合に|の場合は|では|で|に)", body)
+        if match is None:
+            return False
+        body = body[match.end():]
+    return _RECORD_REASON_BODY.fullmatch(body) is not None
+
+
+def _display_citation_matches(question, anchor):
+    citation, separator, body = question.partition(_CITATION_JOIN)
+    return (bool(separator and body) and citation.startswith("「")
+            and _bind_anchor(anchor.source, citation[1:]) == anchor)
 
 
 def _confirm_reading(raw, plan):
@@ -372,11 +430,13 @@ def _confirm_reading(raw, plan):
                 # The reader may return the rest of the same answer clause.
                 # Keep the immutable display span in the receipt.
                 value["quote"] = anchor.quote
-    return value == {
-        "verdict": "accept", "focus": plan.focus, "source": plan.source,
-        "quote": plan.quote, "condition": plan.condition,
+    expected = {
+        "verdict": "accept", "focus": plan.focus, "condition": plan.condition,
         "premise_supported": True, "new_information": True,
-    } and value["premise_supported"] is True and value["new_information"] is True
+    }
+    if not plan.is_record_reason:
+        expected.update(source=plan.source, quote=plan.quote)
+    return value == expected and value["premise_supported"] is True and value["new_information"] is True
 
 
 def _candidate(question, *, plan, lane, theme, material):
@@ -428,7 +488,8 @@ async def generate_question(prepared, sources, *, material, generate):
 
     question = _accept_surface(await generate(WRITE_SYSTEM_MESSAGE, {
         "lane": lane, "theme": theme, "focus": plan.focus,
-        "quote": plan.quote, "condition": plan.condition, "ask": plan.ask,
+        "quote": plan.quote, "condition": plan.condition,
+        "ask": "引用した内容の理由" if plan.is_record_reason else plan.ask,
     }), plan=plan, theme=theme)
     if question is None:
         return QuestionRun(None, "rejected")
@@ -438,7 +499,12 @@ async def generate_question(prepared, sources, *, material, generate):
         return QuestionRun(None, "rejected")
     # Give the reader the exact final text and original author material only.
     # It has no access to the selected plan, its label or its acceptance result.
-    reader = ANSWER_READ_SYSTEM_MESSAGE if plan.anchor and plan.anchor.source.field == "answer" else READ_SYSTEM_MESSAGE
+    if plan.is_record_reason:
+        reader = RECORD_REASON_READ_SYSTEM_MESSAGE
+    elif plan.anchor and plan.anchor.source.field == "answer":
+        reader = ANSWER_READ_SYSTEM_MESSAGE
+    else:
+        reader = READ_SYSTEM_MESSAGE
     read = await generate(reader, {"question": question, "material": prepared})
     if not _confirm_reading(read, plan):
         return QuestionRun(None, "rejected")

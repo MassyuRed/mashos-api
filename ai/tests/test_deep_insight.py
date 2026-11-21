@@ -11,8 +11,9 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 import api_deep_insight as api
+import response_microcache
 from cocolon_meaning_experience_engine.deep_insight_question import (
-    PLAN_SYSTEM_MESSAGE, READ_SYSTEM_MESSAGE, WRITE_SYSTEM_MESSAGE,
+    PLAN_SYSTEM_MESSAGE, RECORD_REASON_READ_SYSTEM_MESSAGE, WRITE_SYSTEM_MESSAGE,
 )
 
 
@@ -33,8 +34,7 @@ def material(*, records=(), prior=(), map_reference=None):
 REFLECTION_PLAN = {"decision": "ask", "focus": "REASON", "source": "r1.thought",
                    "quote": "頼まれたことを先にした", "condition": "", "ask": "頼まれたことを先にした理由"}
 REFLECTION_TEXT = {"question": "どんな理由からですか？"}
-REFLECTION_READ = {"verdict": "accept", "focus": "REASON", "source": "r1.thought",
-                   "quote": "頼まれたことを先にした", "condition": "",
+REFLECTION_READ = {"verdict": "accept", "focus": "REASON", "condition": "",
                    "premise_supported": True, "new_information": True}
 
 
@@ -76,7 +76,7 @@ def api_harness(monkeypatch):
         return OWNER
 
     answers = {PLAN_SYSTEM_MESSAGE: REFLECTION_PLAN, WRITE_SYSTEM_MESSAGE: REFLECTION_TEXT,
-               READ_SYSTEM_MESSAGE: REFLECTION_READ}
+               RECORD_REASON_READ_SYSTEM_MESSAGE: REFLECTION_READ}
     input_material = {"value": material(records=[RECORD]), "guard": "source-guard"}
 
     async def storage_rpc(name, payload, *, timeout):
@@ -136,7 +136,9 @@ def test_issue_and_exact_answer_pass_verified_owner_to_the_store(api_harness):
     response = client.post("/deep-insight/questions", headers=AUTH, json={"lane": "records"})
     assert response.status_code == 200 and response.json()["status"] == "issued"
     assert calls[-1][0] == "deep_insight_issue_grounded" and calls[-1][1]["p_material_guard"] == "source-guard"
-    assert [row[1] for row in calls if row[0] == "4B"] == list((PLAN_SYSTEM_MESSAGE, WRITE_SYSTEM_MESSAGE, READ_SYSTEM_MESSAGE))
+    assert [row[1] for row in calls if row[0] == "4B"] == [
+        PLAN_SYSTEM_MESSAGE, WRITE_SYSTEM_MESSAGE, RECORD_REASON_READ_SYSTEM_MESSAGE,
+    ]
     receipt = calls[-1][1]["p_grounding_receipt"]
     assert receipt["source_id"] == RECORD["id"] and receipt["source_version"] == RECORD["source_version"]
     assert "quote" not in receipt and "question" not in receipt
@@ -163,7 +165,7 @@ def test_no_merit_is_reused_for_same_material_but_rechecked_after_edit(api_harne
 def test_independent_rejection_stops_before_storage(api_harness):
     client, _, calls, answers, context = api_harness
     context["guard"] = "reader-rejection"
-    answers[READ_SYSTEM_MESSAGE] = {**REFLECTION_READ, "verdict": "reject", "premise_supported": False}
+    answers[RECORD_REASON_READ_SYSTEM_MESSAGE] = {"verdict": "reject", "reason": "unsupported_premise"}
     response = client.post("/deep-insight/questions", headers=AUTH, json={"lane": "records"})
     assert response.json() == {"status": "no_question", "question": None}
     assert not [row for row in calls if row[0] == "deep_insight_issue_grounded"]
@@ -188,23 +190,16 @@ def test_same_revision_requests_share_one_issue_and_receive_the_same_question(ap
     generate = api._generate_candidate
 
     async def both():
-        started, checked = asyncio.Event(), asyncio.Event()
-        storage = api.sb_post_rpc
+        started, coalesced = asyncio.Event(), asyncio.Event()
 
         async def wait_on_other_request(system, payload):
             if system == PLAN_SYSTEM_MESSAGE:
                 started.set()
-                await checked.wait()
+                await coalesced.wait()
             return await generate(system, payload)
 
-        async def note_second_context(name, payload, *, timeout):
-            result = await storage(name, payload, timeout=timeout)
-            if name == "deep_insight_candidate_context" and started.is_set():
-                checked.set()
-            return result
-
         monkeypatch.setattr(api, "_generate_candidate", wait_on_other_request)
-        monkeypatch.setattr(api, "sb_post_rpc", note_second_context)
+        monkeypatch.setattr(response_microcache, "record_cache_coalesced", lambda _: coalesced.set())
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=client.app), base_url="http://test") as session:
             def request():
                 return session.post("/deep-insight/questions", headers=AUTH, json={"lane": "records"})
@@ -218,6 +213,126 @@ def test_same_revision_requests_share_one_issue_and_receive_the_same_question(ap
     assert first.json() == second.json()
     assert len([row for row in calls if row[0] == "4B"]) == 3
     assert len([row for row in calls if row[0] == "deep_insight_issue_grounded"]) == 1
+
+
+def test_theme_recovers_when_the_record_entrance_issues_concurrently(api_harness, monkeypatch):
+    client, state, _, _, context = api_harness
+    state.update(can_use_theme=True, theme_available_today=True)
+    context["guard"] = "before-record-issue"
+    storage = api.sb_post_rpc
+    try_issue = api._try_issue
+    theme_inputs = []
+    theme_deadlines = []
+    writes = []
+
+    async def both():
+        theme_generating = asyncio.Event()
+        record_issued = asyncio.Event()
+
+        async def generate(prepared, sources, *, material, generate):
+            lane = prepared["lane"]
+            if lane == "theme":
+                theme_inputs.append((prepared["theme"], prepared["previous_questions"]))
+                if len(theme_inputs) == 1:
+                    theme_generating.set()
+                    await record_issued.wait()
+            candidate = SimpleNamespace(text=f"{lane}の問いですか？", question_key=lane, text_key=lane, receipt={})
+            return SimpleNamespace(candidate=candidate)
+
+        async def remember_deadline(owner, command, day, guard, material, deadline):
+            if command.lane == "theme":
+                theme_deadlines.append(deadline)
+            return await try_issue(owner, command, day, guard, material, deadline)
+
+        async def issue(name, payload, *, timeout):
+            if name != "deep_insight_issue_grounded":
+                return await storage(name, payload, timeout=timeout)
+            assert payload["p_user_id"] == OWNER and payload["p_day"] == state["day"]
+            lane, guard, theme = (payload[k] for k in ("p_lane", "p_material_guard", "p_theme"))
+            writes.append((lane, guard, theme))
+            if guard != context["guard"]:
+                return httpx.Response(200, json={"status": "no_question", "question": None})
+            question = {**Q, "lane": lane, "theme": theme, "question_text": payload["p_question_text"]}
+            if lane == "records":
+                state["records"] = question
+                context.update(guard="after-record-issue", value=material(records=[RECORD], prior=[question]))
+                record_issued.set()
+            else:
+                question["id"] = "00000000-0000-0000-0000-000000000102"
+                state["theme"] = question
+            return httpx.Response(200, json={"status": "issued", "question": question})
+
+        monkeypatch.setattr(api, "generate_question", generate)
+        monkeypatch.setattr(api, "_try_issue", remember_deadline)
+        monkeypatch.setattr(api, "sb_post_rpc", issue)
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=client.app), base_url="http://test") as session:
+            request_url = "/deep-insight/questions"
+            theme = asyncio.create_task(session.post(request_url, headers=AUTH,
+                json={"lane": "theme", "theme": "仕事・学び"}))
+            await theme_generating.wait()
+            records = await session.post(request_url, headers=AUTH, json={"lane": "records"})
+            issued = await theme
+            return records, issued, await session.post(request_url, headers=AUTH,
+                json={"lane": "theme", "theme": "人間関係"})
+
+    records, theme, revisit = asyncio.run(asyncio.wait_for(both(), timeout=5))
+    assert records.json()["status"] == theme.json()["status"] == "issued"
+    assert theme.json()["question"]["theme"] == "仕事・学び"
+    assert revisit.json() == {"status": "existing", "question": theme.json()["question"]}
+    assert theme_inputs[0] == ("仕事・学び", [])
+    assert theme_inputs[1][0] == "仕事・学び"
+    assert theme_inputs[1][1][0]["question"] == records.json()["question"]["question_text"]
+    assert writes == [("records", "before-record-issue", None), ("theme", "before-record-issue", "仕事・学び"),
+                      ("theme", "after-record-issue", "仕事・学び")]
+    assert len(theme_deadlines) == 2 and theme_deadlines[0] == theme_deadlines[1]
+
+
+@pytest.mark.parametrize(("change", "http_status", "result", "attempts"), [
+    ("same_guard", 200, "no_question", 1),
+    ("next_day", 200, "no_question", 1),
+    ("entitlement_lost", 403, "deep_insight_theme_locked", 1),
+    ("slot_filled", 200, "existing", 1),
+    ("new_guard_again", 200, "no_question", 2),
+])
+def test_theme_recovery_rechecks_day_entitlement_slot_and_guard(api_harness, monkeypatch,
+                                                          change, http_status, result, attempts):
+    client, state, _, _, context = api_harness
+    state.update(can_use_theme=True, theme_available_today=True)
+    context["guard"] = change
+    storage = api.sb_post_rpc
+    generations = []
+    writes = []
+
+    async def generate(prepared, sources, *, material, generate):
+        assert prepared["theme"] == "仕事・学び"
+        generations.append(prepared)
+        candidate = SimpleNamespace(text="何を大事にしていますか？", question_key="theme", text_key="theme", receipt={})
+        return SimpleNamespace(candidate=candidate)
+
+    async def issue(name, payload, *, timeout):
+        if name != "deep_insight_issue_grounded":
+            return await storage(name, payload, timeout=timeout)
+        writes.append(payload["p_material_guard"])
+        if change != "same_guard":
+            context["guard"] = f"{change}-{len(writes)}"
+        if change == "next_day":
+            state["day"] = "2026-11-22"
+        if change == "entitlement_lost":
+            state["can_use_theme"] = False
+        if change == "slot_filled":
+            state["theme"] = {**Q, "lane": "theme", "theme": "人間関係"}
+        return httpx.Response(200, json={"status": "no_question", "question": None})
+
+    monkeypatch.setattr(api, "generate_question", generate)
+    monkeypatch.setattr(api, "sb_post_rpc", issue)
+    response = client.post("/deep-insight/questions", headers=AUTH, json={"lane": "theme", "theme": "仕事・学び"})
+    assert response.status_code == http_status
+    payload = response.json()
+    assert payload.get("status", payload.get("detail")) == result
+    if change == "slot_filled":
+        assert payload["question"] == state["theme"]
+    assert len(generations) == len(writes) == attempts
+    assert len(set(writes)) == attempts
 
 
 def test_normal_app_routes_expose_only_deep_insight_as_active_question_feature():
