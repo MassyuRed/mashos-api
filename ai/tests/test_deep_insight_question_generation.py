@@ -7,6 +7,7 @@ import pytest
 from cocolon_meaning_experience_engine.deep_insight_question import (
     ANSWER_READ_SYSTEM_MESSAGE, PLAN_SYSTEM_MESSAGE, READ_SYSTEM_MESSAGE,
     RECORD_REASON_READ_SYSTEM_MESSAGE, WRITE_SYSTEM_MESSAGE,
+    _THEME_PLAN_SYSTEM_MESSAGE, _THEME_READ_SYSTEM_MESSAGE, _THEME_WRITE_SYSTEM_MESSAGE,
     _bind_anchor, _display_citation_matches, generate_question, prepare_question_material,
 )
 
@@ -50,12 +51,15 @@ def run(original, plan, question=BODY, *, reading=None, lane="records", theme=No
 
     async def generate(system, payload):
         calls.append((system, payload))
-        if system == PLAN_SYSTEM_MESSAGE:
+        if system in (PLAN_SYSTEM_MESSAGE, _THEME_PLAN_SYSTEM_MESSAGE):
             response = plan
-        elif system == WRITE_SYSTEM_MESSAGE:
+        elif system in (WRITE_SYSTEM_MESSAGE, _THEME_WRITE_SYSTEM_MESSAGE):
             response = {"question": question}
+        elif system == _THEME_READ_SYSTEM_MESSAGE:
+            response = reading if reading is not None else {"fits_theme": True, "asks_something_new": True}
         else:
-            assert system in (READ_SYSTEM_MESSAGE, ANSWER_READ_SYSTEM_MESSAGE, RECORD_REASON_READ_SYSTEM_MESSAGE)
+            assert system in (READ_SYSTEM_MESSAGE, ANSWER_READ_SYSTEM_MESSAGE,
+                              RECORD_REASON_READ_SYSTEM_MESSAGE)
             response = reading if reading is not None else read(plan, record_reason=system == RECORD_REASON_READ_SYSTEM_MESSAGE)
         return json.dumps(response, ensure_ascii=False)
 
@@ -216,8 +220,9 @@ def test_answer_alone_has_private_provenance_and_can_supply_a_follow_up():
 
 
 def test_theme_needs_no_history_but_an_unrelated_meal_is_rejected():
-    plan = ask(focus="RELATIONSHIP", source="", quote="", ask="友達だと感じる場面")
     original = material()
+    prepared, _ = prepare_question_material(original, lane="theme", theme="人間関係")
+    plan = ask(focus="VALUE", source="", quote="", ask=prepared["theme_lenses"][0])
     result, _ = run(original, plan, "どんなときに、この人は友達だなと感じますか？",
                     lane="theme", theme="人間関係")
     assert result.disposition == "selected"
@@ -225,6 +230,65 @@ def test_theme_needs_no_history_but_an_unrelated_meal_is_rejected():
     result, calls = run(original, plan, "朝ごはんに何を食べたいですか？",
                         lane="theme", theme="人間関係")
     assert result.disposition == "rejected" and len(calls) == 2
+
+
+def test_theme_lenses_reach_planner_and_independent_reader():
+    past_answer = {
+        "id": ANSWER_ID, "source_version": VERSION, "theme": "人間関係",
+        "question_text": "人と距離を縮めたいと思うのはどんな場面ですか？",
+        "answer_text": "一緒に笑える話題が見つかったときです。", "answered_at": STAMP,
+    }
+    cases = (
+        ("人間関係",
+         "意見が分かれたとき、相手のどんな姿勢に信頼を感じますか？"),
+        ("自分の価値観",
+         "大切な予定が二つ重なったとき、何を基準に順番を決めますか？"),
+        ("仕事・学び",
+         "勉強でつまずいたとき、誰かに聞こうと決める目安は何ですか？"),
+        ("日々の過ごし方",
+         "忙しい日でも確保しておきたい時間はどんな時間ですか？"),
+        ("これからのこと",
+         "新しいことを始めるか迷ったとき、何があれば一歩踏み出せますか？"),
+    )
+    lens_sets = set()
+    for theme, question in cases:
+        original = material(prior=[past_answer]) if theme == past_answer["theme"] else material()
+        prepared, _ = prepare_question_material(original, lane="theme", theme=theme)
+        plan = ask(focus="VALUE", source="", quote="", ask=prepared["theme_lenses"][0])
+        result, calls = run(original, plan, question, lane="theme", theme=theme)
+        assert result.disposition == "selected"
+        assert [system for system, _ in calls] == [
+            _THEME_PLAN_SYSTEM_MESSAGE, _THEME_WRITE_SYSTEM_MESSAGE, _THEME_READ_SYSTEM_MESSAGE,
+        ]
+        planned = calls[0][1]
+        assert planned["theme"] == theme and planned["theme_lenses"]
+        lens_sets.add(frozenset(planned["theme_lenses"]))
+        assert calls[2][1] == {"question": question, "material": planned}
+        if theme == past_answer["theme"]:
+            previous, = planned["previous_questions"]
+            assert previous == {"question": past_answer["question_text"], "answer_source": "a1",
+                                "answered": True, "theme": theme}
+            assert planned["sources"]["a1"]["text"] == past_answer["answer_text"]
+
+    assert len(lens_sets) == len(cases)
+
+
+def test_theme_uses_an_unasked_lens_and_requires_an_open_question():
+    theme = "仕事・学び"
+    prepared, _ = prepare_question_material(material(), lane="theme", theme=theme)
+    used, other, *_ = prepared["theme_lenses"]
+    prior_plan = ask(focus="VALUE", source="", quote="", ask=used)
+    prior, _ = run(material(), prior_plan, "新しいやり方を覚えるとき、最初に何をしますか？",
+                   lane="theme", theme=theme)
+    prior_question = {"question_key": prior.candidate.question_key, "theme": theme,
+        "question_text": prior.candidate.text, "answer_text": None, "answered_at": None}
+    original = material(prior=[prior_question])
+    repeated, calls = run(original, prior_plan, lane="theme", theme=theme)
+    assert repeated.disposition == "rejected" and len(calls) == 1
+    assert used not in calls[0][1]["theme_lenses"]
+    different_plan = {**prior_plan, "ask": other}
+    closed, calls = run(original, different_plan, "手が止まるときはありますか？", lane="theme", theme=theme)
+    assert closed.disposition == "rejected" and len(calls) == 2
 
 
 def test_two_conditions_do_not_collapse_from_surface_similarity():
