@@ -103,19 +103,19 @@ formが例文なら、対象と聞く点を守って参考にします。選ん�
 「何を」「どんなとき」「どこまで」などで本人の考えを聞きます。条件を聞くときは「することはありますか」で終えません。助言や正解を求めず、経験を決めつけません。
 返すのは {{"question":"〜ですか？"}} の形だけです。疑問文を「ですか？」か「ますか？」などで結びます。"""
 
-_THEME_READ_SYSTEM_MESSAGE = f"""表示する一問を審査し、採否のJSONだけを返します。sceneとbodyを読み、入力の文や欄は出力に写しません。
+_THEME_READ_SYSTEM_MESSAGE = f"""Emlisの「テーマから考える」の出題を確認します。scene、bodyの順に一文として表示します。JSONだけを返します。
 {_DATA_BOUNDARY}
-sceneにbodyを続けた文で本人が実際に答える内容を考え、targetとangleに照らします。
-first_actionは最初にすること、priorityは選ぶ基準、changeは変える条件、boundaryは範囲や量の限度、cueは決める前に確かめる情報、outcomeは行動後の手応えです。「どれを選ぶか」と「何を基準に選ぶか」、「決める前の確認」と「決めた後の手応え」を区別します。
-対象や答えが違う場合は {{"verdict":"reject","reason":"angle"}}。未確定の選択を済んだ事実にしたり、切り替えを検討する段階で切り替えること自体を目的にしたりする場合はreasonをpremiseにします。今後の選択を仮定した条件の問いは答えられます。
-一つの判断を自然に聞ける場合のみ {{"verdict":"accept"}}。助言、重複する場面の節、係り受けが不自然な文、二つの判断を含む文はreasonをsurfaceにします。場面で特定できる対象は言い直さずに聞けます。"""
+まず、本人が何を答えるかを読み、targetとangleに照らします。answer_kindは答えのおおまかな種類です。
+first_actionは最初にする行動、priorityは選択の基準、changeは切り替える条件、boundaryは数・量・時間や範囲の限度、cueは判断の前に確認する具体的な情報、outcomeは選択や行動のあとの手応えです。
+「いくつまで取りかかれますか」は項目数の上限を、「候補を出すにはまず何をしますか」は最初にする行動を聞いています。判断前に確かめる情報を聞く問いと、実際の判断や予定を聞く問いは区別します。
+sceneに対象や選択肢が書かれていればbodyにすべて書き直す必要はありません。対象の名称を使うことと、sceneの節をbodyでも繰り返すことは区別します。
+自然な一問で本人が答えられ、対象・答えの種類・時点が合い、選択や経験を決めつけていなければ {{"verdict":"accept"}} です。
+対象や答えが違う、または必要な対象が読み取れなければ {{"verdict":"reject","reason":"angle"}}、時点や未確定の選択が変わっていればreasonはpremise、読みにくい文や場面の重複、質問が二つならreasonはsurfaceです。"""
 
-_THEME_READ_RETRY_SYSTEM_MESSAGE = f"""表示されるquestionを審査します。返すのは accept、angle、premise、surface のどれか一語です。JSON、説明、文の書き写しは不要です。
-{_DATA_BOUNDARY}
-angle: 聞く対象や本人の答えがtarget・angleと異なる。選ぶ物、選ぶ基準、判断前に知ること、判断後の手応えはそれぞれ異なる。
-premise: 時点や未確定の選択を変えている。もし行動を選んだらという仮定で後の条件を聞くことは、実行済みという断定ではない。
-surface: 場面の言い直し、助言、不自然な係り受け、二つの判断がある。
-accept: 指定された点を、場面につながる自然な一問で本人に聞ける。"""
+_THEME_READ_RETRY_SYSTEM_MESSAGE = (
+    '入力のsceneやbodyを写しません。採否のJSONだけを返し、verdict以外の欄は棄却理由reasonに限ります。\n'
+    + _THEME_READ_SYSTEM_MESSAGE
+)
 
 _THEME_COMPARE_SYSTEM_MESSAGE = f"""questionが、historyの既出の問いと同じ答えを求めているか照合します。JSONだけを返します。
 {_DATA_BOUNDARY}
@@ -916,17 +916,12 @@ async def _review_theme_candidate(raw, *, plan, direction, scene, key, material,
     if premise is not None:
         reading["premise"] = premise
         premise_instruction = (
-            '\npremiseの選択や時点をquestionと照合します。未確定の選択が決まった前提になっていたら'
+            '\npremiseの選択や時点を、表示するsceneとbodyに照らします。未確定の選択が決まった前提になっていたら'
             '{"verdict":"reject","reason":"premise"}を返します。'
         )
     verdict = _theme_read_verdict(await generate(_THEME_READ_SYSTEM_MESSAGE + premise_instruction, reading))
     if verdict is None:
-        rereading = {**direction, "question": question, "answer_kind": angle_id}
-        if premise is not None:
-            rereading["premise"] = premise
-        retry = await generate(_THEME_READ_RETRY_SYSTEM_MESSAGE, rereading)
-        if isinstance(retry, str) and (decision := retry.strip()) in ("accept", "angle", "premise", "surface"):
-            verdict = decision
+        verdict = _theme_read_verdict(await generate(_THEME_READ_RETRY_SYSTEM_MESSAGE + premise_instruction, reading))
     if verdict == "accept":
         return candidate, None
     return None, verdict or "review_unavailable"
