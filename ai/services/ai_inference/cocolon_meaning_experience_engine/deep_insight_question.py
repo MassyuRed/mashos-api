@@ -229,9 +229,9 @@ _RECORD_ALTERNATIVE_READ_MESSAGE = f"""画面に表示する引用citationと質
 まずbodyを読んで、本人がどの行動を先にする条件を尋ねられているか確かめます。その行動が同じ原文にあり、先にした事実を加えず仮定として尋ねていれば、focusはCONDITIONでpremise_supportedはtrueです。
 答えを探す対象はbodyで尋ねた行動を先にする条件です。citationの過去の行動を先にした理由や、別の作業がまだ途中だったという記録は、別の作業を先にする条件への答えではありません。
 原文または本人回答にbodyの質問に答える具体的な記述がある場合に限り、already_answeredとし、その記述をevidenceに一字ずつ写します。既出や見送りに実質的に同じ問いがある場合はreasonをrepeated_questionとして拒否します。マップと過去の問いだけから答えを作りません。
-sourceはmaterial.sourcesでcitationが一意に見つかるキーです。quoteはcitationそのままです。原文の理由や句点を足しません。conditionはbodyが明示する既知の限定条件だけです。「同じような場面で」のみなら空文字です。
+引用と出典の文字列はプログラムが照合しています。応答にはsourceやquoteの欄を作らず、質問の意味を判定します。conditionはbodyが明示する既知の限定条件だけです。「同じような場面で」のみなら空文字です。
 例：r2.actionが「返送の締切が近かったので、荷物の梱包を先に済ませた。帳簿の整理はまだ途中だった。」。citationが「荷物の梱包を先に済ませた」、bodyが「同じような場面で、帳簿の整理を先にするのはどんなときですか？」で、別の回答、既出、見送りがなければ、帳簿を先にする条件はまだ書かれていません。
-その例では {{"verdict":"accept","focus":"CONDITION","source":"r2.action","quote":"荷物の梱包を先に済ませた","condition":"","premise_supported":true,"new_information":true}} を返します。
+その例では {{"verdict":"accept","focus":"CONDITION","condition":"","premise_supported":true,"new_information":true}} を返します。
 本人の原文や回答に「帳簿の締切が当日なら帳簿を先に整理する」とあれば {{"verdict":"reject","reason":"already_answered","evidence":"帳簿の締切が当日なら帳簿を先に整理する"}} を返します。
 同じ原文で、bodyが原文にない献立を考える行動を持ち出したり、帳簿を先にしたと決めつけたりした場合は {{"verdict":"reject","reason":"unsupported_premise"}} です。引用元や判断を確認できない場合は {{"verdict":"reject","reason":"unclear"}} を返します。"""
 _SKIPPED_EMLIS_QUESTIONS_GUIDANCE = (
@@ -592,7 +592,7 @@ def _display_citation_matches(question, anchor):
             and _bind_anchor(anchor.source, citation[1:]) == anchor)
 
 
-def _confirm_reading(raw, plan):
+def _confirm_reading(raw, plan, *, citation_verified=False):
     value = _json_object(raw)
     anchor = plan.anchor
     if value and anchor and anchor.source.field == "answer" and value.get("source") == plan.source:
@@ -607,7 +607,7 @@ def _confirm_reading(raw, plan):
         "verdict": "accept", "focus": plan.focus, "condition": plan.condition,
         "premise_supported": True, "new_information": True,
     }
-    if not plan.is_record_reason:
+    if not plan.is_record_reason and not citation_verified:
         expected.update(source=plan.source, quote=plan.quote)
     return value == expected and value["premise_supported"] is True and value["new_information"] is True
 
@@ -962,6 +962,8 @@ async def generate_question(prepared, sources, *, material, generate):
         )
         if plan is None:
             return QuestionRun(None, "rejected")
+        if any(key != plan.source and plan.quote in source.text for key, source in sources.items()):
+            return QuestionRun(None, "rejected")
 
     writing = {
         "lane": lane, "theme": theme, "focus": plan.focus,
@@ -993,6 +995,6 @@ async def generate_question(prepared, sources, *, material, generate):
     else:
         reader = READ_SYSTEM_MESSAGE
     read = await generate(reader + skipped_guidance, reading)
-    if not _confirm_reading(read, plan):
+    if not _confirm_reading(read, plan, citation_verified=alternative is not None):
         return QuestionRun(None, "rejected")
     return QuestionRun(candidate, "selected")

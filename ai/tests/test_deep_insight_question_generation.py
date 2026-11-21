@@ -77,7 +77,9 @@ def run(original, plan, question=BODY, *, reading=None, alternative=None):
             ))
             selected_plan = plan if alternative is None else {**ask(), **alternative}
             response = reading if reading is not None else read(
-                selected_plan, record_reason=system.startswith(RECORD_REASON_READ_SYSTEM_MESSAGE))
+                selected_plan, record_reason=system.startswith((
+                    RECORD_REASON_READ_SYSTEM_MESSAGE, _RECORD_ALTERNATIVE_READ_MESSAGE,
+                )))
         return json.dumps(response, ensure_ascii=False)
 
     result = asyncio.run(generate_question(prepared, sources, material=original, generate=generate))
@@ -208,18 +210,31 @@ def test_alternative_writer_reversing_the_choice_is_still_rejected_by_the_reader
     {"new_information": False},
     {"verdict": "reject", "reason": "already_answered"},
 ])
-def test_alternative_reader_must_return_exact_citation_condition_and_new_evidence(overrides):
+def test_alternative_reader_must_return_semantics_without_a_citation_override(overrides):
     original = material(source("相手が困っていたので、" + QUOTE + "。自分の仕事はまだ途中だった。"))
     question = "同じような場面で、自分の仕事を先にするのはどんなときですか？"
     result, calls = run(
         original, ask(), question,
         alternative={"decision": "ask", "focus": "CONDITION", "ask": "同じような場面で自分の仕事を先にする条件"},
-        reading=read(ask(focus="CONDITION"), **overrides),
+        reading=read(ask(focus="CONDITION"), record_reason=True, **overrides),
     )
     assert result.disposition == "rejected" and result.candidate is None and len(calls) == 4
     assert calls[-1] == (_RECORD_ALTERNATIVE_READ_MESSAGE, {
         "citation": QUOTE, "body": question, "material": calls[0][1],
     })
+
+
+def test_alternative_planning_refuses_the_same_citation_in_another_field():
+    original = material(source(
+        "相手が困っていたので、" + QUOTE + "。自分の仕事はまだ途中だった。",
+        action=QUOTE + "。",
+    ))
+    result, calls = run(
+        original, ask(),
+        alternative={"decision": "ask", "focus": "CONDITION", "ask": "自分の仕事を先にする条件"},
+    )
+    assert result.disposition == "rejected" and result.candidate is None
+    assert [system for system, _ in calls] == [PLAN_SYSTEM_MESSAGE, _RECORD_ALTERNATIVE_PLAN_MESSAGE]
 
 
 def test_alternative_reader_can_reject_an_undocumented_action():
