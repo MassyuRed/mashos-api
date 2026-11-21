@@ -15,7 +15,8 @@ ANSWER_ID = "00000000-0000-0000-0000-000000000124"
 VERSION = "b" * 64
 STAMP = "2026-11-21T10:00:00Z"
 QUOTE = "頼まれたことを先にした"
-QUESTION = f"「{QUOTE}」のは、どんな理由からですか？"
+BODY = "どんな理由からですか？"
+QUESTION = f"「{QUOTE}」と書いていましたが、{BODY}"
 
 
 def source(text=QUOTE + "。", **changes):
@@ -40,7 +41,7 @@ def read(plan, **changes):
             "premise_supported": True, "new_information": True, **changes}
 
 
-def run(original, plan, question=QUESTION, *, reading=None, lane="records", theme=None):
+def run(original, plan, question=BODY, *, reading=None, lane="records", theme=None):
     prepared, sources = prepare_question_material(original, lane=lane, theme=theme)
     calls = []
 
@@ -83,7 +84,7 @@ def test_explicit_reason_stops_before_writing_but_new_condition_can_pass():
     assert result.disposition == "rejected" and len(calls) == 1
 
     plan = ask(focus="CONDITION", ask="自分の仕事を先にする条件")
-    question = f"「{QUOTE}」のとは逆に、自分の仕事を先にするのはどんなときですか？"
+    question = "逆に、自分の仕事を先にするのはどんなときですか？"
     result, calls = run(original, plan, question)
     assert result.disposition == "selected" and len(calls) == 3
 
@@ -104,9 +105,10 @@ def test_independent_reading_must_support_the_actual_candidate(updates):
 
 
 @pytest.mark.parametrize("plan,question", [
-    (ask(), f"「{QUOTE}」とき、家族のために仕事をやめたのはどうしてですか？"),
-    (ask(focus="CONDITION"), QUESTION),
-    (ask(), f"「{QUOTE}」のはどうしてですか？ほかにはどんなことがありますか？"),
+    (ask(), "家族のために仕事をやめたのはどうしてですか？"),
+    (ask(focus="CONDITION"), BODY),
+    (ask(), "どうしてですか？ほかにはどんなことがありますか？"),
+    (ask(), QUESTION),
 ])
 def test_unwarranted_premise_focus_change_and_multiple_questions_stop_before_reader(plan, question):
     result, calls = run(material(source()), plan, question)
@@ -120,7 +122,7 @@ def test_answer_alone_has_private_provenance_and_can_supply_a_follow_up():
     }
     quote = "意見が違っても本音を言える"
     plan = ask(focus="CONDITION", source="a1", quote=quote, ask="相手がどう聞くかの条件")
-    text = f"「{quote}」のは、相手がどんなふうに話を聞いてくれるときですか？"
+    text = "相手がどんなふうに話を聞いてくれると、本音を言いやすいですか？"
     result, calls = run(material(prior=[answer]), plan, text)
     assert result.disposition == "selected"
     assert calls[0][1]["previous_questions"][0]["answer_source"] == "a1"
@@ -144,10 +146,10 @@ def test_two_conditions_do_not_collapse_from_surface_similarity():
     original = material(source("仕事と家庭のそれぞれで頼まれたことを先にした。"))
     work = ask(focus="CONDITION", condition="仕事", ask="仕事で優先する条件")
     home = ask(focus="CONDITION", condition="家庭", ask="家庭で優先する条件")
-    work_text = f"「{QUOTE}」ことについて、仕事ではどんな条件なら順番を変えますか？"
-    home_text = f"「{QUOTE}」ことについて、家庭ではどんな条件なら順番を変えますか？"
+    work_text = "仕事ではどんな条件なら順番を変えますか？"
+    home_text = "家庭ではどんな条件なら順番を変えますか？"
     first, _ = run(original, work, work_text)
-    prior = {"question_text": work_text, "question_key": first.candidate.question_key,
+    prior = {"question_text": first.candidate.text, "question_key": first.candidate.question_key,
              "text_key": first.candidate.text_key, "answer_text": None, "answered_at": None}
     second, _ = run(material(*original["records"], prior=[prior]), home, home_text)
     assert second.disposition == "selected"
@@ -159,11 +161,11 @@ def test_target_identity_does_not_change_with_quote_length():
     first, _ = run(original, ask())
     short = "頼まれたことを先に"
     shorter = ask(quote=short)
-    second, _ = run(original, shorter, f"「{short}」したのは、どうしてですか？")
+    second, _ = run(original, shorter, "どうしてそうしたのですか？")
     assert first.candidate.question_key == second.candidate.question_key
     prior = {"question_text": first.candidate.text, "question_key": first.candidate.question_key,
              "text_key": first.candidate.text_key, "answer_text": None, "answered_at": None}
-    blocked, calls = run(material(*original["records"], prior=[prior]), shorter, second.candidate.text)
+    blocked, calls = run(material(*original["records"], prior=[prior]), shorter, "どうしてそうしたのですか？")
     assert blocked.disposition == "rejected" and len(calls) == 2
 
 

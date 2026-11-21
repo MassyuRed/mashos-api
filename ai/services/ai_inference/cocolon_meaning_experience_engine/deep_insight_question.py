@@ -54,27 +54,32 @@ askは何を知りたいかの短い日本語で、表示する質問文では�
 前の回答a1から聞く例 {{"decision":"ask","focus":"CONDITION","source":"a1","quote":"意見が違っても本音を言える","condition":"","ask":"本音を言いやすい相手の反応"}}
 テーマの出力例 {{"decision":"ask","focus":"RELATIONSHIP","source":"","quote":"","condition":"","ask":"友達だと感じる場面"}}"""
 
-WRITE_SYSTEM_MESSAGE = f"""採用された確認点を、本人に丁寧に尋ねる自然な日本語の一問にします。questionだけを持つJSONを返します。
+WRITE_SYSTEM_MESSAGE = f"""確認点askを、本人に丁寧に尋ねる自然な日本語の一問にします。questionだけを持つJSONを返します。
 {_DATA_BOUNDARY}
-focus、ask、conditionは別の観点に変えません。引用があれば一度だけ「」で囲み、字面を一文字も変えません。
-引用と既知の条件のほかに出来事・時点・真意・原因・評価を前提として足しません。既知の条件は問いの中に短く残します。
-テーマの入口では本人の出来事を前提にせず、選択したテーマで本人が自由に答えられる形にします。
+記録の入口では引用が質問の直前に表示されます。questionには引用を繰り返さず、引用後に続く質問だけを書きます。
+askにある確認対象を文面で明示します。「相手の反応」を確認するなら、どんな反応かを聞きます。「どんなときですか」だけに縮めません。conditionが空でなければその語を文面に残します。
+引用と既知の条件のほかに出来事・時点・真意・原因・評価を前提として足しません。
+テーマの入口では特定の人や本人の出来事を前提にせず、選択したテーマで本人が自由に答えられる形にします。
 末尾は必ず「ですか？」または「ますか？」などの、全角の疑問符「？」で終える質問にします。「のか」で終わる見出し、疑問符の省略、助言、誘導、二つ目の質問は使いません。
-記録の出力例 {{"question":"「頼まれたことを先にした」のは、どんな理由からですか？"}}
-人間関係の出力例 {{"question":"どんなときに、この人は友達だなと感じますか？"}}"""
+引用の後で理由を聞く出力例 {{"question":"どういう理由で、そうしたのですか？"}}
+引用の後で相手の反応を聞く出力例 {{"question":"相手がどんな反応をすると、安心して話を続けられますか？"}}
+テーマで基準を聞く出力例 {{"question":"新しいことを学ぶとき、どんなことを大切にしますか？"}}"""
 
 READ_SYSTEM_MESSAGE = f"""Emlisの完成した一問を、渡された原資料から独立に読みます。日本語のJSONだけを返します。
 {_DATA_BOUNDARY}
 作成者が何を意図したかではなく、完成文が実際に本人の何を尋ね、どの出来事・主体・時点・否定・留保・条件を前提に置くかを読んでください。
 focusは意味から選びます。{_FOCUS_GUIDE}
 記録入口では、文面の「」内をquoteとし、本人の原文sourcesのどのキーにあるか照合します。sourceはsourcesのキーだけを一字ずつ写します。キーがa1ならa1で、a1.textは使いません。該当が一つに確定しなければ拒否します。
-テーマ入口ではsourceとquoteを空にし、選択テーマと問いの観点が実際に一致するか確かめます。
+テーマ入口ではsourceとquoteを空にし、選択テーマと問いの観点が実際に一致するか確かめます。記録や過去の回答がゼロでも成立します。その人の過去の事実を前提にせず、テーマに沿った初めての基準を尋ねる場合はpremise_supportedとnew_informationをtrueにします。
 conditionは文面が明示した既知の短い限定条件をそのまま書き、限定がなければ空文字です。推測して補わないでください。
 premise_supportedは、引用外も含めて原文にない出来事・主体・時点・評価・原因を前提にせず、テーマにも合う時だけtrueにします。
 new_informationは、同じ場面について有効な回答・訂正・原文で既に答えた内容を言い換えて聞かず、既出・スキップと同じ観点ではなく、本人の判断が具体的に分かる時だけtrueにします。既知の理由と未確認の別条件は区別します。
 マップと過去の問い自体は本人の答えや事実ではありません。別人や別の時点の答えを本人の答えにせず、前提や重複を確かめられなければ拒否します。
-拒否は {{"verdict":"reject"}}。採用する場合だけ
-{{"verdict":"accept","focus":"REASON","source":"r1.thought","quote":"頼まれたことを先にした","condition":"","premise_supported":true,"new_information":true}}。"""
+記録で「不安があっても説明会に行った」の理由を初めて聞く場合の採用例
+{{"verdict":"accept","focus":"REASON","source":"r1.thought","quote":"不安があっても説明会に行った","condition":"","premise_supported":true,"new_information":true}}。
+過去の材料なしで仕事・学びを選び「何を大切にして仕事を選びますか？」と聞く場合の採用例
+{{"verdict":"accept","focus":"VALUE","source":"","quote":"","condition":"","premise_supported":true,"new_information":true}}。
+拒否の例 {{"verdict":"reject","reason":"already_answered"}}。reasonはalready_answered、unsupported_premise、outside_theme、no_new_information、unclearのいずれかです。"""
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -307,17 +312,11 @@ def _accept_surface(raw, *, plan, theme):
     value = _json_object(raw)
     if value is None or set(value) != {"question"} or not isinstance(value["question"], str):
         return None
-    question = value["question"].strip()
-    if not 7 <= len(question) <= 280 or question[-1:] not in "？?" or not _safe_text(question):
+    body = value["question"].strip()
+    if not 7 <= len(body) <= 280 or body[-1:] not in "？?" or not _safe_text(body):
         return None
-    body = question
-    if plan.anchor:
-        quoted = f"「{plan.quote}」"
-        if body.count(quoted) != 1:
-            return None
-        body = body.replace(quoted, "", 1)
     if ("「" in body or "」" in body or _QUESTION_PUNCTUATION.search(body[:-1]) or _PREMISE_MARKERS.search(body)
-            or (plan.condition and plan.condition not in question)):
+            or (plan.condition and plan.condition not in body)):
         return None
     if any(match.group() not in plan.quote for match in _PAST_PREMISE.finditer(body)):
         return None
@@ -327,7 +326,8 @@ def _accept_surface(raw, *, plan, theme):
         return None
     if theme and "人間関係" in _normal(theme) and _FOOD_ROUTINE.search(body) and not _RELATIONAL_CONTEXT.search(body):
         return None
-    return question
+    question = f"「{plan.quote}」と書いていましたが、{body}" if plan.anchor else body
+    return question if len(question) <= 280 else None
 
 
 def _confirm_reading(raw, plan):

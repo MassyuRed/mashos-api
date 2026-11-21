@@ -32,7 +32,7 @@ def material(*, records=(), prior=(), map_reference=None):
 
 REFLECTION_PLAN = {"decision": "ask", "focus": "REASON", "source": "r1.thought",
                    "quote": "頼まれたことを先にした", "condition": "", "ask": "頼まれたことを先にした理由"}
-REFLECTION_TEXT = {"question": "「頼まれたことを先にした」のは、どんな理由からですか？"}
+REFLECTION_TEXT = {"question": "どんな理由からですか？"}
 REFLECTION_READ = {"verdict": "accept", "focus": "REASON", "source": "r1.thought",
                    "quote": "頼まれたことを先にした", "condition": "",
                    "premise_supported": True, "new_information": True}
