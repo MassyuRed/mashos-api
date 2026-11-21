@@ -240,9 +240,9 @@ def theme_run(theme, question, *, questions=(), reading=None, comparison=None, e
         calls.append((system, payload))
         if system == _THEME_PLAN_SYSTEM_MESSAGE:
             return json.dumps({"scene": scene, "target": target}, ensure_ascii=False)
-        if system == _THEME_WRITE_SYSTEM_MESSAGE:
+        if system.startswith(_THEME_WRITE_SYSTEM_MESSAGE):
             return question if raw_write else json.dumps({"question": question}, ensure_ascii=False)
-        if system == _THEME_REPAIR_SYSTEM_MESSAGE:
+        if system.startswith(_THEME_REPAIR_SYSTEM_MESSAGE):
             return json.dumps({"question": repair or question}, ensure_ascii=False)
         if system == _THEME_COMPARE_SYSTEM_MESSAGE:
             return json.dumps(comparison if comparison is not None else {"verdict": "distinct"})
@@ -320,6 +320,7 @@ def test_theme_preserves_an_unmade_choice_in_the_independent_review():
     assert writer["premise"] == reader["premise"] == repair["premise"]
     assert "二つの方法を試し比べ始める段階" in reader["premise"]
     assert "form" not in reader and "draft" not in repair
+    assert "どの選択が未確定か" in calls[0][0] and "どの選択が未確定か" in calls[2][0]
     assert calls[1][0].startswith(_THEME_READ_SYSTEM_MESSAGE)
     assert calls[1][0] != _THEME_READ_SYSTEM_MESSAGE
 
@@ -460,6 +461,11 @@ def test_theme_allows_asking_where_to_start_without_treating_it_as_a_yes_no_ques
     ("仕事・学び", "finish", "change",
      "一区切りついた振り返りでは、次の作業の進め方を変えるのはどんなときですか？",
      "次の作業の進め方を変えるのはどんなときですか？"),
+    ("仕事・学び", "scope", "first_action",
+     "新しい依頼や情報が加わった直後、まず何に手をつけますか？", "まず何に手をつけますか？"),
+    ("これからのこと", "route_change", "first_action",
+     "目標の向かい方を変えようか迷ったとき、別の進め方を少し試すなら最初にどんなことをしますか？",
+     "別の進め方を少し試すなら最初にどんなことをしますか？"),
     ("日々の過ごし方", "move", "first_action",
      "体を動かす時間を日常に組み込むために、まず何をしますか？", "まず何をしますか？"),
     ("これからのこと", "change_habits", "change",

@@ -105,6 +105,10 @@ sceneは表示済みです。同じ場面を繰り返さず、angleへの答え�
 formが例文なら、何についてどんな答えを求めるかを保ちます。基準なら目安、条件なら行動を変えるきっかけを聞きます。
 問いだけを、丁寧な日本語の {{"question":"〜ますか？"}} の形で返します。"""
 
+_THEME_WRITE_PREMISE = (
+    "\npremiseは問いの内容を決める条件です。場面の時点と、どの選択が未確定かを保ち、formの例に沿って一問を書きます。"
+)
+
 
 PLAN_SYSTEM_MESSAGE = f"""Emlisの「わたしを知る問い」で、本人に確かめる一点を選びます。日本語のJSONだけを返します。
 {_DATA_BOUNDARY}
@@ -658,7 +662,8 @@ async def _generate_theme(prepared, material, generate):
     premise = prepared["premise"]
     if premise is not None:
         writing["premise"] = premise
-    raw = await generate(_THEME_WRITE_SYSTEM_MESSAGE, writing)
+    premise_instruction = _THEME_WRITE_PREMISE if premise is not None else ""
+    raw = await generate(_THEME_WRITE_SYSTEM_MESSAGE + premise_instruction, writing)
     for attempt in range(2):
         candidate, reason = await _review_theme_candidate(
             raw, plan=plan, direction=direction, scene=scene, key=key, material=material,
@@ -675,7 +680,7 @@ async def _generate_theme(prepared, material, generate):
             return QuestionRun(candidate, "selected")
         if attempt or reason == "repeat":
             return QuestionRun(None, "rejected")
-        raw = await generate(_THEME_REPAIR_SYSTEM_MESSAGE, {
+        raw = await generate(_THEME_REPAIR_SYSTEM_MESSAGE + premise_instruction, {
             **writing, "reason": reason,
         })
 
