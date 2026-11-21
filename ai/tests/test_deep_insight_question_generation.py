@@ -18,7 +18,7 @@ from cocolon_meaning_experience_engine.deep_insight_question import (
 )
 
 from cocolon_meaning_experience_engine.deep_insight_theme import (
-    THEME_DISTINCT_POSITIONS, THEME_EQUIVALENT_POSITIONS, THEME_SCENES, THEME_VERIFIED_BODIES,
+    THEME_DISTINCT_POSITIONS, THEME_EQUIVALENT_POSITIONS, THEME_SCENES, THEME_TARGET_FORMS, THEME_VERIFIED_BODIES,
 )
 from cocolon_meaning_experience_engine.deep_insight_theme_intents import THEME_SCENE_ANGLE_TARGETS
 
@@ -714,6 +714,9 @@ def test_theme_rejects_non_polite_endings_and_unbound_questions(body):
     ("人間関係", "group", "priority",
      "複数の案から一つを選ぶ基準は、何を基準に決めますか？",
      "複数の案から一つを選ぶ基準は何ですか？"),
+    ("人間関係", "asking_help", "priority",
+     "誰かに助けを求めるかどうかを決める際、どのような手がかりに決めますか？",
+     "どんなことを手がかりに決めますか？"),
     ("自分の価値観", "giving_credit", "priority",
      "誰のどんな働きを言葉にするかを選ぶ基準を、何を基準に決めますか？",
      "誰のどんな働きを言葉にするか、何を目安に決めますか？"),
@@ -789,8 +792,12 @@ def test_theme_catalog_has_distinct_compatible_judgments_for_every_supported_sce
         targets = THEME_SCENE_ANGLE_TARGETS[theme]
         assert set(targets) == set(scenes)
         assert sum(len(angles) for angles in targets.values()) >= 50
-        for angles in targets.values():
+        for scene, angles in targets.items():
             assert len(angles) >= 4 and len(set(angles.values())) == len(angles)
+            for angle in angles:
+                position = (theme, scene, angle)
+                bodies = THEME_VERIFIED_BODIES.get(position) or (THEME_TARGET_FORMS[position],)
+                assert all(body.endswith("？") and body.count("？") == 1 and "〜" not in body for body in bodies)
     assert "change" in THEME_SCENE_ANGLE_TARGETS["人間関係"]["thanks"]
     assert "伝え" in THEME_SCENE_ANGLE_TARGETS["人間関係"]["thanks"]["change"][0]
     for theme, pairs in THEME_DISTINCT_POSITIONS.items():
