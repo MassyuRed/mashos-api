@@ -11,16 +11,6 @@ THEME_ANGLES = {
     "outcome": "後でその選択に納得できる手がかり",
 }
 
-# Each pattern specifies what kind of answer the question must elicit.
-THEME_QUESTION_FORMS = {
-    "first_action": "何から始めるかを聞く。文型「〜するために、まず何をしますか？」",
-    "priority": "選ぶ基準を聞く。文型「〜は、何を基準に決めますか？」",
-    "change": "行動を変える条件を聞く。文型「〜するのは、どんなときですか？」",
-    "boundary": "どこまで許容するかを聞く。金額・時間・内容など、対象に合う上限を尋ねる。",
-    "cue": "判断前に確認したいことを聞く。文型「〜について、何を確かめておきますか？」",
-    "outcome": "あとで納得できる手がかりを聞く。文型「どんなことがあれば、〜してよかったと思いますか？」",
-}
-
 THEME_SCENES = {
     "人間関係": {
         "new_people": "初対面の人と話すとき",
@@ -317,3 +307,91 @@ THEME_DECISION_IN_SCENE = frozenset({
     ("人間関係", "asking_help", "priority"),
     ("自分の価値観", "ownership", "priority"),
 })
+
+# These pairs ask for different answers when both displayed questions match
+# the reviewed wording below. Other combinations still require comparison.
+THEME_DISTINCT_POSITIONS = {
+    "人間関係": (
+        (("reconnect", "priority"), ("reconnect", "outcome")),
+        (("asking_help", "priority"), ("asking_help", "cue")),
+    ),
+    "自分の価値観": (
+        (("risk", "boundary"), ("ownership", "boundary")),
+        (("risk", "boundary"), ("promise", "boundary")),
+        (("ownership", "boundary"), ("promise", "boundary")),
+        (("measure", "priority"), ("measure", "change")),
+    ),
+    "仕事・学び": (
+        (("experiment", "priority"), ("experiment", "boundary")),
+        (("experiment", "priority"), ("new_method", "priority")),
+    ),
+    "日々の過ごし方": (
+        (("transition", "first_action"), ("transition", "outcome")),
+    ),
+    "これからのこと": (
+        (("several_goals", "priority"), ("first_step", "priority")),
+        (("several_goals", "priority"), ("change_habits", "priority")),
+        (("first_step", "priority"), ("change_habits", "priority")),
+    ),
+}
+
+# The first body is the writer example. Additional bodies are exact
+# previously generated wording reviewed against the current displayed scene.
+THEME_VERIFIED_BODIES = {
+    ("人間関係", "reconnect", "priority"): (
+        "自分から連絡するかどうかは、何を目安に決めますか？",
+        "久しぶりの相手に連絡するかどうかは、何を基準に決めますか？",
+    ),
+    ("人間関係", "reconnect", "outcome"): (
+        "連絡したあと、どんなやり取りができたら、声をかけてよかったと思いますか？",
+    ),
+    ("人間関係", "asking_help", "priority"): (
+        "どんなことを手がかりに決めますか？",
+    ),
+    ("人間関係", "asking_help", "cue"): (
+        "頼む相手を決める前に、候補の人について何を確かめておきますか？",
+    ),
+    ("自分の価値観", "risk", "boundary"): (
+        "試したい方がうまくいかなかった場合、どのくらいの不利益まで受け入れられますか？",
+    ),
+    ("自分の価値観", "ownership", "boundary"): (
+        "どの程度の負担までなら、引き受けてもいいと思いますか？",
+        "どの程度の負担までなら引き受けていいと思いますか？",
+    ),
+    ("自分の価値観", "promise", "boundary"): (
+        "約束を守るためなら、どこまで負担を引き受けられますか？",
+    ),
+    ("自分の価値観", "measure", "priority"): (
+        "周りからの評価と自分の納得のうち、どちらを重く見るかは何を目安に決めますか？",
+    ),
+    ("自分の価値観", "measure", "change"): (
+        "どんなことがあれば、自分の評価の基準を見直しますか？",
+    ),
+    ("仕事・学び", "experiment", "priority"): (
+        "どちらのやり方を使うか、何を基準に決めますか？",
+    ),
+    ("仕事・学び", "experiment", "boundary"): (
+        "別のやり方を試すなら、どの範囲まで試しますか？",
+        "本格的な切り替えをする前に、どの程度の範囲で別の方法を試すつもりですか？",
+    ),
+    ("仕事・学び", "new_method", "priority"): (
+        "どの作業で新しいやり方を試すか、何を目安に決めますか？",
+    ),
+    ("日々の過ごし方", "transition", "first_action"): (
+        "気持ちに区切りをつけるために、まず何をしますか？",
+        "区切りをつけるためにまず何をしますか？",
+    ),
+    ("日々の過ごし方", "transition", "outcome"): (
+        "どんな変化があれば、自分の時間に気持ちが切り替わったと感じますか？",
+    ),
+    ("これからのこと", "several_goals", "priority"): (
+        "どれから取りかかるか、何を基準に決めますか？",
+        "取りかかる順番を決める基準は何ですか？",
+    ),
+    ("これからのこと", "first_step", "priority"): (
+        "始め方がいくつかあるなら、何を目安に最初の一歩を選びますか？",
+    ),
+    ("これからのこと", "change_habits", "priority"): (
+        "今の習慣のうち、新しい暮らしでも続けるものは何を目安に選びますか？",
+    ),
+}

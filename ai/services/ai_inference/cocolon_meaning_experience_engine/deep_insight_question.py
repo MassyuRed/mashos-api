@@ -15,8 +15,10 @@ from emlis_ai_evidence_ledger_service import (
 from emlis_ai_safety_triage import build_emlis_safety_triage_decision
 
 from .deep_insight_theme import (
-    THEME_ANGLES, THEME_CHOICE_PREMISES, THEME_DECISION_IN_SCENE, THEME_DECISION_TARGETS, THEME_EQUIVALENT_POSITIONS, THEME_QUESTION_FORMS,
+    THEME_ANGLES, THEME_CHOICE_PREMISES, THEME_DECISION_IN_SCENE, THEME_DECISION_TARGETS,
+    THEME_DISTINCT_POSITIONS, THEME_EQUIVALENT_POSITIONS,
     THEME_REPEATED_INTRODUCTIONS, THEME_SCENES, THEME_SCENE_WORDING, THEME_TARGET_ANGLES, THEME_TARGET_FORMS,
+    THEME_VERIFIED_BODIES,
 )
 from .deep_insight_theme_intents import THEME_SCENE_ANGLE_TARGETS
 from .emlis_thread_source import identity
@@ -76,8 +78,8 @@ _THEME_WRITE_SYSTEM_MESSAGE = f"""日本語の短い質問を一つ返してく�
 {_DATA_BOUNDARY}
 sceneは問いの前に表示する場面です。sceneの直後に続く一節だけ書き、場面は繰り返しません。
 targetは本人が考える具体的なもの、angleは本人の答えで知りたいことです。どの行動・選択について、何を聞くかが伝わるようにします。
-formが例文なら、対象と聞く点を守って参考にします。「何を」「どんなとき」「どこまで」などで本人の考えを聞き、経験を決めつけません。
-返すのは {{"question":"〜ですか？"}} の形だけです。疑問文を「ですか？」か「ますか？」などで結びます。"""
+formがあれば、対象と聞く点を守って例文を参考にします。「何を」「どんなとき」「どこまで」などで本人の考えを聞き、経験を決めつけません。
+作った問いをquestionという一つの項目に入れたJSONだけを返します。疑問文を「ですか？」か「ますか？」などで結びます。"""
 
 _THEME_READ_SYSTEM_MESSAGE = f"""Emlisの「テーマから考える」の完成文questionを確認します。日本語のJSONだけを返します。
 {_DATA_BOUNDARY}
@@ -103,8 +105,8 @@ _THEME_COMPARE_PAIR_SYSTEM_MESSAGE = """新しいquestionと以前のpreviousの
 _THEME_REPAIR_SYSTEM_MESSAGE = f"""日本語の短い質問を一つ書き直してください。
 {_DATA_BOUNDARY}
 sceneは表示済みです。同じ場面を繰り返さず、angleへの答えを得るためにtargetをどう聞くか考えます。
-formが例文なら、何についてどんな答えを求めるかを保ちます。基準なら目安、条件なら行動を変えるきっかけを聞きます。
-問いだけを、丁寧な日本語の {{"question":"〜ますか？"}} の形で返します。"""
+formがあれば、例文が何についてどんな答えを求めるかを保ちます。基準なら目安、条件なら行動を変えるきっかけを聞きます。
+丁寧な日本語の問いをquestionという一つの項目に入れたJSONだけを返します。"""
 
 _THEME_WRITE_PREMISE = (
     "\npremiseは問いの内容を決める条件です。場面の時点と、どの選択が未確定かを保ち、formの例に沿って一問を書きます。"
@@ -591,7 +593,6 @@ def _prepare_theme(material, theme, choose):
         position = (theme, scene_id, angle_id)
         scene = THEME_SCENE_WORDING.get(position, scene)
         target, angle = THEME_SCENE_ANGLE_TARGETS[theme][scene_id][angle_id]
-        form = THEME_TARGET_FORMS.get(position, THEME_QUESTION_FORMS[angle_id])
         archived_keys = {row["question_key"] for row in past[30:]}
         scene_angles = {angle_id: intent[1] for angle_id, intent in THEME_SCENE_ANGLE_TARGETS[theme][scene_id].items()}
         previous_angles = [
@@ -604,7 +605,12 @@ def _prepare_theme(material, theme, choose):
         position = None
         angle_id = choose(tuple(THEME_ANGLES))
         angle = THEME_ANGLES[angle_id]
-        form = THEME_QUESTION_FORMS[angle_id]
+    examples = THEME_VERIFIED_BODIES.get(position, ())
+    form = examples[0] if examples else THEME_TARGET_FORMS.get(position)
+    if form and (not form.endswith("？") or "〜" in form or "～" in form):
+        form = None
+    distinct_text_keys = _theme_distinct_text_keys(position)
+    history, distinct_ids = _theme_history(past, known_positions, distinct_text_keys)
     return {
         "lane": "theme", "theme": theme, "scene": scene, "angle": angle, "target": target, "form": form,
         "angle_id": angle_id, "question_key": key, "previous_questions": previous,
@@ -612,21 +618,60 @@ def _prepare_theme(material, theme, choose):
         "repeated_introductions": THEME_REPEATED_INTRODUCTIONS.get(position, ()),
         "decision_in_scene": position in THEME_DECISION_IN_SCENE,
         "previous_angles": previous_angles,
-        "theme_history": _theme_history(past, known_positions),
+        "theme_history": history,
+        "verified_text_keys": _theme_verified_text_keys(position) if distinct_ids else (),
+        "distinct_history_ids": distinct_ids,
     }
 
 
-def _theme_history(past, known_positions):
+def _theme_verified_text_keys(position):
+    bodies = THEME_VERIFIED_BODIES.get(position, ())
+    if not bodies:
+        return ()
+    theme, scene_id, _ = position
+    scene = THEME_SCENE_WORDING.get(position, THEME_SCENES[theme][scene_id])
+    return tuple(_text_key(_normal(f"{scene}、{body}")) for body in bodies)
+
+
+def _theme_distinct_text_keys(position):
+    if position is None:
+        return {}
+    theme, scene_id, angle_id = position
+    current = (scene_id, angle_id)
+    keys = {}
+    for first, second in THEME_DISTINCT_POSITIONS.get(theme, ()):
+        if current == first:
+            previous = second
+        elif current == second:
+            previous = first
+        else:
+            continue
+        keys[_theme_position_key(theme, *previous)] = _theme_verified_text_keys((theme, *previous))
+    return keys
+
+
+def _theme_history(past, known_positions, distinct_text_keys):
     history = []
+    distinct_ids = []
     for index, row in enumerate(past):
-        wording = _excerpt(row.get("question_text"), 280) if index < 30 else None
+        original = row.get("question_text") if index < 30 else None
+        wording = _excerpt(original, 280)
         intent = known_positions.get(row["question_key"])
         if wording or intent:
             item = {"id": len(history) + 1, **(intent or {})}
             if wording:
                 item["question"] = wording
             history.append(item)
-    return history
+            text_key = row.get("text_key")
+            if text_key in distinct_text_keys.get(row["question_key"], ()) and (
+                original is None or (wording == original and _text_key(_normal(wording)) == text_key)
+            ):
+                distinct_ids.append(item["id"])
+    return history, distinct_ids
+
+
+def _text_key(normalized):
+    return identity("deep-insight-text", normalized)
 
 
 def _candidate(question, *, plan, lane, material, question_key=None):
@@ -638,7 +683,7 @@ def _candidate(question, *, plan, lane, material, question_key=None):
         scope = (anchor.source.source_id, anchor.source.field, anchor.span_start, anchor.span_end)
         question_key = identity("deep-insight-target", lane, scope, plan.focus, condition_key)
     normalized = _normal(question)
-    text_key = identity("deep-insight-text", normalized)
+    text_key = _text_key(normalized)
     issued = material["questions"] if lane == "theme" else material["prior"]
     if any(question_key == p.get("question_key") or text_key == p.get("text_key") for p in issued):
         return None
@@ -696,7 +741,9 @@ async def _generate_theme(prepared, material, generate):
 
     direction = {"theme": theme, "target": target, "angle": angle}
     plan = _Plan("VALUE", "", "", "", angle, None)
-    writing = {"scene": scene, "target": target, "angle": angle, "form": prepared["form"]}
+    writing = {"scene": scene, "target": target, "angle": angle}
+    if prepared["form"]:
+        writing["form"] = prepared["form"]
     premise = prepared["premise"]
     if premise is not None:
         writing["premise"] = premise
@@ -710,9 +757,13 @@ async def _generate_theme(prepared, material, generate):
             previous_angles=prepared["previous_angles"],
         )
         if candidate is not None:
+            history = prepared["theme_history"]
+            if candidate.text_key in prepared["verified_text_keys"]:
+                distinct_ids = set(prepared["distinct_history_ids"])
+                history = [row for row in history if row["id"] not in distinct_ids]
             if not await _theme_has_new_answer(
                 {**direction, "scene": scene, "question": candidate.text},
-                prepared["theme_history"], generate,
+                history, generate,
             ):
                 return QuestionRun(None, "rejected")
             return QuestionRun(candidate, "selected")

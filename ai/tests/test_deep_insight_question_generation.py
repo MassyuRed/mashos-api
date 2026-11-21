@@ -16,7 +16,9 @@ from cocolon_meaning_experience_engine.deep_insight_question import (
     generate_question, prepare_question_material,
 )
 
-from cocolon_meaning_experience_engine.deep_insight_theme import THEME_SCENES
+from cocolon_meaning_experience_engine.deep_insight_theme import (
+    THEME_DISTINCT_POSITIONS, THEME_EQUIVALENT_POSITIONS, THEME_SCENES, THEME_VERIFIED_BODIES,
+)
 from cocolon_meaning_experience_engine.deep_insight_theme_intents import THEME_SCENE_ANGLE_TARGETS
 
 
@@ -385,6 +387,61 @@ def test_theme_distinguishes_two_ordering_questions_by_their_answer_targets():
     assert calls[-1][1]["history"][0]["target"] == "取りかかる順番"
 
 
+@pytest.mark.parametrize("recent_count", [0, 30])
+def test_theme_uses_reviewed_distinction_for_recent_and_archived_displays(recent_count):
+    theme = "自分の価値観"
+    previous, _ = theme_run(theme, THEME_VERIFIED_BODIES[(theme, "ownership", "boundary")][-1],
+                            choose_theme=select_theme_angle("ownership", "boundary"))
+    old = {"question_key": previous.candidate.question_key, "text_key": previous.candidate.text_key}
+    if not recent_count:
+        old["question_text"] = previous.candidate.text
+    recent = [{"question_key": f"recent-{i}", "question_text": f"{i}回目は何を選びますか？"}
+              for i in range(recent_count)]
+    body = THEME_VERIFIED_BODIES[(theme, "risk", "boundary")][0]
+    result, calls = theme_run(theme, body, questions=recent + [old],
+                              choose_theme=select_theme_angle("risk", "boundary"))
+    assert result.disposition == "selected"
+    assert calls[0][1]["form"] == body
+    assert calls[1][1]["question"] == result.candidate.text
+    assert "form" not in calls[1][1]
+    if recent_count:
+        assert calls[2][0] == _THEME_COMPARE_SYSTEM_MESSAGE
+        assert calls[2][1]["history"] == [{"id": i + 1, "question": row["question_text"]}
+                                         for i, row in enumerate(recent)]
+    else:
+        assert len(calls) == 2
+
+
+@pytest.mark.parametrize("changed", ["prior_key", "prior_wording", "current_wording"])
+def test_theme_still_compares_displays_outside_reviewed_distinction(changed):
+    theme = "自分の価値観"
+    previous, _ = theme_run(theme, THEME_VERIFIED_BODIES[(theme, "ownership", "boundary")][0],
+                            choose_theme=select_theme_angle("ownership", "boundary"))
+    old = {"question_key": previous.candidate.question_key, "text_key": previous.candidate.text_key,
+           "question_text": previous.candidate.text}
+    body = THEME_VERIFIED_BODIES[(theme, "risk", "boundary")][0]
+    if changed == "prior_key":
+        old["text_key"] = "unknown"
+    elif changed == "prior_wording":
+        old["question_text"] = "うまくいかない場合に、どの程度の負担を引き受けますか？"
+    else:
+        body = "失敗したときは、どの範囲まで損を受け入れられますか？"
+    result, calls = theme_run(theme, body, questions=[old], comparison={"verdict": "repeat", "id": 1},
+                              choose_theme=select_theme_angle("risk", "boundary"))
+    assert result.disposition == "rejected"
+    assert calls[2][0] == _THEME_COMPARE_SYSTEM_MESSAGE
+    assert calls[2][1]["history"][0]["question"] == old["question_text"]
+    assert calls[3][0] == _THEME_COMPARE_PAIR_SYSTEM_MESSAGE
+
+
+def test_theme_writer_without_verified_example_uses_the_selected_answer_target():
+    result, calls = theme_run("日々の過ごし方", "食事の支度には、どのくらいまで時間をかけますか？",
+                              choose_theme=select_theme_angle("meal", "boundary"))
+    assert result.disposition == "selected"
+    assert set(calls[0][1]) == {"scene", "angle", "target"}
+    assert calls[1][0] == _THEME_READ_SYSTEM_MESSAGE
+
+
 @pytest.mark.parametrize(("issued_scene", "next_scene"), [
     ("new_method", "experiment"), ("experiment", "new_method"),
 ])
@@ -572,6 +629,13 @@ def test_theme_catalog_has_distinct_compatible_judgments_for_every_supported_sce
             assert len(angles) >= 4 and len(set(angles.values())) == len(angles)
     assert "change" in THEME_SCENE_ANGLE_TARGETS["人間関係"]["thanks"]
     assert "伝え" in THEME_SCENE_ANGLE_TARGETS["人間関係"]["thanks"]["change"][0]
+    for theme, pairs in THEME_DISTINCT_POSITIONS.items():
+        for first, second in pairs:
+            assert first != second
+            assert all(not {first, second} <= set(group) for group in THEME_EQUIVALENT_POSITIONS.get(theme, ()))
+            for scene, angle in (first, second):
+                assert angle in THEME_SCENE_ANGLE_TARGETS[theme][scene]
+                assert THEME_VERIFIED_BODIES[(theme, scene, angle)]
 
 
 def test_theme_reader_receives_older_same_scene_angles_without_guessing_their_text():
