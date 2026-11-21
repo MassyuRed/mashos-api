@@ -891,6 +891,24 @@ def test_theme_rejects_old_exact_text_key_and_closed_question():
     assert result.disposition == "rejected" and len(calls) == 2
 
 
+def test_theme_repairs_a_closed_question_containing_its_usual_wording():
+    draft = "感謝を伝える言葉をいつもと変えることはありますか？"
+    revised = "いつもとは別の言葉を選ぶのは、どんなときですか？"
+    result, calls = theme_run(
+        "人間関係", draft, repair=revised, choose_theme=select_theme_angle("thanks", "change"),
+    )
+    assert [system for system, _ in calls] == [
+        _THEME_WRITE_SYSTEM_MESSAGE, _THEME_REPAIR_SYSTEM_MESSAGE, _THEME_READ_SYSTEM_MESSAGE,
+    ]
+    assert result.candidate.text.endswith(revised)
+
+
+def test_theme_allows_asking_for_a_start_time():
+    draft = "話すと決めたら、いつから話し始めますか？"
+    result, calls = theme_run("人間関係", draft)
+    assert len(calls) == 2 and result.candidate.text.endswith(draft)
+
+
 @pytest.mark.parametrize("body", [
     "最初に何をするか？",
     "どんなときに変えますか？",

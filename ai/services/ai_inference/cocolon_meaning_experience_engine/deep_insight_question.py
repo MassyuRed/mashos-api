@@ -26,7 +26,10 @@ from .emlis_thread_source import identity
 
 _FOCUSES = frozenset({"REASON", "CONDITION", "VALUE", "CHANGE", "RELATIONSHIP", "PREFERENCE", "MEANING"})
 _QUESTION_PUNCTUATION = re.compile(r"[。！？!?\n\r]")
-_THEME_QUESTION_WORD = re.compile(r"何から|誰から|何(?!か)|どんな|どの|どう|どちら|どれ|どこ|いつ|いくつ|いくら|誰(?!か)")
+_THEME_QUESTION_WORD = re.compile(
+    r"何から|誰から|何(?!か)|どんな|どの|どう|どちら|どれ|どこ|"
+    r"いつ(?!も|でも|か(?!ら)|の間にか)|いくつ|いくら|誰(?!か)"
+)
 _THEME_QUESTION_END = re.compile(r"(?:ます|です|でしょう|ません)か[？?]\Z")
 _THEME_UNMARKED_QUESTION_END = re.compile(r"(?:ます|です|でしょう|ません)か。?\Z")
 _THEME_QUOTED_QUESTION = re.compile(r"「([^「」\r\n]+)」")
