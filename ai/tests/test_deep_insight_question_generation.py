@@ -10,6 +10,7 @@ from cocolon_meaning_experience_engine import deep_insight_question
 from cocolon_meaning_experience_engine.deep_insight_question import (
     ANSWER_READ_SYSTEM_MESSAGE, PLAN_SYSTEM_MESSAGE, READ_SYSTEM_MESSAGE,
     RECORD_REASON_READ_SYSTEM_MESSAGE, WRITE_SYSTEM_MESSAGE,
+    _RECORD_ALTERNATIVE_PLAN_MESSAGE,
     _THEME_COMPARE_PAIR_SYSTEM_MESSAGE, _THEME_COMPARE_SYSTEM_MESSAGE,
     _THEME_PLAN_SYSTEM_MESSAGE, _THEME_READ_SYSTEM_MESSAGE,
     _THEME_REPAIR_SYSTEM_MESSAGE, _THEME_WRITE_SYSTEM_MESSAGE,
@@ -56,7 +57,7 @@ def read(plan, *, record_reason=False, **changes):
     return {**result, **changes}
 
 
-def run(original, plan, question=BODY, *, reading=None):
+def run(original, plan, question=BODY, *, reading=None, alternative=None):
     prepared, sources = prepare_question_material(original, lane="records", theme=None)
     calls = []
 
@@ -64,12 +65,16 @@ def run(original, plan, question=BODY, *, reading=None):
         calls.append((system, payload))
         if system.startswith(PLAN_SYSTEM_MESSAGE):
             response = plan
+        elif system.startswith(_RECORD_ALTERNATIVE_PLAN_MESSAGE):
+            assert alternative is not None
+            response = alternative
         elif system == WRITE_SYSTEM_MESSAGE:
             response = {"question": question}
         else:
             assert system.startswith((READ_SYSTEM_MESSAGE, ANSWER_READ_SYSTEM_MESSAGE, RECORD_REASON_READ_SYSTEM_MESSAGE))
+            selected_plan = plan if alternative is None else {**ask(), **alternative}
             response = reading if reading is not None else read(
-                plan, record_reason=system.startswith(RECORD_REASON_READ_SYSTEM_MESSAGE))
+                selected_plan, record_reason=system.startswith(RECORD_REASON_READ_SYSTEM_MESSAGE))
         return json.dumps(response, ensure_ascii=False)
 
     result = asyncio.run(generate_question(prepared, sources, material=original, generate=generate))
@@ -137,30 +142,63 @@ def test_record_is_not_retained_if_its_dismissal_cannot_fit(monkeypatch):
     assert "skipped_emlis_questions" not in prepared
 
 
-def test_explicit_reason_stops_before_writing_but_new_condition_can_pass():
+@pytest.mark.parametrize("reason_quote", ["相手が困っていたので", "相手が困っていたので、" + QUOTE])
+def test_explicit_reason_is_replaced_only_by_a_supported_new_condition(reason_quote):
     causal_sentence = "相手が困っていたので、" + QUOTE
     original = material(source(causal_sentence + "。自分の仕事はまだ途中だった。"))
-    # This was the real planner response for the documented positive control.
-    invalid_plan = ask(quote=causal_sentence, ask="相手が困っていた理由")
-    result, calls = run(original, invalid_plan)
-    assert result.disposition == "rejected" and len(calls) == 1
+    invalid_plan = ask(quote=reason_quote, ask="相手が困っていた理由")
+    condition = {"decision": "ask", "focus": "CONDITION", "ask": "自分の仕事を先にする条件"}
 
-    plan = ask(focus="CONDITION", ask="自分の仕事を先にする条件")
     question = "同じような場面で、自分の仕事を先にするのはどんなときですか？"
-    result, calls = run(original, plan, question)
-    assert result.disposition == "selected" and len(calls) == 3
+    result, calls = run(original, invalid_plan, question, alternative=condition)
+    assert result.disposition == "selected"
+    assert [system for system, _ in calls] == [
+        PLAN_SYSTEM_MESSAGE, _RECORD_ALTERNATIVE_PLAN_MESSAGE, WRITE_SYSTEM_MESSAGE, READ_SYSTEM_MESSAGE,
+    ]
     assert result.candidate.text == f"「{QUOTE}」と書いていましたが、{question}"
-    assert calls[2][1]["material"] == calls[0][1]
+    assert calls[1][1] == {"action": QUOTE, "alternatives": ["自分の仕事はまだ途中だった"], "material": calls[0][1]}
+    assert calls[2][1]["quote"] == QUOTE
+    assert calls[3][1]["material"] == calls[0][1]
 
-    result, calls = run(original, plan, "自分の仕事を先にしたとき、どんな条件がありましたか？",
-                        reading={"verdict": "reject", "reason": "unsupported_premise"})
-    assert result.disposition == "rejected" and len(calls) == 3
+    result, calls = run(original, invalid_plan, "自分の仕事を先にしたとき、どんな条件がありましたか？",
+                        reading={"verdict": "reject", "reason": "unsupported_premise"}, alternative=condition)
+    assert result.disposition == "rejected" and len(calls) == 4
+
+
+@pytest.mark.parametrize("response,disposition", [
+    ({"decision": "skip"}, "no_merit"),
+    ({"decision": "ask", "focus": "REASON", "ask": "相手が困っていた理由"}, "rejected"),
+    ({"decision": "ask", "focus": "CONDITION", "source": "a1", "ask": "仕事を先にする条件"}, "rejected"),
+])
+def test_alternative_planning_cannot_repeat_reason_or_choose_another_source(response, disposition):
+    original = material(source("相手が困っていたので、" + QUOTE + "。自分の仕事はまだ途中だった。"))
+    result, calls = run(original, ask(), alternative=response)
+    assert result.disposition == disposition and result.candidate is None and len(calls) == 2
+
+
+def test_alternative_planning_still_blocks_a_dismissed_question_before_reading():
+    question = "同じような場面で、自分の仕事を先にするのはどんなときですか？"
+    original = material(source("相手が困っていたので、" + QUOTE + "。自分の仕事はまだ途中だった。",
+                               emlis_skipped_question=question))
+    result, calls = run(original, ask(), question, alternative={
+        "decision": "ask", "focus": "CONDITION", "ask": "自分の仕事を先にする条件",
+    })
+    assert result.disposition == "rejected" and result.candidate is None and len(calls) == 3
+    assert "skipped_emlis_questions" in calls[1][0]
 
 
 def test_explicit_reason_without_a_new_question_can_still_skip():
     original = material(source("相手が困っていたので、" + QUOTE + "。"))
     result, calls = run(original, {"decision": "skip"})
     assert result.disposition == "no_merit" and len(calls) == 1
+    result, calls = run(original, ask(quote="相手が困っていたので", ask="相手が困っていた理由"))
+    assert result.disposition == "rejected" and len(calls) == 1
+
+
+def test_invalid_reason_quote_cannot_trigger_alternative_planning():
+    original = material(source("相手が困っていたので、" + QUOTE + "。自分の仕事はまだ途中だった。"))
+    result, calls = run(original, ask(quote="原文にはない理由"))
+    assert result.disposition == "rejected" and len(calls) == 1
 
 
 @pytest.mark.parametrize("updates", [

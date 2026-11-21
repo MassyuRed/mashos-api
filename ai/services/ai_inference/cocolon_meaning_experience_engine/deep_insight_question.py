@@ -55,6 +55,11 @@ _RECORD_REASON_BODY = re.compile(
 _CITATION_JOIN = "」と書いていましたが、"
 _CONDITION_QUESTION = re.compile(r"どんな(?:とき|時|場合|条件|場面)|どういう(?:とき|場合|条件)")
 _STATED_REASON = re.compile(r"(?:した|いた|った|だった|くて|なので|なくて)(?:ので|から)|だったため|するため|のため")
+_RECORD_SENTENCE = re.compile(r"[^。！？!?\n\r]+")
+_PENDING_ACTION = re.compile(
+    r"まだ[^、,]*(?:途中|未着手|終わっていな|済んでいな)|やりかけ|"
+    r"(?:作業|対応|準備|用事|仕事|勉強)[^、,]*(?:が残って|は残って)"
+)
 _REASON_FINISH = re.compile(r"(?:から|ため|ので)(?:です|だ|でした)?[。！？!?]?\Z")
 _PAST_PREMISE = re.compile(
     r"(?:仕事を(?:やめた|辞めた)|別れた|断った|諦めた|退職した|押しつけられた)"
@@ -124,7 +129,6 @@ PLAN_SYSTEM_MESSAGE = f"""Emlisの「わたしを知る問い」で、本人に�
 記録の入口では、同じ場面について思考・行動・有効な本人回答を照合し、まだ本人が説明していない観点を一つ選びます。
 既に書いた理由、別表現の既出質問、スキップしたEmlisの問いを繰り返しません。理由が確認済みでも別の条件が有用ならCONDITIONにします。
 「〜ので、〜した」では、前半は本人が記した後半の理由です。その理由や、文中の相手がなぜそうしたかは尋ねません。本人に新しく確かめる点がなければskipです。
-先にした作業の理由と、途中だった別の作業が原文にある場合、同じような場面で別の作業を先にする条件を聞く価値があればCONDITIONにします。実際に別の作業を先にしたとは扱わず、原文にない選択肢は足しません。
 記録のsourceはsourcesに実在するキーを一字ずつ写します。キーがa1ならa1です。キーにtext、sources、配列番号などを足しません。
 quoteはそのキーのtextに一度だけ現れる連続した6〜70文字です。理由と行動をまとめず、確認する行動・判断・状態を含む箇所を選び、文末の「。」「！」「？」と空白は含めません。別人の意図・過去の事実を推定しません。
 テーマの入口では、選択したテーマ内で、自分の基準や捉え方が分かる一点を選びます。関連記録がなくても生成し、sourceとquoteは空文字です。
@@ -133,9 +137,15 @@ askは何を知りたいかの短い日本語で、表示する質問文では�
 思考・行動欄の出来事の理由を選ぶときは、askを「引用した内容の理由」とし、記録の動作を別の動作に言い換えません。
 {_FOCUS_GUIDE}
 記録の出力例 {{"decision":"ask","focus":"REASON","source":"r1.thought","quote":"夕方までに道具を片づけた","condition":"","ask":"引用した内容の理由"}}
-記録r1.thoughtが「雨が降りそうだったので、自転車を先にしまった。庭の掃除はまだ途中だった。」の場合の出力例 {{"decision":"ask","focus":"CONDITION","source":"r1.thought","quote":"自転車を先にしまった","condition":"","ask":"同じような場面で庭の掃除を先に続ける条件"}}
 前の回答a1から聞く例 {{"decision":"ask","focus":"CONDITION","source":"a1","quote":"意見が違っても本音を言える","condition":"","ask":"本音を言いやすい相手の反応"}}
 テーマの出力例 {{"decision":"ask","focus":"RELATIONSHIP","source":"","quote":"","condition":"","ask":"友達だと感じる場面"}}"""
+
+_RECORD_ALTERNATIVE_PLAN_MESSAGE = f"""本人が記録した行動actionと、同じ記録に残る途中の行動alternativesを比べます。日本語のJSONだけを返します。
+{_DATA_BOUNDARY}
+actionの理由は原文にあります。理由や、記録に登場した別の人の事情を聞きません。
+alternativesにある行動を先にする条件を、同じような場面について本人に確かめる価値がある場合だけ選びます。実際にその行動を先にしたと決めつけません。
+原文・本人回答・既出・見送った問いを読み、条件がすでに分かる、場面が違う、または新たに尋ねる意味がなければ {{"decision":"skip"}} を返します。
+尋ねる場合は、条件を聞く対象をaskに明記し、{{"decision":"ask","focus":"CONDITION","ask":"別の行動を先にする条件"}} の形だけで返します。askに表示用の質問文は書きません。"""
 
 WRITE_SYSTEM_MESSAGE = f"""確認点askを、本人に丁寧に尋ねる自然な日本語の一問にします。questionだけを持つJSONを返します。
 {_DATA_BOUNDARY}
@@ -446,7 +456,7 @@ def _stated_reason(anchor):
     return bool(_STATED_REASON.search(prefix + anchor.quote) or _REASON_FINISH.search(suffix.strip()))
 
 
-def _accept_plan(value, *, lane, sources):
+def _read_plan(value, *, lane, sources):
     if (not isinstance(value, dict) or set(value) != {"decision", "focus", "source", "quote", "condition", "ask"}
             or any(not isinstance(v, str) for v in value.values())
             or value["decision"] != "ask" or value["focus"] not in _FOCUSES):
@@ -468,11 +478,28 @@ def _accept_plan(value, *, lane, sources):
         anchor = _bind_anchor(selected, quote)
         if anchor is None or (condition and condition not in anchor.source.text):
             return None
-        if focus == "REASON" and (_stated_reason(anchor) or _FOREIGN_ACTOR.match(quote)):
-            return None
     elif lane != "theme" or source or quote:
         return None
     return _Plan(focus, source, quote, condition, ask, anchor)
+
+
+def _record_alternative(plan):
+    sentences = tuple(_RECORD_SENTENCE.finditer(plan.anchor.source.text))
+    for sentence in sentences:
+        if not sentence.start() <= plan.anchor.start < plan.anchor.end <= sentence.end():
+            continue
+        reason = _STATED_REASON.search(sentence.group())
+        if reason is None:
+            return None
+        action = sentence.group()[reason.end():].strip(" 、,")
+        alternatives = [
+            other.group().strip() for other in sentences
+            if other is not sentence and _PENDING_ACTION.search(other.group())
+        ]
+        if alternatives and _bind_anchor(plan.anchor.source, action) and not _FOREIGN_ACTOR.match(action):
+            return {"action": action, "alternatives": alternatives}
+        return None
+    return None
 
 
 def _accept_surface(raw, *, plan, theme):
@@ -872,9 +899,27 @@ async def generate_question(prepared, sources, *, material, generate):
     decision = _json_object(await generate(PLAN_SYSTEM_MESSAGE + skipped_guidance, prepared))
     if decision == {"decision": "skip"}:
         return QuestionRun(None, "no_merit")
-    plan = _accept_plan(decision, lane=lane, sources=sources)
+    plan = _read_plan(decision, lane=lane, sources=sources)
     if plan is None:
         return QuestionRun(None, "rejected")
+    known_reason = plan.focus == "REASON" and _stated_reason(plan.anchor)
+    if known_reason or (plan.focus == "REASON" and _FOREIGN_ACTOR.match(plan.quote)):
+        alternative = _record_alternative(plan) if known_reason and plan.is_record_reason else None
+        if alternative is None:
+            return QuestionRun(None, "rejected")
+        revised = _json_object(await generate(
+            _RECORD_ALTERNATIVE_PLAN_MESSAGE + skipped_guidance, {**alternative, "material": prepared},
+        ))
+        if revised == {"decision": "skip"}:
+            return QuestionRun(None, "no_merit")
+        if not revised or set(revised) != {"decision", "focus", "ask"} or revised["focus"] != "CONDITION":
+            return QuestionRun(None, "rejected")
+        plan = _read_plan(
+            {**revised, "source": plan.source, "quote": alternative["action"], "condition": ""},
+            lane=lane, sources=sources,
+        )
+        if plan is None:
+            return QuestionRun(None, "rejected")
 
     question = _accept_surface(await generate(WRITE_SYSTEM_MESSAGE, {
         "lane": lane, "theme": theme, "focus": plan.focus,
