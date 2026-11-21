@@ -32,6 +32,15 @@ CASE_TIMEOUT_SECONDS = 96
 SCHEMA = "deep-insight.theme-eval.v1"
 Generate = Callable[[str, dict], Awaitable[str]]
 
+_MODEL_PHASES = (
+    (question._THEME_PLAN_SYSTEM_MESSAGE, "scene_plan"),
+    (question._THEME_WRITE_SYSTEM_MESSAGE, "write"),
+    (question._THEME_READ_SYSTEM_MESSAGE, "read"),
+    (question._THEME_REPAIR_SYSTEM_MESSAGE, "repair"),
+    (question._THEME_COMPARE_SYSTEM_MESSAGE, "history_batch"),
+    (question._THEME_COMPARE_PAIR_SYSTEM_MESSAGE, "history_pair"),
+)
+
 
 @dataclass(frozen=True)
 class Case:
@@ -76,7 +85,9 @@ async def run_case(case: Case, history, seen_inputs, *, generate: Generate):
     prepared = None
 
     async def capture(system, payload):
-        call = {"index": len(calls) + 1, "system_sha256": hashlib.sha256(system.encode("utf-8")).hexdigest(),
+        phase = next((label for prompt, label in _MODEL_PHASES if system.startswith(prompt)), "unknown")
+        call = {"index": len(calls) + 1, "phase": phase,
+                "system_sha256": hashlib.sha256(system.encode("utf-8")).hexdigest(),
                 "input": copy.deepcopy(payload), "raw": None}
         calls.append(call)
         call["raw"] = await generate(system, payload)
@@ -150,6 +161,9 @@ async def evaluate(selected, output, *, generate: Generate | None = None, transp
         totals[case.theme]["attempts"] += 1
         totals[case.theme]["provider_calls"] += len(outcome["calls"])
         totals[case.theme][outcome["disposition"]] += 1
+        if outcome["disposition"] in ("rejected", "error") and outcome["calls"]:
+            phase = outcome["calls"][-1]["phase"]
+            totals[case.theme][f"{outcome['disposition']}_after_{phase}"] += 1
 
         if outcome.get("all_history_key_collision"):
             totals[case.theme]["all_history_key_collision"] += 1

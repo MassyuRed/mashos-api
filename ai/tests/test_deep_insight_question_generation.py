@@ -786,6 +786,19 @@ def test_theme_allows_asking_where_to_start_without_treating_it_as_a_yes_no_ques
     assert calls[1][0] == _THEME_READ_SYSTEM_MESSAGE
 
 
+@pytest.mark.parametrize(("draft", "expected"), [
+    ("無理なく贈り物に使える金額の上限は、いくらまでですか？", "無理なく贈り物に使える金額の上限はいくらですか？"),
+    ("贈り物には、いくらまでなら無理なく使えますか？", "贈り物には、いくらまでなら無理なく使えますか？"),
+])
+def test_theme_reader_checks_the_amount_without_a_redundant_upper_limit(draft, expected):
+    result, calls = theme_run(
+        "自分の価値観", draft, choose_theme=select_theme_angle("useful_gift", "boundary"),
+    )
+    reading = calls[1][1]
+    assert reading["body"] == expected
+    assert result.candidate.text == f"{reading['scene']}、{expected}"
+
+
 @pytest.mark.parametrize(("theme", "scene", "angle", "draft", "expected"), [
     ("人間関係", "asking_help", "priority",
      "誰かに助けを求めるかどうか、何を基準に決めますか？", "何を基準に決めますか？"),

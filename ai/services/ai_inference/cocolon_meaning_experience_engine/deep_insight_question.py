@@ -43,6 +43,7 @@ _THEME_REPEATED_CRITERION = re.compile(
     r"(?:基準|目安|決め手)[はを][、, ]*何を(?:基準|目安|決め手)に"
 )
 _THEME_BROKEN_CRITERION = re.compile(r"(?:どのような|どんな)(?:手がかり|基準|目安)に決めますか[？?]\Z")
+_THEME_REDUNDANT_LIMIT = re.compile(r"((?:上限|限度)は)[、, ]*(いくら|いくつ)まで((?:です|でしょう)か[？?])\Z")
 _PREMISE_MARKERS = re.compile(r"はず|に違いない|ということですよね|させられた|診断|性格タイプ")
 _REASON_QUESTION = re.compile(r"なぜ|どうして|理由(?:は|から|で|を|が)|どういう理由")
 _RECORD_REASON_BODY = re.compile(
@@ -849,6 +850,7 @@ async def _review_theme_candidate(raw, *, plan, direction, scene, key, material,
     body = _accept_surface(raw, plan=plan, theme=direction["theme"])
     if body is not None:
         body = _without_repeated_introduction(body, scene, repeated_introductions)
+        body = _THEME_REDUNDANT_LIMIT.sub(r"\1\2\3", body)
     if (body is None or len(body) < 7 or not _THEME_QUESTION_WORD.search(body) or not _THEME_QUESTION_END.search(body)
             or _THEME_UNBOUND_CHANGE.fullmatch(body) or _THEME_ASSISTANT_NAME.search(body)
             or (not decision_in_scene and _THEME_UNBOUND_DECISION.fullmatch(body))
