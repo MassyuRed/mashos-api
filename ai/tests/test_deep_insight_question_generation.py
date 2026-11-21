@@ -1023,6 +1023,17 @@ def test_theme_preserves_a_qualifier_that_makes_a_repeated_opening_a_different_c
     assert result.candidate.text == f"{calls[1][1]['scene']}、{draft}"
 
 
+def test_theme_preserves_the_question_after_a_punctuation_only_echo_of_the_scene():
+    expected = "どちらの扱いにするかは、何を決め手にしますか？"
+    draft = "全員を同じように扱うか、事情に合わせるか迷ったとき、" + expected
+    result, calls = theme_run(
+        "自分の価値観", draft, choose_theme=select_theme_angle("fairness", "priority"),
+    )
+    assert [system for system, _ in calls] == [_THEME_WRITE_SYSTEM_MESSAGE, _THEME_READ_SYSTEM_MESSAGE]
+    assert calls[1][1]["body"] == expected
+    assert result.candidate.text == f"{calls[1][1]['scene']}、{expected}"
+
+
 def test_theme_preserves_a_new_scope_in_an_opening_about_asking_for_help():
     draft = "人にしかできない作業で誰かに助けを求めるかどうかを決める際、どんなことを手がかりにしますか？"
     result, calls = theme_run("人間関係", draft, choose_theme=select_theme_angle("asking_help", "priority"))

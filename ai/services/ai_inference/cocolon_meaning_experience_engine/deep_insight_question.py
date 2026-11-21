@@ -35,6 +35,7 @@ _THEME_UNMARKED_QUESTION_END = re.compile(r"(?:ます|です|でしょう|ませ
 _THEME_QUOTED_QUESTION = re.compile(r"「([^「」\r\n]+)」")
 _THEME_SINGLE_QUOTED_QUESTION = re.compile(r"\{[ \t]*'question'[ \t]*:[ \t]*'([^'\r\n]+)'[ \t]*\}")
 _THEME_PLAIN_QUESTION = re.compile(r"[ぁ-んァ-ヶ一-龯][^\r\n{}「」\"'：:]*[？?]")
+_THEME_SCENE_COMMA = re.compile(r"[、,，]")
 _THEME_ASSISTANT_NAME = re.compile(r"emlis|エムリス", re.IGNORECASE)
 _THEME_MAX_PAIR_RECHECKS = 6
 _THEME_HISTORY_BATCH_SIZE = 32
@@ -931,14 +932,14 @@ async def _review_theme_candidate(raw, *, plan, direction, scene, key, material,
 
 
 def _without_repeated_introduction(body, scene, repeated_introductions):
-    openings = tuple(
-        introduction + delimiter
-        for introduction in (scene, *repeated_introductions)
-        for delimiter in ("、", ",")
-    )
-    while opening := next((opening for opening in openings if body.startswith(opening)), None):
-        body = body.removeprefix(opening).lstrip()
-    return body
+    openings = {_THEME_SCENE_COMMA.sub("", text) for text in (scene, *repeated_introductions)}
+    while True:
+        for comma in _THEME_SCENE_COMMA.finditer(body):
+            if _THEME_SCENE_COMMA.sub("", body[:comma.start()]) in openings:
+                body = body[comma.end():].lstrip()
+                break
+        else:
+            return body
 
 
 async def generate_question(prepared, sources, *, material, generate):
