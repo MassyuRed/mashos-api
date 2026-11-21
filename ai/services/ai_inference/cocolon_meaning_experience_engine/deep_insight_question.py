@@ -871,7 +871,7 @@ async def _generate_theme(prepared, material, generate):
             return QuestionRun(candidate, "selected")
         if attempt or reason in ("repeat", "review_unavailable"):
             return QuestionRun(None, "rejected")
-        cue_instruction = _THEME_REPAIR_CUE if reason == "angle" and prepared["angle_id"] == "cue" else ""
+        cue_instruction = _THEME_REPAIR_CUE if reason in ("angle", "surface") and prepared["angle_id"] == "cue" else ""
         raw = await generate(_THEME_REPAIR_SYSTEM_MESSAGE + premise_instruction + cue_instruction, {
             **writing, "reason": reason,
         })

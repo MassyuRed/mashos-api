@@ -980,9 +980,11 @@ def test_theme_repairs_a_closed_question_containing_its_usual_wording():
 ])
 def test_theme_repairs_a_yes_no_main_clause_with_an_embedded_question(theme, scene, angle, draft, revised):
     result, calls = theme_run(theme, draft, repair=revised, choose_theme=select_theme_angle(scene, angle))
-    assert [system for system, _ in calls] == [
-        _THEME_WRITE_SYSTEM_MESSAGE, _THEME_REPAIR_SYSTEM_MESSAGE, _THEME_READ_SYSTEM_MESSAGE,
-    ]
+    assert len(calls) == 3
+    assert calls[0][0] == _THEME_WRITE_SYSTEM_MESSAGE
+    assert calls[1][0].startswith(_THEME_REPAIR_SYSTEM_MESSAGE)
+    assert ("情報そのもの" in calls[1][0]) == (angle == "cue")
+    assert calls[2][0] == _THEME_READ_SYSTEM_MESSAGE
     assert calls[1][1]["reason"] == "surface"
     assert result.candidate.text.endswith(revised)
 
