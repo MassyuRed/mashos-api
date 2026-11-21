@@ -65,11 +65,38 @@ askにある確認対象を文面で明示します。「相手の反応」を�
 引用の後で相手の反応を聞く出力例 {{"question":"相手がどんな反応をすると、安心して話を続けられますか？"}}
 テーマで基準を聞く出力例 {{"question":"新しいことを学ぶとき、どんなことを大切にしますか？"}}"""
 
-READ_SYSTEM_MESSAGE = f"""Emlisの完成した一問を、渡された原資料から独立に読みます。日本語のJSONだけを返します。
+
+def _reading_system_message(*, answer):
+    focus_intro = "focusは意味から選びます。"
+    focus_detail = ""
+    quote_guidance = (
+        "記録入口では、文面の「」内をquoteとし、本人の原文sourcesのどのキーにあるか照合します。"
+        "sourceはsourcesのキーだけを一字ずつ写します。キーがa1ならa1で、a1.textは使いません。"
+        "該当が一つに確定しなければ拒否します。"
+    )
+    answer_example = ""
+    if answer:
+        focus_intro = "focusは問いが答えとして求める内容から選びます。"
+        focus_detail = (
+            "相手の具体的な反応や振る舞いによって自分の行動が変わる条件を聞く場合はCONDITION、"
+            "相手との関係をどう捉えるかを聞く場合はRELATIONSHIPです。"
+        )
+        quote_guidance = (
+            "記録入口では、入力questionの先頭にあるかぎ括弧の中だけをquoteに一字ずつ写します。"
+            "次にsourcesでその文字列を探します。"
+            "sourcesのtext全体へ広げず、末尾の句読点も補いません。"
+            "sourceはsourcesのキーだけを一字ずつ写します。"
+            "キーがa1ならa1で、a1.textは使いません。"
+            "該当が一つに確定しなければ拒否します。"
+        )
+        answer_example = """以前の答えa2が「相談できると嬉しい。急ぎのときもそう思う。」で、questionが「相談できると嬉しい」と書いていましたが、相手のどんな反応があると相談しやすいですか？の場合の採用例
+{"verdict":"accept","focus":"CONDITION","source":"a2","quote":"相談できると嬉しい","condition":"","premise_supported":true,"new_information":true}。
+"""
+    return f"""Emlisの完成した一問を、渡された原資料から独立に読みます。日本語のJSONだけを返します。
 {_DATA_BOUNDARY}
 作成者が何を意図したかではなく、完成文が実際に本人の何を尋ね、どの出来事・主体・時点・否定・留保・条件を前提に置くかを読んでください。
-focusは意味から選びます。{_FOCUS_GUIDE}
-記録入口では、文面の「」内をquoteとし、本人の原文sourcesのどのキーにあるか照合します。sourceはsourcesのキーだけを一字ずつ写します。キーがa1ならa1で、a1.textは使いません。該当が一つに確定しなければ拒否します。
+{focus_intro}{_FOCUS_GUIDE}{focus_detail}
+{quote_guidance}
 テーマ入口ではsourceとquoteを空にし、選択テーマと問いの観点が実際に一致するか確かめます。記録や過去の回答がゼロでも成立します。その人の過去の事実を前提にせず、テーマに沿った初めての基準を尋ねる場合はpremise_supportedとnew_informationをtrueにします。
 conditionは文面が明示した既知の短い限定条件をそのまま書き、限定がなければ空文字です。推測して補わないでください。
 premise_supportedは、引用外も含めて原文にない出来事・主体・時点・評価・原因を前提にせず、テーマにも合う時だけtrueにします。
@@ -77,15 +104,13 @@ new_informationは、同じ場面について有効な回答・訂正・原文�
 マップと過去の問い自体は本人の答えや事実ではありません。別人や別の時点の答えを本人の答えにせず、前提や重複を確かめられなければ拒否します。
 記録で「不安があっても説明会に行った」の理由を初めて聞く場合の採用例
 {{"verdict":"accept","focus":"REASON","source":"r1.thought","quote":"不安があっても説明会に行った","condition":"","premise_supported":true,"new_information":true}}。
-過去の材料なしで仕事・学びを選び「何を大切にして仕事を選びますか？」と聞く場合の採用例
+{answer_example}過去の材料なしで仕事・学びを選び「何を大切にして仕事を選びますか？」と聞く場合の採用例
 {{"verdict":"accept","focus":"VALUE","source":"","quote":"","condition":"","premise_supported":true,"new_information":true}}。
 拒否の例 {{"verdict":"reject","reason":"already_answered"}}。reasonはalready_answered、unsupported_premise、outside_theme、no_new_information、unclearのいずれかです。"""
 
-ANSWER_READ_SYSTEM_MESSAGE = READ_SYSTEM_MESSAGE + """
-本人の過去の回答を引用する場合、以前の問いで尋ねたこと、本人が既に書いた答え、いまの問いで求める答えを照合します。
-相手の具体的な反応や振る舞いによって自分の行動が変わる条件を聞く場合はCONDITION、相手との関係をどう捉えるかを聞く場合はRELATIONSHIPです。
-以前の答えa2が「相談できると嬉しい。急ぎのときもそう思う。」で、questionが「相談できると嬉しい」と書いていましたが、相手のどんな反応があると相談しやすいですか？の場合の採用例
-{"verdict":"accept","focus":"CONDITION","source":"a2","quote":"相談できると嬉しい","condition":"","premise_supported":true,"new_information":true}。"""
+
+READ_SYSTEM_MESSAGE = _reading_system_message(answer=False)
+ANSWER_READ_SYSTEM_MESSAGE = _reading_system_message(answer=True)
 
 
 @dataclass(frozen=True, slots=True, repr=False)
