@@ -165,7 +165,7 @@ def test_explicit_reason_is_replaced_only_by_a_supported_new_condition(reason_qu
         "lane": "records", "theme": None, "focus": "CONDITION", "quote": QUOTE,
         "condition": "", "ask": condition["ask"], "alternatives": ["自分の仕事はまだ途中だった"],
     }
-    assert calls[3][1] == {"question": result.candidate.text, "material": calls[0][1]}
+    assert calls[3][1] == {"citation": QUOTE, "body": question, "material": calls[0][1]}
     receipt = result.candidate.receipt
     assert original["records"][0]["thought"][receipt["start"]:receipt["end"]] == QUOTE
 
@@ -189,7 +189,8 @@ def test_alternative_writer_reversing_the_choice_is_still_rejected_by_the_reader
     assert result.disposition == "rejected" and result.candidate is None
     assert calls[-1][0] == _RECORD_ALTERNATIVE_READ_MESSAGE
     assert calls[-1][1] == {
-        "question": f"「{QUOTE}」と書いていましたが、頼まれたことを先にすることの条件は、どんなときですか？",
+        "citation": QUOTE,
+        "body": "頼まれたことを先にすることの条件は、どんなときですか？",
         "material": calls[0][1],
     }
 
@@ -217,7 +218,7 @@ def test_alternative_reader_must_return_exact_citation_condition_and_new_evidenc
     )
     assert result.disposition == "rejected" and result.candidate is None and len(calls) == 4
     assert calls[-1] == (_RECORD_ALTERNATIVE_READ_MESSAGE, {
-        "question": f"「{QUOTE}」と書いていましたが、{question}", "material": calls[0][1],
+        "citation": QUOTE, "body": question, "material": calls[0][1],
     })
 
 
@@ -230,6 +231,23 @@ def test_alternative_reader_can_reject_an_undocumented_action():
     )
     assert result.disposition == "rejected" and result.candidate is None and len(calls) == 4
     assert calls[-1][0] == _RECORD_ALTERNATIVE_READ_MESSAGE
+
+
+def test_alternative_reader_still_rejects_an_answer_beyond_the_visible_citation():
+    evidence = "自分の仕事の締切が当日なら、自分の仕事を先に進める"
+    original = material(source("相手が困っていたので、" + QUOTE + "。自分の仕事はまだ途中だった。"
+                               + evidence + "。"))
+    question = "同じような場面で、自分の仕事を先にするのはどんなときですか？"
+    result, calls = run(
+        original, ask(), question,
+        alternative={"decision": "ask", "focus": "CONDITION", "ask": "同じような場面で自分の仕事を先にする条件"},
+        reading={"verdict": "reject", "reason": "already_answered", "evidence": evidence},
+    )
+    assert result.disposition == "rejected" and result.candidate is None
+    assert calls[-1] == (_RECORD_ALTERNATIVE_READ_MESSAGE, {
+        "citation": QUOTE, "body": question, "material": calls[0][1],
+    })
+    assert evidence in calls[-1][1]["material"]["sources"]["r1.thought"]["text"]
 
 
 @pytest.mark.parametrize("response,disposition", [
