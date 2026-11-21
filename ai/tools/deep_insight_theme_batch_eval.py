@@ -38,6 +38,7 @@ _MODEL_PHASES = (
     (question._THEME_READ_SYSTEM_MESSAGE, "read"),
     (question._THEME_READ_RETRY_SYSTEM_MESSAGE, "read_retry"),
     (question._THEME_REPAIR_SYSTEM_MESSAGE, "repair"),
+    (question._THEME_FORM_REPAIR_SYSTEM_MESSAGE, "repair"),
     (question._THEME_COMPARE_SYSTEM_MESSAGE, "history_batch"),
     (question._THEME_COMPARE_PAIR_SYSTEM_MESSAGE, "history_pair"),
 )
