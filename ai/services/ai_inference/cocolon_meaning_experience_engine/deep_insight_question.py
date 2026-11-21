@@ -184,6 +184,10 @@ new_informationは、同じ場面について有効な回答・訂正・原文�
 
 READ_SYSTEM_MESSAGE = _reading_system_message(answer=False)
 ANSWER_READ_SYSTEM_MESSAGE = _reading_system_message(answer=True)
+_SKIPPED_EMLIS_QUESTIONS_GUIDANCE = (
+    "\nskipped_emlis_questionsは、sourcesに示す同じ記録で本人が回答を見送った問いです。"
+    "その記録について、同じ内容を別の言い方で聞き直しません。見送った問い自体は本人の事実や回答ではありません。"
+)
 RECORD_REASON_READ_SYSTEM_MESSAGE = f"""Emlisの一問を、渡された原資料から独立に読みます。日本語のJSONだけを返します。
 {_DATA_BOUNDARY}
 完成文は、原文から抜き出した「」内と、その内容について尋ねる文で構成されます。先頭の引用を含め、主体、動作、時点、否定、留保、条件を原資料と照合してください。
@@ -322,6 +326,10 @@ def prepare_question_material(material, *, lane, theme, choose_theme=choice):
         raw_fields = (record["thought"], record["action"])
         if any(isinstance(text, str) and text.strip() and not _safe_text(text) for text in raw_fields):
             continue
+        skipped_raw = record.get("emlis_skipped_question")
+        skipped = _excerpt(skipped_raw, 250)
+        if skipped_raw and not skipped:
+            continue
         record_source_keys = []
         for field in ("thought", "action"):
             value = _excerpt(record[field], 520)
@@ -330,11 +338,14 @@ def prepare_question_material(material, *, lane, theme, choose_theme=choice):
                 append_source(key, _source(record, field=field, text=value, recorded_at=record["created_at"]))
                 if key in sources:
                     record_source_keys.append(key)
+        open_start = len(payload["open_emlis_questions"])
+        answered_start = len(payload["answered_emlis_questions"])
         prompt = _excerpt(record["emlis_open_question"], 250)
         if prompt and record_source_keys:
             payload["open_emlis_questions"].append({"question": prompt, "sources": record_source_keys})
             if len(_compact(payload).encode()) > _MAX_MATERIAL_BYTES:
                 payload["open_emlis_questions"].pop()
+        skipped_source_keys = list(record_source_keys)
         for j, pair in enumerate(record.get("emlis_answered_questions", []), 1):
             question = _excerpt(pair["question"], 250)
             answer = _excerpt(pair["answer"], 500)
@@ -352,6 +363,21 @@ def prepare_question_material(material, *, lane, theme, choose_theme=choice):
                 payload["sources"].pop(key)
                 sources.pop(key)
                 break
+            skipped_source_keys.append(key)
+        if skipped and skipped_source_keys:
+            control = {"question": skipped, "sources": skipped_source_keys}
+            dismissed = payload.setdefault("skipped_emlis_questions", [])
+            dismissed.append(control)
+            if len(_compact(payload).encode()) > _MAX_MATERIAL_BYTES:
+                # Never admit a record after omitting its dismissal for size.
+                dismissed.pop()
+                if not dismissed:
+                    del payload["skipped_emlis_questions"]
+                del payload["open_emlis_questions"][open_start:]
+                del payload["answered_emlis_questions"][answered_start:]
+                for key in skipped_source_keys:
+                    del payload["sources"][key]
+                    del sources[key]
 
     map_reference = material["map"]
     if map_reference:
@@ -622,6 +648,17 @@ def _candidate(question, *, plan, lane, material, question_key=None):
                   for pair in row.get("emlis_answered_questions", []) if pair.get("question")]
         if any(normalized == _normal(text) for text in known):
             return None
+        if anchor:
+            # The same generic question can refer to different occurrences.
+            # Compare its literal wording only within the anchored record.
+            source_id = anchor.source.source_id
+            body = _normal(question.partition(_CITATION_JOIN)[2])
+            for row in material["records"]:
+                dismissed = row.get("emlis_skipped_question")
+                if dismissed and _normal(dismissed) in (normalized, body) and (
+                        row["id"] == source_id or any(answer.get("id") == source_id
+                            for answer in row.get("emlis_answered_questions", []))):
+                    return None
     receipt = {
         "policy_version": _POLICY_VERSION, "lane": lane, "focus": plan.focus,
         "source_id": anchor.source.source_id if anchor else None,
@@ -762,7 +799,8 @@ async def generate_question(prepared, sources, *, material, generate):
     if not sources:
         return QuestionRun(None, "no_merit")
 
-    decision = _json_object(await generate(PLAN_SYSTEM_MESSAGE, prepared))
+    skipped_guidance = _SKIPPED_EMLIS_QUESTIONS_GUIDANCE if prepared.get("skipped_emlis_questions") else ""
+    decision = _json_object(await generate(PLAN_SYSTEM_MESSAGE + skipped_guidance, prepared))
     if decision == {"decision": "skip"}:
         return QuestionRun(None, "no_merit")
     plan = _accept_plan(decision, lane=lane, sources=sources)
@@ -788,7 +826,7 @@ async def generate_question(prepared, sources, *, material, generate):
         reader = ANSWER_READ_SYSTEM_MESSAGE
     else:
         reader = READ_SYSTEM_MESSAGE
-    read = await generate(reader, {"question": question, "material": prepared})
+    read = await generate(reader + skipped_guidance, {"question": question, "material": prepared})
     if not _confirm_reading(read, plan):
         return QuestionRun(None, "rejected")
     return QuestionRun(candidate, "selected")

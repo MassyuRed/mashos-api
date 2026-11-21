@@ -361,6 +361,67 @@ async function verifyRecordAssessmentAfterMap() {
   assert.deepEqual(await job(owner), failed);
 }
 
+async function verifySkippedEmlisControls() {
+  const skipMigration = '20261121195000_deep_insight_skipped_emlis_questions.sql';
+  const owner = '00000000-0000-0000-0000-000000000031';
+  await db.exec('reset role');
+  await db.query('insert into auth.users values($1)', [owner]);
+  await db.query("insert into public.profiles(id,subscription_tier) values($1,'premium')", [owner]);
+
+  async function record(label, {action = 'skip', terminal = false, answered = false, stale = false,
+    correction = false, wrongQuestion = false, forged = false} = {}) {
+    const id = await value(`insert into public.emotions(id,user_id,created_at,memo)
+      values(gen_random_uuid(),$1,now() at time zone 'UTC',$2) returning id as v`, [owner, label]);
+    const thread = await value(`insert into public.emlis_input_threads
+      (id,user_id,original_emotion_id,revision,state,issued_count,source_snapshot,data)
+      select gen_random_uuid(),e.user_id,e.id,1,'COMPLETED',1,public.emlis_parent_source(e),
+        '{"original_source_ref":"original","body_state":"FINAL","evaluated_tier":"free"}'::jsonb
+      from public.emotions e where e.id=$1 returning id as v`, [id]);
+    await db.query(`insert into public.emlis_thread_events(id,thread_id,seq,kind,round_index,question_id,payload)
+      values(gen_random_uuid(),$1,1,'QUESTION',1,$2,$3)`, [thread, label,
+        JSON.stringify({original_source_ref: 'original', prompt_private: label + 'についてどう考えますか？'})]);
+    if (answered) await db.query(`insert into public.emlis_thread_events
+      (id,thread_id,seq,kind,round_index,question_id,payload)
+      values(gen_random_uuid(),$1,2,'ANSWER',1,$2,'{}')`, [thread, label]);
+    const payload = terminal ? {reason: action} : {stage: 'NATURAL_FINAL_REQUESTED', status: 'RUNNING', question_ending: action};
+    payload.request_fingerprint = forged ? 'incorrect' : 'action-request-' + sha256(JSON.stringify([action, label, null]));
+    await db.query(`insert into public.emlis_thread_events
+      (id,thread_id,seq,kind,round_index,question_id,idempotency_key,payload)
+      values(gen_random_uuid(),$1,3,$2,1,$3,$4,$5)`, [thread, terminal ? 'TERMINAL' : 'OPERATION',
+      wrongQuestion ? '別の問い' : null, label + '-operation', JSON.stringify(payload)]);
+    if (correction) await db.query(`insert into public.emlis_thread_events(id,thread_id,seq,kind,round_index,payload)
+      values(gen_random_uuid(),$1,4,'OPERATION',1,'{"stage":"INTERPRETATION_CORRECTION"}')`, [thread]);
+    if (stale) await db.query("update public.emotions set memo=memo||'（改訂）' where id=$1", [id]);
+    return id;
+  }
+
+  const admitted = await record('自然応答で見送った問い');
+  const legacy = await record('旧経路で明示終了した問い', {terminal: true, action: 'stop'});
+  const controls = [await record('回答後に終了した問い', {terminal: true, action: 'stop', answered: true}),
+    await record('古い入力の問い', {stale: true}), await record('撤回後の問い', {correction: true}),
+    await record('終了対象が違う問い', {wrongQuestion: true}), await record('終了の根拠がない問い', {forged: true})];
+  const priorGuard = (await context(owner)).guard;
+  const unaffected = await context(free);
+  await db.exec(fs.readFileSync(path.join(root, 'supabase/migrations', skipMigration), 'utf8'));
+  await db.exec('set role service_role');
+  assert.deepEqual(await context(free), unaffected);
+  const updated = await context(owner);
+  const records = new Map(updated.material.records.map(row => [row.id, row]));
+  assert.notEqual(updated.guard, priorGuard);
+  assert.equal(records.get(admitted).emlis_skipped_question, '自然応答で見送った問いについてどう考えますか？');
+  assert.equal(records.get(legacy).emlis_skipped_question, '旧経路で明示終了した問いについてどう考えますか？');
+  assert.equal(records.get(admitted).emlis_open_question, null);
+  for (const id of controls) assert.equal('emlis_skipped_question' in records.get(id), false);
+  const anchor = records.get(admitted);
+  const proof = receipt(anchor, 'thought', anchor.thought, 0, [...anchor.thought].length);
+  assert.equal((await issue(owner, 'records', 'old-guard', {guard: priorGuard})).status, 'no_question');
+  assert.equal((await groundedIssue(owner, proof, {guard: priorGuard})).status, 'no_question');
+  assert.equal((await groundedIssue(owner, proof, {guard: updated.guard})).status, 'issued');
+  assert.equal('emlis_skipped_question' in (await state(owner)).records, false);
+  await db.query("update public.profiles set subscription_tier='plus' where id=$1", [owner]);
+  assert.equal((await context(owner)).material.records.some(row => 'emlis_skipped_question' in row), false);
+}
+
 async function run() {
   await db.exec(`create role anon; create role authenticated; create role service_role bypassrls;
     create schema auth; create table auth.users(id uuid primary key);
@@ -564,10 +625,12 @@ async function run() {
   assert.equal((await readQuestion(plus, existingRecord.id)).answer_text, '切替前の問いへの回答');
   await fail('P0002', () => readQuestion(free, oldQuestion));
   await fail('P0002', () => readQuestion(plus, '00000000-0000-0000-0000-000000000000'));
+  await verifySkippedEmlisControls();
 
   for (const role of ['anon', 'authenticated']) {
     await db.exec('set role ' + role);
     await fail('42501', () => state(free));
+    await fail('42501', () => context(free));
     await fail('42501', () => themeContext(free, '人間関係'));
     await fail('42501', () => readQuestion(plus, oldQuestion));
     await fail('42501', () => db.query('select * from public.deep_insight_questions'));

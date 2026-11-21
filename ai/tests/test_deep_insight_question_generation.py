@@ -5,6 +5,7 @@ import random
 
 import pytest
 
+from cocolon_meaning_experience_engine import deep_insight_question
 from cocolon_meaning_experience_engine.deep_insight_question import (
     ANSWER_READ_SYSTEM_MESSAGE, PLAN_SYSTEM_MESSAGE, READ_SYSTEM_MESSAGE,
     RECORD_REASON_READ_SYSTEM_MESSAGE, WRITE_SYSTEM_MESSAGE,
@@ -58,14 +59,14 @@ def run(original, plan, question=BODY, *, reading=None):
 
     async def generate(system, payload):
         calls.append((system, payload))
-        if system == PLAN_SYSTEM_MESSAGE:
+        if system.startswith(PLAN_SYSTEM_MESSAGE):
             response = plan
         elif system == WRITE_SYSTEM_MESSAGE:
             response = {"question": question}
         else:
-            assert system in (READ_SYSTEM_MESSAGE, ANSWER_READ_SYSTEM_MESSAGE,
-                              RECORD_REASON_READ_SYSTEM_MESSAGE)
-            response = reading if reading is not None else read(plan, record_reason=system == RECORD_REASON_READ_SYSTEM_MESSAGE)
+            assert system.startswith((READ_SYSTEM_MESSAGE, ANSWER_READ_SYSTEM_MESSAGE, RECORD_REASON_READ_SYSTEM_MESSAGE))
+            response = reading if reading is not None else read(
+                plan, record_reason=system.startswith(RECORD_REASON_READ_SYSTEM_MESSAGE))
         return json.dumps(response, ensure_ascii=False)
 
     result = asyncio.run(generate_question(prepared, sources, material=original, generate=generate))
@@ -88,6 +89,49 @@ def test_plan_write_read_are_separate_and_receipt_resolves_original():
     assert receipt["start"] == 2 and original_text[receipt["start"]: receipt["end"]] == QUOTE
     assert receipt["literal_sha256"] == hashlib.sha256(QUOTE.encode()).hexdigest()
     assert candidate.question_key == "deep-insight-target-" + receipt["target_key"]
+
+
+def test_dismissed_emlis_wording_is_deny_only_and_blocks_the_same_anchored_body():
+    original = material(source(emlis_skipped_question=BODY))
+    result, calls = run(original, ask())
+    assert result.disposition == "rejected" and result.candidate is None
+    assert len(calls) == 2
+    planner, writing = calls
+    assert "skipped_emlis_questions" in planner[0]
+    assert planner[1]["skipped_emlis_questions"] == [{"question": BODY, "sources": ["r1.thought"]}]
+    assert set(planner[1]["sources"]) == {"r1.thought"}
+    assert planner[1]["open_emlis_questions"] == planner[1]["answered_emlis_questions"] == []
+    assert "skipped_emlis_questions" not in writing[1]
+
+
+def test_dismissed_question_scope_reaches_reader_without_blocking_another_record():
+    other = source("まだ残っていた資料を先に直した。", id="00000000-0000-0000-0000-000000000017")
+    original = material(source(emlis_skipped_question=BODY), other)
+    result, calls = run(original, ask(source="r2.thought", quote="残っていた資料を先に直した"))
+    assert result.disposition == "selected"
+    assert "skipped_emlis_questions" in calls[2][0]
+    assert calls[2][1]["material"]["skipped_emlis_questions"] == [
+        {"question": BODY, "sources": ["r1.thought"]},
+    ]
+
+
+def test_reader_can_refuse_a_paraphrase_of_a_dismissed_emlis_question():
+    original = material(source(emlis_skipped_question=BODY))
+    result, calls = run(original, ask(), "そうしたのはなぜですか？",
+                        reading={"verdict": "reject", "new_information": False})
+    assert result.disposition == "rejected" and result.candidate is None
+    assert len(calls) == 3 and "skipped_emlis_questions" in calls[2][0]
+
+
+def test_record_is_not_retained_if_its_dismissal_cannot_fit(monkeypatch):
+    plain, _ = prepare_question_material(material(source()), lane="records", theme=None)
+    cap = len(json.dumps(plain, ensure_ascii=False, separators=(",", ":")).encode())
+    monkeypatch.setattr(deep_insight_question, "_MAX_MATERIAL_BYTES", cap)
+
+    original = material(source(emlis_skipped_question=BODY))
+    prepared, sources = prepare_question_material(original, lane="records", theme=None)
+    assert not sources and not prepared["sources"]
+    assert "skipped_emlis_questions" not in prepared
 
 
 def test_explicit_reason_stops_before_writing_but_new_condition_can_pass():
