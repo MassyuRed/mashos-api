@@ -198,6 +198,169 @@ async function verifyThemePrivacyAndRecordsPlan(themeGrounding) {
   assert.equal((await groundedIssue(other, themeGrounding)).status, 'issued');
 }
 
+async function verifyRecordsNotifications() {
+  const memo = '記録に残した本人の判断';
+  async function seedUser(pushEnabled, token) {
+    await db.exec('reset role');
+    const user = await value('insert into auth.users values(gen_random_uuid()) returning id as v');
+    await db.query(`insert into public.profiles(id,subscription_tier,push_enabled,push_token)
+      values($1,'premium',$2,$3)`, [user, pushEnabled, token]);
+    await db.query(`insert into public.emotions(id,user_id,created_at,memo,memo_action)
+      values(gen_random_uuid(),$1,now() at time zone 'UTC' - interval '1 minute',$2,'')`, [user, memo]);
+    await db.exec('set role service_role');
+    return user;
+  }
+  async function issueRecord(user, guard) {
+    const source = (await context(user)).material.records[0];
+    return groundedIssue(user, receipt(source, 'thought', memo, 0, [...memo].length), {guard});
+  }
+  const claim = (user, id) => value('select public.deep_insight_record_notification_can_send($1,$2) as v', [user, id]);
+  const jobRows = async (user) => (await db.query(`select job_key,job_type,user_id,payload
+    from public.astor_jobs where user_id=$1 and job_key like 'deep_insight_record_ready:%'`, [user])).rows;
+
+  const owner = await seedUser(true, 'synthetic-device');
+  assert.equal((await issueRecord(owner, 'stale-guard')).status, 'no_question');
+  assert.deepEqual(await jobRows(owner), []);
+  const outcome = await issueRecord(owner);
+  assert.equal(outcome.status, 'issued');
+  const question = outcome.question;
+  assert.equal((await issueRecord(owner)).question.id, question.id);
+  const [job] = await jobRows(owner);
+  assert.equal((await jobRows(owner)).length, 1);
+  assert.equal(job.job_type, 'send_fcm_push_v1');
+  assert.equal(job.job_key, 'deep_insight_record_ready:' + question.id);
+  assert.deepEqual(job.payload.recipient_user_ids, [owner]);
+  assert.deepEqual(job.payload.data, {
+    type: 'deep_insight_record_ready', target: 'deep_insight', user_id: owner, question_id: question.id,
+  });
+  assert.equal(JSON.stringify(job.payload).includes(question.question_text), false);
+  assert.equal(JSON.stringify(job.payload).includes(memo), false);
+  assert.deepEqual(await claim(free, question.id), {eligible: false});
+
+  await db.query("update public.profiles set subscription_tier='plus' where id=$1", [owner]);
+  assert.deepEqual(await claim(owner, question.id), {eligible: false});
+  await db.query("update public.profiles set subscription_tier='premium',push_enabled=false where id=$1", [owner]);
+  assert.deepEqual(await claim(owner, question.id), {eligible: false});
+  await db.query('update public.profiles set push_enabled=true where id=$1', [owner]);
+  assert.deepEqual(await claim(owner, question.id), {eligible: true});
+  assert.deepEqual(await claim(owner, question.id), {eligible: false});
+
+  const answeredOwner = await seedUser(true, 'synthetic-second-device');
+  const answered = (await issueRecord(answeredOwner)).question;
+  assert.equal((await answer(answeredOwner, answered, '本人の回答')).inserted, true);
+  assert.equal((await jobRows(answeredOwner)).length, 1);
+  assert.deepEqual(await claim(answeredOwner, answered.id), {eligible: false});
+
+  const disabled = await seedUser(false, 'synthetic-disabled-device');
+  assert.equal((await issueRecord(disabled)).status, 'issued');
+  assert.deepEqual(await jobRows(disabled), []);
+
+  const noDevice = await seedUser(true, null);
+  assert.equal((await issueRecord(noDevice)).status, 'issued');
+  assert.deepEqual(await jobRows(noDevice), []);
+
+  const ungroundedOwner = await seedUser(true, 'synthetic-third-device');
+  assert.equal((await issue(ungroundedOwner, 'records', 'no-grounding')).status, 'issued');
+  assert.deepEqual(await jobRows(ungroundedOwner), []);
+}
+
+async function verifyRecordAssessmentAfterMap() {
+  async function seed(tier) {
+    await db.exec('reset role');
+    const owner = await value('insert into auth.users values(gen_random_uuid()) returning id as v');
+    await db.query('insert into public.profiles(id,subscription_tier) values($1,$2)', [owner, tier]);
+    await db.query(`insert into public.emotions(id,user_id,created_at,memo,memo_action)
+      values(gen_random_uuid(),$1,now() at time zone 'UTC' - interval '1 minute','本人の記録','')`, [owner]);
+    await db.exec('set role service_role');
+    return owner;
+  }
+  async function saveMap(owner) {
+    // Give separate saves distinct statement times in the WASM database.
+    await new Promise((resolve) => setTimeout(resolve, 3));
+    const id = await value("select 'artifact:'||replace(gen_random_uuid()::text,'-','') as v");
+    const projection = {wire_kind: 'watashi.map.v2', projection_of: id + '@1'};
+    const saved = await value(`with source as materialized (select public.analysis_cumulative_source_snapshot($1) as s)
+      select jsonb_build_object('guard',s->>'guard','report',public.analysis_cumulative_commit($1,s->>'guard',$2,
+        jsonb_build_object('schema_version','analysis.private-evidence.v1','projection_of',$2||'@1',
+          'coverage',jsonb_build_object('profile','cumulative.v1','source_count',jsonb_array_length(s->'members'))),
+        $3,'試験用のマップ',(s->>'period_start')::timestamptz,(s->>'period_end')::timestamptz,null,true)) as v
+      from source`, [owner, id, JSON.stringify(projection)]);
+    assert.equal(saved.report.replaceAll('-', ''), id.slice('artifact:'.length));
+    return saved;
+  }
+  const job = (owner) => value(`select (select to_jsonb(j) from public.astor_jobs j
+    where j.job_key='deep_insight_records_assessment:'||$1::uuid::text) as v`, [owner]);
+  const claim = async (owner, attempts) => {
+    await db.query(`update public.astor_jobs set status='running',attempts=$2,worker_id='test-worker',
+      started_at=clock_timestamp(),updated_at=clock_timestamp()
+      where job_key='deep_insight_records_assessment:'||$1::uuid::text`, [owner, attempts]);
+    return job(owner);
+  };
+  const settle = (original, retry, worker = original.worker_id) => value('select public.deep_insight_record_assessment_settle($1,$2,$3,$4,$5) as v',
+    [original.job_key, worker, original.started_at, original.updated_at, retry]);
+
+  for (const tier of ['free', 'plus']) {
+    const owner = await seed(tier);
+    await saveMap(owner);
+    assert.equal(await job(owner), null);
+  }
+
+  const owner = await seed('premium');
+  const first = await saveMap(owner);
+  const pending = await job(owner);
+  assert.equal(pending.status, 'queued');
+  assert.equal(pending.job_type, 'deep_insight_records_assessment_v1');
+  assert.deepEqual(pending.payload, {source_guard: first.guard});
+  assert.equal(pending.max_attempts, 3);
+  assert.equal((await context(owner)).material.map.source_version, sha256(first.guard));
+  const replay = await saveMap(owner);
+  assert.notEqual(replay.report, first.report);
+  assert.equal(replay.guard, first.guard);
+  assert.deepEqual(await job(owner), pending);
+
+  const priorClaim = await claim(owner, 3);
+  await db.query("update public.emotions set memo='本人の新しい記録' where user_id=$1", [owner]);
+  const newer = await saveMap(owner);
+  const coalesced = await job(owner);
+  assert.notEqual(newer.guard, first.guard);
+  assert.deepEqual(coalesced.payload, {source_guard: newer.guard});
+  assert.equal(coalesced.status, 'running');
+  assert.equal(coalesced.started_at, priorClaim.started_at);
+  assert.deepEqual(await settle(priorClaim, true, 'another-worker'), {settled: false});
+  assert.deepEqual(await settle(priorClaim, true), {settled: true});
+  assert.equal((await job(owner)).status, 'queued');
+  assert.equal((await job(owner)).attempts, 0);
+
+  const retryable = await claim(owner, 1);
+  assert.deepEqual(await settle(retryable, true), {settled: true});
+  const retry = await job(owner);
+  assert.equal(retry.status, 'queued');
+  assert.ok(Date.parse(retry.run_after) > Date.parse(retry.updated_at));
+  assert.equal(retry.attempts, 1);
+  assert.deepEqual(await settle(retryable, false), {settled: false});
+
+  assert.deepEqual(await settle(await claim(owner, 3), true), {settled: true});
+  const failed = await job(owner);
+  assert.equal(failed.status, 'failed');
+  await saveMap(owner);
+  assert.deepEqual(await job(owner), failed);
+
+  await db.query("update public.profiles set push_token='synthetic-device' where id=$1", [owner]);
+  const current = await context(owner);
+  const source = current.material.records[0];
+  const grounded = receipt(source, 'thought', source.thought, 0, [...source.thought].length);
+  const question = (await groundedIssue(owner, grounded, {guard: current.guard})).question;
+  assert.ok(question);
+  assert.equal(await value('select job_type as v from public.astor_jobs where job_key=$1',
+    ['deep_insight_record_ready:' + question.id]), 'send_fcm_push_v1');
+  await db.query("update public.emotions set memo='次の記録' where user_id=$1", [owner]);
+  await saveMap(owner);
+  assert.deepEqual(await job(owner), failed);
+  await answer(owner, question, '本人の回答');
+  await saveMap(owner);
+  assert.deepEqual(await job(owner), failed);
+}
+
 async function run() {
   await db.exec(`create role anon; create role authenticated; create role service_role bypassrls;
     create schema auth; create table auth.users(id uuid primary key);
@@ -206,7 +369,9 @@ async function run() {
     create table public.emotions(id uuid primary key,user_id uuid references auth.users(id) on delete cascade,
       created_at timestamp,memo text,memo_action text,category text[],emotions text[],emotion_details jsonb);
     create table public.astor_jobs(job_key text primary key,job_type text,user_id uuid,payload jsonb,priority integer,
-      run_after timestamptz,updated_at timestamptz default now(),status text default 'queued');
+      run_after timestamptz,updated_at timestamptz default now(),status text default 'queued',
+      attempts integer default 0,max_attempts integer default 8,worker_id text,started_at timestamptz,
+      finished_at timestamptz,last_error text);
     grant usage on schema public to anon,authenticated,service_role;
     grant all on public.profiles,public.emotions,public.astor_jobs to service_role;`);
   for (const file of [
@@ -374,6 +539,14 @@ async function run() {
     '20261121185100_deep_insight_theme_ready_notifications.sql'), 'utf8'));
   await verifyThemeNotifications();
   await verifyThemePrivacyAndRecordsPlan(themeGrounding);
+  await db.exec('reset role');
+  await db.exec(fs.readFileSync(path.join(root, 'supabase/migrations',
+    '20261121192000_deep_insight_record_ready_notifications.sql'), 'utf8'));
+  await verifyRecordsNotifications();
+  await db.exec('reset role');
+  await db.exec(fs.readFileSync(path.join(root, 'supabase/migrations',
+    '20261121193000_deep_insight_record_assessment_on_map.sql'), 'utf8'));
+  await verifyRecordAssessmentAfterMap();
 
   for (const role of ['anon', 'authenticated']) {
     await db.exec('set role ' + role);
@@ -385,6 +558,10 @@ async function run() {
     await fail('42501', () => value('select public.deep_insight_theme_notification_enqueue_due() as v'));
     await fail('42501', () => value('select public.deep_insight_theme_notification_can_send($1,$2) as v',
       [free, freeTheme.question.id]));
+    await fail('42501', () => value('select public.deep_insight_record_notification_can_send($1,$2) as v',
+      [free, first.id]));
+    await fail('42501', () => value('select public.deep_insight_record_assessment_settle($1,$2,now(),now(),false) as v',
+      ['test-job', 'test-worker']));
     await fail('42501', () => answer(free, first, saved.question.answer_text));
     await fail('42501', () => value('select public.deep_insight_issue_grounded($1,current_date,$2,$3,$4,$5,$6,$7,$8) as v',
       [free, 'records', null, 'x', 'x', 'x', 'x', JSON.stringify(grounding)]));

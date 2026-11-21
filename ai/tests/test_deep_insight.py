@@ -1,4 +1,5 @@
 import asyncio
+from hashlib import sha256
 import json
 import os
 from pathlib import Path
@@ -171,6 +172,82 @@ def test_theme_notification_is_explicit_private_opt_in(api_harness):
     assert client.patch(path, headers=AUTH, json={"enabled": False}).json() == {"enabled": False}
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("lane,body", [
+    ("record", "「わたしを知る問い」に新しいふりかえりの問いが届きました"),
+    ("theme", "「わたしを知る問い」で新しいテーマの問いを受け取れます"),
+])
+async def test_question_notification_delivery_claim_and_owner(monkeypatch, lane, body):
+    from unittest.mock import AsyncMock
+
+    import astor_worker as worker
+
+    event = f"deep_insight_{lane}_ready"
+    data = dict(type=event, target="deep_insight", user_id=OWNER, question_id=QUESTION)
+    payload = dict(recipient_mode="user_ids", recipient_user_ids=[OWNER], exclude_user_ids=[],
+        actor_user_id=OWNER, event_type=event, title="Emlis", body=body, data=data)
+    tokens = AsyncMock(return_value={OWNER: "test-device"})
+    send = AsyncMock(return_value={"status": "sent"})
+    rpc = AsyncMock(side_effect=[httpx.Response(200, json={"eligible": True}),
+                                httpx.Response(200, json={"eligible": False})])
+    monkeypatch.setattr(worker, "_fetch_push_tokens_for_users", tokens)
+    monkeypatch.setattr(worker, "_send_fcm_push", send)
+    monkeypatch.setattr(worker, "sb_post_rpc", rpc)
+
+    for changed in (dict(body="private text"), dict(data=dict(data, user_id=QUESTION)),
+                    dict(recipient_user_ids=[OWNER, QUESTION]), dict(actor_user_id=QUESTION),
+                    dict(data=dict(data, question_id="not-a-uuid"))):
+        result = await worker._handle_send_fcm_push_v1(user_id=OWNER, payload=dict(payload, **changed))
+        assert result["status"] == f"skipped_invalid_deep_insight_{lane}_notification"
+    tokens.assert_not_awaited()
+    send.assert_not_awaited()
+    rpc.assert_not_awaited()
+
+    result = await worker._handle_send_fcm_push_v1(user_id=OWNER, payload=payload)
+    assert result["status"] == "sent"
+    rpc.assert_awaited_once_with(f"deep_insight_{lane}_notification_can_send",
+        {"p_user_id": OWNER, "p_question_id": QUESTION}, timeout=5.0)
+    send.assert_awaited_once_with(tokens=["test-device"], title="Emlis", body=body, data=data)
+
+    replay = await worker._handle_send_fcm_push_v1(user_id=OWNER, payload=payload)
+    assert replay["status"] == f"skipped_stale_deep_insight_{lane}_notification"
+    assert send.await_count == 1
+
+    tokens.return_value = {}
+    no_device = await worker._handle_send_fcm_push_v1(user_id=OWNER, payload=payload)
+    assert no_device["status"] == "skipped_no_token"
+    assert rpc.await_count == 2
+    assert send.await_count == 1
+
+    tokens.return_value = {OWNER: "test-device"}
+    rpc.side_effect = None
+    rpc.return_value = httpx.Response(200, json={"eligible": True})
+    send.return_value = {"status": "failed", "errors": ["sensitive-provider-diagnostic"]}
+    with pytest.raises(RuntimeError, match="^deep_insight_notification_delivery_unavailable$"):
+        await worker._handle_send_fcm_push_v1(user_id=OWNER, payload=payload)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("protocol", ["v1", "legacy"])
+async def test_deep_insight_delivery_provider_errors_omit_raw_details(monkeypatch, caplog, protocol):
+    import api_emotion_submit as submit
+
+    diagnostic = "sensitive-provider-diagnostic"
+    client = httpx.AsyncClient
+    transport = httpx.MockTransport(lambda _: httpx.Response(400, text=diagnostic))
+    monkeypatch.setattr(submit.httpx, "AsyncClient", lambda **options: client(transport=transport, **options))
+    monkeypatch.setattr(submit, "FCM_PUSH_ENABLED", True)
+    monkeypatch.setattr(submit, "FCM_SERVER_KEY", "synthetic-key")
+    monkeypatch.setattr(submit, "_has_fcm_v1_credentials", lambda: True)
+    monkeypatch.setattr(submit, "_get_fcm_oauth_access_token",
+                        lambda: ("synthetic-oauth", None, "example", "test@example.invalid"))
+    send = submit._send_fcm_push_v1 if protocol == "v1" else submit._send_fcm_push_legacy
+    result = await send(tokens=["test-device"], title="Emlis", body="body",
+                        data={"type": "deep_insight_record_ready"})
+    assert result["status"] == "failed" and result["failure"] == 1 and result["errors"] == []
+    assert diagnostic not in caplog.text
+
+
 def test_issue_and_exact_answer_pass_verified_owner_to_the_store(api_harness):
     client, _, calls, _, _ = api_harness
     response = client.post("/deep-insight/questions", headers=AUTH, json={"lane": "records"})
@@ -222,6 +299,114 @@ def test_second_instance_does_not_generate_while_the_same_slot_is_locked(api_har
     response = client.post("/deep-insight/questions", headers=AUTH, json={"lane": "records"})
     assert response.status_code == 503 and response.headers["retry-after"] == "3"
     assert not [row for row in calls if row[0] in {"4B", "deep_insight_issue_grounded"}]
+
+
+MAP_GUARD = "analysis-db-cumulative-v1:" + "a" * 64
+MAP_REFERENCE = {"source_version": sha256(MAP_GUARD.encode()).hexdigest(),
+                 "summary": "架空のマップ", "generated_at": "2026-11-21T10:00:00Z"}
+
+
+@pytest.mark.parametrize("condition,status", [
+    ("wrong_plan", "records_locked"), ("pending", "existing"), ("used_today", "daily_limit"),
+    ("superseded_map", "stale_map"), ("no_person_source", "no_material"),
+])
+def test_closed_app_assessment_checks_prerequisites_before_model(api_harness, condition, status):
+    _, state, calls, _, context = api_harness
+    context["value"] = material(records=[RECORD], map_reference=dict(MAP_REFERENCE))
+    if condition == "wrong_plan":
+        state["can_use_records"] = False
+    elif condition == "pending":
+        state["records"] = Q
+    elif condition == "used_today":
+        state["record_available_today"] = False
+    elif condition == "superseded_map":
+        context["value"]["map"]["source_version"] = "b" * 64
+    elif condition == "no_person_source":
+        context["value"]["records"] = []
+
+    assert asyncio.run(api.assess_deep_insight_records(OWNER, MAP_GUARD)) == status
+    assert not [row for row in calls if row[0] in {"4B", "deep_insight_issue_grounded"}]
+
+
+def test_closed_app_assessment_uses_current_map_and_reuses_no_merit(api_harness):
+    _, _, calls, answers, context = api_harness
+    context.update(guard="assessment-source", value=material(records=[RECORD],
+        map_reference=MAP_REFERENCE))
+    answers[PLAN_SYSTEM_MESSAGE] = {"decision": "skip"}
+
+    async def assess_twice():
+        assert await api.assess_deep_insight_records(OWNER, MAP_GUARD) == "no_merit"
+        assert await api.assess_deep_insight_records(OWNER, MAP_GUARD) == "no_merit"
+
+    asyncio.run(assess_twice())
+    assert [row[1] for row in calls if row[0] == "4B"] == [PLAN_SYSTEM_MESSAGE]
+    assert not [row for row in calls if row[0] == "deep_insight_issue_grounded"]
+
+
+def test_closed_app_and_foreground_share_the_same_slot_after_source_edit(api_harness, monkeypatch):
+    client, _, calls, _, context = api_harness
+    context["value"]["map"] = MAP_REFERENCE
+    generate = api._generate_candidate
+    lock_keys = []
+
+    async def run():
+        started, release = asyncio.Event(), asyncio.Event()
+
+        async def acquire(*, lock_key, ttl_seconds):
+            lock_keys.append(lock_key)
+            return SimpleNamespace(acquired=len(lock_keys) == 1, lock_key=lock_key, owner_id="test-lease")
+
+        async def generate_in_background(system, payload):
+            if system == PLAN_SYSTEM_MESSAGE:
+                started.set()
+                await release.wait()
+            return await generate(system, payload)
+
+        monkeypatch.setattr(api, "try_acquire_lock", acquire)
+        monkeypatch.setattr(api, "_generate_candidate", generate_in_background)
+        background = asyncio.create_task(api.assess_deep_insight_records(OWNER, MAP_GUARD))
+        await started.wait()
+        context["guard"] = "updated-while-assessing"
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=client.app), base_url="http://test") as session:
+            response = await session.post("/deep-insight/questions", headers=AUTH, json={"lane": "records"})
+        release.set()
+        return response, await background
+
+    response, result = asyncio.run(asyncio.wait_for(run(), timeout=5))
+    assert response.status_code == 503 and response.headers["retry-after"] == "3"
+    assert result == "issued" and len(lock_keys) == 2 and lock_keys[0] == lock_keys[1]
+    assert len([row for row in calls if row[0] == "deep_insight_issue_grounded"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_record_assessment_worker_settles_exact_claim_and_retries_failures(monkeypatch):
+    from unittest.mock import AsyncMock
+
+    import astor_worker as worker
+
+    claim = SimpleNamespace(job_key="deep_insight_records_assessment:" + OWNER, user_id=OWNER,
+        payload={"source_guard": MAP_GUARD}, attempts=1, max_attempts=3, worker_id="worker-1",
+        started_at="2026-11-21T00:00:01Z", updated_at="2026-11-21T00:00:02Z")
+    request = AsyncMock(return_value=httpx.Response(200, json={"settled": True}))
+    assess = AsyncMock(return_value="issued")
+    monkeypatch.setattr(worker, "sb_post_rpc", request)
+    monkeypatch.setattr(api, "assess_deep_insight_records", assess)
+
+    assert await worker._run_deep_insight_record_assessment(claim) == "issued"
+    assess.assert_awaited_once_with(OWNER, MAP_GUARD)
+    request.assert_awaited_once_with("deep_insight_record_assessment_settle", {
+        "p_job_key": claim.job_key, "p_worker_id": claim.worker_id, "p_started_at": claim.started_at,
+        "p_updated_at": claim.updated_at, "p_retry": False,
+    }, timeout=5.0)
+    assess.side_effect = RuntimeError("private failure")
+    assert await worker._run_deep_insight_record_assessment(claim) == "unavailable"
+    assert request.await_args.args[1]["p_retry"] is True
+    claim.attempts = claim.max_attempts + 1
+    assert await worker._run_deep_insight_record_assessment(claim) == "retry_exhausted"
+    assert assess.await_count == 2
+    claim.payload["foreign_user"] = QUESTION
+    assert await worker._run_deep_insight_record_assessment(claim) == "skipped_invalid"
+    assert assess.await_count == 2
 
 
 def test_same_revision_requests_share_one_issue_and_receive_the_same_question(api_harness, monkeypatch):

@@ -16,6 +16,7 @@ from cocolon_meaning_experience_engine.deep_insight_question import (
 )
 
 from cocolon_meaning_experience_engine.deep_insight_theme import THEME_SCENES
+from cocolon_meaning_experience_engine.deep_insight_theme_intents import THEME_SCENE_ANGLE_TARGETS
 
 
 RECORD_ID = "00000000-0000-0000-0000-000000000123"
@@ -223,6 +224,10 @@ def test_answer_alone_has_private_provenance_and_can_supply_a_follow_up():
     assert rejected.disposition == "rejected"
 
 
+def select_theme_angle(scene, angle):
+    return lambda values: next(value for value in values if value[0] in (scene, angle))
+
+
 def theme_run(theme, question, *, questions=(), reading=None, extra=None, scene=None, target=None, repair=None,
               choose_theme=lambda values: values[0]):
     original = {"questions": questions, **(extra or {})}
@@ -267,7 +272,7 @@ def test_theme_provider_sees_only_selected_direction_and_previous_question_wordi
         extra={"records": [source("本人記録は渡さない")], "map": {"summary": "マップは渡さない"}})
     assert result.disposition == "selected"
     writer, reader = [payload for _, payload in calls]
-    direction = {"target": "会話の話題", "angle": "最初に取る行動"}
+    direction = {"target": "最初のひと言", "angle": "話し始めるために最初にすること"}
     assert writer == {**direction, "form": "何から始めるかを聞く。文型「〜するために、まず何をしますか？」"}
     assert reader == {
         **direction, "theme": theme, "scene": "初対面の人と話すとき",
@@ -346,41 +351,53 @@ def test_theme_rejects_non_polite_endings_and_unbound_questions(body):
     assert result.disposition == "rejected" and len(calls) == 2
 
 
-@pytest.mark.parametrize(("theme", "seed", "draft", "expected"), [
-    ("人間関係", 20261121109,
+@pytest.mark.parametrize(("theme", "scene", "angle", "draft", "expected"), [
+    ("人間関係", "asking_help", "priority",
      "誰かに助けを求めるかどうか、何を基準に決めますか？", "何を基準に決めますか？"),
-    ("自分の価値観", 20261121201,
+    ("自分の価値観", "ownership", "priority",
      "勧めを断るか受けるか、何を基準に決めますか？", "何を基準に決めますか？"),
-    ("自分の価値観", 20261121209,
+    ("自分の価値観", "giving_credit", "first_action",
      "感謝や評価を伝える際、まず何をしますか？", "まず何をしますか？"),
-    ("仕事・学び", 20261121309,
+    ("仕事・学び", "finish", "change",
      "一区切りついた振り返りでは、次の作業の進め方を変えるのはどんなときですか？",
      "次の作業の進め方を変えるのはどんなときですか？"),
-    ("日々の過ごし方", 20261121409,
+    ("日々の過ごし方", "move", "first_action",
      "体を動かす時間を日常に組み込むために、まず何をしますか？", "まず何をしますか？"),
-    ("これからのこと", 20261121509,
+    ("これからのこと", "change_habits", "change",
      "新しい暮らしの中で、習慣を変えるのはどんなときですか？",
      "新しい暮らしの中で、習慣を変えるのはどんなときですか？"),
 ])
-def test_theme_removes_only_the_verified_opening_before_reading(theme, seed, draft, expected):
-    result, calls = theme_run(theme, draft, choose_theme=random.Random(seed).choice)
+def test_theme_removes_only_the_verified_opening_before_reading(theme, scene, angle, draft, expected):
+    result, calls = theme_run(theme, draft, choose_theme=select_theme_angle(scene, angle))
     assert result.candidate.text == f"{calls[1][1]['scene']}、{expected}"
     assert calls[1][1]["question"] == result.candidate.text
 
 
 def test_theme_preserves_a_qualifier_that_makes_a_repeated_opening_a_different_condition():
     draft = "朝に体を動かす時間を日常に組み込むために、まず何をしますか？"
-    result, calls = theme_run("日々の過ごし方", draft, choose_theme=random.Random(20261121409).choice)
+    result, calls = theme_run("日々の過ごし方", draft, choose_theme=select_theme_angle("move", "first_action"))
     assert result.candidate.text == f"{calls[1][1]['scene']}、{draft}"
 
 
 def test_theme_checks_repeat_against_the_displayed_text_after_removing_an_opening():
     draft = "誰かに助けを求めるかどうか、何を基準に決めますか？"
-    result, _ = theme_run("人間関係", draft, choose_theme=random.Random(20261121109).choice)
+    choose = select_theme_angle("asking_help", "priority")
+    result, _ = theme_run("人間関係", draft, choose_theme=choose)
     prior = {"question_key": "old-slot", "text_key": result.candidate.text_key}
-    repeated, calls = theme_run("人間関係", draft, questions=[prior],
-                                choose_theme=random.Random(20261121109).choice)
+    repeated, calls = theme_run("人間関係", draft, questions=[prior], choose_theme=choose)
     assert repeated.disposition == "rejected" and len(calls) == 1
+
+
+def test_theme_catalog_has_distinct_compatible_judgments_for_every_supported_scene():
+    assert set(THEME_SCENE_ANGLE_TARGETS) == set(THEME_SCENES)
+    for theme, scenes in THEME_SCENES.items():
+        targets = THEME_SCENE_ANGLE_TARGETS[theme]
+        assert set(targets) == set(scenes)
+        assert sum(len(angles) for angles in targets.values()) >= 50
+        for angles in targets.values():
+            assert len(angles) >= 4 and len(set(angles.values())) == len(angles)
+    assert "change" in THEME_SCENE_ANGLE_TARGETS["人間関係"]["thanks"]
+    assert "伝え" in THEME_SCENE_ANGLE_TARGETS["人間関係"]["thanks"]["change"][0]
 
 
 def test_theme_reader_receives_older_same_scene_angles_without_guessing_their_text():

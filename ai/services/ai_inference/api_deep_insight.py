@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 from datetime import date, datetime
+from hashlib import sha256
 import json
 import logging
 from typing import Literal
@@ -210,9 +211,9 @@ async def _issue_state(owner: str, lane: Lane):
 
 
 async def _issue_from_material(owner, command, day, guard, material, prepared, sources):
-    # A different theme still uses the same owner's single theme slot.
+    # Foreground and background callers share each owner's daily lane slot.
     lock_key = build_lock_key(namespace="deep-insight", user_id=owner, report_type=command.lane,
-                              period_start=day, period_end="theme-slot" if command.lane == "theme" else guard)
+                              period_start=day, period_end=f"{command.lane}-slot")
     try:
         lease = await try_acquire_lock(lock_key=lock_key, ttl_seconds=120)
     except (HTTPException, httpx.HTTPError, RuntimeError, ValueError):
@@ -289,13 +290,22 @@ async def _try_issue(owner, command, day, guard, material, deadline):
         ttl_resolver=lambda row: _NO_MERIT_CACHE_SECONDS if row.disposition == "no_merit" else 0))
 
 
-async def _issue_question(owner, command, deadline):
+def _map_source_matches(material, expected_version):
+    if expected_version is None:
+        return True
+    reference = material.get("map") if isinstance(material, dict) else None
+    return isinstance(reference, dict) and reference.get("source_version") == expected_version
+
+
+async def _issue_question(owner, command, deadline, *, expected_map_version=None):
     state, previous = await _issue_state(owner, command.lane)
     if previous is not None:
         return _Attempt(previous.status, previous)
 
     day = state.day.isoformat()
     guard, material = await _candidate_context(owner, command)
+    if not _map_source_matches(material, expected_map_version):
+        return _Attempt("stale_map", QuestionResult(status="no_question"))
     outcome = await _try_issue(owner, command, day, guard, material, deadline)
     if outcome.disposition != "source_changed_or_duplicate":
         return outcome
@@ -308,9 +318,35 @@ async def _issue_question(owner, command, deadline):
         return _Attempt(previous.status, previous)
 
     refreshed_guard, refreshed_material = await _candidate_context(owner, command)
+    if not _map_source_matches(refreshed_material, expected_map_version):
+        return _Attempt("stale_map", QuestionResult(status="no_question"))
     if refreshed_guard == guard:
         return outcome
     return await _try_issue(owner, command, day, refreshed_guard, refreshed_material, deadline)
+
+
+async def _issue_with_deadline(owner, command, *, expected_map_version=None):
+    deadline = asyncio.get_running_loop().time() + _GENERATION_BUDGET_SECONDS
+    try:
+        async with asyncio.timeout_at(deadline):
+            return await _issue_question(owner, command, deadline, expected_map_version=expected_map_version)
+    except TimeoutError:
+        return _Attempt("unavailable", error=(503, "deep_insight_question_unavailable", None))
+
+
+async def assess_deep_insight_records(owner, source_guard):
+    """Run the same issuance policy after a current map became available."""
+    expected_version = sha256(source_guard.encode()).hexdigest()
+    try:
+        outcome = await _issue_with_deadline(owner, QuestionCommand(lane="records"),
+                                             expected_map_version=expected_version)
+        if outcome.error is not None:
+            raise HTTPException(*outcome.error)
+    except HTTPException as exc:
+        if exc.status_code == 403 and exc.detail == "deep_insight_records_locked":
+            return "records_locked"
+        raise RuntimeError("deep_insight_record_assessment_unavailable") from None
+    return outcome.disposition
 
 
 def register_deep_insight_routes(app: FastAPI) -> None:
@@ -333,12 +369,7 @@ def register_deep_insight_routes(app: FastAPI) -> None:
     @router.post("/questions", response_model=QuestionResult)
     async def issue_deep_insight_question(command: QuestionCommand, response: Response, owner: str = Depends(_owner)):
         response.headers["Cache-Control"] = "no-store"
-        deadline = asyncio.get_running_loop().time() + _GENERATION_BUDGET_SECONDS
-        try:
-            async with asyncio.timeout_at(deadline):
-                outcome = await _issue_question(owner, command, deadline)
-        except TimeoutError:
-            outcome = _Attempt("unavailable", error=(503, "deep_insight_question_unavailable", None))
+        outcome = await _issue_with_deadline(owner, command)
         logger.info("DeepInsight generation %s %s", command.lane, outcome.disposition)
         if outcome.error is not None:
             raise HTTPException(*outcome.error)

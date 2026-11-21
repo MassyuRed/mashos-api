@@ -389,6 +389,7 @@ def _parse_job_types(raw: str) -> List[str]:
 
 
 _RETIRED_EMOTION_REPORT_JOBS = ("generate_emotion_report_v2", "inspect_emotion_report_v1")
+_DEEP_INSIGHT_RECORD_ASSESSMENT_JOB = "deep_insight_records_assessment_v1"
 
 
 # Always include the core job types required by the current pipeline even when
@@ -413,6 +414,7 @@ _REQUIRED_WORKER_JOB_TYPES: List[str] = [
     "refresh_global_summary_v1",
     "inspect_global_summary_v1",
     "send_fcm_push_v1",
+    _DEEP_INSIGHT_RECORD_ASSESSMENT_JOB,
 ]
 
 
@@ -466,6 +468,7 @@ _WORKER_JOB_TYPE_PROFILES: Dict[str, List[str]] = {
         "analyze_self_structure_deep_v1",
         "generate_emotion_report_v2",
         "generate_premium_reflections_v1",
+        _DEEP_INSIGHT_RECORD_ASSESSMENT_JOB,
     ],
     "inspect": [
         "inspect_reflection_v1",
@@ -523,13 +526,13 @@ def _format_queue_stats_for_log(stats: Dict[str, Any]) -> str:
     )
 
 
-async def _deep_insight_theme_notification_rpc(name, parameters, result_key, result_type):
+async def _deep_insight_worker_rpc(name, parameters, result_key, result_type):
     response = await sb_post_rpc(name, parameters, timeout=5.0)
     if response.status_code != 200:
-        raise RuntimeError("deep_insight_theme_notification_unavailable")
+        raise RuntimeError("deep_insight_worker_storage_unavailable")
     result = response.json()
     if type(result) is not dict or type(result.get(result_key)) is not result_type:
-        raise RuntimeError("deep_insight_theme_notification_response_invalid")
+        raise RuntimeError("deep_insight_worker_storage_response_invalid")
     return result
 
 
@@ -563,7 +566,7 @@ async def _run_worker_maintenance(
 
     if "send_fcm_push_v1" in job_types:
         try:
-            result = await _deep_insight_theme_notification_rpc(
+            result = await _deep_insight_worker_rpc(
                 "deep_insight_theme_notification_enqueue_due", {"p_limit": 50}, "queued", int)
             if result["queued"]:
                 logger.info("DeepInsight theme reminders queued. count=%s", result["queued"])
@@ -3403,24 +3406,29 @@ async def _handle_send_fcm_push_v1(*, user_id: str, payload: Dict[str, Any]) -> 
     if (payload or {}).get("event_type") == "myweb_report_ready" or data_payload.get("type") == "myweb_report":
         return {"status": "skipped_retired_emotion_report"}
 
-    themes_event = "deep_insight_theme_ready"
-    is_theme_notice = payload.get("event_type") == themes_event or data_payload.get("type") == themes_event
-    if is_theme_notice:
+    notices = {
+        "theme": "「わたしを知る問い」で新しいテーマの問いを受け取れます",
+        "record": "「わたしを知る問い」に新しいふりかえりの問いが届きました",
+    }
+    notice_lane = next((lane for lane in notices if f"deep_insight_{lane}_ready" in
+                        (payload.get("event_type"), data_payload.get("type"))), None)
+    if notice_lane:
         from uuid import UUID
+        event = f"deep_insight_{notice_lane}_ready"
         owner = str(user_id or "").strip()
         question_id = str(data_payload.get("question_id") or "")
         try:
             valid = (str(UUID(owner)) == owner and str(UUID(question_id)) == question_id
                      and mode == "user_ids" and payload.get("recipient_user_ids") == [owner]
                      and not payload.get("exclude_user_ids") and payload.get("actor_user_id") == owner
-                     and payload.get("event_type") == themes_event
-                     and title == "Emlis" and body == "「わたしを知る問い」で新しいテーマの問いを受け取れます"
-                     and data_payload == {"type": themes_event, "target": "deep_insight",
+                     and payload.get("event_type") == event
+                     and title == "Emlis" and body == notices[notice_lane]
+                     and data_payload == {"type": event, "target": "deep_insight",
                                           "user_id": owner, "question_id": question_id})
         except (ValueError, TypeError, AttributeError):
             valid = False
         if not valid:
-            return {"status": "skipped_invalid_deep_insight_theme_notification"}
+            return {"status": f"skipped_invalid_deep_insight_{notice_lane}_notification"}
 
     if ((payload or {}).get('event_type') == 'watashi_map_updated'
             or data_payload.get('type') == 'watashi_map_updated'):
@@ -3523,23 +3531,30 @@ async def _handle_send_fcm_push_v1(*, user_id: str, payload: Dict[str, Any]) -> 
             "event_type": str((payload or {}).get("event_type") or ""),
         }
 
-    if is_theme_notice:
+    if notice_lane:
         # A current preference, plan and latest question are required at send
         # time. Once claimed, an unknown provider result must not be retried.
-        readiness = await _deep_insight_theme_notification_rpc(
-            "deep_insight_theme_notification_can_send",
+        readiness = await _deep_insight_worker_rpc(
+            f"deep_insight_{notice_lane}_notification_can_send",
             {"p_user_id": owner, "p_question_id": question_id}, "eligible", bool)
         if not readiness["eligible"]:
-            if "defer_until" in readiness:
+            if notice_lane == "theme" and "defer_until" in readiness:
                 next_due = datetime.fromisoformat(readiness["defer_until"].replace("Z", "+00:00"))
                 if next_due.tzinfo is None:
                     raise RuntimeError("deep_insight_theme_notification_time_invalid")
                 return {"status": "deferred_deep_insight_theme_notification", "run_after": next_due.isoformat()}
-            return {"status": "skipped_stale_deep_insight_theme_notification"}
+            return {"status": f"skipped_stale_deep_insight_{notice_lane}_notification"}
 
-    send_res = await _send_fcm_push(tokens=tokens, title=title, body=body, data=data_payload)
+    try:
+        send_res = await _send_fcm_push(tokens=tokens, title=title, body=body, data=data_payload)
+    except Exception:
+        if notice_lane:
+            raise RuntimeError("deep_insight_notification_delivery_unavailable") from None
+        raise
     send_status = str((send_res or {}).get("status") or "failed")
     if send_status != "sent":
+        if notice_lane:
+            raise RuntimeError("deep_insight_notification_delivery_unavailable")
         raise RuntimeError(f"send_fcm_push_v1 failed: status={send_status} result={send_res}")
     return {
         "status": "sent",
@@ -3551,6 +3566,44 @@ async def _handle_send_fcm_push_v1(*, user_id: str, payload: Dict[str, Any]) -> 
         "chunk_count": (payload or {}).get("chunk_count"),
         "fcm_result": send_res,
     }
+
+
+async def _run_deep_insight_record_assessment(claimed):
+    from uuid import UUID
+
+    from api_deep_insight import assess_deep_insight_records
+
+    try:
+        owner = str(UUID(claimed.user_id))
+    except (ValueError, TypeError, AttributeError):
+        owner = None
+    payload = claimed.payload
+    guard = payload.get("source_guard") if isinstance(payload, dict) else None
+    valid = (owner is not None and owner == claimed.user_id
+        and claimed.job_key == f"deep_insight_records_assessment:{owner}"
+        and isinstance(guard, str) and re.fullmatch(r"analysis-db-cumulative-v1:[0-9a-f]{64}", guard)
+        and set(payload) == {"source_guard"})
+    status, retry = "skipped_invalid", False
+    if valid:
+        if claimed.attempts > claimed.max_attempts:
+            status, retry = "retry_exhausted", True
+        else:
+            try:
+                status = await assess_deep_insight_records(owner, guard)
+            except Exception:
+                status, retry = "unavailable", True
+    try:
+        result = await _deep_insight_worker_rpc("deep_insight_record_assessment_settle", {
+            "p_job_key": claimed.job_key,
+            "p_worker_id": claimed.worker_id,
+            "p_started_at": claimed.started_at,
+            "p_updated_at": claimed.updated_at,
+            "p_retry": retry,
+        }, "settled", bool)
+    except Exception:
+        # Stale-job recovery can reclaim this lease after an unknown write.
+        return "settlement_unavailable"
+    return status if result["settled"] else "claim_changed"
 
 
 async def _run_map_job(claimed, handler, **kwargs):
@@ -3688,6 +3741,9 @@ async def _worker_loop() -> None:
                             delay_seconds=1,
                         )
                 logger.info("job done. key=%s type=%s user=%s res=%s", claimed.job_key, claimed.job_type, claimed.user_id, res)
+            elif claimed.job_type == _DEEP_INSIGHT_RECORD_ASSESSMENT_JOB:
+                status = await _run_deep_insight_record_assessment(claimed)
+                logger.info("DeepInsight record assessment %s", status)
             elif claimed.job_type == "snapshot_generate_v1":
                 # Central material snapshots (internal/public). Debounced via run_after and requeue delay.
                 snap_res = await _handle_snapshot_generate_v1(user_id=claimed.user_id, payload=(claimed.payload or {}))

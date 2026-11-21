@@ -1413,6 +1413,10 @@ def _get_fcm_oauth_access_token() -> Tuple[str, datetime, str, str]:
         return _FCM_OAUTH_TOKEN, _FCM_OAUTH_EXPIRY, project_id, client_email
 
 
+def _is_private_deep_insight_push(data: Optional[Dict[str, Any]]) -> bool:
+    return (data or {}).get("type") in ("deep_insight_theme_ready", "deep_insight_record_ready")
+
+
 async def _send_fcm_push_v1(
     *,
     tokens: List[str],
@@ -1427,6 +1431,7 @@ async def _send_fcm_push_v1(
     """
     if not FCM_PUSH_ENABLED:
         return {"status": "disabled", "success": 0, "failure": 0, "provider": "fcm_v1"}
+    private_notice = _is_private_deep_insight_push(data)
 
     # credentials が設定されていなくても /etc/secrets にあれば送る
     if not (_has_fcm_v1_credentials() or os.path.isfile("/etc/secrets/firebase_service_account.json")):
@@ -1459,6 +1464,9 @@ async def _send_fcm_push_v1(
     try:
         access_token, expiry, project_id, client_email = _get_fcm_oauth_access_token()
     except Exception as exc:
+        if private_notice:
+            logger.error("DeepInsight FCM v1 OAuth token unavailable")
+            return {"status": "oauth_error", "success": 0, "failure": len(uniq), "provider": "fcm_v1"}
         logger.error("FCM v1 OAuth token error [patch_v5]: %s", exc)
         return {"status": "oauth_error", "success": 0, "failure": len(uniq), "provider": "fcm_v1", "error": str(exc)[:300]}
 
@@ -1538,14 +1546,14 @@ async def _send_fcm_push_v1(
             errs.append(str(exc))
 
     logger.info("FCM v1 push sent [patch_v5]: success=%s failure=%s", success, failure)
-    if failure and errs:
+    if failure and errs and not private_notice:
         logger.warning("FCM v1 push failures (sample) [patch_v5 told=%s sa=%s]: %s", project_id, (client_email or ""), errs[:3])
     return {
         "status": "sent" if success > 0 else "failed",
         "success": success,
         "failure": failure,
         "provider": "fcm_v1",
-        "errors": errs[:3],
+        "errors": [] if private_notice else errs[:3],
     }
 
 async def _send_fcm_push_legacy(
@@ -1560,6 +1568,7 @@ async def _send_fcm_push_legacy(
         return {"status": "disabled", "success": 0, "failure": 0, "provider": "legacy"}
     if not FCM_SERVER_KEY:
         return {"status": "no_credentials", "success": 0, "failure": 0, "provider": "legacy"}
+    private_notice = _is_private_deep_insight_push(data)
 
     # 重複除去・空除去
     uniq: List[str] = []
@@ -1601,6 +1610,9 @@ async def _send_fcm_push_legacy(
             resp = await client.post(FCM_API_URL, headers=headers, json=payload)
             if resp.status_code != 200:
                 total_failure += len(batch)
+                if private_notice:
+                    logger.error("DeepInsight FCM legacy push failed: status=%s", resp.status_code)
+                    continue
                 err = f"status={resp.status_code} body={resp.text[:300]}"
                 errors.append(err)
                 logger.error(
@@ -1622,7 +1634,7 @@ async def _send_fcm_push_legacy(
                 total_failure += failure
                 logger.info("FCM legacy push sent: success=%s failure=%s", success, failure)
 
-                if failure:
+                if failure and not private_notice:
                     results = js.get("results")
                     if isinstance(results, list):
                         errs = [r.get("error") for r in results if isinstance(r, dict) and r.get("error")]

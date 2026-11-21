@@ -18,6 +18,7 @@ from .deep_insight_theme import (
     THEME_ANGLES, THEME_DECISION_IN_SCENE, THEME_DECISION_TARGETS, THEME_QUESTION_FORMS,
     THEME_REPEATED_INTRODUCTIONS, THEME_SCENES, THEME_TARGET_ANGLES, THEME_TARGET_FORMS,
 )
+from .deep_insight_theme_intents import THEME_SCENE_ANGLE_TARGETS
 from .emlis_thread_source import identity
 
 
@@ -507,22 +508,20 @@ def _prepare_theme(material, theme, choose):
     previous_angles = []
     options = []
     for scene_id, scene in THEME_SCENES.get(theme, {}).items():
-        pairs = [
-            (angle_id, _theme_position_key(theme, scene_id, angle_id))
-            for angle_id in THEME_ANGLES
-        ]
-        available = [(angle_id, key) for angle_id, key in pairs if key not in used]
+        targets = THEME_SCENE_ANGLE_TARGETS[theme][scene_id]
+        issued = {angle_id: _theme_position_key(theme, scene_id, angle_id) for angle_id in THEME_ANGLES}
+        available = [(angle_id, issued[angle_id]) for angle_id in targets if issued[angle_id] not in used]
         if available:
-            options.append((scene_id, scene, available))
+            times_used = sum(key in used for key in issued.values())
+            options.append((scene_id, scene, available, times_used))
     if options:
         # Visit a variety of concrete situations before drawing further
         # questions from already visited situations.
-        highest_remaining = max(len(available) for _, _, available in options)
-        scene_id, scene, available = choose([item for item in options if len(item[2]) == highest_remaining])
+        fewest_issued = min(option[3] for option in options)
+        scene_id, scene, available, _ = choose([item for item in options if item[3] == fewest_issued])
         angle_id, key = choose(available)
         position = (theme, scene_id, angle_id)
-        target = THEME_DECISION_TARGETS[theme][scene_id]
-        angle = THEME_TARGET_ANGLES.get(position, THEME_ANGLES[angle_id])
+        target, angle = THEME_SCENE_ANGLE_TARGETS[theme][scene_id][angle_id]
         form = THEME_TARGET_FORMS.get(position, THEME_QUESTION_FORMS[angle_id])
         archived_keys = {row["question_key"] for row in past[30:]}
         previous_angles = [

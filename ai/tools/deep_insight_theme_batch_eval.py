@@ -122,6 +122,7 @@ async def evaluate(selected, output, *, generate: Generate | None = None, transp
                   "theme_catalog_sha256": digest({
                       "scenes": question.THEME_SCENES, "angles": question.THEME_ANGLES,
                       "targets": question.THEME_DECISION_TARGETS,
+                      "scene_intents": question.THEME_SCENE_ANGLE_TARGETS,
                       "forms": question.THEME_QUESTION_FORMS,
                       "overrides": sorted(question.THEME_TARGET_ANGLES.items()),
                       "form_overrides": sorted(question.THEME_TARGET_FORMS.items()),
