@@ -446,7 +446,7 @@ def theme_run(theme, question, *, questions=(), reading=None, comparison=None, e
         if system.startswith(_THEME_REPAIR_SYSTEM_MESSAGE):
             return json.dumps({"question": repair or question}, ensure_ascii=False)
         if system.startswith(_THEME_READ_RETRY_SYSTEM_MESSAGE) and rereading is not None:
-            return json.dumps(rereading, ensure_ascii=False)
+            return rereading if isinstance(rereading, str) else json.dumps(rereading, ensure_ascii=False)
         if system == _THEME_COMPARE_SYSTEM_MESSAGE:
             return json.dumps(comparison if comparison is not None else {"verdict": "distinct"})
         return json.dumps(reading if reading is not None
@@ -469,6 +469,7 @@ def test_theme_needs_no_history_but_an_unrelated_meal_is_rejected():
 
 
 @pytest.mark.parametrize("raw", [
+    "最初にどんな話題を出しますか？",
     "「最初にどんな話題を出しますか？」",
     "{'question': '最初にどんな話題を出しますか？'}",
 ])
@@ -515,7 +516,7 @@ def test_theme_reader_must_accept_scene_and_angle(reason):
     assert calls[2][1]["reason"] == reason
 
 
-@pytest.mark.parametrize("corrected_read", [None, {"verdict": "accept"}])
+@pytest.mark.parametrize("corrected_read", [None, {"verdict": "accept"}, "accept"])
 def test_theme_retries_only_the_reader_when_it_echoes_the_scene_and_body(corrected_read):
     draft = "一度伝え方を決めた後、どんなときにもう一方の方法に切り替えますか？"
     result, calls = theme_run(
@@ -526,11 +527,25 @@ def test_theme_retries_only_the_reader_when_it_echoes_the_scene_and_body(correct
     assert [system for system, _ in calls] == [
         _THEME_WRITE_SYSTEM_MESSAGE, _THEME_READ_SYSTEM_MESSAGE, _THEME_READ_RETRY_SYSTEM_MESSAGE,
     ]
-    assert calls[1][1] == calls[2][1]
-    if corrected_read is None:
+    original = dict(calls[1][1])
+    exact_display = f"{original.pop('scene')}、{original.pop('body')}"
+    assert calls[2][1] == {**original, "question": exact_display}
+    if corrected_read != "accept":
         assert result.disposition == "rejected" and result.candidate is None
     else:
-        assert result.candidate.text == f"{calls[1][1]['scene']}、{draft}"
+        assert result.candidate.text == exact_display
+
+
+def test_theme_replaces_two_independent_answers_with_one_before_the_reader():
+    draft = "本格的に切り替える前に、どの程度の範囲で別の方法を試し、その結果をどう判断しますか？"
+    revised = "本格的に切り替える前に、どこまで別の方法を試しますか？"
+    selected, calls = theme_run(
+        "仕事・学び", draft, repair=revised, choose_theme=select_theme_angle("experiment", "boundary"),
+    )
+    assert calls[1][0].startswith(_THEME_REPAIR_SYSTEM_MESSAGE)
+    assert calls[1][1]["reason"] == "surface"
+    assert calls[2][1]["body"] == revised
+    assert selected.candidate.text.endswith(revised)
 
 
 def test_theme_preserves_an_unmade_choice_in_the_independent_review():
