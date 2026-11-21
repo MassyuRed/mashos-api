@@ -575,7 +575,7 @@ def test_theme_distinguishes_two_ordering_questions_by_their_answer_targets():
     assert result.disposition == "selected"
     assert calls[-1][0] == _THEME_COMPARE_SYSTEM_MESSAGE
     assert calls[-1][1]["target"] == "暮らしを変えても残しておきたい習慣"
-    assert calls[-1][1]["history"][0]["target"] == "取りかかる順番"
+    assert calls[-1][1]["history"] == [{"id": 1, "question": history[0]["question_text"]}]
 
 
 @pytest.mark.parametrize("recent_count", [0, 30])
@@ -713,15 +713,18 @@ def test_theme_checks_two_cited_questions_before_the_remaining_history(final_ver
 def test_theme_checks_the_fifth_suspected_repeat_in_long_history():
     question = {"question": "久しぶりに連絡するとしたら、最初に何を伝えますか？"}
     history = [{"id": i, "question": f"{i}回目は何を選びますか？"} for i in range(1, 32)]
-    suspects = iter((4, 7, 10, 12, 30, None))
+    suspects = {4, 7, 10, 12, 30}
     cleared = []
+    scanned = []
 
     async def generate(system, payload):
         if system == _THEME_COMPARE_SYSTEM_MESSAGE:
-            suspect = next(suspects)
+            ids = [row["id"] for row in payload["history"]]
+            scanned.append(ids)
+            suspect = next((i for i in ids if i in suspects), None)
             if suspect is None:
-                assert len(payload["history"]) == 26
                 return '{"verdict":"distinct"}'
+            suspects.remove(suspect)
             return json.dumps({"verdict": "repeat", "id": suspect})
         assert system == _THEME_COMPARE_PAIR_SYSTEM_MESSAGE
         cleared.append(payload["previous"])
@@ -729,6 +732,62 @@ def test_theme_checks_the_fifth_suspected_repeat_in_long_history():
 
     assert asyncio.run(_theme_has_new_answer(question, history, generate))
     assert cleared == [history[i - 1]["question"] for i in (4, 7, 10, 12, 30)]
+    assert [len(batch) for batch in scanned[:2]] == [31, 30]
+    assert all(len(batch) <= deep_insight_question._THEME_HISTORY_SUBBATCH_SIZE for batch in scanned[2:])
+    assert set().union(*map(set, scanned[2:])) == set(range(1, 32)) - {4, 7}
+
+
+def test_theme_retains_a_true_paraphrase_in_the_last_subbatch():
+    question = {"question": "やり方を試した結果、どんな手応えがあれば今後も使おうと思いますか？"}
+    earlier = "新しい手順をこの先も使い続ける決め手になる結果は何ですか？"
+    history = [{"id": i, "question": f"{i}回目は何を選びますか？"} for i in range(1, 31)]
+    history.append({"id": 31, "question": earlier})
+    suspects = {1, 2, 31}
+    checked_sizes = []
+
+    async def generate(system, payload):
+        if system == _THEME_COMPARE_SYSTEM_MESSAGE:
+            ids = [row["id"] for row in payload["history"]]
+            checked_sizes.append(len(ids))
+            suspect = next((i for i in ids if i in suspects), None)
+            if suspect:
+                suspects.remove(suspect)
+                return json.dumps({"verdict": "repeat", "id": suspect})
+            return '{"verdict":"distinct"}'
+        assert system == _THEME_COMPARE_PAIR_SYSTEM_MESSAGE
+        return json.dumps({"verdict": "repeat" if payload["previous"] == earlier else "distinct"})
+
+    assert not asyncio.run(_theme_has_new_answer(question, history, generate))
+    assert checked_sizes == [31, 30, 8, 8, 8, 5]
+    assert not suspects
+
+
+def test_theme_rejects_an_unchecked_nomination_after_the_pair_budget():
+    question = {"question": "何から新しい手順を試しますか？"}
+    history = [{"id": i, "question": f"{i}回目は何を選びますか？"} for i in range(1, 11)]
+    pairs = []
+
+    async def generate(system, payload):
+        if system == _THEME_COMPARE_SYSTEM_MESSAGE:
+            return json.dumps({"verdict": "repeat", "id": payload["history"][0]["id"]})
+        assert system == _THEME_COMPARE_PAIR_SYSTEM_MESSAGE
+        pairs.append(payload["previous"])
+        return '{"verdict":"distinct"}'
+
+    assert not asyncio.run(_theme_has_new_answer(question, history, generate))
+    assert len(pairs) == 3
+
+
+def test_theme_uses_an_archived_position_without_omitting_an_unresolved_match():
+    question = {"question": "人に頼まれたことを引き受ける上限はどこまでですか？"}
+    old = {"id": 31, "scene": "人に何かを勧められて、応じるか迷ったとき", "target": "負担", "angle": "負担の上限"}
+
+    async def generate(system, payload):
+        assert system == _THEME_COMPARE_SYSTEM_MESSAGE
+        assert payload["history"] == [old]
+        return '{"verdict":"repeat","id":31}'
+
+    assert not asyncio.run(_theme_has_new_answer(question, [old], generate))
 
 
 @pytest.mark.parametrize("control", ["distinct", "semantic_repeat", "exact_repeat"])
@@ -759,7 +818,7 @@ def test_theme_resolves_three_cited_questions_with_archived_history(control):
         original, lane="theme", theme=theme, choose_theme=select_theme_angle(*current_position[1:]),
     )
     # Match the order in which the actual 4B retest cited distinct history.
-    cited_ids = iter((21, 30, 17, None))
+    cited_ids = [21, 30, 17]
     comparisons = []
     pairs = []
     calls = []
@@ -771,8 +830,11 @@ def test_theme_resolves_three_cited_questions_with_archived_history(control):
         if system.startswith(_THEME_READ_SYSTEM_MESSAGE):
             return '{"verdict":"accept"}'
         if system == _THEME_COMPARE_SYSTEM_MESSAGE:
-            comparisons.append([row["id"] for row in payload["history"]])
-            cited = next(cited_ids)
+            ids = [row["id"] for row in payload["history"]]
+            comparisons.append(ids)
+            cited = next((i for i in cited_ids if i in ids), None)
+            if cited:
+                cited_ids.remove(cited)
             return json.dumps({"verdict": "repeat", "id": cited} if cited else {"verdict": "distinct"})
         assert system == _THEME_COMPARE_PAIR_SYSTEM_MESSAGE
         pairs.append(payload["previous"])
@@ -786,9 +848,11 @@ def test_theme_resolves_three_cited_questions_with_archived_history(control):
         assert len(calls) == 1
         return
     assert pairs == [recent[i - 1]["question_text"] for i in (21, 30, 17)]
-    expected = [[i for i in range(1, 31) if i not in removed] for removed in ((), (21,), (21, 30))]
+    after_split = [i for i in range(1, 31) if i not in (21, 30)]
+    expected = [list(range(1, 31)), [i for i in range(1, 31) if i != 21],
+                after_split[:8], after_split[8:16], after_split[16:24]]
     if control == "distinct":
-        expected.append([i for i in range(1, 31) if i not in (21, 30, 17)])
+        expected.extend([after_split[17:24], after_split[24:]])
     assert comparisons == expected
 
 
@@ -903,6 +967,58 @@ def test_theme_repairs_a_closed_question_containing_its_usual_wording():
     assert result.candidate.text.endswith(revised)
 
 
+@pytest.mark.parametrize(("theme", "scene", "angle", "draft", "revised"), [
+    ("仕事・学び", "feedback", "cue",
+     "指摘された改善点について、具体的に何を直す必要があるかを知っていますか？",
+     "どこを直すか決める前に、相手の指摘について何を確かめますか？"),
+    ("仕事・学び", "feedback", "change",
+     "指摘された内容が、今の作業手順をどう変える必要があるかを示す具体的な条件はありますか？",
+     "指摘にどんな内容があったら、今の作業手順を変えようと思いますか？"),
+    ("これからのこと", "leave_space", "boundary",
+     "空き時間を保ちながら、用事をどれくらいまで入れるか、その目安はありますか？",
+     "空き時間を残すには、用事をどれくらいまで入れますか？"),
+])
+def test_theme_repairs_a_yes_no_main_clause_with_an_embedded_question(theme, scene, angle, draft, revised):
+    result, calls = theme_run(theme, draft, repair=revised, choose_theme=select_theme_angle(scene, angle))
+    assert [system for system, _ in calls] == [
+        _THEME_WRITE_SYSTEM_MESSAGE, _THEME_REPAIR_SYSTEM_MESSAGE, _THEME_READ_SYSTEM_MESSAGE,
+    ]
+    assert calls[1][1]["reason"] == "surface"
+    assert result.candidate.text.endswith(revised)
+
+
+@pytest.mark.parametrize(("theme", "scene", "draft", "revised"), [
+    ("自分の価値観", "risk",
+     "失敗した場合にやり直せる余地があるかどうか、どのように確かめておきますか？",
+     "試す前に、やり直しに使える時間や手段について何を確かめますか？"),
+    ("仕事・学び", "teach",
+     "説明の組み立てを決める前に、相手がどこまで分かっているかをどう確かめますか？",
+     "説明の組み立てを決める前に、相手の理解について何を確かめますか？"),
+    ("日々の過ごし方", "rest_day",
+     "用事にかかる時間について、どれくらい見積もりますか？",
+     "用事と休息の時間を決める前に、用事にかかる時間について何を確かめますか？"),
+    ("日々の過ごし方", "between_tasks",
+     "用事の合間に実際に使える時間を決める際、移動や準備に必要な時間をどう確認しますか？",
+     "合間の使い道を決める前に、移動や準備にかかる時間について何を確かめますか？"),
+])
+def test_theme_repairs_a_question_about_the_way_to_check_instead_of_the_cue(theme, scene, draft, revised):
+    result, calls = theme_run(theme, draft, repair=revised, choose_theme=select_theme_angle(scene, "cue"))
+    assert len(calls) == 3
+    assert calls[1][0].startswith(_THEME_REPAIR_SYSTEM_MESSAGE)
+    assert "情報そのもの" in calls[1][0] and calls[1][1]["reason"] == "angle"
+    assert calls[2][1]["body"] == revised
+    assert result.candidate.text.endswith(revised)
+
+
+@pytest.mark.parametrize("draft", [
+    "どれくらいの間隔なら相手も心地よく会えるか、決める前に何を確かめますか？",
+    "今のやり方が合っているか考える前に、どんな手がかりがありますか？",
+])
+def test_theme_keeps_open_main_questions_about_facts(draft):
+    result, calls = theme_run("人間関係", draft, choose_theme=select_theme_angle("distance", "cue"))
+    assert len(calls) == 2 and result.candidate.text.endswith(draft)
+
+
 def test_theme_allows_asking_for_a_start_time():
     draft = "話すと決めたら、いつから話し始めますか？"
     result, calls = theme_run("人間関係", draft)
@@ -947,6 +1063,12 @@ def test_theme_rejects_non_polite_endings_and_unbound_questions(body):
     ("自分の価値観", "public_private", "priority",
      "何を基準に自分のルールを守るべきですか？",
      "自分のルールを守るべきか、何を基準に決めますか？"),
+    ("日々の過ごし方", "rest_day", "boundary",
+     "休みの日に用事を入れる際、休んだと感じられる余裕を残すために、用事は何件まで入れるのが適切ですか？",
+     "休める時間を残すには、用事を何件くらいまで入れますか？"),
+    ("日々の過ごし方", "weather", "priority",
+     "その外出の目的が、予定を当日に行うか後日に回すかをどう決める基準になりますか？",
+     "予定どおり出かけるか後日に回すか、外出の目的のどんな点を重く見て決めますか？"),
 ])
 def test_theme_repairs_advice_and_repeated_decision_criteria_before_reading(theme, scene, angle, draft, revised):
     result, calls = theme_run(theme, draft, repair=revised, choose_theme=select_theme_angle(scene, angle))
@@ -1006,6 +1128,16 @@ def test_theme_reader_checks_the_amount_without_a_redundant_upper_limit(draft, e
      "別の進め方を少し試すなら最初にどんなことをしますか？"),
     ("日々の過ごし方", "move", "first_action",
      "体を動かす時間を日常に組み込むために、まず何をしますか？", "まず何をしますか？"),
+    ("日々の過ごし方", "changed_plans", "first_action",
+     "その日の予定が急に変わった直後に、最初に何をしますか？", "最初に何をしますか？"),
+    ("日々の過ごし方", "between_tasks", "priority",
+     "用事の合間に少しだけ空き時間ができたとき、短い休憩にするか小さな用事を済ませるかの決め手は何ですか？",
+     "短い休憩にするか小さな用事を済ませるかの決め手は何ですか？"),
+    ("仕事・学び", "experiment", "priority",
+     "慣れた手順を別の方法に切り替えるかどうか、何を基準に決めますか？", "何を基準に決めますか？"),
+    ("これからのこと", "route_change", "priority",
+     "目標の向かい方を変えようか迷ったとき、同じ目標に向かう別の進め方を選ぶ決め手は何ですか？",
+     "同じ目標に向かう別の進め方を選ぶ決め手は何ですか？"),
     ("これからのこと", "change_habits", "change",
      "新しい暮らしの中で、習慣を変えるのはどんなときですか？",
      "新しい暮らしの中で、習慣を変えるのはどんなときですか？"),
@@ -1094,7 +1226,7 @@ def test_theme_reader_receives_older_same_scene_angles_with_available_wording(ol
     expected = {"id": 31, "scene": "初対面の人と話すとき",
                 "target": "最初のひと言", "angle": "話し始めるために最初にすること"}
     if older_wording is not None:
-        expected["question"] = older_wording
+        expected = {"id": 31, "question": older_wording}
         assert calls[-1][1]["previous"] == older_wording
     assert history[30] == expected
 

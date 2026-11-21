@@ -454,7 +454,7 @@ THEME_TARGET_FORMS = {
     ("仕事・学び", "teach", "priority"): "覚えたことのうち、どの部分を先に伝えるかは何を目安に決めますか？",
     ("仕事・学び", "teach", "change"): "相手がどんな反応をしたら、別の例を使って説明し直しますか？",
     ("仕事・学び", "teach", "boundary"): "最初の説明でどこまで伝えるか、何を目安に決めますか？",
-    ("仕事・学び", "teach", "cue"): "説明の組み立てを決める前に、相手がどこまで分かっているかをどう確かめますか？",
+    ("仕事・学び", "teach", "cue"): "説明の組み立てを決める前に、相手の理解について何を確かめますか？",
     ("仕事・学び", "sources", "first_action"): "二つの手順を比べやすくするために、まず手元で何をしますか？",
     ("仕事・学び", "sources", "priority"): "資料に載っている手順のうち、どれを使うかは何を目安に決めますか？",
     ("仕事・学び", "sources", "change"): "片方の手順で進めてみて、どんなことが起きたらもう片方に切り替えますか？",
@@ -522,7 +522,7 @@ THEME_TARGET_FORMS = {
     ("日々の過ごし方", "screen", "cue"): "一日のうち長く見ている時間帯を知るために、何を見直しますか？",
     ("日々の過ごし方", "screen", "outcome"): "見る時間を変えてみたあと、毎日がどう変わると、自分に合った調整だったと感じますか？",
     ("日々の過ごし方", "weather", "first_action"): "出かけるかを決める前に、最初に何をしますか？",
-    ("日々の過ごし方", "weather", "priority"): "予定どおり出かけるか後日に回すかは、その外出の目的の何が決め手になりますか？",
+    ("日々の過ごし方", "weather", "priority"): "予定どおり出かけるか後日に回すか、外出の目的のどんな点を重く見て決めますか？",
     ("日々の過ごし方", "weather", "change"): "天気がどう変わると、出かける時刻をずらしますか？",
     ("日々の過ごし方", "weather", "cue"): "外出をどうするか決める前に、天気のどんな情報を確認しますか？",
     ("日々の過ごし方", "weather", "outcome"): "当日を振り返って、どんな結果なら外出の仕方を選んでよかったと思いますか？",
@@ -617,11 +617,15 @@ THEME_REPEATED_INTRODUCTIONS = {
     ),
     ("人間関係", "disagreement", "priority"): ("意見が分かれたとき",),
     ("人間関係", "feedback", "first_action"): ("改善してほしいことを伝えるとき",),
-    ("自分の価値観", "public_private", "priority"): ("誰にも見られない場で自分のルールを守るかどうかは",),
+    ("自分の価値観", "public_private", "priority"): (
+        "誰にも見られない場で自分のルールを守るかどうかは", "誰にも見られない場では",
+    ),
     ("自分の価値観", "ownership", "priority"): ("勧めを断るか受けるか",),
     ("自分の価値観", "ownership", "boundary"): ("勧められたことを試す際",),
     ("自分の価値観", "giving_credit", "first_action"): ("感謝や評価を伝える際",),
-    ("仕事・学び", "finish", "change"): ("一区切りついた振り返りでは",),
+    ("仕事・学び", "finish", "change"): ("一区切りついた振り返りでは", "一区切りついた仕事や勉強の振り返りにおいて"),
+    ("仕事・学び", "experiment", "priority"): ("慣れた手順を別の方法に切り替えるかどうか",),
+    ("仕事・学び", "stuck", "cue"): ("手が止まったとき",),
     ("日々の過ごし方", "move", "first_action"): ("体を動かす時間を日常に組み込むために",),
     ("仕事・学び", "finish", "priority"): ("作業の振り返りで",),
     ("仕事・学び", "routine", "change"): ("集中が途切れたとき", "集中が途切れた際"),
@@ -634,11 +638,14 @@ THEME_REPEATED_INTRODUCTIONS = {
     ("仕事・学び", "error", "priority"): ("作業の誤りを見つけたとき",),
     ("仕事・学び", "collaboration", "priority"): ("それぞれの担当を決めるとき",),
     ("日々の過ごし方", "rest_day", "boundary"): ("休みの日に用事を入れる場合",),
+    ("日々の過ごし方", "changed_plans", "first_action"): ("その日の予定が急に変わった直後に",),
+    ("日々の過ごし方", "between_tasks", "priority"): ("用事の合間に少しだけ空き時間ができたとき",),
     ("日々の過ごし方", "sleep", "first_action"): ("翌朝の予定に向けた今夜",),
     ("日々の過ごし方", "transition", "first_action"): ("仕事や勉強を終えた直後",),
     ("これからのこと", "route_change", "change"): ("目標への向かい方を変えるかどうか",),
     ("これからのこと", "trial", "first_action"): ("新しい環境を少し試す最初の行動として",),
     ("これからのこと", "route_change", "first_action"): ("目標の向かい方を変えようか迷ったとき",),
+    ("これからのこと", "route_change", "priority"): ("目標の向かい方を変えようか迷ったとき",),
 }
 
 # The displayed scene itself already presents the two alternatives.
@@ -646,6 +653,7 @@ THEME_DECISION_IN_SCENE = frozenset({
     ("人間関係", "asking_help", "priority"),
     ("自分の価値観", "ownership", "priority"),
     ("自分の価値観", "public_private", "priority"),
+    ("仕事・学び", "experiment", "priority"),
 })
 
 # These pairs ask for different answers when both displayed questions match

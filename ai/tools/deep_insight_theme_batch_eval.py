@@ -125,7 +125,14 @@ async def run_case(case: Case, history, seen_inputs, *, generate: Generate):
 async def evaluate(selected, output, *, generate: Generate | None = None, transport="injected"):
     counts = Counter(case.theme for case in selected)
     provenance = hashlib.sha256(Path(question.__file__).read_bytes()).hexdigest()
-    max_history_batches = ceil((max(counts.values(), default=0) - 1) / question._THEME_HISTORY_BATCH_SIZE)
+    max_history = max(0, max(counts.values(), default=0) - 1)
+    max_history_batches = ceil(max_history / question._THEME_HISTORY_BATCH_SIZE)
+    max_rechecks = min(question._THEME_MAX_PAIR_RECHECKS, 2 + max_history // 8)
+    max_splits = min(max_history_batches, max_rechecks // question._THEME_HISTORY_SPLIT_AFTER)
+    subbatches = ceil((question._THEME_HISTORY_BATCH_SIZE - question._THEME_HISTORY_SPLIT_AFTER)
+                     / question._THEME_HISTORY_SUBBATCH_SIZE)
+    # Each split replaces one remaining original-batch scan with smaller scans.
+    max_compare_calls = max_history_batches + 2 * max_rechecks + max_splits * (subbatches - 1)
     emit(output, {"kind": "manifest", "schema": SCHEMA, "cases_by_theme": counts,
                   "plan_sha256": digest([asdict(case) for case in selected]),
                   "generator_sha256": provenance,
@@ -146,7 +153,7 @@ async def evaluate(selected, output, *, generate: Generate | None = None, transp
                   }),
                   "fictional": True, "transport": transport if generate is not None else "dry_run",
                   "provider_calls": generate is not None,
-                  "max_provider_calls": (7 + max_history_batches + 2 * question._THEME_MAX_PAIR_RECHECKS) * len(selected),
+                  "max_provider_calls": (7 + max_compare_calls) * len(selected),
                   "same_input_retries": 0})
     if generate is None:
         for case in selected:
