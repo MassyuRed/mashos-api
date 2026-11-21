@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass
 from datetime import date, datetime
 import json
 import logging
@@ -15,15 +16,19 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 
 from api_emotion_submit import _extract_bearer_token, _resolve_user_id_from_token
 from cocolon_meaning_experience_engine.deep_insight_question import (
-    SYSTEM_MESSAGE, admit_question, prepare_question_material,
+    generate_question, prepare_question_material,
 )
 from emlis_thread_config import MAX_ANSWER_CHARS, natural_reply_provider_settings
+from generation_lock import build_lock_key, release_lock, try_acquire_lock
+from response_microcache import get_or_compute
 from supabase_client import sb_post_rpc
 
 
 logger = logging.getLogger(__name__)
 Lane = Literal["records", "theme"]
 QuestionStatus = Literal["issued", "existing", "no_question", "daily_limit"]
+_GENERATION_BUDGET_SECONDS = 96
+_NO_MERIT_CACHE_SECONDS = 15 * 60
 
 
 class Question(BaseModel):
@@ -68,6 +73,13 @@ class QuestionCommand(BaseModel):
 class QuestionResult(BaseModel):
     status: QuestionStatus
     question: Question | None = None
+
+
+@dataclass(frozen=True)
+class _Attempt:
+    disposition: str
+    result: QuestionResult | None = None
+    error: tuple[int, str, dict[str, str] | None] | None = None
 
 
 class AnswerCommand(BaseModel):
@@ -129,7 +141,7 @@ def _stored(model, result):
         raise HTTPException(503, "deep_insight_storage_unavailable") from None
 
 
-async def _generate_candidate(material):
+async def _generate_candidate(system: str, material: dict) -> str:
     # The existing normal Emlis recipient author serves OpenAI-compatible
     # system/user messages. This is a separate request and never uses its
     # recipient reply as a question or as evidence.
@@ -142,7 +154,7 @@ async def _generate_candidate(material):
                 or not model or not key):
             raise ValueError
         messages = [
-            {"role": "system", "content": SYSTEM_MESSAGE},
+            {"role": "system", "content": system},
             {"role": "user", "content": json.dumps(material, ensure_ascii=False, separators=(",", ":"))},
         ]
         async with asyncio.timeout(32):
@@ -172,6 +184,59 @@ async def _generate_candidate(material):
         raise HTTPException(503, "deep_insight_question_unavailable") from None
 
 
+async def _issue_state(owner: str, lane: Lane):
+    state = _stored(_StoredState, await _rpc("deep_insight_state", {"p_user_id": owner}))
+    if lane == "theme" and not state.can_use_theme:
+        raise HTTPException(403, "deep_insight_theme_locked")
+    question = state.records if lane == "records" else state.theme
+    if question is not None:
+        return state, QuestionResult(status="existing", question=question)
+    available = state.record_available_today if lane == "records" else state.theme_available_today
+    return state, None if available else QuestionResult(status="daily_limit")
+
+
+async def _issue_from_material(owner, command, day, guard, material, prepared, sources):
+    # A different theme still uses the same owner's single theme slot.
+    lock_key = build_lock_key(namespace="deep-insight", user_id=owner, report_type=command.lane,
+                              period_start=day, period_end=guard)
+    try:
+        lease = await try_acquire_lock(lock_key=lock_key, ttl_seconds=120)
+    except (HTTPException, httpx.HTTPError, RuntimeError, ValueError):
+        raise HTTPException(503, "deep_insight_question_unavailable") from None
+    if not lease.acquired:
+        _, result = await _issue_state(owner, command.lane)
+        if result is not None:
+            return _Attempt(result.status, result)
+        raise HTTPException(503, "deep_insight_question_unavailable", headers={"Retry-After": "3"})
+
+    try:
+        state, result = await _issue_state(owner, command.lane)
+        if result is not None:
+            return _Attempt(result.status, result)
+        if state.day.isoformat() != day:
+            return _Attempt("source_changed", QuestionResult(status="no_question"))
+
+        try:
+            async with asyncio.timeout(_GENERATION_BUDGET_SECONDS):
+                run = await generate_question(prepared, sources, material=material, generate=_generate_candidate)
+        except TimeoutError:
+            raise HTTPException(503, "deep_insight_question_unavailable") from None
+        candidate = run.candidate
+        if candidate is None:
+            return _Attempt(run.disposition, QuestionResult(status="no_question"))
+
+        saved = await _rpc("deep_insight_issue_grounded", {
+            "p_user_id": owner, "p_day": day, "p_lane": command.lane, "p_theme": command.theme,
+            "p_question_text": candidate.text, "p_question_key": candidate.question_key,
+            "p_text_key": candidate.text_key, "p_material_guard": guard,
+            "p_grounding_receipt": candidate.receipt,
+        })
+        result = _stored(QuestionResult, saved)
+        return _Attempt("source_changed_or_duplicate" if result.status == "no_question" else result.status, result)
+    finally:
+        await release_lock(lock_key=lease.lock_key, owner_id=lease.owner_id)
+
+
 def register_deep_insight_routes(app: FastAPI) -> None:
     router = APIRouter(prefix="/deep-insight")
 
@@ -183,35 +248,39 @@ def register_deep_insight_routes(app: FastAPI) -> None:
     @router.post("/questions", response_model=QuestionResult)
     async def issue_deep_insight_question(command: QuestionCommand, response: Response, owner: str = Depends(_owner)):
         response.headers["Cache-Control"] = "no-store"
-        state = _stored(_StoredState, await _rpc("deep_insight_state", {"p_user_id": owner}))
-        if command.lane == "theme" and not state.can_use_theme:
-            raise HTTPException(403, "deep_insight_theme_locked")
-        question = state.records if command.lane == "records" else state.theme
-        if question is not None:
-            return QuestionResult(status="existing", question=question)
-        available = state.record_available_today if command.lane == "records" else state.theme_available_today
-        if not available:
-            return QuestionResult(status="daily_limit")
+        state, previous = await _issue_state(owner, command.lane)
+        if previous is not None:
+            return previous
 
         context = await _rpc("deep_insight_candidate_context", {"p_user_id": owner})
         try:
             material = context["material"]
             guard = context["guard"]
+            if not isinstance(guard, str) or not guard:
+                raise ValueError
             prepared, sources = prepare_question_material(material, lane=command.lane, theme=command.theme)
         except (ValueError, KeyError, TypeError):
             raise HTTPException(503, "deep_insight_storage_unavailable") from None
         if command.lane == "records" and not sources:
             return QuestionResult(status="no_question")
-        raw = await _generate_candidate(prepared)
-        candidate = admit_question(raw, lane=command.lane, theme=command.theme, sources=sources, material=material)
-        if candidate is None:
-            return QuestionResult(status="no_question")
-        saved = await _rpc("deep_insight_issue", {
-            "p_user_id": owner, "p_day": state.day.isoformat(), "p_lane": command.lane, "p_theme": command.theme,
-            "p_question_text": candidate.text, "p_question_key": candidate.question_key,
-            "p_text_key": candidate.text_key, "p_material_guard": guard,
-        })
-        return _stored(QuestionResult, saved)
+
+        day = state.day.isoformat()
+        cache_key = build_lock_key(namespace="deep-insight-v2", user_id=owner, report_type=command.lane,
+                                   period_start=day, period_end=guard + ":" + (command.theme or ""))
+
+        async def attempt():
+            try:
+                return await _issue_from_material(owner, command, day, guard, material, prepared, sources)
+            except HTTPException as exc:
+                # Failed requests remain retryable. Use the status only, never source text, in telemetry.
+                return _Attempt("unavailable", error=(exc.status_code, exc.detail, exc.headers))
+
+        outcome = await get_or_compute(cache_key, 0, attempt,
+            ttl_resolver=lambda row: _NO_MERIT_CACHE_SECONDS if row.disposition == "no_merit" else 0)
+        logger.info("DeepInsight generation %s %s", command.lane, outcome.disposition)
+        if outcome.error is not None:
+            raise HTTPException(*outcome.error)
+        return outcome.result
 
     @router.post("/answers", response_model=AnswerResult)
     async def answer_deep_insight_question(command: AnswerCommand, response: Response, owner: str = Depends(_owner)):

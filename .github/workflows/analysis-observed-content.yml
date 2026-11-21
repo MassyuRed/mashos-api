@@ -76,11 +76,16 @@ name: Analysis observed content
       - ai/tests/test_analysis_map_correction_sql.py
       - ai/tests/test_analysis_map_correction_handoff.py
       - ai/tests/test_analysis_deep_insight_handoff.py
+      - ai/services/ai_inference/api_deep_insight.py
+      - ai/tests/test_deep_insight.py
+      - ai/tests/test_deep_insight_question_generation.py
+      - ai/tests/deep_insight_sql.cjs
       - ai/tests/analysis_map_correction_sql.cjs
       - supabase/migrations/*_analysis_map_interpretation_corrections.sql
       - supabase/migrations/*_analysis_map_correction_handoff.sql
       - supabase/migrations/*_analysis_deep_insight_answer_handoff.sql
       - supabase/migrations/*_deep_insight_questions.sql
+      - supabase/migrations/*_deep_insight_grounded_questions.sql
       - ai/tests/test_analysis_if_service.py
       - ai/tests/test_cmee_current_4b_packet.py
       - ai/tests/fixtures/cmee_current_4b_packet_20261114.json
@@ -344,6 +349,8 @@ jobs:
           ai/tests/test_analysis_map_correction_sql.py
           ai/tests/test_analysis_map_correction_handoff.py
           ai/tests/test_analysis_deep_insight_handoff.py
+          ai/tests/test_deep_insight.py
+          ai/tests/test_deep_insight_question_generation.py
           ai/tests/test_analysis_if_service.py
           ai/tests/test_cmee_current_4b_packet.py
           ai/tests/test_emlis_natural_frames_application.py
