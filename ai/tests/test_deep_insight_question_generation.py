@@ -138,14 +138,29 @@ def test_record_is_not_retained_if_its_dismissal_cannot_fit(monkeypatch):
 
 
 def test_explicit_reason_stops_before_writing_but_new_condition_can_pass():
-    original = material(source("相手が困っていたので、" + QUOTE + "。"))
-    result, calls = run(original, ask())
+    causal_sentence = "相手が困っていたので、" + QUOTE
+    original = material(source(causal_sentence + "。自分の仕事はまだ途中だった。"))
+    # This was the real planner response for the documented positive control.
+    invalid_plan = ask(quote=causal_sentence, ask="相手が困っていた理由")
+    result, calls = run(original, invalid_plan)
     assert result.disposition == "rejected" and len(calls) == 1
 
     plan = ask(focus="CONDITION", ask="自分の仕事を先にする条件")
-    question = "逆に、自分の仕事を先にするのはどんなときですか？"
+    question = "同じような場面で、自分の仕事を先にするのはどんなときですか？"
     result, calls = run(original, plan, question)
     assert result.disposition == "selected" and len(calls) == 3
+    assert result.candidate.text == f"「{QUOTE}」と書いていましたが、{question}"
+    assert calls[2][1]["material"] == calls[0][1]
+
+    result, calls = run(original, plan, "自分の仕事を先にしたとき、どんな条件がありましたか？",
+                        reading={"verdict": "reject", "reason": "unsupported_premise"})
+    assert result.disposition == "rejected" and len(calls) == 3
+
+
+def test_explicit_reason_without_a_new_question_can_still_skip():
+    original = material(source("相手が困っていたので、" + QUOTE + "。"))
+    result, calls = run(original, {"decision": "skip"})
+    assert result.disposition == "no_merit" and len(calls) == 1
 
 
 @pytest.mark.parametrize("updates", [
