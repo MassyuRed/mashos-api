@@ -57,6 +57,7 @@ Deprecated rows remain listed until their compatibility window is closed.
 | GET | `/deep-insight` | `deep_insight.state.v1` | `false` |  | Owner-only pending questions, recent history, next theme availability and theme reminder preference |
 | PATCH | `/deep-insight/theme-notification` | `deep_insight.theme_notification.update.v1` | `false` |  | Opt in or out of the owner’s theme availability reminder |
 | POST | `/deep-insight/questions` | `deep_insight.questions.issue.v1` | `false` |  | Grounded issuance within the owner’s rolling theme allowance or separate JST records allowance |
+| GET | `/deep-insight/questions/{question_id}` | `deep_insight.questions.read.v1` | `false` |  | Read one issued question by ID for its authenticated owner, including outside recent history |
 | POST | `/deep-insight/answers` | `deep_insight.answers.submit.v1` | `false` |  | Owner-only answer to an issued question. Identical retry returns the saved answer |
 | GET | `/notices/current` | `notice.current.v1` | `false` |  |  |
 | GET | `/notices/history` | `notice.history.list.v1` | `false` |  |  |

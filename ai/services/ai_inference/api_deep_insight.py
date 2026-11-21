@@ -357,6 +357,13 @@ def register_deep_insight_routes(app: FastAPI) -> None:
         response.headers["Cache-Control"] = "no-store"
         return _stored(_StoredState, await _rpc("deep_insight_state", {"p_user_id": owner}))
 
+    @router.get("/questions/{question_id}", response_model=Question)
+    async def read_deep_insight_question(question_id: UUID, response: Response, owner: str = Depends(_owner)):
+        response.headers["Cache-Control"] = "no-store"
+        return _stored(Question, await _rpc("deep_insight_question_by_id", {
+            "p_user_id": owner, "p_question_id": str(question_id),
+        }))
+
     @router.patch("/theme-notification", response_model=ThemeNotification)
     async def update_deep_insight_theme_notification(command: ThemeNotification, response: Response,
                                                      owner: str = Depends(_owner)):

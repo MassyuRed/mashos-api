@@ -547,11 +547,29 @@ async function run() {
   await db.exec(fs.readFileSync(path.join(root, 'supabase/migrations',
     '20261121193000_deep_insight_record_assessment_on_map.sql'), 'utf8'));
   await verifyRecordAssessmentAfterMap();
+  await db.exec('reset role');
+  await db.exec(fs.readFileSync(path.join(root, 'supabase/migrations',
+    '20261121194000_deep_insight_question_by_id.sql'), 'utf8'));
+  await db.query(`insert into public.deep_insight_questions
+    (user_id,lane,theme,question_text,issued_on,issued_at,question_key,text_key)
+    select $1,'theme','人間関係','比較用の問い',current_date-n,now()-make_interval(days=>n),
+      'history-before-notification-' || n,'history-before-notification-' || n
+    from generate_series(2,50) as n`, [plus]);
+  await db.exec('set role service_role');
+  const readQuestion = (owner, id) => value('select public.deep_insight_question_by_id($1,$2) as v', [owner, id]);
+  const oldQuestion = await value(`select id as v from public.deep_insight_questions
+    where user_id=$1 and question_key='history-before-notification-50'`, [plus]);
+  assert.ok(!(await state(plus)).history.some((q) => q.id === oldQuestion));
+  assert.equal((await readQuestion(plus, oldQuestion)).id, oldQuestion);
+  assert.equal((await readQuestion(plus, existingRecord.id)).answer_text, '切替前の問いへの回答');
+  await fail('P0002', () => readQuestion(free, oldQuestion));
+  await fail('P0002', () => readQuestion(plus, '00000000-0000-0000-0000-000000000000'));
 
   for (const role of ['anon', 'authenticated']) {
     await db.exec('set role ' + role);
     await fail('42501', () => state(free));
     await fail('42501', () => themeContext(free, '人間関係'));
+    await fail('42501', () => readQuestion(plus, oldQuestion));
     await fail('42501', () => db.query('select * from public.deep_insight_questions'));
     await fail('42501', () => db.query('select * from public.deep_insight_theme_notification_settings'));
     await fail('42501', () => value('select public.deep_insight_theme_notification_write($1,true) as v', [free]));

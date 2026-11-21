@@ -289,7 +289,7 @@ def test_theme_provider_sees_only_selected_direction_and_previous_question_wordi
     writer, reader, comparer = [payload for _, payload in calls]
     direction = {"target": "最初のひと言", "angle": "話し始めるために最初にすること"}
     assert writer == {**direction, "scene": "初対面の人と話すとき",
-                      "answer_kind": "最初に取る具体的な行動", "example": "最初にどんなひと言をかけますか？"}
+                      "form": "最初にどんなひと言をかけますか？"}
     assert reader == {
         **direction, "theme": theme, "scene": "初対面の人と話すとき",
         "question": result.candidate.text,
@@ -319,7 +319,9 @@ def test_theme_preserves_an_unmade_choice_in_the_independent_review():
     assert result.disposition == "rejected"
     assert writer["premise"] == reader["premise"] == repair["premise"]
     assert "二つの方法を試し比べ始める段階" in reader["premise"]
-    assert "example" not in reader and "draft" not in repair
+    assert "form" not in reader and "draft" not in repair
+    assert calls[1][0].startswith(_THEME_READ_SYSTEM_MESSAGE)
+    assert calls[1][0] != _THEME_READ_SYSTEM_MESSAGE
 
 
 def test_theme_distinguishes_two_ordering_questions_by_their_answer_targets():

@@ -55,6 +55,7 @@ REQUIRED_PUBLIC_V1_ROUTE_KEYS = {
     ('GET', '/deep-insight'),
     ('PATCH', '/deep-insight/theme-notification'),
     ('POST', '/deep-insight/questions'),
+    ('GET', '/deep-insight/questions/{question_id}'),
     ('POST', '/deep-insight/answers'),
     ('GET', '/notices/current'),
     ('GET', '/notices/history'),

@@ -86,6 +86,10 @@ def api_harness(monkeypatch):
         calls.append((name, payload))
         if name == "deep_insight_state":
             return httpx.Response(200, json=state)
+        if name == "deep_insight_question_by_id":
+            if payload["p_question_id"] == QUESTION:
+                return httpx.Response(200, json=Q)
+            return httpx.Response(404, json={"code": "P0002", "message": "deep_insight_question_unavailable"})
         if name == "deep_insight_candidate_context":
             return httpx.Response(200, json={"material": input_material["value"], "guard": input_material["guard"]})
         if name == "deep_insight_theme_candidate_context":
@@ -138,6 +142,22 @@ def test_read_and_repeat_never_generate_and_legacy_theme_entitlement_is_supporte
     assert client.post("/deep-insight/questions", headers=AUTH, json={"lane": "records"}).json() == {
         "status": "existing", "question": Q, "theme_next_available_at": None}
     assert [name for name, _ in calls] == ["deep_insight_state"] * 3
+
+
+def test_read_by_notification_id_uses_verified_owner_without_history_or_generation(api_harness):
+    client, state, calls, _, _ = api_harness
+    path = f"/deep-insight/questions/{QUESTION}"
+    assert not state["history"] and state["records"] is None
+    assert client.get(path).status_code == 401
+    response = client.get(path, headers=AUTH)
+    assert response.status_code == 200 and response.headers["cache-control"] == "no-store"
+    assert response.json() == Q
+    unknown = "00000000-0000-0000-0000-000000000102"
+    assert client.get(f"/deep-insight/questions/{unknown}", headers=AUTH).status_code == 404
+    assert calls == [
+        ("deep_insight_question_by_id", {"p_user_id": OWNER, "p_question_id": question_id})
+        for question_id in (QUESTION, unknown)
+    ]
 
 
 def test_free_can_revisit_theme_during_cooldown_and_answer_preexisting_records(api_harness):
@@ -563,6 +583,7 @@ def test_normal_app_routes_expose_only_deep_insight_as_active_question_feature()
     assert "get" in paths["/deep-insight"]
     assert "patch" in paths["/deep-insight/theme-notification"]
     assert "post" in paths["/deep-insight/questions"]
+    assert "get" in paths["/deep-insight/questions/{question_id}"]
     assert "post" in paths["/deep-insight/answers"]
     assert not any(path.startswith("/today-question/") for path in paths)
 

@@ -11,14 +11,14 @@ THEME_ANGLES = {
     "outcome": "後でその選択に納得できる手がかり",
 }
 
-# The answer kind is a description, never a sentence to fill in.
-THEME_ANSWER_KINDS = {
-    "first_action": "最初に取る具体的な行動",
-    "priority": "選ぶときの決め手",
-    "change": "今の行動や予定を変える条件",
-    "boundary": "対象について引き受ける範囲や限度",
-    "cue": "決める前に確かめる具体的な手がかり",
-    "outcome": "あとで評価するときに目印になる結果や変化",
+# Each pattern specifies what kind of answer the question must elicit.
+THEME_QUESTION_FORMS = {
+    "first_action": "何から始めるかを聞く。文型「〜するために、まず何をしますか？」",
+    "priority": "選ぶ基準を聞く。文型「〜は、何を基準に決めますか？」",
+    "change": "行動を変える条件を聞く。文型「〜するのは、どんなときですか？」",
+    "boundary": "どこまで許容するかを聞く。金額・時間・内容など、対象に合う上限を尋ねる。",
+    "cue": "判断前に確認したいことを聞く。文型「〜について、何を確かめておきますか？」",
+    "outcome": "あとで納得できる手がかりを聞く。文型「どんなことがあれば、〜してよかったと思いますか？」",
 }
 
 THEME_SCENES = {
@@ -209,6 +209,7 @@ THEME_SCENE_WORDING = {
     ("これからのこと", "first_step", "cue"): "やってみたいことが思い浮かんだとき",
 }
 
+
 THEME_CHOICE_PREMISES = {
     ("自分の価値観", "fairness", "outcome"): "同じ扱いと事情に応じた扱いのどちらの結果にも答えられる問いにする。",
     ("自分の価値観", "public_private", "first_action"): "ルールを守る選択は未確定。守ると決めた場合の話として尋ねる。",
@@ -238,17 +239,17 @@ THEME_TARGET_ANGLES = {
     ("これからのこと", "milestone", "boundary"): "途中の一つの区切りまで、どこまで進めるかを決める目安",
 }
 
-THEME_QUESTION_EXAMPLES = {
+THEME_TARGET_FORMS = {
     ("人間関係", "new_people", "first_action"): "最初にどんなひと言をかけますか？",
-    ("人間関係", "personal_topic", "outcome"): "相手のどんな反応があれば、打ち明けてよかったと思えますか？",
-    ("仕事・学び", "new_method", "outcome"): "どんな結果が出たら、次も新しいやり方を使おうと思いますか？",
-    ("日々の過ごし方", "sleep", "change"): "夜の予定を切り上げるのは、どんなときですか？",
-    ("人間関係", "favors", "boundary"): "頼まれたことのうち、どこまでなら引き受けられますか？",
-    ("人間関係", "cancel", "change"): "どんなときに、相手への伝え方を変えますか？",
-    ("自分の価値観", "money", "boundary"): "一つの使い道にいくらまで回せるか、何を目安に決めますか？",
-    ("仕事・学び", "deadlines", "boundary"): "今の作業をどこまで進めたら、次の作業に移りますか？",
-    ("日々の過ごし方", "screen", "boundary"): "スマートフォンを見るのを何を目安に切り上げますか？",
-    ("これからのこと", "milestone", "boundary"): "一つの区切りまでに、どこまで進めるかを何で決めますか？",
+    ("人間関係", "personal_topic", "outcome"): "相手の反応を聞く。文型「相手がどんな反応をすると、〜してよかったと思いますか？」",
+    ("仕事・学び", "new_method", "outcome"): "続けたいと思う手応えを聞く。文型「どんな結果なら、〜を続けたいと思いますか？」",
+    ("日々の過ごし方", "sleep", "change"): "夜の予定を切り上げる条件を聞く。文型「どんなときに、〜を切り上げますか？」",
+    ("人間関係", "favors", "boundary"): "引き受ける範囲を聞く。文型「どこまでなら、〜を引き受けられますか？」",
+    ("人間関係", "cancel", "change"): "伝え方を変える条件を聞く。文型「どんなときに、〜の伝え方を変えますか？」",
+    ("自分の価値観", "money", "boundary"): "一つの使い道に回す金額の上限を判断する目安を聞く。",
+    ("仕事・学び", "deadlines", "boundary"): "一つの作業をいったん終えて次に移る目安を聞く。",
+    ("日々の過ごし方", "screen", "boundary"): "見る時間の上限や切り上げる目安を一つ聞く。",
+    ("これからのこと", "milestone", "boundary"): "一つの区切りまでに進める範囲の決め方を聞く。",
     ("人間関係", "thanks", "boundary"): "品物にどのくらいまでなら無理なくお金を使えますか？",
     ("自分の価値観", "ownership", "boundary"): "どの程度の負担までなら、引き受けてもいいと思いますか？",
     ("自分の価値観", "measure", "change"): "どんなことがあれば、自分の評価の基準を見直しますか？",
@@ -267,9 +268,9 @@ THEME_QUESTION_EXAMPLES = {
     ("自分の価値観", "fairness", "outcome"): "どんな結果が見えたら、自分の選んだ対応は公平だったと思えますか？",
     ("自分の価値観", "public_private", "first_action"): "自分のルールを守ると決めた場合、まず何をしますか？",
     ("自分の価値観", "risk", "boundary"): "試したい方がうまくいかなかった場合、どのくらいの不利益まで受け入れられますか？",
-    ("仕事・学び", "scope", "first_action"): "今の作業を見直すために、まず何に手をつけますか？",
+    ("仕事・学び", "scope", "first_action"): "まず何に手をつけますか？",
     ("仕事・学び", "experiment", "first_action"): "二つのやり方を試し比べるために、まず何を試しますか？",
-    ("日々の過ごし方", "changed_plans", "first_action"): "一日の予定を組み直すとき、最初に何をしますか？",
+    ("日々の過ごし方", "changed_plans", "first_action"): "最初に何をしますか？",
     ("日々の過ごし方", "free_morning", "cue"): "朝の過ごし方を決める前に、自分の調子について何を確かめますか？",
     ("これからのこと", "first_step", "cue"): "最初の一歩を決める前に、何を確かめておきますか？",
     ("これからのこと", "six_months", "outcome"): "半年後、どんな変化があれば少し前に進めたと感じますか？",
@@ -280,9 +281,7 @@ THEME_QUESTION_EXAMPLES = {
 # These openings only repeat the authored scene for the specified angle.
 # Match the entire leading clause, so a new time, place, or condition survives.
 THEME_REPEATED_INTRODUCTIONS = {
-    ("人間関係", "asking_help", "priority"): (
-        "誰かに助けを求めるかどうか", "誰かに助けを求めるかどうかは", "誰かに助けを求める際",
-    ),
+    ("人間関係", "asking_help", "priority"): ("誰かに助けを求めるかどうか", "誰かに助けを求めるかどうかは", "誰かに助けを求める際"),
     ("自分の価値観", "ownership", "priority"): ("勧めを断るか受けるか",),
     ("自分の価値観", "ownership", "boundary"): ("勧められたことを試す際",),
     ("自分の価値観", "giving_credit", "first_action"): ("感謝や評価を伝える際",),
