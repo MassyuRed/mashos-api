@@ -212,10 +212,13 @@ THEME_CHOICE_PREMISES = {
     ("これからのこと", "trial", "outcome"): "試したあと、その環境が合うと分かる手がかりを聞く。環境が合うことはまだ分からない。",
 }
 
-# Both positions ask what trial result would make the person keep using
-# the new method. Keep their stored keys and use either to block the pair.
+# Each group asks for the same judgment. Keep all stored keys so that
+# either issued position blocks the other, including in archived history.
 THEME_EQUIVALENT_POSITIONS = {
-    "仕事・学び": ((("new_method", "outcome"), ("experiment", "outcome")),),
+    "仕事・学び": (
+        (("new_method", "outcome"), ("experiment", "outcome")),
+        (("stuck", "change"), ("stuck", "boundary")),
+    ),
 }
 
 THEME_TARGET_ANGLES = {

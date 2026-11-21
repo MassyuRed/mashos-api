@@ -461,6 +461,27 @@ def test_theme_avoids_an_equivalent_outcome_in_another_scene(issued_scene, next_
     assert prepared["question_key"] != _theme_position_key(theme, next_scene, "outcome")
 
 
+@pytest.mark.parametrize(("issued", "equivalent"), [("change", "boundary"), ("boundary", "change")])
+def test_theme_avoids_asking_twice_when_to_stop_researching_alone(issued, equivalent):
+    theme = "仕事・学び"
+    recent = [{"question_key": f"recent-{i}"} for i in range(30)]
+    old = {"question_key": _theme_position_key(theme, "stuck", issued)}
+
+    def choose(options):
+        if len(options[0]) == 4:
+            # Every scene has one issued slot, so we can revisit this one.
+            return next(option for option in options if option[0] == "stuck")
+        assert equivalent not in {angle for angle, _ in options}
+        return options[0]
+
+    other_scenes = [{"question_key": _theme_position_key(theme, scene, "first_action")}
+                    for scene in THEME_SCENES[theme] if scene != "stuck"]
+    prepared, _ = prepare_question_material(
+        {"questions": recent + [old] + other_scenes}, lane="theme", theme=theme, choose_theme=choose,
+    )
+    assert prepared["question_key"] != _theme_position_key(theme, "stuck", equivalent)
+
+
 def test_theme_checks_cited_wording_then_rechecks_the_rest_of_the_history():
     question = {"question": "守りたい約束と目の前の都合がぶつかったとき、どこまで負担を引き受けますか？"}
     earlier = {"id": 1, "question": "人に勧められたことを試すとき、どこまで負担を引き受けますか？"}
