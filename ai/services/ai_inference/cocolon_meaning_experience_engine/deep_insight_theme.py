@@ -203,6 +203,7 @@ THEME_DECISION_TARGETS = {
 THEME_SCENE_WORDING = {
     ("人間関係", "thanks", "boundary"): "助けてもらった相手に、お礼の品を贈ろうと思ったとき",
     ("自分の価値観", "ownership", "boundary"): "人から勧められたことを少し試そうと思ったとき",
+    ("仕事・学び", "new_method", "cue"): "仕事や勉強で新しいやり方を試す前に",
     ("仕事・学び", "routine", "change"): "作業の途中で集中が切れたとき",
     ("日々の過ごし方", "screen", "change"): "ふだんの生活でスマートフォンを見る時間が決まっているとき",
 }
@@ -243,16 +244,16 @@ THEME_TARGET_FORMS = {
     ("人間関係", "thanks", "boundary"): "品物にどのくらいまでなら無理なくお金を使えますか？",
     ("自分の価値観", "ownership", "boundary"): "どの程度の負担までなら、引き受けてもいいと思いますか？",
     ("自分の価値観", "measure", "change"): "どんなことがあれば、自分の評価の基準を見直しますか？",
-    ("仕事・学び", "new_method", "cue"): "試す前に、慣れたやり方と何を比べておきますか？",
+    ("仕事・学び", "new_method", "cue"): "慣れたやり方と何を比べておきますか？",
     ("仕事・学び", "experiment", "priority"): "どちらのやり方を使うか、何を基準に決めますか？",
     ("仕事・学び", "finish", "priority"): "進め方と結果のどちらから振り返るか、何を目安に決めますか？",
-    ("仕事・学び", "routine", "change"): "どんなときに、作業を続ける代わりにいったん区切りを入れますか？",
+    ("仕事・学び", "routine", "change"): "このまま続けるか、いったん区切るかは、何を目安に決めますか？",
     ("日々の過ごし方", "tired_evening", "boundary"): "休む時間を残しながら、家の用事はどこまでできそうですか？",
     ("日々の過ごし方", "between_tasks", "outcome"): "次の用事に移るとき、どんな変化があれば、合間の時間をうまく使えたと感じますか？",
     ("日々の過ごし方", "screen", "change"): "どんな変化があれば、今と違う時間帯に見るようにしますか？",
     ("これからのこと", "several_goals", "priority"): "どれから取りかかるか、何を基準に決めますか？",
     ("これからのこと", "change_habits", "priority"): "今の習慣のうち、新しい暮らしでも続けるものは何を目安に選びますか？",
-    ("これからのこと", "uncertainty", "cue"): "どんな今後の予定が分かれば、準備することを決めやすくなりますか？",
+    ("これからのこと", "uncertainty", "cue"): "これからの予定で、準備を決める前に何を確かめておきますか？",
 }
 
 # These openings only repeat the authored scene for the specified angle.
@@ -260,11 +261,13 @@ THEME_TARGET_FORMS = {
 THEME_REPEATED_INTRODUCTIONS = {
     ("人間関係", "asking_help", "priority"): ("誰かに助けを求めるかどうか", "誰かに助けを求める際"),
     ("自分の価値観", "ownership", "priority"): ("勧めを断るか受けるか",),
+    ("自分の価値観", "ownership", "boundary"): ("勧められたことを試す際",),
     ("自分の価値観", "giving_credit", "first_action"): ("感謝や評価を伝える際",),
     ("仕事・学び", "finish", "change"): ("一区切りついた振り返りでは",),
     ("日々の過ごし方", "move", "first_action"): ("体を動かす時間を日常に組み込むために",),
     ("仕事・学び", "finish", "priority"): ("作業の振り返りで",),
     ("仕事・学び", "routine", "change"): ("集中が途切れたとき", "集中が途切れた際"),
+    ("仕事・学び", "new_method", "cue"): ("新しいやり方を試す前に", "試す前に"),
 }
 
 # The displayed scene itself already presents the two alternatives.
