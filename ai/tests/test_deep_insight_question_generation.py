@@ -289,7 +289,7 @@ def test_theme_provider_sees_only_selected_direction_and_previous_question_wordi
     writer, reader, comparer = [payload for _, payload in calls]
     direction = {"target": "最初のひと言", "angle": "話し始めるために最初にすること"}
     assert writer == {**direction, "scene": "初対面の人と話すとき",
-                      "form": "最初にどんなひと言をかけますか？"}
+                      "answer_kind": "最初に取る具体的な行動", "example": "最初にどんなひと言をかけますか？"}
     assert reader == {
         **direction, "theme": theme, "scene": "初対面の人と話すとき",
         "question": result.candidate.text,
@@ -299,13 +299,27 @@ def test_theme_provider_sees_only_selected_direction_and_previous_question_wordi
     assert calls[2][0] == _THEME_COMPARE_SYSTEM_MESSAGE
 
 
-@pytest.mark.parametrize("reason", ["surface", "angle"])
+@pytest.mark.parametrize("reason", ["surface", "angle", "premise"])
 def test_theme_reader_must_accept_scene_and_angle(reason):
     reading = {"verdict": "reject", "reason": reason}
     result, calls = theme_run("人間関係", "最初にどんな話題を出しますか？",
                               reading=reading)
     assert result.disposition == "rejected"
     assert len(calls) == 4
+    assert calls[2][1]["reason"] == reason
+
+
+def test_theme_preserves_an_unmade_choice_in_the_independent_review():
+    result, calls = theme_run(
+        "仕事・学び", "新しいやり方に切り替えるために、まず何をしますか？",
+        reading={"verdict": "reject", "reason": "premise"},
+        choose_theme=select_theme_angle("experiment", "first_action"),
+    )
+    writer, reader, repair, _ = [payload for _, payload in calls]
+    assert result.disposition == "rejected"
+    assert writer["premise"] == reader["premise"] == repair["premise"]
+    assert "二つの方法を試し比べ始める段階" in reader["premise"]
+    assert "example" not in reader and "draft" not in repair
 
 
 def test_theme_distinguishes_two_ordering_questions_by_their_answer_targets():
@@ -418,10 +432,20 @@ def test_theme_rejects_old_exact_text_key_and_closed_question():
     "何を基準に決めますか？",
     "Emlis、最初に何をしますか？",
     "仕事や勉強で新しいやり方を試すとき、何ですか？",
+    "何か始めますか？",
 ])
 def test_theme_rejects_non_polite_endings_and_unbound_questions(body):
     result, calls = theme_run("仕事・学び", body)
     assert result.disposition == "rejected" and len(calls) == 2
+
+
+def test_theme_allows_asking_where_to_start_without_treating_it_as_a_yes_no_question():
+    result, calls = theme_run(
+        "日々の過ごし方", "自由時間になった直後に何から始めますか？",
+        choose_theme=select_theme_angle("short_day", "first_action"),
+    )
+    assert result.candidate.text == "自由に使える時間が少ない日、自由時間になった直後に何から始めますか？"
+    assert calls[1][0] == _THEME_READ_SYSTEM_MESSAGE
 
 
 @pytest.mark.parametrize(("theme", "scene", "angle", "draft", "expected"), [
