@@ -5,7 +5,7 @@ import json
 import pytest
 
 from cocolon_meaning_experience_engine.deep_insight_question import (
-    PLAN_SYSTEM_MESSAGE, READ_SYSTEM_MESSAGE, WRITE_SYSTEM_MESSAGE,
+    ANSWER_READ_SYSTEM_MESSAGE, PLAN_SYSTEM_MESSAGE, READ_SYSTEM_MESSAGE, WRITE_SYSTEM_MESSAGE,
     generate_question, prepare_question_material,
 )
 
@@ -52,7 +52,7 @@ def run(original, plan, question=BODY, *, reading=None, lane="records", theme=No
         elif system == WRITE_SYSTEM_MESSAGE:
             response = {"question": question}
         else:
-            assert system == READ_SYSTEM_MESSAGE
+            assert system in (READ_SYSTEM_MESSAGE, ANSWER_READ_SYSTEM_MESSAGE)
             response = reading if reading is not None else read(plan)
         return json.dumps(response, ensure_ascii=False)
 
@@ -123,11 +123,17 @@ def test_answer_alone_has_private_provenance_and_can_supply_a_follow_up():
     quote = "意見が違っても本音を言える"
     plan = ask(focus="CONDITION", source="a1", quote=quote, ask="相手がどう聞くかの条件")
     text = "相手がどんなふうに話を聞いてくれると、本音を言いやすいですか？"
-    result, calls = run(material(prior=[answer]), plan, text)
+    result, calls = run(material(prior=[answer]), plan, text, reading=read(
+        plan, quote="意見が違っても本音を言えるときです"))
     assert result.disposition == "selected"
     assert calls[0][1]["previous_questions"][0]["answer_source"] == "a1"
+    assert calls[2][0] == ANSWER_READ_SYSTEM_MESSAGE
     assert result.candidate.receipt["field"] == "answer"
     assert result.candidate.receipt["source_id"] == ANSWER_ID
+    assert result.candidate.receipt["end"] == len(quote)
+    rejected, _ = run(material(prior=[answer]), plan, text, reading=read(
+        plan, quote="意見が違っても本音を言えるはずです"))
+    assert rejected.disposition == "rejected"
 
 
 def test_theme_needs_no_history_but_an_unrelated_meal_is_rejected():
