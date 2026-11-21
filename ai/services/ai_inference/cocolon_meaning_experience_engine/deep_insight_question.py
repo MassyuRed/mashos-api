@@ -47,7 +47,8 @@ _THEME_UNBOUND_DECISION = re.compile(
     r"^(?:何を(?:目安|基準|決め手)に|どうやって)(?:して)?[、,]?決めますか[？?]$"
 )
 _THEME_EMBEDDED_POLAR_QUESTION = re.compile(
-    r"か(?:どうか)?(?:[をがは][、, ]*(?:(?:知|分か|わか)っています|(?:把握|理解|確認)しています)"
+    r"か(?:どうか)?(?:[をがは][、, ]*(?:(?:知|分か|わか)っています|(?:把握|理解|確認)しています|"
+    r"確かめ(?:ておき)?ます|確認し(?:ておき)?ます)"
     r"|[、, ]*(?:を示す)?(?:その|具体的な)?(?:目安|条件|例|基準|手がかり|きっかけ)はあります)か[？?]\Z"
 )
 _THEME_ADVICE_QUESTION = re.compile(
@@ -60,11 +61,13 @@ _THEME_REPEATED_CRITERION = re.compile(
 )
 _THEME_BROKEN_CRITERION = re.compile(
     r"(?:(?:どのような|どんな)(?:手がかり|基準|目安)に決めます|"
-    r"(?:どう|どのように)決める(?:基準|目安)になります)か[？?]\Z"
+    r"(?:どう|どのように)決める(?:基準|目安)になります|"
+    r"(?:どのようなこと|どんなこと|何)があれば[、, ]*あります)か[？?]\Z"
 )
 _THEME_CUE_METHOD_OR_ESTIMATE = re.compile(
-    r"(?:(?:どう(?:やって)?|どのように|どんな方法で)[、, ]*"
-    r"(?:(?:確かめ|確認し|調べ)(?:ておき|てい)?ます|(?:確かめる|確認する|調べる)のでしょう)"
+    r"(?:(?:どう(?:やって)?|どのように|(?:どんな|どのような)方法で)[、, ]*"
+    r"(?:(?:確かめ|確認し|調べ|判断し|見極め)(?:ておき|てい)?ます|"
+    r"(?:確かめる|確認する|調べる|判断する|見極める)のでしょう)"
     r"|(?:どのくらい|どれくらい|どの程度)[、, ]*見積もります)か[？?]\Z"
 )
 _THEME_LIMIT_AND_RESULT = re.compile(
@@ -156,16 +159,17 @@ _THEME_COMPARE_PAIR_SYSTEM_MESSAGE = f"""新しいquestionと以前のprevious�
 
 _THEME_REPAIR_SYSTEM_MESSAGE = f"""日本語の短い質問を一つ書き直してください。
 {_DATA_BOUNDARY}
-sceneは表示済みです。同じ場面を繰り返さず、angleへの答えを得るためにtargetをどう聞くか考えます。
-formが例文なら、何についてどんな答えを求めるかを保ちます。reasonがangleなら本人に聞く点を見直し、premiseなら時点と未確定の選択を保ち、surfaceなら一つの判断を平易に聞きます。
-条件を聞くなら「どんなときですか？」などで条件そのものを尋ねます。はい・いいえで答える問い、助言を求める問い、答えを二つ求める問いには変えません。
+sceneは表示済みです。formが例文ならその一問をもとに、targetについてangleが求める答えを尋ねます。
+sceneとformにある時点や未確定の選択を保ちます。reasonがsurfaceでも、文だけでなく回答の中身まで読み、本人が尋ねられた事実や判断を具体的に答えられる一問にします。
+場面の言い直し、はい・いいえの問い、一般にどうするのが適切かを求める問い、答えを二つ求める問いは避けます。
 問いだけを、丁寧な日本語の {{"question":"〜ますか？"}} の形で返します。"""
 
 _THEME_WRITE_PREMISE = (
     "\npremiseは問いの内容を決める条件です。場面の時点と、どの選択が未確定かを保ち、formの例に沿って一問を書きます。"
 )
 _THEME_REPAIR_CUE = (
-    "\n何を確かめたいか、判断前に知りたい情報そのものを聞きます。確認のやり方や見積もった数字は聞きません。"
+    "\n判断する前に知りたい情報そのものを、『何を』『どんな条件を』などで直接尋ねます。"
+    "その情報があるか、何をすべきか、どのように確かめたり判断したりするかは聞きません。"
 )
 
 
@@ -897,8 +901,9 @@ async def _theme_has_new_answer(question, history, generate):
         repeated = next((row for row in batch if row["id"] == repeated_id), None)
         if not repeated or not repeated.get("question"):
             return False
+        # Keep the earlier question first in the serialized provider prompt.
         pair = _json_object(await generate(_THEME_COMPARE_PAIR_SYSTEM_MESSAGE, {
-            "question": question["question"], "previous": repeated["question"],
+            "previous": repeated["question"], "question": question["question"],
         }))
         if pair != {"verdict": "distinct"}:
             return False

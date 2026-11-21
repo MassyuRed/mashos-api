@@ -51,8 +51,8 @@ class Case:
     expected: str = "issue"
 
 
-def compact(value) -> str:
-    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
+def compact(value, *, sort_keys=True) -> str:
+    return json.dumps(value, ensure_ascii=False, sort_keys=sort_keys, separators=(",", ":"), allow_nan=False)
 
 
 def digest(value) -> str:
@@ -76,7 +76,7 @@ def material_for(history) -> dict:
 
 
 def emit(output: TextIO, data):
-    output.write(compact(data) + "\n")
+    output.write(compact(data, sort_keys=False) + "\n")
     output.flush()
 
 
@@ -89,6 +89,7 @@ async def run_case(case: Case, history, seen_inputs, *, generate: Generate):
         phase = next((label for prompt, label in _MODEL_PHASES if system.startswith(prompt)), "unknown")
         call = {"index": len(calls) + 1, "phase": phase,
                 "system_sha256": hashlib.sha256(system.encode("utf-8")).hexdigest(),
+                "provider_input_sha256": hashlib.sha256(compact(payload, sort_keys=False).encode("utf-8")).hexdigest(),
                 "input": copy.deepcopy(payload), "raw": None}
         calls.append(call)
         call["raw"] = await generate(system, payload)

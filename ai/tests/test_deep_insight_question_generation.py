@@ -683,6 +683,7 @@ def test_theme_checks_cited_wording_then_rechecks_the_rest_of_the_history():
         (_THEME_COMPARE_PAIR_SYSTEM_MESSAGE, {**question, "previous": earlier["question"]}),
         (_THEME_COMPARE_SYSTEM_MESSAGE, {**question, "history": [other]}),
     ]
+    assert list(calls[1][1]) == ["previous", "question"]
 
 
 @pytest.mark.parametrize("final_verdict", [{"verdict": "distinct"}, {"verdict": "repeat", "id": 3}])
@@ -971,6 +972,9 @@ def test_theme_repairs_a_closed_question_containing_its_usual_wording():
     ("仕事・学び", "feedback", "cue",
      "指摘された改善点について、具体的に何を直す必要があるかを知っていますか？",
      "どこを直すか決める前に、相手の指摘について何を確かめますか？"),
+    ("仕事・学び", "feedback", "cue",
+     "どの部分について修正を求められているのかを確かめますか？",
+     "直す部分を決める前に、指摘された内容のうち何を確かめますか？"),
     ("仕事・学び", "feedback", "change",
      "指摘された内容が、今の作業手順をどう変える必要があるかを示す具体的な条件はありますか？",
      "指摘にどんな内容があったら、今の作業手順を変えようと思いますか？"),
@@ -993,6 +997,9 @@ def test_theme_repairs_a_yes_no_main_clause_with_an_embedded_question(theme, sce
     ("自分の価値観", "risk",
      "失敗した場合にやり直せる余地があるかどうか、どのように確かめておきますか？",
      "試す前に、やり直しに使える時間や手段について何を確かめますか？"),
+    ("自分の価値観", "risk",
+     "失敗した場合にやり直せる余地があるかどうか、どのように判断しますか？",
+     "うまくいかなかった場合にやり直せる条件のうち、何を確かめておきますか？"),
     ("仕事・学び", "teach",
      "説明の組み立てを決める前に、相手がどこまで分かっているかをどう確かめますか？",
      "説明の組み立てを決める前に、相手の理解について何を確かめますか？"),
@@ -1012,9 +1019,32 @@ def test_theme_repairs_a_question_about_the_way_to_check_instead_of_the_cue(them
     assert result.candidate.text.endswith(revised)
 
 
+def test_theme_does_not_release_a_rewrite_that_still_asks_how_to_judge():
+    result, calls = theme_run(
+        "自分の価値観", "失敗した場合にやり直せる余地があることはありますか？",
+        repair="失敗した場合にやり直せる余地があるかどうか、どのように判断しますか？",
+        choose_theme=select_theme_angle("risk", "cue"),
+    )
+    assert result.disposition == "rejected" and result.candidate is None
+    assert len(calls) == 2
+    assert "やり直せる条件" in calls[1][1]["form"]
+
+
+def test_theme_questions_about_trying_an_environment_keep_the_choice_unmade():
+    open_question = "試すかどうかを決めるには、その環境のどんな条件を確かめますか？"
+    result, calls = theme_run(
+        "これからのこと", open_question, choose_theme=select_theme_angle("trial", "cue"),
+    )
+    writer, reader = [payload for _, payload in calls]
+    assert writer["scene"] == reader["scene"] == "新しい環境を少し試すか迷ったとき"
+    assert "試すかどうかは未確定" in writer["premise"] == reader["premise"]
+    assert result.candidate.text == f"{writer['scene']}、{open_question}"
+
+
 @pytest.mark.parametrize("draft", [
     "どれくらいの間隔なら相手も心地よく会えるか、決める前に何を確かめますか？",
     "今のやり方が合っているか考える前に、どんな手がかりがありますか？",
+    "相手が心地よく会える間隔を判断するには、どんな手がかりを確かめますか？",
 ])
 def test_theme_keeps_open_main_questions_about_facts(draft):
     result, calls = theme_run("人間関係", draft, choose_theme=select_theme_angle("distance", "cue"))
@@ -1065,6 +1095,9 @@ def test_theme_rejects_non_polite_endings_and_unbound_questions(body):
     ("自分の価値観", "public_private", "priority",
      "何を基準に自分のルールを守るべきですか？",
      "自分のルールを守るべきか、何を基準に決めますか？"),
+    ("自分の価値観", "spare_time", "outcome",
+     "その時間の使い方でよかったと思える手がかりは、どんなことがあればありますか？",
+     "あとでどんな気持ちになったら、その時間の使い方でよかったと思いますか？"),
     ("日々の過ごし方", "rest_day", "boundary",
      "休みの日に用事を入れる際、休んだと感じられる余裕を残すために、用事は何件まで入れるのが適切ですか？",
      "休める時間を残すには、用事を何件くらいまで入れますか？"),
@@ -1075,9 +1108,10 @@ def test_theme_rejects_non_polite_endings_and_unbound_questions(body):
 def test_theme_repairs_advice_and_repeated_decision_criteria_before_reading(theme, scene, angle, draft, revised):
     result, calls = theme_run(theme, draft, repair=revised, choose_theme=select_theme_angle(scene, angle))
 
-    assert [system for system, _ in calls] == [
+    prompts = (
         _THEME_WRITE_SYSTEM_MESSAGE, _THEME_REPAIR_SYSTEM_MESSAGE, _THEME_READ_SYSTEM_MESSAGE,
-    ]
+    )
+    assert all(system.startswith(prompt) for (system, _), prompt in zip(calls, prompts, strict=True))
     assert calls[1][1]["reason"] == "surface" and "draft" not in calls[1][1]
     assert result.candidate.text == f"{calls[0][1]['scene']}、{revised}"
     assert calls[2][1]["body"] == revised
