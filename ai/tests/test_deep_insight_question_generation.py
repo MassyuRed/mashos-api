@@ -412,7 +412,7 @@ def test_theme_reader_receives_older_same_scene_angles_without_guessing_their_te
     )
     assert result.disposition == "rejected" and len(calls) == 2
     assert calls[1][1]["previous_questions"] == [row["question_text"] for row in recent]
-    assert calls[1][1]["previous_angles"] == ["最初に取る行動"]
+    assert calls[1][1]["previous_angles"] == ["話し始めるために最初にすること"]
 
 
 def test_theme_refuses_a_matching_older_answer_target_before_the_model_reads_it():

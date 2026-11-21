@@ -72,6 +72,7 @@ targetは、その場面で本人が判断する具体的な物事です。「�
 _THEME_WRITE_SYSTEM_MESSAGE = f"""日本語の短い質問を一つ返してください。
 {_DATA_BOUNDARY}
 targetは質問の対象、angleは知りたいこと、formは答えを引き出す文型です。文型の「〜」に対象に合う普段の言葉を入れ、知りたいことを一つだけ尋ねます。
+formが完成した質問の例なら、対象と求める答えを保って使います。「確認しますか？」のような二択にせず、確かめたい事実自体を聞きます。複数の候補を選ぶ場合、その選択を「この作業」のように一つに狭めません。
 angleやtargetを長いまま写さず、同じ言葉は繰り返しません。挨拶や場面の前置きは付けません。「〜する際、」から始めません。経験済みとは決めつけません。
 返すのは {{"question":"丁寧な質問文？"}} の形だけです。"""
 
@@ -79,13 +80,14 @@ _THEME_READ_SYSTEM_MESSAGE = f"""Emlisの「テーマから考える」の完成
 {_DATA_BOUNDARY}
 場面と聞く点が保たれ、答えを決めつけず、本人の選択や目安を一つ聞く自然な質問なら {{"verdict":"accept"}} を返します。
 targetは判断する物事です。その物事が自然な形で伝わり、angleに沿った答えを一つ返せることを確かめます。
+上限を尋ねる問いを、続けられる条件にすり替えません。複数の候補から選ぶ問いを、特定の一つの行動に置き換えません。場面にある選択肢が伝わる「どれから」「どちら」などの聞き方は自然です。
 「最初に取る行動」なら行動を聞き、「選択の決め手」なら基準を聞く文が合います。続けたいと思う目安と、すでに経験した感想は区別します。
 同じ場面を別の言い方で前置きしているだけならsurfaceです。時点や対象を絞る実質的な条件が増える場合は、その条件が場面や聞く点に合うかを見ます。
 previous_questionsと実質的に同じ内容なら、ほかの条件にかかわらず {{"verdict":"reject","reason":"repeat"}} です。
 場面が消えた、不自然、質問が二つ、または前提の決めつけならrejectでreasonはsurfaceです。"""
 
 _THEME_PREVIOUS_QUESTIONS_GUIDE = """
-previous_questionsとは、同じ状況で同じ判断や行動を答えるかを比べます。「何を基準に」などの聞き方が共通でも、判断対象や時点が違うならrepeatではありません。たとえば、使う手順を決める前に確かめる事実と、試した手順を続けると決める目安は別の答えです。"""
+previous_questionsとは、同じ状況で同じ判断や行動を答えるかを比べます。「何を基準に」などの聞き方が共通でも、判断対象や時点が違うならrepeatではありません。始めたいことの順番を選ぶ基準と、新しい暮らしに残す習慣を選ぶ基準は別です。使う手順を決める前に確かめる事実と、試した手順を続ける目安も別です。"""
 
 _THEME_PREVIOUS_ANGLES_GUIDE = """
 previous_anglesは同じ場面で以前に出した問いの観点です。文面はありません。同じ観点や同じ内容の答えを求めるときはrepeat、別の点を尋ねるときはほかの条件で判定します。"""
@@ -94,6 +96,7 @@ _THEME_REPAIR_SYSTEM_MESSAGE = f"""日本語の短い質問を一つ書き直し
 {_DATA_BOUNDARY}
 sceneは質問の先に表示済みです。questionにはsceneやそれを言い換えた前置きを入れません。draftは不採用になった文です。
 判断する対象targetについて、尋ねる点angleに合うようにformから必要な部分だけ使います。例えば、聞きたいのが基準なら対象と基準を一つ尋ね、条件なら対象の行動に変える条件を一つ尋ねます。
+formが完成した質問の例なら、その対象と求める答えを保ちます。元の文で聞いている対象や時点がずれていれば、例に戻して直します。
 元の文に余分な語や前提があっても引き継ぎません。返すのは {{"question":"短く丁寧な質問文？"}} の形だけです。"""
 
 
@@ -524,8 +527,9 @@ def _prepare_theme(material, theme, choose):
         target, angle = THEME_SCENE_ANGLE_TARGETS[theme][scene_id][angle_id]
         form = THEME_TARGET_FORMS.get(position, THEME_QUESTION_FORMS[angle_id])
         archived_keys = {row["question_key"] for row in past[30:]}
+        scene_angles = {angle_id: intent[1] for angle_id, intent in THEME_SCENE_ANGLE_TARGETS[theme][scene_id].items()}
         previous_angles = [
-            THEME_TARGET_ANGLES.get((theme, scene_id, prior_id), prior_angle)
+            scene_angles.get(prior_id, prior_angle)
             for prior_id, prior_angle in THEME_ANGLES.items()
             if _theme_position_key(theme, scene_id, prior_id) in archived_keys
         ]
