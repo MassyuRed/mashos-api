@@ -392,9 +392,12 @@ def test_theme_provider_sees_only_selected_direction_and_previous_question_wordi
                       "form": "最初にどんなひと言をかけますか？"}
     assert reader == {
         **direction, "theme": theme, "scene": "初対面の人と話すとき",
-        "question": result.candidate.text,
+        "body": "最初にどんな話題を出しますか？", "answer_kind": "first_action",
     }
-    assert comparer == {**reader, "history": [{"id": 1, "question": previous}]}
+    assert comparer == {
+        **direction, "theme": theme, "scene": reader["scene"],
+        "question": result.candidate.text, "history": [{"id": 1, "question": previous}],
+    }
     assert calls[1][0] == _THEME_READ_SYSTEM_MESSAGE
     assert calls[2][0] == _THEME_COMPARE_SYSTEM_MESSAGE
 
@@ -456,7 +459,8 @@ def test_theme_uses_reviewed_distinction_for_recent_and_archived_displays(recent
                               choose_theme=select_theme_angle("risk", "boundary"))
     assert result.disposition == "selected"
     assert calls[0][1]["form"] == body
-    assert calls[1][1]["question"] == result.candidate.text
+    assert calls[1][1]["body"] == body
+    assert calls[1][1]["answer_kind"] == "boundary"
     assert "form" not in calls[1][1]
     if recent_count:
         assert calls[2][0] == _THEME_COMPARE_SYSTEM_MESSAGE
@@ -770,7 +774,7 @@ def test_theme_repairs_advice_and_repeated_decision_criteria_before_reading(them
     ]
     assert calls[1][1]["reason"] == "surface" and "draft" not in calls[1][1]
     assert result.candidate.text == f"{calls[0][1]['scene']}、{revised}"
-    assert calls[2][1]["question"] == result.candidate.text
+    assert calls[2][1]["body"] == revised
 
 
 def test_theme_allows_asking_where_to_start_without_treating_it_as_a_yes_no_question():
@@ -806,7 +810,8 @@ def test_theme_allows_asking_where_to_start_without_treating_it_as_a_yes_no_ques
 def test_theme_removes_only_the_verified_opening_before_reading(theme, scene, angle, draft, expected):
     result, calls = theme_run(theme, draft, choose_theme=select_theme_angle(scene, angle))
     assert result.candidate.text == f"{calls[1][1]['scene']}、{expected}"
-    assert calls[1][1]["question"] == result.candidate.text
+    assert calls[1][1]["body"] == expected
+    assert calls[1][1]["answer_kind"] == angle
 
 
 def test_theme_preserves_a_qualifier_that_makes_a_repeated_opening_a_different_condition():
@@ -881,7 +886,7 @@ def test_theme_refuses_a_matching_older_answer_target_before_the_model_reads_it(
         '{"question":"取りかかる順番は何を基準に決めますか？"}',
         plan=None, direction={"angle": "始めたいことに取りかかる順番を決める基準"},
         scene="始めてみたいことがいくつかあるとき", key="new-slot", material={"questions": []},
-        previous_angles=["始めたいことに取りかかる順番を決める基準"],
+        previous_angles=["始めたいことに取りかかる順番を決める基準"], angle_id="priority",
         generate=unexpected_read,
     ))
     assert candidate is None and reason == "repeat"
@@ -897,7 +902,7 @@ def test_theme_reviews_a_repaired_question_without_changing_its_issued_key():
     ]
     assert calls[1][1]["reason"] == "surface"
     assert "draft" not in calls[1][1]
-    assert calls[2][1]["question"] == result.candidate.text
+    assert calls[2][1]["body"] == repaired
 
 
 def test_theme_allows_an_interrogative_condition_opening():

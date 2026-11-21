@@ -92,14 +92,14 @@ targetは本人が考える具体的なもの、angleは本人の答えで知り
 formが例文なら、対象と聞く点を守って参考にします。「何を」「どんなとき」「どこまで」などで本人の考えを聞き、経験を決めつけません。
 返すのは {{"question":"〜ですか？"}} の形だけです。疑問文を「ですか？」か「ますか？」などで結びます。"""
 
-_THEME_READ_SYSTEM_MESSAGE = f"""Emlisの「テーマから考える」の完成文questionを確認します。日本語のJSONだけを返します。
+_THEME_READ_SYSTEM_MESSAGE = f"""Emlisの「テーマから考える」の出題を確認します。scene、bodyの順に一文として表示します。JSONだけを返します。
 {_DATA_BOUNDARY}
-場面と聞く点が保たれ、答えを決めつけず、本人の選択や目安を一つ聞く自然な質問なら {{"verdict":"accept"}} を返します。
-targetは判断する物事です。その物事が自然な形で伝わり、angleに沿った答えを一つ返せることを確かめます。
-上限を尋ねる問いを、続けられる条件にすり替えません。複数の候補から選ぶ問いを、特定の一つの行動に置き換えません。場面にある選択肢が伝わる「どれから」「どちら」などの聞き方は自然です。
-「最初に取る行動」なら行動を聞き、「選択の決め手」なら基準を聞く文が合います。続けたいと思う目安と、すでに経験した感想は区別します。
-同じ場面を別の言い方で前置きしているだけならsurfaceです。時点や対象を絞る実質的な条件が増える場合は、その条件が場面や聞く点に合うかを見ます。
-場面が消えた、不自然、質問が二つ、または前提の決めつけならrejectでreasonはsurfaceです。"""
+まず、本人が何を答えるかを読み、targetとangleに照らします。answer_kindは答えのおおまかな種類です。
+first_actionは最初にする行動、priorityは選択の基準、changeは切り替える条件、boundaryは数・量・時間や範囲の限度、cueは判断の前に確認する具体的な情報、outcomeは選択や行動のあとの手応えです。
+「いくつまで取りかかれますか」は項目数の上限を、「候補を出すにはまず何をしますか」は最初にする行動を聞いています。判断前に確かめる情報を聞く問いと、実際の判断や予定を聞く問いは区別します。
+sceneに対象や選択肢が書かれていればbodyにすべて書き直す必要はありません。対象の名称を使うことと、sceneの節をbodyでも繰り返すことは区別します。
+自然な一問で本人が答えられ、対象・答えの種類・時点が合い、選択や経験を決めつけていなければ {{"verdict":"accept"}} です。
+対象や答えが違う、または必要な対象が読み取れなければ {{"verdict":"reject","reason":"angle"}}、時点や未確定の選択が変わっていればreasonはpremise、読みにくい文や場面の重複、質問が二つならreasonはsurfaceです。"""
 
 _THEME_COMPARE_SYSTEM_MESSAGE = f"""questionが、historyの既出の問いと同じ答えを求めているか照合します。JSONだけを返します。
 {_DATA_BOUNDARY}
@@ -116,7 +116,7 @@ _THEME_COMPARE_PAIR_SYSTEM_MESSAGE = """新しいquestionと以前のpreviousの
 _THEME_REPAIR_SYSTEM_MESSAGE = f"""日本語の短い質問を一つ書き直してください。
 {_DATA_BOUNDARY}
 sceneは表示済みです。同じ場面を繰り返さず、angleへの答えを得るためにtargetをどう聞くか考えます。
-formが例文なら、何についてどんな答えを求めるかを保ちます。基準なら目安、条件なら行動を変えるきっかけを聞きます。
+formが例文なら、何についてどんな答えを求めるかを保ちます。reasonがangleなら、本人の答えとして知りたいことを問い直します。premiseなら、時点と未確定の選択を保ちます。
 問いだけを、丁寧な日本語の {{"question":"〜ますか？"}} の形で返します。"""
 
 _THEME_WRITE_PREMISE = (
@@ -140,12 +140,13 @@ askは何を知りたいかの短い日本語で、表示する質問文では�
 前の回答a1から聞く例 {{"decision":"ask","focus":"CONDITION","source":"a1","quote":"意見が違っても本音を言える","condition":"","ask":"本音を言いやすい相手の反応"}}
 テーマの出力例 {{"decision":"ask","focus":"RELATIONSHIP","source":"","quote":"","condition":"","ask":"友達だと感じる場面"}}"""
 
-_RECORD_ALTERNATIVE_PLAN_MESSAGE = f"""本人が記録した行動actionと、同じ記録に残る途中の行動alternativesを比べます。日本語のJSONだけを返します。
+_RECORD_ALTERNATIVE_PLAN_MESSAGE = f"""同じような場面で本人が別の作業を先にする条件を確認できるか判断します。日本語のJSONだけを返します。
 {_DATA_BOUNDARY}
-actionの理由は原文にあります。理由や、記録に登場した別の人の事情を聞きません。
-alternativesにある行動を先にする条件を、同じような場面について本人に確かめる価値がある場合だけ選びます。実際にその行動を先にしたと決めつけません。
-原文・本人回答・既出・見送った問いを読み、条件がすでに分かる、場面が違う、または新たに尋ねる意味がなければ {{"decision":"skip"}} を返します。
-尋ねる場合は、条件を聞く対象をaskに明記し、{{"decision":"ask","focus":"CONDITION","ask":"別の行動を先にする条件"}} の形だけで返します。askに表示用の質問文は書きません。"""
+actionは本人が先にした行動です。alternativesは同じ記録にある未完了の行動です。原文・本人回答・既出・見送った問いはmaterialにあります。
+先にした理由が記録にあっても、同じ場面で別の作業を先にする条件がまだ分からず、その条件が本人の判断を知る手がかりになる場合は、別の作業をaskに示します。答えは仮定の条件です。実際に別の作業を先にしたとは扱いません。記録に登場した相手の事情も尋ねません。
+例：「図書館が閉まる時刻だったので、借りた本の返却を先に済ませた。書いていた原稿はまだ途中だった。」で、原稿を先にする条件の記録・回答・既出・見送りがなければ {{"decision":"ask","focus":"CONDITION","ask":"同じような場面で原稿を書くのを先にする条件"}} を返します。
+同じ例で、本人が「原稿も当日締切なら、原稿を先にする」とすでに説明している場合は {{"decision":"skip"}} を返します。同じ条件をすでに尋ねた、回答を見送った、行動の場面が違う、または尋ねる意味がなければskipです。
+askには何の条件かを明記し、表示用の質問文にはしません。"""
 
 WRITE_SYSTEM_MESSAGE = f"""確認点askを、本人に丁寧に尋ねる自然な日本語の一問にします。questionだけを持つJSONを返します。
 {_DATA_BOUNDARY}
@@ -789,7 +790,7 @@ async def _generate_theme(prepared, material, generate):
     for attempt in range(2):
         candidate, reason = await _review_theme_candidate(
             raw, plan=plan, direction=direction, scene=scene, key=key, material=material,
-            generate=generate, premise=premise,
+            generate=generate, premise=premise, angle_id=prepared["angle_id"],
             repeated_introductions=prepared["repeated_introductions"], decision_in_scene=prepared["decision_in_scene"],
             previous_angles=prepared["previous_angles"],
         )
@@ -841,7 +842,7 @@ async def _theme_has_new_answer(question, history, generate):
     return True
 
 
-async def _review_theme_candidate(raw, *, plan, direction, scene, key, material, generate,
+async def _review_theme_candidate(raw, *, plan, direction, scene, key, material, generate, angle_id,
                                   repeated_introductions=(), decision_in_scene=False, previous_angles=(), premise=None):
     if direction["angle"] in previous_angles:
         return None, "repeat"
@@ -861,7 +862,7 @@ async def _review_theme_candidate(raw, *, plan, direction, scene, key, material,
     candidate = _candidate(question, plan=plan, lane="theme", material=material, question_key=key)
     if candidate is None:
         return None, "repeat"
-    reading = {**direction, "scene": scene, "question": question}
+    reading = {**direction, "scene": scene, "body": body, "answer_kind": angle_id}
     system = _THEME_READ_SYSTEM_MESSAGE
     if premise is not None:
         reading["premise"] = premise
