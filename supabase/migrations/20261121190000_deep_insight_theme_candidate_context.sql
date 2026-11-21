@@ -10,8 +10,7 @@ returns jsonb language sql stable security invoker set search_path='' as $$
     where q.user_id=p_user_id and q.lane='theme' and q.theme=p_theme
   ), material as (
     select jsonb_build_object('questions',coalesce(jsonb_agg(
-      jsonb_build_object('question_key',question_key,'text_key',text_key)
-      || case when position<=30 then jsonb_build_object('question_text',question_text) else '{}'::jsonb end
+      jsonb_build_object('question_key',question_key,'text_key',text_key,'question_text',question_text)
       order by position),'[]'::jsonb)) as body
     from issued
   )

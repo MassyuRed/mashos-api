@@ -158,7 +158,7 @@ async function verifyThemePrivacyAndRecordsPlan(themeGrounding) {
     assert.deepEqual(question, {
       question_key: `prior-question-${n}`,
       text_key: `prior-text-${n}`,
-      ...(n <= 30 ? {question_text: `既出の問い ${n}`} : {}),
+      question_text: `既出の問い ${n}`,
     });
   });
   assert.notEqual((await themeContext(other, selected)).guard, narrow.guard);

@@ -580,6 +580,54 @@ def test_theme_resolves_three_cited_questions_with_archived_history(control):
     assert comparisons == expected
 
 
+@pytest.mark.parametrize("control", ["distinct", "semantic_repeat", "exact_repeat"])
+def test_theme_compares_older_legacy_wording_in_the_next_history_batch(control):
+    theme = "自分の価値観"
+    position = (theme, "risk", "boundary")
+    body = THEME_VERIFIED_BODIES[position][-1]
+    old_text = "うまくいかない場合、試したい選択でどの程度の損まで受け入れられますか？"
+    older = {"question_key": "legacy-slot", "text_key": "legacy-text", "question_text": old_text}
+    if control == "exact_repeat":
+        # An older algorithm may not have stored the current text key.
+        older["question_text"] = f"{THEME_SCENES[theme][position[1]]}、{body}"
+    batch_size = deep_insight_question._THEME_HISTORY_BATCH_SIZE
+    recent = [
+        {"question_key": f"prior-{index}", "question_text": f"{index}回目は何を選びますか？"}
+        for index in range(batch_size)
+    ]
+    original = {"questions": recent + [older]}
+    prepared, sources = prepare_question_material(
+        original, lane="theme", theme=theme, choose_theme=select_theme_angle(*position[1:]),
+    )
+    calls = []
+    old_id = batch_size + 1
+
+    async def generate(system, payload):
+        calls.append((system, payload))
+        if system.startswith(_THEME_WRITE_SYSTEM_MESSAGE):
+            return json.dumps({"question": body})
+        if system.startswith(_THEME_READ_SYSTEM_MESSAGE):
+            return '{"verdict":"accept"}'
+        if system == _THEME_COMPARE_SYSTEM_MESSAGE:
+            if payload["history"][0]["id"] == old_id and control == "semantic_repeat":
+                return json.dumps({"verdict": "repeat", "id": old_id})
+            return '{"verdict":"distinct"}'
+        assert system == _THEME_COMPARE_PAIR_SYSTEM_MESSAGE
+        assert payload["previous"] == old_text
+        return '{"verdict":"repeat"}'
+
+    result = asyncio.run(generate_question(prepared, sources, material=original, generate=generate))
+    assert result.disposition == ("selected" if control == "distinct" else "rejected")
+    if control == "exact_repeat":
+        assert len(calls) == 1
+        return
+    compared = [
+        row for system, payload in calls if system == _THEME_COMPARE_SYSTEM_MESSAGE for row in payload["history"]
+    ]
+    assert [row["id"] for row in compared] == list(range(1, old_id + 1))
+    assert compared[-1] == {"id": old_id, "question": old_text}
+
+
 @pytest.mark.parametrize("theme", THEME_SCENES)
 def test_theme_selection_does_not_reuse_an_issued_position_over_fifty_draws(theme):
     questions = []
@@ -612,10 +660,11 @@ def test_theme_will_try_new_situations_after_all_catalog_positions():
         questions=issued, scene="学んだ手順が通じない現場に出会ったとき", target="別の手順を選ぶかどうか")
     assert result.disposition == "selected"
     assert result.candidate.question_key not in {row["question_key"] for row in issued}
-    assert [system for system, _ in calls] == [
+    assert [system for system, _ in calls[:3]] == [
         _THEME_PLAN_SYSTEM_MESSAGE, _THEME_WRITE_SYSTEM_MESSAGE, _THEME_READ_SYSTEM_MESSAGE,
-        _THEME_COMPARE_SYSTEM_MESSAGE,
     ]
+    assert all(system == _THEME_COMPARE_SYSTEM_MESSAGE for system, _ in calls[3:])
+    assert sum(len(payload["history"]) for _, payload in calls[3:]) == len(issued)
 
 
 def test_theme_rejects_old_exact_text_key_and_closed_question():
@@ -738,22 +787,30 @@ def test_theme_catalog_has_distinct_compatible_judgments_for_every_supported_sce
                 assert THEME_VERIFIED_BODIES[(theme, scene, angle)]
 
 
-def test_theme_reader_receives_older_same_scene_angles_without_guessing_their_text():
+@pytest.mark.parametrize("older_wording", [None, "初対面の人と話すとき、会話の話題はどう選びますか？"])
+def test_theme_reader_receives_older_same_scene_angles_with_available_wording(older_wording):
     theme = "人間関係"
     recent = [{"question_key": f"recent-{index}", "question_text": f"{index}回目は何を選びますか？"}
               for index in range(30)]
     archived = [{"question_key": _theme_position_key(theme, scene_id, "first_action")}
                 for scene_id in THEME_SCENES[theme]]
+    if older_wording is not None:
+        archived[0]["question_text"] = older_wording
     result, calls = theme_run(
         theme, "会話の話題は何を基準に選びますか？", questions=recent + archived,
         comparison={"verdict": "repeat", "id": 31},
     )
-    assert result.disposition == "rejected" and len(calls) == 3
+    assert result.disposition == "rejected"
+    assert len(calls) == (4 if older_wording else 3)
     assert "history" not in calls[1][1]
     history = calls[2][1]["history"]
     assert [item["question"] for item in history[:30]] == [row["question_text"] for row in recent]
-    assert history[30] == {"id": 31, "scene": "初対面の人と話すとき",
-                           "target": "最初のひと言", "angle": "話し始めるために最初にすること"}
+    expected = {"id": 31, "scene": "初対面の人と話すとき",
+                "target": "最初のひと言", "angle": "話し始めるために最初にすること"}
+    if older_wording is not None:
+        expected["question"] = older_wording
+        assert calls[-1][1]["previous"] == older_wording
+    assert history[30] == expected
 
 
 def test_theme_refuses_a_matching_older_answer_target_before_the_model_reads_it():

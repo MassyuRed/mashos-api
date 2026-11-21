@@ -16,6 +16,7 @@ import copy
 from dataclasses import asdict, dataclass
 import hashlib
 import json
+from math import ceil
 import os
 from pathlib import Path
 import random
@@ -27,7 +28,6 @@ from cocolon_meaning_experience_engine import deep_insight_question as question
 
 THEMES = ("人間関係", "自分の価値観", "仕事・学び", "日々の過ごし方", "これからのこと")
 ATTEMPTS_PER_THEME = 50
-RECENT_WORDING_LIMIT = 30
 CASE_TIMEOUT_SECONDS = 96
 SCHEMA = "deep-insight.theme-eval.v1"
 Generate = Callable[[str, dict], Awaitable[str]]
@@ -58,14 +58,11 @@ def cases(themes=THEMES, *, attempts=ATTEMPTS_PER_THEME, seed=20261121) -> tuple
 
 
 def material_for(history) -> dict:
-    """Mirror the theme input: all issued keys, with wording for the latest 30."""
-    rows = []
-    for index, prior in enumerate(history):
-        row = {"question_key": prior["question_key"], "text_key": prior["text_key"]}
-        if index < RECENT_WORDING_LIMIT:
-            row["question_text"] = prior["question_text"]
-        rows.append(row)
-    return {"questions": rows}
+    """Mirror the theme input: keys and wording for every issued question."""
+    return {"questions": [
+        {field: prior[field] for field in ("question_key", "text_key", "question_text")}
+        for prior in history
+    ]}
 
 
 def emit(output: TextIO, data):
@@ -116,6 +113,7 @@ async def run_case(case: Case, history, seen_inputs, *, generate: Generate):
 async def evaluate(selected, output, *, generate: Generate | None = None, transport="injected"):
     counts = Counter(case.theme for case in selected)
     provenance = hashlib.sha256(Path(question.__file__).read_bytes()).hexdigest()
+    max_history_batches = ceil((max(counts.values(), default=0) - 1) / question._THEME_HISTORY_BATCH_SIZE)
     emit(output, {"kind": "manifest", "schema": SCHEMA, "cases_by_theme": counts,
                   "plan_sha256": digest([asdict(case) for case in selected]),
                   "generator_sha256": provenance,
@@ -136,7 +134,7 @@ async def evaluate(selected, output, *, generate: Generate | None = None, transp
                   }),
                   "fictional": True, "transport": transport if generate is not None else "dry_run",
                   "provider_calls": generate is not None,
-                  "max_provider_calls": (6 + 2 * question._THEME_MAX_PAIR_RECHECKS) * len(selected),
+                  "max_provider_calls": (5 + max_history_batches + 2 * question._THEME_MAX_PAIR_RECHECKS) * len(selected),
                   "same_input_retries": 0})
     if generate is None:
         for case in selected:

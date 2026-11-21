@@ -33,6 +33,7 @@ _THEME_QUOTED_QUESTION = re.compile(r"「([^「」\r\n]+)」")
 _THEME_SINGLE_QUOTED_QUESTION = re.compile(r"\{[ \t]*'question'[ \t]*:[ \t]*'([^'\r\n]+)'[ \t]*\}")
 _THEME_ASSISTANT_NAME = re.compile(r"emlis|エムリス", re.IGNORECASE)
 _THEME_MAX_PAIR_RECHECKS = 6
+_THEME_HISTORY_BATCH_SIZE = 32
 _THEME_UNBOUND_CHANGE = re.compile(r"^(?:どんな(?:とき|時|場合)|どういう(?:とき|時|場合)|いつ)に?(?:変え|切り替え)ますか[？?]$")
 _THEME_UNBOUND_DECISION = re.compile(
     r"^(?:何を(?:目安|基準|決め手)に|どうやって)(?:して)?[、,]?決めますか[？?]$"
@@ -655,10 +656,12 @@ def _theme_distinct_text_keys(position):
 def _theme_history(past, known_positions, distinct_text_keys):
     history = []
     distinct_ids = []
-    for index, row in enumerate(past):
-        original = row.get("question_text") if index < 30 else None
-        wording = _excerpt(original, 280)
+    for row in past:
         intent = known_positions.get(row["question_key"])
+        original = row.get("question_text")
+        # The saved wording may express a different judgment from the
+        # current catalog. Keep it available when checking older questions.
+        wording = _excerpt(original, 280)
         if wording or intent:
             item = {"id": len(history) + 1, **(intent or {})}
             if wording:
@@ -666,7 +669,7 @@ def _theme_history(past, known_positions, distinct_text_keys):
             history.append(item)
             text_key = row.get("text_key")
             if text_key in distinct_text_keys.get(row["question_key"], ()) and (
-                original is None or (wording == original and _text_key(_normal(wording)) == text_key)
+                original is None or (wording == original and _text_key(_normal(original)) == text_key)
             ):
                 distinct_ids.append(item["id"])
     return history, distinct_ids
@@ -688,6 +691,10 @@ def _candidate(question, *, plan, lane, material, question_key=None):
     text_key = _text_key(normalized)
     issued = material["questions"] if lane == "theme" else material["prior"]
     if any(question_key == p.get("question_key") or text_key == p.get("text_key") for p in issued):
+        return None
+    if lane == "theme" and any(
+        isinstance(text := row.get("question_text"), str) and normalized == _normal(text) for row in issued
+    ):
         return None
     if lane == "records":
         known = [p["question_text"] for p in issued if p.get("question_text")]
@@ -778,29 +785,30 @@ async def _theme_has_new_answer(question, history, generate):
     # The broad comparison can cite several unrelated questions in a long
     # history. Allow more independent pair checks as that history grows while
     # keeping a fixed ceiling inside the caller's generation deadline.
-    pair_recheck_limit = min(_THEME_MAX_PAIR_RECHECKS, 2 + len(history) // 12)
-    for rechecks in range(pair_recheck_limit + 1):
-        if not history:
-            return True
-        check = _json_object(await generate(_THEME_COMPARE_SYSTEM_MESSAGE, {**question, "history": history}))
-        if check == {"verdict": "distinct"}:
-            return True
-        if rechecks == pair_recheck_limit:
-            return False
-        if not check or set(check) != {"verdict", "id"} or check["verdict"] != "repeat" or type(check["id"]) is not int:
-            return False
-        repeated_id = check["id"]
-        repeated = next((row for row in history if row["id"] == repeated_id), None)
-        if not repeated or not repeated.get("question"):
-            return False
-        # Remove only the cited wording after a distinct pair verdict. Check
-        # the rest of the history even if the model cited several rows.
-        pair = _json_object(await generate(_THEME_COMPARE_PAIR_SYSTEM_MESSAGE, {
-            "question": question["question"], "previous": repeated["question"],
-        }))
-        if pair != {"verdict": "distinct"}:
-            return False
-        history = [row for row in history if row["id"] != repeated_id]
+    remaining_rechecks = min(_THEME_MAX_PAIR_RECHECKS, 2 + len(history) // 12)
+    for start in range(0, len(history), _THEME_HISTORY_BATCH_SIZE):
+        batch = history[start:start + _THEME_HISTORY_BATCH_SIZE]
+        while batch:
+            check = _json_object(await generate(_THEME_COMPARE_SYSTEM_MESSAGE, {**question, "history": batch}))
+            if check == {"verdict": "distinct"}:
+                break
+            if not remaining_rechecks or not check or set(check) != {"verdict", "id"}:
+                return False
+            if check["verdict"] != "repeat" or type(check["id"]) is not int:
+                return False
+            repeated_id = check["id"]
+            repeated = next((row for row in batch if row["id"] == repeated_id), None)
+            if not repeated or not repeated.get("question"):
+                return False
+            pair = _json_object(await generate(_THEME_COMPARE_PAIR_SYSTEM_MESSAGE, {
+                "question": question["question"], "previous": repeated["question"],
+            }))
+            if pair != {"verdict": "distinct"}:
+                return False
+            # Only the row resolved by the independent check can be removed.
+            remaining_rechecks -= 1
+            batch = [row for row in batch if row["id"] != repeated_id]
+    return True
 
 
 async def _review_theme_candidate(raw, *, plan, direction, scene, key, material, generate,
