@@ -22,10 +22,8 @@ from emotion_history_search_service import (
     search_similar_inputs,
 )
 from supabase_client import sb_get
-from today_question_store import TodayQuestionStore, _settings_public
 
 _PROFILES_TABLE = "profiles"
-_TQ_STORE = TodayQuestionStore()
 
 
 def _pick_rows(resp: Any) -> List[Dict[str, Any]]:
@@ -48,22 +46,6 @@ async def _get_myweb_home_summary_for_user(user_id: str) -> Dict[str, Any]:
     return await get_myweb_home_summary_for_emlis_ai(user_id)
 
 
-async def _get_latest_today_question_answer_for_user(user_id: str) -> Dict[str, Any]:
-    try:
-        rows = await _TQ_STORE.list_history(user_id, limit=1, offset=0)
-        return rows[0] if rows else {}
-    except Exception:
-        return {}
-
-
-async def _list_recent_today_question_answers_for_user(user_id: str, *, limit: int) -> List[Dict[str, Any]]:
-    try:
-        rows = await _TQ_STORE.list_history(user_id, limit=limit, offset=0)
-        return rows or []
-    except Exception:
-        return []
-
-
 async def _resolve_display_name_for_user(user_id: str) -> Optional[str]:
     uid = str(user_id or "").strip()
     if not uid:
@@ -83,19 +65,6 @@ async def _resolve_display_name_for_user(user_id: str) -> Optional[str]:
         return display_name or None
     except Exception:
         return None
-
-
-async def _resolve_timezone_name_for_user(user_id: str, *, fallback: Optional[str] = None) -> str:
-    raw_fallback = str(fallback or "").strip()
-    if raw_fallback:
-        return raw_fallback
-    try:
-        settings = await _TQ_STORE.get_or_create_user_settings(user_id)
-        public_settings = _settings_public(settings) if isinstance(settings, dict) else {}
-        timezone_name = str(public_settings.get("timezone_name") or "").strip()
-        return timezone_name or "Asia/Tokyo"
-    except Exception:
-        return "Asia/Tokyo"
 
 
 def _count_chars(*values: Any) -> int:
@@ -199,17 +168,9 @@ async def build_emlis_ai_source_bundle(
     now_utc = now_utc or datetime.now(timezone.utc)
     current_input = normalize_emlis_current_input(current_input)
 
-    # Display name and timezone are independent reads. Collect them in parallel
-    # so the /emotion/submit synchronous reply path is not lengthened by
-    # avoidable serial waits.
     raw_display_name = str(display_name or "").strip()
-    name_task = None if raw_display_name else asyncio.create_task(_resolve_display_name_for_user(user_id))
-    timezone_task = asyncio.create_task(_resolve_timezone_name_for_user(user_id, fallback=timezone_name))
-    if name_task is not None:
-        resolved_name, resolved_timezone_name = await asyncio.gather(name_task, timezone_task)
-    else:
-        resolved_name = raw_display_name
-        resolved_timezone_name = await timezone_task
+    resolved_name = raw_display_name or await _resolve_display_name_for_user(user_id)
+    resolved_timezone_name = str(timezone_name or "").strip() or "Asia/Tokyo"
 
     greeting = await decide_greeting_for_user(
         user_id=user_id,
@@ -233,10 +194,6 @@ async def build_emlis_ai_source_bundle(
 
     if capability.include_myweb_summary:
         async_tasks["myweb_home_summary"] = asyncio.create_task(_get_myweb_home_summary_for_user(user_id))
-
-    if capability.include_today_question_history:
-        async_tasks["latest_today_question_answer"] = asyncio.create_task(_get_latest_today_question_answer_for_user(user_id))
-        async_tasks["recent_today_question_answers"] = asyncio.create_task(_list_recent_today_question_answers_for_user(user_id, limit=3))
 
     if capability.history_mode != "none":
         created_at = str(current_input.get("created_at") or "").strip()
@@ -309,7 +266,6 @@ async def build_emlis_ai_source_bundle(
     }
     bundle.input_effort = build_input_effort_signals(
         current_input,
-        latest_today_question_answer=bundle.latest_today_question_answer,
         same_day_recent_inputs=bundle.same_day_recent_inputs,
     )
     bundle.memory_richness = build_memory_richness_signals(

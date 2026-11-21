@@ -18,7 +18,6 @@ HOME_STATE_SOURCE_VERSIONS: Dict[str, str] = {
     "input_summary": "input.summary.v1",
     "global_summary": "global_summary.ready_first.v1",
     "notices_current": "notice.current.v1",
-    "today_question_current": "today_question.current.v1",
     "emotion_reflection_quota": "emotion.reflection.quota.v1",
 }
 
@@ -119,14 +118,6 @@ async def _build_home_state_payload(
                     "badge": {"show": False, "count": 0},
                     "popup_notice": None,
                 },
-                "today_question_current": {
-                    "service_day_key": _today_jst_date_iso(),
-                    "question": None,
-                    "answer_status": "unanswered",
-                    "answer_summary": None,
-                    "delivery": {},
-                    "progress": {},
-                },
                 "emotion_reflection_quota": {
                     "status": "ok",
                     "subscription_tier": "free",
@@ -143,7 +134,6 @@ async def _build_home_state_payload(
     from api_global_summary import get_global_summary_payload
     from api_input_summary import get_input_summary_payload_for_user
     from api_notice import get_notice_current_payload_for_user
-    from api_today_question import get_today_question_current_payload_for_user
     from home_gateway.emotion_reflection_publish_service import build_emotion_reflection_quota_status
 
     defaults: Dict[str, Dict[str, Any]] = {
@@ -172,14 +162,6 @@ async def _build_home_state_payload(
             "badge": {"show": False, "count": 0},
             "popup_notice": None,
         },
-        "today_question_current": {
-            "service_day_key": _today_jst_date_iso(),
-            "question": None,
-            "answer_status": "unanswered",
-            "answer_summary": None,
-            "delivery": {},
-            "progress": {},
-        },
         "emotion_reflection_quota": {
             "status": "ok",
             "subscription_tier": "free",
@@ -195,11 +177,6 @@ async def _build_home_state_payload(
         _safe_section("input_summary", get_input_summary_payload_for_user(uid), defaults["input_summary"]),
         _safe_section("global_summary", get_global_summary_payload(mode="ready_first"), defaults["global_summary"]),
         _safe_section("notices_current", get_notice_current_payload_for_user(uid, normalized_meta), defaults["notices_current"]),
-        _safe_section(
-            "today_question_current",
-            get_today_question_current_payload_for_user(uid, timezone_name=timezone_name),
-            defaults["today_question_current"],
-        ),
         _safe_section("emotion_reflection_quota", build_emotion_reflection_quota_status(uid), defaults["emotion_reflection_quota"]),
     )
 
@@ -211,10 +188,8 @@ async def _build_home_state_payload(
             errors[name] = error
 
     notices_current = sections.get("notices_current") if isinstance(sections.get("notices_current"), dict) else {}
-    today_question_current = sections.get("today_question_current") if isinstance(sections.get("today_question_current"), dict) else {}
     popup_notice = notices_current.get("popup_notice") if isinstance(notices_current.get("popup_notice"), Mapping) else None
     popup_notice_id = str((popup_notice or {}).get("notice_id") or "").strip() or None
-    question = today_question_current.get("question") if isinstance(today_question_current.get("question"), Mapping) else None
 
     popup_candidates = []
     if popup_notice_id:
@@ -222,18 +197,11 @@ async def _build_home_state_payload(
             "kind": "notice",
             "notice_id": popup_notice_id,
         })
-    if question and str(today_question_current.get("answer_status") or "unanswered") != "answered":
-        popup_candidates.append({
-            "kind": "today_question",
-            "service_day_key": str(today_question_current.get("service_day_key") or _today_jst_date_iso()),
-            "question_id": str(question.get("question_id") or "").strip() or None,
-        })
-
     return {
         "status": "ok",
         "user_id": uid,
         "generated_at": _iso_utc(),
-        "service_day_key": str(today_question_current.get("service_day_key") or _today_jst_date_iso()),
+        "service_day_key": _today_jst_date_iso(),
         "source_versions": dict(HOME_STATE_SOURCE_VERSIONS),
         "popup_candidates": popup_candidates,
         "notice_popup_notice_id": popup_notice_id,

@@ -5,6 +5,7 @@ import asyncio
 import os
 
 from emlis_thread_service import Q3_PROFILE
+from emlis_thread_config import natural_reply_provider_settings
 from cocolon_meaning_experience_engine.natural_reply import PROFILE, SelfHostedNaturalReplySource
 
 _initial_tasks = {}
@@ -19,9 +20,7 @@ def application_thread_service():
     if profile:
         if profile != PROFILE:
             raise ValueError("unsupported_emlis_response_profile")
-        settings = {"endpoint": os.environ.get("EMLIS_NATURAL_REPLY_ENDPOINT", ""),
-                    "model": os.environ.get("EMLIS_NATURAL_REPLY_MODEL", ""),
-                    "api_key": os.environ.get("EMLIS_NATURAL_REPLY_API_KEY", "")}
+        settings = natural_reply_provider_settings()
         try:
             source = SelfHostedNaturalReplySource(**settings)
         except ValueError:

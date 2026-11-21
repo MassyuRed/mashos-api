@@ -413,7 +413,7 @@ def record_plan_owners(material, available=None, *, merge_anchors=False):
             unowned.add(number)
             continue
         locals_by_record[record].add(number)
-        if f['source_role'] == 'ORIGINAL_INPUT':
+        if f['source_role'] in {'ORIGINAL_INPUT', 'USER_DEEP_INSIGHT_ANSWER'}:
             originals[record].add(number)
     if not all(originals.values()) or len(records) + len(unowned) > 12:
         return ()

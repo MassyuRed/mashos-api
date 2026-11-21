@@ -1075,12 +1075,12 @@ async def request_map_refresh(user_id, *, force=False, trigger='map_view', reque
     owner = _owner(user_id)
     if not _map_refresh_queue_enabled():
         return None
-    if trigger not in {'map_view', 'manual', 'emotion_submit'}:
+    if trigger not in {'map_view', 'manual', 'emotion_submit', 'deep_insight_answer'}:
         raise ValueError('analysis_refresh_trigger_invalid')
     if not force and (await read_maps(owner, limit=1, metadata_only=True))['items']:
         return await map_refresh_status(owner)
     status = await map_refresh_status(owner)
-    if not force and trigger != 'emotion_submit' and status in {'queued', 'running'}:
+    if not force and trigger in {'map_view', 'manual'} and status in {'queued', 'running'}:
         return status
     from datetime import datetime, timezone
     from astor_job_queue import enqueue_job
@@ -1117,7 +1117,8 @@ async def map_evidence(user_id, report_id, node, *, month=None):
 def _project_evidence(owner, raw):
     from astor_material_snapshots import _analysis_saved_member
     from cocolon_meaning_experience_engine.cores.analysis.source_adapter import (
-        commitment, _time, AnalysisObservedMapRequest, freeze_analysis_sources, source_field_text)
+        DEEP_INSIGHT_ANSWER_ROLE, commitment, _time, AnalysisObservedMapRequest,
+        freeze_analysis_sources, source_field_text)
     correction_evidence = []
     if raw.get('map_corrections'):
         from cocolon_meaning_experience_engine.cores.analysis.map_interpretation_correction import qualify_map_correction
@@ -1143,6 +1144,23 @@ def _project_evidence(owner, raw):
         extra = ({'map_corrections': corrections,
             **({'evidence_scope': 'MAP_CORRECTION_CONTEXT'} if not row['expected_envelopes'] else {})}
             if corrections else {})
+        if 'deep_insight' in row:
+            member, _ = _analysis_saved_member(dict(row, tier=raw['tier'], now=raw['now']),
+                owner=owner, input_id=original['id'], tier=raw['tier'],
+                start=_time(original['created_at']), end=_time(raw['now']), cumulative=True)
+            frozen = freeze_analysis_sources(AnalysisObservedMapRequest('analysis-evidence-'+uuid4().hex,
+                owner, _time(original['created_at']).isoformat(), raw['now'], (member,)))
+            source, = frozen.sources
+            if source.envelope.source_role != DEEP_INSIGHT_ANSWER_ROLE:
+                raise ValueError('analysis_deep_insight_binding_invalid')
+            answer = source_field_text(source, 'memo')
+            unchanged = (commitment(original) == row['analyzed_version']
+                and set(row['expected_envelopes']) <= {source.envelope.envelope_id})
+            items.append(dict(id=original['id'], created_at=original['created_at'],
+                memo=answer, memo_action='', answers=[],
+                deep_insight=dict(question_text=member.deep_insight.question_text, answer_text=answer),
+                version_state='CURRENT' if unchanged else 'EDITED_SINCE_ANALYSIS', **extra))
+            continue
         if commitment(original) != row['analyzed_version']:
             items.append(dict(id=original['id'], created_at=original['created_at'],
                 memo=original['memo'], memo_action=original['memo_action'], answers=[],

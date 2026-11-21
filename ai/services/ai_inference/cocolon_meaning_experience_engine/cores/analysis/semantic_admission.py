@@ -4508,6 +4508,11 @@ class AnalysisSemanticMapInput:
                 dict(role='user', content=self.material_json)]
 
     def _source_instruction(self, instruction, material):
+        if any('deep_insight_question' in record for record in material.get('records', ())):
+            instruction += ('\nUSER_DEEP_INSIGHT_ANSWERは「わたしを知る問い」への本人の回答です。'
+                'recordsのdeep_insight_questionは回答が何を指すかを読むための質問文で、原記録や本人の事実ではありません。'
+                '質問の仮説や前提を本人が認めたと決めず、回答が明示した条件や考えだけを残します。'
+                '本人の回答だけから根拠quoteを取り、別の記録への補足や質問に書かれた出来事そのものとは扱いません。')
         if (self.prompt_version == SEMANTIC_MAP_SOURCE_DUTIES_PROFILE
                 or self.prompt_version in SEMANTIC_MAP_NODE_LOCAL_V4_PROFILES and 'source_duties' in material):
             instruction += _SEMANTIC_MAP_SOURCE_DUTIES_INSTRUCTION
@@ -4660,11 +4665,15 @@ def prepare_analysis_semantic_map(request, snapshot, *,
         correction_private.append(dict(source=row, cohort_refs=list(source.cohort_refs),
             source_envelope_id=source.envelope.envelope_id, evidence=asdict(source.evidence)))
     records = []
+    questions = {member.saved_record_ref: member.deep_insight for member in request.members
+        if member.deep_insight is not None}
     for ref, ordinal in ordinals.items():
         original = originals[ref]
         records.append(dict(record=ordinal, recorded_at=original['created_at'],
             selected_categories=original['category'], selected_emotions=original['emotions'],
             emotion_details=original['emotion_details']))
+        if ref in questions:
+            records[-1]['deep_insight_question'] = questions[ref].question_text
     material = dict(analysis_as_of=frozen.period[1], records=records, fields=material_fields)
     if correction_material:
         material['map_corrections'] = correction_material

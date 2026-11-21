@@ -5,6 +5,12 @@ MAX_ANSWER_CHARS = 2000
 APPLICATION_EXECUTION_MODE = "EMLIS_APPLICATION"
 
 
+def natural_reply_provider_settings():
+    return {"endpoint": os.getenv("EMLIS_NATURAL_REPLY_ENDPOINT", ""),
+            "model": os.getenv("EMLIS_NATURAL_REPLY_MODEL", ""),
+            "api_key": os.getenv("EMLIS_NATURAL_REPLY_API_KEY", "")}
+
+
 def development_enabled():
     return (os.getenv("COCOLON_EMLIS_THREAD_DEVELOPMENT", "") == "true"
             and os.getenv("COCOLON_ENV", "") == "development")

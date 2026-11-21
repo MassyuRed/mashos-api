@@ -164,8 +164,6 @@ def _install_p5_runtime_history_context(monkeypatch: pytest.MonkeyPatch) -> None
 
     monkeypatch.setattr(context_service, "_get_input_summary_for_user", _p5_runtime_empty_dict)
     monkeypatch.setattr(context_service, "_get_myweb_home_summary_for_user", _p5_runtime_empty_dict)
-    monkeypatch.setattr(context_service, "_get_latest_today_question_answer_for_user", _p5_runtime_empty_dict)
-    monkeypatch.setattr(context_service, "_list_recent_today_question_answers_for_user", _p5_runtime_empty_list)
     monkeypatch.setattr(context_service, "get_last_input_for_user", _last_input)
     monkeypatch.setattr(context_service, "list_same_day_recent_inputs", _same_day_inputs)
     monkeypatch.setattr(context_service, "search_similar_inputs", _similar_inputs)

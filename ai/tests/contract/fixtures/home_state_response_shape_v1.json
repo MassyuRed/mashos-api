@@ -9,9 +9,7 @@
   "popup_candidates": [
     {
       "kind": "<str>",
-      "notice_id": "<str_or_null>",
-      "service_day_key": "<str_or_null>",
-      "question_id": "<str_or_null>"
+      "notice_id": "<str_or_null>"
     }
   ],
   "notice_popup_notice_id": "<str_or_null>",
@@ -19,7 +17,6 @@
     "input_summary": "<dict>",
     "global_summary": "<dict>",
     "notices_current": "<dict>",
-    "today_question_current": "<dict>",
     "emotion_reflection_quota": "<dict>"
   },
   "errors": "<dict>"

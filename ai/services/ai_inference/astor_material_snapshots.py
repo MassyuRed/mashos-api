@@ -99,7 +99,8 @@ async def _analysis_period_ids(owner: str, start: str, end: str) -> tuple[str, .
 
 def _analysis_saved_member(snapshot, *, owner, input_id, tier, start, end, cumulative=False):
     from cocolon_meaning_experience_engine.cores.analysis.source_adapter import (
-        AnalysisSavedRecord, AnalysisSupplement, ORIGINAL_FIELDS, canonical_bytes, commitment, _time,
+        AnalysisDeepInsightQuestion, AnalysisSavedRecord, AnalysisSupplement, ORIGINAL_FIELDS,
+        canonical_bytes, commitment, _time,
     )
     from emlis_thread_service import _check, _request
     from emlis_thread_store import ThreadStoreError
@@ -133,6 +134,14 @@ def _analysis_saved_member(snapshot, *, owner, input_id, tier, start, end, cumul
         events = snapshot['events']
         if type(events) is not list or any(type(e) is not dict for e in events):
             raise AnalysisSavedSourceError('analysis_saved_source_invalid')
+        deep_insight = None
+        if 'deep_insight' in snapshot:
+            if (not cumulative or thread is not None or events
+                    or type(snapshot['deep_insight']) is not dict):
+                raise AnalysisSavedSourceError('analysis_saved_source_invalid')
+            deep_insight = AnalysisDeepInsightQuestion(**snapshot['deep_insight'])
+            if deep_insight.user_id != owner:
+                raise AnalysisSavedSourceError('analysis_saved_owner_mismatch')
         if thread is None:
             if events:
                 raise AnalysisSavedSourceError('analysis_saved_source_invalid')
@@ -185,7 +194,7 @@ def _analysis_saved_member(snapshot, *, owner, input_id, tier, start, end, cumul
             for a in answers)
         member = AnalysisSavedRecord(owner, input_id, record_version,
             canonical_bytes(original).decode('utf-8'), supplements,
-            interpretation_corrections=corrections)
+            interpretation_corrections=corrections, deep_insight=deep_insight)
         return member, (input_id, record_version, guard)
     except AnalysisSavedSourceError:
         raise
@@ -2439,20 +2448,15 @@ async def generate_and_store_material_snapshots(
     internal_discovery_rows = await fetch_discovery_rows_for_self_structure(uid, include_secret=True)
     public_discovery_rows = await fetch_discovery_rows_for_self_structure(uid, include_secret=False)
 
-    internal_today_question_rows = await fetch_today_question_rows_for_self_structure(uid, include_secret=True)
-    public_today_question_rows: List[Dict[str, Any]] = []
-
     internal_self_structure_view = build_self_structure_view(
         emotion_rows=internal_emotion_rows,
         echo_rows=internal_echo_rows,
         discovery_rows=internal_discovery_rows,
-        today_question_rows=internal_today_question_rows,
     )
     public_self_structure_view = build_self_structure_view(
         emotion_rows=public_emotion_rows,
         echo_rows=public_echo_rows,
         discovery_rows=public_discovery_rows,
-        today_question_rows=public_today_question_rows,
     )
 
     premium_reflection_view = build_premium_reflection_view(
@@ -2472,14 +2476,12 @@ async def generate_and_store_material_snapshots(
     internal_material_meta.extend(_material_meta_rows_from_rows("emotion_input", internal_emotion_rows))
     internal_material_meta.extend(_material_meta_rows_from_rows("echo", internal_echo_rows))
     internal_material_meta.extend(_material_meta_rows_from_rows("discovery", internal_discovery_rows))
-    internal_material_meta.extend(_material_meta_rows_from_rows("today_question", internal_today_question_rows))
     internal_material_meta = _dedupe_material_meta_rows(internal_material_meta)
 
     public_material_meta: List[Dict[str, Any]] = []
     public_material_meta.extend(_material_meta_rows_from_rows("emotion_input", public_emotion_rows))
     public_material_meta.extend(_material_meta_rows_from_rows("echo", public_echo_rows))
     public_material_meta.extend(_material_meta_rows_from_rows("discovery", public_discovery_rows))
-    public_material_meta.extend(_material_meta_rows_from_rows("today_question", public_today_question_rows))
     public_material_meta = _dedupe_material_meta_rows(public_material_meta)
 
     internal_hash = compute_source_hash_from_material_meta(

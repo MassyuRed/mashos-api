@@ -180,7 +180,7 @@ from api_analysis_compat import register_analysis_compat_routes
 from api_piece_compat import register_piece_compat_routes
 from api_relationship_compat import register_relationship_compat_routes
 from api_retired_legacy_compat import register_retired_legacy_compat_routes
-from api_today_question import register_today_question_routes, run_today_question_push_once
+from api_deep_insight import register_deep_insight_routes
 from supabase_client import aclose_async_client, sb_get as _shared_sb_get, sb_post as _shared_sb_post
 from api_report_distribution_settings import register_report_distribution_settings_routes
 from prompt_templates import render_prompt_template, list_prompt_templates
@@ -330,7 +330,7 @@ def create_application(*, piece_preview_configuration: Optional[Dict[str, Any]] 
     register_piece_runtime_routes(app)
     register_nexus_routes(app)
     register_nexus_compat_routes(app)
-    register_today_question_routes(app)
+    register_deep_insight_routes(app)
     register_report_distribution_settings_routes(app)
     register_analysis_compat_routes(app)
     register_piece_compat_routes(app, include_preview=not preview_candidate,
@@ -1426,20 +1426,6 @@ def _run_report_distribution_push_cli(args: Optional[List[str]] = None) -> int:
         return 1
 
 
-def _run_today_question_push_cli(args: Optional[List[str]] = None) -> int:
-    import asyncio
-
-    argv = list(args or [])
-    limit = _parse_optional_cli_limit(argv, 200)
-    try:
-        result = asyncio.run(run_today_question_push_once(limit=limit))
-        print(json.dumps(_model_to_jsonable(result), ensure_ascii=False))
-        return 0
-    except Exception:
-        logger.exception("today_question_push CLI failed")
-        return 1
-
-
 def mymodel_templates() -> Dict[str, Any]:
     """Return available server-side prompt templates (Phase5)."""
     return {"status": "ok", "templates": list_prompt_templates()}
@@ -1650,8 +1636,7 @@ if __name__ == "__main__":
             raise SystemExit(_run_rollover_cli())
         if _cmd in {"report_distribution_push", "report-distribution-push"}:
             raise SystemExit(_run_report_distribution_push_cli(_args))
-        if _cmd in {"today_question_push", "today-question-push"}:
-            raise SystemExit(_run_today_question_push_cli(_args))
+        raise SystemExit(f"Unknown command: {_cmd}")
 
     import uvicorn
     uvicorn.run("app:app", host=HOST, port=PORT, log_level="info")

@@ -5,7 +5,6 @@ from typing import Any, Dict, Literal, Mapping, Optional, Tuple
 
 HomeCommandName = Literal[
     "emotion.submit",
-    "today_question.answer.create",
     "notice.read",
     "notice.popup_seen",
     "emotion.reflection.publish",

@@ -7,9 +7,10 @@ An arbitrary HTTP caller must never be allowed to construct these requests.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field, replace
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 import hashlib
 import json
+from uuid import UUID
 
 from emlis_ai_current_input_bundle import normalize_emlis_current_input
 from emlis_ai_evidence_ledger_service import build_evidence_ledger
@@ -20,6 +21,7 @@ from ...emlis_thread_contracts import InterpretationCorrectionSource
 POLICY = 'cocolon.cmee.analysis.observed.offline.v1'
 ORIGINAL_FIELDS = frozenset(('id', 'created_at', 'memo', 'memo_action',
                              'category', 'emotions', 'emotion_details'))
+DEEP_INSIGHT_ANSWER_ROLE = 'USER_DEEP_INSIGHT_ANSWER'
 
 
 def canonical_bytes(value: object) -> bytes:
@@ -48,6 +50,16 @@ class AnalysisSupplement:
 
 
 @dataclass(frozen=True, slots=True, repr=False)
+class AnalysisDeepInsightQuestion:
+    """The issued question frames its owner's answer without being evidence."""
+    user_id: str
+    lane: str
+    theme: str | None
+    question_text: str
+    issued_on: str
+
+
+@dataclass(frozen=True, slots=True, repr=False)
 class AnalysisSavedRecord:
     owner_scope: str
     saved_record_ref: str
@@ -58,6 +70,7 @@ class AnalysisSavedRecord:
     # AI target text stays control metadata. Only the person's explanation
     # becomes a separately qualified evidence envelope.
     interpretation_corrections: tuple[InterpretationCorrectionSource, ...] = ()
+    deep_insight: AnalysisDeepInsightQuestion | None = None
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -143,6 +156,28 @@ def _time(value: str, *, saved_utc: bool = False) -> datetime:
         return result.astimezone(timezone.utc)
     except (ValueError, TypeError, AttributeError):
         raise AnalysisSourceError('analysis_timestamp_invalid') from None
+
+
+def _checked_deep_insight_question(record, original):
+    question = record.deep_insight
+    try:
+        if (type(question) is not AnalysisDeepInsightQuestion
+                or question.user_id != record.owner_scope
+                or original['id'] != str(UUID(original['id']))
+                or question.lane not in {'records', 'theme'}
+                or (question.lane == 'records' and question.theme is not None)
+                or (question.lane == 'theme'
+                    and (type(question.theme) is not str or not question.theme.strip()))
+                or type(question.question_text) is not str or not question.question_text.strip()
+                or date.fromisoformat(question.issued_on).isoformat() != question.issued_on
+                or type(original['memo']) is not str or not original['memo'].strip()
+                or original['memo_action'] != ''
+                or any(original[key] != [] for key in ('category', 'emotions', 'emotion_details'))
+                or record.supplements or record.interpretation_corrections):
+            raise ValueError
+    except (ValueError, TypeError, AttributeError):
+        raise AnalysisSourceError('analysis_deep_insight_binding_invalid') from None
+    return asdict(question)
 
 
 def _source(record, role, source_id, version, original):
@@ -271,6 +306,8 @@ def freeze_analysis_sources(request: AnalysisObservedMapRequest) -> AnalysisSour
         if member.interpretation_corrections:
             identity = commitment([identity, [asdict(c) for c in member.interpretation_corrections
                 if type(c) is InterpretationCorrectionSource]])
+        if member.deep_insight is not None:
+            identity = commitment([identity, _checked_deep_insight_question(member, original)])
         if member.saved_record_ref in versions:
             if versions[member.saved_record_ref] != identity:
                 raise AnalysisSourceError('analysis_duplicate_record_conflict')
@@ -325,8 +362,9 @@ def freeze_analysis_sources(request: AnalysisObservedMapRequest) -> AnalysisSour
                 raise AnalysisSourceError('analysis_correction_binding_invalid')
             supplements.add(correction.correction_id)
         if included:
-            child = _source(member, 'ORIGINAL_INPUT', ref,
-                            member.saved_record_version, original)
+            role = 'ORIGINAL_INPUT' if member.deep_insight is None else DEEP_INSIGHT_ANSWER_ROLE
+            version = member.saved_record_version if member.deep_insight is None else versions[ref]
+            child = _source(member, role, ref, version, original)
             sources.append(child)
             children.append(child.envelope.envelope_id)
             for supplement in member.supplements:
@@ -340,7 +378,7 @@ def freeze_analysis_sources(request: AnalysisObservedMapRequest) -> AnalysisSour
                 sources.append(child)
                 children.append(child.envelope.envelope_id)
         members.append(AnalysisSourceMember(ref, member.saved_record_version,
-            'PERIOD_RECORD_IDENTITY', versions[ref],
+            'PERIOD_RECORD_IDENTITY' if member.deep_insight is None else DEEP_INSIGHT_ANSWER_ROLE, versions[ref],
             'INCLUDED' if included else 'EXCLUDED',
             'IN_PERIOD' if included else 'OUTSIDE_PERIOD', tuple(children)))
     period = (start.isoformat(), end.isoformat())

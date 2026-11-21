@@ -63,24 +63,6 @@ async def _execute_home_command_impl(command: HomeCommand) -> Dict[str, Any]:
             receive_emlis_questions=payload.get("receive_emlis_questions", True),
         )
 
-    if command.name == "today_question.answer.create":
-        from .today_question_command_service import create_today_question_answer
-
-        return await create_today_question_answer(
-            user_id=user_id,
-            service_day_key=str(payload.get("service_day_key") or ""),
-            question_id=str(payload.get("question_id") or ""),
-            sequence_no=payload.get("sequence_no"),
-            answer_mode=str(payload.get("answer_mode") or ""),
-            selected_choice_id=payload.get("selected_choice_id"),
-            selected_choice_key=payload.get("selected_choice_key"),
-            free_text=payload.get("free_text"),
-            timezone_name=payload.get("timezone_name"),
-            question_origin=payload.get("question_origin"),
-            personal_question_id=payload.get("personal_question_id"),
-            source_anchor_hash=payload.get("source_anchor_hash"),
-        )
-
     if command.name == "notice.read":
         from .notice_command_service import mark_notices_read
 

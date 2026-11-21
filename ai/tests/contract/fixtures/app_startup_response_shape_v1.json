@@ -23,16 +23,13 @@
       "has_any_emotion_log_unread": "<bool>",
       "has_any_friends_unread": "<bool>",
       "has_any_myweb_unread": "<bool>",
-      "has_popup_notice": "<bool>",
-      "today_question_answered": "<bool>"
+      "has_popup_notice": "<bool>"
     },
     "sections": {
       "emotion_log_unread": "<dict>",
       "friends_unread": "<dict>",
       "myweb_unread": "<dict>",
-      "notices_current": "<dict>",
-      "today_question_light": "<dict>",
-      "today_question": "<dict>"
+      "notices_current": "<dict>"
     },
     "errors": "<dict>",
     "timezone_name": "<str_or_null>"

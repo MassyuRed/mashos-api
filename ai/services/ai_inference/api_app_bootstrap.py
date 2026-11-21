@@ -43,8 +43,6 @@ def _feature_flags(app: Optional[FastAPI] = None, *, piece_publication: bool = F
         "follower_sharing_enabled": follower_sharing_enabled(),
         "emlis_threads_enabled": read_enabled(),
         "myweb_mock_enabled": False,
-        "today_question_enabled": True,
-        "today_question_history_enabled": True,
         "subscription_sales_enabled": (os.getenv("COCOLON_SUBSCRIPTION_SALES_ENABLED") or "true").strip().lower() in {"1", "true", "yes", "on"},
     }
 
@@ -99,7 +97,6 @@ def _startup_fallback_payload(
             "has_any_friends_unread": False,
             "has_any_myweb_unread": False,
             "has_popup_notice": False,
-            "today_question_answered": False,
         },
         "sections": {},
         "errors": {"startup": str(detail or "unavailable")},
@@ -165,7 +162,7 @@ def register_app_bootstrap_routes(app: FastAPI) -> None:
         response: Response,
         authorization: Optional[str] = Header(default=None),
         force_refresh: bool = Query(default=False, description="If true, bypass the cached startup snapshot for this request."),
-        timezone_name: Optional[str] = Query(default=None, description="Optional IANA timezone name or offset used for Today Question / Global Summary sections."),
+        timezone_name: Optional[str] = Query(default=None, description="Optional IANA timezone name or offset."),
     ) -> AppStartupResponse:
         response.headers["Vary"] = PIECE_PUBLICATION_HEADER
         return await _build_startup_response(

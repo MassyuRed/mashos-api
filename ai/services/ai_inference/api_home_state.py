@@ -9,7 +9,6 @@ from api_emotion_piece import EmotionPieceQuotaResponse
 from api_global_summary import GlobalSummaryResponse
 from api_input_summary import InputSummaryResponse
 from api_notice import NoticeCurrentResponse
-from api_today_question import TodayQuestionCurrentResponse
 from client_compat import extract_client_meta
 from home_gateway.emotion_submit_service import resolve_authenticated_user_id
 from home_gateway.read_model_service import get_home_state
@@ -18,15 +17,12 @@ from home_gateway.read_model_service import get_home_state
 class HomeStatePopupCandidate(BaseModel):
     kind: str
     notice_id: Optional[str] = None
-    service_day_key: Optional[str] = None
-    question_id: Optional[str] = None
 
 
 class HomeStateSections(BaseModel):
     input_summary: InputSummaryResponse
     global_summary: GlobalSummaryResponse
     notices_current: NoticeCurrentResponse
-    today_question_current: TodayQuestionCurrentResponse
     emotion_reflection_quota: EmotionPieceQuotaResponse
 
 

@@ -36,7 +36,6 @@ STARTUP_SNAPSHOT_SOURCE_VERSIONS: Dict[str, str] = {
     # Input/Home-owned sections remain available for compatibility, but their
     # payload is projected from the canonical /home/state read model.
     "notices_current": "home_state.notices_current.compat.v1",
-    "today_question_light": "home_state.today_question_current.light.compat.v1",
 }
 
 
@@ -102,28 +101,6 @@ async def _safe_section(name: str, coro, default: Any) -> tuple[str, Any, Option
         return name, default, str(exc)
 
 
-def _light_today_question_payload(payload: Mapping[str, Any]) -> Dict[str, Any]:
-    question_raw = payload.get("question") if isinstance(payload, Mapping) else None
-    question: Optional[Dict[str, Any]] = None
-    if isinstance(question_raw, Mapping):
-        question = {
-            "question_id": str(question_raw.get("question_id") or "").strip() or None,
-            "question_key": str(question_raw.get("question_key") or "").strip() or None,
-            "version": int(question_raw.get("version") or 1),
-            "text": str(question_raw.get("text") or "").strip() or None,
-            "choice_count": int(question_raw.get("choice_count") or 0),
-            "free_text_enabled": bool(question_raw.get("free_text_enabled", True)),
-        }
-    return {
-        "service_day_key": str(payload.get("service_day_key") or _today_jst_date_iso()),
-        "answer_status": str(payload.get("answer_status") or "unanswered"),
-        "answer_summary": payload.get("answer_summary") if isinstance(payload.get("answer_summary"), Mapping) else None,
-        "question": question,
-        "delivery": payload.get("delivery") if isinstance(payload.get("delivery"), Mapping) else {},
-        "progress": payload.get("progress") if isinstance(payload.get("progress"), Mapping) else {},
-    }
-
-
 async def _build_startup_snapshot_payload(
     user_id: str,
     *,
@@ -184,14 +161,6 @@ async def _build_startup_snapshot_payload(
             "badge": {"show": False, "count": 0},
             "popup_notice": None,
         },
-        "today_question_light": {
-            "service_day_key": _today_jst_date_iso(),
-            "answer_status": "unanswered",
-            "answer_summary": None,
-            "question": None,
-            "delivery": {},
-            "progress": {},
-        },
     }
 
     home_state_projection_default = {
@@ -204,7 +173,6 @@ async def _build_startup_snapshot_payload(
         "notice_popup_notice_id": None,
         "sections": {
             "notices_current": defaults["notices_current"],
-            "today_question_current": defaults["today_question_light"],
         },
         "errors": {},
     }
@@ -233,14 +201,8 @@ async def _build_startup_snapshot_payload(
                 if isinstance(home_sections.get("notices_current"), Mapping)
                 else defaults["notices_current"]
             )
-            sections["today_question_light"] = _light_today_question_payload(
-                home_sections.get("today_question_current")
-                if isinstance(home_sections.get("today_question_current"), Mapping)
-                else defaults["today_question_light"]
-            )
             if error:
                 errors["notices_current"] = error
-                errors["today_question_light"] = error
             continue
         sections[name] = payload
         if error:
@@ -254,11 +216,6 @@ async def _build_startup_snapshot_payload(
     emotion_log_unread = sections.get("emotion_log_unread") if isinstance(sections.get("emotion_log_unread"), Mapping) else {}
     myweb_unread = sections.get("myweb_unread") if isinstance(sections.get("myweb_unread"), Mapping) else {}
     notices_current = sections.get("notices_current") if isinstance(sections.get("notices_current"), Mapping) else {}
-    if "today_question_light" in sections and "today_question" not in sections:
-        sections["today_question"] = sections["today_question_light"]
-
-    today_question = sections.get("today_question_light") if isinstance(sections.get("today_question_light"), Mapping) else {}
-
     unread_by_type = myweb_unread.get("unread_by_type") if isinstance(myweb_unread.get("unread_by_type"), Mapping) else {}
     startup_flags = {
         "has_any_emotion_log_unread": bool(emotion_log_unread.get("feed_unread") or emotion_log_unread.get("requests_unread")),
@@ -266,7 +223,6 @@ async def _build_startup_snapshot_payload(
         "has_any_friends_unread": bool(emotion_log_unread.get("feed_unread") or emotion_log_unread.get("requests_unread")),
         "has_any_myweb_unread": any(bool(unread_by_type.get(k)) for k in ("daily", "weekly", "monthly", "selfStructure")),
         "has_popup_notice": bool(notices_current.get("popup_notice")),
-        "today_question_answered": str(today_question.get("answer_status") or "unanswered") == "answered",
     }
 
     payload = {

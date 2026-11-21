@@ -14,7 +14,7 @@ Deprecated rows remain listed until their compatibility window is closed.
 | POST | `/emlis/threads/{thread_id}/corrections` | `emlis.thread.interpretation_correction.v1` | `false` |  | Owned completed natural reply; exact target excerpt and required user explanation; separate correction source and unchanged question budget |
 | GET | `/app/bootstrap` | `app.bootstrap.v1` | `false` |  | Runtime guardrail / maintenance switch |
 | GET | `/app/startup` | `app.startup.v1` | `false` |  | Auth-required startup bundle for unread / popup / lightweight prefetch only; Home hydration moved to /home/state |
-| GET | `/home/state` | `home.state.v1` | `false` |  | Auth-required Home hydration bundle (input summary + global summary + notices + today question + reflection quota); app.startup intentionally excludes heavy Home counters |
+| GET | `/home/state` | `home.state.v1` | `false` |  | Auth-required Home hydration bundle. DeepInsight state is read through its own route. |
 | POST | `/ops/client-events` | `ops.client_events.write.v1` | `false` |  | Best-effort RN client observability event ingest; no product state mutation |
 | POST | `/emotion/submit` | `emotion.submit.v1` | `false` |  | Legacy payloads remain accepted. Optional receive_emlis_questions is a strict boolean, default true; captured with this input and used for new Q3 question delivery only, independent of notifications/history access. Existing thread choices remain fixed. input_feedback.comment_text and public response keys stay stable; the private saved choice is not a response/source field. |
 | GET | `/emotion/reflection/quota` | `emotion.reflection.quota.v1` | `true` | /emotion/piece/quota | Current-month publish quota / capability probe for Home reflection flow |
@@ -54,13 +54,9 @@ Deprecated rows remain listed until their compatibility window is closed.
 | GET | `/mymodel/qna/echoes/history` | `mymodel.qna.echoes.history.v1` | `true` | /piece/resonances/history |  |
 | GET | `/mymodel/qna/discoveries/history` | `mymodel.qna.discoveries.history.v1` | `true` |  | Retired compatibility route |
 | POST | `/activity/login` | `activity.login.v1` | `false` |  | Client login heartbeat / streak touch |
-| GET | `/today-question/current` | `today_question.current.v1` | `false` |  |  |
-| GET | `/today-question/status` | `today_question.status.v1` | `false` |  | Lightweight Today Question popup/badge state without question body or choices |
-| POST | `/today-question/answers` | `today_question.answers.create.v1` | `false` |  |  |
-| GET | `/today-question/history` | `today_question.history.list.v1` | `false` |  |  |
-| PATCH | `/today-question/history/{answer_id}` | `today_question.history.patch.v1` | `false` |  |  |
-| GET | `/today-question/settings` | `today_question.settings.read.v1` | `false` |  |  |
-| PATCH | `/today-question/settings` | `today_question.settings.patch.v1` | `false` |  |  |
+| GET | `/deep-insight` | `deep_insight.state.v1` | `false` |  | Owner-only pending questions, recent history and availability |
+| POST | `/deep-insight/questions` | `deep_insight.questions.issue.v1` | `false` |  | One new question per eligible lane per JST day, if a grounded candidate is available |
+| POST | `/deep-insight/answers` | `deep_insight.answers.submit.v1` | `false` |  | Owner-only answer to an issued question. Identical retry returns the saved answer |
 | GET | `/notices/current` | `notice.current.v1` | `false` |  |  |
 | GET | `/notices/history` | `notice.history.list.v1` | `false` |  |  |
 | POST | `/notices/read` | `notice.read.mark.v1` | `false` |  |  |
