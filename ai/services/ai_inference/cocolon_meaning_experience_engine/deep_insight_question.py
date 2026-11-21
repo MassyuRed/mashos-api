@@ -94,10 +94,9 @@ _THEME_COMPARE_SYSTEM_MESSAGE = f"""questionが、historyの既出の問いと�
 
 _THEME_REPAIR_SYSTEM_MESSAGE = f"""日本語の短い質問を一つ書き直してください。
 {_DATA_BOUNDARY}
-sceneは質問の先に表示済みです。questionにはsceneやそれを言い換えた前置きを入れません。draftは不採用になった文です。
-判断する対象targetについて、尋ねる点angleに合うようにformから必要な部分だけ使います。例えば、聞きたいのが基準なら対象と基準を一つ尋ね、条件なら対象の行動に変える条件を一つ尋ねます。
-formが完成した質問の例なら、その対象と求める答えを保ちます。元の文で聞いている対象や時点がずれていれば、例に戻して直します。
-元の文に余分な語や前提があっても引き継ぎません。返すのは {{"question":"短く丁寧な質問文？"}} の形だけです。"""
+sceneは表示済みです。同じ場面を繰り返さず、angleへの答えを得るためにtargetをどう聞くか考えます。
+formが例文なら、何についてどんな答えを求めるかを保ちます。基準なら目安、条件なら行動を変えるきっかけを聞きます。
+問いだけを、丁寧な日本語の {{"question":"〜ますか？"}} の形で返します。"""
 
 
 PLAN_SYSTEM_MESSAGE = f"""Emlisの「わたしを知る問い」で、本人に確かめる一点を選びます。日本語のJSONだけを返します。
@@ -655,7 +654,7 @@ async def _generate_theme(prepared, material, generate):
         if attempt or reason == "repeat":
             return QuestionRun(None, "rejected")
         raw = await generate(_THEME_REPAIR_SYSTEM_MESSAGE, {
-            **writing, "draft": raw[:400], "reason": reason,
+            **writing, "reason": reason,
         })
 
 

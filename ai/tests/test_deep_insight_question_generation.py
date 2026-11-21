@@ -275,7 +275,7 @@ def test_theme_provider_sees_only_selected_direction_and_previous_question_wordi
     writer, reader, comparer = [payload for _, payload in calls]
     direction = {"target": "最初のひと言", "angle": "話し始めるために最初にすること"}
     assert writer == {**direction, "scene": "初対面の人と話すとき",
-                      "form": "何から始めるかを聞く。文型「〜するために、まず何をしますか？」"}
+                      "form": "最初にどんなひと言をかけますか？"}
     assert reader == {
         **direction, "theme": theme, "scene": "初対面の人と話すとき",
         "question": result.candidate.text,
@@ -462,6 +462,7 @@ def test_theme_reviews_a_repaired_question_without_changing_its_issued_key():
         _THEME_WRITE_SYSTEM_MESSAGE, _THEME_REPAIR_SYSTEM_MESSAGE, _THEME_READ_SYSTEM_MESSAGE,
     ]
     assert calls[1][1]["reason"] == "surface"
+    assert "draft" not in calls[1][1]
     assert calls[2][1]["question"] == result.candidate.text
 
 

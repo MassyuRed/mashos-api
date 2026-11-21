@@ -202,6 +202,8 @@ THEME_DECISION_TARGETS = {
 # These pairs need a more precise answer target than the general angle.
 THEME_SCENE_WORDING = {
     ("人間関係", "thanks", "boundary"): "助けてもらった相手に、お礼の品を贈ろうと思ったとき",
+    ("自分の価値観", "ownership", "boundary"): "人から勧められたことを少し試そうと思ったとき",
+    ("仕事・学び", "routine", "change"): "作業の途中で集中が切れたとき",
     ("日々の過ごし方", "screen", "change"): "ふだんの生活でスマートフォンを見る時間が決まっているとき",
 }
 
@@ -222,6 +224,7 @@ THEME_TARGET_ANGLES = {
 }
 
 THEME_TARGET_FORMS = {
+    ("人間関係", "new_people", "first_action"): "最初にどんなひと言をかけますか？",
     ("人間関係", "personal_topic", "outcome"): "相手の反応を聞く。文型「相手がどんな反応をすると、〜してよかったと思いますか？」",
     ("仕事・学び", "new_method", "outcome"): "続けたいと思う手応えを聞く。文型「どんな結果なら、〜を続けたいと思いますか？」",
     ("日々の過ごし方", "sleep", "change"): "夜の予定を切り上げる条件を聞く。文型「どんなときに、〜を切り上げますか？」",
@@ -232,14 +235,17 @@ THEME_TARGET_FORMS = {
     ("日々の過ごし方", "screen", "boundary"): "見る時間の上限や切り上げる目安を一つ聞く。",
     ("これからのこと", "milestone", "boundary"): "一つの区切りまでに進める範囲の決め方を聞く。",
     ("人間関係", "thanks", "boundary"): "品物にどのくらいまでなら無理なくお金を使えますか？",
-    ("自分の価値観", "ownership", "boundary"): "勧めを試すなら、どの程度の負担まで引き受けられますか？",
+    ("自分の価値観", "ownership", "boundary"): "どの程度の負担までなら、引き受けてもいいと思いますか？",
     ("自分の価値観", "measure", "change"): "どんなことがあれば、自分の評価の基準を見直しますか？",
     ("仕事・学び", "new_method", "cue"): "試す前に、慣れたやり方と何を比べておきますか？",
     ("仕事・学び", "experiment", "priority"): "どちらのやり方を使うか、何を基準に決めますか？",
-    ("仕事・学び", "finish", "priority"): "進め方と結果のどちらから振り返るか、何を目安に決めますか？",
+    ("仕事・学び", "finish", "priority"): "進め方と結果のどちらを先に見るか、何を目安に決めますか？",
+    ("仕事・学び", "routine", "change"): "どんなときに、作業を続ける代わりにいったん区切りを入れますか？",
+    ("日々の過ごし方", "tired_evening", "boundary"): "休む時間を残しながら、家の用事はどこまでできそうですか？",
     ("日々の過ごし方", "screen", "change"): "どんな変化があれば、今と違う時間帯に見るようにしますか？",
     ("これからのこと", "several_goals", "priority"): "どれから取りかかるか、何を基準に決めますか？",
     ("これからのこと", "change_habits", "priority"): "今の習慣のうち、新しい暮らしでも続けるものは何を目安に選びますか？",
+    ("これからのこと", "uncertainty", "cue"): "どんな今後の予定が分かれば、準備することを決めやすくなりますか？",
 }
 
 # These openings only repeat the authored scene for the specified angle.
@@ -250,6 +256,7 @@ THEME_REPEATED_INTRODUCTIONS = {
     ("自分の価値観", "giving_credit", "first_action"): ("感謝や評価を伝える際",),
     ("仕事・学び", "finish", "change"): ("一区切りついた振り返りでは",),
     ("日々の過ごし方", "move", "first_action"): ("体を動かす時間を日常に組み込むために",),
+    ("仕事・学び", "finish", "priority"): ("作業の振り返りで",),
 }
 
 # The displayed scene itself already presents the two alternatives.
