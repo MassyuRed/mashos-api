@@ -27,6 +27,8 @@ _QUESTION_PUNCTUATION = re.compile(r"[。！？!?\n\r]")
 _THEME_QUESTION_WORD = re.compile(r"何(?!か)|どんな|どの|どう|どちら|どれ|どこ|いつ|いくつ|いくら|誰(?!か)")
 _THEME_QUESTION_END = re.compile(r"(?:ます|です|でしょう|ません)か[？?]\Z")
 _THEME_UNMARKED_QUESTION_END = re.compile(r"(?:ます|です|でしょう|ません)か。?\Z")
+_THEME_QUOTED_QUESTION = re.compile(r"「([^「」\r\n]+)」")
+_THEME_SINGLE_QUOTED_QUESTION = re.compile(r"\{[ \t]*'question'[ \t]*:[ \t]*'([^'\r\n]+)'[ \t]*\}")
 _THEME_ASSISTANT_NAME = re.compile(r"emlis|エムリス", re.IGNORECASE)
 _THEME_UNBOUND_CHANGE = re.compile(r"^(?:どんな(?:とき|時|場合)|どういう(?:とき|時|場合)|いつ)に?(?:変え|切り替え)ますか[？?]$")
 _THEME_UNBOUND_DECISION = re.compile(
@@ -434,11 +436,21 @@ def _accept_plan(value, *, lane, sources):
 
 def _accept_surface(raw, *, plan, theme):
     value = _json_object(raw)
+    if value is None and theme and isinstance(raw, str):
+        # The natural model sometimes wraps its one question in Japanese
+        # quotation marks or renders its single field with apostrophes.
+        wrapped = raw.strip()
+        match = _THEME_QUOTED_QUESTION.fullmatch(wrapped) or _THEME_SINGLE_QUOTED_QUESTION.fullmatch(wrapped)
+        if match:
+            value = {"question": match.group(1)}
     if value is None or set(value) != {"question"} or not isinstance(value["question"], str):
         return None
     body = value["question"].strip()
-    if theme and _THEME_UNMARKED_QUESTION_END.search(body):
-        body = body.removesuffix("。") + "？"
+    if theme:
+        if "〜" in body or "～" in body:
+            return None
+        if _THEME_UNMARKED_QUESTION_END.search(body):
+            body = body.removesuffix("。") + "？"
     if not 7 <= len(body) <= 280 or body[-1:] not in "？?" or not _safe_text(body):
         return None
     if plan.is_record_reason:

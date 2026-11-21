@@ -229,7 +229,7 @@ def select_theme_angle(scene, angle):
 
 
 def theme_run(theme, question, *, questions=(), reading=None, comparison=None, extra=None,
-              scene=None, target=None, repair=None, choose_theme=lambda values: values[0]):
+              scene=None, target=None, repair=None, raw_write=False, choose_theme=lambda values: values[0]):
     original = {"questions": questions, **(extra or {})}
     prepared, sources = prepare_question_material(
         original, lane="theme", theme=theme, choose_theme=choose_theme,
@@ -241,7 +241,7 @@ def theme_run(theme, question, *, questions=(), reading=None, comparison=None, e
         if system == _THEME_PLAN_SYSTEM_MESSAGE:
             return json.dumps({"scene": scene, "target": target}, ensure_ascii=False)
         if system == _THEME_WRITE_SYSTEM_MESSAGE:
-            return json.dumps({"question": question}, ensure_ascii=False)
+            return question if raw_write else json.dumps({"question": question}, ensure_ascii=False)
         if system == _THEME_REPAIR_SYSTEM_MESSAGE:
             return json.dumps({"question": repair or question}, ensure_ascii=False)
         if system == _THEME_COMPARE_SYSTEM_MESSAGE:
@@ -263,6 +263,19 @@ def test_theme_needs_no_history_but_an_unrelated_meal_is_rejected():
     assert [system for system, _ in calls] == [_THEME_WRITE_SYSTEM_MESSAGE, _THEME_READ_SYSTEM_MESSAGE]
     result, calls = theme_run(theme, "朝ごはんに何を食べたいですか？")
     assert result.disposition == "rejected" and len(calls) == 2
+
+
+@pytest.mark.parametrize("raw", [
+    "「最初にどんな話題を出しますか？」",
+    "{'question': '最初にどんな話題を出しますか？'}",
+])
+def test_theme_reads_single_question_wrappers_but_still_checks_the_display(raw):
+    selected, calls = theme_run("人間関係", raw, raw_write=True)
+    assert selected.candidate.text == "初対面の人と話すとき、最初にどんな話題を出しますか？"
+    assert calls[1][0] == _THEME_READ_SYSTEM_MESSAGE
+
+    rejected, _ = theme_run("人間関係", raw, raw_write=True, reading={"verdict": "reject", "reason": "angle"})
+    assert rejected.disposition == "rejected"
 
 
 def test_theme_provider_sees_only_selected_direction_and_previous_question_wording():
