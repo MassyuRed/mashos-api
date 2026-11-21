@@ -124,6 +124,7 @@ async def evaluate(selected, output, *, generate: Generate | None = None, transp
                       "targets": question.THEME_DECISION_TARGETS,
                       "scene_intents": question.THEME_SCENE_ANGLE_TARGETS,
                       "scene_wording": sorted(question.THEME_SCENE_WORDING.items()),
+                      "equivalent_positions": question.THEME_EQUIVALENT_POSITIONS,
                       "forms": question.THEME_QUESTION_FORMS,
                       "overrides": sorted(question.THEME_TARGET_ANGLES.items()),
                       "form_overrides": sorted(question.THEME_TARGET_FORMS.items()),
@@ -132,7 +133,7 @@ async def evaluate(selected, output, *, generate: Generate | None = None, transp
                   }),
                   "fictional": True, "transport": transport if generate is not None else "dry_run",
                   "provider_calls": generate is not None,
-                  "max_provider_calls": 6 * len(selected), "same_input_retries": 0})
+                  "max_provider_calls": 8 * len(selected), "same_input_retries": 0})
     if generate is None:
         for case in selected:
             emit(output, {"kind": "case", **asdict(case)})

@@ -8,9 +8,10 @@ import pytest
 from cocolon_meaning_experience_engine.deep_insight_question import (
     ANSWER_READ_SYSTEM_MESSAGE, PLAN_SYSTEM_MESSAGE, READ_SYSTEM_MESSAGE,
     RECORD_REASON_READ_SYSTEM_MESSAGE, WRITE_SYSTEM_MESSAGE,
-    _THEME_COMPARE_SYSTEM_MESSAGE, _THEME_PLAN_SYSTEM_MESSAGE, _THEME_READ_SYSTEM_MESSAGE,
+    _THEME_COMPARE_PAIR_SYSTEM_MESSAGE, _THEME_COMPARE_SYSTEM_MESSAGE,
+    _THEME_PLAN_SYSTEM_MESSAGE, _THEME_READ_SYSTEM_MESSAGE,
     _THEME_REPAIR_SYSTEM_MESSAGE, _THEME_WRITE_SYSTEM_MESSAGE,
-    _bind_anchor, _display_citation_matches, _review_theme_candidate, _theme_position_key,
+    _bind_anchor, _display_citation_matches, _review_theme_candidate, _theme_has_new_answer, _theme_position_key,
     generate_question, prepare_question_material,
 )
 
@@ -308,6 +309,44 @@ def test_theme_distinguishes_two_ordering_questions_by_their_answer_targets():
     assert calls[-1][0] == _THEME_COMPARE_SYSTEM_MESSAGE
     assert calls[-1][1]["target"] == "暮らしを変えても残しておきたい習慣"
     assert calls[-1][1]["history"][0]["target"] == "取りかかる順番"
+
+
+@pytest.mark.parametrize(("issued_scene", "next_scene"), [
+    ("new_method", "experiment"), ("experiment", "new_method"),
+])
+def test_theme_avoids_an_equivalent_outcome_in_another_scene(issued_scene, next_scene):
+    theme = "仕事・学び"
+    key = _theme_position_key(theme, issued_scene, "outcome")
+
+    def choose(options):
+        if len(options[0]) == 4:
+            return next(option for option in options if option[0] == next_scene)
+        assert "outcome" not in {angle for angle, _ in options}
+        return options[0]
+
+    prepared, _ = prepare_question_material(
+        {"questions": [{"question_key": key}]}, lane="theme", theme=theme, choose_theme=choose,
+    )
+    assert prepared["question_key"] != _theme_position_key(theme, next_scene, "outcome")
+
+
+def test_theme_checks_cited_wording_then_rechecks_the_rest_of_the_history():
+    question = {"question": "守りたい約束と目の前の都合がぶつかったとき、どこまで負担を引き受けますか？"}
+    earlier = {"id": 1, "question": "人に勧められたことを試すとき、どこまで負担を引き受けますか？"}
+    other = {"id": 2, "question": "自分のルールを見直そうと決めるのはどんなときですか？"}
+    responses = iter([{"verdict": "repeat", "id": 1}, {"verdict": "distinct"}, {"verdict": "distinct"}])
+    calls = []
+
+    async def generate(system, payload):
+        calls.append((system, payload))
+        return json.dumps(next(responses))
+
+    assert asyncio.run(_theme_has_new_answer(question, [earlier, other], generate))
+    assert calls == [
+        (_THEME_COMPARE_SYSTEM_MESSAGE, {**question, "history": [earlier, other]}),
+        (_THEME_COMPARE_PAIR_SYSTEM_MESSAGE, {**question, "previous": earlier["question"]}),
+        (_THEME_COMPARE_SYSTEM_MESSAGE, {**question, "history": [other]}),
+    ]
 
 
 @pytest.mark.parametrize("theme", THEME_SCENES)

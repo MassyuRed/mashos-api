@@ -207,6 +207,12 @@ THEME_SCENE_WORDING = {
     ("日々の過ごし方", "screen", "change"): "ふだんの生活でスマートフォンを見る時間が決まっているとき",
 }
 
+# Both positions ask what trial result would make the person keep using
+# the new method. Keep their stored keys and use either to block the pair.
+THEME_EQUIVALENT_POSITIONS = {
+    "仕事・学び": ((("new_method", "outcome"), ("experiment", "outcome")),),
+}
+
 THEME_TARGET_ANGLES = {
     ("人間関係", "personal_topic", "outcome"): "話した場合に打ち明けてよかったと思える相手の反応",
     ("自分の価値観", "ownership", "priority"): "人からの勧めに応じるかどうかを自分で決める基準",
@@ -239,9 +245,10 @@ THEME_TARGET_FORMS = {
     ("自分の価値観", "measure", "change"): "どんなことがあれば、自分の評価の基準を見直しますか？",
     ("仕事・学び", "new_method", "cue"): "試す前に、慣れたやり方と何を比べておきますか？",
     ("仕事・学び", "experiment", "priority"): "どちらのやり方を使うか、何を基準に決めますか？",
-    ("仕事・学び", "finish", "priority"): "進め方と結果のどちらを先に見るか、何を目安に決めますか？",
+    ("仕事・学び", "finish", "priority"): "進め方と結果のどちらから振り返るか、何を目安に決めますか？",
     ("仕事・学び", "routine", "change"): "どんなときに、作業を続ける代わりにいったん区切りを入れますか？",
     ("日々の過ごし方", "tired_evening", "boundary"): "休む時間を残しながら、家の用事はどこまでできそうですか？",
+    ("日々の過ごし方", "between_tasks", "outcome"): "次の用事に移るとき、どんな変化があれば、合間の時間をうまく使えたと感じますか？",
     ("日々の過ごし方", "screen", "change"): "どんな変化があれば、今と違う時間帯に見るようにしますか？",
     ("これからのこと", "several_goals", "priority"): "どれから取りかかるか、何を基準に決めますか？",
     ("これからのこと", "change_habits", "priority"): "今の習慣のうち、新しい暮らしでも続けるものは何を目安に選びますか？",
@@ -257,6 +264,7 @@ THEME_REPEATED_INTRODUCTIONS = {
     ("仕事・学び", "finish", "change"): ("一区切りついた振り返りでは",),
     ("日々の過ごし方", "move", "first_action"): ("体を動かす時間を日常に組み込むために",),
     ("仕事・学び", "finish", "priority"): ("作業の振り返りで",),
+    ("仕事・学び", "routine", "change"): ("集中が途切れたとき", "集中が途切れた際"),
 }
 
 # The displayed scene itself already presents the two alternatives.
