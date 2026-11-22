@@ -1851,6 +1851,11 @@ def repeated_record_node_dates(material, nodes):
     from collections import Counter
 
     fields = _original_field_records(material)
+    received = material.get('received_answer_thoughts', ())
+    if len(received) > 1:
+        # v24 qualifies each supplemental answer against its own thought.
+        # For these captions the bound answer shares the original record's date.
+        fields.update((scope['answer_field'], scope['record']) for scope in received)
     owners = []
     for node in nodes:
         source_records = {fields.get(root['field']) for unit in node['units'] for root in unit['evidence']}

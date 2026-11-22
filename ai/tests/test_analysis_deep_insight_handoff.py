@@ -144,10 +144,8 @@ def v24_provider(calls, *, received_case=False):
                     nodes=[dict(node_id=f'n{index}', units=node['units']) for index, node in enumerate(ordered, 1)])
         elif phase == 'NODES':
             nodes = {}
-            protected = set()
-            if received_prepared is not None:
-                binding, = material['received_answer_thoughts']
-                protected.update((binding['thought_field'], binding['action_field']))
+            protected = {scope[key] for scope in material.get('received_answer_thoughts', ())
+                         for key in ('thought_field', 'action_field')}
             for node in material['plan']['nodes']:
                 ref = node['node_id']
                 spec = schema['nodes']['properties'][ref]['properties']
@@ -170,7 +168,7 @@ def v24_provider(calls, *, received_case=False):
                     nodes[ref].update(title=text, meaning='')
             value.update(plan_sha256=schema['plan_sha256']['enum'][0], nodes=nodes)
             for node in material['plan']['nodes']:
-                if node['units'][0]['evidence'][0]['field'] not in protected:
+                if received_prepared is None or node['units'][0]['evidence'][0]['field'] not in protected:
                     continue
                 wrong_meaning = deepcopy(value)
                 wrong_meaning['nodes'][node['node_id']]['meaning'] = '発表後、褒められたことを重く受け止めた。'
@@ -427,3 +425,19 @@ def test_v24_whole_plan_keeps_two_answered_thoughts_and_actions_separate(natural
     answers[0]['field'], answers[1]['field'] = answers[1]['field'], answers[0]['field']
     with pytest.raises(admission.AnalysisSemanticMapError):
         admission.admit_semantic_node_local_v4_plan_response(prepared, crossed)
+
+    pytest.importorskip('lmformatenforcer')
+    calls = []
+    response = run(v24_provider(calls)(prepared))
+    artifact, coverage = semantic.build_semantic_map(prepared, response)
+    assert [phase for phase, _ in calls] == ['PLAN', 'NODES', 'RELATIONS']
+    assert coverage['mapped_count'] == 3
+    projection = artifact.safe_projection(authenticated_owner_scope=user)
+    assert not projection['edges']
+    actions = [node for node in projection['nodes'] if node['title'] == action]
+    assert len(actions) == 2
+    assert len({node['summary'] for node in actions}) == 2
+    assert all(node['summary'].endswith(f'の記録：\n{action}') or
+               node['summary'].endswith(f'）：\n{action}') for node in actions)
+    private_nodes = {node['node_ref']: node for node in artifact.private_evidence()['graph']['nodes']}
+    assert {tuple(private_nodes[node['node_ref']]['record_refs']) for node in actions} == {(original,), (second,)}
