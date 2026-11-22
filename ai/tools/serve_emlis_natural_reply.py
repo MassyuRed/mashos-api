@@ -691,6 +691,48 @@ def _semantic_relation_fact_parts(material):
     return parts
 
 
+def _received_answer_plan_slots(material, pairs, obj):
+    """Bind qualified whole-map slots to offered source choices, without parsing instructions."""
+    guide = material['received_answer_plan']
+    scopes = material.get('received_answer_thoughts')
+    if (material.get('author_profile') != OCCURRENCE_V24_PROFILE
+            or 'history_stage' in material or type(scopes) is not list or len(scopes) < 2
+            or type(guide) is not list or not 1 <= len(guide) <= 12):
+        raise ValueError('semantic_received_answer_plan_invalid')
+    offered = {pair['properties']['field']['enum'][0]: pair['properties']['quote']['enum'] for pair in pairs}
+    fixed = {scope[key] for scope in scopes for key in ('thought_field', 'answer_field', 'action_field')}
+    fixed.update(field['field'] for field in material['fields']
+                 if field['source_role'] == 'USER_INTERPRETATION_CORRECTION')
+    seen, nodes = set(), []
+
+    def slots(items):
+        return dict(type='array', items=items, additionalItems=False,
+                    minItems=len(items), maxItems=len(items))
+
+    for i, node in enumerate(guide, 1):
+        if (type(node) is not dict or set(node) != {'node_id', 'units'} or node['node_id'] != f'n{i}'
+                or type(node['units']) is not list or not 1 <= len(node['units']) <= 2):
+            raise ValueError('semantic_received_answer_plan_invalid')
+        units = []
+        for unit in node['units']:
+            if (type(unit) is not dict or set(unit) != {'evidence'}
+                    or type(unit['evidence']) is not list or len(unit['evidence']) != 1):
+                raise ValueError('semantic_received_answer_plan_invalid')
+            root, = unit['evidence']
+            if (type(root) is not dict or set(root) != {'field', 'quote'} or type(root['field']) is not int
+                    or root['field'] in seen or root['quote'] not in offered.get(root['field'], ())):
+                raise ValueError('semantic_received_answer_plan_invalid')
+            field, quote = root['field'], root['quote']
+            seen.add(field)
+            units.append(obj(dict(evidence=slots([obj(dict(
+                quote=dict(type='string', enum=[quote] if field in fixed else offered[field]),
+                field=dict(type='integer', enum=[field])))]))))
+        nodes.append(obj(dict(node_id=dict(type='string', enum=[node['node_id']]), units=slots(units))))
+    if seen != set(offered):
+        raise ValueError('semantic_received_answer_plan_invalid')
+    return slots(nodes)
+
+
 def _semantic_node_local_v4_schema(material, pairs, unknown_pairs, *, leaf=False, record_owners=(), bound_titles=False, ordered_titles=False):
     """Three private author shapes; no text repair or semantic certification."""
     from copy import deepcopy
@@ -719,7 +761,9 @@ def _semantic_node_local_v4_schema(material, pairs, unknown_pairs, *, leaf=False
             if type(scope) is not str or not re.fullmatch(r'[0-9a-f]{64}', scope):
                 raise ValueError('semantic_plan_choice_scope_invalid')
             props['source_choices_sha256'] = dict(type='string', enum=[scope])
-        props['nodes'] = dict(type='array', items=node, minItems=max(1, len(record_owners)), maxItems=12)
+        props['nodes'] = (_received_answer_plan_slots(material, pairs, obj)
+            if 'received_answer_plan' in material else
+            dict(type='array', items=node, minItems=max(1, len(record_owners)), maxItems=12))
         return root(phase, props)
     if phase == 'RELATIONS' and author_profile in {OCCURRENCE_V8_PROFILE, *SOURCE_CUED_PROFILES}:
         # The model sees one ordered copy of the evidence. Reconstruct the
@@ -1198,8 +1242,8 @@ def semantic_output_schema(messages):
     return obj(properties)
 
 
-def _if_json_schema_parser(schema, config):
-    """Keep exact JSON-escaped source quotes inside the existing IF grammar.
+def _ordered_source_json_schema_parser(schema, config):
+    """Preserve exact JSON-escaped source quotes and ordered object tuples.
 
     The pinned upstream parser compares decoded enum strings to raw JSON
     characters. Isolate its namespace so this correction cannot change the
@@ -1261,10 +1305,9 @@ def _if_json_schema_parser(schema, config):
     class EmptyAwareList(module.ListParsingState):
         def add_character(self, char):
             if isinstance(self.list_member_type, list):
-                # Only IF's fixed prefixItems object tuples use this path;
-                # nested values keep upstream behavior.
+                # Only explicitly fixed object tuples use this path.
                 if not self.list_member_type or any(not is_object_slot(item) for item in self.list_member_type):
-                    raise ValueError('if_object_tuple_invalid')
+                    raise ValueError('source_object_tuple_invalid')
                 result = module.PrimitiveParsingState.add_character(self, char)
                 if char == '[':
                     result.seen_list_opener = True
@@ -1288,19 +1331,37 @@ def _if_json_schema_parser(schema, config):
     module.StringParsingState = ExactJsonEnum
     module.ListParsingState = EmptyAwareList
     generic_get_parser = module.get_parser
-    def if_get_parser(root, value):
+    def ordered_get_parser(root, value):
         prefix = value.extras.get('prefixItems') if value.type == 'array' else None
         if prefix is not None:
             if (type(prefix) is not list or not prefix
                     or value.minItems != len(prefix) or value.maxItems != len(prefix)):
-                raise ValueError('if_object_tuple_invalid')
+                raise ValueError('source_object_tuple_invalid')
             members = [module.JsonSchemaObject(**item) for item in prefix]
             if any(not is_object_slot(item) for item in members):
-                raise ValueError('if_object_tuple_invalid')
+                raise ValueError('source_object_tuple_invalid')
             return EmptyAwareList(root, members, len(members), len(members))
         return generic_get_parser(root, value)
-    module.get_parser = if_get_parser
+    module.get_parser = ordered_get_parser
     return module.JsonSchemaParser(schema, config=config)
+
+
+def _if_json_schema_parser(schema, config):
+    return _ordered_source_json_schema_parser(schema, config)
+
+
+def _lmfe_object_tuples(schema):
+    # The native LMFE schema model reads prefixItems from extras but cannot
+    # validate draft-07 list-valued items. The transport grammar stays draft-07.
+    translated = dict(schema)
+    if 'properties' in schema:
+        translated['properties'] = {name: _lmfe_object_tuples(spec)
+                                    for name, spec in schema['properties'].items()}
+    if type(schema.get('items')) is list:
+        translated['prefixItems'] = [_lmfe_object_tuples(item) for item in schema['items']]
+        translated['items'] = False
+        del translated['additionalItems']
+    return translated
 
 
 @lru_cache(maxsize=512)
@@ -2402,6 +2463,8 @@ def _semantic_logical_json_parser(messages, alphabet):
     # coverage only; they never substitute for evidence field IDs.
     config.force_json_field_order = True
     material = json.loads(messages[1]['content'])
+    if (material.get('author_phase') == 'PLAN' and 'received_answer_plan' in material):
+        return _ordered_source_json_schema_parser(_lmfe_object_tuples(schema), config)
     if material.get('model_schema') == NODE_LOCAL_V4_SCHEMA and material.get('author_phase') != 'PLAN':
         ids = tuple(n['node_id'] for n in material.get('candidate_nodes', ()))
         return _semantic_unique_json_schema_parser(schema, config, bound_node_ids=ids,

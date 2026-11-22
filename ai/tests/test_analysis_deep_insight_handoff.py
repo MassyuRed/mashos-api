@@ -435,8 +435,12 @@ def test_v24_whole_plan_keeps_two_answered_thoughts_and_actions_separate(natural
     material = json.loads(prepared.material_json)
     received_scopes = sorted(material['received_answer_thoughts'], key=lambda scope: scope['record'])
     assert len(received_scopes) == 2
-    prompt, _ = admission.semantic_node_local_v4_wire_messages(prepared, 'PLAN')
-    packet = json.JSONDecoder().raw_decode(prompt['content'].split('JSONのみ返します。\n', 1)[1])[0]
+    messages = admission.semantic_node_local_v4_wire_messages(prepared, 'PLAN')
+    prompt, inputs = messages
+    shown = json.loads(inputs['content'])
+    packet = dict(schema_version=admission._semantic_v4_schema('PLAN'),
+                  source_choices_sha256=shown['source_choices_sha256'],
+                  nodes=shown['received_answer_plan'])
     plan = admission.admit_semantic_node_local_v4_plan_response(prepared, packet)
     nodes = [[[part['field'] for part in unit['evidence']] for unit in node['units']] for node in plan['nodes']]
     for scope in received_scopes:
@@ -465,6 +469,18 @@ def test_v24_whole_plan_keeps_two_answered_thoughts_and_actions_separate(natural
     assert json.dumps(titles, ensure_ascii=False, separators=(',', ':')) in node_prompt['content']
 
     pytest.importorskip('lmformatenforcer')
+    assert accepts(packet, messages)
+    coalesced = deepcopy(packet)
+    answering_node = next(node for node in coalesced['nodes'] if len(node['units']) == 2)
+    answering_node['units'][0]['evidence'].extend(answering_node['units'].pop()['evidence'])
+    assert not accepts(coalesced, messages) and not accepts(crossed, messages)
+    ordinary = deepcopy(messages)
+    ordinary[1]['content'] = json.dumps({key: value for key, value in shown.items()
+                                        if key != 'received_answer_plan'}, ensure_ascii=False)
+    assert accepts(coalesced, ordinary)
+    with pytest.raises(admission.AnalysisSemanticMapError, match='analysis_semantic_plan_received_answer_scope_invalid'):
+        admission.admit_semantic_node_local_v4_plan_response(prepared, coalesced)
+
     calls = []
     response = run(v24_provider(calls, plan_packet=packet)(prepared))
     artifact, coverage = semantic.build_semantic_map(prepared, response)
