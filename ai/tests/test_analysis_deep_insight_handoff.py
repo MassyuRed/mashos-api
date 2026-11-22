@@ -109,7 +109,7 @@ def _received_answer_plan(prepared, material, fields, selected, value):
             admission.admit_semantic_node_local_v4_plan_response(prepared, dict(value, nodes=invalid))
 
 
-def v24_provider(calls, *, received_case=False, plan_packet=None):
+def v24_provider(calls, *, received_case=False, plan_packet=None, scoped_node_guide=None):
     received_prepared = None
     received_plan = received_nodes = received_plan_raw = None
 
@@ -169,6 +169,33 @@ def v24_provider(calls, *, received_case=False, plan_packet=None):
                 if root['field'] in protected or (received_prepared is not None and text == ANSWER):
                     nodes[ref].update(title=text, meaning='')
             value.update(plan_sha256=schema['plan_sha256']['enum'][0], nodes=nodes)
+            if scoped_node_guide is not None:
+                prepared, titles = scoped_node_guide
+                ordinary_material = dict(material)
+                del ordinary_material['received_answer_thoughts']
+                ordinary_messages = [messages[0], dict(role='user',
+                    content=json.dumps(ordinary_material, ensure_ascii=False))]
+                ordinary_nodes = probe.semantic_output_schema(ordinary_messages)['properties']['nodes']['properties']
+                for node in material['plan']['nodes']:
+                    ref = node['node_id']
+                    spec = schema['nodes']['properties'][ref]
+                    if ref not in titles:
+                        assert spec == ordinary_nodes[ref]
+                        continue
+                    assert spec['properties']['title']['enum'] == titles[ref]
+                    assert spec['properties']['meaning']['enum'] == ['']
+                    changes = [('meaning', '発表後、褒められたことを重く受け止めた。')]
+                    if len(node['units']) == 2:
+                        changes.append(('title', node['units'][1]['evidence'][0]['quote']))
+                    for field, wrong in changes:
+                        changed = deepcopy(value)
+                        changed['nodes'][ref][field] = wrong
+                        assert accepts(changed, ordinary_messages)
+                        assert not accepts(changed, messages)
+                        with pytest.raises(admission.AnalysisSemanticMapError,
+                                           match='analysis_semantic_node_received_answer_scope_invalid'):
+                            admission.admit_semantic_node_local_v4_nodes_response(
+                                prepared, material['plan'], changed)
             for node in material['plan']['nodes']:
                 if received_prepared is None or node['units'][0]['evidence'][0]['field'] not in protected:
                     continue
@@ -482,7 +509,7 @@ def test_v24_whole_plan_keeps_two_answered_thoughts_and_actions_separate(natural
         admission.admit_semantic_node_local_v4_plan_response(prepared, coalesced)
 
     calls = []
-    response = run(v24_provider(calls, plan_packet=packet)(prepared))
+    response = run(v24_provider(calls, plan_packet=packet, scoped_node_guide=(prepared, titles))(prepared))
     artifact, coverage = semantic.build_semantic_map(prepared, response)
     assert [phase for phase, _ in calls] == ['PLAN', 'NODES', 'RELATIONS']
     assert coverage['mapped_count'] == 3

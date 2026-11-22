@@ -733,6 +733,34 @@ def _received_answer_plan_slots(material, pairs, obj):
     return slots(nodes)
 
 
+def _bind_received_answer_node_prose(material, plan, node_properties, display_sentences):
+    """Use the same source as admission for each answered thought and separate action."""
+    fields = {field['field']: field for field in material['fields']}
+    roots = {node['node_id']: [root for unit in node['units'] for root in unit['evidence']]
+             for node in plan['nodes']}
+    protected = {}
+    for scope in material['received_answer_thoughts']:
+        answer = scope['answer_field']
+        paired = [node for node, evidence in roots.items() if any(root['field'] == answer for root in evidence)]
+        if len(paired) != 1:
+            raise ValueError('semantic_received_answer_node_scope_invalid')
+        protected[paired[0]] = scope['thought_field']
+        action = scope['action_field']
+        for node, evidence in roots.items():
+            if any(root['field'] == action for root in evidence):
+                protected.setdefault(node, action)
+    for node, field in protected.items():
+        root = next((root for root in roots[node] if root['field'] == field), None)
+        if root is None:
+            raise ValueError('semantic_received_answer_node_scope_invalid')
+        quote = root['quote']
+        titles = [quote] if len(quote) <= 80 and quote in display_sentences.get(field, ()) else (
+            _semantic_choice_module().source_node_titles({'fields': [fields[field]]}, [{'evidence': [root]}], ())[:1])
+        properties = node_properties[node]['properties']
+        properties['title'] = dict(type='string', enum=titles)
+        properties['meaning'] = dict(type='string', enum=[''])
+
+
 def _semantic_node_local_v4_schema(material, pairs, unknown_pairs, *, leaf=False, record_owners=(), bound_titles=False, ordered_titles=False):
     """Three private author shapes; no text repair or semantic certification."""
     from copy import deepcopy
@@ -932,6 +960,9 @@ def _semantic_node_local_v4_schema(material, pairs, unknown_pairs, *, leaf=False
                     if 'enum' not in prop:
                         prop['x-source-closers'] = source_runs([evidence['quote']])
     if phase == 'NODES':
+        if (author_profile == OCCURRENCE_V24_PROFILE and 'history_stage' not in material
+                and len(material.get('received_answer_thoughts', ())) > 1):
+            _bind_received_answer_node_prose(material, plan, node_properties, display_sentences)
         digest = signature(plan)
         if author_profile in FACT_REFERENCE_PROFILES:
             request = material.get('fact_source_request_ref')
