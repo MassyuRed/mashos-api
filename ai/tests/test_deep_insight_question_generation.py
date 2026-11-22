@@ -10,7 +10,8 @@ from cocolon_meaning_experience_engine import deep_insight_question
 from cocolon_meaning_experience_engine.deep_insight_question import (
     ANSWER_READ_SYSTEM_MESSAGE, PLAN_SYSTEM_MESSAGE, READ_SYSTEM_MESSAGE,
     RECORD_REASON_READ_SYSTEM_MESSAGE, WRITE_SYSTEM_MESSAGE,
-    _PRIOR_ANSWER_REREAD_MESSAGE, _RECORD_ALTERNATIVE_PLAN_MESSAGE, _RECORD_ALTERNATIVE_READ_MESSAGE,
+    _PRIOR_ANSWER_EVIDENCE_MESSAGE, _PRIOR_ANSWER_SCOPE_MESSAGE,
+    _RECORD_ALTERNATIVE_PLAN_MESSAGE, _RECORD_ALTERNATIVE_READ_MESSAGE,
     _RECORD_ALTERNATIVE_WRITE_MESSAGE,
     _THEME_COMPARE_EVIDENCE_SYSTEM_MESSAGE, _THEME_COMPARE_PAIR_SYSTEM_MESSAGE, _THEME_COMPARE_SYSTEM_MESSAGE,
     _THEME_PLAN_SYSTEM_MESSAGE, _THEME_READ_RETRY_SYSTEM_MESSAGE, _THEME_READ_SYSTEM_MESSAGE,
@@ -59,7 +60,7 @@ def read(plan, *, record_reason=False, **changes):
     return {**result, **changes}
 
 
-def run(original, plan, question=BODY, *, reading=None, rereading=None, alternative=None):
+def run(original, plan, question=BODY, *, reading=None, extraction=None, scope=None, alternative=None):
     prepared, sources = prepare_question_material(original, lane="records", theme=None)
     calls = []
 
@@ -72,8 +73,10 @@ def run(original, plan, question=BODY, *, reading=None, rereading=None, alternat
             response = alternative
         elif system in (WRITE_SYSTEM_MESSAGE, _RECORD_ALTERNATIVE_WRITE_MESSAGE):
             response = {"question": question}
-        elif system.startswith(_PRIOR_ANSWER_REREAD_MESSAGE):
-            response = rereading
+        elif system == _PRIOR_ANSWER_EVIDENCE_MESSAGE:
+            response = extraction
+        elif system.startswith(_PRIOR_ANSWER_SCOPE_MESSAGE):
+            response = scope
         else:
             assert system.startswith((
                 READ_SYSTEM_MESSAGE, ANSWER_READ_SYSTEM_MESSAGE, RECORD_REASON_READ_SYSTEM_MESSAGE,
@@ -446,23 +449,24 @@ def test_answer_alone_has_private_provenance_and_can_supply_a_follow_up():
     assert rejected.disposition == "rejected"
 
 
-@pytest.mark.parametrize(("reader_fields", "rereader_fields", "expected", "calls_expected"), [
-    ({}, {"requested": "本音を言いやすい相手の反応"}, "selected", 4),
-    ({}, {"requested": "意見が違っても本音を言える"}, "rejected", 4),
-    ({}, {"premise_supported": False, "requested": "本音を言いやすい相手の反応"}, "rejected", 4),
-    ({}, {"new_information": False, "requested": "本音を言いやすい相手の反応"}, "rejected", 4),
-    ({}, {"verdict": "reject", "reason": "repeated_question"}, "rejected", 4),
-    ({}, {}, "rejected", 4),
-    ({"source": "a1", "evidence": "相手が最後まで話を聞いてくれると本音を言いやすい"},
-     {"requested": "本音を言いやすい相手の反応"}, "rejected", 3),
-    ({"source": "a3", "evidence": "相手が最後まで話を聞いてくれると本音を言いやすい"},
-     {"verdict": "reject", "reason": "already_answered"}, "rejected", 4),
-    ({"reason": "unsupported_premise"}, None, "rejected", 3),
+@pytest.mark.parametrize(("reader_fields", "extracted", "scope_fields", "expected", "calls_expected"), [
+    ({"source": "a1", "evidence": "意見が違っても本音を言えるときです。"},
+     {"source": None, "evidence": None}, {}, "selected", 5),
+    ({}, {"source": None, "evidence": None}, {"requested": "意見が違っても本音を言える"}, "rejected", 5),
+    ({}, {"source": None, "evidence": None}, {"focus": "RELATIONSHIP"}, "rejected", 5),
+    ({}, {"source": None, "evidence": None}, {"premise_supported": False}, "rejected", 5),
+    ({}, {"source": None, "evidence": None}, {"distinct_question": False}, "rejected", 5),
+    ({}, {"source": None, "evidence": None}, {"verdict": "reject", "reason": "repeated_question"}, "rejected", 5),
+    ({}, None, {}, "rejected", 4),
+    ({}, {"source": "a3", "evidence": None}, {}, "rejected", 4),
+    ({}, {"source": None, "evidence": None, "certainty": "unknown"}, {}, "rejected", 4),
+    ({}, {"source": "a1", "evidence": "相手が最後まで話を聞いてくれると本音を言いやすい"}, {}, "rejected", 4),
+    ({"reason": "unsupported_premise"}, None, {}, "rejected", 3),
 ])
 def test_answer_follow_up_distinguishes_the_new_reaction_from_the_cited_condition(
-        reader_fields, rereader_fields, expected, calls_expected):
+        reader_fields, extracted, scope_fields, expected, calls_expected):
     answer_text = "意見が違っても本音を言えるときです。"
-    if evidence := reader_fields.get("evidence"):
+    if evidence := (extracted or {}).get("evidence"):
         answer_text += evidence + "です。"
     answer = {
         "id": ANSWER_ID, "source_version": VERSION, "question_text": "どんなときに、相手に本音を話しやすいですか？",
@@ -472,22 +476,39 @@ def test_answer_follow_up_distinguishes_the_new_reaction_from_the_cited_conditio
     body = "本音を言いやすい相手の反応は、どんなものですか？"
     plan = ask(focus="CONDITION", source="a1", quote=quote, ask="本音を言いやすい相手の反応")
     reading = {"verdict": "reject", "reason": "already_answered", **reader_fields}
-    rereading = read(plan, record_reason=True, **(rereader_fields or {}))
-    result, calls = run(material(prior=[answer]), plan, body, reading=reading, rereading=rereading)
+    scope = {"verdict": "accept", "focus": "CONDITION", "condition": "", "premise_supported": True,
+             "distinct_question": True, "requested": "本音を言いやすい相手の反応", **scope_fields}
+    result, calls = run(material(prior=[answer]), plan, body, reading=reading, extraction=extracted, scope=scope)
     reader, payload = calls[2]
     assert reader == ANSWER_READ_SYSTEM_MESSAGE
     assert "引用後の問いにそのまま答えられる記述をsourcesから探し" in reader
     assert payload["question"] == f"「{quote}」と書いていましたが、{body}"
     assert payload["material"]["sources"]["a1"]["text"] == answer_text
     assert len(calls) == calls_expected
-    if calls_expected == 4:
-        assert calls[-1] == (_PRIOR_ANSWER_REREAD_MESSAGE, {
-            "citation": quote, "body": body, "material": calls[0][1],
+    if calls_expected >= 4:
+        assert calls[3] == (_PRIOR_ANSWER_EVIDENCE_MESSAGE, {"question": body, "texts": {"a1": answer_text}})
+    if calls_expected == 5:
+        assert calls[-1] == (_PRIOR_ANSWER_SCOPE_MESSAGE, {
+            "citation": quote, "body": body, "material": {key: item for key, item in calls[0][1].items()
+                                                            if key != "map_reference"},
         })
     assert result.disposition == expected
     if result.candidate is not None:
         assert result.candidate.text == payload["question"]
         assert result.candidate.receipt["source_id"] == ANSWER_ID
+
+
+def test_saved_emlis_answer_does_not_take_the_prior_deep_insight_retry():
+    quote = "意見が違っても本音を言える"
+    record = source(emlis_answered_questions=[{
+        "id": ANSWER_ID, "source_version": VERSION, "answered_at": STAMP,
+        "question": "どんなときに、相手に本音を話しやすいですか？", "answer": quote + "ときです。",
+    }])
+    plan = ask(focus="CONDITION", source="r1.answer1", quote=quote, ask="本音を言いやすい相手の反応")
+    result, calls = run(material(record), plan, "本音を言いやすい相手の反応は、どんなものですか？",
+                        reading={"verdict": "reject", "reason": "already_answered"})
+    assert result.disposition == "rejected"
+    assert [system for system, _ in calls] == [PLAN_SYSTEM_MESSAGE, WRITE_SYSTEM_MESSAGE, ANSWER_READ_SYSTEM_MESSAGE]
 
 
 def select_theme_angle(scene, angle):
