@@ -73,22 +73,28 @@ def _received_answer_plan(prepared, material, fields, selected, value):
     action = source(binding['action_field'])
     supplement = source(binding['answer_field'])
     insight = source(next(field['field'] for field in fields if field['source_role'] == DEEP_INSIGHT_ANSWER_ROLE))
+    # The model selected the four complete sources and gave action its own
+    # unit. Admission separates that unit into a node before NODES authors text.
+    authored = dict(node_id='n1', units=[dict(evidence=[thought, supplement]), dict(evidence=[action])])
     value.update(source_choices_sha256=material['source_choices_sha256'],
-        nodes=[node(1, thought, supplement), node(2, insight), node(3, action)])
+        nodes=[authored, node(2, insight)])
 
     # The earlier model output attached the supplement to the action and
     # repeated it beside the thought, even though the original did not link them.
-    wrong_scope = dict(value, nodes=[node(1, action, supplement), node(2, insight), node(3, thought, supplement)])
-    with pytest.raises(admission.AnalysisSemanticMapError, match='analysis_semantic_plan_received_answer_scope_invalid'):
-        admission.admit_semantic_node_local_v4_plan_response(prepared, wrong_scope)
+    repeated = [node(1, action, supplement), node(2, insight), node(3, thought, supplement)]
+    merged = [dict(node_id='n1', units=[dict(evidence=[thought, supplement, action])]), node(2, insight)]
+    for invalid in (repeated, merged):
+        with pytest.raises(admission.AnalysisSemanticMapError,
+                          match='analysis_semantic_plan_received_answer_scope_invalid'):
+            admission.admit_semantic_node_local_v4_plan_response(prepared, dict(value, nodes=invalid))
 
 
 def v24_provider(calls, *, received_case=False):
     received_prepared = None
-    received_plan = received_nodes = None
+    received_plan = received_nodes = received_plan_raw = None
 
     def handler(request):
-        nonlocal received_plan, received_nodes
+        nonlocal received_plan, received_nodes, received_plan_raw
         messages = json.loads(request.content)['messages']
         material = json.loads(messages[1]['content'])
         phase = material['author_phase']
@@ -178,7 +184,10 @@ def v24_provider(calls, *, received_case=False):
                     admission.semantic_node_local_v4_relations(received_prepared, received_plan, received_nodes,
                         dict(value, overview=wrong_overview))
         assert accepts(value, messages), phase
-        return successful_response(json.dumps(value, ensure_ascii=False, separators=(',', ':')))
+        raw = json.dumps(value, ensure_ascii=False, separators=(',', ':'))
+        if received_prepared is not None and phase == 'PLAN':
+            received_plan_raw = raw
+        return successful_response(raw)
 
     provider = model_sources.SelfHostedSemanticAnalysisModelSource(endpoint='https://synthetic-analysis.invalid/chat/completions',
         model='test-model', api_key='synthetic-test', semantic_prompt_version=admission.SEMANTIC_MAP_OCCURRENCE_V24_PROFILE,
@@ -190,10 +199,13 @@ def v24_provider(calls, *, received_case=False):
             nonlocal received_prepared
             received_prepared = prepared
             try:
-                return await complete(prepared, **kwargs)
+                response = await complete(prepared, **kwargs)
             except RuntimeError as error:
                 phase = calls[-1][0] if calls else 'request setup'
                 pytest.fail(f'V24 admission failed after {phase}: {error.__context__ or error}')
+            receipt = json.loads(response.raw)['phases'][0]
+            assert receipt['phase'] == 'PLAN' and receipt['raw'] == received_plan_raw
+            return response
 
         provider._node_local_v4 = capture_prepared
     return provider

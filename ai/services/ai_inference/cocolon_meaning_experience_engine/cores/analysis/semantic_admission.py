@@ -2858,6 +2858,23 @@ def _semantic_received_answer_plan(material):
         for unit in group]) for i, group in enumerate(groups, 1)]
 
 
+def _semantic_separate_received_plan(material, plan):
+    """Separate the independent action before any model prose is written.
+
+    Accept that alternative placement only when it cited the very same complete
+    sources, once each, and put the action in its own unit. The raw receipt
+    preserves the placement the model returned.
+    """
+    expected = _semantic_received_answer_plan(material)
+    if not expected or plan['nodes'] == expected:
+        return plan
+    action = expected[-1]
+    first = next(node for node in expected if len(node['units']) == 2)
+    units = [dict(evidence=first['units'][0]['evidence'] + first['units'][1]['evidence']), *action['units']]
+    accepted = [dict(node, units=units) if node is first else node for node in expected[:-1]]
+    return dict(plan, nodes=expected) if plan['nodes'] == accepted else plan
+
+
 def _semantic_received_answer_scope(material, plan):
     """Check source allocation even when several groups share a history phase."""
     scopes = material.get('received_answer_thoughts', ())
@@ -4010,7 +4027,8 @@ def admit_semantic_node_local_v4_plan_response(prepared, value, *, merge_anchors
     if prepared.prompt_version not in {SEMANTIC_MAP_OCCURRENCE_V11_PROFILE, *SEMANTIC_MAP_FACT_REFERENCE_PROFILES}:
         return semantic_node_local_v4_plan(prepared, value, merge_anchors=merge_anchors, merge_action_sources=merge_action_sources, context_sources=context_sources, distinct_context_sources=distinct_context_sources, speaker_context_sources=speaker_context_sources, attributed_context_sources=attributed_context_sources)
     reason = 'analysis_semantic_plan_choice_invalid'
-    view, choices, allowed = _semantic_plan_choices(prepared, json.loads(prepared.material_json))
+    material = json.loads(prepared.material_json)
+    view, choices, allowed = _semantic_plan_choices(prepared, material)
     _semantic_map_require(_semantic_map_keys(value, {'schema_version', 'source_choices_sha256', 'nodes'})
         and value['source_choices_sha256'] == view['source_choices_sha256']
         and type(value['nodes']) is list, reason)
@@ -4031,6 +4049,7 @@ def admit_semantic_node_local_v4_plan_response(prepared, value, *, merge_anchors
                     _semantic_map_require(key in allowed.get(field, ()) and (field, key) not in numbered, reason)
                     quote = key
                 root['quote'] = quote
+    plan = _semantic_separate_received_plan(material, plan)
     return semantic_node_local_v4_plan(prepared, plan, merge_anchors=merge_anchors, merge_action_sources=merge_action_sources, context_sources=context_sources, distinct_context_sources=distinct_context_sources, speaker_context_sources=speaker_context_sources, attributed_context_sources=attributed_context_sources)
 
 
