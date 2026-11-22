@@ -1175,6 +1175,38 @@ def project_saved_corrected_source(handoff):
         question_need_decision_identity=question, circumstance_control=circumstance)
 
 
+def _natural_refined_save_retried(events, received, observation):
+    """Verify each failed attempt and explicit retry between receipt and save."""
+    from emlis_thread_service import RETRYABLE_FAILURES
+
+    between = [e for e in events if received['seq'] < e['seq'] < observation['seq']]
+    if not between or len(between) % 2:
+        return False
+    if any(e['kind'] != 'OPERATION' or e['operation_id'] != received['operation_id']
+           or e['round_index'] != received['round_index'] for e in between):
+        return False
+    stamps = [parse_iso_utc(e['recorded_at']) for e in [received, *between, observation]]
+    if None in stamps or stamps != sorted(stamps):
+        return False
+
+    attempt = received['attempt_id']
+    seen = {attempt}
+    for failure, retry in zip(between[::2], between[1::2], strict=True):
+        fail, start = failure['payload'], retry['payload']
+        next_attempt = _uuid(retry['attempt_id'], 'PIECE_SOURCE_NOT_ELIGIBLE')
+        fingerprint = start.get('request_fingerprint')
+        if (failure['attempt_id'] != attempt or fail.get('status') != 'RESPONSE_FAILED'
+                or fail.get('failure_code') not in RETRYABLE_FAILURES
+                or next_attempt in seen or start.get('status') != 'RUNNING'
+                or retry['question_id'] is not None or set(start) != {'status', 'request_fingerprint'}
+                or not isinstance(retry['idempotency_key'], str) or not retry['idempotency_key']
+                or not isinstance(fingerprint, str) or not re.fullmatch(r'action-request-[0-9a-f]{64}', fingerprint)):
+            return False
+        seen.add(next_attempt)
+        attempt = next_attempt
+    return attempt == observation['attempt_id']
+
+
 def _natural_refined_observation_handoff(saved: PieceSavedOriginal, snapshot: dict,
                                          answer_id: str) -> PieceSavedRefinedHandoff:
     """Bind one current natural answer to real sources and saved reply receipts.
@@ -1287,8 +1319,9 @@ def _natural_refined_observation_handoff(saved: PieceSavedOriginal, snapshot: di
     require(op.get('source_prefix_ref') == admitted.source_prefix_ref
             and op.get('context_ref') == _context_ref(snapshot)
             and op.get('context_guards') == d.get('context_guards', []))
-    require(all(answer[key] == checkpoint[key] == observation[key] == d.get(key)
-                for key in ('operation_id', 'attempt_id')))
+    require(answer['operation_id'] == checkpoint['operation_id'] == observation['operation_id']
+            == d.get('operation_id') and answer['attempt_id'] == checkpoint['attempt_id']
+            and observation['attempt_id'] == d.get('attempt_id'))
     require(initial['seq'] < question['seq'] < answer['seq'] < checkpoint['seq'] < observation['seq'])
 
     def receipt_chain(body, prefix, response_stage, source_request):
@@ -1306,6 +1339,8 @@ def _natural_refined_observation_handoff(saved: PieceSavedOriginal, snapshot: di
                 and type(artifact.get('model')) is str and bool(artifact['model'].strip()))
         for key in ('operation_id', 'attempt_id'):
             _uuid(body[key], 'PIECE_SOURCE_NOT_ELIGIBLE')
+        author_attempt = checkpoint['attempt_id'] if body is observation else body['attempt_id']
+        _uuid(author_attempt, 'PIECE_SOURCE_NOT_ELIGIBLE')
         pair = []
         for stage in ('NATURAL_REPLY_CALL_STARTED', 'NATURAL_REPLY_RECEIVED'):
             matches = [e for e in events if e['kind'] == 'OPERATION'
@@ -1313,7 +1348,7 @@ def _natural_refined_observation_handoff(saved: PieceSavedOriginal, snapshot: di
                 and e['payload'].get('source_prefix_ref') == prefix]
             require(len(matches) == 1)
             event = matches[0]
-            require(all(event[key] == body[key] for key in ('operation_id', 'attempt_id'))
+            require(event['operation_id'] == body['operation_id'] and event['attempt_id'] == author_attempt
                     and event['round_index'] == body['round_index']
                     and event['payload'].get('context_ref') == context_ref
                     and event['payload'].get('response_stage') == response_stage)
@@ -1323,6 +1358,10 @@ def _natural_refined_observation_handoff(saved: PieceSavedOriginal, snapshot: di
         require(received['payload'].get('reply') == {
             'text': payload['text'], 'model': artifact['model'],
             'source_prefix_ref': prefix, 'schema_version': ARTIFACT_SCHEMA})
+        if author_attempt != body['attempt_id']:
+            require(all(started['payload'].get(key) == received['payload'].get(key) == artifact.get(key)
+                        for key in ('meaning_profile', 'writer_messages_sha256'))
+                    and _natural_refined_save_retried(events, received, body))
         return started, received
 
     initial_started, initial_received = receipt_chain(initial, original_prefix, 'PRE_QUESTION', original_request)

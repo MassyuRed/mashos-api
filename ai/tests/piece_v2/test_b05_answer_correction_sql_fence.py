@@ -6,25 +6,29 @@ matching that snapshot cannot replace independent source/receipt validation.
 """
 from copy import deepcopy
 from datetime import datetime, timedelta
+import asyncio
 import json
 from uuid import uuid4
 
 import pytest
 
 from cocolon_meaning_experience_engine.emlis_thread_source import identity
-from piece_v2_contract import canonical_sha256_hex
+from piece_v2_contract import PieceContractError, canonical_sha256_hex
+from piece_v2_source_adapter import PieceSavedSourceAdapter
 from test_b05_answer_correction_application import answer_correction_case
 from test_b05_interpretation_correction_application import corrected_db, corrected_case
 from test_b05_effective_round_sql_fence import effective_fence_db, _apply
 from test_b05_natural_refined_saved_pipeline import (
+    ONE, _bind, _prepare_natural, _finish_refined_pipeline, _provider,
     natural_refined_db, refined_pipeline_db, saved_piece_db,
 )
 from test_b05_refined_source_fence_sql import (
-    SIGNATURES, _catalog, _issue_args, _mutation_args, _saved_args,
+    SIGNATURES, _RECORD, _canonical_lineage, _catalog, _issue_args, _mutation_args, _saved_args,
     _piece_state, _update, rpc,
 )
 
 MIGRATION = '20261115005742_piece_answer_and_interpretation_corrections.sql'
+RETRY_MIGRATION = '20261122143000_piece_natural_refined_save_retry.sql'
 WRITERS = {'issue': 'piece_issue_preview_v2', 'visual': 'piece_mutate_preview_visual_v2',
            'save': 'piece_save_v2'}
 CHANGES = (
@@ -46,6 +50,98 @@ def mixed_fence_db(corrected_db):
     _apply(corrected_db, MIGRATION)
     corrected_db.mixed_fence_catalog = (before, _catalog(corrected_db))
     return corrected_db
+
+
+@pytest.fixture(scope='module')
+def recovered_natural_db(mixed_fence_db):
+    before = _catalog(mixed_fence_db)
+    _apply(mixed_fence_db, RETRY_MIGRATION)
+    assert _catalog(mixed_fence_db) == before
+    return mixed_fence_db
+
+
+@pytest.mark.parametrize('failed_saves', [0, 1, 2])
+def test_recovered_natural_answer_reaches_preview_visual_save_and_reread(
+        recovered_natural_db, monkeypatch, failed_saves):
+    action = '会議で発表した。'
+    answer = 'その時は重かった。'
+    state, _, calls = _prepare_natural(recovered_natural_db, monkeypatch, tier='premium',
+        case_id='natural-save-recovery', action_text=action, first_answer=answer,
+        failed_refined_saves=failed_saves)
+    events = state['snapshot_before']['events']
+    received = [e for e in events if e['payload'].get('stage') == 'NATURAL_REPLY_RECEIVED']
+    retries = [e for e in events if e['payload'].get('status') == 'RESPONSE_FAILED']
+    assert len(calls) == len(received) == 2 and len(retries) == failed_saves
+    assert state['completed_dto']['current_observation']['text'] == received[-1]['payload']['reply']['text']
+    blocks = [ONE, action, answer]
+    seen = _provider(monkeypatch, state['case_id'], blocks)
+    result = _finish_refined_pipeline(recovered_natural_db, monkeypatch, state,
+        visual_change=True, expected_blocks=blocks)
+    assert len(seen) == result['quota_consumptions'] == 1
+    assert result['source_unchanged'] and result['emlis_unchanged']
+
+
+@pytest.fixture(scope='module')
+def recovered_natural_case(recovered_natural_db):
+    with pytest.MonkeyPatch.context() as setup:
+        state, handoff, _ = _prepare_natural(recovered_natural_db, setup, tier='premium',
+            first_answer='その時は重かった。', action_text='会議で発表した。', failed_refined_saves=2)
+    snapshot = state['snapshot_before']
+    lineage = _canonical_lineage(handoff)
+    record = _RECORD()
+    record['source_lineage'] = lineage
+    return dict(owner=state['owner'], parent=state['source_id'], snapshot=snapshot,
+        token=state['token'], record=record, expected=dict(original=state['original'],
+            thread_id=snapshot['thread']['id'], thread_revision=snapshot['thread']['revision'], lineage=lineage))
+
+
+@pytest.mark.parametrize('operation', tuple(WRITERS))
+@pytest.mark.parametrize('change', ['missing_failure', 'other_operation', 'missing_retry_key',
+    'changed_reply', 'changed_writer', 'reused_attempt', 'different_running_stage'])
+def test_recovered_natural_answer_requires_the_saved_retry_chain(
+        recovered_natural_db, recovered_natural_case, monkeypatch, operation, change):
+    db, case = recovered_natural_db, deepcopy(recovered_natural_case)
+    _bind(db, monkeypatch, case['owner'], case['token'])
+    assert 'code' not in db.query('BEGIN')
+    try:
+        args = _issue_args(case)
+        if operation != 'issue':
+            preview = rpc(db, WRITERS['issue'], args)
+            assert 'code' not in preview, preview
+            args = _mutation_args(db, case, preview) if operation == 'visual' else _saved_args(case, preview)
+        events = case['snapshot']['events']
+        received = next(e for e in events if e['round_index'] == 1
+                        and e['payload'].get('stage') == 'NATURAL_REPLY_RECEIVED')
+        failure, retry = [e for e in events if e['seq'] > received['seq']][:2]
+        if change == 'missing_failure':
+            _update(db, 'DELETE FROM public.emlis_thread_events WHERE id=$1', [failure['id']])
+        elif change == 'other_operation':
+            _update(db, 'UPDATE public.emlis_thread_events SET operation_id=$2 WHERE id=$1',
+                [retry['id'], str(uuid4())])
+        elif change == 'missing_retry_key':
+            _update(db, 'UPDATE public.emlis_thread_events SET idempotency_key=NULL WHERE id=$1', [retry['id']])
+        elif change == 'reused_attempt':
+            _update(db, 'UPDATE public.emlis_thread_events SET attempt_id=$2 WHERE id=$1',
+                [retry['id'], received['attempt_id']])
+        elif change == 'different_running_stage':
+            retry['payload']['stage'] = 'NATURAL_FINAL_REQUESTED'
+            _write_event(db, retry)
+        else:
+            if change == 'changed_reply':
+                received['payload']['reply']['text'] += '変更'
+            else:
+                received['payload']['writer_messages_sha256'] = '0' * 64
+            _write_event(db, received)
+        before = _piece_state(db)
+        assert rpc(db, WRITERS[operation], args) == {'code': 'P0001', 'message': 'PIECE_CONFLICT'}
+        assert _piece_state(db) == before
+        if operation == 'issue':
+            with pytest.raises(PieceContractError, match='PIECE_SOURCE_NOT_ELIGIBLE'):
+                asyncio.run(PieceSavedSourceAdapter().resolve_refined_handoff('Bearer '+case['token'],
+                    case['parent'], supplemental_answer_identity=case['snapshot']['thread']['latest_answer_event_id'],
+                    opted_in=True))
+    finally:
+        assert 'code' not in db.query('ROLLBACK')
 
 
 def _sql_case(case):

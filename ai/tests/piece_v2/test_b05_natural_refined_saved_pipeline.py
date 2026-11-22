@@ -10,6 +10,7 @@ from pathlib import Path
 from unittest.mock import patch
 from uuid import uuid4
 
+import httpx
 import pytest
 import api_account_visibility
 import emlis_thread_store
@@ -81,7 +82,8 @@ def _bind(db, monkeypatch, owner, token):
 
 
 def _prepare_natural(db, monkeypatch, *, tier='premium', stopped=False, case_id='natural', with_history=False,
-                     with_frame_target=False, rounds=1, action_text='', first_answer=ANSWER, memo_text=None):
+                     with_frame_target=False, rounds=1, action_text='', first_answer=ANSWER, memo_text=None,
+                     failed_refined_saves=0):
     owner, parent = str(uuid4()), str(uuid4())
     token = 'synthetic-natural-refined-owner'
     _update(db, 'insert into auth.users values ($1)', [owner])
@@ -113,6 +115,18 @@ def _prepare_natural(db, monkeypatch, *, tier='premium', stopped=False, case_id=
     assert initial['state']=='AWAITING_ANSWER' and initial['issued_count']==1, _natural_failure_diagnostics(
         service, owner, parent, initial, calls, phases, phase='initial_start', case_id=case_id,
         tier=tier, rounds=rounds, stopped=stopped)
+
+    remaining_failed_saves = failed_refined_saves
+
+    async def fail_refined_save(name, payload, **kwargs):
+        nonlocal remaining_failed_saves
+        if remaining_failed_saves and any(event['kind'] == 'OBSERVATION' for event in payload.get('p_events', ())):
+            remaining_failed_saves -= 1
+            return httpx.Response(503, json={'code': '57P03'})
+        return await db.rpc(name, payload, **kwargs)
+
+    if failed_refined_saves:
+        monkeypatch.setattr(emlis_thread_store, 'sb_post_rpc', fail_refined_save)
     completed = initial
     texts = (first_answer, '今は、私は怖い。', '今は、私は寂しい。')
     for index in range(rounds):
@@ -120,6 +134,11 @@ def _prepare_natural(db, monkeypatch, *, tier='premium', stopped=False, case_id=
         completed = run(service.answer(owner,completed['thread_id'],
             question_id=completed['pending_question']['question_id'],expected_revision=completed['revision'],
             idempotency_key='natural-answer-'+str(index+1),answer_text=texts[index],authored_at=authored))
+        for retry_number in range(failed_refined_saves if index == 0 else 0):
+            assert completed['can_retry']
+            completed = run(service.action(owner, completed['thread_id'], action='retry_response',
+                expected_revision=completed['revision'], idempotency_key=f'failed-save-retry-{index}-{retry_number}',
+                operation_id=completed['operation_id']))
         if index < rounds-1:
             completed = run(service.action(owner,completed['thread_id'],action='continue',
                 expected_revision=completed['revision'],idempotency_key='natural-continue-'+str(index+1)))
