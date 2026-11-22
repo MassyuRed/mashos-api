@@ -315,6 +315,11 @@ _SKIPPED_EMLIS_QUESTIONS_GUIDANCE = (
     "\nskipped_emlis_questionsは、sourcesに示す同じ記録で本人が回答を見送った問いです。"
     "その記録について、同じ内容を別の言い方で聞き直しません。見送った問い自体は本人の事実や回答ではありません。"
 )
+_EMLIS_CORRECTION_GUIDANCE = (
+    "\nsource_roleがUSER_INTERPRETATION_CORRECTIONの資料は、本人が元の記録について明示的に訂正した一節です。"
+    "その節で本人が伝えたことを使い、以前の解釈や問いの前提を戻しません。"
+    "元の出来事と訂正を書いた時点を区別します。"
+)
 RECORD_REASON_READ_SYSTEM_MESSAGE = f"""Emlisの一問を、渡された原資料から独立に読みます。日本語のJSONだけを返します。
 {_DATA_BOUNDARY}
 完成文は、原文から抜き出した「」内と、その内容について尋ねる文で構成されます。先頭の引用を含め、主体、動作、時点、否定、留保、条件を原資料と照合してください。
@@ -338,6 +343,7 @@ class _Source:
     text: str
     recorded_at: str | None
     standalone_answer: bool = False
+    source_start: int = 0
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -401,7 +407,7 @@ def _excerpt(value, limit):
     return value[:boundary + 1] if boundary >= 12 else None
 
 
-def _source(row, *, field, text, recorded_at, standalone_answer=False):
+def _source(row, *, field, text, recorded_at, standalone_answer=False, source_start=0):
     source_id = row.get("id")
     version = row.get("source_version")
     if not isinstance(source_id, str) or not isinstance(version, str) or not _HEX_DIGEST.fullmatch(version):
@@ -411,7 +417,8 @@ def _source(row, *, field, text, recorded_at, standalone_answer=False):
             return None
     except ValueError:
         return None
-    return _Source(source_id, version, field, text, recorded_at, standalone_answer)
+    return _Source(source_id, version, field, text, recorded_at,
+                   standalone_answer=standalone_answer, source_start=source_start)
 
 
 def prepare_question_material(material, *, lane, theme, choose_theme=choice, excluded_theme_keys=()):
@@ -427,6 +434,8 @@ def prepare_question_material(material, *, lane, theme, choose_theme=choice, exc
         if source is None:
             return
         payload["sources"][key] = {"text": source.text, "recorded_at": source.recorded_at}
+        if source.field == "correction":
+            payload["sources"][key]["source_role"] = "USER_INTERPRETATION_CORRECTION"
         if len(_compact(payload).encode()) > _MAX_MATERIAL_BYTES:
             del payload["sources"][key]
         else:
@@ -495,6 +504,16 @@ def prepare_question_material(material, *, lane, theme, choose_theme=choice, exc
                     sources.pop(key)
                     break
             skipped_source_keys.append(key)
+        for j, correction in enumerate(record.get("emlis_corrections", ()), 1):
+            excerpt = _excerpt(correction["text"], 500)
+            source_start = correction["scalar_start"]
+            if not excerpt or type(source_start) is not int or not 0 <= source_start < 2000:
+                continue
+            key = f"r{i}.correction{j}"
+            append_source(key, _source(correction, field="correction", text=excerpt,
+                                       recorded_at=correction["recorded_at"], source_start=source_start))
+            if key in sources:
+                skipped_source_keys.append(key)
         if skipped and skipped_source_keys:
             control = {"question": skipped, "sources": skipped_source_keys}
             dismissed = payload.setdefault("skipped_emlis_questions", [])
@@ -927,7 +946,8 @@ def _candidate(question, *, plan, lane, material, question_key=None):
     if anchor:
         # Bind the occurrence to its original clause, not the model's choice
         # of a shorter citation or surface wording.
-        scope = (anchor.source.source_id, anchor.source.field, anchor.span_start, anchor.span_end)
+        scope = (anchor.source.source_id, anchor.source.field,
+                 anchor.source.source_start + anchor.span_start, anchor.source.source_start + anchor.span_end)
         question_key = identity("deep-insight-target", lane, scope, plan.focus, condition_key)
     normalized = _normal(question)
     text_key = _text_key(normalized)
@@ -952,13 +972,15 @@ def _candidate(question, *, plan, lane, material, question_key=None):
             body = _normal(question.partition(_CITATION_JOIN)[2])
             for row in material["records"]:
                 answers = row.get("emlis_answered_questions", [])
-                if any(answer.get("id") == source_id
+                anchored_correction = any(correction.get("id") == source_id
+                                          for correction in row.get("emlis_corrections", ()))
+                if any((anchored_correction or answer.get("id") == source_id)
                         and (previous := answer.get("previous_question") or answer.get("question"))
                         and _normal(previous) in (normalized, body) for answer in answers):
                     return None
                 dismissed = row.get("emlis_skipped_question")
                 if dismissed and _normal(dismissed) in (normalized, body) and (
-                        row["id"] == source_id or any(answer.get("id") == source_id
+                        row["id"] == source_id or anchored_correction or any(answer.get("id") == source_id
                             for answer in answers)):
                     return None
     receipt = {
@@ -966,7 +988,8 @@ def _candidate(question, *, plan, lane, material, question_key=None):
         "source_id": anchor.source.source_id if anchor else None,
         "source_version": anchor.source.source_version if anchor else None,
         "field": anchor.source.field if anchor else None,
-        "start": anchor.start if anchor else None, "end": anchor.end if anchor else None,
+        "start": anchor.source.source_start + anchor.start if anchor else None,
+        "end": anchor.source.source_start + anchor.end if anchor else None,
         "literal_sha256": hashlib.sha256(anchor.quote.encode()).hexdigest() if anchor else None,
         "condition_key": condition_key, "target_key": question_key.rsplit("-", 1)[1],
     }
@@ -1184,8 +1207,10 @@ async def generate_question(prepared, sources, *, material, generate):
     if not sources:
         return QuestionRun(None, "no_merit")
 
-    skipped_guidance = _SKIPPED_EMLIS_QUESTIONS_GUIDANCE if prepared.get("skipped_emlis_questions") else ""
-    decision = _json_object(await generate(PLAN_SYSTEM_MESSAGE + skipped_guidance, prepared))
+    source_guidance = _SKIPPED_EMLIS_QUESTIONS_GUIDANCE if prepared.get("skipped_emlis_questions") else ""
+    if any(source.field == "correction" for source in sources.values()):
+        source_guidance += _EMLIS_CORRECTION_GUIDANCE
+    decision = _json_object(await generate(PLAN_SYSTEM_MESSAGE + source_guidance, prepared))
     if decision == {"decision": "skip"}:
         return QuestionRun(None, "no_merit")
     plan = _read_plan(decision, lane=lane, sources=sources)
@@ -1198,7 +1223,7 @@ async def generate_question(prepared, sources, *, material, generate):
         if alternative is None:
             return QuestionRun(None, "rejected")
         revised = _json_object(await generate(
-            _RECORD_ALTERNATIVE_PLAN_MESSAGE + skipped_guidance, {**alternative, "material": prepared},
+            _RECORD_ALTERNATIVE_PLAN_MESSAGE + source_guidance, {**alternative, "material": prepared},
         ))
         if revised == {"decision": "skip"}:
             return QuestionRun(None, "no_merit")
@@ -1242,7 +1267,7 @@ async def generate_question(prepared, sources, *, material, generate):
         reader = ANSWER_READ_SYSTEM_MESSAGE
     else:
         reader = READ_SYSTEM_MESSAGE
-    read = await generate(reader + skipped_guidance, reading)
+    read = await generate(reader + source_guidance, reading)
     if _confirm_reading(read, plan, citation_verified=alternative is not None):
         return QuestionRun(candidate, "selected")
     if reader == ANSWER_READ_SYSTEM_MESSAGE and await _retry_answer_reading(

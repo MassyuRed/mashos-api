@@ -114,6 +114,7 @@ name: Piece B2-B/B3/B4/B5 isolated PostgreSQL
       - ai/tests/piece_v2/test_b05_answer_correction_sql_fence.py
       - supabase/migrations/*_piece_natural_answer_active_source.sql
       - supabase/migrations/*_piece_natural_refined_source_fence.sql
+      - supabase/migrations/*_piece_natural_initial_frame_feedback.sql
       - supabase/migrations/*_piece_natural_later_add_answer.sql
       - supabase/migrations/*_piece_natural_effective_round_sources.sql
       - ai/tests/test_cmee_piece_request_saved_pipeline.py

@@ -1207,8 +1207,8 @@ def _natural_refined_save_retried(events, received, observation):
     return attempt == observation['attempt_id']
 
 
-def _natural_initial_frame_revision(saved, snapshot, initial, initial_finish, answer, request):
-    """Reconstruct the initial context across a first revision of an owned past frame."""
+def _natural_initial_frame_feedback(saved, snapshot, initial, initial_finish, answer, request):
+    """Reconstruct the initial context across the first decision on an owned past frame."""
     from dataclasses import replace
     from cocolon_meaning_experience_engine.emlis_thread_source import identity
     from emlis_thread_service import _context_ref
@@ -1223,12 +1223,14 @@ def _natural_initial_frame_revision(saved, snapshot, initial, initial_finish, an
     update, = updates
     payload = update['payload']
     target = payload.get('frame_feedback_target')
+    event_status = payload.get('status')
     if (update['kind'] != 'OPERATION' or update['round_index'] != answer['round_index']
             or update['seq'] != initial_finish['seq'] + 1 or answer['seq'] != update['seq'] + 1
             or any(update[key] is not None for key in ('operation_id', 'attempt_id', 'question_id'))
             or not isinstance(update['idempotency_key'], str) or not update['idempotency_key']
             or set(payload) != {'status', 'request_fingerprint', 'frame_feedback_target'}
-            or payload.get('status') != 'FRAME_REVISED' or type(target) is not dict
+            or event_status not in ('FRAME_CONFIRMED', 'FRAME_REJECTED', 'FRAME_REVISED')
+            or type(target) is not dict
             or type(target.get('feedback_version')) is not int or target['feedback_version'] != 1
             or target.get('displayed_status') != 'TENTATIVE'):
         return None
@@ -1250,8 +1252,9 @@ def _natural_initial_frame_revision(saved, snapshot, initial, initial_finish, an
                    and row.get('status') == 'TENTATIVE' and bool(row.get('evidence_refs')) for row in frames) != 1):
         return None
     current = request.emlis_thread.frame_feedback_sources
+    status = event_status.removeprefix('FRAME_')
     matches = [f for f in current if f.frame_key == key and f.source_emotion_id == source_id
-               and f.frame_ref == target.get('frame_ref') and f.version == 1 and f.status == 'REVISED'
+               and f.frame_ref == target.get('frame_ref') and f.version == 1 and f.status == status
                and payload.get('request_fingerprint') == identity(
                    'frame-feedback-request', f.frame_ref, f.status, f.correction_text)]
     if len(matches) != 1:
@@ -1263,7 +1266,8 @@ def _natural_initial_frame_revision(saved, snapshot, initial, initial_finish, an
     previous_data = {**data, 'context_feedback': [row for row in data['context_feedback'] if row != [key, 1]]}
     initial_context = _context_ref({**snapshot, 'thread': {**thread, 'data': previous_data}})
     initial_request = replace(request, emlis_thread=replace(request.emlis_thread,
-        frame_feedback_sources=tuple(f for f in current if f is not matches[0])))
+        frame_feedback_sources=tuple(f for f in current if f is not matches[0]),
+        rejected_frame_keys=tuple(k for k in request.emlis_thread.rejected_frame_keys if k != key)))
     return initial_request, initial_context
 
 
@@ -1361,7 +1365,7 @@ def _natural_refined_observation_handoff(saved: PieceSavedOriginal, snapshot: di
     current_context = _context_ref(snapshot)
     initial_context = current_context
     if initial['payload'].get('context_ref') != current_context:
-        original = _natural_initial_frame_revision(saved, snapshot, initial, initial_finish, answer, original_request)
+        original = _natural_initial_frame_feedback(saved, snapshot, initial, initial_finish, answer, original_request)
         require(original is not None)
         original_request, initial_context = original
     original_prefix = admit_emlis_thread(original_request).source_prefix_ref

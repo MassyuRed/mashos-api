@@ -3,6 +3,9 @@ from __future__ import annotations
 import asyncio
 from typing import Any, Dict, Optional
 
+import pytest
+from fastapi import HTTPException
+
 
 class _FakeResponse:
     def __init__(self, status_code: int, payload: Any):
@@ -112,6 +115,7 @@ def test_qna_detail_uses_public_display_text_and_hides_blocked_rows(client, monk
     import api_mymodel_qna as qna_module
     import api_piece_runtime as piece_runtime_module
     import piece_public_read_service as piece_read_service
+    from piece_generated_identity import compute_generated_question_q_key
 
     reflection_row: Dict[str, Any] = {
         "id": "reflection-row-1",
@@ -121,6 +125,9 @@ def test_qna_detail_uses_public_display_text_and_hides_blocked_rows(client, monk
         "source_type": qna_module.EMOTION_GENERATED_SOURCE_TYPE,
     }
     current_body = {"value": "[メールアドレス]"}
+    expected_aliases = {
+        "reflection:test-1": {"reflection:test-1", "test-1", "reflection:reflection-row-1", "reflection-row-1"},
+    }
 
     async def fake_resolve_user_id_from_token(_access_token: str) -> str:
         return "owner-1"
@@ -134,17 +141,22 @@ def test_qna_detail_uses_public_display_text_and_hides_blocked_rows(client, monk
         assert row.get("id") == "reflection-row-1"
         return current_body["value"]
 
-    async def fake_fetch_instance_metrics(_instance_ids):
+    async def fake_fetch_instance_metrics(instance_ids, *, alias_groups=None):
+        assert instance_ids == {"reflection:test-1"}
+        assert alias_groups == expected_aliases
         return {"reflection:test-1": {"views": 0, "resonances": 0}}
 
-    async def fake_fetch_reads(_viewer_user_id: str, _q_instance_ids):
+    async def fake_fetch_reads(viewer_user_id: str, q_instance_ids, *, alias_groups=None):
+        assert viewer_user_id == "owner-1"
+        assert q_instance_ids == {"reflection:test-1"}
+        assert alias_groups == expected_aliases
         return set()
 
-    async def fake_is_resonated(_viewer_user_id: str, _q_instance_id: str):
+    async def fake_is_resonated(viewer_user_id: str, q_instance_id: str, *, alias_groups=None):
+        assert viewer_user_id == "owner-1"
+        assert q_instance_id == "reflection:test-1"
+        assert alias_groups == expected_aliases
         return False
-
-    def fake_build_generated_q_key(_row):
-        return "generated:test"
 
     monkeypatch.setattr(piece_runtime_module, "_resolve_user_id_from_token", fake_resolve_user_id_from_token)
     monkeypatch.setattr(piece_read_service, "resolve_generated_reflection_access", fake_resolve_generated_reflection_access)
@@ -152,7 +164,6 @@ def test_qna_detail_uses_public_display_text_and_hides_blocked_rows(client, monk
     monkeypatch.setattr(piece_read_service, "fetch_instance_metrics", fake_fetch_instance_metrics)
     monkeypatch.setattr(piece_read_service, "fetch_reads", fake_fetch_reads)
     monkeypatch.setattr(piece_read_service, "is_resonated", fake_is_resonated)
-    monkeypatch.setattr(piece_read_service, "build_generated_q_key", fake_build_generated_q_key)
 
     response = client.get(
         "/mymodel/qna/detail?q_instance_id=reflection:test-1",
@@ -161,6 +172,7 @@ def test_qna_detail_uses_public_display_text_and_hides_blocked_rows(client, monk
 
     assert response.status_code == 200, response.text
     assert response.json()["body"] == "[メールアドレス]"
+    assert response.json()["q_key"] == compute_generated_question_q_key(reflection_row["question"])
 
     current_body["value"] = None
 
@@ -174,16 +186,21 @@ def test_qna_detail_uses_public_display_text_and_hides_blocked_rows(client, monk
 def test_qna_reaction_context_uses_display_text(monkeypatch):
     import api_mymodel_qna as qna_module
     import api_piece_runtime as piece_runtime_module
+    from piece_generated_identity import compute_generated_question_q_key
+
+    reflection_row = {
+        "id": "reflection-row-ctx",
+        "public_id": "reflection:test-ctx",
+        "owner_user_id": "owner-ctx",
+        "question": "Question 3",
+        "source_type": qna_module.EMOTION_GENERATED_SOURCE_TYPE,
+    }
+    q_key = compute_generated_question_q_key(reflection_row["question"])
 
     async def fake_resolve_generated_reflection_access(*, viewer_user_id: str, q_instance_id: str):
         assert viewer_user_id == "owner-ctx"
         assert q_instance_id == "reflection:test-ctx"
-        return {
-            "id": "reflection-row-ctx",
-            "owner_user_id": "owner-ctx",
-            "question": "Question 3",
-            "source_type": qna_module.EMOTION_GENERATED_SOURCE_TYPE,
-        }
+        return dict(reflection_row)
 
     def fake_get_public_generated_reflection_text(row):
         assert row.get("id") == "reflection-row-ctx"
@@ -196,12 +213,24 @@ def test_qna_reaction_context_uses_display_text(monkeypatch):
         piece_runtime_module._resolve_qna_context_for_reaction(
             viewer_user_id="owner-ctx",
             q_instance_id="reflection:test-ctx",
-            q_key="generated:test",
+            q_key=q_key,
         )
     )
 
     assert ctx["kind"] == qna_module.EMOTION_GENERATED_SOURCE_TYPE
     assert ctx["context_answer"] == "[メールアドレス]"
+    assert ctx["q_key"] == q_key
+    assert ctx["q_instance_id"] == "reflection:test-ctx"
+
+    with pytest.raises(HTTPException) as mismatch:
+        asyncio.run(
+            piece_runtime_module._resolve_qna_context_for_reaction(
+                viewer_user_id="owner-ctx",
+                q_instance_id="reflection:test-ctx",
+                q_key=compute_generated_question_q_key("Another question"),
+            )
+        )
+    assert mismatch.value.status_code == 400
 
 
 def test_legacy_profilecreate_discovery_routes_are_removed(client):

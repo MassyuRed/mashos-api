@@ -30,6 +30,7 @@ from test_b05_refined_source_fence_sql import (
 MIGRATION = '20261115005742_piece_answer_and_interpretation_corrections.sql'
 RETRY_MIGRATION = '20261122143000_piece_natural_refined_save_retry.sql'
 FRAME_REVISION_MIGRATION = '20261122144000_piece_natural_initial_frame_revision.sql'
+FRAME_FEEDBACK_MIGRATION = '20261122145100_piece_natural_initial_frame_feedback.sql'
 WRITERS = {'issue': 'piece_issue_preview_v2', 'visual': 'piece_mutate_preview_visual_v2',
            'save': 'piece_save_v2'}
 CHANGES = (
@@ -65,18 +66,20 @@ def recovered_natural_db(mixed_fence_db):
 def revised_frame_db(recovered_natural_db):
     before = _catalog(recovered_natural_db)
     _apply(recovered_natural_db, FRAME_REVISION_MIGRATION)
+    _apply(recovered_natural_db, FRAME_FEEDBACK_MIGRATION)
     assert _catalog(recovered_natural_db) == before
     return recovered_natural_db
 
 
 @pytest.mark.parametrize('failed_saves', [0, 1])
-def test_one_answer_after_revising_a_past_frame_reaches_piece_writers(
-        revised_frame_db, monkeypatch, failed_saves):
+@pytest.mark.parametrize('status', ['CONFIRMED', 'REJECTED', 'REVISED'])
+def test_one_answer_after_feedback_on_a_past_frame_reaches_piece_writers(
+        revised_frame_db, monkeypatch, failed_saves, status):
     action, answer = '会議で発表した。', 'その時は怖かった。'
     revision = '結果だけで判断されたことが気になった。'
     state, _, calls = _prepare_natural(revised_frame_db, monkeypatch,
-        case_id='initial-frame-revision', action_text=action, first_answer=answer,
-        failed_refined_saves=failed_saves, prior_frame_revision=revision)
+        case_id='initial-frame-feedback', action_text=action, first_answer=answer,
+        failed_refined_saves=failed_saves, prior_frame_feedback=(status, revision if status == 'REVISED' else None))
     blocks = [ONE, action, answer]
     seen = _provider(monkeypatch, state['case_id'], blocks)
     result = _finish_refined_pipeline(revised_frame_db, monkeypatch, state,
@@ -92,7 +95,7 @@ def revised_frame_case(revised_frame_db):
     with pytest.MonkeyPatch.context() as setup:
         state, handoff, _ = _prepare_natural(revised_frame_db, setup,
             first_answer='その時は怖かった。', action_text='会議で発表した。', failed_refined_saves=1,
-            prior_frame_revision='結果だけで判断されたことが気になった。')
+            prior_frame_feedback=('REVISED', '結果だけで判断されたことが気になった。'))
     snapshot = state['snapshot_before']
     lineage = _canonical_lineage(handoff)
     record = _RECORD()
@@ -104,7 +107,7 @@ def revised_frame_case(revised_frame_db):
 
 @pytest.mark.parametrize('operation', tuple(WRITERS))
 @pytest.mark.parametrize('change', ['missing_revision', 'wrong_target', 'wrong_fingerprint', 'wrong_initial_context',
-    'different_live_feedback'])
+    'different_live_feedback', 'wrong_feedback_status'])
 def test_piece_writers_require_the_saved_past_frame_revision(revised_frame_db, revised_frame_case, operation, change):
     db, case = revised_frame_db, deepcopy(revised_frame_case)
     assert 'code' not in db.query('BEGIN')
@@ -130,6 +133,8 @@ def test_piece_writers_require_the_saved_past_frame_revision(revised_frame_db, r
         else:
             if change == 'wrong_target':
                 frame_event['payload']['frame_feedback_target']['evidence_refs'] = ['ev-foreign']
+            elif change == 'wrong_feedback_status':
+                frame_event['payload']['status'] = 'FRAME_CONFIRMED'
             else:
                 frame_event['payload']['request_fingerprint'] = 'frame-feedback-request-' + '0' * 64
             _write_event(db, frame_event)

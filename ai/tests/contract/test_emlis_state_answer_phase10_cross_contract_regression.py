@@ -117,6 +117,7 @@ def test_phase10_emotion_submit_response_contract_keeps_state_answer_material_in
         "category",
         "created_at",
         "is_secret",
+        "receive_emlis_questions",
         "notify_friends",
     }
     assert _pydantic_field_names(EmotionSubmitInputFeedback) == {"comment_text", "emlis_ai"}
@@ -161,6 +162,7 @@ def test_phase10_emotion_submit_response_contract_keeps_state_answer_material_in
         "raw_input",
         "raw_text",
         "comment_text_body",
+        "receive_emlis_questions",
     }
     assert forbidden_public_keys.isdisjoint(public_keys)
     assert '"environment_state_output_frame":' not in dumped_meta
