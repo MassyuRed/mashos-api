@@ -563,3 +563,93 @@ def test_final_single_field_uses_the_recipient_instruction_without_an_answer():
     assert '短い受け取りや一度の言い換えも構いません' not in system['content']
     assert '今回は回答後です' not in system['content']
     assert json.loads(source['content'])['records'] == json.loads(previous.writer_material_json)['records']
+
+
+@pytest.mark.parametrize('old_writer', [False, True])
+def test_received_answer_source_roles_keep_exact_saved_writer_on_retry(natural_case, qdb, monkeypatch, old_writer):
+    from cocolon_meaning_experience_engine import natural_reply
+    from test_emlis_q2_application import answer
+
+    user, parent, service, calls = natural_case
+    memo = '褒められたのに、嬉しくなかった。'
+    action = '会議で発表した。'
+    supplement = 'その時は重かった。'
+    qdb.query('update public.emotions set memo=$2,memo_action=$3 where id=$1', [parent, memo, action])
+    initial = run(service.start(user, parent))
+    prompt = initial['pending_question']['text']
+    assert prompt == '「褒められた」は、あなたにはどんな意味として届きましたか。'
+    failed = False
+
+    async def fail_first_observation_save(name, payload, **kwargs):
+        nonlocal failed
+        if not failed and any(e['kind'] == 'OBSERVATION' for e in payload.get('p_events', [])):
+            failed = True
+            return httpx.Response(503, json={'code': '57P03'})
+        return await qdb.rpc(name, payload, **kwargs)
+
+    def previous_writer(*args, **kwargs):
+        kwargs['include_received_answer'] = False
+        return prepare_natural_reply(*args, **kwargs)
+
+    monkeypatch.setattr(emlis_thread_store, 'sb_post_rpc', fail_first_observation_save)
+    with monkeypatch.context() as old:
+        if old_writer:
+            old.setattr(natural_reply, 'prepare_natural_reply', previous_writer)
+        pending = run(answer(service, user, initial, supplement))
+    assert failed and pending['can_retry'] and len(calls) == 2
+    request = calls[-1]
+    messages = build_natural_reply_messages(request)
+    message = json.loads(messages[-1]['content'])
+    if old_writer:
+        assert 'records' in message
+        assert prompt in messages[-1]['content']
+        version = natural_reply.SOURCE_CONTEXT_VERSION
+    else:
+        assert message['今回の場面'] == {'起きたこと': '褒められた', 'その時の反応': '嬉しくなかった',
+                                      '補足': supplement, '思考欄の原文': memo}
+        assert '行動欄' not in message
+        assert action not in messages[-1]['content']
+        assert prompt not in messages[-1]['content']
+        version = natural_reply.RECEIVED_ANSWER_CONTEXT_VERSION
+    material = json.loads(request.analysis_material_json)
+    assert material['coverage']['active_state'] == 'PENDING' and not material['active_fields']
+    assert (material['original_record']['memo'], material['original_record']['memo_action']) == (memo, action)
+    before = run(service.store.read(user, input_id=parent))
+    receipt = [e for e in before['events'] if e['payload'].get('stage') == 'NATURAL_REPLY_RECEIVED'][-1]['payload']
+    assert receipt['writer_context_version'] == version
+    encoded = json.dumps(messages, ensure_ascii=False, separators=(',', ':')).encode()
+    assert receipt['writer_messages_sha256'] == hashlib.sha256(encoded).hexdigest()
+
+    async def no_new_author(material):
+        raise AssertionError('the saved reply must not generate again')
+
+    restarted = EmlisThreadService(runtime_profile=Q3_PROFILE, natural_reply_source=no_new_author)
+    result = run(restarted.action(user, pending['thread_id'], action='retry_response',
+        expected_revision=pending['revision'], idempotency_key='resume-received-answer',
+        operation_id=pending['operation_id']))
+    assert result['current_observation']['text'] == receipt['reply']['text']
+    assert run(restarted.get(user, parent))['current_observation'] == result['current_observation']
+    after = run(service.store.read(user, input_id=parent))
+    artifact = _observations(after)[-1]['payload']['artifact']
+    assert artifact['analysis_material'] == material
+    assert artifact['writer_messages_sha256'] == receipt['writer_messages_sha256']
+
+
+@pytest.mark.parametrize('action,supplement', [
+    ('その時に会議で発表した。', 'その時は重かった。'),
+    ('褒められた直後に資料を片づけた。', 'その時は重かった。'),
+    ('会議で発表した。', 'その時は重かった。分かりません。'),
+])
+def test_received_answer_only_uses_fully_bound_sources(natural_case, qdb, action, supplement):
+    from cocolon_meaning_experience_engine.natural_reply import SOURCE_CONTEXT_VERSION
+    from test_emlis_q2_application import answer
+
+    user, parent, service, calls = natural_case
+    qdb.query('update public.emotions set memo=$2,memo_action=$3 where id=$1',
+        [parent, '褒められたのに、嬉しくなかった。', action])
+    initial = run(service.start(user, parent))
+    final = run(answer(service, user, initial, supplement))
+    assert final['body_state'] == 'REFINED'
+    writer = json.loads(calls[-1].writer_material_json)
+    assert writer['source_context_version'] == SOURCE_CONTEXT_VERSION
+    assert 'received_answer_dialogue' not in writer
