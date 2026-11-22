@@ -1,0 +1,563 @@
+# Piece B2-B/B3/B4/B5 verification only. No Supabase/live credentials or deployment.
+name: Piece B2-B/B3/B4/B5 isolated PostgreSQL
+
+'on':
+  push:
+    branches:
+      - agent/cmee-v1a-i1sx-source-explicit-20260815
+    paths:
+      - .github/workflows/piece-b2b-isolated-postgres.yml
+      - supabase/migrations/20260808_002_piece_v2_foundation.sql
+      - supabase/migrations/20261103235434_piece_v2_expand_visual_palette.sql
+      - ai/tests/piece_v2/db/test_b02_piece_v2_foundation.py
+      - supabase/migrations/20260808_003_piece_v2_rls_and_staging.sql
+      - ai/services/ai_inference/piece_v2_access.py
+      - ai/tests/piece_v2/db/test_b03_piece_v2_access_rls.py
+      - ai/tests/piece_v2/test_b03_piece_v2_access_api_policy.py
+      - supabase/migrations/20260808_004_piece_v2_atomic_functions.sql
+      - ai/services/ai_inference/piece_v2_store.py
+      - ai/services/ai_inference/piece_v2_quota.py
+      - ai/tests/piece_v2/db/test_b04_piece_v2_atomic_transactions.py
+      - supabase/migrations/*_piece_legacy_metrics_atomic.sql
+      - supabase/migrations/*_piece_legacy_reaction_alias.sql
+      - ai/tests/piece_v2/db/test_piece_legacy_public_alias_native.py
+      - ai/services/ai_inference/subscription_projection.py
+      - ai/services/ai_inference/subscription_live_console_check.py
+      - ai/services/ai_inference/subscription_bootstrap_store.py
+      - ai/services/ai_inference/api_follow_graph.py
+      - ai/services/ai_inference/emlis_ai_context_service.py
+      - ai/services/ai_inference/emlis_ai_world_model_service.py
+      - ai/tests/test_subscription_purchase_owner_hint.py
+      - ai/tests/test_subscription_live_console_readiness.py
+      - ai/tests/test_follow_private_visibility_failure.py
+      - ai/tests/test_emlis_ai_metadata_input_selection.py
+      - ai/tests/test_emlis_natural_reply_application.py
+      - ai/tests/test_emlis_natural_frames_application.py
+      - ai/tests/test_emlis_frame_feedback_context.py
+      - supabase/migrations/*_emlis_frame_feedback_target_context.sql
+      - supabase/migrations/*_piece_frame_target_dependency_fence.sql
+      - ai/tests/test_emlis_interpretation_correction.py
+      - supabase/migrations/*_emlis_interpretation_correction_history.sql
+      - ai/tests/test_emlis_natural_question_application.py
+      - ai/tests/test_emlis_question_receiving_preference.py
+      - ai/tests/test_emlis_natural_reply_response_purpose.py
+      - supabase/migrations/*_emlis_natural_bound_questions.sql
+      - supabase/migrations/*_emlis_question_receiving_preference.sql
+      - ai/tests/piece_v2/db/test_b05_preview_persistence.py
+      - ai/services/ai_inference/piece_v2_preview_service.py
+      - ai/services/ai_inference/piece_model_source.py
+      - ai/services/ai_inference/cocolon_meaning_experience_engine/piece_semantic_admission.py
+      - ai/services/ai_inference/cocolon_meaning_experience_engine/piece_v1c.py
+      - ai/services/ai_inference/cocolon_meaning_experience_engine/engine.py
+      - ai/services/ai_inference/cocolon_meaning_experience_engine/natural_reply.py
+      - ai/services/ai_inference/cocolon_meaning_experience_engine/cores/analysis/source_adapter.py
+      - ai/services/ai_inference/cocolon_meaning_experience_engine/cores/analysis/semantic_admission.py
+      - ai/services/ai_inference/emlis_thread_service.py
+      - ai/services/ai_inference/piece_v2_source_adapter.py
+      - ai/tests/test_emlis_active_meaning_application.py
+      - ai/tests/test_emlis_analysis_material.py
+      - ai/tests/test_analysis_emlis_material_handoff.py
+      - ai/tests/test_piece_cmee_realization.py
+      - ai/tests/fixtures/piece_cmee_realization_recorded.json
+      - ai/tests/piece_v2/test_b05_shared_meaning_piece_pipeline.py
+      - supabase/migrations/*_analysis_emlis_material_handoff.sql
+      - supabase/migrations/*_piece_shared_analysis_material_fence.sql
+      - ai/services/ai_inference/cocolon_meaning_experience_engine/preparation_sources.py
+      - ai/tests/test_piece_model_source.py
+      - ai/tests/test_piece_model_candidate_independent.py
+      - ai/tests/test_piece_model_finite_scope.py
+      - ai/tests/test_piece_model_evaluation_reuse.py
+      - ai/tests/piece_v2/test_b08_piece_bare_finite_evaluation.py
+      - ai/tests/piece_v2/test_b08_piece_personal_evaluation.py
+      - ai/tests/piece_v2/test_b08_piece_past_transitive_expression.py
+      - ai/tests/piece_v2/test_b08_piece_finite_nominal_argument.py
+      - ai/tests/piece_v2/test_b08_piece_simple_nominal_transitive.py
+      - ai/tests/test_piece_model_field_slots.py
+      - ai/tests/test_cmee_piece_supplemental_then_feeling.py
+      - ai/tools/serve_emlis_natural_reply.py
+      - ai/services/ai_inference/analysis_merge_response_parser.py
+      - ai/tests/test_piece_model_server_constraints.py
+      - ai/tests/test_analysis_merge_constraint_prefix.py
+      - ai/tools/training/train_piece_model_adapter.py
+      - ai/tests/test_piece_model_adapter_training.py
+      - ai/tests/test_piece_model_prose_register.py
+      - ai/tests/test_piece_model_scoped_action.py
+      - ai/tests/test_piece_model_narrator_voice.py
+      - ai/tests/test_piece_model_temporal_self_omission.py
+      - ai/tests/test_piece_model_authoring_constraints.py
+      - ai/tests/test_piece_model_content_selection.py
+      - ai/tests/test_piece_quoted_scope_binding.py
+      - ai/tests/test_piece_model_authoring_application.py
+      - ai/tests/test_piece_model_coordinated_actions.py
+      - ai/tests/test_piece_model_mixed_keep_register.py
+      - ai/tests/test_piece_model_inflection_composition.py
+      - ai/tests/test_piece_model_source_topic_choices.py
+      - ai/tools/analysis_semantic_generation_requirements.txt
+      - ai/tests/piece_v2/test_b05_piece_model_concurrency.py
+      - ai/tests/piece_v2/test_b05_piece_model_saved_pipeline.py
+      - ai/tests/piece_v2/test_b05_piece_qualified_checkpoint.py
+      - ai/tests/piece_v2/test_b05_refined_preview_saved_pipeline.py
+      - ai/tests/piece_v2/test_b05_natural_refined_saved_pipeline.py
+      - ai/tests/piece_v2/test_b05_natural_unanswered_question.py
+      - ai/tests/test_cmee_piece_answer_updates.py
+      - ai/tests/test_piece_model_active_ranges.py
+      - ai/tests/piece_v2/test_b05_piece_answer_update_saved_pipeline.py
+      - ai/tests/piece_v2/test_b05_effective_round_source_contract.py
+      - ai/tests/piece_v2/test_b05_effective_round_sql_fence.py
+      - ai/tests/test_cmee_piece_interpretation_correction.py
+      - ai/tests/piece_v2/test_b05_interpretation_correction_application.py
+      - ai/tests/piece_v2/test_b05_interpretation_correction_sql_fence.py
+      - supabase/migrations/*_piece_interpretation_correction_source.sql
+      - supabase/migrations/*_piece_multiple_interpretation_corrections.sql
+      - supabase/migrations/*_piece_answer_and_interpretation_corrections.sql
+      - ai/tests/piece_v2/test_b05_answer_correction_application.py
+      - ai/tests/piece_v2/test_b05_answer_correction_sql_fence.py
+      - supabase/migrations/*_piece_natural_answer_active_source.sql
+      - supabase/migrations/*_piece_natural_refined_source_fence.sql
+      - supabase/migrations/*_piece_natural_later_add_answer.sql
+      - supabase/migrations/*_piece_natural_effective_round_sources.sql
+      - ai/tests/test_cmee_piece_request_saved_pipeline.py
+      - ai/tests/test_emlis_q2_application.py
+      - ai/tests/helpers/emlis_q2_postgres.cjs
+      - ai/tests/piece_v2/test_b05_piece_model_evaluation_pipeline.py
+      - ai/services/ai_inference/piece_v2_safety_review.py
+      - ai/tests/piece_v2/db/test_b05_reviewed_preview_issuance.py
+      - ai/tests/piece_v2/db/test_b05_generated_preview_issuance.py
+      - ai/tests/piece_v2/db/test_b05_preview_replay_read.py
+      - ai/services/ai_inference/api_piece_v2.py
+      - ai/tests/piece_v2/test_b05_piece_v2_quota_api.py
+      - supabase/migrations/20261010_005_piece_v2_quota_read.sql
+      - supabase/migrations/20261010050940_piece_v2_preview_visual_change.sql
+      - ai/tests/piece_v2/test_b05_preview_visual_mutation.py
+      - ai/tests/piece_v2/db/test_b05_preview_visual_mutation_native.py
+      - ai/services/ai_inference/piece_v2_runtime_control.py
+      - ai/services/ai_inference/piece_v2_source_ref_http.py
+      - ai/services/ai_inference/api_app_bootstrap.py
+      - ai/tests/piece_v2/test_b14a_piece_v2_runtime_control.py
+      - ai/tests/piece_v2/test_b14a_piece_preview_composition.py
+      - ai/tests/piece_v2/test_b05_source_ref_http_candidate.py
+      - ai/tests/piece_v2/db/test_b10_preview_application_native.py
+      - ai/services/ai_inference/app.py
+      - ai/services/ai_inference/api_emotion_piece.py
+      - ai/services/ai_inference/api_piece_compat.py
+      - ai/services/ai_inference/api_contract_registry.py
+      - ai/services/ai_inference/middleware_api_contract.py
+      - ai/tests/piece_v2/test_b12_shared_preview_composition.py
+      - ai/tests/piece_v2/db/test_b12_shared_preview_native.py
+      - ai/tests/piece_v2/db/test_b05_preview_cancel_http.py
+      - ai/tests/piece_v2/db/test_b06_save_tier_fence.py
+      - ai/services/ai_inference/piece_v2_save_service.py
+      - ai/tests/piece_v2/test_b06_piece_v2_save_api.py
+      - ai/tests/piece_v2/db/test_b06_save_context_fence.py
+      - ai/services/ai_inference/piece_v2_owner_service.py
+      - ai/tests/piece_v2/test_b07_piece_v2_owner_api.py
+      - ai/tests/piece_v2/test_b07_piece_v2_mutation_http.py
+      - ai/tests/piece_v2/db/test_b07_piece_v2_mutation_http_native.py
+      - ai/services/ai_inference/cocolon_meaning_experience_engine/piece_source.py
+      - ai/services/ai_inference/piece_v2_content_policy.py
+      - ai/services/ai_inference/piece_v2_content_policy.py
+      - ai/services/ai_inference/piece_v2_generation.py
+      - ai/tests/piece_v2/test_b08_source_meaning_review.py
+      - ai/tests/piece_v2/test_b08_engine_result_binding.py
+      - ai/tests/piece_v2/test_b08_source_contact_boundary.py
+      - ai/tests/piece_v2/test_b08_piece_latin_role_binding.py
+      - ai/tests/piece_v2/test_b08_piece_script_role_binding.py
+      - ai/tests/piece_v2/test_b08_piece_joined_kana_role_binding.py
+      - ai/tests/piece_v2/test_b08_piece_named_role_owner.py
+
+permissions:
+  contents: read
+
+jobs:
+  b2b-foundation:
+    if: github.repository == 'MassyuRed/mashos-api'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: piece_b2b_disposable_only
+          POSTGRES_DB: piece_v2_test_b2b
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d piece_v2_test_b2b"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      PYTEST_DISABLE_PLUGIN_AUTOLOAD: '1'
+      PYTHONDONTWRITEBYTECODE: '1'
+      PIECE_V2_TEST_DATABASE_URL: postgresql://postgres:piece_b2b_disposable_only@127.0.0.1:5432/piece_v2_test_b2b
+      PIECE_V2_TEST_DATABASE_DISPOSABLE_ACK: I_ACKNOWLEDGE_DISPOSABLE_DATABASE
+    steps:
+      - name: Check out the triggering commit
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Read the fixed pre-change Piece source for byte compatibility
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: 7f51a64e6cb58668ad5d418480b7de4499bfe6fa
+          path: .compatibility/piece-7f51
+          fetch-depth: 1
+          persist-credentials: false
+          sparse-checkout: |
+            ai/services/ai_inference/piece_v2_contract.py
+            ai/services/ai_inference/piece_v2_content_policy.py
+            ai/services/ai_inference/piece_v2_generation.py
+            ai/services/ai_inference/cocolon_meaning_experience_engine/piece_source.py
+            ai/services/ai_inference/cocolon_meaning_experience_engine/piece_v1c.py
+            ai/services/ai_inference/cocolon_meaning_experience_engine/piece_refined.py
+            ai/services/ai_inference/cocolon_meaning_experience_engine/preparation_sources.py
+            ai/services/ai_inference/cocolon_meaning_experience_engine/piece_semantic_admission.py
+            ai/services/ai_inference/piece_v2_source_adapter.py
+            ai/services/ai_inference/piece_model_source.py
+          sparse-checkout-cone-mode: false
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+      - name: Install unchanged isolated-test dependencies
+        run: python -m pip install --quiet --disable-pip-version-check -r requirements-piece-v2-test.txt
+      - name: Record tested source and runtime identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rev-parse HEAD
+          sha256sum \
+            requirements-piece-v2-test.txt \
+            ai/tests/piece_v2/db/conftest.py \
+            ai/tests/piece_v2/db/test_b02_piece_v2_foundation.py \
+            supabase/migrations/20260808_001_piece_v2_legacy_read_bridge.sql \
+            supabase/migrations/20260808_002_piece_v2_foundation.sql \
+            supabase/migrations/20261103235434_piece_v2_expand_visual_palette.sql \
+            ai/services/ai_inference/piece_v2_contract.py \
+            ai/services/ai_inference/piece_v2_visual.py \
+            supabase/migrations/20260808_003_piece_v2_rls_and_staging.sql \
+            ai/services/ai_inference/piece_v2_access.py \
+            ai/tests/piece_v2/db/test_b03_piece_v2_access_rls.py \
+            supabase/migrations/20260808_004_piece_v2_atomic_functions.sql \
+            ai/services/ai_inference/piece_v2_store.py \
+            ai/services/ai_inference/piece_v2_quota.py \
+            ai/tests/piece_v2/db/test_b04_piece_v2_atomic_transactions.py \
+            ai/tests/piece_v2/db/test_b05_preview_persistence.py
+          python - <<'PY'
+          import os
+          import platform
+          import psycopg
+          import pytest
+          print('Python:', platform.python_version())
+          print('pytest:', pytest.__version__)
+          print('psycopg:', psycopg.__version__)
+          with psycopg.connect(os.environ['PIECE_V2_TEST_DATABASE_URL'], connect_timeout=3) as conn:
+              print('PostgreSQL:', conn.execute('SHOW server_version').fetchone()[0])
+          PY
+      - name: Run only the existing B2-B tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pytest -q --tb=short -ra \
+            -c /dev/null --confcutdir=ai/tests/piece_v2/db \
+            ai/tests/piece_v2/db/test_b02_piece_v2_foundation.py
+      - name: Run B3 access and native RLS tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pytest -q --tb=short -ra -p no:cacheprovider \
+            -c /dev/null --confcutdir=ai/tests/piece_v2/db \
+            ai/tests/piece_v2/db/test_b03_piece_v2_access_rls.py
+          python -m pytest -q --tb=short -ra -p no:cacheprovider \
+            -c /dev/null --noconftest \
+            ai/tests/piece_v2/test_b03_piece_v2_access_api_policy.py
+      - name: Run B4 atomic transactions and adapter tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pytest -q --tb=short -ra -p no:cacheprovider \
+            -c /dev/null --confcutdir=ai/tests/piece_v2/db \
+            ai/tests/piece_v2/db/test_b04_piece_v2_atomic_transactions.py
+      - name: Run legacy public aliases with independent PostgreSQL connections
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha256sum \
+            supabase/migrations/*_piece_legacy_metrics_atomic.sql \
+            supabase/migrations/*_piece_legacy_reaction_alias.sql \
+            ai/tests/piece_v2/db/test_piece_legacy_public_alias_native.py
+          python -m pytest -q --tb=short -ra -p no:cacheprovider \
+            -c /dev/null --confcutdir=ai/tests/piece_v2/db \
+            ai/tests/piece_v2/db/test_piece_legacy_public_alias_native.py
+      - name: Run B5 preview persistence and B4 connection tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pytest -q --tb=short -ra -p no:cacheprovider \
+            -c /dev/null --confcutdir=ai/tests/piece_v2/db \
+            ai/tests/piece_v2/db/test_b05_preview_persistence.py
+      - name: Install existing backend requirements for HTTP cancellation tests
+        run: python -m pip install --quiet --disable-pip-version-check -r requirements.txt
+      - name: Run B5 cancellation HTTP and native SQL integration
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha256sum requirements.txt ai/services/ai_inference/api_piece_v2.py ai/tests/piece_v2/db/test_b05_preview_cancel_http.py
+          python - <<'PYHTTP'
+          from importlib.metadata import version
+          for name in ('fastapi', 'starlette', 'pydantic', 'httpx', 'pytest', 'psycopg'):
+              print(name + ':', version(name))
+          PYHTTP
+          python -m pytest -q --tb=short -ra -p no:cacheprovider \
+            -c /dev/null --confcutdir=ai/tests/piece_v2/db \
+            ai/tests/piece_v2/db/test_b05_preview_cancel_http.py
+      - name: Run B5 quota HTTP and native retained consumption
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pytest -q --tb=short -ra -p no:cacheprovider \
+            -c /dev/null --noconftest \
+            ai/tests/piece_v2/test_b05_piece_v2_quota_api.py
+      - name: Run visual-only preview mutation and native revision locks
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pytest -q --tb=short -ra -p no:cacheprovider \
+            -c /dev/null --noconftest \
+            ai/tests/piece_v2/test_b05_preview_visual_mutation.py
+          python -m pytest -q --tb=short -ra -p no:cacheprovider \
+            -c /dev/null --confcutdir=ai/tests/piece_v2/db \
+            ai/tests/piece_v2/db/test_b05_preview_visual_mutation_native.py
+      - name: Run pre-save tier fence with native lock-wait verification
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha256sum ai/tests/piece_v2/db/test_b06_save_tier_fence.py
+          python -m pytest -q --tb=short -ra -p no:cacheprovider \
+            -c /dev/null --confcutdir=ai/tests/piece_v2/db \
+            ai/tests/piece_v2/db/test_b06_save_tier_fence.py
+      - name: Run B6 authenticated save and native source-lock integration
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha256sum ai/services/ai_inference/piece_v2_save_service.py ai/tests/piece_v2/test_b06_piece_v2_save_api.py
+          python -m pytest -q --tb=short -ra -p no:cacheprovider \
+            -c /dev/null --noconftest \
+            ai/tests/piece_v2/test_b06_piece_v2_save_api.py
+      - name: Run B6 saved Q3 context with native lock-wait verification
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha256sum ai/tests/piece_v2/db/test_b06_save_context_fence.py
+          python -m pytest -q --tb=short -ra -p no:cacheprovider \
+            -c /dev/null --noconftest \
+            ai/tests/piece_v2/db/test_b06_save_context_fence.py
+      - name: Run B7 owner history and detail with native saved artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha256sum ai/services/ai_inference/piece_v2_owner_service.py ai/tests/piece_v2/test_b07_piece_v2_owner_api.py
+          python -m pytest -q --tb=short -ra -p no:cacheprovider \
+            -c /dev/null --noconftest \
+            ai/tests/piece_v2/test_b07_piece_v2_owner_api.py
+      - name: Run B7 mutation HTTP and native transaction integration
+        shell: bash
+        env:
+          PYTHONPATH: ai/services/ai_inference
+        run: |
+          set -euo pipefail
+          sha256sum ai/services/ai_inference/api_piece_v2.py ai/tests/piece_v2/test_b07_piece_v2_mutation_http.py ai/tests/piece_v2/db/test_b07_piece_v2_mutation_http_native.py
+          python -m pytest -q --tb=short -ra -p no:cacheprovider \
+            -c /dev/null --noconftest \
+            ai/tests/piece_v2/test_b07_piece_v2_mutation_http.py
+          python -m pytest -q --tb=short -ra -p no:cacheprovider \
+            -c /dev/null --confcutdir=ai/tests/piece_v2/db \
+            ai/tests/piece_v2/db/test_b07_piece_v2_mutation_http_native.py
+      - name: Run B8 source-result binding and safety regressions
+        shell: bash
+        env:
+          PYTHONPATH: ai/services/ai_inference
+        run: |
+          set -euo pipefail
+          sha256sum ai/services/ai_inference/piece_v2_generation.py ai/tests/piece_v2/test_b08_engine_result_binding.py ai/services/ai_inference/cocolon_meaning_experience_engine/piece_source.py ai/services/ai_inference/piece_v2_content_policy.py ai/tests/piece_v2/test_b08_piece_latin_role_binding.py ai/tests/piece_v2/test_b08_source_contact_boundary.py
+          python -m pytest -q --tb=short -ra -p no:cacheprovider \
+            -c /dev/null --noconftest \
+            ai/tests/piece_v2/test_b08_source_meaning_review.py \
+            ai/tests/piece_v2/test_b08_engine_result_binding.py \
+            ai/tests/piece_v2/test_b08_piece_script_role_binding.py \
+            ai/tests/piece_v2/test_b08_piece_joined_kana_role_binding.py \
+            ai/tests/piece_v2/test_b08_piece_named_role_owner.py \
+            ai/tests/piece_v2/test_b08_piece_latin_role_binding.py \
+            ai/tests/piece_v2/test_b08_source_contact_boundary.py
+      - name: Run B5 generated-artifact issuance connection (synthetic safety review)
+        shell: bash
+        env:
+          PYTHONPATH: ai/services/ai_inference
+        run: |
+          set -euo pipefail
+          sha256sum ai/services/ai_inference/piece_v2_preview_service.py ai/tests/piece_v2/db/test_b05_generated_preview_issuance.py
+          python -m pytest -q --tb=short -ra -p no:cacheprovider \
+            -c /dev/null --noconftest \
+            ai/tests/piece_v2/db/test_b05_generated_preview_issuance.py
+      - name: Run B5 read-only restart replay (synthetic source and safety)
+        shell: bash
+        env:
+          PYTHONPATH: ai/services/ai_inference
+        run: |
+          set -euo pipefail
+          python -m pytest -q --tb=short -ra -p no:cacheprovider \
+            -c /dev/null --noconftest \
+            ai/tests/piece_v2/db/test_b05_preview_replay_read.py
+      - name: Run B5 actual bounded review and native issuance (synthetic Auth/source)
+        shell: bash
+        env:
+          PYTHONPATH: ai/services/ai_inference
+        run: |
+          set -euo pipefail
+          sha256sum ai/services/ai_inference/piece_v2_safety_review.py ai/tests/piece_v2/db/test_b05_reviewed_preview_issuance.py
+          python -m pytest -q --tb=short -ra -p no:cacheprovider \
+            -c /dev/null --noconftest \
+            ai/tests/piece_v2/db/test_b05_reviewed_preview_issuance.py
+      - name: Run existing preview composition and source-reference contracts
+        shell: bash
+        env:
+          PYTHONPATH: ai/services/ai_inference
+        run: |
+          set -euo pipefail
+          sha256sum ai/services/ai_inference/piece_v2_runtime_control.py ai/services/ai_inference/api_piece_v2.py ai/services/ai_inference/piece_v2_source_ref_http.py ai/services/ai_inference/api_app_bootstrap.py
+          python -m pytest -q --tb=short -ra -p no:cacheprovider \
+            -c /dev/null --noconftest \
+            ai/tests/piece_v2/test_b14a_piece_v2_runtime_control.py \
+            ai/tests/piece_v2/test_b14a_piece_preview_composition.py \
+            ai/tests/piece_v2/test_b05_source_ref_http_candidate.py
+      - name: Run composed preview through actual CMEE review and native persistence
+        shell: bash
+        env:
+          PYTHONPATH: ai/services/ai_inference
+        run: |
+          set -euo pipefail
+          sha256sum ai/tests/piece_v2/db/test_b10_preview_application_native.py
+          python -m pytest -q --tb=short -ra -p no:cacheprovider \
+            -c /dev/null --noconftest \
+            ai/tests/piece_v2/db/test_b10_preview_application_native.py
+      - name: Install existing shared-application requirements
+        run: python -m pip install --quiet --disable-pip-version-check -r ai/services/ai_inference/requirements.txt
+      - name: Verify prepared shared API and unchanged default contracts
+        shell: bash
+        env:
+          PYTHONPATH: ai:ai/services:ai/services/ai_inference
+          SUPABASE_URL: https://synthetic.invalid
+          SUPABASE_SERVICE_ROLE_KEY: synthetic-isolated-test-only
+          MYMODEL_APP_NAME: Cocolon Isolated Test
+        run: |
+          set -euo pipefail
+          sha256sum ai/services/ai_inference/app.py ai/services/ai_inference/api_contract_registry.py ai/services/ai_inference/middleware_api_contract.py ai/tests/piece_v2/test_b12_shared_preview_composition.py
+          python -m pytest -q --tb=short -ra -p no:cacheprovider \
+            -c /dev/null --noconftest \
+            ai/tests/piece_v2/test_b12_shared_preview_composition.py \
+            ai/tests/contract/test_api_contract_registry.py
+      - name: Set up the existing Node runtime for saved-input SQL checks
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+      - name: Install only the existing PostgreSQL WASM test dependency
+        run: npm install --prefix "$RUNNER_TEMP/shared-input-postgres" --ignore-scripts --no-audit --no-fund @electric-sql/pglite@0.5.8
+      - name: Verify complete input materials, purchase owners and private profile failures
+        env:
+          PYTHONPATH: .:ai:ai/services:ai/services/ai_inference:ai/tests
+          Q2_PGLITE_MODULE: ${{ runner.temp }}/shared-input-postgres/node_modules/@electric-sql/pglite
+        shell: bash
+        run: |
+          python -m pytest -q --tb=short -ra -p no:cacheprovider \
+            -c /dev/null --rootdir=. --noconftest \
+            ai/tests/test_emlis_natural_reply_application.py \
+            ai/tests/test_emlis_active_meaning_application.py \
+            ai/tests/test_emlis_analysis_material.py \
+            ai/tests/test_analysis_emlis_material_handoff.py \
+            ai/tests/test_emlis_natural_frames_application.py \
+            ai/tests/test_emlis_frame_feedback_context.py \
+            ai/tests/test_emlis_interpretation_correction.py \
+            ai/tests/test_emlis_natural_question_application.py \
+            ai/tests/test_emlis_question_receiving_preference.py \
+            ai/tests/test_emlis_natural_reply_response_purpose.py \
+            ai/tests/test_emlis_ai_metadata_input_selection.py \
+            ai/tests/test_subscription_purchase_owner_hint.py \
+            ai/tests/test_subscription_live_console_readiness.py \
+            ai/tests/test_follow_private_visibility_failure.py
+      - name: Install the pinned parser and NumPy for CPU protocol tests
+        run: python -m pip install --quiet --disable-pip-version-check numpy==2.3.5 -r ai/tools/analysis_semantic_generation_requirements.txt
+      - name: Verify Piece model receipt, mutations, cancellation and saved reuse
+        env:
+          PIECE_ADD_COMPAT_BASE_REPOSITORY: ${{ github.workspace }}/.compatibility/piece-7f51
+          PYTHONPATH: .:ai/services:ai/services/ai_inference:ai/tests:ai/tests/piece_v2
+          Q2_PGLITE_MODULE: ${{ runner.temp }}/shared-input-postgres/node_modules/@electric-sql/pglite
+        shell: bash
+        run: |
+          python -m pytest -q --tb=short -ra -p no:cacheprovider \
+            -c /dev/null --rootdir=. --noconftest \
+            ai/tests/test_piece_model_source.py \
+            ai/tests/test_piece_cmee_realization.py \
+            ai/tests/piece_v2/test_b05_shared_meaning_piece_pipeline.py \
+            ai/tests/test_piece_model_candidate_independent.py \
+            ai/tests/test_piece_model_finite_scope.py \
+            ai/tests/test_piece_model_evaluation_reuse.py \
+            ai/tests/test_piece_model_field_slots.py \
+            ai/tests/test_cmee_piece_supplemental_then_feeling.py \
+            ai/tests/test_piece_model_server_constraints.py \
+            ai/tests/test_analysis_merge_constraint_prefix.py \
+            ai/tests/test_piece_model_adapter_training.py \
+            ai/tests/test_piece_model_prose_register.py \
+            ai/tests/test_piece_model_operator_tree.py \
+            ai/tests/test_piece_model_inflection_composition.py \
+            ai/tests/test_piece_model_source_topic_choices.py \
+            ai/tests/test_piece_model_scoped_action.py \
+            ai/tests/test_piece_model_narrator_voice.py \
+            ai/tests/test_piece_model_temporal_self_omission.py \
+            ai/tests/test_piece_model_authoring_constraints.py \
+            ai/tests/test_piece_model_content_selection.py \
+            ai/tests/test_piece_quoted_scope_binding.py \
+            ai/tests/test_piece_model_authoring_application.py \
+            ai/tests/test_piece_model_coordinated_actions.py \
+            ai/tests/test_piece_model_mixed_keep_register.py \
+            ai/tests/piece_v2/test_b05_piece_model_concurrency.py \
+            ai/tests/piece_v2/test_b05_piece_model_saved_pipeline.py \
+            ai/tests/piece_v2/test_b05_piece_qualified_checkpoint.py \
+            ai/tests/piece_v2/test_b05_piece_model_evaluation_pipeline.py \
+            ai/tests/piece_v2/test_b05_natural_unanswered_question.py \
+            ai/tests/piece_v2/test_b05_natural_refined_saved_pipeline.py \
+            ai/tests/test_cmee_piece_answer_updates.py \
+            ai/tests/test_piece_model_active_ranges.py \
+            ai/tests/piece_v2/test_b05_piece_answer_update_saved_pipeline.py \
+            ai/tests/piece_v2/test_b05_effective_round_source_contract.py \
+            ai/tests/piece_v2/test_b05_effective_round_sql_fence.py \
+            ai/tests/test_cmee_piece_interpretation_correction.py \
+            ai/tests/piece_v2/test_b05_interpretation_correction_application.py \
+            ai/tests/piece_v2/test_b05_interpretation_correction_sql_fence.py \
+            ai/tests/piece_v2/test_b05_answer_correction_application.py \
+            ai/tests/piece_v2/test_b05_answer_correction_sql_fence.py
+          python -m pytest -q --tb=short -ra -p no:cacheprovider \
+            -c /dev/null --rootdir=. --noconftest \
+            ai/tests/piece_v2/test_b08_piece_bare_finite_evaluation.py \
+            ai/tests/piece_v2/test_b08_piece_personal_evaluation.py \
+            ai/tests/piece_v2/test_b08_piece_past_transitive_expression.py \
+            ai/tests/piece_v2/test_b08_piece_finite_nominal_argument.py \
+            ai/tests/piece_v2/test_b08_piece_simple_nominal_transitive.py \
+            -k 'modified_preference or short_nominal_intent or compound_activity or activity_ or short_bare_input_is_not_padded_to_satisfy_a_format or test_existing_free_short_essay_minimum_is_not_relaxed_for_preferences or test_short_past_source_keeps_the_existing_minimum_envelope or test_short_preference_does_not_lower_the_free_minimum_or_become_a_declaration'
+      - name: Verify prepared shared API through native disposable persistence
+        shell: bash
+        env:
+          PYTHONPATH: ai:ai/services:ai/services/ai_inference
+          SUPABASE_URL: https://synthetic.invalid
+          SUPABASE_SERVICE_ROLE_KEY: synthetic-isolated-test-only
+          MYMODEL_APP_NAME: Cocolon Isolated Test
+        run: |
+          set -euo pipefail
+          sha256sum ai/tests/piece_v2/db/test_b12_shared_preview_native.py
+          python -m pytest -q --tb=short -ra -p no:cacheprovider \
+            -c /dev/null --noconftest \
+            ai/tests/piece_v2/db/test_b12_shared_preview_native.py
+

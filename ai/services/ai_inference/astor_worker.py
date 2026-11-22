@@ -29,6 +29,7 @@ heavy tasks out-of-process, improving API stability.
 from __future__ import annotations
 
 import asyncio
+from functools import partial
 import json
 import logging
 import math
@@ -119,7 +120,9 @@ def _install_optional_perf_runtime_stubs() -> None:
 
 _install_optional_perf_runtime_stubs()
 
+from analysis_job_progress import MapJobClaimChanged, MapJobClaimUnavailable, map_job_progress
 from astor_job_queue import (
+    JOBS_TABLE, MAP_JOB_TYPES, check_map_job_owner, renew_map_job_progress,
     fetch_next_queued_job,
     claim_job,
     enqueue_job,
@@ -129,7 +132,7 @@ from astor_job_queue import (
     fetch_queue_stats,
     requeue_stale_running_jobs,
 )
-from supabase_client import sb_get, sb_patch, sb_post  # type: ignore
+from supabase_client import sb_get, sb_patch, sb_post, sb_post_rpc  # type: ignore
 
 
 # NOTE:
@@ -148,18 +151,12 @@ from astor_material_snapshots import (
     _exclude_rows_by_ids,
 )  # type: ignore
 
-# Phase X+: emotion structure reports (Analysis weekly/monthly)
-from api_analysis_reports import (
-    _build_analysis_target_period,
-    _generate_analysis_report_and_save_from_snapshot,
-)  # type: ignore
-
-from api_emotion_submit import _fetch_push_tokens_for_users, _send_fcm_push  # type: ignore
-
-try:
-    from report_distribution_push_store import ReportDistributionPushStore
-except Exception:  # pragma: no cover
-    ReportDistributionPushStore = None  # type: ignore
+from api_analysis_reports import _build_analysis_target_period
+from api_emotion_submit import (  # type: ignore
+    _fetch_push_tokens_for_users,
+    _filter_current_emotion_recipients,
+    _send_fcm_push,
+)
 
 # Generation lock (avoid concurrent snapshot generation per user/scope)
 from generation_lock import build_lock_key, make_owner_id, release_lock, try_acquire_lock  # type: ignore
@@ -284,29 +281,21 @@ from astor_global_summary_enqueue import (  # type: ignore
 )
 
 
-MYWEB_REPORTS_TABLE = (os.getenv("MYWEB_REPORTS_TABLE") or "myweb_reports").strip() or "myweb_reports"
-MYWEB_REPORTS_READ_TABLE = (
-    os.getenv("COCOLON_ANALYSIS_REPORTS_READ_TABLE")
-    or os.getenv("ANALYSIS_REPORTS_READ_TABLE")
-    or os.getenv("COCOLON_MYWEB_REPORTS_READ_TABLE")
-    or os.getenv("MYWEB_REPORTS_READ_TABLE")
-    or "analysis_reports"
-).strip() or "analysis_reports"
 MATERIAL_SNAPSHOTS_TABLE = (os.getenv("MATERIAL_SNAPSHOTS_TABLE") or "material_snapshots").strip() or "material_snapshots"
 SNAPSHOT_SCOPE_DEFAULT = (os.getenv("SNAPSHOT_SCOPE_DEFAULT") or "global").strip() or "global"
 ANALYSIS_RESULTS_TABLE = (os.getenv("ANALYSIS_RESULTS_TABLE") or "analysis_results").strip() or "analysis_results"
 MYMODEL_REFLECTIONS_TABLE = (os.getenv("MYMODEL_REFLECTIONS_TABLE") or "mymodel_reflections").strip() or "mymodel_reflections"
 MYMODEL_REFLECTIONS_READ_TABLE = (
-    os.getenv("COCOLON_PIECES_READ_TABLE")
-    or os.getenv("COCOLON_MYMODEL_REFLECTIONS_READ_TABLE")
+    os.getenv("COCOLON_MYMODEL_REFLECTIONS_READ_TABLE")
     or os.getenv("MYMODEL_REFLECTIONS_READ_TABLE")
-    or "pieces"
-).strip() or "pieces"
+    or "mymodel_reflections_read"
+).strip() or "mymodel_reflections_read"
 
 # JST (UTC+9) fixed for MyWeb periods
 JST = timezone(timedelta(hours=9))
 
-EMOTION_REPORT_V2_ENABLED = (os.getenv("ASTOR_ENABLE_EMOTION_REPORT_V2", "false").strip().lower() == "true")
+# Keep the existing deployment option for deep emotion analysis.
+EMOTION_DEEP_ANALYSIS_ENABLED = (os.getenv("ASTOR_ENABLE_EMOTION_REPORT_V2", "false").strip().lower() == "true")
 
 WORKER_LOGGER = logging.getLogger("astor_worker")
 
@@ -399,6 +388,10 @@ def _parse_job_types(raw: str) -> List[str]:
     return xs
 
 
+_RETIRED_EMOTION_REPORT_JOBS = ("generate_emotion_report_v2", "inspect_emotion_report_v1")
+_DEEP_INSIGHT_RECORD_ASSESSMENT_JOB = "deep_insight_records_assessment_v1"
+
+
 # Always include the core job types required by the current pipeline even when
 # ASTOR_WORKER_JOB_TYPES is left at an older/stale value in Render.
 _REQUIRED_WORKER_JOB_TYPES: List[str] = [
@@ -410,8 +403,8 @@ _REQUIRED_WORKER_JOB_TYPES: List[str] = [
     "analyze_self_structure_deep_v1",
     "generate_premium_reflections_v1",
     "inspect_reflection_v1",
-    "generate_emotion_report_v2",
-    "inspect_emotion_report_v1",
+    # Claim already queued report jobs so they can be settled without report writes.
+    *_RETIRED_EMOTION_REPORT_JOBS,
     "refresh_ranking_board_v1",
     "inspect_ranking_board_v1",
     "refresh_account_status_v1",
@@ -421,6 +414,7 @@ _REQUIRED_WORKER_JOB_TYPES: List[str] = [
     "refresh_global_summary_v1",
     "inspect_global_summary_v1",
     "send_fcm_push_v1",
+    _DEEP_INSIGHT_RECORD_ASSESSMENT_JOB,
 ]
 
 
@@ -474,6 +468,7 @@ _WORKER_JOB_TYPE_PROFILES: Dict[str, List[str]] = {
         "analyze_self_structure_deep_v1",
         "generate_emotion_report_v2",
         "generate_premium_reflections_v1",
+        _DEEP_INSIGHT_RECORD_ASSESSMENT_JOB,
     ],
     "inspect": [
         "inspect_reflection_v1",
@@ -531,6 +526,16 @@ def _format_queue_stats_for_log(stats: Dict[str, Any]) -> str:
     )
 
 
+async def _deep_insight_worker_rpc(name, parameters, result_key, result_type):
+    response = await sb_post_rpc(name, parameters, timeout=5.0)
+    if response.status_code != 200:
+        raise RuntimeError("deep_insight_worker_storage_unavailable")
+    result = response.json()
+    if type(result) is not dict or type(result.get(result_key)) is not result_type:
+        raise RuntimeError("deep_insight_worker_storage_response_invalid")
+    return result
+
+
 async def _run_worker_maintenance(
     *,
     logger: logging.Logger,
@@ -558,6 +563,15 @@ async def _run_worker_maintenance(
                 )
         except Exception as exc:
             logger.warning("stale running maintenance failed. worker_id=%s err=%s", worker_id, exc)
+
+    if "send_fcm_push_v1" in job_types:
+        try:
+            result = await _deep_insight_worker_rpc(
+                "deep_insight_theme_notification_enqueue_due", {"p_limit": 50}, "queued", int)
+            if result["queued"]:
+                logger.info("DeepInsight theme reminders queued. count=%s", result["queued"])
+        except Exception:
+            logger.warning("DeepInsight theme reminder scheduling unavailable")
 
     if stats_enabled:
         try:
@@ -662,180 +676,8 @@ def _build_emotion_analysis_skip_result(
     }
 
 
-async def _handle_generate_emotion_report_v2(*, user_id: str, payload: dict) -> dict:
-    """Generate emotion structure reports from emotion_period snapshots for a user (v2).
-
-    v2 方針:
-    - emotion_period material_snapshots (weekly/monthly) を入力として使用する。
-    - emotions テーブルを直接読まない（materials 経由の国家設計）。
-    """
-    uid = str(user_id or "").strip()
-    if not uid:
-        raise ValueError("user_id is required")
-
-    include_astor = bool((payload or {}).get("include_astor", True))
-
-    scopes: List[str] = []
-    if isinstance((payload or {}).get("scopes"), list):
-        scopes = [str(x or "").strip() for x in (payload or {}).get("scopes") if str(x or "").strip()]
-    else:
-        sc = str((payload or {}).get("scope") or "").strip()
-        if sc:
-            scopes = [sc]
-
-    if not scopes:
-        raise ValueError("payload.scope(s) is required")
-
-    generated: List[Dict[str, Any]] = []
-    skipped: List[Dict[str, Any]] = []
-    errors: Dict[str, str] = {}
-    for sc in scopes:
-        try:
-            _text, _json, _astor_text, meta = await _generate_analysis_report_and_save_from_snapshot(uid, scope=sc, include_astor=include_astor)
-            rid = None
-            rt = None
-            pub_hash = None
-            meta_status = "generated"
-            skip_reason = None
-            if isinstance(meta, dict):
-                rid = meta.get("report_id")
-                rt = meta.get("report_type")
-                pub_hash = meta.get("public_source_hash")
-                meta_status = str(meta.get("status") or "generated").strip() or "generated"
-                skip_reason = str(meta.get("skip_reason") or "").strip() or None
-            if meta_status == "skipped":
-                skipped.append({
-                    "scope": sc,
-                    "report_type": rt,
-                    "report_id": rid,
-                    "public_source_hash": pub_hash,
-                    "status": "skipped",
-                    "skip_reason": skip_reason or NO_PUBLIC_EMOTION_SKIP_REASON,
-                })
-                continue
-            generated.append({"scope": sc, "report_type": rt, "report_id": rid, "public_source_hash": pub_hash, "status": "ok"})
-        except Exception as exc:
-            errors[sc] = str(exc)
-
-    if generated:
-        return {"status": "ok", "user_id": uid, "generated": generated, "skipped": (skipped or None), "errors": (errors or None)}
-
-    if skipped and not errors:
-        return {"status": "skipped_no_input", "user_id": uid, "generated": [], "skipped": skipped, "errors": None}
-
-    if skipped and errors:
-        return {"status": "skipped_no_input", "user_id": uid, "generated": [], "skipped": skipped, "errors": errors}
-
-    raise RuntimeError(f"generate_emotion_report_v2 failed: {errors}")
-
-
-# ----------------------------
-# Inspection: Emotion report (MyWeb) publish gating
-# ----------------------------
-
-_EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
-# Very loose phone detector (JP + general digit sequences)
-_PHONE_RE = re.compile(r"(?:\b0\d{1,4}[- ]?\d{1,4}[- ]?\d{4}\b|\b\d{10,11}\b)")
-
-
 def _now_iso_z() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
-
-
-def _normalize_distribution_key(raw: Any) -> Optional[str]:
-    s = str(raw or "").strip()
-    if not s:
-        return None
-    return s if len(s) == 10 else None
-
-
-def _distribution_key_from_requested_at(raw: Any) -> Optional[str]:
-    s = str(raw or "").strip()
-    if not s:
-        return None
-    try:
-        if s.endswith("Z"):
-            s = s[:-1] + "+00:00"
-        dt = datetime.fromisoformat(s)
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        return dt.astimezone(JST).date().isoformat()
-    except Exception:
-        return None
-
-
-def _emotion_distribution_family(report_type: Any) -> Optional[str]:
-    rt = str(report_type or "").strip().lower()
-    if rt == "daily":
-        return "emotion_daily"
-    if rt == "weekly":
-        return "emotion_weekly"
-    if rt == "monthly":
-        return "emotion_monthly"
-    return None
-
-
-async def _enqueue_emotion_report_distribution_candidate(
-    *,
-    user_id: str,
-    report_row: Dict[str, Any],
-    payload: Dict[str, Any],
-) -> bool:
-    if ReportDistributionPushStore is None:
-        return False
-    if not bool((payload or {}).get("distribution_origin")):
-        return False
-    distribution_key = (
-        _normalize_distribution_key((payload or {}).get("distribution_key"))
-        or _distribution_key_from_requested_at((payload or {}).get("requested_at"))
-    )
-    if not distribution_key:
-        return False
-    family = _emotion_distribution_family((report_row or {}).get("report_type"))
-    if not family:
-        return False
-    try:
-        store = ReportDistributionPushStore()
-        await store.create_candidate(
-            user_id=str(user_id or "").strip(),
-            distribution_key=distribution_key,
-            report_family=family,
-            report_table=MYWEB_REPORTS_TABLE,
-            report_id=(report_row or {}).get("id"),
-            report_type=str((report_row or {}).get("report_type") or "").strip() or None,
-            period_start=str((report_row or {}).get("period_start") or "").strip() or None,
-            period_end=str((report_row or {}).get("period_end") or "").strip() or None,
-            open_target={
-                "screen": "MyWeb",
-                "open_mode": "reportHistory",
-                "report_type": str((report_row or {}).get("report_type") or "").strip() or None,
-            },
-        )
-        return True
-    except Exception as exc:
-        WORKER_LOGGER.warning(
-            "Failed to enqueue report distribution candidate. user=%s report_id=%s err=%s",
-            str(user_id or "").strip(),
-            str((report_row or {}).get("id") or "").strip(),
-            exc,
-        )
-        return False
-
-
-def _detect_pii(text: str) -> List[str]:
-    t = str(text or "")
-    flags: List[str] = []
-    try:
-        if _EMAIL_RE.search(t):
-            flags.append("email")
-    except Exception:
-        pass
-    try:
-        if _PHONE_RE.search(t):
-            flags.append("phone")
-    except Exception:
-        pass
-    return flags
 
 
 async def _fetch_latest_public_source_hash(user_id: str, *, scope: str) -> Optional[str]:
@@ -874,265 +716,6 @@ async def _fetch_latest_public_source_hash(user_id: str, *, scope: str) -> Optio
         return compute_source_hash_from_emotion_meta(user_id=uid, scope=sc, snapshot_type="public", meta_rows=meta)
     except Exception:
         return None
-
-
-async def _fetch_myweb_report_row(report_id: str, *, user_id: str) -> Optional[Dict[str, Any]]:
-    rid = str(report_id or "").strip()
-    uid = str(user_id or "").strip()
-    if not rid or not uid:
-        return None
-    try:
-        resp = await sb_get(
-            f"/rest/v1/{MYWEB_REPORTS_READ_TABLE}",
-            params={
-                "select": "id,user_id,report_type,period_start,period_end,title,content_text,content_json,generated_at,updated_at",
-                "id": f"eq.{rid}",
-                "user_id": f"eq.{uid}",
-                "limit": "1",
-            },
-            timeout=10.0,
-        )
-        if resp.status_code not in (200, 206):
-            return None
-        rows = resp.json()
-        if isinstance(rows, list) and rows and isinstance(rows[0], dict):
-            return rows[0]
-    except Exception:
-        return None
-    return None
-
-
-async def _patch_myweb_report_content_json(report_id: str, *, content_json: Dict[str, Any]) -> bool:
-    rid = str(report_id or "").strip()
-    if not rid:
-        return False
-    try:
-        resp = await sb_patch(
-            f"/rest/v1/{MYWEB_REPORTS_TABLE}",
-            params={"id": f"eq.{rid}"},
-            json={
-                "content_json": content_json,
-                "updated_at": _now_iso_z(),
-            },
-            prefer="return=minimal",
-            timeout=10.0,
-        )
-        return resp.status_code in (200, 204)
-    except Exception:
-        return False
-
-
-def _build_myweb_ready_push_payload(report_type: str) -> Dict[str, Any]:
-    rt = str(report_type or "").strip().lower()
-    body = "新しいレポートが届きました"
-    if rt == "daily":
-        body = "今日の自己観測が届きました"
-    elif rt == "weekly":
-        body = "今週の自己観測レポートが完成しました"
-    elif rt == "monthly":
-        body = "今月の自己構造レポートが完成しました"
-
-    return {
-        "title": "Cocolon",
-        "body": body,
-        "data": {
-            "type": "myweb_report",
-            "screen": "MyWeb",
-            "report_type": (rt or "unknown"),
-        },
-    }
-
-
-async def _send_myweb_report_ready_push(*, user_id: str, report_row: Dict[str, Any]) -> bool:
-    """Queue a report-ready push notification.
-
-    The actual FCM external call is handled by `send_fcm_push_v1` notification
-    workers so report inspection jobs do not block on Firebase latency.
-    """
-    uid = str(user_id or "").strip()
-    if not uid:
-        return False
-
-    push_payload = _build_myweb_ready_push_payload(str((report_row or {}).get("report_type") or ""))
-    data_payload = dict((push_payload or {}).get("data") or {})
-
-    report_id = str((report_row or {}).get("id") or "").strip()
-    if report_id:
-        data_payload["report_id"] = report_id
-
-    period_start = (report_row or {}).get("period_start")
-    if period_start:
-        data_payload["period_start"] = str(period_start)
-
-    period_end = (report_row or {}).get("period_end")
-    if period_end:
-        data_payload["period_end"] = str(period_end)
-
-    try:
-        from fcm_push_queue import enqueue_user_push_notification_jobs
-
-        queued = await enqueue_user_push_notification_jobs(
-            recipient_user_ids=[uid],
-            title=str((push_payload or {}).get("title") or "Cocolon"),
-            body=str((push_payload or {}).get("body") or "新しいレポートが届きました"),
-            data=data_payload,
-            actor_user_id=uid,
-            event_type="myweb_report_ready",
-            job_key_prefix=f"myweb_report_ready:{uid}:{report_id or _now_iso_z()}",
-            priority=6,
-            chunk_size=1,
-        )
-        return queued > 0
-    except Exception as exc:
-        WORKER_LOGGER.warning(
-            "Failed to enqueue myweb report ready FCM push. user=%s report_id=%s err=%s",
-            uid,
-            report_id,
-            exc,
-        )
-        return False
-
-
-
-async def _handle_inspect_emotion_report_v1(*, user_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
-    """Inspect a generated emotion report and set publish.status.
-
-    Expected payload:
-    - report_id (required)
-    - scope (optional, default SNAPSHOT_SCOPE_DEFAULT)
-    - expected_public_source_hash (optional)
-    """
-    uid = str(user_id or "").strip()
-    report_id = str((payload or {}).get("report_id") or "").strip()
-    if not uid:
-        raise ValueError("user_id is required")
-    if not report_id:
-        raise ValueError("payload.report_id is required")
-
-    row = await _fetch_myweb_report_row(report_id, user_id=uid)
-    if not row:
-        return {"status": "missing", "user_id": uid, "report_id": report_id}
-
-    cj = row.get("content_json") if isinstance(row.get("content_json"), dict) else {}
-    pub = cj.get("publish") if isinstance(cj.get("publish"), dict) else {}
-    previous_status = str(pub.get("status") or "").strip().upper()
-
-    scope = str((payload or {}).get("scope") or pub.get("scope") or SNAPSHOT_SCOPE_DEFAULT).strip() or SNAPSHOT_SCOPE_DEFAULT
-    expected_hash = (payload or {}).get("expected_public_source_hash") or pub.get("publicSourceHash")
-    secret_excluded = bool(pub.get("secretExcluded"))  # should be True for publishable artifacts
-
-    # --- public alignment ---
-    current_hash = await _fetch_latest_public_source_hash(uid, scope=scope)
-    hash_match = bool(expected_hash and current_hash and str(expected_hash) == str(current_hash))
-
-    flags: List[str] = []
-    if not secret_excluded:
-        flags.append("secret_excluded_missing")
-    if not expected_hash:
-        flags.append("expected_public_source_hash_missing")
-    if not current_hash:
-        flags.append("current_public_source_hash_missing")
-    if expected_hash and current_hash and not hash_match:
-        flags.append("public_snapshot_mismatch")
-
-    # --- PII check (rule-based, minimal) ---
-    text_parts: List[str] = []
-    try:
-        if isinstance(row.get("content_text"), str):
-            text_parts.append(row.get("content_text") or "")
-    except Exception:
-        pass
-    try:
-        if isinstance(cj.get("astorText"), str):
-            text_parts.append(cj.get("astorText") or "")
-    except Exception:
-        pass
-    pii_flags = _detect_pii("\n".join(text_parts))
-    for pf in pii_flags:
-        flags.append(f"pii:{pf}")
-
-    inspected_at = _now_iso_z()
-
-    status = "READY"
-    if flags:
-        status = "NEEDS_REVIEW"
-
-    # If missing governance meta or public mismatch, request regeneration (best-effort)
-    need_regen = any(
-        f in flags for f in ("secret_excluded_missing", "expected_public_source_hash_missing", "public_snapshot_mismatch")
-    )
-    if need_regen:
-        try:
-            # Use v2 regeneration for emotion_period-scoped artifacts (v1 is deprecated).
-            if scope.startswith("emotion_weekly:") or scope.startswith("emotion_monthly:"):
-                regen_hash = str(current_hash or expected_hash or "")
-                await enqueue_job(
-                    job_key=f"emotion_report_v2_refresh:{uid}:{scope}:{regen_hash}",
-                    job_type="generate_emotion_report_v2",
-                    user_id=uid,
-                    payload={
-                        "trigger": "inspect_mismatch",
-                        "requested_at": inspected_at,
-                        "scope": scope,
-                        "include_astor": True,
-                        "distribution_origin": bool((payload or {}).get("distribution_origin")),
-                        "distribution_key": (payload or {}).get("distribution_key"),
-                    },
-                    priority=20,
-                    debounce_seconds=10,
-                )
-        except Exception:
-            pass
-
-    pub2 = dict(pub or {})
-    pub2.update(
-        {
-            "status": status,
-            "inspectedAt": inspected_at,
-            "latestPublicSourceHash": current_hash,
-            "hashMatch": bool(hash_match),
-            "inspectionFlags": flags,
-            "inspector": {"job_type": "inspect_emotion_report_v1"},
-        }
-    )
-    cj2 = dict(cj or {})
-    cj2["publish"] = pub2
-
-    patched = await _patch_myweb_report_content_json(report_id, content_json=cj2)
-
-    distribution_candidate_enqueued = False
-    if status == "READY":
-        try:
-            distribution_candidate_enqueued = await _enqueue_emotion_report_distribution_candidate(
-                user_id=uid,
-                report_row=row,
-                payload=(payload or {}),
-            )
-        except Exception as exc:
-            WORKER_LOGGER.warning(
-                "Emotion distribution candidate enqueue failed. user=%s report_id=%s err=%s",
-                uid,
-                report_id,
-                exc,
-            )
-
-    ready_push_sent = False
-
-    return {
-        "status": status,
-        "user_id": uid,
-        "report_id": report_id,
-        "patched": bool(patched),
-        "scope": scope,
-        "expected_public_source_hash": expected_hash,
-        "latest_public_source_hash": current_hash,
-        "hash_match": bool(hash_match),
-        "flags": flags,
-        "previous_status": (previous_status or None),
-        "ready_push_sent": bool(ready_push_sent),
-        "distribution_candidate_enqueued": bool(distribution_candidate_enqueued),
-    }
-
 
 
 def _scope_from_emotion_period_scope(scope: str) -> str:
@@ -2387,6 +1970,11 @@ async def _handle_analyze_self_structure_standard_v1(*, user_id: str, payload: D
     if not uid:
         raise ValueError("user_id is required")
 
+    from analysis_observed_service import observed_enabled
+    if observed_enabled():
+        result = await refresh_myprofile_latest_report(user_id=uid, trigger='self_structure_standard')
+        return dict(result, scope='cumulative')
+
     scope = str((payload or {}).get("scope") or SNAPSHOT_SCOPE_DEFAULT).strip() or SNAPSHOT_SCOPE_DEFAULT
     if scope != SNAPSHOT_SCOPE_DEFAULT:
         raise ValueError(f"unsupported scope for self structure standard analysis: {scope}")
@@ -2423,6 +2011,11 @@ async def _handle_analyze_self_structure_deep_v1(*, user_id: str, payload: Dict[
     uid = str(user_id or "").strip()
     if not uid:
         raise ValueError("user_id is required")
+
+    from analysis_observed_service import observed_enabled
+    if observed_enabled():
+        result = await refresh_myprofile_latest_report(user_id=uid, trigger='self_structure_deep')
+        return dict(result, scope='cumulative')
 
     scope = str((payload or {}).get("scope") or SNAPSHOT_SCOPE_DEFAULT).strip() or SNAPSHOT_SCOPE_DEFAULT
     if scope != SNAPSHOT_SCOPE_DEFAULT:
@@ -3143,9 +2736,11 @@ def _p75(xs: List[float]) -> Optional[float]:
 
 
 def _build_transition_records(entries: List[Any]) -> List[Dict[str, Any]]:
-    seq = sorted(list(entries or []), key=lambda e: str(getattr(e, "timestamp", "") or ""))
+    from analysis_engine.emotion_structure_engine.weekly import temporal_emotion_runs
+    pairs = [(prev, cur) for run in temporal_emotion_runs(entries)
+             for prev, cur in zip(run, run[1:])]
     out: List[Dict[str, Any]] = []
-    for prev, cur in zip(seq, seq[1:]):
+    for prev, cur in pairs:
         prev_dt = _parse_entry_dt(prev)
         cur_dt = _parse_entry_dt(cur)
         if prev_dt is None or cur_dt is None:
@@ -3451,10 +3046,33 @@ def _build_deep_control_model_payload(entries: List[Any], *, scope_kind: str, pe
             "maxPatterns": DEEP_MAX_CONTROL_PATTERNS,
         },
         "notes": [
-            "この deep モデルでは、連続するすべての感情遷移を観測対象として扱っています。",
+            "同時に記録した感情を、順番に変化したものとして扱いません。",
             "制御パターン数はデータから決まり、最大5件まで返します。",
         ],
     }
+
+
+async def _aligned_emotion_period_rows(*, user_id: str, scope: str,
+        snapshot: Dict[str, Any]) -> tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """Bind derived features to the same complete public inputs as the snapshot."""
+    info = _parse_emotion_period_scope(scope)
+    rows = _filter_non_self_insight_rows(await fetch_emotions_in_range(user_id,
+        start_iso=info['period_start_iso'], end_iso=info['period_end_iso'],
+        include_secret=False, max_rows=None))
+    identity_rows = list(rows)
+    if info['kind'] == 'daily':
+        identity_rows += _filter_non_self_insight_rows(await fetch_emotions_in_range(user_id,
+            start_iso=info['prev_period_start_iso'], end_iso=info['prev_period_end_iso'],
+            include_secret=False, max_rows=None))
+    actual = compute_source_hash_from_emotion_meta(user_id=user_id, scope=scope,
+        snapshot_type='public', meta_rows=identity_rows)
+    if (snapshot.get('user_id') != user_id or snapshot.get('scope') != scope
+            or snapshot.get('snapshot_type') != 'public'
+            or snapshot.get('source_hash') != actual):
+        raise RuntimeError('emotion_snapshot_source_changed')
+    return rows, {'profile': 'emotion_period.rows.v1', 'snapshot_id': snapshot['id'],
+        'source_hash': actual, 'scope': scope, 'snapshot_type': 'public',
+        'row_count': len(rows)}
 
 
 async def _handle_analyze_emotion_structure_deep_v1(*, user_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -3495,8 +3113,7 @@ async def _handle_analyze_emotion_structure_deep_v1(*, user_id: str, payload: Di
     if not start_iso or not end_iso:
         raise RuntimeError("snapshot period meta missing")
 
-    rows = await fetch_emotions_in_range(uid, start_iso=start_iso, end_iso=end_iso, include_secret=False)
-    rows = _filter_non_self_insight_rows(rows)
+    rows, source_alignment = await _aligned_emotion_period_rows(user_id=uid, scope=scope, snapshot=snap)
     entries = _normalize_entries_to_jst(build_emotion_entries_from_rows(rows))
     if not entries:
         return {
@@ -3557,6 +3174,7 @@ async def _handle_analyze_emotion_structure_deep_v1(*, user_id: str, payload: Di
             "end_iso": end_iso,
         },
         "entry_count": len(entries),
+        "source_alignment": source_alignment,
         "deep_control_model": deep_model,
         "controlPatterns": list(deep_model.get("control_patterns") or []),
         "patternEpisodes": list(deep_model.get("pattern_episodes") or []),
@@ -3673,13 +3291,7 @@ async def _handle_analyze_emotion_structure_standard_v1(*, user_id: str, payload
     if not start_iso or not end_iso:
         raise RuntimeError("snapshot period meta missing")
 
-    rows = await fetch_emotions_in_range(
-        uid,
-        start_iso=start_iso,
-        end_iso=end_iso,
-        include_secret=False,
-    )
-    rows = _filter_non_self_insight_rows(rows)
+    rows, source_alignment = await _aligned_emotion_period_rows(user_id=uid, scope=scope, snapshot=snap)
     entries = _normalize_entries_to_jst(build_emotion_entries_from_rows(rows))
     if not entries:
         return {
@@ -3714,6 +3326,7 @@ async def _handle_analyze_emotion_structure_standard_v1(*, user_id: str, payload
             "end_iso": end_iso,
         },
         "entry_count": len(entries),
+        "source_alignment": source_alignment,
     }
 
     if scope_kind == "daily":
@@ -3790,9 +3403,87 @@ async def _handle_send_fcm_push_v1(*, user_id: str, payload: Dict[str, Any]) -> 
     mode = str((payload or {}).get("recipient_mode") or "user_ids").strip() or "user_ids"
     data_payload = (payload or {}).get("data") if isinstance((payload or {}).get("data"), dict) else {}
 
+    if (payload or {}).get("event_type") == "myweb_report_ready" or data_payload.get("type") == "myweb_report":
+        return {"status": "skipped_retired_emotion_report"}
+
+    notices = {
+        "theme": "「わたしを知る問い」で新しいテーマの問いを受け取れます",
+        "record": "「わたしを知る問い」に新しいふりかえりの問いが届きました",
+    }
+    notice_lane = next((lane for lane in notices if f"deep_insight_{lane}_ready" in
+                        (payload.get("event_type"), data_payload.get("type"))), None)
+    if notice_lane:
+        from uuid import UUID
+        event = f"deep_insight_{notice_lane}_ready"
+        owner = str(user_id or "").strip()
+        question_id = str(data_payload.get("question_id") or "")
+        try:
+            valid = (str(UUID(owner)) == owner and str(UUID(question_id)) == question_id
+                     and mode == "user_ids" and payload.get("recipient_user_ids") == [owner]
+                     and not payload.get("exclude_user_ids") and payload.get("actor_user_id") == owner
+                     and payload.get("event_type") == event
+                     and title == "Emlis" and body == notices[notice_lane]
+                     and data_payload == {"type": event, "target": "deep_insight",
+                                          "user_id": owner, "question_id": question_id})
+        except (ValueError, TypeError, AttributeError):
+            valid = False
+        if not valid:
+            return {"status": f"skipped_invalid_deep_insight_{notice_lane}_notification"}
+
+    if ((payload or {}).get('event_type') == 'watashi_map_updated'
+            or data_payload.get('type') == 'watashi_map_updated'):
+        from uuid import UUID
+        uid = str(user_id or '').strip()
+        rid = str(data_payload.get('report_id') or '')
+        try:
+            expected_version = 'artifact:' + UUID(rid).hex + '@1'
+            valid = (str(UUID(uid)) == uid and str(UUID(rid)) == rid
+                and mode == 'user_ids' and payload.get('recipient_user_ids') == [uid]
+                and payload.get('actor_user_id') == uid
+                and payload.get('event_type') == 'watashi_map_updated'
+                and title == 'Emlis' and body == 'わたしマップが更新されました'
+                and data_payload.get('user_id') == uid
+                and data_payload.get('type') == 'watashi_map_updated'
+                and data_payload.get('target') == 'watashi_map'
+                and data_payload.get('version_key') == expected_version)
+        except (ValueError, TypeError, AttributeError):
+            valid = False
+        if not valid:
+            return {'status': 'skipped_invalid_map_notification'}
+        from analysis_cumulative_service import read_maps
+        # The existing metadata RPC enforces the owner's current source guard
+        # without returning the analysis body or any evidence. Read failures
+        # propagate so the durable push job can retry instead of sending stale.
+        current = await read_maps(uid, limit=1, metadata_only=True)
+        if not current['items'] or current['items'][0]['id'] != rid:
+            return {'status': 'skipped_stale_map_notification'}
+
+    managed_emotion = payload.get("event_type") == "emotion_log"
+    actor_user_id = str(payload.get("actor_user_id") or "").strip() if managed_emotion else ""
+    if managed_emotion and (mode != "user_ids" or not actor_user_id or actor_user_id != str(user_id).strip()):
+        return {"status": "skipped_invalid_emotion_notification"}
+
     tokens: List[str] = []
     recipient_count = 0
-    if mode == "tokens":
+    if notice_lane:
+        # Claim and read the exact compatible token together. The normal
+        # profile token reader could see a different installation's token.
+        readiness = await _deep_insight_worker_rpc(
+            f"deep_insight_{notice_lane}_notification_can_send",
+            {"p_user_id": owner, "p_question_id": question_id}, "eligible", bool)
+        if not readiness["eligible"]:
+            if notice_lane == "theme" and "defer_until" in readiness:
+                next_due = datetime.fromisoformat(readiness["defer_until"].replace("Z", "+00:00"))
+                if next_due.tzinfo is None:
+                    raise RuntimeError("deep_insight_theme_notification_time_invalid")
+                return {"status": "deferred_deep_insight_theme_notification", "run_after": next_due.isoformat()}
+            return {"status": f"skipped_stale_deep_insight_{notice_lane}_notification"}
+        token = readiness.get("token")
+        if not isinstance(token, str) or not token.strip():
+            raise RuntimeError("deep_insight_worker_storage_response_invalid")
+        tokens = [token.strip()]
+        recipient_count = 1
+    elif mode == "tokens":
         raw_tokens = (payload or {}).get("tokens") or []
         token_values = raw_tokens if isinstance(raw_tokens, list) else []
         seen = set()
@@ -3834,6 +3525,14 @@ async def _handle_send_fcm_push_v1(*, user_id: str, payload: Dict[str, Any]) -> 
         token_map = await _fetch_push_tokens_for_users(recipient_ids)
         exclude_token_map = await _fetch_push_tokens_for_users(exclude_ids) if exclude_ids else {}
         exclude_tokens = {str(t or "").strip() for t in (exclude_token_map or {}).values() if str(t or "").strip()}
+        if managed_emotion:
+            recipient_ids = await _filter_current_emotion_recipients(
+                viewer_user_ids=recipient_ids, owner_user_id=actor_user_id,
+            )
+            recipient_count = len(recipient_ids)
+            if not recipient_ids:
+                return {"status": "skipped_no_recipient", "user_id": str(user_id or "").strip()}
+            token_map = {uid: token_map[uid] for uid in recipient_ids if uid in token_map}
         seen_tokens = set()
         for raw_token in (token_map or {}).values():
             tok = str(raw_token or "").strip()
@@ -3850,9 +3549,16 @@ async def _handle_send_fcm_push_v1(*, user_id: str, payload: Dict[str, Any]) -> 
             "event_type": str((payload or {}).get("event_type") or ""),
         }
 
-    send_res = await _send_fcm_push(tokens=tokens, title=title, body=body, data=data_payload)
+    try:
+        send_res = await _send_fcm_push(tokens=tokens, title=title, body=body, data=data_payload)
+    except Exception:
+        if notice_lane:
+            raise RuntimeError("deep_insight_notification_delivery_unavailable") from None
+        raise
     send_status = str((send_res or {}).get("status") or "failed")
     if send_status != "sent":
+        if notice_lane:
+            raise RuntimeError("deep_insight_notification_delivery_unavailable")
         raise RuntimeError(f"send_fcm_push_v1 failed: status={send_status} result={send_res}")
     return {
         "status": "sent",
@@ -3864,6 +3570,49 @@ async def _handle_send_fcm_push_v1(*, user_id: str, payload: Dict[str, Any]) -> 
         "chunk_count": (payload or {}).get("chunk_count"),
         "fcm_result": send_res,
     }
+
+
+async def _run_deep_insight_record_assessment(claimed):
+    from uuid import UUID
+
+    from api_deep_insight import assess_deep_insight_records
+
+    try:
+        owner = str(UUID(claimed.user_id))
+    except (ValueError, TypeError, AttributeError):
+        owner = None
+    payload = claimed.payload
+    guard = payload.get("source_guard") if isinstance(payload, dict) else None
+    valid = (owner is not None and owner == claimed.user_id
+        and claimed.job_key == f"deep_insight_records_assessment:{owner}"
+        and isinstance(guard, str) and re.fullmatch(r"analysis-db-cumulative-v1:[0-9a-f]{64}", guard)
+        and set(payload) == {"source_guard"})
+    status, retry = "skipped_invalid", False
+    if valid:
+        if claimed.attempts > claimed.max_attempts:
+            status, retry = "retry_exhausted", True
+        else:
+            try:
+                status = await assess_deep_insight_records(owner, guard)
+            except Exception:
+                status, retry = "unavailable", True
+    try:
+        result = await _deep_insight_worker_rpc("deep_insight_record_assessment_settle", {
+            "p_job_key": claimed.job_key,
+            "p_worker_id": claimed.worker_id,
+            "p_started_at": claimed.started_at,
+            "p_updated_at": claimed.updated_at,
+            "p_retry": retry,
+        }, "settled", bool)
+    except Exception:
+        # Stale-job recovery can reclaim this lease after an unknown write.
+        return "settlement_unavailable"
+    return status if result["settled"] else "claim_changed"
+
+
+async def _run_map_job(claimed, handler, **kwargs):
+    with map_job_progress(partial(renew_map_job_progress, claimed), partial(check_map_job_owner, claimed)):
+        return await handler(user_id=claimed.user_id, **kwargs)
 
 
 async def _worker_loop() -> None:
@@ -3947,7 +3696,7 @@ async def _worker_loop() -> None:
             continue
 
         try:
-            claimed = await claim_job(job_key=job.job_key, worker_id=worker_id, attempts=job.attempts)
+            claimed = await claim_job(job_key=job.job_key, worker_id=worker_id, attempts=job.attempts, candidate=job)
             consecutive_poll_errors = 0
         except Exception as exc:
             consecutive_poll_errors += 1
@@ -3966,11 +3715,13 @@ async def _worker_loop() -> None:
             await asyncio.sleep(0)
             continue
 
+        # Only a MAP claimant may settle its running generation.
+        map_claim = claimed if claimed.job_type in MAP_JOB_TYPES else None
         # Process claimed job
         try:
             if claimed.job_type == "myprofile_latest_refresh_v1":
-                res = await refresh_myprofile_latest_report(
-                    user_id=claimed.user_id,
+                res = await _run_map_job(
+                    claimed, refresh_myprofile_latest_report,
                     trigger=(claimed.payload or {}).get("trigger") or "worker",
                     force=bool((claimed.payload or {}).get("force", False)),
                 )
@@ -3978,22 +3729,25 @@ async def _worker_loop() -> None:
                 status = str((res or {}).get("status") or "")
                 if status == "skipped_locked":
                     # Another generator is running; retry shortly.
-                    await requeue(job_key=claimed.job_key, worker_id=worker_id, error="locked", delay_seconds=10)
+                    await requeue(job_key=claimed.job_key, worker_id=worker_id, claim=claimed, error="locked", delay_seconds=10)
                 else:
                     done = await mark_done_if_unchanged(
                         job_key=claimed.job_key,
                         worker_id=worker_id,
-                        expected_updated_at=claimed.updated_at,
+                        expected_updated_at=claimed.updated_at, claim=claimed,
                     )
                     if not done:
                         # The job was updated while running; queue it again for a fresh run.
                         await requeue(
                             job_key=claimed.job_key,
                             worker_id=worker_id,
-                            error="updated_while_running",
+                            error="updated_while_running", claim=claimed,
                             delay_seconds=1,
                         )
                 logger.info("job done. key=%s type=%s user=%s res=%s", claimed.job_key, claimed.job_type, claimed.user_id, res)
+            elif claimed.job_type == _DEEP_INSIGHT_RECORD_ASSESSMENT_JOB:
+                status = await _run_deep_insight_record_assessment(claimed)
+                logger.info("DeepInsight record assessment %s", status)
             elif claimed.job_type == "snapshot_generate_v1":
                 # Central material snapshots (internal/public). Debounced via run_after and requeue delay.
                 snap_res = await _handle_snapshot_generate_v1(user_id=claimed.user_id, payload=(claimed.payload or {}))
@@ -4115,6 +3869,7 @@ async def _worker_loop() -> None:
                                         pub_hash = str(public.get("source_hash") or "")
                                         if not pub_hash:
                                             raise RuntimeError("public source_hash missing for emotion_period scope")
+                                        recovery_deep = (claimed.payload or {}).get("recover_deep_alignment")
                                         await enqueue_job(
                                             job_key=f"analysis_emotion_structure_standard:{claimed.user_id}:{scope}:{pub_hash}",
                                             job_type="analyze_emotion_structure_standard_v1",
@@ -4126,6 +3881,8 @@ async def _worker_loop() -> None:
                                                 "source_hash": pub_hash,
                                                 "distribution_origin": bool((claimed.payload or {}).get("distribution_origin")),
                                                 "distribution_key": (claimed.payload or {}).get("distribution_key"),
+                                                **({"recover_deep_alignment": recovery_deep}
+                                                    if isinstance(recovery_deep, dict) else {}),
                                             },
                                             priority=18,
                                         )
@@ -4154,11 +3911,15 @@ async def _worker_loop() -> None:
                 else:
                     try:
                         analysis_status = str((analysis_res or {}).get("status") or "").strip()
-                        if EMOTION_REPORT_V2_ENABLED and analysis_status == "ok":
+                        recovery_deep = (claimed.payload or {}).get("recover_deep_alignment")
+                        recover_existing_deep = isinstance(recovery_deep, dict) and recovery_deep == {
+                            "snapshot_id": (analysis_res or {}).get("snapshot_id"),
+                            "source_hash": (analysis_res or {}).get("source_hash"),
+                        }
+                        if (EMOTION_DEEP_ANALYSIS_ENABLED or recover_existing_deep) and analysis_status == "ok":
                             scope = str((analysis_res or {}).get("scope") or (claimed.payload or {}).get("scope") or "").strip()
                             pub_hash = str((analysis_res or {}).get("source_hash") or (claimed.payload or {}).get("source_hash") or "").strip()
                             if scope and pub_hash:
-                                include_astor = not scope.startswith("emotion_daily:")
                                 await enqueue_job(
                                     job_key=f"analysis_emotion_structure_deep:{claimed.user_id}:{scope}:{pub_hash}",
                                     job_type="analyze_emotion_structure_deep_v1",
@@ -4173,23 +3934,8 @@ async def _worker_loop() -> None:
                                     },
                                     priority=17,
                                 )
-                                await enqueue_job(
-                                    job_key=f"emotion_report_v2_refresh:{claimed.user_id}:{scope}:{pub_hash}",
-                                    job_type="generate_emotion_report_v2",
-                                    user_id=claimed.user_id,
-                                    payload={
-                                        "trigger": "analyze_emotion_structure_standard_v1",
-                                        "requested_at": (claimed.payload or {}).get("requested_at"),
-                                        "scope": scope,
-                                        "include_astor": include_astor,
-                                        "source_hash": pub_hash,
-                                        "distribution_origin": bool((claimed.payload or {}).get("distribution_origin")),
-                                        "distribution_key": (claimed.payload or {}).get("distribution_key"),
-                                    },
-                                    priority=12,
-                                )
                     except Exception as exc:
-                        logger.error("Emotion report enqueue after analysis failed: %s", exc)
+                        logger.error("Deep emotion analysis enqueue failed: %s", exc)
                 logger.info(
                     "job done. key=%s type=%s user=%s res=%s",
                     claimed.job_key,
@@ -4214,31 +3960,6 @@ async def _worker_loop() -> None:
                         error="updated_while_running",
                         delay_seconds=1,
                     )
-                else:
-                    try:
-                        analysis_status = str((analysis_res or {}).get("status") or "").strip()
-                        if EMOTION_REPORT_V2_ENABLED and analysis_status == "ok":
-                            scope = str((analysis_res or {}).get("scope") or (claimed.payload or {}).get("scope") or "").strip()
-                            pub_hash = str((analysis_res or {}).get("source_hash") or (claimed.payload or {}).get("source_hash") or "").strip()
-                            if scope and pub_hash:
-                                include_astor = not scope.startswith("emotion_daily:")
-                                await enqueue_job(
-                                    job_key=f"emotion_report_v2_refresh:{claimed.user_id}:{scope}:{pub_hash}",
-                                    job_type="generate_emotion_report_v2",
-                                    user_id=claimed.user_id,
-                                    payload={
-                                        "trigger": "analyze_emotion_structure_deep_v1",
-                                        "requested_at": (claimed.payload or {}).get("requested_at"),
-                                        "scope": scope,
-                                        "include_astor": include_astor,
-                                        "source_hash": pub_hash,
-                                        "distribution_origin": bool((claimed.payload or {}).get("distribution_origin")),
-                                        "distribution_key": (claimed.payload or {}).get("distribution_key"),
-                                    },
-                                    priority=11,
-                                )
-                    except Exception as exc:
-                        logger.error("Emotion report enqueue after deep analysis failed: %s", exc)
                 logger.info(
                     "job done. key=%s type=%s user=%s res=%s",
                     claimed.job_key,
@@ -4247,20 +3968,20 @@ async def _worker_loop() -> None:
                     analysis_res,
                 )
             elif claimed.job_type == "analyze_self_structure_standard_v1":
-                analysis_res = await _handle_analyze_self_structure_standard_v1(
-                    user_id=claimed.user_id,
+                analysis_res = await _run_map_job(
+                    claimed, _handle_analyze_self_structure_standard_v1,
                     payload=(claimed.payload or {}),
                 )
                 done = await mark_done_if_unchanged(
                     job_key=claimed.job_key,
                     worker_id=worker_id,
-                    expected_updated_at=claimed.updated_at,
+                    expected_updated_at=claimed.updated_at, claim=claimed,
                 )
                 if not done:
                     await requeue(
                         job_key=claimed.job_key,
                         worker_id=worker_id,
-                        error="updated_while_running",
+                        error="updated_while_running", claim=claimed,
                         delay_seconds=1,
                     )
                 else:
@@ -4290,20 +4011,20 @@ async def _worker_loop() -> None:
                     analysis_res,
                 )
             elif claimed.job_type == "analyze_self_structure_deep_v1":
-                analysis_res = await _handle_analyze_self_structure_deep_v1(
-                    user_id=claimed.user_id,
+                analysis_res = await _run_map_job(
+                    claimed, _handle_analyze_self_structure_deep_v1,
                     payload=(claimed.payload or {}),
                 )
                 done = await mark_done_if_unchanged(
                     job_key=claimed.job_key,
                     worker_id=worker_id,
-                    expected_updated_at=claimed.updated_at,
+                    expected_updated_at=claimed.updated_at, claim=claimed,
                 )
                 if not done:
                     await requeue(
                         job_key=claimed.job_key,
                         worker_id=worker_id,
-                        error="updated_while_running",
+                        error="updated_while_running", claim=claimed,
                         delay_seconds=1,
                     )
                 else:
@@ -4680,54 +4401,7 @@ async def _worker_loop() -> None:
                     claimed.user_id,
                     insp_res,
                 )
-            elif claimed.job_type == "generate_emotion_report_v2":
-                gen_res = await _handle_generate_emotion_report_v2(user_id=claimed.user_id, payload=(claimed.payload or {}))
-                # Enqueue inspection jobs for publish gating (best-effort).
-                try:
-                    gen_list = (gen_res or {}).get("generated") or []
-                    if isinstance(gen_list, list) and gen_list:
-                        for it in gen_list:
-                            if not isinstance(it, dict):
-                                continue
-                            rid = str(it.get("report_id") or "").strip()
-                            if not rid:
-                                continue
-                            scope = str(it.get("scope") or "").strip() or SNAPSHOT_SCOPE_DEFAULT
-                            expected_public_hash = it.get("public_source_hash")
-                            await enqueue_job(
-                                job_key=f"inspect_emotion_report:{claimed.user_id}:{rid}",
-                                job_type="inspect_emotion_report_v1",
-                                user_id=claimed.user_id,
-                                payload={
-                                    "report_id": rid,
-                                    "scope": scope,
-                                    "expected_public_source_hash": expected_public_hash,
-                                    "trigger": "generate_emotion_report_v2",
-                                    "requested_at": (claimed.payload or {}).get("requested_at"),
-                                    "distribution_origin": bool((claimed.payload or {}).get("distribution_origin")),
-                                    "distribution_key": (claimed.payload or {}).get("distribution_key"),
-                                },
-                                priority=30,
-                            )
-                except Exception as exc:
-                    logger.error("Inspect enqueue failed (v2): %s", exc)
-
-                done = await mark_done_if_unchanged(
-                    job_key=claimed.job_key,
-                    worker_id=worker_id,
-                    expected_updated_at=claimed.updated_at,
-                )
-                if not done:
-                    # The job was updated while running; queue it again for a fresh run.
-                    await requeue(
-                        job_key=claimed.job_key,
-                        worker_id=worker_id,
-                        error="updated_while_running",
-                        delay_seconds=1,
-                    )
-                logger.info("job done. key=%s type=%s user=%s res=%s", claimed.job_key, claimed.job_type, claimed.user_id, gen_res)
-            elif claimed.job_type == "inspect_emotion_report_v1":
-                insp_res = await _handle_inspect_emotion_report_v1(user_id=claimed.user_id, payload=(claimed.payload or {}))
+            elif claimed.job_type in _RETIRED_EMOTION_REPORT_JOBS:
                 done = await mark_done_if_unchanged(
                     job_key=claimed.job_key,
                     worker_id=worker_id,
@@ -4740,19 +4414,29 @@ async def _worker_loop() -> None:
                         error="updated_while_running",
                         delay_seconds=1,
                     )
-                logger.info(
-                    "job done. key=%s type=%s user=%s res=%s",
-                    claimed.job_key,
-                    claimed.job_type,
-                    claimed.user_id,
-                    insp_res,
-                )
+                else:
+                    logger.info("Retired emotion report job settled. key=%s type=%s", claimed.job_key, claimed.job_type)
 
             elif claimed.job_type == "send_fcm_push_v1":
                 push_res = await _handle_send_fcm_push_v1(
                     user_id=claimed.user_id,
                     payload=(claimed.payload or {}),
                 )
+                if push_res["status"] == "deferred_deep_insight_theme_notification":
+                    # A plan downgrade delayed eligibility. Keep this same
+                    # durable job and leave the send retry budget untouched.
+                    response = await sb_patch(
+                        f"/rest/v1/{JOBS_TABLE}",
+                        params={"job_key": "eq." + claimed.job_key, "status": "eq.running",
+                                "worker_id": "eq." + worker_id, "updated_at": "eq." + claimed.updated_at},
+                        json={"status": "queued", "worker_id": None, "run_after": push_res["run_after"],
+                              "attempts": max(0, claimed.attempts - 1),
+                              "updated_at": datetime.now(timezone.utc).isoformat()},
+                        timeout=5.0,
+                    )
+                    if response.status_code not in (200, 204):
+                        raise RuntimeError("deep_insight_theme_notification_defer_failed")
+                    continue
                 done = await mark_done_if_unchanged(
                     job_key=claimed.job_key,
                     worker_id=worker_id,
@@ -4776,6 +4460,18 @@ async def _worker_loop() -> None:
             else:
                 await mark_failed(job_key=claimed.job_key, worker_id=worker_id, error=f"Unknown job_type: {claimed.job_type}")
                 logger.warning("unknown job_type. key=%s type=%s", claimed.job_key, claimed.job_type)
+        except MapJobClaimChanged:
+            # An enqueue on this still-owned generation needs another pass. A
+            # replacement worker has a different lease and must not be touched.
+            try:
+                await requeue(job_key=claimed.job_key, worker_id=worker_id, claim=map_claim,
+                              error='map_claim_changed', delay_seconds=1)
+            except Exception:
+                logger.warning('MAP claimant could not confirm requeue; awaiting stale recovery')
+        except MapJobClaimUnavailable:
+            # A missing PATCH acknowledgement could mean the lease changed.
+            # Stop local work. The conditional stale recovery owns the decision.
+            logger.warning('MAP progress acknowledgement unavailable; awaiting stale recovery')
         except Exception as exc:
             # Retry with backoff, then fail
             try:
@@ -4833,11 +4529,11 @@ async def _worker_loop() -> None:
                                 )
                     except Exception:
                         pass
-                    await mark_failed(job_key=claimed.job_key, worker_id=worker_id, error=str(exc))
+                    await mark_failed(job_key=claimed.job_key, worker_id=worker_id, error=str(exc), claim=map_claim)
                 else:
                     # simple backoff: 5s, 10s, 20s, 40s... capped
                     delay = min(120, max(5, 5 * (2 ** max(0, attempts - 1))))
-                    await requeue(job_key=claimed.job_key, worker_id=worker_id, error=str(exc), delay_seconds=int(delay))
+                    await requeue(job_key=claimed.job_key, worker_id=worker_id, error=str(exc), delay_seconds=int(delay), claim=map_claim)
             except Exception:
                 pass
             logger.exception("job failed. key=%s type=%s err=%s", claimed.job_key, claimed.job_type, exc)

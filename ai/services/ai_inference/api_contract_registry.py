@@ -26,9 +26,14 @@ class ApiContractEntry:
 
 
 PUBLIC_API_CONTRACTS: Tuple[ApiContractEntry, ...] = (
+    ApiContractEntry('GET', '/emlis/threads/by-input/{emotion_id}', 'emlis.thread.read.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Q4 mode-gated reader; authenticated owner, persisted snapshots, no generation; additive can_write'),
+    ApiContractEntry('POST', '/emlis/threads/{thread_id}/answers', 'emlis.thread.answer.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Q4 admitted writes only; one answer per issued question, meaning before body'),
+    ApiContractEntry('POST', '/emlis/threads/{thread_id}/actions', 'emlis.thread.action.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Q4 admitted writes only; skip/stop or confirmed transient failure retry; Q3 explicit continuation within server budget'),
+    ApiContractEntry('POST', '/emlis/threads/{thread_id}/frames', 'emlis.thread.frame_feedback.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Q4 admitted writes only; owned tentative frame confirmation, rejection or correction; no question budget'),
+    ApiContractEntry('POST', '/emlis/threads/{thread_id}/corrections', 'emlis.thread.interpretation_correction.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Owned completed natural reply; exact target excerpt and user explanation, persisted separate source; existing question budget unchanged'),
     ApiContractEntry('GET', '/app/bootstrap', 'app.bootstrap.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Runtime guardrail / maintenance switch'),
     ApiContractEntry('GET', '/app/startup', 'app.startup.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Auth-required startup bundle for unread / popup / lightweight prefetch only; Home hydration moved to /home/state'),
-    ApiContractEntry('GET', '/home/state', 'home.state.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Auth-required Home hydration bundle (input summary + global summary + notices + today question + reflection quota); app.startup intentionally excludes heavy Home counters'),
+    ApiContractEntry('GET', '/home/state', 'home.state.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Auth-required Home hydration bundle. DeepInsight state is read through its own route.'),
     ApiContractEntry('POST', '/ops/client-events', 'ops.client_events.write.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Best-effort RN client observability event ingest; no product state mutation'),
     ApiContractEntry('POST', '/emotion/submit', 'emotion.submit.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Legacy payloads must remain accepted; input_feedback.comment_text stays stable while input_feedback.emlis_ai remains additive-only across observation-kernel metadata expansions'),
     ApiContractEntry('GET', '/emotion/reflection/quota', 'emotion.reflection.quota.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Current-month publish quota / capability probe for Home reflection flow', deprecated=True, replacement='/emotion/piece/quota'),
@@ -68,13 +73,11 @@ PUBLIC_API_CONTRACTS: Tuple[ApiContractEntry, ...] = (
     ApiContractEntry('GET', '/mymodel/qna/echoes/history', 'mymodel.qna.echoes.history.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, deprecated=True, replacement='/piece/resonances/history'),
     ApiContractEntry('GET', '/mymodel/qna/discoveries/history', 'mymodel.qna.discoveries.history.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, deprecated=True, notes='Retired compatibility route'),
     ApiContractEntry('POST', '/activity/login', 'activity.login.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Client login heartbeat / streak touch'),
-    ApiContractEntry('GET', '/today-question/current', 'today_question.current.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='May return additive personal_followup fields: question_origin, personal_question_id, question_type, source_anchor and optional_free_text_enabled'),
-    ApiContractEntry('GET', '/today-question/status', 'today_question.status.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Lightweight Today Question popup/badge state without question body or choices'),
-    ApiContractEntry('POST', '/today-question/answers', 'today_question.answers.create.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Accepts additive personal_followup guard fields while static role-probe payload remains compatible'),
-    ApiContractEntry('GET', '/today-question/history', 'today_question.history.list.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='May include self-only personal_followup metadata and source_anchor_summary'),
-    ApiContractEntry('PATCH', '/today-question/history/{answer_id}', 'today_question.history.patch.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY),
-    ApiContractEntry('GET', '/today-question/settings', 'today_question.settings.read.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY),
-    ApiContractEntry('PATCH', '/today-question/settings', 'today_question.settings.patch.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY),
+    ApiContractEntry('GET', '/deep-insight', 'deep_insight.state.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY),
+    ApiContractEntry('PATCH', '/deep-insight/theme-notification', 'deep_insight.theme_notification.update.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY),
+    ApiContractEntry('POST', '/deep-insight/questions', 'deep_insight.questions.issue.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY),
+    ApiContractEntry('GET', '/deep-insight/questions/{question_id}', 'deep_insight.questions.read.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY),
+    ApiContractEntry('POST', '/deep-insight/answers', 'deep_insight.answers.submit.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY),
     ApiContractEntry('GET', '/notices/current', 'notice.current.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY),
     ApiContractEntry('GET', '/notices/history', 'notice.history.list.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY),
     ApiContractEntry('POST', '/notices/read', 'notice.read.mark.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY),
@@ -129,12 +132,23 @@ PUBLIC_API_CONTRACTS: Tuple[ApiContractEntry, ...] = (
     ApiContractEntry('GET', '/ranking/mymodel_resonances', 'ranking.mymodel_resonances.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, deprecated=True, replacement='/ranking/piece_resonances'),
     ApiContractEntry('GET', '/ranking/mymodel_discoveries', 'ranking.mymodel_discoveries.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, deprecated=True, notes='Retired compatibility route'),
     ApiContractEntry('GET', '/subscription/bootstrap', 'subscription.bootstrap.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Runtime subscription sales / plan config; plans may include additive emlis_ai metadata and marketing lines'),
+    ApiContractEntry('POST', '/analysis/if-route/scenario-sets', 'analysis.if_route.scenario_sets.create.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Authenticated Premium owner; immutable IF or explicit Saved intent; no generated observation facts'),
+    ApiContractEntry('GET', '/analysis/if-route/scenario-sets', 'analysis.if_route.scenario_sets.list.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Authenticated Premium owner; immutable IF or explicit Saved intent; no generated observation facts'),
+    ApiContractEntry('GET', '/analysis/if-route/scenario-sets/{artifact_id}', 'analysis.if_route.scenario_sets.read.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Authenticated Premium owner; immutable IF or explicit Saved intent; no generated observation facts'),
+    ApiContractEntry('DELETE', '/analysis/if-route/scenario-sets/{artifact_id}', 'analysis.if_route.scenario_sets.delete.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Authenticated Premium owner; immutable IF or explicit Saved intent; no generated observation facts'),
+    ApiContractEntry('POST', '/analysis/saved-route-intents', 'analysis.saved_route_intents.create.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Authenticated Premium owner; immutable IF or explicit Saved intent; no generated observation facts'),
+    ApiContractEntry('GET', '/analysis/saved-route-intents', 'analysis.saved_route_intents.list.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Authenticated Premium owner; immutable IF or explicit Saved intent; no generated observation facts'),
+    ApiContractEntry('GET', '/analysis/saved-route-intents/{artifact_id}', 'analysis.saved_route_intents.read.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Authenticated Premium owner; immutable IF or explicit Saved intent; no generated observation facts'),
+    ApiContractEntry('DELETE', '/analysis/saved-route-intents/{artifact_id}', 'analysis.saved_route_intents.delete.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Authenticated Premium owner; immutable IF or explicit Saved intent; no generated observation facts'),
     ApiContractEntry('GET', '/analysis/home-summary', 'analysis.home_summary.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY),
+    ApiContractEntry('GET', '/analysis/kokoro-weather', 'analysis.kokoro_weather.live.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Owner-only input aggregation; JST today/week/month, existing history retention, no generated report'),
     ApiContractEntry('POST', '/analysis/reports/ensure', 'analysis.reports.ensure.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Analysis core reportValidity meta is additive under content_json.reportValidity; no diagnosis or overclaim output'),
     ApiContractEntry('GET', '/analysis/reports/ready', 'analysis.reports.ready.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Read-side contract may include additive content_json.reportValidity meta'),
     ApiContractEntry('GET', '/analysis/reports/{report_id}', 'analysis.reports.detail.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Detail may include additive content_json.reportValidity meta'),
     ApiContractEntry('GET', '/analysis/reports/{report_id}/weekly-days', 'analysis.report.weekly_days.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY),
     ApiContractEntry('GET', '/report-reads/analysis-unread-status', 'report_reads.analysis_unread.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY),
+    ApiContractEntry('POST', '/self-structure/map-corrections', 'self_structure.map_corrections.create.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Authenticated owner exact map target and separate person explanation; immutable source, next current-map refresh'),
+    ApiContractEntry('GET', '/self-structure/map-corrections', 'self_structure.map_corrections.read.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Authenticated owner exact map target and separate person explanation; immutable source, next current-map refresh'),
     ApiContractEntry('GET', '/self-structure/latest/status', 'self_structure.latest.status.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY),
     ApiContractEntry('GET', '/self-structure/latest', 'self_structure.latest.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Latest self-structure meta may include additive reportValidity and content_json.watashiMap'),
     ApiContractEntry('POST', '/self-structure/monthly/ensure', 'self_structure.monthly.ensure.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Self-structure reports attach additive content_json.reportValidity and content_json.watashiMap meta'),
@@ -151,6 +165,8 @@ PUBLIC_API_CONTRACTS: Tuple[ApiContractEntry, ...] = (
     ApiContractEntry('POST', '/follow/remove-follower', 'follow.remove_follower.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY),
     ApiContractEntry('GET', '/follow/stats', 'follow.stats.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY),
     ApiContractEntry('GET', '/follow/list', 'follow.list.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY),
+    ApiContractEntry('GET', '/follow/followers/content-visibility', 'follow.followers.content_visibility.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Authenticated author settings for current followers'),
+    ApiContractEntry('PATCH', '/follow/followers/{follower_user_id}/content-visibility', 'follow.followers.content_visibility.patch.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Authenticated author updates one or both independent sharing fields for a current follower'),
     ApiContractEntry('GET', '/follow/requests/incoming', 'follow.requests.incoming.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY),
     ApiContractEntry('GET', '/follow/requests/outgoing', 'follow.requests.outgoing.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY),
     ApiContractEntry('POST', '/follow/request/cancel', 'follow.request.cancel.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY),
@@ -192,12 +208,46 @@ _CONTRACTS_BY_ROUTE: Dict[Tuple[str, str], ApiContractEntry] = {
 }
 
 
-def iter_public_api_contracts() -> Tuple[ApiContractEntry, ...]:
-    return PUBLIC_API_CONTRACTS
+# Selected only by the explicit, non-deployed shared-app preview candidate.
+# The default public registry and policy version remain the legacy contract.
+_PREVIEW_CANDIDATE_CONTRACTS = (
+    ApiContractEntry('POST', '/emotion/piece/save', 'emotion.piece.save.v2', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Isolated candidate: existing private atomic save and same-key replay; independent save readiness with preview dependency; no public write or native fit admission'),
+    ApiContractEntry('GET', '/emotion/piece/quota', 'emotion.piece.quota.v2', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Isolated candidate: authenticated current-month saved usage; preview-gated read-only display, not save admission or legacy publish count'),
+    ApiContractEntry('DELETE', '/emotion/piece/{piece_id}', 'emotion.piece.delete.v2', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Isolated candidate: owner/version/key-bound atomic purge; independent delete readiness with owner-read dependency; same-key receipt replay and no quota refund'),
+    ApiContractEntry('GET', '/emotion/piece/history', 'emotion.piece.history.v2', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Isolated candidate: authenticated owner saved history; independent of preview generation; no source reread or writes'),
+    ApiContractEntry('GET', '/emotion/piece/{piece_id}/export', 'emotion.piece.export.v2', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Authenticated current export permission and exact saved artifact; local native export; no generation, quota consumption or writes'),
+    ApiContractEntry('POST', '/emotion/piece/{piece_id}/export-receipt', 'emotion.piece.export_receipt.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Authenticated, body-free evidence for a locally rendered PNG; no OS delivery outcome or asset storage'),
+    ApiContractEntry('PATCH', '/emotion/piece/{piece_id}/visibility', 'emotion.piece.visibility.v2', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Authenticated owner/version-bound publication or withdrawal of a saved Piece; followers can read the published body in the opt-in Nexus feed'),
+    ApiContractEntry('GET', '/emotion/piece/{piece_id}', 'emotion.piece.detail.v2', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Isolated candidate: exact owner saved artifact and renderer; no regeneration, current-tier gate or writes'),
+    ApiContractEntry('DELETE', '/emotion/piece/preview/{preview_id}', 'emotion.piece.preview.cancel.v2', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Isolated candidate: owner/revision-bound terminal cancellation; explicit same-ID/revision replay, no quota or generation'),
+    ApiContractEntry('POST', '/emotion/piece/preview', 'emotion.piece.preview.v2', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Isolated candidate: piece.api.v2 saved-source request and Idempotency-Key; no raw-input compatibility'),
+    ApiContractEntry('PATCH', '/emotion/piece/preview/{preview_id}', 'emotion.piece.preview.visual.v2', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Isolated candidate: existing visual-only revision update; no Idempotency-Key or body regeneration; original POST/key recovers current revision'),
+    ApiContractEntry('GET', '/emotion/piece/source-ref/{saved_input_id}', 'emotion.piece.source_ref.v2', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Isolated candidate: exact seven saved-source references; optional exact supplemental_answer_identity query selects an eligible additive answer; authenticated explicit read; no generation'),
+)
+_PREVIEW_CANDIDATE_REPLACED_KEYS = {
+    ('POST', '/emotion/piece/preview'), ('POST', '/emotion/reflection/preview'),
+    ('GET', '/emotion/piece/quota'), ('GET', '/emotion/reflection/quota'),
+    # Legacy draft writes are absent, not aliases into the v2 lifecycle.
+    ('POST', '/emotion/piece/publish'), ('POST', '/emotion/piece/cancel'),
+    ('POST', '/emotion/reflection/publish'), ('POST', '/emotion/reflection/cancel'),
+}
+_PREVIEW_CANDIDATE_REGISTRY = tuple(
+    entry for entry in PUBLIC_API_CONTRACTS
+    if (entry.method, entry.path) not in _PREVIEW_CANDIDATE_REPLACED_KEYS
+) + _PREVIEW_CANDIDATE_CONTRACTS
+_PREVIEW_CANDIDATE_BY_ROUTE = {
+    (entry.method, entry.path): entry for entry in _PREVIEW_CANDIDATE_REGISTRY
+}
 
 
-def get_contract_entry(*, method: str, path: str) -> Optional[ApiContractEntry]:
-    return _CONTRACTS_BY_ROUTE.get((str(method or "").upper(), str(path or "")))
+def iter_public_api_contracts(*, piece_preview: bool = False) -> Tuple[ApiContractEntry, ...]:
+    return _PREVIEW_CANDIDATE_REGISTRY if piece_preview is True else PUBLIC_API_CONTRACTS
+
+
+def get_contract_entry(*, method: str, path: str,
+                       piece_preview: bool = False) -> Optional[ApiContractEntry]:
+    registry = _PREVIEW_CANDIDATE_BY_ROUTE if piece_preview is True else _CONTRACTS_BY_ROUTE
+    return registry.get((str(method or "").upper(), str(path or "")))
 
 
 def _request_route_path(request: Request) -> Optional[str]:
@@ -211,8 +261,10 @@ def _request_route_path(request: Request) -> Optional[str]:
     return None
 
 
-def find_contract_entry_for_request(request: Request) -> Optional[ApiContractEntry]:
-    return get_contract_entry(method=request.method, path=_request_route_path(request) or "")
+def find_contract_entry_for_request(request: Request, *,
+                                    piece_preview: bool = False) -> Optional[ApiContractEntry]:
+    return get_contract_entry(method=request.method, path=_request_route_path(request) or "",
+                              piece_preview=piece_preview)
 
 
 def contract_route_keys() -> Tuple[Tuple[str, str], ...]:

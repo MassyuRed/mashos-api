@@ -12,7 +12,7 @@ import asyncio
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import FastAPI, Header, HTTPException, Response
 
 from api_follow import (
     FriendUnreadMarkReadBody,
@@ -28,10 +28,7 @@ from api_follow import (
     _parse_iso_utc,
     _resolve_user_id_from_token,
     _upsert_last_read_at,
-    fetch_latest_ready_emotion_log_feed_summary,
     get_friend_unread_status_payload_for_user,
-    logger,
-    select_emotion_log_feed_items,
 )
 
 EmotionLogUnreadStatusResponse = FriendUnreadStatusResponse
@@ -46,6 +43,7 @@ def register_emotion_log_routes(app: FastAPI) -> None:
     @app.get("/emotion-log/feed", response_model=Dict[str, Any])
     async def get_emotion_log_feed(
         authorization: Optional[str] = Header(default=None, alias="Authorization"),
+        response: Response = None,
     ) -> Dict[str, Any]:
         access_token = _extract_bearer_token(authorization)
         if not access_token:
@@ -53,22 +51,11 @@ def register_emotion_log_routes(app: FastAPI) -> None:
 
         me = await _resolve_user_id_from_token(access_token)
 
-        summary = None
-        try:
-            summary = await fetch_latest_ready_emotion_log_feed_summary(me)
-        except Exception as exc:
-            logger.warning("Failed to fetch ready emotion log feed summary: %s", exc)
-            summary = None
-
-        if summary:
-            items = _build_friend_feed_response_items(select_emotion_log_feed_items(summary))
-            return {"status": "ok", "items": items}
-
-        try:
-            live_rows = await _fetch_live_emotion_log_feed_rows(me, limit=20)
-            return {"status": "ok", "items": _build_friend_feed_response_items(live_rows)}
-        except HTTPException:
-            raise
+        if response is not None:
+            response.headers["Cache-Control"] = "private, no-store"
+        # A READY projection can predate the author's latest cutoff.
+        rows = await _fetch_live_emotion_log_feed_rows(me, limit=20)
+        return {"status": "ok", "items": _build_friend_feed_response_items(rows)}
 
     @app.get("/emotion-log/unread-status", response_model=FriendUnreadStatusResponse)
     async def get_friend_unread_status(

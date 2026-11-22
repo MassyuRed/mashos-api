@@ -1,0 +1,1365 @@
+"""CMEE's code-disabled Piece consumer: graph -> intent/plan -> canonical body.
+
+The existing B8 caller and B9 image path consume this result. No Emlis body is
+created or reused. This bounded consumer has no authentication, DB, quota,
+public route, native renderer or external-generation capability.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass
+import hashlib
+import json
+import re
+
+from piece_v2_contract import PieceContractError
+from piece_v2_content_policy import (
+    ENVELOPES, check_existing_detectors, choose_format, unavailable, validate_candidate_text,
+)
+from piece_v2_expression import (
+    _DEPENDENT_START, _EMBEDDED_REPORT, _INTENT_ROLES, _REFERENCE,
+    _SELF_TOPIC, _WISH_END,
+)
+from .contracts import EngineStatus, ExecutionMode
+from .piece_source import (
+    _SIMPLE_NOUN, _calendar_time_adverb_span, _direct_transitive_expression, _PERSON_NAME_LEFT_BOUNDARY,
+    _validated_self_insight_mode, PiecePersonalEvaluation, PieceSourceMeaning, build_piece_source_meaning,
+    _literal_self_account, _finite_self_person_action_account, _scoped_finite_self_person_action,
+    _written_feeling_expression, _SCOPE_RELATIONS,
+    _scoped_self_topic, _qualified_self_topic, _scoped_expression_match, _same_self_scope_author,
+    _FINITE_RESERVATION_QUESTION,
+    piece_public_role_aliases, validate_piece_nominal_references, validate_piece_saved_fields,
+    validate_piece_personal_evaluations, validate_piece_expression_scopes,
+    piece_text_nodes, piece_source_text,
+)
+
+_WRITTEN_ACCOUNT_END = re.compile(
+    r'(?:です|ます|でした|ました|ません|だった|ない|なかった|かった|しい|た|だ)[。！？!?]$')
+# Finite inflections of the already-written reservation context. Keep these
+# local to literal retention: a polite negative is no less uncertain, and
+# 迷っている is complete without admitting arbitrary plain verb endings.
+_FINITE_RESERVATION_END = re.compile(
+    r'(?:(?:分かり|わかり|とは限り)ません(?:でした)?|迷っている)[。！!]$')
+# A pause after the already-written まだ does not complete a decision. Keep
+# only its existing finite negative predicate in this literal-account arm.
+# A target/topic would need its own source proof; do not swallow a clause.
+# This is not a global
+# uncertainty cue, a new proposition, or a format-eligibility rule.
+_PAUSED_DECISION_RESERVATION = re.compile(
+    r'^まだ[、，,][ \t\u3000]*決めて(?:いませんでした|いません|いなかった|いない)[。！!]$')
+# Only an entire source-bound argument matching this finite nominalization
+# owns its uncertainty words. A larger target can swallow an outer adverb,
+# condition or reservation; do not exempt its matching substring.
+_NOMINALIZED_RESERVATION = re.compile(
+    r'(?:(?:分から|わから)(?:ない|なかった)|迷って(?:いる|いた)|'
+    r'まだ決め(?:ていない|ていなかった))(?:こと|もの|時間)')
+# The overt action noun and written final stop license only literal account
+# retention. The suffix alone, an unfinished subordinate clause, and a
+# question do not establish this form.
+_PLAIN_SURU_ACCOUNT_END = re.compile(
+    r'(?:[一-龥々]{2,}|[一-龥々ァ-ヴ][一-龥々ァ-ヴーぁ-ん]*を)する。$')
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class PieceGenerationRequest:
+    request_id: str
+    source: object
+    expected_owner_id: str
+    expected_saved_input_id: str
+    expected_source_version: str
+    tier: str = 'free'
+    requested_format: str | None = None
+    core_id: str = 'piece'
+    product_job: str = 'EXPRESS_AND_SHARE'
+    execution_mode: str = ExecutionMode.OFFLINE_CANDIDATE.value
+
+
+@dataclass(frozen=True, slots=True)
+class PieceArtifactIntent:
+    product_job: str = 'EXPRESS_AND_SHARE'
+    authorship: str = 'USER_OWNED_COCOLON_SHAPED'
+    audience: str = 'EXTERNAL_SHARE_CARD_WITHIN_POLICY'
+    publicization: str = 'SOURCE_STATED_ROLE_ABSTRACTION'
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class PieceTextDuty:
+    node_id: str
+    operation: str
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class PieceArtifactPlan:
+    graph_id: str
+    source_version: str
+    intent: PieceArtifactIntent
+    duties: tuple[PieceTextDuty, ...]
+    block_node_ids: tuple[tuple[str, ...], ...]
+    declaration_eligible: bool
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class PieceArtifact:
+    body_blocks: tuple[str, ...]
+    piece_text: str
+    piece_text_hash: str
+    format_type: str
+    eligible_formats: tuple[str, ...]
+
+    def content_payload(self) -> dict:
+        return {'schema_version': 'piece.content_payload.v1',
+                'format_type': self.format_type, 'body_blocks': list(self.body_blocks),
+                'title': None, 'language': 'ja',
+                'meaning_contract_version': 'piece.content_meaning.v1',
+                'safety_contract_version': 'piece.public_safety_transformation.v1'}
+
+    def as_candidate(self) -> dict:
+        return {'candidate_state': 'OFFLINE_NOT_ACCEPTED',
+                'content_payload': self.content_payload(), 'piece_text': self.piece_text,
+                'piece_text_hash': self.piece_text_hash,
+                'eligible_formats': list(self.eligible_formats), 'format_type': self.format_type,
+                'production_enabled': False, 'record_effect': 0, 'quota_effect': 0}
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class PieceModelRealizedArtifact(PieceArtifact):
+    """Explicit private v2 provenance; legacy artifact serialization is exact.
+
+    Public payload/hash/recipe remain the realized work. Raw provider prose is
+    separately retained, never replaced or relabelled as a new model response.
+    """
+    realization_profile: str
+    model_body_blocks: tuple[str, ...]
+    realization_edits: tuple[tuple[str, str, int, str, str], ...]
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class PieceEngineOutcome:
+    status: EngineStatus
+    reason_codes: tuple[str, ...]
+    source_meaning: PieceSourceMeaning | None = None
+    artifact_plan: PieceArtifactPlan | None = None
+    artifact: PieceArtifact | None = None
+    automatic_progression: bool = False
+
+    def as_body_free(self) -> dict:
+        return {'core_id': 'piece', 'product_job': 'EXPRESS_AND_SHARE',
+                'execution_mode': ExecutionMode.OFFLINE_CANDIDATE.value,
+                'status': self.status.value, 'reason_codes': list(self.reason_codes),
+                'artifact_present': self.artifact is not None,
+                'automatic_progression': False, 'production_enabled': False,
+                'record_effect': 0, 'quota_effect': 0}
+
+
+def _focal_parts(sentence: str) -> tuple[str, str, str] | None:
+    from piece_v2_generation import _FOCUS, _DEICTIC, _NESTED
+    match = _FOCUS.fullmatch(sentence)
+    if match is None:
+        return None
+    obj = match['object'].lstrip('、，,')
+    # Use the same complete nominal shape as the Piece source parser.
+    # The written focal transitive predicate already establishes its object;
+    # do not fabricate a nominalizer or change the user's chosen noun.
+    if (not (obj.endswith(('こと', 'もの', '時間')) or _SIMPLE_NOUN.fullmatch(obj))
+            or _NESTED.search(obj) or _DEICTIC.search(obj)):
+        raise unavailable('focal_object_not_self_contained')
+    return obj, match['predicate'], match['speaker']
+
+
+def _has_topic_qualification(meaning: PieceSourceMeaning, duties: tuple[PieceTextDuty, ...]) -> bool:
+    # The established topic author can retain a written condition/reason/
+    # concession inside its body without creating a typed source scope. That
+    # missing type cannot license a detached quote or unqualified declaration.
+    # Restrict formats of already-admitted duties at the written operator
+    # and comma boundary. Source admission, KEEP meaning and body stay intact.
+    original = piece_source_text(meaning)
+    evaluations = {frame.node_id: frame for frame in meaning.personal_evaluations}
+    for node, duty in zip(meaning.graph.nodes, duties, strict=True):
+        if duty.operation == 'KEEP_COMPLETE_SOURCE_CONTEXT':
+            # A retained literal can state the same author on both sides of
+            # an existing operator. Its finite reservation must remain with
+            # that expression even though neither a wish/simile decision nor
+            # a typed scope is made. Restrict formats only; keep every word.
+            scoped = _scoped_expression_match(node.value)
+            if scoped is not None and _literal_self_account(node.value):
+                topic = _scoped_self_topic(scoped['intention'])
+                if (topic is not None
+                        and _same_self_scope_author(scoped['premise'], topic['speaker'])
+                        and _FINITE_RESERVATION_END.search(scoped['premise'] + '。')
+                        and _literal_self_account(scoped['intention'])):
+                    return True
+            continue
+        if duty.operation == 'SOURCE_FIRST_PERSON_TOPIC':
+            topic = _qualified_self_topic(node.value)
+            if topic is not None and any(re.search(re.escape(marker) + r'[、，,]', topic['body'])
+                                         for marker in _SCOPE_RELATIONS):
+                return True
+            continue
+        if duty.operation == 'SOURCE_PERSONAL_EVALUATION':
+            frame = evaluations[node.node_id]
+            target = original[slice(*frame.scalar_parts[2])]
+        elif duty.operation == 'SOURCE_FOCAL_TO_FIRST_PERSON':
+            parts = _focal_parts(node.value)
+            if parts is None:
+                continue
+            target = parts[0]
+        else:
+            continue
+        # A source-bound nominal argument can also retain an outer clause.
+        # A finite reservation, action-noun する or explicit が/は/もある/ない
+        # can delimit this already-written clause. Bare た/だ endings cannot:
+        # e.g. 北野で/秦野で also have kana spellings ending たので/だので.
+        # Keep noun-internal matches and unproved premises unchanged. This
+        # limits formats, never source admission, scope types or body words.
+        for marker in _SCOPE_RELATIONS:
+            for match in re.finditer(re.escape(marker) + r'[、，,]', target):
+                premise = target[:match.start()] + '。'
+                if (_FINITE_RESERVATION_END.search(premise)
+                        or _PLAIN_SURU_ACCOUNT_END.search(premise)
+                        or re.search(r'[がはも](?:ある|ない)。$', premise)):
+                    return True
+    return False
+
+
+def _has_declaration_uncertainty(meaning: PieceSourceMeaning) -> bool:
+    from piece_v2_generation import _FOCUS, _UNCERTAIN
+    node = meaning.graph.nodes[0]
+    target_span = None
+    frame = next((frame for frame in meaning.personal_evaluations
+                  if frame.node_id == node.node_id), None)
+    if frame is not None:
+        start = meaning.sentences[0].source_start
+        target_span = tuple(part - start for part in frame.scalar_parts[2])
+    else:
+        expression = _direct_transitive_expression(node.value) or _FOCUS.fullmatch(node.value)
+        if expression is not None:
+            target_span = expression.span('object')
+    nominalized = (target_span is not None
+                   and _NOMINALIZED_RESERVATION.fullmatch(node.value[slice(*target_span)]) is not None)
+    return any(not (nominalized
+                    and target_span[0] <= marker.start() < marker.end() <= target_span[1])
+               for marker in _UNCERTAIN.finditer(node.value))
+
+
+def compile_piece_artifact_plan(meaning: PieceSourceMeaning) -> PieceArtifactPlan:
+    """Keep every source proposition and its dependent qualification together.
+
+    Shared roles may suggest an intent, but cannot supply its words, speaker,
+    missing cause, certainty or relation. The actual first-person construction
+    must also bind. Non-final intents no longer lose subsequent uncertainty.
+    """
+    from .piece_semantic_admission import (
+        PieceSemanticSnapshotV1, PieceSemanticDutyBindingV1, PieceSemanticPlanV1,
+        source_nodes, digest,
+    )
+    if type(meaning) is PieceSemanticSnapshotV1:
+        validate_piece_saved_fields(meaning)
+        nodes = source_nodes(meaning)
+        duties = tuple(PieceSemanticDutyBindingV1(
+            'duty:' + binding.claim_ref, (binding.claim_ref,), (binding.node_ref,),
+            (binding.source_binding_ref,), tuple(json.loads(binding.claim_json)['polarity']['scope_refs']))
+            for binding in meaning.claim_bindings)
+        return PieceSemanticPlanV1(
+            meaning.snapshot_ref, meaning.source_commitment,
+            'piece-graph:' + digest([meaning.snapshot_ref, [node[0] for node in nodes]]),
+            duties, (tuple(node[0] for node in nodes[:-1]), (nodes[-1][0],)),
+            tuple('selection:' + '|'.join(row.alias_refs) for row in meaning.source_selections),
+            ('short_essay',))
+    from piece_v2_generation import (
+        _UNCERTAIN, _DEICTIC, _is_unpunctuated_account,
+        _OMITTED_ACCOUNT_QUESTION, _OMITTED_LEXICAL_SCOPE,
+        _OMITTED_NEW_PREFIX_GUARD, _OMITTED_ACCOUNT_OBJECT,
+        _has_unread_explicit_account_scope, _unproved_explicit_account_object,
+    )
+    graph = meaning.graph
+    validate_piece_saved_fields(meaning)
+    validate_piece_nominal_references(meaning)
+    validate_piece_personal_evaluations(meaning)
+    evaluations = {frame.node_id: frame for frame in meaning.personal_evaluations}
+    validate_piece_expression_scopes(meaning)
+    scopes = {scope.node_id: scope for scope in meaning.expression_scopes}
+    from .piece_refined import supplemental_feeling_time_span
+    duties: list[PieceTextDuty] = []
+    intents: list[int] = []
+    focal = False
+    has_calendar_time_context = False
+    text_nodes = piece_text_nodes(meaning)
+    for index, (node, semantic) in enumerate(zip(text_nodes, meaning.sentences, strict=True)):
+        sentence = node.value
+        admitted = [r.reference_scalar_span for r in meaning.nominal_references
+                    if r.reference_node_id == node.node_id]
+        temporal = _calendar_time_adverb_span(sentence)
+        answer_time = supplemental_feeling_time_span(meaning, node)
+        time_scope = scopes.get(node.node_id)
+        if time_scope is not None and time_scope.relation == 'SOURCE_EXPLICIT_TIME_CONTEXT':
+            # The source scope was recomputed above, including its complete
+            # self expression and comma boundary. Admit only the exact time
+            # lexeme before its topic particle, never another nominal token.
+            temporal = (time_scope.scope_scalar_span[0] - semantic.source_start,
+                        time_scope.scope_scalar_span[1] - len(time_scope.marker) - semantic.source_start)
+        has_calendar_time_context = has_calendar_time_context or temporal is not None
+        if _DEICTIC.search(sentence) or any(
+                m.span() != temporal and not (
+                    answer_time is not None and answer_time[0] <= m.start()
+                    and m.end() <= answer_time[1]) and not any(
+                    a <= semantic.source_start + m.start()
+                    and semantic.source_start + m.end() <= b for a, b in admitted)
+                for m in _REFERENCE.finditer(sentence)):
+            raise unavailable('unresolved_reference')
+        if node.node_id in scopes:
+            if _scoped_finite_self_person_action(sentence) is not None:
+                # A source-bound completed account stays literal in the
+                # native author. Only model preservation may vary register.
+                duties.append(PieceTextDuty(node.node_id, 'KEEP_COMPLETE_SOURCE_CONTEXT'))
+                continue
+            duties.append(PieceTextDuty(node.node_id, 'SOURCE_SCOPED_EXPRESSION_TO_FIRST_PERSON'))
+            intents.append(index)
+            continue
+        if _focal_parts(sentence) is not None:
+            duties.append(PieceTextDuty(node.node_id, 'SOURCE_FOCAL_TO_FIRST_PERSON'))
+            intents.append(index)
+            focal = True
+            continue
+        if node.node_id in evaluations:
+            duties.append(PieceTextDuty(node.node_id, 'SOURCE_PERSONAL_EVALUATION'))
+            intents.append(index)
+            continue
+        topic = _qualified_self_topic(sentence)
+        if (sentence.endswith(('！', '!')) and _literal_self_account(sentence)
+                and topic is None):
+            # Existing literal self accounts already own these exact words and
+            # emphasis. Punctuation support for the structured families must
+            # not convert that retained wish/simile into a new declaration.
+            duties.append(PieceTextDuty(node.node_id, 'KEEP_COMPLETE_SOURCE_CONTEXT'))
+            continue
+        if (topic is not None and _WISH_END.search(topic['body'])
+                and semantic.role in _INTENT_ROLES
+                and not _DEPENDENT_START.search(topic['body'])
+                and not _EMBEDDED_REPORT.search(topic['body'])):
+            duties.append(PieceTextDuty(node.node_id, 'SOURCE_FIRST_PERSON_TOPIC'))
+            intents.append(index)
+        elif _direct_transitive_expression(sentence) is not None:
+            # Preserve the established wish path above. A complete explicit
+            # transitive state/rejection also owns an expression, without
+            # depending on a shared wish label or inventing an intention.
+            duties.append(PieceTextDuty(node.node_id, 'SOURCE_TRANSITIVE_SELF_TOPIC'))
+            intents.append(index)
+        else:
+            duties.append(PieceTextDuty(node.node_id, 'KEEP_COMPLETE_SOURCE_CONTEXT'))
+    if not intents:
+        # A hidden selection cannot turn a nominal fragment into an article.
+        # This bounded account arm requires a written finite account/state;
+        # it does not add an experiencer, predicate or inferred explanation.
+        saved = meaning.saved_snapshot
+        feeling_account = meaning.selected_feelings and any(
+            _WRITTEN_ACCOUNT_END.search(node.value)
+            or _PLAIN_SURU_ACCOUNT_END.search(node.value)
+            or (saved is not None and _is_unpunctuated_account(node.value))
+            for node in text_nodes)
+        self_insight_account = False
+        literal_account = False
+        scoped_action_account = False
+        if saved is not None:
+            record = json.loads(saved.saved_original_json)
+            self_insight_mode = not meaning.selected_feelings and _validated_self_insight_mode(
+                record['emotions'] or [], record['emotion_details'] or [])
+            if meaning.selected_feelings or self_insight_mode:
+                # The existing complete-account families share one
+                # reservation check. A selected mode supplies no proposition:
+                # at least one written action or explicit self expression
+                # must independently qualify, and every other sentence must
+                # be an account or the same finite reservation context.
+                actions = tuple(_finite_self_person_action_account(node.value)
+                    or _is_unpunctuated_account(
+                        node.value[:-1] if node.value.endswith(('。', '！', '!')) else node.value,
+                        allow_nonpast=node.value.endswith(('。', '！', '!')))
+                    or bool(_PLAIN_SURU_ACCOUNT_END.search(node.value)
+                        and not _OMITTED_ACCOUNT_QUESTION.search(node.value)
+                        and not _OMITTED_NEW_PREFIX_GUARD.search(node.value)
+                        and not _OMITTED_LEXICAL_SCOPE.search(node.value)
+                        and not _has_unread_explicit_account_scope(node.value)
+                        and not _DEPENDENT_START.search(node.value)
+                        and ('を' not in node.value or _OMITTED_ACCOUNT_OBJECT.search(
+                            node.value.rpartition('を')[0][-25:]))
+                        and not _unproved_explicit_account_object(node.value.rpartition('を')[0]))
+                    for node in text_nodes)
+                scoped_actions = tuple(
+                    node.node_id in scopes
+                    and _scoped_finite_self_person_action(node.value) is not None
+                    for node in text_nodes)
+                # This new account owns every complete action. Do not feed
+                # it into the legacy feeling/wish/reservation qualification.
+                scoped_action_account = any(scoped_actions) and all(
+                    scoped or _finite_self_person_action_account(node.value)
+                    for node, scoped in zip(text_nodes, scoped_actions, strict=True))
+                self_accounts = tuple(_literal_self_account(node.value)
+                    or _written_feeling_expression(
+                        node.value, current_affirmative_only=False) is not None
+                    for node in text_nodes)
+                reservations = tuple(bool(((_UNCERTAIN.search(node.value)
+                        and _WRITTEN_ACCOUNT_END.search(node.value))
+                        or ((_FINITE_RESERVATION_END.search(node.value)
+                             or _PAUSED_DECISION_RESERVATION.fullmatch(node.value))
+                            and not _FINITE_RESERVATION_QUESTION.search(node.value)))
+                        and node.value.endswith(('。', '！', '!'))
+                        and not _OMITTED_ACCOUNT_QUESTION.search(node.value)
+                        and not _OMITTED_LEXICAL_SCOPE.search(node.value)
+                        and not _has_unread_explicit_account_scope(node.value)
+                        and not _EMBEDDED_REPORT.search(node.value))
+                    for node in text_nodes)
+                complete = all(action or account or reservation for action, account, reservation
+                               in zip(actions, self_accounts, reservations, strict=True))
+                literal_account = any(self_accounts) and complete
+                self_insight_account = self_insight_mode and any(actions) and complete
+        # An independently qualified answer can explicitly state a complete
+        # feeling without carrying the original's hidden selection. Keep its
+        # source words through the existing duty/author; this grants neither
+        # a selected state, a wish nor declaration eligibility.
+        from .piece_refined import supplemental_feeling_account, supplemental_complete_self_account
+        if not (feeling_account or self_insight_account or literal_account or scoped_action_account
+                or supplemental_feeling_account(meaning) or supplemental_complete_self_account(meaning)):
+            raise unavailable('expression_meaning_not_admitted')
+    ids = tuple(node.node_id for node in text_nodes)
+    # A newly admitted temporal context must not be moved behind a later wish.
+    # Keep the original sequence without adding an inferred time/scope edge.
+    dependent = has_calendar_time_context or any(
+        _DEPENDENT_START.search(node.value) for node in graph.nodes)
+    if meaning.nominal_references:
+        # Antecedents, mentions and subsequent reservations remain a single
+        # source-ordered reading group. No isolated quote, inferred expansion
+        # or last-wish-first move can detach what the reference refers to.
+        first = min(ids.index(r.antecedent_node_id) for r in meaning.nominal_references)
+        blocks = (ids[:first], ids[first:]) if first else (ids,)
+    elif evaluations or meaning.expression_scopes:
+        # Keep each value, preference and source-marked reason/condition with
+        # every qualification in source order; never excerpt a pledge.
+        blocks = (ids,)
+    elif focal:
+        # Keep the existing admitted focal path's canonical block identity.
+        blocks = tuple((node_id,) for node_id in ids) if len(ids) <= 3 else (
+            (ids[0],), ids[1:-1], (ids[-1],))
+    elif len(intents) == 1 and intents[0] == len(ids)-1 and len(ids) > 1 and not dependent:
+        direct = _direct_transitive_expression(graph.nodes[-1].value)
+        # A retrospective or tentative expression must not inherit the old
+        # terminal-wish fronting. Keep prior context before it without adding
+        # a time, cause or commitment, and retain the complete reading group.
+        qualified = direct is not None and (
+            direct['past_predicate'] is not None or direct['modal'] is not None)
+        blocks = (ids,) if qualified else ((ids[-1],), ids[:-1])
+    elif len(ids) == 1:
+        blocks = (ids,)
+    else:
+        # A wish followed by a limitation is one reading group. Never move it
+        # to the end, turn it into a standalone declaration, or drop its tail.
+        pivot = intents[0] if intents else 0
+        blocks = (ids[:pivot], ids[pivot:]) if pivot else (ids,)
+    if meaning.saved_snapshot is not None:
+        # Source-written lines and field boundaries own their paragraphs.
+        # Keep their order without inferring a temporal or causal relation.
+        original = piece_source_text(meaning)
+        paragraphs = []
+        previous = None
+        for node, evidence, sentence in zip(text_nodes, meaning.evidence, meaning.sentences, strict=True):
+            if (previous is None or evidence.field_path != previous[0]
+                    or re.search(r'[\r\n]', original[previous[1]:sentence.source_start])):
+                paragraphs.append([])
+            paragraphs[-1].append(node.node_id)
+            previous = (evidence.field_path, sentence.source_end)
+        blocks = tuple(tuple(group) for group in paragraphs)
+    topic_qualified = _has_topic_qualification(meaning, tuple(duties))
+    declaration = (bool(intents) and len(ids) == 1 and not meaning.expression_scopes and not topic_qualified
+                   and not _has_declaration_uncertainty(meaning))
+    # A source-written past wish/value/state is an account of that time,
+    # not evidence of a present commitment. Bind this to the same complete
+    # direct grammar that admitted the source; a suffix elsewhere in the
+    # argument cannot supply its tense. Existing nonpast eligibility stays.
+    direct = _direct_transitive_expression(graph.nodes[0].value) if declaration else None
+    if declaration:
+        # The focal and direct word orders share the same source-bound past
+        # predicate. Reordering it does not establish a present commitment.
+        # Object-internal past words and the final copula do not supply tense.
+        from piece_v2_generation import _FOCUS
+        focused = _FOCUS.fullmatch(graph.nodes[0].value)
+        if focused is not None and focused['past_predicate'] is not None:
+            declaration = False
+    # Bind outer commitment to the parsed predicate, not just an uncertainty
+    # keyword elsewhere in the sentence. In particular polite non-universality
+    # is still not a pledge, even when the older keyword scan misses it.
+    if direct is not None and (
+            direct['past_predicate'] is not None or direct['modal'] is not None):
+        declaration = False
+    if evaluations:
+        # A past preference, negation or tentative assessment is not a promise.
+        # Only an explicit present value can additionally offer declaration.
+        frame = evaluations.get(ids[0])
+        declaration = bool(declaration and frame is not None
+                           and frame.kind == 'PERSONAL_VALUE'
+                           and frame.temporal_scope == 'NONPAST'
+                           and frame.polarity == 'AFFIRMATIVE'
+                           and frame.commitment == 'ASSERTED'
+                           and not re.search(r'もし|なら|たら|とき|場合', graph.nodes[0].value))
+    return PieceArtifactPlan(graph.graph_id, graph.source_version, PieceArtifactIntent(),
+                             tuple(duties), blocks, declaration)
+
+
+def _publicize_source_sentence(sentence: str, meaning: PieceSourceMeaning) -> str:
+    # Replacements use source-written roles and explicitly bound named owners.
+    # No generic mask, new social role or inferred person is introduced.
+    source_text = piece_source_text(meaning)
+    for binding in meaning.role_bindings:
+        if source_text[binding.source_start:binding.source_end] != binding.role + 'の' + binding.name:
+            raise unavailable('public_role_source_binding')
+    aliases = piece_public_role_aliases(meaning.role_bindings)
+    if not aliases:
+        return sentence
+    phrases = {b.role + 'の' + b.name: aliases[b.name] for b in meaning.role_bindings}
+    # Consume the whole written phrase before a bare name. A single pass
+    # prevents an inserted qualification from being replaced again, and
+    # preserves a shorter explicit binding without duplicating its prefix.
+    full = '|'.join(re.escape(p) for p in sorted(phrases, key=len, reverse=True))
+    names = '|'.join(re.escape(n) for n in sorted(aliases, key=len, reverse=True))
+    replacements = {**phrases, **aliases}
+    return re.sub(full + '|' + _PERSON_NAME_LEFT_BOUNDARY + '(?:' + names + ')',
+                  lambda match: replacements[match.group()], sentence)
+
+
+def _evaluation_sentence(meaning: PieceSourceMeaning, frame: PiecePersonalEvaluation,
+                         *, separate_viewpoint: bool = True,
+                         omit_self_topic: bool = False) -> str:
+    """One writer realization shared by free and explicitly scoped evaluations."""
+    original = piece_source_text(meaning)
+    speaker, predicate, target = (original[a:b] for a, b in frame.scalar_parts)
+    perspective = speaker + ('にとって' if frame.construction == 'にとって' else 'は')
+    # Only the relative nominal copula な becomes its source register's
+    # finite copula. Negative/past/modal predicates stay byte-exact.
+    finite = predicate[:-1] + frame.copula if predicate.endswith('な') else predicate
+    # Only the caller's source-proven same-author scope may omit a repeated
+    # self topic. An explicit value viewpoint remains a distinct expression.
+    prefix = ('' if omit_self_topic and frame.construction in ('は', 'が')
+              else perspective + ('、' if separate_viewpoint else ''))
+    return prefix + target + 'が' + finite + '。'
+
+
+def _linked_self_continuations(meaning: PieceSourceMeaning,
+                               plan: PieceArtifactPlan
+                               ) -> tuple[frozenset[str], frozenset[str]]:
+    """Reduce an adjacent, source-proven author repetition, not subject meaning.
+
+    The same-block antecedent must itself state the same literal first person.
+    A validated nominal reference must open the following written scope. Only
+    its explicit wish may omit the redundant topic; an evaluation viewpoint,
+    comparison, intervening context or different speaker is never elided.
+    Source/graph/plan validators run before this editorial choice is consumed.
+    Direct antecedents reuse their complete author/object proof. Their optional
+    edits are returned separately and applied only after full realization, so
+    shortening cannot remove an already-admitted short essay from its envelope.
+    """
+    original = piece_source_text(meaning)
+    nodes = {node.node_id: node for node in meaning.graph.nodes}
+    evaluations = {frame.node_id: frame for frame in meaning.personal_evaluations}
+    scopes = {scope.node_id: scope for scope in meaning.expression_scopes}
+    references = {ref.reference_node_id: ref for ref in meaning.nominal_references}
+    positions = {node.node_id: i for i, node in enumerate(meaning.graph.nodes)}
+    spans = {sentence.node_id: sentence for sentence in meaning.sentences}
+    duties = {duty.node_id: duty.operation for duty in plan.duties}
+    continuations, direct_continuations = set(), set()
+    for group in plan.block_node_ids:
+        for previous, current in zip(group, group[1:]):
+            ref, scope = references.get(current), scopes.get(current)
+            if (ref is None or scope is None or ref.antecedent_node_id != previous
+                    or previous in scopes or current in evaluations
+                    or duties[previous] == 'KEEP_COMPLETE_SOURCE_CONTEXT'
+                    or ref.reference_scalar_span[0] != scope.scope_scalar_span[0]):
+                continue
+            # Literal retention owns no editorial author continuation. Keep
+            # the following explicit topic after e.g. an exclamatory wish,
+            # just as independent review does after every KEEP proposition.
+            # A linked referent does not establish the subject of its whole
+            # scope. A later は/が/も can introduce another participant or a
+            # contrast, so do not elide the author's explicit topic across it.
+            # The referent's own initial は/が/も is not a competing subject.
+            # Exclude the validated connective (including けれども) itself.
+            # This conservative surface check only declines an optional edit;
+            # it never rejects input or claims general subject resolution.
+            tail = original[ref.reference_scalar_span[1]:
+                            scope.scope_scalar_span[1] - len(scope.marker)]
+            if re.search(r'[はがも]', tail[1:] if tail.startswith(('は', 'が', 'も')) else tail):
+                continue
+            topic = _scoped_self_topic(original[slice(*scope.expression_scalar_span)])
+            if topic is None or not _WISH_END.search(topic['body']):
+                continue
+            frame = evaluations.get(previous)
+            focal = _focal_parts(nodes[previous].value) if frame is None else None
+            speaker = (original[slice(*frame.scalar_parts[0])] if frame is not None
+                       else focal[2] if focal is not None else None)
+            if speaker == topic['speaker']:
+                continuations.add(current)
+            elif speaker is None:
+                direct = _direct_transitive_expression(nodes[previous].value)
+                # Only the existing simple scoped-wish realization can lose
+                # this topic. A scoped transitive expression has its own writer.
+                if (direct is None or direct['speaker'] != topic['speaker']
+                        or _direct_transitive_expression(
+                            original[slice(*scope.expression_scalar_span)]) is not None
+                        or positions[current] != positions[previous] + 1):
+                    continue
+                gap = original[spans[previous].source_end:spans[current].source_start]
+                start = spans[previous].source_start
+                target_span = (start + direct.start('object'), start + direct.end('object'))
+                # Preserve source line breaks and competing subjects/contrasts.
+                # A false positive merely declines an optional edit. Match the
+                # complete original object in both coordinate systems; a wish
+                # label, nearby word or speaker alias never supplies authority.
+                if ('\n' in gap or '\r' in gap
+                        or re.search(r'[はがも]', direct['object'][:-len(ref.nominal_head)])
+                        or re.search(r'[はがも]', topic['body'])
+                        or ref.antecedent_scalar_span != target_span
+                        or ref.antecedent_utf8_span != tuple(
+                            len(original[:offset].encode('utf-8')) for offset in target_span)):
+                    continue
+                direct_continuations.add(current)
+    return frozenset(continuations), frozenset(direct_continuations)
+
+
+def _adjacent_self_continuations(meaning: PieceSourceMeaning,
+                                 plan: PieceArtifactPlan) -> frozenset[str]:
+    """Find optional self-topic omissions from explicit, adjacent duties.
+
+    Two wishes, or a focal/evaluative/direct author followed by a bound
+    plain-topic preference or direct expression, can share a written author. Another subject/contrast, source
+    line break, scoped duty or paragraph boundary keeps the topic. A preceding
+    evaluation's viewpoint is retained; the following explicit viewpoint or
+    focus is never elided. Both propositions must state the same first person.
+    A continued expression may extend that same source-bound referent chain,
+    but cannot start a new chain after an unlicensed link. The plan remains
+    intact; this is not general subject/discourse resolution.
+    """
+    original = piece_source_text(meaning)
+    nodes = {node.node_id: node for node in meaning.graph.nodes}
+    positions = {node.node_id: i for i, node in enumerate(meaning.graph.nodes)}
+    spans = {sentence.node_id: sentence for sentence in meaning.sentences}
+    duties = {duty.node_id: duty.operation for duty in plan.duties}
+    evaluations = {frame.node_id: frame for frame in meaning.personal_evaluations}
+    continuations = set()
+    continuation_referents = {}
+    for group in plan.block_node_ids:
+        for previous, current in zip(group, group[1:]):
+            if previous not in spans or current not in spans:
+                continue
+            if positions[current] != positions[previous] + 1:
+                continue
+            gap = original[spans[previous].source_end:spans[current].source_start]
+            if '\n' in gap or '\r' in gap:
+                continue
+            # A direct continuation must have ONE already-bound reference as
+            # its complete object, in both original coordinate systems. A
+            # source predicate match, matching words, or one operand of a pair
+            # alone cannot grant subject continuity. Leave the old two-wish
+            # path below untouched when this bounded reference is absent.
+            bound_direct = None
+            direct_links = []
+            if duties[current] in {'SOURCE_TRANSITIVE_SELF_TOPIC',
+                                   'SOURCE_FIRST_PERSON_TOPIC'}:
+                candidate = _direct_transitive_expression(nodes[current].value)
+                if candidate is not None:
+                    start = spans[current].source_start
+                    target_span = (start + candidate.start('object'),
+                                   start + candidate.end('object'))
+                    target_utf8 = tuple(len(original[:offset].encode('utf-8'))
+                                        for offset in target_span)
+                    direct_links = [ref for ref in meaning.nominal_references
+                                    if ref.reference_node_id == current
+                                    and ref.reference_scalar_span == target_span
+                                    and ref.reference_utf8_span == target_utf8]
+                    if len(direct_links) == 1:
+                        bound_direct = candidate
+            if (duties[previous] in {'SOURCE_FOCAL_TO_FIRST_PERSON',
+                                     'SOURCE_PERSONAL_EVALUATION',
+                                     'SOURCE_TRANSITIVE_SELF_TOPIC',
+                                     'SOURCE_FIRST_PERSON_TOPIC'}
+                    and (duties[current] == 'SOURCE_PERSONAL_EVALUATION'
+                         or bound_direct is not None)):
+                prior = evaluations.get(previous)
+                direct_span = None
+                direct = None
+                if duties[previous] == 'SOURCE_PERSONAL_EVALUATION':
+                    # An existing source-bound evaluation can establish this
+                    # author and referent. Keep its full viewpoint/predicate;
+                    # no new source admission or evaluation inference occurs.
+                    if prior is None or prior.construction not in {'は', 'にとって'}:
+                        continue
+                    speaker = original[slice(*prior.scalar_parts[0])]
+                    target = original[slice(*prior.scalar_parts[2])]
+                elif duties[previous] == 'SOURCE_FOCAL_TO_FIRST_PERSON':
+                    focal = _focal_parts(nodes[previous].value)
+                    if focal is None:
+                        continue
+                    target, _, speaker = focal
+                else:
+                    # An admitted direct expression states the same author
+                    # and full argument as a focal one. A generic wish role
+                    # alone cannot supply either: re-read the existing direct
+                    # grammar and bind its exact object span below. Keep its
+                    # predicate/register, even when it is a state or refusal.
+                    direct = _direct_transitive_expression(nodes[previous].value)
+                    if direct is None:
+                        continue
+                    target, speaker = direct['object'], direct['speaker']
+                    start = spans[previous].source_start
+                    direct_span = (start + direct.start('object'),
+                                   start + direct.end('object'))
+                frame = evaluations.get(current)
+                # Only the next plain は preference or proved direct object
+                # may omit its topic. Explicit viewpoints, focus, comparisons
+                # and outer scopes retain their existing complete writer.
+                if bound_direct is not None:
+                    if bound_direct['speaker'] != speaker:
+                        continue
+                    links = direct_links
+                else:
+                    if (frame is None or frame.construction != 'は'
+                            or frame.kind != 'PERSONAL_PREFERENCE'
+                            or original[slice(*frame.scalar_parts[0])] != speaker):
+                        continue
+                    links = [ref for ref in meaning.nominal_references
+                             if ref.reference_node_id == current
+                             and ref.reference_scalar_span == frame.scalar_parts[2]
+                             and ref.reference_utf8_span == frame.utf8_parts[2]]
+                if len(links) != 1:
+                    continue
+                ref = links[0]
+                referent = (ref.antecedent_node_id, ref.nominal_head,
+                            ref.antecedent_scalar_span, ref.antecedent_utf8_span)
+                # The resolver keeps later mentions bound to the original
+                # object, not the preceding pronoun. Extend only a previously
+                # licensed adjacent continuation of that exact source object.
+                # Matching visible words, proximity, or an earlier standalone
+                # mention cannot restart a chain across a declined boundary.
+                if continuation_referents.get(previous) == referent:
+                    # Do not manufacture identical adjacent sentences. Keep
+                    # the source's repeated proposition and its explicit topic,
+                    # just as the existing two-wish edit declines duplicates.
+                    same_evaluation = (prior is not None and frame is not None
+                                       and _evaluation_sentence(meaning, prior)
+                                       == _evaluation_sentence(meaning, frame))
+                    same_direct = (direct is not None and bound_direct is not None
+                                   and (direct['object'], direct['predicate'])
+                                   == (bound_direct['object'], bound_direct['predicate']))
+                    if ((prior is None and direct is None)
+                            or same_evaluation or same_direct):
+                        continue
+                    continuations.add(current)
+                    continuation_referents[current] = referent
+                    continue
+                # Starting a chain binds the actual preceding full object.
+                # Extending one above instead binds the original antecedent;
+                # the preceding pronoun must never become a new object owner.
+                if direct_span is not None and (
+                        ref.antecedent_scalar_span != direct_span
+                        or ref.antecedent_utf8_span != tuple(
+                            len(original[:offset].encode('utf-8')) for offset in direct_span)):
+                    continue
+                if (ref.antecedent_node_id != previous
+                        or original[slice(*links[0].antecedent_scalar_span)] != target
+                        or (prior is not None and (
+                            links[0].antecedent_scalar_span != prior.scalar_parts[2]
+                            or links[0].antecedent_utf8_span != prior.utf8_parts[2]))
+                        # The bound head もの contains も, not a contrast particle.
+                        or re.search(r'[はがも]', target[:-len(links[0].nominal_head)])):
+                    continue
+                continuations.add(current)
+                continuation_referents[current] = referent
+                continue
+            if (duties[previous] != 'SOURCE_FIRST_PERSON_TOPIC'
+                    or duties[current] != 'SOURCE_FIRST_PERSON_TOPIC'):
+                continue
+            before = _SELF_TOPIC.fullmatch(nodes[previous].value)
+            after = _SELF_TOPIC.fullmatch(nodes[current].value)
+            if (before is None or after is None
+                    or before['speaker'] != after['speaker']
+                    or before['body'] == after['body']):
+                continue
+            # Do not move an implicit subject across another participant or
+            # contrast. Even lexical false positives only decline this optional
+            # edit; they do not make an otherwise admitted input unavailable.
+            if any(re.search(r'[はがも]', topic['body']) for topic in (before, after)):
+                continue
+            continuations.add(current)
+    return frozenset(continuations)
+
+
+
+def _paired_self_continuations(meaning: PieceSourceMeaning,
+                               plan: PieceArtifactPlan) -> frozenset[str]:
+    """Share one explicit author across a source-bound two-object paragraph.
+
+    Both objects must be the immediately preceding, same-block propositions,
+    each with the same written author and its own complete source argument.
+    A focal or direct expression uses its already-admitted source grammar;
+    a generic wish label alone cannot establish either author or argument.
+    The following plain-topic preference, direct or focal transitive expression
+    must refer to exactly those objects. Keep its entire ordered argument and
+    predicate intact, including past time, negation or modality. This does not equate an
+    explicit value viewpoint with a self-topic or infer an omitted author.
+    A complete two-reference conditional wish can share the same proved author.
+    Other scopes, newlines, competing subjects or different speakers decline only
+    this optional edit. Source admission, meaning and plan stay unchanged.
+    """
+    original = piece_source_text(meaning)
+    nodes = {node.node_id: node for node in meaning.graph.nodes}
+    positions = {node.node_id: i for i, node in enumerate(meaning.graph.nodes)}
+    spans = {sentence.node_id: sentence for sentence in meaning.sentences}
+    duties = {duty.node_id: duty.operation for duty in plan.duties}
+    evaluations = {frame.node_id: frame for frame in meaning.personal_evaluations}
+    scopes = {scope.node_id: scope for scope in meaning.expression_scopes}
+    continuations = set()
+    for group in plan.block_node_ids:
+        for first, previous, current in zip(group, group[1:], group[2:]):
+            frame, scope = evaluations.get(current), scopes.get(current)
+            if (positions[previous] != positions[first] + 1
+                    or positions[current] != positions[previous] + 1):
+                continue
+            if scope is not None:
+                # Only a written two-object condition with an explicit simple
+                # wish may share its author. Keep evaluative viewpoints and
+                # direct transitive clauses with their existing writers.
+                expression = original[slice(*scope.expression_scalar_span)]
+                topic = _scoped_self_topic(expression)
+                if (duties[current] != 'SOURCE_SCOPED_EXPRESSION_TO_FIRST_PERSON'
+                        or scope.relation != 'SOURCE_EXPLICIT_CONDITION'
+                        or frame is not None or topic is None
+                        or not _WISH_END.search(topic['body'])
+                        or _direct_transitive_expression(expression) is not None
+                        or _REFERENCE.search(topic['body'])
+                        or re.search(r'[はがも]', topic['body'])):
+                    continue
+                target_span = (scope.scope_scalar_span[0],
+                               scope.scope_scalar_span[1] - len(scope.marker))
+                speaker = topic['speaker']
+            elif duties[current] in {'SOURCE_TRANSITIVE_SELF_TOPIC',
+                                     'SOURCE_FIRST_PERSON_TOPIC'}:
+                # The same source-bound two-object author proof applies to
+                # an existing direct predicate, not just a liking expression.
+                # A wish role alone supplies neither an object nor a speaker.
+                # Scoped transitive expressions retain their own full writer.
+                direct = _direct_transitive_expression(nodes[current].value)
+                if direct is None:
+                    continue
+                start = spans[current].source_start
+                target_span = (start + direct.start('object'),
+                               start + direct.end('object'))
+                speaker = direct['speaker']
+            elif duties[current] == 'SOURCE_FOCAL_TO_FIRST_PERSON':
+                # The focal writer already realizes this explicit speaker as
+                # a self-topic. Share only that repeated topic after both
+                # source-bound operands pass the same adjacency proof below.
+                # Its complete predicate and object are not shortened.
+                from piece_v2_generation import _FOCUS
+                focal = _FOCUS.fullmatch(nodes[current].value)
+                if focal is None:
+                    continue
+                end = spans[current].source_start + focal.end('object')
+                target_span = (end - len(focal['object'].lstrip('、，,')), end)
+                speaker = focal['speaker']
+            else:
+                if (duties[current] != 'SOURCE_PERSONAL_EVALUATION' or frame is None
+                        or frame.construction != 'は' or frame.kind != 'PERSONAL_PREFERENCE'):
+                    continue
+                target_span = frame.scalar_parts[2]
+                speaker = original[slice(*frame.scalar_parts[0])]
+            if any('\n' in gap or '\r' in gap for gap in (
+                    original[spans[first].source_end:spans[previous].source_start],
+                    original[spans[previous].source_end:spans[current].source_start])):
+                continue
+            links = [ref for ref in meaning.nominal_references
+                     if ref.reference_node_id == current
+                     and target_span[0] <= ref.reference_scalar_span[0]
+                     and ref.reference_scalar_span[1] <= target_span[1]]
+            if (len(links) != 2 or len({ref.nominal_head for ref in links}) != 2
+                    or {ref.antecedent_node_id for ref in links} != {first, previous}):
+                continue
+            if scope is not None:
+                ordered_links = sorted(links, key=lambda ref: ref.reference_scalar_span)
+                left, right = ordered_links
+                joiner = original[left.reference_scalar_span[1]:right.reference_scalar_span[0]]
+                if (left.reference_scalar_span[0] != target_span[0]
+                        or right.reference_scalar_span[1] != target_span[1]
+                        or re.fullmatch(r'と[、，,]?[ \t\u3000]*', joiner) is None):
+                    continue
+            for ref in links:
+                antecedent = ref.antecedent_node_id
+                prior = evaluations.get(antecedent)
+                if duties[antecedent] == 'SOURCE_PERSONAL_EVALUATION':
+                    if (prior is None or prior.construction not in {'は', 'にとって'}
+                            or prior.scalar_parts[2] != ref.antecedent_scalar_span
+                            or prior.utf8_parts[2] != ref.antecedent_utf8_span):
+                        break
+                    author = original[slice(*prior.scalar_parts[0])]
+                    target = original[slice(*prior.scalar_parts[2])]
+                elif duties[antecedent] == 'SOURCE_FOCAL_TO_FIRST_PERSON':
+                    focal = _focal_parts(nodes[antecedent].value)
+                    if focal is None:
+                        break
+                    target, _, author = focal
+                elif duties[antecedent] in {'SOURCE_TRANSITIVE_SELF_TOPIC',
+                                           'SOURCE_FIRST_PERSON_TOPIC'}:
+                    # Reuse the admitted direct grammar, including its exact
+                    # predicate/register. Bind the complete argument at BOTH
+                    # coordinate types; matching a word or wish role is not
+                    # authority to share an author across these propositions.
+                    direct = _direct_transitive_expression(nodes[antecedent].value)
+                    if direct is None:
+                        break
+                    start = spans[antecedent].source_start
+                    target_span = (start + direct.start('object'),
+                                   start + direct.end('object'))
+                    if (ref.antecedent_scalar_span != target_span
+                            or ref.antecedent_utf8_span != tuple(
+                                len(original[:offset].encode('utf-8'))
+                                for offset in target_span)):
+                        break
+                    target, author = direct['object'], direct['speaker']
+                else:
+                    break
+                if (author != speaker
+                        or target != original[slice(*ref.antecedent_scalar_span)]
+                        or re.search(r'[はがも]', target[:-len(ref.nominal_head)])):
+                    break
+            else:
+                continuations.add(current)
+                # The validated focal/direct expression is this author's は
+                # sentence. Share only its topic, not its state, rejection or
+                # intention. An explicit にとって keeps its written viewpoint.
+                if duties[previous] in {'SOURCE_FOCAL_TO_FIRST_PERSON',
+                                        'SOURCE_TRANSITIVE_SELF_TOPIC',
+                                        'SOURCE_FIRST_PERSON_TOPIC'}:
+                    continuations.add(previous)
+    return frozenset(continuations)
+
+
+MODEL_REALIZATION_PROFILE = 'piece.cmee_realization.v2'
+
+
+def _model_realization_clauses(text):
+    # Do not guess sentence boundaries inside retained discourse or quotes.
+    if any(c in text for c in '「」『』\"\'“”（）()【】\r\n'):
+        return None
+    clauses = tuple(re.findall(r'[^。！？!?]+[。！？!?]', text))
+    return clauses if clauses and ''.join(clauses) == text else None
+
+
+def _model_realization_key(text):
+    from piece_v2_content_policy import _piece_model_read_block, _piece_model_operator_tree
+    read = _piece_model_read_block(text)
+    if read is not None:
+        return ('finite', repr(read))
+    tree = _piece_model_operator_tree(text)
+    return ('operator', repr(tree)) if tree is not None else ('literal', text)
+
+
+def _realize_admitted_model_blocks(meaning, plan, blocks):
+    """Apply existing source-owned editorial decisions to an admitted body.
+
+    This is not recovery for a failed model candidate. The caller first runs
+    the unchanged whole-body S7. Each edited occurrence then has a unique,
+    ordered source/model correspondence; duplicates/unknown correspondence,
+    quote boundaries and already changed discourse keep their model text.
+    """
+    from .piece_refined import PieceRefinedMeaning, refined_meaning_parts
+    from piece_v2_content_policy import _piece_model_topic_continuations
+    pairs = refined_meaning_parts(meaning, plan) if type(meaning) is PieceRefinedMeaning else ((meaning, plan),)
+    result, edits, offset = [], [], 0
+    eligible = None
+    for part, child in pairs:
+        # This is the existing author's source-bound editorial realization,
+        # used as a decision reference, never as a replacement for a failed raw.
+        try:
+            reference = realize_piece_artifact(part, child, tier='premium', requested_format='short_essay')
+        except PieceContractError:
+            # The admitted raw remains a short essay when the finite source
+            # author cannot supply an editorial reference. Do not infer a
+            # rewrite or award another format from an unavailable reference.
+            count = len(child.block_node_ids)
+            result.extend(blocks[offset:offset + count])
+            offset += count
+            eligible = ('short_essay',)
+            continue
+        eligible = reference.eligible_formats if eligible is None else ('short_essay',)
+        topics, omissions = _piece_model_topic_continuations(part, child)
+        nodes = {node.node_id: node for node in piece_text_nodes(part)}
+        for group, authored in zip(child.block_node_ids, reference.body_blocks, strict=True):
+            raw = blocks[offset]
+            before = _model_realization_clauses(raw)
+            after = _model_realization_clauses(authored)
+            original = tuple(nodes[node_id].value for node_id in group)
+            keys = tuple(_model_realization_key(_publicize_source_sentence(value, part))
+                         for value in original)
+            if (before is None or after is None or len(before) != len(group)
+                    or len(after) != len(group)):
+                result.append(raw)
+                offset += 1
+                continue
+            visible_keys = tuple(_model_realization_key(value) for value in before)
+            realized = []
+            for index, (node_id, source, visible, native) in enumerate(
+                    zip(group, original, before, after, strict=True)):
+                key = keys[index]
+                if (key != visible_keys[index] or keys.count(key) != 1
+                        or visible_keys.count(key) != 1):
+                    realized.append(visible)
+                    continue
+                public_source = _publicize_source_sentence(source, part)
+                # A role already realized by the model must not make us undo
+                # its independently admitted register just to repeat that edit.
+                value = native if native != public_source else visible
+                if node_id in omissions and topics[node_id]['topic_end'] is not None:
+                    speaker = topics[node_id]['narrator']
+                    topic = re.match(re.escape(speaker) + r'は[、，,]?', value)
+                    if topic is not None:
+                        value = value[topic.end():]
+                if value != visible:
+                    edits.append((part.envelope.source_record_id, node_id, offset, visible, value))
+                realized.append(value)
+            result.append(''.join(realized))
+            offset += 1
+    if offset != len(blocks):
+        raise unavailable('piece_model_block_partition')
+    return tuple(result), tuple(edits), eligible or ('short_essay',)
+
+
+def realize_piece_model_artifact(meaning, plan, *, body_blocks, tier, requested_format,
+                                 realization_profile=None):
+    """Adopt one fixed model body through the existing Piece artifact owner.
+
+    The model supplies no format, language, plan, recipe or safety verdict.
+    This function neither repairs a failed body nor invokes the finite author
+    as a replacement. Exact candidate bytes become the canonical artifact.
+    """
+    from piece_v2_content_policy import validate_piece_model_preservation
+    if type(body_blocks) is not tuple or not body_blocks or any(type(b) is not str for b in body_blocks):
+        raise unavailable('piece_model_body_shape')
+    text = '\n\n'.join(body_blocks)
+    artifact = PieceArtifact(body_blocks, text, hashlib.sha256(text.encode()).hexdigest(),
+                             'short_essay', ('short_essay',))
+    validate_piece_model_preservation(meaning, plan, artifact)
+    if realization_profile == MODEL_REALIZATION_PROFILE:
+        blocks, edits, source_formats = _realize_admitted_model_blocks(meaning, plan, body_blocks)
+        from .piece_refined import PieceRefinedMeaning, PieceCorrectedSourceSnapshot
+        if (type(meaning) is PieceRefinedMeaning
+                and type(meaning.source) is PieceCorrectedSourceSnapshot):
+            source_formats = tuple(fmt for fmt in source_formats if fmt in plan.eligible_formats)
+        text = '\n\n'.join(blocks)
+        review = PieceArtifact(blocks, text, hashlib.sha256(text.encode()).hexdigest(),
+                              'short_essay', ('short_essay',))
+        validate_piece_model_preservation(meaning, plan, review)
+        # The source author's established eligibility is necessary. The model
+        # cannot award quote/declaration eligibility or override plan rules.
+        formats = []
+        for fmt in source_formats:
+            candidate = PieceArtifact(blocks, text, review.piece_text_hash, fmt, source_formats)
+            try:
+                validate_candidate_text(candidate.content_payload())
+            except ValueError:
+                continue
+            formats.append(fmt)
+        recommended = ('declaration' if 'declaration' in formats else
+                       'quote' if 'quote' in formats else 'short_essay')
+        selected = choose_format(tier=tier, requested=requested_format,
+            eligible=tuple(formats), recommended=recommended)
+        return PieceModelRealizedArtifact(blocks, text, review.piece_text_hash, selected, tuple(formats),
+            realization_profile, body_blocks, edits)
+    if realization_profile is not None:
+        raise unavailable('piece_model_realization_profile')
+    selected = choose_format(tier=tier, requested=requested_format,
+        eligible=('short_essay',), recommended='short_essay')
+    artifact = PieceArtifact(body_blocks, text, artifact.piece_text_hash, selected, ('short_essay',))
+    return artifact
+
+
+def realize_piece_artifact(meaning: PieceSourceMeaning, plan: PieceArtifactPlan,
+                           *, tier: str, requested_format: str | None) -> PieceArtifact:
+    """Realize plan-owned duties from the source graph; never call B8's old author."""
+    from .piece_semantic_admission import (
+        PieceSemanticSnapshotV1, PieceSemanticArtifactV1, PieceSemanticRealizationV1,
+        source_nodes,
+    )
+    if type(meaning) is PieceSemanticSnapshotV1:
+        from piece_v2_content_policy import (
+            validate_piece_semantic_preservation, _validate_text_envelope,
+        )
+        validate_piece_saved_fields(meaning)
+        validate_piece_semantic_preservation(meaning, plan, None, tier=tier,
+                                            requested_format=requested_format)
+        nodes = {row[0]: row for row in source_nodes(meaning)}
+        blocks = []
+        visible = {}
+        for block_index, group in enumerate(plan.block_node_ids):
+            text = ''
+            for node_ref in group:
+                row = nodes[node_ref]
+                visible[node_ref] = (block_index, len(text), row[2])
+                # The sole Piece author retains the complete written clause,
+                # including the shared second sentence's connective and comma.
+                text += row[4]
+            blocks.append(text)
+        blocks = tuple(blocks)
+        selected = choose_format(tier=tier, requested=requested_format,
+                                 eligible=plan.eligible_formats, recommended='short_essay')
+        text = '\n\n'.join(blocks)
+        _validate_text_envelope(text, blocks, selected)
+        check_existing_detectors(text)
+        realized = []
+        for binding, duty in zip(meaning.claim_bindings, plan.duties, strict=True):
+            bi, offset, source_start = visible[binding.node_ref]
+            realized.append(PieceSemanticRealizationV1(binding.claim_ref, duty.duty_ref,
+                (binding.node_ref,), (binding.source_binding_ref,), bi,
+                offset + binding.scalar_start - source_start,
+                offset + binding.scalar_end - source_start))
+        artifact = PieceSemanticArtifactV1(meaning.snapshot_ref, plan.plan_ref,
+            meaning.source_commitment, blocks, text,
+            hashlib.sha256(text.encode('utf-8')).hexdigest(), selected,
+            plan.eligible_formats, tuple(realized), plan.selection_duties)
+        validate_piece_semantic_preservation(meaning, plan, artifact, tier=tier,
+                                            requested_format=requested_format)
+        return artifact
+    graph = meaning.graph
+    if plan.graph_id != graph.graph_id or plan.source_version != graph.source_version:
+        raise unavailable('piece_plan_source_binding')
+    ids = tuple(node.node_id for node in graph.nodes)
+    ordered = tuple(node_id for block in plan.block_node_ids for node_id in block)
+    if (tuple(d.node_id for d in plan.duties) != ids
+            or sorted(ordered) != sorted(ids) or len(ordered) != len(ids)
+            or any(not block for block in plan.block_node_ids)):
+        raise unavailable('piece_plan_complete_coverage')
+    if plan.intent != PieceArtifactIntent():
+        raise unavailable('piece_intent_mismatch')
+    if plan != compile_piece_artifact_plan(meaning):
+        raise unavailable('piece_plan_semantic_binding')
+    continuations, direct_continuations = _linked_self_continuations(meaning, plan)
+    sentences: dict[str, str] = {}
+    evidence_by_id = {ev.evidence_id: ev for ev in meaning.evidence}
+    for node, duty in zip(graph.nodes, plan.duties, strict=True):
+        evidence = evidence_by_id.get(node.evidence_ids[0])
+        if evidence is None:
+            raise unavailable('piece_graph_source_binding')
+        raw = meaning.envelope.raw_utf8
+        if (node.evidence_ids != (evidence.evidence_id,)
+                or raw[evidence.utf8_start:evidence.utf8_end].decode('utf-8') != node.value):
+            raise unavailable('piece_graph_source_binding')
+        text = _publicize_source_sentence(node.value, meaning)
+        if duty.operation == 'SOURCE_SCOPED_EXPRESSION_TO_FIRST_PERSON':
+            scope = next((s for s in meaning.expression_scopes if s.node_id == node.node_id), None)
+            if scope is None:
+                raise unavailable('piece_plan_operation_binding')
+            original = piece_source_text(meaning)
+            premise = original[slice(*scope.scope_scalar_span)]
+            frame = next((f for f in meaning.personal_evaluations if f.node_id == node.node_id), None)
+            if frame is not None:
+                # Keep the written scope before the complete evaluation. A
+                # time topic is not its nominal argument or an inferred cause.
+                # Its existing comma separates the short time topic from the
+                # explicit viewpoint; avoid another inserted pause immediately
+                # after that viewpoint. Other scopes retain their prior surface.
+                temporal = scope.relation == 'SOURCE_EXPLICIT_TIME_CONTEXT'
+                speaker = original[slice(*frame.scalar_parts[0])]
+                # Recomputed scope/frame validation already established this
+                # exact author within one sentence, without a new participant
+                # or report boundary. Keep its first topic and every premise
+                # word; にとって still states the explicit evaluation viewpoint.
+                same_author = premise.startswith(speaker + 'は')
+                text = _publicize_source_sentence(
+                    premise + '、' + _evaluation_sentence(
+                        meaning, frame, separate_viewpoint=not (temporal or same_author),
+                        omit_self_topic=same_author), meaning)
+            else:
+                expression = original[slice(*scope.expression_scalar_span)]
+                focal = _focal_parts(expression)
+                direct = _direct_transitive_expression(expression) if focal is None else None
+                if direct is not None:
+                    focal = (direct['object'], direct['predicate'], direct['speaker'])
+                if focal is not None:
+                    obj, predicate, speaker = focal
+                    # Scope validation proves a sentence-initial self topic,
+                    # when present, is this exact same author without another
+                    # participant/report boundary. Keep that visible topic and
+                    # omit only its repetition; do not infer speaker aliases.
+                    # The full premise, connective, object and predicate stay.
+                    prefix = '' if premise.startswith(speaker + 'は') else speaker + 'は'
+                    text = premise + '、' + prefix + obj + 'を' + predicate + '。'
+                else:
+                    topic = _scoped_self_topic(original[slice(*scope.expression_scalar_span)])
+                    if topic is None:
+                        raise unavailable('piece_plan_operation_binding')
+                    # Realize the written first-person topic. The complete premise,
+                    # its exact connective, and all intention arguments stay intact.
+                    # In particular なら never becomes ので, and neither clause is
+                    # changed into a new causal explanation or an unconditional vow.
+                    # An adjacent source-bound continuation already establishes
+                    # this author. Keep its full scope and predicate; omit only
+                    # the repeated self-topic, never the first visible viewpoint.
+                    prefix = '' if node.node_id in continuations else topic['speaker'] + 'は、'
+                    referenced_premise = any(
+                        ref.reference_node_id == node.node_id
+                        and scope.scope_scalar_span[0] <= ref.reference_scalar_span[0]
+                        and ref.reference_scalar_span[1] <= scope.scope_scalar_span[1]
+                        for ref in meaning.nominal_references)
+                    if (scope.relation == 'SOURCE_EXPLICIT_CONCESSION'
+                            or referenced_premise):
+                        # Keep the source-bound premise before the written topic.
+                        # A nominal link does not make its participant the author;
+                        # fronting a retained topic can blur that clause boundary.
+                        # The existing continuation check alone owns omission.
+                        text = premise + '、' + prefix + topic['body'] + '。'
+                    else:
+                        text = prefix + premise + '、' + topic['body'] + '。'
+                    if (expression.endswith(('！', '!'))
+                            and not _WISH_END.search(topic['body'])):
+                        # This existing literal family includes both a verb's
+                        # みたい and comparisons. Keep the whole source order
+                        # and topic rather than classify or front either one.
+                        # The one original stop is restored below as usual.
+                        text = node.value[:-1] + '。'
+                text = _publicize_source_sentence(text, meaning)
+        elif duty.operation == 'SOURCE_FOCAL_TO_FIRST_PERSON':
+            parts = _focal_parts(text)
+            if parts is None:
+                raise unavailable('piece_plan_operation_binding')
+            obj, predicate, speaker = parts
+            text = speaker + 'は、' + obj + 'を' + predicate + '。'
+        elif duty.operation == 'SOURCE_FIRST_PERSON_TOPIC':
+            topic = _qualified_self_topic(text)
+            if topic is None or not _WISH_END.search(topic['body']):
+                raise unavailable('piece_plan_operation_binding')
+            direct = _direct_transitive_expression(node.value)
+            if direct is not None:
+                # This existing wish also has a source-proven transitive
+                # object. Share its separator boundary with independent
+                # review, rather than retaining a pause inside that object.
+                text = _publicize_source_sentence(
+                    direct['speaker'] + 'は、' + direct['object']
+                    + 'を' + direct['predicate'] + '。', meaning)
+            else:
+                text = topic['speaker'] + 'は、' + topic['body'] + '。'
+        elif duty.operation == 'SOURCE_TRANSITIVE_SELF_TOPIC':
+            direct = _direct_transitive_expression(node.value)
+            if direct is None:
+                raise unavailable('piece_plan_operation_binding')
+            text = _publicize_source_sentence(
+                direct['speaker'] + 'は、' + direct['object']
+                + 'を' + direct['predicate'] + '。', meaning)
+        elif duty.operation == 'SOURCE_PERSONAL_EVALUATION':
+            frame = next((f for f in meaning.personal_evaluations if f.node_id == node.node_id), None)
+            if frame is None:
+                raise unavailable('piece_plan_operation_binding')
+            text = _publicize_source_sentence(_evaluation_sentence(meaning, frame), meaning)
+        elif duty.operation != 'KEEP_COMPLETE_SOURCE_CONTEXT':
+            raise unavailable('piece_plan_operation_unknown')
+        sentences[node.node_id] = text
+    # Apply the optional continuity edit only after source/plan validation and
+    # complete realization. Remove just the redundant topic, not a proposition,
+    # public relationship, predicate, negation, reservation or the first author.
+    paired = _paired_self_continuations(meaning, plan)
+    # A paired condition keeps its premise first. Its topic edit uses the
+    # existing scoped post-realization path, never the sentence-initial edit.
+    paired_scopes = paired & {scope.node_id for scope in meaning.expression_scopes}
+    direct_continuations = direct_continuations | paired_scopes
+    adjacent = _adjacent_self_continuations(meaning, plan) | (paired - paired_scopes)
+    if adjacent:
+        edited = dict(sentences)
+        for node_id in adjacent:
+            topic = _SELF_TOPIC.fullmatch(edited[node_id])
+            if topic is None:
+                raise unavailable('piece_plan_operation_binding')
+            edited[node_id] = topic['body'] + '。'
+        # These multisentence bodies are short essays. An optional edit must not turn
+        # an admitted short essay into a below-minimum refusal. Decline the edit
+        # rather than changing the existing envelope or padding the user's text.
+        length = len(re.sub(r'\s', '', ''.join(edited.values())))
+        if length >= ENVELOPES['short_essay'][0]:
+            sentences = edited
+    if direct_continuations:
+        edited = dict(sentences)
+        original = piece_source_text(meaning)
+        for scope in meaning.expression_scopes:
+            if scope.node_id not in direct_continuations:
+                continue
+            topic = _scoped_self_topic(original[slice(*scope.expression_scalar_span)])
+            if topic is None:
+                raise unavailable('piece_plan_operation_binding')
+            premise = original[slice(*scope.scope_scalar_span)] + '、'
+            # Work from the actual complete realized sentence, not a new body
+            # or a guessed subject. Keep the referential premise and all of
+            # its connective; delete only this proven repeated self-topic.
+            prefix = _publicize_source_sentence(premise + topic['speaker'] + 'は、', meaning)
+            if not edited[scope.node_id].startswith(prefix):
+                raise unavailable('piece_plan_operation_binding')
+            edited[scope.node_id] = (_publicize_source_sentence(premise, meaning)
+                                     + edited[scope.node_id][len(prefix):])
+        if len(re.sub(r'\s', '', ''.join(edited.values()))) >= ENVELOPES['short_essay'][0]:
+            sentences = edited
+    # Editorial word order and optional repeated-topic removal do not own the
+    # source's written emphasis. Restore its one declarative stop only after
+    # those existing edits, without normalizing a source, span or KEEP node.
+    for node, duty in zip(graph.nodes, plan.duties, strict=True):
+        if duty.operation != 'KEEP_COMPLETE_SOURCE_CONTEXT' and node.value.endswith(('。', '！', '!')):
+            text = sentences[node.node_id]
+            if not text.endswith('。'):
+                raise unavailable('piece_plan_operation_binding')
+            sentences[node.node_id] = text[:-1] + node.value[-1]
+    blocks = tuple(''.join(sentences[node_id] for node_id in group)
+                   for group in plan.block_node_ids)
+    payloads = {}
+    for fmt in ('short_essay', 'quote', 'declaration'):
+        if fmt == 'quote' and (len(ids) != 1 or meaning.expression_scopes
+                               or _has_topic_qualification(meaning, plan.duties)):
+            continue
+        if fmt == 'declaration' and not plan.declaration_eligible:
+            continue
+        payload = {'schema_version': 'piece.content_payload.v1', 'format_type': fmt,
+                   'body_blocks': list(blocks), 'title': None, 'language': 'ja',
+                   'meaning_contract_version': 'piece.content_meaning.v1',
+                   'safety_contract_version': 'piece.public_safety_transformation.v1'}
+        try:
+            validate_candidate_text(payload)
+        except ValueError:
+            # Existing content-envelope owner exposes ValueError; the legacy
+            # B01 loader may also reload its concrete exception class.
+            continue
+        payloads[fmt] = payload
+    eligible = tuple(payloads)
+    recommended = 'declaration' if 'declaration' in eligible else (
+        'quote' if 'quote' in eligible else 'short_essay')
+    selected = choose_format(tier=tier, requested=requested_format,
+                             eligible=eligible, recommended=recommended)
+    text = validate_candidate_text(payloads[selected])
+    check_existing_detectors(text)
+    return PieceArtifact(blocks, text, hashlib.sha256(text.encode('utf-8')).hexdigest(),
+                         selected, eligible)
+
+
+def generate_piece_artifact(request: PieceGenerationRequest) -> PieceEngineOutcome:
+    if (type(request) is not PieceGenerationRequest or request.core_id != 'piece'
+            or request.product_job != 'EXPRESS_AND_SHARE'
+            or request.execution_mode != ExecutionMode.OFFLINE_CANDIDATE.value
+            or not isinstance(request.request_id, str) or not request.request_id.strip()):
+        return PieceEngineOutcome(EngineStatus.REJECTED, ('piece_request_out_of_scope',))
+    from .piece_refined import PieceRefinedSourceSnapshot, PieceCorrectedSourceSnapshot, generate_refined_piece
+    if type(request.source) in (PieceRefinedSourceSnapshot, PieceCorrectedSourceSnapshot):
+        return generate_refined_piece(request)
+    meaning = None
+    plan = None
+    try:
+        meaning = build_piece_source_meaning(
+            request.source, expected_owner_id=request.expected_owner_id,
+            expected_saved_input_id=request.expected_saved_input_id,
+            expected_source_version=request.expected_source_version)
+        plan = compile_piece_artifact_plan(meaning)
+        artifact = realize_piece_artifact(meaning, plan, tier=request.tier,
+                                          requested_format=request.requested_format)
+    except PieceContractError as exc:
+        return PieceEngineOutcome(EngineStatus.UNAVAILABLE, (exc.detail or 'piece_content_unavailable',),
+                                  meaning, plan)
+    except Exception:
+        # Private source/graph exceptions are never copied into an outcome.
+        return PieceEngineOutcome(EngineStatus.UNAVAILABLE, ('piece_vertical_internal_failure',))
+    return PieceEngineOutcome(EngineStatus.GENERATED, ('piece_source_plan_generated',),
+                              meaning, plan, artifact)

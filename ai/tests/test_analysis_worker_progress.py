@@ -1,0 +1,180 @@
+"""Exercise worker lease changes against a conditional, in-memory PostgREST row."""
+import asyncio
+from copy import deepcopy
+from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
+import unittest
+from unittest.mock import AsyncMock, patch
+
+from analysis_job_progress import (MapJobClaimChanged, MapJobClaimUnavailable,
+    check_map_job_owner, checkpoint_v24_phase, map_job_progress)
+import astor_job_queue as queue
+
+
+def response(status, data):
+    return SimpleNamespace(status_code=status, json=lambda: deepcopy(data), text='')
+
+
+class MapProgressTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        old = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+        self.row = dict(job_key='myprofile_latest_refresh:synthetic', user_id='synthetic',
+            job_type='myprofile_latest_refresh_v1', status='running', worker_id='worker-A',
+            started_at=old, updated_at=old, attempts=1, max_attempts=8,
+            payload={'trigger': 'map_view'}, run_after=old)
+        self.job = queue._row_to_job(deepcopy(self.row))
+        self.trigger = False
+        self.unknown_ack = False
+        self.enterContext(patch.object(queue, 'ensure_supabase_config'))
+        self.enterContext(patch.object(queue, 'sb_patch', self.patch_row))
+
+    async def patch_row(self, _path, *, params, json, **kwargs):
+        for key, wanted in params.items():
+            if key == 'select':
+                continue
+            value = self.row.get(key)
+            if wanted == 'is.null':
+                matched = value is None
+            elif wanted.startswith('neq.'):
+                matched = wanted[4:] != str(value)
+            else:
+                matched = wanted == 'eq.' + str(value)
+            if not matched:
+                return response(200, [])
+        self.row.update(deepcopy(json))
+        if self.trigger:
+            self.row['updated_at'] = queue._now_iso_z()
+        if self.unknown_ack:
+            raise OSError('unavailable')
+        return response(200, [self.row])
+
+    async def stale(self, scanned):
+        with patch.object(queue, 'sb_get', AsyncMock(return_value=response(200, [scanned]))):
+            return await queue.requeue_stale_running_jobs(stale_running_seconds=1800)
+
+    async def test_completed_phases_renew_without_losing_enqueue_revision(self):
+        for trigger in (False, True):
+            self.trigger = trigger
+            started, previous = self.job.started_at, self.job.run_after
+            await queue.renew_map_job_progress(self.job)
+            self.assertEqual(self.job.started_at, started)
+            self.assertNotEqual(self.job.run_after, previous)
+            self.assertEqual(self.job.updated_at, self.row['updated_at'])
+        await queue.check_map_job_owner(self.job)
+        self.assertTrue(await queue.mark_done_if_unchanged(job_key=self.job.job_key,
+            claim=self.job, expected_updated_at=self.job.updated_at))
+        self.assertEqual(self.row['status'], 'done')
+
+    async def test_new_input_is_preserved_and_old_compute_cannot_commit(self):
+        self.row['max_attempts'] = self.job.max_attempts = 1
+        self.row.update(updated_at=queue._now_iso_z(), last_error='map_updated_while_running',
+                        payload={'trigger': 'new input'})
+        with self.assertRaises(MapJobClaimChanged):
+            await queue.check_map_job_owner(self.job)
+        self.assertFalse(await queue.mark_done_if_unchanged(job_key=self.job.job_key,
+            claim=self.job, expected_updated_at=self.job.updated_at))
+        await queue.requeue(job_key=self.job.job_key, claim=self.job, error='map_claim_changed')
+        self.assertEqual((self.row['status'], self.row['attempts'], self.row['max_attempts']), ('queued', 0, 1))
+        self.assertEqual(self.row['payload'], {'trigger': 'new input'})
+
+    async def test_old_claim_cannot_finish_fail_or_requeue_replacement(self):
+        # Reused process name and attempt number still have a new lease timestamp.
+        self.row.update(started_at=queue._now_iso_z(), updated_at=queue._now_iso_z())
+        newer = deepcopy(self.row)
+        with self.assertRaises(MapJobClaimChanged):
+            await queue.renew_map_job_progress(self.job)
+        self.assertFalse(await queue.mark_done_if_unchanged(job_key=self.job.job_key,
+            claim=self.job, expected_updated_at=self.job.updated_at))
+        await queue.mark_failed(job_key=self.job.job_key, claim=self.job, error='old')
+        await queue.requeue(job_key=self.job.job_key, claim=self.job, error='old')
+        self.assertEqual(self.row, newer)
+
+    async def test_stale_scan_loses_to_real_progress_and_replacement(self):
+        scanned = deepcopy(self.row)
+        await queue.renew_map_job_progress(self.job)
+        self.assertEqual(await self.stale(scanned), 0)
+        self.assertEqual(await self.stale(deepcopy(self.row)), 0)
+        self.assertEqual(self.row['status'], 'running')
+
+    async def test_dead_claim_requeues_with_budget_or_fails_last_attempt(self):
+        old = deepcopy(self.row)
+        self.assertEqual(await self.stale(deepcopy(self.row)), 1)
+        self.assertEqual((self.row['status'], self.row['attempts']), ('queued', 1))
+        self.row = dict(old, attempts=8)
+        self.assertEqual(await self.stale(deepcopy(self.row)), 0)
+        self.assertEqual((self.row['status'], self.row['last_error']), ('failed', 'map_progress_stalled'))
+
+    async def test_unknown_heartbeat_ack_aborts_without_overwriting_current_lease(self):
+        old = self.job.run_after
+        self.unknown_ack = True
+        with self.assertRaises(MapJobClaimUnavailable):
+            await queue.renew_map_job_progress(self.job)
+        self.assertEqual(self.job.run_after, old)
+        self.assertNotEqual(self.row['run_after'], old)
+        self.unknown_ack = False
+        await queue.requeue(job_key=self.job.job_key, claim=self.job, error='old')
+        self.assertEqual(self.row['status'], 'running')
+
+    async def test_same_generation_final_retry_and_legacy_exhausted_row_never_claim(self):
+        self.row['max_attempts'] = self.job.max_attempts = 1
+        await queue.requeue(job_key=self.job.job_key, claim=self.job, error='unavailable')
+        self.assertEqual((self.row['status'], self.row['attempts']), ('failed', 1))
+        self.row['status'] = 'queued'
+        candidate = queue._row_to_job(self.row)
+        got = await queue.claim_job(job_key=self.job.job_key, worker_id='B', attempts=1, candidate=candidate)
+        self.assertIsNone(got)
+        self.assertEqual((self.row['status'], self.row['attempts']), ('failed', 1))
+
+    async def test_old_queued_snapshot_cannot_replace_new_revision_or_reset_attempts(self):
+        self.row.update(status='queued', attempts=0, max_attempts=1)
+        observed = queue._row_to_job(self.row)
+        self.row.update(updated_at=queue._now_iso_z(), attempts=1)
+        self.assertIsNone(await queue.claim_job(job_key=self.job.job_key, worker_id='B',
+                                                attempts=0, candidate=observed))
+        self.assertEqual((self.row['status'], self.row['attempts']), ('queued', 1))
+
+    async def test_stalled_new_request_gets_fresh_budget(self):
+        self.row.update(max_attempts=1, last_error='map_updated_while_running', payload={'value': 'new'})
+        self.assertEqual(await self.stale(deepcopy(self.row)), 1)
+        self.assertEqual((self.row['status'], self.row['attempts'], self.row['payload']), ('queued', 0, {'value': 'new'}))
+        fresh = queue._row_to_job(self.row)
+        got = await queue.claim_job(job_key=fresh.job_key, worker_id='B', attempts=0, candidate=fresh)
+        self.assertEqual((got.status, got.attempts, got.started_at, got.run_after),
+                         ('running', 1, self.row['started_at'], self.row['started_at']))
+
+    async def test_first_phase_stall_with_automatic_updated_at_does_not_replenish_budget(self):
+        started = queue._parse_iso_z(self.row['started_at'])
+        self.row.update(max_attempts=1, run_after=self.row['started_at'],
+                        updated_at=(started + timedelta(microseconds=1)).isoformat())
+        self.assertEqual(await self.stale(deepcopy(self.row)), 0)
+        self.assertEqual((self.row['status'], self.row['attempts']), ('failed', 1))
+
+    async def test_legacy_claim_with_newer_input_before_first_progress_is_preserved(self):
+        started = queue._parse_iso_z(self.row['started_at'])
+        self.row.update(max_attempts=1, run_after=(started - timedelta(seconds=20)).isoformat(),
+                        updated_at=(started + timedelta(seconds=1)).isoformat())
+        self.assertEqual(await self.stale(deepcopy(self.row)), 1)
+        self.assertEqual((self.row['status'], self.row['attempts']), ('queued', 0))
+
+    async def test_health_retains_actual_runtime_and_uses_progress_for_staleness(self):
+        await queue.renew_map_job_progress(self.job)
+        with patch.object(queue, 'sb_get', AsyncMock(return_value=response(200, [self.row]))):
+            stats = await queue.fetch_queue_stats(stale_running_seconds=1800)
+        self.assertEqual(stats['stale_running_count'], 0)
+        self.assertGreater(stats['oldest_running_age_seconds'], 3500)
+
+    async def test_callbacks_are_task_scoped_and_reset_on_exit(self):
+        progress, check = AsyncMock(), AsyncMock()
+        async def checkpoints():
+            await checkpoint_v24_phase()
+            await check_map_job_owner()
+        outside = asyncio.create_task(checkpoints())
+        with map_job_progress(progress, check):
+            await asyncio.gather(outside, asyncio.create_task(checkpoints()))
+        await checkpoints()
+        progress.assert_awaited_once()
+        check.assert_awaited_once()
+
+
+if __name__ == '__main__':
+    unittest.main()

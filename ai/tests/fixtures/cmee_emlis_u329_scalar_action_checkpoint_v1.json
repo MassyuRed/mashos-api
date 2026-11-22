@@ -1,0 +1,625 @@
+{
+  "source_commit": "6af573362ba2ff6f969e24018de80b359804080a",
+  "cases": [
+    {
+      "memo": "分からない。",
+      "action": "机を片付けた。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-62d9c7eea623eca505f756a636cfc5bbc06ddbd28414557d584d85d3a6c030e6",
+        "source_prefix_ref": "emlis-q3-source-prefix-d0ab43a2f2331d31db31dc5973d8c809173078501a765062f4b8b43b6a812a83",
+        "base_meaning_ref": "emlis-base-meaning-3d50e7ce187e0060d8dce8f1e32e0f37c682acfe75eb62bc8937e12e86c5d177",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "nuclei_sha256": "60e3f3fca689516675c68b2cf726822ef2d677db4c70add56f8919bf972d6f49",
+      "relations_sha256": "6f30f6a52dbbbc1359952e601138c39941bc256ff2a9a51e6c81edde4123556a",
+      "selected_sha256": "86c3367f585d6cba6cf32d4109c1d56eea6fad2ca7eb6f88b7fc0299a081b953",
+      "body": "見えたこと：\n分からないのですね。\n今の入力には、「机を片付けた」という行動があります。\n\nEmlisから：\n机を片付けたことを見過ごさず、大切に受け止めています。",
+      "reception": "机を片付けたことを見過ごさず、大切に受け止めています。",
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      }
+    },
+    {
+      "memo": "分からない。",
+      "action": "部屋を片付けた。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-b21bf880f5d1251a951a861da7eff1603f7bcb95f1981a2cf9c2e18bef4299af",
+        "source_prefix_ref": "emlis-q3-source-prefix-8ac699aac5128c6a5ffd4c11836f5e2f33d1008077f1772a4e33162cae13fd53",
+        "base_meaning_ref": "emlis-base-meaning-1de31b35ef846b97d7a4a1770f7fa846ca126eedc66b545263a3eaa0b2fc1c40",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "nuclei_sha256": "60e3f3fca689516675c68b2cf726822ef2d677db4c70add56f8919bf972d6f49",
+      "relations_sha256": "6f30f6a52dbbbc1359952e601138c39941bc256ff2a9a51e6c81edde4123556a",
+      "selected_sha256": "04dbc2095a0a43798ec35fce807b22e9ce6a8d0181cb5e810b14dd90a752c06f",
+      "body": "見えたこと：\n分からないのですね。\n今の入力には、「部屋を片付けた」という行動があります。\n\nEmlisから：\n部屋を片付けたことを見過ごさず、大切に受け止めています。",
+      "reception": "部屋を片付けたことを見過ごさず、大切に受け止めています。",
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      }
+    },
+    {
+      "memo": "分からない。",
+      "action": "メモを書いた。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-4197289d4da6b63791b858026d88f1bd3e902a486fd5d42f35498a3d1ce874aa",
+        "source_prefix_ref": "emlis-q3-source-prefix-6536a348a373af34d129156ab380b77e86763bfda33ca796e42b08c4c72b0e38",
+        "base_meaning_ref": "emlis-base-meaning-4640a2aeedd665076fbf1e6058c69f52b60fae8b8cfb1c1d1a3547a4dc47704f",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "nuclei_sha256": "e9b43f05b8d8d21bec69d55f8d97e04b83fd319228c7e6dd364a5fcb02efdada",
+      "relations_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "selected_sha256": "0c39751fab782f4b008f7e49cfd3d836247d62904f4de918a2b832b9d7113fd0",
+      "body": "見えたこと：\n分からないのですね。\n今の入力には、「メモを書いた」という行動があります。\n\nEmlisから：\n分からないことを小さくせずに受け止めています。メモを書いたことを大切に思っています。",
+      "reception": "分からないことを小さくせずに受け止めています。メモを書いたことを大切に思っています。",
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      }
+    },
+    {
+      "memo": "分からない。",
+      "action": "資料を整理した。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-2f2de9745796098d162cef7e8661523542722f5ab1d813b30ecd4df214e70e99",
+        "source_prefix_ref": "emlis-q3-source-prefix-5d472b1cfa0c0e6ce7f1ff28b23a1e0505e8c71e2d61feb5245d20ffcd61f048",
+        "base_meaning_ref": "emlis-base-meaning-25596f3f610dbdb27b48d002e8fe562feb6b6226a8ffb992a61a5ed669841bbf",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "nuclei_sha256": "e9b43f05b8d8d21bec69d55f8d97e04b83fd319228c7e6dd364a5fcb02efdada",
+      "relations_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "selected_sha256": "a5b4dee78a442c6a33aafe33db13b0577dc88ea08e300742bc8fb747b3ac859b",
+      "body": "見えたこと：\n分からないのですね。\n今の入力には、「資料を整理した」という行動があります。\n\nEmlisから：\n分からないことを小さくせずに受け止めています。資料を整理したことを大切に思っています。",
+      "reception": "分からないことを小さくせずに受け止めています。資料を整理したことを大切に思っています。",
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      }
+    },
+    {
+      "memo": "分からない。",
+      "action": "机を片づけた。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-a7faafb88b43ca9cd50d227843e2b767bfdb7b3df7fe6fdb03da0821b775a83e",
+        "source_prefix_ref": "emlis-q3-source-prefix-a39d581818a7910735691ba36ff8616128e04fd8fafcfc061595cc3d230bb378",
+        "base_meaning_ref": "emlis-base-meaning-1cf34868e50cec86c1c413670641ac0eb5b53e1e9b8b17a8fb7558eee02b2abf",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "nuclei_sha256": "e9b43f05b8d8d21bec69d55f8d97e04b83fd319228c7e6dd364a5fcb02efdada",
+      "relations_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "selected_sha256": "53390b6702da5021658b8e297ac92e9c61fa8691163a8bc52aa08dbf15fdba1a",
+      "body": "見えたこと：\n分からないのですね。\n今の入力には、「机を片づけた」という行動があります。\n\nEmlisから：\n分からないことを小さくせずに受け止めています。机を片づけたことを大切に思っています。",
+      "reception": "分からないことを小さくせずに受け止めています。机を片づけたことを大切に思っています。",
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      }
+    },
+    {
+      "memo": "今はまだよく分からない。",
+      "action": "机を片付けた。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-b13eb0d39f660e64a0f83e06ee929bf805a11159b0f009436406dd79d9303b01",
+        "source_prefix_ref": "emlis-q3-source-prefix-3b6f11b5b3f51cb07f93532e74080a0ddde2d77aabee08b9f354264fa2971751",
+        "base_meaning_ref": "emlis-base-meaning-8785280790de83c78193508873f5fb811c7cab41bb03d76ce58cbc888b64c7ba",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "nuclei_sha256": "d661f4e5d89f6102e43fc8b46f608ae150af7204cc244efb20bd1df6a159459d",
+      "relations_sha256": "31a859576afb7afd37ea71015d60e12a101e7fbe5e4cedb365cb0d634ee197aa",
+      "selected_sha256": "5a1aebfa844a8b5f561a4b8e09e92c361c3379c513000526b352c1790908267f",
+      "body": "見えたこと：\n今はまだよく分からないのですね。\n今の入力には、「机を片付けた」という行動があります。\n\nEmlisから：\n机を片付けたことを見過ごさず、大切に受け止めています。",
+      "reception": "机を片付けたことを見過ごさず、大切に受け止めています。",
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      }
+    },
+    {
+      "memo": "今はまだよく分からない。",
+      "action": "部屋を片付けた。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-78023afdd6a34621efe2400b13c8dc938b77cccb75410aaffed01a9e46479abf",
+        "source_prefix_ref": "emlis-q3-source-prefix-f52c2cc8a94a6eb92705b408cb8292c2d9cf21b9d3f764a6877970f74c54b7f0",
+        "base_meaning_ref": "emlis-base-meaning-90a548ec2f8d8d57ae4ddcef570829c8644aa8836df5486f36fd673a14b75392",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "nuclei_sha256": "d661f4e5d89f6102e43fc8b46f608ae150af7204cc244efb20bd1df6a159459d",
+      "relations_sha256": "31a859576afb7afd37ea71015d60e12a101e7fbe5e4cedb365cb0d634ee197aa",
+      "selected_sha256": "ee6cbb72851e2965ad1c83a8f9897e10b645c42e7e8c6e583b5d1e6f3e198474",
+      "body": "見えたこと：\n今はまだよく分からないのですね。\n今の入力には、「部屋を片付けた」という行動があります。\n\nEmlisから：\n部屋を片付けたことを見過ごさず、大切に受け止めています。",
+      "reception": "部屋を片付けたことを見過ごさず、大切に受け止めています。",
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      }
+    },
+    {
+      "memo": "今はまだよく分からない。",
+      "action": "メモを書いた。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-3c78eef5854659d729d06556f0b3c08e3b28552672ce194418718dffcd1885bf",
+        "source_prefix_ref": "emlis-q3-source-prefix-8eeb068617b9d734cbc20cd6dfe60502a47f6eaa41ad727ff4fadb415b811e16",
+        "base_meaning_ref": "emlis-base-meaning-4758225933328cfc0f3ba425ea5f658ab440c44acb00e4e72191ecc8cbfdffe4",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "nuclei_sha256": "2b907edf1768577ccb761d8ae39ab99e93a2670cc7b1b55ec73fba0b8dc03ebd",
+      "relations_sha256": "46df217ba92a7e36adeaed588b324b6d3ff0686c62af25df8306fd7dd779f40e",
+      "selected_sha256": "4c97c2231ca685a870d95bee0fbf0fc33e09e0b708b6b311c2cd1a2a1c86912b",
+      "body": "見えたこと：\n今はまだよく分からないのですね。\n今の入力には、「メモを書いた」という行動があります。\n\nEmlisから：\n今はまだよく分からないことを小さくせずに受け止めています。メモを書いたことを大切に思っています。",
+      "reception": "今はまだよく分からないことを小さくせずに受け止めています。メモを書いたことを大切に思っています。",
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      }
+    },
+    {
+      "memo": "今はまだよく分からない。",
+      "action": "資料を整理した。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-c5b8e656f6672e7f0d8eeb08744bb4c8f0c99f042733df9bd2852bf747ad9fec",
+        "source_prefix_ref": "emlis-q3-source-prefix-ef7cb4561a8cc50a2d884ad3bd2337c070df6194e408f5bc82f6eebd56028ecb",
+        "base_meaning_ref": "emlis-base-meaning-f6560e6cf42f4307de93f8f2036bf44d29b7a0a502de01e80ce0edfef220967b",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "nuclei_sha256": "2b907edf1768577ccb761d8ae39ab99e93a2670cc7b1b55ec73fba0b8dc03ebd",
+      "relations_sha256": "46df217ba92a7e36adeaed588b324b6d3ff0686c62af25df8306fd7dd779f40e",
+      "selected_sha256": "5ccba794ae227f8fa86493329961046b24ab534c25057c44e5ddcfa051a12487",
+      "body": "見えたこと：\n今はまだよく分からないのですね。\n今の入力には、「資料を整理した」という行動があります。\n\nEmlisから：\n今はまだよく分からないことを小さくせずに受け止めています。資料を整理したことを大切に思っています。",
+      "reception": "今はまだよく分からないことを小さくせずに受け止めています。資料を整理したことを大切に思っています。",
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      }
+    },
+    {
+      "memo": "今はまだよく分からない。",
+      "action": "机を片づけた。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-8b6d4634523eaefabcb85a67b2d9ec0063265849ff3e07c1cf3bdb8e25b35a98",
+        "source_prefix_ref": "emlis-q3-source-prefix-26768bebfb5fe4a2744a13b6af9c83ef86dcc58a1baaaceeeb2e1b5334c93f72",
+        "base_meaning_ref": "emlis-base-meaning-9a57f8bc32db42d0f2515c4eaf370e30be7c14eead766915afb5affb4738e3fa",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "nuclei_sha256": "2b907edf1768577ccb761d8ae39ab99e93a2670cc7b1b55ec73fba0b8dc03ebd",
+      "relations_sha256": "46df217ba92a7e36adeaed588b324b6d3ff0686c62af25df8306fd7dd779f40e",
+      "selected_sha256": "26958a2e7eb5971c38ef8ee600f70dba6461ad0d4550d17df23bf7b88aae5c71",
+      "body": "見えたこと：\n今はまだよく分からないのですね。\n今の入力には、「机を片づけた」という行動があります。\n\nEmlisから：\n今はまだよく分からないことを小さくせずに受け止めています。机を片づけたことを大切に思っています。",
+      "reception": "今はまだよく分からないことを小さくせずに受け止めています。机を片づけたことを大切に思っています。",
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      }
+    },
+    {
+      "memo": "現在もまだはっきりわからない。",
+      "action": "机を片付けた。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-f50679740e83ba359e7eb017918f1aeb4b4664a1460cff2363868d49d2c93650",
+        "source_prefix_ref": "emlis-q3-source-prefix-cfd5638d37fb22ecf12b985e4c17056fdd9b51d4268195a55740cd195f8b46c8",
+        "base_meaning_ref": "emlis-base-meaning-020af346d821fbf8e8218969d7503789ce93b1a8d2c65f9f8dbfcc9d96c235eb",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "nuclei_sha256": "f35880ccbdbecddf5afaf2258d42a38e0f04bf8c243eb32e8d973a175948c3e9",
+      "relations_sha256": "31a859576afb7afd37ea71015d60e12a101e7fbe5e4cedb365cb0d634ee197aa",
+      "selected_sha256": "5c31a280e298ac9e85ae875407e565ba5ad36cec11632123db141bb1f9648152",
+      "body": "見えたこと：\n現在もまだはっきりわからないのですね。\n今の入力には、「机を片付けた」という行動があります。\n\nEmlisから：\n机を片付けたことを見過ごさず、大切に受け止めています。",
+      "reception": "机を片付けたことを見過ごさず、大切に受け止めています。",
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      }
+    },
+    {
+      "memo": "現在もまだはっきりわからない。",
+      "action": "部屋を片付けた。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-c15a3c03279ba7006ce034c589d035a1c80b98975f046fe447740d8ef54f9035",
+        "source_prefix_ref": "emlis-q3-source-prefix-253e4df5d9c2290134bfb73d5c5dfcd28f22aac4b16fe539a50fc31c7b39e194",
+        "base_meaning_ref": "emlis-base-meaning-f2b68630ccf683847b92e98af1804e15b30cd14a4c57295830cdc412a5e0d4d1",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "nuclei_sha256": "f35880ccbdbecddf5afaf2258d42a38e0f04bf8c243eb32e8d973a175948c3e9",
+      "relations_sha256": "31a859576afb7afd37ea71015d60e12a101e7fbe5e4cedb365cb0d634ee197aa",
+      "selected_sha256": "b95dda41604b898de651717d6184ff41a3e2651988ce1552b820541a00fafb06",
+      "body": "見えたこと：\n現在もまだはっきりわからないのですね。\n今の入力には、「部屋を片付けた」という行動があります。\n\nEmlisから：\n部屋を片付けたことを見過ごさず、大切に受け止めています。",
+      "reception": "部屋を片付けたことを見過ごさず、大切に受け止めています。",
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      }
+    },
+    {
+      "memo": "現在もまだはっきりわからない。",
+      "action": "メモを書いた。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-e83ab3a6848c012becc2356457375fb0624631b19a14c614ea4ade66e1de8dc0",
+        "source_prefix_ref": "emlis-q3-source-prefix-5e8cce0c92fee3681777e3eacaba749095984388f3d3e06f6983d4d6fb4a0b52",
+        "base_meaning_ref": "emlis-base-meaning-6dfbcba7a33e7168ea3b5e4874e021a4f0e1403450efe7111ce16f72aeb6fa48",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "nuclei_sha256": "5a89860128b05aac503ad439b36d9e0706c67ef3f1e3de919a05f3e395e8d2b3",
+      "relations_sha256": "46df217ba92a7e36adeaed588b324b6d3ff0686c62af25df8306fd7dd779f40e",
+      "selected_sha256": "1da969e367c3d8427a52cc2927af849d7588c1871c47ec6c628a8789df305174",
+      "body": "見えたこと：\n現在もまだはっきりわからないのですね。\n今の入力には、「メモを書いた」という行動があります。\n\nEmlisから：\n現在もまだはっきりわからないことを小さくせずに受け止めています。メモを書いたことを大切に思っています。",
+      "reception": "現在もまだはっきりわからないことを小さくせずに受け止めています。メモを書いたことを大切に思っています。",
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      }
+    },
+    {
+      "memo": "現在もまだはっきりわからない。",
+      "action": "資料を整理した。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-3387769ba098a28c1e33214dd86f0ef2d72147fbe2b45ed5349d8af513c6b81d",
+        "source_prefix_ref": "emlis-q3-source-prefix-7fdf6f1fff610214e0de54020a0c10ddca3f9b88bc4b94e77dc015da918a8b5d",
+        "base_meaning_ref": "emlis-base-meaning-7ff89803ea4520b543897656c59bf7352520a01c0841af4d72ea49503c2d7316",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "nuclei_sha256": "5a89860128b05aac503ad439b36d9e0706c67ef3f1e3de919a05f3e395e8d2b3",
+      "relations_sha256": "46df217ba92a7e36adeaed588b324b6d3ff0686c62af25df8306fd7dd779f40e",
+      "selected_sha256": "e314850dcc262b39eaac0df21cd9eb97831f0187a51be6c82d018cac5dc24372",
+      "body": "見えたこと：\n現在もまだはっきりわからないのですね。\n今の入力には、「資料を整理した」という行動があります。\n\nEmlisから：\n現在もまだはっきりわからないことを小さくせずに受け止めています。資料を整理したことを大切に思っています。",
+      "reception": "現在もまだはっきりわからないことを小さくせずに受け止めています。資料を整理したことを大切に思っています。",
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      }
+    },
+    {
+      "memo": "現在もまだはっきりわからない。",
+      "action": "机を片づけた。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-5e3c2826cabff31c1fd08768dfb78dd08cadee201993ec54ad6c809d5369127e",
+        "source_prefix_ref": "emlis-q3-source-prefix-d7bd8bc4276b70c2baf1aee4cf770b291759dfc09c391114d6a302408686c1dd",
+        "base_meaning_ref": "emlis-base-meaning-2035e79519e9a035b563454858be315c62372dfa602f99a018871655564b19c4",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "nuclei_sha256": "5a89860128b05aac503ad439b36d9e0706c67ef3f1e3de919a05f3e395e8d2b3",
+      "relations_sha256": "46df217ba92a7e36adeaed588b324b6d3ff0686c62af25df8306fd7dd779f40e",
+      "selected_sha256": "cbb8b937719af8b96ca436b63e7abd9d60eb11271b792de6bc62405668369deb",
+      "body": "見えたこと：\n現在もまだはっきりわからないのですね。\n今の入力には、「机を片づけた」という行動があります。\n\nEmlisから：\n現在もまだはっきりわからないことを小さくせずに受け止めています。机を片づけたことを大切に思っています。",
+      "reception": "現在もまだはっきりわからないことを小さくせずに受け止めています。机を片づけたことを大切に思っています。",
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      }
+    },
+    {
+      "memo": "はっきり分からない。",
+      "action": "机を片付けた。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-30954b9d862eafd3532e2b24f802a3297c3bdceabe7d3230e75afa86e29a4ae7",
+        "source_prefix_ref": "emlis-q3-source-prefix-52e71c745066f2af0e7ccfe1e6d133283ee06fa0b878ebf80ba0522c3b39dbf1",
+        "base_meaning_ref": "emlis-base-meaning-9f0f89200c1e2ff8404e54b245dd84cae6368c2b93654501a919b1b9cfb9ce94",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "nuclei_sha256": "1ee6664c422875b956584c6f001656038a82b11cfc00a53b8ff44de72eb5d529",
+      "relations_sha256": "31a859576afb7afd37ea71015d60e12a101e7fbe5e4cedb365cb0d634ee197aa",
+      "selected_sha256": "ccf87c64e5921afe5ef70719d64a9b60f24d4e56375ea3dfba0d7ada30fa1bec",
+      "body": "見えたこと：\nはっきり分からないのですね。\n今の入力には、「机を片付けた」という行動があります。\n\nEmlisから：\n机を片付けたことを見過ごさず、大切に受け止めています。",
+      "reception": "机を片付けたことを見過ごさず、大切に受け止めています。",
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      }
+    },
+    {
+      "memo": "はっきり分からない。",
+      "action": "部屋を片付けた。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-ae3c4230dd0ea305c446f887996331f70eaa840af64a0893ddfbd70e0a81a9f1",
+        "source_prefix_ref": "emlis-q3-source-prefix-4497898028133dc28b58b05a97b0049c6a8b0de89adcf8cb5f69db9b3ac27c62",
+        "base_meaning_ref": "emlis-base-meaning-b88d047b3475098d3ed3815c57ad1192a37ab97e3675fd514bed74815b07ca82",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "nuclei_sha256": "1ee6664c422875b956584c6f001656038a82b11cfc00a53b8ff44de72eb5d529",
+      "relations_sha256": "31a859576afb7afd37ea71015d60e12a101e7fbe5e4cedb365cb0d634ee197aa",
+      "selected_sha256": "f17e324b937d206682ef0b2779da32eee95c471f7f9aa28216483cf4454409ff",
+      "body": "見えたこと：\nはっきり分からないのですね。\n今の入力には、「部屋を片付けた」という行動があります。\n\nEmlisから：\n部屋を片付けたことを見過ごさず、大切に受け止めています。",
+      "reception": "部屋を片付けたことを見過ごさず、大切に受け止めています。",
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      }
+    },
+    {
+      "memo": "はっきり分からない。",
+      "action": "メモを書いた。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-0a0acb1a77299896b1284b80bc93c937b181161e2697fa2ab69f1063bc73d359",
+        "source_prefix_ref": "emlis-q3-source-prefix-ff8ad77a1510170dbef88e82507528938281e2f79aa4731a7e0591dfc656dcec",
+        "base_meaning_ref": "emlis-base-meaning-1daddc1f96aad811d30c644fabbbd04c09c07b19478f527376859d81a31b779a",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "nuclei_sha256": "41affb29286f73b3f4866b19cfc548eccba14c7292ad69117896fae0c2f6ae8b",
+      "relations_sha256": "46df217ba92a7e36adeaed588b324b6d3ff0686c62af25df8306fd7dd779f40e",
+      "selected_sha256": "daedaaf550e0e8d1fe4a1e651ea4f55623fc52dfb60403924303a397ca4681f2",
+      "body": "見えたこと：\nはっきり分からないのですね。\n今の入力には、「メモを書いた」という行動があります。\n\nEmlisから：\nはっきり分からないことを小さくせずに受け止めています。メモを書いたことを大切に思っています。",
+      "reception": "はっきり分からないことを小さくせずに受け止めています。メモを書いたことを大切に思っています。",
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      }
+    },
+    {
+      "memo": "はっきり分からない。",
+      "action": "資料を整理した。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-9538b027f0beb0d6d92d037feffc0e2026787be40c9ee82dae3545aebc19a2ff",
+        "source_prefix_ref": "emlis-q3-source-prefix-af2f4a1c6f8d5f6fc8d95009c6304aa1cc82f0c3e6aa909b9fa040564332ebd4",
+        "base_meaning_ref": "emlis-base-meaning-822e02fa5ae49f6f681821d5b151e35f56f1c5d44c5171ceb30481dd942f1123",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "nuclei_sha256": "41affb29286f73b3f4866b19cfc548eccba14c7292ad69117896fae0c2f6ae8b",
+      "relations_sha256": "46df217ba92a7e36adeaed588b324b6d3ff0686c62af25df8306fd7dd779f40e",
+      "selected_sha256": "a987352129e696b2acc5d83ef95b8f5e6f871261cf7c45d5852ff39eb48481fe",
+      "body": "見えたこと：\nはっきり分からないのですね。\n今の入力には、「資料を整理した」という行動があります。\n\nEmlisから：\nはっきり分からないことを小さくせずに受け止めています。資料を整理したことを大切に思っています。",
+      "reception": "はっきり分からないことを小さくせずに受け止めています。資料を整理したことを大切に思っています。",
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      }
+    },
+    {
+      "memo": "はっきり分からない。",
+      "action": "机を片づけた。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-51f1cb09a62c16852132d8c4db2e5a8459c887ec42f0ebbbb322a5e9c45f68e1",
+        "source_prefix_ref": "emlis-q3-source-prefix-964acde313d65bdd4a572223223a2411380ee0ebade466f303a972a040b4068e",
+        "base_meaning_ref": "emlis-base-meaning-c74811b23993d1daef095389ade1859bb72072594ee86beb7ca80d0d8242fd85",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "nuclei_sha256": "41affb29286f73b3f4866b19cfc548eccba14c7292ad69117896fae0c2f6ae8b",
+      "relations_sha256": "46df217ba92a7e36adeaed588b324b6d3ff0686c62af25df8306fd7dd779f40e",
+      "selected_sha256": "2f2f637b4332eeb0f6f7335114018a25dae4031196a30a116c0e97175bb68045",
+      "body": "見えたこと：\nはっきり分からないのですね。\n今の入力には、「机を片づけた」という行動があります。\n\nEmlisから：\nはっきり分からないことを小さくせずに受け止めています。机を片づけたことを大切に思っています。",
+      "reception": "はっきり分からないことを小さくせずに受け止めています。机を片づけたことを大切に思っています。",
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      }
+    }
+  ]
+}

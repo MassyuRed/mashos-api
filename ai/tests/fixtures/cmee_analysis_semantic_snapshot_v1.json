@@ -1,0 +1,1351 @@
+{
+  "owner_scope": "offline-cocolon-four-case-owner-20261023",
+  "operation_request_id": "offline-A02-P1-20261023",
+  "tier": "plus",
+  "period": {
+    "end_exclusive": "2026-10-14T15:00:00+00:00",
+    "start": "2026-10-07T15:00:00+00:00"
+  },
+  "source_p1_request_ref": "prep-747095ce8bd8f10e87900a149eafac68a88a82d9e13975808c2639baa6a30251",
+  "source_set_ref": "analysis-set:7108340b2d886b44aa7ec1328a7723a059059ee4b122f783f35a69898cc67416",
+  "originals": [
+    {
+      "category": [
+        "生活",
+        "人間関係"
+      ],
+      "created_at": "2026-10-09T18:10:00+09:00",
+      "emotion_details": [
+        {
+          "strength": "weak",
+          "type": "平穏"
+        }
+      ],
+      "emotions": [
+        "平穏"
+      ],
+      "id": "A02-4",
+      "memo": "今日も連絡係だった。まだ返事のない人がいることも残したかった。前より待つ時間は短かった。",
+      "memo_action": "回答済みと未回答を分けて途中の案内を送り、最終の返事を待った。"
+    },
+    {
+      "category": [
+        "生活"
+      ],
+      "created_at": "2026-10-11T16:10:00+09:00",
+      "emotion_details": [
+        {
+          "strength": "medium",
+          "type": "平穏"
+        }
+      ],
+      "emotions": [
+        "平穏"
+      ],
+      "id": "A02-5",
+      "memo": "今日は道具係だった。数を照らし合わせられてほっとした。使いやすかったかは聞いていない。",
+      "memo_action": "道具を貸す時に数を記録し、返ってきた数と照合した。全て戻っていた。"
+    },
+    {
+      "category": [
+        "生活"
+      ],
+      "created_at": "2026-10-13T21:10:00+09:00",
+      "emotion_details": [
+        {
+          "strength": "weak",
+          "type": "平穏"
+        },
+        {
+          "strength": "weak",
+          "type": "不安"
+        }
+      ],
+      "emotions": [
+        "平穏",
+        "不安"
+      ],
+      "id": "A02-6",
+      "memo": "買う物は買えたけど、今日はメモを作るのが少し面倒だった。",
+      "memo_action": "買い物前にメモを作り、メモを見ながら買った。"
+    }
+  ],
+  "packet": {
+    "candidate": {
+      "schema_version": "cocolon.cmee.analysis_semantic_proposal.v1",
+      "core": "analysis",
+      "units": [
+        {
+          "unit_ref": "a.role",
+          "source_id": "A02-4",
+          "field_path": "memo",
+          "carrier": "GRAPH_NODE",
+          "proposed_node_kind": "ROLE",
+          "kind": "ROLE",
+          "group_ref": "A02-4.memo.g0",
+          "evidence_indexes": [
+            0
+          ],
+          "actor_binding": "OMITTED_NOT_OWNER_DERIVED",
+          "predicate_surface": "連絡係だった",
+          "arguments": [],
+          "polarity": "AFFIRMED",
+          "modality": "ASSERTED_AS_WRITTEN",
+          "temporal_scope": "WRITTEN_TODAY_RELATIVE",
+          "qualifiers": [
+            {
+              "kind": "RELATIVE_DAY",
+              "evidence_indexes": [
+                11
+              ]
+            },
+            {
+              "kind": "ADDITIVE_NO_REPEAT_COUNT",
+              "evidence_indexes": [
+                12
+              ]
+            }
+          ],
+          "parent_unit_ref": null
+        },
+        {
+          "unit_ref": "a.intention",
+          "source_id": "A02-4",
+          "field_path": "memo",
+          "carrier": "GRAPH_NODE",
+          "proposed_node_kind": "ATTENTION_OR_THOUGHT",
+          "kind": "RECORDED_INTENTION",
+          "group_ref": "A02-4.memo.g10",
+          "evidence_indexes": [
+            1
+          ],
+          "actor_binding": "OMITTED_NOT_OWNER_DERIVED",
+          "predicate_surface": "残したかった",
+          "arguments": [
+            {
+              "role": "WISH_CONTENT_NOT_INDEPENDENT_FACT",
+              "text": "まだ返事のない人がいること",
+              "evidence_indexes": [
+                13
+              ]
+            }
+          ],
+          "polarity": "AFFIRMED",
+          "modality": "WISH_REALIZATION_NOT_ASSERTED",
+          "temporal_scope": "WRITTEN_PAST_UNRESOLVED_OCCASION",
+          "qualifiers": [
+            {
+              "kind": "ADDITIVE_WISH_CONTENT",
+              "evidence_indexes": [
+                14
+              ]
+            }
+          ],
+          "parent_unit_ref": null
+        },
+        {
+          "unit_ref": "a.relative_wait",
+          "source_id": "A02-4",
+          "field_path": "memo",
+          "carrier": "GRAPH_NODE",
+          "proposed_node_kind": "IMMEDIATE_RESULT_OR_AFTERMATH",
+          "kind": "PERSON_STATED_RELATIVE_COMPARISON",
+          "group_ref": "A02-4.memo.g31",
+          "evidence_indexes": [
+            2
+          ],
+          "actor_binding": "OMITTED_NOT_OWNER_DERIVED",
+          "predicate_surface": "短かった",
+          "arguments": [
+            {
+              "role": "WRITTEN_は",
+              "text": "待つ時間は",
+              "evidence_indexes": [
+                15
+              ]
+            }
+          ],
+          "polarity": "AFFIRMED",
+          "modality": "ASSERTED_AS_WRITTEN",
+          "temporal_scope": "COMPARISON_BASELINE_UNRESOLVED",
+          "qualifiers": [
+            {
+              "kind": "UNRESOLVED_COMPARISON_BASELINE",
+              "evidence_indexes": [
+                16
+              ]
+            }
+          ],
+          "parent_unit_ref": null
+        },
+        {
+          "unit_ref": "a.classify",
+          "source_id": "A02-4",
+          "field_path": "memo_action",
+          "carrier": "GRAPH_NODE",
+          "proposed_node_kind": "ACTION_OR_NONACTION",
+          "kind": "ACTION",
+          "group_ref": "A02-4.memo_action.g0",
+          "evidence_indexes": [
+            18
+          ],
+          "actor_binding": "OMITTED_NOT_OWNER_DERIVED",
+          "predicate_surface": "分けて",
+          "arguments": [
+            {
+              "role": "WRITTEN_を",
+              "text": "回答済みと未回答を",
+              "evidence_indexes": [
+                17
+              ]
+            }
+          ],
+          "polarity": "AFFIRMED",
+          "modality": "ASSERTED_AS_WRITTEN",
+          "temporal_scope": "WRITTEN_PAST_UNRESOLVED_OCCASION",
+          "qualifiers": [],
+          "parent_unit_ref": null
+        },
+        {
+          "unit_ref": "a.send",
+          "source_id": "A02-4",
+          "field_path": "memo_action",
+          "carrier": "GRAPH_NODE",
+          "proposed_node_kind": "ACTION_OR_NONACTION",
+          "kind": "ACTION",
+          "group_ref": "A02-4.memo_action.g0",
+          "evidence_indexes": [
+            20
+          ],
+          "actor_binding": "OMITTED_NOT_OWNER_DERIVED",
+          "predicate_surface": "送り",
+          "arguments": [
+            {
+              "role": "WRITTEN_を",
+              "text": "途中の案内を",
+              "evidence_indexes": [
+                19
+              ]
+            }
+          ],
+          "polarity": "AFFIRMED",
+          "modality": "ASSERTED_AS_WRITTEN",
+          "temporal_scope": "WRITTEN_PAST_UNRESOLVED_OCCASION",
+          "qualifiers": [],
+          "parent_unit_ref": null
+        },
+        {
+          "unit_ref": "a.wait",
+          "source_id": "A02-4",
+          "field_path": "memo_action",
+          "carrier": "GRAPH_NODE",
+          "proposed_node_kind": "ACTION_OR_NONACTION",
+          "kind": "ACTION",
+          "group_ref": "A02-4.memo_action.g0",
+          "evidence_indexes": [
+            22
+          ],
+          "actor_binding": "OMITTED_NOT_OWNER_DERIVED",
+          "predicate_surface": "待った",
+          "arguments": [
+            {
+              "role": "WRITTEN_を",
+              "text": "最終の返事を",
+              "evidence_indexes": [
+                21
+              ]
+            }
+          ],
+          "polarity": "AFFIRMED",
+          "modality": "ASSERTED_AS_WRITTEN",
+          "temporal_scope": "WRITTEN_PAST_UNRESOLVED_OCCASION",
+          "qualifiers": [],
+          "parent_unit_ref": null
+        },
+        {
+          "unit_ref": "a.tools_role",
+          "source_id": "A02-5",
+          "field_path": "memo",
+          "carrier": "GRAPH_NODE",
+          "proposed_node_kind": "ROLE",
+          "kind": "ROLE",
+          "group_ref": "A02-5.memo.g0",
+          "evidence_indexes": [
+            4
+          ],
+          "actor_binding": "OMITTED_NOT_OWNER_DERIVED",
+          "predicate_surface": "道具係だった",
+          "arguments": [],
+          "polarity": "AFFIRMED",
+          "modality": "ASSERTED_AS_WRITTEN",
+          "temporal_scope": "WRITTEN_TODAY_RELATIVE",
+          "qualifiers": [
+            {
+              "kind": "RELATIVE_DAY",
+              "evidence_indexes": [
+                23
+              ]
+            }
+          ],
+          "parent_unit_ref": null
+        },
+        {
+          "unit_ref": "a.match_scope",
+          "source_id": "A02-5",
+          "field_path": "memo",
+          "carrier": "DEPENDENT_SCOPE",
+          "proposed_node_kind": null,
+          "kind": "WRITTEN_DEPENDENT_MATCH_SCOPE",
+          "group_ref": "A02-5.memo.g10",
+          "evidence_indexes": [
+            25
+          ],
+          "actor_binding": "OMITTED_NOT_OWNER_DERIVED",
+          "predicate_surface": "照らし合わせられて",
+          "arguments": [
+            {
+              "role": "WRITTEN_を",
+              "text": "数を",
+              "evidence_indexes": [
+                24
+              ]
+            }
+          ],
+          "polarity": "AFFIRMED",
+          "modality": "WRITTEN_RARERU_NOT_INDEPENDENTLY_DISAMBIGUATED",
+          "temporal_scope": "WRITTEN_PAST_UNRESOLVED_OCCASION",
+          "qualifiers": [],
+          "parent_unit_ref": "a.relief"
+        },
+        {
+          "unit_ref": "a.relief",
+          "source_id": "A02-5",
+          "field_path": "memo",
+          "carrier": "GRAPH_NODE",
+          "proposed_node_kind": "IMMEDIATE_RESULT_OR_AFTERMATH",
+          "kind": "FEELING_WITH_WRITTEN_SCOPE",
+          "group_ref": "A02-5.memo.g10",
+          "evidence_indexes": [
+            26
+          ],
+          "actor_binding": "OMITTED_NOT_OWNER_DERIVED",
+          "predicate_surface": "ほっとした",
+          "arguments": [],
+          "polarity": "AFFIRMED",
+          "modality": "ASSERTED_AS_WRITTEN",
+          "temporal_scope": "WRITTEN_PAST_UNRESOLVED_OCCASION",
+          "qualifiers": [],
+          "parent_unit_ref": null
+        },
+        {
+          "unit_ref": "a.non_action",
+          "source_id": "A02-5",
+          "field_path": "memo",
+          "carrier": "GRAPH_NODE",
+          "proposed_node_kind": "ACTION_OR_NONACTION",
+          "kind": "EXPLICIT_NON_ACTION",
+          "group_ref": "A02-5.memo.g27",
+          "evidence_indexes": [
+            6
+          ],
+          "actor_binding": "OMITTED_NOT_OWNER_DERIVED",
+          "predicate_surface": "聞いていない",
+          "arguments": [
+            {
+              "role": "WRITTEN_は_QUESTION_CONTENT",
+              "text": "使いやすかったかは",
+              "evidence_indexes": [
+                27
+              ]
+            }
+          ],
+          "polarity": "NEGATED",
+          "modality": "ASSERTED_AS_WRITTEN",
+          "temporal_scope": "UP_TO_THIS_SOURCE_WRITING",
+          "qualifiers": [],
+          "parent_unit_ref": null
+        },
+        {
+          "unit_ref": "a.record_count",
+          "source_id": "A02-5",
+          "field_path": "memo_action",
+          "carrier": "GRAPH_NODE",
+          "proposed_node_kind": "ACTION_OR_NONACTION",
+          "kind": "ACTION",
+          "group_ref": "A02-5.memo_action.g0",
+          "evidence_indexes": [
+            30
+          ],
+          "actor_binding": "OMITTED_NOT_OWNER_DERIVED",
+          "predicate_surface": "記録し",
+          "arguments": [
+            {
+              "role": "WRITTEN_を",
+              "text": "数を",
+              "evidence_indexes": [
+                28
+              ]
+            }
+          ],
+          "polarity": "AFFIRMED",
+          "modality": "ASSERTED_AS_WRITTEN",
+          "temporal_scope": "WRITTEN_PAST_UNRESOLVED_OCCASION",
+          "qualifiers": [
+            {
+              "kind": "WHEN_CONTEXT_NOT_SEPARATE_LOAN_EVENT",
+              "evidence_indexes": [
+                29
+              ]
+            }
+          ],
+          "parent_unit_ref": null
+        },
+        {
+          "unit_ref": "a.compare_count",
+          "source_id": "A02-5",
+          "field_path": "memo_action",
+          "carrier": "GRAPH_NODE",
+          "proposed_node_kind": "ACTION_OR_NONACTION",
+          "kind": "ACTION",
+          "group_ref": "A02-5.memo_action.g0",
+          "evidence_indexes": [
+            32
+          ],
+          "actor_binding": "OMITTED_NOT_OWNER_DERIVED",
+          "predicate_surface": "照合した",
+          "arguments": [
+            {
+              "role": "WRITTEN_と",
+              "text": "返ってきた数と",
+              "evidence_indexes": [
+                31
+              ]
+            }
+          ],
+          "polarity": "AFFIRMED",
+          "modality": "ASSERTED_AS_WRITTEN",
+          "temporal_scope": "WRITTEN_PAST_UNRESOLVED_OCCASION",
+          "qualifiers": [],
+          "parent_unit_ref": null
+        },
+        {
+          "unit_ref": "a.tools_result",
+          "source_id": "A02-5",
+          "field_path": "memo_action",
+          "carrier": "GRAPH_NODE",
+          "proposed_node_kind": "IMMEDIATE_RESULT_OR_AFTERMATH",
+          "kind": "RESULT_STATE",
+          "group_ref": "A02-5.memo_action.g25",
+          "evidence_indexes": [
+            8
+          ],
+          "actor_binding": "OMITTED_NOT_OWNER_DERIVED",
+          "predicate_surface": "戻っていた",
+          "arguments": [
+            {
+              "role": "WRITTEN_QUANTIFIED_ENTITY_UNRESOLVED",
+              "text": "全て",
+              "evidence_indexes": [
+                33
+              ]
+            }
+          ],
+          "polarity": "AFFIRMED",
+          "modality": "ASSERTED_AS_WRITTEN",
+          "temporal_scope": "WRITTEN_PAST_UNRESOLVED_OCCASION",
+          "qualifiers": [],
+          "parent_unit_ref": null
+        },
+        {
+          "unit_ref": "a.bought_result",
+          "source_id": "A02-6",
+          "field_path": "memo",
+          "carrier": "GRAPH_NODE",
+          "proposed_node_kind": "IMMEDIATE_RESULT_OR_AFTERMATH",
+          "kind": "RESULT_STATE",
+          "group_ref": "A02-6.memo.g0",
+          "evidence_indexes": [
+            35
+          ],
+          "actor_binding": "OMITTED_NOT_OWNER_DERIVED",
+          "predicate_surface": "買えた",
+          "arguments": [
+            {
+              "role": "WRITTEN_は",
+              "text": "買う物は",
+              "evidence_indexes": [
+                34
+              ]
+            }
+          ],
+          "polarity": "AFFIRMED",
+          "modality": "ASSERTED_AS_WRITTEN",
+          "temporal_scope": "WRITTEN_PAST_UNRESOLVED_OCCASION",
+          "qualifiers": [],
+          "parent_unit_ref": null
+        },
+        {
+          "unit_ref": "a.burden",
+          "source_id": "A02-6",
+          "field_path": "memo",
+          "carrier": "ANNOTATION",
+          "proposed_node_kind": null,
+          "kind": "WRITTEN_BURDEN",
+          "group_ref": "A02-6.memo.g0",
+          "evidence_indexes": [
+            39
+          ],
+          "actor_binding": "OMITTED_NOT_OWNER_DERIVED",
+          "predicate_surface": "面倒だった",
+          "arguments": [
+            {
+              "role": "WRITTEN_が_ACTION_TARGET",
+              "text": "メモを作るのが",
+              "evidence_indexes": [
+                36
+              ]
+            }
+          ],
+          "polarity": "AFFIRMED",
+          "modality": "ASSERTED_AS_WRITTEN",
+          "temporal_scope": "WRITTEN_TODAY_RELATIVE",
+          "qualifiers": [
+            {
+              "kind": "RELATIVE_DAY",
+              "evidence_indexes": [
+                37
+              ]
+            },
+            {
+              "kind": "DEGREE",
+              "evidence_indexes": [
+                38
+              ]
+            }
+          ],
+          "parent_unit_ref": null
+        },
+        {
+          "unit_ref": "a.make_memo",
+          "source_id": "A02-6",
+          "field_path": "memo_action",
+          "carrier": "GRAPH_NODE",
+          "proposed_node_kind": "ACTION_OR_NONACTION",
+          "kind": "ACTION",
+          "group_ref": "A02-6.memo_action.g0",
+          "evidence_indexes": [
+            42
+          ],
+          "actor_binding": "OMITTED_NOT_OWNER_DERIVED",
+          "predicate_surface": "作り",
+          "arguments": [
+            {
+              "role": "WRITTEN_を",
+              "text": "メモを",
+              "evidence_indexes": [
+                40
+              ]
+            }
+          ],
+          "polarity": "AFFIRMED",
+          "modality": "ASSERTED_AS_WRITTEN",
+          "temporal_scope": "WRITTEN_PAST_UNRESOLVED_OCCASION",
+          "qualifiers": [
+            {
+              "kind": "WRITTEN_BEFORE_SHOPPING_CONTEXT",
+              "evidence_indexes": [
+                41
+              ]
+            }
+          ],
+          "parent_unit_ref": null
+        },
+        {
+          "unit_ref": "a.read_memo",
+          "source_id": "A02-6",
+          "field_path": "memo_action",
+          "carrier": "GRAPH_NODE",
+          "proposed_node_kind": "ACTION_OR_NONACTION",
+          "kind": "ACTION",
+          "group_ref": "A02-6.memo_action.g0",
+          "evidence_indexes": [
+            44
+          ],
+          "actor_binding": "OMITTED_NOT_OWNER_DERIVED",
+          "predicate_surface": "見ながら",
+          "arguments": [
+            {
+              "role": "WRITTEN_を",
+              "text": "メモを",
+              "evidence_indexes": [
+                43
+              ]
+            }
+          ],
+          "polarity": "AFFIRMED",
+          "modality": "ASSERTED_AS_WRITTEN",
+          "temporal_scope": "WRITTEN_PAST_UNRESOLVED_OCCASION",
+          "qualifiers": [],
+          "parent_unit_ref": null
+        },
+        {
+          "unit_ref": "a.buy",
+          "source_id": "A02-6",
+          "field_path": "memo_action",
+          "carrier": "GRAPH_NODE",
+          "proposed_node_kind": "ACTION_OR_NONACTION",
+          "kind": "ACTION",
+          "group_ref": "A02-6.memo_action.g0",
+          "evidence_indexes": [
+            45
+          ],
+          "actor_binding": "OMITTED_NOT_OWNER_DERIVED",
+          "predicate_surface": "買った",
+          "arguments": [],
+          "polarity": "AFFIRMED",
+          "modality": "ASSERTED_AS_WRITTEN",
+          "temporal_scope": "WRITTEN_PAST_UNRESOLVED_OCCASION",
+          "qualifiers": [],
+          "parent_unit_ref": null
+        }
+      ],
+      "sentence_groups": [
+        {
+          "group_ref": "A02-4.memo.g0",
+          "evidence_indexes": [
+            0
+          ]
+        },
+        {
+          "group_ref": "A02-4.memo.g10",
+          "evidence_indexes": [
+            1
+          ]
+        },
+        {
+          "group_ref": "A02-4.memo.g31",
+          "evidence_indexes": [
+            2
+          ]
+        },
+        {
+          "group_ref": "A02-4.memo_action.g0",
+          "evidence_indexes": [
+            3
+          ]
+        },
+        {
+          "group_ref": "A02-5.memo.g0",
+          "evidence_indexes": [
+            4
+          ]
+        },
+        {
+          "group_ref": "A02-5.memo.g10",
+          "evidence_indexes": [
+            5
+          ]
+        },
+        {
+          "group_ref": "A02-5.memo.g27",
+          "evidence_indexes": [
+            6
+          ]
+        },
+        {
+          "group_ref": "A02-5.memo_action.g0",
+          "evidence_indexes": [
+            7
+          ]
+        },
+        {
+          "group_ref": "A02-5.memo_action.g25",
+          "evidence_indexes": [
+            8
+          ]
+        },
+        {
+          "group_ref": "A02-6.memo.g0",
+          "evidence_indexes": [
+            9
+          ]
+        },
+        {
+          "group_ref": "A02-6.memo_action.g0",
+          "evidence_indexes": [
+            10
+          ]
+        }
+      ],
+      "scope_relations": [
+        {
+          "relation_ref": "a.classify_send",
+          "kind": "SOURCE_WRITTEN_TE_LINK",
+          "endpoint_unit_refs": [
+            "a.classify",
+            "a.send"
+          ],
+          "evidence_indexes": [
+            3
+          ],
+          "marker_evidence_indexes": [
+            46
+          ],
+          "projection_role": "SOURCE_SCOPE_NOT_ROUTE_EDGE"
+        },
+        {
+          "relation_ref": "a.send_wait",
+          "kind": "SOURCE_WRITTEN_COORDINATE_LINK",
+          "endpoint_unit_refs": [
+            "a.send",
+            "a.wait"
+          ],
+          "evidence_indexes": [
+            3
+          ],
+          "marker_evidence_indexes": [
+            47
+          ],
+          "projection_role": "SOURCE_SCOPE_NOT_ROUTE_EDGE"
+        },
+        {
+          "relation_ref": "a.match_relief",
+          "kind": "SOURCE_WRITTEN_FEELING_SCOPE",
+          "endpoint_unit_refs": [
+            "a.match_scope",
+            "a.relief"
+          ],
+          "evidence_indexes": [
+            5
+          ],
+          "marker_evidence_indexes": [
+            48
+          ],
+          "projection_role": "SOURCE_SCOPE_NOT_ROUTE_EDGE"
+        },
+        {
+          "relation_ref": "a.record_compare",
+          "kind": "SOURCE_WRITTEN_COORDINATE_LINK",
+          "endpoint_unit_refs": [
+            "a.record_count",
+            "a.compare_count"
+          ],
+          "evidence_indexes": [
+            7
+          ],
+          "marker_evidence_indexes": [
+            49
+          ],
+          "projection_role": "SOURCE_SCOPE_NOT_ROUTE_EDGE"
+        },
+        {
+          "relation_ref": "a.concession",
+          "kind": "SOURCE_WRITTEN_CONCESSION",
+          "endpoint_unit_refs": [
+            "a.bought_result",
+            "a.burden"
+          ],
+          "evidence_indexes": [
+            9
+          ],
+          "marker_evidence_indexes": [
+            50
+          ],
+          "projection_role": "SOURCE_SCOPE_NOT_ROUTE_EDGE"
+        },
+        {
+          "relation_ref": "a.make_read",
+          "kind": "SOURCE_WRITTEN_COORDINATE_LINK",
+          "endpoint_unit_refs": [
+            "a.make_memo",
+            "a.read_memo"
+          ],
+          "evidence_indexes": [
+            10
+          ],
+          "marker_evidence_indexes": [
+            51
+          ],
+          "projection_role": "SOURCE_SCOPE_NOT_ROUTE_EDGE"
+        },
+        {
+          "relation_ref": "a.before_context",
+          "kind": "SOURCE_WRITTEN_BEFORE_CONTEXT",
+          "endpoint_unit_refs": [
+            "a.make_memo",
+            "a.buy"
+          ],
+          "evidence_indexes": [
+            10
+          ],
+          "marker_evidence_indexes": [
+            41
+          ],
+          "projection_role": "SOURCE_SCOPE_NOT_ROUTE_EDGE"
+        },
+        {
+          "relation_ref": "a.nagara",
+          "kind": "SOURCE_WRITTEN_NAGARA_SCOPE",
+          "endpoint_unit_refs": [
+            "a.read_memo",
+            "a.buy"
+          ],
+          "evidence_indexes": [
+            52
+          ],
+          "marker_evidence_indexes": [
+            53
+          ],
+          "projection_role": "SOURCE_SCOPE_NOT_ROUTE_EDGE"
+        }
+      ],
+      "unknowns": [
+        {
+          "unknown_ref": "a.usability",
+          "target_unit_refs": [
+            "a.non_action"
+          ],
+          "target_dimension": "USABILITY_QUESTION_CONTENT",
+          "origin": "NOT_OBSERVED_IN_MATERIAL",
+          "resolution_state": "NO_USABILITY_ANSWER_IN_MATERIAL",
+          "evidence_indexes": [
+            6,
+            54
+          ],
+          "checked_source_set_ref": "analysis-set:7108340b2d886b44aa7ec1328a7723a059059ee4b122f783f35a69898cc67416",
+          "checked_text_fields": [
+            {
+              "source_id": "A02-4",
+              "field_path": "memo",
+              "field_sha256": "b0d50749c1b8fec76d8fb81a65d32736dda5a79aaee7d1195a2367e5509d01f0"
+            },
+            {
+              "source_id": "A02-4",
+              "field_path": "memo_action",
+              "field_sha256": "ef9c4be493a24e4c48937f40e9ccd778ce09dfce7c1d29ec07428a9750dc1095"
+            },
+            {
+              "source_id": "A02-5",
+              "field_path": "memo",
+              "field_sha256": "f64dfe68dde8e3df9f72d4f5c55517e669ef3c99a375a164476e180f41af54a8"
+            },
+            {
+              "source_id": "A02-5",
+              "field_path": "memo_action",
+              "field_sha256": "849041d10c8096595ef9487b28430e0ba9036624f4fd92875f371ac6592aa85d"
+            },
+            {
+              "source_id": "A02-6",
+              "field_path": "memo",
+              "field_sha256": "b04dd1d39edf9d86d53a3fd9f744fc7aafc9e979c09be6c1d88f9f1d104efced"
+            },
+            {
+              "source_id": "A02-6",
+              "field_path": "memo_action",
+              "field_sha256": "1a28967501e87a8b4054d14c51e7c4402e50aa41181436ba11388ee59e88031c"
+            }
+          ],
+          "proposed_label": "今回の材料には、使いやすさについての回答が記されていない。",
+          "forbidden_promotions": [
+            "PERSON_STATED_UNKNOWN",
+            "POOR_USABILITY",
+            "AWAITING_REPLY",
+            "NEVER_RECEIVED_AN_ANSWER"
+          ]
+        }
+      ],
+      "annotations": [
+        {
+          "annotation_ref": "a.burden_annotation",
+          "unit_ref": "a.burden",
+          "target_unit_refs": [
+            "a.make_memo"
+          ],
+          "target_nominal_evidence_indexes": [
+            36
+          ],
+          "target_link_policy": "SAME_RECORD_EXACT_MEMO_CREATION_ONLY_NOT_GENERAL_COREFERENCE",
+          "evidence_indexes": [
+            39
+          ],
+          "degree_evidence_indexes": [
+            38
+          ],
+          "temporal_scope": "WRITTEN_TODAY_RELATIVE_PAST",
+          "forbidden_promotions": [
+            "CAUSE",
+            "TRAIT",
+            "DIAGNOSIS",
+            "BUYING_FAILURE",
+            "ROUTE_ORDER"
+          ]
+        }
+      ],
+      "source_selections": [
+        {
+          "selection_ref": "A02-4.selection.0",
+          "source_id": "A02-4",
+          "label": "平穏",
+          "strength": "weak",
+          "source_commitment": "sha256:2548497997817272799af54a7424b0bff1b899fca70e8cdc2c57628f024dffa6",
+          "alias_refs": [
+            [
+              "emotions",
+              0
+            ],
+            [
+              "emotion_details",
+              0
+            ]
+          ],
+          "coverage_state": "SOURCE_SELECTION_RETAINED_NOT_TEXTUALIZED"
+        },
+        {
+          "selection_ref": "A02-5.selection.0",
+          "source_id": "A02-5",
+          "label": "平穏",
+          "strength": "medium",
+          "source_commitment": "sha256:f797ed63b2ab868d777dda2ce5763364a43bd15e52565997ef918e7eed49426e",
+          "alias_refs": [
+            [
+              "emotions",
+              0
+            ],
+            [
+              "emotion_details",
+              0
+            ]
+          ],
+          "coverage_state": "SOURCE_SELECTION_RETAINED_NOT_TEXTUALIZED"
+        },
+        {
+          "selection_ref": "A02-6.selection.0",
+          "source_id": "A02-6",
+          "label": "平穏",
+          "strength": "weak",
+          "source_commitment": "sha256:9bf75cb43af29dcc3ade09316d7e66ac7a36424a9934c256113a221cb23e45cf",
+          "alias_refs": [
+            [
+              "emotions",
+              0
+            ],
+            [
+              "emotion_details",
+              0
+            ]
+          ],
+          "coverage_state": "SOURCE_SELECTION_RETAINED_NOT_TEXTUALIZED"
+        },
+        {
+          "selection_ref": "A02-6.selection.1",
+          "source_id": "A02-6",
+          "label": "不安",
+          "strength": "weak",
+          "source_commitment": "sha256:9bf75cb43af29dcc3ade09316d7e66ac7a36424a9934c256113a221cb23e45cf",
+          "alias_refs": [
+            [
+              "emotions",
+              1
+            ],
+            [
+              "emotion_details",
+              1
+            ]
+          ],
+          "coverage_state": "SOURCE_SELECTION_RETAINED_NOT_TEXTUALIZED"
+        }
+      ],
+      "route_edges": [],
+      "conflicts": [],
+      "updates": []
+    },
+    "evidence": [
+      {
+        "source_id": "A02-4",
+        "field_path": "memo",
+        "start": 0,
+        "end": 10,
+        "quote": "今日も連絡係だった。"
+      },
+      {
+        "source_id": "A02-4",
+        "field_path": "memo",
+        "start": 10,
+        "end": 31,
+        "quote": "まだ返事のない人がいることも残したかった。"
+      },
+      {
+        "source_id": "A02-4",
+        "field_path": "memo",
+        "start": 31,
+        "end": 44,
+        "quote": "前より待つ時間は短かった。"
+      },
+      {
+        "source_id": "A02-4",
+        "field_path": "memo_action",
+        "start": 0,
+        "end": 31,
+        "quote": "回答済みと未回答を分けて途中の案内を送り、最終の返事を待った。"
+      },
+      {
+        "source_id": "A02-5",
+        "field_path": "memo",
+        "start": 0,
+        "end": 10,
+        "quote": "今日は道具係だった。"
+      },
+      {
+        "source_id": "A02-5",
+        "field_path": "memo",
+        "start": 10,
+        "end": 27,
+        "quote": "数を照らし合わせられてほっとした。"
+      },
+      {
+        "source_id": "A02-5",
+        "field_path": "memo",
+        "start": 27,
+        "end": 43,
+        "quote": "使いやすかったかは聞いていない。"
+      },
+      {
+        "source_id": "A02-5",
+        "field_path": "memo_action",
+        "start": 0,
+        "end": 25,
+        "quote": "道具を貸す時に数を記録し、返ってきた数と照合した。"
+      },
+      {
+        "source_id": "A02-5",
+        "field_path": "memo_action",
+        "start": 25,
+        "end": 33,
+        "quote": "全て戻っていた。"
+      },
+      {
+        "source_id": "A02-6",
+        "field_path": "memo",
+        "start": 0,
+        "end": 28,
+        "quote": "買う物は買えたけど、今日はメモを作るのが少し面倒だった。"
+      },
+      {
+        "source_id": "A02-6",
+        "field_path": "memo_action",
+        "start": 0,
+        "end": 22,
+        "quote": "買い物前にメモを作り、メモを見ながら買った。"
+      },
+      {
+        "source_id": "A02-4",
+        "field_path": "memo",
+        "start": 0,
+        "end": 2,
+        "quote": "今日"
+      },
+      {
+        "source_id": "A02-4",
+        "field_path": "memo",
+        "start": 2,
+        "end": 3,
+        "quote": "も"
+      },
+      {
+        "source_id": "A02-4",
+        "field_path": "memo",
+        "start": 10,
+        "end": 23,
+        "quote": "まだ返事のない人がいること"
+      },
+      {
+        "source_id": "A02-4",
+        "field_path": "memo",
+        "start": 23,
+        "end": 24,
+        "quote": "も"
+      },
+      {
+        "source_id": "A02-4",
+        "field_path": "memo",
+        "start": 34,
+        "end": 39,
+        "quote": "待つ時間は"
+      },
+      {
+        "source_id": "A02-4",
+        "field_path": "memo",
+        "start": 31,
+        "end": 34,
+        "quote": "前より"
+      },
+      {
+        "source_id": "A02-4",
+        "field_path": "memo_action",
+        "start": 0,
+        "end": 9,
+        "quote": "回答済みと未回答を"
+      },
+      {
+        "source_id": "A02-4",
+        "field_path": "memo_action",
+        "start": 0,
+        "end": 12,
+        "quote": "回答済みと未回答を分けて"
+      },
+      {
+        "source_id": "A02-4",
+        "field_path": "memo_action",
+        "start": 12,
+        "end": 18,
+        "quote": "途中の案内を"
+      },
+      {
+        "source_id": "A02-4",
+        "field_path": "memo_action",
+        "start": 12,
+        "end": 20,
+        "quote": "途中の案内を送り"
+      },
+      {
+        "source_id": "A02-4",
+        "field_path": "memo_action",
+        "start": 21,
+        "end": 27,
+        "quote": "最終の返事を"
+      },
+      {
+        "source_id": "A02-4",
+        "field_path": "memo_action",
+        "start": 21,
+        "end": 31,
+        "quote": "最終の返事を待った。"
+      },
+      {
+        "source_id": "A02-5",
+        "field_path": "memo",
+        "start": 0,
+        "end": 2,
+        "quote": "今日"
+      },
+      {
+        "source_id": "A02-5",
+        "field_path": "memo",
+        "start": 10,
+        "end": 12,
+        "quote": "数を"
+      },
+      {
+        "source_id": "A02-5",
+        "field_path": "memo",
+        "start": 10,
+        "end": 21,
+        "quote": "数を照らし合わせられて"
+      },
+      {
+        "source_id": "A02-5",
+        "field_path": "memo",
+        "start": 21,
+        "end": 27,
+        "quote": "ほっとした。"
+      },
+      {
+        "source_id": "A02-5",
+        "field_path": "memo",
+        "start": 27,
+        "end": 36,
+        "quote": "使いやすかったかは"
+      },
+      {
+        "source_id": "A02-5",
+        "field_path": "memo_action",
+        "start": 7,
+        "end": 9,
+        "quote": "数を"
+      },
+      {
+        "source_id": "A02-5",
+        "field_path": "memo_action",
+        "start": 0,
+        "end": 7,
+        "quote": "道具を貸す時に"
+      },
+      {
+        "source_id": "A02-5",
+        "field_path": "memo_action",
+        "start": 0,
+        "end": 12,
+        "quote": "道具を貸す時に数を記録し"
+      },
+      {
+        "source_id": "A02-5",
+        "field_path": "memo_action",
+        "start": 13,
+        "end": 20,
+        "quote": "返ってきた数と"
+      },
+      {
+        "source_id": "A02-5",
+        "field_path": "memo_action",
+        "start": 13,
+        "end": 25,
+        "quote": "返ってきた数と照合した。"
+      },
+      {
+        "source_id": "A02-5",
+        "field_path": "memo_action",
+        "start": 25,
+        "end": 27,
+        "quote": "全て"
+      },
+      {
+        "source_id": "A02-6",
+        "field_path": "memo",
+        "start": 0,
+        "end": 4,
+        "quote": "買う物は"
+      },
+      {
+        "source_id": "A02-6",
+        "field_path": "memo",
+        "start": 0,
+        "end": 7,
+        "quote": "買う物は買えた"
+      },
+      {
+        "source_id": "A02-6",
+        "field_path": "memo",
+        "start": 13,
+        "end": 20,
+        "quote": "メモを作るのが"
+      },
+      {
+        "source_id": "A02-6",
+        "field_path": "memo",
+        "start": 10,
+        "end": 12,
+        "quote": "今日"
+      },
+      {
+        "source_id": "A02-6",
+        "field_path": "memo",
+        "start": 20,
+        "end": 22,
+        "quote": "少し"
+      },
+      {
+        "source_id": "A02-6",
+        "field_path": "memo",
+        "start": 10,
+        "end": 28,
+        "quote": "今日はメモを作るのが少し面倒だった。"
+      },
+      {
+        "source_id": "A02-6",
+        "field_path": "memo_action",
+        "start": 5,
+        "end": 8,
+        "quote": "メモを"
+      },
+      {
+        "source_id": "A02-6",
+        "field_path": "memo_action",
+        "start": 0,
+        "end": 5,
+        "quote": "買い物前に"
+      },
+      {
+        "source_id": "A02-6",
+        "field_path": "memo_action",
+        "start": 0,
+        "end": 10,
+        "quote": "買い物前にメモを作り"
+      },
+      {
+        "source_id": "A02-6",
+        "field_path": "memo_action",
+        "start": 11,
+        "end": 14,
+        "quote": "メモを"
+      },
+      {
+        "source_id": "A02-6",
+        "field_path": "memo_action",
+        "start": 11,
+        "end": 18,
+        "quote": "メモを見ながら"
+      },
+      {
+        "source_id": "A02-6",
+        "field_path": "memo_action",
+        "start": 18,
+        "end": 22,
+        "quote": "買った。"
+      },
+      {
+        "source_id": "A02-4",
+        "field_path": "memo_action",
+        "start": 11,
+        "end": 12,
+        "quote": "て"
+      },
+      {
+        "source_id": "A02-4",
+        "field_path": "memo_action",
+        "start": 18,
+        "end": 21,
+        "quote": "送り、"
+      },
+      {
+        "source_id": "A02-5",
+        "field_path": "memo",
+        "start": 19,
+        "end": 21,
+        "quote": "れて"
+      },
+      {
+        "source_id": "A02-5",
+        "field_path": "memo_action",
+        "start": 10,
+        "end": 13,
+        "quote": "録し、"
+      },
+      {
+        "source_id": "A02-6",
+        "field_path": "memo",
+        "start": 7,
+        "end": 9,
+        "quote": "けど"
+      },
+      {
+        "source_id": "A02-6",
+        "field_path": "memo_action",
+        "start": 8,
+        "end": 11,
+        "quote": "作り、"
+      },
+      {
+        "source_id": "A02-6",
+        "field_path": "memo_action",
+        "start": 11,
+        "end": 22,
+        "quote": "メモを見ながら買った。"
+      },
+      {
+        "source_id": "A02-6",
+        "field_path": "memo_action",
+        "start": 15,
+        "end": 18,
+        "quote": "ながら"
+      },
+      {
+        "source_id": "A02-5",
+        "field_path": "memo",
+        "start": 27,
+        "end": 35,
+        "quote": "使いやすかったか"
+      }
+    ]
+  },
+  "origin": "HAND_AUTHORED_P5_SYNTHETIC_NOT_MODEL_OUTPUT"
+}

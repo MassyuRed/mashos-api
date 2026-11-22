@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import logging
+from hashlib import sha256
 from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, Header, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StrictBool
 
 from api_account_visibility import _get_profile_row, _pick_row, _require_user_id
 from account_delete_service import execute_account_delete
@@ -33,6 +34,7 @@ class AccountProfileMePatchBody(BaseModel):
     push_platform: Optional[str] = None
     push_token: Optional[str] = None
     push_token_updated_at: Optional[str] = None
+    push_deep_insight_supported: StrictBool = False
     tutorial_completed: Optional[bool] = None
     tutorial_skipped: Optional[bool] = None
     tutorial_completed_at: Optional[str] = None
@@ -160,7 +162,7 @@ async def _is_display_name_available(
     return True
 
 
-def _raise_profile_update_error(resp: Any, *, operation: str) -> None:
+def _raise_profile_update_error(resp: Any, *, operation: str, redact_body: bool) -> None:
     try:
         payload = resp.json()
     except Exception:
@@ -173,7 +175,7 @@ def _raise_profile_update_error(resp: Any, *, operation: str) -> None:
         "account/profile/me %s failed: status=%s body=%s",
         operation,
         getattr(resp, "status_code", "?"),
-        str(getattr(resp, "text", ""))[:1500],
+        "[redacted]" if redact_body else str(getattr(resp, "text", ""))[:1500],
     )
     raise HTTPException(status_code=502, detail="Failed to update profile")
 
@@ -250,6 +252,7 @@ async def _update_or_create_profile_me(
     push_platform: Any = _UNSET,
     push_token: Any = _UNSET,
     push_token_updated_at: Any = _UNSET,
+    push_deep_insight_supported: bool = False,
     tutorial_completed: Any = _UNSET,
     tutorial_skipped: Any = _UNSET,
     tutorial_completed_at: Any = _UNSET,
@@ -268,7 +271,11 @@ async def _update_or_create_profile_me(
     if push_platform is not _UNSET:
         update_fields["push_platform"] = _coerce_optional_text(push_platform)
     if push_token is not _UNSET:
-        update_fields["push_token"] = _coerce_optional_text(push_token)
+        token = _coerce_optional_text(push_token)
+        update_fields["push_token"] = token
+        update_fields["push_deep_insight_token_sha256"] = (
+            sha256(token.encode()).hexdigest() if token and push_deep_insight_supported else None
+        )
     if push_token_updated_at is not _UNSET:
         update_fields["push_token_updated_at"] = _coerce_optional_text(push_token_updated_at)
     if tutorial_completed is not _UNSET:
@@ -290,7 +297,7 @@ async def _update_or_create_profile_me(
             timeout=8.0,
         )
         if resp.status_code not in (200, 204):
-            _raise_profile_update_error(resp, operation="patch")
+            _raise_profile_update_error(resp, operation="patch", redact_body=push_token is not _UNSET)
         return _pick_row(resp) or await _fetch_profile_me(user_id)
 
     insert_payload: Dict[str, Any] = {
@@ -310,7 +317,7 @@ async def _update_or_create_profile_me(
         timeout=8.0,
     )
     if resp.status_code not in (200, 201):
-        _raise_profile_update_error(resp, operation="insert")
+        _raise_profile_update_error(resp, operation="insert", redact_body=push_token is not _UNSET)
 
     return _pick_row(resp) or await _fetch_profile_me(user_id)
 
@@ -366,6 +373,7 @@ def register_account_lifecycle_routes(app: FastAPI) -> None:
             push_platform=payload.get("push_platform", _UNSET),
             push_token=payload.get("push_token", _UNSET),
             push_token_updated_at=payload.get("push_token_updated_at", _UNSET),
+            push_deep_insight_supported=body.push_deep_insight_supported,
             tutorial_completed=payload.get("tutorial_completed", _UNSET),
             tutorial_skipped=payload.get("tutorial_skipped", _UNSET),
             tutorial_completed_at=payload.get("tutorial_completed_at", _UNSET),

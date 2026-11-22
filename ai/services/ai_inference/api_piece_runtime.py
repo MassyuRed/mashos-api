@@ -32,6 +32,7 @@ import os
 import random
 from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional, Set, Tuple
+from uuid import UUID
 
 import httpx
 from fastapi import FastAPI, Header, HTTPException, Query
@@ -44,8 +45,9 @@ from api_emotion_submit import (
 )
 from api_profile_create import _fetch_answers as _fetch_profile_answers
 from api_profile_create import _fetch_questions as _fetch_profile_questions
+from follow_content_visibility import filter_piece_visible_owner_ids, hidden_share_code_owner_ids
 from piece_generated_display import get_public_generated_reflection_text
-from piece_generated_identity import compute_generated_question_q_key
+from piece_generated_identity import compute_generated_question_q_key, generated_instance_aliases
 from piece_generated_access import resolve_generated_reflection_access
 from piece_text_formatter import get_public_create_reflection_text
 from subscription import SubscriptionTier
@@ -551,46 +553,53 @@ async def _sb_delete(
 async def _filter_recommendation_enabled(user_ids: List[str]) -> List[str]:
     """Filter out users who have is_recommendation_enabled = false.
 
-    Missing settings rows are treated as enabled (public default).
+    Missing settings rows in a valid, successful read use the public default.
+    A failed or malformed read cannot establish a user's recommendation choice.
     """
     ids = [str(x).strip() for x in (user_ids or []) if str(x).strip()]
     if not ids:
         return []
 
-    # Default: enabled unless explicitly disabled.
-    enabled_set = set(ids)
+    enabled_set: Set[str] = set()
 
     # Chunk to avoid huge query strings.
     chunk_size = 200
     for i in range(0, len(ids), chunk_size):
         chunk = ids[i : i + chunk_size]
         in_list = ",".join(chunk)
-        resp = await _sb_get(
-            f"/rest/v1/{VISIBILITY_TABLE}",
-            params={
-                "select": "user_id,is_recommendation_enabled",
-                "user_id": f"in.({in_list})",
-            },
-        )
-        if resp.status_code >= 300:
+        try:
+            resp = await _sb_get(
+                f"/rest/v1/{VISIBILITY_TABLE}",
+                params={
+                    "select": "user_id,is_recommendation_enabled",
+                    "user_id": f"in.({in_list})",
+                },
+            )
+            if resp.status_code >= 300:
+                logger.warning(
+                    "Supabase visibility settings fetch failed (recommendation filter): %s",
+                    resp.status_code,
+                )
+                continue
+            rows = resp.json()
+        except Exception:
+            logger.warning("Supabase visibility settings unavailable (recommendation filter)")
+            continue
+        if (not isinstance(rows, list)
+                or any(not isinstance(r, dict)
+                       or not isinstance(r.get("user_id"), str)
+                       or r["user_id"] not in chunk
+                       or type(r.get("is_recommendation_enabled")) is not bool
+                       for r in rows)
+                or len({r["user_id"] for r in rows}) != len(rows)):
             logger.warning(
-                "Supabase visibility settings fetch failed (recommendation filter): %s %s",
-                resp.status_code,
-                (resp.text or "")[:500],
+                "Supabase visibility settings malformed (recommendation filter)"
             )
             continue
-        rows = resp.json()
-        if not isinstance(rows, list):
-            continue
+        enabled_set.update(chunk)
         for r in rows:
-            if not isinstance(r, dict):
-                continue
-            uid = str(r.get("user_id") or "").strip()
-            if not uid:
-                continue
-            flag = r.get("is_recommendation_enabled")
-            if flag is False:
-                enabled_set.discard(uid)
+            if r["is_recommendation_enabled"] is False:
+                enabled_set.discard(r["user_id"])
 
     # Preserve original order.
     return [uid for uid in ids if uid in enabled_set]
@@ -711,25 +720,8 @@ def _quoted_in(values: Set[str]) -> str:
 
 
 async def _has_myprofile_link(*, viewer_user_id: str, owner_user_id: str) -> bool:
-    """viewer -> owner のアクセス許可があるか（myprofile_links で判定）。"""
-    resp = await _sb_get(
-        "/rest/v1/myprofile_links",
-        params={
-            "select": "viewer_user_id",
-            "viewer_user_id": f"eq.{viewer_user_id}",
-            "owner_user_id": f"eq.{owner_user_id}",
-            "limit": "1",
-        },
-    )
-    if resp.status_code >= 300:
-        logger.error(
-            "Supabase myprofile_links select failed: %s %s",
-            resp.status_code,
-            resp.text[:1500],
-        )
-        raise HTTPException(status_code=502, detail="Failed to check myprofile link")
-    rows = resp.json()
-    return bool(isinstance(rows, list) and rows)
+    """viewer -> owner のピース閲覧許可を確認。"""
+    return bool(await filter_piece_visible_owner_ids(viewer_user_id, {owner_user_id}))
 
 async def _fetch_profiles_by_ids(user_ids: List[str]) -> Dict[str, Dict[str, Any]]:
     """Bulk fetch profiles by ids (service_role)."""
@@ -855,6 +847,11 @@ async def _fetch_followed_owner_ids(*, viewer_user_id: str, limit: int = 5000) -
     return out
 
 
+async def _fetch_visible_piece_owner_ids(*, viewer_user_id: str, limit: int = 5000) -> Set[str]:
+    followed = await _fetch_followed_owner_ids(viewer_user_id=viewer_user_id, limit=limit)
+    return await filter_piece_visible_owner_ids(viewer_user_id, followed)
+
+
 async def _fetch_active_user_ids(*, since_iso: str, scan_limit: int) -> Set[str]:
     """Fetch active user ids within window, based on:
     - emotions.created_at >= since
@@ -944,7 +941,10 @@ async def _fetch_metrics(q_keys: Set[str]) -> Dict[str, Dict[str, Any]]:
     return out
 
 
-async def _fetch_instance_metrics(q_instance_ids: Set[str]) -> Dict[str, Dict[str, Any]]:
+async def _fetch_instance_metrics(q_instance_ids: Set[str], *, alias_groups=None) -> Dict[str, Dict[str, Any]]:
+    if alias_groups is not None:
+        from piece_public_read_store import fetch_instance_metrics
+        return await fetch_instance_metrics(q_instance_ids, alias_groups=alias_groups)
     """Fetch per-answer metrics aggregated by q_instance_id."""
     if not q_instance_ids:
         return {}
@@ -1091,7 +1091,10 @@ async def _fetch_latest_discovery_for_viewer(*, viewer_user_id: str, q_instance_
 
 
 
-async def _fetch_reads(viewer_user_id: str, q_instance_ids: Set[str]) -> Set[str]:
+async def _fetch_reads(viewer_user_id: str, q_instance_ids: Set[str], *, alias_groups=None) -> Set[str]:
+    if alias_groups is not None:
+        from piece_public_read_store import fetch_reads
+        return await fetch_reads(viewer_user_id, q_instance_ids, alias_groups=alias_groups)
     if not viewer_user_id or not q_instance_ids:
         return set()
     resp = await _sb_get(
@@ -1244,7 +1247,7 @@ async def _ensure_piece_resonance_allowed(*, viewer_user_id: str, target_user_id
     if target == viewer:
         raise HTTPException(status_code=400, detail="Self resonance is not allowed")
 
-    followed_owner_ids = await _fetch_followed_owner_ids(viewer_user_id=viewer, limit=5000)
+    followed_owner_ids = await _fetch_visible_piece_owner_ids(viewer_user_id=viewer, limit=5000)
     if target not in followed_owner_ids:
         raise HTTPException(
             status_code=403,
@@ -1255,143 +1258,42 @@ async def _ensure_piece_resonance_allowed(*, viewer_user_id: str, target_user_id
 async def _inc_metric(
     *, q_key: str, q_instance_id: Optional[str] = None, field: str, delta: int = 1
 ) -> Dict[str, int]:
-    """Increment views/resonances for both:
-    - per-answer row (q_instance_id = '<target_user_id>:<question_id>')
-    - global popularity row (q_instance_id IS NULL)
+    """Atomically update the existing instance/global public counters.
 
-    This is best-effort and not strictly atomic.
-
-    Return:
-    - views/resonances: per-answer counts if q_instance_id is provided, otherwise global counts
-    - global_views/global_resonances: attached when q_instance_id is provided
+    Authentication and current public-row access remain the caller's job. One
+    service-role RPC owns both counters; no stale read/absolute PATCH is used.
     """
-
     kk = str(q_key or "").strip()
     iid = str(q_instance_id or "").strip() or None
     if not kk:
         return {"views": 0, "resonances": 0}
-    if field not in ("views", "resonances"):
-        raise ValueError("invalid metric field")
+    if field not in ("views", "resonances") or type(delta) is not int or delta not in (-1, 1):
+        raise ValueError("invalid metric increment")
+    # The RPC is intentionally bound to the existing physical table. An old
+    # deployment override must be reconciled before enabling this implementation.
+    if METRICS_TABLE != "mymodel_qna_metrics":
+        raise HTTPException(status_code=502, detail="Piece metrics table is not supported")
+    try:
+        response = await _sb_post_rpc("piece_increment_legacy_metric", {
+            "p_q_key": kk, "p_q_instance_id": iid,
+            "p_field": field, "p_delta": delta,
+        })
+        if response.status_code >= 300:
+            raise ValueError("metric RPC failed")
+        result = response.json()
+        required = {"views", "resonances"}
+        if iid is not None:
+            required.update({"global_views", "global_resonances"})
+        if (not isinstance(result, dict) or set(result) != required
+                or any(type(result[key]) is not int or result[key] < 0 for key in required)):
+            raise ValueError("invalid metric RPC response")
+        return {key: result[key] for key in required}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("atomic Piece metric update failed")
+        raise HTTPException(status_code=502, detail="Failed to update Piece metrics") from exc
 
-    async def _inc_one(*, iid_filter: Optional[str]) -> Dict[str, int]:
-        # 1) Fetch current
-        cur_views = 0
-        cur_res = 0
-        exists = False
-
-        params_get = {
-            "select": "q_key,q_instance_id,views,resonances",
-            "q_key": f"eq.{kk}",
-            "limit": "1",
-        }
-        if iid_filter is None:
-            params_get["q_instance_id"] = "is.null"
-        else:
-            params_get["q_instance_id"] = f"eq.{iid_filter}"
-
-        try:
-            resp = await _sb_get(f"/rest/v1/{METRICS_TABLE}", params=params_get)
-            if resp.status_code < 300:
-                rows = resp.json()
-                if isinstance(rows, list) and rows:
-                    exists = True
-                    try:
-                        cur_views = int(rows[0].get("views") or 0)
-                    except Exception:
-                        cur_views = 0
-                    try:
-                        cur_res = int(rows[0].get("resonances") or 0)
-                    except Exception:
-                        cur_res = 0
-        except Exception as exc:
-            logger.warning("Supabase %s select failed (metrics inc): %s", METRICS_TABLE, exc)
-            exists = False
-            cur_views = 0
-            cur_res = 0
-
-        # 2) Increment in memory
-        if field == "views":
-            cur_views += int(delta)
-        else:
-            cur_res += int(delta)
-
-        # Clamp (allow decrement for toggle; never go below 0)
-        if cur_views < 0:
-            cur_views = 0
-        if cur_res < 0:
-            cur_res = 0
-
-        # 3) Upsert
-        params_patch = {"q_key": f"eq.{kk}"}
-        if iid_filter is None:
-            params_patch["q_instance_id"] = "is.null"
-        else:
-            params_patch["q_instance_id"] = f"eq.{iid_filter}"
-
-        if exists:
-            try:
-                resp2 = await _sb_patch(
-                    f"/rest/v1/{METRICS_TABLE}",
-                    params=params_patch,
-                    json={
-                        "views": cur_views,
-                        "resonances": cur_res,
-                        "updated_at": _now_iso(),
-                    },
-                    prefer="return=minimal",
-                )
-                if resp2.status_code >= 300:
-                    logger.warning(
-                        "Supabase %s patch failed: %s %s",
-                        METRICS_TABLE,
-                        resp2.status_code,
-                        resp2.text[:800],
-                    )
-            except Exception as exc:
-                logger.warning("Supabase %s patch failed (metrics inc): %s", METRICS_TABLE, exc)
-        else:
-            payload = {
-                "q_key": kk,
-                "q_instance_id": iid_filter,
-                "views": cur_views,
-                "resonances": cur_res,
-                "updated_at": _now_iso(),
-            }
-            try:
-                resp3 = await _sb_post(
-                    f"/rest/v1/{METRICS_TABLE}",
-                    json=payload,
-                    prefer="return=minimal",
-                )
-                if resp3.status_code >= 300:
-                    logger.warning(
-                        "Supabase %s insert failed: %s %s",
-                        METRICS_TABLE,
-                        resp3.status_code,
-                        resp3.text[:800],
-                    )
-            except Exception as exc:
-                logger.warning("Supabase %s insert failed (metrics inc): %s", METRICS_TABLE, exc)
-
-        return {"views": cur_views, "resonances": cur_res}
-
-    # Per-answer (if provided)
-    instance_counts: Optional[Dict[str, int]] = None
-    if iid is not None:
-        instance_counts = await _inc_one(iid_filter=iid)
-
-    # Global popularity (always maintained)
-    global_counts = await _inc_one(iid_filter=None)
-
-    if instance_counts is None:
-        return {"views": int(global_counts.get("views") or 0), "resonances": int(global_counts.get("resonances") or 0)}
-
-    return {
-        "views": int(instance_counts.get("views") or 0),
-        "resonances": int(instance_counts.get("resonances") or 0),
-        "global_views": int(global_counts.get("views") or 0),
-        "global_resonances": int(global_counts.get("resonances") or 0),
-    }
 
 async def _resolve_tiers(*, viewer_user_id: str, target_user_id: str) -> Tuple[str, str, str, str]:
     """Return (subscription_tier, view_tier, build_tier, effective_tier)."""
@@ -1715,7 +1617,7 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:
             )
 
         # Only reflections currently accessible to the viewer.
-        followed_set = await _fetch_followed_owner_ids(viewer_user_id=str(viewer_user_id))
+        followed_set = await _fetch_visible_piece_owner_ids(viewer_user_id=str(viewer_user_id))
         if not followed_set:
             return QnaSavedReflectionsResponse(
                 status="ok",
@@ -2295,7 +2197,7 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:
             )
 
         # Only reflections currently accessible to the viewer.
-        followed_set = await _fetch_followed_owner_ids(viewer_user_id=str(viewer_user_id))
+        followed_set = await _fetch_visible_piece_owner_ids(viewer_user_id=str(viewer_user_id))
         if not followed_set:
             return QnaSavedReflectionsResponse(
                 status="ok",
@@ -2706,11 +2608,10 @@ MYMODEL_REFLECTIONS_TABLE = (
     os.getenv("MYMODEL_REFLECTIONS_TABLE", "mymodel_reflections") or "mymodel_reflections"
 ).strip() or "mymodel_reflections"
 MYMODEL_REFLECTIONS_READ_TABLE = (
-    os.getenv("COCOLON_PIECES_READ_TABLE")
-    or os.getenv("COCOLON_MYMODEL_REFLECTIONS_READ_TABLE")
+    os.getenv("COCOLON_MYMODEL_REFLECTIONS_READ_TABLE")
     or os.getenv("MYMODEL_REFLECTIONS_READ_TABLE")
-    or "pieces"
-).strip() or "pieces"
+    or "mymodel_reflections_read"
+).strip() or "mymodel_reflections_read"
 
 
 def _remove_registered_route(app: FastAPI, path: str, methods: Set[str]) -> None:
@@ -3114,7 +3015,11 @@ async def _fetch_generated_reflections_by_public_ids(
         lookup_public_ids.update(_generated_lookup_values(value))
         lookup_id = _generated_lookup_id(value)
         if lookup_id:
-            lookup_ids.add(lookup_id)
+            try:
+                lookup_ids.add(str(UUID(lookup_id)))
+            except ValueError:
+                # public_id is text; only valid UUIDs belong in the id filter.
+                pass
 
     merged: Dict[str, Dict[str, Any]] = {}
 
@@ -3130,33 +3035,30 @@ async def _fetch_generated_reflections_by_public_ids(
             params["status"] = "in.(ready,published)"
         return params
 
-    if lookup_ids:
-        params = _base_params()
-        params["id"] = _quoted_in(lookup_ids)
-        rows = await _sb_get_json_local(f"/rest/v1/{MYMODEL_REFLECTIONS_READ_TABLE}", params=params)
-        for row in rows:
-            rid = str((row or {}).get("id") or "").strip()
-            if rid:
-                merged[rid] = row
-
-    if lookup_public_ids:
-        params = _base_params()
-        params["public_id"] = _quoted_in(lookup_public_ids)
-        rows = await _sb_get_json_local(f"/rest/v1/{MYMODEL_REFLECTIONS_READ_TABLE}", params=params)
-        for row in rows:
-            rid = str((row or {}).get("id") or "").strip()
-            if rid:
-                merged[rid] = row
+    for field, values in (("id", lookup_ids), ("public_id", lookup_public_ids)):
+        ordered = sorted(values)
+        for offset in range(0, len(ordered), 200):
+            chunk = set(ordered[offset:offset + 200])
+            params = _base_params()
+            params["limit"] = str(max(1, len(chunk) * 3))
+            params[field] = _quoted_in(chunk)
+            rows = await _sb_get_json_local(f"/rest/v1/{MYMODEL_REFLECTIONS_READ_TABLE}", params=params)
+            for row in rows:
+                rid = str((row or {}).get("id") or "").strip()
+                if rid:
+                    merged[rid] = row
 
     out: Dict[str, Dict[str, Any]] = {}
     visible_rows = _suppress_overlapping_generated_rows(_canonicalize_generated_rows_latest_by_qkey(list(merged.values())))
     for r in visible_rows:
         pid = _generated_public_id(r)
-        if not pid or pid not in ids:
+        if not pid:
             continue
         if not get_public_generated_reflection_text(r):
             continue
-        out[pid] = r
+        for alias in generated_instance_aliases(r):
+            if alias in ids:
+                out[alias] = r
     return out
 
 
@@ -3225,11 +3127,20 @@ async def _resolve_qna_context_for_reaction(
     if not body:
         raise HTTPException(status_code=404, detail="Reflection not found")
     owner_user_id = str((row or {}).get("owner_user_id") or "").strip()
+    canonical_q_key = _build_generated_q_key(row)
+    requested_q_key = str(q_key or "").strip()
+    if requested_q_key and requested_q_key != canonical_q_key:
+        raise HTTPException(status_code=400, detail="Piece question key does not match")
+    aliases = generated_instance_aliases(row)
+    if not aliases:
+        raise HTTPException(status_code=404, detail="Reflection not found")
     return {
+        "q_instance_id": aliases[0],
+        "alias_groups": {aliases[0]: set(aliases)},
         "kind": (_row_source_type(row) or "generated"),
         "target_user_id": owner_user_id,
         "question_id": 0,
-        "q_key": str(q_key or "").strip() or _build_generated_q_key(row),
+        "q_key": canonical_q_key,
         "row": row,
         "context_source_type": EMOTION_GENERATED_SOURCE_TYPE,
         "context_question": str((row or {}).get("question") or "").strip() or None,
@@ -3237,6 +3148,43 @@ async def _resolve_qna_context_for_reaction(
         "context_topic_key": str((row or {}).get("topic_key") or "").strip() or None,
         "context_category": str((row or {}).get("category") or "").strip() or None,
     }
+
+
+async def _apply_piece_reaction(ctx: Dict[str, Any], viewer_user_id: str,
+                                operation: str, *, echo=None) -> Dict[str, Any]:
+    if (METRICS_TABLE != "mymodel_qna_metrics" or RESONANCES_TABLE != "mymodel_qna_resonances"
+            or ECHOES_TABLE != "mymodel_qna_echoes"
+            or MYMODEL_REFLECTIONS_TABLE != "mymodel_reflections"):
+        raise HTTPException(status_code=502, detail="Piece reaction tables are not supported")
+    row = ctx["row"]
+    canonical = generated_instance_aliases(row)
+    if not canonical or ctx["q_instance_id"] != canonical[0]:
+        raise HTTPException(status_code=502, detail="Piece reaction source binding is invalid")
+    try:
+        response = await _sb_post_rpc("piece_apply_legacy_reaction", {
+            "p_source_id": str(row["id"]), "p_expected_owner": ctx["target_user_id"],
+            "p_viewer_id": viewer_user_id, "p_canonical_id": canonical[0],
+            "p_q_key": ctx["q_key"], "p_operation": operation, "p_echo": echo,
+        })
+        if response.status_code >= 300:
+            raise ValueError("reaction RPC failed")
+        result = response.json()
+        expected = {"q_instance_id", "changed_count", "resonated", "views", "resonances", "deleted_echo_activity_dates"}
+        if (not isinstance(result, dict) or set(result) != expected
+                or result["q_instance_id"] != canonical[0]
+                or type(result["resonated"]) is not bool
+                or result["resonated"] != (operation != "remove")
+                or any(type(result[key]) is not int or result[key] < 0
+                       for key in ("changed_count", "views", "resonances"))
+                or result["changed_count"] > (len(canonical) if operation == "remove" else 1)
+                or not isinstance(result["deleted_echo_activity_dates"], list)
+                or any(not isinstance(value, str) or not value.strip()
+                       for value in result["deleted_echo_activity_dates"])):
+            raise ValueError("invalid reaction RPC acknowledgement")
+        return result
+    except Exception as exc:
+        logger.warning("atomic Piece reaction failed")
+        raise HTTPException(status_code=502, detail="Failed to update Piece reaction") from exc
 
 
 async def _fetch_create_list_items(
@@ -3331,9 +3279,23 @@ async def _build_saved_generated_items(
         return []
     ids = {iid for iid, _, _ in prepared_rows}
     rows_map = await _fetch_generated_reflections_by_public_ids(ids, require_active=True, require_ready=True)
-    profiles_map = await _fetch_profiles_by_ids(list({owner for _, owner, _ in prepared_rows}))
-    metrics_task = asyncio.create_task(_fetch_instance_metrics(set(ids)))
-    reads_task = asyncio.create_task(_fetch_reads(str(viewer_user_id or "").strip(), set(ids)))
+    normalized = []
+    canonical_rows = {}
+    for old_iid, owner, saved_at in prepared_rows:
+        row = rows_map.get(old_iid)
+        aliases = generated_instance_aliases(row) if row else ()
+        if not aliases or aliases[0] in canonical_rows:
+            continue
+        canonical_rows[aliases[0]] = row
+        normalized.append((aliases[0], owner, saved_at))
+    prepared_rows, rows_map = normalized, canonical_rows
+    ids = set(rows_map)
+    alias_groups = {iid: set(generated_instance_aliases(row)) for iid, row in rows_map.items()}
+    profile_owner_ids = {owner for _, owner, _ in prepared_rows}
+    profiles_map = await _fetch_profiles_by_ids(list(profile_owner_ids))
+    hidden_codes = await hidden_share_code_owner_ids(profile_owner_ids - {str(viewer_user_id)})
+    metrics_task = asyncio.create_task(_fetch_instance_metrics(ids, alias_groups=alias_groups))
+    reads_task = asyncio.create_task(_fetch_reads(str(viewer_user_id or "").strip(), ids, alias_groups=alias_groups))
     metrics_map, read_set = await asyncio.gather(metrics_task, reads_task)
     followed_set = set(followed_owner_ids or set())
     viewer_id = str(viewer_user_id or "").strip()
@@ -3354,7 +3316,7 @@ async def _build_saved_generated_items(
         p = profiles_map.get(str(owner_uid)) or {}
         dn = p.get("display_name") if isinstance(p, dict) else None
         dn_s = dn.strip() if isinstance(dn, str) else None
-        friend_code_raw = p.get("friend_code") if isinstance(p, dict) else None
+        friend_code_raw = p.get("friend_code") if isinstance(p, dict) and owner_uid not in hidden_codes else None
         friend_code = friend_code_raw.strip() if isinstance(friend_code_raw, str) else None
         q_key = _build_generated_q_key(row)
         metric_row = metrics_map.get(iid) or {}
@@ -3473,7 +3435,9 @@ async def _build_saved_create_items(
     metrics_task = asyncio.create_task(_fetch_instance_metrics(q_instance_ids))
     reads_task = asyncio.create_task(_fetch_reads(str(viewer_user_id or "").strip(), q_instance_ids))
     metrics_map, read_set = await asyncio.gather(metrics_task, reads_task)
-    profiles_map = await _fetch_profiles_by_ids(list({row[1] for row in visible_rows}))
+    profile_owner_ids = {row[1] for row in visible_rows}
+    profiles_map = await _fetch_profiles_by_ids(list(profile_owner_ids))
+    hidden_codes = await hidden_share_code_owner_ids(profile_owner_ids - {str(viewer_user_id)})
     followed_set = set(followed_owner_ids or set())
     viewer_id = str(viewer_user_id or "").strip()
 
@@ -3482,7 +3446,7 @@ async def _build_saved_create_items(
         p = profiles_map.get(str(owner_uid)) or {}
         dn = p.get("display_name") if isinstance(p, dict) else None
         dn_s = dn.strip() if isinstance(dn, str) else None
-        friend_code_raw = p.get("friend_code") if isinstance(p, dict) else None
+        friend_code_raw = p.get("friend_code") if isinstance(p, dict) and owner_uid not in hidden_codes else None
         friend_code = friend_code_raw.strip() if isinstance(friend_code_raw, str) else None
         body = body_by_pair.get((str(owner_uid), int(qid_val))) or ""
         metric_row = metrics_map.get(iid) or {}
@@ -3659,11 +3623,11 @@ def register_piece_runtime_routes(app: FastAPI) -> None:
         tgt = str(ctx.get("target_user_id") or "")
         qid = int(ctx.get("question_id") or 0)
         qk = str(ctx.get("q_key") or "")
-        iid = str(req.q_instance_id or "").strip()
+        iid = ctx["q_instance_id"]
         await _upsert_read(viewer_user_id, iid)
 
         if tgt == viewer_user_id:
-            metrics = await _fetch_instance_metrics({iid})
+            metrics = await _fetch_instance_metrics({iid}, alias_groups=ctx["alias_groups"])
             m = metrics.get(iid) or {}
             try:
                 views = int(m.get("views") or 0)
@@ -3677,7 +3641,8 @@ def register_piece_runtime_routes(app: FastAPI) -> None:
 
         if qid > 0:
             await _insert_view_log(target_user_id=tgt, viewer_user_id=viewer_user_id, question_id=int(qid), q_key=qk, q_instance_id=iid)
-        counts = await _inc_metric(q_key=qk, q_instance_id=iid, field="views", delta=1)
+        await _inc_metric(q_key=qk, q_instance_id=iid, field="views", delta=1)
+        counts = (await _fetch_instance_metrics({iid}, alias_groups=ctx["alias_groups"])).get(iid) or {}
         requested_at = _now_iso()
         try:
             await enqueue_ranking_board_refresh(
@@ -3726,69 +3691,18 @@ def register_piece_runtime_routes(app: FastAPI) -> None:
         tgt = str(ctx.get("target_user_id") or "").strip()
         qid = int(ctx.get("question_id") or 0)
         qk = str(ctx.get("q_key") or "").strip()
-        iid = str(req.q_instance_id or "").strip()
+        iid = ctx["q_instance_id"]
 
         await _ensure_piece_resonance_allowed(
             viewer_user_id=str(viewer_user_id),
             target_user_id=tgt,
         )
 
-        already = await _is_resonated(viewer_user_id, iid)
-        if already:
-            metrics = await _fetch_instance_metrics({iid})
-            m = metrics.get(iid) or {}
-            try:
-                views = int(m.get("views") or 0)
-            except Exception:
-                views = 0
-            try:
-                res_cnt = int(m.get("resonances") or 0)
-            except Exception:
-                res_cnt = 0
-            return QnaResonanceResponse(status="already", q_key=qk, q_instance_id=iid, resonated=True, views=views, resonances=res_cnt)
-
-        payload_res = {
-            "viewer_user_id": str(viewer_user_id),
-            "q_instance_id": iid,
-            "q_key": str(qk),
-            "created_at": _now_iso(),
-        }
-        resp = await _sb_post(
-            f"/rest/v1/{RESONANCES_TABLE}",
-            json=payload_res,
-            prefer="resolution=ignore-duplicates,return=representation",
-        )
-        if resp.status_code >= 300:
-            logger.error("Supabase %s insert failed (resonance): %s %s", RESONANCES_TABLE, resp.status_code, (resp.text or "")[:800])
-            raise HTTPException(status_code=502, detail="Failed to confirm resonance")
-        try:
-            inserted_rows = resp.json()
-        except Exception:
-            inserted_rows = []
-        if isinstance(inserted_rows, list) and not inserted_rows:
-            metrics = await _fetch_instance_metrics({iid})
-            m = metrics.get(iid) or {}
-            try:
-                views = int(m.get("views") or 0)
-            except Exception:
-                views = 0
-            try:
-                res_cnt = int(m.get("resonances") or 0)
-            except Exception:
-                res_cnt = 0
-            return QnaResonanceResponse(status="already", q_key=qk, q_instance_id=iid, resonated=True, views=views, resonances=res_cnt)
-
-        if qid > 0:
-            await _insert_resonance_log(
-                target_user_id=tgt,
-                viewer_user_id=str(viewer_user_id),
-                question_id=int(qid),
-                q_key=qk,
-                q_instance_id=iid,
-            )
-        counts = await _inc_metric(q_key=qk, q_instance_id=iid, field="resonances", delta=1)
-        views = int(counts.get("views") or 0)
-        res_cnt = int(counts.get("resonances") or 0)
+        counts = await _apply_piece_reaction(ctx, str(viewer_user_id), "resonate")
+        views, res_cnt = counts["views"], counts["resonances"]
+        if counts["changed_count"] == 0:
+            return QnaResonanceResponse(status="already", q_key=qk, q_instance_id=iid,
+                resonated=True, views=views, resonances=res_cnt)
         requested_at = _now_iso()
         try:
             await enqueue_global_snapshot_refresh(
@@ -3921,14 +3835,14 @@ def register_piece_runtime_routes(app: FastAPI) -> None:
         generated_ids = {
             str((row or {}).get("q_instance_id") or "").strip()
             for row in ordered_rows
-            if _is_generated_reflection_instance_id(str((row or {}).get("q_instance_id") or "").strip())
+            if str((row or {}).get("q_instance_id") or "").strip()
         }
         generated_rows_map = await _fetch_generated_reflections_by_public_ids(
             generated_ids,
             require_active=True,
             require_ready=True,
         )
-        followed_set = await _fetch_followed_owner_ids(viewer_user_id=str(viewer_user_id))
+        followed_set = await _fetch_visible_piece_owner_ids(viewer_user_id=str(viewer_user_id))
 
         generated_prepared: List[Tuple[str, str, str]] = []
         create_prepared: List[Tuple[str, str, int, str, str]] = []
@@ -3937,8 +3851,8 @@ def register_piece_runtime_routes(app: FastAPI) -> None:
             saved_at = str((row or {}).get("created_at") or "").strip()
             if not iid or not saved_at:
                 continue
-            if _is_generated_reflection_instance_id(iid):
-                generated_row = generated_rows_map.get(iid) or {}
+            generated_row = generated_rows_map.get(iid)
+            if generated_row:
                 owner_uid = str((generated_row or {}).get("owner_user_id") or (row or {}).get("target_user_id") or "").strip()
                 if not owner_uid or owner_uid not in followed_set:
                     continue
@@ -3987,7 +3901,7 @@ def register_piece_runtime_routes(app: FastAPI) -> None:
         tgt = str(ctx.get("target_user_id") or "")
         qid = int(ctx.get("question_id") or 0)
         qk = str(ctx.get("q_key") or "")
-        iid = str(req.q_instance_id or "").strip()
+        iid = ctx["q_instance_id"]
         if tgt == viewer_user_id:
             raise HTTPException(status_code=400, detail="Self echoes is not allowed")
         await _ensure_piece_resonance_allowed(
@@ -4005,51 +3919,12 @@ def register_piece_runtime_routes(app: FastAPI) -> None:
             if not memo.strip():
                 memo = None
         requested_at = _now_iso()
-        payload = {
-            "viewer_user_id": str(viewer_user_id),
-            "target_user_id": str(tgt),
-            "question_id": int(qid),
-            "q_key": str(qk),
-            "q_instance_id": iid,
-            "strength": strength,
-            "memo": memo,
-            "context_source_type": ctx.get("context_source_type"),
-            "context_question": ctx.get("context_question"),
-            "context_answer": ctx.get("context_answer"),
-            "context_topic_key": ctx.get("context_topic_key"),
-            "context_category": ctx.get("context_category"),
-            "created_at": requested_at,
-        }
-        resp = await _sb_post(f"/rest/v1/{ECHOES_TABLE}", json=payload, prefer="resolution=merge-duplicates,return=minimal")
-        if resp.status_code >= 300:
-            logger.error("Supabase %s upsert failed: %s %s", ECHOES_TABLE, resp.status_code, (resp.text or "")[:800])
-            raise HTTPException(status_code=502, detail="Failed to submit echoes")
-        resonated = await _is_resonated(viewer_user_id, iid)
-        views = 0
-        res_cnt = 0
-        if not resonated:
-            payload_res = {"viewer_user_id": str(viewer_user_id), "q_instance_id": iid, "q_key": str(qk), "created_at": _now_iso()}
-            resp2 = await _sb_post(f"/rest/v1/{RESONANCES_TABLE}", json=payload_res, prefer="resolution=merge-duplicates,return=minimal")
-            if resp2.status_code >= 300:
-                logger.error("Supabase %s insert failed (echoes->resonance): %s %s", RESONANCES_TABLE, resp2.status_code, (resp2.text or "")[:800])
-                raise HTTPException(status_code=502, detail="Failed to confirm resonance")
-            if qid > 0:
-                await _insert_resonance_log(target_user_id=tgt, viewer_user_id=viewer_user_id, question_id=int(qid), q_key=qk, q_instance_id=iid)
-            counts = await _inc_metric(q_key=qk, q_instance_id=iid, field="resonances", delta=1)
-            views = int(counts.get("views") or 0)
-            res_cnt = int(counts.get("resonances") or 0)
-            resonated = True
-        else:
-            metrics = await _fetch_instance_metrics({iid})
-            m = metrics.get(iid) or {}
-            try:
-                views = int(m.get("views") or 0)
-            except Exception:
-                views = 0
-            try:
-                res_cnt = int(m.get("resonances") or 0)
-            except Exception:
-                res_cnt = 0
+        counts = await _apply_piece_reaction(ctx, str(viewer_user_id), "echo", echo={
+            "strength": strength, "memo": memo,
+            "question": ctx.get("context_question"), "answer": ctx.get("context_answer"),
+            "topic_key": ctx.get("context_topic_key"), "category": ctx.get("context_category"),
+        })
+        views, res_cnt, resonated = counts["views"], counts["resonances"], True
         try:
             await enqueue_global_snapshot_refresh(
                 user_id=viewer_user_id,
@@ -4104,53 +3979,12 @@ def register_piece_runtime_routes(app: FastAPI) -> None:
         ctx = await _resolve_qna_context_for_reaction(viewer_user_id=viewer_user_id, q_instance_id=req.q_instance_id, q_key=req.q_key)
         tgt = str(ctx.get("target_user_id") or "")
         qk = str(ctx.get("q_key") or "")
-        iid = str(req.q_instance_id or "").strip()
+        iid = ctx["q_instance_id"]
         if tgt == viewer_user_id:
             raise HTTPException(status_code=400, detail="Self echoes is not allowed")
-        resp_del = await _sb_delete(
-            f"/rest/v1/{ECHOES_TABLE}",
-            params={
-                "viewer_user_id": f"eq.{viewer_user_id}",
-                "q_instance_id": f"eq.{iid}",
-                "select": "created_at",
-            },
-            prefer="return=representation",
-        )
-        if resp_del.status_code >= 300:
-            logger.error("Supabase %s delete failed (echoes): %s %s", ECHOES_TABLE, resp_del.status_code, (resp_del.text or "")[:800])
-            raise HTTPException(status_code=502, detail="Failed to delete echoes")
-        deleted_echo_activity_dates: List[str] = []
-        try:
-            deleted_rows = resp_del.json()
-        except Exception:
-            deleted_rows = []
-        if isinstance(deleted_rows, list):
-            for row in deleted_rows:
-                if not isinstance(row, dict):
-                    continue
-                deleted_created_at = str(row.get("created_at") or "").strip()
-                if deleted_created_at:
-                    deleted_echo_activity_dates.append(deleted_created_at)
-        was_resonated = await _is_resonated(viewer_user_id, iid)
-        resp_del2 = await _sb_delete(f"/rest/v1/{RESONANCES_TABLE}", params={"viewer_user_id": f"eq.{viewer_user_id}", "q_instance_id": f"eq.{iid}"}, prefer="return=minimal")
-        if resp_del2.status_code >= 300:
-            logger.error("Supabase %s delete failed (resonances): %s %s", RESONANCES_TABLE, resp_del2.status_code, (resp_del2.text or "")[:800])
-            raise HTTPException(status_code=502, detail="Failed to delete resonance state")
-        if was_resonated:
-            counts = await _inc_metric(q_key=qk, q_instance_id=iid, field="resonances", delta=-1)
-            views = int(counts.get("views") or 0)
-            res_cnt = int(counts.get("resonances") or 0)
-        else:
-            metrics = await _fetch_instance_metrics({iid})
-            m = metrics.get(iid) or {}
-            try:
-                views = int(m.get("views") or 0)
-            except Exception:
-                views = 0
-            try:
-                res_cnt = int(m.get("resonances") or 0)
-            except Exception:
-                res_cnt = 0
+        counts = await _apply_piece_reaction(ctx, str(viewer_user_id), "remove")
+        deleted_echo_activity_dates = counts["deleted_echo_activity_dates"]
+        views, res_cnt = counts["views"], counts["resonances"]
         requested_at = _now_iso()
         try:
             await enqueue_global_snapshot_refresh(
@@ -4217,7 +4051,7 @@ def register_piece_runtime_routes(app: FastAPI) -> None:
             raise HTTPException(status_code=401, detail="Invalid token")
         ctx = await _resolve_qna_context_for_reaction(viewer_user_id=viewer_user_id, q_instance_id=q_instance_id, q_key=q_key)
         qk = str(ctx.get("q_key") or "")
-        iid = str(q_instance_id or "").strip()
+        iid = ctx["q_instance_id"]
         tier_str, retention = await _resolve_history_retention_for_user(
             viewer_user_id,
             now_utc=datetime.now(timezone.utc),
@@ -4243,7 +4077,7 @@ def register_piece_runtime_routes(app: FastAPI) -> None:
             params=_apply_created_at_retention({
                 "select": "strength,memo,created_at",
                 "viewer_user_id": f"eq.{viewer_user_id}",
-                "q_instance_id": f"eq.{iid}",
+                "q_instance_id": _quoted_in(ctx["alias_groups"][iid]),
                 "order": "created_at.desc",
                 "limit": "1",
             }),
@@ -4261,25 +4095,25 @@ def register_piece_runtime_routes(app: FastAPI) -> None:
 
         total = await _sb_count_rows(
             f"/rest/v1/{ECHOES_TABLE}",
-            params=_apply_created_at_retention({"q_instance_id": f"eq.{iid}"}),
+            params=_apply_created_at_retention({"q_instance_id": _quoted_in(ctx["alias_groups"][iid])}),
         )
         cnt_small = await _sb_count_rows(
             f"/rest/v1/{ECHOES_TABLE}",
-            params=_apply_created_at_retention({"q_instance_id": f"eq.{iid}", "strength": "eq.small"}),
+            params=_apply_created_at_retention({"q_instance_id": _quoted_in(ctx["alias_groups"][iid]), "strength": "eq.small"}),
         )
         cnt_medium = await _sb_count_rows(
             f"/rest/v1/{ECHOES_TABLE}",
-            params=_apply_created_at_retention({"q_instance_id": f"eq.{iid}", "strength": "eq.medium"}),
+            params=_apply_created_at_retention({"q_instance_id": _quoted_in(ctx["alias_groups"][iid]), "strength": "eq.medium"}),
         )
         cnt_large = await _sb_count_rows(
             f"/rest/v1/{ECHOES_TABLE}",
-            params=_apply_created_at_retention({"q_instance_id": f"eq.{iid}", "strength": "eq.large"}),
+            params=_apply_created_at_retention({"q_instance_id": _quoted_in(ctx["alias_groups"][iid]), "strength": "eq.large"}),
         )
         resp = await _sb_get(
             f"/rest/v1/{ECHOES_TABLE}",
             params=_apply_created_at_retention({
                 "select": "strength,created_at",
-                "q_instance_id": f"eq.{iid}",
+                "q_instance_id": _quoted_in(ctx["alias_groups"][iid]),
                 "order": "created_at.desc",
                 "limit": str(eff_limit + 1),
                 "offset": str(eff_offset),

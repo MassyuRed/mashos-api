@@ -1,0 +1,59 @@
+{
+  "source_commit": "e53e8af8513bd567e1df9bca1b09dad4977e230c",
+  "source_tree": "dbe1cde22eecce5dd3bf6e480e02371f13ba33eb",
+  "capture_method": "Independent isolated u347 source checkout; no current-code legacy patch.",
+  "memo": "友達からの誘いを断って、一人で休めたことにほっとした。でも、もう誘ってもらえなくなるかもしれないと思うと寂しい。褒められたのに、嬉しくなかった。何が不安なのか、自分でもまだわからない。",
+  "initial": {
+    "q1": {
+      "checkpoint_sha": "42fb11f1a7609773756283baa760a4e5bcc1d5a883e10e37697dfca7a619101c",
+      "checkpoint_id": "emlis-checkpoint-b21aef571283a5599f52622b43256f96f10c0c5249f3ea4ec96e05d79078fd65",
+      "original_plan_sha": "0280677e11b2e5973c29086340e5ffc2d39e133207ba3a1f5b70b19edcb1f0f1",
+      "artifact": null,
+      "question": null,
+      "question_decision": {
+        "disposition": "BLOCKED",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "prequestion_body_unavailable"
+      },
+      "reasons": [
+        "emlis_q3_initial_body_unavailable"
+      ],
+      "status": "UNAVAILABLE",
+      "body_state": "UNAVAILABLE",
+      "plan_sha": "0280677e11b2e5973c29086340e5ffc2d39e133207ba3a1f5b70b19edcb1f0f1",
+      "projection_error": "LIMITED_RECEPTION_CAPABILITY_GAP_STOP"
+    },
+    "q3": {
+      "checkpoint_sha": "232fc35eb49cdd956e1eb27bf20a7e73128c6cb0a3be181b0e438ef2e6ec161b",
+      "checkpoint_id": "emlis-checkpoint-f8f888b9d45d9a5ccb914bebeee7247ffee00dd2f100f90f52eb10c73c7ae340",
+      "original_plan_sha": "0280677e11b2e5973c29086340e5ffc2d39e133207ba3a1f5b70b19edcb1f0f1",
+      "artifact": null,
+      "question": null,
+      "question_decision": {
+        "disposition": "BLOCKED",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "prequestion_body_unavailable"
+      },
+      "reasons": [
+        "emlis_q3_initial_body_unavailable"
+      ],
+      "status": "UNAVAILABLE",
+      "body_state": "UNAVAILABLE",
+      "plan_sha": "0280677e11b2e5973c29086340e5ffc2d39e133207ba3a1f5b70b19edcb1f0f1",
+      "projection_error": "LIMITED_RECEPTION_CAPABILITY_GAP_STOP"
+    }
+  },
+  "isolated_checkout_commit": "0f14462bc35a57fd5d49b05fc212a54e5ad1e9cf"
+}

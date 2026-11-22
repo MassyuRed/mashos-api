@@ -3332,6 +3332,54 @@ except Exception:
 MYPROFILE_LATEST_PERIOD = str(os.getenv("MYPROFILE_LATEST_PERIOD", "28d") or "28d").strip() or "28d"
 
 
+async def prepare_saved_analysis_observed_map(authorization: _Optional[str], *,
+        period_start: str, period_end: str, report_mode: str,
+        previous_period_start: _Optional[str] = None,
+        previous_period_end: _Optional[str] = None) -> _Dict[str, _Any]:
+    """Read-only V2 generation from authenticated saved inputs.
+
+    Intentionally separate from the legacy builder (also called by /mymodel,
+    cron and workers). This is not yet an HTTP route or a storage writer.
+    No private preview/artifact escapes and no V1 fallback runs on failure.
+    """
+    from astor_material_snapshots import (
+        AnalysisSavedSourceError, load_analysis_saved_period, recheck_analysis_saved_period,
+    )
+    from cocolon_meaning_experience_engine import MeaningExperienceEngine
+    from cocolon_meaning_experience_engine.contracts import EngineStatus
+    from cocolon_meaning_experience_engine.cores.analysis.source_adapter import AnalysisSourceError
+    from dataclasses import replace
+    try:
+        if (previous_period_start is None) != (previous_period_end is None):
+            raise AnalysisSavedSourceError('analysis_comparison_period_incomplete')
+        saved = await load_analysis_saved_period(authorization, period_start=period_start,
+            period_end=period_end, report_mode=report_mode)
+        previous = None
+        request = saved.request
+        if previous_period_start is not None:
+            previous = await load_analysis_saved_period(authorization,
+                period_start=previous_period_start, period_end=previous_period_end, report_mode=report_mode)
+            if previous.subscription_tier != saved.subscription_tier:
+                raise AnalysisSavedSourceError('analysis_saved_source_changed')
+            request = replace(request, comparison_previous_request=previous.request)
+        outcome = await _asyncio.to_thread(MeaningExperienceEngine().generate, request)
+        if outcome.status != EngineStatus.GENERATED or outcome.artifact is None:
+            return {'status': 'UNAVAILABLE', 'reason_codes': list(outcome.reason_codes)}
+        projection = outcome.artifact.safe_projection(
+            authenticated_owner_scope=saved.request.authenticated_owner_scope)
+        text = outcome.artifact.safe_text_projection(
+            authenticated_owner_scope=saved.request.authenticated_owner_scope)
+        await recheck_analysis_saved_period(authorization, saved)
+        if previous is not None:
+            await recheck_analysis_saved_period(authorization, previous)
+        return {'status': 'GENERATED', 'report_mode': report_mode,
+                'content_text': text['text'], 'meta': projection}
+    except AnalysisSavedSourceError as exc:
+        return {'status': 'UNAVAILABLE', 'reason_codes': [str(exc)]}
+    except AnalysisSourceError:
+        return {'status': 'UNAVAILABLE', 'reason_codes': ['analysis_safe_surface_unavailable']}
+
+
 def _now_iso_z() -> str:
     return (
         _datetime.now(_timezone.utc)
@@ -3427,6 +3475,17 @@ async def refresh_myprofile_monthly_report(
     if not uid:
         raise ValueError("user_id is required")
 
+    from analysis_observed_service import observed_enabled
+    if observed_enabled():
+        if not include_secret:
+            raise ValueError('analysis_source_scope_override_unavailable')
+        from analysis_cumulative_service import ensure_map
+        result = await ensure_map(uid, monthly=True)
+        return {'status': 'ok', 'user_id': uid, 'period': 'all', 'report_mode': 'standard',
+            'generated_at': result['generated_at'], 'report_id': result['report_id'],
+            'source_profile': 'cumulative.v1', 'report_text': result['content_text'] or '',
+            'report_meta': result['meta'] or {}, 'history_saved': result['history_saved']}
+
     period_used = str(period_override or "28d").strip() or "28d"
     report_mode = _normalize_report_mode(report_mode_override)
     now_dt = (now or _dt.datetime.now(_dt.timezone.utc)).astimezone(_dt.timezone.utc).replace(microsecond=0)
@@ -3474,6 +3533,15 @@ async def refresh_myprofile_latest_report(
     uid = str(user_id or "").strip()
     if not uid:
         raise ValueError("user_id is required")
+
+    from analysis_observed_service import observed_enabled
+    if observed_enabled():
+        from analysis_cumulative_service import ensure_map
+        result = await ensure_map(uid, force=force)
+        # Worker callers log this result. Do not return private map contents.
+        return {'status': 'ok' if result['has_visible_content'] else 'empty',
+            'user_id': uid, 'report_mode': 'standard', 'period': 'all',
+            'generated_at': result['generated_at']}
 
     period_used = str(period_override or MYPROFILE_LATEST_PERIOD or "28d").strip() or "28d"
 

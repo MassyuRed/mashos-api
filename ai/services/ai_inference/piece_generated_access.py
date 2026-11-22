@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Set, Tuple
+from uuid import UUID
 
 from fastapi import HTTPException
 
@@ -72,13 +73,19 @@ def generated_row_sort_key(row: Dict[str, Any]) -> Tuple[str, str]:
 async def fetch_emotion_generated_row_by_instance_id(q_instance_id: str) -> Optional[Dict[str, Any]]:
     lookup_values = generated_lookup_values(q_instance_id)
     lookup_id = generated_lookup_id(q_instance_id)
+    try:
+        database_id = str(UUID(lookup_id))
+    except (ValueError, TypeError, AttributeError):
+        database_id = None
     merged: Dict[str, Dict[str, Any]] = {}
-    if lookup_id:
+    # public_id is text and can contain a historical non-UUID alias. Sending
+    # that alias to the UUID id column aborts before its valid text lookup.
+    if database_id:
         rows = await sb_get_json(
             f"/rest/v1/{MYMODEL_REFLECTIONS_READ_TABLE}",
             params={
                 "select": "*",
-                "id": f"eq.{lookup_id}",
+                "id": f"eq.{database_id}",
                 "source_type": f"eq.{EMOTION_GENERATED_SOURCE_TYPE}",
                 "is_active": "eq.true",
                 "status": "in.(ready,published)",

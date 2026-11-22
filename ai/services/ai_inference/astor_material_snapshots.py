@@ -33,12 +33,15 @@ v1 のスコープ
 
 from __future__ import annotations
 
+import asyncio
+from dataclasses import dataclass, field
 import hashlib
 import json
 import logging
 import os
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
+from uuid import UUID, uuid4
 
 import httpx
 
@@ -52,6 +55,216 @@ except Exception:  # pragma: no cover
 
 
 logger = logging.getLogger("astor_material_snapshots")
+
+
+class AnalysisSavedSourceError(ValueError):
+    """Fixed codes only; source bodies and database errors stay private."""
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class AnalysisSavedPeriod:
+    """Request-local source snapshot, not a durable read/write authorization."""
+    request: Any = field(repr=False)
+    subscription_tier: str
+    report_mode: str
+    source_guards: tuple = field(repr=False)
+
+
+async def _analysis_period_ids(owner: str, start: str, end: str) -> tuple[str, ...]:
+    from supabase_client import sb_get
+    try:
+        response = await sb_get('/rest/v1/emotions', params={
+            'select': 'id', 'user_id': 'eq.' + owner,
+            'and': '(created_at.gte.' + start + ',created_at.lt.' + end + ')',
+            'order': 'created_at.asc,id.asc', 'limit': '101',
+        }, prefer='count=exact', timeout=8.0)
+        if response.status_code not in (200, 206):
+            raise AnalysisSavedSourceError('analysis_saved_source_unavailable')
+        rows = response.json()
+        total_text = response.headers.get('content-range', '').rsplit('/', 1)[-1]
+        if not total_text.isdecimal() or not isinstance(rows, list):
+            raise AnalysisSavedSourceError('analysis_period_incomplete')
+        total = int(total_text)
+        if total > 100 or len(rows) > 100:
+            raise AnalysisSavedSourceError('analysis_period_limit_exceeded')
+        ids = tuple(str(UUID(row['id'])) for row in rows if type(row) is dict and set(row) == {'id'})
+        if total != len(rows) or len(ids) != len(rows) or len(set(ids)) != len(ids):
+            raise AnalysisSavedSourceError('analysis_period_incomplete')
+        return ids
+    except AnalysisSavedSourceError:
+        raise
+    except (httpx.HTTPError, ValueError, TypeError, KeyError, AttributeError):
+        raise AnalysisSavedSourceError('analysis_saved_source_unavailable') from None
+
+
+def _analysis_saved_member(snapshot, *, owner, input_id, tier, start, end, cumulative=False):
+    from cocolon_meaning_experience_engine.cores.analysis.source_adapter import (
+        AnalysisDeepInsightQuestion, AnalysisSavedRecord, AnalysisSupplement, ORIGINAL_FIELDS,
+        canonical_bytes, commitment, _time,
+    )
+    from emlis_thread_service import _check, _request
+    from emlis_thread_store import ThreadStoreError
+    from cocolon_meaning_experience_engine.emlis_thread_source import admit_emlis_thread
+    from cocolon_meaning_experience_engine.source_kernel import SourceAdmissionError
+    try:
+        original = snapshot['original']
+        if (type(original) is not dict or set(original) != ORIGINAL_FIELDS
+                or original['id'] != input_id or snapshot['tier'] != tier):
+            raise AnalysisSavedSourceError('analysis_saved_source_changed')
+        created = _time(original['created_at'], saved_utc=True)
+        if not start <= created < end:
+            raise AnalysisSavedSourceError('analysis_saved_source_changed')
+        if cumulative:
+            # Map scope is all owned inputs, independent of the general input
+            # history window. Never impersonate a higher subscription tier.
+            thread = snapshot.get('thread')
+            if thread and (thread.get('user_id') != owner
+                    or thread.get('original_emotion_id') != input_id):
+                raise AnalysisSavedSourceError('analysis_saved_owner_mismatch')
+            if thread and thread.get('source_snapshot') != original:
+                # After an input edit, answers bound to the older original are
+                # not answers to its replacement. The current original remains.
+                thread = None
+                snapshot = dict(snapshot, thread=None, events=[])
+            if thread and thread['data']['runtime_profile'] not in {
+                    'q2.free.one_round.v1', 'q3.plan.sequential.v1'}:
+                raise AnalysisSavedSourceError('analysis_saved_source_invalid')
+        else:
+            thread = _check(snapshot)
+        events = snapshot['events']
+        if type(events) is not list or any(type(e) is not dict for e in events):
+            raise AnalysisSavedSourceError('analysis_saved_source_invalid')
+        deep_insight = None
+        if 'deep_insight' in snapshot:
+            if (not cumulative or thread is not None or events
+                    or type(snapshot['deep_insight']) is not dict):
+                raise AnalysisSavedSourceError('analysis_saved_source_invalid')
+            deep_insight = AnalysisDeepInsightQuestion(**snapshot['deep_insight'])
+            if deep_insight.user_id != owner:
+                raise AnalysisSavedSourceError('analysis_saved_owner_mismatch')
+        if thread is None:
+            if events:
+                raise AnalysisSavedSourceError('analysis_saved_source_invalid')
+            answers, corrections, guard = (), (), None
+        else:
+            if (thread['user_id'] != owner or thread['original_emotion_id'] != input_id
+                    or type(thread['revision']) is not int or thread['revision'] < 1
+                    or any(e['thread_id'] != thread['id'] for e in events)):
+                raise AnalysisSavedSourceError('analysis_saved_source_invalid')
+            answer_events = [e for e in events if e['kind'] == 'ANSWER']
+            request = _request(snapshot, include_context=False, analysis_source_only=True) if cumulative else _request(snapshot, include_context=False)
+            admitted = admit_emlis_thread(request)
+            corrections = admitted.control.interpretation_corrections
+            correction_events = [e for e in events if e['kind'] == 'OPERATION'
+                and e['payload'].get('stage') == 'INTERPRETATION_CORRECTION']
+            if len(corrections) != len(correction_events):
+                raise AnalysisSavedSourceError('analysis_saved_source_invalid')
+            for correction, event in zip(corrections, correction_events):
+                targets = [e for e in events if e['id'] == correction.target_event_id]
+                target = targets[0] if len(targets) == 1 else None
+                if (event['id'] != correction.correction_id or target is None
+                        or target['kind'] != 'OBSERVATION'
+                        or type(target['payload'].get('text')) is not str
+                        or target['payload']['text'].count(correction.target_text) != 1
+                        or events.index(target) >= events.index(event)):
+                    raise AnalysisSavedSourceError('analysis_saved_source_invalid')
+            question_events = [e for e in events if e['kind'] == 'QUESTION']
+            question_ids = [e['question_id'] for e in question_events]
+            if (len(set(question_ids)) != len(question_ids)
+                    or len(question_events) != thread['issued_count']
+                    or any(e['question_id'] != e['payload']['question_id']
+                        or e['thread_id'] != e['payload']['thread_id']
+                        or e['round_index'] != index
+                        or e['payload']['original_source_ref'] != request.emlis_thread.original_source_ref
+                        for index, e in enumerate(question_events, 1))
+                    or any(e['question_id'] not in question_ids for e in answer_events)):
+                raise AnalysisSavedSourceError('analysis_saved_source_invalid')
+            answers = tuple(a.source for a in admitted.answers)
+            if len(answers) != len(answer_events) or any(
+                    a.answer_id != e['id'] or a.question_id != e['question_id']
+                    or a.round_index != e['round_index'] for a, e in zip(answers, answer_events)):
+                raise AnalysisSavedSourceError('analysis_saved_source_invalid')
+            guard = commitment([thread['id'], thread['revision'], question_events,
+                                [e['payload']['source'] for e in answer_events]])
+            if corrections:
+                guard = commitment([guard, correction_events])
+        record_version = commitment(original)
+        supplements = tuple(AnalysisSupplement(a.answer_id, owner, input_id,
+            record_version, a.answer_text_private, commitment(a.answer_text_private), a.source_role)
+            for a in answers)
+        member = AnalysisSavedRecord(owner, input_id, record_version,
+            canonical_bytes(original).decode('utf-8'), supplements,
+            interpretation_corrections=corrections, deep_insight=deep_insight)
+        return member, (input_id, record_version, guard)
+    except AnalysisSavedSourceError:
+        raise
+    except (ThreadStoreError, SourceAdmissionError, ValueError, TypeError, KeyError, AttributeError):
+        raise AnalysisSavedSourceError('analysis_saved_source_invalid') from None
+
+
+async def load_analysis_saved_period(authorization: Optional[str], *,
+        period_start: str, period_end: str, report_mode: str) -> AnalysisSavedPeriod:
+    """Authenticate, read the complete retained period, bind original/answers.
+
+    Uses the existing owner/retention-checked saved-input RPC. No caller-owned
+    user ID, generated Emlis body, question text or derived snapshot is input.
+    This reader does not persist, activate a route or authorize a later write.
+    """
+    from api_account_visibility import _require_user_id
+    from fastapi import HTTPException
+    from subscription import SubscriptionTier, MyProfileMode, is_myprofile_mode_allowed
+    from subscription_store import get_subscription_tier_for_user
+    from emlis_thread_store import EmlisThreadStore, ThreadStoreError
+    from cocolon_meaning_experience_engine.cores.analysis.source_adapter import AnalysisObservedMapRequest, _time
+    from publish_governance import timestamp_in_history_retention
+    try:
+        owner = str(UUID(await _require_user_id(authorization)))
+    except (HTTPException, httpx.HTTPError, ValueError, TypeError, AttributeError):
+        raise AnalysisSavedSourceError('analysis_auth_unavailable') from None
+    try:
+        start, end = _time(period_start), _time(period_end)
+        if start >= end or end > datetime.now(timezone.utc):
+            raise AnalysisSavedSourceError('analysis_period_invalid')
+        modes = {'light': MyProfileMode.LIGHT, 'standard': MyProfileMode.STANDARD,
+                 'deep': MyProfileMode.STRUCTURAL}
+        tier = await get_subscription_tier_for_user(owner, default=SubscriptionTier.FREE)
+        if (tier not in tuple(SubscriptionTier) or report_mode not in modes
+                or not is_myprofile_mode_allowed(tier, modes[report_mode])):
+            raise AnalysisSavedSourceError('analysis_report_mode_unavailable')
+        # Never call a partially retained interval a complete period.
+        now = datetime.now(timezone.utc)
+        if not timestamp_in_history_retention(start.isoformat(), tier.value, now):
+            raise AnalysisSavedSourceError('analysis_period_not_retained')
+        ids = await _analysis_period_ids(owner, start.isoformat(), end.isoformat())
+        store, semaphore = EmlisThreadStore(), asyncio.Semaphore(4)
+        async def read(input_id):
+            async with semaphore:
+                snapshot = await store.read(owner, input_id=input_id)
+                return _analysis_saved_member(snapshot, owner=owner, input_id=input_id,
+                    tier=tier.value, start=start, end=end)
+        records = await asyncio.gather(*(read(input_id) for input_id in ids))
+        request = AnalysisObservedMapRequest('analysis-saved-' + uuid4().hex, owner,
+            start.isoformat(), end.isoformat(), tuple(member for member, guard in records))
+        return AnalysisSavedPeriod(request, tier.value, report_mode, tuple(guard for member, guard in records))
+    except AnalysisSavedSourceError:
+        raise
+    except (ThreadStoreError, HTTPException, httpx.HTTPError, ValueError, TypeError, KeyError, AttributeError):
+        raise AnalysisSavedSourceError('analysis_saved_source_unavailable') from None
+
+
+async def recheck_analysis_saved_period(authorization: Optional[str], saved: AnalysisSavedPeriod) -> None:
+    """Reject a changed cohort/answer/access before returning a generated view.
+
+    A second read is not an atomic save or an ongoing permission. Durable
+    publication must eventually recheck in the storage transaction itself.
+    """
+    fresh = await load_analysis_saved_period(authorization,
+        period_start=saved.request.period_start, period_end=saved.request.period_end,
+        report_mode=saved.report_mode)
+    if (fresh.request.authenticated_owner_scope != saved.request.authenticated_owner_scope
+            or fresh.subscription_tier != saved.subscription_tier
+            or fresh.source_guards != saved.source_guards):
+        raise AnalysisSavedSourceError('analysis_saved_source_changed')
 
 SUPABASE_URL = (os.getenv("SUPABASE_URL") or "").rstrip("/")
 SUPABASE_SERVICE_ROLE_KEY = (os.getenv("SUPABASE_SERVICE_ROLE_KEY") or "").strip()
@@ -160,18 +373,29 @@ def _sb_headers(*, prefer: str = "") -> Dict[str, str]:
     return h
 
 
-async def _sb_get_json(path: str, *, params: List[Tuple[str, str]], timeout: float = 8.0) -> List[Dict[str, Any]]:
+async def _sb_get_json(path: str, *, params: List[Tuple[str, str]], timeout: float = 8.0,
+        strict: bool = False) -> List[Dict[str, Any]]:
     if not _has_supabase_config():
+        if strict:
+            raise RuntimeError("emotion_period_source_unavailable")
         return []
     url = f"{SUPABASE_URL}{path}"
     async with httpx.AsyncClient(timeout=timeout) as client:
         resp = await client.get(url, headers=_sb_headers(), params=params)
     if resp.status_code not in (200, 206):
+        if strict:
+            if resp.status_code == 404:
+                raise FileNotFoundError("emotion_material_source_not_found")
+            raise RuntimeError("emotion_period_source_unavailable")
         raise RuntimeError(f"Supabase GET failed: {resp.status_code} {(resp.text or '')[:800]}")
     try:
         data = resp.json()
     except Exception:
+        if strict:
+            raise RuntimeError("emotion_period_source_unavailable") from None
         return []
+    if strict and (not isinstance(data, list) or any(not isinstance(row, dict) for row in data)):
+        raise RuntimeError("emotion_period_source_unavailable")
     if isinstance(data, list):
         return [x for x in data if isinstance(x, dict)]
     return []
@@ -233,7 +457,7 @@ def _latest_monthly_scope_for_now(now_utc: Optional[datetime] = None) -> str:
 
 
 async def fetch_emotion_meta_for_hash(user_id: str, *, start_iso: Optional[str] = None, end_iso: Optional[str] = None) -> List[Dict[str, Any]]:
-    """Fetch (id, created_at, is_secret) rows for hashing.
+    """Fetch source fields used by the emotion material identity.
 
     Uses pagination and caps at SNAPSHOT_META_MAX_ROWS to avoid runaway loads.
     """
@@ -253,7 +477,7 @@ async def fetch_emotion_meta_for_hash(user_id: str, *, start_iso: Optional[str] 
 
         
         params: List[Tuple[str, str]] = [
-            ("select", "id,created_at,is_secret,category"),
+            ("select", "id,created_at,is_secret,memo,memo_action,category,emotions,emotion_details,emotion_strength_avg"),
             ("user_id", f"eq.{uid}"),
         ]
         if start_iso:
@@ -262,7 +486,7 @@ async def fetch_emotion_meta_for_hash(user_id: str, *, start_iso: Optional[str] 
             params.append(("created_at", f"lte.{end_iso}"))
         params.extend(
             [
-                ("order", "created_at.asc"),
+                ("order", "created_at.asc,id.asc"),
                 ("limit", str(limit)),
                 ("offset", str(offset)),
             ]
@@ -271,15 +495,13 @@ async def fetch_emotion_meta_for_hash(user_id: str, *, start_iso: Optional[str] 
         rows = await _sb_get_json(
             "/rest/v1/emotions",
             params=params,
+            strict=True,
         )
         if not rows:
             break
 
         out.extend(rows)
-        if len(rows) < limit:
-            break
-
-        offset += limit
+        offset += len(rows)
 
     return out
 
@@ -290,18 +512,33 @@ async def fetch_recent_emotions(user_id: str, *, include_secret: bool) -> List[D
     if not uid:
         return []
 
-    params: List[Tuple[str, str]] = [
-        ("select", "id,created_at,emotions,emotion_details,memo,memo_action,is_secret,emotion_strength_avg,category"),
-        ("user_id", f"eq.{uid}"),
-        ("order", "created_at.desc"),
-        ("limit", str(max(1, int(SNAPSHOT_RECENT_EMOTIONS_LIMIT)))),
-    ]
-    if not include_secret:
-        params.append(("is_secret", "eq.false"))
-
-    rows = await _sb_get_json("/rest/v1/emotions", params=params)
+    rows: List[Dict[str, Any]] = []
+    maximum = max(1, int(SNAPSHOT_RECENT_EMOTIONS_LIMIT))
+    while len(rows) < maximum:
+        params: List[Tuple[str, str]] = [
+            ("select", "id,created_at,emotions,emotion_details,memo,memo_action,is_secret,emotion_strength_avg,category"),
+            ("user_id", f"eq.{uid}"),
+            ("order", "created_at.desc,id.desc"),
+            ("limit", str(maximum - len(rows))),
+            ("offset", str(len(rows))),
+        ]
+        if not include_secret:
+            params.append(("is_secret", "eq.false"))
+        page = await _sb_get_json("/rest/v1/emotions", params=params, strict=True)
+        if not page:
+            break
+        rows.extend(page)
     # order is desc; make it asc for readability
     return list(reversed(rows))
+
+
+def _emotion_input_content_signature(row: Dict[str, Any]) -> str:
+    """Fingerprint every input dimension without retaining source text in metadata."""
+    content = {key: row.get(key) for key in (
+        "memo", "memo_action", "category", "emotions", "emotion_details", "emotion_strength_avg",
+    )}
+    encoded = json.dumps(content, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
 def compute_source_hash_from_emotion_meta(
@@ -311,29 +548,23 @@ def compute_source_hash_from_emotion_meta(
     snapshot_type: str,
     meta_rows: List[Dict[str, Any]],
 ) -> str:
-    """Compute a stable sha256 hash based on emotion meta rows.
-
-    We hash only meta fields to keep memory usage stable.
-    Hash changes when:
-    - a new row is added
-    - is_secret toggles (if included in the snapshot_type)
-    """
+    """Fingerprint membership, visibility and complete emotion input contents."""
     uid = str(user_id or "").strip()
     sc = str(scope or "").strip() or SNAPSHOT_SCOPE_DEFAULT
     st = str(snapshot_type or "").strip() or "internal"
 
     h = hashlib.sha256()
-    h.update(f"v1|{uid}|{sc}|{st}|".encode("utf-8"))
+    h.update(f"v2|{uid}|{sc}|{st}|".encode("utf-8"))
 
-    for r in meta_rows:
+    for r in sorted(meta_rows, key=lambda row: (str(row.get("created_at") or ""), str(row.get("id") or ""))):
         rid = str(r.get("id") or "")
         created_at = str(r.get("created_at") or "")
         is_secret = bool(r.get("is_secret"))
         # public snapshots should exclude secret rows entirely
         if st == "public" and is_secret:
             continue
-        category_sig = _category_signature(r.get("category"))
-        h.update((rid + "|" + created_at + "|" + ("1" if is_secret else "0") + "|" + category_sig + "\n").encode("utf-8"))
+        content_sig = _emotion_input_content_signature(r)
+        h.update((rid + "|" + created_at + "|" + ("1" if is_secret else "0") + "|" + content_sig + "\n").encode("utf-8"))
 
     return h.hexdigest()
 
@@ -546,31 +777,37 @@ async def _fetch_optional_rows_by_user(
     mx = max(ps, int(max_rows or 20000))
 
     while True:
-        limit = min(ps, mx - len(out))
+        limit = min(ps, mx - offset)
         if limit <= 0:
             break
 
-        rows = await _safe_optional_sb_get_json(
-            f"/rest/v1/{tbl}",
-            params=[
-                ("select", "*"),
-                (col, f"eq.{uid}"),
-                ("order", "created_at.asc"),
-                ("limit", str(limit)),
-                ("offset", str(offset)),
-            ],
-            timeout=10.0,
-        )
+        try:
+            rows = await _sb_get_json(
+                f"/rest/v1/{tbl}",
+                params=[
+                    ("select", "*"),
+                    (col, f"eq.{uid}"),
+                    ("order", "created_at.asc,id.asc"),
+                    ("limit", str(limit)),
+                    ("offset", str(offset)),
+                ],
+                timeout=10.0,
+                strict=True,
+            )
+        except FileNotFoundError:
+            # An optional source may be absent, but a failed later page is
+            # never evidence that the source ended successfully.
+            if offset == 0:
+                return []
+            raise
         if not rows:
             break
 
+        offset += len(rows)
         if not include_secret:
             rows = [r for r in rows if not _row_is_secret(r)]
 
         out.extend(rows)
-        if len(rows) < limit:
-            break
-        offset += limit
 
     out.sort(key=lambda r: (_row_created_at(r), str(r.get("id") or "")))
     return out
@@ -600,21 +837,19 @@ async def fetch_emotions_for_self_structure(
         params: List[Tuple[str, str]] = [
             ("select", "id,created_at,emotions,emotion_details,memo,memo_action,is_secret,emotion_strength_avg,category"),
             ("user_id", f"eq.{uid}"),
-            ("order", "created_at.asc"),
+            ("order", "created_at.asc,id.asc"),
             ("limit", str(limit)),
             ("offset", str(offset)),
         ]
         if not include_secret:
             params.append(("is_secret", "eq.false"))
 
-        rows = await _sb_get_json("/rest/v1/emotions", params=params, timeout=10.0)
+        rows = await _sb_get_json("/rest/v1/emotions", params=params, timeout=10.0, strict=True)
         if not rows:
             break
 
         out.extend(rows)
-        if len(rows) < limit:
-            break
-        offset += limit
+        offset += len(rows)
 
     return out
 
@@ -648,21 +883,19 @@ async def fetch_emotions_for_premium_reflection(
         params: List[Tuple[str, str]] = [
             ("select", "*"),
             ("user_id", f"eq.{uid}"),
-            ("order", "created_at.asc"),
+            ("order", "created_at.asc,id.asc"),
             ("limit", str(limit)),
             ("offset", str(offset)),
         ]
         if not include_secret:
             params.append(("is_secret", "eq.false"))
 
-        rows = await _sb_get_json("/rest/v1/emotions", params=params, timeout=10.0)
+        rows = await _sb_get_json("/rest/v1/emotions", params=params, timeout=10.0, strict=True)
         if not rows:
             break
 
         out.extend(rows)
-        if len(rows) < limit:
-            break
-        offset += limit
+        offset += len(rows)
 
     return out
 
@@ -722,7 +955,7 @@ def _material_meta_rows_from_rows(material_kind: str, rows: List[Dict[str, Any]]
             "is_secret": _row_is_secret(r),
         }
         if mk == "emotion_input":
-            row["content_sig"] = _category_signature(r.get("category"))
+            row["content_sig"] = _emotion_input_content_signature(r)
         elif mk == "echo":
             row["content_sig"] = "|".join([
                 str(r.get("q_instance_id") or ""),
@@ -1266,11 +1499,11 @@ async def fetch_emotions_in_range(
     end_iso: str,
     include_secret: bool,
     page_size: int = 1000,
-    max_rows: int = 20000,
+    max_rows: Optional[int] = 20000,
 ) -> List[Dict[str, Any]]:
     """Fetch emotion rows in a period range (for aggregation / period snapshots).
 
-    Uses pagination and caps at max_rows to avoid runaway loads.
+    Uses stable pagination. Period snapshot owners pass None for complete input.
     """
     uid = str(user_id or "").strip()
     if not uid:
@@ -1279,34 +1512,31 @@ async def fetch_emotions_in_range(
     out: List[Dict[str, Any]] = []
     offset = 0
     ps = max(1, int(page_size or 1000))
-    mx = max(ps, int(max_rows or 20000))
+    mx = None if max_rows is None else max(ps, int(max_rows or 20000))
 
     while True:
-        limit = min(ps, mx - len(out))
+        limit = ps if mx is None else min(ps, mx - len(out))
         if limit <= 0:
             break
 
         params: List[Tuple[str, str]] = [
-            ("select", "id,created_at,emotions,emotion_details,memo,memo_action,is_secret,emotion_strength_avg"),
+            ("select", "id,created_at,emotions,emotion_details,memo,memo_action,is_secret,emotion_strength_avg,category"),
             ("user_id", f"eq.{uid}"),
             ("created_at", f"gte.{start_iso}"),
             ("created_at", f"lte.{end_iso}"),
-            ("order", "created_at.asc"),
+            ("order", "created_at.asc,id.asc"),
             ("limit", str(limit)),
             ("offset", str(offset)),
         ]
         if not include_secret:
             params.append(("is_secret", "eq.false"))
 
-        rows = await _sb_get_json("/rest/v1/emotions", params=params, timeout=10.0)
+        rows = await _sb_get_json("/rest/v1/emotions", params=params, timeout=10.0, strict=True)
         if not rows:
             break
 
         out.extend(rows)
-        if len(rows) < limit:
-            break
-
-        offset += limit
+        offset += len(rows)
 
     return out
 
@@ -1376,6 +1606,7 @@ async def get_emotion_period_public_input_stats(*, user_id: str, scope: str) -> 
         start_iso=start_iso,
         end_iso=end_iso,
         include_secret=False,
+        max_rows=None,
     )
     filtered_rows = filter_self_insight_only_emotion_rows(public_rows)
 
@@ -1462,9 +1693,10 @@ async def _load_emotion_period_current_materials(*, user_id: str, scope: str) ->
     if not period_start_iso or not period_end_iso:
         raise ValueError(f"Invalid period in scope: {sc}")
 
-    meta = await fetch_emotion_meta_for_hash(uid, start_iso=period_start_iso, end_iso=period_end_iso)
-    internal_rows = await fetch_emotions_in_range(uid, start_iso=period_start_iso, end_iso=period_end_iso, include_secret=True)
-    public_rows_data = await fetch_emotions_in_range(uid, start_iso=period_start_iso, end_iso=period_end_iso, include_secret=False)
+    internal_rows = await fetch_emotions_in_range(uid, start_iso=period_start_iso,
+        end_iso=period_end_iso, include_secret=True, max_rows=None)
+    meta = list(internal_rows)
+    public_rows_data = [row for row in internal_rows if not _row_is_secret(row)]
 
     exclude_ids = {str(r.get("id") or "") for r in internal_rows if _is_self_insight_only_row(r)}
     if exclude_ids:
@@ -1504,7 +1736,7 @@ async def get_emotion_period_public_input_status(*, user_id: str, scope: str) ->
 def _normalize_details(row: Dict[str, Any]) -> List[Dict[str, Any]]:
     """Normalize emotion details into [{type, strength}, ...]. (Match MyWeb logic)"""
     details = row.get("emotion_details")
-    if isinstance(details, list):
+    if isinstance(details, list) and details:
         out = []
         for it in details:
             if isinstance(it, dict):
@@ -1887,10 +2119,11 @@ async def _generate_and_store_emotion_period_snapshots(
     prev_period_end_iso = str(info.get("prev_period_end_iso") or "").strip()
     prev_period_start_utc = info.get("prev_period_start_utc")
 
-    # 1) Fetch current-period materials only.
-    meta = await fetch_emotion_meta_for_hash(uid, start_iso=period_start_iso, end_iso=period_end_iso)
-    internal_rows = await fetch_emotions_in_range(uid, start_iso=period_start_iso, end_iso=period_end_iso, include_secret=True)
-    public_rows_data = await fetch_emotions_in_range(uid, start_iso=period_start_iso, end_iso=period_end_iso, include_secret=False)
+    # Fingerprint and aggregate exactly the same complete, request-local rows.
+    internal_rows = await fetch_emotions_in_range(uid, start_iso=period_start_iso,
+        end_iso=period_end_iso, include_secret=True, max_rows=None)
+    meta = list(internal_rows)
+    public_rows_data = [row for row in internal_rows if not _row_is_secret(row)]
 
     # 2) Exclude self-insight-only rows from emotion structure materials.
     exclude_ids = {str(r.get("id") or "") for r in internal_rows if emotion_row_is_self_insight_only(r)}
@@ -1953,9 +2186,10 @@ async def _generate_and_store_emotion_period_snapshots(
     prev_internal_rows: List[Dict[str, Any]] = []
     prev_public_rows_data: List[Dict[str, Any]] = []
     if kind == "daily" and prev_period_start_iso and prev_period_end_iso:
-        prev_meta = await fetch_emotion_meta_for_hash(uid, start_iso=prev_period_start_iso, end_iso=prev_period_end_iso)
-        prev_internal_rows = await fetch_emotions_in_range(uid, start_iso=prev_period_start_iso, end_iso=prev_period_end_iso, include_secret=True)
-        prev_public_rows_data = await fetch_emotions_in_range(uid, start_iso=prev_period_start_iso, end_iso=prev_period_end_iso, include_secret=False)
+        prev_internal_rows = await fetch_emotions_in_range(uid, start_iso=prev_period_start_iso,
+            end_iso=prev_period_end_iso, include_secret=True, max_rows=None)
+        prev_meta = list(prev_internal_rows)
+        prev_public_rows_data = [row for row in prev_internal_rows if not _row_is_secret(row)]
 
         prev_exclude_ids = {str(r.get("id") or "") for r in prev_internal_rows if emotion_row_is_self_insight_only(r)}
         if prev_exclude_ids:
@@ -2214,20 +2448,15 @@ async def generate_and_store_material_snapshots(
     internal_discovery_rows = await fetch_discovery_rows_for_self_structure(uid, include_secret=True)
     public_discovery_rows = await fetch_discovery_rows_for_self_structure(uid, include_secret=False)
 
-    internal_today_question_rows = await fetch_today_question_rows_for_self_structure(uid, include_secret=True)
-    public_today_question_rows: List[Dict[str, Any]] = []
-
     internal_self_structure_view = build_self_structure_view(
         emotion_rows=internal_emotion_rows,
         echo_rows=internal_echo_rows,
         discovery_rows=internal_discovery_rows,
-        today_question_rows=internal_today_question_rows,
     )
     public_self_structure_view = build_self_structure_view(
         emotion_rows=public_emotion_rows,
         echo_rows=public_echo_rows,
         discovery_rows=public_discovery_rows,
-        today_question_rows=public_today_question_rows,
     )
 
     premium_reflection_view = build_premium_reflection_view(
@@ -2247,14 +2476,12 @@ async def generate_and_store_material_snapshots(
     internal_material_meta.extend(_material_meta_rows_from_rows("emotion_input", internal_emotion_rows))
     internal_material_meta.extend(_material_meta_rows_from_rows("echo", internal_echo_rows))
     internal_material_meta.extend(_material_meta_rows_from_rows("discovery", internal_discovery_rows))
-    internal_material_meta.extend(_material_meta_rows_from_rows("today_question", internal_today_question_rows))
     internal_material_meta = _dedupe_material_meta_rows(internal_material_meta)
 
     public_material_meta: List[Dict[str, Any]] = []
     public_material_meta.extend(_material_meta_rows_from_rows("emotion_input", public_emotion_rows))
     public_material_meta.extend(_material_meta_rows_from_rows("echo", public_echo_rows))
     public_material_meta.extend(_material_meta_rows_from_rows("discovery", public_discovery_rows))
-    public_material_meta.extend(_material_meta_rows_from_rows("today_question", public_today_question_rows))
     public_material_meta = _dedupe_material_meta_rows(public_material_meta)
 
     internal_hash = compute_source_hash_from_material_meta(
@@ -2383,4 +2610,3 @@ async def generate_and_store_material_snapshots(
 def _merge_text_parts(parts: List[str]) -> str:
     cleaned = [str(x).strip() for x in parts if str(x or "").strip()]
     return "\n".join(cleaned) if cleaned else ""
-

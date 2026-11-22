@@ -7,11 +7,16 @@ Deprecated rows remain listed until their compatibility window is closed.
 
 | Method | Path | Contract ID | Deprecated | Replacement | Notes |
 |---|---|---|---|---|---|
+| GET | `/emlis/threads/by-input/{emotion_id}` | `emlis.thread.read.v1` | `false` |  | Q4 mode-gated reader; authenticated owner, persisted snapshots, no generation; additive can_write |
+| POST | `/emlis/threads/{thread_id}/answers` | `emlis.thread.answer.v1` | `false` |  | Q4 admitted writes only; one answer per issued question, meaning before body |
+| POST | `/emlis/threads/{thread_id}/actions` | `emlis.thread.action.v1` | `false` |  | Q4 admitted writes only; skip/stop or confirmed transient failure retry; Q3 explicit continuation within server budget |
+| POST | `/emlis/threads/{thread_id}/frames` | `emlis.thread.frame_feedback.v1` | `false` |  | Q4 admitted writes only; owned tentative frame confirmation, rejection or correction; no question budget |
+| POST | `/emlis/threads/{thread_id}/corrections` | `emlis.thread.interpretation_correction.v1` | `false` |  | Owned completed natural reply; exact target excerpt and required user explanation; separate correction source and unchanged question budget |
 | GET | `/app/bootstrap` | `app.bootstrap.v1` | `false` |  | Runtime guardrail / maintenance switch |
 | GET | `/app/startup` | `app.startup.v1` | `false` |  | Auth-required startup bundle for unread / popup / lightweight prefetch only; Home hydration moved to /home/state |
-| GET | `/home/state` | `home.state.v1` | `false` |  | Auth-required Home hydration bundle (input summary + global summary + notices + today question + reflection quota); app.startup intentionally excludes heavy Home counters |
+| GET | `/home/state` | `home.state.v1` | `false` |  | Auth-required Home hydration bundle. DeepInsight state is read through its own route. |
 | POST | `/ops/client-events` | `ops.client_events.write.v1` | `false` |  | Best-effort RN client observability event ingest; no product state mutation |
-| POST | `/emotion/submit` | `emotion.submit.v1` | `false` |  | Legacy payloads must remain accepted; input_feedback.comment_text stays stable while input_feedback.emlis_ai remains additive-only across observation-kernel metadata expansions |
+| POST | `/emotion/submit` | `emotion.submit.v1` | `false` |  | Legacy payloads remain accepted. Optional receive_emlis_questions is a strict boolean, default true; captured with this input and used for new Q3 question delivery only, independent of notifications/history access. Existing thread choices remain fixed. input_feedback.comment_text and public response keys stay stable; the private saved choice is not a response/source field. |
 | GET | `/emotion/reflection/quota` | `emotion.reflection.quota.v1` | `true` | /emotion/piece/quota | Current-month publish quota / capability probe for Home reflection flow |
 | POST | `/emotion/reflection/preview` | `emotion.reflection.preview.v1` | `true` | /emotion/piece/preview | Preview-only reflection generation; does not canonical-save Home input |
 | POST | `/emotion/reflection/publish` | `emotion.reflection.publish.v1` | `true` | /emotion/piece/publish | Publishes a preview draft and reuses Home write fan-out / cache invalidation |
@@ -49,13 +54,11 @@ Deprecated rows remain listed until their compatibility window is closed.
 | GET | `/mymodel/qna/echoes/history` | `mymodel.qna.echoes.history.v1` | `true` | /piece/resonances/history |  |
 | GET | `/mymodel/qna/discoveries/history` | `mymodel.qna.discoveries.history.v1` | `true` |  | Retired compatibility route |
 | POST | `/activity/login` | `activity.login.v1` | `false` |  | Client login heartbeat / streak touch |
-| GET | `/today-question/current` | `today_question.current.v1` | `false` |  |  |
-| GET | `/today-question/status` | `today_question.status.v1` | `false` |  | Lightweight Today Question popup/badge state without question body or choices |
-| POST | `/today-question/answers` | `today_question.answers.create.v1` | `false` |  |  |
-| GET | `/today-question/history` | `today_question.history.list.v1` | `false` |  |  |
-| PATCH | `/today-question/history/{answer_id}` | `today_question.history.patch.v1` | `false` |  |  |
-| GET | `/today-question/settings` | `today_question.settings.read.v1` | `false` |  |  |
-| PATCH | `/today-question/settings` | `today_question.settings.patch.v1` | `false` |  |  |
+| GET | `/deep-insight` | `deep_insight.state.v1` | `false` |  | Owner-only pending questions, recent history, next theme availability and theme reminder preference |
+| PATCH | `/deep-insight/theme-notification` | `deep_insight.theme_notification.update.v1` | `false` |  | Opt in or out of the owner’s theme availability reminder |
+| POST | `/deep-insight/questions` | `deep_insight.questions.issue.v1` | `false` |  | Grounded issuance within the owner’s rolling theme allowance or separate JST records allowance |
+| GET | `/deep-insight/questions/{question_id}` | `deep_insight.questions.read.v1` | `false` |  | Read one issued question by ID for its authenticated owner, including outside recent history |
+| POST | `/deep-insight/answers` | `deep_insight.answers.submit.v1` | `false` |  | Owner-only answer to an issued question. Identical retry returns the saved answer |
 | GET | `/notices/current` | `notice.current.v1` | `false` |  |  |
 | GET | `/notices/history` | `notice.history.list.v1` | `false` |  |  |
 | POST | `/notices/read` | `notice.read.mark.v1` | `false` |  |  |
@@ -110,7 +113,18 @@ Deprecated rows remain listed until their compatibility window is closed.
 | GET | `/ranking/mymodel_resonances` | `ranking.mymodel_resonances.v1` | `true` | /ranking/piece_resonances |  |
 | GET | `/ranking/mymodel_discoveries` | `ranking.mymodel_discoveries.v1` | `true` |  | Retired compatibility route |
 | GET | `/subscription/bootstrap` | `subscription.bootstrap.v1` | `false` |  | Runtime subscription sales / plan config; plans may include additive emlis_ai metadata and marketing lines |
+| POST | `/analysis/if-route/scenario-sets` | `analysis.if_route.scenario_sets.create.v1` | `false` |  | Authenticated Premium owner; immutable IF or explicit Saved intent; no generated observation facts |
+| GET | `/analysis/if-route/scenario-sets` | `analysis.if_route.scenario_sets.list.v1` | `false` |  | Authenticated Premium owner; immutable IF or explicit Saved intent; no generated observation facts |
+| GET | `/analysis/if-route/scenario-sets/{artifact_id}` | `analysis.if_route.scenario_sets.read.v1` | `false` |  | Authenticated Premium owner; immutable IF or explicit Saved intent; no generated observation facts |
+| DELETE | `/analysis/if-route/scenario-sets/{artifact_id}` | `analysis.if_route.scenario_sets.delete.v1` | `false` |  | Authenticated Premium owner; immutable IF or explicit Saved intent; no generated observation facts |
+| POST | `/analysis/saved-route-intents` | `analysis.saved_route_intents.create.v1` | `false` |  | Authenticated Premium owner; immutable IF or explicit Saved intent; no generated observation facts |
+| GET | `/analysis/saved-route-intents` | `analysis.saved_route_intents.list.v1` | `false` |  | Authenticated Premium owner; immutable IF or explicit Saved intent; no generated observation facts |
+| GET | `/analysis/saved-route-intents/{artifact_id}` | `analysis.saved_route_intents.read.v1` | `false` |  | Authenticated Premium owner; immutable IF or explicit Saved intent; no generated observation facts |
+| DELETE | `/analysis/saved-route-intents/{artifact_id}` | `analysis.saved_route_intents.delete.v1` | `false` |  | Authenticated Premium owner; immutable IF or explicit Saved intent; no generated observation facts |
+| POST | `/self-structure/map-corrections` | `self_structure.map_corrections.create.v1` | `false` |  | Authenticated owner exact map target and separate person explanation; immutable source, next current-map refresh |
+| GET | `/self-structure/map-corrections` | `self_structure.map_corrections.read.v1` | `false` |  | Authenticated owner exact map target and separate person explanation; immutable source, next current-map refresh |
 | GET | `/analysis/home-summary` | `analysis.home_summary.v1` | `false` |  |  |
+| GET | `/analysis/kokoro-weather` | `analysis.kokoro_weather.live.v1` | `false` |  | Owner-only input aggregation; JST today/week/month, existing history retention, no generated report |
 | POST | `/analysis/reports/ensure` | `analysis.reports.ensure.v1` | `false` |  | Analysis core reportValidity meta is additive under content_json.reportValidity; no diagnosis or overclaim output |
 | GET | `/analysis/reports/ready` | `analysis.reports.ready.v1` | `false` |  | Read-side contract may include additive content_json.reportValidity meta |
 | GET | `/analysis/reports/{report_id}` | `analysis.reports.detail.v1` | `false` |  | Detail may include additive content_json.reportValidity meta |
@@ -132,6 +146,8 @@ Deprecated rows remain listed until their compatibility window is closed.
 | POST | `/follow/remove-follower` | `follow.remove_follower.v1` | `false` |  |  |
 | GET | `/follow/stats` | `follow.stats.v1` | `false` |  |  |
 | GET | `/follow/list` | `follow.list.v1` | `false` |  |  |
+| GET | `/follow/followers/content-visibility` | `follow.followers.content_visibility.v1` | `false` |  | Authenticated author reads independent sharing choices for accepted followers. |
+| PATCH | `/follow/followers/{follower_user_id}/content-visibility` | `follow.followers.content_visibility.patch.v1` | `false` |  | Authenticated author updates either sharing field for one accepted follower. |
 | GET | `/follow/requests/incoming` | `follow.requests.incoming.v1` | `false` |  |  |
 | GET | `/follow/requests/outgoing` | `follow.requests.outgoing.v1` | `false` |  |  |
 | POST | `/follow/request/cancel` | `follow.request.cancel.v1` | `false` |  |  |
@@ -165,3 +181,75 @@ Deprecated rows remain listed until their compatibility window is closed.
 | GET | `/ranking/piece_views` | `ranking.piece_views.v1` | `false` |  |  |
 | GET | `/subscription/me` | `subscription.me.v1` | `false` |  |  |
 | POST | `/subscription/update` | `subscription.update.v1` | `false` |  | Client purchase sync / tier refresh |
+
+## Follower-specific sharing
+
+Deploy the follower-visibility SQL before the API and worker. Current approved
+relationships are required for both kinds of sharing. Missing choices allow
+both kinds, and explicit choices survive an unfollow. Piece and emotion reads,
+queued delivery, and the withdrawal of access use stored choices even when
+management is disabled. `FOLLOWER_SHARING_ENABLED=true` exposes the management
+routes and bootstrap capability and retires the legacy account-visibility PATCH
+with 410. The existing account setting GET preserves its stored values.
+
+## Shared Piece v2 composition
+
+`app.create_application(piece_preview_configuration=...)` can explicitly compose
+the existing preview factory into the shared API. The dictionary is passed to
+`create_piece_preview_application`; it is application-owned configuration. Enabled
+preview still requires the existing requested/ready checks and valid
+TTL/renderer configuration. Test values are not deployment settings.
+
+The module-level `app` and `create_application()` retain the legacy composition
+and the default registry above. The existing explicit shared composition can
+activate Piece publication with both `PIECE_V2_PUBLICATION_ENABLED=true` and
+`PIECE_V2_PUBLICATION_READY=true`. Verify the publication migration and access
+rules before marking this pair ready. Explicit factory settings take precedence.
+The three publication flags are advertised by bootstrap/startup only to clients
+sending `X-Piece-Publication: 1`. The five private Piece flags are independent. Input submission, bootstrap and other shared routes/middleware remain
+on the same application. In the explicit candidate, only one owner is registered
+for each preview/source-ref route, and the contract middleware uses a registry
+captured for that application:
+
+| Method | Candidate path | Contract ID | Difference from the default |
+| --- | --- | --- | --- |
+| POST | `/emotion/piece/preview` | `emotion.piece.preview.v2` | Existing `piece.api.v2` saved-source request, Idempotency-Key and response; no raw-input fallback |
+| GET | `/emotion/piece/source-ref/{saved_input_id}` | `emotion.piece.source_ref.v2` | Authenticated seven-field saved-source reference; optional exact `supplemental_answer_identity` canonical UUID query explicitly selects one eligible saved additive answer; no query retains the original-only read |
+| POST | `/emotion/reflection/preview` | none | Not registered (404); its legacy DTO must not delegate to the v2 owner |
+| PATCH | `/emotion/piece/{piece_id}/visibility` | `emotion.piece.visibility.v2` | Authenticated exact owner and saved row version with `X-Piece-Publication: 1`; public transitions require current non-Secret source and permission. Private transitions withdraw the post. |
+| GET | `/nexus/pieces?include_piece_v2=true` | `nexus.pieces.list.v1` | Active publication read includes Piece v2 cards with the canonical body, date, author, and public Piece ID for the owner and approved followers. The legacy default feed is unchanged. |
+
+The source-ref query accepts no answer text, owner, tier, stage or eligibility
+flag. Duplicate and unknown query fields are rejected. Its seven-field response
+does not include the private answer body or commitment; preview and save perform
+their own current-source checks. Selecting a saved answer does not register or
+activate this transport in another application.
+
+2026-11-09 private Piece model integration: `PIECE_MODEL_SOURCE=shared_4b.v1`
+selects the existing `EMLIS_NATURAL_REPLY_*` connection with a dedicated Piece
+body-only prompt. Default/off retains the current finite author. Enabled
+first creation acquires one unadopted receipt, then CMEE verifies complete
+source/body preservation before B8, Safety and the existing preview write.
+The initial model format is `short_essay` only; provider failure or an
+unassessed body has no finite-author fallback. No public fields, schema
+versions or DB columns are added. Stored preview/read, visual mutation and
+save replay do not acquire or author text again. In-process overlapping
+same-key calls share only the same request/source/runtime receipt until
+issuance exits; SQL remains the persistence authority. Provider acquisition
+is bounded at 240 seconds and the RN preview POST at 250 seconds; other
+transports retain their deadlines and caller cancellation. Code integration
+does not imply that this selector or deployment has been activated live.
+
+The v2 contract ID identifies the candidate even while its feature flag is OFF;
+changing runtime flags cannot relabel the owner as v1. The public policy version
+and default registry remain unchanged. Other legacy Piece/Q&A routes remain in
+this preparation, so this is **not PCE-6/PCE-7 M5 retirement or a production
+cutover**. Admitting the deployment/runtime values, completing the legacy-route
+transition, and real Auth/RN/device/image-save/share acceptance remain separate.
+
+`test_b12_shared_preview_composition.py` verifies the shared submit → source-ref
+→ explicit preview seam, per-application contracts, default preservation and
+closed OFF/error behavior with synthetic IO. `test_b12_shared_preview_native.py`
+reuses the guarded disposable PostgreSQL fixture for real CMEE/review/persistence
+and replay. Neither test uses live credentials or user data; neither verifies
+real Auth, server lifespan or a running environment.

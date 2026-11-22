@@ -10,6 +10,8 @@ non-diagnostic observation report without changing public routes, DB names,
 """
 
 from dataclasses import dataclass, field, replace
+import json
+import hashlib
 import re
 from typing import Any, Iterable, Mapping
 
@@ -284,11 +286,12 @@ def _add_runtime_meta_to_payload(
     contract: AnalysisComposerInputContract,
     candidate_text: str,
     runtime_meta: Mapping[str, Any] | None = None,
+    snapshot_binding: Mapping[str, Any] | None = None,
 ) -> CoreTextPayload:
     original_units = tuple(payload.phrase_units or ())
     spans = tuple(payload.evidence_spans or ())
     derived_units: list[PhraseUnit] = []
-    if spans and candidate_text:
+    if spans and candidate_text and snapshot_binding is None:
         base_span_id = spans[0].span_id
         for index, sentence in enumerate(_sentences(candidate_text), start=len(original_units) + 1):
             derived_units.append(
@@ -382,6 +385,12 @@ def _add_runtime_meta_to_payload(
         forbidden_surface_patterns=forbidden,
         composer_model=ANALYSIS_COMPOSER_MODEL,
         meta=meta,
+        sentence_bindings=(tuple(dict(sentence_id=f"s{index}", text=sentence,
+            used_evidence_span_ids=[span.span_id for span in spans],
+            used_phrase_unit_ids=[unit.phrase_unit_id for unit in original_units],
+            relation_type="snapshot_aggregate_observation", line_role="analysis_observation_report")
+            for index, sentence in enumerate(_sentences(snapshot_binding.get("expected_text")), 1))
+            if snapshot_binding is not None else payload.sentence_bindings),
     )
 
 
@@ -524,6 +533,8 @@ class AnalysisComposer:
         source_id: Any = "",
         cross_core_enabled: bool = False,
         meta: Mapping[str, Any] | None = None,
+        snapshot_binding: Mapping[str, Any] | None = None,
+        snapshot_legacy_text: Any = None,
         **kwargs: Any,
     ) -> AnalysisComposerEvaluation:
         normalized_domain = normalize_analysis_material_domain(domain) or ANALYSIS_DOMAIN_EMOTION
@@ -563,13 +574,50 @@ class AnalysisComposer:
             cross_core_enabled=cross_core_enabled,
             **kwargs,
         )
+        if snapshot_binding is not None:
+            # This narrow runtime input is built from immutable snapshot facts
+            # by the existing report renderer, never from candidate sentences.
+            # Keep every common guard and additionally require the complete
+            # deterministic source render (including deep/graph fields) to match.
+            try:
+                canonical = lambda value: json.dumps(value, ensure_ascii=False, sort_keys=True,
+                    separators=(",", ":"), allow_nan=False)
+                original_materials = material_sources if material_sources is not None else materials
+                expected = snapshot_binding["expected_payload"]
+                supplied = output_payload if isinstance(output_payload, Mapping) else content_json
+                digest = snapshot_binding["source_digest"]
+                matched = (snapshot_binding["profile"] in {"analysis.snapshot.facts.v1", "analysis.daily.rows.facts.v1"}
+                    and isinstance(digest, str) and len(digest) == 64
+                    and all(c in "0123456789abcdef" for c in digest)
+                    and isinstance(snapshot_binding.get("source_bytes"), str)
+                    and digest == hashlib.sha256(snapshot_binding["source_bytes"].encode("utf-8")).hexdigest()
+                    and candidate_text == _clean(snapshot_binding["expected_text"])
+                    and isinstance(snapshot_legacy_text, str)
+                    and _clean(snapshot_legacy_text) == _clean(snapshot_binding["expected_legacy_text"])
+                    and canonical(original_materials) == canonical(snapshot_binding["materials"])
+                    and isinstance(supplied, Mapping) and isinstance(expected, Mapping)
+                    and set(supplied) <= (set(expected) | {"reportVersion", "publish", "reportValidity", "textGenerationCore"})
+                    and all((key not in supplied or supplied[key] is None) if value is None
+                            else (key in supplied and canonical(supplied[key]) == canonical(value))
+                            for key, value in expected.items())
+                    and all(isinstance(supplied.get("publish"), Mapping)
+                            and supplied["publish"].get(key) == value
+                            for key, value in snapshot_binding.get("expected_publish", {}).items()))
+            except (KeyError, TypeError, ValueError, AttributeError):
+                matched = False
+            if not matched:
+                contract = replace(contract, rejection_reasons=tuple(contract.rejection_reasons)
+                    + ("analysis_snapshot_source_mismatch",))
+            runtime_meta["snapshot_source"] = dict(profile=snapshot_binding.get("profile", ""),
+                source_digest=snapshot_binding.get("source_digest", ""), matched=matched)
         text_safety = evaluate_analysis_report_text_safety(
             candidate_text,
             domain=normalized_domain,
             material_fields=material_fields,
             target_period=target_period,
         )
-        payload = _add_runtime_meta_to_payload(contract.payload, contract=contract, candidate_text=candidate_text, runtime_meta=runtime_meta)
+        payload = _add_runtime_meta_to_payload(contract.payload, contract=contract, candidate_text=candidate_text,
+            runtime_meta=runtime_meta, snapshot_binding=snapshot_binding)
         candidate = _runtime_candidate(text=candidate_text, payload=payload, contract=contract)
         result = self.core_composer.generate(payload, candidate)
         return AnalysisComposerEvaluation(

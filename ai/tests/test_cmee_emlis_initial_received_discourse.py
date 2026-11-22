@@ -1,0 +1,1195 @@
+"""Initial source-owned relations and later answers use one prose owner.
+
+Public synthetic cases only. Preserve complete meaning and unproved boundaries.
+"""
+
+from helpers.retained_assertions import continue_assertions, retained_assertion
+from dataclasses import replace
+import pytest
+from cocolon_meaning_experience_engine import MeaningExperienceEngine
+from cocolon_meaning_experience_engine.emlis_thread_contracts import EmlisQuestionControlV1
+from test_cmee_emlis_q1_thread import initial, A
+from test_cmee_emlis_q3_thread import begin, advance
+from test_cmee_emlis_received_discourse import actual, inverse
+from test_emlis_q3_application import qdb, qcase
+from test_emlis_q2_application import run, answer
+
+
+SINGLE = '褒められたのに、嬉しくなかった。'
+MULTI = SINGLE + '誘われたのに、悲しかった。頼まれたのに、寂しかった。'
+
+
+@pytest.mark.parametrize('clause', [
+    '友人はメモを書いた', '家族の手紙を書いた', '同僚からの内容を書いた',
+    '話を書いた', '引用を書いた', '報告を書いた', '次のメモを書いた',
+    '家族への手紙は書いた', '書いた', 'メモを手紙を書いた',
+    '職場でメモをノートに書いた', '家族への手紙を友人のノートに書いた',
+    '明日資料を書いた', '詳しい誰のメモを書いた', '振り返り明日資料を書いた',
+    '昨日メモを書いた', '昨日、朝メモを書いた', '昨日、 朝メモを書いた',
+    '昨日、以前メモを書いた', '昨日、　午前メモを書いた', '昨日、今日メモを書いた',
+    'その後、昨日、メモを書いた', '昨日、その後、メモを書いた',
+    'その後、それから、メモを書いた', '昨日、\nメモを書いた',
+    '私は、\nメモを書いた', 'ゆっくりメモを書いた',
+    '昨日、私がメモを書いた', '今日、私も家族への手紙を書いた',
+    '今日、ぼくが考えをノートに書いた',
+    'メモを書いたとの話でした', 'メモを書いた。友人の話でした'])
+def test_omitted_writing_keeps_unparsed_and_report_boundaries(clause):
+    from emlis_ai_grounded_observation_plan import _source_prefix_opens_report
+    assert _source_prefix_opens_report(clause + '。')
+
+
+@pytest.mark.parametrize('writing', [
+    '私は家族への手紙を書いた', '私は同僚との約束を書きました',
+    '私は会議でのメモを書いた', '僕は、職場で家族への手紙を書きました',
+    '私は家族への手紙をノートに書いた', '自分は新しい会議でのメモを書いた',
+    '私は会議での同僚との約束を書いた',
+    'その後、私は家族への手紙を書いた', 'それから私はメモを書きました',
+    'その後　僕は考えをノートに書いた',
+    'それから、私は職場で会議でのメモを書きました',
+    '昨日私は家族への手紙を書いた', '今日、僕はメモを書きました',
+    'わたしは昨日、考えをノートに書いた', '私は、今日 職場で会議でのメモを書いた',
+    '昨日私は今月号を書いた', '私は昨日、分担を書いた',
+    '今日、俺は今年度を書きました', '私は昨日、　分担を書いた',
+    # u208: these complete omitted-actor clauses no longer open a report.
+    '家族への手紙を書いた', 'その後、メモを書いた', '昨日、メモを書いた',
+    '考えをノートに書いた', '記録を書いた', '今日　家族への手紙をノートに書きました',
+    'それから職場で会議でのメモを書きました', '昨日、同僚との約束を書いた',
+    # u209: the same relation may belong to the one place/medium slot.
+    '私は家族との会議でメモを書いた', '私はメモを家族への手紙に書いた',
+    '私は家族への手紙を職場での会議で書いた',
+    '家族との会議でメモを書いた', '昨日、家族との会議でメモを書いた',
+    'その後、私はメモを家族との会議で書きました',
+    '私は昨日、職場での会議でメモを書いた',
+    # u210: an explicit SELF writer may name a self-owned nominal argument.
+    '私は自分の考えを書いた', '僕は私の気持ちを書きました',
+    '私は僕のノートに考えを書いた', '私はメモを俺の手紙に書いた',
+    '昨日、私は自分の考えを書いた', 'その後、私は自分の気持ちを書きました',
+    '私は自分の考えを僕のノートに書いた',
+    '私は自分の家族への手紙を書いた',
+    # u211: written kana SELF possessives keep their original noun spelling.
+    '私はわたしの考えを書いた', '僕はぼくのノートに考えを書きました',
+    '昨日、俺はメモをおれの手紙に書いた', '私はおれの気持ちを書いた',
+    'わたしは今日、わたしの家族への手紙を書いた',
+    'その後、私はぼくの気持ちを書いた'])
+def test_relational_writing_keeps_independent_feeling_and_unfinished_witness(writing):
+    import emlis_ai_grounded_observation_plan as owner
+    from cocolon_meaning_experience_engine.source_kernel import freeze_text_source
+    from cocolon_meaning_experience_engine.emlis_answer_update import prepare_emlis_meaning, build_updated_grounded_plan
+    assert not owner._source_prefix_opens_report(writing + '。')
+    assert owner._source_prefix_opens_report('友人が話した。' + writing + '。')
+    assert owner._source_prefix_opens_report(writing + '。友人が話した。')
+    memo = writing + '。その後、私は落ち着きました。'
+    source = freeze_text_source(initial(memo))
+    span = next(s for s in source.evidence_spans if s.raw_text == 'その後、私は落ち着きました')
+    assert owner._source_polite_past_feeling_is_bound(span, source.normalized_current_input)
+    unfinished = 'まだ昨日の方針が決まっていない'
+    prepared = prepare_emlis_meaning(begin(writing + '。' + unfinished + '。'))
+    plan = build_updated_grounded_plan(prepared)
+    node, = (n for n in plan.nuclei if 'semantic_role:present_unfinished' in n.semantic_frame.attribute_codes)
+    assert (node.semantic_frame.polarity, node.semantic_frame.modality, node.semantic_frame.time_scope) == (
+        'negative', 'fact', 'current_input')
+    assert prepared.thread.resolver().resolve(node.source_span_ids[0]).raw_text == unfinished
+
+
+@pytest.mark.parametrize('writing', [
+    '私は家族への説明を書いた', '私は友人との話を書いた', '私は会議での発言を書きました',
+    '私は家族への手紙を引用に書いた', '私は報告に家族への手紙を書いた',
+    '私は誰への手紙を書いた', '私は次への手紙を書いた',
+    '私は明日家族への手紙を書いた', '私は家族への明日手紙を書いた',
+    '私は振り返り明日会議でのメモを書いた',
+    '私は家族への手紙を明日ノートに書いた',
+    '私は昨日職場で家族への手紙を書いた',
+    '私は家族からの手紙を書いた', '私は友人の考えを書いた',
+    '私は家族への手紙の内容を書いた', '私は友人のノートに家族への手紙を書いた',
+    '友人は家族への手紙を書いた',
+    '私は職場で家族への手紙をノートに書いた', '私は家族への手紙を記録を書いた',
+    '私は家族への手紙をこう書いた', '私は、\n家族への手紙を書いた',
+    '私は家族との話でメモを書いた', '私は家族への説明にメモを書いた',
+    '私はメモを会議での報告に書いた', '私はメモを友人のノートに書いた',
+    '私はメモを家族からの手紙に書いた', '友人は家族との会議でメモを書いた',
+    '私は家族との会議でメモをノートに書いた',
+    '家族との会議でメモを職場での会議で書いた',
+    '私は明日会議での記録にメモを書いた', '私は家族との明日会議でメモを書いた',
+    '私はメモを家族への明日手紙に書いた', '私は誰との会議でメモを書いた',
+    '私は詳しい誰との会議でメモを書いた', '私はメモを次への手紙に書いた',
+    '私は昨日、 朝会議での記録にメモを書いた',
+    'その後、昨日、家族との会議でメモを書いた',
+    '昨日、私が家族との会議でメモを書いた',
+    '私は家族との会議で\nメモを書いた',
+    # A possessive does not supply an actor or open arbitrary report content.
+    '自分の考えを書いた', '僕のノートに考えを書いた',
+    '昨日、自分の考えを書いた', 'その後、自分の気持ちを書いた',
+    '友人は自分の考えを書いた',
+    'わたしの考えを書いた', 'その後、ぼくのノートに考えを書いた',
+    '友人はわたしの考えを書いた', '私はおれの気持ちをこう書いた',
+    '私はわたしの説明をノートに書いた', '私はぼくの話をノートに書いた',
+    '私はわたしの明日メモを書いた', '私はメモをぼくの明日ノートに書いた',
+    '私はおれの詳しい誰メモを書いた', '私はわたしの友人の考えを書いた',
+    '私は自分の友人の考えを書いた', '私は友人への自分の考えを書いた',
+    '私は自分の説明をノートに書いた', '私は自分の話をノートに書いた',
+    '私は自分の引用に考えを書いた', '私は自分の報告にメモを書いた',
+    '私は自分の明日メモを書いた', '私は自分の詳しい誰メモを書いた',
+    '私はメモを僕の明日ノートに書いた', '私は俺の振り返り明日資料を書いた',
+    '私は職場で自分の考えを僕のノートに書いた',
+    '昨日、私が自分の考えを書いた', 'その後、昨日、私は自分の考えを書いた',
+    '私は自分の考えをこう書いた', '私は、自分の考えを\n書いた'])
+def test_relational_writing_preserves_report_attribution_and_unparsed_scope(writing):
+    from emlis_ai_grounded_observation_plan import _source_prefix_opens_report
+    assert _source_prefix_opens_report(writing + '。')
+
+
+@pytest.mark.parametrize('writing', [
+    'その後、それから、私はメモを書いた', 'その後、昨日、私はメモを書いた',
+    'その後、私は昨日、メモを書いた', 'その後、\n私はメモを書いた',
+    'その後、友人はメモを書いた',
+    'その後、私は明日資料を書いた', 'その後、私は詳しい誰の資料を書いた',
+    'その後、私は家族への明日手紙を書いた',
+    'その後、私はメモを明日ノートに書いた',
+    'その後、私は友人の感想を書いた', 'その後、私は家族からの手紙を書いた',
+    'その後、私は家族への説明を書いた', 'その後、私は話をノートに書いた',
+    'その後、私は職場でメモをノートに書いた',
+    'その後、私は家族への手紙を書いた。友人の話でした'])
+def test_sequenced_writing_keeps_unparsed_and_reported_scope(writing):
+    from emlis_ai_grounded_observation_plan import _source_prefix_opens_report
+    assert _source_prefix_opens_report(writing + '。')
+
+
+@pytest.mark.parametrize('writing', [
+    '昨日、今日私はメモを書いた', '私は昨日、今日メモを書いた',
+    '昨日、その後、私はメモを書いた', 'その後、昨日私はメモを書いた',
+    '昨日、\n私はメモを書いた', '私は昨日、\nメモを書いた',
+    '昨日、友人はメモを書いた',
+    '私は昨日家族への手紙を書いた', '私は昨日、以前資料を書いた',
+    '私は昨日、朝メモを書いた', '私は昨日、分を書いた',
+    '私は昨日、 朝メモを書いた', '私は昨日、 以前資料を書いた',
+    '私は昨日、　分を書いた',
+    '昨日、私は明日資料を書いた', '昨日、私は家族への明日手紙を書いた',
+    '昨日、私はメモを明日ノートに書いた', '昨日、私は詳しい誰の資料を書いた',
+    '昨日、私は友人の感想を書いた', '昨日、私は家族からの手紙を書いた',
+    '昨日、私は家族への説明を書いた', '昨日、私は話をノートに書いた',
+    '昨日、私は職場でメモをノートに書いた', '昨日、私はメモをこう書いた',
+    '昨日、私は家族への手紙を書いた。友人の話でした'])
+def test_dated_writing_keeps_unparsed_and_reported_scope(writing):
+    from emlis_ai_grounded_observation_plan import _source_prefix_opens_report
+    assert _source_prefix_opens_report(writing + '。')
+
+
+@pytest.mark.parametrize('subject', ['私', 'わたし', '僕', 'ぼく', '自分', '俺', 'おれ'])
+def test_completed_self_writing_is_not_a_report_introduction(subject):
+    from emlis_ai_grounded_observation_plan import _source_prefix_opens_report
+    for particle in ('は', 'が', 'も'):
+        for sentence in (subject + particle + '記録を書いた。',
+                         subject + particle + '、　新しいメモを書きました。'):
+            assert not _source_prefix_opens_report(sentence)
+            assert _source_prefix_opens_report(sentence + '友人が話した。')
+            assert _source_prefix_opens_report('友人が話した。' + sentence)
+
+
+@pytest.mark.parametrize('writing', ['私は考えをノートに書いた', '私はノートに考えを書いた',
+    '僕は、職場で記録を書きました', '俺は記録を職場で書いた',
+    'ぼくが新しいメモを古いノートに書きました', '自分も新しい職場で考えを書いた'])
+def test_completed_two_argument_writing_keeps_independent_unfinished_scope(writing):
+    from emlis_ai_grounded_observation_plan import _source_prefix_opens_report
+    from cocolon_meaning_experience_engine.emlis_answer_update import prepare_emlis_meaning, build_updated_grounded_plan
+    assert not _source_prefix_opens_report(writing + '。')
+    assert _source_prefix_opens_report(writing + '。友人が話した。')
+    assert _source_prefix_opens_report('友人が話した。' + writing + '。')
+    unfinished = 'まだ昨日の方針が決まっていない'
+    for memo, action in ((writing + '。' + unfinished + '。', ''), (unfinished + '。', writing + '。')):
+        prepared = prepare_emlis_meaning(begin(memo, action))
+        plan = build_updated_grounded_plan(prepared)
+        node, = (n for n in plan.nuclei if 'semantic_role:present_unfinished' in n.semantic_frame.attribute_codes)
+        assert (node.semantic_frame.polarity, node.semantic_frame.modality, node.semantic_frame.time_scope) == (
+            'negative', 'fact', 'current_input')
+        assert prepared.thread.resolver().resolve(node.source_span_ids[0]).raw_text == unfinished
+
+
+@pytest.mark.parametrize('writing', ['友人は考えをノートに書いた',
+    '私は話をノートに書いた', '私はノートに内容を書いた', '私は引用に考えを書いた',
+    '私は次をノートに書いた', '私は何をノートに書いた', '私はノートに以下を書いた',
+    '私は友人の考えをノートに書いた', '私は考えを友人のノートに書いた',
+    '私は職場で考えをノートに書いた', '私は考えを記録を書いた',
+    '私は考えにノートに書いた', '私は考えとノートを書いた',
+    '私は考えをノートにこう書いた'])
+def test_completed_two_argument_writing_keeps_report_and_unproved_arguments(writing):
+    from emlis_ai_grounded_observation_plan import _source_prefix_opens_report
+    from cocolon_meaning_experience_engine.emlis_answer_update import prepare_emlis_meaning, build_updated_grounded_plan
+    assert _source_prefix_opens_report(writing + '。')
+    for memo, action in ((writing + '。まだ昨日の方針が決まっていない。', ''),
+                         ('まだ昨日の方針が決まっていない。', writing + '。')):
+        plan = build_updated_grounded_plan(prepare_emlis_meaning(begin(memo, action)))
+        assert not any('semantic_role:present_unfinished' in n.semantic_frame.attribute_codes for n in plan.nuclei)
+
+
+@pytest.mark.parametrize('writing', ['友人は記録を書いた',
+    '私はこう書いた', '私は次の記録を書いた', '私は以下を書いた',
+    '私は話を書いた', '私は報告を書いた', '私は内容を書いた',
+    '私は友人の感想を書いた', '私は友人の記録を書いた',
+    '私は何を書いた', '私は誰の記録を書いた'])
+def test_completed_self_writing_keeps_unproved_report_boundaries(writing):
+    from emlis_ai_grounded_observation_plan import _source_prefix_opens_report
+    from cocolon_meaning_experience_engine.emlis_answer_update import prepare_emlis_meaning, build_updated_grounded_plan
+    assert _source_prefix_opens_report(writing + '。')
+    unfinished = 'まだ昨日の方針が決まっていない。'
+    for memo, action in ((writing + '。' + unfinished, ''),
+                         (unfinished, writing + '。')):
+        plan = build_updated_grounded_plan(prepare_emlis_meaning(begin(memo, action)))
+        assert not any('semantic_role:present_unfinished' in n.semantic_frame.attribute_codes for n in plan.nuclei)
+
+
+@pytest.mark.parametrize('text', ['私は記録を書いた。まだ昨日の方針が決まっていない。',
+                                  'まだ昨日の方針が決まっていない。私はメモを書きました。'])
+def test_unfinished_nominal_yesterday_keeps_completed_writing_and_shared_witness(text):
+    from cocolon_meaning_experience_engine.emlis_answer_update import prepare_emlis_meaning, build_updated_grounded_plan
+    prepared = prepare_emlis_meaning(begin(text))
+    plan = build_updated_grounded_plan(prepared)
+    resolver = prepared.thread.resolver()
+    node, = (n for n in plan.nuclei if 'semantic_role:present_unfinished' in n.semantic_frame.attribute_codes)
+    assert node.semantic_frame.time_scope == 'current_input'
+    assert resolver.resolve(node.source_span_ids[0]).raw_text == 'まだ昨日の方針が決まっていない'
+    assert node.semantic_frame.polarity == 'negative'
+    assert node.semantic_frame.modality == 'fact'
+
+
+@pytest.mark.parametrize('text', ['まだ昨日の方針が決まっていない。',
+                                  'まだ仕事の昨日分が見つかっていません。'])
+def test_unfinished_nominal_yesterday_keeps_current_host_and_actual_body(text):
+    from test_cmee_emlis_detached_observation import read_body
+    context = actual(request=begin(text))
+    result, plan, _sentence, resolver, _selected = context
+    node, = (n for n in plan.nuclei if n.source_fields == ('memo',))
+    frame = node.semantic_frame
+    assert (frame.time_scope, frame.polarity, frame.modality) == ('current_input', 'negative', 'fact')
+    assert [c for c in frame.attribute_codes if c.startswith('time_scope:')] == ['time_scope:current_input']
+    assert 'semantic_role:present_unfinished' in frame.attribute_codes
+    assert resolver.resolve(node.source_span_ids[0]).raw_text == text.removesuffix('。')
+    body = result.artifact.text
+    assert text.removesuffix('。') in body
+    assert read_body(context, body).passed
+    for changed in (body.replace('昨日', '今日'), body.replace('いない', 'いた').replace('いません', 'いました')):
+        assert changed != body and not read_body(context, changed).passed
+
+
+@pytest.mark.parametrize('text', [
+    'まだ昨日方針が決まっていない。', '昨日まだ方針が決まっていない。',
+    'まだ昨日の方針が決まっていなかった。', 'まだ昨日の方針が決まっていない？',
+    'まだ昨日の方針が決まっていないかもしれない。',
+    'まだ昨日の方針が決まっていないわけではない。',
+    '夢を見た。まだ昨日の方針が決まっていない。',
+    '友人が話した。まだ昨日の方針が決まっていない。',
+    '友人によると、まだ昨日の方針が決まっていない。',
+    '友人から聞いた話です。まだ昨日の方針が決まっていない。',
+    '友人の感想。まだ昨日の方針が決まっていない。',
+    '「まだ昨日の方針が決まっていない」と聞いた。',
+    'まだ昨日以前の方針が決まっていない。',
+])
+def test_unfinished_nominal_yesterday_does_not_promote_unclosed_or_reported_hosts(text):
+    from cocolon_meaning_experience_engine.emlis_answer_update import prepare_emlis_meaning, build_updated_grounded_plan
+    plan = build_updated_grounded_plan(prepare_emlis_meaning(begin(text)))
+    assert not any('semantic_role:present_unfinished' in n.semantic_frame.attribute_codes for n in plan.nuclei)
+
+
+def test_unfinished_nominal_yesterday_keeps_other_field_report_scope():
+    from cocolon_meaning_experience_engine.emlis_answer_update import prepare_emlis_meaning, build_updated_grounded_plan
+    plan = build_updated_grounded_plan(prepare_emlis_meaning(begin(
+        'まだ昨日の方針が決まっていない。', '友人の報告。')))
+    assert not any('semantic_role:present_unfinished' in n.semantic_frame.attribute_codes for n in plan.nuclei)
+    plan = build_updated_grounded_plan(prepare_emlis_meaning(begin(
+        '私は記録を書いた。まだ昨日の方針が決まっていない。', '友人の報告。')))
+    assert not any('semantic_role:present_unfinished' in n.semantic_frame.attribute_codes for n in plan.nuclei)
+
+
+@pytest.mark.parametrize('text', ['まだ気持ちが定まっていない。',
+    'まだ不安の原因が見つかっていない。', 'まだ昨日の気持ちが決まっていません。'])
+def test_unfinished_feeling_nominal_keeps_host_meaning_and_actual_body(text):
+    from test_cmee_emlis_detached_observation import read_body
+    context = actual(request=begin(text))
+    result, plan, _sentence, resolver, _selected = context
+    node, = (n for n in plan.nuclei if n.source_fields == ('memo',))
+    frame = node.semantic_frame
+    assert (node.kind, frame.predicate_kind, frame.modality, frame.polarity, frame.time_scope) == (
+        'event', 'event', 'fact', 'negative', 'current_input')
+    assert 'semantic_role:present_unfinished' in frame.attribute_codes
+    assert 'operator:feeling' not in frame.attribute_codes
+    assert resolver.resolve(node.source_span_ids[0]).raw_text == text.removesuffix('。')
+    body = result.artifact.text
+    assert text.removesuffix('。') in body
+    assert read_body(context, body).passed
+    for replacement in (text.replace('気持ち', '方針').replace('不安', '不満'),
+                        text.replace('いない', 'いた').replace('いません', 'いました')):
+        assert replacement != text
+        changed = body.replace(text.removesuffix('。'), replacement.removesuffix('。'))
+        assert changed != body and not read_body(context, changed).passed
+
+
+@pytest.mark.parametrize('text', [
+    'まだ気持ちがつらい。', 'まだ気持ちが定まっていなかった。',
+    'まだ気持ちが定まっている。', '気持ちが定まっていない。',
+    'まだ気持ちが定まっていない？', 'まだ気持ちが定まっていないかもしれない。',
+    'まだ気持ちが定まっていないと思う。', 'まだ気持ちが定まっていないなら。',
+    'まだ気持ちが定まっていないわけではない。',
+    'まだあの気持ちが定まっていない。', 'まだ昨日気持ちが定まっていない。',
+    'まだ誰の気持ちが定まっていない。', 'まだ何の不安が定まっていない。',
+    'まだ気持ちが定まっていないと聞いた。',
+    'まだ昨日以前の気持ちが定まっていない。',
+    '夢を見た。まだ気持ちが定まっていない。',
+    '友人が話した。まだ気持ちが定まっていない。',
+    '友人によると、まだ気持ちが定まっていない。',
+    '友人の感想。まだ気持ちが定まっていない。',
+    '「まだ気持ちが定まっていない」と聞いた。',
+])
+def test_unfinished_feeling_nominal_keeps_unproved_or_reported_hosts(text):
+    from cocolon_meaning_experience_engine.emlis_answer_update import prepare_emlis_meaning, build_updated_grounded_plan
+    plan = build_updated_grounded_plan(prepare_emlis_meaning(begin(text)))
+    assert not any('semantic_role:present_unfinished' in n.semantic_frame.attribute_codes for n in plan.nuclei)
+
+
+@pytest.mark.parametrize('action', ['友人が話した。', '友人の報告。', '夢を見た。'])
+def test_unfinished_feeling_nominal_keeps_other_field_report_scope(action):
+    from cocolon_meaning_experience_engine.emlis_answer_update import prepare_emlis_meaning, build_updated_grounded_plan
+    for text in ('まだ気持ちが定まっていない。', 'まだ昨日の気持ちが定まっていない。'):
+        plan = build_updated_grounded_plan(prepare_emlis_meaning(begin(text, action)))
+        assert not any('semantic_role:present_unfinished' in n.semantic_frame.attribute_codes for n in plan.nuclei)
+
+
+@pytest.mark.parametrize('text,polarity', [
+    ('私は難しい会議を担当した。', 'neutral'),
+    ('私は家族の難しい会議を担当しませんでした。', 'negative'),
+    ('私は難しい記録を担当した。', 'neutral'),
+    ('私は難しい職場にいた。', 'neutral'),
+    ('私は家族の難しい職場にいませんでした。', 'negative'),
+])
+def test_difficult_past_nominals_keep_shared_meaning_and_actual_body(text, polarity):
+    from test_cmee_emlis_detached_observation import read_body
+    context = actual(request=begin(text))
+    result, plan, _sentence, resolver, _selected = context
+    node, = (n for n in plan.nuclei if n.source_fields == ('memo',))
+    frame = node.semantic_frame
+    assert (node.kind, frame.predicate_kind, frame.modality, frame.polarity) == ('event', 'event', 'fact', polarity)
+    assert not {'operator:constraint', 'operator:action', 'operator:performed_action'} & set(frame.attribute_codes)
+    assert resolver.resolve(node.source_span_ids[0]).raw_text == text.removesuffix('。')
+    body = result.artifact.text
+    assert text.removesuffix('。') in body
+    assert read_body(context, body).passed
+    for replacement in ('', '易しい'):
+        assert not read_body(context, body.replace('難しい', replacement)).passed
+    for added in ('行動に移しています', '実際の行動', '大切に思っています'):
+        assert added not in body
+
+
+@pytest.mark.parametrize('text', [
+    '難しい。', '会議は難しい。', '難しかった。', '難しくない。',
+    '難しい会議を担当したと思う。', '難しい会議を担当したと聞いた。',
+    '難しい会議を担当したなら。', '難しい会議を担当したい。',
+    '難しい会議を担当している。', '難しい会議を担当したかもしれない。',
+    '難しい職場にいたと思う。', '難しい職場にいたと聞いた。',
+    '難しい職場にいたい。', '難しい職場にいる。', '難しい職場でいた。',
+    '難しくない会議を担当した。', '難しい良い会議を担当した。',
+    '難しいが、私は会議を担当した。', '無理な会議を担当した。',
+    '難しい制約を担当した。', '難しい限界にいた。',
+    '私は難しい会議を担当した。難しい。', '難しい。私は難しい職場にいた。',
+])
+def test_difficult_past_nominals_keep_independent_constraints_and_unclosed_hosts(text):
+    from emlis_ai_grounded_observation_plan import _operator_codes_for_text
+    assert 'operator:constraint' in _operator_codes_for_text(text)
+
+
+@pytest.mark.parametrize('text', ['私は悪い職場にいた。', '私は家族の悪い職場にいませんでした。'])
+def test_bad_past_location_keeps_event_and_complete_actual_body(text):
+    from test_cmee_emlis_detached_observation import read_body
+    context = actual(request=begin(text))
+    result, plan, _sentence, resolver, _selected = context
+    node, = (n for n in plan.nuclei if n.source_fields == ('memo',))
+    assert (node.kind, node.semantic_frame.predicate_kind, node.semantic_frame.modality) == ('event', 'event', 'fact')
+    assert node.semantic_frame.actor == 'current_user'
+    assert resolver.resolve(node.source_span_ids[0]).raw_text == text.removesuffix('。')
+    body = result.artifact.text
+    assert text.removesuffix('。') in body
+    assert read_body(context, body).passed
+    for replacement in ('', '良い'):
+        assert not read_body(context, body.replace('悪い', replacement)).passed
+
+
+@pytest.mark.parametrize('text', ['私は良い職場にいた。', '私は家族の良い職場にいませんでした。'])
+def test_good_past_location_keeps_event_and_complete_actual_body(text):
+    from test_cmee_emlis_detached_observation import read_body
+    context = actual(request=begin(text))
+    result, plan, _sentence, resolver, _selected = context
+    node, = (n for n in plan.nuclei if n.source_fields == ('memo',))
+    assert (node.kind, node.semantic_frame.predicate_kind, node.semantic_frame.modality) == ('event', 'event', 'fact')
+    assert node.semantic_frame.actor == 'current_user'
+    assert 'operator:value' not in node.semantic_frame.attribute_codes
+    assert resolver.resolve(node.source_span_ids[0]).raw_text == text.removesuffix('。')
+    body = result.artifact.text
+    assert text.removesuffix('。') in body
+    assert read_body(context, body).passed
+    for replacement in ('', '悪い'):
+        assert not read_body(context, body.replace('良い', replacement)).passed
+
+
+@pytest.mark.parametrize('text', [
+    '私は良い。', '私には良い。', '私は職場が良い。', '良くなった。',
+    '良いと思う。', '良い職場にいたと思う。', '良い職場にいたと聞いた。',
+    '良い職場にいたい。', '良い職場にいたら。', '良い職場にいたずらした。',
+    '良い職場にいる。', '良い職場になった。', '良い職場にいたけれど。',
+    '良い良い職場にいた。', '良いところにいた。',
+    '良い職場にいた。私には大切だ。', '大切な良い職場にいた。',
+    '良い職場にいた。私は良い。', '私は良い。良い職場にいた。',
+])
+def test_good_past_location_does_not_erase_other_values_or_unclosed_hosts(text):
+    from emlis_ai_grounded_observation_plan import _operator_codes_for_text
+    assert 'operator:value' in _operator_codes_for_text(text)
+
+
+@pytest.mark.parametrize('text,kind,polarity', [
+    ('私は良い会議を担当した。', 'event', 'neutral'),
+    ('私は家族の良い会議を担当しませんでした。', 'event', 'negative'),
+    ('私は良い記録を担当した。', 'event', 'neutral'),
+])
+def test_good_past_responsibility_keeps_shared_kind_and_complete_actual_body(text, kind, polarity):
+    from test_cmee_emlis_detached_observation import read_body
+    context = actual(request=begin(text))
+    result, plan, _sentence, resolver, _selected = context
+    node, = (n for n in plan.nuclei if n.source_fields == ('memo',))
+    frame = node.semantic_frame
+    assert (node.kind, frame.predicate_kind, frame.modality, frame.polarity) == (kind, kind, 'fact', polarity)
+    assert frame.actor == 'current_user'
+    assert 'operator:value' not in frame.attribute_codes
+    assert resolver.resolve(node.source_span_ids[0]).raw_text == text.removesuffix('。')
+    body = result.artifact.text
+    assert text.removesuffix('。') in body
+    assert read_body(context, body).passed
+    for replacement in ('', '悪い'):
+        assert not read_body(context, body.replace('良い', replacement)).passed
+
+
+@pytest.mark.parametrize('text', ['私は記録を担当した。', '私は良い記録を担当した。',
+                                  '私は会議のメモを担当しませんでした。'])
+def test_past_responsibility_is_not_execution_of_its_nominal_task(text):
+    from test_cmee_emlis_detached_observation import read_body
+    context = actual(request=begin(text))
+    result, plan, _sentence, resolver, _selected = context
+    node, = (n for n in plan.nuclei if n.source_fields == ('memo',))
+    assert (node.kind, node.semantic_frame.predicate_kind) == ('event', 'event')
+    assert not {'operator:action', 'operator:performed_action'} & set(node.semantic_frame.attribute_codes)
+    assert resolver.resolve(node.source_span_ids[0]).raw_text == text.removesuffix('。')
+    assert text.removesuffix('。') in result.artifact.text
+    assert read_body(context, result.artifact.text).passed
+    for added in ('行動に移しています', '実際の行動', '大切に思っています'):
+        assert added not in result.artifact.text
+
+
+@pytest.mark.parametrize('text', ['私は記録を書いた。', '私はメモした。',
+    '記録を担当したと思う。', '記録を担当したと聞いた。', '記録を担当したい。',
+    '記録を担当している。', '記録を担当したなら。', '記録に担当した。',
+    '私は記録を書いた。私は記録を担当した。'])
+def test_past_responsibility_keeps_other_action_predicates_and_unclosed_hosts(text):
+    from emlis_ai_grounded_observation_plan import _operator_codes_for_text
+    assert 'operator:action' in _operator_codes_for_text(text)
+
+
+@pytest.mark.parametrize('text', [
+    '私は良い。', '私には良い。', '私は会議が良い。', '良くなった。',
+    '良い会議を担当したと思う。', '良い会議を担当したと聞いた。',
+    '良い会議を担当したい。', '良い会議を担当したなら。',
+    '良い会議を担当している。', '良い会議を担当する。', '良い会議を担当したけれど。',
+    '良い会議に担当した。', '良い良い会議を担当した。', '良いところを担当した。',
+    '良い会議を担当した。私には大切だ。', '大切な良い会議を担当した。',
+    '良い会議を担当した。私は良い。', '私は良い。良い会議を担当した。',
+])
+def test_good_past_responsibility_keeps_other_values_unclosed_hosts_and_case(text):
+    from emlis_ai_grounded_observation_plan import _operator_codes_for_text
+    assert 'operator:value' in _operator_codes_for_text(text)
+
+
+@pytest.mark.parametrize('left,right', [
+    ('私は家族の時間を守りたい', '私はつらい'),
+    ('ぼくは、生活の基盤を守りたいです', 'ぼくは、苦しいです'),
+    ('自分は自分の家族の時間を守りたい', '自分は辛い'),
+    ('私は資料の内容を調べたい', '私はつらい'),
+    ('私は家族の気持ちを守りたい', '私はつらい'),
+    ('自分は自分の家族の気持ちを守りたい', '自分は辛い'),
+    ('ぼくは、学びノートの振り返りを守りたいです', 'ぼくは、苦しいです'),
+    ('私は資料の振り返りを調べたい', '私はつらい'),
+    ('俺は家族の時間を守りたい', '俺はつらい'),
+    ('おれは、家族の気持ちを守りたいです', 'おれは、苦しいです'),
+    ('俺は家族の新しい時間を守りたい', 'おれはつらい'),
+    ('おれは学びノートの悪い振り返りを守りたい', '俺は辛い'),
+])
+def test_genitive_wish_contrast_preserves_shared_finite_proof_and_actual_body(left, right):
+    from test_cmee_emlis_detached_observation import read_body
+    context = actual(request=begin(left + 'けれど、' + right + '。'))
+    result, plan, _sentence, resolver, _selected = context
+    nodes = [n for n in plan.nuclei if n.source_fields == ('memo',)]
+    assert len(nodes) == 2
+    wish, burden = nodes
+    assert (wish.kind, wish.semantic_frame.modality) == ('wish', 'wish')
+    assert 'lexical:source_finite_contrast_feeling' in burden.semantic_frame.attribute_codes
+    assert not any(c.startswith('semantic_dependency:') for n in nodes for c in n.semantic_frame.attribute_codes)
+    assert any((r.type, r.from_nucleus_id, r.to_nucleus_id) ==
+        ('contrast', wish.nucleus_id, burden.nucleus_id) for r in plan.relations)
+    for node, expected in zip(nodes, (left, right)):
+        code, = (c for c in node.semantic_frame.attribute_codes if c.startswith('source_fragment_scalar_range:'))
+        start, end = map(int, code.split(':')[1:])
+        assert resolver.resolve(node.source_span_ids[0]).raw_text[start:end] == expected
+        assert node.semantic_frame.actor == 'current_user'
+    body = result.artifact.text
+    assert left in body and right in body
+    assert read_body(context, body).passed
+    for old, new in ((left, left.replace('時間', '予定').replace('基盤', '資金').replace('内容', '題名')
+                     .replace('気持ち', '記録').replace('振り返り', '予定')),
+                     (right, right.replace('つらい', 'つらかった').replace('苦しい', '嬉しい').replace('辛い', '辛くない'))):
+        assert old != new
+        assert not read_body(context, body.replace(old, new)).passed
+
+
+@pytest.mark.parametrize('noun', [
+    '新しい家族の生活', '新しい学びノートの長い振り返り',
+    '悪い家族の取り組み', '家族の悪い取り組み', '悪い学びノートの長い振り返り',
+] + ['家族の' + adjective + '取り組み' for adjective in (
+    '新しい', '古い', '大きい', '小さい', '長い', '短い', '詳しい', '難しい', '易しい', '良い')])
+def test_attributive_genitive_wish_preserves_source_argument_and_actual_body(noun):
+    from test_cmee_emlis_detached_observation import read_body
+    left, right = '私は' + noun + 'を守りたい', '私はつらい'
+    context = actual(request=begin(left + 'けれど、' + right + '。'))
+    result, plan, _sentence, resolver, _selected = context
+    wish, burden = [n for n in plan.nuclei if n.source_fields == ('memo',)]
+    assert (wish.kind, wish.semantic_frame.modality) == ('wish', 'wish')
+    assert 'lexical:source_finite_contrast_feeling' in burden.semantic_frame.attribute_codes
+    assert not any(c.startswith('semantic_dependency:') for n in (wish, burden)
+                   for c in n.semantic_frame.attribute_codes)
+    assert any((r.type, r.from_nucleus_id, r.to_nucleus_id) ==
+        ('contrast', wish.nucleus_id, burden.nucleus_id) for r in plan.relations)
+    for node, expected in ((wish, left), (burden, right)):
+        code, = (c for c in node.semantic_frame.attribute_codes if c.startswith('source_fragment_scalar_range:'))
+        start, end = map(int, code.split(':')[1:])
+        assert resolver.resolve(node.source_span_ids[0]).raw_text[start:end] == expected
+        assert node.semantic_frame.actor == 'current_user'
+    body = result.artifact.text
+    assert left in body and right in body
+    assert read_body(context, body).passed
+    adjective = next(a for a in ('新しい', '古い', '大きい', '小さい', '長い', '短い',
+        '詳しい', '難しい', '易しい', '良い', '悪い') if a in noun)
+    for replacement in ('', '古い' if adjective != '古い' else '新しい'):
+        mutated = body.replace(adjective, replacement, 1)
+        assert mutated != body and not read_body(context, mutated).passed
+
+
+@pytest.mark.parametrize('adjective', [
+    '新しい', '古い', '大きい', '小さい', '長い', '短い', '詳しい', '難しい', '易しい', '良い', '悪い',
+])
+def test_attributive_genitive_wish_has_bounded_nominal_owner(adjective):
+    from emlis_ai_grounded_observation_plan import _source_operator_owner_scope_is_bound
+    # Syntax proof remains separate from safety/self-evaluation detection.
+    assert _source_operator_owner_scope_is_bound('私は家族の' + adjective + '取り組みを守りたい')
+
+
+@pytest.mark.parametrize('fragment', [
+    '友人は家族の時間を守りたい', '家族の時間を守りたい',
+    '私は友人は家族の時間を守りたい', '私は家族の時間を友人は守りたい',
+    '私は家族の時間を守りたいと友人は思う', '私は家族の時間を守りたいと聞いた',
+    '私は家族の時間を守りたかった', '私は家族の時間を守りたくない',
+    '私は家族の時間を守りたい気持ちがある', '私は家族の時間を守りたいかもしれない',
+    '私は家族のつらさが苦しい', '私は家族のつらさを守りたい',
+    '私は家族の読んでメモを守りたい', '私は家族の気持ちがつらい',
+    '私は家族の気持ちを友人は守りたい', '私は家族の気持ちを守りたいと聞いた',
+    '私は家族の気持ちを守りたい気持ちがある', '私は家族の気持ちを守りたいかもしれない',
+    '私は家族の気持ちを守りたくない', '私は家族の気持ちを守りたかった',
+    '私は家族の新しくない生活を守りたい', '私は家族の新しかった生活を守りたい',
+    '私は家族の新しく生活を守りたい', '私は家族のとても新しい生活を守りたい',
+    '私は家族の新しい大きい生活を守りたい', '私は家族の楽しい生活を守りたい',
+    '私は家族の新しいを守りたい', '私は家族の新しい生活を友人は守りたい',
+    '私らは家族の時間を守りたい', '私たちは家族の時間を守りたい',
+    '私自身は家族の時間を守りたい', '私も家族の時間を守りたい',
+    '私が家族の時間を守りたい',
+])
+@pytest.mark.parametrize('subject', ['私', '俺', 'おれ'])
+def test_genitive_wish_owner_repair_does_not_lend_self_to_unproved_hosts(fragment, subject):
+    from emlis_ai_grounded_observation_plan import _source_operator_owner_scope_is_bound
+    assert not _source_operator_owner_scope_is_bound(fragment.replace('私', subject))
+
+
+@pytest.mark.parametrize('left,right', [
+    ('私は悲しい', '私は、つらい'),
+    ('私は悲しい', '僕は、 辛いです'),
+    ('ぼくは、苦しいです', '嬉しかった'),
+    ('わたしは、つらい', '嬉しかった'),
+    ('自分は、苦しい', '嬉しかった'),
+    ('俺は、つらい', '嬉しかった'),
+    ('おれは悲しい', 'おれは、 苦しいです'),
+])
+def test_explicit_present_burden_topic_comma_keeps_shared_meaning_and_inverse(left, right):
+    from test_cmee_emlis_detached_observation import read_body
+    context = actual(request=begin(left + 'けれど' + right + '。'))
+    result, plan, _, resolver, _ = context
+    assert result.artifact is not None
+    body = result.artifact.text
+    assert '「' + left + '」' in body and '「' + right + '」' in body
+    nodes = {n.nucleus_id: n for n in plan.nuclei}
+    relation = next(r for r in plan.relations if r.type == 'contrast')
+    for ref, text in ((relation.from_nucleus_id, left), (relation.to_nucleus_id, right)):
+        n = nodes[ref]
+        f = n.semantic_frame
+        assert n.kind == 'reaction' and f.predicate_kind == 'feeling'
+        assert 'lexical:source_finite_contrast_feeling' in f.attribute_codes
+        if '、' in text:
+            assert (f.actor, f.time_scope, f.polarity, f.modality) == (
+                'current_user', 'current_input', 'negative', 'feeling')
+            code, = (c for c in f.attribute_codes if c.startswith('source_fragment_scalar_range:'))
+            start, end = map(int, code.split(':')[1:])
+            assert resolver.resolve(n.source_span_ids[0]).raw_text[start:end] == text
+    assert read_body(context, body).passed
+    for old, new in (('けれど、', 'から、'), ('あなたは、', '友人は、'),
+                     ('つらい', 'つらかった'), ('辛い', '辛くない'), ('苦しい', '嬉しい')):
+        if old in body:
+            changed = body.replace(old, new, 1)
+            assert changed != body and not read_body(context, changed).passed
+
+
+@pytest.mark.parametrize('right', [
+    '私は、不安です', '私は、嬉しい', '私は、つらかった', '私は、つらくない',
+    '私は、とてもつらい', '私は、、つらい', '私は，つらい', '私は,つらい',
+    '友人は、つらい', '私は、つらいかもしれない', '私は、つらいと聞いた',
+])
+@pytest.mark.parametrize('subject', ['私', '俺', 'おれ'])
+def test_burden_topic_comma_does_not_expand_other_shared_finite_feeling_forms(right, subject):
+    right = right.replace('私', subject)
+    from cocolon_meaning_experience_engine.emlis_answer_update import prepare_emlis_meaning, build_updated_grounded_plan
+    plan = build_updated_grounded_plan(prepare_emlis_meaning(begin(subject + 'は仕事を続けたいけれど' + right + '。')))
+    assert not any('lexical:source_finite_contrast_feeling' in n.semantic_frame.attribute_codes
+                   for n in plan.nuclei)
+
+
+def test_shared_burden_topic_comma_uses_existing_ledger_tab_normalization():
+    from test_cmee_emlis_detached_observation import read_body
+    memo = '私は悲しいけれど私は、\tつらい。'
+    context = actual(request=begin(memo))
+    plain = actual(request=begin(memo.replace('\t', ' ')))
+    assert context[0].artifact.text == plain[0].artifact.text
+    nodes = [n for n in context[1].nuclei if n.source_fields == ('memo',)]
+    assert len(nodes) == 2
+    assert all('lexical:source_finite_contrast_feeling' in n.semantic_frame.attribute_codes for n in nodes)
+    assert all('\t' not in context[3].resolve(n.source_span_ids[0]).raw_text for n in nodes)
+    assert read_body(context, context[0].artifact.text).passed
+    # Analysis separately checks original field bytes and keeps tabs unknown;
+    # this shared Emlis ledger has already normalized them before the parser.
+
+
+@pytest.mark.parametrize('left,link,right,left_time,right_time', [
+    ('悲しかった', 'けど', '嬉しかった', 'past', 'past'),
+    ('悲しい', 'けれど', '嬉しかった', 'current_input', 'past'),
+    ('悲しかった', 'けれども', '嬉しい', 'past', 'current_input'),
+    ('嬉しかった', 'けど', '悲しかった', 'past', 'past'),
+    ('私も少し不安だった', 'けれど', '嬉しかった', 'past', 'past'),
+    ('悲しかった', 'けど', '怖くなかった', 'past', 'past'),
+    ('悲しかった', 'けど', '嬉しかったです', 'past', 'past'),
+    ('悲しかった', 'けれど', '私には嬉しい', 'past', 'current_input'),
+])
+@pytest.mark.parametrize('capability', ['Q3_FREE', 'Q3_PLUS', 'Q3_PREMIUM'])
+def test_finite_feeling_contrast_keeps_each_feeling_and_its_time(
+        left, link, right, left_time, right_time, capability):
+    from test_cmee_emlis_detached_observation import read_body
+    req = begin(left + link + right + '。')
+    req = replace(req, emlis_thread=replace(req.emlis_thread, capability_snapshot=capability,
+        question_control_context=EmlisQuestionControlV1(question_limit=3 if capability == 'Q3_PREMIUM' else 1)))
+    context = actual(request=req)
+    result = MeaningExperienceEngine().generate(req)
+    assert result.artifact is not None and result.artifact.text == context[0].artifact.text
+    # A contrast states neither becoming nor simultaneous current feelings.
+    body = result.artifact.text
+    assert '変化' not in body and '同時' not in body and '今は' not in body
+    assert '「' + left + '」' in body and '「' + right + '」' in body
+    assert link + '、' in result.artifact.reception and 'のですね' in result.artifact.reception
+    assert '今ここに置かれた言葉' not in body
+    nuclei = {n.nucleus_id: n for n in context[1].nuclei}
+    relation = next(r for r in context[1].relations if r.type == 'contrast')
+    for nucleus_id, time in ((relation.from_nucleus_id, left_time), (relation.to_nucleus_id, right_time)):
+        nucleus = nuclei[nucleus_id]
+        assert (nucleus.kind, nucleus.semantic_frame.predicate_kind, nucleus.semantic_frame.time_scope) == (
+            'reaction', 'feeling', time)
+    assert result.question is None  # No event or new question target is invented.
+    assert read_body(context, body).passed
+
+
+@pytest.mark.parametrize('memo', [
+    '友人は悲しかったけど嬉しかった。',
+    '私は悲しかったけど友人は嬉しかった。',
+    '「悲しかったけど嬉しかった」と言われた。',
+    '悲しかったけど嬉しかったかもしれない。',
+    '褒められたのに、悲しかったけど嬉しかった。',
+])
+def test_unproved_compound_feelings_are_not_promoted_to_self_finite_pair(memo):
+    from cocolon_meaning_experience_engine.emlis_answer_update import prepare_emlis_meaning, build_updated_grounded_plan
+    req = begin(memo)
+    prepared = prepare_emlis_meaning(req)
+    plan = build_updated_grounded_plan(prepared)
+    if memo == '褒められたのに、悲しかったけど嬉しかった。':
+        # u13 proves this whole source, not an isolated inner feeling pair.
+        # Keep the original parameter and require the event and both edges;
+        # a marker alone or a two-feeling-only reception is insufficient.
+        from test_cmee_emlis_detached_observation import read_body
+        nodes = [n for n in plan.nuclei if n.source_fields == ('memo',)]
+        assert len(nodes) == 3
+        expected = (
+            ('event', 'event', 'neutral', 'fact', 0, 5, '褒められた'),
+            ('reaction', 'feeling', 'negative', 'feeling', 8, 13, '悲しかった'),
+            ('reaction', 'feeling', 'positive', 'feeling', 15, 20, '嬉しかった'),
+        )
+        resolver = prepared.thread.resolver()
+        for node, (kind, predicate, polarity, modality, start, end, fragment) in zip(nodes, expected):
+            assert (node.kind, node.semantic_frame.predicate_kind,
+                    node.semantic_frame.polarity, node.semantic_frame.modality) == (
+                        kind, predicate, polarity, modality)
+            assert (node.semantic_frame.actor, node.semantic_frame.time_scope,
+                    node.grounding_kind, node.retention, node.allowed_claim_scope) == (
+                        'current_user', 'past', 'explicit', 'required', 'explicit_current_input')
+            assert len(node.source_span_ids) == 1 and node.source_span_ids == nodes[0].source_span_ids
+            ranges = [code for code in node.semantic_frame.attribute_codes
+                      if code.startswith('source_fragment_scalar_range:')]
+            assert ranges == [f'source_fragment_scalar_range:{start}:{end}']
+            raw = resolver.resolve(node.source_span_ids[0]).raw_text
+            assert raw[start:end] == memo[start:end] == fragment
+        assert [(r.type, r.from_nucleus_id, r.to_nucleus_id, r.grounding_kind,
+                 r.source_span_ids) for r in plan.relations if r.retention == 'required'] == [
+            ('contrast', nodes[0].nucleus_id, nodes[1].nucleus_id, 'user_stated_relation', nodes[0].source_span_ids),
+            ('contrast', nodes[1].nucleus_id, nodes[2].nucleus_id, 'user_stated_relation', nodes[0].source_span_ids),
+        ]
+        result = MeaningExperienceEngine().generate(req)
+        assert result.artifact is not None
+        assert '「褒められた」のに「悲しかった」けど「嬉しかった」' in result.artifact.observation
+        assert '褒められたのに、悲しかったけど、嬉しかった' in result.artifact.reception
+        context = actual(request=req)
+        body = result.artifact.text
+        assert context[0].artifact.text == body and read_body(context, body).passed
+        partial = body.replace(result.artifact.reception, '悲しかったけど、嬉しかったのですね。')
+        assert partial != body and not read_body(context, partial).passed
+        return
+    assert not any('lexical:source_finite_contrast_feeling' in n.semantic_frame.attribute_codes for n in plan.nuclei)
+    result = MeaningExperienceEngine().generate(req)
+    assert result.artifact is None or '悲しかったけど、嬉しかったのですね' not in result.artifact.reception
+
+
+@pytest.mark.parametrize('change', ['嬉しくなった', '不安になった', '落ち着いてきた'])
+def test_explicit_change_does_not_acquire_finite_feeling_proof(change):
+    from cocolon_meaning_experience_engine.emlis_answer_update import prepare_emlis_meaning, build_updated_grounded_plan
+    from emlis_ai_grounded_human_reception import final_reception_source_anchor_text
+    req = begin('悲しかったけど' + change + '。')
+    prepared = prepare_emlis_meaning(req)
+    plan = build_updated_grounded_plan(prepared)
+    index = {n.nucleus_id: n for n in plan.nuclei}
+    changed = [n for n in plan.nuclei if change in final_reception_source_anchor_text(
+        n.nucleus_id, index, prepared.thread.resolver())]
+    assert changed
+    assert all('lexical:source_finite_contrast_feeling' not in n.semantic_frame.attribute_codes for n in changed)
+
+
+@pytest.mark.parametrize('old,new', [
+    ('悲しいけれど', '悲しかったけれど'),
+    ('嬉しかったのですね', '嬉しいのですね'),
+    ('嬉しかったのですね', '嬉しくなったのですね'),
+    ('けれど、', 'から、'), ('けれど、', 'けど、'),
+    ('悲しいけれど、', ''),
+    ('悲しいけれど、', '今は悲しいけれど、'),
+    ('悲しいけれど、', '悲しいけれど、同時に'),
+    ('「悲しい」', '「悲しかった」'),
+    ('「嬉しかった」', '「嬉しい」'),
+])
+def test_contrast_tense_relation_and_no_added_change_are_read_from_actual_body(old, new):
+    from test_cmee_emlis_detached_observation import read_body
+    context = actual(request=begin('悲しいけれど嬉しかった。'))
+    body = context[0].artifact.text
+    changed = body.replace(old, new, 1)
+    assert changed != body and read_body(context, body).passed
+    assert not read_body(context, changed).passed
+
+
+@pytest.mark.parametrize('old,new', [
+    ('あなたも', 'あなたは'), ('あなたも', '友人も'),
+    ('少し怖くなかった', '怖くなかった'),
+    ('少し怖くなかった', '少し怖かった'),
+    ('少し怖くなかった', '安心した'),
+    ('少し怖くなかった', '少し怖くない'),
+    ('あなたも少し怖くなかったけれど、嬉しかった',
+     'あなたも怖くなかったけれど、少し嬉しかった'),
+])
+def test_contrast_owner_degree_and_negation_cannot_move_between_feelings(old, new):
+    from test_cmee_emlis_detached_observation import read_body
+    context = actual(request=begin('私も少し怖くなかったけれど嬉しかった。'))
+    body = context[0].artifact.text
+    changed = body.replace(old, new, 1)
+    assert changed != body and read_body(context, body).passed
+    assert not read_body(context, changed).passed
+
+
+@pytest.mark.parametrize('link', ['が', 'けども'])
+def test_other_existing_contrast_connectors_keep_fallback_and_local_times(link):
+    from test_cmee_emlis_detached_observation import read_body
+    context = actual(request=begin('悲しかった' + link + '嬉しかった。'))
+    body = context[0].artifact.text
+    assert '「悲しかった」' in body and '「嬉しかった」' in body
+    assert '変化' not in body and '同時' not in body
+    assert read_body(context, body).passed
+
+
+@pytest.mark.parametrize('ending', ['のです。', 'のだと受け取りました。'])
+def test_contrast_independent_reader_accepts_equivalent_acknowledgement(ending):
+    from test_cmee_emlis_detached_observation import read_body
+    context = actual(request=begin('悲しかったけど嬉しかった。'))
+    body = context[0].artifact.text.replace('のですね。', ending)
+    assert read_body(context, body).passed
+
+
+@pytest.mark.parametrize('memo', ['不安だけど嬉しかった。', '悲しかったけど不安だ。',
+                                 '不安だったけど悲しくなかった。', '悲しかったけど不安でした。'])
+def test_contrast_copula_keeps_finite_first_and_acknowledged_final_clause(memo):
+    from test_cmee_emlis_detached_observation import read_body
+    context = actual(request=begin(memo))
+    body = context[0].artifact.text
+    assert 'のですね' in context[0].artifact.reception and '今ここに置かれた言葉' not in body
+    assert read_body(context, body).passed
+    if '不安だけど、' in body:
+        assert not read_body(context, body.replace('不安だけど、', '不安なけど、')).passed
+
+
+@pytest.mark.parametrize('memo', [SINGLE, '誘われたのに、悲しかった。',
+    '頼まれたけど、寂しかった。', '言われたけれど、嬉しくなかった。'])
+def test_initial_engine_receives_an_experience_not_a_placed_word(memo):
+    req=initial(memo)
+    result=MeaningExperienceEngine().generate(req)
+    assert result.artifact is not None, result.reason_codes
+    follow=result.artifact.reception
+    assert '受け止めています' not in follow
+    assert '今ここに置かれた言葉' not in follow
+    assert 'のですね' in follow
+    assert result.question is not None
+    assert result.question.prompt_private not in result.artifact.text
+    assert req.emlis_thread.current_round == 0 and not req.emlis_thread.answers
+    assert not result.automatic_progression
+
+
+@pytest.mark.parametrize('memo',[SINGLE,SINGLE+'誘われたのに、悲しかった。',MULTI])
+@pytest.mark.parametrize('capability',['Q3_FREE','Q3_PLUS','Q3_PREMIUM'])
+def test_grouped_application_initial_body_preserves_every_independent_pair(memo,capability):
+    req=initial(memo)
+    limit=3 if capability=='Q3_PREMIUM' else 1
+    req=replace(req,emlis_thread=replace(req.emlis_thread,capability_snapshot=capability,
+        question_control_context=EmlisQuestionControlV1(question_limit=limit)))
+    result=MeaningExperienceEngine().generate(req)
+    assert result.artifact is not None, result.reason_codes
+    follow=result.artifact.reception
+    assert follow.count('のですね')==1
+    assert '受け止めています' not in follow and '今ここに置かれた言葉' not in follow
+    for source,noun in [('褒められた','嬉しさ'),('誘われた','悲しさ'),('頼まれた','寂しさ')]:
+        if source in memo:
+            assert follow.count(source)==1 and noun in follow
+    # One answer per issued question; Premium changes the thread's question budget.
+    assert result.question is not None and result.question.answer_limit==1
+    assert req.emlis_thread.question_control_context.question_limit==limit
+    assert result.meaning_checkpoint is not None
+
+
+@pytest.mark.parametrize('old,new',[
+    ('嬉しさにはつながらなかった','嬉しさにつながった'),
+    ('嬉しさにはつながらなかった','嬉しさにつなげられなかった'),
+    ('嬉しさにはつながらなかった','嬉しさにはつながっていない'),
+    ('嬉しさ','楽しさ'),('褒められたことは','友人が褒められたことは'),
+    ('褒められたことは','今日も褒められたことは'),
+    ('褒められたことは','褒められなかったことは'),
+    ('褒められたことは、',''),
+])
+def test_initial_meaning_mutations_are_rejected_without_author_oracle(old,new):
+    context=actual(request=initial(SINGLE))
+    follow=context[0].artifact.reception
+    changed=follow.replace(old,new)
+    assert changed!=follow
+    assert inverse(context,follow,without_author=True).passed
+    assert not inverse(context,changed,without_author=True).passed
+
+
+@pytest.mark.parametrize('old,new',[
+    ('誘われたのに','誘われたので'),('悲しさ','嬉しさ'),
+    ('悲しさを感じた','悲しさを感じ続けている'),('悲しさを感じた','悲しさを感じなかった'),
+])
+def test_affirmed_negative_feeling_keeps_contrast_and_past(old,new):
+    context=actual(request=initial('誘われたのに、悲しかった。'))
+    follow=context[0].artifact.reception;changed=follow.replace(old,new)
+    assert changed!=follow and not inverse(context,changed,without_author=True).passed
+
+
+@pytest.mark.parametrize('ending',['のです。','のだと受け取りました。'])
+def test_initial_acknowledgement_is_not_fixed_author_spelling(ending):
+    context=actual(request=initial(SINGLE))
+    follow=context[0].artifact.reception.replace('のですね。',ending)
+    assert inverse(context,follow).passed
+
+
+@pytest.mark.parametrize('memo',[
+    '友人が褒められたのに、嬉しくなかった。',
+    '「褒められたのに、嬉しくなかった」と友人が言った。',
+    '褒められたなら、嬉しくなかったかもしれない。',
+    '褒められなかったのに、嬉しくなかった。',
+    '褒められたのに、少しも嬉しくなかった。',
+])
+def test_unproved_actor_modality_and_qualified_feeling_are_not_rewritten(memo):
+    result=MeaningExperienceEngine().generate(initial(memo))
+    follow=result.artifact.reception if result.artifact else ''
+    assert '褒められたことは、嬉しさにはつながらなかった' not in follow
+
+
+@pytest.mark.parametrize('tier',['free','plus','premium'])
+@pytest.mark.parametrize('memo',[SINGLE,SINGLE+'誘われたのに、悲しかった。',MULTI])
+def test_initial_finite_prose_and_answer_are_saved_without_rerendering(qcase,qdb,monkeypatch,tier,memo):
+    user,parent,service=qcase
+    qdb.query('update public.profiles set subscription_tier=$2 where id=$1',[user,tier])
+    qdb.query('update public.emotions set memo=$1 where id=$2',[memo,parent])
+    first=run(service.start(user,parent))
+    assert first['current_observation'] is not None,first
+    text=first['current_observation']['text'].split('Emlisから：',1)[1]
+    assert '受け止めています' not in text and text.count('のですね')==1
+    assert first['issued_count']==1 and first['question_limit']==(3 if tier=='premium' else 1)
+    for event in ('褒められた','誘われた','頼まれた'):
+        if event in memo: assert text.count(event)==1
+    assert run(service.get(user,parent))==first
+    after=run(answer(service,user,first,A))
+    assert after['current_observation'] is not None,after
+    assert after['original']==first['original']
+    assert after['body_state']=='REFINED'
+    updated=after['current_observation']['text'].split('Emlisから：',1)[1]
+    expected_answer='次も同じ成果を求められるような重さとして届いたのですね。'
+    assert expected_answer in updated
+    if memo != SINGLE:
+        assert expected_answer + '誘われた' in updated
+    for event in ('褒められた','誘われた','頼まれた'):
+        if event in memo: assert updated.count(event)==1
+    monkeypatch.setattr(service.engine,'generate',lambda *_:pytest.fail('saved text must not rerender'))
+    assert run(service.get(user,parent))==after
+    assert run(service.start(user,parent))==after
+
+
+@pytest.mark.parametrize('old,new',[
+    ('嬉しさにはつながらず','嬉しさにつながり'),
+    ('誘われたのに、悲しさを感じ、',''),
+    ('誘われたのに','誘われたので'),
+    ('悲しさ','嬉しさ'),
+    ('頼まれたのに','友人が頼まれたのに'),
+    ('寂しさを感じた','寂しさを感じ続けている'),
+])
+def test_initial_group_inverse_keeps_all_pairs_without_an_author_oracle(old,new):
+    context=actual(request=begin(MULTI))
+    follow=context[0].artifact.reception;changed=follow.replace(old,new)
+    assert changed!=follow
+    assert inverse(context,follow,without_author=True).passed
+    assert not inverse(context,changed,without_author=True).passed
+
+
+@pytest.mark.parametrize('reply,withdraws,time',[
+    ('その時は嬉しかった。',False,'その時に嬉しかった'),
+    ('今は嬉しい。',False,'回答した時点で嬉しい'),
+    ('「嬉しくなかった」は誤りです。',True,None),
+    ('あの時も本当は嬉しかった。書き方を間違えた。',True,'その時に嬉しかった'),
+])
+@continue_assertions
+def test_answer_time_and_original_correction_preserve_other_events(reply,withdraws,time):
+    request=advance(begin(MULTI),reply)
+    context=actual(request=request);follow=context[0].artifact.reception
+    retained_assertion(lambda: ('誘われたのに、悲しさを感じ' in follow), "'誘われたのに、悲しさを感じ' in follow")
+    retained_assertion(lambda: ('頼まれたのに、寂しさを感じた' in follow), "'頼まれたのに、寂しさを感じた' in follow")
+    retained_assertion(lambda: (('嬉しさにはつながらず' in follow)==(not withdraws)), "('嬉しさにはつながらず' in follow) == (not withdraws)")
+    if time is not None:retained_assertion(lambda: (time in follow), 'time in follow')
+    retained_assertion(lambda: (inverse(context,follow,without_author=True).passed), 'inverse(context, follow, without_author=True).passed')
+    retained_assertion(lambda: (not inverse(context,follow.replace('悲しさ','楽しさ'),without_author=True).passed), "not inverse(context, follow.replace('悲しさ', '楽しさ'), without_author=True).passed")
+
+
+OWNED_PAST = (
+    '誘われたのに、私も少し不安だった。'
+    '頼まれたのに、少し私は怖くなかった。'
+    '言われたけど、僕には少し寂しかった。'
+)
+
+
+@pytest.mark.parametrize('source,finite', [
+    ('私も少し不安だった', 'あなたも少し不安だった'),
+    ('少し私は怖くなかった', 'あなたは少し怖くなかった'),
+    ('僕には少し寂しかった', 'あなたには少し寂しかった'),
+    ('少し不安だった', '少し不安だった'),
+    ('私も少し不安でした', 'あなたも少し不安だった'),
+    ('私は少し怖くなかったです', 'あなたは少し怖くなかった'),
+    ('少し私は不安だった', 'あなたは少し不安だった'),
+])
+@pytest.mark.parametrize('capability', ['Q3_FREE', 'Q3_PLUS', 'Q3_PREMIUM'])
+def test_owned_past_initial_body_keeps_complete_reaction(source, finite, capability):
+    from test_cmee_emlis_detached_observation import read_body
+    req = begin('誘われたのに、' + source + '。')
+    req = replace(req, emlis_thread=replace(req.emlis_thread,
+        capability_snapshot=capability,
+        question_control_context=EmlisQuestionControlV1(
+            question_limit=3 if capability == 'Q3_PREMIUM' else 1)))
+    result = MeaningExperienceEngine().generate(req)
+    assert result.artifact is not None, result.reason_codes
+    assert '誘われたのに、' + finite + 'のですね。' in result.artifact.reception
+    assert source in result.artifact.observation
+    assert result.question is not None and not result.automatic_progression
+    context = actual(request=req)
+    assert read_body(context, result.artifact.text).passed
+
+
+@pytest.mark.parametrize('old,new', [
+    ('あなたも少し不安だった', 'あなたは少し不安だった'),
+    ('あなたも少し不安だった', '少し不安だった'),
+    ('あなたも少し不安だった', '友人も少し不安だった'),
+    ('あなたも少し不安だった', 'あなたも不安だった'),
+    ('あなたも少し不安だった', 'あなたも少し不安だ'),
+    ('あなたは少し怖くなかった', 'あなたは少し怖かった'),
+    ('あなたは少し怖くなかった', 'あなたは少し安心した'),
+    ('誘われたのに', '誘われたので'),
+    ('言われたけど', '言われたのに'),
+    ('頼まれたのに、あなたは少し怖くなかったし、', ''),
+    ('「私も少し不安だった」', '「私も不安だった」'),
+    ('「少し私は怖くなかった」', '「少し私は怖くない」'),
+])
+def test_owned_past_initial_meaning_is_read_without_either_author(old, new):
+    from test_cmee_emlis_detached_observation import read_body
+    context = actual(request=begin(OWNED_PAST))
+    body = context[0].artifact.text
+    assert read_body(context, body).passed
+    changed = body.replace(old, new, 1)
+    assert changed != body
+    assert not read_body(context, changed).passed
+
+
+@pytest.mark.parametrize('memo', [
+    '友人が誘われたのに、私も少し不安だった。',
+    '誘われたのに、友人も少し不安だった。',
+    '「誘われたのに、私も少し不安だった」と友人が言った。',
+    '誘われたのに、私も少し不安だったらしい。',
+    '誘われたなら、私も少し不安だったかもしれない。',
+    '誘われなかったのに、私も少し不安だった。',
+    '誘われたのに、私も少し不安だったと思う。',
+    '誘われたのに、私も少し不安だったわけではない。',
+    '誘われたのに、私も少し不安だ。',
+    '誘われたのに、少し私は少し不安だった。',
+    '誘われたのに、少しも怖くなかった。',
+])
+def test_owned_past_projection_does_not_promote_unproved_sources(memo):
+    from cocolon_meaning_experience_engine.emlis_answer_update import prepare_emlis_meaning, build_updated_grounded_plan
+    plan = build_updated_grounded_plan(prepare_emlis_meaning(begin(memo)))
+    assert not any(flag.startswith('source_received_event_link:')
+                   for nucleus in plan.nuclei for flag in nucleus.semantic_frame.attribute_codes)
+
+
+@pytest.mark.parametrize('tier', ['free', 'plus', 'premium'])
+def test_owned_past_initial_and_answer_saved_body_reuse(qcase, qdb, monkeypatch, tier):
+    user, parent, service = qcase
+    qdb.query('update public.profiles set subscription_tier=$2 where id=$1', [user, tier])
+    qdb.query('update public.emotions set memo=$1 where id=$2', [OWNED_PAST, parent])
+    first = run(service.start(user, parent))
+    follow = first['current_observation']['text'].split('Emlisから：', 1)[1]
+    for text in ('誘われたのに、あなたも少し不安だった',
+                 '頼まれたのに、あなたは少し怖くなかった',
+                 '言われたけど、あなたには少し寂しかった'):
+        assert text in follow
+    after = run(answer(service, user, first, '今は少し苦しい。'))
+    assert after['body_state'] == 'REFINED' and after['original'] == first['original']
+    assert '回答した時点では少し苦しい' in after['current_observation']['text']
+    monkeypatch.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved body must not regenerate'))
+    assert run(service.get(user, parent)) == after
+    assert run(service.start(user, parent)) == after
+
+
+@pytest.mark.parametrize('memo,fragments,times', [
+    ('褒められたのに、悲しいけれど嬉しかった。', ('褒められた', '悲しい', '嬉しかった'), ('past', 'current_input', 'past')),
+    ('誘われたのに、悲しかったけど怖くなかった。', ('誘われた', '悲しかった', '怖くなかった'), ('past', 'past', 'past')),
+    ('頼まれたけど、私も少し不安だったけれど嬉しかった。', ('頼まれた', '私も少し不安だった', '嬉しかった'), ('past', 'past', 'past')),
+    ('評価されたけれど、嬉しかったけど悲しかった。', ('評価された', '嬉しかった', '悲しかった'), ('past', 'past', 'past')),
+])
+@pytest.mark.parametrize('capability', ['Q3_FREE', 'Q3_PLUS', 'Q3_PREMIUM'])
+def test_received_feeling_chain_keeps_three_operands_and_two_source_edges(memo, fragments, times, capability):
+    from test_cmee_emlis_detached_observation import read_body
+    req = begin(memo)
+    req = replace(req, emlis_thread=replace(req.emlis_thread, capability_snapshot=capability,
+        question_control_context=EmlisQuestionControlV1(question_limit=3 if capability == 'Q3_PREMIUM' else 1)))
+    context = actual(request=req)
+    result = MeaningExperienceEngine().generate(req)
+    assert result.artifact and result.artifact.text == context[0].artifact.text
+    assert result.question is not None and not result.automatic_progression
+    body = result.artifact.text
+    assert all('「' + text + '」' in result.artifact.observation for text in fragments)
+    assert '変化' not in body and '同時' not in body and '安心' not in body and '今は' not in body
+    assert all(text.replace('私も', 'あなたも') in result.artifact.reception for text in fragments)
+    nodes = [n for n in context[1].nuclei if 'semantic_dependency:received_feeling_contrast_chain' in n.semantic_frame.attribute_codes]
+    assert len(nodes) == 3 and tuple(n.semantic_frame.time_scope for n in nodes) == times
+    assert [(r.from_nucleus_id, r.to_nucleus_id) for r in context[1].relations if r.retention == 'required'] == [
+        (nodes[0].nucleus_id, nodes[1].nucleus_id), (nodes[1].nucleus_id, nodes[2].nucleus_id)]
+    assert read_body(context, body).passed
+
+
+@pytest.mark.parametrize('old,new', [
+    ('「頼まれた」けど', '「頼まれた」から'),
+    ('「私も少し不安だった」けれど', '「私も少し不安だった」ので'),
+    ('「私も少し不安だった」', '「私も不安だった」'),
+    ('「嬉しかった」', '「嬉しい」'),
+    ('頼まれたけど、', '頼まれたから、'),
+    ('あなたも少し不安だった', 'あなたは少し不安だった'),
+    ('あなたも少し不安だった', 'あなたも不安だった'),
+    ('不安だったけれど、', '不安だったから、'),
+    ('嬉しかったのですね', '嬉しくなかったのですね'),
+    ('嬉しかったのですね', '嬉しいのですね'),
+])
+def test_received_feeling_chain_inverse_rejects_operand_and_edge_changes(old, new):
+    from test_cmee_emlis_detached_observation import read_body
+    context = actual(request=begin('頼まれたけど、私も少し不安だったけれど嬉しかった。'))
+    body = context[0].artifact.text
+    changed = body.replace(old, new, 1)
+    assert changed != body and read_body(context, body).passed
+    assert not read_body(context, changed).passed
+
+
+@pytest.mark.parametrize('memo', [
+    '友人が褒められたのに、悲しかったけど嬉しかった。',
+    '褒められたのに、友人は悲しかったけど嬉しかった。',
+    '「褒められたのに、悲しかったけど嬉しかった」と友人が言った。',
+    '褒められたなら、悲しかったけど嬉しかったかもしれない。',
+    '褒められたのに、悲しかったけど嬉しかったらしい。',
+])
+def test_received_feeling_chain_does_not_split_unproved_owners_or_modality(memo):
+    from cocolon_meaning_experience_engine.emlis_answer_update import prepare_emlis_meaning, build_updated_grounded_plan
+    plan = build_updated_grounded_plan(prepare_emlis_meaning(begin(memo)))
+    assert not any('semantic_dependency:received_feeling_contrast_chain' in n.semantic_frame.attribute_codes for n in plan.nuclei)
+
+
+@pytest.mark.parametrize('old,new', [
+    ('「褒められた」のに', ''),
+    ('「悲しかった」けど', ''),
+    ('けど「嬉しかった」', ''),
+    ('「褒められた」のに', '「褒められた」から'),
+    ('「悲しかった」けど', '「悲しかった」から'),
+    ('「褒められた」のに「悲しかった」けど「嬉しかった」',
+     '「褒められた」と「悲しかった」と「嬉しかった」'),
+    ('褒められたのに、', ''),
+    ('悲しかったけど、', ''),
+    ('けど、嬉しかった', ''),
+    ('褒められたのに、', '褒められたから、'),
+    ('悲しかったけど、', '悲しかったから、'),
+    ('悲しかったけど、', '悲しいけど、'),
+    ('嬉しかったのですね', '嬉しくなかったのですね'),
+    ('悲しかったけど、嬉しかった', '嬉しかったけど、悲しかった'),
+])
+def test_proved_chain_boundary_rejects_partial_or_changed_body(old, new):
+    from test_cmee_emlis_detached_observation import read_body
+    context = actual(request=begin('褒められたのに、悲しかったけど嬉しかった。'))
+    body = context[0].artifact.text
+    changed = body.replace(old, new, 1)
+    assert changed != body and read_body(context, body).passed
+    assert not read_body(context, changed).passed
+
+
+@pytest.mark.parametrize('memo', [
+    '褒められたのに、私は悲しかったけど友人は嬉しかった。',
+    '褒められたのに、悲しかったけど嬉しかったかもしれない。',
+    '褒められたのに、悲しかったけど「嬉しかった」と聞いた。',
+    '褒められたのに、悲しかったけど嬉しくなった。',
+])
+def test_chain_boundary_does_not_prove_foreign_report_uncertainty_or_change(memo):
+    from cocolon_meaning_experience_engine.emlis_answer_update import prepare_emlis_meaning, build_updated_grounded_plan
+    plan = build_updated_grounded_plan(prepare_emlis_meaning(begin(memo)))
+    assert not any('semantic_dependency:received_feeling_contrast_chain' in n.semantic_frame.attribute_codes for n in plan.nuclei)

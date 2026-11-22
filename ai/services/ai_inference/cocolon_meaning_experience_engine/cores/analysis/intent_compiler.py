@@ -1,0 +1,4856 @@
+"""Analysis-owned observed graph from existing source-grounded semantic frames.
+
+The shared semantic owner supplies evidence, polarity and modality, never an
+Emlis response. Analysis decides its own node kinds, edges and missing scopes.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass, replace
+from collections import Counter
+from copy import deepcopy
+import hashlib
+import json
+import re
+
+from emlis_ai_grounded_observation_plan import (
+    build_final_stage1_grounded_observation_plan,
+    source_proven_performed_action_status,
+    _source_current_cognition as _shared_source_current_cognition, _source_current_cognition_parts,
+    _source_unfinished_result_clause_is_bound,
+    _source_polite_past_feeling_is_bound,
+    _source_prefix_opens_report,
+)
+from ...contracts import EvidenceRef
+from ...emlis_answer_update import _WITHDRAWAL, _REPLACEMENT
+from .source_adapter import (AnalysisSourceError, AnalysisSourceSet, commitment,
+                            scoped_source_view, source_field_text, selected_categories)
+
+def _source_current_cognition(nucleus):
+    # Analysis explicitly reads either original text field. The shared witness
+    # retains its memo-only default for existing Emlis callers/checkpoints.
+    return (len(nucleus.source_fields) == 1
+        and _shared_source_current_cognition(nucleus,
+            source_field=nucleus.source_fields[0]))
+
+
+NODE_KINDS = ('SCENE', 'ROLE', 'ATTENTION_OR_THOUGHT',
+              'ACTION_OR_NONACTION', 'IMMEDIATE_RESULT_OR_AFTERMATH')
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class AnalysisUnitQualifier:
+    kind: str
+    quote: str
+    evidence: EvidenceRef
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class AnalysisUnitCandidate:
+    index: int
+    quote: str
+    node_kind: str | None
+    parent: int | None
+    scope_role: str | None
+    qualifiers: tuple[AnalysisUnitQualifier, ...]
+    evidence: EvidenceRef
+    actor: str = 'UNRESOLVED_NOT_OWNER_DERIVED'
+    polarity: str = 'AS_WRITTEN_UNRESOLVED'
+    modality: str = 'AS_WRITTEN_UNRESOLVED'
+    temporal_scope: str = 'AS_WRITTEN_UNRESOLVED'
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class AnalysisUnitCandidateField:
+    field: int
+    field_ref: str
+    field_path: str
+    record_ref: str
+    record_version: str
+    complete_source_text: str
+    evidence: EvidenceRef
+    units: tuple[AnalysisUnitCandidate, ...]
+    residual_ranges: tuple[tuple[int, int], ...]
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class AnalysisUnitCandidateGraph:
+    """Private model proposals, deliberately not an ObservedGraph."""
+    owner_scope: str
+    source_set_ref: str
+    request_ref: str
+    response_ref: str
+    fields: tuple[AnalysisUnitCandidateField, ...]
+    unparsed_record_refs: tuple[str, ...]
+    semantic_status: str = 'UNVALIDATED_MODEL_CANDIDATE'
+    route_edges: tuple = ()
+
+
+def compile_analysis_unit_candidates(frozen, request_ref, response_ref, fields):
+    # Admission binds every part to its complete source before compilation.
+    return AnalysisUnitCandidateGraph(frozen.owner_scope, frozen.source_set_ref,
+        request_ref, response_ref, tuple(fields), tuple(m.saved_record_ref for m in frozen.members))
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class ObservedProposition:
+    """Whole-clause grammatical interpretation, private and source-bound.
+
+    Arguments retain written case particles; a ni-case is not guessed to be
+    a recipient, location or cause. This is not anonymized telemetry.
+    """
+    actor: str
+    arguments: tuple[tuple[str, str], ...]
+    predicate_lemma: str
+    polarity: str
+    modality: str
+    temporal_scope: str
+    source_parts: tuple[tuple[str, int, int], ...]
+    sequence_marker: str = ''
+    relative_day: str = ''
+    possible_content: ObservedProposition | None = None
+    result_state: str = ''
+    dependent_form: str = ''
+    scene_state: str = ''
+    role_state: str = ''
+    written_modifiers: tuple[str, ...] = ()
+
+
+# A bounded verb/inflection inventory, not an input/topic-to-answer table.
+# The finite operator and every argument must consume the complete clause.
+_VERBS = (
+    ('書く', '書', 'k'), ('調べる', '調べ', 'vowel'),
+    ('試す', '試', 's'), ('見る', '見', 'vowel'),
+    ('作る', '作', 'r'), ('残す', '残', 's'),
+    ('記録する', '記録', 'suru'), ('メモする', 'メモ', 'suru'),
+    ('続ける', '続け', 'vowel'),
+)
+# Kana-bearing nouns need a lexical proof: allowing arbitrary okurigana would
+# misread 急いで / 読んで as a noun plus de-case and erase a second predicate.
+# These are nominal lexemes, not triggers selecting a response or a topic.
+# Kanji and katakana may coexist in one nominal (仕事メモ / メモ帳).
+# Keep hiragana limited to the existing explicit lexemes; particles and verb
+# endings must still be consumed separately by the whole-clause grammar.
+# One written attributive form may qualify each nominal segment. Keep it
+# inside the argument, not as an independent assessment or result. Other
+# inflections, adverbs and stacked modifiers require their own scope proof.
+_ATTRIBUTIVE = r'(?:新しい|古い|大きい|小さい|長い|短い|詳しい|難しい|易しい|良い|悪い)'
+_ATTRIBUTIVE_PREFIX = re.compile('^' + _ATTRIBUTIVE)
+_KANA_NOMINAL = r'(?:考え|思い|気持ち|学び|振り返り|取り組み)'
+_KANA_NOMINAL_PREFIX = re.compile('^' + _KANA_NOMINAL)
+# One proven kana lexeme can head a compound such as 振り返りメモ.
+# Its suffix stays kanji/katakana; arbitrary kana and repeated lexemes are
+# not admitted. Preserve the complete compound as one written argument.
+_NOMINAL = (_ATTRIBUTIVE + r'?(?:' + _KANA_NOMINAL
+            + r'[一-鿿々ァ-ヴー]*|[一-鿿々ァ-ヴー]+)')
+_ARGUMENT = re.compile(r'(?P<noun>' + _NOMINAL + r'(?:の' + _NOMINAL
+                       + r')*)(?P<case>を|に|で|と)')
+# Keep a written case relation inside its nominal argument: 同僚からの資料
+# is one object, not a second participant of the performed action. Only
+# ordinary past fact clauses use this extension; wishes, cognitive content
+# and dependent te episodes retain their existing grammatical boundary.
+_NOMINAL_CASE_LINK = re.compile(r'(?:から|へ|と|で)の')
+_PAST_ARGUMENT = re.compile(r'(?P<noun>' + _NOMINAL
+    + r'(?:(?:からの|への|との|での|の)' + _NOMINAL
+    + r')*)(?P<case>を|に|で|と)')
+# Kana SELF possessives are bounded to completed writing, including an
+# omitted actor. Ownership never supplies the missing writer.
+# Do not add pronouns to the general nominal grammar: that would also admit
+# new scenes, wishes and embedded/dependent actions.
+_SELF_WRITING_ARGUMENT = re.compile(
+    r'(?P<noun>(?:(?:私|わたし|僕|ぼく|自分|俺|おれ)の)?' + _NOMINAL
+    + r'(?:(?:への|との|での)' + _NOMINAL + r')*)(?P<case>を|に|で)')
+_KANA_SELF_POSSESSIVE = re.compile(r'^(?:わたし|ぼく|おれ)の')
+
+# Refusal has its own original-only complete-clause proof. Do not extend
+# the general verb/noun/case inventories (wishes, answers and embedded acts).
+_REFUSAL_NOMINAL = r'(?:' + _NOMINAL + r'|集まり|誘い)'
+_PAST_REFUSAL = re.compile(r'(?P<noun>' + _REFUSAL_NOMINAL
+    + r'(?:(?:からの|への|との|での|の)' + _REFUSAL_NOMINAL + r')*)'
+    + r'(?P<case>は|を)(?P<finite>断った|断らなかった)')
+
+
+def _finite_predicates(*, include_nonpast=False):
+    forms = []
+    for lemma, stem, group in _VERBS:
+        i, a, past = {
+            'k': (stem + 'き', stem + 'か', stem + 'いた'),
+            's': (stem + 'し', stem + 'さ', stem + 'した'),
+            'r': (stem + 'り', stem + 'ら', stem + 'った'),
+            'vowel': (stem, stem, stem + 'た'),
+            'suru': (stem + 'し', stem + 'し', stem + 'した'),
+        }[group]
+        for surface, polarity, modality, time in (
+            (past, 'positive', 'fact', 'past'),
+            (i + 'ました', 'positive', 'fact', 'past'),
+            (a + 'なかった', 'negative', 'fact', 'past'),
+            (i + 'ませんでした', 'negative', 'fact', 'past'),
+            (i + 'たい', 'positive', 'wish', 'current_input'),
+            (i + 'たいです', 'positive', 'wish', 'current_input'),
+            (i + 'たくない', 'negative', 'wish', 'current_input'),
+            (i + 'たくないです', 'negative', 'wish', 'current_input'),
+            (i + 'たくありません', 'negative', 'wish', 'current_input'),
+            (i + 'たかった', 'positive', 'wish', 'past'),
+            (i + 'たかったです', 'positive', 'wish', 'past'),
+            (i + 'たくなかった', 'negative', 'wish', 'past'),
+            (i + 'たくなかったです', 'negative', 'wish', 'past'),
+            (i + 'たくありませんでした', 'negative', 'wish', 'past'),
+        ):
+            forms.append((surface, lemma, polarity, modality, time))
+        if not include_nonpast:
+            # Sentence-final politeness cannot sit before the embedded
+            # possibility host ("なかったですかもしれない").
+            forms.append((a + 'なかったです', lemma, 'negative', 'fact', 'past'))
+        if include_nonpast:
+            forms.extend(((lemma, lemma, 'positive', 'fact', 'nonpast'),
+                          (a + 'ない', lemma, 'negative', 'fact', 'nonpast')))
+    return tuple(sorted(forms, key=lambda row: len(row[0]), reverse=True))
+
+
+_FINITE_PREDICATES = _finite_predicates()
+# A written decision about an explicit object is an ordinary past action.
+# Keep this lexical addition out of wishes, cognitive complements and te
+# episodes: those scopes need their own complete source witness.
+_PAST_DECISION_PREDICATES = tuple(
+    (surface, lemma, polarity, 'fact', 'past')
+    for lemma, forms in (
+        ('決める', (('決めた', 'positive'), ('決めました', 'positive'),
+            ('決めなかった', 'negative'), ('決めなかったです', 'negative'),
+            ('決めませんでした', 'negative'))),
+        # Preserve the written preparatory aspect in the visible predicate
+        # and meaning key. Not preparing is not the same as not deciding.
+        ('決めておく', (('決めておいた', 'positive'), ('決めておきました', 'positive'),
+            ('決めておかなかった', 'negative'), ('決めておかなかったです', 'negative'),
+            ('決めておきませんでした', 'negative'))))
+    for surface, polarity in forms)
+_PAST_DECISION_LEMMAS = frozenset(row[1] for row in _PAST_DECISION_PREDICATES)
+_PAST_ACTION_LEMMAS = frozenset(row[0] for row in _VERBS)
+# Only the existing nine verbs: their plain perfective forms supply the
+# corresponding te inflection. These forms carry no independent past tense.
+_TE_PREDICATES = tuple((surface[:-1] + 'て', lemma, 'positive', 'fact', 'dependent')
+    for surface, lemma, polarity, modality, time in _FINITE_PREDICATES
+    if (polarity, modality, time) == ('positive', 'fact', 'past')
+    and not surface.endswith('ました'))
+_CONTENT_PREDICATES = _finite_predicates(include_nonpast=True)
+_CANONICAL_CONTENT = {(lemma, polarity, time): surface
+    for surface, lemma, polarity, modality, time in _CONTENT_PREDICATES
+    if modality == 'fact'
+    and not surface.endswith(('ました', 'ませんでした'))}
+_CLAUSE_PREFIX = re.compile(r'^(その後|それから|今日|昨日)[、，\s]*')
+# A post-topic day modifies the finite clause. An explicit の or case
+# particle instead keeps 今日/昨日 inside the written nominal argument.
+_POST_TOPIC_DAY = re.compile(r'(今日|昨日)(?!の|を|に|で|と|は|が|も)[、，\s]*')
+_DAY_EXTENSION = re.compile(
+    r'(?:分|以前|以後|以降|以来|当時|時点|現在|中|付|頃|ごろ|まで|から|より|だけ|'
+    r'朝|昼|夜|晩|夕|午前|午後|早朝|深夜|未明|正午)')
+
+
+def _unparsed_day_extension(value, *, separated):
+    extension = _DAY_EXTENSION.match(value)
+    if extension is None:
+        return False
+    # A calendar suffix 分 binds to the day. After a written separator,
+    # 分担 / 分室 / 分類... are complete nominal arguments, not that suffix.
+    # The caller must still parse the whole clause. Bare 分, 分の..., finer
+    # times and ranges remain unresolved, as do all unseparated readings.
+    return not (separated and extension.group() == '分'
+                and re.match(r'分[一-鿿々ァ-ヴー]+', value))
+
+
+# Observed unsupported time prefixes must not be swallowed by the open
+# kanji nominal slot. This is not a new time interpretation or day enum.
+# Keep complete issue/year nominals (今月号 / 今年度) and their の modifiers.
+# A longer suffix remains unresolved; these exceptions never date an event.
+_UNPARSED_TIME_NOMINAL = re.compile(
+    r'^(?:明後日|明日|一昨日|今朝|昨夜|先週|来週|今週|'
+    r'(?:今月|先月|来月)(?!号$)|(?:今年|昨年|来年)(?!度$))(?=.)')
+_COGNITIVE_HOSTS = {value: value for value in (
+    '考えてしまう', '思ってしまう', '考えている', '思っている', '考える', '思う')}
+_COGNITIVE_HOSTS['考えちゃう'] = '考えてしまう'
+_UNFINISHED_RESULT = re.compile(
+    r'(?P<still>まだ)(?P<noun>' + _NOMINAL + r'(?:の' + _NOMINAL + r')*)'
+    r'(?P<case>は|が|も)(?P<stem>見つか|決ま|定ま)って(?P<negative>いない|いません)')
+_RESULT_STEMS = {'見つかる': '見つか', '決まる': '決ま', '定まる': '定ま'}
+_CHANGE_PAST = {'減る': '減った', '増える': '増えた', '変わる': '変わった', '戻る': '戻った'}
+# Preserve the canonical past surface used by the realizer. Only admit a
+# polite inflection only when its complete episode has a shared witness.
+_CHANGE_FORMS = {surface: lemma for lemma, surface in _CHANGE_PAST.items()}
+_CHANGE_FORMS.update({'変わりました': '変わる', '減りました': '減る',
+                      '増えました': '増える', '戻りました': '戻る'})
+_BOUNDED_CHANGE = re.compile(
+    r'(?P<noun>' + _NOMINAL + r'(?:の' + _NOMINAL + r')*)'
+    r'(?P<case>は|が|も)(?P<predicate>' + '|'.join(_CHANGE_FORMS) + r')')
+# Finite feelings still require a shared pair or a complete standalone witness.
+# These inflections never assess whether a preceding action helped.
+_FEELING_PAST = {'安心する': '安心した', '落ち着く': '落ち着いた',
+                 '嬉しい': '嬉しかった', 'うれしい': 'うれしかった', '不安だ': '不安だった'}
+_FEELING_FORMS = {'安心した': '安心する', '安心しました': '安心する',
+    '落ち着いた': '落ち着く', '落ち着きました': '落ち着く',
+    '嬉しかった': '嬉しい', '嬉しかったです': '嬉しい',
+    'うれしかった': 'うれしい', 'うれしかったです': 'うれしい',
+    '不安だった': '不安だ', '不安でした': '不安だ'}
+# These nonpast forms describe the source's writing time, not the reader's
+# present or an ongoing condition. Other current feelings remain unresolved.
+_CURRENT_FEELING_FORMS = {'不安だ': '不安だ', '不安です': '不安だ'}
+_CURRENT_NEGATIVE_FEELING_FORMS = {surface: '不安だ' for surface in (
+    '不安ではない', '不安ではないです', '不安ではありません',
+    '不安じゃない', '不安じゃないです', '不安じゃありません')}
+# Existential anxiety retains the written particle, polarity and tense.
+# It is not a copular claim, and は does not assert another feeling exists.
+_EXISTENTIAL_ANXIETY_FORMS = {
+    '不安' + case + finite: (case, current, polarity)
+    for case in ('は', 'が')
+    for current, polarity, forms in (
+        (True, 'positive', ('ある', 'あります')),
+        (False, 'positive', ('あった', 'ありました')),
+        (True, 'negative', ('ない', 'ないです', 'ありません')),
+        (False, 'negative', ('なかった', 'なかったです', 'ありませんでした')))
+    for finite in forms}
+# An absent feeling does not establish its opposite or an action's effect.
+# Only complete standalone SELF clauses can use these negative inflections.
+_FEELING_PAST_NEGATIVE = {'安心する': '安心しなかった', '落ち着く': '落ち着かなかった',
+                          '嬉しい': '嬉しくなかった', 'うれしい': 'うれしくなかった',
+                          '不安だ': '不安ではなかった'}
+_NEGATIVE_FEELING_FORMS = {surface: lemma
+    for lemma, plain, polite in (
+        ('安心する', '安心しなかった', '安心しませんでした'),
+        ('落ち着く', '落ち着かなかった', '落ち着きませんでした'),
+        ('嬉しい', '嬉しくなかった', '嬉しくありませんでした'),
+        ('うれしい', 'うれしくなかった', 'うれしくありませんでした'),
+        ('不安だ', '不安ではなかった', '不安ではありませんでした'),
+        ('不安だ', '不安じゃなかった', '不安じゃありませんでした'))
+    for surface in (plain, plain + 'です', polite)}
+_PAST_EVENT_TOPIC = (
+    r'(?P<subject>私|僕|ぼく|俺|おれ|わたし|自分)は(?:[、，][ \u3000]*)?'
+    r'(?:(?P<day>今日|昨日)(?!の|を|に|で|と|は|が|も)(?P<day_separator>[、，\s]*))?')
+_PAST_PRESENCE = re.compile(
+    _PAST_EVENT_TOPIC + r'(?P<noun>' + _NOMINAL
+    + r'(?:の' + _NOMINAL + r')*)(?P<case>に)'
+    r'(?P<predicate>いた|いました|いなかった(?:です)?|いませんでした)')
+_PAST_RESPONSIBILITY = re.compile(
+    _PAST_EVENT_TOPIC + r'(?P<noun>' + _NOMINAL
+    + r'(?:の' + _NOMINAL + r')*)(?P<case>を)'
+    r'(?P<predicate>担当した|担当しました|担当しなかった(?:です)?|担当しませんでした)')
+_PROTECTIVE_WISH = re.compile(
+    r'(?P<subject>私|僕|ぼく|俺|おれ|わたし|自分)は(?:[、，][ \u3000]*)?(?P<noun>' + _NOMINAL
+    + r'(?:の' + _NOMINAL + r')*)(?P<case>を)(?P<predicate>守りたい(?:です)?)')
+
+
+def _protective_wish_proposition(value):
+    # A written current intention with an explicit object; no other forms of
+    # 守る, inferred benefit, or motive for another action are admitted here.
+    match = _PROTECTIVE_WISH.fullmatch(value)
+    if match is None or re.search(r'(?:^|の)(?:何|誰|幾)', match['noun']):
+        return None
+    return ObservedProposition('SELF', (('を', match['noun']),), '守る',
+        'positive', 'wish', 'current_input', (
+            ('SELF_TOPIC', 0, match.start('noun')),
+            ('PROTECTIVE_OBJECT', match.start('noun'), match.end('noun')),
+            ('CASE_を', match.start('case'), match.end('case')),
+            ('FINITE_PROTECTIVE_WISH', match.start('predicate'), len(value))))
+
+
+def _protective_wish_witness(nucleus, *, contrast_fragment=False):
+    frame = nucleus.semantic_frame
+    action_field = nucleus.source_fields == ('memo_action',)
+    times = {'current_input', 'future'} if action_field else {'current_input'}
+    # The shared keyword frame can classify a nominal object such as 気持ち
+    # as feeling before wish. The full finite surface, nucleus kind and
+    # modality must still independently witness the current intention.
+    predicate_matches = (frame.predicate_kind == 'wish'
+        or (frame.predicate_kind == 'feeling'
+            and 'operator:feeling' in frame.attribute_codes))
+    return (nucleus.grounding_kind == 'explicit'
+        and nucleus.allowed_claim_scope == 'explicit_current_input'
+        and nucleus.retention in {'required', 'should'}
+        and (nucleus.kind == 'wish' or action_field and nucleus.kind == 'action')
+        and predicate_matches
+        and nucleus.source_fields in {('memo',), ('memo_action',)}
+        and len(nucleus.source_span_ids) == 1
+        and (frame.actor, frame.polarity, frame.modality)
+            == ('current_user', 'positive', 'wish')
+        and frame.time_scope in times
+        and 'operator:wish' in frame.attribute_codes
+        and not any(code.startswith(('source_fragment_', 'surface_scalar_',
+                    'thread_time:', 'semantic_dependency:'))
+                    and not (contrast_fragment and (
+                        code == 'source_fragment_scalar_source:normalized_raw_text'
+                        or code.startswith('source_fragment_scalar_range:')))
+                    for code in frame.attribute_codes))
+
+
+def _past_event_topic_parts(match):
+    if match is None or re.search(r'(?:^|の)(?:何|誰|幾)', match['noun']):
+        return None
+    # Keep an unparsed/repeated day out of the nominal argument. Nominal
+    # 今日の... remains unsupported here; it must never become an event day.
+    if re.match(r'(?:今日|昨日)', match['noun']):
+        return None
+    if match['day'] is None:
+        return (('SELF_TOPIC', 0, match.start('noun')),)
+    # Match the action grammar's bounded day scope: neither a finer time
+    # nor an unseparated genitive phrase establishes the event's day.
+    if (_unparsed_day_extension(match['noun'], separated=bool(match['day_separator']))
+            or (not match['day_separator'] and 'の' in match['noun'])):
+        return None
+    day = {'今日': 'TODAY', '昨日': 'YESTERDAY'}[match['day']]
+    return (('SELF_TOPIC', 0, match.start('day')),
+            ('RELATIVE_DAY_' + day, match.start('day'), match.start('noun')))
+
+
+def _past_responsibility_proposition(value):
+    # The explicit responsibility predicate, not the noun or a job-title
+    # guess, establishes the role relation. It proves no completed task.
+    match = _PAST_RESPONSIBILITY.fullmatch(value)
+    topic_parts = _past_event_topic_parts(match)
+    if topic_parts is None:
+        return None
+    polarity = 'negative' if match['predicate'] in {'担当しなかった', '担当しなかったです', '担当しませんでした'} else 'positive'
+    return ObservedProposition('SELF', (('を', match['noun']),), '担当する',
+        polarity, 'fact', 'past', topic_parts + (
+            ('ROLE_NOMINAL', match.start('noun'), match.end('noun')),
+            ('CASE_を', match.start('case'), match.end('case')),
+            ('FINITE_RESPONSIBILITY', match.start('predicate'), len(value))),
+        relative_day={'今日': 'TODAY', '昨日': 'YESTERDAY'}.get(match['day'], ''),
+        role_state='PAST_RESPONSIBILITY')
+
+
+def _past_presence_proposition(value):
+    match = _PAST_PRESENCE.fullmatch(value)
+    topic_parts = _past_event_topic_parts(match)
+    if topic_parts is None:
+        return None
+    polarity = 'negative' if match['predicate'] in {'いなかった', 'いなかったです', 'いませんでした'} else 'positive'
+    return ObservedProposition('SELF', (('に', match['noun']),), 'いる',
+        polarity, 'fact', 'past', topic_parts + (
+            ('SCENE_NOMINAL', match.start('noun'), match.end('noun')),
+            ('CASE_に', match.start('case'), match.end('case')),
+            ('FINITE_PRESENCE', match.start('predicate'), len(value))),
+        relative_day={'今日': 'TODAY', '昨日': 'YESTERDAY'}.get(match['day'], ''),
+        scene_state='PAST_PRESENCE')
+
+
+def _past_event_proposition(value):
+    """Retain one written day/connective on a complete scene or role clause.
+
+    The finite host still proves past and SELF. Offsets address the full
+    source clause, including its prefix; no rewritten source is introduced.
+    """
+    prefix = _CLAUSE_PREFIX.match(value)
+    start = prefix.end() if prefix else 0
+    event = (_past_presence_proposition(value[start:])
+             or _past_responsibility_proposition(value[start:]))
+    # This bounded grammar admits one day or connective, not a combination
+    # whose scope would need a separate interpretation.
+    if event is not None and prefix is not None and event.relative_day:
+        return None
+    if event is None or prefix is None:
+        return event
+    token = prefix.group(1)
+    marker = {'その後': 'AFTER_PREVIOUS', 'それから': 'THEN_OR_ADDITION'}.get(token, '')
+    day = {'今日': 'TODAY', '昨日': 'YESTERDAY'}.get(token, '')
+    return replace(event, sequence_marker=marker, relative_day=day,
+        source_parts=((marker or 'RELATIVE_DAY_' + day, 0, start),)
+            + tuple((kind, a + start, b + start) for kind, a, b in event.source_parts))
+
+
+def _past_event_witness(nucleus, proposition):
+    # The shared generic event supplies grounding, not an inferred role.
+    # Its current_input time is unspecified; the whole finite clause proves
+    # past. Its default actor alone never proves SELF ownership.
+    frame = nucleus.semantic_frame
+    action_field = nucleus.source_fields == ('memo_action',)
+    # A nominal 記録/メモ can give the shared clause an action/action
+    # classification. Only a fully parsed responsibility may consume that
+    # consistent witness; the finite 担当 predicate supplies ROLE, not a
+    # completed task. The actual action field also has an action default for
+    # complete presence clauses, whose finite predicate still proves SCENE.
+    predicate_matches = (nucleus.kind == frame.predicate_kind == 'event'
+        or ((proposition.role_state == 'PAST_RESPONSIBILITY' or action_field)
+            and nucleus.kind == frame.predicate_kind == 'action'
+            and 'operator:action' in frame.attribute_codes))
+    # The shared surface planner lowers ordinary clauses to should when
+    # there are more than three. This is a display priority, not uncertainty.
+    # Both fully parsed scenes and responsibilities retain that priority;
+    # sentence position must not erase an explicit event. Optional fragments
+    # stay excluded and every semantic/source witness below remains required.
+    retention = {'required', 'should'}
+    return (nucleus.grounding_kind == 'explicit'
+        and nucleus.allowed_claim_scope == 'explicit_current_input'
+        and nucleus.retention in retention
+        and predicate_matches
+        and nucleus.source_fields in {('memo',), ('memo_action',)}
+        and len(nucleus.source_span_ids) == 1
+        and frame.actor == 'current_user'
+        # The action-field default is an intention even for a complete past
+        # presence/negative responsibility. The parsed finite clause above,
+        # not the UI field's default, establishes factual past in this scope.
+        and frame.modality in ({'fact', 'intention'} if action_field else {'fact'})
+        and frame.polarity == ('negative' if proposition.polarity == 'negative' else 'neutral')
+        # Shared 'present' marks 今日, not the finite host's tense. Accept
+        # that witness only when this complete clause explicitly carries it.
+        and (frame.time_scope in {'past', 'current_input'}
+             or (proposition.relative_day == 'TODAY' and
+                 frame.time_scope in ({'present', 'future'} if action_field else {'present'})))
+        and not any(code.startswith(('source_fragment_', 'surface_scalar_',
+                    'thread_time:', 'semantic_dependency:')) for code in frame.attribute_codes))
+
+
+_WRITTEN_ANXIETY_DEGREES = {
+    '少し': 'DEGREE_SLIGHT', 'とても': 'DEGREE_TOTEMO', 'かなり': 'DEGREE_KANARI',
+    'やや': 'DEGREE_YAYA', 'ちょっと': 'DEGREE_CHOTTO',
+}
+
+_WRITTEN_NEGATED_ANXIETY_DEGREES = {
+    '全く': 'NEGATION_MATTAKU_KANJI', 'まったく': 'NEGATION_MATTAKU_KANA',
+    '全然': 'NEGATION_ZENZEN',
+    'あまり': 'PARTIAL_NEGATION_AMARI', 'あんまり': 'PARTIAL_NEGATION_ANMARI',
+    '少しも': 'NEGATION_SUKOSHIMO', 'ちっとも': 'NEGATION_CHITTOMO',
+}
+
+
+def _finite_feeling_proposition(value):
+    # Retain topic punctuation in the complete endpoint's source range.
+    # Admission requires either the complete pair or a standalone SELF witness.
+    prefix = re.match(r'^(その後|それから|今日|昨日)[、， \u3000]*', value)
+    offset = prefix.end() if prefix else 0
+    subject = re.compile(r'(?:私|僕|ぼく|俺|おれ|わたし|自分)は(?:[、，][ \u3000]*)?').match(value, offset)
+    # A sequence marker is not evidence of who experienced the feeling.
+    # Keep omitted subjects exclusive to already-proved compound episodes.
+    if prefix and subject is None:
+        return None
+    start = subject.end() if subject else 0
+    token = prefix.group(1) if prefix else ''
+    marker = {'その後': 'AFTER_PREVIOUS', 'それから': 'THEN_OR_ADDITION'}.get(token, '')
+    day = {'今日': 'TODAY', '昨日': 'YESTERDAY'}.get(token, '')
+    parts = ((marker or 'RELATIVE_DAY_' + day, 0, offset),) if prefix else ()
+    parts += (('SELF_TOPIC', offset, start),) if subject else ()
+    post_day = re.match(r'(今日|昨日)[、， \u3000]*', value[start:]) if subject else None
+    if post_day:
+        # One local day only; neither a second day nor a connective licenses
+        # a combined time scope. The finite suffix must still match in full.
+        if prefix:
+            return None
+        day = {'今日': 'TODAY', '昨日': 'YESTERDAY'}[post_day.group(1)]
+        parts += (('RELATIVE_DAY_' + day, start, start + post_day.end()),)
+        start += post_day.end()
+    degrees = {**_WRITTEN_ANXIETY_DEGREES, **_WRITTEN_NEGATED_ANXIETY_DEGREES}
+    # Keep a known negative expression such as 少しも whole, rather than
+    # letting its affirmative prefix 少し consume only part of the scope.
+    degree = max((word for word in degrees if value.startswith(word, start)), key=len, default='')
+    modifier = degrees.get(degree, '')
+    finite_start = start + len(degree)
+    finite = value[finite_start:]
+    existential = _EXISTENTIAL_ANXIETY_FORMS.get(finite)
+    noun_start = finite_start
+    modifier_start = start
+    verb_start = noun_start + 3
+    # One degree may instead occur immediately after the complete noun/case.
+    # Reuse the same finite table without discarding any remaining suffix.
+    post_degree = max((word for word in degrees
+                       if value.startswith(word, verb_start)), key=len, default=''
+                      ) if not degree and finite.startswith(('不安は', '不安が')) else ''
+    if post_degree:
+        degree = post_degree
+        modifier = degrees[degree]
+        modifier_start = verb_start
+        verb_start += len(degree)
+        existential = _EXISTENTIAL_ANXIETY_FORMS.get(value[noun_start:modifier_start] + value[verb_start:])
+        if existential is None:
+            return None
+    if existential is not None:
+        case, current, polarity = existential
+        # The complete finite verb fixes the modifier's scope. Partial
+        # negation is retained as written, never converted to total absence.
+        allowed_degrees = (_WRITTEN_NEGATED_ANXIETY_DEGREES if polarity == 'negative'
+                           else _WRITTEN_ANXIETY_DEGREES)
+        if (subject is None or (current and day not in {'', 'TODAY'})
+                or (degree and degree not in allowed_degrees)):
+            return None
+        degree_parts = (('WRITTEN_MODIFIER_' + modifier, modifier_start,
+                         modifier_start + len(degree)),) if degree else ()
+        noun_parts = (('FEELING_NOUN', noun_start, noun_start + 2),
+                      ('CASE_' + case, noun_start + 2, noun_start + 3))
+        return ObservedProposition('SELF', ((case, '不安'),), 'ある',
+            polarity, 'feeling', 'current_input' if current else 'past',
+            parts + (noun_parts + degree_parts if post_degree else degree_parts + noun_parts)
+                  + (('FINITE_FEELING', verb_start, len(value)),),
+            result_state='CURRENT_FEELING' if current else 'PAST_FEELING',
+            sequence_marker=marker, relative_day=day,
+            written_modifiers=(modifier,) if degree else ())
+    negative = finite in _NEGATIVE_FEELING_FORMS or finite in _CURRENT_NEGATIVE_FEELING_FORMS
+    current = finite in _CURRENT_FEELING_FORMS or finite in _CURRENT_NEGATIVE_FEELING_FORMS
+    lemma = (_CURRENT_NEGATIVE_FEELING_FORMS if current and negative else
+             _CURRENT_FEELING_FORMS if current else
+             _NEGATIVE_FEELING_FORMS if negative else _FEELING_FORMS).get(finite)
+    if lemma is None:
+        return None
+    # Current anxiety needs its own explicit experiencer and current witness;
+    # its written degree never inherits a past or compound temporal scope.
+    if current and subject is None:
+        return None
+    # A complete current feeling may name 今日. 昨日 with a nonpast
+    # predicate does not prove whether the feeling is past or current.
+    # Keep the written day local, never infer it from the record timestamp.
+    if day and (subject is None or (current and day != 'TODAY')):
+        return None
+    # Only admit a written modifier whose scope is fixed by the complete
+    # finite clause. Keep emphatic and partial negation as distinct written
+    # modifiers; あまり/あんまり never becomes total absence or slight anxiety.
+    # Affirmative degrees (e.g. 少し) never acquire a negative scope by default.
+    # Unparsed particles, stacking and ellipsis stay pending.
+    allowed_degrees = _WRITTEN_NEGATED_ANXIETY_DEGREES if negative else _WRITTEN_ANXIETY_DEGREES
+    if degree and (subject is None or lemma != '不安だ' or degree not in allowed_degrees):
+        return None
+    parts += (('WRITTEN_MODIFIER_' + modifier, start, finite_start),) if degree else ()
+    return ObservedProposition('SELF' if subject else 'UNSPECIFIED', (),
+        lemma, 'negative' if negative else 'positive', 'feeling', 'current_input' if current else 'past',
+        parts + (('FINITE_FEELING', finite_start, len(value)),),
+        result_state='CURRENT_FEELING' if current else 'PAST_FEELING', sequence_marker=marker,
+        relative_day=day,
+        written_modifiers=(modifier,) if degree else ())
+
+
+def _standalone_finite_feeling_witness(nucleus, proposition):
+    # A shared current_user default cannot establish an omitted experiencer.
+    # The complete finite SELF clause proves tense; current_input is the shared
+    # standalone frame's scope. Current forms require current_input unless
+    # their own 今日 has a present witness; they never inherit a past scope.
+    current = proposition.result_state == 'CURRENT_FEELING'
+    existential_anxiety = (proposition.predicate_lemma == 'ある'
+        and proposition.arguments in {(('は', '不安'),), (('が', '不安'),)})
+    if (proposition.result_state not in {'PAST_FEELING', 'CURRENT_FEELING'} or proposition.actor != 'SELF'
+            or proposition.polarity not in {'positive', 'negative'}
+            or (proposition.modality, proposition.temporal_scope) !=
+               ('feeling', 'current_input' if current else 'past')
+            or (current and (not (proposition.predicate_lemma == '不安だ' or existential_anxiety)
+                             or proposition.relative_day not in {'', 'TODAY'}))):
+        return False
+    # Keep positive degree and modifiers of explicit negation separate, without deriving
+    # numeric intensity, relief or improvement from either one.
+    allowed_degrees = (_WRITTEN_NEGATED_ANXIETY_DEGREES if proposition.polarity == 'negative'
+                       else _WRITTEN_ANXIETY_DEGREES)
+    if proposition.written_modifiers and (
+            not (proposition.predicate_lemma == '不安だ' or existential_anxiety)
+            or len(proposition.written_modifiers) != 1
+            or proposition.written_modifiers[0] not in allowed_degrees.values()):
+        return False
+    frame = nucleus.semantic_frame
+    action_field = nucleus.source_fields == ('memo_action',)
+    expected = (('value', 'value', 'fact') if proposition.predicate_lemma == '安心する'
+                else ('reaction', 'feeling', 'feeling'))
+    # Shared negative affect is not grammatical negation. The complete
+    # anxiety clause's grammatical polarity and written modifier jointly retain
+    # its scope. Negative polarity alone proves neither absence nor improvement.
+    negative_affect = proposition.predicate_lemma == '不安だ' or existential_anxiety
+    if negative_affect and (
+            {'operator:positive_change', 'semantic_role:current_change'} & set(frame.attribute_codes)
+            or (('operator:negation' in frame.attribute_codes) != (proposition.polarity == 'negative'))):
+        return False
+    expected_polarity = ('negative' if negative_affect and not action_field
+        else 'neutral' if negative_affect and proposition.polarity == 'positive'
+        else proposition.polarity)
+    operators = ({'operator:feeling'} if negative_affect else
+                 {'operator:negation'} if proposition.polarity == 'negative'
+                 else {'operator:positive_change'} if action_field
+                 else {'operator:positive_change', 'semantic_role:current_change'})
+    frame_matches = (nucleus.kind, frame.predicate_kind, frame.modality) == expected
+    if action_field:
+        # Keep the actual action-field evidence. Shared defaults are not
+        # allowed to turn the complete feeling into a performed action.
+        frame_matches = ((nucleus.kind in {expected[0], 'action'}
+            and frame.predicate_kind == expected[1] and frame.modality == expected[2])
+            or (negative_affect and not current and nucleus.kind == 'action'
+                and frame.predicate_kind == 'feeling' and frame.modality == 'fact'
+                and 'operator:feeling' in frame.attribute_codes)
+            or (proposition.predicate_lemma == '安心する'
+                and nucleus.kind == frame.predicate_kind == 'action'
+                and frame.modality in {'fact', 'intention'}
+                and 'operator:action' in frame.attribute_codes))
+    # Shared present/past marks the written day; the fully parsed finite host
+    # separately proves tense. Do not borrow a date from another clause.
+    times = (({'present', 'future', 'past'} if action_field else {'present'})
+             if proposition.relative_day == 'TODAY' else
+             {'past'} if proposition.relative_day == 'YESTERDAY' else
+             {'current_input'} if current else {'current_input', 'past'})
+    return (nucleus.grounding_kind == 'explicit'
+        and nucleus.allowed_claim_scope == 'explicit_current_input'
+        and nucleus.retention in {'required', 'should'}
+        and nucleus.source_fields in {('memo',), ('memo_action',)}
+        and len(nucleus.source_span_ids) == 1
+        and frame_matches
+        and frame.actor == 'current_user' and frame.polarity == expected_polarity
+        and frame.time_scope in times
+        and operators <= set(frame.attribute_codes)
+        and (expected[1] != 'feeling' or 'operator:feeling' in frame.attribute_codes)
+        and not any(code.startswith(('source_fragment_', 'surface_scalar_',
+                    'thread_time:', 'semantic_dependency:')) for code in frame.attribute_codes))
+
+
+def _bounded_change_proposition(value):
+    feeling = _finite_feeling_proposition(value)
+    if feeling is not None:
+        return feeling
+    match = _BOUNDED_CHANGE.fullmatch(value)
+    if match is None or re.search(r'(?:^|の)(?:何|誰|幾)', match['noun']):
+        return None
+    lemma = _CHANGE_FORMS[match['predicate']]
+    return ObservedProposition('UNSPECIFIED', ((match['case'], match['noun']),),
+        lemma, 'positive', 'fact', 'past', (
+            ('RESULT_NOMINAL', 0, match.end('noun')),
+            ('CASE_' + match['case'], match.start('case'), match.end('case')),
+            ('FINITE_CHANGE', match.start('predicate'), len(value))),
+        result_state='BOUNDED_CHANGE')
+
+
+def _unfinished_result_proposition(value):
+    match = _UNFINISHED_RESULT.fullmatch(value)
+    if (match is None or not _source_unfinished_result_clause_is_bound(value)
+            or re.search(r'(?:^|の)(?:何|誰)', match['noun'])):
+        return None
+    # The noun is the written topic/subject, not proof of a first-person
+    # agent, an earlier action, or the cause of this unachieved state.
+    return ObservedProposition('UNSPECIFIED', ((match['case'], match['noun']),),
+        match['stem'] + 'る', 'negative', 'fact', 'current_input', (
+            ('STILL_OPERATOR', 0, match.end('still')),
+            ('RESULT_NOMINAL', match.start('noun'), match.end('noun')),
+            ('CASE_' + match['case'], match.start('case'), match.end('case')),
+            ('RESULT_PREDICATE', match.start('stem'), match.start('negative')),
+            ('NEGATIVE_STATE', match.start('negative'), len(value))),
+        result_state='NOT_YET')
+
+
+def _unfinished_result_witness(nucleus):
+    frame = nucleus.semantic_frame
+    return (nucleus.grounding_kind == 'explicit'
+        and nucleus.allowed_claim_scope == 'explicit_current_input'
+        and nucleus.retention == 'required'
+        and nucleus.kind == frame.predicate_kind == 'event'
+        and nucleus.source_fields in {('memo',), ('memo_action',)}
+        and len(nucleus.source_span_ids) == 1
+        and frame.actor == 'current_user' and frame.modality == 'fact'
+        and frame.polarity == 'negative'
+        and frame.time_scope in {'present', 'current_input', 'continuing'}
+        and 'semantic_role:present_unfinished' in frame.attribute_codes
+        and not any(code.startswith(('source_fragment_', 'surface_scalar_',
+                    'thread_time:', 'semantic_dependency:')) for code in frame.attribute_codes))
+
+def _proposition_node_kind(proposition):
+    if proposition.scene_state:
+        return 'SCENE'
+    if proposition.role_state:
+        return 'ROLE'
+    if proposition.result_state:
+        return 'IMMEDIATE_RESULT_OR_AFTERMATH'
+    if proposition.modality == 'wish' or proposition.possible_content:
+        return 'ATTENTION_OR_THOUGHT'
+    return 'ACTION_OR_NONACTION'
+
+
+def _has_unparsed_nominal_segment(part):
+    modifier = _ATTRIBUTIVE_PREFIX.match(part)
+    head = part[modifier.end():] if modifier else part
+    kana_head = _KANA_NOMINAL_PREFIX.match(head)
+    suffix = head[kana_head.end():] if kana_head else ''
+    # Bare 何/誰 heads are unresolved objects too, not completed claims.
+    # Do not broaden 幾 here: plain 幾何/幾何学 are ordinary nominals.
+    # A modifier cannot hide an unresolved time or interrogative head.
+    # Apply the additional 今日/昨日 check only to newly admitted modified
+    # segments, leaving existing explicit nominal time scopes unchanged.
+    return bool(_UNPARSED_TIME_NOMINAL.match(head)
+        or re.match(r'^(?:何|誰)', head)
+        or (modifier and (re.match(r'^(?:今日|昨日)(?=.)', head)
+                          or re.match(r'^(?:何|誰|幾)', head)))
+        # Check the new compound boundary without changing old plain nouns
+        # such as 仕事の昨日分 or treating any noun as an event's date.
+        or _UNPARSED_TIME_NOMINAL.match(suffix)
+        or re.match(r'^(?:今日|昨日)(?=.)', suffix)
+        or re.match(r'^(?:何|誰|幾)', suffix))
+
+
+def _has_unparsed_nominal_scope(proposition):
+    if proposition is None:
+        return False
+    # Result clauses have no day parser. A leading 今日/昨日 must not be
+    # swallowed into their subject as if its time had been understood.
+    # Preserve complete nominal heads (今日の疑問 / 昨日分の疑問), not
+    # longer unparsed compounds (昨日分疑問). Inner genitives such as
+    # 仕事の昨日分 do not date the result and keep their existing scope.
+    if proposition.result_state in {'BOUNDED_CHANGE', 'NOT_YET'} and any(
+            re.match(r'^(?:今日|昨日)(?!分?(?:の|$))', noun)
+            for _, noun in proposition.arguments):
+        return True
+    # Explicit の and a standalone case-marked day remain nominal: e.g.
+    # 明日の資料 / 明日を記録した do not date the action. Check every
+    # genitive segment and possible content, not only the first argument.
+    return (any(_has_unparsed_nominal_segment(part)
+                for _, noun in proposition.arguments for part in noun.split('の'))
+            or _has_unparsed_nominal_scope(proposition.possible_content))
+
+
+def _proposition(value: str) -> ObservedProposition | None:
+    proposition = _parsed_proposition(value)
+    return None if _has_unparsed_nominal_scope(proposition) else proposition
+
+
+def _parsed_proposition(value: str) -> ObservedProposition | None:
+    """Internal grammatical candidate; callers must check unresolved time."""
+    protective = _protective_wish_proposition(value)
+    if protective is not None:
+        return protective
+    event = _past_event_proposition(value)
+    if event is not None:
+        return event
+    result = _unfinished_result_proposition(value) or _bounded_change_proposition(value)
+    if result is not None:
+        return result
+    cognition = _cognitive_proposition(value)
+    if cognition is not None:
+        return cognition
+    action = _contextual_past_action_proposition(value)
+    if action is not None:
+        return action
+    wish = _omitted_plain_wish_proposition(value)
+    if wish is not None:
+        return wish
+    refusal = _past_refusal_proposition(value)
+    if refusal is not None:
+        return refusal
+    prefix = _CLAUSE_PREFIX.match(value)
+    start = prefix.end() if prefix else 0
+    token = prefix.group(1) if prefix else ''
+    marker = {'その後': 'AFTER_PREVIOUS', 'それから': 'THEN_OR_ADDITION'}.get(token, '')
+    relative_day = {'今日': 'TODAY', '昨日': 'YESTERDAY'}.get(token, '')
+    # A topic-adjacent comma is punctuation within this explicit SELF clause.
+    # Retain it in the exact source span; never skip a sentence or line break.
+    subject = re.compile(r'(?:私|僕|ぼく|俺|おれ|わたし|自分)は(?:[、，][ \u3000]*)?').match(value, start)
+    if subject is None:
+        return None
+    parts = ([(marker or 'RELATIVE_DAY_' + relative_day, 0, start)] if prefix else [])
+    parts.append(('SELF_TOPIC', start, subject.end()))
+    return _finite_proposition(value, subject.end(), 'SELF', parts, marker, relative_day)
+
+
+def _finite_proposition(value, body_start, actor, prefix_parts, marker='', relative_day='', *, content_only=False, predicate_forms=None):
+    day = _POST_TOPIC_DAY.match(value, body_start)
+    if day is not None:
+        # 昨日分の資料 / 昨日以前の資料 are not evidence that the action
+        # happened yesterday. Finer day/range scopes need their own parse.
+        if _unparsed_day_extension(value[day.end():], separated=day.end() > day.end(1)):
+            return None
+        first_argument = (_PAST_ARGUMENT.match(value, day.end())
+                          or _SELF_WRITING_ARGUMENT.match(value, day.end()))
+        if (day.end() == day.end(1) and first_argument is not None
+                and 'の' in first_argument['noun']):
+            # 昨日提出の資料 can describe the material, not the action.
+            # Without a separator this bounded grammar leaves the whole
+            # genitive scope unresolved rather than selecting either reading.
+            return None
+        # Nested cognition and dependent te episodes have their own scope
+        # witnesses. Do not silently promote their day into this host.
+        if content_only or predicate_forms is not None or marker or relative_day:
+            return None
+        relative_day = {'今日': 'TODAY', '昨日': 'YESTERDAY'}[day.group(1)]
+        prefix_parts = [*prefix_parts,
+            ('RELATIVE_DAY_' + relative_day, body_start, day.end())]
+        body_start = day.end()
+    inventory = predicate_forms if predicate_forms is not None else (
+        _CONTENT_PREDICATES if content_only else _FINITE_PREDICATES + _PAST_DECISION_PREDICATES)
+    for finite, lemma, polarity, modality, time in inventory:
+        if not value.endswith(finite):
+            continue
+        # Do not reinterpret a current wish as a past wish just to admit a
+        # yesterday modifier. Its tense must already be explicit in the source.
+        if relative_day == 'YESTERDAY' and time != 'past':
+            continue
+        end = len(value) - len(finite)
+        offset, arguments = body_start, []
+        parts = list(prefix_parts)
+        argument_pattern = (_PAST_ARGUMENT
+            if not content_only and predicate_forms is None
+            and modality == 'fact' and time == 'past' else _ARGUMENT)
+        owned_writing = (argument_pattern is _PAST_ARGUMENT
+            and actor in {'SELF', 'UNSPECIFIED'}
+            and (lemma, polarity) == ('書く', 'positive'))
+        kana_owned_writing = False
+        while offset < end:
+            argument = argument_pattern.match(value, offset, end)
+            if argument is None and owned_writing:
+                argument = _SELF_WRITING_ARGUMENT.match(value, offset, end)
+                kana_owned_writing = kana_owned_writing or argument is not None
+            if argument is None:
+                break
+            noun = argument['noun']
+            if _NOMINAL_CASE_LINK.search(noun):
+                # Validate every nominal head, not only the first object.
+                # New date/range readings (今日からの, 昨日での, etc.)
+                # remain pending; this is not an extension of event time.
+                heads = re.split(r'(?:からの|への|との|での|の)', noun)
+                if any(_has_unparsed_nominal_segment(head)
+                       or re.match(r'^(?:今日|昨日)', head) for head in heads):
+                    break
+            # A second/unparsed day cannot become a made-up compound noun.
+            # 今日の資料 remains a nominal modifier, not an event date.
+            if re.match(r'(?:今日|昨日)(?!の|$)', noun):
+                break
+            if re.search(r'(?:った|いた|した|んだ|ない|たい)$', noun):
+                break
+            arguments.append((argument['case'], noun))
+            parts.append(('CASE_' + argument['case'], offset, argument.end()))
+            offset = argument.end()
+        if offset != end or len({case for case, _ in arguments}) != len(arguments):
+            continue
+        if kana_owned_writing and (len(arguments) not in {1, 2}
+                or not any(case == 'を' for case, _ in arguments)
+                or any(_SELF_WRITING_ARGUMENT.fullmatch(noun + case) is None
+                       for case, noun in arguments)):
+            continue
+        if lemma in _PAST_DECISION_LEMMAS and not any(case == 'を' for case, _ in arguments):
+            continue
+        parts.append(('FINITE_PREDICATE', end, len(value)))
+        return ObservedProposition(actor, tuple(arguments), lemma,
+            polarity, modality, time, tuple(parts),
+            marker, relative_day)
+    return None
+
+
+def _past_refusal_proposition(value):
+    """A written object-topic is not an actor or an event date.
+
+    Keep は as written rather than inventing を. 今日の modifies its noun;
+    a bare day/adverb, unknown kana or extra clause cannot enter this proof.
+    _fragment separately confines recognition to one complete original field.
+    """
+    m = _PAST_REFUSAL.fullmatch(value)
+    if m is None:
+        return None
+    heads = re.split(r'(?:からの|への|との|での|の)', m['noun'])
+    # A human topic such as 友人は断った could be the actor, not the
+    # refused object. Only these explicit refusal-object heads prove the
+    # topicalized reading; do not classify an arbitrary noun as its object.
+    if (heads[-1] not in {'誘い', '依頼', '提案', '招待'}
+            or any(_has_unparsed_nominal_segment(h)
+            or re.match(r'^(?:今日|昨日)(?=.)', h) for h in heads)):
+        return None
+    return ObservedProposition('UNSPECIFIED', ((m['case'], m['noun']),), '断る',
+        'negative' if m['finite'] == '断らなかった' else 'positive', 'fact', 'past',
+        (('CASE_' + m['case'], 0, m.start('finite')),
+         ('FINITE_PREDICATE', m.start('finite'), len(value))))
+
+
+def _omitted_plain_wish_proposition(value):
+    """Recognize a finite wish without supplying the unwritten wisher.
+
+    Recognition alone is not source admission. _fragment confines this new
+    grammar to one complete original field; answers and clause fragments
+    retain their prior scope. Reuse only the nine verbs' four plain forms.
+    """
+    forms = tuple(row for row in _FINITE_PREDICATES
+        if row[3] == 'wish' and row[0].endswith(
+            ('たい', 'たかった', 'たくない', 'たくなかった')))
+    p = _finite_proposition(value, 0, 'UNSPECIFIED', (), predicate_forms=forms)
+    if (p is None or not any(case == 'を' for case, _ in p.arguments)
+            or any((p.sequence_marker, p.relative_day, p.possible_content,
+                p.result_state, p.dependent_form, p.scene_state, p.role_state,
+                p.written_modifiers))):
+        return None
+    return p
+
+
+def _contextual_past_action_proposition(value):
+    """Keep a complete past action even when its actor is not written.
+
+    今回は and 事前に are preserved modifiers, not dates or a relation to
+    another event. The shared frame's default actor never supplies SELF.
+    """
+    prefix = _CLAUSE_PREFIX.match(value)
+    offset = prefix.end() if prefix else 0
+    token = prefix.group(1) if prefix else ''
+    marker = {'その後': 'AFTER_PREVIOUS', 'それから': 'THEN_OR_ADDITION'}.get(token, '')
+    day = {'今日': 'TODAY', '昨日': 'YESTERDAY'}.get(token, '')
+    parts = [(marker or 'RELATIVE_DAY_' + day, 0, offset)] if prefix else []
+    topic = re.compile(r'(?:私|僕|ぼく|俺|おれ|わたし|自分)は(?:[、，][ \u3000]*)?')
+    subject = topic.match(value, offset)
+    if subject:
+        parts.append(('SELF_TOPIC', offset, subject.end()))
+        offset = subject.end()
+    modifiers = []
+    for written, role in (('今回は', 'THIS_OCCASION'), ('事前に', 'IN_ADVANCE')):
+        match = re.compile(written + r'[、， \u3000]*').match(value, offset)
+        if match:
+            modifiers.append(role)
+            parts.append(('WRITTEN_MODIFIER_' + role, offset, match.end()))
+            offset = match.end()
+        # Both 私は今回は... and 今回は私は... retain the written topic.
+        if role == 'THIS_OCCASION' and subject is None:
+            subject = topic.match(value, offset)
+            if subject:
+                parts.append(('SELF_TOPIC', offset, subject.end()))
+                offset = subject.end()
+    if subject and not modifiers:
+        return None  # The existing ordinary SELF grammar owns this case.
+    proposition = _finite_proposition(value, offset, 'SELF' if subject else 'UNSPECIFIED',
+                                      parts, marker, day)
+    if (proposition is None
+            or (proposition.modality, proposition.temporal_scope) != ('fact', 'past')):
+        return None
+    if proposition.predicate_lemma not in _PAST_DECISION_LEMMAS:
+        # Reuse only the existing nine ordinary past verbs, with a complete
+        # written object. Modifier-bearing decisions keep their prior scope;
+        # do not expand SELF/adverb, wish, cognition or dependent-te grammar.
+        if subject or modifiers or not any(case == 'を' for case, _ in proposition.arguments):
+            return None
+        if day and (_unparsed_day_extension(value[prefix.end():],
+                separated=prefix.end() > prefix.end(1))
+                or (prefix.end() == prefix.end(1)
+                    and 'の' in proposition.arguments[0][1])):
+            return None
+    # An unconsumed/repeated modifier must not become a nominal argument.
+    if ('に', '事前') in proposition.arguments:
+        return None
+    return replace(proposition, written_modifiers=tuple(modifiers))
+
+
+def _te_action_proposition(value):
+    """Parse a dependent action without asserting that it happened."""
+    prefix = _CLAUSE_PREFIX.match(value)
+    marker = {'その後': 'AFTER_PREVIOUS', 'それから': 'THEN_OR_ADDITION'}.get(
+        prefix.group(1), '') if prefix else ''
+    if prefix and not marker:
+        return None
+    start = prefix.end() if prefix else 0
+    subject = re.compile(r'(?:私|僕|ぼく|俺|おれ|わたし|自分)は(?:[、，][ \u3000]*)?').match(value, start)
+    if subject is None:
+        return None
+    parts = ([(marker, 0, start)] if prefix else []) + [('SELF_TOPIC', start, subject.end())]
+    proposition = _finite_proposition(value, subject.end(), 'SELF',
+        parts, marker=marker, predicate_forms=_TE_PREDICATES)
+    if _has_unparsed_nominal_scope(proposition):
+        return None
+    return replace(proposition, source_parts=tuple(
+        ('DEPENDENT_PREDICATE' if role == 'FINITE_PREDICATE' else role, a, b)
+        for role, a, b in proposition.source_parts)) if proposition else None
+
+
+def _cognitive_proposition(value):
+    """A proved present thinker plus a fully parsed, non-factual complement.
+
+    The shared grammar owns the cognitive host. Its open lexical slot is not
+    safe content until Analysis also understands the whole embedded clause.
+    An omitted embedded subject stays unspecified, even under a SELF thinker.
+    """
+    # Keep the topic comma inside the source span, matching the shared
+    # cognition boundary; the embedded clause remains only a possibility.
+    subject = re.match(r'^(?:私|僕|ぼく|俺|おれ|わたし|自分)は(?:[、,])?', value)
+    scopes = _source_current_cognition_parts(value) if subject else None
+    if not scopes or {role for role, *_ in scopes} != {'possibility', 'cognition'}:
+        return None
+    bounds = {role: (a, b) for role, a, b, _ in scopes}
+    a, b = bounds['possibility']
+    c, d = bounds['cognition']
+    # The shared present-time prefix can consume the first 今 of an unsupported
+    # time nominal. Restore the original clause only to recognize that pending
+    # scope; it must not block independent, proved statements in the same field.
+    recovered_time_prefix = (a == subject.end() + 1
+        and value[subject.end():a] == '今'
+        and _UNPARSED_TIME_NOMINAL.match(value[subject.end():]) is not None)
+    if recovered_time_prefix:
+        a = subject.end()
+    suffix = re.search(r'(?:かもしれない|かも知れない|かも)$', value[a:b])
+    if (a != subject.end() or d != len(value) or suffix is None
+            or value[b:c] not in {'と', 'って'} or value[c:d] not in _COGNITIVE_HOSTS):
+        return None
+    content_end = a + suffix.start()
+    content = _finite_proposition(value[:content_end], a, 'UNSPECIFIED', (), content_only=True)
+    if content is None or content.modality != 'fact':
+        return None
+    if recovered_time_prefix and not _has_unparsed_nominal_scope(content):
+        return None
+    content = replace(content, modality='possibility')
+    parts = (('SELF_TOPIC', 0, a), *content.source_parts,
+        ('POSSIBILITY_OPERATOR', content_end, b), ('COGNITIVE_CONNECTOR', b, c),
+        ('PRESENT_COGNITIVE_HOST', c, d))
+    return ObservedProposition('SELF', (), _COGNITIVE_HOSTS[value[c:d]],
+        'neutral', 'fact', 'current_input', parts, possible_content=content)
+
+
+def _predicate_meaning(proposition):
+    # One lexeme, two source spellings. Preserve the original proposition and
+    # evidence for rendering; only its meaning key is spelling-independent.
+    lemma = proposition.predicate_lemma
+    if proposition.result_state == 'PAST_FEELING' and lemma == 'うれしい':
+        lemma = '嬉しい'
+    return lemma
+
+
+def _proposition_meaning(proposition):
+    content = proposition.possible_content
+    meaning = (proposition.actor, tuple(sorted(proposition.arguments)),
+            _predicate_meaning(proposition), proposition.result_state, proposition.scene_state, proposition.role_state,
+            (_proposition_meaning(content), content.polarity, content.modality,
+             content.temporal_scope) if content else None)
+    # Keep lexical variants' original spelling for display/replay, but do not
+    # report a period change for that alone. Partial and total negation remain
+    # different meanings even though both have negative grammatical polarity.
+    variants = {'NEGATION_MATTAKU_KANA': 'NEGATION_MATTAKU_KANJI',
+                'PARTIAL_NEGATION_ANMARI': 'PARTIAL_NEGATION_AMARI'}
+    modifiers = tuple(variants.get(code, code)
+                      for code in proposition.written_modifiers)
+    return meaning + (modifiers,) if modifiers else meaning
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class ObservedQuotedField:
+    """Offline model classification, not an independently resolved proposition."""
+    owner_scope: str
+    source_set_ref: str
+    record_ref: str
+    record_version: str
+    field_ref: str
+    node_kind: str
+    text: str
+    evidence: EvidenceRef
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class ObservedNode:
+    node_ref: str
+    node_kind: str
+    visible_label: str
+    record_refs: tuple[str, ...]
+    evidence_refs: tuple[EvidenceRef, ...]
+    polarity: str
+    modality: str
+    temporal_scope: str
+    proposition: ObservedProposition | None = None
+    update_refs: tuple[str, ...] = ()
+    quoted_field: ObservedQuotedField | None = None
+    selected_categories: tuple[str, ...] = ()
+    selected_category_context: bool = False
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class ObservedSourceUpdate:
+    update_ref: str
+    operation: str
+    record_ref: str
+    target_evidence: EvidenceRef
+    answer_evidence_refs: tuple[EvidenceRef, ...]
+    replacement_evidence_refs: tuple[EvidenceRef, ...]
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class ObservedEdge:
+    edge_ref: str
+    edge_kind: str
+    endpoint_refs: tuple[str, str]
+    evidence_refs: tuple[EvidenceRef, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class UnknownGap:
+    gap_ref: str
+    between_node_refs: tuple[str, ...]
+    missing_scope: str
+    reason_code: str
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class ObservedConflict:
+    """Opposed written claims; shared occasion and truth remain unresolved."""
+    conflict_ref: str
+    target_refs: tuple[str, str]
+    evidence_refs: tuple[EvidenceRef, ...]
+    reason_code: str = 'OPPOSING_POLARITY_OCCASION_UNRESOLVED'
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class ObservedAnnotation:
+    """A source-bound annotation, never a route step or an inferred cause."""
+    annotation_ref: str
+    target_ref: str
+    predicate_lemma: str
+    source_labels: tuple[str, ...]
+    evidence_refs: tuple[EvidenceRef, ...]
+    update_refs: tuple[str, ...] = ()
+    kind: str = 'BURDEN'
+    annotation_state: str = 'SOURCE_EXPLICIT_ANNOTATION'
+    uncertainty: str = 'CAUSE_AND_DURATION_NOT_ESTABLISHED'
+    alternative_explanations: tuple[str, ...] = ()
+    forbidden_promotions: tuple[str, ...] = ('CAUSE', 'TRAIT', 'DIAGNOSIS', 'ROUTE_ORDER')
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class ObservedGraph:
+    nodes: tuple[ObservedNode, ...]
+    edges: tuple[ObservedEdge, ...]
+    unknown_gaps: tuple[UnknownGap, ...]
+    source_updates: tuple[ObservedSourceUpdate, ...] = ()
+    conflicts: tuple[ObservedConflict, ...] = ()
+    annotations: tuple[ObservedAnnotation, ...] = ()
+
+
+def _written_role_proposition(text):
+    """One explicit SELF role statement, not a generic noun/coplanar guess.
+
+    The written の役割は relation proves the role; a word ending in 係 does
+    not. Consume the complete field so a reported, hypothetical or uncertain
+    host cannot be discarded. Recording time never supplies event time.
+    The ordinary scope guard also reuses it to recognize a closed sentence;
+    that use does not add a ROLE node to the ordinary map.
+    """
+    if type(text) is not str:
+        return None
+    match = re.fullmatch(
+        r'(?P<self>私|わたし|僕|ぼく|俺|おれ|自分)(?P<topic>の役割は)'
+        r'(?P<noun>' + _NOMINAL + r'(?:の' + _NOMINAL + r')*)'
+        r'(?P<copula>だった|でした|ではなかった|ではなかったです|'
+        r'ではありませんでした|じゃなかった|じゃなかったです)(?:[。．.]?)', text)
+    if match is None or re.search(r'(?:^|の)(?:何|誰|幾)', match['noun']):
+        return None
+    # An unresolved temporal/scope expression must not be hidden in an open
+    # kanji nominal. Keep this lexical boundary aligned with existing frames.
+    if any(_has_unparsed_nominal_segment(p)
+            or re.match(r'^(?:今日|昨日|明日|明後日|一昨日|今朝|昨夜|先週|来週|今週|今月|先月|来月|今年|昨年|来年)', p)
+            for p in match['noun'].split('の')):
+        return None
+    negative = match['copula'] not in {'だった', 'でした'}
+    parts = (('SELF_POSSESSIVE', match.start('self'), match.end('self')),
+        ('EXPLICIT_ROLE_TOPIC', match.start('topic'), match.end('topic')),
+        ('ROLE_NOMINAL', match.start('noun'), match.end('noun')),
+        ('FINITE_ROLE_COPULA', match.start('copula'), match.end('copula')))
+    return ObservedProposition('SELF', (('は', match['noun']),), 'だ',
+        'negative' if negative else 'positive', 'fact', 'past', parts,
+        role_state='WRITTEN_PAST_ROLE')
+
+
+def _model_written_role_proof(source_set, field):
+    """Validate the complete written witness without compiling a saved map."""
+    if (type(field) is not AnalysisUnitCandidateField or len(source_set.members) != 1
+            or field.record_ref != source_set.members[0].saved_record_ref
+            or field.record_version != source_set.members[0].saved_record_version):
+        raise AnalysisSourceError('analysis_written_role_binding_invalid')
+    proposition = _written_role_proposition(field.complete_source_text)
+    if proposition is None:
+        raise AnalysisSourceError('analysis_written_role_scope_unsupported')
+    parts = {role: (a, b) for role, a, b in proposition.source_parts}
+    a, _ = parts['ROLE_NOMINAL']; _, b = parts['FINITE_ROLE_COPULA']
+    accepted_quotes = {field.complete_source_text,
+        field.complete_source_text.rstrip('。．.'), field.complete_source_text[a:b]}
+    roots = [u for u in field.units if u.parent is None]
+    if (len(roots) != 1 or roots[0].node_kind != 'ROLE'
+            or roots[0].scope_role is not None or roots[0].quote not in accepted_quotes
+            or any(u is not roots[0] and not (u.parent == roots[0].index
+                and u.scope_role == 'CONTENT_TARGET' and u.quote == proposition.arguments[0][1])
+                for u in field.units)):
+        raise AnalysisSourceError('analysis_written_role_candidate_mismatch')
+    for unit in field.units:
+        for qualifier in unit.qualifiers:
+            actor_end = parts['SELF_POSSESSIVE'][1]
+            copula = field.complete_source_text[parts['FINITE_ROLE_COPULA'][0]:b]
+            negative_operators = ({copula, 'ありませんでした'}
+                if copula == 'ではありませんでした' else
+                {copula, 'なかったです' if copula.endswith('です') else 'なかった'})
+            allowed = ((qualifier.kind == 'EXPLICIT_ACTOR'
+                        and qualifier.quote in {field.complete_source_text[:actor_end],
+                                                field.complete_source_text[:actor_end] + 'の'})
+                or (qualifier.kind == 'NEGATION' and proposition.polarity == 'negative'
+                    and qualifier.quote in negative_operators))
+            if not allowed:
+                raise AnalysisSourceError('analysis_written_role_qualifier_mismatch')
+    e = field.evidence
+    if (e.scalar_start != 0 or e.scalar_end != len(field.complete_source_text)
+            or e.utf8_start != e.field_utf8_start or e.utf8_end != e.field_utf8_end):
+        raise AnalysisSourceError('analysis_written_role_binding_invalid')
+    categories = selected_categories(source_set, field.record_ref)
+    return proposition, categories
+
+
+def compile_model_written_role_graph(source_set, field):
+    """Admit one source-explicit partial frame from a bound ROLE proposal.
+
+    The candidate stays unchanged. No qualifier becomes an independent fact,
+    and this does not widen compile_observed_graph's normal finite parser.
+    """
+    proposition, categories = _model_written_role_proof(source_set, field)
+    e = field.evidence
+    node = ObservedNode('n1', 'ROLE', field.complete_source_text,
+        (field.record_ref,), (e,), proposition.polarity, proposition.modality,
+        proposition.temporal_scope, proposition,
+        selected_categories=categories or (), selected_category_context=categories is not None)
+    gaps = tuple(UnknownGap('g' + str(i), ('n1',), kind,
+        'NOT_ESTABLISHED_FROM_SOURCE') for i, kind in enumerate(
+            (k for k in NODE_KINDS if k != 'ROLE'), 1))
+    return ObservedGraph((node,), (), gaps)
+
+
+def validate_model_written_role_graph(source_set, field, graph):
+    """Check restored meaning in place; do not invoke the compiler/author."""
+    proposition, categories = _model_written_role_proof(source_set, field)
+    if (type(graph) is not ObservedGraph or type(graph.nodes) is not tuple
+            or len(graph.nodes) != 1 or graph.edges or graph.source_updates
+            or graph.conflicts or graph.annotations):
+        raise AnalysisSourceError('analysis_written_role_saved_graph_changed')
+    node = graph.nodes[0]
+    from dataclasses import asdict
+    expected = dict(node_ref='n1', node_kind='ROLE', visible_label=field.complete_source_text,
+        record_refs=[field.record_ref], evidence_refs=[asdict(field.evidence)],
+        polarity=proposition.polarity, modality=proposition.modality,
+        temporal_scope=proposition.temporal_scope, proposition=asdict(proposition),
+        update_refs=[], quoted_field=None, selected_categories=list(categories or ()),
+        selected_category_context=categories is not None)
+    gaps = [dict(gap_ref='g' + str(i), between_node_refs=['n1'], missing_scope=kind,
+        reason_code='NOT_ESTABLISHED_FROM_SOURCE') for i, kind in enumerate(
+            (k for k in NODE_KINDS if k != 'ROLE'), 1)]
+    if (type(node) is not ObservedNode or _semantic_json(asdict(node)) != _semantic_json(expected)
+            or _semantic_json([asdict(g) for g in graph.unknown_gaps]) != _semantic_json(gaps)):
+        raise AnalysisSourceError('analysis_written_role_saved_graph_changed')
+    return graph
+
+
+def _written_role_clause_witness(text):
+    """One leading explicit role and one independent, still unread past act.
+
+    This closes only the role's own source scope. The trailing act supplies
+    neither a SELF actor nor a role-to-action relation in this profile.
+    """
+    if type(text) is not str or re.search(r'[「」『』“”"?？]|によると|いわく|曰く|夢を見|'
+            r'(?:聞いた|聞きました|読んだ|読みました)(?:話|内容)', text):
+        raise AnalysisSourceError('analysis_written_role_clause_scope_unsupported')
+    match = re.fullmatch(r'([^。．.\r\n]+)[。．.]([^。．.\r\n]+)[。．.]?', text)
+    if match is None:
+        raise AnalysisSourceError('analysis_written_role_clause_scope_unsupported')
+    label, remainder = match.groups()
+    role = _written_role_proposition(label)
+    tail = _proposition(remainder)
+    if (role is None or tail is None or _known_postposed_host(remainder)
+            or tail.predicate_lemma not in _PAST_ACTION_LEMMAS
+            or (tail.modality, tail.temporal_scope) != ('fact', 'past')
+            or _has_unparsed_nominal_scope(tail)
+            or any((tail.sequence_marker, tail.relative_day, tail.possible_content,
+                    tail.result_state, tail.dependent_form, tail.scene_state,
+                    tail.role_state, tail.written_modifiers))):
+        raise AnalysisSourceError('analysis_written_role_clause_scope_unsupported')
+    return label, replace(role, role_state='WRITTEN_PAST_ROLE_CLAUSE')
+
+
+def _model_written_role_clause_node(source_set, field):
+    if (type(field) is not AnalysisUnitCandidateField or len(source_set.members) != 1
+            or len(source_set.sources) != 1 or len(source_set.category_records) != 1
+            or source_set.sources[0].envelope.source_role != 'ORIGINAL_INPUT'
+            or field.record_ref != source_set.members[0].saved_record_ref
+            or field.record_version != source_set.members[0].saved_record_version
+            or field.field_path != 'memo'):
+        raise AnalysisSourceError('analysis_written_role_clause_binding_invalid')
+    text = field.complete_source_text
+    label, p = _written_role_clause_witness(text)
+    parts = {name: (a, b) for name, a, b in p.source_parts}
+    accepted = {label, label + text[len(label)],
+        label[parts['ROLE_NOMINAL'][0]:parts['FINITE_ROLE_COPULA'][1]]}
+    roots = [u for u in field.units if u.parent is None and u.node_kind == 'ROLE']
+    if (len(roots) != 1 or roots[0].scope_role is not None or roots[0].quote not in accepted
+            or roots[0].evidence.scalar_end > len(label) + 1):
+        raise AnalysisSourceError('analysis_written_role_clause_candidate_mismatch')
+    root = roots[0]
+    for unit in field.units:
+        if unit is root or (unit.parent == root.index and unit.scope_role == 'CONTENT_TARGET'
+                and unit.quote == p.arguments[0][1]):
+            for q in unit.qualifiers:
+                copula = label[parts['FINITE_ROLE_COPULA'][0]:]
+                operators = ({copula, 'ありませんでした'} if copula == 'ではありませんでした'
+                    else {copula, 'なかったです' if copula.endswith('です') else 'なかった'})
+                if not ((q.kind == 'EXPLICIT_ACTOR'
+                        and q.quote in {label[:parts['SELF_POSSESSIVE'][1]],
+                                       label[:parts['SELF_POSSESSIVE'][1]] + 'の'})
+                        or (q.kind == 'NEGATION' and p.polarity == 'negative' and q.quote in operators)):
+                    raise AnalysisSourceError('analysis_written_role_clause_qualifier_mismatch')
+        elif unit.evidence.scalar_start < len(label) + 1 or unit.parent == root.index:
+            raise AnalysisSourceError('analysis_written_role_clause_candidate_mismatch')
+    e = field.evidence
+    if (e.scalar_start != 0 or e.scalar_end != len(text) or e.utf8_start != e.field_utf8_start
+            or e.utf8_end != e.field_utf8_end):
+        raise AnalysisSourceError('analysis_written_role_clause_binding_invalid')
+    evidence = replace(e,
+        evidence_id='analysis-unit-evidence:' + commitment([field.field_ref, 0, len(label)])[7:],
+        scalar_end=len(label), utf8_end=e.field_utf8_start + len(label.encode('utf-8')),
+        literal_sha256=hashlib.sha256(label.encode('utf-8')).hexdigest())
+    categories = selected_categories(source_set, field.record_ref)
+    return ObservedNode('n1', 'ROLE', label, (field.record_ref,), (evidence,),
+        p.polarity, p.modality, p.temporal_scope, p,
+        selected_categories=categories or (), selected_category_context=True)
+
+
+def _written_role_clause_gaps():
+    return tuple(UnknownGap('g' + str(i), ('n1',), kind, 'NOT_ESTABLISHED_FROM_SOURCE')
+        for i, kind in enumerate((k for k in NODE_KINDS if k != 'ROLE'), 1)) + (
+            UnknownGap('g5', ('n1',), 'SOURCE_SCOPE', 'UNSUPPORTED_OR_UNCERTAIN_SOURCE_SCOPE'),)
+
+
+def compile_model_written_role_clause_graph(source_set, field):
+    return ObservedGraph((_model_written_role_clause_node(source_set, field),), (), _written_role_clause_gaps())
+
+
+def validate_model_written_role_clause_graph(source_set, field, graph):
+    from dataclasses import asdict
+    if (type(graph) is not ObservedGraph
+            or type(graph.nodes) is not tuple or type(graph.unknown_gaps) is not tuple
+            or type(graph.edges) is not tuple
+            or _semantic_json(asdict(graph)) != _semantic_json(asdict(ObservedGraph(
+                (_model_written_role_clause_node(source_set, field),), (), _written_role_clause_gaps())))):
+        raise AnalysisSourceError('analysis_written_role_clause_saved_graph_changed')
+    return graph
+
+
+def _check_model_action_units(action, p, label, *, units=None, scalar_start=0,
+        node_kind='ACTION_OR_NONACTION', finite_part='FINITE_PREDICATE', accepted_quotes=None):
+    """Match one complete source-proved action to its unchanged model units."""
+    subject = next(((a, b) for name, a, b in p.source_parts if name == 'SELF_TOPIC'), None)
+    finite = next(((a, b) for name, a, b in p.source_parts if name == finite_part), None)
+    if (finite is None or (subject is None and p.actor != 'UNSPECIFIED')
+            or (subject is not None and p.actor != 'SELF')):
+        raise AnalysisSourceError('analysis_written_role_action_scope_unsupported')
+    units = action.units if units is None else units
+    roots = [u for u in units if u.parent is None]
+    accepted = ({action.complete_source_text[scalar_start:], label}
+        | ({label[subject[1]:]} if subject is not None else set())
+        if accepted_quotes is None else accepted_quotes)
+    nouns = {noun for _, noun in p.arguments}
+    if (len(roots) != 1 or roots[0].node_kind != node_kind
+            or roots[0].scope_role is not None or roots[0].quote not in accepted
+            or any(u is not roots[0] and not (u.parent == roots[0].index
+                and u.scope_role == 'CONTENT_TARGET' and u.quote in nouns) for u in units)):
+        raise AnalysisSourceError('analysis_written_role_action_candidate_mismatch')
+    self_text = label[subject[0]:subject[1]].split('は', 1)[0] if subject is not None else None
+    finite_text = label[finite[0]:finite[1]]
+    operators = {finite_text}
+    match = re.search(r'(なかった(?:です)?|ませんでした)$', finite_text)
+    if match:
+        operators.add(match[0])
+    if (p.polarity == 'negative' and p.predicate_lemma.endswith('する')
+            and finite_text == p.predicate_lemma[:-2] + 'しなかった'):
+        operators.add('しなかった')
+    for unit in units:
+        for q in unit.qualifiers:
+            actor = (subject is not None and q.kind == 'EXPLICIT_ACTOR'
+                and q.quote in {self_text, self_text + 'は'}
+                and q.evidence.scalar_start == scalar_start + subject[0]
+                and q.evidence.scalar_end == scalar_start + subject[0] + len(q.quote))
+            negative = (q.kind == 'NEGATION' and p.polarity == 'negative' and q.quote in operators
+                and q.evidence.scalar_end == scalar_start + len(label)
+                and q.evidence.scalar_start >= scalar_start + finite[0])
+            if not (actor or negative):
+                raise AnalysisSourceError('analysis_written_role_action_qualifier_mismatch')
+
+
+def _written_role_clause_action_witness(text):
+    """The existing two-clause scope, with an independently explicit SELF act."""
+    label, role = _written_role_clause_witness(text)
+    start = len(label) + 1
+    tail = text[start:].rstrip('。．.')
+    action = _proposition(tail)
+    if (action.actor != 'SELF' or not any(k == 'SELF_TOPIC' for k, _, _ in action.source_parts)):
+        raise AnalysisSourceError('analysis_written_role_action_scope_unsupported')
+    return label, role, tail, action, start
+
+
+def compile_model_written_role_clause_action_graph(source_set, field):
+    """Keep both proved clauses in one original field, with no relation edge.
+
+    Candidate units and their original coordinates remain unchanged. The
+    private ROLE_CLAUSE compiler and saved identity remain role-only.
+    """
+    role = _model_written_role_clause_node(source_set, field)
+    _, _, label, p, start = _written_role_clause_action_witness(field.complete_source_text)
+    graph = compile_observed_graph(source_set)
+    if (len(graph.nodes) != 1 or graph.edges or graph.source_updates or graph.conflicts or graph.annotations):
+        raise AnalysisSourceError('analysis_written_role_action_scope_unsupported')
+    action = graph.nodes[0]
+    if (action.node_kind != 'ACTION_OR_NONACTION' or action.proposition != p
+            or action.visible_label != label or action.record_refs != role.record_refs
+            or len(action.evidence_refs) != 1 or action.update_refs or action.quoted_field is not None):
+        raise AnalysisSourceError('analysis_written_role_action_scope_unsupported')
+    e = action.evidence_refs[0]
+    base = field.evidence
+    if (e.source_envelope_id != base.source_envelope_id or e.field_path != field.field_path
+            or (e.field_utf8_start, e.field_utf8_end, e.field_sha256) !=
+               (base.field_utf8_start, base.field_utf8_end, base.field_sha256)
+            or (e.scalar_start, e.scalar_end) != (start, start + len(label))
+            or (e.utf8_start, e.utf8_end) != (
+                base.field_utf8_start + len(field.complete_source_text[:start].encode('utf-8')),
+                base.field_utf8_start + len(field.complete_source_text[:start + len(label)].encode('utf-8')))
+            or e.literal_sha256 != hashlib.sha256(label.encode('utf-8')).hexdigest()):
+        raise AnalysisSourceError('analysis_written_role_action_binding_invalid')
+    units = tuple(u for u in field.units if u.evidence.scalar_start >= start)
+    _check_model_action_units(field, p, label, units=units, scalar_start=start)
+    return ObservedGraph((role, replace(action, node_ref='n2')), (), _written_role_action_gaps())
+
+
+def _model_complete_observed_action(node, fields):
+    """Match an existing finite node to its own complete, bound model field."""
+    p = node.proposition
+    if (node.node_kind != 'ACTION_OR_NONACTION' or p is None or p.actor not in {'SELF', 'UNSPECIFIED'}
+            or (p.modality, p.temporal_scope) != ('fact', 'past')
+            or p.predicate_lemma not in _PAST_ACTION_LEMMAS | {'断る'}
+            or any((p.sequence_marker, p.relative_day, p.possible_content, p.result_state,
+                    p.dependent_form, p.scene_state, p.role_state, p.written_modifiers))
+            or len(node.evidence_refs) != 1 or node.update_refs or node.quoted_field is not None):
+        return None
+    e = node.evidence_refs[0]
+    matches = [f for f in fields if f.record_ref in node.record_refs
+        and f.field_path == e.field_path and f.evidence.source_envelope_id == e.source_envelope_id]
+    if len(matches) != 1:
+        return None
+    field = matches[0]
+    other_fields = [f for f in fields if f is not field]
+    # This first model-to-map scope never releases another field's report.
+    # Keep the full source in the shared compiler above, then conservatively
+    # withhold adoption for quoted or forward-reporting material elsewhere.
+    if any(re.search(r'[「」『』“”"]', f.complete_source_text)
+            or _analysis_prefix_opens_report(f.complete_source_text)
+            or _forward_speech_opens_report(f.complete_source_text) for f in other_fields):
+        return None
+    text = field.complete_source_text
+    label = text.rstrip('。．.')
+    if (text not in {label, label + '。', label + '．', label + '.'}
+            or node.visible_label != label or (e.scalar_start, e.scalar_end) != (0, len(label))
+            or e.field_sha256 != field.evidence.field_sha256
+            or (e.field_utf8_start, e.field_utf8_end) !=
+               (field.evidence.field_utf8_start, field.evidence.field_utf8_end)
+            or (e.utf8_start, e.utf8_end) !=
+               (e.field_utf8_start, e.field_utf8_start + len(label.encode('utf-8')))):
+        return None
+    try:
+        if p.predicate_lemma == '断る':
+            # A short finite root is sufficient only with its exact whole
+            # object child. No generic action quote exception is introduced.
+            if (other_fields or _past_refusal_proposition(label) != p
+                    or not any(u.parent is not None and u.scope_role == 'CONTENT_TARGET'
+                        and u.quote == p.arguments[0][1] for u in field.units)):
+                return None
+            finite = next((label[a:b] for role, a, b in p.source_parts
+                if role == 'FINITE_PREDICATE'), '')
+            _check_model_action_units(field, p, label,
+                accepted_quotes={label, text, finite})
+        else:
+            _check_model_action_units(field, p, label)
+    except AnalysisSourceError:
+        return None
+    return field
+
+
+def compile_model_observed_actions(source_set, fields):
+    """Consume a matched complete action through the existing source compiler.
+
+    Keep the original whole source, its safety/host checks, evidence and gaps.
+    This does not treat model roots or the authenticated owner as actor proof.
+    A missing subject stays UNSPECIFIED under the existing source proof;
+    it never inherits SELF from the owner or a model actor qualifier.
+    Single plain actions and fully witnessed one-field SELF sequences reuse
+    existing source grammar and edges. Plain SELF wishes keep their
+    existing wish modality and written time through a separate narrow proof.
+    """
+    graph = compile_observed_graph(source_set)
+    if any(n.node_kind == 'ATTENTION_OR_THOUGHT' for n in graph.nodes):
+        return _model_complete_observed_plain_wishes(source_set, graph, fields)
+    if len(graph.nodes) >= 2:
+        return _model_complete_observed_action_sequence(graph, fields)
+    if (len(graph.nodes) != 1 or graph.edges or graph.source_updates
+            or graph.conflicts or graph.annotations):
+        return None
+    node = graph.nodes[0]
+    field = _model_complete_observed_action(node, fields)
+    if field is None:
+        return None
+    other_fields = [f for f in fields if f is not field]
+    # Some unsupported text has no shared nucleus. A nonempty other field
+    # is still unread; absence from the plan cannot turn it into parsed text.
+    if other_fields and not any(g.missing_scope == 'SOURCE_SCOPE' for g in graph.unknown_gaps):
+        graph = replace(graph, unknown_gaps=graph.unknown_gaps + (UnknownGap(
+            'g' + str(len(graph.unknown_gaps) + 1), (node.node_ref,), 'SOURCE_SCOPE',
+            'UNSUPPORTED_OR_UNCERTAIN_SOURCE_SCOPE'),))
+    return graph
+
+
+def _model_complete_observed_plain_wishes(source_set, graph, fields):
+    """Match explicit wishes without turning them into performed acts.
+
+    The existing source compiler owns every proposition, polarity and time.
+    A complete negative wish quote retains its finite negation without a
+    separate NEGATION qualifier; model raw and qualifiers are never repaired.
+    This narrow original-record scope keeps one wish, or positive past actions
+    with wishes, across complete memo/memo_action fields. An original wish
+    without a written actor remains UNSPECIFIED in its own complete field;
+    a separate SELF action never supplies that wish's actor. The whole source is
+    compiled before this proof; fields never borrow each other's witnesses.
+    Preserve the original graph and unestablished connections unchanged.
+    """
+    if (len(source_set.members) != 1 or len(source_set.sources) != 1 or len(fields) not in {1, 2}
+            or source_set.sources[0].envelope.source_role != 'ORIGINAL_INPUT'
+            or source_set.members[0].child_source_envelope_refs !=
+               (source_set.sources[0].envelope.envelope_id,)
+            or graph.edges or graph.source_updates or graph.conflicts or graph.annotations
+            or any(g.missing_scope == 'SOURCE_SCOPE' for g in graph.unknown_gaps)
+            or not graph.nodes
+            or (len(graph.nodes) > 1 and not any(
+                n.node_kind == 'ACTION_OR_NONACTION' for n in graph.nodes))):
+        return None
+    if (any(f.field_path not in {'memo', 'memo_action'} for f in fields)
+            or len({f.field_path for f in fields}) != len(fields)):
+        return None
+    return _model_complete_observed_plain_wish_fields(
+        graph, fields, source_set.sources[0].envelope.envelope_id,
+        # Only this original-only wrapper permits an omitted wish actor.
+        # The shared witness still checks each node's own complete field,
+        # units and evidence; supplemental answers retain the default False.
+        allow_omitted=True)
+
+
+def _model_complete_observed_plain_wish_fields(graph, fields, source_envelope_id,
+        *, allow_omitted=False):
+    """Match complete fields to their own source-proved plain wish nodes.
+
+    Source scope stays with the caller: the original-only wrapper above and
+    the ordinary-answer proof below each establish their own source boundary.
+    This shared witness never changes a source role or supplies a proposition.
+    """
+    witnessed = {f.field_path: (f, [], []) for f in fields}
+    for node in graph.nodes:
+        p = node.proposition
+        omitted = bool(allow_omitted and p is not None and p.actor == 'UNSPECIFIED'
+            and node.node_kind == 'ATTENTION_OR_THOUGHT' and p.modality == 'wish')
+        if (p is None or (p.actor != 'SELF' and not omitted)
+                or p.predicate_lemma not in _PAST_ACTION_LEMMAS
+                or (node.node_kind, p.polarity, p.modality, p.temporal_scope) not in {
+                    ('ACTION_OR_NONACTION', 'positive', 'fact', 'past'),
+                    ('ATTENTION_OR_THOUGHT', 'positive', 'wish', 'current_input'),
+                    ('ATTENTION_OR_THOUGHT', 'positive', 'wish', 'past'),
+                    ('ATTENTION_OR_THOUGHT', 'negative', 'wish', 'current_input'),
+                    ('ATTENTION_OR_THOUGHT', 'negative', 'wish', 'past')}
+                or (node.polarity, node.modality, node.temporal_scope) !=
+                   (p.polarity, p.modality, p.temporal_scope)
+                or any((p.sequence_marker, p.relative_day, p.possible_content,
+                    p.result_state, p.dependent_form, p.scene_state, p.role_state,
+                    p.written_modifiers))
+                or len(node.evidence_refs) != 1 or node.update_refs or node.quoted_field is not None):
+            return None
+        e, = node.evidence_refs
+        if e.field_path not in witnessed:
+            return None
+        field, spans, consumed = witnessed[e.field_path]
+        text, base = field.complete_source_text, field.evidence
+        if node.record_refs != (field.record_ref,):
+            return None
+        label = node.visible_label
+        if (e.source_envelope_id != base.source_envelope_id
+                or e.source_envelope_id != source_envelope_id
+                or e.field_path != field.field_path
+                or (e.field_utf8_start, e.field_utf8_end, e.field_sha256) !=
+                   (base.field_utf8_start, base.field_utf8_end, base.field_sha256)
+                or text[e.scalar_start:e.scalar_end] != label
+                or (e.utf8_start, e.utf8_end) != (
+                    base.field_utf8_start + len(text[:e.scalar_start].encode('utf-8')),
+                    base.field_utf8_start + len(text[:e.scalar_end].encode('utf-8')))
+                or e.literal_sha256 != hashlib.sha256(label.encode('utf-8')).hexdigest()):
+            return None
+        end = e.scalar_end + int(text[e.scalar_end:e.scalar_end+1] in {'。', '．', '.'})
+        units = tuple(u for u in field.units
+            if e.scalar_start <= u.evidence.scalar_start and u.evidence.scalar_end <= end)
+        subject = next(((a, b) for k, a, b in p.source_parts if k == 'SELF_TOPIC'), None)
+        if subject is None and not omitted:
+            return None
+        quotes = ({label} if subject is None
+            else {label, label[subject[0]:], label[subject[1]:]})
+        if end != e.scalar_end:
+            quotes |= {quote + text[e.scalar_end] for quote in tuple(quotes)}
+        try:
+            _check_model_action_units(field, p, label, units=units,
+                scalar_start=e.scalar_start, node_kind=node.node_kind, accepted_quotes=quotes)
+        except AnalysisSourceError:
+            return None
+        spans.append(e)
+        consumed.extend(u.index for u in units)
+    for field, spans, consumed in witnessed.values():
+        text = field.complete_source_text
+        if (not spans or text[:spans[0].scalar_start].strip()
+                or text[spans[-1].scalar_end:].strip('。．.\r\n\t ')
+                or any(not re.fullmatch(r'[。．.\s]+', text[left.scalar_end:right.scalar_start])
+                    for left, right in zip(spans, spans[1:]))
+                or sorted(consumed) != sorted(u.index for u in field.units)):
+            return None
+    return graph
+
+
+def _model_complete_observed_action_sequence(graph, fields):
+    """Keep a fully witnessed original field's actions and written order.
+
+    The shared source compiler owns every fact, gap and edge. Model units
+    must cover each existing clause once; unit order supplies no relation.
+    """
+    if (len(fields) != 1 or graph.source_updates or graph.conflicts or graph.annotations
+            or any(g.missing_scope == 'SOURCE_SCOPE' for g in graph.unknown_gaps)):
+        return None
+    field = fields[0]
+    text, base = field.complete_source_text, field.evidence
+    spans, consumed = [], []
+    for node in graph.nodes:
+        p = node.proposition
+        if (node.node_kind != 'ACTION_OR_NONACTION' or p is None or p.actor != 'SELF'
+                or (p.modality, p.temporal_scope) != ('fact', 'past')
+                or p.predicate_lemma not in _PAST_ACTION_LEMMAS | _PAST_DECISION_LEMMAS
+                or p.sequence_marker not in {'', 'AFTER_PREVIOUS', 'THEN_OR_ADDITION'}
+                or any((p.relative_day, p.possible_content, p.result_state, p.dependent_form,
+                    p.scene_state, p.role_state, p.written_modifiers))
+                or len(node.evidence_refs) != 1 or node.update_refs or node.quoted_field is not None
+                or node.record_refs != (field.record_ref,)):
+            return None
+        e = node.evidence_refs[0]
+        label = node.visible_label
+        if (e.source_envelope_id != base.source_envelope_id or e.field_path != field.field_path
+                or (e.field_utf8_start, e.field_utf8_end, e.field_sha256) !=
+                   (base.field_utf8_start, base.field_utf8_end, base.field_sha256)
+                or text[e.scalar_start:e.scalar_end] != label
+                or (e.utf8_start, e.utf8_end) != (
+                    base.field_utf8_start + len(text[:e.scalar_start].encode('utf-8')),
+                    base.field_utf8_start + len(text[:e.scalar_end].encode('utf-8')))
+                or e.literal_sha256 != hashlib.sha256(label.encode('utf-8')).hexdigest()):
+            return None
+        end = e.scalar_end + int(text[e.scalar_end:e.scalar_end+1] in {'。', '．', '.'})
+        units = tuple(u for u in field.units
+            if e.scalar_start <= u.evidence.scalar_start and u.evidence.scalar_end <= end)
+        subject = next(((a, b) for k, a, b in p.source_parts if k == 'SELF_TOPIC'), None)
+        if subject is None:
+            return None
+        quotes = {label, label[subject[0]:], label[subject[1]:]}
+        if end != e.scalar_end:
+            quotes |= {quote + text[e.scalar_end] for quote in tuple(quotes)}
+        try:
+            _check_model_action_units(field, p, label, units=units,
+                scalar_start=e.scalar_start, accepted_quotes=quotes)
+        except AnalysisSourceError:
+            return None
+        spans.append(e)
+        consumed.extend(u.index for u in units)
+    if (graph.nodes[0].proposition.sequence_marker
+            or text[:spans[0].scalar_start].strip()
+            or text[spans[-1].scalar_end:].strip('。．.\r\n\t ')
+            or any(not re.fullmatch(r'[。．.\s]+', text[left.scalar_end:right.scalar_start])
+                for left, right in zip(spans, spans[1:]))
+            or sorted(consumed) != sorted(u.index for u in field.units)):
+        return None
+    expected = [(left.node_ref, right.node_ref, (le, re_))
+        for left, right, le, re_ in zip(graph.nodes, graph.nodes[1:], spans, spans[1:])
+        if right.proposition.sequence_marker]
+    actual = [(edge.endpoint_refs[0], edge.endpoint_refs[1], edge.evidence_refs)
+        for edge in graph.edges if edge.edge_kind == 'OBSERVED_ORDER']
+    if len(actual) != len(graph.edges) or actual != expected:
+        return None
+    return graph
+
+
+def compile_model_supplement_action(source_set, fields, source):
+    """Prove one ordinary answer without detaching it from its parent source.
+
+    The shared compiler validates the full record and owns its evidence. A
+    canonical node can have an original/earlier-answer representative; restore
+    only this answer's written witness for the unchanged complete-field check.
+    """
+    if source.envelope.source_role != 'SUPPLEMENTAL_ANSWER':
+        return None
+    graph = compile_observed_graph(source_set)
+    if graph.source_updates or graph.conflicts or graph.annotations:
+        return None
+    owned = [(node, e) for node in graph.nodes for e in node.evidence_refs
+        if e.source_envelope_id == source.envelope.envelope_id]
+    if len(owned) != 1:
+        return None
+    node, evidence = owned[0]
+    text = source_field_text(source, evidence.field_path)
+    label = text[evidence.scalar_start:evidence.scalar_end]
+    p = _proposition(label)
+    if (p is None or node.proposition is None
+            or _proposition_meaning(p) != _proposition_meaning(node.proposition)
+            or (p.polarity, p.modality, p.temporal_scope) !=
+               (node.polarity, node.modality, node.temporal_scope)):
+        return None
+    node = replace(node, node_ref='n1', visible_label=label, proposition=p,
+        record_refs=(source.record_ref,), evidence_refs=(evidence,))
+    return node if _model_complete_observed_action(node, fields) is not None else None
+
+
+def compile_model_supplement_plain_wish(source_set, fields, source):
+    """Prove one whole, explicit SELF wish in an ordinary answer's own memo.
+
+    Compile the complete parent and all answers before selecting a witness.
+    Canonical aggregation can retain another source's representative, so
+    rederive the proposition and its coordinates from this answer's literal.
+    An unread parent remains the caller's gap; it cannot supply answer proof.
+    """
+    if (source.envelope.source_role != 'SUPPLEMENTAL_ANSWER'
+            or source not in source_set.sources
+            or sum(s.envelope.envelope_id == source.envelope.envelope_id
+                for s in source_set.sources) != 1):
+        return None
+    graph = compile_observed_graph(source_set)
+    if graph.source_updates or graph.conflicts or graph.annotations:
+        return None
+    source_id = source.envelope.envelope_id
+    members = [m for m in source_set.members
+        if m.saved_record_ref == source.record_ref
+        and m.saved_record_version == source.record_version
+        and source_id in m.child_source_envelope_refs]
+    own_fields = tuple(f for f in fields if f.evidence.source_envelope_id == source_id)
+    if (len(members) != 1 or len(own_fields) != 1
+            or own_fields[0].record_ref != source.record_ref
+            or own_fields[0].record_version != source.record_version
+            or own_fields[0].field_path != 'memo'):
+        return None
+    field, = own_fields
+    text = source_field_text(source, 'memo')
+    base = next(e for e in source.evidence if e.field_path == 'memo')
+    if (field.complete_source_text != text
+            or field.evidence.field_path != 'memo'
+            or (field.evidence.field_utf8_start, field.evidence.field_utf8_end,
+                field.evidence.field_sha256) !=
+               (base.field_utf8_start, base.field_utf8_end, base.field_sha256)
+            or (field.evidence.scalar_start, field.evidence.scalar_end) != (0, len(text))
+            or (field.evidence.utf8_start, field.evidence.utf8_end) !=
+               (base.field_utf8_start, base.field_utf8_end)
+            or field.evidence.literal_sha256 != hashlib.sha256(text.encode('utf-8')).hexdigest()):
+        return None
+    owned = [(node, e) for node in graph.nodes for e in node.evidence_refs
+        if e.source_envelope_id == source_id]
+    if len(owned) != 1:
+        return None
+    node, evidence = owned[0]
+    if (node.node_kind != 'ATTENTION_OR_THOUGHT'
+            or source.record_ref not in node.record_refs
+            or evidence.field_path != 'memo'
+            or any(node.node_ref in edge.endpoint_refs
+                or any(e.source_envelope_id == source_id for e in edge.evidence_refs)
+                for edge in graph.edges)):
+        return None
+    label = text[evidence.scalar_start:evidence.scalar_end]
+    p = _proposition(label)
+    if (p is None or node.proposition is None or p.modality != 'wish'
+            or _proposition_meaning(p) != _proposition_meaning(node.proposition)
+            or (p.polarity, p.modality, p.temporal_scope) !=
+               (node.polarity, node.modality, node.temporal_scope)):
+        return None
+    local = ObservedGraph((replace(node, node_ref='n1', visible_label=label,
+        proposition=p, record_refs=(source.record_ref,), evidence_refs=(evidence,)),), (), ())
+    return _model_complete_observed_plain_wish_fields(local, own_fields, source_id)
+
+
+def compile_model_observed_role_decision(source_set, fields):
+    """Match model units to an existing complete responsibility/decision graph.
+
+    Keep the shared compiler's nodes, evidence, gaps and written-order edge
+    unchanged. This neither creates a role identity nor supplies a motive.
+    """
+    if (len(source_set.members) != 1 or len(source_set.sources) != 1
+            or len(source_set.category_records) != 1
+            or source_set.sources[0].envelope.source_role != 'ORIGINAL_INPUT'
+            or len(fields) != 1 or fields[0].field_path != 'memo'):
+        raise AnalysisSourceError('analysis_model_role_decision_scope_unsupported')
+    field = fields[0]
+    graph = compile_observed_graph(source_set)
+    return _model_role_decision_field_graph(field, graph)
+
+
+def _model_role_decision_field_graph(field, graph):
+    """Prove the same complete field, two nodes and optional written order."""
+    if (len(graph.nodes) != 2 or graph.source_updates or graph.conflicts or graph.annotations
+            or any(g.missing_scope == 'SOURCE_SCOPE' for g in graph.unknown_gaps)):
+        raise AnalysisSourceError('analysis_model_role_decision_scope_unsupported')
+    role, decision = graph.nodes
+    if (role.node_kind != 'ROLE' or role.proposition is None
+            or role.proposition.role_state != 'PAST_RESPONSIBILITY'
+            or role.proposition.predicate_lemma != '担当する'
+            or decision.node_kind != 'ACTION_OR_NONACTION' or decision.proposition is None
+            or decision.proposition.predicate_lemma not in _PAST_DECISION_LEMMAS):
+        raise AnalysisSourceError('analysis_model_role_decision_scope_unsupported')
+    spans = []
+    consumed = []
+    text, base = field.complete_source_text, field.evidence
+    for node in graph.nodes:
+        p = node.proposition
+        if (p.actor != 'SELF' or (p.modality, p.temporal_scope) != ('fact', 'past')
+                or len(p.arguments) != 1 or p.arguments[0][0] != 'を'
+                or any((p.relative_day, p.possible_content, p.result_state, p.dependent_form,
+                    p.scene_state, p.written_modifiers))
+                or len(node.evidence_refs) != 1 or node.update_refs or node.quoted_field is not None
+                or node.record_refs != (field.record_ref,)):
+            raise AnalysisSourceError('analysis_model_role_decision_scope_unsupported')
+        e = node.evidence_refs[0]
+        if (e.source_envelope_id != base.source_envelope_id or e.field_path != field.field_path
+                or (e.field_utf8_start, e.field_utf8_end, e.field_sha256) !=
+                   (base.field_utf8_start, base.field_utf8_end, base.field_sha256)
+                or text[e.scalar_start:e.scalar_end] != node.visible_label
+                or (e.utf8_start, e.utf8_end) != (
+                    base.field_utf8_start + len(text[:e.scalar_start].encode('utf-8')),
+                    base.field_utf8_start + len(text[:e.scalar_end].encode('utf-8')))
+                or e.literal_sha256 != hashlib.sha256(node.visible_label.encode('utf-8')).hexdigest()):
+            raise AnalysisSourceError('analysis_model_role_decision_binding_invalid')
+        end = e.scalar_end + int(text[e.scalar_end:e.scalar_end+1] in {'。','.'})
+        units = tuple(u for u in field.units
+            if e.scalar_start <= u.evidence.scalar_start and u.evidence.scalar_end <= end)
+        subject = next(((a,b) for k,a,b in p.source_parts if k == 'SELF_TOPIC'), None)
+        finite_kind = 'FINITE_RESPONSIBILITY' if node is role else 'FINITE_PREDICATE'
+        finite = next(((a,b) for k,a,b in p.source_parts if k == finite_kind), None)
+        if subject is None or finite is None:
+            raise AnalysisSourceError('analysis_model_role_decision_scope_unsupported')
+        label = node.visible_label
+        quotes = {label, label[subject[0]:], label[subject[1]:]}
+        # A bare predicate needs its written object as an actual model child.
+        roots = [u for u in units if u.parent is None]
+        if (len(roots) == 1 and any(u.parent == roots[0].index
+                and u.scope_role == 'CONTENT_TARGET' and u.quote == p.arguments[0][1] for u in units)):
+            quotes.add(label[finite[0]:finite[1]])
+        if end != e.scalar_end:
+            quotes |= {quote + text[e.scalar_end] for quote in tuple(quotes)}
+        _check_model_action_units(field, p, label, units=units, scalar_start=e.scalar_start,
+            node_kind=node.node_kind, finite_part=finite_kind, accepted_quotes=quotes)
+        spans.append(e)
+        consumed.extend(u.index for u in units)
+    left,right = spans
+    if (text[:left.scalar_start].strip() or text[right.scalar_end:].strip('。.\r\n\t ')
+            or not re.fullmatch(r'[。.\s]+', text[left.scalar_end:right.scalar_start])
+            or sorted(consumed) != sorted(u.index for u in field.units)
+            or role.proposition.sequence_marker
+            or decision.proposition.sequence_marker not in {'','AFTER_PREVIOUS','THEN_OR_ADDITION'}):
+        raise AnalysisSourceError('analysis_model_role_decision_scope_unsupported')
+    if decision.proposition.sequence_marker:
+        if (len(graph.edges) != 1 or graph.edges[0].edge_kind != 'OBSERVED_ORDER'
+                or graph.edges[0].endpoint_refs != (role.node_ref,decision.node_ref)
+                or graph.edges[0].evidence_refs != (left,right)):
+            raise AnalysisSourceError('analysis_model_role_decision_scope_unsupported')
+    elif graph.edges:
+        raise AnalysisSourceError('analysis_model_role_decision_scope_unsupported')
+    return graph
+
+
+def compile_model_supplement_role_decision(source_set, fields, source):
+    """Reuse the complete responsibility/decision proof for an owned answer.
+
+    First compile the whole parent and all answers. Only this answer's exact
+    witnesses enter the local proof; source roles and envelopes stay intact.
+    Canonical representatives from another source cannot supply source_parts.
+    """
+    if source.envelope.source_role != 'SUPPLEMENTAL_ANSWER':
+        return None
+    graph = compile_observed_graph(source_set)
+    if graph.source_updates or graph.conflicts or graph.annotations:
+        return None
+    matches = [f for f in fields if f.record_ref == source.record_ref
+        and f.field_path == 'memo' and f.evidence.source_envelope_id == source.envelope.envelope_id]
+    if len(matches) != 1:
+        return None
+    field = matches[0]
+    owned = []
+    for node in graph.nodes:
+        evidence = tuple(e for e in node.evidence_refs
+            if e.source_envelope_id == source.envelope.envelope_id)
+        if not evidence:
+            continue
+        if len(evidence) != 1:
+            return None
+        e = evidence[0]
+        if e.field_path != field.field_path:
+            return None
+        label = source_field_text(source, e.field_path)[e.scalar_start:e.scalar_end]
+        p = _proposition(label)
+        if (p is None or node.proposition is None
+                or _proposition_meaning(p) != _proposition_meaning(node.proposition)
+                or (p.polarity, p.modality, p.temporal_scope) !=
+                   (node.polarity, node.modality, node.temporal_scope)):
+            return None
+        owned.append(replace(node, visible_label=label, proposition=p,
+            record_refs=(source.record_ref,), evidence_refs=evidence))
+    if len(owned) != 2:
+        return None
+    owned.sort(key=lambda n: n.evidence_refs[0].scalar_start)
+    refs = {n.node_ref: 'n' + str(i) for i, n in enumerate(owned, 1)}
+    edges = []
+    for edge in graph.edges:
+        own_evidence = any(e.source_envelope_id == source.envelope.envelope_id for e in edge.evidence_refs)
+        if not own_evidence:
+            if set(edge.endpoint_refs) & refs.keys():
+                return None
+            continue
+        if (not set(edge.endpoint_refs) <= refs.keys()
+                or any(e.source_envelope_id != source.envelope.envelope_id for e in edge.evidence_refs)):
+            return None
+        edges.append(replace(edge, edge_ref='e' + str(len(edges) + 1),
+            endpoint_refs=tuple(refs[r] for r in edge.endpoint_refs)))
+    # The shared field proof checks prefix/suffix/separator, all units and
+    # exact evidence. An unread parent is not an unread part of this answer;
+    # the caller retains that parent's SOURCE_SCOPE in the final record graph.
+    local = ObservedGraph(tuple(replace(n, node_ref=refs[n.node_ref]) for n in owned), tuple(edges), ())
+    try:
+        return _model_role_decision_field_graph(field, local)
+    except AnalysisSourceError:
+        return None
+
+
+def _model_written_role_action_proof(source_set, fields):
+    """Two complete original fields: written role and finite SELF past action.
+
+    This reuses the established grammars. No cross-field order, motive,
+    responsibility-to-action inference, or unresolved remainder is admitted.
+    """
+    if (len(source_set.members) != 1 or len(source_set.sources) != 1
+            or source_set.sources[0].envelope.source_role != 'ORIGINAL_INPUT'
+            or len(fields) != 2 or {f.field_path for f in fields} != {'memo', 'memo_action'}):
+        raise AnalysisSourceError('analysis_written_role_action_scope_unsupported')
+    roles = [f for f in fields if _written_role_proposition(f.complete_source_text) is not None]
+    if len(roles) != 1:
+        raise AnalysisSourceError('analysis_written_role_action_scope_unsupported')
+    role = roles[0]
+    role_p, categories = _model_written_role_proof(source_set, role)
+    action = next(f for f in fields if f is not role)
+    text = action.complete_source_text
+    label = text.rstrip('。．.')
+    p = _proposition(label)
+    if (text not in {label, label + '。', label + '．', label + '.'}
+            or p is None or p.actor != 'SELF' or p.modality != 'fact' or p.temporal_scope != 'past'
+            or p.polarity not in {'positive', 'negative'} or p.predicate_lemma not in _PAST_ACTION_LEMMAS
+            or _proposition_node_kind(p) != 'ACTION_OR_NONACTION'
+            or any((p.sequence_marker, p.relative_day, p.possible_content, p.result_state,
+                    p.dependent_form, p.scene_state, p.role_state, p.written_modifiers))):
+        raise AnalysisSourceError('analysis_written_role_action_scope_unsupported')
+    if (action.record_ref != role.record_ref or action.record_version != role.record_version
+            or action.evidence.source_envelope_id != role.evidence.source_envelope_id
+            or action.evidence.scalar_start != 0 or action.evidence.scalar_end != len(text)
+            or action.evidence.utf8_start != action.evidence.field_utf8_start
+            or action.evidence.utf8_end != action.evidence.field_utf8_end):
+        raise AnalysisSourceError('analysis_written_role_action_binding_invalid')
+    _check_model_action_units(action, p, label)
+    evidence = replace(action.evidence,
+        evidence_id='analysis-unit-evidence:' + commitment([action.field_ref, 0, len(label)])[7:],
+        scalar_end=len(label),
+        utf8_end=action.evidence.field_utf8_start + len(label.encode('utf-8')),
+        literal_sha256=hashlib.sha256(label.encode('utf-8')).hexdigest())
+    return role, role_p, action, p, evidence, label, categories
+
+
+def _written_role_action_nodes(source_set, fields):
+    role, role_p, action, action_p, evidence, label, categories = _model_written_role_action_proof(source_set, fields)
+    return tuple(ObservedNode('n' + str(i), 'ROLE' if f is role else 'ACTION_OR_NONACTION',
+        f.complete_source_text if f is role else label, (f.record_ref,),
+        (f.evidence if f is role else evidence,), p.polarity, p.modality, p.temporal_scope, p,
+        selected_categories=categories or (), selected_category_context=categories is not None)
+        for i, f in enumerate(fields, 1) for p in (role_p if f is role else action_p,))
+
+
+def _written_role_action_gaps():
+    missing = tuple(k for k in NODE_KINDS if k not in {'ROLE', 'ACTION_OR_NONACTION'})
+    return tuple(UnknownGap('g' + str(i), ('n1',), k, 'NOT_ESTABLISHED_FROM_SOURCE')
+        for i, k in enumerate(missing, 1)) + (UnknownGap('g4', ('n1', 'n2'),
+            'ROUTE_CONNECTION', 'ONLY_EXPLICIT_ORDER_IS_SHOWN'),)
+
+
+def compile_model_written_role_action_graph(source_set, fields):
+    return ObservedGraph(_written_role_action_nodes(source_set, fields), (), _written_role_action_gaps())
+
+
+def validate_model_written_role_action_graph(source_set, fields, graph):
+    # Recheck the two complete source witnesses in place, without invoking a
+    # graph compiler, a language author, or a model during saved-file reads.
+    from dataclasses import asdict
+    if (type(graph) is not ObservedGraph or type(graph.nodes) is not tuple
+            or type(graph.unknown_gaps) is not tuple or graph.edges or graph.source_updates
+            or graph.conflicts or graph.annotations
+            or _semantic_json([asdict(n) for n in graph.nodes]) !=
+               _semantic_json([asdict(n) for n in _written_role_action_nodes(source_set, fields)])
+            or _semantic_json([asdict(g) for g in graph.unknown_gaps]) !=
+               _semantic_json([asdict(g) for g in _written_role_action_gaps()])):
+        raise AnalysisSourceError('analysis_written_role_action_saved_graph_changed')
+    return graph
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class PeriodChange:
+    change_id: str
+    change_kind: str
+    current_ref: str
+    previous_ref: str
+    evidence_refs: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class PeriodComparison:
+    comparison_id: str
+    current_artifact_ref: str
+    current_source_set_ref: str
+    previous_artifact_ref: str
+    previous_source_set_ref: str
+    comparability_state: str
+    reason_codes: tuple[str, ...]
+    change_claims: tuple[PeriodChange, ...]
+
+
+def _period_meaning_groups(graph):
+    # IDs, source offsets, inflection and record counts are not semantic
+    # differences. Keep the complete proposition operators and graph targets.
+    def node_key(n):
+        p = n.proposition
+        if p is None:
+            raise AnalysisSourceError('analysis_comparison_meaning_unavailable')
+        return (n.node_kind, _proposition_meaning(p), n.polarity, n.modality,
+                n.temporal_scope, p.relative_day, p.sequence_marker,
+                n.selected_categories if n.selected_category_context else None)
+    nodes = {n.node_ref: n for n in graph.nodes}
+    keys = {ref: node_key(n) for ref, n in nodes.items()}
+    groups = {kind: {} for kind in ('ROUTE_EVIDENCE_CHANGED',
+        'ANNOTATION_EVIDENCE_CHANGED', 'UNKNOWN_SCOPE_CHANGED', 'CONFLICT_STATE_CHANGED')}
+    def add(kind, key, evidence):
+        bucket = groups[kind].setdefault(key, [])
+        bucket.extend(e.evidence_id for e in evidence if e.evidence_id not in bucket)
+    for n in graph.nodes:
+        add('ROUTE_EVIDENCE_CHANGED', ('node', keys[n.node_ref]), n.evidence_refs)
+    for e in graph.edges:
+        endpoints = tuple(keys[ref] for ref in e.endpoint_refs)
+        if e.edge_kind == 'REPEATED_COOCCURRENCE':
+            endpoints = frozenset(endpoints)
+        add('ROUTE_EVIDENCE_CHANGED', ('edge', e.edge_kind, endpoints), e.evidence_refs)
+    for a in graph.annotations:
+        add('ANNOTATION_EVIDENCE_CHANGED', (a.kind, keys[a.target_ref],
+            a.predicate_lemma, a.annotation_state, a.uncertainty), a.evidence_refs)
+    for g in graph.unknown_gaps:
+        # Missing-stage / unread-scope anchors and adjacent unknown pairs
+        # are presentation positions, not claims about those particular
+        # nodes. Compare the kinds of unresolved scope only. An explicit
+        # missing predecessor really is attached to its written successor.
+        target = (tuple(keys[ref] for ref in g.between_node_refs)
+            if g.reason_code == 'EXPLICIT_PREDECESSOR_NOT_ESTABLISHED' else ())
+        add('UNKNOWN_SCOPE_CHANGED', (target, g.missing_scope, g.reason_code),
+            tuple(e for ref in g.between_node_refs for e in nodes[ref].evidence_refs))
+    for c in graph.conflicts:
+        add('CONFLICT_STATE_CHANGED', (frozenset(keys[ref] for ref in c.target_refs),
+            c.reason_code), c.evidence_refs)
+    return groups
+
+
+def compare_period_meaning(current, previous):
+    """Compare freshly compiled artifacts, never different stored policy versions.
+
+    Called only by generation before current is returned. Absence from a
+    period is not proof of absence from the person's life.
+    """
+    from .source_adapter import _time
+    if current.owner_scope != previous.owner_scope:
+        raise AnalysisSourceError('analysis_comparison_owner_mismatch')
+    start, end = map(_time, current.period)
+    before_start, before_end = map(_time, previous.period)
+    reasons = []
+    if end - start != before_end - before_start:
+        reasons.append('PERIOD_LENGTH_MISMATCH')
+    if before_start >= start:
+        reasons.append('PREVIOUS_PERIOD_NOT_EARLIER')
+    elif before_end > start:
+        reasons.append('PERIOD_OVERLAP')
+    elif before_end != start:
+        reasons.append('PERIOD_NOT_ADJACENT')
+    shared_records = ({m.saved_record_ref for m in current.source_members if m.inclusion_status == 'INCLUDED'}
+        & {m.saved_record_ref for m in previous.source_members if m.inclusion_status == 'INCLUDED'})
+    if shared_records:
+        reasons.append('SHARED_RECORD_IDENTITY')
+    changes = []
+    if not reasons:
+        now, before = _period_meaning_groups(current.graph), _period_meaning_groups(previous.graph)
+        for kind in now:
+            difference = now[kind].keys() ^ before[kind].keys()
+            if not difference:
+                continue
+            # Keep evidence in deterministic graph order, not set iteration.
+            evidence = tuple(dict.fromkeys(e for groups in (now, before)
+                for key, refs in groups[kind].items() if key in difference for e in refs))
+            if not evidence:
+                raise AnalysisSourceError('analysis_comparison_evidence_unavailable')
+            changes.append(PeriodChange('change' + str(len(changes) + 1), kind,
+                current.reference, previous.reference, evidence))
+    return PeriodComparison('comparison:' + commitment([current.reference, previous.reference])[7:],
+        current.reference, current.source_set_ref, previous.reference, previous.source_set_ref,
+        'NOT_COMPARABLE' if reasons else 'COMPARABLE', tuple(reasons), tuple(changes))
+
+
+def _opposed_claim_meaning(left, right):
+    if left.modality != 'feeling':
+        return _proposition_meaning(left) == _proposition_meaning(right)
+    negative, positive = (left, right) if left.polarity == 'negative' else (right, left)
+    # Only complete absence opposes a written presence. Partial negation is
+    # not absence, even when paired with a strong positive degree.
+    if negative.written_modifiers not in {
+            (), ('NEGATION_MATTAKU_KANJI',), ('NEGATION_MATTAKU_KANA',),
+            ('NEGATION_ZENZEN',), ('NEGATION_SUKOSHIMO',), ('NEGATION_CHITTOMO',)}:
+        return False
+    if positive.written_modifiers not in {
+            (), ('DEGREE_SLIGHT',), ('DEGREE_TOTEMO',), ('DEGREE_KANARI',),
+            ('DEGREE_YAYA',), ('DEGREE_CHOTTO',)}:
+        return False
+    if (left.written_modifiers or right.written_modifiers) and not all(
+            p.predicate_lemma == '不安だ' or (p.predicate_lemma == 'ある'
+                and p.arguments in {(('は', '不安'),), (('が', '不安'),)})
+            for p in (left, right)):
+        return False
+    # This local relation comparison never changes either source proposition,
+    # its displayed degree, aggregation key or period-comparison meaning.
+    return (_proposition_meaning(replace(left, written_modifiers=()))
+            == _proposition_meaning(replace(right, written_modifiers=())))
+
+
+def _opposed_claim_pairs(claims):
+    # Called for one original source only. Written day and field must agree;
+    # never infer an occasion from created_at or compare different records.
+    for index, (left, a, p) in enumerate(claims):
+        for right, b, q in claims[index + 1:]:
+            if (left != right and a.field_path == b.field_path
+                    and a.source_envelope_id == b.source_envelope_id
+                    and p.relative_day == q.relative_day
+                    and (p.modality, p.temporal_scope) == (q.modality, q.temporal_scope)
+                    and p.polarity != q.polarity
+                    and _opposed_claim_meaning(p, q)):
+                yield (left, right), (a, b)
+
+
+def _node_kind(nucleus):
+    frame = nucleus.semantic_frame
+    codes = set(frame.attribute_codes)
+    if nucleus.grounding_kind not in ('explicit', 'user_stated_relation'):
+        return None
+    if frame.actor != 'current_user':
+        return None
+    if source_proven_performed_action_status(nucleus):
+        return 'ACTION_OR_NONACTION'
+    if nucleus.kind == 'wish' and frame.modality == 'wish':
+        return 'ATTENTION_OR_THOUGHT'
+    if codes.intersection({'lexical:source_current_cognition',
+            'lexical:source_self_appraisal', 'lexical:source_original_cognition'}):
+        return 'ATTENTION_OR_THOUGHT'
+    if (nucleus.kind == 'event' and frame.modality == 'fact' and
+            'semantic_role:source_event' in codes):
+        return 'SCENE'
+    # Do not infer a role or a result from a generic reaction/change label.
+    return None
+
+
+def _action_change_pair(source, plan, span_id):
+    """Prove both endpoints and the whole written past-after episode.
+
+    The shared relation is necessary but may also wrap dreams/reports. Its
+    marker alone cannot license either endpoint. Analysis consumes every
+    character and only projects order, never causal support or improvement.
+    """
+    if plan is None:
+        return None
+    span = next((s for s in source.spans if s.span_id == span_id), None)
+    if span is None or span.source_field not in {'memo', 'memo_action'}:
+        return None
+    rows = [n for n in plan.nuclei if span_id in n.source_span_ids]
+    if len(rows) != 2:
+        return None
+    action, change = rows
+    if (action.kind != 'action' or change.kind != 'change'
+            or not source_proven_performed_action_status(action)
+            or change.semantic_frame.predicate_kind != 'change'):
+        return None
+    ranges = []
+    for n in rows:
+        f = n.semantic_frame
+        codes = f.attribute_codes
+        bounds = [c for c in codes if c.startswith('source_fragment_scalar_range:')]
+        if (n.source_span_ids != (span_id,) or n.source_fields != (span.source_field,)
+                or n.grounding_kind != 'explicit' or n.retention != 'required'
+                or n.allowed_claim_scope != 'explicit_current_input'
+                or f.actor != 'current_user' or f.time_scope != 'past'
+                or (n is action and f.modality != 'fact')
+                or (n is change and f.modality not in {'fact', 'feeling'})
+                or 'semantic_dependency:action_before_change' not in codes
+                or 'source_fragment_scalar_source:normalized_raw_text' not in codes
+                or len(bounds) != 1 or any(c.startswith(('surface_scalar_', 'thread_time:')) for c in codes)):
+            return None
+        ranges.append(tuple(map(int, bounds[0].split(':')[1:])))
+    links = [r for r in plan.relations if r.from_nucleus_id == action.nucleus_id
+             and r.to_nucleus_id == change.nucleus_id]
+    if (len(links) != 1 or links[0].type != 'action_supports_change'
+            or links[0].grounding_kind != 'user_stated_relation' or links[0].retention != 'required'
+            or links[0].source_span_ids != (span_id,)
+            or links[0].source_relation_ids != ('typed_projection:perfective_action_before_bounded_change',)):
+        return None
+    raw = span.raw_text
+    (a, b), (c, d) = ranges
+    if not (a == 0 < b < c < d == len(raw)):
+        return None
+    connector = raw[b:c]
+    te_after = re.fullmatch(r'から[、,]\s*', connector) is not None
+    if not te_after and re.fullmatch(r'(?:後|あと)(?:に)?[、,]\s*', connector) is None:
+        return None
+    left = _te_action_proposition(raw[a:b]) if te_after else _proposition(raw[a:b])
+    right = _bounded_change_proposition(raw[c:d])
+    if (left is None or right is None or _has_unparsed_nominal_scope(right) or left.actor != 'SELF'
+            or right.sequence_marker or right.relative_day
+            # Anxiety has a standalone witness only, not a shared pair proof.
+            or right.predicate_lemma in {'不安だ', 'ある'}
+            # Decisions are admitted as whole standalone past clauses only.
+            or left.predicate_lemma in _PAST_DECISION_LEMMAS
+            # A negative feeling needs the new complete shared witness;
+            # the old positive keyword pair cannot license its negation.
+            or (right.polarity != 'positive' and not (
+                right.result_state == 'PAST_FEELING' and right.polarity == 'negative'
+                and change.semantic_frame.polarity == 'negative'
+                and {'operator:negation', 'semantic_role:source_proven_negative_feeling_sequence'}
+                    <= set(change.semantic_frame.attribute_codes)
+                and 'operator:positive_change' not in change.semantic_frame.attribute_codes))
+            or left.result_state or left.scene_state or left.role_state or left.possible_content or left.relative_day
+            or left.sequence_marker not in {'', 'AFTER_PREVIOUS', 'THEN_OR_ADDITION'}
+            or any(re.search(r'(?:^|の)(?:何|誰|幾)', noun) for _, noun in left.arguments)
+            or (left.polarity, left.modality, left.temporal_scope) !=
+                ('positive', 'fact', 'dependent' if te_after else 'past')):
+        return None
+    # The shared owner marks reassurance as fact and the other admitted
+    # feeling predicates as feeling. Match that witness exactly; Analysis
+    # retains all of these as a reported experience, never a performed action.
+    expected_modality = ('feeling' if right.result_state == 'PAST_FEELING'
+                         and right.predicate_lemma != '安心する' else 'fact')
+    # The shared feeling flag searches the entire endpoint, including nouns
+    # such as 気持ちメモ / 不安. A completely parsed nominal past change is
+    # still a reported change, not a performed action or a feeling attribution.
+    # Keep possessive/genitive feeling scopes pending: the shared default actor
+    # does not establish whose experience a phrase such as 友人の不安 describes.
+    nominal_change_with_feeling_word = (
+        right.result_state == 'BOUNDED_CHANGE'
+        and change.semantic_frame.modality == 'feeling'
+        and 'operator:bounded_change' in change.semantic_frame.attribute_codes
+        and all('の' not in noun for _, noun in right.arguments))
+    if (change.semantic_frame.modality != expected_modality
+            and not nominal_change_with_feeling_word):
+        return None
+    if te_after:
+        # Past is established by this whole episode and its shared witness,
+        # never by the te ending. Source parts still point to the written te.
+        left = replace(left, temporal_scope='past', dependent_form='TE_BEFORE_PAST_CHANGE')
+    return action.nucleus_id, change.nucleus_id, ranges, left, right
+
+
+def _analysis_prefix_opens_report(prefix):
+    # A fully parsed decision is a closed action/nonaction, not a report
+    # introducing the following sentence. The shared conservative heuristic
+    # can pair の in その後 / a nominal with でした in ませんでした.
+    # Inspect every other clause so a genuine earlier speaker remains open.
+    for clause in re.split(r'[。．.]', prefix):
+        # A complete SELF の役割は statement closes its own past assertion.
+        # The generic の…だった heuristic must not reopen it as a report.
+        # Other clauses are still checked, including earlier/later hosts.
+        if _written_role_proposition(clause.strip()) is not None:
+            continue
+        proposition = _proposition(clause.strip())
+        closed_decision = bool(proposition and proposition.actor == 'SELF'
+            and proposition.predicate_lemma in _PAST_DECISION_LEMMAS)
+        # A whole negative past act cannot introduce a quotation merely
+        # because その後 / a nominal contains の and the ending is でした.
+        # Positive writing may still introduce reported content.
+        omitted_negative_action = bool(proposition and proposition.actor == 'UNSPECIFIED'
+            and proposition.predicate_lemma in _PAST_ACTION_LEMMAS
+            and proposition.polarity == 'negative')
+        if (proposition is not None and (closed_decision or omitted_negative_action)
+                and (proposition.modality, proposition.temporal_scope) == ('fact', 'past')
+                and proposition.polarity in {'positive', 'negative'}):
+            continue
+        if _source_prefix_opens_report(clause):
+            return True
+    return False
+
+
+def _closed_possibility_scope(span, context):
+    # Recognize only the scope of a whole SELF feeling or past-action
+    # possibility. This never supplies a factual node or a shared witness.
+    # The polite ません belongs to the possibility operator, not to the
+    # feeling's polarity. Admit only complete endings, with no trailing host.
+    match = re.fullmatch(r'(.+?)(?:かもしれない|かも知れない|かもしれません|かも知れません)', span.raw_text)
+    if match is None:
+        return False
+    content = match[1]
+    # In 不安かもしれない the possibility operator occupies the copula slot.
+    # The temporary だ is used only to recognize the existing feeling grammar;
+    # no generated claim, evidence coordinate or source text includes it.
+    proposition = _finite_feeling_proposition(content + 'だ' if content.endswith('不安') else content)
+    if proposition is None:
+        proposition = _proposition(content)
+        # Reuse the existing nine action verbs and their plain past finite
+        # forms. Sentence-final politeness, wishes, decisions and incomplete
+        # nominal/time scopes do not become a newly understood possibility.
+        if (proposition is None or proposition.predicate_lemma not in _PAST_ACTION_LEMMAS
+                or (proposition.modality, proposition.temporal_scope) != ('fact', 'past')
+                or proposition.possible_content or proposition.written_modifiers
+                or not any(case == 'を' for case, _ in proposition.arguments)):
+            return False
+        finite = next((content[a:b] for role, a, b in proposition.source_parts
+                       if role == 'FINITE_PREDICATE'), '')
+        if finite != _CANONICAL_CONTENT.get((proposition.predicate_lemma, proposition.polarity, 'past')):
+            return False
+    if (proposition.actor != 'SELF' or proposition.sequence_marker
+            or proposition.dependent_form):
+        return False
+    before = context[:span.start_index].rstrip(' \t\u3000\r\n')
+    after = context[span.end_index:].lstrip(' \t\u3000\r\n')
+    # Ledger commas, semicolons, line breaks and fixed-length fragments alone
+    # do not close this uncertainty's scope. Require sentence punctuation.
+    if ((before and before[-1] not in '。.')
+            or (after and after[0] not in '。.')):
+        return False
+    following = after.lstrip(' \t\u3000。.\r\n')
+    return not re.match(r'(?:と|って|わけ|訳|のでは|のか|のは|のも|なんて|などと|かも|かどうか|はず)',
+                        following)
+
+
+def _self_wish_or_past_event(proposition):
+    return bool(proposition and proposition.actor == 'SELF'
+        and not proposition.dependent_form and proposition.possible_content is None
+        and (proposition.modality == 'wish'
+             or proposition.scene_state == 'PAST_PRESENCE'
+             or proposition.role_state == 'PAST_RESPONSIBILITY'))
+
+
+# The same finite past speech forms open a forward report and can close a
+# proved postposed quotation. Recognizing speech never attributes its content
+# to the owner; closure only releases the following independent statement.
+_PAST_SPEECH = (r'(?:言った|言いました|話した|話しました|語った|語りました|'
+                r'述べた|述べました|伝えた|伝えました|答えた|答えました|説明した|説明しました)')
+# Present speech owns its quotation too. These are rejection prefixes only;
+# they do not extend the past-only proof that releases a following statement.
+_PRESENT_SPEECH = (r'(?:言う|言います|話す|話します|語る|語ります|'
+                   r'述べる|述べます|伝える|伝えます|答える|答えます|説明する|説明します)')
+# Negation of these same speech verbs still owns the preceding quotation.
+# These forms withhold attribution, never prove that a report has closed.
+_NEGATED_SPEECH = (r'(?:(?:言わ|話さ|語ら|述べ|伝え|答え|説明し)(?:ない|なかった)(?:です)?|'
+                   r'(?:言い|話し|語り|述べ|伝え|答え|説明し)ません(?:でした)?)')
+_SPEECH_SPEAKER_MODIFIER = (r'(?:[一-鿿々]+(?:しい|しかった|しくない|しくなかった|い)'
+                          r'|知らない|知らなかった|知っている|知っていた)')
+_QUALIFIED_SPEECH_SPEAKER = (_SPEECH_SPEAKER_MODIFIER + r'+'
+                           r'[一-鿿々ァ-ヴー]+'
+                           r'(?:の' + _NOMINAL + r')*')
+_SPEECH_SPEAKER = (r'(?:私|僕|ぼく|俺|おれ|わたし|自分|' + _NOMINAL
+                   + r'(?:の' + _NOMINAL + r')*)')
+_SPEECH_TOPIC = r'(?:は|が|も)(?:[、，][ \u3000]*)?'
+_FORWARD_SPEECH = re.compile(r'(?:' + _QUALIFIED_SPEECH_SPEAKER
+    + r'|' + _SPEECH_SPEAKER + r')' + _SPEECH_TOPIC
+    + r'(?:' + _PRESENT_SPEECH + r'|' + _NEGATED_SPEECH + r')')
+
+
+def _forward_speech_opens_report(text):
+    # Require a whole known explicit speaker and finite speech clause.
+    # A postposed と... host or an object-bearing act is not a new report.
+    return any(_FORWARD_SPEECH.fullmatch(clause.strip())
+               for clause in re.split(r'[。．.\r\n;；]', text))
+
+
+def _known_postposed_host(continuation, *, closed_speech=False):
+    # Reuse the established speaker/host grammar for rejection and closure.
+    # Complete known modifiers can qualify a kanji/katakana speaker noun
+    # in sequence before a speech host. This identifies quotation scope only; it
+    # neither resolves the speaker nor expands the proposition noun grammar.
+    # Requiring the kanji stem avoids consuming independent とても / とある /
+    # と同時に sentences. The shii family also keeps its past/negative forms;
+    # arbitrary -katta stems could instead be verbs (分かった / 預かった).
+    # A negated speech host, present or past, does not assert its embedded
+    # content either. Recognizing that host does not prove it is closed.
+    # Keep prefix matching for open/nested suffixes; this rejection does not
+    # prove that the host is closed. Four explicit forms of 知る can also
+    # qualify this speaker; they never establish whose knowledge it is.
+    # Other relative clauses and unknown modifiers stay unread.
+    match = re.fullmatch if closed_speech else re.match
+    speech = (_PAST_SPEECH if closed_speech else
+              r'(?:' + _PAST_SPEECH + r'|' + _PRESENT_SPEECH + r'|' + _NEGATED_SPEECH + r')')
+    if match(r'と(?:は|も)?' + _QUALIFIED_SPEECH_SPEAKER + _SPEECH_TOPIC + speech, continuation):
+        return True
+    speaker = r'(?:' + _SPEECH_SPEAKER + _SPEECH_TOPIC + r')?'
+    if closed_speech:
+        # Closure requires a whole known speaker/speech form. The broad
+        # rejection prefixes below (e.g. と信 / などと) prove no such scope.
+        return re.fullmatch(r'と(?:は|も)?' + speaker + speech, continuation)
+    return re.match(r'(?:と(?:は|も)?' + speaker + r'(?:' + speech
+                    + r'|思|考|感|言|い|聞|書|読|伝|認|信|報)|'
+                    r'って|わけ|訳|のでは|のか|のは|のも|なんて|などと|かも|かどうか|はず)', continuation)
+
+
+def _closed_quote_action_context(context, span, start, end):
+    # A closed, explicitly attributed past utterance can accompany an independent
+    # SELF past action. Its content stays unread; this view is only for scope
+    # checks, never source/evidence, proposition construction or order edges.
+    if context.count('「') != 1 or context.count('」') != 1:
+        return context
+    if start != 0 or end != len(span.raw_text):
+        return context
+    proposition = _parsed_proposition(span.raw_text)
+    if not (proposition and proposition.actor == 'SELF'
+            and proposition.predicate_lemma in _PAST_ACTION_LEMMAS
+            and (proposition.modality, proposition.temporal_scope) == ('fact', 'past')
+            and not proposition.dependent_form and proposition.possible_content is None):
+        return context
+    speaker = r'(?:' + _QUALIFIED_SPEECH_SPEAKER + r'|' + _SPEECH_SPEAKER + r')'
+    hosts = list(re.finditer(r'(?:^|(?<=[。．.!！]))[ \t\u3000]*'
+        + speaker + _SPEECH_TOPIC + r'「[^「」『』“”"\r\n]+」と'
+        + _PAST_SPEECH + r'[。．.!！]', context))
+    if len(hosts) != 1 or not (hosts[0].end() <= span.start_index
+                             or span.end_index <= hosts[0].start()):
+        return context
+    host = hosts[0]
+    between = (context[host.end():span.start_index] if host.end() <= span.start_index
+               else context[span.end_index:host.start()])
+    if between.strip(' \t\u3000。．.\r\n'):
+        return context
+    following = context[host.end():].lstrip(' \t\u3000。．.!！\r\n;；')
+    if _known_postposed_host(following):
+        return context
+    # Keep coordinates and the sentence boundary. Any other quotation or
+    # report remains visible to the unchanged guards below.
+    view = context[:host.start()] + ' ' * (host.end() - host.start() - 1) + context[host.end() - 1:]
+    # The existing report scan does not establish closure at these marks.
+    if re.search(r'[!！?？…‥]', view):
+        return context
+    return view
+
+
+def _fragment(source, nucleus, plan=None, *, _protective_contrast=False):
+    # Multi-span nuclei can contain unbounded relations. Keep them unknown in
+    # this first consumer rather than stitching a new proposition together.
+    if len(nucleus.source_span_ids) != 1:
+        return None
+    span_id = nucleus.source_span_ids[0]
+    ref = next((r for r in source.evidence if r.source_span_id == span_id), None)
+    span = next((s for s in source.spans if s.span_id == span_id), None)
+    if ref is None or span is None:
+        return None
+    a, b = 0, len(span.raw_text)
+    codes = nucleus.semantic_frame.attribute_codes
+    compound = any('semantic_dependency:action_before_change' in n.semantic_frame.attribute_codes
+                   for n in plan.nuclei if span_id in n.source_span_ids) if plan else False
+    pair = _action_change_pair(source, plan, span_id) if compound else None
+    if compound and pair is None:
+        return None
+    ranges = [c for c in codes if c.startswith((
+        'surface_scalar_range:', 'source_fragment_scalar_range:'))]
+    if ranges:
+        if len(ranges) != 1:
+            return None
+        prefix, raw_a, raw_b = ranges[0].split(':')
+        witness = prefix.replace('_range', '_source') + ':normalized_raw_text'
+        if witness not in codes:
+            return None
+        a, b = int(raw_a), int(raw_b)
+        if not (0 <= a < b <= len(span.raw_text)):
+            return None
+    # Analysis preserves the whole finite host including negation/modality.
+    # Quote, report and conditional scopes need additional route semantics;
+    # their presence is explicit in unknown gaps rather than silently dropped.
+    context = source.normalized.get(span.source_field, '')
+    context = _closed_quote_action_context(context, span, a, b)
+    if re.search(r'[「」『』“”"?？]|(?:と言われ|と聞い|そうだ|なら|(?<!か)もし)', context):
+        return None
+    # A complete cognitive witness can represent its uncertain complement.
+    # A separate, closed possibility stays unknown without erasing
+    # other proved clauses. Open or unparsed speculative scopes block the field.
+    if re.search(r'かもしれ|かも知れ', context):
+        proved = {n.source_span_ids[0] for n in plan.nuclei
+                  if _source_current_cognition(n)} if plan is not None else set()
+        if any(not ((s.span_id in proved and _cognitive_proposition(s.raw_text) is not None)
+                    or _closed_possibility_scope(s, context))
+               for s in source.spans if s.source_field == span.source_field
+               and re.search(r'かもしれ|かも知れ', s.raw_text)):
+            return None
+        if re.search(r'かもしれ|かも知れ', span.raw_text) and span.span_id not in proved:
+            return None
+    # An open reported speaker can carry across sentences and source fields.
+    # First-person grammar alone cannot close that attribution scope.
+    record_context = '\n'.join(str(source.normalized.get(field, ''))
+                               for field in ('memo', 'memo_action'))
+    # A first-person claim after present or negated speech has no owner proof.
+    # Keep earlier same-field content and other records independent. The
+    # other field has no established chronology, so cannot close the report.
+    other_field = 'memo_action' if span.source_field == 'memo' else 'memo'
+    if any(_forward_speech_opens_report(text) for text in (
+            context[:span.start_index], str(source.normalized.get(other_field, '')))):
+        return None
+    if re.search(r'によると|いわく|曰く|の(?:話|感想|気持ち|説明|報告|発言)(?:です|だ|[。．.])',
+                 record_context):
+        return None
+    # Dream/heard/read attribution also remains open across sentences and
+    # fields. Apply the existing boundary to every observed claim, not only
+    # scenes, roles and protective wishes: SELF grammar cannot close it.
+    if re.search(r'(?:聞いた|聞きました|読んだ|読みました)(?:話|内容)|夢を見',
+                 record_context):
+        return None
+    value = span.raw_text[a:b].strip(' 、，。．')
+    if not value:
+        return None
+    # A following written speaker/cognitive/retraction host owns the entire
+    # source span, including cognition and either endpoint of a contrast.
+    # Punctuation alone cannot make its first-person content the owner's.
+    # Reuse the same closed host grammar for every candidate family.
+    following_host = context[span.end_index:].lstrip(' \t\u3000。．.!！\r\n;；')
+    if _known_postposed_host(following_host):
+        return None
+    proposition = _parsed_proposition(value)
+    past_refusal = bool(proposition and proposition.predicate_lemma == '断る')
+    if past_refusal:
+        # No actor borrowing, cross-field concatenation, partial quotation,
+        # supplemental-answer admission or invented refusal day/reason.
+        if (source.envelope.source_role != 'ORIGINAL_INPUT'
+                or span.source_field not in {'memo', 'memo_action'}
+                or pair is not None or a != 0 or b != len(span.raw_text)
+                or nucleus.grounding_kind != 'explicit'
+                or nucleus.allowed_claim_scope != 'explicit_current_input'
+                or _past_refusal_proposition(value) != proposition
+                or re.fullmatch(r'[ \t\u3000]*' + re.escape(value)
+                    + r'[。．.]?[ \t\u3000]*', source_field_text(source, span.source_field)) is None):
+            return None
+    unattributed_wish = bool(proposition and proposition.actor == 'UNSPECIFIED'
+        and proposition.modality == 'wish')
+    if unattributed_wish:
+        # An omitted actor is not the authenticated owner or a preceding
+        # clause's subject. Admit only a complete original field, not an
+        # answer, a cross-field join, a comma/line fragment or an open host.
+        if (source.envelope.source_role != 'ORIGINAL_INPUT'
+                or span.source_field not in {'memo', 'memo_action'}
+                or pair is not None or a != 0 or b != len(span.raw_text)
+                or nucleus.grounding_kind != 'explicit'
+                or nucleus.allowed_claim_scope != 'explicit_current_input'
+                or _omitted_plain_wish_proposition(value) != proposition
+                or re.fullmatch(r'[ \t\u3000]*' + re.escape(value)
+                    + r'[。．.]?[ \t\u3000]*', source_field_text(source, span.source_field)) is None):
+            return None
+    if _has_unparsed_nominal_scope(proposition):
+        # Use the existing unresolved-source path; never fall back to a
+        # raw node that would also make unrelated readable nodes unsafe.
+        return None
+    if _cognitive_proposition(value) is not None and not _source_current_cognition(nucleus):
+        return None
+    result = _unfinished_result_proposition(value)
+    change = _bounded_change_proposition(value)
+    qualified_past = bool(proposition and any(
+        _NOMINAL_CASE_LINK.search(noun) for _, noun in proposition.arguments))
+    kana_owned_writing = bool(proposition and proposition.predicate_lemma == '書く'
+        and any(_KANA_SELF_POSSESSIVE.match(noun) for _, noun in proposition.arguments))
+    past_decision = bool(proposition and proposition.predicate_lemma in _PAST_DECISION_LEMMAS)
+    unattributed_action = bool(proposition and proposition.actor == 'UNSPECIFIED'
+        and (proposition.modality, proposition.temporal_scope) == ('fact', 'past')
+        and proposition.predicate_lemma in _PAST_ACTION_LEMMAS)
+    bounded_past_action = past_decision or unattributed_action or past_refusal
+    # An explicit first-person topic does not close another speaker's report.
+    # Apply the existing host checks to ordinary whole past actions as well;
+    # compound endpoints keep their own shared source/host proof.
+    self_past_action = bool(proposition and proposition.actor == 'SELF'
+        and proposition.predicate_lemma in _PAST_ACTION_LEMMAS
+        and (proposition.modality, proposition.temporal_scope) == ('fact', 'past')
+        and pair is None and a == 0 and b == len(span.raw_text))
+    dated_compound_nominal = bool(proposition and proposition.relative_day and proposition.arguments
+        and _unparsed_day_extension(proposition.arguments[0][1], separated=False)
+        and not _unparsed_day_extension(proposition.arguments[0][1], separated=True))
+    # Preserve the pre-existing stricter guards for their established scope.
+    # The new ordinary-action check requires an actual report marker rather
+    # than promoting every unread writing act or polite ending to a report.
+    self_past_action = self_past_action and not (qualified_past or bounded_past_action
+        or dated_compound_nominal or kana_owned_writing)
+    if dated_compound_nominal and (a != 0 or b != len(span.raw_text)):
+        return None
+    # Resolving a calendar-suffix collision does not resolve the speaker.
+    # Apply the existing full-source attribution boundary to these dated
+    # nominals in scenes, roles and wishes as well as performed actions.
+    source_host_required = (qualified_past or bounded_past_action or self_past_action
+                            or dated_compound_nominal or kana_owned_writing)
+    if unattributed_action:
+        # Shared current_user is not an actor proof. The existing complete
+        # finite grammar supplies tense/negation just as for SELF clauses;
+        # keep a whole explicit factual source, never a compound endpoint.
+        frame = nucleus.semantic_frame
+        if (pair is not None or a != 0 or b != len(span.raw_text)
+                or nucleus.grounding_kind != 'explicit'
+                or nucleus.allowed_claim_scope != 'explicit_current_input'
+                or frame.modality not in ({'fact', 'intention'}
+                    if span.source_field == 'memo_action' and proposition.polarity == 'negative'
+                    else {'fact'})
+                or frame.polarity not in ({'negative'} if proposition.polarity == 'negative'
+                                          else {'positive', 'neutral'})):
+            return None
+    if past_decision:
+        frame = nucleus.semantic_frame
+        # The negative shared frame may lack a past tag and does not assert
+        # performance. Its negation plus this finite clause proves nonperformance;
+        # never require or manufacture a positive performed-action witness.
+        if (pair is not None or a != 0 or b != len(span.raw_text)
+                or nucleus.kind != 'action' or nucleus.grounding_kind != 'explicit'
+                or nucleus.retention not in {'required', 'should'}
+                or nucleus.allowed_claim_scope != 'explicit_current_input'
+                or frame.actor != 'current_user'
+                or frame.modality not in ({'fact', 'intention'}
+                    if span.source_field == 'memo_action' and proposition.polarity == 'negative'
+                    else {'fact'})
+                or (proposition.polarity == 'positive' and not (
+                    source_proven_performed_action_status(nucleus)
+                    and frame.time_scope == 'past' and frame.polarity in {'positive', 'neutral'}))
+                or (proposition.polarity == 'negative' and not (
+                    frame.polarity == 'negative'
+                    and (frame.time_scope in {'past', 'current_input'}
+                         or (proposition.relative_day == 'TODAY' and frame.time_scope in
+                             ({'present', 'future'} if span.source_field == 'memo_action' else {'present'})))
+                    and {'operator:action', 'operator:negation'} <= set(codes)
+                    and 'operator:performed_action' not in codes))):
+            return None
+    if source_host_required:
+        # A newly readable object must not turn a reported speaker's
+        # first-person clause into the owner's completed action.
+        prefix = context[:span.start_index]
+        other_field = 'memo_action' if span.source_field == 'memo' else 'memo'
+        other = str(source.normalized.get(other_field, ''))
+        if unattributed_action:
+            # A ledger split after an unfinished topic is not a naturally
+            # omitted actor. Keep 私は、\n資料を調べた unresolved rather than
+            # discarding the written topic or inheriting it across a break.
+            open_topic = (r'(?:^|[。．.!！\r\n;；])\s*'
+                r'(?:(?:その後|それから|今日|昨日)[、，\s]*)?'
+                r'(?:私|僕|ぼく|俺|おれ|わたし|自分|'
+                + _NOMINAL + r'(?:の' + _NOMINAL + r')*)(?:は|が|も)'
+                r'[、，, \u3000]*[。．.!！\r\n;；\s]*$')
+            if any(re.search(open_topic, text) for text in (prefix, other)):
+                return None
+        for earlier_field in (prefix, other):
+            clauses = [clause.strip() for clause in re.split(
+                r'[。．.\r\n;；]' if self_past_action else r'[。．.]', earlier_field) if clause.strip()]
+            for index, preceding in enumerate(clauses):
+                preceding = preceding.strip()
+                previous = _proposition(clauses[index - 1].strip()) if self_past_action and index else None
+                # Only pair a trailing host with a clause whose following-host
+                # guard is established below. Parsed SELF alone is insufficient
+                # for wishes, scenes and roles with an unread host. Keep the guarded pair
+                # unobserved; never join fields or clear an earlier open report.
+                if (previous is not None and (previous.actor == 'SELF'
+                        or (previous.actor == 'UNSPECIFIED'
+                            and previous.predicate_lemma in _PAST_ACTION_LEMMAS | _PAST_DECISION_LEMMAS
+                            and (previous.modality, previous.temporal_scope) == ('fact', 'past')))
+                        and not previous.dependent_form and previous.possible_content is None
+                        and (previous.result_state in {'PAST_FEELING', 'CURRENT_FEELING'}
+                            or (_self_wish_or_past_event(previous)
+                                and _known_postposed_host(preceding))
+                            or previous.predicate_lemma in _PAST_DECISION_LEMMAS
+                            or (previous.predicate_lemma in _PAST_ACTION_LEMMAS
+                                and (previous.modality, previous.temporal_scope) == ('fact', 'past'))
+                            or any(_NOMINAL_CASE_LINK.search(noun) for _, noun in previous.arguments)
+                            or (previous.predicate_lemma == '書く' and any(
+                                _KANA_SELF_POSSESSIVE.match(noun) for _, noun in previous.arguments))
+                            or (previous.relative_day and previous.arguments
+                                and _unparsed_day_extension(previous.arguments[0][1], separated=False)
+                                and not _unparsed_day_extension(previous.arguments[0][1], separated=True)))):
+                    # The speaker is opaque: closing this suffix never proves
+                    # who acted. Do not swallow nested hosts into its name.
+                    host = re.match(r'(?:(?:と|などと)(?P<speaker>[^。．.\r\n;；、，,「」『』!?！？]+?)'
+                            r'(?:は|が|も)(?P<speech_pause>[、，][ \u3000]*)?'
+                            r'(?P<speech>' + _PAST_SPEECH + r')|の(?:は|も)嘘だった)', preceding)
+                    if host is not None:
+                        # New speech forms require the known whole host even
+                        # without a comma. An opaque name must not swallow a
+                        # relative clause such as 語った友人 or a nested report.
+                        if ((host['speech_pause'] is not None
+                                or host['speech'] not in {None, '言った', '言いました'})
+                                and not _known_postposed_host(preceding, closed_speech=True)):
+                            return None
+                        speaker_scope = host['speaker'] or ''
+                        if _known_postposed_host(preceding, closed_speech=True):
+                            # In a proved modifier sequence, って inside 知っている/
+                            # 知っていた is not a nested quotation. Normalize only
+                            # those words in the parsed prefix for this local check;
+                            # keep source text and every remaining host marker intact.
+                            modifiers = re.match(r'^(?:は|も)?' + _SPEECH_SPEAKER_MODIFIER
+                                                 + r'+', speaker_scope)
+                            if modifiers is not None:
+                                speaker_scope = (re.sub(r'知って(?:いる|いた)', '', modifiers[0])
+                                                 + speaker_scope[modifiers.end():])
+                        # A present/negative speech clause inside an opaque speaker
+                        # is not proof that the outer report has closed.
+                        if (host.end() != len(preceding) or re.search(
+                                r'と|って|なら|もし|かも|言った|話した|思う|'
+                                + _NEGATED_SPEECH + r'|' + _PRESENT_SPEECH, speaker_scope)):
+                            return None
+                        continue
+                written = _proposition(preceding)
+                # Reuse the full nominal interpretation for a completed writing
+                # act. A qualified object does not by itself open a quotation;
+                # report/deictic content and extra participants still can.
+                if (written and written.predicate_lemma == '書く'
+                        and (written.actor, written.modality, written.temporal_scope,
+                             written.polarity) == ('SELF', 'fact', 'past', 'positive')
+                        and len(written.arguments) in {1, 2}
+                        and 'を' in {case for case, _ in written.arguments}
+                        and all(case in {'を', 'に', 'で'} for case, _ in written.arguments)
+                        and not re.search(r'何|誰|次|以下|上記|下記|話|発言|引用|説明|報告|内容',
+                                          ''.join(noun for _, noun in written.arguments))):
+                    continue
+                if self_past_action:
+                    speech = re.search(_PAST_SPEECH + r'$', preceding)
+                    report_noun = re.search(r'の(?:話|発言|引用|説明|報告|内容)(?:だ|です|だった|でした)$',
+                        preceding)
+                    written_report = (re.search(r'(?:書いた|書きました)$', preceding)
+                        and ('を' not in preceding or re.search(
+                            r'(?:と|って)書|話|発言|引用|説明|報告|内容|次|以下|上記|下記', preceding)))
+                    if not (speech or report_noun or written_report):
+                        continue
+                if _analysis_prefix_opens_report(preceding):
+                    return None
+        if re.search(r'(?:言って|話して|語って|述べて|書いて|伝えて|答えて|説明して)'
+                r'(?:いた|いました|いる|います)(?:[。．.\s]|$)', prefix + '\n' + other):
+            return None
+    if change is not None and (pair is None or nucleus.nucleus_id != pair[1]):
+        if (pair is not None or a != 0 or b != len(span.raw_text)
+                or not _standalone_finite_feeling_witness(nucleus, change)):
+            return None
+        # All three newly admitted polite forms need the same source-host
+        # proof, including those already positive in the shared keyword plan.
+        if (value.endswith(('落ち着きました', '嬉しかったです', 'うれしかったです'))
+                and not _source_polite_past_feeling_is_bound(
+                    span, source.normalized, source_field=span.source_field)):
+            return None
+        if (change.polarity == 'negative' or change.sequence_marker or change.relative_day
+                or change.predicate_lemma in {'不安だ', 'ある'}):
+            # Punctuation cannot close a reported speaker or detach a
+            # cognitive/retracted host. This bounds only the new admission;
+            # it does not reinterpret the existing positive family.
+            prefix = context[:span.start_index]
+            other = str(source.normalized.get(
+                'memo_action' if span.source_field == 'memo' else 'memo', ''))
+            if (any(_analysis_prefix_opens_report(text) for text in (prefix, other))
+                    or re.search(r'(?:言って|話して|語って|述べて|書いて|伝えて|答えて|説明して)'
+                        r'(?:いた|いました|いる|います)(?:[。．.\s]|$)', prefix + '\n' + other)
+                    or re.search(r'[!?！？…‥]|と言|と話|と語|と聞', record_context)):
+                return None
+            following = context[span.end_index:].lstrip(' \t\u3000。．.!！\r\n;；')
+            # No subject inference inside an unread quotative continuation:
+            # both "と私は思う" and "と友人が言った" still own this clause.
+            # A comma-delimited transition starts a separate sentence. Its
+            # initial と is not a quote particle; keep the preceding feeling
+            # while leaving the unparsed following sentence unknown. Require
+            # the delimiter, so ところでの話 or an unknown speaker stays pending.
+            transition = re.match(r'(?:ところで|とりあえず)[、，,]', following)
+            if not transition and re.match(r'(?:と|って|のは|のも|なんて|などと)', following):
+                return None
+    whole_wish_or_event = (pair is None and a == 0 and b == len(span.raw_text)
+                          and _self_wish_or_past_event(proposition))
+    if (source_host_required or whole_wish_or_event
+            or (change is not None and (pair is None or nucleus.nucleus_id != pair[1]))):
+        # Ledger punctuation is not proof that the finite host is
+        # closed: a following dependent suffix can negate or embed either
+        # polarity, including a host with its own explicit speaker. Match
+        # that host, not every sentence starting with と (e.g. とても).
+        continuation = context[span.end_index:].lstrip(' \t\u3000。．.!！\r\n;；')
+        if ((bounded_past_action or dated_compound_nominal or kana_owned_writing)
+                and not re.match(r'(?:ところで|とりあえず)[、，,]', continuation)
+                and re.match(r'(?:と|って|のは|のも|なんて|などと)', continuation)):
+            return None
+        if _known_postposed_host(continuation):
+            return None
+    if result is not None and not _unfinished_result_witness(nucleus):
+        return None
+    event = _past_event_proposition(value)
+    if event is not None and (a != 0 or b != len(span.raw_text)
+            or not _past_event_witness(nucleus, event)):
+        return None
+    protective = _protective_wish_proposition(value)
+    if protective is not None:
+        if a == 0 and b == len(span.raw_text):
+            if not _protective_wish_witness(nucleus):
+                return None
+        else:
+            if not _protective_wish_witness(nucleus, contrast_fragment=True):
+                return None
+            # A protective endpoint is usable only after the complete
+            # wish/burden contrast has been proved. The pair's left-side
+            # call skips this recursive check, never the other source checks.
+            if not _protective_contrast:
+                contrast = _wish_burden_pair(source, plan, span_id) if plan else None
+                if contrast is None or contrast[0] != nucleus.nucleus_id:
+                    return None
+    # The ledger also splits long sentences at commas or fixed lengths.
+    # Every observed claim needs the whole finite host, including any later
+    # negation or uncertainty. Check the full span, not an endpoint inside a
+    # proven compound; evidence still addresses the unchanged original.
+    before = context[:span.start_index].rstrip(' \t\u3000')
+    after = context[span.end_index:].lstrip(' \t\u3000')
+    boundaries = '。．.!！\r\n'
+    if event is None and protective is None:
+        # Preserve existing ordinary-clause semicolon boundaries from the
+        # ledger without expanding the prior scene/role/protective grammar.
+        boundaries += ';；'
+    if ((before and before[-1] not in boundaries)
+            or (after and after[0] not in boundaries)):
+        return None
+    # current_user is the shared frame's default, not proof of its subject.
+    # Actions/thoughts require an explicit first-person finite host, except
+    # complete past actions whose omitted actor stays UNSPECIFIED. Non-agent
+    # result states retain their existing bounded exception.
+    if (result is None and change is None and not bounded_past_action and not unattributed_wish
+            and not re.match(r'^(?:(?:今日|昨日|その後|それから)[、，\s]*)?(?:私は|僕は|ぼくは|俺は|おれは|わたしは|自分は)', value)):
+        return None
+    # The source helper already proved a length-preserving normalization.
+    field = source.envelope.raw_utf8[ref.field_utf8_start:ref.field_utf8_end].decode('utf-8')
+    start, end = ref.scalar_start + a, ref.scalar_start + b
+    literal = field[start:end]
+    if literal.replace('\u3000', ' ').strip() != span.raw_text[a:b].strip():
+        raise AnalysisSourceError('analysis_fragment_evidence_mismatch')
+    evidence = replace(ref,
+        evidence_id='analysis-evidence:' + commitment([ref.source_envelope_id,
+            ref.field_path, start, end])[7:],
+        scalar_start=start, scalar_end=end,
+        utf8_start=ref.field_utf8_start + len(field[:start].encode('utf-8')),
+        utf8_end=ref.field_utf8_start + len(field[:end].encode('utf-8')),
+        literal_sha256=hashlib.sha256(literal.encode('utf-8')).hexdigest())
+    proposition = (pair[3] if nucleus.nucleus_id == pair[0] else pair[4]) if pair else proposition
+    return value, evidence, proposition
+
+
+def _burden_predicate(value):
+    # Complete affirmative present inflections, not negative polarity alone.
+    # In particular, an absent positive feeling does not prove a burden.
+    match = re.fullmatch(r'(?:私|僕|ぼく|俺|おれ|わたし|自分)は(?:、[ \u3000]*)?'
+                         r'(?P<predicate>つらい|辛い|苦しい)(?:です)?', value)
+    # Normalize this proved self-feeling predicate only; source labels and
+    # evidence retain their original spelling, including correction targets.
+    return ('つらい' if match['predicate'] == '辛い' else match['predicate']) if match else None
+
+
+def _wish_burden_pair(source, plan, span_id):
+    """Consume one complete, shared-owner contrast with two explicit selves."""
+    span = next((s for s in source.spans if s.span_id == span_id), None)
+    if span is None or span.source_field not in {'memo', 'memo_action'}:
+        return None
+    rows = [n for n in plan.nuclei if span_id in n.source_span_ids]
+    if len(rows) != 2:
+        return None
+    wish, burden = rows
+    for n in rows:
+        f = n.semantic_frame
+        codes = f.attribute_codes
+        if (n.source_span_ids != (span_id,) or n.source_fields != (span.source_field,)
+                or n.grounding_kind not in {'explicit', 'user_stated_relation'}
+                or n.retention != 'required' or n.allowed_claim_scope != 'explicit_current_input'
+                or f.actor != 'current_user' or f.time_scope != 'current_input'
+                or 'semantic_role:generic_relation_fragment' not in codes
+                or 'source_fragment_scalar_source:normalized_raw_text' not in codes
+                or len([c for c in codes if c.startswith('source_fragment_scalar_range:')]) != 1
+                or any(c.startswith(('surface_scalar_', 'thread_time:', 'semantic_dependency:')) for c in codes)):
+            return None
+    w, b = wish.semantic_frame, burden.semantic_frame
+    if ((wish.kind, w.predicate_kind, w.polarity, w.modality) != ('wish', 'wish', 'positive', 'wish')
+            or (burden.kind, b.predicate_kind, b.polarity, b.modality) != ('reaction', 'feeling', 'negative', 'feeling')
+            or 'lexical:source_finite_contrast_feeling' not in b.attribute_codes):
+        return None
+    links = [r for r in plan.relations if r.from_nucleus_id == wish.nucleus_id
+             and r.to_nucleus_id == burden.nucleus_id]
+    if (len(links) != 1 or links[0].type != 'contrast'
+            or links[0].grounding_kind != 'user_stated_relation' or links[0].retention != 'required'
+            or links[0].source_span_ids != (span_id,)
+            or links[0].source_relation_ids != ('typed_projection:top_level_connective',)
+            or links[0].source_meaning_arc_keys != ('compound_span:top_level_relation',)):
+        return None
+    whole = next((r for r in source.evidence if r.source_span_id == span_id), None)
+    if whole is None:
+        return None
+    # Long ledger fragments must not erase a reporting/dream host or modifier.
+    context = source.normalized.get(span.source_field, '')
+    before, after = context[:span.start_index].rstrip(' \t\u3000'), context[span.end_index:].lstrip(' \t\u3000')
+    if ((before and before[-1] not in '。．.!！\r\n')
+            or (after and after[0] not in '。．.!！\r\n')):
+        return None
+    left = _fragment(source, wish, plan, _protective_contrast=True)
+    right = _fragment(source, burden, plan)
+    if left is None or right is None or left[2] is None:
+        return None
+    p, a, z = left[2], left[1], right[1]
+    predicate = _burden_predicate(right[0])
+    if (predicate is None or p.actor != 'SELF' or p.possible_content
+            or p.sequence_marker or p.relative_day
+            or (p.polarity, p.modality, p.temporal_scope) != ('positive', 'wish', 'current_input')
+            or any(re.search(r'(?:^|の)(?:何|誰|幾)', noun) for _, noun in p.arguments)
+            or not (whole.scalar_start == a.scalar_start < a.scalar_end < z.scalar_start < z.scalar_end == whole.scalar_end)):
+        return None
+    connector = source_field_text(source, span.source_field)[a.scalar_end:z.scalar_start]
+    if re.fullmatch(r'(?:けれども|けれど|けど|が)[、,]?\s*', connector) is None:
+        return None
+    return wish.nucleus_id, burden.nucleus_id, predicate, right[0], (a, z, whole)
+
+
+def _self_propositions(source, *, require_complete=False, plan=None):
+    """Read existing grammatical claims, retaining original field coordinates.
+
+    An ordinary answer must stand on its own. Unread text may qualify, retract
+    or correct the apparent claim, so a parsed fragment is not enough.
+    """
+    if plan is None:
+        plan = build_final_stage1_grounded_observation_plan(
+            source.normalized, evidence_spans=source.spans, _analysis_action_field=True)
+    if plan.input_profile.material_quality == 'safety_routed':
+        raise AnalysisSourceError('analysis_separate_safety_required')
+    claims = []
+    for nucleus in plan.nuclei:
+        if (nucleus.grounding_kind not in ('explicit', 'user_stated_relation')
+                or nucleus.semantic_frame.actor != 'current_user'):
+            continue
+        fragment = _fragment(source, nucleus, plan)
+        proposition = fragment[2] if fragment else None
+        if proposition is not None:
+            claims.append((proposition, fragment[1]))
+    if require_complete:
+        raw = source_field_text(source, 'memo')
+        covered = set()
+        for _, evidence in claims:
+            if evidence.field_path == 'memo':
+                covered.update(range(evidence.scalar_start, evidence.scalar_end))
+        # The connector belongs to the pair, not to either finite endpoint.
+        for span in source.spans:
+            pair = _action_change_pair(source, plan, span.span_id)
+            if pair and sum(e.source_span_id == span.span_id for _, e in claims) == 2:
+                ref = next(r for r in source.evidence if r.source_span_id == span.span_id)
+                covered.update(range(ref.scalar_start, ref.scalar_end))
+            annotation = _wish_burden_pair(source, plan, span.span_id)
+            if annotation and any(e == annotation[4][0] for _, e in claims):
+                whole = annotation[4][2]
+                covered.update(range(whole.scalar_start, whole.scalar_end))
+        # Deliberately not all punctuation: question marks, quotes and other
+        # unparsed operators cannot be treated as harmless sentence separators.
+        if not claims or any(i not in covered and char not in ' \t\r\n\u3000。．.'
+                             for i, char in enumerate(raw)):
+            raise AnalysisSourceError('analysis_supplement_interpretation_pending')
+    return tuple(claims)
+
+
+def _explicit_order_pairs(source, plan, withdrawn):
+    """Bind a written connective to adjacent complete clauses in one field.
+
+    The shared plan establishes the claims, while Analysis owns this relation.
+    Never bridge an unread clause, another field/source, or a removed target.
+    A current wish is not proof that a later action occurred.
+    """
+    whole = {(r.field_path, r.scalar_start, r.scalar_end) for r in source.evidence}
+    all_claims = _self_propositions(source, plan=plan)
+    claims = {e.evidence_id: (p, e) for p, e in all_claims
+              if e.source_span_id not in withdrawn
+              and (e.field_path, e.scalar_start, e.scalar_end) in whole}
+    compound_pairs = []
+    feeling_predecessors = {e.evidence_id for p, e in claims.values()
+        if (p.result_state, p.actor, p.modality, p.temporal_scope)
+            == ('PAST_FEELING', 'SELF', 'feeling', 'past')}
+    for span in source.spans:
+        if span.span_id in withdrawn or not _action_change_pair(source, plan, span.span_id):
+            continue
+        endpoints = sorted(((p, e) for p, e in all_claims if e.source_span_id == span.span_id),
+                           key=lambda item: item[1].scalar_start)
+        if len(endpoints) != 2:
+            continue
+        compound_pairs.append(tuple(e for _, e in endpoints))
+        initial, first = endpoints[0]
+        # A written "then" scopes over the complete action/result episode.
+        # Keep its actual first endpoint for the existing adjacency proof;
+        # neither the marker nor source order creates a predecessor by itself.
+        if (initial.sequence_marker in {'AFTER_PREVIOUS', 'THEN_OR_ADDITION'}
+                and (first.field_path, first.scalar_start,
+                     endpoints[-1][1].scalar_end) in whole):
+            claims[first.evidence_id] = (initial, first)
+        terminal, evidence = endpoints[-1]
+        # A completely proved episode may precede the next written "then".
+        # Use only its terminal result, never its initial action, and keep
+        # the original end coordinate so unread intervening text still blocks.
+        if ((terminal.result_state, terminal.modality, terminal.temporal_scope) in {
+                    ('BOUNDED_CHANGE', 'fact', 'past'),
+                    ('PAST_FEELING', 'feeling', 'past')}
+                and (evidence.field_path, endpoints[0][1].scalar_start,
+                     evidence.scalar_end) in whole):
+            claims[evidence.evidence_id] = (terminal, evidence)
+            if terminal.modality == 'feeling':
+                feeling_predecessors.add(evidence.evidence_id)
+    ordered = sorted(claims.values(), key=lambda item:
+                     (item[1].field_path, item[1].scalar_start, item[1].scalar_end))
+    pairs = []
+    for (left, a), (right, b) in zip(ordered, ordered[1:]):
+        if (a.field_path != b.field_path or a.scalar_end >= b.scalar_start
+                or right.sequence_marker not in {'AFTER_PREVIOUS', 'THEN_OR_ADDITION'}
+                or not (right.modality == 'fact' or (right.modality == 'feeling'
+                        and b.evidence_id in feeling_predecessors))
+                or not (left.modality == 'fact' or (left.modality == 'feeling'
+                        and a.evidence_id in feeling_predecessors))
+                or (left.temporal_scope, right.temporal_scope) != ('past', 'past')):
+            continue
+        separator = source_field_text(source, a.field_path)[a.scalar_end:b.scalar_start]
+        if (re.fullmatch(r'[。．.\s]+', separator)
+                and any(char in separator for char in '。．.\r\n')):
+            pairs.append((a, b))
+    # Order the already-proved links for reading; source position alone
+    # never establishes a link or changes its direction.
+    return tuple(sorted(pairs + compound_pairs,
+        key=lambda pair: (pair[0].field_path, pair[0].scalar_start,
+                          pair[0].scalar_end, pair[1].scalar_start, pair[1].scalar_end)))
+
+
+def _partial_anxiety_pair_can_be_retained(left, right):
+    # This only exempts two already written anxiety claims from the ordinary
+    # supplement's polarity-only rejection. It neither infers a remainder nor
+    # merges the claims. Strong positive degrees remain unresolved.
+    negative, positive = (left, right) if left.polarity == 'negative' else (right, left)
+    return (negative.polarity == 'negative' and positive.polarity == 'positive'
+        and all(p.modality == 'feeling' and (p.predicate_lemma == '不安だ'
+            or (p.predicate_lemma == 'ある'
+                and p.arguments in {(('は', '不安'),), (('が', '不安'),)}))
+                for p in (negative, positive))
+        and negative.written_modifiers in {
+            ('PARTIAL_NEGATION_AMARI',), ('PARTIAL_NEGATION_ANMARI',)}
+        and positive.written_modifiers in {
+            (), ('DEGREE_SLIGHT',), ('DEGREE_YAYA',), ('DEGREE_CHOTTO',)})
+
+
+def _admit_ordinary_supplement(answer, earlier_sources, excluded):
+    _check_supplement_claims(answer, _self_propositions(answer, require_complete=True), earlier_sources, excluded)
+
+
+def _check_supplement_claims(answer, claims, earlier_sources, excluded):
+    earlier = [(p, source.envelope.envelope_id) for source in earlier_sources
+               for p, evidence in _self_propositions(source)
+               if evidence.source_span_id not in excluded.get(source.envelope.envelope_id, set())]
+    for current, _ in claims:
+        for previous, source_id in earlier:
+            # Without an explicit correction target, do not choose between
+            # opposing descriptions of the same possible action/wish/feeling. Missing
+            # arguments do not prove a different occasion or a different object.
+            a, b = dict(current.arguments), dict(previous.arguments)
+            compatible_arguments = all(a[case] == b[case] for case in a.keys() & b.keys())
+            # Relative days distinguish occasions only within one statement
+            # source. An answer's yesterday may be its original input's today.
+            separate_days = (source_id == answer.envelope.envelope_id
+                and current.relative_day and previous.relative_day
+                and current.relative_day != previous.relative_day)
+            if (current.actor == previous.actor
+                    and _predicate_meaning(current) == _predicate_meaning(previous)
+                    and current.modality == previous.modality
+                    and current.temporal_scope == previous.temporal_scope
+                    and current.polarity != previous.polarity
+                    and not _partial_anxiety_pair_can_be_retained(current, previous)
+                    and compatible_arguments and not separate_days):
+                raise AnalysisSourceError('analysis_supplement_interpretation_pending')
+        earlier.append((current, answer.envelope.envelope_id))
+
+
+def _active_sources(source_set):
+    """Apply whole-clause corrections to occurrences before period grouping."""
+    originals = {s.record_ref: s for s in source_set.sources
+                 if s.envelope.source_role == 'ORIGINAL_INPUT'}
+    excluded, views, updates, replacement_updates = {}, [], [], {}
+    for answer in source_set.sources:
+        if answer.envelope.source_role not in {'SUPPLEMENTAL_ANSWER', 'USER_INTERPRETATION_CORRECTION'}:
+            views.append(answer)
+            continue
+        raw = source_field_text(answer, 'memo')
+        text = raw.strip().rstrip('。．.')
+        replacement, withdrawal = _REPLACEMENT.fullmatch(text), _WITHDRAWAL.fullmatch(text)
+        match = replacement or withdrawal
+        original = originals.get(answer.record_ref)
+        if original is None:
+            raise AnalysisSourceError('analysis_supplement_parent_missing')
+        if match is None:
+            if answer.envelope.source_role == 'USER_INTERPRETATION_CORRECTION':
+                # An AI excerpt is not a claim in the original. Only an exact
+                # person-authored whole-clause update can use the existing
+                # correction proof below; other explanations remain pending.
+                raise AnalysisSourceError('analysis_interpretation_correction_pending')
+            earlier = tuple(source for source in views if source.record_ref == answer.record_ref)
+            _admit_ordinary_supplement(answer, earlier, excluded)
+            views.append(answer)
+            continue
+        old = match['old'].rstrip('。．.')
+        targets = []
+        for ref in original.evidence:
+            field = source_field_text(original, ref.field_path)
+            literal = field[ref.scalar_start:ref.scalar_end]
+            prefix, suffix = field[:ref.scalar_start].rstrip(), field[ref.scalar_end:].lstrip()
+            if (literal.replace('\u3000', ' ').strip().rstrip('。．.') == old
+                    and (not prefix or prefix[-1] in '。．.!！?？')
+                    and (not suffix or suffix[0] in '。．.!！?？')):
+                targets.append(ref)
+        if len(targets) != 1:
+            raise AnalysisSourceError('analysis_correction_target_unresolved')
+        target = targets[0]
+        if target.source_span_id in excluded.get(original.envelope.envelope_id, set()):
+            raise AnalysisSourceError('analysis_correction_target_unresolved')
+        original_plan = build_final_stage1_grounded_observation_plan(
+            original.normalized, evidence_spans=original.spans, _analysis_action_field=True)
+        target_is_self_claim = False
+        for nucleus in original_plan.nuclei:
+            if (nucleus.source_span_ids != (target.source_span_id,)
+                    or nucleus.grounding_kind not in ('explicit', 'user_stated_relation')
+                    or nucleus.semantic_frame.actor != 'current_user'):
+                continue
+            fragment = _fragment(original, nucleus, original_plan)
+            if (fragment and (fragment[1].scalar_start, fragment[1].scalar_end) ==
+                    (target.scalar_start, target.scalar_end)
+                    and fragment[2] is not None):
+                target_is_self_claim = True
+        # Quote location alone cannot prove that a reported first-person
+        # clause belongs to the current user. Preserve its original scope.
+        if not target_is_self_claim and _action_change_pair(original, original_plan, target.source_span_id):
+            target_is_self_claim = sum(e.source_span_id == target.source_span_id
+                for _, e in _self_propositions(original, plan=original_plan)) == 2
+        if not target_is_self_claim:
+            target_is_self_claim = _wish_burden_pair(original, original_plan, target.source_span_id) is not None
+        if not target_is_self_claim:
+            raise AnalysisSourceError('analysis_correction_target_unresolved')
+        excluded.setdefault(original.envelope.envelope_id, set()).add(target.source_span_id)
+        view = None
+        if replacement:
+            leading = len(raw) - len(raw.lstrip())
+            view = scoped_source_view(answer, leading + match.start('new'),
+                                      leading + match.end('new'))
+            earlier = tuple(source for source in views if source.record_ref == answer.record_ref)
+            _check_supplement_claims(view, _self_propositions(view), earlier, excluded)
+            views.append(view)
+        update = ObservedSourceUpdate('analysis-update:' + commitment([
+            answer.envelope.envelope_id, target.evidence_id,
+            'REVISE' if replacement else 'WITHDRAW'])[7:],
+            'REVISE' if replacement else 'WITHDRAW', answer.record_ref,
+            target, answer.evidence, view.evidence if view else ())
+        updates.append(update)
+        if view:
+            replacement_updates[view.envelope.envelope_id] = update.update_ref
+    return tuple(views), excluded, tuple(updates), replacement_updates
+
+
+def _observed_claim_signature(kind, proposition, label, polarity, modality, time,
+        evidence, ordered_evidence, envelope_id, categories):
+    """Canonical finite aggregation identity, shared by admitted model nodes."""
+    meaning = _proposition_meaning(proposition) if proposition else label
+    occurrence_scope = (evidence.evidence_id if evidence.evidence_id in ordered_evidence
+        or (proposition and (proposition.sequence_marker
+            or (proposition.actor == 'UNSPECIFIED'
+                and kind in {'ACTION_OR_NONACTION', 'ATTENTION_OR_THOUGHT'}))) else None)
+    day_scope = ((envelope_id, proposition.relative_day)
+        if proposition and proposition.relative_day else None)
+    occasion_scope = (envelope_id if proposition
+        and 'THIS_OCCASION' in proposition.written_modifiers else None)
+    return (kind, meaning, polarity, modality, time, occurrence_scope, day_scope, occasion_scope, categories)
+
+
+def compile_observed_graph(source_set: AnalysisSourceSet) -> ObservedGraph:
+    active_sources, excluded, updates, replacement_updates = _active_sources(source_set)
+    nodes, edges, gaps = [], [], []
+    conflict_evidence = {}
+    annotation_claims = {}
+    unresolved_records = set()
+    by_signature, occurrences, record_orders = {}, {}, {}
+    for source in active_sources:
+        plan = build_final_stage1_grounded_observation_plan(
+            source.normalized, evidence_spans=source.spans, _analysis_action_field=True)
+        if plan.input_profile.material_quality == 'safety_routed':
+            raise AnalysisSourceError('analysis_separate_safety_required')
+        order_pairs = _explicit_order_pairs(source, plan,
+            excluded.get(source.envelope.envelope_id, set()))
+        ordered_evidence = {e.evidence_id for pair in order_pairs for e in pair}
+        admitted, by_evidence = {}, {}
+        # Quoted speech is still unread even when it supplied no shared
+        # nucleus. Retain its scope alongside a separately proved SELF act.
+        unresolved = any(s.source_field in ('memo', 'memo_action')
+            and s.span_id not in excluded.get(source.envelope.envelope_id, set())
+            and re.search(r'[「」『』“”"]', s.raw_text) for s in source.spans)
+        comparable_claims = []
+        annotation_pairs = [pair for span in source.spans
+            if span.span_id not in excluded.get(source.envelope.envelope_id, set())
+            and (pair := _wish_burden_pair(source, plan, span.span_id))]
+        annotation_nuclei = {pair[1] for pair in annotation_pairs}
+        for nucleus in plan.nuclei:
+            if set(nucleus.source_span_ids) & excluded.get(source.envelope.envelope_id, set()):
+                continue
+            if nucleus.nucleus_id in annotation_nuclei:
+                continue
+            explicit = (nucleus.grounding_kind in ('explicit', 'user_stated_relation')
+                        and nucleus.semantic_frame.actor == 'current_user')
+            fragment = _fragment(source, nucleus, plan) if explicit else None
+            proposition = fragment[2] if fragment else None
+            # A shared nucleus alone does not prove the complete clause.
+            # Keep unparsed original text in the existing unknown scope so
+            # it cannot make independently readable nodes unprojectable.
+            kind = _proposition_node_kind(proposition) if proposition else None
+            if not kind:
+                fragment = None
+            if fragment is None:
+                if any(s.source_field in ('memo', 'memo_action') and
+                       s.span_id in nucleus.source_span_ids for s in source.spans):
+                    unresolved = True
+                continue
+            label, evidence, _ = fragment
+            frame = nucleus.semantic_frame
+            polarity, modality, time = ((proposition.polarity, proposition.modality,
+                proposition.temporal_scope) if proposition else
+                (frame.polarity, frame.modality, frame.time_scope))
+            update_ref = replacement_updates.get(source.envelope.envelope_id)
+            node_updates = (update_ref,) if update_ref else ()
+            # Exact grammatical equivalence, not synonymous/topic matching.
+            # A polite restatement or reordered cases is still one claim;
+            # preserve each source witness without inventing a cooccurrence.
+            # A sequence is about occurrences: collapsing A -> B -> A by
+            # proposition would create a false cycle or erase repeated A.
+            # Ordinary, unqualified claims retain their existing aggregation.
+            # An omitted action actor is not a shared person identity:
+            # retain each written occurrence even without an order marker.
+            # A relative day is anchored to its own input/answer, not to the
+            # viewing date or the parent's created_at. Only equivalent claims
+            # in that same source and day retain ordinary aggregation.
+            # Each source's 今回 names its own occasion, even with a written SELF.
+            categories = selected_categories(source_set, source.record_ref)
+            signature = _observed_claim_signature(kind, proposition, label, polarity, modality, time,
+                evidence, ordered_evidence, source.envelope.envelope_id, categories)
+            index = by_signature.get(signature)
+            if index is None:
+                index = len(nodes)
+                by_signature[signature] = index
+                nodes.append(ObservedNode('n' + str(index + 1), kind, label,
+                    (source.record_ref,), (evidence,), polarity,
+                    modality, time, proposition, node_updates,
+                    selected_categories=categories or (), selected_category_context=categories is not None))
+            else:
+                old = nodes[index]
+                nodes[index] = replace(old,
+                    record_refs=tuple(dict.fromkeys((*old.record_refs, source.record_ref))),
+                    evidence_refs=tuple(dict.fromkeys((*old.evidence_refs, evidence))),
+                    update_refs=tuple(dict.fromkeys((*old.update_refs, *node_updates))))
+            node = nodes[index]
+            if (source.envelope.source_role == 'ORIGINAL_INPUT'
+                    and proposition and proposition.actor == 'SELF'
+                    and polarity in {'positive', 'negative'}
+                    and (((modality, time) == ('fact', 'past')
+                          and kind in {'SCENE', 'ROLE', 'ACTION_OR_NONACTION'})
+                         or (modality == 'feeling'
+                             and (proposition.result_state, time) in {
+                                 ('PAST_FEELING', 'past'), ('CURRENT_FEELING', 'current_input')}
+                             and kind == 'IMMEDIATE_RESULT_OR_AFTERMATH'))
+                    and not proposition.sequence_marker and not proposition.dependent_form
+                    and evidence.evidence_id not in ordered_evidence):
+                comparable_claims.append((node.node_ref, evidence, proposition))
+            admitted[nucleus.nucleus_id] = node.node_ref
+            by_evidence[evidence.evidence_id] = node.node_ref
+            occurrences.setdefault(source.record_ref, set()).add(node.node_ref)
+            if proposition and _protective_wish_proposition(label) == proposition:
+                key = ('PROTECTIVE', node.node_ref)
+                old = annotation_claims.get(key)
+                if old is None:
+                    annotation_claims[key] = ObservedAnnotation(
+                        'a' + str(len(annotation_claims) + 1), node.node_ref,
+                        '守る', (label,), (evidence,), node_updates, kind='PROTECTIVE',
+                        uncertainty='PROTECTION_OUTCOME_AND_ACTION_MOTIVE_NOT_ESTABLISHED',
+                        forbidden_promotions=('PROTECTION_OUTCOME', 'ACTION_MOTIVE',
+                                              'CAUSE', 'TRAIT', 'DIAGNOSIS', 'ROUTE_ORDER'))
+                else:
+                    annotation_claims[key] = replace(old,
+                        source_labels=tuple(dict.fromkeys((*old.source_labels, label))),
+                        evidence_refs=tuple(dict.fromkeys((*old.evidence_refs, evidence))),
+                        update_refs=tuple(dict.fromkeys((*old.update_refs, *node_updates))))
+        for wish_id, _, predicate, label, evidence in annotation_pairs:
+            target = admitted.get(wish_id)
+            if target is None:
+                unresolved = True
+                continue
+            key = (target, predicate)
+            update_ref = replacement_updates.get(source.envelope.envelope_id)
+            old = annotation_claims.get(key)
+            if old is None:
+                annotation_claims[key] = ObservedAnnotation('a' + str(len(annotation_claims) + 1),
+                    target, predicate, (label,), evidence, (update_ref,) if update_ref else ())
+            else:
+                annotation_claims[key] = replace(old,
+                    source_labels=tuple(dict.fromkeys((*old.source_labels, label))),
+                    evidence_refs=tuple(dict.fromkeys((*old.evidence_refs, *evidence))),
+                    update_refs=tuple(dict.fromkeys((*old.update_refs, *((update_ref,) if update_ref else ())))))
+        for targets, evidence in _opposed_claim_pairs(comparable_claims):
+            targets = tuple(sorted(targets, key=lambda ref: int(ref[1:])))
+            conflict_evidence[targets] = tuple(dict.fromkeys(
+                (*conflict_evidence.get(targets, ()), *evidence)))
+        # The whole replacement, not just a convenient sub-clause, must be
+        # interpreted. Otherwise no old result can be returned as current.
+        if source.envelope.envelope_id in replacement_updates and (not admitted or unresolved):
+            raise AnalysisSourceError('analysis_correction_replacement_unsupported')
+        for a, b in order_pairs:
+            endpoints = (by_evidence.get(a.evidence_id), by_evidence.get(b.evidence_id))
+            if all(endpoints) and endpoints[0] != endpoints[1]:
+                # A compound's whole source also witnesses its connective.
+                relation_evidence = ((a, b) + tuple(r for r in source.evidence
+                    if r.source_span_id == a.source_span_id)) if a.source_span_id == b.source_span_id else (a, b)
+                edges.append(ObservedEdge('e' + str(len(edges) + 1),
+                    'OBSERVED_ORDER', endpoints, relation_evidence))
+                record_orders.setdefault(source.record_ref, set()).add(endpoints)
+        if unresolved or (not admitted and any(
+                s.source_field in ('memo', 'memo_action') and
+                s.span_id not in excluded.get(source.envelope.envelope_id, set())
+                for s in source.spans)):
+            unresolved_records.add(source.record_ref)
+    # Original and supplemental content are one occasion. Determine gaps only
+    # after both have contributed, not independently for each source child.
+    for record_ref, ids in occurrences.items():
+        anchors = tuple(n.node_ref for n in nodes if n.node_ref in ids)
+        present = {n.node_kind for n in nodes if n.node_ref in ids}
+        for kind in NODE_KINDS:
+            if kind not in present:
+                gaps.append(UnknownGap('g' + str(len(gaps) + 1), anchors[:1],
+                    kind, 'NOT_ESTABLISHED_FROM_SOURCE'))
+        if record_ref in unresolved_records:
+            gaps.append(UnknownGap('g' + str(len(gaps) + 1), anchors[:1],
+                'SOURCE_SCOPE', 'UNSUPPORTED_OR_UNCERTAIN_SOURCE_SCOPE'))
+        known_pairs = record_orders.get(record_ref, set())
+        for pair in zip(anchors, anchors[1:]):
+            if pair not in known_pairs and pair[::-1] not in known_pairs:
+                gaps.append(UnknownGap('g' + str(len(gaps) + 1), pair,
+                    'ROUTE_CONNECTION', 'ONLY_EXPLICIT_ORDER_IS_SHOWN'))
+        for node in nodes:
+            if (node.node_ref in ids and node.proposition
+                    and node.proposition.sequence_marker
+                    and not any(pair[1] == node.node_ref for pair in known_pairs)):
+                gaps.append(UnknownGap('g' + str(len(gaps) + 1), (node.node_ref,),
+                    'ROUTE_CONNECTION', 'EXPLICIT_PREDECESSOR_NOT_ESTABLISHED'))
+    if nodes and unresolved_records - occurrences.keys():
+        gaps.append(UnknownGap('g' + str(len(gaps) + 1), (nodes[0].node_ref,),
+            'SOURCE_SCOPE', 'UNSUPPORTED_OR_UNCERTAIN_SOURCE_SCOPE'))
+    # A supplemental answer shares its original's occasion. Two fields or two
+    # answers from one record therefore never turn into a repeated pattern.
+    from itertools import combinations
+    pair_records, envelopes_by_record = {}, {}
+    for source in source_set.sources:
+        envelopes_by_record.setdefault(source.record_ref, set()).add(source.envelope.envelope_id)
+    for ref, ids in occurrences.items():
+        for pair in combinations(sorted(ids, key=lambda n: int(n[1:])), 2):
+            pair_records.setdefault(pair, []).append(ref)
+    node_index = {n.node_ref: n for n in nodes}
+    for pair in sorted(pair_records, key=lambda p: (int(p[0][1:]), int(p[1][1:]))):
+        together = pair_records[pair]
+        if len(together) < 2:
+            continue
+        left, right = (node_index[ref] for ref in pair)
+        supporting_envelopes = set().union(*(envelopes_by_record[ref] for ref in together))
+        refs = tuple(dict.fromkeys(r for r in (*left.evidence_refs, *right.evidence_refs)
+                                  if r.source_envelope_id in supporting_envelopes))
+        edges.append(ObservedEdge('e' + str(len(edges) + 1),
+            'REPEATED_COOCCURRENCE', pair, refs))
+    conflicts = tuple(ObservedConflict('c' + str(index), targets, evidence)
+        for index, (targets, evidence) in enumerate(conflict_evidence.items(), 1))
+    return ObservedGraph(tuple(nodes), tuple(edges), tuple(gaps), updates, conflicts,
+                         tuple(annotation_claims.values()))
+
+
+# Explicit offline semantic snapshots use a private graph. They do not enter
+# the legacy parser, ObservedGraph, route edge taxonomy, or public DTO.
+_ANALYSIS_SEMANTIC_GRAPH_SCHEMA = 'cocolon.cmee.analysis_semantic_graph.v1'
+
+
+def _semantic_json(value):
+    return json.dumps(value, ensure_ascii=False, sort_keys=True,
+                      separators=(',', ':'), allow_nan=False)
+
+
+def _semantic_digest(value):
+    return hashlib.sha256(_semantic_json(value).encode('utf-8')).hexdigest()
+
+
+def _semantic_ref(kind, snapshot_ref, meaning_ref):
+    return 'analysis-semantic-' + kind + ':' + _semantic_digest(
+        [snapshot_ref, meaning_ref])
+
+
+def _semantic_same(left, right):
+    # JSON spelling, unlike Python equality, distinguishes bool and integer.
+    return _semantic_json(left) == _semantic_json(right)
+
+
+def _semantic_snapshot_view(snapshot):
+    from .semantic_admission import AnalysisSemanticSnapshotV1
+    if type(snapshot) is not AnalysisSemanticSnapshotV1:
+        raise AnalysisSourceError('analysis_semantic_snapshot_type_invalid')
+    view = snapshot.payload()
+    if (type(view) is not dict or
+            view.get('semantic_profile') != 'analysis_candidate_snapshot.v1'):
+        raise AnalysisSourceError('analysis_semantic_snapshot_type_invalid')
+    # Request/owner/source meaning validation belongs to admission and is
+    # performed by the lifecycle caller before this private projection arm.
+    return view
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class AnalysisSemanticGraphV1:
+    graph_json: str
+
+    def payload(self):
+        if type(self.graph_json) is not str:
+            raise AnalysisSourceError('analysis_semantic_graph_invalid')
+        value = json.loads(self.graph_json)
+        if not _semantic_same(self.graph_json, _semantic_json(value)):
+            raise AnalysisSourceError('analysis_semantic_graph_invalid')
+        return value
+
+    @property
+    def graph_ref(self):
+        return self.payload()['graph_ref']
+
+
+def _semantic_binding_carrier(binding, packet, snapshot_ref):
+    claim = binding['claim_json']
+    evidence = packet['evidence'][claim['evidence_indexes'][0]]
+    return dict(unit_ref=claim['unit_ref'], group_ref=claim['group_ref'],
+        claim_json=claim, source_binding_ref=binding['source_binding_ref'],
+        source_binding_json=binding['source_binding_json'],
+        visible_label=evidence['quote'])
+
+
+def compile_semantic_graph(snapshot):
+    """Compile already-admitted meaning without the legacy finite parser."""
+    view = _semantic_snapshot_view(snapshot)
+    packet = view['candidate_packet']
+    candidate = packet['candidate']
+    ref = view['snapshot_ref']
+    bindings = {b['unit_ref']: b for b in view['unit_bindings']}
+    nodes, dependent_scopes, annotations, unit_node_bindings = [], [], [], []
+    for unit in candidate['units']:
+        binding = bindings[unit['unit_ref']]
+        carrier = _semantic_binding_carrier(binding, packet, ref)
+        if unit['carrier'] == 'GRAPH_NODE':
+            node_ref = _semantic_ref('node', ref, unit['unit_ref'])
+            nodes.append(dict(carrier, node_ref=node_ref,
+                              node_kind=unit['proposed_node_kind']))
+            unit_node_bindings.append(dict(unit_ref=unit['unit_ref'], node_ref=node_ref))
+        elif unit['carrier'] == 'DEPENDENT_SCOPE':
+            dependent_scopes.append(dict(carrier, carrier_ref=_semantic_ref(
+                'dependent-scope', ref, unit['unit_ref'])))
+        elif unit['carrier'] != 'ANNOTATION':
+            raise AnalysisSourceError('analysis_semantic_carrier_invalid')
+    for annotation in candidate['annotations']:
+        binding = bindings[annotation['unit_ref']]
+        annotations.append(dict(annotation, carrier_ref=_semantic_ref(
+            'annotation', ref, annotation['annotation_ref']),
+            unit_binding=_semantic_binding_carrier(binding, packet, ref)))
+    groups = []
+    for group in candidate['sentence_groups']:
+        evidence = packet['evidence'][group['evidence_indexes'][0]]
+        groups.append(dict(group, source_id=evidence['source_id'],
+            field_path=evidence['field_path'], original_text=evidence['quote'],
+            unit_refs=[u['unit_ref'] for u in candidate['units']
+                       if u['group_ref'] == group['group_ref']]))
+    payload = dict(schema_version=_ANALYSIS_SEMANTIC_GRAPH_SCHEMA,
+        semantic_profile=view['semantic_profile'], snapshot_ref=ref,
+        source_commitment=view['source_commitment'],
+        source_set_ref=view['source_set_ref'], period=view['period'],
+        nodes=nodes, dependent_scopes=dependent_scopes, groups=groups,
+        scope_relations=[dict(r, scope_ref=_semantic_ref('scope', ref,
+            r['relation_ref'])) for r in candidate['scope_relations']],
+        unknowns=[dict(u, carrier_ref=_semantic_ref('unknown', ref,
+            u['unknown_ref'])) for u in candidate['unknowns']],
+        annotations=annotations, source_selections=candidate['source_selections'],
+        unit_node_bindings=unit_node_bindings, evidence=packet['evidence'],
+        route_edges=[])
+    payload['graph_ref'] = 'analysis-semantic-graph:' + _semantic_digest(payload)
+    graph = AnalysisSemanticGraphV1(_semantic_json(payload))
+    validate_semantic_graph(snapshot, graph)
+    return graph
+
+
+def validate_semantic_graph(snapshot, graph):
+    """Inspect a saved graph directly against its adopted source bindings.
+
+    This validator does not invoke the compiler or the old parser. Full source
+    and semantic admission is independently checked by the lifecycle caller.
+    """
+    view = _semantic_snapshot_view(snapshot)
+    if type(graph) is not AnalysisSemanticGraphV1:
+        raise AnalysisSourceError('analysis_semantic_graph_invalid')
+    value = graph.payload()
+    expected_keys = {'schema_version', 'semantic_profile', 'snapshot_ref',
+        'source_commitment', 'source_set_ref', 'period', 'nodes',
+        'dependent_scopes', 'groups', 'scope_relations', 'unknowns',
+        'annotations', 'source_selections', 'unit_node_bindings', 'evidence',
+        'route_edges', 'graph_ref'}
+    if type(value) is not dict or set(value) != expected_keys:
+        raise AnalysisSourceError('analysis_semantic_graph_invalid')
+    identity = dict(schema_version=_ANALYSIS_SEMANTIC_GRAPH_SCHEMA,
+        semantic_profile=view['semantic_profile'], snapshot_ref=view['snapshot_ref'],
+        source_commitment=view['source_commitment'],
+        source_set_ref=view['source_set_ref'], period=view['period'], route_edges=[])
+    if any(not _semantic_same(value[k], expected) for k, expected in identity.items()):
+        raise AnalysisSourceError('analysis_semantic_graph_invalid')
+    packet, ref = view['candidate_packet'], view['snapshot_ref']
+    candidate = packet['candidate']
+    bindings = {b['unit_ref']: b for b in view['unit_bindings']}
+    observed_refs = []
+    for carrier_name, unit_carrier in (('nodes', 'GRAPH_NODE'),
+                                       ('dependent_scopes', 'DEPENDENT_SCOPE')):
+        required = [u for u in candidate['units'] if u['carrier'] == unit_carrier]
+        rows = value[carrier_name]
+        if type(rows) is not list or len(rows) != len(required):
+            raise AnalysisSourceError('analysis_semantic_graph_invalid')
+        for row, unit in zip(rows, required):
+            binding = bindings[unit['unit_ref']]
+            expected = dict(unit_ref=unit['unit_ref'], group_ref=unit['group_ref'],
+                claim_json=unit, source_binding_ref=binding['source_binding_ref'],
+                source_binding_json=binding['source_binding_json'],
+                visible_label=packet['evidence'][unit['evidence_indexes'][0]]['quote'])
+            if unit_carrier == 'GRAPH_NODE':
+                node_ref = _semantic_ref('node', ref, unit['unit_ref'])
+                expected.update(node_ref=node_ref, node_kind=unit['proposed_node_kind'])
+                observed_refs.append(dict(unit_ref=unit['unit_ref'], node_ref=node_ref))
+            else:
+                expected['carrier_ref'] = _semantic_ref('dependent-scope', ref, unit['unit_ref'])
+            if not _semantic_same(row, expected):
+                raise AnalysisSourceError('analysis_semantic_graph_invalid')
+    expected_groups = []
+    for group in candidate['sentence_groups']:
+        evidence = packet['evidence'][group['evidence_indexes'][0]]
+        expected_groups.append(dict(group, source_id=evidence['source_id'],
+            field_path=evidence['field_path'], original_text=evidence['quote'],
+            unit_refs=[u['unit_ref'] for u in candidate['units'] if u['group_ref'] == group['group_ref']]))
+    expected_annotations = []
+    for annotation in candidate['annotations']:
+        binding = bindings[annotation['unit_ref']]
+        unit = binding['claim_json']
+        expected_annotations.append(dict(annotation,
+            carrier_ref=_semantic_ref('annotation', ref, annotation['annotation_ref']),
+            unit_binding=dict(unit_ref=unit['unit_ref'], group_ref=unit['group_ref'],
+                claim_json=unit, source_binding_ref=binding['source_binding_ref'],
+                source_binding_json=binding['source_binding_json'],
+                visible_label=packet['evidence'][unit['evidence_indexes'][0]]['quote'])))
+    expected_collections = dict(groups=expected_groups,
+        scope_relations=[dict(r, scope_ref=_semantic_ref('scope', ref, r['relation_ref']))
+                         for r in candidate['scope_relations']],
+        unknowns=[dict(u, carrier_ref=_semantic_ref('unknown', ref, u['unknown_ref']))
+                  for u in candidate['unknowns']],
+        annotations=expected_annotations, source_selections=candidate['source_selections'],
+        unit_node_bindings=observed_refs, evidence=packet['evidence'])
+    if any(not _semantic_same(value[k], expected) for k, expected in expected_collections.items()):
+        raise AnalysisSourceError('analysis_semantic_graph_invalid')
+    material = {k: v for k, v in value.items() if k != 'graph_ref'}
+    if value['graph_ref'] != 'analysis-semantic-graph:' + _semantic_digest(material):
+        raise AnalysisSourceError('analysis_semantic_graph_invalid')
+    return graph
+
+
+def graph_from_payload(snapshot, payload):
+    graph = AnalysisSemanticGraphV1(_semantic_json(payload))
+    return validate_semantic_graph(snapshot, graph)
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class AnalysisSemanticMapGraph:
+    owner_scope: str
+    source_set_ref: str
+    source_guard: str
+    request_ref: str
+    messages_sha256: str
+    response_sha256: str
+    overview_json: str
+    nodes_json: str
+    edges_json: str
+    source_members_json: str
+    coverage_json: str
+    meaning_review_json: str = '{}'
+    map_correction_sources_json: str = ''
+    record_scoped_unknowns: bool = False
+    compact_source_captions: bool = False
+    source_ordered_detail: bool = False
+    original_field_sections: bool = False
+
+
+def analysis_semantic_source_duties(frozen, fields):
+    """Move the existing source/unknown/relation responsibilities to map input.
+
+    The general map remains the model's interpretation. These are only the
+    premises the observed owner can derive from complete, admitted sources;
+    an unread range is not converted into an empty or false proposition.
+    Work per record so no order, repeated pattern or motive is manufactured
+    by joining two records or an original and its answer as separate events.
+    """
+    from dataclasses import asdict
+    ordered = {m.saved_record_ref: i for i, m in enumerate(frozen.members, 1)}
+    claims, relations = [], []
+    covered = {number: set() for number, *_ in fields}
+    for member in frozen.members:
+        sources = tuple(s for s in frozen.sources if s.record_ref == member.saved_record_ref)
+        local = replace(frozen, members=(member,), sources=sources,
+            category_records=tuple(r for r in frozen.category_records
+                if r.saved_record_ref == member.saved_record_ref))
+        graph = compile_observed_graph(local)
+        occurrence_refs = {}
+        for node in graph.nodes:
+            if node.proposition is None:
+                continue
+            proposition = node.proposition
+            for evidence in node.evidence_refs:
+                matches = [(number, text, base) for number, text, _, base in fields
+                    if base.source_envelope_id == evidence.source_envelope_id
+                    and base.field_path == evidence.field_path
+                    and base.scalar_start <= evidence.scalar_start
+                    and evidence.scalar_end <= base.scalar_end]
+                if not matches:
+                    continue
+                if len(matches) != 1:
+                    raise AnalysisSourceError('analysis_semantic_input_unbound')
+                number, text, base = matches[0]
+                start, end = evidence.scalar_start - base.scalar_start, evidence.scalar_end - base.scalar_start
+                quote = text[start:end]
+                if not quote:
+                    continue
+                ref = 'c' + str(len(claims) + 1)
+                source = next(s for s in sources
+                    if s.envelope.envelope_id == evidence.source_envelope_id)
+                claim = dict(claim_ref=ref, field=number,
+                    record=ordered[member.saved_record_ref],
+                    source_role=source.envelope.source_role,
+                    scalar_start=start, scalar_end=end, quote=quote,
+                    node_kind=node.node_kind, proposition=asdict(proposition))
+                claims.append(claim)
+                covered[number].update(range(start, end))
+                occurrence_refs.setdefault(node.node_ref, []).append((ref, evidence))
+        for edge in graph.edges:
+            left, right = (occurrence_refs.get(ref, ()) for ref in edge.endpoint_refs)
+            evidence_ids = {e.evidence_id for e in edge.evidence_refs}
+            for a, ea in left:
+                for b, eb in right:
+                    if ea.evidence_id in evidence_ids and eb.evidence_id in evidence_ids:
+                        relations.append(dict(relation_kind=edge.edge_kind,
+                            from_claim=a, to_claim=b,
+                            record=ordered[member.saved_record_ref]))
+    residual = []
+    for number, text, _, _ in fields:
+        pending = [i for i, char in enumerate(text)
+            if i not in covered[number] and char not in ' \t\r\n\u3000。．.']
+        ranges = []
+        for i in pending:
+            if ranges and ranges[-1][1] == i:
+                ranges[-1][1] += 1
+            else:
+                ranges.append([i, i + 1])
+        if ranges:
+            residual.append(dict(field=number, ranges=ranges))
+    return dict(schema_version='analysis.semantic-source-duties.v1',
+        claims=claims, written_relations=relations, unassessed_source_ranges=residual,
+        interpretation_status='UNASSESSED',
+        forbidden_promotions=['RESULT_TO_INTENT', 'COOCCURRENCE_TO_CAUSE',
+            'RECORD_ORDER_TO_EVENT_ORDER', 'WISH_TO_PERFORMED_ACTION',
+            'UNSPECIFIED_ACTOR_TO_SELF', 'CONTEXT_DIFFERENCE_TO_FIXED_TRAIT'])
+
+
+def analysis_semantic_source_duties_material(duties):
+    """A compact generation view, retaining the full source exactly once.
+
+    The private prepared input keeps the complete owner derivation. The model
+    receives field/span references and meaning axes, without another copy of
+    every quotation, source-part coordinate or empty dataclass field.
+    """
+    def reading(p):
+        value = dict(actor=p['actor'], predicate=p['predicate_lemma'],
+            arguments=p['arguments'], polarity=p['polarity'],
+            modality=p['modality'], time=p['temporal_scope'])
+        for key, target in (('relative_day', 'relative_day'),
+                ('result_state', 'result'), ('scene_state', 'scene'),
+                ('role_state', 'role'), ('written_modifiers', 'modifiers'),
+                ('dependent_form', 'dependent'), ('sequence_marker', 'sequence')):
+            if p[key]:
+                value[target] = p[key]
+        if p['possible_content'] is not None:
+            value['possible_content'] = reading(p['possible_content'])
+        return value
+    return dict(schema_version=duties['schema_version'],
+        claims=[dict(claim_ref=c['claim_ref'], field=c['field'],
+            span=[c['scalar_start'], c['scalar_end']], reading=reading(c['proposition']))
+            for c in duties['claims']],
+        written_relations=duties['written_relations'],
+        unassessed_source_ranges=duties['unassessed_source_ranges'],
+        interpretation_status=duties['interpretation_status'],
+        forbidden_promotions=duties['forbidden_promotions'])
+
+
+def _semantic_map_duty_root(prepared, claim):
+    """Resolve a source-owner duty to the same admitted field coordinates."""
+    from dataclasses import asdict
+    from .semantic_admission import semantic_map_hash, _semantic_map_require
+    field = next((f for f in prepared.fields if f[0] == claim['field']), None)
+    _semantic_map_require(field is not None, 'analysis_semantic_input_unbound')
+    _, text, _, base = field
+    start, end = claim['scalar_start'], claim['scalar_end']
+    _semantic_map_require(text[start:end] == claim['quote'], 'analysis_semantic_input_unbound')
+    absolute_start, absolute_end = base.scalar_start + start, base.scalar_start + end
+    ref = replace(base, evidence_id='analysis-evidence:' + semantic_map_hash([
+        base.source_envelope_id, base.field_path, absolute_start, absolute_end]),
+        scalar_start=absolute_start, scalar_end=absolute_end,
+        utf8_start=base.utf8_start + len(text[:start].encode('utf-8')),
+        utf8_end=base.utf8_start + len(text[:end].encode('utf-8')),
+        literal_sha256=hashlib.sha256(claim['quote'].encode('utf-8')).hexdigest())
+    return asdict(ref)
+
+
+def _semantic_map_source_context(prepared, refs, roots):
+    """Retain proved context without treating a model reading as user fact."""
+    material = json.loads(prepared.material_json)
+    if material.get('source_duties') is None:
+        return [], [], []
+    duties = json.loads(prepared.source_duties_json)
+    ordered = {m.saved_record_ref: i for i, m in enumerate(prepared.frozen.members, 1)}
+    records = {ordered[ref] for ref in refs}
+    notes, conditions, support = [], [], []
+    for claim in duties['claims']:
+        if claim['record'] not in records:
+            continue
+        p = claim['proposition']
+        root = _semantic_map_duty_root(prepared, claim)
+        note = None
+        if p['scene_state'] == 'PAST_PRESENCE':
+            note = '同じ記録に書かれた場面：' + claim['quote']
+        elif p['role_state'] == 'PAST_RESPONSIBILITY':
+            note = '同じ記録に書かれた担当：' + claim['quote']
+        if note:
+            if note not in notes:
+                notes.append(note)
+                conditions.append(note)
+            support.append(root)
+        # Day, actor and modal scope belong to this particular premise, not
+        # to every other statement made in the same record or selected node.
+        quoted = any(r['source_envelope_id'] == root['source_envelope_id']
+            and r['field_path'] == root['field_path']
+            and r['scalar_start'] <= root['scalar_start']
+            and r['scalar_end'] >= root['scalar_end'] for r in roots)
+        if not quoted:
+            continue
+        scoped = []
+        if p['relative_day']:
+            note = ('根拠に書かれた時点：この記述時点の' +
+                {'TODAY': '今日', 'YESTERDAY': '昨日'}[p['relative_day']])
+            scoped.append(note)
+            conditions.append(note)
+        for modifier, wording in (('THIS_OCCASION', '今回'), ('IN_ADVANCE', '事前')):
+            if modifier in p['written_modifiers']:
+                note = '根拠に書かれた範囲・時点：' + wording
+                scoped.append(note)
+                conditions.append(note)
+        if p['modality'] == 'wish':
+            scoped.append('希望として書かれた内容：' + claim['quote'])
+        if p['possible_content'] is not None:
+            scoped.append('本人が考えた可能性として書かれた内容：' + claim['quote'])
+        if p['actor'] == 'UNSPECIFIED':
+            scoped.append('誰についての記述かは、この根拠だけでは特定されていません。')
+        for value in scoped:
+            if value not in notes:
+                notes.append(value)
+        if scoped:
+            support.append(root)
+    unique = {root['evidence_id']: root for root in support}
+    return notes, conditions, list(unique.values())
+
+
+def _semantic_map_visible_review(prepared, roots, texts):
+    """Read the actual visible fields, not a copy of the model's plan.
+
+    This reuses only complete propositions the current owner already reads.
+    Multi-clause prose and ambiguous matches stay unassessed. A unique,
+    completely quoted premise can expose a changed polarity/time/modality;
+    that narrow comparison never certifies the rest of a node or relation.
+    """
+    from .semantic_admission import _semantic_map_require
+    if json.loads(prepared.material_json).get('source_duties') is None:
+        return None
+    duties = json.loads(prepared.source_duties_json)
+    source = []
+    for claim in duties['claims']:
+        root = _semantic_map_duty_root(prepared, claim)
+        if any(r['source_envelope_id'] == root['source_envelope_id']
+                and r['field_path'] == root['field_path']
+                and r['scalar_start'] <= root['scalar_start']
+                and r['scalar_end'] >= root['scalar_end'] for r in roots):
+            source.append(claim)
+    rows = []
+    for name, text in texts:
+        value = text.strip()
+        if value[-1:] in {'。', '．', '.'}:
+            value = value[:-1]
+        visible = _proposition(value)
+        matches = []
+        if (visible is not None and not visible.possible_content
+                and not visible.dependent_form and not visible.sequence_marker):
+            for claim in source:
+                p = claim['proposition']
+                if (not p['possible_content'] and not p['dependent_form'] and not p['sequence_marker']
+                        and (visible.actor == p['actor'] or
+                             (visible.actor == 'UNSPECIFIED' and p['actor'] == 'SELF'))
+                        and visible.predicate_lemma == p['predicate_lemma']
+                        and sorted(visible.arguments) == sorted(tuple(x) for x in p['arguments'])
+                        and list(visible.written_modifiers) == p['written_modifiers']
+                        and (visible.result_state, visible.scene_state, visible.role_state)
+                            == (p['result_state'], p['scene_state'], p['role_state'])):
+                    matches.append(claim)
+        signatures = {(c['proposition']['polarity'], c['proposition']['modality'],
+                       c['proposition']['temporal_scope']) for c in matches}
+        verdict, reason = 'UNASSESSED', 'VISIBLE_OR_SOURCE_SCOPE_NOT_UNIQUELY_READ'
+        if len(matches) == 1:
+            expected = next(iter(signatures))
+            actual = (visible.polarity, visible.modality, visible.temporal_scope)
+            changed = [axis for axis, a, b in zip(('POLARITY', 'MODALITY', 'TIME'), expected, actual) if a != b]
+            day = matches[0]['proposition']['relative_day']
+            if visible.relative_day and day and visible.relative_day != day:
+                changed.append('RELATIVE_DAY')
+            _semantic_map_require(not changed, 'analysis_semantic_meaning_conflict')
+            verdict, reason = 'NO_CONFLICT_IN_CHECKED_SCOPE', 'COMPLETE_SOURCE_PREMISE_AXES_MATCH'
+        rows.append(dict(field=name, verdict=verdict, reason=reason,
+            source_claims=[c['claim_ref'] for c in matches],
+            checked_axes=['POLARITY', 'MODALITY', 'TIME'] if len(matches) == 1 else []))
+    return dict(fields=rows, interpretation_status='UNASSESSED')
+
+
+def _semantic_map_context(prepared, refs):
+    from emlis_ai_current_input_bundle import normalize_emlis_current_input
+    material = json.loads(prepared.material_json)
+    ordered = {m.saved_record_ref: i for i, m in enumerate(prepared.frozen.members, 1)}
+    result = []
+    labels = {'weak': '弱', 'medium': '中', 'strong': '強'}
+    names = {'joy': '喜び', 'sadness': '悲しみ', 'anger': '怒り', 'anxiety': '不安',
+             'calm': '平穏', 'peace': '平穏', 'self_insight': '自己理解'}
+    for row in material['records']:
+        if row['record'] not in {ordered[ref] for ref in refs}:
+            continue
+        # The source owner already accepts legacy null/scalar metadata. Use
+        # its existing normalization for display without changing raw material.
+        selected = normalize_emlis_current_input(dict(category=row['selected_categories'],
+            emotions=row['selected_emotions'], emotion_details=row['emotion_details']))
+        categories = selected['category']
+        states = []
+        for item in selected['emotion_details']:
+            name = item.get('type', item.get('emotion'))
+            name = names.get(name, name)
+            if name in {'自己理解', 'self_insight'}:
+                states.append('自己理解')
+            elif name and item.get('strength') in labels:
+                states.append(str(name) + '・' + labels[item['strength']])
+            elif name:
+                states.append(str(name))
+        # Legacy records may have a selected feeling and no saved strength.
+        # Preserve that feeling without inventing medium intensity.
+        if not states:
+            states = [names.get(name, name) for name in selected['emotions'] if type(name) is str]
+        value = '／'.join(categories)
+        if states:
+            value += ('：' if value else '') + '、'.join(states)
+        if value and value not in result:
+            result.append(value)
+    return result
+
+
+def expand_analysis_semantic_event_plan(prepared, packet):
+    """Compile an opt-in reference author contract, never repair authored prose.
+
+    Each factual clause is authored once. This validates source binding and
+    reference scope only; model facts and interpretations remain unassessed.
+    Legacy profiles retain their original packet and compiler behavior.
+    """
+    from .semantic_admission import SEMANTIC_MAP_NODE_LOCAL_V4_PROFILES
+    if (getattr(prepared, 'prompt_version', None) in SEMANTIC_MAP_NODE_LOCAL_V4_PROFILES
+            or type(packet) is dict and packet.get('schema_version') in {'cocolon.analysis.semantic_map.node_local.model.v4',
+                'cocolon.analysis.semantic_map.node_local.model.v4.bound_roots.v1',
+                'cocolon.analysis.semantic_map.node_local.model.v4.bound_roots.v2', 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v1',
+                'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v2', 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v3', 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v4', 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v5', 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v6',
+                'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v7',
+                'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v8',
+                'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v9',
+                'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v10',
+                'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v11',
+                'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v12',
+                'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v13',
+                'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v14',
+                'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v15',
+                'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v16',
+                'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v17',
+                'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v18', 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v19', 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v20', 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v21', 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v22', 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v23', 'cocolon.analysis.semantic_map.node_local.model.v4.occurrence.v24'}):
+        from .semantic_admission import (assemble_semantic_node_local_v4_with_node_choices,
+            SEMANTIC_MAP_NODE_LOCAL_V3_PROFILE, SEMANTIC_MAP_FACT_ENDPOINT_PROFILES, SEMANTIC_MAP_CONTENT_PLAN_PROFILES,
+            SEMANTIC_MAP_VISIBLE_SOURCE_PROFILES, SEMANTIC_MAP_FACT_PROSE_PROFILES)
+        comparison_sources = {}
+        joined, authored_nodes = assemble_semantic_node_local_v4_with_node_choices(
+            prepared, packet, comparison_sources=comparison_sources)
+        fixed_record_units = set()
+        if prepared.prompt_version in SEMANTIC_MAP_VISIBLE_SOURCE_PROFILES:
+            from .semantic_admission import _semantic_node_fact_sources
+            # Only the already bound, independently restored whole-sentence slots carry a source date.
+            sources = _semantic_node_fact_sources(joined, json.loads(prepared.material_json), prepared.prompt_version)
+            counts = Counter((node, unit) for node, unit, _ in sources)
+            fixed_record_units = {f"{n['node_id']}.u{i}" for n in joined['nodes']
+                                  for i, u in enumerate(n['units'], 1)
+                                  if counts[n['node_id'], f'u{i}'] == len(u['evidence'])}
+            if prepared.prompt_version in SEMANTIC_MAP_FACT_PROSE_PROFILES:
+                from .semantic_admission import _semantic_fact_part_key, _semantic_fact_sentence_choices
+                choices = _semantic_fact_sentence_choices(joined, json.loads(prepared.material_json), prepared.prompt_version)
+                selected = {}
+                for n in joined['nodes']:
+                    nid = n['node_id']
+                    for i, u in enumerate(n['units'], 1):
+                        uid = f'u{i}'
+                        phrases = []
+                        for j, evidence in enumerate(u['evidence']):
+                            key = _semantic_fact_part_key(u['evidence'], j)
+                            slot = (nid, uid, key)
+                            ref = authored_nodes['nodes'][nid]['units'][uid]['fact_parts'][key]
+                            phrase = sources[slot][1] if slot in sources else choices.get(slot, {}).get(ref)
+                            if phrase is None:
+                                break
+                            phrases.append(phrase)
+                        else:
+                            selected[f'{nid}.{uid}'] = tuple(phrases)
+                fixed_record_units = selected
+        # Exact phase assembly: roots/prose/IDs were fixed and checked before
+        # this projection. No rejected sentence, edge or partial raw is fixed.
+        joined['nodes'] = [{k: v for k, v in n.items() if k != 'node_id'} for n in joined['nodes']]
+        return _expand_analysis_semantic_node_local_v3(
+            replace(prepared, prompt_version=SEMANTIC_MAP_NODE_LOCAL_V3_PROFILE), joined,
+            fact_endpoints=prepared.prompt_version in SEMANTIC_MAP_FACT_ENDPOINT_PROFILES,
+            mark_record_ownership=prepared.prompt_version in SEMANTIC_MAP_CONTENT_PLAN_PROFILES,
+            fixed_record_units=fixed_record_units, comparison_sources=comparison_sources,
+            preserve_action_sentence_order=packet.get('merge_wire_version') in ('cocolon.analysis.merge_wire.v4', 'cocolon.analysis.merge_wire.v5', 'cocolon.analysis.merge_wire.v6', 'cocolon.analysis.merge_wire.v7', 'cocolon.analysis.merge_wire.v8', 'cocolon.analysis.merge_wire.v9', 'cocolon.analysis.merge_wire.v10'),
+            original_field_sections=packet.get('merge_wire_version') in ('cocolon.analysis.merge_wire.v6', 'cocolon.analysis.merge_wire.v7', 'cocolon.analysis.merge_wire.v8', 'cocolon.analysis.merge_wire.v9', 'cocolon.analysis.merge_wire.v10'),
+            record_scoped_captions=prepared.prompt_version in {'semantic_map.node_local.v4.occurrence.v23', 'semantic_map.node_local.v4.occurrence.v24'},
+            compact_source_captions=prepared.prompt_version in {'semantic_map.node_local.v4.occurrence.v22', 'semantic_map.node_local.v4.occurrence.v23', 'semantic_map.node_local.v4.occurrence.v24'},
+            deduplicate_source_sentences=prepared.prompt_version in {'semantic_map.node_local.v4.occurrence.v21', 'semantic_map.node_local.v4.occurrence.v22', 'semantic_map.node_local.v4.occurrence.v23', 'semantic_map.node_local.v4.occurrence.v24'},
+            whole_map_overview=prepared.prompt_version in {'semantic_map.node_local.v4.occurrence.v20', 'semantic_map.node_local.v4.occurrence.v21', 'semantic_map.node_local.v4.occurrence.v22', 'semantic_map.node_local.v4.occurrence.v23', 'semantic_map.node_local.v4.occurrence.v24'},
+            per_root_fact_limit=prepared.prompt_version in {'semantic_map.node_local.v4.occurrence.v20', 'semantic_map.node_local.v4.occurrence.v21', 'semantic_map.node_local.v4.occurrence.v22', 'semantic_map.node_local.v4.occurrence.v23', 'semantic_map.node_local.v4.occurrence.v24'},
+            use_attributed_captions=prepared.prompt_version in SEMANTIC_MAP_FACT_PROSE_PROFILES,
+            deduplicate_node_evidence=prepared.prompt_version in {'semantic_map.node_local.v4.occurrence.v18', 'semantic_map.node_local.v4.occurrence.v19', 'semantic_map.node_local.v4.occurrence.v20', 'semantic_map.node_local.v4.occurrence.v21', 'semantic_map.node_local.v4.occurrence.v22', 'semantic_map.node_local.v4.occurrence.v23', 'semantic_map.node_local.v4.occurrence.v24'},
+            scope_earlier_unknowns=prepared.prompt_version in {'semantic_map.node_local.v4.occurrence.v18', 'semantic_map.node_local.v4.occurrence.v19', 'semantic_map.node_local.v4.occurrence.v20', 'semantic_map.node_local.v4.occurrence.v21', 'semantic_map.node_local.v4.occurrence.v22', 'semantic_map.node_local.v4.occurrence.v23', 'semantic_map.node_local.v4.occurrence.v24'})
+    if (getattr(prepared, 'prompt_version', None) == 'semantic_map.node_local.v3'
+            or type(packet) is dict and packet.get('schema_version') == 'cocolon.analysis.semantic_map.node_local.model.v3'):
+        return _expand_analysis_semantic_node_local_v3(prepared, packet)
+    if (getattr(prepared, 'prompt_version', None) == 'semantic_map.event_plan.v2'
+            or type(packet) is dict and packet.get('schema_version') == 'cocolon.analysis.semantic_map.event_plan.model.v2'):
+        return _expand_analysis_semantic_event_plan_v2(prepared, packet)
+    from .semantic_admission import (_semantic_map_require, _semantic_map_keys,
+        _semantic_map_text, _semantic_map_evidence, SEMANTIC_MAP_MODEL_SCHEMA)
+    profile = 'semantic_map.event_plan.v1'
+    schema = 'cocolon.analysis.semantic_map.event_plan.model.v1'
+    selected = getattr(prepared, 'prompt_version', None) == profile
+    is_plan = type(packet) is dict and packet.get('schema_version') == schema
+    _semantic_map_require(selected == is_plan, 'analysis_semantic_event_plan_profile_unbound')
+    if not selected:
+        return packet
+    require = _semantic_map_require
+    reason = 'analysis_semantic_event_plan_invalid'
+    require(_semantic_map_keys(packet, {'schema_version', 'events', 'readings', 'nodes', 'edges', 'overview'}), reason)
+    def rows(value, maximum, minimum=0):
+        require(type(value) is list and minimum <= len(value) <= maximum, reason)
+        return value
+    def refs(value, known, maximum, minimum=0):
+        rows(value, maximum, minimum)
+        require(all(type(ref) is str and ref in known for ref in value)
+            and len(value) == len(set(value)), reason)
+        return value
+    def text(value, maximum):
+        require(_semantic_map_text(value, maximum), reason)
+        return value
+    events = {}
+    for index, event in enumerate(rows(packet['events'], 24, 1), 1):
+        require(_semantic_map_keys(event, {'evidence', 'event_id', 'fact', 'unknowns'})
+            and event['event_id'] == 'e' + str(index), reason)
+        roots = rows(event['evidence'], 4, 1)
+        # Reuse exact source/field/correction admission, not a second reader.
+        bound = [_semantic_map_evidence(prepared, root)[1] for root in roots]
+        require(len({root['evidence_id'] for root in bound}) == len(bound), reason)
+        text(event['fact'], 160)
+        unknowns = rows(event['unknowns'], 4)
+        for unknown in unknowns:
+            text(unknown, 240)
+        require(len(set(unknowns)) == len(unknowns), reason)
+        events[event['event_id']] = event
+    readings = {}
+    for index, reading in enumerate(rows(packet['readings'], 24), 1):
+        require(_semantic_map_keys(reading, {'reading_id', 'event_refs', 'meaning'})
+            and reading['reading_id'] == 'r' + str(index), reason)
+        refs(reading['event_refs'], events, 4, 1)
+        text(reading['meaning'], 240)
+        readings[reading['reading_id']] = reading
+    used_events, used_readings = set(), set()
+    def selected_parts(row, event_max, reading_max, allowed_events=None):
+        event_refs = refs(row['event_refs'], events, event_max, 1)
+        reading_refs = refs(row['reading_refs'], readings, reading_max)
+        scope = set(event_refs)
+        require(allowed_events is None or scope <= allowed_events, reason)
+        require(all(set(readings[ref]['event_refs']) <= scope for ref in reading_refs), reason)
+        used_events.update(scope)
+        used_readings.update(reading_refs)
+        facts = [events[ref]['fact'] for ref in event_refs]
+        meanings = [readings[ref]['meaning'] for ref in reading_refs]
+        return facts, meanings
+    nodes, node_scopes = [], {}
+    for index, node in enumerate(rows(packet['nodes'], 24, 1), 1):
+        require(_semantic_map_keys(node, {'node_id', 'node_kind', 'perspective', 'title', 'event_refs', 'reading_refs'})
+            and node['node_id'] == 'n' + str(index), reason)
+        facts, meanings = selected_parts(node, 4, 4)
+        evidence, unknowns = [], []
+        for ref in node['event_refs']:
+            for root in events[ref]['evidence']:
+                if root not in evidence:
+                    evidence.append(deepcopy(root))
+            for unknown in events[ref]['unknowns']:
+                if unknown not in unknowns:
+                    unknowns.append(unknown)
+        node_scopes[node['node_id']] = set(node['event_refs'])
+        nodes.append(dict(evidence=evidence, node_id=node['node_id'],
+            node_kind=node['node_kind'], title=text(node['title'], 80),
+            summary='\n'.join(facts), explanation='\n'.join(facts + meanings),
+            perspective=node['perspective'], unknowns=unknowns))
+    reachable = set().union(*node_scopes.values())
+    require(reachable == set(events), 'analysis_semantic_event_plan_orphan')
+    edges = []
+    for edge in rows(packet['edges'], 48):
+        require(_semantic_map_keys(edge, {'from', 'to', 'relation_kind', 'label', 'event_refs', 'reading_refs'})
+            and type(edge['from']) is str and edge['from'] in node_scopes
+            and type(edge['to']) is str and edge['to'] in node_scopes, reason)
+        facts, meanings = selected_parts(edge, 6, 4,
+            node_scopes[edge['from']] | node_scopes[edge['to']])
+        edges.append(dict(**{key: edge[key] for key in ('from', 'to', 'relation_kind')},
+            label=text(edge['label'], 80), explanation='\n'.join(facts + meanings)))
+    overview = packet['overview']
+    require(_semantic_map_keys(overview, {'title', 'event_refs', 'reading_refs'}), reason)
+    facts, meanings = selected_parts(overview, 24, 8, reachable)
+    require(used_events == set(events) and used_readings == set(readings),
+        'analysis_semantic_event_plan_orphan')
+    return dict(schema_version=SEMANTIC_MAP_MODEL_SCHEMA, nodes=nodes, edges=edges,
+        overview=dict(title=text(overview['title'], 80), summary='\n'.join(facts + meanings)))
+
+
+def _expand_analysis_semantic_event_plan_v2(prepared, packet):
+    """Realize selected authored units; dependencies supply source scope only.
+
+    This is a distinct author contract, not a conversion or repair of v1 raw.
+    Source modes remain unassessed model interpretations. Quoted qualifications
+    are kept verbatim inside their already-admitted event evidence.
+    """
+    from .semantic_admission import (_semantic_map_require as require,
+        _semantic_map_keys as keys, _semantic_map_text, _semantic_map_evidence,
+        SEMANTIC_MAP_MODEL_SCHEMA, SEMANTIC_MAP_EVENT_PLAN_V2_PROFILE,
+        SEMANTIC_MAP_EVENT_PLAN_V2_SCHEMA)
+    require(getattr(prepared, 'prompt_version', None) == SEMANTIC_MAP_EVENT_PLAN_V2_PROFILE
+        and type(packet) is dict and packet.get('schema_version') == SEMANTIC_MAP_EVENT_PLAN_V2_SCHEMA,
+        'analysis_semantic_event_plan_profile_unbound')
+    reason = 'analysis_semantic_event_plan_invalid'
+    require(keys(packet, {'schema_version', 'events', 'readings', 'nodes', 'edges', 'overview'}), reason)
+
+    def rows(value, maximum, minimum=0):
+        require(type(value) is list and minimum <= len(value) <= maximum, reason)
+        return value
+
+    def text(value, maximum):
+        require(_semantic_map_text(value, maximum), reason)
+        return value
+
+    def refs(value, known, maximum, minimum=0):
+        rows(value, maximum, minimum)
+        require(all(type(ref) is str and ref in known for ref in value)
+            and len(value) == len(set(value)), reason)
+        return value
+
+    events, units, dependencies, quotations = {}, {}, {}, {}
+    for index, event in enumerate(rows(packet['events'], 24, 1), 1):
+        require(keys(event, {'evidence', 'event_id', 'source_mode', 'fact', 'unknowns'})
+            and event['event_id'] == 'e' + str(index)
+            and type(event['source_mode']) is str and event['source_mode'] in {
+                'RECORDED', 'PERSON_JUDGMENT', 'PERSON_WISH', 'DECIDED_PLAN'}, reason)
+        roots = rows(event['evidence'], 4, 1)
+        bound = [_semantic_map_evidence(prepared, root)[1] for root in roots]
+        require(len({root['evidence_id'] for root in bound}) == len(bound), reason)
+        units[event['event_id']] = text(event['fact'], 160)
+        dependencies[event['event_id']] = [event['event_id']]
+        qualifications = []
+        for unknown in rows(event['unknowns'], 4):
+            require(keys(unknown, {'source_quote', 'source_field'})
+                and type(unknown['source_field']) is int, reason)
+            quote = text(unknown['source_quote'], 240)
+            # The whole correction has already been admitted above. A
+            # qualification is a range within that root, not a partial root.
+            require(any(root['field'] == unknown['source_field']
+                and root['quote'].count(quote) == 1 for root in roots),
+                'analysis_semantic_event_plan_unknown_unbound')
+            field = next((f for f in prepared.fields if f[0] == unknown['source_field']), None)
+            require(field is not None and field[1].count(quote) == 1,
+                'analysis_semantic_event_plan_unknown_unbound')
+            pair = (unknown['source_field'], quote)
+            require(pair not in qualifications, reason)
+            qualifications.append(pair)
+        quotations[event['event_id']] = qualifications
+        events[event['event_id']] = event
+    readings = {}
+    for index, reading in enumerate(rows(packet['readings'], 24), 1):
+        require(keys(reading, {'reading_id', 'event_refs', 'meaning'})
+            and reading['reading_id'] == 'r' + str(index), reason)
+        dependencies[reading['reading_id']] = refs(reading['event_refs'], events, 4, 1)
+        units[reading['reading_id']] = text(reading['meaning'], 240)
+        readings[reading['reading_id']] = reading
+    used_units = set()
+
+    def selected(row, unit_max, event_max, reading_max, allowed_events=None):
+        selected_units = refs(row['unit_refs'], units, unit_max, 1)
+        require(sum(ref in readings for ref in selected_units) <= reading_max, reason)
+        closure = list(dict.fromkeys(event for ref in selected_units for event in dependencies[ref]))
+        require(len(closure) <= event_max
+            and (allowed_events is None or set(closure) <= allowed_events), reason)
+        used_units.update(selected_units)
+        # Only explicitly selected authored units become prose. In particular,
+        # a reading's evidence closure does not append more factual sentences.
+        return [units[ref] for ref in selected_units], closure
+
+    nodes, node_scopes = [], {}
+    for index, node in enumerate(rows(packet['nodes'], 24, 1), 1):
+        require(keys(node, {'node_id', 'node_kind', 'perspective', 'title', 'unit_refs'})
+            and node['node_id'] == 'n' + str(index), reason)
+        visible, closure = selected(node, 4, 24, 4)
+        evidence, unknowns = [], []
+        for ref in closure:
+            for root in events[ref]['evidence']:
+                if root not in evidence:
+                    evidence.append(deepcopy(root))
+            for _, quote in quotations[ref]:
+                if quote not in unknowns:
+                    unknowns.append(quote)
+        node_scopes[node['node_id']] = set(closure)
+        nodes.append(dict(evidence=evidence, node_id=node['node_id'], node_kind=node['node_kind'],
+            perspective=node['perspective'], title=text(node['title'], 80),
+            summary=visible[0], explanation='\n'.join(visible), unknowns=unknowns))
+    reachable = set().union(*node_scopes.values())
+    require(reachable == set(events), 'analysis_semantic_event_plan_orphan')
+    edges = []
+    for edge in rows(packet['edges'], 48):
+        require(keys(edge, {'from', 'to', 'relation_kind', 'label', 'unit_refs'})
+            and type(edge['from']) is str and edge['from'] in node_scopes
+            and type(edge['to']) is str and edge['to'] in node_scopes, reason)
+        visible, _ = selected(edge, 6, 24, 4, node_scopes[edge['from']] | node_scopes[edge['to']])
+        edges.append(dict(**{key: edge[key] for key in ('from', 'to', 'relation_kind')},
+            label=text(edge['label'], 80), explanation='\n'.join(visible)))
+    overview = packet['overview']
+    require(keys(overview, {'title', 'unit_refs'}), reason)
+    visible, _ = selected(overview, 32, 24, 8, reachable)
+    require(set(readings) <= used_units, 'analysis_semantic_event_plan_orphan')
+    return dict(schema_version=SEMANTIC_MAP_MODEL_SCHEMA, nodes=nodes, edges=edges,
+        overview=dict(title=text(overview['title'], 80), summary='\n'.join(visible)))
+
+
+def _node_unique_fixed_facts(units, fixed_parts, original_records, *, source_sentences=None,
+                             separate_sentences=False, action_sentence_order=None):
+    """Remove repeated bound phrases within one single-record explanation."""
+    records = {original_records.get(root['field']) for unit in units for root in unit['evidence']}
+    if None in records or len(records) != 1 or not all(fixed_parts):
+        return [unit['fact'] for unit in units]
+    seen = set()
+    covered = set()
+    displayed = []
+    action_slots = {}
+    for unit, phrases in zip(units, fixed_parts, strict=True):
+        retained = []
+        for root, phrase in zip(unit['evidence'], phrases, strict=True):
+            slot = (root['field'], root['quote'], phrase, unit['source_mode'])
+            if slot in seen:
+                continue
+            seen.add(slot)
+            if source_sentences is not None and phrase in root['quote']:
+                from analysis_plan_source_choices import _sentences
+                sentences = _sentences(phrase, original_for_overview=True)
+                if (sentences and ''.join(sentences) == phrase
+                        and all(s in source_sentences.get(root['field'], ()) for s in sentences)):
+                    # The same original sentence can be cited alone and within a longer root.
+                    # Keep the whole selection if it supplies even one new source sentence.
+                    if separate_sentences:
+                        # All sentences occur exactly once in this original field. Preserve
+                        # different record, source mode and qualified quotations independently.
+                        for sentence in sentences:
+                            key = (root['field'], unit['source_mode'], sentence)
+                            if key not in covered:
+                                if retained:
+                                    displayed.append(''.join(retained))
+                                    retained = []
+                                field = root['field']
+                                order = (action_sentence_order or {}).get(field, {})
+                                if sentence in order:
+                                    action_slots.setdefault(field, []).append((len(displayed), order[sentence]))
+                                displayed.append(sentence)
+                                covered.add(key)
+                        continue
+                    keys = {(root['field'], unit['source_mode'], s) for s in sentences}
+                    if keys <= covered:
+                        continue
+                    covered.update(keys)
+            retained.append(phrase)
+        if retained:
+            displayed.append(''.join(retained))
+    # Only permute slots occupied by whole, uniquely located sentences of one
+    # original action field. Keep the authors' other fields, readings, and
+    # qualifications in place; source position expresses no inferred event time.
+    if len(units) == 1 and action_sentence_order and all(
+            all(a[1] <= b[1] for a, b in zip(slots, slots[1:])) for slots in action_slots.values()):
+        return [units[0]['fact']]
+    for slots in action_slots.values():
+        ordered = [displayed[index] for index, _ in sorted(slots, key=lambda item: item[1])]
+        for (index, _), sentence in zip(slots, ordered, strict=True):
+            displayed[index] = sentence
+    return displayed
+
+
+def _expand_analysis_semantic_node_local_v3(prepared, packet, *, fact_endpoints=False, mark_record_ownership=False,
+                                           fixed_record_units=(), use_attributed_captions=False, deduplicate_node_evidence=False,
+                                           scope_earlier_unknowns=False, whole_map_overview=False, per_root_fact_limit=False,
+                                           deduplicate_source_sentences=False, compact_source_captions=False,
+                                           record_scoped_captions=False, preserve_action_sentence_order=False, original_field_sections=False,
+                                           comparison_sources=None):
+    """Compile node-owned authored units, not a repair of a reference plan.
+
+    There is no independently authored fact/reading registry to relink. All
+    declared local facts are rendered with their original qualifications;
+    only deterministic positional IDs and views are derived here. The normal
+    quoted-map compiler still owns source/cohort/correction and public bounds.
+    """
+    from .semantic_admission import (_semantic_map_require as require,
+        _semantic_map_keys as keys, _semantic_map_text, _semantic_map_evidence,
+        SEMANTIC_MAP_MODEL_SCHEMA, SEMANTIC_MAP_NODE_LOCAL_V3_PROFILE,
+        SEMANTIC_MAP_NODE_LOCAL_V3_SCHEMA, SEMANTIC_MAP_NODE_KINDS,
+        SEMANTIC_MAP_PERSPECTIVES, SEMANTIC_MAP_RELATION_KINDS)
+    require(getattr(prepared, 'prompt_version', None) == SEMANTIC_MAP_NODE_LOCAL_V3_PROFILE
+        and type(packet) is dict and packet.get('schema_version') == SEMANTIC_MAP_NODE_LOCAL_V3_SCHEMA,
+        'analysis_semantic_node_local_profile_unbound')
+    reason = 'analysis_semantic_node_local_invalid'
+    require(keys(packet, {'schema_version', 'nodes', 'edges', 'overview'}), reason)
+
+    def rows(value, maximum, minimum=0):
+        require(type(value) is list and minimum <= len(value) <= maximum, reason)
+        return value
+
+    def text(value, maximum, *, empty=False):
+        require(empty and value == '' or _semantic_map_text(value, maximum), reason)
+        return value
+
+    material = json.loads(prepared.material_json)
+    def display_facts(units, facts, refs):
+        if fixed_record_units:
+            from analysis_plan_source_choices import mixed_record_facts
+            fixed = ([fixed_record_units.get(ref, False) for ref in refs] if isinstance(fixed_record_units, dict)
+                     else [ref in fixed_record_units for ref in refs])
+            labels, shown = mixed_record_facts(material, units, fixed)
+            if labels:
+                return labels, shown
+        if mark_record_ownership:
+            from analysis_plan_source_choices import separate_record_labels
+            labels = separate_record_labels(material, units)
+            if labels:
+                return labels, [label + '：' + fact for label, fact in zip(labels, facts, strict=True)]
+        return (), facts
+
+    unknown_clocks = {}
+    if scope_earlier_unknowns:
+        from analysis_plan_source_choices import earlier_unknown_fields
+        unknown_clocks = earlier_unknown_fields(material)
+    original_records = {field['field']: field['record'] for field in material['fields']
+                        if field['source_role'] == 'ORIGINAL_INPUT'} if deduplicate_node_evidence else {}
+    source_sentences = None
+    action_sentence_order = {}
+    if deduplicate_source_sentences:
+        from analysis_plan_source_choices import _sentences
+        source_sentences = {f['field']: {s for s in _sentences(f['text'], original_for_overview=True)
+                                        if f['text'].count(s) == 1}
+                            for f in material['fields'] if f['field'] in original_records}
+        if preserve_action_sentence_order:
+            for field in material['fields']:
+                number = field['field']
+                if (number in original_records and field['field_path'] == 'memo_action'
+                        and field.get('supplement') is None and field.get('fragment_is_complete_field') is True
+                        and field.get('fragment_scalar_range') == [0, len(field['text'])]):
+                    action_sentence_order[number] = {sentence: field['text'].index(sentence)
+                        for sentence in source_sentences[number]
+                        if field['text'].find(sentence) == field['text'].rfind(sentence)}
+    field_records = {field['field']: field['record'] for field in material['fields']}
+    required_records = {row['record'] for row in material['records']}
+    covered_records = set()
+    nodes, bodies, summaries = [], {}, {}
+    for index, node in enumerate(rows(packet['nodes'], 12, 1), 1):
+        require(keys(node, {'units', 'node_kind', 'perspective', 'title', 'meaning'})
+            and type(node['node_kind']) is str and node['node_kind'] in SEMANTIC_MAP_NODE_KINDS
+            and type(node['perspective']) is str and node['perspective'] in SEMANTIC_MAP_PERSPECTIVES, reason)
+        roots, unknowns, facts = [], [], []
+        for unit in rows(node['units'], 2, 1):
+            require(keys(unit, {'evidence', 'source_mode', 'fact', 'unknowns'})
+                and type(unit['source_mode']) is str and unit['source_mode'] in {
+                    'RECORDED', 'PERSON_JUDGMENT', 'PERSON_WISH', 'DECIDED_PLAN'}, reason)
+            evidence = rows(unit['evidence'], 4, 1)
+            bound = [_semantic_map_evidence(prepared, root)[1] for root in evidence]
+            require(len({root['evidence_id'] for root in bound}) == len(bound), reason)
+            facts.append(text(unit['fact'], 160 * len(evidence) if per_root_fact_limit else 160))
+            for root in evidence:
+                # A map-correction cohort is not a substitute citation of the
+                # original records. Its complete explanation remains a root.
+                record = field_records.get(root['field'])
+                if type(record) is int and record > 0:
+                    covered_records.add(record)
+                if root not in roots:
+                    roots.append(deepcopy(root))
+            qualifications = set()
+            for unknown in rows(unit['unknowns'], 2):
+                require(keys(unknown, {'source_quote', 'source_field'})
+                    and type(unknown['source_field']) is int, reason)
+                quote = text(unknown['source_quote'], 240)
+                require(any(root['field'] == unknown['source_field']
+                    and root['quote'].count(quote) == 1 for root in evidence),
+                    'analysis_semantic_node_local_unknown_unbound')
+                field = next((field for field in prepared.fields if field[0] == unknown['source_field']), None)
+                require(field is not None and field[1].count(quote) == 1,
+                    'analysis_semantic_node_local_unknown_unbound')
+                qualification = (unknown['source_field'], quote)
+                require(qualification not in qualifications, reason)
+                qualifications.add(qualification)
+                if unknown['source_field'] in unknown_clocks:
+                    label = unknown_clocks[unknown['source_field']]
+                    quote = f'当時の未確認（{label}）：{quote}'
+                if quote not in unknowns:
+                    unknowns.append(quote)
+        meaning = text(node['meaning'], 240, empty=True)
+        if compact_source_captions and 'どう' in meaning and meaning.endswith(('かが書かれています。', 'かが記されています。')):
+            # Authored descriptions of a document can promise detail absent from the record.
+            # A person's own description of what a document says remains valid evidence.
+            if not any(meaning in root['quote'] for root in roots):
+                meaning = ''
+        # A derived view may remove byte-identical authored repetitions, but
+        # cannot decide that a paraphrase or a qualified statement is redundant.
+        # Keep the original meaning in the summary and private authored plan.
+        repeated_facts = meaning in facts or meaning in ('\n'.join(facts), ''.join(facts))
+        node_id = 'n' + str(index)
+        record_labels, displayed_facts = display_facts(node['units'], facts,
+            [f'{node_id}.u{i}' for i in range(1, len(facts) + 1)])
+        explanation_facts = displayed_facts
+        sections = None
+        if original_field_sections and fixed_record_units and not record_labels:
+            from analysis_plan_source_choices import ordered_record_sections
+            parts = [fixed_record_units.get(f'{node_id}.u{i}') for i in range(1, len(facts) + 1)]
+            sections = ordered_record_sections(material['fields'], node['units'], parts)
+        if sections:
+            headings = {'memo': '考えたこと・感じたこと', 'memo_action': '出来事・行動'}
+            explanation_facts = [line for path, lines in sections
+                                 for line in ([headings[path], *lines] if len(sections) > 1 else lines)]
+        elif deduplicate_node_evidence and fixed_record_units and (len(facts) > 1 or action_sentence_order) and not record_labels:
+            parts = [fixed_record_units.get(f'{node_id}.u{i}') for i in range(1, len(facts) + 1)]
+            explanation_facts = _node_unique_fixed_facts(node['units'], parts, original_records,
+                                                       source_sentences=source_sentences, separate_sentences=compact_source_captions,
+                                                       action_sentence_order=action_sentence_order)
+        visible = explanation_facts + ([meaning] if meaning and not repeated_facts else [])
+        body = '\n'.join(dict.fromkeys(paragraph for part in visible for paragraph in part.split('\n')))
+        summary = '\n'.join(displayed_facts) if record_labels else meaning or facts[0]
+        if sections:
+            first = sections[0][1][0]
+            summary = first if len(first) <= 240 else node['title']
+        elif compact_source_captions and not record_labels and (not meaning or meaning == node['title']):
+            summary = next((line for line in explanation_facts if line != node['title'] and len(line) <= 240), summary)
+        if use_attributed_captions and record_labels:
+            # Keep each record date with its own fact. The authored title may describe only one record.
+            caption = summary if len(summary) <= 249 else node['title']
+        else:
+            caption = '・'.join(record_labels) + '：' + node['title'] if record_labels else summary
+        # The full dated pieces always remain in the explanation. A dense node
+        # can exceed the public summary limit once provenance labels are added.
+        if fixed_record_units and len(summary) > 400:
+            summary = node['title'] if per_root_fact_limit and len(caption) > 400 else caption
+        bodies[node_id] = body
+        # Eight selected summaries share the public overview's 2,000 characters.
+        summaries[node_id] = node['title'] if fixed_record_units and len(caption) > 249 else caption
+        nodes.append(dict(evidence=roots, node_id=node_id, node_kind=node['node_kind'],
+            perspective=node['perspective'], title=text(node['title'], 80),
+            summary=summary, explanation=body, unknowns=unknowns))
+    # Preserve the existing large-cohort partial-coverage exception rather
+    # than introducing a new source-count cap or dropping input records. The
+    # regular graph coverage below still reports mapped/unparsed explicitly.
+    if len(required_records) <= 24:
+        require(required_records <= covered_records, 'analysis_semantic_node_local_coverage_incomplete')
+    edges = []
+    expected_keys = {'from', 'to', 'relation_kind', 'label'}
+    if fact_endpoints:
+        expected_keys |= {'from_unit', 'to_unit'}
+        by_unit = {f'n{i}.u{j}': unit for i, node in enumerate(packet['nodes'], 1)
+                   for j, unit in enumerate(node['units'], 1)}
+    for edge in rows(packet['edges'], 48):
+        require(keys(edge, expected_keys)
+            and type(edge['from']) is str and edge['from'] in bodies
+            and type(edge['to']) is str and edge['to'] in bodies and edge['from'] != edge['to']
+            and type(edge['relation_kind']) is str and edge['relation_kind'] in SEMANTIC_MAP_RELATION_KINDS, reason)
+        result = {key: edge[key] for key in ('from', 'to', 'relation_kind')}
+        result['label'] = text(edge['label'], 80)
+        if fact_endpoints:
+            selected = [by_unit[edge[key]] for key in ('from_unit', 'to_unit')]
+            refs = [edge['from_unit'], edge['to_unit']]
+            chosen = (comparison_sources or {}).get((*refs, result['label']))
+            evidence = [unit['evidence'] for unit in selected]
+            facts = [unit['fact'] for unit in selected]
+            if chosen and result['relation_kind'] in ('CONTEXT_CONTRAST', 'SHARED_MEANING'):
+                facts = [sentence for _, _, sentence in chosen]
+                evidence = [[r for r in roots if r['field'] == field and r['quote'] == quote and sentence in quote]
+                            for roots, (field, quote, sentence) in zip(evidence, chosen, strict=True)]
+                require(all(evidence), reason)
+            elif action_sentence_order and isinstance(fixed_record_units, dict):
+                # Endpoint facts retain their own evidence closure. Do not sort
+                # across endpoints, even when the edge connects the same record.
+                facts = [''.join(_node_unique_fixed_facts([unit], [fixed_record_units.get(ref)], original_records,
+                             source_sentences=source_sentences, separate_sentences=True, action_sentence_order=action_sentence_order))
+                         for unit, ref in zip(selected, refs, strict=True)]
+            _, display = display_facts(selected, facts, refs)
+            result['explanation'] = '\n'.join(display)
+            result['unit_evidence'] = evidence
+        else:
+            result['explanation'] = bodies[edge['from']] + '\n' + bodies[edge['to']]
+        edges.append(result)
+    overview = packet['overview']
+    require(keys(overview, {'title', 'node_refs'}), reason)
+    refs = rows(overview['node_refs'], len(nodes) if whole_map_overview else 8, 1)
+    require(all(type(ref) is str and ref in summaries for ref in refs)
+        and len(refs) == len(set(refs)), reason)
+    if whole_map_overview and sum(len(summaries[ref]) for ref in refs) + len(refs) - 1 > 2000:
+        # Keep a whole caption per item. All longer explanations remain on the nodes.
+        titles = {node['node_id']: node['title'] for node in nodes}
+        per_item = (2000 - len(refs) + 1) // len(refs)
+        summaries = {ref: summaries[ref] if len(summaries[ref]) <= per_item else titles[ref] for ref in refs}
+    heading = text(overview['title'], 80)
+    overview_text = '\n'.join(summaries[ref] for ref in refs)
+    if compact_source_captions:
+        from analysis_plan_source_choices import selected_record_overview
+        overview_text = selected_record_overview(material, packet['nodes'], fixed_record_units, heading,
+            include_authored_titles=record_scoped_captions) or overview_text
+    if record_scoped_captions:
+        from analysis_plan_source_choices import repeated_record_node_dates
+        for index, label in repeated_record_node_dates(material, packet['nodes']).items():
+            node = nodes[index]
+            dated = label + '：\n' + node['summary']
+            # A dense caption can exceed the public bound; the body's full facts
+            # and meaning remain available alongside its dated source title.
+            node['summary'] = dated if len(dated) <= 400 else label + '：\n' + node['title']
+    return dict(schema_version=SEMANTIC_MAP_MODEL_SCHEMA, nodes=nodes, edges=edges,
+        overview=dict(title=heading, summary=overview_text))
+
+
+def _semantic_node_local_review(graph, prepared, original, expanded):
+    from .semantic_admission import semantic_map_canonical, semantic_map_hash
+    units = {('n' + str(index)): ['n' + str(index) + '.u' + str(unit_index)
+        for unit_index, _ in enumerate(node['units'], 1)]
+        for index, node in enumerate(original['nodes'], 1)}
+    review = json.loads(graph.meaning_review_json)
+    review.setdefault('interpretation_status', 'UNASSESSED')
+    review.setdefault('unknowns_status', 'UNASSESSED')
+    review['node_local_plan'] = dict(profile=prepared.prompt_version, plan=deepcopy(original),
+        assigned_unit_ids=units,
+        node_meaning_roots='ALL_AND_ONLY_NODE_OWNED_UNITS',
+        edge_unit_closures=[dict(from_ref=edge['from'], to_ref=edge['to'],
+            unit_refs=[edge['from_unit'], edge['to_unit']] if 'from_unit' in edge else
+                      units[edge['from']] + units[edge['to']]) for edge in original['edges']],
+        overview_node_refs=list(original['overview']['node_refs']),
+        expanded_packet_sha256=semantic_map_hash(expanded),
+        source_modes_status='UNASSESSED_MODEL_QUALIFICATIONS', meaning_status='UNASSESSED',
+        full_source_semantic_coverage=False, realization='NODE_OWNED_AUTHORED_UNITS')
+    return replace(graph, meaning_review_json=semantic_map_canonical(review))
+
+
+def _semantic_event_plan_review(graph, prepared, original, expanded):
+    from .semantic_admission import SEMANTIC_MAP_NODE_LOCAL_V4_PROFILES
+    if getattr(prepared, 'prompt_version', None) in SEMANTIC_MAP_NODE_LOCAL_V4_PROFILES:
+        from .semantic_admission import (assemble_semantic_node_local_v4,
+            semantic_map_canonical, semantic_map_hash)
+        joined = assemble_semantic_node_local_v4(prepared, original)
+        graph = _semantic_node_local_review(graph, prepared, joined, expanded)
+        review = json.loads(graph.meaning_review_json)
+        review['node_local_plan']['phase_artifact'] = deepcopy(original)
+        review['node_local_plan']['phase_count'] = 3
+        review['node_local_plan']['phase_raw_hashes'] = [p['raw_sha256'] for p in original['phases']]
+        review['node_local_plan']['final_artifact_sha256'] = semantic_map_hash(original)
+        review['node_local_plan']['realization'] = 'PLANNED_ROOTS_THEN_NODE_PROSE_THEN_ACTUAL_NODE_RELATIONS'
+        return replace(graph, meaning_review_json=semantic_map_canonical(review),
+            source_ordered_detail=original.get('merge_wire_version') in ('cocolon.analysis.merge_wire.v4', 'cocolon.analysis.merge_wire.v5', 'cocolon.analysis.merge_wire.v6', 'cocolon.analysis.merge_wire.v7', 'cocolon.analysis.merge_wire.v8', 'cocolon.analysis.merge_wire.v9', 'cocolon.analysis.merge_wire.v10'),
+            original_field_sections=original.get('merge_wire_version') in ('cocolon.analysis.merge_wire.v6', 'cocolon.analysis.merge_wire.v7', 'cocolon.analysis.merge_wire.v8', 'cocolon.analysis.merge_wire.v9', 'cocolon.analysis.merge_wire.v10'),
+            compact_source_captions=prepared.prompt_version in {'semantic_map.node_local.v4.occurrence.v22', 'semantic_map.node_local.v4.occurrence.v23', 'semantic_map.node_local.v4.occurrence.v24'},
+            record_scoped_unknowns=prepared.prompt_version in {'semantic_map.node_local.v4.occurrence.v18', 'semantic_map.node_local.v4.occurrence.v19', 'semantic_map.node_local.v4.occurrence.v20', 'semantic_map.node_local.v4.occurrence.v21', 'semantic_map.node_local.v4.occurrence.v22', 'semantic_map.node_local.v4.occurrence.v23', 'semantic_map.node_local.v4.occurrence.v24'})
+    if getattr(prepared, 'prompt_version', None) == 'semantic_map.node_local.v3':
+        return _semantic_node_local_review(graph, prepared, original, expanded)
+    if getattr(prepared, 'prompt_version', None) not in {'semantic_map.event_plan.v1', 'semantic_map.event_plan.v2'}:
+        return graph
+    from .semantic_admission import semantic_map_canonical, semantic_map_hash
+    review = json.loads(graph.meaning_review_json)
+    review['event_plan'] = dict(profile=prepared.prompt_version, plan=deepcopy(original),
+        expanded_packet_sha256=semantic_map_hash(expanded),
+        meaning_status='UNASSESSED', realization='SHARED_AUTHORED_REFERENCES')
+    return replace(graph, meaning_review_json=semantic_map_canonical(review))
+
+
+def compile_analysis_semantic_stage(stage, packet, *, response_sha256):
+    """Use the original compiler with an additional shown-source boundary.
+
+    A full-parent quote match alone is insufficient for a shortened synthesis
+    request. Both authored roots and compiler-added support roots must have
+    actually been shown in that request. AI leaf text supplies no roots.
+    """
+    from .semantic_admission import (AnalysisSemanticMapStageInput,
+        _semantic_map_require, _semantic_map_evidence, semantic_map_canonical,
+        semantic_map_hash, _semantic_history_corrections, _semantic_history_leaf_packet,
+        SEMANTIC_HISTORY_PROFILE, SEMANTIC_HISTORY_MERGE_PROFILE, SEMANTIC_MAP_NODE_LOCAL_V3_PROFILE,
+        SEMANTIC_MAP_NODE_LOCAL_V4_PROFILES, _semantic_v4_view)
+    _semantic_map_require(type(stage) is AnalysisSemanticMapStageInput
+        and stage.kind in {'LEAF', 'MERGE'}, 'analysis_semantic_history_stage_unbound')
+    parent = stage.parent
+    original_packet = packet
+    expansion_view = (_semantic_v4_view(stage)
+        if stage.prompt_version in {SEMANTIC_MAP_NODE_LOCAL_V3_PROFILE, *SEMANTIC_MAP_NODE_LOCAL_V4_PROFILES} else parent)
+    packet = expand_analysis_semantic_event_plan(expansion_view, packet)
+    material = json.loads(stage.material_json)
+    history_profile = SEMANTIC_HISTORY_MERGE_PROFILE if stage.kind == 'MERGE' else SEMANTIC_HISTORY_PROFILE
+    _semantic_map_require(material.get('history_stage', {}).get('profile') == history_profile,
+        'analysis_semantic_history_stage_unbound')
+    originals = {f[0]: f for f in parent.fields}
+    shown = {}
+    for field in material['fields']:
+        number = field['field']
+        _semantic_map_require(number in originals and number not in shown,
+            'analysis_semantic_history_field_unbound')
+        text = originals[number][1]
+        start, end = field.get('fragment_scalar_range', [0, len(text)])
+        _semantic_map_require(type(start) is int and type(end) is int
+            and 0 <= start < end <= len(text) and field['text'] == text[start:end],
+            'analysis_semantic_history_field_unbound')
+        shown[number] = (start, end)
+
+    def root_is_shown(root):
+        for number, (_, text, _, base) in originals.items():
+            if number not in shown:
+                continue
+            start, end = shown[number]
+            if (root['source_envelope_id'] == base.source_envelope_id
+                    and root['field_path'] == base.field_path
+                    and base.scalar_start + start <= root['scalar_start']
+                    and root['scalar_end'] <= base.scalar_start + end):
+                return True
+        return False
+
+    # Existing strict map/schema admission follows below. Check only the
+    # evidence structure here so unsupported output remains a typed rejection.
+    _semantic_map_require(type(packet) is dict and type(packet.get('nodes')) is list,
+        'analysis_semantic_map_invalid')
+    final_roots = []
+    for node in packet['nodes']:
+        _semantic_map_require(type(node) is dict and type(node.get('evidence')) is list,
+            'analysis_semantic_map_invalid')
+        roots = [_semantic_map_evidence(parent, e)[1] for e in node['evidence']]
+        _semantic_map_require(all(root_is_shown(root) for root in roots),
+            'analysis_semantic_history_evidence_not_shown')
+        final_roots.append(roots)
+    corrections = (_semantic_history_corrections(parent, stage.record_refs)
+        if stage.kind == 'LEAF' else json.loads(parent.map_correction_sources_json or '[]'))
+    view = replace(parent, map_correction_sources_json=semantic_map_canonical(corrections) if corrections else '')
+    if stage.prompt_version in SEMANTIC_MAP_NODE_LOCAL_V4_PROFILES:
+        view = replace(view, material_json=stage.material_json, request_ref=expansion_view.request_ref)
+    graph = _compile_analysis_semantic_map_v2(view, packet, response_sha256=response_sha256,
+        author_packet=original_packet)
+    graph = _semantic_event_plan_review(graph, view, original_packet, packet)
+    nodes = json.loads(graph.nodes_json)
+    _semantic_map_require(all(root_is_shown(root) for node in nodes
+        for root in node['evidence_refs']), 'analysis_semantic_history_evidence_not_shown')
+    leaf_candidates, scoped_unknowns = [], []
+    if stage.kind == 'MERGE':
+        # Leaf candidates are retained as unassessed private history. They
+        # neither become new person source nor add words to the final graph.
+        # Rederive them from the bound receipts, never from model material.
+        for leaf, receipt in stage.leaves:
+            leaf_packet, leaf_graph = _semantic_history_leaf_packet(leaf, receipt)
+            leaf_candidates.append(dict(leaf_request_ref=leaf.request_ref,
+                messages_sha256=receipt.messages_sha256, response_sha256=receipt.raw_sha256,
+                raw=receipt.raw, packet=leaf_packet, coverage=json.loads(leaf_graph.coverage_json)))
+            for node in leaf_packet['nodes']:
+                if node['unknowns']:
+                    scoped_unknowns.append(dict(leaf_request_ref=leaf.request_ref, node_id=node['node_id'],
+                        evidence=node['evidence'], unknowns=node['unknowns']))
+    review = json.loads(graph.meaning_review_json)
+    review['history_synthesis'] = dict(profile=history_profile, kind=stage.kind,
+        parent_request_ref=parent.request_ref, full_source_semantic_coverage=False,
+        leaf_receipts=material.get('leaf_receipts', []),
+        field_manifest=material.get('field_manifest', []),
+        omitted_ranges=material.get('omitted_ranges', []),
+        scoped_unknowns=scoped_unknowns,
+        inherited_unknowns=[],
+        unknown_handling='PRIVATE_ONLY_UNASSESSED' if stage.kind == 'MERGE' else 'INHERIT_WITHOUT_RESOLUTION',
+        history_coverage=material.get('history_coverage', {}))
+    if stage.kind == 'MERGE':
+        review['history_synthesis'].update(leaf_candidates=leaf_candidates,
+            leaf_source_index=material['leaf_source_index'])
+    coverage = json.loads(graph.coverage_json)
+    if stage.kind == 'LEAF':
+        count = len(stage.record_refs)
+        snapshot = json.loads(parent.source_snapshot_json)
+        stale = sum(sum(event.get('kind') == 'ANSWER' for event in row.get('events', []))
+            for row in snapshot['members'] if row['original']['id'] in stage.record_refs
+            and row.get('thread') and row['thread'].get('source_snapshot') != row['original'])
+        coverage.update(source_count=count, processed_count=count,
+            unparsed_count=count - coverage['mapped_count'], excluded_count=0,
+            exclusion_reasons={}, stale_supplement_count=stale)
+    return replace(graph, request_ref=stage.request_ref, messages_sha256=semantic_map_hash(stage.messages()),
+        coverage_json=semantic_map_canonical(coverage), meaning_review_json=semantic_map_canonical(review))
+
+
+def compile_analysis_semantic_map(prepared, packet, *, response_sha256):
+    expanded = expand_analysis_semantic_event_plan(prepared, packet)
+    graph = _compile_analysis_semantic_map_v2(prepared, expanded, response_sha256=response_sha256,
+        author_packet=packet)
+    return _semantic_event_plan_review(graph, prepared, packet, expanded)
+
+
+def _compile_analysis_semantic_map_v2(prepared, packet, *, response_sha256, author_packet=None):
+    from .semantic_admission import (AnalysisSemanticMapInput,
+        SEMANTIC_MAP_MODEL_SCHEMA, SEMANTIC_MAP_NODE_KINDS, SEMANTIC_MAP_PERSPECTIVES,
+        SEMANTIC_MAP_RELATION_KINDS, SEMANTIC_MAP_FACT_ENDPOINT_PROFILES, _semantic_map_require, _semantic_map_keys,
+        _semantic_map_text, _semantic_map_strings, _semantic_map_evidence,
+        semantic_map_canonical, semantic_map_hash)
+    from .source_adapter import freeze_analysis_sources
+    from dataclasses import asdict
+    _semantic_map_require(type(prepared) is AnalysisSemanticMapInput
+        and freeze_analysis_sources(prepared.request) == prepared.frozen,
+        'analysis_semantic_input_unbound')
+    _semantic_map_require(_semantic_map_keys(packet, {'schema_version', 'overview', 'nodes', 'edges'})
+        and packet['schema_version'] == SEMANTIC_MAP_MODEL_SCHEMA)
+    overview = packet['overview']
+    _semantic_map_require(_semantic_map_keys(overview, {'title', 'summary'}) and _semantic_map_text(overview['title'], 80)
+        and _semantic_map_text(overview['summary'], 2000))
+    _semantic_map_require(type(packet['nodes']) is list and 1 <= len(packet['nodes']) <= 24
+        and type(packet['edges']) is list and len(packet['edges']) <= 48)
+    correction_sources = json.loads(prepared.map_correction_sources_json or '[]')
+    def correction_field_scope(kind, row, refs, original_quotes):
+        for correction in correction_sources:
+            target = correction['source']['target_context']
+            field = target['field']
+            # An unrelated source or a verbatim original premise is not the
+            # rejected AI inference. Structured source context is preserved.
+            if (target['kind'] != kind or '.' in field
+                    or not set(correction['cohort_refs']) & set(refs)
+                    or target['field_text'] in original_quotes):
+                continue
+            _semantic_map_require(row.get(field) != target['field_text'],
+                'analysis_map_correction_target_reused')
+    public_nodes, private_nodes, referenced = [], [], set()
+    source_conditions = {}
+    source_roots, node_reviews, edge_reviews, original_quotes_by_node = {}, [], [], {}
+    for index, node in enumerate(packet['nodes'], 1):
+        _semantic_map_require(_semantic_map_keys(node, {'node_id', 'node_kind', 'title', 'summary', 'explanation', 'perspective', 'unknowns', 'evidence'})
+            and node['node_id'] == 'n' + str(index)
+            and type(node['node_kind']) is str and node['node_kind'] in SEMANTIC_MAP_NODE_KINDS
+            and type(node['perspective']) is str and node['perspective'] in SEMANTIC_MAP_PERSPECTIVES
+            and _semantic_map_text(node['title'], 80) and _semantic_map_text(node['summary'], 400) and _semantic_map_text(node['explanation'], 3000)
+            and _semantic_map_strings(node['unknowns'], maximum=4, text_maximum=500)
+            and type(node['evidence']) is list and 1 <= len(node['evidence']) <= 24)
+        roots = [_semantic_map_evidence(prepared, value) for value in node['evidence']]
+        ids = [root['evidence_id'] for _, root in roots]
+        _semantic_map_require(len(ids) == len(set(ids)))
+        # A map correction is an independent source whose target may depend
+        # on several original records. It never becomes a fabricated input.
+        refs = list(dict.fromkeys(ref for dependency, _ in roots
+            for ref in (dependency if type(dependency) is tuple else (dependency,))))
+        original_quotes = [value['quote'] for value, (dependency, _) in zip(node['evidence'], roots)
+                           if type(dependency) is str]
+        original_quotes_by_node[node['node_id']] = original_quotes
+        correction_field_scope('node', node, refs, original_quotes)
+        referenced.update(refs)
+        source_notes, conditions, support = _semantic_map_source_context(prepared,
+            refs, [root for _, root in roots])
+        source_conditions['n' + str(index)] = (conditions, frozenset(refs))
+        context = list(dict.fromkeys([*_semantic_map_context(prepared, refs), *source_notes]))
+        if any(type(dependency) is tuple for dependency, _ in roots):
+            context.append('本人のマップ訂正で述べた説明を参照しています。')
+        source_roots['n' + str(index)] = [root for _, root in roots]
+        node_reviews.append(_semantic_map_visible_review(prepared,
+            source_roots['n' + str(index)],
+            [(key, node[key]) for key in ('title', 'summary', 'explanation')]))
+        public_nodes.append(dict(node_ref='n' + str(index), node_kind=node['node_kind'],
+            title=node['title'], summary=node['summary'], explanation=node['explanation'],
+            perspective=node['perspective'], context=context, unknowns=node['unknowns'],
+            evidence_badge_count=(len({ref for dependency, _ in roots
+                if type(dependency) is str for ref in (dependency,)})
+                + len({root['source_envelope_id'] for dependency, root in roots
+                       if type(dependency) is tuple}))))
+        all_roots = {root['evidence_id']: root for root in [*(root for _, root in roots), *support]}
+        private_nodes.append(dict(public_nodes[-1],
+            record_refs=refs, evidence_refs=list(all_roots.values())))
+    # Separate roots do not turn one repeated generic description into a map.
+    used_envelopes = {root['source_envelope_id'] for roots in source_roots.values() for root in roots}
+    _semantic_map_require(all(c['source_envelope_id'] in used_envelopes for c in correction_sources),
+        'analysis_map_correction_not_applied')
+    correction_field_scope('overview', overview, referenced,
+        [quote for quotes in original_quotes_by_node.values() for quote in quotes])
+    _semantic_map_require(len({(node['title'], node['summary'], node['explanation'])
+                  for node in public_nodes}) == len(public_nodes))
+    fact_endpoints = prepared.prompt_version in SEMANTIC_MAP_FACT_ENDPOINT_PROFILES
+    edge_keys = {'from', 'to', 'relation_kind', 'label', 'explanation'}
+    if fact_endpoints:
+        edge_keys.add('unit_evidence')
+    public_edges, seen = [], set()
+    for index, edge in enumerate(packet['edges'], 1):
+        _semantic_map_require(_semantic_map_keys(edge, edge_keys)
+            and type(edge['from']) is str and type(edge['to']) is str
+            and edge['from'] in {node['node_ref'] for node in public_nodes}
+            and edge['to'] in {node['node_ref'] for node in public_nodes}
+            and edge['from'] != edge['to'] and type(edge['relation_kind']) is str
+            and edge['relation_kind'] in SEMANTIC_MAP_RELATION_KINDS
+            and _semantic_map_text(edge['label'], 80) and _semantic_map_text(edge['explanation'], 1800))
+        key = (min(edge['from'], edge['to']), max(edge['from'], edge['to']), edge['relation_kind'])
+        _semantic_map_require(key not in seen)
+        seen.add(key)
+        explanation = edge['explanation']
+        if fact_endpoints:
+            # Source conditions, corrections and private meaning review refer to
+            # the same two units the author actually used for this relation.
+            conditions, edge_quotes, edge_roots = [], [], []
+            for side, evidence in zip(('from', 'to'), edge['unit_evidence'], strict=True):
+                resolved = [_semantic_map_evidence(prepared, item) for item in evidence]
+                roots = [root for _, root in resolved]
+                refs = frozenset(ref for dependency, _ in resolved
+                    for ref in (dependency if type(dependency) is tuple else (dependency,)))
+                _semantic_map_require(all(root in source_roots[edge[side]] for root in roots))
+                edge_roots.extend(roots)
+                edge_quotes.extend(item['quote'] for item, (dependency, _) in zip(evidence, resolved)
+                    if type(dependency) is str)
+                conditions.append((_semantic_map_source_context(prepared, refs, roots)[1], refs))
+            (left, left_records), (right, right_records) = conditions
+        else:
+            left, left_records = source_conditions[edge['from']]
+            right, right_records = source_conditions[edge['to']]
+            edge_quotes = original_quotes_by_node[edge['from']] + original_quotes_by_node[edge['to']]
+            edge_roots = [*source_roots[edge['from']], *source_roots[edge['to']]]
+        correction_field_scope('edge', edge, left_records | right_records, edge_quotes)
+        if (edge['relation_kind'] in {'CONTEXT_CONTRAST', 'SHARED_MEANING'}
+                and left and right and left != right and left_records.isdisjoint(right_records)):
+            # These are independent source premises, not a claim that the
+            # conditions caused an action or that the two records share an
+            # intention. Keep every proved condition visible on its node even
+            # if the existing edge text envelope has no room for the note.
+            left_text = '」「'.join(value.split('：', 1)[1] for value in left)
+            right_text = '」「'.join(value.split('：', 1)[1] for value in right)
+            note = 'それぞれの記録には「' + left_text + '」と「' + right_text + '」という文脈も書かれています。'
+            if len(explanation) + len(note) + 1 <= 1800:
+                explanation += '\n' + note
+        public_edges.append(dict(edge_ref='e' + str(index), from_ref=edge['from'],
+            to_ref=edge['to'], relation_kind=edge['relation_kind'],
+            label=edge['label'], explanation=explanation))
+        edge_reviews.append(_semantic_map_visible_review(prepared, edge_roots,
+            [(key, edge[key]) for key in ('label', 'explanation')]))
+    count = len(prepared.frozen.members)
+    reasons = json.loads(prepared.exclusion_reasons_json)
+    coverage = dict(profile='cumulative.v1', source_count=prepared.source_count, processed_count=count,
+        mapped_count=len(referenced), unparsed_count=count - len(referenced), excluded_count=sum(reasons.values()),
+        exclusion_reasons=reasons, stale_supplement_count=prepared.stale_supplement_count)
+    overview_refs = source_roots.keys()
+    if fact_endpoints:
+        # Expansion has checked all three raw receipts, including the selected
+        # node IDs in RELATIONS. An unselected, similar event is not a second
+        # interpretation of the premise that this overview actually cites.
+        _semantic_map_require(author_packet is not None, 'analysis_semantic_node_local_v4_lineage_invalid')
+        overview_refs = json.loads(author_packet['phases'][-1]['raw'])['overview']['node_refs']
+    review = (dict(schema_version='analysis.semantic-visible-review.v1',
+        overview=_semantic_map_visible_review(prepared,
+            [root for ref in overview_refs for root in source_roots[ref]], list(overview.items())),
+        nodes=node_reviews, edges=edge_reviews,
+        unknowns_status='UNASSESSED', interpretation_status='UNASSESSED')
+        if json.loads(prepared.material_json).get('source_duties') is not None else {})
+    return AnalysisSemanticMapGraph(prepared.frozen.owner_scope,
+        prepared.frozen.source_set_ref, prepared.source_guard, prepared.request_ref,
+        semantic_map_hash(prepared.messages()), response_sha256,
+        semantic_map_canonical(overview), semantic_map_canonical(private_nodes),
+        semantic_map_canonical(public_edges),
+        semantic_map_canonical([asdict(m) for m in prepared.frozen.members]),
+        semantic_map_canonical(coverage), semantic_map_canonical(review),
+        prepared.map_correction_sources_json)
+

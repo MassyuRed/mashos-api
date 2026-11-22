@@ -1,0 +1,1915 @@
+{
+  "source_commit": "d663ce22836fd32604788605001d71e8561f7ba2",
+  "cases": [
+    {
+      "case": "reverse",
+      "memo": "今日は疲れている。でも、昨日は友達と話せて嬉しかった。",
+      "checkpoint_sha": "44c47942aa12f18a4490d4542a43fb0668e2cab538d06bb60b0564286ff4f67b",
+      "checkpoint_id": "emlis-checkpoint-48c7f431cce5da935b2a25aa52299415d911b2caf28d31ef3bd59f50b67b6ad4",
+      "plan_sha": "9638f500e50fd504315cb893a55017b2709859650e35b96f1890ac9665b29c63",
+      "nuclei_sha": "c8cb7229906e2e3167d6fa7d40c9ded43dc717d624e471f558c97530ef8c32dd",
+      "relations": [
+        {
+          "relation_id": "relation:r1",
+          "type": "contrast",
+          "from_nucleus_id": "nucleus:s1",
+          "to_nucleus_id": "nucleus:s3",
+          "source_span_ids": [
+            "s1",
+            "s2",
+            "s3"
+          ],
+          "grounding_kind": "user_stated_relation",
+          "certainty": 0.84,
+          "retention": "required",
+          "source_relation_ids": [
+            "conflict.e1",
+            "evidence_relation_marker:s2",
+            "whole_input_source_order"
+          ],
+          "source_meaning_arc_keys": [
+            "whole_input:source_order"
+          ]
+        },
+        {
+          "relation_id": "relation:r2",
+          "type": "attempt_and_block",
+          "from_nucleus_id": "nucleus:s3",
+          "to_nucleus_id": "nucleus:s1",
+          "source_span_ids": [
+            "s1",
+            "s3"
+          ],
+          "grounding_kind": "user_stated_relation",
+          "certainty": 0.78,
+          "retention": "required",
+          "source_relation_ids": [
+            "conflict.e2"
+          ],
+          "source_meaning_arc_keys": []
+        }
+      ],
+      "projection_error": "RECEPTION_BINDING_CONFLICT_STOP",
+      "artifact_sha": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "body": null,
+      "question": null,
+      "question_decision": {
+        "disposition": "BLOCKED",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "prequestion_body_unavailable"
+      },
+      "reasons": [
+        "emlis_q3_initial_body_unavailable"
+      ],
+      "q1": {
+        "checkpoint_sha": "87780f9e96b739dc73d9de1ab840f4c985ab24a460b4c1bbae580dedbac4461d",
+        "checkpoint_id": "emlis-checkpoint-924de77d6262c2fa38f71d29b03e15f9528fc9594c20daa31785b7d48f40fc0c",
+        "artifact_sha": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+        "question": null,
+        "question_decision": {
+          "disposition": "BLOCKED",
+          "target_ref": null,
+          "target_kind": null,
+          "supporting_evidence_refs": [],
+          "missing_dimension": null,
+          "affected_meaning_refs": [],
+          "affected_reception_refs": [],
+          "asked_target_refs": [],
+          "decision_reason": "prequestion_body_unavailable"
+        },
+        "reasons": [
+          "cmee_vertical_internal_failure"
+        ]
+      }
+    },
+    {
+      "case": "hiragana",
+      "memo": "今日は疲れている。でも、昨日は友達と話せてうれしかった。",
+      "checkpoint_sha": "dc68809decce206928921e4879665a05a943259c7a7249b6d41067e15e245f2b",
+      "checkpoint_id": "emlis-checkpoint-9f85cf91cde4e562698e0e5d01f314a325015c2372101777802dbfb2b9567f6a",
+      "plan_sha": "9638f500e50fd504315cb893a55017b2709859650e35b96f1890ac9665b29c63",
+      "nuclei_sha": "c8cb7229906e2e3167d6fa7d40c9ded43dc717d624e471f558c97530ef8c32dd",
+      "relations": [
+        {
+          "relation_id": "relation:r1",
+          "type": "contrast",
+          "from_nucleus_id": "nucleus:s1",
+          "to_nucleus_id": "nucleus:s3",
+          "source_span_ids": [
+            "s1",
+            "s2",
+            "s3"
+          ],
+          "grounding_kind": "user_stated_relation",
+          "certainty": 0.84,
+          "retention": "required",
+          "source_relation_ids": [
+            "conflict.e1",
+            "evidence_relation_marker:s2",
+            "whole_input_source_order"
+          ],
+          "source_meaning_arc_keys": [
+            "whole_input:source_order"
+          ]
+        },
+        {
+          "relation_id": "relation:r2",
+          "type": "attempt_and_block",
+          "from_nucleus_id": "nucleus:s3",
+          "to_nucleus_id": "nucleus:s1",
+          "source_span_ids": [
+            "s1",
+            "s3"
+          ],
+          "grounding_kind": "user_stated_relation",
+          "certainty": 0.78,
+          "retention": "required",
+          "source_relation_ids": [
+            "conflict.e2"
+          ],
+          "source_meaning_arc_keys": []
+        }
+      ],
+      "projection_error": "RECEPTION_BINDING_CONFLICT_STOP",
+      "artifact_sha": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "body": null,
+      "question": null,
+      "question_decision": {
+        "disposition": "BLOCKED",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "prequestion_body_unavailable"
+      },
+      "reasons": [
+        "emlis_q3_initial_body_unavailable"
+      ],
+      "q1": {
+        "checkpoint_sha": "f4ae6a01fc7759f43539c2b342b0643d95d40c8c3ee2acc36bfaba4031bdb83a",
+        "checkpoint_id": "emlis-checkpoint-c06d3e5bffa14349d07b6ce51fdf343f4bcd5e42da7c3c2132b0ec7b19a63703",
+        "artifact_sha": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+        "question": null,
+        "question_decision": {
+          "disposition": "BLOCKED",
+          "target_ref": null,
+          "target_kind": null,
+          "supporting_evidence_refs": [],
+          "missing_dimension": null,
+          "affected_meaning_refs": [],
+          "affected_reception_refs": [],
+          "asked_target_refs": [],
+          "decision_reason": "prequestion_body_unavailable"
+        },
+        "reasons": [
+          "cmee_vertical_internal_failure"
+        ]
+      }
+    },
+    {
+      "case": "degree_both",
+      "memo": "今日はとても疲れている。でも、昨日は友達と話せてとても嬉しかった。",
+      "checkpoint_sha": "e18a0c9b06d57e74673196959d244c2f6b186765bc2ad701b042db5a5d45a9db",
+      "checkpoint_id": "emlis-checkpoint-903c2bb94c225495a2bacdcf7c64788bfaf121ba17366d504397b596902c2e85",
+      "plan_sha": "9638f500e50fd504315cb893a55017b2709859650e35b96f1890ac9665b29c63",
+      "nuclei_sha": "c8cb7229906e2e3167d6fa7d40c9ded43dc717d624e471f558c97530ef8c32dd",
+      "relations": [
+        {
+          "relation_id": "relation:r1",
+          "type": "contrast",
+          "from_nucleus_id": "nucleus:s1",
+          "to_nucleus_id": "nucleus:s3",
+          "source_span_ids": [
+            "s1",
+            "s2",
+            "s3"
+          ],
+          "grounding_kind": "user_stated_relation",
+          "certainty": 0.84,
+          "retention": "required",
+          "source_relation_ids": [
+            "conflict.e1",
+            "evidence_relation_marker:s2",
+            "whole_input_source_order"
+          ],
+          "source_meaning_arc_keys": [
+            "whole_input:source_order"
+          ]
+        },
+        {
+          "relation_id": "relation:r2",
+          "type": "attempt_and_block",
+          "from_nucleus_id": "nucleus:s3",
+          "to_nucleus_id": "nucleus:s1",
+          "source_span_ids": [
+            "s1",
+            "s3"
+          ],
+          "grounding_kind": "user_stated_relation",
+          "certainty": 0.78,
+          "retention": "required",
+          "source_relation_ids": [
+            "conflict.e2"
+          ],
+          "source_meaning_arc_keys": []
+        }
+      ],
+      "projection_error": "RECEPTION_BINDING_CONFLICT_STOP",
+      "artifact_sha": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "body": null,
+      "question": null,
+      "question_decision": {
+        "disposition": "BLOCKED",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "prequestion_body_unavailable"
+      },
+      "reasons": [
+        "emlis_q3_initial_body_unavailable"
+      ],
+      "q1": {
+        "checkpoint_sha": "2c5babecdf11bb7f7290616c574443342f5163db537204492addff1e2600c764",
+        "checkpoint_id": "emlis-checkpoint-29d38bef61bb2e293f0178c5234eed90c65455ed6bdb7a537858dcd4aa5a9608",
+        "artifact_sha": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+        "question": null,
+        "question_decision": {
+          "disposition": "BLOCKED",
+          "target_ref": null,
+          "target_kind": null,
+          "supporting_evidence_refs": [],
+          "missing_dimension": null,
+          "affected_meaning_refs": [],
+          "affected_reception_refs": [],
+          "asked_target_refs": [],
+          "decision_reason": "prequestion_body_unavailable"
+        },
+        "reasons": [
+          "cmee_vertical_internal_failure"
+        ]
+      }
+    },
+    {
+      "case": "degree_past",
+      "memo": "今日は疲れている。でも、昨日は友達と話せてとても嬉しかった。",
+      "checkpoint_sha": "b9a18e4a1e4fb9ca3670c3674426f0d2ec862b38f99f6cd9f0984e389055f906",
+      "checkpoint_id": "emlis-checkpoint-305b694162502f994f838f8148906aed560f7effbd1d3368027310c5c47b86c7",
+      "plan_sha": "9638f500e50fd504315cb893a55017b2709859650e35b96f1890ac9665b29c63",
+      "nuclei_sha": "c8cb7229906e2e3167d6fa7d40c9ded43dc717d624e471f558c97530ef8c32dd",
+      "relations": [
+        {
+          "relation_id": "relation:r1",
+          "type": "contrast",
+          "from_nucleus_id": "nucleus:s1",
+          "to_nucleus_id": "nucleus:s3",
+          "source_span_ids": [
+            "s1",
+            "s2",
+            "s3"
+          ],
+          "grounding_kind": "user_stated_relation",
+          "certainty": 0.84,
+          "retention": "required",
+          "source_relation_ids": [
+            "conflict.e1",
+            "evidence_relation_marker:s2",
+            "whole_input_source_order"
+          ],
+          "source_meaning_arc_keys": [
+            "whole_input:source_order"
+          ]
+        },
+        {
+          "relation_id": "relation:r2",
+          "type": "attempt_and_block",
+          "from_nucleus_id": "nucleus:s3",
+          "to_nucleus_id": "nucleus:s1",
+          "source_span_ids": [
+            "s1",
+            "s3"
+          ],
+          "grounding_kind": "user_stated_relation",
+          "certainty": 0.78,
+          "retention": "required",
+          "source_relation_ids": [
+            "conflict.e2"
+          ],
+          "source_meaning_arc_keys": []
+        }
+      ],
+      "projection_error": "RECEPTION_BINDING_CONFLICT_STOP",
+      "artifact_sha": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "body": null,
+      "question": null,
+      "question_decision": {
+        "disposition": "BLOCKED",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "prequestion_body_unavailable"
+      },
+      "reasons": [
+        "emlis_q3_initial_body_unavailable"
+      ],
+      "q1": {
+        "checkpoint_sha": "eda8608770ae6827f229b4d5ca6ba42b9e0eac81b18fd34ae95dfe3d77a2fa69",
+        "checkpoint_id": "emlis-checkpoint-2bb6ff32a0c2bb8f40e34b7886b193c3f32b52d79d75b600bd24fe4f2f4a4de0",
+        "artifact_sha": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+        "question": null,
+        "question_decision": {
+          "disposition": "BLOCKED",
+          "target_ref": null,
+          "target_kind": null,
+          "supporting_evidence_refs": [],
+          "missing_dimension": null,
+          "affected_meaning_refs": [],
+          "affected_reception_refs": [],
+          "asked_target_refs": [],
+          "decision_reason": "prequestion_body_unavailable"
+        },
+        "reasons": [
+          "cmee_vertical_internal_failure"
+        ]
+      }
+    },
+    {
+      "case": "past_then",
+      "memo": "今は疲れている。ただ、その時は友達と話せて嬉しかった。",
+      "checkpoint_sha": "09bddbd817bcf0a1f68c95878ce0e0148f70a6c107f9e07cc9c32da471867397",
+      "checkpoint_id": "emlis-checkpoint-f12b40eda0cb2acae17bb6502e0dd8948abfbd5aca16156e137b0cc7ce7b1f8c",
+      "plan_sha": "496be275e6eb33df6194510c6e37a06f67146675dd3bb75d99b1f035216e8705",
+      "nuclei_sha": "0fe1d83b691ddeb33d7352d708823653412ca4671e704fd85f5dc631ca478969",
+      "relations": [
+        {
+          "relation_id": "relation:r1",
+          "type": "contrast",
+          "from_nucleus_id": "nucleus:s1",
+          "to_nucleus_id": "nucleus:s3",
+          "source_span_ids": [
+            "s1",
+            "s2",
+            "s3"
+          ],
+          "grounding_kind": "user_stated_relation",
+          "certainty": 0.84,
+          "retention": "required",
+          "source_relation_ids": [
+            "conflict.e1",
+            "evidence_relation_marker:s2",
+            "whole_input_source_order"
+          ],
+          "source_meaning_arc_keys": [
+            "whole_input:source_order"
+          ]
+        },
+        {
+          "relation_id": "relation:r2",
+          "type": "attempt_and_block",
+          "from_nucleus_id": "nucleus:s3",
+          "to_nucleus_id": "nucleus:s1",
+          "source_span_ids": [
+            "s1",
+            "s3"
+          ],
+          "grounding_kind": "user_stated_relation",
+          "certainty": 0.78,
+          "retention": "required",
+          "source_relation_ids": [
+            "conflict.e2"
+          ],
+          "source_meaning_arc_keys": []
+        }
+      ],
+      "projection_error": "RECEPTION_BINDING_CONFLICT_STOP",
+      "artifact_sha": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "body": null,
+      "question": null,
+      "question_decision": {
+        "disposition": "BLOCKED",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "prequestion_body_unavailable"
+      },
+      "reasons": [
+        "emlis_q3_initial_body_unavailable"
+      ],
+      "q1": {
+        "checkpoint_sha": "444d36a2c8bdd2fea3b4a4c0b02777c1ba301a9998f5ff332bb52f9aceb11265",
+        "checkpoint_id": "emlis-checkpoint-5a1d9bf1a6bf0e676578bb4f1b0f9e7ce5474f4f91ee0830f5cb0e8f22542341",
+        "artifact_sha": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+        "question": null,
+        "question_decision": {
+          "disposition": "BLOCKED",
+          "target_ref": null,
+          "target_kind": null,
+          "supporting_evidence_refs": [],
+          "missing_dimension": null,
+          "affected_meaning_refs": [],
+          "affected_reception_refs": [],
+          "asked_target_refs": [],
+          "decision_reason": "prequestion_body_unavailable"
+        },
+        "reasons": [
+          "cmee_vertical_internal_failure"
+        ]
+      }
+    },
+    {
+      "case": "now",
+      "memo": "今は疲れている。しかし、昨日は友達と話せて嬉しかった。",
+      "checkpoint_sha": "7e9471d5d513634088f0e775cd8c13ad4b2187aff43249ff2171c8ca1c7f0fe3",
+      "checkpoint_id": "emlis-checkpoint-9cf500a1b656c701f3f5f6b8a0f906f412a2a242282efa28e9740b76fbee4301",
+      "plan_sha": "5a0bbe94db214e50f013ca18c3823bb456859ef9f70240b930929fe11f663ebe",
+      "nuclei_sha": "466cd84d7b7b0325647b715b12036338ac6fa8f9062fb78ac0a8fb78d7af82e4",
+      "relations": [
+        {
+          "relation_id": "relation:r1",
+          "type": "attempt_and_block",
+          "from_nucleus_id": "nucleus:s2",
+          "to_nucleus_id": "nucleus:s1",
+          "source_span_ids": [
+            "s1",
+            "s2"
+          ],
+          "grounding_kind": "user_stated_relation",
+          "certainty": 0.78,
+          "retention": "required",
+          "source_relation_ids": [
+            "conflict.e1"
+          ],
+          "source_meaning_arc_keys": []
+        },
+        {
+          "relation_id": "relation:r2",
+          "type": "shift_from_to",
+          "from_nucleus_id": "nucleus:s1",
+          "to_nucleus_id": "nucleus:s2",
+          "source_span_ids": [
+            "s1",
+            "s2"
+          ],
+          "grounding_kind": "user_stated_relation",
+          "certainty": 0.6192,
+          "retention": "required",
+          "source_relation_ids": [
+            "whole_input_source_order"
+          ],
+          "source_meaning_arc_keys": [
+            "whole_input:source_order"
+          ]
+        }
+      ],
+      "projection_error": "stage1_relation_direction_invalid",
+      "artifact_sha": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "body": null,
+      "question": null,
+      "question_decision": {
+        "disposition": "BLOCKED",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "prequestion_body_unavailable"
+      },
+      "reasons": [
+        "emlis_q3_initial_body_unavailable"
+      ],
+      "q1": {
+        "checkpoint_sha": "22af0ee98d80749c31399f6f313b40069d2cb4f509678c8d7988ba2795ec2d37",
+        "checkpoint_id": "emlis-checkpoint-1e6b73620d72b0493b8e280fe2cf8a8c59f51a98243fb09c5aa3be3198e17ce0",
+        "artifact_sha": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+        "question": null,
+        "question_decision": {
+          "disposition": "BLOCKED",
+          "target_ref": null,
+          "target_kind": null,
+          "supporting_evidence_refs": [],
+          "missing_dimension": null,
+          "affected_meaning_refs": [],
+          "affected_reception_refs": [],
+          "asked_target_refs": [],
+          "decision_reason": "prequestion_body_unavailable"
+        },
+        "reasons": [
+          "stage1_projection_unavailable"
+        ]
+      }
+    },
+    {
+      "case": "also",
+      "memo": "今日も疲れている。でも、昨日も友達と話せて嬉しかった。",
+      "checkpoint_sha": "ca2afdfd97a59d6bae36c477fd3a26ec18f41e6825c8a76688da55a9976b67f4",
+      "checkpoint_id": "emlis-checkpoint-c1de5846bccd0f4b209710c591a8cbfb2dea2ff835e0e0fb21e4198449f2e345",
+      "plan_sha": "9638f500e50fd504315cb893a55017b2709859650e35b96f1890ac9665b29c63",
+      "nuclei_sha": "c8cb7229906e2e3167d6fa7d40c9ded43dc717d624e471f558c97530ef8c32dd",
+      "relations": [
+        {
+          "relation_id": "relation:r1",
+          "type": "contrast",
+          "from_nucleus_id": "nucleus:s1",
+          "to_nucleus_id": "nucleus:s3",
+          "source_span_ids": [
+            "s1",
+            "s2",
+            "s3"
+          ],
+          "grounding_kind": "user_stated_relation",
+          "certainty": 0.84,
+          "retention": "required",
+          "source_relation_ids": [
+            "conflict.e1",
+            "evidence_relation_marker:s2",
+            "whole_input_source_order"
+          ],
+          "source_meaning_arc_keys": [
+            "whole_input:source_order"
+          ]
+        },
+        {
+          "relation_id": "relation:r2",
+          "type": "attempt_and_block",
+          "from_nucleus_id": "nucleus:s3",
+          "to_nucleus_id": "nucleus:s1",
+          "source_span_ids": [
+            "s1",
+            "s3"
+          ],
+          "grounding_kind": "user_stated_relation",
+          "certainty": 0.78,
+          "retention": "required",
+          "source_relation_ids": [
+            "conflict.e2"
+          ],
+          "source_meaning_arc_keys": []
+        }
+      ],
+      "projection_error": "RECEPTION_BINDING_CONFLICT_STOP",
+      "artifact_sha": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "body": null,
+      "question": null,
+      "question_decision": {
+        "disposition": "BLOCKED",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "prequestion_body_unavailable"
+      },
+      "reasons": [
+        "emlis_q3_initial_body_unavailable"
+      ],
+      "q1": {
+        "checkpoint_sha": "6058d05f64af035da0541397e112aa9212bbe54217a665c11d6116a2618ee567",
+        "checkpoint_id": "emlis-checkpoint-0a80045aac12fb5013ac71512c10c77befb115229cde3ee0071cabb0864e70a6",
+        "artifact_sha": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+        "question": null,
+        "question_decision": {
+          "disposition": "BLOCKED",
+          "target_ref": null,
+          "target_kind": null,
+          "supporting_evidence_refs": [],
+          "missing_dimension": null,
+          "affected_meaning_refs": [],
+          "affected_reception_refs": [],
+          "asked_target_refs": [],
+          "decision_reason": "prequestion_body_unavailable"
+        },
+        "reasons": [
+          "cmee_vertical_internal_failure"
+        ]
+      }
+    },
+    {
+      "case": "punctuation",
+      "memo": "今日は疲れている。ただ昨日は友達と話せて嬉しかった。",
+      "checkpoint_sha": "4a1e4aa9b8e49750faaa543f7f326b52e23044ab4ee4907971b1a14852c873ed",
+      "checkpoint_id": "emlis-checkpoint-eefa37a167295cbe0d76530089809a85c9f579f0b218f6f8596e46ddf677e2d7",
+      "plan_sha": "9638f500e50fd504315cb893a55017b2709859650e35b96f1890ac9665b29c63",
+      "nuclei_sha": "c8cb7229906e2e3167d6fa7d40c9ded43dc717d624e471f558c97530ef8c32dd",
+      "relations": [
+        {
+          "relation_id": "relation:r1",
+          "type": "contrast",
+          "from_nucleus_id": "nucleus:s1",
+          "to_nucleus_id": "nucleus:s3",
+          "source_span_ids": [
+            "s1",
+            "s2",
+            "s3"
+          ],
+          "grounding_kind": "user_stated_relation",
+          "certainty": 0.84,
+          "retention": "required",
+          "source_relation_ids": [
+            "conflict.e1",
+            "evidence_relation_marker:s2",
+            "whole_input_source_order"
+          ],
+          "source_meaning_arc_keys": [
+            "whole_input:source_order"
+          ]
+        },
+        {
+          "relation_id": "relation:r2",
+          "type": "attempt_and_block",
+          "from_nucleus_id": "nucleus:s3",
+          "to_nucleus_id": "nucleus:s1",
+          "source_span_ids": [
+            "s1",
+            "s3"
+          ],
+          "grounding_kind": "user_stated_relation",
+          "certainty": 0.78,
+          "retention": "required",
+          "source_relation_ids": [
+            "conflict.e2"
+          ],
+          "source_meaning_arc_keys": []
+        }
+      ],
+      "projection_error": "RECEPTION_BINDING_CONFLICT_STOP",
+      "artifact_sha": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "body": null,
+      "question": null,
+      "question_decision": {
+        "disposition": "BLOCKED",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "prequestion_body_unavailable"
+      },
+      "reasons": [
+        "emlis_q3_initial_body_unavailable"
+      ],
+      "q1": {
+        "checkpoint_sha": "aeb0a1a109ddc144cefebd10dfdcadac6a77d7740a2aa22cc2038897d81096a5",
+        "checkpoint_id": "emlis-checkpoint-9385b6d82e2d94b63e17790e5e3f1d3f4e7a1fe1e12f3664c9b18fccd6e6b976",
+        "artifact_sha": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+        "question": null,
+        "question_decision": {
+          "disposition": "BLOCKED",
+          "target_ref": null,
+          "target_kind": null,
+          "supporting_evidence_refs": [],
+          "missing_dimension": null,
+          "affected_meaning_refs": [],
+          "affected_reception_refs": [],
+          "asked_target_refs": [],
+          "decision_reason": "prequestion_body_unavailable"
+        },
+        "reasons": [
+          "cmee_vertical_internal_failure"
+        ]
+      }
+    },
+    {
+      "case": "forward",
+      "memo": "昨日は友達と話せて嬉しかった。でも、今日は疲れている。",
+      "checkpoint_sha": "04ae198aa579042b6ac65f03afcab1c0fbc130af4b9eef33f22b9b675abe93ae",
+      "checkpoint_id": "emlis-checkpoint-febb8b10db6ade529d966775acb71c57304a51af352b8ef037cdb19c18e80fc5",
+      "plan_sha": "6320cb22ae9eed30244f2eed389248632e758706a9caa38c42704a486bbc4185",
+      "nuclei_sha": "20b10cf4adb4ef43bfaf94dd487e8997143013f2f1f20d392e6f973679fa44e8",
+      "relations": [
+        {
+          "relation_id": "relation:r1",
+          "type": "contrast",
+          "from_nucleus_id": "nucleus:s1",
+          "to_nucleus_id": "nucleus:s3",
+          "source_span_ids": [
+            "s1",
+            "s2",
+            "s3"
+          ],
+          "grounding_kind": "user_stated_relation",
+          "certainty": 0.84,
+          "retention": "required",
+          "source_relation_ids": [
+            "conflict.e1",
+            "conflict.e2",
+            "evidence_relation_marker:s2",
+            "whole_input_source_order"
+          ],
+          "source_meaning_arc_keys": [
+            "whole_input:source_order"
+          ]
+        }
+      ],
+      "selected_sha": "c2bcc010094043d8de2acdd3d16f2541f7ec6b8a3ab5ab9102b2c97bf622cc63",
+      "artifact_sha": "b1256f07b32ade9a86fde75b68d76a1be04d684b79cc1924f593e41c65c09f89",
+      "body": "見えたこと：\n「昨日は友達と話せて嬉しかった」の一方で「今日は疲れている」とあります。\n\nEmlisから：\n昨日は友達と話せて嬉しかったことと今日は疲れていることの両方を、その違いも含めて小さくせずに受け止めています。",
+      "question": null,
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      },
+      "reasons": [
+        "no_bound_personal_meaning_target"
+      ],
+      "q1": {
+        "checkpoint_sha": "fc853b61e1a58cb4df57895cb96b737ba37ecfd1a5b7afe4ebb5943e328fd868",
+        "checkpoint_id": "emlis-checkpoint-67f8c508fd76689965deb8dc23115da59c9b0c2e212949fe036e3b02726a63f3",
+        "artifact_sha": "01e3e6e5bd41407e86d604fc6e8163ffd8b2a1cd19fa7388facdff6aa4525485",
+        "question": null,
+        "question_decision": {
+          "disposition": "END",
+          "target_ref": null,
+          "target_kind": null,
+          "supporting_evidence_refs": [],
+          "missing_dimension": null,
+          "affected_meaning_refs": [],
+          "affected_reception_refs": [],
+          "asked_target_refs": [],
+          "decision_reason": "no_bound_personal_meaning_target"
+        },
+        "reasons": [
+          "no_bound_personal_meaning_target"
+        ]
+      }
+    },
+    {
+      "case": "forward_degree",
+      "memo": "昨日は友達と話せてとても嬉しかった。でも、今日は疲れている。",
+      "checkpoint_sha": "8e93487a675a2aacec05b4b192e8a805c1ed470aa79ac9fa1ce1fe38167c0e55",
+      "checkpoint_id": "emlis-checkpoint-f72bfc9ad3311c0020ca6564cc98d59976c5b3f199c0dbae0c07f4c94f716714",
+      "plan_sha": "6320cb22ae9eed30244f2eed389248632e758706a9caa38c42704a486bbc4185",
+      "nuclei_sha": "20b10cf4adb4ef43bfaf94dd487e8997143013f2f1f20d392e6f973679fa44e8",
+      "relations": [
+        {
+          "relation_id": "relation:r1",
+          "type": "contrast",
+          "from_nucleus_id": "nucleus:s1",
+          "to_nucleus_id": "nucleus:s3",
+          "source_span_ids": [
+            "s1",
+            "s2",
+            "s3"
+          ],
+          "grounding_kind": "user_stated_relation",
+          "certainty": 0.84,
+          "retention": "required",
+          "source_relation_ids": [
+            "conflict.e1",
+            "conflict.e2",
+            "evidence_relation_marker:s2",
+            "whole_input_source_order"
+          ],
+          "source_meaning_arc_keys": [
+            "whole_input:source_order"
+          ]
+        }
+      ],
+      "selected_sha": "415ef087c15144372b94f00bdf7c8c1800d3f9ce8849b25d6c1bdbc624f11478",
+      "artifact_sha": "7edce1fcd2a94272781089dcaa6f9f59040cf0a941a42129ba613160c33cacc9",
+      "body": "見えたこと：\n「昨日は友達と話せてとても嬉しかった」の一方で「今日は疲れている」とあります。\n\nEmlisから：\n昨日は友達と話せてとても嬉しかったことと今日は疲れていることの両方を、その違いも含めて小さくせずに受け止めています。",
+      "question": null,
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      },
+      "reasons": [
+        "no_bound_personal_meaning_target"
+      ],
+      "q1": {
+        "checkpoint_sha": "8b244d484c5e9eaeab6bfca3678f61222fcbf9bf5528be3fc74953ee819780f2",
+        "checkpoint_id": "emlis-checkpoint-2cc3f6130ec316e7db98348801e2b936236390338df7f025ee25d9e53b7af727",
+        "artifact_sha": "3e6040c0c8060964cef2f576cef5f96e97dc2b7e7c6de651736a9333ad68f55b",
+        "question": null,
+        "question_decision": {
+          "disposition": "END",
+          "target_ref": null,
+          "target_kind": null,
+          "supporting_evidence_refs": [],
+          "missing_dimension": null,
+          "affected_meaning_refs": [],
+          "affected_reception_refs": [],
+          "asked_target_refs": [],
+          "decision_reason": "no_bound_personal_meaning_target"
+        },
+        "reasons": [
+          "no_bound_personal_meaning_target"
+        ]
+      }
+    },
+    {
+      "case": "negative",
+      "memo": "今日は疲れている。でも、昨日は友達と話せて嬉しくなかった。",
+      "checkpoint_sha": "d0e3c4e7ac584aaae63163704ff345c514f2eb041d617606bfa96f0fa13bf6f1",
+      "checkpoint_id": "emlis-checkpoint-4f19483810a932d8f39841bef56e960e8344d2c7e89e8f0a4b03b279bdc119b8",
+      "plan_sha": "ddfbccaea7a221bb3621e7aee6cc13524f42cb4936bcc78ca7ade229dae8abc5",
+      "nuclei_sha": "4bc9ec0c72f864de5bafc6d6d52a0d72ee09a75997e4e1c65f5193f5c50d70a5",
+      "relations": [
+        {
+          "relation_id": "relation:r1",
+          "type": "contrast",
+          "from_nucleus_id": "nucleus:s1",
+          "to_nucleus_id": "nucleus:s3",
+          "source_span_ids": [
+            "s1",
+            "s2",
+            "s3"
+          ],
+          "grounding_kind": "user_stated_relation",
+          "certainty": 0.84,
+          "retention": "required",
+          "source_relation_ids": [
+            "conflict.e1",
+            "evidence_relation_marker:s2",
+            "whole_input_source_order"
+          ],
+          "source_meaning_arc_keys": [
+            "whole_input:source_order"
+          ]
+        },
+        {
+          "relation_id": "relation:r2",
+          "type": "attempt_and_block",
+          "from_nucleus_id": "nucleus:s3",
+          "to_nucleus_id": "nucleus:s1",
+          "source_span_ids": [
+            "s1",
+            "s3"
+          ],
+          "grounding_kind": "user_stated_relation",
+          "certainty": 0.78,
+          "retention": "required",
+          "source_relation_ids": [
+            "conflict.e2"
+          ],
+          "source_meaning_arc_keys": []
+        }
+      ],
+      "projection_error": "RECEPTION_BINDING_CONFLICT_STOP",
+      "artifact_sha": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "body": null,
+      "question": null,
+      "question_decision": {
+        "disposition": "BLOCKED",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "prequestion_body_unavailable"
+      },
+      "reasons": [
+        "emlis_q3_initial_body_unavailable"
+      ],
+      "q1": {
+        "checkpoint_sha": "790f0f48f43893233ae1e67cfd76a910665518b1bd5ac215c88ad61f4a32e9de",
+        "checkpoint_id": "emlis-checkpoint-0080571c8d08cc842c5736e586d9f78e66b3250c98487d828ae9d8016ea8dcdc",
+        "artifact_sha": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+        "question": null,
+        "question_decision": {
+          "disposition": "BLOCKED",
+          "target_ref": null,
+          "target_kind": null,
+          "supporting_evidence_refs": [],
+          "missing_dimension": null,
+          "affected_meaning_refs": [],
+          "affected_reception_refs": [],
+          "asked_target_refs": [],
+          "decision_reason": "prequestion_body_unavailable"
+        },
+        "reasons": [
+          "cmee_vertical_internal_failure"
+        ]
+      }
+    },
+    {
+      "case": "untimed",
+      "memo": "疲れている。でも、友達と話せて嬉しかった。",
+      "checkpoint_sha": "444bfa61024a4bec05fb8a6dbe6588a8d0d31f6ca6d540759334fff65508e691",
+      "checkpoint_id": "emlis-checkpoint-9a245dd6cabbd99e5c6a1c0456e433b4e96701374e7c1b786701d3ae6ec88507",
+      "plan_sha": "9e5bf9242bc368274b4c246eac1e4b79eb476a33ad5daa8ae6e905a6546ebd16",
+      "nuclei_sha": "3930b88f57959131b3d72a0b3a3b634806e2ea0df3029e98f7dc3f12c9ca81c5",
+      "relations": [
+        {
+          "relation_id": "relation:r1",
+          "type": "contrast",
+          "from_nucleus_id": "nucleus:s1",
+          "to_nucleus_id": "nucleus:s3",
+          "source_span_ids": [
+            "s1",
+            "s2",
+            "s3"
+          ],
+          "grounding_kind": "user_stated_relation",
+          "certainty": 0.84,
+          "retention": "required",
+          "source_relation_ids": [
+            "conflict.e1",
+            "evidence_relation_marker:s2",
+            "whole_input_source_order"
+          ],
+          "source_meaning_arc_keys": [
+            "whole_input:source_order"
+          ]
+        },
+        {
+          "relation_id": "relation:r2",
+          "type": "attempt_and_block",
+          "from_nucleus_id": "nucleus:s3",
+          "to_nucleus_id": "nucleus:s1",
+          "source_span_ids": [
+            "s1",
+            "s3"
+          ],
+          "grounding_kind": "user_stated_relation",
+          "certainty": 0.78,
+          "retention": "required",
+          "source_relation_ids": [
+            "conflict.e2"
+          ],
+          "source_meaning_arc_keys": []
+        }
+      ],
+      "projection_error": "RECEPTION_BINDING_CONFLICT_STOP",
+      "artifact_sha": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "body": null,
+      "question": null,
+      "question_decision": {
+        "disposition": "BLOCKED",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "prequestion_body_unavailable"
+      },
+      "reasons": [
+        "emlis_q3_initial_body_unavailable"
+      ],
+      "q1": {
+        "checkpoint_sha": "bcbd161e6fbc89375416023eb0a58dafbf71d072d39ce7f68ca31115c39d77bd",
+        "checkpoint_id": "emlis-checkpoint-61d75f93a561398fb6507cb897f74eb87c5be29fd37f673ef396b9412b2d6204",
+        "artifact_sha": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+        "question": null,
+        "question_decision": {
+          "disposition": "BLOCKED",
+          "target_ref": null,
+          "target_kind": null,
+          "supporting_evidence_refs": [],
+          "missing_dimension": null,
+          "affected_meaning_refs": [],
+          "affected_reception_refs": [],
+          "asked_target_refs": [],
+          "decision_reason": "prequestion_body_unavailable"
+        },
+        "reasons": [
+          "cmee_vertical_internal_failure"
+        ]
+      }
+    },
+    {
+      "case": "past_fatigue",
+      "memo": "疲れた。でも、昨日は友達と話せて嬉しかった。",
+      "checkpoint_sha": "a0d104cb5eb5710856b035f1ba1c806e18987fb44c4d6ae828e2646fc6dbbdf3",
+      "checkpoint_id": "emlis-checkpoint-32920d4c77a96e46ea00d62063a22ff11c9d92fb8a55e9673f5f470dba69316d",
+      "plan_sha": "1603cad7ac3efa86838c8bd553198cfde2e64512f35411c6f9f033df7b675bd1",
+      "nuclei_sha": "dfe2ed00035d7fa473ad91c8e460d96abb8c2f187db2a30aefcac6c9f6db633d",
+      "relations": [
+        {
+          "relation_id": "relation:r1",
+          "type": "contrast",
+          "from_nucleus_id": "nucleus:s1",
+          "to_nucleus_id": "nucleus:s3",
+          "source_span_ids": [
+            "s1",
+            "s2",
+            "s3"
+          ],
+          "grounding_kind": "user_stated_relation",
+          "certainty": 0.84,
+          "retention": "required",
+          "source_relation_ids": [
+            "conflict.e1"
+          ],
+          "source_meaning_arc_keys": []
+        },
+        {
+          "relation_id": "relation:r2",
+          "type": "attempt_and_block",
+          "from_nucleus_id": "nucleus:s3",
+          "to_nucleus_id": "nucleus:s1",
+          "source_span_ids": [
+            "s1",
+            "s3"
+          ],
+          "grounding_kind": "user_stated_relation",
+          "certainty": 0.78,
+          "retention": "required",
+          "source_relation_ids": [
+            "conflict.e2"
+          ],
+          "source_meaning_arc_keys": []
+        }
+      ],
+      "projection_error": "RECEPTION_BINDING_CONFLICT_STOP",
+      "artifact_sha": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "body": null,
+      "question": null,
+      "question_decision": {
+        "disposition": "BLOCKED",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "prequestion_body_unavailable"
+      },
+      "reasons": [
+        "emlis_q3_initial_body_unavailable"
+      ],
+      "q1": {
+        "checkpoint_sha": "126732c2e334e9edf347b8b60e521fc63da7d124caa9b94a369bb5c63e662d25",
+        "checkpoint_id": "emlis-checkpoint-14fb5c62d7dd06deecf3252589562cbec45f180d490a269cb053a520ffccddb7",
+        "artifact_sha": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+        "question": null,
+        "question_decision": {
+          "disposition": "BLOCKED",
+          "target_ref": null,
+          "target_kind": null,
+          "supporting_evidence_refs": [],
+          "missing_dimension": null,
+          "affected_meaning_refs": [],
+          "affected_reception_refs": [],
+          "asked_target_refs": [],
+          "decision_reason": "prequestion_body_unavailable"
+        },
+        "reasons": [
+          "cmee_vertical_internal_failure"
+        ]
+      }
+    },
+    {
+      "case": "other",
+      "memo": "今日は疲れている。でも、昨日は友達が嬉しかった。",
+      "checkpoint_sha": "a2d4c205dfb4e69cb123830759ed7191044688c7b8f5911f83b6313412726dfb",
+      "checkpoint_id": "emlis-checkpoint-a53dc2a077ac96363d7f5b2c568e56601422fefdcc1a2137d08731e8f612590c",
+      "plan_sha": "9638f500e50fd504315cb893a55017b2709859650e35b96f1890ac9665b29c63",
+      "nuclei_sha": "c8cb7229906e2e3167d6fa7d40c9ded43dc717d624e471f558c97530ef8c32dd",
+      "relations": [
+        {
+          "relation_id": "relation:r1",
+          "type": "contrast",
+          "from_nucleus_id": "nucleus:s1",
+          "to_nucleus_id": "nucleus:s3",
+          "source_span_ids": [
+            "s1",
+            "s2",
+            "s3"
+          ],
+          "grounding_kind": "user_stated_relation",
+          "certainty": 0.84,
+          "retention": "required",
+          "source_relation_ids": [
+            "conflict.e1",
+            "evidence_relation_marker:s2",
+            "whole_input_source_order"
+          ],
+          "source_meaning_arc_keys": [
+            "whole_input:source_order"
+          ]
+        },
+        {
+          "relation_id": "relation:r2",
+          "type": "attempt_and_block",
+          "from_nucleus_id": "nucleus:s3",
+          "to_nucleus_id": "nucleus:s1",
+          "source_span_ids": [
+            "s1",
+            "s3"
+          ],
+          "grounding_kind": "user_stated_relation",
+          "certainty": 0.78,
+          "retention": "required",
+          "source_relation_ids": [
+            "conflict.e2"
+          ],
+          "source_meaning_arc_keys": []
+        }
+      ],
+      "projection_error": "RECEPTION_BINDING_CONFLICT_STOP",
+      "artifact_sha": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "body": null,
+      "question": null,
+      "question_decision": {
+        "disposition": "BLOCKED",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "prequestion_body_unavailable"
+      },
+      "reasons": [
+        "emlis_q3_initial_body_unavailable"
+      ],
+      "q1": {
+        "checkpoint_sha": "7194531a32eb70b6621f63dee398321bb64f1aa110cafd6009f2e0f0b7f8dfb4",
+        "checkpoint_id": "emlis-checkpoint-131858970116558e048f21058a00feca3449c849da14c58b4118820a144ddfbe",
+        "artifact_sha": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+        "question": null,
+        "question_decision": {
+          "disposition": "BLOCKED",
+          "target_ref": null,
+          "target_kind": null,
+          "supporting_evidence_refs": [],
+          "missing_dimension": null,
+          "affected_meaning_refs": [],
+          "affected_reception_refs": [],
+          "asked_target_refs": [],
+          "decision_reason": "prequestion_body_unavailable"
+        },
+        "reasons": [
+          "cmee_vertical_internal_failure"
+        ]
+      }
+    },
+    {
+      "case": "explicit_self",
+      "memo": "今日は私は疲れている。でも、昨日は友達と話せて嬉しかった。",
+      "checkpoint_sha": "7c408cc513e991e83208c79cb95366249d3459470fae1cc3162b34033ee65d99",
+      "checkpoint_id": "emlis-checkpoint-5044db7b30d0553f8827e4d6046ef932a8683abef0a22370e47760483aa388af",
+      "plan_sha": "9638f500e50fd504315cb893a55017b2709859650e35b96f1890ac9665b29c63",
+      "nuclei_sha": "c8cb7229906e2e3167d6fa7d40c9ded43dc717d624e471f558c97530ef8c32dd",
+      "relations": [
+        {
+          "relation_id": "relation:r1",
+          "type": "contrast",
+          "from_nucleus_id": "nucleus:s1",
+          "to_nucleus_id": "nucleus:s3",
+          "source_span_ids": [
+            "s1",
+            "s2",
+            "s3"
+          ],
+          "grounding_kind": "user_stated_relation",
+          "certainty": 0.84,
+          "retention": "required",
+          "source_relation_ids": [
+            "conflict.e1",
+            "evidence_relation_marker:s2",
+            "whole_input_source_order"
+          ],
+          "source_meaning_arc_keys": [
+            "whole_input:source_order"
+          ]
+        },
+        {
+          "relation_id": "relation:r2",
+          "type": "attempt_and_block",
+          "from_nucleus_id": "nucleus:s3",
+          "to_nucleus_id": "nucleus:s1",
+          "source_span_ids": [
+            "s1",
+            "s3"
+          ],
+          "grounding_kind": "user_stated_relation",
+          "certainty": 0.78,
+          "retention": "required",
+          "source_relation_ids": [
+            "conflict.e2"
+          ],
+          "source_meaning_arc_keys": []
+        }
+      ],
+      "projection_error": "RECEPTION_BINDING_CONFLICT_STOP",
+      "artifact_sha": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "body": null,
+      "question": null,
+      "question_decision": {
+        "disposition": "BLOCKED",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "prequestion_body_unavailable"
+      },
+      "reasons": [
+        "emlis_q3_initial_body_unavailable"
+      ],
+      "q1": {
+        "checkpoint_sha": "68865b2c1e331ae7fbc417704f960e3bc808738ffd8b4756839f7e5153bd8c87",
+        "checkpoint_id": "emlis-checkpoint-0d8004532576b31444b5937371df66ae611a388090a8ceccc0b70dcfa54bde14",
+        "artifact_sha": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+        "question": null,
+        "question_decision": {
+          "disposition": "BLOCKED",
+          "target_ref": null,
+          "target_kind": null,
+          "supporting_evidence_refs": [],
+          "missing_dimension": null,
+          "affected_meaning_refs": [],
+          "affected_reception_refs": [],
+          "asked_target_refs": [],
+          "decision_reason": "prequestion_body_unavailable"
+        },
+        "reasons": [
+          "cmee_vertical_internal_failure"
+        ]
+      }
+    },
+    {
+      "case": "quoted",
+      "memo": "「今日は疲れている。でも、昨日は友達と話せて嬉しかった。」と聞いた。",
+      "checkpoint_sha": "4db9b18d49f7eb7bc4698c6d42a61757bddeaf1555e010c6c6cb21f3e6d408a8",
+      "checkpoint_id": "emlis-checkpoint-5950f996142b1ef2014d1bd3674111f3f5b93e4819f3605cae9972ac6fb511c0",
+      "plan_sha": "88f941ea95f66d502737555ea20bc25f7da83467f2022923d3b1170f3af4c875",
+      "nuclei_sha": "0cd04d4142992478533f936978f9d5e503f523aa1da32f4f298fffd898fb2713",
+      "relations": [
+        {
+          "relation_id": "relation:r1",
+          "type": "contrast",
+          "from_nucleus_id": "nucleus:s1",
+          "to_nucleus_id": "nucleus:s3",
+          "source_span_ids": [
+            "s1",
+            "s2",
+            "s3"
+          ],
+          "grounding_kind": "user_stated_relation",
+          "certainty": 0.84,
+          "retention": "required",
+          "source_relation_ids": [
+            "conflict.e1",
+            "evidence_relation_marker:s2",
+            "whole_input_source_order"
+          ],
+          "source_meaning_arc_keys": [
+            "whole_input:source_order"
+          ]
+        },
+        {
+          "relation_id": "relation:r2",
+          "type": "attempt_and_block",
+          "from_nucleus_id": "nucleus:s3",
+          "to_nucleus_id": "nucleus:s1",
+          "source_span_ids": [
+            "s1",
+            "s3"
+          ],
+          "grounding_kind": "user_stated_relation",
+          "certainty": 0.78,
+          "retention": "required",
+          "source_relation_ids": [
+            "conflict.e2"
+          ],
+          "source_meaning_arc_keys": []
+        },
+        {
+          "relation_id": "relation:r3",
+          "type": "uncertain_connection",
+          "from_nucleus_id": "nucleus:s3",
+          "to_nucleus_id": "nucleus:s4",
+          "source_span_ids": [
+            "s3",
+            "s4"
+          ],
+          "grounding_kind": "bounded_structural_inference",
+          "certainty": 0.6192,
+          "retention": "should",
+          "source_relation_ids": [
+            "whole_input_source_order"
+          ],
+          "source_meaning_arc_keys": [
+            "whole_input:source_order"
+          ]
+        }
+      ],
+      "selected_sha": "f2c5badf90be8c382e832e62231c82cf500806181967bc898a10075fe498e1ab",
+      "artifact_sha": "3b8a1742e78baa5aef2b9116cb6152f8df3feedfcd4faa87811c62cc066204fa",
+      "body": "見えたこと：\n「今日は疲れている」という見方だけでなく、「昨日は友達と話せて嬉しかった」という具体的な変化も同時にあります。 「昨日は友達と話せて嬉しかった」と「今日は疲れている」が、この順でつながっています。\n今回の中心には、「と聞いた」があります。\n\nEmlisから：\n今日は疲れていることと昨日は友達と話せて嬉しかったという気持ちとの違い、また、一方の向きともう一方の向きがともにあることを受け止めています。",
+      "question": null,
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      },
+      "reasons": [
+        "no_bound_personal_meaning_target"
+      ],
+      "q1": {
+        "checkpoint_sha": "5a9cbe1057a6a9ae5192093fb2dfd47024d661805b73b55cf64220c1c117a7a4",
+        "checkpoint_id": "emlis-checkpoint-1a860c9411e7b524b6144547c552492dd97f9fa0ac877d65946378f22166262c",
+        "artifact_sha": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+        "question": null,
+        "question_decision": {
+          "disposition": "BLOCKED",
+          "target_ref": null,
+          "target_kind": null,
+          "supporting_evidence_refs": [],
+          "missing_dimension": null,
+          "affected_meaning_refs": [],
+          "affected_reception_refs": [],
+          "asked_target_refs": [],
+          "decision_reason": "prequestion_body_unavailable"
+        },
+        "reasons": [
+          "current_experiencer_or_time_scope_unsupported"
+        ]
+      }
+    },
+    {
+      "case": "conditional",
+      "memo": "今日は疲れている。でも、昨日は友達と話せても嬉しかった。",
+      "checkpoint_sha": "6465438c6f282abee37463e93edce8247dcd8b82751b332529507a10e0c64dfb",
+      "checkpoint_id": "emlis-checkpoint-5b9c1d275d640820da98f3208c0b44fbf553419b12ee3ce97a8d1cadbfd6e081",
+      "plan_sha": "9638f500e50fd504315cb893a55017b2709859650e35b96f1890ac9665b29c63",
+      "nuclei_sha": "c8cb7229906e2e3167d6fa7d40c9ded43dc717d624e471f558c97530ef8c32dd",
+      "relations": [
+        {
+          "relation_id": "relation:r1",
+          "type": "contrast",
+          "from_nucleus_id": "nucleus:s1",
+          "to_nucleus_id": "nucleus:s3",
+          "source_span_ids": [
+            "s1",
+            "s2",
+            "s3"
+          ],
+          "grounding_kind": "user_stated_relation",
+          "certainty": 0.84,
+          "retention": "required",
+          "source_relation_ids": [
+            "conflict.e1",
+            "evidence_relation_marker:s2",
+            "whole_input_source_order"
+          ],
+          "source_meaning_arc_keys": [
+            "whole_input:source_order"
+          ]
+        },
+        {
+          "relation_id": "relation:r2",
+          "type": "attempt_and_block",
+          "from_nucleus_id": "nucleus:s3",
+          "to_nucleus_id": "nucleus:s1",
+          "source_span_ids": [
+            "s1",
+            "s3"
+          ],
+          "grounding_kind": "user_stated_relation",
+          "certainty": 0.78,
+          "retention": "required",
+          "source_relation_ids": [
+            "conflict.e2"
+          ],
+          "source_meaning_arc_keys": []
+        }
+      ],
+      "projection_error": "RECEPTION_BINDING_CONFLICT_STOP",
+      "artifact_sha": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "body": null,
+      "question": null,
+      "question_decision": {
+        "disposition": "BLOCKED",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "prequestion_body_unavailable"
+      },
+      "reasons": [
+        "emlis_q3_initial_body_unavailable"
+      ],
+      "q1": {
+        "checkpoint_sha": "5fe49cff51b0c6f4a3b394f08f95d9dd7d2173de3d930370d82e53a2b62c6891",
+        "checkpoint_id": "emlis-checkpoint-b354a46a71a4332791e001050ca7031873e4c5eddc14881b1c7843b7570c89cd",
+        "artifact_sha": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+        "question": null,
+        "question_decision": {
+          "disposition": "BLOCKED",
+          "target_ref": null,
+          "target_kind": null,
+          "supporting_evidence_refs": [],
+          "missing_dimension": null,
+          "affected_meaning_refs": [],
+          "affected_reception_refs": [],
+          "asked_target_refs": [],
+          "decision_reason": "prequestion_body_unavailable"
+        },
+        "reasons": [
+          "cmee_vertical_internal_failure"
+        ]
+      }
+    },
+    {
+      "case": "polite",
+      "memo": "今日は疲れています。でも、昨日は友達と話せて嬉しかった。",
+      "checkpoint_sha": "693b6a55a6325c401052f987c3b16c8f74fb249b416f3d4171405f0f97c33b41",
+      "checkpoint_id": "emlis-checkpoint-4b0dc19795aa21e8e4c1b90117bf178076bd135fb93b7202175fddd9e047d1a8",
+      "plan_sha": "9638f500e50fd504315cb893a55017b2709859650e35b96f1890ac9665b29c63",
+      "nuclei_sha": "c8cb7229906e2e3167d6fa7d40c9ded43dc717d624e471f558c97530ef8c32dd",
+      "relations": [
+        {
+          "relation_id": "relation:r1",
+          "type": "contrast",
+          "from_nucleus_id": "nucleus:s1",
+          "to_nucleus_id": "nucleus:s3",
+          "source_span_ids": [
+            "s1",
+            "s2",
+            "s3"
+          ],
+          "grounding_kind": "user_stated_relation",
+          "certainty": 0.84,
+          "retention": "required",
+          "source_relation_ids": [
+            "conflict.e1",
+            "evidence_relation_marker:s2",
+            "whole_input_source_order"
+          ],
+          "source_meaning_arc_keys": [
+            "whole_input:source_order"
+          ]
+        },
+        {
+          "relation_id": "relation:r2",
+          "type": "attempt_and_block",
+          "from_nucleus_id": "nucleus:s3",
+          "to_nucleus_id": "nucleus:s1",
+          "source_span_ids": [
+            "s1",
+            "s3"
+          ],
+          "grounding_kind": "user_stated_relation",
+          "certainty": 0.78,
+          "retention": "required",
+          "source_relation_ids": [
+            "conflict.e2"
+          ],
+          "source_meaning_arc_keys": []
+        }
+      ],
+      "projection_error": "RECEPTION_BINDING_CONFLICT_STOP",
+      "artifact_sha": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "body": null,
+      "question": null,
+      "question_decision": {
+        "disposition": "BLOCKED",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "prequestion_body_unavailable"
+      },
+      "reasons": [
+        "emlis_q3_initial_body_unavailable"
+      ],
+      "q1": {
+        "checkpoint_sha": "4c7ec801ec4d536ebaf06a358d7919a34c6a930392ee995ac57c767482d326a8",
+        "checkpoint_id": "emlis-checkpoint-9c9979f183ed5dc318efa6b346a65efb96b338b6243dc3357187a7e0e003208a",
+        "artifact_sha": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+        "question": null,
+        "question_decision": {
+          "disposition": "BLOCKED",
+          "target_ref": null,
+          "target_kind": null,
+          "supporting_evidence_refs": [],
+          "missing_dimension": null,
+          "affected_meaning_refs": [],
+          "affected_reception_refs": [],
+          "asked_target_refs": [],
+          "decision_reason": "prequestion_body_unavailable"
+        },
+        "reasons": [
+          "cmee_vertical_internal_failure"
+        ]
+      }
+    },
+    {
+      "case": "repeated_degree",
+      "memo": "今日はとてもとても疲れている。でも、昨日は友達と話せて嬉しかった。",
+      "checkpoint_sha": "23913a43c902e0cd08c0cc694f4dcc28d53daec8f5c8d818fca951203283977d",
+      "checkpoint_id": "emlis-checkpoint-c71e2dab6675cde1dd8fde2c913da4656ea82d81eb2516d2012d8ecd979e29f7",
+      "plan_sha": "9638f500e50fd504315cb893a55017b2709859650e35b96f1890ac9665b29c63",
+      "nuclei_sha": "c8cb7229906e2e3167d6fa7d40c9ded43dc717d624e471f558c97530ef8c32dd",
+      "relations": [
+        {
+          "relation_id": "relation:r1",
+          "type": "contrast",
+          "from_nucleus_id": "nucleus:s1",
+          "to_nucleus_id": "nucleus:s3",
+          "source_span_ids": [
+            "s1",
+            "s2",
+            "s3"
+          ],
+          "grounding_kind": "user_stated_relation",
+          "certainty": 0.84,
+          "retention": "required",
+          "source_relation_ids": [
+            "conflict.e1",
+            "evidence_relation_marker:s2",
+            "whole_input_source_order"
+          ],
+          "source_meaning_arc_keys": [
+            "whole_input:source_order"
+          ]
+        },
+        {
+          "relation_id": "relation:r2",
+          "type": "attempt_and_block",
+          "from_nucleus_id": "nucleus:s3",
+          "to_nucleus_id": "nucleus:s1",
+          "source_span_ids": [
+            "s1",
+            "s3"
+          ],
+          "grounding_kind": "user_stated_relation",
+          "certainty": 0.78,
+          "retention": "required",
+          "source_relation_ids": [
+            "conflict.e2"
+          ],
+          "source_meaning_arc_keys": []
+        }
+      ],
+      "projection_error": "RECEPTION_BINDING_CONFLICT_STOP",
+      "artifact_sha": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "body": null,
+      "question": null,
+      "question_decision": {
+        "disposition": "BLOCKED",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "prequestion_body_unavailable"
+      },
+      "reasons": [
+        "emlis_q3_initial_body_unavailable"
+      ],
+      "q1": {
+        "checkpoint_sha": "d8b89415b422a4706a914bc1143944c01ecb7d13952d31f290a300adccaa3416",
+        "checkpoint_id": "emlis-checkpoint-0c76d5e673032b2e097dcd792a1e7f1d41de59541817310da866fdac74c87c80",
+        "artifact_sha": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+        "question": null,
+        "question_decision": {
+          "disposition": "BLOCKED",
+          "target_ref": null,
+          "target_kind": null,
+          "supporting_evidence_refs": [],
+          "missing_dimension": null,
+          "affected_meaning_refs": [],
+          "affected_reception_refs": [],
+          "asked_target_refs": [],
+          "decision_reason": "prequestion_body_unavailable"
+        },
+        "reasons": [
+          "cmee_vertical_internal_failure"
+        ]
+      }
+    },
+    {
+      "case": "unsupported",
+      "memo": "今日は疲れている。でも、昨日は友達と話せて楽しかった。",
+      "checkpoint_sha": "613d2447c385ad160a2bd279d6a853b69196c43e1d4eaddcbe9de8f3714b6923",
+      "checkpoint_id": "emlis-checkpoint-f15070a38c8036555be0de184e3cbaf109c7dbac1285c21696139e59008672e6",
+      "plan_sha": "cdfe6e9ee5171d4fb7725ab56fd8eb3281f3a72e772b609fd002eaee8004c74a",
+      "nuclei_sha": "52cb37a96151c5fee398edec55b83d9c9f250dac39c5cf1bde1d024c89866b40",
+      "relations": [
+        {
+          "relation_id": "relation:r1",
+          "type": "contrast",
+          "from_nucleus_id": "nucleus:s1",
+          "to_nucleus_id": "nucleus:s3",
+          "source_span_ids": [
+            "s1",
+            "s2",
+            "s3"
+          ],
+          "grounding_kind": "user_stated_relation",
+          "certainty": 0.84,
+          "retention": "required",
+          "source_relation_ids": [
+            "conflict.e1",
+            "evidence_relation_marker:s2",
+            "whole_input_source_order"
+          ],
+          "source_meaning_arc_keys": [
+            "whole_input:source_order"
+          ]
+        },
+        {
+          "relation_id": "relation:r2",
+          "type": "attempt_and_block",
+          "from_nucleus_id": "nucleus:s3",
+          "to_nucleus_id": "nucleus:s1",
+          "source_span_ids": [
+            "s1",
+            "s3"
+          ],
+          "grounding_kind": "user_stated_relation",
+          "certainty": 0.78,
+          "retention": "required",
+          "source_relation_ids": [
+            "conflict.e2"
+          ],
+          "source_meaning_arc_keys": []
+        }
+      ],
+      "projection_error": "RECEPTION_BINDING_CONFLICT_STOP",
+      "artifact_sha": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "body": null,
+      "question": null,
+      "question_decision": {
+        "disposition": "BLOCKED",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "prequestion_body_unavailable"
+      },
+      "reasons": [
+        "emlis_q3_initial_body_unavailable"
+      ],
+      "q1": {
+        "checkpoint_sha": "66e248adfab17b73b4f22b9a042e41be9fc9155f55176564a355726c6a583951",
+        "checkpoint_id": "emlis-checkpoint-44625e7e7d6511e0327e76bea27cbd7ad833d7d926f61ca875c0a34e6618a3c8",
+        "artifact_sha": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+        "question": null,
+        "question_decision": {
+          "disposition": "BLOCKED",
+          "target_ref": null,
+          "target_kind": null,
+          "supporting_evidence_refs": [],
+          "missing_dimension": null,
+          "affected_meaning_refs": [],
+          "affected_reception_refs": [],
+          "asked_target_refs": [],
+          "decision_reason": "prequestion_body_unavailable"
+        },
+        "reasons": [
+          "bound_human_reception_positive_burden_promotion"
+        ]
+      }
+    },
+    {
+      "case": "extra",
+      "memo": "今日は疲れている。でも、昨日は友達と話せて嬉しかった。明日は休みたい。",
+      "checkpoint_sha": "da1392f9301f62f86e22d40456e5d8a0a0a4d815a4edf83d60a43e21e4436f7e",
+      "checkpoint_id": "emlis-checkpoint-fc22f638e573c6a127a0ea385ef9080ddff950ae415cc22f111b7f10d15c3f4c",
+      "plan_sha": "6b3af899952b81a1172e96601c0bdf7eb28cbb2a78096ca47460e1ea6ffb6065",
+      "nuclei_sha": "8c9ec9d6b7f06d0a417c5ff1a402e550a5bdb8e4e961eec977f932f51b976e69",
+      "relations": [
+        {
+          "relation_id": "relation:r1",
+          "type": "contrast",
+          "from_nucleus_id": "nucleus:s1",
+          "to_nucleus_id": "nucleus:s3",
+          "source_span_ids": [
+            "s1",
+            "s2",
+            "s3"
+          ],
+          "grounding_kind": "user_stated_relation",
+          "certainty": 0.84,
+          "retention": "required",
+          "source_relation_ids": [
+            "conflict.e1",
+            "evidence_relation_marker:s2",
+            "whole_input_source_order"
+          ],
+          "source_meaning_arc_keys": [
+            "whole_input:source_order"
+          ]
+        },
+        {
+          "relation_id": "relation:r2",
+          "type": "attempt_and_block",
+          "from_nucleus_id": "nucleus:s3",
+          "to_nucleus_id": "nucleus:s1",
+          "source_span_ids": [
+            "s1",
+            "s3"
+          ],
+          "grounding_kind": "user_stated_relation",
+          "certainty": 0.78,
+          "retention": "required",
+          "source_relation_ids": [
+            "conflict.e2"
+          ],
+          "source_meaning_arc_keys": []
+        },
+        {
+          "relation_id": "relation:r3",
+          "type": "uncertain_connection",
+          "from_nucleus_id": "nucleus:s3",
+          "to_nucleus_id": "nucleus:s4",
+          "source_span_ids": [
+            "s3",
+            "s4"
+          ],
+          "grounding_kind": "bounded_structural_inference",
+          "certainty": 0.6192,
+          "retention": "should",
+          "source_relation_ids": [
+            "whole_input_source_order"
+          ],
+          "source_meaning_arc_keys": [
+            "whole_input:source_order"
+          ]
+        }
+      ],
+      "selected_sha": "ab4bd09eeddda4513787a502d57cbdadbbd307eafe52b1956159f2b8e64c1f84",
+      "artifact_sha": "709548a0432a9388ccd02b5bbf9ae3bb22a0f73b1386ad5fc627872cf35309c8",
+      "body": "見えたこと：\n「今日は疲れている」という見方だけでなく、「昨日は友達と話せて嬉しかった」という具体的な変化も同時にあります。 「昨日は友達と話せて嬉しかった」と「今日は疲れている」が、この順でつながっています。その背景には、「明日は休みたい」という状態も重なっています。\n\nEmlisから：\nその状態が重なる中で、一方の向きと今ここに置かれた言葉との違い、また、一方の向きともう一方の向きがともにあることを小さくせずに受け止めています。",
+      "question": null,
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      },
+      "reasons": [
+        "no_bound_personal_meaning_target"
+      ],
+      "q1": {
+        "checkpoint_sha": "a584a1b654c135f3b1e1ab5a207124123158627e2be21349d8da551a3c4ed453",
+        "checkpoint_id": "emlis-checkpoint-07c03bd1cde5ca9b65f572109abff15c8fcce2e745b8d2f09e65567bdc64b662",
+        "artifact_sha": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+        "question": null,
+        "question_decision": {
+          "disposition": "BLOCKED",
+          "target_ref": null,
+          "target_kind": null,
+          "supporting_evidence_refs": [],
+          "missing_dimension": null,
+          "affected_meaning_refs": [],
+          "affected_reception_refs": [],
+          "asked_target_refs": [],
+          "decision_reason": "prequestion_body_unavailable"
+        },
+        "reasons": [
+          "current_experiencer_or_time_scope_unsupported"
+        ]
+      }
+    },
+    {
+      "case": "cause",
+      "memo": "今日は疲れている。だから、昨日は友達と話せて嬉しかった。",
+      "checkpoint_sha": "42321921637bb37fff93bf4c6bd134413dae1a4b2fdb4396300eba1e57777d9e",
+      "checkpoint_id": "emlis-checkpoint-58f87f63ed7bd28096fec9276eaa0e952b966a6cfbfc47783f956847da7f242c",
+      "plan_sha": "42c91f1447df498ce2918fa263a8f9f91b3851b8664aca6cfd10273975b39734",
+      "nuclei_sha": "4b8c72e423eb6222d25213ca4fb87c1bc3eefa8229f2adedcc1eb97a7a543612",
+      "relations": [
+        {
+          "relation_id": "relation:r1",
+          "type": "attempt_and_block",
+          "from_nucleus_id": "nucleus:s2",
+          "to_nucleus_id": "nucleus:s1",
+          "source_span_ids": [
+            "s1",
+            "s2"
+          ],
+          "grounding_kind": "user_stated_relation",
+          "certainty": 0.78,
+          "retention": "required",
+          "source_relation_ids": [
+            "conflict.e1"
+          ],
+          "source_meaning_arc_keys": []
+        },
+        {
+          "relation_id": "relation:r2",
+          "type": "shift_from_to",
+          "from_nucleus_id": "nucleus:s1",
+          "to_nucleus_id": "nucleus:s2",
+          "source_span_ids": [
+            "s1",
+            "s2"
+          ],
+          "grounding_kind": "user_stated_relation",
+          "certainty": 0.6192,
+          "retention": "required",
+          "source_relation_ids": [
+            "whole_input_source_order"
+          ],
+          "source_meaning_arc_keys": [
+            "whole_input:source_order"
+          ]
+        }
+      ],
+      "projection_error": "stage1_relation_direction_invalid",
+      "artifact_sha": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "body": null,
+      "question": null,
+      "question_decision": {
+        "disposition": "BLOCKED",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "prequestion_body_unavailable"
+      },
+      "reasons": [
+        "emlis_q3_initial_body_unavailable"
+      ],
+      "q1": {
+        "checkpoint_sha": "78a61fc2a9fb4f0579f1574e77a345988926c71aea3934e3885adf04382e4a5c",
+        "checkpoint_id": "emlis-checkpoint-e8b98cdb7d57baeea53b9f5c4a6e57267919d43b6da2fc2f6c75cac0007efd53",
+        "artifact_sha": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+        "question": null,
+        "question_decision": {
+          "disposition": "BLOCKED",
+          "target_ref": null,
+          "target_kind": null,
+          "supporting_evidence_refs": [],
+          "missing_dimension": null,
+          "affected_meaning_refs": [],
+          "affected_reception_refs": [],
+          "asked_target_refs": [],
+          "decision_reason": "prequestion_body_unavailable"
+        },
+        "reasons": [
+          "stage1_projection_unavailable"
+        ]
+      }
+    }
+  ]
+}

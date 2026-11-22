@@ -83,9 +83,6 @@ def _patch_real_reply_source_bundle(monkeypatch: pytest.MonkeyPatch) -> None:
     async def fake_display_name(_user_id: str) -> str:
         return "Mash"
 
-    async def fake_timezone(_user_id: str, *, fallback: str | None = None) -> str:
-        return str(fallback or "Asia/Tokyo")
-
     async def fake_greeting(**_kwargs: Any) -> GreetingDecision:
         return GreetingDecision(
             slot_name="phase18-9-product-quality",
@@ -104,13 +101,10 @@ def _patch_real_reply_source_bundle(monkeypatch: pytest.MonkeyPatch) -> None:
         return None
 
     monkeypatch.setattr(context_service, "_resolve_display_name_for_user", fake_display_name)
-    monkeypatch.setattr(context_service, "_resolve_timezone_name_for_user", fake_timezone)
     monkeypatch.setattr(context_service, "decide_greeting_for_user", fake_greeting)
     for name, replacement in {
         "_get_input_summary_for_user": empty_dict,
         "_get_myweb_home_summary_for_user": empty_dict,
-        "_get_latest_today_question_answer_for_user": empty_dict,
-        "_list_recent_today_question_answers_for_user": empty_list,
         "get_last_input_for_user": none_value,
         "list_same_day_recent_inputs": empty_list,
         "search_similar_inputs": empty_list,

@@ -22,6 +22,83 @@ from emlis_ai_self_denial_safe_state_answer import build_self_denial_safe_state_
 from emlis_ai_types import EvidenceSpan, GraphClaim, ObservationGraph
 
 
+def test_bad_attributive_object_is_not_speaker_appraisal() -> None:
+    from emlis_ai_grounded_observation_plan import _operator_codes_for_text
+    from emlis_ai_safety_triage import is_bounded_self_denial_text, classify_emlis_safety_triage_text
+    for subject in ('私', 'わたし', '僕', 'ぼく', '自分', '俺', 'おれ'):
+        for noun in ('家族の悪い取り組み', '悪い取り組み', '悪い学びノートの長い振り返り',
+                     '悪い資料の内容', '家族の悪い考え'):
+            text = subject + 'は' + noun + 'を守りたいけれど、' + subject + 'はつらい。'
+            assert not is_bounded_self_denial_text(text), text
+            assert 'operator:self_evaluation' not in _operator_codes_for_text(text), text
+            assert classify_emlis_safety_triage_text(text).safety_triage_kind == 'safe_observation'
+
+
+def test_bad_object_does_not_hide_self_denial_or_emergency() -> None:
+    from emlis_ai_grounded_observation_plan import _operator_codes_for_text
+    from emlis_ai_safety_triage import is_bounded_self_denial_text, classify_emlis_safety_triage_text
+    wish = '私は家族の悪い取り組みを守りたい。'
+    for appraisal in ('私は悪い。', '私は悪いと思う。', '私は悪いから謝った。',
+                      '私は悪い人間だ。', '私は悪い自分を変えたい。', '私は悪い人間をやめたい。',
+                      '僕は悪い僕自身を変えたい。', '俺は悪い俺自身を変えたい。',
+                      '私は悪い人間性を直したい。', '私は悪い人格を変えたい。',
+                      '私はダメ。', '自分には価値がない。', '自分を責め続けている。'):
+        for text in (appraisal, appraisal + wish, wish + appraisal):
+            assert is_bounded_self_denial_text(text), text
+            assert 'operator:self_evaluation' in _operator_codes_for_text(text), text
+            assert classify_emlis_safety_triage_text(text).safety_triage_kind == 'self_denial_safe_state_answer'
+    for text in ('私はダメだけど悪い取り組みを守りたい。',
+                 '私は悪い取り組みを守りたいけれど私は悪い。',
+                 '私は悪い取り組みを守りたいけれど自分には価値がない。'):
+        assert is_bounded_self_denial_text(text), text
+        assert 'operator:self_evaluation' in _operator_codes_for_text(text), text
+    for unresolved in ('私は悪い取り組み。', '私は悪い取り組みの。', '私は悪いやり方を変えたい。'):
+        assert is_bounded_self_denial_text(unresolved), unresolved
+    for text in ('私は悪く思う。', '私は弱い。', '私は遅い。'):
+        assert 'operator:self_evaluation' in _operator_codes_for_text(text), text
+    for signal, kind in (('死にたい。', 'safety_blocked_emergency'),
+                         ('助けが必要。', 'safety_support_required')):
+        for text in (signal + wish, wish + signal):
+            assert classify_emlis_safety_triage_text(text).safety_triage_kind == kind, text
+
+
+def test_bad_past_location_is_not_speaker_appraisal() -> None:
+    from emlis_ai_grounded_observation_plan import _operator_codes_for_text
+    from emlis_ai_safety_triage import is_bounded_self_denial_text, classify_emlis_safety_triage_text
+    for subject in ('私', 'わたし', '僕', 'ぼく', '自分', '俺', 'おれ'):
+        for noun in ('悪い職場', '家族の悪い職場', '悪い会社の新しい職場'):
+            for ending in ('いた', 'いました', 'いなかった', 'いなかったです', 'いませんでした'):
+                for stop in ('', '。', '．', '.', '!', '！', '?', '？'):
+                    text = subject + 'は' + noun + 'に' + ending + stop
+                    assert not is_bounded_self_denial_text(text), text
+                    assert 'operator:self_evaluation' not in _operator_codes_for_text(text), text
+                    assert classify_emlis_safety_triage_text(text).safety_triage_kind == 'safe_observation'
+
+
+def test_bad_past_location_does_not_hide_self_appraisal_or_unclosed_hosts() -> None:
+    from emlis_ai_grounded_observation_plan import _operator_codes_for_text
+    from emlis_ai_safety_triage import is_bounded_self_denial_text, classify_emlis_safety_triage_text
+    scene = '私は悪い職場にいた。'
+    for appraisal in ('私は悪い。', '私は悪いと思う。', '私はダメ。',
+                      '自分には価値がない。', '自分を責め続けている。'):
+        for text in (scene + appraisal, appraisal + scene):
+            assert is_bounded_self_denial_text(text), text
+            assert 'operator:self_evaluation' in _operator_codes_for_text(text), text
+            assert classify_emlis_safety_triage_text(text).safety_triage_kind == 'self_denial_safe_state_answer'
+    for unresolved in ('私は悪い職場にいたい。', '私は悪い職場にいたら。',
+                      '私は悪い職場にいたと思う。', '私は悪い職場にいたずらした。',
+                      '私は悪い医者になった。', '私は悪い自分にいた。',
+                      '僕は悪い僕自身にいた。', '私は悪い人間にいた。',
+                      '私は悪いやり方にいた。', '私は悪い職場に。',
+                      '私は悪い職場にいたけれど私は悪い。'):
+        assert is_bounded_self_denial_text(unresolved), unresolved
+        assert 'operator:self_evaluation' in _operator_codes_for_text(unresolved), unresolved
+    for signal, kind in (('死にたい。', 'safety_blocked_emergency'),
+                         ('助けが必要。', 'safety_support_required')):
+        for text in (signal + scene, scene + signal):
+            assert classify_emlis_safety_triage_text(text).safety_triage_kind == kind, text
+
+
 def _span(text: str, *, detected_type: str = "event", span_id: str = "memo.1") -> EvidenceSpan:
     return EvidenceSpan(
         span_id=span_id,
@@ -136,6 +213,32 @@ def test_phase20_2_support_required_is_separate_from_safe_state_answer_and_emerg
     )
     assert support_contract["public_observation_status"] == "safety_blocked"
     assert support_contract["public_input_feedback_allowed"] is False
+
+
+def test_self_worth_additive_particle_cannot_override_stronger_safety_boundaries() -> None:
+    # Use a grammatical variant of the existing public self-worth input.
+    denial = "自分には価値がない。".replace("価値が", "価値も")
+    for stronger, expected in (
+        ("安全が保てない。助けが必要。", "safety_support_required"),
+        ("もう消えたい。今日で終わりにしたい。", "safety_blocked_emergency"),
+    ):
+        for combined in (denial + stronger, stronger + denial):
+            decision = build_emlis_safety_triage_decision(
+                current_input={"memo": combined},
+                evidence_spans=[_span(denial), _span(stronger, span_id="memo.2")],
+            )
+            assert decision.safety_triage_kind == expected
+            assert decision.requires_block is True
+            assert decision.public_emlis_observation_allowed is False
+            assert decision.must_not_accept_identity_claim_as_fact is True
+    graph_boundary = build_emlis_safety_triage_decision(
+        current_input={"memo": denial},
+        graph=_graph(["safety_boundary"]),
+        evidence_spans=[_span(denial)],
+    )
+    assert graph_boundary.safety_triage_kind == "safety_support_required"
+    assert graph_boundary.requires_block is True
+    assert graph_boundary.public_emlis_observation_allowed is False
 
 
 def test_phase20_2_safe_observation_maps_to_normal_observation_contract() -> None:

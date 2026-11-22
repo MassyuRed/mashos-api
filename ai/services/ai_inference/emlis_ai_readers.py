@@ -19,11 +19,10 @@ from input_summary_reader import get_input_summary_snapshot
 from supabase_client import sb_get
 
 PIECES_READ_TABLE = (
-    os.getenv("COCOLON_PIECES_READ_TABLE")
-    or os.getenv("COCOLON_MYMODEL_REFLECTIONS_READ_TABLE")
+    os.getenv("COCOLON_MYMODEL_REFLECTIONS_READ_TABLE")
     or os.getenv("MYMODEL_REFLECTIONS_READ_TABLE")
-    or "pieces"
-).strip() or "pieces"
+    or "mymodel_reflections_read"
+).strip() or "mymodel_reflections_read"
 ANALYSIS_REPORTS_READ_TABLE = (
     os.getenv("COCOLON_ANALYSIS_REPORTS_READ_TABLE")
     or os.getenv("ANALYSIS_REPORTS_READ_TABLE")

@@ -33,7 +33,7 @@ import logging
 import os
 import re
 from datetime import datetime, timezone, timedelta
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Literal, Optional
 
 import httpx
 from fastapi import FastAPI, Header, HTTPException, Path, Query
@@ -297,12 +297,20 @@ ASTOR_STRUCTURE_PATTERNS_TABLE = (
 ).strip()
 
 
-class MyProfileLatestEnsureResponse(BaseModel):
+class CumulativeMapMetadata(BaseModel):
+    report_id: Optional[str] = None
+    source_profile: Optional[str] = None
+    map_context: Optional[Dict[str, Any]] = None
+    snapshot_month: Optional[str] = None
+    captured_at: Optional[str] = None
+
+
+class MyProfileLatestEnsureResponse(CumulativeMapMetadata):
     status: str = Field("ok", description="ok")
     refreshed: bool = Field(..., description="True if report was regenerated & saved")
     reason: str = Field(
         ...,
-        description="missing | stale_analysis | schema_mismatch | force | up_to_date | no_analysis | no_visible_content | in_progress",
+        description="missing | stale_analysis | schema_mismatch | force | up_to_date | no_analysis | no_visible_content | insufficient_input | in_progress",
     )
     report_mode: str = Field(..., description="light | standard | deep")
     period: str = Field(..., description="lookback period (e.g. 28d)")
@@ -322,6 +330,8 @@ class MyProfileLatestEnsureResponse(BaseModel):
     meta: Optional[Dict[str, Any]] = Field(default=None, description="metadata JSON")
     has_visible_content: bool = Field(default=True, description="false when the latest view is no-data only")
     skip_reason: Optional[str] = Field(default=None, description="optional no-save reason")
+    refresh_status: Optional[Literal['queued', 'running', 'failed']] = Field(default=None,
+        description="Background refresh state or queue failure; null when no refresh is pending")
 
 
 class MyProfileLatestStatusResponse(BaseModel):
@@ -331,6 +341,8 @@ class MyProfileLatestStatusResponse(BaseModel):
     saved_report_mode: Optional[str] = Field(default=None, description="saved latest report mode (light | standard | deep)")
     has_visible_content: bool = Field(default=False, description="false when the latest view is no-data only")
     skip_reason: Optional[str] = Field(default=None, description="optional no-data reason")
+    refresh_status: Optional[Literal['queued', 'running', 'failed']] = Field(default=None,
+        description="Background refresh state or queue failure; this status read never enqueues")
 
 
 # ----------------------------
@@ -448,14 +460,14 @@ async def _enqueue_self_structure_monthly_distribution_candidate(
     return False
 
 
-class MyProfileMonthlyEnsureResponse(BaseModel):
+class MyProfileMonthlyEnsureResponse(CumulativeMapMetadata):
     status: str = Field("ok", description="ok")
     refreshed: bool = Field(..., description="True if regenerated & saved")
-    reason: str = Field(..., description="missing | force | mode_mismatch | schema_mismatch | up_to_date | no_visible_content | unchanged | in_progress")
+    reason: str = Field(..., description="missing | force | mode_mismatch | schema_mismatch | up_to_date | no_visible_content | insufficient_input | unchanged | in_progress")
     report_mode: str = Field(..., description="light | standard | deep")
     period: str = Field(..., description="lookback period (e.g. 28d)")
-    period_start: str = Field(..., description="period_start (ISO)")
-    period_end: str = Field(..., description="period_end (ISO)")
+    period_start: Optional[str] = Field(default=None, description="period_start (ISO)")
+    period_end: Optional[str] = Field(default=None, description="period_end (ISO)")
     generated_at: Optional[str] = Field(default=None, description="generated_at of returned report")
     title: Optional[str] = Field(default=None, description="report title")
     content_text: Optional[str] = Field(default=None, description="report body")
@@ -1326,8 +1338,42 @@ SelfStructureMonthlyEnsureBody = MyProfileMonthlyEnsureBody
 SelfStructureMonthlyEnsureResponse = MyProfileMonthlyEnsureResponse
 
 
+class AnalysisMapCorrectionBody(BaseModel):
+    artifact_ref: str = Field(min_length=1, max_length=128)
+    kind: Literal['overview', 'node', 'edge']
+    ref: str = Field(min_length=1, max_length=128)
+    field: str = Field(min_length=1, max_length=64)
+    target_text: str = Field(min_length=1, max_length=2000)
+    explanation: str = Field(min_length=1, max_length=2000)
+    idempotency_key: str = Field(min_length=1, max_length=128)
+    model_config = {'extra': 'forbid'}
+
+
 def register_self_structure_routes(app: FastAPI) -> None:
     """Register current Self Structure routes on the given FastAPI app."""
+
+    async def map_correction_owner(authorization):
+        token = _extract_bearer_token(authorization)
+        if not token:
+            raise HTTPException(401, 'Authorization header with Bearer token is required')
+        owner = await _resolve_user_id_from_token(token)
+        if not owner:
+            raise HTTPException(401, 'Failed to resolve user id')
+        return str(owner)
+
+    @app.post('/self-structure/map-corrections')
+    async def post_analysis_map_correction(body: AnalysisMapCorrectionBody,
+            authorization: Optional[str] = Header(default=None, alias='Authorization')) -> dict:
+        from analysis_map_correction_service import submit_map_correction
+        owner = await map_correction_owner(authorization)
+        return await submit_map_correction(owner, body.model_dump())
+
+    @app.get('/self-structure/map-corrections')
+    async def get_analysis_map_correction(idempotency_key: str = Query(min_length=1, max_length=128),
+            authorization: Optional[str] = Header(default=None, alias='Authorization')) -> dict:
+        from analysis_map_correction_service import read_map_correction
+        owner = await map_correction_owner(authorization)
+        return await read_map_correction(owner, idempotency_key=idempotency_key)
 
     @app.get("/self-structure/latest/status", response_model=SelfStructureLatestStatusResponse)
     async def get_self_structure_latest_status(
@@ -1338,6 +1384,11 @@ def register_self_structure_routes(app: FastAPI) -> None:
             raise HTTPException(status_code=401, detail="Authorization header with Bearer token is required")
 
         uid = await _resolve_user_id_from_token(access_token)
+
+        from analysis_observed_service import observed_enabled, saved_status
+        if observed_enabled():
+            from analysis_cumulative_service import map_status
+            return SelfStructureLatestStatusResponse(**(await map_status(str(uid))))
 
         try:
             resp = await _sb_get(
@@ -1377,6 +1428,7 @@ def register_self_structure_routes(app: FastAPI) -> None:
     @app.get("/self-structure/latest", response_model=SelfStructureLatestEnsureResponse)
     async def get_or_refresh_self_structure_latest(
         authorization: Optional[str] = Header(default=None, alias="Authorization"),
+        map_renderer: Optional[str] = Header(default=None, alias="X-Watashi-Map-Renderer"),
         ensure: bool = Query(
             default=True,
             description="If true, regenerate when stale/missing",
@@ -1384,6 +1436,10 @@ def register_self_structure_routes(app: FastAPI) -> None:
         force: bool = Query(
             default=False,
             description="If true, force regeneration",
+        ),
+        background: bool = Query(
+            default=False,
+            description="If true, read saved content immediately and queue needed generation",
         ),
         period: Optional[str] = Query(
             default=None,
@@ -1408,6 +1464,26 @@ def register_self_structure_routes(app: FastAPI) -> None:
 
         effective_period = (period or DEFAULT_LATEST_PERIOD or "28d").strip() or "28d"
 
+        from analysis_observed_service import observed_enabled
+        if observed_enabled():
+            from analysis_cumulative_service import (
+                ensure_map, map_refresh_status, map_response_for_renderer, request_map_refresh)
+            if background:
+                result = await ensure_map(uid, ensure=False)
+                try:
+                    result['refresh_status'] = (await request_map_refresh(uid, force=force,
+                        trigger='manual' if force else 'map_view') if ensure
+                        else await map_refresh_status(uid))
+                except Exception:
+                    # Saved-content authorization and guard checks above remain
+                    # hard failures; only the optional queue operation degrades.
+                    logger.warning('Analysis background refresh request failed')
+                    result['refresh_status'] = 'failed'
+            else:
+                result = await ensure_map(uid, ensure=ensure, force=force)
+            return SelfStructureLatestEnsureResponse(**map_response_for_renderer(
+                result, map_renderer))
+
         # ---- Resolve report_mode (with subscription gating; fail-closed) ----
         # わたしマップ Phase 1: Free は latest の light 概要のみ許可する。
         # Plus は standard、Premium は deep を既定にし、DB / route / report family は変更しない。
@@ -1423,6 +1499,9 @@ def register_self_structure_routes(app: FastAPI) -> None:
             from subscription_store import get_subscription_tier_for_user
 
             tier = await get_subscription_tier_for_user(uid, default=SubscriptionTier.FREE)
+            from analysis_observed_service import observed_enabled, read_saved
+            if observed_enabled():
+                tier = SubscriptionTier((await read_saved(uid, limit=1))['subscription_tier'])
             default_mode = (
                 MyProfileMode.LIGHT
                 if tier == SubscriptionTier.FREE
@@ -1449,6 +1528,11 @@ def register_self_structure_routes(app: FastAPI) -> None:
         except Exception as exc:
             logger.warning("Failed to resolve subscription tier/report_mode (deny): %s", exc)
             raise HTTPException(status_code=403, detail="MyProfile report is not available")
+
+        from analysis_observed_service import observed_enabled, ensure_saved
+        if observed_enabled():
+            return SelfStructureLatestEnsureResponse(**(await ensure_saved(uid,
+                period=effective_period, report_mode=effective_report_mode, ensure=ensure, force=force)))
 
         # ---- Fetch latest self-structure analysis refs (stale source-of-truth) ----
         latest_analysis_rows: Dict[str, Optional[Dict[str, Any]]] = {}
@@ -1692,6 +1776,7 @@ def register_self_structure_routes(app: FastAPI) -> None:
     async def ensure_self_structure_monthly_report(
         body: SelfStructureMonthlyEnsureBody,
         authorization: Optional[str] = Header(default=None, alias="Authorization"),
+        map_renderer: Optional[str] = Header(default=None, alias="X-Watashi-Map-Renderer"),
     ) -> SelfStructureMonthlyEnsureResponse:
         """Ensure the current month's distributed MyProfile monthly report exists.
 
@@ -1719,6 +1804,14 @@ def register_self_structure_routes(app: FastAPI) -> None:
         effective_period = (body.period or DEFAULT_MONTHLY_DISTRIBUTION_PERIOD or "28d").strip() or "28d"
         distribution_origin = bool(body.distribution_origin or str(body.trigger or "").strip() == "internal_rollover")
 
+        from analysis_observed_service import observed_enabled
+        if observed_enabled():
+            if not include_secret or body.now_iso is not None:
+                raise HTTPException(400, 'analysis_period_override_unavailable')
+            from analysis_cumulative_service import ensure_map, map_response_for_renderer
+            return SelfStructureMonthlyEnsureResponse(**map_response_for_renderer(
+                await ensure_map(uid, monthly=True), map_renderer))
+
         # ---- Resolve report_mode (with subscription gating; fail-closed) ----
         # Spec v2: free users cannot view MyProfile self-structure reports.
         effective_report_mode = "standard"
@@ -1733,6 +1826,9 @@ def register_self_structure_routes(app: FastAPI) -> None:
             from subscription_store import get_subscription_tier_for_user
 
             tier = await get_subscription_tier_for_user(uid, default=SubscriptionTier.FREE)
+            from analysis_observed_service import observed_enabled, read_saved
+            if observed_enabled():
+                tier = SubscriptionTier((await read_saved(uid, limit=1))['subscription_tier'])
             if tier == SubscriptionTier.FREE:
                 raise HTTPException(status_code=403, detail="MyProfile report is available for Plus/Premium users only")
 
@@ -1762,6 +1858,13 @@ def register_self_structure_routes(app: FastAPI) -> None:
         except Exception as exc:
             logger.warning("Failed to resolve subscription tier/report_mode (deny): %s", exc)
             raise HTTPException(status_code=403, detail="MyProfile report is not available")
+
+        from analysis_observed_service import observed_enabled, ensure_saved
+        if observed_enabled():
+            if not include_secret or body.now_iso is not None:
+                raise HTTPException(400, 'analysis_period_override_unavailable')
+            return SelfStructureMonthlyEnsureResponse(**(await ensure_saved(uid,
+                period=effective_period, report_mode=effective_report_mode, force=force, monthly=True)))
 
         # ---- time helpers (JST fixed) ----
         JST = timezone(timedelta(hours=9))

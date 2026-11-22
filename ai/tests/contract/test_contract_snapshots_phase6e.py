@@ -448,14 +448,12 @@ def test_app_startup_matches_response_shape_fixture(client, monkeypatch):
                 "friends_unread": "friends.unread.v1",
                 "myweb_unread": "report_reads.myweb_unread.v1",
                 "notices_current": "notice.current.v1",
-                "today_question_light": "today_question.current.light.v1"
             },
             "flags": {
                 "has_any_emotion_log_unread": True,
                 "has_any_friends_unread": True,
                 "has_any_myweb_unread": False,
                 "has_popup_notice": True,
-                "today_question_answered": False
             },
             "sections": {
                 "emotion_log_unread": {
@@ -488,36 +486,6 @@ def test_app_startup_matches_response_shape_fixture(client, monkeypatch):
                     "badge": {"show": True, "count": 1},
                     "popup_notice": {"notice_id": "notice-1", "title": "hello", "body": "notice body"}
                 },
-                "today_question_light": {
-                    "service_day_key": "2026-04-19",
-                    "answer_status": "unanswered",
-                    "answer_summary": None,
-                    "question": {
-                        "question_id": "q-1",
-                        "question_key": "qkey",
-                        "version": 1,
-                        "text": "今日の問い",
-                        "choice_count": 3,
-                        "free_text_enabled": True
-                    },
-                    "delivery": {},
-                    "progress": {}
-                },
-                "today_question": {
-                    "service_day_key": "2026-04-19",
-                    "answer_status": "unanswered",
-                    "answer_summary": None,
-                    "question": {
-                        "question_id": "q-1",
-                        "question_key": "qkey",
-                        "version": 1,
-                        "text": "今日の問い",
-                        "choice_count": 3,
-                        "free_text_enabled": True
-                    },
-                    "delivery": {},
-                    "progress": {}
-                }
             },
             "errors": {},
             "timezone_name": timezone_name,
@@ -539,6 +507,7 @@ def test_app_startup_matches_response_shape_fixture(client, monkeypatch):
     assert response.status_code == 200, response.text
     body = response.json()
     _assert_shape_subset(expected_shape, body)
+    assert "today_question_light" not in body["startup"]["sections"]
     assert "input_summary" not in body["startup"]["sections"]
     assert "global_summary" not in body["startup"]["sections"]
 
@@ -560,7 +529,7 @@ def test_home_state_matches_response_shape_fixture(client, monkeypatch):
             "service_day_key": "2026-04-19",
             "source_versions": {"schema": "home_state.v1"},
             "popup_candidates": [
-                {"kind": "notice", "notice_id": "notice-1", "service_day_key": None, "question_id": None}
+                {"kind": "notice", "notice_id": "notice-1"}
             ],
             "notice_popup_notice_id": "notice-1",
             "sections": {
@@ -588,22 +557,6 @@ def test_home_state_matches_response_shape_fixture(client, monkeypatch):
                     "has_unread": True,
                     "badge": {"show": True, "count": 1},
                     "popup_notice": {"notice_id": "notice-1", "title": "hello", "body": "notice body"}
-                },
-                "today_question_current": {
-                    "service_day_key": "2026-04-19",
-                    "question": {
-                        "question_id": "q-1",
-                        "question_key": "qkey",
-                        "version": 1,
-                        "text": "今日の問い",
-                        "choice_count": 3,
-                        "choices": [{"choice_id": "c-1", "choice_key": "one", "label": "はい"}],
-                        "free_text_enabled": True
-                    },
-                    "answer_status": "unanswered",
-                    "answer_summary": None,
-                    "delivery": {},
-                    "progress": {}
                 },
                 "emotion_reflection_quota": {
                     "status": "ok",

@@ -118,6 +118,7 @@ from api_emotion_submit import (
     _ensure_supabase_config,
 )
 from api_emotion_piece import register_emotion_piece_routes
+from api_emlis_thread import register_emlis_thread_routes
 from api_emotion_secret import register_emotion_secret_routes
 from api_emotion_history_search import register_emotion_history_search_routes
 from api_emotion_history_manage import register_emotion_history_manage_routes
@@ -170,6 +171,7 @@ from api_report_reads import register_report_reads_routes
 from api_analysis_reads import register_analysis_read_routes
 from api_self_structure import register_self_structure_routes
 from api_self_structure_reports import register_self_structure_report_routes
+from api_analysis_if_routes import register_analysis_if_routes
 from api_profile_create import register_profile_create_routes
 from api_piece_runtime import register_piece_runtime_routes
 from api_nexus import register_nexus_routes
@@ -178,7 +180,7 @@ from api_analysis_compat import register_analysis_compat_routes
 from api_piece_compat import register_piece_compat_routes
 from api_relationship_compat import register_relationship_compat_routes
 from api_retired_legacy_compat import register_retired_legacy_compat_routes
-from api_today_question import register_today_question_routes, run_today_question_push_once
+from api_deep_insight import register_deep_insight_routes
 from supabase_client import aclose_async_client, sb_get as _shared_sb_get, sb_post as _shared_sb_post
 from api_report_distribution_settings import register_report_distribution_settings_routes
 from prompt_templates import render_prompt_template, list_prompt_templates
@@ -241,92 +243,156 @@ except Exception:
 ROLLOVER_SELF_STRUCTURE_MONTHLY_URL = os.getenv("ROLLOVER_SELF_STRUCTURE_MONTHLY_URL", "").strip()
 JST = timezone(timedelta(hours=9))
 
-# ---------- App ----------
-app = FastAPI(title=APP_NAME, version="1.0.0")
+# ---------- App composition ----------
+def create_application(*, piece_preview_configuration: Optional[Dict[str, Any]] = None) -> FastAPI:
+    """Build the shared API; the deployed/default entry remains legacy.
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS if ALLOWED_ORIGINS != ["*"] else ["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-app.add_middleware(
-    GZipMiddleware,
-    minimum_size=max(512, int(os.getenv("API_GZIP_MINIMUM_SIZE", "1024") or "1024")),
-)
+    An explicit dict selects the Piece v2 factory. For this composition only,
+    a deployment can request and mark publication ready with the two dedicated
+    environment settings. Explicit caller options take precedence. No readiness
+    is inferred from the live DB, and default app:app retains the legacy setup.
+    Other shared routes, middleware and shutdown behavior use this same owner.
+    The candidate omits old reflection preview/quota aliases and the four
+    legacy Piece/reflection publish/cancel writes, without redirecting them
+    into the v2 lifecycle. Other legacy Piece/Q&A surfaces remain for M5.
+    """
+    preview_candidate = piece_preview_configuration is not None
+    if preview_candidate:
+        from piece_v2_runtime_control import create_piece_preview_application
+        configuration = dict(piece_preview_configuration)
+        publication_requested = os.getenv("PIECE_V2_PUBLICATION_ENABLED") == "true"
+        publication_ready = os.getenv("PIECE_V2_PUBLICATION_READY") == "true"
+        for feature in ("public_read", "public_write", "visibility_toggle"):
+            configuration.setdefault(f"{feature}_requested", publication_requested)
+            configuration.setdefault(f"{feature}_ready", publication_ready)
+        app = create_piece_preview_application(**configuration)
+        app.title = APP_NAME
+        app.version = "1.0.0"
+    else:
+        app = FastAPI(title=APP_NAME, version="1.0.0")
 
-# Phase8++: global active_users touch middleware (best-effort)
-install_active_user_touch_middleware(app)
-install_api_contract_middleware(app)
-install_request_perf_middleware(app)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=ALLOWED_ORIGINS if ALLOWED_ORIGINS != ["*"] else ["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+    app.add_middleware(
+        GZipMiddleware,
+        minimum_size=max(512, int(os.getenv("API_GZIP_MINIMUM_SIZE", "1024") or "1024")),
+    )
+
+    # Phase8++: global active_users touch middleware (best-effort)
+    install_active_user_touch_middleware(app)
+    install_api_contract_middleware(app, piece_preview=preview_candidate)
+    install_request_perf_middleware(app)
 
 
-register_emotion_submit_routes(app)
-register_emotion_piece_routes(app)
-register_emotion_secret_routes(app)
-register_emotion_history_search_routes(app)
-register_emotion_history_manage_routes(app)
-register_connect_routes(app)
-register_follow_routes(app)
-register_follow_graph_routes(app)
-register_emotion_log_routes(app)
-register_emotion_notification_settings_routes(app)
-register_myprofile_legacy_request_routes(app)
-register_public_profile_routes(app)
-register_subscription_routes(app)
-register_subscription_webhook_routes(app)
-register_subscription_release_config_routes(app)
-register_subscription_live_console_routes(app)
-register_analysis_report_routes(app)
-register_cron_distribution_routes(app)
-register_ranking_routes(app)
-register_activity_login_routes(app)
-register_account_status_routes(app)
-register_account_visibility_routes(app)
-register_account_lifecycle_routes(app)
-register_app_bootstrap_routes(app)
-register_home_state_routes(app)
-register_notice_routes(app)
-register_client_event_routes(app)
-register_input_summary_routes(app)
-register_global_summary_routes(app)
-register_report_reads_routes(app)
-register_analysis_read_routes(app)
-register_self_structure_routes(app)
-register_self_structure_report_routes(app)
-register_profile_create_routes(app)
-register_piece_runtime_routes(app)
-register_nexus_routes(app)
-register_nexus_compat_routes(app)
-register_today_question_routes(app)
-register_report_distribution_settings_routes(app)
-register_analysis_compat_routes(app)
-register_piece_compat_routes(app)
-register_relationship_compat_routes(app)
-register_retired_legacy_compat_routes(app)
+    register_emotion_submit_routes(app)
+    register_emlis_thread_routes(app)
+    register_emotion_piece_routes(app, include_preview=not preview_candidate,
+                                 include_quota=not preview_candidate)
+    register_emotion_secret_routes(app)
+    register_emotion_history_search_routes(app)
+    register_emotion_history_manage_routes(app)
+    register_connect_routes(app)
+    register_follow_routes(app)
+    register_follow_graph_routes(app)
+    register_emotion_log_routes(app)
+    register_emotion_notification_settings_routes(app)
+    register_myprofile_legacy_request_routes(app)
+    register_public_profile_routes(app)
+    register_subscription_routes(app)
+    register_subscription_webhook_routes(app)
+    register_subscription_release_config_routes(app)
+    register_subscription_live_console_routes(app)
+    register_analysis_report_routes(app)
+    register_cron_distribution_routes(app)
+    register_ranking_routes(app)
+    register_activity_login_routes(app)
+    register_account_status_routes(app)
+    register_account_visibility_routes(app)
+    register_account_lifecycle_routes(app)
+    if not preview_candidate:
+        register_app_bootstrap_routes(app)
+    register_home_state_routes(app)
+    register_notice_routes(app)
+    register_client_event_routes(app)
+    register_input_summary_routes(app)
+    register_global_summary_routes(app)
+    register_report_reads_routes(app)
+    register_analysis_read_routes(app)
+    register_self_structure_routes(app)
+    register_self_structure_report_routes(app)
+    register_analysis_if_routes(app)
+    register_profile_create_routes(app)
+    register_piece_runtime_routes(app)
+    register_nexus_routes(app)
+    register_nexus_compat_routes(app)
+    register_deep_insight_routes(app)
+    register_report_distribution_settings_routes(app)
+    register_analysis_compat_routes(app)
+    register_piece_compat_routes(app, include_preview=not preview_candidate,
+                                include_quota=not preview_candidate)
+    register_relationship_compat_routes(app)
+    register_retired_legacy_compat_routes(app)
 
-# Extra ranking routes (Phase: MyModel views/resonances + login streak)
-# NOTE: Some ranking endpoints live in separate modules; ensure they are registered.
-def _route_exists(_path: str, _method: str) -> bool:
-    for _r in app.router.routes:
-        if getattr(_r, "path", None) == _path and _method in getattr(_r, "methods", set()):
-            return True
-    return False
+    # Extra ranking routes (Phase: MyModel views/resonances + login streak)
+    # NOTE: Some ranking endpoints live in separate modules; ensure they are registered.
+    def _route_exists(_path: str, _method: str) -> bool:
+        for _r in app.router.routes:
+            if getattr(_r, "path", None) == _path and _method in getattr(_r, "methods", set()):
+                return True
+        return False
 
-if not _route_exists("/ranking/piece_views", "GET"):
-    register_ranking_piece_views_routes(app)
+    if not _route_exists("/ranking/piece_views", "GET"):
+        register_ranking_piece_views_routes(app)
 
-if not _route_exists("/ranking/piece_resonances", "GET"):
-    register_ranking_piece_resonances_routes(app)
+    if not _route_exists("/ranking/piece_resonances", "GET"):
+        register_ranking_piece_resonances_routes(app)
 
-# /ranking/login_streak may already exist in api_ranking.py; register it here only if missing.
-if not _route_exists("/ranking/login_streak", "GET"):
-    if callable(register_ranking_login_streak_routes):
-        register_ranking_login_streak_routes(app)  # type: ignore
-    elif callable(register_ranking_routes_login_streak):
-        # Fallback: module may expose register_ranking_routes (includes login_streak).
-        register_ranking_routes_login_streak(app)  # type: ignore
+    # /ranking/login_streak may already exist in api_ranking.py; register it here only if missing.
+    if not _route_exists("/ranking/login_streak", "GET"):
+        if callable(register_ranking_login_streak_routes):
+            register_ranking_login_streak_routes(app)  # type: ignore
+        elif callable(register_ranking_routes_login_streak):
+            # Fallback: module may expose register_ranking_routes (includes login_streak).
+            register_ranking_routes_login_streak(app)  # type: ignore
+
+
+    app.post("/myweb/insight", response_model=MyWebInsightResponse)(myweb_insight)
+    app.post("/myweb/insight/weekly", response_model=MyWebInsightResponse)(myweb_insight_weekly)
+    app.post("/myweb/insight/monthly", response_model=MyWebInsightResponse)(myweb_insight_monthly)
+    app.get("/myweb/insight/weekly", response_model=MyWebInsightResponse)(myweb_insight_weekly_get)
+    app.get("/myweb/insight/monthly", response_model=MyWebInsightResponse)(myweb_insight_monthly_get)
+    app.get("/healthz")(healthz)
+    app.post("/internal/rollover")(internal_rollover)
+    app.get("/mymodel/templates")(mymodel_templates)
+    app.post("/mymodel/infer", response_model=InferResponse)(infer)
+    app.on_event("shutdown")(_close_shared_supabase_client)
+    if preview_candidate:
+        # Retire only these legacy draft writes in the explicit v2 candidate.
+        # The compatibility module also owns unrelated Nexus/Q&A routes;
+        # preserve those route objects and the default legacy composition.
+        retired_piece_write_paths = {
+            '/emotion/piece/publish', '/emotion/piece/cancel',
+            '/emotion/reflection/publish', '/emotion/reflection/cancel',
+        }
+        app.router.routes[:] = [
+            route for route in app.router.routes
+            if not (getattr(route, 'path', None) in retired_piece_write_paths
+                    and getattr(route, 'methods', None) == {'POST'})
+        ]
+        # The factory's generic ID read must follow shared static routes such
+        # as /emotion/piece/quota. Preserve the original route
+        # object/handler and both UUID and piece:<UUID> owner identifiers.
+        detail_route = next(route for route in app.router.routes
+                            if getattr(route, 'path', None) == '/emotion/piece/{piece_id}'
+                            and getattr(route, 'methods', None) == {'GET'})
+        app.router.routes.remove(detail_route)
+        app.router.routes.append(detail_route)
+    return app
 
 
 # ASTOR engine for Analysis insight (構造分析レポート用)
@@ -1100,7 +1166,6 @@ class MyWebInsightResponse(BaseModel):
 
 
 # ---------- MyWeb Insight Routes ----------
-@app.post("/myweb/insight", response_model=MyWebInsightResponse)
 async def myweb_insight(
     req: MyWebInsightRequest,
     authorization: Optional[str] = Header(default=None, alias="Authorization"),
@@ -1158,7 +1223,6 @@ async def myweb_insight(
     return MyWebInsightResponse(text=astor_resp.text, meta=meta)
 
 
-@app.post("/myweb/insight/weekly", response_model=MyWebInsightResponse)
 async def myweb_insight_weekly(
     req: MyWebInsightRequest,
     authorization: Optional[str] = Header(default=None, alias="Authorization"),
@@ -1174,7 +1238,6 @@ async def myweb_insight_weekly(
     return await myweb_insight(effective_req, authorization=authorization)
 
 
-@app.post("/myweb/insight/monthly", response_model=MyWebInsightResponse)
 async def myweb_insight_monthly(
     req: MyWebInsightRequest,
     authorization: Optional[str] = Header(default=None, alias="Authorization"),
@@ -1190,7 +1253,6 @@ async def myweb_insight_monthly(
     return await myweb_insight(effective_req, authorization=authorization)
 
 
-@app.get("/myweb/insight/weekly", response_model=MyWebInsightResponse)
 async def myweb_insight_weekly_get(
     authorization: Optional[str] = Header(default=None, alias="Authorization"),
 ) -> MyWebInsightResponse:
@@ -1202,7 +1264,6 @@ async def myweb_insight_weekly_get(
     return await myweb_insight(req, authorization=authorization)
 
 
-@app.get("/myweb/insight/monthly", response_model=MyWebInsightResponse)
 async def myweb_insight_monthly_get(
     authorization: Optional[str] = Header(default=None, alias="Authorization"),
 ) -> MyWebInsightResponse:
@@ -1215,7 +1276,6 @@ async def myweb_insight_monthly_get(
 
 
 
-@app.get("/healthz")
 def healthz() -> Dict[str, Any]:
     return {"status": "ok", "app": APP_NAME}
 
@@ -1304,7 +1364,6 @@ async def _run_rollover_once() -> Dict[str, Any]:
     }
 
 
-@app.post("/internal/rollover")
 async def internal_rollover(request: Request) -> Dict[str, Any]:
     """Single daily cron entry (JST 0:00) that fans out daily/weekly/monthly rollover jobs.
 
@@ -1367,27 +1426,11 @@ def _run_report_distribution_push_cli(args: Optional[List[str]] = None) -> int:
         return 1
 
 
-def _run_today_question_push_cli(args: Optional[List[str]] = None) -> int:
-    import asyncio
-
-    argv = list(args or [])
-    limit = _parse_optional_cli_limit(argv, 200)
-    try:
-        result = asyncio.run(run_today_question_push_once(limit=limit))
-        print(json.dumps(_model_to_jsonable(result), ensure_ascii=False))
-        return 0
-    except Exception:
-        logger.exception("today_question_push CLI failed")
-        return 1
-
-
-@app.get("/mymodel/templates")
 def mymodel_templates() -> Dict[str, Any]:
     """Return available server-side prompt templates (Phase5)."""
     return {"status": "ok", "templates": list_prompt_templates()}
 
 
-@app.post("/mymodel/infer", response_model=InferResponse)
 async def infer(
     req: InferRequest,
     authorization: Optional[str] = Header(default=None, alias="Authorization"),
@@ -1425,6 +1468,15 @@ async def infer(
     if access_token:
         # 不正/期限切れトークンは 401
         viewer_user_id = await _resolve_user_id_from_token(access_token)
+
+    if is_myprofile_report:
+        from analysis_observed_service import observed_enabled
+        if observed_enabled():
+            if not viewer_user_id:
+                raise HTTPException(401, 'Authorization is required')
+            # Cumulative private maps use authenticated owner routes, never a
+            # generic inference target or a caller-supplied owner's ID.
+            raise HTTPException(409, 'analysis_use_authenticated_self_structure_route')
 
     # --- Step 5: Subscription tier & report_mode gating ---
     # report_mode is used for:
@@ -1562,12 +1614,15 @@ async def infer(
     return InferResponse(output=output, meta=meta)
 
 
-@app.on_event("shutdown")
 async def _close_shared_supabase_client() -> None:
     try:
         await aclose_async_client()
     except Exception as exc:
         logger.warning("shared supabase client shutdown failed: %s", exc)
+
+
+# The existing deployment target keeps the legacy composition and default OFF.
+app = create_application()
 
 
 # ---------- Entrypoint ----------
@@ -1581,8 +1636,7 @@ if __name__ == "__main__":
             raise SystemExit(_run_rollover_cli())
         if _cmd in {"report_distribution_push", "report-distribution-push"}:
             raise SystemExit(_run_report_distribution_push_cli(_args))
-        if _cmd in {"today_question_push", "today-question-push"}:
-            raise SystemExit(_run_today_question_push_cli(_args))
+        raise SystemExit(f"Unknown command: {_cmd}")
 
     import uvicorn
     uvicorn.run("app:app", host=HOST, port=PORT, log_level="info")

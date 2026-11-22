@@ -1,0 +1,53 @@
+{
+  "schema_version": "cocolon.piece.migration_manifest.v1",
+  "application_migration_identity": "mashos-api.supabase.migrations.v1",
+  "automatic_progression": false,
+  "production_apply_authorized": false,
+  "candidate_state": "M1_SQL_AND_TEST_SUPPORT_ONLY_CALLER_REBINDING_AND_NATIVE_DB_GREEN_PENDING",
+  "catalog_baseline": {
+    "repository_head": "7a10fc593b123cb9d9b02147c4b345894dba0c0b",
+    "repository_tree": "842715d588c0573f0de5411dae62b8b8bb22f3a4",
+    "packet_version": "pce0.current_supabase_piece_catalog.v2",
+    "captured_at_utc": "2026-08-07T09:41:56.410491",
+    "sha256": "2f51e5e6e4207a186aaacbeb355c07ade3b4f777960f3f46d1dbea9f8f9d810e",
+    "public_mymodel_reflections_kind": "table",
+    "public_pieces_kind": "security_invoker_view",
+    "public_mymodel_reflections_read_state": "absent",
+    "application_migration_relation_state": "absent",
+    "interpretation": "HISTORICAL_PIN_NOT_CURRENT_LIVE_CATALOG"
+  },
+  "legacy_caller_preimages": {
+    "ai/services/ai_inference/astor_worker.py": "78ae6649346cc4c0f3dd126fee24c8752bc7ea1b",
+    "ai/services/ai_inference/api_piece_runtime.py": "3b11ef5de990ced1e1388f7f45d389375a561e32",
+    "ai/services/ai_inference/emlis_ai_readers.py": "f87152c592461cf2b593842c0969c394bdc77790",
+    "ai/services/ai_inference/piece_generated_metrics.py": "4df0fbebc3da1dc1d0417ccd752749ae40c826bb",
+    "ai/services/ai_inference/piece_generation_store.py": "ae2c4518c628a46bc3c09485c2c4ddb0912e1dab",
+    "ai/services/ai_inference/piece_public_read_store.py": "174a75dcd0be160551422a58533299074c76d2b5"
+  },
+  "migrations": [
+    {
+      "id": "20260808_001_piece_v2_legacy_read_bridge",
+      "phase": "M1_LEGACY_READ_BRIDGE",
+      "path": "supabase/migrations/20260808_001_piece_v2_legacy_read_bridge.sql",
+      "sha256": "1b8b0c5e6e12f6cd8b7e5982f0ddd0892653596e9bac6a6a50ead7582f97dcd1",
+      "expected_catalog_sha256": "2f51e5e6e4207a186aaacbeb355c07ade3b4f777960f3f46d1dbea9f8f9d810e",
+      "production_applied": false,
+      "destructive": false,
+      "public_pieces_semantics_changed": false
+    }
+  ],
+  "existing_non_piece_migrations": [
+    {
+      "path": "supabase/migrations/20260911020509_emlis_input_threads_q2.sql",
+      "sha256": "8ec3369d5377046d933daaccc39123b7e92b7c1c33339136fdbc1a56a379c88f",
+      "application_state": "NOT_QUERIED_NOT_APPLIED_BY_THIS_WORK"
+    },
+    {
+      "path": "supabase/migrations/20260911041749_emlis_q3_plan_rounds.sql",
+      "sha256": "75a40ed8560651280fe913d2051a03fe2e77ee8cab25c91e512a985cc9a8a719",
+      "application_state": "NOT_QUERIED_NOT_APPLIED_BY_THIS_WORK"
+    }
+  ],
+  "checked_api_head": "fa82077febb1363e286eb225fd53ff50ad863bbf",
+  "live_catalog_state": "NOT_QUERIED"
+}

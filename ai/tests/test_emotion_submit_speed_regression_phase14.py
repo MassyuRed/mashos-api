@@ -6,8 +6,10 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from unittest.mock import AsyncMock
 
 import emotion_submit_service as service
+import api_emotion_submit as submit
 from emlis_ai_observation_diagnostic_lockdown import build_observation_diagnostic_lockdown
 from emlis_ai_public_feedback_meta import build_public_emlis_input_feedback_meta
 from fixtures.emlis_ai_two_stage_reception_cases import TWO_STAGE_RECEPTION_CASES
@@ -275,3 +277,52 @@ def test_phase14_diagnostic_lockdown_carries_speed_summary_without_body() -> Non
     assert diagnostic["daily_reception_branch"] is True
     assert diagnostic["reception_mode_id"] == "daily_unpleasant_reception"
     _assert_no_text_payload(diagnostic)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('enqueue_fails', [False, True])
+async def test_map_job_is_reserved_before_unrelated_side_effects_without_generating(monkeypatch, enqueue_fails):
+    import analysis_cumulative_service as maps
+    import analysis_observed_service as observed
+    import astor_job_queue as queue
+
+    events = []
+
+    async def reserve(owner, **kwargs):
+        events.append(('reserve', owner, kwargs))
+        if enqueue_fails:
+            raise RuntimeError('queue unavailable')
+        return 'queued'
+
+    async def notify(**kwargs):
+        events.append(('notify', kwargs['owner_user_id']))
+
+    def ingest(*args):
+        events.append(('ingest',))
+
+    monkeypatch.setattr(submit, 'ASTOR_WORKER_QUEUE_ENABLED', True)
+    monkeypatch.setattr(submit, 'MYPROFILE_LATEST_AUTO_REFRESH_ENABLED', True)
+    monkeypatch.setattr(submit, 'ASTOR_SNAPSHOT_ENQUEUE_ENABLED', False)
+    monkeypatch.setattr(observed, 'observed_enabled', lambda: True)
+    monkeypatch.setattr(maps, 'request_map_refresh', reserve)
+    generate = AsyncMock(side_effect=AssertionError('model in submit side effect'))
+    monkeypatch.setattr(maps, 'ensure_map', generate)
+    monkeypatch.setattr(submit, '_notify_follow_viewers_about_emotion', notify)
+    monkeypatch.setattr(submit.astor_engine, 'handle', ingest)
+    queued = AsyncMock()
+    monkeypatch.setattr(queue, 'enqueue_job', queued)
+    for name in ('enqueue_ranking_board_refresh_many', 'enqueue_account_status_refresh', 'enqueue_global_summary_refresh'):
+        monkeypatch.setattr(submit, name, AsyncMock())
+
+    owner = '00000000-0000-0000-0000-000000000001'
+    await submit._post_submit_background_async(user_id=owner,
+        emotion_details=[{'type': '平穏', 'strength': 'medium'}],
+        created_at='2026-11-08T00:00:00Z', avg_strength=2.0,
+        memo='合成入力', is_secret=True, notify_friends=True)
+    assert [event[0] for event in events] == ['reserve', 'notify', 'ingest']
+    assert events[0][1] == owner
+    assert events[0][2]['trigger'] == 'emotion_submit'
+    assert events[0][2]['requested_at'] == '2026-11-08T00:00:00Z'
+    assert events[0][2]['debounce_seconds'] == submit.ASTOR_SELF_STRUCTURE_DEBOUNCE_SECONDS
+    queued.assert_not_awaited()  # no duplicate legacy profile job
+    generate.assert_not_awaited()

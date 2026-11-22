@@ -1,0 +1,10 @@
+# Optional GPU-only source/JSON constraints. Not part of the Render API runtime.
+lm-format-enforcer @ git+https://github.com/noamgat/lm-format-enforcer.git@817f944fcc8851917c40300a47f62d1defc3ffc3
+interegular==0.3.3
+pydantic==2.13.5
+pydantic-core==2.46.5
+annotated-types==0.8.0
+typing-inspection==0.4.5
+typing-extensions==4.16.0
+packaging==26.3
+PyYAML==6.0.3

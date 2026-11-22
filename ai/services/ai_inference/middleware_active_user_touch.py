@@ -451,7 +451,6 @@ def install_active_user_touch_middleware(app: FastAPI) -> None:
             "/emotion/submit",
             "/friends",
             "/notices",
-            "/today-question",
             "/report-reads",
             "/input/summary",
         )

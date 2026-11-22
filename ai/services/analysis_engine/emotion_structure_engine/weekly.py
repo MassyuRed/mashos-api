@@ -252,6 +252,34 @@ def aggregate_time_bucket_rows(bucket_groups: Iterable[List[Dict[str, Any]]]) ->
     return _finalize_time_bucket_rows(rows_by_bucket)
 
 
+def temporal_emotion_runs(entries: List[EmotionEntry]) -> List[List[EmotionEntry]]:
+    """Keep chronological runs only where one observation has an established order.
+
+    Tags expanded from one input are simultaneous. Distinct inputs at the same
+    instant also have no established order. Neither tag order nor strongest
+    intensity supplies chronology; ambiguous instants break, rather than bridge,
+    a run. All entries remain available to the separate quantity aggregates.
+    """
+    by_time: Dict[datetime, List[EmotionEntry]] = {}
+    for entry in entries or []:
+        instant = _parse_iso_datetime(getattr(entry, "timestamp", ""))
+        if instant is None:
+            return []
+        by_time.setdefault(instant, []).append(entry)
+    runs: List[List[EmotionEntry]] = []
+    current: List[EmotionEntry] = []
+    for _, simultaneous in sorted(by_time.items()):
+        if len(simultaneous) != 1:
+            if current:
+                runs.append(current)
+                current = []
+            continue
+        current.append(simultaneous[0])
+    if current:
+        runs.append(current)
+    return runs
+
+
 def build_weekly_features(entries: List[EmotionEntry], period: str) -> WeeklySnapshot:
     # Pre: entries sorted by timestamp asc
     counts = {l: 0 for l in LABELS}
@@ -295,17 +323,20 @@ def build_weekly_features(entries: List[EmotionEntry], period: str) -> WeeklySna
     # alternation & run lengths
     changes = 0
     runs = []
-    run_len = 1
-    for i in range(1, N):
-        prev, cur = entries[i - 1], entries[i]
-        if (cur.label != prev.label) or (cur.intensity != prev.intensity):
-            changes += 1
-            runs.append(run_len)
-            run_len = 1
-        else:
-            run_len += 1
-    runs.append(run_len)
-    alternation_rate = changes / (N - 1) if N > 1 else 0.0
+    comparable_pairs = 0
+    temporal_runs = temporal_emotion_runs(entries)
+    for sequence in temporal_runs:
+        run_len = 1
+        for prev, cur in zip(sequence, sequence[1:]):
+            comparable_pairs += 1
+            if (cur.label != prev.label) or (cur.intensity != prev.intensity):
+                changes += 1
+                runs.append(run_len)
+                run_len = 1
+            else:
+                run_len += 1
+        runs.append(run_len)
+    alternation_rate = changes / comparable_pairs if comparable_pairs else None
     run_stats = {
         "median": float(statistics.median(runs)) if runs else 0.0,
         "max": max(runs) if runs else 0,
@@ -318,16 +349,17 @@ def build_weekly_features(entries: List[EmotionEntry], period: str) -> WeeklySna
     intensity_max = max(intensities) if intensities else 0
 
     # motifs sliding window length=3
-    for t in range(0, N - 2):
-        tri = (entries[t].label, entries[t + 1].label, entries[t + 2].label)
-        name = MOTIF_DICT.get(tri)
-        if name:
-            motifs.append({
-                "name": name,
-                "start_id": entries[t].id,
-                "end_id": entries[t + 2].id,
-            })
-            motif_counts[name] = motif_counts.get(name, 0) + 1
+    for sequence in temporal_runs:
+        for t in range(0, len(sequence) - 2):
+            tri = (sequence[t].label, sequence[t + 1].label, sequence[t + 2].label)
+            name = MOTIF_DICT.get(tri)
+            if name:
+                motifs.append({
+                    "name": name,
+                    "start_id": sequence[t].id,
+                    "end_id": sequence[t + 2].id,
+                })
+                motif_counts[name] = motif_counts.get(name, 0) + 1
 
     share = _normalize_share(wcounts)
     entropy = _entropy(share)
@@ -398,6 +430,8 @@ def _axis_explicit_text_for_diversity(z_entropy: Optional[float], z_gini: Option
 def _motif_text(snapshot: WeeklySnapshot) -> Tuple[str, str]:
     # Choose one representative motif to mention, prioritizing sadness->peace->joy
     if not snapshot.motif_counts:
+        if snapshot.alternation_rate is None:
+            return ("insufficient", "感情が変化した順序を判断できる記録がありませんでした。")
         return ("ok", "この週に特徴的な補正ループの観測はありませんでした。")
     preferred_order = ["sadness-peace-joy", "anxiety-peace-joy", "joy-peace-joy", "peace-joy-peace"]
     name = None

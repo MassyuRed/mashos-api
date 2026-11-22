@@ -43,7 +43,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
 import httpx
 from fastapi import FastAPI, Header, HTTPException, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StrictBool
 try:
     from pydantic import model_validator  # type: ignore
 except ImportError:  # pragma: no cover
@@ -82,6 +82,7 @@ from supabase_client import (
     sb_post as _sb_post_shared,
 )
 from supabase_auth_token_cache import resolve_user_id_verified_cached
+from emotion_follower_visibility import permitted_emotion_recipients
 from response_microcache import invalidate_prefix
 
 logger = logging.getLogger("emotion_submit")
@@ -492,6 +493,7 @@ async def _insert_emotion_row(
     category: Optional[List[str]],
     created_at: str,
     is_secret: bool,
+    receive_emlis_questions: bool = True,
 ) -> Dict[str, Any]:
     """
     Supabase の emotions テーブルに1件INSERTする。
@@ -505,6 +507,7 @@ async def _insert_emotion_row(
         "memo": memo,
         "created_at": created_at,
         "is_secret": bool(is_secret),
+        "receive_emlis_questions": receive_emlis_questions,
     }
     if memo_action is not None:
         payload["memo_action"] = memo_action
@@ -690,6 +693,12 @@ async def _auto_refresh_myprofile_latest_report(user_id: str) -> None:
     if not uid:
         return
 
+    from analysis_observed_service import observed_enabled
+    if observed_enabled():
+        from analysis_cumulative_service import ensure_map
+        await ensure_map(uid)
+        return
+
     # ---- throttle ----
     min_interval = int(MYPROFILE_LATEST_REFRESH_MIN_INTERVAL_SECONDS or 0)
     if min_interval > 0:
@@ -873,6 +882,11 @@ class EmotionSubmitRequest(BaseModel):
         description="MyModel external からの照会制御用フラグ（感情通知には影響しない）。",
     )
 
+    receive_emlis_questions: StrictBool = Field(
+        default=True,
+        description="今回の入力でEmlisからの問いを受け取るか。未指定はtrue。既存の履歴参照や保存済み回答は変更しない。",
+    )
+
     notify_friends: Optional[bool] = Field(
         default=True,
         alias="send_friend_notification",
@@ -1019,6 +1033,7 @@ async def _filter_viewer_ids_by_emotion_notification_settings(
     *,
     viewer_user_ids: List[str],
     owner_user_id: str,
+    require_read: bool = False,
 ) -> List[str]:
     """Apply per-viewer emotion notification mute settings.
 
@@ -1035,8 +1050,8 @@ async def _filter_viewer_ids_by_emotion_notification_settings(
         - Global text sentinels are not sent through owner_user_id filters because
           current read views may type owner_user_id as uuid. This keeps submit
           notification filtering from emitting uuid syntax warnings.
-    Backward compatibility:
-        - If the table/columns are missing, filtering is skipped (treat as all enabled).
+    Legacy compatibility skips unavailable tables. The author-controlled
+    dispatch path requires a current read so a receiver mute is not bypassed.
     """
     _ensure_supabase_config()
     if not owner_user_id:
@@ -1053,6 +1068,8 @@ async def _filter_viewer_ids_by_emotion_notification_settings(
     queryable_viewer_ids = [uid for uid in ids if _is_uuid_like(uid)]
     owner_filter_ids = _emotion_notification_owner_filter_ids(owner_user_id)
     if not queryable_viewer_ids or not owner_filter_ids:
+        if require_read:
+            raise RuntimeError("Emotion notification preferences unavailable")
         logger.debug(
             "Skip %s filtering because ids are not uuid-filter-safe: owner_uuid_like=%s viewer_count=%s queryable_viewer_count=%s",
             EMOTION_NOTIFICATION_SETTINGS_READ_TABLE,
@@ -1079,8 +1096,10 @@ async def _filter_viewer_ids_by_emotion_notification_settings(
             timeout=5.0,
         )
 
-        # If table doesn't exist / columns missing, skip filtering (treat as enabled)
+        # Unavailable settings can only fall back in the unchanged legacy path.
         if resp.status_code >= 300:
+            if require_read:
+                raise RuntimeError("Emotion notification preferences unavailable")
             logger.warning(
                 "Supabase select %s failed (skip emotion filtering): status=%s body=%s",
                 EMOTION_NOTIFICATION_SETTINGS_READ_TABLE,
@@ -1090,6 +1109,11 @@ async def _filter_viewer_ids_by_emotion_notification_settings(
             return ids
 
         rows = resp.json()
+        if require_read and (type(rows) is not list or any(
+            not isinstance(row, dict) or not _is_uuid_like(row.get("viewer_user_id"))
+            for row in rows
+        )):
+            raise RuntimeError("Emotion notification preferences unavailable")
         disabled = set()
         if isinstance(rows, list):
             for r in rows:
@@ -1102,9 +1126,23 @@ async def _filter_viewer_ids_by_emotion_notification_settings(
             return ids
         return [uid for uid in ids if uid not in disabled]
     except Exception as exc:
+        if require_read:
+            raise RuntimeError("Emotion notification preferences unavailable") from None
         logger.warning("Failed to apply %s (skip emotion filtering): %s", EMOTION_NOTIFICATION_SETTINGS_READ_TABLE, exc)
         return ids
 
+
+async def _filter_current_emotion_recipients(*, owner_user_id: str, viewer_user_ids: List[str]) -> List[str]:
+    # A receiver preference can narrow delivery, but never grant a missing sender permission.
+    approved = await permitted_emotion_recipients(owner_user_id, viewer_user_ids)
+    recipients = []
+    for start in range(0, len(approved), 100):
+        recipients.extend(await _filter_viewer_ids_by_emotion_notification_settings(
+            viewer_user_ids=approved[start:start + 100],
+            owner_user_id=owner_user_id,
+            require_read=True,
+        ))
+    return recipients
 
 
 async def _fetch_profile_display_name(user_id: str) -> str:
@@ -1375,6 +1413,10 @@ def _get_fcm_oauth_access_token() -> Tuple[str, datetime, str, str]:
         return _FCM_OAUTH_TOKEN, _FCM_OAUTH_EXPIRY, project_id, client_email
 
 
+def _is_private_deep_insight_push(data: Optional[Dict[str, Any]]) -> bool:
+    return (data or {}).get("type") in ("deep_insight_theme_ready", "deep_insight_record_ready")
+
+
 async def _send_fcm_push_v1(
     *,
     tokens: List[str],
@@ -1389,6 +1431,7 @@ async def _send_fcm_push_v1(
     """
     if not FCM_PUSH_ENABLED:
         return {"status": "disabled", "success": 0, "failure": 0, "provider": "fcm_v1"}
+    private_notice = _is_private_deep_insight_push(data)
 
     # credentials が設定されていなくても /etc/secrets にあれば送る
     if not (_has_fcm_v1_credentials() or os.path.isfile("/etc/secrets/firebase_service_account.json")):
@@ -1421,6 +1464,9 @@ async def _send_fcm_push_v1(
     try:
         access_token, expiry, project_id, client_email = _get_fcm_oauth_access_token()
     except Exception as exc:
+        if private_notice:
+            logger.error("DeepInsight FCM v1 OAuth token unavailable")
+            return {"status": "oauth_error", "success": 0, "failure": len(uniq), "provider": "fcm_v1"}
         logger.error("FCM v1 OAuth token error [patch_v5]: %s", exc)
         return {"status": "oauth_error", "success": 0, "failure": len(uniq), "provider": "fcm_v1", "error": str(exc)[:300]}
 
@@ -1500,14 +1546,14 @@ async def _send_fcm_push_v1(
             errs.append(str(exc))
 
     logger.info("FCM v1 push sent [patch_v5]: success=%s failure=%s", success, failure)
-    if failure and errs:
+    if failure and errs and not private_notice:
         logger.warning("FCM v1 push failures (sample) [patch_v5 told=%s sa=%s]: %s", project_id, (client_email or ""), errs[:3])
     return {
         "status": "sent" if success > 0 else "failed",
         "success": success,
         "failure": failure,
         "provider": "fcm_v1",
-        "errors": errs[:3],
+        "errors": [] if private_notice else errs[:3],
     }
 
 async def _send_fcm_push_legacy(
@@ -1522,6 +1568,7 @@ async def _send_fcm_push_legacy(
         return {"status": "disabled", "success": 0, "failure": 0, "provider": "legacy"}
     if not FCM_SERVER_KEY:
         return {"status": "no_credentials", "success": 0, "failure": 0, "provider": "legacy"}
+    private_notice = _is_private_deep_insight_push(data)
 
     # 重複除去・空除去
     uniq: List[str] = []
@@ -1563,6 +1610,9 @@ async def _send_fcm_push_legacy(
             resp = await client.post(FCM_API_URL, headers=headers, json=payload)
             if resp.status_code != 200:
                 total_failure += len(batch)
+                if private_notice:
+                    logger.error("DeepInsight FCM legacy push failed: status=%s", resp.status_code)
+                    continue
                 err = f"status={resp.status_code} body={resp.text[:300]}"
                 errors.append(err)
                 logger.error(
@@ -1584,7 +1634,7 @@ async def _send_fcm_push_legacy(
                 total_failure += failure
                 logger.info("FCM legacy push sent: success=%s failure=%s", success, failure)
 
-                if failure:
+                if failure and not private_notice:
                     results = js.get("results")
                     if isinstance(results, list):
                         errs = [r.get("error") for r in results if isinstance(r, dict) and r.get("error")]
@@ -1700,6 +1750,13 @@ async def _push_notify_followers_about_emotion(
         for token in owner_token_map.values()
         if isinstance(token, str) and token.strip()
     }
+
+    # Tokens are server-private. Authorize recipients against the latest
+    # relation and receiver preferences just before contacting FCM.
+    current = await _filter_current_emotion_recipients(
+        viewer_user_ids=list(token_map), owner_user_id=owner_user_id,
+    )
+    token_map = {uid: token_map[uid] for uid in current if uid in token_map}
 
     tokens: List[str] = []
     seen_tokens = set()
@@ -1828,8 +1885,7 @@ async def _notify_follow_viewers_about_emotion(
         # フォロー viewer がいない場合は何もしない
         return
 
-    # Per-viewer emotion notification settings (viewer-side mute)
-    viewer_user_ids = await _filter_viewer_ids_by_emotion_notification_settings(
+    viewer_user_ids = await _filter_current_emotion_recipients(
         viewer_user_ids=viewer_user_ids,
         owner_user_id=owner_user_id,
     )
@@ -1901,6 +1957,24 @@ async def _post_submit_background_async(
     is_secret: bool,
     notify_friends: bool,
 ) -> None:
+    # Reserve the cumulative map before unrelated notification/ingest work.
+    # Only the durable worker generates it; the input response never waits for
+    # the model, and the 30s side-effect timeout cannot cancel its generation.
+    cumulative_refresh_handled = False
+    if ASTOR_WORKER_QUEUE_ENABLED and MYPROFILE_LATEST_AUTO_REFRESH_ENABLED:
+        from analysis_observed_service import observed_enabled
+        if observed_enabled():
+            cumulative_refresh_handled = True
+            try:
+                from analysis_cumulative_service import request_map_refresh
+                await request_map_refresh(user_id, trigger="emotion_submit",
+                    requested_at=created_at,
+                    debounce_seconds=ASTOR_SELF_STRUCTURE_DEBOUNCE_SECONDS)
+            except Exception:
+                # The saved input remains valid. The background map read can
+                # reserve the same job again if this best-effort enqueue failed.
+                logger.warning("Cumulative map refresh enqueue failed after input save")
+
     # 1) 感情通知（EmotionLog 用タイムライン + Push）
     if notify_friends:
         try:
@@ -1941,16 +2015,17 @@ async def _post_submit_background_async(
             if ASTOR_WORKER_QUEUE_ENABLED:
                 from astor_job_queue import enqueue_job as _enqueue_job
 
-                await _enqueue_job(
-                    job_key=f"myprofile_latest_refresh:{user_id}",
-                    job_type="myprofile_latest_refresh_v1",
-                    user_id=user_id,
-                    payload={
-                        "trigger": "emotion_submit",
-                        "requested_at": created_at,
-                    },
-                    priority=50,
-                )
+                if not cumulative_refresh_handled:
+                    await _enqueue_job(
+                        job_key=f"myprofile_latest_refresh:{user_id}",
+                        job_type="myprofile_latest_refresh_v1",
+                        user_id=user_id,
+                        payload={
+                            "trigger": "emotion_submit",
+                            "requested_at": created_at,
+                        },
+                        priority=50,
+                    )
                 # 4) Central material snapshots (internal/public) are generated in worker (debounced)
                 try:
                     if ASTOR_SNAPSHOT_ENQUEUE_ENABLED:
@@ -2196,6 +2271,7 @@ def register_emotion_submit_routes(app: FastAPI) -> None:
                 "created_at": payload.created_at,
                 "is_secret": bool(payload.is_secret),
                 "notify_friends": notify_friends,
+                "receive_emlis_questions": payload.receive_emlis_questions,
             },
             user_id=user_id,
             requested_at=payload.created_at,
@@ -2212,6 +2288,19 @@ def register_emotion_submit_routes(app: FastAPI) -> None:
                 comment_text=input_feedback_comment,
                 emlis_ai=input_feedback_meta,
             )
+
+        # A saved input can precede async thread creation. Return only the
+        # existing pending marker; it never makes an unavailable body visible.
+        elif (isinstance(persisted.get("inserted"), dict)
+              and persisted["inserted"].get("id") and not input_feedback_comment
+              and isinstance(input_feedback_meta, dict)
+              and input_feedback_meta.get("observation_status") == "unavailable"
+              and "thread_reply_pending" in (input_feedback_meta.get("rejection_reasons") or [])):
+            input_feedback = EmotionSubmitInputFeedback(comment_text="", emlis_ai={
+                "schema_version": "emlis.public_input_feedback_meta.v1",
+                "observation_status": "unavailable",
+                "rejection_reasons": ["thread_reply_pending"],
+            })
 
         return EmotionSubmitResponse(
             status="ok",

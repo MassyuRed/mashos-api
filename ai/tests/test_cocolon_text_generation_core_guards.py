@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
+import pytest
+
 import json
 
 from cocolon_text_generation_core import (
@@ -163,3 +165,105 @@ def test_common_must_keep_coverage_checks_required_roles_and_used_evidence_ids()
     assert missing_role.passed is False
     assert "must_keep_role_missing:ordinary_life_wish" in missing_role.rejection_reasons
     assert passed.passed is True
+
+
+
+def _whole_source_binding_case(text=None, bound=("s1",)):
+    # Independent public materials share grammar, not an event or an owner.
+    source = ("箱の数が揃ったわけではなく、棚には空きがあった",
+              "雨が止んだわけではないけれど、外を歩けそうだと思えた")
+    evidence = [_span("s1", source[0]), _span("s2", source[1])]
+    sentence = text if text is not None else f"「{source[0]}」という経緯があったのですね。"
+    binding = {"sentence_id": "s1", "text": sentence,
+               "used_evidence_span_ids": list(bound), "used_phrase_unit_ids": [],
+               "relation_type": "source_explicit_nucleus"}
+    return source, sentence, evidence, binding
+
+
+def test_grounding_whole_bound_source_does_not_attribute_shared_grammar_to_other_source():
+    from cocolon_text_generation_core.guards.grounding import _span_matches_sentence
+    source, text, evidence, binding = _whole_source_binding_case()
+    assert _span_matches_sentence(text, source[1])  # Previously incidental attribution.
+    result = evaluate_grounding(text, evidence_spans=evidence,
+        used_evidence_span_ids=("s1", "s2"), sentence_bindings=[binding])
+    assert result.passed and result.coverage_ratio == 1.0
+    assert result.sentence_claims[0]["evidence_span_ids"] == ["s1"]
+    assert result.sentence_claims[0]["binding_evidence_span_ids"] == ["s1"]
+
+
+def test_grounding_keeps_another_whole_source_visible_outside_the_binding():
+    source, _, _, _ = _whole_source_binding_case()
+    _, text, evidence, binding = _whole_source_binding_case(
+        f"「{source[0]}」の一方で、「{source[1]}」という思いも見えます。")
+    result = evaluate_grounding(text, evidence_spans=evidence,
+        used_evidence_span_ids=("s1", "s2"), sentence_bindings=[binding])
+    assert result.passed
+    assert set(result.sentence_claims[0]["evidence_span_ids"]) == {"s1", "s2"}
+    assert result.sentence_claims[0]["binding_evidence_span_ids"] == ["s1"]
+    # The caller's exact-binding equality must still see this extra source.
+    assert set(result.sentence_claims[0]["evidence_span_ids"]) != set(binding["used_evidence_span_ids"])
+
+
+def test_grounding_without_whole_bound_source_or_binding_preserves_lexical_support():
+    source, text, evidence, binding = _whole_source_binding_case()
+    unbound = evaluate_grounding(text, evidence_spans=evidence, used_evidence_span_ids=("s1", "s2"))
+    assert set(unbound.sentence_claims[0]["evidence_span_ids"]) == {"s1", "s2"}
+    binding["used_evidence_span_ids"] = ["s2"]
+    not_owned = evaluate_grounding(text, evidence_spans=evidence,
+        used_evidence_span_ids=("s1", "s2"), sentence_bindings=[binding])
+    assert set(not_owned.sentence_claims[0]["evidence_span_ids"]) == {"s1", "s2"}
+
+
+def test_grounding_source_attribution_does_not_hide_unbacked_diagnosis():
+    source, _, _, _ = _whole_source_binding_case()
+    _, text, evidence, binding = _whole_source_binding_case(
+        f"「{source[0]}」という経緯から、あなたは病気です。")
+    result = evaluate_grounding(text, evidence_spans=evidence,
+        used_evidence_span_ids=("s1", "s2"), sentence_bindings=[binding])
+    assert not result.passed
+    assert "unsupported_diagnosis_like" in result.rejection_reasons
+
+
+@pytest.mark.parametrize("partial", [
+    "外を歩けそうだと思えた",
+    "雨が止んだわけではない",
+    "外を歩けそうだという思いもあった",
+])
+def test_grounding_keeps_partial_second_source_outside_complete_bound_source(partial):
+    source, _, _, _ = _whole_source_binding_case()
+    _, text, evidence, binding = _whole_source_binding_case(
+        f"「{source[0]}」という経緯があり、{partial}。")
+    assert source[1] not in text  # A full-source-only rule would silently lose s2.
+    result = evaluate_grounding(text, evidence_spans=evidence,
+        used_evidence_span_ids=("s1", "s2"), sentence_bindings=[binding])
+    assert result.passed
+    assert set(result.sentence_claims[0]["evidence_span_ids"]) == {"s1", "s2"}
+    assert result.sentence_claims[0]["binding_evidence_span_ids"] == ["s1"]
+    assert set(result.sentence_claims[0]["evidence_span_ids"]) != set(binding["used_evidence_span_ids"])
+
+
+def test_grounding_keeps_partial_phrase_support_outside_complete_bound_source():
+    source, _, _, _ = _whole_source_binding_case()
+    _, text, evidence, binding = _whole_source_binding_case(
+        f"「{source[0]}」という経緯があり、風を感じる余地も残る。")
+    phrases = [{"phrase_unit_id": "p2", "evidence_span_id": "s2", "text": "風を感じる余地"}]
+    result = evaluate_grounding(text, evidence_spans=evidence,
+        used_evidence_span_ids=("s1", "s2"), phrase_units=phrases,
+        used_phrase_unit_ids=("p2",), sentence_bindings=[binding])
+    assert result.passed
+    assert set(result.sentence_claims[0]["evidence_span_ids"]) == {"s1", "s2"}
+    assert result.sentence_claims[0]["binding_evidence_span_ids"] == ["s1"]
+
+
+
+def test_grounding_missing_other_evidence_remains_a_rejection_not_an_exception():
+    source, _, _, _ = _whole_source_binding_case()
+    _, text, evidence, binding = _whole_source_binding_case(
+        f"「{source[0]}」という経緯があり、風を感じる余地も残る。")
+    phrases = [{"phrase_unit_id": "missing-source-phrase", "evidence_span_id": "missing", "text": "風を感じる余地"}]
+    result = evaluate_grounding(text, evidence_spans=evidence,
+        used_evidence_span_ids=("s1", "missing"), phrase_units=phrases,
+        used_phrase_unit_ids=("missing-source-phrase",), sentence_bindings=[binding])
+    assert not result.passed
+    from cocolon_text_generation_core.guards.grounding import REJECTION_USED_EVIDENCE_NOT_FOUND
+    assert REJECTION_USED_EVIDENCE_NOT_FOUND in result.rejection_reasons

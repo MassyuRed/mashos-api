@@ -18,18 +18,16 @@ _VERSION_SPLIT_RE = re.compile(r"[^0-9A-Za-z]+")
 PLUS_CANONICAL_SUBTITLE = None
 PREMIUM_CANONICAL_SUBTITLE = None
 PLUS_CANONICAL_FEATURES = [
-    "履歴全般：表示期間1年分。",
+    "わたしマップ以外の履歴：表示期間1年分。",
     "ホーム：Emlisの観測が入力履歴を踏まえた内容になります。",
-    "分析：こころ天気（日/週/月）の本文と観測理由を見られます。",
-    "分析：わたしマップで役割スイッチと詳しい自己分析レポートを読めます。",
-    "ピース：生成回数が月30回になります。",
+    "分析：現在のわたしマップは全プラン共通。月次マップの履歴を直近12回分見比べられます。",
+    "ピース：保存できる数が月30件になります。",
 ]
 PREMIUM_CANONICAL_FEATURES = [
-    "履歴全般：表示期間無制限。",
+    "わたしマップ以外の履歴：表示期間無制限。",
     "ホーム：Emlisの観測がユーザーごとに合わせた内容になります。",
-    "分析：こころ天気（日/週/月）の変化パターンや長期傾向まで見られます。",
-    "分析：わたしマップで長期変化や深い分かれ道まで見られます。",
-    "ピース：生成回数が無制限になります。",
+    "分析：現在のわたしマップは全プラン共通。保存済みの月次マップを全期間見比べられます。",
+    "ピース：保存できる数が無制限になります。",
 ]
 
 
@@ -209,11 +207,12 @@ def _replace_legacy_subscription_text(value: Any) -> Optional[str]:
         .replace("Reflection", "ピース")
         .replace("自己分析レポートが閲覧可能になります", f"わたしマップで役割スイッチと{detail_token}を読めます")
         .replace("自己分析レポートがさらに深くなります", "わたしマップで長期変化や深い分かれ道まで見られます")
-        .replace("感情分析レポート", "こころ天気（日/週/月）")
+        .replace("こころ天気", "こころグラフ")
+        .replace("感情分析レポート", "こころグラフ（日/週/月）")
         .replace("自己分析レポート", detail_token)
         .replace("自己構造", "わたしマップ")
         .replace("自己分析", "わたしマップ")
-        .replace("日報・週報・月報", "こころ天気（日/週/月）")
+        .replace("日報・週報・月報", "こころグラフ（日/週/月）")
         .replace("Piece", "ピース")
         .replace("ピース作成", "ピース生成")
         .replace("ピースの作成", "ピースの生成")
@@ -412,7 +411,7 @@ def _default_plan_catalog() -> Dict[str, Dict[str, Any]]:
             "purchasable": True,
             "launch_stage": "live",
             "title": "Plusプラン",
-            "price_label": "月額300円",
+            "price_label": "月額680円",
             "subtitle": PLUS_CANONICAL_SUBTITLE,
             "features": list(PLUS_CANONICAL_FEATURES),
             "note_lines": [],
@@ -440,7 +439,7 @@ def _default_plan_catalog() -> Dict[str, Dict[str, Any]]:
             "purchasable": True,
             "launch_stage": "live",
             "title": "Premiumプラン",
-            "price_label": "月額980円",
+            "price_label": "月額1480円",
             "subtitle": PREMIUM_CANONICAL_SUBTITLE,
             "features": list(PREMIUM_CANONICAL_FEATURES),
             "note_lines": [],

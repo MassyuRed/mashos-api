@@ -1,0 +1,449 @@
+{
+  "source_commit": "11720b60765471b7fc15ec2ba29280a71e8fc204",
+  "rows": [
+    {
+      "case_id": "explicit_then",
+      "memo": "褒められたのに、嬉しくなかった。誘われたのに、悲しかった。",
+      "action": "資料を分類できて満足した。",
+      "answer": "「今は満足していない」ではなく「その時は納得した」です。",
+      "capability": "Q3_PREMIUM",
+      "supplemental_answers": [
+        {
+          "answer_id": "answer-1",
+          "thread_id": "q1-thread",
+          "question_id": "emlis-question-ca3caba329da51d451682127cd4a05ad758d06a55f94dec3bd071939c171e332",
+          "round_index": 1,
+          "original_source_ref": "src-74175ac6adee0a31000cbfed",
+          "answer_text_private": "「満足した」ではなく「今は満足していない」です。",
+          "recorded_at": "2026-09-11T01:00:00Z",
+          "authored_at": null,
+          "source_version": "cocolon.cmee.supplemental_answer.v1",
+          "source_role": "SUPPLEMENTAL_ANSWER"
+        },
+        {
+          "answer_id": "answer-2",
+          "thread_id": "q1-thread",
+          "question_id": "emlis-question-9bd7a1710237be38482b888488f3ac6dccbaeccc5f3fa5ec3882bd819437fc51",
+          "round_index": 2,
+          "original_source_ref": "src-74175ac6adee0a31000cbfed",
+          "answer_text_private": "「今は満足していない」ではなく「その時は納得した」です。",
+          "recorded_at": "2026-09-12T01:00:00Z",
+          "authored_at": null,
+          "source_version": "cocolon.cmee.supplemental_answer.v1",
+          "source_role": "SUPPLEMENTAL_ANSWER"
+        }
+      ],
+      "question_control": {
+        "pending_question": {
+          "question_id": "emlis-question-9bd7a1710237be38482b888488f3ac6dccbaeccc5f3fa5ec3882bd819437fc51",
+          "parent_request_id": "q1-synthetic",
+          "thread_id": "q1-thread",
+          "original_source_ref": "src-74175ac6adee0a31000cbfed",
+          "decision": {
+            "disposition": "ASK",
+            "target_ref": "emlis-target-134e968b5e9cb4928f4df861ca48f6f6bef06216a9d374454f8e0990b37f7cae",
+            "target_kind": "PERSONAL_RECEIVED_MEANING",
+            "supporting_evidence_refs": [
+              "ev-34f165a9a858505326ebe880"
+            ],
+            "missing_dimension": "personal_received_meaning",
+            "affected_meaning_refs": [
+              "nucleus:s2:event",
+              "nucleus:s2:reaction"
+            ],
+            "affected_reception_refs": [
+              "nucleus:s2:event",
+              "nucleus:s2:reaction"
+            ],
+            "asked_target_refs": [
+              "emlis-target-9b70ef48db895188940fab110f80770dce2cc2b8c4887050627b540614601d4f"
+            ],
+            "decision_reason": "source_bound_event_personal_meaning_missing"
+          },
+          "prompt_private": "「誘われた」は、あなたにはどんな意味として届きましたか。",
+          "skip_allowed": true,
+          "answer_limit": 1,
+          "answer_source_role": "SUPPLEMENTAL_ANSWER",
+          "schema_version": "cocolon.cmee.emlis_clarification.v1"
+        },
+        "asked_target_refs": [
+          "emlis-target-9b70ef48db895188940fab110f80770dce2cc2b8c4887050627b540614601d4f",
+          "emlis-target-134e968b5e9cb4928f4df861ca48f6f6bef06216a9d374454f8e0990b37f7cae"
+        ],
+        "issued_count": 2,
+        "stop": false,
+        "issued_questions": [
+          {
+            "question_id": "emlis-question-ca3caba329da51d451682127cd4a05ad758d06a55f94dec3bd071939c171e332",
+            "parent_request_id": "q1-synthetic",
+            "thread_id": "q1-thread",
+            "original_source_ref": "src-74175ac6adee0a31000cbfed",
+            "decision": {
+              "disposition": "ASK",
+              "target_ref": "emlis-target-9b70ef48db895188940fab110f80770dce2cc2b8c4887050627b540614601d4f",
+              "target_kind": "PERSONAL_RECEIVED_MEANING",
+              "supporting_evidence_refs": [
+                "ev-55197a9b4c15b27bf4d2f508"
+              ],
+              "missing_dimension": "personal_received_meaning",
+              "affected_meaning_refs": [
+                "nucleus:s1:event",
+                "nucleus:s1:reaction"
+              ],
+              "affected_reception_refs": [
+                "nucleus:s1:event",
+                "nucleus:s1:reaction"
+              ],
+              "asked_target_refs": [],
+              "decision_reason": "source_bound_event_personal_meaning_missing"
+            },
+            "prompt_private": "「褒められた」は、あなたにはどんな意味として届きましたか。",
+            "skip_allowed": true,
+            "answer_limit": 1,
+            "answer_source_role": "SUPPLEMENTAL_ANSWER",
+            "schema_version": "cocolon.cmee.emlis_clarification.v1"
+          },
+          {
+            "question_id": "emlis-question-9bd7a1710237be38482b888488f3ac6dccbaeccc5f3fa5ec3882bd819437fc51",
+            "parent_request_id": "q1-synthetic",
+            "thread_id": "q1-thread",
+            "original_source_ref": "src-74175ac6adee0a31000cbfed",
+            "decision": {
+              "disposition": "ASK",
+              "target_ref": "emlis-target-134e968b5e9cb4928f4df861ca48f6f6bef06216a9d374454f8e0990b37f7cae",
+              "target_kind": "PERSONAL_RECEIVED_MEANING",
+              "supporting_evidence_refs": [
+                "ev-34f165a9a858505326ebe880"
+              ],
+              "missing_dimension": "personal_received_meaning",
+              "affected_meaning_refs": [
+                "nucleus:s2:event",
+                "nucleus:s2:reaction"
+              ],
+              "affected_reception_refs": [
+                "nucleus:s2:event",
+                "nucleus:s2:reaction"
+              ],
+              "asked_target_refs": [
+                "emlis-target-9b70ef48db895188940fab110f80770dce2cc2b8c4887050627b540614601d4f"
+              ],
+              "decision_reason": "source_bound_event_personal_meaning_missing"
+            },
+            "prompt_private": "「誘われた」は、あなたにはどんな意味として届きましたか。",
+            "skip_allowed": true,
+            "answer_limit": 1,
+            "answer_source_role": "SUPPLEMENTAL_ANSWER",
+            "schema_version": "cocolon.cmee.emlis_clarification.v1"
+          }
+        ],
+        "question_limit": 3
+      },
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-69c3ebcbc0a301281deba2c03a4fd309bcdb55d8d815f0e8689e3a7a4f8734c2",
+        "source_prefix_ref": "emlis-q3-source-prefix-85d9ed8052ae0b7fac47d7a7e45cbbeb0da7786eb8255288c2ec0b98d9fdbb9c",
+        "base_meaning_ref": "emlis-base-meaning-f0e2c7dfa7f520ffb77a190bf8bcb281eb2c8baec5460f98d43b22bc40bbd836",
+        "answer_update": {
+          "answer_source_ref": "src-f84bb81f5611f78c3bb37333",
+          "question_ref": "emlis-question-9bd7a1710237be38482b888488f3ac6dccbaeccc5f3fa5ec3882bd819437fc51",
+          "prior_meaning_ref": "emlis-base-meaning-f0e2c7dfa7f520ffb77a190bf8bcb281eb2c8baec5460f98d43b22bc40bbd836",
+          "updates": [
+            {
+              "update_ref": "emlis-update-8a62a463ed9455686e4a2aeebc5060883d7b96f67391518e3c02831f5dd4ce71",
+              "binding_kind": "EXPLICIT_CORRECTION",
+              "target_meaning_refs": [
+                "answer:s7"
+              ],
+              "evidence_refs": [
+                "ev-b08a8eaefb496cf0a7af41f1"
+              ],
+              "temporal_binding": {
+                "about_time": "ANSWER_TIME",
+                "anchor_source_ref": "src-2542299c71cb3ed6eb481e39",
+                "time_expression_evidence_refs": [],
+                "relative_relation": "revision_of_answer_time",
+                "resolved_interval": null,
+                "timezone_basis": null
+              },
+              "operation": "WITHDRAW",
+              "changed_claim_refs": [],
+              "superseded_claim_refs": [
+                "answer:s7"
+              ],
+              "affected_dependency_refs": [
+                "answer-target-5d313106cb9d306ec3450ff5bc233373ee1ea28bd3424ad63a16e4007a60340a"
+              ]
+            }
+          ],
+          "unresolved_parts": [
+            {
+              "evidence_refs": [
+                "ev-b08a8eaefb496cf0a7af41f1"
+              ],
+              "reason_code": "correction_replacement_unsupported"
+            }
+          ],
+          "disposition": "MATERIAL_UPDATE",
+          "new_meaning_ref": "emlis-meaning-980156e112eb7646b925c6bfd286a75172909e15a727a7350912b73c71279699"
+        },
+        "assessment_status": "PARTIAL",
+        "accepted_update_refs": [
+          "emlis-update-ef263fd240743a4a38d47e3b687f9d6030c49224f8469b72539db291c20c54ca",
+          "emlis-update-8a62a463ed9455686e4a2aeebc5060883d7b96f67391518e3c02831f5dd4ce71"
+        ],
+        "inactive_claim_refs": [
+          "nucleus:s3:appraisal",
+          "relation:r3",
+          "answer:s7",
+          "answer-target-5d313106cb9d306ec3450ff5bc233373ee1ea28bd3424ad63a16e4007a60340a"
+        ],
+        "unresolved_parts": [
+          {
+            "evidence_refs": [
+              "ev-b08a8eaefb496cf0a7af41f1"
+            ],
+            "reason_code": "correction_replacement_unsupported"
+          }
+        ],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "baseline_body": "見えたこと：\n「褒められた」の一方で「嬉しくなかった」、また「誘われた」の一方で「悲しかった」とあります。\n「資料を分類できて」という出来事がありました。\n回答の「「今は満足していない」ではなく「その時は納得した」です」には、今回の観測に反映できていない部分があります。\n\nEmlisから：\n褒められたことと嬉しくなかったことの両方を、その違いも含めて小さくせずに受け止めています。",
+      "baseline_body_state": "PARTIALLY_REFINED"
+    },
+    {
+      "case_id": "explicit_then_withdrawn",
+      "memo": "褒められたのに、嬉しくなかった。誘われたのに、悲しかった。",
+      "action": "資料を分類できて満足した。",
+      "answer": "「今は満足していない」ではなく「その時は納得した」です。「資料を分類できて」は誤りです。",
+      "capability": "Q3_PREMIUM",
+      "supplemental_answers": [
+        {
+          "answer_id": "answer-1",
+          "thread_id": "q1-thread",
+          "question_id": "emlis-question-ca3caba329da51d451682127cd4a05ad758d06a55f94dec3bd071939c171e332",
+          "round_index": 1,
+          "original_source_ref": "src-74175ac6adee0a31000cbfed",
+          "answer_text_private": "「満足した」ではなく「今は満足していない」です。",
+          "recorded_at": "2026-09-11T01:00:00Z",
+          "authored_at": null,
+          "source_version": "cocolon.cmee.supplemental_answer.v1",
+          "source_role": "SUPPLEMENTAL_ANSWER"
+        },
+        {
+          "answer_id": "answer-2",
+          "thread_id": "q1-thread",
+          "question_id": "emlis-question-9bd7a1710237be38482b888488f3ac6dccbaeccc5f3fa5ec3882bd819437fc51",
+          "round_index": 2,
+          "original_source_ref": "src-74175ac6adee0a31000cbfed",
+          "answer_text_private": "「今は満足していない」ではなく「その時は納得した」です。「資料を分類できて」は誤りです。",
+          "recorded_at": "2026-09-12T01:00:00Z",
+          "authored_at": null,
+          "source_version": "cocolon.cmee.supplemental_answer.v1",
+          "source_role": "SUPPLEMENTAL_ANSWER"
+        }
+      ],
+      "question_control": {
+        "pending_question": {
+          "question_id": "emlis-question-9bd7a1710237be38482b888488f3ac6dccbaeccc5f3fa5ec3882bd819437fc51",
+          "parent_request_id": "q1-synthetic",
+          "thread_id": "q1-thread",
+          "original_source_ref": "src-74175ac6adee0a31000cbfed",
+          "decision": {
+            "disposition": "ASK",
+            "target_ref": "emlis-target-134e968b5e9cb4928f4df861ca48f6f6bef06216a9d374454f8e0990b37f7cae",
+            "target_kind": "PERSONAL_RECEIVED_MEANING",
+            "supporting_evidence_refs": [
+              "ev-34f165a9a858505326ebe880"
+            ],
+            "missing_dimension": "personal_received_meaning",
+            "affected_meaning_refs": [
+              "nucleus:s2:event",
+              "nucleus:s2:reaction"
+            ],
+            "affected_reception_refs": [
+              "nucleus:s2:event",
+              "nucleus:s2:reaction"
+            ],
+            "asked_target_refs": [
+              "emlis-target-9b70ef48db895188940fab110f80770dce2cc2b8c4887050627b540614601d4f"
+            ],
+            "decision_reason": "source_bound_event_personal_meaning_missing"
+          },
+          "prompt_private": "「誘われた」は、あなたにはどんな意味として届きましたか。",
+          "skip_allowed": true,
+          "answer_limit": 1,
+          "answer_source_role": "SUPPLEMENTAL_ANSWER",
+          "schema_version": "cocolon.cmee.emlis_clarification.v1"
+        },
+        "asked_target_refs": [
+          "emlis-target-9b70ef48db895188940fab110f80770dce2cc2b8c4887050627b540614601d4f",
+          "emlis-target-134e968b5e9cb4928f4df861ca48f6f6bef06216a9d374454f8e0990b37f7cae"
+        ],
+        "issued_count": 2,
+        "stop": false,
+        "issued_questions": [
+          {
+            "question_id": "emlis-question-ca3caba329da51d451682127cd4a05ad758d06a55f94dec3bd071939c171e332",
+            "parent_request_id": "q1-synthetic",
+            "thread_id": "q1-thread",
+            "original_source_ref": "src-74175ac6adee0a31000cbfed",
+            "decision": {
+              "disposition": "ASK",
+              "target_ref": "emlis-target-9b70ef48db895188940fab110f80770dce2cc2b8c4887050627b540614601d4f",
+              "target_kind": "PERSONAL_RECEIVED_MEANING",
+              "supporting_evidence_refs": [
+                "ev-55197a9b4c15b27bf4d2f508"
+              ],
+              "missing_dimension": "personal_received_meaning",
+              "affected_meaning_refs": [
+                "nucleus:s1:event",
+                "nucleus:s1:reaction"
+              ],
+              "affected_reception_refs": [
+                "nucleus:s1:event",
+                "nucleus:s1:reaction"
+              ],
+              "asked_target_refs": [],
+              "decision_reason": "source_bound_event_personal_meaning_missing"
+            },
+            "prompt_private": "「褒められた」は、あなたにはどんな意味として届きましたか。",
+            "skip_allowed": true,
+            "answer_limit": 1,
+            "answer_source_role": "SUPPLEMENTAL_ANSWER",
+            "schema_version": "cocolon.cmee.emlis_clarification.v1"
+          },
+          {
+            "question_id": "emlis-question-9bd7a1710237be38482b888488f3ac6dccbaeccc5f3fa5ec3882bd819437fc51",
+            "parent_request_id": "q1-synthetic",
+            "thread_id": "q1-thread",
+            "original_source_ref": "src-74175ac6adee0a31000cbfed",
+            "decision": {
+              "disposition": "ASK",
+              "target_ref": "emlis-target-134e968b5e9cb4928f4df861ca48f6f6bef06216a9d374454f8e0990b37f7cae",
+              "target_kind": "PERSONAL_RECEIVED_MEANING",
+              "supporting_evidence_refs": [
+                "ev-34f165a9a858505326ebe880"
+              ],
+              "missing_dimension": "personal_received_meaning",
+              "affected_meaning_refs": [
+                "nucleus:s2:event",
+                "nucleus:s2:reaction"
+              ],
+              "affected_reception_refs": [
+                "nucleus:s2:event",
+                "nucleus:s2:reaction"
+              ],
+              "asked_target_refs": [
+                "emlis-target-9b70ef48db895188940fab110f80770dce2cc2b8c4887050627b540614601d4f"
+              ],
+              "decision_reason": "source_bound_event_personal_meaning_missing"
+            },
+            "prompt_private": "「誘われた」は、あなたにはどんな意味として届きましたか。",
+            "skip_allowed": true,
+            "answer_limit": 1,
+            "answer_source_role": "SUPPLEMENTAL_ANSWER",
+            "schema_version": "cocolon.cmee.emlis_clarification.v1"
+          }
+        ],
+        "question_limit": 3
+      },
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-54c39290c0bfe635222ceb180bc472bb2a1aaadcac01abc41ee3cba586ddadb6",
+        "source_prefix_ref": "emlis-q3-source-prefix-93cdcf19349dde7c6f9a84511aa16650ae0e3af0352755fc73f988d291fc3d5b",
+        "base_meaning_ref": "emlis-base-meaning-f0e2c7dfa7f520ffb77a190bf8bcb281eb2c8baec5460f98d43b22bc40bbd836",
+        "answer_update": {
+          "answer_source_ref": "src-b8c709f2a582df41850c5a7e",
+          "question_ref": "emlis-question-9bd7a1710237be38482b888488f3ac6dccbaeccc5f3fa5ec3882bd819437fc51",
+          "prior_meaning_ref": "emlis-base-meaning-f0e2c7dfa7f520ffb77a190bf8bcb281eb2c8baec5460f98d43b22bc40bbd836",
+          "updates": [
+            {
+              "update_ref": "emlis-update-2207cdbca34f6f6aa1eccea8a254f2fabc5805f20228e94748a54ecd0fff8cd6",
+              "binding_kind": "EXPLICIT_CORRECTION",
+              "target_meaning_refs": [
+                "answer:s7"
+              ],
+              "evidence_refs": [
+                "ev-a2df4c37ddaf9d3696771cfe"
+              ],
+              "temporal_binding": {
+                "about_time": "ANSWER_TIME",
+                "anchor_source_ref": "src-2542299c71cb3ed6eb481e39",
+                "time_expression_evidence_refs": [],
+                "relative_relation": "revision_of_answer_time",
+                "resolved_interval": null,
+                "timezone_basis": null
+              },
+              "operation": "WITHDRAW",
+              "changed_claim_refs": [],
+              "superseded_claim_refs": [
+                "answer:s7"
+              ],
+              "affected_dependency_refs": [
+                "answer-target-5d313106cb9d306ec3450ff5bc233373ee1ea28bd3424ad63a16e4007a60340a"
+              ]
+            },
+            {
+              "update_ref": "emlis-update-fcbe77eb5104cb2e3c7b044c380401e724f583a946fecee9a97ff42cc639b5b6",
+              "binding_kind": "EXPLICIT_CORRECTION",
+              "target_meaning_refs": [
+                "nucleus:s3:event"
+              ],
+              "evidence_refs": [
+                "ev-ac846a17177b8ac03f53c2ab"
+              ],
+              "temporal_binding": {
+                "about_time": "ORIGINAL_OCCASION",
+                "anchor_source_ref": "src-74175ac6adee0a31000cbfed",
+                "time_expression_evidence_refs": [],
+                "relative_relation": null,
+                "resolved_interval": null,
+                "timezone_basis": null
+              },
+              "operation": "WITHDRAW",
+              "changed_claim_refs": [],
+              "superseded_claim_refs": [
+                "nucleus:s3:event"
+              ],
+              "affected_dependency_refs": [
+                "answer-target-5d313106cb9d306ec3450ff5bc233373ee1ea28bd3424ad63a16e4007a60340a"
+              ]
+            }
+          ],
+          "unresolved_parts": [
+            {
+              "evidence_refs": [
+                "ev-a2df4c37ddaf9d3696771cfe"
+              ],
+              "reason_code": "correction_replacement_unsupported"
+            }
+          ],
+          "disposition": "MATERIAL_UPDATE",
+          "new_meaning_ref": "emlis-meaning-6036dbfde022449f8ef755df24a319b6e68c8425efb0538ede7c2c82740ba55f"
+        },
+        "assessment_status": "PARTIAL",
+        "accepted_update_refs": [
+          "emlis-update-ef263fd240743a4a38d47e3b687f9d6030c49224f8469b72539db291c20c54ca",
+          "emlis-update-2207cdbca34f6f6aa1eccea8a254f2fabc5805f20228e94748a54ecd0fff8cd6",
+          "emlis-update-fcbe77eb5104cb2e3c7b044c380401e724f583a946fecee9a97ff42cc639b5b6"
+        ],
+        "inactive_claim_refs": [
+          "nucleus:s3:appraisal",
+          "relation:r3",
+          "answer:s7",
+          "answer-target-5d313106cb9d306ec3450ff5bc233373ee1ea28bd3424ad63a16e4007a60340a",
+          "nucleus:s3:event"
+        ],
+        "unresolved_parts": [
+          {
+            "evidence_refs": [
+              "ev-a2df4c37ddaf9d3696771cfe"
+            ],
+            "reason_code": "correction_replacement_unsupported"
+          }
+        ],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "baseline_body": "見えたこと：\n「褒められた」の一方で「嬉しくなかった」、また「誘われた」の一方で「悲しかった」とあります。\n回答の「「今は満足していない」ではなく「その時は納得した」です」には、今回の観測に反映できていない部分があります。\n\nEmlisから：\n褒められたことは、嬉しさにはつながらず、誘われたのに、悲しさを感じたのですね。",
+      "baseline_body_state": "PARTIALLY_REFINED"
+    }
+  ]
+}

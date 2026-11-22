@@ -1,0 +1,3 @@
+# Isolated Piece tests only; no product dependency update.
+pytest==8.4.1
+psycopg[binary]==3.3.6

@@ -1232,8 +1232,11 @@ async def persist_emotion_submission(
     created_at: Optional[str] = None,
     is_secret: bool = False,
     notify_friends: bool = True,
+    receive_emlis_questions: bool = True,
 ) -> Dict[str, Any]:
     """Persist one emotion submission and trigger the existing post-submit flow."""
+    if type(receive_emlis_questions) is not bool:
+        raise HTTPException(status_code=400, detail="Invalid Emlis question setting")
     submit_started_at = _phase14_perf_counter()
     normalized = normalize_submission_payload(
         emotions=emotions,
@@ -1253,6 +1256,7 @@ async def persist_emotion_submission(
         category=normalized["category"],
         created_at=effective_created_at,
         is_secret=bool(is_secret),
+        receive_emlis_questions=receive_emlis_questions,
     )
 
     try:

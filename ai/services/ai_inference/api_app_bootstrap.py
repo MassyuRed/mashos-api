@@ -5,11 +5,17 @@ import os
 from datetime import datetime, timezone
 from typing import Any, Dict, Mapping, Optional
 
-from fastapi import FastAPI, Header, HTTPException, Query, Request
+from fastapi import FastAPI, Header, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field
 
 from api_emotion_submit import _extract_bearer_token, _resolve_user_id_from_token
 from client_compat import extract_client_meta
+from emlis_thread_config import read_enabled
+from follow_content_visibility import follower_sharing_enabled
+from piece_v2_runtime_control import (
+    PIECE_PUBLICATION_FEATURES, PIECE_PUBLICATION_HEADER, piece_feature_flags_for_app,
+    wants_piece_publication,
+)
 
 logger = logging.getLogger("api_app_bootstrap")
 
@@ -27,22 +33,28 @@ class AppStartupResponse(AppBootstrapResponse):
     startup: Dict[str, Any] = Field(default_factory=dict)
 
 
-def _feature_flags() -> Dict[str, bool]:
+def _feature_flags(app: Optional[FastAPI] = None, *, piece_publication: bool = False) -> Dict[str, bool]:
+    piece_flags = piece_feature_flags_for_app(app)
+    if not piece_publication:
+        piece_flags.update(dict.fromkeys(PIECE_PUBLICATION_FEATURES, False))
     return {
+        **piece_flags,
         "account_delete_enabled": True,
+        "follower_sharing_enabled": follower_sharing_enabled(),
+        "emlis_threads_enabled": read_enabled(),
         "myweb_mock_enabled": False,
-        "today_question_enabled": True,
-        "today_question_history_enabled": True,
         "subscription_sales_enabled": (os.getenv("COCOLON_SUBSCRIPTION_SALES_ENABLED") or "true").strip().lower() in {"1", "true", "yes", "on"},
     }
 
 
-def _bootstrap_payload(*, client_meta: Optional[Mapping[str, Optional[str]]] = None) -> Dict[str, Any]:
+def _bootstrap_payload(*, client_meta: Optional[Mapping[str, Optional[str]]] = None,
+                       app: Optional[FastAPI] = None,
+                       piece_publication: bool = False) -> Dict[str, Any]:
     return {
         "minimum_supported_version": (os.getenv("APP_MINIMUM_SUPPORTED_VERSION") or "").strip() or None,
         "recommended_version": (os.getenv("APP_RECOMMENDED_VERSION") or "").strip() or None,
         "maintenance_message": (os.getenv("APP_MAINTENANCE_MESSAGE") or "").strip() or None,
-        "feature_flags": _feature_flags(),
+        "feature_flags": _feature_flags(app, piece_publication=piece_publication),
         "client_meta": dict(client_meta or {}),
     }
 
@@ -85,7 +97,6 @@ def _startup_fallback_payload(
             "has_any_friends_unread": False,
             "has_any_myweb_unread": False,
             "has_popup_notice": False,
-            "today_question_answered": False,
         },
         "sections": {},
         "errors": {"startup": str(detail or "unavailable")},
@@ -130,7 +141,8 @@ async def _build_startup_response(
         )
 
     return AppStartupResponse(
-        **_bootstrap_payload(client_meta=client_meta),
+        **_bootstrap_payload(client_meta=client_meta, app=request.app,
+                             piece_publication=wants_piece_publication(request)),
         timezone_name=resolved_timezone_name,
         startup=_normalize_startup_payload(startup_payload, timezone_name=resolved_timezone_name),
     )
@@ -138,17 +150,21 @@ async def _build_startup_response(
 
 def register_app_bootstrap_routes(app: FastAPI) -> None:
     @app.get("/app/bootstrap", response_model=AppBootstrapResponse)
-    async def get_app_bootstrap(request: Request) -> AppBootstrapResponse:
+    async def get_app_bootstrap(request: Request, response: Response) -> AppBootstrapResponse:
+        response.headers["Vary"] = PIECE_PUBLICATION_HEADER
         client_meta = extract_client_meta(request.headers)
-        return AppBootstrapResponse(**_bootstrap_payload(client_meta=client_meta))
+        return AppBootstrapResponse(**_bootstrap_payload(
+            client_meta=client_meta, app=request.app, piece_publication=wants_piece_publication(request)))
 
     @app.get("/app/startup", response_model=AppStartupResponse)
     async def get_app_startup(
         request: Request,
+        response: Response,
         authorization: Optional[str] = Header(default=None),
         force_refresh: bool = Query(default=False, description="If true, bypass the cached startup snapshot for this request."),
-        timezone_name: Optional[str] = Query(default=None, description="Optional IANA timezone name or offset used for Today Question / Global Summary sections."),
+        timezone_name: Optional[str] = Query(default=None, description="Optional IANA timezone name or offset."),
     ) -> AppStartupResponse:
+        response.headers["Vary"] = PIECE_PUBLICATION_HEADER
         return await _build_startup_response(
             request,
             authorization=authorization,

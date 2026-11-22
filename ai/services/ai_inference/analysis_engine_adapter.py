@@ -234,7 +234,7 @@ def _pick_first_text(row: Mapping[str, Any], keys: Sequence[str]) -> str:
 
 def _normalize_details(row: Dict[str, Any]) -> List[Dict[str, Any]]:
     details = row.get("emotion_details")
-    if isinstance(details, list):
+    if isinstance(details, list) and details:
         out: List[Dict[str, Any]] = []
         for it in details:
             if not isinstance(it, dict):

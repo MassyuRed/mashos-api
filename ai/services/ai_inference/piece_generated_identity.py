@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import re
-from typing import Any
+from typing import Any, Mapping, Tuple
 
 _WS_RE = re.compile(r"\s+")
 _QKEY_PUNCT_RE = re.compile(r"[。．.!！?？、,「」『』【】\[\]（）()<>＜＞\"'`]+")
@@ -39,8 +39,29 @@ def compute_generated_question_q_key(question: Any) -> str:
     return f"generated:q:{hashlib.md5(normalized.encode('utf-8')).hexdigest()}"
 
 
+def generated_instance_aliases(row: Mapping[str, Any]) -> Tuple[str, ...]:
+    """Public-ID-first instance identities derived only from a verified row.
+
+    New writes use the first, prefixed identity, as generated_public_id already
+    does. Old state may use either field with or without the reflection prefix.
+    """
+    aliases = []
+    for key in ("public_id", "id"):
+        raw = str(row.get(key) or "").strip()
+        if not raw:
+            continue
+        bare = raw.split(":", 1)[1] if raw.startswith("reflection:") else raw
+        if not bare:
+            continue
+        for value in ("reflection:" + bare, bare):
+            if value not in aliases:
+                aliases.append(value)
+    return tuple(aliases)
+
+
 __all__ = [
     "collapse_generated_question_text",
     "compute_generated_question_q_key",
     "normalize_generated_question_text_for_key",
+    "generated_instance_aliases",
 ]

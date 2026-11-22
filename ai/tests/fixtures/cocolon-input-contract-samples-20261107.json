@@ -1,0 +1,221 @@
+{
+  "schema": "cocolon.input-contract.samples.v1",
+  "synthetic": true,
+  "purpose": "架空の同一人物の入力操作と各材料の保持を検証する票。一般意味品質や実機成功を保証しない。",
+  "created_at": "自動記録（試験時のみ合成日時を付与）",
+  "cases": [
+    {
+      "case_id": "01",
+      "category": [
+        "生活"
+      ],
+      "emotion_details": [
+        {
+          "type": "喜び",
+          "strength": "weak"
+        },
+        {
+          "type": "平穏",
+          "strength": "medium"
+        }
+      ],
+      "memo": "部屋が少し片づくと気持ちも落ち着きます。今日は全部終えなくてもよいと思いました。",
+      "memo_action": "私は机を片づけた。残りの棚は片づけなかった。",
+      "send_emotion_notification": false,
+      "is_secret": false,
+      "self_insight_strength_ui": "弱／中／強"
+    },
+    {
+      "case_id": "02",
+      "category": [
+        "仕事"
+      ],
+      "emotion_details": [
+        {
+          "type": "不安",
+          "strength": "medium"
+        },
+        {
+          "type": "怒り",
+          "strength": "weak"
+        }
+      ],
+      "memo": "任された内容はきちんと確認したいです。直前に予定が変わったことには少し腹が立ちました。",
+      "memo_action": "私は会議を担当した。私は会議の資料を調べた。",
+      "send_emotion_notification": false,
+      "is_secret": false,
+      "self_insight_strength_ui": "弱／中／強"
+    },
+    {
+      "case_id": "03",
+      "category": [
+        "趣味"
+      ],
+      "emotion_details": [
+        {
+          "type": "喜び",
+          "strength": "strong"
+        }
+      ],
+      "memo": "自分がきれいだと思った風景を残せたのが嬉しかったです。人に見せるかどうかは、まだ決めていません。",
+      "memo_action": "私は写真を撮った。私は写真を見た。",
+      "send_emotion_notification": false,
+      "is_secret": false,
+      "self_insight_strength_ui": "弱／中／強"
+    },
+    {
+      "case_id": "04",
+      "category": [
+        "人間関係"
+      ],
+      "emotion_details": [
+        {
+          "type": "悲しみ",
+          "strength": "medium"
+        },
+        {
+          "type": "不安",
+          "strength": "weak"
+        }
+      ],
+      "memo": "友人と会えなくなって寂しかったです。予定が合わなかっただけなのか、相手の気持ちはわかりません。",
+      "memo_action": "友人から予定を変えたいと連絡が来た。今日は会わなかった。",
+      "send_emotion_notification": false,
+      "is_secret": false,
+      "self_insight_strength_ui": "弱／中／強"
+    },
+    {
+      "case_id": "05",
+      "category": [
+        "恋愛"
+      ],
+      "emotion_details": [
+        {
+          "type": "喜び",
+          "strength": "medium"
+        },
+        {
+          "type": "不安",
+          "strength": "strong"
+        }
+      ],
+      "memo": "一緒に過ごせたことは嬉しいです。ただ、話せなかったこともあり、相手がどう受け取ったかは気になっています。",
+      "memo_action": "恋人と夕食を食べた。相談したかった話はしなかった。",
+      "send_emotion_notification": false,
+      "is_secret": false,
+      "self_insight_strength_ui": "弱／中／強"
+    },
+    {
+      "case_id": "06",
+      "category": [
+        "健康"
+      ],
+      "emotion_details": [
+        {
+          "type": "悲しみ",
+          "strength": "weak"
+        },
+        {
+          "type": "平穏",
+          "strength": "strong"
+        }
+      ],
+      "memo": "休んだら少し落ち着きました。今日動けなかったことは残念ですが、明日の調子はまだわかりません。",
+      "memo_action": "今日は散歩をしなかった。家で休んだ。",
+      "send_emotion_notification": false,
+      "is_secret": false,
+      "self_insight_strength_ui": "弱／中／強"
+    },
+    {
+      "case_id": "07",
+      "category": [
+        "学習"
+      ],
+      "emotion_details": [
+        {
+          "type": "怒り",
+          "strength": "medium"
+        },
+        {
+          "type": "平穏",
+          "strength": "weak"
+        }
+      ],
+      "memo": "同じところで間違えて悔しかったです。それでも、どこで迷うのかは前より少しわかりました。",
+      "memo_action": "私は問題を解いた。私は答えを確認した。",
+      "send_emotion_notification": false,
+      "is_secret": false,
+      "self_insight_strength_ui": "弱／中／強"
+    },
+    {
+      "case_id": "08",
+      "category": [
+        "価値観"
+      ],
+      "emotion_details": [
+        {
+          "type": "怒り",
+          "strength": "strong"
+        }
+      ],
+      "memo": "自分の意見を聞かずに決められたことに腹が立ちました。私は自分で選びたい。",
+      "memo_action": "集まりでは別の人が方針を決めた。私はその場では意見を言わなかった。",
+      "send_emotion_notification": false,
+      "is_secret": false,
+      "self_insight_strength_ui": "弱／中／強"
+    },
+    {
+      "case_id": "09",
+      "category": [
+        "人生"
+      ],
+      "emotion_details": [
+        {
+          "type": "悲しみ",
+          "strength": "strong"
+        }
+      ],
+      "memo": "以前思い描いた暮らしと今の暮らしが違って、今日はつらく感じました。これから何を変えるかはまだ決めていません。",
+      "memo_action": "古い日記を読んだ。今後の予定は決めなかった。",
+      "send_emotion_notification": false,
+      "is_secret": false,
+      "self_insight_strength_ui": "弱／中／強"
+    },
+    {
+      "case_id": "10",
+      "category": [
+        "価値観",
+        "人生"
+      ],
+      "emotion_details": [
+        {
+          "type": "自己理解",
+          "strength": "medium"
+        }
+      ],
+      "memo": "周りと同じ進み方をすることより、自分が納得して選ぶことを大切にしたいと考えました。",
+      "memo_action": "",
+      "send_emotion_notification": false,
+      "is_secret": false,
+      "self_insight_strength_ui": null
+    },
+    {
+      "case_id": "11",
+      "category": [
+        "仕事",
+        "人間関係"
+      ],
+      "emotion_details": [
+        {
+          "type": "平穏",
+          "strength": "medium"
+        }
+      ],
+      "memo": "",
+      "memo_action": "私は会議を担当した。私は会議の資料を作った。友人の質問には答えた。",
+      "send_emotion_notification": false,
+      "is_secret": false,
+      "self_insight_strength_ui": "弱／中／強"
+    }
+  ]
+}

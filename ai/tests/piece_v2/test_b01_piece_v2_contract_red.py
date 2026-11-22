@@ -154,6 +154,7 @@ def _load_future_owner() -> ModuleType:
     if not _OWNER_PATH.is_file():
         pytest.fail(_RED_SIGNATURE, pytrace=False)
 
+    previous = sys.modules.get(_OWNER_MODULE_NAME)
     try:
         spec = importlib.util.spec_from_file_location(_OWNER_MODULE_NAME, _OWNER_PATH)
         if spec is None or spec.loader is None:
@@ -167,6 +168,13 @@ def _load_future_owner() -> ModuleType:
             f"{_NONCREDIT_IMPORT_SIGNATURE}:{type(exc).__name__}",
             pytrace=False,
         )
+    finally:
+        # Other Piece tests already hold the canonical exception class. Keep
+        # this fresh file load from splitting that class's runtime identity.
+        if previous is None:
+            sys.modules.pop(_OWNER_MODULE_NAME, None)
+        else:
+            sys.modules[_OWNER_MODULE_NAME] = previous
 
 
 def _require_callable(owner: ModuleType, name: str) -> Callable[..., Any]:

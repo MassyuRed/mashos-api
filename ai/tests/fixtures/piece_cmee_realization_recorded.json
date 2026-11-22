@@ -1,0 +1,57 @@
+{
+  "all_fictional": true,
+  "purpose": "CPU realization of unchanged recorded raw; no new inference, original acquisition is not rebound or re-adopted",
+  "archive_sha256": "52a06bde70ec913eb745400083ee3948f1dcd86263d116a9b3784c90b290c18c",
+  "rows": [
+    {
+      "case_id": "COHERENT-PARAGRAPH",
+      "original": {
+        "category": [
+          "仕事",
+          "人間関係"
+        ],
+        "created_at": "2026-11-13T20:02:01.085",
+        "emotion_details": [
+          {
+            "strength": "medium",
+            "type": "自己理解"
+          }
+        ],
+        "emotions": [
+          "自己理解"
+        ],
+        "id": "50d567dc-1d76-4fdb-8718-c58552e8e12c",
+        "memo": "私は、会議で考えがまとまらないまま返事をして、後から言いたかったことに気づきました。私は、会議では答えることに気を取られて、自分が何に迷っているのかをうまく言葉にできませんでした。私は、次の会議では、すぐに答えを出すよりも、考えを整理する時間を大切にしたいです。私は、返事をする前にメモを見返したいです。私は、返事の前にメモを見返したいと同僚にはまだ伝えていません。",
+        "memo_action": ""
+      },
+      "raw_output": "{\"field_blocks\":{\"memo_0\":\"私は、会議で考えがまとまらないまま返事をして、後から言いたかったことに気づいた。私は、会議では答えることに気を取られて、自分が何に迷っているのかをうまく言葉にできなかった。私は、次の会議では、すぐに答えを出すよりも、考えを整理する時間を大切にしたい。私は、返事をする前にメモを見返したい。私は、返事の前にメモを見返したいと同僚にはまだ伝えていない。\"}}",
+      "raw_sha256": "7d2be167f0571b1d0fcf377f29e61b596c428e21eef0d65c4548d6bcaf545818",
+      "finish_reason": "stop"
+    },
+    {
+      "case_id": "COHERENT-TWO-FIELDS",
+      "original": {
+        "category": [
+          "趣味",
+          "価値観"
+        ],
+        "created_at": "2026-11-13T20:02:01.085",
+        "emotion_details": [
+          {
+            "strength": "weak",
+            "type": "平穏"
+          }
+        ],
+        "emotions": [
+          "平穏"
+        ],
+        "id": "d330d721-1e34-46fe-96bc-4268d2a3d2f2",
+        "memo": "おれは、同僚の岸さんと展示を見る時間が好きです。おれは、同僚の岸さんとなら、感想を急いでまとめなくても話せる気がします。まだ、次に行く日は決めていません。",
+        "memo_action": "僕は、昨日は一人で予定を考えました。僕は、相手に合わせるために予定を変えたわけではありません。"
+      },
+      "raw_output": "{\"field_blocks\":{\"memo_0\":\"おれは、同僚と展示を見る時間が好きだ。おれは、同僚となら、感想を急いでまとめなくても話せる気がする。まだ、次に行く日は決めていない。\",\"memo_action_1\":\"僕は、昨日は一人で予定を考えた。僕は、相手に合わせるために予定を変えたわけではない。\"}}",
+      "raw_sha256": "354bcf09cce35bcfaa928a3fd14ecfe7e6536d78ac4362a911c2b411d3de3440",
+      "finish_reason": "stop"
+    }
+  ]
+}

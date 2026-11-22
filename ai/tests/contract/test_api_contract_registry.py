@@ -52,13 +52,11 @@ REQUIRED_PUBLIC_V1_ROUTE_KEYS = {
     ('GET', '/mymodel/qna/echoes/history'),
     ('GET', '/mymodel/qna/discoveries/history'),
     ('POST', '/activity/login'),
-    ('GET', '/today-question/current'),
-    ('GET', '/today-question/status'),
-    ('POST', '/today-question/answers'),
-    ('GET', '/today-question/history'),
-    ('PATCH', '/today-question/history/{answer_id}'),
-    ('GET', '/today-question/settings'),
-    ('PATCH', '/today-question/settings'),
+    ('GET', '/deep-insight'),
+    ('PATCH', '/deep-insight/theme-notification'),
+    ('POST', '/deep-insight/questions'),
+    ('GET', '/deep-insight/questions/{question_id}'),
+    ('POST', '/deep-insight/answers'),
     ('GET', '/notices/current'),
     ('GET', '/notices/history'),
     ('POST', '/notices/read'),
@@ -170,9 +168,13 @@ print(json.dumps(routes, sort_keys=True))
         [sys.executable, "-c", script],
         cwd=root,
         env=env,
-        check=True,
+        check=False,
         capture_output=True,
         text=True,
+    )
+    assert completed.returncode == 0, (
+        f"Production route import failed (exit {completed.returncode}):\n"
+        f"{completed.stderr}"
     )
     return json.loads(completed.stdout)
 

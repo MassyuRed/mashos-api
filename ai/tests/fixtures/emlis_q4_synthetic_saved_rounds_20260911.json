@@ -1,0 +1,3456 @@
+[
+  {
+    "tier": "free",
+    "case": "meaning_A",
+    "answer": "次も同じ成果を求められるようで、重かった。",
+    "initial": {
+      "schema_version": "cocolon.emlis_thread.application.v1",
+      "thread_id": "aceb54d6-ed5b-4137-915a-104f8ac1348c",
+      "revision": 3,
+      "state": "AWAITING_ANSWER",
+      "original": {
+        "id": "82d2e516-180f-47b6-8865-a5fefc3dc304",
+        "created_at": "2026-09-11T06:12:01.047",
+        "memo": "褒められたのに、嬉しくなかった。",
+        "memo_action": ""
+      },
+      "timeline": [
+        {
+          "event_id": "bec8d931-37ba-4b1a-8886-b3751c2608ff",
+          "kind": "OBSERVATION",
+          "recorded_at": "2026-09-11T00:12:05.545-06:00",
+          "round_index": 0,
+          "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n\nEmlisから：\n褒められたことと嬉しくなかったことの両方を、その違いも含めて小さくせずに受け止めています。",
+          "stage": "INITIAL",
+          "is_current": true
+        },
+        {
+          "event_id": "62bac84e-bbc3-4d5b-8290-49193899a8b1",
+          "kind": "QUESTION",
+          "recorded_at": "2026-09-11T00:12:05.547-06:00",
+          "round_index": 1,
+          "question_id": "emlis-question-3c28904c261da6a5bc31721f939571fb39a7c7eeb368ab5d36176619ab13af2b",
+          "text": "「褒められた」は、あなたにはどんな意味として届きましたか。"
+        }
+      ],
+      "can_write": true,
+      "pending_question": {
+        "event_id": "62bac84e-bbc3-4d5b-8290-49193899a8b1",
+        "kind": "QUESTION",
+        "recorded_at": "2026-09-11T00:12:05.547-06:00",
+        "round_index": 1,
+        "question_id": "emlis-question-3c28904c261da6a5bc31721f939571fb39a7c7eeb368ab5d36176619ab13af2b",
+        "text": "「褒められた」は、あなたにはどんな意味として届きましたか。"
+      },
+      "current_observation": {
+        "event_id": "bec8d931-37ba-4b1a-8886-b3751c2608ff",
+        "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n\nEmlisから：\n褒められたことと嬉しくなかったことの両方を、その違いも含めて小さくせずに受け止めています。"
+      },
+      "body_state": "PRE_QUESTION",
+      "answer_saved": false,
+      "answer_assessment": "NOT_APPLICABLE",
+      "meaning_updated": false,
+      "failure_code": null,
+      "operation_id": "72ac8093-88f3-4736-9ad2-fe4e195d4753",
+      "attempt_id": "035663ca-8f51-434c-8f12-ea2505c915cf",
+      "requested_attempt_id": null,
+      "can_retry": false,
+      "can_continue": false,
+      "issued_count": 1,
+      "question_limit": 1,
+      "started_question_limit": 1,
+      "processing_deadline_at": null,
+      "interpretive_frames": []
+    },
+    "result": {
+      "schema_version": "cocolon.emlis_thread.application.v1",
+      "thread_id": "aceb54d6-ed5b-4137-915a-104f8ac1348c",
+      "revision": 6,
+      "state": "COMPLETED",
+      "original": {
+        "id": "82d2e516-180f-47b6-8865-a5fefc3dc304",
+        "created_at": "2026-09-11T06:12:01.047",
+        "memo": "褒められたのに、嬉しくなかった。",
+        "memo_action": ""
+      },
+      "timeline": [
+        {
+          "event_id": "bec8d931-37ba-4b1a-8886-b3751c2608ff",
+          "kind": "OBSERVATION",
+          "recorded_at": "2026-09-11T00:12:05.545-06:00",
+          "round_index": 0,
+          "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n\nEmlisから：\n褒められたことと嬉しくなかったことの両方を、その違いも含めて小さくせずに受け止めています。",
+          "stage": "INITIAL",
+          "is_current": false
+        },
+        {
+          "event_id": "62bac84e-bbc3-4d5b-8290-49193899a8b1",
+          "kind": "QUESTION",
+          "recorded_at": "2026-09-11T00:12:05.547-06:00",
+          "round_index": 1,
+          "question_id": "emlis-question-3c28904c261da6a5bc31721f939571fb39a7c7eeb368ab5d36176619ab13af2b",
+          "text": "「褒められた」は、あなたにはどんな意味として届きましたか。"
+        },
+        {
+          "event_id": "94f2f51f-69d3-446c-94ad-fc01747d0352",
+          "kind": "ANSWER",
+          "recorded_at": "2026-09-11T00:12:05.572-06:00",
+          "round_index": 1,
+          "text": "次も同じ成果を求められるようで、重かった。",
+          "question_id": "emlis-question-3c28904c261da6a5bc31721f939571fb39a7c7eeb368ab5d36176619ab13af2b",
+          "authored_at": "2026-09-11T00:00:00+00:00"
+        },
+        {
+          "event_id": "b97caeef-914d-4110-85e6-e479d1aa610c",
+          "kind": "OBSERVATION",
+          "recorded_at": "2026-09-11T00:12:05.722-06:00",
+          "round_index": 1,
+          "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。 「褒められた」ことに対するその時の受け止めとして、「次も同じ成果を求められるようで、重かった」が見えます。\n\nEmlisから：\n褒められたことについて、その時に次も同じ成果を求められるようで、重かったことを小さくせずに受け止めています。",
+          "stage": "REFINED",
+          "is_current": true
+        }
+      ],
+      "can_write": true,
+      "pending_question": null,
+      "current_observation": {
+        "event_id": "b97caeef-914d-4110-85e6-e479d1aa610c",
+        "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。 「褒められた」ことに対するその時の受け止めとして、「次も同じ成果を求められるようで、重かった」が見えます。\n\nEmlisから：\n褒められたことについて、その時に次も同じ成果を求められるようで、重かったことを小さくせずに受け止めています。"
+      },
+      "body_state": "REFINED",
+      "answer_saved": true,
+      "answer_assessment": "RESOLVED",
+      "meaning_updated": true,
+      "failure_code": null,
+      "operation_id": "00199241-00ba-45b5-9d42-f9cb8b488f2e",
+      "attempt_id": "c3694712-82c9-4aa9-8a98-449e862ff02a",
+      "requested_attempt_id": null,
+      "can_retry": false,
+      "can_continue": false,
+      "issued_count": 1,
+      "question_limit": 1,
+      "started_question_limit": 1,
+      "processing_deadline_at": null,
+      "interpretive_frames": []
+    }
+  },
+  {
+    "tier": "free",
+    "case": "meaning_B",
+    "answer": "結果だけで、そこまでの苦労は見てもらえていないと思った。",
+    "initial": {
+      "schema_version": "cocolon.emlis_thread.application.v1",
+      "thread_id": "358de799-0370-43bb-b880-cda2eb13eec9",
+      "revision": 3,
+      "state": "AWAITING_ANSWER",
+      "original": {
+        "id": "1761d0fc-46b5-442b-97aa-3a6cbd08d5bf",
+        "created_at": "2026-09-11T06:12:05.744",
+        "memo": "褒められたのに、嬉しくなかった。",
+        "memo_action": ""
+      },
+      "timeline": [
+        {
+          "event_id": "ebecbf22-3e19-46dc-9918-168b8a10e0fc",
+          "kind": "OBSERVATION",
+          "recorded_at": "2026-09-11T00:12:05.831-06:00",
+          "round_index": 0,
+          "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n\nEmlisから：\n褒められたことと嬉しくなかったことの両方を、その違いも含めて小さくせずに受け止めています。",
+          "stage": "INITIAL",
+          "is_current": true
+        },
+        {
+          "event_id": "92ef8052-9ed1-43b9-8185-561d823d60db",
+          "kind": "QUESTION",
+          "recorded_at": "2026-09-11T00:12:05.832-06:00",
+          "round_index": 1,
+          "question_id": "emlis-question-366c3241a81cefe0b000f4d93c430b271b473db97f6a9bfa6d5b51d2dd46d622",
+          "text": "「褒められた」は、あなたにはどんな意味として届きましたか。"
+        }
+      ],
+      "can_write": true,
+      "pending_question": {
+        "event_id": "92ef8052-9ed1-43b9-8185-561d823d60db",
+        "kind": "QUESTION",
+        "recorded_at": "2026-09-11T00:12:05.832-06:00",
+        "round_index": 1,
+        "question_id": "emlis-question-366c3241a81cefe0b000f4d93c430b271b473db97f6a9bfa6d5b51d2dd46d622",
+        "text": "「褒められた」は、あなたにはどんな意味として届きましたか。"
+      },
+      "current_observation": {
+        "event_id": "ebecbf22-3e19-46dc-9918-168b8a10e0fc",
+        "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n\nEmlisから：\n褒められたことと嬉しくなかったことの両方を、その違いも含めて小さくせずに受け止めています。"
+      },
+      "body_state": "PRE_QUESTION",
+      "answer_saved": false,
+      "answer_assessment": "NOT_APPLICABLE",
+      "meaning_updated": false,
+      "failure_code": null,
+      "operation_id": "6331a037-92ce-4fbe-8c0c-3f3923191601",
+      "attempt_id": "3c23347a-a5cc-4eff-8500-3ed7a7cce312",
+      "requested_attempt_id": null,
+      "can_retry": false,
+      "can_continue": false,
+      "issued_count": 1,
+      "question_limit": 1,
+      "started_question_limit": 1,
+      "processing_deadline_at": null,
+      "interpretive_frames": []
+    },
+    "result": {
+      "schema_version": "cocolon.emlis_thread.application.v1",
+      "thread_id": "358de799-0370-43bb-b880-cda2eb13eec9",
+      "revision": 6,
+      "state": "COMPLETED",
+      "original": {
+        "id": "1761d0fc-46b5-442b-97aa-3a6cbd08d5bf",
+        "created_at": "2026-09-11T06:12:05.744",
+        "memo": "褒められたのに、嬉しくなかった。",
+        "memo_action": ""
+      },
+      "timeline": [
+        {
+          "event_id": "ebecbf22-3e19-46dc-9918-168b8a10e0fc",
+          "kind": "OBSERVATION",
+          "recorded_at": "2026-09-11T00:12:05.831-06:00",
+          "round_index": 0,
+          "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n\nEmlisから：\n褒められたことと嬉しくなかったことの両方を、その違いも含めて小さくせずに受け止めています。",
+          "stage": "INITIAL",
+          "is_current": false
+        },
+        {
+          "event_id": "92ef8052-9ed1-43b9-8185-561d823d60db",
+          "kind": "QUESTION",
+          "recorded_at": "2026-09-11T00:12:05.832-06:00",
+          "round_index": 1,
+          "question_id": "emlis-question-366c3241a81cefe0b000f4d93c430b271b473db97f6a9bfa6d5b51d2dd46d622",
+          "text": "「褒められた」は、あなたにはどんな意味として届きましたか。"
+        },
+        {
+          "event_id": "9f13c3e4-3f2f-4315-b4b4-26b9560bc730",
+          "kind": "ANSWER",
+          "recorded_at": "2026-09-11T00:12:05.846-06:00",
+          "round_index": 1,
+          "text": "結果だけで、そこまでの苦労は見てもらえていないと思った。",
+          "question_id": "emlis-question-366c3241a81cefe0b000f4d93c430b271b473db97f6a9bfa6d5b51d2dd46d622",
+          "authored_at": "2026-09-11T00:00:00+00:00"
+        },
+        {
+          "event_id": "f7daf4ad-afe6-4084-b4f0-e7850eaa9e7f",
+          "kind": "OBSERVATION",
+          "recorded_at": "2026-09-11T00:12:05.982-06:00",
+          "round_index": 1,
+          "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。 「褒められた」ことに対するその時の受け止めとして、「結果だけで、そこまでの苦労は見てもらえていないと思った」が見えます。\n\nEmlisから：\n褒められたことについて、その時に結果だけで、そこまでの苦労は見てもらえていないと思ったことを小さくせずに受け止めています。",
+          "stage": "REFINED",
+          "is_current": true
+        }
+      ],
+      "can_write": true,
+      "pending_question": null,
+      "current_observation": {
+        "event_id": "f7daf4ad-afe6-4084-b4f0-e7850eaa9e7f",
+        "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。 「褒められた」ことに対するその時の受け止めとして、「結果だけで、そこまでの苦労は見てもらえていないと思った」が見えます。\n\nEmlisから：\n褒められたことについて、その時に結果だけで、そこまでの苦労は見てもらえていないと思ったことを小さくせずに受け止めています。"
+      },
+      "body_state": "REFINED",
+      "answer_saved": true,
+      "answer_assessment": "RESOLVED",
+      "meaning_updated": true,
+      "failure_code": null,
+      "operation_id": "bffd3cfb-07d4-481c-b865-4815d56af3ab",
+      "attempt_id": "52841029-0da4-49c0-bb62-8105cdf5b3bf",
+      "requested_attempt_id": null,
+      "can_retry": false,
+      "can_continue": false,
+      "issued_count": 1,
+      "question_limit": 1,
+      "started_question_limit": 1,
+      "processing_deadline_at": null,
+      "interpretive_frames": []
+    }
+  },
+  {
+    "tier": "free",
+    "case": "now",
+    "answer": "今は嬉しい。",
+    "initial": {
+      "schema_version": "cocolon.emlis_thread.application.v1",
+      "thread_id": "6ca11478-0f51-4628-9ac6-f00457e5c58f",
+      "revision": 3,
+      "state": "AWAITING_ANSWER",
+      "original": {
+        "id": "44ea4d49-59e4-4398-b668-b8e5622a3cca",
+        "created_at": "2026-09-11T06:12:06",
+        "memo": "褒められたのに、嬉しくなかった。",
+        "memo_action": ""
+      },
+      "timeline": [
+        {
+          "event_id": "664170e7-9df7-4085-b616-59d5746c3dc0",
+          "kind": "OBSERVATION",
+          "recorded_at": "2026-09-11T00:12:06.092-06:00",
+          "round_index": 0,
+          "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n\nEmlisから：\n褒められたことと嬉しくなかったことの両方を、その違いも含めて小さくせずに受け止めています。",
+          "stage": "INITIAL",
+          "is_current": true
+        },
+        {
+          "event_id": "622d5512-9fff-4be8-9c4f-38de2c495d3c",
+          "kind": "QUESTION",
+          "recorded_at": "2026-09-11T00:12:06.093-06:00",
+          "round_index": 1,
+          "question_id": "emlis-question-57d9bf3ce4d28b06655aea3ee0b13ee62c8710a7f25ba338a0f08cda992dbee6",
+          "text": "「褒められた」は、あなたにはどんな意味として届きましたか。"
+        }
+      ],
+      "can_write": true,
+      "pending_question": {
+        "event_id": "622d5512-9fff-4be8-9c4f-38de2c495d3c",
+        "kind": "QUESTION",
+        "recorded_at": "2026-09-11T00:12:06.093-06:00",
+        "round_index": 1,
+        "question_id": "emlis-question-57d9bf3ce4d28b06655aea3ee0b13ee62c8710a7f25ba338a0f08cda992dbee6",
+        "text": "「褒められた」は、あなたにはどんな意味として届きましたか。"
+      },
+      "current_observation": {
+        "event_id": "664170e7-9df7-4085-b616-59d5746c3dc0",
+        "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n\nEmlisから：\n褒められたことと嬉しくなかったことの両方を、その違いも含めて小さくせずに受け止めています。"
+      },
+      "body_state": "PRE_QUESTION",
+      "answer_saved": false,
+      "answer_assessment": "NOT_APPLICABLE",
+      "meaning_updated": false,
+      "failure_code": null,
+      "operation_id": "ccf29a24-18f5-42f8-aa20-e35e9ec69f60",
+      "attempt_id": "4c7e42d0-e2f1-4f59-88ce-dd5d09aa2616",
+      "requested_attempt_id": null,
+      "can_retry": false,
+      "can_continue": false,
+      "issued_count": 1,
+      "question_limit": 1,
+      "started_question_limit": 1,
+      "processing_deadline_at": null,
+      "interpretive_frames": []
+    },
+    "result": {
+      "schema_version": "cocolon.emlis_thread.application.v1",
+      "thread_id": "6ca11478-0f51-4628-9ac6-f00457e5c58f",
+      "revision": 6,
+      "state": "COMPLETED",
+      "original": {
+        "id": "44ea4d49-59e4-4398-b668-b8e5622a3cca",
+        "created_at": "2026-09-11T06:12:06",
+        "memo": "褒められたのに、嬉しくなかった。",
+        "memo_action": ""
+      },
+      "timeline": [
+        {
+          "event_id": "664170e7-9df7-4085-b616-59d5746c3dc0",
+          "kind": "OBSERVATION",
+          "recorded_at": "2026-09-11T00:12:06.092-06:00",
+          "round_index": 0,
+          "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n\nEmlisから：\n褒められたことと嬉しくなかったことの両方を、その違いも含めて小さくせずに受け止めています。",
+          "stage": "INITIAL",
+          "is_current": false
+        },
+        {
+          "event_id": "622d5512-9fff-4be8-9c4f-38de2c495d3c",
+          "kind": "QUESTION",
+          "recorded_at": "2026-09-11T00:12:06.093-06:00",
+          "round_index": 1,
+          "question_id": "emlis-question-57d9bf3ce4d28b06655aea3ee0b13ee62c8710a7f25ba338a0f08cda992dbee6",
+          "text": "「褒められた」は、あなたにはどんな意味として届きましたか。"
+        },
+        {
+          "event_id": "e900f1fd-773b-4060-a695-3a61efbf2c51",
+          "kind": "ANSWER",
+          "recorded_at": "2026-09-11T00:12:06.11-06:00",
+          "round_index": 1,
+          "text": "今は嬉しい。",
+          "question_id": "emlis-question-57d9bf3ce4d28b06655aea3ee0b13ee62c8710a7f25ba338a0f08cda992dbee6",
+          "authored_at": "2026-09-11T00:00:00+00:00"
+        },
+        {
+          "event_id": "0db74def-6ed1-488e-a166-8fbb01fec6e0",
+          "kind": "OBSERVATION",
+          "recorded_at": "2026-09-11T00:12:06.247-06:00",
+          "round_index": 1,
+          "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。 「褒められた」ことに対する回答した時点の受け止めとして、「嬉しい」が見えます。\n\nEmlisから：\n褒められたことについて、嬉しいという気持ちを受け止めています。",
+          "stage": "REFINED",
+          "is_current": true
+        }
+      ],
+      "can_write": true,
+      "pending_question": null,
+      "current_observation": {
+        "event_id": "0db74def-6ed1-488e-a166-8fbb01fec6e0",
+        "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。 「褒められた」ことに対する回答した時点の受け止めとして、「嬉しい」が見えます。\n\nEmlisから：\n褒められたことについて、嬉しいという気持ちを受け止めています。"
+      },
+      "body_state": "REFINED",
+      "answer_saved": true,
+      "answer_assessment": "RESOLVED",
+      "meaning_updated": true,
+      "failure_code": null,
+      "operation_id": "37749eca-4ede-4c83-973c-1a2c43aa8225",
+      "attempt_id": "cf97da32-efa3-45ec-955c-78e90ad932ab",
+      "requested_attempt_id": null,
+      "can_retry": false,
+      "can_continue": false,
+      "issued_count": 1,
+      "question_limit": 1,
+      "started_question_limit": 1,
+      "processing_deadline_at": null,
+      "interpretive_frames": []
+    }
+  },
+  {
+    "tier": "free",
+    "case": "then_correction",
+    "answer": "あの時も本当は嬉しかった。書き方を間違えた。",
+    "initial": {
+      "schema_version": "cocolon.emlis_thread.application.v1",
+      "thread_id": "4b4b1d6d-6ff6-4c3a-9aca-8dad5bf7a7ad",
+      "revision": 3,
+      "state": "AWAITING_ANSWER",
+      "original": {
+        "id": "d7ede904-e587-4a58-a3e3-5856ac8543b8",
+        "created_at": "2026-09-11T06:12:06.262",
+        "memo": "褒められたのに、嬉しくなかった。",
+        "memo_action": ""
+      },
+      "timeline": [
+        {
+          "event_id": "ecc5b21f-f886-4df4-932b-a0e0e7074333",
+          "kind": "OBSERVATION",
+          "recorded_at": "2026-09-11T00:12:06.342-06:00",
+          "round_index": 0,
+          "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n\nEmlisから：\n褒められたことと嬉しくなかったことの両方を、その違いも含めて小さくせずに受け止めています。",
+          "stage": "INITIAL",
+          "is_current": true
+        },
+        {
+          "event_id": "53725929-bc6a-468b-baa2-5985ff8064ad",
+          "kind": "QUESTION",
+          "recorded_at": "2026-09-11T00:12:06.343-06:00",
+          "round_index": 1,
+          "question_id": "emlis-question-538c333f98e15b8a0e973e9981101d82fcd41d67f89c65d72a108e9ac85fe54e",
+          "text": "「褒められた」は、あなたにはどんな意味として届きましたか。"
+        }
+      ],
+      "can_write": true,
+      "pending_question": {
+        "event_id": "53725929-bc6a-468b-baa2-5985ff8064ad",
+        "kind": "QUESTION",
+        "recorded_at": "2026-09-11T00:12:06.343-06:00",
+        "round_index": 1,
+        "question_id": "emlis-question-538c333f98e15b8a0e973e9981101d82fcd41d67f89c65d72a108e9ac85fe54e",
+        "text": "「褒められた」は、あなたにはどんな意味として届きましたか。"
+      },
+      "current_observation": {
+        "event_id": "ecc5b21f-f886-4df4-932b-a0e0e7074333",
+        "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n\nEmlisから：\n褒められたことと嬉しくなかったことの両方を、その違いも含めて小さくせずに受け止めています。"
+      },
+      "body_state": "PRE_QUESTION",
+      "answer_saved": false,
+      "answer_assessment": "NOT_APPLICABLE",
+      "meaning_updated": false,
+      "failure_code": null,
+      "operation_id": "00b0f35b-9390-4726-b05f-1428e3f6961c",
+      "attempt_id": "948dc541-3277-4cde-8841-227e63940cca",
+      "requested_attempt_id": null,
+      "can_retry": false,
+      "can_continue": false,
+      "issued_count": 1,
+      "question_limit": 1,
+      "started_question_limit": 1,
+      "processing_deadline_at": null,
+      "interpretive_frames": []
+    },
+    "result": {
+      "schema_version": "cocolon.emlis_thread.application.v1",
+      "thread_id": "4b4b1d6d-6ff6-4c3a-9aca-8dad5bf7a7ad",
+      "revision": 6,
+      "state": "COMPLETED",
+      "original": {
+        "id": "d7ede904-e587-4a58-a3e3-5856ac8543b8",
+        "created_at": "2026-09-11T06:12:06.262",
+        "memo": "褒められたのに、嬉しくなかった。",
+        "memo_action": ""
+      },
+      "timeline": [
+        {
+          "event_id": "ecc5b21f-f886-4df4-932b-a0e0e7074333",
+          "kind": "OBSERVATION",
+          "recorded_at": "2026-09-11T00:12:06.342-06:00",
+          "round_index": 0,
+          "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n\nEmlisから：\n褒められたことと嬉しくなかったことの両方を、その違いも含めて小さくせずに受け止めています。",
+          "stage": "INITIAL",
+          "is_current": false
+        },
+        {
+          "event_id": "53725929-bc6a-468b-baa2-5985ff8064ad",
+          "kind": "QUESTION",
+          "recorded_at": "2026-09-11T00:12:06.343-06:00",
+          "round_index": 1,
+          "question_id": "emlis-question-538c333f98e15b8a0e973e9981101d82fcd41d67f89c65d72a108e9ac85fe54e",
+          "text": "「褒められた」は、あなたにはどんな意味として届きましたか。"
+        },
+        {
+          "event_id": "7b799801-bd4c-4e17-a0ea-6e712a74cfba",
+          "kind": "ANSWER",
+          "recorded_at": "2026-09-11T00:12:06.355-06:00",
+          "round_index": 1,
+          "text": "あの時も本当は嬉しかった。書き方を間違えた。",
+          "question_id": "emlis-question-538c333f98e15b8a0e973e9981101d82fcd41d67f89c65d72a108e9ac85fe54e",
+          "authored_at": "2026-09-11T00:00:00+00:00"
+        },
+        {
+          "event_id": "3db78460-2f3a-4763-8198-382d268dfd68",
+          "kind": "OBSERVATION",
+          "recorded_at": "2026-09-11T00:12:06.442-06:00",
+          "round_index": 1,
+          "text": "見えたこと：\n「褒められた」ことに対するその時の受け止めとして、「嬉しかった」が見えます。\n\nEmlisから：\n褒められたことについて、嬉しかったという気持ちを受け止めています。",
+          "stage": "REFINED",
+          "is_current": true
+        }
+      ],
+      "can_write": true,
+      "pending_question": null,
+      "current_observation": {
+        "event_id": "3db78460-2f3a-4763-8198-382d268dfd68",
+        "text": "見えたこと：\n「褒められた」ことに対するその時の受け止めとして、「嬉しかった」が見えます。\n\nEmlisから：\n褒められたことについて、嬉しかったという気持ちを受け止めています。"
+      },
+      "body_state": "REFINED",
+      "answer_saved": true,
+      "answer_assessment": "RESOLVED",
+      "meaning_updated": true,
+      "failure_code": null,
+      "operation_id": "f8ea1e95-6e6b-4dfb-916c-dc60d0bc762e",
+      "attempt_id": "4c6d9c9a-38f3-4b8c-9a7e-c92c11c27aba",
+      "requested_attempt_id": null,
+      "can_retry": false,
+      "can_continue": false,
+      "issued_count": 1,
+      "question_limit": 1,
+      "started_question_limit": 1,
+      "processing_deadline_at": null,
+      "interpretive_frames": []
+    }
+  },
+  {
+    "tier": "free",
+    "case": "unknown",
+    "answer": "分からない。",
+    "initial": {
+      "schema_version": "cocolon.emlis_thread.application.v1",
+      "thread_id": "94c67a42-a4ab-4a2a-a8f9-8822d7bd34c6",
+      "revision": 3,
+      "state": "AWAITING_ANSWER",
+      "original": {
+        "id": "ed790173-0083-45db-b668-c4b4cdce8905",
+        "created_at": "2026-09-11T06:12:06.454",
+        "memo": "褒められたのに、嬉しくなかった。",
+        "memo_action": ""
+      },
+      "timeline": [
+        {
+          "event_id": "5e622398-7de8-416f-9235-8ff2ddc48307",
+          "kind": "OBSERVATION",
+          "recorded_at": "2026-09-11T00:12:06.535-06:00",
+          "round_index": 0,
+          "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n\nEmlisから：\n褒められたことと嬉しくなかったことの両方を、その違いも含めて小さくせずに受け止めています。",
+          "stage": "INITIAL",
+          "is_current": true
+        },
+        {
+          "event_id": "87d3239d-405a-4a77-9db0-45632ecb015b",
+          "kind": "QUESTION",
+          "recorded_at": "2026-09-11T00:12:06.536-06:00",
+          "round_index": 1,
+          "question_id": "emlis-question-fb2e2a8a951ccca800e3f72c4969346bb115fa64beecb723ab84c93dfbe0bccb",
+          "text": "「褒められた」は、あなたにはどんな意味として届きましたか。"
+        }
+      ],
+      "can_write": true,
+      "pending_question": {
+        "event_id": "87d3239d-405a-4a77-9db0-45632ecb015b",
+        "kind": "QUESTION",
+        "recorded_at": "2026-09-11T00:12:06.536-06:00",
+        "round_index": 1,
+        "question_id": "emlis-question-fb2e2a8a951ccca800e3f72c4969346bb115fa64beecb723ab84c93dfbe0bccb",
+        "text": "「褒められた」は、あなたにはどんな意味として届きましたか。"
+      },
+      "current_observation": {
+        "event_id": "5e622398-7de8-416f-9235-8ff2ddc48307",
+        "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n\nEmlisから：\n褒められたことと嬉しくなかったことの両方を、その違いも含めて小さくせずに受け止めています。"
+      },
+      "body_state": "PRE_QUESTION",
+      "answer_saved": false,
+      "answer_assessment": "NOT_APPLICABLE",
+      "meaning_updated": false,
+      "failure_code": null,
+      "operation_id": "96ccd966-06e5-4fd9-89dc-99aa06b6e203",
+      "attempt_id": "c72db7ea-ef1c-4054-a334-77943073b621",
+      "requested_attempt_id": null,
+      "can_retry": false,
+      "can_continue": false,
+      "issued_count": 1,
+      "question_limit": 1,
+      "started_question_limit": 1,
+      "processing_deadline_at": null,
+      "interpretive_frames": []
+    },
+    "result": {
+      "schema_version": "cocolon.emlis_thread.application.v1",
+      "thread_id": "94c67a42-a4ab-4a2a-a8f9-8822d7bd34c6",
+      "revision": 6,
+      "state": "COMPLETED",
+      "original": {
+        "id": "ed790173-0083-45db-b668-c4b4cdce8905",
+        "created_at": "2026-09-11T06:12:06.454",
+        "memo": "褒められたのに、嬉しくなかった。",
+        "memo_action": ""
+      },
+      "timeline": [
+        {
+          "event_id": "5e622398-7de8-416f-9235-8ff2ddc48307",
+          "kind": "OBSERVATION",
+          "recorded_at": "2026-09-11T00:12:06.535-06:00",
+          "round_index": 0,
+          "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n\nEmlisから：\n褒められたことと嬉しくなかったことの両方を、その違いも含めて小さくせずに受け止めています。",
+          "stage": "INITIAL",
+          "is_current": true
+        },
+        {
+          "event_id": "87d3239d-405a-4a77-9db0-45632ecb015b",
+          "kind": "QUESTION",
+          "recorded_at": "2026-09-11T00:12:06.536-06:00",
+          "round_index": 1,
+          "question_id": "emlis-question-fb2e2a8a951ccca800e3f72c4969346bb115fa64beecb723ab84c93dfbe0bccb",
+          "text": "「褒められた」は、あなたにはどんな意味として届きましたか。"
+        },
+        {
+          "event_id": "1ced92fc-3a8a-48df-baf4-afaa29c09b05",
+          "kind": "ANSWER",
+          "recorded_at": "2026-09-11T00:12:06.553-06:00",
+          "round_index": 1,
+          "text": "分からない。",
+          "question_id": "emlis-question-fb2e2a8a951ccca800e3f72c4969346bb115fa64beecb723ab84c93dfbe0bccb",
+          "authored_at": "2026-09-11T00:00:00+00:00"
+        }
+      ],
+      "can_write": true,
+      "pending_question": null,
+      "current_observation": {
+        "event_id": "5e622398-7de8-416f-9235-8ff2ddc48307",
+        "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n\nEmlisから：\n褒められたことと嬉しくなかったことの両方を、その違いも含めて小さくせずに受け止めています。"
+      },
+      "body_state": "UNCHANGED",
+      "answer_saved": true,
+      "answer_assessment": "RESOLVED",
+      "meaning_updated": false,
+      "failure_code": null,
+      "operation_id": "4760ccb9-48da-4574-b6b0-c8599fddcde9",
+      "attempt_id": "9e9a9ce5-ddc1-43b7-90ad-acc26405e4a3",
+      "requested_attempt_id": null,
+      "can_retry": false,
+      "can_continue": false,
+      "issued_count": 1,
+      "question_limit": 1,
+      "started_question_limit": 1,
+      "processing_deadline_at": null,
+      "interpretive_frames": []
+    }
+  },
+  {
+    "tier": "free",
+    "case": "partial",
+    "answer": "その時は寂しかった。どう表したらいいかはまだ分からない。",
+    "initial": {
+      "schema_version": "cocolon.emlis_thread.application.v1",
+      "thread_id": "7ce8f692-b7cf-4cd1-b199-997019ac8d5c",
+      "revision": 3,
+      "state": "AWAITING_ANSWER",
+      "original": {
+        "id": "eb738c69-387f-436b-a794-fcedd46a311e",
+        "created_at": "2026-09-11T06:12:06.585",
+        "memo": "褒められたのに、嬉しくなかった。",
+        "memo_action": ""
+      },
+      "timeline": [
+        {
+          "event_id": "184f35f3-f723-4859-8419-45c110f6d0bc",
+          "kind": "OBSERVATION",
+          "recorded_at": "2026-09-11T00:12:06.672-06:00",
+          "round_index": 0,
+          "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n\nEmlisから：\n褒められたことと嬉しくなかったことの両方を、その違いも含めて小さくせずに受け止めています。",
+          "stage": "INITIAL",
+          "is_current": true
+        },
+        {
+          "event_id": "d7628e94-3df3-4f03-899c-1ab6abfa7a30",
+          "kind": "QUESTION",
+          "recorded_at": "2026-09-11T00:12:06.672-06:00",
+          "round_index": 1,
+          "question_id": "emlis-question-cbbbadcc4b44fe20309fb38db2192e9d16d64bdd2b8a15a0117dfbedf8d6048f",
+          "text": "「褒められた」は、あなたにはどんな意味として届きましたか。"
+        }
+      ],
+      "can_write": true,
+      "pending_question": {
+        "event_id": "d7628e94-3df3-4f03-899c-1ab6abfa7a30",
+        "kind": "QUESTION",
+        "recorded_at": "2026-09-11T00:12:06.672-06:00",
+        "round_index": 1,
+        "question_id": "emlis-question-cbbbadcc4b44fe20309fb38db2192e9d16d64bdd2b8a15a0117dfbedf8d6048f",
+        "text": "「褒められた」は、あなたにはどんな意味として届きましたか。"
+      },
+      "current_observation": {
+        "event_id": "184f35f3-f723-4859-8419-45c110f6d0bc",
+        "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n\nEmlisから：\n褒められたことと嬉しくなかったことの両方を、その違いも含めて小さくせずに受け止めています。"
+      },
+      "body_state": "PRE_QUESTION",
+      "answer_saved": false,
+      "answer_assessment": "NOT_APPLICABLE",
+      "meaning_updated": false,
+      "failure_code": null,
+      "operation_id": "67dee586-b941-4f3c-b39c-617e2869a81d",
+      "attempt_id": "6ed5ea86-9cf8-4514-9165-f8895da3a007",
+      "requested_attempt_id": null,
+      "can_retry": false,
+      "can_continue": false,
+      "issued_count": 1,
+      "question_limit": 1,
+      "started_question_limit": 1,
+      "processing_deadline_at": null,
+      "interpretive_frames": []
+    },
+    "result": {
+      "schema_version": "cocolon.emlis_thread.application.v1",
+      "thread_id": "7ce8f692-b7cf-4cd1-b199-997019ac8d5c",
+      "revision": 6,
+      "state": "COMPLETED",
+      "original": {
+        "id": "eb738c69-387f-436b-a794-fcedd46a311e",
+        "created_at": "2026-09-11T06:12:06.585",
+        "memo": "褒められたのに、嬉しくなかった。",
+        "memo_action": ""
+      },
+      "timeline": [
+        {
+          "event_id": "184f35f3-f723-4859-8419-45c110f6d0bc",
+          "kind": "OBSERVATION",
+          "recorded_at": "2026-09-11T00:12:06.672-06:00",
+          "round_index": 0,
+          "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n\nEmlisから：\n褒められたことと嬉しくなかったことの両方を、その違いも含めて小さくせずに受け止めています。",
+          "stage": "INITIAL",
+          "is_current": false
+        },
+        {
+          "event_id": "d7628e94-3df3-4f03-899c-1ab6abfa7a30",
+          "kind": "QUESTION",
+          "recorded_at": "2026-09-11T00:12:06.672-06:00",
+          "round_index": 1,
+          "question_id": "emlis-question-cbbbadcc4b44fe20309fb38db2192e9d16d64bdd2b8a15a0117dfbedf8d6048f",
+          "text": "「褒められた」は、あなたにはどんな意味として届きましたか。"
+        },
+        {
+          "event_id": "c5a00b3c-9e49-4509-aa57-7a419052546d",
+          "kind": "ANSWER",
+          "recorded_at": "2026-09-11T00:12:06.687-06:00",
+          "round_index": 1,
+          "text": "その時は寂しかった。どう表したらいいかはまだ分からない。",
+          "question_id": "emlis-question-cbbbadcc4b44fe20309fb38db2192e9d16d64bdd2b8a15a0117dfbedf8d6048f",
+          "authored_at": "2026-09-11T00:00:00+00:00"
+        },
+        {
+          "event_id": "963b75e9-c15f-4ce3-8eff-3998735cefca",
+          "kind": "OBSERVATION",
+          "recorded_at": "2026-09-11T00:12:06.823-06:00",
+          "round_index": 1,
+          "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。 「褒められた」ことに対するその時の受け止めとして、「寂しかった」が見えます。\n\nEmlisから：\n褒められたことについて、その時に寂しかったことを小さくせずに受け止めています。",
+          "stage": "REFINED",
+          "is_current": true
+        }
+      ],
+      "can_write": true,
+      "pending_question": null,
+      "current_observation": {
+        "event_id": "963b75e9-c15f-4ce3-8eff-3998735cefca",
+        "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。 「褒められた」ことに対するその時の受け止めとして、「寂しかった」が見えます。\n\nEmlisから：\n褒められたことについて、その時に寂しかったことを小さくせずに受け止めています。"
+      },
+      "body_state": "PARTIALLY_REFINED",
+      "answer_saved": true,
+      "answer_assessment": "PARTIAL",
+      "meaning_updated": true,
+      "failure_code": null,
+      "operation_id": "583828b9-4220-44ea-93fa-6d9cd1748f91",
+      "attempt_id": "0eaf5ad5-7c8d-49a1-be10-6ed420b09e49",
+      "requested_attempt_id": null,
+      "can_retry": false,
+      "can_continue": false,
+      "issued_count": 1,
+      "question_limit": 1,
+      "started_question_limit": 1,
+      "processing_deadline_at": null,
+      "interpretive_frames": []
+    }
+  },
+  {
+    "tier": "free",
+    "case": "correction_body_failure",
+    "answer": "「嬉しくなかった」は誤りです。",
+    "initial": {
+      "schema_version": "cocolon.emlis_thread.application.v1",
+      "thread_id": "9e665a75-5f73-4d95-8a01-43e5f27b47ea",
+      "revision": 3,
+      "state": "AWAITING_ANSWER",
+      "original": {
+        "id": "b00c47ad-59a0-4ba9-839e-af5a0b4eb8b1",
+        "created_at": "2026-09-11T06:12:06.842",
+        "memo": "褒められたのに、嬉しくなかった。",
+        "memo_action": ""
+      },
+      "timeline": [
+        {
+          "event_id": "ae129bf3-fbcf-476a-b10c-b9df5a21b54e",
+          "kind": "OBSERVATION",
+          "recorded_at": "2026-09-11T00:12:06.926-06:00",
+          "round_index": 0,
+          "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n\nEmlisから：\n褒められたことと嬉しくなかったことの両方を、その違いも含めて小さくせずに受け止めています。",
+          "stage": "INITIAL",
+          "is_current": true
+        },
+        {
+          "event_id": "bf317471-e8be-4594-b665-b00eb4da73bc",
+          "kind": "QUESTION",
+          "recorded_at": "2026-09-11T00:12:06.927-06:00",
+          "round_index": 1,
+          "question_id": "emlis-question-4fb1a09622cfb819dbc8528990b86f416aa10d3852d3a4a5e2f4433b375d809c",
+          "text": "「褒められた」は、あなたにはどんな意味として届きましたか。"
+        }
+      ],
+      "can_write": true,
+      "pending_question": {
+        "event_id": "bf317471-e8be-4594-b665-b00eb4da73bc",
+        "kind": "QUESTION",
+        "recorded_at": "2026-09-11T00:12:06.927-06:00",
+        "round_index": 1,
+        "question_id": "emlis-question-4fb1a09622cfb819dbc8528990b86f416aa10d3852d3a4a5e2f4433b375d809c",
+        "text": "「褒められた」は、あなたにはどんな意味として届きましたか。"
+      },
+      "current_observation": {
+        "event_id": "ae129bf3-fbcf-476a-b10c-b9df5a21b54e",
+        "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n\nEmlisから：\n褒められたことと嬉しくなかったことの両方を、その違いも含めて小さくせずに受け止めています。"
+      },
+      "body_state": "PRE_QUESTION",
+      "answer_saved": false,
+      "answer_assessment": "NOT_APPLICABLE",
+      "meaning_updated": false,
+      "failure_code": null,
+      "operation_id": "e685cb43-1ef8-48e7-ae42-778b245de966",
+      "attempt_id": "a3a13370-8065-4d3b-a7cf-33bae1de2b90",
+      "requested_attempt_id": null,
+      "can_retry": false,
+      "can_continue": false,
+      "issued_count": 1,
+      "question_limit": 1,
+      "started_question_limit": 1,
+      "processing_deadline_at": null,
+      "interpretive_frames": []
+    },
+    "result": {
+      "schema_version": "cocolon.emlis_thread.application.v1",
+      "thread_id": "9e665a75-5f73-4d95-8a01-43e5f27b47ea",
+      "revision": 6,
+      "state": "RESPONSE_FAILED",
+      "original": {
+        "id": "b00c47ad-59a0-4ba9-839e-af5a0b4eb8b1",
+        "created_at": "2026-09-11T06:12:06.842",
+        "memo": "褒められたのに、嬉しくなかった。",
+        "memo_action": ""
+      },
+      "timeline": [
+        {
+          "event_id": "ae129bf3-fbcf-476a-b10c-b9df5a21b54e",
+          "kind": "OBSERVATION",
+          "recorded_at": "2026-09-11T00:12:06.926-06:00",
+          "round_index": 0,
+          "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n\nEmlisから：\n褒められたことと嬉しくなかったことの両方を、その違いも含めて小さくせずに受け止めています。",
+          "stage": "INITIAL",
+          "is_current": false
+        },
+        {
+          "event_id": "bf317471-e8be-4594-b665-b00eb4da73bc",
+          "kind": "QUESTION",
+          "recorded_at": "2026-09-11T00:12:06.927-06:00",
+          "round_index": 1,
+          "question_id": "emlis-question-4fb1a09622cfb819dbc8528990b86f416aa10d3852d3a4a5e2f4433b375d809c",
+          "text": "「褒められた」は、あなたにはどんな意味として届きましたか。"
+        },
+        {
+          "event_id": "90bfb513-a8bb-4b15-a03b-6dbd417c1151",
+          "kind": "ANSWER",
+          "recorded_at": "2026-09-11T00:12:06.943-06:00",
+          "round_index": 1,
+          "text": "「嬉しくなかった」は誤りです。",
+          "question_id": "emlis-question-4fb1a09622cfb819dbc8528990b86f416aa10d3852d3a4a5e2f4433b375d809c",
+          "authored_at": "2026-09-11T00:00:00+00:00"
+        }
+      ],
+      "can_write": true,
+      "pending_question": null,
+      "current_observation": null,
+      "body_state": "MEANING_UPDATED_BODY_UNAVAILABLE",
+      "answer_saved": true,
+      "answer_assessment": "RESOLVED",
+      "meaning_updated": true,
+      "failure_code": "body_not_validated",
+      "operation_id": "64ad2636-b0ad-413e-ae4a-1f048312339e",
+      "attempt_id": "b14c1641-6cf0-49ab-8822-4036ee313a0a",
+      "requested_attempt_id": null,
+      "can_retry": false,
+      "can_continue": false,
+      "issued_count": 1,
+      "question_limit": 1,
+      "started_question_limit": 1,
+      "processing_deadline_at": null,
+      "interpretive_frames": []
+    }
+  },
+  {
+    "tier": "plus",
+    "case": "meaning_A",
+    "answer": "次も同じ成果を求められるようで、重かった。",
+    "initial": {
+      "schema_version": "cocolon.emlis_thread.application.v1",
+      "thread_id": "332fcad1-cc44-4285-84be-0574d79d3052",
+      "revision": 3,
+      "state": "AWAITING_ANSWER",
+      "original": {
+        "id": "80c666ee-5e2f-4cdf-b5d5-3b520891c1d7",
+        "created_at": "2026-09-11T06:12:07.221",
+        "memo": "褒められたのに、嬉しくなかった。",
+        "memo_action": ""
+      },
+      "timeline": [
+        {
+          "event_id": "d30f0bae-3598-4c7d-b275-5d3d48d284cc",
+          "kind": "OBSERVATION",
+          "recorded_at": "2026-09-11T00:12:07.326-06:00",
+          "round_index": 0,
+          "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n\nEmlisから：\n褒められたことと嬉しくなかったことの両方を、その違いも含めて小さくせずに受け止めています。",
+          "stage": "INITIAL",
+          "is_current": true
+        },
+        {
+          "event_id": "2a5fda75-3bc9-4c6f-bd11-c08308fee8e7",
+          "kind": "QUESTION",
+          "recorded_at": "2026-09-11T00:12:07.326-06:00",
+          "round_index": 1,
+          "question_id": "emlis-question-93e047f4468134f2d3de95dacf283900d119f2fb9dbe2d45159b9cb08a85948a",
+          "text": "「褒められた」は、あなたにはどんな意味として届きましたか。"
+        }
+      ],
+      "can_write": true,
+      "pending_question": {
+        "event_id": "2a5fda75-3bc9-4c6f-bd11-c08308fee8e7",
+        "kind": "QUESTION",
+        "recorded_at": "2026-09-11T00:12:07.326-06:00",
+        "round_index": 1,
+        "question_id": "emlis-question-93e047f4468134f2d3de95dacf283900d119f2fb9dbe2d45159b9cb08a85948a",
+        "text": "「褒められた」は、あなたにはどんな意味として届きましたか。"
+      },
+      "current_observation": {
+        "event_id": "d30f0bae-3598-4c7d-b275-5d3d48d284cc",
+        "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n\nEmlisから：\n褒められたことと嬉しくなかったことの両方を、その違いも含めて小さくせずに受け止めています。"
+      },
+      "body_state": "PRE_QUESTION",
+      "answer_saved": false,
+      "answer_assessment": "NOT_APPLICABLE",
+      "meaning_updated": false,
+      "failure_code": null,
+      "operation_id": "394ae93e-5046-467a-8b36-8ac1a30078cc",
+      "attempt_id": "f2109290-bb2f-4a57-a862-d3b1d75f1fe4",
+      "requested_attempt_id": null,
+      "can_retry": false,
+      "can_continue": false,
+      "issued_count": 1,
+      "question_limit": 1,
+      "started_question_limit": 1,
+      "processing_deadline_at": null,
+      "interpretive_frames": []
+    },
+    "result": {
+      "schema_version": "cocolon.emlis_thread.application.v1",
+      "thread_id": "332fcad1-cc44-4285-84be-0574d79d3052",
+      "revision": 6,
+      "state": "COMPLETED",
+      "original": {
+        "id": "80c666ee-5e2f-4cdf-b5d5-3b520891c1d7",
+        "created_at": "2026-09-11T06:12:07.221",
+        "memo": "褒められたのに、嬉しくなかった。",
+        "memo_action": ""
+      },
+      "timeline": [
+        {
+          "event_id": "d30f0bae-3598-4c7d-b275-5d3d48d284cc",
+          "kind": "OBSERVATION",
+          "recorded_at": "2026-09-11T00:12:07.326-06:00",
+          "round_index": 0,
+          "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n\nEmlisから：\n褒められたことと嬉しくなかったことの両方を、その違いも含めて小さくせずに受け止めています。",
+          "stage": "INITIAL",
+          "is_current": false
+        },
+        {
+          "event_id": "2a5fda75-3bc9-4c6f-bd11-c08308fee8e7",
+          "kind": "QUESTION",
+          "recorded_at": "2026-09-11T00:12:07.326-06:00",
+          "round_index": 1,
+          "question_id": "emlis-question-93e047f4468134f2d3de95dacf283900d119f2fb9dbe2d45159b9cb08a85948a",
+          "text": "「褒められた」は、あなたにはどんな意味として届きましたか。"
+        },
+        {
+          "event_id": "7ebeeb3c-c636-444b-bec4-1738fdb5fb31",
+          "kind": "ANSWER",
+          "recorded_at": "2026-09-11T00:12:07.34-06:00",
+          "round_index": 1,
+          "text": "次も同じ成果を求められるようで、重かった。",
+          "question_id": "emlis-question-93e047f4468134f2d3de95dacf283900d119f2fb9dbe2d45159b9cb08a85948a",
+          "authored_at": "2026-09-11T00:00:00+00:00"
+        },
+        {
+          "event_id": "534614cd-6b3e-489a-be67-5bcae24c0200",
+          "kind": "OBSERVATION",
+          "recorded_at": "2026-09-11T00:12:07.482-06:00",
+          "round_index": 1,
+          "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。 「褒められた」ことに対するその時の受け止めとして、「次も同じ成果を求められるようで、重かった」が見えます。\n\nEmlisから：\n褒められたことについて、その時に次も同じ成果を求められるようで、重かったことを小さくせずに受け止めています。\n\nこれまでの記録から：\n今回の「褒められた」という言葉は、2026-09-10の記録の「褒められた」にも重なります。同じ言葉でも、今回の受け止めまで同じとは決めずに見ています。",
+          "stage": "REFINED",
+          "is_current": true
+        }
+      ],
+      "can_write": true,
+      "pending_question": null,
+      "current_observation": {
+        "event_id": "534614cd-6b3e-489a-be67-5bcae24c0200",
+        "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。 「褒められた」ことに対するその時の受け止めとして、「次も同じ成果を求められるようで、重かった」が見えます。\n\nEmlisから：\n褒められたことについて、その時に次も同じ成果を求められるようで、重かったことを小さくせずに受け止めています。\n\nこれまでの記録から：\n今回の「褒められた」という言葉は、2026-09-10の記録の「褒められた」にも重なります。同じ言葉でも、今回の受け止めまで同じとは決めずに見ています。"
+      },
+      "body_state": "REFINED",
+      "answer_saved": true,
+      "answer_assessment": "RESOLVED",
+      "meaning_updated": true,
+      "failure_code": null,
+      "operation_id": "756a5392-86a8-40fa-9365-de9b30923ce0",
+      "attempt_id": "b8eca684-cbfe-48c5-9433-4bbac62c4300",
+      "requested_attempt_id": null,
+      "can_retry": false,
+      "can_continue": false,
+      "issued_count": 1,
+      "question_limit": 1,
+      "started_question_limit": 1,
+      "processing_deadline_at": null,
+      "interpretive_frames": []
+    }
+  },
+  {
+    "tier": "plus",
+    "case": "meaning_B",
+    "answer": "結果だけで、そこまでの苦労は見てもらえていないと思った。",
+    "initial": {
+      "schema_version": "cocolon.emlis_thread.application.v1",
+      "thread_id": "17d0c8a5-c224-4871-b689-f1863d8282cb",
+      "revision": 3,
+      "state": "AWAITING_ANSWER",
+      "original": {
+        "id": "b1429b8b-4f52-4ad9-af51-00982b6d477e",
+        "created_at": "2026-09-11T06:12:07.721",
+        "memo": "褒められたのに、嬉しくなかった。",
+        "memo_action": ""
+      },
+      "timeline": [
+        {
+          "event_id": "c965caa6-49a5-4301-b346-f18c5430df07",
+          "kind": "OBSERVATION",
+          "recorded_at": "2026-09-11T00:12:07.904-06:00",
+          "round_index": 0,
+          "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n\nEmlisから：\n褒められたことと嬉しくなかったことの両方を、その違いも含めて小さくせずに受け止めています。",
+          "stage": "INITIAL",
+          "is_current": true
+        },
+        {
+          "event_id": "6e6923c4-72fb-4d3d-8450-40035c03a681",
+          "kind": "QUESTION",
+          "recorded_at": "2026-09-11T00:12:07.905-06:00",
+          "round_index": 1,
+          "question_id": "emlis-question-b404a74548cabe9495e280afa49a00c3ee7f9d9c926cb0fb7c291a944d908612",
+          "text": "「褒められた」は、あなたにはどんな意味として届きましたか。"
+        }
+      ],
+      "can_write": true,
+      "pending_question": {
+        "event_id": "6e6923c4-72fb-4d3d-8450-40035c03a681",
+        "kind": "QUESTION",
+        "recorded_at": "2026-09-11T00:12:07.905-06:00",
+        "round_index": 1,
+        "question_id": "emlis-question-b404a74548cabe9495e280afa49a00c3ee7f9d9c926cb0fb7c291a944d908612",
+        "text": "「褒められた」は、あなたにはどんな意味として届きましたか。"
+      },
+      "current_observation": {
+        "event_id": "c965caa6-49a5-4301-b346-f18c5430df07",
+        "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n\nEmlisから：\n褒められたことと嬉しくなかったことの両方を、その違いも含めて小さくせずに受け止めています。"
+      },
+      "body_state": "PRE_QUESTION",
+      "answer_saved": false,
+      "answer_assessment": "NOT_APPLICABLE",
+      "meaning_updated": false,
+      "failure_code": null,
+      "operation_id": "e9c8ccf7-0898-4275-8713-b113faabc4a0",
+      "attempt_id": "446d19f8-1260-4afb-9276-da80ed0162bc",
+      "requested_attempt_id": null,
+      "can_retry": false,
+      "can_continue": false,
+      "issued_count": 1,
+      "question_limit": 1,
+      "started_question_limit": 1,
+      "processing_deadline_at": null,
+      "interpretive_frames": []
+    },
+    "result": {
+      "schema_version": "cocolon.emlis_thread.application.v1",
+      "thread_id": "17d0c8a5-c224-4871-b689-f1863d8282cb",
+      "revision": 6,
+      "state": "COMPLETED",
+      "original": {
+        "id": "b1429b8b-4f52-4ad9-af51-00982b6d477e",
+        "created_at": "2026-09-11T06:12:07.721",
+        "memo": "褒められたのに、嬉しくなかった。",
+        "memo_action": ""
+      },
+      "timeline": [
+        {
+          "event_id": "c965caa6-49a5-4301-b346-f18c5430df07",
+          "kind": "OBSERVATION",
+          "recorded_at": "2026-09-11T00:12:07.904-06:00",
+          "round_index": 0,
+          "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n\nEmlisから：\n褒められたことと嬉しくなかったことの両方を、その違いも含めて小さくせずに受け止めています。",
+          "stage": "INITIAL",
+          "is_current": false
+        },
+        {
+          "event_id": "6e6923c4-72fb-4d3d-8450-40035c03a681",
+          "kind": "QUESTION",
+          "recorded_at": "2026-09-11T00:12:07.905-06:00",
+          "round_index": 1,
+          "question_id": "emlis-question-b404a74548cabe9495e280afa49a00c3ee7f9d9c926cb0fb7c291a944d908612",
+          "text": "「褒められた」は、あなたにはどんな意味として届きましたか。"
+        },
+        {
+          "event_id": "e6bde7fb-f66a-4650-957a-ab70d3fb48b4",
+          "kind": "ANSWER",
+          "recorded_at": "2026-09-11T00:12:07.926-06:00",
+          "round_index": 1,
+          "text": "結果だけで、そこまでの苦労は見てもらえていないと思った。",
+          "question_id": "emlis-question-b404a74548cabe9495e280afa49a00c3ee7f9d9c926cb0fb7c291a944d908612",
+          "authored_at": "2026-09-11T00:00:00+00:00"
+        },
+        {
+          "event_id": "2449daf2-f87f-409f-83c1-af93d1688a09",
+          "kind": "OBSERVATION",
+          "recorded_at": "2026-09-11T00:12:08.089-06:00",
+          "round_index": 1,
+          "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。 「褒められた」ことに対するその時の受け止めとして、「結果だけで、そこまでの苦労は見てもらえていないと思った」が見えます。\n\nEmlisから：\n褒められたことについて、その時に結果だけで、そこまでの苦労は見てもらえていないと思ったことを小さくせずに受け止めています。\n\nこれまでの記録から：\n今回の「褒められた」という言葉は、2026-09-10の記録の「褒められた」にも重なります。同じ言葉でも、今回の受け止めまで同じとは決めずに見ています。",
+          "stage": "REFINED",
+          "is_current": true
+        }
+      ],
+      "can_write": true,
+      "pending_question": null,
+      "current_observation": {
+        "event_id": "2449daf2-f87f-409f-83c1-af93d1688a09",
+        "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。 「褒められた」ことに対するその時の受け止めとして、「結果だけで、そこまでの苦労は見てもらえていないと思った」が見えます。\n\nEmlisから：\n褒められたことについて、その時に結果だけで、そこまでの苦労は見てもらえていないと思ったことを小さくせずに受け止めています。\n\nこれまでの記録から：\n今回の「褒められた」という言葉は、2026-09-10の記録の「褒められた」にも重なります。同じ言葉でも、今回の受け止めまで同じとは決めずに見ています。"
+      },
+      "body_state": "REFINED",
+      "answer_saved": true,
+      "answer_assessment": "RESOLVED",
+      "meaning_updated": true,
+      "failure_code": null,
+      "operation_id": "e9cb2564-f131-410a-9fba-d1e8e413487f",
+      "attempt_id": "3ec067a9-8a47-4934-92a7-e6fa22507204",
+      "requested_attempt_id": null,
+      "can_retry": false,
+      "can_continue": false,
+      "issued_count": 1,
+      "question_limit": 1,
+      "started_question_limit": 1,
+      "processing_deadline_at": null,
+      "interpretive_frames": []
+    }
+  },
+  {
+    "tier": "plus",
+    "case": "now",
+    "answer": "今は嬉しい。",
+    "initial": {
+      "schema_version": "cocolon.emlis_thread.application.v1",
+      "thread_id": "c86fce73-7451-4f8b-9ef3-270527ffd3cc",
+      "revision": 3,
+      "state": "AWAITING_ANSWER",
+      "original": {
+        "id": "01a9fdfe-2452-4ec4-94b2-7cc5e0c2ac7a",
+        "created_at": "2026-09-11T06:12:08.335",
+        "memo": "褒められたのに、嬉しくなかった。",
+        "memo_action": ""
+      },
+      "timeline": [
+        {
+          "event_id": "8d137a2f-4e42-45a1-92c8-44873b7f0c6a",
+          "kind": "OBSERVATION",
+          "recorded_at": "2026-09-11T00:12:08.421-06:00",
+          "round_index": 0,
+          "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n\nEmlisから：\n褒められたことと嬉しくなかったことの両方を、その違いも含めて小さくせずに受け止めています。",
+          "stage": "INITIAL",
+          "is_current": true
+        },
+        {
+          "event_id": "8942ccb8-9f60-487a-b044-5aeb2aacfe8c",
+          "kind": "QUESTION",
+          "recorded_at": "2026-09-11T00:12:08.421-06:00",
+          "round_index": 1,
+          "question_id": "emlis-question-547802f5504747be009bb3772d82731a98c98621f884e6a39cd6c1b955e698f9",
+          "text": "「褒められた」は、あなたにはどんな意味として届きましたか。"
+        }
+      ],
+      "can_write": true,
+      "pending_question": {
+        "event_id": "8942ccb8-9f60-487a-b044-5aeb2aacfe8c",
+        "kind": "QUESTION",
+        "recorded_at": "2026-09-11T00:12:08.421-06:00",
+        "round_index": 1,
+        "question_id": "emlis-question-547802f5504747be009bb3772d82731a98c98621f884e6a39cd6c1b955e698f9",
+        "text": "「褒められた」は、あなたにはどんな意味として届きましたか。"
+      },
+      "current_observation": {
+        "event_id": "8d137a2f-4e42-45a1-92c8-44873b7f0c6a",
+        "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n\nEmlisから：\n褒められたことと嬉しくなかったことの両方を、その違いも含めて小さくせずに受け止めています。"
+      },
+      "body_state": "PRE_QUESTION",
+      "answer_saved": false,
+      "answer_assessment": "NOT_APPLICABLE",
+      "meaning_updated": false,
+      "failure_code": null,
+      "operation_id": "6a7d4d6b-da84-42ae-8780-2373f03b7a5a",
+      "attempt_id": "ef3274ad-a03b-48f9-960e-3629255a111f",
+      "requested_attempt_id": null,
+      "can_retry": false,
+      "can_continue": false,
+      "issued_count": 1,
+      "question_limit": 1,
+      "started_question_limit": 1,
+      "processing_deadline_at": null,
+      "interpretive_frames": []
+    },
+    "result": {
+      "schema_version": "cocolon.emlis_thread.application.v1",
+      "thread_id": "c86fce73-7451-4f8b-9ef3-270527ffd3cc",
+      "revision": 6,
+      "state": "COMPLETED",
+      "original": {
+        "id": "01a9fdfe-2452-4ec4-94b2-7cc5e0c2ac7a",
+        "created_at": "2026-09-11T06:12:08.335",
+        "memo": "褒められたのに、嬉しくなかった。",
+        "memo_action": ""
+      },
+      "timeline": [
+        {
+          "event_id": "8d137a2f-4e42-45a1-92c8-44873b7f0c6a",
+          "kind": "OBSERVATION",
+          "recorded_at": "2026-09-11T00:12:08.421-06:00",
+          "round_index": 0,
+          "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n\nEmlisから：\n褒められたことと嬉しくなかったことの両方を、その違いも含めて小さくせずに受け止めています。",
+          "stage": "INITIAL",
+          "is_current": false
+        },
+        {
+          "event_id": "8942ccb8-9f60-487a-b044-5aeb2aacfe8c",
+          "kind": "QUESTION",
+          "recorded_at": "2026-09-11T00:12:08.421-06:00",
+          "round_index": 1,
+          "question_id": "emlis-question-547802f5504747be009bb3772d82731a98c98621f884e6a39cd6c1b955e698f9",
+          "text": "「褒められた」は、あなたにはどんな意味として届きましたか。"
+        },
+        {
+          "event_id": "46f19d77-ad30-48a4-865b-d57dce610524",
+          "kind": "ANSWER",
+          "recorded_at": "2026-09-11T00:12:08.436-06:00",
+          "round_index": 1,
+          "text": "今は嬉しい。",
+          "question_id": "emlis-question-547802f5504747be009bb3772d82731a98c98621f884e6a39cd6c1b955e698f9",
+          "authored_at": "2026-09-11T00:00:00+00:00"
+        },
+        {
+          "event_id": "ca3ffd2e-9ce8-4188-9822-a4e858729baf",
+          "kind": "OBSERVATION",
+          "recorded_at": "2026-09-11T00:12:08.604-06:00",
+          "round_index": 1,
+          "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。 「褒められた」ことに対する回答した時点の受け止めとして、「嬉しい」が見えます。\n\nEmlisから：\n褒められたことについて、嬉しいという気持ちを受け止めています。\n\nこれまでの記録から：\n今回の「褒められた」という言葉は、2026-09-10の記録の「褒められた」にも重なります。同じ言葉でも、今回の受け止めまで同じとは決めずに見ています。",
+          "stage": "REFINED",
+          "is_current": true
+        }
+      ],
+      "can_write": true,
+      "pending_question": null,
+      "current_observation": {
+        "event_id": "ca3ffd2e-9ce8-4188-9822-a4e858729baf",
+        "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。 「褒められた」ことに対する回答した時点の受け止めとして、「嬉しい」が見えます。\n\nEmlisから：\n褒められたことについて、嬉しいという気持ちを受け止めています。\n\nこれまでの記録から：\n今回の「褒められた」という言葉は、2026-09-10の記録の「褒められた」にも重なります。同じ言葉でも、今回の受け止めまで同じとは決めずに見ています。"
+      },
+      "body_state": "REFINED",
+      "answer_saved": true,
+      "answer_assessment": "RESOLVED",
+      "meaning_updated": true,
+      "failure_code": null,
+      "operation_id": "27dba9d0-73ac-40dd-8fff-ba8c41044dfe",
+      "attempt_id": "87c8092f-59c4-4ad8-80ee-4b3f593c5c97",
+      "requested_attempt_id": null,
+      "can_retry": false,
+      "can_continue": false,
+      "issued_count": 1,
+      "question_limit": 1,
+      "started_question_limit": 1,
+      "processing_deadline_at": null,
+      "interpretive_frames": []
+    }
+  },
+  {
+    "tier": "plus",
+    "case": "then_correction",
+    "answer": "あの時も本当は嬉しかった。書き方を間違えた。",
+    "initial": {
+      "schema_version": "cocolon.emlis_thread.application.v1",
+      "thread_id": "f020179d-dcf8-4120-809f-7fd8ecda9818",
+      "revision": 3,
+      "state": "AWAITING_ANSWER",
+      "original": {
+        "id": "c9f18f6a-c09d-400d-a888-f56e8ac1c5e0",
+        "created_at": "2026-09-11T06:12:08.849",
+        "memo": "褒められたのに、嬉しくなかった。",
+        "memo_action": ""
+      },
+      "timeline": [
+        {
+          "event_id": "a21b360a-532d-4429-834d-f470c1ccaafc",
+          "kind": "OBSERVATION",
+          "recorded_at": "2026-09-11T00:12:08.938-06:00",
+          "round_index": 0,
+          "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n\nEmlisから：\n褒められたことと嬉しくなかったことの両方を、その違いも含めて小さくせずに受け止めています。",
+          "stage": "INITIAL",
+          "is_current": true
+        },
+        {
+          "event_id": "7bbbf789-5e56-417d-b762-357d92234965",
+          "kind": "QUESTION",
+          "recorded_at": "2026-09-11T00:12:08.939-06:00",
+          "round_index": 1,
+          "question_id": "emlis-question-09d5428d201098e028cde1d411d656dbce98178ac71e44566ff3614422894444",
+          "text": "「褒められた」は、あなたにはどんな意味として届きましたか。"
+        }
+      ],
+      "can_write": true,
+      "pending_question": {
+        "event_id": "7bbbf789-5e56-417d-b762-357d92234965",
+        "kind": "QUESTION",
+        "recorded_at": "2026-09-11T00:12:08.939-06:00",
+        "round_index": 1,
+        "question_id": "emlis-question-09d5428d201098e028cde1d411d656dbce98178ac71e44566ff3614422894444",
+        "text": "「褒められた」は、あなたにはどんな意味として届きましたか。"
+      },
+      "current_observation": {
+        "event_id": "a21b360a-532d-4429-834d-f470c1ccaafc",
+        "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n\nEmlisから：\n褒められたことと嬉しくなかったことの両方を、その違いも含めて小さくせずに受け止めています。"
+      },
+      "body_state": "PRE_QUESTION",
+      "answer_saved": false,
+      "answer_assessment": "NOT_APPLICABLE",
+      "meaning_updated": false,
+      "failure_code": null,
+      "operation_id": "a688dfdb-80af-44b0-95c9-ea25bebcc9ca",
+      "attempt_id": "363aa274-0e26-4eab-985d-46f4884fb067",
+      "requested_attempt_id": null,
+      "can_retry": false,
+      "can_continue": false,
+      "issued_count": 1,
+      "question_limit": 1,
+      "started_question_limit": 1,
+      "processing_deadline_at": null,
+      "interpretive_frames": []
+    },
+    "result": {
+      "schema_version": "cocolon.emlis_thread.application.v1",
+      "thread_id": "f020179d-dcf8-4120-809f-7fd8ecda9818",
+      "revision": 6,
+      "state": "COMPLETED",
+      "original": {
+        "id": "c9f18f6a-c09d-400d-a888-f56e8ac1c5e0",
+        "created_at": "2026-09-11T06:12:08.849",
+        "memo": "褒められたのに、嬉しくなかった。",
+        "memo_action": ""
+      },
+      "timeline": [
+        {
+          "event_id": "a21b360a-532d-4429-834d-f470c1ccaafc",
+          "kind": "OBSERVATION",
+          "recorded_at": "2026-09-11T00:12:08.938-06:00",
+          "round_index": 0,
+          "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n\nEmlisから：\n褒められたことと嬉しくなかったことの両方を、その違いも含めて小さくせずに受け止めています。",
+          "stage": "INITIAL",
+          "is_current": false
+        },
+        {
+          "event_id": "7bbbf789-5e56-417d-b762-357d92234965",
+          "kind": "QUESTION",
+          "recorded_at": "2026-09-11T00:12:08.939-06:00",
+          "round_index": 1,
+          "question_id": "emlis-question-09d5428d201098e028cde1d411d656dbce98178ac71e44566ff3614422894444",
+          "text": "「褒められた」は、あなたにはどんな意味として届きましたか。"
+        },
+        {
+          "event_id": "e6c2e057-915c-4f2d-82b2-9f1917e17500",
+          "kind": "ANSWER",
+          "recorded_at": "2026-09-11T00:12:08.954-06:00",
+          "round_index": 1,
+          "text": "あの時も本当は嬉しかった。書き方を間違えた。",
+          "question_id": "emlis-question-09d5428d201098e028cde1d411d656dbce98178ac71e44566ff3614422894444",
+          "authored_at": "2026-09-11T00:00:00+00:00"
+        },
+        {
+          "event_id": "68e8495d-bab8-440c-a7ae-8bf6104e6689",
+          "kind": "OBSERVATION",
+          "recorded_at": "2026-09-11T00:12:09.059-06:00",
+          "round_index": 1,
+          "text": "見えたこと：\n「褒められた」ことに対するその時の受け止めとして、「嬉しかった」が見えます。\n\nEmlisから：\n褒められたことについて、嬉しかったという気持ちを受け止めています。\n\nこれまでの記録から：\n今回の「褒められた」という言葉は、2026-09-10の記録の「褒められた」にも重なります。同じ言葉でも、今回の受け止めまで同じとは決めずに見ています。",
+          "stage": "REFINED",
+          "is_current": true
+        }
+      ],
+      "can_write": true,
+      "pending_question": null,
+      "current_observation": {
+        "event_id": "68e8495d-bab8-440c-a7ae-8bf6104e6689",
+        "text": "見えたこと：\n「褒められた」ことに対するその時の受け止めとして、「嬉しかった」が見えます。\n\nEmlisから：\n褒められたことについて、嬉しかったという気持ちを受け止めています。\n\nこれまでの記録から：\n今回の「褒められた」という言葉は、2026-09-10の記録の「褒められた」にも重なります。同じ言葉でも、今回の受け止めまで同じとは決めずに見ています。"
+      },
+      "body_state": "REFINED",
+      "answer_saved": true,
+      "answer_assessment": "RESOLVED",
+      "meaning_updated": true,
+      "failure_code": null,
+      "operation_id": "ec951f80-a5ae-4938-9407-d65684a2dfa1",
+      "attempt_id": "c7c1d830-37e7-4c32-88dc-e59b35169663",
+      "requested_attempt_id": null,
+      "can_retry": false,
+      "can_continue": false,
+      "issued_count": 1,
+      "question_limit": 1,
+      "started_question_limit": 1,
+      "processing_deadline_at": null,
+      "interpretive_frames": []
+    }
+  },
+  {
+    "tier": "plus",
+    "case": "unknown",
+    "answer": "分からない。",
+    "initial": {
+      "schema_version": "cocolon.emlis_thread.application.v1",
+      "thread_id": "71090a51-9d4b-4650-9e82-548ed050a773",
+      "revision": 3,
+      "state": "AWAITING_ANSWER",
+      "original": {
+        "id": "37d960f4-bc3d-499c-94e1-e3280cdf90d5",
+        "created_at": "2026-09-11T06:12:09.305",
+        "memo": "褒められたのに、嬉しくなかった。",
+        "memo_action": ""
+      },
+      "timeline": [
+        {
+          "event_id": "efc7a927-f216-4125-b8e5-ce23eb2e9bd6",
+          "kind": "OBSERVATION",
+          "recorded_at": "2026-09-11T00:12:09.387-06:00",
+          "round_index": 0,
+          "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n\nEmlisから：\n褒められたことと嬉しくなかったことの両方を、その違いも含めて小さくせずに受け止めています。",
+          "stage": "INITIAL",
+          "is_current": true
+        },
+        {
+          "event_id": "4a69808f-2a6c-42df-9abe-98cca1be404a",
+          "kind": "QUESTION",
+          "recorded_at": "2026-09-11T00:12:09.387-06:00",
+          "round_index": 1,
+          "question_id": "emlis-question-17ac68ea731d4072f14e7c58dd2005647119d43cbd6252fe67209c20b651f27d",
+          "text": "「褒められた」は、あなたにはどんな意味として届きましたか。"
+        }
+      ],
+      "can_write": true,
+      "pending_question": {
+        "event_id": "4a69808f-2a6c-42df-9abe-98cca1be404a",
+        "kind": "QUESTION",
+        "recorded_at": "2026-09-11T00:12:09.387-06:00",
+        "round_index": 1,
+        "question_id": "emlis-question-17ac68ea731d4072f14e7c58dd2005647119d43cbd6252fe67209c20b651f27d",
+        "text": "「褒められた」は、あなたにはどんな意味として届きましたか。"
+      },
+      "current_observation": {
+        "event_id": "efc7a927-f216-4125-b8e5-ce23eb2e9bd6",
+        "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n\nEmlisから：\n褒められたことと嬉しくなかったことの両方を、その違いも含めて小さくせずに受け止めています。"
+      },
+      "body_state": "PRE_QUESTION",
+      "answer_saved": false,
+      "answer_assessment": "NOT_APPLICABLE",
+      "meaning_updated": false,
+      "failure_code": null,
+      "operation_id": "af82f3a0-dda1-4e83-9e11-7f900cd84401",
+      "attempt_id": "17daf641-686a-4bb1-88df-5773e28138da",
+      "requested_attempt_id": null,
+      "can_retry": false,
+      "can_continue": false,
+      "issued_count": 1,
+      "question_limit": 1,
+      "started_question_limit": 1,
+      "processing_deadline_at": null,
+      "interpretive_frames": []
+    },
+    "result": {
+      "schema_version": "cocolon.emlis_thread.application.v1",
+      "thread_id": "71090a51-9d4b-4650-9e82-548ed050a773",
+      "revision": 6,
+      "state": "COMPLETED",
+      "original": {
+        "id": "37d960f4-bc3d-499c-94e1-e3280cdf90d5",
+        "created_at": "2026-09-11T06:12:09.305",
+        "memo": "褒められたのに、嬉しくなかった。",
+        "memo_action": ""
+      },
+      "timeline": [
+        {
+          "event_id": "efc7a927-f216-4125-b8e5-ce23eb2e9bd6",
+          "kind": "OBSERVATION",
+          "recorded_at": "2026-09-11T00:12:09.387-06:00",
+          "round_index": 0,
+          "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n\nEmlisから：\n褒められたことと嬉しくなかったことの両方を、その違いも含めて小さくせずに受け止めています。",
+          "stage": "INITIAL",
+          "is_current": true
+        },
+        {
+          "event_id": "4a69808f-2a6c-42df-9abe-98cca1be404a",
+          "kind": "QUESTION",
+          "recorded_at": "2026-09-11T00:12:09.387-06:00",
+          "round_index": 1,
+          "question_id": "emlis-question-17ac68ea731d4072f14e7c58dd2005647119d43cbd6252fe67209c20b651f27d",
+          "text": "「褒められた」は、あなたにはどんな意味として届きましたか。"
+        },
+        {
+          "event_id": "98941303-56e3-4149-9f40-b20d761973f6",
+          "kind": "ANSWER",
+          "recorded_at": "2026-09-11T00:12:09.401-06:00",
+          "round_index": 1,
+          "text": "分からない。",
+          "question_id": "emlis-question-17ac68ea731d4072f14e7c58dd2005647119d43cbd6252fe67209c20b651f27d",
+          "authored_at": "2026-09-11T00:00:00+00:00"
+        }
+      ],
+      "can_write": true,
+      "pending_question": null,
+      "current_observation": {
+        "event_id": "efc7a927-f216-4125-b8e5-ce23eb2e9bd6",
+        "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n\nEmlisから：\n褒められたことと嬉しくなかったことの両方を、その違いも含めて小さくせずに受け止めています。"
+      },
+      "body_state": "UNCHANGED",
+      "answer_saved": true,
+      "answer_assessment": "RESOLVED",
+      "meaning_updated": false,
+      "failure_code": null,
+      "operation_id": "7d4dca12-eef6-4752-bca8-b831abc84e6f",
+      "attempt_id": "d0c220e4-e069-4355-9671-da703c6a24bb",
+      "requested_attempt_id": null,
+      "can_retry": false,
+      "can_continue": false,
+      "issued_count": 1,
+      "question_limit": 1,
+      "started_question_limit": 1,
+      "processing_deadline_at": null,
+      "interpretive_frames": []
+    }
+  },
+  {
+    "tier": "plus",
+    "case": "partial",
+    "answer": "その時は寂しかった。どう表したらいいかはまだ分からない。",
+    "initial": {
+      "schema_version": "cocolon.emlis_thread.application.v1",
+      "thread_id": "3657f68a-dfe0-43da-8686-fec429c89a22",
+      "revision": 3,
+      "state": "AWAITING_ANSWER",
+      "original": {
+        "id": "cdde8b08-b454-4b34-94de-6b9c3d916fee",
+        "created_at": "2026-09-11T06:12:09.686",
+        "memo": "褒められたのに、嬉しくなかった。",
+        "memo_action": ""
+      },
+      "timeline": [
+        {
+          "event_id": "7c990761-9d82-45d1-9416-baa9237b8ebc",
+          "kind": "OBSERVATION",
+          "recorded_at": "2026-09-11T00:12:09.782-06:00",
+          "round_index": 0,
+          "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n\nEmlisから：\n褒められたことと嬉しくなかったことの両方を、その違いも含めて小さくせずに受け止めています。",
+          "stage": "INITIAL",
+          "is_current": true
+        },
+        {
+          "event_id": "06720f48-11b3-4986-a4fe-de1835d77198",
+          "kind": "QUESTION",
+          "recorded_at": "2026-09-11T00:12:09.782-06:00",
+          "round_index": 1,
+          "question_id": "emlis-question-7506c9f7e7c7b6795996c255fd03413a941aa53ff9a7223fb3834d94e519a446",
+          "text": "「褒められた」は、あなたにはどんな意味として届きましたか。"
+        }
+      ],
+      "can_write": true,
+      "pending_question": {
+        "event_id": "06720f48-11b3-4986-a4fe-de1835d77198",
+        "kind": "QUESTION",
+        "recorded_at": "2026-09-11T00:12:09.782-06:00",
+        "round_index": 1,
+        "question_id": "emlis-question-7506c9f7e7c7b6795996c255fd03413a941aa53ff9a7223fb3834d94e519a446",
+        "text": "「褒められた」は、あなたにはどんな意味として届きましたか。"
+      },
+      "current_observation": {
+        "event_id": "7c990761-9d82-45d1-9416-baa9237b8ebc",
+        "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n\nEmlisから：\n褒められたことと嬉しくなかったことの両方を、その違いも含めて小さくせずに受け止めています。"
+      },
+      "body_state": "PRE_QUESTION",
+      "answer_saved": false,
+      "answer_assessment": "NOT_APPLICABLE",
+      "meaning_updated": false,
+      "failure_code": null,
+      "operation_id": "16677e2a-aba7-4a7e-85e9-2f70b94f0732",
+      "attempt_id": "b9418ad2-445f-4e50-9a58-b551f6fc8514",
+      "requested_attempt_id": null,
+      "can_retry": false,
+      "can_continue": false,
+      "issued_count": 1,
+      "question_limit": 1,
+      "started_question_limit": 1,
+      "processing_deadline_at": null,
+      "interpretive_frames": []
+    },
+    "result": {
+      "schema_version": "cocolon.emlis_thread.application.v1",
+      "thread_id": "3657f68a-dfe0-43da-8686-fec429c89a22",
+      "revision": 6,
+      "state": "COMPLETED",
+      "original": {
+        "id": "cdde8b08-b454-4b34-94de-6b9c3d916fee",
+        "created_at": "2026-09-11T06:12:09.686",
+        "memo": "褒められたのに、嬉しくなかった。",
+        "memo_action": ""
+      },
+      "timeline": [
+        {
+          "event_id": "7c990761-9d82-45d1-9416-baa9237b8ebc",
+          "kind": "OBSERVATION",
+          "recorded_at": "2026-09-11T00:12:09.782-06:00",
+          "round_index": 0,
+          "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n\nEmlisから：\n褒められたことと嬉しくなかったことの両方を、その違いも含めて小さくせずに受け止めています。",
+          "stage": "INITIAL",
+          "is_current": false
+        },
+        {
+          "event_id": "06720f48-11b3-4986-a4fe-de1835d77198",
+          "kind": "QUESTION",
+          "recorded_at": "2026-09-11T00:12:09.782-06:00",
+          "round_index": 1,
+          "question_id": "emlis-question-7506c9f7e7c7b6795996c255fd03413a941aa53ff9a7223fb3834d94e519a446",
+          "text": "「褒められた」は、あなたにはどんな意味として届きましたか。"
+        },
+        {
+          "event_id": "ac176206-37b0-45ab-a0a7-ce660532626a",
+          "kind": "ANSWER",
+          "recorded_at": "2026-09-11T00:12:09.797-06:00",
+          "round_index": 1,
+          "text": "その時は寂しかった。どう表したらいいかはまだ分からない。",
+          "question_id": "emlis-question-7506c9f7e7c7b6795996c255fd03413a941aa53ff9a7223fb3834d94e519a446",
+          "authored_at": "2026-09-11T00:00:00+00:00"
+        },
+        {
+          "event_id": "1ebf39aa-00a1-4d05-91d1-5775b9acf337",
+          "kind": "OBSERVATION",
+          "recorded_at": "2026-09-11T00:12:09.933-06:00",
+          "round_index": 1,
+          "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。 「褒められた」ことに対するその時の受け止めとして、「寂しかった」が見えます。\n\nEmlisから：\n褒められたことについて、その時に寂しかったことを小さくせずに受け止めています。",
+          "stage": "REFINED",
+          "is_current": true
+        }
+      ],
+      "can_write": true,
+      "pending_question": null,
+      "current_observation": {
+        "event_id": "1ebf39aa-00a1-4d05-91d1-5775b9acf337",
+        "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。 「褒められた」ことに対するその時の受け止めとして、「寂しかった」が見えます。\n\nEmlisから：\n褒められたことについて、その時に寂しかったことを小さくせずに受け止めています。"
+      },
+      "body_state": "PARTIALLY_REFINED",
+      "answer_saved": true,
+      "answer_assessment": "PARTIAL",
+      "meaning_updated": true,
+      "failure_code": null,
+      "operation_id": "42f18a19-6e7b-4235-863a-ca75018e9a0e",
+      "attempt_id": "4d5a6376-26de-405d-be84-73a38b4a6723",
+      "requested_attempt_id": null,
+      "can_retry": false,
+      "can_continue": false,
+      "issued_count": 1,
+      "question_limit": 1,
+      "started_question_limit": 1,
+      "processing_deadline_at": null,
+      "interpretive_frames": []
+    }
+  },
+  {
+    "tier": "plus",
+    "case": "correction_body_failure",
+    "answer": "「嬉しくなかった」は誤りです。",
+    "initial": {
+      "schema_version": "cocolon.emlis_thread.application.v1",
+      "thread_id": "d01b27c6-a87a-42e1-a887-caf629e84382",
+      "revision": 3,
+      "state": "AWAITING_ANSWER",
+      "original": {
+        "id": "6261f026-7ae4-4d9f-9913-287fdc685bfe",
+        "created_at": "2026-09-11T06:12:10.218",
+        "memo": "褒められたのに、嬉しくなかった。",
+        "memo_action": ""
+      },
+      "timeline": [
+        {
+          "event_id": "ff2b8b82-dda8-40da-876d-c2c2007d3793",
+          "kind": "OBSERVATION",
+          "recorded_at": "2026-09-11T00:12:10.311-06:00",
+          "round_index": 0,
+          "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n\nEmlisから：\n褒められたことと嬉しくなかったことの両方を、その違いも含めて小さくせずに受け止めています。",
+          "stage": "INITIAL",
+          "is_current": true
+        },
+        {
+          "event_id": "549b660c-d3a2-4558-b939-ca9b5c67b54c",
+          "kind": "QUESTION",
+          "recorded_at": "2026-09-11T00:12:10.311-06:00",
+          "round_index": 1,
+          "question_id": "emlis-question-bce812fec5c9f81e23e948e76ac28ea123903643d3ad6763ee875f2089f8aef2",
+          "text": "「褒められた」は、あなたにはどんな意味として届きましたか。"
+        }
+      ],
+      "can_write": true,
+      "pending_question": {
+        "event_id": "549b660c-d3a2-4558-b939-ca9b5c67b54c",
+        "kind": "QUESTION",
+        "recorded_at": "2026-09-11T00:12:10.311-06:00",
+        "round_index": 1,
+        "question_id": "emlis-question-bce812fec5c9f81e23e948e76ac28ea123903643d3ad6763ee875f2089f8aef2",
+        "text": "「褒められた」は、あなたにはどんな意味として届きましたか。"
+      },
+      "current_observation": {
+        "event_id": "ff2b8b82-dda8-40da-876d-c2c2007d3793",
+        "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n\nEmlisから：\n褒められたことと嬉しくなかったことの両方を、その違いも含めて小さくせずに受け止めています。"
+      },
+      "body_state": "PRE_QUESTION",
+      "answer_saved": false,
+      "answer_assessment": "NOT_APPLICABLE",
+      "meaning_updated": false,
+      "failure_code": null,
+      "operation_id": "7f51fc23-abf9-4791-a70c-de61509fd373",
+      "attempt_id": "f3e32b4e-6daf-42f7-b35e-14a1b1191542",
+      "requested_attempt_id": null,
+      "can_retry": false,
+      "can_continue": false,
+      "issued_count": 1,
+      "question_limit": 1,
+      "started_question_limit": 1,
+      "processing_deadline_at": null,
+      "interpretive_frames": []
+    },
+    "result": {
+      "schema_version": "cocolon.emlis_thread.application.v1",
+      "thread_id": "d01b27c6-a87a-42e1-a887-caf629e84382",
+      "revision": 6,
+      "state": "RESPONSE_FAILED",
+      "original": {
+        "id": "6261f026-7ae4-4d9f-9913-287fdc685bfe",
+        "created_at": "2026-09-11T06:12:10.218",
+        "memo": "褒められたのに、嬉しくなかった。",
+        "memo_action": ""
+      },
+      "timeline": [
+        {
+          "event_id": "ff2b8b82-dda8-40da-876d-c2c2007d3793",
+          "kind": "OBSERVATION",
+          "recorded_at": "2026-09-11T00:12:10.311-06:00",
+          "round_index": 0,
+          "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n\nEmlisから：\n褒められたことと嬉しくなかったことの両方を、その違いも含めて小さくせずに受け止めています。",
+          "stage": "INITIAL",
+          "is_current": false
+        },
+        {
+          "event_id": "549b660c-d3a2-4558-b939-ca9b5c67b54c",
+          "kind": "QUESTION",
+          "recorded_at": "2026-09-11T00:12:10.311-06:00",
+          "round_index": 1,
+          "question_id": "emlis-question-bce812fec5c9f81e23e948e76ac28ea123903643d3ad6763ee875f2089f8aef2",
+          "text": "「褒められた」は、あなたにはどんな意味として届きましたか。"
+        },
+        {
+          "event_id": "39097638-2a61-41a8-b4bd-31c8cc81afcc",
+          "kind": "ANSWER",
+          "recorded_at": "2026-09-11T00:12:10.326-06:00",
+          "round_index": 1,
+          "text": "「嬉しくなかった」は誤りです。",
+          "question_id": "emlis-question-bce812fec5c9f81e23e948e76ac28ea123903643d3ad6763ee875f2089f8aef2",
+          "authored_at": "2026-09-11T00:00:00+00:00"
+        }
+      ],
+      "can_write": true,
+      "pending_question": null,
+      "current_observation": null,
+      "body_state": "MEANING_UPDATED_BODY_UNAVAILABLE",
+      "answer_saved": true,
+      "answer_assessment": "RESOLVED",
+      "meaning_updated": true,
+      "failure_code": "body_not_validated",
+      "operation_id": "de0b1ce4-0bb0-4c79-b13a-519bc20fa019",
+      "attempt_id": "ee444c8d-d752-48f5-ac4b-3abbe7cf7a90",
+      "requested_attempt_id": null,
+      "can_retry": false,
+      "can_continue": false,
+      "issued_count": 1,
+      "question_limit": 1,
+      "started_question_limit": 1,
+      "processing_deadline_at": null,
+      "interpretive_frames": []
+    }
+  },
+  {
+    "tier": "premium",
+    "case": "meaning_A",
+    "answer": "次も同じ成果を求められるようで、重かった。",
+    "initial": {
+      "schema_version": "cocolon.emlis_thread.application.v1",
+      "thread_id": "8afb53db-55d6-4bdc-b296-9ba590e54215",
+      "revision": 3,
+      "state": "AWAITING_ANSWER",
+      "original": {
+        "id": "29b4c7aa-3c14-4c6c-b10b-f61f3b4ee992",
+        "created_at": "2026-09-11T06:12:10.601",
+        "memo": "褒められたのに、嬉しくなかった。",
+        "memo_action": ""
+      },
+      "timeline": [
+        {
+          "event_id": "ee425d15-c645-48f4-bc33-32071fef94c7",
+          "kind": "OBSERVATION",
+          "recorded_at": "2026-09-11T00:12:10.699-06:00",
+          "round_index": 0,
+          "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n\nEmlisから：\n褒められたことと嬉しくなかったことの両方を、その違いも含めて小さくせずに受け止めています。",
+          "stage": "INITIAL",
+          "is_current": true
+        },
+        {
+          "event_id": "9e6a5aad-e7ef-4beb-be7e-04bc600bc111",
+          "kind": "QUESTION",
+          "recorded_at": "2026-09-11T00:12:10.699-06:00",
+          "round_index": 1,
+          "question_id": "emlis-question-77b672ccd87602a2fd5464e32dccf5284d5d732f494704c4bf1e99c6b732dba3",
+          "text": "「褒められた」は、あなたにはどんな意味として届きましたか。"
+        }
+      ],
+      "can_write": true,
+      "pending_question": {
+        "event_id": "9e6a5aad-e7ef-4beb-be7e-04bc600bc111",
+        "kind": "QUESTION",
+        "recorded_at": "2026-09-11T00:12:10.699-06:00",
+        "round_index": 1,
+        "question_id": "emlis-question-77b672ccd87602a2fd5464e32dccf5284d5d732f494704c4bf1e99c6b732dba3",
+        "text": "「褒められた」は、あなたにはどんな意味として届きましたか。"
+      },
+      "current_observation": {
+        "event_id": "ee425d15-c645-48f4-bc33-32071fef94c7",
+        "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n\nEmlisから：\n褒められたことと嬉しくなかったことの両方を、その違いも含めて小さくせずに受け止めています。"
+      },
+      "body_state": "PRE_QUESTION",
+      "answer_saved": false,
+      "answer_assessment": "NOT_APPLICABLE",
+      "meaning_updated": false,
+      "failure_code": null,
+      "operation_id": "74dfdbac-50e4-4f13-98b0-75151185e607",
+      "attempt_id": "e4716e09-792d-4b6f-a89c-b7430c5997b6",
+      "requested_attempt_id": null,
+      "can_retry": false,
+      "can_continue": false,
+      "issued_count": 1,
+      "question_limit": 3,
+      "started_question_limit": 3,
+      "processing_deadline_at": null,
+      "interpretive_frames": [
+        {
+          "frame_key": "frame-key-ff0139bc16a158c192192344038eee4f6b8185f3294ecf28a3180e405e90546c",
+          "frame_ref": "frame-version-e69ab4a81ba64038e6c956c230750c240040c0a0d7b91803c4be0d25625e18b4",
+          "trigger": "褒められた",
+          "received_meaning": "重かった",
+          "input_id": "25627bbe-eecf-4a73-930e-e77c6803e2eb",
+          "recorded_at": "2026-09-10T06:12:10.359",
+          "status": "TENTATIVE",
+          "correction_text": null
+        }
+      ]
+    },
+    "result": {
+      "schema_version": "cocolon.emlis_thread.application.v1",
+      "thread_id": "8afb53db-55d6-4bdc-b296-9ba590e54215",
+      "revision": 6,
+      "state": "COMPLETED",
+      "original": {
+        "id": "29b4c7aa-3c14-4c6c-b10b-f61f3b4ee992",
+        "created_at": "2026-09-11T06:12:10.601",
+        "memo": "褒められたのに、嬉しくなかった。",
+        "memo_action": ""
+      },
+      "timeline": [
+        {
+          "event_id": "ee425d15-c645-48f4-bc33-32071fef94c7",
+          "kind": "OBSERVATION",
+          "recorded_at": "2026-09-11T00:12:10.699-06:00",
+          "round_index": 0,
+          "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n\nEmlisから：\n褒められたことと嬉しくなかったことの両方を、その違いも含めて小さくせずに受け止めています。",
+          "stage": "INITIAL",
+          "is_current": false
+        },
+        {
+          "event_id": "9e6a5aad-e7ef-4beb-be7e-04bc600bc111",
+          "kind": "QUESTION",
+          "recorded_at": "2026-09-11T00:12:10.699-06:00",
+          "round_index": 1,
+          "question_id": "emlis-question-77b672ccd87602a2fd5464e32dccf5284d5d732f494704c4bf1e99c6b732dba3",
+          "text": "「褒められた」は、あなたにはどんな意味として届きましたか。"
+        },
+        {
+          "event_id": "53f2aa4c-08d1-4d9a-9227-398ae2c12e7e",
+          "kind": "ANSWER",
+          "recorded_at": "2026-09-11T00:12:10.713-06:00",
+          "round_index": 1,
+          "text": "次も同じ成果を求められるようで、重かった。",
+          "question_id": "emlis-question-77b672ccd87602a2fd5464e32dccf5284d5d732f494704c4bf1e99c6b732dba3",
+          "authored_at": "2026-09-11T00:00:00+00:00"
+        },
+        {
+          "event_id": "8dfd4e80-7dae-4930-9d5c-ad7664aa6b37",
+          "kind": "OBSERVATION",
+          "recorded_at": "2026-09-11T00:12:10.872-06:00",
+          "round_index": 1,
+          "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。 「褒められた」ことに対するその時の受け止めとして、「次も同じ成果を求められるようで、重かった」が見えます。\n\nEmlisから：\n褒められたことについて、その時に次も同じ成果を求められるようで、重かったことを小さくせずに受け止めています。\n\nこれまでの記録から：\n今回の「褒められた」という言葉は、2026-09-10の記録の「褒められた」にも重なります。同じ言葉でも、今回の受け止めまで同じとは決めずに見ています。",
+          "stage": "REFINED",
+          "is_current": true
+        }
+      ],
+      "can_write": true,
+      "pending_question": null,
+      "current_observation": {
+        "event_id": "8dfd4e80-7dae-4930-9d5c-ad7664aa6b37",
+        "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。 「褒められた」ことに対するその時の受け止めとして、「次も同じ成果を求められるようで、重かった」が見えます。\n\nEmlisから：\n褒められたことについて、その時に次も同じ成果を求められるようで、重かったことを小さくせずに受け止めています。\n\nこれまでの記録から：\n今回の「褒められた」という言葉は、2026-09-10の記録の「褒められた」にも重なります。同じ言葉でも、今回の受け止めまで同じとは決めずに見ています。"
+      },
+      "body_state": "REFINED",
+      "answer_saved": true,
+      "answer_assessment": "RESOLVED",
+      "meaning_updated": true,
+      "failure_code": null,
+      "operation_id": "1181628a-1e04-4cd0-9efb-545c3c7ac20f",
+      "attempt_id": "55bca6ee-0ca5-4de9-9069-c99d91ead832",
+      "requested_attempt_id": null,
+      "can_retry": false,
+      "can_continue": false,
+      "issued_count": 1,
+      "question_limit": 3,
+      "started_question_limit": 3,
+      "processing_deadline_at": null,
+      "interpretive_frames": [
+        {
+          "frame_key": "frame-key-ff0139bc16a158c192192344038eee4f6b8185f3294ecf28a3180e405e90546c",
+          "frame_ref": "frame-version-e69ab4a81ba64038e6c956c230750c240040c0a0d7b91803c4be0d25625e18b4",
+          "trigger": "褒められた",
+          "received_meaning": "重かった",
+          "input_id": "25627bbe-eecf-4a73-930e-e77c6803e2eb",
+          "recorded_at": "2026-09-10T06:12:10.359",
+          "status": "TENTATIVE",
+          "correction_text": null
+        }
+      ]
+    }
+  },
+  {
+    "tier": "premium",
+    "case": "meaning_B",
+    "answer": "結果だけで、そこまでの苦労は見てもらえていないと思った。",
+    "initial": {
+      "schema_version": "cocolon.emlis_thread.application.v1",
+      "thread_id": "0ae5b164-b1a0-4b70-a574-0b4bec54ed1f",
+      "revision": 3,
+      "state": "AWAITING_ANSWER",
+      "original": {
+        "id": "27024b82-3a04-4400-81d7-5c692d9e8b89",
+        "created_at": "2026-09-11T06:12:11.123",
+        "memo": "褒められたのに、嬉しくなかった。",
+        "memo_action": ""
+      },
+      "timeline": [
+        {
+          "event_id": "7ad813ff-7f3d-4ce7-96a1-067ab7667680",
+          "kind": "OBSERVATION",
+          "recorded_at": "2026-09-11T00:12:11.228-06:00",
+          "round_index": 0,
+          "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n\nEmlisから：\n褒められたことと嬉しくなかったことの両方を、その違いも含めて小さくせずに受け止めています。",
+          "stage": "INITIAL",
+          "is_current": true
+        },
+        {
+          "event_id": "1509c2ed-5240-4d5f-8e0d-43d78a7e7506",
+          "kind": "QUESTION",
+          "recorded_at": "2026-09-11T00:12:11.229-06:00",
+          "round_index": 1,
+          "question_id": "emlis-question-ba614776e75c37b7771a18bde14ef0369f77a1d7a84f1ada7b98eca9ed3bd588",
+          "text": "「褒められた」は、あなたにはどんな意味として届きましたか。"
+        }
+      ],
+      "can_write": true,
+      "pending_question": {
+        "event_id": "1509c2ed-5240-4d5f-8e0d-43d78a7e7506",
+        "kind": "QUESTION",
+        "recorded_at": "2026-09-11T00:12:11.229-06:00",
+        "round_index": 1,
+        "question_id": "emlis-question-ba614776e75c37b7771a18bde14ef0369f77a1d7a84f1ada7b98eca9ed3bd588",
+        "text": "「褒められた」は、あなたにはどんな意味として届きましたか。"
+      },
+      "current_observation": {
+        "event_id": "7ad813ff-7f3d-4ce7-96a1-067ab7667680",
+        "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n\nEmlisから：\n褒められたことと嬉しくなかったことの両方を、その違いも含めて小さくせずに受け止めています。"
+      },
+      "body_state": "PRE_QUESTION",
+      "answer_saved": false,
+      "answer_assessment": "NOT_APPLICABLE",
+      "meaning_updated": false,
+      "failure_code": null,
+      "operation_id": "e42df583-259d-4cf0-9607-bd574ef75d54",
+      "attempt_id": "b381f04e-a9fe-4924-9887-97798362e923",
+      "requested_attempt_id": null,
+      "can_retry": false,
+      "can_continue": false,
+      "issued_count": 1,
+      "question_limit": 3,
+      "started_question_limit": 3,
+      "processing_deadline_at": null,
+      "interpretive_frames": [
+        {
+          "frame_key": "frame-key-2b184429f8b9aab12dcdfc47e5b1fad9fd08d93320ae5b36b1bc788c2502ed9d",
+          "frame_ref": "frame-version-53c5d7172f6299a2f54df7fbab3bec4757e573da9e656905fd082c5672869ce2",
+          "trigger": "褒められた",
+          "received_meaning": "重かった",
+          "input_id": "578042fb-0b60-45a5-8a1e-1044f1d81ad8",
+          "recorded_at": "2026-09-10T06:12:10.885",
+          "status": "TENTATIVE",
+          "correction_text": null
+        }
+      ]
+    },
+    "result": {
+      "schema_version": "cocolon.emlis_thread.application.v1",
+      "thread_id": "0ae5b164-b1a0-4b70-a574-0b4bec54ed1f",
+      "revision": 6,
+      "state": "COMPLETED",
+      "original": {
+        "id": "27024b82-3a04-4400-81d7-5c692d9e8b89",
+        "created_at": "2026-09-11T06:12:11.123",
+        "memo": "褒められたのに、嬉しくなかった。",
+        "memo_action": ""
+      },
+      "timeline": [
+        {
+          "event_id": "7ad813ff-7f3d-4ce7-96a1-067ab7667680",
+          "kind": "OBSERVATION",
+          "recorded_at": "2026-09-11T00:12:11.228-06:00",
+          "round_index": 0,
+          "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n\nEmlisから：\n褒められたことと嬉しくなかったことの両方を、その違いも含めて小さくせずに受け止めています。",
+          "stage": "INITIAL",
+          "is_current": false
+        },
+        {
+          "event_id": "1509c2ed-5240-4d5f-8e0d-43d78a7e7506",
+          "kind": "QUESTION",
+          "recorded_at": "2026-09-11T00:12:11.229-06:00",
+          "round_index": 1,
+          "question_id": "emlis-question-ba614776e75c37b7771a18bde14ef0369f77a1d7a84f1ada7b98eca9ed3bd588",
+          "text": "「褒められた」は、あなたにはどんな意味として届きましたか。"
+        },
+        {
+          "event_id": "661576d6-7b8d-41fb-b41f-e8a7a8d26ce4",
+          "kind": "ANSWER",
+          "recorded_at": "2026-09-11T00:12:11.246-06:00",
+          "round_index": 1,
+          "text": "結果だけで、そこまでの苦労は見てもらえていないと思った。",
+          "question_id": "emlis-question-ba614776e75c37b7771a18bde14ef0369f77a1d7a84f1ada7b98eca9ed3bd588",
+          "authored_at": "2026-09-11T00:00:00+00:00"
+        },
+        {
+          "event_id": "091455f5-1ff8-4472-b4bd-feef6ef2e0fe",
+          "kind": "OBSERVATION",
+          "recorded_at": "2026-09-11T00:12:11.401-06:00",
+          "round_index": 1,
+          "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。 「褒められた」ことに対するその時の受け止めとして、「結果だけで、そこまでの苦労は見てもらえていないと思った」が見えます。\n\nEmlisから：\n褒められたことについて、その時に結果だけで、そこまでの苦労は見てもらえていないと思ったことを小さくせずに受け止めています。\n\nこれまでの記録から：\n今回の「褒められた」という言葉は、2026-09-10の記録の「褒められた」にも重なります。同じ言葉でも、今回の受け止めまで同じとは決めずに見ています。",
+          "stage": "REFINED",
+          "is_current": true
+        }
+      ],
+      "can_write": true,
+      "pending_question": null,
+      "current_observation": {
+        "event_id": "091455f5-1ff8-4472-b4bd-feef6ef2e0fe",
+        "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。 「褒められた」ことに対するその時の受け止めとして、「結果だけで、そこまでの苦労は見てもらえていないと思った」が見えます。\n\nEmlisから：\n褒められたことについて、その時に結果だけで、そこまでの苦労は見てもらえていないと思ったことを小さくせずに受け止めています。\n\nこれまでの記録から：\n今回の「褒められた」という言葉は、2026-09-10の記録の「褒められた」にも重なります。同じ言葉でも、今回の受け止めまで同じとは決めずに見ています。"
+      },
+      "body_state": "REFINED",
+      "answer_saved": true,
+      "answer_assessment": "RESOLVED",
+      "meaning_updated": true,
+      "failure_code": null,
+      "operation_id": "7cc4b941-3fee-4ccd-ba09-0d435c512970",
+      "attempt_id": "6e47d290-d499-40a2-ba84-f974bb27cfe9",
+      "requested_attempt_id": null,
+      "can_retry": false,
+      "can_continue": false,
+      "issued_count": 1,
+      "question_limit": 3,
+      "started_question_limit": 3,
+      "processing_deadline_at": null,
+      "interpretive_frames": [
+        {
+          "frame_key": "frame-key-2b184429f8b9aab12dcdfc47e5b1fad9fd08d93320ae5b36b1bc788c2502ed9d",
+          "frame_ref": "frame-version-53c5d7172f6299a2f54df7fbab3bec4757e573da9e656905fd082c5672869ce2",
+          "trigger": "褒められた",
+          "received_meaning": "重かった",
+          "input_id": "578042fb-0b60-45a5-8a1e-1044f1d81ad8",
+          "recorded_at": "2026-09-10T06:12:10.885",
+          "status": "TENTATIVE",
+          "correction_text": null
+        }
+      ]
+    }
+  },
+  {
+    "tier": "premium",
+    "case": "now",
+    "answer": "今は嬉しい。",
+    "initial": {
+      "schema_version": "cocolon.emlis_thread.application.v1",
+      "thread_id": "bc93b015-aafa-4b73-af3f-3dd3b6476321",
+      "revision": 3,
+      "state": "AWAITING_ANSWER",
+      "original": {
+        "id": "f99b782c-37cc-4502-97a5-24f75a1e31ec",
+        "created_at": "2026-09-11T06:12:11.753",
+        "memo": "褒められたのに、嬉しくなかった。",
+        "memo_action": ""
+      },
+      "timeline": [
+        {
+          "event_id": "234f8c1c-21db-4843-84dd-9f138db2aeb4",
+          "kind": "OBSERVATION",
+          "recorded_at": "2026-09-11T00:12:11.861-06:00",
+          "round_index": 0,
+          "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n\nEmlisから：\n褒められたことと嬉しくなかったことの両方を、その違いも含めて小さくせずに受け止めています。",
+          "stage": "INITIAL",
+          "is_current": true
+        },
+        {
+          "event_id": "2c4eb998-2066-4fbb-bd8d-24f8e311763d",
+          "kind": "QUESTION",
+          "recorded_at": "2026-09-11T00:12:11.861-06:00",
+          "round_index": 1,
+          "question_id": "emlis-question-dbd7aaf1a1be0d1a1ebce4672f96d6954f1b208e4177fbfd385f7f9bb2438e24",
+          "text": "「褒められた」は、あなたにはどんな意味として届きましたか。"
+        }
+      ],
+      "can_write": true,
+      "pending_question": {
+        "event_id": "2c4eb998-2066-4fbb-bd8d-24f8e311763d",
+        "kind": "QUESTION",
+        "recorded_at": "2026-09-11T00:12:11.861-06:00",
+        "round_index": 1,
+        "question_id": "emlis-question-dbd7aaf1a1be0d1a1ebce4672f96d6954f1b208e4177fbfd385f7f9bb2438e24",
+        "text": "「褒められた」は、あなたにはどんな意味として届きましたか。"
+      },
+      "current_observation": {
+        "event_id": "234f8c1c-21db-4843-84dd-9f138db2aeb4",
+        "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n\nEmlisから：\n褒められたことと嬉しくなかったことの両方を、その違いも含めて小さくせずに受け止めています。"
+      },
+      "body_state": "PRE_QUESTION",
+      "answer_saved": false,
+      "answer_assessment": "NOT_APPLICABLE",
+      "meaning_updated": false,
+      "failure_code": null,
+      "operation_id": "4817c82f-ee41-48f4-bbfc-6ba164e824b6",
+      "attempt_id": "d06f16be-3cae-4ef7-9ede-326517780bc6",
+      "requested_attempt_id": null,
+      "can_retry": false,
+      "can_continue": false,
+      "issued_count": 1,
+      "question_limit": 3,
+      "started_question_limit": 3,
+      "processing_deadline_at": null,
+      "interpretive_frames": [
+        {
+          "frame_key": "frame-key-1ef06672b2ac751167554718d135936fac1087fa6f2a55418dd1798f471ff159",
+          "frame_ref": "frame-version-796db233ab19c5ed6bf31ae17f4ec00482f3d5863060804f740a11fecdbded46",
+          "trigger": "褒められた",
+          "received_meaning": "重かった",
+          "input_id": "6d6d3971-c9f4-43e6-8bbe-497f759a4678",
+          "recorded_at": "2026-09-10T06:12:11.415",
+          "status": "TENTATIVE",
+          "correction_text": null
+        }
+      ]
+    },
+    "result": {
+      "schema_version": "cocolon.emlis_thread.application.v1",
+      "thread_id": "bc93b015-aafa-4b73-af3f-3dd3b6476321",
+      "revision": 6,
+      "state": "COMPLETED",
+      "original": {
+        "id": "f99b782c-37cc-4502-97a5-24f75a1e31ec",
+        "created_at": "2026-09-11T06:12:11.753",
+        "memo": "褒められたのに、嬉しくなかった。",
+        "memo_action": ""
+      },
+      "timeline": [
+        {
+          "event_id": "234f8c1c-21db-4843-84dd-9f138db2aeb4",
+          "kind": "OBSERVATION",
+          "recorded_at": "2026-09-11T00:12:11.861-06:00",
+          "round_index": 0,
+          "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n\nEmlisから：\n褒められたことと嬉しくなかったことの両方を、その違いも含めて小さくせずに受け止めています。",
+          "stage": "INITIAL",
+          "is_current": false
+        },
+        {
+          "event_id": "2c4eb998-2066-4fbb-bd8d-24f8e311763d",
+          "kind": "QUESTION",
+          "recorded_at": "2026-09-11T00:12:11.861-06:00",
+          "round_index": 1,
+          "question_id": "emlis-question-dbd7aaf1a1be0d1a1ebce4672f96d6954f1b208e4177fbfd385f7f9bb2438e24",
+          "text": "「褒められた」は、あなたにはどんな意味として届きましたか。"
+        },
+        {
+          "event_id": "3df84fbd-e257-4763-b13f-0266e9ef87c9",
+          "kind": "ANSWER",
+          "recorded_at": "2026-09-11T00:12:11.875-06:00",
+          "round_index": 1,
+          "text": "今は嬉しい。",
+          "question_id": "emlis-question-dbd7aaf1a1be0d1a1ebce4672f96d6954f1b208e4177fbfd385f7f9bb2438e24",
+          "authored_at": "2026-09-11T00:00:00+00:00"
+        },
+        {
+          "event_id": "cd3bba95-8ae1-40ff-8c36-93aa5801c558",
+          "kind": "OBSERVATION",
+          "recorded_at": "2026-09-11T00:12:12.058-06:00",
+          "round_index": 1,
+          "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。 「褒められた」ことに対する回答した時点の受け止めとして、「嬉しい」が見えます。\n\nEmlisから：\n褒められたことについて、嬉しいという気持ちを受け止めています。\n\nこれまでの記録から：\n今回の「褒められた」という言葉は、2026-09-10の記録の「褒められた」にも重なります。同じ言葉でも、今回の受け止めまで同じとは決めずに見ています。",
+          "stage": "REFINED",
+          "is_current": true
+        }
+      ],
+      "can_write": true,
+      "pending_question": null,
+      "current_observation": {
+        "event_id": "cd3bba95-8ae1-40ff-8c36-93aa5801c558",
+        "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。 「褒められた」ことに対する回答した時点の受け止めとして、「嬉しい」が見えます。\n\nEmlisから：\n褒められたことについて、嬉しいという気持ちを受け止めています。\n\nこれまでの記録から：\n今回の「褒められた」という言葉は、2026-09-10の記録の「褒められた」にも重なります。同じ言葉でも、今回の受け止めまで同じとは決めずに見ています。"
+      },
+      "body_state": "REFINED",
+      "answer_saved": true,
+      "answer_assessment": "RESOLVED",
+      "meaning_updated": true,
+      "failure_code": null,
+      "operation_id": "2d6f5ba1-248a-4548-bf23-a0236a4dc459",
+      "attempt_id": "3f940420-8112-47c9-95db-b5ccae82d8bd",
+      "requested_attempt_id": null,
+      "can_retry": false,
+      "can_continue": false,
+      "issued_count": 1,
+      "question_limit": 3,
+      "started_question_limit": 3,
+      "processing_deadline_at": null,
+      "interpretive_frames": [
+        {
+          "frame_key": "frame-key-1ef06672b2ac751167554718d135936fac1087fa6f2a55418dd1798f471ff159",
+          "frame_ref": "frame-version-796db233ab19c5ed6bf31ae17f4ec00482f3d5863060804f740a11fecdbded46",
+          "trigger": "褒められた",
+          "received_meaning": "重かった",
+          "input_id": "6d6d3971-c9f4-43e6-8bbe-497f759a4678",
+          "recorded_at": "2026-09-10T06:12:11.415",
+          "status": "TENTATIVE",
+          "correction_text": null
+        }
+      ]
+    }
+  },
+  {
+    "tier": "premium",
+    "case": "then_correction",
+    "answer": "あの時も本当は嬉しかった。書き方を間違えた。",
+    "initial": {
+      "schema_version": "cocolon.emlis_thread.application.v1",
+      "thread_id": "f9d03330-a67a-4f5f-9aac-c02f6d943ed9",
+      "revision": 3,
+      "state": "AWAITING_ANSWER",
+      "original": {
+        "id": "c3d3e3f5-63b4-4ef4-9c55-522cbc5b1755",
+        "created_at": "2026-09-11T06:12:12.343",
+        "memo": "褒められたのに、嬉しくなかった。",
+        "memo_action": ""
+      },
+      "timeline": [
+        {
+          "event_id": "eda73fb0-e34c-4572-8ac0-99644f979ab0",
+          "kind": "OBSERVATION",
+          "recorded_at": "2026-09-11T00:12:12.447-06:00",
+          "round_index": 0,
+          "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n\nEmlisから：\n褒められたことと嬉しくなかったことの両方を、その違いも含めて小さくせずに受け止めています。",
+          "stage": "INITIAL",
+          "is_current": true
+        },
+        {
+          "event_id": "0a29bc54-d9ea-49b1-9215-11a12b3fa443",
+          "kind": "QUESTION",
+          "recorded_at": "2026-09-11T00:12:12.447-06:00",
+          "round_index": 1,
+          "question_id": "emlis-question-3443943212f118e6d390f6722e668aca863c2094231482f0b2022366b01b1a88",
+          "text": "「褒められた」は、あなたにはどんな意味として届きましたか。"
+        }
+      ],
+      "can_write": true,
+      "pending_question": {
+        "event_id": "0a29bc54-d9ea-49b1-9215-11a12b3fa443",
+        "kind": "QUESTION",
+        "recorded_at": "2026-09-11T00:12:12.447-06:00",
+        "round_index": 1,
+        "question_id": "emlis-question-3443943212f118e6d390f6722e668aca863c2094231482f0b2022366b01b1a88",
+        "text": "「褒められた」は、あなたにはどんな意味として届きましたか。"
+      },
+      "current_observation": {
+        "event_id": "eda73fb0-e34c-4572-8ac0-99644f979ab0",
+        "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n\nEmlisから：\n褒められたことと嬉しくなかったことの両方を、その違いも含めて小さくせずに受け止めています。"
+      },
+      "body_state": "PRE_QUESTION",
+      "answer_saved": false,
+      "answer_assessment": "NOT_APPLICABLE",
+      "meaning_updated": false,
+      "failure_code": null,
+      "operation_id": "f6b4408b-e6bc-4f1c-8538-48d4fc3363eb",
+      "attempt_id": "11b800b2-8600-49df-adc9-664025e98218",
+      "requested_attempt_id": null,
+      "can_retry": false,
+      "can_continue": false,
+      "issued_count": 1,
+      "question_limit": 3,
+      "started_question_limit": 3,
+      "processing_deadline_at": null,
+      "interpretive_frames": [
+        {
+          "frame_key": "frame-key-1df347985bab8427767d50fc821c8ce46edcdd38f7df14bf324e2e1cc7824391",
+          "frame_ref": "frame-version-3b65d1af64b579beb03fa7bba750a3f2b41dc6e693582cf621d6b3d7a1ff9a53",
+          "trigger": "褒められた",
+          "received_meaning": "重かった",
+          "input_id": "0d9ae53a-c8fd-4c20-a527-1045eb8e5022",
+          "recorded_at": "2026-09-10T06:12:12.076",
+          "status": "TENTATIVE",
+          "correction_text": null
+        }
+      ]
+    },
+    "result": {
+      "schema_version": "cocolon.emlis_thread.application.v1",
+      "thread_id": "f9d03330-a67a-4f5f-9aac-c02f6d943ed9",
+      "revision": 6,
+      "state": "COMPLETED",
+      "original": {
+        "id": "c3d3e3f5-63b4-4ef4-9c55-522cbc5b1755",
+        "created_at": "2026-09-11T06:12:12.343",
+        "memo": "褒められたのに、嬉しくなかった。",
+        "memo_action": ""
+      },
+      "timeline": [
+        {
+          "event_id": "eda73fb0-e34c-4572-8ac0-99644f979ab0",
+          "kind": "OBSERVATION",
+          "recorded_at": "2026-09-11T00:12:12.447-06:00",
+          "round_index": 0,
+          "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n\nEmlisから：\n褒められたことと嬉しくなかったことの両方を、その違いも含めて小さくせずに受け止めています。",
+          "stage": "INITIAL",
+          "is_current": false
+        },
+        {
+          "event_id": "0a29bc54-d9ea-49b1-9215-11a12b3fa443",
+          "kind": "QUESTION",
+          "recorded_at": "2026-09-11T00:12:12.447-06:00",
+          "round_index": 1,
+          "question_id": "emlis-question-3443943212f118e6d390f6722e668aca863c2094231482f0b2022366b01b1a88",
+          "text": "「褒められた」は、あなたにはどんな意味として届きましたか。"
+        },
+        {
+          "event_id": "9b1d82cb-91df-436d-9b94-0c99009ff9ea",
+          "kind": "ANSWER",
+          "recorded_at": "2026-09-11T00:12:12.462-06:00",
+          "round_index": 1,
+          "text": "あの時も本当は嬉しかった。書き方を間違えた。",
+          "question_id": "emlis-question-3443943212f118e6d390f6722e668aca863c2094231482f0b2022366b01b1a88",
+          "authored_at": "2026-09-11T00:00:00+00:00"
+        },
+        {
+          "event_id": "ecbf7f22-ec6f-4da1-9380-f749fb130254",
+          "kind": "OBSERVATION",
+          "recorded_at": "2026-09-11T00:12:12.578-06:00",
+          "round_index": 1,
+          "text": "見えたこと：\n「褒められた」ことに対するその時の受け止めとして、「嬉しかった」が見えます。\n\nEmlisから：\n褒められたことについて、嬉しかったという気持ちを受け止めています。\n\nこれまでの記録から：\n今回の「褒められた」という言葉は、2026-09-10の記録の「褒められた」にも重なります。同じ言葉でも、今回の受け止めまで同じとは決めずに見ています。",
+          "stage": "REFINED",
+          "is_current": true
+        }
+      ],
+      "can_write": true,
+      "pending_question": null,
+      "current_observation": {
+        "event_id": "ecbf7f22-ec6f-4da1-9380-f749fb130254",
+        "text": "見えたこと：\n「褒められた」ことに対するその時の受け止めとして、「嬉しかった」が見えます。\n\nEmlisから：\n褒められたことについて、嬉しかったという気持ちを受け止めています。\n\nこれまでの記録から：\n今回の「褒められた」という言葉は、2026-09-10の記録の「褒められた」にも重なります。同じ言葉でも、今回の受け止めまで同じとは決めずに見ています。"
+      },
+      "body_state": "REFINED",
+      "answer_saved": true,
+      "answer_assessment": "RESOLVED",
+      "meaning_updated": true,
+      "failure_code": null,
+      "operation_id": "79072459-fbad-498d-afb8-40f688fabacc",
+      "attempt_id": "38034a9e-27e3-4225-9778-383690f5b7cd",
+      "requested_attempt_id": null,
+      "can_retry": false,
+      "can_continue": false,
+      "issued_count": 1,
+      "question_limit": 3,
+      "started_question_limit": 3,
+      "processing_deadline_at": null,
+      "interpretive_frames": [
+        {
+          "frame_key": "frame-key-1df347985bab8427767d50fc821c8ce46edcdd38f7df14bf324e2e1cc7824391",
+          "frame_ref": "frame-version-3b65d1af64b579beb03fa7bba750a3f2b41dc6e693582cf621d6b3d7a1ff9a53",
+          "trigger": "褒められた",
+          "received_meaning": "重かった",
+          "input_id": "0d9ae53a-c8fd-4c20-a527-1045eb8e5022",
+          "recorded_at": "2026-09-10T06:12:12.076",
+          "status": "TENTATIVE",
+          "correction_text": null
+        }
+      ]
+    }
+  },
+  {
+    "tier": "premium",
+    "case": "unknown",
+    "answer": "分からない。",
+    "initial": {
+      "schema_version": "cocolon.emlis_thread.application.v1",
+      "thread_id": "74ff4a33-aedc-40e4-8e10-355435f2104b",
+      "revision": 3,
+      "state": "AWAITING_ANSWER",
+      "original": {
+        "id": "cec2ab8d-350d-40a6-93f2-f10f7e90441e",
+        "created_at": "2026-09-11T06:12:12.826",
+        "memo": "褒められたのに、嬉しくなかった。",
+        "memo_action": ""
+      },
+      "timeline": [
+        {
+          "event_id": "6dbc4b76-673c-4db0-adb2-fcc0686bbf7c",
+          "kind": "OBSERVATION",
+          "recorded_at": "2026-09-11T00:12:12.918-06:00",
+          "round_index": 0,
+          "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n\nEmlisから：\n褒められたことと嬉しくなかったことの両方を、その違いも含めて小さくせずに受け止めています。",
+          "stage": "INITIAL",
+          "is_current": true
+        },
+        {
+          "event_id": "42abd0ca-78db-4081-b410-d70e93f80c6f",
+          "kind": "QUESTION",
+          "recorded_at": "2026-09-11T00:12:12.918-06:00",
+          "round_index": 1,
+          "question_id": "emlis-question-c67dff0132dd910cb239a33754fbe5943daa30ddb6fa85a7dcbbb6e503cd320d",
+          "text": "「褒められた」は、あなたにはどんな意味として届きましたか。"
+        }
+      ],
+      "can_write": true,
+      "pending_question": {
+        "event_id": "42abd0ca-78db-4081-b410-d70e93f80c6f",
+        "kind": "QUESTION",
+        "recorded_at": "2026-09-11T00:12:12.918-06:00",
+        "round_index": 1,
+        "question_id": "emlis-question-c67dff0132dd910cb239a33754fbe5943daa30ddb6fa85a7dcbbb6e503cd320d",
+        "text": "「褒められた」は、あなたにはどんな意味として届きましたか。"
+      },
+      "current_observation": {
+        "event_id": "6dbc4b76-673c-4db0-adb2-fcc0686bbf7c",
+        "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n\nEmlisから：\n褒められたことと嬉しくなかったことの両方を、その違いも含めて小さくせずに受け止めています。"
+      },
+      "body_state": "PRE_QUESTION",
+      "answer_saved": false,
+      "answer_assessment": "NOT_APPLICABLE",
+      "meaning_updated": false,
+      "failure_code": null,
+      "operation_id": "febac534-8790-42c8-9647-c797230f9bd8",
+      "attempt_id": "2bf5c675-d4f4-4112-9fb0-005b759d89be",
+      "requested_attempt_id": null,
+      "can_retry": false,
+      "can_continue": false,
+      "issued_count": 1,
+      "question_limit": 3,
+      "started_question_limit": 3,
+      "processing_deadline_at": null,
+      "interpretive_frames": [
+        {
+          "frame_key": "frame-key-7bfa9a3e60a0782aae84bb863f90d991aa6ec32670edb37a8d0e50aa07112824",
+          "frame_ref": "frame-version-1bc022aae2fbebff3f8d3eae1ebf2282b54cd103e508b701c0300a78ce84dc32",
+          "trigger": "褒められた",
+          "received_meaning": "重かった",
+          "input_id": "2caf222d-ff6c-49bb-a838-c59e4f9d5874",
+          "recorded_at": "2026-09-10T06:12:12.59",
+          "status": "TENTATIVE",
+          "correction_text": null
+        }
+      ]
+    },
+    "result": {
+      "schema_version": "cocolon.emlis_thread.application.v1",
+      "thread_id": "74ff4a33-aedc-40e4-8e10-355435f2104b",
+      "revision": 6,
+      "state": "COMPLETED",
+      "original": {
+        "id": "cec2ab8d-350d-40a6-93f2-f10f7e90441e",
+        "created_at": "2026-09-11T06:12:12.826",
+        "memo": "褒められたのに、嬉しくなかった。",
+        "memo_action": ""
+      },
+      "timeline": [
+        {
+          "event_id": "6dbc4b76-673c-4db0-adb2-fcc0686bbf7c",
+          "kind": "OBSERVATION",
+          "recorded_at": "2026-09-11T00:12:12.918-06:00",
+          "round_index": 0,
+          "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n\nEmlisから：\n褒められたことと嬉しくなかったことの両方を、その違いも含めて小さくせずに受け止めています。",
+          "stage": "INITIAL",
+          "is_current": true
+        },
+        {
+          "event_id": "42abd0ca-78db-4081-b410-d70e93f80c6f",
+          "kind": "QUESTION",
+          "recorded_at": "2026-09-11T00:12:12.918-06:00",
+          "round_index": 1,
+          "question_id": "emlis-question-c67dff0132dd910cb239a33754fbe5943daa30ddb6fa85a7dcbbb6e503cd320d",
+          "text": "「褒められた」は、あなたにはどんな意味として届きましたか。"
+        },
+        {
+          "event_id": "84e2c502-6d2b-4c32-bf5a-0a2567d80853",
+          "kind": "ANSWER",
+          "recorded_at": "2026-09-11T00:12:12.934-06:00",
+          "round_index": 1,
+          "text": "分からない。",
+          "question_id": "emlis-question-c67dff0132dd910cb239a33754fbe5943daa30ddb6fa85a7dcbbb6e503cd320d",
+          "authored_at": "2026-09-11T00:00:00+00:00"
+        }
+      ],
+      "can_write": true,
+      "pending_question": null,
+      "current_observation": {
+        "event_id": "6dbc4b76-673c-4db0-adb2-fcc0686bbf7c",
+        "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n\nEmlisから：\n褒められたことと嬉しくなかったことの両方を、その違いも含めて小さくせずに受け止めています。"
+      },
+      "body_state": "UNCHANGED",
+      "answer_saved": true,
+      "answer_assessment": "RESOLVED",
+      "meaning_updated": false,
+      "failure_code": null,
+      "operation_id": "ec06038d-94fa-49cb-8512-f0b167169756",
+      "attempt_id": "d3dfa18b-6097-4943-bbea-09dd4151f4c6",
+      "requested_attempt_id": null,
+      "can_retry": false,
+      "can_continue": false,
+      "issued_count": 1,
+      "question_limit": 3,
+      "started_question_limit": 3,
+      "processing_deadline_at": null,
+      "interpretive_frames": [
+        {
+          "frame_key": "frame-key-7bfa9a3e60a0782aae84bb863f90d991aa6ec32670edb37a8d0e50aa07112824",
+          "frame_ref": "frame-version-1bc022aae2fbebff3f8d3eae1ebf2282b54cd103e508b701c0300a78ce84dc32",
+          "trigger": "褒められた",
+          "received_meaning": "重かった",
+          "input_id": "2caf222d-ff6c-49bb-a838-c59e4f9d5874",
+          "recorded_at": "2026-09-10T06:12:12.59",
+          "status": "TENTATIVE",
+          "correction_text": null
+        }
+      ]
+    }
+  },
+  {
+    "tier": "premium",
+    "case": "partial",
+    "answer": "その時は寂しかった。どう表したらいいかはまだ分からない。",
+    "initial": {
+      "schema_version": "cocolon.emlis_thread.application.v1",
+      "thread_id": "5e3ba145-4cfa-413b-bf57-e80e632efe81",
+      "revision": 3,
+      "state": "AWAITING_ANSWER",
+      "original": {
+        "id": "40bf5629-6417-464b-bfe5-3a193000ffc2",
+        "created_at": "2026-09-11T06:12:13.2",
+        "memo": "褒められたのに、嬉しくなかった。",
+        "memo_action": ""
+      },
+      "timeline": [
+        {
+          "event_id": "42c2a453-f410-4507-b1fa-fcf80ef7f12a",
+          "kind": "OBSERVATION",
+          "recorded_at": "2026-09-11T00:12:13.297-06:00",
+          "round_index": 0,
+          "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n\nEmlisから：\n褒められたことと嬉しくなかったことの両方を、その違いも含めて小さくせずに受け止めています。",
+          "stage": "INITIAL",
+          "is_current": true
+        },
+        {
+          "event_id": "626e486a-34fa-4750-a9ae-063e48c193a8",
+          "kind": "QUESTION",
+          "recorded_at": "2026-09-11T00:12:13.297-06:00",
+          "round_index": 1,
+          "question_id": "emlis-question-5208aac7b34ef4d05e22c59dfe4725053761ac6eacdbbe0b8e5093631bb8b9ae",
+          "text": "「褒められた」は、あなたにはどんな意味として届きましたか。"
+        }
+      ],
+      "can_write": true,
+      "pending_question": {
+        "event_id": "626e486a-34fa-4750-a9ae-063e48c193a8",
+        "kind": "QUESTION",
+        "recorded_at": "2026-09-11T00:12:13.297-06:00",
+        "round_index": 1,
+        "question_id": "emlis-question-5208aac7b34ef4d05e22c59dfe4725053761ac6eacdbbe0b8e5093631bb8b9ae",
+        "text": "「褒められた」は、あなたにはどんな意味として届きましたか。"
+      },
+      "current_observation": {
+        "event_id": "42c2a453-f410-4507-b1fa-fcf80ef7f12a",
+        "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n\nEmlisから：\n褒められたことと嬉しくなかったことの両方を、その違いも含めて小さくせずに受け止めています。"
+      },
+      "body_state": "PRE_QUESTION",
+      "answer_saved": false,
+      "answer_assessment": "NOT_APPLICABLE",
+      "meaning_updated": false,
+      "failure_code": null,
+      "operation_id": "c8c36508-4adf-4f3b-b22f-0170322b6b9d",
+      "attempt_id": "92e48929-62ba-40d8-8ee0-b75686c454d4",
+      "requested_attempt_id": null,
+      "can_retry": false,
+      "can_continue": false,
+      "issued_count": 1,
+      "question_limit": 3,
+      "started_question_limit": 3,
+      "processing_deadline_at": null,
+      "interpretive_frames": [
+        {
+          "frame_key": "frame-key-4ca7a92568827d64e05c0ca54d1401fa05d91749d81f4bb6a2c91ed5b1f6724d",
+          "frame_ref": "frame-version-6b15c174f508b04ba9f6f238c9e14188ace66739870ff24b5b3e34976cbafd48",
+          "trigger": "褒められた",
+          "received_meaning": "重かった",
+          "input_id": "7d7a5938-2c89-4f26-be92-f34b179fa6ec",
+          "recorded_at": "2026-09-10T06:12:12.961",
+          "status": "TENTATIVE",
+          "correction_text": null
+        }
+      ]
+    },
+    "result": {
+      "schema_version": "cocolon.emlis_thread.application.v1",
+      "thread_id": "5e3ba145-4cfa-413b-bf57-e80e632efe81",
+      "revision": 6,
+      "state": "COMPLETED",
+      "original": {
+        "id": "40bf5629-6417-464b-bfe5-3a193000ffc2",
+        "created_at": "2026-09-11T06:12:13.2",
+        "memo": "褒められたのに、嬉しくなかった。",
+        "memo_action": ""
+      },
+      "timeline": [
+        {
+          "event_id": "42c2a453-f410-4507-b1fa-fcf80ef7f12a",
+          "kind": "OBSERVATION",
+          "recorded_at": "2026-09-11T00:12:13.297-06:00",
+          "round_index": 0,
+          "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n\nEmlisから：\n褒められたことと嬉しくなかったことの両方を、その違いも含めて小さくせずに受け止めています。",
+          "stage": "INITIAL",
+          "is_current": false
+        },
+        {
+          "event_id": "626e486a-34fa-4750-a9ae-063e48c193a8",
+          "kind": "QUESTION",
+          "recorded_at": "2026-09-11T00:12:13.297-06:00",
+          "round_index": 1,
+          "question_id": "emlis-question-5208aac7b34ef4d05e22c59dfe4725053761ac6eacdbbe0b8e5093631bb8b9ae",
+          "text": "「褒められた」は、あなたにはどんな意味として届きましたか。"
+        },
+        {
+          "event_id": "4bed5ca4-22b2-482e-912d-f8962a71aab3",
+          "kind": "ANSWER",
+          "recorded_at": "2026-09-11T00:12:13.312-06:00",
+          "round_index": 1,
+          "text": "その時は寂しかった。どう表したらいいかはまだ分からない。",
+          "question_id": "emlis-question-5208aac7b34ef4d05e22c59dfe4725053761ac6eacdbbe0b8e5093631bb8b9ae",
+          "authored_at": "2026-09-11T00:00:00+00:00"
+        },
+        {
+          "event_id": "6f26da9e-ca4f-42f0-8a6d-8c39c55022da",
+          "kind": "OBSERVATION",
+          "recorded_at": "2026-09-11T00:12:13.457-06:00",
+          "round_index": 1,
+          "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。 「褒められた」ことに対するその時の受け止めとして、「寂しかった」が見えます。\n\nEmlisから：\n褒められたことについて、その時に寂しかったことを小さくせずに受け止めています。",
+          "stage": "REFINED",
+          "is_current": true
+        }
+      ],
+      "can_write": true,
+      "pending_question": null,
+      "current_observation": {
+        "event_id": "6f26da9e-ca4f-42f0-8a6d-8c39c55022da",
+        "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。 「褒められた」ことに対するその時の受け止めとして、「寂しかった」が見えます。\n\nEmlisから：\n褒められたことについて、その時に寂しかったことを小さくせずに受け止めています。"
+      },
+      "body_state": "PARTIALLY_REFINED",
+      "answer_saved": true,
+      "answer_assessment": "PARTIAL",
+      "meaning_updated": true,
+      "failure_code": null,
+      "operation_id": "36cbee4a-928f-43b1-82c3-0311cc08cdd2",
+      "attempt_id": "eeb3ca7f-109b-49a2-8300-bcf6aaa3ee81",
+      "requested_attempt_id": null,
+      "can_retry": false,
+      "can_continue": false,
+      "issued_count": 1,
+      "question_limit": 3,
+      "started_question_limit": 3,
+      "processing_deadline_at": null,
+      "interpretive_frames": [
+        {
+          "frame_key": "frame-key-4ca7a92568827d64e05c0ca54d1401fa05d91749d81f4bb6a2c91ed5b1f6724d",
+          "frame_ref": "frame-version-6b15c174f508b04ba9f6f238c9e14188ace66739870ff24b5b3e34976cbafd48",
+          "trigger": "褒められた",
+          "received_meaning": "重かった",
+          "input_id": "7d7a5938-2c89-4f26-be92-f34b179fa6ec",
+          "recorded_at": "2026-09-10T06:12:12.961",
+          "status": "TENTATIVE",
+          "correction_text": null
+        }
+      ]
+    }
+  },
+  {
+    "tier": "premium",
+    "case": "correction_body_failure",
+    "answer": "「嬉しくなかった」は誤りです。",
+    "initial": {
+      "schema_version": "cocolon.emlis_thread.application.v1",
+      "thread_id": "a970307e-bed9-4476-bd25-1036ed14621a",
+      "revision": 3,
+      "state": "AWAITING_ANSWER",
+      "original": {
+        "id": "fb077813-8f32-4588-a1f9-f97aa45d9841",
+        "created_at": "2026-09-11T06:12:13.701",
+        "memo": "褒められたのに、嬉しくなかった。",
+        "memo_action": ""
+      },
+      "timeline": [
+        {
+          "event_id": "8e0afdc6-24a7-4e46-9103-deee5699ae7d",
+          "kind": "OBSERVATION",
+          "recorded_at": "2026-09-11T00:12:13.803-06:00",
+          "round_index": 0,
+          "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n\nEmlisから：\n褒められたことと嬉しくなかったことの両方を、その違いも含めて小さくせずに受け止めています。",
+          "stage": "INITIAL",
+          "is_current": true
+        },
+        {
+          "event_id": "0bedf3e7-0faa-4131-a539-4a5e7d5f0555",
+          "kind": "QUESTION",
+          "recorded_at": "2026-09-11T00:12:13.803-06:00",
+          "round_index": 1,
+          "question_id": "emlis-question-7f67704ad7abf4843ac7fabd53fade0e046e37b964287489fb009095a90b7624",
+          "text": "「褒められた」は、あなたにはどんな意味として届きましたか。"
+        }
+      ],
+      "can_write": true,
+      "pending_question": {
+        "event_id": "0bedf3e7-0faa-4131-a539-4a5e7d5f0555",
+        "kind": "QUESTION",
+        "recorded_at": "2026-09-11T00:12:13.803-06:00",
+        "round_index": 1,
+        "question_id": "emlis-question-7f67704ad7abf4843ac7fabd53fade0e046e37b964287489fb009095a90b7624",
+        "text": "「褒められた」は、あなたにはどんな意味として届きましたか。"
+      },
+      "current_observation": {
+        "event_id": "8e0afdc6-24a7-4e46-9103-deee5699ae7d",
+        "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n\nEmlisから：\n褒められたことと嬉しくなかったことの両方を、その違いも含めて小さくせずに受け止めています。"
+      },
+      "body_state": "PRE_QUESTION",
+      "answer_saved": false,
+      "answer_assessment": "NOT_APPLICABLE",
+      "meaning_updated": false,
+      "failure_code": null,
+      "operation_id": "34e8654e-5f1a-4603-b7ba-4bfb05e82722",
+      "attempt_id": "da4c3048-404d-4abc-931e-3815484d27df",
+      "requested_attempt_id": null,
+      "can_retry": false,
+      "can_continue": false,
+      "issued_count": 1,
+      "question_limit": 3,
+      "started_question_limit": 3,
+      "processing_deadline_at": null,
+      "interpretive_frames": [
+        {
+          "frame_key": "frame-key-9edb4bf00128c59c77f83f89d4fb0cc7ad6aee8325041ccb852614a66639c19b",
+          "frame_ref": "frame-version-f05b947698360e0509bee74623b0d08e3499c325a945c4bd37dc60bdbef9a0bb",
+          "trigger": "褒められた",
+          "received_meaning": "重かった",
+          "input_id": "bc31f7fd-9f95-4829-9979-1c26b095b03f",
+          "recorded_at": "2026-09-10T06:12:13.472",
+          "status": "TENTATIVE",
+          "correction_text": null
+        }
+      ]
+    },
+    "result": {
+      "schema_version": "cocolon.emlis_thread.application.v1",
+      "thread_id": "a970307e-bed9-4476-bd25-1036ed14621a",
+      "revision": 6,
+      "state": "RESPONSE_FAILED",
+      "original": {
+        "id": "fb077813-8f32-4588-a1f9-f97aa45d9841",
+        "created_at": "2026-09-11T06:12:13.701",
+        "memo": "褒められたのに、嬉しくなかった。",
+        "memo_action": ""
+      },
+      "timeline": [
+        {
+          "event_id": "8e0afdc6-24a7-4e46-9103-deee5699ae7d",
+          "kind": "OBSERVATION",
+          "recorded_at": "2026-09-11T00:12:13.803-06:00",
+          "round_index": 0,
+          "text": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n\nEmlisから：\n褒められたことと嬉しくなかったことの両方を、その違いも含めて小さくせずに受け止めています。",
+          "stage": "INITIAL",
+          "is_current": false
+        },
+        {
+          "event_id": "0bedf3e7-0faa-4131-a539-4a5e7d5f0555",
+          "kind": "QUESTION",
+          "recorded_at": "2026-09-11T00:12:13.803-06:00",
+          "round_index": 1,
+          "question_id": "emlis-question-7f67704ad7abf4843ac7fabd53fade0e046e37b964287489fb009095a90b7624",
+          "text": "「褒められた」は、あなたにはどんな意味として届きましたか。"
+        },
+        {
+          "event_id": "c73bc47d-2d20-4b59-b967-e290cf8efee6",
+          "kind": "ANSWER",
+          "recorded_at": "2026-09-11T00:12:13.819-06:00",
+          "round_index": 1,
+          "text": "「嬉しくなかった」は誤りです。",
+          "question_id": "emlis-question-7f67704ad7abf4843ac7fabd53fade0e046e37b964287489fb009095a90b7624",
+          "authored_at": "2026-09-11T00:00:00+00:00"
+        }
+      ],
+      "can_write": true,
+      "pending_question": null,
+      "current_observation": null,
+      "body_state": "MEANING_UPDATED_BODY_UNAVAILABLE",
+      "answer_saved": true,
+      "answer_assessment": "RESOLVED",
+      "meaning_updated": true,
+      "failure_code": "body_not_validated",
+      "operation_id": "52e57f50-ffa6-4d84-9bf5-f4a904be929e",
+      "attempt_id": "b2a00f5c-9928-4b3f-82ac-45d47f28fca6",
+      "requested_attempt_id": null,
+      "can_retry": false,
+      "can_continue": false,
+      "issued_count": 1,
+      "question_limit": 3,
+      "started_question_limit": 3,
+      "processing_deadline_at": null,
+      "interpretive_frames": [
+        {
+          "frame_key": "frame-key-9edb4bf00128c59c77f83f89d4fb0cc7ad6aee8325041ccb852614a66639c19b",
+          "frame_ref": "frame-version-f05b947698360e0509bee74623b0d08e3499c325a945c4bd37dc60bdbef9a0bb",
+          "trigger": "褒められた",
+          "received_meaning": "重かった",
+          "input_id": "bc31f7fd-9f95-4829-9979-1c26b095b03f",
+          "recorded_at": "2026-09-10T06:12:13.472",
+          "status": "TENTATIVE",
+          "correction_text": null
+        }
+      ]
+    }
+  },
+  {
+    "tier": "premium",
+    "case": "three_rounds",
+    "turns": [
+      {
+        "schema_version": "cocolon.emlis_thread.application.v1",
+        "thread_id": "238d259e-5de2-498f-8338-b5843fd03c6c",
+        "revision": 3,
+        "state": "AWAITING_ANSWER",
+        "original": {
+          "id": "4e42ffe4-7195-4845-9efd-76318882ed92",
+          "created_at": "2026-09-11T06:12:13.853",
+          "memo": "褒められたのに、嬉しくなかった。誘われたのに、悲しかった。頼まれたのに、寂しかった。",
+          "memo_action": ""
+        },
+        "timeline": [
+          {
+            "event_id": "4aa9705e-f104-4781-8c02-d79ca532d92f",
+            "kind": "OBSERVATION",
+            "recorded_at": "2026-09-11T00:12:13.925-06:00",
+            "round_index": 0,
+            "text": "見えたこと：\n「褒められた」の一方で「嬉しくなかった」、また「誘われた」の一方で「悲しかった」、また「頼まれた」の一方で「寂しかった」という、それぞれ異なる向きが並んでいます。\n\nEmlisから：\n褒められたことと嬉しくなかったことの両方を、その違いも含めて小さくせずに受け止めています。",
+            "stage": "INITIAL",
+            "is_current": true
+          },
+          {
+            "event_id": "1bbafec8-0999-422b-b175-330b1e8eb15e",
+            "kind": "QUESTION",
+            "recorded_at": "2026-09-11T00:12:13.925-06:00",
+            "round_index": 1,
+            "question_id": "emlis-question-f5e6440e40c56425ae0859c8053795197a1a6a1e0c59c18f2a9e727d8be47706",
+            "text": "「褒められた」は、あなたにはどんな意味として届きましたか。"
+          }
+        ],
+        "can_write": true,
+        "pending_question": {
+          "event_id": "1bbafec8-0999-422b-b175-330b1e8eb15e",
+          "kind": "QUESTION",
+          "recorded_at": "2026-09-11T00:12:13.925-06:00",
+          "round_index": 1,
+          "question_id": "emlis-question-f5e6440e40c56425ae0859c8053795197a1a6a1e0c59c18f2a9e727d8be47706",
+          "text": "「褒められた」は、あなたにはどんな意味として届きましたか。"
+        },
+        "current_observation": {
+          "event_id": "4aa9705e-f104-4781-8c02-d79ca532d92f",
+          "text": "見えたこと：\n「褒められた」の一方で「嬉しくなかった」、また「誘われた」の一方で「悲しかった」、また「頼まれた」の一方で「寂しかった」という、それぞれ異なる向きが並んでいます。\n\nEmlisから：\n褒められたことと嬉しくなかったことの両方を、その違いも含めて小さくせずに受け止めています。"
+        },
+        "body_state": "PRE_QUESTION",
+        "answer_saved": false,
+        "answer_assessment": "NOT_APPLICABLE",
+        "meaning_updated": false,
+        "failure_code": null,
+        "operation_id": "a4febfb3-d1b1-4783-98dc-383ba62fa68c",
+        "attempt_id": "8ab56af9-01f2-4e31-ae4c-2440107a4953",
+        "requested_attempt_id": null,
+        "can_retry": false,
+        "can_continue": false,
+        "issued_count": 1,
+        "question_limit": 3,
+        "started_question_limit": 3,
+        "processing_deadline_at": null,
+        "interpretive_frames": []
+      },
+      {
+        "schema_version": "cocolon.emlis_thread.application.v1",
+        "thread_id": "238d259e-5de2-498f-8338-b5843fd03c6c",
+        "revision": 6,
+        "state": "AWAITING_CONTINUE",
+        "original": {
+          "id": "4e42ffe4-7195-4845-9efd-76318882ed92",
+          "created_at": "2026-09-11T06:12:13.853",
+          "memo": "褒められたのに、嬉しくなかった。誘われたのに、悲しかった。頼まれたのに、寂しかった。",
+          "memo_action": ""
+        },
+        "timeline": [
+          {
+            "event_id": "4aa9705e-f104-4781-8c02-d79ca532d92f",
+            "kind": "OBSERVATION",
+            "recorded_at": "2026-09-11T00:12:13.925-06:00",
+            "round_index": 0,
+            "text": "見えたこと：\n「褒められた」の一方で「嬉しくなかった」、また「誘われた」の一方で「悲しかった」、また「頼まれた」の一方で「寂しかった」という、それぞれ異なる向きが並んでいます。\n\nEmlisから：\n褒められたことと嬉しくなかったことの両方を、その違いも含めて小さくせずに受け止めています。",
+            "stage": "INITIAL",
+            "is_current": false
+          },
+          {
+            "event_id": "1bbafec8-0999-422b-b175-330b1e8eb15e",
+            "kind": "QUESTION",
+            "recorded_at": "2026-09-11T00:12:13.925-06:00",
+            "round_index": 1,
+            "question_id": "emlis-question-f5e6440e40c56425ae0859c8053795197a1a6a1e0c59c18f2a9e727d8be47706",
+            "text": "「褒められた」は、あなたにはどんな意味として届きましたか。"
+          },
+          {
+            "event_id": "48d70c14-cd41-49f8-8d58-7ff16e96ecf7",
+            "kind": "ANSWER",
+            "recorded_at": "2026-09-11T00:12:13.938-06:00",
+            "round_index": 1,
+            "text": "その時は重かった。",
+            "question_id": "emlis-question-f5e6440e40c56425ae0859c8053795197a1a6a1e0c59c18f2a9e727d8be47706",
+            "authored_at": "2026-09-11T00:00:00+00:00"
+          },
+          {
+            "event_id": "2bf4b280-067e-432f-b4b2-96496f15450c",
+            "kind": "OBSERVATION",
+            "recorded_at": "2026-09-11T00:12:14.018-06:00",
+            "round_index": 1,
+            "text": "見えたこと：\n「褒められた」の一方で「嬉しくなかった」、また「誘われた」の一方で「悲しかった」、また「頼まれた」の一方で「寂しかった」という、それぞれ異なる向きが並んでいます。 「褒められた」ことに対するその時の受け止めとして、「重かった」が見えます。\n\nEmlisから：\n褒められたことについて、その時に重かったことを小さくせずに受け止めています。",
+            "stage": "REFINED",
+            "is_current": true
+          }
+        ],
+        "can_write": true,
+        "pending_question": null,
+        "current_observation": {
+          "event_id": "2bf4b280-067e-432f-b4b2-96496f15450c",
+          "text": "見えたこと：\n「褒められた」の一方で「嬉しくなかった」、また「誘われた」の一方で「悲しかった」、また「頼まれた」の一方で「寂しかった」という、それぞれ異なる向きが並んでいます。 「褒められた」ことに対するその時の受け止めとして、「重かった」が見えます。\n\nEmlisから：\n褒められたことについて、その時に重かったことを小さくせずに受け止めています。"
+        },
+        "body_state": "REFINED",
+        "answer_saved": true,
+        "answer_assessment": "RESOLVED",
+        "meaning_updated": true,
+        "failure_code": null,
+        "operation_id": "6e8d117e-c5bc-4429-b564-f96f24fb2025",
+        "attempt_id": "f5a8feac-c665-44ae-8fc0-0bf3f7f54e51",
+        "requested_attempt_id": null,
+        "can_retry": false,
+        "can_continue": true,
+        "issued_count": 1,
+        "question_limit": 3,
+        "started_question_limit": 3,
+        "processing_deadline_at": null,
+        "interpretive_frames": []
+      },
+      {
+        "schema_version": "cocolon.emlis_thread.application.v1",
+        "thread_id": "238d259e-5de2-498f-8338-b5843fd03c6c",
+        "revision": 7,
+        "state": "AWAITING_ANSWER",
+        "original": {
+          "id": "4e42ffe4-7195-4845-9efd-76318882ed92",
+          "created_at": "2026-09-11T06:12:13.853",
+          "memo": "褒められたのに、嬉しくなかった。誘われたのに、悲しかった。頼まれたのに、寂しかった。",
+          "memo_action": ""
+        },
+        "timeline": [
+          {
+            "event_id": "4aa9705e-f104-4781-8c02-d79ca532d92f",
+            "kind": "OBSERVATION",
+            "recorded_at": "2026-09-11T00:12:13.925-06:00",
+            "round_index": 0,
+            "text": "見えたこと：\n「褒められた」の一方で「嬉しくなかった」、また「誘われた」の一方で「悲しかった」、また「頼まれた」の一方で「寂しかった」という、それぞれ異なる向きが並んでいます。\n\nEmlisから：\n褒められたことと嬉しくなかったことの両方を、その違いも含めて小さくせずに受け止めています。",
+            "stage": "INITIAL",
+            "is_current": false
+          },
+          {
+            "event_id": "1bbafec8-0999-422b-b175-330b1e8eb15e",
+            "kind": "QUESTION",
+            "recorded_at": "2026-09-11T00:12:13.925-06:00",
+            "round_index": 1,
+            "question_id": "emlis-question-f5e6440e40c56425ae0859c8053795197a1a6a1e0c59c18f2a9e727d8be47706",
+            "text": "「褒められた」は、あなたにはどんな意味として届きましたか。"
+          },
+          {
+            "event_id": "48d70c14-cd41-49f8-8d58-7ff16e96ecf7",
+            "kind": "ANSWER",
+            "recorded_at": "2026-09-11T00:12:13.938-06:00",
+            "round_index": 1,
+            "text": "その時は重かった。",
+            "question_id": "emlis-question-f5e6440e40c56425ae0859c8053795197a1a6a1e0c59c18f2a9e727d8be47706",
+            "authored_at": "2026-09-11T00:00:00+00:00"
+          },
+          {
+            "event_id": "2bf4b280-067e-432f-b4b2-96496f15450c",
+            "kind": "OBSERVATION",
+            "recorded_at": "2026-09-11T00:12:14.018-06:00",
+            "round_index": 1,
+            "text": "見えたこと：\n「褒められた」の一方で「嬉しくなかった」、また「誘われた」の一方で「悲しかった」、また「頼まれた」の一方で「寂しかった」という、それぞれ異なる向きが並んでいます。 「褒められた」ことに対するその時の受け止めとして、「重かった」が見えます。\n\nEmlisから：\n褒められたことについて、その時に重かったことを小さくせずに受け止めています。",
+            "stage": "REFINED",
+            "is_current": true
+          },
+          {
+            "event_id": "40a39f7d-2e0c-490c-81d7-2893b7508abc",
+            "kind": "QUESTION",
+            "recorded_at": "2026-09-11T00:12:14.035-06:00",
+            "round_index": 2,
+            "question_id": "emlis-question-d6a51b2c5e7f8fa6269f6af785e73571638adf25eb6dfdc9f4c399c1b87895ee",
+            "text": "「誘われた」は、あなたにはどんな意味として届きましたか。"
+          }
+        ],
+        "can_write": true,
+        "pending_question": {
+          "event_id": "40a39f7d-2e0c-490c-81d7-2893b7508abc",
+          "kind": "QUESTION",
+          "recorded_at": "2026-09-11T00:12:14.035-06:00",
+          "round_index": 2,
+          "question_id": "emlis-question-d6a51b2c5e7f8fa6269f6af785e73571638adf25eb6dfdc9f4c399c1b87895ee",
+          "text": "「誘われた」は、あなたにはどんな意味として届きましたか。"
+        },
+        "current_observation": {
+          "event_id": "2bf4b280-067e-432f-b4b2-96496f15450c",
+          "text": "見えたこと：\n「褒められた」の一方で「嬉しくなかった」、また「誘われた」の一方で「悲しかった」、また「頼まれた」の一方で「寂しかった」という、それぞれ異なる向きが並んでいます。 「褒められた」ことに対するその時の受け止めとして、「重かった」が見えます。\n\nEmlisから：\n褒められたことについて、その時に重かったことを小さくせずに受け止めています。"
+        },
+        "body_state": "REFINED",
+        "answer_saved": true,
+        "answer_assessment": "RESOLVED",
+        "meaning_updated": true,
+        "failure_code": null,
+        "operation_id": "6e8d117e-c5bc-4429-b564-f96f24fb2025",
+        "attempt_id": "f5a8feac-c665-44ae-8fc0-0bf3f7f54e51",
+        "requested_attempt_id": null,
+        "can_retry": false,
+        "can_continue": false,
+        "issued_count": 2,
+        "question_limit": 3,
+        "started_question_limit": 3,
+        "processing_deadline_at": null,
+        "interpretive_frames": []
+      },
+      {
+        "schema_version": "cocolon.emlis_thread.application.v1",
+        "thread_id": "238d259e-5de2-498f-8338-b5843fd03c6c",
+        "revision": 10,
+        "state": "AWAITING_CONTINUE",
+        "original": {
+          "id": "4e42ffe4-7195-4845-9efd-76318882ed92",
+          "created_at": "2026-09-11T06:12:13.853",
+          "memo": "褒められたのに、嬉しくなかった。誘われたのに、悲しかった。頼まれたのに、寂しかった。",
+          "memo_action": ""
+        },
+        "timeline": [
+          {
+            "event_id": "4aa9705e-f104-4781-8c02-d79ca532d92f",
+            "kind": "OBSERVATION",
+            "recorded_at": "2026-09-11T00:12:13.925-06:00",
+            "round_index": 0,
+            "text": "見えたこと：\n「褒められた」の一方で「嬉しくなかった」、また「誘われた」の一方で「悲しかった」、また「頼まれた」の一方で「寂しかった」という、それぞれ異なる向きが並んでいます。\n\nEmlisから：\n褒められたことと嬉しくなかったことの両方を、その違いも含めて小さくせずに受け止めています。",
+            "stage": "INITIAL",
+            "is_current": false
+          },
+          {
+            "event_id": "1bbafec8-0999-422b-b175-330b1e8eb15e",
+            "kind": "QUESTION",
+            "recorded_at": "2026-09-11T00:12:13.925-06:00",
+            "round_index": 1,
+            "question_id": "emlis-question-f5e6440e40c56425ae0859c8053795197a1a6a1e0c59c18f2a9e727d8be47706",
+            "text": "「褒められた」は、あなたにはどんな意味として届きましたか。"
+          },
+          {
+            "event_id": "48d70c14-cd41-49f8-8d58-7ff16e96ecf7",
+            "kind": "ANSWER",
+            "recorded_at": "2026-09-11T00:12:13.938-06:00",
+            "round_index": 1,
+            "text": "その時は重かった。",
+            "question_id": "emlis-question-f5e6440e40c56425ae0859c8053795197a1a6a1e0c59c18f2a9e727d8be47706",
+            "authored_at": "2026-09-11T00:00:00+00:00"
+          },
+          {
+            "event_id": "2bf4b280-067e-432f-b4b2-96496f15450c",
+            "kind": "OBSERVATION",
+            "recorded_at": "2026-09-11T00:12:14.018-06:00",
+            "round_index": 1,
+            "text": "見えたこと：\n「褒められた」の一方で「嬉しくなかった」、また「誘われた」の一方で「悲しかった」、また「頼まれた」の一方で「寂しかった」という、それぞれ異なる向きが並んでいます。 「褒められた」ことに対するその時の受け止めとして、「重かった」が見えます。\n\nEmlisから：\n褒められたことについて、その時に重かったことを小さくせずに受け止めています。",
+            "stage": "REFINED",
+            "is_current": false
+          },
+          {
+            "event_id": "40a39f7d-2e0c-490c-81d7-2893b7508abc",
+            "kind": "QUESTION",
+            "recorded_at": "2026-09-11T00:12:14.035-06:00",
+            "round_index": 2,
+            "question_id": "emlis-question-d6a51b2c5e7f8fa6269f6af785e73571638adf25eb6dfdc9f4c399c1b87895ee",
+            "text": "「誘われた」は、あなたにはどんな意味として届きましたか。"
+          },
+          {
+            "event_id": "b13df5e7-0317-4262-9f28-77c3a50d738a",
+            "kind": "ANSWER",
+            "recorded_at": "2026-09-11T00:12:14.051-06:00",
+            "round_index": 2,
+            "text": "その時は怖かった。",
+            "question_id": "emlis-question-d6a51b2c5e7f8fa6269f6af785e73571638adf25eb6dfdc9f4c399c1b87895ee",
+            "authored_at": "2026-09-11T00:00:00+00:00"
+          },
+          {
+            "event_id": "16b8d41d-8017-42b1-b9a5-456e69c8e39c",
+            "kind": "OBSERVATION",
+            "recorded_at": "2026-09-11T00:12:14.146-06:00",
+            "round_index": 2,
+            "text": "見えたこと：\n「褒められた」の一方で「嬉しくなかった」、また「誘われた」の一方で「悲しかった」、また「頼まれた」の一方で「寂しかった」という、それぞれ異なる向きが並んでいます。 「褒められた」ことに対するその時の受け止めとして、「重かった」、また「誘われた」ことに対するその時の受け止めとして、「怖かった」が見えます。\n\nEmlisから：\n誘われたことについて、その時に怖かったことを小さくせずに受け止めています。",
+            "stage": "REFINED",
+            "is_current": true
+          }
+        ],
+        "can_write": true,
+        "pending_question": null,
+        "current_observation": {
+          "event_id": "16b8d41d-8017-42b1-b9a5-456e69c8e39c",
+          "text": "見えたこと：\n「褒められた」の一方で「嬉しくなかった」、また「誘われた」の一方で「悲しかった」、また「頼まれた」の一方で「寂しかった」という、それぞれ異なる向きが並んでいます。 「褒められた」ことに対するその時の受け止めとして、「重かった」、また「誘われた」ことに対するその時の受け止めとして、「怖かった」が見えます。\n\nEmlisから：\n誘われたことについて、その時に怖かったことを小さくせずに受け止めています。"
+        },
+        "body_state": "REFINED",
+        "answer_saved": true,
+        "answer_assessment": "RESOLVED",
+        "meaning_updated": true,
+        "failure_code": null,
+        "operation_id": "1a7de8ba-0f40-4ab2-9e0f-9225462fad98",
+        "attempt_id": "60b90aeb-f102-4f1a-86ab-a41efea604e0",
+        "requested_attempt_id": null,
+        "can_retry": false,
+        "can_continue": true,
+        "issued_count": 2,
+        "question_limit": 3,
+        "started_question_limit": 3,
+        "processing_deadline_at": null,
+        "interpretive_frames": []
+      },
+      {
+        "schema_version": "cocolon.emlis_thread.application.v1",
+        "thread_id": "238d259e-5de2-498f-8338-b5843fd03c6c",
+        "revision": 11,
+        "state": "AWAITING_ANSWER",
+        "original": {
+          "id": "4e42ffe4-7195-4845-9efd-76318882ed92",
+          "created_at": "2026-09-11T06:12:13.853",
+          "memo": "褒められたのに、嬉しくなかった。誘われたのに、悲しかった。頼まれたのに、寂しかった。",
+          "memo_action": ""
+        },
+        "timeline": [
+          {
+            "event_id": "4aa9705e-f104-4781-8c02-d79ca532d92f",
+            "kind": "OBSERVATION",
+            "recorded_at": "2026-09-11T00:12:13.925-06:00",
+            "round_index": 0,
+            "text": "見えたこと：\n「褒められた」の一方で「嬉しくなかった」、また「誘われた」の一方で「悲しかった」、また「頼まれた」の一方で「寂しかった」という、それぞれ異なる向きが並んでいます。\n\nEmlisから：\n褒められたことと嬉しくなかったことの両方を、その違いも含めて小さくせずに受け止めています。",
+            "stage": "INITIAL",
+            "is_current": false
+          },
+          {
+            "event_id": "1bbafec8-0999-422b-b175-330b1e8eb15e",
+            "kind": "QUESTION",
+            "recorded_at": "2026-09-11T00:12:13.925-06:00",
+            "round_index": 1,
+            "question_id": "emlis-question-f5e6440e40c56425ae0859c8053795197a1a6a1e0c59c18f2a9e727d8be47706",
+            "text": "「褒められた」は、あなたにはどんな意味として届きましたか。"
+          },
+          {
+            "event_id": "48d70c14-cd41-49f8-8d58-7ff16e96ecf7",
+            "kind": "ANSWER",
+            "recorded_at": "2026-09-11T00:12:13.938-06:00",
+            "round_index": 1,
+            "text": "その時は重かった。",
+            "question_id": "emlis-question-f5e6440e40c56425ae0859c8053795197a1a6a1e0c59c18f2a9e727d8be47706",
+            "authored_at": "2026-09-11T00:00:00+00:00"
+          },
+          {
+            "event_id": "2bf4b280-067e-432f-b4b2-96496f15450c",
+            "kind": "OBSERVATION",
+            "recorded_at": "2026-09-11T00:12:14.018-06:00",
+            "round_index": 1,
+            "text": "見えたこと：\n「褒められた」の一方で「嬉しくなかった」、また「誘われた」の一方で「悲しかった」、また「頼まれた」の一方で「寂しかった」という、それぞれ異なる向きが並んでいます。 「褒められた」ことに対するその時の受け止めとして、「重かった」が見えます。\n\nEmlisから：\n褒められたことについて、その時に重かったことを小さくせずに受け止めています。",
+            "stage": "REFINED",
+            "is_current": false
+          },
+          {
+            "event_id": "40a39f7d-2e0c-490c-81d7-2893b7508abc",
+            "kind": "QUESTION",
+            "recorded_at": "2026-09-11T00:12:14.035-06:00",
+            "round_index": 2,
+            "question_id": "emlis-question-d6a51b2c5e7f8fa6269f6af785e73571638adf25eb6dfdc9f4c399c1b87895ee",
+            "text": "「誘われた」は、あなたにはどんな意味として届きましたか。"
+          },
+          {
+            "event_id": "b13df5e7-0317-4262-9f28-77c3a50d738a",
+            "kind": "ANSWER",
+            "recorded_at": "2026-09-11T00:12:14.051-06:00",
+            "round_index": 2,
+            "text": "その時は怖かった。",
+            "question_id": "emlis-question-d6a51b2c5e7f8fa6269f6af785e73571638adf25eb6dfdc9f4c399c1b87895ee",
+            "authored_at": "2026-09-11T00:00:00+00:00"
+          },
+          {
+            "event_id": "16b8d41d-8017-42b1-b9a5-456e69c8e39c",
+            "kind": "OBSERVATION",
+            "recorded_at": "2026-09-11T00:12:14.146-06:00",
+            "round_index": 2,
+            "text": "見えたこと：\n「褒められた」の一方で「嬉しくなかった」、また「誘われた」の一方で「悲しかった」、また「頼まれた」の一方で「寂しかった」という、それぞれ異なる向きが並んでいます。 「褒められた」ことに対するその時の受け止めとして、「重かった」、また「誘われた」ことに対するその時の受け止めとして、「怖かった」が見えます。\n\nEmlisから：\n誘われたことについて、その時に怖かったことを小さくせずに受け止めています。",
+            "stage": "REFINED",
+            "is_current": true
+          },
+          {
+            "event_id": "d5a8c7a3-8e39-4a07-aa36-c84cc462e4ac",
+            "kind": "QUESTION",
+            "recorded_at": "2026-09-11T00:12:14.166-06:00",
+            "round_index": 3,
+            "question_id": "emlis-question-401bb86f1f79640e5eb0950c7f0e4e111da68ec3b4b281bedcbcec39c172834c",
+            "text": "「頼まれた」は、あなたにはどんな意味として届きましたか。"
+          }
+        ],
+        "can_write": true,
+        "pending_question": {
+          "event_id": "d5a8c7a3-8e39-4a07-aa36-c84cc462e4ac",
+          "kind": "QUESTION",
+          "recorded_at": "2026-09-11T00:12:14.166-06:00",
+          "round_index": 3,
+          "question_id": "emlis-question-401bb86f1f79640e5eb0950c7f0e4e111da68ec3b4b281bedcbcec39c172834c",
+          "text": "「頼まれた」は、あなたにはどんな意味として届きましたか。"
+        },
+        "current_observation": {
+          "event_id": "16b8d41d-8017-42b1-b9a5-456e69c8e39c",
+          "text": "見えたこと：\n「褒められた」の一方で「嬉しくなかった」、また「誘われた」の一方で「悲しかった」、また「頼まれた」の一方で「寂しかった」という、それぞれ異なる向きが並んでいます。 「褒められた」ことに対するその時の受け止めとして、「重かった」、また「誘われた」ことに対するその時の受け止めとして、「怖かった」が見えます。\n\nEmlisから：\n誘われたことについて、その時に怖かったことを小さくせずに受け止めています。"
+        },
+        "body_state": "REFINED",
+        "answer_saved": true,
+        "answer_assessment": "RESOLVED",
+        "meaning_updated": true,
+        "failure_code": null,
+        "operation_id": "1a7de8ba-0f40-4ab2-9e0f-9225462fad98",
+        "attempt_id": "60b90aeb-f102-4f1a-86ab-a41efea604e0",
+        "requested_attempt_id": null,
+        "can_retry": false,
+        "can_continue": false,
+        "issued_count": 3,
+        "question_limit": 3,
+        "started_question_limit": 3,
+        "processing_deadline_at": null,
+        "interpretive_frames": []
+      },
+      {
+        "schema_version": "cocolon.emlis_thread.application.v1",
+        "thread_id": "238d259e-5de2-498f-8338-b5843fd03c6c",
+        "revision": 14,
+        "state": "COMPLETED",
+        "original": {
+          "id": "4e42ffe4-7195-4845-9efd-76318882ed92",
+          "created_at": "2026-09-11T06:12:13.853",
+          "memo": "褒められたのに、嬉しくなかった。誘われたのに、悲しかった。頼まれたのに、寂しかった。",
+          "memo_action": ""
+        },
+        "timeline": [
+          {
+            "event_id": "4aa9705e-f104-4781-8c02-d79ca532d92f",
+            "kind": "OBSERVATION",
+            "recorded_at": "2026-09-11T00:12:13.925-06:00",
+            "round_index": 0,
+            "text": "見えたこと：\n「褒められた」の一方で「嬉しくなかった」、また「誘われた」の一方で「悲しかった」、また「頼まれた」の一方で「寂しかった」という、それぞれ異なる向きが並んでいます。\n\nEmlisから：\n褒められたことと嬉しくなかったことの両方を、その違いも含めて小さくせずに受け止めています。",
+            "stage": "INITIAL",
+            "is_current": false
+          },
+          {
+            "event_id": "1bbafec8-0999-422b-b175-330b1e8eb15e",
+            "kind": "QUESTION",
+            "recorded_at": "2026-09-11T00:12:13.925-06:00",
+            "round_index": 1,
+            "question_id": "emlis-question-f5e6440e40c56425ae0859c8053795197a1a6a1e0c59c18f2a9e727d8be47706",
+            "text": "「褒められた」は、あなたにはどんな意味として届きましたか。"
+          },
+          {
+            "event_id": "48d70c14-cd41-49f8-8d58-7ff16e96ecf7",
+            "kind": "ANSWER",
+            "recorded_at": "2026-09-11T00:12:13.938-06:00",
+            "round_index": 1,
+            "text": "その時は重かった。",
+            "question_id": "emlis-question-f5e6440e40c56425ae0859c8053795197a1a6a1e0c59c18f2a9e727d8be47706",
+            "authored_at": "2026-09-11T00:00:00+00:00"
+          },
+          {
+            "event_id": "2bf4b280-067e-432f-b4b2-96496f15450c",
+            "kind": "OBSERVATION",
+            "recorded_at": "2026-09-11T00:12:14.018-06:00",
+            "round_index": 1,
+            "text": "見えたこと：\n「褒められた」の一方で「嬉しくなかった」、また「誘われた」の一方で「悲しかった」、また「頼まれた」の一方で「寂しかった」という、それぞれ異なる向きが並んでいます。 「褒められた」ことに対するその時の受け止めとして、「重かった」が見えます。\n\nEmlisから：\n褒められたことについて、その時に重かったことを小さくせずに受け止めています。",
+            "stage": "REFINED",
+            "is_current": false
+          },
+          {
+            "event_id": "40a39f7d-2e0c-490c-81d7-2893b7508abc",
+            "kind": "QUESTION",
+            "recorded_at": "2026-09-11T00:12:14.035-06:00",
+            "round_index": 2,
+            "question_id": "emlis-question-d6a51b2c5e7f8fa6269f6af785e73571638adf25eb6dfdc9f4c399c1b87895ee",
+            "text": "「誘われた」は、あなたにはどんな意味として届きましたか。"
+          },
+          {
+            "event_id": "b13df5e7-0317-4262-9f28-77c3a50d738a",
+            "kind": "ANSWER",
+            "recorded_at": "2026-09-11T00:12:14.051-06:00",
+            "round_index": 2,
+            "text": "その時は怖かった。",
+            "question_id": "emlis-question-d6a51b2c5e7f8fa6269f6af785e73571638adf25eb6dfdc9f4c399c1b87895ee",
+            "authored_at": "2026-09-11T00:00:00+00:00"
+          },
+          {
+            "event_id": "16b8d41d-8017-42b1-b9a5-456e69c8e39c",
+            "kind": "OBSERVATION",
+            "recorded_at": "2026-09-11T00:12:14.146-06:00",
+            "round_index": 2,
+            "text": "見えたこと：\n「褒められた」の一方で「嬉しくなかった」、また「誘われた」の一方で「悲しかった」、また「頼まれた」の一方で「寂しかった」という、それぞれ異なる向きが並んでいます。 「褒められた」ことに対するその時の受け止めとして、「重かった」、また「誘われた」ことに対するその時の受け止めとして、「怖かった」が見えます。\n\nEmlisから：\n誘われたことについて、その時に怖かったことを小さくせずに受け止めています。",
+            "stage": "REFINED",
+            "is_current": false
+          },
+          {
+            "event_id": "d5a8c7a3-8e39-4a07-aa36-c84cc462e4ac",
+            "kind": "QUESTION",
+            "recorded_at": "2026-09-11T00:12:14.166-06:00",
+            "round_index": 3,
+            "question_id": "emlis-question-401bb86f1f79640e5eb0950c7f0e4e111da68ec3b4b281bedcbcec39c172834c",
+            "text": "「頼まれた」は、あなたにはどんな意味として届きましたか。"
+          },
+          {
+            "event_id": "3af72f56-4106-449d-8011-c5c9750aa634",
+            "kind": "ANSWER",
+            "recorded_at": "2026-09-11T00:12:14.186-06:00",
+            "round_index": 3,
+            "text": "その時は苦しかった。",
+            "question_id": "emlis-question-401bb86f1f79640e5eb0950c7f0e4e111da68ec3b4b281bedcbcec39c172834c",
+            "authored_at": "2026-09-11T00:00:00+00:00"
+          },
+          {
+            "event_id": "8077dd2a-dffb-459a-a126-22ec700ea765",
+            "kind": "OBSERVATION",
+            "recorded_at": "2026-09-11T00:12:14.301-06:00",
+            "round_index": 3,
+            "text": "見えたこと：\n「褒められた」の一方で「嬉しくなかった」、また「誘われた」の一方で「悲しかった」、また「頼まれた」の一方で「寂しかった」という、それぞれ異なる向きが並んでいます。 「褒められた」ことに対するその時の受け止めとして、「重かった」、また「誘われた」ことに対するその時の受け止めとして、「怖かった」、また「頼まれた」ことに対するその時の受け止めとして、「苦しかった」が見えます。\n\nEmlisから：\n頼まれたことについて、その時に苦しかったことを小さくせずに受け止めています。",
+            "stage": "REFINED",
+            "is_current": true
+          }
+        ],
+        "can_write": true,
+        "pending_question": null,
+        "current_observation": {
+          "event_id": "8077dd2a-dffb-459a-a126-22ec700ea765",
+          "text": "見えたこと：\n「褒められた」の一方で「嬉しくなかった」、また「誘われた」の一方で「悲しかった」、また「頼まれた」の一方で「寂しかった」という、それぞれ異なる向きが並んでいます。 「褒められた」ことに対するその時の受け止めとして、「重かった」、また「誘われた」ことに対するその時の受け止めとして、「怖かった」、また「頼まれた」ことに対するその時の受け止めとして、「苦しかった」が見えます。\n\nEmlisから：\n頼まれたことについて、その時に苦しかったことを小さくせずに受け止めています。"
+        },
+        "body_state": "REFINED",
+        "answer_saved": true,
+        "answer_assessment": "RESOLVED",
+        "meaning_updated": true,
+        "failure_code": null,
+        "operation_id": "50188b10-5e1b-4e1b-93d4-09b88082319d",
+        "attempt_id": "fa330d5b-bdc3-4f8f-8222-a043b066c00c",
+        "requested_attempt_id": null,
+        "can_retry": false,
+        "can_continue": false,
+        "issued_count": 3,
+        "question_limit": 3,
+        "started_question_limit": 3,
+        "processing_deadline_at": null,
+        "interpretive_frames": []
+      }
+    ]
+  }
+]

@@ -5,6 +5,7 @@ from typing import Any, Dict, Tuple
 
 from fastapi import FastAPI, HTTPException
 from fastapi.encoders import jsonable_encoder
+from fastapi import routing
 
 
 def _fastapi_default_value(default: Any) -> Tuple[bool, Any]:
@@ -20,8 +21,18 @@ def _fastapi_default_value(default: Any) -> Tuple[bool, Any]:
 def find_registered_route_endpoint(app: FastAPI, *, path: str, method: str = "GET"):
     target_path = str(path or "").strip()
     target_method = str(method or "GET").strip().upper()
-    for route in getattr(app, "routes", []) or []:
-        if str(getattr(route, "path", "") or "") != target_path:
+    routes = getattr(app, "routes", []) or []
+    # Newer FastAPI retains included routers instead of flattening app.routes.
+    # Use its effective paths (including prefixes), retaining older flat-route
+    # behavior for the FastAPI versions that do not expose this iterator.
+    contexts = getattr(routing, "iter_route_contexts", None)
+    registered = (
+        ((context.path, context.original_route) for context in contexts(routes))
+        if contexts is not None else
+        ((getattr(route, "path", ""), route) for route in routes)
+    )
+    for route_path, route in registered:
+        if str(route_path or "") != target_path:
             continue
         methods = {str(m or "").upper() for m in (getattr(route, "methods", set()) or set())}
         if target_method not in methods:

@@ -1,0 +1,1743 @@
+"""Piece's original-source adapter into CMEE's existing grounded graph types.
+
+No Emlis label, observation, reception, question answer or inferred relationship
+is a Piece source. The shared meaning blocks supply provisional editorial roles
+only. Full original sentences, including duplicates and dependent clauses, own
+all visible propositions. Authenticated saved-record retrieval remains B5.
+"""
+from __future__ import annotations
+
+from dataclasses import asdict, dataclass, replace
+import hashlib
+import json
+import re
+
+from emlis_ai_input_meaning_block_service import build_input_meaning_blocks
+from emlis_ai_types import EvidenceRef as InputEvidenceRef
+from piece_v2_content_policy import check_existing_detectors, unavailable
+from .contracts import (
+    AttachmentAdmission, EpistemicState, EvidenceRef, GroundedMeaningGraph,
+    MeaningEdge, MeaningNode, OwnerClass, ResolverResolution, SourceEnvelope,
+    SourceOwnerDisposition, SourceOwnerResolution, VisibleAuthority,
+)
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class PieceSentenceMeaning:
+    node_id: str
+    evidence_id: str
+    source_start: int
+    source_end: int
+    role: str
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class PieceRoleBinding:
+    """A user's explicit name-to-role binding, not an inferred anonymization."""
+    name: str
+    role: str
+    source_start: int
+    source_end: int
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class PieceNominalReference:
+    """Private source spans for a bounded, provisional discourse attachment."""
+    antecedent_node_id: str
+    reference_node_id: str
+    nominal_head: str
+    antecedent_scalar_span: tuple[int, int]
+    antecedent_utf8_span: tuple[int, int]
+    reference_scalar_span: tuple[int, int]
+    reference_utf8_span: tuple[int, int]
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class PiecePersonalEvaluation:
+    """Source-bound experiencer, evaluation predicate and nominal argument.
+
+    These are provisional Piece semantics, not a shared classifier's label or
+    a new source. Parts are ordered speaker / predicate / target, in the exact
+    original scalar and UTF-8 coordinate systems, before role publicization.
+    """
+    node_id: str
+    construction: str
+    kind: str
+    scalar_parts: tuple[tuple[int, int], ...]
+    utf8_parts: tuple[tuple[int, int], ...]
+    copula: str
+    polarity: str
+    temporal_scope: str
+    commitment: str
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class PieceExpressionScope:
+    """A source-marked relation attached to an explicit first-person expression.
+
+    Both clauses remain private exact ranges of the same original sentence.
+    The relation describes the written connective, not an inferred cause or
+    an assertion that a hypothetical condition has happened or a comparison is a wish.
+    A written concession keeps its two sides; it does not supply an inferred
+    expectation, a causal explanation or a resolution of their tension.
+    """
+    node_id: str
+    relation: str
+    marker: str
+    scope_scalar_span: tuple[int, int]
+    scope_utf8_span: tuple[int, int]
+    expression_scalar_span: tuple[int, int]
+    expression_utf8_span: tuple[int, int]
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class PieceSelectedFeeling:
+    """A saved selection bound to written text or private selection context.
+
+    selection_field/index address the immutable saved JSON, not text offsets.
+    node/evidence address retained text or separate, non-visible selection context.
+    This is selection coverage, never a cause or an inferred intensity.
+    The full saved snapshot still owns the exact raw label/strength spelling.
+    """
+    selection_field: str
+    selection_index: int
+    label: str
+    strength: str
+    node_id: str
+    evidence_id: str
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class PieceSelectionEvidence:
+    """An immutable JSON selection, never a fabricated original-text span."""
+    evidence_id: str
+    node_id: str
+    selection_field: str
+    selection_index: int
+    record_sha256: str
+    value_json: str
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class PieceSourceMeaning:
+    envelope: SourceEnvelope
+    graph: GroundedMeaningGraph
+    evidence: tuple[EvidenceRef, ...]
+    sentences: tuple[PieceSentenceMeaning, ...]
+    role_bindings: tuple[PieceRoleBinding, ...]
+    nominal_references: tuple[PieceNominalReference, ...] = ()
+    personal_evaluations: tuple[PiecePersonalEvaluation, ...] = ()
+    expression_scopes: tuple[PieceExpressionScope, ...] = ()
+    saved_snapshot: object | None = None
+    selected_feelings: tuple[PieceSelectedFeeling, ...] = ()
+    selection_evidence: tuple[PieceSelectionEvidence, ...] = ()
+    selection_contexts: tuple[MeaningNode, ...] = ()
+
+
+def piece_source_text(meaning: PieceSourceMeaning) -> str:
+    """Text coordinates belong to the source field, not its metadata frame."""
+    from .piece_refined import PieceSupplementalMeaning, PieceCorrectionMeaning
+    if type(meaning) is PieceCorrectionMeaning:
+        return meaning.source_snapshot.correction.explanation
+    if type(meaning) is PieceSupplementalMeaning:
+        return meaning.frozen_answer.source.answer_text_private
+    return meaning.envelope.raw_utf8.decode('utf-8')
+
+
+def piece_text_nodes(meaning: PieceSourceMeaning) -> tuple[MeaningNode, ...]:
+    return tuple(n for n in meaning.graph.nodes if n.node_kind != 'PIECE_SELECTED_FEELING')
+
+
+# These are clause operators, not a list of causes, topics or output phrases.
+# Ambiguous origin/causal "から", purpose/concessive "のに", reported wishes
+# and unmarked links are not promoted to a relation. Already-admitted
+# self-topic sentences keep their previous canonical identity.
+_SCOPE_RELATIONS = {
+    'ので': 'SOURCE_EXPLICIT_REASON',
+    'ならば': 'SOURCE_EXPLICIT_CONDITION',
+    'なら': 'SOURCE_EXPLICIT_CONDITION',
+    'けれども': 'SOURCE_EXPLICIT_CONCESSION',
+    'けれど': 'SOURCE_EXPLICIT_CONCESSION',
+}
+_SCOPED_EXPRESSION = re.compile(
+    r'^(?P<scope>(?P<premise>.+?)(?P<marker>'
+    + '|'.join(map(re.escape, _SCOPE_RELATIONS)) + r'))[、，,][ \t\u3000]*'
+    r'(?P<intention>(?:私|わたし|僕|ぼく|俺|おれ)(?:は|にとって|が)[、，,]?.+[。！!])$')
+# A sentence-initial time topic qualifies an explicit evaluation. The comma
+# fixes its boundary; time words inside the nominal target are not extracted.
+# Preserve the written relative time and contrast/additive particle without
+# resolving a date, inferring a previous evaluation, or changing predicate tense.
+# The same operator also qualifies a proved direct transitive expression.
+# It is not a general temporal parser or authority for other scoped wishes.
+# A prospective topic needs the same complete expression and comma boundary;
+# its exact source span, not the spelling alone, can authorize a temporal token.
+_TEMPORAL_EVALUATION = re.compile(
+    r'^(?P<scope>(?P<premise>以前|当時|今|現在|これから)(?P<marker>は|も))[、，,][ \t\u3000]*'
+    r'(?P<intention>(?:私|わたし|僕|ぼく|俺|おれ)(?:は|にとって|が)[、，,]?.+[。！!])$')
+# Preserve the complete self expression, not an inferred desire lemma.
+# 読みたい / 休みたい and a source-written comparison ending みたい retain
+# their exact surface. Neither is promoted to declaration by this operator.
+_SCOPED_SELF_END = re.compile(r'(?:たい|たくない)(?:です)?$')
+_SELF_TOPIC_MENTION = re.compile(r'(?:私|わたし|僕|ぼく|俺|おれ)は')
+
+
+def _scoped_expression_match(sentence: str) -> re.Match[str] | None:
+    """Bind the existing clause grammar only at an unquoted operator.
+
+    Keep the original regex for unquoted sources. For one admitted quotation,
+    constrain only the premise length at each unquoted marker candidate;
+    all groups and spans still come from matching the unchanged source.
+    """
+    if not any(c in sentence for c in '「」『』'):
+        return _SCOPED_EXPRESSION.fullmatch(sentence)
+    from emlis_ai_grounded_sentence_surface import _body_primary_quote_spans
+    quoted, balanced = _body_primary_quote_spans(sentence)
+    if not balanced or len(quoted) != 1:
+        return None
+    def inside(position):
+        return any(start - 1 <= position <= end for start, end in quoted)
+    positions = {match.start() for marker in _SCOPE_RELATIONS
+                 for match in re.finditer(re.escape(marker), sentence)
+                 if match.start() > 0 and not inside(match.start())}
+    matches = []
+    for position in sorted(positions):
+        pattern = _SCOPED_EXPRESSION.pattern.replace(
+            '(?P<premise>.+?)', '(?P<premise>.{' + str(position) + '})', 1)
+        match = re.fullmatch(pattern, sentence)
+        if match is not None and not inside(match.start('intention')):
+            matches.append(match)
+    return matches[0] if len(matches) == 1 else None
+
+
+def _has_unquoted_self_topic(premise: str) -> bool:
+    """A quoted speaker's self mention is not the outer scope's author."""
+    from emlis_ai_grounded_sentence_surface import _body_primary_quote_spans
+    quoted, balanced = _body_primary_quote_spans(premise)
+    if not balanced:
+        return True  # malformed source cannot gain a new outer reading
+    return any(not any(start - 1 <= match.start() < match.end() <= end + 1
+                       for start, end in quoted)
+               for match in _SELF_TOPIC_MENTION.finditer(premise))
+# This rejection reader deliberately permits an empty body so a grammatical
+# operator by itself cannot become a complete proposition or a declaration.
+# It supplies no new positive source grammar or lexical predicate.
+_SELF_PREDICATE_BODY = re.compile(
+    r'^(?:私|わたし|僕|ぼく|俺|おれ)は[、，,]?(?P<body>.*)。$')
+_BARE_SELF_OPERATORS = frozenset({'たい', 'たくない', 'みたい', 'てみたい', 'でみたい'})
+# Shared finite question boundary for the existing reservation and self-scope
+# readers. Keep the established nonquestion でも / どんなに distinctions.
+_FINITE_RESERVATION_QUESTION = re.compile(
+    r'(?:何|なん|なに)で(?!も(?=[^ぁ-ん]|\Z))|どんな(?!に)')
+
+
+def _topic_qualification_tail(body: str) -> str | None:
+    boundaries = tuple(re.finditer(
+        '(?:' + '|'.join(map(re.escape, _SCOPE_RELATIONS)) + r')[、，,]', body))
+    return (body[boundaries[-1].end():].strip('、，, \t\u3000')
+            if boundaries else None)
+
+
+def _validate_self_predicate_body(sentence: str) -> None:
+    # A single written exclamation is an existing declarative terminator.
+    # Use a grammar-only view, including for the rejection reader; the
+    # original node/evidence and the author's KEEP surface remain untouched.
+    statement = sentence[:-1] + '。' if sentence.endswith(('！', '!')) else sentence
+    expressions = [statement]
+    scoped = (_scoped_expression_match(statement)
+              or _TEMPORAL_EVALUATION.fullmatch(statement))
+    if scoped is not None:
+        expressions.append(scoped['intention'])
+    for expression in expressions:
+        topic = _SELF_PREDICATE_BODY.fullmatch(expression)
+        if topic is not None:
+            body = topic['body'].strip().removesuffix('です')
+            tail = _topic_qualification_tail(body)
+            if (not body or body in _BARE_SELF_OPERATORS
+                    or (tail is not None and (
+                        not tail or tail.removesuffix('です') in _BARE_SELF_OPERATORS))):
+                raise unavailable('expression_meaning_not_admitted')
+
+
+def _finite_self_person_action_account(sentence: str) -> bool:
+    """Qualify a complete written interpersonal account for the KEEP duty.
+
+    Reuse the source-role reader's finite voice/case grammar, without making
+    its provisional witness a Piece claim, inferred person, or new author.
+    Only an explicit self subject and an already-supported written person
+    role qualify. Original words, negation, register and past time stay put.
+    """
+    from piece_v2_expression import _DEPENDENT_START, _EMBEDDED_REPORT
+    from piece_v2_generation import (
+        _UNCERTAIN, _OMITTED_ACCOUNT_QUESTION, _OMITTED_LEXICAL_SCOPE,
+        _OMITTED_NEW_PREFIX_GUARD,
+    )
+    from .natural_reply_meaning import (
+        _clauses, _DAY, _SUBJECT, _FORMS, _arguments, _focus_participant, _participant, _SELF,
+    )
+    if (not sentence.endswith('。') or any(pattern.search(sentence) for pattern in (
+            _UNCERTAIN, _OMITTED_ACCOUNT_QUESTION, _OMITTED_LEXICAL_SCOPE,
+            _OMITTED_NEW_PREFIX_GUARD, _DEPENDENT_START, _EMBEDDED_REPORT))):
+        return False
+    rows, count = _clauses(sentence, 'piece_account', 'CURRENT')
+    if len(rows) != 1 or count != 1 or not rows[0].source_context_complete:
+        return False
+    row = rows[0]
+    if (row.raw_text != sentence[:-1] or row.scalar_start != 0
+            or row.scalar_end != len(sentence) - 1
+            or row.subject != 'SELF' or row.predicate not in {'頼む', '相談する', '伝える'}
+            or row.modality != 'fact' or row.temporal_scope != 'past'):
+        return False
+    value = _DAY.sub('', row.raw_text, count=1)
+    subject = _SUBJECT.match(value)
+    if subject is None:
+        return False
+    parsed = {_arguments(value[subject.end():-len(form)])
+              for form, lemma, polarity, modality, time, voice, receiving in _FORMS
+              if (lemma, polarity, modality, time, voice, receiving) == (
+                  row.predicate, row.polarity, row.modality, row.temporal_scope, row.voice, False)
+              and value.endswith(form)}
+    if len(parsed) != 1 or None in parsed:
+        return False
+    args = parsed.pop()
+    people = [(case, noun) for case, noun in args if case in {'に', 'から'}]
+    person = _participant(people[0][1], reply=False) if len(people) == 1 else ''
+    return bool(len(args) == 2 and sum(case == 'を' for case, _ in args) == 1
+                and len(people) == 1
+                and (row.voice == 'passive' or people[0][0] == 'に')
+                and person.startswith('WRITTEN:')
+                and person.removeprefix('WRITTEN:') not in _SELF | {'あなた', '本人', '彼', '彼女'}
+                and _focus_participant(people[0][1]))
+
+
+def _literal_self_account(sentence: str) -> bool:
+    """Retain a finite self expression without deciding wish versus simile.
+
+    The existing scoped literal owner already accepts these same complete
+    endings. Its plain and polite spellings own their original words here;
+    neither a shared role nor this reader supplies a new intent, predicate,
+    participant, assertion or declaration. This is finite source retention,
+    not a general grammaticality or lexical-part-of-speech judgment.
+    """
+    from piece_v2_expression import _SELF_TOPIC, _DEPENDENT_START, _EMBEDDED_REPORT
+    from piece_v2_generation import (
+        _OMITTED_ACCOUNT_QUESTION, _OMITTED_LEXICAL_SCOPE, _OMITTED_NEW_PREFIX_GUARD,
+    )
+    statement = sentence[:-1] + '。' if sentence.endswith(('！', '!')) else sentence
+    topic = _SELF_TOPIC.fullmatch(statement)
+    if topic is None:
+        return False
+    body = topic['body'].strip()
+    _validate_self_predicate_body(sentence)
+    return bool(_SCOPED_SELF_END.search(body)
+                and not _DEPENDENT_START.search(body)
+                and not _EMBEDDED_REPORT.search(body)
+                and not _OMITTED_ACCOUNT_QUESTION.search(body)
+                and not _OMITTED_LEXICAL_SCOPE.search(body)
+                and not _OMITTED_NEW_PREFIX_GUARD.search(body))
+
+
+def _scoped_finite_self_person_action(sentence: str) -> re.Match[str] | None:
+    """Bind one written reason/concession to a complete active past account.
+
+    The premise stays literal context. This bounded arm does not interpret
+    quoted speakers, named identities, nested operators, conditions or an
+    outer self mention, and never turns a completed action into an intent.
+    """
+    from .natural_reply_meaning import _clauses, _SELF
+    if (any(c in sentence for c in '「」『』"“”\r\n')
+            or re.search(_PERSON_NAME, sentence) or _HIRAGANA_ROLE_NAME.search(sentence)):
+        return None
+    match = _scoped_expression_match(sentence)
+    if (match is None or match['marker'] not in {'ので', 'けれど', 'けれども'}
+            or re.search(r'[、，,]', match['premise'])
+            or any(marker in match['premise'] for marker in _SCOPE_RELATIONS)
+            or any(speaker in match['premise'] for speaker in _SELF)
+            or not _finite_self_person_action_account(match['intention'])):
+        return None
+    rows, count = _clauses(match['intention'], 'piece_scoped_account', 'CURRENT')
+    return match if count == len(rows) == 1 and rows[0].voice == 'active' else None
+
+
+_SCOPE_KINDS = {
+    'SOURCE_EXPLICIT_REASON': 'PIECE_SOURCE_REASON_SCOPED_EXPRESSION',
+    'SOURCE_EXPLICIT_CONDITION': 'PIECE_SOURCE_CONDITION_SCOPED_EXPRESSION',
+    'SOURCE_EXPLICIT_CONCESSION': 'PIECE_SOURCE_CONCESSION_SCOPED_EXPRESSION',
+    'SOURCE_EXPLICIT_TIME_CONTEXT': 'PIECE_SOURCE_TIME_SCOPED_EXPRESSION',
+}
+
+
+
+# A prospective time adverb at a clause opening, followed by an explicitly
+# written calendar recurrence, is not a nominal source argument. Requiring
+# the recurrence keeps bare/ablative uses and nominal "...の" unadmitted.
+# This is a bounded temporal surface, not a general deictic resolver.
+_CALENDAR_TIME_ADVERB = re.compile(
+    r'(?P<adverb>これから)[、，,]?[ \t\u3000]*'
+    r'毎(?:日|週|月|年|朝|晩)(?![はがをのとにで])')
+
+# A written numeric interval followed by a comma also has an explicit
+# adverb boundary. Do not search inside nominal arguments or treat a bare
+# number, an interval's nominal suffix, or an unpunctuated continuation as
+# proof. Digits and units remain source text: no duration/date calculation,
+# numeral normalization, inferred author, or nominal referent is introduced.
+_DURATION_TIME_ADVERB = re.compile(
+    r'(?P<adverb>これから)[、，,]?[ \t\u3000]*'
+    r'[0-9０-９]+(?:秒|分|時|日|週|[かヶ箇]月|年)間'
+    r'[ \t\u3000]*[、，,][ \t\u3000]*(?=[^、，,。！？!? \t\u3000])')
+
+
+def _calendar_time_adverb_span(sentence: str) -> tuple[int, int] | None:
+    """Return only the written temporal token, never an inferred referent.
+
+    Use the existing discourse/self-topic grammar to find the clause opening.
+    Do not search inside arbitrary objects, quotations or later clauses. The
+    caller must still validate every OTHER nominal reference and retain all
+    source words; this token alone supplies no author, intent or date.
+    """
+    from piece_v2_expression import _DEPENDENT_START, _SELF_TOPIC
+    offset = 0
+    dependent = _DEPENDENT_START.match(sentence)
+    if dependent is not None:
+        offset = dependent.end()
+        while offset < len(sentence) and sentence[offset] in '、，, \t\u3000':
+            offset += 1
+    # Read the already-supported single exclamation at the same scalar width.
+    # Only the topic match uses this view; token spans and source stay raw.
+    topic_view = sentence[:-1] + '。' if sentence.endswith(('！', '!')) else sentence
+    topic = _SELF_TOPIC.fullmatch(topic_view[offset:])
+    if topic is not None:
+        offset += topic.start('body')
+        # The topic already allows a horizontal pause before its body.
+        # Advance only the matcher position, retaining the raw token span.
+        while offset < len(sentence) and sentence[offset] in ' \t\u3000':
+            offset += 1
+    match = (_CALENDAR_TIME_ADVERB.match(sentence, offset)
+             or _DURATION_TIME_ADVERB.match(sentence, offset))
+    return match.span('adverb') if match is not None else None
+
+
+def _same_self_scope_author(premise: str, speaker: str) -> bool:
+    """Reuse the existing conservative, literally identical scope author."""
+    from piece_v2_expression import _SELF_TOPIC, _DEPENDENT_START, _EMBEDDED_REPORT
+    topic = _SELF_TOPIC.fullmatch(premise + '。')
+    body = topic['body'] if topic is not None else ''
+    # The existing topic grammar owns an optional comma and horizontal pause.
+    # Inspect an adverb-only left-trimmed view; the premise, source spans and
+    # writer retain those separators. Non-adverb branches keep their old view.
+    adverb_body = body.lstrip(' \t\u3000')
+    # These two complete initial adverbs already have a nonquestion reading.
+    # Their internal も is not an additional participant. Use the same
+    # non-hiragana/end boundary; retain every following particle and comma.
+    prefix = re.match(r'どう(?:して|やって)も(?=[^ぁ-ん]|\Z)', adverb_body)
+    if prefix is not None:
+        from piece_v2_generation import _OMITTED_ACCOUNT_QUESTION
+        if (_OMITTED_ACCOUNT_QUESTION.search(adverb_body)
+                or _FINITE_RESERVATION_QUESTION.search(adverb_body)):
+            return False
+        body = adverb_body[prefix.end():].lstrip(' \t\u3000')
+        bare = body.strip(' \t\u3000').removesuffix('です').rstrip(' \t\u3000')
+        if not bare or bare in _BARE_SELF_OPERATORS:
+            return False
+    return (topic is not None and topic['speaker'] == speaker
+            and not re.search(r'[はがも、，,]', body)
+            and not _DEPENDENT_START.search(body)
+            and not _EMBEDDED_REPORT.search(body))
+
+
+def _scoped_self_topic(expression: str) -> re.Match[str] | None:
+    """Read one existing scope's topic using a same-width terminal view.
+
+    The enclosing scope already owns a single declarative terminator. Keep
+    every source byte and evidence range. This is the existing scope-ending
+    family, without deciding whether e.g. みたい is a wish or comparison.
+    """
+    from piece_v2_expression import _SELF_TOPIC
+    statement = expression[:-1] + '。' if expression.endswith(('！', '!')) else expression
+    return _SELF_TOPIC.fullmatch(statement)
+
+
+def _qualified_self_topic(sentence: str) -> re.Match[str] | None:
+    """Read the existing topic-internal qualification at one written stop.
+
+    The plain topic grammar stays unchanged. Its already-written clause
+    operator and immediate comma can also retain one exclamation through
+    the same-width view; they do not create a typed scope or a new wish.
+    Unqualified literal emphasis keeps its existing KEEP owner instead.
+    """
+    from piece_v2_expression import _SELF_TOPIC, _WISH_END
+    topic = _SELF_TOPIC.fullmatch(sentence)
+    if topic is None and sentence.endswith(('！', '!')):
+        topic = _scoped_self_topic(sentence)
+        if topic is not None:
+            from piece_v2_generation import _OMITTED_ACCOUNT_QUESTION
+            if (_topic_qualification_tail(topic['body']) is None
+                    or not _WISH_END.search(topic['body'])
+                    or _OMITTED_ACCOUNT_QUESTION.search(topic['body'])):
+                return None
+    return topic
+
+
+def _direct_transitive_expression(sentence: str) -> re.Match[str] | None:
+    """Read an explicit self topic, nominal object and existing transitive verb.
+
+    Reuse the focal grammar's predicates, not a second intention dictionary.
+    The written を and complete object own the argument; a state or rejection
+    is not rewritten as a wish. Comma-delimited or marked outer clauses are
+    not swallowed into an antecedent. Existing scope parsing owns those.
+    This is bounded surface interpretation, not general Japanese parsing.
+    """
+    from piece_v2_generation import _transitive_predicate_forms, _NESTED, _DEICTIC
+    from piece_v2_expression import _REFERENCE
+    # Derive finite register/time forms of the existing transitive predicates,
+    # not another lexical predicate or a guessed current intention. The past
+    # branch is explicitly bound for format planning; every matched surface
+    # stays in the original scalar/UTF-8 span and is written without tense or
+    # polarity conversion. A single existing finite modal may qualify a plain
+    # predicate; its complete written surface remains the predicate span.
+    # Relative focus, reported speech and stacked modals remain separate.
+    predicates, past_predicates, modal_predicates = _transitive_predicate_forms()
+    # Horizontal pauses at the written particle are separators, as after the
+    # self topic. Keep them outside both argument spans; internal object gaps
+    # and all raw source/scalar/UTF-8 coordinates remain unchanged.
+    match = re.fullmatch(
+        r'(?P<speaker>私|わたし|僕|ぼく|俺|おれ)は[、，,]?[ \t\u3000]*'
+        r'(?P<object>.+?)[ \t\u3000]*を[ \t\u3000]*(?P<predicate>(?:(?:'
+        + '|'.join(map(re.escape, predicates)) + r')|(?P<past_predicate>'
+        + '|'.join(map(re.escape, past_predicates)) + r'))(?P<modal>'
+        + _FINITE_EVALUATION_MODAL + r')?)[。！!]', sentence)
+    if match is None:
+        return None
+    # The modal's own polite register is allowed, not a polite finite base
+    # followed by another auxiliary. Reuse the evaluation owner's closed
+    # possibility/non-universality operators; never remove them to authorize
+    # a current intention, affirmative refusal, or another predicate.
+    modal = match['modal']
+    if modal and match['predicate'][:-len(modal)] not in modal_predicates:
+        return None
+    obj = match['object']
+    # Two complete references joined by the written と form ONE object of
+    # this existing transitive predicate. The source resolver must still bind
+    # both independently. No literal/comparative/nested operand or same-head
+    # ambiguity is admitted here; punctuation inside this exact pair is not
+    # an outer clause boundary. Preserve its order and predicate verbatim.
+    pair = _NOMINAL_REFERENCE_CONJUNCTION.fullmatch(obj)
+    paired = (pair is not None
+              and _NOMINAL_REFERENCE_TARGET.fullmatch(pair['left'])['head']
+              != _NOMINAL_REFERENCE_TARGET.fullmatch(pair['right'])['head'])
+    # The evaluation parser already admits this complete simple nominal
+    # shape. The transitive construction explicitly owns it as an object;
+    # a nominalizing suffix is not required. This supplies neither a new
+    # predicate/author nor an antecedent for an unsupported reference.
+    if (not (obj.endswith(('こと', 'もの', '時間')) or _SIMPLE_NOUN.fullmatch(obj))
+            or (re.search(r'[、，,]', obj) and not paired) or 'のは' in obj
+            or any(marker in obj for marker in _SCOPE_RELATIONS)
+            or _NESTED.search(obj) or _DEICTIC.search(obj)
+            or _SELF_TOPIC_MENTION.search(obj)
+            or (_REFERENCE.search(obj)
+                and not (_NOMINAL_REFERENCE_TARGET.fullmatch(obj) or paired))):
+        return None
+    return match
+
+
+def _scoped_focal_expression(sentence: str) -> tuple[re.Match[str], re.Match[str]] | None:
+    """Bind a focal or direct transitive expression inside its written scope.
+
+    Reuse the same transitive predicate/author grammar; a condition, reason or
+    concession does not establish a missing author or fulfill a wish. The
+    returned offsets are relative to the original sentence and expression,
+    so nominal references can retain their exact original evidence ranges.
+    A time topic qualifies the same complete focal or direct expression;
+    it neither changes its written predicate tense nor supplies an author.
+    """
+    from piece_v2_generation import _FOCUS, _DEICTIC, _NESTED
+    scoped = (_scoped_expression_match(sentence)
+              or _TEMPORAL_EVALUATION.fullmatch(sentence))
+    if scoped is None:
+        return None
+    # The written time topic scopes the complete expression in either
+    # already-admitted word order. Parse its own author, argument and
+    # predicate, including a plain past focal predicate, without converting
+    # its tense from the time word. Nominal links still require their separate owner.
+    # Nominal links still require the same source resolver; evaluation frames
+    # retain their separate owner.
+    focal = (_FOCUS.fullmatch(scoped['intention'])
+             or _direct_transitive_expression(scoped['intention']))
+    if focal is None:
+        return None
+    self_premise = _has_unquoted_self_topic(scoped['premise'])
+    if self_premise:
+        # Share only the already-admitted sentence-initial author. This is
+        # not general participant inference or a speaker-alias equivalence.
+        if not _same_self_scope_author(scoped['premise'], focal['speaker']):
+            return None
+    obj = focal['object'].lstrip('、，,')
+    # The evaluation parser already admits this complete simple nominal
+    # shape. The transitive construction explicitly owns it as an object;
+    # a nominalizing suffix is not required. This supplies neither a new
+    # predicate/author nor an antecedent for an unsupported reference.
+    if (not (obj.endswith(('こと', 'もの', '時間')) or _SIMPLE_NOUN.fullmatch(obj)) or 'のは' in obj
+            or _NESTED.search(obj) or _DEICTIC.search(obj)):
+        if self_premise:
+            return None
+        raise unavailable('focal_object_not_self_contained')
+    return scoped, focal
+
+def _expression_scopes(text: str, nodes: tuple[MeaningNode, ...],
+                   sentences: tuple[PieceSentenceMeaning, ...]
+                   ) -> tuple[PieceExpressionScope, ...]:
+    from piece_v2_expression import (_SELF_TOPIC, _DEPENDENT_START, _EMBEDDED_REPORT)
+    # A scope can qualify an existing value/preference, not only a wish.
+    # The evaluation parser proves its speaker, predicate and whole argument;
+    # a clause ending alone cannot grant authorship or invent an intention.
+    evaluations = {frame.node_id: frame for frame in
+                   _personal_evaluations(text, nodes, sentences)}
+    scopes = []
+    for node, sentence in zip(nodes, sentences, strict=True):
+        start, end = sentence.source_start, sentence.source_end
+        if (sentence.node_id != node.node_id or start < 0 or end > len(text)
+                or text[start:end] != node.value):
+            raise unavailable('piece_intent_scope_source_binding')
+        focal = _scoped_focal_expression(node.value)
+        match = (_scoped_expression_match(node.value)
+                 or _TEMPORAL_EVALUATION.fullmatch(node.value))
+        frame = evaluations.get(node.node_id)
+        finite_action = _scoped_finite_self_person_action(node.value)
+        # A whole-sentence finite match is not evidence of an inner scope.
+        # The evaluation parser must have bound its speaker after the actual
+        # connective, leaving the premise outside the evaluated argument.
+        inner_evaluation = (match is not None and frame is not None
+                            and frame.scalar_parts[0][0] == start + match.start('intention'))
+        if _SELF_TOPIC.fullmatch(node.value) and focal is None and not inner_evaluation:
+            continue
+        if match is None or (_has_unquoted_self_topic(match['premise'])
+                             and focal is None and not inner_evaluation):
+            continue
+        temporal = match.re is _TEMPORAL_EVALUATION
+        if temporal and node.node_id not in evaluations and focal is None:
+            continue
+        topic = _scoped_self_topic(match['intention'])
+        if node.node_id not in evaluations and finite_action is None:
+            if focal is None and (
+                    topic is None or not _SCOPED_SELF_END.search(topic['body'])
+                    or _DEPENDENT_START.search(topic['body'])
+                    or _EMBEDDED_REPORT.search(topic['body'])):
+                continue
+        relation = ('SOURCE_EXPLICIT_TIME_CONTEXT' if temporal
+                    else _SCOPE_RELATIONS[match['marker']])
+        a, b = start + match.start('scope'), start + match.end('scope')
+        c, d = start + match.start('intention'), start + match.end('intention')
+        scopes.append(PieceExpressionScope(
+            node.node_id, relation, match['marker'], (a, b),
+            (len(text[:a].encode('utf-8')), len(text[:b].encode('utf-8'))),
+            (c, d), (len(text[:c].encode('utf-8')), len(text[:d].encode('utf-8')))))
+    return tuple(scopes)
+
+
+def validate_piece_expression_scopes(meaning: PieceSourceMeaning) -> None:
+    """Keep the writer's scope interpretation tied to its actual source."""
+    expected = _expression_scopes(piece_source_text(meaning),
+                              piece_text_nodes(meaning), meaning.sentences)
+    if meaning.expression_scopes != expected:
+        raise unavailable('piece_intent_scope_source_binding')
+    by_node = {scope.node_id: scope for scope in expected}
+    for node in meaning.graph.nodes:
+        if node.node_kind == 'PIECE_SELECTED_FEELING':
+            continue
+        expected_kind = (_SCOPE_KINDS[by_node[node.node_id].relation]
+                         if node.node_id in by_node else 'PIECE_SOURCE_PROPOSITION')
+        if node.node_kind != expected_kind:
+            raise unavailable('piece_intent_scope_kind_binding')
+
+
+# Relationship terms, not topic/final-sentence dispatch vocabulary. We only
+# abstract an identity using the roles and owner links the author writes.
+_ROLE = r'(?:友人|同僚|上司|部下|先輩|後輩|先生)'
+# A written relational chain is one role, not just its terminal noun.
+# Keep every link (including repeated roles); the existing vocabulary is
+# unchanged. Reuse the existing speaker vocabulary only when its possessive
+# is written; an omitted possessor or unknown modifier is not inferred.
+_ROLE_OWNER = r'(?:(?:私|わたし|僕|ぼく|俺|おれ)の)?'
+# Name recognition and replacement share one complete written token boundary.
+# Script is not evidence of a relationship: kana and mixed-script identities
+# still need the same explicit role/owner proof as kanji identities. Do not
+# truncate a longer name to a known suffix or normalize its original spelling.
+# Halfwidth voiced marks remain separate source scalars. Width and the two
+# middle-dot spellings are NOT aliases; each exact name needs its own proof.
+# ASCII/fullwidth Latin names use the same complete-token source proof; case
+# and width never become identity aliases. Hiragana stays outside this legacy
+# script scanner; its bounded, role-proven references are handled below.
+# This is not general PII recognition or public-safety admission.
+_PERSON_NAME_CHARS = '一-龥々ァ-ヺーｦ-ﾟA-Za-zＡ-Ｚａ-ｚ'
+_PERSON_NAME = (r'[' + _PERSON_NAME_CHARS + r']+'
+                r'(?:[・･][' + _PERSON_NAME_CHARS + r']+)*さん')
+# The potential-token boundary is wider than the admitted spelling. Unicode
+# word characters and combining marks must not expose a known ASCII suffix
+# (e.g. ÉAlice / Jo\u0301Alice / 1Alice -> Alice). Hiragana remains a separate
+# grammar boundary; this does not interpret arbitrary hiragana names. Latin
+# hyphen/apostrophe joins likewise cannot expose a separately bound suffix.
+_PERSON_NAME_MARKS = '\u0300-\u036f\u1ab0-\u1aff\u1dc0-\u1dff\u20d0-\u20ff\ufe20-\ufe2f'
+_PERSON_NAME_UNSUPPORTED_JOINS = r"'\-‐-―‘’＇－"
+_PERSON_NAME_POTENTIAL_JOINS = '・･' + _PERSON_NAME_UNSUPPORTED_JOINS
+_PERSON_NAME_POTENTIAL_CHAR = r'(?:[^\Wぁ-ゖ]|[' + _PERSON_NAME_MARKS + r'])'
+# A dot inside a name is not the same boundary as a dot AFTER a completed
+# さん. The latter can separate two named people or two role phrases.
+_PERSON_NAME_LEFT_BOUNDARY = (r'(?:(?<![^\Wぁ-ゖ])(?<![' + _PERSON_NAME_MARKS
+                              + _PERSON_NAME_POTENTIAL_JOINS + r'])|(?<=さん・)|(?<=さん･))')
+_ROLE_NAME = re.compile(_PERSON_NAME_LEFT_BOUNDARY + r'(?P<role>' + _ROLE_OWNER + _ROLE
+                        + r'(?:の' + _ROLE + r')*)の'
+                        r'(?P<name>' + _PERSON_NAME + r')')
+# Scan a whole potential token, including malformed joins, before checking its
+# binding. A leading/trailing/doubled dot must not expose a shorter known
+# suffix to the writer or silently escape the existing unbound-name check.
+# Only the admitted middle dots separate completed honorific tokens. A new
+# unsupported join stays in the scanned token even after a completed さん,
+# matching the writer's refusal to replace a suffix after that join.
+_HONORIFIC_NAME = re.compile(
+    r'(?:' + _PERSON_NAME_POTENTIAL_CHAR + r'|(?<!さん)[・･]|[' + _PERSON_NAME_UNSUPPORTED_JOINS + r'])'
+    r'(?:' + _PERSON_NAME_POTENTIAL_CHAR + r'|[' + _PERSON_NAME_POTENTIAL_JOINS + r'])*さん')
+
+# Pure hiragana is admitted only through a written role, never by adding
+# particles and ordinary words to the legacy script-based name scanner.
+# Non-greedy honorific matching preserves a following particle/role phrase.
+_HIRAGANA_NAME = re.compile(r'[ぁ-ゖ]+?さん')
+_HIRAGANA_ROLE_NAME = re.compile(
+    _PERSON_NAME_LEFT_BOUNDARY + r'(?P<role>' + _ROLE_OWNER + _ROLE
+    + r'(?:の' + _ROLE + r')*)の(?P<name>[ぁ-ゖ]+?さん)')
+_HIRAGANA_NAME_RIGHT = re.compile(r'(?:$|[\s、，,。！？!?・･]|[はがをにへでとのも]|から|まで|より|だけ|さえ)')
+# Ambiguous quantity, collective and kinship forms do not prove an identity.
+# Refuse their role-looking readings, rather than silently singularizing or
+# dropping a relationship. This is not an exhaustive ordinary-word lexicon.
+_ROLE_NON_IDENTITY = re.compile(
+    r'(?:たく|みな|お?(?:とう|かあ|にい|ねえ|じい|ばあ|じ|ば)|だんな|よめ|むすめ'
+    r'|皆|父|母|兄|姉|爺|婆|叔父|伯父|叔母|伯母|旦那|嫁|娘)さん')
+_HIRAGANA_SELF_PREFIX = re.compile(
+    r'(?:^|[\s、，,。！？!?])(?:私|わたし|僕|ぼく|俺|おれ)(?:は|が|にとって)$')
+
+
+def _piece_name_mentions(text: str, bound_names: tuple[str, ...]) -> tuple[re.Match[str], ...]:
+    """Read exact role-proven hiragana references at written boundaries.
+
+    Unpunctuated prose is not a general word segmenter. A known spelling
+    inside a longer token or after an unproved prefix remains unavailable,
+    rather than exposing its suffix to the writer. Ordinary hiragana words
+    with no explicit name binding do not become people. No aliases, new
+    roles, normalization or public-safety admission are supplied here.
+    """
+    legacy = tuple(_HONORIFIC_NAME.finditer(text))
+    hira = {name for name in bound_names if _HIRAGANA_NAME.fullmatch(name)}
+    if not hira:
+        return legacy
+    anchors = {m.span('name') for m in _HIRAGANA_ROLE_NAME.finditer(text)
+               if m['name'] in hira}
+    pattern = re.compile('|'.join(map(re.escape, sorted(hira, key=len, reverse=True))))
+    mentions = list(legacy)
+    previous_ends = {m.end() for m in legacy}
+    for match in pattern.finditer(text):
+        start, end = match.span()
+        prefix = text[:start]
+        direct = (start == 0 or prefix[-1].isspace()
+                  or prefix[-1] in '、，,。！？!?'
+                  or prefix.endswith(('さん・', 'さん･')))
+        coordinated = (start > 0 and prefix[-1] in 'とや'
+                       and start - 1 in previous_ends)
+        if (not (match.span() in anchors or direct or coordinated
+                 or _HIRAGANA_SELF_PREFIX.search(prefix))
+                or _HIRAGANA_NAME_RIGHT.match(text, end) is None):
+            raise unavailable('public_role_binding_missing')
+        mentions.append(match)
+        previous_ends.add(end)
+    return tuple(sorted(mentions, key=lambda m: m.start()))
+
+
+def _digest(text: str) -> str:
+    return hashlib.sha256(text.encode('utf-8')).hexdigest()
+
+
+def piece_public_role_aliases(bindings: tuple[PieceRoleBinding, ...]) -> dict[str, str]:
+    """Resolve written name/role links without dropping an intermediate owner.
+
+    Raw bindings retain their original spans. A named possessor contributes
+    only its own explicit, uniquely resolved role; it is never guessed from
+    proximity. Resolve dependencies before suffix compatibility so a later
+    written qualification also reaches the person's dependent relationships.
+    """
+    relations: dict[str, list[tuple[str | None, str]]] = {}
+    known_names = tuple(binding.name for binding in bindings)
+    for binding in bindings:
+        owners = _piece_name_mentions(binding.role, known_names)
+        if owners:
+            owner = owners[-1]
+            # The nearest named owner includes the earlier links through its
+            # own binding. Reusing the whole prefix would duplicate them.
+            suffix = binding.role[owner.end():]
+            if not re.fullmatch(r'の' + _ROLE + r'(?:の' + _ROLE + r')*', suffix):
+                raise unavailable('public_role_binding_missing')
+            relation = (owner.group(), suffix[1:])
+        else:
+            relation = (None, binding.role)
+        relations.setdefault(binding.name, []).append(relation)
+    for choices in relations.values():
+        owners = {owner for owner, _ in choices if owner is not None}
+        if len(owners) > 1:
+            # Different explicitly named people are not the same owner merely
+            # because one public role happens to be a suffix of the other.
+            raise unavailable('public_role_binding_ambiguous')
+        if any(owner not in relations for owner in owners):
+            raise unavailable('public_role_owner_not_bound')
+    by_name: dict[str, str] = {}
+    pending = dict(relations)
+    while pending:
+        resolved = []
+        for name, choices in pending.items():
+            if any(owner is not None and owner not in by_name for owner, _ in choices):
+                continue
+            selected = None
+            for owner, role in choices:
+                role = by_name[owner] + 'の' + role if owner is not None else role
+                if selected is None or role.endswith('の' + selected):
+                    selected = role
+                elif selected != role and not selected.endswith('の' + role):
+                    raise unavailable('public_role_binding_ambiguous')
+            by_name[name] = selected
+            resolved.append(name)
+        if not resolved:
+            # A cycle, including a self-reference, has no source-proven root.
+            # Even an additional short role cannot license guessing the edge.
+            raise unavailable('public_role_binding_ambiguous')
+        for name in resolved:
+            del pending[name]
+    if len(set(by_name.values())) != len(by_name):
+        raise unavailable('public_role_binding_ambiguous')
+    return by_name
+
+
+def _role_bindings(text: str) -> tuple[PieceRoleBinding, ...]:
+    matches = tuple(sorted((*_ROLE_NAME.finditer(text), *_HIRAGANA_ROLE_NAME.finditer(text)),
+                           key=lambda m: m.start()))
+    if any(_ROLE_NON_IDENTITY.fullmatch(match['name']) for match in matches):
+        raise unavailable('public_role_binding_ambiguous')
+    names = _piece_name_mentions(text, tuple(match['name'] for match in matches))
+    if names and '「' in text:
+        from emlis_ai_grounded_sentence_surface import _body_primary_quote_spans
+        quoted, _ = _body_primary_quote_spans(text)
+        # A quoted "my friend" belongs to its speaker, not to this narrator.
+        # The existing global alias owner cannot publicize a name inside a
+        # quotation without proving that perspective. Retain refusal there;
+        # names solely outside it keep their established role binding.
+        if any(start < name.end() and name.start() < end
+               for name in names for start, end in quoted):
+            raise unavailable('public_identity_is_material')
+    names_by_end = {match.end(): match for match in names}
+    by_end: dict[int, PieceRoleBinding] = {}
+    collected = []
+    for match in matches:
+        start = match.start()
+        if text[:start].rstrip().endswith('の'):
+            owner = names_by_end.get(start - 1)
+            if owner is None:
+                raise unavailable('public_role_owner_not_bound')
+            # Inline owners extend the exact source range, including their
+            # names. A bare named owner can be bound elsewhere in this input.
+            enclosing = by_end.get(owner.end())
+            start = enclosing.source_start if enclosing is not None else owner.start()
+            if text[:start].rstrip().endswith('の'):
+                raise unavailable('public_role_owner_not_bound')
+        binding = PieceRoleBinding(match['name'], text[start:match.start('name') - 1],
+                                   start, match.end())
+        collected.append(binding)
+        by_end[binding.source_end] = binding
+    bindings = tuple(collected)
+    by_name = piece_public_role_aliases(bindings)
+    bound_ends = {binding.source_end for binding in bindings}
+    for match in names:
+        if (text[:match.start()].rstrip().endswith('の')
+                and match.end() not in bound_ends):
+            # An earlier alias cannot license a later, unsupported role phrase
+            # or a role-looking suffix inside another noun for that same name.
+            raise unavailable('public_role_binding_missing')
+        if match.group() not in by_name:
+            raise unavailable('public_role_binding_missing')
+        # Keep the old topical-label refusal unchanged. For subject/additive
+        # labels require a written finite copula; for an object label require
+        # a finite naming assignment. A person receiving/hearing a name is
+        # still an ordinary role reference (名前が友人に伝わった etc.).
+        label_value = False
+        suffix = text[match.end():]
+        for start in (match.start(), *(
+                binding.source_start for binding in bindings
+                if binding.source_end == match.end())):
+            label = re.search(
+                r'(?:名前|名字|姓|呼び名|氏名)[ \t\u3000]*(?P<particle>[はがもを])'
+                r'[ \t\u3000]*[、，,]?[ \t\u3000]*$', text[:start])
+            if label is None:
+                continue
+            particle = label['particle']
+            if (particle == 'は'
+                    or particle in ('が', 'も') and re.match(
+                        r'[ \t\u3000]*(?:です|でした|だった|だ|(?:では|じゃ)'
+                        r'(?:ない(?:です)?|なかった(?:です)?|ありません(?:でした)?))[。！!]', suffix)
+                    or particle == 'を' and re.match(
+                        r'[ \t\u3000]*に[ \t\u3000]*(?:した(?:い|くない)(?:です)?'
+                        r'|した(?:かった|くなかった)(?:です)?|しました|しません(?:でした)?'
+                        r'|します|した|する|しない|しなかった)[。！!]', suffix)):
+                label_value = True
+                break
+        if (re.match(r'[ \t\u3000]*(?:という|と言う|っていう|と呼|と書|と読'
+                     r'|と名(?:付|づ)け(?:た(?:い|くない)(?:です)?|ました|ません(?:でした)?|ます|た|る|ない)'
+                     r'(?=[。！!、，, \t\u3000]|$))', text[match.end():])
+                or label_value):
+            # Here the name is itself what the author is talking about.
+            # Replacing it by a relationship would change the proposition.
+            # Horizontal layout cannot license that replacement. Naming is
+            # limited to written finite forms; 名付けについて / 名付けの
+            # remain ordinary topics discussed with the named person.
+            # A role-qualified name is still the label's value. Inspect its
+            # complete source-bound phrase, including an inline named owner,
+            # rather than turning 名前は友人の田中さん into 名前は友人.
+            raise unavailable('public_identity_is_material')
+    return bindings
+
+
+# Reuse the nominal heads admitted by the existing focal grammar. This does
+# not infer an omitted event, person, cause or a bare pronoun's referent.
+_NOMINAL_REFERENCE_BODY = r'(?P<reference>(?:その|この)(?P<head>時間|こと|もの))'
+_NOMINAL_REFERENCE_TARGET = re.compile(_NOMINAL_REFERENCE_BODY)
+# A whole conjunction, shared by the conditional and transitive boundaries.
+# Matching this surface supplies no antecedent or author authority.
+_NOMINAL_REFERENCE_CONJUNCTION = re.compile(
+    r'(?P<left>(?:その|この)(?:時間|こと|もの))と[、，,]?[ \t\u3000]*'
+    r'(?P<right>(?:その|この)(?:時間|こと|もの))')
+_NOMINAL_REFERENCE = re.compile(
+    r'^(?:(?:私|わたし|僕|ぼく|俺|おれ)は[、，,]?)?'
+    + _NOMINAL_REFERENCE_BODY
+    + r'(?=[はがをにでとのも]|から|だけ|さえ|まで|より)')
+_COMPOSITE_OBJECT = re.compile(r'より|ではなく|だけでなく|または|あるいは')
+_REFERENCE_RELATION = 'SOURCE_BOUND_NOMINAL_REFERENCE'
+
+
+def _evaluation_target_references(target: str) -> tuple[tuple[int, int, str], ...]:
+    """Locate whole reference operands without replacing the evaluation target.
+
+    A source-written ``Aより、B`` retains the existing single-reference
+    operand rule. It can also contain two references with distinct nominal
+    heads, as can ``Aと、B``. Each must independently bind to one prior
+    source object in the resolver below; neither operand certifies the other.
+    Two whole reference operands can also use their explicit と/より operator
+    without a comma. This compact form does not admit a literal operand or
+    infer a missing operator. Same-head and nested pairs stay unresolved.
+    Both sides and the exact marker remain ONE evaluation target, not two
+    separately evaluated objects, an inferred winner, or a user's wish.
+    These relative source ranges do not themselves resolve any referent.
+    """
+    from piece_v2_expression import _REFERENCE
+    from piece_v2_generation import _NESTED
+    direct = _NOMINAL_REFERENCE_TARGET.fullmatch(target)
+    if direct is not None:
+        return ((0, len(target), direct['head']),)
+    if not _REFERENCE.search(target):
+        return ()
+    comparison = re.fullmatch(r'(?P<left>.+?)より[、，,][ \t\u3000]*(?P<right>.+)', target)
+    # Keep comparison precedence: a と inside its complete literal operand
+    # must not steal the outer より boundary from the existing grammar.
+    # Only two complete reference tokens can omit punctuation. Matching the
+    # entire target prevents a nested comparison or a suffix inside an operand
+    # from being treated as the outer operator. The existing resolver below
+    # must still bind BOTH references to distinct, unique source objects.
+    compact_pair = re.fullmatch(
+        r'(?P<left>(?:その|この)(?:時間|こと|もの))(?:より|と)[ \t\u3000]*'
+        r'(?P<right>(?:その|この)(?:時間|こと|もの))', target)
+    compound = comparison or compact_pair or re.fullmatch(
+        r'(?P<left>.+?)と[、，,][ \t\u3000]*(?P<right>.+)', target)
+    if compound is None:
+        raise unavailable('evaluation_target_not_self_contained')
+    references = []
+    for part in ('left', 'right'):
+        operand = compound[part]
+        reference = _NOMINAL_REFERENCE_TARGET.fullmatch(operand)
+        if reference is not None:
+            references.append((compound.start(part), compound.end(part), reference['head']))
+        elif (not operand.endswith(('こと', 'もの', '時間'))
+                or _REFERENCE.search(operand) or _COMPOSITE_OBJECT.search(operand)
+                or _NESTED.search(operand) or 'のは' in operand
+                or operand.startswith(('、', '，', ',', ' ', '\t', '\u3000'))):
+            raise unavailable('evaluation_target_not_self_contained')
+    single_comparison = comparison is not None and len(references) == 1
+    distinct_pair = len(references) == 2 and references[0][2] != references[1][2]
+    if not (single_comparison or distinct_pair):
+        raise unavailable('evaluation_target_not_self_contained')
+    return tuple(references)
+
+
+def _nominal_references(text: str, nodes: tuple[MeaningNode, ...],
+                        sentences: tuple[PieceSentenceMeaning, ...]
+                        ) -> tuple[PieceNominalReference, ...]:
+    """Attach an explicit nominal reference to one prior focal object.
+
+    Only complete focal objects or source-bound personal-evaluation arguments
+    can introduce an antecedent. Every earlier occurrence of its nominal head
+    must belong to that object or an
+    already bound mention. A second candidate, an unmodelled mention or an
+    internal contrast remains unresolved; nearest-word guessing is not used.
+    The writer keeps the entire antecedent and following qualification in one
+    source-ordered reading group, rather than expanding a vague pronoun into
+    an invented visible proposition.
+    """
+    from piece_v2_generation import _FOCUS
+    from piece_v2_expression import _REFERENCE
+    # Derive from actual source again, not caller-supplied frame metadata.
+    # Evaluation polarity/time describes the evaluation, not the referent's
+    # existence: a tentative or past value does not become a present promise.
+    # Parse evaluation arguments without granting their reference authority.
+    # This resolver is the sole source of that authority, avoiding a cycle in
+    # which a candidate evaluation would certify its own antecedent.
+    evaluations = {frame.node_id: frame for frame in
+                   _personal_evaluation_shapes(text, nodes, sentences)}
+    candidates: dict[str, list[tuple[str, int, int]]] = {}
+    bound: list[PieceNominalReference] = []
+    for node, sentence in zip(nodes, sentences, strict=True):
+        start, end = sentence.source_start, sentence.source_end
+        if (sentence.node_id != node.node_id or start < 0 or end > len(text)
+                or text[start:end] != node.value):
+            raise unavailable('piece_reference_source_binding')
+        # Preserve the old sentence-initial reference grammar. A parsed
+        # personal evaluation can additionally bind a whole nominal target or
+        # an explicit comparison operand at its original range. The
+        # two views of a finite self-topic can describe the SAME mention; it
+        # must receive exactly one edge. A scope and a target can instead own
+        # two different mentions, both checked in original source order.
+        mentions: dict[tuple[int, int], tuple[str, str, int]] = {}
+        mention = _NOMINAL_REFERENCE.match(node.value)
+        if mention is None and _NOMINAL_REFERENCE_TARGET.match(node.value):
+            # A whole nominal premise can meet the existing conditional
+            # connective directly, without a case/topic particle in between.
+            # Bind only that complete written premise at the sentence start;
+            # a suffix inside a larger premise or a partial connective is not
+            # licensed. The same unique-prior-object resolver below owns its
+            # authority. Referring to an earlier wish/value does not assert
+            # its existence, fulfill this condition, or transfer its stance.
+            conditional = _scoped_expression_match(node.value)
+            if (conditional is not None and _SCOPE_RELATIONS[conditional['marker']]
+                    == 'SOURCE_EXPLICIT_CONDITION'):
+                mention = _NOMINAL_REFERENCE_TARGET.fullmatch(conditional['premise'])
+        if mention is not None:
+            span = (start + mention.start('reference'), start + mention.end('reference'))
+            mentions[span] = (mention['head'], 'unresolved_reference', span[0])
+        # A coordinated conditional premise retains BOTH complete source
+        # referents. Reuse the existing two-operand parser and unique-prior
+        # resolver; the first case-marked mention is the same span, not a
+        # second edge. No predicate, comparison, third operand or suffix is
+        # admitted by this bounded nominal conjunction.
+        if _NOMINAL_REFERENCE_TARGET.match(node.value):
+            conditional = _scoped_expression_match(node.value)
+            if (conditional is not None
+                    and _SCOPE_RELATIONS[conditional['marker']] == 'SOURCE_EXPLICIT_CONDITION'
+                    and _NOMINAL_REFERENCE_CONJUNCTION.fullmatch(conditional['premise'])):
+                for left, right, head in _evaluation_target_references(conditional['premise']):
+                    # Both operands resolve against preceding discourse, not
+                    # each other. Same-head pairs remain outside the parser.
+                    mentions[(start + left, start + right)] = (head, 'unresolved_reference', start)
+        frame = evaluations.get(node.node_id)
+        if frame is not None:
+            a, b = frame.scalar_parts[2]
+            for left, right, head in _evaluation_target_references(text[a:b]):
+                # A sibling operand is part of the complete evaluation
+                # target, not a new discourse antecedent. Resolve both
+                # against the context preceding that whole target; never
+                # select an object from inside the pair by proximity.
+                mentions[(a + left, a + right)] = (
+                    head, 'evaluation_target_not_self_contained', a)
+        focal = (_FOCUS.fullmatch(node.value)
+                 or _direct_transitive_expression(node.value))
+        expression_start = start
+        if focal is None:
+            scoped_focal = _scoped_focal_expression(node.value)
+            if scoped_focal is not None:
+                scoped, focal = scoped_focal
+                expression_start += scoped.start('intention')
+        if focal is not None:
+            # The already-admitted focal grammar owns this whole object and
+            # its explicit speaker/predicate, including a written outer scope.
+            # A complete nominal reference uses the SAME unique-prior-object
+            # resolver as an evaluation; matching a pronoun alone is not proof.
+            # Do not extend this to embedded or comparative focal operands.
+            obj = focal['object'].lstrip('、，,')
+            reference = _NOMINAL_REFERENCE_TARGET.fullmatch(obj)
+            if reference is not None:
+                r_end = expression_start + focal.end('object')
+                r_start = r_end - len(obj)
+                mentions[(r_start, r_end)] = (
+                    reference['head'], 'unresolved_reference', r_start)
+            elif _NOMINAL_REFERENCE_CONJUNCTION.fullmatch(obj):
+                # The existing focal and direct word orders own the same
+                # complete transitive argument. Neither supplies a referent;
+                # reuse the operand parser and exact unique-prior resolver.
+                # Both mentions see the context BEFORE the whole argument;
+                # the first operand cannot supply the second's antecedent.
+                r_start = expression_start + focal.end('object') - len(obj)
+                for left, right, head in _evaluation_target_references(obj):
+                    mentions[(r_start + left, r_start + right)] = (
+                        head, 'unresolved_reference', r_start)
+        for (r_start, r_end), (head, failure, context_end) in sorted(mentions.items()):
+            prior = candidates.get(head, [])
+            if len(prior) != 1:
+                raise unavailable(failure)
+            antecedent_id, a_start, a_end = prior[0]
+            known = {(a_end - len(head), a_end)}
+            known.update((r.reference_scalar_span[1] - len(head), r.reference_scalar_span[1])
+                         for r in bound if r.nominal_head == head)
+            if any(m.span() not in known for m in re.finditer(re.escape(head), text[:context_end])):
+                raise unavailable(failure)
+            bound.append(PieceNominalReference(
+                antecedent_id, node.node_id, head, (a_start, a_end),
+                (len(text[:a_start].encode('utf-8')), len(text[:a_end].encode('utf-8'))),
+                (r_start, r_end),
+                (len(text[:r_start].encode('utf-8')), len(text[:r_end].encode('utf-8')))))
+        if focal is not None:
+            # Bind the complete object, not its preceding scope or speaker.
+            # Its existence as a referent never asserts that a condition was
+            # met or changes the focal predicate's negation/commitment.
+            obj = focal['object'].lstrip('、，,')
+            a_end = expression_start + focal.end('object')
+        elif node.node_id in evaluations:
+            a_start, a_end = evaluations[node.node_id].scalar_parts[2]
+            obj = text[a_start:a_end]
+        else:
+            continue
+        head = next((h for h in ('こと', 'もの', '時間') if obj.endswith(h)), None)
+        if (head is None or obj.count(head) != 1 or _REFERENCE.search(obj)
+                or _COMPOSITE_OBJECT.search(obj)):
+            continue
+        candidates.setdefault(head, []).append((node.node_id, a_end - len(obj), a_end))
+    return tuple(bound)
+
+
+def _reference_edges(references: tuple[PieceNominalReference, ...],
+                      nodes: tuple[MeaningNode, ...]) -> tuple[MeaningEdge, ...]:
+    by_id = {node.node_id: node for node in nodes}
+    return tuple(MeaningEdge(
+        edge_id=f'piece:reference{index+1}', owner_id=by_id[ref.reference_node_id].owner_id,
+        relation=_REFERENCE_RELATION, source_node_id=ref.reference_node_id,
+        target_node_id=ref.antecedent_node_id, grounding_kind='source_bound_nominal_reference',
+        epistemic_state=EpistemicState.SOURCE_EXPLICIT,
+        evidence_ids=(by_id[ref.antecedent_node_id].evidence_ids[0],
+                      by_id[ref.reference_node_id].evidence_ids[0]))
+        for index, ref in enumerate(references))
+
+
+def validate_piece_nominal_references(meaning: PieceSourceMeaning) -> None:
+    """The artifact planner consumes the source attachments, not a free allowlist."""
+    expected = _nominal_references(piece_source_text(meaning),
+                                   piece_text_nodes(meaning), meaning.sentences)
+    edges = tuple(e for e in meaning.graph.edges if e.relation == _REFERENCE_RELATION)
+    if (meaning.nominal_references != expected
+            or edges != _reference_edges(expected, meaning.graph.nodes)):
+        raise unavailable('piece_reference_source_binding')
+
+
+# Typed evaluative predicates, not topic keywords or canned output sentences.
+# A wish is not inferred from liking, importance, need or a negative evaluation.
+_VALUE_BASES = frozenset({'大切', '大事', '重要', '必要'})
+# Both word orders share state/modal composition. Finite polite auxiliaries
+# are separate from the relative focus grammar: a complete polite denial is
+# not a relative predicate and cannot be followed by another modal here.
+# A single source-written degree modifier belongs to the WHOLE predicate.
+# Keep it inside its scalar/UTF-8 span in both word orders, including negative,
+# past and modal forms. Do not turn degree into certainty or a numeric score,
+# infer an omitted modifier, or move a modifier out of the nominal argument.
+# Unmodelled adverbs and stacked modifiers do not acquire scope here.
+# Register is source text, not a normalization instruction. Plain state may
+# take a polite outer modal; a polite negative is already finite. Keep the
+# whole predicate in its original span so the existing writer preserves it.
+_PLAIN_EVALUATION_MODAL = r'かもしれない|とは限らない'
+_FINITE_EVALUATION_MODAL = _PLAIN_EVALUATION_MODAL + r'|かもしれません|とは限りません'
+_FINITE_NEGATIVE = (r'(?P<finite_negative>(?:では|じゃ)'
+                    r'(?:ありませんでした|ありません|なかったです|ないです))|')
+_EVALUATIVE_PREDICATE = (
+    r'(?P<predicate>(?:とても|かなり|少し|あまり)?'
+    r'(?P<base>大切|大事|重要|必要|好き|苦手)'
+    r'(?P<inflection>(?:(?P<state>(?:では|じゃ)(?:なかった|ない)|だった)'
+    r'(?P<state_modal>{modal})?|'
+    r'(?P<bare_modal>{modal})|{finite_negative}{copula})))')
+# Match the same source-written horizontal target pause as the transitive
+# focal grammar. Capture offsets exclude only that separator; target-internal
+# spaces and all original source bytes remain untouched.
+_EVALUATIVE_FOCUS = re.compile(
+    r'^(?P<speaker>私|わたし|僕|ぼく|俺|おれ)'
+    r'(?P<construction>にとって|が)[、，,]?'
+    + _EVALUATIVE_PREDICATE.format(
+        copula='な', modal=_PLAIN_EVALUATION_MODAL, finite_negative='')
+    + r'のは[、，,]?(?:[ \t\u3000]+(?![ \t\u3000、，,]))?'
+    r'(?P<target>.+?)(?P<copula>です|だ)[。！!]$')
+# The written target particle can have the same horizontal pause as a topic.
+# Its separators belong to neither the target nor the finite predicate span.
+_EVALUATIVE_FINITE = re.compile(
+    r'^(?P<speaker>私|わたし|僕|ぼく|俺|おれ)'
+    r'(?P<construction>にとって|は)[、，,]?[ \t\u3000]*'
+    r'(?P<target>.+?)[ \t\u3000]*が[ \t\u3000]*'
+    # A complete finite evaluation may leave its nonpast affirmative copula
+    # unwritten. The explicit speaker, target particle and predicate still
+    # bind here; an absent copula is not inserted into the source or author.
+    # Keep the focal construction's required relative/final copulas separate.
+    + _EVALUATIVE_PREDICATE.format(
+        copula=r'(?P<copula>でした|です|だ)?', modal=_FINITE_EVALUATION_MODAL,
+        finite_negative=_FINITE_NEGATIVE)
+    + r'[。！!]$')
+_SIMPLE_NOUN = re.compile(r'[一-龥々ァ-ヴー]+')
+
+
+def _modified_preference_nominal(target: str) -> bool:
+    """Prove a whole lexical noun phrase only for explicit SELF preferences.
+
+    Reuse the grounded reader's closed attributive/nominal segments and its
+    written genitive link. 静かな is a lexical attributive, not arbitrary
+    kana followed by な. No clause, missing segment, question or target
+    shortening is licensed, and the shared transitive/focal noun stays put.
+    """
+    from emlis_ai_grounded_observation_plan import _WISH_OBJECT_NOMINAL_SOURCE
+    if any(cue in target for cue in ('何', '誰')):
+        return False
+    segment = (r'(?:' + _WISH_OBJECT_NOMINAL_SOURCE
+               + r'|静かな' + _SIMPLE_NOUN.pattern + r')')
+    return re.fullmatch(segment + r'(?:の' + segment + r')*', target) is not None
+
+
+def _personal_evaluation_shapes(text: str, nodes: tuple[MeaningNode, ...],
+                          sentences: tuple[PieceSentenceMeaning, ...]
+                          ) -> tuple[PiecePersonalEvaluation, ...]:
+    """Recover an explicit personal evaluation, never an omitted viewpoint.
+
+    A complete nominal target is kept as one argument: internal comparison,
+    negation and conditions are not shortened into a winning keyword. Outer
+    denial, reported speech, nested focus and unresolved deixis are not this
+    construction. They are not turned into the author's current conviction.
+    A nominal-reference target or comparison operand is only a candidate
+    here; the source resolver must bind it before evaluation admission.
+    """
+    from piece_v2_expression import _REFERENCE
+    from piece_v2_generation import _NESTED
+    frames = []
+    for node, sentence in zip(nodes, sentences, strict=True):
+        start, end = sentence.source_start, sentence.source_end
+        if (sentence.node_id != node.node_id or start < 0 or end > len(text)
+                or text[start:end] != node.value):
+            raise unavailable('piece_evaluation_source_binding')
+        match = (_EVALUATIVE_FOCUS.fullmatch(node.value)
+                 or _EVALUATIVE_FINITE.fullmatch(node.value))
+        expression_start = start
+        scoped = (_scoped_expression_match(node.value)
+                  or _TEMPORAL_EVALUATION.fullmatch(node.value))
+        if scoped is not None:
+            inner = (_EVALUATIVE_FOCUS.fullmatch(scoped['intention'])
+                     or _EVALUATIVE_FINITE.fullmatch(scoped['intention']))
+            if inner is not None and (
+                    not _has_unquoted_self_topic(scoped['premise'])
+                    or _same_self_scope_author(scoped['premise'], inner['speaker'])):
+                # Prefer the proven inner evaluation even when the outer
+                # finite grammar could swallow its premise and second author
+                # into the target. Both word orders keep the same argument;
+                # the scope does not become an evaluated object or a wish.
+                match = inner
+                expression_start += scoped.start('intention')
+        if match is None:
+            continue
+        kind = 'PERSONAL_VALUE' if match['base'] in _VALUE_BASES else 'PERSONAL_PREFERENCE'
+        # A self topic and a が experiencer bind liking/difficulty; neither
+        # is freely substituted for the explicit value viewpoint にとって.
+        # The target's が is preserved. A contrastive は/も is not rewritten.
+        if match['construction'] in ('が', 'は') and kind != 'PERSONAL_PREFERENCE':
+            continue
+        target = match['target']
+        nominal = target.endswith(('こと', 'もの', '時間'))
+        # A finite self-topic already owns the experiencer: 私はXが好き.
+        # Reuse the existing bounded noun shape without guessing a missing
+        # nominalizer or changing the target. Do not extend the が-focus:
+        # 私が好きなのはX can instead make a person-like X the experiencer.
+        # Reuse the bounded noun stem for a compound activity noun in -作り.
+        # Keep the WHOLE written target; it proves no performed 作る action.
+        # No particle, finite clause, missing stem or interrogative target
+        # gains entry through this additional shape. The shared noun grammar
+        # and the ambiguous が-focus construction remain unchanged.
+        activity_noun = (target.endswith('作り')
+                         and _SIMPLE_NOUN.fullmatch(target[:-2])
+                         and not any(cue in target[:-2] for cue in ('何', '誰')))
+        bare = (match['construction'] in ('にとって', 'は')
+                and (_SIMPLE_NOUN.fullmatch(target) or activity_noun))
+        modified_preference = (not (nominal or bare)
+                               and kind == 'PERSONAL_PREFERENCE'
+                               and match['construction'] == 'は'
+                               and _modified_preference_nominal(target))
+        referential = bool(_evaluation_target_references(target))
+        if (not (nominal or bare or modified_preference)
+                or (_REFERENCE.search(target) and not referential) or _NESTED.search(target)
+                or 'のは' in target or target.startswith(('、', '，', ','))):
+            raise unavailable('evaluation_target_not_self_contained')
+        spans = tuple((expression_start + match.start(key), expression_start + match.end(key))
+                      for key in ('speaker', 'predicate', 'target'))
+        utf8 = tuple((len(text[:a].encode('utf-8')), len(text[:b].encode('utf-8')))
+                     for a, b in spans)
+        state = match['state'] or match.groupdict().get('finite_negative') or ''
+        modal = match['state_modal'] or match['bare_modal'] or ''
+        # These describe the inner evaluation under the outer commitment.
+        # NON_UNIVERSAL over NEGATIVE is not an affirmative evaluation, and
+        # a present modal must not reset the evaluation's original past time.
+        polarity = 'NEGATIVE' if state.startswith(('では', 'じゃ')) else 'AFFIRMATIVE'
+        temporal = ('PAST' if state.endswith(('だった', 'なかった', 'なかったです',
+                                             'ありませんでした'))
+                    or match['copula'] == 'でした' else 'NONPAST')
+        commitment = ('POSSIBLE' if modal in ('かもしれない', 'かもしれません') else
+                      'NON_UNIVERSAL' if modal in ('とは限らない', 'とは限りません') else 'ASSERTED')
+        frames.append(PiecePersonalEvaluation(
+            node.node_id, match['construction'], kind, spans, utf8,
+            match['copula'] or '', polarity, temporal, commitment))
+    return tuple(frames)
+
+
+def _personal_evaluations(text: str, nodes: tuple[MeaningNode, ...],
+                          sentences: tuple[PieceSentenceMeaning, ...]
+                          ) -> tuple[PiecePersonalEvaluation, ...]:
+    """Admit evaluative arguments only after their actual source binding.
+
+    A reference keeps its own speaker, polarity, time and commitment. It does
+    not inherit the antecedent's evaluation, become a new antecedent, or gain
+    a guessed expanded surface. The existing plan/author retains both full
+    propositions and validates the exact reference edges independently.
+    """
+    frames = _personal_evaluation_shapes(text, nodes, sentences)
+    referential = [(frame, _evaluation_target_references(text[slice(*frame.scalar_parts[2])]))
+                   for frame in frames]
+    if any(parts for _, parts in referential):
+        references = _nominal_references(text, nodes, sentences)
+        for frame, parts in referential:
+            for left, right, head in parts:
+                a, b = frame.scalar_parts[2][0] + left, frame.scalar_parts[2][0] + right
+                utf8 = (len(text[:a].encode('utf-8')), len(text[:b].encode('utf-8')))
+                matching = tuple(ref for ref in references
+                                 if ref.reference_node_id == frame.node_id
+                                 and ref.nominal_head == head
+                                 and ref.reference_scalar_span == (a, b)
+                                 and ref.reference_utf8_span == utf8)
+                if len(matching) != 1:
+                    raise unavailable('evaluation_target_not_self_contained')
+    return frames
+
+
+def validate_piece_personal_evaluations(meaning: PieceSourceMeaning) -> None:
+    expected = _personal_evaluations(piece_source_text(meaning),
+                                     piece_text_nodes(meaning), meaning.sentences)
+    if meaning.personal_evaluations != expected:
+        raise unavailable('piece_evaluation_source_binding')
+
+
+def _piece_editorial_roles(sentences: tuple[str, ...],
+                           evidence: InputEvidenceRef) -> dict[int, str]:
+    """Project register only for provisional role classification.
+
+    The existing Piece grammar already admits an optional polite auxiliary,
+    while the shared compatibility classifier can miss the same predicate in
+    that register. Keep its original admitted roles. For an otherwise missing
+    intent role, classify a register-neutral view of the SAME ordered source
+    sentences, using only the already-admitted self-topic/wish grammar.
+
+    This view is not an envelope, graph, evidence span or visible wording. No
+    speaker, predicate, negation, scope, or sentence is removed. A projected
+    slot still needs the shared classifier's admitted intent role; matching
+    the terminal grammar alone never supplies that role. The shared owner,
+    duplicate handling, and author/format admission are not relaxed.
+    """
+    from piece_v2_expression import (
+        _DEPENDENT_START, _EMBEDDED_REPORT, _INTENT_ROLES, _SELF_TOPIC, _WISH_END,
+    )
+
+    def classify(values: tuple[str, ...]) -> dict[int, str]:
+        blocks = build_input_meaning_blocks(
+            current_input={'memo': ''.join(values)}, shaped_user_phrases=(),
+            evidence=evidence)
+        result: dict[int, str] = {}
+        for block in blocks:
+            match = re.fullmatch(r'meaning:(\d+):[^:]+', block.block_key)
+            if match and block.include_in_piece_core:
+                result[int(match[1])] = block.role
+        return result
+
+    roles = classify(sentences)
+    projected = list(sentences)
+    changed: list[int] = []
+    for index, sentence in enumerate(sentences):
+        if roles.get(index) in _INTENT_ROLES:
+            continue
+        topic = _SELF_TOPIC.fullmatch(sentence)
+        if (topic is None or not _WISH_END.search(topic['body'])
+                or not topic['body'].endswith('です')
+                or _DEPENDENT_START.search(topic['body'])
+                or _EMBEDDED_REPORT.search(topic['body'])):
+            continue
+        # Only the grammar's optional register auxiliary is projected away.
+        # Original punctuation and the rest of the complete source stay put.
+        end = topic.end('body')
+        projected[index] = sentence[:end - len('です')] + sentence[end:]
+        changed.append(index)
+    if changed:
+        projected_roles = classify(tuple(projected))
+        for index in changed:
+            role = projected_roles.get(index)
+            if role in _INTENT_ROLES:
+                roles[index] = role
+    return roles
+
+
+def _saved_field_projection(source) -> tuple[tuple[str, int, int], ...]:
+    """Map exact stored field strings into a non-narrative text working view.
+
+    Offsets in PieceSentenceMeaning are view-relative. EvidenceRef scalar
+    offsets are relative to memo/memo_action; UTF-8 offsets address that field
+    inside the view envelope. The complete JSON record is retained privately
+    and committed in the envelope identity, including nulls and metadata.
+    """
+    from piece_v2_contract import canonical_json_bytes
+    from piece_v2_generation import _sentences
+    try:
+        payload = source.saved_original_json
+        if type(payload) is not bytes:
+            raise ValueError()
+        record = json.loads(payload)
+        if (type(record) is not dict or
+                set(record) != {'id', 'created_at', 'memo', 'memo_action',
+                                'category', 'emotions', 'emotion_details'} or
+                canonical_json_bytes(record) != payload or
+                record['id'] != source.saved_input_id or
+                source.source_version != 'emlis.current_input_bundle.v1' or
+                type(record['created_at']) is not str or not record['created_at'] or
+                any(record[key] is not None and type(record[key]) is not str
+                    for key in ('memo', 'memo_action')) or
+                any(record[key] is not None and type(record[key]) is not list
+                    for key in ('category', 'emotions', 'emotion_details')) or
+                any(type(v) is not str for key in ('category', 'emotions')
+                    for v in (record[key] or []))):
+            raise ValueError()
+    except (ValueError, TypeError, UnicodeError):
+        raise unavailable('saved_original_projection_invalid') from None
+    # Selected-feeling coverage is resolved against the completed graph below.
+    # The complete raw record remains sealed; do not delete the selected fields
+    # or turn them into synthetic sentences to make this text view eligible.
+    parts, spans, cursor = [], [], 0
+    for key in ('memo', 'memo_action'):
+        text = record[key]
+        if text is None or not text.strip():
+            continue
+        # Complete action lines in the last nonempty field may omit stops.
+        # An unfinished earlier field cannot borrow the next field.
+        _sentences(text, allow_unpunctuated_account=(
+            key == 'memo_action' or not (record['memo_action'] or '').strip()))
+        if parts:
+            cursor += 2
+        spans.append((key, cursor, cursor + len(text)))
+        parts.append(text)
+        cursor += len(text)
+    if not parts or source.original_text != '\n\n'.join(parts):
+        raise unavailable('saved_original_projection_mismatch')
+    return tuple(spans)
+
+
+def _validated_self_insight_mode(tags: list, details: list) -> bool:
+    """Recognize the exclusive saved UI mode and validate its exact aliases."""
+    if not ('自己理解' in tags or any(type(detail) is dict and
+            detail.get('type') == '自己理解' for detail in details)):
+        return False
+    if (tags and tags != ['自己理解']) or len(details) > 1:
+        raise unavailable('saved_emotion_meaning_not_yet_supported')
+    for detail in details:
+        if (type(detail) is not dict or set(detail) - {'type', 'strength'}
+                or detail.get('type') != '自己理解'):
+            raise unavailable('saved_emotion_meaning_not_yet_supported')
+        # The hidden UI medium and omitted/empty strengths carry no meaning.
+        strength = detail.get('strength', '')
+        if type(strength) is not str or strength not in ('', 'medium'):
+            raise unavailable('saved_emotion_meaning_not_yet_supported')
+    return True
+
+
+def _written_feeling_expression(sentence: str, *, current_affirmative_only: bool) -> re.Match[str] | None:
+    """Read explicit existing feeling words without inferring a selected state.
+
+    Selection binding retains its original present affirmative, full-stop
+    spelling. Literal account retention can also keep the same verb's eight
+    polite forms already retained in selected-feeling mode. Neither purpose
+    guesses an experiencer, tense, intensity, feeling label or missing stop.
+    """
+    from .source_kernel import CANONICAL_EMOTIONS
+    labels = tuple(label for label in CANONICAL_EMOTIONS if label != '自己理解')
+    ending = (r'ています。' if current_affirmative_only else
+              r'(?:てい(?:ます|ません(?:でした)?|ました)|ます|ません(?:でした)?|ました)[。！!]')
+    return re.fullmatch(
+        r'(?:私|わたし|僕|ぼく|俺|おれ)は[、，,]?[ \t\u3000]*'
+        r'(?P<degree>弱い|中程度の|強い)?(?P<label>'
+        + '|'.join(map(re.escape, labels)) + r')を感じ' + ending, sentence)
+
+
+def _selected_feeling_bindings(source, nodes: tuple[MeaningNode, ...],
+                               evidence: tuple[EvidenceRef, ...]):
+    """Bind selections to matching written evidence or separate private context.
+
+    Only a unique present affirmative first-person match with compatible
+    strength can bind to written evidence. The saved selection remains its
+    own private evidence when the text describes a different time, actor,
+    polarity or degree, or when the match is ambiguous.
+    """
+    if source.saved_original_json is None:
+        return (), (), ()
+    from emlis_ai_current_input_bundle import _normalize_strength
+    from .source_kernel import CANONICAL_EMOTIONS, CANONICAL_STRENGTHS
+    record = json.loads(source.saved_original_json)
+    tags, details = record['emotions'] or [], record['emotion_details'] or []
+    if not tags and not details:
+        return (), (), ()
+
+    def require(condition):
+        if not condition:
+            raise unavailable('saved_emotion_meaning_not_yet_supported')
+
+    if _validated_self_insight_mode(tags, details):
+        return (), (), ()
+
+    # 自己理解 is an input mode, not a feeling from which to infer a state.
+    labels = tuple(label for label in CANONICAL_EMOTIONS if label != '自己理解')
+    require(all(type(label) is str and label in labels for label in tags))
+    require(len(tags) == len(set(tags)))
+    rows = [('emotions', i, label, '') for i, label in enumerate(tags)]
+    detail_labels = []
+    for i, detail in enumerate(details):
+        require(type(detail) is dict and not set(detail) - {'type', 'strength'})
+        label, raw_strength = detail.get('type'), detail.get('strength', '')
+        require(type(label) is str and label in labels and type(raw_strength) is str)
+        strength = _normalize_strength(raw_strength)
+        require(strength == '' or strength in CANONICAL_STRENGTHS)
+        detail_labels.append(label)
+        rows.append(('emotion_details', i, label, strength))
+    require(len(detail_labels) == len(set(detail_labels)))
+    # These fields are aliases for the same ordered selections, not two sets
+    # from which to choose whichever agrees with a sentence. Never silently
+    # replace a mismatching tag, detail or its explicitly selected strength.
+    require(not tags or not details or tags == detail_labels)
+    selected_strengths = {label: strength for field, _, label, strength in rows
+                          if field == 'emotion_details'}
+    degree = {'': '', '弱い': 'weak', '中程度の': 'medium', '強い': 'strong'}
+    matches = {}
+    for node in nodes:
+        match = _written_feeling_expression(node.value, current_affirmative_only=True)
+        if match:
+            matches.setdefault(match['label'], []).append((node, degree[match['degree'] or '']))
+    evidence_by_id = {item.evidence_id: item for item in evidence}
+    bound, selection_evidence, selection_nodes = [], [], []
+    metadata = {}
+    for field, index, label, strength in rows:
+        candidates = matches.get(label, [])
+        selected_strength = selected_strengths.get(label, '')
+        if len(candidates) != 1 or (selected_strength and candidates[0][1] != selected_strength):
+            if label not in metadata:
+                node_id = f'piece:feeling{len(metadata)+1}'
+                metadata[label] = (node_id, selected_strength, [])
+            node_id, selected_strength, refs = metadata[label]
+            evidence_id = f'piece:selection:{field}:{index}'
+            refs.append(evidence_id)
+            selection_evidence.append(PieceSelectionEvidence(
+                evidence_id, node_id, field, index,
+                hashlib.sha256(source.saved_original_json).hexdigest(),
+                json.dumps(record[field][index], ensure_ascii=False, sort_keys=True,
+                           separators=(',', ':'))))
+            bound.append(PieceSelectedFeeling(field, index, label, strength, node_id, evidence_id))
+            continue
+        node, _ = candidates[0]
+        require(len(node.evidence_ids) == 1 and node.evidence_ids[0] in evidence_by_id)
+        ev = evidence_by_id[node.evidence_ids[0]]
+        require(ev.field_path in {'memo', 'memo_action'})
+        require(record[ev.field_path][ev.scalar_start:ev.scalar_end] == node.value)
+        bound.append(PieceSelectedFeeling(field, index, label, strength,
+                                          node.node_id, ev.evidence_id))
+    for label, (node_id, strength, refs) in metadata.items():
+        selection_nodes.append(MeaningNode(
+            node_id=node_id, owner_id=node_id + ':owner',
+            node_kind='PIECE_SELECTED_FEELING', grounding_kind='explicit',
+            value=json.dumps({'label': label, 'strength': strength,
+                              'scope': 'RECORDED_SELF'}, ensure_ascii=False,
+                             sort_keys=True, separators=(',', ':')),
+            epistemic_state=EpistemicState.SOURCE_EXPLICIT, evidence_ids=tuple(refs)))
+    return tuple(bound), tuple(selection_evidence), tuple(selection_nodes)
+
+
+def validate_piece_saved_fields(meaning: PieceSourceMeaning) -> None:
+    """Keep field/record provenance bound through plan and final realization.
+
+    The existing single-text path is unchanged. For the field-aware path the
+    same saved snapshot rederives the graph, field evidence and editorial
+    bindings; no caller-supplied field map can weaken source coverage.
+    """
+    from .piece_semantic_admission import PieceSemanticSnapshotV1, validate_snapshot_self
+    if type(meaning) is PieceSemanticSnapshotV1:
+        validate_snapshot_self(meaning)
+        return
+    from .piece_refined import (PieceSupplementalMeaning, validate_supplemental_meaning,
+        PieceActiveOriginalMeaning, validate_active_original_meaning,
+        PieceCorrectionMeaning, validate_correction_meaning)
+    if type(meaning) is PieceCorrectionMeaning:
+        validate_correction_meaning(meaning)
+        return
+    if type(meaning) is PieceActiveOriginalMeaning:
+        validate_active_original_meaning(meaning)
+        return
+    if type(meaning) is PieceSupplementalMeaning:
+        validate_supplemental_meaning(meaning)
+        return
+    is_saved = meaning.envelope.source_schema_version == 'piece.saved_source.original_fields.v1'
+    if not is_saved and meaning.saved_snapshot is None:
+        if (meaning.selected_feelings or meaning.selection_evidence or meaning.selection_contexts
+                or any(n.node_kind == 'PIECE_SELECTED_FEELING' for n in meaning.graph.nodes)):
+            raise unavailable('piece_saved_field_binding')
+        return
+    from piece_v2_generation import PieceSourceSnapshot
+    source = meaning.saved_snapshot
+    if (not is_saved or type(source) is not PieceSourceSnapshot or
+            source.saved_original_json is None):
+        raise unavailable('piece_saved_field_binding')
+    expected = build_piece_source_meaning(
+        source, expected_owner_id=source.owner_id,
+        expected_saved_input_id=source.saved_input_id,
+        expected_source_version=source.source_version)
+    if expected != meaning:
+        raise unavailable('piece_saved_field_binding')
+
+
+def build_piece_source_meaning(source: object, *, expected_owner_id: str,
+                               expected_saved_input_id: str,
+                               expected_source_version: str) -> PieceSourceMeaning:
+    # Import the established internal snapshot/grammar owner, not its output
+    # compiler. Its complete-sentence admission is retained without a raw fallback.
+    from piece_v2_generation import PieceSourceSnapshot, _sentences
+    if type(source) is not PieceSourceSnapshot:
+        raise unavailable('source_type')
+    if not all(isinstance(value, str) and value.strip() for value in (
+            source.owner_id, source.saved_input_id, source.source_version,
+            source.original_text, expected_owner_id, expected_saved_input_id,
+            expected_source_version)):
+        raise unavailable('source_identity')
+    if source.owner_id != expected_owner_id:
+        raise unavailable('source_owner_mismatch')
+    if source.saved_input_id != expected_saved_input_id:
+        raise unavailable('saved_input_binding_mismatch')
+    if source.source_version != expected_source_version:
+        raise unavailable('source_version_binding_mismatch')
+    if source.source_role != 'original' or source.source_stage not in (
+            'normal_observation', 'pre_question_observation'):
+        raise unavailable('source_role_or_stage_not_yet_supported')
+    fields = (_saved_field_projection(source) if source.saved_original_json is not None
+              else (('original_text', 0, len(source.original_text)),))
+    text = source.original_text
+    check_existing_detectors(text)
+    sentences = _sentences(text, allow_unpunctuated_account=source.saved_original_json is not None)
+    for sentence in sentences:
+        _validate_self_predicate_body(sentence)
+    aliases = _role_bindings(text)
+    role_by_position = _piece_editorial_roles(
+        sentences, InputEvidenceRef(kind='saved_input', ref_id=source.saved_input_id))
+    # Provisional role classification may omit duplicate summaries. It is
+    # NEVER allowed to omit an original sentence in the Piece graph below.
+    raw = text.encode('utf-8')
+    identity = json.dumps([source.owner_id, source.saved_input_id,
+                           source.source_version, source.source_role,
+                           source.source_stage, _digest(text)], ensure_ascii=False)
+    if source.saved_original_json is not None:
+        identity = json.dumps([identity, 'piece.saved_source.original_fields.v1',
+                               hashlib.sha256(source.saved_original_json).hexdigest()])
+    envelope_id = 'piece-source:' + _digest(identity)
+    envelope = SourceEnvelope(
+        envelope_id=envelope_id, source_record_id=source.saved_input_id,
+        source_role='ORIGINAL_USER_INPUT',
+        source_schema_version=('piece.saved_source.original_fields.v1'
+                               if source.saved_original_json is not None
+                               else 'piece.saved_source.original.v1'),
+        source_contract_version='piece.source_lineage.v1', source_encoding='UTF-8',
+        label_contract_id='NOT_APPLICABLE', label_contract_digest='',
+        raw_utf8=raw, raw_sha256=_digest(text))
+    nodes, edges, evidence, meanings, resolutions = [], [], [], [], []
+    cursor = 0
+    for index, sentence in enumerate(sentences):
+        start = text.find(sentence, cursor)
+        end = start + len(sentence)
+        if start < cursor or text[start:end] != sentence:
+            raise unavailable('source_sentence_range_mismatch')
+        cursor = end
+        node_id, owner_id, evidence_id = f'piece:s{index+1}', f'piece:o{index+1}', f'piece:e{index+1}'
+        utf8_start = len(text[:start].encode('utf-8'))
+        utf8_end = len(text[:end].encode('utf-8'))
+        matching = [(key, a, b) for key, a, b in fields if a <= start < end <= b]
+        if len(matching) != 1:
+            raise unavailable('saved_original_field_range_mismatch')
+        key, field_start, field_end = matching[0]
+        evidence.append(EvidenceRef(
+            evidence_id=evidence_id, source_span_id=node_id,
+            source_envelope_id=envelope_id, field_path=key, element_index=0,
+            field_utf8_start=len(text[:field_start].encode('utf-8')),
+            field_utf8_end=len(text[:field_end].encode('utf-8')),
+            scalar_start=start - field_start, scalar_end=end - field_start,
+            utf8_start=utf8_start, utf8_end=utf8_end,
+            field_sha256=_digest(text[field_start:field_end]), literal_sha256=_digest(sentence)))
+        nodes.append(MeaningNode(
+            node_id=node_id, owner_id=owner_id, node_kind='PIECE_SOURCE_PROPOSITION',
+            grounding_kind='explicit', value=sentence,
+            epistemic_state=EpistemicState.SOURCE_EXPLICIT, evidence_ids=(evidence_id,)))
+        meanings.append(PieceSentenceMeaning(node_id, evidence_id, start, end,
+                                            role_by_position.get(index, 'source_context')))
+        resolutions.append(SourceOwnerResolution(
+            meaning_owner_id=owner_id, owner_class=OwnerClass.REQUIRED,
+            resolver_resolution=ResolverResolution.UNIQUE,
+            attachment_admission=AttachmentAdmission.PROVISIONAL_ONLY,
+            visible_authority=VisibleAuthority.SOURCE_EXPLICIT,
+            source_owner_disposition=SourceOwnerDisposition.SOURCE_EXPLICIT_VISIBLE,
+            visible_claim_refs=(node_id,), evidence_refs=(evidence_id,),
+            target_unknown_ref=None, reason_codes=('piece_complete_source_proposition',)))
+        if index:
+            edges.append(MeaningEdge(
+                edge_id=f'piece:order{index}', owner_id=owner_id,
+                relation='SOURCE_ORDER', source_node_id=nodes[index-1].node_id,
+                target_node_id=node_id, grounding_kind='explicit',
+                epistemic_state=EpistemicState.SOURCE_EXPLICIT,
+                evidence_ids=(evidence[index-1].evidence_id, evidence_id)))
+    evaluations = _personal_evaluations(text, tuple(nodes), tuple(meanings))
+    scopes = _expression_scopes(text, tuple(nodes), tuple(meanings))
+    scope_by_node = {scope.node_id: scope for scope in scopes}
+    nodes = [replace(node, node_kind=_SCOPE_KINDS[scope_by_node[node.node_id].relation])
+             if node.node_id in scope_by_node else node for node in nodes]
+    references = _nominal_references(text, tuple(nodes), tuple(meanings))
+    edges.extend(_reference_edges(references, tuple(nodes)))
+    selections, selection_evidence, selection_nodes = _selected_feeling_bindings(
+        source, tuple(nodes), tuple(evidence))
+    # Selections are private context, not authored image-text propositions.
+    # Their exact JSON evidence remains bound through saved-field rederivation.
+    # Preserve predecessor identities when the graph has no new attachment.
+    graph_seed = envelope_id if not references else json.dumps(
+        [envelope_id, 'piece.nominal_reference.v1',
+         [(r.antecedent_node_id, r.reference_node_id, r.nominal_head,
+           r.antecedent_scalar_span, r.reference_scalar_span) for r in references]])
+    if evaluations:
+        graph_seed = json.dumps([graph_seed, 'piece.personal_evaluation.v1',
+                                 [asdict(frame) for frame in evaluations]], ensure_ascii=False)
+    if selection_nodes:
+        graph_seed = json.dumps([graph_seed, 'piece.saved_selection_context.v1',
+                                 [asdict(ev) for ev in selection_evidence]], ensure_ascii=False)
+    owners = tuple(node.owner_id for node in nodes)
+    if scopes:
+        graph_seed = json.dumps([
+            graph_seed, 'piece.intent_scope.v1',
+            [(scope.node_id, scope.relation, scope.marker,
+              scope.scope_scalar_span, scope.scope_utf8_span,
+              scope.expression_scalar_span, scope.expression_utf8_span)
+             for scope in scopes]], ensure_ascii=False, separators=(',', ':'))
+    graph = GroundedMeaningGraph(
+        graph_id='piece-graph:' + _digest(graph_seed), source_envelope_id=envelope_id,
+        nodes=tuple(nodes), edges=tuple(edges), owner_dispositions=tuple(resolutions),
+        required_owner_refs=owners, active_optional_owner_refs=(),
+        source_version=source.source_version, obligation_version='piece.content_meaning.v1',
+        owner_universe_digest=_digest(json.dumps(owners)))
+    return PieceSourceMeaning(envelope, graph, tuple(evidence), tuple(meanings), aliases,
+                              references, evaluations, scopes,
+                              source if source.saved_original_json is not None else None,
+                              selections, selection_evidence, selection_nodes)

@@ -15,9 +15,9 @@ def test_current_kokoro_weather_no_observation_payload_is_past_observation_wordi
     payload = build_current_kokoro_weather_from_rows([], end_utc=now, previous_available=True)
 
     assert payload["status"] == "no_observation"
-    assert payload["label"] == "今のこころ天気"
+    assert payload["label"] == "今のこころグラフ"
     assert payload["empty_title"] == "今日はまだ観測がありません"
-    assert payload["empty_action_label"] == "前回のこころ天気を見る"
+    assert payload["empty_action_label"] == "前回のこころグラフを見る"
     assert payload["previous_available"] is True
 
 

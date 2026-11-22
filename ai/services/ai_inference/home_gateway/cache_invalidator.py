@@ -16,10 +16,6 @@ _INVALIDATION_KEYS: dict[HomeCommandName, HomeCacheInvalidationPlan] = {
         response_keys=("input_summary", "global_summary", "home_state"),
         startup_snapshot=True,
     ),
-    "today_question.answer.create": HomeCacheInvalidationPlan(
-        response_keys=("today_question_current", "today_question_status", "home_state"),
-        startup_snapshot=True,
-    ),
     "notice.read": HomeCacheInvalidationPlan(
         response_keys=("notices_current", "home_state"),
         startup_snapshot=True,
@@ -62,10 +58,6 @@ async def execute_cache_invalidation(
                     await invalidate_prefix(f"global_summary:{activity_date}:")
                 else:
                     await invalidate_prefix("global_summary:")
-            elif response_key == "today_question_current":
-                await invalidate_prefix(f"today_question:current:{uid}")
-            elif response_key == "today_question_status":
-                await invalidate_prefix(f"today_question:status:{uid}")
             elif response_key == "notices_current":
                 await invalidate_prefix(f"notices:current:{uid}")
             elif response_key == "emotion_reflection_quota":

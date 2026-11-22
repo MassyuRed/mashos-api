@@ -1,0 +1,483 @@
+from __future__ import annotations
+
+"""Pure Emlis question selection from grounded input meaning, never prose."""
+
+from dataclasses import replace
+import re
+
+from emlis_ai_grounded_human_reception import final_reception_source_anchor_text
+from emlis_ai_grounded_observation_plan import (
+    build_final_stage1_grounded_observation_plan,
+    _source_self_appraisal, _source_self_appraisal_parts,
+    _source_initial_personal_meaning_from_resolver,
+)
+from emlis_ai_safety_triage import TRIAGE_SAFE_OBSERVATION
+
+from .emlis_thread_contracts import EmlisClarificationV1, EmlisQuestionDecisionV1
+from .emlis_thread_source import AdmittedEmlisThread, identity
+
+_RECEIVED_EVENT = re.compile(
+    r"(?:褒められ|ほめられ|言われ|伝えられ|評価され|断られ|誘われ|頼まれ|"
+    r"連絡が来|返事が来|返信が来|声をかけられ|声を掛けられ)"
+)
+_PERSONAL_MEANING = re.compile(
+    r"(?:自分|私|わたし|僕|ぼく).{0,24}(?:にとって|には).{1,36}(?:意味|感じ|思)|"
+    r"(?:と|ように|ようで|みたいに)(?:受け取|感じ|思)|"
+    r"(?:から|ので|ため).{0,30}(?:嬉|うれ|重|寂|さび|悲|辛|つら)|"
+    r"(?:嬉|うれ|重|寂|さび|悲|辛|つら).{0,20}(?:のは|理由は)|"
+    r"(?:ようで|と思って)[、,].{0,12}(?:重|寂|悲|怖|嬉|うれ|つら)|"
+    r"と思った$"
+)
+_NONFACT = re.compile(r"(?:と言った|と言って|そうなら|たら|なら|かもしれ|と言う話|なかった|ていない|なかったら|だろう)")
+_FACTUAL_RECEIVED = re.compile(r"(?:褒められ|ほめられ|言われ|伝えられ|評価され|断られ|誘われ|頼まれ|声をかけられ|声を掛けられ)(?:た|ました)$|(?:連絡|返事|返信)が来(?:た|ました)$")
+
+
+def original_meaning_plan(thread: AdmittedEmlisThread, **legacy):
+    return _original_source_meaning_plan(thread.original, **legacy)
+
+
+def _original_source_meaning_plan(source, *, _legacy_result_appraisal=False, _legacy_appraisal_reason=False,
+                          _legacy_received_appraisal_context=False, _legacy_repeated_appraisal_context=False,
+                          _legacy_appraisal_retention=False, _legacy_duplicate_appraisal_source=False,
+                          _legacy_shared_target_contrast=False, _legacy_received_unfinished_context=False,
+                          _legacy_received_reason_context=False, _legacy_received_report_context=False,
+                          _legacy_cognitive_feeling_scope=False, _legacy_cognitive_temporal_topic=False,
+                          _legacy_feeling_reason_self_scope=False, _legacy_unknown_object_action_scope=False,
+                          _legacy_relief_cognition_reception=False, _legacy_cognitive_self_continuation=False,
+                          _legacy_relief_unknown_retention=False, _legacy_relief_unknown_source=False,
+                          _legacy_relief_cognition_anaphora=False, _legacy_relief_self_recipient=False,
+                          _legacy_past_self_unknown=False, _legacy_reverse_time_contrast=False,
+                          _legacy_time_contrast_source=False, _legacy_cognitive_feeling_orthography=False,
+                          _legacy_mixed_relief_unknown=False, _legacy_relief_received_retention=False,
+                          _legacy_initial_personal_meaning=False):
+    # Every earlier source version predates the initial three-role experience.
+    # A saved identity is re-derived from that complete version, never relabeled.
+    initial_personal_legacy = any(value for name, value in locals().items()
+                                 if name.startswith('_legacy_'))
+    return build_final_stage1_grounded_observation_plan(
+        source.normalized_current_input, evidence_spans=source.evidence_spans,
+        _legacy_initial_personal_meaning=initial_personal_legacy,
+        _legacy_relief_received_retention=(_legacy_relief_received_retention or any((
+            _legacy_mixed_relief_unknown,
+            _legacy_cognitive_feeling_orthography, _legacy_time_contrast_source,
+            _legacy_reverse_time_contrast, _legacy_past_self_unknown,
+            _legacy_relief_self_recipient, _legacy_relief_cognition_anaphora,
+            _legacy_relief_unknown_source, _legacy_relief_unknown_retention,
+            _legacy_cognitive_self_continuation, _legacy_relief_cognition_reception,
+            _legacy_unknown_object_action_scope, _legacy_feeling_reason_self_scope,
+            _legacy_cognitive_temporal_topic, _legacy_cognitive_feeling_scope,
+            _legacy_result_appraisal, _legacy_appraisal_reason, _legacy_received_appraisal_context,
+            _legacy_repeated_appraisal_context, _legacy_appraisal_retention, _legacy_duplicate_appraisal_source,
+            _legacy_shared_target_contrast, _legacy_received_unfinished_context,
+            _legacy_received_reason_context, _legacy_received_report_context))),
+        _legacy_mixed_relief_unknown=(_legacy_mixed_relief_unknown or any((
+            _legacy_cognitive_feeling_orthography, _legacy_time_contrast_source,
+            _legacy_reverse_time_contrast, _legacy_past_self_unknown,
+            _legacy_relief_self_recipient, _legacy_relief_cognition_anaphora,
+            _legacy_relief_unknown_source, _legacy_relief_unknown_retention,
+            _legacy_cognitive_self_continuation, _legacy_relief_cognition_reception,
+            _legacy_unknown_object_action_scope, _legacy_feeling_reason_self_scope,
+            _legacy_cognitive_temporal_topic, _legacy_cognitive_feeling_scope,
+            _legacy_result_appraisal, _legacy_appraisal_reason, _legacy_received_appraisal_context,
+            _legacy_repeated_appraisal_context, _legacy_appraisal_retention, _legacy_duplicate_appraisal_source,
+            _legacy_shared_target_contrast, _legacy_received_unfinished_context,
+            _legacy_received_reason_context, _legacy_received_report_context))),
+        _legacy_cognitive_feeling_orthography=(_legacy_cognitive_feeling_orthography or any((
+            _legacy_time_contrast_source, _legacy_reverse_time_contrast, _legacy_past_self_unknown,
+            _legacy_relief_self_recipient, _legacy_relief_cognition_anaphora,
+            _legacy_relief_unknown_source, _legacy_relief_unknown_retention,
+            _legacy_cognitive_self_continuation, _legacy_relief_cognition_reception,
+            _legacy_unknown_object_action_scope, _legacy_feeling_reason_self_scope,
+            _legacy_cognitive_temporal_topic, _legacy_cognitive_feeling_scope,
+            _legacy_result_appraisal, _legacy_appraisal_reason, _legacy_received_appraisal_context,
+            _legacy_repeated_appraisal_context, _legacy_appraisal_retention, _legacy_duplicate_appraisal_source,
+            _legacy_shared_target_contrast, _legacy_received_unfinished_context,
+            _legacy_received_reason_context, _legacy_received_report_context))),
+        _legacy_time_contrast_source=(_legacy_time_contrast_source or _legacy_reverse_time_contrast or any((
+            _legacy_past_self_unknown, _legacy_relief_self_recipient, _legacy_relief_cognition_anaphora,
+            _legacy_relief_unknown_source, _legacy_relief_unknown_retention,
+            _legacy_cognitive_self_continuation, _legacy_relief_cognition_reception,
+            _legacy_unknown_object_action_scope, _legacy_feeling_reason_self_scope,
+            _legacy_cognitive_temporal_topic, _legacy_cognitive_feeling_scope,
+            _legacy_result_appraisal, _legacy_appraisal_reason, _legacy_received_appraisal_context,
+            _legacy_repeated_appraisal_context, _legacy_appraisal_retention, _legacy_duplicate_appraisal_source,
+            _legacy_shared_target_contrast, _legacy_received_unfinished_context,
+            _legacy_received_reason_context, _legacy_received_report_context))),
+        _legacy_reverse_time_contrast=(_legacy_reverse_time_contrast or _legacy_past_self_unknown or any((
+            _legacy_relief_self_recipient, _legacy_relief_cognition_anaphora,
+            _legacy_relief_unknown_source, _legacy_relief_unknown_retention,
+            _legacy_cognitive_self_continuation, _legacy_relief_cognition_reception,
+            _legacy_unknown_object_action_scope, _legacy_feeling_reason_self_scope,
+            _legacy_cognitive_temporal_topic, _legacy_cognitive_feeling_scope,
+            _legacy_result_appraisal, _legacy_appraisal_reason, _legacy_received_appraisal_context,
+            _legacy_repeated_appraisal_context, _legacy_appraisal_retention, _legacy_duplicate_appraisal_source,
+            _legacy_shared_target_contrast, _legacy_received_unfinished_context,
+            _legacy_received_reason_context, _legacy_received_report_context))),
+        _legacy_past_self_unknown=(_legacy_past_self_unknown or any((
+            _legacy_relief_self_recipient, _legacy_relief_cognition_anaphora,
+            _legacy_relief_unknown_source, _legacy_relief_unknown_retention,
+            _legacy_cognitive_self_continuation, _legacy_relief_cognition_reception,
+            _legacy_unknown_object_action_scope, _legacy_feeling_reason_self_scope,
+            _legacy_cognitive_temporal_topic, _legacy_cognitive_feeling_scope,
+            _legacy_result_appraisal, _legacy_appraisal_reason, _legacy_received_appraisal_context,
+            _legacy_repeated_appraisal_context, _legacy_appraisal_retention, _legacy_duplicate_appraisal_source,
+            _legacy_shared_target_contrast, _legacy_received_unfinished_context,
+            _legacy_received_reason_context, _legacy_received_report_context))),
+        _legacy_relief_self_recipient=(_legacy_relief_self_recipient or _legacy_relief_cognition_anaphora or _legacy_relief_unknown_source or _legacy_relief_unknown_retention or _legacy_cognitive_self_continuation
+            or _legacy_relief_cognition_reception or any((
+                _legacy_unknown_object_action_scope, _legacy_feeling_reason_self_scope,
+                _legacy_cognitive_temporal_topic, _legacy_cognitive_feeling_scope,
+                _legacy_result_appraisal, _legacy_appraisal_reason, _legacy_received_appraisal_context,
+                _legacy_repeated_appraisal_context, _legacy_appraisal_retention, _legacy_duplicate_appraisal_source,
+                _legacy_shared_target_contrast, _legacy_received_unfinished_context,
+                _legacy_received_reason_context, _legacy_received_report_context))),
+        _legacy_relief_cognition_anaphora=(_legacy_relief_cognition_anaphora or _legacy_relief_unknown_source or _legacy_relief_unknown_retention or _legacy_cognitive_self_continuation
+            or _legacy_relief_cognition_reception or any((
+                _legacy_unknown_object_action_scope, _legacy_feeling_reason_self_scope,
+                _legacy_cognitive_temporal_topic, _legacy_cognitive_feeling_scope,
+                _legacy_result_appraisal, _legacy_appraisal_reason, _legacy_received_appraisal_context,
+                _legacy_repeated_appraisal_context, _legacy_appraisal_retention, _legacy_duplicate_appraisal_source,
+                _legacy_shared_target_contrast, _legacy_received_unfinished_context,
+                _legacy_received_reason_context, _legacy_received_report_context))),
+        _legacy_relief_unknown_source=(_legacy_relief_unknown_source or _legacy_relief_unknown_retention or _legacy_cognitive_self_continuation
+            or _legacy_relief_cognition_reception or any((
+                _legacy_unknown_object_action_scope, _legacy_feeling_reason_self_scope,
+                _legacy_cognitive_temporal_topic, _legacy_cognitive_feeling_scope,
+                _legacy_result_appraisal, _legacy_appraisal_reason, _legacy_received_appraisal_context,
+                _legacy_repeated_appraisal_context, _legacy_appraisal_retention, _legacy_duplicate_appraisal_source,
+                _legacy_shared_target_contrast, _legacy_received_unfinished_context,
+                _legacy_received_reason_context, _legacy_received_report_context))),
+        _legacy_relief_unknown_retention=(_legacy_relief_unknown_retention or _legacy_cognitive_self_continuation
+            or _legacy_relief_cognition_reception or any((
+                _legacy_unknown_object_action_scope, _legacy_feeling_reason_self_scope,
+                _legacy_cognitive_temporal_topic, _legacy_cognitive_feeling_scope,
+                _legacy_result_appraisal, _legacy_appraisal_reason, _legacy_received_appraisal_context,
+                _legacy_repeated_appraisal_context, _legacy_appraisal_retention, _legacy_duplicate_appraisal_source,
+                _legacy_shared_target_contrast, _legacy_received_unfinished_context,
+                _legacy_received_reason_context, _legacy_received_report_context))),
+        _legacy_cognitive_self_continuation=(_legacy_cognitive_self_continuation or _legacy_relief_cognition_reception or any((
+            _legacy_unknown_object_action_scope, _legacy_feeling_reason_self_scope,
+            _legacy_cognitive_temporal_topic, _legacy_cognitive_feeling_scope,
+            _legacy_result_appraisal, _legacy_appraisal_reason, _legacy_received_appraisal_context,
+            _legacy_repeated_appraisal_context, _legacy_appraisal_retention, _legacy_duplicate_appraisal_source,
+            _legacy_shared_target_contrast, _legacy_received_unfinished_context,
+            _legacy_received_reason_context, _legacy_received_report_context))),
+        _legacy_relief_cognition_reception=(_legacy_relief_cognition_reception or any((
+            _legacy_unknown_object_action_scope, _legacy_feeling_reason_self_scope,
+            _legacy_cognitive_temporal_topic, _legacy_cognitive_feeling_scope,
+            _legacy_result_appraisal, _legacy_appraisal_reason, _legacy_received_appraisal_context,
+            _legacy_repeated_appraisal_context, _legacy_appraisal_retention, _legacy_duplicate_appraisal_source,
+            _legacy_shared_target_contrast, _legacy_received_unfinished_context,
+            _legacy_received_reason_context, _legacy_received_report_context))),
+        _legacy_result_appraisal=_legacy_result_appraisal,
+        _legacy_appraisal_reason=_legacy_appraisal_reason,
+        _legacy_received_appraisal_context=_legacy_received_appraisal_context,
+        _legacy_unknown_object_action_scope=(_legacy_unknown_object_action_scope or any((
+            _legacy_feeling_reason_self_scope, _legacy_cognitive_temporal_topic, _legacy_cognitive_feeling_scope,
+            _legacy_result_appraisal, _legacy_appraisal_reason, _legacy_received_appraisal_context,
+            _legacy_repeated_appraisal_context, _legacy_appraisal_retention, _legacy_duplicate_appraisal_source,
+            _legacy_shared_target_contrast, _legacy_received_unfinished_context,
+            _legacy_received_reason_context, _legacy_received_report_context))),
+        _legacy_feeling_reason_self_scope=(_legacy_feeling_reason_self_scope or any((
+            _legacy_cognitive_temporal_topic, _legacy_cognitive_feeling_scope,
+            _legacy_result_appraisal, _legacy_appraisal_reason,
+            _legacy_received_appraisal_context, _legacy_repeated_appraisal_context,
+            _legacy_appraisal_retention, _legacy_duplicate_appraisal_source,
+            _legacy_shared_target_contrast, _legacy_received_unfinished_context,
+            _legacy_received_reason_context, _legacy_received_report_context))),
+        _legacy_cognitive_temporal_topic=(_legacy_cognitive_temporal_topic or any((
+            _legacy_cognitive_feeling_scope, _legacy_result_appraisal, _legacy_appraisal_reason,
+            _legacy_received_appraisal_context, _legacy_repeated_appraisal_context,
+            _legacy_appraisal_retention, _legacy_duplicate_appraisal_source,
+            _legacy_shared_target_contrast, _legacy_received_unfinished_context,
+            _legacy_received_reason_context, _legacy_received_report_context))),
+        _legacy_cognitive_feeling_scope=(_legacy_cognitive_feeling_scope or any((
+            _legacy_result_appraisal, _legacy_appraisal_reason, _legacy_received_appraisal_context,
+            _legacy_repeated_appraisal_context, _legacy_appraisal_retention,
+            _legacy_duplicate_appraisal_source, _legacy_shared_target_contrast,
+            _legacy_received_unfinished_context, _legacy_received_reason_context,
+            _legacy_received_report_context))),
+        _legacy_received_report_context=(_legacy_received_report_context or any((
+            _legacy_result_appraisal, _legacy_appraisal_reason, _legacy_received_appraisal_context,
+            _legacy_repeated_appraisal_context, _legacy_appraisal_retention,
+            _legacy_duplicate_appraisal_source, _legacy_shared_target_contrast,
+            _legacy_received_unfinished_context, _legacy_received_reason_context))),
+        _legacy_received_reason_context=(_legacy_received_reason_context or any((
+            _legacy_result_appraisal, _legacy_appraisal_reason, _legacy_received_appraisal_context,
+            _legacy_repeated_appraisal_context, _legacy_appraisal_retention,
+            _legacy_duplicate_appraisal_source, _legacy_shared_target_contrast,
+            _legacy_received_unfinished_context))),
+        _legacy_received_unfinished_context=(_legacy_received_unfinished_context or any((
+            _legacy_result_appraisal, _legacy_appraisal_reason, _legacy_received_appraisal_context,
+            _legacy_repeated_appraisal_context, _legacy_appraisal_retention,
+            _legacy_duplicate_appraisal_source, _legacy_shared_target_contrast))),
+        _legacy_repeated_appraisal_context=_legacy_repeated_appraisal_context,
+        _legacy_appraisal_retention=_legacy_appraisal_retention,
+        _legacy_duplicate_appraisal_source=_legacy_duplicate_appraisal_source,
+        _legacy_shared_target_contrast=(_legacy_shared_target_contrast or any((
+            _legacy_result_appraisal, _legacy_appraisal_reason,
+            _legacy_received_appraisal_context, _legacy_repeated_appraisal_context,
+            _legacy_appraisal_retention, _legacy_duplicate_appraisal_source))),
+    )
+
+
+
+# The proposal lives in question control, never in an original/answer claim.
+# Its two premises are independently sourced; neither implies a hidden goal.
+_APPRAISAL_STANDARD = "PERSONAL_OUTCOME_STANDARD"
+_ZERO_OUTCOME = re.compile(r"(?:何も|何一つ|何ひとつ|一つも|ひとつも)(?:でき|出来)(?:なかった|ていない)")
+_MATERIAL_PREFIX = re.compile(
+    r"^(?:(?:今日|今|現在)(?:は|も)?[、,]?)?"
+    r"(?:(?:私|わたし|僕|ぼく|俺|おれ|自分)(?:は|も)[、,]?)?")
+
+
+def _appraisal_standard_candidate(thread, plan, *, parent_request_id, respect_control):
+    """Ask whether an outcome appraisal uses a personally intended standard.
+
+    A completed record beside a whole zero-outcome
+    appraisal supplies a possible distinction between doing and satisfaction.
+    No specific activity, motive, failure cause, or personality is inferred.
+    Other sources/extra claims and already supplied standards are not ignored.
+    """
+    text = tuple(n for n in plan.nuclei if set(n.source_fields) & {"memo", "memo_action"})
+    appraisals = tuple(n for n in text if _source_self_appraisal(n))
+    material_rows = tuple(n for n in text if n not in appraisals)
+    if len(appraisals) != 1 or len(material_rows) != 1:
+        return None
+    material_row = material_rows[0]
+    if (material_row.source_fields not in {("memo",), ("memo_action",)}
+        or material_row.retention != "required" or len(material_row.source_span_ids) != 1
+        or material_row.grounding_kind not in {"explicit", "user_stated_relation"}
+        or material_row.allowed_claim_scope not in {"explicit_current_input", "source_bounded_relation"}
+        or material_row.semantic_frame.actor != "current_user"
+        or set(material_row.source_span_ids) & set(appraisals[0].source_span_ids)
+        or any(r.retention == "required" for r in plan.relations
+               if {r.from_nucleus_id, r.to_nucleus_id} & {n.nucleus_id for n in text})):
+        return None
+    pair = (*appraisals, material_row)
+    resolver = thread.resolver()
+    index = {n.nucleus_id: n for n in plan.nuclei}
+    appraisal, material = (final_reception_source_anchor_text(n.nucleus_id, index, resolver)
+                           for n in pair)
+    proof = _source_self_appraisal_parts(appraisal)
+    if (proof is None or len(proof[1]) != 1 or proof[1][0][0] != "appraisal"
+        or not _ZERO_OUTCOME.fullmatch(appraisal[slice(*proof[1][0][1:])])):
+        return None
+    finite = _MATERIAL_PREFIX.sub("", material, count=1)
+    # A retained word alone cannot prove a completed record. Check its
+    # whole finite form, rather than inferring an action from a field label.
+    # Copular/adjectival pasts are records of a state, not completed activity;
+    # an ambiguous bare -katta form stays outside this bounded candidate.
+    if (not re.fullmatch(r"[^はがも、,。．.!！?？\s「」『』]+(?:た|ました)(?:だけ(?:です)?)?", finite)
+        or re.search(r"ない|なかった|ません|たかった|たくな|かもしれ|らしい|なら|たら|もし|という|と言|と思|そうだ|予定|つもり", finite)
+        or re.search(r"(?:かった|だった|でした)(?:だけ(?:です)?)?$", finite)
+        or pair[1].semantic_frame.modality != "fact"
+        or re.search(r"昨日|以前|先週|去年|昨年|明日", appraisal + material)):
+        return None
+    # Require complete coverage of the original free-text fields, not just
+    # whichever claims an upstream finite grammar happened to retain.
+    selected_spans = {s for n in pair for s in n.source_span_ids}
+    text_spans = {s.span_id for s in thread.original.evidence_spans
+                  if s.source_field in {"memo", "memo_action"}}
+    if selected_spans != text_spans:
+        return None
+    control = thread.control.question_control_context
+    target = identity("emlis-target", thread.original.envelope.envelope_id,
+                      pair[0].nucleus_id, "personal_outcome_standard")
+    if ((respect_control or thread.control.capability_snapshot.startswith("Q3_"))
+        and target in control.asked_target_refs):
+        return None
+    evidence = tuple(resolver.qualified_ref(s).evidence.evidence_id
+                     for n in pair for s in n.source_span_ids)
+    affected = tuple(n.nucleus_id for n in pair)
+    decision = EmlisQuestionDecisionV1("ASK", target, _APPRAISAL_STANDARD, evidence,
+        "personal_outcome_standard", affected, affected,
+        control.asked_target_refs if respect_control else (),
+        "performed_material_and_zero_outcome_standard_unconfirmed")
+    question = EmlisClarificationV1(
+        identity("emlis-question", thread.control.thread_id, target), parent_request_id,
+        thread.control.thread_id, thread.original.envelope.envelope_id, decision,
+        f"「{appraisal}」は、やりたかったことには手が届かなかった、ということでしょうか。"
+        "違っていたら、その意味を教えてください。")
+    return decision, question
+
+
+def question_candidate(thread: AdmittedEmlisThread, plan, *, parent_request_id: str,
+                       respect_control: bool = True):
+    control = thread.control.question_control_context
+    q3 = thread.control.capability_snapshot.startswith("Q3_")
+    if respect_control and (control.stop or control.issued_count >= control.question_limit
+                            or (thread.answers and not q3)):
+        return EmlisQuestionDecisionV1("END", decision_reason="free_round_complete"), None
+    if plan.input_profile.safety_kind != TRIAGE_SAFE_OBSERVATION:
+        return EmlisQuestionDecisionV1("BLOCKED", decision_reason="separate_safety_owner"), None
+    original = thread.original
+    # Read every admitted text field before treating a dimension as missing.
+    texts = tuple(str(original.normalized_current_input.get(key, ""))
+                  for key in ("memo", "memo_action"))
+    resolver = thread.resolver()
+    if (not thread.answers
+        and _source_initial_personal_meaning_from_resolver(plan.nuclei, plan.relations, resolver)):
+        return EmlisQuestionDecisionV1("END", decision_reason="source_bound_personal_meaning_already_stated"), None
+    index = {row.nucleus_id: row for row in plan.nuclei}
+    reactions = tuple(row for row in plan.nuclei
+                      if row.kind in {"reaction", "state", "constraint", "value", "self_evaluation"}
+                      and set(row.source_fields) & {"memo", "memo_action"})
+    if not reactions:
+        return EmlisQuestionDecisionV1("END", decision_reason="no_bound_personal_meaning_target"), None
+    for nucleus in plan.nuclei:
+        if not set(nucleus.source_fields) & {"memo", "memo_action"}:
+            continue
+        anchor = final_reception_source_anchor_text(nucleus.nucleus_id, index, resolver)
+        match = _RECEIVED_EVENT.search(anchor)
+        if not match or _NONFACT.search(anchor):
+            continue
+        # Keep the event clause only. No arbitrary character truncation and no
+        # hidden cause/character/third-party intention in the question premise.
+        event = re.split(r"(?:のに|けれど|けど|が[、,]|[、,])", anchor, maxsplit=1)[0]
+        if (not event or not _FACTUAL_RECEIVED.search(event) or len(event) > 48
+                or any(c in event for c in "「」『』\n")
+                or re.match(r"^(?:彼|彼女|母|父|妹|弟|兄|姉|友人|上司)(?:は|が|も)", event)):
+            continue
+        bound_reactions = tuple(r for r in reactions
+                                if set(r.source_span_ids) & set(nucleus.source_span_ids))
+        if not bound_reactions:
+            continue
+        region = " ".join(resolver.resolve(s).raw_text for s in nucleus.source_span_ids)
+        if _PERSONAL_MEANING.search(region):
+            continue
+        # An immediately following self explanation of this single received
+        # event also answers the target. Foreign reports and marked other
+        # occasions cannot suppress it merely by sharing an input field.
+        source_spans = tuple(resolver.resolve(s) for s in resolver.span_ids)
+        last = max(i for i, s in enumerate(source_spans) if s.span_id in nucleus.source_span_ids)
+        if last + 1 < len(source_spans):
+            following = source_spans[last + 1]
+            if (following.source_field in nucleus.source_fields
+                    and _PERSONAL_MEANING.search(following.raw_text)
+                    and not re.search(r"別|ほか|他の|[「」『』]|(?:彼|彼女|母|父|上司)(?:は|が|も)", following.raw_text)):
+                continue
+        target = identity("emlis-target", original.envelope.envelope_id,
+                          nucleus.nucleus_id, "personal_received_meaning")
+        if (respect_control or q3) and target in control.asked_target_refs:
+            continue
+        evidence = tuple(resolver.qualified_ref(s).evidence.evidence_id for s in nucleus.source_span_ids)
+        affected = tuple(dict.fromkeys((nucleus.nucleus_id, *(r.nucleus_id for r in bound_reactions))))
+        decision = EmlisQuestionDecisionV1(
+            "ASK", target, "PERSONAL_RECEIVED_MEANING", evidence,
+            "personal_received_meaning", affected,
+            affected if q3 else tuple(plan.response_plan.human_reception_plan.target_nucleus_ids)
+            if plan.response_plan.human_reception_plan else (),
+            control.asked_target_refs if respect_control else (),
+            "source_bound_event_personal_meaning_missing",
+        )
+        question = EmlisClarificationV1(
+            identity("emlis-question", thread.control.thread_id, target), parent_request_id,
+            thread.control.thread_id, original.envelope.envelope_id, decision,
+            f"「{event}」は、あなたにはどんな意味として届きましたか。",
+        )
+        return decision, question
+    appraisal = _appraisal_standard_candidate(thread, plan, parent_request_id=parent_request_id,
+                                              respect_control=respect_control)
+    if appraisal is not None:
+        return appraisal
+    return EmlisQuestionDecisionV1("END", decision_reason="no_bound_personal_meaning_target"), None
+
+
+def validate_question_binding(thread: AdmittedEmlisThread, plan) -> None:
+    question = thread.control.question_control_context.pending_question
+    if question is None:
+        raise ValueError("emlis_question_required")
+    if thread.control.capability_snapshot.startswith("Q3_"):
+        control = thread.control.question_control_context
+        prior = replace(control, pending_question=None, issued_count=len(control.asked_target_refs) - 1,
+                        asked_target_refs=control.asked_target_refs[:-1], issued_questions=control.issued_questions[:-1])
+        thread = replace(thread, control=replace(thread.control, question_control_context=prior))
+    _, canonical = question_candidate(thread, plan, parent_request_id=question.parent_request_id,
+                                      respect_control=False)
+    if canonical is None or question != replace(canonical, decision=replace(
+            canonical.decision, asked_target_refs=question.decision.asked_target_refs)):
+        raise ValueError("emlis_question_noncanonical")
+
+
+def _model_v3_question_candidate(prepared, native, meaning, *, parent_request_id, respect_control):
+    """The actual one-question target, never a provider-created pending ID."""
+    family = native["family"]
+    choices = {
+        "BOOK_CONCERN_V3": ("remaining_concern", "PERSONAL_CONCERN_TARGET", "何が気になりますか？"),
+        "SHOP_DISTANCE_V3": ("felt_left_behind", "PERSONAL_FEELING_REASON", "「少し置いていかれた気がした」のはなぜですか？"),
+    }
+    if native["stage"] != "INITIAL" or family not in choices:
+        return EmlisQuestionDecisionV1("END", decision_reason="model_question_target_unavailable"), None
+    role, focus, prompt = choices[family]
+    thread = prepared.thread
+    control = thread.control.question_control_context
+    ref = native["roles"][role]["claim_ref"]
+    gaps = [g for g in meaning["unknowns"] if g["kind"] == "NOT_STATED" and g["target_claim_refs"] == [ref]]
+    if len(gaps) != 1:
+        return EmlisQuestionDecisionV1("END", decision_reason="model_question_target_unavailable"), None
+    target = identity("emlis-target", thread.original.envelope.envelope_id,
+        prepared.checkpoint.snapshot_ref, ref, gaps[0]["unknown_id"], focus)
+    if (respect_control and control.pending_question is not None) or target in control.asked_target_refs:
+        return EmlisQuestionDecisionV1("END", decision_reason="model_question_target_already_asked"), None
+    evidence = (identity("model-question-evidence", prepared.checkpoint.snapshot_ref, native["roles"][role]),)
+    decision = EmlisQuestionDecisionV1("ASK", target, focus, evidence, focus.lower(), (ref,), (ref,),
+        control.asked_target_refs if respect_control else (), "source_bound_personal_explanation_missing")
+    question = EmlisClarificationV1(identity("emlis-question", thread.control.thread_id, target, prepared.checkpoint.snapshot_ref),
+        parent_request_id, thread.control.thread_id, thread.original.envelope.envelope_id, decision, prompt)
+    return decision, question
+
+
+def model_question_candidate(prepared, *, parent_request_id: str, respect_control: bool = True):
+    """Issue one source-derived question for an admitted private model profile.
+
+    The provider's wording and any provider-supplied ID are not authority. This
+    owner derives the target, prompt and identity from the admitted appraisal
+    object and its NOT_STATED personal-significance gap. The same pure function
+    is used when a real answer is rebound to its previously issued question.
+    """
+    import json
+    from .emlis_semantic_admission import ModelPreparedMeaning
+    if type(prepared) is not ModelPreparedMeaning:
+        raise ValueError("model_question_prepared_type_invalid")
+    thread = prepared.thread
+    control = thread.control.question_control_context
+    if (control.stop or thread.answers or control.issued_count >= control.question_limit
+            or thread.control.capability_snapshot not in {"FREE_Q1", "Q3_FREE"}):
+        return EmlisQuestionDecisionV1("END", decision_reason="free_round_complete"), None
+    proposal = json.loads(prepared.question_proposal_json)
+    if proposal is None:
+        return EmlisQuestionDecisionV1("END", decision_reason="model_question_not_proposed"), None
+    native = json.loads(prepared.native_bindings_json)
+    meaning = json.loads(prepared.meaning_json)["candidate"]
+    if native.get("family") in {"BOOK_CONCERN_V3", "SHOP_DISTANCE_V3"}:
+        return _model_v3_question_candidate(prepared, native, meaning, parent_request_id=parent_request_id, respect_control=respect_control)
+    roles = native["roles"]
+    if native["stage"] != "INITIAL" or not {"solo_appraisal_object", "joy"} <= set(roles):
+        return EmlisQuestionDecisionV1("END", decision_reason="model_question_target_unavailable"), None
+    object_ref, joy_ref = (roles[key]["claim_ref"] for key in ("solo_appraisal_object", "joy"))
+    gaps = tuple(row for row in meaning["unknowns"]
+        if row["kind"] == "NOT_STATED" and set(row["target_claim_refs"]) == {object_ref, joy_ref})
+    if (len(gaps) != 1 or proposal["focus"] != "PERSONAL_JOY_SIGNIFICANCE"
+            or proposal["target_unknown_ref"] != gaps[0]["unknown_id"]
+            or set(proposal["claim_refs"]) != {object_ref, joy_ref}):
+        return EmlisQuestionDecisionV1("END", decision_reason="model_question_target_unavailable"), None
+    object_text = roles["solo_appraisal_object"]["text"]
+    if not object_text or any(character in object_text for character in "「」『』\n\r。！？!?"):
+        return EmlisQuestionDecisionV1("END", decision_reason="model_question_target_unavailable"), None
+    target = identity("emlis-target", thread.original.envelope.envelope_id,
+                      prepared.checkpoint.snapshot_ref, object_ref, joy_ref,
+                      gaps[0]["unknown_id"], "personal_joy_significance")
+    if (respect_control and control.pending_question is not None) or target in control.asked_target_refs:
+        return EmlisQuestionDecisionV1("END", decision_reason="model_question_target_already_asked"), None
+    evidence = tuple(identity("model-question-evidence", prepared.checkpoint.snapshot_ref, roles[key])
+                     for key in ("solo_appraisal_object", "joy"))
+    decision = EmlisQuestionDecisionV1("ASK", target, "PERSONAL_JOY_SIGNIFICANCE", evidence,
+        "personal_joy_significance", (object_ref, joy_ref), (object_ref, joy_ref),
+        control.asked_target_refs if respect_control else (),
+        "source_bound_joy_personal_significance_missing")
+    question = EmlisClarificationV1(
+        identity("emlis-question", thread.control.thread_id, target, prepared.checkpoint.snapshot_ref),
+        parent_request_id, thread.control.thread_id, thread.original.envelope.envelope_id, decision,
+        f"「{object_text}」がなぜ嬉しかったのですか？")
+    return decision, question

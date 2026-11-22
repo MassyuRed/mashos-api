@@ -1,0 +1,491 @@
+# Synthetic Analysis content and save/read regression checks; no live credentials.
+name: Analysis observed content
+
+'on':
+  push:
+    branches:
+      - agent/cmee-v1a-i1sx-source-explicit-20260815
+    paths:
+      - .github/workflows/analysis-observed-content.yml
+      - ai/services/ai_inference/cocolon_meaning_experience_engine/**
+      - ai/services/ai_inference/emlis_ai_grounded_observation_plan.py
+      - ai/services/ai_inference/analysis_observed_service.py
+      - ai/services/ai_inference/analysis_cumulative_service.py
+      - ai/services/ai_inference/analysis_model_source.py
+      - ai/services/ai_inference/analysis_job_progress.py
+      - ai/services/ai_inference/analysis_merge_wire.py
+      - ai/services/ai_inference/analysis_merge_response_parser.py
+      - ai/services/ai_inference/analysis_plan_source_choices.py
+      - ai/services/ai_inference/analysis_if_model_source.py
+      - ai/services/ai_inference/analysis_map_correction_service.py
+      - ai/services/ai_inference/analysis_if_route_service.py
+      - ai/services/ai_inference/analysis_if_route_store.py
+      - ai/services/ai_inference/api_analysis_if_routes.py
+      - ai/services/ai_inference/app.py
+      - ai/services/ai_inference/emlis_thread_service.py
+      - ai/services/ai_inference/analysis_semantic_map.py
+      - ai/tools/serve_emlis_natural_reply.py
+      - ai/tools/cmee_current_4b_packet.py
+      - ai/tools/analysis_semantic_generation_requirements.txt
+      - ai/tools/analysis_jupyter_bridge.py
+      - ai/services/ai_inference/supabase_client.py
+      - ai/services/ai_inference/today_question_store.py
+      - ai/services/ai_inference/report_distribution_push_store.py
+      - ai/tests/test_notification_candidate_read_retry.py
+      - ai/tests/test_emotion_submit_pending_delivery.py
+      - ai/tests/test_analysis_jupyter_bridge.py
+      - ai/services/ai_inference/api_self_structure*.py
+      - ai/services/ai_inference/api_emotion_submit.py
+      - ai/services/ai_inference/astor_job_queue.py
+      - ai/services/ai_inference/fcm_push_queue.py
+      - ai/tests/test_emotion_submit_speed_regression_phase14.py
+      - ai/services/ai_inference/astor_self_structure_report.py
+      - ai/services/ai_inference/api_cron_distribution.py
+      - ai/services/ai_inference/astor_worker.py
+      - ai/services/ai_inference/astor_material_snapshots.py
+      - ai/services/ai_inference/api_analysis_reports.py
+      - ai/services/ai_inference/analysis_engine_adapter.py
+      - ai/services/ai_inference/api_analysis_reads.py
+      - ai/services/ai_inference/api_report_reads.py
+      - ai/services/ai_inference/response_microcache.py
+      - ai/tests/test_analysis_report_kokoro_weather.py
+      - ai/services/ai_inference/api_contract_registry.py
+      - ai/docs/PUBLIC_API_REGISTRY.md
+      - ai/tests/test_kokoro_weather_live.py
+      - ai/services/ai_inference/kokoro_weather_service.py
+      - ai/services/analysis_engine/emotion_structure_engine/weekly.py
+      - ai/services/ai_inference/cocolon_text_generation_core/adapters/analysis_composer.py
+      - ai/tests/test_analysis_snapshot_factual_binding.py
+      - ai/tests/test_analysis_global_material_pagination.py
+      - ai/tests/test_analysis_daily_rows_factual_binding.py
+      - ai/tests/test_analysis_ensure_alignment_recovery.py
+      - ai/tests/test_analysis_report_factual_sections.py
+      - ai/tests/test_analysis_material_input_integrity.py
+      - ai/tests/test_analysis_parallel_emotion_chronology.py
+      - ai/tests/test_analysis_legacy_report_source_integrity.py
+      - ai/tests/test_analysis_cumulative*.py
+      - ai/tests/test_analysis_v24_progress_history.py
+      - ai/tests/test_analysis_v24_progress_transport.py
+      - ai/tests/test_analysis_worker_progress.py
+      - ai/tests/test_emlis_active_meaning_application.py
+      - ai/tests/test_emlis_analysis_material.py
+      - ai/tests/test_analysis_emlis_material_handoff.py
+      - ai/tests/test_analysis_if_routes.py
+      - ai/tests/test_analysis_if_api.py
+      - ai/tests/test_analysis_map_correction_application.py
+      - ai/tests/test_analysis_map_correction_sql.py
+      - ai/tests/test_analysis_map_correction_handoff.py
+      - ai/tests/test_analysis_deep_insight_handoff.py
+      - ai/services/ai_inference/api_deep_insight.py
+      - ai/tests/test_deep_insight.py
+      - ai/tests/test_deep_insight_question_generation.py
+      - ai/tests/deep_insight_sql.cjs
+      - ai/tests/analysis_map_correction_sql.cjs
+      - supabase/migrations/*_analysis_map_interpretation_corrections.sql
+      - supabase/migrations/*_analysis_map_correction_handoff.sql
+      - supabase/migrations/*_analysis_deep_insight_answer_handoff.sql
+      - supabase/migrations/*_deep_insight_questions.sql
+      - supabase/migrations/*_deep_insight_grounded_questions.sql
+      - supabase/migrations/*_deep_insight_theme_cooldown.sql
+      - supabase/migrations/*_deep_insight_theme_ready_notifications.sql
+      - supabase/migrations/*_deep_insight_theme_candidate_context.sql
+      - supabase/migrations/*_deep_insight_record_ready_notifications.sql
+      - supabase/migrations/*_deep_insight_record_assessment_on_map.sql
+      - supabase/migrations/*_deep_insight_question_by_id.sql
+      - supabase/migrations/*_deep_insight_skipped_emlis_questions.sql
+      - ai/tests/test_analysis_if_service.py
+      - ai/tests/test_cmee_current_4b_packet.py
+      - ai/tests/fixtures/cmee_current_4b_packet_20261114.json
+      - ai/tests/test_piece_model_server_constraints.py
+      - ai/tests/analysis_if_route_sql.cjs
+      - supabase/migrations/*_analysis_if_route_artifacts.sql
+      - supabase/migrations/*_analysis_emlis_material_handoff.sql
+      - ai/tests/test_analysis_interpretation_correction_sources.py
+      - ai/tests/test_analysis_active_update_material.py
+      - supabase/migrations/*_analysis_interpretation_correction_sources.sql
+      - ai/tests/test_analysis_semantic*.py
+      - ai/tests/test_emlis_natural_reply_probe_http.py
+      - ai/tests/test_emlis_interpretation_correction.py
+      - supabase/migrations/*_emlis_interpretation_correction_history.sql
+      - ai/tests/test_emlis_natural_question_application.py
+      - ai/tests/test_emlis_natural_reply_response_purpose.py
+      - ai/tests/test_analysis_semantic_source_duties.py
+      - ai/tests/test_analysis_semantic_event_plan_compiler.py
+      - ai/tests/test_analysis_event_plan_decoder.py
+      - ai/tests/test_analysis_event_plan_model_alias.py
+      - ai/tests/test_analysis_event_plan_runtime.py
+      - ai/tests/test_analysis_semantic_event_plan_v2.py
+      - ai/tests/test_analysis_semantic_node_local_v3.py
+      - ai/tests/test_analysis_node_local_v3_lesson.py
+      - ai/tests/test_analysis_semantic_text_views.py
+      - ai/tests/test_analysis_node_local_native_profile.py
+      - ai/tests/test_analysis_node_local_v4_phases.py
+      - ai/tests/test_analysis_occurrence_v7_qualifications.py
+      - ai/tests/test_analysis_occurrence_v8_source_reading.py
+      - ai/tests/test_analysis_occurrence_v8_relation_transport.py
+      - ai/tests/test_analysis_occurrence_v9_plan.py
+      - ai/tests/test_analysis_occurrence_v9_source_cues.py
+      - ai/tests/test_analysis_occurrence_v10_plan_leads.py
+      - ai/tests/test_analysis_occurrence_v10_plan_reading.py
+      - ai/tests/test_analysis_occurrence_v10_record_time.py
+      - ai/tests/test_analysis_occurrence_v11_*.py
+      - ai/tests/test_analysis_occurrence_v12_fact_refs.py
+      - ai/tests/test_analysis_occurrence_v13_plan_choices.py
+      - ai/tests/test_analysis_v13_separate_record_titles.py
+      - ai/tests/test_analysis_occurrence_v14_visible_closers.py
+      - ai/tests/test_analysis_v14_mixed_record_dates.py
+      - ai/tests/test_analysis_occurrence_v15_record_plan.py
+      - ai/tests/test_analysis_occurrence_v16_fact_content.py
+      - ai/tests/test_analysis_v16_source_title_endings.py
+      - ai/tests/test_analysis_v16_attributed_caption.py
+      - ai/tests/test_analysis_occurrence_v17_record_owners.py
+      - ai/tests/test_analysis_v17_stated_non_actions.py
+      - ai/tests/test_analysis_occurrence_v18_compact_originals.py
+      - ai/tests/test_analysis_v18_fact_key_literals.py
+      - ai/tests/test_analysis_v18_repeated_bound_facts.py
+      - ai/tests/test_analysis_v18_overview_source_coverage.py
+      - ai/tests/test_analysis_v18_historical_unknowns.py
+      - ai/tests/test_analysis_v19_source_facts.py
+      - ai/tests/test_analysis_v19_overview_original_record.py
+      - ai/tests/test_analysis_v20_bound_fact_ranges.py
+      - ai/tests/test_analysis_v20_paired_node_meaning.py
+      - ai/tests/test_analysis_v20_plan_reading_regions.py
+      - ai/tests/test_analysis_v20_whole_map_overview.py
+      - ai/tests/test_analysis_v21_authored_overview.py
+      - ai/tests/test_analysis_v21_overlapping_source_facts.py
+      - ai/tests/test_analysis_v21_recorded_schedule.py
+      - ai/tests/test_analysis_v22_plan_source_coverage.py
+      - ai/tests/test_analysis_v22_prior_evidence.py
+      - ai/tests/test_analysis_v22_record_overview.py
+      - ai/tests/test_analysis_v23_overview_arguments.py
+      - ai/tests/test_analysis_v23_record_summary.py
+      - ai/tests/test_analysis_v24_distinct_participants.py
+      - ai/tests/test_analysis_merge_wire.py
+      - ai/tests/test_analysis_merge_transport.py
+      - ai/tests/test_analysis_merge_action_sources.py
+      - ai/tests/test_analysis_merge_response_parser.py
+      - ai/tests/test_analysis_merge_constraint_prefix.py
+      - ai/tests/test_analysis_node_local_bound_roots.py
+      - ai/tests/test_analysis_bound_roots_v2_selection.py
+      - supabase/migrations/*_emlis_natural_bound_questions.sql
+      - ai/tests/test_emlis_natural_reply_meaning_reuse.py
+      - ai/tests/test_emlis_natural_reply_meaning_budget.py
+      - ai/tests/test_emlis_natural_reply_cognition.py
+      - ai/tests/test_emlis_natural_frames_application.py
+      - ai/tests/test_emlis_frame_feedback_context.py
+      - supabase/migrations/*_emlis_frame_feedback_target_context.sql
+      - supabase/migrations/*_piece_frame_target_dependency_fence.sql
+      - ai/tests/test_analysis_observed_api.py
+      - ai/tests/analysis_cumulative_sql.cjs
+      - supabase/migrations/20261101080144_cumulative_watashi_map.sql
+      - supabase/migrations/*_analysis_semantic_map_wire.sql
+      - ai/tests/test_cmee_analysis_v1d_vertical.py
+      - ai/services/ai_inference/piece_v2_source_adapter.py
+      - ai/services/ai_inference/piece_v2_content_policy.py
+      - ai/tests/test_cmee_piece_refined_sources.py
+      - ai/tests/test_cmee_piece_refined_feeling_accounts.py
+      - ai/tests/piece_v2/test_b08_refined_engine_result_binding.py
+      - ai/tests/piece_v2/test_b05a_piece_refined_source_handoff.py
+      - ai/tests/piece_v2/test_b05c_refined_source_ref_projection.py
+      - ai/tests/piece_v2/test_b05_refined_preview_services.py
+      - ai/tests/piece_v2/test_b05_refined_preview_saved_pipeline.py
+      - ai/tests/piece_v2/test_b05_natural_refined_saved_pipeline.py
+      - ai/tests/test_cmee_piece_answer_updates.py
+      - ai/tests/test_piece_model_active_ranges.py
+      - ai/tests/piece_v2/test_b05_piece_answer_update_saved_pipeline.py
+      - supabase/migrations/*_piece_natural_answer_active_source.sql
+      - supabase/migrations/*_piece_natural_refined_source_fence.sql
+      - ai/tests/piece_v2/test_b05_refined_source_fence_sql.py
+      - supabase/migrations/*_piece_refined_source_fence.sql
+      - ai/tests/test_cmee_analysis_input_fields.py
+      - ai/tests/test_input_contract_sample_sheet.py
+      - ai/tests/fixtures/cocolon-input-contract-samples-20261107.json
+      - ai/tests/test_analysis_closed_quote_self_action.py
+      - ai/tests/test_analysis_model*.py
+      - ai/tests/test_cmee_analysis_nominal_relations.py
+      - ai/tests/test_analysis_observed_storage.py
+      - ai/tests/test_analysis_saved_period.py
+      - ai/tests/test_cmee_emlis_limited_change_feeling.py
+      - ai/tests/test_cmee_v1a_i1sx_contracts.py
+      - ai/tests/fixtures/cmee_emlis_q1_shared_owner_identity_v1.json
+
+permissions:
+  contents: read
+
+jobs:
+  observed-content:
+    if: github.repository == 'MassyuRed/mashos-api'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      PYTEST_DISABLE_PLUGIN_AUTOLOAD: '1'
+      PYTHONDONTWRITEBYTECODE: '1'
+      PYTHONPATH: .:ai/services:ai/services/ai_inference:ai/tests
+    steps:
+      - name: Check out the triggering commit
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+      - name: Install isolated-test dependencies
+        run: >-
+          python -m pip install --quiet --disable-pip-version-check
+          pytest==8.4.1 pytest-subtests==0.14.2 pytest-asyncio==1.2.0 numpy==2.3.5
+          fastapi==0.142.2 pydantic==2.13.5 httpx==0.28.1 PyJWT==2.13.0 tornado==6.5.2
+          -r ai/tools/analysis_semantic_generation_requirements.txt
+      - name: Record tested source and runtime
+        run: |
+          git rev-parse HEAD
+          python --version
+          python -m pip freeze
+      - name: Verify input-based live Kokoro weather and saved compatibility
+        run: >-
+          python -m pytest -q --tb=short -ra
+          -p pytest_subtests.plugin -p pytest_asyncio.plugin -p no:cacheprovider -c /dev/null --rootdir=. --noconftest
+          ai/tests/test_kokoro_weather_live.py
+          ai/tests/test_kokoro_weather_service.py
+          ai/tests/test_kokoro_weather_phase6_qa.py
+          ai/tests/test_analysis_home_summary_current_weather.py
+          ai/tests/test_analysis_report_kokoro_weather.py
+          ai/tests/test_analysis_material_input_integrity.py
+          ai/tests/contract/test_api_contract_registry.py
+      - name: Verify notification candidate retries and async Emlis delivery
+        run: >-
+          python -m pytest -q --tb=short -ra
+          -p pytest_subtests.plugin -p no:cacheprovider -c /dev/null --rootdir=. --noconftest
+          ai/tests/test_notification_candidate_read_retry.py
+          ai/tests/test_emotion_submit_pending_delivery.py
+          ai/tests/test_emotion_submit_public_feedback_meta_boundary.py
+          ai/tests/test_analysis_jupyter_bridge.py
+      - name: Verify Analysis generation and saved read
+        run: >-
+          python -m pytest -q --tb=short -ra
+          -p pytest_subtests.plugin -p no:cacheprovider -c /dev/null --rootdir=. --noconftest
+          ai/tests/test_cmee_analysis_v1d_vertical.py
+          ai/tests/test_cmee_analysis_input_fields.py
+          ai/tests/test_input_contract_sample_sheet.py
+          ai/tests/test_analysis_semantic_map.py
+          ai/tests/test_emlis_natural_reply_probe_http.py
+          ai/tests/test_analysis_closed_quote_self_action.py
+          ai/tests/test_analysis_model_role_clause.py
+          ai/tests/test_analysis_model_observed_actions.py
+          ai/tests/test_analysis_model_supplement_wish.py
+          ai/tests/test_analysis_model_observed_roles.py
+          ai/tests/test_analysis_model_same_field_role_action.py
+          ai/tests/test_analysis_model_role_decision.py
+          ai/tests/test_analysis_model_actor_profile.py
+          ai/tests/test_analysis_model_omitted_wish.py
+          ai/tests/test_analysis_model_refusal.py
+          ai/tests/test_analysis_model_closed_role.py
+          ai/tests/test_analysis_model_role_action.py
+          ai/tests/test_analysis_model_quoted_parent_units.py
+          ai/tests/test_analysis_model_parent_local_content.py
+          ai/tests/test_analysis_model_units.py
+          ai/tests/test_cmee_analysis_nominal_relations.py
+          ai/tests/test_analysis_observed_storage.py
+          ai/tests/test_analysis_saved_period.py
+          ai/tests/test_cmee_emlis_limited_change_feeling.py
+      - name: Verify shared owner identity
+        env:
+          PYTHONPATH: ai/services/ai_inference:ai/tests:ai
+        run: >-
+          python -m pytest -q --tb=short -ra
+          -p pytest_subtests.plugin -p no:cacheprovider -c /dev/null --rootdir=. --noconftest
+          ai/tests/test_cmee_v1a_i1sx_contracts.py
+          -k test_active_final_language_owner_chain_has_zero_legacy_compose_calls
+      - name: Read synthetic Analysis content
+        run: |
+          python - <<'PY'
+          from test_cmee_analysis_v1d_vertical import OWNER, record, request
+          from cocolon_meaning_experience_engine.engine import MeaningExperienceEngine
+          cases = (
+              '私は資料を調べた。その後、私は同僚と分担を決めませんでした。それから、私は安心した。',
+              '私は資料を調べた。その後、私は同僚と分担を決めておきませんでした。それから、私は安心した。',
+              '私は同僚との分担を決めませんでした。それから、私は嬉しかった。',
+              '私は資料を調べた。その後、私は分担を決めませんでした。不明な出来事があった。それから、私は安心した。',
+              '私は資料を調べた。その後、私は同僚と分担を決めませんでした。それから、私は落ち着きました。',
+              '私は資料を調べた。その後、私は同僚と分担を決めておきませんでした。それから、私は嬉しかったです。',
+              '私は同僚との分担を決めなかったです。それから、私はうれしかったです。',
+          )
+          for memo in cases:
+              result = MeaningExperienceEngine().generate(request(record(memo=memo)))
+              assert result.artifact is not None
+              print('INPUT:', memo)
+              print(result.artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text'])
+              projection = result.artifact.safe_projection(authenticated_owner_scope=OWNER)
+              print('GRAPH:', len(projection['nodes']), 'nodes', len(projection['edges']), 'edges')
+          PY
+
+      - name: Set up Node for existing PostgreSQL test harness
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+      - name: Install PostgreSQL WASM test dependency
+        run: npm install --prefix "$RUNNER_TEMP/analysis-postgres" --ignore-scripts --no-audit --no-fund @electric-sql/pglite@0.5.8
+      - name: Verify cumulative API, Q3 saved sources and existing job entrypoints
+        env:
+          Q2_PGLITE_MODULE: ${{ runner.temp }}/analysis-postgres/node_modules/@electric-sql/pglite
+        run: >-
+          python -m pytest -q --tb=short -ra
+          -p pytest_subtests.plugin -p pytest_asyncio.plugin -p no:cacheprovider -c /dev/null --rootdir=. --noconftest
+          ai/tests/test_emotion_submit_speed_regression_phase14.py
+          ai/tests/test_cmee_piece_refined_sources.py
+          ai/tests/test_cmee_piece_refined_feeling_accounts.py
+          ai/tests/piece_v2/test_b08_refined_engine_result_binding.py
+          ai/tests/piece_v2/test_b05a_piece_refined_source_handoff.py
+          ai/tests/piece_v2/test_b05c_refined_source_ref_projection.py
+          ai/tests/piece_v2/test_b05_refined_preview_services.py
+          ai/tests/piece_v2/test_b05_refined_preview_saved_pipeline.py
+          ai/tests/piece_v2/test_b05_natural_refined_saved_pipeline.py
+          ai/tests/test_cmee_piece_answer_updates.py
+          ai/tests/test_piece_model_active_ranges.py
+          ai/tests/piece_v2/test_b05_piece_answer_update_saved_pipeline.py
+          ai/tests/piece_v2/test_b05_refined_source_fence_sql.py
+          ai/tests/test_emlis_natural_reply_application.py
+          ai/tests/test_emlis_active_meaning_application.py
+          ai/tests/test_emlis_analysis_material.py
+          ai/tests/test_analysis_emlis_material_handoff.py
+          ai/tests/test_analysis_if_routes.py
+          ai/tests/test_analysis_if_api.py
+          ai/tests/test_analysis_map_correction_application.py
+          ai/tests/test_analysis_map_correction_sql.py
+          ai/tests/test_analysis_map_correction_handoff.py
+          ai/tests/test_analysis_deep_insight_handoff.py
+          ai/tests/test_deep_insight.py
+          ai/tests/test_deep_insight_question_generation.py
+          ai/tests/test_analysis_if_service.py
+          ai/tests/test_cmee_current_4b_packet.py
+          ai/tests/test_emlis_natural_frames_application.py
+          ai/tests/test_emlis_frame_feedback_context.py
+          ai/tests/test_emlis_interpretation_correction.py
+          ai/tests/test_emlis_natural_question_application.py
+          ai/tests/test_emlis_natural_reply_response_purpose.py
+          ai/tests/test_emlis_natural_reply_meaning_reuse.py
+          ai/tests/test_emlis_natural_reply_meaning_budget.py
+          ai/tests/test_emlis_natural_reply_cognition.py
+          ai/tests/test_analysis_model_fields.py
+          ai/tests/test_analysis_cumulative.py
+          ai/tests/test_analysis_interpretation_correction_sources.py
+          ai/tests/test_analysis_active_update_material.py
+          ai/tests/test_analysis_cumulative_model_source.py
+          ai/tests/test_analysis_semantic_integration.py
+          ai/tests/test_analysis_semantic_source_duties.py
+          ai/tests/test_analysis_semantic_event_plan_compiler.py
+          ai/tests/test_analysis_event_plan_decoder.py
+          ai/tests/test_analysis_event_plan_model_alias.py
+          ai/tests/test_analysis_event_plan_runtime.py
+          ai/tests/test_analysis_semantic_event_plan_v2.py
+          ai/tests/test_analysis_semantic_node_local_v3.py
+          ai/tests/test_analysis_node_local_v3_lesson.py
+          ai/tests/test_analysis_semantic_text_views.py
+          ai/tests/test_analysis_node_local_native_profile.py
+          ai/tests/test_analysis_node_local_v4_phases.py
+          ai/tests/test_analysis_occurrence_v7_qualifications.py
+          ai/tests/test_analysis_occurrence_v8_source_reading.py
+          ai/tests/test_analysis_occurrence_v8_relation_transport.py
+          ai/tests/test_analysis_occurrence_v9_plan.py
+          ai/tests/test_analysis_occurrence_v9_source_cues.py
+          ai/tests/test_analysis_occurrence_v10_plan_leads.py
+          ai/tests/test_analysis_occurrence_v10_plan_reading.py
+          ai/tests/test_analysis_occurrence_v10_record_time.py
+          ai/tests/test_analysis_occurrence_v11_*.py
+          ai/tests/test_analysis_occurrence_v12_fact_refs.py
+          ai/tests/test_analysis_occurrence_v13_plan_choices.py
+          ai/tests/test_analysis_v13_separate_record_titles.py
+          ai/tests/test_analysis_occurrence_v14_visible_closers.py
+          ai/tests/test_analysis_v14_mixed_record_dates.py
+          ai/tests/test_analysis_occurrence_v15_record_plan.py
+          ai/tests/test_analysis_occurrence_v16_fact_content.py
+          ai/tests/test_analysis_v16_source_title_endings.py
+          ai/tests/test_analysis_v16_attributed_caption.py
+          ai/tests/test_analysis_occurrence_v17_record_owners.py
+          ai/tests/test_analysis_v17_stated_non_actions.py
+          ai/tests/test_analysis_occurrence_v18_compact_originals.py
+          ai/tests/test_analysis_v18_fact_key_literals.py
+          ai/tests/test_analysis_v18_repeated_bound_facts.py
+          ai/tests/test_analysis_v18_overview_source_coverage.py
+          ai/tests/test_analysis_v18_historical_unknowns.py
+          ai/tests/test_analysis_v19_source_facts.py
+          ai/tests/test_analysis_v19_overview_original_record.py
+          ai/tests/test_analysis_v20_bound_fact_ranges.py
+          ai/tests/test_analysis_v20_paired_node_meaning.py
+          ai/tests/test_analysis_v20_plan_reading_regions.py
+          ai/tests/test_analysis_v20_whole_map_overview.py
+          ai/tests/test_analysis_v21_authored_overview.py
+          ai/tests/test_analysis_v21_overlapping_source_facts.py
+          ai/tests/test_analysis_v21_recorded_schedule.py
+          ai/tests/test_analysis_v22_plan_source_coverage.py
+          ai/tests/test_analysis_v22_prior_evidence.py
+          ai/tests/test_analysis_v22_record_overview.py
+          ai/tests/test_analysis_v23_overview_arguments.py
+          ai/tests/test_analysis_v23_record_summary.py
+          ai/tests/test_analysis_v24_distinct_participants.py
+          ai/tests/test_analysis_merge_wire.py
+          ai/tests/test_analysis_merge_transport.py
+          ai/tests/test_analysis_merge_action_sources.py
+          ai/tests/test_analysis_merge_response_parser.py
+          ai/tests/test_analysis_merge_constraint_prefix.py
+          ai/tests/test_analysis_node_local_bound_roots.py
+          ai/tests/test_analysis_bound_roots_v2_selection.py
+          ai/tests/test_analysis_semantic_history_core.py
+          ai/tests/test_analysis_semantic_history_planner.py
+          ai/tests/test_analysis_semantic_history_service.py
+          ai/tests/test_analysis_cumulative_model_batches.py
+          ai/tests/test_analysis_cumulative_jobs.py
+          ai/tests/test_analysis_v24_progress_history.py
+          ai/tests/test_analysis_v24_progress_transport.py
+          ai/tests/test_analysis_worker_progress.py
+          ai/tests/test_analysis_observed_api.py
+      - name: Verify monthly rank, immutable re-read and source deletion SQL
+        env:
+          NODE_PATH: ${{ runner.temp }}/analysis-postgres/node_modules
+          Q2_PGLITE_MODULE: ${{ runner.temp }}/analysis-postgres/node_modules/@electric-sql/pglite
+        run: |
+          python - <<'PY'
+          import json, os
+          from test_analysis_cumulative import sql_fixture
+          with open(os.path.join(os.environ['RUNNER_TEMP'], 'analysis-cumulative.json'), 'w') as out:
+              json.dump(sql_fixture(), out, ensure_ascii=False)
+          PY
+          node ai/tests/analysis_cumulative_sql.cjs "$RUNNER_TEMP/analysis-cumulative.json"
+          python - <<'PY'
+          import json, os, subprocess, sys
+          from test_analysis_if_service import sql_fixture
+          path = os.path.join(os.environ['RUNNER_TEMP'], 'analysis-if-route.json')
+          with open(path, 'w') as out:
+              json.dump(sql_fixture(), out, ensure_ascii=False)
+          subprocess.run(['node', 'ai/tests/analysis_if_route_sql.cjs', path, sys.executable], check=True)
+          PY
+      - name: Verify report facts, complete input sources and safe legacy recovery
+        env:
+          Q2_PGLITE_MODULE: ${{ runner.temp }}/analysis-postgres/node_modules/@electric-sql/pglite
+        run: >-
+          python -m pytest -q --tb=short -ra
+          -p pytest_subtests.plugin -p pytest_asyncio.plugin -p no:cacheprovider
+          -c /dev/null --rootdir=. --noconftest
+          ai/tests/test_analysis_snapshot_factual_binding.py
+          ai/tests/test_analysis_global_material_pagination.py
+          ai/tests/test_analysis_daily_rows_factual_binding.py
+          ai/tests/test_analysis_ensure_alignment_recovery.py
+          ai/tests/test_analysis_report_factual_sections.py
+          ai/tests/test_analysis_material_input_integrity.py
+          ai/tests/test_analysis_parallel_emotion_chronology.py
+          ai/tests/test_analysis_legacy_report_source_integrity.py
+          ai/tests/test_analysis_report_kokoro_weather.py
+          ai/tests/test_cocolon_text_generation_core_analysis_input_contract.py
+          ai/tests/test_cocolon_text_generation_core_analysis_composer.py
+          ai/tests/test_analysis_environment_state_output_phase7.py
+          ai/tests/test_analysis_environment_state_output_phase8_display_connection.py
+          ai/tests/test_kokoro_weather_service.py
+          ai/tests/test_kokoro_weather_phase6_qa.py
+          ai/tests/test_analysis_home_summary_current_weather.py
+          ai/tests/test_self_structure_watashi_map_payload.py
+          ai/tests/test_analysis_saved_period.py
+          ai/tests/test_analysis_observed_api.py
+          ai/tests/test_analysis_observed_storage.py
+

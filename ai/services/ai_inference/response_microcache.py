@@ -119,12 +119,15 @@ async def get_or_compute(
         if ttl_value > 0:
             expires_at = time.monotonic() + ttl_value
             async with _lock:
-                _cache[cache_key] = CacheEntry(value=copy.deepcopy(value), expires_at=expires_at)
-                try:
-                    _cache.move_to_end(cache_key)
-                except Exception:
-                    pass
-                _trim_unlocked(time.monotonic())
+                # Invalidated producers may finish for their original callers, but
+                # must neither rejoin new reads nor overwrite a newer cache value.
+                if _inflight.get(cache_key) is fut:
+                    _cache[cache_key] = CacheEntry(value=copy.deepcopy(value), expires_at=expires_at)
+                    try:
+                        _cache.move_to_end(cache_key)
+                    except Exception:
+                        pass
+                    _trim_unlocked(time.monotonic())
         fut.set_result(copy.deepcopy(value))
         return value
     except Exception as exc:
@@ -143,6 +146,7 @@ async def invalidate_exact(key: str) -> int:
     async with _lock:
         existed = 1 if cache_key in _cache else 0
         _cache.pop(cache_key, None)
+        _inflight.pop(cache_key, None)
         return existed
 
 
@@ -154,4 +158,7 @@ async def invalidate_prefix(prefix: str) -> int:
         keys = [key for key in list(_cache.keys()) if key.startswith(prefix_s)]
         for key in keys:
             _cache.pop(key, None)
+        for key in list(_inflight):
+            if key.startswith(prefix_s):
+                _inflight.pop(key, None)
         return len(keys)

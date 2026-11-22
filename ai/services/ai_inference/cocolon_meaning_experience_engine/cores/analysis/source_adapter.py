@@ -1,0 +1,489 @@
+"""Freeze owner-resolved saved material, without treating generated text as input.
+
+This is a pure, offline boundary. Authentication, entitlement, retention and
+fresh DB reads remain responsibilities of the future Analysis lifecycle caller.
+An arbitrary HTTP caller must never be allowed to construct these requests.
+"""
+from __future__ import annotations
+
+from dataclasses import asdict, dataclass, field, replace
+from datetime import date, datetime, timezone
+import hashlib
+import json
+from uuid import UUID
+
+from emlis_ai_current_input_bundle import normalize_emlis_current_input
+from emlis_ai_evidence_ledger_service import build_evidence_ledger
+from ...contracts import EvidenceRef, SourceEnvelope
+from ...source_kernel import _text_span_raw_subrange
+from ...emlis_thread_contracts import InterpretationCorrectionSource
+
+POLICY = 'cocolon.cmee.analysis.observed.offline.v1'
+ORIGINAL_FIELDS = frozenset(('id', 'created_at', 'memo', 'memo_action',
+                             'category', 'emotions', 'emotion_details'))
+DEEP_INSIGHT_ANSWER_ROLE = 'USER_DEEP_INSIGHT_ANSWER'
+
+
+def canonical_bytes(value: object) -> bytes:
+    return json.dumps(value, ensure_ascii=False, sort_keys=True,
+                      separators=(',', ':'), allow_nan=False).encode('utf-8')
+
+
+def commitment(value: object) -> str:
+    return 'sha256:' + hashlib.sha256(canonical_bytes(value)).hexdigest()
+
+
+class AnalysisSourceError(ValueError):
+    """Only fixed reason codes, never private values, cross this boundary."""
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class AnalysisSupplement:
+    source_id: str
+    owner_scope: str
+    parent_record_ref: str
+    parent_record_version: str
+    text: str
+    source_version: str
+    # Only a saved, permitted supplemental answer, not question/control text.
+    source_role: str = 'SUPPLEMENTAL_ANSWER'
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class AnalysisDeepInsightQuestion:
+    """The issued question frames its owner's answer without being evidence."""
+    user_id: str
+    lane: str
+    theme: str | None
+    question_text: str
+    issued_on: str
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class AnalysisSavedRecord:
+    owner_scope: str
+    saved_record_ref: str
+    saved_record_version: str
+    original_json: str
+    supplements: tuple[AnalysisSupplement, ...] = ()
+    record_state: str = 'LIVE'
+    # AI target text stays control metadata. Only the person's explanation
+    # becomes a separately qualified evidence envelope.
+    interpretation_corrections: tuple[InterpretationCorrectionSource, ...] = ()
+    deep_insight: AnalysisDeepInsightQuestion | None = None
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class AnalysisObservedMapRequest:
+    request_id: str
+    authenticated_owner_scope: str
+    period_start: str
+    period_end: str
+    members: tuple[AnalysisSavedRecord, ...]
+    core_id: str = 'analysis'
+    product_job: str = 'MAP_AND_EXPLORE'
+    operation: str = 'ANALYSIS_OBSERVED_MAP'
+    execution_mode: str = 'OFFLINE_CANDIDATE'
+    locale: str = 'ja-JP'
+    # Internal, owner-resolved raw sources only. Never a saved/public DTO or
+    # generated text used as input. One previous period, no comparison chain.
+    comparison_previous_request: AnalysisObservedMapRequest | None = None
+    # Cumulative category policy; legacy/offline snapshots retain their old policy.
+    selected_category_context: bool = False
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class AnalysisSource:
+    envelope: SourceEnvelope
+    record_ref: str
+    record_version: str
+    normalized: dict = field(repr=False)
+    spans: tuple = field(repr=False)
+    evidence: tuple[EvidenceRef, ...] = field(repr=False)
+    # Parser view only; the envelope and field bounds remain the full source.
+    scoped_memo_range: tuple[int, int] | None = None
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class AnalysisSourceMember:
+    saved_record_ref: str
+    saved_record_version: str
+    member_role: str
+    source_commitment: str
+    inclusion_status: str
+    inclusion_or_exclusion_reason: str
+    child_source_envelope_refs: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class AnalysisSourceSet:
+    source_set_ref: str
+    owner_scope: str
+    period: tuple[str, str]
+    members: tuple[AnalysisSourceMember, ...]
+    sources: tuple[AnalysisSource, ...]
+    category_records: tuple[AnalysisSavedRecord, ...] = ()
+
+
+def record_selected_categories(record: AnalysisSavedRecord) -> tuple[str, ...]:
+    """User-selected content labels, never inferred scene/role/cause evidence."""
+    original = json.loads(record.original_json)
+    if (original.get('id') != record.saved_record_ref
+            or commitment(original) != record.saved_record_version):
+        raise AnalysisSourceError('analysis_record_version_mismatch')
+    return tuple(sorted(normalize_emlis_current_input(original)['category']))
+
+
+def selected_categories(source_set: AnalysisSourceSet, record_ref: str):
+    if not source_set.category_records:
+        return None
+    matches = [r for r in source_set.category_records if r.saved_record_ref == record_ref]
+    if len(matches) != 1:
+        raise AnalysisSourceError('analysis_record_version_mismatch')
+    return record_selected_categories(matches[0])
+
+
+def _time(value: str, *, saved_utc: bool = False) -> datetime:
+    try:
+        result = datetime.fromisoformat(value.replace('Z', '+00:00'))
+        if result.tzinfo is None:
+            # public.emotions.created_at is timestamp without time zone and
+            # its existing saved-input owner defines it as UTC. Preserve the
+            # exact stored string/commitment; only interpret its time here.
+            if not saved_utc or 'T' not in value:
+                raise ValueError
+            result = result.replace(tzinfo=timezone.utc)
+        return result.astimezone(timezone.utc)
+    except (ValueError, TypeError, AttributeError):
+        raise AnalysisSourceError('analysis_timestamp_invalid') from None
+
+
+def _checked_deep_insight_question(record, original):
+    question = record.deep_insight
+    try:
+        if (type(question) is not AnalysisDeepInsightQuestion
+                or question.user_id != record.owner_scope
+                or original['id'] != str(UUID(original['id']))
+                or question.lane not in {'records', 'theme'}
+                or (question.lane == 'records' and question.theme is not None)
+                or (question.lane == 'theme'
+                    and (type(question.theme) is not str or not question.theme.strip()))
+                or type(question.question_text) is not str or not question.question_text.strip()
+                or date.fromisoformat(question.issued_on).isoformat() != question.issued_on
+                or type(original['memo']) is not str or not original['memo'].strip()
+                or original['memo_action'] != ''
+                or any(original[key] != [] for key in ('category', 'emotions', 'emotion_details'))
+                or record.supplements or record.interpretation_corrections):
+            raise ValueError
+    except (ValueError, TypeError, AttributeError):
+        raise AnalysisSourceError('analysis_deep_insight_binding_invalid') from None
+    return asdict(question)
+
+
+def _source(record, role, source_id, version, original):
+    normalized = normalize_emlis_current_input(original)
+    spans = tuple(build_evidence_ledger(normalized))
+    # Length-prefixed, exact original fields; offsets never refer to normalized
+    # or generated text. Labels remain available to the existing semantic owner
+    # but are not independently promoted to observed route facts.
+    raw = bytearray()
+    fields = {}
+    for key in ('memo', 'memo_action'):
+        value = original.get(key) or ''
+        if not isinstance(value, str):
+            raise AnalysisSourceError('analysis_text_field_invalid')
+        encoded = value.encode('utf-8')
+        raw.extend((key + ':' + str(len(encoded)) + ':').encode())
+        start = len(raw)
+        raw.extend(encoded)
+        fields[key] = (value, start, len(raw))
+    raw_bytes = bytes(raw)
+    envelope_id = 'analysis-source:' + commitment([record.saved_record_ref,
+        record.saved_record_version, role, source_id, version, POLICY])[7:]
+    envelope = SourceEnvelope(envelope_id, source_id, role, POLICY, POLICY,
+        'utf-8', POLICY, commitment(POLICY), raw_bytes,
+        hashlib.sha256(raw_bytes).hexdigest())
+    evidence = []
+    for span in spans:
+        if span.source_field not in fields or span.start_index < 0:
+            continue
+        value, field_start, field_end = fields[span.source_field]
+        start, end = _text_span_raw_subrange(raw_field_text=value,
+            normalized_field_text=normalized[span.source_field], span=span)
+        literal = value[start:end].encode('utf-8')
+        eid = 'analysis-evidence:' + commitment([envelope_id,
+            span.source_field, start, end])[7:]
+        evidence.append(EvidenceRef(eid, span.span_id, envelope_id,
+            span.source_field, 0, field_start, field_end, start, end,
+            field_start + len(value[:start].encode('utf-8')),
+            field_start + len(value[:end].encode('utf-8')),
+            hashlib.sha256(value.encode('utf-8')).hexdigest(),
+            hashlib.sha256(literal).hexdigest()))
+    return AnalysisSource(envelope, record.saved_record_ref,
+        record.saved_record_version, normalized, spans, tuple(evidence))
+
+
+def source_field_text(source: AnalysisSource, field_name: str) -> str:
+    ref = next((e for e in source.evidence if e.field_path == field_name), None)
+    if ref is None:
+        raise AnalysisSourceError('analysis_source_field_unbound')
+    return source.envelope.raw_utf8[ref.field_utf8_start:ref.field_utf8_end].decode('utf-8')
+
+
+def scoped_source_view(source: AnalysisSource, start: int, end: int) -> AnalysisSource:
+    """Parse a proved answer range without creating a derived source envelope.
+
+    Local ledger coordinates belong only to the parser view. Every returned
+    EvidenceRef still addresses the complete, unchanged supplemental field.
+    """
+    raw = source_field_text(source, 'memo')
+    if not (0 <= start < end <= len(raw)):
+        raise AnalysisSourceError('analysis_answer_range_invalid')
+    base = next(e for e in source.evidence if e.field_path == 'memo')
+    fragment = raw[start:end]
+    normalized = normalize_emlis_current_input({'memo': fragment})
+    spans = tuple(build_evidence_ledger(normalized))
+    evidence = []
+    for span in spans:
+        if span.source_field != 'memo':
+            continue
+        a, b = _text_span_raw_subrange(raw_field_text=fragment,
+            normalized_field_text=normalized['memo'], span=span)
+        a, b = start + a, start + b
+        evidence.append(replace(base,
+            evidence_id='analysis-evidence:' + commitment([
+                source.envelope.envelope_id, 'memo', a, b])[7:],
+            source_span_id=span.span_id, scalar_start=a, scalar_end=b,
+            utf8_start=base.field_utf8_start + len(raw[:a].encode('utf-8')),
+            utf8_end=base.field_utf8_start + len(raw[:b].encode('utf-8')),
+            literal_sha256=hashlib.sha256(raw[a:b].encode('utf-8')).hexdigest()))
+    return replace(source, normalized=normalized, spans=spans,
+                   evidence=tuple(evidence), scoped_memo_range=(start, end))
+
+
+def freeze_analysis_sources(request: AnalysisObservedMapRequest) -> AnalysisSourceSet:
+    if (type(request) is not AnalysisObservedMapRequest or
+            request.execution_mode != 'OFFLINE_CANDIDATE' or
+            request.core_id != 'analysis' or
+            request.product_job != 'MAP_AND_EXPLORE' or
+            request.operation != 'ANALYSIS_OBSERVED_MAP' or
+            request.locale != 'ja-JP' or not request.request_id or
+            not isinstance(request.authenticated_owner_scope, str) or
+            not request.authenticated_owner_scope.strip() or
+            not isinstance(request.members, tuple) or
+            type(request.selected_category_context) is not bool):
+        raise AnalysisSourceError('analysis_request_out_of_scope')
+    start, end = _time(request.period_start), _time(request.period_end)
+    if start >= end:
+        raise AnalysisSourceError('analysis_period_invalid')
+    originals, versions, supplements = {}, {}, set()
+    for member in request.members:
+        if (type(member) is not AnalysisSavedRecord or
+                member.owner_scope != request.authenticated_owner_scope):
+            raise AnalysisSourceError('analysis_owner_mismatch')
+        if member.record_state != 'LIVE':
+            raise AnalysisSourceError('analysis_record_not_live')
+        if not isinstance(member.supplements, tuple) or len(member.supplements) > 3:
+            raise AnalysisSourceError('analysis_supplement_cardinality')
+        if any(type(s) is not AnalysisSupplement for s in member.supplements):
+            raise AnalysisSourceError('analysis_supplement_binding_invalid')
+        try:
+            original = json.loads(member.original_json)
+        except (TypeError, ValueError):
+            raise AnalysisSourceError('analysis_original_invalid') from None
+        if (not isinstance(original, dict) or set(original) != ORIGINAL_FIELDS or
+                not isinstance(member.saved_record_ref, str) or
+                not member.saved_record_ref or original['id'] != member.saved_record_ref):
+            raise AnalysisSourceError('analysis_original_shape_invalid')
+        if commitment(original) != member.saved_record_version:
+            raise AnalysisSourceError('analysis_record_version_mismatch')
+        identity = commitment([original, [
+            [s.source_id, s.owner_scope, s.parent_record_ref, s.parent_record_version,
+             s.text, s.source_version, s.source_role] for s in member.supplements
+             if type(s) is AnalysisSupplement]])
+        if type(member.interpretation_corrections) is not tuple:
+            raise AnalysisSourceError('analysis_correction_binding_invalid')
+        if member.interpretation_corrections:
+            identity = commitment([identity, [asdict(c) for c in member.interpretation_corrections
+                if type(c) is InterpretationCorrectionSource]])
+        if member.deep_insight is not None:
+            identity = commitment([identity, _checked_deep_insight_question(member, original)])
+        if member.saved_record_ref in versions:
+            if versions[member.saved_record_ref] != identity:
+                raise AnalysisSourceError('analysis_duplicate_record_conflict')
+            continue
+        versions[member.saved_record_ref] = identity
+        originals[member.saved_record_ref] = (member, original)
+    members, sources = [], []
+    for ref, (member, original) in sorted(originals.items(),
+            key=lambda item: (_time(item[1][1]['created_at'], saved_utc=True), item[0])):
+        included = start <= _time(original['created_at'], saved_utc=True) < end
+        children = []
+        for supplement in member.supplements:
+            if (type(supplement) is not AnalysisSupplement or
+                    supplement.owner_scope != request.authenticated_owner_scope or
+                    supplement.parent_record_ref != ref or
+                    supplement.parent_record_version != member.saved_record_version or
+                    supplement.source_role != 'SUPPLEMENTAL_ANSWER' or
+                    not isinstance(supplement.source_id, str) or
+                    not supplement.source_id or supplement.source_id in supplements or
+                    not isinstance(supplement.text, str) or not supplement.text.strip() or
+                    supplement.source_version != commitment(supplement.text)):
+                raise AnalysisSourceError('analysis_supplement_binding_invalid')
+            supplements.add(supplement.source_id)
+        for correction in member.interpretation_corrections:
+            if (type(correction) is not InterpretationCorrectionSource
+                    or correction.source_role != 'USER_INTERPRETATION_CORRECTION'
+                    or any(type(value) is not str or not value.strip() for value in (
+                        correction.correction_id, correction.thread_id,
+                        correction.original_source_ref, correction.target_event_id,
+                        correction.target_text, correction.explanation, correction.recorded_at))
+                    or max(len(correction.target_text), len(correction.explanation)) > 2000
+                    or correction.correction_id in supplements):
+                raise AnalysisSourceError('analysis_correction_binding_invalid')
+            _time(correction.recorded_at)
+            # Re-derive the Emlis original identity, including its saved UTC
+            # adaptation, so an internal request cannot transplant a valid
+            # correction from another record or an earlier edited version.
+            from emlis_ai_current_input_bundle import build_emlis_current_input_bundle
+            from ...contracts import GenerationRequest
+            from ...source_kernel import freeze_text_source, SourceAdmissionError
+            original_input = dict(original)
+            original_input['created_at'] = _time(original['created_at'], saved_utc=True).isoformat()
+            for name in ('memo', 'memo_action'):
+                if original_input.get(name) is None:
+                    original_input[name] = ''
+            try:
+                expected_original = freeze_text_source(GenerationRequest('analysis-correction-binding',
+                    build_emlis_current_input_bundle(original_input), ref)).envelope.envelope_id
+            except (SourceAdmissionError, ValueError, TypeError):
+                raise AnalysisSourceError('analysis_correction_binding_invalid') from None
+            if correction.original_source_ref != expected_original:
+                raise AnalysisSourceError('analysis_correction_binding_invalid')
+            supplements.add(correction.correction_id)
+        if included:
+            role = 'ORIGINAL_INPUT' if member.deep_insight is None else DEEP_INSIGHT_ANSWER_ROLE
+            version = member.saved_record_version if member.deep_insight is None else versions[ref]
+            child = _source(member, role, ref, version, original)
+            sources.append(child)
+            children.append(child.envelope.envelope_id)
+            for supplement in member.supplements:
+                child = _source(member, 'SUPPLEMENTAL_ANSWER', supplement.source_id,
+                    supplement.source_version, {'id': ref, 'memo': supplement.text})
+                sources.append(child)
+                children.append(child.envelope.envelope_id)
+            for correction in member.interpretation_corrections:
+                child = _source(member, correction.source_role, correction.correction_id,
+                    commitment(asdict(correction)), {'id': ref, 'memo': correction.explanation})
+                sources.append(child)
+                children.append(child.envelope.envelope_id)
+        members.append(AnalysisSourceMember(ref, member.saved_record_version,
+            'PERIOD_RECORD_IDENTITY' if member.deep_insight is None else DEEP_INSIGHT_ANSWER_ROLE, versions[ref],
+            'INCLUDED' if included else 'EXCLUDED',
+            'IN_PERIOD' if included else 'OUTSIDE_PERIOD', tuple(children)))
+    period = (start.isoformat(), end.isoformat())
+    identity = [request.authenticated_owner_scope, period, [asdict(m) for m in members], POLICY]
+    category_records = ()
+    if request.selected_category_context:
+        identity.append('selected-category-context.v1')
+        included_refs = {m.saved_record_ref for m in members if m.inclusion_status == 'INCLUDED'}
+        category_records = tuple(m for m, _ in originals.values() if m.saved_record_ref in included_refs)
+        for record in category_records:
+            record_selected_categories(record)
+    source_set_ref = 'analysis-set:' + commitment(identity)[7:]
+    return AnalysisSourceSet(source_set_ref, request.authenticated_owner_scope,
+                             period, tuple(members), tuple(sources), category_records)
+
+
+def emlis_analysis_source_request(request, *, owner_scope, original_record, as_of):
+    """Project one admitted thread to the existing saved-source owner.
+
+    The caller supplies its owner-resolved saved seven fields and real snapshot
+    clock.  The Emlis source identity is rederived before the saved record is
+    accepted; generated observations, question text and AI correction targets
+    are never members of this source request.  History is projected separately
+    by its caller, rather than joined into the current person's statement.
+    """
+    from emlis_ai_current_input_bundle import build_emlis_current_input_bundle
+    from ...contracts import GenerationRequest
+    from ...emlis_thread_source import admit_emlis_thread
+    from ...source_kernel import freeze_text_source
+
+    if (type(request) is not GenerationRequest or type(owner_scope) is not str
+            or not owner_scope.strip() or type(original_record) is not dict
+            or set(original_record) != ORIGINAL_FIELDS):
+        raise AnalysisSourceError('emlis_analysis_source_binding_invalid')
+    # Canonical serialization also makes this a detached copy. Do not adapt
+    # nullable leaves or the saved date in the version that will be committed.
+    try:
+        original_json = canonical_bytes(original_record).decode('utf-8')
+        original = json.loads(original_json)
+    except (ValueError, TypeError, UnicodeError):
+        raise AnalysisSourceError('emlis_analysis_source_binding_invalid') from None
+    admitted = admit_emlis_thread(request)
+    adapted = dict(original)
+    adapted['created_at'] = _time(original['created_at'], saved_utc=True).isoformat()
+    for name in ('memo', 'memo_action'):
+        if adapted.get(name) is None:
+            adapted[name] = ''
+    rebound = freeze_text_source(replace(request,
+        current_input_bundle=build_emlis_current_input_bundle(adapted)))
+    if (original['id'] != request.expected_source_record_id
+            or rebound.envelope != admitted.original.envelope):
+        raise AnalysisSourceError('emlis_analysis_source_binding_invalid')
+    start, end = _time(original['created_at'], saved_utc=True), _time(as_of)
+    if start >= end:
+        # No artificial one-day/microsecond period is introduced to make a
+        # record fit. The source owner uses its actual half-open clock scope.
+        raise AnalysisSourceError('emlis_analysis_as_of_not_after_source')
+    for source in (*[a.source for a in admitted.answers],
+                   *admitted.control.interpretation_corrections):
+        if _time(source.recorded_at) > end:
+            raise AnalysisSourceError('emlis_analysis_future_source')
+    version = commitment(original)
+    answers = tuple(AnalysisSupplement(a.source.answer_id, owner_scope,
+        original['id'], version, a.source.answer_text_private,
+        commitment(a.source.answer_text_private)) for a in admitted.answers)
+    member = AnalysisSavedRecord(owner_scope, original['id'], version,
+        original_json, answers,
+        interpretation_corrections=admitted.control.interpretation_corrections)
+    projected = AnalysisObservedMapRequest(request.request_id + ':analysis-material',
+        owner_scope, start.isoformat(), end.isoformat(), (member,),
+        selected_category_context=True)
+    # Validate the existing saved-source and correction-parent contracts now.
+    freeze_analysis_sources(projected)
+    return admitted, projected
+
+
+def analysis_map_correction_sources(owner_scope, rows, *, record_refs, as_of):
+    """Admit independent person explanations, never artificial saved inputs.
+
+    SQL owns the current cohort check. Here the existing source boundary binds
+    its owner-resolved rows to this request and freezes only explanation bytes;
+    the old AI field and target excerpt remain separate control metadata.
+    """
+    from .map_interpretation_correction import checked_map_correction, qualify_map_correction
+    if type(rows) not in (list, tuple):
+        raise AnalysisSourceError('analysis_map_correction_source_invalid')
+    qualified, seen = [], set()
+    for raw in rows:
+        try:
+            row = checked_map_correction(owner_scope, raw)
+            if row['correction_id'] in seen or _time(row['recorded_at']) > _time(as_of):
+                raise ValueError
+            seen.add(row['correction_id'])
+            if row['source_state'] != 'ACTIVE':
+                continue
+            source = qualify_map_correction(owner_scope, row)
+            if not set(source.cohort_refs) <= set(record_refs):
+                raise ValueError
+            from emlis_ai_safety_triage import classify_emlis_safety_triage_text
+            if not classify_emlis_safety_triage_text(source.explanation).normal_observation_allowed:
+                raise AnalysisSourceError('analysis_map_correction_separate_safety_required')
+            qualified.append((row, source))
+        except AnalysisSourceError:
+            raise
+        except (ValueError, TypeError, KeyError, AttributeError):
+            raise AnalysisSourceError('analysis_map_correction_source_invalid') from None
+    return tuple(qualified)
+

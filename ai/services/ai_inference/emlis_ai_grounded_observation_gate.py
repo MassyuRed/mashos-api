@@ -9,28 +9,59 @@ reconstruct meaning from the public body and it never serializes source text.
 """
 
 from dataclasses import dataclass
+from itertools import combinations
 import re
 from typing import Any, Final, Literal, Mapping
 
 from emlis_ai_evidence_ledger_service import EvidenceSpanResolver
 from emlis_ai_grounded_human_reception import (
+    _SOURCE_GROUNDED_FINITE_END_RE,
+    SelectedSubjectiveReceptionInputV1,
     GroundedHumanReceptionSurfaceError,
-    realize_grounded_human_reception,
+    replay_source_grounded_human_reception_from_plan,
+    reception_action_is_future_intention,
+    reception_action_is_performed,
     reception_active_moves,
+    reception_effective_move_reference_mode,
     reception_effective_sentence_budget,
     reception_move_predicate_family,
     reception_terminal_predicate_kind,
+    realize_grounded_human_reception,
+    resolve_grounded_reception_move_referent,
+    source_grounded_performed_action_nominal,
+    source_grounded_future_action_nominal,
+    source_grounded_retained_wish_nominal,
+    source_grounded_feeling_target_nominal,
+    source_grounded_unfinished_referent,
+    source_grounded_current_expression_nominal,
+    source_grounded_thread_answer_nominal,
+    restore_thread_answer_nominal,
+    source_grounded_negative_context_nominal,
+    final_reception_source_anchor_text,
 )
 from emlis_ai_grounded_observation_plan import (
+    _FEELING_RE,
+    _THREAD_POSITIVE_FEELING_COPULA_RE,
+    _THREAD_NEGATIVE_FEELING_COPULA_RE,
+    _THREAD_NOMINAL_FEELING_EXPLANATION_RE,
+    FINAL_STAGE1_GROUNDED_PROJECTION_VERSION,
     GroundedObservationPlan,
+    is_grounded_positive_feeling,
+    source_relief_cognition_replacement,
+    source_owned_relief_cognition_from_resolver,
+    source_owned_separate_time_contrast_ids,
     validate_grounded_human_reception_plan,
     validate_grounded_observation_plan,
 )
 from emlis_ai_grounded_sentence_surface import (
     DIRECTIONAL_GROUNDED_RELATION_TYPES,
+    OBSERVATION_SECTION_LABEL,
+    RECEPTION_SECTION_LABEL,
     GroundedSentencePlan,
     GroundedSurfaceResult,
     expected_human_follow_role,
+    parse_grounded_surface_body_bytes,
+    realize_grounded_human_follow_text,
     split_two_stage_surface,
     validate_grounded_sentence_plan,
     validate_grounded_surface_result,
@@ -142,6 +173,68 @@ _RECEPTION_IDENTITY_ACCEPTANCE_RE: Final = re.compile(
 _RECEPTION_QUOTE_RE: Final = re.compile(r"「([^」]+)」")
 _RECEPTION_SENTENCE_END_RE: Final = re.compile(r"[。！？!?]+")
 _GROUNDED_GATE_BODY_FREE_CODE_RE: Final = re.compile(r"^[A-Za-z0-9_.:/-]*$")
+_BODY_INVERSE_ANCHOR_NORMALIZE_RE: Final = re.compile(
+    r"[\s\u3000、。,.!！?？「」『』（）()・:：;；'’\"]"
+)
+_BODY_INVERSE_LEADING_CONNECTOR_RE: Final = re.compile(
+    r"^(?:とそれから|そして|それでも|けれど|だけど|でも|で)"
+)
+_BODY_INVERSE_RELATION_MARKERS_BY_TYPE: Final[dict[str, frozenset[str]]] = {
+    "temporal_before_after": frozenset({"from_to", "change"}),
+    "shift_from_to": frozenset({"from_to", "change"}),
+    "contrast": frozenset({"coexistence", "counterdirection"}),
+    "coexistence": frozenset({"coexistence"}),
+    "user_stated_cause": frozenset({"link", "from_to"}),
+    "user_stated_result": frozenset({"link", "from_to", "change"}),
+    "attempt_and_block": frozenset({"coexistence", "counterdirection"}),
+    "wish_and_constraint": frozenset({"coexistence", "counterdirection"}),
+    "action_supports_change": frozenset({"link"}),
+    "evaluation_about_event": frozenset({"change", "link"}),
+    "self_evaluation_about_state": frozenset({"change", "coexistence"}),
+    "preserves_despite": frozenset({"coexistence", "counterdirection"}),
+    "uncertain_connection": frozenset({"coexistence", "change", "link"}),
+    "continuation_or_refusal": frozenset({"counterdirection", "coexistence"}),
+}
+_BODY_INVERSE_RECEPTION_ACT_TARGET_MARKERS: Final[
+    dict[str, frozenset[str]]
+] = {
+    "stay_with_current_burden": frozenset({"target_burden", "target_words"}),
+    "honor_concrete_effort": frozenset({"target_effort", "target_words"}),
+    "protect_retained_intention": frozenset({"target_intention", "target_words"}),
+    "recognize_lived_change": frozenset({"target_change", "target_words"}),
+    "hold_help_seeking": frozenset({"target_help", "target_words"}),
+    "bounded_counter_self_denial": frozenset(
+        {"target_self_evaluation", "target_words"}
+    ),
+    "respect_words_placed": frozenset({"target_words"}),
+}
+_BODY_INVERSE_RECEPTION_RELATION_PREFERENCE: Final[
+    dict[str, tuple[str, ...]]
+] = {
+    "protect_retained_intention": (
+        "preserves_despite",
+        "wish_and_constraint",
+        "coexistence",
+        "contrast",
+        "continuation_or_refusal",
+    ),
+    "hold_help_seeking": (
+        "wish_and_constraint",
+        "preserves_despite",
+        "coexistence",
+        "contrast",
+    ),
+    "honor_concrete_effort": (
+        "action_supports_change",
+        "temporal_before_after",
+        "user_stated_result",
+    ),
+    "recognize_lived_change": (
+        "action_supports_change",
+        "temporal_before_after",
+        "contrast",
+    ),
+}
 
 
 def _dedupe(values: Any) -> tuple[str, ...]:
@@ -175,6 +268,8 @@ def _ledger_narration_visible(value: Any) -> bool:
 
 
 def _nucleus_source_text(nucleus: Any, resolver: EvidenceSpanResolver) -> str:
+    if getattr(resolver, "source_contract", None) == "cocolon.cmee.emlis_thread.v1":
+        return final_reception_source_anchor_text(nucleus.nucleus_id, {nucleus.nucleus_id: nucleus}, resolver)
     return " ".join(
         str(resolver.resolve(span_id).raw_text or "")
         for span_id in nucleus.source_span_ids
@@ -255,15 +350,111 @@ def _semantic_subcheck_reasons(
         for item in plan.nuclei
         if any(code.startswith("lexical:") for code in item.semantic_frame.attribute_codes)
     )
+    # Compare sensation families in the original inflection of an exactly
+    # witnessed answer nominal. This local check view never changes body
+    # bytes, lexical coverage, or the independent inverse requirement.
+    # A second or unrelated sensation expression remains fully checked.
+    sensation_body = surface_result.text.encode("utf-8")
+    sensation_witness = None
+    replacements = set()
+    focused_source_nuclei = set()
+    planned_observation = tuple(line for line in sentence_plan.lines
+        if line.binding.line_role != "human_follow")
+    if any(line.binding.claim_scope == "unresolved_answer_interpretation"
+           for line in planned_observation):
+        sensation_witness = parse_grounded_surface_body_bytes(sensation_body)
+        observed = tuple(line for line in sensation_witness.lines if line.section == "observation")
+        if len(observed) == len(planned_observation):
+            for parsed, planned in zip(observed, planned_observation):
+                if (planned.binding.claim_scope == "unresolved_answer_interpretation"
+                    and _body_inverse_answer_limit(sensation_body, parsed, planned, plan, resolver)):
+                    # This exact source-bound line reports an unreflected
+                    # answer; it does not assert its quoted sensation. Only
+                    # remove this proved byte range from the local check.
+                    # Adding its source to source_text would incorrectly
+                    # license the same sensation outside the disclosure.
+                    replacements.add((parsed.utf8_byte_start, parsed.utf8_byte_end, b""))
+    reception_plan = plan.response_plan.human_reception_plan
+    from emlis_ai_grounded_observation_plan import _source_unknown_object_group_from_resolver, _source_independent_unknown_object_from_resolver, _source_same_field_unknown_object_from_resolver, _source_relief_cognition_unknown_from_resolver, _source_retained_mixed_unknown_from_resolver, _source_retained_relief_received_from_resolver, _source_initial_personal_meaning_from_resolver
+    unknown_group = _source_unknown_object_group_from_resolver(plan.nuclei, plan.relations, resolver, include_single=True)
+    unknown_group = unknown_group or (_source_independent_unknown_object_from_resolver(plan.nuclei, plan.relations, resolver) or _source_same_field_unknown_object_from_resolver(plan.nuclei, plan.relations, resolver) or _source_relief_cognition_unknown_from_resolver(plan.nuclei, plan.relations, resolver) or _source_retained_mixed_unknown_from_resolver(plan.nuclei, plan.relations, resolver) or tuple(n for n in _source_retained_relief_received_from_resolver(plan.nuclei, plan.relations, resolver)[:1] if n is not None) or tuple(n for n in _source_initial_personal_meaning_from_resolver(plan.nuclei, plan.relations, resolver)[:1] if n is not None))[:1]
+    for move in reception_plan.moves if reception_plan is not None else ():
+        if len(move.target_nucleus_ids) > 1 or move.support_nucleus_ids or (
+            len(unknown_group) == 1 and move.target_nucleus_ids == (unknown_group[0].nucleus_id,)
+            and not move.support_nucleus_ids and move.reception_act == "stay_with_current_burden"):
+            if sensation_witness is None:
+                sensation_witness = parse_grounded_surface_body_bytes(sensation_body)
+            for sentence in sensation_witness.sentences:
+                if sentence.section == "reception":
+                    replacements.update(_body_inverse_thread_answer_group(
+                        sensation_body, sensation_witness, sentence, move, plan, resolver))
+                    replacements.update(_body_inverse_thread_received_group(
+                        sensation_body, sensation_witness, sentence, move, plan, resolver) or ())
+                    if (_read_unknown_object_discourse(
+                        sensation_body[sentence.utf8_byte_start:sentence.utf8_byte_end].decode(),
+                        move, plan, resolver, None) is not None or _read_feeling_reason_discourse(
+                        sensation_body[sentence.utf8_byte_start:sentence.utf8_byte_end].decode(),
+                        move, plan, resolver, None) is not None):
+                        # Recipient case and the finite connective are
+                        # independently restored to both complete sources.
+                        focused_source_nuclei.update((*move.target_nucleus_ids, *move.support_nucleus_ids))
+                    from emlis_ai_grounded_observation_plan import source_owned_relational_focus
+                    focus = source_owned_relational_focus(move, plan)
+                    if (focus is not None and focus[0] == "received_experience_focus"
+                        and _read_relational_focus_discourse(
+                            sensation_body[sentence.utf8_byte_start:sentence.utf8_byte_end].decode(),
+                            move, plan, resolver, None) is not None):
+                        # Exact source roles survive the focus transposition;
+                        # a source-string substring is no longer its proof.
+                        focused_source_nuclei.add(focus[2].nucleus_id)
+            continue
+        answer_nominal = source_grounded_thread_answer_nominal(move, plan, nucleus_index, resolver)
+        if answer_nominal is None:
+            continue
+        _, source, grammar, when, nominal = answer_nominal
+        nominal_bytes = nominal.encode("utf-8")
+        if sensation_body.count(nominal_bytes) != 1:
+            continue
+        start = sensation_body.index(nominal_bytes)
+        end = start + len(nominal_bytes)
+        if sensation_witness is None:
+            sensation_witness = parse_grounded_surface_body_bytes(sensation_body)
+        if (restore_thread_answer_nominal(nominal, grammar, when) == source
+            and any(m.section == "reception" and m.marker_code == "thread_answer_nominal"
+                    and start <= m.utf8_byte_start and m.utf8_byte_end == end for m in sensation_witness.markers)
+            and not any(q.utf8_byte_start < end and start < q.utf8_byte_end for q in sensation_witness.quotes)
+            and not any(m.marker_code == "secondary_quote_boundary" and m.utf8_byte_start < end
+                        and start < m.utf8_byte_end for m in sensation_witness.markers)):
+            replacements.add((start, end, source.encode("utf-8")))
+    # Each offset addresses the original body. Dedupe identical witnesses
+    # and keep overlapping, disagreeing ranges out of this local view.
+    disjoint = tuple(row for row in replacements if not any(
+        other != row and row[0] < other[1] and other[0] < row[1] for other in replacements
+    ))
+    for start, end, source in sorted(disjoint, reverse=True):
+        sensation_body = sensation_body[:start] + source + sensation_body[end:]
+    sensation_text = sensation_body.decode("utf-8")
     for nucleus in plan.nuclei:
         attributes = set(nucleus.semantic_frame.attribute_codes)
         if "lexical:preserve_source_predicate" in attributes:
-            anchor = _normalized(_nucleus_source_text(nucleus, resolver))
-            if anchor and anchor not in surface_normalized:
+            source_anchor = _nucleus_source_text(nucleus, resolver)
+            anchors = {_normalized(source_anchor)}
+            decision_roles = tuple(role for role in ("choice", "timing")
+                if "lexical:source_independent_decision_" + role in attributes)
+            if len(decision_roles) == 1:
+                from emlis_ai_grounded_observation_plan import _source_independent_decision_clause_parts
+                clause = source_anchor.strip(" 　。．.")
+                if (_source_independent_decision_clause_parts(clause) or (None,))[0] == decision_roles[0]:
+                    # Only these complete, source-proven hosts have a plain
+                    # attributive form here; no shortened source stem counts.
+                    anchors.add(_normalized(re.sub(r"決められません$", "決められない",
+                        re.sub(r"迷っています$", "迷っている", clause))))
+            if (any(anchors) and not any(anchor and anchor in surface_normalized for anchor in anchors)
+                and nucleus.nucleus_id not in focused_source_nuclei):
                 semantic.append("lexical_anchor_missing")
         if "lexical:no_new_sensation_family" in attributes:
             for pattern in _SENSATION_FAMILIES.values():
-                if pattern.search(surface_result.text) and not pattern.search(source_text):
+                if pattern.search(sensation_text) and not pattern.search(source_text):
                     semantic.append("ungrounded_sensation_family_added")
                     break
 
@@ -517,6 +708,29 @@ def _semantic_subcheck_reasons(
             for span_id in current.binding.evidence_span_ids
             if not resolver.unresolved_ids((span_id,))
         }
+        # Different typed operands can share one original evidence span.
+        # Compare their independently proved scalar sources only when the
+        # lines actually share evidence. Keep each source's identity so the
+        # same feeling in separate events is not collapsed into repetition.
+        nucleus_index = {n.nucleus_id: n for n in plan.nuclei}
+        typed_anchors = []
+        for line in (previous, current):
+            fragments = []
+            for nid in line.binding.nucleus_ids:
+                nucleus = nucleus_index.get(nid)
+                if nucleus is None or len(nucleus.source_span_ids) != 1:
+                    break
+                raw = resolver.resolve(nucleus.source_span_ids[0]).raw_text
+                fragment = _body_inverse_typed_source_fragment(nucleus, raw)
+                if not fragment:
+                    break
+                fragments.append((nucleus.source_span_ids[0], _normalized(fragment)))
+            typed_anchors.append(set(fragments) if len(fragments) == len(line.binding.nucleus_ids) else None)
+        if (
+            set(previous.binding.evidence_span_ids).intersection(current.binding.evidence_span_ids)
+            and all(typed_anchors)
+        ):
+            previous_anchors, current_anchors = typed_anchors
         if (
             previous_text
             and previous_text == current_text
@@ -557,6 +771,7 @@ def _evaluate_reception_gates(
     resolver: EvidenceSpanResolver,
     observation_text: str,
     reception_text: str,
+    selected_subjective_input: SelectedSubjectiveReceptionInputV1 | None = None,
 ) -> tuple[
     dict[str, GateStatus],
     tuple[str, ...],
@@ -642,6 +857,7 @@ def _evaluate_reception_gates(
 
     active_moves = ()
     realized_reception = None
+    canonical_reception_text = ""
     recovery_contract_valid = True
     if reception_plan is not None:
         try:
@@ -671,22 +887,60 @@ def _evaluate_reception_gates(
             )
         if human_line is not None and recovery_contract_valid:
             try:
-                realized_reception = realize_grounded_human_reception(
-                    reception_plan,
-                    nucleus_index,
+                canonical_reception_text = realize_grounded_human_follow_text(
+                    human_line,
+                    plan,
                     resolver,
-                    recovery_stage=sentence_plan.recovery_stage,
-                    clause_plans=human_line.reception_clause_plans,
+                    selected_subjective_input=selected_subjective_input,
+                    preceding_observation=observation_text,
                 )
-            except (
-                GroundedHumanReceptionSurfaceError,
-                AttributeError,
-                KeyError,
-                TypeError,
-            ):
+            except (AttributeError, KeyError, TypeError, ValueError):
                 reasons_by_gate["reception_move_realization_gate"].append(
-                    "reception_canonical_realization_failed"
+                    "reception_canonical_surface_owner_failed"
                 )
+            if _body_inverse_is_final_stage1_plan(plan):
+                try:
+                    realized_reception = replay_source_grounded_human_reception_from_plan(
+                        reception_plan, nucleus_index, resolver,
+                        plan=plan,
+                        recovery_stage=sentence_plan.recovery_stage,
+                        clause_plans=human_line.reception_clause_plans,
+                        selected_subjective_input=selected_subjective_input,
+                        preceding_observation=observation_text,
+                    )
+                    if not _received_discourse_equivalent(reception_text, realized_reception.text,
+                        reception_plan, human_line.reception_clause_plans, plan, resolver,
+                        selected_subjective_input, preceding_observation=observation_text):
+                        raise GroundedHumanReceptionSurfaceError(
+                            "human_reception_surface_replay_mismatch"
+                        )
+                except (
+                    GroundedHumanReceptionSurfaceError,
+                    AttributeError,
+                    KeyError,
+                    TypeError,
+                ):
+                    reasons_by_gate["reception_move_realization_gate"].append(
+                        "reception_actual_surface_contract_failed"
+                    )
+            else:
+                try:
+                    realized_reception = realize_grounded_human_reception(
+                        reception_plan,
+                        nucleus_index,
+                        resolver,
+                        recovery_stage=sentence_plan.recovery_stage,
+                        clause_plans=human_line.reception_clause_plans,
+                    )
+                except (
+                    GroundedHumanReceptionSurfaceError,
+                    AttributeError,
+                    KeyError,
+                    TypeError,
+                ):
+                    reasons_by_gate["reception_move_realization_gate"].append(
+                        "reception_canonical_realization_failed"
+                    )
 
     if reception_plan is None:
         reasons_by_gate["reception_plan_gate"].append(
@@ -701,6 +955,7 @@ def _evaluate_reception_gates(
                 resolver=resolver,
                 safety_kind=plan.safety_policy.safety_kind,
                 material_quality=plan.input_profile.material_quality,
+                final_source_fidelity=FINAL_STAGE1_GROUNDED_PROJECTION_VERSION in plan.source_contracts,
             )
         except (AttributeError, KeyError, TypeError, ValueError):
             reception_plan_issues = (
@@ -963,14 +1218,19 @@ def _evaluate_reception_gates(
                 reasons_by_gate["reception_move_realization_gate"].append(
                     "reception_realized_predicate_family_mismatch"
                 )
-            if realized_reception.text.strip() != reception_text.strip():
+            expected_reception_text = (
+                canonical_reception_text or realized_reception.text
+            )
+            if not _received_discourse_equivalent(reception_text.strip(), expected_reception_text.strip(),
+                reception_plan, human_line.reception_clause_plans, plan, resolver,
+                selected_subjective_input, preceding_observation=observation_text):
                 reasons_by_gate["reception_move_realization_gate"].append(
                     "reception_canonical_surface_mismatch"
                 )
             if (
                 human_surface_line is None
                 or human_surface_line.text.strip()
-                != realized_reception.text.strip()
+                != reception_text.strip()
             ):
                 reasons_by_gate["reception_move_realization_gate"].append(
                     "reception_surface_line_mismatch"
@@ -1234,7 +1494,9 @@ def _evaluate_reception_gates(
         reasons_by_gate["reception_human_voice_gate"].append(
             "reception_human_terminal_predicate_missing"
         )
-    expected_terminal_predicates = tuple(
+    # Aggregate contract atoms retain each terminal kind once. The Move
+    # predicate-family and visible-duty checks below remain per Move.
+    expected_terminal_predicates = _dedupe(
         reception_terminal_predicate_kind(move.reception_act)
         for move in active_moves
     )
@@ -1288,7 +1550,31 @@ def _evaluate_reception_gates(
         reasons_by_gate["reception_safety_boundary_gate"].append(
             "reception_identity_claim_accepted"
         )
-    if _RECEPTION_RESOLUTION_GUARANTEE_RE.search(reception_text):
+    # A source-proven negative degree is not a resolution guarantee. Exempt
+    # only the embedded assertion's exact range inside a complete, unchanged
+    # nominal object; added assurances elsewhere are still checked normally.
+    denied_assertion_ranges = []
+    from emlis_ai_grounded_observation_plan import _source_provisional_degree_parts
+    for move in active_moves:
+        if len(move.target_nucleus_ids) != 1 or move.support_nucleus_ids:
+            continue
+        n = nucleus_index.get(move.target_nucleus_ids[0])
+        if (n is None or "lexical:source_provisional_degree" not in n.semantic_frame.attribute_codes
+            or n.source_fields != ("memo",) or len(n.source_span_ids) != 1
+            or move.reception_act != "stay_with_current_burden"):
+            continue
+        source = str(resolver.resolve(n.source_span_ids[0]).raw_text)
+        parts = _source_provisional_degree_parts(source)
+        if parts is None:
+            continue
+        for sentence in re.finditer(r"[^。！？!?]+。", reception_text):
+            match = re.fullmatch(re.escape(source) + r"という言葉を小さくせずに(?:"
+                r"(?:受け止めて|気にかけて)(?:います|いて)|(?:受け止め|気にかけ)たいです)。", sentence.group())
+            if match:
+                denied_assertion_ranges.extend((sentence.start() + start, sentence.start() + end)
+                    for role, start, end, _ in parts if role == "assertion")
+    if any(not any(start <= m.start() and m.end() <= end for start, end in denied_assertion_ranges)
+           for m in _RECEPTION_RESOLUTION_GUARANTEE_RE.finditer(reception_text)):
         reasons_by_gate["reception_safety_boundary_gate"].append(
             "reception_safety_or_resolution_guarantee_added"
         )
@@ -1380,6 +1666,7676 @@ def _evaluate_reception_gates(
             "repeated_long_anchor_count": repeated_long_anchor_count,
         },
     )
+
+
+@dataclass(frozen=True)
+class GroundedBodyInverseEvaluation:
+    """Body-free result of matching a byte-derived witness to required duties."""
+
+    passed: bool
+    body_sha256: str
+    observation_line_count: int
+    reception_line_count: int
+    observation_sentence_count: int
+    reception_sentence_count: int
+    source_anchor_count: int
+    relation_marker_count: int
+    uncertainty_marker_count: int
+    reception_marker_count: int
+    failure_codes: tuple[str, ...]
+
+    def as_body_free_meta(self) -> dict[str, Any]:
+        return {
+            "passed": self.passed,
+            "body_sha256": self.body_sha256,
+            "observation_line_count": self.observation_line_count,
+            "reception_line_count": self.reception_line_count,
+            "observation_sentence_count": self.observation_sentence_count,
+            "reception_sentence_count": self.reception_sentence_count,
+            "source_anchor_count": self.source_anchor_count,
+            "relation_marker_count": self.relation_marker_count,
+            "uncertainty_marker_count": self.uncertainty_marker_count,
+            "reception_marker_count": self.reception_marker_count,
+            "failure_codes": list(self.failure_codes),
+            "raw_input_included": False,
+            "raw_text_included": False,
+            "source_text_included": False,
+            "surface_text_included": False,
+            "candidate_body_included": False,
+        }
+
+
+def _body_inverse_normalized_anchor(value: Any) -> str:
+    compact = _BODY_INVERSE_ANCHOR_NORMALIZE_RE.sub("", str(value or "")).lower()
+    while True:
+        reduced = _BODY_INVERSE_LEADING_CONNECTOR_RE.sub("", compact, count=1)
+        if reduced == compact:
+            return compact
+        compact = reduced
+
+
+def _body_inverse_is_final_stage1_plan(plan: GroundedObservationPlan) -> bool:
+    return FINAL_STAGE1_GROUNDED_PROJECTION_VERSION in tuple(
+        getattr(plan, "source_contracts", ())
+    )
+
+
+def _body_inverse_typed_source_fragment(
+    nucleus: Any,
+    raw_text: str,
+) -> str | None:
+    """Independently recover a plan-owned typed source obligation."""
+
+    attributes = tuple(
+        getattr(nucleus.semantic_frame, "attribute_codes", ())
+    )
+    marker_rows = tuple(
+        code
+        for code in attributes
+        if code == "semantic_role:generic_relation_fragment"
+    )
+    scalar_rows = tuple(
+        code
+        for code in attributes
+        if isinstance(code, str)
+        and code.startswith("source_fragment_scalar_range:")
+    )
+    source_rows = tuple(
+        code
+        for code in attributes
+        if isinstance(code, str)
+        and code.startswith("source_fragment_scalar_source:")
+    )
+    legacy_rows = tuple(
+        code
+        for code in attributes
+        if isinstance(code, str)
+        and code.startswith(("surface_scalar_range:", "surface_scalar_source:"))
+    )
+    if not marker_rows:
+        if scalar_rows or source_rows or legacy_rows:
+            return ""
+        return None
+    if (
+        len(marker_rows) != 1
+        or len(scalar_rows) != 1
+        or source_rows
+        != ("source_fragment_scalar_source:normalized_raw_text",)
+        or legacy_rows
+    ):
+        return ""
+    parts = scalar_rows[0].split(":")
+    if len(parts) != 3:
+        return ""
+    try:
+        start, end = int(parts[1]), int(parts[2])
+    except ValueError:
+        return ""
+    normalized_raw = re.sub(
+        r"\s+",
+        " ",
+        str(raw_text or "").replace("\u3000", " "),
+    ).strip()
+    if not (0 <= start < end <= len(normalized_raw)):
+        return ""
+    fragment = normalized_raw[start:end]
+    if not fragment or fragment != fragment.strip():
+        return ""
+    return fragment
+
+
+def _body_inverse_action_is_performed(nucleus: Any) -> bool:
+    return reception_action_is_performed(nucleus, final_source_fidelity=True)
+
+
+def _body_inverse_action_is_future_intention(nucleus: Any) -> bool:
+    return reception_action_is_future_intention(nucleus, final_source_fidelity=True)
+
+
+def _body_inverse_source_values(
+    line: Any,
+    plan: GroundedObservationPlan,
+    resolver: EvidenceSpanResolver,
+) -> tuple[str, ...]:
+    nucleus_index = {item.nucleus_id: item for item in plan.nuclei}
+    span_ids: list[str] = []
+    for nucleus_id in line.binding.nucleus_ids:
+        nucleus = nucleus_index.get(nucleus_id)
+        if nucleus is None:
+            continue
+        for span_id in nucleus.source_span_ids:
+            if span_id not in span_ids:
+                span_ids.append(span_id)
+    for span_id in line.binding.evidence_span_ids:
+        if span_id not in span_ids:
+            span_ids.append(span_id)
+    values: list[str] = []
+    for span_id in span_ids:
+        try:
+            raw_text = str(resolver.resolve(span_id).raw_text or "")
+        except (AttributeError, KeyError, TypeError, ValueError):
+            continue
+        normalized = _body_inverse_normalized_anchor(raw_text)
+        if normalized and normalized not in values:
+            values.append(normalized)
+    return tuple(values)
+
+
+def _body_inverse_nucleus_source_values(
+    nucleus_id: str,
+    plan: GroundedObservationPlan,
+    resolver: EvidenceSpanResolver,
+) -> tuple[str, ...]:
+    nucleus = next(
+        (item for item in plan.nuclei if item.nucleus_id == nucleus_id),
+        None,
+    )
+    if nucleus is None:
+        return ()
+    values: list[str] = []
+    for span_id in nucleus.source_span_ids:
+        try:
+            raw_text = str(resolver.resolve(span_id).raw_text or "")
+        except (AttributeError, KeyError, TypeError, ValueError):
+            continue
+        typed = _body_inverse_typed_source_fragment(nucleus, raw_text)
+        if typed == "":
+            return ()
+        normalized = _body_inverse_normalized_anchor(
+            typed if typed is not None else raw_text
+        )
+        if normalized and normalized not in values:
+            values.append(normalized)
+    return tuple(values)
+
+
+def _body_inverse_original_record_feeling(nucleus, plan, resolver):
+    """Recover the original-record object from raw source, without an author."""
+    frame = nucleus.semantic_frame
+    codes = set(frame.attribute_codes)
+    if (getattr(resolver, "source_contract", None) != "cocolon.cmee.emlis_thread.v1"
+        or nucleus.source_fields not in {("memo",), ("memo_action",)}
+        or nucleus.allowed_claim_scope != "explicit_current_input"
+        or nucleus.retention != "required" or nucleus.grounding_kind != "explicit"
+        or (nucleus.kind, frame.predicate_kind, frame.modality) != ("reaction", "feeling", "feeling")
+        or frame.actor != "current_user" or frame.polarity != "positive" or frame.time_scope != "past"
+        or len(nucleus.source_span_ids) != 1 or nucleus.surface_anchor_ids != nucleus.source_span_ids
+        or not {"semantic_dependency:received_feeling_contrast_chain", "source_received_chain_slot:second",
+                "lexical:source_finite_contrast_feeling"} <= codes
+        or any(c.startswith(("thread_subject:", "thread_time:")) for c in codes)
+        or len({r.to_nucleus_id for r in plan.relations if r.type == "evaluation_about_event"}) < 2
+        or any(nucleus.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id) for r in plan.relations)):
+        return ""
+    span = resolver.resolve(nucleus.source_span_ids[0])
+    if span.source_field != nucleus.source_fields[0]:
+        return ""
+    raw = re.sub(r"\s+", " ", str(span.raw_text or "").replace("\u3000", " ")).strip()
+    owner = r"(?:私|自分|わたし|僕|ぼく|俺|おれ)(?:には|にも|は|も)"
+    degree = r"(?:少し|とても|まだ|全然|あまり)"
+    feeling = (rf"(?:(?:{owner})?(?:{degree})?|{degree}{owner})"
+               r"(?:(?:嬉し|うれし|寂し|さびし|悲し|苦し|つら|辛|怖|こわ|楽し)"
+               r"(?:い|かった|くない|くなかった)(?:です)?|不安(?:だ|だった|です|でした))")
+    match = re.fullmatch(
+        r"(?:(?:私|自分|わたし)(?:は|が))?(?:[一-鿿々ァ-ヶぁ-んー]{1,16}に)?"
+        r"(?:褒められ|ほめられ|言われ|伝えられ|評価され|断られ|誘われ|頼まれ|声をかけられ|声を掛けられ)"
+        rf"(?:た|ました)(?:のに|けれども?|けど)[、,]?{feeling}"
+        rf"(?:けれども?|けど)[、,]?(?P<second>{feeling})", raw)
+    source = _body_inverse_typed_source_fragment(nucleus, raw)
+    if (match is None or not source or source != match['second']
+        or {c for c in codes if c.startswith("source_fragment_scalar_range:")}
+            != {f"source_fragment_scalar_range:{match.start('second')}:{match.end('second')}"}
+        or not source.endswith("かった")
+        or re.search(r"くない|くなかった|寂|さび|悲|苦|つら|辛|怖|こわ|不安", source)):
+        return ""
+    return source
+
+
+def _body_inverse_negative_feeling_sequences(body, witness, line, planned_line, plan, resolver):
+    """Read exact negative episodes from body bytes, without an author oracle."""
+    binding = planned_line.binding
+    index = {n.nucleus_id: n for n in plan.nuclei}
+    relations, nuclei = set(), set()
+    rows = tuple(_body_inverse_visible_text(body, row) for row in witness.sentences
+        if row.section == "observation" and row.section_line_ordinal == line.section_ordinal)
+    if "scope_hedge" in binding.functional_atom_ids and planned_line.surface_function != "render_limited_scope":
+        prefix = "今の入力だけを見ると、"
+        if not rows or not rows[0].startswith(prefix):
+            return frozenset(), frozenset()
+        rows = (rows[0][len(prefix):], *rows[1:])
+    for relation in plan.relations:
+        if relation.relation_id not in binding.relation_ids:
+            continue
+        action, feeling = (index[nid] for nid in (relation.from_nucleus_id, relation.to_nucleus_id))
+        codes = set(feeling.semantic_frame.attribute_codes)
+        if (relation.type != "action_supports_change"
+            or relation.source_relation_ids != ("typed_projection:perfective_action_before_bounded_change",)
+            or relation.grounding_kind != "user_stated_relation" or relation.retention != "required"
+            or relation.relation_id not in plan.coverage_requirements.required_relation_ids
+            or not {"semantic_role:source_proven_negative_feeling_sequence", "operator:negation"} <= codes
+            or "operator:positive_change" in codes or feeling.semantic_frame.polarity != "negative"
+            or feeling.kind != "change" or feeling.semantic_frame.predicate_kind != "change"
+            or feeling.semantic_frame.modality not in {"fact", "feeling"}
+            or not _body_inverse_action_is_performed(action)
+            or action.source_span_ids != feeling.source_span_ids
+            or any(n.retention != "required" or n.grounding_kind != "explicit"
+                or n.allowed_claim_scope != "explicit_current_input" or n.source_fields != ("memo",)
+                or len(n.source_span_ids) != 1 or n.semantic_frame.actor != "current_user"
+                or n.semantic_frame.time_scope != "past"
+                or any(c.startswith("thread_time:") for c in n.semantic_frame.attribute_codes)
+                for n in (action, feeling))):
+            continue
+        span = resolver.resolve(action.source_span_ids[0])
+        raw = str(span.raw_text or "").strip(" \u3000、,。．.")
+        left, right = (_body_inverse_typed_source_fragment(n, raw) for n in (action, feeling))
+        if (span.source_field != "memo" or not left or not right or left == right
+            or not raw.startswith(left) or not raw.endswith(right)
+            or re.search(r'[「」『』“”‘’"?？!！;；…‥\r\n]', raw)
+            or re.fullmatch(r"(?:(?:私|僕|ぼく|俺|おれ|わたし|自分)は(?:[、，][ \u3000]*)?)?"
+                r"(?:安心し(?:なかった(?:です)?|ませんでした)|落ち着(?:かなかった(?:です)?|きませんでした)|"
+                r"(?:嬉し|うれし)く(?:なかった(?:です)?|ありませんでした))", right) is None):
+            continue
+        connector = raw[len(left):-len(right)]
+        if not ((left.endswith(("た", "だ")) and re.fullmatch(r"(?:後|あと)(?:に)?[、,]\s*", connector))
+                or (left.endswith(("て", "で")) and re.fullmatch(r"から[、,]\s*", connector))):
+            continue
+        matches = []
+        for visible in rows:
+            parsed = re.fullmatch(r"「([^「」]+)」((?:後|あと)(?:に)?[、,]\s*|から[、,]\s*)"
+                r"「([^「」]+)」とあります。", visible)
+            if parsed is not None and parsed.groups() == (left, connector, right):
+                matches.append(visible)
+        if len(matches) != 1:
+            continue
+        relations.add(relation.relation_id)
+        nuclei.update((action.nucleus_id, feeling.nucleus_id))
+    return frozenset(relations), frozenset(nuclei)
+
+
+def _body_inverse_limited_change_feeling(body, witness, line, planned_line, plan, resolver):
+    """Recover a past episode from finite clauses, independently of its author.
+
+    Only the three completely restored nuclei receive quote-free credit. The
+    remaining source duties still need their own visible, typed anchors.
+    """
+    binding = planned_line.binding
+    if (binding.line_role != "limited_scope"
+        or planned_line.surface_function != "render_limited_scope"
+        or len(binding.relation_ids) != 2 or "scope_hedge" in binding.functional_atom_ids):
+        return (), frozenset(), frozenset()
+    relations = {r.relation_id: r for r in plan.relations}
+    contrast, support = (relations.get(rid) for rid in binding.relation_ids)
+    if (contrast is None or support is None
+        or (contrast.type, support.type) != ("contrast", "action_supports_change")
+        or contrast.from_nucleus_id != support.to_nucleus_id
+        or len({support.from_nucleus_id, support.to_nucleus_id, contrast.to_nucleus_id}) != 3
+        or any(r.grounding_kind != "user_stated_relation" for r in (contrast, support))):
+        return (), frozenset(), frozenset()
+    index = {n.nucleus_id: n for n in plan.nuclei}
+    nuclei = tuple(index.get(nid) for nid in
+        (support.from_nucleus_id, support.to_nucleus_id, contrast.to_nucleus_id))
+    if any(n is None for n in nuclei):
+        return (), frozenset(), frozenset()
+    action, change, burden = nuclei
+    if (not _body_inverse_action_is_performed(action)
+        or action.semantic_frame.time_scope != "past"
+        or change.kind != "change" or change.semantic_frame.time_scope != "past"
+        or change.semantic_frame.polarity != "positive"
+        or change.semantic_frame.modality not in {"fact", "feeling"}
+        or burden.kind not in {"reaction", "state"}
+        or _body_inverse_action_is_performed(burden) or _body_inverse_action_is_future_intention(burden)
+        or action.source_span_ids != change.source_span_ids
+        or any(n.grounding_kind != "explicit" or n.retention != "required"
+            or n.allowed_claim_scope != "explicit_current_input"
+            or n.source_fields != ("memo",) or len(n.source_span_ids) != 1
+            or n.semantic_frame.actor != "current_user"
+            or any(c.startswith("thread_time:") for c in n.semantic_frame.attribute_codes)
+            for n in nuclei)):
+        return (), frozenset(), frozenset()
+    rows = tuple(row for row in witness.sentences if row.section == "observation"
+                 and row.section_line_ordinal == line.section_ordinal)
+    if len(rows) < 2:
+        return (), frozenset(), frozenset()
+    first, second = (_body_inverse_visible_text(body, row) for row in rows[:2])
+    parsed = re.fullmatch(r"(?P<action>[^。]+[ただ])(?P<link>ら[、,]?)"
+        r"(?P<feeling>[^、,。]+かった)のは、(?P<experience>[^、,。]+(?:く|に)なった)ことなのですね。", first)
+    remaining = re.fullmatch(r"一方で、(?P<event>[^、,。]+)なって、"
+        r"(?P<absence>[^、,。]+ない)という(?P<feeling>[^、,。]+さ)も残っているのですね。", second)
+    if parsed is None or remaining is None:
+        return (), frozenset(), frozenset()
+    visible_sources = (parsed['action'], parsed['experience'][:-1] + "て" + parsed['feeling'],
+                       remaining['event'] + "なり、" + remaining['absence'] + remaining['feeling'] + "も残っている")
+    sources = tuple(_body_inverse_nucleus_source_values(n.nucleus_id, plan, resolver) for n in nuclei)
+    if (any(len(values) != 1 for values in sources)
+        or tuple(_body_inverse_normalized_anchor(value) for value in visible_sources)
+            != tuple(values[0] for values in sources)
+        or any(a in b for i, (a,) in enumerate(sources) for j, (b,) in enumerate(sources) if i != j)
+        or any(re.search(r'[「」『』“”‘’"?？!！;；…‥\s]', value) for value in visible_sources)):
+        return (), frozenset(), frozenset()
+    original = str(resolver.resolve(action.source_span_ids[0]).raw_text or "").strip(" \u3000、,。．.")
+    if parsed['action'] + parsed['link'] + visible_sources[1] != original:
+        return (), frozenset(), frozenset()
+    from emlis_ai_grounded_observation_plan import _FEELING_RE, _POSITIVE_CHANGE_RE, _direct_finite_carrier_shape
+    feeling = re.sub(r"^(?:少し(?:だけ)?|とても|本当に)", "", parsed['feeling'])
+    operator = _FEELING_RE.match(feeling)
+    if (operator is None or _POSITIVE_CHANGE_RE.match(feeling) is None
+        or _FEELING_RE.match(remaining['feeling']) is None
+        or not _direct_finite_carrier_shape(feeling[operator.end():],
+            operator_surface=operator.group(), operator_pattern=_FEELING_RE)):
+        return (), frozenset(), frozenset()
+    # The first two sentences are the whole relation realization. No unknown
+    # prose can be smuggled into the remaining independent material sentences.
+    extras = tuple(nid for nid in binding.nucleus_ids if nid not in {n.nucleus_id for n in nuclei})
+    if len(rows) - 2 != len(extras):
+        return (), frozenset(), frozenset()
+    tail_quotes = []
+    for row, nid in zip(rows[2:], extras):
+        tail = _body_inverse_visible_text(body, row)
+        matched = re.fullmatch(r'(?:あわせて|また)、「([^「」]+)」(.*?)も今の状態として見えます。', tail)
+        nucleus = index[nid]
+        if _body_inverse_action_is_future_intention(nucleus):
+            qualifier = ("という、まだ定めていないこれからの行動"
+                         if nucleus.semantic_frame.modality == "uncertain" else "という、これからの行動")
+        elif _body_inverse_action_is_performed(nucleus):
+            qualifier = "という行動"
+        elif nucleus.kind == "event" and "semantic_role:present_unfinished" in nucleus.semantic_frame.attribute_codes:
+            qualifier = ""
+        else:
+            return (), frozenset(), frozenset()
+        if matched is None or matched[2] != qualifier:
+            return (), frozenset(), frozenset()
+        tail_quotes.append(_body_inverse_normalized_anchor(matched[1]))
+    expected_extras = tuple(value for nid in extras for value in _body_inverse_nucleus_source_values(nid, plan, resolver))
+    if tuple(tail_quotes) != expected_extras:
+        return (), frozenset(), frozenset()
+    return tuple(values[0] for values in sources), frozenset(binding.relation_ids), frozenset(n.nucleus_id for n in nuclei)
+
+
+def _body_inverse_observation_change_reference(
+    body, witness, line, planned_line, plan, resolver,
+):
+    """Resolve an anaphoric change from adjacent observation bytes alone.
+
+    Neither the author, its eligibility helper, nor forward surface bindings
+    are consulted. A named, complete change and feeling must form the first
+    contrast; the next sentence owes the original action and that same change.
+    """
+    visible = _body_inverse_visible_text(body, line)
+    exterior = re.sub(r"「[^「」]*」|『[^『』]*』", "", visible)
+    if "その変化" not in exterior:
+        return frozenset(), ()
+    failure = ("body_inverse_observation_change_reference_unbound",)
+    binding = planned_line.binding
+    relations = {r.relation_id: r for r in plan.relations}
+    if len(binding.relation_ids) != 2 or "scope_hedge" in binding.functional_atom_ids:
+        return frozenset(), failure
+    contrast, support = (relations.get(rid) for rid in binding.relation_ids)
+    if (contrast is None or support is None
+        or contrast.type != "contrast" or support.type != "action_supports_change"
+        or contrast.from_nucleus_id != support.to_nucleus_id
+        or len({support.from_nucleus_id, support.to_nucleus_id, contrast.to_nucleus_id}) != 3
+        or any(r.grounding_kind != "user_stated_relation" for r in (contrast, support))):
+        return frozenset(), failure
+    index = {n.nucleus_id: n for n in plan.nuclei}
+    nuclei = tuple(index.get(nid) for nid in
+        (support.from_nucleus_id, support.to_nucleus_id, contrast.to_nucleus_id))
+    if any(n is None for n in nuclei):
+        return frozenset(), failure
+    action, change, feeling = nuclei
+    if (not _body_inverse_action_is_performed(action)
+        or action.semantic_frame.time_scope != "past"
+        or change.kind != "change" or change.semantic_frame.time_scope != "past"
+        or change.semantic_frame.modality not in {"fact", "feeling"}
+        or feeling.kind not in {"reaction", "state"}
+        or _body_inverse_action_is_performed(feeling) or _body_inverse_action_is_future_intention(feeling)
+        or action.source_span_ids != change.source_span_ids
+        or any(n.grounding_kind != "explicit" or n.source_fields != ("memo",)
+            or len(n.source_span_ids) != 1 or n.semantic_frame.actor != "current_user"
+            or any(c.startswith("thread_time:") for c in n.semantic_frame.attribute_codes)
+            for n in nuclei)):
+        return frozenset(), failure
+    sources = tuple(_body_inverse_nucleus_source_values(n.nucleus_id, plan, resolver) for n in nuclei)
+    if (any(len(values) != 1 for values in sources)
+        or any(re.search(r"[「」『』“”‘’\"?？!！;；…‥\n]",
+                         str(resolver.resolve(n.source_span_ids[0]).raw_text or "")) for n in nuclei)):
+        return frozenset(), failure
+    action_source, change_source, feeling_source = (values[0] for values in sources)
+    if any(a in b for i, (a,) in enumerate(sources) for j, (b,) in enumerate(sources) if i != j):
+        return frozenset(), failure
+    sentences = tuple(row for row in witness.sentences if row.section == "observation"
+        and row.section_line_ordinal == line.section_ordinal)
+    if len(sentences) < 2:
+        return frozenset(), failure
+    first, second = (_body_inverse_visible_text(body, row) for row in sentences[:2])
+    if planned_line.surface_function == "render_limited_scope":
+        before = re.fullmatch(r"今の入力では、「([^「」]+)」という変化と「([^「」]+)」"
+                              r"の異なる向きが確認できます。", first)
+        after = re.fullmatch(r"また、「([^「」]+)」という行動からその変化へのつながりも確認できます。", second)
+    else:
+        before = re.fullmatch(r"「([^「」]+)」という変化と「([^「」]+)」"
+                              r"が、異なる向きのまま同時にあります。", first)
+        after = re.fullmatch(r"「([^「」]+)」という行動からその変化へつながっています。", second)
+    if (not before or not after
+        or tuple(map(_body_inverse_normalized_anchor, before.groups())) != (change_source, feeling_source)
+        or _body_inverse_normalized_anchor(after.group(1)) != action_source
+        or exterior.count("その変化") != 1):
+        return frozenset(), failure
+    return frozenset((support.relation_id,)), ()
+
+
+def _body_inverse_adjacent_action_context(
+    body, parsed_sentence, previous_sentence, clause, previous_clause,
+    move, reception_plan, plan, resolver,
+) -> bool:
+    """Read the two actual sentences without invoking the author/reuse rule.
+
+    A coordination marker cannot replace arbitrary missing context. Its
+    immediately preceding sentence must visibly contain the same complete
+    action/background and primary source, assigned to the reciprocal Moves.
+    """
+    if (clause.move_ids != (move.move_id,)
+        or move.reference_mode != "anaphoric_first" or not move.required
+        or move.move_role != "felt_response" or move.reception_act != "honor_concrete_effort"
+        or len(move.target_nucleus_ids) != 1 or len(move.support_nucleus_ids) != 1):
+        return False
+    index = reception_plan.moves.index(move)
+    if index == 0:
+        return False
+    previous = reception_plan.moves[index - 1]
+    if (previous_clause.move_ids != (previous.move_id,) or not previous.required
+        or previous.reference_mode != "short_anchor_if_ambiguous"
+        or previous.target_nucleus_ids != move.support_nucleus_ids
+        or previous.support_nucleus_ids != move.target_nucleus_ids
+        or set(move.target_nucleus_ids) & set(move.support_nucleus_ids)):
+        return False
+    nuclei = {n.nucleus_id: n for n in plan.nuclei}
+    action = nuclei[move.target_nucleus_ids[0]]
+    context = nuclei[move.support_nucleus_ids[0]]
+    pair_ids = {action.nucleus_id, context.nucleus_id}
+    if (action.kind != "action" or action.semantic_frame.modality != "fact"
+        or not _body_inverse_action_is_performed(action)
+        or any(n.semantic_frame.actor != "current_user" or n.retention != "required"
+               or n.source_fields not in {("memo",), ("memo_action",)}
+               for n in (action, context))
+        or set(action.source_span_ids) & set(context.source_span_ids)
+        or any(r.relation_id in plan.coverage_requirements.required_relation_ids
+               and pair_ids.intersection((r.from_nucleus_id, r.to_nucleus_id))
+               for r in plan.relations)
+        or any(re.search(r"[「」『』]", span.raw_text)
+               for span in resolver.resolve_many(resolver.span_ids)
+               if span.source_field in {*action.source_fields, *context.source_fields})):
+        return False
+    action_text = final_reception_source_anchor_text(action.nucleus_id, nuclei, resolver)
+    context_text = final_reception_source_anchor_text(context.nucleus_id, nuclei, resolver)
+    if (not action_text or not context_text or not action_text.endswith("た")
+        or action_text == context_text):
+        return False
+    before = body[previous_sentence.utf8_byte_start:previous_sentence.utf8_byte_end].decode("utf-8")
+    current = body[parsed_sentence.utf8_byte_start:parsed_sentence.utf8_byte_end].decode("utf-8")
+    # Bound the affirmative present reception as well as the deictic object.
+    # The original action's actor/time/negation are in the exact preceding
+    # prefix; dropping or altering either source cannot discharge this duty.
+    return bool(before.startswith(action_text + "ことを背景に、")
+        and before.count(action_text) == before.count(context_text) == 1
+        and current == "また、その行動を大切に思っています。")
+
+
+def _body_inverse_attributive_support_attention(raw, relation, move, plan, resolver):
+    """Read the actual support clause, not the author's candidate or replay.
+
+    Both ordered endpoints are resolved from their own source evidence. The
+    support remains progressive, while each source keeps its own time and
+    subjectivity. A causal, reversed, quoted or truncated substitute is not
+    this object's affirmative attention/reception.
+    """
+    index = {n.nucleus_id: n for n in plan.nuclei}
+    if (relation.type != "action_supports_change"
+        or move.reception_act != "honor_concrete_effort"
+        or move.target_nucleus_ids != (relation.from_nucleus_id,)
+        or move.support_nucleus_ids != (relation.to_nucleus_id,)
+        or move.reference_mode == "anaphoric_first"):
+        return False
+    action, change = index[relation.from_nucleus_id], index[relation.to_nucleus_id]
+    if (action.kind != "action" or change.kind != "change"
+        or not _body_inverse_action_is_performed(action)
+        or action.semantic_frame.modality != "fact"
+        or change.semantic_frame.modality not in {"fact", "feeling"}
+        or any(n.semantic_frame.actor != "current_user" or n.grounding_kind != "explicit"
+               or len(n.source_span_ids) != 1 for n in (action, change))):
+        return False
+    fragments = []
+    for nucleus in (action, change):
+        source = str(resolver.resolve(nucleus.source_span_ids[0]).raw_text or "")
+        typed = _body_inverse_typed_source_fragment(nucleus, source)
+        if typed == "":
+            return False
+        fragment = (typed if typed is not None else source).strip(" \u3000、,。．.")
+        if not fragment or re.search(r'[「」『』“”‘’"?？!！。;；…‥]', fragment):
+            return False
+        fragments.append(fragment)
+    return re.fullmatch(
+        re.escape(fragments[0] + "ことが支えている、" + fragments[1] + "という変化")
+        + r"(?:を見過ごさず、|に目が留まり、それを)大切に思っています。", raw) is not None
+
+
+def _body_inverse_preceding_change_context(
+    body, previous_sentence, previous_clause, current_sentence,
+    move, reception_plan, plan, resolver,
+):
+    """Prove a discourse antecedent from the preceding actual sentence.
+
+    This parser does not call the author or accept an anchor elsewhere in
+    the body. Both complete source objects, their direction and reception
+    must occupy the adjacent, single-Move past action/change clause.
+    """
+    if (previous_sentence is None or previous_clause is None
+        or len(previous_clause.move_ids) != 1
+        or previous_sentence.utf8_byte_end != current_sentence.utf8_byte_start
+        or move.move_role != "attention" or move.reception_act != "stay_with_current_burden"
+        or len(move.target_nucleus_ids) != 1 or move.support_nucleus_ids):
+        return False
+    index = {n.nucleus_id: n for n in plan.nuclei}
+    target = index[move.target_nucleus_ids[0]]
+    contexts = _body_inverse_reception_context_ids(move, plan)
+    prior = next((m for m in reception_plan.moves if m.move_id == previous_clause.move_ids[0]), None)
+    if (target.semantic_frame.time_scope != "continuing" or len(contexts) != 1
+        or prior is None or prior.move_role != "attention"
+        or prior.reception_act != "honor_concrete_effort" or not prior.required
+        or len(prior.target_nucleus_ids) != 1 or prior.support_nucleus_ids != contexts):
+        return False
+    action, change = index[prior.target_nucleus_ids[0]], index[contexts[0]]
+    if (action.kind != "action" or change.kind != "change"
+        or action.semantic_frame.time_scope != "past"
+        or not _body_inverse_action_is_performed(action)
+        or len(action.source_span_ids) != 1 or action.source_span_ids != change.source_span_ids
+        or any(n.semantic_frame.actor != "current_user" or n.grounding_kind != "explicit"
+               or n.source_fields not in {("memo",), ("memo_action",)}
+               for n in (action, change, target))):
+        return False
+    supports = [r for r in plan.relations if r.type == "action_supports_change"
+        and (r.from_nucleus_id, r.to_nucleus_id) == (action.nucleus_id, change.nucleus_id)]
+    contrasts = [r for r in plan.relations if r.type == "contrast"
+        and (r.from_nucleus_id, r.to_nucleus_id) == (change.nucleus_id, target.nucleus_id)]
+    if len(supports) != 1 or len(contrasts) != 1:
+        return False
+    fragments = []
+    for nucleus in (action, change):
+        source = str(resolver.resolve(nucleus.source_span_ids[0]).raw_text or "")
+        typed = _body_inverse_typed_source_fragment(nucleus, source)
+        if typed == "":
+            return False
+        fragment = (typed if typed is not None else source).strip(" \u3000、,。．.")
+        if not fragment or re.search(r'[「」『』“”‘’"?？!！。;；…‥]', fragment):
+            return False
+        fragments.append(fragment)
+    expected = (fragments[0] + "ことが支えている、" + fragments[1]
+        + "という変化を見過ごさず、大切に思っています。")
+    actual = body[previous_sentence.utf8_byte_start:previous_sentence.utf8_byte_end].decode("utf-8")
+    return (actual == expected
+            or _read_action_change_discourse(actual, prior, plan, resolver, None) is not None)
+
+
+def _body_inverse_finite_contrast_attention(
+    raw, relation, move, plan, resolver, referent, *, preceding_change_proven=False,
+):
+    """Read the full ordered contrast and its reception without author replay."""
+    if move.target_nucleus_ids != (relation.to_nucleus_id,):
+        return False
+    index = {n.nucleus_id: n for n in plan.nuclei}
+    left, right = index[relation.from_nucleus_id], index[relation.to_nucleus_id]
+    if len(left.source_span_ids) != 1 or right.semantic_frame.time_scope not in {"current_input", "continuing"}:
+        return False
+    aspect = tuple(c.split(":", 1)[1] for c in right.semantic_frame.attribute_codes if c.startswith("aspect:"))
+    if any(a not in {"unknown", "not_applicable"} for a in aspect):
+        return False
+    source = str(resolver.resolve(left.source_span_ids[0]).raw_text or "")
+    typed = _body_inverse_typed_source_fragment(left, source)
+    if typed == "":
+        return False
+    source = (typed if typed is not None else source).strip(" \u3000、,。．.")
+    if (not source or not referent or not referent.endswith("こと")
+        or not re.search(r"(?:かった|[てで]いる|[てで]いた|た|ある|ない)$", source)
+        or re.search(r"[「」『』“”‘’\"?？!！。;；…‥]", source)):
+        return False
+    target = referent[:-2]
+    prefix = ""
+    if right.semantic_frame.time_scope == "continuing":
+        final = re.split(r"[、,]", target)[-1]
+        ongoing = bool(re.search(r"(?:て|で)(?:い|お)(?:る|ます|た|ました)$", target))
+        sustained = bool(final.startswith("ずっと")
+            and not re.search(r"[「」『』“”‘’\"()（）\[\]【】?？!！。．.;；…‥]", target)
+            and not re.search(r"(?:より|比べ|比較)", target)
+            and not re.match(r"ずっと(?:前|後|先|昔|未来|以前|以後|遠|近|多|少|高|低)", final)
+            and not re.search(r"(?:と|って)[^、,]*(?:聞|聴|言|話|語|述べ|書|記録|思|考|感じ|判断|伝|教)", final)
+            and re.search(r"(?:ない|ある|いる|なる|する|[うくぐすつぬぶむるい])$", final))
+        if "今" not in target and not ongoing and not sustained:
+            prefix = "今も、"
+    connector = ("その一方で、" if preceding_change_proven
+                 and right.semantic_frame.time_scope == "continuing" else source + "一方で、")
+    expected = connector + prefix + referent + "を見過ごさず、小さくせずに受け止めています。"
+    return raw == expected
+
+
+def _body_inverse_anchor_matches(left: str, right: str) -> bool:
+    if not left or not right:
+        return False
+    return left in right or right in left
+
+
+def _body_inverse_quote_text(body: bytes, row: Any) -> str:
+    return body[row.utf8_byte_start : row.utf8_byte_end].decode(
+        "utf-8", errors="strict"
+    )
+
+
+def _body_inverse_visible_text(body: bytes, row: Any) -> str:
+    return body[row.utf8_byte_start : row.utf8_byte_end].decode(
+        "utf-8", errors="strict"
+    )
+
+
+def _body_inverse_current_negative_relief_material(move, plan, resolver, selected, decision):
+    """Keep the whole three-object appraisal while reading its local pair.
+
+    The current answer and the original contrast are separate contributions to
+    one already-selected MATERIAL_WEIGHT appraisal. Neither may be dropped or
+    promoted to the retired dedicated pair-retention content.
+    """
+    from cocolon_meaning_experience_engine.contracts import EmlisAppraisalContent
+    from emlis_ai_grounded_human_reception import source_grounded_current_negative_relief_reference
+    reception = plan.response_plan.human_reception_plan
+    if not source_grounded_current_negative_relief_reference(reception, move, plan, resolver):
+        return False
+    first = reception.moves[0]
+    if len(selected.decisions) != 2:
+        return False
+    answer_decisions = tuple(d for d in selected.decisions if d.move_id == first.move_id)
+    if len(answer_decisions) != 1:
+        return False
+    other = answer_decisions[0]
+    proposition = decision.subjective_proposition
+    appraisal = proposition.appraisal_content
+    if (decision.branch != 'LIMITED' or other.branch != 'LIMITED'
+        or decision.reception_act != move.reception_act or other.reception_act != first.reception_act
+        or other.target_nucleus_ids != first.target_nucleus_ids or other.support_nucleus_ids
+        or type(appraisal) is not EmlisAppraisalContent
+        or (proposition.content_kind, proposition.subjective_mode, proposition.subjective_operator)
+            != ('APPRAISAL', 'ATTENTION', 'ATTEND_TO')
+        or (appraisal.dimension, appraisal.operation) != ('MATERIAL_WEIGHT', 'RECEIVE_AS_MATERIAL')
+        or proposition.focal_relation_ref is not None or appraisal.focal_relation_ref is not None
+        or proposition.boundary_target_refs or appraisal.protected_bindings
+        or any(getattr(other, field) != getattr(decision, field) for field in
+               ('meaning_outcome_ref', 'reception_binding_ref', 'projected_claim_ref', 'selected_opportunity_ref'))
+        or other.subjective_proposition != proposition
+        or other.basis_rows != decision.basis_rows or other.qualifier_rows != decision.qualifier_rows
+        or len(decision.selected_contribution_refs) != 1 or len(other.selected_contribution_refs) != 1
+        or decision.selected_contribution_refs == other.selected_contribution_refs):
+        return False
+    mappings = dict(selected.semantic_nucleus_pairs)
+    ids = (*move.target_nucleus_ids, *move.support_nucleus_ids, *first.target_nucleus_ids)
+    if (len(set(ids)) != 3 or len(proposition.primary_target_refs) != 3
+        or proposition.primary_target_refs != proposition.response_object_refs
+        or tuple(mappings.get(ref) for ref in proposition.primary_target_refs) != ids
+        or len(decision.basis_rows) != 3 or len(decision.qualifier_rows) != 3
+        or tuple(row.binding_ref for row in decision.basis_rows) != proposition.basis_binding_refs
+        or appraisal.appraised_bindings != proposition.basis_binding_refs
+        or tuple(q.source_qualifier_binding_ref for q in decision.qualifier_rows)
+            != proposition.source_qualifier_binding_refs
+        or proposition.target_contribution_refs != (*decision.selected_contribution_refs,
+                                                     *other.selected_contribution_refs)
+        or appraisal.basis_contribution_refs != proposition.target_contribution_refs):
+        return False
+    index = {n.nucleus_id: n for n in plan.nuclei}
+    for i, (row, qualifier, nid, role, argument) in enumerate(zip(
+            decision.basis_rows, decision.qualifier_rows, ids,
+            ('RELATION_LEFT', 'RELATION_RIGHT', 'APPRAISED_OBJECT'), ('LEFT', 'RIGHT', None))):
+        frame = index[nid].semantic_frame
+        prefix = (argument.lower() + '_') if argument else ''
+        codes = (f'{prefix}polarity:{frame.polarity}', f'{prefix}modality:{frame.modality}',
+                 f'{prefix}time_scope:{frame.time_scope}')
+        contribution = (decision if i < 2 else other).selected_contribution_refs[0]
+        if (row.role != role or mappings.get(row.semantic_ref) != nid
+            or row.contribution_ref != contribution or qualifier.basis_binding_ref != row.binding_ref
+            or row.projection_preimage_ref != selected.projection_preimage_ref
+            or qualifier.projection_preimage_ref != selected.projection_preimage_ref
+            or qualifier.source_argument_role != argument
+            or qualifier.canonical_qualifier_codes != codes
+            or (qualifier.polarity, qualifier.modality, qualifier.time_scope)
+                != (frame.polarity, frame.modality, frame.time_scope)):
+            return False
+    return bool(decision.qualifier_rows[0].source_candidate_ref
+                == decision.qualifier_rows[1].source_candidate_ref
+                != decision.qualifier_rows[2].source_candidate_ref)
+
+
+def _body_inverse_past_cognitive_feeling_contrast_forms(
+    move: Any, plan: GroundedObservationPlan, resolver: EvidenceSpanResolver,
+    selected: SelectedSubjectiveReceptionInputV1 | None,
+) -> tuple[str, ...] | None:
+    """Read a selected whole-source contrast without replaying its author."""
+    from emlis_ai_grounded_observation_plan import (
+        _source_cognitive_feeling_parts, _source_nominal_past_feeling_is_bound,
+        _is_pure_relation_marker, _CONTRAST_RE,
+    )
+    if (selected is None
+        or getattr(resolver, "source_contract", None) != "cocolon.cmee.emlis_thread.v1"
+        or move.reception_act != "recognize_lived_change"
+        or move.move_role != "felt_response" or not move.required
+        or len(move.target_nucleus_ids) != 1 or len(move.support_nucleus_ids) != 1):
+        return None
+    index = {n.nucleus_id: n for n in plan.nuclei}
+    left, right = index[move.target_nucleus_ids[0]], index[move.support_nucleus_ids[0]]
+    nuclei = (left, right)
+    if any(n.source_fields != ("memo",) or n.retention != "required"
+           or n.grounding_kind != "explicit" or n.allowed_claim_scope != "explicit_current_input"
+           or len(n.source_span_ids) != 1 or n.surface_anchor_ids != n.source_span_ids
+           or n.kind != "reaction" or n.semantic_frame.predicate_kind != "feeling"
+           or n.semantic_frame.modality != "feeling" or n.semantic_frame.actor != "current_user"
+           or any(code.startswith(("source_fragment_", "surface_scalar_", "thread_time:"))
+                  for code in n.semantic_frame.attribute_codes) for n in nuclei):
+        return None
+    if ((left.semantic_frame.polarity, left.semantic_frame.time_scope) != ("positive", "past")
+        or right.semantic_frame.polarity != "negative"
+        or right.semantic_frame.time_scope not in {"current_input", "present"}
+        or "lexical:source_nominal_past_feeling" not in left.semantic_frame.attribute_codes
+        or "lexical:source_cognitive_feeling" not in right.semantic_frame.attribute_codes):
+        return None
+    spans = tuple(resolver.resolve(n.source_span_ids[0]) for n in nuclei)
+    if (any(s.source_field != "memo"
+            or resolver.source_text_for_contiguous_spans((s.span_id,)) != s.raw_text for s in spans)
+        or not spans[0].end_index <= spans[1].start_index):
+        return None
+    texts = tuple(s.raw_text for s in spans)
+    parts = _source_cognitive_feeling_parts(texts[1])
+    if not _source_nominal_past_feeling_is_bound(texts[0]) or parts is None or parts[1] != "negative":
+        return None
+    expected_scopes = {f"source_clause_scope:{role}:{a}:{b}:{scope}" for role, a, b, scope in parts[0]}
+    if {code for code in right.semantic_frame.attribute_codes
+        if code.startswith("source_clause_scope:")} != expected_scopes:
+        return None
+    # The marker must actually join these adjacent whole source objects.
+    ids = {n.nucleus_id for n in nuclei}
+    links = tuple(r for r in plan.relations if r.retention == "required"
+                  and {r.from_nucleus_id, r.to_nucleus_id} & ids)
+    if len(links) != 1:
+        return None
+    relation = links[0]
+    if (relation.type != "contrast" or relation.grounding_kind != "user_stated_relation"
+        or relation.from_nucleus_id != left.nucleus_id or relation.to_nucleus_id != right.nucleus_id
+        or relation.relation_id not in plan.coverage_requirements.required_relation_ids):
+        return None
+    marker_ids = tuple(ref.split(":", 1)[1] for ref in relation.source_relation_ids
+                       if ref.startswith("evidence_relation_marker:"))
+    if len(marker_ids) != 1 or not resolver.contains(marker_ids[0]):
+        return None
+    marker = resolver.resolve(marker_ids[0])
+    if (not _is_pure_relation_marker(marker) or not _CONTRAST_RE.search(marker.raw_text)
+        or marker.source_field != "memo"
+        or not spans[0].end_index <= marker.start_index < marker.end_index <= spans[1].start_index):
+        return None
+    between = tuple(s.span_id for s in resolver.resolve_many(resolver.span_ids)
+                    if s.source_field == "memo"
+                    and spans[0].end_index <= s.start_index and s.end_index <= spans[1].start_index)
+    if (between != marker_ids
+        or not {s.span_id for s in (*spans, marker)} <= set(relation.source_span_ids)
+        or set(move.source_evidence_span_ids) != {s.span_id for s in spans}):
+        return None
+    decisions = tuple(d for d in selected.decisions if d.move_id == move.move_id)
+    if len(decisions) != 1:
+        return None
+    decision = decisions[0]
+    proposition = decision.subjective_proposition
+    appraisal = proposition.appraisal_content
+    if (decision.branch not in {"NORMAL", "LIMITED"}
+        or decision.target_nucleus_ids != move.target_nucleus_ids
+        or decision.support_nucleus_ids != move.support_nucleus_ids or appraisal is None):
+        return None
+    mappings = dict(selected.semantic_nucleus_pairs)
+    material = _body_inverse_current_negative_relief_material(move, plan, resolver, selected, decision)
+    if not material and (
+        (appraisal.dimension, appraisal.operation) != ("RELATIONAL_NONCOLLAPSE", "PRESERVE_BOTH_ENDPOINTS")
+        or not proposition.focal_relation_ref
+        or appraisal.focal_relation_ref != proposition.focal_relation_ref
+        or dict(selected.relation_pairs).get(proposition.focal_relation_ref) != relation.relation_id
+        or {mappings.get(ref) for ref in proposition.primary_target_refs} != ids
+        or {mappings.get(ref) for ref in proposition.response_object_refs} != ids):
+        return None
+    selected_rows = tuple(row for row in decision.basis_rows
+                          if row.contribution_ref in decision.selected_contribution_refs
+                          and row.binding_ref in appraisal.appraised_bindings)
+    pairs = []
+    for role, nucleus in zip(("RELATION_LEFT", "RELATION_RIGHT"), nuclei):
+        rows = tuple(row for row in selected_rows
+                     if row.role == role and mappings.get(row.semantic_ref) == nucleus.nucleus_id)
+        if len(rows) != 1:
+            return None
+        qualifiers = tuple(q for q in decision.qualifier_rows if q.basis_binding_ref == rows[0].binding_ref)
+        if (len(qualifiers) != 1
+            or (qualifiers[0].polarity, qualifiers[0].modality, qualifiers[0].time_scope)
+                != (nucleus.semantic_frame.polarity, "feeling", nucleus.semantic_frame.time_scope)):
+            return None
+        pairs.append(rows[0])
+    if pairs[0].contribution_ref != pairs[1].contribution_ref:
+        return None
+    # Complete finite grammar: neither object, possibility nor tense may shrink.
+    nominal = "ということ" if re.search(r"(?:だ|です)$", texts[1]) else "こと"
+    ending = ("との違いを受け止めています。" if material
+              else "との違いをどちらの側も残したまま、感じています。")
+    return (texts[0] + "という気持ちと" + texts[1] + nominal + ending,)
+
+
+def _body_inverse_reception_context_ids(
+    move: Any,
+    plan: GroundedObservationPlan,
+) -> tuple[str, ...]:
+    if move.support_nucleus_ids:
+        return tuple(move.support_nucleus_ids)
+    target_set = set(move.target_nucleus_ids)
+    preference = {
+        relation_type: index
+        for index, relation_type in enumerate(
+            _BODY_INVERSE_RECEPTION_RELATION_PREFERENCE.get(
+                move.reception_act,
+                (),
+            )
+        )
+    }
+    candidates: list[tuple[int, int, str]] = []
+    relation_index = {row.relation_id: row for row in plan.relations}
+    for order, relation_id in enumerate(
+        plan.coverage_requirements.required_relation_ids
+    ):
+        relation = relation_index.get(relation_id)
+        if relation is None:
+            continue
+        endpoints = (relation.from_nucleus_id, relation.to_nucleus_id)
+        if not target_set.intersection(endpoints):
+            continue
+        other_ids = tuple(item for item in endpoints if item not in target_set)
+        if len(other_ids) != 1:
+            continue
+        candidates.append(
+            (
+                preference.get(relation.type, len(preference) + 1),
+                order,
+                other_ids[0],
+            )
+        )
+    if not candidates:
+        return ()
+    candidates.sort()
+    return (candidates[0][2],)
+
+
+def _body_inverse_thread_contrast_answers(body, witness, line, plan, resolver):
+    """Read complete contrast reports and their optional explicit answer.
+
+    This grammar consumes visible bytes only; it does not replay the renderer.
+    Return proven relation IDs and pure contrast runs for sentence accounting.
+    An ambiguous source identity or a cross-sentence antecedent cannot bind.
+    """
+    matched, failures, contrast_groups = set(), [], []
+    index = {n.nucleus_id: n for n in plan.nuclei}
+    span_order = {sid: pos for pos, sid in enumerate(resolver.span_ids)}
+    event_positions = sorted({min((span_order[sid] for sid in n.source_span_ids), default=-1)
+                              for n in plan.nuclei if n.kind == "event"})
+    pair_grammar = r"「([^「」『』\n]+)」の一方で「([^「」『』\n]+)」"
+    for sentence in witness.sentences:
+        if sentence.section != "observation" or sentence.section_line_ordinal != line.section_ordinal:
+            continue
+        text = _body_inverse_visible_text(body, sentence)
+        chain = re.fullmatch(
+            r"「([^「」『』\n]+)」(のに|けれども?|けど)"
+            r"「([^「」『』\n]+)」(けれども?|けど)"
+            r"「([^「」『』\n]+)」とあります。", text)
+        if chain is not None:
+            event_text, outer, first_text, inner, second_text = chain.groups()
+            nodes = []
+            for slot, value in zip(("event", "first", "second"), (event_text, first_text, second_text)):
+                candidates = tuple(n for n in plan.nuclei
+                    if "semantic_dependency:received_feeling_contrast_chain" in n.semantic_frame.attribute_codes
+                    and "source_received_chain_slot:" + slot in n.semantic_frame.attribute_codes
+                    and n.grounding_kind == "explicit"
+                    and n.source_fields in {("memo",), ("memo_action",)}
+                    and n.semantic_frame.actor == "current_user"
+                    and _body_inverse_nucleus_source_values(n.nucleus_id, plan, resolver)
+                        == (_body_inverse_normalized_anchor(value),))
+                if len(candidates) != 1:
+                    break
+                nodes.append(candidates[0])
+            edges = tuple((a.nucleus_id, b.nucleus_id) for a, b in zip(nodes, nodes[1:]))
+            relations = tuple(r for r in plan.relations if r.type == "contrast"
+                and r.grounding_kind == "user_stated_relation"
+                and (r.from_nucleus_id, r.to_nucleus_id) in edges)
+            ids = tuple(r.relation_id for r in relations)
+            same_source = (len(nodes) == 3 and len({n.nucleus_id for n in nodes}) == 3
+                and len(nodes[0].source_span_ids) == 1
+                and all(n.source_span_ids == nodes[0].source_span_ids for n in nodes))
+            raw = str(resolver.resolve(nodes[0].source_span_ids[0]).raw_text or "") if same_source else ""
+            if (not same_source or len(ids) != 2 or matched.intersection(ids)
+                or {(r.from_nucleus_id, r.to_nucleus_id) for r in relations} != set(edges)
+                or re.fullmatch(r"\s*" + re.escape(event_text) + re.escape(outer)
+                    + r"[、,\s]*" + re.escape(first_text) + re.escape(inner)
+                    + r"[、,\s]*" + re.escape(second_text) + r"[。\s]*", raw) is None):
+                failures.append("body_inverse_contrast_report_source_mismatch")
+            else:
+                matched.update(ids)
+                contrast_groups.append(ids)
+            continue
+        if re.fullmatch(rf"(?:{pair_grammar}、また)*{pair_grammar}とあります。", text):
+            pairs = re.findall(pair_grammar, text)
+            if len(pairs) == 1 and not any((n.kind == "event"
+                    or "source_received_chain_slot:first" in n.semantic_frame.attribute_codes)
+                and _body_inverse_nucleus_source_values(n.nucleus_id, plan, resolver)
+                    == (_body_inverse_normalized_anchor(pairs[0][0]),) for n in plan.nuclei):
+                continue
+            relations = []
+            for event_text, reaction_text in pairs:
+                candidates = tuple(r for r in plan.relations
+                    if r.type == "contrast"
+                    and (index[r.from_nucleus_id].kind == "event"
+                         or "source_received_chain_slot:first" in index[r.from_nucleus_id].semantic_frame.attribute_codes
+                         and "source_received_chain_slot:second" in index[r.to_nucleus_id].semantic_frame.attribute_codes)
+                    and index[r.to_nucleus_id].kind == "reaction"
+                    and index[r.to_nucleus_id].semantic_frame.predicate_kind == "feeling"
+                    and all(index[nid].grounding_kind == "explicit"
+                            and index[nid].source_fields in {("memo",), ("memo_action",)}
+                            for nid in (r.from_nucleus_id, r.to_nucleus_id))
+                    and not any(a.type == "evaluation_about_event" and a.from_nucleus_id == r.from_nucleus_id
+                                for a in plan.relations)
+                    and _body_inverse_nucleus_source_values(r.from_nucleus_id, plan, resolver)
+                        == (_body_inverse_normalized_anchor(event_text),)
+                    and _body_inverse_nucleus_source_values(r.to_nucleus_id, plan, resolver)
+                        == (_body_inverse_normalized_anchor(reaction_text),))
+                if len(candidates) != 1:
+                    break
+                relations.append(candidates[0])
+            ids = tuple(r.relation_id for r in relations)
+            positions = [min((span_order[sid] for sid in index[r.from_nucleus_id].source_span_ids), default=-1)
+                         for r in relations]
+            slots = ([0] if len(relations) == 1 and index[relations[0].from_nucleus_id].kind == "reaction"
+                     else [event_positions.index(pos) for pos in positions if pos in event_positions])
+            if (len(ids) != len(pairs) or len(set(ids)) != len(ids) or matched.intersection(ids)
+                or len(slots) != len(ids) or not slots or slots != list(range(slots[0], slots[0] + len(slots)))):
+                failures.append("body_inverse_contrast_report_source_mismatch")
+            else:
+                matched.update(ids)
+                contrast_groups.append(ids)
+            continue
+        connective_text = re.sub(r"「[^「」]*」|『[^『』]*』", "", text)
+        if not any(marker in connective_text for marker in ("その出来事に対する", "その出来事について、", "のに、")):
+            continue
+        parsed = re.fullmatch(
+            r"「([^「」『』\n]+)」一方で「([^「」『』\n]+)」とあり、"
+            r"その出来事について、(その時|回答した時点|先の回答時点)の受け止めは"
+            r"「([^「」『』\n]+)」と書かれています。", text)
+        if parsed is None:
+            parsed = re.fullmatch(
+                r"「([^「」『』\n]+)」という出来事の一方で「([^「」『』\n]+)」という反応があり、"
+                r"その出来事に対する(その時|回答した時点|先の回答時点)の受け止めとして、"
+                r"「([^「」『』\n]+)」が見えます。", text)
+        if parsed is None:
+            parsed = re.fullmatch(
+                r"「([^「」『』\n]+)」のに「([^「」『』\n]+)」、"
+                r"(その時は|回答した時点では|先の回答時点では)"
+                r"「([^「」『』\n]+)」とあります。", text)
+        if parsed is None:
+            failures.append("body_inverse_answer_antecedent_invalid")
+            continue
+        event_text, reaction_text, when, answer_text = parsed.groups()
+        when = when.removesuffix("では").removesuffix("は")
+        # Bind the complete event/reaction/answer relation, not three
+        # independently unique words. Repeated event names retain their IDs.
+        triples = tuple((contrast.from_nucleus_id, contrast.to_nucleus_id, about.to_nucleus_id)
+            for contrast in plan.relations if contrast.type == "contrast"
+            and _body_inverse_normalized_anchor(event_text) in _body_inverse_nucleus_source_values(
+                contrast.from_nucleus_id, plan, resolver)
+            and _body_inverse_normalized_anchor(reaction_text) in _body_inverse_nucleus_source_values(
+                contrast.to_nucleus_id, plan, resolver)
+            for about in plan.relations if about.type == "evaluation_about_event"
+            and about.from_nucleus_id == contrast.from_nucleus_id
+            and _body_inverse_normalized_anchor(answer_text) in _body_inverse_nucleus_source_values(
+                about.to_nucleus_id, plan, resolver))
+        if len(triples) != 1 or len(set(triples[0])) != 3:
+            failures.append("body_inverse_answer_antecedent_ambiguous")
+            continue
+        ids = triples[0]
+        index = {n.nucleus_id: n for n in plan.nuclei}
+        event, reaction, answer = (index[i] for i in ids)
+        contrasts = tuple(r for r in plan.relations if r.type == "contrast"
+                          and r.from_nucleus_id == event.nucleus_id)
+        about = tuple(r for r in plan.relations if r.type == "evaluation_about_event"
+                      and r.from_nucleus_id == event.nucleus_id)
+        expected_time = {"その時": "original_occasion", "回答した時点": "answer_time",
+                         "先の回答時点": "prior_answer_time"}[when]
+        times = {c.split(":", 1)[1] for c in answer.semantic_frame.attribute_codes
+                 if c.startswith("thread_time:")}
+        if (event.kind == "event" and reaction.kind == "reaction"
+                and event.source_fields in {("memo",), ("memo_action",)}
+                and reaction.source_fields in {("memo",), ("memo_action",)}
+                and answer.source_fields == ("answer_text_private",)
+                and times == {expected_time}
+                and len(contrasts) == len(about) == 1
+                and contrasts[0].to_nucleus_id == reaction.nucleus_id
+                and about[0].to_nucleus_id == answer.nucleus_id):
+            matched.update((contrasts[0].relation_id, about[0].relation_id))
+        else:
+            failures.append("body_inverse_answer_antecedent_source_mismatch")
+    return frozenset(matched), tuple(failures), tuple(contrast_groups)
+
+
+
+def _body_inverse_intervening_events(body, witness, line, planned_line, plan, resolver):
+    """Read retained original facts, separately or between pairs, without author replay."""
+    index = {n.nucleus_id: n for n in plan.nuclei}
+    relations = tuple(r for r in plan.relations if r.relation_id in planned_line.binding.relation_ids)
+    linked = {nid for r in plan.relations for nid in (r.from_nucleus_id, r.to_nucleus_id)}
+    if (len(planned_line.binding.nucleus_ids) > 1 and not planned_line.binding.relation_ids
+        and all("semantic_dependency:received_feeling_contrast_chain" in index[nid].semantic_frame.attribute_codes
+                for nid in planned_line.binding.nucleus_ids)):
+        rows = tuple(row for row in witness.sentences if row.section == "observation"
+                     and row.section_line_ordinal == line.section_ordinal)
+        if len(rows) != len(planned_line.binding.nucleus_ids):
+            return False
+        for row, nid in zip(rows, planned_line.binding.nucleus_ids):
+            n = index[nid]
+            ending = "という出来事がありました。" if n.kind == "event" else "という気持ちが書かれています。"
+            parsed = re.fullmatch(r"「([^「」『』\n]+)」" + re.escape(ending), _body_inverse_visible_text(body, row))
+            if (nid in linked or not parsed
+                or _body_inverse_nucleus_source_values(nid, plan, resolver)
+                    != (_body_inverse_normalized_anchor(parsed[1]),)):
+                return False
+        return True
+    if len(planned_line.binding.nucleus_ids) == 1 and not planned_line.binding.relation_ids:
+        nucleus = index[planned_line.binding.nucleus_ids[0]]
+        frame = nucleus.semantic_frame
+        if "semantic_role:appraisal_explicit_reason" in frame.attribute_codes:
+            sources = _body_inverse_nucleus_source_values(nucleus.nucleus_id, plan, resolver)
+            parsed = re.fullmatch(r"(?:今の入力だけを見ると、)?(当時|入力した時点)の状態として、"
+                                 r"「([^「」『』\n]+)」と書かれています。",
+                                 _body_inverse_visible_text(body, line))
+            return bool(nucleus.nucleus_id not in linked
+                and nucleus.kind == frame.predicate_kind == "state"
+                and frame.actor == "current_user" and frame.modality == "fact"
+                and frame.polarity == "positive" and frame.time_scope in {"past", "present"}
+                and nucleus.source_fields in {("memo",), ("memo_action",)}
+                and nucleus.grounding_kind == "explicit" and nucleus.retention == "required"
+                and nucleus.allowed_claim_scope == "explicit_current_input"
+                and "semantic_dependency:reasoned_result_appraisal" in frame.attribute_codes
+                and len(nucleus.source_span_ids) == len(sources) == 1
+                and resolver.source_fields_for(nucleus.source_span_ids) == nucleus.source_fields
+                and parsed and parsed[1] == ("当時" if frame.time_scope == "past" else "入力した時点")
+                and _body_inverse_normalized_anchor(parsed[2]) == sources[0])
+        if (nucleus.nucleus_id not in linked and nucleus.kind == "event"
+            and {"semantic_role:contrast_before", "semantic_dependency:explicit_result_appraisal"}
+                & set(frame.attribute_codes)
+            and nucleus.source_fields in {("memo",), ("memo_action",)}):
+            # A separately retained original event is a complete past fact,
+            # never the replacement feeling's cause, focus or shared flow.
+            sources = _body_inverse_nucleus_source_values(nucleus.nucleus_id, plan, resolver)
+            parsed = re.fullmatch(r"「([^「」『』\n]+)」という出来事がありました。",
+                                 _body_inverse_visible_text(body, line))
+            return bool(frame.predicate_kind == "event" and frame.actor == "current_user"
+                and frame.modality == "fact" and frame.time_scope == "past"
+                and nucleus.grounding_kind == "explicit" and nucleus.retention == "required"
+                and len(nucleus.source_span_ids) == 1 and len(sources) == 1
+                and parsed and _body_inverse_normalized_anchor(parsed.group(1)) == sources[0])
+    contrasts = tuple(r for r in relations if r.type == "contrast")
+    span_order = {sid: i for i, sid in enumerate(resolver.span_ids)}
+    def position(n):
+        return min((span_order[sid] for sid in n.source_span_ids), default=-1)
+    event_ids = {r.from_nucleus_id for r in relations}
+    extra_ids = set(planned_line.binding.nucleus_ids) - {
+        nid for r in relations for nid in (r.from_nucleus_id, r.to_nucleus_id)}
+    trailing = bool(extra_ids and len(event_ids) == 1
+        and all(r.type in {"contrast", "evaluation_about_event"} for r in relations)
+        and all(nid not in linked and index[nid].kind == "event"
+                and position(index[nid]) > position(index[next(iter(event_ids))]) for nid in extra_ids))
+    if len(contrasts) < 2 and not trailing:
+        return True
+    contrast_positions = tuple(position(index[r.from_nucleus_id]) for r in contrasts)
+    independent = tuple(index[nid] for nid in planned_line.binding.nucleus_ids
+        if nid not in linked and index[nid].kind == "event"
+        and nid in plan.coverage_requirements.required_nucleus_ids
+        and (trailing or min(contrast_positions) < position(index[nid]) < max(contrast_positions)))
+    if not independent:
+        return True
+    rows = tuple(row for row in witness.sentences if row.section == "observation"
+                 and row.section_line_ordinal == line.section_ordinal)
+    shared_relations, shared_failures, contrast_groups = _body_inverse_thread_contrast_answers(body, witness, line, plan, resolver)
+    if shared_failures:
+        return False
+    fact_rows = []
+    for nucleus in independent:
+        frame = nucleus.semantic_frame
+        sources = _body_inverse_nucleus_source_values(nucleus.nucleus_id, plan, resolver)
+        if (frame.predicate_kind != "event" or frame.actor != "current_user"
+            or frame.modality != "fact" or frame.time_scope != "past"
+            or nucleus.source_fields not in {("memo",), ("memo_action",)}
+            or nucleus.grounding_kind != "explicit" or nucleus.retention != "required"
+            or len(nucleus.source_span_ids) != 1 or len(sources) != 1):
+            return False
+        matches = []
+        for i, row in enumerate(rows):
+            parsed = re.fullmatch(r"「([^「」『』\n]+)」という出来事がありました。",
+                                 _body_inverse_visible_text(body, row))
+            if parsed and _body_inverse_normalized_anchor(parsed.group(1)) == sources[0]:
+                matches.append(i)
+        if len(matches) != 1:
+            return False
+        fact_rows.append((position(nucleus), matches[0]))
+        # A matching quote elsewhere cannot move this fact behind another
+        # event or make it that event's cause, background or reaction.
+        for relation in (relations if trailing else contrasts):
+            event = index[relation.from_nucleus_id]
+            event_sources = _body_inverse_nucleus_source_values(event.nucleus_id, plan, resolver)
+            shared = any(r.relation_id in shared_relations and r.from_nucleus_id == event.nucleus_id
+                         for r in relations)
+            if not shared and relation.type == "contrast":
+                # Equal event text cannot identify a neighboring pair. Read
+                # both operands and the complete sentence before its position.
+                reaction_sources = _body_inverse_nucleus_source_values(relation.to_nucleus_id, plan, resolver)
+                if len(event_sources) != 1 or len(reaction_sources) != 1:
+                    return False
+                event_rows = []
+                for i, row in enumerate(rows):
+                    parsed = re.fullmatch(r"「([^「」『』\n]+)」と「([^「」『』\n]+)」が、"
+                        r"異なる向きのまま同時にあります。", _body_inverse_visible_text(body, row))
+                    if parsed is None:
+                        parsed = re.fullmatch(r"「([^「」『』\n]+)」の一方で「([^「」『』\n]+)」とあります。", _body_inverse_visible_text(body, row))
+                    if parsed and tuple(map(_body_inverse_normalized_anchor, parsed.groups())) == (
+                            event_sources[0], reaction_sources[0]):
+                        event_rows.append(i)
+            else:
+                event_rows = [i for i, row in enumerate(rows) if any(
+                    value in _body_inverse_normalized_anchor(_body_inverse_visible_text(body, row))
+                    for value in event_sources)]
+            if (len(event_rows) != 1 or (event_rows[0] < matches[0]) != (position(event) < position(nucleus))):
+                return False
+            if not shared and relation.type == "evaluation_about_event":
+                visible = _body_inverse_visible_text(body, rows[event_rows[0]])
+                parsed = re.fullmatch(r"「([^「」『』\n]+)」ことについて、"
+                    r"(その時|回答した時点|先の回答時点)の受け止めは"
+                    r"「([^「」『』\n]+)」と書かれています。", visible)
+                if parsed is None:
+                    parsed = re.fullmatch(r"「([^「」『』\n]+)」ことに対する"
+                        r"(その時|回答した時点|先の回答時点)の受け止めとして、"
+                        r"「([^「」『』\n]+)」が(?:見えます|示されています)。", visible)
+                answer = index[relation.to_nucleus_id]
+                answer_sources = _body_inverse_nucleus_source_values(answer.nucleus_id, plan, resolver)
+                times = {c.split(":", 1)[1] for c in answer.semantic_frame.attribute_codes
+                         if c.startswith("thread_time:")}
+                expected_time = {"original_occasion": "その時", "answer_time": "回答した時点",
+                                 "prior_answer_time": "先の回答時点"}
+                if (parsed is None or len(event_sources) != 1 or len(answer_sources) != 1
+                    or len(times) != 1 or not times <= expected_time.keys()
+                    or _body_inverse_normalized_anchor(parsed[1]) != event_sources[0]
+                    or parsed[2] != expected_time[next(iter(times))]
+                    or _body_inverse_normalized_anchor(parsed[3]) != answer_sources[0]):
+                    return False
+            elif not shared:
+                # Consume the whole neighboring contrast too: an added cause
+                # before its full stop must not hide inside the same sentence.
+                contrast = re.fullmatch(r"「([^「」『』\n]+)」と「([^「」『』\n]+)」が、"
+                    r"異なる向きのまま同時にあります。", _body_inverse_visible_text(body, rows[event_rows[0]]))
+                if contrast is None:
+                    contrast = re.fullmatch(r"「([^「」『』\n]+)」の一方で「([^「」『』\n]+)」とあります。", _body_inverse_visible_text(body, rows[event_rows[0]]))
+                reaction_sources = _body_inverse_nucleus_source_values(relation.to_nucleus_id, plan, resolver)
+                if (contrast is None or len(event_sources) != 1 or len(reaction_sources) != 1
+                    or tuple(map(_body_inverse_normalized_anchor, contrast.groups()))
+                       != (event_sources[0], reaction_sources[0])):
+                    return False
+    if trailing and (len(rows) != 1 + len(independent)
+        or [row for _, row in sorted(fact_rows)] != list(range(1, len(rows)))):
+        return False
+    endpoints = {nid for r in relations for nid in (r.from_nucleus_id, r.to_nucleus_id)}
+    if (relations and {r.type for r in relations} <= {"contrast", "evaluation_about_event"}
+        and set(planned_line.binding.nucleus_ids) - endpoints == {n.nucleus_id for n in independent}
+        and all(r.type == "contrast" or r.from_nucleus_id in {c.from_nucleus_id for c in contrasts}
+                for r in relations)
+        and len(rows) != len(contrasts) - sum(len(group) - 1 for group in contrast_groups) + len(independent)
+            + sum(r.type == "evaluation_about_event" and r.relation_id not in shared_relations for r in relations)):
+        return False
+    return True
+
+
+def _body_inverse_appraisal_time(nucleus):
+    """Read time from the admitted source owner, independently of the author."""
+    frame = nucleus.semantic_frame
+    times = {c.split(':', 1)[1] for c in frame.attribute_codes if c.startswith('thread_time:')}
+    if nucleus.source_fields == ('answer_text_private',):
+        if times == {'answer_time'}:
+            return '回答した時点'
+        if times == {'prior_answer_time'}:
+            return '先の回答時点'
+    return '当時' if frame.time_scope == 'past' else '入力した時点'
+
+
+def _body_inverse_detached_observation(raw, nuclei, plan, resolver, *, correction_answer_source=False):
+    """Read each quoted feeling with its own time, without author replay.
+
+    Whole-line parsing excludes a revived event or a newly causal link. A
+    time token elsewhere in the line cannot discharge this operand's duty.
+    """
+    from emlis_ai_grounded_observation_plan import (
+        _thread_withdrawn_original_reaction, _received_event_reaction_projections,
+        _thread_revised_original_reaction, _thread_withdrawn_result_appraisal,
+        _source_result_appraisal_predicate,
+    )
+    if not nuclei:
+        return False
+    appraisals = tuple(_thread_withdrawn_result_appraisal(n, plan.relations) for n in nuclei)
+    if len(nuclei) > 1 and any(appraisals):
+        if all(appraisals):
+            operand = r'(当時|入力した時点|回答した時点|先の回答時点)の評価「([^「」『』\n]+)」'
+            parsed = re.fullmatch(r'(?:今の入力だけを見ると、)?' + operand
+                + r'(?:と、' + operand + r')+が書かれています。', raw)
+            pieces = re.findall(operand, raw) if parsed else []
+            if len(pieces) != len(nuclei):
+                return False
+            for nucleus, (when, quoted) in zip(nuclei, pieces, strict=True):
+                source = _body_inverse_typed_source_fragment(nucleus, resolver.resolve(nucleus.source_span_ids[0]).raw_text)
+                if (not source or resolver.source_fields_for(nucleus.source_span_ids) != nucleus.source_fields
+                    or not _source_result_appraisal_predicate(nucleus, source) or quoted != source
+                    or when != _body_inverse_appraisal_time(nucleus)):
+                    return False
+            return True
+        sentences = re.findall(r'[^。]+。', raw)
+        return bool(''.join(sentences) == raw and len(sentences) == len(nuclei)
+                    and all(_body_inverse_detached_observation(sentence, (nucleus,), plan, resolver)
+                            for sentence, nucleus in zip(sentences, nuclei, strict=True)))
+    if len(nuclei) == 1 and _thread_withdrawn_result_appraisal(nuclei[0], plan.relations):
+        nucleus = nuclei[0]
+        span = resolver.resolve(nucleus.source_span_ids[0])
+        source = _body_inverse_typed_source_fragment(nucleus, span.raw_text)
+        parsed = re.fullmatch(r'(?:今の入力だけを見ると、)?(?P<time>当時|入力した時点|回答した時点|先の回答時点)の評価として、'
+                              r'「(?P<source>[^「」『』\n]+)」と書かれています。', raw)
+        return bool(parsed and source and resolver.source_fields_for(nucleus.source_span_ids) == nucleus.source_fields
+            and _source_result_appraisal_predicate(nucleus, source) and parsed['source'] == source
+            and parsed['time'] == _body_inverse_appraisal_time(nucleus))
+    operand = r"(?:その時|回答した時点|先の回答時点)の「[^「」『』\n]+」"
+    revised = tuple(_thread_revised_original_reaction(n, plan.relations, polarity=n.semantic_frame.polarity)
+                    for n in nuclei)
+    shared_revision = None
+    if len(nuclei) == 2 and all(revised):
+        text = raw.removeprefix("今の入力だけを見ると、")
+        paired = re.fullmatch(r'当時の気持ちを、それぞれ「([^「」『』\n]+)」、「([^「」『』\n]+)」'
+                              r'と(?:言い直され|言い換えられ)ています。', text)
+        equal = re.fullmatch(r'当時の気持ちを、二つとも「([^「」『』\n]+)」'
+                             r'と(?:言い直され|言い換えられ)ています。', text)
+        if paired or equal:
+            # Each nucleus is still checked below against its own exact
+            # source and time. Equal visible text cannot erase a source duty.
+            values = paired.groups() if paired else (equal[1], equal[1])
+            shared_revision = [("当時", value, True) for value in values]
+    if correction_answer_source:
+        parsed = re.fullmatch(r'訂正の回答では、当時の気持ちを「([^「」『』\n]+)」'
+                              r'と(?:言い直され|言い換えられ)ています。', raw)
+        if len(nuclei) != 1 or not all(revised) or parsed is None:
+            return False
+        pieces = [("当時", parsed[1], True)]
+    elif shared_revision is not None:
+        pieces = shared_revision
+    elif any(revised):
+        # The revision is an explicit discourse operation. Keep it separate
+        # from the feeling's original time and from nearby event clauses.
+        text = raw.removeprefix("今の入力だけを見ると、")
+        pattern = re.compile(r'(?:(?P<when>その時|回答した時点|先の回答時点)の「(?P<original>[^「」『』\n]+)」'
+            r'という気持ちが書かれて|(?P<separation>それとは別に)?「(?P<revised>[^「」『』\n]+)」と、当時の気持ちを(?:言い直され|言い換えられ)て)'
+            r'(?P<ending>おり、|います。)')
+        pieces, cursor = [], 0
+        for i in range(len(nuclei)):
+            parsed = pattern.match(text, cursor)
+            if parsed is None or parsed['ending'] != ("います。" if i == len(nuclei) - 1 else "おり、"):
+                return False
+            if bool(parsed['separation']) != (parsed['revised'] is not None and i > 0):
+                return False
+            pieces.append(("当時" if parsed['revised'] is not None else parsed['when'],
+                           parsed['revised'] if parsed['revised'] is not None else parsed['original'],
+                           parsed['revised'] is not None))
+            cursor = parsed.end()
+        if cursor != len(text):
+            return False
+    elif len(nuclei) == 1:
+        if raw.removeprefix("今の入力だけを見ると、").startswith("最初の記録からは、"):
+            if nuclei[0].source_fields not in {("memo",), ("memo_action",)}:
+                return False
+            parsed = re.fullmatch(r"(?:今の入力だけを見ると、)?最初の記録からは、(当時)"
+                                 r"の「([^「」『』\n]+)」という気持ちが読み取れます。", raw)
+        elif raw.removeprefix("今の入力だけを見ると、").startswith("先の回答には、"):
+            if nuclei[0].source_fields != ("answer_text_private",):
+                return False
+            parsed = re.fullmatch(r"(?:今の入力だけを見ると、)?先の回答には、(その時|回答した時点|先の回答時点)"
+                                 r"の気持ちが「([^「」『』\n]+)」と(?:記されています|書かれています)。", raw)
+        else:
+            parsed = re.fullmatch(r"(?:今の入力だけを見ると、)?(その時|回答した時点|先の回答時点)"
+                                 r"の気持ちとして、「([^「」『』\n]+)」が(?:見えます|読み取れます)。", raw)
+        pieces = [(*parsed.groups(), False)] if parsed else []
+    else:
+        parsed = re.fullmatch(r"(?:今の入力だけを見ると、)?(" + operand
+                             + r"(?:と、" + operand + r")+)という気持ちが(?:書かれています|記されています)。", raw)
+        pieces = [(*p, False) for p in re.findall(
+            r"(その時|回答した時点|先の回答時点)の「([^「」『』\n]+)」", parsed[1])] if parsed else []
+    if len(pieces) != len(nuclei):
+        return False
+    for nucleus, revision, (when, quoted, marked_revision) in zip(nuclei, revised, pieces, strict=True):
+        frame = nucleus.semantic_frame
+        codes = set(frame.attribute_codes)
+        if (marked_revision != revision or ("thread_subject:withdrawn_source_event" not in codes
+             and not _thread_revised_original_reaction(nucleus, plan.relations, polarity=frame.polarity))
+            or nucleus.kind != "reaction" or frame.predicate_kind != "feeling"
+            or frame.modality != "feeling" or frame.actor != "current_user"
+            or nucleus.retention != "required" or nucleus.grounding_kind != "explicit"
+            or len(nucleus.source_span_ids) != 1
+            or resolver.source_fields_for(nucleus.source_span_ids) != nucleus.source_fields
+            or any(nucleus.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id) for r in plan.relations)):
+            return False
+        span = resolver.resolve(nucleus.source_span_ids[0])
+        source = _body_inverse_typed_source_fragment(nucleus, span.raw_text)
+        if source is None:
+            source = str(span.raw_text).strip(" \u3000、,。．.")
+        if not source or quoted != source:
+            return False
+        times = {c.split(":", 1)[1] for c in codes if c.startswith("thread_time:")}
+        if nucleus.source_fields in {("memo",), ("memo_action",)}:
+            if (when not in {"その時", "当時"} or times
+                or not _thread_withdrawn_original_reaction(nucleus, plan.relations)
+                or not any(row.kind == "reaction" and row.polarity == frame.polarity
+                           and set(row.attribute_codes) <= codes
+                           for row in _received_event_reaction_projections(span, frame))):
+                return False
+        elif (nucleus.source_fields == ("answer_text_private",)
+              and nucleus.allowed_claim_scope == "explicit_supplemental_answer"):
+            expected = {"その時": "original_occasion", "当時": "original_occasion", "回答した時点": "answer_time",
+                        "先の回答時点": "prior_answer_time"}[when]
+            if times != {expected}:
+                return False
+        else:
+            return False
+    return True
+
+
+def _read_appraisal_material_discourse(raw, move, plan, resolver, selected_subjective_input=None):
+    """Independently read two complete, ordered, non-cancelling source duties.
+
+    No author replay or expected prose is used. A unique original source is
+    reconstructed from the actual clause and checked against the source-owned
+    appraisal/material inventory. In particular a factual correction, an
+    invented goal or an affirmative cancellation cannot discharge either duty.
+    """
+    from emlis_ai_grounded_observation_plan import _independent_nonaction_pair, _source_self_appraisal
+    pair = _independent_nonaction_pair(plan.nuclei, plan.relations,
+        safety_kind="safe_observation", material_quality="grounded")
+    if (len(pair) != 2 or not _source_self_appraisal(pair[0])
+        or move.reception_act != "stay_with_current_burden" or not move.required
+        or len(move.target_nucleus_ids) != 1 or move.support_nucleus_ids
+        or not raw.endswith("。") or raw.count("。") != 1
+        or re.search(r'[「」『』“”‘’"?？!！\r\n]', raw)):
+        return None
+    active = tuple(m for m in plan.response_plan.human_reception_plan.moves if m.required)
+    if (len(active) != 2
+        or tuple(m.target_nucleus_ids for m in active) != tuple((n.nucleus_id,) for n in pair)
+        or tuple(m.move_role for m in active) != ("attention", "felt_response")):
+        return None
+    if selected_subjective_input is not None:
+        decision = next((d for d in selected_subjective_input.decisions if d.move_id == move.move_id), None)
+        appraisal = decision.subjective_proposition.appraisal_content if decision else None
+        if appraisal is None or appraisal.operation != "RECEIVE_AS_MATERIAL":
+            return None
+    index = {n.nucleus_id: n for n in plan.nuclei}
+    expected = final_reception_source_anchor_text(move.target_nucleus_ids[0], index, resolver)
+    if move.target_nucleus_ids == (pair[0].nucleus_id,) and move.move_role == "attention":
+        parsed = re.fullmatch(r"(?P<source>.+)、という言葉(?:が気になりました|に目が留まりました)。", raw)
+    elif move.target_nucleus_ids == (pair[1].nucleus_id,) and move.move_role == "felt_response":
+        parsed = re.fullmatch(r"(?P<source>.+)、という記録を理由に、先ほどの言葉を"
+                              r"(?:打ち消す|否定する)ことはしません。", raw)
+    else:
+        return None
+    if parsed is None or not expected or parsed["source"] != expected:
+        return None
+    # Preserve source bytes for the existing sensation/qualifier inverse.
+    end = len(parsed["source"].encode("utf-8"))
+    return ((0, end, expected.encode("utf-8")),)
+
+
+def _reasoned_experience_selected_reception(move, plan, selected_subjective_input):
+    """Bind the new content's three roles and two directed edges to source."""
+    from cocolon_meaning_experience_engine.contracts import (
+        EmlisReasonedExperienceAppraisalContent, CMEEStage1ContractError,
+        _stage1_subjective_v2_content_bindings)
+    from emlis_ai_grounded_observation_plan import (
+        source_owned_relational_focus, source_owned_result_appraisal)
+    if selected_subjective_input is None:
+        return False
+    decision = next((d for d in selected_subjective_input.decisions if d.move_id == move.move_id), None)
+    content = decision.subjective_proposition.appraisal_content if decision else None
+    focus = source_owned_relational_focus(move, plan)
+    if (decision is None or decision.branch != 'NORMAL'
+        or type(content) is not EmlisReasonedExperienceAppraisalContent
+        or focus is None or focus[0] != 'reasoned_result_appraisal'):
+        return False
+    try:
+        _stage1_subjective_v2_content_bindings(decision.subjective_proposition)
+    except (CMEEStage1ContractError, TypeError, ValueError):
+        return False
+    reason, event, evaluation = focus[1:]
+    basis = {b.binding_ref: b.semantic_ref for b in decision.basis_rows}
+    semantic_map = dict(selected_subjective_input.semantic_nucleus_pairs)
+    relation_map = dict(selected_subjective_input.relation_pairs)
+    roles = (content.reason_binding_ref, content.event_binding_ref, content.evaluation_binding_ref)
+    edges = {r.relation_id: r for r in plan.relations}
+    reason_edge = edges.get(relation_map.get(content.reason_relation_ref))
+    about = edges.get(relation_map.get(content.appraisal_relation_ref))
+    if (tuple(semantic_map.get(basis.get(ref)) for ref in roles)
+            != tuple(n.nucleus_id for n in focus[1:])
+        or reason_edge is None or reason_edge.type != 'user_stated_cause'
+        or (reason_edge.from_nucleus_id, reason_edge.to_nucleus_id)
+            != (reason.nucleus_id, evaluation.nucleus_id)
+        or about is None or not source_owned_result_appraisal(about, plan.nuclei)
+        or (about.from_nucleus_id, about.to_nucleus_id) != (event.nucleus_id, evaluation.nucleus_id)
+        or content.reason_time != reason.semantic_frame.time_scope
+        or content.evaluation_time != evaluation.semantic_frame.time_scope
+        or content.polarity != evaluation.semantic_frame.polarity
+        or 'source_appraisal_kind:' + content.evaluation_kind not in evaluation.semantic_frame.attribute_codes
+        or 'source_appraisal_degree:unmarked' not in evaluation.semantic_frame.attribute_codes
+        or 'source_appraisal_continuing:still' in evaluation.semantic_frame.attribute_codes):
+        return False
+    qualifiers = {q.basis_binding_ref: q for q in decision.qualifier_rows}
+    for ref, node in zip(roles, focus[1:]):
+        q = qualifiers.get(ref)
+        if q is None or (q.modality, q.polarity, q.time_scope) != (
+            node.semantic_frame.modality, node.semantic_frame.polarity, node.semantic_frame.time_scope):
+            return False
+    return True
+
+
+def _read_relational_focus_discourse(raw, move, plan, resolver, selected_subjective_input):
+    """Independently read the asserted focus, then restore only its source spans.
+
+    The plan proves which two source roles may be related; full body parsing
+    proves their words, direction, epistemic scope and non-certain stance. No
+    author call, author output, fixture text or body binding grants admission.
+    """
+    from emlis_ai_grounded_observation_plan import source_owned_relational_focus
+    focus = source_owned_relational_focus(move, plan)
+    if focus is None:
+        return None
+    if selected_subjective_input is not None:
+        decision = next((d for d in selected_subjective_input.decisions
+                         if d.move_id == move.move_id), None)
+        proposition = decision.subjective_proposition if decision else None
+        appraisal = proposition.appraisal_content if proposition else None
+        position = proposition.relational_position if proposition else None
+        if not (appraisal is not None and appraisal.operation in {
+                    "RECEIVE_AS_MATERIAL", "PRESERVE_BOTH_ENDPOINTS"}
+                or position is not None and position.stance_operator == "STAY_WITH_SPECIFIC_OBJECT"):
+            return None
+    index = {n.nucleus_id: n for n in plan.nuclei}
+    if focus[0] == 'reasoned_result_appraisal':
+        from cocolon_meaning_experience_engine.contracts import (
+            EmlisAppraisalContent, EmlisReasonedExperienceAppraisalContent)
+        reasoned_experience = (selected_subjective_input is not None
+                              and type(appraisal) is EmlisReasonedExperienceAppraisalContent)
+        if (reasoned_experience and not _reasoned_experience_selected_reception(
+                move, plan, selected_subjective_input)):
+            return None
+        if (selected_subjective_input is None or decision is None or decision.branch not in {'NORMAL', 'LIMITED'}
+            or type(appraisal) not in (EmlisAppraisalContent, EmlisReasonedExperienceAppraisalContent)
+            or appraisal.dimension != 'MATERIAL_WEIGHT'
+            or appraisal.operation != 'RECEIVE_AS_MATERIAL'
+            or appraisal.protected_bindings):
+            return None
+        from emlis_ai_grounded_human_reception import (
+            SelectedRetainedReasonedExperienceDecisionV1, validate_selected_retained_reasoned_experience)
+        local = None
+        if type(decision) is SelectedRetainedReasonedExperienceDecisionV1:
+            try:
+                local = validate_selected_retained_reasoned_experience(
+                    decision, selected_subjective_input, plan, resolver)
+            except (ValueError, TypeError, AttributeError, KeyError):
+                return None
+            reasoned_experience = True
+        limited = decision.branch == 'LIMITED'
+        reason_node, event_node, evaluation = focus[1:]
+        basis = {row.binding_ref: row.semantic_ref for row in decision.basis_rows}
+        semantic_map = dict(selected_subjective_input.semantic_nucleus_pairs)
+        relation_map = dict(selected_subjective_input.relation_pairs)
+        reason_edges = tuple(r for r in plan.relations if r.type == 'user_stated_cause'
+            and (r.from_nucleus_id, r.to_nucleus_id) == (reason_node.nucleus_id, evaluation.nucleus_id))
+        if (any(ref not in basis for ref in appraisal.appraised_bindings) or len(reason_edges) != 1):
+            return None
+        expected_ids = {reason_node.nucleus_id, event_node.nucleus_id, evaluation.nucleus_id}
+        if limited:
+            selected_ids = {semantic_map.get(row.semantic_ref) for row in decision.basis_rows
+                            if row.contribution_ref in decision.selected_contribution_refs}
+            if (proposition.subjective_mode != 'ATTENTION' or proposition.subjective_operator != 'ATTEND_TO'
+                or appraisal.appraised_bindings != proposition.basis_binding_refs
+                or appraisal.focal_relation_ref is not None or proposition.focal_relation_ref is not None
+                or selected_ids != expected_ids):
+                return None
+        elif (len(appraisal.appraised_bindings) != 3
+              or {semantic_map.get(basis[ref]) for ref in appraisal.appraised_bindings} != expected_ids
+              or relation_map.get(appraisal.focal_relation_ref) != reason_edges[0].relation_id
+              or proposition.focal_relation_ref != appraisal.focal_relation_ref):
+            return None
+        reason, event, feeling = (final_reception_source_anchor_text(n.nucleus_id, index, resolver)
+                                  for n in focus[1:])
+        legacy_limited = False
+        if limited and local is None:
+            from emlis_ai_grounded_observation_plan import source_owned_duplicate_reason_appraisals
+            span = resolver.resolve(reason_node.source_span_ids[0])
+            occurrences = tuple(s for s in resolver.resolve_many(resolver.span_ids)
+                if s.source_field == span.source_field and s.raw_text == span.raw_text)
+            duplicate = source_owned_duplicate_reason_appraisals(plan.nuclei, plan.relations, resolver)
+            legacy_limited = len(occurrences) != 1 and focus[1:] not in duplicate
+        parsed = (re.fullmatch(r'(?P<event>.+)ことへの'
+            r'(?P<time>当時の|入力した時点での)(?P<evaluation>満足)について、'
+            r'(?P<reason>.+)という理由に目を向けています。', raw) if limited
+            else re.fullmatch(r'(?P<reason>.+)点に、(?P<event>.+)ことへの'
+                r'(?P<time>当時の|入力した時点での)(?P<evaluation>満足)の拠り所が見えます。', raw))
+        focused_experience = False
+        if reasoned_experience:
+            parsed = re.fullmatch(r'(?P<event>.+)ことには、(?P<reason>.+)という点で、'
+                r'(?P<time>当時|入力した時点で)ご自身の中に'
+                r'(?P<evaluation>満たされた感覚が(?P<state>あった|ある))のですね。', raw)
+            if parsed is None:
+                # The previous complete focus grammar remains readable under
+                # the same content qualification, source roles and time checks.
+                parsed = re.fullmatch(r'(?P<event>.+)ことについて受け取ったのは、(?P<reason>.+)という点で、'
+                    r'(?P<time>当時|入力した時点で)ご自身の中に'
+                    r'(?P<evaluation>満たされた感覚が(?P<state>あった|ある))経験です。', raw)
+            focused_experience = parsed is not None
+            if parsed is None:
+                # Retain the complete prior grammar, under the same selected
+                # content and source checks. No partial/keyword admission.
+                parsed = re.fullmatch(r'(?P<event>.+)ことを、(?P<reason>.+)という点で、'
+                    r'(?P<time>当時、|入力した時点で、)ご自身の中に'
+                    r'(?P<evaluation>満たされた感覚が(?P<state>あった|ある))経験として受け取りました。', raw)
+        if legacy_limited:
+            parsed = re.fullmatch(r'(?P<reason>.+)ことを理由に、(?P<event>.+)ことについて、'
+                r'(?P<time>当時は|入力した時点では)(?P<evaluation>.+)のですね。', raw)
+        endings = {c.split(':', 1)[1] for c in event_node.semantic_frame.attribute_codes
+                   if c.startswith('source_appraisal_event_ending:')}
+        if parsed is None or not all((reason, event, feeling)) or len(endings) != 1:
+            return None
+        actual_reason, actual_event = parsed['reason'], parsed['event']
+        for key, source in (('reason', reason), ('event', event)):
+            owner = re.search(r'(?:私|自分|わたし|僕|ぼく|俺|おれ)(?=は|が)', source)
+            if owner:
+                if key == 'reason':
+                    actual_reason = actual_reason.replace('あなた', owner.group(), 1)
+                else:
+                    actual_event = actual_event.replace('あなた', owner.group(), 1)
+        ending = next(iter(endings))
+        when = _body_inverse_appraisal_time(evaluation)
+        time_suffix = 'の' if when == '当時' else 'での'
+        if legacy_limited:
+            time_suffix = 'は' if when == '当時' else 'では'
+        if reasoned_experience:
+            time_suffix = (('' if when == '当時' else 'で') if focused_experience
+                           else ('、' if when == '当時' else 'で、'))
+            if parsed['state'] != ('あった' if (local or appraisal).evaluation_time == 'past' else 'ある'):
+                return None
+        from emlis_ai_grounded_observation_plan import _source_result_appraisal_predicate
+        if (actual_reason != reason or ending not in {'te', 'de', 'ta'}
+            or not actual_event.endswith({'te': 'た', 'de': 'だ', 'ta': 'た'}[ending])
+            or actual_event[:-1] + {'te': 'て', 'de': 'で', 'ta': 'た'}[ending] != event
+            or parsed['time'] != when + time_suffix
+            or legacy_limited and not _read_result_appraisal_finite(parsed['evaluation'], feeling)
+            or not _source_result_appraisal_predicate(evaluation, feeling)):
+            return None
+        return tuple((len(raw[:parsed.start(key)].encode()), len(raw[:parsed.end(key)].encode()), value.encode())
+                     for key, value in (('reason', reason), ('event', event), ('evaluation', feeling)))
+    if focus[0] == 'unfinished_result_appraisal':
+        from cocolon_meaning_experience_engine.contracts import EmlisAppraisalContent
+        if (selected_subjective_input is None or decision is None
+            or decision.branch not in {'NORMAL', 'LIMITED'}
+            or type(appraisal) is not EmlisAppraisalContent or appraisal.protected_bindings):
+            return None
+        context, event_node, evaluation = focus[1:]
+        limited = decision.branch == 'LIMITED'
+        basis = {row.binding_ref: row.semantic_ref for row in decision.basis_rows}
+        semantic_map = dict(selected_subjective_input.semantic_nucleus_pairs)
+        relation_map = dict(selected_subjective_input.relation_pairs)
+        contrasts = tuple(r for r in plan.relations if r.type == 'contrast'
+            and (r.from_nucleus_id, r.to_nucleus_id) == (context.nucleus_id, evaluation.nucleus_id))
+        expected_ids = {context.nucleus_id, event_node.nucleus_id, evaluation.nucleus_id}
+        if any(ref not in basis for ref in appraisal.appraised_bindings) or len(contrasts) != 1:
+            return None
+        if limited:
+            selected_ids = {semantic_map.get(row.semantic_ref) for row in decision.basis_rows
+                            if row.contribution_ref in decision.selected_contribution_refs}
+            if (proposition.subjective_mode != 'ATTENTION' or proposition.subjective_operator != 'ATTEND_TO'
+                or appraisal.dimension != 'MATERIAL_WEIGHT' or appraisal.operation != 'RECEIVE_AS_MATERIAL'
+                or appraisal.appraised_bindings != proposition.basis_binding_refs
+                or appraisal.focal_relation_ref is not None or proposition.focal_relation_ref is not None
+                or selected_ids != expected_ids):
+                return None
+        elif (appraisal.dimension != 'RELATIONAL_NONCOLLAPSE' or appraisal.operation != 'PRESERVE_BOTH_ENDPOINTS'
+              or len(appraisal.appraised_bindings) != 3
+              or {semantic_map.get(basis[ref]) for ref in appraisal.appraised_bindings} != expected_ids
+              or relation_map.get(appraisal.focal_relation_ref) != contrasts[0].relation_id
+              or proposition.focal_relation_ref != appraisal.focal_relation_ref):
+            return None
+        unfinished, event, feeling = (final_reception_source_anchor_text(n.nucleus_id, index, resolver)
+                                      for n in focus[1:])
+        parsed = (re.fullmatch(r'(?P<context>.+)という点と、(?P<event>.+)ことへの'
+            r'(?P<time>当時の|入力した時点での)(?P<evaluation>満足)との対比に目を向けています。', raw)
+            if limited else re.fullmatch(r'(?P<context>.+)という点と切り分けて、'
+                r'(?P<time>当時の|入力した時点での)満足を、'
+                r'(?P<event>.+)ことに向けられた(?P<evaluation>充足)として受け取りました。', raw))
+        endings = {code.split(':', 1)[1] for code in event_node.semantic_frame.attribute_codes
+                   if code.startswith('source_appraisal_event_ending:')}
+        if parsed is None or not all((unfinished, event, feeling)) or len(endings) != 1:
+            return None
+        ending = next(iter(endings))
+        if ending not in {'te', 'de', 'ta'}:
+            return None
+        actual = parsed['event']
+        owner = re.search(r'(?:私|自分|わたし|僕|ぼく|俺|おれ)(?=は|が)', event)
+        if owner:
+            actual = actual.replace('あなた', owner.group(), 1)
+        when = _body_inverse_appraisal_time(evaluation)
+        from emlis_ai_grounded_observation_plan import _source_result_appraisal_predicate
+        if (parsed['context'] != unfinished
+            or parsed['time'] != when + ('の' if when == '当時' else 'での')
+            or not actual.endswith({'te': 'た', 'de': 'だ', 'ta': 'た'}[ending])
+            or actual[:-1] + {'te': 'て', 'de': 'で', 'ta': 'た'}[ending] != event
+            or not _source_result_appraisal_predicate(evaluation, feeling)):
+            return None
+        # Both grammars bind satisfaction to the event and preserve the
+        # negative fact. Only NORMAL may read that satisfaction as fulfilment.
+        return tuple((len(raw[:parsed.start(key)].encode()), len(raw[:parsed.end(key)].encode()), value.encode())
+                     for key, value in (('context', unfinished), ('event', event), ('evaluation', feeling)))
+    if focus[0] == "received_feeling_contrast":
+        event, first, second = (final_reception_source_anchor_text(n.nucleus_id, index, resolver)
+                                for n in focus[1:])
+        if not all((event, first, second)) or len({event, first, second}) != 3:
+            return None
+        source = str(resolver.resolve(focus[1].source_span_ids[0]).raw_text or "").strip(" \u3000、,。．.")
+        joined = re.fullmatch(re.escape(event) + r"(?P<outer>のに|けれども|けれど|けど)[、, ]*"
+            + re.escape(first) + r"(?P<inner>けれども|けれど|けど)[、, ]*" + re.escape(second), source)
+        parsed = re.fullmatch(r"(?P<event>.+?)(?P<outer>のに|けれども|けれど|けど)、"
+            r"(?P<first>.+?)(?P<inner>けれども|けれど|けど)、"
+            r"(?P<second>.+)(?:のですね|のです|のだと受け取りました)。", raw)
+        if joined is None or parsed is None:
+            return None
+        actual_event = parsed['event']
+        owner = re.match(r"(?:私|自分|わたし)(?=は|が)", event)
+        if owner is not None:
+            if not actual_event.startswith('あなた'):
+                return None
+            actual_event = owner.group() + actual_event[len('あなた'):]
+        if (actual_event != event or parsed['outer'] != joined['outer'] or parsed['inner'] != joined['inner']
+            or parsed['first'].endswith('な')
+            or _restore_thread_finite_answer(
+                parsed['first'][:-1] + 'な' if parsed['first'].endswith('だ') else parsed['first'],
+                first, copular_clause=True) != first
+            or _restore_thread_finite_answer(parsed['second'], second, copular_clause=True) != second):
+            return None
+        return tuple((len(raw[:parsed.start(key)].encode()), len(raw[:parsed.end(key)].encode()), value.encode())
+                      for key, value in (('event', event), ('first', first), ('second', second)))
+    kind, left, right = focus
+    first, second = (final_reception_source_anchor_text(n.nucleus_id, index, resolver)
+                     for n in (left, right))
+    if (not first or not second or first == second
+        or any(mark in first + second for mark in ("。", "？", "?", "「", "」", "\n"))):
+        return None
+    if kind == "withdrawn_target_appraisal_reason":
+        from cocolon_meaning_experience_engine.contracts import EmlisAppraisalContent
+        from emlis_ai_grounded_observation_plan import _source_result_appraisal_predicate
+        if (selected_subjective_input is None or decision is None or decision.branch != 'LIMITED'
+            or type(appraisal) is not EmlisAppraisalContent
+            or proposition.subjective_mode != 'ATTENTION' or proposition.subjective_operator != 'ATTEND_TO'
+            or appraisal.protected_bindings or proposition.focal_relation_ref != appraisal.focal_relation_ref):
+            return None
+        basis = {row.binding_ref: row.semantic_ref for row in decision.basis_rows}
+        semantic_map = dict(selected_subjective_input.semantic_nucleus_pairs)
+        relation_map = dict(selected_subjective_input.relation_pairs)
+        edges = tuple(r for r in plan.relations if r.type == 'user_stated_cause'
+            and (r.from_nucleus_id, r.to_nucleus_id) == (left.nucleus_id, right.nucleus_id))
+        if any(ref not in basis for ref in appraisal.appraised_bindings) or len(edges) != 1:
+            return None
+        selected_ids = {semantic_map.get(row.semantic_ref) for row in decision.basis_rows
+                        if row.contribution_ref in decision.selected_contribution_refs}
+        from emlis_ai_grounded_observation_plan import _thread_retained_reaction_groups
+        source_moves = plan.response_plan.human_reception_plan.moves
+        retained_pair = bool(len(source_moves) == 2
+            and tuple(m.reception_act for m in source_moves)
+                == ('recognize_lived_change', 'stay_with_current_burden')
+            and all(m.required for m in source_moves)
+            and tuple((family, m.target_nucleus_ids, m.support_nucleus_ids)
+                      for family, m in zip(('lived_change', 'current_burden'), source_moves))
+                == _thread_retained_reaction_groups(plan.nuclei, plan.relations))
+        material_attention = bool(appraisal.dimension == 'MATERIAL_WEIGHT'
+            and retained_pair
+            and appraisal.operation == 'RECEIVE_AS_MATERIAL'
+            and appraisal.appraised_bindings == proposition.basis_binding_refs
+            and appraisal.focal_relation_ref is None
+            and selected_ids == {left.nucleus_id, right.nucleus_id})
+        relational_attention = bool(appraisal.dimension == 'RELATIONAL_NONCOLLAPSE'
+            and appraisal.operation == 'PRESERVE_BOTH_ENDPOINTS'
+            and len(appraisal.appraised_bindings) == 2
+            and {semantic_map.get(basis[ref]) for ref in appraisal.appraised_bindings}
+                == {left.nucleus_id, right.nucleus_id}
+            and relation_map.get(appraisal.focal_relation_ref) == edges[0].relation_id)
+        if not (material_attention or relational_attention):
+            return None
+        parsed = re.fullmatch(r'(?P<reason>.+)という理由と、(?P<time>当時の|入力した時点での)'
+            r'(?P<evaluation>満足)とのつながりに目を向けています。', raw)
+        if parsed is None or not _source_result_appraisal_predicate(right, second):
+            return None
+        actual_reason = parsed['reason']
+        owner = re.search(r'(?:私|自分|わたし|僕|ぼく|俺|おれ)(?=は|が)', first)
+        if owner:
+            actual_reason = actual_reason.replace('あなた', owner.group(), 1)
+        when = _body_inverse_appraisal_time(right)
+        if actual_reason != first or parsed['time'] != when + ('の' if when == '当時' else 'での'):
+            return None
+        return tuple((len(raw[:parsed.start(key)].encode()), len(raw[:parsed.end(key)].encode()), value.encode())
+                     for key, value in (('reason', first), ('evaluation', second)))
+    if kind == "original_result_appraisal":
+        if (selected_subjective_input is not None and decision is not None
+            and decision.branch == 'LIMITED' and appraisal is not None
+            and appraisal.dimension == 'MATERIAL_WEIGHT' and appraisal.operation == 'RECEIVE_AS_MATERIAL'):
+            parsed = re.fullmatch(r'(?P<event>.+)ことについて、(?P<time>当時は|入力した時点では|回答した時点では|先の回答時点では)'
+                                  r'(?P<evaluation>.+)のですね。', raw)
+            from emlis_ai_grounded_observation_plan import _source_result_appraisal_predicate
+            endings = {c.split(':', 1)[1] for c in left.semantic_frame.attribute_codes
+                       if c.startswith('source_appraisal_event_ending:')}
+            if (parsed is None or len(endings) != 1 or not _source_result_appraisal_predicate(right, second)
+                or parsed['time'] != (_body_inverse_appraisal_time(right) + ('は' if _body_inverse_appraisal_time(right) == '当時' else 'では'))):
+                return None
+            ending = next(iter(endings))
+            actual = parsed['event']
+            owner = re.search(r'(?:私|自分|わたし|僕|ぼく|俺|おれ)(?=は|が)', first)
+            if owner:
+                actual = actual.replace('あなた', owner.group(), 1)
+            if (ending not in {'te', 'de', 'ta'}
+                or not actual.endswith({'te': 'た', 'de': 'だ', 'ta': 'た'}[ending])
+                or actual[:-1] + {'te': 'て', 'de': 'で', 'ta': 'た'}[ending] != first
+                or not _read_result_appraisal_finite(parsed['evaluation'], second)):
+                return None
+            return tuple((len(raw[:parsed.start(key)].encode()), len(raw[:parsed.end(key)].encode()), value.encode())
+                         for key, value in (('event', first), ('evaluation', second)))
+        if (selected_subjective_input is None or decision is None or decision.branch != 'NORMAL'
+            or appraisal is None or appraisal.focal_relation_ref is None
+            or proposition.focal_relation_ref != appraisal.focal_relation_ref):
+            return None
+        endings = {c.split(":", 1)[1] for c in left.semantic_frame.attribute_codes
+                   if c.startswith("source_appraisal_event_ending:")}
+        if len(endings) != 1:
+            return None
+        ending = next(iter(endings))
+        if ending not in {"te", "de", "ta"}:
+            return None
+        from cocolon_meaning_experience_engine.contracts import EmlisEvaluatedExperienceAppraisalContent
+        if type(appraisal) is not EmlisEvaluatedExperienceAppraisalContent:
+            return None
+        # Read the actual experience topology and inner predicate. Do not
+        # invoke the author or its content-to-surface derivation here.
+        positive = re.fullmatch(r'(?P<event>.+)ことを、(?P<time>当時、|入力した時点で、|回答した時点で、|先の回答時点で、)'
+            r'(?P<evaluation>.+)経験として受け取りました。', raw)
+        negative = re.fullmatch(r'(?P<event>.+)ことと、それについて(?P<time>当時は|入力した時点では|回答した時点では|先の回答時点では)'
+            r'(?P<evaluation>.+)ことの両方を受け取りました。', raw)
+        parsed = positive or negative
+        if parsed is None or ('positive' if positive else 'negative') != appraisal.polarity:
+            return None
+        when = _body_inverse_appraisal_time(right)
+        expected_time = when + (('、' if when == '当時' else 'で、') if positive
+                                else ('は' if when == '当時' else 'では'))
+        if parsed['time'] != expected_time:
+            return None
+        inner = re.fullmatch(r'(?P<owner>ご自身の中に|ご自身の理解の中で)(?P<still>まだ)?'
+            r'(?P<degree>少し|とても|本当に|まったく|あまり)?'
+            r'(?P<state>満たされた感覚があった|満たされた感覚がある|'
+            r'満たされた感覚がなかった|満たされた感覚がない|'
+            r'筋が通っていた|筋が通っている|筋が通っていなかった|筋が通っていない|'
+            r'納得した|納得している|納得しなかった|納得していない)',
+            parsed['evaluation'])
+        if inner is None:
+            return None
+        states = {
+            '満たされた感覚があった': ('satisfaction', 'positive', 'past', 'ご自身の中に'),
+            '満たされた感覚がある': ('satisfaction', 'positive', 'present', 'ご自身の中に'),
+            '満たされた感覚がなかった': ('satisfaction', 'negative', 'past', 'ご自身の中に'),
+            '満たされた感覚がない': ('satisfaction', 'negative', 'present', 'ご自身の中に'),
+            '筋が通っていた': ('acceptance', 'positive', 'past', 'ご自身の理解の中で'),
+            '筋が通っている': ('acceptance', 'positive', 'present', 'ご自身の理解の中で'),
+            '筋が通っていなかった': ('acceptance', 'negative', 'past', 'ご自身の理解の中で'),
+            '筋が通っていない': ('acceptance', 'negative', 'present', 'ご自身の理解の中で'),
+            '納得した': ('acceptance', 'positive', 'past', 'ご自身の理解の中で'),
+            '納得している': ('acceptance', 'positive', 'present', 'ご自身の理解の中で'),
+            '納得しなかった': ('acceptance', 'negative', 'past', 'ご自身の理解の中で'),
+            '納得していない': ('acceptance', 'negative', 'present', 'ご自身の理解の中で'),
+        }
+        degrees = {None: 'unmarked', '少し': 'slight', 'とても': 'very',
+                   '本当に': 'truly', 'まったく': 'not_at_all', 'あまり': 'not_much'}
+        if (states[inner['state']] != (appraisal.evaluation_kind, appraisal.polarity,
+                                       appraisal.evaluation_time, inner['owner'])
+            or bool(inner['still']) != appraisal.continuing
+            or degrees[inner['degree']] != appraisal.degree):
+            return None
+        if (appraisal.evaluation_kind == 'acceptance'
+            and inner['state'].startswith('納得') != (appraisal.degree != 'unmarked')):
+            return None
+        actual = parsed['event']
+        owner = re.search(r"(?:私|自分|わたし|僕|ぼく|俺|おれ)(?=は|が)", first)
+        if owner:
+            actual = actual.replace('あなた', owner.group(), 1)
+        if not actual.endswith({'te': 'た', 'de': 'だ', 'ta': 'た'}[ending]):
+            return None
+        restored = actual[:-1] + {'te': 'て', 'de': 'で', 'ta': 'た'}[ending]
+        if restored != first:
+            return None
+        return tuple((len(raw[:parsed.start(key)].encode()), len(raw[:parsed.end(key)].encode()), value.encode())
+                     for key, value in (('event', first), ('evaluation', second)))
+    if kind == "feeling_contrast":
+        source = str(resolver.resolve(left.source_span_ids[0]).raw_text or "").strip(" \u3000、,。．.")
+        if "source_received_chain_slot:first" in left.semantic_frame.attribute_codes:
+            ranges = tuple(c.split(":")[1:] for c in left.semantic_frame.attribute_codes
+                           if c.startswith("source_fragment_scalar_range:"))
+            if len(ranges) != 1 or source[int(ranges[0][0]):int(ranges[0][1])] != first:
+                return None
+            source = source[int(ranges[0][0]):]
+        joined = re.fullmatch(re.escape(first) + r"(?P<link>けれども|けれど|けど|のに)[、, ]*"
+                              + re.escape(second), source)
+        parsed = re.fullmatch(r"(?P<first>.+?)(?P<link>けれども|けれど|けど|のに)、"
+                              r"(?P<second>.+)(?:のですね|のです|のだと受け取りました)。", raw)
+        if (joined is None or parsed is None or parsed['link'] != joined['link']
+            or parsed['first'].endswith('な')
+            or _restore_thread_finite_answer(
+                parsed['first'][:-1] + 'な' if parsed['first'].endswith('だ') else parsed['first'],
+                first, copular_clause=True) != first
+            or _restore_thread_finite_answer(parsed['second'], second, copular_clause=True) != second):
+            return None
+        return tuple((len(raw[:parsed.start(key)].encode()), len(raw[:parsed.end(key)].encode()),
+                      value.encode()) for key, value in (('first', first), ('second', second)))
+    if kind == "received_event_feeling":
+        source = str(resolver.resolve(left.source_span_ids[0]).raw_text or "").strip(" \u3000、,。．.")
+        ranges = tuple(c.split(":")[1:] for c in right.semantic_frame.attribute_codes
+                       if c.startswith("source_fragment_scalar_range:"))
+        if len(ranges) != 1 or source[int(ranges[0][0]):int(ranges[0][1])] != second:
+            return None
+        joined = re.fullmatch(re.escape(first) + r"(?P<link>のに|けれども|けれど|けど)[、, ]*"
+                              + re.escape(second), source[:int(ranges[0][1])])
+        parsed = re.fullmatch(r"(?P<event>.+?)(?P<link>のに|けれども|けれど|けど)、"
+                             r"(?P<feeling>.+)(?:のですね|のです|のだと受け取りました)。", raw)
+        if joined is None or parsed is None:
+            return None
+        event = parsed['event']
+        owner = re.match(r"(?:私|自分|わたし)(?=は|が)", first)
+        if owner is not None:
+            if not event.startswith('あなた'):
+                return None
+            event = owner.group() + event[len('あなた'):]
+        if (event != first or parsed['link'] != joined['link']
+            or _restore_thread_finite_answer(parsed['feeling'], second, copular_clause=True) != second):
+            return None
+        return tuple((len(raw[:parsed.start(key)].encode()), len(raw[:parsed.end(key)].encode()), value.encode())
+                     for key, value in (('event', first), ('feeling', second)))
+    if kind == "received_experience_focus":
+        from emlis_ai_grounded_observation_plan import (
+            _source_nominal_past_feeling_parts, _LEADING_CONTRAST_RE,
+        )
+        source = _source_nominal_past_feeling_parts(second)
+        if source is None or source[1] not in {"に", "が"}:
+            return None
+        experience, particle, degree, feeling = source
+        lead = _LEADING_CONTRAST_RE.match(experience)
+        prefix = lead.group() if lead else ""
+        # Keep a source comma/space with its leading connective. Moving
+        # only the word would create a second comma after the focus marker.
+        if prefix:
+            end = len(prefix)
+            while end < len(experience) and experience[end] in "、, ":
+                end += 1
+            prefix, experience = experience[:end], experience[end:]
+        if (re.search(r"(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:は|が)", first + second)
+            or "とは思わない" in experience):
+            return None
+        parsed = re.fullmatch(
+            r"(?P<background>.+)けれど、(?P<response>.+)のは、"
+            r"(?P<experience>.+)こと(?:なのですね|なのです|なのだと受け取りました)。", raw)
+        if (parsed is None or parsed['background'] != first
+            or parsed['response'] != prefix + degree + feeling
+            or parsed['experience'] != experience
+            or prefix + parsed['experience'] + 'こと' + particle + degree + feeling != second):
+            return None
+        # Restore the complete transposed source only after reading all its
+        # roles. These spans serve the existing inverse, never the author.
+        return ((0, len(first.encode()), first.encode()),
+                (len(raw[:parsed.start('response')].encode()),
+                 len(raw[:parsed.end('experience')].encode()), second.encode()))
+    if kind == "answer_owned_standard":
+        stance_reading = re.fullmatch(
+            r"(?P<appraisal>.+)という振り返りを、(?P<wish>.+)という望みを起点に、"
+            r"一緒に見ていきたいです。", raw)
+        material_reading = re.fullmatch(
+            r"(?P<appraisal>.+)という振り返りは、(?P<wish>.+)という望みに"
+            r"照らしたものとして(?:読めます|受け取れます)。", raw)
+        if selected_subjective_input is not None:
+            parsed = stance_reading if position is not None else material_reading
+        else:
+            parsed = stance_reading or material_reading
+        if (parsed is None or parsed["appraisal"] != first or parsed["wish"] != second):
+            return None
+        spans = (('appraisal', first), ('wish', second))
+        return tuple((len(raw[:parsed.start(key)].encode()), len(raw[:parsed.end(key)].encode()),
+                      value.encode()) for key, value in spans)
+    source = re.fullmatch(r"(?P<matter>.+(?:か|のか))(?P<topic>は|が)?"
+                          r"(?P<state>(?:まだ|今は|もう)?(?:分からない|わからない|分からなくなった|"
+                          r"わからなくなった|決められない|迷っている))", second)
+    parsed = re.fullmatch(r"(?P<affirmed>.+)一方で、(?P<unknown>.+)のは、"
+                          r"(?P<matter>.+)という点(?:なのですね|なのだと読めます)。", raw)
+    if (source is None or parsed is None or parsed['affirmed'] != first
+        or parsed['unknown'] != source['state'] or parsed['matter'] != source['matter']):
+        return None
+    # The topicalization is one contiguous source-owned span. Restoring it for
+    # the existing inverse does not change the emitted body or original data.
+    return ((0, len(first.encode()), first.encode()),
+            (len(raw[:parsed.start('unknown')].encode()),
+             len(raw[:parsed.end('matter')].encode()), second.encode()))
+
+
+def _read_action_purpose_discourse(raw, move, plan, resolver, selected_subjective_input):
+    """Read the purpose and performed action independently from actual prose.
+
+    Source grammar supplies the two permitted roles, never the answer text.
+    Restoring that one source span serves the existing evidence inverse only;
+    it cannot promote the purpose to an achieved result or a cause.
+    """
+    from emlis_ai_grounded_observation_plan import source_owned_action_purpose
+    from emlis_ai_grounded_human_reception import source_grounded_reception_move_relations
+    if (move.reception_act != "honor_concrete_effort" or not move.required
+        or len(move.target_nucleus_ids) != 1 or move.support_nucleus_ids
+        or source_grounded_reception_move_relations(move, plan)):
+        return None
+    nucleus = next((n for n in plan.nuclei if n.nucleus_id == move.target_nucleus_ids[0]), None)
+    parts = source_owned_action_purpose(nucleus, resolver) if nucleus is not None else None
+    if parts is None:
+        return None
+    if selected_subjective_input is not None:
+        decision = next((d for d in selected_subjective_input.decisions if d.move_id == move.move_id), None)
+        proposition = decision.subjective_proposition if decision else None
+        appraisal = proposition.appraisal_content if proposition else None
+        if appraisal is None or appraisal.operation != "RECEIVE_AS_MATERIAL":
+            return None
+    purpose, connector, action = parts
+    parsed = re.fullmatch(r"(?P<action>.+)のは、(?P<purpose>.+)ため(?:なのですね|なのです|なのだと受け取りました)。", raw)
+    if parsed is None or parsed['action'] != action or parsed['purpose'] != purpose:
+        return None
+    # The inversion occupies one contiguous body range. Reconstruct the
+    # exact source order, including its connective, for downstream scope checks.
+    return ((0, len(raw[:parsed.end('purpose')].encode()),
+             (purpose + connector + action).encode()),)
+
+
+def _read_action_change_discourse(raw, move, plan, resolver, selected_subjective_input):
+    """Verify the past episode from body bytes without rerunning its author."""
+    from emlis_ai_grounded_observation_plan import source_owned_action_change
+    parts = source_owned_action_change(move, plan, resolver)
+    if parts is None:
+        return None
+    sequence = re.fullmatch(r"(?:後|あと)(?:に)?[、,]\s*|から[、,]\s*", parts[1])
+    negative_feeling = bool(sequence and re.fullmatch(
+        r"(?:(?:私|僕|ぼく|俺|おれ|わたし|自分)は(?:[、，][ \u3000]*)?)?"
+        r"(?:安心しなかった(?:です)?|安心しませんでした|落ち着かなかった(?:です)?|落ち着きませんでした|"
+        r"(?:嬉し|うれし)くなかった(?:です)?|(?:嬉し|うれし)くありませんでした)", parts[2]))
+    finite_feeling = parts[2].endswith(("落ち着きました", "嬉しかったです", "うれしかったです")) or bool(
+        sequence and re.fullmatch(r"(?:(?:私|僕|ぼく|俺|おれ|わたし|自分)は(?:[、，][ \u3000]*)?)?(?:落ち着いた|嬉しかった|うれしかった)", parts[2])) or negative_feeling
+    if selected_subjective_input is not None:
+        decision = next((d for d in selected_subjective_input.decisions if d.move_id == move.move_id), None)
+        proposition = decision.subjective_proposition if decision else None
+        appraisal = proposition.appraisal_content if proposition else None
+        from emlis_ai_grounded_human_reception import source_grounded_reception_move_relations
+        links = source_grounded_reception_move_relations(move, plan)
+        noncollapse = bool((finite_feeling or sequence and parts[2].endswith(("減った", "増えた", "戻った")))
+            and appraisal is not None
+            and appraisal.dimension == "RELATIONAL_NONCOLLAPSE"
+            and appraisal.operation == "PRESERVE_BOTH_ENDPOINTS"
+            and proposition.focal_relation_ref is not None
+            and appraisal.focal_relation_ref == proposition.focal_relation_ref
+            and len(links) == 1
+            and dict(selected_subjective_input.relation_pairs).get(proposition.focal_relation_ref)
+                == links[0].relation_id)
+        if not (appraisal is not None and appraisal.dimension == "MATERIAL_WEIGHT"
+                and appraisal.operation == "RECEIVE_AS_MATERIAL" or noncollapse):
+            return None
+    left, connector, right = parts
+    if sequence or right.endswith(("減りました", "増えました", "戻りました", "落ち着きました", "嬉しかったです", "うれしかったです")):
+        # Independently parse the omitted self-topic and plain past ending.
+        # The source still owns SELF/past; a different actor or connective
+        # cannot borrow that proof, nor can a causal/value appraisal.
+        visible_left = re.sub(r"^((?:(?:その後|それから)[、， \u3000]*)?)(?:私|僕|ぼく|俺|おれ|わたし|自分)(?:は|が|も)(?:[、，][ \u3000]*)?", r"\1", left, count=1)
+        visible_right = re.sub(r"(?:減りました|増えました|戻りました|落ち着きました|嬉しかったです|うれしかったです)$", lambda m: {
+            "減りました": "減った", "増えました": "増えた", "戻りました": "戻った",
+            "落ち着きました": "落ち着いた", "嬉しかったです": "嬉しかった", "うれしかったです": "うれしかった",
+        }[m.group()], right)
+        if negative_feeling:
+            visible_right = re.sub(r"(なかった)です$", r"\1", visible_right)
+            visible_right = re.sub(r"(?:安心しませんでした|落ち着きませんでした|嬉しくありませんでした|うれしくありませんでした)$",
+                lambda m: {"安心しませんでした": "安心しなかった", "落ち着きませんでした": "落ち着かなかった",
+                           "嬉しくありませんでした": "嬉しくなかった", "うれしくありませんでした": "うれしくなかった"}[m.group()], visible_right)
+        # A written first-person feeling belongs to the source writer;
+        # do not make it Emlis's own first-person utterance.
+        if finite_feeling:
+            visible_right = re.sub(r"^(?:私|僕|ぼく|俺|おれ|わたし|自分)は(?:[、，][ \u3000]*)?", "", visible_right, count=1)
+        parsed = re.fullmatch(r"(?P<episode>.+)(?:のですね|のです|のだと受け取りました)。", raw)
+        if parsed is None or parsed['episode'] != visible_left + connector + visible_right:
+            return None
+        start = len((visible_left + connector).encode())
+        return ((0, len(visible_left.encode()), left.encode()),
+                (start, start + len(visible_right.encode()), right.encode()))
+    parsed = re.fullmatch(r"(?P<episode>.+)(?:のですね|のです|のだと受け取りました)。", raw)
+    if parsed is None or parsed['episode'] != left + connector + right:
+        return None
+    start = len((left + connector).encode())
+    return ((0, len(left.encode()), left.encode()),
+            (start, start + len(right.encode()), right.encode()))
+
+
+def _answer_feeling_preceding_event(move, plan, resolver, selected_subjective_input,
+                                    preceding_context):
+    """Resolve a shared event only from its immediately preceding full reading.
+
+    Both selected duties and their order stay intact. An omitted event cannot
+    bind through another Move, another event, a partial body or an old answer.
+    """
+    from emlis_ai_grounded_observation_plan import source_owned_answer_feeling
+    roles = source_owned_answer_feeling(move, plan)
+    if roles is None or preceding_context is None:
+        return False
+    previous_move, previous_text = preceding_context
+    moves = plan.response_plan.human_reception_plan.moves
+    position = next((i for i, candidate in enumerate(moves) if candidate == move), -1)
+    event, answer, when = roles
+    if (when not in {"answer_time", "prior_answer_time"}
+        or position <= 0 or moves[position - 1] != previous_move
+        or previous_move.target_nucleus_ids != (event.nucleus_id,)
+        or len(previous_move.support_nucleus_ids) != 1
+        or not previous_move.required or previous_move.move_role != "felt_response"
+        or previous_move.reception_act != "stay_with_current_burden"):
+        return False
+    index = {n.nucleus_id: n for n in plan.nuclei}
+    original = index.get(previous_move.support_nucleus_ids[0])
+    if (original is None or original.source_fields != event.source_fields
+        or original.source_span_ids != event.source_span_ids
+        or original.allowed_claim_scope != "explicit_current_input"
+        or original.semantic_frame.actor != "current_user"
+        or original.semantic_frame.time_scope != "past"):
+        return False
+    return read_received_discourse(previous_text, previous_move, plan, resolver,
+                                   selected_subjective_input) is not None
+
+
+# Finite adjective stems already admitted by the thread answer grammar.
+# Each owner proves its own complete host and preserves the full source;
+# this does not expand the shared memo feeling lexicon.
+_THREAD_FINITE_ANSWER_FEELING_STEMS = frozenset({
+    "嬉し", "うれし", "寂し", "さびし", "悲し", "苦し", "つら", "辛",
+    "怖", "こわ", "重", "楽し", "軽",
+})
+
+
+def _thread_feeling_owner(source):
+    """Read the source owner independently, including a bounded medial one.
+
+    Read が only before the past passive-like perception, without later SELF/あなた.
+    A bare feeling does not distinguish its experiencer from its target.
+    """
+    leading = re.match(r"(?P<self>わたし|ぼく|おれ|私|僕|俺|自分)"
+                       r"(?P<particle>には|にも|は|も|が(?=[^、,。]+れ(?:た|なかった)ようで[、,])(?!.*(?:わたし|ぼく|おれ|私|僕|俺|自分|あなた)))", source)
+    if leading is not None:
+        return leading
+    medial = re.match(r"(?P<degree>(?:少し|とても|本当は|まだ|全然|あまり)+)"
+                      r"(?P<self>わたし|ぼく|おれ|私|僕|俺|自分)"
+                      r"(?P<particle>には|にも|は|も)", source)
+    if medial is None:
+        return None
+    tail = re.sub(r"^(?:少し|とても|本当は|まだ|全然|あまり)+", "",
+                  source[medial.end():], count=1)
+    explanation = re.fullmatch(r"(.+)の(?:です|だった|だ)", tail)
+    host = explanation[1] if explanation else tail
+    noun = re.fullmatch(r"(.+?)(?:な|だった|ではない|ではなかった)" if explanation
+                        else r"(.+?)(?:でした|だった|です|だ)", host)
+    if (noun is not None and _FEELING_RE.fullmatch(noun[1]) and not noun[1].endswith("い")
+        or _THREAD_POSITIVE_FEELING_COPULA_RE.fullmatch(source)
+        or _THREAD_NEGATIVE_FEELING_COPULA_RE.fullmatch(source)
+        or _THREAD_NOMINAL_FEELING_EXPLANATION_RE.fullmatch(source)):
+        return medial
+    adjective = re.fullmatch(r"(.+?)(?:くなかった|くない|かった|い)(?:です)?", host)
+    if adjective is not None and (
+        _FEELING_RE.fullmatch(adjective[1]) or _FEELING_RE.fullmatch(adjective[1] + "い")
+        or adjective[1].endswith("し") and _FEELING_RE.fullmatch(adjective[1][:-1])):
+        return medial
+    return None
+
+
+def _thread_feeling_lexical_host(source, owner):
+    host = source[:owner.start('self')] + source[owner.end():] if owner else source
+    # Only the lexical proof ignores these known prefixes. The reader below
+    # still matches every modifier, in source order, against the full body.
+    return re.sub(r"^(?:少し|とても|本当は|まだ|全然|あまり)+", "", host, count=1)
+
+
+def _thread_past_explanation_predicate(source):
+    """Read outer past separately from the source feeling's own tense."""
+    parsed = re.fullmatch(r"(?P<predicate>.+)のだった", source)
+    if parsed is None:
+        return None
+    predicate = parsed['predicate']
+    host = _thread_feeling_lexical_host(predicate, _thread_feeling_owner(source))
+    noun = re.fullmatch(r"(.+?)(?:な|だった|ではない|ではなかった)", host)
+    if (_THREAD_NOMINAL_FEELING_EXPLANATION_RE.fullmatch(source)
+        or noun is not None and _FEELING_RE.fullmatch(noun[1]) and not noun[1].endswith("い")):
+        return predicate
+    adjective = re.fullmatch(r"(.+?)(?:くなかった|くない|かった|い)", host)
+    if adjective is not None and (
+        adjective[1] in _THREAD_FINITE_ANSWER_FEELING_STEMS
+         or _FEELING_RE.fullmatch(adjective[1]) or _FEELING_RE.fullmatch(adjective[1] + "い")
+        or adjective[1].endswith("し") and _FEELING_RE.fullmatch(adjective[1][:-1])):
+        return predicate
+    return None
+
+
+def _read_result_appraisal_finite(visible, source):
+    """Restore a finite appraisal's polite ending independently of its author."""
+    source = source.removeprefix('今は').removeprefix('その時は')
+    for plain, polite in (('しなかった', 'しませんでした'), ('していない', 'していません'),
+                          ('した', 'しました'), ('している', 'しています')):
+        if visible.endswith(plain) and source == visible[:-len(plain)] + polite:
+            return True
+    return visible == source
+
+
+def _read_detached_feeling_discourse(raw, move, plan, resolver, selected_subjective_input,
+                                    *, sentence_ending=True):
+    """Read the still-active source feeling and its time from complete bytes.
+
+    A removed ABOUT edge cannot be reconstructed from proximity or the old
+    event's source span. Only the independently bounded reaction is readable.
+    No author call or old nominal surface supplies this proof.
+    """
+    if (getattr(resolver, "source_contract", None) != "cocolon.cmee.emlis_thread.v1"
+        or not move.required or move not in plan.response_plan.human_reception_plan.moves
+        or len(move.target_nucleus_ids) != 1 or move.support_nucleus_ids
+        or move.reference_mode == "anaphoric_first"):
+        return None
+    nucleus = next((n for n in plan.nuclei if n.nucleus_id == move.target_nucleus_ids[0]), None)
+    if nucleus is None:
+        return None
+    frame = nucleus.semantic_frame
+    codes = set(frame.attribute_codes)
+    from emlis_ai_grounded_observation_plan import _thread_revised_original_reaction
+    # Use the admitted meaning boundary, never the author's transformation.
+    revised = _thread_revised_original_reaction(nucleus, plan.relations, polarity=frame.polarity)
+    if (not ("thread_subject:withdrawn_source_event" in codes or revised)
+        or nucleus.kind != "reaction" or frame.predicate_kind != "feeling"
+        or frame.modality != "feeling" or frame.actor != "current_user"
+        or nucleus.retention != "required" or nucleus.grounding_kind != "explicit"
+        or len(nucleus.source_span_ids) != 1
+        or any(nucleus.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id) for r in plan.relations)
+        or (frame.polarity, move.reception_act) not in {
+            ("negative", "stay_with_current_burden"), ("positive", "recognize_lived_change")}):
+        return None
+    if selected_subjective_input is not None:
+        decision = next((d for d in selected_subjective_input.decisions if d.move_id == move.move_id), None)
+        appraisal = decision.subjective_proposition.appraisal_content if decision else None
+        if (appraisal is None or appraisal.dimension != "MATERIAL_WEIGHT"
+            or appraisal.operation != "RECEIVE_AS_MATERIAL"):
+            return None
+    span = resolver.resolve(nucleus.source_span_ids[0])
+    if resolver.source_fields_for(nucleus.source_span_ids) != nucleus.source_fields:
+        return None
+    source = _body_inverse_typed_source_fragment(nucleus, span.raw_text)
+    # Read the complete source separately from its finite surface inflection.
+    # Adjective politeness and a proven explanation can share the final
+    # acknowledgement. The returned proof restores the original source bytes.
+    if not source:
+        return None
+    from emlis_ai_grounded_observation_plan import (
+        _thread_withdrawn_result_appraisal, _source_result_appraisal_predicate,
+    )
+    if _thread_withdrawn_result_appraisal(nucleus, plan.relations):
+        parsed = re.fullmatch(r'(?P<time>当時は|入力した時点では|回答した時点では|先の回答時点では)(?P<feeling>.+)のですね。', raw)
+        if (not sentence_ending or parsed is None or _body_inverse_reception_context_ids(move, plan)
+            or not _source_result_appraisal_predicate(nucleus, source)
+            or parsed['time'] != (_body_inverse_appraisal_time(nucleus) + ('は' if _body_inverse_appraisal_time(nucleus) == '当時' else 'では'))
+            or not _read_result_appraisal_finite(parsed['feeling'], source)):
+            return None
+        return ((len(raw[:parsed.start('feeling')].encode()),
+                 len(raw[:parsed.end('feeling')].encode()), source.encode()),)
+    # A detached answer can retain multiple source SELF expressions as one
+    # explicitly user-owned noun. Read its entire sentence independently;
+    # this does not admit it as a finite operand of a feeling pair.
+    if (sentence_ending and "thread_subject:withdrawn_source_event" in codes
+        and nucleus.source_fields == ("answer_text_private",)
+        and nucleus.allowed_claim_scope == "explicit_supplemental_answer"
+        and frame.polarity == "negative" and move.reception_act == "stay_with_current_burden"
+        and not _body_inverse_reception_context_ids(move, plan)):
+        times = [c.split(":", 1)[1] for c in frame.attribute_codes if c.startswith("thread_time:")]
+        scopes = {"original_occasion": "past", "answer_time": "present", "prior_answer_time": "present"}
+        endings = {"attention": "を見過ごさず、小さくせずに受け止めています。",
+                   "significance": "を見失わず、小さくせずに受け止めています。",
+                   "felt_response": "を小さくせずに受け止めています。"}
+        ending = endings.get(move.move_role)
+        if (len(times) == 1 and scopes.get(times[0]) == frame.time_scope
+            and ending and raw.endswith(ending)
+            and selected_subjective_input is not None
+            and not re.search(r'[「」『』“”‘’"?？!！\r\n。]', source)):
+            nominal = raw[:-len(ending)]
+            if _read_multiple_self_answer_nominal(nominal, source, times[0]):
+                return ((0, len(nominal.encode()), source.encode()),)
+    owner = _thread_feeling_owner(source)
+    polite_adjective = re.fullmatch(r"(?P<predicate>.+(?:い|かった))です", source)
+    predicate = polite_adjective['predicate'] if polite_adjective else source
+    if _THREAD_NEGATIVE_FEELING_COPULA_RE.fullmatch(source):
+        predicate = re.sub(r"ありませんでした$", "なかった", predicate)
+        predicate = re.sub(r"ありません$", "ない", predicate)
+    explanatory = re.fullmatch(r"(?P<predicate>.+)の(?:です|だ)", source)
+    explanation_proven = False
+    nominal_explanation = False
+    if explanatory is not None:
+        host = _thread_feeling_lexical_host(explanatory['predicate'], owner)
+        noun = re.fullmatch(r"(.+?)(?:な|だった|ではない|ではなかった)", host)
+        nominal_explanation = bool(_THREAD_NOMINAL_FEELING_EXPLANATION_RE.fullmatch(source)
+            or noun is not None and _FEELING_RE.fullmatch(noun[1])
+                                   and not noun[1].endswith("い"))
+        adjective = re.fullmatch(r"(.+?)(?:くなかった|くない|かった|い)", host)
+        explanation_proven = nominal_explanation or bool(adjective is not None and (
+            adjective[1] in _THREAD_FINITE_ANSWER_FEELING_STEMS
+             or _FEELING_RE.fullmatch(adjective[1]) or _FEELING_RE.fullmatch(adjective[1] + "い")
+            or adjective[1].endswith("し") and _FEELING_RE.fullmatch(adjective[1][:-1])))
+        if not explanation_proven:
+            return None
+        predicate = explanatory['predicate']
+    copular = re.fullmatch(r"(?P<host>.+?)(?P<ending>でした|だった|です|だ)", source)
+    copular_proven = False
+    if copular is not None:
+        noun = _thread_feeling_lexical_host(copular['host'], owner)
+        copular_proven = bool(_FEELING_RE.fullmatch(noun) and not noun.endswith("い")
+            or _THREAD_POSITIVE_FEELING_COPULA_RE.fullmatch(source))
+        if copular_proven:
+            predicate = copular['host'] + (
+                "だった" if copular['ending'] in {"でした", "だった"} else "だ")
+    # Restore the source speaker from actual recipient-facing prose below.
+    # This is independent of the author's surface transformation.
+    remainder = predicate[owner.end():] if owner else predicate
+    if (not source or not (nominal_explanation or copular_proven
+                          or _SOURCE_GROUNDED_FINITE_END_RE.search(predicate))
+        or re.search(r"(?:です|ます|でした|ました|だ)$", predicate) and not copular_proven
+        or re.search(r"(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:には|にも|は|も|が)", remainder)
+        or re.search(r'[「」『』“”‘’"?？!！\r\n。]', source)):
+        return None
+    if nucleus.source_fields in {("memo",), ("memo_action",)}:
+        from emlis_ai_grounded_observation_plan import (
+            _thread_withdrawn_original_reaction, _received_event_reaction_projections,
+        )
+        if (not _thread_withdrawn_original_reaction(nucleus, plan.relations)
+            or not any(row.kind == "reaction" and row.polarity == "negative"
+                       and set(row.attribute_codes) <= codes
+                       for row in _received_event_reaction_projections(span, frame))):
+            return None
+        expected_time = "その時は"
+    elif (nucleus.source_fields == ("answer_text_private",)
+          and nucleus.allowed_claim_scope == "explicit_supplemental_answer"):
+        times = [c.split(":", 1)[1] for c in frame.attribute_codes if c.startswith("thread_time:")]
+        prefixes = {"original_occasion": "その時は", "answer_time": "回答した時点では",
+                    "prior_answer_time": "先の回答時点では"}
+        if len(times) != 1 or times[0] not in prefixes:
+            return None
+        expected_time = prefixes[times[0]]
+    else:
+        return None
+    if owner:
+        expected_time = {"その時は": "その時、", "回答した時点では": "回答した時点で、",
+                         "先の回答時点では": "先の回答時点で、"}[expected_time]
+    if revised:
+        expected_time = "言い直してくださった気持ちについては、" + ("当時、" if owner else "当時は")
+    elif (raw.startswith("最初の記録にあるとおり、")
+          and nucleus.source_fields in {("memo",), ("memo_action",)}
+          and len({r.to_nucleus_id for r in plan.relations
+                   if r.type == "evaluation_about_event"}) >= 2):
+        # The original source and withdrawn reaction were independently
+        # proved above. Keep earlier saved bare-time sentences readable too.
+        expected_time = "最初の記録にあるとおり、" + ("当時、" if owner else "当時は")
+    parsed = re.fullmatch(r"(?P<time>(?:言い直してくださった気持ちについては、|最初の記録にあるとおり、)?"
+                          r"(?:その時は|回答した時点では|先の回答時点では|"
+                          r"その時、|回答した時点で、|先の回答時点で、|当時は|当時、))"
+                          r"(?P<feeling>.+)(?P<ending>のでしたね|のですね|のです|のだと受け取りました)。", raw)
+    if parsed is None or parsed['time'] != expected_time:
+        return None
+    restored = parsed['feeling']
+    if owner:
+        recipient = source[:owner.start('self')] + "あなた" + owner['particle']
+        # Prove the bounded degree order from the source, without its author.
+        if (owner.groupdict().get('degree') == "少し"
+            and not re.match(r"(?:少し|とても|本当は|まだ|全然|あまり)", source[owner.end():])):
+            recipient = "あなた" + owner['particle'] + owner['degree']
+        if not restored.startswith(recipient):
+            return None
+        restored = owner.group() + restored[len(recipient):]
+    # A synthetic ending used to parse the left operand of a pair is not
+    # the response's real acknowledgement. Its explanation must remain のだ.
+    expected = predicate + ("のだ" if explanation_proven and not sentence_ending else "")
+    if copular_proven and predicate.endswith("だ") and sentence_ending:
+        expected = predicate[:-1] + "な"
+    if parsed['ending'] == "のでしたね":
+        expected = _thread_past_explanation_predicate(source) if sentence_ending else None
+    if restored != expected:
+        return None
+    return ((len(raw[:parsed.start('feeling')].encode()),
+             len(raw[:parsed.end('feeling')].encode()), source.encode()),)
+
+
+def read_detached_feeling_pair(raw, moves, plan, resolver, selected_subjective_input):
+    """Read both full finite operands and their separate source times.
+
+    Try every additive boundary; only one complete source-owned partition
+    may succeed. A connective inside a source cannot shorten either operand.
+    Return actual body byte intervals, with no author or replay dependency.
+
+    This existing two-duty reader also reads an original reaction followed
+    by its answer. They share an event, but not predicates or source times.
+    """
+    reception_plan = plan.response_plan.human_reception_plan
+    from emlis_ai_grounded_human_reception import _duplicate_reason_pair
+    repeated_at = _duplicate_reason_pair(reception_plan, 'full', plan=plan, resolver=resolver)
+    active = reception_active_moves(reception_plan, 'full')
+    if repeated_at is not None and tuple(moves) == active[repeated_at:repeated_at + 2]:
+        if selected_subjective_input is None:
+            return None
+        decisions = {d.move_id: d for d in selected_subjective_input.decisions}
+        if any(m.move_id not in decisions or decisions[m.move_id].branch != 'LIMITED' for m in moves):
+            return None
+        # Read both exact-three contributions from this one actual sentence.
+        # Equal byte intervals do not erase their distinct source ownership.
+        proofs = tuple(_read_relational_focus_discourse(raw, move, plan, resolver,
+            selected_subjective_input) for move in moves)
+        return proofs if all(p is not None for p in proofs) and proofs[0] == proofs[1] else None
+
+    if (len(moves) == 2 and selected_subjective_input is not None
+        and "selection:source_owned_answer_adjacent" in reception_plan.depth_policy.selection_reason_codes):
+        from emlis_ai_grounded_observation_plan import source_owned_answer_feeling
+        active = reception_active_moves(reception_plan, "full")
+        roles = source_owned_answer_feeling(moves[1], plan)
+        positions = tuple(i for i in range(len(active) - 1) if active[i:i + 2] == tuple(moves))
+        if (len(active) != 3 or len(positions) != 1
+            or reception_plan.depth_policy.max_moves_per_sentence < 2
+            or reception_plan.depth_policy.min_sentences > 2
+            or not roles or roles[2] not in {"answer_time", "prior_answer_time"}
+            or roles[1].semantic_frame.time_scope != "present"
+            or not all(m.required and m.move_role == "felt_response" for m in moves)
+            or moves[0].reception_act != "stay_with_current_burden"
+            or moves[0].target_nucleus_ids != (roles[0].nucleus_id,)
+            or len(moves[0].support_nucleus_ids) != 1
+            or not raw.startswith("当時、") or raw.count("。") != 1 or not raw.endswith("。")):
+            return None
+        matches = []
+        for boundary in re.finditer(r"、(?=回答した時点では|先の回答時点では)", raw):
+            left, right = raw[len("当時、"):boundary.start()], raw[boundary.end():]
+            if left.endswith("つながらず"):
+                finite = left[:-len("つながらず")] + "つながらなかった"
+            elif left.endswith("感じ"):
+                finite = left + "た"
+            elif left.endswith("く"):
+                finite = left[:-1] + "かった"
+            else:
+                continue
+            first = read_received_discourse(finite + "。", moves[0], plan, resolver, selected_subjective_input)
+            second = _read_answer_feeling_discourse(right, moves[1], plan, resolver,
+                selected_subjective_input, preceding_context=(moves[0], finite + "。"))
+            if first is None or second is None:
+                continue
+            if left.endswith("く"):
+                # Only the restored final adjective extends beyond actual
+                # bytes. Its full source was independently proved above;
+                # bind it to the actual continuative, never the next answer.
+                first = tuple((a, len(left.encode()) if b == len(finite.encode()) else b, source)
+                              for a, b, source in first)
+            # Restore only source ranges actually present before the changed
+            # inflection; do not borrow bytes from the following answer.
+            if any(not 0 <= a < b <= len(left.encode()) for a, b, _ in first):
+                continue
+            prefix, offset = len("当時、".encode()), len(raw[:boundary.end()].encode())
+            matches.append((tuple((a + prefix, b + prefix, source) for a, b, source in first),
+                            tuple((a + offset, b + offset, source) for a, b, source in second)))
+        return matches[0] if len(matches) == 1 else None
+    if (len(moves) != 2 or selected_subjective_input is None
+        or any(len(move.target_nucleus_ids) != 1 for move in moves)
+        or moves[0].target_nucleus_ids == moves[1].target_nucleus_ids
+        or set(moves[0].source_evidence_span_ids) & set(moves[1].source_evidence_span_ids)):
+        return None
+    if raw.startswith("二つの評価とも、"):
+        from emlis_ai_grounded_observation_plan import _thread_withdrawn_result_appraisal
+        index = {n.nucleus_id: n for n in plan.nuclei}
+        if (len(reception_active_moves(reception_plan, "full")) != 3
+            or not all(_thread_withdrawn_result_appraisal(index[m.target_nucleus_ids[0]], plan.relations)
+                       for m in moves)):
+            return None
+        prefix = "二つの評価とも、"
+        proofs = tuple(_read_detached_feeling_discourse(raw[len(prefix):], m, plan, resolver,
+                                                       selected_subjective_input) for m in moves)
+        if any(proof is None for proof in proofs):
+            return None
+        offset = len(prefix.encode())
+        return tuple(tuple((a + offset, b + offset, source) for a, b, source in proof) for proof in proofs)
+    shared = re.fullmatch(r"(?P<feeling>.+)という気持ちを、どちらの言葉からも受け取りました。", raw)
+    if shared is not None:
+        # Both refers to two independent input mentions, not two events or
+        # two moments. Restore each complete source from the shared predicate.
+        # The temporary ending is outside the returned actual byte intervals.
+        finite = shared['feeling'] + "のですね。"
+        active = reception_active_moves(plan.response_plan.human_reception_plan, "full")
+        if len(active) != 3:
+            return None
+        nuclei = tuple(next((n for n in plan.nuclei
+                             if n.nucleus_id == move.target_nucleus_ids[0]), None)
+                       for move in moves)
+        if (any(n is None or len(n.source_span_ids) != 1 for n in nuclei)
+            or set(nuclei[0].source_span_ids) & set(nuclei[1].source_span_ids)):
+            return None
+        proofs = tuple(_read_detached_feeling_discourse(
+            finite, move, plan, resolver, selected_subjective_input, sentence_ending=False)
+            for move in active)
+        if sum(proof is not None for proof in proofs) != 2 or any(move not in active for move in moves):
+            return None
+        pair = tuple(proofs[active.index(move)] for move in moves)
+        if (any(proof is None for proof in pair)
+            or any(not 0 <= start < end <= len(shared['feeling'].encode())
+                   for proof in pair for start, end, _ in proof)):
+            return None
+        return pair
+    matches = []
+    for boundary in re.finditer("し、", raw):
+        left = raw[:boundary.start()]
+        right = raw[boundary.end():]
+        first = _read_detached_feeling_discourse(
+            left + "のですね。", moves[0], plan, resolver, selected_subjective_input,
+            sentence_ending=False)
+        second = _read_detached_feeling_discourse(
+            right, moves[1], plan, resolver, selected_subjective_input)
+        if first is None or second is None or first[0][2] == second[0][2]:
+            continue
+        if (left.encode()[first[0][0]:first[0][1]]
+            == right.encode()[second[0][0]:second[0][1]]):
+            # Different politeness cannot make two equal visible duties
+            # distinct. Such Moves retain their separate existing topology.
+            continue
+        offset = len(raw[:boundary.end()].encode())
+        matches.append((first, tuple((a + offset, b + offset, source) for a, b, source in second)))
+    return matches[0] if len(matches) == 1 else None
+
+
+def _read_answer_feeling_discourse(raw, move, plan, resolver, selected_subjective_input,
+                                   preceding_context=None):
+    """Read event ownership, source time and the full answer from body bytes.
+
+    No author replay or expected sentence grants admission. The feeling is
+    still the person's explicit answer, not Emlis's state or an inferred change.
+    """
+    from emlis_ai_grounded_observation_plan import source_owned_answer_feeling
+    roles = source_owned_answer_feeling(move, plan)
+    if getattr(resolver, "source_contract", None) != "cocolon.cmee.emlis_thread.v1":
+        return None
+    if roles is None:
+        return None
+    if selected_subjective_input is not None:
+        decision = next((d for d in selected_subjective_input.decisions if d.move_id == move.move_id), None)
+        appraisal = decision.subjective_proposition.appraisal_content if decision else None
+        if (appraisal is None or appraisal.dimension != "MATERIAL_WEIGHT"
+            or appraisal.operation != "RECEIVE_AS_MATERIAL"):
+            return None
+    shared_event = _answer_feeling_preceding_event(
+        move, plan, resolver, selected_subjective_input, preceding_context)
+    return _read_answer_feeling_clause(raw, *roles, plan, resolver, shared_event=shared_event)
+
+
+def _read_answer_feeling_clause(raw, event, answer, when, plan, resolver, *, shared_event=False,
+                               allow_past_copular=False, shared_explanatory_ending=True):
+    """Restore one complete answer and its own event/time from actual bytes."""
+    detached = event is None
+    if detached and ("thread_subject:withdrawn_source_event" not in answer.semantic_frame.attribute_codes
+        or any(answer.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id) for r in plan.relations)
+        or resolver.source_fields_for(answer.source_span_ids) != answer.source_fields):
+        return None
+    qualifier = re.match(r"(?:先|間|後)に書かれた方では、", raw)
+    offset = 0
+    if detached:
+        label = next((p for p in ("先の回答にあるとおり、", "先の回答では、") if raw.startswith(p)), None)
+        if label is None:
+            return None
+        offset = len(label.encode())
+        raw = raw[len(label):]
+    if qualifier is not None:
+        if detached or qualifier.group() != _read_received_record_prefixes(plan, resolver).get(event.nucleus_id):
+            return None
+        offset = len(qualifier.group().encode())
+        raw = raw[qualifier.end():]
+    index = {n.nucleus_id: n for n in plan.nuclei}
+    event_text = final_reception_source_anchor_text(event.nucleus_id, index, resolver) if event else ""
+    source = final_reception_source_anchor_text(answer.nucleus_id, index, resolver)
+    if detached and source != _body_inverse_typed_source_fragment(
+        answer, resolver.resolve(answer.source_span_ids[0]).raw_text):
+        return None
+    # A source-proven owner changes perspective at the same position.
+    # The event has its own source-proven SELF owner. Embedded subjects still
+    # fail; a visible recipient must restore the complete original event.
+    event_owner = re.match(r"^(?:私|自分|わたし)(?=は|が)", event_text)
+    owner = _thread_feeling_owner(source)
+    polite = re.fullmatch(r"(?P<predicate>.+(?:い|かった))です", source)
+    predicate = polite['predicate'] if polite else source
+    if _THREAD_NEGATIVE_FEELING_COPULA_RE.fullmatch(source):
+        predicate = re.sub(r"ありませんでした$", "なかった", predicate)
+        predicate = re.sub(r"ありません$", "ない", predicate)
+    explanatory = re.fullmatch(r"(?P<predicate>.+)の(?:です|だ)", source)
+    explanation_proven = False
+    copular = re.fullmatch(r"(?P<host>.+?)(?:でした|だった)", source) if allow_past_copular else None
+    noun = _thread_feeling_lexical_host(copular['host'], owner) if copular else ""
+    past_copular_proven = bool(noun and _FEELING_RE.fullmatch(noun) and not noun.endswith("い"))
+    if past_copular_proven:
+        predicate = copular['host'] + "だった"
+    nominal_feeling = _THREAD_POSITIVE_FEELING_COPULA_RE.fullmatch(source)
+    if nominal_feeling:
+        copular = re.fullmatch(r"(?P<host>.+?)(?P<ending>でした|だった|です|だ)", source)
+        predicate = copular['host'] + ("だった" if copular['ending'] in {"でした", "だった"} else "だ")
+    if explanatory is not None:
+        host = _thread_feeling_lexical_host(explanatory['predicate'], owner)
+        adjective = re.fullmatch(r"(.+?)(?:くなかった|くない|かった|い)", host)
+        explanation_proven = bool(_THREAD_NOMINAL_FEELING_EXPLANATION_RE.fullmatch(source)
+            or adjective is not None and (
+            adjective[1] in _THREAD_FINITE_ANSWER_FEELING_STEMS
+             or _FEELING_RE.fullmatch(adjective[1]) or _FEELING_RE.fullmatch(adjective[1] + "い")
+            or adjective[1].endswith("し") and _FEELING_RE.fullmatch(adjective[1][:-1])))
+        if explanation_proven:
+            predicate = explanatory['predicate']
+    source_predicate = predicate[owner.end():] if owner else predicate
+    if (not detached and not event_text or not source
+        or not (explanation_proven or _SOURCE_GROUNDED_FINITE_END_RE.search(predicate))
+        or re.search(r"(?:です|ます|でした|ました|だ)$", predicate) and not (nominal_feeling or explanation_proven)
+        or re.search(r"(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:は|も|が)",
+                     event_text[event_owner.end():] if event_owner else event_text)
+        or re.search(r"(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:には|にも|は|も|が)", source_predicate)
+        or re.search(r'[「」『』“”‘’"?？!！\r\n。]', event_text + source)):
+        return None
+    parsed = re.fullmatch(r"(?:(?P<event>.+)ことについて、)?"
+        r"(?P<time>その時は|回答した時点では|先の回答時点では)"
+        r"(?P<feeling>.+)(?P<ending>のでしたね|のですね|のです|のだと受け取りました)。", raw)
+    expected_time = {"original_occasion": "その時は", "answer_time": "回答した時点では",
+                     "prior_answer_time": "先の回答時点では"}[when]
+    past_explanation = parsed is not None and parsed['ending'] == "のでしたね"
+    if past_explanation and _thread_past_explanation_predicate(source) is None:
+        return None
+    parsed_event = parsed['event'] if parsed is not None else None
+    if parsed_event is not None and event_owner is not None:
+        if not parsed_event.startswith("あなた"):
+            return None
+        parsed_event = event_owner.group() + parsed_event[len("あなた"):]
+    if (parsed is None or qualifier is not None and parsed_event is None or (parsed_event != (None if detached else event_text)
+            and not (not detached and parsed['event'] is None and shared_event)) or parsed['time'] != expected_time
+        or _restore_thread_finite_answer(parsed['feeling'] + ("のだった" if past_explanation else ""), source,
+            copular_clause=explanation_proven or past_copular_proven or bool(nominal_feeling),
+            shared_explanatory_ending=explanation_proven and shared_explanatory_ending) != source):
+        return None
+    return tuple((offset + len(raw[:parsed.start(key)].encode()), offset + len(raw[:parsed.end(key)].encode()), value.encode())
+                 for key, value in (("event", event_text), ("feeling", source))
+                 if parsed[key] is not None)
+
+
+def _read_positive_answer_group_discourse(raw, move, plan, resolver, selected_subjective_input):
+    """Read each complete selected answer at its unique source event boundary.
+
+    No author output is replayed. Each operand retains its own ABOUT endpoint,
+    source time, subject, degree and polarity; coordination adds no relation.
+    """
+    if (move.reception_act not in {"recognize_lived_change", "stay_with_current_burden"} or not move.required
+        or move not in plan.response_plan.human_reception_plan.moves
+        or move.support_nucleus_ids or not 2 <= len(move.target_nucleus_ids) <= 3
+        or FINAL_STAGE1_GROUNDED_PROJECTION_VERSION not in plan.source_contracts
+        or getattr(resolver, "source_contract", None) != "cocolon.cmee.emlis_thread.v1"):
+        return None
+    index = {n.nucleus_id: n for n in plan.nuclei}
+    rows = []
+    positive = move.reception_act == "recognize_lived_change"
+    record_prefixes = _read_received_record_prefixes(plan, resolver)
+    event_sources = []
+    qualified = re.search(r"(?:先|間|後)に書かれた方では、", raw) is not None
+    for nid in move.target_nucleus_ids:
+        answer = index[nid]
+        frame = answer.semantic_frame
+        times = tuple(c.split(":", 1)[1] for c in frame.attribute_codes if c.startswith("thread_time:"))
+        about = tuple(r for r in plan.relations if r.type == "evaluation_about_event"
+            and r.to_nucleus_id == nid and r.relation_id in plan.coverage_requirements.required_relation_ids)
+        detached = bool(positive and len(move.target_nucleus_ids) == 2
+            and nid == move.target_nucleus_ids[0]
+            and "thread_subject:withdrawn_source_event" in frame.attribute_codes
+            and not any(nid in (r.from_nucleus_id, r.to_nucleus_id) for r in plan.relations))
+        if ((not is_grounded_positive_feeling(answer) if positive else
+                (answer.kind, frame.predicate_kind, frame.modality, frame.polarity)
+                    != ("reaction", "feeling", "feeling", "negative"))
+            or frame.actor != "current_user"
+            or answer.retention != "required" or answer.grounding_kind != "explicit"
+            or answer.source_fields != ("answer_text_private",) or len(answer.source_span_ids) != 1
+            or answer.allowed_claim_scope != "explicit_supplemental_answer"
+            or len(times) != 1 or times[0] not in {"original_occasion", "answer_time", "prior_answer_time"}
+            or frame.time_scope != ("past" if times[0] == "original_occasion" else "present")
+            or not detached and (len(about) != 1 or about[0].retention != "required"
+                or about[0].grounding_kind != "user_stated_relation")):
+            return None
+        if detached:
+            event_sources.append("")
+            rows.append((None, answer, times[0], ""))
+            continue
+        event = index[about[0].from_nucleus_id]
+        if (event.kind != "event" or event.retention != "required" or event.grounding_kind != "explicit"
+            or event.source_fields not in {("memo",), ("memo_action",)}
+            or resolver.source_fields_for(event.source_span_ids) != event.source_fields
+            or event.semantic_frame.actor != "current_user" or event.semantic_frame.modality != "fact"
+            or event.semantic_frame.time_scope != "past"):
+            return None
+        event_text = final_reception_source_anchor_text(event.nucleus_id, index, resolver)
+        if not event_text:
+            return None
+        event_sources.append(event_text)
+        if "thread_subject:unique_source_clause" not in frame.attribute_codes:
+            # Equal names remain distinct only through their original written
+            # positions and this answer's exact ABOUT/range/time binding.
+            ranges = tuple(c for c in event.semantic_frame.attribute_codes
+                           if c.startswith("source_fragment_scalar_range:"))
+            links = tuple(c for c in event.semantic_frame.attribute_codes
+                          if c.startswith("source_received_event_link:"))
+            if (event.nucleus_id not in record_prefixes or len(event.source_span_ids) != 1
+                or event.allowed_claim_scope != "explicit_current_input"
+                or event.semantic_frame.predicate_kind != "event"
+                or not {"semantic_role:final_stage1_compound_meaning",
+                        "source_fragment_scalar_source:normalized_raw_text"}
+                    <= set(event.semantic_frame.attribute_codes)
+                or ranges != (f"source_fragment_scalar_range:0:{len(event_text)}",)
+                or len(links) != 1 or links[0] not in {"source_received_event_link:noni",
+                    "source_received_event_link:kedo", "source_received_event_link:keredo",
+                    "source_received_event_link:keredomo"}
+                or len(about[0].source_span_ids) != 2
+                or set(about[0].source_span_ids) != set((*event.source_span_ids, *answer.source_span_ids))
+                or {c for c in frame.attribute_codes if c.startswith("thread_subject:distinct_source_occurrence:")}
+                    != {"thread_subject:distinct_source_occurrence:" + event.source_span_ids[0]
+                        + ":thread_time:" + times[0] + ":" + ranges[0] + ":" + links[0]}):
+                return None
+        event_visible = re.sub(r"^(?:私|自分|わたし)(?=は|が)", "あなた", event_text, count=1)
+        if qualified:
+            event_visible = record_prefixes.get(event.nucleus_id, "") + event_visible
+        rows.append((event, answer, times[0], event_visible))
+    if len({event.nucleus_id if event else None for event, _, _, _ in rows}) != len(rows):
+        return None
+    if selected_subjective_input is not None:
+        decision = next((d for d in selected_subjective_input.decisions if d.move_id == move.move_id), None)
+        appraisal = decision.subjective_proposition.appraisal_content if decision else None
+        if (appraisal is None or appraisal.dimension != "MATERIAL_WEIGHT"
+            or appraisal.operation != "RECEIVE_AS_MATERIAL"):
+            return None
+    common_event = re.sub(r"^(?:私|自分|わたし)(?=は|が)", "あなた", event_sources[0], count=1)
+    common_topic = common_event + "ことについて、"
+    shared_topic = bool(rows[0][0] is not None and record_prefixes.get(rows[0][0].nucleus_id)
+        and raw.startswith(common_topic + record_prefixes[rows[0][0].nucleus_id]))
+    if shared_topic and (len(set(event_sources)) != 1
+        or not all(record_prefixes.get(row[0].nucleus_id) for row in rows)
+        or len({record_prefixes[row[0].nucleus_id] for row in rows}) != len(rows)):
+        return None
+    labels = ([record_prefixes[row[0].nucleus_id] for row in rows] if shared_topic else
+              [row[3] + "ことについて、" if row[0] is not None else
+               "先の回答にあるとおり、" if raw.startswith("先の回答にあるとおり、") else "先の回答では、"
+               for row in rows])
+    cuts = [len(common_topic) if shared_topic else 0]
+    if (qualified or shared_topic) and not raw[cuts[0]:].startswith(labels[0]):
+        return None
+    later_labels = labels[1:]
+    for position, event_text in enumerate(later_labels):
+        boundaries = tuple(re.finditer(re.escape("し、" + event_text), raw))
+        occurrence = later_labels[:position].count(event_text)
+        if len(boundaries) != later_labels.count(event_text) or boundaries[occurrence].start() <= cuts[-1]:
+            return None
+        cuts.append(boundaries[occurrence].end() - len(event_text))
+    proofs = []
+    for i, (start, row) in enumerate(zip(cuts, rows)):
+        last = i == len(rows) - 1
+        end = len(raw) if last else cuts[i + 1] - len("し、")
+        part = raw[start:end]
+        if shared_topic:
+            # Validate the actual written-position boundary before lending
+            # the shared event to this one answer. Offsets remain in raw.
+            if not part.startswith(labels[i]):
+                return None
+            start += len(labels[i])
+            part = part[len(labels[i]):]
+        parsed_part = part
+        answer_source = final_reception_source_anchor_text(row[1].nucleus_id, index, resolver)
+        if (not last and (_THREAD_POSITIVE_FEELING_COPULA_RE.fullmatch(answer_source)
+                         or _THREAD_NOMINAL_FEELING_EXPLANATION_RE.fullmatch(answer_source)
+                         or answer_source.endswith(("のです", "のだ")) and part.endswith("のだ"))
+            and answer_source.endswith(("です", "だ"))):
+            # A continuing present copula is だし, not なし. Restore only
+            # its same-width final kana for the synthetic acknowledgement;
+            # proof offsets still point to the actual finite source operand.
+            # The clause reader below independently proves the complete
+            # adjective explanation before accepting this normalization.
+            if not part.endswith("だ"):
+                return None
+            parsed_part = part[:-1] + "な"
+        proof = _read_answer_feeling_clause(
+            parsed_part if last else parsed_part + "のですね。", *row[:3], plan, resolver,
+            allow_past_copular=not positive, shared_explanatory_ending=last,
+            shared_event=shared_topic)
+        if proof is None or any(b > len(part.encode()) for _, b, _ in proof):
+            return None
+        if shared_topic:
+            # Every ABOUT edge still owns an event operand. Equal complete
+            # source events can point to the same actual shared-topic bytes;
+            # their answer/position operands remain distinct below.
+            proofs.append((0, len(common_event.encode()), event_sources[i].encode()))
+        offset = len(raw[:start].encode())
+        proofs.extend((a + offset, b + offset, source) for a, b, source in proof)
+    return tuple(proofs)
+
+
+def _read_independent_decision_discourse(raw, move, plan, resolver, selected_subjective_input):
+    """Read both unresolved hosts and their explicit separation from prose.
+
+    Source grammar proves roles; this reader checks actual bytes rather than
+    asking the author for its output. Selection and focus remain unchanged.
+    """
+    from emlis_ai_grounded_observation_plan import (
+        _source_independent_decision_group, _source_independent_decision_clause_parts,
+        _source_material_allows_reverse,
+    )
+    group = _source_independent_decision_group(plan.nuclei, plan.relations)
+    if (not group or not move.required or move.move_role != "felt_response"
+        or move.reception_act != "stay_with_current_burden"
+        or re.search(r'[「」『』“”‘’"?？!！\r\n]', raw)):
+        return None
+    selected = (move.target_nucleus_ids, move.support_nucleus_ids)
+    forward = ((group[0].nucleus_id,), (group[1].nucleus_id,))
+    reverse = ((group[1].nucleus_id,), (group[0].nucleus_id,))
+    if selected == reverse and _source_material_allows_reverse(group):
+        group = (group[1], group[0], *group[2:])
+    elif selected != forward:
+        return None
+    if selected_subjective_input is not None:
+        decision = next((d for d in selected_subjective_input.decisions
+                         if d.move_id == move.move_id), None)
+        appraisal = decision.subjective_proposition.appraisal_content if decision else None
+        if (appraisal is None or appraisal.dimension != "MATERIAL_WEIGHT"
+            or appraisal.operation != "RECEIVE_AS_MATERIAL"):
+            return None
+    sources = tuple(str(resolver.resolve(n.source_span_ids[0]).raw_text).strip(" 　。．.")
+                    for n in group[:2] if len(n.source_span_ids) == 1)
+    if len(sources) != 2:
+        return None
+    for nucleus, source in zip(group, sources):
+        proof = _source_independent_decision_clause_parts(source)
+        if (proof is None or "lexical:source_independent_decision_" + proof[0]
+            not in nucleus.semantic_frame.attribute_codes):
+            return None
+    parsed = re.fullmatch(r"(?P<left>[^。！？!?]+)こととは別に、(?P<right>[^。！？!?]+)"
+                          r"(?:のですね|のです|のだと受け取りました)。", raw)
+    if parsed is None:
+        return None
+    expected = tuple(re.sub(r"^それとは別に[、,]?", "",
+                            re.sub(r"決められません$", "決められない",
+                                   re.sub(r"迷っています$", "迷っている", source)))
+                     for source in sources)
+    if (parsed['left'], parsed['right']) != expected:
+        return None
+    return tuple((len(raw[:parsed.start(key)].encode()), len(raw[:parsed.end(key)].encode()),
+                  source.encode()) for key, source in zip(('left', 'right'), sources))
+
+
+def _feeling_reason_unknown_restores_source(visible, source):
+    """Independently restore the visible recipient into the proven source slot."""
+    from emlis_ai_grounded_observation_plan import _source_feeling_reason_unknown_parts
+    proof = _source_feeling_reason_unknown_parts(source)
+    if proof is None:
+        return False
+    if proof['owner'] is not None:
+        start, _ = proof.span('owner')
+        recipient = "ご自身" if proof['owner'] == "自分" else "あなた"
+        if visible[start:start + len(recipient)] != recipient:
+            return False
+        visible = visible[:start] + proof['owner'] + visible[start + len(recipient):]
+    return visible == source
+
+
+def _read_unknown_object_discourse(raw, move, plan, resolver, selected_subjective_input):
+    """Read both finite sources independently, preserving the wh-object and SELF."""
+    from emlis_ai_grounded_observation_plan import _source_unknown_object_group_from_resolver, _source_self_unknown_object_parts, _source_independent_unknown_object_from_resolver, _source_same_field_unknown_object_from_resolver, _source_relief_cognition_unknown_from_resolver, _source_retained_mixed_unknown_from_resolver, _source_retained_relief_received_from_resolver, _source_initial_personal_meaning_from_resolver
+    group = _source_unknown_object_group_from_resolver(plan.nuclei, plan.relations, resolver, include_single=True)
+    independent = (_source_independent_unknown_object_from_resolver(plan.nuclei, plan.relations, resolver) or _source_same_field_unknown_object_from_resolver(plan.nuclei, plan.relations, resolver) or _source_relief_cognition_unknown_from_resolver(plan.nuclei, plan.relations, resolver) or _source_retained_mixed_unknown_from_resolver(plan.nuclei, plan.relations, resolver) or tuple(n for n in _source_retained_relief_received_from_resolver(plan.nuclei, plan.relations, resolver)[:1] if n is not None) or tuple(n for n in _source_initial_personal_meaning_from_resolver(plan.nuclei, plan.relations, resolver)[:1] if n is not None))
+    group = group or independent[:1]
+    ids = (*move.target_nucleus_ids, *move.support_nucleus_ids)
+    if len(group) == 1:
+        n = group[0]
+        if (not move.required or move.move_role != "felt_response" or move.reception_act != "stay_with_current_burden"
+            or ids != (n.nucleus_id,) or move.support_nucleus_ids
+            or re.search(r'[「」『』“”‘’"?？!！\r\n]', raw)):
+            return None
+        if selected_subjective_input is not None:
+            decision = next((d for d in selected_subjective_input.decisions if d.move_id == move.move_id), None)
+            appraisal = decision.subjective_proposition.appraisal_content if decision else None
+            expected = ("MATERIAL_WEIGHT", "RECEIVE_AS_MATERIAL") if independent else ("UNFINISHED_OPENNESS", "LEAVE_UNFINISHED")
+            if appraisal is None or (appraisal.dimension, appraisal.operation) != expected:
+                return None
+        source = str(resolver.resolve(n.source_span_ids[0]).raw_text).strip(" 　。．.")
+        past = n.semantic_frame.time_scope == 'past'
+        proof = _source_self_unknown_object_parts(source, past=past)
+        if proof is None:
+            return None
+        if past:
+            if selected_subjective_input is None:
+                return None
+            decisions = tuple(d for d in selected_subjective_input.decisions if d.move_id == move.move_id)
+            if len(decisions) != 1:
+                return None
+            decision = decisions[0]
+            proposition = decision.subjective_proposition
+            mapping = dict(selected_subjective_input.semantic_nucleus_pairs)
+            all_basis = {b.binding_ref for b in decision.basis_rows}
+            selected_basis = tuple(b for b in decision.basis_rows
+                if b.contribution_ref in decision.selected_contribution_refs)
+            selected_refs = {b.binding_ref for b in selected_basis}
+            qualifiers = tuple(q for q in decision.qualifier_rows if q.basis_binding_ref in selected_refs)
+            if (decision.reception_act != move.reception_act
+                or decision.target_nucleus_ids != (n.nucleus_id,) or decision.support_nucleus_ids
+                or not selected_basis or {mapping.get(b.semantic_ref) for b in selected_basis} != {n.nucleus_id}
+                or not set(appraisal.appraised_bindings) <= all_basis
+                or not set(appraisal.basis_contribution_refs) <= {b.contribution_ref for b in decision.basis_rows}
+                or not selected_refs <= set(appraisal.appraised_bindings)
+                or not set(decision.selected_contribution_refs) <= set(appraisal.basis_contribution_refs)
+                or any(b.semantic_ref not in proposition.response_object_refs
+                       or b.semantic_ref not in proposition.primary_target_refs for b in selected_basis)
+                or {q.basis_binding_ref for q in qualifiers} != selected_refs
+                or any((q.polarity, q.modality, q.time_scope) != ('negative', 'uncertain', 'past')
+                       for q in qualifiers)):
+                return None
+        pattern = r"(?P<unknown>[^。！？!?]+)のですね。" if independent or past else r"結論を急がずに、(?P<unknown>[^。！？!?]+)のだと受け止めています。"
+        parsed = re.fullmatch(pattern, raw)
+        if parsed is None:
+            return None
+        visible = parsed['unknown']
+        start, end = proof.span('owner')
+        recipient = "ご自身" if proof['owner'] == "自分" else "あなた"
+        if visible[start:start + len(recipient)] != recipient:
+            return None
+        owner = proof['owner'] + (proof['self_suffix'] or "") if proof['owner'] == "自分" else proof['owner']
+        restored = visible[:start] + owner + visible[start + len(recipient):]
+        if restored != source:
+            return None
+        return ((len(raw[:parsed.start('unknown')].encode()), len(raw[:parsed.end('unknown')].encode()), source.encode()),)
+    if (not group or not move.required or move.move_role != "felt_response"
+        or move.reception_act != "stay_with_current_burden"
+        or len(move.target_nucleus_ids) != 1 or len(move.support_nucleus_ids) != 1
+        or set(ids) != {n.nucleus_id for n in group}
+        or re.search(r'[「」『』“”‘’"?？!！\r\n]', raw)):
+        return None
+    if selected_subjective_input is not None:
+        decision = next((d for d in selected_subjective_input.decisions if d.move_id == move.move_id), None)
+        appraisal = decision.subjective_proposition.appraisal_content if decision else None
+        if appraisal is None or appraisal.dimension != "MATERIAL_WEIGHT" or appraisal.operation != "RECEIVE_AS_MATERIAL":
+            return None
+    sources = tuple(str(resolver.resolve(n.source_span_ids[0]).raw_text).strip(" 　。．.") for n in group)
+    parsed = re.fullmatch(r"(?P<experience>[^。！？!?]+くて)、(?P<unknown>[^。！？!?]+)"
+                          r"(?:のですね|のです|のだと受け取りました)。", raw)
+    if parsed is None:
+        return None
+    feeling = parsed['experience'][:-2] + "い"
+    topic = re.match(r"(?P<owner>わたし|ぼく|おれ|私|僕|俺)は", sources[0])
+    if topic:
+        if not feeling.startswith("あなたは"):
+            return None
+        feeling = topic['owner'] + "は" + feeling[len("あなたは"):]
+    proof = _source_self_unknown_object_parts(sources[1])
+    visible = parsed['unknown']
+    start, end = proof.span('owner')
+    recipient = "ご自身" if proof['owner'] == "自分" else "あなた"
+    if visible[start:start + len(recipient)] != recipient:
+        return None
+    restored_owner = proof['owner'] + (proof['self_suffix'] or "") if proof['owner'] == "自分" else proof['owner']
+    unknown = visible[:start] + restored_owner + visible[start + len(recipient):]
+    if (feeling, unknown) != sources:
+        return None
+    rows = {n.nucleus_id: (len(raw[:parsed.start(key)].encode()), len(raw[:parsed.end(key)].encode()), source.encode())
+            for n, key, source in zip(group, ('experience', 'unknown'), sources)}
+    return tuple(rows[nid] for nid in ids)
+
+
+def _read_feeling_reason_discourse(raw, move, plan, resolver, selected_subjective_input):
+    """Restore a present experience and its open reason from actual prose.
+
+    The source projection owns their association. The inverse independently
+    restores the finite predicate and its SELF topic, never replaying author
+    output or accepting a feeling substring inside a different proposition.
+    """
+    from emlis_ai_grounded_observation_plan import _source_feeling_reason_group
+    group = _source_feeling_reason_group(plan.nuclei, plan.relations)
+    if (not group or not move.required or move.move_role != "felt_response"
+        or move.reception_act != "stay_with_current_burden"
+        or (move.target_nucleus_ids, move.support_nucleus_ids)
+            != ((group[0].nucleus_id,), (group[1].nucleus_id,))
+        or re.search(r'[「」『』“”‘’"?？!！\r\n]', raw)):
+        return None
+    if selected_subjective_input is not None:
+        decision = next((d for d in selected_subjective_input.decisions
+                         if d.move_id == move.move_id), None)
+        appraisal = decision.subjective_proposition.appraisal_content if decision else None
+        if (appraisal is None or appraisal.dimension != "MATERIAL_WEIGHT"
+            or appraisal.operation != "RECEIVE_AS_MATERIAL"):
+            return None
+    sources = tuple(str(resolver.resolve(n.source_span_ids[0]).raw_text).strip(" 　。．.")
+                    for n in group[:2] if len(n.source_span_ids) == 1)
+    if len(sources) != 2:
+        return None
+    parsed = re.fullmatch(r"(?P<experience>[^。！？!?]+)、(?P<unknown>"
+        r"(?:(?:なぜ|どうして|何故)そう感じるのか|その理由)(?:は|が)?"
+        r"[、,]?(?:(?:あなた|ご自身)(?:には|にも|でも|は|も))?"
+        r"(?:まだ)?(?:よく|はっきり)?(?:分からない|わからない))"
+        r"(?:のですね|のです|のだと受け取りました)。", raw)
+    if parsed is None:
+        return None
+    if not _feeling_reason_unknown_restores_source(parsed['unknown'], sources[1]):
+        return None
+    visible = parsed['experience']
+    if visible.endswith("感じがして"):
+        restored = visible[:-2] + "する"
+    elif visible.endswith("感じて"):
+        restored = visible[:-1] + "る"
+    elif visible.endswith("くて") and sources[0].endswith("い"):
+        restored = visible[:-2] + "い"
+    else:
+        return None
+    topic = re.match(r"(?P<owner>わたし|ぼく|おれ|私|僕|俺)は", sources[0])
+    if topic:
+        if not restored.startswith("あなたは"):
+            return None
+        restored = topic['owner'] + "は" + restored[len("あなたは"):]
+    if restored != sources[0]:
+        return None
+    return tuple((len(raw[:parsed.start(key)].encode()), len(raw[:parsed.end(key)].encode()),
+                  source.encode()) for key, source in zip(('experience', 'unknown'), sources))
+
+
+def _read_coexisting_material_discourse(raw, move, plan, resolver, selected_subjective_input):
+    """Restore the two complete source clauses from finite reception prose.
+
+    The tentative target view is not an unresolved reason. Parse only the
+    additive inflection of the first predicate, retaining the source's own
+    explanation difficulty and every constituent of both selected hosts.
+    No author, nominalizer, rendered expectation or vocabulary list is used.
+    """
+    from emlis_ai_grounded_observation_plan import (
+        _source_current_material_group, _source_coexisting_feelings_and_tentative_target,
+    )
+    group = _source_current_material_group(plan.nuclei, plan.relations)
+    if (not group or "lexical:source_current_material_primary"
+            not in group[0].semantic_frame.attribute_codes
+        or "lexical:source_current_material_qualification"
+            not in group[1].semantic_frame.attribute_codes
+        or not move.required or move.move_role != "felt_response"
+        or move.reception_act != "stay_with_current_burden"
+        or re.search(r'[「」『』“”‘’"?？!！\r\n]', raw)):
+        return None
+    selected = (move.target_nucleus_ids, move.support_nucleus_ids)
+    forward = ((group[0].nucleus_id,), (group[1].nucleus_id,))
+    reverse = ((group[1].nucleus_id,), (group[0].nucleus_id,))
+    if selected not in (forward, reverse):
+        return None
+    if selected_subjective_input is not None:
+        decision = next((d for d in selected_subjective_input.decisions
+                         if d.move_id == move.move_id), None)
+        appraisal = decision.subjective_proposition.appraisal_content if decision else None
+        if (appraisal is None or appraisal.dimension != "MATERIAL_WEIGHT"
+            or appraisal.operation != "RECEIVE_AS_MATERIAL"):
+            return None
+    sources = tuple(str(resolver.resolve(n.source_span_ids[0]).raw_text).strip(" 　。．.")
+                    for n in group[:2] if len(n.source_span_ids) == 1)
+    if len(sources) != 2 or not _source_coexisting_feelings_and_tentative_target(*sources):
+        return None
+    reversed_focus = selected == reverse
+    if reversed_focus:
+        sources = tuple(reversed(sources))
+    # The complete second clause may itself contain a comma. Enumerate the
+    # body-owned boundary and require one unique restoration in focus order.
+    ending = re.search(r"(?:のですね|のです|のだと受け取りました)。$", raw)
+    if ending is None:
+        return None
+    clause = raw[:ending.start()]
+    matches = []
+    for split in re.finditer("、", clause):
+        left, right = clause[:split.start()], clause[split.end():]
+        if reversed_focus:
+            if not left.endswith("気がして"):
+                continue
+            restored = left[:-2] + "する"
+        else:
+            if not left.endswith("あり"):
+                continue
+            restored = left[:-1] + "る"
+        if (restored, right) == sources:
+            matches.append(((0, len(left.encode()), sources[0].encode()),
+                            (len(clause[:split.end()].encode()), len(clause.encode()), sources[1].encode())))
+    return matches[0] if len(matches) == 1 else None
+
+
+def _read_temporal_material_discourse(raw, move, plan, resolver, selected_subjective_input):
+    """Restore each complete temporal host without replaying its author.
+
+    The unknown is causal equivalence in the present, not the past memory
+    or the conditional change. Read the visible coordination boundary and
+    reverse only the inflection; all inner scopes must match their source.
+    """
+    from emlis_ai_grounded_observation_plan import (
+        _source_temporal_material_group, _source_temporal_clause_parts,
+        _source_material_allows_reverse,
+    )
+    group = _source_temporal_material_group(plan.nuclei, plan.relations)
+    if (not group or not move.required or move.move_role != "felt_response"
+        or move.reception_act != "stay_with_current_burden"
+        or re.search(r'[「」『』“”‘’"?？!！\r\n]', raw)):
+        return None
+    selected = (move.target_nucleus_ids, move.support_nucleus_ids)
+    forward = ((group[0].nucleus_id,), (group[1].nucleus_id,))
+    reverse = ((group[1].nucleus_id,), (group[0].nucleus_id,))
+    reversed_focus = selected == reverse and _source_material_allows_reverse(group)
+    if selected != forward and not reversed_focus:
+        return None
+    if selected_subjective_input is not None:
+        decision = next((d for d in selected_subjective_input.decisions
+                         if d.move_id == move.move_id), None)
+        appraisal = decision.subjective_proposition.appraisal_content if decision else None
+        if (appraisal is None or appraisal.dimension != "MATERIAL_WEIGHT"
+            or appraisal.operation != "RECEIVE_AS_MATERIAL"):
+            return None
+    sources = tuple(str(resolver.resolve(n.source_span_ids[0]).raw_text).strip(" 　。．.")
+                    for n in group[:2] if len(n.source_span_ids) == 1)
+    if (len(sources) != 2 or tuple((_source_temporal_clause_parts(s) or (None,))[0]
+            for s in sources) != ("relief_residue", "causal_unknown")):
+        return None
+    current = sources[0][:-3] + "いる" if sources[0].endswith("残っています") else sources[0]
+    expected = (sources[1], current) if reversed_focus else (current, sources[1])
+    ordered_sources = tuple(reversed(sources)) if reversed_focus else sources
+    ending = re.search(r"(?:のですね|のです|のだと受け取りました)。$", raw)
+    if ending is None:
+        return None
+    clause = raw[:ending.start()]
+    matches = []
+    for split in re.finditer("、", clause):
+        left, right = clause[:split.start()], clause[split.end():]
+        if reversed_focus:
+            if not left.endswith(("分からず", "わからず")):
+                continue
+            restored = left[:-1] + "ない"
+        else:
+            if not left.endswith("残っていて"):
+                continue
+            restored = left[:-1] + "る"
+        if (restored, right) == expected:
+            matches.append(((0, len(left.encode()), ordered_sources[0].encode()),
+                            (len(clause[:split.end()].encode()), len(clause.encode()), ordered_sources[1].encode())))
+    return matches[0] if len(matches) == 1 else None
+
+
+def _read_detached_burden_discourse(raw, move, plan, resolver, selected_subjective_input):
+    """Read each independent withdrawn or revised clause and its own time.
+
+    This proof uses actual text and source fragments, never the group author,
+    its nominalization markers, or the first operand as a representative.
+    """
+    from emlis_ai_grounded_observation_plan import (
+        _thread_retained_reaction_groups, _thread_withdrawn_original_reaction,
+        _received_event_reaction_projections, is_grounded_current_answer_uncertainty,
+        _thread_revised_original_reaction,
+    )
+    if (getattr(resolver, "source_contract", None) != "cocolon.cmee.emlis_thread.v1"
+        or move not in plan.response_plan.human_reception_plan.moves or not move.required
+        or move.reception_act != "stay_with_current_burden" or move.support_nucleus_ids
+        or not 2 <= len(move.target_nucleus_ids) <= 3
+        or ("current_burden", move.target_nucleus_ids, ())
+            not in _thread_retained_reaction_groups(plan.nuclei, plan.relations)
+        or move.reference_mode == "anaphoric_first"
+        or raw.count("。") != 1 or not raw.endswith("。")
+        or re.search(r'[「」『』“”‘’"?？!！\r\n]', raw)):
+        return None
+    if selected_subjective_input is not None:
+        decision = next((d for d in selected_subjective_input.decisions if d.move_id == move.move_id), None)
+        appraisal = decision.subjective_proposition.appraisal_content if decision else None
+        if appraisal is None or (appraisal.dimension, appraisal.operation) != ("MATERIAL_WEIGHT", "RECEIVE_AS_MATERIAL"):
+            return None
+    ending = re.search(r"(?:のでしたね|のですね|のです|のだと受け取りました)。$", raw)
+    nominal_ending = {"attention": "に目が留まり、それを小さくせずに受け止めています。",
+                      "significance": "を見失わず、小さくせずに受け止めています。",
+                      "felt_response": "を小さくせずに受け止めています。"}.get(move.move_role)
+    nominal_group = bool(nominal_ending and raw.endswith(nominal_ending))
+    if ending is None and not nominal_group:
+        return None
+    shared_intro = "言い直してくださった気持ちは、"
+    equal_intro = "二つの言い直しでは、どちらも"
+    shared_revision = raw.startswith((shared_intro, equal_intro))
+    equal_revision = raw.startswith(equal_intro)
+    intro = equal_intro if equal_revision else shared_intro if shared_revision else ""
+    if nominal_group and shared_revision:
+        return None
+    content = raw[:-len(nominal_ending)] if nominal_group else raw[len(intro):ending.start()]
+    separator = "と、" if nominal_group else "し、"
+    clauses = [content, content] if equal_revision else content.split(separator)
+    if len(clauses) != len(move.target_nucleus_ids):
+        return None
+    index = {n.nucleus_id: n for n in plan.nuclei}
+    if shared_revision and (len(clauses) != 2 or not all(
+            _thread_revised_original_reaction(index[nid], plan.relations)
+            and {c.split(":", 1)[1] for c in index[nid].semantic_frame.attribute_codes
+                 if c.startswith("thread_time:")} == {"original_occasion"}
+            for nid in move.target_nucleus_ids)):
+        return None
+    offset, replacements, owned_nominals = len(intro), [], 0
+    for slot, (nid, clause) in enumerate(zip(move.target_nucleus_ids, clauses, strict=True)):
+        n = index[nid]
+        frame, codes = n.semantic_frame, set(n.semantic_frame.attribute_codes)
+        unknown = is_grounded_current_answer_uncertainty(n)
+        if (not ("thread_subject:withdrawn_source_event" in codes
+                 or _thread_revised_original_reaction(n, plan.relations))
+            or n.retention != "required" or n.grounding_kind != "explicit"
+            or frame.actor != "current_user" or frame.polarity != "negative"
+            or len(n.source_span_ids) != 1
+            or not unknown and (n.kind, frame.predicate_kind, frame.modality) != ("reaction", "feeling", "feeling")
+            or any(nid in (r.from_nucleus_id, r.to_nucleus_id) for r in plan.relations)
+            or resolver.source_fields_for(n.source_span_ids) != n.source_fields):
+            return None
+        span = resolver.resolve(n.source_span_ids[0])
+        source = _body_inverse_typed_source_fragment(n, span.raw_text)
+        if not source or not _SOURCE_GROUNDED_FINITE_END_RE.search(source):
+            return None
+        times = {c.split(":", 1)[1] for c in codes if c.startswith("thread_time:")}
+        if n.source_fields in {("memo",), ("memo_action",)}:
+            if (times or not _thread_withdrawn_original_reaction(n, plan.relations)
+                or not any(row.kind == "reaction" and row.polarity == "negative"
+                    and set(row.attribute_codes) <= codes
+                    for row in _received_event_reaction_projections(span, frame))):
+                return None
+            expected_time = "その時は"
+        elif n.source_fields == ("answer_text_private",) and n.allowed_claim_scope == "explicit_supplemental_answer":
+            prefixes = {"original_occasion": "その時は", "answer_time": "回答した時点では",
+                        "prior_answer_time": "先の回答時点では"}
+            if len(times) != 1 or not times <= prefixes.keys():
+                return None
+            expected_time = prefixes[next(iter(times))]
+        else:
+            return None
+        if nominal_group:
+            # A whole repeated-SELF proposition keeps its existing owned
+            # nominal. Prove every other detached source and time separately;
+            # none may borrow a source, pronoun or time from its neighbor.
+            if "thread_subject:withdrawn_source_event" not in codes:
+                return None
+            when = next(iter(times)) if times else "original_occasion"
+            if _read_multiple_self_answer_nominal(clause, source, when):
+                owned_nominals += 1
+            else:
+                prefix = {"original_occasion": "その時に", "answer_time": "回答した時点で",
+                          "prior_answer_time": "先の回答時点で"}[when]
+                if (not clause.startswith(prefix) or not clause.endswith("こと")
+                    or _restore_thread_finite_answer(clause[len(prefix):-2], source,
+                                                     copular_clause=True, attributive=True) != source):
+                    return None
+            replacements.append((len(raw[:offset].encode()), len(raw[:offset + len(clause)].encode()), source.encode()))
+            offset += len(clause) + len(separator)
+            continue
+        if ("thread_subject:withdrawn_source_event" in codes and re.match(
+                r"(?:(?:少し|とても|本当は|まだ|全然|あまり)*"
+                r"(?:わたし|ぼく|おれ|私|僕|俺|自分)(?:には|にも|は|も)){2,}", source)):
+            # This existing owned-nominal form cannot be read by changing
+            # only the first SELF in a finite acknowledgement.
+            return None
+        if _thread_feeling_owner(source):
+            expected_time = {"その時は": "その時、", "回答した時点では": "回答した時点で、",
+                             "先の回答時点では": "先の回答時点で、"}[expected_time]
+        if _thread_revised_original_reaction(n, plan.relations):
+            time = "当時、" if _thread_feeling_owner(source) else "当時は"
+            expected_time = (("それとは別に" if slot and not equal_revision else "") + time
+                if shared_revision else ("それとは別に" if slot else "")
+                + "言い直してくださった気持ちについては、" + time)
+        if not clause.startswith(expected_time):
+            return None
+        finite = clause[len(expected_time):]
+        acknowledged = equal_revision or slot == len(clauses) - 1
+        restored_form = finite[:-1] + "な" if not acknowledged and finite.endswith("だ") else finite
+        if acknowledged and raw.endswith("のでしたね。"):
+            if _thread_past_explanation_predicate(source) is None:
+                return None
+            restored_form += "のだった"
+        if _restore_thread_finite_answer(restored_form, source, copular_clause=True,
+                shared_explanatory_ending=acknowledged) != source:
+            return None
+        start = len(raw[:offset + len(expected_time)].encode())
+        end = len(raw[:offset + len(clause)].encode())
+        replacements.append((start, end, source.encode()))
+        if not equal_revision:
+            offset += len(clause) + len("し、")
+    return tuple(replacements) if not nominal_group or owned_nominals else None
+
+
+def _shared_target_selected_reception(move, plan, resolver, selected_subjective_input):
+    """Bind the new content arm to complete source-owned nested roles.
+
+    This contains no body author or expected sentence. Both the author entry
+    gate and the independent body reader need this same content/source proof.
+    """
+    from cocolon_meaning_experience_engine.contracts import EmlisSharedTargetExperienceAppraisalContent
+    from emlis_ai_grounded_observation_plan import source_owned_shared_target_appraisal_contrast
+    group = source_owned_shared_target_appraisal_contrast(plan.nuclei, plan.relations, resolver)
+    if (not group or selected_subjective_input is None or not move.required
+        or move not in plan.response_plan.human_reception_plan.moves
+        or move.reception_act != 'stay_with_current_burden'
+        or move.target_nucleus_ids != (group['received_event'].nucleus_id,)
+        or move.support_nucleus_ids != tuple(group[k].nucleus_id for k in ('reaction', 'appraisal', 'appraisal_event'))):
+        return None
+    decisions = tuple(d for d in selected_subjective_input.decisions if d.move_id == move.move_id)
+    if len(decisions) != 1:
+        return None
+    decision = decisions[0]
+    proposition = decision.subjective_proposition
+    content = proposition.appraisal_content
+    if (type(content) is not EmlisSharedTargetExperienceAppraisalContent
+        or content.schema_version != 'cocolon.cmee.emlis.shared_target_experience_appraisal.v1'
+        or decision.branch != 'NORMAL'
+        or decision.reception_act != move.reception_act
+        or decision.target_nucleus_ids != move.target_nucleus_ids
+        or decision.support_nucleus_ids != move.support_nucleus_ids
+        or proposition.subjective_mode != 'ATTENTION' or proposition.subjective_operator != 'ATTEND_TO'
+        or content.dimension != 'RELATIONAL_NONCOLLAPSE' or content.operation != 'PRESERVE_BOTH_ENDPOINTS'
+        or content.protected_bindings or proposition.boundary_target_refs
+        or content.focal_relation_ref != proposition.focal_relation_ref
+        or content.focal_relation_ref != content.outer_contrast_relation_ref):
+        return None
+    basis = {row.binding_ref: row for row in decision.basis_rows}
+    nodes = dict(selected_subjective_input.semantic_nucleus_pairs)
+    edges = dict(selected_subjective_input.relation_pairs)
+    roles = ('appraisal_event', 'appraisal', 'received_event', 'reaction')
+    bindings = tuple(getattr(content, key + '_binding_ref') for key in roles)
+    relation_roles = (('appraisal_relation_ref', 'appraisal_relation'),
+                      ('received_relation_ref', 'received_relation'),
+                      ('outer_contrast_relation_ref', 'outer_relation'))
+    expected_qualifiers = {'qualifier:' + code for code in group['received_event'].semantic_frame.attribute_codes
+        if code.startswith(('source_shared_target_reference_range:', 'source_shared_target_reference_event:'))}
+    if (len(basis) != len(decision.basis_rows) or len(set(bindings)) != 4
+        or len(content.appraised_bindings) != 4 or set(content.appraised_bindings) != set(bindings)
+        or any(ref not in basis or nodes.get(basis[ref].semantic_ref) != group[key].nucleus_id
+               for key, ref in zip(roles, bindings))
+        or any(edges.get(getattr(content, field)) != group[key].relation_id for field, key in relation_roles)
+        or len(expected_qualifiers) != 2 or len(content.target_reference_qualifier_refs) != 2
+        or set(content.target_reference_qualifier_refs) != expected_qualifiers
+        or {nodes.get(ref) for ref in proposition.response_object_refs} != {group[key].nucleus_id for key in roles}
+        or not set(bindings) <= set(proposition.basis_binding_refs)
+        or not set(content.basis_contribution_refs) <= set(decision.selected_contribution_refs)
+        or not {basis[ref].contribution_ref for ref in bindings} <= set(content.basis_contribution_refs)
+        or not set(decision.selected_contribution_refs) <= set(proposition.target_contribution_refs)):
+        return None
+    return group
+
+
+def _shared_target_preceding_appraisal(move, plan, resolver, selected_subjective_input,
+                                       preceding_context):
+    """Resolve satisfaction only through the preceding complete appraisal.
+
+    A word match is not a referent: the selected group, adjacent Move, source
+    event, appraisal and optional reason must agree before reading its body.
+    """
+    group = _shared_target_selected_reception(move, plan, resolver, selected_subjective_input)
+    if group is None or preceding_context is None:
+        return False
+    previous_move, previous_text = preceding_context
+    moves = plan.response_plan.human_reception_plan.moves
+    if len(moves) != 2 or moves != (previous_move, move):
+        return False
+    from emlis_ai_grounded_observation_plan import source_owned_relational_focus
+    reason = group.get('reason')
+    expected = (('reasoned_result_appraisal', reason, group['appraisal_event'], group['appraisal'])
+                if reason is not None else
+                ('original_result_appraisal', group['appraisal_event'], group['appraisal']))
+    decisions = tuple(d for d in selected_subjective_input.decisions if d.move_id == previous_move.move_id)
+    if (source_owned_relational_focus(previous_move, plan) != expected
+        or len(decisions) != 1 or decisions[0].branch != 'NORMAL'):
+        return False
+    return read_source_owned_discourse(previous_text, previous_move, plan, resolver,
+                                      selected_subjective_input) is not None
+
+
+def _read_shared_target_reception_discourse(raw, move, plan, resolver, selected_subjective_input,
+                                            preceding_context=None):
+    """Read four roles explicitly or through a proven adjacent appraisal.
+
+    The received-event/reaction connective is inside the right experience;
+    the outer comparison never turns satisfaction and joy into opposites.
+    """
+    group = _shared_target_selected_reception(move, plan, resolver, selected_subjective_input)
+    if group is None:
+        return None
+    parsed = re.fullmatch(r'(?P<received>.+?)(?P<inner>のに|けれども|けれど|けど)'
+        r'(?P<reaction>.+)ことは、(?:(?P<anaphor>その)|(?P<event>.+)ことへの'
+        r'(?P<time>当時の|入力した時点での|当時まだあった|入力した時点でまだある))'
+        r'(?P<appraisal>満足)とは切り分けて受け取りました。', raw)
+    if parsed is None:
+        return None
+    index = {n.nucleus_id: n for n in plan.nuclei}
+    source = {key: final_reception_source_anchor_text(group[key].nucleus_id, index, resolver)
+              for key in ('appraisal_event', 'appraisal', 'received_event', 'reaction')}
+    endings = tuple(c.split(':', 1)[1] for c in group['appraisal_event'].semantic_frame.attribute_codes
+                    if c.startswith('source_appraisal_event_ending:'))
+    links = tuple(c.split(':', 1)[1] for c in group['received_event'].semantic_frame.attribute_codes
+                  if c.startswith('source_received_event_link:'))
+    if (len(endings) != 1 or endings[0] not in {'te', 'de', 'ta'} or len(links) != 1
+        or links[0] not in {'noni', 'kedo', 'keredo', 'keredomo'}):
+        return None
+    anaphoric = parsed['anaphor'] is not None
+    if anaphoric and not _shared_target_preceding_appraisal(
+            move, plan, resolver, selected_subjective_input, preceding_context):
+        return None
+    event = parsed['event']
+    owner = re.search(r'(?:私|自分|わたし|僕|ぼく|俺|おれ)(?=は|が)', source['appraisal_event'])
+    if not anaphoric:
+        if owner:
+            event = event.replace('あなた', owner.group(), 1)
+        ending = endings[0]
+        if not event.endswith({'te': 'た', 'de': 'だ', 'ta': 'た'}[ending]):
+            return None
+        event = event[:-1] + {'te': 'て', 'de': 'で', 'ta': 'た'}[ending]
+    appraisal = group['appraisal']
+    still = 'source_appraisal_continuing:still' in appraisal.semantic_frame.attribute_codes
+    when = _body_inverse_appraisal_time(appraisal)
+    expected_time = ((when + ('まだあった' if when == '当時' else 'でまだある')) if still
+                     else when + ('の' if when == '当時' else 'での'))
+    from emlis_ai_grounded_observation_plan import _source_result_appraisal_predicate
+    if (not anaphoric and (event != source['appraisal_event'] or parsed['time'] != expected_time)
+        or parsed['received'] != source['received_event']
+        or parsed['inner'] != {'noni': 'のに', 'kedo': 'けど', 'keredo': 'けれど', 'keredomo': 'けれども'}[links[0]]
+        or not _source_result_appraisal_predicate(appraisal, source['appraisal'])):
+        return None
+    nominal = re.fullmatch(r'(?P<stem>[^、,]+)さが(?P<presence>伴わなかった|伴った)', parsed['reaction'])
+    if nominal is not None:
+        restored = nominal['stem'] + ('くなかった' if nominal['presence'] == '伴わなかった' else 'かった')
+        if source['reaction'].endswith('です'):
+            restored += 'です'
+        if (restored != source['reaction']
+            or not (_FEELING_RE.fullmatch(nominal['stem']) or _FEELING_RE.fullmatch(nominal['stem'] + 'い')
+                    or nominal['stem'].endswith('し') and _FEELING_RE.fullmatch(nominal['stem'][:-1]))):
+            return None
+    elif _restore_thread_finite_answer(parsed['reaction'], source['reaction'], copular_clause=True) != source['reaction']:
+        return None
+    duties = (('received', 'received_event'), ('reaction', 'reaction'),
+              ('event', 'appraisal_event'), ('appraisal', 'appraisal'))
+    return tuple((len(raw[:parsed.start(field)].encode()), len(raw[:parsed.end(field)].encode()), source[key].encode())
+                 for field, key in duties if parsed[field] is not None)
+
+
+def _read_retained_appraisal_event_discourse(raw, move, plan, resolver, selected_subjective_input):
+    """Restore an independently parsed action to its original scalar text."""
+    from emlis_ai_grounded_human_reception import source_grounded_retained_appraisal_event
+    owned = source_grounded_retained_appraisal_event(move, plan, resolver)
+    if owned is None or selected_subjective_input is None:
+        return None
+    decisions = tuple(d for d in selected_subjective_input.decisions if d.move_id == move.move_id)
+    if len(decisions) != 1 or decisions[0].branch != 'LIMITED':
+        return None
+    decision = decisions[0]
+    proposition = decision.subjective_proposition
+    content = proposition.appraisal_content
+    if (content is None or (content.dimension, content.operation) != ('MATERIAL_WEIGHT', 'RECEIVE_AS_MATERIAL')
+        or proposition.subjective_mode != 'ATTENTION' or proposition.subjective_operator != 'ATTEND_TO'
+        or content.focal_relation_ref is not None or proposition.focal_relation_ref is not None
+        or content.protected_bindings or content.appraised_bindings != proposition.basis_binding_refs
+        or (decision.reception_act, decision.target_nucleus_ids, decision.support_nucleus_ids)
+            != (move.reception_act, move.target_nucleus_ids, move.support_nucleus_ids)
+        or len(decision.selected_contribution_refs) != 1):
+        return None
+    selected_basis = tuple(b for b in decision.basis_rows
+                           if b.contribution_ref in decision.selected_contribution_refs)
+    semantic_map = dict(selected_subjective_input.semantic_nucleus_pairs)
+    if (len(selected_basis) != 1
+        or semantic_map.get(selected_basis[0].semantic_ref) != move.target_nucleus_ids[0]
+        or selected_basis[0].binding_ref not in content.appraised_bindings
+        or decision.selected_contribution_refs[0] not in content.basis_contribution_refs):
+        return None
+    qualifiers = tuple(q for q in decision.qualifier_rows
+                       if q.basis_binding_ref == selected_basis[0].binding_ref)
+    if (len(qualifiers) != 1
+        or (qualifiers[0].polarity, qualifiers[0].modality, qualifiers[0].time_scope)
+            != ('neutral', 'fact', 'past')):
+        return None
+    endings = {'attention': r'に目が留まり、それを小さくせずに受け止めています',
+               'significance': r'を見失わず、小さくせずに受け止めています',
+               'felt_response': r'を小さくせずに受け止めています'}
+    if move.move_role not in endings or re.search(r'[「」『』“”‘’"?？!！\r\n]', raw):
+        return None
+    parsed = re.fullmatch(r'(?P<event>[^。]+)こと' + endings[move.move_role] + r'。', raw)
+    if parsed is None:
+        return None
+    source, ending = owned
+    finite = parsed['event']
+    owner = re.search(r'(?:私|自分|わたし|僕|ぼく|俺|おれ)(?=は|が)', source)
+    if owner:
+        if finite[owner.start():owner.start() + len('あなた')] != 'あなた':
+            return None
+        finite = finite[:owner.start()] + owner.group() + finite[owner.start() + len('あなた'):]
+    if not finite.endswith({'te': 'た', 'de': 'だ', 'ta': 'た'}[ending]):
+        return None
+    restored = finite[:-1] + {'te': 'て', 'de': 'で', 'ta': 'た'}[ending]
+    if restored != source:
+        return None
+    return ((0, len(parsed['event'].encode()), source.encode()),)
+
+
+def _relief_cognition_corrected_source(move, plan, resolver, selected):
+    if not move.required or len(move.target_nucleus_ids) != 1 or move.support_nucleus_ids or selected is None:
+        return None
+    n = next((n for n in plan.nuclei if n.nucleus_id == move.target_nucleus_ids[0]), None)
+    if n is None or n.source_fields != ('answer_text_private',) or n.allowed_claim_scope != 'explicit_supplemental_answer':
+        return None
+    slots = tuple(c.split(':')[-1] for c in n.semantic_frame.attribute_codes
+                  if c.startswith('thread_subject:relief_cognition_replacement:'))
+    if len(slots) != 1 or n.semantic_frame.actor != 'current_user':
+        return None
+    from emlis_ai_grounded_human_reception import final_reception_source_anchor_text
+    source = final_reception_source_anchor_text(n.nucleus_id, {n.nucleus_id: n}, resolver)
+    proof = source_relief_cognition_replacement(source, slots[0])
+    decision = next((d for d in selected.decisions if d.move_id == move.move_id), None)
+    if (not proof or proof != (n.semantic_frame.polarity, n.semantic_frame.time_scope)
+        or decision is None or decision.target_nucleus_ids != move.target_nucleus_ids
+        or decision.support_nucleus_ids or decision.subjective_proposition.appraisal_content is None
+        or decision.subjective_proposition.appraisal_content.dimension != 'MATERIAL_WEIGHT'
+        or n.nucleus_id not in {dict(selected.semantic_nucleus_pairs).get(b.semantic_ref)
+            for b in decision.basis_rows if b.contribution_ref in decision.selected_contribution_refs}):
+        return None
+    return source
+
+
+def _relief_cognition_selected_reception(move, plan, resolver, selected):
+    """Prove selected facets against live complete source roles, without text authoring."""
+    from cocolon_meaning_experience_engine.contracts import EmlisReliefCognitionAppraisalContent
+    if selected is None or not move.required:
+        return None
+    decisions = tuple(d for d in selected.decisions if d.move_id == move.move_id)
+    if len(decisions) != 1:
+        return None
+    d = decisions[0]
+    p = d.subjective_proposition
+    basis_rows = d.basis_rows
+    from emlis_ai_grounded_human_reception import SelectedRetainedReliefCognitionDecisionV1, SelectedRetainedReliefReceivedDecisionV1
+    from emlis_ai_grounded_human_reception import SelectedInitialReceivedPersonalMeaningDecisionV1
+    if type(d) is SelectedInitialReceivedPersonalMeaningDecisionV1:
+        from cocolon_meaning_experience_engine.contracts import InitialReceivedPersonalMeaningPairContentV1
+        if type(d.initial_received_personal_meaning) is not InitialReceivedPersonalMeaningPairContentV1:
+            return None
+        from cocolon_meaning_experience_engine.emlis_thread_projection import validate_initial_personal_meaning_source
+        try:
+            local = validate_initial_personal_meaning_source(d, selected, plan, resolver)
+        except (ValueError, TypeError, AttributeError, KeyError):
+            return None
+        p, basis_rows = local.proposition, local.basis_rows
+    elif type(d) is SelectedRetainedReliefReceivedDecisionV1:
+        from cocolon_meaning_experience_engine.contracts import RetainedReliefReceivedPairContentV1
+        # The other local content belongs to the received-experience reader.
+        # Reject it here before replay; this cannot grant a pair qualification.
+        if type(d.retained_relief_received) is not RetainedReliefReceivedPairContentV1:
+            return None
+        from cocolon_meaning_experience_engine.emlis_thread_projection import validate_retained_relief_received_source
+        try:
+            local = validate_retained_relief_received_source(d, selected, plan, resolver)
+        except (ValueError, TypeError, AttributeError, KeyError):
+            return None
+        p, basis_rows = local.proposition, local.basis_rows
+    elif type(d) is SelectedRetainedReliefCognitionDecisionV1:
+        from cocolon_meaning_experience_engine.emlis_thread_projection import validate_retained_relief_cognition_source
+        try:
+            local = validate_retained_relief_cognition_source(d, selected, plan, resolver)
+        except (ValueError, TypeError, AttributeError, KeyError):
+            return None
+        p, basis_rows = local.proposition, local.basis_rows
+    c = p.appraisal_content
+    if (type(c) is not EmlisReliefCognitionAppraisalContent or d.branch not in {'NORMAL', 'LIMITED'}
+        or c.schema_version != 'cocolon.cmee.emlis.relief_cognition_appraisal.v1'
+        or (p.subjective_mode, p.subjective_operator) != ('ATTENTION', 'ATTEND_TO')
+        or (c.dimension, c.operation) != ('RELATIONAL_NONCOLLAPSE', 'PRESERVE_BOTH_ENDPOINTS')
+        or c.reaction != 'BOUNDED_RELIEF_AT_REPORTED_RELIEF'
+        or c.response != 'LISTEN_TO_PRESENT_LONELINESS_UNDER_UNCERTAINTY'
+        or c.protected_bindings or p.boundary_target_refs
+        or c.focal_relation_ref != p.focal_relation_ref
+        or d.reception_act != move.reception_act
+        or d.target_nucleus_ids != move.target_nucleus_ids
+        or d.support_nucleus_ids != move.support_nucleus_ids):
+        return None
+    nodes, edges = dict(selected.semantic_nucleus_pairs), dict(selected.relation_pairs)
+    basis = {b.binding_ref: b for b in basis_rows}
+    roles = set((*move.target_nucleus_ids, *move.support_nucleus_ids))
+    pairs = tuple(pair for pair in source_owned_relief_cognition_from_resolver(plan.nuclei, plan.relations, resolver)
+                  if {pair[0].nucleus_id, pair[1].nucleus_id} == roles
+                  and edges.get(c.focal_relation_ref) == pair[2].relation_id)
+    if len(pairs) != 1:
+        return None
+    left, right, edge = pairs[0]
+    if (set(c.appraised_bindings) != set(basis)
+        or set((*c.relief_binding_refs, *c.loneliness_binding_refs)) != set(basis)
+        or set(c.relief_binding_refs) & set(c.loneliness_binding_refs)
+        or any(not refs or any(ref not in basis or nodes.get(basis[ref].semantic_ref) != node.nucleus_id
+                              for ref in refs)
+               for refs, node in ((c.relief_binding_refs, left), (c.loneliness_binding_refs, right)))
+        or {nodes.get(ref) for ref in p.response_object_refs} != roles
+        or set(c.basis_contribution_refs) != set(d.selected_contribution_refs)):
+        return None
+    return left, right, edge
+
+
+def _relief_cognition_observation_antecedents(pair, move, resolver, preceding_observation):
+    """Bind short references to unique, complete actual Layer-1 clauses.
+
+    The caller must first prove the live selected pair. Source qualification
+    only permits this check; neither it nor a previous Reception is evidence
+    that the preceding Observation actually contains those meanings.
+    """
+    if (not isinstance(preceding_observation, str) or not preceding_observation
+        or move.reference_mode != 'anaphoric_first'
+        or any('source_relief_cognition_anaphora:v1' not in n.semantic_frame.attribute_codes
+               for n in pair[:2])):
+        return False
+    left, right, _ = pair
+    sources = tuple(resolver.resolve(n.source_span_ids[0]).raw_text for n in (left, right))
+    lines = preceding_observation.splitlines()
+    matches = tuple(i for i, line in enumerate(lines)
+        if (m := re.fullmatch(r'「(?P<left>[^「」]+)」の一方で「(?P<right>[^「」]+)」とあります。', line))
+        and (m['left'], m['right']) == sources)
+    if len(matches) != 1 or any(preceding_observation.count(source) != 1 for source in sources):
+        return False
+    # Another relief/loneliness host makes the short reference ambiguous.
+    # Keep its full form rather than selecting an antecedent by proximity.
+    other = '\n'.join(line for i, line in enumerate(lines) if i != matches[0])
+    return re.search(r'ほっと|安心|寂し|さびし', other) is None
+
+
+def _read_relief_cognition_discourse(raw, move, plan, resolver, selected, preceding_observation=None):
+    pair = _relief_cognition_selected_reception(move, plan, resolver, selected)
+    if pair is None:
+        return None
+    from emlis_ai_grounded_observation_plan import _source_cognitive_feeling_parts
+    left, right, _ = pair
+    source_left, source_right = (resolver.resolve(n.source_span_ids[0]).raw_text for n in (left, right))
+    parts, _ = _source_cognitive_feeling_parts(source_right)
+    scopes = {role: (start, end) for role, start, end, _ in parts}
+    short = re.fullmatch(r'(?P<relief>ほっとした|安心した)と聞いて、私も少し(?:安心しました|ほっとしました)(?:が|し)、'
+        r'(?P<feeling>その(?:寂しさ|さびしさ))にも、今、耳を傾け(?:てい)?たいです。', raw)
+    if short is not None:
+        from emlis_ai_grounded_observation_plan import _source_nominal_past_feeling_parts
+        relief = _source_nominal_past_feeling_parts(source_left)
+        feeling = source_right[slice(*scopes['feeling'])]
+        if (not _relief_cognition_observation_antecedents(pair, move, resolver, preceding_observation)
+            or not relief or short['relief'] != relief[3]
+            or short['feeling'] != ('そのさびしさ' if feeling.endswith('さびしい') else 'その寂しさ')):
+            return None
+        return tuple((len(raw[:short.start(role)].encode()), len(raw[:short.end(role)].encode()), source.encode())
+            for role, source in (('relief', source_left), ('feeling', source_right)))
+    match = re.fullmatch(r'(?P<relief>[^。]+)と聞いて、私も少し(?:安心しました|ほっとしました)(?:が|し)、'
+        r'(?P<cognition>[^。]+?)と(?P<feeling>(?:少し(?:だけ)?|ちょっと|とても|まだ|ずっと)?(?:寂しい|さびしい))'
+        r'という気持ちにも、今、耳を傾け(?:てい)?たいです。', raw)
+    if match is None:
+        return None
+    # Recipient substitution is local to the original explicit SELF subject.
+    left_visible = re.sub(r'^(?:私|わたし|自分|僕|ぼく|俺|おれ)(?=は|が)', 'あなた', source_left)
+    prefix = source_right[:scopes['cognitive_condition'][0]]
+    prefix_visible = re.sub(r'^(?:私|わたし|自分|僕|ぼく|俺|おれ)(?=は|が|も)', 'あなた', prefix)
+    feeling = source_right[slice(*scopes['feeling'])]
+    if (match['relief'] != left_visible or match['cognition'] != prefix_visible
+        or match['feeling'] != feeling):
+        return None
+    replacements = []
+    for start, end, source in ((match.start('relief'), match.end('relief'), source_left),
+                              (match.start('cognition'), match.end('feeling'), source_right)):
+        replacements.append((len(raw[:start].encode()), len(raw[:end].encode()), source.encode()))
+    return tuple(replacements)
+
+
+def _read_relief_survivor_discourse(raw, move, plan, resolver, selected):
+    """Restore the whole visible recipient object to its independent source."""
+    from emlis_ai_grounded_observation_plan import _source_nominal_past_feeling_parts
+    if (selected is None or not move.required or len(move.target_nucleus_ids) != 1
+        or move.support_nucleus_ids or move.reference_mode == "anaphoric_first"
+        or move.reception_act != "recognize_lived_change"
+        or _body_inverse_reception_context_ids(move, plan)):
+        return None
+    n = next((n for n in plan.nuclei if n.nucleus_id == move.target_nucleus_ids[0]), None)
+    if n is None:
+        return None
+    f = n.semantic_frame
+    if (not {"source_relief_self_recipient:v1", "source_relief_cognition_origin:relief",
+             "lexical:source_nominal_past_feeling"} <= set(f.attribute_codes)
+        or (n.kind, f.actor, f.predicate_kind, f.modality, f.polarity, f.time_scope)
+           != ("reaction", "current_user", "feeling", "feeling", "positive", "past")
+        or n.source_fields != ("memo",) or n.allowed_claim_scope != "explicit_current_input"
+        or n.retention != "required" or n.grounding_kind != "explicit"
+        or len(n.source_span_ids) != 1 or n.surface_anchor_ids != n.source_span_ids
+        or any(n.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id) for r in plan.relations)):
+        return None
+    decisions = tuple(d for d in selected.decisions if d.move_id == move.move_id)
+    if len(decisions) != 1:
+        return None
+    d = decisions[0];p = d.subjective_proposition;c = p.appraisal_content
+    mapping = dict(selected.semantic_nucleus_pairs)
+    all_basis = {b.binding_ref:b for b in d.basis_rows}
+    selected_basis = {b.binding_ref:b for b in d.basis_rows
+                      if b.contribution_ref in d.selected_contribution_refs}
+    if (d.reception_act != move.reception_act or d.target_nucleus_ids != move.target_nucleus_ids
+        or d.support_nucleus_ids or c is None
+        or (c.dimension, c.operation) != ("MATERIAL_WEIGHT", "RECEIVE_AS_MATERIAL")
+        or not set(c.appraised_bindings) <= set(all_basis)
+        or not set(c.basis_contribution_refs) <= {b.contribution_ref for b in d.basis_rows}
+        or not selected_basis or not set(selected_basis) <= set(c.appraised_bindings)
+        or not set(d.selected_contribution_refs) <= set(c.basis_contribution_refs)
+        or any(b.semantic_ref not in p.response_object_refs or b.semantic_ref not in p.primary_target_refs
+               or mapping.get(b.semantic_ref) != n.nucleus_id
+               for b in selected_basis.values())
+        or {mapping.get(b.semantic_ref) for b in d.basis_rows
+            if b.contribution_ref in d.selected_contribution_refs} != {n.nucleus_id}):
+        return None
+    source = final_reception_source_anchor_text(n.nucleus_id, {n.nucleus_id:n}, resolver)
+    owner = re.match(r"^(?:私|わたし|自分|僕|ぼく|俺|おれ)(?=は|が)", source)
+    if (owner is None or source != resolver.resolve(n.source_span_ids[0]).raw_text
+        or not _source_nominal_past_feeling_parts(source)):
+        return None
+    role = {"attention":"を見過ごさず、", "felt_response":"を"}.get(move.move_role)
+    if role is None:
+        return None
+    match = re.fullmatch(r"(?P<source>[^。]+)という気持ち" + role + "受け止めています。", raw)
+    if match is None or not match['source'].startswith("あなた"):
+        return None
+    restored = owner.group() + match['source'][len("あなた"):]
+    if restored != source:
+        return None
+    return ((0, len(match['source'].encode()), source.encode()),)
+
+
+def _read_retained_received_event_discourse(raw, move, plan, resolver, selected):
+    """Read the source-owned surviving event without borrowing an author's text."""
+    from emlis_ai_grounded_human_reception import SelectedRetainedReliefReceivedDecisionV1
+    from cocolon_meaning_experience_engine.emlis_thread_projection import validate_retained_relief_received_source
+    decision = next((d for d in selected.decisions if d.move_id == move.move_id), None) if selected else None
+    if type(decision) is not SelectedRetainedReliefReceivedDecisionV1:
+        return None
+    try:
+        local = validate_retained_relief_received_source(decision, selected, plan, resolver)
+    except (ValueError, TypeError, AttributeError, KeyError):
+        return None
+    if (local.eligibility.operation != 'WITHDRAW_REACTION' or not move.required
+        or move.move_role != 'attention' or move.reception_act != 'stay_with_current_burden'
+        or len(move.target_nucleus_ids) != 1 or move.support_nucleus_ids
+        or re.search(r'[「」『』“”‘’"?？!！\r\n]', raw)):
+        return None
+    from emlis_ai_grounded_observation_plan import _source_retained_relief_received_from_resolver, _source_initial_personal_meaning_from_resolver
+    original = _source_retained_relief_received_from_resolver(plan.nuclei, plan.relations, resolver)
+    if not original or move.target_nucleus_ids != (original[3].nucleus_id,):
+        return None
+    index = {n.nucleus_id: n for n in plan.nuclei}
+    event = index.get(original[3].nucleus_id)
+    if (event is None or original[4].nucleus_id in index
+        or any(event.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id) for r in plan.relations)
+        or (event.kind, event.semantic_frame.actor, event.semantic_frame.predicate_kind,
+            event.semantic_frame.modality, event.semantic_frame.time_scope)
+            != ('event', 'current_user', 'event', 'fact', 'past')):
+        return None
+    source = final_reception_source_anchor_text(event.nucleus_id, index, resolver)
+    owner = re.match(r'^(?:私|自分|わたし)(?=は|が)', source)
+    parsed = re.fullmatch(r'(?P<event>[^。]+)' + (
+        'のですね。' if owner and source[owner.end():].startswith('は')
+        else 'ことはあったのですね。'), raw)
+    if parsed is None:
+        return None
+    visible = parsed['event']
+    if owner:
+        if not visible.startswith('あなた'):
+            return None
+        visible = owner.group() + visible[len('あなた'):]
+    if visible != source:
+        return None
+    return ((0, len(parsed['event'].encode()), source.encode()),)
+
+
+def read_source_owned_discourse(raw, move, plan, resolver, selected_subjective_input=None,
+                                *, preceding_context=None, preceding_observation=None):
+    """Read supported finite source duties without a literal-author oracle."""
+    from emlis_ai_grounded_observation_plan import source_snapshot_v2_group
+    group = source_snapshot_v2_group(plan.nuclei, plan.relations, resolver,
+        nucleus_ids=(*move.target_nucleus_ids, *move.support_nucleus_ids))
+    if group:
+        if not move.required or move not in plan.response_plan.human_reception_plan.moves:
+            return None
+        kind, ids, lexical = group
+        # Anaphora owes the complete, independently read Observation in this
+        # same body. A missing/changed antecedent cannot borrow saved prose.
+        if preceding_observation is None:
+            return None
+        antecedents = tuple(text for text in re.split(r"(?<=。)\s*", preceding_observation)
+            if read_snapshot_observation_clause(text,kind,lexical))
+        if len(antecedents) != 1:
+            return None
+        if kind == "written_te":
+            parsed = re.fullmatch(r"(?P<object>その打合せでの関わり方)に、私は心が留まります。", raw)
+            if parsed is None:
+                return None
+            start, end = (len(raw[:p].encode()) for p in parsed.span("object"))
+            return tuple((start,end,value.encode()) for value in lexical)
+        parsed = re.fullmatch(r"(?P<joy>[^、。]+)という気持ちも、(?P<unknown>どの部分かまだ曖昧)なままで受け止めています。", raw)
+        if parsed is None or parsed["joy"] != lexical[0]:
+            return None
+        return tuple((len(raw[:parsed.start(key)].encode()), len(raw[:parsed.end(key)].encode()), value.encode())
+            for key,value in zip(("joy","unknown"),lexical))
+    from cocolon_meaning_experience_engine.contracts import EmlisReliefCognitionAppraisalContent
+    decision = next((d for d in selected_subjective_input.decisions if d.move_id == move.move_id), None) if selected_subjective_input else None
+    from emlis_ai_grounded_human_reception import SelectedRetainedReliefCognitionDecisionV1, SelectedRetainedReliefReceivedDecisionV1
+    from emlis_ai_grounded_human_reception import SelectedInitialReceivedPersonalMeaningDecisionV1
+    if type(decision) is SelectedInitialReceivedPersonalMeaningDecisionV1:
+        from cocolon_meaning_experience_engine.contracts import InitialReceivedPersonalMeaningPairContentV1
+        if type(decision.initial_received_personal_meaning) is InitialReceivedPersonalMeaningPairContentV1:
+            return _read_relief_cognition_discourse(raw, move, plan, resolver, selected_subjective_input, preceding_observation)
+        return _read_initial_personal_meaning_discourse(raw, move, plan, resolver, selected_subjective_input)
+    if decision and (type(decision.subjective_proposition.appraisal_content) is EmlisReliefCognitionAppraisalContent
+                     or type(decision) is SelectedRetainedReliefCognitionDecisionV1
+                     or type(decision) is SelectedRetainedReliefReceivedDecisionV1
+                         and type(decision.retained_relief_received.proposition.appraisal_content)
+                             is EmlisReliefCognitionAppraisalContent):
+        # A missing new facet cannot fall back to the old contrast wording.
+        return _read_relief_cognition_discourse(raw, move, plan, resolver, selected_subjective_input, preceding_observation)
+    if (type(decision) is SelectedRetainedReliefReceivedDecisionV1
+        and decision.retained_relief_received.eligibility.operation == 'WITHDRAW_REACTION'):
+        return _read_retained_received_event_discourse(raw, move, plan, resolver, selected_subjective_input)
+    survivor = _read_relief_survivor_discourse(raw, move, plan, resolver, selected_subjective_input)
+    if survivor is not None:
+        return survivor
+    corrected = _relief_cognition_corrected_source(move, plan, resolver, selected_subjective_input)
+    if corrected is not None:
+        match = re.fullmatch(r'言い直してくださった気持ちは、(?P<feeling>[^。]+)ということなのですね。', raw)
+        if match is None or match['feeling'] != corrected:
+            return None
+        return ((len(raw[:match.start('feeling')].encode()),
+                 len(raw[:match.end('feeling')].encode()), corrected.encode()),)
+    retained_event = _read_retained_appraisal_event_discourse(
+        raw, move, plan, resolver, selected_subjective_input)
+    if retained_event is not None:
+        return retained_event
+    if any(n.nucleus_id in move.target_nucleus_ids
+           and 'source_shared_target_slot:received_event' in n.semantic_frame.attribute_codes
+           for n in plan.nuclei):
+        # An invalid grouped arm cannot fall through to the old pair reader.
+        return _read_shared_target_reception_discourse(
+            raw, move, plan, resolver, selected_subjective_input, preceding_context)
+    detached_group = _read_detached_burden_discourse(raw, move, plan, resolver, selected_subjective_input)
+    if detached_group is not None:
+        return detached_group
+    detached = _read_detached_feeling_discourse(raw, move, plan, resolver, selected_subjective_input)
+    if detached is not None:
+        return detached
+    temporal = _read_temporal_material_discourse(
+        raw, move, plan, resolver, selected_subjective_input)
+    if temporal is not None:
+        return temporal
+    coexisting = _read_coexisting_material_discourse(
+        raw, move, plan, resolver, selected_subjective_input)
+    if coexisting is not None:
+        return coexisting
+    unknown_object = _read_unknown_object_discourse(raw, move, plan, resolver, selected_subjective_input)
+    if unknown_object is not None or any(n.nucleus_id in move.target_nucleus_ids
+        and any(c.startswith('source_past_self_unknown:') for c in n.semantic_frame.attribute_codes)
+        for n in plan.nuclei):
+        return unknown_object
+    feeling_reason = _read_feeling_reason_discourse(
+        raw, move, plan, resolver, selected_subjective_input)
+    if feeling_reason is not None:
+        return feeling_reason
+    independent_decision = _read_independent_decision_discourse(
+        raw, move, plan, resolver, selected_subjective_input)
+    if independent_decision is not None:
+        return independent_decision
+    positive_answers = _read_positive_answer_group_discourse(
+        raw, move, plan, resolver, selected_subjective_input)
+    if positive_answers is not None:
+        return positive_answers
+    answer = _read_answer_feeling_discourse(raw, move, plan, resolver, selected_subjective_input,
+                                           preceding_context)
+    if answer is not None:
+        return answer
+    action_change = _read_action_change_discourse(raw, move, plan, resolver, selected_subjective_input)
+    if action_change is not None:
+        return action_change
+    purpose = _read_action_purpose_discourse(raw, move, plan, resolver, selected_subjective_input)
+    if purpose is not None:
+        return purpose
+    focus = _read_relational_focus_discourse(raw, move, plan, resolver, selected_subjective_input)
+    if focus is not None:
+        return focus
+    appraisal = _read_appraisal_material_discourse(raw, move, plan, resolver, selected_subjective_input)
+    return appraisal if appraisal is not None else read_received_discourse(
+        raw, move, plan, resolver, selected_subjective_input)
+
+
+def _read_received_record_prefixes(plan, resolver):
+    """Recover written-position qualifiers from source ranges, not the author."""
+    from emlis_ai_grounded_observation_plan import _received_event_reaction_projections
+    index = {n.nucleus_id: n for n in plan.nuclei}
+    # Reconstruct positions independently from the surviving original
+    # event nuclei. A missing burden Move is not a missing source occurrence.
+    ids = tuple(n.nucleus_id for n in plan.nuclei if n.kind == "event"
+        and n.allowed_claim_scope == "explicit_current_input"
+        and any(field in {"memo", "memo_action"} for field in n.source_fields))
+    if not 1 <= len(ids) <= 3:
+        return {}
+    grouped = {}
+    for nid in ids:
+        nucleus = index[nid]
+        if len(nucleus.source_span_ids) != 1 or nucleus.source_fields not in {("memo",), ("memo_action",)}:
+            continue
+        span = resolver.resolve(nucleus.source_span_ids[0])
+        source = final_reception_source_anchor_text(nid, index, resolver)
+        if not source or not 0 <= span.start_index < span.end_index:
+            continue
+        visible = re.sub(r"^(?:私|自分|わたし)(?=は|が)", "あなた", source, count=1)
+        grouped.setdefault((span.source_field, visible), []).append((span.start_index, span.end_index, nid))
+    result = {}
+    for (field, visible), active in grouped.items():
+        # Independently recover the written population from the immutable
+        # original spans. Never read the author's labels or revive withdrawn
+        # event semantics. The shared source grammar proves complete hosts.
+        positions = {(start, end) for start, end, _ in active}
+        if len(positions) != len(active):
+            continue
+        for sid in resolver.span_ids:
+            source_span = resolver.resolve(sid)
+            if source_span.source_field != field or not 0 <= source_span.start_index < source_span.end_index:
+                continue
+            rows = _received_event_reaction_projections(source_span, None)
+            event_rows = tuple(row for row in rows if row.kind == "event")
+            if len(event_rows) != 1:
+                continue
+            event = event_rows[0]
+            source = re.sub(r"\s+", " ", source_span.raw_text).strip()[event.scalar_start:event.scalar_end]
+            normalized = re.sub(r"^(?:私|自分|わたし)(?=は|が)", "あなた", source, count=1)
+            if normalized == visible:
+                positions.add((source_span.start_index, source_span.end_index))
+        occurrences = sorted(positions)
+        if not 2 <= len(occurrences) <= 3 or any(a[1] > b[0] for a, b in zip(occurrences, occurrences[1:])):
+            continue
+        words = ("先", "後") if len(occurrences) == 2 else ("先", "間", "後")
+        for start, end, nid in active:
+            result[nid] = words[occurrences.index((start, end))] + "に書かれた方では、"
+    return result
+
+
+def read_received_discourse(raw, move, plan, resolver, selected_subjective_input=None):
+    prefixes = _read_received_record_prefixes(plan, resolver)
+    expected = tuple((nid, prefixes[nid]) for nid in move.target_nucleus_ids if nid in prefixes)
+    index = {n.nucleus_id: n for n in plan.nuclei}
+    if not expected:
+        return _read_received_discourse_unqualified(raw, move, plan, resolver, selected_subjective_input)
+    events = tuple(re.sub(r"^(?:私|自分|わたし)(?=は|が)", "あなた",
+                         final_reception_source_anchor_text(nid, index, resolver), count=1)
+                   for nid, _ in expected)
+    markers = tuple(re.finditer(r"(?:先|間|後)に書かれた(?:方では、|「)(?="
+                               + "|".join(re.escape(event) for event in events) + ")", raw))
+    if not markers:
+        # Previously saved unqualified prose keeps its existing independent
+        # source reading. The current author supplies all known qualifiers.
+        return _read_received_discourse_unqualified(raw, move, plan, resolver, selected_subjective_input)
+    if len(markers) != len(expected):
+        return None
+    removals = []
+    for marker, (nid, prefix) in zip(markers, expected, strict=True):
+        event = final_reception_source_anchor_text(nid, index, resolver)
+        visible = re.sub(r"^(?:私|自分|わたし)(?=は|が)", "あなた", event, count=1)
+        if (marker.start() and raw[marker.start() - 1] != "、"
+            or not raw[marker.end():].startswith(visible)):
+            return None
+        if marker.group() == prefix:
+            removals.append((marker.start(), marker.end()))
+        elif marker.group() == prefix.removesuffix("方では、") + "「":
+            end = marker.end() + len(visible)
+            close = "」ということがあった"
+            if not raw[end:].startswith(close) or not re.match(
+                    r"(?:のに|けれども|けれど|けど)、", raw[end + len(close):]):
+                return None
+            # The source-proven event and its original contrast are read by
+            # the existing role reader. Remove only the verified annotation.
+            removals.extend(((marker.start(), marker.end()), (end, end + len(close))))
+        else:
+            return None
+    pieces, removed, cursor, shifts = [], 0, 0, []
+    for start, end in removals:
+        if start < cursor:
+            return None
+        pieces.append(raw[cursor:start])
+        at = len(raw[:start].encode()) - removed
+        size = len(raw[start:end].encode())
+        shifts.append((at, size))
+        removed += size
+        cursor = end
+    pieces.append(raw[cursor:])
+    proof = _read_received_discourse_unqualified("".join(pieces), move, plan, resolver, selected_subjective_input)
+    if proof is None or any(start < at < end for start, end, _ in proof for at, _ in shifts):
+        return None
+    return tuple((start + sum(size for at, size in shifts if at <= start),
+                  end + sum(size for at, size in shifts if at < end), source)
+                 for start, end, source in proof)
+
+
+def _read_received_discourse_unqualified(raw, move, plan, resolver, selected_subjective_input=None):
+    """Parse either finite or coordinated clauses with a shared past scope.
+
+    Source-owned event boundaries must match their ordered occurrences.
+    Only the actual connective inflection is normalized for the independent role reader; the source,
+    body, witness and response bindings are never rewritten.
+    """
+    from emlis_ai_grounded_observation_plan import _thread_revised_original_reaction
+    if len(move.target_nucleus_ids) <= 1 or "、また、" in raw:
+        return _read_received_discourse_parts(raw, move, plan, resolver, selected_subjective_input)
+    index = {n.nucleus_id: n for n in plan.nuclei}
+    later_events = []
+    for nid in move.target_nucleus_ids[1:]:
+        nucleus = index[nid]
+        revised = _thread_revised_original_reaction(nucleus, plan.relations, polarity=nucleus.semantic_frame.polarity)
+        if revised:
+            event = "訂正の回答では、"
+        else:
+            event = final_reception_source_anchor_text(nid, index, resolver)
+            event = re.sub(r"^(?:私|自分|わたし)(?=は|が)", "あなた", event or "", count=1)
+        later_events.append((event, revised))
+    cuts = [0]
+    for position, (event, revised) in enumerate(later_events):
+        starts = [m.start() for m in re.finditer(re.escape("、" + event), raw)] if event else []
+        # Repeated event labels retain each source ID in order. Require all
+        # expected boundaries, and reject surplus anchors inside an answer.
+        # Independent revision prefixes keep their existing unique rule.
+        expected = 1 if revised else sum(label == event for label, _ in later_events)
+        occurrence = 0 if revised else sum(label == event for label, _ in later_events[:position])
+        if len(starts) != expected or starts[occurrence] <= cuts[-1]:
+            return None
+        cuts.append(starts[occurrence] + 1)
+    actual_parts = [raw[start:end - 1] for start, end in zip(cuts, cuts[1:])]
+    actual_parts.append(raw[cuts[-1]:])
+    normalized_parts, shared_slots = [], []
+    for part_index, part in enumerate(actual_parts):
+        event_id = move.target_nucleus_ids[part_index]
+        event = final_reception_source_anchor_text(event_id, index, resolver)
+        event = re.sub(r"^(?:私|自分|わたし)(?=は|が)", "あなた", event or "", count=1)
+        shared_prefix = event + "時も、" if event else ""
+        shared = bool(event and (part == event + "時も" or part.startswith(shared_prefix)))
+        if shared:
+            required = set(plan.coverage_requirements.required_relation_ids)
+            relations = tuple(r for r in plan.relations if r.relation_id in required
+                and r.from_nucleus_id == event_id and r.to_nucleus_id in move.support_nucleus_ids)
+            if (len(relations) != 1 or relations[0].type != "evaluation_about_event"
+                or {c for c in index[relations[0].to_nucleus_id].semantic_frame.attribute_codes
+                    if c.startswith("thread_time:")} != {"thread_time:original_occasion"}):
+                return None
+            if part == event + "時も":
+                shared_slots.append(part_index)
+                normalized_parts.append(None)
+                continue
+            if not shared_slots:
+                return None
+        elif shared_slots:
+            return None
+        if part_index == len(actual_parts) - 1:
+            normalized = part
+        elif part.endswith("し"):
+            # Additive coordination preserves each complete finite clause.
+            # Cut only at the proved next source-owned occurrence above; an
+            # identical connective inside an answer remains part of it.
+            finite = part[:-1]
+            # A noun before additive し needs its finite copula だ. Treating
+            # な as equivalent here would misread 不安なし as 不安です.
+            if finite.endswith("な"):
+                return None
+            if finite.endswith("だ"):
+                finite = finite[:-1] + "な"
+        elif part.endswith("つながらず"):
+            finite = part[:-5] + "つながらなかった"
+        elif part.endswith("感じ"):
+            finite = part + "た"
+        elif part.endswith("届き"):
+            finite = part[:-2] + "届いた"
+        elif part.endswith("と思い"):
+            finite = part[:-1] + "った"
+        elif part.endswith("く"):
+            finite = part[:-1] + "かった"
+        else:
+            return None
+        if part_index < len(actual_parts) - 1:
+            normalized = finite + "のですね"
+        if shared:
+            suffix = normalized[len(shared_prefix):]
+            # Each original event/answer pair is independently read below,
+            # including exact source recovery and complete relation cover.
+            for slot in shared_slots:
+                source_event = final_reception_source_anchor_text(move.target_nucleus_ids[slot], index, resolver)
+                source_event = re.sub(r"^(?:私|自分|わたし)(?=は|が)", "あなた", source_event or "", count=1)
+                normalized_parts[slot] = source_event + "時は、" + suffix.removesuffix("。")
+            normalized = event + "時は、" + suffix
+            shared_slots = []
+        normalized_parts.append(normalized)
+    if shared_slots:
+        return None
+    normalized = "、また、".join(normalized_parts)
+    proof = _read_received_discourse_parts(normalized, move, plan, resolver, selected_subjective_input,
+                                           coordinated_prefix_count=len(actual_parts) - 1)
+    if proof is None:
+        return None
+    intervals, base = [], 0
+    for original, adapted, start in zip(actual_parts, normalized_parts, cuts):
+        intervals.append((base, base + len(adapted.encode()), len(raw[:start].encode()), len(original.encode())))
+        base += len(adapted.encode()) + len("、また、".encode())
+    restored = []
+    for start, end, source in proof:
+        containing = [r for r in intervals if r[0] <= start < end <= r[1]]
+        if len(containing) != 1:
+            return None
+        lo, hi, actual_start, actual_size = containing[0]
+        restored.append((actual_start + start - lo,
+                         actual_start + min(end - lo, actual_size), source))
+    return tuple(restored)
+
+
+def _read_received_discourse_parts(raw, move, plan, resolver, selected_subjective_input=None,
+                                  *, coordinated_prefix_count=0):
+    """Read finite event/feeling/answer roles from actual text, without replay.
+
+    The response grammar may vary its acknowledgement; acceptance depends on
+    the reconstructed propositions, relation ownership, polarity and time.
+    No source clause may disappear merely because it is present in Layer 1.
+    Returned ranges restore grammatical feeling nouns for sensation checks;
+    they are not a replacement body or evidence supplied by the author.
+    """
+    from emlis_ai_grounded_observation_plan import (
+        _thread_retained_reaction_groups, _received_contrast_group_targets,
+        _thread_withdrawn_original_reaction, _received_event_reaction_projections,
+        _thread_revised_original_reaction,
+    )
+    from emlis_ai_grounded_human_reception import (
+        SelectedRetainedReceivedExperienceDecisionV1, SelectedRetainedReliefReceivedDecisionV1,
+        validate_selected_retained_received_experience,
+    )
+    decision = next((d for d in selected_subjective_input.decisions
+                     if d.move_id == move.move_id), None) if selected_subjective_input else None
+    local = None
+    if type(decision) is SelectedRetainedReceivedExperienceDecisionV1:
+        try:
+            local = validate_selected_retained_received_experience(
+                decision, selected_subjective_input, plan, resolver)
+        except (ValueError, TypeError, AttributeError, KeyError):
+            return None
+    relief_received = type(decision) is SelectedRetainedReliefReceivedDecisionV1
+    if relief_received:
+        from cocolon_meaning_experience_engine.emlis_thread_projection import validate_retained_relief_received_source
+        try:
+            local = validate_retained_relief_received_source(
+                decision, selected_subjective_input, plan, resolver)
+        except (ValueError, TypeError, AttributeError, KeyError):
+            return None
+    original_group = _received_contrast_group_targets(plan.nuclei, plan.relations)
+    original = bool(original_group and original_group ==
+                    (move.target_nucleus_ids, move.support_nucleus_ids))
+    thread_group = (("current_burden", move.target_nucleus_ids, move.support_nucleus_ids)
+                    in _thread_retained_reaction_groups(plan.nuclei, plan.relations))
+    reception_moves = plan.response_plan.human_reception_plan.moves
+    source_groups = _thread_retained_reaction_groups(plan.nuclei, plan.relations)
+    separate_received_scopes = bool(
+        2 <= len(reception_moves) == len(source_groups) <= 3
+        and tuple(m.move_role for m in reception_moves) == (
+            ("attention", "felt_response") if len(reception_moves) == 2
+            else ("attention", "significance", "felt_response"))
+        and all(m.required and m.reception_act == "stay_with_current_burden"
+                and m.support_nucleus_ids for m in reception_moves)
+        and tuple(("current_burden", m.target_nucleus_ids, m.support_nucleus_ids)
+                  for m in reception_moves) == source_groups)
+    nuclei = {n.nucleus_id: n for n in plan.nuclei}
+    qualified_original_scope = bool(
+        len(reception_moves) == 3
+        and tuple(m.move_role for m in reception_moves) == ("significance", "felt_response", "attention")
+        and all(m.required and m.reception_act == "stay_with_current_burden" for m in reception_moves)
+        and all(m.support_nucleus_ids for m in reception_moves[:2])
+        and tuple(("current_burden", m.target_nucleus_ids, m.support_nucleus_ids) for m in reception_moves) == source_groups
+        and move == reception_moves[0]
+        and any(nid in _read_received_record_prefixes(plan, resolver) for nid in move.target_nucleus_ids)
+        and len(reception_moves[2].target_nucleus_ids) == 1
+        and _thread_revised_original_reaction(nuclei[reception_moves[2].target_nucleus_ids[0]], plan.relations)
+        and not any(r.type == "evaluation_about_event" and r.from_nucleus_id in move.target_nucleus_ids
+                    and r.to_nucleus_id in move.support_nucleus_ids
+                    and r.relation_id in plan.coverage_requirements.required_relation_ids for r in plan.relations)
+    )
+    has_answers = any(n.source_fields == ("answer_text_private",) for n in plan.nuclei)
+    if (has_answers and getattr(resolver, "source_contract", None) != "cocolon.cmee.emlis_thread.v1"
+        or not move.required or not (move.move_role == "felt_response"
+            or move.move_role == "attention" and thread_group
+            and (separate_received_scopes and move == reception_moves[0]
+                or relief_received
+                or "selection:source_owned_answer_adjacent"
+                in plan.response_plan.human_reception_plan.depth_policy.selection_reason_codes)
+            # The middle contribution has the same fully proved event/answer
+            # scope. Keep its role and source group; do not admit arbitrary
+            # significance Moves merely because their text is finite.
+            or move.move_role == "significance" and thread_group
+            and (separate_received_scopes and len(reception_moves) == 3
+                 and move == reception_moves[1]
+                 or qualified_original_scope))
+        or move.reception_act != "stay_with_current_burden"
+        or not (original or thread_group or local is not None)
+        or not raw.endswith("。") or raw.count("。") != 1
+        or re.search(r'[「」『』“”‘’"?？!！\r\n]', raw)):
+        return None
+    decision = None
+    if selected_subjective_input is not None:
+        decision = next((d for d in selected_subjective_input.decisions
+                         if d.move_id == move.move_id), None)
+        appraisal = decision.subjective_proposition.appraisal_content if decision else None
+        if appraisal is None or appraisal.operation not in {"RECEIVE_AS_MATERIAL", "PRESERVE_BOTH_ENDPOINTS"}:
+            return None
+    parts = raw[:-1].split("、また、")
+    if (len(parts) != len(move.target_nucleus_ids)
+        or not 0 <= coordinated_prefix_count < len(parts)):
+        return None
+    nuclei = {n.nucleus_id: n for n in plan.nuclei}
+    required = set(plan.coverage_requirements.required_relation_ids)
+    consumed, consumed_relations, replacements = set(), set(), []
+    offset, saw_answer = 0, False
+    for part_index, (event_id, part) in enumerate(zip(move.target_nucleus_ids, parts)):
+        event = nuclei[event_id]
+        if (event.source_fields == ("answer_text_private",)
+            and "thread_subject:withdrawn_source_event" in event.semantic_frame.attribute_codes):
+            frame = event.semantic_frame
+            times = {c.split(":", 1)[1] for c in frame.attribute_codes if c.startswith("thread_time:")}
+            if (not thread_group or event.allowed_claim_scope != "explicit_supplemental_answer"
+                or event.retention != "required" or event.grounding_kind != "explicit"
+                or (event.kind, frame.predicate_kind, frame.modality) != ("reaction", "feeling", "feeling")
+                or frame.actor != "current_user" or frame.polarity != "negative"
+                or len(event.source_span_ids) != 1 or len(times) != 1
+                or not times <= {"original_occasion", "answer_time", "prior_answer_time"}
+                or "thread_subject:withdrawn_source_event" not in frame.attribute_codes
+                or any(event_id in (r.from_nucleus_id, r.to_nucleus_id) for r in plan.relations)
+                or resolver.source_fields_for(event.source_span_ids) != event.source_fields):
+                return None
+            when = next(iter(times))
+            source = _body_inverse_typed_source_fragment(event, resolver.resolve(event.source_span_ids[0]).raw_text)
+            ending = re.search(r"(?:のでしたね|のですね|のです|のだと受け取りました)$", part)
+            owner = _thread_feeling_owner(source) if source else None
+            prefix = "先の回答にあるとおり、" + ({
+                "original_occasion": "その時、", "answer_time": "回答した時点で、",
+                "prior_answer_time": "先の回答時点で、"} if owner else {
+                "original_occasion": "その時は", "answer_time": "回答した時点では",
+                "prior_answer_time": "先の回答時点では"})[when]
+            if (not source or frame.time_scope != ("past" if when == "original_occasion" else "present")
+                or ending is None or not part.startswith(prefix)):
+                return None
+            finite = part[len(prefix):ending.start()]
+            if re.search(r"(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:には|にも|は|も|が)", finite):
+                return None
+            if ending.group() == "のでしたね":
+                if _thread_past_explanation_predicate(source) is None:
+                    return None
+                finite += "のだった"
+            if _restore_thread_finite_answer(finite, source,
+                    copular_clause=source.endswith(("です", "でした", "だった", "だ")),
+                    shared_explanatory_ending=True) != source:
+                return None
+            start = len((raw[:offset] + prefix).encode())
+            end = len((raw[:offset] + part[:ending.start()]).encode())
+            replacements.append((start, end, source.encode()))
+            consumed.add(event_id)
+            saw_answer = True
+            offset += len(part) + len("、また、")
+            continue
+        if _thread_revised_original_reaction(event, plan.relations, polarity=event.semantic_frame.polarity):
+            span = resolver.resolve(event.source_span_ids[0])
+            source = _body_inverse_typed_source_fragment(event, span.raw_text)
+            ending = re.search(r"(?:のでしたね|のですね|のです|のだと受け取りました)$", part)
+            prefix = ("訂正の回答では、" if len(move.target_nucleus_ids) > 1
+                      else "言い直してくださった気持ちについては、") + (
+                "当時、" if source and _thread_feeling_owner(source) else "当時は")
+            if (not thread_group or resolver.source_fields_for(event.source_span_ids) != event.source_fields
+                or not source or ending is None or not part.startswith(prefix)):
+                return None
+            finite = part[len(prefix):ending.start()]
+            acknowledged = part_index >= coordinated_prefix_count
+            if ending.group() == "のでしたね":
+                if not acknowledged or _thread_past_explanation_predicate(source) is None:
+                    return None
+                finite += "のだった"
+            if _restore_thread_finite_answer(finite, source,
+                    copular_clause=source.endswith(("でした", "だった", "のです", "のだ")),
+                    shared_explanatory_ending=acknowledged) != source:
+                return None
+            start = len((raw[:offset] + prefix).encode())
+            end = len((raw[:offset] + part[:ending.start()]).encode())
+            replacements.append((start, end, source.encode()))
+            consumed.add(event_id)
+            offset += len(part) + len("、また、")
+            continue
+        if _thread_withdrawn_original_reaction(event, plan.relations):
+            span = resolver.resolve(event.source_span_ids[0])
+            source = _body_inverse_typed_source_fragment(event, span.raw_text)
+            ending = re.search(r"(?:のですね|のです|のだと受け取りました)$", part)
+            prefix = next((p for p in ("最初の記録にあるとおり、当時は", "その時は")
+                           if part.startswith(p)), None)
+            if (not thread_group or resolver.source_fields_for(event.source_span_ids) != event.source_fields
+                or not source or not re.search(r"(?:かった(?:です)?|[てで]いた|た|だ|でした)$", source)
+                or ending is None or prefix is None
+                or _restore_thread_finite_answer(part[len(prefix):ending.start()], source,
+                    copular_clause=source.endswith(("でした", "だった"))) != source
+                or not any(row.kind == "reaction" and row.polarity == "negative"
+                    and set(row.attribute_codes) <= set(event.semantic_frame.attribute_codes)
+                    for row in _received_event_reaction_projections(span, event.semantic_frame))):
+                return None
+            start = len((raw[:offset] + prefix).encode())
+            end = len((raw[:offset] + part[:ending.start()]).encode())
+            replacements.append((start, end, source.encode()))
+            consumed.add(event_id)
+            offset += len(part) + len("、また、")
+            continue
+        contrasts = tuple(r for r in plan.relations if r.relation_id in required
+            and r.type == "contrast" and r.from_nucleus_id == event_id
+            and r.to_nucleus_id in move.support_nucleus_ids)
+        about = tuple(r for r in plan.relations if r.relation_id in required
+            and r.type == "evaluation_about_event" and r.from_nucleus_id == event_id
+            and r.to_nucleus_id in move.support_nucleus_ids)
+        if (len(contrasts) > 1 or len(about) > 1 or not (contrasts or about)
+            or event.semantic_frame.actor != "current_user"
+            or event.semantic_frame.time_scope != "past"
+            or resolver.source_fields_for(event.source_span_ids) != event.source_fields
+            or event.source_fields not in {("memo",), ("memo_action",)}):
+            return None
+        event_source = final_reception_source_anchor_text(event_id, nuclei, resolver)
+        feeling_source = link = None
+        if contrasts:
+            relation = contrasts[0]
+            feeling = nuclei[relation.to_nucleus_id]
+            feeling_source = final_reception_source_anchor_text(feeling.nucleus_id, nuclei, resolver)
+            if (feeling.source_span_ids != event.source_span_ids or len(event.source_span_ids) != 1
+                or feeling.source_fields != event.source_fields
+                or feeling.semantic_frame.time_scope != "past"
+                or feeling.semantic_frame.actor != "current_user"):
+                return None
+            source = re.sub(r"\s+", " ", resolver.resolve(event.source_span_ids[0]).raw_text).strip(" 　、,。．.")
+            if not (source.startswith(event_source) and source.endswith(feeling_source)):
+                return None
+            link = source[len(event_source):-len(feeling_source)].rstrip("、,")
+            if link not in {"のに", "けど", "けれど", "けれども"}:
+                return None
+            consumed.add(feeling.nucleus_id)
+            consumed_relations.add(relation.relation_id)
+        if local is not None and contrasts and not about:
+            # Independently read the two subordinate objects of the retained
+            # LIMITED predicate. The actor belongs to each source endpoint,
+            # not to the matrix "receive" predicate spoken by Emlis.
+            suffix = {
+                ("MATERIAL_WEIGHT", "RECEIVE_AS_MATERIAL"):
+                    "との違いを小さくせずに受け止めています",
+                ("RELATIONAL_NONCOLLAPSE", "PRESERVE_BOTH_ENDPOINTS"):
+                    "の両方を、その違いも含めて小さくせずに受け止めています",
+            }.get((appraisal.dimension, appraisal.operation))
+            objects = re.fullmatch(r"(?P<event>.+?)ことと(?P<feeling>.+?)ということ" + re.escape(suffix),
+                                   part) if suffix else None
+            if objects is not None:
+                event_owner = re.match(r"(?:私|自分|わたし)(?:は|が)", event_source)
+                feeling_owner = _thread_feeling_owner(feeling_source)
+                event_nominal = ("あなたが" + event_source[event_owner.end():]
+                                 if event_owner else event_source)
+                finite = objects["feeling"]
+                if (event_owner is None and feeling_owner is None
+                    or len(parts) != 1 or len(move.support_nucleus_ids) != 1
+                    or objects["event"] != event_nominal
+                    or not finite.endswith(("かった", "だった"))):
+                    return None
+                if feeling_owner is not None and feeling_owner['particle'] == "は":
+                    if finite.count("あなたが") != 1:
+                        return None
+                    finite = finite.replace("あなたが", "あなたは", 1)
+                if _restore_thread_finite_answer(finite, feeling_source, copular_clause=True) != feeling_source:
+                    return None
+                for name, original_source in (("event", event_source), ("feeling", feeling_source)):
+                    start = len((raw[:offset] + part[:objects.start(name)]).encode())
+                    end = len((raw[:offset] + part[:objects.end(name)]).encode())
+                    replacements.append((start, end, original_source.encode()))
+                consumed.add(event_id)
+                offset += len(part) + len("、また、")
+                continue
+        # Reverse the visible event owner at its actual byte range. Source
+        # contrast validation above still uses the untouched source event.
+        # This is the same leading SELF rule as relational focus, not an
+        # unrestricted replacement of pronouns in the body or its proof.
+        event_visible = event_source
+        owner = re.match(r"(?:私|自分|わたし)(?=は|が)", event_source or "")
+        if owner is not None:
+            event_visible = "あなた" + event_source[owner.end():]
+            if not part.startswith(event_visible):
+                return None
+            start = len(raw[:offset].encode())
+            end = start + len(event_visible.encode())
+            replacements.append((start, end, event_source.encode()))
+        experience = re.fullmatch(
+            r"(?P<event>.+?)ことは、あなたにとって(?P<feeling>[^、,]+)さを"
+            r"(?P<presence>伴わない|伴う)経験だったのですね", part)
+        if experience is None:
+            # Keep the complete former grammar readable for saved bodies.
+            # Do not mix its past accompaniment with the new past-experience
+            # grammar; each must independently preserve SELF and past scope.
+            experience = re.fullmatch(
+                r"(?P<event>.+?)ことだけでは言い表せない、(?P<feeling>[^、,]+)さが"
+                r"(?P<presence>伴わなかった|伴った)あなたの経験として受け取りました", part)
+        if experience is not None:
+            # Read the selected contrast, its two owned endpoints and the
+            # actual polarity from delivered bytes. Do not call the author
+            # or treat a generic 'experience' label as a semantic witness.
+            experience_basis = local.basis_rows if local is not None else decision.basis_rows if decision else ()
+            if (decision is None or decision.branch != "NORMAL" and local is None or about
+                or len(parts) != 1 or len(contrasts) != 1
+                or decision.target_nucleus_ids != move.target_nucleus_ids
+                or decision.support_nucleus_ids != move.support_nucleus_ids
+                or len(move.support_nucleus_ids) != 1
+                or len(decision.selected_contribution_refs) != 1
+                or len(experience_basis) != 2):
+                return None
+            proposition = local.proposition if local is not None else decision.subjective_proposition
+            appraisal = proposition.appraisal_content
+            node_map = dict(selected_subjective_input.semantic_nucleus_pairs)
+            relation_map = dict(selected_subjective_input.relation_pairs)
+            endpoints = (event_id, feeling.nucleus_id)
+            if (proposition.subjective_mode != "ATTENTION"
+                or proposition.subjective_operator != "ATTEND_TO"
+                or appraisal is None or appraisal.dimension != "RELATIONAL_NONCOLLAPSE"
+                or appraisal.operation != "PRESERVE_BOTH_ENDPOINTS"
+                or appraisal.focal_relation_ref != proposition.focal_relation_ref
+                or relation_map.get(proposition.focal_relation_ref) != contrasts[0].relation_id
+                or tuple(node_map.get(ref) for ref in proposition.response_object_refs) != endpoints
+                or set(appraisal.appraised_bindings) != {b.binding_ref for b in experience_basis}
+                or {(b.role, node_map.get(b.semantic_ref)) for b in experience_basis}
+                    != {("RELATION_LEFT", event_id), ("RELATION_RIGHT", feeling.nucleus_id)}
+                or not decision.selected_contribution_refs
+                or not (set(appraisal.basis_contribution_refs) == set(decision.selected_contribution_refs)
+                        == set(proposition.target_contribution_refs)
+                        == {b.contribution_ref for b in experience_basis})):
+                return None
+            restored = experience["feeling"] + (
+                "くなかった" if experience["presence"] in {"伴わない", "伴わなかった"} else "かった")
+            if (experience["event"] != event_visible or event_visible.startswith("あなたは")
+                # The source may use the polite ending for this same bare
+                # past predicate. Keep the complete source bytes below.
+                or feeling_source not in {restored, restored + "です"}
+                or not _FEELING_RE.fullmatch(experience["feeling"])
+                    and not _FEELING_RE.fullmatch(experience["feeling"] + "い")
+                    and not (experience["feeling"].endswith("し")
+                             and _FEELING_RE.fullmatch(experience["feeling"][:-1]))):
+                return None
+            start = len((raw[:offset] + part[:experience.start("feeling")]).encode())
+            end = len((raw[:offset] + part[:experience.end("feeling")] + "さ").encode())
+            replacements.append((start, end, feeling_source.encode()))
+            consumed.add(event_id)
+            offset += len(part) + len("、また、")
+            continue
+        ending = re.search(r"(?:のでしたね|のですね|のです|のだと受け取りました)$", part)
+        if ending is None:
+            # A complete original past clause can lead directly into its
+            # separately owned positive answer without repeating an ending.
+            # It still has to restore the entire contrast below; the full
+            # body reader also requires the following answer in this order.
+            from emlis_ai_grounded_observation_plan import source_owned_answer_feeling
+            moves = plan.response_plan.human_reception_plan.moves
+            position = next((i for i, candidate in enumerate(moves) if candidate == move), -1)
+            following = (source_owned_answer_feeling(moves[position + 1], plan)
+                         if 0 <= position < len(moves) - 1 else None)
+            if (not thread_group or len(moves) != 3 or len(parts) != 1
+                or move.move_role != "felt_response" or len(move.support_nucleus_ids) != 1
+                or "selection:source_owned_answer_adjacent"
+                    not in plan.response_plan.human_reception_plan.depth_policy.selection_reason_codes
+                or not contrasts or about or not following
+                or following[0].nucleus_id != event_id
+                or following[2] not in {"answer_time", "prior_answer_time"}):
+                return None
+        clause = part[:ending.start()] if ending else part
+        past_explanation = bool(ending and ending.group() == "のでしたね")
+        if past_explanation and (not about or part_index < coordinated_prefix_count):
+            return None
+        consumed.add(event_id)
+        if not about:
+            # Reconstruct the complete source feeling from the actual finite
+            # reading. Absence is not inability, continuing pain or a cause.
+            absent = re.fullmatch(r"(?P<event>.+?)ことは、(?P<feeling>[^、,]+)さにはつながらなかった", clause)
+            present = re.fullmatch(r"(?P<event>.+?)(?P<link>けれども|けれど|けど|のに)、(?P<feeling>[^、,]+)さを感じた", clause)
+            parsed = absent or present
+            if parsed is not None:
+                restored = parsed["feeling"] + ("くなかった" if absent else "かった")
+                if (parsed["event"] != event_visible or restored != feeling_source
+                    or present is not None and present["link"] != link):
+                    return None
+                start = len((raw[:offset] + clause[:parsed.start("feeling")]).encode("utf-8"))
+                end = len((raw[:offset] + clause[:parsed.end("feeling")] + "さ").encode("utf-8"))
+                replacements.append((start, end, feeling_source.encode("utf-8")))
+            else:
+                # The earlier grammatical reading remains independently
+                # interpretable, but not a reason to require it verbatim.
+                candidates = {(clause[:m.start()], m.group(), clause[m.end():])
+                              for m in re.finditer(r"けれども|けれど|けど|のに", clause)}
+                if (event_visible, link, feeling_source) not in candidates:
+                    prefix = event_visible + link + "、"
+                    if (not clause.startswith(prefix)
+                        or _restore_thread_finite_answer(clause[len(prefix):], feeling_source,
+                            copular_clause=True) != feeling_source):
+                        return None
+                    start = len((raw[:offset] + prefix).encode())
+                    end = len((raw[:offset] + clause).encode())
+                    replacements.append((start, end, feeling_source.encode()))
+        else:
+            relation = about[0]
+            answer = nuclei[relation.to_nucleus_id]
+            times = {c.split(":", 1)[1] for c in answer.semantic_frame.attribute_codes
+                     if c.startswith("thread_time:")}
+            if (len(times) != 1 or not times <= {"original_occasion", "answer_time", "prior_answer_time"}
+                or answer.source_fields != ("answer_text_private",)
+                or answer.allowed_claim_scope != "explicit_supplemental_answer"
+                or answer.semantic_frame.actor != "current_user"
+                or answer.semantic_frame.polarity != "negative"
+                    and not (relief_received and answer.semantic_frame.polarity == "positive")):
+                return None
+            answer_source = final_reception_source_anchor_text(answer.nucleus_id, nuclei, resolver)
+            # Read a complete original feeling and a separately timed
+            # answer. A visible SELF conversion is reversed from the actual
+            # bytes; Layer 1 or the author cannot donate a missing modifier.
+            prefix = event_visible + link + "、" if contrasts else ""
+            explicit = re.fullmatch(
+                re.escape(prefix) + r"(?P<feeling>.+)し、"
+                r"(?P<time>その時は|回答した時点では|先の回答時点では|その時、|回答した時点で、|先の回答時点で、)(?P<answer>.+)", clause,
+            ) if prefix else None
+            if explicit is not None:
+                actual_time = {"その時は": "original_occasion", "回答した時点では": "answer_time",
+                               "先の回答時点では": "prior_answer_time", "その時、": "original_occasion",
+                               "回答した時点で、": "answer_time", "先の回答時点で、": "prior_answer_time"}[explicit['time']]
+                if explicit['time'].endswith("、"):
+                    # Read the new time adjunct only for a complete owned
+                    # feeling. Neither the author nor another source may
+                    # donate the owner, predicate or any modifier.
+                    owner = _thread_feeling_owner(answer_source)
+                    host = _thread_feeling_lexical_host(answer_source, owner)
+                    noun = re.fullmatch(r"(.+?)(?:でした|だった|です|だ)", host)
+                    adjective = re.fullmatch(r"(.+?)(?:くなかった|くない|かった|い)(?:です)?", host)
+                    simple_noun = (noun is not None and _FEELING_RE.fullmatch(noun[1])
+                                   and not noun[1].endswith("い"))
+                    simple_adjective = adjective is not None and (
+                        _FEELING_RE.fullmatch(adjective[1]) or _FEELING_RE.fullmatch(adjective[1] + "い")
+                        or adjective[1].endswith("し") and _FEELING_RE.fullmatch(adjective[1][:-1]))
+                    if (owner is None or owner['particle'] not in {"は", "も", "には", "にも"}
+                        or not (simple_noun or simple_adjective)):
+                        return None
+                if (past_explanation and _thread_past_explanation_predicate(answer_source) is None
+                    or times != {actual_time}
+                    or _restore_thread_finite_answer(explicit['feeling'], feeling_source,
+                        copular_clause=True) != feeling_source
+                    or _restore_thread_finite_answer(
+                        explicit['answer'] + ("のだった" if past_explanation else ""), answer_source,
+                        copular_clause=True, shared_explanatory_ending=part_index >= coordinated_prefix_count) != answer_source):
+                    return None
+                for name, source_value in (("feeling", feeling_source), ("answer", answer_source)):
+                    start = len((raw[:offset] + clause[:explicit.start(name)]).encode())
+                    end = len((raw[:offset] + clause[:explicit.end(name)]).encode())
+                    replacements.append((start, end, source_value.encode()))
+                consumed.add(answer.nucleus_id)
+                consumed_relations.add(relation.relation_id)
+                offset += len(part) + len("、また、")
+                continue
+            if past_explanation:
+                if _thread_past_explanation_predicate(answer_source) is None:
+                    return None
+                clause += "のだった"
+            polite = re.fullmatch(r"(?P<predicate>.+(?:い|かった))です", answer_source)
+            predicate = polite['predicate'] if polite else answer_source
+            owner = _thread_feeling_owner(answer_source)
+            remainder = predicate[owner.end():] if owner else predicate
+            if (polite is not None or owner is not None) and re.search(
+                    r"(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:には|にも|は|も|が)", remainder):
+                return None
+            if times != {"original_occasion"}:
+                # Read source/time roles from the delivered clause, without
+                # asking the author for its expected surface. An answer-time
+                # statement cannot replace the original past reaction.
+                temporal = re.fullmatch(
+                    r"(?P<event>.+?)(?:時は(?:(?P<absent>[^、,]+)くなく、|(?P<felt>[^、,]+)く、)|ことについて、)"
+                    r"(?P<time>回答した時点では|先の回答時点では)(?P<answer>.+)", clause)
+                if temporal is None:
+                    return None
+                actual_feeling = (temporal["absent"] + "くなかった" if temporal["absent"] is not None
+                                  else temporal["felt"] + "かった" if temporal["felt"] is not None else None)
+                actual_time = {"回答した時点では": "answer_time",
+                               "先の回答時点では": "prior_answer_time"}[temporal["time"]]
+                actual_answer = _restore_thread_finite_answer(temporal["answer"], answer_source,
+                    copular_clause=True, shared_explanatory_ending=part_index >= coordinated_prefix_count)
+                if ((temporal["event"], actual_feeling, actual_answer)
+                    != (event_visible, feeling_source, answer_source)
+                    or times != {actual_time}):
+                    return None
+                consumed.add(answer.nucleus_id)
+                consumed_relations.add(relation.relation_id)
+                offset += len(part) + len("、また、")
+                continue
+            # The body, not an author-produced nominal, owns these spans.
+            perceived = re.fullmatch(
+                r"(?P<event>.+?)ことは(?:(?P<feeling>[^、,]+)さにはつながらず、|、(?P<positive>[^、,]+)さを伴い、|、)"
+                r"(?P<perception>.+)ような(?P<burden>[^、,]+)さとして届いた", clause)
+            finite = re.fullmatch(
+                r"(?P<event>.+?)時は(?:(?P<feeling>[^、,]+)くなく、|(?P<positive>[^、,]+)く、|、)(?P<answer>.+)", clause)
+            if perceived is not None:
+                actual_event = perceived["event"]
+                actual_feeling = (perceived["feeling"] + "くなかった"
+                                  if perceived["feeling"] is not None else
+                                  perceived["positive"] + "かった" if perceived["positive"] is not None else None)
+                restored = {perceived["perception"] + "ようで" + comma
+                            + perceived["burden"] + "かった" for comma in ("、", ",")}
+                if not any(_restore_thread_finite_answer(value, answer_source) == answer_source
+                           for value in restored):
+                    return None
+                begin = len((raw[:offset] + clause[:perceived.start("perception")]).encode("utf-8"))
+                finish = len((raw[:offset] + clause[:perceived.end()]).encode("utf-8"))
+                replacements.append((begin, finish, answer_source.encode("utf-8")))
+            elif finite is not None:
+                actual_event = finite["event"]
+                actual_feeling = (finite["feeling"] + "くなかった"
+                                  if finite["feeling"] is not None else
+                                  finite["positive"] + "かった" if finite["positive"] is not None else None)
+                actual_answer = _restore_thread_finite_answer(finite["answer"], answer_source,
+                    copular_clause=True, shared_explanatory_ending=part_index >= coordinated_prefix_count)
+                if actual_answer != answer_source:
+                    return None
+            else:
+                return None
+            if (actual_event, actual_feeling) != (event_visible, feeling_source):
+                return None
+            consumed.add(answer.nucleus_id)
+            consumed_relations.add(relation.relation_id)
+        offset += len(part) + len("、また、")
+    expected_relations = {r.relation_id for r in plan.relations if r.relation_id in required
+        and r.from_nucleus_id in move.target_nucleus_ids
+        and r.to_nucleus_id in move.support_nucleus_ids}
+    if (consumed != set((*move.target_nucleus_ids, *move.support_nucleus_ids))
+        or consumed_relations != expected_relations):
+        return None
+    return tuple(replacements)
+
+
+def _received_discourse_equivalent(actual, canonical, reception_plan, clauses, plan,
+                                   resolver, selected_subjective_input, *, preceding_observation=None):
+    """Do not make a grammatical acknowledgement spelling a semantic oracle.
+
+    Unchanged clauses retain the existing contract. A changed finite reading
+    must independently express the complete same source-owned duties on both
+    sides, so this does not authorize arbitrary rewrites, omissions or labels.
+    """
+    if actual == canonical:
+        return True
+    actual_parts = actual.split("。")
+    canonical_parts = canonical.split("。")
+    if (actual_parts[-1] or canonical_parts[-1]
+        or len(actual_parts) != len(canonical_parts)
+        or len(actual_parts) != len(clauses) + 1):
+        return False
+    moves = {m.move_id: m for m in reception_plan.moves}
+    for number, (left, right, clause) in enumerate(zip(actual_parts[:-1], canonical_parts[:-1], clauses)):
+        if left == right:
+            continue
+        if len(clause.move_ids) == 2:
+            pair = tuple(moves[mid] for mid in clause.move_ids if mid in moves)
+            if all(read_detached_feeling_pair(text + "。", pair, plan, resolver,
+                                              selected_subjective_input) is not None
+                   for text in (left, right)):
+                continue
+            return False
+        if len(clause.move_ids) != 1:
+            return False
+        move = moves.get(clause.move_ids[0])
+        previous = (moves.get(clauses[number - 1].move_ids[0])
+                    if number and len(clauses[number - 1].move_ids) == 1 else None)
+        if move is None or any(read_source_owned_discourse(text + "。", move, plan, resolver,
+            selected_subjective_input, preceding_observation=preceding_observation, preceding_context=(previous, parts[number - 1] + "。")
+            if previous is not None else None) is None
+            for text, parts in ((left, actual_parts), (right, canonical_parts))):
+            return False
+    return True
+
+
+def _restore_thread_finite_answer(actual, source, *, copular_clause=False,
+                                   shared_explanatory_ending=False, attributive=False):
+    """Restore an admitted answer from its complete attributive clause.
+
+    Parse the actual recipient subject and terminal inflection independently
+    of the author. The source owns every other character, including degree,
+    particles, negation and tense; no substring can discharge that duty.
+    """
+    for ending, grammar in (("な", "COPULAR_PRESENT_POLITE"),
+                            ("だった", "COPULAR_PAST_POLITE")):
+        if actual.endswith(ending) and restore_thread_answer_nominal(
+                actual[:-len(ending)], grammar) == source:
+            return source
+    polite = re.fullmatch(r"(?P<predicate>.+(?:い|かった))です", source)
+    predicate = polite['predicate'] if polite else source
+    owner = _thread_feeling_owner(source)
+    restored = actual
+    if owner:
+        recipient = source[:owner.start('self')] + "あなた" + owner['particle']
+        if (owner.groupdict().get('degree') == "少し"
+            and not re.match(r"(?:少し|とても|本当は|まだ|全然|あまり)", source[owner.end():])):
+            recipient = "あなた" + owner['particle'] + owner['degree']
+        if not restored.startswith(recipient):
+            return None
+        restored = owner.group() + restored[len(recipient):]
+    if _THREAD_NEGATIVE_FEELING_COPULA_RE.fullmatch(source):
+        for polite_ending, finite_ending in (("ありませんでした", "なかった"), ("ありません", "ない")):
+            if source.endswith(polite_ending):
+                # Read the actual finite negation, then require every source
+                # byte. Wrong tense or an unshared polite ending cannot fall
+                # through to the ordinary source-equality path.
+                if not restored.endswith(finite_ending):
+                    return None
+                restored = restored[:-len(finite_ending)] + polite_ending
+                return source if restored == source else None
+    if attributive:
+        explanatory = re.fullmatch(r"(?P<predicate>.+)の(?P<ending>です|だった|だ)", source)
+        if explanatory is not None:
+            ending = "のだったという" if explanatory['ending'] == "だった" else "のだという"
+            return source if restored == explanatory['predicate'] + ending else None
+    if copular_clause and polite is None:
+        explanatory = re.fullmatch(r"(?P<predicate>.+)の(?:です|だ)", source)
+        if explanatory is not None:
+            host = _thread_feeling_lexical_host(explanatory['predicate'], owner)
+            noun = re.fullmatch(r"(.+?)(?:な|だった|ではない|ではなかった)", host)
+            adjective = re.fullmatch(r"(.+?)(?:くなかった|くない|かった|い)", host)
+            noun_proven = bool(_THREAD_NOMINAL_FEELING_EXPLANATION_RE.fullmatch(source)
+                or noun is not None and _FEELING_RE.fullmatch(noun[1]) and not noun[1].endswith("い"))
+            adjective_proven = (adjective is not None and (
+                adjective[1] in _THREAD_FINITE_ANSWER_FEELING_STEMS
+                 or _FEELING_RE.fullmatch(adjective[1]) or _FEELING_RE.fullmatch(adjective[1] + "い")
+                or adjective[1].endswith("し") and _FEELING_RE.fullmatch(adjective[1][:-1])))
+            if noun_proven or adjective_proven:
+                # Only a real acknowledged ending can share its の. A
+                # normalized intermediate clause must still contain the
+                # source explanation (のだし -> のな + のですね).
+                suffix = "" if shared_explanatory_ending else "のな"
+                return source if restored == explanatory['predicate'] + suffix else None
+        copular = re.fullmatch(r"(?P<host>.+?)(?P<ending>でした|だった|です|だ)", source)
+        if copular is not None:
+            noun = _thread_feeling_lexical_host(copular['host'], owner)
+            # Attributive clauses may inflect a known terminal noun while
+            # retaining the entire prefix. This does not admit that prefix
+            # as a new finite-owner reading.
+            terminal_noun = attributive and any(
+                token.end() == len(copular['host']) and not token.group().endswith("い")
+                for token in _FEELING_RE.finditer(copular['host']))
+            if (_FEELING_RE.fullmatch(noun) and not noun.endswith("い") or terminal_noun
+                or _THREAD_POSITIVE_FEELING_COPULA_RE.fullmatch(source)):
+                ending = "だった" if copular['ending'] in {"でした", "だった"} else "な"
+                if not restored.endswith(ending):
+                    return None
+                restored = restored[:-len(ending)] + copular['ending']
+    if polite:
+        restored += "です"
+    return source if restored == source else None
+
+
+def _read_multiple_self_answer_nominal(nominal, source, when):
+    """Independently recover a complete repeated-SELF feeling and its time."""
+    parts = re.fullmatch(
+        r"(?P<prefix>(?:(?:少し|とても|本当は|まだ|全然|あまり)*"
+        r"(?:わたし|ぼく|おれ|私|僕|俺|自分)(?:には|にも|は|も)){2,})(?P<tail>.+)", source)
+    if parts is None:
+        return False
+    lexical = re.sub(r"^(?:少し|とても|本当は|まだ|全然|あまり)+", "", parts['tail'])
+    explanatory = re.fullmatch(r"(.+)の(?:です|だ|だった)", lexical)
+    host = explanatory[1] if explanatory else lexical
+    noun = re.fullmatch(r"(.+?)(?:な|だった|ではない|ではなかった)" if explanatory
+                        else r"(.+?)(?:です|だ|でした|だった)", host)
+    adjective = re.fullmatch(r"(.+?)(?:くない|くなかった|かった|い)(?:です)?", host)
+    noun_proven = noun is not None and _FEELING_RE.fullmatch(noun[1]) and not noun[1].endswith("い")
+    if not (noun_proven
+            or adjective and (_FEELING_RE.fullmatch(adjective[1])
+                or _FEELING_RE.fullmatch(adjective[1] + "い")
+                or adjective[1].endswith("し") and _FEELING_RE.fullmatch(adjective[1][:-1]))):
+        return False
+    temporal = {"original_occasion": "その時の", "answer_time": "回答した時点の",
+                "prior_answer_time": "先の回答時点の"}.get(when)
+    if temporal is None:
+        return False
+    suffix = "という、" + temporal + "あなたの気持ち"
+    if not nominal.startswith(parts['prefix']) or not nominal.endswith(suffix):
+        return False
+    actual = nominal[len(parts['prefix']):-len(suffix)]
+    tail = parts['tail']
+    # Invert the actual ending only. Every preceding character, including
+    # all SELF tokens, particles and degrees, must match the original source.
+    if tail.endswith("でした"):
+        return actual.endswith("だった") and actual[:-3] + "でした" == tail
+    if tail.endswith("です"):
+        if explanatory or noun_proven:
+            return actual.endswith("だ") and actual[:-1] + "です" == tail
+        return actual + "です" == tail
+    return actual == tail
+
+
+def _body_inverse_thread_received_group(body, witness, sentence, move, plan, resolver):
+    """Read original clauses and immediately bound answer anaphora from bytes.
+
+    Source contrasts and ABOUT edges are checked separately; no forward group
+    nominal, expression, or grammatical marker payload is the answer oracle.
+    """
+    finite = read_source_owned_discourse(
+        body[sentence.utf8_byte_start:sentence.utf8_byte_end].decode("utf-8"),
+        move, plan, resolver,
+    ) if sentence.section == "reception" else None
+    if finite is not None:
+        return tuple((start + sentence.utf8_byte_start, end + sentence.utf8_byte_start, source)
+                     for start, end, source in finite)
+    from emlis_ai_grounded_observation_plan import _thread_retained_reaction_groups
+    if (sentence.section != "reception"
+        or ("current_burden", move.target_nucleus_ids, move.support_nucleus_ids)
+           not in _thread_retained_reaction_groups(plan.nuclei, plan.relations)):
+        return None
+    index = {n.nucleus_id: n for n in plan.nuclei}
+    expected = []
+    for event_id in move.target_nucleus_ids:
+        event = index[event_id]
+        contrast = tuple(r for r in plan.relations if r.type == "contrast"
+            and r.from_nucleus_id == event_id and r.to_nucleus_id in move.support_nucleus_ids
+            and r.relation_id in plan.coverage_requirements.required_relation_ids)
+        about = tuple(r for r in plan.relations if r.type == "evaluation_about_event"
+            and r.from_nucleus_id == event_id and r.to_nucleus_id in move.support_nucleus_ids
+            and r.relation_id in plan.coverage_requirements.required_relation_ids)
+        if len(contrast) > 1 or len(about) > 1 or not (contrast or about):
+            return None
+        if contrast:
+            feeling = index[contrast[0].to_nucleus_id]
+            left, right = (final_reception_source_anchor_text(n.nucleus_id, index, resolver) for n in (event, feeling))
+            if (event.source_span_ids != feeling.source_span_ids or len(event.source_span_ids) != 1
+                or event.source_fields != feeling.source_fields or event.source_fields not in {("memo",), ("memo_action",)}
+                or event.semantic_frame.time_scope != feeling.semantic_frame.time_scope
+                or event.semantic_frame.time_scope != "past"):
+                return None
+            source = re.sub(r"\s+", " ", resolver.resolve(event.source_span_ids[0]).raw_text).strip(" 　、,。．.")
+            if not source.startswith(left) or not source.endswith(right):
+                return None
+            connector = source[len(left):-len(right)].rstrip("、,")
+            if connector not in {"のに", "けど", "けれど", "けれども"}:
+                return None
+            expected.append(("original", event_id, left, connector, right))
+        if about:
+            answer = index[about[0].to_nucleus_id]
+            times = {c.split(":", 1)[1] for c in answer.semantic_frame.attribute_codes if c.startswith("thread_time:")}
+            if (len(times) != 1 or answer.source_fields != ("answer_text_private",)
+                or answer.allowed_claim_scope != "explicit_supplemental_answer"
+                or answer.semantic_frame.polarity != "negative"):
+                return None
+            expected.append(("answer" if contrast else "direct", event_id,
+                final_reception_source_anchor_text(answer.nucleus_id, index, resolver), next(iter(times))))
+    raw = body[sentence.utf8_byte_start:sentence.utf8_byte_end].decode("utf-8")
+    if (move.move_role == "significance"
+        and not raw.endswith("を見失わず、小さくせずに受け止めています。")):
+        return None
+    attention_ending = "に目が留まり、それを小さくせずに受け止めています。"
+    if (move.move_role == "attention" and move.reception_act == "stay_with_current_burden"
+        and raw.endswith(attention_ending)):
+        # The governed source object ends before the attention clause;
+        # its later それを is not part of the original answer's nominal.
+        objects = raw[:-len(attention_ending)]
+    else:
+        objects, separator, _predicate = raw.rpartition("を")
+        if not separator:
+            return None
+    divisions = tuple(m.start() for m in re.finditer("と、", objects))
+    # An omitted event anaphor is bound only by one fully read original
+    # object followed by its own timed answer, never by a neighbouring event.
+    same_event_pair = (len(move.target_nucleus_ids) == 1 and len(expected) == 2
+        and expected[0][0] == "original" and expected[1][0] == "answer"
+        and expected[0][1] == expected[1][1]
+        and expected[1][3] in {"original_occasion", "answer_time", "prior_answer_time"})
+    def read_piece(start, end, wanted):
+        piece = objects[start:end]
+        attributive_nominal_read = False
+        if wanted[0] == "original":
+            if not piece.endswith("こと"):
+                return None
+            clause = piece[:-2]
+            parses = {(clause[:m.start()], m.group(), clause[m.end():])
+                      for m in re.finditer(r"けれども|けれど|けど|のに", clause)}
+            if not any(left == wanted[2] and connector == wanted[3]
+                       and _restore_thread_finite_answer(feeling, wanted[4], copular_clause=True,
+                                                         attributive=True) == wanted[4]
+                       for left, connector, feeling in parses):
+                return None
+            attributive_nominal_read = (piece.endswith(("のだということ", "のだったということ"))
+                and wanted[4].endswith(("のです", "のだ", "のだった")))
+            nominal_start = start
+            markers = {"finite_clause_nominal"}
+        else:
+            interpretations = set()
+            nominal = ""
+            event_anchor = "その出来事" if wanted[0] == "answer" else final_reception_source_anchor_text(wanted[1], index, resolver) + "こと"
+            prefixes = (event_anchor + "への", event_anchor + "について、")
+            if (same_event_pair and wanted[0] == "answer"
+                and (piece.startswith(("その時に", "回答した時点で", "先の回答時点で"))
+                     or _read_multiple_self_answer_nominal(piece, wanted[2], wanted[3])
+                     or any(restore_thread_answer_nominal(piece, grammar, wanted[3]) == wanted[2]
+                            for grammar in ("BELIEF", "PERCEIVED_0", "PERCEIVED_1")))):
+                prefixes += ("",)
+            for prefix in prefixes:
+                if not piece.startswith(prefix):
+                    continue
+                nominal = piece[len(prefix):]
+                nominal_start = start + len(prefix)
+                if (not prefix.endswith("への")
+                    and _read_multiple_self_answer_nominal(nominal, wanted[2], wanted[3])):
+                    interpretations.add(wanted[2:])
+                for when, temporal in (("original_occasion", "その時に"), ("answer_time", "回答した時点で"),
+                                       ("prior_answer_time", "先の回答時点で")):
+                    if prefix.endswith("への") or prefix == "":
+                        grammars = (("BELIEF", "PERCEIVED_0", "PERCEIVED_1") if prefix == "" else
+                            ("BELIEF", "PAST_FEELING", "PERCEIVED_0", "PERCEIVED_1", "COPULAR_PRESENT_POLITE", "COPULAR_PAST_POLITE", "ADJECTIVE_PRESENT_POLITE"))
+                        for grammar in grammars:
+                            value = restore_thread_answer_nominal(nominal, grammar, when)
+                            if value is not None:
+                                interpretations.add((value, when))
+                    if not prefix.endswith("への") and nominal.startswith(temporal) and nominal.endswith("こと"):
+                        value = _restore_thread_finite_answer(nominal[len(temporal):-2], wanted[2],
+                            copular_clause=True, attributive=True)
+                        if value is not None:
+                            interpretations.add((value, when))
+            if wanted[2:] not in interpretations:
+                return None
+            # The generic witness does not mark these attributive endings.
+            # Their complete timed clauses were independently restored above.
+            attributive_nominal_read = (
+                piece.endswith("なこと") and wanted[2].endswith(("です", "だ"))
+                or piece.endswith(("のだということ", "のだったということ"))
+                and wanted[2].endswith(("のです", "のだ", "のだった")))
+            markers = {"thread_answer_nominal", "finite_clause_nominal"}
+            if _read_multiple_self_answer_nominal(nominal, wanted[2], wanted[3]):
+                markers = {"target_feeling"}
+        offset = sentence.utf8_byte_start + len(objects[:nominal_start].encode("utf-8"))
+        finish = sentence.utf8_byte_start + len(objects[:end].encode("utf-8"))
+        if (any(q.utf8_byte_start < finish and offset < q.utf8_byte_end for q in witness.quotes)
+            or any(m.marker_code == "secondary_quote_boundary" and m.utf8_byte_start < finish
+                   and offset < m.utf8_byte_end for m in witness.markers)
+            or not attributive_nominal_read and not any(m.section == "reception" and m.marker_code in markers
+                       and offset <= m.utf8_byte_start and m.utf8_byte_end == finish for m in witness.markers)):
+            return None
+        if wanted[0] == "original":
+            feeling_start = sentence.utf8_byte_start + len(
+                (objects[:start] + wanted[2] + wanted[3]).encode("utf-8"))
+            return ((feeling_start, finish - len("こと".encode("utf-8")), wanted[4].encode("utf-8")),)
+        return ((offset, finish, wanted[2].encode("utf-8")),)
+
+    # Parse successive duties rather than enumerating combinations of every
+    # conjunction in a potentially long answer. Cache ambiguous suffixes and
+    # retain at most two parses: exactly one complete reading is required.
+    from functools import lru_cache
+    @lru_cache(None)
+    def read_suffix(item, start):
+        final = item == len(expected) - 1
+        ends = (len(objects),) if final else tuple(end for end in divisions if end >= start)
+        successes = []
+        for end in ends:
+            spans = read_piece(start, end, expected[item])
+            if spans is None:
+                continue
+            tails = ((),) if final else read_suffix(item + 1, end + 2)
+            for tail in tails:
+                successes.append((*spans, *tail))
+                if len(successes) == 2:
+                    return tuple(successes)
+        return tuple(successes)
+    successes = read_suffix(0, 0)
+    return successes[0] if len(successes) == 1 else None
+
+
+def _body_inverse_shared_material_feeling_objects(
+    body, sentence, clause, plan, resolver, selected_subjective_input,
+) -> bool | None:
+    """Read both source-owned objects and their one shared governed predicate.
+
+    This is independent of the author, its replay, and its surface bindings.
+    Eligibility comes from the selected duties, never from matching a suffix
+    in the supplied body. A changed connective cannot evade the whole proof.
+    """
+    if len(clause.move_ids) != 2 or selected_subjective_input is None:
+        return None
+    moves_by_id = {m.move_id: m for m in plan.response_plan.human_reception_plan.moves}
+    moves = tuple(moves_by_id[mid] for mid in clause.move_ids if mid in moves_by_id)
+    if (len(moves) != 2 or tuple(m.move_role for m in moves) != ("attention", "felt_response")
+        or any(m.reception_act != "recognize_lived_change" or not m.required
+               or len(m.target_nucleus_ids) != 1 or m.support_nucleus_ids for m in moves)):
+        return None
+    nuclei = {n.nucleus_id: n for n in plan.nuclei}
+    objects = []
+    for move in moves:
+        nucleus = nuclei.get(move.target_nucleus_ids[0])
+        decision = next((d for d in selected_subjective_input.decisions
+                         if d.move_id == move.move_id), None)
+        appraisal = decision.subjective_proposition.appraisal_content if decision else None
+        if (nucleus is None or not is_grounded_positive_feeling(nucleus)
+            or nucleus.source_fields != ("memo",)
+            or nucleus.semantic_frame.actor != "current_user"
+            or _body_inverse_reception_context_ids(move, plan)
+            or appraisal is None or appraisal.dimension != "MATERIAL_WEIGHT"
+            or appraisal.operation != "RECEIVE_AS_MATERIAL"):
+            return None
+        source = final_reception_source_anchor_text(nucleus.nucleus_id, nuclei, resolver)
+        if not source:
+            return False
+        objects.append(source + "という気持ち")
+    if (len(set(m.target_nucleus_ids[0] for m in moves)) != 2
+        or len(set(objects)) != 2
+        or set(moves[0].source_evidence_span_ids) & set(moves[1].source_evidence_span_ids)):
+        return False
+    raw = body[sentence.utf8_byte_start:sentence.utf8_byte_end].decode("utf-8")
+    expected = objects[0] + "も、" + objects[1] + "も、見過ごさず、受け止めています。"
+    return raw == expected
+
+
+def _body_inverse_nominal_constraint_clause(body, sentence, move, plan, resolver, selected_subjective_input, *, nominal="という言葉", temporal_prefix=""):
+    """Restore the entire selected nominal object, including its left edge.
+
+    A matching source substring cannot license an added experiencer, cause,
+    or completed thought around it. Parse the body-owned object slot and
+    compare its complete contents with the selected source, without replay.
+    """
+    if (sentence.section != "reception" or move.move_role != "felt_response"
+        or move.reception_act != "stay_with_current_burden" or not move.required
+        or len(move.target_nucleus_ids) != 1 or move.support_nucleus_ids):
+        return False
+    nucleus = next((n for n in plan.nuclei if n.nucleus_id == move.target_nucleus_ids[0]), None)
+    if nucleus is None or len(nucleus.source_span_ids) != 1:
+        return False
+    decision = next((d for d in selected_subjective_input.decisions if d.move_id == move.move_id), None) if selected_subjective_input else None
+    proposition = decision.subjective_proposition if decision else None
+    if proposition is None:
+        return False
+    appraisal = proposition.appraisal_content
+    openness = bool(appraisal is not None and appraisal.operation == "LEAVE_UNFINISHED"
+        or proposition.relational_position is not None
+        and proposition.relational_position.stance_operator == "HOLD_UNFINISHED_OPEN")
+    raw = body[sentence.utf8_byte_start:sentence.utf8_byte_end].decode("utf-8")
+    parsed = re.fullmatch(
+        (r"結論を急がずに、" if openness else "")
+        + re.escape(temporal_prefix) + r"(?P<source>[^。！？!?]+)" + re.escape(nominal) + r"を小さくせずに(?:"
+        r"(?:受け止めて|気にかけて)(?:います|いて)|"
+        r"(?:受け止め|気にかけ)たいです)。", raw)
+    source = str(resolver.resolve(nucleus.source_span_ids[0]).raw_text).strip(" \u3000、,。．.")
+    return parsed is not None and parsed.group("source") == source
+
+
+
+def _body_inverse_unfinished_result_clause(body, sentence, move, plan, resolver):
+    """Read the complete independent event object from body bytes only."""
+    from emlis_ai_grounded_observation_plan import _source_action_change_contrast_unfinished
+    unfinished = _source_action_change_contrast_unfinished(plan.nuclei, plan.relations)
+    if (not unfinished or move.target_nucleus_ids != unfinished or move.support_nucleus_ids
+        or move.move_role != "felt_response" or move.reception_act != "stay_with_current_burden"
+        or not move.required or sentence.section != "reception"):
+        return False
+    nucleus = next(n for n in plan.nuclei if n.nucleus_id == unfinished[0])
+    source = str(resolver.resolve(nucleus.source_span_ids[0]).raw_text).strip(" 　、,。．.")
+    nominal = "こと" if source.endswith("っていない") else "という言葉"
+    raw = body[sentence.utf8_byte_start:sentence.utf8_byte_end].decode("utf-8")
+    parsed = re.fullmatch(r"(?P<source>[^。！？!?]+)" + nominal
+        + r"を小さくせずに(?:(?:受け止めて|気にかけて)(?:います|いて)|(?:受け止め|気にかけ)たいです)。", raw)
+    return parsed is not None and parsed.group("source") == source
+
+
+def _body_inverse_current_material_group(body, witness, sentence, move, plan, resolver, selected_subjective_input):
+    """Restore both finite source objects from bytes, without forward replay."""
+    from emlis_ai_grounded_observation_plan import _source_current_material_group, _source_material_allows_reverse
+    group = _source_current_material_group(plan.nuclei, plan.relations)
+    if (not group or sentence.section != "reception" or move.move_role != "felt_response"
+        or move.reception_act != "stay_with_current_burden" or not move.required):
+        return False
+    selected = (move.target_nucleus_ids, move.support_nucleus_ids)
+    forward = ((group[0].nucleus_id,), (group[1].nucleus_id,))
+    reverse = ((group[1].nucleus_id,), (group[0].nucleus_id,))
+    reversed_focus = selected == reverse and _source_material_allows_reverse(group)
+    if selected != forward and not reversed_focus:
+        return False
+    if reversed_focus:
+        group = (group[1], group[0], *group[2:])
+    decision = next((d for d in selected_subjective_input.decisions if d.move_id == move.move_id), None) if selected_subjective_input else None
+    proposition = decision.subjective_proposition if decision else None
+    if proposition is None:
+        return False
+    appraisal = proposition.appraisal_content
+    openness = bool(appraisal is not None and appraisal.operation == "LEAVE_UNFINISHED"
+        or proposition.relational_position is not None
+        and proposition.relational_position.stance_operator == "HOLD_UNFINISHED_OPEN")
+    raw = body[sentence.utf8_byte_start:sentence.utf8_byte_end].decode("utf-8")
+    prefix = "結論を急がずに、" if openness else ""
+    expected = tuple(str(resolver.resolve(n.source_span_ids[0]).raw_text).strip(" 　。．.") for n in group[:2])
+    expected = tuple(c[:-3] + "いる" if c.endswith("残っています")
+                     and "lexical:source_temporal_relief_residue" in n.semantic_frame.attribute_codes
+                     else c for n, c in zip(group[:2], expected))
+    decision_roles = tuple(next((role for role in ("choice", "timing")
+        if "lexical:source_independent_decision_" + role in n.semantic_frame.attribute_codes), None) for n in group[:2])
+    if decision_roles in {("choice", "timing"), ("timing", "choice")}:
+        expected = tuple(re.sub(r"決められません$", "決められない",
+                                re.sub(r"迷っています$", "迷っている", c)) for c in expected)
+        if decision_roles == ("timing", "choice"):
+            expected = (re.sub(r"^それとは別に[、,]?", "", expected[0]), "それとは別に、" + expected[1])
+    self_topic = re.fullmatch(r"(?P<owner>私|わたし|僕|ぼく|俺|おれ)は(?P<feeling>[^、,]+)", expected[0])
+    left_suffix = "というあなたの気持ち" if self_topic else "こと"
+    parsed = re.fullmatch(re.escape(prefix) + r"(?P<left>[^。！？!?]+)" + re.escape(left_suffix) + r"と、(?P<right>[^。！？!?]+)こと"
+        r"を小さくせずに(?:(?:受け止めて|気にかけて)(?:います|いて)|(?:受け止め|気にかけ)たいです)。", raw)
+    if parsed is None:
+        return False
+    restored_left = (self_topic['owner'] + "は" if self_topic else "") + parsed.group("left")
+    if (restored_left, parsed.group("right")) != expected:
+        return False
+    for name in ("left", "right"):
+        start = sentence.utf8_byte_start + len(raw[:parsed.start(name)].encode())
+        suffix = left_suffix if name == "left" else "こと"
+        marker_code = "target_feeling" if name == "left" and self_topic else "finite_clause_nominal"
+        end = sentence.utf8_byte_start + len(raw[:parsed.end(name)].encode()) + len(suffix.encode())
+        if (any(q.utf8_byte_start < end and start < q.utf8_byte_end for q in witness.quotes)
+            or any(m.marker_code == "secondary_quote_boundary" and m.utf8_byte_start < end and start < m.utf8_byte_end for m in witness.markers)
+            or not any(m.section == "reception" and m.marker_code == marker_code
+                       and start <= m.utf8_byte_start and m.utf8_byte_end == end for m in witness.markers)):
+            return False
+    return True
+
+
+def _body_inverse_received_contrast_group(body, witness, sentence, move, plan, resolver):
+    """Read each finite event/reaction pair and its actual source connector."""
+    count = len(move.target_nucleus_ids)
+    if (count not in {2, 3} or len(move.support_nucleus_ids) != count
+        or move.reception_act != "stay_with_current_burden" or sentence.section != "reception"):
+        return False
+    index = {n.nucleus_id: n for n in plan.nuclei}
+    expected = []
+    for event_id, feeling_id in zip(move.target_nucleus_ids, move.support_nucleus_ids, strict=True):
+        event, feeling = index[event_id], index[feeling_id]
+        links = tuple(r for r in plan.relations if r.type == "contrast"
+            and (r.from_nucleus_id, r.to_nucleus_id) == (event_id, feeling_id)
+            and r.relation_id in plan.coverage_requirements.required_relation_ids)
+        if (len(links) != 1 or event.kind != "event" or feeling.kind != "reaction"
+            or event.semantic_frame.modality != "fact" or feeling.semantic_frame.modality != "feeling"
+            or event.semantic_frame.time_scope != feeling.semantic_frame.time_scope
+            or event.semantic_frame.time_scope != "past"
+            or event.source_span_ids != feeling.source_span_ids or len(event.source_span_ids) != 1
+            or event.source_fields != feeling.source_fields or event.source_fields not in {("memo",), ("memo_action",)}):
+            return False
+        left = final_reception_source_anchor_text(event_id, index, resolver)
+        right = final_reception_source_anchor_text(feeling_id, index, resolver)
+        raw = re.sub(r"\s+", " ", resolver.resolve(event.source_span_ids[0]).raw_text).strip(" 　、,。．.")
+        if not raw.startswith(left) or not raw.endswith(right):
+            return False
+        connector = raw[len(left):-len(right)].rstrip("、,")
+        if connector not in {"のに", "けど", "けれど", "けれども"}:
+            return False
+        expected.append((left, connector, right))
+    raw = body[sentence.utf8_byte_start:sentence.utf8_byte_end].decode("utf-8")
+    objects, separator, _predicate = raw.rpartition("を")
+    pieces = objects.split("と、")
+    if not separator or len(pieces) != count:
+        return False
+    offset = sentence.utf8_byte_start
+    for piece, expected_pair in zip(pieces, expected, strict=True):
+        if not piece.endswith("こと"):
+            return False
+        clause = piece[:-2]
+        candidates = {(clause[:m.start()], m.group(), clause[m.end():])
+                      for m in re.finditer(r"けれども|けれど|けど|のに", clause)}
+        if expected_pair not in candidates:
+            return False
+        end = offset + len(piece.encode("utf-8"))
+        if (any(q.utf8_byte_start < end and offset < q.utf8_byte_end for q in witness.quotes)
+            or any(m.marker_code == "secondary_quote_boundary" and m.utf8_byte_start < end
+                   and offset < m.utf8_byte_end for m in witness.markers)
+            or not any(m.section == "reception" and m.marker_code == "finite_clause_nominal"
+                       and offset <= m.utf8_byte_start and m.utf8_byte_end == end for m in witness.markers)):
+            return False
+        offset = end + len("と、".encode("utf-8"))
+    return True
+
+
+def _body_inverse_thread_answer_group(body, witness, sentence, move, plan, resolver):
+    """Parse all event/answer/time pairs from one actual reception sentence.
+
+    No forward group or rendered reference is consulted. Every reconstructed
+    pair must resolve once to the selected source duties in their own order.
+    Returned byte ranges are also safe grammatical views for sensation checks.
+    """
+    if (getattr(resolver, "source_contract", None) != "cocolon.cmee.emlis_thread.v1"
+        or not 2 <= len(move.target_nucleus_ids) <= 3 or move.support_nucleus_ids
+        or move.reception_act != "stay_with_current_burden" or sentence.section != "reception"):
+        return ()
+    index = {n.nucleus_id: n for n in plan.nuclei}
+    expected = []
+    for nid in move.target_nucleus_ids:
+        n = index[nid]
+        times = {c.split(":", 1)[1] for c in n.semantic_frame.attribute_codes if c.startswith("thread_time:")}
+        about = tuple(r for r in plan.relations if r.type == "evaluation_about_event"
+            and r.relation_id in plan.coverage_requirements.required_relation_ids and r.to_nucleus_id == nid)
+        if (n.source_fields != ("answer_text_private",) or n.allowed_claim_scope != "explicit_supplemental_answer"
+            or n.kind != "reaction" or n.semantic_frame.modality != "feeling"
+            or n.semantic_frame.polarity != "negative" or len(times) != 1 or len(about) != 1):
+            return ()
+        event = index[about[0].from_nucleus_id]
+        if event.kind != "event" or event.source_fields not in {("memo",), ("memo_action",)}:
+            return ()
+        expected.append((final_reception_source_anchor_text(event.nucleus_id, index, resolver),
+                         final_reception_source_anchor_text(nid, index, resolver), next(iter(times))))
+    if len(set(expected)) != len(expected):
+        return ()
+    raw = body[sentence.utf8_byte_start:sentence.utf8_byte_end].decode("utf-8")
+    objects, separator, _predicate = raw.rpartition("を")
+    if not separator:
+        return ()
+    divisions = tuple(m.start() for m in re.finditer("と、", objects))
+    successes = []
+    for cuts in combinations(divisions, len(expected) - 1):
+        starts = (0, *(i + 2 for i in cuts))
+        ends = (*cuts, len(objects))
+        restored, spans = [], []
+        for start, end in zip(starts, ends, strict=True):
+            piece = objects[start:end]
+            boundaries = tuple((piece.index(s), s) for s in ("ことへの", "ことについて、") if s in piece)
+            if not boundaries:
+                break
+            boundary, sep = min(boundaries)
+            event, nominal = piece[:boundary], piece[boundary + len(sep):]
+            interpretations = set()
+            for when, prefix in (("original_occasion", "その時に"), ("answer_time", "回答した時点で"),
+                                 ("prior_answer_time", "先の回答時点で")):
+                for grammar in ("BELIEF", "PAST_FEELING", "PERCEIVED_0", "PERCEIVED_1", "COPULAR_PRESENT_POLITE", "COPULAR_PAST_POLITE", "ADJECTIVE_PRESENT_POLITE"):
+                    source = restore_thread_answer_nominal(nominal, grammar, when)
+                    if source is not None and sep == "ことへの":
+                        interpretations.add((event, source, when))
+                if sep == "ことについて、" and nominal.startswith(prefix) and nominal.endswith("こと"):
+                    for expected_event, expected_source, _ in expected:
+                        if event == expected_event:
+                            source = _restore_thread_finite_answer(nominal[len(prefix):-2], expected_source)
+                            if source is not None:
+                                interpretations.add((event, source, when))
+            matches = interpretations.intersection(expected)
+            if len(matches) != 1:
+                break
+            match = next(iter(matches))
+            restored.append(match)
+            offset = sentence.utf8_byte_start + len(objects[:start + len(event) + len(sep)].encode("utf-8"))
+            finish = offset + len(nominal.encode("utf-8"))
+            if (any(q.utf8_byte_start < finish and offset < q.utf8_byte_end for q in witness.quotes)
+                or any(m.marker_code == "secondary_quote_boundary" and m.utf8_byte_start < finish
+                       and offset < m.utf8_byte_end for m in witness.markers)
+                or not any(m.section == "reception" and m.marker_code in {"thread_answer_nominal", "finite_clause_nominal"}
+                           and offset <= m.utf8_byte_start and m.utf8_byte_end == finish for m in witness.markers)):
+                break
+            spans.append((offset, finish, match[1].encode("utf-8")))
+        if tuple(restored) == tuple(expected) and len(spans) == len(expected):
+            successes.append(tuple(spans))
+    return successes[0] if len(successes) == 1 else ()
+
+
+def _body_inverse_answer_limit(body, parsed_line, planned_line, plan, resolver):
+    """Read the completed limit sentence without replaying the renderer.
+
+    Nested source quotes remain source text. Only the outside predicate says
+    that part of this answer is unreflected; it makes no claim about the user.
+    """
+    binding = planned_line.binding
+    ids = tuple(atom[len("unknown_boundary:"):] for atom in binding.functional_atom_ids
+                if atom.startswith("unknown_boundary:"))
+    boundaries = tuple(row for row in plan.unknown_boundaries
+        if row.dimension == "answer_interpretation_unresolved" and row.unknown_id in ids)
+    if (len(ids) != 1 or len(boundaries) != 1
+        or binding.nucleus_ids or binding.relation_ids or not binding.required
+        or binding.line_role != "limited_scope" or planned_line.surface_function != "render_limited_scope"
+        or boundaries[0].affected_nucleus_ids or boundaries[0].surface_policy != "do_not_claim"
+        or binding.evidence_span_ids != boundaries[0].evidence_span_ids
+        or not binding.evidence_span_ids
+        or getattr(resolver, "source_contract", None) != "cocolon.cmee.emlis_thread.v1"
+        or resolver.source_fields_for(binding.evidence_span_ids) != ("answer_text_private",)):
+        return False
+    text = body[parsed_line.utf8_byte_start:parsed_line.utf8_byte_end].decode("utf-8")
+    prefix, suffix = "回答の", "には、今回の観測に反映できていない部分があります。"
+    if not text.startswith(prefix) or not text.endswith(suffix):
+        return False
+    quoted = text[len(prefix):-len(suffix)]
+    values, start = [], 0
+    while start < len(quoted):
+        if quoted[start] != "「":
+            return False
+        stack, end = ["「"], start + 1
+        while end < len(quoted) and stack:
+            if quoted[end] in "「『":
+                stack.append(quoted[end])
+            elif quoted[end] in "」』":
+                if stack[-1] != {"」": "「", "』": "『"}[quoted[end]]:
+                    return False
+                stack.pop()
+            end += 1
+        if stack or quoted[end-1] != "」":
+            return False
+        values.append(quoted[start+1:end-1])
+        if end == len(quoted):
+            break
+        if quoted[end:end+2] != "と「":
+            return False
+        start = end + 1
+    # Resolve the source independently of its forward surface. Separators
+    # inside a contiguous range are evidence too, not invented conjunctions.
+    return tuple(values) == (resolver.source_text_for_contiguous_spans(boundaries[0].evidence_span_ids),)
+
+
+def _body_inverse_reason_appraisal(body, line, planned_line, plan, resolver):
+    """Read one entire reason/target/evaluation configuration, without the author.
+
+    A shared evaluation has two incoming edges, so quote adjacency cannot
+    prove both. Only the complete grammar and all source-owned roles grant
+    these exact edges; unrelated directional checks remain unchanged.
+    """
+    from emlis_ai_grounded_observation_plan import (
+        source_owned_result_appraisal_reason, source_owned_duplicate_reason_appraisals)
+    if getattr(resolver, "source_contract", None) != "cocolon.cmee.emlis_thread.v1":
+        return frozenset()
+    visible = _body_inverse_visible_text(body, line)
+    parsed = re.fullmatch(r'「([^「」『』\n]+)」を理由に、'
+        r'「([^「」『』\n]+)」という出来事への評価は「([^「」『』\n]+)」とあります。', visible)
+    if parsed is None:
+        return frozenset()
+    binding = planned_line.binding
+    index = {n.nucleus_id: n for n in plan.nuclei}
+    groups, edges = [], set()
+    for relation in plan.relations:
+        if relation.relation_id not in binding.relation_ids:
+            continue
+        reason = source_owned_result_appraisal_reason(relation, plan.nuclei, plan.relations)
+        if reason is None:
+            continue
+        group = (reason, index[relation.from_nucleus_id], index[relation.to_nucleus_id])
+        expected = tuple(_body_inverse_nucleus_source_values(n.nucleus_id, plan, resolver) for n in group)
+        if (any(len(values) != 1 for values in expected)
+            or tuple(map(_body_inverse_normalized_anchor, parsed.groups())) != tuple(v[0] for v in expected)):
+            return frozenset()
+        groups.append(group)
+        ids = {n.nucleus_id for n in group}
+        edges.update(r.relation_id for r in plan.relations
+                     if r.retention == 'required' and ids & {r.from_nucleus_id, r.to_nucleus_id})
+    if (len(groups) not in {1, 2} or len(edges) != 2 * len(groups)
+        or edges != set(binding.relation_ids)
+        or set(binding.nucleus_ids) != {n.nucleus_id for group in groups for n in group}):
+        return frozenset()
+    if len(groups) == 2:
+        duplicate = source_owned_duplicate_reason_appraisals(plan.nuclei, plan.relations, resolver)
+        if not duplicate or {tuple(n.nucleus_id for n in g) for g in groups} != {
+            tuple(n.nucleus_id for n in g) for g in duplicate}:
+            return frozenset()
+    else:
+        span = resolver.resolve(groups[0][0].source_span_ids[0])
+        if sum(s.source_field == span.source_field and s.raw_text == span.raw_text
+               for s in resolver.resolve_many(resolver.span_ids)) != 1:
+            return frozenset()
+    return frozenset(edges)
+
+
+def _body_inverse_unfinished_appraisal(body, witness, line, planned_line, plan, resolver):
+    """Read the joined three-role clause; leave the separate received duty live."""
+    from emlis_ai_grounded_observation_plan import (
+        source_owned_result_appraisal_context, _received_contrast_group_targets)
+    binding = planned_line.binding
+    if (getattr(resolver, "source_contract", None) != "cocolon.cmee.emlis_thread.v1"
+        or len(binding.nucleus_ids) != 5 or len(binding.relation_ids) != 3
+        or set(binding.nucleus_ids) != {nid for r in plan.relations for nid in (r.from_nucleus_id, r.to_nucleus_id)}
+        or set(binding.relation_ids) != {r.relation_id for r in plan.relations}):
+        return frozenset()
+    groups = tuple((r, context) for r in plan.relations
+        if (context := source_owned_result_appraisal_context(r, plan.nuclei, plan.relations)) is not None)
+    if len(groups) != 1:
+        return frozenset()
+    appraisal, context = groups[0]
+    ids = (context.nucleus_id, appraisal.from_nucleus_id, appraisal.to_nucleus_id)
+    edges = frozenset(r.relation_id for r in plan.relations
+                     if set(ids) & {r.from_nucleus_id, r.to_nucleus_id})
+    remaining = tuple(r for r in plan.relations if r.relation_id not in edges)
+    if (len(edges) != 2 or len(remaining) != 1
+        or remaining[0].grounding_kind != 'user_stated_relation'):
+        return frozenset()
+    other = remaining[0]
+    rest = tuple(n for n in plan.nuclei if n.nucleus_id not in ids)
+    current = {n.nucleus_id: n for n in rest}
+    event, answer = current.get(other.from_nucleus_id), current.get(other.to_nucleus_id)
+    corrected_received = (other.type == 'evaluation_about_event'
+        and event is not None and answer is not None
+        and event.kind == 'event' and event.source_fields in {('memo',), ('memo_action',)}
+        and event.semantic_frame.actor == 'current_user' and event.semantic_frame.time_scope == 'past'
+        and any(c.startswith('source_received_event_link:') for c in event.semantic_frame.attribute_codes)
+        and answer.kind == 'reaction' and answer.source_fields == ('answer_text_private',)
+        and answer.semantic_frame.actor == 'current_user' and answer.semantic_frame.time_scope == 'past'
+        and {c for c in answer.semantic_frame.attribute_codes if c.startswith('thread_time:')}
+            == {'thread_time:original_occasion'}
+        and event.grounding_kind == answer.grounding_kind == 'explicit'
+        and event.retention == answer.retention == 'required'
+        and set(other.source_span_ids) == set(event.source_span_ids + answer.source_span_ids))
+    if not (_received_contrast_group_targets(rest, remaining) or corrected_received):
+        return frozenset()
+    expected = tuple(_body_inverse_nucleus_source_values(nid, plan, resolver) for nid in ids)
+    matches = []
+    for row in witness.sentences:
+        if row.section != 'observation' or row.section_line_ordinal != line.section_ordinal:
+            continue
+        parsed = re.fullmatch(r'「([^「」『』\n]+)」の一方で、'
+            r'「([^「」『』\n]+)」という出来事への評価は「([^「」『』\n]+)」とあります。',
+            _body_inverse_visible_text(body, row))
+        if parsed:
+            matches.append(tuple(map(_body_inverse_normalized_anchor, parsed.groups())))
+    if (any(len(values) != 1 for values in expected)
+        or matches != [tuple(values[0] for values in expected)]):
+        return frozenset()
+    return edges
+
+
+def _body_inverse_shared_target_appraisal_observation(body, parsed_line, planned_line, plan, resolver):
+    """Read one complete nested observation; never replay its author.
+
+    This replaces generic binary contrast checking only for the entire
+    closed, source-proven group, including its optional appraisal-only reason.
+    """
+    from emlis_ai_grounded_observation_plan import source_owned_shared_target_appraisal_contrast
+    group = source_owned_shared_target_appraisal_contrast(plan.nuclei, plan.relations, resolver)
+    if not group:
+        return False
+    keys = ('appraisal_event', 'appraisal', 'received_event', 'reaction') + (('reason',) if 'reason' in group else ())
+    edge_keys = ('appraisal_relation', 'received_relation', 'outer_relation') + (('reason_relation',) if 'reason_relation' in group else ())
+    node_ids = {group[k].nucleus_id for k in keys}
+    edge_ids = {group[k].relation_id for k in edge_keys}
+    evidence_ids = {sid for key in (*keys, *edge_keys) for sid in group[key].source_span_ids}
+    binding = planned_line.binding
+    if (planned_line.surface_function != 'observe_nuclei_with_relations'
+        or binding.line_role != 'primary_observation' or not binding.required
+        or binding.claim_scope != 'single_input_bounded_observation'
+        or set(binding.nucleus_ids) != node_ids or len(binding.nucleus_ids) != len(node_ids)
+        or set(binding.relation_ids) != edge_ids or len(binding.relation_ids) != len(edge_ids)
+        or set(binding.evidence_span_ids) != evidence_ids
+        or set(plan.coverage_requirements.required_nucleus_ids) != node_ids
+        or set(plan.coverage_requirements.required_relation_ids) != edge_ids):
+        return False
+    visible = _body_inverse_visible_text(body, parsed_line)
+    parsed = re.fullmatch(r'(?:「(?P<reason>[^「」『』\n]+)」を理由に、)?'
+        r'「(?P<event>[^「」『』\n]+)」という行為への評価は「(?P<appraisal>[^「」『』\n]+)」'
+        r'とあり、その評価と対比して、同じ行為について「(?P<received>[^「」『』\n]+)」'
+        r'(?P<inner>のに|けれども|けれど|けど)「(?P<reaction>[^「」『』\n]+)」と書かれています。', visible)
+    if parsed is None or bool(parsed['reason']) != ('reason' in group):
+        return False
+    roles = (('event', 'appraisal_event'), ('appraisal', 'appraisal'),
+             ('received', 'received_event'), ('reaction', 'reaction')) + ((('reason', 'reason'),) if 'reason' in group else ())
+    for field, key in roles:
+        expected = _body_inverse_nucleus_source_values(group[key].nucleus_id, plan, resolver)
+        if len(expected) != 1 or _body_inverse_normalized_anchor(parsed[field]) != expected[0]:
+            return False
+    links = tuple(c.split(':', 1)[1] for c in group['received_event'].semantic_frame.attribute_codes
+                  if c.startswith('source_received_event_link:'))
+    return (len(links) == 1 and parsed['inner'] ==
+            {'noni': 'のに', 'kedo': 'けど', 'keredo': 'けれど', 'keredomo': 'けれども'}.get(links[0]))
+
+
+def read_snapshot_observation_clause(raw, kind, lexical):
+    """Independent finite source restoration, shared by inverse and anaphora."""
+    pattern = (r"(?P<a>[^、。]+)、(?P<b>[^。]+)のですね。" if kind == "written_te"
+        else r"(?P<a>[^、。]+)一方で、(?P<b>[^。]+)なのですね。")
+    parsed = re.fullmatch(pattern, raw)
+    return bool(parsed is not None and (parsed["a"],parsed["b"]) == lexical)
+
+
+def _body_inverse_snapshot_v2(body, witness, line, planned_line, plan, resolver):
+    from emlis_ai_grounded_observation_plan import source_snapshot_v2_group
+    groups = source_snapshot_v2_group(plan.nuclei, plan.relations, resolver)
+    if groups is None: return (), frozenset()
+    rows = tuple(_body_inverse_visible_text(body, r) for r in witness.sentences
+        if r.section == "observation" and r.section_line_ordinal == line.section_ordinal)
+    sources, consumed = [], set()
+    for kind, ids, lexical in groups:
+        links = tuple(r for r in plan.relations if (r.from_nucleus_id, r.to_nucleus_id) == ids
+            and r.relation_id in planned_line.binding.relation_ids)
+        if not links: continue
+        matches = tuple(raw for raw in rows if read_snapshot_observation_clause(raw,kind,lexical))
+        if len(matches) == 1:
+            sources.extend(lexical)
+            consumed.add(links[0].relation_id)
+    return tuple(sources), frozenset(consumed)
+
+
+def evaluate_grounded_surface_body_inverse(
+    *,
+    body: bytes,
+    plan: GroundedObservationPlan,
+    sentence_plan: GroundedSentencePlan,
+    resolver: EvidenceSpanResolver,
+    selected_subjective_input: SelectedSubjectiveReceptionInputV1 | None = None,
+) -> GroundedBodyInverseEvaluation:
+    """Re-parse final bytes and independently match plan-visible duties.
+
+    The parser is body-only.  This matcher then checks section/line order,
+    source-bound quote order, relation and boundary markers, and the distinct
+    human-reception duty against the canonical plans.  It never consults a
+    forward parser witness or serialized source text.
+    """
+
+    witness = parse_grounded_surface_body_bytes(body)
+    failures: list[str] = list(witness.structural_issues)
+    final_stage1_plan = _body_inverse_is_final_stage1_plan(plan)
+    separate_time_contrast_ids = (source_owned_separate_time_contrast_ids(plan, resolver)
+                                 if final_stage1_plan else frozenset())
+    observation_lines = tuple(
+        row for row in witness.lines if row.section == "observation"
+    )
+    reception_lines = tuple(
+        row for row in witness.lines if row.section == "reception"
+    )
+    planned_observation_lines = tuple(
+        row
+        for row in sentence_plan.lines
+        if row.binding.line_role != "human_follow"
+    )
+    planned_reception_lines = tuple(
+        row
+        for row in sentence_plan.lines
+        if row.binding.line_role == "human_follow"
+    )
+    nucleus_index = {item.nucleus_id: item for item in plan.nuclei}
+    if witness.section_order != ("observation", "reception"):
+        failures.append("body_inverse_section_order_mismatch")
+    if len(observation_lines) != len(planned_observation_lines):
+        failures.append("body_inverse_observation_line_count_mismatch")
+    if len(reception_lines) != len(planned_reception_lines):
+        failures.append("body_inverse_reception_line_count_mismatch")
+    expected_limit_ids = tuple(row.unknown_id for row in plan.unknown_boundaries
+                              if row.dimension == "answer_interpretation_unresolved")
+    actual_limit_ids = tuple(atom[len("unknown_boundary:"):]
+        for line in planned_observation_lines
+        if line.binding.claim_scope == "unresolved_answer_interpretation"
+        for atom in line.binding.functional_atom_ids if atom.startswith("unknown_boundary:"))
+    if actual_limit_ids != expected_limit_ids:
+        failures.append("body_inverse_answer_limit_duty_missing")
+
+    sentence_line_index = {
+        (row.section, row.section_ordinal): row.section_line_ordinal
+        for row in witness.sentences
+    }
+
+    def quotes_for_line(section: str, line_ordinal: int) -> tuple[Any, ...]:
+        return tuple(
+            row
+            for row in witness.quotes
+            if row.section == section
+            and sentence_line_index.get((row.section, row.sentence_ordinal))
+            == line_ordinal
+        )
+
+    from emlis_ai_grounded_observation_plan import _source_initial_personal_meaning_from_resolver
+    initial_personal = _source_initial_personal_meaning_from_resolver(plan.nuclei, plan.relations, resolver)
+    from emlis_ai_grounded_observation_plan import source_owned_relief_cognition_from_resolver, _received_contrast_group_targets
+    from emlis_ai_grounded_human_reception import _source_grounded_received_contrast_rows
+    relief_pairs = source_owned_relief_cognition_from_resolver(plan.nuclei, plan.relations, resolver)
+    mixed_received_reports = []
+    if len(relief_pairs) == 1:
+        for edge in plan.relations:
+            pair = (nucleus_index[edge.from_nucleus_id], nucleus_index[edge.to_nucleus_id])
+            if _received_contrast_group_targets(pair, (edge,)):
+                rows = _source_grounded_received_contrast_rows(
+                    (edge.from_nucleus_id,), (edge.to_nucleus_id,), nucleus_index, resolver)
+                if rows:
+                    mixed_received_reports.append((edge.relation_id, rows))
+    # The finite report names one original experience. Equal source wording in
+    # multiple occurrences cannot identify which relation was reported.
+    mixed_received_reports = dict(mixed_received_reports) if len(mixed_received_reports) == 1 else {}
+    for index, (parsed_line, planned_line) in enumerate(
+        zip(observation_lines, planned_observation_lines),
+        start=1,
+    ):
+        if initial_personal:
+            meaning = initial_personal[5]
+            raw_line = _body_inverse_visible_text(body, parsed_line)
+            if (meaning.nucleus_id in planned_line.binding.nucleus_ids
+                and not planned_line.binding.relation_ids):
+                # Parse delivered bytes as independent source reports. The
+                # old flow/current-state wording cannot validate this scope.
+                match = re.fullmatch(r'(?P<first>「[^「」]+」)(?:と(?P<second>「[^「」]+」))?'
+                                     r'と(?P<separate>、それぞれ)?書かれています。', raw_line)
+                sources = tuple(resolver.resolve(nucleus_index[nid].source_span_ids[0]).raw_text
+                                for nid in planned_line.binding.nucleus_ids)
+                seen = tuple(match[name][1:-1] for name in ('first', 'second') if match and match[name])
+                if (match is None or seen != sources or bool(match['separate']) != (len(sources) > 1)):
+                    failures.append(f'body_inverse_initial_personal_meaning_observation_scope:{index}')
+            if initial_personal[-1].relation_id in planned_line.binding.relation_ids:
+                outside_quotes = re.sub(r'「[^「」]*」', '', raw_line)
+                if re.search(r'同時|だから|ために|原因', outside_quotes):
+                    failures.append(f'body_inverse_initial_personal_meaning_relation_scope:{index}')
+        if planned_line.binding.claim_scope == "unresolved_answer_interpretation":
+            if not _body_inverse_answer_limit(body, parsed_line, planned_line, plan, resolver):
+                failures.append(f"body_inverse_answer_limit_mismatch:{index}")
+            continue
+        if (final_stage1_plan and any(n.nucleus_id in planned_line.binding.nucleus_ids
+            and 'semantic_dependency:shared_target_appraisal_contrast_v1' in n.semantic_frame.attribute_codes
+            for n in plan.nuclei)):
+            # The specialized reader consumes the complete group. A flattened
+            # or partially valid binary report cannot fall back to old prose.
+            if not _body_inverse_shared_target_appraisal_observation(
+                    body, parsed_line, planned_line, plan, resolver):
+                failures.append(f'body_inverse_shared_target_appraisal_scope_mismatch:{index}')
+            continue
+        quote_rows = quotes_for_line("observation", parsed_line.section_ordinal)
+        expected_sources = _body_inverse_source_values(planned_line, plan, resolver)
+        # Independently read a complete, source-bound finite cognition clause.
+        # This is an exact source obligation, not a quote-free fallback. The
+        # writer and this matcher do not share a renderer or its witness.
+        direct_cognition = False
+        direct_provisional = False
+        direct_decision = False
+        direct_sources, direct_relations, direct_nuclei = (
+            _body_inverse_limited_change_feeling(body, witness, parsed_line, planned_line, plan, resolver)
+            if final_stage1_plan else ((), frozenset(), frozenset()))
+        snapshot_sources, snapshot_relations = _body_inverse_snapshot_v2(
+            body, witness, parsed_line, planned_line, plan, resolver)
+        direct_sources += snapshot_sources
+        direct_relations |= snapshot_relations
+        direct_nuclei |= frozenset(nid for r in plan.relations if r.relation_id in snapshot_relations
+            for nid in (r.from_nucleus_id, r.to_nucleus_id))
+        from emlis_ai_grounded_observation_plan import source_snapshot_v2_group
+        snapshot_groups = source_snapshot_v2_group(plan.nuclei, plan.relations, resolver)
+        if snapshot_groups is not None:
+            expected_snapshot_links = {r.relation_id for r in plan.relations
+                if r.relation_id in planned_line.binding.relation_ids
+                and any((r.from_nucleus_id, r.to_nucleus_id) == ids for _, ids, _ in snapshot_groups)}
+            if expected_snapshot_links != set(snapshot_relations):
+                failures.append(f"body_inverse_snapshot_v2_source_mismatch:{index}")
+        negative_relations = frozenset()
+        reason_appraisal_relations = (_body_inverse_reason_appraisal(
+            body, parsed_line, planned_line, plan, resolver) if final_stage1_plan else frozenset())
+        unfinished_appraisal_relations = (_body_inverse_unfinished_appraisal(
+            body, witness, parsed_line, planned_line, plan, resolver) if final_stage1_plan else frozenset())
+        direct_relations |= reason_appraisal_relations | unfinished_appraisal_relations
+        if final_stage1_plan:
+            negative_relations, negative_nuclei = _body_inverse_negative_feeling_sequences(
+                body, witness, parsed_line, planned_line, plan, resolver)
+            required_negative = {r.relation_id for r in plan.relations
+                if r.relation_id in planned_line.binding.relation_ids
+                and "semantic_role:source_proven_negative_feeling_sequence"
+                    in nucleus_index[r.to_nucleus_id].semantic_frame.attribute_codes}
+            if not required_negative <= negative_relations:
+                failures.append(f"body_inverse_negative_feeling_sequence_mismatch:{index}")
+            direct_relations |= negative_relations
+            direct_nuclei |= negative_nuclei
+        binding = planned_line.binding
+        if (final_stage1_plan
+            and (planned_line.surface_function, binding.claim_scope) in {
+                ("observe_nuclei", "single_input_bounded_observation"),
+                ("render_limited_scope", "limited_grounding_no_event_completion"),
+            }
+            and len(binding.nucleus_ids) == 1 and not binding.relation_ids):
+            cognition = nucleus_index.get(binding.nucleus_ids[0])
+            if cognition is not None:
+                cf = cognition.semantic_frame
+                codes = set(cf.attribute_codes)
+                provisional = bool(cognition.kind == cf.predicate_kind == "change"
+                    and (cf.actor, cf.modality, cf.polarity, cf.time_scope)
+                        == ("current_user", "fact", "mixed", "current_input")
+                    and {"lexical:source_provisional_degree", "lexical:preserve_source_predicate"} <= codes)
+                decision_roles = tuple(role for role in ("choice", "timing")
+                    if "lexical:source_independent_decision_" + role in codes)
+                decision = bool(len(decision_roles) == 1 and cognition.kind == cf.predicate_kind == "uncertainty"
+                    and cf.actor == "current_user" and cf.modality == "uncertain" and cf.time_scope == "present"
+                    and cf.polarity == ("neutral" if decision_roles[0] == "choice" else "negative")
+                    and {"operator:uncertainty", "semantic_role:limiting_unknown", "lexical:preserve_source_predicate"} <= codes)
+                if ((provisional or decision or (cognition.kind == cf.predicate_kind == "uncertainty"
+                    and cf.actor == "current_user" and cf.modality == "uncertain"
+                    and cf.polarity == "negative" and cf.time_scope in {"present", "current_input"}
+                    and {"operator:negation", "operator:uncertainty", "semantic_role:limiting_unknown",
+                         "lexical:preserve_source_predicate"} <= codes))
+                    and cognition.grounding_kind == "explicit" and cognition.retention == "required"
+                    and cognition.source_fields in {("memo",), ("memo_action",)}
+                    and len(cognition.source_span_ids) == 1
+                    and binding.evidence_span_ids == cognition.source_span_ids
+                    and not any(code.startswith(("thread_time:", "source_fragment_", "surface_scalar_"))
+                                or code == "semantic_role:embedded_turn" for code in codes)):
+                    source_span = resolver.resolve(cognition.source_span_ids[0])
+                    source_clause = str(source_span.raw_text).strip(" \u3000。．.")
+                    from emlis_ai_grounded_observation_plan import _source_provisional_degree_parts, _source_independent_decision_clause_parts, _source_feeling_reason_unknown_parts
+                    reason_unknown = ("lexical:source_feeling_reason_unknown" in codes
+                                      and _source_feeling_reason_unknown_parts(source_clause) is not None)
+                    if (source_span.source_field == cognition.source_fields[0]
+                        and 0 <= source_span.start_index < source_span.end_index
+                        and (provisional and _source_provisional_degree_parts(source_clause) is not None
+                             or decision and (_source_independent_decision_clause_parts(source_clause) or (None,))[0] == decision_roles[0]
+                             or re.fullmatch(r"(?:(?:現在|今)(?:も|は))?(?:まだ)?(?:はっきり|よく)?(?:わからない|分からない)", source_clause)
+                             or reason_unknown
+                             or "lexical:source_temporal_causal_unknown" in codes
+                             and re.fullmatch(r".*(?:現在|今|今日)の(?:きっかけ|原因|理由)が同じか(?:も|は)?"
+                                              r"(?:まだ)?(?:はっきり|よく)?(?:わからない|分からない)", source_clause))):
+                        direct_cognition = True
+                        if provisional:
+                            source_clause = re.sub(r"(気[がはも])します(?=けれど|けど)", r"\1する", source_clause)
+                            source_clause = re.sub(r"ないです$|ありません$", "ない", source_clause)
+                            if "lexical:source_denied_resolution" in codes:
+                                source_clause = re.sub(r"思いました$", "思った", source_clause)
+                                source_clause = re.sub(r"思えました$", "思えた", source_clause)
+                        if decision:
+                            source_clause = re.sub(r"迷っています$", "迷っている", source_clause)
+                            source_clause = re.sub(r"決められません$", "決められない", source_clause)
+                        visible = _body_inverse_visible_text(body, parsed_line)
+                        if "scope_hedge" in binding.functional_atom_ids:
+                            if not visible.startswith("今の入力だけを見ると、"):
+                                failures.append(f"body_inverse_cognition_scope_missing:{index}")
+                            else:
+                                visible = visible[len("今の入力だけを見ると、"):]
+                        matched = re.fullmatch(r"(?P<source>.+)のですね。", visible)
+                        if (quote_rows or not matched or not (
+                            _feeling_reason_unknown_restores_source(matched.group("source"), source_clause)
+                            if reason_unknown else matched.group("source") == source_clause)):
+                            failures.append(f"body_inverse_cognition_source_or_predicate_mismatch:{index}")
+                        elif provisional:
+                            direct_provisional = True
+                        elif decision:
+                            direct_decision = True
+        if expected_sources and not quote_rows and not direct_cognition and not direct_sources:
+            failures.append(f"body_inverse_observation_source_anchor_missing:{index}")
+        normalized_quote_texts: list[str] = list(direct_sources)
+        for quote_row in quote_rows:
+            try:
+                quote_text = _body_inverse_normalized_anchor(
+                    _body_inverse_quote_text(body, quote_row)
+                )
+            except (UnicodeDecodeError, ValueError):
+                failures.append(f"body_inverse_quote_bytes_invalid:{index}")
+                continue
+            normalized_quote_texts.append(quote_text)
+            matches = tuple(
+                source_index
+                for source_index, source_text in enumerate(expected_sources)
+                if _body_inverse_anchor_matches(quote_text, source_text)
+            )
+            if not matches:
+                failures.append(f"body_inverse_unbound_observation_quote:{index}")
+                continue
+        if (set(planned_line.binding.relation_ids) - snapshot_relations - negative_relations - reason_appraisal_relations - unfinished_appraisal_relations
+            and not parsed_line.relation_marker_codes):
+            failures.append(f"body_inverse_required_relation_marker_missing:{index}")
+        relation_index = {item.relation_id: item for item in plan.relations}
+        shared_change_relations = frozenset()
+        if final_stage1_plan:
+            shared_change_relations, reference_failures = _body_inverse_observation_change_reference(
+                body, witness, parsed_line, planned_line, plan, resolver,
+            )
+            failures.extend(reference_failures)
+        grouped_relations, contrast_groups = frozenset(), ()
+        if getattr(resolver, "source_contract", None) == "cocolon.cmee.emlis_thread.v1":
+            grouped_relations, group_failures, contrast_groups = _body_inverse_thread_contrast_answers(
+                body, witness, parsed_line, plan, resolver)
+            failures.extend(group_failures)
+        if contrast_groups:
+            # Compare the actual event quotes across reports, not only the
+            # pairs within one report. ABOUT and retained legacy reports
+            # cannot be moved past a compact run.
+            span_order = {sid: pos for pos, sid in enumerate(resolver.span_ids)}
+            event_order = []
+            event_mentions = {}
+            events = tuple(n for n in plan.nuclei if n.kind == "event"
+                           and n.nucleus_id in planned_line.binding.nucleus_ids)
+            report_subjects = (*events, *(nucleus_index[relation_index[group[0]].from_nucleus_id]
+                for group in contrast_groups if len(group) == 1
+                and "source_received_chain_slot:first" in nucleus_index[
+                    relation_index[group[0]].from_nucleus_id].semantic_frame.attribute_codes))
+            for quote_row in quote_rows:
+                value = _body_inverse_normalized_anchor(_body_inverse_quote_text(body, quote_row))
+                candidates = tuple(n for n in events
+                    if _body_inverse_nucleus_source_values(n.nucleus_id, plan, resolver) == (value,))
+                if len(candidates) > 1:
+                    # Equal event words are not equal source occurrences.
+                    # Resolve only the event quote of a complete proven chain
+                    # or legacy pair, through its own contrast endpoint.
+                    hosts = tuple(row for row in witness.sentences
+                        if row.section == "observation"
+                        and row.section_line_ordinal == parsed_line.section_ordinal
+                        and row.utf8_byte_start <= quote_row.utf8_byte_start
+                        and quote_row.utf8_byte_end <= row.utf8_byte_end)
+                    if len(hosts) == 1:
+                        host = hosts[0]
+                        host_quotes = tuple(q for q in quote_rows
+                            if host.utf8_byte_start <= q.utf8_byte_start
+                            and q.utf8_byte_end <= host.utf8_byte_end)
+                        visible = _body_inverse_visible_text(body, host)
+                        chain = re.fullmatch(r"「([^「」『』\n]+)」(?:のに|けれども?|けど)"
+                            r"「([^「」『』\n]+)」(?:けれども?|けど)"
+                            r"「([^「」『』\n]+)」とあります。", visible)
+                        pair = re.fullmatch(r"「([^「」『』\n]+)」と「([^「」『』\n]+)」が、"
+                            r"異なる向きのまま同時にあります。", visible)
+                        if pair is None:
+                            pair = re.fullmatch(r"「([^「」『』\n]+)」の一方で「([^「」『』\n]+)」とあります。", visible)
+                        answer_report = re.fullmatch(r"(?:(?P<position>先|間|後)に書かれた)?"
+                            r"「(?P<event>[^「」『』\n]+)」ことについて、"
+                            r"(?P<when>先の回答時点|回答した時点|その時)の受け止めは"
+                            r"「(?P<answer>[^「」『』\n]+)」と書かれています。", visible)
+                        combined = re.fullmatch(r"「([^「」『』\n]+)」のに「([^「」『』\n]+)」、"
+                            r"(?:その時は|回答した時点では|先の回答時点では)"
+                            r"「([^「」『』\n]+)」とあります。", visible)
+                        report = chain or pair or combined
+                        if report is not None and host_quotes and quote_row == host_quotes[0]:
+                            reaction = _body_inverse_normalized_anchor(report[2])
+                            candidates = tuple(n for n in candidates if any(
+                                r.type == "contrast" and r.grounding_kind == "user_stated_relation"
+                                and r.relation_id in planned_line.binding.relation_ids
+                                and r.from_nucleus_id == n.nucleus_id
+                                and _body_inverse_nucleus_source_values(r.to_nucleus_id, plan, resolver) == (reaction,)
+                                and (r.relation_id in grouped_relations if chain is not None or combined is not None else
+                                     "source_received_chain_slot:event" not in n.semantic_frame.attribute_codes)
+                                for r in plan.relations))
+                        elif answer_report is not None and host_quotes and quote_row == host_quotes[0]:
+                            when = {"その時": "original_occasion", "回答した時点": "answer_time",
+                                    "先の回答時点": "prior_answer_time"}[answer_report["when"]]
+                            answer_value = _body_inverse_normalized_anchor(answer_report["answer"])
+                            positions = _read_received_record_prefixes(plan, resolver)
+                            candidates = tuple(n for n in candidates if any(
+                                r.type == "evaluation_about_event"
+                                and r.relation_id in planned_line.binding.relation_ids
+                                and r.from_nucleus_id == n.nucleus_id
+                                and nucleus_index[r.to_nucleus_id].source_fields == ("answer_text_private",)
+                                and {c for c in nucleus_index[r.to_nucleus_id].semantic_frame.attribute_codes
+                                     if c.startswith("thread_time:")} == {"thread_time:" + when}
+                                and _body_inverse_nucleus_source_values(r.to_nucleus_id, plan, resolver) == (answer_value,)
+                                and (answer_report["position"] is None or positions.get(n.nucleus_id)
+                                     == answer_report["position"] + "に書かれた方では、")
+                                for r in plan.relations))
+                    if not candidates:
+                        failures.append(f"body_inverse_contrast_report_source_ambiguous:{index}")
+                if len(candidates) > 1:
+                    failures.append(f"body_inverse_contrast_report_source_ambiguous:{index}")
+                elif candidates:
+                    nid = candidates[0].nucleus_id
+                    event_mentions[nid] = event_mentions.get(nid, 0) + 1
+                    event_order.append(min((span_order[sid] for sid in candidates[0].source_span_ids), default=-1))
+            if event_order != sorted(event_order):
+                failures.append(f"body_inverse_contrast_report_order_mismatch:{index}")
+            # When these reports consume the whole relation-only line, every
+            # visible sentence must be one of those proven reports.
+            relations = tuple(relation_index[rid] for rid in planned_line.binding.relation_ids)
+            endpoints = {nid for r in relations for nid in (r.from_nucleus_id, r.to_nucleus_id)}
+            if (set(planned_line.binding.nucleus_ids) <= endpoints
+                and {r.type for r in relations} <= {"contrast", "evaluation_about_event"}):
+                for event in events:
+                    owned = tuple(r for r in relations if r.from_nucleus_id == event.nucleus_id)
+                    expected_mentions = (2 if {r.type for r in owned} == {"contrast", "evaluation_about_event"}
+                        and not {r.relation_id for r in owned} <= grouped_relations else 1)
+                    if event_mentions.get(event.nucleus_id, 0) != expected_mentions:
+                        failures.append(f"body_inverse_contrast_report_event_count_mismatch:{index}")
+                for row in witness.sentences:
+                    if row.section != "observation" or row.section_line_ordinal != parsed_line.section_ordinal:
+                        continue
+                    values = tuple(map(_body_inverse_normalized_anchor,
+                        re.findall(r"「([^「」]+)」", _body_inverse_visible_text(body, row))))
+                    if not any(value in _body_inverse_nucleus_source_values(event.nucleus_id, plan, resolver)
+                               for value in values for event in report_subjects):
+                        failures.append(f"body_inverse_contrast_report_unbound_sentence:{index}")
+            if (set(planned_line.binding.nucleus_ids) <= endpoints
+                and set(planned_line.binding.relation_ids) <= grouped_relations):
+                line_rows = tuple(row for row in witness.sentences if row.section == "observation"
+                                  and row.section_line_ordinal == parsed_line.section_ordinal)
+                expected = len(contrast_groups) + sum(r.type == "evaluation_about_event" for r in relations)
+                if len(line_rows) != expected:
+                    failures.append(f"body_inverse_contrast_report_scope_mismatch:{index}")
+        from emlis_ai_grounded_observation_plan import source_owned_duplicate_reason_appraisals
+        repeated = source_owned_duplicate_reason_appraisals(plan.nuclei, plan.relations, resolver)
+        if (repeated and not reason_appraisal_relations
+            and set(planned_line.binding.nucleus_ids) == {n.nucleus_id for g in repeated for n in g}):
+            rows = tuple(_body_inverse_visible_text(body, row) for row in witness.sentences
+                         if row.section == 'observation' and row.section_line_ordinal == parsed_line.section_ordinal)
+            reason = re.fullmatch(r'「([^「」『』\n]+)」を理由として、「([^「」『』\n]+)」へつながっています。', rows[0]) if len(rows) == 2 else None
+            appraisal = re.fullmatch(r'「([^「」『』\n]+)」という出来事に対する評価は、「([^「」『』\n]+)」とあります。', rows[1]) if len(rows) == 2 else None
+            expected = tuple(tuple(_body_inverse_nucleus_source_values(n.nucleus_id, plan, resolver)
+                                   for n in group) for group in repeated)
+            ids = set(planned_line.binding.nucleus_ids)
+            required = {r.relation_id for r in plan.relations if r.retention == 'required'
+                        and ids & {r.from_nucleus_id, r.to_nucleus_id}}
+            actual = (tuple(map(_body_inverse_normalized_anchor,
+                (reason[1], appraisal[1], reason[2]))) if reason and appraisal else ())
+            if (len(required) != 4 or set(planned_line.binding.relation_ids) != required
+                or not actual or reason[2] != appraisal[2]
+                or any(len(values) != 1 for group in expected for values in group)
+                or any(tuple(values[0] for values in group) != actual for group in expected)):
+                failures.append(f'body_inverse_duplicate_appraisal_scope_mismatch:{index}')
+        for relation_id in planned_line.binding.relation_ids:
+            relation = relation_index.get(relation_id)
+            if relation is None:
+                failures.append(f"body_inverse_required_relation_missing:{index}")
+                continue
+            if relation_id in snapshot_relations or relation_id in unfinished_appraisal_relations:
+                # The complete source-bound clause independently proved these
+                # two edges. Its shared evaluation need not be quoted twice.
+                continue
+            allowed_markers = _BODY_INVERSE_RELATION_MARKERS_BY_TYPE.get(
+                relation.type,
+                frozenset(),
+            )
+            if relation_id not in direct_relations and allowed_markers and not (
+                set(parsed_line.relation_marker_codes) & allowed_markers
+            ):
+                failures.append(
+                    f"body_inverse_relation_type_marker_mismatch:{index}"
+                )
+            from_values = _body_inverse_nucleus_source_values(
+                relation.from_nucleus_id,
+                plan,
+                resolver,
+            )
+            to_values = _body_inverse_nucleus_source_values(
+                relation.to_nucleus_id,
+                plan,
+                resolver,
+            )
+            # A thread's explicit contrast owes each complete source operand.
+            # A shorter adjective cannot stand in for its degree or negation,
+            # including when the complete words occur in another source group.
+            chain_from = nucleus_index[relation.from_nucleus_id]
+            chain_to = nucleus_index[relation.to_nucleus_id]
+            from emlis_ai_grounded_observation_plan import source_owned_result_appraisal_context
+            unfinished_appraisal = relation.type == "contrast" and any(
+                r.to_nucleus_id == chain_to.nucleus_id
+                and source_owned_result_appraisal_context(r, plan.nuclei, plan.relations) == chain_from
+                for r in plan.relations if r.type == "evaluation_about_event"
+            )
+            if unfinished_appraisal:
+                # Present unfinished fact and past appraisal retain separate
+                # time scopes. Read the complete contrast grammar from bytes.
+                pairs = []
+                for row in witness.sentences:
+                    if row.section != "observation" or row.section_line_ordinal != parsed_line.section_ordinal:
+                        continue
+                    visible = _body_inverse_visible_text(body, row)
+                    pair = re.fullmatch(r"「([^「」『』\n]+)」の一方で「([^「」『』\n]+)」とあります。", visible)
+                    if pair:
+                        pairs.append(pair.groups())
+                if not any(_body_inverse_normalized_anchor(left) in from_values
+                           and _body_inverse_normalized_anchor(right) in to_values
+                           for left, right in pairs):
+                    failures.append(f"body_inverse_unfinished_appraisal_contrast_missing:{index}")
+            exact_chain = (len(chain_from.source_span_ids) == 1
+                and chain_from.source_span_ids == chain_to.source_span_ids
+                and all("semantic_dependency:received_feeling_contrast_chain" in n.semantic_frame.attribute_codes
+                        for n in (chain_from, chain_to))
+                and any("source_received_chain_slot:" + left in chain_from.semantic_frame.attribute_codes
+                        and "source_received_chain_slot:" + right in chain_to.semantic_frame.attribute_codes
+                        for left, right in (("event", "first"), ("first", "second"))))
+            scoped_feeling_contrast = (
+                "lexical:source_nominal_past_feeling" in chain_from.semantic_frame.attribute_codes
+                and "lexical:source_cognitive_feeling" in chain_to.semantic_frame.attribute_codes
+                and chain_from.semantic_frame.time_scope == "past"
+                and chain_to.semantic_frame.time_scope in {"present", "current_input"}
+                and all(n.kind == "reaction" and n.semantic_frame.predicate_kind == "feeling"
+                        for n in (chain_from, chain_to)))
+            separate_time_contrast = relation_id in separate_time_contrast_ids
+            neutral_time_contrast = scoped_feeling_contrast or separate_time_contrast
+            initial_received_contrast = bool(initial_personal and relation_id == initial_personal[-1].relation_id)
+            mixed_received_rows = mixed_received_reports.get(relation_id, ())
+            exact_contrast = separate_time_contrast or (relation.type == "contrast"
+                and getattr(resolver, "source_contract", None) == "cocolon.cmee.emlis_thread.v1"
+                and (nucleus_index[relation.from_nucleus_id].kind == "event" or exact_chain or scoped_feeling_contrast)
+                and nucleus_index[relation.to_nucleus_id].kind == "reaction"
+                and nucleus_index[relation.to_nucleus_id].semantic_frame.predicate_kind == "feeling"
+                and all(nucleus_index[nid].source_fields in {("memo",), ("memo_action",)}
+                        and nucleus_index[nid].grounding_kind == "explicit"
+                        for nid in (relation.from_nucleus_id, relation.to_nucleus_id)))
+            if (exact_contrast and planned_line.surface_function in {"observe_relation", "observe_nuclei_with_relations"}
+                and "scope_hedge" not in planned_line.binding.functional_atom_ids
+                and (exact_chain
+                     or not any(r.type == "evaluation_about_event" and r.from_nucleus_id == relation.from_nucleus_id
+                                for r in plan.relations))
+                and relation_id not in grouped_relations):
+                # New reports must be consumed by their complete grammar.
+                # A marker in another pair or inside a quote cannot legitimize
+                # changing this pair to a cause, unrelated list or extra claim.
+                legacy_pairs = []
+                for row in witness.sentences:
+                    if row.section != "observation" or row.section_line_ordinal != parsed_line.section_ordinal:
+                        continue
+                    visible = _body_inverse_visible_text(body, row)
+                    singleton = re.fullmatch(r"「([^「」『』\n]+)」と「([^「」『』\n]+)」が、"
+                        r"異なる向きのまま同時にあります。", visible)
+                    # Different source times do not authorize simultaneity.
+                    if neutral_time_contrast:
+                        singleton = None
+                    if initial_received_contrast:
+                        # The newly qualified original experience has its own
+                        # finite report. Its source connective, endpoints and
+                        # full sentence are independently read from bytes.
+                        links = tuple(c.split(':')[1] for c in chain_from.semantic_frame.attribute_codes
+                                      if c.startswith('source_received_event_link:'))
+                        link_text = {'noni': 'のに', 'kedo': 'けど', 'keredo': 'けれど', 'keredomo': 'けれども'}
+                        singleton = re.fullmatch(r'「([^「」『』\n]+)」' + re.escape(link_text[links[0]])
+                            + r'「([^「」『』\n]+)」という経験が書かれています。', visible)
+                    elif singleton is None:
+                        if mixed_received_rows:
+                            link_text = {'noni': 'のに', 'kedo': 'けど', 'keredo': 'けれど', 'keredomo': 'けれども'}
+                            singleton = re.fullmatch(r'「([^「」『』\n]+)」' + re.escape(link_text[mixed_received_rows[0][-1]])
+                                + r'「([^「」『』\n]+)」という経験が書かれています。', visible)
+                        if singleton is None:
+                            singleton = re.fullmatch(r"「([^「」『』\n]+)」の一方で「([^「」『』\n]+)」とあります。", visible)
+                    operand = r"「([^「」『』\n]+)」の一方で「([^「」『』\n]+)」"
+                    if singleton:
+                        legacy_pairs.append(singleton.groups())
+                    elif not (neutral_time_contrast or initial_received_contrast) and re.fullmatch(rf"(?:{operand}、また)+{operand}という、それぞれ異なる向きが並んでいます。", visible):
+                        legacy_pairs.extend(re.findall(operand, visible))
+                if ((neutral_time_contrast or initial_received_contrast or mixed_received_rows) and len(planned_line.binding.relation_ids) == 1
+                    and set(planned_line.binding.nucleus_ids) <= {
+                        relation.from_nucleus_id, relation.to_nucleus_id}
+                    and (len(legacy_pairs) != 1 or sum(row.section == "observation"
+                        and row.section_line_ordinal == parsed_line.section_ordinal
+                        for row in witness.sentences) != 1)):
+                    failures.append(f"body_inverse_contrast_report_unbound_sentence:{index}")
+                if not any(_body_inverse_normalized_anchor(left) in from_values
+                           and _body_inverse_normalized_anchor(right) in to_values
+                           for left, right in legacy_pairs):
+                    failures.append(f"body_inverse_contrast_report_missing:{index}")
+            from_positions = tuple(
+                quote_index
+                for quote_index, quote_text in enumerate(normalized_quote_texts)
+                if any(
+                    quote_text == source_text if exact_contrast else _body_inverse_anchor_matches(quote_text, source_text)
+                    for source_text in from_values
+                )
+            )
+            to_positions = tuple(
+                quote_index
+                for quote_index, quote_text in enumerate(normalized_quote_texts)
+                if any(
+                    quote_text == source_text if exact_contrast else _body_inverse_anchor_matches(quote_text, source_text)
+                    for source_text in to_values
+                )
+            )
+            if final_stage1_plan and (
+                not from_positions or not to_positions
+            ):
+                failures.append(
+                    f"body_inverse_relation_endpoint_missing:{index}"
+                )
+            if (
+                relation.type in DIRECTIONAL_GROUNDED_RELATION_TYPES
+                and relation_id not in reason_appraisal_relations
+                and relation_id not in grouped_relations
+                and relation_id not in shared_change_relations
+                and from_positions
+                and to_positions
+                and not any(
+                    to_position == from_position + 1
+                    for from_position in from_positions
+                    for to_position in to_positions
+                )
+            ):
+                failures.append(f"body_inverse_relation_direction_reversed:{index}")
+            if relation.type == "contrast" and len(planned_line.binding.relation_ids) > 1:
+                # Each visible pair must remain adjacent, even when several
+                # independent pairs share a single coordinated predicate.
+                if not any(b == a + 1 for a in from_positions for b in to_positions):
+                    failures.append(f"body_inverse_contrast_pair_crossed:{index}")
+            # The typed event/past-feeling sentence owes both complete clauses,
+            # their ordered contrast, and a past (not current or causal) reading.
+            # Recover these duties from source and body bytes, never author replay.
+            if (final_stage1_plan and relation.type == "contrast"
+                and len(planned_line.binding.relation_ids) == 1):
+                event = nucleus_index[relation.from_nucleus_id]
+                feeling = nucleus_index[relation.to_nucleus_id]
+                sentence_rows = tuple(row for row in witness.sentences
+                    if row.section == "observation"
+                    and row.section_line_ordinal == parsed_line.section_ordinal)
+                if sentence_rows:
+                    first_sentence = _body_inverse_visible_text(body, sentence_rows[0])
+                    exterior = re.sub(r"「[^「」]*」|『[^『』]*』", "", first_sentence)
+                    if "という経緯" in exterior or "という気持ちも" in exterior:
+                        supported = (
+                            event.kind == "event" and event.semantic_frame.modality == "fact"
+                            and feeling.kind == "reaction"
+                            and feeling.semantic_frame.predicate_kind == "feeling"
+                            and feeling.semantic_frame.modality == "feeling"
+                            and feeling.semantic_frame.polarity == "positive"
+                            and feeling.semantic_frame.time_scope == "past"
+                            and "lexical:source_nominal_past_feeling" in feeling.semantic_frame.attribute_codes
+                            and all(n.semantic_frame.actor == "current_user"
+                                and n.grounding_kind == "explicit" and n.source_fields == ("memo",)
+                                and len(n.source_span_ids) == 1
+                                and not _body_inverse_action_is_performed(n)
+                                and not _body_inverse_action_is_future_intention(n)
+                                and not any(c.startswith(("source_fragment_scalar_", "surface_scalar_", "thread_time:"))
+                                    or c == "semantic_role:generic_relation_fragment"
+                                    for c in n.semantic_frame.attribute_codes)
+                                for n in (event, feeling)))
+                        originals = tuple(str(resolver.resolve(n.source_span_ids[0]).raw_text or "").strip(" \u3000、,。．.")
+                                          for n in (event, feeling)) if supported else ()
+                        matched = re.fullmatch(r"「([^「」]+)」という経緯があった一方で、"
+                            r"「([^「」]+)」という気持ちもあったのですね。", first_sentence)
+                        if (not supported or not matched
+                            or not re.search(r"(?:かった|[てで]いた|た|だ)$", originals[0])
+                            or any(re.search(r"[「」『』“”‘’\"?？!！。;；…‥\n]", text) for text in originals)
+                            or tuple(map(_body_inverse_normalized_anchor, matched.groups()))
+                               != tuple(map(_body_inverse_normalized_anchor, originals))):
+                            failures.append(f"body_inverse_past_feeling_contrast_scope_mismatch:{index}")
+            if (relation.type == "evaluation_about_event"
+                    and getattr(resolver, "source_contract", None) == "cocolon.cmee.emlis_thread.v1"):
+                left_sources = _body_inverse_nucleus_source_values(relation.from_nucleus_id, plan, resolver)
+                right_sources = _body_inverse_nucleus_source_values(relation.to_nucleus_id, plan, resolver)
+                from emlis_ai_grounded_observation_plan import source_owned_result_appraisal
+                if source_owned_result_appraisal(relation, plan.nuclei):
+                    if relation_id in reason_appraisal_relations:
+                        continue
+                    # Read the whole original-input relation. It has no answer
+                    # time and cannot borrow the supplemental-answer grammar.
+                    matches = []
+                    appraisal_line_relations = tuple(relation_index[rid] for rid in planned_line.binding.relation_ids)
+                    owned = tuple(sorted((r for r in appraisal_line_relations if source_owned_result_appraisal(r, plan.nuclei)),
+                        key=lambda r: int(nucleus_index[r.from_nucleus_id].source_span_ids[0][1:])))
+                    for row in witness.sentences:
+                        if row.section != "observation" or row.section_line_ordinal != parsed_line.section_ordinal:
+                            continue
+                        visible = _body_inverse_visible_text(body, row)
+                        if len(owned) > 1 and len(owned) == len(appraisal_line_relations):
+                            operand = r'「([^「」『』\n]+)」という出来事に対する(当時|入力した時点|回答した時点|先の回答時点)の評価は「([^「」『』\n]+)」'
+                            if re.fullmatch(operand + r'(?:、また' + operand + r')+と書かれています。', visible):
+                                pieces = re.findall(operand, visible)
+                                expected = tuple((
+                                    _body_inverse_nucleus_source_values(r.from_nucleus_id, plan, resolver)[0],
+                                    _body_inverse_appraisal_time(nucleus_index[r.to_nucleus_id]),
+                                    _body_inverse_nucleus_source_values(r.to_nucleus_id, plan, resolver)[0]) for r in owned)
+                                actual = tuple((_body_inverse_normalized_anchor(a), t, _body_inverse_normalized_anchor(b))
+                                               for a, t, b in pieces)
+                                if actual == expected:
+                                    matches.append(row)
+                            continue
+                        evaluation = nucleus_index[relation.to_nucleus_id]
+                        at = (_body_inverse_appraisal_time(evaluation) + "の") if (
+                            evaluation.source_fields == ("answer_text_private",)) else ""
+                        parsed = re.fullmatch(r"「([^「」]+)」という出来事に対する" + at + r"評価は、「([^「」]+)」とあります。", visible)
+                        if parsed and (tuple(map(_body_inverse_normalized_anchor, parsed.groups()))
+                                       == (left_sources[0], right_sources[0])):
+                            matches.append(parsed)
+                    if len(matches) != 1:
+                        failures.append(f"body_inverse_original_appraisal_relation_missing:{index}")
+                    continue
+                target_codes = set(nucleus_index[relation.to_nucleus_id].semantic_frame.attribute_codes)
+                when = "先の回答時点" if "thread_time:prior_answer_time" in target_codes else "回答した時点" if "thread_time:answer_time" in target_codes else "その時"
+                # Read the whole sentence before extracting its local
+                # event/time/answer clauses. Legal clauses must not hide an
+                # added cause or actor between them, nor borrow another
+                # clause's time when the two answers have identical text.
+                evaluation_clauses = []
+                shared_time_relation_ids = set()
+                grammars = (
+                    (r"((?:先|間|後)に書かれた)?「([^「」]+)」ことについて、(先の回答時点|回答した時点|その時)"
+                     r"の受け止めは「([^「」]+)」", "とあり、また", "と書かれています。"),
+                    (r"()「([^「」]+)」ことに対する(先の回答時点|回答した時点|その時)"
+                     r"の受け止めとして、「([^「」]+)」", "、また", r"が(?:見えます|示されています)。"),
+                )
+                for row in witness.sentences:
+                    if row.section != "observation" or row.section_line_ordinal != parsed_line.section_ordinal:
+                        continue
+                    visible = _body_inverse_visible_text(body, row).removeprefix("今の入力だけを見ると、")
+                    shared_time = re.fullmatch(
+                        r"それぞれの出来事について、(先の回答時点|回答した時点|その時)の受け止めとして、"
+                        r"((?:「[^「」『』\n]+」ことには「[^「」『』\n]+」、)+"
+                        r"「[^「」『』\n]+」ことには「[^「」『』\n]+」)と書かれています。", visible)
+                    if shared_time:
+                        pairs = re.findall(r"「([^「」『』\n]+)」ことには「([^「」『』\n]+)」", shared_time[2])
+                        matched_relations = []
+                        for event, answer in pairs:
+                            matches = tuple(r for r in plan.relations
+                                if r.relation_id in planned_line.binding.relation_ids
+                                and r.type == "evaluation_about_event"
+                                and r.relation_id not in grouped_relations
+                                and _body_inverse_nucleus_source_values(r.from_nucleus_id, plan, resolver)
+                                    == (_body_inverse_normalized_anchor(event),)
+                                and _body_inverse_nucleus_source_values(r.to_nucleus_id, plan, resolver)
+                                    == (_body_inverse_normalized_anchor(answer),)
+                                and {c for c in nucleus_index[r.to_nucleus_id].semantic_frame.attribute_codes
+                                     if c.startswith("thread_time:")} == {"thread_time:" + {
+                                         "その時": "original_occasion", "回答した時点": "answer_time",
+                                         "先の回答時点": "prior_answer_time"}[shared_time[1]]})
+                            if len(matches) != 1:
+                                break
+                            matched_relations.append(matches[0])
+                        span_order = {sid: pos for pos, sid in enumerate(resolver.span_ids)}
+                        positions = [min((span_order[sid] for sid in nucleus_index[r.from_nucleus_id].source_span_ids),
+                                         default=-1) for r in matched_relations]
+                        bound_event_positions = sorted({min((span_order[sid]
+                            for sid in nucleus_index[r.from_nucleus_id].source_span_ids), default=-1)
+                            for r in plan.relations if r.relation_id in planned_line.binding.relation_ids})
+                        pair_slots = [bound_event_positions.index(pos) for pos in positions]
+                        matched_ids = {r.relation_id for r in matched_relations}
+                        if (len(matched_relations) != len(pairs)
+                            or len(matched_ids) != len(pairs)
+                            or shared_time_relation_ids & matched_ids
+                            or positions != sorted(set(positions))
+                            or pair_slots != list(range(pair_slots[0], pair_slots[0] + len(pair_slots)))):
+                            failures.append(f"body_inverse_answer_target_relation_missing:{index}")
+                        else:
+                            shared_time_relation_ids.update(matched_ids)
+                            evaluation_clauses.extend(("", event, shared_time[1], answer) for event, answer in pairs)
+                    for operand, connector, ending in grammars:
+                        if re.fullmatch(rf"(?:{operand}{connector})*{operand}{ending}", visible):
+                            evaluation_clauses.extend(re.findall(operand, visible))
+                positions = _read_received_record_prefixes(plan, resolver)
+                owned_clauses = [clause for clause in evaluation_clauses
+                        if _body_inverse_normalized_anchor(clause[1]) in left_sources
+                        and clause[2] == when
+                        and _body_inverse_normalized_anchor(clause[3]) in right_sources
+                        and (not clause[0] or positions.get(relation.from_nucleus_id) == clause[0] + "方では、")]
+                if relation_id not in grouped_relations and not (any(b == a + 1 for a in from_positions for b in to_positions) and
+                        owned_clauses and (not any(clause[0] for clause in owned_clauses) or len(owned_clauses) == 1)):
+                    failures.append(f"body_inverse_answer_target_relation_missing:{index}")
+        if (
+            planned_line.binding.line_role == "fact_boundary"
+            and "fact_boundary" not in parsed_line.uncertainty_marker_codes
+        ):
+            failures.append(f"body_inverse_fact_boundary_marker_missing:{index}")
+        if (
+            planned_line.binding.line_role == "limited_opposition"
+            and not set(parsed_line.relation_marker_codes)
+            & {"counterdirection", "coexistence"}
+        ):
+            failures.append(f"body_inverse_limited_opposition_marker_missing:{index}")
+        required_nuclei = tuple(
+            nucleus_index[nucleus_id]
+            for nucleus_id in planned_line.binding.nucleus_ids
+            if nucleus_id in nucleus_index
+            and nucleus_id in set(plan.coverage_requirements.required_nucleus_ids)
+        )
+        # An undivided current feeling or proven denied report still owes its
+        # complete scene/host in Layer 1, independently of its Layer 2 referent.
+        # Substring matching must not accept deleting that scene merely because
+        # the remaining feeling names the Layer 2 referent. Typed fragments and
+        # relation surfaces retain their separate source obligations.
+        if (
+            final_stage1_plan
+            and not plan.relations
+            and len(required_nuclei) == 1
+            and sum(bool(set(item.source_fields) & {"memo", "memo_action"})
+                    for item in plan.nuclei) == 1
+        ):
+            whole_nucleus = required_nuclei[0]
+            frame = whole_nucleus.semantic_frame
+            if (
+                (
+                    whole_nucleus.source_fields == ("memo",)
+                    and is_grounded_positive_feeling(whole_nucleus)
+                    and frame.time_scope in {"present", "current_input"}
+                    or whole_nucleus.source_fields in {("memo",), ("memo_action",)}
+                    and whole_nucleus.kind == frame.predicate_kind == "state"
+                    and frame.polarity == "negative" and frame.modality == "fact"
+                    and frame.time_scope == "past"
+                    and "lexical:source_denied_past_thought_report" in frame.attribute_codes
+                )
+                and len(whole_nucleus.source_span_ids) == 1
+                and frame.actor == "current_user"
+                and not any(
+                    code == "semantic_role:generic_relation_fragment"
+                    or code.startswith(("source_fragment_scalar_", "surface_scalar_"))
+                    for code in frame.attribute_codes
+                )
+            ):
+                whole_sources = _body_inverse_nucleus_source_values(
+                    whole_nucleus.nucleus_id, plan, resolver
+                )
+                if not whole_sources or any(
+                    not any(source_text in quote_text for quote_text in normalized_quote_texts)
+                    for source_text in whole_sources
+                ):
+                    failures.append(f"body_inverse_observation_source_anchor_incomplete:{index}")
+        required_kinds = {item.kind for item in required_nuclei}
+        # Each finite appraisal retains its complete host independently of
+        # the other layer. A surviving adjective must not stand in for a
+        # deleted tentative host, nor a verb for its nominalized evaluation.
+        for nucleus in required_nuclei:
+            if final_stage1_plan and {"lexical:source_appraisal_tentative",
+                    "lexical:source_appraisal_alternative"} & set(nucleus.semantic_frame.attribute_codes):
+                source_values = _body_inverse_nucleus_source_values(nucleus.nucleus_id, plan, resolver)
+                if not source_values or any(not any(value in quote for quote in normalized_quote_texts)
+                                            for value in source_values):
+                    failures.append(f"body_inverse_appraisal_host_incomplete:{index}")
+        if getattr(resolver, "source_contract", None) == "cocolon.cmee.emlis_thread.v1":
+            from emlis_ai_grounded_observation_plan import (
+                _thread_withdrawn_original_reaction, _thread_revised_original_reaction,
+                _thread_withdrawn_result_appraisal, source_owned_result_appraisal,
+            )
+            visible_line = _body_inverse_visible_text(body, parsed_line)
+            original_feelings = tuple(source for n in required_nuclei
+                if (source := _body_inverse_original_record_feeling(n, plan, resolver)))
+            original_reports = tuple(_body_inverse_visible_text(body, row) for row in witness.sentences
+                if row.section == "observation" and row.section_line_ordinal == parsed_line.section_ordinal)
+            if (visible_line.count("最初の記録には、") != len(original_feelings)
+                or any(original_reports.count("最初の記録には、「" + source
+                    + "」という当時の気持ちも書かれています。") != 1 for source in original_feelings)):
+                failures.append(f"body_inverse_original_record_feeling_scope_mismatch:{index}")
+            if not _body_inverse_intervening_events(body, witness, parsed_line, planned_line, plan, resolver):
+                failures.append(f"body_inverse_independent_event_scope_mismatch:{index}")
+            detached_nuclei = tuple(nucleus_index[nid] for nid in planned_line.binding.nucleus_ids)
+            past = tuple(n for n in detached_nuclei if any(c.startswith('source_past_self_unknown:')
+                for c in n.semantic_frame.attribute_codes))
+            if past:
+                from emlis_ai_grounded_observation_plan import _source_past_self_unknown_from_resolver
+                group = _source_past_self_unknown_from_resolver(plan.nuclei, plan.relations, resolver)
+                if (not group or past != group[:1] or len(detached_nuclei) != 1
+                    or planned_line.binding.relation_ids
+                    or planned_line.binding.evidence_span_ids != past[0].source_span_ids
+                    or visible_line != 'その時の認識として、「' + resolver.resolve(past[0].source_span_ids[0]).raw_text + '」とあります。'):
+                    failures.append(f'body_inverse_past_unknown_observation_mismatch:{index}')
+            if (detached_nuclei and not planned_line.binding.relation_ids
+                and (len(detached_nuclei) > 1 or all(
+                    (n.kind, n.semantic_frame.predicate_kind, n.semantic_frame.modality)
+                        == ("reaction", "feeling", "feeling")
+                    and (n.source_fields == ("answer_text_private",)
+                         or _thread_withdrawn_original_reaction(n, plan.relations)
+                         or _thread_withdrawn_result_appraisal(n, plan.relations))
+                    for n in detached_nuclei))
+                and all("thread_subject:withdrawn_source_event" in n.semantic_frame.attribute_codes
+                        or _thread_revised_original_reaction(n, plan.relations, polarity=n.semantic_frame.polarity)
+                        for n in detached_nuclei)
+                and not _body_inverse_detached_observation(visible_line, detached_nuclei, plan, resolver)):
+                failures.append(f"body_inverse_detached_feeling_scope_mismatch:{index}")
+            for nucleus in required_nuclei:
+                if nucleus.source_fields != ("answer_text_private",):
+                    continue
+                source_values = _body_inverse_nucleus_source_values(nucleus.nucleus_id, plan, resolver)
+                if not source_values or any(not any(value in quote for quote in normalized_quote_texts)
+                                            for value in source_values):
+                    failures.append(f"body_inverse_answer_source_anchor_incomplete:{index}")
+                times = {code.split(":", 1)[1] for code in nucleus.semantic_frame.attribute_codes
+                         if code.startswith("thread_time:")}
+                expected = "先の回答時点" if times == {"prior_answer_time"} else "回答した時点" if times == {"answer_time"} else "その時" if times == {"original_occasion"} else None
+                if times == {"original_occasion"} and _thread_revised_original_reaction(
+                    nucleus, plan.relations, polarity=nucleus.semantic_frame.polarity):
+                    expected = "当時"
+                if (_thread_withdrawn_result_appraisal(nucleus, plan.relations)
+                    or any(r.to_nucleus_id == nucleus.nucleus_id
+                           and source_owned_result_appraisal(r, plan.nuclei) for r in plan.relations)):
+                    expected = _body_inverse_appraisal_time(nucleus) + "の評価"
+                if expected is None or expected not in visible_line:
+                    failures.append(f"body_inverse_answer_target_time_missing:{index}")
+            from emlis_ai_grounded_observation_plan import is_grounded_current_answer_uncertainty
+            revised_reactions = tuple(n for n in required_nuclei
+                if _thread_revised_original_reaction(n, plan.relations, polarity=n.semantic_frame.polarity))
+            detached_states = tuple(n for n in required_nuclei
+                if "thread_subject:withdrawn_source_event" in n.semantic_frame.attribute_codes
+                and is_grounded_current_answer_uncertainty(n))
+            line_rows = tuple(row for row in witness.sentences
+                if row.section == "observation"
+                and row.section_line_ordinal == parsed_line.section_ordinal)
+            # A surviving feeling is a complete source report even when it
+            # shares a planned line with unrelated events. Read its own
+            # sentence, not a source/time token borrowed from that line.
+            detached_reports = tuple(n for n in required_nuclei
+                if n.source_fields in {("answer_text_private",), ("memo",), ("memo_action",)}
+                and "thread_subject:withdrawn_source_event" in n.semantic_frame.attribute_codes
+                and (n.kind, n.semantic_frame.predicate_kind, n.semantic_frame.modality)
+                    == ("reaction", "feeling", "feeling")
+                and not any(n.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id) for r in plan.relations))
+            if planned_line.binding.relation_ids or len(detached_nuclei) == 1:
+                answer_rows = []
+                for nucleus in detached_reports:
+                    rows = tuple(row for row in line_rows if _body_inverse_detached_observation(
+                        _body_inverse_visible_text(body, row).removeprefix("また、"),
+                        (nucleus,), plan, resolver))
+                    if len(rows) != 1 or rows[0] in answer_rows:
+                        failures.append(f"body_inverse_detached_source_scope_mismatch:{index}")
+                    else:
+                        answer_rows.append(rows[0])
+            independent_tail = line_rows[-len(revised_reactions) - len(detached_states):]
+            if revised_reactions:
+                # In this bounded contrast/answer graph, every sentence
+                # belongs to an event duty or to an independent tail duty.
+                # Extra prose before the tail cannot invent another relation.
+                relations = tuple(r for r in plan.relations
+                    if r.relation_id in planned_line.binding.relation_ids)
+                endpoints = {nid for r in relations for nid in (r.from_nucleus_id, r.to_nucleus_id)}
+                independent_ids = {n.nucleus_id for n in (*revised_reactions, *detached_states)}
+                if (relations and {r.type for r in relations} <= {"contrast", "evaluation_about_event"}
+                    and set(planned_line.binding.nucleus_ids) - endpoints == independent_ids):
+                    contrasts = tuple(r for r in relations if r.type == "contrast")
+                    answers = tuple(r for r in relations if r.type == "evaluation_about_event")
+                    shared_events = {r.from_nucleus_id for r in contrasts} & {r.from_nucleus_id for r in answers}
+                    remaining_contrasts = sum(r.from_nucleus_id not in shared_events for r in contrasts)
+                    compact_ids = {rid for group in contrast_groups for rid in group}
+                    remaining_contrasts -= sum(r.relation_id in compact_ids for r in contrasts)
+                    separate_answer_times = {tuple(c for c in nucleus_index[r.to_nucleus_id].semantic_frame.attribute_codes
+                        if c.startswith("thread_time:")) for r in answers if r.from_nucleus_id not in shared_events}
+                    event_sentences = (len(shared_events)
+                        + len(contrast_groups)
+                        + (remaining_contrasts if shared_events else int(bool(remaining_contrasts)))
+                        + len(separate_answer_times))
+                    if len(line_rows) != event_sentences + len(independent_ids):
+                        failures.append(f"body_inverse_revised_reaction_scope_mismatch:{index}")
+            for nucleus in revised_reactions:
+                if (not planned_line.binding.relation_ids
+                    and _body_inverse_detached_observation(visible_line, detached_nuclei, plan, resolver)):
+                    continue
+                # Bind this replacement to its own complete independent
+                # sentence. Another answer's time token is not its proof.
+                rows = tuple(row for row in witness.sentences
+                    if row.section == "observation"
+                    and row.section_line_ordinal == parsed_line.section_ordinal
+                    and _body_inverse_detached_observation(
+                        _body_inverse_visible_text(body, row).removeprefix("また、"),
+                        (nucleus,), plan, resolver, correction_answer_source=True))
+                if (len(independent_tail) != len(revised_reactions) + len(detached_states)
+                    or len(rows) != 1
+                    or rows[0] != independent_tail[revised_reactions.index(nucleus)]):
+                    failures.append(f"body_inverse_revised_reaction_scope_mismatch:{index}")
+            if detached_states:
+                # Read one complete final sentence per independent state. A
+                # time token or matching quote elsewhere in this line cannot
+                # discharge that answer's own source/time obligation.
+                line_rows = tuple(row for row in witness.sentences
+                    if row.section == "observation"
+                    and row.section_line_ordinal == parsed_line.section_ordinal)
+                state_pattern = (r"(?:今の入力だけを見ると、|また、)?(回答した時点|先の回答時点)では、"
+                                 r"「([^「」]+)」と(?:書かれています|記されています)。")
+                state_rows = line_rows[-len(detached_states):]
+                state_count = sum(re.fullmatch(state_pattern, _body_inverse_visible_text(body, row)) is not None
+                                  for row in line_rows)
+                if len(state_rows) != len(detached_states) or state_count != len(detached_states):
+                    failures.append(f"body_inverse_detached_answer_state_scope_mismatch:{index}")
+                else:
+                    for nucleus, row in zip(detached_states, state_rows, strict=True):
+                        source_values = _body_inverse_nucleus_source_values(nucleus.nucleus_id, plan, resolver)
+                        expected = ("先の回答時点" if "thread_time:prior_answer_time" in nucleus.semantic_frame.attribute_codes
+                                    else "回答した時点")
+                        state = re.fullmatch(state_pattern, _body_inverse_visible_text(body, row))
+                        if (state is None or state.group(1) != expected or len(source_values) != 1
+                            or _normalized(state.group(2)) != source_values[0]
+                            or any(nucleus.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id) for r in plan.relations)):
+                            failures.append(f"body_inverse_detached_answer_state_scope_mismatch:{index}")
+        if (any(n.kind == "change" and n.nucleus_id not in direct_nuclei for n in required_nuclei)
+            and "change" not in parsed_line.semantic_marker_codes
+            and not direct_provisional):
+            failures.append(f"body_inverse_required_change_missing:{index}")
+        if (
+            "constraint" in required_kinds
+            and "constraint" not in parsed_line.semantic_marker_codes
+        ):
+            failures.append(f"body_inverse_required_constraint_missing:{index}")
+        if (
+            (
+                "uncertainty" in required_kinds
+                or any(
+                    "semantic_role:limiting_unknown"
+                    in item.semantic_frame.attribute_codes
+                    for item in required_nuclei
+                )
+            )
+            and "unknown" not in parsed_line.semantic_marker_codes
+            and not parsed_line.uncertainty_marker_codes
+            # This exact finite host already states the unresolved object.
+            # A changed/deleted host fails the complete source match above.
+            and not direct_decision
+            and not all(item.nucleus_id in direct_nuclei for item in required_nuclei
+                if item.kind == "uncertainty" or "semantic_role:limiting_unknown" in item.semantic_frame.attribute_codes)
+        ):
+            failures.append(f"body_inverse_required_unknown_missing:{index}")
+        required_future_intention = any(
+            item.kind == "wish"
+            and item.semantic_frame.modality in {"wish", "intention"}
+            for item in required_nuclei
+        ) or (
+            final_stage1_plan
+            and any(
+                _body_inverse_action_is_future_intention(item)
+                for item in required_nuclei
+            )
+        )
+        if (
+            required_future_intention
+            and "intention" not in parsed_line.semantic_marker_codes
+        ):
+            failures.append(f"body_inverse_required_intention_missing:{index}")
+        required_effort = (
+            any(
+                _body_inverse_action_is_performed(item) and item.nucleus_id not in direct_nuclei
+                for item in required_nuclei
+            )
+            if final_stage1_plan
+            else "action" in required_kinds
+        )
+        if (
+            required_effort
+            and "effort" not in parsed_line.semantic_marker_codes
+        ):
+            failures.append(f"body_inverse_required_effort_missing:{index}")
+
+    # Only actual body bytes that passed the whole Layer-1 inverse may
+    # license a Layer-2 short reference. Never render an expected Observation.
+    preceding_observation = ('\n'.join(_body_inverse_visible_text(body, line)
+        for line in observation_lines) if not failures else None)
+
+    for index, (parsed_line, planned_line) in enumerate(
+        zip(reception_lines, planned_reception_lines),
+        start=1,
+    ):
+        if not parsed_line.reception_marker_codes:
+            failures.append(f"body_inverse_reception_response_marker_missing:{index}")
+        if (
+            "reception_speaker:explicit_emlis"
+            in planned_line.binding.functional_atom_ids
+            and "emlis_voice" not in parsed_line.reception_marker_codes
+        ):
+            failures.append(f"body_inverse_explicit_emlis_voice_missing:{index}")
+        quote_rows = quotes_for_line("reception", parsed_line.section_ordinal)
+        expected_sources = _body_inverse_source_values(planned_line, plan, resolver)
+        for quote_row in quote_rows:
+            try:
+                quote_text = _body_inverse_normalized_anchor(
+                    _body_inverse_quote_text(body, quote_row)
+                )
+            except (UnicodeDecodeError, ValueError):
+                failures.append(f"body_inverse_reception_quote_bytes_invalid:{index}")
+                continue
+            matches = tuple(
+                source_index
+                for source_index, source_text in enumerate(expected_sources)
+                if _body_inverse_anchor_matches(quote_text, source_text)
+            )
+            if not matches:
+                failures.append(f"body_inverse_unbound_reception_quote:{index}")
+                continue
+
+        atom_values = set(planned_line.binding.functional_atom_ids)
+        min_values = tuple(
+            int(atom.rsplit(":", 1)[1])
+            for atom in atom_values
+            if atom.startswith("reception_sentence_min:")
+            and atom.rsplit(":", 1)[1].isdigit()
+        )
+        max_values = tuple(
+            int(atom.rsplit(":", 1)[1])
+            for atom in atom_values
+            if atom.startswith("reception_sentence_max:")
+            and atom.rsplit(":", 1)[1].isdigit()
+        )
+        if min_values and parsed_line.sentence_count < min_values[0]:
+            failures.append(f"body_inverse_reception_sentence_underflow:{index}")
+        if max_values and parsed_line.sentence_count > max_values[0]:
+            failures.append(f"body_inverse_reception_sentence_overflow:{index}")
+
+        reception_plan = plan.response_plan.human_reception_plan
+        if reception_plan is not None:
+            if final_stage1_plan:
+                try:
+                    replay = replay_source_grounded_human_reception_from_plan(
+                        reception_plan, nucleus_index, resolver,
+                        plan=plan,
+                        recovery_stage=sentence_plan.recovery_stage,
+                        clause_plans=planned_line.reception_clause_plans,
+                        selected_subjective_input=selected_subjective_input,
+                        preceding_observation=preceding_observation,
+                    )
+                    if not _received_discourse_equivalent(
+                        _body_inverse_visible_text(body, parsed_line), replay.text,
+                        reception_plan, planned_line.reception_clause_plans, plan, resolver,
+                        selected_subjective_input, preceding_observation=preceding_observation):
+                        failures.append(f"body_inverse_reception_replay_mismatch:{index}")
+                except (GroundedHumanReceptionSurfaceError, AttributeError, KeyError, TypeError, ValueError):
+                    failures.append(f"body_inverse_reception_replay_unavailable:{index}")
+            parsed_codes = set(parsed_line.reception_marker_codes)
+            if not final_stage1_plan:
+                for move in reception_plan.moves:
+                    if not move.required:
+                        continue
+                    target_markers = (
+                        _BODY_INVERSE_RECEPTION_ACT_TARGET_MARKERS.get(
+                            move.reception_act,
+                            frozenset(),
+                        )
+                    )
+                    if target_markers and not parsed_codes.intersection(
+                        target_markers
+                    ):
+                        failures.append(
+                            "body_inverse_reception_target_duty_missing:"
+                            f"{move.move_id}"
+                        )
+                    if (
+                        move.move_role == "attention"
+                        and "attention" not in parsed_codes
+                    ):
+                        failures.append(
+                            "body_inverse_reception_attention_duty_missing:"
+                            f"{move.move_id}"
+                        )
+                    why_markers = {
+                        "stay_with_current_burden": {"receive"},
+                        "honor_concrete_effort": {
+                            "receive",
+                            "felt_response",
+                        },
+                        "protect_retained_intention": {
+                            "attention",
+                            "protect",
+                            "receive",
+                        },
+                        "recognize_lived_change": {
+                            "attention",
+                            "felt_response",
+                        },
+                        "hold_help_seeking": {
+                            "attention",
+                            "felt_response",
+                        },
+                        "bounded_counter_self_denial": {"protect"},
+                        "respect_words_placed": {
+                            "receive",
+                            "felt_response",
+                        },
+                    }.get(move.reception_act, set())
+                    if why_markers and not parsed_codes.intersection(
+                        why_markers
+                    ):
+                        failures.append(
+                            "body_inverse_reception_why_duty_missing:"
+                            f"{move.move_id}"
+                        )
+            else:
+                parsed_sentences = tuple(
+                    row
+                    for row in witness.sentences
+                    if row.section == "reception"
+                    and row.section_line_ordinal
+                    == parsed_line.section_ordinal
+                )
+                clause_plans = tuple(planned_line.reception_clause_plans)
+                if len(parsed_sentences) != len(clause_plans):
+                    failures.append(
+                        f"body_inverse_reception_clause_count_mismatch:{index}"
+                    )
+                move_index = {
+                    move.move_id: move for move in reception_plan.moves
+                }
+                # Optional duties still keep their previous referent
+                # availability check. Only required finite duties can be
+                # discharged below by the complete independent body reader.
+                for clause in clause_plans:
+                    for move_id in clause.move_ids:
+                        move = move_index.get(move_id)
+                        if move is None or move.required:
+                            continue
+                        try:
+                            resolve_grounded_reception_move_referent(
+                                reception_plan, move, nucleus_index, resolver,
+                                allow_short_anchor=False,
+                                recovery_stage=sentence_plan.recovery_stage,
+                                allow_anaphoric_topic=True,
+                                final_source_fidelity=final_stage1_plan,
+                                plan=plan,
+                            )
+                        except (GroundedHumanReceptionSurfaceError, AttributeError, KeyError, TypeError):
+                            failures.append("body_inverse_reception_referent_unavailable:" + move_id)
+                for clause_index, (clause, parsed_sentence) in enumerate(zip(
+                    clause_plans,
+                    parsed_sentences,
+                )):
+                    try:
+                        parsed_sentence_text = (
+                            _body_inverse_normalized_anchor(
+                                _body_inverse_visible_text(
+                                    body,
+                                    parsed_sentence,
+                                )
+                            )
+                        )
+                    except (UnicodeDecodeError, ValueError):
+                        failures.append(
+                            f"body_inverse_reception_sentence_bytes_invalid:{index}"
+                        )
+                        continue
+                    sentence_codes = set(
+                        parsed_sentence.reception_marker_codes
+                    )
+                    detached_pair_proof = None
+                    if final_stage1_plan and sentence_plan.recovery_stage == "full":
+                        shared_objects = _body_inverse_shared_material_feeling_objects(
+                            body, parsed_sentence, clause, plan, resolver, selected_subjective_input,
+                        )
+                        if len(clause.move_ids) == 2:
+                            detached_pair_proof = read_detached_feeling_pair(
+                                body[parsed_sentence.utf8_byte_start:parsed_sentence.utf8_byte_end].decode("utf-8"),
+                                tuple(move_index[mid] for mid in clause.move_ids if mid in move_index),
+                                plan, resolver, selected_subjective_input,
+                            )
+                        if (len(clause.move_ids) == 2 and shared_objects is not True
+                            and detached_pair_proof is None):
+                            failures.append("body_inverse_shared_feeling_objects_invalid:"
+                                            + str(clause.sentence_slot))
+                    for move_id in clause.move_ids:
+                        move = move_index.get(move_id)
+                        if move is None or not move.required:
+                            continue
+                        finite_proof = read_source_owned_discourse(
+                            body[parsed_sentence.utf8_byte_start:parsed_sentence.utf8_byte_end].decode("utf-8"),
+                            move, plan, resolver, selected_subjective_input,
+                            preceding_observation=preceding_observation,
+                            preceding_context=(
+                                move_index[clause_plans[clause_index - 1].move_ids[0]],
+                                body[parsed_sentences[clause_index - 1].utf8_byte_start:
+                                     parsed_sentences[clause_index - 1].utf8_byte_end].decode("utf-8"),
+                            ) if clause_index and len(clause_plans[clause_index - 1].move_ids) == 1 else None,
+                        ) if (final_stage1_plan and len(clause.move_ids) == 1
+                              and sentence_plan.recovery_stage == "full") else None
+                        if finite_proof is not None or detached_pair_proof is not None:
+                            # Complete body-owned proposition/edge verification
+                            # replaces nominal/closing-token requirements only.
+                            # Source, plan, clause, trace and safety gates remain.
+                            continue
+                        if any(n.nucleus_id in move.target_nucleus_ids
+                            and any(c.startswith('source_past_self_unknown:') for c in n.semantic_frame.attribute_codes)
+                            for n in plan.nuclei):
+                            failures.append('body_inverse_past_unknown_reception_mismatch:' + move_id)
+                            continue
+                        if (final_stage1_plan and sentence_plan.recovery_stage == 'full'
+                            and len(move.target_nucleus_ids) == 1 and not move.support_nucleus_ids
+                            and not _body_inverse_reception_context_ids(move, plan)
+                            and move.reception_act == 'recognize_lived_change'
+                            and any(n.nucleus_id in move.target_nucleus_ids
+                                and 'source_relief_self_recipient:v1' in n.semantic_frame.attribute_codes
+                                for n in plan.nuclei)):
+                            # Versioned recipient scope requires its complete
+                            # source AND selected-basis proof, never fallback.
+                            failures.append('body_inverse_relief_survivor_scope_mismatch:' + move_id)
+                            continue
+                        from cocolon_meaning_experience_engine.contracts import EmlisReliefCognitionAppraisalContent
+                        selected_decision = next((d for d in selected_subjective_input.decisions
+                            if d.move_id == move_id), None) if selected_subjective_input else None
+                        from emlis_ai_grounded_human_reception import SelectedRetainedReliefCognitionDecisionV1, SelectedRetainedReliefReceivedDecisionV1
+                        from emlis_ai_grounded_human_reception import SelectedInitialReceivedPersonalMeaningDecisionV1
+                        if type(selected_decision) is SelectedInitialReceivedPersonalMeaningDecisionV1:
+                            failures.append('body_inverse_initial_personal_meaning_duty_missing:' + move_id)
+                            continue
+                        if type(selected_decision) is SelectedRetainedReliefReceivedDecisionV1:
+                            failures.append('body_inverse_relief_received_duty_missing:' + move_id)
+                            continue
+                        if (selected_decision and (type(selected_decision.subjective_proposition.appraisal_content)
+                                is EmlisReliefCognitionAppraisalContent
+                                or type(selected_decision) is SelectedRetainedReliefCognitionDecisionV1)):
+                            failures.append('body_inverse_relief_cognition_facet_missing:' + move_id)
+                            continue
+                        # A source-owned finite clause that fails its complete
+                        # reader must not be rescued by generating a nominal
+                        # paraphrase. Keep the legacy nominal path for actual
+                        # nominal forms; do not call an author to judge these
+                        # finite bytes, including corrupted pair clauses.
+                        if (final_stage1_plan and sentence_plan.recovery_stage == "full"
+                            and getattr(resolver, "source_contract", None) == "cocolon.cmee.emlis_thread.v1"
+                            and move.reception_act in {"stay_with_current_burden", "recognize_lived_change"}
+                            and (len(clause.move_ids) == 1 or shared_objects is not True)
+                            and all(nid in nucleus_index
+                                and nucleus_index[nid].semantic_frame.actor == "current_user"
+                                and (nucleus_index[nid].source_fields in {("memo",), ("memo_action",)}
+                                     or nucleus_index[nid].source_fields == ("answer_text_private",)
+                                     and nucleus_index[nid].allowed_claim_scope == "explicit_supplemental_answer")
+                                for nid in (*move.target_nucleus_ids, *move.support_nucleus_ids))
+                            and re.search(r"(?:のでしたね|のですね|のです|のだと受け取りました|経験として受け取りました|充足として受け取りました|満足の拠り所が見えます|理由に目を向けています|つながりに目を向けています|対比に目を向けています|ことの両方を受け取りました|ことについて受け取ったのは、[^。]+経験です)。$",
+                                body[parsed_sentence.utf8_byte_start:parsed_sentence.utf8_byte_end].decode("utf-8"))):
+                            failures.append("body_inverse_reception_finite_duty_unverified:" + move_id)
+                            continue
+                        target_nuclei = tuple(
+                            nucleus_index[nucleus_id]
+                            for nucleus_id in move.target_nucleus_ids
+                            if nucleus_id in nucleus_index
+                        )
+                        if any(
+                            _body_inverse_action_is_future_intention(nucleus)
+                            for nucleus in target_nuclei
+                        ):
+                            target_markers = frozenset({"target_intention"})
+                        elif (
+                            final_stage1_plan
+                            and move.reception_act == "recognize_lived_change"
+                            and target_nuclei
+                            and len(target_nuclei) == len(move.target_nucleus_ids)
+                            and all(is_grounded_positive_feeling(nucleus)
+                                    for nucleus in target_nuclei)
+                        ):
+                            # The same source-bound feeling used before
+                            # selection must be visible in the parsed body.
+                            # Change/words markers cannot discharge this duty.
+                            target_markers = frozenset({"target_feeling"})
+                            if (getattr(resolver, "source_contract", None) == "cocolon.cmee.emlis_thread.v1"
+                                and len(target_nuclei) == 1
+                                and target_nuclei[0].source_fields == ("answer_text_private",)):
+                                answer = target_nuclei[0]
+                                times = {code.split(":", 1)[1] for code in answer.semantic_frame.attribute_codes
+                                         if code.startswith("thread_time:")}
+                                prefixes = {"original_occasion": "その時に", "answer_time": "回答した時点で",
+                                            "prior_answer_time": "先の回答時点で"}
+                                source = final_reception_source_anchor_text(answer.nucleus_id,nucleus_index,resolver)
+                                phrase = (prefixes[next(iter(times))]+source+"という気持ち").encode() if (
+                                    len(times) == 1 and times <= prefixes.keys() and source
+                                    and answer.allowed_claim_scope == "explicit_supplemental_answer") else b""
+                                nominal_answer = source_grounded_thread_answer_nominal(move, plan, nucleus_index, resolver)
+                                if nominal_answer is not None:
+                                    _, original, grammar, when, nominal = nominal_answer
+                                    if original != source or restore_thread_answer_nominal(nominal, grammar, when) != source:
+                                        phrase = b""
+                                    else:
+                                        phrase = (nominal + "という気持ち").encode()
+                                # Restore the whole event/time/feeling object from
+                                # its required source relation, not an inner phrase
+                                # that could sit under a newly inserted experiencer.
+                                about = tuple(r for r in plan.relations
+                                    if r.type == "evaluation_about_event"
+                                    and r.to_nucleus_id == answer.nucleus_id
+                                    and r.relation_id in plan.coverage_requirements.required_relation_ids)
+                                qualified_object = None
+                                if nominal_answer is None and len(clause.move_ids) == 1 and len(about) == 1:
+                                    event_source = final_reception_source_anchor_text(
+                                        about[0].from_nucleus_id, nucleus_index, resolver)
+                                    qualified_object = ((event_source + "ことについて、").encode() + phrase
+                                                        if event_source and phrase else b"")
+                                raw = body[parsed_sentence.utf8_byte_start:parsed_sentence.utf8_byte_end]
+                                start = parsed_sentence.utf8_byte_start + raw.find(phrase)
+                                end = start + len(phrase)
+                                if (not phrase or raw.count(phrase) != 1
+                                    or nominal_answer is not None and not raw.startswith(phrase)
+                                    or qualified_object is not None and (not qualified_object
+                                        or not raw.startswith(qualified_object))
+                                    or any(q.section == "reception" and q.utf8_byte_start < end
+                                           and start < q.utf8_byte_end for q in witness.quotes)
+                                    or any(m.section == "reception" and m.marker_code == "secondary_quote_boundary"
+                                           and m.utf8_byte_start < end and start < m.utf8_byte_end
+                                           for m in witness.markers)):
+                                    failures.append(f"body_inverse_positive_answer_source_time_missing:{move_id}")
+                        else:
+                            target_markers = (
+                                _BODY_INVERSE_RECEPTION_ACT_TARGET_MARKERS.get(
+                                    move.reception_act,
+                                    frozenset(),
+                                )
+                            )
+                        effective_reference_mode = (
+                            reception_effective_move_reference_mode(
+                                reception_plan,
+                                move,
+                                sentence_plan.recovery_stage, plan=plan, resolver=resolver,
+                            )
+                        )
+                        try:
+                            expected_referent = resolve_grounded_reception_move_referent(
+                                reception_plan, move, nucleus_index, resolver,
+                                allow_short_anchor=False,
+                                recovery_stage=sentence_plan.recovery_stage,
+                                allow_anaphoric_topic=True,
+                                final_source_fidelity=final_stage1_plan,
+                                plan=plan,
+                            )
+                        except (GroundedHumanReceptionSurfaceError, AttributeError, KeyError, TypeError):
+                            failures.append("body_inverse_reception_referent_unavailable:" + move_id)
+                            expected_referent = None
+                        expected_referent_text = (
+                            _body_inverse_normalized_anchor(
+                                expected_referent.text
+                            )
+                            if expected_referent is not None
+                            else ""
+                        )
+                        nominal_target_visible = False
+                        cognition_nominal_range: tuple[int, int] | None = None
+                        future_nominal_required = bool(
+                            final_stage1_plan
+                            and effective_reference_mode != "anaphoric_first"
+                            and expected_referent is not None
+                            and expected_referent.kind == "future_action_intention"
+                            and expected_referent.text == source_grounded_future_action_nominal(
+                                move, nucleus_index, resolver,
+                            )
+                        )
+                        burden_nominal_required = bool(
+                            final_stage1_plan
+                            and effective_reference_mode == "anaphoric_first"
+                            and expected_referent is not None
+                            and expected_referent.kind == "current_expression"
+                            and expected_referent.text == (source_grounded_feeling_target_nominal(
+                                move, plan, nucleus_index, resolver,
+                            ) or source_grounded_unfinished_referent(
+                                move, plan, nucleus_index, resolver,
+                            ))
+                        )
+                        wish_nominal_required = bool(
+                            final_stage1_plan
+                            and effective_reference_mode != "anaphoric_first"
+                            and expected_referent is not None
+                            and expected_referent.kind == "retained_wish"
+                            and expected_referent.text == source_grounded_retained_wish_nominal(
+                                move, plan, nucleus_index, resolver,
+                            )
+                        )
+                        expression_nominal_required = bool(
+                            final_stage1_plan
+                            and effective_reference_mode != "anaphoric_first"
+                            and expected_referent is not None
+                            and expected_referent.kind == "current_expression"
+                            and expected_referent.text == source_grounded_current_expression_nominal(
+                                move, plan, nucleus_index, resolver,
+                            )
+                        )
+                        expression_words_nominal_required = bool(
+                            expression_nominal_required
+                            and expected_referent.text.endswith("という言葉")
+                        )
+                        thread_answer_nominal = (
+                            source_grounded_thread_answer_nominal(move, plan, nucleus_index, resolver)
+                            if expression_nominal_required else None
+                        )
+                        nominal_target_required = bool(
+                            final_stage1_plan
+                            and effective_reference_mode != "anaphoric_first"
+                            and expected_referent is not None
+                            and expected_referent.kind == "self_started_effort"
+                            and expected_referent.text == source_grounded_performed_action_nominal(
+                                move, nucleus_index, resolver,
+                            )
+                        ) or burden_nominal_required or future_nominal_required or wish_nominal_required or expression_nominal_required
+                        if nominal_target_required:
+                            # Bind a body-only grammatical suffix to the end
+                            # of this independently resolved *whole* referent.
+                            # Normalized anchor offsets cannot address bytes.
+                            nominal_bytes = expected_referent.text.encode("utf-8")
+                            raw_sentence = body[parsed_sentence.utf8_byte_start:parsed_sentence.utf8_byte_end]
+                            offset = raw_sentence.find(nominal_bytes)
+                            if offset >= 0 and raw_sentence.count(nominal_bytes) == 1:
+                                start = parsed_sentence.utf8_byte_start + offset
+                                end = start + len(nominal_bytes)
+                                nominal_target_visible = any(
+                                    marker.section == "reception"
+                                    and marker.marker_kind == ("reception" if expression_words_nominal_required else "semantic")
+                                    and marker.marker_code == (
+                                        "target_words" if expression_words_nominal_required else
+                                        "thread_answer_nominal" if thread_answer_nominal is not None else
+                                        ("negative_carrier_nominal"
+                                         if expected_referent.text.endswith("なさ")
+                                         else "adnominal_subject") if burden_nominal_required
+                                        and expected_referent.text == source_grounded_feeling_target_nominal(
+                                            move, plan, nucleus_index, resolver,
+                                        )
+                                        else "finite_clause_nominal"
+                                    )
+                                    and start <= marker.utf8_byte_start
+                                    and marker.utf8_byte_end == end
+                                    for marker in witness.markers
+                                )
+                                if (burden_nominal_required or future_nominal_required or wish_nominal_required or expression_nominal_required) and (
+                                    any(q.section == "reception" and q.utf8_byte_start < end
+                                        and start < q.utf8_byte_end for q in witness.quotes)
+                                    or any(m.section == "reception" and m.marker_code == "secondary_quote_boundary"
+                                           and m.utf8_byte_start < end and start < m.utf8_byte_end
+                                           for m in witness.markers)
+                                ):
+                                    nominal_target_visible = False
+                                # A performed action with its coowned change
+                                # starts this source-bound relational object.
+                                # A matching substring inside a newly prefixed
+                                # actor or time does not prove the same object.
+                                from emlis_ai_grounded_observation_plan import _source_action_change_contrast
+                                action_contrast = _source_action_change_contrast(plan.nuclei, plan.relations)
+                                if (action_contrast and move.reception_act == "honor_concrete_effort"
+                                    and move.target_nucleus_ids == (action_contrast[0],)
+                                    and move.support_nucleus_ids == (action_contrast[1],)
+                                    and nucleus_index[action_contrast[0]].semantic_frame.time_scope == "past"):
+                                    nominal_target_visible = nominal_target_visible and offset == 0
+                                # A separately selected performed action owns the
+                                # whole object in attention and felt-response
+                                # clauses alike. A new actor/time prefix cannot
+                                # borrow the original action as a substring.
+                                if (len(clause.move_ids) == 1
+                                    and move.reception_act == "honor_concrete_effort"
+                                    and len(move.target_nucleus_ids) == 1 and not move.support_nucleus_ids
+                                    and expected_referent.kind == "self_started_effort"
+                                    and not _body_inverse_reception_context_ids(move, plan)):
+                                    # The response act must itself be affirmative.
+                                    # A source-internal or earlier positive marker
+                                    # cannot discharge a negated final predicate.
+                                    response_tail = raw_sentence[len(nominal_bytes):].decode("utf-8")
+                                    affirmative_act = re.search(
+                                        r"大切に(?:(?:思って|気にかけて|受け止めて)(?:います|いて)|"
+                                        r"(?:思い|気にかけ|受け止め)たいです)。\Z", response_tail)
+                                    nominal_target_visible = bool(
+                                        nominal_target_visible and offset == 0 and affirmative_act)
+                                if thread_answer_nominal is not None:
+                                    _, source, grammar, when, nominal = thread_answer_nominal
+                                    actual_nominal = body[start:end].decode("utf-8")
+                                    nominal_target_visible = bool(
+                                        nominal_target_visible and actual_nominal == nominal
+                                        and restore_thread_answer_nominal(actual_nominal, grammar, when) == source
+                                    )
+                                elif (expression_nominal_required and len(move.target_nucleus_ids) == 1
+                                      and not move.support_nucleus_ids):
+                                    answer = nucleus_index[move.target_nucleus_ids[0]]
+                                    source = final_reception_source_anchor_text(answer.nucleus_id, nucleus_index, resolver)
+                                    times = {c.split(":", 1)[1] for c in answer.semantic_frame.attribute_codes
+                                             if c.startswith("thread_time:")}
+                                    if (answer.source_fields == ("answer_text_private",)
+                                        and answer.allowed_claim_scope == "explicit_supplemental_answer"
+                                        and re.search(r"(?:い|かった)です$", source)
+                                        and len(times) == 1
+                                        and times <= {"original_occasion", "answer_time", "prior_answer_time"}):
+                                        prefix = {"original_occasion": "その時に", "answer_time": "回答した時点で",
+                                                  "prior_answer_time": "先の回答時点で"}[next(iter(times))]
+                                        actual_nominal = body[start:end].decode("utf-8")
+                                        # Recover the entire admitted source, including its owner,
+                                        # from the visible attributive clause without an author replay.
+                                        if actual_nominal != prefix + source + "こと":
+                                            nominal_target_visible = bool(nominal_target_visible
+                                                and actual_nominal.startswith(prefix) and actual_nominal.endswith("こと")
+                                                and actual_nominal[len(prefix):-2] + "です" == source)
+                                # Independently restore a finite cognition from
+                                # its body-only こと object. A generic referent,
+                                # a quotation, or a source replay elsewhere in
+                                # this sentence cannot satisfy this obligation.
+                                if ((burden_nominal_required or expression_nominal_required) and nominal_target_visible
+                                    and move.move_role == "felt_response"
+                                    and len(move.target_nucleus_ids) == 1 and not move.support_nucleus_ids):
+                                    cognition = nucleus_index[move.target_nucleus_ids[0]]
+                                    cf = cognition.semantic_frame
+                                    codes = set(cf.attribute_codes)
+                                    independent_cognition = len(reception_plan.moves) == 1 or (
+                                        len(reception_plan.moves) == 2
+                                        and "lexical:source_bounded_expression" in codes
+                                        and cognition.source_fields == ("memo",)
+                                        and all(
+                                            other.required and other.reception_act == "honor_concrete_effort"
+                                            and len(other.target_nucleus_ids) == 1 and not other.support_nucleus_ids
+                                            and (action := nucleus_index.get(other.target_nucleus_ids[0])) is not None
+                                            and action.nucleus_id != cognition.nucleus_id
+                                            and action.source_fields == ("memo_action",) and action.retention == "required"
+                                            and not set(action.source_span_ids).intersection(cognition.source_span_ids)
+                                            and action.semantic_frame.actor == "current_user"
+                                            and action.kind == "action"
+                                            and action.semantic_frame.modality == "fact"
+                                            and action.semantic_frame.time_scope in {"past", "continuing", "present", "completed"}
+                                            and "operator:performed_action" in action.semantic_frame.attribute_codes
+                                            for other in reception_plan.moves if other != move
+                                        )
+                                        and not any(
+                                            (r.retention == "required" or r.type != "uncertain_connection")
+                                            and cognition.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id)
+                                            for r in plan.relations
+                                        )
+                                    )
+                                    if (cognition.kind == cf.predicate_kind == "uncertainty"
+                                        and independent_cognition
+                                        and cf.actor == "current_user" and cf.modality == "uncertain"
+                                        and cf.polarity == "negative" and cf.time_scope in {"present", "current_input"}
+                                        and cognition.grounding_kind == "explicit" and cognition.retention == "required"
+                                        and cognition.source_fields in {("memo",), ("memo_action",)}
+                                        and len(cognition.source_span_ids) == 1
+                                        and {"operator:uncertainty", "operator:negation", "semantic_role:limiting_unknown",
+                                             "lexical:preserve_source_predicate", "lexical:no_new_sensation_family"} <= codes
+                                        and not any(code.startswith(("source_fragment_", "surface_scalar_", "thread_time:"))
+                                                    or code == "semantic_role:embedded_turn" for code in codes)):
+                                        source_span = resolver.resolve(cognition.source_span_ids[0])
+                                        source_clause = str(source_span.raw_text).strip(" \u3000。．.")
+                                        if (source_span.source_field == cognition.source_fields[0]
+                                            and 0 <= source_span.start_index < source_span.end_index
+                                            and re.fullmatch(r"(?:(?:現在|今)(?:も|は))?(?:まだ)?(?:はっきり|よく)?(?:わからない|分からない)", source_clause)):
+                                            actual_nominal = body[start:end].decode("utf-8")
+                                            # Read the whole object slot, not
+                                            # an expected substring inside an
+                                            # added まだ/subject/time modifier.
+                                            decision = next((d for d in selected_subjective_input.decisions
+                                                if d.move_id == move.move_id), None) if selected_subjective_input else None
+                                            proposition = decision.subjective_proposition if decision else None
+                                            open_required = bool(
+                                                proposition is None and len(reception_plan.moves) == 1
+                                                or proposition is not None and (
+                                                    proposition.appraisal_content is not None
+                                                    and proposition.appraisal_content.operation == "LEAVE_UNFINISHED"
+                                                    or proposition.relational_position is not None
+                                                    and proposition.relational_position.stance_operator == "HOLD_UNFINISHED_OPEN"
+                                                )
+                                            )
+                                            received = re.fullmatch(
+                                                (r"結論を急がずに、" if open_required else "")
+                                                + r"(?P<source>[^。！？!?]+)こと"
+                                                r"を小さくせずに(?:"
+                                                r"(?:受け止めて|気にかけて)(?:います|いて)|"
+                                                r"(?:受け止め|気にかけ)たいです)。",
+                                                raw_sentence.decode("utf-8"),
+                                            )
+                                            if (received is not None and received.group("source") == source_clause
+                                                and actual_nominal.endswith("こと") and actual_nominal[:-2] == source_clause):
+                                                cognition_nominal_range = (start, end)
+                                            else:
+                                                nominal_target_visible = False
+                            from emlis_ai_grounded_observation_plan import _thread_retained_reaction_groups
+                            retained_group = bool(move.support_nucleus_ids) and (
+                                "current_burden", move.target_nucleus_ids, move.support_nucleus_ids) in (
+                                    _thread_retained_reaction_groups(plan.nuclei, plan.relations))
+                            from emlis_ai_grounded_observation_plan import _source_action_change_contrast_unfinished
+                            if (expression_nominal_required and move.target_nucleus_ids
+                                == _source_action_change_contrast_unfinished(plan.nuclei, plan.relations)):
+                                nominal_target_visible = nominal_target_visible and _body_inverse_unfinished_result_clause(
+                                    body, parsed_sentence, move, plan, resolver)
+                            if expression_nominal_required and retained_group:
+                                nominal_target_visible = _body_inverse_thread_received_group(
+                                    body, witness, parsed_sentence, move, plan, resolver) is not None
+                            elif (expression_words_nominal_required and len(clause.move_ids) == 1
+                                and move.move_role == "felt_response"
+                                and move.reception_act == "stay_with_current_burden"
+                                and len(move.target_nucleus_ids) == 1 and not move.support_nucleus_ids
+                                and nucleus_index[move.target_nucleus_ids[0]].semantic_frame.time_scope
+                                    in {"present", "current_input"}
+                                and not _body_inverse_reception_context_ids(move, plan)
+                                and len(nucleus_index[move.target_nucleus_ids[0]].source_span_ids) == 1
+                                and expected_referent.text == str(resolver.resolve(
+                                    nucleus_index[move.target_nucleus_ids[0]].source_span_ids[0]).raw_text)
+                                    .strip(" \u3000、,。．.") + "という言葉"):
+                                # Read the entire selected object, not a source
+                                # substring inside an added actor, time or cause.
+                                nominal_target_visible = nominal_target_visible and _body_inverse_nominal_constraint_clause(
+                                    body, parsed_sentence, move, plan, resolver, selected_subjective_input)
+                            elif expression_nominal_required and any(
+                                {"lexical:source_nominal_constraint_clause", "lexical:source_provisional_degree"}
+                                & set(nucleus_index[nid].semantic_frame.attribute_codes)
+                                for nid in move.target_nucleus_ids):
+                                nominal_target_visible = nominal_target_visible and _body_inverse_nominal_constraint_clause(
+                                    body, parsed_sentence, move, plan, resolver, selected_subjective_input)
+                            elif expression_nominal_required and any(
+                                {"lexical:source_feeling_reason_subject", "lexical:source_current_material_primary", "lexical:source_current_material_qualification",
+                                 "lexical:source_temporal_relief_residue", "lexical:source_temporal_causal_unknown",
+                                 "lexical:source_independent_decision_choice", "lexical:source_independent_decision_timing"}
+                                & set(nucleus_index[nid].semantic_frame.attribute_codes)
+                                for nid in move.target_nucleus_ids):
+                                nominal_target_visible = nominal_target_visible and _body_inverse_current_material_group(
+                                    body, witness, parsed_sentence, move, plan, resolver, selected_subjective_input)
+                            elif expression_nominal_required and len(move.target_nucleus_ids) > 1:
+                                nominal_target_visible = (
+                                    _body_inverse_received_contrast_group(body, witness, parsed_sentence, move, plan, resolver)
+                                    if move.support_nucleus_ids else bool(_body_inverse_thread_answer_group(
+                                        body, witness, parsed_sentence, move, plan, resolver)))
+                        # The selected independent two-object path owes the
+                        # complete material and action clauses. A familiar
+                        # suffix alone cannot authorize another actor or time.
+                        from emlis_ai_grounded_observation_plan import _is_independent_source_material
+                        independent_pair = bool(
+                            final_stage1_plan and len(reception_plan.moves) == 2
+                            and effective_reference_mode != "anaphoric_first"
+                            and len(clause.move_ids) == 1
+                            and {m.reception_act for m in reception_plan.moves}
+                                == {"stay_with_current_burden", "honor_concrete_effort"}
+                            and all(m.required and m.move_role == "felt_response"
+                                    and len(m.target_nucleus_ids) == 1 and not m.support_nucleus_ids
+                                    and not _body_inverse_reception_context_ids(m, plan)
+                                    for m in reception_plan.moves)
+                            and any(_is_independent_source_material(nucleus_index[m.target_nucleus_ids[0]],
+                                        safety_kind=plan.input_profile.safety_kind)
+                                    for m in reception_plan.moves if m.reception_act == "stay_with_current_burden")
+                        )
+                        if independent_pair:
+                            owner = nucleus_index[move.target_nucleus_ids[0]]
+                            source = (str(resolver.resolve(owner.source_span_ids[0]).raw_text)
+                                      .strip(" \u3000、,。．.")) if len(owner.source_span_ids) == 1 else ""
+                            raw = body[parsed_sentence.utf8_byte_start:parsed_sentence.utf8_byte_end].decode("utf-8")
+                            complete_object = False
+                            if move.reception_act == "stay_with_current_burden":
+                                for nominal in ("こと", "という言葉"):
+                                    if expected_referent is not None and expected_referent.text == source + nominal:
+                                        # A source-owned time adjunct may be outside
+                                        # the complete quoted/nominal object. Preserve
+                                        # the existing present/continuing/past forms;
+                                        # another actor, time or cause is not licensed.
+                                        prefix = {"present": "今、", "continuing": "今も、",
+                                                  "past": "これまで、"}.get(owner.semantic_frame.time_scope, "")
+                                        prefixes = ("", prefix) if prefix else ("",)
+                                        complete_object = any(_body_inverse_nominal_constraint_clause(
+                                            body, parsed_sentence, move, plan, resolver, selected_subjective_input,
+                                            nominal=nominal, temporal_prefix=prefix) for prefix in prefixes)
+                            elif owner.source_fields == ("memo_action",) and owner.semantic_frame.actor == "current_user":
+                                nominal = ("というこれからの行動" if _body_inverse_action_is_future_intention(owner)
+                                           else "こと" if _body_inverse_action_is_performed(owner) else None)
+                                if source and nominal:
+                                    parsed = re.fullmatch(r"(?P<source>[^。！？!?]+)" + re.escape(nominal)
+                                        + r"を(?:大切に思って(?:います|いて)|大切に思いたいです)。", raw)
+                                    complete_object = parsed is not None and parsed.group("source") == source
+                            if not complete_object:
+                                failures.append(f"body_inverse_independent_material_action_object_missing:{move_id}")
+                        adjacent_context_matched = bool(
+                            final_stage1_plan and sentence_plan.recovery_stage == "full"
+                            and effective_reference_mode == "anaphoric_first" and clause_index > 0
+                            and _body_inverse_adjacent_action_context(
+                                body, parsed_sentence, parsed_sentences[clause_index - 1],
+                                clause, clause_plans[clause_index - 1], move,
+                                reception_plan, plan, resolver,
+                            )
+                        )
+                        target_visible = (
+                            nominal_target_visible if nominal_target_required
+                            else bool(sentence_codes.intersection(target_markers))
+                        )
+                        if expected_referent_text == "その行動":
+                            # This reference is admitted only with its actual
+                            # antecedent, never by a generic action marker.
+                            target_visible = adjacent_context_matched
+
+                        if (final_stage1_plan and sentence_plan.recovery_stage == "full"
+                            and len(clause.move_ids) == 2
+                            and move.reception_act == "recognize_lived_change"
+                            and target_markers == frozenset({"target_feeling"})):
+                            # A shared sentence's other feeling marker cannot
+                            # discharge this move's own complete feeling object.
+                            # Keep the existing per-duty diagnostic as well as
+                            # the independent whole shared-clause proof.
+                            owned_source = (final_reception_source_anchor_text(
+                                move.target_nucleus_ids[0], nucleus_index, resolver,
+                            ) if len(move.target_nucleus_ids) == 1 else "")
+                            owned_object = _body_inverse_normalized_anchor(
+                                owned_source + "という気持ち"
+                            ) if owned_source else ""
+                            target_visible = target_visible and bool(
+                                owned_object and owned_object in parsed_sentence_text
+                            )
+                        if target_markers and not target_visible:
+                            failures.append(
+                                "body_inverse_reception_target_duty_missing:"
+                                f"{move.move_id}"
+                            )
+                        if (
+                            not expected_referent_text
+                            or expected_referent_text
+                            not in parsed_sentence_text
+                        ):
+                            failures.append(
+                                "body_inverse_reception_target_referent_missing:"
+                                f"{move.move_id}"
+                            )
+                        target_values = tuple(
+                            source_value
+                            for nucleus_id in move.target_nucleus_ids
+                            for source_value in (
+                                _body_inverse_nucleus_source_values(
+                                    nucleus_id,
+                                    plan,
+                                    resolver,
+                                )
+                            )
+                        )
+                        if (final_stage1_plan and sentence_plan.recovery_stage == "full"
+                            and len(clause.move_ids) == 1):
+                            from emlis_ai_grounded_observation_plan import _source_separate_contrast_objects_from_resolver
+                            pair = _source_separate_contrast_objects_from_resolver(
+                                move, plan.nuclei, plan.relations, resolver)
+                            if pair:
+                                # Seeing both source strings and a receive
+                                # marker does not prove their relation. Read
+                                # the two governed objects AND the contrast
+                                # adjunct; an invented causal object cannot
+                                # discharge PRESERVE_BOTH_ENDPOINTS.
+                                decision = next((d for d in selected_subjective_input.decisions
+                                    if d.move_id == move.move_id), None) if selected_subjective_input else None
+                                appraisal = decision.subjective_proposition.appraisal_content if decision else None
+                                proposition = decision.subjective_proposition if decision else None
+                                relation = next(r for r in plan.relations if r.retention == "required"
+                                    and (r.from_nucleus_id, r.to_nucleus_id) == tuple(n.nucleus_id for n in pair))
+                                node_map = dict(selected_subjective_input.semantic_nucleus_pairs) if selected_subjective_input else {}
+                                relation_map = dict(selected_subjective_input.relation_pairs) if selected_subjective_input else {}
+                                sources = []
+                                for nucleus in pair:
+                                    source_raw = resolver.resolve(nucleus.source_span_ids[0]).raw_text
+                                    fragment = _body_inverse_typed_source_fragment(nucleus, source_raw)
+                                    sources.append(source_raw if fragment is None else fragment)
+                                raw = body[parsed_sentence.utf8_byte_start:parsed_sentence.utf8_byte_end].decode("utf-8")
+                                object_pattern = re.escape(sources[0] + "ことと" + sources[1] + "こと")
+                                if (not all(sources) or appraisal is None
+                                    or (appraisal.dimension, appraisal.operation)
+                                        != ("RELATIONAL_NONCOLLAPSE", "PRESERVE_BOTH_ENDPOINTS")
+                                    or proposition.focal_relation_ref != appraisal.focal_relation_ref
+                                    or relation_map.get(appraisal.focal_relation_ref) != relation.relation_id
+                                    or tuple(node_map.get(ref) for ref in proposition.response_object_refs)
+                                        != tuple(n.nucleus_id for n in pair)
+                                    or re.fullmatch(object_pattern
+                                        + r"の両方を、(?:その)?違いも含めて小さくせずに受け止めています。", raw) is None):
+                                    failures.append(f"body_inverse_separate_contrast_scope_mismatch:{move.move_id}")
+                        if (final_stage1_plan and sentence_plan.recovery_stage == "full"
+                            and len(clause.move_ids) == 1 and len(target_nuclei) == 1):
+                            original_feeling = _body_inverse_original_record_feeling(target_nuclei[0], plan, resolver)
+                            raw = body[parsed_sentence.utf8_byte_start:parsed_sentence.utf8_byte_end].decode("utf-8")
+                            if original_feeling or raw.startswith("最初の記録にある、"):
+                                role = {"attention": "を見過ごさず、", "felt_response": "を"}.get(move.move_role)
+                                expected = ("最初の記録にある、" + original_feeling
+                                            + "という気持ち" + (role or "") + "受け止めています。")
+                                if (not original_feeling or role is None or raw != expected
+                                    or move.reception_act != "recognize_lived_change"
+                                    or move.support_nucleus_ids or _body_inverse_reception_context_ids(move, plan)
+                                    or effective_reference_mode == "anaphoric_first"):
+                                    failures.append(f"body_inverse_original_record_reception_scope_mismatch:{move_id}")
+                        if (final_stage1_plan and sentence_plan.recovery_stage == "full"
+                            and len(clause.move_ids) == 1 and len(target_nuclei) == 1
+                            and move.reception_act == "recognize_lived_change"
+                            and is_grounded_positive_feeling(target_nuclei[0])
+                            and {"lexical:source_nominal_cognition_feeling", "lexical:source_received_past_feeling", "lexical:source_nominal_past_feeling"}
+                                & set(target_nuclei[0].semantic_frame.attribute_codes)):
+                            # The positive main feeling governs this whole
+                            # nominal cognition. Its negative background and
+                            # potential content cannot be left only in Layer 1
+                            # or reassigned to a foreign owner or a change.
+                            source = final_reception_source_anchor_text(
+                                target_nuclei[0].nucleus_id, nucleus_index, resolver)
+                            raw = body[parsed_sentence.utf8_byte_start:parsed_sentence.utf8_byte_end].decode("utf-8")
+                            role = {"attention": "を見過ごさず、", "felt_response": "を"}.get(move.move_role)
+                            expected = source + "という気持ち" + (role or "") + "受け止めています。"
+                            complete_forms = (expected,)
+                            contexts = _body_inverse_reception_context_ids(move, plan)
+                            contrast = tuple(r for r in plan.relations
+                                if r.type == "contrast" and r.retention == "required"
+                                and r.to_nucleus_id == target_nuclei[0].nucleus_id
+                                and contexts == (r.from_nucleus_id,))
+                            context_valid = not contexts and not move.support_nucleus_ids
+                            if (len(contrast) == 1 and len(contexts) == 1
+                                and nucleus_index[contexts[0]].kind == "event"
+                                and "lexical:source_nominal_past_feeling"
+                                    in target_nuclei[0].semantic_frame.attribute_codes):
+                                before = final_reception_source_anchor_text(contexts[0], nucleus_index, resolver)
+                                context_valid = bool(before and (not move.support_nucleus_ids
+                                    or move.support_nucleus_ids == contexts))
+                                expected = before + "ことと" + source + "という気持ち" + (role or "") + "その違いも含めて受け止めています。"
+                                complete_forms = (expected, before + "ことと" + source
+                                    + "という気持ちとの違い" + (role or "") + "受け止めています。")
+                                # Independently check the finite background,
+                                # its contrast connector, the complete past
+                                # feeling and the selected reception role.
+                                # Do not ask the author to certify its prose.
+                                left = nucleus_index[contexts[0]]
+                                right = target_nuclei[0]
+                                if (right.semantic_frame.time_scope == "past"
+                                    and right.semantic_frame.polarity == "positive"
+                                    and all(str(n.semantic_frame.actor).lower() in {"current_user", "user", "self"}
+                                            and not _body_inverse_action_is_performed(n)
+                                            and not _body_inverse_action_is_future_intention(n)
+                                            for n in (left, right))
+                                    and left.semantic_frame.modality == "fact"
+                                    and not any(code.startswith("aspect:") and code.split(":", 1)[1]
+                                                not in {"unknown", "not_applicable"}
+                                                for code in right.semantic_frame.attribute_codes)
+                                    and re.search(r"(?:かった|[てで]いた|た|だ)$", before)
+                                    and not re.search(r"[「」『』“”‘’\"?？!！。;；…‥]", before + source)):
+                                    complete_forms += (before + "けれど、" + source
+                                        + "という気持ち" + (role or "") + "受け止めています。",)
+                            contrast_forms = _body_inverse_past_cognitive_feeling_contrast_forms(
+                                move, plan, resolver, selected_subjective_input)
+                            if contrast_forms is not None:
+                                context_valid = True
+                                complete_forms = contrast_forms
+                            if (not source or role is None or not context_valid
+                                or effective_reference_mode == "anaphoric_first" or raw not in complete_forms):
+                                failures.append(f"body_inverse_nominal_cognition_feeling_object_missing:{move_id}")
+                        if (
+                            effective_reference_mode == "anaphoric_first"
+                            and any(source_value in (
+                                _body_inverse_normalized_anchor((
+                                    body[parsed_sentence.utf8_byte_start:cognition_nominal_range[0]]
+                                    + body[cognition_nominal_range[1]:parsed_sentence.utf8_byte_end]
+                                ).decode("utf-8"))
+                                if cognition_nominal_range is not None else parsed_sentence_text
+                            ) for source_value in target_values)
+                        ):
+                            failures.append(
+                                "body_inverse_reception_anaphoric_target_replayed:"
+                                f"{move.move_id}"
+                            )
+                        relation_attention_valid = True
+                        shared_change_context_matched = False
+                        if (final_stage1_plan and sentence_plan.recovery_stage == "full"
+                            and len(clause.move_ids) == 1 and move.move_role == "attention"
+                            and effective_reference_mode != "anaphoric_first"
+                            and selected_subjective_input is not None):
+                            decision = next((d for d in selected_subjective_input.decisions
+                                             if d.move_id == move.move_id), None)
+                            appraisal = decision.subjective_proposition.appraisal_content if decision else None
+                            object_ids = set(move.target_nucleus_ids) | set(
+                                _body_inverse_reception_context_ids(move, plan))
+                            object_relations = [r for r in plan.relations
+                                if {r.from_nucleus_id, r.to_nucleus_id} == object_ids]
+                            if (appraisal is not None and appraisal.dimension == "MATERIAL_WEIGHT"
+                                and appraisal.operation == "RECEIVE_AS_MATERIAL"
+                                and move.reception_act == "stay_with_current_burden"
+                                and len(move.target_nucleus_ids) == 1 and not move.support_nucleus_ids
+                                and len(object_ids) == 1
+                                and expected_referent is not None
+                                and expected_referent.kind == "current_expression"
+                                and expected_referent.text.endswith("という言葉")
+                                and nucleus_index[move.target_nucleus_ids[0]].semantic_frame.actor == "current_user"):
+                                # Read the whole independently resolved source
+                                # object and the affirmative attention/reception
+                                # clause. Source-internal markers, an inserted
+                                # actor/time, or a negated act cannot discharge it.
+                                raw = body[parsed_sentence.utf8_byte_start:parsed_sentence.utf8_byte_end].decode("utf-8")
+                                # Preserve the existing typed polite-past
+                                # adjunct outside the complete source object.
+                                # This correction does not change temporal
+                                # realization or permit arbitrary added time.
+                                frame = nucleus_index[move.target_nucleus_ids[0]].semantic_frame
+                                source_text = expected_referent.text[:-len("という言葉")]
+                                time_marker = {"past": "これまで", "completed": "すでに"}.get(frame.time_scope)
+                                prefix = (time_marker + "、" if time_marker
+                                    and source_text.endswith("かったです")
+                                    and time_marker not in source_text else "")
+                                relation_attention_valid = re.fullmatch(
+                                    re.escape(prefix + expected_referent.text)
+                                    + r"(?:を見過ごさず、|に目が留まり、それを)"
+                                    + r"小さくせずに受け止めています。", raw) is not None
+                            change_context_ids = _body_inverse_reception_context_ids(move, plan)
+                            change_context_prefix = None
+                            # Only required/selected relations belong to this Move.
+                            # A retained SHOULD source-order relation is not an
+                            # authored causal relation or a second target object.
+                            required_object_relations = [r for r in object_relations
+                                if r.relation_id in plan.coverage_requirements.required_relation_ids]
+                            if (len(change_context_ids) == 1 and len(object_ids) == 2
+                                and not required_object_relations):
+                                context_nucleus = nucleus_index[change_context_ids[0]]
+                                context_frame = context_nucleus.semantic_frame
+                                context_source = final_reception_source_anchor_text(
+                                    context_nucleus.nucleus_id, nucleus_index, resolver)
+                                if (context_nucleus.kind == "action"
+                                    and context_frame.actor == "current_user"
+                                    and context_frame.predicate_kind == "action"
+                                    and context_frame.modality == "fact"
+                                    and "operator:performed_action" in context_frame.attribute_codes
+                                    and context_source and context_source.endswith("た")):
+                                    change_context_prefix = context_source + "ことを背景に、"
+                            if (appraisal is not None and appraisal.dimension == "MATERIAL_WEIGHT"
+                                and appraisal.operation == "RECEIVE_AS_MATERIAL"
+                                and move.reception_act == "recognize_lived_change"
+                                and len(move.target_nucleus_ids) == 1
+                                and (len(object_ids) == 1 and not move.support_nucleus_ids
+                                     or change_context_prefix is not None)
+                                and expected_referent is not None and expected_referent.kind == "lived_change"
+                                and target_nuclei[0].kind == "reaction"
+                                and target_nuclei[0].semantic_frame.actor == "current_user"
+                                and target_nuclei[0].semantic_frame.predicate_kind == "feeling"
+                                and target_nuclei[0].semantic_frame.modality == "feeling"):
+                                # A personally felt change remains subjective.
+                                # Resolve the whole original object independently:
+                                # mere source words elsewhere, a changed speaker,
+                                # time/cause insertion, or negated reception cannot
+                                # stand for this affirmative attention clause.
+                                source = final_reception_source_anchor_text(
+                                    target_nuclei[0].nucleus_id, nucleus_index, resolver)
+                                raw = body[parsed_sentence.utf8_byte_start:parsed_sentence.utf8_byte_end].decode("utf-8")
+                                relation_attention_valid = bool(source and raw == (
+                                    (change_context_prefix or "") + source + "という" + expected_referent.text
+                                    + "を見過ごさず、受け止めています。"))
+                            if (appraisal is not None and appraisal.dimension == "MATERIAL_WEIGHT"
+                                and appraisal.operation == "RECEIVE_AS_MATERIAL"
+                                and move.reception_act == "recognize_lived_change"
+                                and len(move.target_nucleus_ids) == len(object_ids) == 1
+                                and not move.support_nucleus_ids and not change_context_ids
+                                and not required_object_relations
+                                and effective_reference_mode != "anaphoric_first"
+                                and expected_referent is not None and expected_referent.kind == "lived_change"
+                                and target_nuclei[0].kind == "change"
+                                and target_nuclei[0].semantic_frame.actor == "current_user"
+                                and (target_nuclei[0].semantic_frame.predicate_kind,
+                                     target_nuclei[0].semantic_frame.modality) in {
+                                         ("change", "fact"), ("feeling", "feeling")}):
+                                # The sole change object has no admitted background.
+                                # Read its complete source and grammatical boundary;
+                                # source containment under an invented prefix is not
+                                # evidence that this is the same received meaning.
+                                source = final_reception_source_anchor_text(
+                                    target_nuclei[0].nucleus_id, nucleus_index, resolver)
+                                raw = body[parsed_sentence.utf8_byte_start:parsed_sentence.utf8_byte_end].decode("utf-8")
+                                relation_attention_valid = bool(source and re.fullmatch(
+                                    re.escape(source + "という" + expected_referent.text)
+                                    + r"(?:を見過ごさず、|に目が留まり、それを)受け止めています。", raw))
+                            if (appraisal is not None and appraisal.dimension == "MATERIAL_WEIGHT"
+                                and appraisal.operation == "RECEIVE_AS_MATERIAL"
+                                and len(object_ids) == 2 and len(object_relations) == 1):
+                                relation_kind = object_relations[0].type
+                                boundary = {
+                                    ("action_supports_change", "honor_concrete_effort"):
+                                        ("支えていること", "大切に思っています"),
+                                    ("contrast", "stay_with_current_burden"):
+                                        ("との違い", "小さくせずに受け止めています"),
+                                }.get((relation_kind, move.reception_act))
+                                if boundary is not None:
+                                    # Parse the completed object's case and
+                                    # affirmative attention/act independently
+                                    # of author replay. A source-internal word
+                                    # such as 見過ごして cannot stand for this duty.
+                                    nominal_end, act = boundary
+                                    raw = body[parsed_sentence.utf8_byte_start:parsed_sentence.utf8_byte_end].decode("utf-8")
+                                    relation_attention_valid = re.fullmatch(
+                                        r"[^。！？!?]+" + re.escape(nominal_end)
+                                        + r"(?:を見過ごさず、|に目が留まり、それを)"
+                                        + re.escape(act) + "。", raw) is not None
+                                    if relation_kind == "action_supports_change":
+                                        relation_attention_valid = relation_attention_valid or _body_inverse_attributive_support_attention(
+                                            raw, object_relations[0], move, plan, resolver)
+                                    if relation_kind == "contrast" and "一方で、" in raw:
+                                        prior_proven = bool(raw.startswith("その一方で、") and clause_index > 0
+                                            and _body_inverse_preceding_change_context(
+                                                body, parsed_sentences[clause_index - 1], clause_plans[clause_index - 1],
+                                                parsed_sentence, move, reception_plan, plan, resolver))
+                                        relation_attention_valid = _body_inverse_finite_contrast_attention(
+                                            raw, object_relations[0], move, plan, resolver,
+                                            expected_referent.text if expected_referent is not None else "",
+                                            preceding_change_proven=prior_proven)
+                                        shared_change_context_matched = prior_proven and relation_attention_valid
+                        if (
+                            move.move_role == "attention"
+                            and ("attention" not in sentence_codes or not relation_attention_valid)
+                        ):
+                            failures.append(
+                                "body_inverse_reception_attention_duty_missing:"
+                                f"{move.move_id}"
+                            )
+
+                        importance_codes = {
+                            "stay_with_current_burden": {"receive"},
+                            "honor_concrete_effort": {
+                                "receive",
+                                "felt_response",
+                            },
+                            "protect_retained_intention": {
+                                "receive",
+                                "felt_response",
+                            },
+                            "recognize_lived_change": {
+                                "receive",
+                                "felt_response",
+                            },
+                            "hold_help_seeking": {
+                                "receive",
+                                "felt_response",
+                            },
+                            "bounded_counter_self_denial": {"protect"},
+                            "respect_words_placed": {
+                                "receive",
+                                "felt_response",
+                            },
+                        }.get(move.reception_act, set())
+                        importance_missing = bool(
+                            importance_codes
+                            and not sentence_codes.intersection(
+                                importance_codes
+                            )
+                        )
+                        if (
+                            move.reception_act
+                            == "protect_retained_intention"
+                            and "protect" not in sentence_codes
+                        ):
+                            importance_missing = True
+
+                        context_ids = _body_inverse_reception_context_ids(
+                            move,
+                            plan,
+                        )
+                        context_values = tuple(
+                            source_value
+                            for nucleus_id in context_ids
+                            for source_value in (
+                                _body_inverse_nucleus_source_values(
+                                    nucleus_id,
+                                    plan,
+                                    resolver,
+                                )
+                            )
+                        )
+                        anaphoric_context = bool(
+                            context_values
+                            and effective_reference_mode
+                            == "anaphoric_first"
+                        )
+                        context_match_text = parsed_sentence_text
+                        context_morphology_missing = False
+                        if (final_stage1_plan and not anaphoric_context
+                            and move.target_nucleus_ids and move.support_nucleus_ids):
+                            received_proof = _body_inverse_thread_received_group(
+                                body, witness, parsed_sentence, move, plan, resolver)
+                            if received_proof:
+                                # Recover only independently read inflections;
+                                # every original context remains a full-source duty.
+                                restored = body[parsed_sentence.utf8_byte_start:parsed_sentence.utf8_byte_end]
+                                for start, end, source in sorted(received_proof, reverse=True):
+                                    lo, hi = start - parsed_sentence.utf8_byte_start, end - parsed_sentence.utf8_byte_start
+                                    restored = restored[:lo] + source + restored[hi:]
+                                context_match_text = _body_inverse_normalized_anchor(restored.decode("utf-8"))
+                        decision_context_matched = bool(
+                            final_stage1_plan and not anaphoric_context
+                            and len(context_ids) == 1
+                            and any({"lexical:source_independent_decision_choice",
+                                     "lexical:source_independent_decision_timing"}
+                                    & set(nucleus_index[nid].semantic_frame.attribute_codes)
+                                    for nid in move.target_nucleus_ids)
+                            and _body_inverse_current_material_group(
+                                body, witness, parsed_sentence, move, plan, resolver, selected_subjective_input)
+                        )
+                        context_nominal = None
+                        if final_stage1_plan and not anaphoric_context:
+                            try:
+                                context_nominal = source_grounded_negative_context_nominal(
+                                    move, plan, nucleus_index, resolver,
+                                )
+                            except GroundedHumanReceptionSurfaceError:
+                                context_morphology_missing = True
+                        if context_nominal is not None:
+                            context_id, source_fragment, nominal = context_nominal
+                            raw_sentence = body[parsed_sentence.utf8_byte_start:parsed_sentence.utf8_byte_end]
+                            nominal_bytes = nominal.encode("utf-8")
+                            offset = raw_sentence.find(nominal_bytes)
+                            start = parsed_sentence.utf8_byte_start + max(offset, 0)
+                            end = start + len(nominal_bytes)
+                            # This branch requires the independently derived
+                            # whole nominal exactly once. It cannot fall back
+                            # to the old category phrase or a shortened stem.
+                            context_morphology_missing = bool(
+                                context_ids != (context_id,)
+                                or offset < 0 or raw_sentence.count(nominal_bytes) != 1
+                                or any(q.utf8_byte_start < end and start < q.utf8_byte_end
+                                       for q in witness.quotes)
+                                or any(m.section == "reception" and m.marker_kind == "semantic"
+                                       and m.marker_code == "secondary_quote_boundary"
+                                       and m.utf8_byte_start < end and start < m.utf8_byte_end
+                                       for m in witness.markers)
+                                or not nominal.endswith("ないこと")
+                                or nominal[:-4] + "なくて" != source_fragment
+                                or _body_inverse_normalized_anchor(source_fragment)
+                                not in context_values
+                            )
+                            if not context_morphology_missing:
+                                # Restore only this witnessed grammatical
+                                # span for the original full-source check.
+                                # The actual body/witness and exact replay
+                                # comparison remain untouched.
+                                restored = (raw_sentence[:offset]
+                                            + (nominal[:-4] + "なくて").encode("utf-8")
+                                            + raw_sentence[offset + len(nominal_bytes):])
+                                context_match_text = _body_inverse_normalized_anchor(
+                                    restored.decode("utf-8", errors="strict"))
+                        context_missing = bool(
+                            context_morphology_missing or context_values
+                            and (
+                                (
+                                    anaphoric_context
+                                    and not adjacent_context_matched
+                                    and not any(
+                                        marker in parsed_sentence_text
+                                        for marker in ("中で", "中にも", "背景")
+                                    )
+                                )
+                                or (
+                                    not anaphoric_context
+                                    and not decision_context_matched
+                                    and not shared_change_context_matched
+                                    and not any(
+                                        source_value in context_match_text
+                                        for source_value in context_values
+                                    )
+                                )
+                            )
+                        )
+                        if anaphoric_context and any(
+                            source_value in parsed_sentence_text
+                            for source_value in context_values
+                        ):
+                            failures.append(
+                                "body_inverse_reception_anaphoric_context_replayed:"
+                                f"{move.move_id}"
+                            )
+                        if context_missing:
+                            failures.append(
+                                "body_inverse_reception_context_anchor_missing:"
+                                f"{move.move_id}"
+                            )
+                        if importance_missing or context_missing:
+                            failures.append(
+                                "body_inverse_reception_why_duty_missing:"
+                                f"{move.move_id}"
+                            )
+
+    failure_codes = _dedupe(failures)
+    return GroundedBodyInverseEvaluation(
+        passed=not failure_codes,
+        body_sha256=witness.body_sha256,
+        observation_line_count=len(observation_lines),
+        reception_line_count=len(reception_lines),
+        observation_sentence_count=witness.observation_sentence_count,
+        reception_sentence_count=witness.reception_sentence_count,
+        source_anchor_count=len(witness.quotes),
+        relation_marker_count=sum(
+            row.marker_kind == "relation" for row in witness.markers
+        ),
+        uncertainty_marker_count=sum(
+            row.marker_kind == "uncertainty" for row in witness.markers
+        ),
+        reception_marker_count=sum(
+            row.marker_kind == "reception" for row in witness.markers
+        ),
+        failure_codes=failure_codes,
+    )
+
+
+def _grounded_surface_body_projection_matches(
+    surface_result: GroundedSurfaceResult,
+) -> bool:
+    observation = "\n".join(
+        line.text
+        for line in surface_result.lines
+        if line.binding.line_role != "human_follow"
+    ).strip()
+    reception = "\n".join(
+        line.text
+        for line in surface_result.lines
+        if line.binding.line_role == "human_follow"
+    ).strip()
+    expected = (
+        f"{OBSERVATION_SECTION_LABEL}\n{observation}\n\n"
+        f"{RECEPTION_SECTION_LABEL}\n{reception}"
+    ).strip()
+    return surface_result.text.encode("utf-8") == expected.encode("utf-8")
 
 
 @dataclass(frozen=True)
@@ -1616,11 +9572,16 @@ def evaluate_grounded_observation_gate(
     surface_result: GroundedSurfaceResult,
     resolver: EvidenceSpanResolver,
     product_readfeel_status: ProductReadfeelStatus = "not_evaluated",
+    require_body_inverse: bool = False,
+    selected_subjective_input: SelectedSubjectiveReceptionInputV1 | None = None,
 ) -> GroundedObservationGateReport:
     """Evaluate I5 plan/coverage/evidence/template/depth gates.
 
     Product Read Feel is an external human result.  A delivery pass therefore
     remains ``not_evaluated`` unless an explicit human result is supplied.
+    The stronger body-only inverse is opt-in so the existing production I5
+    route remains byte-for-byte and decision-for-decision unchanged; the CMEE
+    candidate path enables it explicitly before selection.
     """
 
     if product_readfeel_status not in {"not_evaluated", "human_pass", "human_fail"}:
@@ -1644,9 +9605,28 @@ def evaluate_grounded_observation_gate(
             sentence_plan,
             plan,
             resolver,
+            selected_subjective_input=selected_subjective_input,
         )
     except (AttributeError, KeyError, TypeError, ValueError):
         surface_issues = ("grounded_surface_validation_contract_invalid",)
+    body_inverse_reasons: tuple[str, ...] = ()
+    if require_body_inverse and surface_result.status == "generated":
+        try:
+            body_inverse = evaluate_grounded_surface_body_inverse(
+                body=surface_result.text.encode("utf-8"),
+                plan=plan,
+                sentence_plan=sentence_plan,
+                resolver=resolver,
+                selected_subjective_input=selected_subjective_input,
+            )
+        except (AttributeError, KeyError, TypeError, UnicodeError, ValueError):
+            body_inverse_reasons = ("body_inverse_evaluation_contract_invalid",)
+        else:
+            body_inverse_reasons = body_inverse.failure_codes
+        if not _grounded_surface_body_projection_matches(surface_result):
+            body_inverse_reasons = _dedupe(
+                (*body_inverse_reasons, "body_inverse_surface_projection_mismatch")
+            )
     semantic_subcheck_reasons, anti_template_reasons, depth_reasons = _semantic_subcheck_reasons(
         plan=plan,
         sentence_plan=sentence_plan,
@@ -1667,6 +9647,7 @@ def evaluate_grounded_observation_gate(
         resolver=resolver,
         observation_text=two_stage_observation,
         reception_text=two_stage_reception,
+        selected_subjective_input=selected_subjective_input,
     )
 
     validation_issues = _dedupe((*plan_issues, *sentence_issues, *surface_issues))
@@ -1721,7 +9702,7 @@ def evaluate_grounded_observation_gate(
             and required_nuclei <= bound_nuclei
             and required_relations <= bound_relations
         )
-    ) and not semantic_subcheck_reasons
+    ) and not semantic_subcheck_reasons and not body_inverse_reasons
 
     anti_template = bool(
         not plan.surface_policy.completed_semantic_template_allowed
@@ -1740,11 +9721,19 @@ def evaluate_grounded_observation_gate(
         )
     else:
         mechanical_restatement_gate = "not_evaluated"
+    question_text = surface_result.text
+    if require_body_inverse and not body_inverse_reasons:
+        for line in surface_result.lines:
+            if line.binding.claim_scope == "unresolved_answer_interpretation":
+                # Only an independently matched source-limit sentence may
+                # contain quoted questions. Its outside predicate is fixed;
+                # no source quotation can authorize an Emlis question.
+                question_text = question_text.replace(line.text, "", 1)
     question_free = bool(
         not plan.response_plan.question_policy.allowed
         and all(not line.binding.contains_question for line in sentence_plan.lines)
-        and "?" not in surface_result.text
-        and "？" not in surface_result.text
+        and "?" not in question_text
+        and "？" not in question_text
     )
     depth_adequate = bool(
         required_coverage
@@ -1816,7 +9805,10 @@ def evaluate_grounded_observation_gate(
     if not required_coverage:
         reasons.append("grounded_required_coverage_failed")
     if not text_semantic_retained:
-        reasons.extend(semantic_subcheck_reasons or ("grounded_text_semantic_retention_failed",))
+        reasons.extend(
+            (*semantic_subcheck_reasons, *body_inverse_reasons)
+            or ("grounded_text_semantic_retention_failed",)
+        )
     if not anti_template:
         reasons.extend(anti_template_reasons or ("grounded_anti_template_failed",))
     if mechanical_restatement_detected:
@@ -1980,7 +9972,456 @@ __all__ = [
     "GROUND_OBSERVATION_GATE_SCHEMA_VERSION",
     "GROUND_OBSERVATION_REPLY_GENERATION_PATH",
     "RECEPTION_GATE_REPORT_FIELDS",
+    "GroundedBodyInverseEvaluation",
     "GroundedObservationGateReport",
     "grounded_gate_meta_is_body_free",
+    "evaluate_grounded_surface_body_inverse",
     "evaluate_grounded_observation_gate",
 ]
+
+
+def evaluate_emlis_history_line_inverse(text, line_plan, *, prepared):
+    """Independent Layer-3 grammar/anchor check; never enter two-layer inverse."""
+    from datetime import datetime
+    from cocolon_meaning_experience_engine.emlis_thread_history import admitted_history_plans
+    from cocolon_meaning_experience_engine.emlis_answer_update import build_updated_grounded_plan
+    from emlis_ai_grounded_human_reception import final_reception_source_anchor_text
+    current_plan = build_updated_grounded_plan(prepared)
+    past = next((row for row in admitted_history_plans(prepared.thread) if row[0].source_guard[0] == line_plan.input_id), None)
+    if past is None or past[0].recorded_at != line_plan.recorded_at:
+        return False
+    for plan, resolver, nid, expected, evidence in (
+        (current_plan, prepared.thread.resolver(), line_plan.current_nucleus_id, line_plan.current_text, line_plan.current_evidence_refs),
+        (past[2],past[1].thread.resolver(),line_plan.past_nucleus_id,line_plan.past_text,line_plan.past_evidence_refs)):
+        index = {n.nucleus_id:n for n in plan.nuclei}
+        if nid not in index or final_reception_source_anchor_text(nid,index,resolver) != expected:
+            return False
+        if tuple(resolver.qualified_ref(s).evidence.evidence_id for s in index[nid].source_span_ids) != evidence:
+            return False
+    match = re.fullmatch(r'今回の「([^「」\n]+)」という言葉は、(\d{4}-\d{2}-\d{2})の記録の「([^「」\n]+)」にも重なります。同じ言葉でも、今回の受け止めまで同じとは決めずに見ています。', text)
+    if not match or line_plan.relation != 'REPEATED_EXPLICIT_WORDING':
+        return False
+    return (match.group(1) == line_plan.current_text and match.group(3) == line_plan.past_text
+            and match.group(2) == datetime.fromisoformat(line_plan.recorded_at.replace('Z','+00:00')).date().isoformat()
+            and bool(line_plan.current_evidence_refs and line_plan.past_evidence_refs))
+
+
+def _read_initial_personal_meaning_discourse(raw, move, plan, resolver, selected):
+    """Read the delivered three clauses against source; never invoke an author."""
+    from cocolon_meaning_experience_engine.emlis_thread_projection import validate_initial_personal_meaning_source
+    from cocolon_meaning_experience_engine.contracts import InitialReceivedPersonalMeaningContentV1
+    from emlis_ai_grounded_observation_plan import _source_initial_personal_meaning_from_resolver
+    try:
+        decision, = (d for d in selected.decisions if d.move_id == move.move_id)
+        local = validate_initial_personal_meaning_source(decision, selected, plan, resolver)
+        if type(local) is not InitialReceivedPersonalMeaningContentV1:
+            return None
+        group = _source_initial_personal_meaning_from_resolver(plan.nuclei, plan.relations, resolver)
+        if not group:
+            return None
+        event, reaction, meaning = group[3:6]
+        match = re.fullmatch(r'(?P<event>[^。]+?)(?P<link>のに|けれども|けれど|けど)、'
+                            r'(?P<reaction>[^。]+?)し、(?P<meaning>[^。]+)のですね。', raw)
+        if match is None:
+            return None
+        sources = []
+        for role, node in (('event', event), ('reaction', reaction), ('meaning', meaning)):
+            host = resolver.resolve(node.source_span_ids[0]).raw_text
+            ranges = tuple(code.removeprefix('source_fragment_scalar_range:').split(':')
+                           for code in node.semantic_frame.attribute_codes if code.startswith('source_fragment_scalar_range:'))
+            if role == 'meaning':
+                if ranges:
+                    return None
+                source = host
+            else:
+                if len(ranges) != 1:
+                    return None
+                a, b = map(int, ranges[0]); source = host[a:b]
+            visible = match[role]
+            owner = re.match(r'^(?:私|自分|わたし)(?=は|が|も)', source)
+            if owner:
+                if not visible.startswith('あなた'):
+                    return None
+                visible = owner.group() + visible[len('あなた'):]
+            if source.endswith('です') and role != 'event':
+                visible += 'です'
+            if visible != source:
+                return None
+            sources.append((len(raw[:match.start(role)].encode()), len(raw[:match.end(role)].encode()), source.encode()))
+        links = tuple(code.split(':')[1] for code in event.semantic_frame.attribute_codes
+                      if code.startswith('source_received_event_link:'))
+        link_names = {'のに': 'noni', 'けど': 'kedo', 'けれど': 'keredo', 'けれども': 'keredomo'}
+        if links != (link_names[match['link']],):
+            return None
+        return tuple(sources)
+    except (ValueError, TypeError, AttributeError, KeyError):
+        return None
+
+
+def _evaluate_emlis_model_daily_calm_surface_inverse(proposal, meaning_packet, native):
+    """Read the approved daily family independently of the proposal builder.
+
+    Source clauses and complete section coverage are rechecked. In particular,
+    the tara statement is never read as a general causal or physiological rule.
+    """
+    def fail(code):
+        raise ValueError("model_surface_" + code)
+
+    if native.get("stage") != "INITIAL" or len(native["source_fields"]) != 1:
+        fail("daily_stage_invalid")
+    fields = next(iter(native["source_fields"].values()))
+    am = re.fullmatch(r"(帰って)から、((うどん|雑炊)を作って)(食べた)。", fields.get("memo_action", ""))
+    mm = re.fullmatch(r"((あったかいもの|温かいもの)を?食べた)ら、((ちょっと|少し)落ち着いた)。", fields.get("memo", ""))
+    roles = native["roles"]
+    expected_roles = {"return", "cook", "eat", "warm_food_eat", "slight_calm"}
+    if not am or not mm or set(roles) != expected_roles:
+        fail("daily_source_invalid")
+    expected_text = dict(zip(("return", "cook", "eat", "warm_food_eat", "slight_calm"),
+                            (am[1], am[2], am[4], mm[1], mm[3])))
+    if any(roles[name]["text"] != value for name, value in expected_text.items()):
+        fail("daily_source_binding_invalid")
+    candidate = meaning_packet["candidate"]
+    if (candidate["unknowns"] or candidate["conflicts"] or candidate["updates"]
+            or proposal.get("update_note") is not None):
+        fail("daily_initial_only")
+    relation_roles = native["relation_roles"]
+    required = {
+        "observation": ({"return", "cook", "eat"}, {"return_before_cook", "return_before_eat", "cook_and_eat"}),
+        "reception": ({"warm_food_eat", "slight_calm"}, {"written_eat_calm"}),
+    }
+    if set(relation_roles) != set().union(*(r for _, r in required.values())):
+        fail("daily_relations_invalid")
+    rows = proposal.get("bindings")
+    if type(rows) is not list or len(rows) != 2 or {r.get("section") for r in rows} != set(required):
+        fail("section_invalid")
+    # Food comes from the written cooking clause, not the warm-food memo.
+    # Neither recognizer supplies an identity edge between the two eating acts.
+    tail = r"(?:のですね|んですね|のです|ということですね)"
+    patterns = {
+        "observation": r"帰ってから" + re.escape(am[3]) + r"を作って食べた" + tail,
+        "reception": r"(?:あったかいもの|温かいもの)を?食べて(?:少し|ちょっと)落ち着けてよかった(?:です|ですね)",
+    }
+    bindings = {row["section"]: row for row in rows}
+    traces = []
+    for section, (role_names, relation_names) in required.items():
+        value = proposal.get(section)
+        if type(value) is not str or re.search(r"[！？!?]", value):
+            fail("section_invalid")
+        sentences = list(re.finditer(r"[^。]+[。]?", value))
+        if len(sentences) != 1 or sentences[0].group(0) != value:
+            fail("sentence_not_read")
+        clean = re.sub(r"[\s、,。]", "", value)
+        if not re.fullmatch(patterns[section], clean):
+            fail("sentence_not_read")
+        claim_refs = tuple(sorted(roles[name]["claim_ref"] for name in role_names))
+        relation_refs = tuple(sorted(relation_roles[name] for name in relation_names))
+        binding = bindings[section]
+        if (set(binding) != {"section", "claim_refs", "relation_refs"}
+                or len(binding["claim_refs"]) != len(claim_refs)
+                or len(binding["relation_refs"]) != len(relation_refs)
+                or set(binding["claim_refs"]) != set(claim_refs)
+                or set(binding["relation_refs"]) != set(relation_refs)):
+            fail("binding_or_coverage_invalid")
+        traces.append(dict(section=section, claim_refs=claim_refs, relation_refs=relation_refs,
+            sentences=(dict(start=0, end=len(value), claim_refs=claim_refs, relation_refs=relation_refs),)))
+    return tuple(traces)
+
+
+def _evaluate_emlis_model_v3_surface_inverse(proposal, meaning_packet, native):
+    """Independent bounded Japanese recognition, never a second body author.
+
+    Re-read complete fields here rather than calling the admission recognizer.
+    Literal quotations alone cannot license a changed subject, polarity, time,
+    perceived reality, unknown target, or the direction of an explanation.
+    """
+    def fail(code):
+        raise ValueError("model_surface_v3_" + code)
+    sources = native.get("source_fields", {})
+    originals = [(sid,f) for sid,f in sources.items() if "memo" in f and "memo_action" in f]
+    if len(originals) != 1:
+        fail("original_source_invalid")
+    sid, fields = originals[0]
+    patterns = (
+        ("BOOK_CONCERN_V3", r"(?P<late_return>借りていた本を返すのが遅れて)、(?P<apologize>友人に謝った)。",
+         r"(?P<reassurance_received>大丈夫って言ってくれた)けど、(?P<remaining_concern>まだちょっと気になる)。"),
+        ("SHOP_DISTANCE_V3", r"(?P<opening_known>昔からの友人が店を開いたと知って)、(?P<celebration_sent>お祝いのメッセージを送った)。",
+         r"(?P<joy>うれしかった)けど、(?P<felt_left_behind>少し置いていかれた気がした)。"),
+        ("REPOT_RECEPTION_V3", r"(?P<guidance_received>植え替えの手順を叔父に説明してもらい)、(?P<listened_to_end>最後まで聞いた)。",
+         r"(?P<understood_method>やり方が分かって)(?P<relief>安心した)。"),
+        ("KNIT_UNKNOWN_V3", r"(?P<unravelled>今日は編みかけの見本をほどいた)。",
+         r"(?P<burden>ほどくのは面倒だった)。(\s*)(?P<sadness>さみしさも少しあった)。(\s*)(?P<stated_unknown>二つがどうつながるかは、自分でも分からない)。"),
+    )
+    found = [(family, re.fullmatch(ap, fields.get("memo_action", "")), re.fullmatch(mp, fields.get("memo", "")))
+             for family,ap,mp in patterns if re.fullmatch(ap,fields.get("memo_action","")) and re.fullmatch(mp,fields.get("memo",""))]
+    if len(found) != 1 or found[0][0] != native.get("family"):
+        fail("source_family_invalid")
+    family, action, memo = found[0]
+    expected = {}
+    for match,field in ((action,"memo_action"),(memo,"memo")):
+        expected.update({name:(sid,field,text) for name,text in match.groupdict().items()})
+    after = native.get("stage") == "AFTER_EXPLANATION"
+    if native.get("stage") not in {"INITIAL","AFTER_EXPLANATION"}:
+        fail("stage_invalid")
+    answers = [(key,value) for key,value in sources.items() if "answer_text_private" in value]
+    if bool(answers) != after or len(sources) != 1 + int(after) or len(answers) > 1:
+        fail("source_stage_invalid")
+    if after:
+        aid, af = answers[0]
+        text = af["answer_text_private"]
+        if family == "BOOK_CONCERN_V3":
+            ap = (r'(?P<self_statement>自分から「週末に返すね」と言っていた)のに、(?P<late_awareness>遅くなると分かった)時点で(?P<no_contact>連絡しなかった)ことです。\n\n'
+                  r'(?P<returned>本は返した)のですが、「(?P<counterfactual>一言、遅くなるって伝えておけばよかったな)」と、(?P<continuing_concern>まだ気になっています)。')
+        elif family == "SHOP_DISTANCE_V3":
+            ap = (r'(?P<shared_talk>以前、その友人と「いつか店をやれたらいいね」と話していたことがあるんです)。'
+                  r'(?P<no_joint_preparation>具体的に一緒に準備をしていたわけでも)、(?P<no_promise>約束していたわけでもありません)。\n\n'
+                  r'でも、開店したと聞いたとき、(?P<perceived_realization>二人で話していた未来が、友人の方ではもう現実になっていたんだな、と感じました)。'
+                  r'(?P<answer_joy>うれしい)のに、(?P<felt_distance>あの話を一緒にしていた頃から少し離れてしまったようで)、(?P<answer_sadness>寂しかったです)。')
+        else:
+            fail("initial_only")
+        matched = re.fullmatch(ap,text)
+        if matched is None:
+            fail("answer_source_invalid")
+        expected.update({name:(aid,"answer_text_private",quote) for name,quote in matched.groupdict().items()})
+    roles = native.get("roles",{})
+    if set(roles) != set(expected):
+        fail("role_coverage_invalid")
+    for name,(source_id,field,quote) in expected.items():
+        role = roles[name]
+        text = sources[source_id][field]
+        if (role.get("source_id"),role.get("field_path"),role.get("text")) != (source_id,field,quote):
+            fail("role_source_invalid")
+        if text.count(quote) != 1 or role.get("start") != text.index(quote) or role.get("end") != text.index(quote)+len(quote):
+            fail("role_source_invalid")
+    candidate = meaning_packet["candidate"]
+    if family == "KNIT_UNKNOWN_V3":
+        u = candidate["unknowns"]
+        if (len(u)!=1 or u[0]["kind"]!="PERSON_STATED" or u[0]["target_claim_refs"] != [roles[n]["claim_ref"] for n in ("burden","sadness")]
+                or u[0]["description"] != expected["stated_unknown"][2]):
+            fail("unknown_target_invalid")
+    def clean(value):
+        return re.sub(r"[\s、,。「」『』]", "", value)
+    tail = r"(?:のですね|んですね|ということですね)"
+    grammar=[]
+    def add(pattern, names, relations=(), *, section=None):
+        grammar.append((re.compile(pattern),set(names),set(relations),section))
+    if family == "BOOK_CONCERN_V3" and not after:
+        add(r"本を返すのが遅れて友人に謝り大丈夫と言われてもまだ少し気がかりが残っている"+tail,
+            ("late_return","apologize","reassurance_received","remaining_concern"),("action_link","memo_link"),section="observation")
+        add(r"大丈夫と言ってもらえたこともまだ気になることも聞いていたいです",
+            ("reassurance_received","remaining_concern"),("memo_link",),section="reception")
+        required={"observation":{"late_return","apologize","reassurance_received","remaining_concern"},"reception":{"reassurance_received","remaining_concern"}}
+    elif family == "BOOK_CONCERN_V3":
+        add(r"遅くなると分かった時に連絡しなかったことが今も気になっている"+tail,
+            ("late_awareness","no_contact","continuing_concern"),("awareness_time",),section="observation")
+        add(r"本を返してもあの時に一言伝えておけばという思いは残っている"+tail,
+            ("returned","counterfactual","continuing_concern"),("returned_concession","concern_content"),section="reception")
+        add(r"何が気になっているのか話してくださってありがとうございます",
+            ("remaining_concern","no_contact"),("answer_explains_target",),section="reception")
+        add(r"気がかりの対象が遅れると分かった時に連絡しなかったことだと説明されました",
+            ("remaining_concern","late_awareness","no_contact"),("answer_explains_target","awareness_time"),section="update_note")
+        required={"observation":{"late_awareness","no_contact","continuing_concern"},"reception":{"returned","counterfactual","continuing_concern"},"update_note":{"remaining_concern","no_contact"}}
+    elif family == "SHOP_DISTANCE_V3" and not after:
+        add(r"友人の開店を知ってお祝いのメッセージを送りうれしさと少し置いていかれたような感覚があった"+tail,
+            ("opening_known","celebration_sent","joy","felt_left_behind"),("action_link","memo_link"),section="observation")
+        add(r"開店を喜ぶ気持ちと少し置いていかれたような感覚をどちらも聞いていたいです",
+            ("joy","felt_left_behind"),("memo_link",),section="reception")
+        required={"observation":{"opening_known","celebration_sent","joy","felt_left_behind"},"reception":{"joy","felt_left_behind"}}
+    elif family == "SHOP_DISTANCE_V3":
+        add(r"二人で話していた未来が友人の方ではもう現実になっていたんだなと感じた"+tail,
+            ("shared_talk","perceived_realization"),("past_reference",),section="observation")
+        add(r"(?:その一方で)?あの話を一緒にしていた頃から少し離れてしまったようで寂しかった"+tail,
+            ("felt_distance","answer_sadness"),("distance_link",),section="observation")
+        add(r"一緒に準備したり約束したりしていたわけではなくても二人で話した時間はあった"+tail,
+            ("no_joint_preparation","no_promise","shared_talk"),section="reception")
+        add(r"開店のうれしさもその頃から離れたような寂しさも受け取りました",
+            ("answer_joy","felt_distance","answer_sadness"),("answer_concession","distance_link"),section="reception")
+        add(r"本人の説明で二人で話していた未来とあの頃からの距離が気持ちに関わっていたことが分かりました",
+            ("shared_talk","perceived_realization","felt_left_behind","felt_distance","answer_sadness"),("past_reference","answer_explains_target"),section="update_note")
+        add(r"共同準備や約束があったことにはしません",("no_joint_preparation","no_promise"),section="update_note")
+        required={"observation":{"shared_talk","perceived_realization","felt_distance","answer_sadness"},"reception":{"no_joint_preparation","no_promise","shared_talk","answer_joy","felt_distance","answer_sadness"},"update_note":{"felt_left_behind","felt_distance","no_joint_preparation","no_promise"}}
+    elif family == "REPOT_RECEPTION_V3":
+        add(r"叔父に植え替えの手順を説明してもらい最後まで聞いた"+tail,
+            ("guidance_received","listened_to_end"),("action_link",),section="observation")
+        add(r"やり方が分かって安心できてよかった(?:です|ですね)",
+            ("understood_method","relief"),("memo_link",),section="reception")
+        required={"observation":{"guidance_received","listened_to_end"},"reception":{"understood_method","relief"}}
+    else:
+        add(r"編みかけの見本をほどいた"+tail,("unravelled",),section="observation")
+        add(r"面倒だったことと少しさみしかったことがどちらもあった"+tail,("burden","sadness"),section="observation")
+        add(r"二つがどうつながるのかはまだ分からない"+tail,("stated_unknown","burden","sadness"),section="reception")
+        add(r"分からないところも含めて今の言葉として聞いていたいです",("stated_unknown",),section="reception")
+        required={"observation":{"unravelled","burden","sadness"},"reception":{"stated_unknown","burden","sadness"}}
+    if set(proposal) != {"observation","reception","update_note","bindings"}:
+        fail("section_shape_invalid")
+    bindings = {row["section"]:row for row in proposal["bindings"]}
+    if len(bindings)!=len(proposal["bindings"]) or set(bindings)!=set(required):
+        fail("section_coverage_invalid")
+    relation_roles=native["relation_roles"]
+    seen, traces=set(),[]
+    for section in ("observation","reception","update_note"):
+        value=proposal[section]
+        if value is None:
+            if section in required or section!="update_note":
+                fail("section_invalid")
+            continue
+        if type(value) is not str or not value.strip() or re.search(r"[！？!?]",value) or section not in bindings:
+            fail("section_invalid")
+        names,relations,sentences=set(),set(),[]
+        for match in re.finditer(r"[^。]+[。]?",value):
+            sentence=clean(match[0])
+            matches=[(ns,rs) for pattern,ns,rs,where in grammar if where==section and pattern.fullmatch(sentence)]
+            if len(matches)!=1 or sentence in seen:
+                fail("sentence_not_read")
+            seen.add(sentence); ns,rs=matches[0]; names|=ns; relations|=rs
+            sentences.append(dict(start=match.start(),end=match.end(),claim_refs=tuple(sorted(roles[n]["claim_ref"] for n in ns)),relation_refs=tuple(sorted(relation_roles[n] for n in rs))))
+        expected_claims={roles[n]["claim_ref"] for n in names}
+        expected_relations={relation_roles[n] for n in relations}
+        binding=bindings[section]
+        if (not sentences or not required[section] <= names or set(binding["claim_refs"])!=expected_claims
+                or len(binding["claim_refs"])!=len(expected_claims) or set(binding["relation_refs"])!=expected_relations
+                or len(binding["relation_refs"])!=len(expected_relations)):
+            fail("binding_or_coverage_invalid")
+        if section=="update_note" and (not after or set(binding["update_refs"])!=set(range(len(candidate["updates"])))):
+            fail("update_coverage_invalid")
+        traces.append(dict(section=section,claim_refs=tuple(sorted(expected_claims)),relation_refs=tuple(sorted(expected_relations)),sentences=tuple(sentences)))
+    return tuple(traces)
+
+
+def evaluate_emlis_model_surface_inverse(*, proposal, meaning_packet, native_bindings):
+    """Independently read a bounded repair/reuse profile's proposed Japanese.
+
+    This is a recognizer, not a body generator, a model judge, or a call back
+    into the old finite author. Lexical objects/participants come from native
+    source case slots. Unrecognized sentences fail closed; matching supplied
+    claim references alone never makes a sentence faithful. General Japanese
+    fidelity and product naturalness are deliberately not claimed here.
+    """
+    if native_bindings.get("family") in {"BOOK_CONCERN_V3", "SHOP_DISTANCE_V3", "REPOT_RECEPTION_V3", "KNIT_UNKNOWN_V3"}:
+        return _evaluate_emlis_model_v3_surface_inverse(proposal, meaning_packet, native_bindings)
+    if native_bindings.get("family") == "DAILY_CALM_V1":
+        return _evaluate_emlis_model_daily_calm_surface_inverse(proposal, meaning_packet, native_bindings)
+
+    def fail(code):
+        raise ValueError("model_surface_" + code)
+
+    def clean(value):
+        return re.sub(r"[\s、,。！？!?「」『』]", "", value)
+
+    def literal(value):
+        return re.escape(clean(value))
+
+    roles = native_bindings["roles"]
+    candidate = meaning_packet["candidate"]
+    after = native_bindings["stage"] == "AFTER_CORRECTION"
+    if native_bindings["stage"] not in {"INITIAL", "AFTER_CORRECTION"}:
+        fail("stage_unsupported")
+    cases = native_bindings["case_arguments"]
+    objects = [row["text"] for row in cases if row["owner_claim_ref"] == roles["repair"]["claim_ref"] and row["written_role"] == "を"]
+    if len(objects) != 1:
+        fail("case_binding_invalid")
+    object_text = objects[0]
+    # A written noun head is an anaphoric mention of the same unique repair
+    # object, not a second guessed object or a replacement of source metadata.
+    head_match = re.search(r"[一-龠々ァ-ヺー]+$", object_text)
+    object_forms = {object_text, head_match[0] if head_match else object_text}
+    object_pattern = "(?:" + "|".join(literal(x) for x in sorted(object_forms, key=len, reverse=True)) + ")"
+    result = clean(roles["usable_again"]["text"])
+    joy = r"(?:うれしかった|嬉しかった)"
+    tail = r"(?:のですね|んですね|のです|ということですね)"
+    patterns = []
+
+    def add(pattern, role_names, relation_names=(), update_indexes=()):
+        patterns.append((re.compile(pattern), set(role_names), set(relation_names), set(update_indexes)))
+
+    add(object_pattern + r"を(?:修理し|修理して|直し|直して)" + re.escape(result) + tail,
+        ("repair", "usable_again"), ("repair_and_result",))
+    if not after:
+        appraisal = literal(roles["solo_appraisal_object"]["text"])
+        add(appraisal + r"が" + joy + tail, ("solo_appraisal_object", "joy"), ("joy_ground",))
+        add(joy + r"のは" + appraisal + r"だった" + tail,
+            ("solo_appraisal_object", "joy"), ("joy_ground",))
+    else:
+        persons = [r["text"] for r in cases if r["owner_claim_ref"] == roles["friend_guidance"]["claim_ref"] and r["written_role"] == "に"]
+        procedures = [r["text"] for r in cases if r["owner_claim_ref"] == roles["friend_guidance"]["claim_ref"] and r["written_role"] == "を"]
+        if len(persons) != 1 or len(procedures) != 1:
+            fail("case_binding_invalid")
+        guidance = literal(persons[0]) + r"に" + literal(procedures[0]) + r"を(?:教わり|教わって|教えてもらい|教えてもらって)"
+        joint = r"(?:一緒に" + object_pattern + r"を|" + object_pattern + r"を一緒に|一緒に)(?:直した|修理した|直しました|修理しました)"
+        add(guidance + joint + tail, ("friend_guidance", "joint_repair"))
+        reuse_text = roles["reuse_appraisal_object"]["text"]
+        if not reuse_text.endswith("からです"):
+            fail("reason_binding_invalid")
+        reuse = literal(reuse_text[:-len("からです")])
+        add(reuse + r"ことが" + joy + tail, ("reuse_appraisal_object", "joy"), ("joy_ground_revised",))
+        add(joy + r"のは" + reuse + r"ことだった" + tail,
+            ("reuse_appraisal_object", "joy"), ("joy_ground_revised",))
+        # A concise account of the source-confirmed changes; this says neither
+        # that the old claim is still true nor that a new cause was invented.
+        add(r"共同(?:修理|作業)とまた使えることへの(?:喜び|うれしさ)へ(?:訂正|更新)しました",
+            ("friend_guidance", "joint_repair", "reuse_appraisal_object"), ("joy_ground_revised",), (0, 1, 2))
+
+    # Emlis' own response to a known result has a different role from a claim
+    # about why the person felt joy. It is bound to that result and cannot
+    # introduce another person's feelings, a diagnosis or a future outcome.
+    result_continuative = re.escape(result[:-2] + "って") if result.endswith("った") else None
+    if result_continuative:
+        add(r"(?:その)?" + object_pattern + r"に" + result_continuative + r"よかった(?:ですね|です)",
+            ("usable_again",))
+        add(result_continuative + r"よかった(?:ですね|です)", ("usable_again",))
+        if result.startswith("また"):
+            add(r"また(?:その)?" + object_pattern + r"に" + re.escape(result[2:-2] + "って")
+                + r"よかった(?:ですね|です)", ("usable_again",))
+    add(r"(?:" + object_pattern + r"が)?" + re.escape(result) + r"と(?:聞けて|聞いて)私も(?:うれしい|嬉しい)です",
+        ("usable_again", "joy"))
+    if after:
+        add(literal(roles["reuse_appraisal_object"]["text"][:-len("からです")])
+            .replace("なった", "なって") + r"よかった(?:ですね|です)", ("reuse_appraisal_object",))
+
+    relation_roles = native_bindings["relation_roles"]
+    role_ids = {name: row["claim_ref"] for name, row in roles.items()}
+    bindings = {row["section"]: row for row in proposal["bindings"]}
+    required = {
+        "observation": {"friend_guidance", "joint_repair"} if after else {"repair", "usable_again"},
+        "reception": {"reuse_appraisal_object", "joy"} if after else {"solo_appraisal_object", "joy"},
+    }
+    traces = []
+    seen_sentences = set()
+    for section in ("observation", "reception", "update_note"):
+        text = proposal[section]
+        if text is None:
+            if section != "update_note" or section in bindings:
+                fail("section_invalid")
+            continue
+        if type(text) is not str or not text.strip() or section not in bindings or re.search(r"[?？]", text):
+            fail("section_invalid")
+        sentence_rows = []
+        consumed_roles, consumed_relations, consumed_updates = set(), set(), set()
+        for match in re.finditer(r"[^。！？!?]+[。！？!?]?", text):
+            sentence = clean(match[0])
+            if sentence in seen_sentences:
+                fail("sentence_repeated")
+            seen_sentences.add(sentence)
+            matches = [(role_set, relations, updates) for pattern, role_set, relations, updates in patterns
+                       if pattern.fullmatch(sentence)]
+            if len(matches) != 1:
+                fail("sentence_not_read")
+            role_set, relations, updates = matches[0]
+            if updates and section != "update_note" or section == "update_note" and not updates:
+                fail("section_role_invalid")
+            consumed_roles.update(role_set)
+            consumed_relations.update(relations)
+            consumed_updates.update(updates)
+            sentence_rows.append(dict(start=match.start(), end=match.end(),
+                claim_refs=tuple(role_ids[name] for name in sorted(role_set)),
+                relation_refs=tuple(relation_roles[name] for name in sorted(relations))))
+        expected_claims = {role_ids[name] for name in consumed_roles}
+        expected_relations = {relation_roles[name] for name in consumed_relations}
+        binding = bindings[section]
+        if (not sentence_rows or not required.get(section, set()) <= consumed_roles
+                or set(binding["claim_refs"]) != expected_claims
+                or set(binding["relation_refs"]) != expected_relations
+                or section == "update_note" and (not after or set(binding["update_refs"]) != consumed_updates)):
+            fail("binding_or_coverage_invalid")
+        traces.append(dict(section=section, claim_refs=tuple(sorted(expected_claims)),
+                           relation_refs=tuple(sorted(expected_relations)), sentences=tuple(sentence_rows)))
+    return tuple(traces)

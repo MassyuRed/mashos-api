@@ -1,0 +1,475 @@
+{
+  "origin": "P2_HAND_AUTHORED_NOT_MODEL_OUTPUT",
+  "case_id": "P01-N",
+  "p1_request_ref": "prep-5d2d66abadafe5865647749ec5aedd2a6a30b04224fb5c12bb883f5db830b8cb",
+  "original": {
+    "category": [
+      "仕事",
+      "人間関係"
+    ],
+    "created_at": "2026-10-20T20:40:00+09:00",
+    "emotion_details": [
+      {
+        "strength": "weak",
+        "type": "喜び"
+      },
+      {
+        "strength": "weak",
+        "type": "不安"
+      }
+    ],
+    "emotions": [
+      "喜び",
+      "不安"
+    ],
+    "id": "P01-O",
+    "memo": "助かったと言ってもらえてうれしかった。でも自分の仕事が残って、帰るのが遅くなった。手伝ったことを後悔しているわけではない。次も引き受けるかは、そのときの余裕で決めたい。",
+    "memo_action": "頼まれて同僚の発表資料を一緒に直した。"
+  },
+  "source_version": "emlis.current_input_bundle.v1",
+  "packet": {
+    "candidate": {
+      "schema_version": "cocolon.cmee.semantic_mapping_proposal.v1",
+      "core": "piece",
+      "claims": [
+        {
+          "claim_id": "p.joy",
+          "kind": "STATE",
+          "text": "助かったと言ってもらえてうれしかった。",
+          "subject": {
+            "binding": "OMITTED",
+            "source_entity": null,
+            "evidence_indexes": []
+          },
+          "predicate": {
+            "surface": "うれしかった",
+            "arguments": []
+          },
+          "polarity": {
+            "value": "AFFIRMED",
+            "scope_refs": [
+              "p.joy"
+            ],
+            "evidence_indexes": [
+              1
+            ]
+          },
+          "modality": {
+            "value": "ASSERTED_AS_WRITTEN",
+            "evidence_indexes": [
+              1
+            ]
+          },
+          "about_time": {
+            "kind": "WRITTEN_PAST_UNRESOLVED_OCCASION",
+            "expression": null,
+            "anchor_source_id": null,
+            "evidence_indexes": [
+              1
+            ]
+          },
+          "qualifiers": [
+            {
+              "kind": "REPORTED_SPEECH_SCOPE",
+              "text": "助かったと言ってもらえて",
+              "scope_refs": [
+                "p.joy"
+              ],
+              "evidence_indexes": [
+                0
+              ]
+            }
+          ],
+          "evidence_indexes": [
+            1
+          ]
+        },
+        {
+          "claim_id": "p.work_left",
+          "kind": "RESULT_STATE",
+          "text": "自分の仕事が残って",
+          "subject": {
+            "binding": "EXPLICIT",
+            "source_entity": "自分の仕事",
+            "evidence_indexes": [
+              11
+            ]
+          },
+          "predicate": {
+            "surface": "残って",
+            "arguments": [
+              {
+                "role": "WRITTEN_が",
+                "text": "自分の仕事",
+                "claim_ref": null,
+                "evidence_indexes": [
+                  10
+                ]
+              }
+            ]
+          },
+          "polarity": {
+            "value": "AFFIRMED",
+            "scope_refs": [
+              "p.work_left"
+            ],
+            "evidence_indexes": [
+              2
+            ]
+          },
+          "modality": {
+            "value": "ASSERTED_AS_WRITTEN",
+            "evidence_indexes": [
+              2
+            ]
+          },
+          "about_time": {
+            "kind": "WRITTEN_PAST_UNRESOLVED_OCCASION",
+            "expression": null,
+            "anchor_source_id": null,
+            "evidence_indexes": [
+              2
+            ]
+          },
+          "qualifiers": [],
+          "evidence_indexes": [
+            2
+          ]
+        },
+        {
+          "claim_id": "p.late",
+          "kind": "RESULT_STATE",
+          "text": "帰るのが遅くなった。",
+          "subject": {
+            "binding": "OMITTED",
+            "source_entity": null,
+            "evidence_indexes": []
+          },
+          "predicate": {
+            "surface": "遅くなった",
+            "arguments": []
+          },
+          "polarity": {
+            "value": "AFFIRMED",
+            "scope_refs": [
+              "p.late"
+            ],
+            "evidence_indexes": [
+              3
+            ]
+          },
+          "modality": {
+            "value": "ASSERTED_AS_WRITTEN",
+            "evidence_indexes": [
+              3
+            ]
+          },
+          "about_time": {
+            "kind": "WRITTEN_PAST_UNRESOLVED_OCCASION",
+            "expression": null,
+            "anchor_source_id": null,
+            "evidence_indexes": [
+              3
+            ]
+          },
+          "qualifiers": [],
+          "evidence_indexes": [
+            3
+          ]
+        },
+        {
+          "claim_id": "p.no_regret",
+          "kind": "SCOPED_EVALUATION",
+          "text": "手伝ったことを後悔しているわけではない。",
+          "subject": {
+            "binding": "OMITTED",
+            "source_entity": null,
+            "evidence_indexes": []
+          },
+          "predicate": {
+            "surface": "後悔しているわけではない",
+            "arguments": [
+              {
+                "role": "WRITTEN_を",
+                "text": "手伝ったこと",
+                "claim_ref": null,
+                "evidence_indexes": [
+                  12
+                ]
+              }
+            ]
+          },
+          "polarity": {
+            "value": "SCOPED_NEGATION",
+            "scope_refs": [
+              "p.no_regret"
+            ],
+            "evidence_indexes": [
+              5
+            ]
+          },
+          "modality": {
+            "value": "ASSERTED_AS_WRITTEN",
+            "evidence_indexes": [
+              5
+            ]
+          },
+          "about_time": {
+            "kind": "WRITTEN_CURRENT_EVALUATION",
+            "expression": null,
+            "anchor_source_id": null,
+            "evidence_indexes": [
+              5
+            ]
+          },
+          "qualifiers": [
+            {
+              "kind": "NEGATION_SCOPE",
+              "text": "わけではない",
+              "scope_refs": [
+                "p.no_regret"
+              ],
+              "evidence_indexes": [
+                4
+              ]
+            }
+          ],
+          "evidence_indexes": [
+            5
+          ]
+        },
+        {
+          "claim_id": "p.next",
+          "kind": "CONDITIONAL_INTENTION",
+          "text": "次も引き受けるかは、そのときの余裕で決めたい。",
+          "subject": {
+            "binding": "OMITTED",
+            "source_entity": null,
+            "evidence_indexes": []
+          },
+          "predicate": {
+            "surface": "決めたい",
+            "arguments": [
+              {
+                "role": "WRITTEN_で",
+                "text": "そのときの余裕",
+                "claim_ref": null,
+                "evidence_indexes": [
+                  13
+                ]
+              }
+            ]
+          },
+          "polarity": {
+            "value": "AFFIRMED",
+            "scope_refs": [
+              "p.next"
+            ],
+            "evidence_indexes": [
+              6
+            ]
+          },
+          "modality": {
+            "value": "WISH_OR_INTENTION_NOT_ACTION",
+            "evidence_indexes": [
+              6
+            ]
+          },
+          "about_time": {
+            "kind": "WRITTEN_FUTURE_RELATIVE",
+            "expression": "次",
+            "anchor_source_id": "P01-O",
+            "evidence_indexes": [
+              14
+            ]
+          },
+          "qualifiers": [],
+          "evidence_indexes": [
+            6
+          ]
+        },
+        {
+          "claim_id": "p.help",
+          "kind": "ACTION",
+          "text": "頼まれて同僚の発表資料を一緒に直した。",
+          "subject": {
+            "binding": "OMITTED",
+            "source_entity": null,
+            "evidence_indexes": []
+          },
+          "predicate": {
+            "surface": "直した",
+            "arguments": []
+          },
+          "polarity": {
+            "value": "AFFIRMED",
+            "scope_refs": [
+              "p.help"
+            ],
+            "evidence_indexes": [
+              7
+            ]
+          },
+          "modality": {
+            "value": "ASSERTED_AS_WRITTEN",
+            "evidence_indexes": [
+              7
+            ]
+          },
+          "about_time": {
+            "kind": "WRITTEN_PAST_UNRESOLVED_OCCASION",
+            "expression": null,
+            "anchor_source_id": null,
+            "evidence_indexes": [
+              7
+            ]
+          },
+          "qualifiers": [],
+          "evidence_indexes": [
+            7
+          ]
+        }
+      ],
+      "relations": [
+        {
+          "relation_id": "p.contrast",
+          "type": "SOURCE_WRITTEN_CONCESSION",
+          "from_claim_id": "p.joy",
+          "to_claim_id": "p.work_left",
+          "polarity": "AFFIRMED",
+          "scope_refs": [
+            "p.contrast"
+          ],
+          "qualifiers": [],
+          "evidence_indexes": [
+            8
+          ]
+        },
+        {
+          "relation_id": "p.cooccur",
+          "type": "WRITTEN_TE_LINK_CAUSALITY_UNRESOLVED",
+          "from_claim_id": "p.work_left",
+          "to_claim_id": "p.late",
+          "polarity": "AFFIRMED",
+          "scope_refs": [
+            "p.cooccur"
+          ],
+          "qualifiers": [],
+          "evidence_indexes": [
+            9
+          ]
+        }
+      ],
+      "unknowns": [],
+      "conflicts": [],
+      "updates": []
+    },
+    "evidence": [
+      {
+        "source_id": "P01-O",
+        "field_path": "memo",
+        "start": 0,
+        "end": 12,
+        "quote": "助かったと言ってもらえて"
+      },
+      {
+        "source_id": "P01-O",
+        "field_path": "memo",
+        "start": 0,
+        "end": 19,
+        "quote": "助かったと言ってもらえてうれしかった。"
+      },
+      {
+        "source_id": "P01-O",
+        "field_path": "memo",
+        "start": 21,
+        "end": 30,
+        "quote": "自分の仕事が残って"
+      },
+      {
+        "source_id": "P01-O",
+        "field_path": "memo",
+        "start": 31,
+        "end": 41,
+        "quote": "帰るのが遅くなった。"
+      },
+      {
+        "source_id": "P01-O",
+        "field_path": "memo",
+        "start": 54,
+        "end": 60,
+        "quote": "わけではない"
+      },
+      {
+        "source_id": "P01-O",
+        "field_path": "memo",
+        "start": 41,
+        "end": 61,
+        "quote": "手伝ったことを後悔しているわけではない。"
+      },
+      {
+        "source_id": "P01-O",
+        "field_path": "memo",
+        "start": 61,
+        "end": 84,
+        "quote": "次も引き受けるかは、そのときの余裕で決めたい。"
+      },
+      {
+        "source_id": "P01-O",
+        "field_path": "memo_action",
+        "start": 0,
+        "end": 19,
+        "quote": "頼まれて同僚の発表資料を一緒に直した。"
+      },
+      {
+        "source_id": "P01-O",
+        "field_path": "memo",
+        "start": 19,
+        "end": 41,
+        "quote": "でも自分の仕事が残って、帰るのが遅くなった。"
+      },
+      {
+        "source_id": "P01-O",
+        "field_path": "memo",
+        "start": 21,
+        "end": 41,
+        "quote": "自分の仕事が残って、帰るのが遅くなった。"
+      },
+      {
+        "source_id": "P01-O",
+        "field_path": "memo",
+        "start": 21,
+        "end": 27,
+        "quote": "自分の仕事が"
+      },
+      {
+        "source_id": "P01-O",
+        "field_path": "memo",
+        "start": 21,
+        "end": 26,
+        "quote": "自分の仕事"
+      },
+      {
+        "source_id": "P01-O",
+        "field_path": "memo",
+        "start": 41,
+        "end": 48,
+        "quote": "手伝ったことを"
+      },
+      {
+        "source_id": "P01-O",
+        "field_path": "memo",
+        "start": 71,
+        "end": 79,
+        "quote": "そのときの余裕で"
+      },
+      {
+        "source_id": "P01-O",
+        "field_path": "memo",
+        "start": 61,
+        "end": 62,
+        "quote": "次"
+      }
+    ]
+  }
+}

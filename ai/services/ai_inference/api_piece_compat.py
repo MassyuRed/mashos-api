@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from fastapi import FastAPI, Header, Path, Query, Request
+from fastapi import FastAPI, Header, Path, Query, Request, Response
 
 from api_emotion_piece import (
     EmotionReflectionCancelRequest,
@@ -38,8 +38,8 @@ from api_nexus import (
 from route_compat_delegate import call_registered_route_json
 
 
-def register_piece_compat_routes(app: FastAPI) -> None:
-    @app.get('/emotion/reflection/quota', response_model=EmotionReflectionQuotaResponse)
+def register_piece_compat_routes(app: FastAPI, *, include_preview: bool = True,
+                                 include_quota: bool = True) -> None:
     async def compat_emotion_reflection_quota(
         authorization: Optional[str] = Header(default=None, alias='Authorization'),
     ) -> EmotionReflectionQuotaResponse:
@@ -51,7 +51,11 @@ def register_piece_compat_routes(app: FastAPI) -> None:
         )
         return EmotionReflectionQuotaResponse(**payload)
 
-    @app.post('/emotion/reflection/preview', response_model=EmotionReflectionPreviewResponse)
+    # A save-quota response cannot be projected through the old publish DTO.
+    if include_quota:
+        app.add_api_route('/emotion/reflection/quota', compat_emotion_reflection_quota,
+                          methods=['GET'], response_model=EmotionReflectionQuotaResponse)
+
     async def compat_emotion_reflection_preview(
         request: Request,
         payload: EmotionReflectionPreviewRequest,
@@ -67,6 +71,12 @@ def register_piece_compat_routes(app: FastAPI) -> None:
             authorization=authorization,
         )
         return EmotionReflectionPreviewResponse(**result)
+
+    # The old DTO/delegate cannot call the saved-source v2 preview handler.
+    # Default registration preserves the alias; the isolated candidate omits it.
+    if include_preview:
+        app.add_api_route('/emotion/reflection/preview', compat_emotion_reflection_preview,
+                          methods=['POST'], response_model=EmotionReflectionPreviewResponse)
 
     @app.post('/emotion/reflection/publish', response_model=EmotionReflectionPublishResponse)
     async def compat_emotion_reflection_publish(
@@ -100,6 +110,7 @@ def register_piece_compat_routes(app: FastAPI) -> None:
 
     @app.get('/nexus/reflections', response_model=NexusReflectionResponse)
     async def compat_nexus_reflections(
+        response: Response,
         sort: str = Query(default='latest'),
         limit: int = Query(default=20, ge=1, le=100),
         user_id: Optional[str] = Query(default=None),
@@ -110,6 +121,7 @@ def register_piece_compat_routes(app: FastAPI) -> None:
             app,
             path='/nexus/pieces',
             detail='Legacy /nexus/reflections compat failed',
+            response=response,
             sort=sort,
             limit=limit,
             user_id=user_id,

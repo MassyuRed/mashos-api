@@ -1,0 +1,265 @@
+{
+  "source_commit": "44d8e47836d3443d446ff31cf167963c06548e9f",
+  "cases": [
+    {
+      "case": "base",
+      "memo": "友達と話せて嬉しかった。でも、疲れた。",
+      "reason_codes": [
+        "no_bound_personal_meaning_target"
+      ],
+      "checkpoint_sha256": "b86642172d7e0a949c298af7ed79dfebbb47ed1a3991f8965a5442098fca5415",
+      "nuclei_sha256": "4e8c2dd304b9f2e4464a6b296b1d05b8ae4501550dd1fed781fcbacf9ef3e444",
+      "relations_sha256": "ba00ef435146ff3dbd30a937666ba7b225089b950dadab8e8b2125952a8b7c60",
+      "decisions_sha256": "50fcbe115b6a1f3c417293bc660048f697ca9ad38310862d860dc0be23b4e763",
+      "body": "見えたこと：\n「友達と話せて嬉しかった」と「疲れた」が、異なる向きのまま同時にあります。\n\nEmlisから：\nその状態が重なる中で、今ここに置かれた言葉ともう一方の向きとの違いをどちらの側も残したまま、小さくせずに受け止めています。",
+      "observation": "「友達と話せて嬉しかった」と「疲れた」が、異なる向きのまま同時にあります。"
+    },
+    {
+      "case": "hiragana_degree",
+      "memo": "友達と話せてうれしかった。でも、少し疲れた。",
+      "reason_codes": [
+        "no_bound_personal_meaning_target"
+      ],
+      "checkpoint_sha256": "c9930278a139f827498b80659122d01a12f21f9332e2eda45ac109ed44719d5c",
+      "nuclei_sha256": "e539e71f4ea5674b5a6f8289c43286d0a0a53f006602ce3d17a4f7880efdb8d7",
+      "relations_sha256": "cf67f2bd17b45acfe8b67c05f67aa88496381b6865d2c619f05818479f41eedc",
+      "decisions_sha256": "03892547248b1e804a55c3545947c3fe5f97382f44ca5bce352464e5058ee955",
+      "body": "見えたこと：\n「友達と話せてうれしかった」と「少し疲れた」が、異なる向きのまま同時にあります。\n\nEmlisから：\nその状態が重なる中で、今ここに置かれた言葉ともう一方の向きとの違いをどちらの側も残したまま、小さくせずに受け止めています。",
+      "observation": "「友達と話せてうれしかった」と「少し疲れた」が、異なる向きのまま同時にあります。"
+    },
+    {
+      "case": "enjoyment",
+      "memo": "友達と話せて楽しかった。でも、疲れた。",
+      "reason_codes": [
+        "no_bound_personal_meaning_target"
+      ],
+      "checkpoint_sha256": "37e933829de96cc09c398f4a5a3048302ffc17abd37642540540f448ef79d0ce",
+      "nuclei_sha256": "9a44b02d507a87e9710e4d7905943fe35988a175ce2160c079a485033cb0b2d4",
+      "relations_sha256": "ba00ef435146ff3dbd30a937666ba7b225089b950dadab8e8b2125952a8b7c60",
+      "decisions_sha256": "45845c4b834497c36d2a5bbeeafed59b2f299006bf48f48a38074b939b61fdc8",
+      "body": "見えたこと：\n「友達と話せて楽しかった」と「疲れた」が、異なる向きのまま同時にあります。\n\nEmlisから：\n友達と話せて楽しかったという今ここに置かれた言葉と疲れたことの両方を、その違いも含めて小さくせずに受け止めています。",
+      "observation": "「友達と話せて楽しかった」と「疲れた」が、異なる向きのまま同時にあります。"
+    },
+    {
+      "case": "shikashi",
+      "memo": "友達と話せて嬉しかった。しかし、疲れた。",
+      "reason_codes": [
+        "emlis_q3_initial_body_unavailable"
+      ],
+      "checkpoint_sha256": "79ca498ef5b4b7d1d86cc61ea8489811960b39d53dd47a0766b6e9a0afd8dd19",
+      "nuclei_sha256": "79720c73e686e30bbd9b95c8ad55b82bff066eaa91b8be238d2ec8f852cf3f6d",
+      "relations_sha256": "545c1fc937936a9ed6908b71e7ac76bab7d33eccb6ab2ddaf086daa4063e9d37",
+      "decisions_sha256": "a38b96311e9471805f1c7701d96c4206cf90000ea2649dee44c5fe4a75da075c",
+      "body": null,
+      "observation": null
+    },
+    {
+      "case": "tada",
+      "memo": "友達と話せて嬉しかった。ただ、疲れた。",
+      "reason_codes": [
+        "no_bound_personal_meaning_target"
+      ],
+      "checkpoint_sha256": "2da6ac8a031fe8990760a96566be3b5dba85e096844f02ce2c25a748f9a4f390",
+      "nuclei_sha256": "4e8c2dd304b9f2e4464a6b296b1d05b8ae4501550dd1fed781fcbacf9ef3e444",
+      "relations_sha256": "ba00ef435146ff3dbd30a937666ba7b225089b950dadab8e8b2125952a8b7c60",
+      "decisions_sha256": "8b79bcab3c56359a95261daef83c04636412ecbf53da9eb6187db137d5c4c987",
+      "body": "見えたこと：\n「友達と話せて嬉しかった」と「疲れた」が、異なる向きのまま同時にあります。\n\nEmlisから：\nその状態が重なる中で、今ここに置かれた言葉ともう一方の向きとの違いをどちらの側も残したまま、小さくせずに受け止めています。",
+      "observation": "「友達と話せて嬉しかった」と「疲れた」が、異なる向きのまま同時にあります。"
+    },
+    {
+      "case": "soredemo",
+      "memo": "友達と話せて嬉しかった。それでも、疲れた。",
+      "reason_codes": [
+        "emlis_q3_initial_body_unavailable"
+      ],
+      "checkpoint_sha256": "b2dfef30378db42bcc29f551ce6e8b3d1d50b05ba1c3c73d8a6b2ef45918f28e",
+      "nuclei_sha256": "e64a3af1ac0acfc27312ed0cbac67d6ec253c4649576801cebc72adbfb469297",
+      "relations_sha256": "545c1fc937936a9ed6908b71e7ac76bab7d33eccb6ab2ddaf086daa4063e9d37",
+      "decisions_sha256": "841df5ef2b47c2a51cf50aaa7c674040b2e63584f592ebc0190f36d012925c03",
+      "body": null,
+      "observation": null
+    },
+    {
+      "case": "distinct_times",
+      "memo": "昨日は友達と話せて嬉しかった。でも、今日は疲れている。",
+      "reason_codes": [
+        "no_bound_personal_meaning_target"
+      ],
+      "checkpoint_sha256": "04ae198aa579042b6ac65f03afcab1c0fbc130af4b9eef33f22b9b675abe93ae",
+      "nuclei_sha256": "20b10cf4adb4ef43bfaf94dd487e8997143013f2f1f20d392e6f973679fa44e8",
+      "relations_sha256": "cf67f2bd17b45acfe8b67c05f67aa88496381b6865d2c619f05818479f41eedc",
+      "decisions_sha256": "f25298deab9d46d464226fc4f69eafbe26c374acca29c027007c4948c88f139c",
+      "body": "見えたこと：\n「昨日は友達と話せて嬉しかった」と「今日は疲れている」が、異なる向きのまま同時にあります。\n\nEmlisから：\nその状態が重なる中で、今ここに置かれた言葉ともう一方の向きとの違いをどちらの側も残したまま、小さくせずに受け止めています。",
+      "observation": "「昨日は友達と話せて嬉しかった」と「今日は疲れている」が、異なる向きのまま同時にあります。"
+    },
+    {
+      "case": "negative_joy",
+      "memo": "友達と話せて嬉しくなかった。でも、疲れた。",
+      "reason_codes": [
+        "no_bound_personal_meaning_target"
+      ],
+      "checkpoint_sha256": "df38df7a5cf95c9e16c82f6e1fdd1160dfec879d22d0d49c50dde652aeb9017e",
+      "nuclei_sha256": "c465add3b34994da1163f3a04708421b4cc4744327e4821c6a032fc32d5127a0",
+      "relations_sha256": "ba00ef435146ff3dbd30a937666ba7b225089b950dadab8e8b2125952a8b7c60",
+      "decisions_sha256": "94bdbaf35fec69bfd34945fa746c63de999e7928fda9d589179746e2f9aec8fb",
+      "body": "見えたこと：\n「友達と話せて嬉しくなかった」と「疲れた」が、異なる向きのまま同時にあります。\n\nEmlisから：\nその状態が重なる中で、今ここに置かれた言葉ともう一方の向きとの違いをどちらの側も残したまま、小さくせずに受け止めています。",
+      "observation": "「友達と話せて嬉しくなかった」と「疲れた」が、異なる向きのまま同時にあります。"
+    },
+    {
+      "case": "negative_fatigue",
+      "memo": "友達と話せて嬉しかった。でも、疲れなかった。",
+      "reason_codes": [
+        "no_bound_personal_meaning_target"
+      ],
+      "checkpoint_sha256": "04023a906a361369737f216fe6e44a8e64c4b89075501539c0e786704a3b712a",
+      "nuclei_sha256": "42cd5ffb35e7da44417f03b6815149e273ba8da6096c20e6064c2c28173b8a50",
+      "relations_sha256": "cf67f2bd17b45acfe8b67c05f67aa88496381b6865d2c619f05818479f41eedc",
+      "decisions_sha256": "fd0df62c111ced5042bd187714d814a31fd977aace97a82dc4d51c64e95e9396",
+      "body": "見えたこと：\n「友達と話せて嬉しかった」と「疲れなかった」が、異なる向きのまま同時にあります。\n\nEmlisから：\nその状態が重なる中で、今ここに置かれた言葉ともう一方の向きとの違いをどちらの側も残したまま、小さくせずに受け止めています。",
+      "observation": "「友達と話せて嬉しかった」と「疲れなかった」が、異なる向きのまま同時にあります。"
+    },
+    {
+      "case": "explicit_self",
+      "memo": "私は友達と話せて嬉しかった。でも、私は疲れた。",
+      "reason_codes": [
+        "no_bound_personal_meaning_target"
+      ],
+      "checkpoint_sha256": "7bebb9af78c4cf161b82a8191f8b0f2bc7c47b1b10af4e31deea441fd7c8582d",
+      "nuclei_sha256": "e539e71f4ea5674b5a6f8289c43286d0a0a53f006602ce3d17a4f7880efdb8d7",
+      "relations_sha256": "cf67f2bd17b45acfe8b67c05f67aa88496381b6865d2c619f05818479f41eedc",
+      "decisions_sha256": "31255c8fc707d9f3ef4763c0d7f835408a650642585f95ba4828789df19e9e33",
+      "body": "見えたこと：\n「私は友達と話せて嬉しかった」と「私は疲れた」が、異なる向きのまま同時にあります。\n\nEmlisから：\nその状態が重なる中で、今ここに置かれた言葉ともう一方の向きとの違いをどちらの側も残したまま、小さくせずに受け止めています。",
+      "observation": "「私は友達と話せて嬉しかった」と「私は疲れた」が、異なる向きのまま同時にあります。"
+    },
+    {
+      "case": "reversed_order",
+      "memo": "疲れた。でも、友達と話せて嬉しかった。",
+      "reason_codes": [
+        "emlis_q3_initial_body_unavailable"
+      ],
+      "checkpoint_sha256": "4d56f95a173cb4fac4b356c68d0532af8ad6037a63c450ad0e65d988b6c618db",
+      "nuclei_sha256": "2abc5717d3340285237b44c7b85786522a3b8394f0ac46db6e1f737ac2fd65fc",
+      "relations_sha256": "efcf7285cd8042761e2f01e2e464ca8ca08f269994963f6a5d6f7b583d90547c",
+      "decisions_sha256": null,
+      "body": null,
+      "observation": null
+    },
+    {
+      "case": "polite",
+      "memo": "友達と話せて嬉しかったです。でも、疲れました。",
+      "reason_codes": [
+        "no_bound_personal_meaning_target"
+      ],
+      "checkpoint_sha256": "dc7864e13cccaeefdede5a1ce75bad6ecc9ec532d9ee8f4777dbfd2669dd40f9",
+      "nuclei_sha256": "e539e71f4ea5674b5a6f8289c43286d0a0a53f006602ce3d17a4f7880efdb8d7",
+      "relations_sha256": "cf67f2bd17b45acfe8b67c05f67aa88496381b6865d2c619f05818479f41eedc",
+      "decisions_sha256": "2306e8ba0bf12a975a4e368ff915332cb61d8bfef4e40f6b9ea41dddc68d7fd2",
+      "body": "見えたこと：\n「友達と話せて嬉しかったです」と「疲れました」が、異なる向きのまま同時にあります。\n\nEmlisから：\nその状態が重なる中で、今ここに置かれた言葉ともう一方の向きとの違いをどちらの側も残したまま、小さくせずに受け止めています。",
+      "observation": "「友達と話せて嬉しかったです」と「疲れました」が、異なる向きのまま同時にあります。"
+    },
+    {
+      "case": "foreign_owner",
+      "memo": "友達は私と話せて嬉しかった。でも、疲れた。",
+      "reason_codes": [
+        "no_bound_personal_meaning_target"
+      ],
+      "checkpoint_sha256": "f1bce62bf28a1473c00a62a05f892747699c1dbb3375056a45f520bae7c3d943",
+      "nuclei_sha256": "4e8c2dd304b9f2e4464a6b296b1d05b8ae4501550dd1fed781fcbacf9ef3e444",
+      "relations_sha256": "ba00ef435146ff3dbd30a937666ba7b225089b950dadab8e8b2125952a8b7c60",
+      "decisions_sha256": "739352cb7cb34f9e7be9453a7a75ddf77340c1b76bb40b1d4baacbce945403d7",
+      "body": "見えたこと：\n「友達は私と話せて嬉しかった」と「疲れた」が、異なる向きのまま同時にあります。\n\nEmlisから：\nその状態が重なる中で、今ここに置かれた言葉ともう一方の向きとの違いをどちらの側も残したまま、小さくせずに受け止めています。",
+      "observation": "「友達は私と話せて嬉しかった」と「疲れた」が、異なる向きのまま同時にあります。"
+    },
+    {
+      "case": "quoted",
+      "memo": "「友達と話せて嬉しかった。でも、疲れた」と彼女は言った。",
+      "reason_codes": [
+        "emlis_q3_initial_body_unavailable"
+      ],
+      "checkpoint_sha256": "89495fc1ef144dfd245db3229ea086080ac54be6ddb874030c47cb90c680fe15",
+      "nuclei_sha256": "e539e71f4ea5674b5a6f8289c43286d0a0a53f006602ce3d17a4f7880efdb8d7",
+      "relations_sha256": "cf67f2bd17b45acfe8b67c05f67aa88496381b6865d2c619f05818479f41eedc",
+      "decisions_sha256": "ea0f3677e5dd69ec982ea2ada7d7343c816f96f3d73de69d40c7793fb5b46fbc",
+      "body": null,
+      "observation": null
+    },
+    {
+      "case": "reported",
+      "memo": "友達の感想です。友達と話せて嬉しかった。でも、疲れた。",
+      "reason_codes": [
+        "no_bound_personal_meaning_target"
+      ],
+      "checkpoint_sha256": "bd7809acc34706ee0bdf55b3357d7f42e21cc2cb8592abfa7d95c68e82d1368e",
+      "nuclei_sha256": "a99dff455327d59a881ab02d69181c98d3ee18a77a290e943013ed7cb8cba7b7",
+      "relations_sha256": "589bb84b2d9f074c83bd9d03d6f01962a5202498e1dfd1c7bd41b3fe5d1d9223",
+      "decisions_sha256": "215b02dcdc0ede4c2619607e3dc9716069c62be65c49a935d3f6f825347b94c3",
+      "body": "見えたこと：\n今回の中心には、「友達の感想です」があります。\n「友達と話せて嬉しかった」と「疲れた」が、異なる向きのまま同時にあります。\n\nEmlisから：\n友達と話せて嬉しかったという気持ちと疲れたこととの違いをどちらの側も残したまま、感じています。",
+      "observation": "今回の中心には、「友達の感想です」があります。\n「友達と話せて嬉しかった」と「疲れた」が、異なる向きのまま同時にあります。"
+    },
+    {
+      "case": "hypothetical",
+      "memo": "もし友達と話せて嬉しかったとしても、疲れるかもしれない。",
+      "reason_codes": [
+        "emlis_q3_initial_body_unavailable"
+      ],
+      "checkpoint_sha256": "0a2ccf31c5ad16cb3225b1e5a5988b8933220ab376f2252d186888319ea0f04a",
+      "nuclei_sha256": "576cf5c1c222ed4c7b470f93eb680e7e5f4de6cdb52be4da2076f798b57b09fc",
+      "relations_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "decisions_sha256": null,
+      "body": null,
+      "observation": null
+    },
+    {
+      "case": "question",
+      "memo": "友達と話せて嬉しかった？でも、疲れた？",
+      "reason_codes": [
+        "no_bound_personal_meaning_target"
+      ],
+      "checkpoint_sha256": "f5c4a3aac6f26e3ad2dd46d3485ca261fdebb1c76960335ff3eb4d155efee9aa",
+      "nuclei_sha256": "4e8c2dd304b9f2e4464a6b296b1d05b8ae4501550dd1fed781fcbacf9ef3e444",
+      "relations_sha256": "ba00ef435146ff3dbd30a937666ba7b225089b950dadab8e8b2125952a8b7c60",
+      "decisions_sha256": "ab59bdb6a02825f83392fb22bd530a211d0f1e05dae2ed0d572cd2aec86894ca",
+      "body": "見えたこと：\n「友達と話せて嬉しかった」と「疲れた」が、異なる向きのまま同時にあります。\n\nEmlisから：\nその状態が重なる中で、今ここに置かれた言葉ともう一方の向きとの違いをどちらの側も残したまま、小さくせずに受け止めています。",
+      "observation": "「友達と話せて嬉しかった」と「疲れた」が、異なる向きのまま同時にあります。"
+    },
+    {
+      "case": "no_connector",
+      "memo": "友達と話せて嬉しかった。疲れた。",
+      "reason_codes": [
+        "emlis_q3_initial_body_unavailable"
+      ],
+      "checkpoint_sha256": "fbb11169bac081ee43c5f3fe9e246245604e22f7a19fcd94b676115a97a9ebab",
+      "nuclei_sha256": "241692d0cc9aa9c4ba9ec1db1bc10cd2560b6cf3e723636740860c078bd0f27a",
+      "relations_sha256": "7a8924a73b7e9888fedb68f52d945b773005c164af37b200bc36effe6505d78b",
+      "decisions_sha256": "1f360f6fe7170b8dd2a63dfcafe20f8344e4ec399bdfa142a5e6736aaecf9a36",
+      "body": null,
+      "observation": null
+    },
+    {
+      "case": "same_span",
+      "memo": "友達と話せて嬉しかったけど、疲れた。",
+      "reason_codes": [
+        "no_bound_personal_meaning_target"
+      ],
+      "checkpoint_sha256": "710b1818c6204157aa61e9ae7015c3dd0d77eb8e6b0c73b021853b9a5e4a9458",
+      "nuclei_sha256": "24843749458759a91fb9ba7ada2d644da6fd04fdd38fbb658645f1e107075fe3",
+      "relations_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "decisions_sha256": "038005efde63759d9f93544f2a3cfab3fa5f481e9b063481e86b8f370c7e5610",
+      "body": "見えたこと：\n今は、「友達と話せて嬉しかったけど、疲れた」という感覚が前に出ています。\n\nEmlisから：\n今ここに置かれた言葉を小さくせずに受け止めています。",
+      "observation": "今は、「友達と話せて嬉しかったけど、疲れた」という感覚が前に出ています。"
+    },
+    {
+      "case": "future_possible",
+      "memo": "友達と話せて嬉しかった。でも、明日は疲れるかもしれない。",
+      "reason_codes": [
+        "emlis_q3_initial_body_unavailable"
+      ],
+      "checkpoint_sha256": "56a6878b8d7b781415c23035945906a32d056b5f1ace338d315f1c2dbc9df688",
+      "nuclei_sha256": "a9355d3b92314fed2e08d32ef1d8347e4320395d4cb6d69cb546968a6f901d28",
+      "relations_sha256": "cf67f2bd17b45acfe8b67c05f67aa88496381b6865d2c619f05818479f41eedc",
+      "decisions_sha256": null,
+      "body": null,
+      "observation": null
+    }
+  ]
+}

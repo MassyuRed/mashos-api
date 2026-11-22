@@ -25,7 +25,8 @@ import os
 from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Optional
 
-from astor_job_queue import enqueue_job
+from astor_job_queue import JOBS_TABLE, enqueue_job
+from supabase_client import ensure_supabase_config, sb_post
 
 FCM_PUSH_JOB_TYPE = "send_fcm_push_v1"
 
@@ -87,6 +88,33 @@ def _normalize_job_key_prefix(value: Optional[str]) -> str:
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:24]
 
 
+async def _insert_push_job_once(*, job_key: str, user_id: str,
+                                payload: Dict[str, Any], priority: int,
+                                max_attempts: int) -> bool:
+    """Reserve one existing queue key without changing any prior generation."""
+    ensure_supabase_config()
+    now = _now_iso_z()
+    response = await sb_post(
+        f"/rest/v1/{JOBS_TABLE}",
+        params={"on_conflict": "job_key"},
+        json={"job_key": job_key, "job_type": FCM_PUSH_JOB_TYPE,
+            "user_id": user_id, "payload": payload, "priority": priority,
+            "status": "queued", "attempts": 0,
+            "max_attempts": max_attempts, "run_after": now, "updated_at": now},
+        prefer="resolution=ignore-duplicates,return=representation",
+        timeout=6.0,
+    )
+    if response.status_code not in (200, 201):
+        raise RuntimeError(f"push_once_insert_failed:{response.status_code}")
+    try:
+        rows = response.json()
+    except (TypeError, ValueError):
+        raise RuntimeError("push_once_insert_invalid") from None
+    if type(rows) is not list or len(rows) > 1 or (rows and type(rows[0]) is not dict):
+        raise RuntimeError("push_once_insert_invalid")
+    return bool(rows)
+
+
 async def enqueue_user_push_notification_jobs(
     *,
     recipient_user_ids: Iterable[Any],
@@ -100,12 +128,17 @@ async def enqueue_user_push_notification_jobs(
     priority: int = 5,
     chunk_size: Optional[int] = None,
     max_attempts: Optional[int] = None,
+    only_if_absent: bool = False,
 ) -> int:
     """Enqueue FCM push jobs addressed by user id.
 
     Returns the number of queued chunks.  Each chunk is processed by a worker and
     resolves push tokens at send time, so updated push_enabled / push_token values
     are respected.
+
+    only_if_absent atomically reserves a new queue key and leaves any prior
+    queued, running or terminal job untouched. External-send retries remain
+    at-least-once; reserving a job once does not guarantee one device delivery.
     """
     recipients = _ordered_unique_strs(recipient_user_ids)
     actor = str(actor_user_id or "").strip()
@@ -158,15 +191,21 @@ async def enqueue_user_push_notification_jobs(
         job_key_parts.extend([str(index), digest])
         job_key = ":".join(job_key_parts)
 
-        await enqueue_job(
-            job_key=job_key,
-            job_type=FCM_PUSH_JOB_TYPE,
-            user_id=actor or chunk_user_ids[0],
-            payload=payload,
-            priority=int(priority or 5),
-            max_attempts=int(max_attempts or FCM_PUSH_QUEUE_MAX_ATTEMPTS),
-        )
-        queued += 1
+        if only_if_absent:
+            queued += int(await _insert_push_job_once(
+                job_key=job_key, user_id=actor or chunk_user_ids[0], payload=payload,
+                priority=int(priority or 5),
+                max_attempts=int(max_attempts or FCM_PUSH_QUEUE_MAX_ATTEMPTS)))
+        else:
+            await enqueue_job(
+                job_key=job_key,
+                job_type=FCM_PUSH_JOB_TYPE,
+                user_id=actor or chunk_user_ids[0],
+                payload=payload,
+                priority=int(priority or 5),
+                max_attempts=int(max_attempts or FCM_PUSH_QUEUE_MAX_ATTEMPTS),
+            )
+            queued += 1
 
     return queued
 
@@ -180,6 +219,7 @@ async def enqueue_single_user_push_notification(
     event_type: str = "generic",
     job_key_prefix: Optional[str] = None,
     priority: int = 5,
+    only_if_absent: bool = False,
 ) -> int:
     """Convenience wrapper for one-recipient push notifications."""
     uid = str(user_id or "").strip()
@@ -195,4 +235,5 @@ async def enqueue_single_user_push_notification(
         job_key_prefix=job_key_prefix,
         priority=priority,
         chunk_size=1,
+        only_if_absent=only_if_absent,
     )

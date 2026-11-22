@@ -10,7 +10,9 @@ from access_policy.viewer_access_policy import resolve_piece_view_tiers
 from astor_account_status_enqueue import enqueue_account_status_refresh
 from astor_global_summary_enqueue import enqueue_global_summary_refresh
 from astor_ranking_enqueue import enqueue_ranking_board_refresh
+from follow_content_visibility import hidden_share_code_owner_ids
 from piece_generated_display import get_public_generated_reflection_text
+from piece_generated_identity import generated_instance_aliases
 from piece_generated_access import (
     EMOTION_GENERATED_SOURCE_TYPE,
     build_generated_q_key,
@@ -27,6 +29,7 @@ from piece_public_read_store import (
     delete_piece_related_state,
     fetch_followed_owner_ids,
     fetch_instance_metrics,
+    fetch_native_public_piece_posts,
     fetch_profiles_by_ids,
     fetch_reads,
     fetch_resonated_instances,
@@ -107,6 +110,15 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _generated_alias_groups(rows: List[Dict[str, Any]]) -> Dict[str, Set[str]]:
+    groups: Dict[str, Set[str]] = {}
+    for row in rows:
+        canonical = generated_public_id(row)
+        if canonical:
+            groups.setdefault(canonical, set()).update(generated_instance_aliases(row))
+    return groups
+
+
 async def _build_public_piece_items(*, viewer_user_id: str, rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     if not rows:
         return []
@@ -116,10 +128,12 @@ async def _build_public_piece_items(*, viewer_user_id: str, rows: List[Dict[str,
         if str((row or {}).get("owner_user_id") or "").strip()
     }
     profiles_map = await fetch_profiles_by_ids(list(owner_ids))
-    q_instance_ids: Set[str] = {generated_public_id(row) for row in rows if generated_public_id(row)}
-    metrics_task = asyncio.create_task(fetch_instance_metrics(q_instance_ids))
-    reads_task = asyncio.create_task(fetch_reads(viewer_user_id, q_instance_ids))
-    resonated_task = asyncio.create_task(fetch_resonated_instances(viewer_user_id, q_instance_ids))
+    hidden_codes = await hidden_share_code_owner_ids(owner_ids - {str(viewer_user_id)})
+    alias_groups = _generated_alias_groups(rows)
+    q_instance_ids = set(alias_groups)
+    metrics_task = asyncio.create_task(fetch_instance_metrics(q_instance_ids, alias_groups=alias_groups))
+    reads_task = asyncio.create_task(fetch_reads(viewer_user_id, q_instance_ids, alias_groups=alias_groups))
+    resonated_task = asyncio.create_task(fetch_resonated_instances(viewer_user_id, q_instance_ids, alias_groups=alias_groups))
     followed_owner_ids_task = asyncio.create_task(
         fetch_followed_owner_ids(viewer_user_id=viewer_user_id, limit=5000)
     )
@@ -151,7 +165,8 @@ async def _build_public_piece_items(*, viewer_user_id: str, rows: List[Dict[str,
                 "owner": {
                     "user_id": owner_user_id,
                     "display_name": str(owner_profile.get("display_name") or "").strip() or None,
-                    "friend_code": str(owner_profile.get("friend_code") or "").strip() or None,
+                    "friend_code": None if owner_user_id in hidden_codes else
+                        str(owner_profile.get("friend_code") or "").strip() or None,
                 },
                 "question": {"q_key": q_key, "title": question_text},
                 "body": body,
@@ -204,8 +219,9 @@ async def _compute_public_unread_for_target(*, viewer_user_id: str, target_user_
             "has_unread": False,
         }
     rows = await fetch_active_emotion_generated_reflections_for_owner(target_user_id, limit=500)
-    q_instance_ids = {generated_public_id(row) for row in rows if generated_public_id(row)}
-    read_set = await fetch_reads(viewer_user_id, q_instance_ids)
+    alias_groups = _generated_alias_groups(rows)
+    q_instance_ids = set(alias_groups)
+    read_set = await fetch_reads(viewer_user_id, q_instance_ids, alias_groups=alias_groups)
     total_items = len(q_instance_ids)
     unread_count = sum(1 for iid in q_instance_ids if iid not in read_set)
     return {
@@ -234,6 +250,10 @@ async def _build_public_piece_detail_response(
     if not title:
         raise HTTPException(status_code=404, detail="Reflection not found")
     target_user_id = str((row or {}).get("owner_user_id") or "").strip()
+    iid = generated_public_id(row)
+    if not iid:
+        raise HTTPException(status_code=404, detail="Reflection not found")
+    alias_groups = _generated_alias_groups([row])
     is_self = target_user_id == str(viewer_user_id)
     followed_owner_ids: Set[str] = set()
     if target_user_id and not is_self:
@@ -242,7 +262,7 @@ async def _build_public_piece_detail_response(
             limit=5000,
         )
     can_resonate = bool(target_user_id and not is_self and target_user_id in followed_owner_ids)
-    resonated_task = asyncio.create_task(is_resonated(viewer_user_id, iid))
+    resonated_task = asyncio.create_task(is_resonated(viewer_user_id, iid, alias_groups=alias_groups))
 
     views = 0
     resonances = 0
@@ -250,14 +270,16 @@ async def _build_public_piece_detail_response(
     if mark_viewed:
         await upsert_read(viewer_user_id, iid)
         if is_self:
-            metrics = await fetch_instance_metrics({iid})
+            metrics = await fetch_instance_metrics({iid}, alias_groups=alias_groups)
             metric_row = metrics.get(iid) or {}
             views = int(metric_row.get("views") or 0)
             resonances = int(metric_row.get("resonances") or 0)
         else:
             counts = await inc_metric(q_key=q_key, q_instance_id=iid, field="views", delta=1)
-            views = int(counts.get("views") or 0)
-            resonances = int(counts.get("resonances") or 0)
+            metrics = await fetch_instance_metrics({iid}, alias_groups=alias_groups)
+            aggregate = metrics.get(iid) or counts
+            views = int(aggregate.get("views") or 0)
+            resonances = int(aggregate.get("resonances") or 0)
             requested_at = _now_iso()
             _run_in_background(
                 enqueue_ranking_board_refresh(
@@ -286,8 +308,8 @@ async def _build_public_piece_detail_response(
                 )
             )
     else:
-        metrics_task = asyncio.create_task(fetch_instance_metrics({iid}))
-        reads_task = asyncio.create_task(fetch_reads(viewer_user_id, {iid}))
+        metrics_task = asyncio.create_task(fetch_instance_metrics({iid}, alias_groups=alias_groups))
+        reads_task = asyncio.create_task(fetch_reads(viewer_user_id, {iid}, alias_groups=alias_groups))
         metrics, read_set = await asyncio.gather(metrics_task, reads_task)
         metric_row = metrics.get(iid) or {}
         views = int(metric_row.get("views") or 0)
@@ -316,6 +338,7 @@ async def build_nexus_reflections_payload(
     sort: str,
     limit: int,
     following_only: bool,
+    include_piece_v2: bool = False,
 ) -> Dict[str, Any]:
     viewer_id = str(viewer_user_id or "").strip()
     if not viewer_id:
@@ -333,7 +356,7 @@ async def build_nexus_reflections_payload(
     else:
         target_owner_ids = set(followed_owner_ids)
         target_owner_ids.add(viewer_id)
-    if not target_owner_ids:
+    if not target_owner_ids and not include_piece_v2:
         return {"status": "ok", "sort": _normalize_public_sort(sort), "total_items": 0, "has_more": False, "items": []}
     fetch_oldest_first = _normalize_public_sort(sort) == "oldest"
     owner_tasks = [
@@ -353,6 +376,25 @@ async def build_nexus_reflections_payload(
                 merged[pid] = row
     rows = sorted(list(merged.values()), key=generated_row_sort_key, reverse=(not fetch_oldest_first))
     items = await _build_public_piece_items(viewer_user_id=viewer_id, rows=rows)
+    if include_piece_v2:
+        native_rows = await fetch_native_public_piece_posts(
+            viewer_user_id=viewer_id,
+            target_user_id=owner_filter or None,
+            following_only=following_only,
+            sort="oldest" if fetch_oldest_first else "latest",
+            limit=int(limit) + 1,
+        )
+        native_profiles = await fetch_profiles_by_ids(sorted({row["owner_user_id"] for row in native_rows}))
+        items.extend({
+            "q_instance_id": row["public_id"],
+            "source_type": "piece_v2",
+            "owner": {
+                "user_id": row["owner_user_id"],
+                "display_name": (native_profiles.get(row["owner_user_id"]) or {}).get("display_name"),
+            },
+            "body": row["body"],
+            "created_at": row["published_at"],
+        } for row in native_rows)
     sorted_items = _sort_nexus_items(items, sort)
     total_items = len(sorted_items)
     return {
@@ -510,13 +552,12 @@ async def build_qna_public_unread_status_payload(*, viewer_user_id: str) -> Dict
     if followed_owner_ids:
         owner_tasks = [fetch_active_emotion_generated_reflections_for_owner(owner_id, limit=500) for owner_id in sorted(followed_owner_ids)]
         rows_nested = await asyncio.gather(*owner_tasks)
-        q_instance_ids: Set[str] = set()
+        all_rows: List[Dict[str, Any]] = []
         for owner_rows in rows_nested:
-            for row in owner_rows or []:
-                iid = generated_public_id(row)
-                if iid:
-                    q_instance_ids.add(iid)
-        read_set = await fetch_reads(viewer_id, q_instance_ids)
+            all_rows.extend(owner_rows or [])
+        alias_groups = _generated_alias_groups(all_rows)
+        q_instance_ids = set(alias_groups)
+        read_set = await fetch_reads(viewer_id, q_instance_ids, alias_groups=alias_groups)
         for iid in q_instance_ids:
             if iid not in read_set:
                 following_has_unread = True

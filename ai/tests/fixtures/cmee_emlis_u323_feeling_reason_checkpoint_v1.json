@@ -1,0 +1,141 @@
+{
+  "source_commit": "a1925d5d761b397aee9f939fc42a1d9305c4a19f",
+  "cases": [
+    {
+      "memo": "なんだかしんどい。その理由はまだ分からない。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-048189e6d30d65ccc8f859af93c2568a3ff4746d728ae6ea1add11d39a39b12a",
+        "source_prefix_ref": "emlis-q3-source-prefix-39934882c987bb5b5febc8dddf3f2135845a238980553784d4347a3b7fc86eb0",
+        "base_meaning_ref": "emlis-base-meaning-c86295ccd3409cba8ffa6da08e9cb338d3b5abd8cf07a094ee87d0a775b3360e",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "public_result": {
+        "status": "UNAVAILABLE",
+        "body": null,
+        "reason_codes": [
+          "emlis_q3_initial_body_unavailable"
+        ],
+        "question_decision": {
+          "disposition": "BLOCKED",
+          "target_ref": null,
+          "target_kind": null,
+          "supporting_evidence_refs": [],
+          "missing_dimension": null,
+          "affected_meaning_refs": [],
+          "affected_reception_refs": [],
+          "asked_target_refs": [],
+          "decision_reason": "prequestion_body_unavailable"
+        }
+      },
+      "original_nuclei_sha256": "604c0941c880c88d05e7b73f81d11f02b7469174dbe60d93029722838a65169f",
+      "original_relations_sha256": "46df217ba92a7e36adeaed588b324b6d3ff0686c62af25df8306fd7dd779f40e"
+    },
+    {
+      "memo": "少し怖い。その理由は自分でもまだ分からない。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-699b64870dfc685ddc20954ba996568f55207c5f3089fb69a57a62cf30b7c217",
+        "source_prefix_ref": "emlis-q3-source-prefix-5843683e79dc6645d92ff3616b7517cbbfc4fd9974f081ec13c1521f2594bc3c",
+        "base_meaning_ref": "emlis-base-meaning-6ed3fb16b5cc670018d71479e61c06da6cefd4c931ebbd0045973a7429a94fae",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "public_result": {
+        "status": "UNAVAILABLE",
+        "body": null,
+        "reason_codes": [
+          "emlis_q3_initial_body_unavailable"
+        ],
+        "question_decision": {
+          "disposition": "BLOCKED",
+          "target_ref": null,
+          "target_kind": null,
+          "supporting_evidence_refs": [],
+          "missing_dimension": null,
+          "affected_meaning_refs": [],
+          "affected_reception_refs": [],
+          "asked_target_refs": [],
+          "decision_reason": "prequestion_body_unavailable"
+        }
+      },
+      "original_nuclei_sha256": "ef08aeaf88c17953ec9a47846b733853ff8a9265fd09c36f36adbbef8fe2530c",
+      "original_relations_sha256": "46df217ba92a7e36adeaed588b324b6d3ff0686c62af25df8306fd7dd779f40e"
+    },
+    {
+      "memo": "少し怖い。なぜそう感じるのか、私にもよく分からない。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-7d9cf7c13f0ccb2f14f080634ff3c4c186482ee491a4b624aeba5a1047d7eadc",
+        "source_prefix_ref": "emlis-q3-source-prefix-61ef1fa37ac190f391ec6643472895ea57dce40599d613b50b78506bc5dfa296",
+        "base_meaning_ref": "emlis-base-meaning-37cc993cc3f683cb2e5c107133ff8d9aedabcf8fa91cec73bad2a06da8a13c9b",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "public_result": {
+        "status": "LIMITED",
+        "body": "見えたこと：\n今は、「少し怖い」という感覚や状態が前に出ています。\n今回の中心には、「なぜそう感じるのか、私にもよく分からない」があります。\n\nEmlisから：\nまだ定まらないことを背景に、今ここに置かれた言葉を小さくせずに受け止めています。",
+        "reason_codes": [
+          "no_bound_personal_meaning_target"
+        ],
+        "question_decision": {
+          "disposition": "END",
+          "target_ref": null,
+          "target_kind": null,
+          "supporting_evidence_refs": [],
+          "missing_dimension": null,
+          "affected_meaning_refs": [],
+          "affected_reception_refs": [],
+          "asked_target_refs": [],
+          "decision_reason": "no_bound_personal_meaning_target"
+        }
+      },
+      "original_nuclei_sha256": "291ad23f8512afcae7d37608d2491160981a97a1a60ab4029fb512978e112f9a",
+      "original_relations_sha256": "46df217ba92a7e36adeaed588b324b6d3ff0686c62af25df8306fd7dd779f40e"
+    },
+    {
+      "memo": "しんどい。その理由はまだ分からない。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-044f9e8acf97dd06326d5b47e97af46853cd7f3a7b2ca21a6596610251212994",
+        "source_prefix_ref": "emlis-q3-source-prefix-5a3259dac43bf2cf3e440ea34f4e58625b1f5cca271120b78891a0f37ace211b",
+        "base_meaning_ref": "emlis-base-meaning-1e6fb88c492b2c55b83a264d6c48ef373d946b2e60cc4ebf10470f1cdbbc04ed",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "public_result": {
+        "status": "LIMITED",
+        "body": "見えたこと：\n今は、「しんどい」という感覚が前に出ています。\nその理由はまだ分からないのですね。\n\nEmlisから：\nしんどくて、その理由はまだ分からないのですね。",
+        "reason_codes": [
+          "no_bound_personal_meaning_target"
+        ],
+        "question_decision": {
+          "disposition": "END",
+          "target_ref": null,
+          "target_kind": null,
+          "supporting_evidence_refs": [],
+          "missing_dimension": null,
+          "affected_meaning_refs": [],
+          "affected_reception_refs": [],
+          "asked_target_refs": [],
+          "decision_reason": "no_bound_personal_meaning_target"
+        }
+      },
+      "original_nuclei_sha256": "aff62f8287f4f5f8569b148c16c4e15dfa362bfe0adf6b6350f1f8147dd4ace6",
+      "original_relations_sha256": "46df217ba92a7e36adeaed588b324b6d3ff0686c62af25df8306fd7dd779f40e"
+    }
+  ]
+}

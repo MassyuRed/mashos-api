@@ -1,0 +1,2795 @@
+"""Saved Analysis API contracts with synthetic auth/DB I/O and the real engine."""
+import copy
+from datetime import datetime, timedelta, timezone
+import json
+import os
+import unittest
+from unittest.mock import AsyncMock, patch
+from uuid import UUID
+
+from fastapi import HTTPException
+import httpx
+import analysis_observed_service as service
+from cocolon_meaning_experience_engine import MeaningExperienceEngine
+from cocolon_meaning_experience_engine.contracts import EngineStatus
+from cocolon_meaning_experience_engine.cores.analysis import observed_route_realizer as realizer
+from cocolon_meaning_experience_engine.cores.analysis.source_adapter import (
+    AnalysisObservedMapRequest, AnalysisSavedRecord, AnalysisSourceError, canonical_bytes, commitment,
+)
+
+OWNER, OTHER = str(UUID(int=1)), str(UUID(int=2))
+START, END = '2026-10-01T00:00:00+00:00', '2026-10-03T00:00:00+00:00'
+GUARD = 'analysis-db-v1:' + 'a' * 64
+
+
+def fixture(memo='私は考えをノートに書いた。私は仕事を続けたい。'):
+    original = {'id': str(UUID(int=101)), 'created_at': '2026-10-01T01:00:00',
+        'memo': memo, 'memo_action': '',
+        'category': ['仕事'], 'emotions': ['平穏'], 'emotion_details': []}
+    member = AnalysisSavedRecord(OWNER, original['id'], commitment(original), canonical_bytes(original).decode())
+    artifact = MeaningExperienceEngine().generate(AnalysisObservedMapRequest(
+        'synthetic-storage', OWNER, START, END, (member,))).artifact
+    projection = artifact.safe_projection(authenticated_owner_scope=OWNER)
+    row = {'id': str(UUID(artifact.artifact_id[9:])), 'report_type': 'latest',
+        'report_mode': 'standard', 'title': 'わたしマップ', 'period_start': START, 'period_end': END,
+        'generated_at': END, 'updated_at': END,
+        'content_text': artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text'],
+        'content_json': {'report_mode': 'standard', 'watashiMap': projection}}
+    return {'original': original, 'private': service.private_storage_evidence(artifact), 'row': row}
+
+
+def result(rows, tier='plus', matched=False):
+    return {'items': rows, 'subscription_tier': tier, 'matched': matched}
+
+
+async def comparison_fixture(*, previous_memo='私は考えをノートに書かなかった。',
+                             current_memo='私は考えをノートに書いた。私は仕事を続けたい。',
+                             empty=False, eligible=True):
+    """Real save service/engine, synthetic DB transport; also consumed by SQL tests."""
+    fx = fixture(current_memo)
+    previous = dict(fx['original'], id=str(UUID(int=99)), created_at='2026-09-30T01:00:00', memo=previous_memo)
+    previous_start = '2026-09-29T00:00:00+00:00'
+    writes = []
+    async def rpc(name, payload):
+        if name == 'analysis_observed_comparison_snapshot':
+            def snapshot(originals):
+                return {'guard': GUARD, 'tier': 'plus', 'now': END, 'members': [
+                    {'original': s, 'thread': None, 'events': []} for s in originals]}
+            if not eligible:
+                return {'comparison_eligible': False, 'current': snapshot([fx['original']]),
+                        'guard': GUARD, 'tier': 'plus'}
+            return {'guard': 'analysis-db-compare-v1:' + 'b' * 64, 'tier': 'plus', 'comparison_eligible': True,
+                'current': snapshot([fx['original']]), 'previous': snapshot([] if empty else [previous]),
+                'previous_start': previous_start, 'previous_end': START}
+        if name == 'analysis_observed_commit':
+            writes.append(payload)
+            fx['row'].update(id=str(UUID(payload['p_artifact_id'][9:])), content_text=payload['p_text'])
+            fx['row']['content_json']['watashiMap'] = payload['p_projection']
+            return fx['row']['id']
+        if name == 'analysis_observed_read':
+            return result([fx['row']], matched=True)
+        raise AssertionError(name)
+    with patch.dict(os.environ, COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE='development'), \
+            patch.object(service, '_rpc', side_effect=rpc):
+        await service.generate_saved(OWNER, start=START, end=END, report_mode='standard', report_type='latest')
+    fx.update(private=writes[0]['p_private_evidence'], previous_original=None if empty else previous)
+    return fx
+
+
+async def storage_sql_fixture():
+    fx = fixture()
+    fx['comparison'] = await comparison_fixture()
+    fx['empty_comparison'] = await comparison_fixture(empty=True)
+    fx['unchanged_comparison'] = await comparison_fixture(previous_memo=fx['original']['memo'])
+    return fx
+
+
+class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
+    async def test_unproved_postposed_or_past_action_attribution_never_commits(self):
+        for memo, action in (
+            ('私は職場にいた。と親しい新しい友人が言った。', ''),
+            ('私は仕事を続けたい。と親しい知っている友人が語らない。', ''),
+            ('知っている親しい友人が話さない。私は職場にいた。', ''),
+            ('親しかった新しい友人が語る。', '私は資料を調べた。'),
+            ('私は職場にいた。', '知らない若い友人の母も，述べませんでした。'),
+            ('私は職場にいた。と知っていた親しい友人が語ったと弟が言った。私は記録を残した。', ''),
+            ('友人が言わないです。私は仕事を続けたい。', ''),
+            ('親しい友人は、話さなかった。私は職場にいた。', ''),
+            ('知らない友人が語りません。私は記録を担当した。', ''),
+            ('知っている友人の母も，述べませんでした。私は資料を調べた。', ''),
+            ('友人が伝えなかったです。私は嬉しかった。', ''),
+            ('私は職場にいた。', '優しくない同僚は答えない。'),
+            ('親しかった友人が説明しませんでした。', '私は仕事を続けたい。'),
+            ('友人が言う。私は仕事を続けたい。', ''),
+            ('親しい友人は、話します。私は職場にいた。', ''),
+            ('知らない友人が語る。私は記録を担当した。', ''),
+            ('知っている友人の母も，述べます。私は資料を調べた。', ''),
+            ('友人が伝える。私は嬉しかった。', ''),
+            ('私は職場にいた。', '優しくない同僚は答えます。'),
+            ('親しかった友人が説明する。', '私は仕事を続けたい。'),
+            ('友人が話した。私は資料を調べた。', ''),
+            ('友人が話していました。私は資料を調べなかった。', ''),
+            ('私は資料を調べた。と友人が言った。', ''),
+            ('私は資料を調べた。のは嘘だった。', ''),
+            ('私は資料を調べた。', '友人が話した。'),
+            ('友人が話した。', '私は資料を調べた。'),
+            ('私は仕事を続けたい。と友人が言った。', ''),
+            ('私は家族を守りたい。と友人が言った。', ''),
+            ('私は職場にいた。と友人が言った。', ''),
+            ('私は職場にいなかった。のは嘘だった。', ''),
+            ('私は記録を担当した。と私は思う。', ''),
+            ('私は記録を担当しなかった。わけではない。', ''),
+            ('私は仕事を続けたい。と親しい友人が言った。', ''),
+            ('私は職場にいた。と優しい同僚は言いました。', ''),
+            ('私は記録を担当した。と若い先輩も言った。', ''),
+            ('私は資料を調べた。と忙しい友人が言った。', ''),
+            ('私は嬉しかった。と厳しい先輩が言った。', ''),
+            ('私は仕事を続けたい。と親しかった友人が言った。', ''),
+            ('私は職場にいた。と優しくない同僚は言いました。', ''),
+            ('私は記録を担当した。と忙しくなかった友人の母も言った。', ''),
+            ('私は資料を調べた。と厳しかった先輩が言った。', ''),
+            ('私は嬉しかった。と親しくなかった友人が言った。', ''),
+            ('私は仕事を続けたい。と親しい友人が言わなかった。', ''),
+            ('私は職場にいた。と優しくない同僚は言いませんでした。', ''),
+            ('私は記録を担当した。と親しかった友人が言わなかったです。', ''),
+            ('私は資料を調べた。と忙しい友人が言わなかった。', ''),
+            ('私は嬉しかった。と親しくなかった友人が言いませんでした。', ''),
+            ('私は仕事を続けたい。と知らない人が言った。', ''),
+            ('私は職場にいた。と知らなかった友人は言いませんでした。', ''),
+            ('私は記録を担当した。と知っている同僚も言いました。', ''),
+            ('私は資料を調べた。と知っていた友人の母が言わなかった。', ''),
+            ('私は嬉しかった。と知らない人が言った。', ''),
+            ('私は仕事を続けたい。と友人が、言った。', ''),
+            ('私は職場にいた。と親しい友人が、言ったけれど。私は記録を残した。', ''),
+            ('私は資料を調べた。と知っている友人が、言ったと弟が言った。私は記録を残した。', ''),
+            ('私は職場にいた。と友人が話した。', ''),
+            ('私は仕事を続けたい。と親しい友人が語りました。', ''),
+            ('私は記録を担当した。と知らない人が、説明しました。', ''),
+            ('私は職場にいた。と親しい友人が話したけれど。私は記録を残した。', ''),
+            ('私は仕事を続けたい。と親しい友人が言わない。', ''),
+            ('私は職場にいた。と優しくない同僚は言いません。', ''),
+            ('私は記録を担当した。と親しかった友人が言わないです。', ''),
+            ('私は職場にいた。とは知っている友人が言いませんと弟が言った。私は記録を残した。', ''),
+            ('私は仕事を続けたい。と友人が話さなかった。', ''),
+            ('私は職場にいた。と親しい友人が語らない。', ''),
+            ('私は記録を担当した。とは知っている友人の母も，述べませんでした。', ''),
+            ('私は仕事を続けたい。と知らない人が、伝えないです。', ''),
+            ('私は嬉しかった。と優しくない同僚は答えなかったです。', ''),
+            ('私は資料を調べた。と説明しない友人が言った。私は記録を残した。', ''),
+            ('私は仕事を続けたい。と親しい友人が言う。', ''),
+            ('私は職場にいた。と親しい友人は、話します。', ''),
+            ('私は記録を担当した。と知らない友人が語る。', ''),
+            ('私は職場にいた。と知っている友人の母も，述べます。', ''),
+            ('私は仕事を続けたい。と友人が伝える。', ''),
+            ('私は嬉しかった。と優しくない同僚は答えます。', ''),
+            ('私は資料を調べた。と説明する友人が言った。私は記録を残した。', ''),
+        ):
+            with self.subTest(memo=memo, action=action):
+                original = dict(self.fx['original'], memo=memo, memo_action=action,
+                    emotion_details=[{'type': '平穏', 'strength': 'medium'}])
+                snapshot = {'guard': GUARD, 'tier': 'plus', 'now': END, 'members': [
+                    {'original': original, 'thread': None, 'events': []}]}
+                with patch.dict(os.environ, COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE='off'), \
+                        patch.object(service, '_rpc', AsyncMock(return_value=snapshot)) as rpc, \
+                        self.assertLogs(realizer.logger, level='WARNING'):
+                    pending = await service.generate_saved(OWNER, start=START, end=END,
+                        report_mode='standard', report_type='latest')
+                self.assertIs(pending, service._INSUFFICIENT_INPUT)
+                self.assertEqual([call.args[0] for call in rpc.await_args_list],
+                                 ['analysis_observed_source_snapshot'])
+
+    async def test_closed_possibility_survives_save_read_as_unknown_scope(self):
+        for memo, labels, edge_count in (
+            ('私は不安だ。私は資料を調べたかもしれない。', ['不安だ（この記述時点の気持ち）'], 0),
+            ('私は資料を調べなかったかも知れません。私は不安だ。', ['不安だ（この記述時点の気持ち）'], 0),
+            ('私は資料を調べた。私は資料を調べなかったかもしれない。', ['資料を調べる（実行済み）'], 0),
+            ('私は資料を調べた。その後、私は記録を残した。私は資料を見たかもしれない。',
+             ['資料を調べる（実行済み）', 'その後：記録を残す（実行済み）'], 1),
+            ('私は不安だ。私は資料を見たかもしれない。それから、私は記録を残した。',
+             ['不安だ（この記述時点の気持ち）', 'それから：記録を残す（実行済み）'], 0),
+            ('私は不安だ。私は不安ではないかもしれません。', ['不安だ（この記述時点の気持ち）'], 0),
+            ('私は不安ではないかも知れません。私は不安だ。', ['不安だ（この記述時点の気持ち）'], 0),
+            ('私は安心した。私は不安かもしれません。', ['安心した（記録された気持ち）'], 0),
+            ('私は資料を調べた。その後、私は記録を残した。私は不安だったかもしれません。',
+             ['資料を調べる（実行済み）', 'その後：記録を残す（実行済み）'], 1),
+            ('私は不安だ。私は不安ではないかもしれません。それから、私は記録を残した。',
+             ['不安だ（この記述時点の気持ち）', 'それから：記録を残す（実行済み）'], 0),
+            ('私は不安だ。私は不安ではないかもしれない。', ['不安だ（この記述時点の気持ち）'], 0),
+            ('私は不安ではないかもしれない。私は不安だ。', ['不安だ（この記述時点の気持ち）'], 0),
+            ('私は安心した。私は不安かもしれない。', ['安心した（記録された気持ち）'], 0),
+            ('私は資料を調べた。その後、私は記録を残した。私は不安だったかもしれない。',
+             ['資料を調べる（実行済み）', 'その後：記録を残す（実行済み）'], 1),
+            ('私は不安だ。私は不安ではないかもしれない。それから、私は記録を残した。',
+             ['不安だ（この記述時点の気持ち）', 'それから：記録を残す（実行済み）'], 0),
+        ):
+            with self.subTest(memo=memo):
+                fx, writes = fixture(memo), []
+                row = fx['row']
+                async def rpc(name, payload):
+                    if name == 'analysis_observed_source_snapshot':
+                        return {'guard': GUARD, 'tier': 'plus', 'now': END, 'members': [
+                            {'original': fx['original'], 'thread': None, 'events': []}]}
+                    if name == 'analysis_observed_commit':
+                        writes.append(payload)
+                        row.update(id=str(UUID(payload['p_artifact_id'][9:])), content_text=payload['p_text'])
+                        row['content_json']['watashiMap'] = payload['p_projection']
+                        return row['id']
+                    self.assertEqual(name, 'analysis_observed_read')
+                    return result([row], matched=True)
+                with patch.dict(os.environ, COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE='off'), \
+                        patch.object(service, '_rpc', side_effect=rpc):
+                    saved = await service.generate_saved(OWNER, start=START, end=END,
+                        report_mode='standard', report_type='latest')
+                    with patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('regenerated')):
+                        reread = await service.read_saved(OWNER, report_id=saved['id'], report_mode='standard')
+                self.assertEqual(len(writes), 1)
+                self.assertEqual(saved, reread['items'][0])
+                self.assertEqual(saved['id'], str(UUID(writes[0]['p_artifact_id'][9:])))
+                self.assertEqual(saved['content_text'], writes[0]['p_text'])
+                projection = saved['content_json']['watashiMap']
+                self.assertEqual(projection, writes[0]['p_projection'])
+                self.assertEqual([n['visible_label'] for n in projection['nodes']], labels)
+                self.assertEqual(len(projection['edges']), edge_count)
+                self.assertFalse(projection['conflict_badges'])
+                self.assertIn('まだ読み取れていない内容', saved['content_text'])
+                self.assertTrue(any(g['missing_scope'] == 'SOURCE_SCOPE'
+                    and g['reason_code'] == 'UNSUPPORTED_OR_UNCERTAIN_SOURCE_SCOPE'
+                    for g in writes[0]['p_private_evidence']['graph']['unknown_gaps']))
+                self.assertNotIn('かもしれない', saved['content_text'])
+                self.assertNotIn('かもしれません', saved['content_text'])
+                self.assertNotIn('かも知れません', saved['content_text'])
+                self.assertNotIn('私は', json.dumps(writes[0]['p_private_evidence'], ensure_ascii=False))
+
+    async def test_closed_possibility_in_incomplete_updates_never_commits(self):
+        from test_analysis_saved_period import with_answer, NOW
+        for answer, reason in (
+            ('私は不安だ。私は資料を調べたかもしれない。', 'analysis_supplement_interpretation_pending'),
+            ('「私は記録を残した」ではなく「私は不安だ。私は資料を調べなかったかも知れません」です。',
+             'analysis_correction_replacement_unsupported'),
+            ('私は不安だ。私は不安ではないかもしれません。', 'analysis_supplement_interpretation_pending'),
+            ('「私は記録を残した」ではなく「私は不安だ。私は不安ではないかも知れません」です。',
+             'analysis_correction_replacement_unsupported'),
+            ('私は不安だ。私は不安ではないかもしれない。', 'analysis_supplement_interpretation_pending'),
+            ('「私は記録を残した」ではなく「私は不安だ。私は不安ではないかもしれない」です。',
+             'analysis_correction_replacement_unsupported'),
+        ):
+            with self.subTest(answer=answer):
+                original = dict(self.fx['original'], memo='私は記録を残した。',
+                    emotion_details=[{'type': '平穏', 'strength': 'medium'}])
+                member = with_answer({'original': original}, answer)
+                snapshot = {'guard': GUARD, 'tier': 'plus', 'now': NOW, 'members': [member]}
+                with patch.dict(os.environ, COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE='off'), \
+                        patch.object(service, '_rpc', AsyncMock(return_value=snapshot)) as rpc, \
+                        self.assertLogs(realizer.logger, level='WARNING') as logs:
+                    with self.assertRaises(HTTPException) as caught:
+                        await service.generate_saved(OWNER, start=START, end=END,
+                            report_mode='standard', report_type='latest')
+                self.assertEqual(caught.exception.status_code, 422)
+                self.assertEqual(caught.exception.detail, 'analysis_observed_map_unavailable')
+                self.assertEqual([call.args[0] for call in rpc.await_args_list],
+                                 ['analysis_observed_source_snapshot'])
+                self.assertEqual([r.getMessage() for r in logs.records], [
+                    'analysis_observed_generation_unavailable stage=current reason=' + reason])
+
+    async def test_partial_anxiety_supplements_survive_save_without_regeneration(self):
+        from test_analysis_saved_period import with_answer, NOW
+        for no, yes in (('不安はあまりない', '不安は少しある'),
+                        ('あまり不安ではない', '少し不安だ')):
+            for old, new in ((no, yes), (yes, no)):
+                with self.subTest(old=old, new=new):
+                    fx = fixture('私は' + old + '。')
+                    fx['original']['emotion_details'] = [{'type': '平穏', 'strength': 'medium'}]
+                    member = with_answer({'original': fx['original']}, '私は' + new + '。')
+                    row, writes = fx['row'], []
+                    async def rpc(name, payload):
+                        if name == 'analysis_observed_source_snapshot':
+                            return {'guard': GUARD, 'tier': 'plus', 'now': NOW, 'members': [member]}
+                        if name == 'analysis_observed_commit':
+                            writes.append(payload)
+                            row.update(id=str(UUID(payload['p_artifact_id'][9:])), content_text=payload['p_text'])
+                            row['content_json']['watashiMap'] = payload['p_projection']
+                            return row['id']
+                        self.assertEqual(name, 'analysis_observed_read')
+                        return result([row], matched=True)
+                    with patch.dict(os.environ, COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE='off'), \
+                            patch.object(service, '_rpc', side_effect=rpc):
+                        saved = await service.generate_saved(OWNER, start=START, end=END,
+                            report_mode='standard', report_type='latest')
+                        with patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('regenerated')):
+                            reread = await service.read_saved(OWNER, report_id=saved['id'], report_mode='standard')
+                    self.assertEqual(len(writes), 1)
+                    self.assertEqual(saved, reread['items'][0])
+                    self.assertEqual(saved['content_text'], writes[0]['p_text'])
+                    projection = saved['content_json']['watashiMap']
+                    self.assertEqual(projection, writes[0]['p_projection'])
+                    self.assertEqual([n['visible_label'] for n in projection['nodes']],
+                        [v + '（この記述時点の気持ち）' for v in (old, new)])
+                    self.assertFalse(projection['edges'])
+                    self.assertFalse(projection['conflict_badges'])
+
+    async def test_existential_degree_anxiety_survives_save_and_read(self):
+        for degree, case in (('少し', 'が'), ('とても', 'は'), ('かなり', 'が'), ('やや', 'は'), ('ちょっと', 'が'),
+                             ('全く', 'が'), ('まったく', 'は'), ('全然', 'が'), ('あまり', 'は'),
+                             ('あんまり', 'が'), ('少しも', 'は'), ('ちっとも', 'が')):
+            negative = degree in {'全く', 'まったく', '全然', 'あまり', 'あんまり', '少しも', 'ちっとも'}
+            polite, plain, past, past_plain = (('ありません', 'ない', 'ありませんでした', 'なかった')
+                                             if negative else ('あります', 'ある', 'ありました', 'あった'))
+            for stem in (degree + '不安' + case, '不安' + case + degree):
+                for clause, label in (
+                        ('私は' + stem + polite + '。', stem + plain + '（この記述時点の気持ち）'),
+                        ('今日、私は' + stem + plain + '。',
+                         'この記述時点の今日：' + stem + plain + '（この記述時点の気持ち）'),
+                        ('昨日、私は' + stem + past + '。',
+                         'この記述時点の昨日：' + stem + past_plain + '（記録された気持ち）')):
+                    with self.subTest(clause=clause):
+                        fx = fixture(clause)
+                        row, writes = fx['row'], []
+                        async def rpc(name, payload):
+                            if name == 'analysis_observed_source_snapshot':
+                                return {'guard': GUARD, 'tier': 'plus', 'now': END, 'members': [
+                                    {'original': fx['original'], 'thread': None, 'events': []}]}
+                            if name == 'analysis_observed_commit':
+                                writes.append(payload)
+                                row.update(id=str(UUID(payload['p_artifact_id'][9:])), content_text=payload['p_text'])
+                                row['content_json']['watashiMap'] = payload['p_projection']
+                                return row['id']
+                            self.assertEqual(name, 'analysis_observed_read')
+                            return result([row], matched=True)
+                        with patch.dict(os.environ, COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE='off'), \
+                                patch.object(service, '_rpc', side_effect=rpc):
+                            saved = await service.generate_saved(OWNER, start=START, end=END,
+                                report_mode='standard', report_type='latest')
+                            with patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('regenerated')):
+                                reread = await service.read_saved(OWNER, report_id=saved['id'], report_mode='standard')
+                        self.assertEqual(len(writes), 1)
+                        self.assertEqual(saved, reread['items'][0])
+                        self.assertEqual(saved['content_text'], writes[0]['p_text'])
+                        projection = saved['content_json']['watashiMap']
+                        self.assertEqual(projection, writes[0]['p_projection'])
+                        self.assertEqual([n['visible_label'] for n in projection['nodes']], [label])
+                        self.assertIn(label, saved['content_text'])
+                        self.assertFalse(projection['edges'])
+                        self.assertFalse(projection['annotation_badges'])
+
+    async def test_existential_anxiety_survives_save_and_read(self):
+        for case in ('は', 'が'):
+            for clause, label in (
+                    ('私は不安' + case + 'あります。', '不安' + case + 'ある（この記述時点の気持ち）'),
+                    ('今日、私は不安' + case + 'ある。',
+                     'この記述時点の今日：不安' + case + 'ある（この記述時点の気持ち）'),
+                    ('昨日、私は不安' + case + 'ありました。',
+                     'この記述時点の昨日：不安' + case + 'あった（記録された気持ち）'),
+                    ('私は不安' + case + 'ありません。', '不安' + case + 'ない（この記述時点の気持ち）'),
+                    ('今日、私は不安' + case + 'ない。',
+                     'この記述時点の今日：不安' + case + 'ない（この記述時点の気持ち）'),
+                    ('昨日、私は不安' + case + 'ありませんでした。',
+                     'この記述時点の昨日：不安' + case + 'なかった（記録された気持ち）')):
+                with self.subTest(clause=clause):
+                    fx = fixture(clause)
+                    row, writes = fx['row'], []
+                    async def rpc(name, payload):
+                        if name == 'analysis_observed_source_snapshot':
+                            return {'guard': GUARD, 'tier': 'plus', 'now': END, 'members': [
+                                {'original': fx['original'], 'thread': None, 'events': []}]}
+                        if name == 'analysis_observed_commit':
+                            writes.append(payload)
+                            row.update(id=str(UUID(payload['p_artifact_id'][9:])), content_text=payload['p_text'])
+                            row['content_json']['watashiMap'] = payload['p_projection']
+                            return row['id']
+                        self.assertEqual(name, 'analysis_observed_read')
+                        return result([row], matched=True)
+                    with patch.dict(os.environ, COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE='off'), \
+                            patch.object(service, '_rpc', side_effect=rpc):
+                        saved = await service.generate_saved(OWNER, start=START, end=END,
+                            report_mode='standard', report_type='latest')
+                        with patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('regenerated')):
+                            reread = await service.read_saved(OWNER, report_id=saved['id'], report_mode='standard')
+                    self.assertEqual(len(writes), 1)
+                    self.assertEqual(saved, reread['items'][0])
+                    self.assertEqual(saved['content_text'], writes[0]['p_text'])
+                    projection = saved['content_json']['watashiMap']
+                    self.assertEqual(projection, writes[0]['p_projection'])
+                    self.assertEqual([n['visible_label'] for n in projection['nodes']], [label])
+                    self.assertIn(label, saved['content_text'])
+                    self.assertFalse(projection['edges'])
+                    self.assertFalse(projection['annotation_badges'])
+
+    async def test_particle_negative_anxiety_survives_save_and_read(self):
+        for degree in ('少しも', 'ちっとも'):
+            for clause, label in (
+                    ('私は' + degree + '不安じゃありません。', degree + '不安ではない（この記述時点の気持ち）'),
+                    ('今日、私は' + degree + '不安ではない。',
+                     'この記述時点の今日：' + degree + '不安ではない（この記述時点の気持ち）'),
+                    ('昨日、私は' + degree + '不安ではありませんでした。',
+                     'この記述時点の昨日：' + degree + '不安ではなかった（記録された気持ち）')):
+                with self.subTest(clause=clause):
+                    fx = fixture(clause)
+                    row, writes = fx['row'], []
+                    async def rpc(name, payload):
+                        if name == 'analysis_observed_source_snapshot':
+                            return {'guard': GUARD, 'tier': 'plus', 'now': END, 'members': [
+                                {'original': fx['original'], 'thread': None, 'events': []}]}
+                        if name == 'analysis_observed_commit':
+                            writes.append(payload)
+                            row.update(id=str(UUID(payload['p_artifact_id'][9:])), content_text=payload['p_text'])
+                            row['content_json']['watashiMap'] = payload['p_projection']
+                            return row['id']
+                        self.assertEqual(name, 'analysis_observed_read')
+                        return result([row], matched=True)
+                    with patch.dict(os.environ, COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE='off'), \
+                            patch.object(service, '_rpc', side_effect=rpc):
+                        saved = await service.generate_saved(OWNER, start=START, end=END,
+                            report_mode='standard', report_type='latest')
+                        with patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('regenerated')):
+                            reread = await service.read_saved(OWNER, report_id=saved['id'], report_mode='standard')
+                    self.assertEqual(len(writes), 1)
+                    self.assertEqual(saved, reread['items'][0])
+                    self.assertEqual(saved['content_text'], writes[0]['p_text'])
+                    projection = saved['content_json']['watashiMap']
+                    self.assertEqual(projection, writes[0]['p_projection'])
+                    self.assertEqual([n['visible_label'] for n in projection['nodes']], [label])
+                    self.assertIn(label, saved['content_text'])
+                    self.assertFalse(projection['edges'])
+                    self.assertFalse(projection['annotation_badges'])
+
+    async def test_partial_negative_anxiety_survives_save_and_read(self):
+        for degree in ('あまり', 'あんまり'):
+            for clause, label in (
+                    ('私は' + degree + '不安じゃありません。', degree + '不安ではない（この記述時点の気持ち）'),
+                    ('今日、私は' + degree + '不安ではない。',
+                     'この記述時点の今日：' + degree + '不安ではない（この記述時点の気持ち）'),
+                    ('昨日、私は' + degree + '不安ではありませんでした。',
+                     'この記述時点の昨日：' + degree + '不安ではなかった（記録された気持ち）')):
+                with self.subTest(clause=clause):
+                    fx = fixture(clause)
+                    row, writes = fx['row'], []
+                    async def rpc(name, payload):
+                        if name == 'analysis_observed_source_snapshot':
+                            return {'guard': GUARD, 'tier': 'plus', 'now': END, 'members': [
+                                {'original': fx['original'], 'thread': None, 'events': []}]}
+                        if name == 'analysis_observed_commit':
+                            writes.append(payload)
+                            row.update(id=str(UUID(payload['p_artifact_id'][9:])), content_text=payload['p_text'])
+                            row['content_json']['watashiMap'] = payload['p_projection']
+                            return row['id']
+                        self.assertEqual(name, 'analysis_observed_read')
+                        return result([row], matched=True)
+                    with patch.dict(os.environ, COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE='off'), \
+                            patch.object(service, '_rpc', side_effect=rpc):
+                        saved = await service.generate_saved(OWNER, start=START, end=END,
+                            report_mode='standard', report_type='latest')
+                        with patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('regenerated')):
+                            reread = await service.read_saved(OWNER, report_id=saved['id'], report_mode='standard')
+                    self.assertEqual(len(writes), 1)
+                    self.assertEqual(saved, reread['items'][0])
+                    self.assertEqual(saved['content_text'], writes[0]['p_text'])
+                    projection = saved['content_json']['watashiMap']
+                    self.assertEqual(projection, writes[0]['p_projection'])
+                    self.assertEqual([n['visible_label'] for n in projection['nodes']], [label])
+                    self.assertIn(label, saved['content_text'])
+                    self.assertFalse(projection['edges'])
+                    self.assertFalse(projection['annotation_badges'])
+
+    async def test_emphatic_negative_anxiety_survives_save_and_read(self):
+        for degree in ('全く', 'まったく', '全然'):
+            for clause, label in (
+                    ('私は' + degree + '不安じゃありません。', degree + '不安ではない（この記述時点の気持ち）'),
+                    ('今日、私は' + degree + '不安ではない。',
+                     'この記述時点の今日：' + degree + '不安ではない（この記述時点の気持ち）'),
+                    ('昨日、私は' + degree + '不安ではありませんでした。',
+                     'この記述時点の昨日：' + degree + '不安ではなかった（記録された気持ち）')):
+                with self.subTest(clause=clause):
+                    fx = fixture(clause)
+                    row, writes = fx['row'], []
+                    async def rpc(name, payload):
+                        if name == 'analysis_observed_source_snapshot':
+                            return {'guard': GUARD, 'tier': 'plus', 'now': END, 'members': [
+                                {'original': fx['original'], 'thread': None, 'events': []}]}
+                        if name == 'analysis_observed_commit':
+                            writes.append(payload)
+                            row.update(id=str(UUID(payload['p_artifact_id'][9:])), content_text=payload['p_text'])
+                            row['content_json']['watashiMap'] = payload['p_projection']
+                            return row['id']
+                        self.assertEqual(name, 'analysis_observed_read')
+                        return result([row], matched=True)
+                    with patch.dict(os.environ, COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE='off'), \
+                            patch.object(service, '_rpc', side_effect=rpc):
+                        saved = await service.generate_saved(OWNER, start=START, end=END,
+                            report_mode='standard', report_type='latest')
+                        with patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('regenerated')):
+                            reread = await service.read_saved(OWNER, report_id=saved['id'], report_mode='standard')
+                    self.assertEqual(len(writes), 1)
+                    self.assertEqual(saved, reread['items'][0])
+                    self.assertEqual(saved['content_text'], writes[0]['p_text'])
+                    projection = saved['content_json']['watashiMap']
+                    self.assertEqual(projection, writes[0]['p_projection'])
+                    self.assertEqual([n['visible_label'] for n in projection['nodes']], [label])
+                    self.assertIn(label, saved['content_text'])
+                    self.assertFalse(projection['edges'])
+                    self.assertFalse(projection['annotation_badges'])
+
+    async def test_feeling_noun_writing_survives_saved_read(self):
+        for clause in ('気持ちを書いた', 'ぼくのノートに気持ちを書きました',
+                       '昨日、わたしの気持ちを手紙に書きました'):
+            with self.subTest(clause=clause):
+                await self._assert_action_change_saved(clause + '。それから、私は安心しなかった。',
+                    expected_label='それから：安心しなかった（記録された気持ち）')
+                self.assertIn('誰の行動かは未確定', self.row['content_text'])
+                self.assertNotIn('誰の気持ちかは未確定', self.row['content_text'])
+
+    async def test_kana_omitted_writing_feeling_survives_saved_read(self):
+        for clause in ('わたしの考えを書いた', 'ぼくのノートに考えを書きました',
+                       '昨日、メモをおれの手紙に書いた'):
+            with self.subTest(clause=clause):
+                await self._assert_action_change_saved(clause + '。それから、私は落ち着きました。',
+                    expected_label='それから：落ち着いた（記録された気持ち）')
+                self.assertIn('誰の行動かは未確定', self.row['content_text'])
+                self.assertNotIn('誰の気持ちかは未確定', self.row['content_text'])
+                self.assertEqual('この記述時点の昨日：' in self.row['content_text'], clause.startswith('昨日'))
+
+    async def test_omitted_owned_writing_feeling_survives_saved_read(self):
+        for clause in ('自分の考えを書いた', '僕のノートに考えを書きました',
+                       '昨日、メモを俺の手紙に書いた'):
+            with self.subTest(clause=clause):
+                await self._assert_action_change_saved(clause + '。それから、私は落ち着きました。',
+                    expected_label='それから：落ち着いた（記録された気持ち）')
+                self.assertIn('誰の行動かは未確定', self.row['content_text'])
+                self.assertNotIn('誰の気持ちかは未確定', self.row['content_text'])
+                self.assertEqual('この記述時点の昨日：' in self.row['content_text'], clause.startswith('昨日'))
+
+    async def test_kana_owned_writing_feeling_survives_saved_read(self):
+        for clause in ('私はわたしの考えを書いた', '僕はぼくのノートに考えを書きました',
+                       '昨日、俺はメモをおれの手紙に書いた'):
+            with self.subTest(clause=clause):
+                await self._assert_action_change_saved(clause + '。それから、私は落ち着きました。',
+                    expected_label='それから：落ち着いた（記録された気持ち）')
+                self.assertNotIn('誰の行動かは未確定', self.row['content_text'])
+
+    async def test_self_owned_writing_feeling_survives_saved_read(self):
+        for clause in ('私は自分の考えを書いた', '私は僕のノートに考えを書きました',
+                       '昨日、私はメモを俺の手紙に書いた'):
+            with self.subTest(clause=clause):
+                await self._assert_action_change_saved(clause + '。それから、私は落ち着きました。',
+                    expected_label='それから：落ち着いた（記録された気持ち）')
+                self.assertNotIn('誰の行動かは未確定', self.row['content_text'])
+                self.assertEqual('この記述時点の昨日：' in self.row['content_text'], clause.startswith('昨日'))
+
+    async def test_relational_writing_place_feeling_survives_saved_read(self):
+        for clause in ('私は家族との会議でメモを書いた',
+                       '私はメモを家族への手紙に書いた',
+                       '昨日、家族への手紙を職場での会議で書いた'):
+            with self.subTest(clause=clause):
+                await self._assert_action_change_saved(clause + '。それから、私は落ち着きました。',
+                    expected_label='それから：落ち着いた（記録された気持ち）')
+                self.assertEqual('誰の行動かは未確定' in self.row['content_text'], clause.startswith('昨日'))
+                self.assertEqual('この記述時点の昨日：' in self.row['content_text'], clause.startswith('昨日'))
+
+    async def test_omitted_writing_feeling_survives_saved_read(self):
+        for clause in ('家族への手紙を書いた', 'その後、考えをノートに書きました',
+                       '昨日、職場で会議でのメモを書いた'):
+            with self.subTest(clause=clause):
+                await self._assert_action_change_saved(clause + '。それから、私は落ち着きました。',
+                    expected_label='それから：落ち着いた（記録された気持ち）')
+                self.assertIn('誰の行動かは未確定', self.row['content_text'])
+                self.assertNotIn('誰の気持ちかは未確定', self.row['content_text'])
+                self.assertEqual('この記述時点の昨日：' in self.row['content_text'], clause.startswith('昨日'))
+
+    async def test_dated_writing_feeling_survives_saved_read(self):
+        for clause, day in (('昨日私は家族への手紙を書いた', '昨日'),
+                            ('今日、私は考えをノートに書きました', '今日'),
+                            ('私は昨日、職場で会議でのメモを書いた', '昨日')):
+            with self.subTest(clause=clause):
+                await self._assert_action_change_saved(clause + '。それから、私は落ち着きました。',
+                    expected_label='それから：落ち着いた（記録された気持ち）')
+                self.assertIn('この記述時点の' + day + '：', self.row['content_text'])
+                self.assertNotIn('誰の行動かは未確定', self.row['content_text'])
+
+    async def test_sequenced_writing_feeling_survives_saved_read(self):
+        for clause in ('その後、私は家族への手紙を書いた',
+                       'それから私は考えをノートに書きました'):
+            with self.subTest(clause=clause):
+                await self._assert_action_change_saved('私は職場にいた。' + clause
+                    + '。それから、私は落ち着きました。',
+                    expected_label='それから：落ち着いた（記録された気持ち）',
+                    expected_preceding_label='職場にいた（記録された場面）')
+                self.assertIn('書く（実行済み）', self.row['content_text'])
+                self.assertNotIn('誰の行動かは未確定', self.row['content_text'])
+
+    async def test_relational_writing_feeling_survives_saved_read(self):
+        for clause in ('私は家族への手紙を書いた', '私は同僚との約束を書きました',
+                       '私は職場で会議でのメモを書いた', '私は家族への手紙をノートに書いた'):
+            with self.subTest(clause=clause):
+                await self._assert_action_change_saved(clause + '。その後、私は落ち着きました。',
+                    expected_label='その後：落ち着いた（記録された気持ち）')
+                self.assertIn('書く（実行済み）', self.row['content_text'])
+                self.assertNotIn('誰の行動かは未確定', self.row['content_text'])
+
+    async def test_omitted_negative_decision_polite_feeling_survives_saved_read(self):
+        for prefix in ('その後、', '昨日、'):
+            for finite in ('決めませんでした', '決めておかなかったです'):
+                with self.subTest(prefix=prefix, finite=finite):
+                    await self._assert_action_change_saved(prefix
+                        + '同僚との分担を' + finite + '。それから、私は落ち着きました。',
+                        expected_label='それから：落ち着いた（記録された気持ち）')
+                    self.assertIn('誰の行動かは未確定', self.row['content_text'])
+                    self.assertNotIn('誰の気持ちかは未確定', self.row['content_text'])
+                    self.assertIn('決めておく' if '決めて' in finite else '決める', self.row['content_text'])
+                    self.assertIn('行わなかった', self.row['content_text'])
+                    self.assertEqual('この記述時点の昨日：' in self.row['content_text'], prefix == '昨日、')
+
+    async def test_dated_negative_decision_polite_feeling_survives_saved_read(self):
+        for prefix, day in (('昨日、私は', '昨日'), ('今日私は', '今日'), ('私は昨日、', '昨日')):
+            for finite in ('決めませんでした', '決めておかなかったです'):
+                with self.subTest(prefix=prefix, finite=finite):
+                    await self._assert_action_change_saved(prefix
+                        + '同僚との分担を' + finite + '。それから、私は落ち着きました。',
+                        expected_label='それから：落ち着いた（記録された気持ち）')
+                    self.assertIn('この記述時点の' + day + '：', self.row['content_text'])
+                    self.assertIn('決めておく' if '決めて' in finite else '決める', self.row['content_text'])
+                    self.assertIn('行わなかった', self.row['content_text'])
+
+    async def test_dated_negative_action_polite_feeling_survives_saved_read(self):
+        for prefix, day, unspecified in (('昨日、私は', '昨日', False),
+                ('私は今日、', '今日', False), ('昨日、', '昨日', True)):
+            for feeling, label in (('落ち着きました', '落ち着いた'),
+                    ('嬉しかったです', '嬉しかった'), ('うれしかったです', 'うれしかった')):
+                with self.subTest(prefix=prefix, feeling=feeling):
+                    await self._assert_action_change_saved(prefix
+                        + '同僚からの資料を調べませんでした。それから、私は' + feeling + '。',
+                        expected_label='それから：' + label + '（記録された気持ち）')
+                    self.assertIn('この記述時点の' + day + '：', self.row['content_text'])
+                    self.assertEqual('誰の行動かは未確定' in self.row['content_text'], unspecified)
+
+    async def test_omitted_negative_action_polite_feeling_survives_saved_read(self):
+        for finite in ('調べませんでした', '調べなかったです'):
+            for feeling, label in (('落ち着きました', '落ち着いた'),
+                    ('嬉しかったです', '嬉しかった'), ('うれしかったです', 'うれしかった')):
+                with self.subTest(finite=finite, feeling=feeling):
+                    await self._assert_action_change_saved('私は職場にいた。'
+                        'その後、同僚からの資料を' + finite + '。それから、私は' + feeling + '。',
+                        expected_label='それから：' + label + '（記録された気持ち）',
+                        expected_preceding_label='職場にいた（記録された場面）')
+                    self.assertIn('誰の行動かは未確定', self.row['content_text'])
+                    self.assertIn('同僚からの資料を調べる（行わなかった）', self.row['content_text'])
+
+    async def test_polite_feeling_after_negative_decision_survives_saved_read(self):
+        for finite in ('決めませんでした', '決めておきませんでした'):
+            for feeling, label in (('落ち着きました', '落ち着いた'),
+                    ('嬉しかったです', '嬉しかった'), ('うれしかったです', 'うれしかった')):
+                with self.subTest(finite=finite, feeling=feeling):
+                    await self._assert_action_change_saved('私は資料を調べた。'
+                        'その後、私は同僚と分担を' + finite + '。それから、私は' + feeling + '。',
+                        expected_label='それから：' + label + '（記録された気持ち）',
+                        expected_preceding_label='資料を調べる（実行済み）')
+
+    async def test_omitted_actor_action_and_order_survive_saved_read(self):
+        for finite in ('調べた', '調べました', '調べなかった', '調べませんでした'):
+            with self.subTest(finite=finite):
+                await self._assert_action_change_saved('私は職場にいた。その後、資料を'
+                    + finite + '。それから、私は安心した。',
+                    expected_label='それから：安心した（記録された気持ち）',
+                    expected_preceding_label='職場にいた（記録された場面）')
+                self.assertIn('誰の行動かは未確定', self.row['content_text'])
+
+    def setUp(self):
+        self.fx = fixture()
+        self.row = self.fx['row']
+
+    async def test_prefixed_feeling_route_survives_save_and_read(self):
+        for finite in ('安心した', '落ち着きました', '嬉しくなかった'):
+            with self.subTest(finite=finite):
+                fx = fixture('私は職場にいた。その後、私は会議を担当した。'
+                    'その後、私は資料を調べた。それから、私は' + finite + '。')
+                fx['original']['emotion_details'] = [{'type': '平穏', 'strength': 'medium'}]
+                row, writes = fx['row'], []
+                async def rpc(name, payload):
+                    if name == 'analysis_observed_source_snapshot':
+                        return {'guard': GUARD, 'tier': 'plus', 'now': END, 'members': [
+                            {'original': fx['original'], 'thread': None, 'events': []}]}
+                    if name == 'analysis_observed_commit':
+                        writes.append(payload)
+                        row['id'] = str(UUID(payload['p_artifact_id'][9:]))
+                        row['content_text'] = payload['p_text']
+                        row['content_json']['watashiMap'] = payload['p_projection']
+                        return row['id']
+                    self.assertEqual(name, 'analysis_observed_read')
+                    return result([row], matched=True)
+                with patch.dict(os.environ, COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE='off'), \
+                        patch.object(service, '_rpc', side_effect=rpc):
+                    saved = await service.generate_saved(OWNER, start=START, end=END,
+                        report_mode='standard', report_type='latest')
+                    with patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('regenerated')):
+                        reread = await service.read_saved(OWNER, report_id=saved['id'], report_mode='standard')
+                self.assertEqual(len(writes), 1)
+                self.assertEqual(saved, reread['items'][0])
+                self.assertEqual(saved['content_text'], writes[0]['p_text'])
+                projection = saved['content_json']['watashiMap']
+                self.assertEqual(projection, writes[0]['p_projection'])
+                self.assertEqual(len(projection['nodes']), 4)
+                self.assertEqual(len(projection['edges']), 3)
+                self.assertTrue(all(e['edge_kind'] == 'OBSERVED_ORDER' for e in projection['edges']))
+                label = projection['nodes'][-1]['visible_label']
+                self.assertTrue(label.startswith('それから：'))
+                self.assertIn(label, saved['content_text'])
+
+    async def test_past_decision_route_survives_save_and_read(self):
+        for finite, lemma, ending in (
+                ('決めた', '決める', '実行済み'), ('決めました', '決める', '実行済み'),
+                ('決めませんでした', '決める', '行わなかった'),
+                ('決めておいた', '決めておく', '実行済み'),
+                ('決めておきました', '決めておく', '実行済み'),
+                ('決めておきませんでした', '決めておく', '行わなかった')):
+            with self.subTest(finite=finite):
+                fx = fixture('私は資料を調べた。その後、私は同僚と分担を' + finite
+                             + '。それから、私は安心した。')
+                fx['original']['emotion_details'] = [{'type': '平穏', 'strength': 'medium'}]
+                row, writes = fx['row'], []
+                async def rpc(name, payload):
+                    if name == 'analysis_observed_source_snapshot':
+                        return {'guard': GUARD, 'tier': 'plus', 'now': END, 'members': [
+                            {'original': fx['original'], 'thread': None, 'events': []}]}
+                    if name == 'analysis_observed_commit':
+                        writes.append(payload)
+                        row['id'] = str(UUID(payload['p_artifact_id'][9:]))
+                        row['content_text'] = payload['p_text']
+                        row['content_json']['watashiMap'] = payload['p_projection']
+                        return row['id']
+                    self.assertEqual(name, 'analysis_observed_read')
+                    return result([row], matched=True)
+                with patch.dict(os.environ, COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE='off'), \
+                        patch.object(service, '_rpc', side_effect=rpc):
+                    saved = await service.generate_saved(OWNER, start=START, end=END,
+                        report_mode='standard', report_type='latest')
+                    with patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('regenerated')):
+                        reread = await service.read_saved(OWNER, report_id=saved['id'], report_mode='standard')
+                self.assertEqual(len(writes), 1)
+                self.assertEqual(saved, reread['items'][0])
+                self.assertEqual(saved['content_text'], writes[0]['p_text'])
+                projection = saved['content_json']['watashiMap']
+                self.assertEqual(projection, writes[0]['p_projection'])
+                self.assertEqual((len(projection['nodes']), len(projection['edges'])), (3, 2))
+                self.assertTrue(all(e['edge_kind'] == 'OBSERVED_ORDER' for e in projection['edges']))
+                label = projection['nodes'][1]['visible_label']
+                self.assertEqual(label, 'その後：同僚と分担を' + lemma + '（' + ending + '）')
+                self.assertIn(label, saved['content_text'])
+                self.assertEqual(projection['nodes'][2]['visible_label'],
+                                 'それから：安心した（記録された気持ち）')
+
+    async def test_unattributed_decision_route_survives_save_and_read(self):
+        for clause, label in (
+                ('今回は事前に同僚と分担を決めておいた',
+                 '今回は、事前に同僚と分担を決めておく（実行済み）（誰の行動かは未確定）'),
+                ('今回は事前に同僚と分担を決めておかなかった',
+                 '今回は、事前に同僚と分担を決めておく（行わなかった）（誰の行動かは未確定）'),
+                ('昨日、分担を決めました',
+                 'この記述時点の昨日：分担を決める（実行済み）（誰の行動かは未確定）')):
+            with self.subTest(clause=clause):
+                await self._assert_action_change_saved(clause
+                    + '。その後、私は資料を調べた。それから、私は記録を残した。',
+                    expected_label='それから：記録を残す（実行済み）',
+                    expected_preceding_label=label)
+
+    async def test_separated_day_nominal_route_survives_save_and_read(self):
+        for clause, label in (
+                ('私は昨日、分担を決めておいた', '分担を決めておく（実行済み）'),
+                ('私は昨日、分担を決めておかなかった', '分担を決めておく（行わなかった）'),
+                ('私は昨日、分室にいた', '分室にいた（記録された場面）'),
+                ('私は昨日、分担を担当しませんでした', '分担を担当しなかった（記録された担当）')):
+            with self.subTest(clause=clause):
+                await self._assert_action_change_saved(clause
+                    + '。その後、私は資料を調べた。それから、私は記録を残した。',
+                    expected_label='それから：記録を残す（実行済み）',
+                    expected_preceding_label='この記述時点の昨日：' + label)
+
+    async def test_negative_feeling_before_transition_survives_save_and_read(self):
+        for finite in ('嬉しくなかった', 'うれしくありませんでした'):
+            for transition in ('ところで、', 'とりあえず、'):
+                with self.subTest(finite=finite, transition=transition):
+                    fx = fixture('私は' + finite + '。' + transition
+                        + '別のこともあった。その後、私は記録を残した。')
+                    fx['original']['emotion_details'] = [{'type': '平穏', 'strength': 'medium'}]
+                    row, writes = fx['row'], []
+                    async def rpc(name, payload):
+                        if name == 'analysis_observed_source_snapshot':
+                            return {'guard': GUARD, 'tier': 'plus', 'now': END, 'members': [
+                                {'original': fx['original'], 'thread': None, 'events': []}]}
+                        if name == 'analysis_observed_commit':
+                            writes.append(payload)
+                            row['id'] = str(UUID(payload['p_artifact_id'][9:]))
+                            row['content_text'] = payload['p_text']
+                            row['content_json']['watashiMap'] = payload['p_projection']
+                            return row['id']
+                        self.assertEqual(name, 'analysis_observed_read')
+                        return result([row], matched=True)
+                    with patch.dict(os.environ, COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE='off'), \
+                            patch.object(service, '_rpc', side_effect=rpc):
+                        saved = await service.generate_saved(OWNER, start=START, end=END,
+                            report_mode='standard', report_type='latest')
+                        with patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('regenerated')):
+                            reread = await service.read_saved(OWNER, report_id=saved['id'], report_mode='standard')
+                    self.assertEqual(len(writes), 1)
+                    self.assertEqual(saved, reread['items'][0])
+                    self.assertEqual(saved['content_text'], writes[0]['p_text'])
+                    self.assertEqual(saved['content_json']['watashiMap'], writes[0]['p_projection'])
+                    feeling, action = writes[0]['p_projection']['nodes']
+                    label = ('うれしくなかった' if finite.startswith('うれしく') else finite) + '（記録された気持ち）'
+                    self.assertEqual(feeling['visible_label'], label)
+                    self.assertIn(label, saved['content_text'])
+                    self.assertEqual(action['node_kind'], 'ACTION_OR_NONACTION')
+                    self.assertFalse(writes[0]['p_projection']['edges'])
+                    self.assertTrue(writes[0]['p_projection']['unknown_gaps'])
+
+    async def test_split_feeling_attribution_preserves_only_grounded_saved_content(self):
+        for host in ('と友人が言った。', 'のは嘘だった。'):
+            with self.subTest(host=host):
+                fx = fixture('私は嬉しかった。' + host + 'その後、私は記録を残した。')
+                fx['original']['emotion_details'] = [{'type': '平穏', 'strength': 'medium'}]
+                row, writes = fx['row'], []
+                async def rpc(name, payload):
+                    if name == 'analysis_observed_source_snapshot':
+                        return {'guard': GUARD, 'tier': 'plus', 'now': END, 'members': [
+                            {'original': fx['original'], 'thread': None, 'events': []}]}
+                    if name == 'analysis_observed_commit':
+                        writes.append(payload)
+                        row['id'] = str(UUID(payload['p_artifact_id'][9:]))
+                        row['content_text'] = payload['p_text']
+                        row['content_json']['watashiMap'] = payload['p_projection']
+                        return row['id']
+                    self.assertEqual(name, 'analysis_observed_read')
+                    return result([row], matched=True)
+                with patch.dict(os.environ, COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE='off'), \
+                        patch.object(service, '_rpc', side_effect=rpc):
+                    saved = await service.generate_saved(OWNER, start=START, end=END,
+                        report_mode='standard', report_type='latest')
+                    with patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('regenerated')):
+                        reread = await service.read_saved(OWNER, report_id=saved['id'], report_mode='standard')
+                self.assertEqual(len(writes), 1)
+                self.assertEqual(saved, reread['items'][0])
+                self.assertEqual(saved['content_text'], writes[0]['p_text'])
+                self.assertEqual(saved['content_json']['watashiMap'], writes[0]['p_projection'])
+                node, = writes[0]['p_projection']['nodes']
+                self.assertEqual(node['node_kind'], 'ACTION_OR_NONACTION')
+                self.assertNotIn('記録された気持ち', saved['content_text'])
+                self.assertFalse(writes[0]['p_projection']['edges'])
+                self.assertTrue(writes[0]['p_projection']['unknown_gaps'])
+
+    async def test_opposed_feeling_spellings_in_supplements_never_commit(self):
+        from test_analysis_saved_period import with_answer, NOW
+        for old, new in (('嬉しかった', 'うれしくなかった'),
+                ('うれしかった', '嬉しくなかった'),
+                ('嬉しくなかった', 'うれしかった'),
+                ('うれしくなかった', '嬉しかった'),
+                ('不安は全くない', '不安は少しある'),
+                ('不安は少しある', '不安は全くない'),
+                ('不安はあまりない', '不安はとてもある'),
+                ('不安はとてもある', '不安はあまりない')):
+            with self.subTest(old=old, new=new):
+                original = dict(self.fx['original'], memo='私は' + old + '。',
+                    emotion_details=[{'type': '平穏', 'strength': 'medium'}])
+                member = with_answer({'original': original}, '私は' + new + '。')
+                snapshot = {'guard': GUARD, 'tier': 'plus', 'now': NOW, 'members': [member]}
+                with patch.dict(os.environ, COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE='off'), \
+                        patch.object(service, '_rpc', AsyncMock(return_value=snapshot)) as rpc, \
+                        self.assertLogs(realizer.logger, level='WARNING') as logs:
+                    with self.assertRaises(HTTPException) as caught:
+                        await service.generate_saved(OWNER, start=START, end=END,
+                            report_mode='standard', report_type='latest')
+                self.assertEqual(caught.exception.status_code, 422)
+                self.assertEqual(caught.exception.detail, 'analysis_observed_map_unavailable')
+                self.assertEqual([call.args[0] for call in rpc.await_args_list],
+                                 ['analysis_observed_source_snapshot'])
+                self.assertEqual([r.getMessage() for r in logs.records], [
+                    'analysis_observed_generation_unavailable stage=current '
+                    'reason=analysis_supplement_interpretation_pending'])
+
+    async def test_explicit_feeling_spelling_correction_survives_save_and_read(self):
+        from test_analysis_saved_period import with_answer, NOW
+        for old, new in (('嬉しかった', 'うれしくなかった'),
+                ('うれしかった', '嬉しくなかった'),
+                ('嬉しくなかった', 'うれしかった'),
+                ('うれしくなかった', '嬉しかった')):
+            with self.subTest(old=old, new=new):
+                fx = fixture('私は' + old + '。その後、私は記録を残した。')
+                fx['original']['emotion_details'] = [{'type': '平穏', 'strength': 'medium'}]
+                member = with_answer({'original': fx['original']},
+                    '「私は' + old + '」ではなく「私は' + new + '」です。')
+                row, writes = fx['row'], []
+                async def rpc(name, payload):
+                    if name == 'analysis_observed_source_snapshot':
+                        return {'guard': GUARD, 'tier': 'plus', 'now': NOW, 'members': [member]}
+                    if name == 'analysis_observed_commit':
+                        writes.append(payload)
+                        row['id'] = str(UUID(payload['p_artifact_id'][9:]))
+                        row['content_text'] = payload['p_text']
+                        row['content_json']['watashiMap'] = payload['p_projection']
+                        return row['id']
+                    self.assertEqual(name, 'analysis_observed_read')
+                    return result([row], matched=True)
+                with patch.dict(os.environ, COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE='off'), \
+                        patch.object(service, '_rpc', side_effect=rpc):
+                    saved = await service.generate_saved(OWNER, start=START, end=END,
+                        report_mode='standard', report_type='latest')
+                    with patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('regenerated')):
+                        reread = await service.read_saved(OWNER, report_id=saved['id'], report_mode='standard')
+                self.assertEqual(len(writes), 1)
+                self.assertEqual(saved, reread['items'][0])
+                self.assertEqual(saved['content_text'], writes[0]['p_text'])
+                self.assertEqual(saved['content_json']['watashiMap'], writes[0]['p_projection'])
+                self.assertIn(new + '（記録された気持ち）', saved['content_text'])
+                self.assertNotIn(old + '（記録された気持ち）', saved['content_text'])
+                self.assertEqual(len(writes[0]['p_private_evidence']['graph']['source_updates']), 1)
+
+    async def test_saved_past_feeling_keeps_legacy_actor_label_without_reinterpretation(self):
+        for finite in ('安心した', '安心しなかった'):
+            with self.subTest(finite=finite):
+                row = fixture('私は資料を調べた後、' + finite + '。')['row']
+                # Fixed pre-u188 surface: reading must retain saved content,
+                # even though new generation now qualifies the unresolved actor.
+                row['content_json']['watashiMap']['nodes'][1]['visible_label'] = finite + '（記録された気持ち）'
+                row['content_text'] = (
+                    '行動・非行動：資料を調べる（実行済み）（1件の記録）\n'
+                    '結果・余韻：' + finite + '（記録された気持ち）（1件の記録）\n'
+                    '記録内の順序：資料を調べる（実行済み） → ' + finite
+                    + '（記録された気持ち）。原因を示す線ではありません。\n'
+                    '未確定（資料を調べる（実行済み））：確定していない項目：場面、役割、考え・注意。')
+                before = copy.deepcopy(row)
+                with patch.object(service, '_rpc', AsyncMock(return_value=result([row], matched=True))) as rpc, \
+                        patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('read regenerated')):
+                    reread = await service.read_saved(OWNER, report_id=row['id'])
+                self.assertEqual(reread['items'][0], before)
+                self.assertEqual(row, before)
+                self.assertEqual([call.args[0] for call in rpc.await_args_list], ['analysis_observed_read'])
+
+    async def test_insufficient_current_input_keeps_diagnostic_without_saving(self):
+        for members in ([{'original': dict(self.fx['original'], memo=memo),
+                          'thread': None, 'events': []}] for memo in (
+                              '未対応の合成記録です。', '', '私は何を調べた。', '私は誰の資料を見た。',
+                              '私は今週資料を調べた。', '私は今年仕事を続けたい。',
+                              '私は今月資料を調べないかもしれないと思う。',
+                              '夢を見た。私は資料を調べた。',
+                              '友人から聞いた話です。私は仕事を続けたい。',
+                              '私は嬉しかった。と友人が言った。',
+                              '私は嬉しかった。のは嘘だった。',
+                              '私は仕事を続けたい、とは思いません、'
+                              + 'その内容を忘れないように長い文章として残しています' * 4 + '。')):
+            snapshot = {'guard': GUARD, 'tier': 'plus', 'now': END, 'members': members}
+            with self.subTest(memo=members[0]['original']['memo']), \
+                    patch.dict(os.environ, COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE='off'), \
+                    patch.object(service, '_rpc', AsyncMock(return_value=snapshot)) as rpc, \
+                    self.assertLogs(realizer.logger, level='WARNING') as logs:
+                pending = await service.generate_saved(OWNER, start=START, end=END,
+                    report_mode='standard', report_type='latest')
+            self.assertIs(pending, service._INSUFFICIENT_INPUT)
+            self.assertEqual([call.args[0] for call in rpc.await_args_list],
+                             ['analysis_observed_source_snapshot'])
+            self.assertEqual([r.getMessage() for r in logs.records], [
+                'analysis_observed_generation_unavailable stage=current '
+                'reason=analysis_observed_route_not_established'])
+
+    async def test_empty_current_period_skips_engine_and_storage(self):
+        empty = {'guard': GUARD, 'tier': 'plus', 'now': END, 'members': []}
+        previous = dict(empty, members=[{'original': dict(self.fx['original'],
+            id=str(UUID(int=99)), created_at='2026-09-30T01:00:00', memo='未対応の合成記録です。'),
+            'thread': None, 'events': []}])
+        snapshots = [
+            ('off', empty),
+            ('development', {'guard': GUARD, 'tier': 'plus', 'comparison_eligible': False,
+                             'current': empty}),
+        ]
+        for previous_source in (empty, previous):
+            snapshots.append(('development', {'guard': 'analysis-db-compare-v1:' + 'b' * 64,
+                'tier': 'plus', 'comparison_eligible': True, 'current': empty, 'previous': previous_source,
+                'previous_start': '2026-09-29T00:00:00+00:00', 'previous_end': START}))
+        for mode, snapshot in snapshots:
+            with self.subTest(mode=mode, eligible=snapshot.get('comparison_eligible')), \
+                    patch.dict(os.environ, COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE=mode), \
+                    patch.object(service, '_rpc', AsyncMock(return_value=snapshot)) as rpc, \
+                    patch.object(MeaningExperienceEngine, 'generate') as engine, \
+                    patch('response_microcache.invalidate_prefix', AsyncMock()) as invalidate, \
+                    self.assertNoLogs(realizer.logger, level='WARNING'):
+                row = await service.generate_saved(OWNER, start=START, end=END,
+                    report_mode='standard', report_type='latest')
+            self.assertIsNone(row)
+            engine.assert_not_called()
+            invalidate.assert_not_awaited()
+            self.assertEqual([call.args[0] for call in rpc.await_args_list], [
+                'analysis_observed_source_snapshot' if mode == 'off' else 'analysis_observed_comparison_snapshot'])
+
+    async def test_empty_current_does_not_hide_invalid_snapshot_or_period(self):
+        empty = {'guard': GUARD, 'tier': 'plus', 'now': END, 'members': []}
+        comparison = {'guard': 'analysis-db-compare-v1:' + 'b' * 64, 'tier': 'plus',
+            'comparison_eligible': True, 'current': empty, 'previous': empty,
+            'previous_start': '2026-09-29T00:00:00+00:00', 'previous_end': START}
+        cases = [('off', empty, 'invalid', END), ('off', empty, END, START),
+                 ('off', empty, START, START), ('off', dict(empty, guard='invalid'), START, END),
+                 ('off', dict(empty, members=None), START, END),
+                 ('development', dict(comparison, previous_end=END), START, END),
+                 ('development', dict(comparison, previous=dict(empty, tier='free')), START, END),
+                 ('development', dict(comparison, previous=dict(empty, members=None)), START, END)]
+        for mode, snapshot, start, end in cases:
+            with self.subTest(mode=mode, start=start, end=end, snapshot=snapshot), \
+                    patch.dict(os.environ, COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE=mode), \
+                    patch.object(service, '_rpc', AsyncMock(return_value=snapshot)) as rpc, \
+                    patch.object(MeaningExperienceEngine, 'generate') as engine:
+                with self.assertRaises(HTTPException) as caught:
+                    await service.generate_saved(OWNER, start=start, end=end,
+                        report_mode='standard', report_type='latest')
+            self.assertEqual((caught.exception.status_code, caught.exception.detail),
+                             (422, 'analysis_saved_source_unavailable'))
+            engine.assert_not_called()
+            self.assertEqual(rpc.await_count, 1)
+
+    async def test_generation_failure_logs_previous_reason_once(self):
+        with self.assertLogs(realizer.logger, level='WARNING') as logs:
+            with self.assertRaises(HTTPException) as caught:
+                await comparison_fixture(previous_memo='未対応の合成記録です。')
+        self.assertEqual((caught.exception.status_code, caught.exception.detail),
+                         (422, 'analysis_observed_map_unavailable'))
+        self.assertEqual([r.getMessage() for r in logs.records], [
+            'analysis_observed_generation_unavailable stage=previous '
+            'reason=analysis_observed_route_not_established'])
+
+    async def test_comparison_failure_logs_detail_but_keeps_generic_outcome(self):
+        original_generate = realizer.generate_observed_map
+        outcomes = []
+        def generate(request):
+            outcome = original_generate(request)
+            outcomes.append(outcome)
+            return outcome
+        for exception, reason in (
+                (AnalysisSourceError('analysis_comparison_evidence_unavailable'),
+                 'analysis_comparison_evidence_unavailable'),
+                (AnalysisSourceError('合成秘密本文\n' + OWNER), 'analysis_generation_reason_unclassified'),
+                (ValueError('合成秘密本文\n' + OWNER), 'analysis_comparison_unavailable')):
+            with self.subTest(reason=reason), \
+                    patch.object(realizer, 'compare_period_meaning', side_effect=exception), \
+                    patch('cocolon_meaning_experience_engine.engine.generate_observed_map', side_effect=generate), \
+                    self.assertLogs(realizer.logger, level='WARNING') as logs:
+                with self.assertRaises(HTTPException) as caught:
+                    await comparison_fixture()
+            self.assertEqual((caught.exception.status_code, caught.exception.detail),
+                             (422, 'analysis_observed_map_unavailable'))
+            self.assertEqual(outcomes[-1].reason_codes, ('analysis_comparison_unavailable',))
+            self.assertIsNone(outcomes[-1].artifact)
+            self.assertEqual([r.getMessage() for r in logs.records], [
+                'analysis_observed_generation_unavailable stage=comparison reason=' + reason])
+            self.assertTrue(all(r.exc_info is None and r.stack_info is None for r in logs.records))
+
+    async def test_generation_failure_log_rejects_unclassified_values(self):
+        class PrivateValue:
+            def __str__(self):
+                raise AssertionError('must not stringify diagnostic data')
+        for value in ('合成秘密本文\n' + OWNER, 'analysis_source_invalid\n' + OWNER,
+                      '', [], {}, PrivateValue()):
+            with self.subTest(value_type=type(value).__name__), \
+                    self.assertLogs(realizer.logger, level='WARNING') as logs:
+                realizer._failed_outcome(EngineStatus.UNAVAILABLE, 'analysis_source_invalid',
+                    stage=value, diagnostic_reason=value)
+            self.assertEqual([r.getMessage() for r in logs.records], [
+                'analysis_observed_generation_unavailable stage=unclassified '
+                'reason=analysis_generation_reason_unclassified'])
+            self.assertTrue(all(r.exc_info is None and r.stack_info is None for r in logs.records))
+        with patch.object(realizer, 'compile_observed_graph',
+                          side_effect=RuntimeError('合成秘密本文\n' + OWNER)), \
+                self.assertLogs(realizer.logger, level='WARNING') as logs:
+            outcome = MeaningExperienceEngine().generate(AnalysisObservedMapRequest(
+                'synthetic-log-request', OWNER, START, END, ()))
+        self.assertEqual(outcome.reason_codes, ('analysis_semantic_generation_unavailable',))
+        self.assertEqual([r.getMessage() for r in logs.records], [
+            'analysis_observed_generation_unavailable stage=current '
+            'reason=analysis_semantic_generation_unavailable'])
+
+    async def test_successful_generation_emits_no_failure_log(self):
+        with self.assertNoLogs(realizer.logger, level='WARNING'):
+            for options in ({}, {'empty': True}, {'eligible': False}):
+                fx = await comparison_fixture(**options)
+                self.assertTrue(fx['row']['content_json']['watashiMap']['nodes'])
+
+    async def test_comparison_requires_matching_saved_text(self):
+        for state, kinds, reasons in (('COMPARABLE', ['ROUTE_EVIDENCE_CHANGED'], []),
+                ('NOT_COMPARABLE', [], ['PERIOD_OVERLAP'])):
+            with self.subTest(state=state):
+                row = copy.deepcopy(self.row)
+                row['content_json']['watashiMap']['period_comparison'] = {
+                    'state': state, 'safe_change_kinds': kinds, 'reason_codes': reasons}
+                with patch.object(service, '_rpc', AsyncMock(return_value=result([row]))):
+                    with self.assertRaises(HTTPException) as caught:
+                        await service.read_saved(OWNER)
+                self.assertEqual(caught.exception.status_code, 503)
+
+    async def test_comparison_save_read_preserves_both_private_artifacts_and_public_identity(self):
+        fx = await comparison_fixture()
+        row, private = fx['row'], fx['private']
+        self.assertEqual(row['content_json']['watashiMap']['period_comparison']['state'], 'COMPARABLE')
+        self.assertIn('読み取れた内容・つながり', row['content_text'])
+        self.assertEqual(private['schema_version'], 'analysis.private-evidence.v2')
+        c, previous = private['period_comparison'], private['previous_evidence']
+        self.assertEqual(c['current_artifact_ref'], private['projection_of'])
+        self.assertEqual(c['previous_artifact_ref'], previous['projection_of'])
+        self.assertEqual(c['previous_source_set_ref'], previous['source_set_ref'])
+        for claim in c['change_claims']:
+            self.assertTrue(claim['evidence_refs'])
+        for raw in ('visible_label', 'predicate_lemma', 'original_json', '私は', 'ノート'):
+            self.assertNotIn(raw, json.dumps(private, ensure_ascii=False))
+        for secret in ('previous_evidence', 'comparison_dependency', 'evidence_refs', c['previous_artifact_ref']):
+            self.assertNotIn(secret, json.dumps(row, ensure_ascii=False))
+        with patch.object(service, '_rpc', AsyncMock(return_value=result([row], matched=True))), \
+                patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('read regenerated')):
+            reread = await service.read_saved(OWNER, report_id=row['id'])
+        self.assertEqual(reread['items'][0], row)
+
+    async def test_feeling_spelling_comparison_survives_save_read_without_regeneration(self):
+        kanji = '私は資料を調べた後、嬉しかった。'
+        kana = kanji.replace('嬉しかった', 'うれしかった')
+        for before, now in ((kanji, kana), (kana, kanji)):
+            with self.subTest(now=now):
+                fx = await comparison_fixture(current_memo=now, previous_memo=before)
+                row, private = fx['row'], fx['private']
+                projection = row['content_json']['watashiMap']
+                self.assertEqual(projection['period_comparison'], {'state': 'COMPARABLE',
+                    'reason_codes': [], 'safe_change_kinds': []})
+                self.assertFalse(private['period_comparison']['change_claims'])
+                self.assertNotEqual(private['projection_of'], private['previous_evidence']['projection_of'])
+                spelling = 'うれしかった' if 'うれしかった' in now else '嬉しかった'
+                self.assertIn(spelling + '（誰の気持ちかは未確定）', row['content_text'])
+                self.assertIn('今回比較した記述内容では差分を検出していません', row['content_text'])
+                with patch.object(service, '_rpc', AsyncMock(return_value=result([row], matched=True))), \
+                        patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('read regenerated')):
+                    reread = await service.read_saved(OWNER, report_id=row['id'])
+                self.assertEqual(reread['items'][0], row)
+
+    async def test_burden_spelling_comparison_survives_save_read_without_regeneration(self):
+        kanji = '私は仕事を続けたいけれど、私は辛い。'
+        kana = kanji.replace('辛い', 'つらい')
+        for before, now in ((kanji, kana), (kana, kanji)):
+            with self.subTest(now=now):
+                fx = await comparison_fixture(current_memo=now, previous_memo=before)
+                row, private = fx['row'], fx['private']
+                projection = row['content_json']['watashiMap']
+                self.assertEqual(projection['period_comparison'], {'state': 'COMPARABLE',
+                    'reason_codes': [], 'safe_change_kinds': []})
+                self.assertFalse(private['period_comparison']['change_claims'])
+                self.assertEqual(len(projection['annotation_badges']), 1)
+                self.assertIn('この希望と対比して、つらいと記述されています', row['content_text'])
+                self.assertNotIn('まだ読み取れていない内容', row['content_text'])
+                for evidence in (private, private['previous_evidence']):
+                    self.assertEqual(len(evidence['graph']['annotations']), 1)
+                    self.assertEqual(len(evidence['graph']['annotations'][0]['evidence_refs']), 3)
+                for raw in ('source_labels', 'predicate_lemma', '私は', '辛い', 'つらい'):
+                    self.assertNotIn(raw, json.dumps(private, ensure_ascii=False))
+                with patch.object(service, '_rpc', AsyncMock(return_value=result([row], matched=True))), \
+                        patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('read regenerated')):
+                    reread = await service.read_saved(OWNER, report_id=row['id'])
+                self.assertEqual(reread['items'][0], row)
+
+    async def test_burden_topic_comma_survives_save_read_without_regeneration(self):
+        plain = '私は仕事を続けたいけれど、私は辛い。'
+        comma = plain.replace('私は辛い', '私は、\u3000辛い')
+        for before, now in ((plain, comma), (comma, plain)):
+            with self.subTest(now=now):
+                fx = await comparison_fixture(current_memo=now, previous_memo=before)
+                row, private = fx['row'], fx['private']
+                projection = row['content_json']['watashiMap']
+                self.assertEqual(projection['period_comparison'], {'state': 'COMPARABLE',
+                    'reason_codes': [], 'safe_change_kinds': []})
+                self.assertFalse(private['period_comparison']['change_claims'])
+                self.assertEqual(len(projection['annotation_badges']), 1)
+                self.assertEqual(projection['projection_of'], private['projection_of'])
+                self.assertIn('この希望と対比して、つらいと記述されています', row['content_text'])
+                self.assertNotIn('まだ読み取れていない内容', row['content_text'])
+                for evidence in (private, private['previous_evidence']):
+                    self.assertEqual(len(evidence['graph']['annotations'][0]['evidence_refs']), 3)
+                for raw in ('source_labels', 'predicate_lemma', '私は', '辛い'):
+                    self.assertNotIn(raw, json.dumps(private, ensure_ascii=False))
+                with patch.object(service, '_rpc', AsyncMock(return_value=result([row], matched=True))), \
+                        patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('read regenerated')):
+                    reread = await service.read_saved(OWNER, report_id=row['id'])
+                self.assertEqual(reread['items'][0], row)
+
+    async def test_protective_burden_survives_save_read_without_regeneration(self):
+        plain = '私は家族を守りたいけれど、私はつらい。'
+        equivalent = 'ぼくは、家族を守りたいですけど、ぼくは、辛いです。'
+        changed = '私は生活を守りたいけれど、私は苦しいです。'
+        for before, now, differs in ((plain, equivalent, False), (equivalent, plain, False),
+                (plain, changed, True),
+                (plain.replace('家族', '家族の時間'), equivalent.replace('家族', '家族の時間'), False),
+                (equivalent.replace('家族', '家族の時間'), plain.replace('家族', '家族の時間'), False),
+                (plain.replace('家族', '家族の時間'), changed.replace('生活', '生活の基盤'), True),
+                (plain.replace('家族', '家族の気持ち'), equivalent.replace('家族', '家族の気持ち'), False),
+                (equivalent.replace('家族', '家族の気持ち'), plain.replace('家族', '家族の気持ち'), False),
+                (plain.replace('家族', '家族の気持ち'), changed.replace('生活', '家族の考え'), True),
+                (plain.replace('家族', '家族の新しい生活'), equivalent.replace('家族', '家族の新しい生活'), False),
+                (equivalent.replace('家族', '家族の新しい生活'), plain.replace('家族', '家族の新しい生活'), False),
+                (plain.replace('家族', '家族の新しい生活'), plain.replace('家族', '家族の古い生活'), True),
+                (plain.replace('家族', '家族の悪い取り組み'), equivalent.replace('家族', '家族の悪い取り組み'), False),
+                (equivalent.replace('家族', '家族の悪い取り組み'), plain.replace('家族', '家族の悪い取り組み'), False),
+                (plain.replace('家族', '家族の悪い取り組み'), plain.replace('家族', '家族の良い取り組み'), True)):
+            with self.subTest(now=now):
+                fx = await comparison_fixture(current_memo=now, previous_memo=before)
+                row, private = fx['row'], fx['private']
+                projection = row['content_json']['watashiMap']
+                self.assertEqual(len(projection['annotation_badges']), 2)
+                self.assertEqual(projection['projection_of'], private['projection_of'])
+                self.assertEqual(bool(projection['period_comparison']['safe_change_kinds']), differs)
+                self.assertIn('実際に守れているかは確定していません', row['content_text'])
+                self.assertIn('原因や続いている期間は確定していません', row['content_text'])
+                for evidence in (private, private['previous_evidence']):
+                    self.assertEqual([len(a['evidence_refs']) for a in evidence['graph']['annotations']], [1, 3])
+                for raw in ('source_labels', 'predicate_lemma', '私は', 'ぼくは', '辛い'):
+                    self.assertNotIn(raw, json.dumps(private, ensure_ascii=False))
+                with patch.object(service, '_rpc', AsyncMock(return_value=result([row], matched=True))), \
+                        patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('read regenerated')):
+                    reread = await service.read_saved(OWNER, report_id=row['id'])
+                self.assertEqual(reread['items'][0], row)
+
+    async def test_explicit_self_spellings_survive_save_read_and_spelling_comparison(self):
+        clauses = ('ぼくは職場にいなかったです。ぼくは会議を担当した。'
+                     'その後、ぼくは資料を調べた。',
+                     'ぼくは家族を守りたい。ぼくは資料を調べないかもしれないと思う。'
+                     'ぼくは仕事を続けたいけれど、ぼくはつらいです。',
+                     'ぼくは、家族の新しい生活を守りたいけれど、ぼくは、つらいです。')
+        for subject, memo in ((subject, clause.replace('ぼく', subject))
+                              for subject in ('ぼく', '俺', 'おれ') for clause in clauses):
+            with self.subTest(memo=memo):
+                fx = await comparison_fixture(current_memo=memo, previous_memo=memo.replace(subject, '僕'))
+                row = fx['row']
+                p = row['content_json']['watashiMap']
+                self.assertEqual(p['period_comparison'], {'state': 'COMPARABLE',
+                    'reason_codes': [], 'safe_change_kinds': []})
+                self.assertEqual(p['projection_of'], fx['private']['projection_of'])
+                self.assertFalse(fx['private']['period_comparison']['change_claims'])
+                for node in p['nodes']:
+                    self.assertIn(node['visible_label'], row['content_text'])
+                self.assertEqual([a['kind'] for a in p['annotation_badges']],
+                                 ['PROTECTIVE', 'BURDEN'] if 'つらい' in memo else [])
+                with patch.object(service, '_rpc', AsyncMock(return_value=result([row], matched=True))), \
+                        patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('read regenerated')):
+                    reread = await service.read_saved(OWNER, report_id=row['id'])
+                self.assertEqual(reread['items'][0], row)
+
+    async def test_empty_previous_is_dependency_but_unreadable_previous_is_not_first_use(self):
+        fx = await comparison_fixture(empty=True)
+        self.assertEqual(fx['row']['content_json']['watashiMap']['period_comparison']['state'], 'NO_PREVIOUS')
+        self.assertIsNone(fx['private']['previous_evidence'])
+        self.assertIsNone(fx['private']['period_comparison'])
+        self.assertEqual(fx['private']['comparison_dependency']['policy'], 'adjacent-equal-v1')
+        with self.assertRaises(HTTPException) as caught:
+            await comparison_fixture(previous_memo='この文は未対応の合成記録です。')
+        self.assertEqual(caught.exception.status_code, 422)
+
+    async def test_comparison_flag_defaults_off_and_requires_exact_development_value(self):
+        for value in ('', 'off', 'true', 'enabled', 'invalid'):
+            with patch.dict(os.environ, COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE=value):
+                self.assertFalse(service.period_comparison_enabled())
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertFalse(service.period_comparison_enabled())
+
+    async def test_previous_outside_retention_keeps_current_single_period_available(self):
+        fx = await comparison_fixture(eligible=False)
+        self.assertEqual(fx['private']['schema_version'], 'analysis.private-evidence.v1')
+        self.assertNotIn('comparison_dependency', fx['private'])
+        self.assertEqual(fx['row']['content_json']['watashiMap']['period_comparison']['state'], 'NO_PREVIOUS')
+
+    async def test_comparison_storage_errors_never_fall_back_to_single_period(self):
+        for status in (403, 404, 409, 422, 503):
+            with patch.dict(os.environ, COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE='development'), \
+                    patch.object(service, '_rpc', AsyncMock(side_effect=HTTPException(status, 'unavailable'))) as rpc:
+                with self.assertRaises(HTTPException) as caught:
+                    await service.generate_saved(OWNER, start=START, end=END, report_mode='standard', report_type='latest')
+                self.assertEqual(caught.exception.status_code, status)
+                self.assertEqual(rpc.await_count, 1)
+
+    async def test_saved_comparison_rejects_private_unknown_duplicate_and_inconsistent_fields(self):
+        fx = await comparison_fixture()
+        for mutation in ('private', 'kind', 'duplicate', 'reasons', 'state', 'not_comparable', 'not_list'):
+            with self.subTest(mutation=mutation):
+                row = copy.deepcopy(fx['row'])
+                c = row['content_json']['watashiMap']['period_comparison']
+                if mutation == 'private': c['previous_artifact_ref'] = 'private'
+                if mutation == 'kind': c['safe_change_kinds'] = ['IMPROVED']
+                if mutation == 'duplicate': c['safe_change_kinds'] *= 2
+                if mutation == 'reasons': c['reason_codes'] = ['PERIOD_OVERLAP']
+                if mutation == 'state': c['state'] = 'NO_PREVIOUS'
+                if mutation == 'not_comparable': c.update(state='NOT_COMPARABLE', reason_codes=[])
+                if mutation == 'not_list': c['safe_change_kinds'] = {}
+                with patch.object(service, '_rpc', AsyncMock(return_value=result([row]))):
+                    with self.assertRaises(HTTPException): await service.read_saved(OWNER)
+
+    async def test_protective_intention_survives_save_read_with_private_evidence_separate(self):
+        for memo in ('私は家族を守りたい。私は仕事を続けたいけれど、私はつらい。',
+                     '私は、家族を守りたい。私は仕事を続けたいけれど、私はつらい。',
+                     '僕は，　家族を守りたいです。私は仕事を続けたいけれど、私はつらい。'):
+            with self.subTest(memo=memo):
+                self.fx = fixture(memo)
+                self.row = self.fx['row']
+                writes = []
+                async def rpc(name, payload):
+                    if name == 'analysis_observed_source_snapshot':
+                        return {'guard': GUARD, 'tier': 'plus', 'now': END, 'members': [
+                            {'original': self.fx['original'], 'thread': None, 'events': []}]}
+                    if name == 'analysis_observed_commit':
+                        writes.append(payload)
+                        self.row['id'] = str(UUID(payload['p_artifact_id'][9:]))
+                        self.row['content_text'] = payload['p_text']
+                        self.row['content_json']['watashiMap'] = payload['p_projection']
+                        return self.row['id']
+                    return result([self.row], matched=True)
+                with patch.object(service, '_rpc', side_effect=rpc):
+                    saved = await service.generate_saved(OWNER, start=START, end=END,
+                        report_mode='standard', report_type='latest')
+                    with patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('regenerated')):
+                        reread = await service.read_saved(OWNER, report_id=saved['id'], report_mode='standard')
+                self.assertEqual(saved, reread['items'][0])
+                projection = saved['content_json']['watashiMap']
+                self.assertEqual(projection, writes[0]['p_projection'])
+                self.assertEqual(saved['content_text'], writes[0]['p_text'])
+                self.assertEqual([a['kind'] for a in projection['annotation_badges']], ['PROTECTIVE', 'BURDEN'])
+                private = writes[0]['p_private_evidence']
+                self.assertEqual(private['graph']['annotations'][0]['evidence_refs'],
+                                 private['graph']['nodes'][0]['evidence_refs'])
+                for key in ('source_labels', 'predicate_lemma', 'visible_label', 'original_json', '家族', '守りたい'):
+                    self.assertNotIn(key, json.dumps(private, ensure_ascii=False))
+                for key in ('evidence_refs', 'source_envelope_id', 'literal_sha256', 'annotation_state'):
+                    self.assertNotIn(key, json.dumps(saved, ensure_ascii=False))
+
+    async def test_saved_protective_rejects_other_target_and_false_outcome(self):
+        base = fixture('私は仕事を続けたい。私は記録を残した。私は家族を守りたい。')['row']
+        for mutation in ('wish', 'action', 'unknown', 'kind', 'outcome', 'private', 'duplicate', 'text', 'target_label'):
+            with self.subTest(mutation=mutation):
+                row = copy.deepcopy(base)
+                projection = row['content_json']['watashiMap']
+                badge = projection['annotation_badges'][0]
+                if mutation == 'wish': badge['target_ref'] = 'n1'
+                if mutation == 'action': badge['target_ref'] = 'n2'
+                if mutation == 'unknown': badge['target_ref'] = 'n999'
+                if mutation == 'kind': badge['kind'] = 'BURDEN'
+                if mutation == 'outcome': badge['visible_label'] = '家族を守れています。'
+                if mutation == 'private': badge['source_labels'] = ['私は家族を守りたい']
+                if mutation == 'duplicate': projection['annotation_badges'].append(dict(badge, annotation_ref='a2'))
+                if mutation == 'text': row['content_text'] = row['content_text'].split('注記')[0]
+                if mutation == 'target_label': projection['nodes'][2]['visible_label'] = '家族を守ることを望まない'
+                with patch.object(service, '_rpc', AsyncMock(return_value=result([row]))):
+                    with self.assertRaises(HTTPException) as raised:
+                        await service.read_saved(OWNER)
+                self.assertEqual(raised.exception.status_code, 503)
+
+    async def test_repeated_period_saves_compact_gaps_and_keeps_all_private_sources(self):
+        self.fx = fixture('私は仕事を続けたいけれど、私はつらい。')
+        self.row = self.fx['row']
+        second = dict(self.fx['original'], id=str(UUID(int=102)),
+            created_at='2026-10-02T01:00:00', memo='僕は仕事を続けたいけれど、僕はつらいです。')
+        writes = []
+        async def rpc(name, payload):
+            if name == 'analysis_observed_source_snapshot':
+                return {'guard': GUARD, 'tier': 'plus', 'now': END, 'members': [
+                    {'original': original, 'thread': None, 'events': []}
+                    for original in (self.fx['original'], second)]}
+            if name == 'analysis_observed_commit':
+                writes.append(payload)
+                self.row['id'] = str(UUID(payload['p_artifact_id'][9:]))
+                self.row['content_text'] = payload['p_text']
+                self.row['content_json']['watashiMap'] = payload['p_projection']
+                return self.row['id']
+            return result([self.row], matched=True)
+        with patch.object(service, '_rpc', side_effect=rpc):
+            saved = await service.generate_saved(OWNER, start=START, end=END,
+                report_mode='standard', report_type='latest')
+            with patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('regenerated')):
+                reread = await service.read_saved(OWNER, report_id=saved['id'], report_mode='standard')
+        self.assertEqual(saved, reread['items'][0])
+        projection = saved['content_json']['watashiMap']
+        self.assertEqual(projection, writes[0]['p_projection'])
+        self.assertEqual(saved['content_text'], writes[0]['p_text'])
+        self.assertEqual(len(projection['unknown_gaps']), 1)
+        self.assertEqual(projection['unknown_gaps'][0]['visible_label'],
+                         '確定していない項目：場面、役割、行動・非行動、結果・余韻。')
+        self.assertEqual(saved['content_text'].count('未確定（'), 1)
+        private = writes[0]['p_private_evidence']
+        self.assertEqual(len(private['source_members']), 2)
+        self.assertEqual(len(private['graph']['unknown_gaps']), 8)
+        self.assertEqual(len(private['graph']['nodes'][0]['evidence_refs']), 2)
+        self.assertEqual(len(private['graph']['annotations'][0]['evidence_refs']), 6)
+        for key in ('reason_code', 'missing_scope', 'evidence_refs', 'source_members'):
+            self.assertNotIn(json.dumps(key) + ':', json.dumps(saved, ensure_ascii=False))
+
+    async def test_corrected_and_withdrawn_stage_gaps_survive_saved_read_without_regeneration(self):
+        from test_analysis_saved_period import with_answer, NOW
+        episode = 'それから私は資料を調べてから、落ち着いた'
+        for answer, scopes, node_count in (
+                ('「' + episode + '」ではなく「' + episode.replace('落ち着いた', '嬉しかった') + '」です。',
+                 '場面、考え・注意', 4),
+                ('「' + episode + '」は取り消します。', '場面、考え・注意、結果・余韻', 2)):
+            with self.subTest(answer=answer):
+                fx = fixture('私は会議を担当した。' + episode + '。その後、私は記録を残した。')
+                # The supplemental-answer binding uses the saved Emlis source
+                # contract, which requires a nonempty emotion_details array.
+                fx['original']['emotion_details'] = [{'type': '平穏', 'strength': 'medium'}]
+                member = with_answer({'original': fx['original']}, answer)
+                row, writes = fx['row'], []
+                async def rpc(name, payload):
+                    if name == 'analysis_observed_source_snapshot':
+                        return {'guard': GUARD, 'tier': 'plus', 'now': NOW, 'members': [member]}
+                    if name == 'analysis_observed_commit':
+                        writes.append(payload)
+                        row['id'] = str(UUID(payload['p_artifact_id'][9:]))
+                        row['content_text'] = payload['p_text']
+                        row['content_json']['watashiMap'] = payload['p_projection']
+                        return row['id']
+                    return result([row], matched=True)
+                with patch.object(service, '_rpc', side_effect=rpc):
+                    saved = await service.generate_saved(OWNER, start=START, end=END,
+                        report_mode='standard', report_type='latest')
+                    with patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('regenerated')):
+                        reread = await service.read_saved(OWNER, report_id=saved['id'], report_mode='standard')
+                self.assertEqual(saved, reread['items'][0])
+                projection = saved['content_json']['watashiMap']
+                self.assertEqual(projection, writes[0]['p_projection'])
+                self.assertEqual(saved['content_text'], writes[0]['p_text'])
+                self.assertEqual(len(projection['nodes']), node_count)
+                self.assertIn('確定していない項目：' + scopes + '。', saved['content_text'])
+                self.assertNotIn('落ち着いた', saved['content_text'])
+                private = writes[0]['p_private_evidence']['graph']
+                self.assertEqual(len(private['source_updates']), 1)
+                self.assertEqual(len(private['unknown_gaps']),
+                    len(projection['unknown_gaps']) + len(scopes.split('、')) - 1)
+
+    async def test_previous_saved_duplicate_gaps_keep_their_original_text_and_identity(self):
+        row = fixture('私は仕事を続けたいけれど、私はつらい。')['row']
+        projection = row['content_json']['watashiMap']
+        # Preserve the old per-stage wire text explicitly; current generation
+        # now groups the scopes and cannot serve as a historical fixture.
+        scopes = ('場面', '役割', '行動・非行動', '結果・余韻')
+        projection['unknown_gaps'] = [
+            {'gap_ref': 'g' + str(i + 1), 'between_node_refs': ['n1'],
+             'visible_label': scope + 'は、この記録からは確定していません。'}
+            for i, scope in enumerate(scopes * 2)]
+        lines = row['content_text'].splitlines()
+        # Historical wire text: node, both sets of gaps, then the annotation.
+        target = projection['nodes'][0]['visible_label']
+        row['content_text'] = '\n'.join(lines[:1] + [
+            '未確定（' + target + '）：' + g['visible_label']
+            for g in projection['unknown_gaps']] + lines[-1:])
+        before = copy.deepcopy(row)
+        with patch.object(service, '_rpc', AsyncMock(return_value=result([row]))), \
+                patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('regenerated')):
+            saved = await service.read_saved(OWNER, report_id=row['id'], report_mode='standard')
+        self.assertEqual(saved['items'][0], before)
+        self.assertEqual(saved['items'][0]['content_text'].count('未確定（'), 8)
+        self.assertEqual(row, before)
+
+    async def test_missing_predecessor_explanation_survives_save_and_read(self):
+        label = 'この記述がどの内容に続くのかは、この記録からは確定していません。'
+        for memo in ('その後、私は資料を調べた。', 'それから、私は資料を調べなかった。',
+                     '私は記録を担当した。まだわからない。その後、私は資料を調べた。'):
+            with self.subTest(memo=memo):
+                fx = fixture(memo)
+                row, writes = fx['row'], []
+                async def rpc(name, payload):
+                    if name == 'analysis_observed_source_snapshot':
+                        return {'guard': GUARD, 'tier': 'plus', 'now': END, 'members': [
+                            {'original': fx['original'], 'thread': None, 'events': []}]}
+                    if name == 'analysis_observed_commit':
+                        writes.append(payload)
+                        row['id'] = str(UUID(payload['p_artifact_id'][9:]))
+                        row['content_text'] = payload['p_text']
+                        row['content_json']['watashiMap'] = payload['p_projection']
+                        return row['id']
+                    return result([row], matched=True)
+                with patch.object(service, '_rpc', side_effect=rpc):
+                    saved = await service.generate_saved(OWNER, start=START, end=END,
+                        report_mode='standard', report_type='latest')
+                    with patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('regenerated')):
+                        reread = await service.read_saved(OWNER, report_id=saved['id'], report_mode='standard')
+                self.assertEqual(saved, reread['items'][0])
+                self.assertEqual(saved['content_text'].count(label), 1)
+                projection = saved['content_json']['watashiMap']
+                self.assertEqual(projection, writes[0]['p_projection'])
+                self.assertEqual(saved['content_text'], writes[0]['p_text'])
+                specific, = [g for g in projection['unknown_gaps'] if g['visible_label'] == label]
+                private = writes[0]['p_private_evidence']['graph']['unknown_gaps']
+                self.assertEqual(next(g['reason_code'] for g in private if g['gap_ref'] == specific['gap_ref']),
+                                 'EXPLICIT_PREDECESSOR_NOT_ESTABLISHED')
+                for key in ('reason_code', 'missing_scope', 'evidence_refs'):
+                    self.assertNotIn(json.dumps(key) + ':', json.dumps(saved, ensure_ascii=False))
+
+    async def test_previous_saved_predecessor_label_keeps_original_text_without_regeneration(self):
+        row = fixture('その後、私は資料を調べた。')['row']
+        specific = 'この記述がどの内容に続くのかは、この記録からは確定していません。'
+        historical = '段階同士のつながりは、この記録からは確定していません。'
+        for gap in row['content_json']['watashiMap']['unknown_gaps']:
+            if gap['visible_label'] == specific:
+                gap['visible_label'] = historical
+        row['content_text'] = row['content_text'].replace(specific, historical)
+        before = copy.deepcopy(row)
+        with patch.object(service, '_rpc', AsyncMock(return_value=result([row]))), \
+                patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('regenerated')):
+            saved = await service.read_saved(OWNER, report_id=row['id'], report_mode='standard')
+        self.assertEqual(saved['items'][0], before)
+        self.assertIn(historical, saved['items'][0]['content_text'])
+        self.assertEqual(row, before)
+
+    async def test_burden_annotation_survives_save_and_read_without_regeneration(self):
+        self.fx = fixture('私は仕事を続けたいけれど、私はつらい。')
+        self.row = self.fx['row']
+        writes = []
+        async def rpc(name, payload):
+            if name == 'analysis_observed_source_snapshot':
+                return {'guard': GUARD, 'tier': 'plus', 'now': END, 'members': [
+                    {'original': self.fx['original'], 'thread': None, 'events': []}]}
+            if name == 'analysis_observed_commit':
+                writes.append(payload)
+                self.row['id'] = str(UUID(payload['p_artifact_id'][9:]))
+                self.row['content_text'] = payload['p_text']
+                self.row['content_json']['watashiMap'] = payload['p_projection']
+                return self.row['id']
+            return result([self.row], matched=True)
+        with patch.object(service, '_rpc', side_effect=rpc):
+            saved = await service.generate_saved(OWNER, start=START, end=END,
+                report_mode='standard', report_type='latest')
+            with patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('regenerated')):
+                reread = await service.read_saved(OWNER, report_id=saved['id'], report_mode='standard')
+        self.assertEqual(saved, reread['items'][0])
+        self.assertEqual(saved['content_text'], writes[0]['p_text'])
+        projection = saved['content_json']['watashiMap']
+        self.assertEqual(projection, writes[0]['p_projection'])
+        self.assertEqual(len(projection['annotation_badges']), 1)
+        private = writes[0]['p_private_evidence']
+        claim = private['graph']['annotations'][0]
+        self.assertEqual(claim['target_ref'], projection['annotation_badges'][0]['target_ref'])
+        self.assertEqual(claim['annotation_state'], 'SOURCE_EXPLICIT_ANNOTATION')
+        self.assertEqual(len(claim['evidence_refs']), 3)
+        for key in ('visible_label', 'source_labels', 'predicate_lemma', 'original_json', '私は', 'つらい', '仕事'):
+            self.assertNotIn(key, json.dumps(private, ensure_ascii=False))
+        for key in ('evidence_refs', 'source_envelope_id', 'literal_sha256', 'forbidden_promotions', 'annotation_state'):
+            self.assertNotIn(key, json.dumps(saved, ensure_ascii=False))
+        self.assertIn('注記（仕事を続けることへの希望）', saved['content_text'])
+
+    async def test_saved_burden_rejects_invalid_shape_target_label_and_text(self):
+        base = fixture('私は記録を残した。私は仕事を続けたいけれど、私はつらい。')['row']
+        for mutation in ('unknown', 'action', 'edge', 'duplicate', 'kind', 'private', 'label', 'non_list', 'id', 'missing_text'):
+            with self.subTest(mutation=mutation):
+                row = copy.deepcopy(base)
+                projection = row['content_json']['watashiMap']
+                badge = projection['annotation_badges'][0]
+                if mutation == 'unknown': badge['target_ref'] = 'n999'
+                if mutation == 'action': badge['target_ref'] = 'n1'
+                if mutation == 'edge': badge['target_ref'] = 'e1'
+                if mutation == 'duplicate': projection['annotation_badges'].append(dict(badge, annotation_ref='a2'))
+                if mutation == 'kind': badge['kind'] = 'PROTECTIVE'
+                if mutation == 'private': badge['evidence_refs'] = ['private']
+                if mutation == 'label': badge['visible_label'] = '仕事が原因でつらくなっています。'
+                if mutation == 'non_list': projection['annotation_badges'] = {}
+                if mutation == 'id': badge['annotation_ref'] = 'a0'
+                if mutation == 'missing_text': row['content_text'] = row['content_text'].split('注記')[0]
+                with patch.object(service, '_rpc', AsyncMock(return_value=result([row]))):
+                    with self.assertRaises(HTTPException) as raised:
+                        await service.read_saved(OWNER)
+                self.assertEqual(raised.exception.status_code, 503)
+
+    async def test_generate_commits_and_rereads_exact_identity(self):
+        self.fx = fixture('私は、考えをノートに書いた。僕は，仕事を続けたい。')
+        self.row = self.fx['row']
+        writes = []
+        async def rpc(name, payload):
+            if name == 'analysis_observed_source_snapshot':
+                return {'guard': GUARD, 'tier': 'plus', 'now': END, 'members': [
+                    {'original': self.fx['original'], 'thread': None, 'events': []}]}
+            if name == 'analysis_observed_commit':
+                writes.append(payload)
+                projection = payload['p_projection']
+                self.row['id'] = str(UUID(payload['p_artifact_id'][9:]))
+                self.row['content_text'] = payload['p_text']
+                self.row['content_json']['watashiMap'] = projection
+                return self.row['id']
+            return result([self.row], matched=True)
+        with patch.object(service, '_rpc', side_effect=rpc):
+            saved = await service.generate_saved(OWNER, start=START, end=END,
+                report_mode='standard', report_type='latest')
+            with patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('regenerated')):
+                reread = await service.read_saved(OWNER, report_id=saved['id'], report_mode='standard')
+        self.assertEqual(reread['items'][0], saved)
+        self.assertEqual(saved['content_json']['watashiMap'], writes[0]['p_projection'])
+        self.assertEqual(saved['content_text'], writes[0]['p_text'])
+        self.assertEqual([n['visible_label'] for n in saved['content_json']['watashiMap']['nodes']],
+            ['考えをノートに書く（実行済み）', '仕事を続けることへの希望'])
+        encoded = json.dumps(writes[0]['p_private_evidence'], ensure_ascii=False)
+        self.assertNotIn('私は', encoded)
+        self.assertNotIn('visible_label', encoded)
+        self.assertNotIn('original_json', encoded)
+        self.assertIn('evidence_refs', encoded)
+        self.assertEqual(writes[0]['p_guard'], GUARD)
+
+    async def test_saved_event_topic_commas_keep_scene_role_and_text_without_regeneration(self):
+        fx = fixture('私は、職場にいた。僕は，今日、会議を担当しませんでした。')
+        row = fx['row']
+        with patch.object(service, '_rpc', AsyncMock(return_value=result([row]))), \
+                patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('regenerated')):
+            reread = await service.read_saved(OWNER)
+        saved, = reread['items']
+        self.assertEqual(saved['content_text'], row['content_text'])
+        self.assertEqual(saved['content_json']['watashiMap'], row['content_json']['watashiMap'])
+        self.assertEqual([n['visible_label'] for n in saved['content_json']['watashiMap']['nodes']],
+            ['職場にいた（記録された場面）', 'この記述時点の今日：会議を担当しなかった（記録された担当）'])
+        self.assertNotIn('私は', json.dumps(fx['private'], ensure_ascii=False))
+
+    async def test_mixed_script_arguments_survive_save_and_read_without_regeneration(self):
+        original = dict(self.fx['original'], memo=
+            '私は、昨日、会議室ロビーにいた。その後、私は仕事メモをメモ帳に書かなかった。')
+        writes = []
+        async def rpc(name, payload):
+            if name == 'analysis_observed_source_snapshot':
+                return {'guard': GUARD, 'tier': 'plus', 'now': END, 'members': [
+                    {'original': original, 'thread': None, 'events': []}]}
+            if name == 'analysis_observed_commit':
+                writes.append(payload)
+                self.row.update(id=str(UUID(payload['p_artifact_id'][9:])), content_text=payload['p_text'])
+                self.row['content_json']['watashiMap'] = payload['p_projection']
+                return self.row['id']
+            if name == 'analysis_observed_read':
+                return result([self.row], matched=True)
+            raise AssertionError(name)
+        with patch.dict(os.environ, COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE='off'), \
+                patch.object(service, '_rpc', side_effect=rpc):
+            saved = await service.generate_saved(OWNER, start=START, end=END,
+                report_mode='standard', report_type='latest')
+            with patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('regenerated')):
+                reread = await service.read_saved(OWNER, report_id=saved['id'], report_mode='standard')
+        self.assertEqual(len(writes), 1)
+        self.assertEqual(reread['items'][0], saved)
+        projection = saved['content_json']['watashiMap']
+        self.assertEqual(projection, writes[0]['p_projection'])
+        self.assertEqual(saved['content_text'], writes[0]['p_text'])
+        self.assertEqual([n['visible_label'] for n in projection['nodes']], [
+            'この記述時点の昨日：会議室ロビーにいた（記録された場面）',
+            'その後：仕事メモをメモ帳に書く（行わなかった）'])
+        self.assertEqual(len(projection['edges']), 1)
+        self.assertNotIn('私は', json.dumps(writes[0]['p_private_evidence'], ensure_ascii=False))
+
+    async def test_attributive_arguments_survive_save_and_read_without_regeneration(self):
+        original = dict(self.fx['original'], memo=
+            '私は、昨日、新しい会議室にいた。その後、私は詳しい仕事メモを古いノートに書かなかった。')
+        writes = []
+        async def rpc(name, payload):
+            if name == 'analysis_observed_source_snapshot':
+                return {'guard': GUARD, 'tier': 'plus', 'now': END, 'members': [
+                    {'original': original, 'thread': None, 'events': []}]}
+            if name == 'analysis_observed_commit':
+                writes.append(payload)
+                self.row.update(id=str(UUID(payload['p_artifact_id'][9:])), content_text=payload['p_text'])
+                self.row['content_json']['watashiMap'] = payload['p_projection']
+                return self.row['id']
+            if name == 'analysis_observed_read':
+                return result([self.row], matched=True)
+            raise AssertionError(name)
+        with patch.dict(os.environ, COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE='off'), \
+                patch.object(service, '_rpc', side_effect=rpc):
+            saved = await service.generate_saved(OWNER, start=START, end=END,
+                report_mode='standard', report_type='latest')
+            with patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('regenerated')):
+                reread = await service.read_saved(OWNER, report_id=saved['id'], report_mode='standard')
+        self.assertEqual(len(writes), 1)
+        self.assertEqual(reread['items'][0], saved)
+        projection = saved['content_json']['watashiMap']
+        self.assertEqual(projection, writes[0]['p_projection'])
+        self.assertEqual(saved['content_text'], writes[0]['p_text'])
+        self.assertEqual([n['visible_label'] for n in projection['nodes']], [
+            'この記述時点の昨日：新しい会議室にいた（記録された場面）',
+            'その後：詳しい仕事メモを古いノートに書く（行わなかった）'])
+        self.assertEqual(len(projection['edges']), 1)
+        self.assertNotIn('私は', json.dumps(writes[0]['p_private_evidence'], ensure_ascii=False))
+
+    async def test_kana_compound_arguments_survive_save_and_read_without_regeneration(self):
+        original = dict(self.fx['original'], memo=
+            '私は、昨日、新しい会議室にいた。その後、私は新しい振り返りメモを古い学びノートに書かなかった。')
+        writes = []
+        async def rpc(name, payload):
+            if name == 'analysis_observed_source_snapshot':
+                return {'guard': GUARD, 'tier': 'plus', 'now': END, 'members': [
+                    {'original': original, 'thread': None, 'events': []}]}
+            if name == 'analysis_observed_commit':
+                writes.append(payload)
+                self.row.update(id=str(UUID(payload['p_artifact_id'][9:])), content_text=payload['p_text'])
+                self.row['content_json']['watashiMap'] = payload['p_projection']
+                return self.row['id']
+            if name == 'analysis_observed_read':
+                return result([self.row], matched=True)
+            raise AssertionError(name)
+        with patch.dict(os.environ, COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE='off'), \
+                patch.object(service, '_rpc', side_effect=rpc):
+            saved = await service.generate_saved(OWNER, start=START, end=END,
+                report_mode='standard', report_type='latest')
+            with patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('regenerated')):
+                reread = await service.read_saved(OWNER, report_id=saved['id'], report_mode='standard')
+        self.assertEqual(len(writes), 1)
+        self.assertEqual(reread['items'][0], saved)
+        projection = saved['content_json']['watashiMap']
+        self.assertEqual(projection, writes[0]['p_projection'])
+        self.assertEqual(saved['content_text'], writes[0]['p_text'])
+        self.assertEqual([n['visible_label'] for n in projection['nodes']], [
+            'この記述時点の昨日：新しい会議室にいた（記録された場面）',
+            'その後：新しい振り返りメモを古い学びノートに書く（行わなかった）'])
+        self.assertEqual(len(projection['edges']), 1)
+        self.assertNotIn('私は', json.dumps(writes[0]['p_private_evidence'], ensure_ascii=False))
+
+    async def test_feeling_word_changes_survive_save_and_read_without_regeneration(self):
+        original = dict(self.fx['original'], memo=
+            '私は資料を調べた後、不安が減った。私は記録を残してから、気持ちメモが増えた。'
+            '私は振り返りメモを残した後、取り組み方が変わりました。')
+        writes = []
+        async def rpc(name, payload):
+            if name == 'analysis_observed_source_snapshot':
+                return {'guard': GUARD, 'tier': 'plus', 'now': END, 'members': [
+                    {'original': original, 'thread': None, 'events': []}]}
+            if name == 'analysis_observed_commit':
+                writes.append(payload)
+                self.row.update(id=str(UUID(payload['p_artifact_id'][9:])), content_text=payload['p_text'])
+                self.row['content_json']['watashiMap'] = payload['p_projection']
+                return self.row['id']
+            if name == 'analysis_observed_read':
+                return result([self.row], matched=True)
+            raise AssertionError(name)
+        with patch.dict(os.environ, COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE='off'), \
+                patch.object(service, '_rpc', side_effect=rpc):
+            saved = await service.generate_saved(OWNER, start=START, end=END,
+                report_mode='standard', report_type='latest')
+            with patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('regenerated')):
+                reread = await service.read_saved(OWNER, report_id=saved['id'], report_mode='standard')
+        self.assertEqual(len(writes), 1)
+        self.assertEqual(reread['items'][0], saved)
+        projection = saved['content_json']['watashiMap']
+        self.assertEqual(projection, writes[0]['p_projection'])
+        self.assertEqual(saved['content_text'], writes[0]['p_text'])
+        self.assertEqual([n['visible_label'] for n in projection['nodes']], [
+            '資料を調べる（実行済み）', '不安が減った（記録された変化）',
+            '記録を残す（実行済み）', '気持ちメモが増えた（記録された変化）',
+            '振り返りメモを残す（実行済み）', '取り組み方が変わった（記録された変化）'])
+        self.assertEqual([e['edge_kind'] for e in projection['edges']],
+            ['OBSERVED_ORDER', 'OBSERVED_ORDER', 'OBSERVED_ORDER'])
+        self.assertNotIn('私は', json.dumps(writes[0]['p_private_evidence'], ensure_ascii=False))
+
+    async def test_partial_map_with_unparsed_original_is_saved_and_read_without_regeneration(self):
+        for unparsed in ('私は資料を明日ノートに書いた', '私は何を調べた', '私は誰の資料を見た',
+                         '私は職場にいた。と親しい新しい友人が言った',
+                         '私は仕事を続けたい。と知っている親しい友人が語った',
+                         '私は記録を担当した。と親しい知っている友人が話しました',
+                         '私は資料を調べた。とは知っていた親しい若い友人の母も，述べました',
+                         '私は仕事を続けたい。と友人が言った',
+                         '私は職場にいた。と友人が言った',
+                         '私は記録を担当した。と友人が言った',
+                         '私は仕事を続けたい。と親しい友人が言った',
+                         '私は職場にいた。と優しい同僚は言いました',
+                         '私は記録を担当した。と若い先輩も言った',
+                         '私は仕事を続けたい。と親しかった友人が言った',
+                         '私は職場にいた。と優しくない同僚は言いました',
+                         '私は記録を担当した。と忙しくなかった友人の母も言った',
+                         '私は仕事を続けたい。と親しい友人が言わなかった',
+                         '私は職場にいた。と優しくない同僚は言いませんでした',
+                         '私は記録を担当した。と親しかった友人が言わなかったです',
+                         '私は仕事を続けたい。と知らない人が言った',
+                         '私は職場にいた。と知らなかった友人は言いませんでした',
+                         '私は記録を担当した。と知っている同僚も言いました',
+                         '私は職場にいた。と知っていた友人の母が言った',
+                         '私は仕事を続けたい。と友人が、言った',
+                         '私は職場にいた。と親しくなかった友人は，言いました',
+                         '私は記録を担当した。と知らない人も、 言った',
+                         '私は嬉しかった。とは知っている友人の母が、　言いました',
+                         '私は職場にいた。と友人が話した',
+                         '私は仕事を続けたい。と親しい友人が語りました',
+                         '私は記録を担当した。と知らない人が、述べた',
+                         '私は嬉しかった。とは知っている友人の母が、　説明しました',
+                         '私は仕事を続けたい。と親しい友人が言わない',
+                         '私は職場にいた。と優しくない同僚は言いません',
+                         '私は記録を担当した。と親しかった友人が言わないです',
+                         '私は職場にいた。とは知っている友人の母も，言いません',
+                         '私は仕事を続けたい。と友人が話さなかった',
+                         '私は職場にいた。と親しい友人が語らない',
+                         '私は記録を担当した。とは知っている友人の母も，述べませんでした',
+                         '私は資料を見た。と知らない人が、伝えないです',
+                         '私は嬉しかった。と優しくない同僚は答えなかったです',
+                         '私は職場にいた。と親しかった友人が説明しません',
+                         '私は仕事を続けたい。と親しい友人が言う',
+                         '私は職場にいた。と親しい友人は、話します',
+                         '私は記録を担当した。と知らない友人が語る',
+                         '私は職場にいた。と知っている友人の母も，述べます',
+                         '私は仕事を続けたい。と友人が伝える',
+                         '私は嬉しかった。と優しくない同僚は答えます',
+                         '私は資料を見た。と親しかった友人が説明する',
+                         '私は今週資料を調べた', '私は今年仕事を続けたい',
+                         '私は今月資料を調べないかもしれないと思う',
+                         '私は今年資料を調べたかもしれないと思っている',
+                         '私は資料を調べた後、今日疑問が減った',
+                         '私は資料を調べてから、昨日疑問が減った',
+                         'まだ今日方針が決まっていない',
+                         'まだ昨日方針が見つかっていません'):
+            with self.subTest(unparsed=unparsed):
+                original = dict(self.fx['original'], memo=unparsed + '。私は記録を残した。')
+                writes = []
+                async def rpc(name, payload):
+                    if name == 'analysis_observed_source_snapshot':
+                        return {'guard': GUARD, 'tier': 'plus', 'now': END, 'members': [
+                            {'original': original, 'thread': None, 'events': []}]}
+                    if name == 'analysis_observed_commit':
+                        writes.append(payload)
+                        self.row.update(id=str(UUID(payload['p_artifact_id'][9:])), content_text=payload['p_text'])
+                        self.row['content_json']['watashiMap'] = payload['p_projection']
+                        return self.row['id']
+                    if name == 'analysis_observed_read':
+                        return result([self.row], matched=True)
+                    raise AssertionError(name)
+                with patch.dict(os.environ, COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE='off'), \
+                        patch.object(service, '_rpc', side_effect=rpc):
+                    saved = await service.generate_saved(OWNER, start=START, end=END,
+                        report_mode='standard', report_type='latest')
+                    with patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('regenerated')):
+                        reread = await service.read_saved(OWNER, report_id=saved['id'], report_mode='standard')
+                self.assertEqual(len(writes), 1)
+                self.assertEqual(reread['items'][0], saved)
+                projection = saved['content_json']['watashiMap']
+                self.assertEqual([n['visible_label'] for n in projection['nodes']], ['記録を残す（実行済み）'])
+                self.assertTrue(any('まだ読み取れていない内容' in g['visible_label']
+                                    for g in projection['unknown_gaps']))
+                self.assertEqual(saved['content_text'], writes[0]['p_text'])
+                for hidden in ('明日ノート', '何', '誰', '今週資料', '今年仕事', '今月資料', '今年資料',
+                               '今日疑問', '昨日疑問', '今日方針', '昨日方針'):
+                    self.assertNotIn(hidden, json.dumps(saved, ensure_ascii=False))
+                self.assertNotIn('私は', json.dumps(writes[0]['p_private_evidence'], ensure_ascii=False))
+
+    async def test_open_attribution_keeps_independent_content_after_save_and_read(self):
+        for context, same_record in (('夢を見た。', False), ('友人から聞いた話です。', False),
+                ('親しい新しい友人が語る。', False), ('親しい新しい友人が語る。', True),
+                ('知っている親しい友人が話さない。', False), ('知っている親しい友人が話さない。', True),
+                ('親しい知っている友人が説明しませんでした。', False),
+                ('親しい知っている友人が説明しませんでした。', True),
+                ('本で読んだ内容です。', False), ('友人が話した。', False),
+                ('友人が話していました。', False), ('友人が話した。', True),
+                ('友人が話していました。', True),
+                ('友人が言う。', False), ('友人が言う。', True),
+                ('親しい友人は、話します。', False), ('親しい友人は、話します。', True),
+                ('知らない友人が語る。', False), ('知らない友人が語る。', True),
+                ('知っている友人の母も，述べます。', False), ('知っている友人の母も，述べます。', True),
+                ('友人が伝える。', False), ('友人が伝える。', True),
+                ('優しくない同僚は答えます。', False), ('優しくない同僚は答えます。', True),
+                ('親しかった友人が説明する。', False), ('親しかった友人が説明する。', True),
+                ('友人が言わないです。', False), ('友人が言わないです。', True),
+                ('親しい友人は、話さなかった。', False), ('親しい友人は、話さなかった。', True),
+                ('知らない友人が語りません。', False), ('知らない友人が語りません。', True),
+                ('知っている友人の母も，述べませんでした。', False), ('知っている友人の母も，述べませんでした。', True),
+                ('友人が伝えなかったです。', False), ('友人が伝えなかったです。', True),
+                ('優しくない同僚は答えない。', False), ('優しくない同僚は答えない。', True),
+                ('親しかった友人が説明しませんでした。', False), ('親しかった友人が説明しませんでした。', True)):
+            with self.subTest(context=context, same_record=same_record):
+                original = dict(self.fx['original'], memo='私は記録を残した。')
+                reported = dict(original, id=str(UUID(int=102)),
+                    memo=context + '私は資料を調べた。その後私は作品を作った。')
+                members = ((dict(original, memo=original['memo'] + reported['memo']),)
+                           if same_record else (reported, original))
+                writes = []
+                async def rpc(name, payload):
+                    if name == 'analysis_observed_source_snapshot':
+                        return {'guard': GUARD, 'tier': 'plus', 'now': END, 'members': [
+                            {'original': member, 'thread': None, 'events': []}
+                            for member in members]}
+                    if name == 'analysis_observed_commit':
+                        writes.append(payload)
+                        self.row.update(id=str(UUID(payload['p_artifact_id'][9:])), content_text=payload['p_text'])
+                        self.row['content_json']['watashiMap'] = payload['p_projection']
+                        return self.row['id']
+                    if name == 'analysis_observed_read':
+                        return result([self.row], matched=True)
+                    raise AssertionError(name)
+                with patch.dict(os.environ, COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE='off'), \
+                        patch.object(service, '_rpc', side_effect=rpc):
+                    saved = await service.generate_saved(OWNER, start=START, end=END,
+                        report_mode='standard', report_type='latest')
+                    with patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('regenerated')):
+                        reread = await service.read_saved(OWNER, report_id=saved['id'], report_mode='standard')
+                self.assertEqual(len(writes), 1)
+                self.assertEqual(reread['items'][0], saved)
+                projection = saved['content_json']['watashiMap']
+                self.assertEqual(projection, writes[0]['p_projection'])
+                self.assertEqual(saved['content_text'], writes[0]['p_text'])
+                self.assertEqual([n['visible_label'] for n in projection['nodes']], ['記録を残す（実行済み）'])
+                self.assertFalse(projection['edges'])
+                self.assertIn('まだ読み取れていない内容', saved['content_text'])
+                self.assertNotIn('資料を調べる', saved['content_text'])
+                self.assertNotIn('私は', json.dumps(writes[0]['p_private_evidence'], ensure_ascii=False))
+
+    async def test_split_sentence_preserves_only_complete_statement_after_save_read(self):
+        tail = 'その内容を忘れないように長い文章として残しています' * 4
+        for unresolved in ('私は仕事を続けたい、とは思いません、',
+                           '私は資料を調べた、と思います、'):
+            with self.subTest(unresolved=unresolved):
+                original = dict(self.fx['original'],
+                    memo=unresolved + tail + '。私は記録を残した。')
+                writes = []
+                async def rpc(name, payload):
+                    if name == 'analysis_observed_source_snapshot':
+                        return {'guard': GUARD, 'tier': 'plus', 'now': END, 'members': [
+                            {'original': original, 'thread': None, 'events': []}]}
+                    if name == 'analysis_observed_commit':
+                        writes.append(payload)
+                        self.row.update(id=str(UUID(payload['p_artifact_id'][9:])), content_text=payload['p_text'])
+                        self.row['content_json']['watashiMap'] = payload['p_projection']
+                        return self.row['id']
+                    if name == 'analysis_observed_read':
+                        return result([self.row], matched=True)
+                    raise AssertionError(name)
+                with patch.dict(os.environ, COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE='off'), \
+                        patch.object(service, '_rpc', side_effect=rpc):
+                    saved = await service.generate_saved(OWNER, start=START, end=END,
+                        report_mode='standard', report_type='latest')
+                    with patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('regenerated')):
+                        reread = await service.read_saved(OWNER, report_id=saved['id'], report_mode='standard')
+                self.assertEqual(len(writes), 1)
+                self.assertEqual(reread['items'][0], saved)
+                projection = saved['content_json']['watashiMap']
+                self.assertEqual(projection, writes[0]['p_projection'])
+                self.assertEqual(saved['content_text'], writes[0]['p_text'])
+                self.assertEqual([n['visible_label'] for n in projection['nodes']], ['記録を残す（実行済み）'])
+                self.assertFalse(projection['edges'])
+                self.assertIn('まだ読み取れていない内容', saved['content_text'])
+                self.assertNotIn('私は', json.dumps(writes[0]['p_private_evidence'], ensure_ascii=False))
+
+    async def test_polite_past_wishes_survive_save_and_read_without_regeneration(self):
+        for ending, expected in (
+            ('たかったです', '仕事を続けることへの希望（当時）'),
+            ('たくなかったです', '仕事を続けることを望まない（当時）'),
+        ):
+            with self.subTest(ending=ending):
+                original = dict(self.fx['original'], memo='私は仕事を続け' + ending + '。')
+                writes = []
+                async def rpc(name, payload):
+                    if name == 'analysis_observed_source_snapshot':
+                        return {'guard': GUARD, 'tier': 'plus', 'now': END, 'members': [
+                            {'original': original, 'thread': None, 'events': []}]}
+                    if name == 'analysis_observed_commit':
+                        writes.append(payload)
+                        self.row.update(id=str(UUID(payload['p_artifact_id'][9:])), content_text=payload['p_text'])
+                        self.row['content_json']['watashiMap'] = payload['p_projection']
+                        return self.row['id']
+                    if name == 'analysis_observed_read':
+                        return result([self.row], matched=True)
+                    raise AssertionError(name)
+                with patch.dict(os.environ, COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE='off'), \
+                        patch.object(service, '_rpc', side_effect=rpc):
+                    saved = await service.generate_saved(OWNER, start=START, end=END,
+                        report_mode='standard', report_type='latest')
+                    with patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('regenerated')):
+                        reread = await service.read_saved(OWNER, report_id=saved['id'], report_mode='standard')
+                self.assertEqual(len(writes), 1)
+                self.assertEqual(reread['items'][0], saved)
+                projection = saved['content_json']['watashiMap']
+                self.assertEqual(projection, writes[0]['p_projection'])
+                self.assertEqual(saved['content_text'], writes[0]['p_text'])
+                self.assertEqual([n['visible_label'] for n in projection['nodes']], [expected])
+                self.assertEqual(projection['nodes'][0]['node_kind'], 'ATTENTION_OR_THOUGHT')
+                self.assertIn(expected, saved['content_text'])
+                self.assertNotIn('実行済み', saved['content_text'])
+                self.assertFalse(projection['edges'])
+                self.assertNotIn('私は', json.dumps(writes[0]['p_private_evidence'], ensure_ascii=False))
+
+    async def test_formal_negative_wishes_survive_save_and_read_without_regeneration(self):
+        for ending, expected in (
+            ('たくありません', '仕事を続けることを望まない'),
+            ('たくありませんでした', '仕事を続けることを望まない（当時）'),
+        ):
+            with self.subTest(ending=ending):
+                original = dict(self.fx['original'], memo='私は資料を調べた。私は仕事を続け' + ending + '。')
+                writes = []
+                async def rpc(name, payload):
+                    if name == 'analysis_observed_source_snapshot':
+                        return {'guard': GUARD, 'tier': 'plus', 'now': END, 'members': [
+                            {'original': original, 'thread': None, 'events': []}]}
+                    if name == 'analysis_observed_commit':
+                        writes.append(payload)
+                        self.row.update(id=str(UUID(payload['p_artifact_id'][9:])), content_text=payload['p_text'])
+                        self.row['content_json']['watashiMap'] = payload['p_projection']
+                        return self.row['id']
+                    if name == 'analysis_observed_read':
+                        return result([self.row], matched=True)
+                    raise AssertionError(name)
+                with patch.dict(os.environ, COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE='off'), \
+                        patch.object(service, '_rpc', side_effect=rpc):
+                    saved = await service.generate_saved(OWNER, start=START, end=END,
+                        report_mode='standard', report_type='latest')
+                    with patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('regenerated')):
+                        reread = await service.read_saved(OWNER, report_id=saved['id'], report_mode='standard')
+                self.assertEqual(len(writes), 1)
+                self.assertEqual(reread['items'][0], saved)
+                projection = saved['content_json']['watashiMap']
+                self.assertEqual(projection, writes[0]['p_projection'])
+                self.assertEqual(saved['content_text'], writes[0]['p_text'])
+                self.assertEqual([n['visible_label'] for n in projection['nodes']],
+                                 ['資料を調べる（実行済み）', expected])
+                self.assertEqual(projection['nodes'][1]['node_kind'], 'ATTENTION_OR_THOUGHT')
+                self.assertIn(expected, saved['content_text'])
+                self.assertFalse(projection['edges'])
+                self.assertNotIn('まだ読み取れていない内容', saved['content_text'])
+                self.assertNotIn('私は', json.dumps(writes[0]['p_private_evidence'], ensure_ascii=False))
+
+    async def test_polite_past_nonaction_survives_save_read_without_regeneration(self):
+        original = dict(self.fx['original'],
+            memo='私は昨日、資料を調べなかったです。その後私は記録を残した。')
+        writes = []
+        async def rpc(name, payload):
+            if name == 'analysis_observed_source_snapshot':
+                return {'guard': GUARD, 'tier': 'plus', 'now': END, 'members': [
+                    {'original': original, 'thread': None, 'events': []}]}
+            if name == 'analysis_observed_commit':
+                writes.append(payload)
+                self.row.update(id=str(UUID(payload['p_artifact_id'][9:])), content_text=payload['p_text'])
+                self.row['content_json']['watashiMap'] = payload['p_projection']
+                return self.row['id']
+            if name == 'analysis_observed_read':
+                return result([self.row], matched=True)
+            raise AssertionError(name)
+        with patch.dict(os.environ, COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE='off'), \
+                patch.object(service, '_rpc', side_effect=rpc):
+            saved = await service.generate_saved(OWNER, start=START, end=END,
+                report_mode='standard', report_type='latest')
+            with patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('regenerated')):
+                reread = await service.read_saved(OWNER, report_id=saved['id'], report_mode='standard')
+        self.assertEqual(len(writes), 1)
+        self.assertEqual(reread['items'][0], saved)
+        projection = saved['content_json']['watashiMap']
+        self.assertEqual(projection, writes[0]['p_projection'])
+        self.assertEqual(saved['content_text'], writes[0]['p_text'])
+        self.assertEqual([n['visible_label'] for n in projection['nodes']],
+                         ['この記述時点の昨日：資料を調べる（行わなかった）', 'その後：記録を残す（実行済み）'])
+        self.assertTrue(all(n['node_kind'] == 'ACTION_OR_NONACTION' for n in projection['nodes']))
+        self.assertEqual(len(projection['edges']), 1)
+        self.assertIn('資料を調べる（行わなかった）', saved['content_text'])
+        self.assertNotIn('まだ読み取れていない内容', saved['content_text'])
+        self.assertNotIn('私は', json.dumps(writes[0]['p_private_evidence'], ensure_ascii=False))
+
+    async def test_polite_negative_past_events_survive_save_read_without_regeneration(self):
+        original = dict(self.fx['original'], memo='私は昨日、職場にいなかったです。'
+            'その後私は会議を担当しなかったです。それから私は記録を残した。')
+        writes = []
+        async def rpc(name, payload):
+            if name == 'analysis_observed_source_snapshot':
+                return {'guard': GUARD, 'tier': 'plus', 'now': END, 'members': [
+                    {'original': original, 'thread': None, 'events': []}]}
+            if name == 'analysis_observed_commit':
+                writes.append(payload)
+                self.row.update(id=str(UUID(payload['p_artifact_id'][9:])), content_text=payload['p_text'])
+                self.row['content_json']['watashiMap'] = payload['p_projection']
+                return self.row['id']
+            if name == 'analysis_observed_read':
+                return result([self.row], matched=True)
+            raise AssertionError(name)
+        with patch.dict(os.environ, COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE='off'), \
+                patch.object(service, '_rpc', side_effect=rpc):
+            saved = await service.generate_saved(OWNER, start=START, end=END,
+                report_mode='standard', report_type='latest')
+            with patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('regenerated')):
+                reread = await service.read_saved(OWNER, report_id=saved['id'], report_mode='standard')
+        self.assertEqual(len(writes), 1)
+        self.assertEqual(reread['items'][0], saved)
+        projection = saved['content_json']['watashiMap']
+        self.assertEqual(projection, writes[0]['p_projection'])
+        self.assertEqual(saved['content_text'], writes[0]['p_text'])
+        self.assertEqual([n['node_kind'] for n in projection['nodes']],
+                         ['SCENE', 'ROLE', 'ACTION_OR_NONACTION'])
+        self.assertEqual(len(projection['edges']), 2)
+        for label in ('この記述時点の昨日：職場にいなかった', '会議を担当しなかった'):
+            self.assertIn(label, saved['content_text'])
+        self.assertNotIn('まだ読み取れていない内容', saved['content_text'])
+        self.assertNotIn('私は', json.dumps(writes[0]['p_private_evidence'], ensure_ascii=False))
+
+    async def test_opposed_claims_survive_save_read_with_private_evidence_only(self):
+        for memo in (
+                '私は資料を調べた。私は資料を調べなかった。',
+                '私は不安だ。私は不安ではない。',
+                '今日、私は不安ではありません。今日、私は少し不安です。',
+                '昨日、私は安心した。昨日、私は安心しなかった。',
+                '私は嬉しかった。私はうれしくありませんでした。',
+                '私は不安が全くない。私は不安が少しある。',
+                '私は不安はちっともなかった。私は不安はとてもあった。'):
+            with self.subTest(memo=memo):
+                self.fx = fixture(memo)
+                self.row = self.fx['row']
+                writes = []
+                async def rpc(name, payload):
+                    if name == 'analysis_observed_source_snapshot':
+                        return {'guard': GUARD, 'tier': 'plus', 'now': END, 'members': [
+                            {'original': self.fx['original'], 'thread': None, 'events': []}]}
+                    if name == 'analysis_observed_commit':
+                        writes.append(payload)
+                        self.row['id'] = str(UUID(payload['p_artifact_id'][9:]))
+                        self.row['content_text'] = payload['p_text']
+                        self.row['content_json']['watashiMap'] = payload['p_projection']
+                        return self.row['id']
+                    return result([self.row], matched=True)
+                with patch.object(service, '_rpc', side_effect=rpc):
+                    saved = await service.generate_saved(OWNER, start=START, end=END,
+                        report_mode='standard', report_type='latest')
+                    with patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('regenerated')):
+                        reread = await service.read_saved(OWNER, report_id=saved['id'], report_mode='standard')
+                self.assertEqual(saved, reread['items'][0])
+                self.assertEqual(saved['content_text'], writes[0]['p_text'])
+                projection = saved['content_json']['watashiMap']
+                self.assertEqual(projection, writes[0]['p_projection'])
+                self.assertEqual(len(projection['conflict_badges']), 1)
+                private = writes[0]['p_private_evidence']
+                conflict = private['graph']['conflicts'][0]
+                self.assertEqual(conflict['target_refs'], tuple(projection['conflict_badges'][0]['target_refs']))
+                self.assertEqual(len(conflict['evidence_refs']), 2)
+                encoded_private = json.dumps(private, ensure_ascii=False)
+                encoded_safe = json.dumps(saved, ensure_ascii=False)
+                for key in ('visible_label', 'original_json', '私は', '資料', '不安', '嬉しい', '安心', 'proposition'):
+                    self.assertNotIn(key, encoded_private)
+                for key in ('evidence_refs', 'source_envelope_id', 'literal_sha256', 'OPPOSING_POLARITY'):
+                    self.assertNotIn(key, encoded_safe)
+                self.assertIn('同じ機会のことかは確定していません', saved['content_text'])
+
+    async def test_old_feeling_snapshot_is_read_without_adding_conflicts(self):
+        row = fixture('私は不安だ。私は不安ではない。')['row']
+        self.assertEqual(len(row['content_json']['watashiMap']['conflict_badges']), 1)
+        # A saved pre-u233 projection had the same nodes but no feeling badge.
+        row['content_json']['watashiMap']['conflict_badges'] = []
+        row['content_text'] = row['content_text'].split('\n一致していない記録')[0]
+        with patch.object(service, '_rpc', AsyncMock(return_value=result([row]))) as rpc, \
+                patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('regenerated')):
+            reread = await service.read_saved(OWNER)
+        self.assertEqual(reread['items'][0], row)
+        self.assertFalse(reread['items'][0]['content_json']['watashiMap']['conflict_badges'])
+        self.assertEqual(rpc.call_count, 1)
+        self.assertEqual(rpc.call_args.args[0], 'analysis_observed_read')
+
+    async def test_saved_conflict_rejects_invalid_targets_shape_and_text(self):
+        base = fixture('私は資料を調べた。私は資料を調べなかった。')['row']
+        for mutation in ('unknown', 'same', 'duplicate', 'private', 'label', 'non_list', 'missing_text'):
+            with self.subTest(mutation=mutation):
+                row = copy.deepcopy(base)
+                projection = row['content_json']['watashiMap']
+                badge = projection['conflict_badges'][0]
+                if mutation == 'unknown': badge['target_refs'][1] = 'n999'
+                if mutation == 'same': badge['target_refs'][1] = badge['target_refs'][0]
+                if mutation == 'duplicate':
+                    projection['conflict_badges'].append(dict(badge, conflict_ref='c2'))
+                if mutation == 'private': badge['evidence_refs'] = ['private']
+                if mutation == 'label': badge['visible_label'] = 'どちらかの記述は誤りです。'
+                if mutation == 'non_list': projection['conflict_badges'] = {}
+                if mutation == 'missing_text': row['content_text'] = row['content_text'].split('一致していない記録')[0]
+                with patch.object(service, '_rpc', AsyncMock(return_value=result([row]))):
+                    with self.assertRaises(HTTPException) as raised:
+                        await service.read_saved(OWNER)
+                self.assertEqual(raised.exception.status_code, 503)
+
+    async def test_sequence_occurrences_survive_save_and_read_without_reinterpretation(self):
+        self.fx = fixture('私は資料を調べた。その後私は考えをノートに書いた。'
+                          'それから私は資料を調べた。')
+        self.row = self.fx['row']
+        writes = []
+        async def rpc(name, payload):
+            if name == 'analysis_observed_source_snapshot':
+                return {'guard': GUARD, 'tier': 'plus', 'now': END, 'members': [
+                    {'original': self.fx['original'], 'thread': None, 'events': []}]}
+            if name == 'analysis_observed_commit':
+                writes.append(payload)
+                self.row['id'] = str(UUID(payload['p_artifact_id'][9:]))
+                self.row['content_text'] = payload['p_text']
+                self.row['content_json']['watashiMap'] = payload['p_projection']
+                return self.row['id']
+            return result([self.row], matched=True)
+        with patch.object(service, '_rpc', side_effect=rpc):
+            saved = await service.generate_saved(OWNER, start=START, end=END,
+                report_mode='standard', report_type='latest')
+            with patch.object(MeaningExperienceEngine, 'generate',
+                              side_effect=AssertionError('read regenerated')):
+                reread = await service.read_saved(OWNER)
+        projection = saved['content_json']['watashiMap']
+        self.assertEqual(len(projection['nodes']), 3)
+        self.assertEqual([(e['from_ref'], e['to_ref']) for e in projection['edges']],
+                         [('n1', 'n2'), ('n2', 'n3')])
+        self.assertEqual(projection, writes[0]['p_projection'])
+        self.assertEqual(saved['content_text'], writes[0]['p_text'])
+        self.assertEqual(reread['items'][0], saved)
+        encoded = json.dumps(writes[0]['p_private_evidence'], ensure_ascii=False)
+        for private in ('私は', 'proposition', 'sequence_marker', 'source_parts', 'visible_label'):
+            self.assertNotIn(private, encoded)
+
+    async def test_saved_relative_day_remains_statement_bound_when_read(self):
+        fx = fixture('昨日私は資料を調べた。今日私は資料を調べなかった。')
+        row = fx['row']
+        with patch.object(service, '_rpc', AsyncMock(return_value=result([row]))), \
+             patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('read regenerated')):
+            value = await service.read_saved(OWNER)
+        self.assertEqual(value['items'][0], row)
+        projection = value['items'][0]['content_json']['watashiMap']
+        self.assertEqual([n['visible_label'] for n in projection['nodes']], [
+            'この記述時点の昨日：資料を調べる（実行済み）',
+            'この記述時点の今日：資料を調べる（行わなかった）'])
+        self.assertFalse(projection['edges'])
+        for label in [n['visible_label'] for n in projection['nodes']]:
+            self.assertIn(label, value['items'][0]['content_text'])
+        encoded = json.dumps(fx['private'], ensure_ascii=False)
+        for private in ('relative_day', 'source_parts', 'visible_label', '昨日', '今日'):
+            self.assertNotIn(private, encoded)
+
+    async def test_saved_cognition_keeps_uncertainty_without_private_content(self):
+        for topic in ('私は', '私は、', '僕は,'):
+            with self.subTest(topic=topic):
+                fx = fixture('私は記録を残した。' + topic + '資料を調べなかったかもしれないと思っている。')
+                row = fx['row']
+                writes = []
+                async def rpc(name, payload):
+                    if name == 'analysis_observed_source_snapshot':
+                        return {'guard': GUARD, 'tier': 'plus', 'now': END, 'members': [
+                            {'original': fx['original'], 'thread': None, 'events': []}]}
+                    if name == 'analysis_observed_commit':
+                        writes.append(payload)
+                        row['id'] = str(UUID(payload['p_artifact_id'][9:]))
+                        row['content_text'] = payload['p_text']
+                        row['content_json']['watashiMap'] = payload['p_projection']
+                        return row['id']
+                    if name == 'analysis_observed_read':
+                        return result([row], matched=True)
+                    raise AssertionError(name)
+                with patch.dict(os.environ, COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE='off'), \
+                     patch.object(service, '_rpc', side_effect=rpc):
+                    saved = await service.generate_saved(OWNER, start=START, end=END,
+                        report_mode='standard', report_type='latest')
+                    with patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('read regenerated')):
+                        value = await service.read_saved(OWNER)
+                self.assertEqual(value['items'][0], saved)
+                self.assertEqual(saved, row)
+                self.assertEqual(len(writes), 1)
+                projection = saved['content_json']['watashiMap']
+                self.assertEqual(projection, writes[0]['p_projection'])
+                self.assertEqual(saved['content_text'], writes[0]['p_text'])
+                thought = next(n for n in projection['nodes'] if n['node_kind'] == 'ATTENTION_OR_THOUGHT')
+                self.assertEqual(thought['visible_label'], '資料を調べなかったかもしれないと思っている（この記述時点の考え）')
+                self.assertIn(thought['visible_label'], saved['content_text'])
+                self.assertFalse(projection['edges'])
+                for value in (fx['private'], writes[0]['p_private_evidence'], projection):
+                    encoded = json.dumps(value, ensure_ascii=False)
+                    for private in ('possible_content', 'source_parts', 'UNSPECIFIED', '私は', '僕は'):
+                        self.assertNotIn(private, encoded)
+
+    async def test_unfinished_result_survives_commit_and_read_without_regeneration(self):
+        for action, clause in ((action, clause)
+                for action in ('私は資料を調べた。', '私は記録を書いた。',
+                               '私は考えをノートに書いた。', '私は職場で記録を書きました。')
+                for clause in ('まだ方法が見つかっていない', 'まだ昨日の方針が決まっていない',
+                               'まだ仕事の昨日分が見つかっていません',
+                               'まだ気持ちが定まっていない', 'まだ不安の原因が見つかっていない',
+                               'まだ昨日の気持ちが決まっていません')):
+            with self.subTest(action=action, clause=clause):
+                self.fx = fixture(action + clause + '。')
+                self.row = self.fx['row']
+                writes = []
+                async def rpc(name, payload):
+                    if name == 'analysis_observed_source_snapshot':
+                        return {'guard': GUARD, 'tier': 'plus', 'now': END, 'members': [
+                            {'original': self.fx['original'], 'thread': None, 'events': []}]}
+                    if name == 'analysis_observed_commit':
+                        writes.append(payload)
+                        self.row['id'] = str(UUID(payload['p_artifact_id'][9:]))
+                        self.row['content_text'] = payload['p_text']
+                        self.row['content_json']['watashiMap'] = payload['p_projection']
+                        return self.row['id']
+                    return result([self.row], matched=True)
+                with patch.object(service, '_rpc', side_effect=rpc):
+                    saved = await service.generate_saved(OWNER, start=START, end=END,
+                        report_mode='standard', report_type='latest')
+                    with patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('read regenerated')):
+                        reread = await service.read_saved(OWNER)
+                self.assertEqual(reread['items'][0], saved)
+                projection = saved['content_json']['watashiMap']
+                self.assertEqual(projection, writes[0]['p_projection'])
+                self.assertEqual(saved['content_text'], writes[0]['p_text'])
+                result_node = next(n for n in projection['nodes'] if n['node_kind'] == 'IMMEDIATE_RESULT_OR_AFTERMATH')
+                self.assertEqual(result_node['visible_label'], clause.replace('いません', 'いない') + '（この記述時点）')
+                self.assertIn(result_node['visible_label'], saved['content_text'])
+                self.assertFalse(projection['edges'])
+                for encoded in (json.dumps(writes[0]['p_private_evidence'], ensure_ascii=False),
+                                json.dumps(projection, ensure_ascii=False)):
+                    for private in ('result_state', 'NOT_YET', 'UNSPECIFIED', 'source_parts'):
+                        self.assertNotIn(private, encoded)
+
+    async def test_action_change_order_survives_commit_and_read_without_regeneration(self):
+        await self._assert_action_change_saved('私は資料を調べた後、疑問が減った。')
+
+    async def test_compound_outgoing_order_survives_commit_and_read_without_regeneration(self):
+        for prefix in ('私は資料を調べた後、', '私は資料を調べてから、'):
+            for clause, label in (
+                    ('その後、私は記録を残した。', 'その後：記録を残す（実行済み）'),
+                    ('それから、私は記録を残さなかった。', 'それから：記録を残す（行わなかった）')):
+                with self.subTest(prefix=prefix, clause=clause):
+                    await self._assert_action_change_saved(prefix + '疑問が減った。' + clause,
+                        expected_following_label=label)
+
+    async def test_compound_incoming_order_survives_commit_and_read_without_regeneration(self):
+        for action in ('その後、私は資料を調べた後、', 'それから、僕は、資料を調べてから、'):
+            for preceding, label in (('私は会議を担当した。', '会議を担当した（記録された担当）'),
+                    ('私は会議を担当しなかった。', '会議を担当しなかった（記録された担当）')):
+                with self.subTest(action=action, preceding=preceding):
+                    await self._assert_action_change_saved(preceding + action + '疑問が減った。',
+                        expected_preceding_label=label)
+
+    async def test_te_after_change_survives_commit_and_read_without_regeneration(self):
+        for memo in ('私は資料を調べてから、疑問が減った。',
+                     '私は、資料を調べてから、疑問が減った。'):
+            with self.subTest(memo=memo):
+                await self._assert_action_change_saved(memo)
+
+    async def test_prefixed_polite_compounds_survive_commit_and_read_without_regeneration(self):
+        for marker, ending, label in ((m, e, label) for m in ('その後、', 'それから') for e, label in (('落ち着きました', '落ち着いた（誰の気持ちかは未確定）'),
+                ('私は、嬉しかったです', '嬉しかった（記録された気持ち）'),
+                ('うれしかったです', 'うれしかった（誰の気持ちかは未確定）'),
+                ('疑問が減りました', '疑問が減った（記録された変化）'),
+                ('気持ちメモが増えました', '気持ちメモが増えた（記録された変化）'),
+                ('資料が戻りました', '資料が戻った（記録された変化）'),
+                ('落ち着いた', '落ち着いた（誰の気持ちかは未確定）'),
+                ('私は、嬉しかった', '嬉しかった（記録された気持ち）'),
+                ('うれしかった', 'うれしかった（誰の気持ちかは未確定）'),
+                ('疑問が減った', '疑問が減った（記録された変化）'),
+                ('気持ちメモが増えた', '気持ちメモが増えた（記録された変化）'),
+                ('資料が戻った', '資料が戻った（記録された変化）'),
+                ('安心しませんでした', '安心しなかった（誰の気持ちかは未確定）'),
+                ('私は、落ち着かなかったです', '落ち着かなかった（記録された気持ち）'),
+                ('嬉しくなかった', '嬉しくなかった（誰の気持ちかは未確定）'),
+                ('僕は、うれしくありませんでした', 'うれしくなかった（記録された気持ち）'))):
+            with self.subTest(ending=ending):
+                await self._assert_action_change_saved('私は会議を担当した。'
+                    + marker + '私は資料を調べてから、' + ending + '。その後、私は記録を残した。',
+                    label, expected_preceding_label='会議を担当した（記録された担当）',
+                    expected_following_label='その後：記録を残す（実行済み）')
+
+    async def test_polite_decrease_increase_return_survive_save_and_read(self):
+        for clause, plain in (('不安が減りました', '不安が減った'),
+                              ('気持ちメモが増えました', '気持ちメモが増えた'),
+                              ('資料が戻りました', '資料が戻った')):
+            with self.subTest(clause=clause):
+                for action in ('私は資料を調べた後、', '私は、資料を調べた後、',
+                               '僕は，　資料を調べてから、'):
+                    with self.subTest(action=action):
+                        await self._assert_action_change_saved(action + clause + '。',
+                            plain + '（記録された変化）')
+
+    async def test_past_feeling_survives_commit_and_read_without_regeneration(self):
+        for memo, label in (('私は資料を調べた後、安心した。', '安心した（誰の気持ちかは未確定）'),
+                ('私は資料を調べてから、落ち着いた。', '落ち着いた（誰の気持ちかは未確定）'),
+                ('私は、資料を調べてから、安心した。', '安心した（誰の気持ちかは未確定）'),
+                ('私は資料を調べた後、私は、安心しました。', '安心した（記録された気持ち）'),
+                ('私は、資料を調べてから、僕は， 落ち着いた。', '落ち着いた（記録された気持ち）'),
+                ('私は記録を残した後、わたしは、　嬉しかった。', '嬉しかった（記録された気持ち）'),
+                ('私は資料を調べた後、落ち着きました。', '落ち着いた（誰の気持ちかは未確定）'),
+                ('俺は資料を調べてから、俺は、嬉しかったです。', '嬉しかった（記録された気持ち）'),
+                ('私は資料を調べた後、私はうれしかったです。', 'うれしかった（記録された気持ち）')):
+            with self.subTest(memo=memo):
+                await self._assert_action_change_saved(memo, label)
+
+    async def test_standalone_self_feeling_survives_save_and_read_without_regeneration(self):
+        for clause, label in (('私は安心した', '安心した'), ('私は、安心しました', '安心した'),
+                ('私は不安だった', '不安だった'), ('僕は、不安でした', '不安だった'),
+                ('私は少し不安だった', '少し不安だった'), ('僕は、少し不安でした', '少し不安だった'),
+                ('私はとても不安だった', 'とても不安だった'), ('僕は、とても不安でした', 'とても不安だった'),
+                ('私はかなり不安だった', 'かなり不安だった'), ('僕は、かなり不安でした', 'かなり不安だった'),
+                ('私はやや不安だった', 'やや不安だった'), ('僕は、やや不安でした', 'やや不安だった'),
+                ('私はちょっと不安だった', 'ちょっと不安だった'), ('僕は、ちょっと不安でした', 'ちょっと不安だった'),
+                ('僕は落ち着いた', '落ち着いた'), ('私は嬉しかった', '嬉しかった'),
+                ('わたしは、　うれしかった', 'うれしかった'), ('私は落ち着きました', '落ち着いた'),
+                ('僕は、嬉しかったです', '嬉しかった'), ('わたしは，　うれしかったです', 'うれしかった'),
+                ('私は安心しなかった', '安心しなかった'), ('僕は安心しませんでした', '安心しなかった'),
+                ('私は落ち着かなかったです', '落ち着かなかった'),
+                ('僕は、嬉しくありませんでした', '嬉しくなかった'),
+                ('わたしは，　うれしくなかった', 'うれしくなかった')):
+            with self.subTest(clause=clause):
+                self.fx = fixture(clause + '。その後、私は記録を残した。')
+                self.row = self.fx['row']
+                writes = []
+                async def rpc(name, payload):
+                    if name == 'analysis_observed_source_snapshot':
+                        return {'guard': GUARD, 'tier': 'plus', 'now': END, 'members': [
+                            {'original': self.fx['original'], 'thread': None, 'events': []}]}
+                    if name == 'analysis_observed_commit':
+                        writes.append(payload)
+                        self.row.update(id=str(UUID(payload['p_artifact_id'][9:])), content_text=payload['p_text'])
+                        self.row['content_json']['watashiMap'] = payload['p_projection']
+                        return self.row['id']
+                    if name == 'analysis_observed_read':
+                        return result([self.row], matched=True)
+                    raise AssertionError(name)
+                with patch.dict(os.environ, COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE='off'), \
+                        patch.object(service, '_rpc', side_effect=rpc):
+                    saved = await service.generate_saved(OWNER, start=START, end=END,
+                        report_mode='standard', report_type='latest')
+                    with patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('read regenerated')):
+                        reread = await service.read_saved(OWNER)
+                self.assertEqual(reread['items'][0], saved)
+                self.assertEqual(len(writes), 1)
+                projection = saved['content_json']['watashiMap']
+                self.assertEqual((projection, saved['content_text']), (writes[0]['p_projection'], writes[0]['p_text']))
+                feeling, action = projection['nodes']
+                self.assertEqual(feeling['visible_label'], label + '（記録された気持ち）')
+                edge, = projection['edges']
+                self.assertEqual((edge['edge_kind'], edge['from_ref'], edge['to_ref']),
+                    ('OBSERVED_ORDER', feeling['node_ref'], action['node_ref']))
+                self.assertIn(feeling['visible_label'], saved['content_text'])
+                for encoded in (json.dumps(writes[0]['p_private_evidence'], ensure_ascii=False),
+                                json.dumps(projection, ensure_ascii=False)):
+                    for private in ('PAST_FEELING', 'source_parts', clause):
+                        self.assertNotIn(private, encoded)
+
+    async def test_current_anxiety_keeps_saved_writing_time_without_regeneration(self):
+        for memo, labels in (
+                *((prefix + finite + '。', ('この記述時点の今日：' + label + '（この記述時点の気持ち）',))
+                  for prefix in ('今日、私は', '僕は今日、') for finite, label in (
+                      ('不安です', '不安だ'), ('不安じゃありません', '不安ではない'),
+                      ('少し不安だ', '少し不安だ'), ('かなり不安です', 'かなり不安だ'))),
+                ('今日、私は不安です。それから、私は記録を残した。',
+                 ('この記述時点の今日：不安だ（この記述時点の気持ち）', 'それから：記録を残す（実行済み）')),
+                ('今日、私は不安だった。今日、私は不安です。',
+                 ('この記述時点の今日：不安だった（記録された気持ち）',
+                  'この記述時点の今日：不安だ（この記述時点の気持ち）')),
+                *((day + '、私は' + finite + '。',
+                   ('この記述時点の' + day + '：' + label + '（記録された気持ち）',))
+                  for day in ('今日', '昨日') for finite, label in (
+                      ('落ち着きました', '落ち着いた'), ('嬉しかったです', '嬉しかった'),
+                      ('うれしかったです', 'うれしかった'))),
+                ('昨日、私は不安だった。', ('この記述時点の昨日：不安だった（記録された気持ち）',)),
+                ('私は今日、かなり不安でした。', ('この記述時点の今日：かなり不安だった（記録された気持ち）',)),
+                ('昨日、私は不安じゃありませんでした。', ('この記述時点の昨日：不安ではなかった（記録された気持ち）',)),
+                ('今日、私は安心した。', ('この記述時点の今日：安心した（記録された気持ち）',)),
+                ('昨日、私は不安だった。今日、私は落ち着いた。',
+                 ('この記述時点の昨日：不安だった（記録された気持ち）', 'この記述時点の今日：落ち着いた（記録された気持ち）')),
+                *(('私は' + degree + finite + '。', (degree + '不安だ（この記述時点の気持ち）',))
+                  for degree in ('少し', 'とても', 'かなり', 'やや', 'ちょっと') for finite in ('不安だ', '不安です')),
+                ('私はかなり不安です。それから、私は記録を残した。',
+                 ('かなり不安だ（この記述時点の気持ち）', 'それから：記録を残す（実行済み）')),
+                ('私は資料を調べた。その後、私はやや不安です。',
+                 ('資料を調べる（実行済み）', 'その後：やや不安だ（この記述時点の気持ち）')),
+                *((('私は' + form + '。'), ('不安ではない（この記述時点の気持ち）',)) for form in (
+                    '不安ではない', '不安ではないです', '不安ではありません',
+                    '不安じゃない', '不安じゃないです', '不安じゃありません')),
+                ('私は不安ではない。それから、私は記録を残した。',
+                 ('不安ではない（この記述時点の気持ち）', 'それから：記録を残す（実行済み）')),
+                ('私は資料を調べた。その後、私は不安じゃありません。',
+                 ('資料を調べる（実行済み）', 'その後：不安ではない（この記述時点の気持ち）')),
+                ('私は不安ではなかった。私は不安ではない。',
+                 ('不安ではなかった（記録された気持ち）', '不安ではない（この記述時点の気持ち）')),
+                ('私は不安だ。', ('不安だ（この記述時点の気持ち）',)),
+                ('私は不安です。それから、私は記録を残した。',
+                 ('不安だ（この記述時点の気持ち）', 'それから：記録を残す（実行済み）')),
+                ('私は資料を調べた。その後、私は不安です。',
+                 ('資料を調べる（実行済み）', 'その後：不安だ（この記述時点の気持ち）'))):
+            with self.subTest(memo=memo):
+                self.fx = fixture(memo)
+                self.row = self.fx['row']
+                writes = []
+                async def rpc(name, payload):
+                    if name == 'analysis_observed_source_snapshot':
+                        return {'guard': GUARD, 'tier': 'plus', 'now': END, 'members': [
+                            {'original': self.fx['original'], 'thread': None, 'events': []}]}
+                    if name == 'analysis_observed_commit':
+                        writes.append(payload)
+                        self.row.update(id=str(UUID(payload['p_artifact_id'][9:])), content_text=payload['p_text'])
+                        self.row['content_json']['watashiMap'] = payload['p_projection']
+                        return self.row['id']
+                    if name == 'analysis_observed_read':
+                        return result([self.row], matched=True)
+                    raise AssertionError(name)
+                with patch.dict(os.environ, COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE='off'), \
+                        patch.object(service, '_rpc', side_effect=rpc):
+                    saved = await service.generate_saved(OWNER, start=START, end=END,
+                        report_mode='standard', report_type='latest')
+                    with patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('read regenerated')):
+                        reread = await service.read_saved(OWNER)
+                self.assertEqual(reread['items'][0], saved)
+                self.assertEqual(len(writes), 1)
+                projection = saved['content_json']['watashiMap']
+                self.assertEqual((projection, saved['content_text']), (writes[0]['p_projection'], writes[0]['p_text']))
+                self.assertEqual(tuple(n['visible_label'] for n in projection['nodes']), labels)
+                self.assertFalse(projection['edges'])
+                for label in labels:
+                    self.assertIn(label, saved['content_text'])
+                for encoded in (json.dumps(writes[0]['p_private_evidence'], ensure_ascii=False),
+                                json.dumps(projection, ensure_ascii=False)):
+                    for private in ('CURRENT_FEELING', 'source_parts', '私は'):
+                        self.assertNotIn(private, encoded)
+
+    async def test_written_anxiety_degrees_keep_saved_degree_and_order(self):
+        await self._assert_action_change_saved(
+            '昨日、私は不安だった。それから、私は記録を残した。',
+            'それから：記録を残す（実行済み）')
+        for degree in ('少し', 'とても', 'かなり', 'やや', 'ちょっと'):
+            with self.subTest(degree=degree):
+                await self._assert_action_change_saved(
+                    '私は資料を調べた。その後、私は' + degree + '不安でした。',
+                    'その後：' + degree + '不安だった（記録された気持ち）')
+
+    async def test_past_anxiety_and_absent_relief_keep_saved_order(self):
+        await self._assert_action_change_saved(
+            '私は不安だった。それから、私は安心しなかった。',
+            'それから：安心しなかった（記録された気持ち）')
+        await self._assert_action_change_saved(
+            '私は資料を調べた。その後、私は不安でした。',
+            'その後：不安だった（記録された気持ち）')
+
+    async def test_absent_anxiety_keeps_saved_negation_and_order(self):
+        await self._assert_action_change_saved(
+            '私は不安ではなかった。それから、私は記録を残した。',
+            'それから：記録を残す（実行済み）')
+        self.assertEqual(self.row['content_json']['watashiMap']['nodes'][0]['visible_label'],
+                         '不安ではなかった（記録された気持ち）')
+        self.assertIn('不安ではなかった（記録された気持ち）', self.row['content_text'])
+        await self._assert_action_change_saved(
+            '私は資料を調べた。その後、私は不安じゃありませんでした。',
+            'その後：不安ではなかった（記録された気持ち）')
+
+    async def test_past_feeling_outgoing_order_survives_save_and_read(self):
+        for episode, label, following, following_label in (
+                ('私は資料を調べた後、安心した。', '安心した（誰の気持ちかは未確定）',
+                 'その後、私は記録を残した。', 'その後：記録を残す（実行済み）'),
+                ('私は資料を調べてから、私は、安心しました。', '安心した（記録された気持ち）',
+                 'その後、私は記録を残した。', 'その後：記録を残す（実行済み）'),
+                ('私は資料を調べてから、落ち着いた。', '落ち着いた（誰の気持ちかは未確定）',
+                 'それから、私は記録を残さなかった。', 'それから：記録を残す（行わなかった）'),
+                ('私は資料を調べた後、私は嬉しかった。', '嬉しかった（記録された気持ち）',
+                 'その後、私は記録を残した。', 'その後：記録を残す（実行済み）'),
+                ('私は資料を調べてから、うれしかった。', 'うれしかった（誰の気持ちかは未確定）',
+                 'その後、私は記録を残した。', 'その後：記録を残す（実行済み）')):
+            with self.subTest(episode=episode):
+                await self._assert_action_change_saved(episode + following, label,
+                    expected_following_label=following_label)
+
+    async def test_dated_polite_feeling_order_survives_save_and_read(self):
+        await self._assert_action_change_saved(
+            '昨日、私は落ち着きました。それから、私は記録を残した。',
+            'それから：記録を残す（実行済み）')
+        self.assertEqual(self.row['content_json']['watashiMap']['nodes'][0]['visible_label'],
+            'この記述時点の昨日：落ち着いた（記録された気持ち）')
+
+    async def _assert_action_change_saved(self, memo, expected_label='疑問が減った（記録された変化）',
+                                         *, expected_following_label=None, expected_preceding_label=None):
+        self.fx = fixture(memo)
+        self.row = self.fx['row']
+        writes = []
+        async def rpc(name, payload):
+            if name == 'analysis_observed_source_snapshot':
+                return {'guard': GUARD, 'tier': 'plus', 'now': END, 'members': [
+                    {'original': self.fx['original'], 'thread': None, 'events': []}]}
+            if name == 'analysis_observed_commit':
+                writes.append(payload)
+                self.row['id'] = str(UUID(payload['p_artifact_id'][9:]))
+                self.row['content_text'] = payload['p_text']
+                self.row['content_json']['watashiMap'] = payload['p_projection']
+                return self.row['id']
+            return result([self.row], matched=True)
+        with patch.object(service, '_rpc', side_effect=rpc):
+            saved = await service.generate_saved(OWNER, start=START, end=END,
+                report_mode='standard', report_type='latest')
+            with patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('read regenerated')):
+                reread = await service.read_saved(OWNER)
+        self.assertEqual(reread['items'][0], saved)
+        projection = saved['content_json']['watashiMap']
+        self.assertEqual(projection, writes[0]['p_projection'])
+        self.assertEqual(saved['content_text'], writes[0]['p_text'])
+        nodes = list(projection['nodes'])
+        preceding = nodes.pop(0) if expected_preceding_label is not None else None
+        if preceding is not None:
+            self.assertEqual(preceding['visible_label'], expected_preceding_label)
+            self.assertIn(expected_preceding_label, saved['content_text'])
+        if expected_following_label is None:
+            action, change = nodes
+            expected_edges = [('OBSERVED_ORDER', action['node_ref'], change['node_ref'])]
+        else:
+            action, change, following = nodes
+            self.assertEqual(following['visible_label'], expected_following_label)
+            self.assertIn(expected_following_label, saved['content_text'])
+            expected_edges = [('OBSERVED_ORDER', action['node_ref'], change['node_ref']),
+                              ('OBSERVED_ORDER', change['node_ref'], following['node_ref'])]
+        if preceding is not None:
+            expected_edges.insert(0, ('OBSERVED_ORDER', preceding['node_ref'], action['node_ref']))
+        self.assertEqual([(e['edge_kind'], e['from_ref'], e['to_ref'])
+                          for e in projection['edges']], expected_edges)
+        self.assertEqual(change['visible_label'], expected_label)
+        self.assertIn(change['visible_label'], saved['content_text'])
+        for encoded in (json.dumps(writes[0]['p_private_evidence'], ensure_ascii=False),
+                        json.dumps(projection, ensure_ascii=False)):
+            for private in ('result_state', 'BOUNDED_CHANGE', 'PAST_FEELING', 'source_parts', '私は',
+                            'action_supports_change', 'dependent_form', 'TE_BEFORE_PAST_CHANGE',
+                            'written_modifiers', 'THIS_OCCASION', 'IN_ADVANCE', 'DEGREE_SLIGHT',
+                            'DEGREE_TOTEMO', 'DEGREE_KANARI', 'DEGREE_YAYA', 'DEGREE_CHOTTO'):
+                self.assertNotIn(private, encoded)
+
+    async def test_scene_and_role_polarity_and_action_order_survive_save_and_read(self):
+        for clause, kind, label in (
+                ('私は職場にいました', 'SCENE', '職場にいた（記録された場面）'),
+                ('私は職場にいませんでした', 'SCENE', '職場にいなかった（記録された場面）'),
+                ('私は悪い職場にいました', 'SCENE', '悪い職場にいた（記録された場面）'),
+                ('私は家族の悪い職場にいませんでした', 'SCENE', '家族の悪い職場にいなかった（記録された場面）'),
+                ('私は昨日、悪い会社の職場にいた', 'SCENE', 'この記述時点の昨日：悪い会社の職場にいた（記録された場面）'),
+                ('私は良い職場にいました', 'SCENE', '良い職場にいた（記録された場面）'),
+                ('私は難しい職場にいました', 'SCENE', '難しい職場にいた（記録された場面）'),
+                ('私は家族の難しい職場にいませんでした', 'SCENE', '家族の難しい職場にいなかった（記録された場面）'),
+                ('私は家族の良い職場にいませんでした', 'SCENE', '家族の良い職場にいなかった（記録された場面）'),
+                ('私は昨日、良い会社の職場にいた', 'SCENE', 'この記述時点の昨日：良い会社の職場にいた（記録された場面）'),
+                ('私は会議の司会を担当しました', 'ROLE', '会議の司会を担当した（記録された担当）'),
+                ('私は会議の司会を担当しませんでした', 'ROLE', '会議の司会を担当しなかった（記録された担当）'),
+                ('私は良い会議を担当しました', 'ROLE', '良い会議を担当した（記録された担当）'),
+                ('私は難しい会議を担当しました', 'ROLE', '難しい会議を担当した（記録された担当）'),
+                ('私は昨日、難しい会議を担当しませんでした', 'ROLE', 'この記述時点の昨日：難しい会議を担当しなかった（記録された担当）'),
+                ('私は家族の良い会議を担当しなかったです', 'ROLE', '家族の良い会議を担当しなかった（記録された担当）'),
+                ('私は良い記録を担当した', 'ROLE', '良い記録を担当した（記録された担当）'),
+                ('私は昨日、良い会議を担当しませんでした', 'ROLE', 'この記述時点の昨日：良い会議を担当しなかった（記録された担当）'),
+                ('私は記録を担当しました', 'ROLE', '記録を担当した（記録された担当）'),
+                ('私はメモを担当しなかったです', 'ROLE', 'メモを担当しなかった（記録された担当）'),
+                ('私は会議の記録を担当した', 'ROLE', '会議の記録を担当した（記録された担当）'),
+                ('私は昨日、記録を担当しませんでした', 'ROLE', 'この記述時点の昨日：記録を担当しなかった（記録された担当）'),
+                ('今日私は職場にいました', 'SCENE', 'この記述時点の今日：職場にいた（記録された場面）'),
+                ('昨日私は職場にいませんでした', 'SCENE', 'この記述時点の昨日：職場にいなかった（記録された場面）'),
+                ('その後私は会議の司会を担当しました', 'ROLE', 'その後：会議の司会を担当した（記録された担当）'),
+                ('それから私は会議の司会を担当しませんでした', 'ROLE', 'それから：会議の司会を担当しなかった（記録された担当）')):
+            with self.subTest(clause=clause):
+                self.fx = fixture(clause + '。その後、私は資料を調べた。')
+                self.row = self.fx['row']
+                writes = []
+                async def rpc(name, payload):
+                    if name == 'analysis_observed_source_snapshot':
+                        return {'guard': GUARD, 'tier': 'plus', 'now': END, 'members': [
+                            {'original': self.fx['original'], 'thread': None, 'events': []}]}
+                    if name == 'analysis_observed_commit':
+                        writes.append(payload)
+                        self.row['id'] = str(UUID(payload['p_artifact_id'][9:]))
+                        self.row['content_text'] = payload['p_text']
+                        self.row['content_json']['watashiMap'] = payload['p_projection']
+                        return self.row['id']
+                    return result([self.row], matched=True)
+                with patch.object(service, '_rpc', side_effect=rpc):
+                    saved = await service.generate_saved(OWNER, start=START, end=END,
+                        report_mode='standard', report_type='latest')
+                    with patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('read regenerated')):
+                        reread = await service.read_saved(OWNER)
+                self.assertEqual(reread['items'][0], saved)
+                projection = saved['content_json']['watashiMap']
+                self.assertEqual((projection, saved['content_text']), (writes[0]['p_projection'], writes[0]['p_text']))
+                context_node, action = projection['nodes']
+                self.assertEqual((context_node['node_kind'], context_node['visible_label']), (kind, label))
+                self.assertIn(label, saved['content_text'])
+                edge, = projection['edges']
+                self.assertEqual((edge['edge_kind'], edge['from_ref'], edge['to_ref']),
+                    ('OBSERVED_ORDER', context_node['node_ref'], action['node_ref']))
+                for encoded in (json.dumps(writes[0]['p_private_evidence'], ensure_ascii=False),
+                                json.dumps(projection, ensure_ascii=False)):
+                    for private in ('scene_state', 'PAST_PRESENCE', 'role_state', 'PAST_RESPONSIBILITY', 'source_parts', '私は'):
+                        self.assertNotIn(private, encoded)
+
+    async def test_late_scene_is_saved_and_read_with_the_same_text_and_graph(self):
+        context = '私は会議を担当した。私は資料を調べた。私は記録を残した。'
+        for scene, label in (
+                ('私は職場にいた。', '職場にいた（記録された場面）'),
+                ('私は昨日、職場にいなかったです。', 'この記述時点の昨日：職場にいなかった（記録された場面）')):
+            with self.subTest(scene=scene):
+                original = dict(self.fx['original'], memo=context + scene)
+                writes = []
+                async def rpc(name, payload):
+                    if name == 'analysis_observed_source_snapshot':
+                        return {'guard': GUARD, 'tier': 'plus', 'now': END, 'members': [
+                            {'original': original, 'thread': None, 'events': []}]}
+                    if name == 'analysis_observed_commit':
+                        writes.append(payload)
+                        self.row.update(id=str(UUID(payload['p_artifact_id'][9:])), content_text=payload['p_text'])
+                        self.row['content_json']['watashiMap'] = payload['p_projection']
+                        return self.row['id']
+                    if name == 'analysis_observed_read':
+                        return result([self.row], matched=True)
+                    raise AssertionError(name)
+                with patch.dict(os.environ, COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE='off'), \
+                        patch.object(service, '_rpc', side_effect=rpc):
+                    saved = await service.generate_saved(OWNER, start=START, end=END,
+                        report_mode='standard', report_type='latest')
+                    with patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('read regenerated')):
+                        reread = await service.read_saved(OWNER, report_id=saved['id'], report_mode='standard')
+                self.assertEqual(len(writes), 1)
+                self.assertEqual(reread['items'][0], saved)
+                projection = saved['content_json']['watashiMap']
+                self.assertEqual((projection, saved['content_text']), (writes[0]['p_projection'], writes[0]['p_text']))
+                self.assertEqual(projection['nodes'][-1]['visible_label'], label)
+                self.assertIn('場面：' + label, saved['content_text'])
+                self.assertNotIn('場面は、この記録からは確定していません', saved['content_text'])
+                self.assertFalse(projection['edges'])
+
+    async def test_saved_scene_role_action_chain_is_read_without_reinterpretation(self):
+        fx = fixture('今日私は職場にいた。その後私は会議の司会を担当した。'
+                     'それから私は資料を調べた。')
+        with patch.object(service, '_rpc', AsyncMock(return_value=result([fx['row']]))), \
+             patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('read regenerated')):
+            value = await service.read_saved(OWNER)
+        self.assertEqual(value['items'][0], fx['row'])
+        p = value['items'][0]['content_json']['watashiMap']
+        self.assertEqual([n['node_kind'] for n in p['nodes']], ['SCENE', 'ROLE', 'ACTION_OR_NONACTION'])
+        self.assertEqual([(e['from_ref'], e['to_ref']) for e in p['edges']], [('n1', 'n2'), ('n2', 'n3')])
+        for n in p['nodes']:
+            self.assertIn(n['visible_label'], value['items'][0]['content_text'])
+
+    async def test_read_never_generates_and_preserves_wire(self):
+        with patch.object(service, '_rpc', AsyncMock(return_value=result([self.row]))), \
+             patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('read regenerated')):
+            value = await service.read_saved(OWNER)
+        self.assertEqual(value['items'][0], self.row)
+
+    async def test_corrupt_private_and_mismatched_text_are_rejected(self):
+        for kind in ('private', 'text', 'identity', 'edge'):
+            row = copy.deepcopy(self.row)
+            if kind == 'private': row['content_json']['watashiMap']['raw_body'] = 'PRIVATE'
+            if kind == 'text': row['content_text'] = 'PRIVATE old source'
+            if kind == 'identity': row['id'] = OTHER
+            if kind == 'edge': row['content_json']['watashiMap']['edges'] = [{'source_ref': 'PRIVATE'}]
+            with patch.object(service, '_rpc', AsyncMock(return_value=result([row]))):
+                with self.assertRaises(HTTPException) as raised: await service.read_saved(OWNER)
+                self.assertEqual(raised.exception.status_code, 503)
+                self.assertNotIn('PRIVATE', raised.exception.detail)
+
+    async def test_free_history_and_plus_deep_never_return_body(self):
+        for tier, mode, history in [('free', 'light', True), ('free', 'standard', False), ('plus', 'deep', False)]:
+            row = copy.deepcopy(self.row)
+            row['report_mode'] = row['content_json']['report_mode'] = mode
+            with patch.object(service, '_rpc', AsyncMock(return_value=result([row], tier))):
+                with self.assertRaises(HTTPException): await service.read_saved(OWNER, history=history)
+
+    async def test_lost_ack_not_retried_or_returned_as_saved(self):
+        with patch.object(service, 'sb_post_rpc', AsyncMock(side_effect=httpx.ReadTimeout('PRIVATE'))) as io:
+            with self.assertRaises(HTTPException) as raised: await service._rpc('analysis_observed_commit', {})
+        self.assertEqual(io.await_count, 1)
+        self.assertEqual(raised.exception.status_code, 503)
+        self.assertNotIn('PRIVATE', raised.exception.detail)
+
+    async def test_conflict_never_falls_back(self):
+        with patch.dict(os.environ, COCOLON_ANALYSIS_OBSERVED_MODE='development'), \
+             patch.object(service, 'read_saved', AsyncMock(return_value=result([]))), \
+             patch.object(service, 'generate_saved', AsyncMock(side_effect=HTTPException(409, 'changed'))):
+            with self.assertRaises(HTTPException) as raised:
+                await service.ensure_saved(OWNER, period='28d', report_mode='standard')
+        self.assertEqual(raised.exception.status_code, 409)
+
+    async def test_read_only_retains_old_valid_saved_map(self):
+        row = copy.deepcopy(self.row)
+        end = datetime.now(timezone.utc)-timedelta(days=3)
+        row.update(period_start=(end-timedelta(days=28)).isoformat(), period_end=end.isoformat())
+        with patch.dict(os.environ, COCOLON_ANALYSIS_OBSERVED_MODE='read_only'), \
+             patch.object(service, 'read_saved', AsyncMock(return_value=result([row]))), \
+             patch.object(service, 'generate_saved', AsyncMock(side_effect=AssertionError('read-only write'))):
+            answer = await service.ensure_saved(OWNER, period='28d', report_mode='standard', force=True)
+        self.assertTrue(answer['has_visible_content'])
+        self.assertFalse(answer['refreshed'])
+
+    async def test_insufficient_regeneration_does_not_fall_back_to_saved_report(self):
+        for monthly in (False, True):
+            with self.subTest(monthly=monthly), \
+                    patch.dict(os.environ, COCOLON_ANALYSIS_OBSERVED_MODE='development'), \
+                    patch.object(service, 'read_saved', AsyncMock(return_value=result([self.row]))), \
+                    patch.object(service, 'generate_saved',
+                                 AsyncMock(return_value=service._INSUFFICIENT_INPUT)):
+                answer = await service.ensure_saved(OWNER, period='28d', report_mode='standard',
+                                                    force=True, monthly=monthly)
+            self.assertEqual(answer['reason'], 'insufficient_input')
+            self.assertEqual(answer['skip_reason'], 'analysis_insufficient_input')
+            self.assertFalse(answer['has_visible_content'])
+            self.assertFalse(answer['refreshed'])
+            self.assertFalse(answer['history_saved'])
+            for key in ('content_text', 'meta', 'title', 'generated_at', 'latest_generated_at'):
+                self.assertIsNone(answer[key])
+
+    async def test_status_selects_same_tier_default_mode(self):
+        standard, deep = copy.deepcopy(self.row), copy.deepcopy(self.row)
+        deep['report_mode'] = 'deep'
+        with patch.object(service, 'read_saved', AsyncMock(side_effect=[result([standard], 'premium'), result([deep], 'premium')])) as read:
+            status = await service.saved_status(OWNER)
+        self.assertEqual(read.await_args.kwargs['report_mode'], 'deep')
+        self.assertEqual(status['version_key'], deep['content_json']['watashiMap']['projection_of'])
+
+    async def test_monthly_exclusive_end_and_no_view_time_regeneration(self):
+        with patch.dict(os.environ, COCOLON_ANALYSIS_OBSERVED_MODE='development'), \
+             patch.object(service, 'read_saved', AsyncMock(return_value=result([]))), \
+             patch.object(service, 'generate_saved', AsyncMock(return_value=self.row)) as generate:
+            await service.ensure_saved(OWNER, period='28d', report_mode='standard', monthly=True)
+        end = datetime.fromisoformat(generate.await_args.kwargs['end']).astimezone(timezone(timedelta(hours=9)))
+        self.assertEqual((end.day, end.hour, end.minute, end.second, end.microsecond), (1, 0, 0, 0, 0))
+
+
+if __name__ == '__main__':
+    unittest.main()
