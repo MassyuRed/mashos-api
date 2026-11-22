@@ -688,20 +688,21 @@ def test_theme_clears_only_the_reviewed_different_answer_in_captured_history(the
 @pytest.mark.parametrize(("issued_scene", "next_scene"), [
     ("new_method", "experiment"), ("experiment", "new_method"),
 ])
-def test_theme_avoids_an_equivalent_outcome_in_another_scene(issued_scene, next_scene):
+@pytest.mark.parametrize("same_answer", ["outcome", "boundary"])
+def test_theme_avoids_an_equivalent_trial_question_in_another_scene(issued_scene, next_scene, same_answer):
     theme = "仕事・学び"
-    key = _theme_position_key(theme, issued_scene, "outcome")
+    key = _theme_position_key(theme, issued_scene, same_answer)
 
     def choose(options):
         if len(options[0]) == 4:
             return next(option for option in options if option[0] == next_scene)
-        assert "outcome" not in {angle for angle, _ in options}
+        assert same_answer not in {angle for angle, _ in options}
         return options[0]
 
     prepared, _ = prepare_question_material(
         {"questions": [{"question_key": key}]}, lane="theme", theme=theme, choose_theme=choose,
     )
-    assert prepared["question_key"] != _theme_position_key(theme, next_scene, "outcome")
+    assert prepared["question_key"] != _theme_position_key(theme, next_scene, same_answer)
 
 
 @pytest.mark.parametrize(("issued", "equivalent"), [("change", "boundary"), ("boundary", "change")])
