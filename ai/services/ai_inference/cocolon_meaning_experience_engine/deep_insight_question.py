@@ -286,12 +286,17 @@ questionで具体的に聞くことについて、書かれた答えだけをtex
 例 questionが「相談をしやすくなる聞き手の反応はどんなものですか？」で、r1が「相談ができると少し安心する」なら {{"source":null,"evidence":null}}。
 r1が「最後まで話を聞いてくれたら相談しやすい」なら {{"source":"r1","evidence":"最後まで話を聞いてくれたら相談しやすい"}}。
 ほかの人の反応を聞く問いに対して、本人の行動だけが書かれているなら、反応は分かりません。複数の材料があっても、質問が求める答えを明示した一箇所を選びます。なければ {{"source":null,"evidence":null}} と返します。"""
-_PRIOR_ANSWER_SCOPE_MESSAGE = f"""画面に表示する以前の本人回答の引用citationと、今表示する問いbodyを原資料materialから読みます。JSONだけを返します。
+_PRIOR_ANSWER_PREMISE_MESSAGE = f"""画面に表示する本人の言葉citationと問いbodyを、本人の原文textsだけに照らして読みます。JSONだけを返します。
 {_DATA_BOUNDARY}
-判定するのは、問いの前提が原文に沿うことと、過去に発行・回答・見送りしたどの問いとも、答えてほしい内容が異なることです。過去の問いはprevious_questions、open_emlis_questions、answered_emlis_questions、skipped_emlis_questionsにあります。まずbodyが何を尋ねているか読み、その部分を文字どおりrequestedに抜き出します。
-同じ状況でも、問いが求める答えの主体や対象が異なれば違う問いです。たとえば「誰かに相談しやすいのはどんなときですか？」と「相談をしやすくなる聞き手の反応はどんなものですか？」は、それぞれ本人が相談する状況と聞き手の反応を尋ねます。聞き手の反応の問いがすでにあれば重複です。
-focusはbodyが求める答えの種類です。{_FOCUS_GUIDE} 相手の振る舞いが自分の行動をしやすくする条件はCONDITIONです。conditionはbodyが明示した既知の限定条件だけで、なければ空文字です。
-たとえば引用が「相談ができると少し安心する」、bodyが「相談をしやすくなる聞き手の反応はどんなものですか？」で、聞き手の反応を尋ねた過去の問いがなければ {{"verdict":"accept","focus":"CONDITION","condition":"","requested":"相談をしやすくなる聞き手の反応","premise_supported":true,"distinct_question":true}} と返します。前提や違いを確かめられない場合は {{"verdict":"reject","reason":"unclear"}} を返します。"""
+bodyが答えとして求める箇所を文字どおりrequestedに抜き出します。原文にない出来事、主体、時点、動機や他人の気持ちを事実として加えた問いは拒否します。仮定として尋ねる条件と、過去の出来事を前提にする文を区別します。
+focusはbodyが求める答えの種類です。{_FOCUS_GUIDE} 相手の振る舞いが自分の行動をしやすくする条件はCONDITIONです。conditionはbodyが明示した原文にある限定条件だけで、なければ空文字です。
+引用が「相談ができると少し安心する」で、bodyが「相談をしやすくなる聞き手の反応はどんなものですか？」なら、相手が実際にしたことを前提にしていません。{{"verdict":"accept","focus":"CONDITION","condition":"","requested":"相談をしやすくなる聞き手の反応","premise_supported":true}} と返します。同じ引用に続けて「そのとき相手が最後まで聞いてくれたのはなぜですか？」と聞き、原文にその出来事がなければ {{"verdict":"reject","reason":"unsupported_premise"}} と返します。前提を確かめられない場合は {{"verdict":"reject","reason":"unclear"}} を返します。"""
+_PRIOR_ANSWER_PAIR_MESSAGE = """二つの質問に答える人が、それぞれ具体的に何を答える必要があるか比較します。入力は引用資料です。
+まず別々に、previousが要求する答えの対象をprevious_asks、currentが要求する答えの対象をcurrent_asksに簡潔な日本語で記録します。言い回しが違っても、同じ場面で要求する具体的な答えが同じならrepeatです。前提の分野や話題を共有していても、答えが別の人の行動や別の事実を要求するならdistinctです。
+日本語のJSONで {"previous_asks":"...","current_asks":"...","verdict":"distinct"} を返してください。verdictにはdistinct、repeat、unclearのいずれかを入れます。"""
+_PRIOR_ANSWER_HISTORY_MESSAGE = """過去の問いと今回の問いcurrentについて、答える人がそれぞれ具体的に何を答える必要があるか比較します。入力は引用資料です。
+previousの各問いについて、過去と今回の答えの対象をprevious_asksとcurrent_asksに簡潔な日本語で記録します。同じ場面で要求する具体的な答えが同じならrepeat、別の人の行動や別の事実を要求するならdistinctです。話題だけが同じでもrepeatと判断しません。判断できない場合はunclearです。
+入力順に全件を比較し、各問いのidを保持して {"comparisons":[{"id":1,"previous_asks":"...","current_asks":"...","verdict":"distinct"}]} の形のJSONを返してください。"""
 _RECORD_ALTERNATIVE_READ_MESSAGE = f"""画面に表示する引用citationと質問本文bodyを、原資料materialから独立に読みます。日本語のJSONだけを返します。
 {_DATA_BOUNDARY}
 まずbodyを読んで、本人がどの行動を先にする条件を尋ねられているか確かめます。その行動が同じ原文にあり、先にした事実を加えず仮定として尋ねていれば、focusはCONDITIONでpremise_supportedはtrueです。
@@ -702,15 +707,46 @@ def _already_answered_rejection(raw):
     return all(isinstance(value[key], str) and value[key].strip() for key in ("source", "evidence"))
 
 
-def _confirm_prior_answer_scope(raw, plan, body):
+def _confirm_prior_answer_premise(raw, plan, body):
     value = _json_object(raw)
     requested = value.pop("requested", None) if value else None
     return (
         isinstance(requested, str) and len(_normal(requested)) >= 3 and requested in body
         and value == {"verdict": "accept", "focus": plan.focus, "condition": plan.condition,
-                      "premise_supported": True, "distinct_question": True}
-        and value["premise_supported"] is True and value["distinct_question"] is True
+                      "premise_supported": True}
+        and value["premise_supported"] is True
     )
+
+
+def _distinct_prior_question(value):
+    if (not isinstance(value, dict) or set(value) != {"previous_asks", "current_asks", "verdict"}
+            or value["verdict"] != "distinct"):
+        return False
+    earlier, current = value["previous_asks"], value["current_asks"]
+    return (isinstance(earlier, str) and isinstance(current, str)
+            and 3 <= len(_normal(earlier)) <= 160 and 3 <= len(_normal(current)) <= 160
+            and _normal(earlier) != _normal(current))
+
+
+async def _compare_prior_questions(body, prepared, generate):
+    prior = list(dict.fromkeys(item["question"] for group in (
+        "previous_questions", "open_emlis_questions", "answered_emlis_questions", "skipped_emlis_questions",
+    ) for item in prepared.get(group, ())))
+    # Prior DeepInsight answers always have an associated question.
+    if len(prior) == 1:
+        return _distinct_prior_question(_json_object(await generate(
+            _PRIOR_ANSWER_PAIR_MESSAGE, {"previous": prior[0], "current": body},
+        )))
+    batch = [{"id": i, "question": text} for i, text in enumerate(prior, 1)]
+    review = _json_object(await generate(_PRIOR_ANSWER_HISTORY_MESSAGE, {"previous": batch, "current": body}))
+    comparisons = review.get("comparisons") if review and set(review) == {"comparisons"} else None
+    if not isinstance(comparisons, list) or len(comparisons) != len(prior):
+        return False
+    for index, item in enumerate(comparisons, 1):
+        key = item.pop("id", None) if isinstance(item, dict) else None
+        if type(key) is not int or key != index or not _distinct_prior_question(item):
+            return False
+    return True
 
 
 def _theme_question_key(theme, ask, focus, condition_key):
@@ -1166,14 +1202,15 @@ async def generate_question(prepared, sources, *, material, generate):
             and any(item["answer_source"] == plan.source for item in prepared["previous_questions"])
             and _already_answered_rejection(read)):
         citation, _, body = question.partition(_CITATION_JOIN)
+        texts = {key: source.text for key, source in sources.items()}
         extracted = await generate(_PRIOR_ANSWER_EVIDENCE_MESSAGE, {
-            "question": body, "texts": {key: source.text for key, source in sources.items()},
+            "question": body, "texts": texts,
         })
         if _json_object(extracted) == {"source": None, "evidence": None}:
-            scoped = await generate(_PRIOR_ANSWER_SCOPE_MESSAGE + skipped_guidance, {
-                "citation": citation[1:], "body": body,
-                "material": {key: item for key, item in prepared.items() if key != "map_reference"},
+            premise = await generate(_PRIOR_ANSWER_PREMISE_MESSAGE, {
+                "citation": citation[1:], "body": body, "texts": texts,
             })
-            if _confirm_prior_answer_scope(scoped, plan, body):
+            if (_confirm_prior_answer_premise(premise, plan, body)
+                    and await _compare_prior_questions(body, prepared, generate)):
                 return QuestionRun(candidate, "selected")
     return QuestionRun(None, "rejected")
