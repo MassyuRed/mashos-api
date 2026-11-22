@@ -557,6 +557,23 @@ def test_theme_replaces_two_independent_answers_with_one_before_the_reader():
     assert selected.candidate.text.endswith(revised)
 
 
+@pytest.mark.parametrize(("scene_id", "angle_id", "scene", "body"), [
+    ("money", "priority", "使いたいことがいくつかあり、予算が限られているとき",
+     "どの使い道を優先するか、何を目安に決めますか？"),
+    ("unpopular_choice", "outcome", "少数派の意見を伝えても結論が変わらなかったとしたら",
+     "そのあと、どんなことがあれば、意見を伝えてよかったと思いますか？"),
+])
+def test_values_theme_puts_the_condition_in_the_displayed_scene(scene_id, angle_id, scene, body):
+    result, calls = theme_run("自分の価値観", body, choose_theme=select_theme_angle(scene_id, angle_id))
+
+    assert len(calls) == 2
+    (_, writer), (reader_system, reader) = calls
+    assert writer["scene"] == reader["scene"] == scene
+    assert writer["form"] == reader["form"] == reader["body"] == body
+    assert reader_system.startswith(_THEME_READ_SYSTEM_MESSAGE)
+    assert result.candidate.text == f"{scene}、{body}"
+
+
 def test_theme_preserves_an_unmade_choice_in_the_independent_review():
     result, calls = theme_run(
         "仕事・学び", "新しいやり方に切り替えるために、まず何をしますか？",
