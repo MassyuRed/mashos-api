@@ -109,7 +109,7 @@ def _received_answer_plan(prepared, material, fields, selected, value):
             admission.admit_semantic_node_local_v4_plan_response(prepared, dict(value, nodes=invalid))
 
 
-def v24_provider(calls, *, received_case=False):
+def v24_provider(calls, *, received_case=False, plan_packet=None):
     received_prepared = None
     received_plan = received_nodes = received_plan_raw = None
 
@@ -124,7 +124,9 @@ def v24_provider(calls, *, received_case=False):
         if phase == 'PLAN':
             restored, table, _ = choices.restore_view(material)
             selected = {(field, quote): cue for (field, cue), quote in table.items()}
-            if received_prepared is not None:
+            if plan_packet is not None:
+                value = plan_packet
+            elif received_prepared is not None:
                 _received_answer_plan(received_prepared, material, restored['fields'], selected, value)
             else:
                 nodes, original_heads = [], {}
@@ -412,12 +414,13 @@ def test_v24_whole_plan_keeps_two_answered_thoughts_and_actions_separate(natural
     snapshot = result['rows'][0]['value']
     prepared = semantic.prepare_semantic_map(user, snapshot, prompt_version=admission.SEMANTIC_MAP_OCCURRENCE_V24_PROFILE)
     material = json.loads(prepared.material_json)
-    first, second = sorted(material['received_answer_thoughts'], key=lambda scope: scope['record'])
+    received_scopes = sorted(material['received_answer_thoughts'], key=lambda scope: scope['record'])
+    assert len(received_scopes) == 2
     prompt, _ = admission.semantic_node_local_v4_wire_messages(prepared, 'PLAN')
     packet = json.JSONDecoder().raw_decode(prompt['content'].split('JSONのみ返します。\n', 1)[1])[0]
     plan = admission.admit_semantic_node_local_v4_plan_response(prepared, packet)
     nodes = [[[part['field'] for part in unit['evidence']] for unit in node['units']] for node in plan['nodes']]
-    for scope in (first, second):
+    for scope in received_scopes:
         assert [[scope['thought_field']], [scope['answer_field']]] in nodes
         assert [[scope['action_field']]] in nodes[len(material['records']):]
     crossed = deepcopy(packet)
@@ -428,7 +431,7 @@ def test_v24_whole_plan_keeps_two_answered_thoughts_and_actions_separate(natural
 
     pytest.importorskip('lmformatenforcer')
     calls = []
-    response = run(v24_provider(calls)(prepared))
+    response = run(v24_provider(calls, plan_packet=packet)(prepared))
     artifact, coverage = semantic.build_semantic_map(prepared, response)
     assert [phase for phase, _ in calls] == ['PLAN', 'NODES', 'RELATIONS']
     assert coverage['mapped_count'] == 3
