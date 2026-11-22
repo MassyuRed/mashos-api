@@ -37,7 +37,7 @@ def harness(monkeypatch, database):
     client_context = ContextVar('piece_b7_test_http_client')
     app = FastAPI()
     app.include_router(api.router)
-    from piece_v2_runtime_control import PIECE_FEATURE_NAMES
+    from piece_v2_runtime_control import PIECE_FEATURE_NAMES, PIECE_PUBLICATION_HEADER
     app.state.piece_v2_runtime = {
         'requested': dict.fromkeys(PIECE_FEATURE_NAMES, True),
         'ready': dict.fromkeys(PIECE_FEATURE_NAMES, True)}
@@ -87,8 +87,10 @@ def harness(monkeypatch, database):
 
     async def send(op, pid, *, version=2, scope='public', owner='owner', key=_KEY):
         body = {'expected_row_version': version}
+        headers = {'Authorization': 'Bearer synthetic-' + owner, 'Idempotency-Key': key}
         if op == 'visibility':
             body['visibility_scope'] = scope
+            headers[PIECE_PUBLICATION_HEADER] = '1'
         method = 'PATCH' if op == 'visibility' else 'DELETE'
         path = '/emotion/piece/' + str(pid) + ('/visibility' if op == 'visibility' else '')
         async with httpx.AsyncClient(transport=httpx.MockTransport(upstream)) as backend:
@@ -96,8 +98,7 @@ def harness(monkeypatch, database):
             try:
                 async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),
                                              base_url='https://test.invalid') as client:
-                    return await client.request(method, path, json=body, headers={
-                        'Authorization': 'Bearer synthetic-' + owner, 'Idempotency-Key': key})
+                    return await client.request(method, path, json=body, headers=headers)
             finally:
                 client_context.reset(token)
 
