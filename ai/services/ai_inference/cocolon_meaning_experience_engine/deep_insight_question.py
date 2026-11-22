@@ -242,14 +242,12 @@ def _reading_system_message(*, answer):
         "該当が一つに確定しなければ拒否します。"
     )
     answer_example = ""
+    rejection_example = """拒否の例 {"verdict":"reject","reason":"already_answered"}。"""
     if answer:
         focus_intro = "focusは問いが答えとして求める内容から選びます。"
         focus_detail = (
             "相手の具体的な反応や振る舞いによって自分の行動が変わる条件を聞く場合はCONDITION、"
             "相手との関係をどう捉えるかを聞く場合はRELATIONSHIPです。"
-            "『意見が違っても本音を言える』は本人の経験で、相手がどう反応すると本音を言いやすいかには答えていません。"
-            "『相手が最後まで話を聞いてくれると本音を言いやすい』のように、"
-            "今回の問いが求める相手の反応まで明記されている場合は既回答です。"
         )
         quote_guidance = (
             "記録入口では、入力questionの先頭にあるかぎ括弧の中だけをquoteに一字ずつ写します。"
@@ -262,6 +260,8 @@ def _reading_system_message(*, answer):
         answer_example = """以前の答えa2が「相談できると嬉しい。急ぎのときもそう思う。」で、questionが「相談できると嬉しい」と書いていましたが、相手のどんな反応があると相談しやすいですか？の場合の採用例
 {"verdict":"accept","focus":"CONDITION","source":"a2","quote":"相談できると嬉しい","condition":"","premise_supported":true,"new_information":true}。
 """
+        rejection_example = """既回答の場合は、引用後の問いにそのまま答えられる記述をsourcesから探し、キーと原文を返します。
+本音を言いやすい相手の反応を聞くとき、具体的な反応を本人が答えている例は {"verdict":"reject","reason":"already_answered","source":"a1","evidence":"相手が最後まで話を聞いてくれると本音を言いやすい"} です。"""
     return f"""Emlisの完成した一問を、渡された原資料から独立に読みます。日本語のJSONだけを返します。
 {_DATA_BOUNDARY}
 作成者が何を意図したかではなく、完成文が実際に本人の何を尋ね、どの出来事・主体・時点・否定・留保・条件を前提に置くかを読んでください。
@@ -276,11 +276,18 @@ new_informationは、同じ場面について有効な回答・訂正・原文�
 {{"verdict":"accept","focus":"REASON","source":"r1.thought","quote":"不安があっても説明会に行った","condition":"","premise_supported":true,"new_information":true}}。
 {answer_example}過去の材料なしで仕事・学びを選び「何を大切にして仕事を選びますか？」と聞く場合の採用例
 {{"verdict":"accept","focus":"VALUE","source":"","quote":"","condition":"","premise_supported":true,"new_information":true}}。
-拒否の例 {{"verdict":"reject","reason":"already_answered"}}。reasonはalready_answered、unsupported_premise、outside_theme、no_new_information、unclearのいずれかです。"""
+{rejection_example}reasonはalready_answered、unsupported_premise、outside_theme、no_new_information、unclearのいずれかです。"""
 
 
 READ_SYSTEM_MESSAGE = _reading_system_message(answer=False)
 ANSWER_READ_SYSTEM_MESSAGE = _reading_system_message(answer=True)
+_PRIOR_ANSWER_REREAD_MESSAGE = f"""本人が以前に答えた言葉citationと、今表示する問いbodyを原資料materialから読みます。JSONだけを返します。
+{_DATA_BOUNDARY}
+まずbodyが今答えてほしい内容を読み、その部分を文字どおりrequestedに抜き出します。次に以前の本人回答をprevious_questionsのanswer_sourceとsourcesで照合し、同じ対象・主体・場面への具体的な答えがあるか調べます。以前の問いやマップは本人の答えではありません。
+citationが「意見が違っても本音を言える」で、bodyが「本音を言いやすい相手の反応は、どんなものですか？」なら、requestedは「本音を言いやすい相手の反応」です。意見の違いがあっても話せるという記述から、相手の反応は分かりません。
+原文や本人回答の具体的な記述がbodyの答えになる場合は、その記述を写し {{"verdict":"reject","reason":"already_answered","source":"a1","evidence":"相手が最後まで話を聞いてくれると本音を言いやすい"}} と返します。既出・回答見送りに同じ問いがある場合は {{"verdict":"reject","reason":"repeated_question"}} を返します。
+bodyの前提がすべて資料にあり、同じ主体・時点における未確認の答えを尋ね、既出や見送りを繰り返していない場合だけ採用します。focusはbodyが求める答えの種類です。{_FOCUS_GUIDE} 相手の振る舞いが自分の行動をしやすくする条件はCONDITIONです。conditionはbodyが明示した既知の限定条件だけで、なければ空文字です。
+上の例に、相手の反応を書いた記述や同じ問いがなければ {{"verdict":"accept","focus":"CONDITION","condition":"","requested":"本音を言いやすい相手の反応","premise_supported":true,"new_information":true}} です。裏づけや区別が確認できなければ {{"verdict":"reject","reason":"unclear"}} を返します。"""
 _RECORD_ALTERNATIVE_READ_MESSAGE = f"""画面に表示する引用citationと質問本文bodyを、原資料materialから独立に読みます。日本語のJSONだけを返します。
 {_DATA_BOUNDARY}
 まずbodyを読んで、本人がどの行動を先にする条件を尋ねられているか確かめます。その行動が同じ原文にあり、先にした事実を加えず仮定として尋ねていれば、focusはCONDITIONでpremise_supportedはtrueです。
@@ -660,8 +667,12 @@ def _display_citation_matches(question, anchor):
             and _bind_anchor(anchor.source, citation[1:]) == anchor)
 
 
-def _confirm_reading(raw, plan, *, citation_verified=False):
+def _confirm_reading(raw, plan, *, citation_verified=False, body=None):
     value = _json_object(raw)
+    if body is not None:
+        requested = value.pop("requested", None) if value else None
+        if not isinstance(requested, str) or len(_normal(requested)) < 3 or requested not in body:
+            return False
     anchor = plan.anchor
     if value and anchor and anchor.source.field == "answer" and value.get("source") == plan.source:
         quote = value.get("quote")
@@ -678,6 +689,19 @@ def _confirm_reading(raw, plan, *, citation_verified=False):
     if not plan.is_record_reason and not citation_verified:
         expected.update(source=plan.source, quote=plan.quote)
     return value == expected and value["premise_supported"] is True and value["new_information"] is True
+
+
+def _unsubstantiated_answer_rejection(raw, sources):
+    value = _json_object(raw)
+    if not value or value.get("verdict") != "reject" or value.get("reason") != "already_answered":
+        return False
+    if set(value) == {"verdict", "reason"}:
+        return True
+    if set(value) != {"verdict", "reason", "source", "evidence"}:
+        return False
+    source, evidence = value["source"], value["evidence"]
+    original = sources.get(source) if isinstance(source, str) else None
+    return original is None or not isinstance(evidence, str) or not evidence.strip() or evidence not in original.text
 
 
 def _theme_question_key(theme, ask, focus, condition_key):
@@ -1127,6 +1151,15 @@ async def generate_question(prepared, sources, *, material, generate):
     else:
         reader = READ_SYSTEM_MESSAGE
     read = await generate(reader + skipped_guidance, reading)
-    if not _confirm_reading(read, plan, citation_verified=alternative is not None):
-        return QuestionRun(None, "rejected")
-    return QuestionRun(candidate, "selected")
+    if _confirm_reading(read, plan, citation_verified=alternative is not None):
+        return QuestionRun(candidate, "selected")
+    if (reader == ANSWER_READ_SYSTEM_MESSAGE
+            and any(item["answer_source"] == plan.source for item in prepared["previous_questions"])
+            and _unsubstantiated_answer_rejection(read, sources)):
+        citation, _, body = question.partition(_CITATION_JOIN)
+        read = await generate(_PRIOR_ANSWER_REREAD_MESSAGE + skipped_guidance, {
+            "citation": citation[1:], "body": body, "material": prepared,
+        })
+        if _confirm_reading(read, plan, citation_verified=True, body=body):
+            return QuestionRun(candidate, "selected")
+    return QuestionRun(None, "rejected")

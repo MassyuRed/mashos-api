@@ -10,7 +10,8 @@ from cocolon_meaning_experience_engine import deep_insight_question
 from cocolon_meaning_experience_engine.deep_insight_question import (
     ANSWER_READ_SYSTEM_MESSAGE, PLAN_SYSTEM_MESSAGE, READ_SYSTEM_MESSAGE,
     RECORD_REASON_READ_SYSTEM_MESSAGE, WRITE_SYSTEM_MESSAGE,
-    _RECORD_ALTERNATIVE_PLAN_MESSAGE, _RECORD_ALTERNATIVE_READ_MESSAGE, _RECORD_ALTERNATIVE_WRITE_MESSAGE,
+    _PRIOR_ANSWER_REREAD_MESSAGE, _RECORD_ALTERNATIVE_PLAN_MESSAGE, _RECORD_ALTERNATIVE_READ_MESSAGE,
+    _RECORD_ALTERNATIVE_WRITE_MESSAGE,
     _THEME_COMPARE_EVIDENCE_SYSTEM_MESSAGE, _THEME_COMPARE_PAIR_SYSTEM_MESSAGE, _THEME_COMPARE_SYSTEM_MESSAGE,
     _THEME_PLAN_SYSTEM_MESSAGE, _THEME_READ_RETRY_SYSTEM_MESSAGE, _THEME_READ_SYSTEM_MESSAGE,
     _THEME_FORM_REPAIR_SYSTEM_MESSAGE, _THEME_REPAIR_SYSTEM_MESSAGE, _THEME_WRITE_SYSTEM_MESSAGE,
@@ -57,7 +58,7 @@ def read(plan, *, record_reason=False, **changes):
     return {**result, **changes}
 
 
-def run(original, plan, question=BODY, *, reading=None, alternative=None):
+def run(original, plan, question=BODY, *, reading=None, rereading=None, alternative=None):
     prepared, sources = prepare_question_material(original, lane="records", theme=None)
     calls = []
 
@@ -70,6 +71,8 @@ def run(original, plan, question=BODY, *, reading=None, alternative=None):
             response = alternative
         elif system in (WRITE_SYSTEM_MESSAGE, _RECORD_ALTERNATIVE_WRITE_MESSAGE):
             response = {"question": question}
+        elif system.startswith(_PRIOR_ANSWER_REREAD_MESSAGE):
+            response = rereading
         else:
             assert system.startswith((
                 READ_SYSTEM_MESSAGE, ANSWER_READ_SYSTEM_MESSAGE, RECORD_REASON_READ_SYSTEM_MESSAGE,
@@ -442,26 +445,48 @@ def test_answer_alone_has_private_provenance_and_can_supply_a_follow_up():
     assert rejected.disposition == "rejected"
 
 
-@pytest.mark.parametrize(("answer_text", "already_answered"), [
-    ("意見が違っても本音を言えるときです。", False),
-    ("意見が違っても本音を言えるときです。最後まで話を聞いてくれると本音を言いやすいです。", True),
+@pytest.mark.parametrize(("reader_fields", "rereader_fields", "expected", "calls_expected"), [
+    ({}, {"requested": "本音を言いやすい相手の反応"}, "selected", 4),
+    ({}, {"requested": "意見が違っても本音を言える"}, "rejected", 4),
+    ({}, {"premise_supported": False, "requested": "本音を言いやすい相手の反応"}, "rejected", 4),
+    ({}, {"new_information": False, "requested": "本音を言いやすい相手の反応"}, "rejected", 4),
+    ({}, {"verdict": "reject", "reason": "repeated_question"}, "rejected", 4),
+    ({}, {}, "rejected", 4),
+    ({"source": "a1", "evidence": "相手が最後まで話を聞いてくれると本音を言いやすい"},
+     {"requested": "本音を言いやすい相手の反応"}, "rejected", 3),
+    ({"source": "a3", "evidence": "相手が最後まで話を聞いてくれると本音を言いやすい"},
+     {"verdict": "reject", "reason": "already_answered"}, "rejected", 4),
+    ({"reason": "unsupported_premise"}, None, "rejected", 3),
 ])
-def test_answer_follow_up_distinguishes_the_new_reaction_from_the_cited_condition(answer_text, already_answered):
+def test_answer_follow_up_distinguishes_the_new_reaction_from_the_cited_condition(
+        reader_fields, rereader_fields, expected, calls_expected):
+    answer_text = "意見が違っても本音を言えるときです。"
+    if evidence := reader_fields.get("evidence"):
+        answer_text += evidence + "です。"
     answer = {
-        "id": ANSWER_ID, "source_version": VERSION, "question_text": "どんなときに友達だと感じますか？",
+        "id": ANSWER_ID, "source_version": VERSION, "question_text": "どんなときに、相手に本音を話しやすいですか？",
         "answer_text": answer_text, "answered_at": STAMP,
     }
     quote = "意見が違っても本音を言える"
     body = "本音を言いやすい相手の反応は、どんなものですか？"
     plan = ask(focus="CONDITION", source="a1", quote=quote, ask="本音を言いやすい相手の反応")
-    reading = {"verdict": "reject", "reason": "already_answered"} if already_answered else read(plan)
-    result, calls = run(material(prior=[answer]), plan, body, reading=reading)
-    reader, payload = calls[-1]
+    reading = {"verdict": "reject", "reason": "already_answered", **reader_fields}
+    rereading = read(plan, record_reason=True, **(rereader_fields or {}))
+    result, calls = run(material(prior=[answer]), plan, body, reading=reading, rereading=rereading)
+    reader, payload = calls[2]
     assert reader == ANSWER_READ_SYSTEM_MESSAGE
-    assert "今回の問いが求める相手の反応まで明記されている場合は既回答" in reader
+    assert "引用後の問いにそのまま答えられる記述をsourcesから探し" in reader
     assert payload["question"] == f"「{quote}」と書いていましたが、{body}"
     assert payload["material"]["sources"]["a1"]["text"] == answer_text
-    assert result.disposition == ("rejected" if already_answered else "selected")
+    assert len(calls) == calls_expected
+    if calls_expected == 4:
+        assert calls[-1] == (_PRIOR_ANSWER_REREAD_MESSAGE, {
+            "citation": quote, "body": body, "material": calls[0][1],
+        })
+    assert result.disposition == expected
+    if result.candidate is not None:
+        assert result.candidate.text == payload["question"]
+        assert result.candidate.receipt["source_id"] == ANSWER_ID
 
 
 def select_theme_angle(scene, angle):
