@@ -192,3 +192,33 @@ def test_actual_history_bound_prefix_is_rederived_and_changed_context_drops_only
     assert 'emlis_source_materials' not in material
     assert len(material['records']) == 2
     assert any('私は日程を決めた' in f['text'] for f in material['fields'])
+
+
+@pytest.mark.parametrize('legacy', [False, True])
+def test_plan_change_keeps_original_and_drops_old_paid_derivative(handoff_case, legacy):
+    db, rpc, user, parent, service, calls = handoff_case
+    db.query("update public.profiles set subscription_tier='premium' where id=$1", [user])
+    started = run(service.start(user, parent))
+    assert started['current_observation']['text'] == BODY
+    if legacy:
+        assert 'code' not in db.query("update public.emlis_input_threads set data=data-'evaluated_tier'"
+            " where original_emotion_id=$1", [parent])
+    _, before = prepare(handoff_case)
+    assert json.loads(before.material_json)['emlis_source_materials']
+
+    db.query("update public.profiles set subscription_tier='free' where id=$1", [user])
+    snapshot, after = prepare(handoff_case)
+    material = json.loads(after.material_json)
+    assert 'emlis_source_materials' not in material
+    assert any('私は仕事を続けたい' in field['text'] for field in material['fields'])
+    assert len(calls) == 1
+
+    if legacy:
+        raw, = snapshot['members']
+        observation = next(e for e in raw['events'] if e['kind'] == 'OBSERVATION')
+        saved = raw['thread']['data']['analysis_material']
+        saved['coverage']['active_field_count'] += 1
+        observation['payload']['artifact']['analysis_material'] = copy.deepcopy(saved)
+        with pytest.raises(AnalysisSourceError, match='analysis_emlis_material_binding_invalid'):
+            admission.admit_saved_emlis_analysis_material(raw, owner_scope=user, tier='free',
+                as_of=snapshot['now'])

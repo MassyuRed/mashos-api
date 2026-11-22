@@ -1145,6 +1145,7 @@ class EmlisThreadService:
         t['data']['analysis_state'] = analysis_state
         if analysis_material is not None:
             t['data']['analysis_material'] = analysis_material
+            t['data']['evaluated_tier'] = snapshot['tier']
         observation = _event("OBSERVATION", {"text": candidate.text,
             "stage": "CORRECTED" if correcting else "REFINED" if t.get("latest_answer_event_id") else "INITIAL",
             "source_prefix_ref": t["source_prefix_ref"], "context_ref": _context_ref(snapshot),

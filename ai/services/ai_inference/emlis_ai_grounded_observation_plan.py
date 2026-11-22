@@ -10474,10 +10474,26 @@ def build_grounded_reception_opportunities(
         retained_rows = []
         for family, targets, supports in retained_reaction_groups:
             selected = tuple(nucleus_index[nid] for nid in (*targets, *supports))
-            retained_rows.append(replace(by_family[family], target_nucleus_ids=targets,
-                support_nucleus_ids=supports, retention="required",
-                source_evidence_span_ids=tuple(_ordered_span_ids(sid for n in selected for sid in n.source_span_ids)),
-                source_field_count=len({f for n in selected for f in n.source_fields})))
+            evidence_ids = tuple(_ordered_span_ids(sid for n in selected for sid in n.source_span_ids))
+            field_count = len({f for n in selected for f in n.source_fields})
+            existing = by_family.get(family)
+            if existing is None:
+                # A retained source group can qualify an independent action
+                # that the generic family mapper did not nominate.
+                row = GroundedReceptionOpportunity(
+                    opportunity_id="", family=family,
+                    reception_act=_RECEPTION_ACT_BY_OPPORTUNITY_FAMILY[family],
+                    target_nucleus_ids=targets, support_nucleus_ids=supports,
+                    retention="required", source_field_count=field_count,
+                    safety_required=False, source_evidence_span_ids=evidence_ids,
+                    priority=_opportunity_priority(selected[0], family=family,
+                        human_follow_target_ids=follow_ids, relation_connected_ids=relation_connected_ids,
+                        safety_required=False))
+            else:
+                row = replace(existing, target_nucleus_ids=targets, support_nucleus_ids=supports,
+                    retention="required", source_evidence_span_ids=evidence_ids,
+                    source_field_count=field_count)
+            retained_rows.append(row)
         return tuple(replace(row, opportunity_id=f"ro{i}") for i, row in enumerate(retained_rows, 1))
 
     if mixed_answer_targets:

@@ -63,6 +63,21 @@ def natural_questions(qdb, monkeypatch):
     return create
 
 
+def test_independent_consulting_action_does_not_block_first_natural_reply(natural_questions, qdb):
+    user, parent, service, calls = natural_questions()
+    action = '私は友人に旅程を相談しました。'
+    assert 'code' not in qdb.query('update public.emotions set memo_action=$2 where id=$1',
+        [parent, action])
+    initial = run(service.start(user, parent))
+    assert initial['current_observation']['text'] in {ACK, FINAL}
+    assert len(calls) == 1
+    material = run(service.store.read(user, input_id=parent))
+    assert material['original']['memo'] == ONE
+    assert material['original']['memo_action'] == action
+    assert run(service.get(user, parent))['current_observation'] == initial['current_observation']
+    assert len(calls) == 1
+
+
 def test_one_real_bound_question_answer_update_and_saved_natural_reread(natural_questions):
     user, parent, service, calls = natural_questions()
     initial = run(service.start(user, parent))

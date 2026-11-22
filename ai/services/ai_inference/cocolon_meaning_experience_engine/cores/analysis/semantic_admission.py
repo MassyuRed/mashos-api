@@ -744,7 +744,7 @@ def admit_saved_emlis_analysis_material(raw, *, owner_scope, tier, as_of):
     supplied, current pair of thread/OBS materials must match complete
     rederivation before any of its active text or typed duties is consumed.
     """
-    from emlis_thread_service import _request, _generation_current
+    from emlis_thread_service import Q3_PROFILE, _request, _generation_current
     from .source_adapter import _time
     from ...natural_reply import ACTIVE_MEANING_PROFILE
     thread = raw.get('thread')
@@ -780,12 +780,24 @@ def admit_saved_emlis_analysis_material(raw, *, owner_scope, tier, as_of):
         raise AnalysisSourceError('analysis_emlis_material_binding_invalid')
     if 'corrected_circumstance' in saved and saved['corrected_circumstance'] is not True:
         raise AnalysisSourceError('analysis_emlis_material_binding_invalid')
-    expected = prepare_emlis_analysis_material(_request(snapshot), owner_scope=owner_scope,
-        original_record=raw['original'], as_of=saved['as_of'],
+    options = dict(owner_scope=owner_scope, original_record=raw['original'], as_of=saved['as_of'],
         include_corrected_circumstance=saved.get('corrected_circumstance', False))
-    if expected != saved:
-        raise AnalysisSourceError('analysis_emlis_material_binding_invalid')
-    return saved
+    expected = prepare_emlis_analysis_material(_request(snapshot), **options)
+    if expected == saved:
+        return saved
+    # Old initial replies did not retain the tier that bound their source
+    # prefix. If the entire saved derivative belongs to another tier, leave
+    # it out and let the ordinary Analysis path use the person's sources.
+    context = raw['context']
+    if ('evaluated_tier' not in data and data.get('runtime_profile') == Q3_PROFILE
+            and expected['source_prefix_ref'] != saved['source_prefix_ref']
+            and not any(data.get(key) for key in ('context_guards', 'context_feedback', 'frame_target_dependencies'))
+            and not any(context.get(key) for key in ('history', 'feedback', 'frame_target_dependencies'))):
+        for prior_tier in ('free', 'plus', 'premium'):
+            if prior_tier != tier and prepare_emlis_analysis_material(
+                    _request(dict(snapshot, tier=prior_tier)), **options) == saved:
+                return None
+    raise AnalysisSourceError('analysis_emlis_material_binding_invalid')
 
 
 def _model_fields_ref(request, frozen, source_guard):
