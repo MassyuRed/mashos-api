@@ -542,6 +542,139 @@ def test_v3_adapter_preserves_explicit_unknown_without_forcing_a_split() -> None
     )
 
 
+def _resolved_spans(resolver):
+    return tuple(resolver.resolve(span_id) for span_id in resolver.span_ids)
+
+
+def test_open_slot_authority_smoke_is_body_free_and_deterministic() -> None:
+    expected = {
+        "nls3s_b001_0007": (),
+        "nls3s_b001_0041": (
+            ("explicit_unverbalized_unknown", ("nucleus:s1",)),
+        ),
+        "nls3s_b001_0093": (
+            ("explicit_referent_unknown", ("nucleus:s3",)),
+        ),
+        "nls3s_b001_0096": (),
+    }
+    for case_id, expected_unknowns in expected.items():
+        plan, resolver, witness = _case_artifacts(case_id)
+        repeated = build_grounded_semantic_restatement_witness(
+            plan,
+            resolver,
+        )
+        assert repeated == witness
+        assert tuple(
+            (row.dimension, row.affected_unit_ids)
+            for row in witness.explicit_unknowns
+        ) == expected_unknowns
+        assert not validate_grounded_semantic_restatement_witness(
+            witness,
+            plan=plan,
+            resolver=resolver,
+        )
+        assert witness.as_body_free_meta()["body_free"] is True
+
+
+def test_unverbalized_owner_requires_one_exact_user_stated_link() -> None:
+    plan, resolver, witness = _case_artifacts("nls3s_b001_0041")
+    relation = plan.relations[0]
+    non_authoritative = replace(
+        plan,
+        relations=(
+            replace(
+                relation,
+                grounding_kind="bounded_structural_inference",
+            ),
+        ),
+    )
+    without_exact_link = semantic_module._explicit_unknown_witnesses(
+        non_authoritative,
+        _resolved_spans(resolver),
+        witness.semantic_units,
+        witness.relations,
+        witness.semantic_links,
+    )
+    assert not any(
+        row.dimension == "explicit_unverbalized_unknown"
+        for row in without_exact_link
+    )
+
+    duplicate = replace(relation, relation_id="relation:r999")
+    ambiguous = replace(
+        plan,
+        relations=(*plan.relations, duplicate),
+        coverage_requirements=replace(
+            plan.coverage_requirements,
+            required_relation_ids=(
+                *plan.coverage_requirements.required_relation_ids,
+                duplicate.relation_id,
+            ),
+        ),
+    )
+    with pytest.raises(GroundedSemanticRestatementError) as error:
+        semantic_module._explicit_unknown_witnesses(
+            ambiguous,
+            _resolved_spans(resolver),
+            witness.semantic_units,
+            witness.relations,
+            witness.semantic_links,
+        )
+    assert error.value.code == "SEMANTIC_RESTATEMENT_OPEN_SLOT_AMBIGUOUS"
+
+
+def test_temporal_unknown_requires_an_exact_required_precedes_link() -> None:
+    plan, resolver, witness = _case_artifacts("nls3s_b001_0054")
+    assert tuple(
+        (row.dimension, row.affected_unit_ids)
+        for row in witness.explicit_unknowns
+        if row.dimension == "explicit_temporal_referent_unknown"
+    ) == (
+        (
+            "explicit_temporal_referent_unknown",
+            (witness.semantic_links[0].from_unit_id,),
+        ),
+    )
+    without_required_link = semantic_module._explicit_unknown_witnesses(
+        plan,
+        _resolved_spans(resolver),
+        witness.semantic_units,
+        witness.relations,
+        (replace(witness.semantic_links[0], required=False),),
+    )
+    assert not any(
+        row.dimension == "explicit_temporal_referent_unknown"
+        for row in without_required_link
+    )
+
+
+def test_completion_open_slot_requires_one_exact_response_governor() -> None:
+    plan, resolver, witness = _case_artifacts("nls3s_b001_0093")
+    assert tuple(
+        (row.dimension, row.affected_unit_ids)
+        for row in witness.explicit_unknowns
+    ) == (("explicit_referent_unknown", ("nucleus:s3",)),)
+
+    ambiguous = replace(
+        plan,
+        response_plan=replace(
+            plan.response_plan,
+            primary_nucleus_ids=(),
+            human_follow_target_ids=(),
+            human_reception_plan=None,
+        ),
+    )
+    with pytest.raises(GroundedSemanticRestatementError) as error:
+        semantic_module._explicit_unknown_witnesses(
+            ambiguous,
+            _resolved_spans(resolver),
+            witness.semantic_units,
+            witness.relations,
+            witness.semantic_links,
+        )
+    assert error.value.code == "SEMANTIC_RESTATEMENT_OPEN_SLOT_AMBIGUOUS"
+
+
 def _cross_role_api_or_red():
     required = (
         "GROUND_CROSS_ROLE_SEMANTIC_RESTATEMENT_WITNESS_SCHEMA",

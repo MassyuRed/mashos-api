@@ -6,14 +6,14 @@ from __future__ import annotations
 
 This one-shot private runner rebuilds upstream typed sources request-locally.
 It imports no prior Step11 runtime adapter, Gate, or selector and accepts only
-the distinct rc0035 recovery identity after source-bound inverse validation.
+the distinct rc0036 recovery identity after source-bound inverse validation.
 Body-full rows are written only beside a body-free HMAC summary in an existing
 caller-owned 0700 directory outside the repository.
 """
 
 import argparse
 import ast
-from collections import Counter
+from collections import Counter, defaultdict
 from concurrent.futures import ProcessPoolExecutor
 from contextlib import redirect_stderr, redirect_stdout
 from dataclasses import dataclass
@@ -116,26 +116,26 @@ _PRIVATE_SCHEMA = "cocolon.emlis.nls_v3.current_rc.g8.private_exact100.v4"
 _BODY_FREE_SCHEMA = (
     "cocolon.emlis.nls_v3.current_rc.g8.body_free_exact100.v4"
 )
-_RECOVERY_CANDIDATE_VERSION = "nls_v3_rc_0035_cycle001_product_recovery"
+_RECOVERY_CANDIDATE_VERSION = "nls_v3_rc_0036_cycle001_product_quality"
 _RECOVERY_CANDIDATE_SCHEMA = (
     "cocolon.emlis.nls_v3.step11."
-    "cycle001_product_recovery_candidate.rc0035.v1"
+    "cycle001_product_quality_candidate.rc0036.v1"
 )
 _RECOVERY_OWNER_SCHEMA = (
     "cocolon.emlis.nls_v3.step11."
-    "cycle001_product_recovery_owner.rc0035.v1"
+    "cycle001_product_recovery_owner.rc0036.v1"
 )
 _RECOVERY_SOURCE_SCHEMA = (
     "cocolon.emlis.nls_v3.step11."
-    "cycle001_product_recovery_source.rc0035.v1"
+    "cycle001_product_recovery_source.rc0036.v1"
 )
 _RECOVERY_PLAN_SCHEMA = (
     "cocolon.emlis.nls_v3.step11."
-    "cycle001_product_recovery_plan.rc0035.v1"
+    "cycle001_product_recovery_plan.rc0036.v1"
 )
 _RECOVERY_RENDERED_SCHEMA = (
     "cocolon.emlis.nls_v3.step11."
-    "cycle001_product_recovery_rendered.rc0035.v1"
+    "cycle001_product_recovery_rendered.rc0036.v1"
 )
 _CASE_RE = re.compile(r"^nls3s_b001_[0-9]{4}$")
 _RUN_ID_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{2,63}$")
@@ -825,6 +825,10 @@ class _ExpectedAtom:
     source_span_ids: tuple[str, ...]
     source_evidence_alias_ids: tuple[str, ...]
     source_marker_span_ids: tuple[str, ...]
+    source_grounding_kind: str
+    source_relation_ids: tuple[str, ...]
+    authority_basis: str
+    source_retention: str
     construction_roles: tuple[_ExpectedConstructionRole, ...]
     source_order: int
     surface_token: str
@@ -874,6 +878,74 @@ class _ExpectedRecovery:
     candidate_boundary_sha256: str
     catalog: Mapping[str, Any]
     grammar: Mapping[str, Any]
+    visible_authority: Any | None = None
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class _ExpectedVisibleMove:
+    """One source-authorised visible move, without a completed sentence."""
+
+    section_role: str
+    family: str
+    source_unit_id: str
+    source_atom_ids: tuple[str, ...]
+    source_owner_ids: tuple[str, ...]
+    source_obligation_ids: tuple[str, ...]
+    source_fragment_ids: tuple[str, ...]
+    dimensions: tuple[str, str, str, str]
+    semantic_key: str = ""
+    direction: str = ""
+    target_owner_ids: tuple[str, ...] = ()
+    support_owner_ids: tuple[str, ...] = ()
+    grounded_phrase_id: str = ""
+    grounded_feature_sha256: str = ""
+    action_lifecycle: str = ""
+    open_unknown: bool = False
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class _ParsedVisibleNode:
+    """Body-only typed clause signature without reconstructed prose."""
+
+    section_role: str
+    family: str
+    visible_owner_ids: tuple[str, ...]
+    semantic_key: str
+    source_fragment_ids: tuple[str, ...] = ()
+    target_owner_ids: tuple[str, ...] = ()
+    support_owner_ids: tuple[str, ...] = ()
+    open_unknown: bool = False
+    intended_action: bool = False
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class _ExpectedVisibleAuthority:
+    """Independent overlay/lexical authority used by the private runner."""
+
+    active_discourse_plan: Mapping[str, Any]
+    semantic_overlay: Any
+    active_discourse_plan_sha256: str
+    semantic_overlay_sha256: str
+    source_to_owner: Mapping[str, str]
+    owner_to_source: Mapping[str, str]
+    ordered_owner_ids: tuple[str, ...]
+    plain_phrase_by_owner: Mapping[str, str]
+    first_phrase_by_owner: Mapping[str, str]
+    phrase_id_by_owner: Mapping[str, str]
+    feature_sha256_by_owner: Mapping[str, str]
+    owner_reference_by_owner: Mapping[str, str]
+    specificity_companion_phrase: str | None
+    moves: tuple[_ExpectedVisibleMove, ...] = ()
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class _ExpectedAnchorFragment:
+    source_slot: str
+    source_start: int
+    source_end: int
+    source_anchor_id: str
+    text: str
+    source_nucleus_ids: tuple[str, ...]
 
 
 def _build_direct_recovery_context(
@@ -1081,7 +1153,7 @@ def _relation_source_dimensions(
     )
 
 
-def _direct_expected_recovery(
+def _direct_expected_recovery_base(
     context: _DirectRecoveryContext,
 ) -> _ExpectedRecovery:
     """Derive the complete expected recovery signature from upstream only."""
@@ -1150,24 +1222,27 @@ def _direct_expected_recovery(
             source_to_owner.get(str(value), str(value))
             for value in opportunity.support_nucleus_ids
         )
+        focus_owner_ids = _ordered_unique_strings((*targets, *supports))
         if (
             not targets
+            or not focus_owner_ids
             or any(value not in nucleus_by_owner for value in targets)
             or any(value not in nucleus_by_owner for value in supports)
+            or any(value not in nucleus_by_owner for value in focus_owner_ids)
         ):
             raise CurrentRcG8RunError(
                 "CURRENT_RC_G8_DIRECT_SOURCE_CONTEXT_INVALID"
             )
         inventory_act = str(opportunity.reception_act)
-        intention = any(
-            str(nucleus_by_owner[value].modality) == "intended"
-            or str(nucleus_by_owner[value].temporal_scope)
-            in {"future", "present_to_future", "intended_future"}
+        concrete_action = all(
+            str(nucleus_by_owner[value].modality) in {"observed", "reported"}
+            and str(nucleus_by_owner[value].temporal_scope)
+            not in {"future", "present_to_future", "intended_future"}
             for value in targets
         )
-        if inventory_act == "honor_concrete_action" and intention:
+        if inventory_act == "honor_concrete_action" and not concrete_action:
             effective = "do_not_dismiss"
-            basis = "intended_or_future_action_nonpromotion"
+            basis = "nonactual_action_nonpromotion"
         else:
             effective = inventory_act
             basis = "source_reception_act_projection"
@@ -1175,7 +1250,7 @@ def _direct_expected_recovery(
             _ExpectedReception(
                 source_reception_opportunity_id=str(opportunity.source_id),
                 source_scope=str(opportunity.family),
-                source_focus_owner_ids=(),
+                source_focus_owner_ids=focus_owner_ids,
                 source_target_owner_ids=targets,
                 supporting_source_owner_ids=supports,
                 visible_support_owner_ids=tuple(
@@ -1187,6 +1262,10 @@ def _direct_expected_recovery(
                 sentence_group_ordinal=ordinal,
             )
         )
+
+    focus_owner_ids = _ordered_unique_strings(
+        value for row in receptions for value in row.source_focus_owner_ids
+    )
 
     obligations = tuple(context.inventory_result.ledger["obligations"])
     grounded_nucleus_by_id = {
@@ -1236,7 +1315,7 @@ def _direct_expected_recovery(
         }
         return _ExpectedFragment(
             source_fragment_id=(
-                "nls3s11rc0035fragment_" + artifact_sha256(material)[:16]
+                "nls3s11rc0036fragment_" + artifact_sha256(material)[:16]
             ),
             source_owner_id=owner_id,
             source_nucleus_id=nucleus_id,
@@ -1249,11 +1328,41 @@ def _direct_expected_recovery(
             binding_basis=basis,
         )
 
+    root_active_owner_ids = {
+        *focus_owner_ids,
+        *(
+            value
+            for row in receptions
+            for value in (
+                *row.source_target_owner_ids,
+                *row.visible_support_owner_ids,
+            )
+        ),
+        *(
+            owner_by_ordinal[int(value)]
+            for row in lexical.construction_atoms
+            for value in row.target_owner_ordinals
+        ),
+        *(str(row.source_owner_id) for row in lexical.relation_endpoint_atoms),
+        *(
+            value
+            for row in lexical.semantic_link_atoms
+            for value in (
+                str(row.from_semantic_unit_id),
+                str(row.to_semantic_unit_id),
+            )
+        ),
+        *(
+            str(owner_id)
+            for row in lexical.explicit_unknown_atoms
+            for _kind, owner_id, _ordinal in row.affected_source_owners
+        ),
+    }
     roots: list[_ExpectedRoot] = []
     for nucleus in snapshot.nuclei:
-        if nucleus.required is not True:
-            continue
         owner_id = str(nucleus.actual_source_id)
+        if nucleus.required is not True and owner_id not in root_active_owner_ids:
+            continue
         nucleus_id = str(nucleus.source_id)
         aliases = {owner_id, nucleus_id}
         obligation_ids = tuple(
@@ -1306,11 +1415,12 @@ def _direct_expected_recovery(
             ],
             "semantic_kind": str(nucleus.kind),
             "dimensions": list(dimensions),
+            "required": bool(nucleus.required),
         }
         roots.append(
             _ExpectedRoot(
                 source_root_id=(
-                    "nls3s11rc0035root_"
+                    "nls3s11rc0036root_"
                     + artifact_sha256(root_material)[:16]
                 ),
                 source_owner_id=owner_id,
@@ -1319,7 +1429,7 @@ def _direct_expected_recovery(
                 source_fragments=fragments,
                 semantic_kind=str(nucleus.kind),
                 dimensions=dimensions,
-                required=True,
+                required=bool(nucleus.required),
             )
         )
 
@@ -1400,6 +1510,10 @@ def _direct_expected_recovery(
                     str(value) for value in instance.evidence_alias_ids
                 ),
                 source_marker_span_ids=(),
+                source_grounding_kind="",
+                source_relation_ids=(),
+                authority_basis="",
+                source_retention="",
                 construction_roles=tuple(roles),
                 source_order=len(atom_rows) + 1,
                 surface_token=str(instance.construction_surface_token),
@@ -1478,6 +1592,12 @@ def _direct_expected_recovery(
                     for spec in relation_specs.get(atom_id, ())
                     if spec.marker_source_span_id is not None
                 ),
+                source_grounding_kind=str(authority.source_grounding_kind),
+                source_relation_ids=tuple(
+                    str(value) for value in authority.source_relation_ids
+                ),
+                authority_basis=str(authority.authority_basis),
+                source_retention=str(authority.source_retention),
                 construction_roles=(),
                 source_order=len(atom_rows) + 1,
                 surface_token="",
@@ -1539,6 +1659,10 @@ def _direct_expected_recovery(
                 source_span_ids=(str(spec.source_span_id),),
                 source_evidence_alias_ids=(),
                 source_marker_span_ids=(),
+                source_grounding_kind="explicit_semantic_link",
+                source_relation_ids=(atom_id,),
+                authority_basis="semantic_link_binding",
+                source_retention="required" if bool(link.required) else "optional",
                 construction_roles=(),
                 source_order=len(atom_rows) + 1,
                 surface_token="",
@@ -1589,6 +1713,10 @@ def _direct_expected_recovery(
                 source_span_ids=(str(spec.source_span_id),),
                 source_evidence_alias_ids=(),
                 source_marker_span_ids=(),
+                source_grounding_kind="",
+                source_relation_ids=(),
+                authority_basis="",
+                source_retention="",
                 construction_roles=(),
                 source_order=len(atom_rows) + 1,
                 surface_token="",
@@ -1938,6 +2066,1571 @@ def _direct_expected_recovery(
         candidate_boundary_sha256=candidate_boundary_sha256,
         catalog=catalog,
         grammar=grammar,
+    )
+
+
+def _expected_active_discourse_plan(
+    context: _DirectRecoveryContext,
+) -> Mapping[str, Any]:
+    """Select a source topology without consulting the production renderer."""
+
+    obligations = tuple(context.inventory_result.ledger["obligations"])
+    obligation_rank = {
+        str(row["obligation_id"]): ordinal
+        for ordinal, row in enumerate(obligations)
+    }
+
+    def topology_key(plan: Mapping[str, Any]) -> tuple[Any, ...]:
+        nodes = tuple(plan.get("nodes", ()))
+        groups = tuple(plan.get("sentence_groups", ()))
+        edges = tuple(plan.get("edges", ()))
+        node_obligation = {
+            str(row["node_id"]): str(row["obligation_id"])
+            for row in nodes
+        }
+        if (
+            len(node_obligation) != len(nodes)
+            or not set(node_obligation.values()) <= set(obligation_rank)
+        ):
+            raise CurrentRcG8RunError(
+                "CURRENT_RC_G8_DIRECT_SOURCE_CONTEXT_INVALID"
+            )
+        group_topology = tuple(
+            (
+                0 if str(group["section_role"]) == "observation" else 1,
+                tuple(
+                    obligation_rank[node_obligation[str(node_id)]]
+                    for node_id in group["node_ids"]
+                ),
+            )
+            for group in groups
+        )
+        observation_widths = tuple(
+            len(group["node_ids"])
+            for group in groups
+            if str(group["section_role"]) == "observation"
+        )
+        reception_widths = tuple(
+            len(group["node_ids"])
+            for group in groups
+            if str(group["section_role"]) == "reception"
+        )
+        edge_topology = tuple(
+            sorted(
+                (
+                    str(edge["type"]),
+                    obligation_rank[node_obligation[str(edge["from"])]],
+                    obligation_rank[node_obligation[str(edge["to"])]],
+                )
+                for edge in edges
+            )
+        )
+        return (
+            max(observation_widths, default=0),
+            max(reception_widths, default=0),
+            -len(observation_widths),
+            -len(reception_widths),
+            group_topology,
+            edge_topology,
+        )
+
+    plans = tuple(context.discourse_plans)
+    if not plans:
+        raise CurrentRcG8RunError(
+            "CURRENT_RC_G8_DIRECT_SOURCE_CONTEXT_INVALID"
+        )
+    return min(plans, key=topology_key)
+
+
+def _expected_overlay_visible_features(overlay: Any) -> dict[str, dict[str, str]]:
+    from emlis_ai_step11_surface_catalog_v3 import STEP11_SURFACE_CATALOG
+
+    strength_by_anchor = {
+        str(row.label_anchor_id): row.strength
+        for row in overlay.label_anchors
+    }
+    allowed_lifecycles = frozenset(
+        STEP11_SURFACE_CATALOG["grounded_lexicalization"]
+        ["lifecycle_authority_policy"]["action_projection"]
+    )
+    result: dict[str, dict[str, str]] = {}
+    for binding in overlay.nucleus_anchor_bindings:
+        strengths = {
+            strength_by_anchor[str(anchor_id)]
+            for anchor_id in binding.source_label_anchor_ids
+            if str(anchor_id) in strength_by_anchor
+            and strength_by_anchor[str(anchor_id)] is not None
+        }
+        if len(strengths) > 1:
+            raise CurrentRcG8RunError(
+                "CURRENT_RC_G8_DIRECT_SOURCE_CONTEXT_INVALID"
+            )
+        if strengths:
+            result.setdefault(str(binding.nucleus_id), {})[
+                "label_strength"
+            ] = str(next(iter(strengths)))
+        if str(binding.realization_status) in allowed_lifecycles:
+            result.setdefault(str(binding.nucleus_id), {})[
+                "realization_lifecycle"
+            ] = str(binding.realization_status)
+    return result
+
+
+def _build_expected_projection_authority(
+    context: _DirectRecoveryContext,
+) -> _ExpectedVisibleAuthority:
+    """Rebuild active overlay and grounded owner phrases from source only."""
+
+    from emlis_ai_nls_v3_artifact_contract import artifact_sha256
+    from emlis_ai_step11_grounded_lexicalization_v3 import (
+        Step11GroundedLexicalizationError,
+        build_step11_grounded_phrase_specs,
+        render_step11_grounded_phrase,
+        select_step11_visible_source_anchor_use,
+    )
+    from emlis_ai_step11_semantic_overlay_v3 import (
+        build_step11_semantic_overlay,
+        step11_semantic_overlay_material,
+    )
+
+    active_plan = _expected_active_discourse_plan(context)
+    overlay = build_step11_semantic_overlay(
+        dict(context.projected_current_input),
+        inventory_result=context.inventory_result,
+        content_plan=context.content_plan,
+        discourse_plan=active_plan,
+    )
+    snapshot = context.inventory_result.source_snapshot
+    nuclei = tuple(snapshot.nuclei)
+    nucleus_by_source = {str(row.source_id): row for row in nuclei}
+    source_to_owner = {
+        str(row.source_id): str(row.actual_source_id) for row in nuclei
+    }
+    owner_to_source = {
+        str(row.actual_source_id): str(row.source_id) for row in nuclei
+    }
+
+    def canonical(value: Any) -> str:
+        key = str(value)
+        return key if key in nucleus_by_source else owner_to_source.get(key, key)
+
+    obligations = tuple(context.inventory_result.ledger["obligations"])
+    obligation_by_id = {
+        str(row["obligation_id"]): row for row in obligations
+    }
+    node_by_id = {
+        str(row["node_id"]): row for row in active_plan["nodes"]
+    }
+    discourse_nucleus_ids = tuple(
+        canonical(nucleus_id)
+        for group in active_plan["sentence_groups"]
+        for node_id in group["node_ids"]
+        for nucleus_id in obligation_by_id[
+            str(node_by_id[str(node_id)]["obligation_id"])
+        ].get("nucleus_ids", ())
+    )
+    authority_nucleus_ids = (
+        *overlay.planning_frontier.active_nucleus_ids,
+        *(
+            nucleus_id
+            for relation in overlay.relations
+            for nucleus_id in (
+                relation.from_nucleus_id,
+                relation.to_nucleus_id,
+            )
+        ),
+        *(
+            nucleus_id
+            for unknown in overlay.unknowns
+            for nucleus_id in (
+                *unknown.target_nucleus_ids,
+                *unknown.context_nucleus_ids,
+            )
+        ),
+        *(
+            nucleus_id
+            for binding in overlay.reception_antecedent_bindings
+            for nucleus_id in (
+                *binding.antecedent_nucleus_ids,
+                *binding.supporting_nucleus_ids,
+                *binding.source_target_nucleus_ids,
+            )
+        ),
+    )
+    source_order = {
+        str(row.source_id): ordinal for ordinal, row in enumerate(nuclei)
+    }
+    ordered_source_ids = _ordered_unique_strings(
+        (
+            *discourse_nucleus_ids,
+            *sorted(
+                (canonical(value) for value in authority_nucleus_ids),
+                key=lambda value: source_order.get(value, len(source_order)),
+            ),
+        )
+    )
+    if (
+        not ordered_source_ids
+        or any(value not in source_to_owner for value in ordered_source_ids)
+    ):
+        raise CurrentRcG8RunError(
+            "CURRENT_RC_G8_DIRECT_SOURCE_CONTEXT_INVALID"
+        )
+    participating = set(
+        str(value)
+        for value in overlay.planning_frontier.participating_obligation_ids
+    )
+
+    def owner_obligations(nucleus_id: str) -> tuple[str, ...]:
+        selected = tuple(
+            str(row["obligation_id"])
+            for row in obligations
+            if str(row["obligation_id"]) in participating
+            and nucleus_id in {canonical(value) for value in row["nucleus_ids"]}
+        )
+        fallback = tuple(
+            str(row["obligation_id"])
+            for row in obligations
+            if nucleus_id in {canonical(value) for value in row["nucleus_ids"]}
+        )
+        result = selected or fallback
+        if not result:
+            raise CurrentRcG8RunError(
+                "CURRENT_RC_G8_DIRECT_SOURCE_CONTEXT_INVALID"
+            )
+        return result
+
+    extra_features = _expected_overlay_visible_features(overlay)
+    spec_by_source: dict[str, Any] = {}
+    for nucleus_id in ordered_source_ids:
+        try:
+            rows = build_step11_grounded_phrase_specs(
+                snapshot,
+                (),
+                additional_owner_obligation_ids={
+                    nucleus_id: owner_obligations(nucleus_id)
+                },
+                additional_visible_feature_values=(
+                    {nucleus_id: extra_features[nucleus_id]}
+                    if nucleus_id in extra_features
+                    else None
+                ),
+            )
+        except Step11GroundedLexicalizationError as exc:
+            raise CurrentRcG8RunError(exc.code) from None
+        if len(rows) != 1 or rows[0].owner_nucleus_ids != (nucleus_id,):
+            raise CurrentRcG8RunError(
+                "CURRENT_RC_G8_DIRECT_SOURCE_CONTEXT_INVALID"
+            )
+        spec_by_source[nucleus_id] = rows[0]
+
+    nuclei_by_anchor: dict[str, list[str]] = defaultdict(list)
+    for binding in overlay.nucleus_anchor_bindings:
+        for anchor_id in binding.source_anchor_ids:
+            nuclei_by_anchor[str(anchor_id)].append(str(binding.nucleus_id))
+    anchor_fragments = tuple(
+        _ExpectedAnchorFragment(
+            source_slot=str(anchor.source_slot),
+            source_start=int(anchor.start),
+            source_end=int(anchor.end),
+            source_anchor_id=str(anchor.anchor_id),
+            text=str(anchor.text),
+            source_nucleus_ids=tuple(
+                sorted(nuclei_by_anchor.get(str(anchor.anchor_id), ()))
+            ),
+        )
+        for anchor in overlay.anchors
+        if str(anchor.role) == "nucleus"
+    )
+    selected_anchor = None
+    selected_anchor_source_id: str | None = None
+    for nucleus_id in ordered_source_ids:
+        owner_fragments = tuple(
+            row for row in anchor_fragments
+            if nucleus_id in row.source_nucleus_ids
+        )
+        if not owner_fragments:
+            continue
+        try:
+            selected_anchor = select_step11_visible_source_anchor_use(
+                (spec_by_source[nucleus_id],),
+                owner_fragments,
+                preferred_owner_nucleus_ids=(nucleus_id,),
+                require_input_specific_binding=True,
+            )
+        except Step11GroundedLexicalizationError as exc:
+            if exc.code == "STEP11_INPUT_SPECIFIC_ANCHOR_UNRESOLVED":
+                continue
+            raise CurrentRcG8RunError(exc.code) from None
+        selected_anchor_source_id = nucleus_id
+        break
+
+    companion_phrase: str | None = None
+    if selected_anchor is None:
+        evidence_alias_by_actual = {
+            str(row.actual_source_id): str(row.alias_source_id)
+            for row in snapshot.source_id_alias_bindings
+            if str(row.source_kind) == "evidence"
+        }
+        label_candidates = sorted(
+            overlay.label_anchors,
+            key=lambda row: (
+                0 if str(row.source_field) == "category" else 1,
+                int(row.source_ordinal),
+            ),
+        )
+        for label_anchor in label_candidates:
+            evidence_alias = evidence_alias_by_actual.get(
+                str(label_anchor.evidence_span_id)
+            )
+            matches = tuple(
+                row for row in nuclei
+                if evidence_alias is not None
+                and evidence_alias in row.evidence_ids
+                and str(label_anchor.source_field) in row.source_fields
+            )
+            if len(matches) != 1:
+                continue
+            nucleus_id = str(matches[0].source_id)
+            features = (
+                {nucleus_id: {"label_strength": str(label_anchor.strength)}}
+                if label_anchor.strength is not None
+                else None
+            )
+            try:
+                rows = build_step11_grounded_phrase_specs(
+                    snapshot,
+                    (),
+                    additional_owner_obligation_ids={
+                        nucleus_id: owner_obligations(nucleus_id)
+                    },
+                    additional_visible_feature_values=features,
+                )
+                if len(rows) != 1:
+                    continue
+                fragment = _ExpectedAnchorFragment(
+                    source_slot=str(label_anchor.source_slot),
+                    source_start=0,
+                    source_end=len(str(label_anchor.label)),
+                    source_anchor_id=str(label_anchor.label_anchor_id),
+                    text=str(label_anchor.label),
+                    source_nucleus_ids=(nucleus_id,),
+                )
+                anchor_use = select_step11_visible_source_anchor_use(
+                    rows,
+                    (fragment,),
+                    preferred_owner_nucleus_ids=(nucleus_id,),
+                    require_input_specific_binding=True,
+                )
+                companion_phrase = render_step11_grounded_phrase(
+                    rows[0], anchor_use
+                )
+            except Step11GroundedLexicalizationError as exc:
+                if exc.code == "STEP11_INPUT_SPECIFIC_ANCHOR_UNRESOLVED":
+                    continue
+                raise CurrentRcG8RunError(exc.code) from None
+            break
+        if companion_phrase is None:
+            raise CurrentRcG8RunError(
+                "CURRENT_RC_G8_DIRECT_SOURCE_CONTEXT_INVALID"
+            )
+
+    plain_phrase_by_owner = {
+        source_to_owner[source_id]: render_step11_grounded_phrase(spec)
+        for source_id, spec in spec_by_source.items()
+    }
+    first_phrase_by_owner = dict(plain_phrase_by_owner)
+    if selected_anchor is not None and selected_anchor_source_id is not None:
+        owner_id = source_to_owner[selected_anchor_source_id]
+        first_phrase_by_owner[owner_id] = render_step11_grounded_phrase(
+            spec_by_source[selected_anchor_source_id], selected_anchor
+        )
+
+    owner_ids = tuple(source_to_owner[value] for value in ordered_source_ids)
+    owners_by_phrase: dict[str, list[str]] = defaultdict(list)
+    for owner_id in owner_ids:
+        owners_by_phrase[plain_phrase_by_owner[owner_id]].append(owner_id)
+    references: dict[str, str] = {}
+    for phrase, rows in owners_by_phrase.items():
+        if len(rows) == 1:
+            references[rows[0]] = "その" + phrase
+        elif len(rows) == 2:
+            references[rows[0]] = "先に示した" + phrase
+            references[rows[1]] = "後に示した" + phrase
+        else:
+            for ordinal, owner_id in enumerate(rows, start=1):
+                references[owner_id] = str(ordinal) + "番目に示した" + phrase
+    if len(references) != len(owner_ids) or len(set(references.values())) != len(
+        references
+    ):
+        raise CurrentRcG8RunError(
+            "CURRENT_RC_G8_DIRECT_SOURCE_CONTEXT_INVALID"
+        )
+    return _ExpectedVisibleAuthority(
+        active_discourse_plan=active_plan,
+        semantic_overlay=overlay,
+        active_discourse_plan_sha256=artifact_sha256(active_plan),
+        semantic_overlay_sha256=artifact_sha256(
+            step11_semantic_overlay_material(overlay, include_id=False)
+        ),
+        source_to_owner=source_to_owner,
+        owner_to_source=owner_to_source,
+        ordered_owner_ids=owner_ids,
+        plain_phrase_by_owner=plain_phrase_by_owner,
+        first_phrase_by_owner=first_phrase_by_owner,
+        phrase_id_by_owner={
+            source_to_owner[source_id]: str(spec.grounded_phrase_id)
+            for source_id, spec in spec_by_source.items()
+        },
+        feature_sha256_by_owner={
+            source_to_owner[source_id]: str(
+                spec.visible_feature_fingerprint_sha256
+            )
+            for source_id, spec in spec_by_source.items()
+        },
+        owner_reference_by_owner=references,
+        specificity_companion_phrase=companion_phrase,
+    )
+
+
+def _expected_overlay_receptions(
+    context: _DirectRecoveryContext,
+    authority: _ExpectedVisibleAuthority,
+) -> tuple[_ExpectedReception, ...]:
+    snapshot = context.successor_snapshot.base_snapshot
+    nuclei_by_owner = {
+        str(row.actual_source_id): row for row in snapshot.nuclei
+    }
+    opportunities: dict[str, Any] = {}
+    for row in snapshot.reception_opportunities:
+        opportunities[str(row.source_id)] = row
+        opportunities[str(row.actual_source_id)] = row
+    result: list[_ExpectedReception] = []
+    for ordinal, binding in enumerate(
+        authority.semantic_overlay.reception_antecedent_bindings, start=1
+    ):
+        matches: list[Any] = []
+        seen: set[str] = set()
+        for value in binding.source_reception_opportunity_ids:
+            row = opportunities.get(str(value))
+            if row is None or str(row.source_id) in seen:
+                continue
+            matches.append(row)
+            seen.add(str(row.source_id))
+        if len(matches) != 1:
+            raise CurrentRcG8RunError(
+                "CURRENT_RC_G8_DIRECT_SOURCE_CONTEXT_INVALID"
+            )
+        opportunity = matches[0]
+        antecedents = (
+            tuple(binding.antecedent_nucleus_ids)
+            or tuple(binding.source_target_nucleus_ids)
+        )
+        targets = _ordered_unique_strings(
+            authority.source_to_owner.get(str(value), str(value))
+            for value in antecedents
+        )
+        supports = _ordered_unique_strings(
+            authority.source_to_owner.get(str(value), str(value))
+            for value in binding.supporting_nucleus_ids
+        )
+        focus = _ordered_unique_strings((*targets, *supports))
+        if (
+            not targets
+            or not focus
+            or any(value not in nuclei_by_owner for value in focus)
+        ):
+            raise CurrentRcG8RunError(
+                "CURRENT_RC_G8_DIRECT_SOURCE_CONTEXT_INVALID"
+            )
+        inventory_act = str(opportunity.reception_act)
+        if inventory_act not in set(str(value) for value in binding.allowed_response_acts):
+            raise CurrentRcG8RunError(
+                "CURRENT_RC_G8_DIRECT_SOURCE_CONTEXT_INVALID"
+            )
+        concrete = str(binding.action_lifecycle) in {
+            "reported_completed",
+            "reported_ongoing",
+        }
+        if inventory_act == "honor_concrete_action" and not concrete:
+            effective = "do_not_dismiss"
+            basis = "nonactual_action_nonpromotion"
+        else:
+            effective = inventory_act
+            basis = "source_reception_act_projection"
+        result.append(
+            _ExpectedReception(
+                source_reception_opportunity_id=str(opportunity.source_id),
+                source_scope=str(opportunity.family),
+                source_focus_owner_ids=focus,
+                source_target_owner_ids=targets,
+                supporting_source_owner_ids=supports,
+                visible_support_owner_ids=tuple(
+                    value for value in supports if value not in set(targets)
+                ),
+                inventory_reception_act=inventory_act,
+                effective_reception_act=effective,
+                act_refinement_basis=basis,
+                sentence_group_ordinal=ordinal,
+            )
+        )
+    if not result:
+        raise CurrentRcG8RunError(
+            "CURRENT_RC_G8_DIRECT_SOURCE_CONTEXT_INVALID"
+        )
+    return tuple(result)
+
+
+def _expected_alias_identities(
+    context: _DirectRecoveryContext,
+) -> Mapping[str, frozenset[str]]:
+    peers: dict[str, set[str]] = defaultdict(set)
+    for binding in context.successor_snapshot.base_snapshot.source_id_alias_bindings:
+        if str(binding.source_kind) not in {"relation", "unknown_boundary"}:
+            continue
+        actual = str(binding.actual_source_id)
+        alias = str(binding.alias_source_id)
+        peers[actual].update((actual, alias))
+        peers[alias].update((actual, alias))
+    return {key: frozenset(values) for key, values in peers.items()}
+
+
+def _identity_closure(
+    values: Sequence[Any], aliases: Mapping[str, frozenset[str]]
+) -> frozenset[str]:
+    result: set[str] = set()
+    for value in values:
+        key = str(value)
+        result.add(key)
+        result.update(aliases.get(key, ()))
+    return frozenset(result)
+
+
+def _expected_active_atoms(
+    context: _DirectRecoveryContext,
+    base: _ExpectedRecovery,
+    authority: _ExpectedVisibleAuthority,
+) -> tuple[_ExpectedAtom, ...]:
+    active_owners = set(authority.ordered_owner_ids)
+    aliases = _expected_alias_identities(context)
+    selected: list[_ExpectedAtom] = []
+    selected_ids: set[str] = set()
+    for atom in base.atoms:
+        if (
+            atom.semantic_family == "construction"
+            and set(atom.source_owner_ids) <= active_owners
+        ):
+            selected.append(atom)
+            selected_ids.add(atom.source_atom_id)
+    for relation in authority.semantic_overlay.relations:
+        if not relation.required and not relation.explicit:
+            continue
+        owners = (
+            authority.source_to_owner[str(relation.from_nucleus_id)],
+            authority.source_to_owner[str(relation.to_nucleus_id)],
+        )
+        matches = tuple(
+            atom for atom in base.atoms
+            if atom.semantic_family in {"relation", "semantic_link"}
+            and atom.source_atom_id not in selected_ids
+            and tuple(atom.source_owner_ids[:2]) == owners
+        )
+        if len(matches) != 1:
+            raise CurrentRcG8RunError(
+                "CURRENT_RC_G8_DIRECT_SOURCE_CONTEXT_INVALID"
+            )
+        selected.append(matches[0])
+        selected_ids.add(matches[0].source_atom_id)
+    for unknown in authority.semantic_overlay.unknowns:
+        unknown_ids = _identity_closure(unknown.source_unknown_ids, aliases)
+        owners = {
+            authority.source_to_owner[str(value)]
+            for value in (
+                *unknown.target_nucleus_ids,
+                *unknown.context_nucleus_ids,
+            )
+            if str(value) in authority.source_to_owner
+        }
+        matches = tuple(
+            atom for atom in base.atoms
+            if atom.semantic_family == "explicit_unknown"
+            and atom.source_atom_id not in selected_ids
+            and _identity_closure((atom.source_atom_id,), aliases) & unknown_ids
+            and bool(set(atom.source_owner_ids) & owners)
+        )
+        if not matches:
+            raise CurrentRcG8RunError(
+                "CURRENT_RC_G8_DIRECT_SOURCE_CONTEXT_INVALID"
+            )
+        selected.extend(matches)
+        selected_ids.update(row.source_atom_id for row in matches)
+    return tuple(sorted(selected, key=lambda row: row.source_order))
+
+
+def _expected_role_tokens(
+    context: _DirectRecoveryContext,
+    receptions: Sequence[_ExpectedReception],
+) -> Mapping[str, tuple[str, ...]]:
+    from emlis_ai_step11_rc0029_experiment_surface_catalog_v3 import (
+        STEP11_RC0029_EXPERIMENT_SURFACE_CATALOG,
+    )
+
+    lexical = context.lexical_atom_specs
+    rows: dict[str, list[str]] = defaultdict(list)
+    catalog = STEP11_RC0029_EXPERIMENT_SURFACE_CATALOG[
+        "owner_role_surface_tokens"
+    ]
+    owner_by_ordinal = {
+        int(row.owner_ordinal): str(row.source_owner_id)
+        for row in lexical.owner_bindings
+    }
+    for atom in lexical.construction_atoms:
+        for ordinal in atom.target_owner_ordinals:
+            rows[owner_by_ordinal[int(ordinal)]].append(
+                str(atom.role_position_surface_token)
+            )
+    for atom in lexical.relation_endpoint_atoms:
+        rows[str(atom.source_owner_id)].append(
+            str(atom.relation_surface_token)
+            + str(catalog["relation_" + str(atom.relation_endpoint_role)])
+        )
+    for atom in lexical.semantic_link_atoms:
+        rows[str(atom.from_semantic_unit_id)].append(
+            str(atom.semantic_link_surface_token)
+            + str(catalog["semantic_link_from"])
+        )
+        rows[str(atom.to_semantic_unit_id)].append(
+            str(atom.semantic_link_surface_token)
+            + str(catalog["semantic_link_to"])
+        )
+    for atom in lexical.explicit_unknown_atoms:
+        for _kind, owner_id, _ordinal in atom.affected_source_owners:
+            rows[str(owner_id)].append(
+                str(atom.unknown_surface_token)
+                + str(catalog["explicit_unknown"])
+            )
+    for binding in receptions:
+        for owner_id in binding.source_target_owner_ids:
+            rows[owner_id].append(str(catalog["reception_target"]))
+        for owner_id in binding.visible_support_owner_ids:
+            rows[owner_id].append(str(catalog["reception_support"]))
+        for owner_id in binding.source_focus_owner_ids:
+            rows[owner_id].append(str(catalog["reception_antecedent"]))
+    return {
+        owner_id: _ordered_unique_strings(values)
+        for owner_id, values in rows.items()
+    }
+
+
+def _expected_typed_payload_sha256(
+    owner_registry: Sequence[str],
+    atoms: Sequence[_ExpectedAtom],
+    receptions: Sequence[_ExpectedReception],
+) -> str:
+    from emlis_ai_nls_v3_artifact_contract import artifact_sha256
+
+    constructions: list[dict[str, Any]] = []
+    relations: list[dict[str, Any]] = []
+    links: list[dict[str, Any]] = []
+    unknowns: list[dict[str, Any]] = []
+    for atom in atoms:
+        row = atom.forward_signature
+        if atom.semantic_family == "construction":
+            constructions.append(
+                {
+                    "ordinal": row[1],
+                    "construction_instance_id": row[2],
+                    "construction_code": row[3],
+                    "catalog_atom_code": row[4],
+                    "surface_token": row[5],
+                    "construction_slot_ids": list(row[6]),
+                    "role_atoms": [
+                        {
+                            "construction_slot_id": role[0],
+                            "lexical_role_kind": role[1],
+                            "construction_position": role[2],
+                            "role_position_atom_code": role[3],
+                            "role_position_surface_token": role[4],
+                            "target_owner_ordinals": list(role[5]),
+                            "participation_ids": list(role[6]),
+                        }
+                        for role in row[7]
+                    ],
+                }
+            )
+        elif atom.semantic_family == "relation":
+            relations.append(
+                {
+                    "ordinal": row[1],
+                    "experiment_relation_id": row[2],
+                    "source_relation_id": row[3],
+                    "source_relation_type": row[4],
+                    "effective_relation_type": row[5],
+                    "from_owner_ordinal": row[6],
+                    "to_owner_ordinal": row[7],
+                    "direction": row[8],
+                    "authority_basis": row[9],
+                    "source_retention": row[10],
+                    "experiment_retention": row[11],
+                    "refines_source_relation_id": row[12],
+                }
+            )
+        elif atom.semantic_family == "semantic_link":
+            links.append(
+                {
+                    "ordinal": row[1],
+                    "source_semantic_link_id": row[2],
+                    "relation_type": row[3],
+                    "from_owner_ordinal": row[4],
+                    "to_owner_ordinal": row[5],
+                    "direction": row[6],
+                    "required": row[7],
+                }
+            )
+        elif atom.semantic_family == "explicit_unknown":
+            unknowns.append(
+                {
+                    "ordinal": row[1],
+                    "source_unknown_id": row[2],
+                    "dimension": row[3],
+                    "affected_owner_ordinals": list(row[4]),
+                    "required": row[5],
+                }
+            )
+    return artifact_sha256(
+        {
+            "owner_registry": list(owner_registry),
+            "construction_atoms": constructions,
+            "relation_atoms": relations,
+            "semantic_link_atoms": links,
+            "explicit_unknown_atoms": unknowns,
+            "reception_bindings": [
+                {
+                    "source_reception_opportunity_id": (
+                        row.source_reception_opportunity_id
+                    ),
+                    "source_scope": row.source_scope,
+                    "source_focus_owner_ids": list(row.source_focus_owner_ids),
+                    "source_target_owner_ids": list(
+                        row.source_target_owner_ids
+                    ),
+                    "supporting_source_owner_ids": list(
+                        row.supporting_source_owner_ids
+                    ),
+                    "visible_support_owner_ids": list(
+                        row.visible_support_owner_ids
+                    ),
+                    "inventory_reception_act": row.inventory_reception_act,
+                    "effective_reception_act": row.effective_reception_act,
+                    "act_refinement_basis": row.act_refinement_basis,
+                    "sentence_group_ordinal": row.sentence_group_ordinal,
+                }
+                for row in receptions
+            ],
+        }
+    )
+
+
+def _expected_unknown_dimension_key(value: str) -> str:
+    mapping = {
+        "cause": "cause",
+        "future_outcome": "outcome",
+        "omitted_referent": "referent",
+        "unresolved_intention": "future",
+        "decision_state": "decision_state",
+        "post_decision_comparative_merit": (
+            "post_decision_comparative_merit"
+        ),
+        "other_person": "other_person_awareness",
+        "relation": "relation",
+        "unspecified": "generic",
+    }
+    try:
+        return mapping[value]
+    except KeyError as exc:
+        raise CurrentRcG8RunError(
+            "CURRENT_RC_G8_DIRECT_SOURCE_CONTEXT_INVALID"
+        ) from exc
+
+
+def _expected_observation_owner_groups(
+    context: _DirectRecoveryContext,
+    authority: _ExpectedVisibleAuthority,
+) -> tuple[tuple[str, ...], ...]:
+    """Project discourse groups from typed obligations, never case identity."""
+
+    obligations = {
+        str(row["obligation_id"]): row
+        for row in context.inventory_result.ledger["obligations"]
+    }
+    nodes = {
+        str(row["node_id"]): row
+        for row in authority.active_discourse_plan["nodes"]
+    }
+    primary_kinds = frozenset(
+        {
+            "grounded_nucleus_notice",
+            "significance_or_shift",
+            "intention_or_next_action",
+        }
+    )
+
+    def source_id(value: Any) -> str:
+        key = str(value)
+        return (
+            key
+            if key in authority.source_to_owner
+            else authority.owner_to_source.get(key, key)
+        )
+
+    active_owner_ids = set(authority.ordered_owner_ids)
+    covered: set[str] = set()
+    result: list[tuple[str, ...]] = []
+    for group in authority.active_discourse_plan["sentence_groups"]:
+        if str(group["section_role"]) != "observation":
+            continue
+        owner_ids = _ordered_unique_strings(
+            authority.source_to_owner[nucleus_id]
+            for node_id in group["node_ids"]
+            for node in (nodes[str(node_id)],)
+            for obligation in (obligations[str(node["obligation_id"])],)
+            if str(obligation["kind"]) in primary_kinds
+            for value in obligation.get("nucleus_ids", ())
+            for nucleus_id in (source_id(value),)
+            if nucleus_id in authority.source_to_owner
+            and authority.source_to_owner[nucleus_id] in active_owner_ids
+            and authority.source_to_owner[nucleus_id] not in covered
+        )
+        if owner_ids:
+            result.append(owner_ids)
+            covered.update(owner_ids)
+    result.extend(
+        (owner_id,)
+        for owner_id in authority.ordered_owner_ids
+        if owner_id not in covered
+    )
+    if (
+        not result
+        or set(value for row in result for value in row) != active_owner_ids
+        or sum(len(row) for row in result) != len(active_owner_ids)
+    ):
+        raise CurrentRcG8RunError(
+            "CURRENT_RC_G8_DIRECT_SOURCE_CONTEXT_INVALID"
+        )
+    return tuple(result)
+
+
+def _expected_source_range_groups(
+    context: _DirectRecoveryContext,
+    expected: _ExpectedRecovery,
+    authority: _ExpectedVisibleAuthority,
+) -> tuple[
+    tuple[str, tuple[_ExpectedRoot, ...], tuple[_ExpectedFragment, ...]], ...
+]:
+    """Group typed source ranges without constructing any visible wording."""
+
+    roots_by_owner = {row.source_owner_id: row for row in expected.roots}
+    discourse_owner_order = _ordered_unique_strings(
+        owner_id
+        for group in _expected_observation_owner_groups(context, authority)
+        for owner_id in group
+        if owner_id in roots_by_owner
+    )
+    source_owner_order = _ordered_unique_strings(
+        (*discourse_owner_order, *authority.ordered_owner_ids)
+    )
+    owner_rank = {
+        owner_id: ordinal for ordinal, owner_id in enumerate(source_owner_order)
+    }
+    nucleus_by_owner = {
+        str(row.actual_source_id): row
+        for row in context.successor_snapshot.base_snapshot.nuclei
+    }
+    label_owner_ids = {
+        owner_id
+        for owner_id in source_owner_order
+        if str(nucleus_by_owner[owner_id].allowed_claim_scope)
+        == "selected_label_only"
+    }
+    range_rows: dict[tuple[str, int, int, str], dict[str, Any]] = {}
+    for owner_id in source_owner_order:
+        root = roots_by_owner[owner_id]
+        if not root.source_fragments:
+            raise CurrentRcG8RunError(
+                "CURRENT_RC_G8_DIRECT_SOURCE_CONTEXT_INVALID"
+            )
+        for fragment in root.source_fragments:
+            key = (
+                fragment.source_span_id,
+                fragment.span_relative_start_index,
+                fragment.span_relative_end_index,
+                fragment.source_fragment_text_sha256,
+            )
+            row = range_rows.setdefault(
+                key,
+                {
+                    "source_span_id": fragment.source_span_id,
+                    "source_field": fragment.source_field,
+                    "start": fragment.span_relative_start_index,
+                    "end": fragment.span_relative_end_index,
+                    "text_sha256": fragment.source_fragment_text_sha256,
+                    "owners": [],
+                    "roots": [],
+                    "fragments": [],
+                },
+            )
+            if (
+                row["source_field"] != fragment.source_field
+                or row["text_sha256"]
+                != fragment.source_fragment_text_sha256
+            ):
+                raise CurrentRcG8RunError(
+                    "CURRENT_RC_G8_DIRECT_SOURCE_CONTEXT_INVALID"
+                )
+            row["owners"].append(owner_id)
+            row["roots"].append(root)
+            row["fragments"].append(fragment)
+    rows_by_span: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(
+        list
+    )
+    for row in range_rows.values():
+        rows_by_span[(row["source_span_id"], row["source_field"])].append(row)
+    for rows in rows_by_span.values():
+        ordered = sorted(rows, key=lambda row: (row["start"], row["end"]))
+        if any(
+            left["end"] > right["start"]
+            for left, right in zip(ordered, ordered[1:])
+        ):
+            raise CurrentRcG8RunError(
+                "CURRENT_RC_G8_DIRECT_SOURCE_CONTEXT_INVALID"
+            )
+
+    def rank(rows: Sequence[Mapping[str, Any]]) -> tuple[int, int]:
+        return (
+            min(
+                owner_rank[owner_id]
+                for row in rows
+                for owner_id in row["owners"]
+            ),
+            min(int(row["start"]) for row in rows),
+        )
+
+    grouped_rows: list[tuple[str, tuple[Mapping[str, Any], ...]]] = []
+    main_groups: list[tuple[Mapping[str, Any], ...]] = []
+    for span_rows in rows_by_span.values():
+        normal_rows = tuple(
+            sorted(
+                (
+                    row
+                    for row in span_rows
+                    if not set(row["owners"]) <= label_owner_ids
+                ),
+                key=lambda row: (row["start"], row["end"]),
+            )
+        )
+        if not normal_rows:
+            continue
+        decomposition_owned = all(
+            "adapter:semantic_decomposition_v3"
+            in {
+                str(code)
+                for owner_id in row["owners"]
+                for code in nucleus_by_owner[owner_id].source_attribute_codes
+            }
+            for row in normal_rows
+        )
+        if decomposition_owned:
+            main_groups.append(normal_rows)
+        else:
+            main_groups.extend((row,) for row in normal_rows)
+    main_groups.sort(key=rank)
+    grouped_rows.extend(("meaning", rows) for rows in main_groups)
+    label_rows: dict[str, list[Mapping[str, Any]]] = defaultdict(list)
+    for row in range_rows.values():
+        if not set(row["owners"]) <= label_owner_ids:
+            continue
+        source_field = str(row["source_field"])
+        if source_field in {"emotion_details", "emotions"}:
+            label_rows["emotion"].append(row)
+        elif source_field in {"category", "categories"}:
+            label_rows["category"].append(row)
+        else:
+            raise CurrentRcG8RunError(
+                "CURRENT_RC_G8_DIRECT_SOURCE_CONTEXT_INVALID"
+            )
+    for label_kind in ("emotion", "category"):
+        rows = tuple(
+            sorted(label_rows.get(label_kind, ()), key=lambda row: rank((row,)))
+        )
+        if rows:
+            grouped_rows.append(("labelcompanion", rows))
+    result: list[
+        tuple[str, tuple[_ExpectedRoot, ...], tuple[_ExpectedFragment, ...]]
+    ] = []
+    for family, rows in grouped_rows:
+        result.append(
+            (
+                family,
+                tuple(
+                    {
+                        root.source_root_id: root
+                        for row in rows
+                        for root in row["roots"]
+                    }.values()
+                ),
+                tuple(
+                    fragment
+                    for row in rows
+                    for fragment in row["fragments"]
+                ),
+            )
+        )
+    return tuple(result)
+
+
+def _expected_visible_moves(
+    context: _DirectRecoveryContext,
+    expected: _ExpectedRecovery,
+    authority: _ExpectedVisibleAuthority,
+) -> tuple[_ExpectedVisibleMove, ...]:
+    from emlis_ai_nls_v3_artifact_contract import artifact_sha256
+
+    roots_by_owner = {row.source_owner_id: row for row in expected.roots}
+    atoms_by_id = {row.source_atom_id: row for row in expected.atoms}
+    moves: list[_ExpectedVisibleMove] = []
+    construction_by_owner: dict[str, list[str]] = defaultdict(list)
+    for atom in expected.atoms:
+        if atom.semantic_family != "construction":
+            continue
+        owner_id = next(
+            (
+                value for value in authority.ordered_owner_ids
+                if value in atom.source_owner_ids
+            ),
+            None,
+        )
+        if owner_id is None:
+            raise CurrentRcG8RunError(
+                "CURRENT_RC_G8_DIRECT_SOURCE_CONTEXT_INVALID"
+            )
+        construction_by_owner[owner_id].append(atom.source_atom_id)
+    rendered_owner_ids: set[str] = set()
+    rendered_fragment_ids: set[str] = set()
+    for unit_family, group_roots, fragments in _expected_source_range_groups(
+        context, expected, authority
+    ):
+        owner_ids = _ordered_unique_strings(
+            row.source_owner_id for row in group_roots
+        )
+        new_owner_ids = tuple(
+            value for value in owner_ids if value not in rendered_owner_ids
+        )
+        atom_ids = _ordered_unique_strings(
+            atom_id
+            for owner_id in new_owner_ids
+            for atom_id in construction_by_owner.get(owner_id, ())
+        )
+        obligation_ids = _ordered_unique_strings(
+            obligation_id
+            for row in group_roots
+            if row.source_owner_id in new_owner_ids
+            for obligation_id in row.source_obligation_ids
+        )
+        fragment_ids = tuple(row.source_fragment_id for row in fragments)
+        if set(fragment_ids) & rendered_fragment_ids:
+            raise CurrentRcG8RunError(
+                "CURRENT_RC_G8_DIRECT_SOURCE_CONTEXT_INVALID"
+            )
+        moves.append(
+            _ExpectedVisibleMove(
+                section_role="observation",
+                family="root_group",
+                source_unit_id=(
+                    "nls3s11rc0036"
+                    + unit_family
+                    + "_"
+                    + artifact_sha256(
+                        {
+                            "source_root_ids": [
+                                row.source_root_id for row in group_roots
+                            ],
+                            "source_fragment_ids": list(fragment_ids),
+                        }
+                    )[:16]
+                ),
+                source_atom_ids=atom_ids,
+                source_owner_ids=owner_ids,
+                source_obligation_ids=obligation_ids,
+                source_fragment_ids=fragment_ids,
+                dimensions=_aggregate_source_dimensions(
+                    tuple(row.dimensions for row in group_roots)
+                ),
+                semantic_key="source_range_group",
+            )
+        )
+        rendered_owner_ids.update(new_owner_ids)
+        rendered_fragment_ids.update(fragment_ids)
+    expected_fragment_ids = {
+        fragment.source_fragment_id
+        for root in expected.roots
+        for fragment in root.source_fragments
+    }
+    if (
+        rendered_owner_ids != set(authority.ordered_owner_ids)
+        or rendered_fragment_ids != expected_fragment_ids
+    ):
+        raise CurrentRcG8RunError(
+            "CURRENT_RC_G8_DIRECT_SOURCE_CONTEXT_INVALID"
+        )
+    active_source_ids = set(authority.owner_to_source.values()) & {
+        authority.owner_to_source[value]
+        for value in authority.ordered_owner_ids
+    }
+    for evaluation in authority.semantic_overlay.reported_self_evaluations:
+        source_ids = _ordered_unique_strings(
+            binding.nucleus_id
+            for binding in authority.semantic_overlay.nucleus_anchor_bindings
+            if evaluation.source_anchor_id in binding.source_anchor_ids
+            and str(binding.nucleus_id) in active_source_ids
+        )
+        if len(source_ids) != 1:
+            raise CurrentRcG8RunError(
+                "CURRENT_RC_G8_DIRECT_SOURCE_CONTEXT_INVALID"
+            )
+        owner_id = authority.source_to_owner[source_ids[0]]
+        root = roots_by_owner[owner_id]
+        moves.append(
+            _ExpectedVisibleMove(
+                section_role="observation",
+                family="self_denial",
+                source_unit_id=str(evaluation.self_evaluation_id),
+                source_atom_ids=(),
+                source_owner_ids=(owner_id,),
+                source_obligation_ids=(),
+                source_fragment_ids=(),
+                dimensions=root.dimensions,
+                semantic_key=str(evaluation.evaluation_target),
+            )
+        )
+    used_relation_ids: set[str] = set()
+    for relation in authority.semantic_overlay.relations:
+        if not relation.required and not relation.explicit:
+            continue
+        owners = (
+            authority.source_to_owner[str(relation.from_nucleus_id)],
+            authority.source_to_owner[str(relation.to_nucleus_id)],
+        )
+        matches = tuple(
+            atom for atom in expected.atoms
+            if atom.semantic_family in {"relation", "semantic_link"}
+            and atom.source_atom_id not in used_relation_ids
+            and tuple(atom.source_owner_ids[:2]) == owners
+        )
+        if len(matches) != 1:
+            raise CurrentRcG8RunError(
+                "CURRENT_RC_G8_DIRECT_SOURCE_CONTEXT_INVALID"
+            )
+        atom = matches[0]
+        used_relation_ids.add(atom.source_atom_id)
+        moves.append(
+            _ExpectedVisibleMove(
+                section_role="observation",
+                family="relation",
+                source_unit_id=atom.source_atom_id,
+                source_atom_ids=(atom.source_atom_id,),
+                source_owner_ids=owners,
+                source_obligation_ids=(),
+                source_fragment_ids=(),
+                dimensions=atom.dimensions,
+                semantic_key=str(relation.relation_type),
+                direction=str(relation.relation_direction),
+            )
+        )
+    aliases = _expected_alias_identities(context)
+    used_unknown_ids: set[str] = set()
+    for unknown in authority.semantic_overlay.unknowns:
+        source_ids = _ordered_unique_strings(unknown.target_nucleus_ids)
+        owner_ids = _ordered_unique_strings(
+            authority.source_to_owner[str(value)]
+            for value in source_ids
+            if str(value) in authority.source_to_owner
+        )
+        source_unknown_ids = _identity_closure(
+            unknown.source_unknown_ids, aliases
+        )
+        matches = tuple(
+            atom for atom in expected.atoms
+            if atom.semantic_family == "explicit_unknown"
+            and atom.source_atom_id not in used_unknown_ids
+            and _identity_closure((atom.source_atom_id,), aliases)
+            & source_unknown_ids
+            and bool(set(atom.source_owner_ids) & set(owner_ids))
+        )
+        if not owner_ids or not matches:
+            raise CurrentRcG8RunError(
+                "CURRENT_RC_G8_DIRECT_SOURCE_CONTEXT_INVALID"
+            )
+        atom_ids = tuple(row.source_atom_id for row in matches)
+        used_unknown_ids.update(atom_ids)
+        moves.append(
+            _ExpectedVisibleMove(
+                section_role="observation",
+                family="unknown",
+                source_unit_id=str(unknown.unknown_id),
+                source_atom_ids=atom_ids,
+                source_owner_ids=owner_ids,
+                source_obligation_ids=(),
+                source_fragment_ids=(),
+                dimensions=("unknown", "unknown", "unknown", "unknown"),
+                semantic_key=_expected_unknown_dimension_key(
+                    str(unknown.unknown_type)
+                ),
+            )
+        )
+    assigned_ids = {
+        atom_id for move in moves for atom_id in move.source_atom_ids
+    }
+    if assigned_ids != set(atoms_by_id):
+        raise CurrentRcG8RunError(
+            "CURRENT_RC_G8_DIRECT_SOURCE_CONTEXT_INVALID"
+        )
+    overlay_reception: dict[str, Any] = {}
+    for binding in authority.semantic_overlay.reception_antecedent_bindings:
+        for opportunity_id in binding.source_reception_opportunity_ids:
+            key = str(opportunity_id)
+            if key in overlay_reception:
+                raise CurrentRcG8RunError(
+                    "CURRENT_RC_G8_DIRECT_SOURCE_CONTEXT_INVALID"
+                )
+            overlay_reception[key] = binding
+    unknown_owner_ids = {
+        authority.source_to_owner[str(nucleus_id)]
+        for unknown in authority.semantic_overlay.unknowns
+        for nucleus_id in (
+            *unknown.target_nucleus_ids,
+            *unknown.context_nucleus_ids,
+        )
+        if str(nucleus_id) in authority.source_to_owner
+    }
+    for reception in expected.receptions:
+        support_ids = tuple(
+            value for value in reception.visible_support_owner_ids
+            if value not in set(reception.source_target_owner_ids)
+        )
+        overlay_binding = overlay_reception.get(
+            reception.source_reception_opportunity_id
+        )
+        if overlay_binding is None:
+            matches = tuple(
+                row
+                for row in authority.semantic_overlay.reception_antecedent_bindings
+                if reception.source_reception_opportunity_id
+                in tuple(str(value) for value in row.source_reception_opportunity_ids)
+            )
+            if len(matches) != 1:
+                raise CurrentRcG8RunError(
+                    "CURRENT_RC_G8_DIRECT_SOURCE_CONTEXT_INVALID"
+                )
+            overlay_binding = matches[0]
+        moves.append(
+            _ExpectedVisibleMove(
+                section_role="reception",
+                family="reception",
+                source_unit_id=reception.source_reception_opportunity_id,
+                source_atom_ids=(),
+                source_owner_ids=_ordered_unique_strings(
+                    (*reception.source_target_owner_ids, *support_ids)
+                ),
+                source_obligation_ids=(),
+                source_fragment_ids=(),
+                dimensions=("unknown", "unknown", "unknown", "unknown"),
+                semantic_key=reception.effective_reception_act,
+                target_owner_ids=reception.source_target_owner_ids,
+                support_owner_ids=support_ids,
+                action_lifecycle=str(overlay_binding.action_lifecycle),
+                open_unknown=bool(
+                    set((*reception.source_target_owner_ids, *support_ids))
+                    & unknown_owner_ids
+                ),
+            )
+        )
+    return tuple(moves)
+
+
+def _authority_with_moves(
+    authority: _ExpectedVisibleAuthority,
+    moves: Sequence[_ExpectedVisibleMove],
+) -> _ExpectedVisibleAuthority:
+    return _ExpectedVisibleAuthority(
+        active_discourse_plan=authority.active_discourse_plan,
+        semantic_overlay=authority.semantic_overlay,
+        active_discourse_plan_sha256=authority.active_discourse_plan_sha256,
+        semantic_overlay_sha256=authority.semantic_overlay_sha256,
+        source_to_owner=authority.source_to_owner,
+        owner_to_source=authority.owner_to_source,
+        ordered_owner_ids=authority.ordered_owner_ids,
+        plain_phrase_by_owner=authority.plain_phrase_by_owner,
+        first_phrase_by_owner=authority.first_phrase_by_owner,
+        phrase_id_by_owner=authority.phrase_id_by_owner,
+        feature_sha256_by_owner=authority.feature_sha256_by_owner,
+        owner_reference_by_owner=authority.owner_reference_by_owner,
+        specificity_companion_phrase=authority.specificity_companion_phrase,
+        moves=tuple(moves),
+    )
+
+
+def _expected_active_roots(
+    context: _DirectRecoveryContext,
+    active_owner_ids: set[str],
+) -> tuple[_ExpectedRoot, ...]:
+    from emlis_ai_grounded_observation_semantic_restatement_v3 import (
+        build_grounded_semantic_restatement_witness,
+    )
+    from emlis_ai_nls_v3_artifact_contract import artifact_sha256
+
+    snapshot = context.successor_snapshot.base_snapshot
+    witness = build_grounded_semantic_restatement_witness(
+        context.grounded_plan, context.resolver
+    )
+    obligations = tuple(context.inventory_result.ledger["obligations"])
+    grounded_by_owner = {
+        str(row.nucleus_id): row for row in context.grounded_plan.nuclei
+    }
+    unit_by_owner = {
+        str(row.unit_id): row for row in witness.semantic_units
+    }
+
+    def source_fragment(
+        *,
+        owner_id: str,
+        nucleus_id: str,
+        span_id: str,
+        start: int,
+        end: int,
+        basis: str,
+        expected_artifact_sha256: str | None = None,
+    ) -> _ExpectedFragment:
+        span = context.resolver.resolve(span_id)
+        raw_text = str(span.raw_text)
+        text = raw_text[start:end]
+        if (
+            not text
+            or start < 0
+            or end <= start
+            or end > len(raw_text)
+            or (
+                expected_artifact_sha256 is not None
+                and artifact_sha256({"source_fragment": text})
+                != expected_artifact_sha256
+            )
+        ):
+            raise CurrentRcG8RunError(
+                "CURRENT_RC_G8_DIRECT_SOURCE_CONTEXT_INVALID"
+            )
+        text_sha256 = hashlib.sha256(text.encode("utf-8")).hexdigest()
+        material = {
+            "source_owner_id": owner_id,
+            "source_nucleus_id": nucleus_id,
+            "source_span_id": span_id,
+            "source_field": str(span.source_field),
+            "span_relative_start_index": start,
+            "span_relative_end_index": end,
+            "source_fragment_text_sha256": text_sha256,
+            "binding_basis": basis,
+        }
+        return _ExpectedFragment(
+            source_fragment_id=(
+                "nls3s11rc0036fragment_" + artifact_sha256(material)[:16]
+            ),
+            source_owner_id=owner_id,
+            source_nucleus_id=nucleus_id,
+            source_span_id=span_id,
+            source_field=str(span.source_field),
+            span_relative_start_index=start,
+            span_relative_end_index=end,
+            source_fragment_text=text,
+            source_fragment_text_sha256=text_sha256,
+            binding_basis=basis,
+        )
+
+    roots: list[_ExpectedRoot] = []
+    for nucleus in snapshot.nuclei:
+        owner_id = str(nucleus.actual_source_id)
+        if owner_id not in active_owner_ids:
+            continue
+        nucleus_id = str(nucleus.source_id)
+        aliases = {owner_id, nucleus_id}
+        obligation_ids = tuple(
+            str(row["obligation_id"])
+            for row in obligations
+            if type(row) is dict
+            and row.get("required") is True
+            and aliases & {str(value) for value in row.get("nucleus_ids", ())}
+        )
+        semantic_unit = unit_by_owner.get(owner_id)
+        if semantic_unit is not None:
+            fragments = (
+                source_fragment(
+                    owner_id=owner_id,
+                    nucleus_id=nucleus_id,
+                    span_id=str(semantic_unit.source_span_id),
+                    start=int(semantic_unit.start_index),
+                    end=int(semantic_unit.end_index),
+                    basis="semantic_unit_exact_typed_range",
+                    expected_artifact_sha256=str(
+                        semantic_unit.source_fragment_sha256
+                    ),
+                ),
+            )
+        else:
+            grounded = grounded_by_owner.get(owner_id)
+            if grounded is None:
+                raise CurrentRcG8RunError(
+                    "CURRENT_RC_G8_DIRECT_SOURCE_CONTEXT_INVALID"
+                )
+            span_ids = _ordered_unique_strings(grounded.source_span_ids)
+            if not span_ids:
+                raise CurrentRcG8RunError(
+                    "CURRENT_RC_G8_DIRECT_SOURCE_CONTEXT_INVALID"
+                )
+            fragments = tuple(
+                source_fragment(
+                    owner_id=owner_id,
+                    nucleus_id=nucleus_id,
+                    span_id=span_id,
+                    start=0,
+                    end=len(str(context.resolver.resolve(span_id).raw_text)),
+                    basis="grounded_nucleus_exact_evidence_span",
+                )
+                for span_id in span_ids
+            )
+        dimensions = _source_dimensions(nucleus)
+        material = {
+            "source_owner_id": owner_id,
+            "source_nucleus_id": nucleus_id,
+            "source_obligation_ids": list(obligation_ids),
+            "source_fragment_ids": [
+                row.source_fragment_id for row in fragments
+            ],
+            "semantic_kind": str(nucleus.kind),
+            "dimensions": list(dimensions),
+            "required": bool(nucleus.required),
+        }
+        roots.append(
+            _ExpectedRoot(
+                source_root_id=(
+                    "nls3s11rc0036root_" + artifact_sha256(material)[:16]
+                ),
+                source_owner_id=owner_id,
+                source_nucleus_id=nucleus_id,
+                source_obligation_ids=obligation_ids,
+                source_fragments=fragments,
+                semantic_kind=str(nucleus.kind),
+                dimensions=dimensions,
+                required=bool(nucleus.required),
+            )
+        )
+    if {row.source_owner_id for row in roots} != active_owner_ids:
+        raise CurrentRcG8RunError(
+            "CURRENT_RC_G8_DIRECT_SOURCE_CONTEXT_INVALID"
+        )
+    return tuple(roots)
+
+
+def _direct_expected_recovery(
+    context: _DirectRecoveryContext,
+) -> _ExpectedRecovery:
+    """Return only the source-active envelope and visible authority."""
+
+    base = _direct_expected_recovery_base(context)
+    authority = _build_expected_projection_authority(context)
+    receptions = _expected_overlay_receptions(context, authority)
+    atoms = _expected_active_atoms(context, base, authority)
+    active_owners = set(authority.ordered_owner_ids)
+    roots = _expected_active_roots(context, active_owners)
+    roles = _expected_role_tokens(context, receptions)
+    owners: list[_ExpectedOwner] = []
+    nucleus_by_owner = {
+        str(row.actual_source_id): row
+        for row in context.successor_snapshot.base_snapshot.nuclei
+    }
+    for owner in context.lexical_atom_specs.owner_bindings:
+        owner_id = str(owner.source_owner_id)
+        if owner_id not in active_owners:
+            continue
+        nucleus = nucleus_by_owner.get(owner_id)
+        referent = authority.plain_phrase_by_owner.get(owner_id)
+        if nucleus is None:
+            raise CurrentRcG8RunError(
+                "CURRENT_RC_G8_DIRECT_SOURCE_CONTEXT_INVALID"
+            )
+        if type(referent) is not str or not referent:
+            raise CurrentRcG8RunError(
+                "CURRENT_RC_G8_DIRECT_SOURCE_CONTEXT_INVALID"
+            )
+        owners.append(
+            _ExpectedOwner(
+                schema_version=_RECOVERY_OWNER_SCHEMA,
+                source_owner_id=owner_id,
+                source_owner_kind=str(owner.source_owner_kind),
+                source_owner_ordinal=int(owner.owner_ordinal),
+                source_nucleus_id=str(nucleus.source_id),
+                semantic_kind=str(nucleus.kind),
+                dimensions=_source_dimensions(nucleus),
+                typed_role_tokens=roles.get(owner_id, ()),
+                referent_text=referent,
+                referent_text_sha256=hashlib.sha256(
+                    referent.encode("utf-8")
+                ).hexdigest(),
+                referent_basis="grounded_semantic_feature_phrase",
+            )
+        )
+    if {row.source_owner_id for row in owners} != active_owners:
+        raise CurrentRcG8RunError(
+            "CURRENT_RC_G8_DIRECT_SOURCE_CONTEXT_INVALID"
+        )
+    family_counts = Counter(row.semantic_family for row in atoms)
+    expected = _ExpectedRecovery(
+        owner_registry=base.owner_registry,
+        owners=tuple(owners),
+        roots=roots,
+        atoms=atoms,
+        receptions=receptions,
+        source_counts=(
+            ("owners", len(owners)),
+            ("roots", len(roots)),
+            ("constructions", family_counts.get("construction", 0)),
+            ("relations", family_counts.get("relation", 0)),
+            ("semantic_links", family_counts.get("semantic_link", 0)),
+            ("explicit_unknowns", family_counts.get("explicit_unknown", 0)),
+            ("receptions", len(receptions)),
+        ),
+        source_commitments=base.source_commitments,
+        current_input_binding=base.current_input_binding,
+        typed_payload_sha256=_expected_typed_payload_sha256(
+            base.owner_registry, atoms, receptions
+        ),
+        candidate_boundary_sha256=base.candidate_boundary_sha256,
+        catalog=base.catalog,
+        grammar=base.grammar,
+    )
+    authority = _authority_with_moves(
+        authority, _expected_visible_moves(context, expected, authority)
+    )
+    return _ExpectedRecovery(
+        owner_registry=expected.owner_registry,
+        owners=expected.owners,
+        roots=expected.roots,
+        atoms=expected.atoms,
+        receptions=expected.receptions,
+        source_counts=expected.source_counts,
+        source_commitments=expected.source_commitments,
+        current_input_binding=expected.current_input_binding,
+        typed_payload_sha256=expected.typed_payload_sha256,
+        candidate_boundary_sha256=expected.candidate_boundary_sha256,
+        catalog=expected.catalog,
+        grammar=expected.grammar,
+        visible_authority=authority,
     )
 
 
@@ -2427,6 +4120,10 @@ def _atom_signature(value: Any) -> tuple[Any, ...]:
         tuple(str(row) for row in value.source_span_ids),
         tuple(str(row) for row in value.source_evidence_alias_ids),
         tuple(str(row) for row in value.source_marker_span_ids),
+        str(value.source_grounding_kind),
+        tuple(str(row) for row in value.source_relation_ids),
+        str(value.authority_basis),
+        str(value.source_retention),
         tuple(
             _construction_role_signature(row)
             for row in value.construction_roles
@@ -2574,111 +4271,429 @@ def _plan_unit_signature(value: Any) -> tuple[Any, ...]:
 def _expected_plan_unit_signatures(
     expected: _ExpectedRecovery,
 ) -> tuple[tuple[Any, ...], ...]:
+    authority = expected.visible_authority
+    if type(authority) is not _ExpectedVisibleAuthority:
+        raise CurrentRcG8RunError(
+            "CURRENT_RC_G8_DIRECT_SOURCE_CONTEXT_INVALID"
+        )
     dimensions_by_owner = {
         row.source_owner_id: row.dimensions for row in expected.owners
     }
-    rows: list[tuple[Any, ...]] = []
-    for root in expected.roots:
-        rows.append(
-            (
-                len(rows) + 1,
-                "observation",
-                root.source_root_id,
-                (),
-                (root.source_owner_id,),
-                ((root.source_owner_id, root.dimensions),),
-                root.source_obligation_ids,
-                tuple(
-                    fragment.source_fragment_id
-                    for fragment in root.source_fragments
+    return tuple(
+        (
+            ordinal,
+            move.section_role,
+            move.source_unit_id,
+            move.source_atom_ids,
+            move.source_owner_ids,
+            tuple(
+                (owner_id, dimensions_by_owner[owner_id])
+                for owner_id in move.source_owner_ids
+            ),
+            move.source_obligation_ids,
+            move.source_fragment_ids,
+            move.dimensions,
+            1,
+        )
+        for ordinal, move in enumerate(authority.moves, start=1)
+    )
+
+
+def _visible_owner_mentions(
+    line: str,
+    authority: _ExpectedVisibleAuthority,
+    expected: _ExpectedRecovery | None = None,
+    phrase_occurrence: Counter[str] | None = None,
+) -> tuple[tuple[str, int, int], ...]:
+    """Decode grounded owner lexemes without comparing source fragments."""
+
+    owners_by_phrase: dict[str, list[str]] = defaultdict(list)
+    if expected is None:
+        for owner_id in authority.ordered_owner_ids:
+            phrase = authority.plain_phrase_by_owner.get(owner_id)
+            if type(phrase) is not str or not phrase:
+                return ()
+            owners_by_phrase[phrase].append(owner_id)
+    else:
+        references = _expected_owner_reference_tokens(expected, authority)
+        if set(references) != set(authority.ordered_owner_ids):
+            return ()
+        for owner_id, phrase in references.items():
+            owners_by_phrase[phrase].append(owner_id)
+    candidates: list[tuple[int, int, str, tuple[str, ...]]] = []
+    for phrase, owner_ids in owners_by_phrase.items():
+        start = line.find(phrase)
+        while start >= 0:
+            candidates.append(
+                (start, start + len(phrase), phrase, tuple(owner_ids))
+            )
+            start = line.find(phrase, start + 1)
+    selected: list[tuple[int, int, str, tuple[str, ...]]] = []
+    for row in sorted(candidates, key=lambda value: (value[0], -value[1])):
+        if any(row[0] < old[1] and old[0] < row[1] for old in selected):
+            continue
+        selected.append(row)
+    selected.sort(key=lambda value: value[0])
+    occurrence = phrase_occurrence if phrase_occurrence is not None else Counter()
+    result: list[tuple[str, int, int]] = []
+    collision_prefixes = {
+        "先に触れた": 0,
+        "続いて触れた": 1,
+        "次に触れた": 1,
+        "あとに触れた": 2,
+    }
+    for start, end, phrase, owner_ids in selected:
+        if len(owner_ids) == 1:
+            owner_id = owner_ids[0]
+        else:
+            prefix = line[max(0, start - 12) : start]
+            rank = next(
+                (
+                    value
+                    for token, value in collision_prefixes.items()
+                    if prefix.endswith(token)
                 ),
-                root.dimensions,
-                1,
+                occurrence[phrase],
             )
+            if rank >= len(owner_ids):
+                return ()
+            owner_id = owner_ids[rank]
+        occurrence[phrase] += 1
+        result.append((owner_id, start, end))
+    return tuple(result)
+
+
+def _line_without_owner_lexemes(
+    line: str, mentions: Sequence[tuple[str, int, int]]
+) -> str:
+    chars = list(line)
+    for _owner_id, start, end in mentions:
+        chars[start:end] = " " * (end - start)
+    return "".join(chars)
+
+
+def _expected_owner_reference_tokens(
+    expected: _ExpectedRecovery,
+    authority: _ExpectedVisibleAuthority,
+) -> Mapping[str, str]:
+    """Rebuild the public typed-anaphor grammar from source owner roles."""
+
+    from emlis_ai_step11_surface_catalog_v3 import STEP11_SURFACE_CATALOG
+
+    endpoint_roles: dict[str, set[str]] = defaultdict(set)
+    for relation in authority.semantic_overlay.relations:
+        from_owner = authority.source_to_owner.get(
+            str(relation.from_nucleus_id)
         )
-    for atom in expected.atoms:
-        rows.append(
-            (
-                len(rows) + 1,
-                "observation",
-                atom.source_atom_id,
-                (atom.source_atom_id,),
-                atom.source_owner_ids,
-                tuple(
-                    (owner_id, dimensions_by_owner[owner_id])
-                    for owner_id in atom.source_owner_ids
-                ),
-                (),
-                (),
-                atom.dimensions,
-                1,
+        to_owner = authority.source_to_owner.get(str(relation.to_nucleus_id))
+        if from_owner is not None:
+            endpoint_roles[from_owner].add(str(relation.from_endpoint_role))
+        if to_owner is not None:
+            endpoint_roles[to_owner].add(str(relation.to_endpoint_role))
+    kind_by_owner = {
+        row.source_owner_id: row.semantic_kind for row in expected.roots
+    }
+    source_slots_by_owner: dict[str, set[str]] = defaultdict(set)
+    for binding in authority.semantic_overlay.nucleus_anchor_bindings:
+        owner_id = authority.source_to_owner.get(str(binding.nucleus_id))
+        if owner_id is not None:
+            source_slots_by_owner[owner_id].update(
+                str(value) for value in binding.source_slots
             )
-        )
-    available = set(dimensions_by_owner)
-    for reception in expected.receptions:
-        visible_owners = _ordered_unique_strings(
-            value
-            for value in (
-                *reception.source_focus_owner_ids,
-                *reception.source_target_owner_ids,
-                *reception.visible_support_owner_ids,
+    role_by_owner: dict[str, str] = {}
+    for owner_id in authority.ordered_owner_ids:
+        explicit = endpoint_roles.get(owner_id, set())
+        if len(explicit) > 1:
+            return {}
+        if explicit:
+            role = next(iter(explicit))
+        elif (
+            kind_by_owner.get(owner_id) == "action"
+            or "memo_action" in source_slots_by_owner.get(owner_id, set())
+        ):
+            role = "action"
+        elif (
+            kind_by_owner.get(owner_id) == "reaction"
+            or bool(
+                {"emotion_details", "emotions"}
+                & source_slots_by_owner.get(owner_id, set())
             )
-            if value in available
-        )
-        rows.append(
-            (
-                len(rows) + 1,
-                "reception",
-                reception.source_reception_opportunity_id,
-                (),
-                visible_owners,
-                tuple(
-                    (owner_id, dimensions_by_owner[owner_id])
-                    for owner_id in visible_owners
-                ),
-                (),
-                (),
-                ("unknown", "unknown", "unknown", "unknown"),
-                1,
+        ):
+            role = "affect"
+        else:
+            role = "proposition"
+        if role not in {"action", "affect", "proposition"}:
+            return {}
+        role_by_owner[owner_id] = role
+    lexical = STEP11_SURFACE_CATALOG["grounded_lexicalization"]
+    local_anaphors = lexical["local_anaphors"]
+    template = str(
+        STEP11_SURFACE_CATALOG["endpoint_reference_grammar"][
+            "reference_token_template"
+        ]
+    )
+    owners_by_role: dict[str, list[str]] = defaultdict(list)
+    for owner_id in authority.ordered_owner_ids:
+        owners_by_role[role_by_owner[owner_id]].append(owner_id)
+    result: dict[str, str] = {}
+    for role, owner_ids in owners_by_role.items():
+        local = str(local_anaphors[role])
+        if len(owner_ids) == 1:
+            result[owner_ids[0]] = local
+            continue
+        role_label = local.removeprefix("その")
+        for ordinal, owner_id in enumerate(owner_ids, start=1):
+            result[owner_id] = template.format(
+                ordinal=ordinal, role_label=role_label
             )
-        )
+    if len(set(result.values())) != len(result):
+        return {}
+    return result
+
+
+def _relation_surface_forms() -> tuple[tuple[str, str, str, str], ...]:
+    from emlis_ai_step11_surface_catalog_v3 import STEP11_SURFACE_CATALOG
+
+    rows: list[tuple[str, str, str, str]] = []
+    relation_atoms = STEP11_SURFACE_CATALOG["grounded_lexicalization"][
+        "relation_atoms"
+    ]
+    for relation_type, directions in relation_atoms.items():
+        for direction, form in directions.items():
+            rows.append(
+                (
+                    str(relation_type),
+                    str(direction),
+                    str(form["left"]),
+                    str(form["right"]),
+                )
+            )
     return tuple(rows)
 
 
-def _visible_dimension_prefix(
-    dimensions: tuple[str, str, str, str],
-    grammar: Mapping[str, Any],
-) -> str:
-    temporal, modality, polarity, referent = dimensions
-    return (
-        str(
-            grammar["temporal_scope_cues"].get(
-                temporal, grammar["temporal_scope_cues"]["unknown"]
-            )
-        )
-        + str(
-            grammar["modality_cues"].get(
-                modality, grammar["modality_cues"]["unknown"]
-            )
-        )
-        + str(
-            grammar["polarity_cues"].get(
-                polarity, grammar["polarity_cues"]["unknown"]
-            )
-        )
-        + str(
-            grammar["referent_scope_cues"].get(
-                referent, grammar["referent_scope_cues"]["unknown"]
-            )
-        )
+def _visible_source_range_tokens(
+    line: str,
+    expected: _ExpectedRecovery,
+    authority: _ExpectedVisibleAuthority,
+    token_occurrence: Counter[str],
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """Decode exact source-range tokens, not a completed rendered line."""
+
+    fragment_by_id = {
+        fragment.source_fragment_id: fragment
+        for root in expected.roots
+        for fragment in root.source_fragments
+    }
+    ordered_fragment_ids = tuple(
+        fragment_id
+        for move in authority.moves
+        if move.family == "root_group"
+        for fragment_id in move.source_fragment_ids
     )
+    range_rows: dict[tuple[str, int, int, str], list[_ExpectedFragment]] = {}
+    range_order: list[tuple[str, int, int, str]] = []
+    for fragment_id in ordered_fragment_ids:
+        fragment = fragment_by_id.get(fragment_id)
+        if fragment is None:
+            return (), ()
+        key = (
+            fragment.source_span_id,
+            fragment.span_relative_start_index,
+            fragment.span_relative_end_index,
+            fragment.source_fragment_text_sha256,
+        )
+        if key not in range_rows:
+            range_rows[key] = []
+            range_order.append(key)
+        range_rows[key].append(fragment)
+    rows_by_text: dict[str, list[tuple[_ExpectedFragment, ...]]] = defaultdict(
+        list
+    )
+    for key in range_order:
+        fragments = tuple(range_rows[key])
+        text = fragments[0].source_fragment_text
+        if not text or any(row.source_fragment_text != text for row in fragments):
+            return (), ()
+        rows_by_text[text].append(fragments)
+    candidates: list[tuple[int, int, str]] = []
+    for token in rows_by_text:
+        start = line.find(token)
+        while start >= 0:
+            candidates.append((start, start + len(token), token))
+            start = line.find(token, start + 1)
+    selected: list[tuple[int, int, str]] = []
+    for row in sorted(candidates, key=lambda value: (value[0], -value[1])):
+        if any(row[0] < old[1] and old[0] < row[1] for old in selected):
+            continue
+        selected.append(row)
+    selected.sort(key=lambda value: value[0])
+    fragment_ids: list[str] = []
+    owner_ids: list[str] = []
+    for _start, _end, token in selected:
+        ordinal = token_occurrence[token]
+        rows = rows_by_text[token]
+        if ordinal >= len(rows):
+            return (), ()
+        fragments = rows[ordinal]
+        token_occurrence[token] += 1
+        fragment_ids.extend(row.source_fragment_id for row in fragments)
+        owner_ids.extend(row.source_owner_id for row in fragments)
+    return tuple(fragment_ids), _ordered_unique_strings(owner_ids)
+
+
+def _parse_visible_node(
+    line: str,
+    *,
+    section_role: str,
+    expected: _ExpectedRecovery,
+    authority: _ExpectedVisibleAuthority,
+    phrase_occurrence: Counter[str] | None = None,
+    token_occurrence: Counter[str] | None = None,
+) -> _ParsedVisibleNode | None:
+    """Parse typed owner/move atoms; no completed sentence is rebuilt."""
+
+    if section_role == "observation":
+        fragment_ids, fragment_owner_ids = _visible_source_range_tokens(
+            line,
+            expected,
+            authority,
+            token_occurrence if token_occurrence is not None else Counter(),
+        )
+        if fragment_ids and fragment_owner_ids:
+            return _ParsedVisibleNode(
+                section_role="observation",
+                family="root_group",
+                visible_owner_ids=fragment_owner_ids,
+                semantic_key="source_range_group",
+                source_fragment_ids=fragment_ids,
+            )
+    mentions = _visible_owner_mentions(
+        line,
+        authority,
+        expected=expected,
+        phrase_occurrence=phrase_occurrence,
+    )
+    visible_owner_ids = _ordered_unique_strings(
+        owner_id for owner_id, _start, _end in mentions
+    )
+    residual = _line_without_owner_lexemes(line, mentions)
+    if section_role == "reception":
+        if not visible_owner_ids:
+            return None
+        acts = expected.catalog["reception_act_predicate_fragments"]
+        matching_acts = tuple(
+            str(act)
+            for act, fragment in acts.items()
+            if type(fragment) is str and fragment and fragment in residual
+        )
+        if len(matching_acts) != 1:
+            return None
+        support_marker = str(
+            expected.catalog["clause_morphology"]["support_target_link"]
+        )
+        support_boundary = line.find(support_marker)
+        if support_marker and support_boundary >= 0:
+            support_ids = _ordered_unique_strings(
+                owner_id
+                for owner_id, _start, end in mentions
+                if end <= support_boundary
+            )
+            target_ids = _ordered_unique_strings(
+                owner_id
+                for owner_id, start, _end in mentions
+                if start > support_boundary
+            )
+        else:
+            support_ids = ()
+            target_ids = visible_owner_ids
+        if not target_ids or set(target_ids) & set(support_ids):
+            return None
+        return _ParsedVisibleNode(
+            section_role="reception",
+            family="reception",
+            visible_owner_ids=(*support_ids, *target_ids),
+            semantic_key=matching_acts[0],
+            target_owner_ids=target_ids,
+            support_owner_ids=support_ids,
+            open_unknown="開いている部分" in residual,
+            intended_action="これから行う" in residual,
+        )
+    if section_role != "observation":
+        return None
+    if visible_owner_ids and all(
+        marker in residual
+        for marker in ("あなた自身", "事実", "決めません")
+    ):
+        if len(visible_owner_ids) != 1:
+            return None
+        return _ParsedVisibleNode(
+            section_role="observation",
+            family="self_denial",
+            visible_owner_ids=visible_owner_ids,
+            semantic_key="self_denial_not_fact",
+        )
+    relation_matches: list[tuple[str, str]] = []
+    for relation_type, direction, left, right in _relation_surface_forms():
+        left_at = residual.find(left)
+        right_at = residual.find(right, max(0, left_at + len(left)))
+        if left_at >= 0 and right_at >= 0:
+            relation_matches.append((relation_type, direction))
+    relation_types = _ordered_unique_strings(
+        value[0] for value in relation_matches
+    )
+    if relation_types and visible_owner_ids:
+        if len(relation_types) != 1 or len(visible_owner_ids) != 2:
+            return None
+        return _ParsedVisibleNode(
+            section_role="observation",
+            family="relation",
+            visible_owner_ids=visible_owner_ids,
+            semantic_key=relation_types[0],
+        )
+    unknown_atoms = {
+        "decision_state": ("選ぶ先",),
+        "post_decision_comparative_merit": ("比べ方",),
+        "other_person_awareness": ("相手からどう見えるか",),
+        "cause": ("理由", "背景"),
+        "referent": ("何を指すか", "指すもの"),
+        "future": ("先の展開",),
+        "outcome": ("結果",),
+        "relation": ("間の関係", "二つの関係"),
+        "generic": ("不明な部分", "その範囲"),
+    }
+    unknown_matches = tuple(
+        key
+        for key, tokens in unknown_atoms.items()
+        if any(token in residual for token in tokens)
+    )
+    boundary_markers = (
+        "まだ",
+        "補いません",
+        "決めつけません",
+        "決めません",
+        "開いて",
+    )
+    if (
+        visible_owner_ids
+        and unknown_matches
+        and any(value in residual for value in boundary_markers)
+    ):
+        if len(unknown_matches) != 1:
+            return None
+        return _ParsedVisibleNode(
+            section_role="observation",
+            family="unknown",
+            visible_owner_ids=visible_owner_ids,
+            semantic_key=unknown_matches[0],
+        )
+    return None
 
 
 def _independent_visible_decode(
     candidate: Any,
     expected: _ExpectedRecovery,
-) -> dict[str, bool]:
-    """Decode body bytes only against independently derived source rows."""
+) -> dict[str, Any]:
+    """Decode typed moves from visible clauses; never replay a full body."""
 
     result = {
         "layout": False,
@@ -2687,187 +4702,476 @@ def _independent_visible_decode(
         "construction_roles": False,
         "receptions": False,
         "dimensions": False,
+        "moves": (),
     }
-    body = candidate.rendered_surface.utf8_bytes
-    observation_count = len(expected.roots) + len(expected.atoms)
-    regions = _plan_owned_regions(
-        body,
-        expected.catalog,
-        expected.grammar,
-        observation_group_ordinals=tuple(range(1, observation_count + 1)),
-    )
-    if regions is None:
+    authority = expected.visible_authority
+    if type(authority) is not _ExpectedVisibleAuthority:
         return result
-    observation_lines, reception_clauses = regions
-    if (
-        len(observation_lines) != observation_count
-        or len(reception_clauses) != len(expected.receptions)
-    ):
-        return result
-    owner_by_id = {row.source_owner_id: row for row in expected.owners}
-    root_lines = observation_lines[: len(expected.roots)]
-    atom_lines = observation_lines[len(expected.roots) :]
-    expected_root_lines: list[str] = []
-    for root in expected.roots:
-        owner = owner_by_id[root.source_owner_id]
-        if owner.referent_basis == "typed_source_fragment_collision_signature":
-            material = owner.referent_text
-        else:
-            material = (
-                "「"
-                + "／".join(
-                    row.source_fragment_text for row in root.source_fragments
-                )
-                + "」に表れている"
-                + owner.referent_text
-            )
-        expected_root_lines.append(
-            _visible_dimension_prefix(root.dimensions, expected.grammar)
-            + material
-            + "がここにあります"
+    try:
+        text = candidate.rendered_surface.utf8_bytes.decode(
+            "utf-8", errors="strict"
         )
-    result["roots"] = tuple(root_lines) == tuple(expected_root_lines)
+        header = str(expected.grammar["observation_header"])
+        separator = str(expected.grammar["section_separator"])
+        suffix = str(
+            expected.catalog["clause_morphology"]["sentence_suffix"]
+        )
+        if not text.startswith(header) or text.count(separator) != 1:
+            return result
+        observation, reception = text[len(header) :].split(separator, 1)
 
-    semantic_lexicon: dict[str, tuple[str, str, str, str]] = {}
-    reception_lexicon: dict[str, tuple[str, str, str, str]] = {}
-    semantic_owner_ids = {
-        value for row in expected.atoms for value in row.source_owner_ids
-    }
-    reception_owner_ids = {
-        value
-        for row in expected.receptions
-        for value in (
-            *row.source_target_owner_ids,
-            *row.visible_support_owner_ids,
+        def section_lines(value: str) -> tuple[str, ...]:
+            if not value:
+                return ()
+            rows = tuple(value.split("\n"))
+            if any(
+                not row or not suffix or not row.endswith(suffix)
+                for row in rows
+            ):
+                raise ValueError("invalid visible line")
+            return tuple(row[: -len(suffix)] for row in rows)
+
+        observation_lines = section_lines(observation)
+        reception_lines = section_lines(reception)
+        visible_rows = (
+            *(("observation", row) for row in observation_lines),
+            *(("reception", row) for row in reception_lines),
         )
-    }
-    for owner in expected.owners:
-        if owner.source_owner_id in semantic_owner_ids:
-            semantic_expression = (
-                _visible_dimension_prefix(owner.dimensions, expected.grammar)
-                + owner.referent_text
+        if len(visible_rows) != len(authority.moves):
+            return result
+        decoded: list[_ParsedVisibleNode] = []
+        phrase_occurrence: Counter[str] = Counter()
+        token_occurrence: Counter[str] = Counter()
+        for section_role, line in visible_rows:
+            node = _parse_visible_node(
+                line,
+                section_role=section_role,
+                expected=expected,
+                authority=authority,
+                phrase_occurrence=phrase_occurrence,
+                token_occurrence=token_occurrence,
             )
-            if semantic_expression in semantic_lexicon:
+            if node is None:
                 return result
-            semantic_lexicon[semantic_expression] = (
-                owner.source_owner_id,
-                "",
-                "",
-                "",
+            decoded.append(node)
+        decoded_moves = tuple(decoded)
+        result["moves"] = decoded_moves
+        root_owner_ids = tuple(
+            owner_id
+            for row in decoded_moves
+            if row.family == "root_group"
+            for owner_id in row.visible_owner_ids
+        )
+        visible_fragment_ids = tuple(
+            fragment_id
+            for row in decoded_moves
+            if row.family == "root_group"
+            for fragment_id in row.source_fragment_ids
+        )
+        expected_fragment_ids = tuple(
+            fragment.source_fragment_id
+            for root in expected.roots
+            for fragment in root.source_fragments
+        )
+        result["roots"] = bool(
+            set(root_owner_ids) == set(authority.ordered_owner_ids)
+            and len(visible_fragment_ids) == len(expected_fragment_ids)
+            and set(visible_fragment_ids) == set(expected_fragment_ids)
+            and any(row.family == "root_group" for row in decoded_moves)
+        )
+        expected_family_counts = Counter(row.family for row in authority.moves)
+        decoded_family_counts = Counter(row.family for row in decoded_moves)
+        result["atoms"] = bool(
+            result["roots"]
+            and all(
+                decoded_family_counts[family]
+                == expected_family_counts[family]
+                for family in ("relation", "unknown", "self_denial")
             )
-        if owner.source_owner_id in reception_owner_ids:
-            if owner.referent_text in reception_lexicon:
-                return result
-            reception_lexicon[owner.referent_text] = (
-                owner.source_owner_id,
-                "",
-                "",
-                "",
+        )
+        root_owner_set = set(root_owner_ids)
+        result["construction_roles"] = bool(
+            result["roots"]
+            and all(
+                bool(set(row.source_owner_ids) & root_owner_set)
+                for row in candidate.source_envelope.atom_bindings
+                if row.semantic_family == "construction"
             )
-    atom_matches: list[bool] = []
-    construction_matches: list[bool] = []
-    morphology = expected.catalog["clause_morphology"]
-    for line, atom in zip(atom_lines, expected.atoms, strict=True):
-        if atom.semantic_family == "construction":
-            role_texts = tuple(
-                role.role_position_surface_token
-                + "は"
-                + str(morphology["target_owner_join"]).join(
-                    _visible_dimension_prefix(dimensions, expected.grammar)
-                    + owner_by_id[owner_id].referent_text
-                    for owner_id, dimensions in zip(
-                        role.source_owner_ids,
-                        role.source_owner_dimensions,
-                        strict=True,
+        )
+        result["receptions"] = bool(
+            decoded_family_counts["reception"]
+            == len(candidate.reception_bindings)
+            and decoded_family_counts["reception"] > 0
+        )
+        result["dimensions"] = bool(
+            all(
+                owner_id in set(candidate.owner_registry)
+                for row in decoded_moves
+                for owner_id in row.visible_owner_ids
+            )
+        )
+        result["layout"] = bool(
+            result["roots"]
+            and result["atoms"]
+            and result["receptions"]
+            and len(observation_lines)
+            == sum(
+                row.section_role == "observation" for row in authority.moves
+            )
+            and len(reception_lines)
+            == sum(row.section_role == "reception" for row in authority.moves)
+        )
+    except Exception:
+        return result
+    return result
+
+
+def _relation_display_owner_ids(
+    owner_ids: tuple[str, ...], relation_type: str, direction: str
+) -> tuple[str, ...]:
+    from emlis_ai_step11_surface_catalog_v3 import STEP11_SURFACE_CATALOG
+
+    if len(owner_ids) != 2:
+        return ()
+    try:
+        form = STEP11_SURFACE_CATALOG["grounded_lexicalization"][
+            "relation_atoms"
+        ][relation_type][direction]
+        endpoint = {"from": owner_ids[0], "to": owner_ids[1]}
+        first, second = tuple(form["endpoint_order"])
+        return (endpoint[str(first)], endpoint[str(second)])
+    except (KeyError, TypeError, ValueError):
+        return ()
+
+
+def _visible_move_signature(value: _ExpectedVisibleMove) -> tuple[Any, ...]:
+    if value.family == "root_group":
+        visible_owner_ids = value.source_owner_ids
+        semantic_key = "source_range_group"
+    elif value.family == "self_denial":
+        visible_owner_ids = value.source_owner_ids
+        semantic_key = "self_denial_not_fact"
+    elif value.family == "relation":
+        visible_owner_ids = _relation_display_owner_ids(
+            value.source_owner_ids, value.semantic_key, value.direction
+        )
+        semantic_key = value.semantic_key
+    elif value.family == "unknown":
+        visible_owner_ids = value.source_owner_ids
+        semantic_key = value.semantic_key
+    elif value.family == "reception":
+        visible_owner_ids = (*value.support_owner_ids, *value.target_owner_ids)
+        semantic_key = value.semantic_key
+    else:
+        return ()
+    return (
+        value.section_role,
+        value.family,
+        visible_owner_ids,
+        semantic_key,
+        value.target_owner_ids,
+        value.support_owner_ids,
+        value.open_unknown,
+        value.action_lifecycle == "intended",
+        value.source_fragment_ids if value.family == "root_group" else (),
+    )
+
+
+def _parsed_visible_signature(value: _ParsedVisibleNode) -> tuple[Any, ...]:
+    return (
+        value.section_role,
+        value.family,
+        value.visible_owner_ids,
+        value.semantic_key,
+        value.target_owner_ids,
+        value.support_owner_ids,
+        value.open_unknown,
+        value.intended_action,
+        value.source_fragment_ids,
+    )
+
+
+def _declared_plan_move_signatures(
+    candidate: Any,
+    expected: _ExpectedRecovery,
+) -> tuple[tuple[Any, ...], ...]:
+    """Normalize the candidate's public AST; never copy expected moves."""
+
+    from emlis_ai_nls_v3_artifact_contract import artifact_sha256
+
+    authority = expected.visible_authority
+    if type(authority) is not _ExpectedVisibleAuthority:
+        return ()
+    try:
+        envelope = candidate.source_envelope
+        roots = tuple(envelope.root_bindings)
+        atoms = tuple(envelope.atom_bindings)
+        receptions = tuple(candidate.reception_bindings)
+        root_by_fragment = {
+            fragment.source_fragment_id: root
+            for root in roots
+            for fragment in root.source_fragments
+        }
+        atom_by_id = {row.source_atom_id: row for row in atoms}
+        reception_by_id = {
+            row.source_reception_opportunity_id: row for row in receptions
+        }
+        evaluation_by_id = {
+            str(row.self_evaluation_id): row
+            for row in authority.semantic_overlay.reported_self_evaluations
+        }
+        unknown_by_id = {
+            str(row.unknown_id): row
+            for row in authority.semantic_overlay.unknowns
+        }
+        overlay_reception: dict[str, Any] = {}
+        for row in authority.semantic_overlay.reception_antecedent_bindings:
+            for opportunity_id in row.source_reception_opportunity_ids:
+                key = str(opportunity_id)
+                if key in overlay_reception:
+                    return ()
+                overlay_reception[key] = row
+        unknown_owner_ids = {
+            authority.source_to_owner[str(nucleus_id)]
+            for unknown in authority.semantic_overlay.unknowns
+            for nucleus_id in (
+                *unknown.target_nucleus_ids,
+                *unknown.context_nucleus_ids,
+            )
+            if str(nucleus_id) in authority.source_to_owner
+        }
+        signatures: list[tuple[Any, ...]] = []
+        declared_root_owner_ids: set[str] = set()
+        construction_by_owner: dict[str, list[str]] = defaultdict(list)
+        for atom in atoms:
+            if atom.semantic_family != "construction":
+                continue
+            owner_id = next(
+                (
+                    value
+                    for value in candidate.owner_registry
+                    if value in atom.source_owner_ids
+                ),
+                None,
+            )
+            if owner_id is None:
+                return ()
+            construction_by_owner[str(owner_id)].append(atom.source_atom_id)
+        for unit in candidate.realization_plan.units:
+            owner_ids = tuple(str(value) for value in unit.source_owner_ids)
+            atom_ids = tuple(str(value) for value in unit.source_atom_ids)
+            fragment_ids = tuple(
+                str(value) for value in unit.source_fragment_ids
+            )
+            if unit.section_role == "reception":
+                if atom_ids or fragment_ids:
+                    return ()
+                reception = reception_by_id.get(str(unit.source_unit_id))
+                overlay_binding = overlay_reception.get(
+                    str(unit.source_unit_id)
+                )
+                if reception is None or overlay_binding is None:
+                    return ()
+                target_ids = tuple(reception.source_target_owner_ids)
+                support_ids = tuple(
+                    value
+                    for value in reception.visible_support_owner_ids
+                    if value not in set(target_ids)
+                )
+                if owner_ids != _ordered_unique_strings(
+                    (*target_ids, *support_ids)
+                ):
+                    return ()
+                signatures.append(
+                    (
+                        "reception",
+                        "reception",
+                        (*support_ids, *target_ids),
+                        str(reception.effective_reception_act),
+                        target_ids,
+                        support_ids,
+                        bool(set((*target_ids, *support_ids)) & unknown_owner_ids),
+                        str(overlay_binding.action_lifecycle) == "intended",
+                        (),
                     )
                 )
-                for role in atom.construction_roles
-            )
-            expected_line = (
-                "、".join(role_texts)
-                + "という"
-                + atom.surface_token
-                + str(morphology["construction_standalone_predicate"])
-            )
-            matched = line == expected_line
-            atom_matches.append(matched)
-            construction_matches.append(matched)
-            continue
-        parsed = _parse_observation(
-            (line,),
-            semantic_lexicon,
-            expected.catalog,
-            expected.grammar,
-            strip_leading_dimensions=False,
-        )
-        signature = (
-            atom.semantic_family,
-            atom.semantic_key,
-            atom.direction,
-            atom.source_owner_ids,
-        )
-        matched = bool(
-            parsed["unparsed"] == 0
-            and parsed["ambiguous"] == 0
-            and parsed["modifiers"] == Counter()
-            and parsed["atoms"] == Counter({signature: 1})
-        )
-        atom_matches.append(matched)
-    result["atoms"] = len(atom_matches) == len(expected.atoms) and all(
-        atom_matches
-    )
-    expected_constructions = sum(
-        row.semantic_family == "construction" for row in expected.atoms
-    )
-    result["construction_roles"] = bool(
-        len(construction_matches) == expected_constructions
-        and all(construction_matches)
-    )
-    parsed_receptions, reception_ambiguity = _parse_reception(
-        reception_clauses,
-        reception_lexicon,
-        expected.catalog,
-        expected.grammar,
-    )
-    expected_receptions = Counter(
-        (
-            row.effective_reception_act,
-            _ordered_unique_strings(
-                value
-                for value in (
-                    *row.source_focus_owner_ids,
-                    *row.visible_support_owner_ids,
+                continue
+            if unit.section_role != "observation":
+                return ()
+            if fragment_ids:
+                try:
+                    grouped_root_rows = tuple(
+                        root_by_fragment[value] for value in fragment_ids
+                    )
+                    group_atoms = tuple(atom_by_id[value] for value in atom_ids)
+                except KeyError:
+                    return ()
+                group_roots = tuple(
+                    {
+                        row.source_root_id: row for row in grouped_root_rows
+                    }.values()
                 )
-                if value not in set(row.source_target_owner_ids)
-                and value in owner_by_id
-            ),
-            row.source_target_owner_ids,
-        )
-        for row in expected.receptions
-    )
-    result["receptions"] = bool(
-        reception_ambiguity == 0
-        and parsed_receptions == expected_receptions
-    )
-    result["dimensions"] = bool(
-        result["roots"]
-        and result["atoms"]
-        and all(
-            _visible_dimension_prefix(owner.dimensions, expected.grammar)
-            + owner.referent_text
-            in line
-            for line, atom in zip(atom_lines, expected.atoms, strict=True)
-            for owner in (
-                owner_by_id[value] for value in atom.source_owner_ids
+                root_owner_ids = _ordered_unique_strings(
+                    row.source_owner_id for row in group_roots
+                )
+                new_owner_ids = tuple(
+                    value
+                    for value in root_owner_ids
+                    if value not in declared_root_owner_ids
+                )
+                construction_ids = _ordered_unique_strings(
+                    atom_id
+                    for owner_id in new_owner_ids
+                    for atom_id in construction_by_owner.get(owner_id, ())
+                )
+                unit_id = str(unit.source_unit_id)
+                family = next(
+                    (
+                        value
+                        for value in ("meaning", "labelcompanion")
+                        if unit_id.startswith("nls3s11rc0036" + value + "_")
+                    ),
+                    None,
+                )
+                if family is None:
+                    return ()
+                source_unit_id = (
+                    "nls3s11rc0036"
+                    + family
+                    + "_"
+                    + artifact_sha256(
+                        {
+                            "source_root_ids": [
+                                row.source_root_id for row in group_roots
+                            ],
+                            "source_fragment_ids": list(fragment_ids),
+                        }
+                    )[:16]
+                )
+                if (
+                    root_owner_ids != owner_ids
+                    or any(
+                        row.semantic_family != "construction"
+                        for row in group_atoms
+                    )
+                    or atom_ids != construction_ids
+                    or str(unit.source_unit_id) != source_unit_id
+                ):
+                    return ()
+                signatures.append(
+                    (
+                        "observation",
+                        "root_group",
+                        owner_ids,
+                        "source_range_group",
+                        (),
+                        (),
+                        False,
+                        False,
+                        fragment_ids,
+                    )
+                )
+                declared_root_owner_ids.update(new_owner_ids)
+                continue
+            evaluation = evaluation_by_id.get(str(unit.source_unit_id))
+            if evaluation is not None:
+                if atom_ids or len(owner_ids) != 1:
+                    return ()
+                signatures.append(
+                    (
+                        "observation",
+                        "self_denial",
+                        owner_ids,
+                        "self_denial_not_fact",
+                        (),
+                        (),
+                        False,
+                        False,
+                        (),
+                    )
+                )
+                continue
+            unknown = unknown_by_id.get(str(unit.source_unit_id))
+            if unknown is not None:
+                try:
+                    group_atoms = tuple(atom_by_id[value] for value in atom_ids)
+                    target_ids = _ordered_unique_strings(
+                        authority.source_to_owner[str(value)]
+                        for value in unknown.target_nucleus_ids
+                    )
+                except KeyError:
+                    return ()
+                if (
+                    not atom_ids
+                    or any(
+                        row.semantic_family != "explicit_unknown"
+                        for row in group_atoms
+                    )
+                    or owner_ids != target_ids
+                ):
+                    return ()
+                signatures.append(
+                    (
+                        "observation",
+                        "unknown",
+                        owner_ids,
+                        _expected_unknown_dimension_key(
+                            str(unknown.unknown_type)
+                        ),
+                        (),
+                        (),
+                        False,
+                        False,
+                        (),
+                    )
+                )
+                continue
+            if len(atom_ids) != 1:
+                return ()
+            atom = atom_by_id.get(atom_ids[0])
+            if (
+                atom is None
+                or atom.semantic_family not in {"relation", "semantic_link"}
+                or str(unit.source_unit_id) != atom.source_atom_id
+                or tuple(atom.source_owner_ids[:2]) != owner_ids
+            ):
+                return ()
+            relation_matches = tuple(
+                row
+                for row in authority.semantic_overlay.relations
+                if (row.required or row.explicit)
+                and (
+                    authority.source_to_owner[str(row.from_nucleus_id)],
+                    authority.source_to_owner[str(row.to_nucleus_id)],
+                )
+                == owner_ids
             )
-        )
-    )
-    result["layout"] = bool(
-        result["roots"]
-        and result["atoms"]
-        and result["receptions"]
-    )
-    return result
+            if len(relation_matches) != 1:
+                return ()
+            relation = relation_matches[0]
+            visible_ids = _relation_display_owner_ids(
+                owner_ids,
+                str(relation.relation_type),
+                str(relation.relation_direction),
+            )
+            if not visible_ids:
+                return ()
+            signatures.append(
+                (
+                    "observation",
+                    "relation",
+                    visible_ids,
+                    str(relation.relation_type),
+                    (),
+                    (),
+                    False,
+                    False,
+                    (),
+                )
+            )
+        return tuple(signatures)
+    except Exception:
+        return ()
 
 
 def _recovery_source_envelope_exact(
@@ -2916,7 +5220,7 @@ def _recovery_source_envelope_exact(
                 )
             )
             and envelope.source_candidate_id
-            == "nls3s11rc0035source_"
+            == "nls3s11rc0036source_"
             + envelope.source_envelope_sha256[:16]
             and all(
                 getattr(envelope, name, None) == value
@@ -2950,7 +5254,7 @@ def _recovery_source_envelope_exact(
             and envelope.base_acceptance_claimed is False
             and envelope.semantic_coverage_authorized is True
             and envelope.semantic_coverage_authority
-            == "rc0035_source_envelope_visible_inverse_replay"
+            == "rc0036_source_envelope_visible_inverse_replay"
             and envelope.experimental_only is True
             and envelope.private_body_full is True
             and envelope.shareable is False
@@ -2976,11 +5280,10 @@ def _recovery_inverse_checks(
         "dimension_loci_exact": False,
     }
     try:
-        from emlis_ai_step11_cycle001_product_recovery_v3 import (
-            step11_cycle001_product_recovery_visible_inverse,
-        )
-
         expected = _direct_expected_recovery(context)
+        authority = expected.visible_authority
+        if type(authority) is not _ExpectedVisibleAuthority:
+            return result
         body = candidate.rendered_surface.utf8_bytes
         result["final_utf8_valid"] = bool(
             type(body) is bytes
@@ -3012,10 +5315,25 @@ def _recovery_inverse_checks(
         )
         actual_forward = _forward_atom_signatures(candidate)
         decoded = _independent_visible_decode(candidate, expected)
+        expected_move_signatures = tuple(
+            _visible_move_signature(row) for row in authority.moves
+        )
+        declared_move_signatures = _declared_plan_move_signatures(
+            candidate, expected
+        )
+        decoded_move_signatures = tuple(
+            _parsed_visible_signature(row) for row in decoded["moves"]
+        )
+        three_way_moves_exact = bool(
+            expected_move_signatures
+            and expected_move_signatures == declared_move_signatures
+            and expected_move_signatures == decoded_move_signatures
+        )
         result["semantic_atoms_exact"] = bool(
             actual_atom_signatures == expected_atom_signatures
             and actual_forward == expected_forward
             and decoded["atoms"]
+            and three_way_moves_exact
         )
         result["construction_modifiers_exact"] = bool(
             tuple(
@@ -3035,6 +5353,7 @@ def _recovery_inverse_checks(
                 if row.semantic_family == "construction"
             )
             and decoded["construction_roles"]
+            and three_way_moves_exact
         )
         result["reception_bindings_exact"] = bool(
             tuple(
@@ -3052,6 +5371,7 @@ def _recovery_inverse_checks(
                 _reception_signature(row) for row in expected.receptions
             )
             and decoded["receptions"]
+            and three_way_moves_exact
         )
         expected_plan_units = _expected_plan_unit_signatures(expected)
         actual_plan_units = tuple(
@@ -3063,30 +5383,14 @@ def _recovery_inverse_checks(
             actual_dimension_rows == expected_dimension_rows
             and actual_plan_units == expected_plan_units
             and decoded["dimensions"]
+            and three_way_moves_exact
         )
-        visible = step11_cycle001_product_recovery_visible_inverse(candidate)
-        replay_units = tuple(
-            (
-                int(row.line_ordinal),
-                str(row.section_role),
-                str(row.source_unit_id),
-                tuple(str(value) for value in row.source_atom_ids),
-                tuple(str(value) for value in row.source_owner_ids),
-                tuple(
-                    (
-                        str(owner_id),
-                        tuple(str(value) for value in dimensions),
-                    )
-                    for owner_id, dimensions in row.source_owner_dimensions
-                ),
-                tuple(str(value) for value in row.source_obligation_ids),
-                tuple(str(value) for value in row.source_fragment_ids),
-            )
-            for row in visible
+        observation_count = sum(
+            row.section_role == "observation" for row in authority.moves
         )
-        expected_replay_units = tuple(row[:8] for row in expected_plan_units)
-        observation_count = len(expected.roots) + len(expected.atoms)
-        reception_count = len(expected.receptions)
+        reception_count = sum(
+            row.section_role == "reception" for row in authority.moves
+        )
         result["inverse_layout_exact"] = bool(
             candidate.realization_plan.schema_version == _RECOVERY_PLAN_SCHEMA
             and candidate.realization_plan.candidate_version_id
@@ -3098,8 +5402,8 @@ def _recovery_inverse_checks(
             and candidate.realization_plan.candidate_boundary_sha256
             == expected.candidate_boundary_sha256
             and actual_plan_units == expected_plan_units
-            and replay_units == expected_replay_units
             and decoded["layout"]
+            and three_way_moves_exact
             and candidate.realization_plan.observation_line_count
             == observation_count
             and candidate.realization_plan.reception_line_count
@@ -3158,7 +5462,7 @@ def _current_candidate(
         **source_arguments,
     )
     checks["recovery_validator_passed"] = not issues
-    expected_candidate_id = "nls3s11rc0035cand_" + artifact_sha256(
+    expected_candidate_id = "nls3s11rc0036cand_" + artifact_sha256(
         {
             "candidate_version_id": _RECOVERY_CANDIDATE_VERSION,
             "candidate_schema": _RECOVERY_CANDIDATE_SCHEMA,
@@ -4249,7 +6553,7 @@ def _write_outputs(
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Build one source-bound rc0035 recovery output for every case in "
+            "Build one source-bound rc0036 recovery output for every case in "
             "the frozen exact-100 corpus and save a private body-full/HMAC "
             "body-free v4 pair only when machine100 is exact."
         )

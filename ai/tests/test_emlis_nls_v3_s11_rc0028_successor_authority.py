@@ -48,6 +48,9 @@ _OWNER = (
     / "ai_inference"
     / "emlis_ai_grounded_relation_construction_authority_successor_v3.py"
 )
+_EXACT100 = (
+    _HERE / "fixtures" / "emlis_nls_v3" / "generated" / "batch_001.jsonl"
+)
 
 
 def _input(thought_text: str) -> dict[str, object]:
@@ -95,6 +98,18 @@ def _build(text: str):
         resolver,
     )
     return normalized, plan, resolver, value
+
+
+def _fixture_input(case_id: str) -> dict[str, object]:
+    return next(
+        row["input"]
+        for row in (
+            json.loads(line)
+            for line in _EXACT100.read_text(encoding="utf-8").splitlines()
+            if line
+        )
+        if row["case_id"] == case_id
+    )
 
 
 def test_successor_exports_closed_experiment_only_contract() -> None:
@@ -279,6 +294,51 @@ def test_relation_topology_semantic_link_and_unknown_mutations_fail_closed() -> 
         resolver=resolver,
     )
     assert "SUCCESSOR_AUTHORITY_EXPLICIT_UNKNOWNS_MISMATCH" in issues
+
+
+def test_completion_referent_unknown_is_a_closed_body_free_authority() -> None:
+    current_input = _fixture_input("nls3s_b001_0093")
+    _normalized, plan, resolver = _plan_and_resolver(current_input)
+    restatement = build_grounded_semantic_restatement_witness(plan, resolver)
+    source = tuple(
+        row
+        for row in restatement.explicit_unknowns
+        if row.dimension == "explicit_referent_unknown"
+    )
+    assert len(source) == 1
+    value = build_grounded_relation_construction_authority_successor(
+        plan,
+        resolver,
+    )
+    assert validate_grounded_relation_construction_authority_successor(
+        value,
+        plan=plan,
+        resolver=resolver,
+    ) == ()
+    binding = tuple(
+        row
+        for row in value.explicit_unknown_authorities
+        if row.source_unknown_id == source[0].unknown_id
+    )
+    assert len(binding) == 1
+    assert binding[0].dimension == "explicit_referent_unknown"
+    assert tuple(
+        row.owner_id for row in binding[0].affected_source_owners
+    ) == source[0].affected_unit_ids
+    material = grounded_relation_construction_authority_successor_material(
+        value,
+        plan=plan,
+        resolver=resolver,
+    )
+    encoded = json.dumps(material, ensure_ascii=False, sort_keys=True)
+    assert all(
+        body not in encoded
+        for body in (
+            current_input["thought_text"],
+            current_input["action_text"],
+        )
+        if body
+    )
 
 
 def test_relation_direction_mutation_and_originless_clone_fail_closed() -> None:

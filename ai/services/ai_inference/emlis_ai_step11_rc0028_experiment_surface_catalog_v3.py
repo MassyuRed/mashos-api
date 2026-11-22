@@ -79,6 +79,7 @@ _DIRECTIONS: Final = ("bidirectional", "source_to_target")
 _UNKNOWN_DIMENSIONS: Final = (
     "explicit_cause_unknown",
     "explicit_choice_decision_unknown",
+    "explicit_referent_unknown",
     "explicit_temporal_referent_unknown",
     "explicit_unverbalized_unknown",
 )
@@ -150,6 +151,9 @@ _RELATION_SURFACE_TOKENS: Final = {
 _UNKNOWN_SURFACE_TOKENS: Final = {
     "explicit_cause_unknown": "理由がまだ分からないところ",
     "explicit_choice_decision_unknown": "選択がまだ決まっていないところ",
+    "explicit_referent_unknown": _ROLE_POSITION_SURFACE_TOKENS[
+        "unknown_or_limit:limit"
+    ],
     "explicit_temporal_referent_unknown": "時点がまだはっきりしないところ",
     "explicit_unverbalized_unknown": "まだ言葉になっていないところ",
 }
