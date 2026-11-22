@@ -691,6 +691,38 @@ def test_work_theme_distinguishes_fixed_trial_conditions_from_comparison_items()
     assert comparison["history"] == [{"id": 1, "question": previous}]
 
 
+def test_theme_repairs_the_observed_awkward_exercise_outcome_after_independent_review():
+    theme = "日々の過ごし方"
+    scene = "体を動かそうと思って日常の予定に組み込むとき"
+    draft = "選んだ入れ方が日常に合っていたと続けてみて分かる変化は何ですか？"
+    revised = "しばらく続けてみて、どんな変化があると、日常に無理なく取り入れられたと感じますか？"
+    original = {"questions": []}
+    prepared, sources = prepare_question_material(
+        original, lane="theme", theme=theme, choose_theme=select_theme_angle("move", "outcome"),
+    )
+    calls = []
+    responses = iter([
+        f"「{scene}、{draft}」",
+        '{"verdict":"reject","reason":"surface"}',
+        json.dumps({"question": revised}, ensure_ascii=False),
+        '{"verdict":"accept"}',
+    ])
+
+    async def generate(system, payload):
+        calls.append((system, payload))
+        return next(responses)
+
+    result = asyncio.run(generate_question(prepared, sources, material=original, generate=generate))
+
+    assert len(calls) == 4
+    assert calls[0][1]["form"] == calls[2][1]["form"] == revised
+    assert calls[1][0].startswith(_THEME_READ_SYSTEM_MESSAGE)
+    assert calls[1][1]["body"] == draft
+    assert calls[3][0].startswith(_THEME_READ_SYSTEM_MESSAGE)
+    assert calls[3][1]["body"] == revised
+    assert result.candidate.text == f"{scene}、{revised}"
+
+
 def test_theme_preserves_an_unmade_choice_in_the_independent_review():
     result, calls = theme_run(
         "仕事・学び", "新しいやり方に切り替えるために、まず何をしますか？",
