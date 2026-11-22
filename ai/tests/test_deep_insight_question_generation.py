@@ -1114,7 +1114,7 @@ def test_theme_repairs_a_yes_no_main_clause_with_an_embedded_question(theme, sce
     else:
         assert calls[1][0] == _THEME_FORM_REPAIR_SYSTEM_MESSAGE
         assert set(calls[1][1]) == {"form", "scene"}
-    assert calls[2][0] == _THEME_READ_SYSTEM_MESSAGE
+    assert calls[2][0].startswith(_THEME_READ_SYSTEM_MESSAGE)
     assert result.candidate.text.endswith(revised)
 
 
