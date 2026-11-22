@@ -1207,6 +1207,66 @@ def _natural_refined_save_retried(events, received, observation):
     return attempt == observation['attempt_id']
 
 
+def _natural_initial_frame_revision(saved, snapshot, initial, initial_finish, answer, request):
+    """Reconstruct the initial context across a first revision of an owned past frame."""
+    from dataclasses import replace
+    from cocolon_meaning_experience_engine.emlis_thread_source import identity
+    from emlis_thread_service import _context_ref
+
+    thread = snapshot['thread']
+    data = thread['data']
+    guards = data.get('context_guards', [])
+    updates = [e for e in snapshot['events'] if initial_finish['seq'] < e['seq'] < answer['seq']]
+    if (snapshot['tier'] != 'premium' or len(updates) != 1
+            or initial['payload'].get('context_guards') != guards):
+        return None
+    update, = updates
+    payload = update['payload']
+    target = payload.get('frame_feedback_target')
+    if (update['kind'] != 'OPERATION' or update['round_index'] != answer['round_index']
+            or update['seq'] != initial_finish['seq'] + 1 or answer['seq'] != update['seq'] + 1
+            or any(update[key] is not None for key in ('operation_id', 'attempt_id', 'question_id'))
+            or not isinstance(update['idempotency_key'], str) or not update['idempotency_key']
+            or set(payload) != {'status', 'request_fingerprint', 'frame_feedback_target'}
+            or payload.get('status') != 'FRAME_REVISED' or type(target) is not dict
+            or type(target.get('feedback_version')) is not int or target['feedback_version'] != 1
+            or target.get('displayed_status') != 'TENTATIVE'):
+        return None
+    times = [parse_iso_utc(e['recorded_at']) for e in (initial_finish, update, answer)]
+    if None in times or times != sorted(times):
+        return None
+
+    key, source_id = target.get('frame_key'), target.get('input_id')
+    source_guard = target.get('source_guard')
+    if (not isinstance(source_id, str) or source_id == saved.saved_input_id
+            or source_guard not in guards or source_guard[0] != source_id
+            or [key, 1] not in data.get('context_feedback', [])
+            or any(row[0] == key for row in data.get('frame_target_dependencies', []))):
+        return None
+    frames = initial['payload'].get('artifact', {}).get('interpretive_frames', [])
+    frame_keys = ('frame_key', 'frame_ref', 'input_id', 'trigger', 'received_meaning', 'evidence_refs')
+    if (set(target) != {*frame_keys, 'source_guard', 'displayed_status', 'feedback_version'}
+            or sum(all(name in row and row[name] == target[name] for name in frame_keys)
+                   and row.get('status') == 'TENTATIVE' and bool(row.get('evidence_refs')) for row in frames) != 1):
+        return None
+    current = request.emlis_thread.frame_feedback_sources
+    matches = [f for f in current if f.frame_key == key and f.source_emotion_id == source_id
+               and f.frame_ref == target.get('frame_ref') and f.version == 1 and f.status == 'REVISED'
+               and payload.get('request_fingerprint') == identity(
+                   'frame-feedback-request', f.frame_ref, f.status, f.correction_text)]
+    if len(matches) != 1:
+        return None
+    recorded_feedback = parse_iso_utc(matches[0].updated_at)
+    if recorded_feedback is None or not times[0] <= recorded_feedback <= times[1]:
+        return None
+
+    previous_data = {**data, 'context_feedback': [row for row in data['context_feedback'] if row != [key, 1]]}
+    initial_context = _context_ref({**snapshot, 'thread': {**thread, 'data': previous_data}})
+    initial_request = replace(request, emlis_thread=replace(request.emlis_thread,
+        frame_feedback_sources=tuple(f for f in current if f is not matches[0])))
+    return initial_request, initial_context
+
+
 def _natural_refined_observation_handoff(saved: PieceSavedOriginal, snapshot: dict,
                                          answer_id: str) -> PieceSavedRefinedHandoff:
     """Bind one current natural answer to real sources and saved reply receipts.
@@ -1290,7 +1350,20 @@ def _natural_refined_observation_handoff(saved: PieceSavedOriginal, snapshot: di
             and qp.get('thread_id') == thread_id and qp.get('question_id') == question['question_id']
             and qp.get('original_source_ref') == d.get('original_source_ref')
             and type(qp.get('decision')) is dict and qp['decision'].get('disposition') == 'ASK')
+    initial_finishes = [e for e in events if e['kind'] == 'OPERATION'
+        and all(e[key] == initial[key] for key in ('operation_id', 'attempt_id'))
+        and e['payload'].get('status') == 'AWAITING_ANSWER'
+        and e['payload'].get('failure_code') is None]
+    require(len(initial_finishes) == 1)
+    initial_finish = initial_finishes[0]
+    require(question['seq'] < initial_finish['seq'] < answer['seq'])
     original_request = replace(request, emlis_thread=replace(request.emlis_thread, answers=(), current_round=0))
+    current_context = _context_ref(snapshot)
+    initial_context = current_context
+    if initial['payload'].get('context_ref') != current_context:
+        original = _natural_initial_frame_revision(saved, snapshot, initial, initial_finish, answer, original_request)
+        require(original is not None)
+        original_request, initial_context = original
     original_prefix = admit_emlis_thread(original_request).source_prefix_ref
     require(initial['payload'].get('source_prefix_ref') == original_prefix
             and original_prefix != admitted.source_prefix_ref)
@@ -1317,19 +1390,19 @@ def _natural_refined_observation_handoff(saved: PieceSavedOriginal, snapshot: di
     else:
         operation, original_ranges, answer_range = _natural_active_answer_ranges(saved, prepared)
     require(op.get('source_prefix_ref') == admitted.source_prefix_ref
-            and op.get('context_ref') == _context_ref(snapshot)
+            and op.get('context_ref') == current_context
             and op.get('context_guards') == d.get('context_guards', []))
     require(answer['operation_id'] == checkpoint['operation_id'] == observation['operation_id']
             == d.get('operation_id') and answer['attempt_id'] == checkpoint['attempt_id']
             and observation['attempt_id'] == d.get('attempt_id'))
     require(initial['seq'] < question['seq'] < answer['seq'] < checkpoint['seq'] < observation['seq'])
 
-    def receipt_chain(body, prefix, response_stage, source_request):
+    def receipt_chain(body, prefix, response_stage, source_request, expected_context):
         payload = body['payload']
         context_ref = payload.get('context_ref')
         require(type(context_ref) is str and bool(context_ref)
                 and not any(c.isspace() for c in context_ref)
-                and context_ref == _context_ref(snapshot)
+                and context_ref == expected_context
                 and payload.get('context_guards') == d.get('context_guards', []))
         artifact = payload.get('artifact')
         require(type(artifact) is dict and artifact.get('schema_version') == ARTIFACT_SCHEMA
@@ -1364,20 +1437,13 @@ def _natural_refined_observation_handoff(saved: PieceSavedOriginal, snapshot: di
                     and _natural_refined_save_retried(events, received, body))
         return started, received
 
-    initial_started, initial_received = receipt_chain(initial, original_prefix, 'PRE_QUESTION', original_request)
-    started, received = receipt_chain(observation, admitted.source_prefix_ref, 'REFINED', request)
+    initial_started, initial_received = receipt_chain(initial, original_prefix, 'PRE_QUESTION', original_request, initial_context)
+    started, received = receipt_chain(observation, admitted.source_prefix_ref, 'REFINED', request, current_context)
     require(checkpoint['seq'] < started['seq'])
     # Reject hidden extra calls/corrections, rather than picking a convenient
     # matching receipt from a broader or subsequently changed conversation.
     require(sum(e['kind'] == 'OPERATION' and e['payload'].get('stage') in {
         'NATURAL_REPLY_CALL_STARTED', 'NATURAL_REPLY_RECEIVED'} for e in events) == 4)
-    initial_finishes = [e for e in events if e['kind'] == 'OPERATION'
-        and all(e[key] == initial[key] for key in ('operation_id', 'attempt_id'))
-        and e['payload'].get('status') == 'AWAITING_ANSWER'
-        and e['payload'].get('failure_code') is None]
-    require(len(initial_finishes) == 1)
-    initial_finish = initial_finishes[0]
-    require(question['seq'] < initial_finish['seq'] < answer['seq'])
     stopped = d.get('natural_question_stop') == 'stop'
     require('continuation_question' not in d)
     if stopped:
@@ -1401,8 +1467,7 @@ def _natural_refined_observation_handoff(saved: PieceSavedOriginal, snapshot: di
         require(finish['seq'] < terminal['seq'] == events[-1]['seq'])
     else:
         require(finish['seq'] == events[-1]['seq'])
-    # Source/context references on the retained OBS and receipts were checked
-    # against the same current snapshot above, including the stop-reuse arm.
+    # Both receipts are bound to the saved context for their own operation.
     chain = [initial_started, initial_received, initial, question, initial_finish,
              answer, checkpoint, started, received, observation, finish]
     if terminal is not None:

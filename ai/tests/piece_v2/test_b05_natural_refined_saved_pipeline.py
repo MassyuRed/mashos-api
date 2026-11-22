@@ -83,7 +83,7 @@ def _bind(db, monkeypatch, owner, token):
 
 def _prepare_natural(db, monkeypatch, *, tier='premium', stopped=False, case_id='natural', with_history=False,
                      with_frame_target=False, rounds=1, action_text='', first_answer=ANSWER, memo_text=None,
-                     failed_refined_saves=0):
+                     failed_refined_saves=0, prior_frame_revision=None):
     owner, parent = str(uuid4()), str(uuid4())
     token = 'synthetic-natural-refined-owner'
     _update(db, 'insert into auth.users values ($1)', [owner])
@@ -98,6 +98,9 @@ def _prepare_natural(db, monkeypatch, *, tier='premium', stopped=False, case_id=
         _update(db, "insert into public.emotions values ($1,$2,(now()-interval '1 day') at time zone 'UTC',$3,'',array['仕事'],array['不安'],$4::jsonb)",
             [past,owner,ONE,json.dumps([dict(type='不安',strength='medium')],ensure_ascii=False)])
     _bind(db,monkeypatch,owner,token)
+    if prior_frame_revision is not None:
+        from test_emlis_natural_frames_application import _past
+        _past(db, user=owner, memo=memo)
     calls = []
     async def provider(material):
         data = json.loads(material.material_json)
@@ -115,6 +118,12 @@ def _prepare_natural(db, monkeypatch, *, tier='premium', stopped=False, case_id=
     assert initial['state']=='AWAITING_ANSWER' and initial['issued_count']==1, _natural_failure_diagnostics(
         service, owner, parent, initial, calls, phases, phase='initial_start', case_id=case_id,
         tier=tier, rounds=rounds, stopped=stopped)
+    if prior_frame_revision is not None:
+        frame, = initial['interpretive_frames']
+        assert frame['input_id'] != parent
+        initial = run(service.frame_feedback(owner, initial['thread_id'], frame_ref=frame['frame_ref'],
+            status='REVISED', correction_text=prior_frame_revision, expected_revision=initial['revision'],
+            idempotency_key='revise-first-past-frame'))
 
     remaining_failed_saves = failed_refined_saves
 

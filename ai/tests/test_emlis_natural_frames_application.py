@@ -8,11 +8,14 @@ import os
 from pathlib import Path
 from uuid import uuid4
 
+import httpx
 import pytest
 
+import emlis_thread_store
+from cocolon_meaning_experience_engine import natural_reply
 from cocolon_meaning_experience_engine.natural_reply import NaturalReply
 from emlis_thread_service import EmlisThreadService, Q3_PROFILE
-from test_emlis_natural_reply_application import natural_case
+from test_emlis_natural_reply_application import _piece_adapter, natural_case
 from test_emlis_q2_application import answer, run
 from test_emlis_q3_application import qdb
 
@@ -21,10 +24,10 @@ BODY = '褒められても嬉しくなかったのですね。'
 REVISION = '結果だけで判断されたことが気になった。'
 
 
-def _past(qdb, user, *, text='その時は重かった。', natural=False):
+def _past(qdb, user, *, text='その時は重かった。', natural=False, memo=MEMO, memo_action=''):
     past = str(uuid4())
-    qdb.query("insert into public.emotions values ($1,$2,(now()-interval '1 day') at time zone 'UTC',$3,'',array['仕事'],array['不安'],$4)",
-        [past, user, MEMO, json.dumps([dict(type='不安', strength='medium')])])
+    qdb.query("insert into public.emotions values ($1,$2,(now()-interval '1 day') at time zone 'UTC',$3,$4,array['仕事'],array['不安'],$5)",
+        [past, user, memo, memo_action, json.dumps([dict(type='不安', strength='medium')])])
     async def provider(material):
         return NaturalReply(BODY, 'synthetic-natural-frame', material.source_prefix_ref)
     service = (EmlisThreadService(runtime_profile=Q3_PROFILE, natural_reply_source=provider)
@@ -203,3 +206,101 @@ def test_optional_frame_derivation_failure_preserves_valid_saved_natural_reply(n
     current = run(service.start(user, parent))
     assert current['current_observation']['text'] == BODY
     assert current['interpretive_frames'] == [] and len(calls) == 1
+
+
+@pytest.mark.parametrize('tier,paid_context', [('plus', True), ('premium', True), ('premium', False)])
+def test_paid_current_answer_and_history_survive_receipt_retry(natural_case, qdb, monkeypatch, tier, paid_context):
+    user, parent, service, calls, past, _ = _case(natural_case, qdb, tier=tier)
+    qdb.query('update public.emotions set memo_action=$2 where id=$1', [parent, '会議で発表した。'])
+    initial = run(service.start(user, parent))
+    if tier == 'premium':
+        frame, = initial['interpretive_frames']
+        initial = run(service.frame_feedback(user, initial['thread_id'], frame_ref=frame['frame_ref'],
+            status='REVISED', correction_text=REVISION, expected_revision=initial['revision'],
+            idempotency_key='revise-past-frame'))
+    current = '褒められた時に嬉しくなかったんですね。その時は怖さを感じていたことも伝わってきました。'
+
+    async def provider(material):
+        calls.append(material)
+        return NaturalReply(current, 'synthetic-natural-frame', material.source_prefix_ref)
+
+    failed = False
+
+    async def rpc(name, payload, **kwargs):
+        nonlocal failed
+        if not failed and any(e['kind'] == 'OBSERVATION' for e in payload.get('p_events', [])):
+            failed = True
+            return httpx.Response(503, json={'code': '57P03'})
+        return await qdb.rpc(name, payload, **kwargs)
+
+    service.natural_reply_source = provider
+    monkeypatch.setattr(emlis_thread_store, 'sb_post_rpc', rpc)
+    with monkeypatch.context() as old_writer:
+        if not paid_context:
+            prepare = natural_reply.prepare_natural_reply
+
+            def prepare_legacy(*args, **kwargs):
+                kwargs['include_paid_received_answer'] = False
+                return prepare(*args, **kwargs)
+
+            old_writer.setattr(natural_reply, 'prepare_natural_reply', prepare_legacy)
+        interrupted = run(answer(service, user, initial, 'その時は怖かった。'))
+    assert interrupted['can_retry'] and len(calls) == 2
+    messages = natural_reply.build_natural_reply_messages(calls[-1])
+    version = (natural_reply.PAID_RECEIVED_ANSWER_CONTEXT_VERSION if paid_context
+               else natural_reply.SOURCE_CONTEXT_VERSION)
+    writer = json.loads(calls[-1].writer_material_json)
+    assert writer['source_context_version'] == version
+    if paid_context:
+        author_input = messages[1]['content']
+        assert '怖かった' in author_input and '会議で発表した' not in author_input
+        assert '重かった' not in author_input and REVISION not in author_input
+        assert '記録の「褒められた」' in writer['history_line']
+        expected = f"{current}\n\n{writer['history_line']}"
+    else:
+        assert '重かった' in messages[1]['content'] and REVISION in messages[1]['content']
+        expected = current
+
+    reopened = EmlisThreadService(runtime_profile=Q3_PROFILE, natural_reply_source=provider,
+                                  natural_context_update_enabled=False)
+    result = run(reopened.action(user, interrupted['thread_id'], action='retry_response',
+        expected_revision=interrupted['revision'], idempotency_key='save-received-reply',
+        operation_id=interrupted['operation_id']))
+    assert result['body_state'] == 'REFINED' and result['current_observation']['text'] == expected
+    assert run(reopened.get(user, parent))['current_observation'] == result['current_observation']
+    assert len(calls) == 2
+    snapshot = run(service.store.read(user, input_id=parent))
+    receipt, = [e for e in snapshot['events'] if e['payload'].get('stage') == 'NATURAL_REPLY_RECEIVED'
+                and e['operation_id'] == interrupted['operation_id']]
+    assert receipt['payload']['reply']['text'] == expected
+    assert receipt['payload']['writer_context_version'] == version
+    assert ('writer_history_sha256' in receipt['payload']) is paid_context
+    assert receipt['payload'].get('provider_reply_text') == (current if paid_context else None)
+    adapter = _piece_adapter(user, service, monkeypatch)
+    ref = run(adapter.resolve_refined_source_ref('Bearer synthetic', parent,
+        supplemental_answer_identity=snapshot['thread']['latest_answer_event_id'], opted_in=True))
+    assert ref['emlis_observation_result_identity'] == result['current_observation']['event_id']
+    if tier == 'premium':
+        frame, = result['interpretive_frames']
+        assert frame['input_id'] == past and frame['received_meaning'] == REVISION
+    else:
+        assert result['interpretive_frames'] == []
+    qdb.query('update public.emotions set memo=$2 where id=$1', [past, '別の記録です。'])
+    assert run(service.get(user, parent))['current_observation'] is None
+    assert len(calls) == 2
+
+
+def test_paid_history_compares_only_the_scene_the_user_answered_about(natural_case, qdb):
+    user, parent, service, calls, _, _ = _case(natural_case, qdb, tier='plus', history=False)
+    action = '会議で発表した。'
+    qdb.query('update public.emotions set memo_action=$2 where id=$1', [parent, action])
+    past, _, _ = _past(qdb, user, memo='誘われたのに、悲しかった。', memo_action=action)
+    initial = run(service.start(user, parent))
+    result = run(answer(service, user, initial, 'その時は怖かった。'))
+    assert result['body_state'] == 'REFINED' and result['current_observation']['text'] == BODY
+    history, = json.loads(calls[-1].material_json)['past_user_records']
+    assert history['input_id'] == past and history['original']['memo_action'] == action
+    writer = json.loads(calls[-1].writer_material_json)
+    assert writer['source_context_version'] == natural_reply.PAID_RECEIVED_ANSWER_CONTEXT_VERSION
+    assert 'history_line' not in writer
+    assert action not in natural_reply.build_natural_reply_messages(calls[-1])[1]['content']

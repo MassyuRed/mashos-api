@@ -20,6 +20,7 @@ ACTIVE_MEANING_PROFILE = "source_grounded_active_meaning.v1"
 SOURCE_CONTEXT_VERSION = "bound_field_and_answer_context.v1"
 CORRECTED_SOURCE_CONTEXT_VERSION = "bound_field_and_answer_context.v2"
 RECEIVED_ANSWER_CONTEXT_VERSION = "bound_field_and_answer_context.v3"
+PAID_RECEIVED_ANSWER_CONTEXT_VERSION = "bound_field_and_answer_context.v4"
 REQUEST_SECONDS = 240
 ARTIFACT_SCHEMA = "cocolon.emlis.recipient_reply.v1"
 _SYSTEM_MESSAGE_START = """あなたはEmlisです。本人の記録を読み、本人に向けた自然な日本語の返事だけを返してください。
@@ -504,7 +505,8 @@ def _frame_feedback_material(admitted, included_ids):
 def prepare_natural_reply(request, *, use_meaning_support=False, response_stage="FINAL", prepared_meaning=None,
                           use_history_answer_plan=False, meaning_profile=None, owner_scope=None,
                           original_record=None, as_of=None, bind_writer_context=True,
-                          include_corrected_circumstance=False, include_received_answer=False):
+                          include_corrected_circumstance=False, include_received_answer=False,
+                          include_paid_received_answer=False):
     """Return admitted user material and the existing independent Safety result."""
     if response_stage not in _RESPONSE_STAGES:
         raise NaturalReplyError('natural_reply_response_stage_invalid')
@@ -629,10 +631,20 @@ def prepare_natural_reply(request, *, use_meaning_support=False, response_stage=
         if dialogue is not None:
             writer['bound_feeling_dialogue'] = dialogue
         elif include_received_answer and not corrected_circumstance:
-            received = _received_answer_dialogue(admitted, material, prepared_meaning, response_stage)
+            paid_context = (include_paid_received_answer
+                and admitted.control.capability_snapshot in {'Q3_PLUS', 'Q3_PREMIUM'}
+                and bool(histories or feedback))
+            received = _received_answer_dialogue(admitted, material, prepared_meaning, response_stage,
+                                                 allow_paid_context=paid_context)
             if received is not None:
-                writer['source_context_version'] = RECEIVED_ANSWER_CONTEXT_VERSION
+                writer['source_context_version'] = (PAID_RECEIVED_ANSWER_CONTEXT_VERSION if paid_context
+                    else RECEIVED_ANSWER_CONTEXT_VERSION)
                 writer['received_answer_dialogue'] = received
+                if paid_context and history:
+                    line = _paid_received_answer_history_line(prepared_meaning,
+                                                              {record['input_id'] for record in history})
+                    if line:
+                        writer['history_line'] = line
     if 'response_purpose' in material:
         writer['response_purpose'] = material['response_purpose']
     return NaturalReplyInput(admitted.source_prefix_ref, _compact_json(material), meaning_profile,
@@ -664,7 +676,33 @@ def _bound_feeling_dialogue(admitted, material, prepared_meaning, response_stage
         'Emlisが聞いた問い': answer['ai_question_context'], '本人の回答': answer['text']}
 
 
-def _received_answer_dialogue(admitted, material, prepared, response_stage):
+def _paid_received_answer_history_line(prepared, safe_input_ids):
+    """Render a separate, verified comparison of independently owned records."""
+    from emlis_ai_grounded_observation_gate import evaluate_emlis_history_line_inverse
+    from emlis_ai_grounded_sentence_surface import realize_emlis_history_line
+    from .emlis_answer_update import build_updated_grounded_plan
+    from .emlis_thread_history import history_line_plan
+
+    control = prepared.thread.control
+    allowed_history = tuple(source for source in control.admitted_history
+                            if source.source_guard[0] in safe_input_ids)
+    prepared = replace(prepared, thread=replace(prepared.thread,
+        control=replace(control, admitted_history=allowed_history)))
+    try:
+        question = control.question_control_context.pending_question
+        line_plan = history_line_plan(prepared, build_updated_grounded_plan(prepared),
+                                     current_nucleus_ids=question.decision.affected_meaning_refs)
+        if line_plan is not None:
+            line = realize_emlis_history_line(line_plan)
+            if evaluate_emlis_history_line_inverse(line, line_plan, prepared=prepared):
+                return line
+    except ValueError:
+        # An optional comparison cannot invalidate the current reply.
+        pass
+    return None
+
+
+def _received_answer_dialogue(admitted, material, prepared, response_stage, *, allow_paid_context=False):
     """Use the bound event/answer without sending the AI question as prose."""
     from emlis_ai_grounded_human_reception import final_reception_source_anchor_text
     from emlis_ai_grounded_observation_plan import (
@@ -676,8 +714,8 @@ def _received_answer_dialogue(admitted, material, prepared, response_stage):
     if (response_stage != 'REFINED' or prepared is None or question is None
             or question.decision.target_kind != 'PERSONAL_RECEIVED_MEANING'
             or control.question_control_context.issued_questions != (question,)
-            or len(admitted.answers) != 1 or control.admitted_history
-            or control.frame_feedback_sources or control.interpretation_corrections):
+            or len(admitted.answers) != 1 or control.interpretation_corrections
+            or (not allow_paid_context and (control.admitted_history or control.frame_feedback_sources))):
         return None
     checkpoint = prepared.checkpoint
     update = checkpoint.answer_update
@@ -889,7 +927,7 @@ def build_natural_reply_messages(request, *, correction_target_context=False):
         # Do not carry instructions for those absent protocols into this one.
         writer = json.loads(request.writer_material_json)
         context_version = writer.get('source_context_version')
-        if context_version == RECEIVED_ANSWER_CONTEXT_VERSION:
+        if context_version in {RECEIVED_ANSWER_CONTEXT_VERSION, PAID_RECEIVED_ANSWER_CONTEXT_VERSION}:
             return [{'role': 'system', 'content': _RECEIVED_ANSWER_REPLY_MESSAGE},
                     {'role': 'user', 'content': _compact_json(writer['received_answer_dialogue'])}]
         has_source_context = context_version in (SOURCE_CONTEXT_VERSION, CORRECTED_SOURCE_CONTEXT_VERSION)

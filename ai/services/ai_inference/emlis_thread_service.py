@@ -965,7 +965,8 @@ class EmlisThreadService:
     async def _process_natural(self, user_id, snapshot):
         from cocolon_meaning_experience_engine.natural_reply import (
             ARTIFACT_SCHEMA, NaturalReply, NaturalReplyError, prepare_natural_reply, validate_reply,
-            CORRECTED_SOURCE_CONTEXT_VERSION, RECEIVED_ANSWER_CONTEXT_VERSION, SOURCE_CONTEXT_VERSION,
+            CORRECTED_SOURCE_CONTEXT_VERSION, PAID_RECEIVED_ANSWER_CONTEXT_VERSION,
+            RECEIVED_ANSWER_CONTEXT_VERSION, SOURCE_CONTEXT_VERSION,
             build_natural_reply_messages)
         from cocolon_meaning_experience_engine.natural_reply_meaning import (
             SCHEMA as MEANING_REVIEW_SCHEMA, compare_reply_meaning)
@@ -998,37 +999,57 @@ class EmlisThreadService:
         if prior is not None:
             context_version = prior["payload"].get("writer_context_version")
         elif t["data"].get("natural_context_update_enabled") is True:
-            context_version = CORRECTED_SOURCE_CONTEXT_VERSION if correcting else RECEIVED_ANSWER_CONTEXT_VERSION
+            context_version = (CORRECTED_SOURCE_CONTEXT_VERSION if correcting
+                               else PAID_RECEIVED_ANSWER_CONTEXT_VERSION)
         else:
             context_version = None
         if context_version not in {None, SOURCE_CONTEXT_VERSION, CORRECTED_SOURCE_CONTEXT_VERSION,
-                                   RECEIVED_ANSWER_CONTEXT_VERSION}:
+                                   RECEIVED_ANSWER_CONTEXT_VERSION, PAID_RECEIVED_ANSWER_CONTEXT_VERSION}:
             raise NaturalReplyError('natural_reply_writer_identity_changed')
         material, safety = prepare_natural_reply(_request(snapshot), response_stage=response_stage,
             bind_writer_context=context_version is not None,
             include_corrected_circumstance=context_version == CORRECTED_SOURCE_CONTEXT_VERSION,
-            include_received_answer=context_version == RECEIVED_ANSWER_CONTEXT_VERSION,
+            include_received_answer=context_version in {RECEIVED_ANSWER_CONTEXT_VERSION,
+                                                        PAID_RECEIVED_ANSWER_CONTEXT_VERSION},
+            include_paid_received_answer=context_version == PAID_RECEIVED_ANSWER_CONTEXT_VERSION,
             prepared_meaning=prepared_meaning,
             meaning_profile=t['data'].get('natural_meaning_profile'), owner_scope=user_id,
             original_record=snapshot['original'], as_of=t['data'].get('natural_meaning_as_of'))
         writer_identity = {}
+        history_line = None
         if material.meaning_profile is not None:
             writer_identity = {'meaning_profile': material.meaning_profile,
                 'writer_messages_sha256': hashlib.sha256(json.dumps(build_natural_reply_messages(material),
                     ensure_ascii=False, separators=(',', ':')).encode('utf-8')).hexdigest()}
-            writer_context = json.loads(material.writer_material_json).get('source_context_version')
+            writer_material = json.loads(material.writer_material_json)
+            writer_context = writer_material.get('source_context_version')
+            history_line = writer_material.get('history_line')
             if writer_context is not None:
                 writer_identity['writer_context_version'] = writer_context
+            if history_line:
+                writer_identity['writer_history_sha256'] = hashlib.sha256(history_line.encode('utf-8')).hexdigest()
 
         def check_writer_identity(event):
             payload = event['payload']
             if ({key: payload[key] for key in writer_identity if key in payload} != writer_identity
-                    or payload.get('meaning_profile') != material.meaning_profile):
+                    or payload.get('meaning_profile') != material.meaning_profile
+                    or payload.get('writer_history_sha256') != writer_identity.get('writer_history_sha256')):
                 raise NaturalReplyError('natural_reply_writer_identity_changed')
+
+        def with_history(reply):
+            try:
+                return validate_reply(replace(reply, text=f'{reply.text}\n\n{history_line}'), material)
+            except NaturalReplyError:
+                # Keep the current reply if the optional paragraph cannot fit.
+                return reply
 
         if received:
             check_writer_identity(received)
             candidate = validate_reply(NaturalReply(**received["payload"]["reply"]), material)
+            if history_line:
+                provider_reply = replace(candidate, text=received['payload'].get('provider_reply_text'))
+                if with_history(validate_reply(provider_reply, material)) != candidate:
+                    raise NaturalReplyError('natural_reply_writer_identity_changed')
         else:
             if started:
                 check_writer_identity(started)
@@ -1051,9 +1072,14 @@ class EmlisThreadService:
             except Exception:
                 return await self._finish(user_id, snapshot, body_state="UNAVAILABLE", state="RESPONSE_FAILED",
                                           failure="natural_reply_unavailable")
+            provider_evidence = {}
+            if history_line:
+                provider_evidence['provider_reply_text'] = candidate.text
+                candidate = with_history(candidate)
             event = _event("OPERATION", {"stage": "NATURAL_REPLY_RECEIVED",
                 "source_prefix_ref": t["source_prefix_ref"], "context_ref": _context_ref(snapshot),
-                "response_stage": response_stage, "reply": asdict(candidate), **writer_identity}, t)
+                "response_stage": response_stage, "reply": asdict(candidate),
+                **provider_evidence, **writer_identity}, t)
             try:
                 snapshot = await self._commit(user_id, snapshot, copy.deepcopy(t), [event], finishing_attempt=t["active_attempt_id"])
             except ThreadStoreError as exc:
@@ -1065,7 +1091,7 @@ class EmlisThreadService:
                 _check(fresh)
                 saved = self._natural_receipt(fresh, "NATURAL_REPLY_RECEIVED")
                 if (fresh["thread"]["active_attempt_id"] != t["active_attempt_id"]
-                        or not saved or saved["payload"].get("reply") != asdict(candidate)):
+                        or not saved or saved["payload"] != event["payload"]):
                     raise exc
                 snapshot = fresh
             t = snapshot["thread"]

@@ -150,7 +150,7 @@ def frame_supported_focus(thread, plan):
     return ()
 
 
-def history_line_plan(prepared, plan):
+def history_line_plan(prepared, plan, *, current_nucleus_ids=None):
     thread = prepared.thread
     if thread.control.capability_snapshot not in {'Q3_PLUS', 'Q3_PREMIUM'}:
         return None
@@ -166,6 +166,8 @@ def history_line_plan(prepared, plan):
     for source, past, past_plan in admitted_history_plans(thread):
         past_resolver = past.thread.resolver()
         for current in plan.nuclei:
+            if current_nucleus_ids is not None and current.nucleus_id not in current_nucleus_ids:
+                continue
             if current.kind not in {'event', 'reaction', 'state'} or not set(current.source_fields) & {'memo', 'memo_action', 'answer_text_private'}:
                 continue
             current_text = _anchor(current.nucleus_id, plan, resolver)
