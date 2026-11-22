@@ -169,9 +169,11 @@ async def _generate_candidate(system: str, material: dict) -> str:
             {"role": "system", "content": system},
             {"role": "user", "content": json.dumps(material, ensure_ascii=False, separators=(",", ":"))},
         ]
-        async with asyncio.timeout(32):
+        # The shared provider can finish a Map phase before it accepts this request.
+        # Keep the issuance deadline across all phases, including time spent queued.
+        async with asyncio.timeout(_GENERATION_BUDGET_SECONDS):
             async with httpx.AsyncClient(follow_redirects=False,
-                    timeout=httpx.Timeout(30.0, connect=5.0)) as client:
+                    timeout=httpx.Timeout(float(_GENERATION_BUDGET_SECONDS), connect=5.0)) as client:
                 async with client.stream("POST", endpoint, headers={"Authorization": "Bearer " + key}, json={
                     "model": model, "messages": messages, "temperature": 0, "max_tokens": 2048,
                     "stream": False, "chat_template_kwargs": {"enable_thinking": False},

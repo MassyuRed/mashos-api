@@ -33,7 +33,7 @@ _FACTUAL_RECEIVED = re.compile(r"(?:褒められ|ほめられ|言われ|伝え�
 PERSONAL_FEELING_CIRCUMSTANCE = "PERSONAL_FEELING_CIRCUMSTANCE"
 _UNEXPLAINED_FEELING = re.compile(
     r"(?:(?:今日|今|きょう|いま)(?:は|も)?[、,\s]*)?"
-    r"(?:(?:私|わたし|僕|ぼく|俺|おれ|自分)(?:は|も)[、,\s]*)?"
+    r"(?:(?P<first_person>私|わたし|僕|ぼく|俺|おれ|自分)(?:は|も)[、,\s]*)?"
     r"(?:(?:本当に|ほんとうに|とても|すごく|かなり|少し|ちょっと)[、,\s]*)?"
     r"(?:(?P<adjective>(?:つら|辛|しんど|苦し|悲し|怖|こわ|寂し|さびし|さみし|嬉し|うれし)"
     r"(?:かった|い))(?:んです|のです|です)?|"

@@ -991,7 +991,8 @@ class EmlisThreadService:
     async def _process_natural(self, user_id, snapshot):
         from cocolon_meaning_experience_engine.natural_reply import (
             ARTIFACT_SCHEMA, NaturalReply, NaturalReplyError, prepare_natural_reply, validate_reply,
-            CORRECTED_SOURCE_CONTEXT_VERSION, DIRECT_FEELING_CORRECTION_CONTEXT_VERSION, PAID_RECEIVED_ANSWER_CONTEXT_VERSION,
+            CORRECTED_SOURCE_CONTEXT_VERSION, DIRECT_FEELING_CORRECTION_CONTEXT_VERSION,
+            DIRECT_FEELING_CORRECTION_CONTEXT_VERSIONS, PAID_RECEIVED_ANSWER_CONTEXT_VERSION,
             RECEIVED_ANSWER_CONTEXT_VERSION, SOURCE_CONTEXT_VERSION,
             build_natural_reply_messages)
         from cocolon_meaning_experience_engine.natural_reply_meaning import (
@@ -1031,16 +1032,19 @@ class EmlisThreadService:
             context_version = None
         if context_version not in {None, SOURCE_CONTEXT_VERSION, CORRECTED_SOURCE_CONTEXT_VERSION,
                                    RECEIVED_ANSWER_CONTEXT_VERSION, PAID_RECEIVED_ANSWER_CONTEXT_VERSION,
-                                   DIRECT_FEELING_CORRECTION_CONTEXT_VERSION}:
+                                   *DIRECT_FEELING_CORRECTION_CONTEXT_VERSIONS}:
             raise NaturalReplyError('natural_reply_writer_identity_changed')
+        direct_version = (context_version if context_version in DIRECT_FEELING_CORRECTION_CONTEXT_VERSIONS
+                          else DIRECT_FEELING_CORRECTION_CONTEXT_VERSION)
         material, safety = prepare_natural_reply(_request(snapshot), response_stage=response_stage,
             bind_writer_context=context_version is not None,
             include_corrected_circumstance=context_version == CORRECTED_SOURCE_CONTEXT_VERSION,
             include_received_answer=context_version in {RECEIVED_ANSWER_CONTEXT_VERSION,
                                                         PAID_RECEIVED_ANSWER_CONTEXT_VERSION},
             include_paid_received_answer=context_version == PAID_RECEIVED_ANSWER_CONTEXT_VERSION,
-            include_direct_feeling_correction=(context_version == DIRECT_FEELING_CORRECTION_CONTEXT_VERSION
+            include_direct_feeling_correction=(context_version in DIRECT_FEELING_CORRECTION_CONTEXT_VERSIONS
                 or (prior is None and context_version == CORRECTED_SOURCE_CONTEXT_VERSION)),
+            direct_feeling_correction_context_version=direct_version,
             prepared_meaning=prepared_meaning,
             meaning_profile=t['data'].get('natural_meaning_profile'), owner_scope=user_id,
             original_record=snapshot['original'], as_of=t['data'].get('natural_meaning_as_of'))

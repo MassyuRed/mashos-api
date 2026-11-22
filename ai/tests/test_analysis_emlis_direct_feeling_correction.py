@@ -25,7 +25,8 @@ def direct_correction_migrations(qdb):
 
 @pytest.mark.usefixtures('direct_correction_migrations')
 @pytest.mark.parametrize('legacy, writer_mode', [
-    (False, 'disabled'), (True, 'disabled'), (False, 'compact'), (False, 'compact_history'), (False, 'saved_v1'),
+    (False, 'disabled'), (True, 'disabled'), (False, 'compact'), (False, 'compact_history'),
+    (False, 'saved_v1'), (False, 'saved_v5'),
 ])
 def test_no_answer_direct_feeling_correction_uses_saved_policy_on_retry(natural_case, qdb, monkeypatch,
         legacy, writer_mode):
@@ -86,12 +87,15 @@ def test_no_answer_direct_feeling_correction_uses_saved_policy_on_retry(natural_
 
     monkeypatch.setattr(emlis_thread_store, 'sb_post_rpc', fail_first_observation)
     with monkeypatch.context() as before_rollout:
-        if writer_mode == 'saved_v1':
+        if writer_mode in {'saved_v1', 'saved_v5'}:
             prepare = natural_reply.prepare_natural_reply
 
             def legacy_writer(*args, **kwargs):
-                if 'include_direct_feeling_correction' in kwargs:
+                if writer_mode == 'saved_v1' and 'include_direct_feeling_correction' in kwargs:
                     kwargs['include_direct_feeling_correction'] = False
+                elif writer_mode == 'saved_v5':
+                    kwargs['direct_feeling_correction_context_version'] = (
+                        natural_reply.LEGACY_DIRECT_FEELING_CORRECTION_CONTEXT_VERSION)
                 return prepare(*args, **kwargs)
 
             before_rollout.setattr(natural_reply, 'prepare_natural_reply', legacy_writer)
@@ -104,8 +108,10 @@ def test_no_answer_direct_feeling_correction_uses_saved_policy_on_retry(natural_
     assert 'analysis_correction_policy' not in operation['payload']['source']
     receipt = [e for e in frozen['events'] if e['payload'].get('stage') == 'NATURAL_REPLY_RECEIVED'][-1]
     messages = natural_reply.build_natural_reply_messages(calls[-1])
-    if writer_mode in {'compact', 'compact_history'}:
-        assert receipt['payload']['writer_context_version'] == natural_reply.DIRECT_FEELING_CORRECTION_CONTEXT_VERSION
+    if writer_mode in {'compact', 'compact_history', 'saved_v5'}:
+        version = (natural_reply.LEGACY_DIRECT_FEELING_CORRECTION_CONTEXT_VERSION if writer_mode == 'saved_v5'
+                   else natural_reply.DIRECT_FEELING_CORRECTION_CONTEXT_VERSION)
+        assert receipt['payload']['writer_context_version'] == version
         assert [m['role'] for m in messages] == ['system', 'user']
         body = json.loads(messages[-1]['content'])
         assert body.pop('本人が訂正した気持ち') == replacement
@@ -125,6 +131,23 @@ def test_no_answer_direct_feeling_correction_uses_saved_policy_on_retry(natural_
             assert body == {}
         assert '質問、助言、箇条書きは入れず' in messages[0]['content']
         assert original not in json.dumps(messages, ensure_ascii=False)
+        assert ('気持ちの持ち主は記録した本人です' in messages[0]['content']) == (writer_mode != 'saved_v5')
+        witnessed = '私は不安でした。'
+        slipped = NaturalReply(witnessed, 'isolated-direct-feeling', calls[-1].source_prefix_ref)
+        if writer_mode == 'saved_v5':
+            assert natural_reply.validate_reply(slipped, calls[-1]).text == witnessed
+        else:
+            for text in (witnessed, '教えてくれてありがとうございます。今は僕も少し不安でした。'):
+                with pytest.raises(natural_reply.NaturalReplyError) as error:
+                    natural_reply.validate_reply(NaturalReply(
+                        text, slipped.model, slipped.source_prefix_ref), calls[-1])
+                assert error.value.reason == 'direct_feeling_first_person'
+        for text in ('「私は不安だった」と伝えてくださったんですね。', '不安だったんですね。'):
+            assert natural_reply.validate_reply(NaturalReply(
+                text, slipped.model, slipped.source_prefix_ref), calls[-1]).text == text
+        # The plain/initial author retains its existing contract.
+        assert natural_reply.validate_reply(NaturalReply(
+            witnessed, slipped.model, calls[0].source_prefix_ref), calls[0]).text == witnessed
     elif writer_mode == 'saved_v1':
         assert receipt['payload']['writer_context_version'] == natural_reply.SOURCE_CONTEXT_VERSION
         assert 'この初回の受口' in messages[0]['content']

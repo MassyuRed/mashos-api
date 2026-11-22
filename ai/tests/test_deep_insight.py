@@ -52,6 +52,8 @@ def test_model_transport_uses_the_existing_authenticated_natural_request_contrac
         sent.append(request)
         post = json.loads(request.content)
         assert str(request.url) == endpoint and request.headers["Authorization"] == "Bearer unit-test-key"
+        assert request.extensions["timeout"]["read"] == api._GENERATION_BUDGET_SECONDS
+        assert request.extensions["timeout"]["connect"] == 5.0
         assert post["model"] == model and post["temperature"] == 0 and post["max_tokens"] == 2048
         assert post["stream"] is False and post["chat_template_kwargs"] == {"enable_thinking": False}
         assert [row["role"] for row in post["messages"]] == ["system", "user"]
@@ -64,6 +66,37 @@ def test_model_transport_uses_the_existing_authenticated_natural_request_contrac
     monkeypatch.setattr(api.httpx, "AsyncClient", lambda **kwargs: real_client(transport=transport, **kwargs))
     assert asyncio.run(api._generate_candidate(PLAN_SYSTEM_MESSAGE, prepared)) == '{"decision":"skip"}'
     assert len(sent) == 1
+
+
+def test_model_transport_accepts_queued_bridge_heartbeat_within_issuance_budget(monkeypatch):
+    monkeypatch.setenv("EMLIS_NATURAL_REPLY_ENDPOINT", "https://model.invalid/v1/chat/completions")
+    monkeypatch.setenv("EMLIS_NATURAL_REPLY_MODEL", "test-natural-4b")
+    monkeypatch.setenv("EMLIS_NATURAL_REPLY_API_KEY", "unit-test-key")
+    budget = api._GENERATION_BUDGET_SECONDS
+    real_timeout = asyncio.timeout
+    timeouts = []
+    real_client = httpx.AsyncClient
+
+    def record_timeout(seconds):
+        timeouts.append(seconds)
+        return real_timeout(seconds)
+
+    class QueuedBridgeResponse(httpx.AsyncByteStream):
+        async def __aiter__(self):
+            yield b" "
+            await asyncio.sleep(0)
+            yield json.dumps({"model": "test-natural-4b", "choices": [{"finish_reason": "stop",
+                "message": {"role": "assistant", "content": '{"decision":"skip"}'}}]}).encode()
+
+    def respond(request):
+        assert request.extensions["timeout"]["read"] == budget
+        return httpx.Response(200, stream=QueuedBridgeResponse())
+
+    monkeypatch.setattr(api.asyncio, "timeout", record_timeout)
+    monkeypatch.setattr(api.httpx, "AsyncClient",
+                        lambda **kwargs: real_client(transport=httpx.MockTransport(respond), **kwargs))
+    assert asyncio.run(api._generate_candidate(PLAN_SYSTEM_MESSAGE, {"lane": "records"})) == '{"decision":"skip"}'
+    assert timeouts == [budget]
 
 
 @pytest.fixture

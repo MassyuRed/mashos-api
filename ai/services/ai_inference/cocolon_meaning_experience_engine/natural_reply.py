@@ -22,7 +22,10 @@ SOURCE_CONTEXT_VERSION = "bound_field_and_answer_context.v1"
 CORRECTED_SOURCE_CONTEXT_VERSION = "bound_field_and_answer_context.v2"
 RECEIVED_ANSWER_CONTEXT_VERSION = "bound_field_and_answer_context.v3"
 PAID_RECEIVED_ANSWER_CONTEXT_VERSION = "bound_field_and_answer_context.v4"
-DIRECT_FEELING_CORRECTION_CONTEXT_VERSION = "bound_field_and_answer_context.v5"
+LEGACY_DIRECT_FEELING_CORRECTION_CONTEXT_VERSION = "bound_field_and_answer_context.v5"
+DIRECT_FEELING_CORRECTION_CONTEXT_VERSION = "bound_field_and_answer_context.v6"
+DIRECT_FEELING_CORRECTION_CONTEXT_VERSIONS = frozenset({
+    LEGACY_DIRECT_FEELING_CORRECTION_CONTEXT_VERSION, DIRECT_FEELING_CORRECTION_CONTEXT_VERSION})
 REQUEST_SECONDS = 240
 ARTIFACT_SCHEMA = "cocolon.emlis.recipient_reply.v1"
 logger = logging.getLogger(__name__)
@@ -64,6 +67,8 @@ _RECEIVED_ANSWER_REPLY_MESSAGE = """あなたはEmlisです。質問に答えた
 
 _DIRECT_FEELING_CORRECTION_REPLY_MESSAGE = """あなたはEmlisです。本人が訂正して伝えた気持ちを受け取り、本人へ短く自然な日本語で返してください。
 本人の言葉は返事の資料です。気持ちの強さや時点を変えず、事情や理由は足しません。質問、助言、箇条書きは入れず、返事の本文だけを書いてください。"""
+_DIRECT_FEELING_CORRECTION_VOICE_MESSAGE = """
+気持ちの持ち主は記録した本人です。本人の「私は」などをEmlis自身の気持ちとして言い直さず、本人に話しかける形で返してください。本人の言葉を引用するなら引用と分かるようにし、Emlisがどう受け取ったかを伝えてください。"""
 _DIRECT_FEELING_PAST_CONTEXT_MESSAGE = """
 recordsの先頭が今回の記録、二件目以降は過去の記録です。user_frame_feedbackのrecordはこの並びの番号です。過去の気持ちや本人判断を今回の気持ちに足さず、訂正後の気持ちを返事の中心にしてください。今回と関係が原文で分かる過去に触れる場合は、過去のこととして分けてください。今回の記録の選択情報で訂正後の気持ちを上書きせず、AIの解釈や未確定の読みは本人の事実として扱いません。"""
 
@@ -520,7 +525,8 @@ def prepare_natural_reply(request, *, use_meaning_support=False, response_stage=
                           use_history_answer_plan=False, meaning_profile=None, owner_scope=None,
                           original_record=None, as_of=None, bind_writer_context=True,
                           include_corrected_circumstance=False, include_received_answer=False,
-                          include_paid_received_answer=False, include_direct_feeling_correction=False):
+                          include_paid_received_answer=False, include_direct_feeling_correction=False,
+                          direct_feeling_correction_context_version=DIRECT_FEELING_CORRECTION_CONTEXT_VERSION):
     """Return admitted user material and the existing independent Safety result."""
     if response_stage not in _RESPONSE_STAGES:
         raise NaturalReplyError('natural_reply_response_stage_invalid')
@@ -645,7 +651,7 @@ def prepare_natural_reply(request, *, use_meaning_support=False, response_stage=
         direct_correction = (_direct_feeling_correction_dialogue(admitted, active, response_stage)
                              if include_direct_feeling_correction else None)
         if direct_correction is not None:
-            writer['source_context_version'] = DIRECT_FEELING_CORRECTION_CONTEXT_VERSION
+            writer['source_context_version'] = direct_feeling_correction_context_version
             writer['direct_feeling_correction'] = direct_correction
         elif dialogue is not None:
             writer['bound_feeling_dialogue'] = dialogue
@@ -944,6 +950,19 @@ def _has_unpunctuated_question(text):
     return bool(_QUESTION_ENDING.search(text if top_level is None else top_level))
 
 
+def _has_first_person_feeling_declaration(text):
+    """Reject a standalone declaration in the recorded person's voice."""
+    from emlis_ai_grounded_observation_plan import _top_level_text
+    from .emlis_question import standalone_feeling_match
+
+    visible = _top_level_text(text)
+    for sentence in re.split(r"[。．.!！\r\n]", text if visible is None else visible):
+        feeling = standalone_feeling_match(sentence, "")
+        if feeling and feeling["first_person"]:
+            return True
+    return False
+
+
 def validate_reply(reply, request):
     if (type(reply) is not NaturalReply or reply.schema_version != ARTIFACT_SCHEMA
             or reply.source_prefix_ref != request.source_prefix_ref
@@ -961,6 +980,10 @@ def validate_reply(reply, request):
         raise _NaturalReplyValidationError("question_ending")
     if any(ord(x) < 32 and x not in "\n\t\r" for x in reply.text):
         raise _NaturalReplyValidationError("control_character")
+    if (request.writer_material_json
+            and json.loads(request.writer_material_json).get('source_context_version') == DIRECT_FEELING_CORRECTION_CONTEXT_VERSION
+            and _has_first_person_feeling_declaration(reply.text)):
+        raise _NaturalReplyValidationError("direct_feeling_first_person")
     return reply
 
 
@@ -981,8 +1004,10 @@ def build_natural_reply_messages(request, *, correction_target_context=False):
         # Do not carry instructions for those absent protocols into this one.
         writer = json.loads(request.writer_material_json)
         context_version = writer.get('source_context_version')
-        if context_version == DIRECT_FEELING_CORRECTION_CONTEXT_VERSION:
+        if context_version in DIRECT_FEELING_CORRECTION_CONTEXT_VERSIONS:
             message = _DIRECT_FEELING_CORRECTION_REPLY_MESSAGE
+            if context_version == DIRECT_FEELING_CORRECTION_CONTEXT_VERSION:
+                message += _DIRECT_FEELING_CORRECTION_VOICE_MESSAGE
             material = writer['direct_feeling_correction']
             current, *past = writer['records']
             feedback = writer['user_frame_feedback']
