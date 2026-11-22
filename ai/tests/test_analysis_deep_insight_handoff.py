@@ -392,14 +392,16 @@ def test_free_received_meaning_and_deep_insight_keep_original_fields_and_saved_e
     assert len(calls) == 3
 
 
-def test_v24_whole_plan_keeps_two_answered_thoughts_and_actions_separate(natural_case, received_map_db):
+@pytest.mark.parametrize('correct_short', [False, True])
+def test_v24_whole_plan_keeps_two_answered_thoughts_and_actions_separate(natural_case, received_map_db, correct_short):
     qdb = received_map_db
     user, original, emlis, _ = natural_case
     thought, action = '褒められたのに、嬉しくなかった。', '会議で発表した。'
+    short_text, replacement = 'つらかったんです', '私は不安だった'
     assert 'code' not in qdb.query('update public.emotions set memo=$2,memo_action=$3 where id=$1',
         [original, thought, action])
     second, short = str(uuid4()), str(uuid4())
-    for identifier, memo, memo_action in ((second, thought, action), (short, 'つらかったんです。', '')):
+    for identifier, memo, memo_action in ((second, thought, action), (short, short_text + '。', '')):
         assert 'code' not in qdb.query('''insert into public.emotions
             values ($1,$2,(now()-interval '5 seconds') at time zone 'UTC',$3,$4,
                 array['仕事'],array['不安'],$5)''',
@@ -408,6 +410,23 @@ def test_v24_whole_plan_keeps_two_answered_thoughts_and_actions_separate(natural
         initial = run(emlis.start(user, identifier))
         refined = run(answer(emlis, user, initial, supplement))
         assert refined['body_state'] == 'REFINED'
+
+    if correct_short:
+        from cocolon_meaning_experience_engine.natural_reply import NaturalReply
+        from test_emlis_interpretation_correction import correct
+
+        async def reply(material):
+            corrections = json.loads(material.material_json).get('interpretation_corrections')
+            body = (replacement if corrections else short_text) + '、と書いてくださったんですね。'
+            return NaturalReply(body, 'isolated-direct-feeling', material.source_prefix_ref)
+
+        emlis.natural_context_update_enabled = False
+        emlis.natural_reply_source = reply
+        original_short = run(emlis.start(user, short))
+        assert (original_short['body_state'], original_short['issued_count']) == ('FINAL', 0)
+        correction = run(correct(emlis, user, original_short, text=short_text,
+            explanation=f'「{short_text}」ではなく「{replacement}」です。'))
+        assert correction['body_state'] == 'FINAL'
 
     result = qdb.query('select public.analysis_cumulative_source_snapshot($1) as value', [user], 'service_role')
     assert 'code' not in result
@@ -423,6 +442,11 @@ def test_v24_whole_plan_keeps_two_answered_thoughts_and_actions_separate(natural
     for scope in received_scopes:
         assert [[scope['thought_field']], [scope['answer_field']]] in nodes
         assert [[scope['action_field']]] in nodes[len(material['records']):]
+    if correct_short:
+        field, = (field for field in material['fields'] if field['source_role'] == 'USER_INTERPRETATION_CORRECTION')
+        assert field['text'] == replacement and [[field['field']]] in nodes
+        assert short_text not in prompt['content']
+        assert not admission._semantic_received_answer_plan(material, allow_multiple=True)
     crossed = deepcopy(packet)
     answers = [node['units'][1]['evidence'][0] for node in crossed['nodes'] if len(node['units']) == 2]
     answers[0]['field'], answers[1]['field'] = answers[1]['field'], answers[0]['field']
@@ -455,3 +479,6 @@ def test_v24_whole_plan_keeps_two_answered_thoughts_and_actions_separate(natural
                node['summary'].endswith(f'）：\n{action}') for node in actions)
     private_nodes = {node['node_ref']: node for node in artifact.private_evidence()['graph']['nodes']}
     assert {tuple(private_nodes[node['node_ref']]['record_refs']) for node in actions} == {(original,), (second,)}
+    if correct_short:
+        corrected, = (node for node in private_nodes.values() if node['record_refs'] == [short])
+        assert replacement in corrected['explanation'] and short_text not in corrected['explanation']

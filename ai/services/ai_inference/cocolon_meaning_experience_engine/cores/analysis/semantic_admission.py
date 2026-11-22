@@ -2846,7 +2846,7 @@ def _semantic_independent_correction_plan_lesson():
         '\n出力例=' + json.dumps(example, ensure_ascii=False, separators=(',', ':')))
 
 
-def _semantic_received_answer_plan(material, *, allow_multiple=False):
+def _semantic_received_answer_plan(material, *, allow_multiple=False, direct_correction_fields=frozenset()):
     """Allocate complete short sources; keep the answered thought and the action independent."""
     scopes = material.get('received_answer_thoughts', ())
     if not scopes or (len(scopes) != 1 and not allow_multiple) or material.get('map_corrections'):
@@ -2867,7 +2867,12 @@ def _semantic_received_answer_plan(material, *, allow_multiple=False):
         if (len(primary_records) != len(set(primary_records))
                 or set(primary_records) != {record['record'] for record in material['records']}
                 or len(primary_records) + len(scopes) > 12
-                or any(fields[n]['source_role'] not in {'ORIGINAL_INPUT', 'USER_DEEP_INSIGHT_ANSWER'} for n in other)):
+                or any(fields[n]['source_role'] not in {'ORIGINAL_INPUT', 'USER_DEEP_INSIGHT_ANSWER'}
+                    and (n not in direct_correction_fields
+                        or fields[n]['source_role'] != 'USER_INTERPRETATION_CORRECTION'
+                        or fields[n]['field_path'] != 'memo'
+                        or choices_for_field(fields[n])[1] != {fields[n]['text']})
+                    for n in other)):
             return []
     if not all(field.get('fragment_is_complete_field') is not False and len(field['text']) < 160
             and field['text'] in choices_for_field(field)[1] for field in fields.values()):
@@ -4417,9 +4422,18 @@ def _semantic_occurrence_v6_messages(prepared, material, phase, bodies=None):
     literal_sources = _semantic_literal_independent_correction_fields(original_material)
     post_answer_sources = _semantic_literal_post_answer_fields(original_material)
     scoped_guidance = ''
+    allow_multiple = (phase in {'PLAN', 'NODES'} and stage is None
+                      and prepared.prompt_version == SEMANTIC_MAP_OCCURRENCE_V24_PROFILE)
+    direct_correction_fields = set()
+    if allow_multiple and prepared.active_source_updates:
+        # The admitted direct-feeling policy already binds the replacement to
+        # the original person and field. Carry its exact active evidence only.
+        direct_sources = {source.envelope.envelope_id for source in prepared.frozen.sources
+                          if source.direct_feeling_target is not None}
+        direct_correction_fields = {number for number, _, _, evidence in prepared.fields
+                                    if evidence.source_envelope_id in direct_sources}
     received_plan = _semantic_received_answer_plan(original_material,
-        allow_multiple=(phase in {'PLAN', 'NODES'} and stage is None
-                        and prepared.prompt_version == SEMANTIC_MAP_OCCURRENCE_V24_PROFILE))
+        allow_multiple=allow_multiple, direct_correction_fields=direct_correction_fields)
     received_scopes = original_material.get('received_answer_thoughts', ())
     if received_plan:
         lesson = ''
