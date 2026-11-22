@@ -20,7 +20,8 @@ from cocolon_meaning_experience_engine.deep_insight_question import (
 )
 
 from cocolon_meaning_experience_engine.deep_insight_theme import (
-    THEME_DISTINCT_POSITIONS, THEME_EQUIVALENT_POSITIONS, THEME_SCENES, THEME_TARGET_FORMS, THEME_VERIFIED_BODIES,
+    THEME_DISTINCT_POSITIONS, THEME_EDITING_FORMS, THEME_EQUIVALENT_POSITIONS, THEME_SCENES,
+    THEME_TARGET_FORMS, THEME_VERIFIED_BODIES,
 )
 from cocolon_meaning_experience_engine.deep_insight_theme_intents import THEME_SCENE_ANGLE_TARGETS
 
@@ -637,6 +638,36 @@ def test_values_theme_puts_the_condition_in_the_displayed_scene(scene_id, angle_
     assert writer["form"] == reader["form"] == reader["body"] == body
     assert reader_system.startswith(_THEME_READ_SYSTEM_MESSAGE)
     assert result.candidate.text == f"{scene}、{body}"
+
+
+@pytest.mark.parametrize(("scene", "angle", "body"), [
+    ("error", "cue", "直し方を決める前に、誤りがほかの箇所にも影響したかどうか、何を確かめますか？"),
+    ("routine", "outcome", "作業中のどんな変化から、選んだ始め方が自分に合っていたと感じますか？"),
+    ("feedback", "change", "指摘のどんな内容が、今の作業手順を変えるきっかけになりますか？"),
+    ("finish", "cue", "同じやり方を次にも使えそうか判断する前に、終えた作業について何を確かめますか？"),
+])
+def test_work_theme_gives_the_writer_and_independent_reader_the_same_reviewed_example(scene, angle, body):
+    result, calls = theme_run("仕事・学び", body, choose_theme=select_theme_angle(scene, angle))
+    (writer_system, writer), (reader_system, reader) = calls
+    assert writer_system.startswith(_THEME_WRITE_SYSTEM_MESSAGE) and "今回はformを校正" in writer_system
+    assert reader_system.startswith(_THEME_READ_SYSTEM_MESSAGE)
+    assert writer["form"] == reader["form"] == reader["body"] == body
+    assert reader["answer_kind"] == angle
+    assert result.candidate.text == f"{reader['scene']}、{body}"
+
+
+def test_work_theme_distinguishes_fixed_trial_conditions_from_comparison_items():
+    theme = "仕事・学び"
+    previous = "仕事や勉強で新しいやり方を試す前に、慣れたやり方と何を比べておきますか？"
+    history = [{"question_key": _theme_position_key(theme, "new_method", "cue"), "question_text": previous}]
+    body = "両方を試すなら、手順以外のどんな条件をそろえておきますか？"
+    result, calls = theme_run(theme, body, questions=history, choose_theme=select_theme_angle("experiment", "cue"))
+    (_, writer), (_, reader), (comparison_system, comparison) = calls
+    assert writer["angle"] == reader["angle"] == comparison["angle"] == "両方を試す前に、手順以外でそろえておく作業条件"
+    assert writer["form"] == reader["form"] == reader["body"] == body
+    assert result.candidate.text == comparison["question"] == f"{reader['scene']}、{body}"
+    assert comparison_system == _THEME_COMPARE_SYSTEM_MESSAGE
+    assert comparison["history"] == [{"id": 1, "question": previous}]
 
 
 def test_theme_preserves_an_unmade_choice_in_the_independent_review():
@@ -1260,7 +1291,7 @@ def test_theme_repairs_a_closed_question_containing_its_usual_wording():
      "直す部分を決める前に、指摘された内容のうち何を確かめますか？"),
     ("仕事・学び", "feedback", "change",
      "指摘された内容が、今の作業手順をどう変える必要があるかを示す具体的な条件はありますか？",
-     "指摘にどんな内容があったら、今の作業手順を変えようと思いますか？"),
+     "指摘のどんな内容が、今の作業手順を変えるきっかけになりますか？"),
     ("これからのこと", "leave_space", "boundary",
      "空き時間を保ちながら、用事をどれくらいまで入れるか、その目安はありますか？",
      "空き時間を残すには、用事をどれくらいまで入れますか？"),
@@ -1478,6 +1509,9 @@ def test_theme_reader_checks_the_amount_without_a_redundant_upper_limit(draft, e
      "振り返りを始めるときに、まず何を手元に書き留めますか？", "まず何を手元に書き留めますか？"),
     ("仕事・学び", "review", "first_action",
      "覚えたつもりの内容を復習する際、最初に取り掛かる作業は何ですか？", "最初に取り掛かる作業は何ですか？"),
+    ("仕事・学び", "question", "priority",
+     "分からない点が残ったとき、どの疑問を先に確かめるかを選ぶ基準は何ですか？",
+     "どの疑問を先に確かめるかを選ぶ基準は何ですか？"),
     ("仕事・学び", "new_method", "first_action",
      "新しいやり方を試す際、作業のどの部分から始めますか？", "作業のどの部分から始めますか？"),
     ("仕事・学び", "scope", "first_action",
@@ -1564,7 +1598,9 @@ def test_theme_catalog_has_distinct_compatible_judgments_for_every_supported_sce
             assert len(angles) >= 4 and len(set(angles.values())) == len(angles)
             for angle in angles:
                 position = (theme, scene, angle)
-                bodies = THEME_VERIFIED_BODIES.get(position) or (THEME_TARGET_FORMS[position],)
+                ordinary = THEME_EDITING_FORMS.get(position) or THEME_TARGET_FORMS.get(position)
+                bodies = THEME_VERIFIED_BODIES.get(position) or (ordinary,)
+                assert all(bodies)
                 assert all(body.endswith("？") and body.count("？") == 1 and "〜" not in body for body in bodies)
     assert "change" in THEME_SCENE_ANGLE_TARGETS["人間関係"]["thanks"]
     assert "伝え" in THEME_SCENE_ANGLE_TARGETS["人間関係"]["thanks"]["change"][0]
