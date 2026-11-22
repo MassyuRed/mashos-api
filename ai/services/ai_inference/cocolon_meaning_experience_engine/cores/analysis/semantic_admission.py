@@ -4418,7 +4418,7 @@ def _semantic_occurrence_v6_messages(prepared, material, phase, bodies=None):
     post_answer_sources = _semantic_literal_post_answer_fields(original_material)
     scoped_guidance = ''
     received_plan = _semantic_received_answer_plan(original_material,
-        allow_multiple=(phase == 'PLAN' and stage is None
+        allow_multiple=(phase in {'PLAN', 'NODES'} and stage is None
                         and prepared.prompt_version == SEMANTIC_MAP_OCCURRENCE_V24_PROFILE))
     received_scopes = original_material.get('received_answer_thoughts', ())
     if received_plan:
@@ -4441,13 +4441,28 @@ def _semantic_occurrence_v6_messages(prepared, material, phase, bodies=None):
             fields = {field['field']: field for field in original_material['fields']}
             sentences = _semantic_display_sentences(original_material)
             titles = {}
-            for node in received_plan:
-                root = node['units'][0]['evidence'][0]
-                titles[node['node_id']] = _semantic_received_answer_titles(fields[root['field']], root['quote'], sentences)
+            plan = material['plan']
+            if len(received_scopes) > 1:
+                protected = _semantic_received_answer_scope(original_material, plan)
+                for node in plan['nodes']:
+                    field = protected.get(node['node_id'])
+                    if field is None:
+                        continue
+                    quote = next(root['quote'] for unit in node['units'] for root in unit['evidence']
+                        if root['field'] == field)
+                    titles[node['node_id']] = _semantic_received_answer_titles(fields[field], quote, sentences)
+                title_instruction = ('node_kindとperspectiveを選びます。次の一覧にある各項目のtitleは候補の一つ、'
+                    'meaningは必ず空文字 "" です。一覧にない項目も、割り当てられた原文に沿って記述します。\n')
+            else:
+                for node in received_plan:
+                    root = node['units'][0]['evidence'][0]
+                    titles[node['node_id']] = _semantic_received_answer_titles(fields[root['field']], root['quote'], sentences)
+                title_instruction = ('node_kindとperspectiveを選び、項目ごとに次の候補からtitleを選びます。'
+                    '全項目のmeaningは空文字です。\n')
             guidance = ('確定した項目を原文のまま表示します。planの順にevidence_ref、source_mode、fact_parts、unknownsを返し、'
                 'fact_partsには提示された参照番号を入れます。確認できる不明がなければunknownsは[]です。'
                 '思考の補足はその思考欄の範囲です。別項目との理由や順序を加えません。'
-                'node_kindとperspectiveを選び、項目ごとに次の候補からtitleを選びます。全項目のmeaningは空文字です。\n'
+                + title_instruction
                 + json.dumps(titles, ensure_ascii=False, separators=(',', ':')))
         else:
             from analysis_plan_source_choices import WholeMapTitle

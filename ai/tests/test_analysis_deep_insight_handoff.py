@@ -429,6 +429,17 @@ def test_v24_whole_plan_keeps_two_answered_thoughts_and_actions_separate(natural
     with pytest.raises(admission.AnalysisSemanticMapError):
         admission.admit_semantic_node_local_v4_plan_response(prepared, crossed)
 
+    node_prompt, _ = admission.semantic_node_local_v4_wire_messages(prepared, 'NODES', plan=plan)
+    protected_titles = {scope[field]: text for scope in received_scopes
+                        for field, text in (('thought_field', thought), ('action_field', action))}
+    titles = {}
+    for node in plan['nodes']:
+        field = node['units'][0]['evidence'][0]['field']
+        if field in protected_titles:
+            titles[node['node_id']] = [protected_titles[field]]
+    assert 'meaningは必ず空文字 ""' in node_prompt['content']
+    assert json.dumps(titles, ensure_ascii=False, separators=(',', ':')) in node_prompt['content']
+
     pytest.importorskip('lmformatenforcer')
     calls = []
     response = run(v24_provider(calls, plan_packet=packet)(prepared))
