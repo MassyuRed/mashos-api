@@ -123,7 +123,10 @@ def _emlis_cases():
             ('EMLIS-REJECTED-PERSON-FRAME', frame_req, frame_raw, [past_raw, frame_raw])):
         prepared, safety = prepare_natural_reply(request,
             meaning_profile=ACTIVE_MEANING_PROFILE, owner_scope=OWNER,
-            original_record=record, as_of=AS_OF, response_stage='FINAL')
+            original_record=record, as_of=AS_OF, response_stage='FINAL',
+            # The ordinary application uses the untagged wire until the
+            # context update is explicitly enabled for a new thread.
+            bind_writer_context=False)
         cases.append(dict(case_id=case_id, owner='emlis', auth_scope='natural',
             prepared=asdict(prepared), request_ref=prepared.source_prefix_ref,
             originals=sources, messages=build_natural_reply_messages(prepared),
