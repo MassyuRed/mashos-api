@@ -56,7 +56,8 @@ def test_progressing_phases_receive_fresh_clocks_and_keep_shared_tokens(monkeypa
 
     async def scenario():
         loop = asyncio.get_running_loop()
-        base_time = loop.time()
+        # Use an exact origin for the strict read-time bound below.
+        base_time = 10_000.0
         elapsed = 0
         sent = []
         monkeypatch.setattr(loop, 'time', lambda: base_time + elapsed)
