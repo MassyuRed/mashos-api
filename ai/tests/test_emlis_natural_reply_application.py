@@ -23,6 +23,21 @@ from cocolon_meaning_experience_engine.natural_reply import (
 BODY = "会議を終えて、少し安心できたのですね。\n\n資料を読み直したことも、今日の記録に残っています。"
 
 
+def _active_application_owner(monkeypatch, provider, context_mode):
+    from emlis_thread_factory import application_thread_service
+
+    monkeypatch.setenv("COCOLON_EMLIS_THREAD_MODE", "active")
+    monkeypatch.setenv("COCOLON_EMLIS_THREAD_RELEASE_APPROVED", "true")
+    monkeypatch.setenv("EMLIS_AI_RESPONSE_PROFILE", "natural_reply.v1")
+    if context_mode is None:
+        monkeypatch.delenv("COCOLON_EMLIS_CONTEXT_UPDATE", raising=False)
+    else:
+        monkeypatch.setenv("COCOLON_EMLIS_CONTEXT_UPDATE", context_mode)
+    owner = application_thread_service()
+    owner.natural_reply_source = provider
+    return owner
+
+
 def test_finite_source_is_compared_without_changing_normal_prompt_and_review_stays_private(natural_case, qdb, monkeypatch):
     user, parent, service, calls = natural_case
     qdb.query("update public.emotions set memo=$2,memo_action='' where id=$1",

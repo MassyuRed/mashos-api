@@ -27,10 +27,11 @@ def application_thread_service():
             # Saved replies remain readable during provider configuration loss.
             # The profile remains selected, so a new write cannot fall back.
             source = None
+    context_update_mode = os.getenv("COCOLON_EMLIS_CONTEXT_UPDATE")
     return EmlisThreadService(runtime_profile=Q3_PROFILE, enforce_application_policy=True,
                               natural_reply_source=source, response_profile=profile or None,
-                              natural_context_update_enabled=(
-                                  os.getenv("COCOLON_EMLIS_CONTEXT_UPDATE") == "true"))
+                              natural_context_update_enabled=context_update_mode in {"true", "paid"},
+                              natural_context_update_paid_only=context_update_mode == "paid")
 
 
 def schedule_initial_reply(owner, user_id, input_id):

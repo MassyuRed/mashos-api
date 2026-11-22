@@ -12,10 +12,11 @@ import pytest
 
 from test_emlis_q2_application import run, answer
 from test_emlis_q3_application import qdb
-from cocolon_meaning_experience_engine.natural_reply import NaturalReply, build_natural_reply_messages
+from cocolon_meaning_experience_engine.natural_reply import (
+    SOURCE_CONTEXT_VERSION, NaturalReply, build_natural_reply_messages)
 from emlis_thread_service import EmlisThreadService, Q3_PROFILE
 from emlis_thread_store import ThreadStoreError
-from test_emlis_natural_reply_application import _observe_initial_natural_failures
+from test_emlis_natural_reply_application import _active_application_owner, _observe_initial_natural_failures
 import emlis_thread_store
 
 
@@ -173,6 +174,28 @@ def test_feeling_question_requires_unexplained_self_state_and_enabled_setting(
     qdb.query('update public.emotions set memo_action=$2 where id=$1', [parent, action])
     dto = run(service.start(user, parent))
     assert (dto['pending_question'] or {}).get('text') == expected_question
+
+
+@pytest.mark.parametrize(('tier', 'mode', 'enabled'), [
+    ('free', 'false', False),
+    ('free', 'paid', False),
+    ('plus', 'paid', True),
+    ('premium', 'paid', True),
+    ('free', 'true', True),
+    ('plus', None, False),
+])
+def test_application_context_mode_pins_new_thread_at_plan_boundary(
+        natural_questions, qdb, monkeypatch, tier, mode, enabled):
+    user, parent, service, calls = natural_questions(tier=tier, memo='つらかったんです')
+    owner = _active_application_owner(monkeypatch, service.natural_reply_source, mode)
+    dto = run(owner.start(user, parent))
+    snapshot = run(owner.store.read(user, input_id=parent))
+    assert snapshot['thread']['data']['started_tier'] == tier
+    assert snapshot['thread']['data'].get('natural_context_update_enabled') is (True if enabled else None)
+    assert (dto['pending_question'] or {}).get('text') == ('なにがつらかったんですか？' if enabled else None)
+    receipt, = [event for event in snapshot['events'] if event['payload'].get('stage') == 'NATURAL_REPLY_RECEIVED']
+    assert receipt['payload'].get('writer_context_version') == (SOURCE_CONTEXT_VERSION if enabled else None)
+    assert len(calls) == 1
 
 
 @pytest.mark.parametrize('tier', ('free', 'plus', 'premium'))

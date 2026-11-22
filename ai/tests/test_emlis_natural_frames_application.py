@@ -15,7 +15,7 @@ import emlis_thread_store
 from cocolon_meaning_experience_engine import natural_reply
 from cocolon_meaning_experience_engine.natural_reply import NaturalReply
 from emlis_thread_service import EmlisThreadService, Q3_PROFILE
-from test_emlis_natural_reply_application import _piece_adapter, natural_case
+from test_emlis_natural_reply_application import _active_application_owner, _piece_adapter, natural_case
 from test_emlis_q2_application import answer, run
 from test_emlis_q3_application import qdb
 
@@ -212,7 +212,10 @@ def test_optional_frame_derivation_failure_preserves_valid_saved_natural_reply(n
 def test_paid_current_answer_and_history_survive_receipt_retry(natural_case, qdb, monkeypatch, tier, paid_context):
     user, parent, service, calls, past, _ = _case(natural_case, qdb, tier=tier)
     qdb.query('update public.emotions set memo_action=$2 where id=$1', [parent, '会議で発表した。'])
-    initial = run(service.start(user, parent))
+    owner = _active_application_owner(monkeypatch, service.natural_reply_source, 'paid')
+    initial = run(owner.start(user, parent))
+    service = _active_application_owner(monkeypatch, owner.natural_reply_source, 'false')
+    assert run(service.get(user, parent))['pending_question'] == initial['pending_question']
     if tier == 'premium':
         frame, = initial['interpretive_frames']
         initial = run(service.frame_feedback(user, initial['thread_id'], frame_ref=frame['frame_ref'],
@@ -261,8 +264,7 @@ def test_paid_current_answer_and_history_survive_receipt_retry(natural_case, qdb
         assert '重かった' in messages[1]['content'] and REVISION in messages[1]['content']
         expected = current
 
-    reopened = EmlisThreadService(runtime_profile=Q3_PROFILE, natural_reply_source=provider,
-                                  natural_context_update_enabled=False)
+    reopened = _active_application_owner(monkeypatch, provider, 'false')
     result = run(reopened.action(user, interrupted['thread_id'], action='retry_response',
         expected_revision=interrupted['revision'], idempotency_key='save-received-reply',
         operation_id=interrupted['operation_id']))

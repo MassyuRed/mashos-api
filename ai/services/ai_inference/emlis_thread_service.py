@@ -348,7 +348,8 @@ class EmlisThreadService:
     def __init__(self, store=None, engine=None, *, runtime_profile=RUNTIME_PROFILE, enforce_application_policy=False,
                  semantic_profile=None, offline_candidate_source=None, offline_model_attempt_seconds=None,
                  natural_reply_source=None, response_profile=None, natural_questions_enabled=True,
-                 natural_meaning_profile=ACTIVE_MEANING_PROFILE, natural_context_update_enabled=True):
+                 natural_meaning_profile=ACTIVE_MEANING_PROFILE, natural_context_update_enabled=True,
+                 natural_context_update_paid_only=False):
         if runtime_profile not in {RUNTIME_PROFILE, Q3_PROFILE}:
             raise ValueError("unsupported_thread_profile")
         if natural_reply_source is not None:
@@ -359,10 +360,12 @@ class EmlisThreadService:
             raise ValueError("unsupported_response_profile")
         self.response_profile = response_profile
         self.natural_reply_source = natural_reply_source
-        if type(natural_questions_enabled) is not bool or type(natural_context_update_enabled) is not bool:
+        if (type(natural_questions_enabled) is not bool or type(natural_context_update_enabled) is not bool
+                or type(natural_context_update_paid_only) is not bool):
             raise ValueError("natural_question_setting_invalid")
         self.natural_questions_enabled = natural_questions_enabled
         self.natural_context_update_enabled = natural_context_update_enabled
+        self.natural_context_update_paid_only = natural_context_update_paid_only
         if natural_meaning_profile not in {None, ACTIVE_MEANING_PROFILE}:
             raise ValueError('natural_reply_meaning_profile_invalid')
         self.natural_meaning_profile = natural_meaning_profile
@@ -475,7 +478,8 @@ class EmlisThreadService:
             if self.runtime_profile == Q3_PROFILE:
                 t["data"].update(natural_question_policy=NATURAL_QUESTION_POLICY,
                     natural_questions_enabled=self.natural_questions_enabled and receive_questions)
-                if self.natural_context_update_enabled:
+                if self.natural_context_update_enabled and (
+                        not self.natural_context_update_paid_only or snapshot["tier"] in {"plus", "premium"}):
                     # Pin context at thread start so changing the deployment setting
                     # cannot change the prompt of an in-flight generation.
                     t["data"]["natural_context_update_enabled"] = True
