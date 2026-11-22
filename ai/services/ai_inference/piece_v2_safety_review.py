@@ -154,7 +154,7 @@ async def review_prepared_original(prepared: PreparedPiecePreview) -> str:
             validate_piece_model_preservation(meaning, plan, artifact)
             if artifact.format_type != 'short_essay' or artifact.eligible_formats != ('short_essay',):
                 _reject()
-            return 'transformed' if (meaning.original.role_bindings
+            return 'transformed' if ((meaning.original is not None and meaning.original.role_bindings)
                 or (meaning.supplemental is not None and meaning.supplemental.role_bindings)) else 'ready'
         # Check the full projected original before any role abstraction. Raw
         # source is neither replaced by the Piece body nor scanned only after

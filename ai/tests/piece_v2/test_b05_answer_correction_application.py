@@ -7,6 +7,7 @@ real. These tests do not exercise a GPU, a native bitmap or a person's account.
 import asyncio
 from contextlib import ExitStack
 from copy import deepcopy
+from dataclasses import replace
 import json
 from unittest.mock import patch
 from uuid import uuid4
@@ -22,11 +23,11 @@ from piece_v2_contract import PieceContractError
 from piece_v2_owner_service import PieceOwnerService, _COLUMNS
 from piece_v2_preview_service import PiecePreviewService, _REPLAY_COLUMNS
 from piece_v2_save_service import PieceSaveService
-from piece_v2_source_adapter import PieceSavedSourceAdapter, project_saved_refined_fence
+from piece_v2_source_adapter import PieceSavedSourceAdapter, project_saved_corrected_source, project_saved_refined_fence
 from piece_v2_source_ref_http import source_ref_router
 from test_b05_interpretation_correction_application import corrected_db
 from test_b05_effective_round_sql_fence import effective_fence_db, _apply
-from test_b05_natural_refined_saved_pipeline import natural_refined_db, refined_pipeline_db, saved_piece_db
+from test_b05_natural_refined_saved_pipeline import _prepare_natural, natural_refined_db, refined_pipeline_db, saved_piece_db
 from test_b05_piece_answer_update_saved_pipeline import ANSWERS, prepare_later_update
 from test_b05_refined_source_fence_sql import rpc
 
@@ -57,13 +58,21 @@ def answer_correction_db(corrected_db):
 
 def answer_correction_case(db, monkeypatch, *, tier='free', rounds=1,
                            operation='REVISE', answer_operation='ADD', issue=True,
-                           extra_explanations=()):
-    # Earlier opaque, unselected ADDs qualify history without being promoted
-    # to Analysis claims or included in the selected Piece body.
-    texts = ['私は怖かった。'] * (rounds - 1) + [
-        LATEST_ADD if answer_operation == 'ADD' else ANSWERS[answer_operation]]
-    state, _, answer_calls = prepare_later_update(db, monkeypatch, rounds,
-        answer_operation, tier, action_text=ACTION, answer_texts=texts)
+                           extra_explanations=(), meeting=False):
+    if meeting:
+        texts = ['会議がうまくできませんでした']
+        state, _, answer_calls = _prepare_natural(db, monkeypatch, tier=tier,
+            memo_text='つらかったんです', first_answer=texts[0])
+        assert state['initial_dto']['pending_question']['text'] == 'なにがつらかったんですか？'
+        explanation = '「つらかったんです」ではなく「私は不安だった」です。'
+    else:
+        # Earlier opaque, unselected ADDs qualify history without being promoted
+        # to Analysis claims or included in the selected Piece body.
+        texts = ['私は怖かった。'] * (rounds - 1) + [
+            LATEST_ADD if answer_operation == 'ADD' else ANSWERS[answer_operation]]
+        state, _, answer_calls = prepare_later_update(db, monkeypatch, rounds,
+            answer_operation, tier, action_text=ACTION, answer_texts=texts)
+        explanation = EXPLANATIONS[operation]
     owner, parent, token = state['owner'], state['source_id'], state['token']
     correction_calls = []
 
@@ -77,7 +86,7 @@ def answer_correction_case(db, monkeypatch, *, tier='free', rounds=1,
     updated = run(service.correct_interpretation(owner, previous['thread_id'],
         expected_revision=previous['revision'], idempotency_key='mixed-proper-correction',
         target_event_id=previous['current_observation']['event_id'], target_text='記録を受け取る',
-        explanation=EXPLANATIONS[operation]))
+        explanation=explanation))
     assert updated['state'] == 'COMPLETED' and updated['body_state'] == 'FINAL'
     assert updated['correction_saved'] and updated['answer_saved']
     assert updated['answer_assessment'] == 'RESOLVED' and updated['meaning_updated'] is False
@@ -117,7 +126,8 @@ def answer_correction_case(db, monkeypatch, *, tier='free', rounds=1,
             raise PieceContractError(result['message'])
         return result
 
-    preview = PiecePreviewService(source_adapter=adapter, model_source=None)
+    preview = (PiecePreviewService(source_adapter=adapter) if meeting
+        else PiecePreviewService(source_adapter=adapter, model_source=None))
     issue_args = dict(idempotency_key='mixed-piece-preview', ttl_seconds=600,
         renderer_version=RENDERER, allowed_renderers=(RENDERER,),
         expected_subscription_tier=tier, load_record=load_preview, rpc=call)
@@ -184,6 +194,46 @@ def _finish_saved_case(case, db, tier):
     assert db.query('select count(*)::int as n from public.piece_quota_consumptions '
         'where owner_user_id=$1', [owner])['rows'][0]['n'] == 1
     return visual, detail
+
+
+@pytest.mark.parametrize('answer_surface', ['会議がうまくできませんでした。',
+    '会議がうまくできました。', 'というのも、会議がうまくできませんでした。'])
+def test_proved_meeting_circumstance_survives_correction_without_old_feeling_or_relation(
+        answer_correction_db, monkeypatch, answer_surface):
+    from cocolon_meaning_experience_engine.piece_v1c import MODEL_REALIZATION_PROFILE
+    from test_b05_piece_model_saved_pipeline import _provider
+
+    case_id = 'corrected-meeting'
+    correction_surface = '私は不安だった。'
+    seen = _provider(monkeypatch, case_id, [answer_surface, correction_surface],
+        realization_profile=MODEL_REALIZATION_PROFILE)
+    case = answer_correction_case(answer_correction_db, monkeypatch, issue=False, meeting=True)
+    handoff = case['handoff']
+    assert handoff.original_active_ranges == ()
+    assert handoff.circumstance_control.answer.answer_id == case['selected_answer_id']
+    with pytest.raises(PieceContractError, match='piece_correction_selected_answer_pending'):
+        project_saved_corrected_source(replace(handoff, circumstance_control=None))
+    unrelated = replace(handoff.circumstance_control,
+        question=replace(handoff.circumstance_control.question, prompt_private='別の質問ですか？'))
+    with pytest.raises(PieceContractError, match='PIECE_CONFLICT'):
+        project_saved_corrected_source(replace(handoff, circumstance_control=unrelated))
+
+    def issue():
+        return run(case['preview'].issue_original('Bearer '+case['token'], case['request'], **case['issue_args']))
+
+    if answer_surface != '会議がうまくできませんでした。':
+        with pytest.raises(PieceContractError, match='PIECE_SOURCE_NOT_ELIGIBLE'):
+            issue()
+        assert len(seen) == 1
+        return
+    case['issued'] = issue()
+    assert len(seen) == 1
+    wire = seen[0]['messages'][1]['content']
+    assert 'つらかった' not in wire and '記録を受け取る' not in wire and 'feeling_circumstance' not in wire
+    assert '会議がうまくできませんでした' in wire and '私は不安だった' in wire
+    assert case['issued']['piece_text'] == answer_surface + '\n\n' + correction_surface
+    _finish_saved_case(case, answer_correction_db, 'free')
+    assert len(seen) == 1
 
 
 @pytest.mark.parametrize('tier', ['free', 'plus', 'premium'])

@@ -1099,6 +1099,7 @@ def validate_source_meaning_preservation(meaning, plan, artifact, *, _model_regi
                 and duties[final_id] == 'KEEP_COMPLETE_SOURCE_CONTEXT'
                 and ((meaning.saved_snapshot is not None
                       and _is_unpunctuated_account(source_nodes[final_id].value))
+                     or (type(meaning) is PieceSupplementalMeaning and meaning.bound_complete_clause)
                      or supplemental_complete_self_account(meaning))):
             # A source-bound paragraph may end in its complete action line
             # without a stop. The exact KEEP check still rejects text edits.
@@ -1136,6 +1137,9 @@ def validate_source_meaning_preservation(meaning, plan, artifact, *, _model_regi
                     replacement_statement = (statement != node.value and replacement_topic is not None
                         and re.fullmatch(re.escape(replacement_topic['speaker'] + 'は') + '[、，,]?'
                             + anchor(replacement_topic['body']) + '。', visible) is not None)
+                if type(meaning) is PieceSupplementalMeaning and meaning.bound_complete_clause:
+                    replacement_statement = (not node.value.endswith(('。', '！', '!'))
+                        and visible == node.value + '。')
                 if (re.fullmatch(anchor(node.value), visible) is None
                         and not replacement_statement
                         and not (_model_register and (

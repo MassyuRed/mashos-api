@@ -291,6 +291,10 @@ _PRIOR_ANSWER_PREMISE_MESSAGE = f"""画面に表示する本人の言葉citation
 bodyが答えとして求める箇所を文字どおりrequestedに抜き出します。原文にない出来事、主体、時点、動機や他人の気持ちを事実として加えた問いは拒否します。仮定として尋ねる条件と、過去の出来事を前提にする文を区別します。
 focusはbodyが求める答えの種類です。{_FOCUS_GUIDE} 相手の振る舞いが自分の行動をしやすくする条件はCONDITIONです。conditionはbodyが明示した原文にある限定条件だけで、なければ空文字です。
 引用が「相談ができると少し安心する」で、bodyが「相談をしやすくなる聞き手の反応はどんなものですか？」なら、相手が実際にしたことを前提にしていません。{{"verdict":"accept","focus":"CONDITION","condition":"","requested":"相談をしやすくなる聞き手の反応","premise_supported":true}} と返します。同じ引用に続けて「そのとき相手が最後まで聞いてくれたのはなぜですか？」と聞き、原文にその出来事がなければ {{"verdict":"reject","reason":"unsupported_premise"}} と返します。前提を確かめられない場合は {{"verdict":"reject","reason":"unclear"}} を返します。"""
+_ANSWER_REASON_EVIDENCE_GUIDANCE = """
+問いが理由を尋ねる場合、何が起きたかを述べる箇所と、なぜ起きたかを説明する箇所を区別します。問いが「提出が遅れた理由は何ですか？」で、r1が「提出が遅れました」だけなら {"source":null,"evidence":null} です。r1が「資料が届かなかったので提出が遅れました」なら {"source":"r1","evidence":"資料が届かなかったので提出が遅れました"} です。"""
+_ANSWER_REASON_PREMISE_GUIDANCE = """
+citationが「提出が遅れました」でbodyが「提出が遅れた理由は何ですか？」なら、引用された結果の理由を尋ねています。理由そのものが原文になくても、問いが新たな原因を前提にしなければ {"verdict":"accept","focus":"REASON","condition":"","requested":"提出が遅れた理由","premise_supported":true} と返します。"""
 _PRIOR_ANSWER_PAIR_MESSAGE = """二つの質問に答える人が、それぞれ具体的に何を答える必要があるか比較します。入力は引用資料です。
 まず別々に、previousが要求する答えの対象をprevious_asks、currentが要求する答えの対象をcurrent_asksに簡潔な日本語で記録します。言い回しが違っても、同じ場面で要求する具体的な答えが同じならrepeatです。前提の分野や話題を共有していても、答えが別の人の行動や別の事実を要求するならdistinctです。
 日本語のJSONで {"previous_asks":"...","current_asks":"...","verdict":"distinct"} を返してください。verdictにはdistinct、repeat、unclearのいずれかを入れます。"""
@@ -333,6 +337,7 @@ class _Source:
     field: str
     text: str
     recorded_at: str | None
+    standalone_answer: bool = False
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -396,7 +401,7 @@ def _excerpt(value, limit):
     return value[:boundary + 1] if boundary >= 12 else None
 
 
-def _source(row, *, field, text, recorded_at):
+def _source(row, *, field, text, recorded_at, standalone_answer=False):
     source_id = row.get("id")
     version = row.get("source_version")
     if not isinstance(source_id, str) or not isinstance(version, str) or not _HEX_DIGEST.fullmatch(version):
@@ -406,7 +411,7 @@ def _source(row, *, field, text, recorded_at):
             return None
     except ValueError:
         return None
-    return _Source(source_id, version, field, text, recorded_at)
+    return _Source(source_id, version, field, text, recorded_at, standalone_answer)
 
 
 def prepare_question_material(material, *, lane, theme, choose_theme=choice, excluded_theme_keys=()):
@@ -476,7 +481,8 @@ def prepare_question_material(material, *, lane, theme, choose_theme=choice, exc
             if not answer or (not question and not standalone):
                 continue
             key = f"r{i}.answer{j}"
-            append_source(key, _source(pair, field="answer", text=answer, recorded_at=pair.get("answered_at")))
+            append_source(key, _source(pair, field="answer", text=answer,
+                                       recorded_at=pair.get("answered_at"), standalone_answer=standalone))
             if key not in sources:
                 continue
             if question:
@@ -734,7 +740,8 @@ async def _compare_prior_questions(body, prepared, generate):
     prior = list(dict.fromkeys(item["question"] for group in (
         "previous_questions", "open_emlis_questions", "answered_emlis_questions", "skipped_emlis_questions",
     ) for item in prepared.get(group, ())))
-    # Prior DeepInsight answers always have an associated question.
+    if not prior:
+        return True
     if len(prior) == 1:
         return _distinct_prior_question(_json_object(await generate(
             _PRIOR_ANSWER_PAIR_MESSAGE, {"previous": prior[0], "current": body},
@@ -749,6 +756,39 @@ async def _compare_prior_questions(body, prepared, generate):
         if type(key) is not int or key != index or not _distinct_prior_question(item):
             return False
     return True
+
+
+async def _retry_answer_reading(read, plan, question, prepared, sources, generate):
+    citation, _, body = question.partition(_CITATION_JOIN)
+    # A retained Emlis answer can report the result without explaining why it
+    # happened. Recheck only when the reader gave that exact citation as proof.
+    copied_result = (
+        plan.anchor.source.standalone_answer and plan.focus == "REASON"
+        and _REASON_QUESTION.search(body) and _json_object(read) == {
+            "verdict": "reject", "reason": "already_answered",
+            "source": plan.source, "evidence": plan.quote,
+        }
+    )
+    if not copied_result and not (
+        any(item["answer_source"] == plan.source for item in prepared["previous_questions"])
+        and _already_answered_rejection(read)
+    ):
+        return False
+    texts = {key: source.text for key, source in sources.items()}
+    evidence_guide = _ANSWER_REASON_EVIDENCE_GUIDANCE if copied_result else ""
+    extracted = await generate(_PRIOR_ANSWER_EVIDENCE_MESSAGE + evidence_guide, {
+        "question": body, "texts": texts,
+    })
+    if _json_object(extracted) != {"source": None, "evidence": None}:
+        return False
+    premise_guide = _ANSWER_REASON_PREMISE_GUIDANCE if copied_result else ""
+    premise = await generate(_PRIOR_ANSWER_PREMISE_MESSAGE + premise_guide, {
+        "citation": citation[1:], "body": body, "texts": texts,
+    })
+    return (
+        _confirm_prior_answer_premise(premise, plan, body)
+        and await _compare_prior_questions(body, prepared, generate)
+    )
 
 
 def _theme_question_key(theme, ask, focus, condition_key):
@@ -1205,19 +1245,8 @@ async def generate_question(prepared, sources, *, material, generate):
     read = await generate(reader + skipped_guidance, reading)
     if _confirm_reading(read, plan, citation_verified=alternative is not None):
         return QuestionRun(candidate, "selected")
-    if (reader == ANSWER_READ_SYSTEM_MESSAGE
-            and any(item["answer_source"] == plan.source for item in prepared["previous_questions"])
-            and _already_answered_rejection(read)):
-        citation, _, body = question.partition(_CITATION_JOIN)
-        texts = {key: source.text for key, source in sources.items()}
-        extracted = await generate(_PRIOR_ANSWER_EVIDENCE_MESSAGE, {
-            "question": body, "texts": texts,
-        })
-        if _json_object(extracted) == {"source": None, "evidence": None}:
-            premise = await generate(_PRIOR_ANSWER_PREMISE_MESSAGE, {
-                "citation": citation[1:], "body": body, "texts": texts,
-            })
-            if (_confirm_prior_answer_premise(premise, plan, body)
-                    and await _compare_prior_questions(body, prepared, generate)):
-                return QuestionRun(candidate, "selected")
+    if reader == ANSWER_READ_SYSTEM_MESSAGE and await _retry_answer_reading(
+        read, plan, question, prepared, sources, generate,
+    ):
+        return QuestionRun(candidate, "selected")
     return QuestionRun(None, "rejected")

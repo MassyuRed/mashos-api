@@ -111,7 +111,8 @@ def _corrected_piece_model_material(source, *, expected_owner_id, tier):
     material = piece_material(source.original, expected_owner_id=expected_owner_id, tier=tier)
     original = material['sources'][0]
     _, rows = corrected_history_ranges(source.original, source.correction, as_of=source.as_of,
-        prior_corrections=source.prior_corrections,answer_sources=source.answer_sources)
+        prior_corrections=source.prior_corrections,answer_sources=source.answer_sources,
+        circumstance_control=source.circumstance_control)
     selected_ranges = {}
     from .emlis_thread_source import freeze_supplemental_answer
     for answer,operation,active_range,_,_ in corrected_answer_ranges(source):

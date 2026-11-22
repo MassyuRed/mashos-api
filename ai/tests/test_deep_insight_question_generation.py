@@ -10,6 +10,7 @@ from cocolon_meaning_experience_engine import deep_insight_question
 from cocolon_meaning_experience_engine.deep_insight_question import (
     ANSWER_READ_SYSTEM_MESSAGE, PLAN_SYSTEM_MESSAGE, READ_SYSTEM_MESSAGE,
     RECORD_REASON_READ_SYSTEM_MESSAGE, WRITE_SYSTEM_MESSAGE,
+    _ANSWER_REASON_EVIDENCE_GUIDANCE, _ANSWER_REASON_PREMISE_GUIDANCE,
     _PRIOR_ANSWER_EVIDENCE_MESSAGE, _PRIOR_ANSWER_HISTORY_MESSAGE, _PRIOR_ANSWER_PAIR_MESSAGE,
     _PRIOR_ANSWER_PREMISE_MESSAGE,
     _RECORD_ALTERNATIVE_PLAN_MESSAGE, _RECORD_ALTERNATIVE_READ_MESSAGE,
@@ -75,9 +76,9 @@ def run(original, plan, question=BODY, *, reading=None, extraction=None, premise
             response = alternative
         elif system in (WRITE_SYSTEM_MESSAGE, _RECORD_ALTERNATIVE_WRITE_MESSAGE):
             response = {"question": question}
-        elif system == _PRIOR_ANSWER_EVIDENCE_MESSAGE:
+        elif system.startswith(_PRIOR_ANSWER_EVIDENCE_MESSAGE):
             response = extraction
-        elif system == _PRIOR_ANSWER_PREMISE_MESSAGE:
+        elif system.startswith(_PRIOR_ANSWER_PREMISE_MESSAGE):
             response = premise
         elif system in (_PRIOR_ANSWER_PAIR_MESSAGE, _PRIOR_ANSWER_HISTORY_MESSAGE):
             response = comparison
@@ -537,6 +538,58 @@ def test_corrected_emlis_answer_keeps_its_verbatim_source_and_old_wording_is_den
     different_plan = {**plan, "focus": "CONDITION", "ask": "準備を終えるための条件"}
     different, _ = run(material(record), different_plan, "どんな条件があれば準備を終えやすいですか？")
     assert different.disposition == "selected" and different.candidate.receipt["source_id"] == ANSWER_ID
+
+
+@pytest.mark.parametrize(("evidence_override", "extraction", "premise_override", "prior_verdict", "selected", "steps"), [
+    ({}, {"source": None, "evidence": None}, {}, None, True, 5),
+    ({"evidence": "別の理由がここにある"}, None, {}, None, False, 3),
+    ({"source": "r2.thought"}, None, {}, None, False, 3),
+    ({}, {"source": "r2.thought", "evidence": "準備に必要な資料が届かなかった"}, {}, None, False, 4),
+    ({}, {"source": None, "evidence": None}, {"requested": "書いていない答え"}, None, False, 5),
+    ({}, {"source": None, "evidence": None}, {}, "repeat", False, 6),
+    ({}, {"source": None, "evidence": None}, {}, "distinct", True, 6),
+])
+def test_corrected_emlis_answer_rechecks_outcome_copied_as_reason(
+        evidence_override, extraction, premise_override, prior_verdict, selected, steps):
+    quote = "会議がうまくできませんでした"
+    previous = "なにがつらかったんですか？"
+    active_question = ("次回の会議に向けて何を準備しますか？" if prior_verdict == "distinct"
+                       else "会議がうまくいかなかったのはなぜですか？")
+    record = source(None, emlis_answered_questions=[{
+        "id": ANSWER_ID, "source_version": VERSION, "answered_at": STAMP, "question": None,
+        "previous_question": previous, "answer": quote,
+    }])
+    records = [record]
+    if extraction and extraction.get("evidence"):
+        records.append(source(extraction["evidence"], id="00000000-0000-0000-0000-000000000125"))
+    prior = [{"question_text": active_question, "answer_text": None, "answered_at": None}] if prior_verdict else []
+    plan = ask(source="r1.answer1", quote=quote, ask="うまくできなかった理由")
+    body = "会議がうまくできなかった理由は何ですか？"
+    reading = {"verdict": "reject", "reason": "already_answered", "source": plan["source"],
+               "evidence": quote, **evidence_override}
+    premise = {"verdict": "accept", "focus": "REASON", "condition": "", "premise_supported": True,
+               "requested": "会議がうまくできなかった理由", **premise_override}
+    current_asks = "会議がうまくいかなかった理由"
+    comparison = {"previous_asks": "次回の会議の準備" if prior_verdict == "distinct" else current_asks,
+                  "current_asks": current_asks, "verdict": prior_verdict}
+    result, calls = run(material(*records, prior=prior), plan, body, reading=reading,
+                        extraction=extraction, premise=premise, comparison=comparison)
+
+    assert len(calls) == steps
+    assert (result.disposition == "selected") is selected
+    assert all(previous not in json.dumps(payload, ensure_ascii=False) for _, payload in calls)
+    if steps >= 4:
+        assert calls[3][0] == _PRIOR_ANSWER_EVIDENCE_MESSAGE + _ANSWER_REASON_EVIDENCE_GUIDANCE
+        assert calls[3][1]["question"] == body
+        assert calls[3][1]["texts"]["r1.answer1"] == quote
+    if steps >= 5:
+        assert calls[4][0] == _PRIOR_ANSWER_PREMISE_MESSAGE + _ANSWER_REASON_PREMISE_GUIDANCE
+        assert calls[4][1]["citation"] == quote
+    if steps == 6:
+        assert calls[5] == (_PRIOR_ANSWER_PAIR_MESSAGE, {"previous": active_question, "current": body})
+    if selected:
+        assert result.candidate.receipt["source_id"] == ANSWER_ID
+        assert result.candidate.receipt["field"] == "answer"
 
 
 @pytest.mark.parametrize(("last_id", "last_verdict", "expected"), [

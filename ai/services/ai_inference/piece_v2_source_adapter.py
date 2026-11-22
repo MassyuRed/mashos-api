@@ -35,6 +35,7 @@ from piece_v2_contract import PieceContractError, canonical_json_bytes, canonica
 from publish_governance import parse_iso_utc, timestamp_in_history_retention
 
 if TYPE_CHECKING:
+    from cocolon_meaning_experience_engine.cores.analysis.source_adapter import AnalysisCircumstanceControl
     from cocolon_meaning_experience_engine.emlis_answer_update import BoundFeelingCircumstance
     from cocolon_meaning_experience_engine.emlis_thread_contracts import SupplementalAnswerSource, InterpretationCorrectionSource
 
@@ -128,6 +129,7 @@ class PieceSavedCorrectedHandoff:
 
     prior_corrections: tuple[InterpretationCorrectionSource, ...] = ()
     answer_sources: tuple[SupplementalAnswerSource, ...] = ()
+    circumstance_control: AnalysisCircumstanceControl | None = None
 
     def lineage_payload(self) -> dict:
         return json.loads(self._lineage_json)
@@ -929,6 +931,7 @@ def _corrected_observation_handoff(saved, snapshot, answer_id=None):
     """Bind every proper correction and its actual completed FINAL receipt."""
     from dataclasses import asdict, replace
     from emlis_thread_service import _context_ref, _request, NATURAL_REPLY_PROFILE, Q3_PROFILE
+    from cocolon_meaning_experience_engine.cores.analysis.source_adapter import analysis_circumstance_control
     from cocolon_meaning_experience_engine.emlis_thread_source import admit_emlis_thread
     from cocolon_meaning_experience_engine.natural_reply import ARTIFACT_SCHEMA
     from cocolon_meaning_experience_engine.piece_refined import corrected_active_ranges
@@ -1049,8 +1052,11 @@ def _corrected_observation_handoff(saved, snapshot, answer_id=None):
     # access above still uses the DB's current clock; advancing that clock
     # cannot change this completed correction's artifact identity.
     source_as_of = observation['recorded_at']
+    circumstance = (analysis_circumstance_control(admitted, include_corrected=True)
+        if mixed and answer_history['bound_feeling_circumstance'] else None)
     operation, ranges, replacement_range, commitment = corrected_active_ranges(
-        original_source, correction, as_of=source_as_of, prior_corrections=sources[:-1],answer_sources=answers)
+        original_source, correction, as_of=source_as_of, prior_corrections=sources[:-1],
+        answer_sources=answers, circumstance_control=circumstance)
     source_binding = dict(correction_id=correction.correction_id,
         source_version='sha256:' + canonical_sha256_hex(asdict(correction)),
         explanation_commitment=commitment, target_event_id=correction.target_event_id)
@@ -1079,7 +1085,8 @@ def _corrected_observation_handoff(saved, snapshot, answer_id=None):
     if mixed:
         fence.update(answer_sources=[asdict(a) for a in answers],answer_checkpoints=list(answer_history['checkpoints']))
     return PieceSavedCorrectedHandoff(saved, correction, thread_id, t['revision'],
-        canonical_json_bytes(lineage), canonical_json_bytes(fence), source_as_of, operation, ranges, replacement_range, sources[:-1], answers)
+        canonical_json_bytes(lineage), canonical_json_bytes(fence), source_as_of, operation, ranges,
+        replacement_range, sources[:-1], answers, circumstance)
 
 
 def project_saved_corrected_source(handoff):
@@ -1090,23 +1097,33 @@ def project_saved_corrected_source(handoff):
     if type(handoff) is not PieceSavedCorrectedHandoff:
         raise _error('PIECE_SOURCE_NOT_ELIGIBLE')
     source = project_saved_original_source(handoff.original, source_stage='normal_observation')
-    operation, ranges, replacement_range, commitment = corrected_active_ranges(
-        source, handoff.correction, as_of=handoff.as_of, prior_corrections=handoff.prior_corrections,answer_sources=handoff.answer_sources)
     line, control = handoff.lineage_payload(), json.loads(handoff._correction_state_json)
-    binding = dict(correction_id=handoff.correction.correction_id,
-        source_version='sha256:' + canonical_sha256_hex(asdict(handoff.correction)),
-        explanation_commitment=commitment, target_event_id=handoff.correction.target_event_id)
     mixed=bool(handoff.answer_sources)
     question=None
+    question_event=None
     selected=handoff.answer_sources[-1] if mixed else None
     if mixed:
         from cocolon_meaning_experience_engine.emlis_thread_source import freeze_supplemental_answer
         matches=[e for e in control.get('events',[]) if e.get('kind')=='QUESTION'
             and e.get('round_index')==selected.round_index and e.get('question_id')==selected.question_id]
         if len(matches)!=1: raise _error('PIECE_CONFLICT')
-        question=matches[0]['id']
+        question_event=matches[0]
+        question=question_event['id']
         _uuid(question,'PIECE_CONFLICT')
         answer_commitment='sha256:'+freeze_supplemental_answer(selected).envelope.raw_sha256
+    circumstance = handoff.circumstance_control
+    if circumstance is not None:
+        from emlis_thread_service import _json
+        from cocolon_meaning_experience_engine.cores.analysis.source_adapter import AnalysisCircumstanceControl
+        if (type(circumstance) is not AnalysisCircumstanceControl or question_event is None
+                or circumstance.answer != selected or _json(circumstance.question) != question_event['payload']):
+            raise _error('PIECE_CONFLICT')
+    operation, ranges, replacement_range, commitment = corrected_active_ranges(
+        source, handoff.correction, as_of=handoff.as_of, prior_corrections=handoff.prior_corrections,
+        answer_sources=handoff.answer_sources, circumstance_control=circumstance)
+    binding = dict(correction_id=handoff.correction.correction_id,
+        source_version='sha256:' + canonical_sha256_hex(asdict(handoff.correction)),
+        explanation_commitment=commitment, target_event_id=handoff.correction.target_event_id)
     observation = line.get('observation', {})
     _uuid(observation.get('emlis_observation_result_identity'), 'PIECE_CONFLICT')
     expected_source = dict(source_input_id=handoff.original.saved_input_id,
@@ -1155,7 +1172,7 @@ def project_saved_corrected_source(handoff):
         opted_in=True, original_active_ranges=ranges, correction_active_range=replacement_range,
         correction_update_operation=operation, as_of=handoff.as_of, prior_corrections=handoff.prior_corrections,
         answer_sources=handoff.answer_sources,selected_answer_id=selected.answer_id if mixed else None,
-        question_need_decision_identity=question)
+        question_need_decision_identity=question, circumstance_control=circumstance)
 
 
 def _natural_refined_observation_handoff(saved: PieceSavedOriginal, snapshot: dict,
@@ -1541,7 +1558,7 @@ def _natural_later_add_handoff(saved, snapshot, answer_id, *, correction_prefix=
     from dataclasses import replace
     from emlis_thread_service import (_context_ref, _json, _request,
         NATURAL_QUESTION_POLICY, NATURAL_REPLY_PROFILE, Q3_PROFILE)
-    from cocolon_meaning_experience_engine.emlis_answer_update import prepare_emlis_meaning
+    from cocolon_meaning_experience_engine.emlis_answer_update import bound_feeling_circumstance, prepare_emlis_meaning
     from cocolon_meaning_experience_engine.emlis_thread_contracts import SEMANTIC_SCHEMA
     from cocolon_meaning_experience_engine.emlis_thread_source import admit_emlis_thread
     from cocolon_meaning_experience_engine.natural_reply import ARTIFACT_SCHEMA
@@ -1700,7 +1717,8 @@ def _natural_later_add_handoff(saved, snapshot, answer_id, *, correction_prefix=
             <=parse_iso_utc(correction_events[0]['payload']['source']['recorded_at']))
         return dict(answers=tuple(a.source for a in admitted.answers),question_event_id=qs[-1]['id'],
             checkpoints=tuple(_json(p.checkpoint) for p in prepared_rounds),
-            observation=bodies[-1],end_event=end_event,source_prefix_ref=admitted.source_prefix_ref)
+            observation=bodies[-1],end_event=end_event,source_prefix_ref=admitted.source_prefix_ref,
+            bound_feeling_circumstance=bound_feeling_circumstance(prepared_rounds[-1]) is not None)
     frozen=admitted.answers[-1]; answer_commitment='sha256:'+frozen.envelope.raw_sha256
     require(saved.record_commitment!=answer_commitment and saved.saved_input_id!=answer_id)
     lineage={

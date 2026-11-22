@@ -13,6 +13,7 @@ import base64
 import hashlib
 import json
 import re
+from typing import TYPE_CHECKING
 
 from piece_v2_content_policy import (
     check_existing_detectors, choose_format, unavailable,
@@ -24,6 +25,9 @@ from .emlis_thread_contracts import SupplementalAnswerSource, InterpretationCorr
 from .emlis_thread_source import FrozenSupplementalAnswer, freeze_supplemental_answer
 from .piece_source import PieceSourceMeaning, build_piece_source_meaning
 from .emlis_answer_update import BoundFeelingCircumstance
+
+if TYPE_CHECKING:
+    from .cores.analysis.source_adapter import AnalysisCircumstanceControl
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -65,6 +69,7 @@ class PieceCorrectedSourceSnapshot:
     answer_sources: tuple[SupplementalAnswerSource, ...] = ()
     selected_answer_id: str | None = None
     question_need_decision_identity: str | None = None
+    circumstance_control: AnalysisCircumstanceControl | None = None
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -95,7 +100,7 @@ class PieceActiveOriginalMeaning(PieceSourceMeaning):
 class PieceRefinedMeaning:
     source: PieceRefinedSourceSnapshot | PieceCorrectedSourceSnapshot
     source_ref: str
-    original: PieceSourceMeaning
+    original: PieceSourceMeaning | None
     supplemental: PieceSupplementalMeaning | PieceCorrectionMeaning | None
     prior_revisions: tuple[PieceSupplementalMeaning, ...] = ()
 
@@ -103,7 +108,7 @@ class PieceRefinedMeaning:
 @dataclass(frozen=True, slots=True, repr=False)
 class PieceRefinedPlan:
     source_ref: str
-    original_plan: object
+    original_plan: object | None
     supplemental_plan: object
     # No relation is invented across sources. Preserve the original blocks,
     # then the answer blocks, with explicit source boundaries in private state.
@@ -132,6 +137,10 @@ def _source_payload(source):
     result = asdict(source)
     result['original'] = original
     if type(source) is PieceCorrectedSourceSnapshot:
+        if source.circumstance_control is None:
+            del result['circumstance_control']
+        else:
+            result['circumstance_control'] = json.loads(json.dumps(result['circumstance_control']))
         if not source.prior_corrections:
             del result['prior_corrections']
         else:
@@ -181,11 +190,12 @@ def refined_source_ref(source) -> str:
     return prefix + _sha(canonical_json_bytes(payload))
 
 
-def _corrected_source_set(original, correction, *, as_of, prior_corrections=(), answer_sources=()):
+def _corrected_source_set(original, correction, *, as_of, prior_corrections=(), answer_sources=(),
+                          circumstance_control=None):
     """Reuse the shared source freezer; no Analysis graph or AI text is read."""
     from piece_v2_generation import PieceSourceSnapshot
     from .cores.analysis.source_adapter import (
-        AnalysisSavedRecord, AnalysisSupplement, AnalysisObservedMapRequest, freeze_analysis_sources,
+        AnalysisCircumstanceControl, AnalysisSavedRecord, AnalysisSupplement, AnalysisObservedMapRequest, freeze_analysis_sources,
         commitment, _time,
     )
     _require(type(original) is PieceSourceSnapshot
@@ -202,17 +212,21 @@ def _corrected_source_set(original, correction, *, as_of, prior_corrections=(), 
             correction.recorded_at, as_of)), 'piece_correction_source_binding')
     start, end, stamp = _time(raw['created_at'], saved_utc=True), _time(as_of), _time(correction.recorded_at)
     _require(start < end and start <= stamp <= end, 'piece_correction_source_clock')
+    _require(circumstance_control is None or (type(circumstance_control) is AnalysisCircumstanceControl
+        and answer_sources == (circumstance_control.answer,)), 'piece_correction_answer_binding')
     member = AnalysisSavedRecord(original.owner_id, original.saved_input_id,
         commitment(raw), original.saved_original_json.decode('utf-8'),
         supplements=tuple(AnalysisSupplement(a.answer_id, original.owner_id, original.saved_input_id,
-            commitment(raw), a.answer_text_private, commitment(a.answer_text_private)) for a in answer_sources),
+            commitment(raw), a.answer_text_private, commitment(a.answer_text_private),
+            circumstance_control=circumstance_control) for a in answer_sources),
         interpretation_corrections=(*prior_corrections, correction))
     request = AnalysisObservedMapRequest('piece-corrected-source', original.owner_id,
         start.isoformat(), end.isoformat(), (member,))
     return freeze_analysis_sources(request)
 
 
-def _corrected_projection(original, correction, *, as_of, prior_corrections=(), answer_sources=()):
+def _corrected_projection(original, correction, *, as_of, prior_corrections=(), answer_sources=(),
+                          circumstance_control=None):
     """Apply the shared original-clause updates without selecting every ADD."""
     from .cores.analysis.intent_compiler import _active_sources, _REPLACEMENT, _WITHDRAWAL, _self_propositions
     from .cores.analysis.source_adapter import _time, source_field_text
@@ -243,7 +257,7 @@ def _corrected_projection(original, correction, *, as_of, prior_corrections=(), 
         for a in answer_sources:
             freeze_supplemental_answer(a)
     frozen = _corrected_source_set(original, correction, as_of=as_of,
-        prior_corrections=prior_corrections, answer_sources=answer_sources)
+        prior_corrections=prior_corrections, answer_sources=answer_sources, circumstance_control=circumstance_control)
     # The full freezer retains every real answer. Fully read ADD claims
     # participate in the existing compatibility checks. An unselected,
     # unread prior ADD qualifies history only; it cannot supply a new claim.
@@ -252,8 +266,16 @@ def _corrected_projection(original, correction, *, as_of, prior_corrections=(), 
         or _WITHDRAWAL.fullmatch(a.answer_text_private.strip().rstrip('。．.')))}
     opaque_ids=set()
     from .cores.analysis.source_adapter import AnalysisSourceError
+    bound_feeling = None
     for view in frozen.sources:
         if view.envelope.source_record_id not in ordinary_answer_ids:
+            continue
+        if view.feeling_circumstance_ranges is not None:
+            bound_feeling, (start, end) = view.feeling_circumstance_ranges
+            literal = source_field_text(view, 'memo')
+            _require(0 <= start < end <= len(literal) and not literal[:start].strip()
+                and literal[end:].strip() in ('', '。', '！', '!')
+                and not re.search(r'[\r\n?？「」『』]', literal), 'piece_feeling_circumstance_source_binding')
             continue
         try:
             _self_propositions(view,require_complete=True)
@@ -261,6 +283,8 @@ def _corrected_projection(original, correction, *, as_of, prior_corrections=(), 
             if str(exc) != 'analysis_supplement_interpretation_pending':
                 raise
             opaque_ids.add(view.envelope.source_record_id)
+    _require(circumstance_control is None or bound_feeling is not None,
+        'piece_feeling_circumstance_source_binding')
     _require(not answer_sources or answer_sources[-1].answer_id not in opaque_ids,
         'piece_correction_selected_answer_pending')
     update_view = replace(frozen,sources=tuple(v for v in frozen.sources
@@ -272,7 +296,8 @@ def _corrected_projection(original, correction, *, as_of, prior_corrections=(), 
         if e.source_span_id in excluded.get(original_source.envelope.envelope_id, set())]
     _require(len(removed) == len(updates), 'piece_correction_active_range_binding')
     full = build_piece_source_meaning(original, expected_owner_id=original.owner_id,
-        expected_saved_input_id=original.saved_input_id, expected_source_version=original.source_version)
+        expected_saved_input_id=original.saved_input_id, expected_source_version=original.source_version,
+        bound_complete_clause=bound_feeling is not None)
     removed_refs = []
     for target in removed:
         matches = [ref for ref in full.evidence if ref.field_path == target.field_path
@@ -282,7 +307,9 @@ def _corrected_projection(original, correction, *, as_of, prior_corrections=(), 
         _require(len(matches) == 1, 'piece_correction_active_range_binding')
         removed_refs.extend(matches)
     ranges = tuple((r.field_path, r.scalar_start, r.scalar_end) for r in full.evidence if r not in removed_refs)
-    _require(bool(ranges), 'piece_correction_active_range_binding')
+    _require(bool(ranges) or (bound_feeling is not None and len(removed) == 1
+        and removed[0].field_path == 'memo' and (removed[0].scalar_start, removed[0].scalar_end) == bound_feeling
+        and updates[0].operation == 'REVISE'), 'piece_correction_active_range_binding')
     if answer_sources:
         # A quote cannot silently choose ORIGINAL when an active answer says
         # the same thing. AI target excerpts are not person-source selectors.
@@ -321,20 +348,24 @@ def _corrected_projection(original, correction, *, as_of, prior_corrections=(), 
         row(a,correction_role=False) for a in answer_sources)
 
 
-def corrected_history_ranges(original, correction, *, as_of, prior_corrections=(), answer_sources=()):
+def corrected_history_ranges(original, correction, *, as_of, prior_corrections=(), answer_sources=(),
+                             circumstance_control=None):
     ranges, rows, _ = _corrected_projection(original,correction,as_of=as_of,
-        prior_corrections=prior_corrections,answer_sources=answer_sources)
+        prior_corrections=prior_corrections,answer_sources=answer_sources,circumstance_control=circumstance_control)
     return ranges,rows
 
 
 def corrected_answer_ranges(source):
     _,_,rows = _corrected_projection(source.original,source.correction,as_of=source.as_of,
-        prior_corrections=source.prior_corrections,answer_sources=source.answer_sources)
+        prior_corrections=source.prior_corrections,answer_sources=source.answer_sources,
+        circumstance_control=source.circumstance_control)
     return rows
 
 
-def corrected_active_ranges(original, correction, *, as_of, prior_corrections=(), answer_sources=()):
-    ranges, rows = corrected_history_ranges(original, correction, as_of=as_of, prior_corrections=prior_corrections, answer_sources=answer_sources)
+def corrected_active_ranges(original, correction, *, as_of, prior_corrections=(), answer_sources=(),
+                            circumstance_control=None):
+    ranges, rows = corrected_history_ranges(original, correction, as_of=as_of,
+        prior_corrections=prior_corrections, answer_sources=answer_sources, circumstance_control=circumstance_control)
     _, operation, active_range, commitment, _ = rows[-1]
     return operation, ranges, active_range, commitment
 
@@ -353,11 +384,13 @@ def _validate_corrected_source(source):
             and type(source.question_need_decision_identity) is str
             and bool(source.question_need_decision_identity.strip())), 'piece_correction_answer_opt_in')
     expected = corrected_active_ranges(source.original, source.correction, as_of=source.as_of,
-        prior_corrections=source.prior_corrections, answer_sources=source.answer_sources)
+        prior_corrections=source.prior_corrections, answer_sources=source.answer_sources,
+        circumstance_control=source.circumstance_control)
     _require(expected == (source.correction_update_operation, source.original_active_ranges,
         source.correction_active_range, source.correction_commitment), 'piece_correction_active_range_binding')
     return next(s for s in _corrected_source_set(source.original, source.correction, as_of=source.as_of,
-            prior_corrections=source.prior_corrections, answer_sources=source.answer_sources).sources
+            prior_corrections=source.prior_corrections, answer_sources=source.answer_sources,
+            circumstance_control=source.circumstance_control).sources
         if s.envelope.source_role == 'USER_INTERPRETATION_CORRECTION'
         and s.envelope.source_record_id == source.correction.correction_id)
 
@@ -371,13 +404,20 @@ def _correction_meaning(source):
     raw, owner = source.correction.explanation, source.original.owner_id
     literal = raw[start:end]
     from .piece_source import _qualified_self_topic, _literal_self_account
+    from .cores.analysis.intent_compiler import _finite_feeling_proposition
     statement = literal if literal.endswith(tuple('。！？!?')) else literal + '。'
-    _require(_qualified_self_topic(statement) is not None and _literal_self_account(statement),
+    # A replacement for the proved original feeling can retain its own
+    # complete written feeling. Its source words do not inherit the old Q&A relation.
+    feeling = (_finite_feeling_proposition(statement[:-1])
+        if source.circumstance_control is not None else None)
+    bound_feeling = feeling is not None and feeling.actor == 'SELF'
+    _require(_qualified_self_topic(statement) is not None
+        and (bound_feeling or _literal_self_account(statement)),
         'piece_correction_replacement_not_self_contained')
     parsed = build_piece_source_meaning(PieceSourceSnapshot(owner, source.correction.correction_id,
         frozen.envelope.source_schema_version, statement), expected_owner_id=owner,
         expected_saved_input_id=source.correction.correction_id,
-        expected_source_version=frozen.envelope.source_schema_version)
+        expected_source_version=frozen.envelope.source_schema_version, bound_complete_clause=bound_feeling)
     _require(len(parsed.graph.nodes) == 1 and not parsed.role_bindings
         and not parsed.nominal_references and not parsed.personal_evaluations and not parsed.expression_scopes,
         'piece_correction_replacement_not_self_contained')
@@ -579,12 +619,14 @@ def supplemental_complete_self_account(meaning):
     return (type(meaning) in (PieceSupplementalMeaning, PieceCorrectionMeaning) and meaning.active_range is not None
         and len(meaning.graph.nodes) == 1 and all(
             _qualified_self_topic(supplemental_statement_view(meaning, node)) is not None
-            and _literal_self_account(supplemental_statement_view(meaning, node))
+            and ((type(meaning) is PieceCorrectionMeaning and meaning.bound_complete_clause)
+                or _literal_self_account(supplemental_statement_view(meaning, node)))
             for node in meaning.graph.nodes))
 
 
 def refined_meaning_parts(meaning, plan):
-    parts = ((meaning.original, plan.original_plan),)
+    _require((meaning.original is None) == (plan.original_plan is None), 'piece_refined_plan_binding')
+    parts = () if meaning.original is None else ((meaning.original, plan.original_plan),)
     _require(len(meaning.prior_revisions) == len(plan.prior_revision_plans),
              'piece_refined_plan_binding')
     parts += tuple(zip(meaning.prior_revisions, plan.prior_revision_plans, strict=True))
@@ -710,16 +752,20 @@ def build_refined_meaning(request):
         _require(original.owner_id == request.expected_owner_id
             and original.saved_input_id == request.expected_saved_input_id
             and original.source_version == request.expected_source_version, 'piece_correction_source_binding')
-        active = _active_original_meaning(original, source.original_active_ranges,
+        active = (_active_original_meaning(original, source.original_active_ranges,
             effective_round_sources=bool(source.prior_corrections or source.answer_sources))
+            if source.original_active_ranges else None)
         prior = []
-        for answer,operation,active_range,_,_ in corrected_answer_ranges(source):
+        for answer,operation,active_range,_,view in corrected_answer_ranges(source):
             if operation != 'WITHDRAW' and (operation == 'REVISE' or answer.answer_id == source.selected_answer_id):
-                prior.append(_supplemental_meaning(answer, original.owner_id, active_range))
+                bound = view.feeling_circumstance_ranges is not None
+                prior.append(_supplemental_meaning(answer, original.owner_id, active_range,
+                    feeling_question_id=answer.question_id if bound else None, bound_complete_clause=bound))
         for i, previous in enumerate(source.prior_corrections):
             prefix = source.prior_corrections[:i]
             op, ranges, active_range, commitment = corrected_active_ranges(
-                original, previous, as_of=source.as_of, prior_corrections=prefix, answer_sources=source.answer_sources)
+                original, previous, as_of=source.as_of, prior_corrections=prefix, answer_sources=source.answer_sources,
+                circumstance_control=source.circumstance_control)
             if op == 'REVISE':
                 child = replace(source, correction=previous, prior_corrections=prefix,
                     original_active_ranges=ranges, correction_update_operation=op,
@@ -827,7 +873,8 @@ def refined_source_roles(source):
 
 def _plans(meaning):
     from .piece_v1c import compile_piece_artifact_plan
-    return PieceRefinedPlan(meaning.source_ref, compile_piece_artifact_plan(meaning.original),
+    return PieceRefinedPlan(meaning.source_ref,
+        compile_piece_artifact_plan(meaning.original) if meaning.original is not None else None,
         compile_piece_artifact_plan(meaning.supplemental) if meaning.supplemental is not None else None,
         source_roles=refined_source_roles(meaning.source),
         prior_revision_plans=tuple(compile_piece_artifact_plan(part) for part in meaning.prior_revisions))
@@ -853,12 +900,11 @@ def validate_refined_preservation(meaning, plan, artifact):
     if validate_feeling_circumstance_body(meaning, artifact.body_blocks):
         check_existing_detectors(artifact.piece_text)
         return
-    count = len(plan.original_plan.block_node_ids)
-    extra = sum(len(child.block_node_ids) for _, child in refined_meaning_parts(meaning, plan)[1:])
-    _require(len(artifact.body_blocks) == count + extra,
-             'piece_refined_artifact_binding')
+    parts = refined_meaning_parts(meaning, plan)
+    _require(len(artifact.body_blocks) == sum(len(child.block_node_ids) for _, child in parts),
+        'piece_refined_artifact_binding')
     offset = 0
-    for part, child_plan in refined_meaning_parts(meaning, plan):
+    for part, child_plan in parts:
         blocks = artifact.body_blocks[offset:offset + len(child_plan.block_node_ids)]
         offset += len(blocks)
         text = '\n\n'.join(blocks)
