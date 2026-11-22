@@ -186,6 +186,25 @@ def test_worker_losing_checkpoint_stops_before_next_post(merge_exchange, claim_e
     assert actions == ['PLAN', 'checkpoint']
 
 
+def test_v24_logs_invalid_plan_wire_without_model_data(caplog, merge_exchange):
+    stage, _ = merge_exchange
+    calls = []
+
+    def handler(request):
+        calls.append(request)
+        return successful_response('{"private":"PRIVATE_REPLY"}')
+
+    async def scenario():
+        with pytest.raises(RuntimeError, match='analysis_model_source_unavailable'):
+            await model_source(stage, handler)(stage, per_phase=True)
+
+    asyncio.run(scenario())
+    assert len(calls) == 1
+    assert 'analysis_model_acquisition_failed phase=PLAN stage=phase_wire http_status=200' in caplog.text
+    assert 'PRIVATE_REPLY' not in caplog.text
+    assert 'test.invalid' not in caplog.text
+
+
 def test_split_v24_leaf_renews_clock_after_accepted_plan(monkeypatch):
     note = '祖母は図面を保存した。'
     parent = prepared([note], core.SEMANTIC_MAP_OCCURRENCE_V24_PROFILE)

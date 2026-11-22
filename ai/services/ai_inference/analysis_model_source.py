@@ -9,6 +9,7 @@ from functools import lru_cache
 import asyncio
 import hashlib
 import json
+import logging
 import os
 from urllib.parse import urlsplit
 
@@ -18,6 +19,8 @@ from cocolon_meaning_experience_engine.cores.analysis.semantic_admission import 
     SEMANTIC_MAP_MAX_PROMPT_BYTES as SEMANTIC_MAX_PROMPT_BYTES,
     SEMANTIC_HISTORY_MERGE_MAX_PROMPT_BYTES as SEMANTIC_MERGE_MAX_PROMPT_BYTES,
 )
+
+logger = logging.getLogger(__name__)
 
 SELECTOR = 'self_hosted.v1'
 SEMANTIC_SELECTOR = 'self_hosted.semantic.v1'
@@ -208,10 +211,12 @@ class SelfHostedSemanticAnalysisModelSource(SelfHostedAnalysisModelSource):
                     len(core.SEMANTIC_MAP_NODE_LOCAL_V4_PHASES) * SEMANTIC_HTTP_TIMEOUT_SECONDS)
         remaining_tokens = core.SEMANTIC_MAP_NODE_LOCAL_V4_TOKEN_BUDGET
         maximum = SEMANTIC_MERGE_MAX_PROMPT_BYTES if getattr(prepared, 'kind', None) == 'MERGE' else SEMANTIC_MAX_PROMPT_BYTES
+        phase, stage, status = 'PLAN', 'prepare', None
         try:
             async with asyncio.timeout_at(end), httpx.AsyncClient(transport=self._transport, follow_redirects=False,
                     trust_env=False) as client:
                 for phase in core.SEMANTIC_MAP_NODE_LOCAL_V4_PHASES:
+                    stage, status = 'prepare', None
                     if per_phase:
                         if asyncio.current_task().cancelling():
                             raise asyncio.CancelledError
@@ -232,11 +237,14 @@ class SelfHostedSemanticAnalysisModelSource(SelfHostedAnalysisModelSource):
                         generation_seconds=min(210.0, remaining - SEMANTIC_V4_RESPONSE_RESERVE_SECONDS))
                     core.require(len(core.semantic_map_canonical(body).encode()) <= SEMANTIC_MAX_REQUEST_BYTES,
                         'analysis_semantic_history_capacity_exceeded')
+                    stage = 'transport'
                     async with asyncio.timeout_at(phase_end), client.stream('POST', self.endpoint,
                             headers={'Authorization': 'Bearer ' + self._api_key}, json=body,
                             timeout=httpx.Timeout(remaining, connect=min(15.0, remaining))) as response:
-                        if response.status_code != 200:
+                        stage, status = 'http_status', response.status_code
+                        if status != 200:
                             raise RuntimeError('analysis_model_source_unavailable')
+                        stage = 'response_read'
                         payload = bytearray()
                         async for chunk in response.aiter_bytes(chunk_size=16384):
                             payload.extend(chunk)
@@ -244,19 +252,25 @@ class SelfHostedSemanticAnalysisModelSource(SelfHostedAnalysisModelSource):
                                 raise ValueError('phase_response_too_large')
                     if loop.time() >= phase_end:
                         raise TimeoutError('analysis_model_source_timeout')
+                    stage = 'response_json'
                     data = json.loads(payload)
+                    stage = 'response_contract'
                     if type(data) is not dict or data.get('model') != self.model:
                         raise ValueError('phase_model_changed')
                     choices = data.get('choices')
                     if type(choices) is not list or len(choices) != 1 or type(choices[0]) is not dict:
                         raise ValueError('phase_choice_invalid')
                     choice, message = choices[0], choices[0].get('message')
-                    if (choice.get('finish_reason') != 'stop' or type(message) is not dict
-                            or message.get('role') != 'assistant' or message.get('tool_calls')
+                    finish_reason = choice.get('finish_reason')
+                    if finish_reason != 'stop':
+                        stage = 'generation_length' if finish_reason == 'length' else 'generation_finish'
+                        raise ValueError('phase_not_complete')
+                    if (type(message) is not dict or message.get('role') != 'assistant' or message.get('tool_calls')
                             or message.get('function_call') or message.get('reasoning_content')
                             or type(message.get('content')) is not str or not message['content'].strip()):
                         raise ValueError('phase_not_complete')
                     raw = message['content']
+                    stage = 'response_usage'
                     usage = data.get('usage')
                     completion = usage.get('completion_tokens') if type(usage) is dict else None
                     if type(completion) is not int or not 1 <= completion <= tokens:
@@ -267,11 +281,14 @@ class SelfHostedSemanticAnalysisModelSource(SelfHostedAnalysisModelSource):
                         finish_reason='stop', completion_tokens=completion))
                     if compact_merge:
                         receipts[-1]['logical_messages_sha256'] = core.semantic_map_hash(legacy_messages(messages))
+                    stage = 'phase_json'
                     value = core._load(raw)
                     if compact_merge:
+                        stage = 'phase_wire'
                         codec = response_codec(messages)
                         if codec is not None:
                             value = codec.decode(value)
+                    stage = 'phase_admission'
                     if phase == 'PLAN':
                         plan = core.admit_semantic_node_local_v4_plan_response(prepared, value,
                             merge_anchors=compact_merge, merge_action_sources=compact_merge, context_sources=compact_merge,
@@ -287,11 +304,13 @@ class SelfHostedSemanticAnalysisModelSource(SelfHostedAnalysisModelSource):
                     else:
                         core.semantic_node_local_v4_relations(prepared, plan, nodes, value, ordered_titles=compact_merge)
                     if per_phase:
+                        stage = 'checkpoint'
                         if loop.time() >= phase_end:
                             raise TimeoutError('analysis_model_source_timeout')
                         from analysis_job_progress import checkpoint_v24_phase
                         async with asyncio.timeout(SEMANTIC_REQUEST_TIMEOUT_SECONDS):
                             await checkpoint_v24_phase()
+            phase, stage, status = 'ASSEMBLE', 'artifact', None
             artifact = dict(schema_version=core.semantic_node_local_v4_artifact_schema(prepared), phases=receipts)
             if compact_merge:
                 artifact['merge_wire_version'] = VERSION
@@ -311,8 +330,14 @@ class SelfHostedSemanticAnalysisModelSource(SelfHostedAnalysisModelSource):
                 raise TimeoutError('analysis_model_source_timeout')
             return result
         except (httpx.TimeoutException, TimeoutError):
+            logger.warning('analysis_model_acquisition_failed phase=%s stage=%s http_status=%s timeout=true',
+                phase, stage, status)
             raise TimeoutError('analysis_model_source_timeout') from None
-        except (httpx.HTTPError, ValueError, TypeError, KeyError, UnicodeError, RuntimeError):
+        except (httpx.HTTPError, ValueError, TypeError, KeyError, UnicodeError, RuntimeError) as exc:
+            # Only the semantic validator's fixed codes are safe to include.
+            reason = str(exc) if isinstance(exc, core.AnalysisSemanticMapError) else None
+            logger.warning('analysis_model_acquisition_failed phase=%s stage=%s http_status=%s reason=%s',
+                phase, stage, status, reason)
             raise RuntimeError('analysis_model_source_unavailable') from None
 
     async def __call__(self, prepared, *, pipeline_deadline=None, per_phase=False):

@@ -882,6 +882,20 @@ def test_http_provider_rejects_partial_wrong_model_or_question_without_retry(cha
     assert len(calls) == 1
 
 
+def test_http_provider_failure_log_uses_fixed_fields(caplog):
+    def transport(request):
+        return httpx.Response(200, json={"model": "chosen-4b", "choices": [{
+            "finish_reason": "PRIVATE_FINISH", "message": {"content": "PRIVATE_REPLY"}}]})
+
+    source = SelfHostedNaturalReplySource(endpoint="https://model.invalid/v1/chat/completions",
+        model="chosen-4b", api_key="PRIVATE_KEY", transport=httpx.MockTransport(transport))
+    with pytest.raises(NaturalReplyError, match="natural_reply_provider_contract"):
+        run(source(NaturalReplyInput("source", '{"current":{"memo":"PRIVATE_INPUT"}}')))
+    assert "emlis_reply_acquisition_failed stage=generation_finish http_status=200" in caplog.text
+    assert "PRIVATE_" not in caplog.text
+    assert "model.invalid" not in caplog.text
+
+
 @pytest.mark.parametrize("text", [
     "『明日でしょうか。』という言葉が気になったのですね。",
     "「いま話せますか。」と声をかけたのですね。",
