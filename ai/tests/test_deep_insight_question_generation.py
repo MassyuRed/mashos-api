@@ -637,6 +637,37 @@ def test_theme_still_compares_displays_outside_reviewed_distinction(changed):
     assert calls[3][0] == _THEME_COMPARE_PAIR_SYSTEM_MESSAGE
 
 
+@pytest.mark.parametrize(("theme", "previous_position", "current_position"), [
+    ("自分の価値観", ("unpopular_choice", "change"), ("unpopular_choice", "priority")),
+    ("仕事・学び", ("new_method", "cue"), ("experiment", "priority")),
+    ("仕事・学び", ("teach", "cue"), ("teach", "first_action")),
+])
+def test_theme_clears_only_the_reviewed_different_answer_in_captured_history(theme, previous_position, current_position):
+    previous_body = THEME_VERIFIED_BODIES[(theme, *previous_position)][0]
+    previous, _ = theme_run(theme, previous_body, choose_theme=select_theme_angle(*previous_position))
+    old = {"question_key": previous.candidate.question_key, "text_key": previous.candidate.text_key,
+           "question_text": previous.candidate.text}
+    other = {"question_key": "another-position", "question_text": "どのくらい時間がかかりましたか？"}
+    visited = [
+        {"question_key": _theme_position_key(theme, scene, next(iter(angles)))}
+        for scene, angles in THEME_SCENE_ANGLE_TARGETS[theme].items() if scene != current_position[0]
+    ]
+    current_body = THEME_VERIFIED_BODIES[(theme, *current_position)][-1]
+    selected, calls = theme_run(theme, current_body, questions=[old, other, *visited],
+                                choose_theme=select_theme_angle(*current_position))
+    assert selected.disposition == "selected"
+    assert calls[-1][0] == _THEME_COMPARE_SYSTEM_MESSAGE
+    histories = [row for system, payload in calls if system == _THEME_COMPARE_SYSTEM_MESSAGE
+                 for row in payload["history"]]
+    assert [row.get("question") for row in histories if "question" in row] == [other["question_text"]]
+
+    mismatched = {**old, "question_text": selected.candidate.text}
+    rejected, calls = theme_run(theme, current_body, questions=[mismatched, *visited],
+                                choose_theme=select_theme_angle(*current_position))
+    assert rejected.disposition == "rejected"
+    assert not any(system == _THEME_COMPARE_SYSTEM_MESSAGE for system, _ in calls)
+
+
 @pytest.mark.parametrize(("issued_scene", "next_scene"), [
     ("new_method", "experiment"), ("experiment", "new_method"),
 ])

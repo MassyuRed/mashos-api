@@ -227,7 +227,7 @@ THEME_CHOICE_PREMISES = {
     ("自分の価値観", "public_private", "first_action"): "ルールを守る選択は未確定。守ると決めた場合の話として尋ねる。",
     ("自分の価値観", "spare_time", "outcome"): "誰のために使うかは未確定。どちらを選んでも答えられるよう、その時間の使い方にあとで納得できる手がかりを聞く。",
     ("仕事・学び", "experiment", "first_action"): "切り替えるかどうかは未確定。二つの方法を試し比べ始める段階で、両方で試す最初の作業部分を聞く。どちらの方法を使うかは聞かない。",
-    ("これからのこと", "first_step", "priority"): "始めたいことは一つ。複数あるのはその一つの始め方で、いくつかの目標の順番は尋ねない。",
+    ("これからのこと", "first_step", "priority"): "一つの活動を始める方法の選び方を尋ねる。",
     ("これからのこと", "route_change", "first_action"): "進め方を変えるかどうかは未確定。別の進め方を実際に少し試す行動を聞く。",
     ("これからのこと", "trial", "cue"): "試すかどうかは未確定。試した感想ではなく、試す判断をする前に確かめたい環境の事実を尋ねる。",
     ("これからのこと", "trial", "outcome"): "試したあと、その環境が合うと分かる手がかりを聞く。環境が合うことはまだ分からない。",
@@ -669,10 +669,13 @@ THEME_DISTINCT_POSITIONS = {
         (("risk", "boundary"), ("promise", "boundary")),
         (("ownership", "boundary"), ("promise", "boundary")),
         (("measure", "priority"), ("measure", "change")),
+        (("unpopular_choice", "priority"), ("unpopular_choice", "change")),
     ),
     "仕事・学び": (
         (("experiment", "priority"), ("experiment", "boundary")),
         (("experiment", "priority"), ("new_method", "priority")),
+        (("experiment", "priority"), ("new_method", "cue")),
+        (("teach", "first_action"), ("teach", "cue")),
     ),
     "日々の過ごし方": (
         (("transition", "first_action"), ("transition", "outcome")),
@@ -717,8 +720,16 @@ THEME_VERIFIED_BODIES = {
     ("自分の価値観", "measure", "change"): (
         "どんなことがあれば、自分の評価の基準を見直しますか？",
     ),
+    ("自分の価値観", "unpopular_choice", "priority"): (
+        "その場で意見を伝えるかどうかは、何を目安に決めますか？",
+        "少数派の意見をその場で伝えるかどうかは、何を基準に決めますか？",
+    ),
+    ("自分の価値観", "unpopular_choice", "change"): (
+        "その場で伝えようと思ったあと、どんなことがあれば、別の機会に伝えることにしますか？",
+    ),
     ("仕事・学び", "experiment", "priority"): (
         "どちらのやり方を使うか、何を基準に決めますか？",
+        "何を基準に決めますか？",
     ),
     ("仕事・学び", "experiment", "boundary"): (
         "別のやり方を試すなら、どの範囲まで試しますか？",
@@ -726,6 +737,15 @@ THEME_VERIFIED_BODIES = {
     ),
     ("仕事・学び", "new_method", "priority"): (
         "どの作業で新しいやり方を試すか、何を目安に決めますか？",
+    ),
+    ("仕事・学び", "new_method", "cue"): (
+        "慣れたやり方と何を比べておきますか？",
+    ),
+    ("仕事・学び", "teach", "first_action"): (
+        "説明に入る前に、まず何をしますか？",
+    ),
+    ("仕事・学び", "teach", "cue"): (
+        "説明の組み立てを決める前に、相手の理解について何を確かめますか？",
     ),
     ("日々の過ごし方", "transition", "first_action"): (
         "気持ちに区切りをつけるために、まず何をしますか？",
@@ -765,7 +785,9 @@ THEME_EDITING_FORMS = {
     ("日々の過ごし方", "changed_plans", "cue"): "組み直す前に、時刻を動かせない用事について何を確かめますか？",
     ("日々の過ごし方", "screen", "cue"): "長く見ている時間帯を知るには、普段の使い方のどんな点を確かめますか？",
     ("これからのこと", "learning_goal", "cue"): "身につけたことを使う場面について、先に何を確かめますか？",
-    ("これからのこと", "first_step", "priority"): "いくつか始め方が思い浮かんだら、何を目安に一つを選びますか？",
+    ("これからのこと", "first_step", "priority"): "その一つにどう取りかかるか、何を目安に決めますか？",
+    ("これからのこと", "trial", "cue"): "試せる時間帯について、決める前に何を確かめますか？",
+    ("これからのこと", "postpone", "cue"): "今から始められるか判断するために、今日の予定で何を確かめますか？",
     ("これからのこと", "change_place", "cue"): "候補の場所に行けるとしたら、決める前に現地で何を確かめますか？",
     ("これからのこと", "route_change", "cue"): "別の方法に変えるか決める前に、今の方法での進み具合のどんな点を確かめますか？",
 }
