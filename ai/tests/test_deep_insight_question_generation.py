@@ -1413,6 +1413,8 @@ def test_theme_reader_checks_the_amount_without_a_redundant_upper_limit(draft, e
      "別の進め方を少し試すなら最初にどんなことをしますか？"),
     ("日々の過ごし方", "move", "first_action",
      "体を動かす時間を日常に組み込むために、まず何をしますか？", "まず何をしますか？"),
+    ("日々の過ごし方", "move", "first_action",
+     "体を動かそうと思って日常の予定に組み込むために、まず何をしますか？", "まず何をしますか？"),
     ("日々の過ごし方", "changed_plans", "first_action",
      "その日の予定が急に変わった直後に、最初に何をしますか？", "最初に何をしますか？"),
     ("日々の過ごし方", "between_tasks", "priority",
