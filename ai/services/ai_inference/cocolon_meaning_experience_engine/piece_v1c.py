@@ -974,7 +974,10 @@ def _realize_admitted_model_blocks(meaning, plan, blocks):
     ordered source/model correspondence; duplicates/unknown correspondence,
     quote boundaries and already changed discourse keep their model text.
     """
-    from .piece_refined import PieceRefinedMeaning, feeling_circumstance_blocks, refined_meaning_parts
+    from .piece_refined import (
+        PieceRefinedMeaning, feeling_circumstance_blocks, refined_meaning_parts,
+        relative_feeling_anchor_blocks,
+    )
     from piece_v2_content_policy import _piece_model_topic_continuations
     circumstance = feeling_circumstance_blocks(meaning)
     if circumstance is not None:
@@ -1040,6 +1043,12 @@ def _realize_admitted_model_blocks(meaning, plan, blocks):
             offset += 1
     if offset != len(blocks):
         raise unavailable('piece_model_block_partition')
+    anchor = relative_feeling_anchor_blocks(meaning, plan)
+    if anchor is not None and result[-1] == anchor[0]:
+        node, = meaning.supplemental.graph.nodes
+        edits.append((meaning.supplemental.envelope.source_record_id, node.node_id,
+                      offset - 1, anchor[0], anchor[1]))
+        result[-1] = anchor[1]
     return tuple(result), tuple(edits), eligible or ('short_essay',)
 
 
@@ -1067,7 +1076,7 @@ def realize_piece_model_artifact(meaning, plan, *, body_blocks, tier, requested_
         text = '\n\n'.join(blocks)
         review = PieceArtifact(blocks, text, hashlib.sha256(text.encode()).hexdigest(),
                               'short_essay', ('short_essay',))
-        validate_piece_model_preservation(meaning, plan, review)
+        validate_piece_model_preservation(meaning, plan, review, allow_bound_feeling_anchor=True)
         # The source author's established eligibility is necessary. The model
         # cannot award quote/declaration eligibility or override plan rules.
         formats = []

@@ -38,6 +38,7 @@ if TYPE_CHECKING:
     from cocolon_meaning_experience_engine.cores.analysis.source_adapter import AnalysisCircumstanceControl
     from cocolon_meaning_experience_engine.emlis_answer_update import BoundFeelingCircumstance
     from cocolon_meaning_experience_engine.emlis_thread_contracts import SupplementalAnswerSource, InterpretationCorrectionSource
+    from cocolon_meaning_experience_engine.piece_refined import PieceRelativeFeelingAnchor
 
 # Exact projection of the existing emlis_parent_source SQL function. Unknown
 # fields require an explicit adapter update, not silent source truncation.
@@ -108,6 +109,7 @@ class PieceSavedRefinedHandoff:
     _effective_checkpoints_json: bytes | None = field(default=None, repr=False)
     feeling_question_id: str | None = None
     feeling_circumstance: BoundFeelingCircumstance | None = None
+    relative_feeling_anchor: PieceRelativeFeelingAnchor | None = None
 
     def lineage_payload(self) -> dict:
         return json.loads(self._lineage_json)
@@ -1516,11 +1518,13 @@ def _natural_refined_observation_handoff(saved: PieceSavedOriginal, snapshot: di
             'contract_version': 'piece.generation_eligibility.v1',
             'decision': 'eligible', 'reason_codes': []},
         'body_free': True}
+    feeling_question_id = _saved_personal_feeling_question(prepared, qp['decision'], frozen)
     return PieceSavedRefinedHandoff(saved, frozen.source, thread_id, t['revision'],
         canonical_json_bytes(lineage), operation, original_ranges, answer_range,
         canonical_json_bytes(cp) if operation != 'ADD' else None,
-        feeling_question_id=_saved_personal_feeling_question(prepared, qp['decision'], frozen),
-        feeling_circumstance=bound_feeling_circumstance(prepared))
+        feeling_question_id=feeling_question_id,
+        feeling_circumstance=bound_feeling_circumstance(prepared),
+        relative_feeling_anchor=_saved_relative_feeling_anchor(saved, prepared, feeling_question_id))
 
 
 def _saved_personal_feeling_question(prepared, decision, frozen):
@@ -1554,6 +1558,69 @@ def _saved_personal_feeling_question(prepared, decision, frozen):
             and ref.evidence.evidence_id in item.evidence_refs):
         return frozen.source.question_id
     return None
+
+
+def _saved_relative_feeling_anchor(saved, prepared, feeling_question_id):
+    """Find the original event through the saved question and resolved ADD."""
+    from cocolon_meaning_experience_engine.emlis_answer_update import build_updated_grounded_plan
+    from cocolon_meaning_experience_engine.piece_refined import PieceRelativeFeelingAnchor
+    from emlis_ai_grounded_human_reception import final_reception_source_anchor_text
+
+    if feeling_question_id is None:
+        return None
+    thread = prepared.thread
+    control = thread.control.question_control_context
+    question = control.pending_question
+    if (question is None or question.question_id != feeling_question_id
+            or control.issued_questions != (question,) or len(thread.answers) != 1
+            or thread.control.interpretation_corrections
+            or prepared.checkpoint.inactive_claim_refs):
+        return None
+    answer, = thread.answers
+    record = saved.original_payload()
+    memo, action = record['memo'], record['memo_action']
+    if (not memo or not action or any(c in memo + action for c in '\r\n')
+            or not answer.source.answer_text_private.startswith('その時は')):
+        return None
+    item, = prepared.checkpoint.answer_update.updates
+    targets = item.target_meaning_refs
+    if len(targets) != 1 or targets[0] not in question.decision.affected_meaning_refs:
+        return None
+    events = tuple(n for n in prepared.original_plan.nuclei if n.nucleus_id == targets[0])
+    if len(events) != 1:
+        return None
+    event, = events
+    frame = event.semantic_frame
+    if (event.source_fields != ('memo',) or len(event.source_span_ids) != 1
+            or (frame.actor, frame.predicate_kind, frame.time_scope) != ('current_user', 'event', 'past')
+            or 'source_received_event_link:noni' not in frame.attribute_codes):
+        return None
+    resolver = thread.resolver()
+    ref = resolver.qualified_ref(event.source_span_ids[0])
+    if (ref.source_envelope_id != thread.original.envelope.envelope_id
+            or ref.evidence.field_path != 'memo'
+            or question.decision.supporting_evidence_refs != (ref.evidence.evidence_id,)):
+        return None
+    try:
+        updated = build_updated_grounded_plan(prepared)
+    except ValueError:
+        return None
+    target, = item.changed_claim_refs
+    relations = tuple(r for r in updated.relations if r.to_nucleus_id == target
+                      and r.type == 'evaluation_about_event')
+    if (len(relations) != 1 or relations[0].from_nucleus_id != event.nucleus_id
+            or relations[0].grounding_kind != 'user_stated_relation'
+            or relations[0].retention != 'required'):
+        return None
+    event_literal = final_reception_source_anchor_text(event.nucleus_id, {event.nucleus_id: event}, resolver)
+    start, end = ref.evidence.scalar_start, ref.evidence.scalar_end
+    location = memo.find(event_literal, start, end)
+    if (not event_literal or location < 0
+            or memo.find(event_literal) != location or memo.find(event_literal, location + 1) != -1
+            or event_literal in action):
+        return None
+    return PieceRelativeFeelingAnchor(question.question_id, answer.source.answer_id,
+                                      (location, location + len(event_literal)))
 
 
 def _natural_active_answer_ranges(saved, prepared):
@@ -2212,6 +2279,7 @@ def project_saved_refined_source(handoff: PieceSavedRefinedHandoff, *, opted_in:
         effective_round_sources=handoff._effective_checkpoints_json is not None,
         feeling_question_id=handoff.feeling_question_id,
         feeling_circumstance=handoff.feeling_circumstance,
+        relative_feeling_anchor=handoff.relative_feeling_anchor,
         question_need_decision_identity=observation['question_need_decision_identity'],
         refined_result_identity=observation['emlis_observation_result_identity'],
         original_commitment=handoff.original.record_commitment,

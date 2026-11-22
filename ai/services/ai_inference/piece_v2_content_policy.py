@@ -659,7 +659,7 @@ def _piece_model_topic_continuations(meaning, plan):
     return topics, frozenset(continuations)
 
 
-def validate_piece_model_preservation(meaning, plan, artifact):
+def validate_piece_model_preservation(meaning, plan, artifact, *, allow_bound_feeling_anchor=False):
     """Author-free whole-body review for the bounded model Piece arm.
 
     The reader is independent of the model and author, not an independent
@@ -672,6 +672,7 @@ def validate_piece_model_preservation(meaning, plan, artifact):
     from cocolon_meaning_experience_engine.piece_refined import (
         PieceRefinedMeaning, PieceRefinedPlan, PieceCorrectedSourceSnapshot, refined_source_ref,
         refined_meaning_parts, refined_source_roles, validate_feeling_circumstance_body,
+        relative_feeling_anchor_blocks,
     )
     from piece_v2_contract import validate_piece_text_binding
     if (type(artifact) is not PieceArtifact or artifact.format_type != 'short_essay'
@@ -701,6 +702,7 @@ def validate_piece_model_preservation(meaning, plan, artifact):
     if validate_feeling_circumstance_body(meaning, artifact.body_blocks):
         check_existing_detectors(artifact.piece_text)
         return
+    anchor = relative_feeling_anchor_blocks(meaning, plan) if allow_bound_feeling_anchor else None
     offset = 0
     for part, child_plan in parts:
         source_blocks = _piece_model_source_blocks(part, child_plan)
@@ -708,6 +710,10 @@ def validate_piece_model_preservation(meaning, plan, artifact):
         offset += len(source_blocks)
         if len(blocks) != len(source_blocks):
             raise unavailable('piece_model_block_partition')
+        # Only a completed Piece may resolve this relative time expression.
+        # Check the exact licensed surface before reviewing the original answer.
+        if anchor is not None and part is meaning.supplemental and blocks == (anchor[1],):
+            blocks = (anchor[0],)
         # Existing named-person abstraction and reference dependencies remain
         # owned by S7. Event-key comparison alone must not retain a raw name
         # or reorder the antecedent of "その..." across its dependent clause.

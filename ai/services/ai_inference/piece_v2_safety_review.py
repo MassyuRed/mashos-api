@@ -151,7 +151,7 @@ async def review_prepared_original(prepared: PreparedPiecePreview) -> str:
             plan = _plans(meaning)
             if _scan(artifact.piece_text):
                 return 'blocked'
-            validate_piece_model_preservation(meaning, plan, artifact)
+            validate_piece_model_preservation(meaning, plan, artifact, allow_bound_feeling_anchor=True)
             if artifact.format_type != 'short_essay' or artifact.eligible_formats != ('short_essay',):
                 _reject()
             return 'transformed' if ((meaning.original is not None and meaning.original.role_bindings)

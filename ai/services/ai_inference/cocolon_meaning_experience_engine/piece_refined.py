@@ -30,6 +30,14 @@ if TYPE_CHECKING:
     from .cores.analysis.source_adapter import AnalysisCircumstanceControl
 
 
+@dataclass(frozen=True, slots=True)
+class PieceRelativeFeelingAnchor:
+    """Exact saved QUESTION_FOCUS evidence for one selected answer."""
+    question_id: str
+    answer_id: str
+    event_range: tuple[int, int]
+
+
 @dataclass(frozen=True, slots=True, repr=False)
 class PieceRefinedSourceSnapshot:
     original: object
@@ -51,6 +59,7 @@ class PieceRefinedSourceSnapshot:
     effective_round_sources: bool = False
     feeling_question_id: str | None = None
     feeling_circumstance: BoundFeelingCircumstance | None = None
+    relative_feeling_anchor: PieceRelativeFeelingAnchor | None = None
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -163,6 +172,10 @@ def _source_payload(source):
     else:
         for key in ('feeling_range', 'circumstance_range'):
             result['feeling_circumstance'][key] = list(result['feeling_circumstance'][key])
+    if source.relative_feeling_anchor is None:
+        del result['relative_feeling_anchor']
+    else:
+        result['relative_feeling_anchor']['event_range'] = list(source.relative_feeling_anchor.event_range)
     if not source.original_active_ranges and source.supplemental_active_range is None:
         del result['original_active_ranges']
         del result['supplemental_active_range']
@@ -741,6 +754,41 @@ def validate_feeling_circumstance_body(meaning, blocks):
         for text, raw, linked in zip(blocks, originals, connected, strict=True)),
         'piece_feeling_circumstance_meaning_not_preserved')
     return True
+
+
+def relative_feeling_anchor_blocks(meaning, plan):
+    """Resolve one optional, source-bound clarification of the answer's time."""
+    if (type(meaning) is not PieceRefinedMeaning
+            or type(meaning.source) is not PieceRefinedSourceSnapshot):
+        return None
+    source = meaning.source
+    anchor = source.relative_feeling_anchor
+    if (type(anchor) is not PieceRelativeFeelingAnchor
+            or source.opted_in is not True or source.supplemental_update_operation != 'ADD'
+            or source.effective_round_sources or source.feeling_circumstance is not None
+            or source.supplemental.round_index != 1
+            or anchor.question_id != source.feeling_question_id
+            or anchor.question_id != source.supplemental.question_id
+            or anchor.answer_id != source.supplemental.answer_id
+            or meaning.original is None or type(meaning.supplemental) is not PieceSupplementalMeaning
+            or len(meaning.supplemental.graph.nodes) != 1
+            or len(plan.original_plan.block_node_ids) != 2
+            or len(plan.supplemental_plan.block_node_ids) != 1
+            or meaning.original.role_bindings or meaning.supplemental.role_bindings):
+        return None
+    record = json.loads(source.original.saved_original_json)
+    memo, action = record['memo'], record['memo_action']
+    answer = source.supplemental.answer_text_private
+    start, end = anchor.event_range
+    if (not memo or not action or not answer.startswith('その時は')
+            or meaning.supplemental.graph.nodes[0].value != answer
+            or not 0 <= start < end <= len(memo)):
+        return None
+    event = memo[start:end]
+    if (memo.find(event) != start or memo.find(event, start + 1) != -1 or event in action
+            or re.search(r'[\r\n。！？!?「」『』]', event)):
+        return None
+    return answer, event + answer[len('その'):]
 
 
 def build_refined_meaning(request):

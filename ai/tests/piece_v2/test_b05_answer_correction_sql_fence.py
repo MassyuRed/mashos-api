@@ -90,6 +90,72 @@ def test_one_answer_after_feedback_on_a_past_frame_reaches_piece_writers(
     assert 'その時は重かった' not in json.dumps(seen, ensure_ascii=False)
 
 
+@pytest.mark.parametrize('legacy_preview', [False, True])
+def test_selected_feeling_keeps_its_proved_thought_event(revised_frame_db, monkeypatch, legacy_preview):
+    from unittest.mock import patch
+    from cocolon_meaning_experience_engine.engine import MeaningExperienceEngine
+    from cocolon_meaning_experience_engine.piece_semantic_admission import (
+        PIECE_FIELD_SLOTS_FORMAT, PieceModelInputV1, receive_piece_model_candidate,
+    )
+    from cocolon_meaning_experience_engine.piece_v1c import MODEL_REALIZATION_PROFILE
+    from piece_v2_preview_service import PiecePreviewService, _prepare_model_inputs
+
+    memo = ONE + '私は、静かな時間を大切にしたいです。'
+    action, answer = '私は友人に旅程を相談しました。', 'その時は怖かった。'
+    state, handoff, _ = _prepare_natural(revised_frame_db, monkeypatch, tier='free',
+        case_id='selected-feeling-event', memo_text=memo, action_text=action, first_answer=answer)
+    anchor = handoff.relative_feeling_anchor
+    assert anchor.question_id == handoff.supplemental.question_id
+    assert anchor.answer_id == handoff.supplemental.answer_id
+    assert memo[slice(*anchor.event_range)] == '褒められた'
+    seen = _provider(monkeypatch, state['case_id'], [memo, action, answer],
+        realization_profile=MODEL_REALIZATION_PROFILE)
+    request, prepared = _prepare_model_inputs(handoff, state['request'])
+    for untrusted in ('褒められた時は怖かった。', '旅程を相談した時は怖かった。'):
+        raw = json.dumps({'field_blocks': {
+            'memo_0': memo, 'memo_action_1': action, 'answer_text_private_2': untrusted,
+        }}, ensure_ascii=False)
+        receipt = receive_piece_model_candidate(prepared, raw_output=raw, finish_reason='stop',
+            candidate_format=PIECE_FIELD_SLOTS_FORMAT, realization_profile=MODEL_REALIZATION_PROFILE)
+        outcome = MeaningExperienceEngine().generate(request, semantic_input=PieceModelInputV1(prepared, receipt))
+        assert outcome.artifact is None
+        assert outcome.reason_codes == ('piece_model_meaning_unassessed_or_changed',)
+
+    if legacy_preview:
+        issue_original = PiecePreviewService.issue_original
+        issuing = True
+
+        async def issue(self, *args, **kwargs):
+            nonlocal issuing
+            if issuing:
+                issuing = False
+                with patch('piece_v2_source_adapter._saved_relative_feeling_anchor', return_value=None):
+                    return await issue_original(self, *args, **kwargs)
+            return await issue_original(self, *args, **kwargs)
+
+        monkeypatch.setattr(PiecePreviewService, 'issue_original', issue)
+    expected_answer = answer if legacy_preview else '褒められた時は怖かった。'
+    evidence = _finish_refined_pipeline(revised_frame_db, monkeypatch, state, visual_change=True,
+        expected_blocks=[memo, action, expected_answer])
+    assert len(seen) == evidence['quota_consumptions'] == 1
+    assert evidence['detail']['visibility_scope'] == 'private'
+    assert evidence['emlis_unchanged'] and evidence['source_unchanged']
+
+
+def test_selected_feeling_with_repeated_event_stays_literal(revised_frame_db, monkeypatch):
+    from cocolon_meaning_experience_engine.piece_v1c import MODEL_REALIZATION_PROFILE
+
+    memo = ONE + '私は、静かな時間を大切にしたいです。'
+    action, answer = '私は褒められた話を友人に伝えました。', 'その時は怖かった。'
+    state, handoff, _ = _prepare_natural(revised_frame_db, monkeypatch, tier='free',
+        case_id='ambiguous-feeling-event', memo_text=memo, action_text=action, first_answer=answer)
+    assert handoff.feeling_question_id == handoff.supplemental.question_id
+    assert handoff.relative_feeling_anchor is None
+    _provider(monkeypatch, state['case_id'], [memo, action, answer],
+        realization_profile=MODEL_REALIZATION_PROFILE)
+    _finish_refined_pipeline(revised_frame_db, monkeypatch, state, expected_blocks=[memo, action, answer])
+
+
 @pytest.fixture(scope='module')
 def revised_frame_case(revised_frame_db):
     with pytest.MonkeyPatch.context() as setup:
