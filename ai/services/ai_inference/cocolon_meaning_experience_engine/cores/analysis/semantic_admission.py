@@ -2846,26 +2846,36 @@ def _semantic_independent_correction_plan_lesson():
         '\n出力例=' + json.dumps(example, ensure_ascii=False, separators=(',', ':')))
 
 
-def _semantic_received_answer_plan(material):
+def _semantic_received_answer_plan(material, *, allow_multiple=False):
     """Allocate complete short sources; keep the answered thought and the action independent."""
     scopes = material.get('received_answer_thoughts', ())
-    if len(scopes) != 1 or material.get('map_corrections'):
+    if not scopes or (len(scopes) != 1 and not allow_multiple) or material.get('map_corrections'):
         return []
     from analysis_plan_source_choices import choices_for_field
 
-    scope, = scopes
-    thought, action, answer = (scope[k] for k in ('thought_field', 'action_field', 'answer_field'))
+    assignments = [(scope['thought_field'], scope['action_field'], scope['answer_field']) for scope in scopes]
     fields = {field['field']: field for field in material['fields']}
-    other = sorted(set(fields) - {thought, action, answer})
-    if (len(other) > 1 or any(fields[n]['source_role'] != 'USER_DEEP_INSIGHT_ANSWER' for n in other)
-            or not all(field.get('fragment_is_complete_field') is not False
-                and len(field['text']) < 160 and field['text'] in choices_for_field(field)[1]
-                for field in fields.values())):
+    other = sorted(set(fields) - {part for assignment in assignments for part in assignment})
+    if len(scopes) == 1:
+        if len(other) > 1 or any(fields[n]['source_role'] != 'USER_DEEP_INSIGHT_ANSWER' for n in other):
+            return []
+    else:
+        # For a short whole-map PLAN, require exactly one initial group for
+        # each record and keep all independent actions after those groups.
+        primary_records = [fields[thought]['record'] for thought, _, _ in assignments]
+        primary_records.extend(fields[n]['record'] for n in other)
+        if (len(primary_records) != len(set(primary_records))
+                or set(primary_records) != {record['record'] for record in material['records']}
+                or len(primary_records) + len(scopes) > 12
+                or any(fields[n]['source_role'] not in {'ORIGINAL_INPUT', 'USER_DEEP_INSIGHT_ANSWER'} for n in other)):
+            return []
+    if not all(field.get('fragment_is_complete_field') is not False and len(field['text']) < 160
+            and field['text'] in choices_for_field(field)[1] for field in fields.values()):
         return []
     # The first original node for each record follows record order.
-    groups = sorted([[[thought], [answer]], *[[[n]] for n in other]],
+    groups = sorted([[[thought], [answer]] for thought, _, answer in assignments] + [[[n]] for n in other],
         key=lambda group: fields[group[0][0]]['record'])
-    groups.append([[action]])
+    groups.extend([[action]] for _, action, _ in assignments)
     return [dict(node_id=f'n{i}', units=[dict(evidence=[dict(quote=fields[n]['text'], field=n) for n in unit])
         for unit in group]) for i, group in enumerate(groups, 1)]
 
@@ -4407,7 +4417,9 @@ def _semantic_occurrence_v6_messages(prepared, material, phase, bodies=None):
     literal_sources = _semantic_literal_independent_correction_fields(original_material)
     post_answer_sources = _semantic_literal_post_answer_fields(original_material)
     scoped_guidance = ''
-    received_plan = _semantic_received_answer_plan(original_material)
+    received_plan = _semantic_received_answer_plan(original_material,
+        allow_multiple=(phase == 'PLAN' and stage is None
+                        and prepared.prompt_version == SEMANTIC_MAP_OCCURRENCE_V24_PROFILE))
     received_scopes = original_material.get('received_answer_thoughts', ())
     if received_plan:
         lesson = ''

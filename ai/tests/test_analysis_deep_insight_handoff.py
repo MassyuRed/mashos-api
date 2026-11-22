@@ -1,7 +1,7 @@
 """Owner answers enter normal MAP through the actual saved-source boundary."""
 from copy import deepcopy
 import json
-from uuid import UUID
+from uuid import UUID, uuid4
 from unittest.mock import AsyncMock
 
 import httpx
@@ -27,6 +27,26 @@ OTHER = str(UUID(int=777))
 QUESTION = '意見が違うとき、どんな反応だと本音を話しやすいですか？'
 ANSWER = '最後まで話を聞いてくれるとき、私は本音を話しやすいです。'
 NOTE = '私は会議の資料を机に置いた。'
+RECEIVED_MAP_MIGRATIONS = (
+    '20261003134440_analysis_observed_artifacts.sql',
+    '20261004041627_analysis_period_comparison.sql',
+    '20261101080144_cumulative_watashi_map.sql',
+    '20261107071033_analysis_semantic_map_wire.sql',
+    '20261114032520_analysis_interpretation_correction_sources.sql',
+    '20261114120000_analysis_if_route_artifacts.sql',
+    '20261114123000_analysis_emlis_material_handoff.sql',
+    '20261114132000_analysis_map_interpretation_corrections.sql',
+    '20261114133000_analysis_map_correction_handoff.sql',
+    '20261121132000_deep_insight_questions.sql',
+    '20261121133000_analysis_deep_insight_answer_handoff.sql',
+)
+
+
+@pytest.fixture(scope='module')
+def received_map_db(qdb):
+    for name in RECEIVED_MAP_MIGRATIONS:
+        sql_script(qdb, name)
+    return qdb
 
 
 def answer_row():
@@ -291,24 +311,12 @@ def test_answer_updates_normal_v24_map_through_provider_and_database(sql_source,
     assert not run(cumulative.read_maps(OWNER, report_id=report, history=True))['items']
 
 
-def test_free_received_meaning_and_deep_insight_keep_original_fields_and_saved_evidence(natural_case, qdb, monkeypatch):
+def test_free_received_meaning_and_deep_insight_keep_original_fields_and_saved_evidence(natural_case, received_map_db, monkeypatch):
+    qdb = received_map_db
     thought, action, supplement = '褒められたのに、嬉しくなかった。', '会議で発表した。', 'その時は重かった。'
     user, parent, emlis, _ = natural_case
     assert 'code' not in qdb.query("update public.emotions set memo=$2,memo_action=$3 where id=$1",
         [parent, thought, action])
-    for name in ('20261003134440_analysis_observed_artifacts.sql',
-                 '20261004041627_analysis_period_comparison.sql',
-                 '20261101080144_cumulative_watashi_map.sql',
-                 '20261107071033_analysis_semantic_map_wire.sql',
-                 '20261114032520_analysis_interpretation_correction_sources.sql',
-                 '20261114120000_analysis_if_route_artifacts.sql',
-                 '20261114123000_analysis_emlis_material_handoff.sql',
-                 '20261114132000_analysis_map_interpretation_corrections.sql',
-                 '20261114133000_analysis_map_correction_handoff.sql',
-                 '20261121132000_deep_insight_questions.sql',
-                 '20261121133000_analysis_deep_insight_answer_handoff.sql'):
-        sql_script(qdb, name)
-
     initial = run(emlis.start(user, parent))
     assert initial['pending_question']['text'] == '「褒められた」は、あなたにはどんな意味として届きましたか。'
     refined = run(answer(emlis, user, initial, supplement))
@@ -382,3 +390,40 @@ def test_free_received_meaning_and_deep_insight_keep_original_fields_and_saved_e
     insight_evidence, = evidence_by_node['n2']
     assert insight_evidence['deep_insight'] == dict(question_text=QUESTION, answer_text=ANSWER)
     assert len(calls) == 3
+
+
+def test_v24_whole_plan_keeps_two_answered_thoughts_and_actions_separate(natural_case, received_map_db):
+    qdb = received_map_db
+    user, original, emlis, _ = natural_case
+    thought, action = '褒められたのに、嬉しくなかった。', '会議で発表した。'
+    assert 'code' not in qdb.query('update public.emotions set memo=$2,memo_action=$3 where id=$1',
+        [original, thought, action])
+    second, short = str(uuid4()), str(uuid4())
+    for identifier, memo, memo_action in ((second, thought, action), (short, 'つらかったんです。', '')):
+        assert 'code' not in qdb.query('''insert into public.emotions
+            values ($1,$2,(now()-interval '5 seconds') at time zone 'UTC',$3,$4,
+                array['仕事'],array['不安'],$5)''',
+            [identifier, user, memo, memo_action, json.dumps([dict(type='不安', strength='medium')])])
+    for identifier, supplement in ((original, 'その時は重かった。'), (second, 'その時は怖かった。')):
+        initial = run(emlis.start(user, identifier))
+        refined = run(answer(emlis, user, initial, supplement))
+        assert refined['body_state'] == 'REFINED'
+
+    result = qdb.query('select public.analysis_cumulative_source_snapshot($1) as value', [user], 'service_role')
+    assert 'code' not in result
+    snapshot = result['rows'][0]['value']
+    prepared = semantic.prepare_semantic_map(user, snapshot, prompt_version=admission.SEMANTIC_MAP_OCCURRENCE_V24_PROFILE)
+    material = json.loads(prepared.material_json)
+    first, second = sorted(material['received_answer_thoughts'], key=lambda scope: scope['record'])
+    prompt, _ = admission.semantic_node_local_v4_wire_messages(prepared, 'PLAN')
+    packet = json.JSONDecoder().raw_decode(prompt['content'].split('JSONのみ返します。\n', 1)[1])[0]
+    plan = admission.admit_semantic_node_local_v4_plan_response(prepared, packet)
+    nodes = [[[part['field'] for part in unit['evidence']] for unit in node['units']] for node in plan['nodes']]
+    for scope in (first, second):
+        assert [[scope['thought_field']], [scope['answer_field']]] in nodes
+        assert [[scope['action_field']]] in nodes[len(material['records']):]
+    crossed = deepcopy(packet)
+    answers = [node['units'][1]['evidence'][0] for node in crossed['nodes'] if len(node['units']) == 2]
+    answers[0]['field'], answers[1]['field'] = answers[1]['field'], answers[0]['field']
+    with pytest.raises(admission.AnalysisSemanticMapError):
+        admission.admit_semantic_node_local_v4_plan_response(prepared, crossed)
