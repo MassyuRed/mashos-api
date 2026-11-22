@@ -4527,6 +4527,11 @@ class AnalysisSemanticMapInput:
                 'coverage内のfieldはsource_material_fieldで、field_bindingsにより今回のfieldへ対応します。'
                 'source_node_bindingsと注記のtarget_refは同じrecord/material内の読取り参照で、出力node_idではありません。'
                 'recordがnullの未確定sourceは有効事実・node根拠にせず、推測で補いません。')
+        if material.get('answered_feeling_circumstances'):
+            instruction += ('\nanswered_feeling_circumstancesは、本人が問いに答えて明らかにした出来事と気持ちの結び付きです。'
+                'circumstanceとfeelingに示す二つの欄の本人原文を一緒に読んで、この一回の関係を保持します。'
+                'scalar_rangeは欄の原文での位置です。'
+                '他の出来事や理由へ広げず、根拠は示された本人原文から取ります。')
         if material.get('map_corrections'):
             instruction += ('\nmap_correctionsは保存されたAIの読みへの本人訂正です。target_contextはAI対象を指す制御情報で、本人の根拠ではありません。'
                 '本人説明だけをUSER_ANALYSIS_MAP_CORRECTIONのfieldとして提示しています。そのfieldは根拠として引用できます。'
@@ -4647,6 +4652,27 @@ def prepare_analysis_semantic_map(request, snapshot, *,
                 for c in m.interpretation_corrections if c.correction_id == source.envelope.source_record_id)
             material_fields[-1]['source_recorded_at'] = correction.recorded_at
         stored_fields.append((index, field['text'], source.record_ref, field['evidence']))
+    answered_circumstances = []
+    for answer in frozen.sources:
+        if answer.feeling_circumstance_ranges is None:
+            continue
+        feeling_range, circumstance_range = answer.feeling_circumstance_ranges
+        endpoints = {}
+        for field in fields:
+            source, evidence = field['source'], field['evidence']
+            if source.record_ref != answer.record_ref or field['field_path'] != 'memo':
+                continue
+            if source.envelope.source_role == 'ORIGINAL_INPUT':
+                name, (start, end) = 'feeling', feeling_range
+            elif source.envelope.envelope_id == answer.envelope.envelope_id:
+                name, (start, end) = 'circumstance', circumstance_range
+            else:
+                continue
+            if evidence.scalar_start <= start < end <= evidence.scalar_end:
+                endpoints[name] = dict(field=field_numbers[field['field_ref']],
+                    scalar_range=[start - evidence.scalar_start, end - evidence.scalar_start])
+        _semantic_map_require(set(endpoints) == {'feeling', 'circumstance'}, 'analysis_supplement_binding_invalid')
+        answered_circumstances.append(dict(record=ordinals[answer.record_ref], **endpoints))
     correction_material, correction_private = [], []
     for row, source in corrections:
         eligible = set(source.cohort_refs) <= set(ordinals)
@@ -4675,6 +4701,8 @@ def prepare_analysis_semantic_map(request, snapshot, *,
         if ref in questions:
             records[-1]['deep_insight_question'] = questions[ref].question_text
     material = dict(analysis_as_of=frozen.period[1], records=records, fields=material_fields)
+    if answered_circumstances:
+        material['answered_feeling_circumstances'] = answered_circumstances
     if correction_material:
         material['map_corrections'] = correction_material
     if handoffs:
@@ -4947,6 +4975,9 @@ def prepare_semantic_leaf(parent, record_refs):
     if 'emlis_source_materials' in material:
         material['emlis_source_materials'] = [h for h in material['emlis_source_materials']
             if h['record'] in ordinals]
+    if 'answered_feeling_circumstances' in material:
+        material['answered_feeling_circumstances'] = [row for row in material['answered_feeling_circumstances']
+            if row['record'] in ordinals]
     if 'source_duties' in material:
         # Relations remain control metadata; only claims/ranges of this leaf
         # are displayed. The final merge receives the complete parent duties.
@@ -5019,6 +5050,10 @@ def prepare_semantic_merge(parent, leaves):
     # could be stored even though the synthesis author never received it.
     for claim in json.loads(parent.source_duties_json or '{}').get('claims', []):
         ranges.setdefault(claim['field'], []).append((claim['scalar_start'], claim['scalar_end']))
+    for relation in material.get('answered_feeling_circumstances', ()):
+        for name in ('feeling', 'circumstance'):
+            endpoint = relation[name]
+            ranges.setdefault(endpoint['field'], []).append(tuple(endpoint['scalar_range']))
     for number, text, dependency, _ in parent.fields:
         if type(dependency) is tuple:
             ranges[number] = [(0, len(text))]

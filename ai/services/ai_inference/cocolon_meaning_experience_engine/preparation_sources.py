@@ -304,6 +304,15 @@ def piece_model_material(source, *, expected_owner_id: str, tier: str = 'free') 
         'authorship': 'USER_OWNED_COCOLON_SHAPED',
         'source_selections_are_not_written_propositions': True,
     })
+    if refined and source.feeling_circumstance is not None:
+        from .piece_refined import _validate_feeling_circumstance_source
+        _validate_feeling_circumstance_source(source)
+        material['control']['feeling_circumstance'] = {
+            'feeling_source_id': original.saved_input_id,
+            'feeling_range': list(source.feeling_circumstance.feeling_range),
+            'circumstance_source_id': source.supplemental.answer_id,
+            'circumstance_range': list(source.feeling_circumstance.circumstance_range),
+        }
     if active_update:
         material['control']['active_source_update'] = source.supplemental_update_operation
     if refined and source.effective_round_sources:

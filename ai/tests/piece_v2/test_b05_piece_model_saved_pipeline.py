@@ -16,7 +16,7 @@ from test_cmee_piece_request_saved_pipeline import saved_piece_db, _run_saved_re
 from test_b05_refined_preview_saved_pipeline import refined_pipeline_db, _run_refined_pipeline
 
 
-def _provider(monkeypatch, case_id, default_blocks):
+def _provider(monkeypatch, case_id, default_blocks, *, realization_profile=None):
     seen = []
     recorded = os.environ.get('PIECE_MODEL_RECORDED_DIR')
     path = Path(recorded) / (case_id + '.private.json') if recorded else None
@@ -39,12 +39,24 @@ def _provider(monkeypatch, case_id, default_blocks):
             response['choices'][0]['message']['content'] = json.dumps(
                 {'field_blocks': dict(zip(keys, default_blocks, strict=True))}, ensure_ascii=False)
         seen.append(dict(prepared=prepared, response=response))
+        if realization_profile is not None:
+            seen[-1]['messages'] = material['messages']
         return httpx.Response(200, json=response)
 
-    source = Shared4BPieceModelSource(endpoint='https://piece.example/v1/chat/completions',
-        model=response['model'], api_key='synthetic-piece-key-not-a-secret',
-        transport=httpx.MockTransport(transport))
-    monkeypatch.setattr('piece_model_source.application_piece_model_source', lambda: source)
+    endpoint, key = 'https://piece.example/v1/chat/completions', 'synthetic-piece-key-not-a-secret'
+    if realization_profile is None:
+        source = Shared4BPieceModelSource(endpoint=endpoint, model=response['model'], api_key=key,
+            transport=httpx.MockTransport(transport))
+        monkeypatch.setattr('piece_model_source.application_piece_model_source', lambda: source)
+    else:
+        monkeypatch.setenv('PIECE_MODEL_SOURCE', 'shared_4b.cmee.v2')
+        monkeypatch.setenv('EMLIS_NATURAL_REPLY_ENDPOINT', endpoint)
+        monkeypatch.setenv('EMLIS_NATURAL_REPLY_MODEL', response['model'])
+        monkeypatch.setenv('EMLIS_NATURAL_REPLY_API_KEY', key)
+        def model_source(**options):
+            assert options['realization_profile'] == realization_profile and options['use_editorial_choices']
+            return Shared4BPieceModelSource(**options, transport=httpx.MockTransport(transport))
+        monkeypatch.setattr('piece_model_source.Shared4BPieceModelSource', model_source)
     return seen
 
 

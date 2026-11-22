@@ -12,7 +12,7 @@ import pytest
 
 from test_emlis_q2_application import run, answer
 from test_emlis_q3_application import qdb
-from cocolon_meaning_experience_engine.natural_reply import NaturalReply
+from cocolon_meaning_experience_engine.natural_reply import NaturalReply, build_natural_reply_messages
 from emlis_thread_service import EmlisThreadService, Q3_PROFILE
 from emlis_thread_store import ThreadStoreError
 from test_emlis_natural_reply_application import _observe_initial_natural_failures
@@ -104,6 +104,75 @@ def test_one_real_bound_question_answer_update_and_saved_natural_reread(natural_
     replay = run(answer(service, user, initial, 'その時は重かった。'))
     assert replay['current_observation'] == completed['current_observation']
     assert len(calls) == 2
+
+
+def test_underspecified_feeling_gets_one_bound_question_and_an_event_answer(natural_questions):
+    from cocolon_meaning_experience_engine.emlis_answer_update import (
+        build_updated_grounded_plan, prepare_emlis_meaning,
+    )
+    from emlis_thread_service import _request
+
+    user, parent, service, _ = natural_questions(memo='つらかったんです')
+    calls = []
+
+    async def provider(material):
+        calls.append(material)
+        return NaturalReply(ACK if len(calls) == 1 else FINAL,
+                            'synthetic-single-provider', material.source_prefix_ref)
+
+    service.natural_reply_source = provider
+    initial = run(service.start(user, parent))
+    assert initial['state'] == 'AWAITING_ANSWER', initial
+    assert initial['pending_question']['text'] == 'なにがつらかったんですか？'
+    assert initial['body_state'] == 'PRE_QUESTION'
+
+    final = run(answer(service, user, initial, '会議がうまくできませんでした'))
+    assert final['state'] == 'COMPLETED', final
+    assert final['body_state'] == 'REFINED' and final['meaning_updated']
+    assert final['issued_count'] == 1 and not final['can_continue']
+    assert len(calls) == 2
+    for call in calls:
+        system_message, _ = build_natural_reply_messages(call)
+        assert '返事の中で場面が伝わる言葉にしてください' in system_message['content']
+    _, user_message = build_natural_reply_messages(calls[1])
+    assert json.loads(user_message['content'])['カテゴリ'] == ['仕事']
+    material = json.loads(calls[1].material_json)
+    assert material['response_purpose'] == {'stage': 'REFINED'}
+    assert material['current_answers'][0]['ai_question_context'] == initial['pending_question']['text']
+    assert material['current_answers'][0]['text'] == '会議がうまくできませんでした'
+    meaning = material['answer_meaning']
+    assert meaning['assessment'] == 'RESOLVED'
+    saved = run(service.store.read(user, input_id=parent))
+    checkpoint, = [event['payload'] for event in saved['events'] if event['kind'] == 'MEANING_UPDATE']
+    prepared = prepare_emlis_meaning(_request(saved, checkpoint_ref=checkpoint['checkpoint_id']))
+    relation, = [row for row in build_updated_grounded_plan(prepared).relations if row.type == 'user_stated_cause']
+    assert relation.from_nucleus_id == prepared.accepted_nuclei[0].nucleus_id
+    assert relation.to_nucleus_id == prepared.thread.control.question_control_context.pending_question.decision.affected_meaning_refs[0]
+    writer = json.loads(calls[1].writer_material_json)['records'][0]
+    rows = writer['unresolved_sources'] if writer['active_state'] == 'PENDING' else writer['active_fields']
+    bound, = [field for field in rows if field['source_role'] == 'SUPPLEMENTAL_ANSWER']
+    assert (bound.get('text') or bound['fields']['memo']) == material['current_answers'][0]['text']
+    assert bound['ai_question_context'] == initial['pending_question']['text']
+
+    reread = run(EmlisThreadService(runtime_profile=Q3_PROFILE).get(user, parent))
+    assert reread['current_observation'] == final['current_observation']
+    assert len(calls) == 2
+
+
+@pytest.mark.parametrize(('memo', 'action', 'enabled', 'expected_question'), [
+    ('本当にしんどかった。', '', True, 'なにがしんどかったんですか？'),
+    ('嬉しかったです。', '', True, 'なにが嬉しかったんですか？'),
+    ('仕事が終わらなくてつらかった。', '', True, None),
+    ('つらかったんです', '会議で発表した。', True, None),
+    ('「つらかった」と友人が言いました。', '', True, None),
+    ('つらかったんです', '', False, None),
+])
+def test_feeling_question_requires_unexplained_self_state_and_enabled_setting(
+        natural_questions, qdb, memo, action, enabled, expected_question):
+    user, parent, service, _ = natural_questions(memo=memo, enabled=enabled)
+    qdb.query('update public.emotions set memo_action=$2 where id=$1', [parent, action])
+    dto = run(service.start(user, parent))
+    assert (dto['pending_question'] or {}).get('text') == expected_question
 
 
 @pytest.mark.parametrize('tier', ('free', 'plus', 'premium'))

@@ -4,6 +4,8 @@ Provider text is synthetic. These checks establish source/realization and
 receipt continuity, not a claim that the real model's prose is now correct.
 """
 import copy
+from dataclasses import replace
+import hashlib
 import json
 
 import httpx
@@ -176,8 +178,8 @@ def test_legacy_received_reply_keeps_legacy_messages_after_new_service_restart(n
     assert 'natural_meaning_profile' not in saved['thread']['data']
 
 
-@pytest.mark.parametrize('alter_receipt', [False, True])
-def test_new_received_reply_reuses_only_the_same_fixed_meaning_and_messages(natural_case, monkeypatch, qdb, alter_receipt):
+@pytest.mark.parametrize('receipt_kind', ['current', 'previous', 'changed_hash'])
+def test_new_received_reply_reuses_only_the_same_fixed_meaning_and_messages(natural_case, monkeypatch, qdb, receipt_kind):
     user, parent, service, calls = natural_case
     _source(qdb, parent)
     failed = False
@@ -196,7 +198,21 @@ def test_new_received_reply_reuses_only_the_same_fixed_meaning_and_messages(natu
     material_ref = json.loads(calls[0].analysis_material_json)['material_ref']
     receipt = next(e for e in before['events'] if e['payload'].get('stage') == 'NATURAL_REPLY_RECEIVED')
     assert receipt['payload']['meaning_profile'] == ACTIVE_MEANING_PROFILE
-    if alter_receipt:
+    if receipt_kind == 'previous':
+        # Before context-aware writing the same two-field record was sent
+        # with no context protocol tag. Preserve its exact receipt on retry.
+        old_writer = json.loads(calls[0].writer_material_json)
+        assert old_writer.pop('source_context_version')
+        old_input = replace(calls[0], writer_material_json=json.dumps(old_writer, ensure_ascii=False, separators=(',', ':')))
+        old_messages = build_natural_reply_messages(old_input)
+        old_hash = hashlib.sha256(json.dumps(old_messages, ensure_ascii=False, separators=(',', ':')).encode()).hexdigest()
+        assert old_hash != receipt['payload']['writer_messages_sha256']
+        for event in before['events']:
+            if event['payload'].get('stage') in {'NATURAL_REPLY_CALL_STARTED', 'NATURAL_REPLY_RECEIVED'}:
+                qdb.query("update public.emlis_thread_events set payload=jsonb_set(payload-'writer_context_version',"
+                          "'{writer_messages_sha256}',to_jsonb($2::text)) where id=$1", [event['id'], old_hash])
+        receipt['payload']['writer_messages_sha256'] = old_hash
+    if receipt_kind == 'changed_hash':
         qdb.query("update public.emlis_thread_events set payload=jsonb_set(payload,'{writer_messages_sha256}',to_jsonb($2::text)) where id=$1",
                   [receipt['id'], 'different-writer-message-hash'])
     restarted = EmlisThreadService(runtime_profile=Q3_PROFILE,
@@ -206,7 +222,7 @@ def test_new_received_reply_reuses_only_the_same_fixed_meaning_and_messages(natu
         operation_id=pending['operation_id']))
     after = run(service.store.read(user, input_id=parent))
     assert len(calls) == 1 and after['thread']['data']['natural_meaning_as_of'] == as_of
-    if alter_receipt:
+    if receipt_kind == 'changed_hash':
         assert result['current_observation'] is None and not result['can_retry']
         assert result['failure_code'] == 'natural_reply_writer_identity_changed'
         assert not _observations(after)
@@ -282,3 +298,51 @@ def test_compact_wire_keeps_long_unparsed_fields_once_and_legacy_bytes_unchanged
     # No implicit migration of a historical request to the new author view.
     restored = NaturalReplyInput(legacy.source_prefix_ref, legacy.material_json)
     assert json.dumps(build_natural_reply_messages(restored), ensure_ascii=False).encode() == old_bytes
+
+
+@pytest.mark.parametrize('answers', [('その時は重かった。',), ('はい。', 'はい。')])
+def test_answer_writing_keeps_each_issued_question_with_its_answer_not_as_user_evidence(answers):
+    from test_emlis_analysis_material import uncorrected, answer_request
+    from test_analysis_saved_period import OWNER, NOW
+
+    saved = uncorrected('褒められたのに、嬉しくなかった。', '会議で発表した。')
+    request = answer_request(saved, answers)
+    control = request.emlis_thread.question_control_context
+    prompts = ('「褒められた」は、あなたにはどんな意味として届きましたか。', 'その日の発表はどうでしたか。')
+    questions = tuple(replace(q, prompt_private=prompts[i]) for i, q in enumerate(control.issued_questions))
+    thread = replace(request.emlis_thread, question_control_context=replace(control, pending_question=questions[-1],
+                      issued_questions=questions))
+    request = replace(request, emlis_thread=thread)
+    options = dict(response_stage='REFINED', meaning_profile=ACTIVE_MEANING_PROFILE,
+                   owner_scope=OWNER, original_record=saved['original'], as_of=NOW)
+    previous, _ = prepare_natural_reply(request, **options, bind_writer_context=False)
+    current, _ = prepare_natural_reply(request, **options)
+    assert current.material_json == previous.material_json and current.analysis_material_json == previous.analysis_material_json
+    system, wire = build_natural_reply_messages(current)
+    assert '欄は出来事の順番を示しません' in system['content']
+    assert 'current_answers' not in system['content']
+    record, = json.loads(wire['content'])['records']
+    rows = record['unresolved_sources'] if record['active_state'] == 'PENDING' else record['active_fields']
+    bound = [row for row in rows if row['source_role'] == 'SUPPLEMENTAL_ANSWER']
+    assert [row['ai_question_context'] for row in bound] == list(prompts[:len(answers)])
+    assert all('ai_question_context' not in row for row in rows if row['source_role'] != 'SUPPLEMENTAL_ANSWER')
+    assert all(prompt not in previous.writer_material_json for prompt in prompts)
+
+
+def test_final_single_field_uses_the_recipient_instruction_without_an_answer():
+    from test_emlis_analysis_material import uncorrected
+    from test_analysis_saved_period import OWNER, NOW
+    from emlis_thread_service import _request
+
+    saved = uncorrected('誘われたのに、悲しかった。', '')
+    request = _request(saved, include_context=False, analysis_source_only=True)
+    options = dict(meaning_profile=ACTIVE_MEANING_PROFILE, owner_scope=OWNER,
+                   original_record=saved['original'], as_of=NOW)
+    current, _ = prepare_natural_reply(request, **options)
+    previous, _ = prepare_natural_reply(request, **options, bind_writer_context=False)
+    system, source = build_natural_reply_messages(current)
+    assert '書き出しからEmlisが本人に話しかける返事' in system['content']
+    assert 'この記録で大事な点を一つ' in system['content']
+    assert '短い受け取りや一度の言い換えも構いません' not in system['content']
+    assert '今回は回答後です' not in system['content']
+    assert json.loads(source['content'])['records'] == json.loads(previous.writer_material_json)['records']

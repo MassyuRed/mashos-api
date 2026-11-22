@@ -415,7 +415,7 @@ def compile_piece_artifact_plan(meaning: PieceSourceMeaning) -> PieceArtifactPla
         # source words through the existing duty/author; this grants neither
         # a selected state, a wish nor declaration eligibility.
         from .piece_refined import supplemental_feeling_account, supplemental_complete_self_account
-        if not (feeling_account or self_insight_account or literal_account or scoped_action_account
+        if not (meaning.bound_complete_clause or feeling_account or self_insight_account or literal_account or scoped_action_account
                 or supplemental_feeling_account(meaning) or supplemental_complete_self_account(meaning)):
             raise unavailable('expression_meaning_not_admitted')
     ids = tuple(node.node_id for node in text_nodes)
@@ -964,8 +964,15 @@ def _realize_admitted_model_blocks(meaning, plan, blocks):
     ordered source/model correspondence; duplicates/unknown correspondence,
     quote boundaries and already changed discourse keep their model text.
     """
-    from .piece_refined import PieceRefinedMeaning, refined_meaning_parts
+    from .piece_refined import PieceRefinedMeaning, feeling_circumstance_blocks, refined_meaning_parts
     from piece_v2_content_policy import _piece_model_topic_continuations
+    circumstance = feeling_circumstance_blocks(meaning)
+    if circumstance is not None:
+        realized = circumstance[1]
+        edits = tuple((part.envelope.source_record_id, part.graph.nodes[0].node_id, index, raw, final)
+            for index, (part, raw, final) in enumerate(zip(
+                (meaning.original, meaning.supplemental), blocks, realized, strict=True)) if raw != final)
+        return realized, edits, ('short_essay',)
     pairs = refined_meaning_parts(meaning, plan) if type(meaning) is PieceRefinedMeaning else ((meaning, plan),)
     result, edits, offset = [], [], 0
     eligible = None

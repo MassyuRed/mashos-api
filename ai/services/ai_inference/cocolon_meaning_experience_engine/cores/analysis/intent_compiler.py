@@ -3142,6 +3142,8 @@ def _active_sources(source_set):
         if answer.envelope.source_role not in {'SUPPLEMENTAL_ANSWER', 'USER_INTERPRETATION_CORRECTION'}:
             views.append(answer)
             continue
+        if answer.feeling_circumstance_no_update:
+            continue
         raw = source_field_text(answer, 'memo')
         text = raw.strip().rstrip('。．.')
         replacement, withdrawal = _REPLACEMENT.fullmatch(text), _WITHDRAWAL.fullmatch(text)
@@ -3156,7 +3158,10 @@ def _active_sources(source_set):
                 # correction proof below; other explanations remain pending.
                 raise AnalysisSourceError('analysis_interpretation_correction_pending')
             earlier = tuple(source for source in views if source.record_ref == answer.record_ref)
-            _admit_ordinary_supplement(answer, earlier, excluded)
+            # This answer has already been re-read with its actual question and
+            # original evidence by the shared CMEE source owner.
+            if answer.feeling_circumstance_ranges is None:
+                _admit_ordinary_supplement(answer, earlier, excluded)
             views.append(answer)
             continue
         old = match['old'].rstrip('。．.')

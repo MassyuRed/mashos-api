@@ -949,7 +949,7 @@ class EmlisThreadService:
         try:
             decision, question = await asyncio.to_thread(question_candidate,
                 prepared.thread if prepared is not None else admitted, plan,
-                parent_request_id=request.request_id)
+                parent_request_id=request.request_id, allow_affect_question=True)
         except Exception:
             if prepared is not None:
                 raise
@@ -959,7 +959,7 @@ class EmlisThreadService:
     async def _process_natural(self, user_id, snapshot):
         from cocolon_meaning_experience_engine.natural_reply import (
             ARTIFACT_SCHEMA, NaturalReply, NaturalReplyError, prepare_natural_reply, validate_reply,
-            build_natural_reply_messages)
+            SOURCE_CONTEXT_VERSION, build_natural_reply_messages)
         from cocolon_meaning_experience_engine.natural_reply_meaning import (
             SCHEMA as MEANING_REVIEW_SCHEMA, compare_reply_meaning)
         t = snapshot["thread"]
@@ -985,7 +985,14 @@ class EmlisThreadService:
         snapshot = copy.deepcopy(snapshot)
         snapshot["thread"]["data"]["natural_response_stage"] = response_stage
         t = snapshot["thread"]
+        received = self._natural_receipt(snapshot, "NATURAL_REPLY_RECEIVED")
+        started = self._natural_receipt(snapshot, "NATURAL_REPLY_CALL_STARTED")
+        prior = received or started
+        context_version = prior["payload"].get("writer_context_version") if prior else SOURCE_CONTEXT_VERSION
+        if context_version not in {None, SOURCE_CONTEXT_VERSION}:
+            raise NaturalReplyError('natural_reply_writer_identity_changed')
         material, safety = prepare_natural_reply(_request(snapshot), response_stage=response_stage,
+            bind_writer_context=context_version is not None,
             prepared_meaning=prepared_meaning,
             meaning_profile=t['data'].get('natural_meaning_profile'), owner_scope=user_id,
             original_record=snapshot['original'], as_of=t['data'].get('natural_meaning_as_of'))
@@ -994,6 +1001,8 @@ class EmlisThreadService:
             writer_identity = {'meaning_profile': material.meaning_profile,
                 'writer_messages_sha256': hashlib.sha256(json.dumps(build_natural_reply_messages(material),
                     ensure_ascii=False, separators=(',', ':')).encode('utf-8')).hexdigest()}
+            if context_version is not None:
+                writer_identity['writer_context_version'] = context_version
 
         def check_writer_identity(event):
             payload = event['payload']
@@ -1001,12 +1010,10 @@ class EmlisThreadService:
                     or payload.get('meaning_profile') != material.meaning_profile):
                 raise NaturalReplyError('natural_reply_writer_identity_changed')
 
-        received = self._natural_receipt(snapshot, "NATURAL_REPLY_RECEIVED")
         if received:
             check_writer_identity(received)
             candidate = validate_reply(NaturalReply(**received["payload"]["reply"]), material)
         else:
-            started = self._natural_receipt(snapshot, "NATURAL_REPLY_CALL_STARTED")
             if started:
                 check_writer_identity(started)
                 return await self._finish(user_id, snapshot, body_state="UNAVAILABLE", state="RESPONSE_FAILED",

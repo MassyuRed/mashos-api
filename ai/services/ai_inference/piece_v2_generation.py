@@ -203,7 +203,8 @@ def _is_unpunctuated_account(text: str, *, allow_nonpast: bool = False) -> bool:
     return not (_DEPENDENT_START.search(clause) or _OMITTED_LEXICAL_SCOPE.search(clause))
 
 
-def _sentences(text: str, *, allow_unpunctuated_account: bool = False) -> list[str]:
+def _sentences(text: str, *, allow_unpunctuated_account: bool = False,
+               bound_complete_clause: bool = False) -> list[str]:
     # Reuse the existing strict delimiter reader for one literal quotation.
     # Its quote-aware sentence spans keep internal stops inside the same
     # source proposition. This supplies no reported speaker or meaning;
@@ -245,7 +246,8 @@ def _sentences(text: str, *, allow_unpunctuated_account: bool = False) -> list[s
             complete = re.findall(r'[^。！？!?]+[。！？!?]', line)
         if line[-1] not in '。！？!?':
             tail = re.split(r'[。！？!?]', line)[-1]
-            if not allow_unpunctuated_account or not _is_unpunctuated_account(tail):
+            if not ((bound_complete_clause and len(nonempty) == 1 and tail == line)
+                    or (allow_unpunctuated_account and _is_unpunctuated_account(tail))):
                 raise unavailable('source_line_mid_sentence')
             complete.append(tail)
         if ''.join(complete) != line:

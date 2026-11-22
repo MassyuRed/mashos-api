@@ -670,7 +670,8 @@ def validate_piece_model_preservation(meaning, plan, artifact):
     from collections import Counter
     from cocolon_meaning_experience_engine.piece_v1c import PieceArtifact
     from cocolon_meaning_experience_engine.piece_refined import (
-        PieceRefinedMeaning, PieceRefinedPlan, PieceCorrectedSourceSnapshot, refined_source_ref, refined_meaning_parts, refined_source_roles,
+        PieceRefinedMeaning, PieceRefinedPlan, PieceCorrectedSourceSnapshot, refined_source_ref,
+        refined_meaning_parts, refined_source_roles, validate_feeling_circumstance_body,
     )
     from piece_v2_contract import validate_piece_text_binding
     if (type(artifact) is not PieceArtifact or artifact.format_type != 'short_essay'
@@ -697,6 +698,9 @@ def validate_piece_model_preservation(meaning, plan, artifact):
         parts = refined_meaning_parts(meaning, plan)
     else:
         parts = ((meaning, plan),)
+    if validate_feeling_circumstance_body(meaning, artifact.body_blocks):
+        check_existing_detectors(artifact.piece_text)
+        return
     offset = 0
     for part, child_plan in parts:
         source_blocks = _piece_model_source_blocks(part, child_plan)
