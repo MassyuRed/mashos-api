@@ -313,12 +313,12 @@ def test_corrected_circumstance_sources_occupy_independent_v24_plan_nodes(natura
     initial = run(service.start(user, parent))
     refined = run(answer(service, user, initial, '会議がうまくできませんでした'))
 
-    def prepared_map():
+    def prepared_map(*other_members):
         saved = run(service.store.read(user, input_id=parent))
         saved['context'] = run(service.store.related_context(user, parent,
             context_guards=saved['thread']['data'].get('context_guards', [])))
         end = datetime.fromisoformat(saved['now']) + timedelta(days=1)
-        snapshot = dict(tier='free', now=saved['now'], members=[saved],
+        snapshot = dict(tier='free', now=saved['now'], members=[saved, *other_members],
             period_start='2020-01-01T00:00:00Z', period_end=end.isoformat(),
             guard='analysis-db-cumulative-v1:' + '1' * 64)
         return prepare_semantic_map(user, snapshot, prompt_version=admission.SEMANTIC_MAP_OCCURRENCE_V24_PROFILE)
@@ -383,6 +383,72 @@ def test_corrected_circumstance_sources_occupy_independent_v24_plan_nodes(natura
     }]
     with pytest.raises(admission.AnalysisSemanticMapError, match='analysis_semantic_relation_independent_correction_scope_invalid'):
         admission.semantic_node_local_v4_relations(corrected, admitted, bodies, relations)
+
+    from test_analysis_deep_insight_handoff import answer_row
+    from test_analysis_cumulative import source_snapshot
+
+    deep_answer = answer_row()
+    deep_answer['deep_insight']['user_id'] = user
+    deep_answer['deep_insight']['question_text'] = '準備したことをどう振り返りますか？'
+    recall = '準備を始める前に相談できていなかったと振り返りました。'
+    deep_answer['original']['memo'] = recall
+    other = source_snapshot(1)['members'][0]
+    other['original']['memo'] = '図書館で本を借りた。'
+    other['original']['memo_action'] = ''
+    for separate_records in ((), (other,)):
+        after = prepared_map(deep_answer, *separate_records)
+        after_material = json.loads(after.material_json)
+        texts = {field['field']: field['text'] for field in after_material['fields']}
+        _, selected = plan(after, [[[number]] for number in texts])
+        _, choices, _ = admission._semantic_plan_choices(after, after_material)
+        for node in selected['nodes']:
+            root = node['units'][0]['evidence'][0]
+            root['quote'] = next((cue for (number, cue), quote in choices.items()
+                if number == root['field'] and quote == root['quote']), root['quote'])
+        selected = admission.admit_semantic_node_local_v4_plan_response(after, selected)
+        classified = {}
+        for planned in selected['nodes']:
+            ref = planned['node_id']
+            evidence = planned['units'][0]['evidence']
+            literal = texts[evidence[0]['field']]
+            key = admission._semantic_fact_part_key(evidence, 0)
+            classified[ref] = dict(units={'u1': dict(evidence_ref=ref + '.u1',
+                source_mode='PERSON_JUDGMENT' if literal == recall else 'RECORDED',
+                fact_parts={key: literal}, unknowns=[])}, node_kind='STATE_CONTEXT',
+                perspective='SELF', title=literal, meaning='')
+        after_bodies = dict(schema_version=admission._semantic_v4_schema('NODES'),
+            plan_sha256=admission.semantic_map_hash(selected), nodes=classified)
+        after_registry = admission._semantic_v4_join(selected, after_bodies)
+        after_relations = dict(schema_version=admission._semantic_v4_schema('RELATIONS'),
+            nodes_sha256=admission.semantic_map_hash(after_registry), qualification_review={}, edges=[],
+            overview=dict(node_refs=list(classified), title=f'{len(after_material["records"])}件の記録を振り返って'))
+        answer_ref = next(node for node, body in classified.items() if body['title'] == recall)
+        result = admission.semantic_node_local_v4_relations(after, selected, after_bodies, after_relations)
+        assert result['edges'] == [] and set(n['title'] for n in result['nodes']) == set(texts.values())
+        assert 'source_modeはPERSON_JUDGMENT' in admission.semantic_node_local_v4_wire_messages(
+            after, 'NODES', plan=selected)[0]['content']
+        relation_instruction = admission.semantic_node_local_v4_wire_messages(
+            after, 'RELATIONS', plan=selected, nodes=after_bodies)[0]['content']
+        assert '一つの場面だけで概要を構成できます' not in relation_instruction
+        assert json.dumps(after_relations['overview'], ensure_ascii=False, separators=(',', ':')) in relation_instruction
+        exact_overview = copy.deepcopy(after_relations)
+        exact_overview['overview']['title'] = recall.rstrip('。')
+        assert admission.semantic_node_local_v4_relations(after, selected, after_bodies, exact_overview) == result
+        assert exact_overview['overview']['title'] == recall.rstrip('。')
+        exact_overview['overview']['node_refs'].pop()
+        with pytest.raises(admission.AnalysisSemanticMapError, match='analysis_semantic_overview_independent_correction_scope_invalid'):
+            admission.semantic_node_local_v4_relations(after, selected, after_bodies, exact_overview)
+        changed = copy.deepcopy(after_bodies)
+        changed['nodes'][answer_ref]['units']['u1']['source_mode'] = 'PERSON_WISH'
+        with pytest.raises(admission.AnalysisSemanticMapError, match='analysis_semantic_node_independent_correction_scope_invalid'):
+            admission.semantic_node_local_v4_nodes(after, selected, changed)
+        changed = copy.deepcopy(after_bodies)
+        changed['nodes'][answer_ref]['meaning'] = 'その後、論点を確認しました。'
+        with pytest.raises(admission.AnalysisSemanticMapError, match='analysis_semantic_node_independent_correction_scope_invalid'):
+            admission.semantic_node_local_v4_nodes(after, selected, changed)
+        after_relations['overview']['title'] = '会議の後で確認したこと'
+        with pytest.raises(admission.AnalysisSemanticMapError, match='analysis_semantic_overview_independent_correction_scope_invalid'):
+            admission.semantic_node_local_v4_relations(after, selected, after_bodies, after_relations)
 
 
 def test_writer_uses_compact_meaning_without_private_evidence_or_losing_source():

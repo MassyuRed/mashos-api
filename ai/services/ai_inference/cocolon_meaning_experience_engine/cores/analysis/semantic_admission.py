@@ -2794,6 +2794,33 @@ def _semantic_literal_independent_correction_fields(material):
     return ()
 
 
+def _semantic_literal_post_answer_fields(material):
+    """Keep adjacent short records independent when the answer is a reported reflection."""
+    if material.get('author_profile') != SEMANTIC_MAP_OCCURRENCE_V24_PROFILE:
+        return ()
+    from analysis_plan_source_choices import choices_for_field
+
+    records, fields = material['records'], material['fields']
+    corrected = [record for record in records if record.get('independent_corrected_source_fields')]
+    retrospective = [field for field in fields if field.get('source_role') == 'USER_DEEP_INSIGHT_ANSWER'
+        and re.search(r'と振り返(?:りました|った)[。！？!?]?$', field['text'])]
+    if (len(records) not in {2, 3} or len(corrected) != 1 or len(retrospective) != 1
+            or not 3 <= len(fields) <= 4 or len(fields) != len(records) + 1
+            or material.get('source_duties', {}).get('written_relations')):
+        return ()
+    answer, = retrospective
+    field_numbers = {field['field'] for field in fields}
+    proof_fields = set(corrected[0]['independent_corrected_source_fields']) | {answer['field']}
+    if (not proof_fields <= field_numbers or {field['field'] for field in fields
+            if field['field'] not in proof_fields and field['source_role'] == 'ORIGINAL_INPUT'}
+            != field_numbers - proof_fields):
+        return ()
+    if all(len(field['text']) < 80 and choices_for_field(field)[1] == {field['text']}
+            for field in fields):
+        return tuple((field['field'], field['text']) for field in fields)
+    return ()
+
+
 def _semantic_literal_correction_titles(quote):
     return {quote} if quote.endswith(('。', '！', '？', '!', '?')) else {quote, quote + '。'}
 
@@ -2898,6 +2925,7 @@ def semantic_node_local_v4_plan(prepared, plan, *, merge_anchors=False, merge_ac
     r(all(fields <= cited for fields in independent_fields),
         'analysis_semantic_plan_independent_correction_scope_invalid')
     literal_sources = _semantic_literal_independent_correction_fields(material)
+    literal_sources = literal_sources or _semantic_literal_post_answer_fields(material)
     if literal_sources:
         r([node['units'] for node in plan['nodes']] == [
             [dict(evidence=[dict(field=number, quote=quote)])] for number, quote in literal_sources],
@@ -3121,7 +3149,10 @@ def semantic_node_local_v4_nodes(prepared, plan, packet, *, bound_titles=False, 
         and set(packet['nodes']) == {n['node_id'] for n in plan['nodes']}, reason)
     fact_parts = prepared.prompt_version in SEMANTIC_MAP_FACT_ENDPOINT_PROFILES
     source_material = json.loads(prepared.material_json)
-    literal_sources = dict(_semantic_literal_independent_correction_fields(source_material))
+    literal_sources = dict(_semantic_literal_independent_correction_fields(source_material)
+        or _semantic_literal_post_answer_fields(source_material))
+    deep_answers = {field['field'] for field in source_material['fields']
+        if field.get('source_role') == 'USER_DEEP_INSIGHT_ANSWER'} if literal_sources else set()
     display_sentences = (_semantic_display_sentences(source_material)
         if prepared.prompt_version in {SEMANTIC_MAP_OCCURRENCE_V11_PROFILE, *SEMANTIC_MAP_FACT_REFERENCE_PROFILES} else {})
     for planned in plan['nodes']:
@@ -3227,6 +3258,9 @@ def semantic_node_local_v4_nodes(prepared, plan, packet, *, bound_titles=False, 
                     160 * len(roots['evidence']) if prepared.prompt_version in {SEMANTIC_MAP_OCCURRENCE_V20_PROFILE, SEMANTIC_MAP_OCCURRENCE_V21_PROFILE, SEMANTIC_MAP_OCCURRENCE_V22_PROFILE, SEMANTIC_MAP_OCCURRENCE_V23_PROFILE, SEMANTIC_MAP_OCCURRENCE_V24_PROFILE} else 160)
                 and type(unit['unknowns']) is list
                 and len(unit['unknowns']) <= 2, reason)
+            if literal_sources and roots['evidence'][0]['field'] in deep_answers:
+                r(unit['source_mode'] == 'PERSON_JUDGMENT' and not unit['unknowns'],
+                    'analysis_semantic_node_independent_correction_scope_invalid')
             seen = set()
             for unknown in unit['unknowns']:
                 r(_semantic_map_keys(unknown, {'source_quote', 'source_field'})
@@ -3435,6 +3469,14 @@ def semantic_node_local_v4_relations(prepared, plan, bodies, packet, *, ordered_
         and type(overview['node_refs']) is list and 1 <= len(overview['node_refs']) <= (len(ids) if whole_map else 8)
         and all(type(ref) is str and ref in ids for ref in overview['node_refs'])
         and len(overview['node_refs']) == len(set(overview['node_refs'])), reason)
+    post_answer_heading = None
+    if _semantic_literal_post_answer_fields(material):
+        from analysis_plan_source_choices import source_title_key
+        post_answer_heading = f'{len(material["records"])}件の記録を振り返って'
+        r(not packet['edges'] and overview['node_refs'] == [node['node_id'] for node in nodes]
+            and (overview['title'] == post_answer_heading or source_title_key(overview['title'])
+                in {source_title_key(node['title']) for node in nodes}),
+            'analysis_semantic_overview_independent_correction_scope_invalid')
     if prepared.prompt_version in SEMANTIC_MAP_CONTENT_PLAN_PROFILES:
         from analysis_plan_source_choices import one_sided_source_titles, source_title_key
         units = [u for n in nodes if n['node_id'] in overview['node_refs'] for u in n['units']]
@@ -3459,6 +3501,11 @@ def semantic_node_local_v4_relations(prepared, plan, bodies, packet, *, ordered_
         _semantic_occurrence_check_relations(nodes, packet)
     if review_qualifications:
         _apply_semantic_qualification_review(prepared, nodes, packet['qualification_review'])
+    if post_answer_heading is not None:
+        # An admitted item title can repeat just one record. Derive the display
+        # heading from the scope after the authored edges and all refs pass.
+        # The exact authored packet stays in the phase receipt.
+        overview = dict(overview, title=post_answer_heading)
     # Source cues stay private in the raw receipt. The existing compiler uses
     # the selected units to bind public edge evidence, exactly as before.
     edges = [{k: v for k, v in edge.items() if k not in {'from_source', 'to_source'}}
@@ -4227,7 +4274,9 @@ def _semantic_occurrence_v6_messages(prepared, material, phase, bodies=None):
     independent_fields = _semantic_independent_correction_fields(material)
     # PLAN's passages have already replaced field text. Inspect the same
     # qualified material used to admit the authored result.
-    literal_sources = _semantic_literal_independent_correction_fields(json.loads(prepared.material_json))
+    original_material = json.loads(prepared.material_json)
+    literal_sources = _semantic_literal_independent_correction_fields(original_material)
+    post_answer_sources = _semantic_literal_post_answer_fields(original_material)
     scoped_guidance = ''
     if independent_fields:
         scoped_guidance = '\nrecordsのindependent_corrected_source_fieldsは、本人が訂正した後にそれぞれ有効な出来事の回答と本人説明のfield番号です。'
@@ -4237,7 +4286,32 @@ def _semantic_occurrence_v6_messages(prepared, material, phase, bodies=None):
             'RELATIONS': 'この二つのfieldを両端にする線は作りません。概要の題にも二つの原文を結ぶ経緯は書きません。',
         }[phase]
         scoped_guidance += ' 同じ記録にあることや訂正の記録日時から、出来事と気持ちの順序や理由、同時性を足しません。'
-    if phase == 'PLAN' and independent_fields:
+    if post_answer_sources:
+        lesson = _semantic_independent_correction_plan_lesson() if phase == 'PLAN' else ''
+        assignments = [(f'n{i}', number) for i, (number, _) in enumerate(post_answer_sources, 1)]
+        if phase == 'PLAN':
+            scoped_guidance += (' 各fieldの全文を独立して一度だけ引用します。各項目のu1には引用が一つです。'
+                + '、'.join(f'{node}はfield {number}' for node, number in assignments) + 'です。')
+        elif phase == 'NODES':
+            answer_field = next(field['field'] for field in original_material['fields']
+                if field['source_role'] == 'USER_DEEP_INSIGHT_ANSWER')
+            answer_node = next(node for node, number in assignments if number == answer_field)
+            scoped_guidance += (' 各titleはそれぞれのu1で引用した原文そのまま、全項目のmeaningは空文字です。'
+                + f' {answer_node}は本人が書いた振り返りです。source_modeはPERSON_JUDGMENT、unknownsは[]です。'
+                '振り返りの対象となった内容と本人が振り返ったことを一つの原文のまま保持します。')
+        else:
+            overview = dict(node_refs=[node for node, _ in assignments],
+                title=f'{len(original_material["records"])}件の記録を振り返って')
+            overview_json = json.dumps(overview, ensure_ascii=False, separators=(',', ':'))
+            if not material['qualification_candidates']:
+                # Generic relation guidance also allows a topical overview of
+                # one item. These independent roots require the scoped title.
+                guidance = ('確定した項目すべてを独立して残すRELATIONSです。原文はそれぞれの項目の根拠です。'
+                    '質問文・記録の並び・話題の共通点は、出来事の理由や順序の根拠ではありません。'
+                    '返すJSONのrootはschema_version,nodes_sha256,qualification_review,edges,overviewの順です。'
+                    'qualification_reviewは{}、edgesは[]です。overviewは割り当てられた全項目を含めます。')
+            scoped_guidance += ' edgesは[]にし、overviewは' + overview_json + 'を返します。'
+    elif phase == 'PLAN' and independent_fields:
         lesson = _semantic_independent_correction_plan_lesson()
         if literal_sources:
             (first, _), (second, _) = literal_sources
