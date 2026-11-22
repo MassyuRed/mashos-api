@@ -1406,6 +1406,15 @@ def test_theme_reader_checks_the_amount_without_a_redundant_upper_limit(draft, e
     ("仕事・学び", "finish", "change",
      "一区切りついた振り返りでは、次の作業の進め方を変えるのはどんなときですか？",
      "次の作業の進め方を変えるのはどんなときですか？"),
+    ("仕事・学び", "finish", "change",
+     "区切りまで進んだ仕事や勉強を振り返って、どんなことが分かったら次の作業では進め方を変えますか？",
+     "どんなことが分かったら次の作業では進め方を変えますか？"),
+    ("仕事・学び", "finish", "first_action",
+     "振り返りを始めるときに、まず何を手元に書き留めますか？", "まず何を手元に書き留めますか？"),
+    ("仕事・学び", "review", "first_action",
+     "覚えたつもりの内容を復習する際、最初に取り掛かる作業は何ですか？", "最初に取り掛かる作業は何ですか？"),
+    ("仕事・学び", "new_method", "first_action",
+     "新しいやり方を試す際、作業のどの部分から始めますか？", "作業のどの部分から始めますか？"),
     ("仕事・学び", "scope", "first_action",
      "新しい依頼や情報が加わった直後、まず何に手をつけますか？", "まず何に手をつけますか？"),
     ("これからのこと", "route_change", "first_action",
@@ -1425,6 +1434,12 @@ def test_theme_reader_checks_the_amount_without_a_redundant_upper_limit(draft, e
     ("これからのこと", "route_change", "priority",
      "目標の向かい方を変えようか迷ったとき、同じ目標に向かう別の進め方を選ぶ決め手は何ですか？",
      "同じ目標に向かう別の進め方を選ぶ決め手は何ですか？"),
+    ("これからのこと", "first_step", "priority",
+     "いくつかある始め方から、最初の一歩を選ぶ基準は何ですか？",
+     "最初の一歩を選ぶ基準は何ですか？"),
+    ("これからのこと", "learning_goal", "first_action",
+     "次に身につけたいことを考え始める行動として、まず具体的に何をしますか？",
+     "まず具体的に何をしますか？"),
     ("これからのこと", "change_habits", "change",
      "新しい暮らしの中で、習慣を変えるのはどんなときですか？",
      "新しい暮らしの中で、習慣を変えるのはどんなときですか？"),
@@ -1436,9 +1451,14 @@ def test_theme_removes_only_the_verified_opening_before_reading(theme, scene, an
     assert calls[1][1]["answer_kind"] == angle
 
 
-def test_theme_preserves_a_qualifier_that_makes_a_repeated_opening_a_different_condition():
-    draft = "朝に体を動かす時間を日常に組み込むために、まず何をしますか？"
-    result, calls = theme_run("日々の過ごし方", draft, choose_theme=select_theme_angle("move", "first_action"))
+@pytest.mark.parametrize(("theme", "scene", "angle", "draft"), [
+    ("日々の過ごし方", "move", "first_action",
+     "朝に体を動かす時間を日常に組み込むために、まず何をしますか？"),
+    ("これからのこと", "first_step", "priority",
+     "一人で試せる始め方から、最初の一歩を選ぶ基準は何ですか？"),
+])
+def test_theme_preserves_a_qualifier_that_makes_a_repeated_opening_a_different_condition(theme, scene, angle, draft):
+    result, calls = theme_run(theme, draft, choose_theme=select_theme_angle(scene, angle))
     assert result.candidate.text == f"{calls[1][1]['scene']}、{draft}"
 
 
