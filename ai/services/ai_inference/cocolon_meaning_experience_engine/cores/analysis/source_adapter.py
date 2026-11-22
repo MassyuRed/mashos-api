@@ -44,6 +44,12 @@ class AnalysisCircumstanceControl:
 
 
 @dataclass(frozen=True, slots=True, repr=False)
+class AnalysisReceivedAnswerControl:
+    question: EmlisClarificationV1
+    answer: SupplementalAnswerSource
+
+
+@dataclass(frozen=True, slots=True, repr=False)
 class AnalysisSupplement:
     source_id: str
     owner_scope: str
@@ -54,6 +60,7 @@ class AnalysisSupplement:
     # Only a saved, permitted supplemental answer, not question/control text.
     source_role: str = 'SUPPLEMENTAL_ANSWER'
     circumstance_control: AnalysisCircumstanceControl | None = None
+    received_answer_control: AnalysisReceivedAnswerControl | None = None
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -112,6 +119,7 @@ class AnalysisSource:
     # Rederived authored cause and feeling coordinates; the AI question was control only.
     feeling_circumstance_ranges: tuple[tuple[int, int], tuple[int, int]] | None = None
     feeling_circumstance_no_update: bool = False
+    received_meaning_bound: bool = False
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -201,6 +209,57 @@ def analysis_circumstance_control(admitted, *, include_corrected=False):
             or question is None or question.decision.target_kind != PERSONAL_FEELING_CIRCUMSTANCE):
         return None
     return AnalysisCircumstanceControl(question, admitted.answers[0].source)
+
+
+def analysis_received_answer_control(admitted):
+    """Carry the one saved question and answer as control, never as evidence."""
+    control = admitted.control
+    questions = control.question_control_context
+    question = questions.pending_question
+    if (question is None or question.decision.target_kind != 'PERSONAL_RECEIVED_MEANING'
+            or questions.issued_questions != (question,) or len(admitted.answers) != 1
+            or control.interpretation_corrections):
+        return None
+    return AnalysisReceivedAnswerControl(question, admitted.answers[0].source)
+
+
+def _checked_received_answer(supplement, original):
+    from emlis_ai_current_input_bundle import build_emlis_current_input_bundle
+    from ...contracts import GenerationRequest
+    from ...emlis_answer_update import prepare_emlis_meaning
+    from ...emlis_thread_contracts import EmlisQuestionControlV1, EmlisThreadInputV1
+    from ...natural_reply import received_answer_anchors
+    from ...source_kernel import freeze_text_source
+
+    control = supplement.received_answer_control
+    if (type(control) is not AnalysisReceivedAnswerControl
+            or type(control.question) is not EmlisClarificationV1
+            or type(control.answer) is not SupplementalAnswerSource):
+        raise AnalysisSourceError('analysis_supplement_binding_invalid')
+    question, answer = control.question, control.answer
+    if (question.decision.target_kind != 'PERSONAL_RECEIVED_MEANING'
+            or answer.answer_id != supplement.source_id or answer.answer_text_private != supplement.text
+            or answer.question_id != question.question_id or answer.thread_id != question.thread_id
+            or answer.round_index != 1 or answer.original_source_ref != question.original_source_ref
+            or question.parent_request_id != 'emlis-' + question.thread_id):
+        raise AnalysisSourceError('analysis_supplement_binding_invalid')
+    adapted = dict(original, created_at=_time(original['created_at'], saved_utc=True).isoformat(),
+        memo=original['memo'] or '', memo_action=original['memo_action'] or '')
+    request = GenerationRequest(question.parent_request_id, build_emlis_current_input_bundle(adapted),
+        original['id'], execution_mode='EMLIS_APPLICATION')
+    if question.original_source_ref != freeze_text_source(request).envelope.envelope_id:
+        raise AnalysisSourceError('analysis_supplement_binding_invalid')
+    question_control = EmlisQuestionControlV1(question, (question.decision.target_ref,), 1,
+        issued_questions=(question,), question_limit=3)
+    thread = EmlisThreadInputV1(question.thread_id, question.original_source_ref, answers=(answer,),
+        current_round=1, capability_snapshot='Q3_FREE', question_control_context=question_control)
+    try:
+        prepared = prepare_emlis_meaning(replace(request, emlis_thread=thread))
+        return received_answer_anchors(prepared.thread, adapted, prepared) is not None
+    except ValueError:
+        # A saved question that cannot be proven by this isolated current
+        # source remains subject to the ordinary supplement admission.
+        return False
 
 
 def _checked_feeling_circumstance(supplement, original, corrections):
@@ -365,6 +424,13 @@ def freeze_analysis_sources(request: AnalysisObservedMapRequest) -> AnalysisSour
                     if type(s.circumstance_control) is AnalysisCircumstanceControl]
         if controls:
             identity = commitment([identity, controls])
+        received = [s.received_answer_control for s in member.supplements
+                    if s.received_answer_control is not None]
+        if received:
+            if (len(member.supplements) != 1 or controls or member.interpretation_corrections
+                    or type(received[0]) is not AnalysisReceivedAnswerControl):
+                raise AnalysisSourceError('analysis_supplement_binding_invalid')
+            identity = commitment([identity, asdict(received[0])])
         if type(member.interpretation_corrections) is not tuple:
             raise AnalysisSourceError('analysis_correction_binding_invalid')
         if member.interpretation_corrections:
@@ -439,6 +505,9 @@ def freeze_analysis_sources(request: AnalysisObservedMapRequest) -> AnalysisSour
                         raise AnalysisSourceError('analysis_supplement_binding_invalid')
                     child = replace(child, **_checked_feeling_circumstance(
                         supplement, original, member.interpretation_corrections))
+                if supplement.received_answer_control is not None:
+                    child = replace(child, received_meaning_bound=_checked_received_answer(
+                        supplement, original))
                 sources.append(child)
                 children.append(child.envelope.envelope_id)
             for correction in member.interpretation_corrections:

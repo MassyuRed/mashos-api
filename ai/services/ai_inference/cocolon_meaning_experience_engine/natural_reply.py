@@ -704,6 +704,25 @@ def _paid_received_answer_history_line(prepared, safe_input_ids):
 
 def _received_answer_dialogue(admitted, material, prepared, response_stage, *, allow_paid_context=False):
     """Use the bound event/answer without sending the AI question as prose."""
+    control = admitted.control
+    if (response_stage != 'REFINED'
+            or (not allow_paid_context and (control.admitted_history or control.frame_feedback_sources))):
+        return None
+    current = material['current']
+    anchors = received_answer_anchors(admitted, current, prepared)
+    if anchors is None:
+        return None
+    event_text, reaction_text = anchors
+    answer, = admitted.answers
+    # The writer answers the issued question. Keep the independent action
+    # in the original and analysis material, outside this narrowed reply.
+    return {'今回の場面': {'起きたこと': event_text, 'その時の反応': reaction_text,
+                         '補足': answer.source.answer_text_private, '思考欄の原文': current['memo']},
+            '選んだ感情': current.get('emotion_details', []), 'カテゴリ': current.get('category', [])}
+
+
+def received_answer_anchors(admitted, current, prepared):
+    """Prove the answered thought's event and reaction independently of the action."""
     from emlis_ai_grounded_human_reception import final_reception_source_anchor_text
     from emlis_ai_grounded_observation_plan import (
         _received_contrast_group_targets, _source_independent_performed_action,
@@ -711,11 +730,10 @@ def _received_answer_dialogue(admitted, material, prepared, response_stage, *, a
 
     control = admitted.control
     question = control.question_control_context.pending_question
-    if (response_stage != 'REFINED' or prepared is None or question is None
+    if (prepared is None or question is None
             or question.decision.target_kind != 'PERSONAL_RECEIVED_MEANING'
             or control.question_control_context.issued_questions != (question,)
-            or len(admitted.answers) != 1 or control.interpretation_corrections
-            or (not allow_paid_context and (control.admitted_history or control.frame_feedback_sources))):
+            or len(admitted.answers) != 1 or control.interpretation_corrections):
         return None
     checkpoint = prepared.checkpoint
     update = checkpoint.answer_update
@@ -745,7 +763,6 @@ def _received_answer_dialogue(admitted, material, prepared, response_stage, *, a
             or item.target_meaning_refs != (event.nucleus_id,)
             or question.decision.affected_meaning_refs != (event.nucleus_id, reaction.nucleus_id)):
         return None
-    current = material['current']
     resolver = admitted.resolver()
     if question.decision.supporting_evidence_refs != (
             resolver.qualified_ref(event.source_span_ids[0]).evidence.evidence_id,):
@@ -764,11 +781,7 @@ def _received_answer_dialogue(admitted, material, prepared, response_stage, *, a
     reaction_text = final_reception_source_anchor_text(reaction.nucleus_id, by_id, resolver)
     if not event_text or not reaction_text or event_text in current['memo_action']:
         return None
-    # The writer answers the issued question. Keep the independent action
-    # in the original and analysis material, outside this narrowed reply.
-    return {'今回の場面': {'起きたこと': event_text, 'その時の反応': reaction_text,
-                         '補足': answer.source.answer_text_private, '思考欄の原文': current['memo']},
-            '選んだ感情': current.get('emotion_details', []), 'カテゴリ': current.get('category', [])}
+    return event_text, reaction_text
 
 
 def _active_writer_record(active, original, *, scope, correction_targets=(), answers=()):

@@ -18,7 +18,9 @@ from test_analysis_cumulative_model_source import sql_source
 from test_analysis_interpretation_correction_sources import sql_script
 from test_analysis_node_local_native_profile import accepts, probe
 from test_analysis_v24_progress_transport import successful_response
-from test_emlis_q2_application import run
+from test_emlis_natural_reply_application import natural_case
+from test_emlis_q2_application import answer, run
+from test_emlis_q3_application import qdb
 
 QUESTION_ID = str(UUID(int=200))
 OTHER = str(UUID(int=777))
@@ -67,22 +69,38 @@ def v24_provider(calls):
         if phase == 'PLAN':
             restored, table, _ = choices.restore_view(material)
             selected = {(field, quote): cue for (field, cue), quote in table.items()}
-            nodes = []
+            nodes, original_heads = [], {}
             for f in restored['fields']:
                 number, text = f['field'], f['text']
-                nodes.append(dict(node_id=f'n{len(nodes) + 1}', units=[dict(evidence=[
-                    dict(quote=selected.get((number, text), text), field=number)])]))
-            value.update(source_choices_sha256=material['source_choices_sha256'], nodes=nodes)
+                unit = dict(evidence=[dict(quote=selected.get((number, text), text), field=number)])
+                if f['source_role'] == 'SUPPLEMENTAL_ANSWER':
+                    original_heads[f['record']]['units'].append(unit)
+                else:
+                    node = dict(units=[unit])
+                    nodes.append(node)
+                    if f['source_role'] in {'ORIGINAL_INPUT', DEEP_INSIGHT_ANSWER_ROLE}:
+                        original_heads.setdefault(f['record'], node)
+            first_nodes = list(original_heads.values())
+            ordered = first_nodes + [node for node in nodes if node not in first_nodes]
+            value.update(source_choices_sha256=material['source_choices_sha256'],
+                nodes=[dict(node_id=f'n{index}', units=node['units']) for index, node in enumerate(ordered, 1)])
         elif phase == 'NODES':
             nodes = {}
             for node in material['plan']['nodes']:
                 ref = node['node_id']
                 spec = schema['nodes']['properties'][ref]['properties']
-                unit = spec['units']['properties']['u1']['properties']
                 text = node['units'][0]['evidence'][0]['quote']
-                facts = {key: shape.get('enum', [text])[0] for key, shape in unit['fact_parts']['properties'].items()}
-                nodes[ref] = dict(units=dict(u1=dict(evidence_ref=ref + '.u1',
-                    source_mode='PERSON_JUDGMENT' if text == ANSWER else 'RECORDED', fact_parts=facts, unknowns=[])),
+                units = {}
+                for index, selected_unit in enumerate(node['units'], 1):
+                    unit_id = f'u{index}'
+                    unit = spec['units']['properties'][unit_id]['properties']
+                    quote = selected_unit['evidence'][0]['quote']
+                    facts = {key: shape.get('enum', [quote])[0]
+                             for key, shape in unit['fact_parts']['properties'].items()}
+                    units[unit_id] = dict(evidence_ref=f'{ref}.{unit_id}',
+                        source_mode='PERSON_JUDGMENT' if quote == ANSWER else 'RECORDED',
+                        fact_parts=facts, unknowns=[])
+                nodes[ref] = dict(units=units,
                     node_kind='SELF_POSITION' if text == ANSWER else 'CHOICE_OUTPUT', perspective='SELF',
                     title=spec['title'].get('enum', [text])[0], meaning=spec['meaning'].get('enum', [text])[0])
             value.update(plan_sha256=schema['plan_sha256']['enum'][0], nodes=nodes)
@@ -181,3 +199,83 @@ def test_answer_updates_normal_v24_map_through_provider_and_database(sql_source,
     assert not run(cumulative.read_maps(OTHER, report_id=report))['items']
     assert 'code' not in db.query('delete from public.deep_insight_questions where id=$1', [QUESTION_ID])
     assert not run(cumulative.read_maps(OWNER, report_id=report, history=True))['items']
+
+
+def test_free_received_meaning_and_deep_insight_keep_original_fields_and_saved_evidence(natural_case, qdb, monkeypatch):
+    thought, action, supplement = '褒められたのに、嬉しくなかった。', '会議で発表した。', 'その時は重かった。'
+    user, parent, emlis, _ = natural_case
+    assert 'code' not in qdb.query("update public.emotions set memo=$2,memo_action=$3 where id=$1",
+        [parent, thought, action])
+    for name in ('20261003134440_analysis_observed_artifacts.sql',
+                 '20261004041627_analysis_period_comparison.sql',
+                 '20261101080144_cumulative_watashi_map.sql',
+                 '20261107071033_analysis_semantic_map_wire.sql',
+                 '20261114032520_analysis_interpretation_correction_sources.sql',
+                 '20261114120000_analysis_if_route_artifacts.sql',
+                 '20261114123000_analysis_emlis_material_handoff.sql',
+                 '20261114132000_analysis_map_interpretation_corrections.sql',
+                 '20261114133000_analysis_map_correction_handoff.sql',
+                 '20261121132000_deep_insight_questions.sql',
+                 '20261121133000_analysis_deep_insight_answer_handoff.sql'):
+        sql_script(qdb, name)
+
+    initial = run(emlis.start(user, parent))
+    assert initial['pending_question']['text'] == '「褒められた」は、あなたにはどんな意味として届きましたか。'
+    refined = run(answer(emlis, user, initial, supplement))
+    assert refined['body_state'] == 'REFINED' and refined['answer_assessment'] == 'RESOLVED'
+    assert 'code' not in qdb.query("""insert into public.deep_insight_questions
+        (id,user_id,lane,theme,question_text,issued_on,question_key,text_key)
+        values ($1,$2,'theme','人間関係',$3,(now() at time zone 'Asia/Tokyo')::date,'question-key','text-key')""",
+        [QUESTION_ID, user, QUESTION])
+
+    async def rpc(name, payload):
+        args = ','.join(f'{key} => ${i}' for i, key in enumerate(payload, 1))
+        values = [json.dumps(value, ensure_ascii=False) if isinstance(value, (dict, list)) else value
+                  for value in payload.values()]
+        result = qdb.query(f'select public.{name}({args}) as value', values, 'service_role')
+        assert 'code' not in result, result
+        return result['rows'][0]['value']
+
+    issued_answer = run(rpc('deep_insight_answer', dict(p_user_id=user, p_question_id=QUESTION_ID, p_answer_text=ANSWER)))
+    assert issued_answer['inserted'] and issued_answer['question']['id'] == QUESTION_ID
+    snap = run(rpc('analysis_cumulative_source_snapshot', {'p_user_id': user}))
+    assert snap['tier'] == 'free' and [row['original']['id'] for row in snap['members']] == [parent, QUESTION_ID]
+    prepared = semantic.prepare_semantic_map(user, snap, prompt_version=admission.SEMANTIC_MAP_OCCURRENCE_V24_PROFILE)
+    material = json.loads(prepared.material_json)
+    assert not material.get('answered_feeling_circumstances')
+    fields = material['fields']
+    expected = [(1, 'ORIGINAL_INPUT', 'memo', thought), (1, 'ORIGINAL_INPUT', 'memo_action', action),
+                (1, 'SUPPLEMENTAL_ANSWER', 'memo', supplement), (2, DEEP_INSIGHT_ANSWER_ROLE, 'memo', ANSWER)]
+    assert [(field['record'], field['source_role'], field['field_path'], field['text']) for field in fields] == expected
+    assert [(row.saved_record_ref, len(row.child_source_envelope_refs)) for row in prepared.frozen.members] == [
+        (parent, 2), (QUESTION_ID, 1)]
+
+    pytest.importorskip('lmformatenforcer')
+    calls = []
+    provider = v24_provider(calls)
+    monkeypatch.setattr(cumulative, '_rpc', rpc)
+    monkeypatch.setattr(cumulative, 'observed_mode', lambda: 'development')
+    monkeypatch.setattr(cumulative, '_queue_map_update_notification', AsyncMock())
+    current = run(cumulative.ensure_map(user, model_source=provider))
+    report = current['report_id']
+    assert report and current['refreshed']
+    assert current['map_context']['processed_count'] == current['map_context']['mapped_count'] == 2
+    assert current['map_context']['excluded_count'] == 0
+    assert [phase for phase, _ in calls] == ['PLAN', 'NODES', 'RELATIONS']
+    assert current['meta']['edges'] == []
+    reread = run(cumulative.ensure_map(user, ensure=False, model_source=provider))
+    detail, = run(cumulative.read_maps(user, report_id=report, limit=1))['items']
+    assert reread['report_id'] == detail['id'] == report
+    assert current['meta'] == reread['meta'] == detail['content_json']['watashiMap']
+    assert current['content_text'] == reread['content_text'] == detail['content_text']
+    for text in (thought, action, supplement, ANSWER):
+        assert text in detail['content_text']
+    evidence = [item for node in detail['content_json']['watashiMap']['nodes']
+                for item in run(cumulative.map_evidence(user, report, node['node_ref']))['items']]
+    assert {item['id'] for item in evidence} == {parent, QUESTION_ID}
+    assert all(item['version_state'] == 'CURRENT' for item in evidence)
+    assert any(item['id'] == parent and item['memo'] == thought and item['memo_action'] == action
+               and item['answers'] == [supplement] for item in evidence)
+    assert any(item['id'] == QUESTION_ID and item['deep_insight'] == dict(question_text=QUESTION, answer_text=ANSWER)
+               for item in evidence)
+    assert len(calls) == 3

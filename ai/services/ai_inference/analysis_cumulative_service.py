@@ -216,7 +216,7 @@ def _checked_coverage(coverage):
     return coverage
 
 
-def _cumulative_model_request(owner, snapshot):
+def _cumulative_model_request(owner, snapshot, *, include_received_answer=False):
     """Resolve the existing saved-source owner before any model profile."""
     from astor_material_snapshots import _analysis_saved_member
     from cocolon_meaning_experience_engine.cores.analysis.source_adapter import (
@@ -225,7 +225,8 @@ def _cumulative_model_request(owner, snapshot):
     start, end = snapshot['period_start'], snapshot['period_end']
     records = tuple(_analysis_saved_member(dict(raw, tier=snapshot['tier'], now=snapshot['now']),
         owner=owner, input_id=raw['original']['id'], tier=snapshot['tier'],
-        start=_time(start), end=_time(end), cumulative=True)[0] for raw in snapshot['members'])
+        start=_time(start), end=_time(end), cumulative=True,
+        include_received_answer=include_received_answer)[0] for raw in snapshot['members'])
     request_id = 'analysis-model-' + commitment([owner, snapshot['guard'], start, end])[7:]
     request = AnalysisObservedMapRequest(request_id, owner, start, end, records)
     return request

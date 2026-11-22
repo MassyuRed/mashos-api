@@ -3,6 +3,7 @@ from dataclasses import replace
 from cocolon_meaning_experience_engine import MeaningExperienceEngine
 from cocolon_meaning_experience_engine.cores.analysis.semantic_admission import (
     SEMANTIC_MAP_PROFILE as PROFILE,
+    SEMANTIC_MAP_OCCURRENCE_V24_PROFILE,
     SEMANTIC_MAP_SCHEMA as SCHEMA,
     SEMANTIC_MAP_MODEL_SCHEMA as MODEL_SCHEMA,
     SEMANTIC_MAP_NODE_KINDS as NODE_KINDS,
@@ -33,8 +34,9 @@ from cocolon_meaning_experience_engine.cores.analysis.observed_route_realizer im
 
 def prepare_semantic_map(owner, snapshot, *, prompt_version=PROFILE):
     from analysis_cumulative_service import _cumulative_model_request
-    return _prepare_analysis_semantic_map(_cumulative_model_request(owner, snapshot), snapshot,
-        prompt_version=prompt_version)
+    request = _cumulative_model_request(owner, snapshot,
+        include_received_answer=prompt_version == SEMANTIC_MAP_OCCURRENCE_V24_PROFILE)
+    return _prepare_analysis_semantic_map(request, snapshot, prompt_version=prompt_version)
 
 
 def build_semantic_map(prepared, response):
