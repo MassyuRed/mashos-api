@@ -5,6 +5,8 @@ Without --run, write the case plan and make no provider calls. The explicit
 --run option uses the configured natural-reply transport. Use it only with an
 authorized provider. Each theme begins with empty history, then uses the
 accepted output from earlier cases as its only issued-question history.
+Each case sends a previously untried question position. If its seeded choice
+has already been attempted, the same seed selects from the remaining positions.
 """
 from __future__ import annotations
 
@@ -41,6 +43,7 @@ _MODEL_PHASES = (
     (question._THEME_FORM_REPAIR_SYSTEM_MESSAGE, "repair"),
     (question._THEME_COMPARE_SYSTEM_MESSAGE, "history_batch"),
     (question._THEME_COMPARE_PAIR_SYSTEM_MESSAGE, "history_pair"),
+    (question._THEME_COMPARE_EVIDENCE_SYSTEM_MESSAGE, "history_evidence"),
 )
 
 
@@ -81,7 +84,7 @@ def emit(output: TextIO, data):
     output.flush()
 
 
-async def run_case(case: Case, history, seen_inputs, *, generate: Generate):
+async def run_case(case: Case, history, attempted_keys, *, generate: Generate):
     material = material_for(history)
     calls = []
     prepared = None
@@ -100,11 +103,22 @@ async def run_case(case: Case, history, seen_inputs, *, generate: Generate):
     try:
         prepared, sources = question.prepare_question_material(
             material, lane="theme", theme=case.theme, choose_theme=random.Random(case.seed).choice)
+        if prepared["question_key"] in attempted_keys:
+            record["replaced_question_key"] = prepared["question_key"]
+            prepared, sources = question.prepare_question_material(
+                material, lane="theme", theme=case.theme, choose_theme=random.Random(case.seed).choice,
+                excluded_theme_keys=attempted_keys,
+            )
         fingerprint = digest(prepared)
         record.update(prepared=prepared, prepared_sha256=fingerprint)
-        if fingerprint in seen_inputs:
-            return {**record, "disposition": "repeated_prepared_input", "final": None}
-        seen_inputs.add(fingerprint)
+        if prepared["question_key"] is None:
+            return {**record, "disposition": "theme_positions_exhausted", "final": None}
+        key = prepared["question_key"]
+        attempted_keys.add(key)
+        for positions in question.THEME_EQUIVALENT_POSITIONS.get(case.theme, ()):
+            equivalents = {question._theme_position_key(case.theme, *position) for position in positions}
+            if key in equivalents:
+                attempted_keys.update(equivalents)
         async with asyncio.timeout(CASE_TIMEOUT_SECONDS):
             result = await question.generate_question(prepared, sources, material=material, generate=capture)
     except Exception as error:
@@ -134,9 +148,10 @@ async def evaluate(selected, output, *, generate: Generate | None = None, transp
     subbatches = ceil((question._THEME_HISTORY_BATCH_SIZE - question._THEME_HISTORY_SPLIT_AFTER)
                      / question._THEME_HISTORY_SUBBATCH_SIZE)
     # Each split replaces one remaining original-batch scan with smaller scans.
-    max_compare_calls = max_history_batches + 2 * max_rechecks + max_splits * (subbatches - 1)
+    max_compare_calls = max_history_batches + 2 * max_rechecks + max_splits * (subbatches - 1) + 1
     emit(output, {"kind": "manifest", "schema": SCHEMA, "cases_by_theme": counts,
                   "plan_sha256": digest([asdict(case) for case in selected]),
+                  "position_selection": "seeded_untried_positions",
                   "generator_sha256": provenance,
                   "theme_catalog_sha256": digest({
                       "scenes": question.THEME_SCENES, "angles": question.THEME_ANGLES,
@@ -146,6 +161,7 @@ async def evaluate(selected, output, *, generate: Generate | None = None, transp
                       "equivalent_positions": question.THEME_EQUIVALENT_POSITIONS,
                       "distinct_positions": question.THEME_DISTINCT_POSITIONS,
                       "verified_bodies": sorted(question.THEME_VERIFIED_BODIES.items()),
+                      "editing_forms": sorted(question.THEME_EDITING_FORMS.items()),
                       "forms": question.THEME_QUESTION_FORMS,
                       "overrides": sorted(question.THEME_TARGET_ANGLES.items()),
                       "form_overrides": sorted(question.THEME_TARGET_FORMS.items()),
@@ -164,10 +180,10 @@ async def evaluate(selected, output, *, generate: Generate | None = None, transp
 
     histories = {theme: [] for theme in counts}
     totals = {theme: Counter() for theme in counts}
-    inputs = {theme: set() for theme in counts}
+    attempted_keys = {theme: set() for theme in counts}
     for case in selected:
         history = histories[case.theme]
-        outcome = await run_case(case, history, inputs[case.theme], generate=generate)
+        outcome = await run_case(case, history, attempted_keys[case.theme], generate=generate)
         totals[case.theme]["attempts"] += 1
         totals[case.theme]["provider_calls"] += len(outcome["calls"])
         totals[case.theme][outcome["disposition"]] += 1

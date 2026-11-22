@@ -11,7 +11,7 @@ from cocolon_meaning_experience_engine.deep_insight_question import (
     ANSWER_READ_SYSTEM_MESSAGE, PLAN_SYSTEM_MESSAGE, READ_SYSTEM_MESSAGE,
     RECORD_REASON_READ_SYSTEM_MESSAGE, WRITE_SYSTEM_MESSAGE,
     _RECORD_ALTERNATIVE_PLAN_MESSAGE, _RECORD_ALTERNATIVE_READ_MESSAGE, _RECORD_ALTERNATIVE_WRITE_MESSAGE,
-    _THEME_COMPARE_PAIR_SYSTEM_MESSAGE, _THEME_COMPARE_SYSTEM_MESSAGE,
+    _THEME_COMPARE_EVIDENCE_SYSTEM_MESSAGE, _THEME_COMPARE_PAIR_SYSTEM_MESSAGE, _THEME_COMPARE_SYSTEM_MESSAGE,
     _THEME_PLAN_SYSTEM_MESSAGE, _THEME_READ_RETRY_SYSTEM_MESSAGE, _THEME_READ_SYSTEM_MESSAGE,
     _THEME_FORM_REPAIR_SYSTEM_MESSAGE, _THEME_REPAIR_SYSTEM_MESSAGE, _THEME_WRITE_SYSTEM_MESSAGE,
     _bind_anchor, _display_citation_matches, _review_theme_candidate, _theme_has_new_answer, _theme_position_key,
@@ -714,6 +714,67 @@ def test_theme_does_not_clear_a_matched_question_without_two_distinct_answer_tar
     assert not asyncio.run(_theme_has_new_answer(question, history, generate))
 
 
+@pytest.mark.parametrize(("previous", "current", "previous_excerpt", "current_excerpt", "difference"), [
+    (
+        "その場で伝えようと思ったあと、どんなことがあれば別の機会に伝えますか？",
+        "少数派の意見をその場で伝えるかどうかは、何を基準に決めますか？",
+        "その場で伝えようと思ったあと", "伝えるかどうか",
+        "予定を別の機会に変えるきっかけからは、まだ伝えると決めていない時の基準は分からない。",
+    ),
+    (
+        "覚えたことを初めて人に教えるとき、説明の組み立てを決める前に、相手の理解について何を確かめますか？",
+        "覚えたことを初めて人に教えるとき、説明に入る前にまず何をしますか？",
+        "相手の理解について何を確かめますか", "説明に入る前にまず何をしますか",
+        "図を描くという準備の行動を答えても、相手の理解について何を確認するかは分からない。",
+    ),
+    (
+        "どんなときに自分で調べ続けるのをやめて別の方法を取りますか？",
+        "手が止まった直後に、まず何を見直しますか？",
+        "自分で調べ続けるのをやめて別の方法を取りますか", "まず何を見直しますか",
+        "直前の手順を見直すと答えても、別の方法に切り替える条件は分からない。",
+    ),
+])
+def test_theme_rechecks_a_repeat_verdict_against_both_original_questions(
+    previous, current, previous_excerpt, current_excerpt, difference,
+):
+    question = {"question": current}
+    past = {"id": 1, "question": previous}
+    other = {"id": 2, "question": "どのくらいの時間を取りますか？"}
+    responses = iter([
+        {"verdict": "repeat", "id": 1},
+        theme_pair_result("repeat"),
+        {"verdict": "distinct", "previous_excerpt": previous_excerpt,
+         "question_excerpt": current_excerpt, "difference": difference},
+        {"verdict": "distinct"},
+    ])
+    calls = []
+
+    async def generate(system, payload):
+        calls.append((system, payload))
+        return json.dumps(next(responses))
+
+    assert asyncio.run(_theme_has_new_answer(question, [past, other], generate))
+    assert calls[2] == (_THEME_COMPARE_EVIDENCE_SYSTEM_MESSAGE, {"previous": previous, "question": current})
+    assert calls[3] == (_THEME_COMPARE_SYSTEM_MESSAGE, {**question, "history": [other]})
+
+
+@pytest.mark.parametrize("evidence", [
+    {"verdict": "repeat"},
+    {"verdict": "distinct", "previous_excerpt": "どの程度", "question_excerpt": "どのくらい", "difference": "、。"},
+    {"verdict": "distinct", "previous_excerpt": "今の仕事", "question_excerpt": "どのくらい", "difference": "量の違いです。"},
+    {"verdict": "distinct", "previous_excerpt": "負担", "question_excerpt": "どのくらい", "difference": "量の違いです。"},
+])
+def test_theme_keeps_paraphrases_blocked_without_text_evidence(evidence):
+    question = {"question": "どのくらいの負担まで受け入れられますか？"}
+    history = [{"id": 1, "question": "どの程度の負担なら引き受けられますか？"}]
+    responses = iter([{"verdict": "repeat", "id": 1}, theme_pair_result("repeat"), evidence])
+
+    async def generate(system, payload):
+        return json.dumps(next(responses))
+
+    assert not asyncio.run(_theme_has_new_answer(question, history, generate))
+
+
 @pytest.mark.parametrize("final_verdict", [{"verdict": "distinct"}, {"verdict": "repeat", "id": 3}])
 def test_theme_checks_two_cited_questions_before_the_remaining_history(final_verdict):
     question = {"question": "新しい方法を試すとしたら、どのくらいの負担を引き受けますか？"}
@@ -725,7 +786,7 @@ def test_theme_checks_two_cited_questions_before_the_remaining_history(final_ver
     responses = iter([
         {"verdict": "repeat", "id": 1}, theme_pair_result(),
         {"verdict": "repeat", "id": 2}, theme_pair_result(),
-        final_verdict,
+        final_verdict, theme_pair_result("repeat"), {"verdict": "repeat"},
     ])
     calls = []
 
@@ -783,6 +844,8 @@ def test_theme_retains_a_true_paraphrase_in_the_last_subbatch():
                 suspects.remove(suspect)
                 return json.dumps({"verdict": "repeat", "id": suspect})
             return '{"verdict":"distinct"}'
+        if system == _THEME_COMPARE_EVIDENCE_SYSTEM_MESSAGE:
+            return '{"verdict":"repeat"}'
         assert system == _THEME_COMPARE_PAIR_SYSTEM_MESSAGE
         return json.dumps(theme_pair_result("repeat" if payload["previous"] == earlier else "distinct"))
 
@@ -865,6 +928,8 @@ def test_theme_resolves_three_cited_questions_with_archived_history(control):
             if cited:
                 cited_ids.remove(cited)
             return json.dumps({"verdict": "repeat", "id": cited} if cited else {"verdict": "distinct"})
+        if system == _THEME_COMPARE_EVIDENCE_SYSTEM_MESSAGE:
+            return '{"verdict":"repeat"}'
         assert system == _THEME_COMPARE_PAIR_SYSTEM_MESSAGE
         pairs.append(payload["previous"])
         answer = "repeat" if len(pairs) == 3 and control == "semantic_repeat" else "distinct"
@@ -917,6 +982,8 @@ def test_theme_compares_older_legacy_wording_in_the_next_history_batch(control):
             if payload["history"][0]["id"] == old_id and control == "semantic_repeat":
                 return json.dumps({"verdict": "repeat", "id": old_id})
             return '{"verdict":"distinct"}'
+        if system == _THEME_COMPARE_EVIDENCE_SYSTEM_MESSAGE:
+            return '{"verdict":"repeat"}'
         assert system == _THEME_COMPARE_PAIR_SYSTEM_MESSAGE
         assert payload["previous"] == old_text
         return json.dumps(theme_pair_result("repeat"))
@@ -953,6 +1020,33 @@ def test_theme_selection_does_not_reuse_an_issued_position_over_fifty_draws(them
             assert len(prepared["previous_questions"]) == 30
             questions[30].pop("question_text", None)
     assert len(scenes) >= len(THEME_SCENES[theme]) and len(angles) > 1
+
+
+def test_theme_evaluation_selects_fifty_untried_positions_per_theme_after_rejections():
+    from io import StringIO
+
+    from ai.tools import deep_insight_theme_batch_eval as batch
+
+    async def reject(*_):
+        return "{}"
+
+    selected = batch.cases()
+    output = StringIO()
+    asyncio.run(batch.evaluate(selected, output, generate=reject))
+    manifest, *results, summary = map(json.loads, output.getvalue().splitlines())
+    assert manifest["position_selection"] == "seeded_untried_positions"
+    assert summary["issued_history_by_theme"] == dict.fromkeys(batch.THEMES, 0)
+    assert [row["id"] for row in results] == [case.id for case in selected]
+    for theme in batch.THEMES:
+        rows = [row for row in results if row["theme"] == theme]
+        keys = {row["prepared"]["question_key"] for row in rows}
+        assert None not in keys and len(keys) == 50
+        assert len({row["prepared_sha256"] for row in rows}) == 50
+        assert all(row["disposition"] == "rejected" and row["calls"] for row in rows)
+        assert all(row["material"] == {"questions": []} for row in rows)
+        assert any("replaced_question_key" in row for row in rows)
+        for positions in THEME_EQUIVALENT_POSITIONS.get(theme, ()):
+            assert len(keys & {_theme_position_key(theme, *position) for position in positions}) <= 1
 
 
 def test_theme_will_try_new_situations_after_all_catalog_positions():
@@ -1013,7 +1107,7 @@ def test_theme_repairs_a_closed_question_containing_its_usual_wording():
 def test_theme_repairs_a_yes_no_main_clause_with_an_embedded_question(theme, scene, angle, draft, revised):
     result, calls = theme_run(theme, draft, repair=revised, choose_theme=select_theme_angle(scene, angle))
     assert len(calls) == 3
-    assert calls[0][0] == _THEME_WRITE_SYSTEM_MESSAGE
+    assert calls[0][0].startswith(_THEME_WRITE_SYSTEM_MESSAGE)
     if angle == "cue":
         assert calls[1][0].startswith(_THEME_REPAIR_SYSTEM_MESSAGE)
         assert "情報そのもの" in calls[1][0] and calls[1][1]["reason"] == "surface"
@@ -1022,6 +1116,20 @@ def test_theme_repairs_a_yes_no_main_clause_with_an_embedded_question(theme, sce
         assert set(calls[1][1]) == {"form", "scene"}
     assert calls[2][0] == _THEME_READ_SYSTEM_MESSAGE
     assert result.candidate.text.endswith(revised)
+
+
+def test_theme_edit_keeps_the_delayed_outcome_in_the_independent_review():
+    form = "しばらくたったあと、どんなことがあれば、考えを見直してよかったと思いますか？"
+    draft = "どんなことがあれば、考えを見直してよかったと思いますか？"
+    result, calls = theme_run(
+        "自分の価値観", draft, repair=form, reading={"verdict": "reject", "reason": "premise"},
+        choose_theme=select_theme_angle("change_mind", "outcome"),
+    )
+    assert "今回はformを校正" in calls[0][0]
+    assert calls[0][1]["form"] == calls[1][1]["form"] == form
+    assert calls[1][1]["body"] == draft
+    assert calls[3][1]["body"] == form
+    assert result.candidate is None
 
 
 @pytest.mark.parametrize(("theme", "scene", "draft", "revised"), [
