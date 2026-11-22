@@ -2768,6 +2768,45 @@ def _semantic_v4_view(prepared):
     return replace(prepared.parent, material_json=prepared.material_json, request_ref=request_ref)
 
 
+def _semantic_independent_correction_fields(material):
+    return [frozenset(row['independent_corrected_source_fields']) for row in material['records']
+            if 'independent_corrected_source_fields' in row]
+
+
+_SEMANTIC_INDEPENDENT_CORRECTION_OVERVIEW = '本人の補足回答と訂正'
+
+
+def _semantic_literal_independent_correction_fields(material):
+    """The two complete, independently selectable passages of a short record."""
+    from analysis_plan_source_choices import choices_for_field
+
+    records = material['records']
+    if len(records) != 1 or 'independent_corrected_source_fields' not in records[0]:
+        return ()
+    number_to_field = {field['field']: field for field in material['fields']}
+    numbers = records[0]['independent_corrected_source_fields']
+    if set(number_to_field) != set(numbers):
+        return ()
+    fields = [number_to_field[number] for number in numbers]
+    if all(len(field['text']) < 80 and choices_for_field(field)[1] == {field['text']}
+           for field in fields):
+        return tuple((field['field'], field['text']) for field in fields)
+    return ()
+
+
+def _semantic_literal_correction_titles(quote):
+    return {quote} if quote.endswith(('。', '！', '？', '!', '?')) else {quote, quote + '。'}
+
+
+def _semantic_independent_correction_plan_lesson():
+    fields = {1: '展示用の鍵は借りられませんでした', 2: '私は落ち着いていた'}
+    example = dict(schema_version=_semantic_v4_schema('PLAN'), source_choices_sha256='例の提示値',
+        nodes=[dict(node_id=f'n{number}', units=[dict(evidence=[dict(quote=quote, field=number)])])
+            for number, quote in fields.items()])
+    return ('\n架空例。記録は一件、independent_corrected_source_fieldsは[1,2]。'
+        '\n出力例=' + json.dumps(example, ensure_ascii=False, separators=(',', ':')))
+
+
 def semantic_node_local_v4_plan(prepared, plan, *, merge_anchors=False, merge_action_sources=False, context_sources=False, distinct_context_sources=False, speaker_context_sources=False, attributed_context_sources=False):
     """Bind the complete allocation before prose; allow cross-record roots."""
     r, reason = _semantic_map_require, 'analysis_semantic_node_local_v4_plan_invalid'
@@ -2776,6 +2815,7 @@ def semantic_node_local_v4_plan(prepared, plan, *, merge_anchors=False, merge_ac
         and type(plan['nodes']) is list and 1 <= len(plan['nodes']) <= 12, reason)
     material = json.loads(prepared.material_json)
     shown = {f['field']: f for f in material['fields']}
+    independent_fields = _semantic_independent_correction_fields(material)
     covered, cited = set(), set()
     previous_allocations = set()
     previous_leads = set()
@@ -2840,6 +2880,9 @@ def semantic_node_local_v4_plan(prepared, plan, *, merge_anchors=False, merge_ac
         r(not missing_action, 'analysis_semantic_plan_action_source_missing')
         if pair and len(preceding) == 1:
             r(preceding[0][0] == pair[2], 'analysis_semantic_plan_paired_original_invalid')
+        node_fields = {root['field'] for unit in node['units'] for root in unit['evidence']}
+        r(not any(fields <= node_fields for fields in independent_fields),
+            'analysis_semantic_plan_independent_correction_scope_invalid')
         if prepared.prompt_version in SEMANTIC_MAP_SOURCE_CUED_PROFILES:
             allocation = tuple(tuple((root['field'], root['quote']) for root in unit['evidence'])
                 for unit in node['units'])
@@ -2852,6 +2895,13 @@ def semantic_node_local_v4_plan(prepared, plan, *, merge_anchors=False, merge_ac
                 previous_leads.add(lead)
     r(not required_sources or not missing_plan_sources(required_sources, previous_allocations),
       'analysis_semantic_plan_record_source_missing')
+    r(all(fields <= cited for fields in independent_fields),
+        'analysis_semantic_plan_independent_correction_scope_invalid')
+    literal_sources = _semantic_literal_independent_correction_fields(material)
+    if literal_sources:
+        r([node['units'] for node in plan['nodes']] == [
+            [dict(evidence=[dict(field=number, quote=quote)])] for number, quote in literal_sources],
+            'analysis_semantic_plan_independent_correction_scope_invalid')
     required = {row['record'] for row in material['records']}
     if len(required) <= 24:
         r(required <= covered, 'analysis_semantic_node_local_coverage_incomplete')
@@ -3071,6 +3121,7 @@ def semantic_node_local_v4_nodes(prepared, plan, packet, *, bound_titles=False, 
         and set(packet['nodes']) == {n['node_id'] for n in plan['nodes']}, reason)
     fact_parts = prepared.prompt_version in SEMANTIC_MAP_FACT_ENDPOINT_PROFILES
     source_material = json.loads(prepared.material_json)
+    literal_sources = dict(_semantic_literal_independent_correction_fields(source_material))
     display_sentences = (_semantic_display_sentences(source_material)
         if prepared.prompt_version in {SEMANTIC_MAP_OCCURRENCE_V11_PROFILE, *SEMANTIC_MAP_FACT_REFERENCE_PROFILES} else {})
     for planned in plan['nodes']:
@@ -3082,6 +3133,10 @@ def semantic_node_local_v4_nodes(prepared, plan, packet, *, bound_titles=False, 
             and type(node['perspective']) is str and node['perspective'] in SEMANTIC_MAP_PERSPECTIVES
             and _semantic_map_text(node['title'], 80)
             and (node['meaning'] == '' or _semantic_map_text(node['meaning'], 240)), reason)
+        if literal_sources:
+            quote = literal_sources[planned['units'][0]['evidence'][0]['field']]
+            r(not node['meaning'] and node['title'] in _semantic_literal_correction_titles(quote),
+                'analysis_semantic_node_independent_correction_scope_invalid')
         titles = {root['quote'] for unit in planned['units'] for root in unit['evidence']
             if len(root['quote']) <= 80 and root['quote'] in display_sentences.get(root['field'], ())}
         if prepared.prompt_version in SEMANTIC_MAP_CONTENT_PLAN_PROFILES:
@@ -3318,8 +3373,10 @@ def semantic_node_local_v4_relations(prepared, plan, bodies, packet, *, ordered_
         and packet['schema_version'] == _semantic_v4_schema('RELATIONS')
         and packet['nodes_sha256'] == semantic_map_hash(nodes)
         and type(packet['edges']) is list and len(packet['edges']) <= 48, reason)
-    if json.loads(prepared.material_json).get('history_stage', {}).get('kind') == 'LEAF':
+    material = json.loads(prepared.material_json)
+    if material.get('history_stage', {}).get('kind') == 'LEAF':
         r(not packet['edges'], reason)
+    independent_fields = _semantic_independent_correction_fields(material)
     seen = set()
     fact_endpoints = prepared.prompt_version in SEMANTIC_MAP_FACT_ENDPOINT_PROFILES
     public_edge_keys = ('from', 'to', 'label', 'relation_kind')
@@ -3334,6 +3391,7 @@ def semantic_node_local_v4_relations(prepared, plan, bodies, packet, *, ordered_
             and type(edge['relation_kind']) is str and edge['relation_kind'] in SEMANTIC_MAP_RELATION_KINDS
             and _semantic_map_text(edge['label'], 80), reason)
         if fact_endpoints:
+            endpoint_fields = []
             for side in ('from', 'to'):
                 node = bodies['nodes'][edge[side]]
                 ref = edge[side + '_unit']
@@ -3342,8 +3400,14 @@ def semantic_node_local_v4_relations(prepared, plan, bodies, packet, *, ordered_
                 if source_cued:
                     index = int(ref.split('.u')[1]) - 1
                     roots = plan['nodes'][int(edge[side][1:]) - 1]['units'][index]['evidence']
-                    r(any(edge[side + '_source'] in _semantic_source_cues(root['quote'])
-                          for root in roots), reason)
+                    selected_fields = {root['field'] for root in roots
+                        if edge[side + '_source'] in _semantic_source_cues(root['quote'])}
+                    r(bool(selected_fields), reason)
+                    endpoint_fields.append(selected_fields)
+            if independent_fields and endpoint_fields:
+                r(not any(fields <= endpoint_fields[0] | endpoint_fields[1]
+                          for fields in independent_fields),
+                    'analysis_semantic_relation_independent_correction_scope_invalid')
         if prepared.prompt_version in SEMANTIC_MAP_VISIBLE_SOURCE_PROFILES:
             quotes = (root['quote'] for side in ('from', 'to')
                 for root in plan['nodes'][int(edge[side][1:]) - 1]['units'][int(edge[side + '_unit'].split('.u')[1]) - 1]['evidence'])
@@ -3352,6 +3416,9 @@ def semantic_node_local_v4_relations(prepared, plan, bodies, packet, *, ordered_
         r(key not in seen, reason)
         seen.add(key)
     overview = packet['overview']
+    if _semantic_literal_independent_correction_fields(material):
+        r(overview == dict(node_refs=['n1', 'n2'], title=_SEMANTIC_INDEPENDENT_CORRECTION_OVERVIEW),
+            'analysis_semantic_overview_independent_correction_scope_invalid')
     scope = None
     if prepared.prompt_version in {SEMANTIC_MAP_OCCURRENCE_V20_PROFILE, SEMANTIC_MAP_OCCURRENCE_V21_PROFILE, SEMANTIC_MAP_OCCURRENCE_V22_PROFILE, SEMANTIC_MAP_OCCURRENCE_V23_PROFILE, SEMANTIC_MAP_OCCURRENCE_V24_PROFILE}:
         from analysis_plan_source_choices import WholeMapTitle
@@ -4157,8 +4224,36 @@ def _semantic_occurrence_v6_messages(prepared, material, phase, bodies=None):
                     '他の記録と区別する原文の言葉を使って、確認できた経過・違いを自然に表します。'
                     '80字以内で一つの経過としてまとめにくい場合は、題に「' + scope.neutral + '」を選べます。'
                     'この場合も全項目の概要を表示します。')
-    guidance = (_SEMANTIC_V4_COMMON + '\n' + guidance
-                + _semantic_occurrence_v6_example(phase, leaf=stage == 'LEAF',
+    independent_fields = _semantic_independent_correction_fields(material)
+    # PLAN's passages have already replaced field text. Inspect the same
+    # qualified material used to admit the authored result.
+    literal_sources = _semantic_literal_independent_correction_fields(json.loads(prepared.material_json))
+    scoped_guidance = ''
+    if independent_fields:
+        scoped_guidance = '\nrecordsのindependent_corrected_source_fieldsは、本人が訂正した後にそれぞれ有効な出来事の回答と本人説明のfield番号です。'
+        scoped_guidance += {
+            'PLAN': '二つのfieldをそれぞれ引用し、必ず別々のnodeに置きます。',
+            'NODES': '各項目の題とmeaningには、その項目の引用から分かる出来事か気持ちだけを書きます。',
+            'RELATIONS': 'この二つのfieldを両端にする線は作りません。概要の題にも二つの原文を結ぶ経緯は書きません。',
+        }[phase]
+        scoped_guidance += ' 同じ記録にあることや訂正の記録日時から、出来事と気持ちの順序や理由、同時性を足しません。'
+    if phase == 'PLAN' and independent_fields:
+        lesson = _semantic_independent_correction_plan_lesson()
+        if literal_sources:
+            (first, _), (second, _) = literal_sources
+            scoped_guidance += (f' 今回はn1とn2の二項目です。n1のu1はfield {first}の引用一件、'
+                f'n2のu1はfield {second}の引用一件です。二つ目の項目まで返します。')
+    elif literal_sources:
+        lesson = ''
+        if phase == 'NODES':
+            scoped_guidance += (' n1とn2はそれぞれu1の原文で内容が完結しています。'
+                'titleにはそれぞれのu1の原文をそのまま返し、meaningはn1・n2とも空文字 "" です。')
+        else:
+            scoped_guidance += (' 今回はedgesを[]にし、overviewは'
+                + json.dumps(dict(node_refs=['n1', 'n2'], title=_SEMANTIC_INDEPENDENT_CORRECTION_OVERVIEW),
+                    ensure_ascii=False, separators=(',', ':')) + 'を返します。')
+    else:
+        lesson = _semantic_occurrence_v6_example(phase, leaf=stage == 'LEAF',
                     review_qualifications=review_qualifications,
                     source_cued=source_cued and (phase != 'PLAN' or prepared.prompt_version in {SEMANTIC_MAP_OCCURRENCE_V11_PROFILE, *SEMANTIC_MAP_FACT_REFERENCE_PROFILES}),
                     grounded_display=grounded_display,
@@ -4166,8 +4261,9 @@ def _semantic_occurrence_v6_messages(prepared, material, phase, bodies=None):
                     fact_profile=prepared.prompt_version,
                     content_plan_profile=(prepared.prompt_version if phase == 'PLAN' and
                         prepared.prompt_version in SEMANTIC_MAP_CONTENT_PLAN_PROFILES else None),
-                    numbered_plan=prepared.prompt_version in {SEMANTIC_MAP_OCCURRENCE_V11_PROFILE, *SEMANTIC_MAP_FACT_REFERENCE_PROFILES} and phase == 'PLAN'))
-    guidance = _semantic_v4_view(prepared)._source_instruction(guidance, material)
+                    numbered_plan=prepared.prompt_version in {SEMANTIC_MAP_OCCURRENCE_V11_PROFILE, *SEMANTIC_MAP_FACT_REFERENCE_PROFILES} and phase == 'PLAN')
+    guidance = _semantic_v4_view(prepared)._source_instruction(_SEMANTIC_V4_COMMON + '\n' + guidance + lesson, material)
+    guidance += scoped_guidance
     messages = [dict(role='system', content=guidance), dict(role='user', content=_semantic_occurrence_message(material))]
     if prepared.prompt_version in SEMANTIC_MAP_FACT_REFERENCE_PROFILES and phase == 'RELATIONS':
         maximum = SEMANTIC_HISTORY_MERGE_MAX_PROMPT_BYTES if stage == 'MERGE' else SEMANTIC_MAP_MAX_PROMPT_BYTES
@@ -4779,6 +4875,20 @@ def prepare_analysis_semantic_map(request, snapshot, *,
         duties = analysis_semantic_source_duties(frozen, tuple(stored_fields))
         source_duties_json = semantic_map_canonical(duties)
         material['source_duties'] = analysis_semantic_source_duties_material(duties)
+        if prompt_version == SEMANTIC_MAP_OCCURRENCE_V24_PROFILE:
+            claims = {claim['claim_ref']: claim['field'] for claim in duties['claims']}
+            written_pairs = {frozenset((claims[relation['from_claim']], claims[relation['to_claim']]))
+                for relation in duties['written_relations']}
+            for ref, handoff in handoffs.items():
+                if not handoff.get('corrected_circumstance') or ref not in ordinals:
+                    continue
+                record = ordinals[ref]
+                answers = [f['field'] for f in material_fields if f['record'] == record
+                    and f['source_role'] == 'SUPPLEMENTAL_ANSWER']
+                revisions = [f['field'] for f in material_fields if f['record'] == record
+                    and f['source_role'] == 'USER_INTERPRETATION_CORRECTION']
+                if len(answers) == len(revisions) == 1 and frozenset(answers + revisions) not in written_pairs:
+                    records[record - 1]['independent_corrected_source_fields'] = answers + revisions
     material_json, dictionary_json = semantic_map_canonical(material), semantic_map_canonical(_semantic_map_foundation())
     request_ref = 'analysis-semantic-request:' + semantic_map_hash([
         prompt_version, frozen.owner_scope, frozen.source_set_ref, snapshot['guard'], material_json, dictionary_json])

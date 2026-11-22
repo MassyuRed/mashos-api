@@ -300,6 +300,91 @@ def test_corrected_circumstance_writer_retries_exact_prior_projection(natural_ca
     assert saved['writer_messages_sha256'] == receipt['payload']['writer_messages_sha256']
     assert run(restarted.get(user, parent))['current_observation'] == result['current_observation']
 
+
+def test_corrected_circumstance_sources_occupy_independent_v24_plan_nodes(natural_case, qdb):
+    from datetime import datetime, timedelta
+    from analysis_semantic_map import prepare_semantic_map
+    from cocolon_meaning_experience_engine.cores.analysis import semantic_admission as admission
+    from test_analysis_node_local_native_profile import accepts
+    from test_emlis_q2_application import answer
+
+    user, parent, service, _ = natural_case
+    qdb.query("update public.emotions set memo=$2,memo_action='' where id=$1", [parent, 'つらかったんです'])
+    initial = run(service.start(user, parent))
+    refined = run(answer(service, user, initial, '会議がうまくできませんでした'))
+
+    def prepared_map():
+        saved = run(service.store.read(user, input_id=parent))
+        saved['context'] = run(service.store.related_context(user, parent,
+            context_guards=saved['thread']['data'].get('context_guards', [])))
+        end = datetime.fromisoformat(saved['now']) + timedelta(days=1)
+        snapshot = dict(tier='free', now=saved['now'], members=[saved],
+            period_start='2020-01-01T00:00:00Z', period_end=end.isoformat(),
+            guard='analysis-db-cumulative-v1:' + '1' * 64)
+        return prepare_semantic_map(user, snapshot, prompt_version=admission.SEMANTIC_MAP_OCCURRENCE_V24_PROFILE)
+
+    def plan(prepared, groups):
+        messages = admission.semantic_node_local_v4_wire_messages(prepared)
+        material = json.loads(messages[1]['content'])
+        quotes = {f['field']: f['text'] for f in json.loads(prepared.material_json)['fields']}
+        nodes = [dict(node_id=f'n{i}', units=[
+            dict(evidence=[dict(quote=quotes[field], field=field) for field in unit])
+            for unit in units]) for i, units in enumerate(groups, 1)]
+        return messages, dict(schema_version=admission._semantic_v4_schema('PLAN'),
+            source_choices_sha256=material['source_choices_sha256'], nodes=nodes)
+
+    uncorrected = prepared_map()
+    original = json.loads(uncorrected.material_json)
+    assert original['answered_feeling_circumstances']
+    assert 'independent_corrected_source_fields' not in original['records'][0]
+    _, linked = plan(uncorrected, [[[1, 2]]])
+    assert admission.admit_semantic_node_local_v4_plan_response(uncorrected, linked)['nodes'] == linked['nodes']
+
+    run(correct(service, user, refined, explanation='「つらかったんです」ではなく「私は不安だった」です。'))
+    corrected = prepared_map()
+    material = json.loads(corrected.material_json)
+    assert not material.get('answered_feeling_circumstances')
+    assert material['records'][0]['independent_corrected_source_fields'] == [1, 2]
+    for groups in ([[[1, 2]]], [[[1], [2]]], [[[1]]]):
+        _, merged = plan(corrected, groups)
+        with pytest.raises(admission.AnalysisSemanticMapError, match='analysis_semantic_plan_independent_correction_scope_invalid'):
+            admission.admit_semantic_node_local_v4_plan_response(corrected, merged)
+    messages, separate = plan(corrected, [[[1]], [[2]]])
+    assert accepts(separate, messages)
+    admitted = admission.admit_semantic_node_local_v4_plan_response(corrected, separate)
+    assert admitted['nodes'] == separate['nodes']
+    first, second = (f['text'] for f in material['fields'])
+    nodes = {}
+    for node, quote in zip(admitted['nodes'], (first, second), strict=True):
+        node_id = node['node_id']
+        key = admission._semantic_fact_part_key(node['units'][0]['evidence'], 0)
+        nodes[node_id] = dict(units={'u1': dict(evidence_ref=node_id + '.u1',
+            source_mode='RECORDED', fact_parts={key: quote}, unknowns=[])},
+            node_kind='STATE_CONTEXT', perspective='SELF', title=quote, meaning='')
+    bodies = dict(schema_version=admission._semantic_v4_schema('NODES'),
+        plan_sha256=admission.semantic_map_hash(admitted), nodes=nodes)
+    unsupported = copy.deepcopy(bodies)
+    unsupported['nodes']['n2']['meaning'] = '会議の後に感じた不安が書かれています。'
+    with pytest.raises(admission.AnalysisSemanticMapError, match='analysis_semantic_node_independent_correction_scope_invalid'):
+        admission.semantic_node_local_v4_nodes(corrected, admitted, unsupported)
+    registry = admission._semantic_v4_join(admitted, bodies)
+    relations = dict(schema_version=admission._semantic_v4_schema('RELATIONS'),
+        nodes_sha256=admission.semantic_map_hash(registry), qualification_review={},
+        edges=[], overview=dict(node_refs=['n1', 'n2'], title='本人の補足回答と訂正'))
+    assert admission.semantic_node_local_v4_relations(corrected, admitted, bodies, relations)['edges'] == []
+    unsupported = copy.deepcopy(relations)
+    unsupported['overview']['title'] = '会議の状況と、その後に感じた不安'
+    with pytest.raises(admission.AnalysisSemanticMapError, match='analysis_semantic_overview_independent_correction_scope_invalid'):
+        admission.semantic_node_local_v4_relations(corrected, admitted, bodies, unsupported)
+    relations['edges'] = [{
+        'from': 'n1', 'to': 'n2', 'from_unit': 'n1.u1', 'to_unit': 'n2.u1',
+        'from_source': first, 'to_source': second, 'relation_kind': 'SHARED_MEANING',
+        'label': '会議の後で不安になった',
+    }]
+    with pytest.raises(admission.AnalysisSemanticMapError, match='analysis_semantic_relation_independent_correction_scope_invalid'):
+        admission.semantic_node_local_v4_relations(corrected, admitted, bodies, relations)
+
+
 def test_writer_uses_compact_meaning_without_private_evidence_or_losing_source():
     from test_analysis_active_update_material import saved_update, REVISE
     from test_analysis_saved_period import OWNER, NOW
