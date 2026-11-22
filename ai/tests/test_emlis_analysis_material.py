@@ -14,7 +14,7 @@ from emlis_thread_service import _request
 from test_analysis_active_update_material import saved_update, REVISE, WITHDRAW
 from test_analysis_saved_period import OWNER, NOW
 from cocolon_meaning_experience_engine.emlis_thread_contracts import (
-    EmlisClarificationV1, EmlisQuestionControlV1, EmlisQuestionDecisionV1,
+    DIRECT_FEELING_CORRECTION_POLICY, EmlisClarificationV1, EmlisQuestionControlV1, EmlisQuestionDecisionV1,
     SupplementalAnswerSource)
 from cocolon_meaning_experience_engine.cores.analysis import semantic_admission as admission
 from cocolon_meaning_experience_engine.cores.analysis.source_adapter import (
@@ -126,6 +126,65 @@ def test_pending_person_explanation_preserves_all_sources_without_resurrecting_o
     assert material['sources'][0]['fields']['memo'] == saved['original']['memo']
     assert material['sources'][-1]['fields']['memo'] == '今はまだ決められません。'
     assert 'AI_TARGET_NOT_USER_EVIDENCE' not in json.dumps(material, ensure_ascii=False)
+
+
+@pytest.mark.parametrize('memo, selected, quoted, revised, reason', [
+    ('つらかったんです', 'つらかったんです', 'つらかったんです', '私は不安だった', None),
+    ('つらかったんです', '別の抜粋', 'つらかったんです', '私は不安だった',
+     'analysis_correction_target_unresolved'),
+    ('つらかったんです', 'つらかったんです', '別の引用', '私は不安だった',
+     'analysis_correction_target_unresolved'),
+    ('つらかったんです。相談した。', 'つらかったんです', 'つらかったんです', '私は不安だった',
+     'analysis_correction_target_unresolved'),
+    ('友人はつらかったんです', '友人はつらかったんです', '友人はつらかったんです', '私は不安だった',
+     'analysis_correction_target_unresolved'),
+    ('つらかったんです？', 'つらかったんです？', 'つらかったんです？', '私は不安だった',
+     'analysis_correction_target_unresolved'),
+    ('つらかったんです', 'つらかったんです', 'つらかったんです', '友人は不安だった',
+     'analysis_correction_replacement_unsupported'),
+    ('つらかったんです', 'つらかったんです', 'つらかったんです', '不安だった',
+     'analysis_correction_replacement_unsupported'),
+    ('つらかったんです', 'つらかったんです', 'つらかったんです', '私は不安だったかもしれない',
+     'analysis_correction_replacement_unsupported'),
+    ('つらかったんです', 'つらかったんです', 'つらかったんです', '私は不安だったなら休んだ',
+     'analysis_correction_replacement_unsupported'),
+])
+def test_direct_feeling_correction_requires_whole_owned_target_and_one_explicit_replacement(
+        memo, selected, quoted, revised, reason):
+    explanation = f'「{quoted}」ではなく「{revised}」です。'
+    saved = saved_update(explanation, memo=memo, action='')
+    observation, operation = saved['events']
+    observation['payload']['text'] = selected
+    operation['payload']['source']['target_text'] = selected
+    legacy = prepare(saved)
+    assert legacy['coverage']['active_state'] == 'PENDING'
+    operation['payload']['analysis_correction_policy'] = DIRECT_FEELING_CORRECTION_POLICY
+    material = prepare(saved)
+    assert material['source_prefix_ref'] == legacy['source_prefix_ref']
+    if reason:
+        assert material['reason_codes'] == [reason]
+        assert material['coverage']['active_state'] == 'PENDING'
+        assert material['active_fields'] == [] and material['graph'] is None
+        return
+    assert legacy['material_ref'] == (
+        'emlis-analysis-material:0fac2d605d202d26137265c5021c5093dd537be1100683e212000a0acf851a90')
+    field, = material['active_fields']
+    claim, = material['source_duties']['claims']
+    update, = material['graph']['source_updates']
+    assert material['coverage']['active_state'] == 'RESOLVED'
+    assert material['original_record']['memo'] == memo
+    assert (field['source_role'], field['text'], field['scalar_start'], field['scalar_end']) == (
+        'USER_INTERPRETATION_CORRECTION', revised, 15, 22)
+    assert (claim['proposition']['actor'], claim['proposition']['modality'],
+            claim['proposition']['temporal_scope'], claim['proposition']['result_state']) == (
+        'SELF', 'feeling', 'past', 'PAST_FEELING')
+    assert (update['operation'], update['target_evidence']['scalar_start'],
+            update['target_evidence']['scalar_end']) == ('REVISE', 0, 8)
+    replacement_ref, = update['replacement_evidence_refs']
+    for key in ('source_envelope_id', 'field_path', 'field_sha256', 'literal_sha256',
+                'scalar_start', 'scalar_end', 'utf8_start', 'utf8_end'):
+        assert replacement_ref[key] == field['evidence'][key]
+    assert material['graph']['edges'] == []
 
 
 def test_three_admitted_answers_use_existing_add_revise_withdraw_owners_and_not_questions():

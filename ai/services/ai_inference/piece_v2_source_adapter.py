@@ -993,8 +993,11 @@ def _corrected_observation_handoff(saved, snapshot, answer_id=None):
             previous_finish=answer_history['end_event']
             continue
         require(body['round_index']==n)
+        prefix_sources = sources[:i]
         prefix_request = replace(request, emlis_thread=replace(request.emlis_thread,
-            interpretation_corrections=sources[:i]))
+            interpretation_corrections=prefix_sources,
+            direct_feeling_correction_ids=tuple(s.correction_id for s in prefix_sources
+                if s.correction_id in request.emlis_thread.direct_feeling_correction_ids)))
         prefix = admit_emlis_thread(prefix_request).source_prefix_ref
         bp = body['payload']
         require(bp.get('stage') == ('INITIAL' if i == 0 else 'CORRECTED')
@@ -1783,7 +1786,8 @@ def _natural_later_add_handoff(saved, snapshot, answer_id, *, correction_prefix=
         cps[-1]['id']==t['current_meaning_event_id'] and bodies[-1]['id']==t['last_observation_event_id']))
     request = _request(snapshot)
     if correction_prefix:
-        request=replace(request,emlis_thread=replace(request.emlis_thread,interpretation_corrections=()))
+        request=replace(request,emlis_thread=replace(request.emlis_thread,
+            interpretation_corrections=(),direct_feeling_correction_ids=()))
     admitted = admit_emlis_thread(request)
     require(len(admitted.answers)==n and (correction_prefix or
         t['source_prefix_ref']==t['evaluated_prefix_ref']==admitted.source_prefix_ref))

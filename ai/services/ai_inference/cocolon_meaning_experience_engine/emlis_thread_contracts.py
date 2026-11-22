@@ -15,6 +15,7 @@ from .contracts import EngineOutcome, EngineStatus, EvidenceRef, SourceEnvelope
 THREAD_SCHEMA = "cocolon.cmee.emlis_thread.v1"
 SEMANTIC_SCHEMA = "cocolon.cmee.emlis_answer_meaning.v1"
 ANSWER_FIELD = "answer_text_private"
+DIRECT_FEELING_CORRECTION_POLICY = "direct_feeling_correction.v1"
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -117,6 +118,7 @@ class EmlisThreadInputV1:
     rejected_frame_keys: tuple[str, ...] = ()
     frame_feedback_sources: tuple[Any, ...] = ()
     interpretation_corrections: tuple[InterpretationCorrectionSource, ...] = ()
+    direct_feeling_correction_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True, repr=False)

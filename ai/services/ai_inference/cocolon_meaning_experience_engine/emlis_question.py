@@ -312,13 +312,14 @@ def _appraisal_standard_candidate(thread, plan, *, parent_request_id, respect_co
     return decision, question
 
 
-def _feeling_circumstance_candidate(thread, plan, *, parent_request_id, respect_control):
-    original = thread.original
-    memo = str(original.normalized_current_input.get("memo", "")).strip()
-    match = _UNEXPLAINED_FEELING.fullmatch(memo)
-    if (not match or (respect_control and thread.answers)
-            or str(original.normalized_current_input.get("memo_action", "")).strip()
-            or plan.input_profile.material_quality != "short_state_sufficient"):
+def standalone_feeling_match(memo, memo_action):
+    return None if memo_action.strip() else _UNEXPLAINED_FEELING.fullmatch(memo.strip())
+
+
+def standalone_feeling_witness(normalized, plan):
+    match = standalone_feeling_match(str(normalized.get("memo", "")),
+        str(normalized.get("memo_action", "")))
+    if not match or plan.input_profile.material_quality != "short_state_sufficient":
         return None
     reactions = tuple(row for row in plan.nuclei if row.source_fields == ("memo",)
                       and row.retention == "required" and row.grounding_kind == "explicit"
@@ -326,7 +327,17 @@ def _feeling_circumstance_candidate(thread, plan, *, parent_request_id, respect_
                       and len(row.source_span_ids) == 1)
     if len(reactions) != 1:
         return None
-    reaction, = reactions
+    return match, reactions[0]
+
+
+def _feeling_circumstance_candidate(thread, plan, *, parent_request_id, respect_control):
+    if respect_control and thread.answers:
+        return None
+    original = thread.original
+    witness = standalone_feeling_witness(original.normalized_current_input, plan)
+    if witness is None:
+        return None
+    match, reaction = witness
     control = thread.control.question_control_context
     target = identity("emlis-target", original.envelope.envelope_id,
                       reaction.nucleus_id, "personal_feeling_circumstance")

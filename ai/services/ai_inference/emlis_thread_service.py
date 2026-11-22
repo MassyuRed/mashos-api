@@ -26,6 +26,7 @@ from cocolon_meaning_experience_engine.natural_reply import ACTIVE_MEANING_PROFI
 from cocolon_meaning_experience_engine.emlis_thread_contracts import (
     EmlisThreadInputV1, EmlisQuestionControlV1, EmlisClarificationV1,
     EmlisQuestionDecisionV1, SupplementalAnswerSource, InterpretationCorrectionSource, SEMANTIC_SCHEMA,
+    DIRECT_FEELING_CORRECTION_POLICY,
 )
 from emlis_thread_store import EmlisThreadStore, ThreadStoreError
 from emlis_thread_config import APPLICATION_EXECUTION_MODE, MAX_ANSWER_CHARS, writes_enabled
@@ -79,6 +80,12 @@ def _corrections(snapshot):
     return tuple(InterpretationCorrectionSource(**e["payload"]["source"])
         for e in snapshot["events"] if e["kind"] == "OPERATION"
         and e["payload"].get("stage") == "INTERPRETATION_CORRECTION")
+
+
+def _direct_feeling_correction_ids(snapshot):
+    return tuple(e['id'] for e in snapshot['events'] if e['kind'] == 'OPERATION'
+        and e['payload'].get('stage') == 'INTERPRETATION_CORRECTION'
+        and e['payload'].get('analysis_correction_policy') == DIRECT_FEELING_CORRECTION_POLICY)
 
 
 def _needs_correction_detail(text):
@@ -144,7 +151,8 @@ def _request(snapshot, *, checkpoint_ref=None, include_context=True, analysis_so
         rejected_frame_keys=rejected, frame_feedback_sources=feedback_sources,
         capability_snapshot="Q3_" + snapshot["tier"].upper() if q3 else "FREE_Q1",
         prepared_meaning_checkpoint_ref=checkpoint_ref,
-        interpretation_corrections=_corrections(snapshot)))
+        interpretation_corrections=_corrections(snapshot),
+        direct_feeling_correction_ids=_direct_feeling_correction_ids(snapshot)))
 
 
 def _saved_frame_target(snapshot, feedback):
@@ -626,9 +634,23 @@ class EmlisThreadService:
         correction_id = str(uuid4())
         source = InterpretationCorrectionSource(correction_id, thread_id, t["data"]["original_source_ref"],
             target_event_id, target_text, explanation, _now(snapshot).isoformat())
-        event = _event("OPERATION", {"stage": "INTERPRETATION_CORRECTION", "status": "SAVED",
+        payload = {"stage": "INTERPRETATION_CORRECTION", "status": "SAVED",
             "source": source, "assessment": "NEEDS_DETAIL" if detail_needed else "UNASSESSED",
-            "request_fingerprint": fingerprint}, t, key=idempotency_key, event_id=correction_id)
+            "request_fingerprint": fingerprint}
+        original = snapshot['original']
+        if (t['data'].get('natural_meaning_profile') == ACTIVE_MEANING_PROFILE
+                and not detail_needed and t['issued_count'] == 0 and not _corrections(snapshot)
+                and target == refreshed.get('current_observation')):
+            from cocolon_meaning_experience_engine.emlis_answer_update import _REPLACEMENT
+            from cocolon_meaning_experience_engine.emlis_question import standalone_feeling_match
+            memo = (original.get('memo') or '').strip()
+            revised = _REPLACEMENT.fullmatch(explanation.strip().rstrip('。．.'))
+            if (revised and revised['old'] == target_text == memo.rstrip('。．.')
+                    and standalone_feeling_match(memo, original.get('memo_action') or '')):
+                # Keep the policy outside the authored source whose identity
+                # Emlis and Piece already share.
+                payload['analysis_correction_policy'] = DIRECT_FEELING_CORRECTION_POLICY
+        event = _event("OPERATION", payload, t, key=idempotency_key, event_id=correction_id)
         t["data"].update(body_state="CORRECTION_UNREFLECTED", meaning_updated=False,
             natural_response_stage="FINAL", failure_code=None,
             context_guards=[h["guard"] for h in snapshot["context"]["history"]],

@@ -16,7 +16,8 @@ from emlis_ai_current_input_bundle import normalize_emlis_current_input
 from emlis_ai_evidence_ledger_service import build_evidence_ledger
 from ...contracts import EvidenceRef, SourceEnvelope
 from ...source_kernel import _text_span_raw_subrange
-from ...emlis_thread_contracts import EmlisClarificationV1, InterpretationCorrectionSource, SupplementalAnswerSource
+from ...emlis_thread_contracts import (DIRECT_FEELING_CORRECTION_POLICY, EmlisClarificationV1,
+    InterpretationCorrectionSource, SupplementalAnswerSource)
 
 POLICY = 'cocolon.cmee.analysis.observed.offline.v1'
 ORIGINAL_FIELDS = frozenset(('id', 'created_at', 'memo', 'memo_action',
@@ -85,6 +86,7 @@ class AnalysisSavedRecord:
     # becomes a separately qualified evidence envelope.
     interpretation_corrections: tuple[InterpretationCorrectionSource, ...] = ()
     deep_insight: AnalysisDeepInsightQuestion | None = None
+    direct_feeling_correction_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -120,6 +122,8 @@ class AnalysisSource:
     feeling_circumstance_ranges: tuple[tuple[int, int], tuple[int, int]] | None = None
     feeling_circumstance_no_update: bool = False
     received_meaning_ranges: tuple[tuple[int, int], tuple[int, int]] | None = None
+    # The saved reply excerpt locates an update. It is control, not evidence.
+    direct_feeling_target: str | None = field(default=None, repr=False)
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -447,6 +451,14 @@ def freeze_analysis_sources(request: AnalysisObservedMapRequest) -> AnalysisSour
         if member.interpretation_corrections:
             identity = commitment([identity, [asdict(c) for c in member.interpretation_corrections
                 if type(c) is InterpretationCorrectionSource]])
+        direct = member.direct_feeling_correction_ids
+        if type(direct) is not tuple or (direct and (member.supplements
+                or not member.interpretation_corrections
+                or type(member.interpretation_corrections[0]) is not InterpretationCorrectionSource
+                or direct != (member.interpretation_corrections[0].correction_id,))):
+            raise AnalysisSourceError('analysis_correction_binding_invalid')
+        if direct:
+            identity = commitment([identity, DIRECT_FEELING_CORRECTION_POLICY, direct])
         if member.deep_insight is not None:
             identity = commitment([identity, _checked_deep_insight_question(member, original)])
         if member.saved_record_ref in versions:
@@ -524,6 +536,8 @@ def freeze_analysis_sources(request: AnalysisObservedMapRequest) -> AnalysisSour
             for correction in member.interpretation_corrections:
                 child = _source(member, correction.source_role, correction.correction_id,
                     commitment(asdict(correction)), {'id': ref, 'memo': correction.explanation})
+                if correction.correction_id in member.direct_feeling_correction_ids:
+                    child = replace(child, direct_feeling_target=correction.target_text)
                 sources.append(child)
                 children.append(child.envelope.envelope_id)
         members.append(AnalysisSourceMember(ref, member.saved_record_version,
@@ -600,7 +614,8 @@ def emlis_analysis_source_request(request, *, owner_scope, original_record, as_o
         commitment(a.source.answer_text_private), circumstance_control=circumstance) for a in admitted.answers)
     member = AnalysisSavedRecord(owner_scope, original['id'], version,
         original_json, answers,
-        interpretation_corrections=admitted.control.interpretation_corrections)
+        interpretation_corrections=admitted.control.interpretation_corrections,
+        direct_feeling_correction_ids=admitted.control.direct_feeling_correction_ids)
     projected = AnalysisObservedMapRequest(request.request_id + ':analysis-material',
         owner_scope, start.isoformat(), end.isoformat(), (member,),
         selected_category_context=True)

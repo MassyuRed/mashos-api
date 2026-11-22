@@ -71,6 +71,7 @@ name: Analysis observed content
       - ai/tests/test_emlis_analysis_material.py
       - ai/tests/test_analysis_emlis_material_handoff.py
       - ai/tests/test_analysis_emlis_circumstance_handoff.py
+      - ai/tests/test_analysis_emlis_direct_feeling_correction.py
       - ai/tests/test_analysis_if_routes.py
       - ai/tests/test_analysis_if_api.py
       - ai/tests/test_analysis_map_correction_application.py
@@ -353,6 +354,7 @@ jobs:
           ai/tests/test_emlis_analysis_material.py
           ai/tests/test_analysis_emlis_material_handoff.py
           ai/tests/test_analysis_emlis_circumstance_handoff.py
+          ai/tests/test_analysis_emlis_direct_feeling_correction.py
           ai/tests/test_analysis_if_routes.py
           ai/tests/test_analysis_if_api.py
           ai/tests/test_analysis_map_correction_application.py

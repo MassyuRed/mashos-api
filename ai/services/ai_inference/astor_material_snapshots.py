@@ -109,6 +109,7 @@ def _analysis_saved_member(snapshot, *, owner, input_id, tier, start, end, cumul
     from cocolon_meaning_experience_engine.source_kernel import SourceAdmissionError
     try:
         circumstance = received = None
+        direct_feeling_correction_ids = ()
         original = snapshot['original']
         if (type(original) is not dict or set(original) != ORIGINAL_FIELDS
                 or original['id'] != input_id or snapshot['tier'] != tier):
@@ -157,6 +158,7 @@ def _analysis_saved_member(snapshot, *, owner, input_id, tier, start, end, cumul
             request = _request(snapshot, include_context=False, analysis_source_only=True) if cumulative else _request(snapshot, include_context=False)
             admitted = admit_emlis_thread(request)
             corrections = admitted.control.interpretation_corrections
+            direct_feeling_correction_ids = admitted.control.direct_feeling_correction_ids
             correction_events = [e for e in events if e['kind'] == 'OPERATION'
                 and e['payload'].get('stage') == 'INTERPRETATION_CORRECTION']
             if len(corrections) != len(correction_events):
@@ -200,7 +202,8 @@ def _analysis_saved_member(snapshot, *, owner, input_id, tier, start, end, cumul
             for a in answers)
         member = AnalysisSavedRecord(owner, input_id, record_version,
             canonical_bytes(original).decode('utf-8'), supplements,
-            interpretation_corrections=corrections, deep_insight=deep_insight)
+            interpretation_corrections=corrections, deep_insight=deep_insight,
+            direct_feeling_correction_ids=direct_feeling_correction_ids)
         return member, (input_id, record_version, guard)
     except AnalysisSavedSourceError:
         raise

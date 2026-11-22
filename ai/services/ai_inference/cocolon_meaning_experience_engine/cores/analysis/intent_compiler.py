@@ -22,6 +22,7 @@ from emlis_ai_grounded_observation_plan import (
 )
 from ...contracts import EvidenceRef
 from ...emlis_answer_update import _WITHDRAWAL, _REPLACEMENT
+from ...emlis_question import standalone_feeling_witness
 from .source_adapter import (AnalysisSourceError, AnalysisSourceSet, commitment,
                             scoped_source_view, source_field_text, selected_categories)
 
@@ -3133,6 +3134,20 @@ def _check_supplement_claims(answer, claims, earlier_sources, excluded):
         earlier.append((current, answer.envelope.envelope_id))
 
 
+def _direct_feeling_target_matches(original, plan, target, selected, quoted):
+    if selected is None or target.field_path != 'memo' or selected != quoted:
+        return False
+    field = source_field_text(original, 'memo')
+    witness = standalone_feeling_witness(original.normalized, plan)
+    if witness is None:
+        return False
+    _, reaction = witness
+    return (reaction.source_span_ids == (target.source_span_id,)
+            and not field[:target.scalar_start].strip()
+            and not field[target.scalar_end:].strip(' \t\r\n\u3000。．.')
+            and field[target.scalar_start:target.scalar_end].rstrip('。．.') == selected)
+
+
 def _active_sources(source_set):
     """Apply whole-clause corrections to occurrences before period grouping."""
     originals = {s.record_ref: s for s in source_set.sources
@@ -3206,7 +3221,10 @@ def _active_sources(source_set):
                 for _, e in _self_propositions(original, plan=original_plan)) == 2
         if not target_is_self_claim:
             target_is_self_claim = _wish_burden_pair(original, original_plan, target.source_span_id) is not None
-        if not target_is_self_claim:
+        direct_feeling_update = (not target_is_self_claim and replacement is not None
+            and _direct_feeling_target_matches(original, original_plan, target,
+                answer.direct_feeling_target, replacement['old']))
+        if not target_is_self_claim and not direct_feeling_update:
             raise AnalysisSourceError('analysis_correction_target_unresolved')
         excluded.setdefault(original.envelope.envelope_id, set()).add(target.source_span_id)
         view = None
@@ -3215,7 +3233,18 @@ def _active_sources(source_set):
             view = scoped_source_view(answer, leading + match.start('new'),
                                       leading + match.end('new'))
             earlier = tuple(source for source in views if source.record_ref == answer.record_ref)
-            _check_supplement_claims(view, _self_propositions(view), earlier, excluded)
+            claims = _self_propositions(view)
+            if direct_feeling_update:
+                # The old occurrence is only an update target. Only the new
+                # authored feeling may supply a complete SELF proposition.
+                if len(claims) != 1:
+                    raise AnalysisSourceError('analysis_correction_replacement_unsupported')
+                proposition, evidence = claims[0]
+                if ((proposition.actor, proposition.modality) != ('SELF', 'feeling')
+                        or proposition.result_state not in {'CURRENT_FEELING', 'PAST_FEELING'}
+                        or (evidence.scalar_start, evidence.scalar_end) != view.scoped_memo_range):
+                    raise AnalysisSourceError('analysis_correction_replacement_unsupported')
+            _check_supplement_claims(view, claims, earlier, excluded)
             views.append(view)
         update = ObservedSourceUpdate('analysis-update:' + commitment([
             answer.envelope.envelope_id, target.evidence_id,
