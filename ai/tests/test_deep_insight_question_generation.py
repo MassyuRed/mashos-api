@@ -677,14 +677,15 @@ def test_work_theme_gives_the_writer_and_independent_reader_the_same_reviewed_ex
     assert result.candidate.text == f"{reader['scene']}、{body}"
 
 
-def test_work_theme_distinguishes_fixed_trial_conditions_from_comparison_items():
+def test_work_theme_distinguishes_reversibility_from_comparison_items():
     theme = "仕事・学び"
     previous = "仕事や勉強で新しいやり方を試す前に、慣れたやり方と何を比べておきますか？"
     history = [{"question_key": _theme_position_key(theme, "new_method", "cue"), "question_text": previous}]
-    body = "両方を試すなら、手順以外のどんな条件をそろえておきますか？"
+    body = "切り替えたあとで元の手順に戻せるか、事前に何を確かめますか？"
     result, calls = theme_run(theme, body, questions=history, choose_theme=select_theme_angle("experiment", "cue"))
     (_, writer), (_, reader), (comparison_system, comparison) = calls
-    assert writer["angle"] == reader["angle"] == comparison["angle"] == "両方を試す前に、手順以外でそろえておく作業条件"
+    assert writer["angle"] == reader["angle"] == comparison["angle"]
+    assert writer["angle"] == "別の方法に切り替えても元の手順に戻せるか、事前に確認する作業条件"
     assert writer["form"] == reader["form"] == reader["body"] == body
     assert result.candidate.text == comparison["question"] == f"{reader['scene']}、{body}"
     assert comparison_system == _THEME_COMPARE_SYSTEM_MESSAGE
