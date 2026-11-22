@@ -81,12 +81,14 @@ def _bind(db, monkeypatch, owner, token):
 
 
 def _prepare_natural(db, monkeypatch, *, tier='premium', stopped=False, case_id='natural', with_history=False,
-                     with_frame_target=False, rounds=1, action_text='', first_answer=ANSWER):
+                     with_frame_target=False, rounds=1, action_text='', first_answer=ANSWER, memo_text=None):
     owner, parent = str(uuid4()), str(uuid4())
     token = 'synthetic-natural-refined-owner'
     _update(db, 'insert into auth.users values ($1)', [owner])
     _update(db, 'insert into public.profiles values ($1,$2)', [owner,tier])
     memo = THREE if stopped or rounds == 3 else ONE+'誘われたのに、悲しかった。' if rounds == 2 else ONE
+    if memo_text is not None:
+        memo = memo_text
     _update(db, "insert into public.emotions values ($1,$2,(now()-interval '5 seconds') at time zone 'UTC',$3,$5,array['仕事'],array['不安'],$4::jsonb)",
         [parent,owner,memo,json.dumps([dict(type='不安',strength='medium')],ensure_ascii=False),action_text])
     past = str(uuid4()) if with_history else None
@@ -188,6 +190,44 @@ def test_answer_owned_relative_feeling_keeps_three_field_source(natural_refined_
     seen = _provider(monkeypatch, state['case_id'], blocks)
     result = _finish_refined_pipeline(natural_refined_db, monkeypatch, state, expected_blocks=blocks)
     assert len(calls) == 2 and len(seen) == 1
+    assert result['quota_consumptions'] == 1 and result['source_unchanged'] and result['emlis_unchanged']
+
+
+def test_confirmed_feeling_circumstance_reaches_model_and_same_saved_piece(natural_refined_db, monkeypatch):
+    from dataclasses import replace
+    from cocolon_meaning_experience_engine.piece_refined import (
+        build_refined_meaning, validate_feeling_circumstance_body,
+    )
+    from cocolon_meaning_experience_engine.piece_v1c import MODEL_REALIZATION_PROFILE, PieceGenerationRequest
+    from piece_v2_source_adapter import project_saved_refined_source
+
+    memo, answer = 'つらかったんです', '会議がうまくできませんでした'
+    state, handoff, calls = _prepare_natural(natural_refined_db, monkeypatch,
+        tier='free', case_id='confirmed-feeling-circumstance', memo_text=memo, first_answer=answer)
+    assert state['initial_dto']['pending_question']['text'] == 'なにがつらかったんですか？'
+    assert handoff.feeling_circumstance.question_id == handoff.supplemental.question_id
+    source = project_saved_refined_source(handoff, opted_in=True)
+    request = PieceGenerationRequest('circumstance', source, state['owner'],
+        state['source_id'], source.original.source_version)
+    meaning = build_refined_meaning(request)
+    malformed = replace(source, feeling_circumstance=replace(source.feeling_circumstance,
+        circumstance_range=(1, len(answer))))
+    with pytest.raises(PieceContractError, match='piece_feeling_circumstance_source_binding'):
+        build_refined_meaning(replace(request, source=malformed))
+    with pytest.raises(PieceContractError, match='piece_feeling_circumstance_meaning_not_preserved'):
+        validate_feeling_circumstance_body(meaning, (memo + '。', 'というのも、会議がうまくできました。'))
+    seen = _provider(monkeypatch, state['case_id'], [memo + '。', answer + '。'],
+        realization_profile=MODEL_REALIZATION_PROFILE)
+    result = _finish_refined_pipeline(natural_refined_db, monkeypatch, state,
+        expected_blocks=[memo + '。', 'というのも、' + answer + '。'])
+    assert len(calls) == 2 and len(seen) == 1
+    prepared = seen[0]['prepared']
+    assert prepared['sources'][0]['original']['memo'] == memo
+    assert prepared['sources'][1]['text_fields']['answer_text_private'] == answer
+    assert prepared['control']['feeling_circumstance'] == {
+        'feeling_source_id': state['source_id'], 'feeling_range': [0, len(memo)],
+        'circumstance_source_id': handoff.supplemental.answer_id, 'circumstance_range': [0, len(answer)],
+    }
     assert result['quota_consumptions'] == 1 and result['source_unchanged'] and result['emlis_unchanged']
 
 

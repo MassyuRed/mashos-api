@@ -30,6 +30,16 @@ _PERSONAL_MEANING = re.compile(
 )
 _NONFACT = re.compile(r"(?:と言った|と言って|そうなら|たら|なら|かもしれ|と言う話|なかった|ていない|なかったら|だろう)")
 _FACTUAL_RECEIVED = re.compile(r"(?:褒められ|ほめられ|言われ|伝えられ|評価され|断られ|誘われ|頼まれ|声をかけられ|声を掛けられ)(?:た|ました)$|(?:連絡|返事|返信)が来(?:た|ました)$")
+PERSONAL_FEELING_CIRCUMSTANCE = "PERSONAL_FEELING_CIRCUMSTANCE"
+_UNEXPLAINED_FEELING = re.compile(
+    r"(?:(?:今日|今|きょう|いま)(?:は|も)?[、,\s]*)?"
+    r"(?:(?:私|わたし|僕|ぼく|俺|おれ|自分)(?:は|も)[、,\s]*)?"
+    r"(?:(?:本当に|ほんとうに|とても|すごく|かなり|少し|ちょっと)[、,\s]*)?"
+    r"(?:(?P<adjective>(?:つら|辛|しんど|苦し|悲し|怖|こわ|寂し|さびし|さみし|嬉し|うれし)"
+    r"(?:かった|い))(?:んです|のです|です)?|"
+    r"(?P<nominal>不安|安心|幸せ)(?:(?P<past>だった|でした)(?:んです|のです)?|だ|です|なんです|なのです)?)"
+    r"[。．.!！]*"
+)
 
 
 def original_meaning_plan(thread: AdmittedEmlisThread, **legacy):
@@ -302,8 +312,40 @@ def _appraisal_standard_candidate(thread, plan, *, parent_request_id, respect_co
     return decision, question
 
 
+def _feeling_circumstance_candidate(thread, plan, *, parent_request_id, respect_control):
+    original = thread.original
+    memo = str(original.normalized_current_input.get("memo", "")).strip()
+    match = _UNEXPLAINED_FEELING.fullmatch(memo)
+    if (not match or (respect_control and thread.answers)
+            or str(original.normalized_current_input.get("memo_action", "")).strip()
+            or plan.input_profile.material_quality != "short_state_sufficient"):
+        return None
+    reactions = tuple(row for row in plan.nuclei if row.source_fields == ("memo",)
+                      and row.retention == "required" and row.grounding_kind == "explicit"
+                      and row.semantic_frame.actor == "current_user" and row.semantic_frame.modality == "feeling"
+                      and len(row.source_span_ids) == 1)
+    if len(reactions) != 1:
+        return None
+    reaction, = reactions
+    control = thread.control.question_control_context
+    target = identity("emlis-target", original.envelope.envelope_id,
+                      reaction.nucleus_id, "personal_feeling_circumstance")
+    if target in control.asked_target_refs:
+        return None
+    evidence = thread.resolver().qualified_ref(reaction.source_span_ids[0]).evidence.evidence_id
+    affected = (reaction.nucleus_id,)
+    decision = EmlisQuestionDecisionV1("ASK", target, PERSONAL_FEELING_CIRCUMSTANCE, (evidence,),
+        "personal_feeling_circumstance", affected, affected,
+        control.asked_target_refs if respect_control else (), "source_bound_feeling_circumstance_missing")
+    feeling = match["adjective"] or match["nominal"] + ("だった" if match["past"] else "な")
+    question = EmlisClarificationV1(identity("emlis-question", thread.control.thread_id, target),
+        parent_request_id, thread.control.thread_id, original.envelope.envelope_id, decision,
+        f"なにが{feeling}んですか？")
+    return decision, question
+
+
 def question_candidate(thread: AdmittedEmlisThread, plan, *, parent_request_id: str,
-                       respect_control: bool = True):
+                       respect_control: bool = True, allow_affect_question: bool = False):
     control = thread.control.question_control_context
     q3 = thread.control.capability_snapshot.startswith("Q3_")
     if respect_control and (control.stop or control.issued_count >= control.question_limit
@@ -319,6 +361,11 @@ def question_candidate(thread: AdmittedEmlisThread, plan, *, parent_request_id: 
     if (not thread.answers
         and _source_initial_personal_meaning_from_resolver(plan.nuclei, plan.relations, resolver)):
         return EmlisQuestionDecisionV1("END", decision_reason="source_bound_personal_meaning_already_stated"), None
+    if allow_affect_question and q3:
+        feeling = _feeling_circumstance_candidate(thread, plan,
+            parent_request_id=parent_request_id, respect_control=respect_control)
+        if feeling is not None:
+            return feeling
     index = {row.nucleus_id: row for row in plan.nuclei}
     reactions = tuple(row for row in plan.nuclei
                       if row.kind in {"reaction", "state", "constraint", "value", "self_evaluation"}
@@ -394,7 +441,7 @@ def validate_question_binding(thread: AdmittedEmlisThread, plan) -> None:
                         asked_target_refs=control.asked_target_refs[:-1], issued_questions=control.issued_questions[:-1])
         thread = replace(thread, control=replace(thread.control, question_control_context=prior))
     _, canonical = question_candidate(thread, plan, parent_request_id=question.parent_request_id,
-                                      respect_control=False)
+        respect_control=False, allow_affect_question=question.decision.target_kind == PERSONAL_FEELING_CIRCUMSTANCE)
     if canonical is None or question != replace(canonical, decision=replace(
             canonical.decision, asked_target_refs=question.decision.asked_target_refs)):
         raise ValueError("emlis_question_noncanonical")

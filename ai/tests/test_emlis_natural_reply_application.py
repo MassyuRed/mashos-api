@@ -533,6 +533,39 @@ def test_provider_configuration_loss_reads_saved_reply_but_cannot_write(natural_
     assert dto["current_observation"] == done["current_observation"] and dto["can_write"] is False
 
 
+def test_emlis_observation_provider_can_be_selected_without_changing_other_consumers(monkeypatch):
+    from emlis_thread_config import natural_reply_provider_settings
+    from emlis_thread_factory import application_thread_service
+    from piece_model_source import CMEE_SELECTOR, application_piece_model_source
+
+    monkeypatch.setenv("EMLIS_AI_RESPONSE_PROFILE", "natural_reply.v1")
+    monkeypatch.setenv("EMLIS_NATURAL_REPLY_ENDPOINT", "https://shared.invalid/chat/completions")
+    monkeypatch.setenv("EMLIS_NATURAL_REPLY_MODEL", "shared-4b")
+    monkeypatch.setenv("EMLIS_NATURAL_REPLY_API_KEY", "shared-test-key")
+    monkeypatch.setenv("PIECE_MODEL_SOURCE", CMEE_SELECTOR)
+    monkeypatch.delenv("COCOLON_EMLIS_CONTEXT_UPDATE", raising=False)
+    monkeypatch.delenv("EMLIS_OBSERVATION_MODEL_ENDPOINT", raising=False)
+    monkeypatch.delenv("EMLIS_OBSERVATION_MODEL", raising=False)
+    monkeypatch.delenv("EMLIS_OBSERVATION_MODEL_API_KEY", raising=False)
+
+    shared = natural_reply_provider_settings()
+    piece_source = application_piece_model_source()
+    service = application_thread_service()
+    assert service.natural_reply_source.model == "shared-4b"
+    assert not service.natural_context_update_enabled
+
+    monkeypatch.setenv("EMLIS_OBSERVATION_MODEL", "observation-4b")
+    assert application_thread_service().natural_reply_source is None
+
+    monkeypatch.setenv("EMLIS_OBSERVATION_MODEL_ENDPOINT", "https://observation.invalid/chat/completions")
+    monkeypatch.setenv("EMLIS_OBSERVATION_MODEL_API_KEY", "observation-test-key")
+    assert application_thread_service().natural_reply_source.model == "observation-4b"
+    assert natural_reply_provider_settings() == shared
+    assert application_piece_model_source() is piece_source
+    monkeypatch.setenv("COCOLON_EMLIS_CONTEXT_UPDATE", "true")
+    assert application_thread_service().natural_context_update_enabled
+
+
 @pytest.mark.parametrize("tier", ["free", "plus", "premium"])
 def test_existing_history_boundary_passes_user_originals_only(natural_case, qdb, tier):
     user, parent, service, calls = natural_case

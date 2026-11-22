@@ -17,7 +17,9 @@ from emlis_ai_grounded_human_reception import final_reception_source_anchor_text
 from emlis_ai_safety_triage import classify_emlis_safety_triage_text, TRIAGE_SAFE_OBSERVATION
 
 from .contracts import GenerationRequest
-from .emlis_question import original_meaning_plan, validate_question_binding, _APPRAISAL_STANDARD
+from .emlis_question import (
+    PERSONAL_FEELING_CIRCUMSTANCE, original_meaning_plan, validate_question_binding, _APPRAISAL_STANDARD,
+)
 from .emlis_thread_contracts import (
     ANSWER_FIELD, SEMANTIC_SCHEMA, THREAD_SCHEMA, AnswerMeaningUpdateV1,
     AnswerTemporalBindingV1, EmlisAnswerUpdateItemV1, EmlisMeaningCheckpointV1,
@@ -38,6 +40,7 @@ _FOREIGN_HOST = re.compile(r"(?:と|って).{1,16}(?:は|が|も)(?:思|感じ|�
 _PERCEIVED_REACTION = re.compile(r"^.+(?:ようで|ように感じて|気がして|と思って)[、,](?:少し|とても|まだ)?(?:重|苦し|つら|辛|怖|悲し|寂し|嬉し|うれし|軽)(?:かった|くなかった)(?:です)?$")
 _SELF_CORRECTIVE_STATE = re.compile(r"^.+(?:のではなく|ではなく)[、,]?(?:私|自分)(?:では|は|も).+(?:していた|していなかった|できなかった)(?:です)?$")
 _OTHER_TIME = re.compile(r"^(?:昨日|一昨日|先週|去年|昨年|別の日|翌日|今日)(?:は|も|の)?")
+_UNCONFIRMED_CIRCUMSTANCE = re.compile(r"[「」『』?？]|かもしれ|だろう|たら|なら|らしい|そうだ|と聞|と言")
 
 
 # A yes/no answer assesses the proposal; it does not create evidence for the
@@ -124,7 +127,7 @@ def _dependent_refs(plan, targets: tuple[str, ...]) -> tuple[str, ...]:
                  if row.from_nucleus_id in targets or row.to_nucleus_id in targets)
 
 
-def _answer_nucleus(span, *, raw: str, about_time: str, source_start: int = 0, source_end: int | None = None, outcome_standard: bool = False, prior_answer_source: str | None = None, result_appraisal_replacement: bool = False, legacy_appraisal_answer_time: bool = False, relief_cognition_slot: str | None = None):
+def _answer_nucleus(span, *, raw: str, about_time: str, source_start: int = 0, source_end: int | None = None, outcome_standard: bool = False, prior_answer_source: str | None = None, result_appraisal_replacement: bool = False, legacy_appraisal_answer_time: bool = False, relief_cognition_slot: str | None = None, feeling_circumstance: bool = False):
     """Use the shared source grammar with a real answer field and no labels."""
     text = span.raw_text
     offset = source_start
@@ -150,6 +153,11 @@ def _answer_nucleus(span, *, raw: str, about_time: str, source_start: int = 0, s
                             safety_span_order={}, normalized_input=local)
     frame = gp._semantic_frame_for_span(local_span, kind=kind, roles=(), claim_ids=(),
                                         normalized_input=local)
+    # The issued circumstance question, rather than the surface order of
+    # fields, lets an ordinary event reply explain the original feeling.
+    circumstance_event = (feeling_circumstance and about_time == "ORIGINAL_OCCASION"
+        and kind in {"event", "action", "constraint"} and frame.modality == "fact"
+        and _PAST.search(bounded) and not _UNCONFIRMED_CIRCUMSTANCE.search(bounded))
     revised_experience = gp.source_relief_cognition_replacement(bounded, relief_cognition_slot)
     if revised_experience is not None:
         polarity, time = revised_experience
@@ -221,7 +229,7 @@ def _answer_nucleus(span, *, raw: str, about_time: str, source_start: int = 0, s
                         # positive or nominal form, independently of the self pronoun.
                         attribute_codes=(frame.attribute_codes if negative and not nominal_feeling else
                             tuple(dict.fromkeys((*frame.attribute_codes, "operator:feeling")))))
-    elif not gp._source_operator_owner_scope_is_bound(bounded):
+    elif not circumstance_event and not gp._source_operator_owner_scope_is_bound(bounded):
         # A uniquely located, admitted answer can keep its own finite
         # copular grammar through a degree-only correction. Do not broaden
         # initial answers or the shared memo grammar with this witness.
@@ -234,12 +242,14 @@ def _answer_nucleus(span, *, raw: str, about_time: str, source_start: int = 0, s
                 and frame.modality == "feeling" and previous and revised
                 and previous.groupdict() == revised.groupdict()):
             return None
-    if not bounded or kind in {"event", "other_explicit"} or _FOREIGN_HOST.search(bounded):
+    if (not bounded or (not circumstance_event and kind in {"event", "other_explicit"})
+            or _FOREIGN_HOST.search(bounded)):
         return None
     time_scope = "present" if about_time in {"ANSWER_TIME","PRIOR_ANSWER_TIME"} else "past"
     codes = tuple(c for c in frame.attribute_codes if not c.startswith(("time_scope:", "operator:change", "operator:positive_change")))
     frame = replace(frame, time_scope=time_scope, attribute_codes=(
         *codes, f"time_scope:{time_scope}", f"thread_time:{about_time.lower()}",
+        *(("thread_subject:feeling_circumstance",) if circumstance_event else ()),
         "lexical:preserve_source_predicate", "lexical:no_new_sensation_family",
         "semantic_role:generic_relation_fragment",
         f"source_fragment_scalar_range:{offset}:{end}",
@@ -995,9 +1005,8 @@ def _active_plan(original, thread, added, inactive, updates, unresolved=(), *, p
                  spans), "answer_interpretation_unresolved", (), spans, "do_not_claim")
         for spans in groups))
     index = {row.nucleus_id: row for row in nuclei}
-    # This subject relation is both a premeaning scope basis and a required
-    # source relation in Observation/Reception. It asserts no cause/contrast.
-    focus = thread.control.question_control_context.pending_question.decision.affected_meaning_refs
+    question = thread.control.question_control_context.pending_question
+    focus = question.decision.affected_meaning_refs
     def subject_targets(item):
         if item.operation == "ADD":
             return item.target_meaning_refs
@@ -1014,10 +1023,19 @@ def _active_plan(original, thread, added, inactive, updates, unresolved=(), *, p
                 if r.type == "evaluation_about_event" and r.to_nucleus_id in item.target_meaning_refs
                 and r.from_nucleus_id in index))
         return ()
-    about_relations = tuple(gp.GroundedSemanticRelation(
-        identity("answer-target", item.update_ref, target, changed), "evaluation_about_event",
-        target, changed, tuple(dict.fromkeys((*index[target].source_span_ids, *index[changed].source_span_ids))),
-        "user_stated_relation", 1.0, "required", (item.update_ref,))
+    def answer_relation(item, target, changed):
+        antecedent, consequence = target, changed
+        relation_kind = "evaluation_about_event"
+        if (question.decision.target_kind == PERSONAL_FEELING_CIRCUMSTANCE and item.operation == "ADD"
+                and "thread_subject:feeling_circumstance" in index[changed].semantic_frame.attribute_codes):
+            antecedent, consequence = changed, target
+            relation_kind = "user_stated_cause"
+        spans = tuple(dict.fromkeys((*index[antecedent].source_span_ids, *index[consequence].source_span_ids)))
+        return gp.GroundedSemanticRelation(
+            identity("answer-target", item.update_ref, target, changed), relation_kind,
+            antecedent, consequence, spans, "user_stated_relation", 1.0, "required", (item.update_ref,))
+
+    about_relations = tuple(answer_relation(item, target, changed)
         for item in updates
         for target in subject_targets(item) if target in index
         for changed in item.changed_claim_refs if changed in index)
@@ -1813,6 +1831,7 @@ def _prepare_answer(thread, original, *, legacy_unknown_replacement_time=False, 
     outcome_standard = question.decision.target_kind == _APPRAISAL_STANDARD
     spans = tuple(resolver.resolve(sid) for sid in resolver.span_ids
                   if resolver.qualified_ref(sid).source_envelope_id == answer.envelope.envelope_id)
+    feeling_circumstance = question.decision.target_kind == PERSONAL_FEELING_CIRCUMSTANCE and len(spans) == 1
     # Resolve quote ownership before either clause interpretation or the
     # answer-wide correction flag. A quoted report cannot authorize revision
     # of the user's original reaction, even when a later self answer is valid.
@@ -1970,7 +1989,8 @@ def _prepare_answer(thread, original, *, legacy_unknown_replacement_time=False, 
                 continue
             offset = (then.end() if then else now.end() if now else 0)
             nucleus = _answer_nucleus(span, raw=answer.source.answer_text_private,
-                                      about_time=about, source_start=offset, outcome_standard=outcome_standard)
+                                      about_time=about, source_start=offset, outcome_standard=outcome_standard,
+                                      feeling_circumstance=feeling_circumstance)
             if nucleus is None:
                 unresolved.append(EmlisUnresolvedPartV1(ev, "answer_syntax_unsupported"))
                 continue
@@ -2061,3 +2081,52 @@ def build_updated_grounded_plan(prepared: PreparedEmlisMeaning):
                         prepared.accepted_nuclei, set(prepared.checkpoint.inactive_claim_refs),
                         prepared.checkpoint.answer_update.updates if prepared.checkpoint.answer_update else (),
                         prepared.checkpoint.unresolved_parts, prepared=prepared)
+
+
+@dataclass(frozen=True, slots=True)
+class BoundFeelingCircumstance:
+    question_id: str
+    answer_id: str
+    feeling_range: tuple[int, int]
+    circumstance_range: tuple[int, int]
+
+
+def bound_feeling_circumstance(prepared: PreparedEmlisMeaning) -> BoundFeelingCircumstance | None:
+    """Return authored evidence ranges for one resolved, bound circumstance answer."""
+    thread = prepared.thread
+    question = thread.control.question_control_context.pending_question
+    update = prepared.checkpoint.answer_update
+    if (question is None or question.decision.target_kind != PERSONAL_FEELING_CIRCUMSTANCE
+            or len(thread.answers) != 1 or prepared.checkpoint.assessment_status != 'RESOLVED'
+            or prepared.checkpoint.inactive_claim_refs or update is None or len(update.updates) != 1):
+        return None
+    answer, = thread.answers
+    item, = update.updates
+    if (answer.source.question_id != question.question_id or update.question_ref != question.question_id
+            or update.answer_source_ref != answer.envelope.envelope_id
+            or item.operation != 'ADD' or item.binding_kind != 'QUESTION_FOCUS'
+            or item.temporal_binding.about_time != 'ORIGINAL_OCCASION'
+            or item.temporal_binding.anchor_source_ref != thread.original.envelope.envelope_id
+            or item.target_meaning_refs != question.decision.affected_meaning_refs
+            or len(item.target_meaning_refs) != 1 or len(item.changed_claim_refs) != 1):
+        return None
+    feeling = next((row for row in prepared.original_plan.nuclei
+        if row.nucleus_id == item.target_meaning_refs[0]), None)
+    circumstance = next((row for row in prepared.accepted_nuclei
+        if row.nucleus_id == item.changed_claim_refs[0]), None)
+    if (feeling is None or circumstance is None or feeling.source_fields != ('memo',)
+            or circumstance.source_fields != (ANSWER_FIELD,)
+            or 'thread_subject:feeling_circumstance' not in circumstance.semantic_frame.attribute_codes
+            or len(feeling.source_span_ids) != 1 or len(circumstance.source_span_ids) != 1):
+        return None
+    resolver = thread.resolver()
+    feeling_ref = resolver.qualified_ref(feeling.source_span_ids[0])
+    circumstance_ref = resolver.qualified_ref(circumstance.source_span_ids[0])
+    if (feeling_ref.source_envelope_id != thread.original.envelope.envelope_id
+            or circumstance_ref.source_envelope_id != answer.envelope.envelope_id
+            or feeling_ref.evidence.evidence_id not in question.decision.supporting_evidence_refs
+            or circumstance_ref.evidence.evidence_id not in item.evidence_refs):
+        return None
+    f, c = feeling_ref.evidence, circumstance_ref.evidence
+    return BoundFeelingCircumstance(question.question_id, answer.source.answer_id,
+        (f.scalar_start, f.scalar_end), (c.scalar_start, c.scalar_end))

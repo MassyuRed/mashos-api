@@ -472,20 +472,22 @@ def prepare_question_material(material, *, lane, theme, choose_theme=choice, exc
         for j, pair in enumerate(record.get("emlis_answered_questions", []), 1):
             question = _excerpt(pair["question"], 250)
             answer = _excerpt(pair["answer"], 500)
-            if not question or not answer:
+            standalone = pair["question"] is None and isinstance(pair.get("previous_question"), str)
+            if not answer or (not question and not standalone):
                 continue
             key = f"r{i}.answer{j}"
             append_source(key, _source(pair, field="answer", text=answer, recorded_at=pair.get("answered_at")))
             if key not in sources:
                 continue
-            payload["answered_emlis_questions"].append({
-                "question": question, "answer": answer, "answer_source": key, "sources": record_source_keys,
-            })
-            if len(_compact(payload).encode()) > _MAX_MATERIAL_BYTES:
-                payload["answered_emlis_questions"].pop()
-                payload["sources"].pop(key)
-                sources.pop(key)
-                break
+            if question:
+                payload["answered_emlis_questions"].append({
+                    "question": question, "answer": answer, "answer_source": key, "sources": record_source_keys,
+                })
+                if len(_compact(payload).encode()) > _MAX_MATERIAL_BYTES:
+                    payload["answered_emlis_questions"].pop()
+                    payload["sources"].pop(key)
+                    sources.pop(key)
+                    break
             skipped_source_keys.append(key)
         if skipped and skipped_source_keys:
             control = {"question": skipped, "sources": skipped_source_keys}
@@ -909,10 +911,15 @@ def _candidate(question, *, plan, lane, material, question_key=None):
             source_id = anchor.source.source_id
             body = _normal(question.partition(_CITATION_JOIN)[2])
             for row in material["records"]:
+                answers = row.get("emlis_answered_questions", [])
+                if any(answer.get("id") == source_id
+                        and (previous := answer.get("previous_question") or answer.get("question"))
+                        and _normal(previous) in (normalized, body) for answer in answers):
+                    return None
                 dismissed = row.get("emlis_skipped_question")
                 if dismissed and _normal(dismissed) in (normalized, body) and (
                         row["id"] == source_id or any(answer.get("id") == source_id
-                            for answer in row.get("emlis_answered_questions", []))):
+                            for answer in answers)):
                     return None
     receipt = {
         "policy_version": _POLICY_VERSION, "lane": lane, "focus": plan.focus,

@@ -23,6 +23,7 @@ from .contracts import EngineStatus
 from .emlis_thread_contracts import SupplementalAnswerSource, InterpretationCorrectionSource
 from .emlis_thread_source import FrozenSupplementalAnswer, freeze_supplemental_answer
 from .piece_source import PieceSourceMeaning, build_piece_source_meaning
+from .emlis_answer_update import BoundFeelingCircumstance
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -45,6 +46,7 @@ class PieceRefinedSourceSnapshot:
     prior_revisions: tuple[tuple[SupplementalAnswerSource, tuple[int, int]], ...] = ()
     effective_round_sources: bool = False
     feeling_question_id: str | None = None
+    feeling_circumstance: BoundFeelingCircumstance | None = None
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -147,6 +149,11 @@ def _source_payload(source):
     # Existing ADD source identities and private saved bytes remain exact.
     if source.feeling_question_id is None:
         del result['feeling_question_id']
+    if source.feeling_circumstance is None:
+        del result['feeling_circumstance']
+    else:
+        for key in ('feeling_range', 'circumstance_range'):
+            result['feeling_circumstance'][key] = list(result['feeling_circumstance'][key])
     if not source.original_active_ranges and source.supplemental_active_range is None:
         del result['original_active_ranges']
         del result['supplemental_active_range']
@@ -408,7 +415,8 @@ def validate_correction_meaning(meaning):
         'piece_correction_evidence_binding')
 
 
-def _supplemental_meaning(answer, owner_id, active_range=None, *, feeling_question_id=None):
+def _supplemental_meaning(answer, owner_id, active_range=None, *, feeling_question_id=None,
+                          bound_complete_clause=False):
     """Adapt existing finite grammar, then bind every node to its answer source.
 
     The temporary text view is only a parser input. It is not retained as
@@ -435,7 +443,8 @@ def _supplemental_meaning(answer, owner_id, active_range=None, *, feeling_questi
     view = PieceSourceSnapshot(owner_id, answer.answer_id, answer.source_version,
                                literal + ('。' if grammar_stop else ''))
     parsed = build_piece_source_meaning(view, expected_owner_id=owner_id,
-        expected_saved_input_id=answer.answer_id, expected_source_version=answer.source_version)
+        expected_saved_input_id=answer.answer_id, expected_source_version=answer.source_version,
+        bound_complete_clause=bound_complete_clause)
     _require(bool(frozen.evidence_refs))
     if active_range is not None:
         _require(len(parsed.graph.nodes) == 1 and not parsed.role_bindings
@@ -486,7 +495,8 @@ def validate_supplemental_meaning(meaning):
     # does not enter this function; this is generation-time source validation.
     _require(type(meaning.grammar_owner_id) is str and bool(meaning.grammar_owner_id.strip()))
     expected = _supplemental_meaning(meaning.frozen_answer.source, meaning.grammar_owner_id, meaning.active_range,
-                                     feeling_question_id=meaning.feeling_question_id)
+                                     feeling_question_id=meaning.feeling_question_id,
+                                     bound_complete_clause=meaning.bound_complete_clause)
     # The grammar's local owner is not part of its graph/source identity.
     _require(meaning == expected, 'piece_refined_answer_evidence_binding')
 
@@ -642,6 +652,55 @@ def supplemental_feeling_account(meaning):
     return True
 
 
+def _validate_feeling_circumstance_source(source):
+    """Rebind exact authored sides of the authenticated single-answer relation."""
+    bound = source.feeling_circumstance
+    answer = source.supplemental
+    original = json.loads(source.original.saved_original_json)
+    memo = original['memo']
+    answer_text = answer.answer_text_private
+    _require(type(bound) is BoundFeelingCircumstance
+        and type(memo) is str and not (original['memo_action'] or '').strip()
+        and bound.question_id == answer.question_id and bound.answer_id == answer.answer_id
+        and answer.round_index == 1 and source.supplemental_update_operation == 'ADD'
+        and not source.effective_round_sources and source.feeling_question_id is None,
+        'piece_feeling_circumstance_source_binding')
+    for literal, span in ((memo, bound.feeling_range), (answer_text, bound.circumstance_range)):
+        start, end = span
+        _require(0 <= start < end <= len(literal) and not literal[:start].strip()
+            and literal[end:].strip() in ('', '。', '！', '!')
+            and not re.search(r'[\r\n?？「」『』]', literal), 'piece_feeling_circumstance_source_binding')
+
+
+def feeling_circumstance_blocks(meaning):
+    """Exact source clauses, plus the connective licensed by their saved Q&A."""
+    if (type(meaning) is not PieceRefinedMeaning
+            or type(meaning.source) is not PieceRefinedSourceSnapshot
+            or meaning.source.feeling_circumstance is None):
+        return None
+    _validate_feeling_circumstance_source(meaning.source)
+    parts = (meaning.original, meaning.supplemental)
+    _require(all(part is not None and part.bound_complete_clause and not part.role_bindings
+        and not part.nominal_references and not part.expression_scopes and len(part.graph.nodes) == 1
+        for part in parts), 'piece_feeling_circumstance_source_binding')
+    originals = tuple(part.graph.nodes[0].value for part in parts)
+    complete = tuple(raw if raw.endswith(('。', '！', '!')) else raw + '。' for raw in originals)
+    return originals, (complete[0], 'というのも、' + complete[1])
+
+
+def validate_feeling_circumstance_body(meaning, blocks):
+    """The only permitted new connector is the proved answer relationship."""
+    admitted = feeling_circumstance_blocks(meaning)
+    if admitted is None:
+        return False
+    originals, connected = admitted
+    _require(len(blocks) == 2 and all(
+        text in (raw, linked) or not raw.endswith(('。', '！', '!')) and text == raw + '。'
+        for text, raw, linked in zip(blocks, originals, connected, strict=True)),
+        'piece_feeling_circumstance_meaning_not_preserved')
+    return True
+
+
 def build_refined_meaning(request):
     from piece_v2_generation import PieceSourceSnapshot
     source = request.source
@@ -695,6 +754,9 @@ def build_refined_meaning(request):
         'piece_refined_answer_commitment')
     _require(type(source.effective_round_sources) is bool
         and type(source.prior_revisions) is tuple, 'piece_refined_active_range_binding')
+    circumstance = source.feeling_circumstance
+    if circumstance is not None:
+        _validate_feeling_circumstance_source(source)
     if source.effective_round_sources:
         _require(bool(source.original_active_ranges)
             and len(source.prior_revisions) < answer.round_index,
@@ -733,9 +795,10 @@ def build_refined_meaning(request):
         original_meaning = build_piece_source_meaning(original,
             expected_owner_id=request.expected_owner_id,
             expected_saved_input_id=request.expected_saved_input_id,
-            expected_source_version=request.expected_source_version)
+            expected_source_version=request.expected_source_version,
+            bound_complete_clause=circumstance is not None)
         supplemental = _supplemental_meaning(answer, original.owner_id,
-                                            feeling_question_id=source.feeling_question_id)
+            feeling_question_id=source.feeling_question_id, bound_complete_clause=circumstance is not None)
     else:
         original_meaning = _active_original_meaning(original, source.original_active_ranges)
         if source.supplemental_update_operation == 'REVISE':
@@ -746,7 +809,7 @@ def build_refined_meaning(request):
         else:
             _require(source.supplemental_active_range is None, 'piece_refined_active_range_binding')
             supplemental = None
-    if supplemental is not None:
+    if supplemental is not None and circumstance is None:
         _require(all(re.match(r'^(?:(?:以前|当時|今|現在|これから)[はも][、，,]\s*)?'
                              r'(?:私|わたし|僕|ぼく|俺|おれ)(?:は|が|にとって)', n.value)
                      or supplemental_feeling_time_span(supplemental, n) is not None
@@ -787,6 +850,9 @@ def validate_refined_preservation(meaning, plan, artifact):
         and artifact.piece_text == '\n\n'.join(artifact.body_blocks)
         and artifact.piece_text_hash == _sha(artifact.piece_text.encode()),
         'piece_refined_artifact_binding')
+    if validate_feeling_circumstance_body(meaning, artifact.body_blocks):
+        check_existing_detectors(artifact.piece_text)
+        return
     count = len(plan.original_plan.block_node_ids)
     extra = sum(len(child.block_node_ids) for _, child in refined_meaning_parts(meaning, plan)[1:])
     _require(len(artifact.body_blocks) == count + extra,
@@ -807,9 +873,13 @@ def realize_refined_piece_artifact(meaning, plan, *, tier, requested_format):
     _require(plan == _plans(meaning), 'piece_refined_plan_binding')
     choose_format(tier=tier, requested=requested_format,
                   eligible=('short_essay',), recommended='short_essay')
-    parts = tuple(realize_piece_artifact(part, child, tier='free', requested_format=None)
-        for part, child in refined_meaning_parts(meaning, plan))
-    blocks = tuple(b for p in parts for b in p.body_blocks)
+    circumstance = feeling_circumstance_blocks(meaning)
+    if circumstance is not None:
+        blocks = circumstance[1]
+    else:
+        parts = tuple(realize_piece_artifact(part, child, tier='free', requested_format=None)
+            for part, child in refined_meaning_parts(meaning, plan))
+        blocks = tuple(b for p in parts for b in p.body_blocks)
     text = '\n\n'.join(blocks)
     artifact = PieceArtifact(blocks, text, _sha(text.encode()), 'short_essay', ('short_essay',))
     validate_refined_preservation(meaning, plan, artifact)

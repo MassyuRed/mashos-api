@@ -5,7 +5,7 @@ import asyncio
 import os
 
 from emlis_thread_service import Q3_PROFILE
-from emlis_thread_config import natural_reply_provider_settings
+from emlis_thread_config import observation_reply_provider_settings
 from cocolon_meaning_experience_engine.natural_reply import PROFILE, SelfHostedNaturalReplySource
 
 _initial_tasks = {}
@@ -20,7 +20,7 @@ def application_thread_service():
     if profile:
         if profile != PROFILE:
             raise ValueError("unsupported_emlis_response_profile")
-        settings = natural_reply_provider_settings()
+        settings = observation_reply_provider_settings()
         try:
             source = SelfHostedNaturalReplySource(**settings)
         except ValueError:
@@ -28,7 +28,9 @@ def application_thread_service():
             # The profile remains selected, so a new write cannot fall back.
             source = None
     return EmlisThreadService(runtime_profile=Q3_PROFILE, enforce_application_policy=True,
-                              natural_reply_source=source, response_profile=profile or None)
+                              natural_reply_source=source, response_profile=profile or None,
+                              natural_context_update_enabled=(
+                                  os.getenv("COCOLON_EMLIS_CONTEXT_UPDATE") == "true"))
 
 
 def schedule_initial_reply(owner, user_id, input_id):

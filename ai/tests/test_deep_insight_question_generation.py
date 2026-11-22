@@ -521,6 +521,24 @@ def test_saved_emlis_answer_does_not_take_the_prior_deep_insight_retry():
     assert [system for system, _ in calls] == [PLAN_SYSTEM_MESSAGE, WRITE_SYSTEM_MESSAGE, ANSWER_READ_SYSTEM_MESSAGE]
 
 
+def test_corrected_emlis_answer_keeps_its_verbatim_source_and_old_wording_is_deny_only():
+    quote = "夕方に会議を終えた"
+    previous = "どんな理由からですか？"
+    record = source(None, emlis_answered_questions=[{
+        "id": ANSWER_ID, "source_version": VERSION, "answered_at": STAMP,
+        "question": None, "previous_question": previous, "answer": quote + "。",
+    }])
+    plan = ask(source="r1.answer1", quote=quote, ask="会議を終えた理由")
+    duplicate, calls = run(material(record), plan, previous)
+    assert len(calls) == 2 and duplicate.disposition == "rejected"
+    assert calls[0][1]["sources"]["r1.answer1"]["text"] == quote + "。"
+    assert not calls[0][1]["answered_emlis_questions"]
+    assert all(previous not in json.dumps(payload, ensure_ascii=False) for _, payload in calls)
+    different_plan = {**plan, "focus": "CONDITION", "ask": "準備を終えるための条件"}
+    different, _ = run(material(record), different_plan, "どんな条件があれば準備を終えやすいですか？")
+    assert different.disposition == "selected" and different.candidate.receipt["source_id"] == ANSWER_ID
+
+
 @pytest.mark.parametrize(("last_id", "last_verdict", "expected"), [
     (3, "distinct", True), (2, "distinct", False), (3, "repeat", False), (3, "unclear", False),
 ])

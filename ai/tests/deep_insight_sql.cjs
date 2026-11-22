@@ -443,6 +443,106 @@ async function verifySkippedEmlisControls() {
   assert.equal((await context(owner)).material.records.some(row => 'emlis_skipped_question' in row), false);
 }
 
+async function verifyEffectiveEmlisControls() {
+  const owner = '00000000-0000-0000-0000-000000000032';
+  const originalThought = 'つらかったんです';
+  const originalAction = '翌日は別の資料を整理しました。';
+  const meetingAnswer = '会議がうまくできませんでした';
+  const staleAnswer = 'あの事情が理由でした。';
+  await db.exec('reset role');
+  await db.query('insert into auth.users values($1)', [owner]);
+  await db.query("insert into public.profiles(id,subscription_tier) values($1,'premium')", [owner]);
+  const original = await value(`insert into public.emotions(id,user_id,created_at,memo,memo_action)
+    values(gen_random_uuid(),$1,now() at time zone 'UTC' - interval '1 minute',$2,$3)
+    returning public.emlis_parent_source(emotions.*) as v`, [owner, originalThought, originalAction]);
+  const thread = await value(`insert into public.emlis_input_threads
+    (id,user_id,original_emotion_id,revision,state,issued_count,source_snapshot,source_prefix_ref,data)
+    values(gen_random_uuid(),$1,$2,1,'COMPLETED',2,$3,'prefix-answers',$4) returning id as v`,
+    [owner, original.id, JSON.stringify(original), JSON.stringify({original_source_ref: 'original',
+      body_state: 'FINAL', natural_meaning_profile: 'source_grounded_active_meaning.v1'})]);
+  async function addAnswer(round, question, answer) {
+    const questionId = 'effective-answer-' + round;
+    const answerId = await value('select gen_random_uuid() as v');
+    const metadata = {thread_id: thread, question_id: questionId, round_index: round,
+      original_source_ref: 'original'};
+    await db.query(`insert into public.emlis_thread_events(id,thread_id,seq,kind,round_index,question_id,payload)
+      values(gen_random_uuid(),$1,$2,'QUESTION',$3,$4,$5),($6,$1,$7,'ANSWER',$3,$4,$8)`,
+      [thread, round * 2 - 1, round, questionId, JSON.stringify({...metadata, prompt_private: question}),
+        answerId, round * 2, JSON.stringify({source: {...metadata,
+          answer_id: answerId, answer_text_private: answer, source_role: 'SUPPLEMENTAL_ANSWER',
+          source_version: 'cocolon.cmee.supplemental_answer.v1'}})]);
+    return answerId;
+  }
+  const staleId = await addAnswer(1, 'なにがつらかったんですか？', staleAnswer);
+  const meetingId = await addAnswer(2, 'その日に何がありましたか？', meetingAnswer);
+  const recordVersion = 'record-version';
+  function field(sourceId, role, name, text, start = 0) {
+    return {source_id: sourceId, source_role: role, record_ref: original.id, record_version: recordVersion,
+      field_path: name, text, scalar_start: start, scalar_end: start + [...text].length};
+  }
+  const thoughtField = field(original.id, 'ORIGINAL_INPUT', 'memo', originalThought);
+  const actionField = field(original.id, 'ORIGINAL_INPUT', 'memo_action', originalAction);
+  const staleField = field(staleId, 'SUPPLEMENTAL_ANSWER', 'memo', staleAnswer);
+  const meetingField = field(meetingId, 'SUPPLEMENTAL_ANSWER', 'memo', meetingAnswer);
+  async function saveObservation(seq, prefix, fields, {activeState = 'RESOLVED', materialOwner = owner} = {}) {
+    const material = {schema_version: 'cocolon.cmee.emlis_analysis_material.v1',
+      owner_scope: materialOwner, record_ref: original.id, record_version: recordVersion,
+      original_record: original, source_prefix_ref: prefix, coverage: {active_state: activeState},
+      active_fields: fields};
+    const observation = await value(`insert into public.emlis_thread_events
+      (id,thread_id,seq,kind,round_index,payload)
+      values(gen_random_uuid(),$1,$2,'OBSERVATION',2,$3) returning id as v`, [thread, seq, JSON.stringify({
+        source_prefix_ref: prefix, artifact: {meaning_profile: 'source_grounded_active_meaning.v1',
+          analysis_material: material},
+      })]);
+    await db.query(`update public.emlis_input_threads set last_observation_event_id=$2, source_prefix_ref=$3,
+      data=jsonb_set(data,'{analysis_material}',$4) where id=$1`,
+    [thread, observation, prefix, JSON.stringify(material)]);
+  }
+  await saveObservation(5, 'prefix-answers', [thoughtField, actionField, staleField, meetingField]);
+  await db.exec('set role service_role');
+  const read = () => context(owner);
+  const before = await read();
+  assert.deepEqual(before.material.records[0].emlis_answered_questions, []);
+  const unchanged = await context(plus);
+  await db.exec('reset role');
+  await db.exec(fs.readFileSync(path.join(root, 'supabase/migrations',
+    '20261122142000_deep_insight_effective_emlis_answers.sql'), 'utf8'));
+  await db.exec('set role service_role');
+  const both = await read();
+  assert.notEqual(both.guard, before.guard);
+  assert.deepEqual(await context(plus), unchanged);
+  assert.deepEqual(both.material.records[0].emlis_answered_questions.map(pair =>
+    [pair.id, pair.question_id, pair.answer]),
+  [[staleId, 'effective-answer-1', staleAnswer], [meetingId, 'effective-answer-2', meetingAnswer]]);
+  const thoughtProof = receipt(both.material.records[0], 'thought', originalThought, 0, [...originalThought].length);
+  await db.query(`insert into public.emlis_thread_events(id,thread_id,seq,kind,round_index,payload)
+    values(gen_random_uuid(),$1,6,'OPERATION',2,'{"stage":"INTERPRETATION_CORRECTION"}')`, [thread]);
+  await db.query("update public.emlis_input_threads set source_prefix_ref='prefix-corrected' where id=$1", [thread]);
+  assert.deepEqual((await read()).material.records, []);
+  await saveObservation(7, 'prefix-corrected', [actionField, meetingField], {activeState: 'PENDING'});
+  assert.deepEqual((await read()).material.records, []);
+  await saveObservation(8, 'prefix-corrected', [actionField, meetingField], {materialOwner: plus});
+  assert.deepEqual((await read()).material.records, []);
+  await saveObservation(9, 'prefix-corrected', [actionField, meetingField,
+    field(staleId, 'SUPPLEMENTAL_ANSWER', 'memo', staleAnswer.slice(1), 1)]);
+  const corrected = await read();
+  const [current] = corrected.material.records;
+  assert.equal(current.thought, null);
+  assert.equal(current.action, originalAction);
+  const earlier = both.material.records[0].emlis_answered_questions[1];
+  assert.deepEqual(current.emlis_answered_questions, [{...earlier, question: null, previous_question: earlier.question}]);
+  assert.notEqual(corrected.guard, both.guard);
+  assert.equal((await groundedIssue(owner, thoughtProof, {guard: both.guard})).status, 'no_question');
+  await fail('22023', () => groundedIssue(owner, thoughtProof, {guard: corrected.guard}));
+  const meetingProof = receipt(current.emlis_answered_questions[0], 'answer', meetingAnswer, 0, [...meetingAnswer].length);
+  const issued = await groundedIssue(owner, meetingProof, {guard: corrected.guard});
+  assert.equal(issued.status, 'issued');
+  const saved = await answer(owner, issued.question, '会議の前に手順を確認していました。');
+  assert.equal((await state(owner)).history[0].id, saved.question.id);
+  assert.equal((await state(owner)).history[0].answer_text, saved.question.answer_text);
+}
+
 async function run() {
   await db.exec(`create role anon; create role authenticated; create role service_role bypassrls;
     create schema auth; create table auth.users(id uuid primary key);
@@ -647,11 +747,13 @@ async function run() {
   await fail('P0002', () => readQuestion(free, oldQuestion));
   await fail('P0002', () => readQuestion(plus, '00000000-0000-0000-0000-000000000000'));
   await verifySkippedEmlisControls();
+  await verifyEffectiveEmlisControls();
 
   for (const role of ['anon', 'authenticated']) {
     await db.exec('set role ' + role);
     await fail('42501', () => state(free));
     await fail('42501', () => context(free));
+    await fail('42501', () => value('select public.deep_insight_material($1) as v', [free]));
     await fail('42501', () => themeContext(free, '人間関係'));
     await fail('42501', () => readQuestion(plus, oldQuestion));
     await fail('42501', () => db.query('select * from public.deep_insight_questions'));

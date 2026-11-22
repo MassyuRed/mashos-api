@@ -3137,10 +3137,14 @@ def _active_sources(source_set):
     """Apply whole-clause corrections to occurrences before period grouping."""
     originals = {s.record_ref: s for s in source_set.sources
                  if s.envelope.source_role == 'ORIGINAL_INPUT'}
+    bound_feelings = {s.record_ref: s.feeling_circumstance_ranges[0] for s in source_set.sources
+                      if s.feeling_circumstance_ranges is not None}
     excluded, views, updates, replacement_updates = {}, [], [], {}
     for answer in source_set.sources:
         if answer.envelope.source_role not in {'SUPPLEMENTAL_ANSWER', 'USER_INTERPRETATION_CORRECTION'}:
             views.append(answer)
+            continue
+        if answer.feeling_circumstance_no_update:
             continue
         raw = source_field_text(answer, 'memo')
         text = raw.strip().rstrip('。．.')
@@ -3156,7 +3160,10 @@ def _active_sources(source_set):
                 # correction proof below; other explanations remain pending.
                 raise AnalysisSourceError('analysis_interpretation_correction_pending')
             earlier = tuple(source for source in views if source.record_ref == answer.record_ref)
-            _admit_ordinary_supplement(answer, earlier, excluded)
+            # This answer has already been re-read with its actual question and
+            # original evidence by the shared CMEE source owner.
+            if answer.feeling_circumstance_ranges is None:
+                _admit_ordinary_supplement(answer, earlier, excluded)
             views.append(answer)
             continue
         old = match['old'].rstrip('。．.')
@@ -3189,6 +3196,11 @@ def _active_sources(source_set):
                 target_is_self_claim = True
         # Quote location alone cannot prove that a reported first-person
         # clause belongs to the current user. Preserve its original scope.
+        if (not target_is_self_claim and answer.envelope.source_role == 'USER_INTERPRETATION_CORRECTION'
+                and target.field_path == 'memo' and bound_feelings.get(answer.record_ref) ==
+                (target.scalar_start, target.scalar_end)):
+            # The saved question and answer already prove this exact owned feeling.
+            target_is_self_claim = True
         if not target_is_self_claim and _action_change_pair(original, original_plan, target.source_span_id):
             target_is_self_claim = sum(e.source_span_id == target.source_span_id
                 for _, e in _self_propositions(original, plan=original_plan)) == 2

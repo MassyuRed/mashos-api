@@ -607,7 +607,8 @@ def _model_fields_source(request, *, allow_supplements=False, allow_source_updat
 EMLIS_ANALYSIS_MATERIAL_SCHEMA = 'cocolon.cmee.emlis_analysis_material.v1'
 
 
-def prepare_emlis_analysis_material(request, *, owner_scope, original_record, as_of):
+def prepare_emlis_analysis_material(request, *, owner_scope, original_record, as_of,
+                                    include_corrected_circumstance=False):
     """Reuse the saved Analysis owners for one private, source-bound material.
 
     Active text and finite interpretation are independent results. An unread
@@ -622,7 +623,8 @@ def prepare_emlis_analysis_material(request, *, owner_scope, original_record, as
         analysis_semantic_source_duties)
 
     admitted, projected = emlis_analysis_source_request(request,
-        owner_scope=owner_scope, original_record=original_record, as_of=as_of)
+        owner_scope=owner_scope, original_record=original_record, as_of=as_of,
+        include_corrected_circumstance=include_corrected_circumstance)
     frozen = freeze_analysis_sources(projected)
     member = projected.members[0]
     answer_times = {a.source.answer_id: dict(recorded_at=a.source.recorded_at,
@@ -709,6 +711,24 @@ def prepare_emlis_analysis_material(request, *, owner_scope, original_record, as
                 'PARTIAL' if residual else 'ALL_ACTIVE_RANGES_COVERED'),
             full_source_semantic_coverage=False,
             interpretation_status='UNASSESSED'), reason_codes=reason_codes)
+    if include_corrected_circumstance and admitted.control.interpretation_corrections:
+        bound_answer = next((source for source in frozen.sources
+            if source.feeling_circumstance_ranges is not None), None)
+        if bound_answer is not None:
+            original = next(source for source in frozen.sources
+                if source.envelope.source_role == 'ORIGINAL_INPUT')
+            feeling_range, _ = bound_answer.feeling_circumstance_ranges
+            if graph is None or not any(
+                update.target_evidence.source_envelope_id == original.envelope.envelope_id
+                and update.target_evidence.field_path == 'memo'
+                and (update.target_evidence.scalar_start, update.target_evidence.scalar_end) == feeling_range
+                for update in graph.source_updates
+            ):
+                return prepare_emlis_analysis_material(request, owner_scope=owner_scope,
+                    original_record=original_record, as_of=as_of)
+            # Old rows rederive from their original scope. Only new material
+            # whose exact feeling premise was updated records this choice.
+            payload['corrected_circumstance'] = True
     # Use the same JSON value before save and after reread, including tuple
     # coordinates in the existing graph. The ref commits every private leaf.
     payload = json.loads(canonical(payload))
@@ -758,8 +778,11 @@ def admit_saved_emlis_analysis_material(raw, *, owner_scope, tier, as_of):
         raise AnalysisSourceError('analysis_emlis_material_binding_invalid')
     if _time(saved['as_of']) > _time(as_of):
         raise AnalysisSourceError('analysis_emlis_material_binding_invalid')
+    if 'corrected_circumstance' in saved and saved['corrected_circumstance'] is not True:
+        raise AnalysisSourceError('analysis_emlis_material_binding_invalid')
     expected = prepare_emlis_analysis_material(_request(snapshot), owner_scope=owner_scope,
-        original_record=raw['original'], as_of=saved['as_of'])
+        original_record=raw['original'], as_of=saved['as_of'],
+        include_corrected_circumstance=saved.get('corrected_circumstance', False))
     if expected != saved:
         raise AnalysisSourceError('analysis_emlis_material_binding_invalid')
     return saved
@@ -4527,6 +4550,11 @@ class AnalysisSemanticMapInput:
                 'coverage内のfieldはsource_material_fieldで、field_bindingsにより今回のfieldへ対応します。'
                 'source_node_bindingsと注記のtarget_refは同じrecord/material内の読取り参照で、出力node_idではありません。'
                 'recordがnullの未確定sourceは有効事実・node根拠にせず、推測で補いません。')
+        if material.get('answered_feeling_circumstances'):
+            instruction += ('\nanswered_feeling_circumstancesは、本人が問いに答えて明らかにした出来事と気持ちの結び付きです。'
+                'circumstanceとfeelingに示す二つの欄の本人原文を一緒に読んで、この一回の関係を保持します。'
+                'scalar_rangeは欄の原文での位置です。'
+                '他の出来事や理由へ広げず、根拠は示された本人原文から取ります。')
         if material.get('map_corrections'):
             instruction += ('\nmap_correctionsは保存されたAIの読みへの本人訂正です。target_contextはAI対象を指す制御情報で、本人の根拠ではありません。'
                 '本人説明だけをUSER_ANALYSIS_MAP_CORRECTIONのfieldとして提示しています。そのfieldは根拠として引用できます。'
@@ -4587,7 +4615,16 @@ def prepare_analysis_semantic_map(request, snapshot, *,
                     text=f['text'], source=by_envelope[f['source_envelope_id']],
                     evidence=EvidenceRef(**f['evidence'])) for f in handoff['active_fields']]
             else:
-                _, member_fields = _model_fields_source(single, allow_supplements=True, allow_source_updates=True)
+                local, member_fields = _model_fields_source(single,
+                    allow_supplements=True, allow_source_updates=True)
+                if member.interpretation_corrections and any(s.circumstance_control for s in member.supplements):
+                    # Validate the existing complete-replacement rule here so
+                    # a pending repair cannot block unrelated eligible records.
+                    from .intent_compiler import compile_observed_graph
+                    compile_observed_graph(local)
+                    # The pending Emlis handoff still holds the superseded
+                    # feeling. Only the proved Analysis fields go to the author.
+                    handoffs.pop(member.saved_record_ref, None)
         except AnalysisSourceError as exc:
             if str(exc) not in known_exclusions:
                 raise
@@ -4621,8 +4658,9 @@ def prepare_analysis_semantic_map(request, snapshot, *,
     frozen = freeze_analysis_sources(request)
     source_order = {source.envelope.envelope_id: index for index, source in enumerate(frozen.sources)}
     from .intent_compiler import _active_sources
-    active_source_updates = (bool(_active_sources(frozen)[2])
-        if any(m.supplements or m.interpretation_corrections for m in request.members) else False)
+    source_updates = (_active_sources(frozen)[2]
+        if any(m.supplements or m.interpretation_corrections for m in request.members) else ())
+    active_source_updates = bool(source_updates)
     fields.sort(key=lambda field: (source_order[field['source'].envelope.envelope_id],
                                   ('memo', 'memo_action').index(field['field_path'])))
     originals = {m.saved_record_ref: json.loads(m.original_json) for m in request.members}
@@ -4647,6 +4685,31 @@ def prepare_analysis_semantic_map(request, snapshot, *,
                 for c in m.interpretation_corrections if c.correction_id == source.envelope.source_record_id)
             material_fields[-1]['source_recorded_at'] = correction.recorded_at
         stored_fields.append((index, field['text'], source.record_ref, field['evidence']))
+    answered_circumstances = []
+    for answer in frozen.sources:
+        if answer.feeling_circumstance_ranges is None:
+            continue
+        feeling_range, circumstance_range = answer.feeling_circumstance_ranges
+        if any((update.target_evidence.scalar_start, update.target_evidence.scalar_end) == feeling_range
+                and update.record_ref == answer.record_ref and update.target_evidence.field_path == 'memo'
+                for update in source_updates):
+            continue
+        endpoints = {}
+        for field in fields:
+            source, evidence = field['source'], field['evidence']
+            if source.record_ref != answer.record_ref or field['field_path'] != 'memo':
+                continue
+            if source.envelope.source_role == 'ORIGINAL_INPUT':
+                name, (start, end) = 'feeling', feeling_range
+            elif source.envelope.envelope_id == answer.envelope.envelope_id:
+                name, (start, end) = 'circumstance', circumstance_range
+            else:
+                continue
+            if evidence.scalar_start <= start < end <= evidence.scalar_end:
+                endpoints[name] = dict(field=field_numbers[field['field_ref']],
+                    scalar_range=[start - evidence.scalar_start, end - evidence.scalar_start])
+        _semantic_map_require(set(endpoints) == {'feeling', 'circumstance'}, 'analysis_supplement_binding_invalid')
+        answered_circumstances.append(dict(record=ordinals[answer.record_ref], **endpoints))
     correction_material, correction_private = [], []
     for row, source in corrections:
         eligible = set(source.cohort_refs) <= set(ordinals)
@@ -4675,6 +4738,8 @@ def prepare_analysis_semantic_map(request, snapshot, *,
         if ref in questions:
             records[-1]['deep_insight_question'] = questions[ref].question_text
     material = dict(analysis_as_of=frozen.period[1], records=records, fields=material_fields)
+    if answered_circumstances:
+        material['answered_feeling_circumstances'] = answered_circumstances
     if correction_material:
         material['map_corrections'] = correction_material
     if handoffs:
@@ -4947,6 +5012,9 @@ def prepare_semantic_leaf(parent, record_refs):
     if 'emlis_source_materials' in material:
         material['emlis_source_materials'] = [h for h in material['emlis_source_materials']
             if h['record'] in ordinals]
+    if 'answered_feeling_circumstances' in material:
+        material['answered_feeling_circumstances'] = [row for row in material['answered_feeling_circumstances']
+            if row['record'] in ordinals]
     if 'source_duties' in material:
         # Relations remain control metadata; only claims/ranges of this leaf
         # are displayed. The final merge receives the complete parent duties.
@@ -5019,6 +5087,10 @@ def prepare_semantic_merge(parent, leaves):
     # could be stored even though the synthesis author never received it.
     for claim in json.loads(parent.source_duties_json or '{}').get('claims', []):
         ranges.setdefault(claim['field'], []).append((claim['scalar_start'], claim['scalar_end']))
+    for relation in material.get('answered_feeling_circumstances', ()):
+        for name in ('feeling', 'circumstance'):
+            endpoint = relation[name]
+            ranges.setdefault(endpoint['field'], []).append(tuple(endpoint['scalar_range']))
     for number, text, dependency, _ in parent.fields:
         if type(dependency) is tuple:
             ranges[number] = [(0, len(text))]

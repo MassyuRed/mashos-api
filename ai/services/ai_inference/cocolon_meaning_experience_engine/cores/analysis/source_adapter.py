@@ -16,7 +16,7 @@ from emlis_ai_current_input_bundle import normalize_emlis_current_input
 from emlis_ai_evidence_ledger_service import build_evidence_ledger
 from ...contracts import EvidenceRef, SourceEnvelope
 from ...source_kernel import _text_span_raw_subrange
-from ...emlis_thread_contracts import InterpretationCorrectionSource
+from ...emlis_thread_contracts import EmlisClarificationV1, InterpretationCorrectionSource, SupplementalAnswerSource
 
 POLICY = 'cocolon.cmee.analysis.observed.offline.v1'
 ORIGINAL_FIELDS = frozenset(('id', 'created_at', 'memo', 'memo_action',
@@ -38,6 +38,12 @@ class AnalysisSourceError(ValueError):
 
 
 @dataclass(frozen=True, slots=True, repr=False)
+class AnalysisCircumstanceControl:
+    question: EmlisClarificationV1
+    answer: SupplementalAnswerSource
+
+
+@dataclass(frozen=True, slots=True, repr=False)
 class AnalysisSupplement:
     source_id: str
     owner_scope: str
@@ -47,6 +53,7 @@ class AnalysisSupplement:
     source_version: str
     # Only a saved, permitted supplemental answer, not question/control text.
     source_role: str = 'SUPPLEMENTAL_ANSWER'
+    circumstance_control: AnalysisCircumstanceControl | None = None
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -102,6 +109,9 @@ class AnalysisSource:
     evidence: tuple[EvidenceRef, ...] = field(repr=False)
     # Parser view only; the envelope and field bounds remain the full source.
     scoped_memo_range: tuple[int, int] | None = None
+    # Rederived authored cause and feeling coordinates; the AI question was control only.
+    feeling_circumstance_ranges: tuple[tuple[int, int], tuple[int, int]] | None = None
+    feeling_circumstance_no_update: bool = False
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -178,6 +188,56 @@ def _checked_deep_insight_question(record, original):
     except (ValueError, TypeError, AttributeError):
         raise AnalysisSourceError('analysis_deep_insight_binding_invalid') from None
     return asdict(question)
+
+
+def analysis_circumstance_control(admitted, *, include_corrected=False):
+    from ...emlis_question import PERSONAL_FEELING_CIRCUMSTANCE
+
+    # Saved Emlis material keeps its existing projection. Analysis can rebind
+    # the earlier answer independently before applying later source updates.
+    control = admitted.control.question_control_context
+    question = control.pending_question
+    if (len(admitted.answers) != 1 or (admitted.control.interpretation_corrections and not include_corrected)
+            or question is None or question.decision.target_kind != PERSONAL_FEELING_CIRCUMSTANCE):
+        return None
+    return AnalysisCircumstanceControl(question, admitted.answers[0].source)
+
+
+def _checked_feeling_circumstance(supplement, original, corrections):
+    from emlis_ai_current_input_bundle import build_emlis_current_input_bundle
+    from ...contracts import GenerationRequest
+    from ...emlis_answer_update import bound_feeling_circumstance, prepare_emlis_meaning
+    from ...emlis_thread_contracts import EmlisQuestionControlV1, EmlisThreadInputV1
+
+    control = supplement.circumstance_control
+    try:
+        if (type(control) is not AnalysisCircumstanceControl
+                or type(control.question) is not EmlisClarificationV1
+                or type(control.answer) is not SupplementalAnswerSource):
+            raise ValueError
+        answer, question = control.answer, control.question
+        if (answer.answer_id != supplement.source_id or answer.answer_text_private != supplement.text
+                or answer.question_id != question.question_id or answer.round_index != 1
+                or question.parent_request_id != 'emlis-' + question.thread_id
+                or any(c.thread_id != answer.thread_id or _time(c.recorded_at) < _time(answer.recorded_at)
+                       for c in corrections)):
+            raise ValueError
+        adapted = dict(original, created_at=_time(original['created_at'], saved_utc=True).isoformat(),
+            memo=original['memo'] or '', memo_action=original['memo_action'] or '')
+        question_control = EmlisQuestionControlV1(question, (question.decision.target_ref,), 1,
+            issued_questions=(question,), question_limit=3)
+        thread = EmlisThreadInputV1(question.thread_id, question.original_source_ref,
+            answers=(answer,), current_round=1, capability_snapshot='Q3_FREE', question_control_context=question_control)
+        request = GenerationRequest(question.parent_request_id, build_emlis_current_input_bundle(adapted),
+            original['id'], execution_mode='EMLIS_APPLICATION', emlis_thread=thread)
+        prepared = prepare_emlis_meaning(request)
+        witness = bound_feeling_circumstance(prepared)
+    except (AttributeError, KeyError, TypeError, ValueError):
+        raise AnalysisSourceError('analysis_supplement_binding_invalid') from None
+    if witness is not None:
+        return {'feeling_circumstance_ranges': (witness.feeling_range, witness.circumstance_range)}
+    return {'feeling_circumstance_no_update':
+        prepared.checkpoint.answer_update.disposition == 'NO_MATERIAL_UPDATE'}
 
 
 def _source(record, role, source_id, version, original):
@@ -301,6 +361,10 @@ def freeze_analysis_sources(request: AnalysisObservedMapRequest) -> AnalysisSour
             [s.source_id, s.owner_scope, s.parent_record_ref, s.parent_record_version,
              s.text, s.source_version, s.source_role] for s in member.supplements
              if type(s) is AnalysisSupplement]])
+        controls = [asdict(s.circumstance_control) for s in member.supplements
+                    if type(s.circumstance_control) is AnalysisCircumstanceControl]
+        if controls:
+            identity = commitment([identity, controls])
         if type(member.interpretation_corrections) is not tuple:
             raise AnalysisSourceError('analysis_correction_binding_invalid')
         if member.interpretation_corrections:
@@ -370,6 +434,11 @@ def freeze_analysis_sources(request: AnalysisObservedMapRequest) -> AnalysisSour
             for supplement in member.supplements:
                 child = _source(member, 'SUPPLEMENTAL_ANSWER', supplement.source_id,
                     supplement.source_version, {'id': ref, 'memo': supplement.text})
+                if supplement.circumstance_control is not None:
+                    if len(member.supplements) != 1:
+                        raise AnalysisSourceError('analysis_supplement_binding_invalid')
+                    child = replace(child, **_checked_feeling_circumstance(
+                        supplement, original, member.interpretation_corrections))
                 sources.append(child)
                 children.append(child.envelope.envelope_id)
             for correction in member.interpretation_corrections:
@@ -395,7 +464,8 @@ def freeze_analysis_sources(request: AnalysisObservedMapRequest) -> AnalysisSour
                              period, tuple(members), tuple(sources), category_records)
 
 
-def emlis_analysis_source_request(request, *, owner_scope, original_record, as_of):
+def emlis_analysis_source_request(request, *, owner_scope, original_record, as_of,
+                                  include_corrected_circumstance=False):
     """Project one admitted thread to the existing saved-source owner.
 
     The caller supplies its owner-resolved saved seven fields and real snapshot
@@ -441,9 +511,13 @@ def emlis_analysis_source_request(request, *, owner_scope, original_record, as_o
         if _time(source.recorded_at) > end:
             raise AnalysisSourceError('emlis_analysis_future_source')
     version = commitment(original)
+    circumstance = analysis_circumstance_control(
+        admitted, include_corrected=include_corrected_circumstance)
+    if request.request_id != 'emlis-' + admitted.control.thread_id:
+        circumstance = None
     answers = tuple(AnalysisSupplement(a.source.answer_id, owner_scope,
         original['id'], version, a.source.answer_text_private,
-        commitment(a.source.answer_text_private)) for a in admitted.answers)
+        commitment(a.source.answer_text_private), circumstance_control=circumstance) for a in admitted.answers)
     member = AnalysisSavedRecord(owner_scope, original['id'], version,
         original_json, answers,
         interpretation_corrections=admitted.control.interpretation_corrections)

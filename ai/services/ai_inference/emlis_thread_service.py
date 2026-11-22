@@ -348,7 +348,7 @@ class EmlisThreadService:
     def __init__(self, store=None, engine=None, *, runtime_profile=RUNTIME_PROFILE, enforce_application_policy=False,
                  semantic_profile=None, offline_candidate_source=None, offline_model_attempt_seconds=None,
                  natural_reply_source=None, response_profile=None, natural_questions_enabled=True,
-                 natural_meaning_profile=ACTIVE_MEANING_PROFILE):
+                 natural_meaning_profile=ACTIVE_MEANING_PROFILE, natural_context_update_enabled=True):
         if runtime_profile not in {RUNTIME_PROFILE, Q3_PROFILE}:
             raise ValueError("unsupported_thread_profile")
         if natural_reply_source is not None:
@@ -359,9 +359,10 @@ class EmlisThreadService:
             raise ValueError("unsupported_response_profile")
         self.response_profile = response_profile
         self.natural_reply_source = natural_reply_source
-        if type(natural_questions_enabled) is not bool:
+        if type(natural_questions_enabled) is not bool or type(natural_context_update_enabled) is not bool:
             raise ValueError("natural_question_setting_invalid")
         self.natural_questions_enabled = natural_questions_enabled
+        self.natural_context_update_enabled = natural_context_update_enabled
         if natural_meaning_profile not in {None, ACTIVE_MEANING_PROFILE}:
             raise ValueError('natural_reply_meaning_profile_invalid')
         self.natural_meaning_profile = natural_meaning_profile
@@ -474,6 +475,10 @@ class EmlisThreadService:
             if self.runtime_profile == Q3_PROFILE:
                 t["data"].update(natural_question_policy=NATURAL_QUESTION_POLICY,
                     natural_questions_enabled=self.natural_questions_enabled and receive_questions)
+                if self.natural_context_update_enabled:
+                    # Pin context at thread start so changing the deployment setting
+                    # cannot change the prompt of an in-flight generation.
+                    t["data"]["natural_context_update_enabled"] = True
         self._begin(t, snapshot)
         if self.runtime_profile == Q3_PROFILE:
             t["data"].update(context_guards=[h["guard"] for h in snapshot["context"]["history"]],
@@ -949,7 +954,8 @@ class EmlisThreadService:
         try:
             decision, question = await asyncio.to_thread(question_candidate,
                 prepared.thread if prepared is not None else admitted, plan,
-                parent_request_id=request.request_id)
+                parent_request_id=request.request_id,
+                allow_affect_question=t["data"].get("natural_context_update_enabled") is True)
         except Exception:
             if prepared is not None:
                 raise
@@ -959,7 +965,7 @@ class EmlisThreadService:
     async def _process_natural(self, user_id, snapshot):
         from cocolon_meaning_experience_engine.natural_reply import (
             ARTIFACT_SCHEMA, NaturalReply, NaturalReplyError, prepare_natural_reply, validate_reply,
-            build_natural_reply_messages)
+            CORRECTED_SOURCE_CONTEXT_VERSION, SOURCE_CONTEXT_VERSION, build_natural_reply_messages)
         from cocolon_meaning_experience_engine.natural_reply_meaning import (
             SCHEMA as MEANING_REVIEW_SCHEMA, compare_reply_meaning)
         t = snapshot["thread"]
@@ -985,7 +991,20 @@ class EmlisThreadService:
         snapshot = copy.deepcopy(snapshot)
         snapshot["thread"]["data"]["natural_response_stage"] = response_stage
         t = snapshot["thread"]
+        received = self._natural_receipt(snapshot, "NATURAL_REPLY_RECEIVED")
+        started = self._natural_receipt(snapshot, "NATURAL_REPLY_CALL_STARTED")
+        prior = received or started
+        if prior is not None:
+            context_version = prior["payload"].get("writer_context_version")
+        elif t["data"].get("natural_context_update_enabled") is True:
+            context_version = CORRECTED_SOURCE_CONTEXT_VERSION if correcting else SOURCE_CONTEXT_VERSION
+        else:
+            context_version = None
+        if context_version not in {None, SOURCE_CONTEXT_VERSION, CORRECTED_SOURCE_CONTEXT_VERSION}:
+            raise NaturalReplyError('natural_reply_writer_identity_changed')
         material, safety = prepare_natural_reply(_request(snapshot), response_stage=response_stage,
+            bind_writer_context=context_version is not None,
+            include_corrected_circumstance=context_version == CORRECTED_SOURCE_CONTEXT_VERSION,
             prepared_meaning=prepared_meaning,
             meaning_profile=t['data'].get('natural_meaning_profile'), owner_scope=user_id,
             original_record=snapshot['original'], as_of=t['data'].get('natural_meaning_as_of'))
@@ -994,6 +1013,9 @@ class EmlisThreadService:
             writer_identity = {'meaning_profile': material.meaning_profile,
                 'writer_messages_sha256': hashlib.sha256(json.dumps(build_natural_reply_messages(material),
                     ensure_ascii=False, separators=(',', ':')).encode('utf-8')).hexdigest()}
+            writer_context = json.loads(material.writer_material_json).get('source_context_version')
+            if writer_context is not None:
+                writer_identity['writer_context_version'] = writer_context
 
         def check_writer_identity(event):
             payload = event['payload']
@@ -1001,12 +1023,10 @@ class EmlisThreadService:
                     or payload.get('meaning_profile') != material.meaning_profile):
                 raise NaturalReplyError('natural_reply_writer_identity_changed')
 
-        received = self._natural_receipt(snapshot, "NATURAL_REPLY_RECEIVED")
         if received:
             check_writer_identity(received)
             candidate = validate_reply(NaturalReply(**received["payload"]["reply"]), material)
         else:
-            started = self._natural_receipt(snapshot, "NATURAL_REPLY_CALL_STARTED")
             if started:
                 check_writer_identity(started)
                 return await self._finish(user_id, snapshot, body_state="UNAVAILABLE", state="RESPONSE_FAILED",

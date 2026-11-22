@@ -132,6 +132,7 @@ class PieceSourceMeaning:
     selected_feelings: tuple[PieceSelectedFeeling, ...] = ()
     selection_evidence: tuple[PieceSelectionEvidence, ...] = ()
     selection_contexts: tuple[MeaningNode, ...] = ()
+    bound_complete_clause: bool = False
 
 
 def piece_source_text(meaning: PieceSourceMeaning) -> str:
@@ -334,6 +335,39 @@ def _literal_self_account(sentence: str) -> bool:
                 and not _OMITTED_ACCOUNT_QUESTION.search(body)
                 and not _OMITTED_LEXICAL_SCOPE.search(body)
                 and not _OMITTED_NEW_PREFIX_GUARD.search(body))
+
+
+_WRITTEN_PAST_SELF_ACTION = re.compile(
+    r'(?P<object>[^、，,。]+)(?:を(?:(?:[一二三四五六七八九十数\d]+)つ)?|は)'
+    r'(?:並べ|選び|読み直し|出し|確かめ|決め)(?:ました|ませんでした|たくありませんでした)')
+_WRITTEN_PAST_SELF_THOUGHT = re.compile(
+    r'(?:自分で)?(?:確かめ|比べ|調べ)てから(?:決め|選び)たいと思いました')
+
+
+def _written_past_self_account_narrator(sentence: str) -> str | None:
+    """Retain a complete first-person report with its original time and polarity."""
+    from piece_v2_expression import _SELF_TOPIC, _DEPENDENT_START, _EMBEDDED_REPORT
+    from piece_v2_generation import (
+        _DEICTIC, _OMITTED_ACCOUNT_QUESTION, _OMITTED_LEXICAL_SCOPE,
+        _OMITTED_NEW_PREFIX_GUARD, _has_unread_explicit_account_scope,
+        _unproved_explicit_account_object,
+    )
+    topic = _SELF_TOPIC.fullmatch(sentence)
+    if topic is None or any(character in sentence for character in '「」『』"“”（）()\r\n'):
+        return None
+    body = topic['body'].strip()
+    if (any(pattern.search(body) for pattern in (_DEICTIC, _DEPENDENT_START,
+            _EMBEDDED_REPORT, _OMITTED_ACCOUNT_QUESTION, _OMITTED_LEXICAL_SCOPE,
+            _OMITTED_NEW_PREFIX_GUARD)) or _has_unread_explicit_account_scope(body)):
+        return None
+    action = _WRITTEN_PAST_SELF_ACTION.fullmatch(body)
+    if action is not None:
+        obj = action['object']
+        if not re.search('[はがを]', obj) and not _unproved_explicit_account_object(obj):
+            return topic['speaker']
+    elif _WRITTEN_PAST_SELF_THOUGHT.fullmatch(body) is not None:
+        return topic['speaker']
+    return None
 
 
 def _scoped_finite_self_person_action(sentence: str) -> re.Match[str] | None:
@@ -1385,7 +1419,7 @@ def _piece_editorial_roles(sentences: tuple[str, ...],
     return roles
 
 
-def _saved_field_projection(source) -> tuple[tuple[str, int, int], ...]:
+def _saved_field_projection(source, *, bound_complete_clause=False) -> tuple[tuple[str, int, int], ...]:
     """Map exact stored field strings into a non-narrative text working view.
 
     Offsets in PieceSentenceMeaning are view-relative. EvidenceRef scalar
@@ -1427,7 +1461,8 @@ def _saved_field_projection(source) -> tuple[tuple[str, int, int], ...]:
         # Complete action lines in the last nonempty field may omit stops.
         # An unfinished earlier field cannot borrow the next field.
         _sentences(text, allow_unpunctuated_account=(
-            key == 'memo_action' or not (record['memo_action'] or '').strip()))
+            key == 'memo_action' or not (record['memo_action'] or '').strip()),
+            bound_complete_clause=bound_complete_clause and key == 'memo')
         if parts:
             cursor += 2
         spans.append((key, cursor, cursor + len(text)))
@@ -1601,14 +1636,15 @@ def validate_piece_saved_fields(meaning: PieceSourceMeaning) -> None:
     expected = build_piece_source_meaning(
         source, expected_owner_id=source.owner_id,
         expected_saved_input_id=source.saved_input_id,
-        expected_source_version=source.source_version)
+        expected_source_version=source.source_version,
+        bound_complete_clause=meaning.bound_complete_clause)
     if expected != meaning:
         raise unavailable('piece_saved_field_binding')
 
 
 def build_piece_source_meaning(source: object, *, expected_owner_id: str,
                                expected_saved_input_id: str,
-                               expected_source_version: str) -> PieceSourceMeaning:
+                               expected_source_version: str, bound_complete_clause: bool = False) -> PieceSourceMeaning:
     # Import the established internal snapshot/grammar owner, not its output
     # compiler. Its complete-sentence admission is retained without a raw fallback.
     from piece_v2_generation import PieceSourceSnapshot, _sentences
@@ -1628,11 +1664,15 @@ def build_piece_source_meaning(source: object, *, expected_owner_id: str,
     if source.source_role != 'original' or source.source_stage not in (
             'normal_observation', 'pre_question_observation'):
         raise unavailable('source_role_or_stage_not_yet_supported')
-    fields = (_saved_field_projection(source) if source.saved_original_json is not None
+    fields = (_saved_field_projection(source, bound_complete_clause=bound_complete_clause)
+              if source.saved_original_json is not None
               else (('original_text', 0, len(source.original_text)),))
     text = source.original_text
     check_existing_detectors(text)
-    sentences = _sentences(text, allow_unpunctuated_account=source.saved_original_json is not None)
+    sentences = _sentences(text, allow_unpunctuated_account=source.saved_original_json is not None,
+                           bound_complete_clause=bound_complete_clause)
+    if bound_complete_clause and len(sentences) != 1:
+        raise unavailable('piece_feeling_circumstance_source_binding')
     for sentence in sentences:
         _validate_self_predicate_body(sentence)
     aliases = _role_bindings(text)
@@ -1740,4 +1780,4 @@ def build_piece_source_meaning(source: object, *, expected_owner_id: str,
     return PieceSourceMeaning(envelope, graph, tuple(evidence), tuple(meanings), aliases,
                               references, evaluations, scopes,
                               source if source.saved_original_json is not None else None,
-                              selections, selection_evidence, selection_nodes)
+                              selections, selection_evidence, selection_nodes, bound_complete_clause)

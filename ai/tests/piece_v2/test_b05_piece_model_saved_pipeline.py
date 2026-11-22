@@ -12,11 +12,12 @@ import httpx
 import pytest
 
 from piece_model_source import Shared4BPieceModelSource
+from piece_v2_contract import PieceContractError
 from test_cmee_piece_request_saved_pipeline import saved_piece_db, _run_saved_request
 from test_b05_refined_preview_saved_pipeline import refined_pipeline_db, _run_refined_pipeline
 
 
-def _provider(monkeypatch, case_id, default_blocks):
+def _provider(monkeypatch, case_id, default_blocks, *, realization_profile=None):
     seen = []
     recorded = os.environ.get('PIECE_MODEL_RECORDED_DIR')
     path = Path(recorded) / (case_id + '.private.json') if recorded else None
@@ -39,12 +40,24 @@ def _provider(monkeypatch, case_id, default_blocks):
             response['choices'][0]['message']['content'] = json.dumps(
                 {'field_blocks': dict(zip(keys, default_blocks, strict=True))}, ensure_ascii=False)
         seen.append(dict(prepared=prepared, response=response))
+        if realization_profile is not None:
+            seen[-1]['messages'] = material['messages']
         return httpx.Response(200, json=response)
 
-    source = Shared4BPieceModelSource(endpoint='https://piece.example/v1/chat/completions',
-        model=response['model'], api_key='synthetic-piece-key-not-a-secret',
-        transport=httpx.MockTransport(transport))
-    monkeypatch.setattr('piece_model_source.application_piece_model_source', lambda: source)
+    endpoint, key = 'https://piece.example/v1/chat/completions', 'synthetic-piece-key-not-a-secret'
+    if realization_profile is None:
+        source = Shared4BPieceModelSource(endpoint=endpoint, model=response['model'], api_key=key,
+            transport=httpx.MockTransport(transport))
+        monkeypatch.setattr('piece_model_source.application_piece_model_source', lambda: source)
+    else:
+        monkeypatch.setenv('PIECE_MODEL_SOURCE', 'shared_4b.cmee.v2')
+        monkeypatch.setenv('EMLIS_NATURAL_REPLY_ENDPOINT', endpoint)
+        monkeypatch.setenv('EMLIS_NATURAL_REPLY_MODEL', response['model'])
+        monkeypatch.setenv('EMLIS_NATURAL_REPLY_API_KEY', key)
+        def model_source(**options):
+            assert options['realization_profile'] == realization_profile and options['use_editorial_choices']
+            return Shared4BPieceModelSource(**options, transport=httpx.MockTransport(transport))
+        monkeypatch.setattr('piece_model_source.Shared4BPieceModelSource', model_source)
     return seen
 
 
@@ -106,6 +119,30 @@ def test_model_body_differs_from_old_author_and_remains_fixed_after_sql_save(sav
     assert result['detail']['piece_text'] != record['memo_action']
     assert len(seen[0]['prepared']['sources']) == 1
     _evidence('normal-request-' + tier, result, seen)
+
+
+@pytest.mark.parametrize('wrong_polarity', (False, True))
+def test_two_field_past_self_accounts_keep_model_bytes_and_negation(saved_piece_db, monkeypatch, wrong_polarity):
+    from cocolon_meaning_experience_engine.piece_v1c import MODEL_REALIZATION_PROFILE
+
+    memo = '私は、急いで結論を出したくありませんでした。私は、自分で確かめてから決めたいと思いました。'
+    action = '私は、午後に見本を三つ並べました。私は、値段の高い見本は選びませんでした。私は、残った二つの説明を読み直しました。'
+    model_action = action.replace('選びませんでした', '選びました') if wrong_polarity else action
+    case_id = 'two-field-past-self-accounts'
+    record = dict(id=case_id,
+        created_at=saved_piece_db.query("SELECT (now()-interval '5 seconds')::text AS stamp")['rows'][0]['stamp'],
+        memo=memo, memo_action=action, category=['生活','価値観'], emotions=['自己理解'],
+        emotion_details=[dict(type='自己理解', strength='medium')])
+    seen = _provider(monkeypatch, case_id, [memo, model_action], realization_profile=MODEL_REALIZATION_PROFILE)
+    if wrong_polarity:
+        with pytest.raises(PieceContractError, match='PIECE_SOURCE_NOT_ELIGIBLE'):
+            _run_saved_request(saved_piece_db, monkeypatch, record, tier='free')
+    else:
+        result = _run_saved_request(saved_piece_db, monkeypatch, record, tier='free')
+        assert result['detail']['piece_text'] == memo + '\n\n' + action
+        assert result['source_unchanged'] and result['emlis_unchanged']
+        assert result['quota_consumptions'] == 1
+    assert len(seen) == 1
 
 
 @pytest.mark.parametrize('case_id,answer', [('Q2-A', '私は寂しかった。'), ('Q2-C', '今は、私は嬉しい。')])

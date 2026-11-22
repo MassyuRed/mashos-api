@@ -35,6 +35,7 @@ from piece_v2_contract import PieceContractError, canonical_json_bytes, canonica
 from publish_governance import parse_iso_utc, timestamp_in_history_retention
 
 if TYPE_CHECKING:
+    from cocolon_meaning_experience_engine.emlis_answer_update import BoundFeelingCircumstance
     from cocolon_meaning_experience_engine.emlis_thread_contracts import SupplementalAnswerSource, InterpretationCorrectionSource
 
 # Exact projection of the existing emlis_parent_source SQL function. Unknown
@@ -105,6 +106,7 @@ class PieceSavedRefinedHandoff:
     prior_revisions: tuple[tuple[SupplementalAnswerSource, tuple[int, int]], ...] = ()
     _effective_checkpoints_json: bytes | None = field(default=None, repr=False)
     feeling_question_id: str | None = None
+    feeling_circumstance: BoundFeelingCircumstance | None = None
 
     def lineage_payload(self) -> dict:
         return json.loads(self._lineage_json)
@@ -623,6 +625,7 @@ def _natural_analysis_material_matches(saved, snapshot, body, request):
     if (profile != 'source_grounded_active_meaning.v1' or type(material) is not dict
             or artifact.get('analysis_state') not in {'GENERATED', 'NOT_GENERATED'}
             or artifact.get('analysis_state') != material.get('state')
+            or ('corrected_circumstance' in material and material['corrected_circumstance'] is not True)
             or material.get('source_prefix_ref') != body['payload'].get('source_prefix_ref')):
         return False
     try:
@@ -633,7 +636,8 @@ def _natural_analysis_material_matches(saved, snapshot, body, request):
             return False
         expected = prepare_emlis_analysis_material(request,
             owner_scope=saved.authenticated_owner_id,
-            original_record=saved.original_payload(), as_of=material['as_of'])
+            original_record=saved.original_payload(), as_of=material['as_of'],
+            include_corrected_circumstance=material.get('corrected_circumstance', False))
         return canonical_json_bytes(expected) == canonical_json_bytes(material)
     except (ValueError, TypeError, KeyError):
         return False
@@ -1168,7 +1172,9 @@ def _natural_refined_observation_handoff(saved: PieceSavedOriginal, snapshot: di
         _context_ref, _json, _request, NATURAL_QUESTION_POLICY,
         NATURAL_REPLY_PROFILE, Q3_PROFILE,
     )
-    from cocolon_meaning_experience_engine.emlis_answer_update import prepare_emlis_meaning
+    from cocolon_meaning_experience_engine.emlis_answer_update import (
+        bound_feeling_circumstance, prepare_emlis_meaning,
+    )
     from cocolon_meaning_experience_engine.emlis_thread_contracts import SEMANTIC_SCHEMA
     from cocolon_meaning_experience_engine.emlis_thread_source import admit_emlis_thread
     from cocolon_meaning_experience_engine.natural_reply import ARTIFACT_SCHEMA
@@ -1388,7 +1394,8 @@ def _natural_refined_observation_handoff(saved: PieceSavedOriginal, snapshot: di
     return PieceSavedRefinedHandoff(saved, frozen.source, thread_id, t['revision'],
         canonical_json_bytes(lineage), operation, original_ranges, answer_range,
         canonical_json_bytes(cp) if operation != 'ADD' else None,
-        feeling_question_id=_saved_personal_feeling_question(prepared, qp['decision'], frozen))
+        feeling_question_id=_saved_personal_feeling_question(prepared, qp['decision'], frozen),
+        feeling_circumstance=bound_feeling_circumstance(prepared))
 
 
 def _saved_personal_feeling_question(prepared, decision, frozen):
@@ -2078,6 +2085,7 @@ def project_saved_refined_source(handoff: PieceSavedRefinedHandoff, *, opted_in:
         prior_revisions=handoff.prior_revisions,
         effective_round_sources=handoff._effective_checkpoints_json is not None,
         feeling_question_id=handoff.feeling_question_id,
+        feeling_circumstance=handoff.feeling_circumstance,
         question_need_decision_identity=observation['question_need_decision_identity'],
         refined_result_identity=observation['emlis_observation_result_identity'],
         original_commitment=handoff.original.record_commitment,

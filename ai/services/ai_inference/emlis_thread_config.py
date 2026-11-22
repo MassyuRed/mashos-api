@@ -11,6 +11,15 @@ def natural_reply_provider_settings():
             "api_key": os.getenv("EMLIS_NATURAL_REPLY_API_KEY", "")}
 
 
+def observation_reply_provider_settings():
+    """Configure the Emlis observation author independently of other consumers."""
+    settings = {"endpoint": os.getenv("EMLIS_OBSERVATION_MODEL_ENDPOINT", ""),
+                "model": os.getenv("EMLIS_OBSERVATION_MODEL", ""),
+                "api_key": os.getenv("EMLIS_OBSERVATION_MODEL_API_KEY", "")}
+    # A partially configured dedicated provider must fail validation as a unit.
+    return settings if any(settings.values()) else natural_reply_provider_settings()
+
+
 def development_enabled():
     return (os.getenv("COCOLON_EMLIS_THREAD_DEVELOPMENT", "") == "true"
             and os.getenv("COCOLON_ENV", "") == "development")

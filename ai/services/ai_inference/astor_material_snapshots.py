@@ -100,13 +100,14 @@ async def _analysis_period_ids(owner: str, start: str, end: str) -> tuple[str, .
 def _analysis_saved_member(snapshot, *, owner, input_id, tier, start, end, cumulative=False):
     from cocolon_meaning_experience_engine.cores.analysis.source_adapter import (
         AnalysisDeepInsightQuestion, AnalysisSavedRecord, AnalysisSupplement, ORIGINAL_FIELDS,
-        canonical_bytes, commitment, _time,
+        analysis_circumstance_control, canonical_bytes, commitment, _time,
     )
     from emlis_thread_service import _check, _request
     from emlis_thread_store import ThreadStoreError
     from cocolon_meaning_experience_engine.emlis_thread_source import admit_emlis_thread
     from cocolon_meaning_experience_engine.source_kernel import SourceAdmissionError
     try:
+        circumstance = None
         original = snapshot['original']
         if (type(original) is not dict or set(original) != ORIGINAL_FIELDS
                 or original['id'] != input_id or snapshot['tier'] != tier):
@@ -184,13 +185,15 @@ def _analysis_saved_member(snapshot, *, owner, input_id, tier, start, end, cumul
                     a.answer_id != e['id'] or a.question_id != e['question_id']
                     or a.round_index != e['round_index'] for a, e in zip(answers, answer_events)):
                 raise AnalysisSavedSourceError('analysis_saved_source_invalid')
+            circumstance = analysis_circumstance_control(admitted, include_corrected=True)
             guard = commitment([thread['id'], thread['revision'], question_events,
                                 [e['payload']['source'] for e in answer_events]])
             if corrections:
                 guard = commitment([guard, correction_events])
         record_version = commitment(original)
         supplements = tuple(AnalysisSupplement(a.answer_id, owner, input_id,
-            record_version, a.answer_text_private, commitment(a.answer_text_private), a.source_role)
+            record_version, a.answer_text_private, commitment(a.answer_text_private), a.source_role,
+            circumstance_control=circumstance)
             for a in answers)
         member = AnalysisSavedRecord(owner, input_id, record_version,
             canonical_bytes(original).decode('utf-8'), supplements,
