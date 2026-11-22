@@ -2834,6 +2834,74 @@ def _semantic_independent_correction_plan_lesson():
         '\n出力例=' + json.dumps(example, ensure_ascii=False, separators=(',', ':')))
 
 
+def _semantic_received_answer_plan(material):
+    """Allocate complete short sources; keep the answered thought and the action independent."""
+    scopes = material.get('received_answer_thoughts', ())
+    if len(scopes) != 1 or material.get('map_corrections'):
+        return []
+    from analysis_plan_source_choices import choices_for_field
+
+    scope, = scopes
+    thought, action, answer = (scope[k] for k in ('thought_field', 'action_field', 'answer_field'))
+    fields = {field['field']: field for field in material['fields']}
+    other = sorted(set(fields) - {thought, action, answer})
+    if (len(other) > 1 or any(fields[n]['source_role'] != 'USER_DEEP_INSIGHT_ANSWER' for n in other)
+            or not all(field.get('fragment_is_complete_field') is not False
+                and len(field['text']) < 160 and field['text'] in choices_for_field(field)[1]
+                for field in fields.values())):
+        return []
+    # The first original node for each record follows record order.
+    groups = sorted([[[thought], [answer]], *[[[n]] for n in other]],
+        key=lambda group: fields[group[0][0]]['record'])
+    groups.append([[action]])
+    return [dict(node_id=f'n{i}', units=[dict(evidence=[dict(quote=fields[n]['text'], field=n) for n in unit])
+        for unit in group]) for i, group in enumerate(groups, 1)]
+
+
+def _semantic_received_answer_scope(material, plan):
+    """Check source allocation even when several groups share a history phase."""
+    scopes = material.get('received_answer_thoughts', ())
+    protected = {}
+    if not scopes:
+        return protected
+    fields = {field['field']: field for field in material['fields']}
+    roots = [(node['node_id'], [unit['evidence'] for unit in node['units']]) for node in plan['nodes']]
+    reason = 'analysis_semantic_plan_received_answer_scope_invalid'
+    for scope in scopes:
+        thought, action, answer = (scope[k] for k in ('thought_field', 'action_field', 'answer_field'))
+        bindings = [(node, units) for node, units in roots
+            if any(root['field'] == answer for unit in units for root in unit)]
+        _semantic_map_require(len(bindings) == 1, reason)
+        [(node, units)] = bindings
+        _semantic_map_require(len(units) == 2
+            and {root['field'] for root in units[0]} == {thought}
+            and len(units[1]) == 1 and units[1][0]['field'] == answer, reason)
+        thought_text = fields[thought]['text']
+        fragment_start = fields[thought].get('fragment_scalar_range', [0])[0]
+        spans = [(start, start + len(root['quote'])) for root in units[0]
+            for start in (thought_text.index(root['quote']) + fragment_start,)]
+        _semantic_map_require(all(any(start <= lo < hi <= end for start, end in spans)
+            for lo, hi in scope['thought_ranges']), reason)
+        action_nodes = {node for node, units in roots
+            if any(root['field'] == action for unit in units for root in unit)}
+        _semantic_map_require(bool(action_nodes), reason)
+        for name, units in roots:
+            if name in action_nodes:
+                _semantic_map_require(all(root['field'] != thought for unit in units for root in unit), reason)
+        protected[node] = thought
+        for name in action_nodes:
+            protected.setdefault(name, action)
+    return protected
+
+
+def _semantic_received_answer_titles(field, quote, display_sentences):
+    if len(quote) <= 80 and quote in display_sentences.get(field['field'], ()):
+        return [quote]
+    from analysis_plan_source_choices import source_node_titles
+
+    return source_node_titles({'fields': [field]}, [{'evidence': [dict(field=field['field'], quote=quote)]}], ())[:1]
+
+
 def semantic_node_local_v4_plan(prepared, plan, *, merge_anchors=False, merge_action_sources=False, context_sources=False, distinct_context_sources=False, speaker_context_sources=False, attributed_context_sources=False):
     """Bind the complete allocation before prose; allow cross-record roots."""
     r, reason = _semantic_map_require, 'analysis_semantic_node_local_v4_plan_invalid'
@@ -2924,6 +2992,10 @@ def semantic_node_local_v4_plan(prepared, plan, *, merge_anchors=False, merge_ac
       'analysis_semantic_plan_record_source_missing')
     r(all(fields <= cited for fields in independent_fields),
         'analysis_semantic_plan_independent_correction_scope_invalid')
+    _semantic_received_answer_scope(material, plan)
+    received_plan = _semantic_received_answer_plan(material)
+    if received_plan:
+        r(plan['nodes'] == received_plan, 'analysis_semantic_plan_received_answer_scope_invalid')
     literal_sources = _semantic_literal_independent_correction_fields(material)
     literal_sources = literal_sources or _semantic_literal_post_answer_fields(material)
     if literal_sources:
@@ -3155,8 +3227,12 @@ def semantic_node_local_v4_nodes(prepared, plan, packet, *, bound_titles=False, 
         if field.get('source_role') == 'USER_DEEP_INSIGHT_ANSWER'} if literal_sources else set()
     display_sentences = (_semantic_display_sentences(source_material)
         if prepared.prompt_version in {SEMANTIC_MAP_OCCURRENCE_V11_PROFILE, *SEMANTIC_MAP_FACT_REFERENCE_PROFILES} else {})
+    received_nodes = _semantic_received_answer_scope(source_material, plan)
+    received_plan = _semantic_received_answer_plan(source_material)
+    fields = {field['field']: field for field in source_material['fields']} if received_nodes else {}
     for planned in plan['nodes']:
-        node = packet['nodes'][planned['node_id']]
+        node_id = planned['node_id']
+        node = packet['nodes'][node_id]
         r(_semantic_map_keys(node, {'units', 'node_kind', 'perspective', 'title', 'meaning'})
             and type(node['units']) is dict
             and set(node['units']) == {'u' + str(i) for i in range(1, len(planned['units']) + 1)}
@@ -3164,6 +3240,13 @@ def semantic_node_local_v4_nodes(prepared, plan, packet, *, bound_titles=False, 
             and type(node['perspective']) is str and node['perspective'] in SEMANTIC_MAP_PERSPECTIVES
             and _semantic_map_text(node['title'], 80)
             and (node['meaning'] == '' or _semantic_map_text(node['meaning'], 240)), reason)
+        if node_id in received_nodes or received_plan:
+            field = received_nodes.get(node_id, planned['units'][0]['evidence'][0]['field'])
+            quote = next(root['quote'] for unit in planned['units'] for root in unit['evidence']
+                if root['field'] == field)
+            titles = _semantic_received_answer_titles(fields[field], quote, display_sentences)
+            r(node['meaning'] == '' and node['title'] in titles,
+                'analysis_semantic_node_received_answer_scope_invalid')
         if literal_sources:
             quote = literal_sources[planned['units'][0]['evidence'][0]['field']]
             r(not node['meaning'] and node['title'] in _semantic_literal_correction_titles(quote),
@@ -3408,6 +3491,9 @@ def semantic_node_local_v4_relations(prepared, plan, bodies, packet, *, ordered_
         and packet['nodes_sha256'] == semantic_map_hash(nodes)
         and type(packet['edges']) is list and len(packet['edges']) <= 48, reason)
     material = json.loads(prepared.material_json)
+    received_plan = _semantic_received_answer_plan(material)
+    if received_plan:
+        r(not packet['edges'], 'analysis_semantic_relation_received_answer_scope_invalid')
     if material.get('history_stage', {}).get('kind') == 'LEAF':
         r(not packet['edges'], reason)
     independent_fields = _semantic_independent_correction_fields(material)
@@ -3418,12 +3504,20 @@ def semantic_node_local_v4_relations(prepared, plan, bodies, packet, *, ordered_
     source_cued = prepared.prompt_version in SEMANTIC_MAP_SOURCE_CUED_PROFILES
     if source_cued:
         wire_edge_keys.update({'from_source', 'to_source'})
+    received_pairs = [({scope['thought_field'], scope['answer_field']}, scope['action_field'])
+        for scope in material.get('received_answer_thoughts', ())]
+    node_fields = {node['node_id']: {root['field'] for unit in node['units'] for root in unit['evidence']}
+        for node in plan['nodes']} if received_pairs else {}
     for edge in packet['edges']:
         r(_semantic_map_keys(edge, wire_edge_keys)
             and type(edge['from']) is str and edge['from'] in ids
             and type(edge['to']) is str and edge['to'] in ids and edge['from'] != edge['to']
             and type(edge['relation_kind']) is str and edge['relation_kind'] in SEMANTIC_MAP_RELATION_KINDS
             and _semantic_map_text(edge['label'], 80), reason)
+        if received_pairs:
+            left, right = node_fields[edge['from']], node_fields[edge['to']]
+            r(not any((thought & left and action in right) or (thought & right and action in left)
+                for thought, action in received_pairs), 'analysis_semantic_relation_received_answer_scope_invalid')
         if fact_endpoints:
             endpoint_fields = []
             for side in ('from', 'to'):
@@ -3469,6 +3563,10 @@ def semantic_node_local_v4_relations(prepared, plan, bodies, packet, *, ordered_
         and type(overview['node_refs']) is list and 1 <= len(overview['node_refs']) <= (len(ids) if whole_map else 8)
         and all(type(ref) is str and ref in ids for ref in overview['node_refs'])
         and len(overview['node_refs']) == len(set(overview['node_refs'])), reason)
+    if received_plan:
+        r(overview == dict(node_refs=[node['node_id'] for node in received_plan],
+                title=f'{len(material["records"])}件の記録を振り返って'),
+            'analysis_semantic_relation_received_answer_scope_invalid')
     post_answer_heading = None
     if _semantic_literal_post_answer_fields(material):
         from analysis_plan_source_choices import source_title_key
@@ -4278,6 +4376,52 @@ def _semantic_occurrence_v6_messages(prepared, material, phase, bodies=None):
     literal_sources = _semantic_literal_independent_correction_fields(original_material)
     post_answer_sources = _semantic_literal_post_answer_fields(original_material)
     scoped_guidance = ''
+    received_plan = _semantic_received_answer_plan(original_material)
+    received_scopes = original_material.get('received_answer_thoughts', ())
+    if received_plan:
+        lesson = ''
+        if phase == 'PLAN':
+            from analysis_plan_source_choices import restore_view
+
+            _, choices, _ = restore_view(material)
+            wire_quotes = {(number, quote): key for (number, key), quote in choices.items()}
+            for node in received_plan:
+                for unit in node['units']:
+                    for root in unit['evidence']:
+                        root['quote'] = wire_quotes.get((root['field'], root['quote']), root['quote'])
+            packet = dict(schema_version=_semantic_v4_schema('PLAN'),
+                source_choices_sha256=material['source_choices_sha256'], nodes=received_plan)
+            guidance = ('本人が答えた対象は思考欄の出来事です。思考とその補足を同じ項目の別unitに置きます。'
+                '独立した行動と他の記録は別の項目です。以下が原文に対応した根拠配置です。JSONのみ返します。\n'
+                + json.dumps(packet, ensure_ascii=False, separators=(',', ':')))
+        elif phase == 'NODES':
+            fields = {field['field']: field for field in original_material['fields']}
+            sentences = _semantic_display_sentences(original_material)
+            titles = {}
+            for node in received_plan:
+                root = node['units'][0]['evidence'][0]
+                titles[node['node_id']] = _semantic_received_answer_titles(fields[root['field']], root['quote'], sentences)
+            guidance = ('確定した項目を原文のまま表示します。planの順にevidence_ref、source_mode、fact_parts、unknownsを返し、'
+                'fact_partsには提示された参照番号を入れます。確認できる不明がなければunknownsは[]です。'
+                '思考の補足はその思考欄の範囲です。別項目との理由や順序を加えません。'
+                'node_kindとperspectiveを選び、項目ごとに次の候補からtitleを選びます。全項目のmeaningは空文字です。\n'
+                + json.dumps(titles, ensure_ascii=False, separators=(',', ':')))
+        else:
+            from analysis_plan_source_choices import WholeMapTitle
+
+            overview = dict(node_refs=[node['node_id'] for node in received_plan])
+            if WholeMapTitle(material, material['candidate_nodes']).count >= 2:
+                overview['title_proposal'] = ''
+            overview['title'] = f'{len(original_material["records"])}件の記録を振り返って'
+            guidance = ('関係が根拠で確認されていない独立した項目です。edgesは[]です。'
+                'qualification_candidatesが空ならqualification_reviewは{}です。全項目を含むoverviewは以下を返します。\n'
+                + json.dumps(overview, ensure_ascii=False, separators=(',', ':')))
+        guidance = _semantic_v4_view(prepared)._source_instruction(_SEMANTIC_V4_COMMON + '\n' + guidance, material)
+        messages = [dict(role='system', content=guidance), dict(role='user', content=_semantic_occurrence_message(material))]
+        if phase == 'RELATIONS':
+            maximum = SEMANTIC_HISTORY_MERGE_MAX_PROMPT_BYTES if stage == 'MERGE' else SEMANTIC_MAP_MAX_PROMPT_BYTES
+            return _semantic_compact_relation_message(material, messages, maximum)
+        return messages
     if independent_fields:
         scoped_guidance = '\nrecordsのindependent_corrected_source_fieldsは、本人が訂正した後にそれぞれ有効な出来事の回答と本人説明のfield番号です。'
         scoped_guidance += {
@@ -4336,6 +4480,13 @@ def _semantic_occurrence_v6_messages(prepared, material, phase, bodies=None):
                     content_plan_profile=(prepared.prompt_version if phase == 'PLAN' and
                         prepared.prompt_version in SEMANTIC_MAP_CONTENT_PLAN_PROFILES else None),
                     numbered_plan=prepared.prompt_version in {SEMANTIC_MAP_OCCURRENCE_V11_PROFILE, *SEMANTIC_MAP_FACT_REFERENCE_PROFILES} and phase == 'PLAN')
+    if received_scopes:
+        scoped_guidance += ('\nreceived_answer_thoughtsは、思考欄の範囲と本人補足の対応です。'
+            '同じ記録のaction_fieldは別場面です。記入順を出来事の順序に使いません。'
+            + {'PLAN': 'thought_rangesを含む思考の引用をu1、answer_fieldの引用をu2にし、'
+                '二つのunitを同じnodeに一度だけ置きます。action_fieldは別のnodeです。',
+                'NODES': '思考と補足の項目、独立した行動の項目は、最初の原文に沿うtitleでmeaningは空文字です。',
+                'RELATIONS': '独立した行動と補足済みの思考の間に経緯や関係を加えません。'}[phase])
     guidance = _semantic_v4_view(prepared)._source_instruction(_SEMANTIC_V4_COMMON + '\n' + guidance + lesson, material)
     guidance += scoped_guidance
     messages = [dict(role='system', content=guidance), dict(role='user', content=_semantic_occurrence_message(material))]
@@ -4855,6 +5006,32 @@ def prepare_analysis_semantic_map(request, snapshot, *,
                 for c in m.interpretation_corrections if c.correction_id == source.envelope.source_record_id)
             material_fields[-1]['source_recorded_at'] = correction.recorded_at
         stored_fields.append((index, field['text'], source.record_ref, field['evidence']))
+    received_answer_thoughts = []
+    if prompt_version == SEMANTIC_MAP_OCCURRENCE_V24_PROFILE:
+        for answer in frozen.sources:
+            thought_ranges = answer.received_meaning_ranges
+            if thought_ranges is None:
+                continue
+            # Ranges belong to the parent's thought, while the answer and
+            # the independent action retain their own active source fields.
+            record_fields = [f for f in fields if f['source'].record_ref == answer.record_ref]
+            thoughts = [f for f in record_fields if f['source'].envelope.source_role == 'ORIGINAL_INPUT'
+                and f['field_path'] == 'memo'
+                and all(f['evidence'].scalar_start <= start < end <= f['evidence'].scalar_end
+                        for start, end in thought_ranges)]
+            actions = [f for f in record_fields if f['source'].envelope.source_role == 'ORIGINAL_INPUT'
+                and f['field_path'] == 'memo_action']
+            answers = [f for f in record_fields if f['source'].envelope.envelope_id == answer.envelope.envelope_id
+                and f['field_path'] == 'memo']
+            _semantic_map_require(len(thoughts) == len(actions) == len(answers) == 1,
+                'analysis_supplement_binding_invalid')
+            thought, action, supplement = thoughts[0], actions[0], answers[0]
+            offset = thought['evidence'].scalar_start
+            received_answer_thoughts.append(dict(record=ordinals[answer.record_ref],
+                thought_field=field_numbers[thought['field_ref']],
+                action_field=field_numbers[action['field_ref']],
+                answer_field=field_numbers[supplement['field_ref']],
+                thought_ranges=[[start - offset, end - offset] for start, end in thought_ranges]))
     answered_circumstances = []
     for answer in frozen.sources:
         if answer.feeling_circumstance_ranges is None:
@@ -4908,6 +5085,8 @@ def prepare_analysis_semantic_map(request, snapshot, *,
         if ref in questions:
             records[-1]['deep_insight_question'] = questions[ref].question_text
     material = dict(analysis_as_of=frozen.period[1], records=records, fields=material_fields)
+    if received_answer_thoughts:
+        material['received_answer_thoughts'] = received_answer_thoughts
     if answered_circumstances:
         material['answered_feeling_circumstances'] = answered_circumstances
     if correction_material:
@@ -5199,6 +5378,9 @@ def prepare_semantic_leaf(parent, record_refs):
     if 'answered_feeling_circumstances' in material:
         material['answered_feeling_circumstances'] = [row for row in material['answered_feeling_circumstances']
             if row['record'] in ordinals]
+    if 'received_answer_thoughts' in material:
+        material['received_answer_thoughts'] = [row for row in material['received_answer_thoughts']
+            if row['record'] in ordinals]
     if 'source_duties' in material:
         # Relations remain control metadata; only claims/ranges of this leaf
         # are displayed. The final merge receives the complete parent duties.
@@ -5275,6 +5457,12 @@ def prepare_semantic_merge(parent, leaves):
         for name in ('feeling', 'circumstance'):
             endpoint = relation[name]
             ranges.setdefault(endpoint['field'], []).append(tuple(endpoint['scalar_range']))
+    for received in material.get('received_answer_thoughts', ()):
+        # Keep the proved thought/range, independent action and answer intact
+        # even when other fields must be shortened for this merge request.
+        for name in ('thought_field', 'action_field', 'answer_field'):
+            number = received[name]
+            ranges[number] = [(0, len(by_stored[number][1]))]
     for number, text, dependency, _ in parent.fields:
         if type(dependency) is tuple:
             ranges[number] = [(0, len(text))]

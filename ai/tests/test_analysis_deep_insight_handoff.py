@@ -58,8 +58,37 @@ def test_v24_reads_answer_as_its_own_record_and_question_as_non_evidence():
         semantic.prepare_semantic_map(OWNER, changed)
 
 
-def v24_provider(calls):
+def _received_answer_plan(prepared, material, fields, selected, value):
+    binding, = material['received_answer_thoughts']
+    field_text = {field['field']: field['text'] for field in fields}
+
+    def source(number):
+        text = field_text[number]
+        return dict(quote=selected.get((number, text), text), field=number)
+
+    def node(index, *roots):
+        return dict(node_id=f'n{index}', units=[dict(evidence=[root]) for root in roots])
+
+    thought = source(binding['thought_field'])
+    action = source(binding['action_field'])
+    supplement = source(binding['answer_field'])
+    insight = source(next(field['field'] for field in fields if field['source_role'] == DEEP_INSIGHT_ANSWER_ROLE))
+    value.update(source_choices_sha256=material['source_choices_sha256'],
+        nodes=[node(1, thought, supplement), node(2, insight), node(3, action)])
+
+    # The earlier model output attached the supplement to the action and
+    # repeated it beside the thought, even though the original did not link them.
+    wrong_scope = dict(value, nodes=[node(1, action, supplement), node(2, insight), node(3, thought, supplement)])
+    with pytest.raises(admission.AnalysisSemanticMapError, match='analysis_semantic_plan_received_answer_scope_invalid'):
+        admission.admit_semantic_node_local_v4_plan_response(prepared, wrong_scope)
+
+
+def v24_provider(calls, *, received_case=False):
+    received_prepared = None
+    received_plan = received_nodes = None
+
     def handler(request):
+        nonlocal received_plan, received_nodes
         messages = json.loads(request.content)['messages']
         material = json.loads(messages[1]['content'])
         phase = material['author_phase']
@@ -69,27 +98,35 @@ def v24_provider(calls):
         if phase == 'PLAN':
             restored, table, _ = choices.restore_view(material)
             selected = {(field, quote): cue for (field, cue), quote in table.items()}
-            nodes, original_heads = [], {}
-            for f in restored['fields']:
-                number, text = f['field'], f['text']
-                unit = dict(evidence=[dict(quote=selected.get((number, text), text), field=number)])
-                if f['source_role'] == 'SUPPLEMENTAL_ANSWER':
-                    original_heads[f['record']]['units'].append(unit)
-                else:
-                    node = dict(units=[unit])
-                    nodes.append(node)
-                    if f['source_role'] in {'ORIGINAL_INPUT', DEEP_INSIGHT_ANSWER_ROLE}:
-                        original_heads.setdefault(f['record'], node)
-            first_nodes = list(original_heads.values())
-            ordered = first_nodes + [node for node in nodes if node not in first_nodes]
-            value.update(source_choices_sha256=material['source_choices_sha256'],
-                nodes=[dict(node_id=f'n{index}', units=node['units']) for index, node in enumerate(ordered, 1)])
+            if received_prepared is not None:
+                _received_answer_plan(received_prepared, material, restored['fields'], selected, value)
+            else:
+                nodes, original_heads = [], {}
+                for f in restored['fields']:
+                    number, text = f['field'], f['text']
+                    unit = dict(evidence=[dict(quote=selected.get((number, text), text), field=number)])
+                    if f['source_role'] == 'SUPPLEMENTAL_ANSWER':
+                        original_heads[f['record']]['units'].append(unit)
+                    else:
+                        node = dict(units=[unit])
+                        nodes.append(node)
+                        if f['source_role'] in {'ORIGINAL_INPUT', DEEP_INSIGHT_ANSWER_ROLE}:
+                            original_heads.setdefault(f['record'], node)
+                first_nodes = list(original_heads.values())
+                ordered = first_nodes + [node for node in nodes if node not in first_nodes]
+                value.update(source_choices_sha256=material['source_choices_sha256'],
+                    nodes=[dict(node_id=f'n{index}', units=node['units']) for index, node in enumerate(ordered, 1)])
         elif phase == 'NODES':
             nodes = {}
+            protected = set()
+            if received_prepared is not None:
+                binding, = material['received_answer_thoughts']
+                protected.update((binding['thought_field'], binding['action_field']))
             for node in material['plan']['nodes']:
                 ref = node['node_id']
                 spec = schema['nodes']['properties'][ref]['properties']
-                text = node['units'][0]['evidence'][0]['quote']
+                root = node['units'][0]['evidence'][0]
+                text = root['quote']
                 units = {}
                 for index, selected_unit in enumerate(node['units'], 1):
                     unit_id = f'u{index}'
@@ -103,22 +140,63 @@ def v24_provider(calls):
                 nodes[ref] = dict(units=units,
                     node_kind='SELF_POSITION' if text == ANSWER else 'CHOICE_OUTPUT', perspective='SELF',
                     title=spec['title'].get('enum', [text])[0], meaning=spec['meaning'].get('enum', [text])[0])
+                if root['field'] in protected or (received_prepared is not None and text == ANSWER):
+                    nodes[ref].update(title=text, meaning='')
             value.update(plan_sha256=schema['plan_sha256']['enum'][0], nodes=nodes)
+            for node in material['plan']['nodes']:
+                if node['units'][0]['evidence'][0]['field'] not in protected:
+                    continue
+                wrong_meaning = deepcopy(value)
+                wrong_meaning['nodes'][node['node_id']]['meaning'] = '発表後、褒められたことを重く受け止めた。'
+                with pytest.raises(admission.AnalysisSemanticMapError,
+                                  match='analysis_semantic_node_received_answer_scope_invalid'):
+                    admission.admit_semantic_node_local_v4_nodes_response(
+                        received_prepared, material['plan'], wrong_meaning)
+            if received_prepared is not None:
+                received_plan = material['plan']
+                received_nodes = admission.admit_semantic_node_local_v4_nodes_response(
+                    received_prepared, received_plan, value)
         else:
             registry = material['candidate_nodes']
             overview = dict(node_refs=[node['node_id'] for node in registry])
             if 'title_proposal' in schema['overview']['properties']:
                 overview.update(title_proposal='', title=choices.WholeMapTitle(material, registry).neutral)
+            elif received_prepared is not None:
+                overview['title'] = '2件の記録を振り返って'
             else:
                 overview['title'] = '書き残した判断と行動'
             value.update(nodes_sha256=schema['nodes_sha256']['enum'][0],
                 qualification_review={}, edges=[], overview=overview)
+            if received_prepared is not None:
+                assert overview['title'] == '2件の記録を振り返って'
+                wrong_title = '発表後に褒められた経験と本音'
+                wrong_overview = dict(overview, title=wrong_title)
+                if 'title_proposal' in overview:
+                    wrong_overview['title_proposal'] = wrong_title
+                with pytest.raises(admission.AnalysisSemanticMapError,
+                                  match='analysis_semantic_relation_received_answer_scope_invalid'):
+                    admission.semantic_node_local_v4_relations(received_prepared, received_plan, received_nodes,
+                        dict(value, overview=wrong_overview))
         assert accepts(value, messages), phase
         return successful_response(json.dumps(value, ensure_ascii=False, separators=(',', ':')))
 
-    return model_sources.SelfHostedSemanticAnalysisModelSource(endpoint='https://synthetic-analysis.invalid/chat/completions',
+    provider = model_sources.SelfHostedSemanticAnalysisModelSource(endpoint='https://synthetic-analysis.invalid/chat/completions',
         model='test-model', api_key='synthetic-test', semantic_prompt_version=admission.SEMANTIC_MAP_OCCURRENCE_V24_PROFILE,
         transport=httpx.MockTransport(handler))
+    if received_case:
+        complete = provider._node_local_v4
+
+        async def capture_prepared(prepared, **kwargs):
+            nonlocal received_prepared
+            received_prepared = prepared
+            try:
+                return await complete(prepared, **kwargs)
+            except RuntimeError as error:
+                phase = calls[-1][0] if calls else 'request setup'
+                pytest.fail(f'V24 admission failed after {phase}: {error.__context__ or error}')
+
+        provider._node_local_v4 = capture_prepared
+    return provider
 
 
 @pytest.mark.parametrize('prior_map', [False, True])
@@ -247,12 +325,17 @@ def test_free_received_meaning_and_deep_insight_keep_original_fields_and_saved_e
     expected = [(1, 'ORIGINAL_INPUT', 'memo', thought), (1, 'ORIGINAL_INPUT', 'memo_action', action),
                 (1, 'SUPPLEMENTAL_ANSWER', 'memo', supplement), (2, DEEP_INSIGHT_ANSWER_ROLE, 'memo', ANSWER)]
     assert [(field['record'], field['source_role'], field['field_path'], field['text']) for field in fields] == expected
+    binding, = material['received_answer_thoughts']
+    assert {key: binding[key] for key in ('record', 'thought_field', 'action_field', 'answer_field')} == dict(
+        record=1, thought_field=1, action_field=2, answer_field=3)
+    assert [thought[start:end].rstrip('。') for start, end in binding['thought_ranges']] == [
+        '褒められた', '嬉しくなかった']
     assert [(row.saved_record_ref, len(row.child_source_envelope_refs)) for row in prepared.frozen.members] == [
         (parent, 2), (QUESTION_ID, 1)]
 
     pytest.importorskip('lmformatenforcer')
     calls = []
-    provider = v24_provider(calls)
+    provider = v24_provider(calls, received_case=True)
     monkeypatch.setattr(cumulative, '_rpc', rpc)
     monkeypatch.setattr(cumulative, 'observed_mode', lambda: 'development')
     monkeypatch.setattr(cumulative, '_queue_map_update_notification', AsyncMock())
@@ -262,7 +345,13 @@ def test_free_received_meaning_and_deep_insight_keep_original_fields_and_saved_e
     assert current['map_context']['processed_count'] == current['map_context']['mapped_count'] == 2
     assert current['map_context']['excluded_count'] == 0
     assert [phase for phase, _ in calls] == ['PLAN', 'NODES', 'RELATIONS']
+    plan = calls[1][1]['plan']
+    assert [[[root['field'] for root in unit['evidence']] for unit in node['units']] for node in plan['nodes']] == [
+        [[binding['thought_field']], [binding['answer_field']]], [[fields[-1]['field']]], [[binding['action_field']]]]
     assert current['meta']['edges'] == []
+    assert current['meta']['overview']['title'] == '2件の記録を振り返って'
+    assert [node['title'] for node in current['meta']['nodes']] == [thought, ANSWER, action]
+    assert '発表後' not in current['content_text']
     reread = run(cumulative.ensure_map(user, ensure=False, model_source=provider))
     detail, = run(cumulative.read_maps(user, report_id=report, limit=1))['items']
     assert reread['report_id'] == detail['id'] == report
@@ -270,12 +359,14 @@ def test_free_received_meaning_and_deep_insight_keep_original_fields_and_saved_e
     assert current['content_text'] == reread['content_text'] == detail['content_text']
     for text in (thought, action, supplement, ANSWER):
         assert text in detail['content_text']
-    evidence = [item for node in detail['content_json']['watashiMap']['nodes']
-                for item in run(cumulative.map_evidence(user, report, node['node_ref']))['items']]
-    assert {item['id'] for item in evidence} == {parent, QUESTION_ID}
-    assert all(item['version_state'] == 'CURRENT' for item in evidence)
-    assert any(item['id'] == parent and item['memo'] == thought and item['memo_action'] == action
-               and item['answers'] == [supplement] for item in evidence)
-    assert any(item['id'] == QUESTION_ID and item['deep_insight'] == dict(question_text=QUESTION, answer_text=ANSWER)
-               for item in evidence)
+    evidence_by_node = {node['node_ref']: run(cumulative.map_evidence(user, report, node['node_ref']))['items']
+                        for node in current['meta']['nodes']}
+    assert {ref: [item['id'] for item in evidence] for ref, evidence in evidence_by_node.items()} == {
+        'n1': [parent], 'n2': [QUESTION_ID], 'n3': [parent]}
+    assert all(item['version_state'] == 'CURRENT' for evidence in evidence_by_node.values() for item in evidence)
+    thought_evidence, = evidence_by_node['n1']
+    assert (thought_evidence['memo'], thought_evidence['memo_action'], thought_evidence['answers']) == (
+        thought, action, [supplement])
+    insight_evidence, = evidence_by_node['n2']
+    assert insight_evidence['deep_insight'] == dict(question_text=QUESTION, answer_text=ANSWER)
     assert len(calls) == 3

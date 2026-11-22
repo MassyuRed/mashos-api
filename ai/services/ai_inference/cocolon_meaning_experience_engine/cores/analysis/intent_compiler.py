@@ -3162,7 +3162,7 @@ def _active_sources(source_set):
             earlier = tuple(source for source in views if source.record_ref == answer.record_ref)
             # This answer has already been re-read with its actual question and
             # original evidence by the shared CMEE source owner.
-            if answer.feeling_circumstance_ranges is None and not answer.received_meaning_bound:
+            if answer.feeling_circumstance_ranges is None and answer.received_meaning_ranges is None:
                 _admit_ordinary_supplement(answer, earlier, excluded)
             views.append(answer)
             continue

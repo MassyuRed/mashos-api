@@ -119,7 +119,7 @@ class AnalysisSource:
     # Rederived authored cause and feeling coordinates; the AI question was control only.
     feeling_circumstance_ranges: tuple[tuple[int, int], tuple[int, int]] | None = None
     feeling_circumstance_no_update: bool = False
-    received_meaning_bound: bool = False
+    received_meaning_ranges: tuple[tuple[int, int], tuple[int, int]] | None = None
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -255,11 +255,22 @@ def _checked_received_answer(supplement, original):
         current_round=1, capability_snapshot='Q3_FREE', question_control_context=question_control)
     try:
         prepared = prepare_emlis_meaning(replace(request, emlis_thread=thread))
-        return received_answer_anchors(prepared.thread, adapted, prepared) is not None
+        anchors = received_answer_anchors(prepared.thread, adapted, prepared)
     except ValueError:
         # A saved question that cannot be proven by this isolated current
         # source remains subject to the ordinary supplement admission.
-        return False
+        return None
+    if anchors is None:
+        return None
+    memo = adapted['memo']
+    event, reaction = anchors
+    event_start, reaction_start = memo.find(event), memo.find(reaction)
+    event_end, reaction_end = event_start + len(event), reaction_start + len(reaction)
+    if (not 0 <= event_start < event_end <= reaction_start < reaction_end
+            or memo.find(event, event_start + 1) != -1
+            or memo.find(reaction, reaction_start + 1) != -1):
+        return None
+    return (event_start, event_end), (reaction_start, reaction_end)
 
 
 def _checked_feeling_circumstance(supplement, original, corrections):
@@ -506,7 +517,7 @@ def freeze_analysis_sources(request: AnalysisObservedMapRequest) -> AnalysisSour
                     child = replace(child, **_checked_feeling_circumstance(
                         supplement, original, member.interpretation_corrections))
                 if supplement.received_answer_control is not None:
-                    child = replace(child, received_meaning_bound=_checked_received_answer(
+                    child = replace(child, received_meaning_ranges=_checked_received_answer(
                         supplement, original))
                 sources.append(child)
                 children.append(child.envelope.envelope_id)
