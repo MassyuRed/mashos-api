@@ -97,7 +97,7 @@ _PAST_PREMISE = re.compile(
     r"(?:仕事を(?:やめた|辞めた)|別れた|断った|諦めた|退職した|押しつけられた)"
     r"(?=の|とき|時|理由|という|わけ)"
 )
-_FOREIGN_ACTOR = re.compile(r"^(?:彼|彼女|母|父|妹|弟|兄|姉|友人|上司|同僚)(?:は|が|も)")
+_FOREIGN_ACTOR = re.compile(r"^(?:相手|彼|彼女|母|父|妹|弟|兄|姉|友人|上司|同僚)(?:は|が|も)")
 _FOOD_ROUTINE = re.compile(r"朝(?:ごはん|ご飯|食)|夕(?:ごはん|ご飯|食)|昼(?:ごはん|ご飯|食)|何を食べ")
 _RELATIONAL_CONTEXT = re.compile(r"相手|友達|友人|家族|同僚|関係|人と|人に|誰か|一緒")
 _HEX_DIGEST = re.compile(r"[0-9a-f]{64}\Z")
@@ -247,6 +247,9 @@ def _reading_system_message(*, answer):
         focus_detail = (
             "相手の具体的な反応や振る舞いによって自分の行動が変わる条件を聞く場合はCONDITION、"
             "相手との関係をどう捉えるかを聞く場合はRELATIONSHIPです。"
+            "『意見が違っても本音を言える』は本人の経験で、相手がどう反応すると本音を言いやすいかには答えていません。"
+            "『相手が最後まで話を聞いてくれると本音を言いやすい』のように、"
+            "今回の問いが求める相手の反応まで明記されている場合は既回答です。"
         )
         quote_guidance = (
             "記録入口では、入力questionの先頭にあるかぎ括弧の中だけをquoteに一字ずつ写します。"
@@ -537,6 +540,15 @@ def _stated_reason(anchor):
     prefix = re.split(r"[。！？!?\n\r]", text[:anchor.start])[-1]
     suffix = re.split(r"[。！？!?\n\r]", text[anchor.end:])[0]
     return bool(_STATED_REASON.search(prefix + anchor.quote) or _REASON_FINISH.search(suffix.strip()))
+
+
+def _foreign_reason_anchor(anchor):
+    if _FOREIGN_ACTOR.match(anchor.quote):
+        return True
+    # The quote may begin after the explicit subject in the same clause.
+    preceding = anchor.source.text[anchor.span_start:anchor.start]
+    clause_start = re.split(r"[、,]", preceding)[-1].lstrip()
+    return _FOREIGN_ACTOR.match(clause_start) is not None
 
 
 def _read_plan(value, *, lane, sources):
@@ -1065,8 +1077,8 @@ async def generate_question(prepared, sources, *, material, generate):
         return QuestionRun(None, "rejected")
     known_reason = plan.focus == "REASON" and _stated_reason(plan.anchor)
     alternative = None
-    if known_reason or (plan.focus == "REASON" and _FOREIGN_ACTOR.match(plan.quote)):
-        alternative = _record_alternative(plan) if known_reason and plan.is_record_reason else None
+    if known_reason or (plan.focus == "REASON" and _foreign_reason_anchor(plan.anchor)):
+        alternative = _record_alternative(plan) if plan.is_record_reason else None
         if alternative is None:
             return QuestionRun(None, "rejected")
         revised = _json_object(await generate(

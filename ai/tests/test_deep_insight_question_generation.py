@@ -147,7 +147,7 @@ def test_record_is_not_retained_if_its_dismissal_cannot_fit(monkeypatch):
     assert "skipped_emlis_questions" not in prepared
 
 
-@pytest.mark.parametrize("reason_quote", ["相手が困っていたので", "相手が困っていたので、" + QUOTE])
+@pytest.mark.parametrize("reason_quote", ["相手が困っていた", "相手が困っていたので", "相手が困っていたので、" + QUOTE])
 def test_explicit_reason_is_replaced_only_by_a_supported_new_condition(reason_quote):
     causal_sentence = "相手が困っていたので、" + QUOTE
     original = material(source(causal_sentence + "。自分の仕事はまだ途中だった。"))
@@ -295,6 +295,24 @@ def test_explicit_reason_without_a_new_question_can_still_skip():
     assert result.disposition == "rejected" and len(calls) == 1
 
 
+@pytest.mark.parametrize(("original", "quote"), [
+    ("相手が困っていたので、" + QUOTE + "。", "相手が困っていた"),
+    ("朝、相手が一人で困っていた。", "一人で困っていた"),
+])
+def test_reason_about_the_other_person_stops_before_writing(original, quote):
+    result, calls = run(material(source(original)), ask(quote=quote, ask="相手が困っていた理由"))
+    assert result.disposition == "rejected"
+    assert [system for system, _ in calls] == [PLAN_SYSTEM_MESSAGE]
+
+
+def test_reason_can_still_cite_the_owners_action_after_another_persons_clause():
+    quote = "作業を急いで終えた"
+    original = material(source("相手が隣にいたとき、私は" + quote + "。"))
+    result, _ = run(original, ask(quote=quote))
+    assert result.disposition == "selected"
+    assert result.candidate.text == f"「{quote}」と書いていましたが、{BODY}"
+
+
 def test_invalid_reason_quote_cannot_trigger_alternative_planning():
     original = material(source("相手が困っていたので、" + QUOTE + "。自分の仕事はまだ途中だった。"))
     result, calls = run(original, ask(quote="原文にはない理由"))
@@ -422,6 +440,28 @@ def test_answer_alone_has_private_provenance_and_can_supply_a_follow_up():
     rejected, _ = run(material(prior=[answer]), plan, text, reading=read(
         plan, quote="意見が違っても本音を言えるはずです"))
     assert rejected.disposition == "rejected"
+
+
+@pytest.mark.parametrize(("answer_text", "already_answered"), [
+    ("意見が違っても本音を言えるときです。", False),
+    ("意見が違っても本音を言えるときです。最後まで話を聞いてくれると本音を言いやすいです。", True),
+])
+def test_answer_follow_up_distinguishes_the_new_reaction_from_the_cited_condition(answer_text, already_answered):
+    answer = {
+        "id": ANSWER_ID, "source_version": VERSION, "question_text": "どんなときに友達だと感じますか？",
+        "answer_text": answer_text, "answered_at": STAMP,
+    }
+    quote = "意見が違っても本音を言える"
+    body = "本音を言いやすい相手の反応は、どんなものですか？"
+    plan = ask(focus="CONDITION", source="a1", quote=quote, ask="本音を言いやすい相手の反応")
+    reading = {"verdict": "reject", "reason": "already_answered"} if already_answered else read(plan)
+    result, calls = run(material(prior=[answer]), plan, body, reading=reading)
+    reader, payload = calls[-1]
+    assert reader == ANSWER_READ_SYSTEM_MESSAGE
+    assert "今回の問いが求める相手の反応まで明記されている場合は既回答" in reader
+    assert payload["question"] == f"「{quote}」と書いていましたが、{body}"
+    assert payload["material"]["sources"]["a1"]["text"] == answer_text
+    assert result.disposition == ("rejected" if already_answered else "selected")
 
 
 def select_theme_angle(scene, angle):
