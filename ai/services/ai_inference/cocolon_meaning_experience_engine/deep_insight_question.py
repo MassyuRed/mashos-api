@@ -943,15 +943,15 @@ async def _theme_has_new_answer(question, history, generate):
         if any(not isinstance(answer, str) for answer in answers):
             return False
         previous_answer, question_answer = map(_normal, answers)
-        if not previous_answer or not question_answer:
+        if not previous_answer or not question_answer or pair["verdict"] not in ("repeat", "distinct"):
             return False
-        if pair["verdict"] == "repeat" and evidence_review_available:
+        if pair["verdict"] == "repeat" or previous_answer == question_answer:
+            if not evidence_review_available:
+                return False
             evidence_review_available = False
             evidence = await generate(_THEME_COMPARE_EVIDENCE_SYSTEM_MESSAGE, pair_input)
             if not _theme_difference_has_text_evidence(evidence, pair_input):
                 return False
-        elif pair["verdict"] != "distinct" or previous_answer == question_answer:
-            return False
         remaining_rechecks -= 1
         # Repeated false nominations from a broad batch warrant smaller
         # comparisons. Only independently cleared rows can be removed.

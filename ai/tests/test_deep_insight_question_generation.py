@@ -732,14 +732,61 @@ def test_theme_checks_cited_wording_then_rechecks_the_rest_of_the_history():
     {"verdict": "distinct"},
     {**theme_pair_result(), "question_answer": " "},
     {**theme_pair_result(), "question_answer": "、。？"},
-    {**theme_pair_result(), "question_answer": theme_pair_result()["previous_answer"]},
+    {**theme_pair_result(), "verdict": "uncertain"},
 ])
-def test_theme_does_not_clear_a_matched_question_without_two_distinct_answer_targets(pair):
+def test_theme_does_not_recheck_a_malformed_pair_verdict(pair):
     question = {"question": "何を最初に試しますか？"}
     history = [{"id": 1, "question": "前に何を試しましたか？"}]
     responses = iter([{"verdict": "repeat", "id": 1}, pair])
 
     async def generate(system, payload):
+        return json.dumps(next(responses))
+
+    assert not asyncio.run(_theme_has_new_answer(question, history, generate))
+
+
+@pytest.mark.parametrize("confirm_difference", [True, False])
+def test_theme_rechecks_distinct_verdict_with_identical_answer_labels(confirm_difference):
+    previous = "相手が話を聞いてほしそうなとき、相手が話しやすいように、まず何をしますか？"
+    current = "相手が話を聞いてほしそうなとき、その場で、どれくらいの時間なら無理なく話を聴けますか？"
+    other = {"id": 2, "question": "どんな相手なら話を聞きやすいですか？"}
+    history = [{"id": 1, "question": previous}, other]
+    label = "相手の話を聞く意欲や話しやすさの状況"
+    evidence = {"verdict": "distinct", "previous_excerpt": "まず何をしますか",
+                "question_excerpt": "どれくらいの時間なら無理なく話を聴けますか",
+                "difference": "初めにする行動では、無理なく聞ける時間が分からない。"}
+    responses = iter([
+        {"verdict": "repeat", "id": 1},
+        {"verdict": "distinct", "previous_answer": label, "question_answer": label + "。"},
+        evidence if confirm_difference else {"verdict": "repeat"},
+        {"verdict": "distinct"},
+    ])
+    calls = []
+
+    async def generate(system, payload):
+        calls.append((system, payload))
+        return json.dumps(next(responses))
+
+    assert asyncio.run(_theme_has_new_answer({"question": current}, history, generate)) is confirm_difference
+    assert calls[2] == (_THEME_COMPARE_EVIDENCE_SYSTEM_MESSAGE, {"previous": previous, "question": current})
+    if confirm_difference:
+        assert calls[3] == (_THEME_COMPARE_SYSTEM_MESSAGE, {"question": current, "history": [other]})
+    else:
+        assert len(calls) == 3
+
+
+def test_theme_shares_one_evidence_review_between_repeat_and_contradictory_verdicts():
+    question = {"question": "いつごろ始めますか？"}
+    history = [{"id": 1, "question": "何から始めますか？"}, {"id": 2, "question": "いつ始めますか？"}]
+    same_answer = {**theme_pair_result("repeat"), "verdict": "distinct"}
+    responses = iter([
+        {"verdict": "repeat", "id": 1}, theme_pair_result("repeat"),
+        {"verdict": "distinct", "previous_excerpt": "何から始めますか", "question_excerpt": "いつごろ始めますか",
+         "difference": "最初の行動を答えても、始める予定の時期は分からない。"},
+        {"verdict": "repeat", "id": 2}, same_answer,
+    ])
+
+    async def generate(_system, _payload):
         return json.dumps(next(responses))
 
     assert not asyncio.run(_theme_has_new_answer(question, history, generate))
