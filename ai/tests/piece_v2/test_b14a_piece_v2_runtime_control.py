@@ -330,7 +330,7 @@ def test_bootstrap_without_application_has_no_piece_authority(bootstrap):
     value = bootstrap._bootstrap_payload(client_meta={'app_version': 'test'})
     assert {k: value['feature_flags'][k] for k in FLAGS} == dict.fromkeys(FLAGS, False)
     assert value['client_meta'] == {'app_version': 'test'}
-    assert value['feature_flags']['today_question_enabled'] is True
+    assert value['feature_flags']['emlis_threads_enabled'] is False
 
 
 def test_bootstrap_projection_keeps_other_metadata_and_hides_requested_ready(wire, bootstrap, monkeypatch):

@@ -213,7 +213,7 @@ def test_same_composition_publishes_only_effective_flags_not_configuration(compo
     assert response.status_code == 200
     flags = response.json()['feature_flags']
     assert {name: flags[name] for name in FLAGS} == {name: name == PREVIEW for name in FLAGS}
-    assert flags['today_question_enabled'] is True
+    assert flags['emlis_threads_enabled'] is False
     assert not any(word in response.text for word in ('requested', 'ready', 'ttl_seconds', 'renderer_version'))
     app.state.piece_v2_runtime['ready'][PREVIEW] = False
     response = send(app, 'GET', path)
