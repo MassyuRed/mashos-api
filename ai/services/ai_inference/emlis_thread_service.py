@@ -991,7 +991,7 @@ class EmlisThreadService:
     async def _process_natural(self, user_id, snapshot):
         from cocolon_meaning_experience_engine.natural_reply import (
             ARTIFACT_SCHEMA, NaturalReply, NaturalReplyError, prepare_natural_reply, validate_reply,
-            CORRECTED_SOURCE_CONTEXT_VERSION, PAID_RECEIVED_ANSWER_CONTEXT_VERSION,
+            CORRECTED_SOURCE_CONTEXT_VERSION, DIRECT_FEELING_CORRECTION_CONTEXT_VERSION, PAID_RECEIVED_ANSWER_CONTEXT_VERSION,
             RECEIVED_ANSWER_CONTEXT_VERSION, SOURCE_CONTEXT_VERSION,
             build_natural_reply_messages)
         from cocolon_meaning_experience_engine.natural_reply_meaning import (
@@ -1030,7 +1030,8 @@ class EmlisThreadService:
         else:
             context_version = None
         if context_version not in {None, SOURCE_CONTEXT_VERSION, CORRECTED_SOURCE_CONTEXT_VERSION,
-                                   RECEIVED_ANSWER_CONTEXT_VERSION, PAID_RECEIVED_ANSWER_CONTEXT_VERSION}:
+                                   RECEIVED_ANSWER_CONTEXT_VERSION, PAID_RECEIVED_ANSWER_CONTEXT_VERSION,
+                                   DIRECT_FEELING_CORRECTION_CONTEXT_VERSION}:
             raise NaturalReplyError('natural_reply_writer_identity_changed')
         material, safety = prepare_natural_reply(_request(snapshot), response_stage=response_stage,
             bind_writer_context=context_version is not None,
@@ -1038,6 +1039,8 @@ class EmlisThreadService:
             include_received_answer=context_version in {RECEIVED_ANSWER_CONTEXT_VERSION,
                                                         PAID_RECEIVED_ANSWER_CONTEXT_VERSION},
             include_paid_received_answer=context_version == PAID_RECEIVED_ANSWER_CONTEXT_VERSION,
+            include_direct_feeling_correction=(context_version == DIRECT_FEELING_CORRECTION_CONTEXT_VERSION
+                or (prior is None and context_version == CORRECTED_SOURCE_CONTEXT_VERSION)),
             prepared_meaning=prepared_meaning,
             meaning_profile=t['data'].get('natural_meaning_profile'), owner_scope=user_id,
             original_record=snapshot['original'], as_of=t['data'].get('natural_meaning_as_of'))

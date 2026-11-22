@@ -896,6 +896,34 @@ def test_http_provider_failure_log_uses_fixed_fields(caplog):
     assert "model.invalid" not in caplog.text
 
 
+@pytest.mark.parametrize("body, reason", [
+    ("  \n", "empty_reply"),
+    ("PRIVATE_REPLY" * 1300, "reply_length"),
+    ("<think>PRIVATE_REPLY</think>", "internal_format"),
+    ("```PRIVATE_REPLY```", "internal_format"),
+    ("PRIVATE_REPLY？", "question_marker"),
+    ("PRIVATE_REPLY?", "question_marker"),
+    ("PRIVATE_REPLY どのようなお気持ちでしたか。", "question_ending"),
+    ("PRIVATE_REPLY\x00", "control_character"),
+])
+def test_http_provider_reply_validation_logs_only_a_fixed_reason(caplog, body, reason):
+    calls = []
+
+    def transport(request):
+        calls.append(request)
+        return httpx.Response(200, json={"model": "chosen-4b", "choices": [{
+            "finish_reason": "stop", "message": {"role": "assistant", "content": body}}]})
+
+    source = SelfHostedNaturalReplySource(endpoint="https://model.invalid/v1/chat/completions",
+        model="chosen-4b", api_key="PRIVATE_KEY", transport=httpx.MockTransport(transport))
+    with pytest.raises(NaturalReplyError, match="^natural_reply_invalid$"):
+        run(source(NaturalReplyInput("PRIVATE_SOURCE", '{"current":{"memo":"PRIVATE_INPUT"}}')))
+    assert len(calls) == 1
+    assert f"emlis_reply_acquisition_failed stage=reply_validation http_status=200 reason={reason}" in caplog.text
+    assert "PRIVATE_" not in caplog.text
+    assert "model.invalid" not in caplog.text
+
+
 @pytest.mark.parametrize("text", [
     "『明日でしょうか。』という言葉が気になったのですね。",
     "「いま話せますか。」と声をかけたのですね。",
