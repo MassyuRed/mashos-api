@@ -1589,9 +1589,6 @@ def test_theme_reader_checks_the_amount_without_a_redundant_upper_limit(draft, e
     ("これからのこと", "first_step", "priority",
      "いくつかある始め方から、最初の一歩を選ぶ基準は何ですか？",
      "最初の一歩を選ぶ基準は何ですか？"),
-    ("これからのこと", "learning_goal", "first_action",
-     "次に身につけたいことを考え始める行動として、まず具体的に何をしますか？",
-     "まず具体的に何をしますか？"),
     ("これからのこと", "change_habits", "change",
      "新しい暮らしの中で、習慣を変えるのはどんなときですか？",
      "新しい暮らしの中で、習慣を変えるのはどんなときですか？"),
@@ -1601,6 +1598,21 @@ def test_theme_removes_only_the_verified_opening_before_reading(theme, scene, an
     assert result.candidate.text == f"{calls[1][1]['scene']}、{expected}"
     assert calls[1][1]["body"] == expected
     assert calls[1][1]["answer_kind"] == angle
+
+
+@pytest.mark.parametrize(("angle", "scene", "body"), [
+    ("first_action", "次に身につけることを考え始めたとき", "学びたいことの候補を探すために、まず何をしますか？"),
+    ("priority", "次に学んでみたいことがいくつかあるとき",
+     "先に学ぶ内容を選ぶとき、候補のどんなところを一番重視しますか？"),
+])
+def test_theme_keeps_learning_candidate_discovery_and_selection_distinct(angle, scene, body):
+    result, calls = theme_run("これからのこと", f"{scene}、{body}",
+                              choose_theme=select_theme_angle("learning_goal", angle))
+    assert calls[0][1]["form"] == body
+    assert calls[1][1]["scene"] == scene
+    assert calls[1][1]["body"] == body
+    assert calls[1][1]["answer_kind"] == angle
+    assert result.candidate.text == f"{scene}、{body}"
 
 
 @pytest.mark.parametrize(("theme", "scene", "angle", "draft"), [
