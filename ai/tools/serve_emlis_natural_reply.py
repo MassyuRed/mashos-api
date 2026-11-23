@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import argparse
 from contextlib import contextmanager, nullcontext
-from functools import lru_cache
+from functools import lru_cache, partial
 import hashlib
 import hmac
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -130,7 +130,7 @@ def generation_failure(exc):
 # Match the fixed, ordered v4 NODES envelope, including JSON whitespace.
 _OCCURRENCE_NODES_OPEN = re.compile(
     r'\s*\{\s*"schema_version"\s*:\s*"[^"]+"\s*,\s*"plan_sha256"\s*:\s*"[0-9a-f]{64}"\s*,\s*"nodes"\s*:\s*\{')
-_OCCURRENCE_NODE_OPEN = re.compile(r'\s*(?:,\s*)?"n[1-9][0-9]*"\s*:\s*\{')
+_OCCURRENCE_NODE_OPEN = re.compile(r'\s*(?:,\s*)?"(n[1-9][0-9]*)"\s*:\s*\{')
 _OCCURRENCE_NODE_KEYS = tuple(re.compile(r'\s*' + ('' if name=='units' else r',\s*') +
     '"' + name + r'"\s*:\s*') for name in ('units','node_kind','perspective','title','meaning'))
 _OCCURRENCE_ESCAPE = re.compile(r'\\(?:u[0-9A-Fa-f]{4}|["\\/bfnrt])')
@@ -180,16 +180,25 @@ def _occurrence_visible_signature(units, title, meaning, fact_sources=None):
     return title, meaning or facts[0], body
 
 
-def _occurrence_duplicate_prefix(wire, fact_sources=None):
+def _occurrence_duplicate_prefix(wire, fact_sources=None, *, dated_records=None):
     """Reject an irrevocably duplicate public node before its token is emitted."""
     opener = _OCCURRENCE_NODES_OPEN.match(wire)
     if opener is None:
         return False
     position = opener.end()
     decoder = json.JSONDecoder()
-    seen = set()
+    seen = {}
+
+    def repeated(identity, record):
+        # Missing record ownership never licenses a second copy. Distinct
+        # records may share prose only when the compiler distinguishes them.
+        previous = seen.get(identity)
+        return bool(previous) and (record is None or record in previous or None in previous)
+
+    dated_records = dated_records or {}
     while node := _OCCURRENCE_NODE_OPEN.match(wire,position):
         position = node.end()
+        record = dated_records.get(node.group(1))
         values = []
         for key in _OCCURRENCE_NODE_KEYS:
             prop = key.match(wire,position)
@@ -208,13 +217,14 @@ def _occurrence_duplicate_prefix(wire, fact_sources=None):
                             value = json.loads(wire[position:]+'"')
                         except json.JSONDecodeError:
                             return False
-                        return _occurrence_visible_signature(values[0],values[3],value,fact_sources) in seen
+                        identity = _occurrence_visible_signature(values[0], values[3], value, fact_sources)
+                        return repeated(identity, record)
                 return False
             values.append(value)
         identity = _occurrence_visible_signature(values[0],values[3],values[4],fact_sources)
-        if identity in seen:
+        if repeated(identity, record):
             return True
-        seen.add(identity)
+        seen.setdefault(identity, set()).add(record)
         while position<len(wire) and wire[position] in ' \r\t\n':
             position += 1
         if wire[position:position+1]!='}':
@@ -244,8 +254,31 @@ def _semantic_wire_fact_sources(messages):
     return sources
 
 
-def _occurrence_greedy_node_filter(tokenizer, prompt_tokens, fact_sources=None, visible_filter=None, compact_prefix=None):
+def _semantic_wire_dated_records(material):
+    if material.get('author_profile') != OCCURRENCE_V24_PROFILE or 'history_stage' in material:
+        return None
+    nodes = material['plan']['nodes']
+    dates = _semantic_choice_module().repeated_record_node_dates(material, nodes, include_corrections=True)
+    action_fields = {scope['action_field'] for scope in material.get('received_answer_thoughts', ())}
+    fields = {field['field']: field for field in material['fields']}
+    dated_records = {}
+    for index in dates:
+        node = nodes[index]
+        roots = [root for unit in node['units'] for root in unit['evidence']]
+        if len(roots) != 1:
+            continue
+        source = fields[roots[0]['field']]
+        if source['field'] in action_fields or source['source_role'] == 'USER_INTERPRETATION_CORRECTION':
+            dated_records[node['node_id']] = source['record']
+    return dated_records
+
+
+def _occurrence_greedy_node_filter(tokenizer, prompt_tokens, fact_sources=None, visible_filter=None,
+                                   compact_prefix=None, *, dated_records=None):
     """Filter actual greedy choices after the pinned LMFE prefix mask."""
+    duplicate = (partial(_occurrence_duplicate_prefix, dated_records=dated_records)
+                 if dated_records else _occurrence_duplicate_prefix)
+
     def choose(input_ids, scores):
         if len(scores)!=1 or len(input_ids)!=1:
             raise ValueError('occurrence_single_greedy_sequence_required')
@@ -270,11 +303,11 @@ def _occurrence_greedy_node_filter(tokenizer, prompt_tokens, fact_sources=None, 
                         break
                     parser = parser.add_character(char)
                 else:
-                    if not _occurrence_duplicate_prefix(parser.projected_prefix(), fact_sources):
+                    if not duplicate(parser.projected_prefix(), fact_sources):
                         return scores
                 scores[0,picked] = float('-inf')
                 continue
-            if not _occurrence_duplicate_prefix(wire, fact_sources):
+            if not duplicate(wire, fact_sources):
                 return scores
             scores[0,picked] = float('-inf')
     return choose
@@ -3093,7 +3126,8 @@ def load_generator(adapter, process_stop, *, weights_sha256=None, config_sha256=
                         if material.get('author_profile') in VISIBLE_SOURCE_PROFILES else None)
                     compact_prefix = allowed_prefix if _semantic_merge_tuple_output(messages) else None
                     format_options['logits_processor']=[_occurrence_greedy_node_filter(tokenizer,count,
-                        _semantic_wire_fact_sources(messages),visible_filter,compact_prefix)]
+                        _semantic_wire_fact_sources(messages), visible_filter, compact_prefix,
+                        dated_records=_semantic_wire_dated_records(material))]
                 elif material.get('author_profile') in {OCCURRENCE_V6_PROFILE, OCCURRENCE_V7_PROFILE, OCCURRENCE_V8_PROFILE, *SOURCE_CUED_PROFILES} and material.get('author_phase') == 'RELATIONS':
                     format_options['logits_processor']=[_occurrence_greedy_relation_filter(allowed_prefix, prompt_tokens=prefix_offset)]
             format_options['prefix_allowed_tokens_fn'] = private_prefix

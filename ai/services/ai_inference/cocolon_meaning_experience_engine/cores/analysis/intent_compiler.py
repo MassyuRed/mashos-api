@@ -4552,7 +4552,10 @@ def _expand_analysis_semantic_node_local_v3(prepared, packet, *, fact_endpoints=
             include_authored_titles=record_scoped_captions) or overview_text
     if record_scoped_captions:
         from analysis_plan_source_choices import repeated_record_node_dates
-        for index, label in repeated_record_node_dates(material, packet['nodes']).items():
+        include_corrections = (material.get('author_profile') == 'semantic_map.node_local.v4.occurrence.v24'
+                               and 'history_stage' not in material)
+        for index, label in repeated_record_node_dates(
+                material, packet['nodes'], include_corrections=include_corrections).items():
             node = nodes[index]
             dated = label + '：\n' + node['summary']
             # A dense caption can exceed the public bound; the body's full facts

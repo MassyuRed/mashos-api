@@ -171,6 +171,15 @@ def v24_provider(calls, *, received_case=False, plan_packet=None, scoped_node_gu
             value.update(plan_sha256=schema['plan_sha256']['enum'][0], nodes=nodes)
             if scoped_node_guide is not None:
                 prepared, titles = scoped_node_guide
+                raw = json.dumps(value, ensure_ascii=False, separators=(',', ':'))
+                facts = probe._semantic_wire_fact_sources(messages)
+                dated_records = probe._semantic_wire_dated_records(material)
+                assert probe._occurrence_duplicate_prefix(raw, facts)
+                assert not probe._occurrence_duplicate_prefix(raw, facts, dated_records=dated_records)
+                assert probe._occurrence_duplicate_prefix(raw, facts,
+                    dated_records=dict.fromkeys(dated_records, 1))
+                assert probe._occurrence_duplicate_prefix(raw, facts,
+                    dated_records=dict(list(dated_records.items())[:1]))
                 ordinary_material = dict(material)
                 del ordinary_material['received_answer_thoughts']
                 ordinary_messages = [messages[0], dict(role='user',
@@ -419,16 +428,18 @@ def test_free_received_meaning_and_deep_insight_keep_original_fields_and_saved_e
     assert len(calls) == 3
 
 
-@pytest.mark.parametrize('correct_short', [False, True])
-def test_v24_whole_plan_keeps_two_answered_thoughts_and_actions_separate(natural_case, received_map_db, correct_short):
+@pytest.mark.parametrize('correction_count', [0, 1, 2])
+def test_v24_whole_plan_keeps_two_answered_thoughts_and_actions_separate(natural_case, received_map_db, correction_count):
     qdb = received_map_db
     user, original, emlis, _ = natural_case
     thought, action = '褒められたのに、嬉しくなかった。', '会議で発表した。'
     short_text, replacement = 'つらかったんです', '私は不安だった'
     assert 'code' not in qdb.query('update public.emotions set memo=$2,memo_action=$3 where id=$1',
         [original, thought, action])
-    second, short = str(uuid4()), str(uuid4())
-    for identifier, memo, memo_action in ((second, thought, action), (short, short_text + '。', '')):
+    second = str(uuid4())
+    corrected_records = [str(uuid4()) for _ in range(correction_count)]
+    short_records = [(short, short_text + '。', '') for short in corrected_records] or [(str(uuid4()), short_text + '。', '')]
+    for identifier, memo, memo_action in [(second, thought, action), *short_records]:
         assert 'code' not in qdb.query('''insert into public.emotions
             values ($1,$2,(now()-interval '5 seconds') at time zone 'UTC',$3,$4,
                 array['仕事'],array['不安'],$5)''',
@@ -438,7 +449,7 @@ def test_v24_whole_plan_keeps_two_answered_thoughts_and_actions_separate(natural
         refined = run(answer(emlis, user, initial, supplement))
         assert refined['body_state'] == 'REFINED'
 
-    if correct_short:
+    if correction_count:
         from cocolon_meaning_experience_engine.natural_reply import NaturalReply
         from test_emlis_interpretation_correction import correct
 
@@ -449,11 +460,12 @@ def test_v24_whole_plan_keeps_two_answered_thoughts_and_actions_separate(natural
 
         emlis.natural_context_update_enabled = False
         emlis.natural_reply_source = reply
-        original_short = run(emlis.start(user, short))
-        assert (original_short['body_state'], original_short['issued_count']) == ('FINAL', 0)
-        correction = run(correct(emlis, user, original_short, text=short_text,
-            explanation=f'「{short_text}」ではなく「{replacement}」です。'))
-        assert correction['body_state'] == 'FINAL'
+        for short in corrected_records:
+            original_short = run(emlis.start(user, short))
+            assert (original_short['body_state'], original_short['issued_count']) == ('FINAL', 0)
+            correction = run(correct(emlis, user, original_short, text=short_text,
+                explanation=f'「{short_text}」ではなく「{replacement}」です。'))
+            assert correction['body_state'] == 'FINAL'
 
     result = qdb.query('select public.analysis_cumulative_source_snapshot($1) as value', [user], 'service_role')
     assert 'code' not in result
@@ -473,9 +485,10 @@ def test_v24_whole_plan_keeps_two_answered_thoughts_and_actions_separate(natural
     for scope in received_scopes:
         assert [[scope['thought_field']], [scope['answer_field']]] in nodes
         assert [[scope['action_field']]] in nodes[len(material['records']):]
-    if correct_short:
-        field, = (field for field in material['fields'] if field['source_role'] == 'USER_INTERPRETATION_CORRECTION')
-        assert field['text'] == replacement and [[field['field']]] in nodes
+    if correction_count:
+        fields = [field for field in material['fields'] if field['source_role'] == 'USER_INTERPRETATION_CORRECTION']
+        assert len(fields) == correction_count
+        assert all(field['text'] == replacement and [[field['field']]] in nodes for field in fields)
         assert short_text not in prompt['content']
         assert not admission._semantic_received_answer_plan(material, allow_multiple=True)
     crossed = deepcopy(packet)
@@ -512,7 +525,7 @@ def test_v24_whole_plan_keeps_two_answered_thoughts_and_actions_separate(natural
     response = run(v24_provider(calls, plan_packet=packet, scoped_node_guide=(prepared, titles))(prepared))
     artifact, coverage = semantic.build_semantic_map(prepared, response)
     assert [phase for phase, _ in calls] == ['PLAN', 'NODES', 'RELATIONS']
-    assert coverage['mapped_count'] == 3
+    assert coverage['mapped_count'] == 2 + len(short_records)
     projection = artifact.safe_projection(authenticated_owner_scope=user)
     assert not projection['edges']
     actions = [node for node in projection['nodes'] if node['title'] == action]
@@ -522,6 +535,22 @@ def test_v24_whole_plan_keeps_two_answered_thoughts_and_actions_separate(natural
                node['summary'].endswith(f'）：\n{action}') for node in actions)
     private_nodes = {node['node_ref']: node for node in artifact.private_evidence()['graph']['nodes']}
     assert {tuple(private_nodes[node['node_ref']]['record_refs']) for node in actions} == {(original,), (second,)}
-    if correct_short:
+    for short in corrected_records:
         corrected, = (node for node in private_nodes.values() if node['record_refs'] == [short])
         assert replacement in corrected['explanation'] and short_text not in corrected['explanation']
+    if correction_count == 2:
+        owners = {(short,) for short in corrected_records}
+        corrected = [node for node in projection['nodes']
+                     if tuple(private_nodes[node['node_ref']]['record_refs']) in owners]
+        assert len(corrected) == 2 and len({node['summary'] for node in corrected}) == 2
+        assert all(node['summary'].endswith(f'への訂正：\n{replacement}') for node in corrected)
+        text_lines = artifact.safe_text_projection(authenticated_owner_scope=user)['text'].splitlines()
+        assert all(node['summary'].splitlines()[0] in text_lines for node in corrected)
+        expected = {source.record_ref: source.envelope.envelope_id for source in prepared.frozen.sources
+                    if source.direct_feeling_target is not None}
+        assert set(expected) == set(corrected_records) and len(set(expected.values())) == 2
+        for node in corrected:
+            private = private_nodes[node['node_ref']]
+            short, = private['record_refs']
+            root, = private['evidence_refs']
+            assert root['source_envelope_id'] == expected[short]

@@ -1846,8 +1846,8 @@ class OverviewSourcePhrases:
         return bool(covered) and covered != self.required
 
 
-def repeated_record_node_dates(material, nodes):
-    """Date separate nodes from one record only when every root belongs to that original."""
+def repeated_record_node_dates(material, nodes, *, include_corrections=False):
+    """Date independently owned nodes when their source record needs to be shown."""
     from collections import Counter
 
     fields = _original_field_records(material)
@@ -1862,10 +1862,36 @@ def repeated_record_node_dates(material, nodes):
         owners.append(source_records.pop() if len(source_records) == 1 else None)
     counts = Counter(owner for owner in owners if owner is not None)
     records = [row['record'] for row in material['records']]
-    if len(records) < 2 or not any(count > 1 for count in counts.values()):
+    if len(records) < 2:
+        return {}
+    originals = ({index: owner for index, owner in enumerate(owners) if owner in counts}
+                 if any(count > 1 for count in counts.values()) else {})
+    corrections = {}
+    if include_corrections:
+        fields = {field['field']: field for field in material['fields']
+                  if field['source_role'] == 'USER_INTERPRETATION_CORRECTION'
+                  and field.get('field_path') == 'memo' and field.get('source_recorded_at')
+                  and field['record'] in records}
+        repeated = {}
+        for index, node in enumerate(nodes):
+            roots = [root for unit in node['units'] for root in unit['evidence']]
+            if len(roots) != 1:
+                continue
+            root = roots[0]
+            field = fields.get(root['field'])
+            if field and root['quote'] == field['text']:
+                repeated.setdefault(root['quote'], []).append((index, field['record']))
+        for occurrences in repeated.values():
+            if len({record for _, record in occurrences}) > 1:
+                corrections.update(occurrences)
+    if not originals and not corrections:
         return {}
     labels = dict(zip(records, _source_date_labels(material, records), strict=True))
-    return {index: labels[owner] for index, owner in enumerate(owners) if owner in counts}
+    dated = {index: labels[owner] for index, owner in originals.items()}
+    # Date the original being corrected. This label is the source record's
+    # date and leaves both the correction clock and event timing intact.
+    dated.update((index, labels[owner] + 'への訂正') for index, owner in corrections.items())
+    return dated
 
 
 def selected_record_overview(material, nodes, fixed_parts, heading, *, include_authored_titles=False):
