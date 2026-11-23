@@ -22,7 +22,7 @@ from cocolon_meaning_experience_engine import MeaningExperienceEngine
 from cocolon_meaning_experience_engine.contracts import GenerationRequest, EngineStatus, ExecutionMode
 from cocolon_meaning_experience_engine.source_kernel import freeze_text_source
 from cocolon_meaning_experience_engine.emlis_thread_source import admit_emlis_thread, identity
-from cocolon_meaning_experience_engine.natural_reply import ACTIVE_MEANING_PROFILE
+from cocolon_meaning_experience_engine.natural_reply import ACTIVE_MEANING_PROFILE, OBSERVATION_CONTEXT_VERSION
 from cocolon_meaning_experience_engine.emlis_thread_contracts import (
     EmlisThreadInputV1, EmlisQuestionControlV1, EmlisClarificationV1,
     EmlisQuestionDecisionV1, SupplementalAnswerSource, InterpretationCorrectionSource, SEMANTIC_SCHEMA,
@@ -357,7 +357,8 @@ class EmlisThreadService:
                  semantic_profile=None, offline_candidate_source=None, offline_model_attempt_seconds=None,
                  natural_reply_source=None, response_profile=None, natural_questions_enabled=True,
                  natural_meaning_profile=ACTIVE_MEANING_PROFILE, natural_context_update_enabled=True,
-                 natural_context_update_paid_only=False, initial_recipient_reply_enabled=False):
+                 natural_context_update_paid_only=False, initial_recipient_reply_enabled=False,
+                 observation_theory_enabled=False):
         if runtime_profile not in {RUNTIME_PROFILE, Q3_PROFILE}:
             raise ValueError("unsupported_thread_profile")
         if natural_reply_source is not None:
@@ -369,12 +370,14 @@ class EmlisThreadService:
         self.response_profile = response_profile
         self.natural_reply_source = natural_reply_source
         if any(type(setting) is not bool for setting in (natural_questions_enabled,
-                natural_context_update_enabled, natural_context_update_paid_only, initial_recipient_reply_enabled)):
+                natural_context_update_enabled, natural_context_update_paid_only, initial_recipient_reply_enabled,
+                observation_theory_enabled)):
             raise ValueError("natural_question_setting_invalid")
         self.natural_questions_enabled = natural_questions_enabled
         self.natural_context_update_enabled = natural_context_update_enabled
         self.natural_context_update_paid_only = natural_context_update_paid_only
         self.initial_recipient_reply_enabled = initial_recipient_reply_enabled
+        self.observation_theory_enabled = observation_theory_enabled
         if natural_meaning_profile not in {None, ACTIVE_MEANING_PROFILE}:
             raise ValueError('natural_reply_meaning_profile_invalid')
         self.natural_meaning_profile = natural_meaning_profile
@@ -489,6 +492,8 @@ class EmlisThreadService:
                     natural_questions_enabled=self.natural_questions_enabled and receive_questions)
                 if self.initial_recipient_reply_enabled:
                     t['data']['initial_recipient_question_policy'] = True
+                    if self.observation_theory_enabled:
+                        t['data']['observation_writer_version'] = OBSERVATION_CONTEXT_VERSION
                 if self.natural_context_update_enabled and (
                         not self.natural_context_update_paid_only or snapshot["tier"] in {"plus", "premium"}):
                     # Pin context at thread start so changing the deployment setting
@@ -990,6 +995,11 @@ class EmlisThreadService:
             if prepared is not None:
                 raise
             return snapshot, None, None
+        if (question is not None and t['data'].get('observation_writer_version') == OBSERVATION_CONTEXT_VERSION
+                and admitted.original.emotion == '自己理解'):
+            from cocolon_meaning_experience_engine.emlis_question import self_understanding_has_open_target
+            if not self_understanding_has_open_target(admitted, question):
+                question = None
         return snapshot, question if decision.disposition == "ASK" else None, prepared
 
     async def _process_natural(self, user_id, snapshot):
@@ -1039,7 +1049,7 @@ class EmlisThreadService:
         if context_version not in {None, SOURCE_CONTEXT_VERSION, CORRECTED_SOURCE_CONTEXT_VERSION,
                                    RECEIVED_ANSWER_CONTEXT_VERSION, PAID_RECEIVED_ANSWER_CONTEXT_VERSION,
                                    INITIAL_STANDALONE_FEELING_CONTEXT_VERSION,
-                                   INITIAL_RECIPIENT_CONTEXT_VERSION,
+                                   INITIAL_RECIPIENT_CONTEXT_VERSION, OBSERVATION_CONTEXT_VERSION,
                                    *DIRECT_FEELING_CORRECTION_CONTEXT_VERSIONS}:
             raise NaturalReplyError('natural_reply_writer_identity_changed')
         direct_version = (context_version if context_version in DIRECT_FEELING_CORRECTION_CONTEXT_VERSIONS
@@ -1047,9 +1057,13 @@ class EmlisThreadService:
         initial_unanswered_final = (t['data'].get('initial_recipient_question_policy') is True
             and t['data'].get('natural_question_stop') in {'skip', 'stop'}
             and not t.get('latest_answer_event_id') and not correcting)
+        use_observation_writer = (not correcting and (
+            context_version == OBSERVATION_CONTEXT_VERSION or (prior is None
+                and t['data'].get('observation_writer_version') == OBSERVATION_CONTEXT_VERSION)))
         material, safety = prepare_natural_reply(_request(snapshot), response_stage=response_stage,
+            use_observation_writer=use_observation_writer,
             bind_writer_context=(context_version is not None
-                and (context_version != INITIAL_RECIPIENT_CONTEXT_VERSION
+                and (context_version not in {INITIAL_RECIPIENT_CONTEXT_VERSION, OBSERVATION_CONTEXT_VERSION}
                      or t['data'].get('natural_context_update_enabled') is True)),
             include_corrected_circumstance=context_version == CORRECTED_SOURCE_CONTEXT_VERSION,
             include_received_answer=context_version in {RECEIVED_ANSWER_CONTEXT_VERSION,

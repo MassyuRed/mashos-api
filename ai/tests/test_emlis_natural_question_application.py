@@ -13,7 +13,7 @@ import pytest
 from test_emlis_q2_application import run, answer
 from test_emlis_q3_application import qdb
 from cocolon_meaning_experience_engine.natural_reply import (
-    INITIAL_RECIPIENT_CONTEXT_VERSION, NaturalReply, build_natural_reply_messages)
+    INITIAL_RECIPIENT_CONTEXT_VERSION, OBSERVATION_CONTEXT_VERSION, NaturalReply, build_natural_reply_messages)
 from emlis_thread_service import EmlisThreadService, Q3_PROFILE
 from emlis_thread_store import ThreadStoreError
 from test_emlis_natural_reply_application import _active_application_owner, _observe_initial_natural_failures
@@ -320,7 +320,9 @@ def test_skip_finishes_with_new_final_reply_and_replay_never_reacquires(natural_
     assert saved['thread']['data']['natural_question_stop'] == 'skip'
 
 
-def test_application_first_skip_keeps_live_paid_history_out_of_the_reply_writer(natural_questions, qdb, monkeypatch):
+@pytest.mark.parametrize('observation', [False, True])
+def test_application_first_skip_keeps_live_paid_history_out_of_the_reply_writer(natural_questions, qdb, monkeypatch,
+                                                                                observation):
     user, parent, _, _ = natural_questions(tier='plus')
     past = str(uuid4())
     qdb.query("insert into public.emotions values ($1,$2,(now()-interval '1 day') at time zone 'UTC',$3,'',"
@@ -334,7 +336,7 @@ def test_application_first_skip_keeps_live_paid_history_out_of_the_reply_writer(
         return NaturalReply('褒められても嬉しくなかったんですね。Emlisはその気持ちを大切に受け止めています。',
                             'synthetic-single-provider', material.source_prefix_ref)
 
-    owner = _active_application_owner(monkeypatch, provider, 'paid')
+    owner = _active_application_owner(monkeypatch, provider, 'paid', observation=observation)
     initial = run(owner.start(user, parent))
     assert initial['state'] == 'AWAITING_ANSWER', initial
     done = run(owner.action(user, initial['thread_id'], action='skip',
@@ -344,12 +346,122 @@ def test_application_first_skip_keeps_live_paid_history_out_of_the_reply_writer(
     _, final = calls
     assert [row['input_id'] for row in json.loads(final.material_json)['past_user_records']] == [past]
     writer = json.loads(final.writer_material_json)
-    assert writer['source_context_version'] == INITIAL_RECIPIENT_CONTEXT_VERSION
+    assert writer['source_context_version'] == (OBSERVATION_CONTEXT_VERSION if observation else INITIAL_RECIPIENT_CONTEXT_VERSION)
     assert 'history_line' not in writer and writer['user_frame_feedback'] == []
     user_message = json.loads(build_natural_reply_messages(final)[1]['content'])
     assert set(user_message) == {'今回の記録'}
     assert '昨日のことです' not in json.dumps(user_message, ensure_ascii=False)
     assert run(owner.get(user, parent))['current_observation'] == done['current_observation']
+
+
+@pytest.mark.parametrize('tier', ['free', 'plus', 'premium'])
+def test_observation_writer_receives_one_verified_prior_passage_only_for_paid_plans(
+        natural_questions, qdb, monkeypatch, tier):
+    user, parent, _, _ = natural_questions(tier=tier, memo='資料を期限に間に合わせた。今日は肩の力が抜けた。')
+    past_memo = '資料を期限に間に合わせた。あの日はほっとした。'
+    for memo, days in [(past_memo, 2), ('駅で傘を買った。', 3)]:
+        qdb.query("insert into public.emotions values ($1,$2,(now()-$4::integer*interval '1 day') at time zone 'UTC',"
+                  "$3,'',array['仕事'],array['平穏'],$5)",
+                  [str(uuid4()), user, memo, days, json.dumps([dict(type='平穏', strength='medium')])])
+    calls = []
+    reply = '間に合って、今日は肩の力が抜けたんですね。Emlisもほっとしました。'
+
+    async def provider(request):
+        calls.append(build_natural_reply_messages(request))
+        return NaturalReply(reply, 'synthetic-single-provider', request.source_prefix_ref)
+
+    owner = _active_application_owner(monkeypatch, provider, 'paid', observation=True)
+    initial = run(owner.start(user, parent))
+    assert initial['current_observation']['text'] == reply
+    assert run(owner.get(user, parent))['current_observation'] == initial['current_observation']
+    (system, user_message), = calls
+    material = json.loads(user_message['content'])
+    assert material.get('以前の本人の言葉') == (None if tier == 'free' else past_memo)
+    assert '駅で傘' not in user_message['content']
+    assert ('二つを並べて読む' in system['content']) is (tier != 'free')
+
+
+def test_self_understanding_projects_the_discovery_and_preserves_the_stored_selection(
+        natural_questions, qdb, monkeypatch):
+    memo = '頼られることが好きだと思っていたけれど、相手によるとわかりました。'
+    user, parent, _, _ = natural_questions(memo=memo)
+    selection = [dict(type='自己理解', strength='medium')]
+    qdb.query("update public.emotions set emotions=array['自己理解'],emotion_details=$2 where id=$1",
+              [parent, json.dumps(selection)])
+    calls = []
+
+    async def provider(request):
+        calls.append(request)
+        return NaturalReply('誰に頼られるかで違うんですね。その違いを聞けて、Emlisはうれしいです。',
+                            'synthetic-single-provider', request.source_prefix_ref)
+
+    owner = _active_application_owner(monkeypatch, provider, 'paid', observation=True)
+    initial = run(owner.start(user, parent))
+    assert initial['state'] == 'COMPLETED' and initial['pending_question'] is None
+    request, = calls
+    system, user_message = build_natural_reply_messages(request)
+    assert '本人が自分について気づいたこと' in system['content']
+    assert memo in user_message['content'] and 'medium' not in user_message['content']
+    assert json.loads(request.material_json)['current']['emotion_details'] == selection
+    assert run(owner.get(user, parent))['current_observation'] == initial['current_observation']
+
+
+@pytest.mark.parametrize(('memo', 'asks'), [
+    ('褒められたのに、嬉しくなかった。', False),
+    ('褒められたのに、嬉しくなかった。なぜだろう。', True),
+    ('褒められたのに、嬉しくなかった。駅で友人に会った。どうしてかな。', False),
+])
+def test_self_understanding_only_asks_about_an_open_point_in_its_own_passage(
+        natural_questions, qdb, monkeypatch, memo, asks):
+    user, parent, service, _ = natural_questions(memo=memo)
+    qdb.query("update public.emotions set emotions=array['自己理解'],emotion_details=$2 where id=$1",
+              [parent, json.dumps([dict(type='自己理解', strength='medium')])])
+    owner = _active_application_owner(monkeypatch, service.natural_reply_source, 'paid', observation=True)
+    initial = run(owner.start(user, parent))
+    assert (initial['pending_question'] is not None) is asks
+
+
+def test_answer_updates_the_observation_without_treating_the_question_as_the_users_words(
+        natural_questions, monkeypatch):
+    user, parent, _, _ = natural_questions()
+    calls = []
+
+    async def provider(request):
+        calls.append(request)
+        return NaturalReply('重く感じられたんですね。' if len(calls) == 2 else ACK,
+                            'synthetic-single-provider', request.source_prefix_ref)
+
+    owner = _active_application_owner(monkeypatch, provider, 'paid', observation=True)
+    initial = run(owner.start(user, parent))
+    final = run(answer(owner, user, initial, 'その時は重かった。'))
+    assert final['state'] == 'COMPLETED'
+    _, refined = calls
+    system, user_message = build_natural_reply_messages(refined)
+    assert '今日かける言葉を選び直し' in system['content']
+    assert 'その時は重かった。' in user_message['content']
+    assert initial['pending_question']['text'] in user_message['content']
+    assert run(owner.get(user, parent))['current_observation'] == final['current_observation']
+
+
+def test_prior_recipient_version_still_builds_the_original_prompt(natural_questions, monkeypatch):
+    from dataclasses import replace
+    user, parent, _, _ = natural_questions()
+    calls = []
+
+    async def provider(request):
+        calls.append(request)
+        return NaturalReply(ACK, 'synthetic-single-provider', request.source_prefix_ref)
+
+    owner = _active_application_owner(monkeypatch, provider, 'paid', observation=True)
+    run(owner.start(user, parent))
+    material, = calls
+    writer = json.loads(material.writer_material_json)
+    writer['source_context_version'] = INITIAL_RECIPIENT_CONTEXT_VERSION
+    writer.pop('self_understanding')
+    legacy = replace(material, writer_material_json=json.dumps(writer, ensure_ascii=False))
+    system, user_message = build_natural_reply_messages(legacy)
+    assert '焼きたてのパン' in system['content']
+    assert '今回の記録' in user_message['content']
 
 
 def test_stop_after_answer_preserves_current_complete_reply_without_extra_generation(natural_questions):

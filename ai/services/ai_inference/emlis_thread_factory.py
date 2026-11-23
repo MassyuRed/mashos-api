@@ -6,7 +6,8 @@ import os
 
 from emlis_thread_service import Q3_PROFILE
 from emlis_thread_config import observation_reply_provider_settings
-from cocolon_meaning_experience_engine.natural_reply import PROFILE, SelfHostedNaturalReplySource
+from cocolon_meaning_experience_engine.natural_reply import (
+    PROFILE, OBSERVATION_CONTEXT_VERSION, SelfHostedNaturalReplySource)
 
 _initial_tasks = {}
 
@@ -32,7 +33,9 @@ def application_thread_service():
                               natural_reply_source=source, response_profile=profile or None,
                               natural_context_update_enabled=context_update_mode in {"true", "paid"},
                               natural_context_update_paid_only=context_update_mode == "paid",
-                              initial_recipient_reply_enabled=True)
+                              initial_recipient_reply_enabled=True,
+                              observation_theory_enabled=(os.getenv("COCOLON_EMLIS_OBSERVATION_WRITER")
+                                                          == OBSERVATION_CONTEXT_VERSION))
 
 
 def schedule_initial_reply(owner, user_id, input_id):

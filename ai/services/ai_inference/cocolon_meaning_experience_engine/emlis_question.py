@@ -355,6 +355,37 @@ def _feeling_circumstance_candidate(thread, plan, *, parent_request_id, respect_
     return decision, question
 
 
+_OPEN_SELF_QUESTION = re.compile(
+    r"(?:なぜ|どうして|何が|どこが|いつから|どんな時|どんなとき|誰なら|どういう時)"
+    r"[^。！？?]*?(?:だろう|でしょう|かな|知りたい|考え中|考えてい(?:る|ます)|"
+    r"(?:分から|わから)(?:ない|ずにいる)|(?:分かり|わかり)ません)[。．!?！？\s]*$")
+
+
+def self_understanding_has_open_target(thread, question):
+    """Only ask about a question the author left open in this same passage."""
+    from emlis_ai_grounded_observation_plan import _top_level_text
+
+    targets = set(question.decision.supporting_evidence_refs)
+    # A new answer may close or replace the uncertainty in the original. Read
+    # the latest answer only when deciding whether to ask a further question.
+    source = thread.answers[-1] if thread.answers else thread.original
+    for field in ('memo', 'memo_action', 'answer_text_private'):
+        spans = [s for s in source.evidence_spans if s.source_field == field]
+        for i, span in enumerate(spans):
+            visible = _top_level_text(span.raw_text)
+            if not visible or not _OPEN_SELF_QUESTION.search(visible):
+                continue
+            # A stand-alone 「なぜだろう」 may follow its explicit target.
+            related = [span]
+            if i and re.fullmatch(r"(?:なぜ|どうして)(?:なん)?(?:だろう|でしょう|かな)[。．!?！？\s]*", visible):
+                related.append(spans[i-1])
+            related_ids = {item.span_id for item in related}
+            if any(ref.evidence_id in targets and ref.source_span_id in related_ids
+                   for ref in source.evidence_refs):
+                return True
+    return False
+
+
 def question_candidate(thread: AdmittedEmlisThread, plan, *, parent_request_id: str,
                        respect_control: bool = True, allow_affect_question: bool = False):
     control = thread.control.question_control_context

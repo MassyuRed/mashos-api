@@ -208,11 +208,20 @@ def test_optional_frame_derivation_failure_preserves_valid_saved_natural_reply(n
     assert current['interpretive_frames'] == [] and len(calls) == 1
 
 
-@pytest.mark.parametrize('tier,paid_context', [('plus', True), ('premium', True), ('premium', False)])
-def test_paid_current_answer_and_history_survive_receipt_retry(natural_case, qdb, monkeypatch, tier, paid_context):
+@pytest.mark.parametrize('tier,version', [
+    ('plus', natural_reply.PAID_RECEIVED_ANSWER_CONTEXT_VERSION),
+    ('premium', natural_reply.PAID_RECEIVED_ANSWER_CONTEXT_VERSION),
+    ('premium', natural_reply.SOURCE_CONTEXT_VERSION),
+    ('plus', natural_reply.OBSERVATION_CONTEXT_VERSION),
+    ('premium', natural_reply.OBSERVATION_CONTEXT_VERSION),
+])
+def test_paid_current_answer_and_history_survive_receipt_retry(natural_case, qdb, monkeypatch, tier, version):
     user, parent, service, calls, past, _ = _case(natural_case, qdb, tier=tier)
     qdb.query('update public.emotions set memo_action=$2 where id=$1', [parent, '会議で発表した。'])
-    owner = _active_application_owner(monkeypatch, service.natural_reply_source, 'paid')
+    owner = _active_application_owner(monkeypatch, service.natural_reply_source, 'paid',
+                                      observation=version == natural_reply.OBSERVATION_CONTEXT_VERSION)
+    # Pin the original generation even when the next process has the new factory.
+    owner.initial_recipient_reply_enabled = version == natural_reply.OBSERVATION_CONTEXT_VERSION
     initial = run(owner.start(user, parent))
     service = _active_application_owner(monkeypatch, owner.natural_reply_source, 'false')
     assert run(service.get(user, parent))['pending_question'] == initial['pending_question']
@@ -239,7 +248,7 @@ def test_paid_current_answer_and_history_survive_receipt_retry(natural_case, qdb
     service.natural_reply_source = provider
     monkeypatch.setattr(emlis_thread_store, 'sb_post_rpc', rpc)
     with monkeypatch.context() as old_writer:
-        if not paid_context:
+        if version == natural_reply.SOURCE_CONTEXT_VERSION:
             prepare = natural_reply.prepare_natural_reply
 
             def prepare_legacy(*args, **kwargs):
@@ -250,16 +259,19 @@ def test_paid_current_answer_and_history_survive_receipt_retry(natural_case, qdb
         interrupted = run(answer(service, user, initial, 'その時は怖かった。'))
     assert interrupted['can_retry'] and len(calls) == 2
     messages = natural_reply.build_natural_reply_messages(calls[-1])
-    version = (natural_reply.PAID_RECEIVED_ANSWER_CONTEXT_VERSION if paid_context
-               else natural_reply.SOURCE_CONTEXT_VERSION)
+    appended_history = version == natural_reply.PAID_RECEIVED_ANSWER_CONTEXT_VERSION
     writer = json.loads(calls[-1].writer_material_json)
     assert writer['source_context_version'] == version
-    if paid_context:
+    if version != natural_reply.SOURCE_CONTEXT_VERSION:
         author_input = messages[1]['content']
         assert '怖かった' in author_input and '会議で発表した' not in author_input
         assert '重かった' not in author_input and REVISION not in author_input
-        assert '記録の「褒められた」' in writer['history_line']
-        expected = f"{current}\n\n{writer['history_line']}"
+        if appended_history:
+            assert '記録の「褒められた」' in writer['history_line']
+            expected = f"{current}\n\n{writer['history_line']}"
+        else:
+            assert 'history_line' not in writer
+            expected = current
     else:
         assert '重かった' in messages[1]['content'] and REVISION in messages[1]['content']
         expected = current
@@ -276,8 +288,8 @@ def test_paid_current_answer_and_history_survive_receipt_retry(natural_case, qdb
                 and e['operation_id'] == interrupted['operation_id']]
     assert receipt['payload']['reply']['text'] == expected
     assert receipt['payload']['writer_context_version'] == version
-    assert ('writer_history_sha256' in receipt['payload']) is paid_context
-    assert receipt['payload'].get('provider_reply_text') == (current if paid_context else None)
+    assert ('writer_history_sha256' in receipt['payload']) is appended_history
+    assert receipt['payload'].get('provider_reply_text') == (current if appended_history else None)
     adapter = _piece_adapter(user, service, monkeypatch)
     ref = run(adapter.resolve_refined_source_ref('Bearer synthetic', parent,
         supplemental_answer_identity=snapshot['thread']['latest_answer_event_id'], opted_in=True))
