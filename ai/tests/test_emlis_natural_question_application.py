@@ -13,7 +13,7 @@ import pytest
 from test_emlis_q2_application import run, answer
 from test_emlis_q3_application import qdb
 from cocolon_meaning_experience_engine.natural_reply import (
-    INITIAL_RECIPIENT_CONTEXT_VERSION, NaturalReply, build_natural_reply_messages)
+    INITIAL_SUPPORT_CONTEXT_VERSION, NaturalReply, build_natural_reply_messages)
 from emlis_thread_service import EmlisThreadService, Q3_PROFILE
 from emlis_thread_store import ThreadStoreError
 from test_emlis_natural_reply_application import _active_application_owner, _observe_initial_natural_failures
@@ -209,9 +209,39 @@ def test_application_context_mode_pins_new_thread_at_plan_boundary(
     assert snapshot['thread']['data'].get('natural_context_update_enabled') is (True if enabled else None)
     assert (dto['pending_question'] or {}).get('text') == ('なにがつらかったんですか？' if enabled else None)
     receipt, = [event for event in snapshot['events'] if event['payload'].get('stage') == 'NATURAL_REPLY_RECEIVED']
-    assert receipt['payload']['writer_context_version'] == INITIAL_RECIPIENT_CONTEXT_VERSION
+    assert receipt['payload']['writer_context_version'] == INITIAL_SUPPORT_CONTEXT_VERSION
     assert run(owner.get(user, parent))['current_observation'] == dto['current_observation']
     assert len(calls) == 1
+
+
+@pytest.mark.parametrize(('tier', 'related'), [('free', False), ('plus', True)])
+def test_initial_support_uses_only_related_owned_history(natural_questions, qdb, monkeypatch, tier, related):
+    user, parent, _, _ = natural_questions(tier=tier, memo='資料を期限に間に合わせた。今日は肩の力が抜けた。')
+    past_memo = '資料を期限に間に合わせた。あの日はほっとした。'
+    qdb.query("update public.emotions set memo_action='提出を済ませて席を立った。' where id=$1", [parent])
+    for memo, days in [(past_memo, 2), ('駅で傘を買った。', 3)]:
+        qdb.query("insert into public.emotions values ($1,$2,(now()-$4::integer*interval '1 day') at time zone 'UTC',"
+                  "$3,'',array['仕事'],array['平穏'],$5)",
+                  [str(uuid4()), user, memo, days, json.dumps([dict(type='平穏', strength='medium')])])
+
+    calls = []
+    reply = '間に合って、今日は肩の力が抜けたんですね。Emlisもほっとしました。'
+
+    async def provider(material):
+        calls.append(build_natural_reply_messages(material))
+        return NaturalReply(reply, 'synthetic-single-provider', material.source_prefix_ref)
+
+    owner = _active_application_owner(monkeypatch, provider, 'paid')
+    result = run(owner.start(user, parent))
+    assert result['current_observation']['text'] == reply
+    assert run(owner.get(user, parent))['current_observation'] == result['current_observation']
+    messages, = calls
+    system, user_message = messages
+    assert '強さは言葉の温度に反映' in system['content']
+    assert '駅で傘を買った' not in user_message['content']
+    context = json.loads(user_message['content'])
+    assert context.get('関連する以前の記録') == (past_memo if related else None)
+    assert '今日の本人にもう一文' in system['content'] if related else '関連する以前の記録' not in system['content']
 
 
 @pytest.mark.parametrize('tier', ('free', 'plus', 'premium'))
