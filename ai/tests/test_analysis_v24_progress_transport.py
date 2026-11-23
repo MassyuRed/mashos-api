@@ -14,6 +14,10 @@ from test_analysis_merge_response_parser import exchange, planned
 from test_analysis_occurrence_v17_record_owners import packet, prepared
 
 
+# Integral seconds keep the strict per-phase upper bounds exact on every runner.
+CLOCK_ORIGIN = 10_000.0
+
+
 @pytest.fixture(scope='module')
 def merge_exchange():
     stage, plan_packet = planned()
@@ -56,11 +60,9 @@ def test_progressing_phases_receive_fresh_clocks_and_keep_shared_tokens(monkeypa
 
     async def scenario():
         loop = asyncio.get_running_loop()
-        # Use an exact origin for the strict read-time bound below.
-        base_time = 10_000.0
         elapsed = 0
         sent = []
-        monkeypatch.setattr(loop, 'time', lambda: base_time + elapsed)
+        monkeypatch.setattr(loop, 'time', lambda: CLOCK_ORIGIN + elapsed)
 
         async def handler(request):
             nonlocal elapsed
@@ -92,9 +94,8 @@ def test_default_transport_still_enforces_one_stage_clock(monkeypatch, merge_exc
 
     async def scenario():
         loop = asyncio.get_running_loop()
-        base_time = loop.time()
         elapsed = 0
-        monkeypatch.setattr(loop, 'time', lambda: base_time + elapsed)
+        monkeypatch.setattr(loop, 'time', lambda: CLOCK_ORIGIN + elapsed)
 
         async def handler(request):
             nonlocal elapsed
@@ -125,9 +126,8 @@ def test_failed_phase_never_posts_again(monkeypatch, merge_exchange, failed_phas
 
     async def scenario():
         loop = asyncio.get_running_loop()
-        base_time = loop.time()
         elapsed = 0
-        monkeypatch.setattr(loop, 'time', lambda: base_time + elapsed)
+        monkeypatch.setattr(loop, 'time', lambda: CLOCK_ORIGIN + elapsed)
 
         async def handler(request):
             nonlocal elapsed
@@ -246,9 +246,8 @@ def test_split_v24_leaf_renews_clock_after_accepted_plan(monkeypatch):
 
     async def scenario():
         loop = asyncio.get_running_loop()
-        base_time = loop.time()
         elapsed = 0
-        monkeypatch.setattr(loop, 'time', lambda: base_time + elapsed)
+        monkeypatch.setattr(loop, 'time', lambda: CLOCK_ORIGIN + elapsed)
 
         async def handler(request):
             nonlocal elapsed
