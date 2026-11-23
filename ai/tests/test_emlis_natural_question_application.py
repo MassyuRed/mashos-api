@@ -443,6 +443,70 @@ def test_answer_updates_the_observation_without_treating_the_question_as_the_use
     assert run(owner.get(user, parent))['current_observation'] == final['current_observation']
 
 
+@pytest.mark.parametrize(('answer_text', 'interpreted'), [('その時は重かった。', True), ('はい。', False)])
+def test_answer_projection_uses_the_exact_issued_turn_and_can_replay_from_its_receipt(
+        natural_questions, monkeypatch, qdb, answer_text, interpreted):
+    from cocolon_meaning_experience_engine.natural_reply import OBSERVATION_ANSWER_CONTEXT_VERSION
+    from test_emlis_natural_reply_application import _piece_adapter
+
+    user, parent, _, _ = natural_questions()
+    calls = []
+    synthetic = '聞かせてくださって、ありがとうございます。'
+
+    async def provider(request):
+        calls.append(request)
+        return NaturalReply(synthetic, 'single-synthetic-author', request.source_prefix_ref)
+
+    owner = _active_application_owner(monkeypatch, provider, 'paid',
+                                      observation_version=OBSERVATION_ANSWER_CONTEXT_VERSION)
+    initial = run(owner.start(user, parent))
+    issued = initial['pending_question']
+    failed = False
+
+    async def rpc(method, payload, **kwargs):
+        nonlocal failed
+        if not failed and any(e['kind'] == 'OBSERVATION' for e in payload.get('p_events', [])):
+            failed = True
+            return httpx.Response(503, json={'code': '57P03'})
+        return await qdb.rpc(method, payload, **kwargs)
+
+    monkeypatch.setattr(emlis_thread_store, 'sb_post_rpc', rpc)
+    partial = run(answer(owner, user, initial, answer_text))
+    assert partial['can_retry']
+    request = calls[-1]
+    material = json.loads(request.material_json)
+    audit = json.loads(request.analysis_material_json)
+    bound, = material['current_answers']
+    assert (bound['question_id'], bound['ai_question_context'], bound['text']) == (
+        issued['question_id'], issued['text'], answer_text)
+    writer = json.loads(request.writer_material_json)
+    assert writer['records'][0]['active_state'] == 'PENDING'
+    assert writer['bound_answer_turns']['interpreted'] is interpreted
+    message = json.loads(build_natural_reply_messages(request)[1]['content'])
+    assert list(message)[-1] == 'いま届いたやり取り'
+    assert message['いま届いたやり取り'] == {'Emlisが送った問い': issued['text'], '本人の返答': answer_text}
+    assert message['今回の記録']['考えたこと・感じたこと'] == ONE
+    assert synthetic not in request.material_json and synthetic not in request.analysis_material_json
+    assert not any(source.get('source_role') == 'AI_QUESTION' for source in audit['sources'])
+    assert 'いま届いたやり取り' not in request.material_json + request.analysis_material_json
+    reopened = _active_application_owner(monkeypatch, provider, 'false')
+    result = run(reopened.action(user, partial['thread_id'], action='retry_response',
+        expected_revision=partial['revision'], idempotency_key='reread-new-answer', operation_id=partial['operation_id']))
+    assert result['current_observation']['text'] == synthetic
+    assert run(reopened.get(user, parent))['current_observation'] == result['current_observation']
+    saved = run(reopened.store.read(user, input_id=parent))
+    receipt, = [e for e in saved['events'] if e['payload'].get('stage') == 'NATURAL_REPLY_RECEIVED'
+                and e['operation_id'] == partial['operation_id']]
+    assert receipt['payload']['writer_context_version'] == OBSERVATION_ANSWER_CONTEXT_VERSION
+    assert len(calls) == 2
+    assert saved['original']['memo'] == ONE
+    if interpreted:
+        adapter = _piece_adapter(user, reopened, monkeypatch)
+        ref = run(adapter.resolve_refined_source_ref('Bearer synthetic', parent,
+            supplemental_answer_identity=saved['thread']['latest_answer_event_id'], opted_in=True))
+        assert ref['emlis_observation_result_identity'] == result['current_observation']['event_id']
+
+
 def test_prior_recipient_version_still_builds_the_original_prompt(natural_questions, monkeypatch):
     from dataclasses import replace
     user, parent, _, _ = natural_questions()

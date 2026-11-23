@@ -23,7 +23,7 @@ from cocolon_meaning_experience_engine.natural_reply import (
 BODY = "会議を終えて、少し安心できたのですね。\n\n資料を読み直したことも、今日の記録に残っています。"
 
 
-def _active_application_owner(monkeypatch, provider, context_mode, *, observation=False):
+def _active_application_owner(monkeypatch, provider, context_mode, *, observation=False, observation_version=None):
     from emlis_thread_factory import application_thread_service
 
     monkeypatch.setenv("COCOLON_EMLIS_THREAD_MODE", "active")
@@ -33,9 +33,9 @@ def _active_application_owner(monkeypatch, provider, context_mode, *, observatio
         monkeypatch.delenv("COCOLON_EMLIS_CONTEXT_UPDATE", raising=False)
     else:
         monkeypatch.setenv("COCOLON_EMLIS_CONTEXT_UPDATE", context_mode)
-    if observation:
+    if observation or observation_version:
         from cocolon_meaning_experience_engine.natural_reply import OBSERVATION_CONTEXT_VERSION
-        monkeypatch.setenv("COCOLON_EMLIS_OBSERVATION_WRITER", OBSERVATION_CONTEXT_VERSION)
+        monkeypatch.setenv("COCOLON_EMLIS_OBSERVATION_WRITER", observation_version or OBSERVATION_CONTEXT_VERSION)
     else:
         monkeypatch.delenv("COCOLON_EMLIS_OBSERVATION_WRITER", raising=False)
     owner = application_thread_service()

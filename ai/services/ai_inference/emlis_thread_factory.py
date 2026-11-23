@@ -7,7 +7,7 @@ import os
 from emlis_thread_service import Q3_PROFILE
 from emlis_thread_config import observation_reply_provider_settings
 from cocolon_meaning_experience_engine.natural_reply import (
-    PROFILE, OBSERVATION_CONTEXT_VERSION, SelfHostedNaturalReplySource)
+    PROFILE, OBSERVATION_CONTEXT_VERSIONS, SelfHostedNaturalReplySource)
 
 _initial_tasks = {}
 
@@ -29,13 +29,13 @@ def application_thread_service():
             # The profile remains selected, so a new write cannot fall back.
             source = None
     context_update_mode = os.getenv("COCOLON_EMLIS_CONTEXT_UPDATE")
+    writer_version = os.getenv("COCOLON_EMLIS_OBSERVATION_WRITER")
     return EmlisThreadService(runtime_profile=Q3_PROFILE, enforce_application_policy=True,
                               natural_reply_source=source, response_profile=profile or None,
                               natural_context_update_enabled=context_update_mode in {"true", "paid"},
                               natural_context_update_paid_only=context_update_mode == "paid",
                               initial_recipient_reply_enabled=True,
-                              observation_theory_enabled=(os.getenv("COCOLON_EMLIS_OBSERVATION_WRITER")
-                                                          == OBSERVATION_CONTEXT_VERSION))
+                              observation_writer_version=(writer_version if writer_version in OBSERVATION_CONTEXT_VERSIONS else None))
 
 
 def schedule_initial_reply(owner, user_id, input_id):

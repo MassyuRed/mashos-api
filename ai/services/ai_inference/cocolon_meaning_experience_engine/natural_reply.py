@@ -29,6 +29,8 @@ DIRECT_FEELING_CORRECTION_RECIPIENT_CONTEXT_VERSION = "bound_field_and_answer_co
 DIRECT_FEELING_CORRECTION_CONTEXT_VERSION = "bound_field_and_answer_context.v9"
 INITIAL_RECIPIENT_CONTEXT_VERSION = "bound_field_and_answer_context.v10"
 OBSERVATION_CONTEXT_VERSION = "bound_field_and_answer_context.v13"
+OBSERVATION_ANSWER_CONTEXT_VERSION = "bound_field_and_answer_context.v16"
+OBSERVATION_CONTEXT_VERSIONS = frozenset({OBSERVATION_CONTEXT_VERSION, OBSERVATION_ANSWER_CONTEXT_VERSION})
 DIRECT_FEELING_CORRECTION_CONTEXT_VERSIONS = frozenset({
     LEGACY_DIRECT_FEELING_CORRECTION_CONTEXT_VERSION,
     DIRECT_FEELING_CORRECTION_VOICE_CONTEXT_VERSION,
@@ -561,12 +563,14 @@ def prepare_natural_reply(request, *, use_meaning_support=False, response_stage=
                           include_corrected_circumstance=False, include_received_answer=False,
                           include_paid_received_answer=False, include_direct_feeling_correction=False,
                           include_initial_standalone_feeling=False,
-                          include_initial_recipient_reply=False, use_observation_writer=False,
+                          include_initial_recipient_reply=False, observation_writer_version=None,
                           initial_unanswered_final=False,
                           direct_feeling_correction_context_version=DIRECT_FEELING_CORRECTION_CONTEXT_VERSION):
     """Return admitted user material and the existing independent Safety result."""
     if response_stage not in _RESPONSE_STAGES:
         raise NaturalReplyError('natural_reply_response_stage_invalid')
+    if observation_writer_version is not None and observation_writer_version not in OBSERVATION_CONTEXT_VERSIONS:
+        raise NaturalReplyError('natural_reply_writer_identity_changed')
     admitted = admit_emlis_thread(request)
     original = request.current_input_bundle.raw_current_input
     current_id = original.get('id')
@@ -663,7 +667,7 @@ def prepare_natural_reply(request, *, use_meaning_support=False, response_stage=
     corrected_circumstance = active.get('corrected_circumstance') is True
     records = [_active_writer_record(active, original, scope='CURRENT_INPUT',
         correction_targets=admitted.control.interpretation_corrections,
-        answers=material["current_answers"] if (bind_writer_context or use_observation_writer) and not corrected_circumstance else ())]
+        answers=material["current_answers"] if (bind_writer_context or observation_writer_version is not None) and not corrected_circumstance else ())]
     record_numbers = {current_id: 1}
     history_answers = {row['input_id']: row['answers'] for row in history} if bind_writer_context else {}
     for source in histories:
@@ -685,7 +689,7 @@ def prepare_natural_reply(request, *, use_meaning_support=False, response_stage=
     is_initial = (response_stage in {'FINAL', 'PRE_QUESTION'} and not admitted.answers
                   and not control.interpretation_corrections
                   and (not control.question_control_context.issued_count or initial_unanswered_final))
-    if use_observation_writer and not control.interpretation_corrections:
+    if observation_writer_version is not None and not control.interpretation_corrections:
         current = records[0]
         # The source kernel already admitted the exclusive UI selection. Its
         # compatibility strength belongs to storage, not the author's input.
@@ -694,7 +698,7 @@ def prepare_natural_reply(request, *, use_meaning_support=False, response_stage=
             metadata = {key: value for key, value in current['metadata'].items()
                         if key != 'emotion_details'}
             current = {**current, 'metadata': metadata}
-        writer.update(source_context_version=OBSERVATION_CONTEXT_VERSION, records=[current],
+        writer.update(source_context_version=observation_writer_version, records=[current],
                       self_understanding=self_understanding, user_frame_feedback=[])
         if admitted.answers and not self_understanding:
             scene = _received_answer_dialogue(admitted, material, prepared_meaning, response_stage,
@@ -702,6 +706,12 @@ def prepare_natural_reply(request, *, use_meaning_support=False, response_stage=
             if scene is not None:
                 writer['answered_scene'] = {
                     **scene, 'Emlisが聞いた問い': material['current_answers'][0]['ai_question_context']}
+            elif observation_writer_version == OBSERVATION_ANSWER_CONTEXT_VERSION and current['active_state'] == 'PENDING':
+                # The CMEE analysis record can be pending while the separately
+                # issued question and its persisted reply have exact provenance.
+                turns = _pending_answer_turns(material)
+                if turns is not None:
+                    writer['bound_answer_turns'] = turns
         if (bind_writer_context and history and not initial_unanswered_final
                 and control.capability_snapshot in {'Q3_PLUS', 'Q3_PREMIUM'}):
             question = control.question_control_context.pending_question
@@ -1153,6 +1163,27 @@ def validate_reply(reply, request):
     return reply
 
 
+def _pending_answer_turns(material):
+    """Keep original speech, issued AI questions and their actual answers apart.
+
+    Source admission and _answers have already checked owner, order and question
+    identity. Respect replacement/withdrawal decisions through the older
+    effective-source projection instead of reviving their original targets.
+    """
+    meaning = material.get('answer_meaning')
+    if not meaning or meaning.get('inactive_claims') or meaning.get('inactive_relations'):
+        return None
+    answers = material['current_answers']
+    if not answers:
+        return None
+    turns = [{'Emlisが送った問い': row['ai_question_context'], '本人の返答': row['text']}
+             for row in answers]
+    return {'previous': turns[:-1], 'latest': turns[-1],
+            'interpreted': (meaning.get('assessment') == 'RESOLVED'
+                            and meaning.get('disposition') == 'MATERIAL_UPDATE'
+                            and not meaning.get('unresolved_parts'))}
+
+
 def _observation_record_for_author(current):
     """Expose intact, active passages to the author; retain full CMEE evidence for storage."""
     if current['active_state'] == 'PENDING':
@@ -1196,14 +1227,27 @@ def build_natural_reply_messages(request, *, correction_target_context=False):
         # Do not carry instructions for those absent protocols into this one.
         writer = json.loads(request.writer_material_json)
         context_version = writer.get('source_context_version')
-        if context_version == OBSERVATION_CONTEXT_VERSION:
+        if context_version in OBSERVATION_CONTEXT_VERSIONS:
             message = _OBSERVATION_MESSAGE + '\n' + (
                 _SELF_UNDERSTANDING_FOLLOW if writer['self_understanding'] else _FEELING_FOLLOW)
             current = writer['records'][0]
             data = {'今回の記録': writer['answered_scene'] if 'answered_scene' in writer
                     else _observation_record_for_author(current)}
             stage = writer.get('response_purpose', {}).get('stage')
-            if stage == 'PRE_QUESTION':
+            turns = writer.get('bound_answer_turns') if context_version == OBSERVATION_ANSWER_CONTEXT_VERSION else None
+            if turns is not None:
+                original = json.loads(request.material_json)['current']
+                data = {'今回の記録': {'考えたこと・感じたこと': original.get('memo', ''),
+                                      '出来事・行動': original.get('memo_action', ''),
+                                      '話題': original.get('category', []),
+                                      '本人が選んだ感情': original.get('emotion_details', []),
+                                      '記録日時': original.get('created_at')}}
+                if turns['previous']:
+                    data['これまでのやり取り'] = turns['previous']
+                message += '\nすでに送った問いに、本人から返答が届きました。末尾の本人の返答を受けて、今この方にかける言葉を選んでください。問いはEmlisの発言です。'
+                if not turns['interpreted']:
+                    message += '\n返答の意味がはっきりしないときも、本人の言葉の範囲で受け止めます。相づちや保留から気持ちや理由を決めません。'
+            elif stage == 'PRE_QUESTION':
                 message += _RESPONSE_PURPOSE_MESSAGES[stage]
             elif any(field['source_role'] == 'SUPPLEMENTAL_ANSWER'
                      for field in (*current['active_fields'], *current.get('unresolved_sources', []))):
@@ -1211,6 +1255,8 @@ def build_natural_reply_messages(request, *, correction_target_context=False):
             if 'related_past' in writer:
                 data['以前の本人の言葉'] = writer['related_past']
                 message += '\n' + _PAST_FOLLOW
+            if turns is not None:
+                data['いま届いたやり取り'] = turns['latest']
             message += '\n' + _OBSERVATION_END
             return [{'role': 'system', 'content': message},
                     {'role': 'user', 'content': _compact_json(data)}]
