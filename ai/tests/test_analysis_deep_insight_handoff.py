@@ -109,7 +109,8 @@ def _received_answer_plan(prepared, material, fields, selected, value):
             admission.admit_semantic_node_local_v4_plan_response(prepared, dict(value, nodes=invalid))
 
 
-def v24_provider(calls, *, received_case=False, plan_packet=None, scoped_node_guide=None, meaning_by_source=None):
+def v24_provider(calls, *, received_case=False, plan_packet=None, scoped_node_guide=None, meaning_by_source=None,
+                 model='test-model'):
     received_prepared = None
     received_plan = received_nodes = received_plan_raw = None
 
@@ -234,7 +235,8 @@ def v24_provider(calls, *, received_case=False, plan_packet=None, scoped_node_gu
             if 'primary_structures' in schema:
                 value['primary_structures'] = [
                     dict(anchors=[f"{node['node_id']}.u{i}.e{j}"], scope='in_this_record',
-                         heading='最後まで話せる場', reading='この場面では、途中で遮られずに話せることが、本音を伝える支えになっています。')
+                         criterion='この場面では、最後まで話せることが大切でした。',
+                         case_reading='途中で遮られずに話せたことが、本音を伝える支えになっています。', heading='最後まで話せる場')
                     for node in registry for i, unit in enumerate(node['units'], 1)
                     for j, root in enumerate(unit['evidence'], 1) if root['quote'] == ANSWER][:1]
             if received_prepared is not None:
@@ -251,10 +253,12 @@ def v24_provider(calls, *, received_case=False, plan_packet=None, scoped_node_gu
         raw = json.dumps(value, ensure_ascii=False, separators=(',', ':'))
         if received_prepared is not None and phase == 'PLAN':
             received_plan_raw = raw
-        return successful_response(raw)
+        response = successful_response(raw).json()
+        response['model'] = model
+        return httpx.Response(200, json=response)
 
     provider = model_sources.SelfHostedSemanticAnalysisModelSource(endpoint='https://synthetic-analysis.invalid/chat/completions',
-        model='test-model', api_key='synthetic-test', semantic_prompt_version=admission.SEMANTIC_MAP_OCCURRENCE_V24_PROFILE,
+        model=model, api_key='synthetic-test', semantic_prompt_version=admission.SEMANTIC_MAP_OCCURRENCE_V24_PROFILE,
         transport=httpx.MockTransport(handler))
     if received_case:
         complete = provider._node_local_v4
@@ -306,7 +310,7 @@ def test_answer_updates_normal_v24_map_through_provider_and_database(sql_source,
         sql_script(db, name)
     assert snapshot()['guard'] == before
     calls = []
-    provider = v24_provider(calls)
+    provider = v24_provider(calls, model=model_sources.SEMANTIC_PRIMARY_STRUCTURE_V2_MODEL)
     old = run(cumulative.ensure_map(OWNER, model_source=provider)) if prior_map else None
     assert 'code' not in db.query('''insert into public.deep_insight_questions
         (id,user_id,lane,question_text,issued_on,question_key,text_key)

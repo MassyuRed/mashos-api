@@ -1014,7 +1014,7 @@ class ResponseCodec:
         self._reserved_source_pairs = pairs + tuple(pair[::-1] for pair in pairs)
         self.comparison_skips = COMPARISON_SKIPS
         self.phase = material['author_phase']
-        self.primary_structure_reading = material.get('primary_structure_reading') == 'karen.v1'
+        self.primary_structure_reading = material.get('primary_structure_reading') in ('karen.v1', 'karen.v2')
         self.plan_units = ()
         self.qualification_items = ()
         if self.phase == 'PLAN':

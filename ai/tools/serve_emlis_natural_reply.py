@@ -64,6 +64,7 @@ OCCURRENCE_V21_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v4-occurrence-v21
 OCCURRENCE_V22_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v4-occurrence-v22'
 OCCURRENCE_V23_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v4-occurrence-v23'
 OCCURRENCE_V24_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v4-occurrence-v24'
+PRIMARY_STRUCTURE_V2_MODEL = OCCURRENCE_V24_MODEL + '-primary-structures-v2'
 OCCURRENCE_V3_PROFILE = 'semantic_map.node_local.v4.occurrence.v3'
 OCCURRENCE_V4_PROFILE = 'semantic_map.node_local.v4.occurrence.v4'
 OCCURRENCE_V5_PROFILE = 'semantic_map.node_local.v4.occurrence.v5'
@@ -1099,14 +1100,18 @@ def _semantic_node_local_v4_schema(material, pairs, unknown_pairs, *, leaf=False
             review[ref] = dict(oneOf=[closed, opened])
         properties['qualification_review'] = obj(review)
     properties.update(edges=dict(type='array', items=edge, maxItems=0 if leaf else 48), overview=obj(overview))
-    if material.get('primary_structure_reading') == 'karen.v1' and author_profile == OCCURRENCE_V24_PROFILE and not leaf:
+    reading = material.get('primary_structure_reading')
+    if reading in ('karen.v1', 'karen.v2') and author_profile == OCCURRENCE_V24_PROFILE and not leaf:
         anchors = [f"{node['node_id']}.u{i}.e{j}" for node in registry
                    for i, unit in enumerate(node['units'], 1) for j in range(1, len(unit['evidence']) + 1)]
-        axis = obj(dict(anchors=dict(type='array', minItems=1, maxItems=min(4, len(anchors)),
-                                     items=dict(type='string', enum=anchors)),
-            scope=dict(type='string', enum=['in_this_record', 'self_report', 'across_records']),
-            heading=text(60), reading=text(360)))
-        properties['primary_structures'] = dict(type='array', items=axis, maxItems=3)
+        fields = dict(anchors=dict(type='array', minItems=1, maxItems=min(4, len(anchors)),
+                                   items=dict(type='string', enum=anchors)),
+                      scope=dict(type='string', enum=['in_this_record', 'self_report', 'across_records']))
+        if reading == 'karen.v2':
+            fields.update(criterion=text(160), case_reading=text(200), heading=text(60))
+        else:
+            fields.update(heading=text(60), reading=text(360))
+        properties['primary_structures'] = dict(type='array', items=obj(fields), maxItems=3)
     return root(phase, properties)
 
 
@@ -2737,15 +2742,21 @@ def make_handler(generate, *, api_key, model_name, deadline, max_requests,
                 request = json.loads(self.rfile.read(length))
                 messages = request["messages"]
                 piece = 'candidate_format' in request
+                requested_model = request.get('model')
+                # The new GPU may serve the deployed v24 workers during rollout.
+                # A legacy GPU name alone never enables a new reply contract.
+                compatible_v24 = event_plan_model == PRIMARY_STRUCTURE_V2_MODEL and requested_model == OCCURRENCE_V24_MODEL
                 event_plan = bool(not natural and event_plan_model is not None
-                    and request.get('model') == event_plan_model)
+                    and (requested_model == event_plan_model or compatible_v24))
                 event_plan_base = event_plan and event_plan_model in {
                     EVENT_PLAN_V2_BASE_MODEL, NODE_LOCAL_V3_BASE_MODEL}
                 if event_plan:
-                    selected_model = event_plan_model
-                staged = event_plan and event_plan_model in {NODE_LOCAL_V4_MODEL, NODE_LOCAL_V4_BOUND_MODEL, NODE_LOCAL_V4_BOUND_V2_MODEL, OCCURRENCE_MODEL, OCCURRENCE_V2_MODEL, OCCURRENCE_V3_MODEL, OCCURRENCE_V4_MODEL, OCCURRENCE_V5_MODEL, OCCURRENCE_V6_MODEL, OCCURRENCE_V7_MODEL, OCCURRENCE_V8_MODEL, OCCURRENCE_V9_MODEL, OCCURRENCE_V10_MODEL, OCCURRENCE_V11_MODEL, OCCURRENCE_V12_MODEL, OCCURRENCE_V13_MODEL, OCCURRENCE_V14_MODEL, OCCURRENCE_V15_MODEL, OCCURRENCE_V16_MODEL, OCCURRENCE_V17_MODEL, OCCURRENCE_V18_MODEL, OCCURRENCE_V19_MODEL, OCCURRENCE_V20_MODEL, OCCURRENCE_V21_MODEL, OCCURRENCE_V22_MODEL, OCCURRENCE_V23_MODEL, OCCURRENCE_V24_MODEL}
+                    selected_model = requested_model
+                staged = event_plan and event_plan_model in {NODE_LOCAL_V4_MODEL, NODE_LOCAL_V4_BOUND_MODEL, NODE_LOCAL_V4_BOUND_V2_MODEL, OCCURRENCE_MODEL, OCCURRENCE_V2_MODEL, OCCURRENCE_V3_MODEL, OCCURRENCE_V4_MODEL, OCCURRENCE_V5_MODEL, OCCURRENCE_V6_MODEL, OCCURRENCE_V7_MODEL, OCCURRENCE_V8_MODEL, OCCURRENCE_V9_MODEL, OCCURRENCE_V10_MODEL, OCCURRENCE_V11_MODEL, OCCURRENCE_V12_MODEL, OCCURRENCE_V13_MODEL, OCCURRENCE_V14_MODEL, OCCURRENCE_V15_MODEL, OCCURRENCE_V16_MODEL, OCCURRENCE_V17_MODEL, OCCURRENCE_V18_MODEL, OCCURRENCE_V19_MODEL, OCCURRENCE_V20_MODEL, OCCURRENCE_V21_MODEL, OCCURRENCE_V22_MODEL, OCCURRENCE_V23_MODEL, OCCURRENCE_V24_MODEL, PRIMARY_STRUCTURE_V2_MODEL}
                 if staged:
                     material = json.loads(messages[1]['content'])
+                    if (material.get('primary_structure_reading') == 'karen.v2') != (requested_model == PRIMARY_STRUCTURE_V2_MODEL):
+                        raise ValueError
                     if material.get('author_phase') not in NODE_LOCAL_V4_PHASES:
                         raise ValueError
                     selected_tokens = request.get('max_tokens')
@@ -2772,7 +2783,7 @@ def make_handler(generate, *, api_key, model_name, deadline, max_requests,
                     except (ValueError, TypeError):
                         material = None
                     marker = material.get('model_schema') if type(material) is dict else None
-                    expected_marker = (NODE_LOCAL_V4_SCHEMA if event_plan_model in {NODE_LOCAL_V4_MODEL, NODE_LOCAL_V4_BOUND_MODEL, NODE_LOCAL_V4_BOUND_V2_MODEL, OCCURRENCE_MODEL, OCCURRENCE_V2_MODEL, OCCURRENCE_V3_MODEL, OCCURRENCE_V4_MODEL, OCCURRENCE_V5_MODEL, OCCURRENCE_V6_MODEL, OCCURRENCE_V7_MODEL, OCCURRENCE_V8_MODEL, OCCURRENCE_V9_MODEL, OCCURRENCE_V10_MODEL, OCCURRENCE_V11_MODEL, OCCURRENCE_V12_MODEL, OCCURRENCE_V13_MODEL, OCCURRENCE_V14_MODEL, OCCURRENCE_V15_MODEL, OCCURRENCE_V16_MODEL, OCCURRENCE_V17_MODEL, OCCURRENCE_V18_MODEL, OCCURRENCE_V19_MODEL, OCCURRENCE_V20_MODEL, OCCURRENCE_V21_MODEL, OCCURRENCE_V22_MODEL, OCCURRENCE_V23_MODEL, OCCURRENCE_V24_MODEL}
+                    expected_marker = (NODE_LOCAL_V4_SCHEMA if event_plan_model in {NODE_LOCAL_V4_MODEL, NODE_LOCAL_V4_BOUND_MODEL, NODE_LOCAL_V4_BOUND_V2_MODEL, OCCURRENCE_MODEL, OCCURRENCE_V2_MODEL, OCCURRENCE_V3_MODEL, OCCURRENCE_V4_MODEL, OCCURRENCE_V5_MODEL, OCCURRENCE_V6_MODEL, OCCURRENCE_V7_MODEL, OCCURRENCE_V8_MODEL, OCCURRENCE_V9_MODEL, OCCURRENCE_V10_MODEL, OCCURRENCE_V11_MODEL, OCCURRENCE_V12_MODEL, OCCURRENCE_V13_MODEL, OCCURRENCE_V14_MODEL, OCCURRENCE_V15_MODEL, OCCURRENCE_V16_MODEL, OCCURRENCE_V17_MODEL, OCCURRENCE_V18_MODEL, OCCURRENCE_V19_MODEL, OCCURRENCE_V20_MODEL, OCCURRENCE_V21_MODEL, OCCURRENCE_V22_MODEL, OCCURRENCE_V23_MODEL, OCCURRENCE_V24_MODEL, PRIMARY_STRUCTURE_V2_MODEL}
                         else NODE_LOCAL_V3_SCHEMA if event_plan_model in {
                             NODE_LOCAL_V3_MODEL, NODE_LOCAL_V3_BASE_MODEL}
                         else EVENT_PLAN_V2_SCHEMA if event_plan_model in {
@@ -2782,7 +2793,7 @@ def make_handler(generate, *, api_key, model_name, deadline, max_requests,
                                 NODE_LOCAL_V3_SCHEMA, NODE_LOCAL_V4_SCHEMA}):
                         raise ValueError
                     if staged:
-                        expected_profile = (OCCURRENCE_V24_PROFILE if event_plan_model == OCCURRENCE_V24_MODEL
+                        expected_profile = (OCCURRENCE_V24_PROFILE if event_plan_model in (OCCURRENCE_V24_MODEL, PRIMARY_STRUCTURE_V2_MODEL)
                             else OCCURRENCE_V23_PROFILE if event_plan_model == OCCURRENCE_V23_MODEL
                             else OCCURRENCE_V22_PROFILE if event_plan_model == OCCURRENCE_V22_MODEL
                             else OCCURRENCE_V21_PROFILE if event_plan_model == OCCURRENCE_V21_MODEL

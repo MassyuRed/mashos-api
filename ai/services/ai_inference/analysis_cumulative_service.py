@@ -929,13 +929,12 @@ async def _ensure_map(user_id, *, ensure=True, force=False, monthly=False, model
             per_phase = False
             try:
                 if semantic_source:
-                    from analysis_semantic_map import (prepare_semantic_map, SemanticMapNoMaterial,
-                        SEMANTIC_MAP_OCCURRENCE_V24_PROFILE)
+                    from analysis_semantic_map import prepare_semantic_map, SemanticMapNoMaterial
                     try:
-                        from analysis_model_source import analysis_model_prompt_version
-                        version = analysis_model_prompt_version(model_source)
+                        from analysis_model_source import analysis_model_prompt_version, analysis_model_primary_structure_reading
                         prepared = await asyncio.to_thread(prepare_semantic_map, owner, snapshot,
-                            prompt_version=version, primary_structures=version == SEMANTIC_MAP_OCCURRENCE_V24_PROFILE)
+                            prompt_version=analysis_model_prompt_version(model_source),
+                            primary_structures=analysis_model_primary_structure_reading(model_source))
                     except SemanticMapNoMaterial as excluded:
                         artifact, coverage = None, _checked_coverage(excluded.coverage)
                     else:

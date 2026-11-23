@@ -3533,10 +3533,33 @@ _PRIMARY_STRUCTURE_INSTRUCTION = (
     '本人が見ている自分、実際の選択、望んでいる自分を分けます。対象には活動や自分自身も含みます。'
     '本人が後に得た自己解釈を以前からの意図に変えません。出来事がないことは避けた証拠になりません。'
     'scopeは複数の原記録で条件・選択を照合できるときacross_records、本人の自己理解の言葉はself_report、'
-    '一場面の読みはin_this_record。見出しheadingは短い日常語、readingは状況を限定した結論と理由を敬語で書きます。'
+    '一場面の読みはin_this_record。{writing_instruction}'
     '比喩を見出しに使う時は本文で平易な言葉に戻し、その例えを新しい事実にしません。'
     '固定的な人柄、経験していない可能性、相手の内心や架空の事実は加えません。分類名に合わせて人を割り振りません。'
     '根拠が行動や感情の一覧だけなら空配列です。')
+_PRIMARY_STRUCTURE_V2_INSTRUCTION = (
+    '返す順はanchors、scope、criterion、case_reading、headingです。criterionは最初に本人に届ける結論です。'
+    '本人が何と何を区別し、選ぶ時に何を大切にしているのか、原文で判断できる範囲を一文で言い切ります。'
+    'case_readingはその結論を支える一文です。場面や行動を並べた先で、その違いが本人の同じ基準でどう説明できるかを書きます。'
+    '本人の自己理解であれば本人が気づいた区別として、一場面だけならその場面に限って述べます。'
+    'headingはこの二文を読んで最後に、本人の具体的な基準が伝わる短い日常語でつけます。二文とも敬語です。'
+    '次は別人の架空例です。「あとで数字を確かめたいので手帳に書いた」「資料を持ち帰って見直せるので講座ではメモを取らなかった」。'
+    'criterion「話を聞くときは、あとから自分の手元で確かめ直せることを大切にしています。」'
+    'case_reading「手帳に書く日も、資料を持ち帰るだけの日も、見返せるものが残るかどうかで記録の仕方が変わっています。」'
+    'heading「あとで確かめられる手がかり」。この例は書き方の説明です。対象者の事実・結論として流用しません。'
+)
+
+
+def _primary_structure_guidance(material):
+    version = material.get('primary_structure_reading')
+    if version == 'karen.v2':
+        return _PRIMARY_STRUCTURE_INSTRUCTION.format(writing_instruction='') + _PRIMARY_STRUCTURE_V2_INSTRUCTION
+    if version == 'karen.v1':
+        return _PRIMARY_STRUCTURE_INSTRUCTION.format(
+            writing_instruction='見出しheadingは短い日常語、readingは状況を限定した結論と理由を敬語で書きます。')
+    return ''
+
+
 _PRIMARY_STRUCTURE_SCOPES = {'across_records', 'self_report', 'in_this_record'}
 
 
@@ -3569,8 +3592,10 @@ def _read_primary_structures(prepared, material, nodes, axes):
                for node in nodes for i, unit in enumerate(node['units'], 1)
                for j, root in enumerate(unit['evidence'], 1)}
     public = []
+    conclusion_first = material.get('primary_structure_reading') == 'karen.v2'
+    parts = ('criterion', 'case_reading') if conclusion_first else ('reading',)
     for axis in axes:
-        _semantic_map_require(_semantic_map_keys(axis, {'anchors', 'scope', 'heading', 'reading'}), reason)
+        _semantic_map_require(_semantic_map_keys(axis, {'anchors', 'scope', 'heading', *parts}), reason)
         anchors = axis['anchors']
         _semantic_map_require(_semantic_map_strings(anchors, maximum=4, text_maximum=15)
             and bool(anchors) and set(anchors) <= origins.keys(), reason)
@@ -3606,9 +3631,17 @@ def _read_primary_structures(prepared, material, nodes, axes):
                 (records[next(iter(owners))].get('selected_emotions') or [])), reason)
         else:
             _semantic_map_require(axis['scope'] == 'in_this_record' and len(owners) == 1, reason)
-        _semantic_map_require(axis['reading'] not in [quote for *_, quote in selected], reason)
+        quotes = [quote for *_, quote in selected]
+        if conclusion_first:
+            # Both displayed sentences are the model's own output. Preserve them in
+            # order; a missing conclusion cannot be supplied by the renderer.
+            _semantic_map_require(_semantic_map_text(axis['criterion'], 160)
+                and _semantic_map_text(axis['case_reading'], 200)
+                and axis['criterion'] != axis['case_reading'], reason)
+        _semantic_map_require(all(axis[key] not in quotes for key in parts), reason)
         refs = list(dict.fromkeys(node['node_id'] for node, *_ in selected))
-        public.append(dict(scope=axis['scope'], title=axis['heading'], description=axis['reading'], node_refs=refs))
+        public.append(dict(scope=axis['scope'], title=axis['heading'],
+                           description=''.join(axis[key] for key in parts), node_refs=refs))
     _check_public_primary_structures(public, {node['node_id'] for node in nodes})
     for axis, source in zip(public, axes):
         _semantic_v14_visible_text(prepared, (axis['title'], axis['description']),
@@ -3624,7 +3657,7 @@ def semantic_node_local_v4_relations(prepared, plan, bodies, packet, *, ordered_
     review_qualifications = prepared.prompt_version in {SEMANTIC_MAP_OCCURRENCE_V7_PROFILE, SEMANTIC_MAP_OCCURRENCE_V8_PROFILE, *SEMANTIC_MAP_SOURCE_CUED_PROFILES}
     relation_keys = {'schema_version', 'nodes_sha256', 'edges', 'overview'}
     material = json.loads(prepared.material_json)
-    if material.get('primary_structure_reading') == 'karen.v1' and material.get('history_stage', {}).get('kind') != 'LEAF':
+    if material.get('primary_structure_reading') in ('karen.v1', 'karen.v2') and material.get('history_stage', {}).get('kind') != 'LEAF':
         relation_keys.add('primary_structures')
     if review_qualifications:
         relation_keys.add('qualification_review')
@@ -4599,8 +4632,8 @@ def _semantic_occurrence_v6_messages(prepared, material, phase, bodies=None):
                 'qualification_candidatesが空ならqualification_reviewは{}です。全項目を含むoverviewは以下を返します。\n'
                 + json.dumps(overview, ensure_ascii=False, separators=(',', ':')))
         guidance = _semantic_v4_view(prepared)._source_instruction(_SEMANTIC_V4_COMMON + '\n' + guidance, material)
-        if phase == 'RELATIONS' and material.get('primary_structure_reading') == 'karen.v1' and stage != 'LEAF':
-            guidance += _PRIMARY_STRUCTURE_INSTRUCTION
+        if phase == 'RELATIONS' and stage != 'LEAF':
+            guidance += _primary_structure_guidance(material)
         messages = [dict(role='system', content=guidance), dict(role='user', content=_semantic_occurrence_message(material))]
         if phase == 'RELATIONS':
             maximum = SEMANTIC_HISTORY_MERGE_MAX_PROMPT_BYTES if stage == 'MERGE' else SEMANTIC_MAP_MAX_PROMPT_BYTES
@@ -4673,8 +4706,8 @@ def _semantic_occurrence_v6_messages(prepared, material, phase, bodies=None):
                 'RELATIONS': '独立した行動と補足済みの思考の間に経緯や関係を加えません。'}[phase])
     guidance = _semantic_v4_view(prepared)._source_instruction(_SEMANTIC_V4_COMMON + '\n' + guidance + lesson, material)
     guidance += scoped_guidance
-    if material.get('primary_structure_reading') == 'karen.v1' and phase == 'RELATIONS' and stage != 'LEAF':
-        guidance += _PRIMARY_STRUCTURE_INSTRUCTION
+    if phase == 'RELATIONS' and stage != 'LEAF':
+        guidance += _primary_structure_guidance(material)
     messages = [dict(role='system', content=guidance), dict(role='user', content=_semantic_occurrence_message(material))]
     if prepared.prompt_version in SEMANTIC_MAP_FACT_REFERENCE_PROFILES and phase == 'RELATIONS':
         maximum = SEMANTIC_HISTORY_MERGE_MAX_PROMPT_BYTES if stage == 'MERGE' else SEMANTIC_MAP_MAX_PROMPT_BYTES
@@ -5271,10 +5304,12 @@ def prepare_analysis_semantic_map(request, snapshot, *,
         if ref in questions:
             records[-1]['deep_insight_question'] = questions[ref].question_text
     material = dict(analysis_as_of=frozen.period[1], records=records, fields=material_fields)
-    _semantic_map_require(type(primary_structures) is bool and (not primary_structures or
-        prompt_version == SEMANTIC_MAP_OCCURRENCE_V24_PROFILE), 'analysis_semantic_input_invalid')
+    _semantic_map_require(type(primary_structures) is bool or
+        type(primary_structures) is str and primary_structures in ('karen.v1', 'karen.v2'),
+        'analysis_semantic_input_invalid')
     if primary_structures:
-        material['primary_structure_reading'] = 'karen.v1'
+        _semantic_map_require(prompt_version == SEMANTIC_MAP_OCCURRENCE_V24_PROFILE, 'analysis_semantic_input_invalid')
+        material['primary_structure_reading'] = 'karen.v1' if primary_structures is True else primary_structures
     if received_answer_thoughts:
         material['received_answer_thoughts'] = received_answer_thoughts
     if answered_circumstances:
@@ -5396,7 +5431,7 @@ def generate_analysis_semantic_map(request, model_input):
             'analysis_semantic_input_invalid')
         expected = prepare_analysis_semantic_map(model_input.source_request,
             json.loads(model_input.source_snapshot_json), prompt_version=model_input.prompt_version,
-            primary_structures=json.loads(model_input.material_json).get('primary_structure_reading') == 'karen.v1')
+            primary_structures=json.loads(model_input.material_json).get('primary_structure_reading', False))
         _semantic_map_require(expected.request == request
             and expected == replace(model_input, response=None), 'analysis_semantic_input_unbound')
         packet = _admit_analysis_semantic_map_response(expected, model_input.response)
@@ -5506,7 +5541,7 @@ def _semantic_history_parent(parent, *, rederive=True):
                 return parent
         expected = prepare_analysis_semantic_map(parent.source_request,
             json.loads(parent.source_snapshot_json), prompt_version=parent.prompt_version,
-            primary_structures=json.loads(parent.material_json).get('primary_structure_reading') == 'karen.v1')
+            primary_structures=json.loads(parent.material_json).get('primary_structure_reading', False))
         _semantic_map_require(expected == parent, 'analysis_semantic_input_unbound')
         if slot is not None and slot[0] is None:
             # Nested source maps can be mutable. Never compare the live input to itself.
