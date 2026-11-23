@@ -10,7 +10,7 @@ from cocolon_meaning_experience_engine import deep_insight_question
 from cocolon_meaning_experience_engine.deep_insight_question import (
     ANSWER_READ_SYSTEM_MESSAGE, PLAN_SYSTEM_MESSAGE, READ_SYSTEM_MESSAGE,
     RECORD_REASON_READ_SYSTEM_MESSAGE, WRITE_SYSTEM_MESSAGE,
-    _ANSWER_REASON_EVIDENCE_GUIDANCE, _ANSWER_REASON_PREMISE_GUIDANCE,
+    _ANSWER_REASON_EVIDENCE_GUIDANCE, _ANSWER_REASON_PREMISE_GUIDANCE, _CORRECTION_REASON_READ_SYSTEM_MESSAGE,
     _PRIOR_ANSWER_EVIDENCE_MESSAGE, _PRIOR_ANSWER_HISTORY_MESSAGE, _PRIOR_ANSWER_PAIR_MESSAGE,
     _PRIOR_ANSWER_PREMISE_MESSAGE,
     _RECORD_ALTERNATIVE_PLAN_MESSAGE, _RECORD_ALTERNATIVE_READ_MESSAGE,
@@ -85,12 +85,13 @@ def run(original, plan, question=BODY, *, reading=None, extraction=None, premise
         else:
             assert system.startswith((
                 READ_SYSTEM_MESSAGE, ANSWER_READ_SYSTEM_MESSAGE, RECORD_REASON_READ_SYSTEM_MESSAGE,
-                _RECORD_ALTERNATIVE_READ_MESSAGE,
+                _CORRECTION_REASON_READ_SYSTEM_MESSAGE, _RECORD_ALTERNATIVE_READ_MESSAGE,
             ))
             selected_plan = plan if alternative is None else {**ask(), **alternative}
             response = reading if reading is not None else read(
                 selected_plan, record_reason=system.startswith((
-                    RECORD_REASON_READ_SYSTEM_MESSAGE, _RECORD_ALTERNATIVE_READ_MESSAGE,
+                    RECORD_REASON_READ_SYSTEM_MESSAGE, _CORRECTION_REASON_READ_SYSTEM_MESSAGE,
+                    _RECORD_ALTERNATIVE_READ_MESSAGE,
                 )))
         return json.dumps(response, ensure_ascii=False)
 
@@ -140,6 +141,69 @@ def test_correction_plan_uses_its_own_source_key_and_exact_replacement_range():
         rejected, calls = run(original, {**plan, **change})
         assert rejected.candidate is None and rejected.rejection_stage == "plan"
         assert rejected.plan_rejection_reason == reason and len(calls) == 1
+
+
+def test_unique_corrected_feeling_reason_is_read_from_the_finished_question():
+    corrected = "私は嬉しかった"
+    correction = {"id": ANSWER_ID, "recorded_at": STAMP, "text": corrected,
+                  "source_version": VERSION, "scalar_start": 15}
+    original = material(source(None, emlis_corrections=[correction]))
+    plan = ask(source="r1.correction1", quote=corrected, ask="嬉しかった理由")
+    body = "どうして嬉しかったのですか？"
+    reading = read(plan, record_reason=True)
+
+    result, calls = run(original, plan, body, reading=reading)
+
+    assert result.disposition == "selected" and len(calls) == 3
+    assert calls[2][0].startswith(_CORRECTION_REASON_READ_SYSTEM_MESSAGE)
+    assert calls[2][1] == {"question": f"「{corrected}」と書いていましたが、{body}", "material": calls[0][1]}
+    assert result.candidate.receipt == {
+        "policy_version": "deep-insight.v2", "lane": "records", "focus": "REASON",
+        "source_id": ANSWER_ID, "source_version": VERSION, "field": "correction",
+        "start": 15, "end": 22, "literal_sha256": hashlib.sha256(corrected.encode()).hexdigest(),
+        "condition_key": None, "target_key": result.candidate.question_key.rsplit("-", 1)[1],
+    }
+    with_exact_locator, calls = run(original, plan, body, reading=read(plan))
+    assert with_exact_locator.candidate == result.candidate and len(calls) == 3
+
+    for rejected_read in (
+        {"verdict": "reject", "reason": "already_answered"},
+        {"verdict": "reject", "reason": "unsupported_premise"},
+        dict(reading, focus="MEANING"),
+        dict(reading, condition="会議中"),
+        dict(reading, premise_supported=False),
+        dict(reading, new_information=False),
+        dict(read(plan), source="r2.correction1"),
+        dict(read(plan), quote="僕は嬉しかった"),
+    ):
+        rejected, calls = run(original, plan, body, reading=rejected_read)
+        assert rejected.candidate is None and rejected.rejection_stage == "reader" and len(calls) == 3
+
+
+@pytest.mark.parametrize("competing_field", ["thought", "action", "answer", "correction"])
+def test_repeated_correction_citation_keeps_exact_source_reading(competing_field):
+    corrected = "私は嬉しかった"
+    other_id = "00000000-0000-0000-0000-000000000125"
+    correction = {"id": ANSWER_ID, "recorded_at": STAMP, "text": corrected,
+                  "source_version": VERSION, "scalar_start": 15}
+    target = source(None, emlis_corrections=[correction])
+    if competing_field == "answer":
+        original = material(target, prior=[{
+            "id": other_id, "source_version": VERSION, "question_text": "どんな気持ちでしたか？",
+            "answer_text": corrected + "。", "answered_at": STAMP,
+        }])
+    elif competing_field == "correction":
+        original = material(target, source(id=other_id, emlis_corrections=[{
+            **correction, "id": "00000000-0000-0000-0000-000000000126",
+        }]))
+    else:
+        original = material(target, source(None, id=other_id, **{competing_field: corrected + "。"}))
+    plan = ask(source="r1.correction1", quote=corrected, ask="嬉しかった理由")
+
+    rejected, calls = run(original, plan, "どうして嬉しかったのですか？", reading=read(plan, record_reason=True))
+
+    assert rejected.candidate is None and rejected.rejection_stage == "reader" and len(calls) == 3
+    assert calls[2][0].startswith(READ_SYSTEM_MESSAGE)
 
 
 def test_identical_standalone_corrections_cannot_bind_an_undated_question():

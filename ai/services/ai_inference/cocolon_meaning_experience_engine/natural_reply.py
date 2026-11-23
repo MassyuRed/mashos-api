@@ -25,10 +25,12 @@ PAID_RECEIVED_ANSWER_CONTEXT_VERSION = "bound_field_and_answer_context.v4"
 LEGACY_DIRECT_FEELING_CORRECTION_CONTEXT_VERSION = "bound_field_and_answer_context.v5"
 DIRECT_FEELING_CORRECTION_VOICE_CONTEXT_VERSION = "bound_field_and_answer_context.v6"
 INITIAL_STANDALONE_FEELING_CONTEXT_VERSION = "bound_field_and_answer_context.v7"
-DIRECT_FEELING_CORRECTION_CONTEXT_VERSION = "bound_field_and_answer_context.v8"
+DIRECT_FEELING_CORRECTION_RECIPIENT_CONTEXT_VERSION = "bound_field_and_answer_context.v8"
+DIRECT_FEELING_CORRECTION_CONTEXT_VERSION = "bound_field_and_answer_context.v9"
 DIRECT_FEELING_CORRECTION_CONTEXT_VERSIONS = frozenset({
     LEGACY_DIRECT_FEELING_CORRECTION_CONTEXT_VERSION,
-    DIRECT_FEELING_CORRECTION_VOICE_CONTEXT_VERSION, DIRECT_FEELING_CORRECTION_CONTEXT_VERSION})
+    DIRECT_FEELING_CORRECTION_VOICE_CONTEXT_VERSION,
+    DIRECT_FEELING_CORRECTION_RECIPIENT_CONTEXT_VERSION, DIRECT_FEELING_CORRECTION_CONTEXT_VERSION})
 REQUEST_SECONDS = 240
 ARTIFACT_SCHEMA = "cocolon.emlis.recipient_reply.v1"
 logger = logging.getLogger(__name__)
@@ -74,6 +76,8 @@ _DIRECT_FEELING_CORRECTION_VOICE_MESSAGE = """
 気持ちの持ち主は記録した本人です。本人の「私は」などをEmlis自身の気持ちとして言い直さず、本人に話しかける形で返してください。本人の言葉を引用するなら引用と分かるようにし、Emlisがどう受け取ったかを伝えてください。"""
 _DIRECT_FEELING_CORRECTION_RECIPIENT_MESSAGE = """あなたはEmlisです。気持ちを伝え直した本人に、短い日本語で話しかけてください。
 「本人が訂正した気持ち」を読み、どう受け取ったかを本人へ会話の言葉で返してください。本人の一人称を使うときは、本人の言葉の引用と分かる形で書いてください。気持ちや時点は本人の言葉に従い、書かれた範囲で受け取ってください。返すのは本人に届ける返事の本文だけです。"""
+_DIRECT_FEELING_CORRECTION_CURRENT_MESSAGE = """あなたはEmlisです。気持ちを伝え直した本人に、短い会話の言葉で返してください。
+「本人が訂正した気持ち」は今回の本人の言葉です。引用するなら全文を一字も変えず「」で囲んでください。一人称を使わず本人に話しかける言い方もできます。気持ちや時点は本人の言葉に従い、本人に届ける返事の本文だけを書いてください。"""
 _DIRECT_FEELING_PAST_CONTEXT_MESSAGE = """
 recordsの先頭が今回の記録、二件目以降は過去の記録です。user_frame_feedbackのrecordはこの並びの番号です。過去の気持ちや本人判断を今回の気持ちに足さず、訂正後の気持ちを返事の中心にしてください。今回と関係が原文で分かる過去に触れる場合は、過去のこととして分けてください。今回の記録の選択情報で訂正後の気持ちを上書きせず、AIの解釈や未確定の読みは本人の事実として扱いません。"""
 
@@ -966,6 +970,7 @@ _DIRECT_FEELING_INSTRUCTION_ECHO = re.compile(
     r"気持ちの強さや時点を変え(?:ず|ない|ません)"
     r"|事情や理由(?:は|を)足し(?:ない|ません)"
 )
+_DIRECT_FEELING_QUOTE_MARKS = ('「」', '『』', '“”', '‘’', '〝〟', '""', '＂＂')
 
 
 def _has_unpunctuated_question(text):
@@ -995,6 +1000,13 @@ def _has_first_person_feeling_declaration(text):
     return False
 
 
+def _has_changed_direct_feeling_quote(text, excerpt):
+    """Only the current replacement is available to quote in this response."""
+    for opening, closing in _DIRECT_FEELING_QUOTE_MARKS:
+        text = text.replace(f'{opening}{excerpt}{closing}', '')
+    return any(mark in text for pair in _DIRECT_FEELING_QUOTE_MARKS for mark in pair)
+
+
 def validate_reply(reply, request):
     if (type(reply) is not NaturalReply or reply.schema_version != ARTIFACT_SCHEMA
             or reply.source_prefix_ref != request.source_prefix_ref
@@ -1015,16 +1027,22 @@ def validate_reply(reply, request):
     writer = json.loads(request.writer_material_json) if request.writer_material_json else {}
     context_version = writer.get('source_context_version')
     if (context_version in {DIRECT_FEELING_CORRECTION_VOICE_CONTEXT_VERSION,
+                            DIRECT_FEELING_CORRECTION_RECIPIENT_CONTEXT_VERSION,
                             DIRECT_FEELING_CORRECTION_CONTEXT_VERSION}
             and _has_first_person_feeling_declaration(reply.text)):
         raise _NaturalReplyValidationError("direct_feeling_first_person")
-    if (context_version == DIRECT_FEELING_CORRECTION_CONTEXT_VERSION
+    if (context_version in {DIRECT_FEELING_CORRECTION_RECIPIENT_CONTEXT_VERSION,
+                            DIRECT_FEELING_CORRECTION_CONTEXT_VERSION}
             and _DIRECT_FEELING_INSTRUCTION_ECHO.search(reply.text)):
         from emlis_ai_grounded_observation_plan import _top_level_text
 
         visible = _top_level_text(reply.text)
         if _DIRECT_FEELING_INSTRUCTION_ECHO.search(reply.text if visible is None else visible):
             raise _NaturalReplyValidationError("direct_feeling_instruction_echo")
+    if context_version == DIRECT_FEELING_CORRECTION_CONTEXT_VERSION:
+        excerpt = writer['direct_feeling_correction']['本人が訂正した気持ち']
+        if _has_changed_direct_feeling_quote(reply.text, excerpt):
+            raise _NaturalReplyValidationError("direct_feeling_quote_source")
     if context_version == INITIAL_STANDALONE_FEELING_CONTEXT_VERSION:
         excerpt = writer['initial_standalone_feeling']
         quoted = f'「{excerpt}」'
@@ -1058,11 +1076,16 @@ def build_natural_reply_messages(request, *, correction_target_context=False):
                         '今回の選択情報': current['metadata']}
             return [{'role': 'system', 'content': _INITIAL_STANDALONE_FEELING_REPLY_MESSAGE},
                     {'role': 'user', 'content': _compact_json(material)}]
+        if context_version == DIRECT_FEELING_CORRECTION_CONTEXT_VERSION:
+            # The admitted history is still used by the thread's source guards.
+            # This author only receives the one confirmed current replacement.
+            return [{'role': 'system', 'content': _DIRECT_FEELING_CORRECTION_CURRENT_MESSAGE},
+                    {'role': 'user', 'content': _compact_json(writer['direct_feeling_correction'])}]
         if context_version in DIRECT_FEELING_CORRECTION_CONTEXT_VERSIONS:
             message = _DIRECT_FEELING_CORRECTION_REPLY_MESSAGE
             if context_version == DIRECT_FEELING_CORRECTION_VOICE_CONTEXT_VERSION:
                 message += _DIRECT_FEELING_CORRECTION_VOICE_MESSAGE
-            elif context_version == DIRECT_FEELING_CORRECTION_CONTEXT_VERSION:
+            elif context_version == DIRECT_FEELING_CORRECTION_RECIPIENT_CONTEXT_VERSION:
                 message = _DIRECT_FEELING_CORRECTION_RECIPIENT_MESSAGE
             material = writer['direct_feeling_correction']
             current, *past = writer['records']

@@ -139,7 +139,8 @@ def test_paid_initial_standalone_feeling_keeps_a_unique_current_correction_targe
 @pytest.mark.usefixtures('direct_correction_migrations')
 @pytest.mark.parametrize('legacy, writer_mode', [
     (False, 'disabled'), (True, 'disabled'), (False, 'compact'), (False, 'compact_history'),
-    (False, 'saved_v1'), (False, 'saved_v5'), (False, 'saved_v6'), (False, 'reject_echo'),
+    (False, 'saved_v1'), (False, 'saved_v5'), (False, 'saved_v6'), (False, 'saved_v8'),
+    (False, 'reject_echo'), (False, 'reject_wrong_quote'),
 ])
 def test_no_answer_direct_feeling_correction_uses_saved_policy_on_retry(natural_case, qdb, monkeypatch,
         legacy, writer_mode):
@@ -154,7 +155,10 @@ def test_no_answer_direct_feeling_correction_uses_saved_policy_on_retry(natural_
 
     user, parent, service, calls = natural_case
     original = 'つらかったんです'
-    replacement = '私は嬉しかった' if writer_mode == 'reject_echo' else '私は不安だった'
+    history_cases = {'compact_history', 'saved_v8', 'reject_wrong_quote'}
+    prior_feeling = '私は嬉しかった'
+    replacement = ('僕は嬉しかった' if writer_mode in history_cases else
+                   prior_feeling if writer_mode == 'reject_echo' else '私は不安だった')
     explanation = f'「{original}」ではなく「{replacement}」です。'
     service.natural_context_update_enabled = writer_mode != 'disabled'
     memo = original + '。' if service.natural_context_update_enabled else original
@@ -162,23 +166,30 @@ def test_no_answer_direct_feeling_correction_uses_saved_policy_on_retry(natural_
     qdb.query("update public.emotions set memo=$2,memo_action='',emotions=array['悲しみ'],"
         "emotion_details=$3,receive_emlis_questions=false where id=$1",
         [parent, memo, json.dumps([dict(type='悲しみ', strength='medium')], ensure_ascii=False)])
-    if writer_mode == 'compact_history':
+    if writer_mode in history_cases:
         for index in range(4):
             past_id = str(uuid4())
             qdb.query("insert into public.emotions(id,user_id,created_at,memo,memo_action,category,emotions,emotion_details)"
                 " values ($1,$2,(now()-interval '1 day') at time zone 'UTC',$3,'',array['仕事'],array['悲しみ'],$4)",
-                [past_id, user, f'過去の場面{index}はつらかった。', json.dumps([dict(type='悲しみ', strength='medium')])])
+                [past_id, user, prior_feeling if index == 3 else f'過去の場面{index}はつらかった。',
+                 json.dumps([dict(type='悲しみ', strength='medium')])])
         qdb.query("insert into public.emlis_frame_feedback(user_id,source_emotion_id,frame_key,frame_ref,status)"
                   " values ($1,$2,'past-frame','past-frame-reference','REJECTED')", [user, past_id])
 
     instruction_echo = '気持ちの強さや時点を変えず、事情や理由は足しません。'
     old_reply = f'「{replacement}」と訂正された言葉を受け取り、その{instruction_echo}'
+    wrong_quote = '「私は嬉しかった」と訂正されたので、その気持ちを受け取ります。'
+    paraphrase = '不安だったんですね。伝え直してくださってありがとうございます。'
 
     async def synthetic_reply(material):
         if not calls:
             text = f'「{original}」と書いてくださったんですね。'
         elif writer_mode in {'saved_v6', 'reject_echo'}:
             text = old_reply
+        elif writer_mode in {'saved_v8', 'reject_wrong_quote'}:
+            text = wrong_quote
+        elif writer_mode == 'compact':
+            text = paraphrase
         else:
             text = f'「{replacement}」と伝え直してくれたんですね。Emlisにその気持ちが伝わってきました。'
         calls.append(material)
@@ -208,7 +219,7 @@ def test_no_answer_direct_feeling_correction_uses_saved_policy_on_retry(natural_
 
     monkeypatch.setattr(emlis_thread_store, 'sb_post_rpc', fail_first_observation)
     with monkeypatch.context() as before_rollout:
-        if writer_mode in {'saved_v1', 'saved_v5', 'saved_v6'}:
+        if writer_mode in {'saved_v1', 'saved_v5', 'saved_v6', 'saved_v8'}:
             prepare = natural_reply.prepare_natural_reply
 
             def legacy_writer(*args, **kwargs):
@@ -220,11 +231,14 @@ def test_no_answer_direct_feeling_correction_uses_saved_policy_on_retry(natural_
                 elif writer_mode == 'saved_v6':
                     kwargs['direct_feeling_correction_context_version'] = (
                         natural_reply.DIRECT_FEELING_CORRECTION_VOICE_CONTEXT_VERSION)
+                elif writer_mode == 'saved_v8':
+                    kwargs['direct_feeling_correction_context_version'] = (
+                        natural_reply.DIRECT_FEELING_CORRECTION_RECIPIENT_CONTEXT_VERSION)
                 return prepare(*args, **kwargs)
 
             before_rollout.setattr(natural_reply, 'prepare_natural_reply', legacy_writer)
         pending = run(correct(service, user, before, text=original, explanation=explanation))
-    if writer_mode == 'reject_echo':
+    if writer_mode in {'reject_echo', 'reject_wrong_quote'}:
         assert pending['state'] == 'RESPONSE_FAILED' and pending['failure_code'] == 'natural_reply_unavailable'
         assert pending['issued_count'] == 0 and not failed and len(calls) == 2
         saved = run(service.store.read(user, input_id=parent))
@@ -233,6 +247,12 @@ def test_no_answer_direct_feeling_correction_uses_saved_policy_on_retry(natural_
         started, = [event for event in attempt if event.get('stage') == 'NATURAL_REPLY_CALL_STARTED']
         assert started['writer_context_version'] == natural_reply.DIRECT_FEELING_CORRECTION_CONTEXT_VERSION
         assert not any(event.get('stage') in {'NATURAL_REPLY_RECEIVED', 'CORRECTED'} for event in attempt)
+        with pytest.raises(natural_reply.NaturalReplyError) as error:
+            natural_reply.validate_reply(NaturalReply(
+                wrong_quote if writer_mode == 'reject_wrong_quote' else old_reply,
+                'isolated-direct-feeling', calls[-1].source_prefix_ref), calls[-1])
+        assert error.value.reason == ('direct_feeling_quote_source' if writer_mode == 'reject_wrong_quote'
+                                      else 'direct_feeling_instruction_echo')
         return
     assert failed and pending['can_retry'] and len(calls) == 2
     written_material = json.loads(calls[-1].analysis_material_json)
@@ -242,15 +262,16 @@ def test_no_answer_direct_feeling_correction_uses_saved_policy_on_retry(natural_
     assert 'analysis_correction_policy' not in operation['payload']['source']
     receipt = [e for e in frozen['events'] if e['payload'].get('stage') == 'NATURAL_REPLY_RECEIVED'][-1]
     messages = natural_reply.build_natural_reply_messages(calls[-1])
-    if writer_mode in {'compact', 'compact_history', 'saved_v5', 'saved_v6'}:
+    if writer_mode in {'compact', 'compact_history', 'saved_v5', 'saved_v6', 'saved_v8'}:
         version = {'saved_v5': natural_reply.LEGACY_DIRECT_FEELING_CORRECTION_CONTEXT_VERSION,
-                   'saved_v6': natural_reply.DIRECT_FEELING_CORRECTION_VOICE_CONTEXT_VERSION}.get(
+                   'saved_v6': natural_reply.DIRECT_FEELING_CORRECTION_VOICE_CONTEXT_VERSION,
+                   'saved_v8': natural_reply.DIRECT_FEELING_CORRECTION_RECIPIENT_CONTEXT_VERSION}.get(
                        writer_mode, natural_reply.DIRECT_FEELING_CORRECTION_CONTEXT_VERSION)
         assert receipt['payload']['writer_context_version'] == version
         assert [m['role'] for m in messages] == ['system', 'user']
         body = json.loads(messages[-1]['content'])
         assert body.pop('本人が訂正した気持ち') == replacement
-        if writer_mode == 'compact_history':
+        if writer_mode == 'saved_v8':
             writer = json.loads(calls[-1].writer_material_json)
             current, *past = body['records']
             assert current == {'scope': 'CURRENT_INPUT', 'metadata': writer['records'][0]['metadata']}
@@ -259,15 +280,23 @@ def test_no_answer_direct_feeling_correction_uses_saved_policy_on_retry(natural_
             assert body['user_frame_feedback'] == writer['user_frame_feedback']
             feedback, = body['user_frame_feedback']
             record = body['records'][feedback['record'] - 1]
-            assert record['active_fields'][0]['text'] == '過去の場面3はつらかった。'
+            assert record['active_fields'][0]['text'] == prior_feeling
             assert feedback['status'] == 'REJECTED'
             assert '過去の気持ちや本人判断を今回の気持ちに足さず' in messages[0]['content']
         else:
             assert body == {}
+        if writer_mode == 'compact_history':
+            writer = json.loads(calls[-1].writer_material_json)
+            assert len(writer['records']) == 5 and len(writer['user_frame_feedback']) == 1
+            assert prior_feeling in calls[-1].material_json
+            assert prior_feeling not in json.dumps(messages, ensure_ascii=False)
+            assert '全文を一字も変えず' in messages[0]['content']
         if writer_mode in {'saved_v5', 'saved_v6'}:
             assert '質問、助言、箇条書きは入れず' in messages[0]['content']
-        else:
+        elif writer_mode == 'saved_v8':
             assert '本人へ会話の言葉で返してください' in messages[0]['content']
+        else:
+            assert '短い会話の言葉で返してください' in messages[0]['content']
         assert original not in json.dumps(messages, ensure_ascii=False)
         assert ('気持ちの持ち主は記録した本人です' in messages[0]['content']) == (writer_mode == 'saved_v6')
         witnessed = '私は不安でした。'
@@ -280,10 +309,12 @@ def test_no_answer_direct_feeling_correction_uses_saved_policy_on_retry(natural_
                     natural_reply.validate_reply(NaturalReply(
                         text, slipped.model, slipped.source_prefix_ref), calls[-1])
                 assert error.value.reason == 'direct_feeling_first_person'
-        for text in ('「私は不安だった」と伝えてくださったんですね。', '不安だったんですね。'):
+        for text in (f'「{replacement}」と伝えてくださったんですね。',
+                     '嬉しかったんですね。伝え直してくれてありがとうございます。'
+                     if writer_mode in history_cases else '不安だったんですね。'):
             assert natural_reply.validate_reply(NaturalReply(
                 text, slipped.model, slipped.source_prefix_ref), calls[-1]).text == text
-        observed_echo = '「私は嬉しかった」と訂正された言葉を受け取り、その' + instruction_echo
+        observed_echo = f'「{replacement}」と訂正された言葉を受け取り、その' + instruction_echo
         echo = NaturalReply(observed_echo, slipped.model, slipped.source_prefix_ref)
         if writer_mode in {'saved_v5', 'saved_v6'}:
             assert natural_reply.validate_reply(echo, calls[-1]).text == observed_echo
@@ -291,7 +322,19 @@ def test_no_answer_direct_feeling_correction_uses_saved_policy_on_retry(natural_
             with pytest.raises(natural_reply.NaturalReplyError) as error:
                 natural_reply.validate_reply(echo, calls[-1])
             assert error.value.reason == 'direct_feeling_instruction_echo'
-        if writer_mode != 'compact_history':
+        if writer_mode == 'compact_history':
+            quoted = f'『{replacement}』と教えてくれてありがとうございます。'
+            assert natural_reply.validate_reply(NaturalReply(
+                quoted, slipped.model, slipped.source_prefix_ref), calls[-1]).text == quoted
+            for text in (wrong_quote, '『私は嬉しかった』と教えてくださったんですね。',
+                         '「嬉しかった」と教えてくださったんですね。',
+                         f'「{replacement}」と「{prior_feeling}」を伝えてくれたんですね。',
+                         f'「{replacement}と教えてくださったんですね。'):
+                with pytest.raises(natural_reply.NaturalReplyError) as error:
+                    natural_reply.validate_reply(NaturalReply(
+                        text, slipped.model, slipped.source_prefix_ref), calls[-1])
+                assert error.value.reason == 'direct_feeling_quote_source'
+        if writer_mode not in history_cases:
             # Initial replies without past records keep the existing author.
             assert natural_reply.validate_reply(NaturalReply(
                 witnessed, slipped.model, calls[0].source_prefix_ref), calls[0]).text == witnessed
@@ -308,6 +351,10 @@ def test_no_answer_direct_feeling_correction_uses_saved_policy_on_retry(natural_
     assert final['issued_count'] == 0 and final['answer_saved'] is False
     if writer_mode == 'saved_v6':
         assert final['current_observation']['text'] == old_reply
+    if writer_mode == 'saved_v8':
+        assert final['current_observation']['text'] == wrong_quote
+    if writer_mode == 'compact':
+        assert final['current_observation']['text'] == paraphrase
     assert run(restarted.get(user, parent))['current_observation'] == final['current_observation']
     saved = run(restarted.store.read(user, input_id=parent))
     assert next(e for e in saved['events'] if e['id'] == receipt['id']) == receipt
@@ -318,7 +365,8 @@ def test_no_answer_direct_feeling_correction_uses_saved_policy_on_retry(natural_
         context_guards=saved['thread']['data']['context_guards']))
     assert admission.admit_saved_emlis_analysis_material(saved, owner_scope=user, tier='premium',
         as_of=saved['now']) == written_material
-    if writer_mode == 'compact_history':
+    if writer_mode in history_cases:
+        assert saved['thread']['data']['context_guards'] == frozen['thread']['data']['context_guards']
         return
 
     phase = sql_snapshot(qdb, user)

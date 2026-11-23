@@ -344,6 +344,15 @@ new_informationは、同じ場面について有効な明記・回答・訂正�
 原文が「連絡する前に会場を片づけた。」で、完成文が「連絡する前に会場を片づけた」と書いていましたが、どんな理由からですか？なら、本人が書いた動作の未確認の理由を尋ねています。
 この例の応答は {{"verdict":"accept","focus":"REASON","condition":"","premise_supported":true,"new_information":true}} です。
 拒否例 {{"verdict":"reject","reason":"already_answered"}}。reasonはalready_answered、unsupported_premise、no_new_information、unclearのいずれかです。"""
+_CORRECTION_REASON_READ_SYSTEM_MESSAGE = f"""Emlisの一問を、渡された原資料から独立に読みます。日本語のJSONだけを返します。
+{_DATA_BOUNDARY}
+完成文questionの先頭の引用と、続く問いが実際に何を尋ねるかをmaterialと照合します。引用の字面と出典はプログラムで照合済みです。応答にsourceやquoteは含めません。
+focusは問いが求める答えの種類です。{_FOCUS_GUIDE} conditionは問いが明示した原文にある短い限定条件で、なければ空文字です。
+premise_supportedをtrueにするのは、主体、出来事、時点、肯定・否定、評価を本人の資料どおりに保ち、記録にない原因や出来事を前提にしないときだけです。元の出来事で感じた理由と、後で訂正した理由を区別します。
+new_informationをtrueにするのは、同じ場面で本人がすでに説明したことや、既出・見送りと同じ観点を尋ねず、本人の判断や受け止め方が新たに分かるときだけです。別の場面の記録、マップ、過去の問い自体は本人の答えにしません。
+例として、本人が「私はほっとした」と訂正し、同じ場面の理由、既出の問い、見送りがなく、完成文が「私はほっとした」と書いていましたが、どうしてほっとしたのですか？なら、感情は書かれていても理由は未確認です。
+この例の応答は {{"verdict":"accept","focus":"REASON","condition":"","premise_supported":true,"new_information":true}} です。同じ場面で理由をすでに「予定どおり終えられたのでほっとした」と説明していれば {{"verdict":"reject","reason":"already_answered"}} です。
+前提や新しさが確認できない場合は拒否します。reasonはalready_answered、unsupported_premise、no_new_information、unclearのいずれかです。"""
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -750,6 +759,13 @@ def _display_citation_matches(question, anchor):
     citation, separator, body = question.partition(_CITATION_JOIN)
     return (bool(separator and body) and citation.startswith("「")
             and _bind_anchor(anchor.source, citation[1:]) == anchor)
+
+
+def _unique_correction_reason_citation(question, plan, sources):
+    anchor = plan.anchor
+    return (plan.focus == "REASON" and anchor.source.field == "correction"
+            and _display_citation_matches(question, anchor)
+            and all(key == plan.source or anchor.quote not in source.text for key, source in sources.items()))
 
 
 def _confirm_reading(raw, plan, *, citation_verified=False):
@@ -1316,12 +1332,18 @@ async def generate_question(prepared, sources, *, material, generate):
         reading = {"citation": citation[1:], "body": body, "material": prepared}
     elif plan.is_record_reason:
         reader = RECORD_REASON_READ_SYSTEM_MESSAGE
+    elif _unique_correction_reason_citation(question, plan, sources):
+        reader = _CORRECTION_REASON_READ_SYSTEM_MESSAGE
     elif plan.anchor and plan.anchor.source.field == "answer":
         reader = ANSWER_READ_SYSTEM_MESSAGE
     else:
         reader = READ_SYSTEM_MESSAGE
     read = await generate(reader + source_guidance, reading)
-    if _confirm_reading(read, plan, citation_verified=alternative is not None):
+    unique_correction = reader == _CORRECTION_REASON_READ_SYSTEM_MESSAGE
+    if (_confirm_reading(read, plan, citation_verified=alternative is not None or unique_correction)
+            or (unique_correction and _confirm_reading(read, plan))):
+        # An independently verified correction does not require the reader to
+        # repeat its locator. Exact matches with the original schema also work.
         return QuestionRun(candidate, "selected")
     if reader == ANSWER_READ_SYSTEM_MESSAGE and await _retry_answer_reading(
         read, plan, question, prepared, sources, generate,
