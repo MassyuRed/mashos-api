@@ -24,6 +24,7 @@ RECEIVED_ANSWER_CONTEXT_VERSION = "bound_field_and_answer_context.v3"
 PAID_RECEIVED_ANSWER_CONTEXT_VERSION = "bound_field_and_answer_context.v4"
 LEGACY_DIRECT_FEELING_CORRECTION_CONTEXT_VERSION = "bound_field_and_answer_context.v5"
 DIRECT_FEELING_CORRECTION_CONTEXT_VERSION = "bound_field_and_answer_context.v6"
+INITIAL_STANDALONE_FEELING_CONTEXT_VERSION = "bound_field_and_answer_context.v7"
 DIRECT_FEELING_CORRECTION_CONTEXT_VERSIONS = frozenset({
     LEGACY_DIRECT_FEELING_CORRECTION_CONTEXT_VERSION, DIRECT_FEELING_CORRECTION_CONTEXT_VERSION})
 REQUEST_SECONDS = 240
@@ -71,6 +72,9 @@ _DIRECT_FEELING_CORRECTION_VOICE_MESSAGE = """
 気持ちの持ち主は記録した本人です。本人の「私は」などをEmlis自身の気持ちとして言い直さず、本人に話しかける形で返してください。本人の言葉を引用するなら引用と分かるようにし、Emlisがどう受け取ったかを伝えてください。"""
 _DIRECT_FEELING_PAST_CONTEXT_MESSAGE = """
 recordsの先頭が今回の記録、二件目以降は過去の記録です。user_frame_feedbackのrecordはこの並びの番号です。過去の気持ちや本人判断を今回の気持ちに足さず、訂正後の気持ちを返事の中心にしてください。今回と関係が原文で分かる過去に触れる場合は、過去のこととして分けてください。今回の記録の選択情報で訂正後の気持ちを上書きせず、AIの解釈や未確定の読みは本人の事実として扱いません。"""
+
+_INITIAL_STANDALONE_FEELING_REPLY_MESSAGE = """あなたはEmlisです。今回の気持ちを伝えた本人に、短く自然な日本語で返してください。
+「今回の本人の言葉」の内容を変えず、本人の言葉としてかぎ括弧「」で一度だけ引用してから、どう受け取ったかを伝えてください。気持ちや時点は本人の言葉に従います。選択情報は今回の記録で本人が選んだものです。元の言葉を上書きせず、理由や出来事、質問や助言は足さずに、返事の本文だけを書いてください。"""
 
 MEANING_SUPPORT_MESSAGE = """
 source_meaning_supportは原文の一部を限られた文法で読んだ補助です。「行為者」は動作をした人、「相手」はその動作を受けた人です。「記録を書いた本人」はEmlisではありません。「原文の人物表記」は原文に書かれた呼称で、記録者かどうかは文脈に従います。「省略され未確定」は本人だと決めないでください。原文と前後の文脈を優先し、補助にない出来事を否定したり未実行と決めたりしないでください。
@@ -526,6 +530,7 @@ def prepare_natural_reply(request, *, use_meaning_support=False, response_stage=
                           original_record=None, as_of=None, bind_writer_context=True,
                           include_corrected_circumstance=False, include_received_answer=False,
                           include_paid_received_answer=False, include_direct_feeling_correction=False,
+                          include_initial_standalone_feeling=False,
                           direct_feeling_correction_context_version=DIRECT_FEELING_CORRECTION_CONTEXT_VERSION):
     """Return admitted user material and the existing independent Safety result."""
     if response_stage not in _RESPONSE_STAGES:
@@ -650,9 +655,14 @@ def prepare_natural_reply(request, *, use_meaning_support=False, response_stage=
         dialogue = _bound_feeling_dialogue(admitted, material, prepared_meaning, response_stage)
         direct_correction = (_direct_feeling_correction_dialogue(admitted, active, response_stage)
                              if include_direct_feeling_correction else None)
+        initial_feeling = (_initial_standalone_feeling(admitted, original, response_stage)
+                           if include_initial_standalone_feeling and history else None)
         if direct_correction is not None:
             writer['source_context_version'] = direct_feeling_correction_context_version
             writer['direct_feeling_correction'] = direct_correction
+        elif initial_feeling is not None:
+            writer.update(source_context_version=INITIAL_STANDALONE_FEELING_CONTEXT_VERSION,
+                          records=records[:1], user_frame_feedback=[], initial_standalone_feeling=initial_feeling)
         elif dialogue is not None:
             writer['bound_feeling_dialogue'] = dialogue
         elif include_received_answer and not corrected_circumstance:
@@ -674,6 +684,20 @@ def prepare_natural_reply(request, *, use_meaning_support=False, response_stage=
         writer['response_purpose'] = material['response_purpose']
     return NaturalReplyInput(admitted.source_prefix_ref, _compact_json(material), meaning_profile,
         _compact_json(writer), _compact_json(active)), safety
+
+
+def _initial_standalone_feeling(admitted, original, response_stage):
+    from .emlis_question import standalone_feeling_match
+
+    control = admitted.control
+    if (response_stage != 'FINAL' or admitted.answers or control.interpretation_corrections
+            or control.question_control_context.issued_count):
+        return None
+    memo = original.get('memo') or ''
+    if not standalone_feeling_match(memo, original.get('memo_action') or ''):
+        return None
+    # Use the same literal excerpt as the existing direct correction owner.
+    return memo.strip().rstrip('。．.')
 
 
 def _direct_feeling_correction_dialogue(admitted, active, response_stage):
@@ -980,10 +1004,18 @@ def validate_reply(reply, request):
         raise _NaturalReplyValidationError("question_ending")
     if any(ord(x) < 32 and x not in "\n\t\r" for x in reply.text):
         raise _NaturalReplyValidationError("control_character")
-    if (request.writer_material_json
-            and json.loads(request.writer_material_json).get('source_context_version') == DIRECT_FEELING_CORRECTION_CONTEXT_VERSION
+    writer = json.loads(request.writer_material_json) if request.writer_material_json else {}
+    context_version = writer.get('source_context_version')
+    if (context_version == DIRECT_FEELING_CORRECTION_CONTEXT_VERSION
             and _has_first_person_feeling_declaration(reply.text)):
         raise _NaturalReplyValidationError("direct_feeling_first_person")
+    if context_version == INITIAL_STANDALONE_FEELING_CONTEXT_VERSION:
+        excerpt = writer['initial_standalone_feeling']
+        quoted = f'「{excerpt}」'
+        if reply.text.count(excerpt) != 1 or quoted not in reply.text:
+            raise _NaturalReplyValidationError("initial_feeling_source")
+        if _has_first_person_feeling_declaration(reply.text):
+            raise _NaturalReplyValidationError("initial_feeling_first_person")
     return reply
 
 
@@ -1004,6 +1036,12 @@ def build_natural_reply_messages(request, *, correction_target_context=False):
         # Do not carry instructions for those absent protocols into this one.
         writer = json.loads(request.writer_material_json)
         context_version = writer.get('source_context_version')
+        if context_version == INITIAL_STANDALONE_FEELING_CONTEXT_VERSION:
+            current, = writer['records']
+            material = {'今回の本人の言葉': writer['initial_standalone_feeling'],
+                        '今回の選択情報': current['metadata']}
+            return [{'role': 'system', 'content': _INITIAL_STANDALONE_FEELING_REPLY_MESSAGE},
+                    {'role': 'user', 'content': _compact_json(material)}]
         if context_version in DIRECT_FEELING_CORRECTION_CONTEXT_VERSIONS:
             message = _DIRECT_FEELING_CORRECTION_REPLY_MESSAGE
             if context_version == DIRECT_FEELING_CORRECTION_CONTEXT_VERSION:

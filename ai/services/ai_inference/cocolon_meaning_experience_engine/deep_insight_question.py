@@ -7,6 +7,7 @@ import hashlib
 import json
 import re
 from secrets import choice
+from typing import Literal
 import unicodedata
 from uuid import UUID
 
@@ -378,10 +379,14 @@ class QuestionCandidate:
     receipt: dict
 
 
+QuestionRejectionStage = Literal["plan", "writer", "duplicate", "reader"]
+
+
 @dataclass(frozen=True, slots=True, repr=False)
 class QuestionRun:
     candidate: QuestionCandidate | None
     disposition: str
+    rejection_stage: QuestionRejectionStage | None = None
 
 
 def _compact(value):
@@ -1215,28 +1220,28 @@ async def generate_question(prepared, sources, *, material, generate):
         return QuestionRun(None, "no_merit")
     plan = _read_plan(decision, lane=lane, sources=sources)
     if plan is None:
-        return QuestionRun(None, "rejected")
+        return QuestionRun(None, "rejected", rejection_stage="plan")
     known_reason = plan.focus == "REASON" and _stated_reason(plan.anchor)
     alternative = None
     if known_reason or (plan.focus == "REASON" and _foreign_reason_anchor(plan.anchor)):
         alternative = _record_alternative(plan) if plan.is_record_reason else None
         if alternative is None:
-            return QuestionRun(None, "rejected")
+            return QuestionRun(None, "rejected", rejection_stage="plan")
         revised = _json_object(await generate(
             _RECORD_ALTERNATIVE_PLAN_MESSAGE + source_guidance, {**alternative, "material": prepared},
         ))
         if revised == {"decision": "skip"}:
             return QuestionRun(None, "no_merit")
         if not revised or set(revised) != {"decision", "focus", "ask"} or revised["focus"] != "CONDITION":
-            return QuestionRun(None, "rejected")
+            return QuestionRun(None, "rejected", rejection_stage="plan")
         plan = _read_plan(
             {**revised, "source": plan.source, "quote": alternative["action"], "condition": ""},
             lane=lane, sources=sources,
         )
         if plan is None:
-            return QuestionRun(None, "rejected")
+            return QuestionRun(None, "rejected", rejection_stage="plan")
         if any(key != plan.source and plan.quote in source.text for key, source in sources.items()):
-            return QuestionRun(None, "rejected")
+            return QuestionRun(None, "rejected", rejection_stage="plan")
 
     writing = {
         "lane": lane, "theme": theme, "focus": plan.focus,
@@ -1249,11 +1254,11 @@ async def generate_question(prepared, sources, *, material, generate):
         writing["alternatives"] = alternative["alternatives"]
     question = _accept_surface(await generate(writer, writing), plan=plan, theme=theme)
     if question is None:
-        return QuestionRun(None, "rejected")
+        return QuestionRun(None, "rejected", rejection_stage="writer")
 
     candidate = _candidate(question, plan=plan, lane=lane, material=material)
     if candidate is None:
-        return QuestionRun(None, "rejected")
+        return QuestionRun(None, "rejected", rejection_stage="duplicate")
     # Give the reader the exact final text and original author material only.
     # It has no access to the selected plan, its label or its acceptance result.
     reading = {"question": question, "material": prepared}
@@ -1274,4 +1279,4 @@ async def generate_question(prepared, sources, *, material, generate):
         read, plan, question, prepared, sources, generate,
     ):
         return QuestionRun(candidate, "selected")
-    return QuestionRun(None, "rejected")
+    return QuestionRun(None, "rejected", rejection_stage="reader")

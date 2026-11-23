@@ -23,6 +23,119 @@ def direct_correction_migrations(qdb):
         sql_script(qdb, name)
 
 
+@pytest.mark.parametrize('legacy_initial', [False, True])
+def test_paid_initial_standalone_feeling_keeps_a_unique_current_correction_target(
+        natural_case, qdb, monkeypatch, legacy_initial):
+    import emlis_thread_service as threads
+    import emlis_thread_store
+    from cocolon_meaning_experience_engine import natural_reply
+    from cocolon_meaning_experience_engine.natural_reply import NaturalReply, NaturalReplyError
+    from test_emlis_interpretation_correction import correct
+
+    user, parent, service, calls = natural_case
+    original = 'つらかったんです'
+    previous_feeling = '私は不安だった'
+    prior_scope_reply = '「私は不安だった」という言葉に、これまでの「つらかった」とは違う重みを感じました。'
+    qdb.query("update public.profiles set subscription_tier='premium' where id=$1", [user])
+    qdb.query("update public.emotions set memo=$2,memo_action='',emotions=array['悲しみ'],"
+        "emotion_details=$3,receive_emlis_questions=false where id=$1",
+        [parent, original + '。', json.dumps([dict(type='悲しみ', strength='medium')])])
+    past = str(uuid4())
+    qdb.query("insert into public.emotions(id,user_id,created_at,memo,memo_action,category,emotions,emotion_details,"
+        "receive_emlis_questions) values ($1,$2,(now()-interval '1 day') at time zone 'UTC',$3,'',array['仕事'],"
+        "array['悲しみ'],$4,false)",
+        [past, user, original + '。', json.dumps([dict(type='悲しみ', strength='medium')])])
+
+    async def past_reply(material):
+        text = previous_feeling + 'と伝えてくださったんですね。' if calls else f'「{original}」と伝えてくれたんですね。'
+        calls.append(material)
+        return NaturalReply(text, 'isolated-4b', material.source_prefix_ref)
+
+    service.natural_reply_source = past_reply
+    past_initial = run(service.start(user, past))
+    past_corrected = run(correct(service, user, past_initial, text=original,
+        explanation=f'「{original}」ではなく「{previous_feeling}」です。'))
+    assert past_corrected['body_state'] == 'FINAL'
+    calls.clear()
+
+    async def reply(material):
+        calls.append(material)
+        if len(calls) != 1:
+            text = '不安だったんですね。その気持ちをEmlisは受け取りました。'
+        elif previous_feeling in natural_reply.build_natural_reply_messages(material)[-1]['content']:
+            text = prior_scope_reply
+        else:
+            text = f'「{original}」と伝えてくれたんですね。そのつらさをEmlisは受け取りました。'
+        return NaturalReply(text, 'isolated-4b', material.source_prefix_ref)
+
+    service.natural_reply_source = reply
+    failed = False
+
+    async def fail_first_observation(name, payload, **kwargs):
+        nonlocal failed
+        if not failed and any(event['kind'] == 'OBSERVATION' for event in payload.get('p_events', [])):
+            failed = True
+            return httpx.Response(503, json={'code': '57P03'})
+        return await qdb.rpc(name, payload, **kwargs)
+
+    monkeypatch.setattr(emlis_thread_store, 'sb_post_rpc', fail_first_observation)
+    with monkeypatch.context() as before_rollout:
+        if legacy_initial:
+            prepare = natural_reply.prepare_natural_reply
+
+            def old_initial(*args, **kwargs):
+                kwargs['include_initial_standalone_feeling'] = False
+                return prepare(*args, **kwargs)
+
+            before_rollout.setattr(natural_reply, 'prepare_natural_reply', old_initial)
+        pending = run(service.start(user, parent))
+    assert failed and pending['can_retry'] and len(calls) == 1
+    frozen = run(service.store.read(user, input_id=parent))
+    writer_events = [event for event in frozen['events'] if event['payload'].get('stage')
+                     in {'NATURAL_REPLY_CALL_STARTED', 'NATURAL_REPLY_RECEIVED'}]
+    assert len(writer_events) == 2
+
+    restarted = threads.EmlisThreadService(runtime_profile=threads.Q3_PROFILE,
+        natural_reply_source=reply, natural_context_update_enabled=False)
+    initial = run(restarted.action(user, pending['thread_id'], action='retry_response',
+        expected_revision=pending['revision'], idempotency_key='resume-initial-feeling',
+        operation_id=pending['operation_id']))
+    assert initial['body_state'] == 'FINAL' and initial['issued_count'] == 0
+    material, = calls
+    version = (natural_reply.SOURCE_CONTEXT_VERSION if legacy_initial
+               else natural_reply.INITIAL_STANDALONE_FEELING_CONTEXT_VERSION)
+    assert {event['payload']['writer_context_version'] for event in writer_events} == {version}
+    assert len({event['payload']['writer_messages_sha256'] for event in writer_events}) == 1
+    saved = run(restarted.store.read(user, input_id=parent))
+    assert past in [item[0] for item in saved['thread']['data']['context_guards']]
+    writer_ids = {event['id'] for event in writer_events}
+    assert [event for event in saved['events'] if event['id'] in writer_ids] == writer_events
+    assert run(restarted.get(user, parent))['current_observation'] == initial['current_observation']
+    if legacy_initial:
+        assert initial['current_observation']['text'] == prior_scope_reply
+        return
+
+    assert initial['current_observation']['text'].count(original) == 1
+    assert previous_feeling in material.material_json
+    prompt = json.loads(natural_reply.build_natural_reply_messages(material)[-1]['content'])
+    assert prompt['今回の本人の言葉'] == original and prompt['今回の選択情報']['emotions'] == ['悲しみ']
+    assert previous_feeling not in json.dumps(prompt, ensure_ascii=False)
+    for wrong, reason in (
+        ('「私は不安だった」と伝えてくれたんですね。', 'initial_feeling_source'),
+        (f'「{original}」と伝えてくれたんですね。私は悲しかった。', 'initial_feeling_first_person'),
+        (f'「{original}」のはなぜですか。', 'question_ending'),
+    ):
+        with pytest.raises(NaturalReplyError) as error:
+            natural_reply.validate_reply(NaturalReply(wrong, 'isolated-4b', material.source_prefix_ref), material)
+        assert error.value.reason == reason
+    corrected = run(correct(restarted, user, initial, text=original,
+        explanation=f'「{original}」ではなく「{previous_feeling}」です。'))
+    assert corrected['body_state'] == 'FINAL' and len(calls) == 2
+    correction, = [event for event in corrected['timeline'] if event['kind'] == 'CORRECTION']
+    active, = json.loads(calls[-1].analysis_material_json)['active_fields']
+    assert (active['source_id'], active['text']) == (correction['event_id'], previous_feeling)
+
+
 @pytest.mark.usefixtures('direct_correction_migrations')
 @pytest.mark.parametrize('legacy, writer_mode', [
     (False, 'disabled'), (True, 'disabled'), (False, 'compact'), (False, 'compact_history'),
@@ -59,7 +172,7 @@ def test_no_answer_direct_feeling_correction_uses_saved_policy_on_retry(natural_
 
     async def synthetic_reply(material):
         text = (replacement + 'と伝えてくださったんですね。' if calls
-                else original + '、と書いてくださったんですね。')
+                else f'「{original}」と書いてくださったんですね。')
         calls.append(material)
         return NaturalReply(text, 'isolated-direct-feeling', material.source_prefix_ref)
 
@@ -145,9 +258,10 @@ def test_no_answer_direct_feeling_correction_uses_saved_policy_on_retry(natural_
         for text in ('「私は不安だった」と伝えてくださったんですね。', '不安だったんですね。'):
             assert natural_reply.validate_reply(NaturalReply(
                 text, slipped.model, slipped.source_prefix_ref), calls[-1]).text == text
-        # The plain/initial author retains its existing contract.
-        assert natural_reply.validate_reply(NaturalReply(
-            witnessed, slipped.model, calls[0].source_prefix_ref), calls[0]).text == witnessed
+        if writer_mode != 'compact_history':
+            # Initial replies without past records keep the existing author.
+            assert natural_reply.validate_reply(NaturalReply(
+                witnessed, slipped.model, calls[0].source_prefix_ref), calls[0]).text == witnessed
     elif writer_mode == 'saved_v1':
         assert receipt['payload']['writer_context_version'] == natural_reply.SOURCE_CONTEXT_VERSION
         assert 'この初回の受口' in messages[0]['content']

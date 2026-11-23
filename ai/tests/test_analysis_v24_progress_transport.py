@@ -205,6 +205,38 @@ def test_v24_logs_invalid_plan_wire_without_model_data(caplog, merge_exchange):
     assert 'test.invalid' not in caplog.text
 
 
+@pytest.mark.parametrize('expected_stage,invalid_reply', [
+    ('bridge_unavailable', {'error': 'analysis_bridge_unavailable', 'status': 503}),
+    ('response_model', {'model': 'PRIVATE_WRONG_MODEL'}),
+    ('response_choices', {'choices': []}),
+    ('response_message', {'choices': [{'finish_reason': 'stop', 'message': {
+        'role': 'assistant', 'content': 'PRIVATE_REPLY', 'reasoning_content': 'PRIVATE_REASONING'}}]}),
+    ('response_content', {'choices': [{'finish_reason': 'stop', 'message': {
+        'role': 'assistant', 'content': '  '}}]}),
+])
+def test_v24_logs_rejected_nodes_envelope_without_model_data(caplog, merge_exchange, expected_stage, invalid_reply):
+    stage, expected = merge_exchange
+    sent = []
+
+    def handler(request):
+        phase = json.loads(json.loads(request.content)['messages'][1]['content'])['author_phase']
+        sent.append(phase)
+        if phase == 'PLAN':
+            return successful_response(expected[phase][1])
+        if expected_stage == 'bridge_unavailable':
+            return httpx.Response(200, content=b'   ' + json.dumps(invalid_reply).encode())
+        return httpx.Response(200, json={'model': 'test-model', **invalid_reply})
+
+    async def scenario():
+        with pytest.raises(RuntimeError, match='analysis_model_source_unavailable'):
+            await model_source(stage, handler)(stage, per_phase=True)
+
+    asyncio.run(scenario())
+    assert sent == ['PLAN', 'NODES']
+    assert f'phase=NODES stage={expected_stage} http_status=200' in caplog.text
+    assert 'PRIVATE_' not in caplog.text
+
+
 def test_split_v24_leaf_renews_clock_after_accepted_plan(monkeypatch):
     note = '祖母は図面を保存した。'
     parent = prepared([note], core.SEMANTIC_MAP_OCCURRENCE_V24_PROFILE)

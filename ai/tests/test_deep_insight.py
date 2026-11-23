@@ -375,13 +375,32 @@ def test_no_merit_is_reused_for_same_material_but_rechecked_after_edit(api_harne
     assert len([row for row in calls if row[0] == "4B"]) == 2
 
 
-def test_independent_rejection_stops_before_storage(api_harness):
+@pytest.mark.parametrize(("stage", "generation_count"), [
+    ("plan", 1), ("writer", 2), ("duplicate", 2), ("reader", 3),
+])
+def test_records_rejection_stage_is_logged_without_private_content(api_harness, caplog, stage, generation_count):
     client, _, calls, answers, context = api_harness
-    context["guard"] = "reader-rejection"
-    answers[RECORD_REASON_READ_SYSTEM_MESSAGE] = {"verdict": "reject", "reason": "unsupported_premise"}
+    context["guard"] = "private-material-guard"
+    private_model_output = "private-model-content"
+    if stage == "plan":
+        answers[PLAN_SYSTEM_MESSAGE] = {**REFLECTION_PLAN, "source": private_model_output}
+    elif stage == "writer":
+        answers[WRITE_SYSTEM_MESSAGE] = {"question": private_model_output}
+    elif stage == "duplicate":
+        context["value"]["prior"] = [{"question_text": "「頼まれたことを先にした」と書いていましたが、どんな理由からですか？",
+                                       "answer_text": None, "answered_at": None}]
+    else:
+        answers[RECORD_REASON_READ_SYSTEM_MESSAGE] = {"verdict": "reject", "reason": private_model_output}
+
+    caplog.set_level("INFO", logger=api.__name__)
     response = client.post("/deep-insight/questions", headers=AUTH, json={"lane": "records"})
+    assert response.status_code == 200
     assert response.json() == {"status": "no_question", "question": None, "theme_next_available_at": None}
     assert not [row for row in calls if row[0] == "deep_insight_issue_grounded"]
+    assert len([row for row in calls if row[0] == "4B"]) == generation_count
+    assert [entry.getMessage() for entry in caplog.records if entry.name == api.__name__] == [
+        f"DeepInsight generation records rejected stage={stage}",
+    ]
 
 
 def test_second_instance_does_not_generate_while_the_same_slot_is_locked(api_harness, monkeypatch):

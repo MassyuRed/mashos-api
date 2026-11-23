@@ -254,9 +254,14 @@ class SelfHostedSemanticAnalysisModelSource(SelfHostedAnalysisModelSource):
                         raise TimeoutError('analysis_model_source_timeout')
                     stage = 'response_json'
                     data = json.loads(payload)
-                    stage = 'response_contract'
+                    # A heartbeat commits HTTP 200 before the native result.
+                    if data == {'error': 'analysis_bridge_unavailable', 'status': 503}:
+                        stage = 'bridge_unavailable'
+                        raise ValueError('phase_bridge_unavailable')
+                    stage = 'response_model'
                     if type(data) is not dict or data.get('model') != self.model:
                         raise ValueError('phase_model_changed')
+                    stage = 'response_choices'
                     choices = data.get('choices')
                     if type(choices) is not list or len(choices) != 1 or type(choices[0]) is not dict:
                         raise ValueError('phase_choice_invalid')
@@ -265,9 +270,12 @@ class SelfHostedSemanticAnalysisModelSource(SelfHostedAnalysisModelSource):
                     if finish_reason != 'stop':
                         stage = 'generation_length' if finish_reason == 'length' else 'generation_finish'
                         raise ValueError('phase_not_complete')
+                    stage = 'response_message'
                     if (type(message) is not dict or message.get('role') != 'assistant' or message.get('tool_calls')
-                            or message.get('function_call') or message.get('reasoning_content')
-                            or type(message.get('content')) is not str or not message['content'].strip()):
+                            or message.get('function_call') or message.get('reasoning_content')):
+                        raise ValueError('phase_not_complete')
+                    stage = 'response_content'
+                    if type(message.get('content')) is not str or not message['content'].strip():
                         raise ValueError('phase_not_complete')
                     raw = message['content']
                     stage = 'response_usage'

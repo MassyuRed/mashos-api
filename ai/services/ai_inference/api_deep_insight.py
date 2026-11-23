@@ -17,7 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field, StrictBool, ValidationError, 
 
 from api_emotion_submit import _extract_bearer_token, _resolve_user_id_from_token
 from cocolon_meaning_experience_engine.deep_insight_question import (
-    generate_question, prepare_question_material,
+    QuestionRejectionStage, generate_question, prepare_question_material,
 )
 from emlis_thread_config import MAX_ANSWER_CHARS, natural_reply_provider_settings
 from generation_lock import build_lock_key, release_lock, try_acquire_lock
@@ -85,6 +85,7 @@ class _Attempt:
     disposition: str
     result: QuestionResult | None = None
     error: tuple[int, str, dict[str, str] | None] | None = None
+    rejection_stage: QuestionRejectionStage | None = None
 
 
 class AnswerCommand(BaseModel):
@@ -236,7 +237,8 @@ async def _issue_from_material(owner, command, day, guard, material, prepared, s
         run = await generate_question(prepared, sources, material=material, generate=_generate_candidate)
         candidate = run.candidate
         if candidate is None:
-            return _Attempt(run.disposition, QuestionResult(status="no_question"))
+            return _Attempt(run.disposition, QuestionResult(status="no_question"),
+                            rejection_stage=run.rejection_stage)
 
         saved = await _rpc("deep_insight_issue_grounded", {
             "p_user_id": owner, "p_day": day, "p_lane": command.lane, "p_theme": command.theme,
@@ -379,7 +381,11 @@ def register_deep_insight_routes(app: FastAPI) -> None:
     async def issue_deep_insight_question(command: QuestionCommand, response: Response, owner: str = Depends(_owner)):
         response.headers["Cache-Control"] = "no-store"
         outcome = await _issue_with_deadline(owner, command)
-        logger.info("DeepInsight generation %s %s", command.lane, outcome.disposition)
+        if outcome.rejection_stage is None:
+            logger.info("DeepInsight generation %s %s", command.lane, outcome.disposition)
+        else:
+            logger.info("DeepInsight generation %s %s stage=%s",
+                        command.lane, outcome.disposition, outcome.rejection_stage)
         if outcome.error is not None:
             raise HTTPException(*outcome.error)
         return outcome.result
