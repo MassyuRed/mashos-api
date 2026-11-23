@@ -23,7 +23,7 @@ from cocolon_meaning_experience_engine.contracts import GenerationRequest, Engin
 from cocolon_meaning_experience_engine.source_kernel import freeze_text_source
 from cocolon_meaning_experience_engine.emlis_thread_source import admit_emlis_thread, identity
 from cocolon_meaning_experience_engine.natural_reply import (
-    ACTIVE_MEANING_PROFILE, OBSERVATION_CONTEXT_VERSIONS, OBSERVATION_DELIVERY_CONTEXT_VERSION)
+    ACTIVE_MEANING_PROFILE, OBSERVATION_CONTEXT_VERSIONS, OBSERVATION_DELIVERY_CONTEXT_VERSIONS)
 from cocolon_meaning_experience_engine.emlis_thread_contracts import (
     EmlisThreadInputV1, EmlisQuestionControlV1, EmlisClarificationV1,
     EmlisQuestionDecisionV1, SupplementalAnswerSource, InterpretationCorrectionSource, SEMANTIC_SCHEMA,
@@ -496,7 +496,7 @@ class EmlisThreadService:
                     t['data']['initial_recipient_question_policy'] = True
                     writer_version = self.observation_writer_version
                     if writer_version is not None and (
-                            writer_version != OBSERVATION_DELIVERY_CONTEXT_VERSION or snapshot['tier'] in {'free', 'plus'}):
+                            writer_version not in OBSERVATION_DELIVERY_CONTEXT_VERSIONS or snapshot['tier'] in {'free', 'plus'}):
                         t['data']['observation_writer_version'] = writer_version
                 if self.natural_context_update_enabled and (
                         not self.natural_context_update_paid_only or snapshot["tier"] in {"plus", "premium"}):
