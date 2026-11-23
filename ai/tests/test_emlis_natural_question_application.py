@@ -13,7 +13,7 @@ import pytest
 from test_emlis_q2_application import run, answer
 from test_emlis_q3_application import qdb
 from cocolon_meaning_experience_engine.natural_reply import (
-    SOURCE_CONTEXT_VERSION, NaturalReply, build_natural_reply_messages)
+    INITIAL_RECIPIENT_CONTEXT_VERSION, NaturalReply, build_natural_reply_messages)
 from emlis_thread_service import EmlisThreadService, Q3_PROFILE
 from emlis_thread_store import ThreadStoreError
 from test_emlis_natural_reply_application import _active_application_owner, _observe_initial_natural_failures
@@ -209,7 +209,8 @@ def test_application_context_mode_pins_new_thread_at_plan_boundary(
     assert snapshot['thread']['data'].get('natural_context_update_enabled') is (True if enabled else None)
     assert (dto['pending_question'] or {}).get('text') == ('なにがつらかったんですか？' if enabled else None)
     receipt, = [event for event in snapshot['events'] if event['payload'].get('stage') == 'NATURAL_REPLY_RECEIVED']
-    assert receipt['payload'].get('writer_context_version') == (SOURCE_CONTEXT_VERSION if enabled else None)
+    assert receipt['payload']['writer_context_version'] == INITIAL_RECIPIENT_CONTEXT_VERSION
+    assert run(owner.get(user, parent))['current_observation'] == dto['current_observation']
     assert len(calls) == 1
 
 

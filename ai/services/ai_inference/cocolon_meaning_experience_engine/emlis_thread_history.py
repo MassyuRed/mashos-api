@@ -150,7 +150,7 @@ def frame_supported_focus(thread, plan):
     return ()
 
 
-def history_line_plan(prepared, plan, *, current_nucleus_ids=None):
+def history_line_plan(prepared, plan, *, current_nucleus_ids=None, initial_event_only=False):
     thread = prepared.thread
     if thread.control.capability_snapshot not in {'Q3_PLUS', 'Q3_PREMIUM'}:
         return None
@@ -158,15 +158,18 @@ def history_line_plan(prepared, plan, *, current_nucleus_ids=None):
         return None
     from emlis_ai_user_label_connection_surface import CONNECTABLE_FAMILY_SELF_UNDERSTANDING_FOLLOW, CONNECTABLE_FAMILIES
     family = CONNECTABLE_FAMILY_SELF_UNDERSTANDING_FOLLOW if any(r.type == 'evaluation_about_event' for r in plan.relations) else None
-    if family not in CONNECTABLE_FAMILIES:
+    if family not in CONNECTABLE_FAMILIES and not initial_event_only:
         return None
     resolver = thread.resolver()
+    matches = []
     # Multiple records: this current input plus one independently owned record.
     # An exact event anchor alone is not a personal trait or a shared cause.
     for source, past, past_plan in admitted_history_plans(thread):
         past_resolver = past.thread.resolver()
         for current in plan.nuclei:
             if current_nucleus_ids is not None and current.nucleus_id not in current_nucleus_ids:
+                continue
+            if initial_event_only and current.kind != 'event':
                 continue
             if current.kind not in {'event', 'reaction', 'state'} or not set(current.source_fields) & {'memo', 'memo_action', 'answer_text_private'}:
                 continue
@@ -182,7 +185,10 @@ def history_line_plan(prepared, plan, *, current_nucleus_ids=None):
                 past_text = _anchor(previous.nucleus_id, past_plan, past_resolver)
                 if current_text != past_text or len(current_text) < 4 or any(x in current_text for x in ('「','」','\n')):
                     continue
-                return HistoryLinePlanV1(current_text, past_text, source.recorded_at, 'REPEATED_EXPLICIT_WORDING',
+                matched = HistoryLinePlanV1(current_text, past_text, source.recorded_at, 'REPEATED_EXPLICIT_WORDING',
                     tuple(resolver.qualified_ref(s).evidence.evidence_id for s in current.source_span_ids),
                     tuple(past_resolver.qualified_ref(s).evidence.evidence_id for s in previous.source_span_ids), source.source_guard[0], current.nucleus_id, previous.nucleus_id)
-    return None
+                if not initial_event_only:
+                    return matched
+                matches.append(matched)
+    return matches[0] if len(matches) == 1 else None
