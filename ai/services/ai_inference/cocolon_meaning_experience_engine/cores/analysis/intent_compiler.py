@@ -4037,6 +4037,9 @@ def expand_analysis_semantic_event_plan(prepared, packet):
                 fixed_record_units = selected
         # Exact phase assembly: roots/prose/IDs were fixed and checked before
         # this projection. No rejected sentence, edge or partial raw is fixed.
+        # Primary structures are separately projected from the validated final receipt
+        # after the original evidence graph passes all its existing checks.
+        joined['overview'].pop('primary_structures', None)
         joined['nodes'] = [{k: v for k, v in n.items() if k != 'node_id'} for n in joined['nodes']]
         return _expand_analysis_semantic_node_local_v3(
             replace(prepared, prompt_version=SEMANTIC_MAP_NODE_LOCAL_V3_PROFILE), joined,
@@ -4604,7 +4607,16 @@ def _semantic_event_plan_review(graph, prepared, original, expanded):
         review['node_local_plan']['phase_raw_hashes'] = [p['raw_sha256'] for p in original['phases']]
         review['node_local_plan']['final_artifact_sha256'] = semantic_map_hash(original)
         review['node_local_plan']['realization'] = 'PLANNED_ROOTS_THEN_NODE_PROSE_THEN_ACTUAL_NODE_RELATIONS'
-        return replace(graph, meaning_review_json=semantic_map_canonical(review),
+        overview = json.loads(graph.overview_json)
+        if 'primary_structures' in joined['overview']:
+            axes = joined['overview']['primary_structures']
+            # A new surface never silently reinstates an interpretation the user rejected.
+            for correction in json.loads(prepared.map_correction_sources_json or '[]'):
+                rejected = correction['source']['target_context']['field_text']
+                if rejected:
+                    axes = [axis for axis in axes if rejected not in (axis['title'], axis['description'])]
+            overview['primary_structures'] = axes
+        return replace(graph, meaning_review_json=semantic_map_canonical(review), overview_json=semantic_map_canonical(overview),
             source_ordered_detail=original.get('merge_wire_version') in ('cocolon.analysis.merge_wire.v4', 'cocolon.analysis.merge_wire.v5', 'cocolon.analysis.merge_wire.v6', 'cocolon.analysis.merge_wire.v7', 'cocolon.analysis.merge_wire.v8', 'cocolon.analysis.merge_wire.v9', 'cocolon.analysis.merge_wire.v10'),
             original_field_sections=original.get('merge_wire_version') in ('cocolon.analysis.merge_wire.v6', 'cocolon.analysis.merge_wire.v7', 'cocolon.analysis.merge_wire.v8', 'cocolon.analysis.merge_wire.v9', 'cocolon.analysis.merge_wire.v10'),
             compact_source_captions=prepared.prompt_version in {'semantic_map.node_local.v4.occurrence.v22', 'semantic_map.node_local.v4.occurrence.v23', 'semantic_map.node_local.v4.occurrence.v24'},

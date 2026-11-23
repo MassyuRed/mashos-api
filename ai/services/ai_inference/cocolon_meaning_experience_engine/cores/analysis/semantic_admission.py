@@ -3521,6 +3521,101 @@ def _apply_semantic_qualification_review(prepared, nodes, review):
             unit['unknowns'] = retained
 
 
+_PRIMARY_STRUCTURE_INSTRUCTION = (
+    '\nprimary_structuresは、この全体から読み取れる本人の判断軸を重要な順に0〜3件返します。'
+    '各項目のanchorsには根拠をn番号.u番号.e番号で1〜4箇所選び、選んだ原文を読みます。'
+    '相手・環境・本人の置かれた役割の中で、誰の基準に注意を向け、何を重んじ、その判断がどんな選択に表れたかを考えます。'
+    '行動が同じでも重視したものが違う場合、行動が逆でも同じものを守った場合を比べます。'
+    '一つの話で生まれた読みを別に聞いた以前の話にも当て、違う振る舞いを説明できるか確かめます。'
+    '合わない場面があれば成立条件を限定し、その根拠もanchorsに含めます。初めて気づいた、使えたという変化は、'
+    '以前になかった性質の発生にしません。変わったのが認識・行動・条件のどれかを区別します。'
+    '別の説明と区別できない時は範囲を一場面に絞るか、その軸を出しません。'
+    '本人が見ている自分、実際の選択、望んでいる自分を分けます。対象には活動や自分自身も含みます。'
+    '本人が後に得た自己解釈を以前からの意図に変えません。出来事がないことは避けた証拠になりません。'
+    'scopeは複数の原記録で条件・選択を照合できるときacross_records、本人の自己理解の言葉はself_report、'
+    '一場面の読みはin_this_record。見出しheadingは短い日常語、readingは状況を限定した結論と理由を敬語で書きます。'
+    '比喩を見出しに使う時は本文で平易な言葉に戻し、その例えを新しい事実にしません。'
+    '固定的な人柄、経験していない可能性、相手の内心や架空の事実は加えません。分類名に合わせて人を割り振りません。'
+    '根拠が行動や感情の一覧だけなら空配列です。')
+_PRIMARY_STRUCTURE_SCOPES = {'across_records', 'self_report', 'in_this_record'}
+
+
+def _check_public_primary_structures(axes, node_refs):
+    reason = 'analysis_primary_structure_invalid'
+    _semantic_map_require(type(axes) is list and len(axes) <= 3, reason)
+    titles, descriptions = set(), set()
+    for axis in axes:
+        _semantic_map_require(_semantic_map_keys(axis, {'scope', 'title', 'description', 'node_refs'})
+            and type(axis['scope']) is str and axis['scope'] in _PRIMARY_STRUCTURE_SCOPES
+            and _semantic_map_text(axis['title'], 60) and _semantic_map_text(axis['description'], 360)
+            and '\n' not in axis['title'] and axis['title'] != axis['description']
+            and axis['title'] not in titles and axis['description'] not in descriptions, reason)
+        refs = axis['node_refs']
+        _semantic_map_require(_semantic_map_strings(refs, maximum=4, text_maximum=4)
+            and bool(refs) and set(refs) <= node_refs, reason)
+        titles.add(axis['title'])
+        descriptions.add(axis['description'])
+
+
+def _read_primary_structures(prepared, material, nodes, axes):
+    """Resolve only authored roots from the already admitted PLAN/NODES for this snapshot."""
+    reason = 'analysis_primary_structure_unbound'
+    _semantic_map_require(prepared.prompt_version == SEMANTIC_MAP_OCCURRENCE_V24_PROFILE
+        and material.get('history_stage', {}).get('kind') != 'LEAF'
+        and type(axes) is list and len(axes) <= 3, reason)
+    fields = {f['field']: f for f in material['fields']}
+    records = {r['record']: r for r in material['records']}
+    origins = {f"{node['node_id']}.u{i}.e{j}": (node, unit, fields[root['field']], root['quote'])
+               for node in nodes for i, unit in enumerate(node['units'], 1)
+               for j, root in enumerate(unit['evidence'], 1)}
+    public = []
+    for axis in axes:
+        _semantic_map_require(_semantic_map_keys(axis, {'anchors', 'scope', 'heading', 'reading'}), reason)
+        anchors = axis['anchors']
+        _semantic_map_require(_semantic_map_strings(anchors, maximum=4, text_maximum=15)
+            and bool(anchors) and set(anchors) <= origins.keys(), reason)
+        selected = [origins[key] for key in anchors]
+        field_numbers = {field['field'] for _, _, field, _ in selected}
+        _semantic_map_require(not any(independent <= field_numbers for independent
+            in _semantic_independent_correction_fields(material)), reason)
+        for answer in material.get('received_answer_thoughts', ()):
+            _semantic_map_require(answer['action_field'] not in field_numbers or
+                field_numbers.isdisjoint((answer['thought_field'], answer['answer_field'])), reason)
+        if _semantic_literal_post_answer_fields(material):
+            _semantic_map_require(len(field_numbers) == 1, reason)
+        # Independent supplements to the same original never count as a second event.
+        # A map correction can span several records and is not an independent origin.
+        owners = {field.get('record') for _, _, field, _ in selected}
+        _semantic_map_require(owners <= records.keys(), reason)
+        mental = [(field['record'], quote) for node, unit, field, quote in selected
+                  if node['perspective'] == 'SELF' and (field['source_role'] == 'ORIGINAL_INPUT'
+                      and field['field_path'] == 'memo' or field['source_role'] in {
+                          'SUPPLEMENTAL_ANSWER', 'USER_INTERPRETATION_CORRECTION', 'USER_DEEP_INSIGHT_ANSWER'})]
+        _semantic_map_require(bool(mental), reason)
+        if axis['scope'] == 'across_records':
+            # Distinct original records and distinct first-person materials, rather than
+            # two fields of one record or one literal copied into multiple records.
+            judgments = {field['record'] for node, unit, field, _ in selected if
+                         node['perspective'] == 'SELF' and unit['source_mode'] in ('PERSON_JUDGMENT', 'DECIDED_PLAN')
+                         and (field['source_role'] == 'ORIGINAL_INPUT' or field['source_role'] == 'USER_DEEP_INSIGHT_ANSWER')}
+            _semantic_map_require(any(a != b and qa != qb and (a in judgments or b in judgments)
+                                      for a, qa in mental for b, qb in mental), reason)
+        elif axis['scope'] == 'self_report':
+            _semantic_map_require(len(owners) == 1 and any(
+                name in ('自己理解', 'self_insight') for name in
+                (records[next(iter(owners))].get('selected_emotions') or [])), reason)
+        else:
+            _semantic_map_require(axis['scope'] == 'in_this_record' and len(owners) == 1, reason)
+        _semantic_map_require(axis['reading'] not in [quote for *_, quote in selected], reason)
+        refs = list(dict.fromkeys(node['node_id'] for node, *_ in selected))
+        public.append(dict(scope=axis['scope'], title=axis['heading'], description=axis['reading'], node_refs=refs))
+    _check_public_primary_structures(public, {node['node_id'] for node in nodes})
+    for axis, source in zip(public, axes):
+        _semantic_v14_visible_text(prepared, (axis['title'], axis['description']),
+            (origins[a][3] for a in source['anchors']))
+    return public
+
+
 def semantic_node_local_v4_relations(prepared, plan, bodies, packet, *, ordered_titles=False):
     semantic_node_local_v4_nodes(prepared, plan, bodies, ordered_titles=ordered_titles)
     nodes = _semantic_v4_join(plan, bodies)
@@ -3528,13 +3623,15 @@ def semantic_node_local_v4_relations(prepared, plan, bodies, packet, *, ordered_
     r, reason = _semantic_map_require, 'analysis_semantic_node_local_v4_relations_invalid'
     review_qualifications = prepared.prompt_version in {SEMANTIC_MAP_OCCURRENCE_V7_PROFILE, SEMANTIC_MAP_OCCURRENCE_V8_PROFILE, *SEMANTIC_MAP_SOURCE_CUED_PROFILES}
     relation_keys = {'schema_version', 'nodes_sha256', 'edges', 'overview'}
+    material = json.loads(prepared.material_json)
+    if material.get('primary_structure_reading') == 'karen.v1' and material.get('history_stage', {}).get('kind') != 'LEAF':
+        relation_keys.add('primary_structures')
     if review_qualifications:
         relation_keys.add('qualification_review')
     r(_semantic_map_keys(packet, relation_keys)
         and packet['schema_version'] == _semantic_v4_schema('RELATIONS')
         and packet['nodes_sha256'] == semantic_map_hash(nodes)
         and type(packet['edges']) is list and len(packet['edges']) <= 48, reason)
-    material = json.loads(prepared.material_json)
     received_plan = _semantic_received_answer_plan(material)
     if received_plan:
         r(not packet['edges'], 'analysis_semantic_relation_received_answer_scope_invalid')
@@ -3652,6 +3749,9 @@ def semantic_node_local_v4_relations(prepared, plan, bodies, packet, *, ordered_
     # the selected units to bind public edge evidence, exactly as before.
     edges = [{k: v for k, v in edge.items() if k not in {'from_source', 'to_source'}}
              for edge in packet['edges']] if source_cued else packet['edges']
+    if 'primary_structures' in packet:
+        overview = dict(overview, primary_structures=_read_primary_structures(
+            prepared, material, nodes, packet['primary_structures']))
     return dict(schema_version=SEMANTIC_MAP_NODE_LOCAL_V3_SCHEMA,
         nodes=nodes, edges=edges, overview=overview)
 
@@ -4499,6 +4599,8 @@ def _semantic_occurrence_v6_messages(prepared, material, phase, bodies=None):
                 'qualification_candidatesが空ならqualification_reviewは{}です。全項目を含むoverviewは以下を返します。\n'
                 + json.dumps(overview, ensure_ascii=False, separators=(',', ':')))
         guidance = _semantic_v4_view(prepared)._source_instruction(_SEMANTIC_V4_COMMON + '\n' + guidance, material)
+        if phase == 'RELATIONS' and material.get('primary_structure_reading') == 'karen.v1' and stage != 'LEAF':
+            guidance += _PRIMARY_STRUCTURE_INSTRUCTION
         messages = [dict(role='system', content=guidance), dict(role='user', content=_semantic_occurrence_message(material))]
         if phase == 'RELATIONS':
             maximum = SEMANTIC_HISTORY_MERGE_MAX_PROMPT_BYTES if stage == 'MERGE' else SEMANTIC_MAP_MAX_PROMPT_BYTES
@@ -4571,6 +4673,8 @@ def _semantic_occurrence_v6_messages(prepared, material, phase, bodies=None):
                 'RELATIONS': '独立した行動と補足済みの思考の間に経緯や関係を加えません。'}[phase])
     guidance = _semantic_v4_view(prepared)._source_instruction(_SEMANTIC_V4_COMMON + '\n' + guidance + lesson, material)
     guidance += scoped_guidance
+    if material.get('primary_structure_reading') == 'karen.v1' and phase == 'RELATIONS' and stage != 'LEAF':
+        guidance += _PRIMARY_STRUCTURE_INSTRUCTION
     messages = [dict(role='system', content=guidance), dict(role='user', content=_semantic_occurrence_message(material))]
     if prepared.prompt_version in SEMANTIC_MAP_FACT_REFERENCE_PROFILES and phase == 'RELATIONS':
         maximum = SEMANTIC_HISTORY_MERGE_MAX_PROMPT_BYTES if stage == 'MERGE' else SEMANTIC_MAP_MAX_PROMPT_BYTES
@@ -4973,7 +5077,7 @@ class AnalysisSemanticMapInput:
 
 
 def prepare_analysis_semantic_map(request, snapshot, *,
-        prompt_version=SEMANTIC_MAP_PROFILE):
+        prompt_version=SEMANTIC_MAP_PROFILE, primary_structures=False):
     """Admit original sources and exact source metadata before model acquisition."""
     from cocolon_meaning_experience_engine.cores.analysis.semantic_admission import AnalysisSemanticError
     from cocolon_meaning_experience_engine.cores.analysis.source_adapter import freeze_analysis_sources, AnalysisSourceError
@@ -5167,6 +5271,10 @@ def prepare_analysis_semantic_map(request, snapshot, *,
         if ref in questions:
             records[-1]['deep_insight_question'] = questions[ref].question_text
     material = dict(analysis_as_of=frozen.period[1], records=records, fields=material_fields)
+    _semantic_map_require(type(primary_structures) is bool and (not primary_structures or
+        prompt_version == SEMANTIC_MAP_OCCURRENCE_V24_PROFILE), 'analysis_semantic_input_invalid')
+    if primary_structures:
+        material['primary_structure_reading'] = 'karen.v1'
     if received_answer_thoughts:
         material['received_answer_thoughts'] = received_answer_thoughts
     if answered_circumstances:
@@ -5287,7 +5395,8 @@ def generate_analysis_semantic_map(request, model_input):
         _semantic_map_require(type(model_input) is AnalysisSemanticMapInput,
             'analysis_semantic_input_invalid')
         expected = prepare_analysis_semantic_map(model_input.source_request,
-            json.loads(model_input.source_snapshot_json), prompt_version=model_input.prompt_version)
+            json.loads(model_input.source_snapshot_json), prompt_version=model_input.prompt_version,
+            primary_structures=json.loads(model_input.material_json).get('primary_structure_reading') == 'karen.v1')
         _semantic_map_require(expected.request == request
             and expected == replace(model_input, response=None), 'analysis_semantic_input_unbound')
         packet = _admit_analysis_semantic_map_response(expected, model_input.response)
@@ -5396,7 +5505,8 @@ def _semantic_history_parent(parent, *, rederive=True):
             if qualified == parent and canonical_bytes(asdict(parent.source_request)) == request_bytes:
                 return parent
         expected = prepare_analysis_semantic_map(parent.source_request,
-            json.loads(parent.source_snapshot_json), prompt_version=parent.prompt_version)
+            json.loads(parent.source_snapshot_json), prompt_version=parent.prompt_version,
+            primary_structures=json.loads(parent.material_json).get('primary_structure_reading') == 'karen.v1')
         _semantic_map_require(expected == parent, 'analysis_semantic_input_unbound')
         if slot is not None and slot[0] is None:
             # Nested source maps can be mutable. Never compare the live input to itself.

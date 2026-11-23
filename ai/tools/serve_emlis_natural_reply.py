@@ -1099,6 +1099,14 @@ def _semantic_node_local_v4_schema(material, pairs, unknown_pairs, *, leaf=False
             review[ref] = dict(oneOf=[closed, opened])
         properties['qualification_review'] = obj(review)
     properties.update(edges=dict(type='array', items=edge, maxItems=0 if leaf else 48), overview=obj(overview))
+    if material.get('primary_structure_reading') == 'karen.v1' and author_profile == OCCURRENCE_V24_PROFILE and not leaf:
+        anchors = [f"{node['node_id']}.u{i}.e{j}" for node in registry
+                   for i, unit in enumerate(node['units'], 1) for j in range(1, len(unit['evidence']) + 1)]
+        axis = obj(dict(anchors=dict(type='array', minItems=1, maxItems=min(4, len(anchors)),
+                                     items=dict(type='string', enum=anchors)),
+            scope=dict(type='string', enum=['in_this_record', 'self_report', 'across_records']),
+            heading=text(60), reading=text(360)))
+        properties['primary_structures'] = dict(type='array', items=axis, maxItems=3)
     return root(phase, properties)
 
 

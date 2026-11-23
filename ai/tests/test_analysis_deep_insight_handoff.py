@@ -231,6 +231,12 @@ def v24_provider(calls, *, received_case=False, plan_packet=None, scoped_node_gu
                 overview['title'] = '書き残した判断と行動'
             value.update(nodes_sha256=schema['nodes_sha256']['enum'][0],
                 qualification_review={}, edges=[], overview=overview)
+            if 'primary_structures' in schema:
+                value['primary_structures'] = [
+                    dict(anchors=[f"{node['node_id']}.u{i}.e{j}"], scope='in_this_record',
+                         heading='最後まで話せる場', reading='この場面では、途中で遮られずに話せることが、本音を伝える支えになっています。')
+                    for node in registry for i, unit in enumerate(node['units'], 1)
+                    for j, root in enumerate(unit['evidence'], 1) if root['quote'] == ANSWER][:1]
             if received_prepared is not None:
                 assert overview['title'] == '2件の記録を振り返って'
                 wrong_title = '発表後に褒められた経験と本音'
@@ -340,6 +346,9 @@ def test_answer_updates_normal_v24_map_through_provider_and_database(sql_source,
     assert report is not None and current['refreshed']
     saved = run(cumulative.read_maps(OWNER, report_id=report))['items'][0]
     assert saved['content_text'] == current['content_text'] and ANSWER in saved['content_text']
+    axis, = saved['content_json']['watashiMap']['overview']['primary_structures']
+    assert axis['scope'] == 'in_this_record' and axis['node_refs'] == [f'n{1 + int(prior_map)}']
+    assert axis['description'] in saved['content_text']
     assert len(calls) == 3 * (1 + int(prior_map))
     evidence = run(cumulative.map_evidence(OWNER, report, f'n{1 + int(prior_map)}'))['items']
     assert evidence[0]['deep_insight'] == dict(question_text=QUESTION, answer_text=ANSWER)
