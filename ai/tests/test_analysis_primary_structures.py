@@ -1,6 +1,8 @@
 """Final authoring, admission and public read of grounded primary structures."""
+import asyncio
 import hashlib
 import json
+from unittest.mock import AsyncMock
 from uuid import UUID
 
 import pytest
@@ -42,10 +44,19 @@ def v2_reading():
                 heading='自分で選ぶ余地')
 
 
-@pytest.mark.parametrize('version', ['karen.v1', 'karen.v2'])
-def test_final_native_receipt_and_saved_graph_show_conditional_conclusion_and_hide_private_anchors(version):
+def observed_v2_repeated_conclusion():
+    # The complete, authored axis from the second fictional RELATIONS run.
+    return dict(anchors=['n1.u1.e1', 'n2.u1.e1'], scope='across_records',
+                criterion='自分で選んだ仕事か、手伝うと決められてしまったか。',
+                case_reading='会議では自分で選んだ仕事は引き受けたが、家では手伝うと決められてしまい、自分で決めたかったので断った。',
+                heading='自分で選んだ仕事か、手伝うと決められてしまったか。')
+
+
+@pytest.mark.parametrize('version, authored, publish', [
+    ('karen.v1', reading, True), ('karen.v2', v2_reading, True), ('karen.v2', observed_v2_repeated_conclusion, False)])
+def test_final_native_receipt_and_saved_graph_show_conditional_conclusion_and_hide_private_anchors(version, authored, publish, monkeypatch):
     p, plan, bodies = scenario(FIRST, SECOND, version=version)
-    axis = v2_reading() if version == 'karen.v2' else reading()
+    axis = authored()
     description = axis.get('reading') or axis['criterion'] + axis['case_reading']
     nodes = core._semantic_v4_join(plan, bodies)
     notes = [FIRST, SECOND]
@@ -72,12 +83,19 @@ def test_final_native_receipt_and_saved_graph_show_conditional_conclusion_and_hi
     graph = artifact.safe_projection(authenticated_owner_scope=OWNER)
     text = artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text']
     assert coverage['mapped_count'] == 2
-    assert graph['overview']['primary_structures'] == [
-        dict(scope='across_records', title=axis['heading'], description=description, node_refs=['n1', 'n2'])]
-    assert 'n1.u1.e1' not in json.dumps(graph) and description in text
-    assert service._checked_projection(graph, str(UUID(artifact.artifact_id[9:]))) == graph
-    assert service._saved_projection_text_matches(graph, text)
-    payload = dict(meta=graph, item=dict(content_json=dict(watashiMap=graph)), content_text=text)
+    expected = [dict(scope='across_records', title=axis['heading'], description=description, node_refs=['n1', 'n2'])]
+    assert graph['overview']['primary_structures'] == (expected if publish else [])
+    assert (description in text) == publish
+    assert 'n1.u1.e1' not in json.dumps(graph)
+    private = artifact.private_evidence()['graph']['meaning_review']['node_local_plan']['phase_artifact']
+    assert private['phases'][-1]['raw'] == receipts[-1]['raw']
+    row = dict(id=str(UUID(artifact.artifact_id[9:])), content_text=text, source_profile='cumulative.v1',
+               report_mode='standard', content_json=dict(report_mode='standard', watashiMap=graph, map_context=coverage))
+    stored = dict(items=[row], subscription_tier='free', matched=True, history_limit=2)
+    monkeypatch.setattr(service, '_rpc', AsyncMock(return_value=json.loads(json.dumps(stored))))
+    refetched, = asyncio.run(service.read_maps(OWNER, report_id=row['id']))['items']
+    assert refetched == row
+    payload = dict(meta=refetched['content_json']['watashiMap'], item=refetched, content_text=refetched['content_text'])
     assert service.map_response_for_renderer(payload, 'semantic.v2')['meta'] == graph
     old = service.map_response_for_renderer(payload, 'semantic.v1')
     assert 'primary_structures' not in old['meta']['overview']
@@ -234,3 +252,20 @@ def test_native_server_preserves_ordinary_v24_and_binds_new_contract_to_its_alia
         finally:
             server.shutdown()
             thread.join()
+
+def test_omission_preserves_neighbors_and_checks_every_origin_before_publication():
+    p, plan, bodies = scenario(FIRST, SECOND, version='karen.v2')
+    nodes = core._semantic_v4_join(plan, bodies)
+    material = json.loads(p.material_json)
+    first = v2_reading()
+    omitted = observed_v2_repeated_conclusion()
+    last = dict(anchors=['n2.u1.e1'], scope='in_this_record',
+                criterion='家での手伝いについては、ご自身にも決める余地があることを重んじています。',
+                case_reading='手伝うと先に決まっていたことが、断るという選択につながっています。',
+                heading='頼まれたときの返事')
+    public = core._read_primary_structures(p, material, nodes, [first, omitted, last])
+    assert [(axis['title'], axis['node_refs']) for axis in public] == [
+        (first['heading'], ['n1', 'n2']), (last['heading'], ['n2'])]
+    for bad in (dict(omitted, anchors=['n9.u1.e1']), dict(omitted, scope='across_records', anchors=['n1.u1.e1'])):
+        with pytest.raises(core.AnalysisSemanticMapError):
+            core._read_primary_structures(p, material, nodes, [first, bad, last])

@@ -3646,6 +3646,10 @@ def _read_primary_structures(prepared, material, nodes, axes):
     for axis, source in zip(public, axes):
         _semantic_v14_visible_text(prepared, (axis['title'], axis['description']),
             (origins[a][3] for a in source['anchors']))
+    if conclusion_first:
+        # A verbatim repeat supplies no separate conclusion beneath that
+        # heading. Keep the original RELATIONS receipt and the admitted graph.
+        return [axis for axis, source in zip(public, axes, strict=True) if source['criterion'] != source['heading']]
     return public
 
 
