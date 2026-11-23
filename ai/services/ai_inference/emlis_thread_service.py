@@ -22,7 +22,8 @@ from cocolon_meaning_experience_engine import MeaningExperienceEngine
 from cocolon_meaning_experience_engine.contracts import GenerationRequest, EngineStatus, ExecutionMode
 from cocolon_meaning_experience_engine.source_kernel import freeze_text_source
 from cocolon_meaning_experience_engine.emlis_thread_source import admit_emlis_thread, identity
-from cocolon_meaning_experience_engine.natural_reply import ACTIVE_MEANING_PROFILE, OBSERVATION_CONTEXT_VERSIONS
+from cocolon_meaning_experience_engine.natural_reply import (
+    ACTIVE_MEANING_PROFILE, OBSERVATION_CONTEXT_VERSIONS, OBSERVATION_DELIVERY_CONTEXT_VERSION)
 from cocolon_meaning_experience_engine.emlis_thread_contracts import (
     EmlisThreadInputV1, EmlisQuestionControlV1, EmlisClarificationV1,
     EmlisQuestionDecisionV1, SupplementalAnswerSource, InterpretationCorrectionSource, SEMANTIC_SCHEMA,
@@ -493,8 +494,10 @@ class EmlisThreadService:
                     natural_questions_enabled=self.natural_questions_enabled and receive_questions)
                 if self.initial_recipient_reply_enabled:
                     t['data']['initial_recipient_question_policy'] = True
-                    if self.observation_writer_version is not None:
-                        t['data']['observation_writer_version'] = self.observation_writer_version
+                    writer_version = self.observation_writer_version
+                    if writer_version is not None and (
+                            writer_version != OBSERVATION_DELIVERY_CONTEXT_VERSION or snapshot['tier'] in {'free', 'plus'}):
+                        t['data']['observation_writer_version'] = writer_version
                 if self.natural_context_update_enabled and (
                         not self.natural_context_update_paid_only or snapshot["tier"] in {"plus", "premium"}):
                     # Pin context at thread start so changing the deployment setting
