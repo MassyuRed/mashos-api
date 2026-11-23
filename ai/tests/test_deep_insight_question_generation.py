@@ -128,7 +128,7 @@ def test_correction_plan_uses_its_own_source_key_and_exact_replacement_range():
     assert result.disposition == "selected"
     assert "r2.correction1" in calls[0][0] and "一つの出典に固有の原文" in calls[0][0]
     assert "一つの出典に固有の原文" not in calls[2][0]
-    assert calls[2][1] == {"question": f"「{corrected}」と書いていましたが、{BODY}", "material": calls[0][1]}
+    assert calls[2][1] == {"citation": corrected, "body": BODY, "material": calls[0][1]}
     assert result.candidate.receipt["source_id"] == ANSWER_ID
     assert result.candidate.receipt["field"] == "correction" and result.candidate.receipt["start"] == 13
     assert result.candidate.receipt["end"] == 13 + len(corrected)
@@ -143,20 +143,21 @@ def test_correction_plan_uses_its_own_source_key_and_exact_replacement_range():
         assert rejected.plan_rejection_reason == reason and len(calls) == 1
 
 
-def test_unique_corrected_feeling_reason_is_read_from_the_finished_question():
+@pytest.mark.parametrize("body", ["どうして嬉しかったのですか？", "嬉しかったのは、どんな理由からですか？"])
+def test_unique_corrected_feeling_reason_is_read_from_the_finished_question(body):
     corrected = "私は嬉しかった"
     correction = {"id": ANSWER_ID, "recorded_at": STAMP, "text": corrected,
                   "source_version": VERSION, "scalar_start": 15}
     original = material(source(None, emlis_corrections=[correction]))
     plan = ask(source="r1.correction1", quote=corrected, ask="嬉しかった理由")
-    body = "どうして嬉しかったのですか？"
     reading = read(plan, record_reason=True)
 
     result, calls = run(original, plan, body, reading=reading)
 
     assert result.disposition == "selected" and len(calls) == 3
     assert calls[2][0].startswith(_CORRECTION_REASON_READ_SYSTEM_MESSAGE)
-    assert calls[2][1] == {"question": f"「{corrected}」と書いていましたが、{body}", "material": calls[0][1]}
+    assert calls[2][1] == {"citation": corrected, "body": body, "material": calls[0][1]}
+    assert result.candidate.text == f"「{corrected}」と書いていましたが、{body}"
     assert result.candidate.receipt == {
         "policy_version": "deep-insight.v2", "lane": "records", "focus": "REASON",
         "source_id": ANSWER_ID, "source_version": VERSION, "field": "correction",
@@ -178,6 +179,28 @@ def test_unique_corrected_feeling_reason_is_read_from_the_finished_question():
     ):
         rejected, calls = run(original, plan, body, reading=rejected_read)
         assert rejected.candidate is None and rejected.rejection_stage == "reader" and len(calls) == 3
+
+
+@pytest.mark.parametrize(("original_thought", "body", "reason"), [
+    (None, "会議で嬉しかったのは、どんな理由からですか？", "unsupported_premise"),
+    ("工夫に気づいてもらえたので嬉しかった。", "嬉しかったのは、どんな理由からですか？", "already_answered"),
+])
+def test_corrected_feeling_reader_can_refuse_a_new_premise_or_known_answer(original_thought, body, reason):
+    corrected = "私は嬉しかった"
+    correction = {"id": ANSWER_ID, "recorded_at": STAMP, "text": corrected,
+                  "source_version": VERSION, "scalar_start": 15}
+    original = material(source(original_thought, emlis_corrections=[correction]))
+    plan = ask(source="r1.correction1", quote=corrected, ask="嬉しかった理由")
+
+    result, calls = run(original, plan, body, reading={"verdict": "reject", "reason": reason})
+
+    assert result.candidate is None and result.rejection_stage == "reader" and len(calls) == 3
+    assert calls[2][0].startswith(_CORRECTION_REASON_READ_SYSTEM_MESSAGE)
+    assert calls[2][1] == {"citation": corrected, "body": body, "material": calls[0][1]}
+    supplied_sources = calls[2][1]["material"]["sources"]
+    assert supplied_sources["r1.correction1"]["text"] == corrected
+    if original_thought is not None:
+        assert supplied_sources["r1.thought"]["text"] == original_thought
 
 
 @pytest.mark.parametrize("competing_field", ["thought", "action", "answer", "correction"])

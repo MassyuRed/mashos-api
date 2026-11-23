@@ -346,13 +346,13 @@ new_informationは、同じ場面について有効な明記・回答・訂正�
 拒否例 {{"verdict":"reject","reason":"already_answered"}}。reasonはalready_answered、unsupported_premise、no_new_information、unclearのいずれかです。"""
 _CORRECTION_REASON_READ_SYSTEM_MESSAGE = f"""Emlisの一問を、渡された原資料から独立に読みます。日本語のJSONだけを返します。
 {_DATA_BOUNDARY}
-完成文questionの先頭の引用と、続く問いが実際に何を尋ねるかをmaterialと照合します。引用の字面と出典はプログラムで照合済みです。応答にsourceやquoteは含めません。
-focusは問いが求める答えの種類です。{_FOCUS_GUIDE} conditionは問いが明示した原文にある短い限定条件で、なければ空文字です。
-premise_supportedをtrueにするのは、主体、出来事、時点、肯定・否定、評価を本人の資料どおりに保ち、記録にない原因や出来事を前提にしないときだけです。元の出来事で感じた理由と、後で訂正した理由を区別します。
-new_informationをtrueにするのは、同じ場面で本人がすでに説明したことや、既出・見送りと同じ観点を尋ねず、本人の判断や受け止め方が新たに分かるときだけです。別の場面の記録、マップ、過去の問い自体は本人の答えにしません。
-例として、本人が「私はほっとした」と訂正し、同じ場面の理由、既出の問い、見送りがなく、完成文が「私はほっとした」と書いていましたが、どうしてほっとしたのですか？なら、感情は書かれていても理由は未確認です。
-この例の応答は {{"verdict":"accept","focus":"REASON","condition":"","premise_supported":true,"new_information":true}} です。同じ場面で理由をすでに「予定どおり終えられたのでほっとした」と説明していれば {{"verdict":"reject","reason":"already_answered"}} です。
-前提や新しさが確認できない場合は拒否します。reasonはalready_answered、unsupported_premise、no_new_information、unclearのいずれかです。"""
+citationは画面に表示する引用、bodyはその後の問いです。一緒に読んでmaterialと照合します。引用の字面と出典はプログラムが照合済みです。応答にはsourceやquoteを含めません。
+先に、本人が同じ記録のどこかで既に答えているかを調べます。sourcesのキーで最初の点までが同じもの（例 r1.thought と r1.correction1）は同じ元記録です。訂正文に理由がなくても、元記録の有効な文や本人の回答が同じ気持ちの理由を述べていれば、already_answered で拒否します。例えば元記録の「発表が無事に終わったので安心した」は、安心した理由を既に答えています。
+訂正文に本人の気持ちが明記され、bodyがその気持ちを受けて理由を尋ねるだけなら、問いの前提は資料にあります。出来事の詳細や日付がなくても、書かれた気持ちの理由は尋ねられます。訂正欄のrecorded_atは訂正を書いた時刻です。bodyが当時の気持ちの理由を尋ねるのか、後から訂正した理由を尋ねるのかを文面で区別します。
+premise_supportedをtrueにするのは、主体、出来事、時点、肯定・否定、評価を保ち、資料にない原因や場面を前提にしない場合だけです。focusはbodyが求める答えの種類です。{_FOCUS_GUIDE} conditionはbodyが明示した原文にある短い限定条件で、なければ空文字です。
+new_informationをtrueにするのは、同じ場面で本人がすでに説明したことや、既出・見送りと同じ観点を尋ねず、本人について新たに分かるときだけです。別の場面の記録、マップ、過去の問い自体は本人の答えにしません。
+例：citationが「私はほっとした」、bodyが「ほっとしたのは、どんな理由からですか？」で、本人の資料に理由、既出、見送りがなければ {{"verdict":"accept","focus":"REASON","condition":"","premise_supported":true,"new_information":true}} です。
+同じ例で「会議でほっとしたのは、どんな理由からですか？」と資料にない場面を足せば {{"verdict":"reject","reason":"unsupported_premise"}} です。理由を「予定どおり終えられたのでほっとした」と本人がすでに説明していれば {{"verdict":"reject","reason":"already_answered"}} です。新しさがなければno_new_information、判断できなければunclearで拒否します。"""
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -1325,11 +1325,8 @@ async def generate_question(prepared, sources, *, material, generate):
         return QuestionRun(None, "rejected", rejection_stage="duplicate")
     # Give the reader the exact final text and original author material only.
     # It has no access to the selected plan, its label or its acceptance result.
-    reading = {"question": question, "material": prepared}
     if alternative is not None:
         reader = _RECORD_ALTERNATIVE_READ_MESSAGE
-        citation, _, body = question.partition(_CITATION_JOIN)
-        reading = {"citation": citation[1:], "body": body, "material": prepared}
     elif plan.is_record_reason:
         reader = RECORD_REASON_READ_SYSTEM_MESSAGE
     elif _unique_correction_reason_citation(question, plan, sources):
@@ -1338,8 +1335,12 @@ async def generate_question(prepared, sources, *, material, generate):
         reader = ANSWER_READ_SYSTEM_MESSAGE
     else:
         reader = READ_SYSTEM_MESSAGE
-    read = await generate(reader + source_guidance, reading)
     unique_correction = reader == _CORRECTION_REASON_READ_SYSTEM_MESSAGE
+    reading = {"question": question, "material": prepared}
+    if alternative is not None or unique_correction:
+        citation, _, body = question.partition(_CITATION_JOIN)
+        reading = {"citation": citation[1:], "body": body, "material": prepared}
+    read = await generate(reader + source_guidance, reading)
     if (_confirm_reading(read, plan, citation_verified=alternative is not None or unique_correction)
             or (unique_correction and _confirm_reading(read, plan))):
         # An independently verified correction does not require the reader to
