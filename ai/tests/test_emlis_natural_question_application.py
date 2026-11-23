@@ -4,6 +4,7 @@ The single configured provider is synthetic. These tests establish lifecycle,
 source/update binding and persisted reread, not actual 4B response quality.
 """
 import asyncio
+from dataclasses import replace
 import json
 from uuid import uuid4
 
@@ -15,7 +16,7 @@ from test_emlis_q3_application import qdb
 from cocolon_meaning_experience_engine.natural_reply import (
     INITIAL_RECIPIENT_CONTEXT_VERSION, OBSERVATION_ANSWER_CONTEXT_VERSION,
     OBSERVATION_CONTEXT_VERSION, OBSERVATION_DELIVERY_CONTEXT_VERSION,
-    OBSERVATION_GROUNDED_CONTEXT_VERSION, NaturalReply,
+    OBSERVATION_GROUNDED_CONTEXT_VERSION, OBSERVATION_OUTCOME_CONTEXT_VERSION, NaturalReply,
     build_natural_reply_messages,
 )
 from emlis_thread_service import EmlisThreadService, Q3_PROFILE
@@ -28,6 +29,14 @@ ONE = '褒められたのに、嬉しくなかった。'
 THREE = ONE + '誘われたのに、悲しかった。頼まれたのに、寂しかった。'
 ACK = '言葉を受け取ったときの気持ちは、単純ではなかったのですね。'
 FINAL = 'まだはっきりしない部分も、そのままにしておけます。'
+
+
+def _assert_uses_v18_messages(request):
+    writer = json.loads(request.writer_material_json)
+    assert writer['source_context_version'] == OBSERVATION_OUTCOME_CONTEXT_VERSION
+    writer['source_context_version'] = OBSERVATION_GROUNDED_CONTEXT_VERSION
+    earlier = replace(request, writer_material_json=json.dumps(writer, ensure_ascii=False))
+    assert build_natural_reply_messages(request) == build_natural_reply_messages(earlier)
 
 
 @pytest.fixture
@@ -325,8 +334,9 @@ def test_skip_finishes_with_new_final_reply_and_replay_never_reacquires(natural_
 
 
 @pytest.mark.parametrize('action', ['', '帰り道、病院の予約が不安だった。'])
+@pytest.mark.parametrize('writer_version', [OBSERVATION_GROUNDED_CONTEXT_VERSION, OBSERVATION_OUTCOME_CONTEXT_VERSION])
 def test_grounded_acknowledgement_uses_the_written_fields_without_the_emotion_selection(
-        natural_questions, qdb, monkeypatch, action):
+        natural_questions, qdb, monkeypatch, action, writer_version):
     user, parent, _, _ = natural_questions()
     qdb.query('update public.emotions set memo_action=$2 where id=$1', [parent, action])
     calls = []
@@ -335,8 +345,7 @@ def test_grounded_acknowledgement_uses_the_written_fields_without_the_emotion_se
         calls.append(request)
         return NaturalReply(ACK, 'synthetic-single-provider', request.source_prefix_ref)
 
-    owner = _active_application_owner(monkeypatch, provider, 'paid',
-                                      observation_version=OBSERVATION_GROUNDED_CONTEXT_VERSION)
+    owner = _active_application_owner(monkeypatch, provider, 'paid', observation_version=writer_version)
     initial = run(owner.start(user, parent))
     assert initial['state'] == 'AWAITING_ANSWER' and initial['body_state'] == 'PRE_QUESTION'
     assert initial['pending_question']['text'] == '「褒められた」は、あなたにはどんな意味として届きましたか。'
@@ -346,11 +355,55 @@ def test_grounded_acknowledgement_uses_the_written_fields_without_the_emotion_se
         fields['出来事・行動'] = action
     _, user_message = build_natural_reply_messages(request)
     assert json.loads(user_message['content']) == {'今回の記録': fields}
+    if writer_version == OBSERVATION_OUTCOME_CONTEXT_VERSION:
+        _assert_uses_v18_messages(request)
     assert json.loads(request.material_json)['current']['emotion_details'] == [
         {'type': '不安', 'strength': 'medium'}]
     saved = run(owner.store.read(user, input_id=parent))
     assert saved['original']['category'] == ['仕事']
     assert saved['original']['memo_action'] == action
+
+
+@pytest.mark.parametrize(('thought_parts', 'action_parts'), [
+    pytest.param(['祖父からもらった腕時計が動かなくなった。', '学生の頃から使っていた。', '寂しかった。'],
+                 ['修理できるかはまだ分からない。'], id='unavailable-and-repair-pending'),
+    pytest.param(['祖父からもらった腕時計をなくした。', '学生の頃から使っていた。', '寂しかった。'],
+                 [], id='explicit-loss'),
+    pytest.param(['　店員は「『修理できますか？』と聞きました。」と言った。', '\nその返事はまだない！'],
+                 ['時計を持ち帰った（明日、電話する予定！）。', '\n箱を棚に置いた？'], id='nested-quotes-and-brackets'),
+    pytest.param(['私は「まだ修理できる！ もうだめかもしれない。'], [], id='unclosed-quotation'),
+])
+def test_outcome_writer_preserves_the_persons_written_segments_and_field_ownership(
+        natural_questions, qdb, monkeypatch, thought_parts, action_parts):
+    memo, action = ''.join(thought_parts), ''.join(action_parts)
+    user, parent, _, _ = natural_questions(memo=memo)
+    qdb.query('update public.emotions set memo_action=$2 where id=$1', [parent, action])
+    calls = []
+
+    async def provider(request):
+        calls.append(request)
+        return NaturalReply(FINAL, 'synthetic-single-provider', request.source_prefix_ref)
+
+    owner = _active_application_owner(monkeypatch, provider, 'paid',
+                                      observation_version=OBSERVATION_OUTCOME_CONTEXT_VERSION)
+    result = run(owner.start(user, parent))
+    assert result['state'] == 'COMPLETED' and result['body_state'] == 'FINAL'
+    assert result['pending_question'] is None
+    request, = calls
+    _, user_message = build_natural_reply_messages(request)
+    expected = {'考えたこと・感じたこと': thought_parts}
+    if action_parts:
+        expected['出来事・行動'] = action_parts
+    assert json.loads(user_message['content']) == {
+        '今回の記録': expected,
+        '言葉選びの参考': {'話題': ['仕事'], '感情と強さ': [{'type': '不安', 'strength': 'medium'}]},
+    }
+    saved = run(owner.store.read(user, input_id=parent))
+    assert (saved['original']['memo'], saved['original']['memo_action']) == (memo, action)
+    receipt, = [e for e in saved['events'] if e['payload'].get('stage') == 'NATURAL_REPLY_RECEIVED']
+    assert receipt['payload']['writer_context_version'] == OBSERVATION_OUTCOME_CONTEXT_VERSION
+    assert run(owner.get(user, parent))['current_observation'] == result['current_observation']
+    assert len(calls) == 1
 
 
 @pytest.mark.parametrize(('tier', 'selected', 'action', 'expected'), [
@@ -363,6 +416,8 @@ def test_grounded_acknowledgement_uses_the_written_fields_without_the_emotion_se
     ('plus', OBSERVATION_GROUNDED_CONTEXT_VERSION, 'skip', OBSERVATION_GROUNDED_CONTEXT_VERSION),
     ('free', OBSERVATION_GROUNDED_CONTEXT_VERSION, 'stop', OBSERVATION_GROUNDED_CONTEXT_VERSION),
     ('premium', OBSERVATION_GROUNDED_CONTEXT_VERSION, 'skip', INITIAL_RECIPIENT_CONTEXT_VERSION),
+    ('plus', OBSERVATION_OUTCOME_CONTEXT_VERSION, 'skip', OBSERVATION_OUTCOME_CONTEXT_VERSION),
+    ('premium', OBSERVATION_OUTCOME_CONTEXT_VERSION, 'skip', INITIAL_RECIPIENT_CONTEXT_VERSION),
 ])
 def test_application_first_skip_keeps_live_paid_history_out_of_the_reply_writer(
         natural_questions, qdb, monkeypatch, tier, selected, action, expected):
@@ -395,7 +450,8 @@ def test_application_first_skip_keeps_live_paid_history_out_of_the_reply_writer(
     assert writer['source_context_version'] == expected
     assert 'history_line' not in writer and 'related_past' not in writer and writer['user_frame_feedback'] == []
     system, user_message = build_natural_reply_messages(final)
-    if expected in {OBSERVATION_DELIVERY_CONTEXT_VERSION, OBSERVATION_GROUNDED_CONTEXT_VERSION}:
+    if expected in {OBSERVATION_DELIVERY_CONTEXT_VERSION, OBSERVATION_GROUNDED_CONTEXT_VERSION,
+                    OBSERVATION_OUTCOME_CONTEXT_VERSION}:
         assert writer['initial_unanswered_final'] is True
         assert '書いていない考えや迷い' in system['content']
     else:
@@ -404,6 +460,8 @@ def test_application_first_skip_keeps_live_paid_history_out_of_the_reply_writer(
     assert set(json.loads(user_message['content'])) == {'今回の記録'}
     assert '昨日のことです' not in user_message['content']
     assert initial['pending_question']['text'] not in user_message['content']
+    if expected == OBSERVATION_OUTCOME_CONTEXT_VERSION:
+        _assert_uses_v18_messages(final)
     assert run(owner.get(user, parent))['current_observation'] == done['current_observation']
 
 
@@ -415,6 +473,8 @@ def test_application_first_skip_keeps_live_paid_history_out_of_the_reply_writer(
     ('plus', OBSERVATION_GROUNDED_CONTEXT_VERSION, 'related'),
     ('plus', OBSERVATION_GROUNDED_CONTEXT_VERSION, 'unrelated'),
     ('plus', OBSERVATION_GROUNDED_CONTEXT_VERSION, 'none'),
+    ('plus', OBSERVATION_OUTCOME_CONTEXT_VERSION, 'related'),
+    ('plus', OBSERVATION_OUTCOME_CONTEXT_VERSION, 'unrelated'),
 ])
 def test_observation_writer_receives_one_verified_prior_passage_only_for_paid_plans(
         natural_questions, qdb, monkeypatch, tier, writer_version, history):
@@ -431,26 +491,34 @@ def test_observation_writer_receives_one_verified_prior_passage_only_for_paid_pl
     reply = '間に合って、今日は肩の力が抜けたんですね。Emlisもほっとしました。'
 
     async def provider(request):
-        calls.append(build_natural_reply_messages(request))
+        calls.append(request)
         return NaturalReply(reply, 'synthetic-single-provider', request.source_prefix_ref)
 
     owner = _active_application_owner(monkeypatch, provider, 'paid', observation_version=writer_version)
     initial = run(owner.start(user, parent))
     assert initial['current_observation']['text'] == reply
     assert run(owner.get(user, parent))['current_observation'] == initial['current_observation']
-    (system, user_message), = calls
+    request, = calls
+    system, user_message = build_natural_reply_messages(request)
     material = json.loads(user_message['content'])
     assert material.get('以前の本人の言葉') == (past_memo if tier != 'free' and history == 'related' else None)
     assert '駅で傘' not in user_message['content']
     if writer_version == OBSERVATION_GROUNDED_CONTEXT_VERSION:
         assert material['今回の記録'] == {'考えたこと・感じたこと': memo}
         assert material['言葉選びの参考']['感情と強さ'] == [{'type': '不安', 'strength': 'medium'}]
+    elif writer_version == OBSERVATION_OUTCOME_CONTEXT_VERSION:
+        if history == 'related':
+            _assert_uses_v18_messages(request)
+        else:
+            assert material['今回の記録'] == {'考えたこと・感じたこと': [
+                '資料を期限に間に合わせた。', '今日は肩の力が抜けた。']}
     else:
         assert ('二つを並べて読む' in system['content']) is (tier != 'free')
 
 
 @pytest.mark.parametrize('writer_version', [
     OBSERVATION_CONTEXT_VERSION, OBSERVATION_DELIVERY_CONTEXT_VERSION, OBSERVATION_GROUNDED_CONTEXT_VERSION,
+    OBSERVATION_OUTCOME_CONTEXT_VERSION,
 ])
 def test_self_understanding_projects_the_discovery_and_preserves_the_stored_selection(
         natural_questions, qdb, monkeypatch, writer_version):
@@ -474,7 +542,7 @@ def test_self_understanding_projects_the_discovery_and_preserves_the_stored_sele
     writer = json.loads(request.writer_material_json)
     assert writer['self_understanding'] is True
     assert 'initial_unanswered_final' not in writer
-    if writer_version == OBSERVATION_GROUNDED_CONTEXT_VERSION:
+    if writer_version in {OBSERVATION_GROUNDED_CONTEXT_VERSION, OBSERVATION_OUTCOME_CONTEXT_VERSION}:
         material = json.loads(user_message['content'])
         assert material['今回の記録'] == {'考えたこと・感じたこと': memo}
         assert '感情と強さ' not in material.get('言葉選びの参考', {})
@@ -482,6 +550,8 @@ def test_self_understanding_projects_the_discovery_and_preserves_the_stored_sele
         assert '本人が自分について気づいたこと' in system['content']
     assert '書いていない考えや迷い' not in system['content']
     assert '同じ名詞を続けず' not in system['content']
+    if writer_version == OBSERVATION_OUTCOME_CONTEXT_VERSION:
+        _assert_uses_v18_messages(request)
     assert memo in user_message['content'] and 'medium' not in user_message['content']
     assert json.loads(request.material_json)['current']['emotion_details'] == selection
     assert run(owner.get(user, parent))['current_observation'] == initial['current_observation']
@@ -529,6 +599,7 @@ def test_answer_updates_the_observation_without_treating_the_question_as_the_use
 @pytest.mark.parametrize(('answer_text', 'interpreted'), [('その時は重かった。', True), ('はい。', False)])
 @pytest.mark.parametrize('writer_version', [
     OBSERVATION_ANSWER_CONTEXT_VERSION, OBSERVATION_DELIVERY_CONTEXT_VERSION, OBSERVATION_GROUNDED_CONTEXT_VERSION,
+    OBSERVATION_OUTCOME_CONTEXT_VERSION,
 ])
 def test_answer_projection_uses_the_exact_issued_turn_and_can_replay_from_its_receipt(
         natural_questions, monkeypatch, qdb, answer_text, interpreted, writer_version):
@@ -570,7 +641,7 @@ def test_answer_projection_uses_the_exact_issued_turn_and_can_replay_from_its_re
     assert 'initial_unanswered_final' not in writer
     system, user_message = build_natural_reply_messages(request)
     assert ('同じ名詞を続けず' in system['content']) is (writer_version in {
-        OBSERVATION_DELIVERY_CONTEXT_VERSION, OBSERVATION_GROUNDED_CONTEXT_VERSION})
+        OBSERVATION_DELIVERY_CONTEXT_VERSION, OBSERVATION_GROUNDED_CONTEXT_VERSION, OBSERVATION_OUTCOME_CONTEXT_VERSION})
     assert '書いていない考えや迷い' not in system['content']
     message = json.loads(user_message['content'])
     assert list(message)[-1] == 'いま届いたやり取り'
@@ -579,6 +650,8 @@ def test_answer_projection_uses_the_exact_issued_turn_and_can_replay_from_its_re
     assert synthetic not in request.material_json and synthetic not in request.analysis_material_json
     assert not any(source.get('source_role') == 'AI_QUESTION' for source in audit['sources'])
     assert 'いま届いたやり取り' not in request.material_json + request.analysis_material_json
+    if writer_version == OBSERVATION_OUTCOME_CONTEXT_VERSION:
+        _assert_uses_v18_messages(request)
     reopened = _active_application_owner(monkeypatch, provider, 'false')
     result = run(reopened.action(user, partial['thread_id'], action='retry_response',
         expected_revision=partial['revision'], idempotency_key='reread-new-answer', operation_id=partial['operation_id']))
@@ -598,7 +671,6 @@ def test_answer_projection_uses_the_exact_issued_turn_and_can_replay_from_its_re
 
 
 def test_prior_recipient_version_still_builds_the_original_prompt(natural_questions, monkeypatch):
-    from dataclasses import replace
     user, parent, _, _ = natural_questions()
     calls = []
 
