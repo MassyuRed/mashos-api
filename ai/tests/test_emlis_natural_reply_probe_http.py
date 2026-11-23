@@ -133,6 +133,119 @@ def test_correction_context_cli_requires_shared_profile_and_forwards_explicit_op
     assert captured['closed'] and captured['max_new_tokens'] == 4096 and captured['request_seconds'] == 210
 
 
+def test_observation_alias_is_separate_from_base_natural_piece_and_analysis():
+    calls = []
+    def generate(messages, deadline, *, profile=None):
+        calls.append((messages, profile))
+        return 'synthetic body', 'stop'
+    base = {'api_key': 'natural-test-key', 'model_name': 'natural'}
+    observation = {'api_key': 'observation-test-key', 'model_name': probe.OBSERVATION_MODEL}
+    def handler(**options):
+        return probe.make_handler(generate, api_key='analysis-test-key', model_name='analysis',
+            deadline=float('inf'), max_requests=0, max_new_tokens=4096, request_seconds=210,
+            event_plan_model=probe.EVENT_PLAN_V2_MODEL, **options)
+    for natural, selected in (({**base, 'model_name': probe.OBSERVATION_MODEL}, None),
+                              (base, {**observation, 'api_key': base['api_key']})):
+        with pytest.raises(ValueError, match='observation_model_configuration_invalid'):
+            handler(natural_reply=natural, observation_reply=selected)
+    server = ThreadingHTTPServer(('127.0.0.1', 0), handler(natural_reply=base, observation_reply=observation))
+    worker = threading.Thread(target=server.serve_forever, daemon=True)
+    worker.start()
+    try:
+        with httpx.Client(trust_env=False, timeout=5) as client:
+            url = f'http://127.0.0.1:{server.server_port}/v1/chat/completions'
+            def post(key, model, tokens, material, **extra):
+                payload = dict(model=model, max_tokens=tokens, temperature=0, stream=False,
+                    chat_template_kwargs={'enable_thinking': False}, messages=[
+                        dict(role='system', content='synthetic instruction'),
+                        dict(role='user', content=json.dumps(material))], **extra)
+                return client.post(url, json=payload, headers={'Authorization': 'Bearer ' + key})
+            obs_key, natural_key, analysis_key = observation['api_key'], base['api_key'], 'analysis-test-key'
+            alias, map_model = probe.OBSERVATION_MODEL, probe.EVENT_PLAN_V2_MODEL
+            natural_source = {'synthetic': 'original evidence'}
+            if_source = {'model_schema': probe.IF_CANDIDATE_SCHEMA}
+            map_source = {'model_schema': probe.EVENT_PLAN_V2_SCHEMA}
+            piece_source = dict(core='piece', task='PIECE_MODEL_BODY', control=dict(field_slots={'memo_0':{}}))
+            marker = {'candidate_format': probe.PIECE_CANDIDATE_FORMAT}
+            assert post(natural_key, alias, 2048, natural_source).status_code == 400
+            assert post(analysis_key, alias, 4096, natural_source).status_code == 400
+            assert post('unknown-key', alias, 2048, natural_source).status_code == 401
+            assert post(obs_key, 'natural', 2048, natural_source).status_code == 400
+            assert post(obs_key, map_model, 2048, map_source).status_code == 400
+            assert post(obs_key, alias, 4096, natural_source).status_code == 400
+            assert post(obs_key, alias, 2048, piece_source, **marker).status_code == 400
+            assert calls == []
+            for key, model, tokens, material, extra, profile in (
+                    (obs_key, alias, 2048, natural_source, {}, 'observation'),
+                    (natural_key, 'natural', 2048, natural_source, {}, 'natural'),
+                    (natural_key, 'natural', 2048, piece_source, marker, 'piece'),
+                    (analysis_key, 'analysis', 4096, if_source, {}, None),
+                    (analysis_key, map_model, 4096, map_source, {}, 'event_plan')):
+                response = post(key, model, tokens, material, **extra)
+                assert response.status_code == 200 and response.json()['model'] == model
+                assert response.json()['choices'][0]['message']['content'] == 'synthetic body'
+                assert calls[-1][1] == profile
+                assert json.loads(calls[-1][0][1]['content']) == material
+            assert [profile for _, profile in calls] == ['observation', 'natural', 'piece', None, 'event_plan']
+    finally:
+        server.shutdown(); server.server_close(); worker.join(3)
+
+
+@pytest.mark.parametrize('change', [None, 'alias', 'path', 'weights', 'config', 'key', 'collision'])
+def test_observation_cli_rejects_partial_or_cross_core_settings_before_loading(monkeypatch, change):
+    captured = {}
+    def load(adapter, stop, **options):
+        captured.update(adapter=adapter, stop=stop, loader=options)
+        return object()
+    def handler(generator, **options):
+        captured['handler'] = options
+        return object()
+    class Server:
+        def __init__(self, *_args): pass
+        def handle_request(self): captured['stop'].set()
+        def server_close(self): pass
+    monkeypatch.setattr(probe, 'load_generator', load)
+    monkeypatch.setattr(probe, 'make_handler', handler)
+    monkeypatch.setattr(probe, 'ThreadingHTTPServer', Server)
+    monkeypatch.setattr(probe.signal, 'signal', lambda *_args: None)
+    analysis_key = 'synthetic-analysis-private-key'
+    natural_key = 'synthetic-natural-private-key'
+    obs_key = 'synthetic-observation-private-key'
+    monkeypatch.setenv('COCOLON_ANALYSIS_MODEL_API_KEY', analysis_key)
+    monkeypatch.setenv('EMLIS_NATURAL_REPLY_API_KEY', natural_key)
+    monkeypatch.setenv('EMLIS_OBSERVATION_MODEL_API_KEY', natural_key if change == 'key' else obs_key)
+    args = dict(alias=['--observation-model', probe.OBSERVATION_MODEL],
+        path=['--observation-adapter', 'observations-cpu'],
+        weights=['--observation-adapter-weights-sha256', probe.OBSERVATION_WEIGHTS],
+        config=['--observation-adapter-config-sha256', probe.OBSERVATION_CONFIG])
+    if change == 'alias':
+        args['alias'][1] = 'arbitrary-observation-model'
+    elif change == 'path':
+        del args['path']
+    elif change == 'weights':
+        args['weights'][1] = '9' * 64
+    elif change == 'config':
+        args['config'][1] = '8' * 8
+    monkeypatch.setattr(sys, 'argv', ['serve', '--analysis-service', '--semantic-json',
+        '--model-name', 'analysis', '--adapter', 'analysis-cpu',
+        '--adapter-weights-sha256', 'a' * 64, '--adapter-config-sha256', 'b' * 64,
+        '--natural-reply-model', probe.OBSERVATION_MODEL if change == 'collision' else 'natural',
+        *(arg for pair in args.values() for arg in pair)])
+    if change:
+        with pytest.raises(SystemExit) as exc:
+            probe.main()
+        assert exc.value.code == 2 and captured == {}
+    else:
+        probe.main()
+        assert captured['adapter'] == 'analysis-cpu'
+        assert captured['loader'] == dict(weights_sha256='a' * 64, config_sha256='b' * 64,
+            max_new_tokens=4096, context_tokens=16384, semantic_json=True,
+            observation_adapter='observations-cpu', observation_weights_sha256=probe.OBSERVATION_WEIGHTS,
+            observation_config_sha256=probe.OBSERVATION_CONFIG)
+        assert captured['handler']['natural_reply'] == dict(api_key=natural_key, model_name='natural')
+        assert captured['handler']['observation_reply'] == dict(api_key=obs_key, model_name=probe.OBSERVATION_MODEL)
+
+
 def test_selected_saved_candidate_requires_matching_pair_and_detects_later_change(tmp_path):
     weights, config = b'synthetic saved weights', b'{"synthetic":"config"}'
     (tmp_path/'adapter_model.safetensors').write_bytes(weights)

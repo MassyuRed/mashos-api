@@ -230,7 +230,7 @@ def test_piece_adapter_revision_is_server_owned_and_never_added_to_other_profile
 
 
 def synthetic_generator(monkeypatch, *, constrained, input_count=1, with_piece_adapter=False,
-                        raw_output=None, inject_order_reset=False):
+                        raw_output=None, inject_order_reset=False, with_observation_adapter=False):
     """Load the real serving closure with a CPU-only deterministic stand-in."""
     from lmformatenforcer.tokenenforcer import TokenEnforcer, TokenEnforcerTokenizerData
     raw = (raw_output if raw_output is not None else
@@ -285,7 +285,7 @@ def synthetic_generator(monkeypatch, *, constrained, input_count=1, with_piece_a
         def named_modules(self):
             return [(f'target_{i}', None) for i in range(56)]
         def set_adapter(self, name, *, inference_mode=False):
-            assert name in ('default', probe.PIECE_ADAPTER_NAME)
+            assert name in ('default', probe.PIECE_ADAPTER_NAME, probe.OBSERVATION_ADAPTER_NAME)
             self.active_adapter = name
             self.grads = not inference_mode
         @contextmanager
@@ -329,7 +329,14 @@ def synthetic_generator(monkeypatch, *, constrained, input_count=1, with_piece_a
         torch_stub.equal = lambda left, right: left == right
         monkeypatch.setattr(probe, 'adapter_identity', lambda *_a, **_k: ('a' * 64, 'b' * 64))
         def load_piece(selected, path, **kwargs):
-            assert selected is model and path == 'piece-cpu'
+            assert selected is model
+            if path == 'observation-cpu':
+                assert with_observation_adapter
+                assert kwargs == dict(weights_sha256=probe.OBSERVATION_WEIGHTS,
+                    config_sha256=probe.OBSERVATION_CONFIG, analysis_config=config,
+                    analysis_weights=weights, adapter_name=probe.OBSERVATION_ADAPTER_NAME)
+                return
+            assert path == 'piece-cpu'
             assert kwargs == dict(weights_sha256='c' * 64, config_sha256='d' * 64,
                 analysis_config=config, analysis_weights=weights)
         monkeypatch.setattr(probe, 'load_piece_adapter', load_piece)
@@ -358,6 +365,10 @@ def synthetic_generator(monkeypatch, *, constrained, input_count=1, with_piece_a
     monkeypatch.setenv('HF_HUB_OFFLINE', '1'); monkeypatch.setenv('TRANSFORMERS_OFFLINE', '1')
     options = dict(piece_adapter='piece-cpu', piece_weights_sha256='c' * 64,
                    piece_config_sha256='d' * 64) if with_piece_adapter else {}
+    if with_observation_adapter:
+        assert with_piece_adapter
+        options.update(observation_adapter='observation-cpu',
+            observation_weights_sha256=probe.OBSERVATION_WEIGHTS, observation_config_sha256=probe.OBSERVATION_CONFIG)
     generator = probe.load_generator('analysis-cpu' if with_piece_adapter else None,
         threading.Event(), max_new_tokens=4096,
         context_tokens=16384, semantic_json=constrained, **options)
@@ -461,6 +472,58 @@ def test_optional_piece_adapter_is_selected_only_for_piece_and_restored_before_b
     assert [row['max_new_tokens'] for row in captured['generate']] == [4096, 2048, 2048, 4096, 2048, 4096]
 
 
+def test_observation_adapter_only_changes_the_observation_forward(monkeypatch):
+    generator, captured, raw, _ = synthetic_generator(monkeypatch, constrained=True,
+        with_piece_adapter=True, with_observation_adapter=True)
+    # This exercises the real profile selection with a single synthetic body
+    # accepted by the constraint used for the selected Analysis stand-in.
+    monkeypatch.setattr(probe, 'semantic_json_parser', probe.piece_json_parser)
+    for profile in ('observation', 'natural', 'piece', None):
+        assert generator(messages(), time.monotonic() + 23, profile=profile) == (raw, 'stop')
+        assert captured['model'].active_adapter == 'default'
+        assert captured['model'].grads is False and captured['model'].training is False
+    assert captured['adapter_states'] == [
+        (probe.OBSERVATION_ADAPTER_NAME, True, False, False), ('default', False, False, False),
+        ('piece', True, False, False), ('default', True, False, False)]
+    assert [row['max_new_tokens'] for row in captured['generate']] == [2048, 2048, 2048, 4096]
+    assert ['prefix_allowed_tokens_fn' in row for row in captured['generate']] == [False, False, True, True]
+
+
+def test_unloaded_observation_profile_fails_before_inference(monkeypatch):
+    generator, captured, _, _ = synthetic_generator(monkeypatch, constrained=True)
+    with pytest.raises(ValueError, match='observation_adapter_unavailable'):
+        generator(messages(), time.monotonic() + 23, profile='observation')
+    assert captured == {'generate': [], 'tokenize': []}
+
+
+@pytest.mark.parametrize('restore_failure', [False, True])
+def test_observation_adapter_restores_default_after_failed_forward_or_stops(monkeypatch, restore_failure):
+    generator, captured, raw, _ = synthetic_generator(monkeypatch, constrained=True,
+        with_piece_adapter=True, with_observation_adapter=True)
+    model = captured['model']
+    original_select, original_generate = model.set_adapter, model.generate
+    def select(name, **kwargs):
+        if restore_failure and name == 'default':
+            raise RuntimeError('restore failed')
+        original_select(name, **kwargs)
+    def generate(**options):
+        if model.active_adapter == probe.OBSERVATION_ADAPTER_NAME:
+            if not restore_failure:
+                raise RuntimeError('forward failed')
+        return original_generate(**options)
+    monkeypatch.setattr(model, 'set_adapter', select)
+    monkeypatch.setattr(model, 'generate', generate)
+    with pytest.raises(RuntimeError, match='restore failed' if restore_failure else 'forward failed'):
+        generator(messages(), time.monotonic() + 23, profile='observation')
+    if restore_failure:
+        for profile in (None, 'piece', 'natural', 'event_plan', 'observation'):
+            with pytest.raises(ValueError, match='generation_stopping'):
+                generator(messages(), time.monotonic() + 23, profile=profile)
+    else:
+        assert model.active_adapter == 'default' and model.grads is False and model.training is False
+        assert generator(messages(), time.monotonic() + 23, profile='natural') == (raw, 'stop')
+
+
 @pytest.mark.parametrize('failure', ['generate', 'select', 'restore'])
 def test_piece_adapter_failure_restores_analysis_or_stops_serving(monkeypatch, failure):
     generator, captured, _, _ = synthetic_generator(monkeypatch, constrained=True,
@@ -483,7 +546,7 @@ def test_piece_adapter_failure_restores_analysis_or_stops_serving(monkeypatch, f
         assert model.active_adapter == 'default' and model.grads is False and model.training is False
 
 
-def adapter_loader_fixture(monkeypatch, tmp_path):
+def adapter_loader_fixture(monkeypatch, tmp_path, *, name='piece'):
     folder = tmp_path / 'piece'
     folder.mkdir()
     (folder / 'adapter_model.safetensors').write_bytes(b'synthetic-independent-piece-weights')
@@ -504,7 +567,7 @@ def adapter_loader_fixture(monkeypatch, tmp_path):
             assert name == 'default' and kwargs == {'inference_mode': True}
             self.active_adapter = name
     model = Model()
-    states = {'default': deepcopy(original), 'piece': deepcopy(expected)}
+    states = {'default': deepcopy(original), name: deepcopy(expected)}
     monkeypatch.setitem(sys.modules, 'peft', SimpleNamespace(
         PeftConfig=SimpleNamespace(from_pretrained=lambda path, **kwargs: config),
         get_peft_model_state_dict=lambda selected, adapter_name='default': states[adapter_name]))
@@ -526,6 +589,31 @@ def test_piece_loading_retains_analysis_weights_and_uses_a_distinct_frozen_adapt
         is_trainable=False, local_files_only=True))]
     assert states['default'] == before and states['piece'] == expected
     assert model.active_adapter == 'default'
+
+
+@pytest.mark.parametrize('damage', [None, 'revision', 'base', 'scope'])
+def test_observation_loading_matches_the_pinned_base_and_existing_tensor_targets(monkeypatch, tmp_path, damage):
+    name = probe.OBSERVATION_ADAPTER_NAME
+    load, model, config, states, expected = adapter_loader_fixture(monkeypatch, tmp_path, name=name)
+    config.update(base_model_name_or_path=probe.MODEL,
+        revision='unexpected' if damage == 'revision' else probe.REVISION)
+    analysis_config = SimpleNamespace(to_dict=lambda: dict(r=8, target_modules={'fixed_q', 'fixed_mlp'},
+        inference_mode=True, revision=None, base_model_name_or_path=probe.MODEL))
+    if damage == 'base':
+        config['base_model_name_or_path'] = 'different model'
+    elif damage == 'scope':
+        config['r'] = 16
+    if damage:
+        with pytest.raises(ValueError, match='base_changed' if damage in ('revision', 'base') else 'scope_changed'):
+            load(adapter_name=name, analysis_config=analysis_config)
+        assert model.loaded == []
+    else:
+        before = deepcopy(states['default'])
+        load(adapter_name=name, analysis_config=analysis_config)
+        assert model.loaded == [(tmp_path / 'piece', dict(adapter_name=name,
+            is_trainable=False, local_files_only=True))]
+        assert states['default'] == before and states[name] == expected
+        assert model.active_adapter == 'default'
 
 
 @pytest.mark.parametrize('damage', ['hash', 'scope', 'saved_shape', 'loaded_piece', 'analysis'])

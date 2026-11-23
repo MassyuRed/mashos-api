@@ -103,6 +103,10 @@ NODE_LOCAL_V3_BASE_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v3-base-851bf
 IF_CANDIDATE_SCHEMA = 'cocolon.analysis.if-candidates.model.v1'
 PIECE_ADAPTER_NAME = 'piece'
 EVENT_PLAN_ADAPTER_NAME = 'event_plan'
+OBSERVATION_ADAPTER_NAME = 'emlis_observation'
+OBSERVATION_MODEL = 'cocolon-qwen35-4b-emlis-observation-10b56315'
+OBSERVATION_WEIGHTS = '10b563154c7b05faf7f84264312328611724cf31ff834d9924337761c5513788'
+OBSERVATION_CONFIG = '27e58c46d301a8c647737e683cb636365f217a924b04b1e4dff4d97b66418ebb'
 
 
 class SourcePrivateConstraintLog(logging.Filter):
@@ -2686,7 +2690,8 @@ def _correction_target_context_messages_valid(messages):
 def make_handler(generate, *, api_key, model_name, deadline, max_requests,
                  max_new_tokens=2048, request_seconds=23, max_request_bytes=65536,
                  natural_reply=None, natural_queue_seconds=210, piece_revision=None,
-                 correction_target_context=False, event_plan_model=None):
+                 correction_target_context=False, event_plan_model=None,
+                 observation_reply=None):
     if (type(correction_target_context) is not bool
             or correction_target_context and not natural_reply):
         raise ValueError('correction_target_context_configuration_invalid')
@@ -2697,6 +2702,16 @@ def make_handler(generate, *, api_key, model_name, deadline, max_requests,
             or not event_plan_model.strip() or event_plan_model == model_name
             or natural_reply and event_plan_model == natural_reply['model_name']):
         raise ValueError('event_plan_model_configuration_invalid')
+    if OBSERVATION_MODEL in (model_name, event_plan_model, natural_reply and natural_reply['model_name']):
+        raise ValueError('observation_model_configuration_invalid')
+    if observation_reply is not None and (
+            not natural_reply or type(observation_reply) is not dict
+            or set(observation_reply) != {'api_key', 'model_name'}
+            or observation_reply['model_name'] != OBSERVATION_MODEL
+            or not isinstance(observation_reply['api_key'], str)
+            or not observation_reply['api_key']
+            or observation_reply['api_key'] in (api_key, natural_reply['api_key'])):
+        raise ValueError('observation_model_configuration_invalid')
     lock = threading.Lock()
     served = 0
 
@@ -2725,10 +2740,14 @@ def make_handler(generate, *, api_key, model_name, deadline, max_requests,
         def do_POST(self):
             nonlocal served
             authorization = self.headers.get("Authorization", "")
-            natural = bool(natural_reply and hmac.compare_digest(authorization, "Bearer " + natural_reply["api_key"]))
+            observation = bool(observation_reply and hmac.compare_digest(
+                authorization, 'Bearer ' + observation_reply['api_key']))
+            natural = observation or bool(natural_reply and hmac.compare_digest(
+                authorization, 'Bearer ' + natural_reply['api_key']))
             if not natural and not hmac.compare_digest(authorization, "Bearer " + api_key):
                 return self.reply(401, {"error": "unauthorized"})
-            selected_model = natural_reply["model_name"] if natural else model_name
+            selected_model = (observation_reply['model_name'] if observation else
+                natural_reply['model_name'] if natural else model_name)
             selected_tokens = 2048 if natural else max_new_tokens
             selected_seconds = 23 if natural else request_seconds
             selected_bytes = 65536 if natural else max_request_bytes
@@ -2824,7 +2843,7 @@ def make_handler(generate, *, api_key, model_name, deadline, max_requests,
                             raise ValueError
                         semantic_output_schema(messages)
                 if piece:
-                    if not natural or request['candidate_format'] != PIECE_CANDIDATE_FORMAT:
+                    if not natural or observation or request['candidate_format'] != PIECE_CANDIDATE_FORMAT:
                         raise ValueError
                     piece_output_schema(messages)
             except Exception:
@@ -2839,8 +2858,9 @@ def make_handler(generate, *, api_key, model_name, deadline, max_requests,
                 if not max_requests:
                     generation_stage('admitted')
                 end = min(deadline, time.monotonic() + selected_seconds)
+                natural_profile = 'observation' if observation else 'piece' if piece else 'natural'
                 generated = (generate(messages, end, profile='event_plan', output_tokens=selected_tokens)
-                                if staged else generate(messages, end, profile="piece" if piece else "natural")
+                                if staged else generate(messages, end, profile=natural_profile)
                                 if natural else generate(messages, end,
                                     profile='event_plan_base' if event_plan_base else 'event_plan')
                                 if event_plan else generate(messages, end))
@@ -2903,7 +2923,7 @@ def base_inference_context(model):
 
 @contextmanager
 def piece_inference_context(model, process_stop, *, adapter_name=PIECE_ADAPTER_NAME):
-    """Use only the separately loaded Piece adapter, then restore Analysis."""
+    """Use only one named adapter, then restore the default analysis adapter."""
     previous = model.active_adapter
     if previous != 'default':
         raise ValueError('piece_adapter_state_invalid')
@@ -2918,7 +2938,7 @@ def piece_inference_context(model, process_stop, *, adapter_name=PIECE_ADAPTER_N
             model.eval()
             model.requires_grad_(False)
         except BaseException:
-            # A failed restoration must not serve Analysis with Piece weights.
+            # Do not serve another request with the named adapter still active.
             process_stop.set()
             raise
 
@@ -2936,6 +2956,14 @@ def load_piece_adapter(model, path, *, weights_sha256, config_sha256,
     # not its learned tensors. Only train/inference mode may differ on disk.
     for value in (expected_config, selected_config):
         value.pop('inference_mode', None)
+    if adapter_name == OBSERVATION_ADAPTER_NAME:
+        # The pinned observation checkpoint was trained on the same base
+        # directly, without inheriting analysis adapter metadata.
+        if (selected_config.get('base_model_name_or_path') != MODEL
+                or selected_config.get('revision') not in (None, REVISION)):
+            raise ValueError('observation_adapter_base_changed')
+        for value in (expected_config, selected_config):
+            value.pop('revision', None)
     if selected_config != expected_config:
         raise ValueError('piece_adapter_scope_changed')
     expected = load_file(Path(path) / 'adapter_model.safetensors')
@@ -2961,7 +2989,8 @@ def load_piece_adapter(model, path, *, weights_sha256, config_sha256,
 def load_generator(adapter, process_stop, *, weights_sha256=None, config_sha256=None,
                    max_new_tokens=2048, context_tokens=8192, semantic_json=False,
                    piece_adapter=None, piece_weights_sha256=None, piece_config_sha256=None,
-                   event_plan_adapter=None, event_plan_weights_sha256=None, event_plan_config_sha256=None):
+                   event_plan_adapter=None, event_plan_weights_sha256=None, event_plan_config_sha256=None,
+                   observation_adapter=None, observation_weights_sha256=None, observation_config_sha256=None):
     if (type(max_new_tokens) is not int or type(context_tokens) is not int
             or not 1 <= max_new_tokens < context_tokens <= 32768):
         raise ValueError("model_token_budget_invalid")
@@ -2987,6 +3016,16 @@ def load_generator(adapter, process_stop, *, weights_sha256=None, config_sha256=
                 or event_plan_weights_sha256 == selected_identity[0]):
             raise ValueError('event_plan_adapter_must_be_separate')
         adapter_identity(event_plan_adapter, event_plan_weights_sha256, event_plan_config_sha256)
+    if any(value is not None for value in (
+            observation_adapter, observation_weights_sha256, observation_config_sha256)):
+        if (not adapter or not observation_adapter
+                or (observation_weights_sha256, observation_config_sha256) != (OBSERVATION_WEIGHTS, OBSERVATION_CONFIG)):
+            raise ValueError('observation_adapter_configuration_invalid')
+        if (Path(observation_adapter).resolve() in {
+                Path(path).resolve() for path in (adapter, piece_adapter, event_plan_adapter) if path}
+                or observation_weights_sha256 in (selected_identity[0], piece_weights_sha256, event_plan_weights_sha256)):
+            raise ValueError('observation_adapter_must_be_separate')
+        adapter_identity(observation_adapter, observation_weights_sha256, observation_config_sha256)
     import torch
     from transformers import AutoTokenizer, Qwen3_5ForConditionalGeneration, StoppingCriteria, StoppingCriteriaList
     if not torch.cuda.is_available() or torch.cuda.device_count() != 1:
@@ -3019,6 +3058,10 @@ def load_generator(adapter, process_stop, *, weights_sha256=None, config_sha256=
             load_piece_adapter(model, event_plan_adapter,
                 weights_sha256=event_plan_weights_sha256, config_sha256=event_plan_config_sha256,
                 analysis_config=config, analysis_weights=expected, adapter_name=EVENT_PLAN_ADAPTER_NAME)
+        if observation_adapter is not None:
+            load_piece_adapter(model, observation_adapter,
+                weights_sha256=observation_weights_sha256, config_sha256=observation_config_sha256,
+                analysis_config=config, analysis_weights=expected, adapter_name=OBSERVATION_ADAPTER_NAME)
     model.eval()
     model.requires_grad_(False)
     if model.training or any(p.requires_grad for p in model.parameters()):
@@ -3063,17 +3106,19 @@ def load_generator(adapter, process_stop, *, weights_sha256=None, config_sha256=
             return self.expired
 
     def generate(messages, end, *, profile=None, output_tokens=None):
-        if (piece_adapter is not None or event_plan_adapter is not None) and process_stop.is_set():
+        if any(path is not None for path in (piece_adapter, event_plan_adapter, observation_adapter)) and process_stop.is_set():
             raise ValueError('generation_stopping')
-        if profile not in (None, "natural", "piece", "event_plan", "event_plan_base"):
+        if profile not in (None, 'natural', 'piece', 'event_plan', 'event_plan_base', 'observation'):
             raise ValueError("generation_profile_invalid")
+        if profile == 'observation' and observation_adapter is None:
+            raise ValueError('observation_adapter_unavailable')
         if profile == "piece" and (not semantic_json or tokenizer_data is None):
             raise ValueError("piece_constraint_unavailable")
         if profile in ('event_plan', 'event_plan_base') and (event_plan_adapter is None or not semantic_json or tokenizer_data is None):
             raise ValueError('event_plan_adapter_unavailable')
-        use_semantic_json = semantic_json and profile != "natural"
-        base_profile = profile in ("natural", "piece")
-        output_budget = 2048 if base_profile else max_new_tokens
+        use_semantic_json = semantic_json and profile not in ('natural', 'observation')
+        natural_budget = profile in ('natural', 'piece', 'observation')
+        output_budget = 2048 if natural_budget else max_new_tokens
         if output_tokens is not None:
             material = json.loads(messages[1]['content'])
             if (profile != 'event_plan' or material.get('model_schema') != NODE_LOCAL_V4_SCHEMA
@@ -3082,13 +3127,14 @@ def load_generator(adapter, process_stop, *, weights_sha256=None, config_sha256=
                     or not 1 <= output_tokens <= min(4096, max_new_tokens)):
                 raise ValueError('semantic_phase_budget_invalid')
             output_budget = output_tokens
-        context_budget = 8192 if base_profile else context_tokens
+        context_budget = 8192 if natural_budget else context_tokens
         # Preserve the base identity previously connected for natural replies.
         # The analysis adapter stays loaded; its state is restored on context exit.
-        adapter_context = (piece_inference_context(model, process_stop, adapter_name=EVENT_PLAN_ADAPTER_NAME)
-            if profile == 'event_plan' else piece_inference_context(model, process_stop)
-            if profile == 'piece' and piece_adapter is not None else
-            base_inference_context(model) if (base_profile or profile == 'event_plan_base') and adapter else nullcontext())
+        named_adapter = {'observation': OBSERVATION_ADAPTER_NAME, 'event_plan': EVENT_PLAN_ADAPTER_NAME,
+                         'piece': PIECE_ADAPTER_NAME if piece_adapter is not None else None}.get(profile)
+        adapter_context = (piece_inference_context(model, process_stop, adapter_name=named_adapter)
+            if named_adapter else base_inference_context(model)
+            if profile in ('natural', 'piece', 'event_plan_base') and adapter else nullcontext())
         if use_semantic_json:
             generation_stage('tokenize')
         encoded = tokenizer.apply_chat_template(messages, enable_thinking=False,
@@ -3182,6 +3228,10 @@ def main():
     parser.add_argument('--piece-adapter')
     parser.add_argument('--piece-adapter-weights-sha256')
     parser.add_argument('--piece-adapter-config-sha256')
+    parser.add_argument('--observation-model', help='Also serve the pinned Emlis observation adapter on its separate API key.')
+    parser.add_argument('--observation-adapter')
+    parser.add_argument('--observation-adapter-weights-sha256')
+    parser.add_argument('--observation-adapter-config-sha256')
     parser.add_argument("--model-name", required=True)
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--max-requests", type=int)
@@ -3196,6 +3246,8 @@ def main():
     parser.add_argument("--context-tokens", type=int)
     parser.add_argument("--request-seconds", type=int)
     args = parser.parse_args()
+    if OBSERVATION_MODEL in (args.model_name, args.natural_reply_model, args.event_plan_model):
+        parser.error('Emlis observation alias requires its own inference profile')
     if args.natural_reply_model and not args.analysis_service:
         parser.error('shared natural reply requires explicit analysis service mode')
     if args.natural_reply_correction_target_context and not args.natural_reply_model:
@@ -3257,6 +3309,20 @@ def main():
            else os.environ.get("EMLIS_NATURAL_REPLY_API_KEY", ""))
     if len(key) < 24:
         parser.error("a private API key of at least 24 characters is required")
+    observation_reply, observation_options = None, {}
+    if any(value is not None for value in (args.observation_model, args.observation_adapter,
+            args.observation_adapter_weights_sha256, args.observation_adapter_config_sha256)):
+        observation_key = os.environ.get('EMLIS_OBSERVATION_MODEL_API_KEY', '')
+        if (not args.analysis_service or not args.adapter or not natural_reply
+                or args.observation_model != OBSERVATION_MODEL or not args.observation_adapter
+                or (args.observation_adapter_weights_sha256, args.observation_adapter_config_sha256)
+                    != (OBSERVATION_WEIGHTS, OBSERVATION_CONFIG)
+                or len(observation_key) < 24 or observation_key in (key, natural_reply['api_key'])):
+            parser.error('Emlis observation requires the dedicated alias, its separate key and both pinned SHA256 values')
+        observation_reply = {'api_key': observation_key, 'model_name': args.observation_model}
+        observation_options = dict(observation_adapter=args.observation_adapter,
+            observation_weights_sha256=args.observation_adapter_weights_sha256,
+            observation_config_sha256=args.observation_adapter_config_sha256)
     stop = threading.Event()
     deadline = float("inf") if args.analysis_service else time.monotonic() + args.seconds
     # Hard process bound also covers model loading and a blocked GPU forward.
@@ -3273,7 +3339,8 @@ def main():
                        if args.analysis_service else {})
     if args.semantic_json:
         runtime_options['semantic_json'] = True
-    generator = load_generator(args.adapter, stop, **identity_options, **runtime_options, **piece_options, **event_plan_options)
+    generator = load_generator(args.adapter, stop, **identity_options, **runtime_options,
+        **piece_options, **event_plan_options, **observation_options)
     server = ThreadingHTTPServer(("0.0.0.0", args.port), make_handler(generator,
         api_key=key, model_name=args.model_name, deadline=deadline,
         max_requests=0 if args.analysis_service else args.max_requests,
@@ -3281,7 +3348,8 @@ def main():
         max_request_bytes=262144 if args.analysis_service else 65536,
         natural_reply=natural_reply, event_plan_model=args.event_plan_model,
         correction_target_context=args.natural_reply_correction_target_context,
-        piece_revision='piece-lora:' + args.piece_adapter_weights_sha256 if piece_options else None))
+        piece_revision='piece-lora:' + args.piece_adapter_weights_sha256 if piece_options else None,
+        observation_reply=observation_reply))
     server.timeout = 1
     try:
         while not stop.is_set() and time.monotonic() < deadline:
