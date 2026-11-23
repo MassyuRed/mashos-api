@@ -487,6 +487,8 @@ class EmlisThreadService:
             if self.runtime_profile == Q3_PROFILE:
                 t["data"].update(natural_question_policy=NATURAL_QUESTION_POLICY,
                     natural_questions_enabled=self.natural_questions_enabled and receive_questions)
+                if self.initial_recipient_reply_enabled:
+                    t['data']['initial_recipient_question_policy'] = True
                 if self.natural_context_update_enabled and (
                         not self.natural_context_update_paid_only or snapshot["tier"] in {"plus", "premium"}):
                     # Pin context at thread start so changing the deployment setting
@@ -982,7 +984,8 @@ class EmlisThreadService:
             decision, question = await asyncio.to_thread(question_candidate,
                 prepared.thread if prepared is not None else admitted, plan,
                 parent_request_id=request.request_id,
-                allow_affect_question=t["data"].get("natural_context_update_enabled") is True)
+                allow_affect_question=(t['data'].get('initial_recipient_question_policy') is True
+                    or t['data'].get('natural_context_update_enabled') is True))
         except Exception:
             if prepared is not None:
                 raise
@@ -994,7 +997,7 @@ class EmlisThreadService:
             ARTIFACT_SCHEMA, NaturalReply, NaturalReplyError, prepare_natural_reply, validate_reply,
             CORRECTED_SOURCE_CONTEXT_VERSION, DIRECT_FEELING_CORRECTION_CONTEXT_VERSION,
             DIRECT_FEELING_CORRECTION_CONTEXT_VERSIONS, INITIAL_STANDALONE_FEELING_CONTEXT_VERSION,
-            INITIAL_RECIPIENT_CONTEXT_VERSION, INITIAL_SUPPORT_CONTEXT_VERSION,
+            INITIAL_RECIPIENT_CONTEXT_VERSION,
             PAID_RECEIVED_ANSWER_CONTEXT_VERSION,
             RECEIVED_ANSWER_CONTEXT_VERSION, SOURCE_CONTEXT_VERSION,
             build_natural_reply_messages)
@@ -1036,14 +1039,17 @@ class EmlisThreadService:
         if context_version not in {None, SOURCE_CONTEXT_VERSION, CORRECTED_SOURCE_CONTEXT_VERSION,
                                    RECEIVED_ANSWER_CONTEXT_VERSION, PAID_RECEIVED_ANSWER_CONTEXT_VERSION,
                                    INITIAL_STANDALONE_FEELING_CONTEXT_VERSION,
-                                   INITIAL_RECIPIENT_CONTEXT_VERSION, INITIAL_SUPPORT_CONTEXT_VERSION,
+                                   INITIAL_RECIPIENT_CONTEXT_VERSION,
                                    *DIRECT_FEELING_CORRECTION_CONTEXT_VERSIONS}:
             raise NaturalReplyError('natural_reply_writer_identity_changed')
         direct_version = (context_version if context_version in DIRECT_FEELING_CORRECTION_CONTEXT_VERSIONS
                           else DIRECT_FEELING_CORRECTION_CONTEXT_VERSION)
+        initial_unanswered_final = (t['data'].get('initial_recipient_question_policy') is True
+            and t['data'].get('natural_question_stop') in {'skip', 'stop'}
+            and not t.get('latest_answer_event_id') and not correcting)
         material, safety = prepare_natural_reply(_request(snapshot), response_stage=response_stage,
             bind_writer_context=(context_version is not None
-                and (context_version not in {INITIAL_RECIPIENT_CONTEXT_VERSION, INITIAL_SUPPORT_CONTEXT_VERSION}
+                and (context_version != INITIAL_RECIPIENT_CONTEXT_VERSION
                      or t['data'].get('natural_context_update_enabled') is True)),
             include_corrected_circumstance=context_version == CORRECTED_SOURCE_CONTEXT_VERSION,
             include_received_answer=context_version in {RECEIVED_ANSWER_CONTEXT_VERSION,
@@ -1055,10 +1061,9 @@ class EmlisThreadService:
                 or (prior is None and not self.initial_recipient_reply_enabled
                     and context_version == PAID_RECEIVED_ANSWER_CONTEXT_VERSION
                     and t['data'].get('started_tier') in {'plus', 'premium'})),
-            include_initial_recipient_reply=(context_version in {INITIAL_RECIPIENT_CONTEXT_VERSION, INITIAL_SUPPORT_CONTEXT_VERSION}
-                or (prior is None and self.initial_recipient_reply_enabled)),
-            initial_recipient_context_version=(context_version
-                if context_version == INITIAL_RECIPIENT_CONTEXT_VERSION else INITIAL_SUPPORT_CONTEXT_VERSION),
+            include_initial_recipient_reply=(context_version == INITIAL_RECIPIENT_CONTEXT_VERSION
+                or (prior is None and (self.initial_recipient_reply_enabled or initial_unanswered_final))),
+            initial_unanswered_final=initial_unanswered_final,
             direct_feeling_correction_context_version=direct_version,
             prepared_meaning=prepared_meaning,
             meaning_profile=t['data'].get('natural_meaning_profile'), owner_scope=user_id,
