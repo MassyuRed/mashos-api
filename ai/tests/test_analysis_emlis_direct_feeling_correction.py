@@ -411,7 +411,9 @@ def test_no_answer_direct_feeling_correction_uses_saved_policy_on_retry(natural_
     plan = dict(focus='REASON', source=key, quote=replacement, condition='')
     responses = iter((dict(plan, decision='ask', ask='訂正で述べた不安の理由'),
         dict(question='不安だったのは、どんな理由からですか？'),
-        dict(plan, verdict='accept', premise_supported=True, new_information=True)))
+        dict(verdict='accept', focus='REASON', condition='', requested='どんな理由から',
+             premise_supported=True),
+        dict(source=None, evidence=None)))
 
     async def synthetic_question_stage(system, payload):
         assert original not in json.dumps(payload, ensure_ascii=False)
@@ -419,6 +421,7 @@ def test_no_answer_direct_feeling_correction_uses_saved_policy_on_retry(natural_
 
     candidate = run(generate_question(prepared, sources, material=context['material'],
         generate=synthetic_question_stage)).candidate
+    assert next(responses, None) is None
     assert candidate and candidate.receipt['field'] == 'correction'
     assert (candidate.receipt['start'], candidate.receipt['end']) == (start, end)
     issued = qdb.query("select public.deep_insight_issue_grounded($1,"

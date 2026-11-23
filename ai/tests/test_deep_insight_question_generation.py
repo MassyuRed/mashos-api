@@ -10,7 +10,8 @@ from cocolon_meaning_experience_engine import deep_insight_question
 from cocolon_meaning_experience_engine.deep_insight_question import (
     ANSWER_READ_SYSTEM_MESSAGE, PLAN_SYSTEM_MESSAGE, READ_SYSTEM_MESSAGE,
     RECORD_REASON_READ_SYSTEM_MESSAGE, WRITE_SYSTEM_MESSAGE,
-    _ANSWER_REASON_EVIDENCE_GUIDANCE, _ANSWER_REASON_PREMISE_GUIDANCE, _CORRECTION_REASON_READ_SYSTEM_MESSAGE,
+    _ANSWER_REASON_EVIDENCE_GUIDANCE, _ANSWER_REASON_PREMISE_GUIDANCE,
+    _CORRECTION_REASON_EVIDENCE_GUIDANCE, _CORRECTION_REASON_PREMISE_GUIDANCE,
     _PRIOR_ANSWER_EVIDENCE_MESSAGE, _PRIOR_ANSWER_HISTORY_MESSAGE, _PRIOR_ANSWER_PAIR_MESSAGE,
     _PRIOR_ANSWER_PREMISE_MESSAGE,
     _RECORD_ALTERNATIVE_PLAN_MESSAGE, _RECORD_ALTERNATIVE_READ_MESSAGE,
@@ -36,6 +37,7 @@ STAMP = "2026-11-21T10:00:00Z"
 QUOTE = "頼まれたことを先にした"
 BODY = "どんな理由からですか？"
 QUESTION = f"「{QUOTE}」と書いていましたが、{BODY}"
+NO_ANSWER = {"source": None, "evidence": None}
 
 
 def source(text=QUOTE + "。", **changes):
@@ -62,6 +64,11 @@ def read(plan, *, record_reason=False, **changes):
     return {**result, **changes}
 
 
+def reason_premise(requested="どんな理由から", **changes):
+    return {"verdict": "accept", "focus": "REASON", "condition": "", "requested": requested,
+            "premise_supported": True, **changes}
+
+
 def run(original, plan, question=BODY, *, reading=None, extraction=None, premise=None,
         comparison=None, alternative=None):
     prepared, sources = prepare_question_material(original, lane="records", theme=None)
@@ -85,13 +92,12 @@ def run(original, plan, question=BODY, *, reading=None, extraction=None, premise
         else:
             assert system.startswith((
                 READ_SYSTEM_MESSAGE, ANSWER_READ_SYSTEM_MESSAGE, RECORD_REASON_READ_SYSTEM_MESSAGE,
-                _CORRECTION_REASON_READ_SYSTEM_MESSAGE, _RECORD_ALTERNATIVE_READ_MESSAGE,
+                _RECORD_ALTERNATIVE_READ_MESSAGE,
             ))
             selected_plan = plan if alternative is None else {**ask(), **alternative}
             response = reading if reading is not None else read(
                 selected_plan, record_reason=system.startswith((
-                    RECORD_REASON_READ_SYSTEM_MESSAGE, _CORRECTION_REASON_READ_SYSTEM_MESSAGE,
-                    _RECORD_ALTERNATIVE_READ_MESSAGE,
+                    RECORD_REASON_READ_SYSTEM_MESSAGE, _RECORD_ALTERNATIVE_READ_MESSAGE,
                 )))
         return json.dumps(response, ensure_ascii=False)
 
@@ -124,11 +130,11 @@ def test_correction_plan_uses_its_own_source_key_and_exact_replacement_range():
     original = material(source(), source(None, id="00000000-0000-0000-0000-000000000125",
                                           emlis_corrections=[correction]))
     plan = ask(source="r2.correction1", quote=corrected, ask="不安だった理由")
-    result, calls = run(original, plan)
+    result, calls = run(original, plan, premise=reason_premise(), extraction=NO_ANSWER)
     assert result.disposition == "selected"
     assert "r2.correction1" in calls[0][0] and "一つの出典に固有の原文" in calls[0][0]
     assert "一つの出典に固有の原文" not in calls[2][0]
-    assert calls[2][1] == {"question": f"「{corrected}」と書いていましたが、{BODY}", "material": calls[0][1]}
+    assert calls[2][1] == {"citation": corrected, "body": BODY, "texts": {"r2.correction1": corrected}}
     assert result.candidate.receipt["source_id"] == ANSWER_ID
     assert result.candidate.receipt["field"] == "correction" and result.candidate.receipt["start"] == 13
     assert result.candidate.receipt["end"] == 13 + len(corrected)
@@ -143,41 +149,111 @@ def test_correction_plan_uses_its_own_source_key_and_exact_replacement_range():
         assert rejected.plan_rejection_reason == reason and len(calls) == 1
 
 
-def test_unique_corrected_feeling_reason_is_read_from_the_finished_question():
+@pytest.mark.parametrize("body", ["どうして嬉しかったのですか？", "嬉しかったのは、どんな理由からですか？"])
+def test_unique_corrected_feeling_reason_is_read_from_the_finished_question(body):
     corrected = "私は嬉しかった"
     correction = {"id": ANSWER_ID, "recorded_at": STAMP, "text": corrected,
                   "source_version": VERSION, "scalar_start": 15}
     original = material(source(None, emlis_corrections=[correction]))
     plan = ask(source="r1.correction1", quote=corrected, ask="嬉しかった理由")
-    body = "どうして嬉しかったのですか？"
-    reading = read(plan, record_reason=True)
+    phrase = "どうして" if body.startswith("どうして") else "どんな理由から"
+    premise = reason_premise(phrase)
 
-    result, calls = run(original, plan, body, reading=reading)
+    result, calls = run(original, plan, body, premise=premise, extraction=NO_ANSWER)
 
-    assert result.disposition == "selected" and len(calls) == 3
-    assert calls[2][0].startswith(_CORRECTION_REASON_READ_SYSTEM_MESSAGE)
-    assert calls[2][1] == {"question": f"「{corrected}」と書いていましたが、{body}", "material": calls[0][1]}
+    assert result.disposition == "selected" and len(calls) == 4
+    assert calls[2] == (_PRIOR_ANSWER_PREMISE_MESSAGE + _CORRECTION_REASON_PREMISE_GUIDANCE,
+                        {"citation": corrected, "body": body, "texts": {"r1.correction1": corrected}})
+    assert calls[3] == (_PRIOR_ANSWER_EVIDENCE_MESSAGE + _CORRECTION_REASON_EVIDENCE_GUIDANCE,
+                        {"question": result.candidate.text, "texts": {"r1.correction1": corrected}})
+    assert result.candidate.text == f"「{corrected}」と書いていましたが、{body}"
     assert result.candidate.receipt == {
         "policy_version": "deep-insight.v2", "lane": "records", "focus": "REASON",
         "source_id": ANSWER_ID, "source_version": VERSION, "field": "correction",
         "start": 15, "end": 22, "literal_sha256": hashlib.sha256(corrected.encode()).hexdigest(),
         "condition_key": None, "target_key": result.candidate.question_key.rsplit("-", 1)[1],
     }
-    with_exact_locator, calls = run(original, plan, body, reading=read(plan))
-    assert with_exact_locator.candidate == result.candidate and len(calls) == 3
-
-    for rejected_read in (
+    for rejected_premise in (
         {"verdict": "reject", "reason": "already_answered"},
         {"verdict": "reject", "reason": "unsupported_premise"},
-        dict(reading, focus="MEANING"),
-        dict(reading, condition="会議中"),
-        dict(reading, premise_supported=False),
-        dict(reading, new_information=False),
-        dict(read(plan), source="r2.correction1"),
-        dict(read(plan), quote="僕は嬉しかった"),
+        dict(premise, focus="MEANING"),
+        dict(premise, condition="会議中"),
+        dict(premise, premise_supported=False),
+        dict(premise, requested="会議中"),
     ):
-        rejected, calls = run(original, plan, body, reading=rejected_read)
+        rejected, calls = run(original, plan, body, premise=rejected_premise, extraction=NO_ANSWER)
         assert rejected.candidate is None and rejected.rejection_stage == "reader" and len(calls) == 3
+
+
+@pytest.mark.parametrize(("original_thought", "body", "reason"), [
+    (None, "会議で嬉しかったのは、どんな理由からですか？", "unsupported_premise"),
+    ("工夫に気づいてもらえたので嬉しかった。", "嬉しかったのは、どんな理由からですか？", "already_answered"),
+])
+def test_corrected_feeling_reader_can_refuse_a_new_premise_or_known_answer(original_thought, body, reason):
+    corrected = "私は嬉しかった"
+    correction = {"id": ANSWER_ID, "recorded_at": STAMP, "text": corrected,
+                  "source_version": VERSION, "scalar_start": 15}
+    original = material(source(original_thought, emlis_corrections=[correction]))
+    plan = ask(source="r1.correction1", quote=corrected, ask="嬉しかった理由")
+
+    premise = {"verdict": "reject", "reason": reason} if original_thought is None else reason_premise()
+    evidence = {"source": "r1.thought", "evidence": original_thought} if original_thought else NO_ANSWER
+    result, calls = run(original, plan, body, premise=premise, extraction=evidence)
+
+    assert result.candidate is None and result.rejection_stage == "reader"
+    assert len(calls) == (4 if original_thought else 3)
+    texts = calls[2][1]["texts"]
+    assert texts["r1.correction1"] == corrected
+    if original_thought is not None:
+        assert texts["r1.thought"] == original_thought
+        assert calls[3][1]["texts"] == texts
+
+
+def test_corrected_reason_uses_same_record_and_only_current_linked_deep_insight_answers():
+    corrected = "私は嬉しかった"
+    other_id = "00000000-0000-0000-0000-000000000125"
+    correction = {"id": ANSWER_ID, "recorded_at": STAMP, "text": corrected,
+                  "source_version": VERSION, "scalar_start": 15}
+    old_question = "あの日は、励まされましたか？"
+    linked_reason = "話す時間を取ってもらったので嬉しかった。"
+    prior = {"id": other_id, "source_version": VERSION, "question_text": old_question,
+             "answer_text": linked_reason, "answered_at": STAMP,
+             "grounding_receipt": {"source_id": ANSWER_ID, "source_version": VERSION}}
+    unrelated = source("発表で褒められたので嬉しかった。", id=other_id)
+    record = source(None, emlis_corrections=[correction])
+    plan = ask(source="r1.correction1", quote=corrected, ask="嬉しかった理由")
+    body = "嬉しかったのは、どんな理由からですか？"
+    result, calls = run(material(record, unrelated, prior=[prior]), plan, body, premise=reason_premise(),
+                        extraction={"source": "a1", "evidence": linked_reason})
+    assert result.candidate is None and result.rejection_stage == "reader"
+    assert calls[3][1]["texts"] == {"r1.correction1": corrected, "a1": linked_reason}
+
+    prior["grounding_receipt"]["source_version"] = "a" * 64
+    result, calls = run(material(record, unrelated, prior=[prior]), plan, body, premise=reason_premise(),
+                        extraction=NO_ANSWER, comparison={"verdict": "distinct", "previous_asks": "励まされたか",
+                                                          "current_asks": "嬉しかった理由"})
+    assert result.disposition == "selected"
+    assert calls[3][1]["texts"] == {"r1.correction1": corrected}
+    assert calls[4] == (_PRIOR_ANSWER_PAIR_MESSAGE, {"previous": old_question, "current": result.candidate.text})
+
+
+def test_corrected_reason_checks_retained_emlis_question_as_deny_only_history():
+    corrected = "私は嬉しかった"
+    correction = {"id": ANSWER_ID, "recorded_at": STAMP, "text": corrected,
+                  "source_version": VERSION, "scalar_start": 15}
+    retained = {"id": "00000000-0000-0000-0000-000000000125", "source_version": VERSION,
+                "question": None, "previous_question": "どうして嬉しかったのですか？",
+                "answer": "まだ自分では分からない。", "answered_at": STAMP}
+    original = material(source(None, emlis_corrections=[correction], emlis_answered_questions=[retained]))
+    plan = ask(source="r1.correction1", quote=corrected, ask="嬉しかった理由")
+    body = "嬉しかったのは、どんな理由からですか？"
+    result, calls = run(original, plan, body, premise=reason_premise(), extraction=NO_ANSWER,
+                        comparison={"verdict": "repeat", "previous_asks": "嬉しかった理由",
+                                    "current_asks": "本人が嬉しかった理由"})
+    assert result.candidate is None and result.rejection_stage == "reader"
+    assert calls[3][1]["texts"] == {"r1.correction1": corrected, "r1.answer1": retained["answer"]}
+    assert calls[4] == (_PRIOR_ANSWER_PAIR_MESSAGE,
+                        {"previous": retained["previous_question"], "current": f"「{corrected}」と書いていましたが、{body}"})
 
 
 @pytest.mark.parametrize("competing_field", ["thought", "action", "answer", "correction"])

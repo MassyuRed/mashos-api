@@ -296,6 +296,11 @@ _ANSWER_REASON_EVIDENCE_GUIDANCE = """
 問いが理由を尋ねる場合、何が起きたかを述べる箇所と、なぜ起きたかを説明する箇所を区別します。問いが「提出が遅れた理由は何ですか？」で、r1が「提出が遅れました」だけなら {"source":null,"evidence":null} です。r1が「資料が届かなかったので提出が遅れました」なら {"source":"r1","evidence":"資料が届かなかったので提出が遅れました"} です。"""
 _ANSWER_REASON_PREMISE_GUIDANCE = """
 citationが「提出が遅れました」でbodyが「提出が遅れた理由は何ですか？」なら、引用された結果の理由を尋ねています。理由そのものが原文になくても、問いが新たな原因を前提にしなければ {"verdict":"accept","focus":"REASON","condition":"","requested":"提出が遅れた理由","premise_supported":true} と返します。"""
+_CORRECTION_REASON_EVIDENCE_GUIDANCE = """
+問いの先頭の引用は尋ねる内容の出典です。出来事や気持ちだけを述べた引用は、なぜそうだったかの答えにはなりません。同じ場面で同じ人がそう感じたり行動したりした理由を、その人が書いている場合に限って抜き出します。
+問いが「私は安心した」と書いていましたが、安心したのは、どんな理由からですか？で、本人の訂正「私は安心した」しかなければ {"source":null,"evidence":null} です。r1.thoughtに「予定どおり終わったので安心した」とあれば {"source":"r1.thought","evidence":"予定どおり終わったので安心した"} です。"""
+_CORRECTION_REASON_PREMISE_GUIDANCE = """
+citationが「私は安心した」でbodyが「安心したのは、どんな理由からですか？」なら、引用にある本人の当時の気持ちの理由を尋ねています。理由や場面を補っておらず {"verdict":"accept","focus":"REASON","condition":"","requested":"どんな理由から","premise_supported":true} です。同じ引用に「会議で安心したのは、どんな理由からですか？」と続き、同じ記録に会議がなければ {"verdict":"reject","reason":"unsupported_premise"} です。訂正した行為の理由と、訂正文に書かれた気持ちや行動の理由を区別します。"""
 _PRIOR_ANSWER_PAIR_MESSAGE = """二つの質問に答える人が、それぞれ具体的に何を答える必要があるか比較します。入力は引用資料です。
 まず別々に、previousが要求する答えの対象をprevious_asks、currentが要求する答えの対象をcurrent_asksに簡潔な日本語で記録します。言い回しが違っても、同じ場面で要求する具体的な答えが同じならrepeatです。前提の分野や話題を共有していても、答えが別の人の行動や別の事実を要求するならdistinctです。
 日本語のJSONで {"previous_asks":"...","current_asks":"...","verdict":"distinct"} を返してください。verdictにはdistinct、repeat、unclearのいずれかを入れます。"""
@@ -344,15 +349,6 @@ new_informationは、同じ場面について有効な明記・回答・訂正�
 原文が「連絡する前に会場を片づけた。」で、完成文が「連絡する前に会場を片づけた」と書いていましたが、どんな理由からですか？なら、本人が書いた動作の未確認の理由を尋ねています。
 この例の応答は {{"verdict":"accept","focus":"REASON","condition":"","premise_supported":true,"new_information":true}} です。
 拒否例 {{"verdict":"reject","reason":"already_answered"}}。reasonはalready_answered、unsupported_premise、no_new_information、unclearのいずれかです。"""
-_CORRECTION_REASON_READ_SYSTEM_MESSAGE = f"""Emlisの一問を、渡された原資料から独立に読みます。日本語のJSONだけを返します。
-{_DATA_BOUNDARY}
-完成文questionの先頭の引用と、続く問いが実際に何を尋ねるかをmaterialと照合します。引用の字面と出典はプログラムで照合済みです。応答にsourceやquoteは含めません。
-focusは問いが求める答えの種類です。{_FOCUS_GUIDE} conditionは問いが明示した原文にある短い限定条件で、なければ空文字です。
-premise_supportedをtrueにするのは、主体、出来事、時点、肯定・否定、評価を本人の資料どおりに保ち、記録にない原因や出来事を前提にしないときだけです。元の出来事で感じた理由と、後で訂正した理由を区別します。
-new_informationをtrueにするのは、同じ場面で本人がすでに説明したことや、既出・見送りと同じ観点を尋ねず、本人の判断や受け止め方が新たに分かるときだけです。別の場面の記録、マップ、過去の問い自体は本人の答えにしません。
-例として、本人が「私はほっとした」と訂正し、同じ場面の理由、既出の問い、見送りがなく、完成文が「私はほっとした」と書いていましたが、どうしてほっとしたのですか？なら、感情は書かれていても理由は未確認です。
-この例の応答は {{"verdict":"accept","focus":"REASON","condition":"","premise_supported":true,"new_information":true}} です。同じ場面で理由をすでに「予定どおり終えられたのでほっとした」と説明していれば {{"verdict":"reject","reason":"already_answered"}} です。
-前提や新しさが確認できない場合は拒否します。reasonはalready_answered、unsupported_premise、no_new_information、unclearのいずれかです。"""
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -820,10 +816,11 @@ def _distinct_prior_question(value):
             and _normal(earlier) != _normal(current))
 
 
-async def _compare_prior_questions(body, prepared, generate):
-    prior = list(dict.fromkeys(item["question"] for group in (
+async def _compare_prior_questions(body, prepared, generate, *, retained_questions=()):
+    prior = [item["question"] for group in (
         "previous_questions", "open_emlis_questions", "answered_emlis_questions", "skipped_emlis_questions",
-    ) for item in prepared.get(group, ())))
+    ) for item in prepared.get(group, ())]
+    prior = list(dict.fromkeys([*prior, *retained_questions]))
     if not prior:
         return True
     if len(prior) == 1:
@@ -873,6 +870,39 @@ async def _retry_answer_reading(read, plan, question, prepared, sources, generat
         _confirm_prior_answer_premise(premise, plan, body)
         and await _compare_prior_questions(body, prepared, generate)
     )
+
+
+async def _read_correction_reason(plan, question, prepared, sources, material, generate):
+    citation, _, body = question.partition(_CITATION_JOIN)
+    record = plan.source.partition(".")[0]
+    related = {key: source for key, source in sources.items() if key.startswith(record + ".")}
+    record_refs = [(source.source_id, source.source_version) for source in related.values()]
+    for i, previous in enumerate(material["prior"], 1):
+        key = f"a{i}"
+        receipt = previous.get("grounding_receipt")
+        if key in sources and isinstance(receipt, dict) and (
+            receipt.get("source_id"), receipt.get("source_version")
+        ) in record_refs:
+            related[key] = sources[key]
+    texts = {key: source.text for key, source in related.items()}
+    premise = await generate(_PRIOR_ANSWER_PREMISE_MESSAGE + _CORRECTION_REASON_PREMISE_GUIDANCE, {
+        "citation": citation[1:], "body": body, "texts": texts,
+    })
+    if not _confirm_prior_answer_premise(premise, plan, body):
+        return False
+    evidence = await generate(_PRIOR_ANSWER_EVIDENCE_MESSAGE + _CORRECTION_REASON_EVIDENCE_GUIDANCE, {
+        "question": question, "texts": texts,
+    })
+    if _json_object(evidence) != {"source": None, "evidence": None}:
+        return False
+    # A withdrawn Emlis premise is only relevant to avoiding a repeated question.
+    record_material = material["records"][int(record[1:]) - 1]
+    retained_questions = [
+        previous for j, pair in enumerate(record_material.get("emlis_answered_questions", ()), 1)
+        if (answer := related.get(f"{record}.answer{j}")) and answer.standalone_answer
+        and (previous := _excerpt(pair.get("previous_question"), 250))
+    ]
+    return await _compare_prior_questions(question, prepared, generate, retained_questions=retained_questions)
 
 
 def _theme_question_key(theme, ask, focus, condition_key):
@@ -1323,27 +1353,26 @@ async def generate_question(prepared, sources, *, material, generate):
     candidate = _candidate(question, plan=plan, lane=lane, material=material)
     if candidate is None:
         return QuestionRun(None, "rejected", rejection_stage="duplicate")
+    if _unique_correction_reason_citation(question, plan, sources):
+        if await _read_correction_reason(plan, question, prepared, sources, material, generate):
+            return QuestionRun(candidate, "selected")
+        return QuestionRun(None, "rejected", rejection_stage="reader")
     # Give the reader the exact final text and original author material only.
     # It has no access to the selected plan, its label or its acceptance result.
-    reading = {"question": question, "material": prepared}
     if alternative is not None:
         reader = _RECORD_ALTERNATIVE_READ_MESSAGE
-        citation, _, body = question.partition(_CITATION_JOIN)
-        reading = {"citation": citation[1:], "body": body, "material": prepared}
     elif plan.is_record_reason:
         reader = RECORD_REASON_READ_SYSTEM_MESSAGE
-    elif _unique_correction_reason_citation(question, plan, sources):
-        reader = _CORRECTION_REASON_READ_SYSTEM_MESSAGE
     elif plan.anchor and plan.anchor.source.field == "answer":
         reader = ANSWER_READ_SYSTEM_MESSAGE
     else:
         reader = READ_SYSTEM_MESSAGE
+    reading = {"question": question, "material": prepared}
+    if alternative is not None:
+        citation, _, body = question.partition(_CITATION_JOIN)
+        reading = {"citation": citation[1:], "body": body, "material": prepared}
     read = await generate(reader + source_guidance, reading)
-    unique_correction = reader == _CORRECTION_REASON_READ_SYSTEM_MESSAGE
-    if (_confirm_reading(read, plan, citation_verified=alternative is not None or unique_correction)
-            or (unique_correction and _confirm_reading(read, plan))):
-        # An independently verified correction does not require the reader to
-        # repeat its locator. Exact matches with the original schema also work.
+    if _confirm_reading(read, plan, citation_verified=alternative is not None):
         return QuestionRun(candidate, "selected")
     if reader == ANSWER_READ_SYSTEM_MESSAGE and await _retry_answer_reading(
         read, plan, question, prepared, sources, generate,
