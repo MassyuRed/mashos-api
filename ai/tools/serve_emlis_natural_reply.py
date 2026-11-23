@@ -730,12 +730,20 @@ def _semantic_relation_fact_parts(material):
 
 
 def _received_answer_plan_slots(material, pairs, obj):
-    """Bind qualified whole-map slots to offered source choices, without parsing instructions."""
-    guide = material['received_answer_plan']
+    """Bind qualified plan slots to offered source choices, without parsing instructions."""
+    history_stage = material.get('history_stage')
+    leaf = 'received_answer_leaf_plan' in material
+    guide = material['received_answer_leaf_plan' if leaf else 'received_answer_plan']
     scopes = material.get('received_answer_thoughts')
     if (material.get('author_profile') != OCCURRENCE_V24_PROFILE
-            or 'history_stage' in material or type(scopes) is not list or len(scopes) < 2
+            or type(scopes) is not list
             or type(guide) is not list or not 1 <= len(guide) <= 12):
+        raise ValueError('semantic_received_answer_plan_invalid')
+    if leaf:
+        if ('received_answer_plan' in material or type(history_stage) is not dict or history_stage.get('kind') != 'LEAF'
+                or len(scopes) != 1 or len(material['records']) != 1 or len(material['fields']) != 3):
+            raise ValueError('semantic_received_answer_plan_invalid')
+    elif 'history_stage' in material or len(scopes) < 2:
         raise ValueError('semantic_received_answer_plan_invalid')
     offered = {pair['properties']['field']['enum'][0]: pair['properties']['quote']['enum'] for pair in pairs}
     fixed = {scope[key] for scope in scopes for key in ('thought_field', 'answer_field', 'action_field')}
@@ -828,7 +836,7 @@ def _semantic_node_local_v4_schema(material, pairs, unknown_pairs, *, leaf=False
                 raise ValueError('semantic_plan_choice_scope_invalid')
             props['source_choices_sha256'] = dict(type='string', enum=[scope])
         props['nodes'] = (_received_answer_plan_slots(material, pairs, obj)
-            if 'received_answer_plan' in material else
+            if {'received_answer_plan', 'received_answer_leaf_plan'} & material.keys() else
             dict(type='array', items=node, minItems=max(1, len(record_owners)), maxItems=12))
         return root(phase, props)
     if phase == 'RELATIONS' and author_profile in {OCCURRENCE_V8_PROFILE, *SOURCE_CUED_PROFILES}:
@@ -2544,7 +2552,8 @@ def _semantic_logical_json_parser(messages, alphabet):
     # coverage only; they never substitute for evidence field IDs.
     config.force_json_field_order = True
     material = json.loads(messages[1]['content'])
-    if (material.get('author_phase') == 'PLAN' and 'received_answer_plan' in material):
+    if (material.get('author_phase') == 'PLAN'
+            and {'received_answer_plan', 'received_answer_leaf_plan'} & material.keys()):
         return _ordered_source_json_schema_parser(_lmfe_object_tuples(schema), config)
     if material.get('model_schema') == NODE_LOCAL_V4_SCHEMA and material.get('author_phase') != 'PLAN':
         ids = tuple(n['node_id'] for n in material.get('candidate_nodes', ()))

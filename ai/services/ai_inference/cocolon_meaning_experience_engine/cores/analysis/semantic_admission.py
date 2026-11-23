@@ -4588,16 +4588,23 @@ def _semantic_occurrence_v6_messages(prepared, material, phase, bodies=None):
             guidance = ('本人が答えた対象は思考欄の出来事です。思考とその補足を同じ項目の別unitに置きます。'
                 '独立した行動と他の記録は別の項目です。以下が原文に対応した根拠配置です。JSONのみ返します。\n'
                 + json.dumps(packet, ensure_ascii=False, separators=(',', ':')))
-            if allow_multiple and len(received_scopes) > 1:
+            single_answer_leaf = (stage == 'LEAF' and len(received_scopes) == 1
+                and prepared.prompt_version == SEMANTIC_MAP_OCCURRENCE_V24_PROFILE
+                and len(original_material['records']) == 1 and len(original_material['fields']) == 3)
+            if single_answer_leaf or allow_multiple and len(received_scopes) > 1:
                 try:
                     admit_semantic_node_local_v4_plan_response(prepared, packet)
                 except AnalysisSemanticMapError:
                     pass  # A guide that does not pass admission must not lock generation.
                 else:
-                    material['received_answer_plan'] = packet['nodes']
-                    guidance = ('本人が答えた対象は思考欄の出来事です。思考とその補足を同じ項目の別unitに置きます。'
-                        '独立した行動と他の記録は別の項目です。received_answer_planの項目、unit、fieldの割り当てに従い、'
-                        'ほかの記録では同じfieldの原文候補から引用を選びます。JSONのみ返します。')
+                    if single_answer_leaf:
+                        # An older server still reads the existing literal lesson.
+                        material['received_answer_leaf_plan'] = packet['nodes']
+                    else:
+                        material['received_answer_plan'] = packet['nodes']
+                        guidance = ('本人が答えた対象は思考欄の出来事です。思考とその補足を同じ項目の別unitに置きます。'
+                            '独立した行動と他の記録は別の項目です。received_answer_planの項目、unit、fieldの割り当てに従い、'
+                            'ほかの記録では同じfieldの原文候補から引用を選びます。JSONのみ返します。')
         elif phase == 'NODES':
             fields = {field['field']: field for field in original_material['fields']}
             sentences = _semantic_display_sentences(original_material)

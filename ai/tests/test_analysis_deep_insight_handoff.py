@@ -228,6 +228,9 @@ def v24_provider(calls, *, received_case=False, plan_packet=None, scoped_node_gu
                 overview.update(title_proposal='', title=choices.WholeMapTitle(material, registry).neutral)
             elif received_prepared is not None:
                 overview['title'] = '2件の記録を振り返って'
+            elif (material.get('history_stage', {}).get('kind') == 'LEAF'
+                    and material.get('received_answer_thoughts')):
+                overview['title'] = '1件の記録を振り返って'
             else:
                 overview['title'] = '書き残した判断と行動'
             value.update(nodes_sha256=schema['nodes_sha256']['enum'][0],
@@ -441,6 +444,36 @@ def test_free_received_meaning_and_deep_insight_keep_original_fields_and_saved_e
     insight_evidence, = evidence_by_node['n2']
     assert insight_evidence['deep_insight'] == dict(question_text=QUESTION, answer_text=ANSWER)
     assert len(calls) == 3
+
+    leaf = admission.prepare_semantic_leaf(prepared, (parent,))
+    leaf_messages = admission.semantic_node_local_v4_wire_messages(leaf)
+    leaf_material = json.loads(leaf_messages[1]['content'])
+    leaf_packet = dict(schema_version=admission._semantic_v4_schema('PLAN'),
+        source_choices_sha256=leaf_material['source_choices_sha256'],
+        nodes=leaf_material['received_answer_leaf_plan'])
+    leaf_plan = admission.admit_semantic_node_local_v4_plan_response(leaf, leaf_packet)
+    assert [[[root['field'] for root in unit['evidence']] for unit in node['units']]
+            for node in leaf_plan['nodes']] == [
+        [[binding['thought_field']], [binding['answer_field']]], [[binding['action_field']]]]
+    assert accepts(leaf_packet, leaf_messages)
+
+    coalesced = deepcopy(leaf_packet)
+    units = coalesced['nodes'][0]['units']
+    units[0]['evidence'].extend(units.pop()['evidence'])
+    legacy_messages = deepcopy(leaf_messages)
+    del leaf_material['received_answer_leaf_plan']
+    legacy_messages[1]['content'] = json.dumps(leaf_material, ensure_ascii=False)
+    assert accepts(leaf_packet, legacy_messages) and accepts(coalesced, legacy_messages)
+    assert not accepts(coalesced, leaf_messages)
+    with pytest.raises(admission.AnalysisSemanticMapError, match='analysis_semantic_plan_received_answer_scope_invalid'):
+        admission.admit_semantic_node_local_v4_plan_response(leaf, coalesced)
+
+    leaf_calls = []
+    response = run(v24_provider(leaf_calls, plan_packet=leaf_packet)(leaf))
+    graph = semantic.build_semantic_history_stage(leaf, response)
+    assert [phase for phase, _ in leaf_calls] == ['PLAN', 'NODES', 'RELATIONS']
+    assert [node['title'] for node in json.loads(graph.nodes_json)] == [thought, action]
+    assert supplement in graph.nodes_json
 
 
 @pytest.mark.parametrize('correction_count', [0, 1, 2])
