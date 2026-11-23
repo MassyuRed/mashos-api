@@ -4344,7 +4344,7 @@ def _expand_analysis_semantic_node_local_v3(prepared, packet, *, fact_endpoints=
     from .semantic_admission import (_semantic_map_require as require,
         _semantic_map_keys as keys, _semantic_map_text, _semantic_map_evidence,
         SEMANTIC_MAP_MODEL_SCHEMA, SEMANTIC_MAP_NODE_LOCAL_V3_PROFILE,
-        SEMANTIC_MAP_NODE_LOCAL_V3_SCHEMA, SEMANTIC_MAP_NODE_KINDS,
+        SEMANTIC_MAP_NODE_LOCAL_V3_SCHEMA, SEMANTIC_MAP_NODE_KINDS, SEMANTIC_MAP_OCCURRENCE_V24_PROFILE,
         SEMANTIC_MAP_PERSPECTIVES, SEMANTIC_MAP_RELATION_KINDS)
     require(getattr(prepared, 'prompt_version', None) == SEMANTIC_MAP_NODE_LOCAL_V3_PROFILE
         and type(packet) is dict and packet.get('schema_version') == SEMANTIC_MAP_NODE_LOCAL_V3_SCHEMA,
@@ -4361,6 +4361,8 @@ def _expand_analysis_semantic_node_local_v3(prepared, packet, *, fact_endpoints=
         return value
 
     material = json.loads(prepared.material_json)
+    standalone_v24 = (material.get('author_profile') == SEMANTIC_MAP_OCCURRENCE_V24_PROFILE
+                      and 'history_stage' not in material)
     def display_facts(units, facts, refs):
         if fixed_record_units:
             from analysis_plan_source_choices import mixed_record_facts
@@ -4443,6 +4445,11 @@ def _expand_analysis_semantic_node_local_v3(prepared, packet, *, fact_endpoints=
                 if quote not in unknowns:
                     unknowns.append(quote)
         meaning = text(node['meaning'], 240, empty=True)
+        if (standalone_v24 and re.fullmatch(r'n[1-9][0-9]*\.u[1-9][0-9]*(?:\.q[1-9][0-9]*)?', meaning)
+                and not any(meaning in root['quote'] for root in roots)):
+            # A bare generated reference carries no visible meaning. Keep its
+            # raw receipt and show the already verified fact in the summary.
+            meaning = ''
         if compact_source_captions and 'どう' in meaning and meaning.endswith(('かが書かれています。', 'かが記されています。')):
             # Authored descriptions of a document can promise detail absent from the record.
             # A person's own description of what a document says remains valid evidence.
@@ -4552,10 +4559,8 @@ def _expand_analysis_semantic_node_local_v3(prepared, packet, *, fact_endpoints=
             include_authored_titles=record_scoped_captions) or overview_text
     if record_scoped_captions:
         from analysis_plan_source_choices import repeated_record_node_dates
-        include_corrections = (material.get('author_profile') == 'semantic_map.node_local.v4.occurrence.v24'
-                               and 'history_stage' not in material)
         for index, label in repeated_record_node_dates(
-                material, packet['nodes'], include_corrections=include_corrections).items():
+                material, packet['nodes'], include_corrections=standalone_v24).items():
             node = nodes[index]
             dated = label + '：\n' + node['summary']
             # A dense caption can exceed the public bound; the body's full facts

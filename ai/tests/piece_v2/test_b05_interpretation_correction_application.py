@@ -7,6 +7,7 @@ This does not exercise a GPU, native bitmap or a real person's account.
 import asyncio
 from contextlib import ExitStack
 from copy import deepcopy
+from dataclasses import replace
 import json
 from unittest.mock import patch
 from uuid import uuid4
@@ -18,7 +19,9 @@ from emlis_thread_service import EmlisThreadService, Q3_PROFILE
 from cocolon_meaning_experience_engine.natural_reply import NaturalReply
 from piece_v2_contract import PieceContractError
 from piece_v2_preview_service import PiecePreviewService, _REPLAY_COLUMNS
-from piece_v2_source_adapter import PieceSavedSourceAdapter, project_saved_refined_fence
+from piece_v2_source_adapter import (
+    PieceSavedSourceAdapter, project_saved_corrected_source, project_saved_refined_fence,
+)
 from piece_v2_save_service import PieceSaveService
 from piece_v2_owner_service import PieceOwnerService, _COLUMNS
 from test_cmee_piece_request_saved_pipeline import saved_piece_db
@@ -44,24 +47,31 @@ def corrected_db(effective_fence_db):
     return effective_fence_db
 
 
-def corrected_case(natural_case, db, monkeypatch, *, operation='REVISE', tier='free', issue=True, memo_action='', memo=MEMO, extra_explanations=()):
+def corrected_case(natural_case, db, monkeypatch, *, operation='REVISE', tier='free', issue=True, memo_action='', memo=MEMO,
+                   extra_explanations=(), direct_feeling=False):
     owner, parent, token = str(uuid4()), str(uuid4()), 'synthetic-corrected-piece'
     _update(db, 'insert into auth.users values ($1)', [owner])
     _update(db, 'insert into public.profiles values ($1,$2)', [owner, tier])
     _update(db, "insert into public.emotions values ($1,$2,(now()-interval '5 seconds') at time zone 'UTC',$3,$4,array['仕事'],array['平穏'],$5::jsonb)",
         [parent, owner, memo, memo_action, json.dumps([dict(type='平穏', strength='medium')], ensure_ascii=False)])
+    if direct_feeling:
+        _update(db, 'update public.emotions set receive_emlis_questions=false where id=$1', [parent])
     _bind(db, monkeypatch, owner, token)
     calls = []
     async def provider(material):
+        text = '少し安心できたと受け取りました。'
+        if direct_feeling:
+            text = '嬉しかったんですね。' if calls else '「つらかったんです」と伝えてくれたんですね。'
         calls.append(material)
-        return NaturalReply('少し安心できたと受け取りました。', 'synthetic-corrected-provider', material.source_prefix_ref)
+        return NaturalReply(text, 'synthetic-corrected-provider', material.source_prefix_ref)
     service = EmlisThreadService(runtime_profile=Q3_PROFILE, natural_reply_source=provider)
     initial = run(service.start(owner, parent))
     assert initial['state'] == 'COMPLETED' and initial['issued_count'] == 0, initial
     updated = run(service.correct_interpretation(owner, initial['thread_id'],
         expected_revision=initial['revision'], idempotency_key='corrected-piece-explanation',
-        target_event_id=initial['current_observation']['event_id'], target_text='少し安心できた',
-        explanation=EXPLANATIONS[operation]))
+        target_event_id=initial['current_observation']['event_id'],
+        target_text='つらかったんです' if direct_feeling else '少し安心できた',
+        explanation='「つらかったんです」ではなく「私は嬉しかった」です。' if direct_feeling else EXPLANATIONS[operation]))
     assert updated['state'] == 'COMPLETED' and updated['body_state'] == 'FINAL', updated
     assert updated['correction_saved'] and updated['correction_assessment'] == 'UNASSESSED'
     for i, explanation in enumerate(extra_explanations, 2):
@@ -92,7 +102,8 @@ def corrected_case(natural_case, db, monkeypatch, *, operation='REVISE', tier='f
         if 'code' in result:
             raise PieceContractError(result['message'])
         return result
-    preview = PiecePreviewService(source_adapter=adapter, model_source=None)
+    preview = (PiecePreviewService(source_adapter=adapter) if direct_feeling
+        else PiecePreviewService(source_adapter=adapter, model_source=None))
     issue_args = dict(idempotency_key='corrected-piece-preview', ttl_seconds=600,
         renderer_version='piece.rn_bitmap_renderer.ios.v2', allowed_renderers=('piece.rn_bitmap_renderer.ios.v2',),
         expected_subscription_tier=tier, load_record=load_preview, rpc=call)
@@ -106,6 +117,83 @@ def corrected_case(natural_case, db, monkeypatch, *, operation='REVISE', tier='f
         issued=issued, source_ref=reference, request=request, record=record,
         expected=expected, snapshot=snapshot, calls=calls, initial=initial, updated=updated,
         issue_args=issue_args, load_record=load_record, load_preview=load_preview, rpc=call)
+
+
+def test_direct_feeling_correction_is_the_only_piece_model_block_and_survives_save(corrected_db, monkeypatch):
+    from cocolon_meaning_experience_engine.piece_v1c import MODEL_REALIZATION_PROFILE
+    from test_b05_piece_model_saved_pipeline import _provider
+
+    corrected = '私は嬉しかった'
+    candidate = corrected + '。'
+    seen = _provider(monkeypatch, 'direct-feeling-correction-piece', [candidate],
+        realization_profile=MODEL_REALIZATION_PROFILE)
+    case = corrected_case(None, corrected_db, monkeypatch, tier='premium',
+        memo='つらかったんです。', direct_feeling=True)
+    owner, token, preview = case['owner'], case['token'], case['issued']
+    handoff = case['handoff']
+    source = project_saved_corrected_source(handoff)
+    assert preview['piece_text'] == candidate
+    assert handoff.original_active_ranges == ()
+    assert source.direct_feeling_correction_ids == (handoff.correction.correction_id,)
+    start = handoff.correction.explanation.index(corrected)
+    assert handoff.correction_active_range == (start, start + len(corrected))
+    generated, = seen
+    slot, = generated['prepared']['control']['field_slots'].values()
+    assert (slot['source_id'], slot['source_role'], slot['field_path']) == (
+        handoff.correction.correction_id, 'USER_INTERPRETATION_CORRECTION', 'memo')
+    literal, = slot['literal_ranges']
+    assert (literal['scalar_start'], literal['scalar_end'], literal['literal']) == (
+        start, start + len(corrected), corrected)
+    wire = generated['messages'][1]['content']
+    assert all(text not in wire for text in ('つらかったんです', 'ではなく', '嬉しかったんですね'))
+
+    request = dict(preview_id=preview['preview_id'], expected_preview_revision=preview['preview_revision'],
+        **{key: preview[key] for key in ('piece_text_hash', 'content_payload_hash', 'visual_recipe_hash')})
+    replay = run(PiecePreviewService().issue_original('Bearer '+token, case['request'], **case['issue_args']))
+    assert replay['piece_text'] == candidate and replay['idempotency_replayed']
+    saver = PieceSaveService(load_record=case['load_record'], rpc=case['rpc'])
+    kwargs = dict(authenticated_user_id=owner, request=request, idempotency_key='direct-feeling-save',
+        allowed_renderers=('piece.rn_bitmap_renderer.ios.v2',))
+    saved = run(saver.save('Bearer '+token, **kwargs))
+    assert run(saver.save('Bearer '+token, **kwargs)) == dict(saved, idempotency_replayed=True)
+
+    async def load(params):
+        row = await case['load_record'](owner, params['id'][3:])
+        return [{key: row[key] for key in _COLUMNS}] if row and row['lifecycle_status'] == 'saved' else []
+
+    detail = run(PieceOwnerService(load_records=load).detail(authenticated_user_id=owner, piece_id=saved['piece_id']))
+    for key in ('piece_text', 'piece_text_hash', 'content_payload_hash', 'visual_recipe_hash'):
+        assert detail[key] == preview[key]
+    assert len(seen) == 1 and len(case['calls']) == 2
+    assert corrected_db.query('select count(*)::int as n from public.piece_quota_consumptions where owner_user_id=$1',
+        [owner])['rows'][0]['n'] == 1
+
+
+@pytest.mark.parametrize('change', ['missing_policy', 'pending_material', 'wrong_range'])
+def test_direct_feeling_piece_rejects_changed_saved_proof(corrected_db, monkeypatch, change):
+    from piece_v2_contract import canonical_json_bytes
+
+    case = corrected_case(None, corrected_db, monkeypatch, tier='premium',
+        memo='つらかったんです。', direct_feeling=True, issue=False)
+    handoff = case['handoff']
+    control = json.loads(handoff._correction_state_json)
+    if change == 'missing_policy':
+        event = next(e for e in control['events'] if e['id'] == handoff.correction.correction_id)
+        del event['payload']['analysis_correction_policy']
+    else:
+        event = next(e for e in control['events'] if e['id'] == case['updated']['current_observation']['event_id'])
+        material = event['payload']['artifact']['analysis_material']
+        if change == 'pending_material':
+            material['coverage']['active_state'] = 'PENDING'
+        else:
+            material['active_fields'][0]['scalar_start'] += 1
+    changed = replace(handoff, _correction_state_json=canonical_json_bytes(control))
+    with pytest.raises((ValueError, PieceContractError)):
+        project_saved_corrected_source(changed)
+    _update(corrected_db, 'update public.emlis_thread_events set payload=$2::jsonb where id=$1',
+        [event['id'], json.dumps(event['payload'], ensure_ascii=False)])
+    with pytest.raises(PieceContractError, match='PIECE_SOURCE_NOT_ELIGIBLE'):
+        run(case['adapter'].resolve_corrected_handoff('Bearer '+case['token'], case['parent']))
 
 
 @pytest.mark.parametrize('tier,operation,memo_action', [

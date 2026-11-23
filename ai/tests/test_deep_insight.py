@@ -398,8 +398,9 @@ def test_records_rejection_stage_is_logged_without_private_content(api_harness, 
     assert response.json() == {"status": "no_question", "question": None, "theme_next_available_at": None}
     assert not [row for row in calls if row[0] == "deep_insight_issue_grounded"]
     assert len([row for row in calls if row[0] == "4B"]) == generation_count
+    reason = " reason=source_unbound" if stage == "plan" else ""
     assert [entry.getMessage() for entry in caplog.records if entry.name == api.__name__] == [
-        f"DeepInsight generation records rejected stage={stage}",
+        f"DeepInsight generation records rejected stage={stage}{reason}",
     ]
 
 

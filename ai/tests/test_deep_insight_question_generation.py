@@ -116,6 +116,54 @@ def test_plan_write_read_are_separate_and_receipt_resolves_original():
     assert candidate.question_key == "deep-insight-target-" + receipt["target_key"]
 
 
+def test_correction_plan_uses_its_own_source_key_and_exact_replacement_range():
+    corrected = "私は不安だった"
+    correction = {"id": ANSWER_ID, "recorded_at": STAMP, "text": corrected,
+                  "source_version": VERSION, "scalar_start": 13}
+    original = material(source(), source(None, id="00000000-0000-0000-0000-000000000125",
+                                          emlis_corrections=[correction]))
+    plan = ask(source="r2.correction1", quote=corrected, ask="不安だった理由")
+    result, calls = run(original, plan)
+    assert result.disposition == "selected"
+    assert "r2.correction1" in calls[0][0] and "一つの出典に固有の原文" in calls[0][0]
+    assert "一つの出典に固有の原文" not in calls[2][0]
+    assert calls[2][1] == {"question": f"「{corrected}」と書いていましたが、{BODY}", "material": calls[0][1]}
+    assert result.candidate.receipt["source_id"] == ANSWER_ID
+    assert result.candidate.receipt["field"] == "correction" and result.candidate.receipt["start"] == 13
+    assert result.candidate.receipt["end"] == 13 + len(corrected)
+    assert result.candidate.receipt["literal_sha256"] == hashlib.sha256(corrected.encode()).hexdigest()
+
+    for change, reason in [({"source": "r2.correction1.text"}, "source_unbound"),
+                           ({"quote": "私はつらかった"}, "quote_unbound"),
+                           ({"ask": "なぜですか？"}, "invalid_ask"),
+                           ({"condition": "会議中"}, "condition_unbound")]:
+        rejected, calls = run(original, {**plan, **change})
+        assert rejected.candidate is None and rejected.rejection_stage == "plan"
+        assert rejected.plan_rejection_reason == reason and len(calls) == 1
+
+
+def test_identical_standalone_corrections_cannot_bind_an_undated_question():
+    corrected = "私は不安だった"
+    earlier = {"id": ANSWER_ID, "recorded_at": STAMP, "text": corrected,
+               "source_version": VERSION, "scalar_start": 13}
+    later = {**earlier, "id": "00000000-0000-0000-0000-000000000126",
+             "recorded_at": "2026-11-22T10:00:00Z", "scalar_start": 14}
+    original = material(source(None, emlis_corrections=[earlier]),
+                        source(None, id="00000000-0000-0000-0000-000000000125", emlis_corrections=[later]),
+                        source(id="00000000-0000-0000-0000-000000000127"))
+    for key in ("r1.correction1", "r2.correction1"):
+        result, calls = run(original, ask(source=key, quote=corrected, ask="不安だった理由"))
+        assert result.candidate is None and result.rejection_stage == "plan"
+        assert result.plan_rejection_reason == "ambiguous_correction_quote" and len(calls) == 1
+        assert {name: entry["text"] for name, entry in calls[0][1]["sources"].items() if ".correction" in name} == {
+            "r1.correction1": corrected, "r2.correction1": corrected,
+        }
+
+    result, calls = run(original, ask(source="r3.thought"))
+    assert result.disposition == "selected" and len(calls) == 3
+    assert result.candidate.receipt["source_id"] == "00000000-0000-0000-0000-000000000127"
+
+
 def test_dismissed_emlis_wording_is_deny_only_and_blocks_the_same_anchored_body():
     original = material(source(emlis_skipped_question=BODY))
     result, calls = run(original, ask())

@@ -929,6 +929,22 @@ def _original_piece_lineage(saved, t, observation, stage, question_identity):
     return PieceSavedHandoff(saved, thread_id, t['revision'], canonical_json_bytes(lineage))
 
 
+def _direct_feeling_piece_material_matches(body, saved, correction, replacement_range):
+    # The completed Emlis artifact keeps the correction's actual source
+    # identity, even when its reply phrases the corrected feeling differently.
+    material = body['payload']['artifact'].get('analysis_material') or {}
+    fields = material.get('active_fields') or []
+    if replacement_range is None or material.get('coverage', {}).get('active_state') != 'RESOLVED' or len(fields) != 1:
+        return False
+    field = fields[0]
+    return (field.get('source_id') == correction.correction_id
+        and field.get('source_role') == 'USER_INTERPRETATION_CORRECTION'
+        and field.get('record_ref') == saved.saved_input_id
+        and field.get('field_path') == 'memo'
+        and (field.get('scalar_start'), field.get('scalar_end')) == replacement_range
+        and field.get('text') == correction.explanation[slice(*replacement_range)])
+
+
 def _corrected_observation_handoff(saved, snapshot, answer_id=None):
     """Bind every proper correction and its actual completed FINAL receipt."""
     from dataclasses import asdict, replace
@@ -1059,9 +1075,12 @@ def _corrected_observation_handoff(saved, snapshot, answer_id=None):
     source_as_of = observation['recorded_at']
     circumstance = (analysis_circumstance_control(admitted, include_corrected=True)
         if mixed and answer_history['bound_feeling_circumstance'] else None)
+    direct_ids = admitted.control.direct_feeling_correction_ids if not mixed and len(sources) == 1 else ()
     operation, ranges, replacement_range, commitment = corrected_active_ranges(
         original_source, correction, as_of=source_as_of, prior_corrections=sources[:-1],
-        answer_sources=answers, circumstance_control=circumstance)
+        answer_sources=answers, circumstance_control=circumstance, direct_feeling_correction_ids=direct_ids)
+    if direct_ids:
+        require(_direct_feeling_piece_material_matches(observation, saved, correction, replacement_range))
     source_binding = dict(correction_id=correction.correction_id,
         source_version='sha256:' + canonical_sha256_hex(asdict(correction)),
         explanation_commitment=commitment, target_event_id=correction.target_event_id)
@@ -1096,6 +1115,7 @@ def _corrected_observation_handoff(saved, snapshot, answer_id=None):
 
 def project_saved_corrected_source(handoff):
     from dataclasses import asdict
+    from emlis_thread_service import _direct_feeling_correction_ids
     from cocolon_meaning_experience_engine.piece_refined import (
         PieceCorrectedSourceSnapshot, corrected_active_ranges,
     )
@@ -1103,7 +1123,11 @@ def project_saved_corrected_source(handoff):
         raise _error('PIECE_SOURCE_NOT_ELIGIBLE')
     source = project_saved_original_source(handoff.original, source_stage='normal_observation')
     line, control = handoff.lineage_payload(), json.loads(handoff._correction_state_json)
+    if type(control) is not dict or type(control.get('events')) is not list:
+        raise _error('PIECE_CONFLICT')
+    events = control['events']
     mixed=bool(handoff.answer_sources)
+    direct_ids = _direct_feeling_correction_ids({'events': events}) if not mixed and not handoff.prior_corrections else ()
     question=None
     question_event=None
     selected=handoff.answer_sources[-1] if mixed else None
@@ -1125,12 +1149,18 @@ def project_saved_corrected_source(handoff):
             raise _error('PIECE_CONFLICT')
     operation, ranges, replacement_range, commitment = corrected_active_ranges(
         source, handoff.correction, as_of=handoff.as_of, prior_corrections=handoff.prior_corrections,
-        answer_sources=handoff.answer_sources, circumstance_control=circumstance)
+        answer_sources=handoff.answer_sources, circumstance_control=circumstance, direct_feeling_correction_ids=direct_ids)
     binding = dict(correction_id=handoff.correction.correction_id,
         source_version='sha256:' + canonical_sha256_hex(asdict(handoff.correction)),
         explanation_commitment=commitment, target_event_id=handoff.correction.target_event_id)
     observation = line.get('observation', {})
     _uuid(observation.get('emlis_observation_result_identity'), 'PIECE_CONFLICT')
+    if direct_ids:
+        bodies = [event for event in events if event['id'] == observation['emlis_observation_result_identity']
+                  and event['kind'] == 'OBSERVATION' and event['payload'].get('stage') == 'CORRECTED']
+        if len(bodies) != 1 or not _direct_feeling_piece_material_matches(
+                bodies[0], handoff.original, handoff.correction, replacement_range):
+            raise _error('PIECE_CONFLICT')
     expected_source = dict(source_input_id=handoff.original.saved_input_id,
         source_input_version=handoff.original.source_input_version,
         source_input_bundle_commitment=handoff.original.input_bundle_commitment,
@@ -1177,7 +1207,8 @@ def project_saved_corrected_source(handoff):
         opted_in=True, original_active_ranges=ranges, correction_active_range=replacement_range,
         correction_update_operation=operation, as_of=handoff.as_of, prior_corrections=handoff.prior_corrections,
         answer_sources=handoff.answer_sources,selected_answer_id=selected.answer_id if mixed else None,
-        question_need_decision_identity=question, circumstance_control=circumstance)
+        question_need_decision_identity=question, circumstance_control=circumstance,
+        direct_feeling_correction_ids=direct_ids)
 
 
 def _natural_refined_save_retried(events, received, observation):

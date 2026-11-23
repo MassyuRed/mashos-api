@@ -17,7 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field, StrictBool, ValidationError, 
 
 from api_emotion_submit import _extract_bearer_token, _resolve_user_id_from_token
 from cocolon_meaning_experience_engine.deep_insight_question import (
-    QuestionRejectionStage, generate_question, prepare_question_material,
+    QuestionPlanRejectionReason, QuestionRejectionStage, generate_question, prepare_question_material,
 )
 from emlis_thread_config import MAX_ANSWER_CHARS, natural_reply_provider_settings
 from generation_lock import build_lock_key, release_lock, try_acquire_lock
@@ -86,6 +86,7 @@ class _Attempt:
     result: QuestionResult | None = None
     error: tuple[int, str, dict[str, str] | None] | None = None
     rejection_stage: QuestionRejectionStage | None = None
+    plan_rejection_reason: QuestionPlanRejectionReason | None = None
 
 
 class AnswerCommand(BaseModel):
@@ -238,7 +239,7 @@ async def _issue_from_material(owner, command, day, guard, material, prepared, s
         candidate = run.candidate
         if candidate is None:
             return _Attempt(run.disposition, QuestionResult(status="no_question"),
-                            rejection_stage=run.rejection_stage)
+                            rejection_stage=run.rejection_stage, plan_rejection_reason=run.plan_rejection_reason)
 
         saved = await _rpc("deep_insight_issue_grounded", {
             "p_user_id": owner, "p_day": day, "p_lane": command.lane, "p_theme": command.theme,
@@ -381,7 +382,10 @@ def register_deep_insight_routes(app: FastAPI) -> None:
     async def issue_deep_insight_question(command: QuestionCommand, response: Response, owner: str = Depends(_owner)):
         response.headers["Cache-Control"] = "no-store"
         outcome = await _issue_with_deadline(owner, command)
-        if outcome.rejection_stage is None:
+        if outcome.plan_rejection_reason is not None:
+            logger.info("DeepInsight generation %s %s stage=%s reason=%s", command.lane,
+                        outcome.disposition, outcome.rejection_stage, outcome.plan_rejection_reason)
+        elif outcome.rejection_stage is None:
             logger.info("DeepInsight generation %s %s", command.lane, outcome.disposition)
         else:
             logger.info("DeepInsight generation %s %s stage=%s",

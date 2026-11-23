@@ -109,7 +109,7 @@ def _received_answer_plan(prepared, material, fields, selected, value):
             admission.admit_semantic_node_local_v4_plan_response(prepared, dict(value, nodes=invalid))
 
 
-def v24_provider(calls, *, received_case=False, plan_packet=None, scoped_node_guide=None):
+def v24_provider(calls, *, received_case=False, plan_packet=None, scoped_node_guide=None, meaning_by_source=None):
     received_prepared = None
     received_plan = received_nodes = received_plan_raw = None
 
@@ -166,6 +166,8 @@ def v24_provider(calls, *, received_case=False, plan_packet=None, scoped_node_gu
                 nodes[ref] = dict(units=units,
                     node_kind='SELF_POSITION' if text == ANSWER else 'CHOICE_OUTPUT', perspective='SELF',
                     title=spec['title'].get('enum', [text])[0], meaning=spec['meaning'].get('enum', [text])[0])
+                if meaning_by_source and text in meaning_by_source:
+                    nodes[ref]['meaning'] = meaning_by_source[text]
                 if root['field'] in protected or (received_prepared is not None and text == ANSWER):
                     nodes[ref].update(title=text, meaning='')
             value.update(plan_sha256=schema['plan_sha256']['enum'][0], nodes=nodes)
@@ -522,7 +524,11 @@ def test_v24_whole_plan_keeps_two_answered_thoughts_and_actions_separate(natural
         admission.admit_semantic_node_local_v4_plan_response(prepared, coalesced)
 
     calls = []
-    response = run(v24_provider(calls, plan_packet=packet, scoped_node_guide=(prepared, titles))(prepared))
+    # Standalone v24 can receive a bare unit reference in prose even when its
+    # facts and correction range are already bound to the exact source.
+    meaning_by_source = {replacement: 'n7.u1'} if correction_count == 1 else None
+    response = run(v24_provider(calls, plan_packet=packet, scoped_node_guide=(prepared, titles),
+                               meaning_by_source=meaning_by_source)(prepared))
     artifact, coverage = semantic.build_semantic_map(prepared, response)
     assert [phase for phase, _ in calls] == ['PLAN', 'NODES', 'RELATIONS']
     assert coverage['mapped_count'] == 2 + len(short_records)
@@ -538,6 +544,11 @@ def test_v24_whole_plan_keeps_two_answered_thoughts_and_actions_separate(natural
     for short in corrected_records:
         corrected, = (node for node in private_nodes.values() if node['record_refs'] == [short])
         assert replacement in corrected['explanation'] and short_text not in corrected['explanation']
+    if correction_count == 1:
+        corrected, = (node for node in projection['nodes'] if node['title'] == replacement)
+        assert corrected['summary'] == replacement
+        assert 'n7.u1' in response.raw
+        assert 'n7.u1' not in artifact.safe_text_projection(authenticated_owner_scope=user)['text'].splitlines()
     if correction_count == 2:
         owners = {(short,) for short in corrected_records}
         corrected = [node for node in projection['nodes']

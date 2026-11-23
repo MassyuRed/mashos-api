@@ -23,10 +23,12 @@ CORRECTED_SOURCE_CONTEXT_VERSION = "bound_field_and_answer_context.v2"
 RECEIVED_ANSWER_CONTEXT_VERSION = "bound_field_and_answer_context.v3"
 PAID_RECEIVED_ANSWER_CONTEXT_VERSION = "bound_field_and_answer_context.v4"
 LEGACY_DIRECT_FEELING_CORRECTION_CONTEXT_VERSION = "bound_field_and_answer_context.v5"
-DIRECT_FEELING_CORRECTION_CONTEXT_VERSION = "bound_field_and_answer_context.v6"
+DIRECT_FEELING_CORRECTION_VOICE_CONTEXT_VERSION = "bound_field_and_answer_context.v6"
 INITIAL_STANDALONE_FEELING_CONTEXT_VERSION = "bound_field_and_answer_context.v7"
+DIRECT_FEELING_CORRECTION_CONTEXT_VERSION = "bound_field_and_answer_context.v8"
 DIRECT_FEELING_CORRECTION_CONTEXT_VERSIONS = frozenset({
-    LEGACY_DIRECT_FEELING_CORRECTION_CONTEXT_VERSION, DIRECT_FEELING_CORRECTION_CONTEXT_VERSION})
+    LEGACY_DIRECT_FEELING_CORRECTION_CONTEXT_VERSION,
+    DIRECT_FEELING_CORRECTION_VOICE_CONTEXT_VERSION, DIRECT_FEELING_CORRECTION_CONTEXT_VERSION})
 REQUEST_SECONDS = 240
 ARTIFACT_SCHEMA = "cocolon.emlis.recipient_reply.v1"
 logger = logging.getLogger(__name__)
@@ -70,6 +72,8 @@ _DIRECT_FEELING_CORRECTION_REPLY_MESSAGE = """あなたはEmlisです。本人�
 本人の言葉は返事の資料です。気持ちの強さや時点を変えず、事情や理由は足しません。質問、助言、箇条書きは入れず、返事の本文だけを書いてください。"""
 _DIRECT_FEELING_CORRECTION_VOICE_MESSAGE = """
 気持ちの持ち主は記録した本人です。本人の「私は」などをEmlis自身の気持ちとして言い直さず、本人に話しかける形で返してください。本人の言葉を引用するなら引用と分かるようにし、Emlisがどう受け取ったかを伝えてください。"""
+_DIRECT_FEELING_CORRECTION_RECIPIENT_MESSAGE = """あなたはEmlisです。気持ちを伝え直した本人に、短い日本語で話しかけてください。
+「本人が訂正した気持ち」を読み、どう受け取ったかを本人へ会話の言葉で返してください。本人の一人称を使うときは、本人の言葉の引用と分かる形で書いてください。気持ちや時点は本人の言葉に従い、書かれた範囲で受け取ってください。返すのは本人に届ける返事の本文だけです。"""
 _DIRECT_FEELING_PAST_CONTEXT_MESSAGE = """
 recordsの先頭が今回の記録、二件目以降は過去の記録です。user_frame_feedbackのrecordはこの並びの番号です。過去の気持ちや本人判断を今回の気持ちに足さず、訂正後の気持ちを返事の中心にしてください。今回と関係が原文で分かる過去に触れる場合は、過去のこととして分けてください。今回の記録の選択情報で訂正後の気持ちを上書きせず、AIの解釈や未確定の読みは本人の事実として扱いません。"""
 
@@ -958,6 +962,10 @@ def _material(original):
 
 
 _QUESTION_ENDING = re.compile(r"(?:でしょうか|でしたか|ましたか|ですか|ますか)[ \t\u3000]*(?=[。．.!！\r\n]|$)")
+_DIRECT_FEELING_INSTRUCTION_ECHO = re.compile(
+    r"気持ちの強さや時点を変え(?:ず|ない|ません)"
+    r"|事情や理由(?:は|を)足し(?:ない|ません)"
+)
 
 
 def _has_unpunctuated_question(text):
@@ -1006,9 +1014,17 @@ def validate_reply(reply, request):
         raise _NaturalReplyValidationError("control_character")
     writer = json.loads(request.writer_material_json) if request.writer_material_json else {}
     context_version = writer.get('source_context_version')
-    if (context_version == DIRECT_FEELING_CORRECTION_CONTEXT_VERSION
+    if (context_version in {DIRECT_FEELING_CORRECTION_VOICE_CONTEXT_VERSION,
+                            DIRECT_FEELING_CORRECTION_CONTEXT_VERSION}
             and _has_first_person_feeling_declaration(reply.text)):
         raise _NaturalReplyValidationError("direct_feeling_first_person")
+    if (context_version == DIRECT_FEELING_CORRECTION_CONTEXT_VERSION
+            and _DIRECT_FEELING_INSTRUCTION_ECHO.search(reply.text)):
+        from emlis_ai_grounded_observation_plan import _top_level_text
+
+        visible = _top_level_text(reply.text)
+        if _DIRECT_FEELING_INSTRUCTION_ECHO.search(reply.text if visible is None else visible):
+            raise _NaturalReplyValidationError("direct_feeling_instruction_echo")
     if context_version == INITIAL_STANDALONE_FEELING_CONTEXT_VERSION:
         excerpt = writer['initial_standalone_feeling']
         quoted = f'「{excerpt}」'
@@ -1044,8 +1060,10 @@ def build_natural_reply_messages(request, *, correction_target_context=False):
                     {'role': 'user', 'content': _compact_json(material)}]
         if context_version in DIRECT_FEELING_CORRECTION_CONTEXT_VERSIONS:
             message = _DIRECT_FEELING_CORRECTION_REPLY_MESSAGE
-            if context_version == DIRECT_FEELING_CORRECTION_CONTEXT_VERSION:
+            if context_version == DIRECT_FEELING_CORRECTION_VOICE_CONTEXT_VERSION:
                 message += _DIRECT_FEELING_CORRECTION_VOICE_MESSAGE
+            elif context_version == DIRECT_FEELING_CORRECTION_CONTEXT_VERSION:
+                message = _DIRECT_FEELING_CORRECTION_RECIPIENT_MESSAGE
             material = writer['direct_feeling_correction']
             current, *past = writer['records']
             feedback = writer['user_frame_feedback']

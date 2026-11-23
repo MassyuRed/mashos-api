@@ -321,6 +321,16 @@ _EMLIS_CORRECTION_GUIDANCE = (
     "その節で本人が伝えたことを使い、以前の解釈や問いの前提を戻しません。"
     "元の出来事と訂正を書いた時点を区別します。"
 )
+_EMLIS_CORRECTION_PLAN_GUIDANCE = (
+    '\n訂正の箇所を使うときは、sourcesでその欄のキーを選び、たとえばr2.correction1なら'
+    'sourceに「r2.correction1」と書きます。quoteはそのキーのtextから、その字面で抜き出します。'
+    '訂正前の語・氏名・日付をquoteやconditionに補いません。'
+    'たとえば架空のr2.correction1が「私は落ち着いた」で、理由も対応する既出の問いもない場合の例は'
+    '{"decision":"ask","focus":"REASON","source":"r2.correction1",'
+    '"quote":"私は落ち着いた","condition":"","ask":"落ち着いた理由"}です。'
+    '同じ文が別の記録にもある場合は、その文だけでは読む人が今回の出来事を区別できません。'
+    '一つの出典に固有の原文を選ぶか、別の確認点を選びます。確認点がなければskipです。'
+)
 RECORD_REASON_READ_SYSTEM_MESSAGE = f"""Emlisの一問を、渡された原資料から独立に読みます。日本語のJSONだけを返します。
 {_DATA_BOUNDARY}
 完成文は、原文から抜き出した「」内と、その内容について尋ねる文で構成されます。先頭の引用を含め、主体、動作、時点、否定、留保、条件を原資料と照合してください。
@@ -380,6 +390,11 @@ class QuestionCandidate:
 
 
 QuestionRejectionStage = Literal["plan", "writer", "duplicate", "reader"]
+QuestionPlanRejectionReason = Literal[
+    "invalid_response", "invalid_shape", "invalid_ask", "invalid_condition", "source_unbound", "quote_unbound",
+    "condition_unbound", "ambiguous_correction_quote", "known_reason", "foreign_actor", "invalid_alternative",
+    "ambiguous_alternative_quote",
+]
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -387,6 +402,11 @@ class QuestionRun:
     candidate: QuestionCandidate | None
     disposition: str
     rejection_stage: QuestionRejectionStage | None = None
+    plan_rejection_reason: QuestionPlanRejectionReason | None = None
+
+
+def _reject_plan(reason: QuestionPlanRejectionReason) -> QuestionRun:
+    return QuestionRun(None, "rejected", rejection_stage="plan", plan_rejection_reason=reason)
 
 
 def _compact(value):
@@ -599,31 +619,55 @@ def _foreign_reason_anchor(anchor):
     return _FOREIGN_ACTOR.match(clause_start) is not None
 
 
-def _read_plan(value, *, lane, sources):
+def _read_plan(value, *, lane, sources) -> _Plan | QuestionPlanRejectionReason:
+    if value is None:
+        return "invalid_response"
     if (not isinstance(value, dict) or set(value) != {"decision", "focus", "source", "quote", "condition", "ask"}
             or any(not isinstance(v, str) for v in value.values())
             or value["decision"] != "ask" or value["focus"] not in _FOCUSES):
-        return None
+        return "invalid_shape"
     focus, source, quote = (value[key] for key in ("focus", "source", "quote"))
     condition, ask = value["condition"], value["ask"]
-    if (not 3 <= len(ask) <= 160 or _QUESTION_PUNCTUATION.search(ask.rstrip("。"))
-            or not _safe_text(ask) or len(condition) > 50 or condition != condition.strip()
+    if not 3 <= len(ask) <= 160 or _QUESTION_PUNCTUATION.search(ask.rstrip("。")) or not _safe_text(ask):
+        return "invalid_ask"
+    if (len(condition) > 50 or condition != condition.strip()
             or any(c in condition for c in "\n\r\x00") or (condition and not _safe_text(condition))):
-        return None
+        return "invalid_condition"
     anchor = None
     if lane == "records":
         selected = sources.get(source)
-        if (focus == "REASON" and selected and selected.field in {"thought", "action"}
+        if selected is None:
+            return "source_unbound"
+        if (focus == "REASON" and selected.field in {"thought", "action"}
                 and quote.endswith("。") and quote in selected.text):
             # A literal sentence-ending mark may be present in the model's
             # selection, while the ledger span ends at the last content scalar.
             quote = quote[:-1]
         anchor = _bind_anchor(selected, quote)
-        if anchor is None or (condition and condition not in anchor.source.text):
-            return None
+        if anchor is None:
+            return "quote_unbound"
+        if condition and condition not in anchor.source.text:
+            return "condition_unbound"
     elif lane != "theme" or source or quote:
-        return None
+        return "source_unbound"
     return _Plan(focus, source, quote, condition, ask, anchor)
+
+
+def _indistinguishable_standalone_correction(plan, sources):
+    selected = plan.anchor.source
+    if selected.field != "correction":
+        return False
+    # The visible quote contains neither the private source key nor the correction clock.
+    # Two records with only the same complete correction afford no distinct quote.
+    records = {}
+    for key, source in sources.items():
+        records.setdefault(key.partition(".")[0], []).append(source)
+    record = plan.source.partition(".")[0]
+    return len(records[record]) == 1 and any(
+        other_record != record and len(values) == 1 and values[0].field == "correction"
+        and values[0].source_id != selected.source_id and values[0].text == selected.text
+        for other_record, values in records.items()
+    )
 
 
 def _record_alternative(plan):
@@ -1213,35 +1257,39 @@ async def generate_question(prepared, sources, *, material, generate):
         return QuestionRun(None, "no_merit")
 
     source_guidance = _SKIPPED_EMLIS_QUESTIONS_GUIDANCE if prepared.get("skipped_emlis_questions") else ""
-    if any(source.field == "correction" for source in sources.values()):
+    has_correction = any(source.field == "correction" for source in sources.values())
+    if has_correction:
         source_guidance += _EMLIS_CORRECTION_GUIDANCE
-    decision = _json_object(await generate(PLAN_SYSTEM_MESSAGE + source_guidance, prepared))
+    plan_guidance = _EMLIS_CORRECTION_PLAN_GUIDANCE if has_correction else ""
+    decision = _json_object(await generate(PLAN_SYSTEM_MESSAGE + source_guidance + plan_guidance, prepared))
     if decision == {"decision": "skip"}:
         return QuestionRun(None, "no_merit")
     plan = _read_plan(decision, lane=lane, sources=sources)
-    if plan is None:
-        return QuestionRun(None, "rejected", rejection_stage="plan")
+    if isinstance(plan, str):
+        return _reject_plan(plan)
+    if has_correction and _indistinguishable_standalone_correction(plan, sources):
+        return _reject_plan("ambiguous_correction_quote")
     known_reason = plan.focus == "REASON" and _stated_reason(plan.anchor)
     alternative = None
     if known_reason or (plan.focus == "REASON" and _foreign_reason_anchor(plan.anchor)):
         alternative = _record_alternative(plan) if plan.is_record_reason else None
         if alternative is None:
-            return QuestionRun(None, "rejected", rejection_stage="plan")
+            return _reject_plan("known_reason" if known_reason else "foreign_actor")
         revised = _json_object(await generate(
             _RECORD_ALTERNATIVE_PLAN_MESSAGE + source_guidance, {**alternative, "material": prepared},
         ))
         if revised == {"decision": "skip"}:
             return QuestionRun(None, "no_merit")
         if not revised or set(revised) != {"decision", "focus", "ask"} or revised["focus"] != "CONDITION":
-            return QuestionRun(None, "rejected", rejection_stage="plan")
+            return _reject_plan("invalid_alternative")
         plan = _read_plan(
             {**revised, "source": plan.source, "quote": alternative["action"], "condition": ""},
             lane=lane, sources=sources,
         )
-        if plan is None:
-            return QuestionRun(None, "rejected", rejection_stage="plan")
+        if isinstance(plan, str):
+            return _reject_plan(plan)
         if any(key != plan.source and plan.quote in source.text for key, source in sources.items()):
-            return QuestionRun(None, "rejected", rejection_stage="plan")
+            return _reject_plan("ambiguous_alternative_quote")
 
     writing = {
         "lane": lane, "theme": theme, "focus": plan.focus,

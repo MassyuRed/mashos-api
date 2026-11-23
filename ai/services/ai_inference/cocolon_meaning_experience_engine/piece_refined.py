@@ -79,6 +79,7 @@ class PieceCorrectedSourceSnapshot:
     selected_answer_id: str | None = None
     question_need_decision_identity: str | None = None
     circumstance_control: AnalysisCircumstanceControl | None = None
+    direct_feeling_correction_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -146,6 +147,10 @@ def _source_payload(source):
     result = asdict(source)
     result['original'] = original
     if type(source) is PieceCorrectedSourceSnapshot:
+        if not source.direct_feeling_correction_ids:
+            del result['direct_feeling_correction_ids']
+        else:
+            result['direct_feeling_correction_ids'] = list(source.direct_feeling_correction_ids)
         if source.circumstance_control is None:
             del result['circumstance_control']
         else:
@@ -204,7 +209,7 @@ def refined_source_ref(source) -> str:
 
 
 def _corrected_source_set(original, correction, *, as_of, prior_corrections=(), answer_sources=(),
-                          circumstance_control=None):
+                          circumstance_control=None, direct_feeling_correction_ids=()):
     """Reuse the shared source freezer; no Analysis graph or AI text is read."""
     from piece_v2_generation import PieceSourceSnapshot
     from .cores.analysis.source_adapter import (
@@ -227,19 +232,27 @@ def _corrected_source_set(original, correction, *, as_of, prior_corrections=(), 
     _require(start < end and start <= stamp <= end, 'piece_correction_source_clock')
     _require(circumstance_control is None or (type(circumstance_control) is AnalysisCircumstanceControl
         and answer_sources == (circumstance_control.answer,)), 'piece_correction_answer_binding')
+    _require(type(direct_feeling_correction_ids) is tuple and (
+        not direct_feeling_correction_ids or (
+            direct_feeling_correction_ids == (correction.correction_id,) and not prior_corrections
+            and not answer_sources and circumstance_control is None
+            and not (raw['memo_action'] or '').strip()
+            and correction.target_text == (raw['memo'] or '').strip().rstrip('。．.'))),
+        'piece_correction_source_binding')
     member = AnalysisSavedRecord(original.owner_id, original.saved_input_id,
         commitment(raw), original.saved_original_json.decode('utf-8'),
         supplements=tuple(AnalysisSupplement(a.answer_id, original.owner_id, original.saved_input_id,
             commitment(raw), a.answer_text_private, commitment(a.answer_text_private),
             circumstance_control=circumstance_control) for a in answer_sources),
-        interpretation_corrections=(*prior_corrections, correction))
+        interpretation_corrections=(*prior_corrections, correction),
+        direct_feeling_correction_ids=direct_feeling_correction_ids)
     request = AnalysisObservedMapRequest('piece-corrected-source', original.owner_id,
         start.isoformat(), end.isoformat(), (member,))
     return freeze_analysis_sources(request)
 
 
 def _corrected_projection(original, correction, *, as_of, prior_corrections=(), answer_sources=(),
-                          circumstance_control=None):
+                          circumstance_control=None, direct_feeling_correction_ids=()):
     """Apply the shared original-clause updates without selecting every ADD."""
     from .cores.analysis.intent_compiler import _active_sources, _REPLACEMENT, _WITHDRAWAL, _self_propositions
     from .cores.analysis.source_adapter import _time, source_field_text
@@ -270,7 +283,8 @@ def _corrected_projection(original, correction, *, as_of, prior_corrections=(), 
         for a in answer_sources:
             freeze_supplemental_answer(a)
     frozen = _corrected_source_set(original, correction, as_of=as_of,
-        prior_corrections=prior_corrections, answer_sources=answer_sources, circumstance_control=circumstance_control)
+        prior_corrections=prior_corrections, answer_sources=answer_sources, circumstance_control=circumstance_control,
+        direct_feeling_correction_ids=direct_feeling_correction_ids)
     # The full freezer retains every real answer. Fully read ADD claims
     # participate in the existing compatibility checks. An unselected,
     # unread prior ADD qualifies history only; it cannot supply a new claim.
@@ -310,7 +324,7 @@ def _corrected_projection(original, correction, *, as_of, prior_corrections=(), 
     _require(len(removed) == len(updates), 'piece_correction_active_range_binding')
     full = build_piece_source_meaning(original, expected_owner_id=original.owner_id,
         expected_saved_input_id=original.saved_input_id, expected_source_version=original.source_version,
-        bound_complete_clause=bound_feeling is not None)
+        bound_complete_clause=bound_feeling is not None or bool(direct_feeling_correction_ids))
     removed_refs = []
     for target in removed:
         matches = [ref for ref in full.evidence if ref.field_path == target.field_path
@@ -320,9 +334,14 @@ def _corrected_projection(original, correction, *, as_of, prior_corrections=(), 
         _require(len(matches) == 1, 'piece_correction_active_range_binding')
         removed_refs.extend(matches)
     ranges = tuple((r.field_path, r.scalar_start, r.scalar_end) for r in full.evidence if r not in removed_refs)
-    _require(bool(ranges) or (bound_feeling is not None and len(removed) == 1
-        and removed[0].field_path == 'memo' and (removed[0].scalar_start, removed[0].scalar_end) == bound_feeling
-        and updates[0].operation == 'REVISE'), 'piece_correction_active_range_binding')
+    if direct_feeling_correction_ids:
+        _require(not ranges and len(removed) == 1 and removed[0].field_path == 'memo'
+            and updates[0].operation == 'REVISE', 'piece_correction_active_range_binding')
+    else:
+        _require(bool(ranges) or (bound_feeling is not None and len(removed) == 1
+            and removed[0].field_path == 'memo'
+            and (removed[0].scalar_start, removed[0].scalar_end) == bound_feeling
+            and updates[0].operation == 'REVISE'), 'piece_correction_active_range_binding')
     if answer_sources:
         # A quote cannot silently choose ORIGINAL when an active answer says
         # the same thing. AI target excerpts are not person-source selectors.
@@ -362,23 +381,26 @@ def _corrected_projection(original, correction, *, as_of, prior_corrections=(), 
 
 
 def corrected_history_ranges(original, correction, *, as_of, prior_corrections=(), answer_sources=(),
-                             circumstance_control=None):
+                             circumstance_control=None, direct_feeling_correction_ids=()):
     ranges, rows, _ = _corrected_projection(original,correction,as_of=as_of,
-        prior_corrections=prior_corrections,answer_sources=answer_sources,circumstance_control=circumstance_control)
+        prior_corrections=prior_corrections,answer_sources=answer_sources,circumstance_control=circumstance_control,
+        direct_feeling_correction_ids=direct_feeling_correction_ids)
     return ranges,rows
 
 
 def corrected_answer_ranges(source):
     _,_,rows = _corrected_projection(source.original,source.correction,as_of=source.as_of,
         prior_corrections=source.prior_corrections,answer_sources=source.answer_sources,
-        circumstance_control=source.circumstance_control)
+        circumstance_control=source.circumstance_control,
+        direct_feeling_correction_ids=source.direct_feeling_correction_ids)
     return rows
 
 
 def corrected_active_ranges(original, correction, *, as_of, prior_corrections=(), answer_sources=(),
-                            circumstance_control=None):
+                            circumstance_control=None, direct_feeling_correction_ids=()):
     ranges, rows = corrected_history_ranges(original, correction, as_of=as_of,
-        prior_corrections=prior_corrections, answer_sources=answer_sources, circumstance_control=circumstance_control)
+        prior_corrections=prior_corrections, answer_sources=answer_sources, circumstance_control=circumstance_control,
+        direct_feeling_correction_ids=direct_feeling_correction_ids)
     _, operation, active_range, commitment, _ = rows[-1]
     return operation, ranges, active_range, commitment
 
@@ -398,12 +420,14 @@ def _validate_corrected_source(source):
             and bool(source.question_need_decision_identity.strip())), 'piece_correction_answer_opt_in')
     expected = corrected_active_ranges(source.original, source.correction, as_of=source.as_of,
         prior_corrections=source.prior_corrections, answer_sources=source.answer_sources,
-        circumstance_control=source.circumstance_control)
+        circumstance_control=source.circumstance_control,
+        direct_feeling_correction_ids=source.direct_feeling_correction_ids)
     _require(expected == (source.correction_update_operation, source.original_active_ranges,
         source.correction_active_range, source.correction_commitment), 'piece_correction_active_range_binding')
     return next(s for s in _corrected_source_set(source.original, source.correction, as_of=source.as_of,
             prior_corrections=source.prior_corrections, answer_sources=source.answer_sources,
-            circumstance_control=source.circumstance_control).sources
+            circumstance_control=source.circumstance_control,
+            direct_feeling_correction_ids=source.direct_feeling_correction_ids).sources
         if s.envelope.source_role == 'USER_INTERPRETATION_CORRECTION'
         and s.envelope.source_record_id == source.correction.correction_id)
 
@@ -422,10 +446,10 @@ def _correction_meaning(source):
     # A replacement for the proved original feeling can retain its own
     # complete written feeling. Its source words do not inherit the old Q&A relation.
     feeling = (_finite_feeling_proposition(statement[:-1])
-        if source.circumstance_control is not None else None)
+        if source.circumstance_control is not None or source.direct_feeling_correction_ids else None)
     bound_feeling = feeling is not None and feeling.actor == 'SELF'
     _require(_qualified_self_topic(statement) is not None
-        and (bound_feeling or _literal_self_account(statement)),
+        and (bound_feeling or (not source.direct_feeling_correction_ids and _literal_self_account(statement))),
         'piece_correction_replacement_not_self_contained')
     parsed = build_piece_source_meaning(PieceSourceSnapshot(owner, source.correction.correction_id,
         frozen.envelope.source_schema_version, statement), expected_owner_id=owner,
