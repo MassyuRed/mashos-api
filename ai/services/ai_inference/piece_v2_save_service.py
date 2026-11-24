@@ -78,7 +78,7 @@ class PieceSaveService:
                    request: dict, idempotency_key: str,
                    allowed_renderers: tuple[str, ...] | None = None,
                    expanded_palette: bool = False, visual_editor: bool = False,
-                   visual_alignment: bool = False) -> dict:
+                   visual_alignment: bool = False, visual_text_size: bool = False) -> dict:
         """The HTTP owner authenticates every call, including committed replay.
 
         For a first save, B5 rechecks current source eligibility without calling
@@ -135,7 +135,8 @@ class PieceSaveService:
             capable_renderer = row['renderer_version'] == 'piece.rn_bitmap_renderer.ios.v2'
             require_piece_visual_selection(selection, expanded_palette=expanded_palette and capable_renderer,
                                            visual_editor=visual_editor and capable_renderer,
-                                           visual_alignment=visual_alignment and capable_renderer)
+                                           visual_alignment=visual_alignment and capable_renderer,
+                                           visual_text_size=visual_text_size and capable_renderer)
             lineage = row['source_lineage']
             current = await _resolve_handoff(self._source_adapter, authorization,
                 _source_ref_from_lineage(lineage))

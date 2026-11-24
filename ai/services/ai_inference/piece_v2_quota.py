@@ -73,7 +73,8 @@ async def read_piece_quota(*, authenticated_user_id: str, post_rpc) -> dict:
 
 def project_piece_plan_capabilities(*, server_tier: str, expanded_palette: bool = False,
                                     subscriber_customization: bool = False,
-                                    visual_editor: bool = False, visual_alignment: bool = False) -> dict:
+                                    visual_editor: bool = False, visual_alignment: bool = False,
+                                    visual_text_size: bool = False) -> dict:
     """PCE-6 plan display only; eligible formats remain the artifact's list.
 
     The new client negotiates subscriber customization separately from the
@@ -85,7 +86,7 @@ def project_piece_plan_capabilities(*, server_tier: str, expanded_palette: bool 
     if type(server_tier) is not str or server_tier not in SAVE_LIMITS:
         raise PieceContractError('PIECE_TEMPORARILY_UNAVAILABLE')
     from piece_v2_visual import (EDITOR_THEME_IDS, FONT_STYLE_IDS, LEGACY_THEME_IDS,
-                                TEXT_ALIGNMENTS, TEXT_COLOR_IDS, THEME_IDS)
+                                TEXT_ALIGNMENTS, TEXT_COLOR_IDS, TEXT_SIZES, THEME_IDS)
     capabilities = {
         'format_selection': {'free': 'fixed', 'plus': 'automatic',
                              'premium': 'eligible_choice'}[server_tier],
@@ -103,4 +104,6 @@ def project_piece_plan_capabilities(*, server_tier: str, expanded_palette: bool 
         capabilities['text_color_ids'] = list(TEXT_COLOR_IDS) if server_tier == 'premium' else []
     if visual_alignment:
         capabilities['text_alignments'] = [] if server_tier == 'free' else list(TEXT_ALIGNMENTS)
+    if visual_text_size:
+        capabilities['text_sizes'] = [] if server_tier == 'free' else list(TEXT_SIZES)
     return capabilities

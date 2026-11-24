@@ -67,8 +67,9 @@ def _save_harness(database, monkeypatch, *, tier='free'):
         font_key = 'visual_recipe->font_style->>font_style_id'
         color_key = 'visual_recipe->font_style->>text_color_id'
         alignment_key = 'visual_recipe->font_style->>text_alignment'
+        size_key = 'visual_recipe->font_style->>text_size'
         assert set(params) <= {'select', 'id', 'owner_user_id', 'limit', 'lifecycle_status', theme_key,
-                               font_key, color_key, alignment_key, 'not.and'}
+                               font_key, color_key, alignment_key, size_key, 'not.and'}
         where, values = ['id=%s', 'owner_user_id=%s'], [params['id'][3:], params['owner_user_id'][3:]]
         if 'lifecycle_status' in params:
             assert params['lifecycle_status'] == 'eq.saved'
@@ -84,6 +85,9 @@ def _save_harness(database, monkeypatch, *, tier='free'):
         if alignment_key in params:
             assert params[alignment_key] == 'is.null'
             where.append("visual_recipe->'font_style'->>'text_alignment' IS NULL")
+        if size_key in params:
+            assert params[size_key] == 'is.null'
+            where.append("visual_recipe->'font_style'->>'text_size' IS NULL")
         if 'not.and' in params:
             assert params['not.and'] == (
                 '(visual_recipe->theme->>theme_id.eq.quiet_night,'

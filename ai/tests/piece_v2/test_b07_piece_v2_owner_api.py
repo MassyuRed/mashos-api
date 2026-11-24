@@ -74,6 +74,9 @@ def _memory_rows(rows, params):
     if 'visual_recipe->font_style->>text_alignment' in params:
         assert params['visual_recipe->font_style->>text_alignment'] == 'is.null'
         rows = [r for r in rows if 'text_alignment' not in r['visual_recipe']['font_style']]
+    if 'visual_recipe->font_style->>text_size' in params:
+        assert params['visual_recipe->font_style->>text_size'] == 'is.null'
+        rows = [r for r in rows if 'text_size' not in r['visual_recipe']['font_style']]
     if 'not.and' in params:
         assert params['not.and'] == ('(visual_recipe->theme->>theme_id.eq.quiet_night,'
             'visual_recipe->branding->>branding_mode.eq.required_small)')
@@ -514,6 +517,33 @@ def test_alignment_client_filters_before_limit_and_retains_v4_work(harness):
     _detail(call(old['id'] + '/export', headers=v4).json(), old)
     _error(call(aligned['id'] + '/export', headers=v4), 404, 'PIECE_NOT_FOUND')
     _detail(call(aligned['id'] + '/export', headers=v5).json(), aligned)
+
+
+def test_text_size_client_can_retrieve_only_supported_saved_rows(harness):
+    from piece_v2_contract import canonical_sha256_hex
+    from piece_v2_visual import build_visual_recipe
+
+    call, state = harness
+    standard = _row(stamp='2026-10-17T00:00:00+00:00')
+    smaller = _row(stamp='2026-10-18T00:00:00+00:00')
+    for row, size in ((standard, 'standard'), (smaller, 'small')):
+        recipe = build_visual_recipe('short_essay', tier='plus', language=row['content_payload']['language'],
+            text_alignment='center', text_size=size)
+        row.update(visual_recipe=recipe, visual_recipe_hash=canonical_sha256_hex(recipe),
+                   renderer_version='piece.rn_bitmap_renderer.ios.v2')
+    state['rows'] = [standard, smaller]
+    v5 = {'Authorization': 'Bearer synthetic-owner', 'X-Piece-Palette': '5'}
+    v6 = dict(v5, **{'X-Piece-Palette': '6'})
+    older = call(query={'limit': '1'}, headers=v5).json()
+    assert [r['piece_id'] for r in older['items']] == [standard['id']]
+    assert older['next_cursor'] is None
+    newer = call(query={'limit': '1'}, headers=v6).json()
+    assert [r['piece_id'] for r in newer['items']] == [smaller['id']]
+    assert [r['piece_id'] for r in call(query={'limit': '1', 'cursor': newer['next_cursor']},
+        headers=v6).json()['items']] == [standard['id']]
+    _detail(call(standard['id'] + '/export', headers=v5).json(), standard)
+    _error(call(smaller['id'] + '/export', headers=v5), 404, 'PIECE_NOT_FOUND')
+    _detail(call(smaller['id'] + '/export', headers=v6).json(), smaller)
 
 
 @pytest.mark.parametrize('palette', [None, '2', '3'])
