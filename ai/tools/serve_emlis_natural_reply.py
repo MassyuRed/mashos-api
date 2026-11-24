@@ -185,25 +185,36 @@ def _occurrence_visible_signature(units, title, meaning, fact_sources=None):
     return title, meaning or facts[0], body
 
 
-def _occurrence_duplicate_prefix(wire, fact_sources=None, *, dated_records=None):
-    """Reject an irrevocably duplicate public node before its token is emitted."""
+def _occurrence_duplicate_prefix(wire, fact_sources=None, *, dated_records=None, authored_roots=None):
+    """Reject repeated public nodes and readings of nested MERGE evidence."""
     opener = _OCCURRENCE_NODES_OPEN.match(wire)
     if opener is None:
         return False
     position = opener.end()
     decoder = json.JSONDecoder()
-    seen = {}
+    seen_visible = {}
+    seen_authored = {}
 
-    def repeated(identity, record):
+    def repeated(values, visible, node_id, record):
         # Missing record ownership never licenses a second copy. Distinct
         # records may share prose only when the compiler distinguishes them.
-        previous = seen.get(identity)
-        return bool(previous) and (record is None or record in previous or None in previous)
+        previous = seen_visible.get(visible)
+        if previous and (record is None or record in previous or None in previous):
+            return True
+        if authored_roots and values[4]:
+            # API admission rejects the same authored title and reading when one
+            # node only adds citations. The visible signature can differ because
+            # it also includes facts written for those added citations.
+            roots = authored_roots[node_id]
+            return any(roots <= other or other <= roots
+                       for other in seen_authored.get(tuple(values[1:]), ()))
+        return False
 
     dated_records = dated_records or {}
     while node := _OCCURRENCE_NODE_OPEN.match(wire,position):
         position = node.end()
-        record = dated_records.get(node.group(1))
+        node_id = node.group(1)
+        record = dated_records.get(node_id)
         values = []
         for key in _OCCURRENCE_NODE_KEYS:
             prop = key.match(wire,position)
@@ -215,21 +226,23 @@ def _occurrence_duplicate_prefix(wire, fact_sources=None, *, dated_records=None)
             except json.JSONDecodeError:
                 # LMFE gives an unfinished meaning at its 240-character limit
                 # only a closing quote. Prevent that dead end one token earlier.
-                if len(values)==4 and seen and wire[position:position+1]=='"':
+                if len(values)==4 and seen_visible and wire[position:position+1]=='"':
                     encoded = wire[position+1:]
                     if len(encoded)>=240 and len(_OCCURRENCE_ESCAPE.sub('x',encoded))>=240:
                         try:
                             value = json.loads(wire[position:]+'"')
                         except json.JSONDecodeError:
                             return False
-                        identity = _occurrence_visible_signature(values[0], values[3], value, fact_sources)
-                        return repeated(identity, record)
+                        visible = _occurrence_visible_signature(values[0], values[3], value, fact_sources)
+                        return repeated([*values, value], visible, node_id, record)
                 return False
             values.append(value)
-        identity = _occurrence_visible_signature(values[0],values[3],values[4],fact_sources)
-        if repeated(identity, record):
+        visible = _occurrence_visible_signature(values[0], values[3], values[4], fact_sources)
+        if repeated(values, visible, node_id, record):
             return True
-        seen.setdefault(identity, set()).add(record)
+        seen_visible.setdefault(visible, set()).add(record)
+        if authored_roots and values[4]:
+            seen_authored.setdefault(tuple(values[1:]), []).append(authored_roots[node_id])
         while position<len(wire) and wire[position] in ' \r\t\n':
             position += 1
         if wire[position:position+1]!='}':
@@ -238,8 +251,8 @@ def _occurrence_duplicate_prefix(wire, fact_sources=None, *, dated_records=None)
     return False
 
 
-def _semantic_wire_fact_sources(messages):
-    messages = _semantic_constraint_messages(messages)
+def _semantic_wire_fact_sources(messages, *, logical_messages=None):
+    messages = logical_messages if logical_messages is not None else _semantic_constraint_messages(messages)
     material = json.loads(messages[1]['content'])
     if material.get('author_profile') not in FACT_REFERENCE_PROFILES:
         return None
@@ -257,6 +270,16 @@ def _semantic_wire_fact_sources(messages):
                 for ref, sentence in parts[key].get('x-fact-sentences', {}).items():
                     sources[(f'{nid}.{uid}', key, ref)] = sentence
     return sources
+
+
+def _semantic_wire_authored_roots(logical_messages):
+    """Read exact PLAN roots from the verified v24 MERGE projection."""
+    plan = json.loads(logical_messages[1]['content'])['plan']
+    return {
+        node['node_id']: frozenset((root['field'], root['quote'])
+                                  for unit in node['units'] for root in unit['evidence'])
+        for node in plan['nodes']
+    }
 
 
 def _semantic_wire_dated_records(material):
@@ -279,10 +302,10 @@ def _semantic_wire_dated_records(material):
 
 
 def _occurrence_greedy_node_filter(tokenizer, prompt_tokens, fact_sources=None, visible_filter=None,
-                                   compact_prefix=None, *, dated_records=None):
+                                   compact_prefix=None, *, dated_records=None, authored_roots=None):
     """Filter actual greedy choices after the pinned LMFE prefix mask."""
-    duplicate = (partial(_occurrence_duplicate_prefix, dated_records=dated_records)
-                 if dated_records else _occurrence_duplicate_prefix)
+    duplicate = (partial(_occurrence_duplicate_prefix, dated_records=dated_records, authored_roots=authored_roots)
+                 if dated_records or authored_roots else _occurrence_duplicate_prefix)
 
     def choose(input_ids, scores):
         if len(scores)!=1 or len(input_ids)!=1:
@@ -3204,9 +3227,13 @@ def load_generator(adapter, process_stop, *, weights_sha256=None, config_sha256=
                     visible_filter = (_occurrence_greedy_relation_filter(allowed_prefix, prompt_tokens=prefix_offset)
                         if material.get('author_profile') in VISIBLE_SOURCE_PROFILES else None)
                     compact_prefix = allowed_prefix if _semantic_merge_tuple_output(messages) else None
+                    # Compact MERGE validation only restores v24 requests and
+                    # verifies their original logical message digest.
+                    logical = _semantic_constraint_messages(messages)
                     format_options['logits_processor']=[_occurrence_greedy_node_filter(tokenizer,count,
-                        _semantic_wire_fact_sources(messages), visible_filter, compact_prefix,
-                        dated_records=_semantic_wire_dated_records(material))]
+                        _semantic_wire_fact_sources(messages, logical_messages=logical), visible_filter, compact_prefix,
+                        dated_records=_semantic_wire_dated_records(material),
+                        authored_roots=_semantic_wire_authored_roots(logical) if compact_prefix else None)]
                 elif material.get('author_profile') in {OCCURRENCE_V6_PROFILE, OCCURRENCE_V7_PROFILE, OCCURRENCE_V8_PROFILE, *SOURCE_CUED_PROFILES} and material.get('author_phase') == 'RELATIONS':
                     format_options['logits_processor']=[_occurrence_greedy_relation_filter(allowed_prefix, prompt_tokens=prefix_offset)]
             format_options['prefix_allowed_tokens_fn'] = private_prefix

@@ -128,6 +128,59 @@ def _request_relation_messages(first, second, report, third, *, version=wire.REQ
                                                       wire_version=version)
 
 
+def test_native_merge_nodes_filter_repeated_reading_even_when_rendered_facts_differ():
+    from types import SimpleNamespace
+
+    from cocolon_meaning_experience_engine.cores.analysis import semantic_admission as core
+    from test_analysis_merge_transport import source_merge
+    from test_analysis_node_local_native_profile import advance
+    from test_analysis_occurrence_v17_record_owners import packet
+
+    shared = '午前に試した。'
+    extra = '窓の内側に紙を置いた。'
+    other = '夜は別の作業をした。'
+    stage = source_merge([shared + extra, shared + other])
+    plan = core.admit_semantic_node_local_v4_plan_response(stage, packet(stage, [
+        [[(1, shared)]], [[(2, shared), (2, other)]], [[(1, extra), (1, shared)]],
+    ]), merge_anchors=True)
+    messages = core.semantic_node_local_v4_wire_messages(stage, 'NODES', plan=plan)
+    codec = wire.response_codec(messages)
+    logical = probe._semantic_constraint_messages(messages)
+    facts = probe._semantic_wire_fact_sources(messages, logical_messages=logical)
+    roots = probe._semantic_wire_authored_roots(logical)
+
+    def response(last):
+        return dict(h=codec.binding, n=[
+            [[['RECORDED', [1], []]], 'STATE_CONTEXT', 'SELF', '記録にある場面', shared],
+            [[['RECORDED', [2, 3], []]], 'STATE_CONTEXT', 'SELF', '記録にある場面', shared],
+            [[['RECORDED', [4, 5], []]], 'STATE_CONTEXT', 'SELF', '記録にある場面', last],
+        ])
+
+    repeated, separate = response(shared), response(extra)
+    repeated_wire = wire.compact_json(repeated)
+    alphabet = ''.join(dict.fromkeys(wire.compact_json(messages) + repeated_wire
+                                    + wire.compact_json(separate) + '追'))
+    native = probe.semantic_json_parser(messages, alphabet)
+    raw = advance(native, repeated_wire).projected_prefix()
+    assert not probe._occurrence_duplicate_prefix(raw, facts)
+    assert probe._occurrence_duplicate_prefix(raw, facts, authored_roots=roots)
+    with pytest.raises(core.AnalysisSemanticMapError, match='repeated_authored_reading'):
+        core.admit_semantic_node_local_v4_nodes_response(stage, plan, codec.decode(repeated),
+                                                        bound_titles=True, ordered_titles=True)
+
+    before_closing_meaning = advance(native, repeated_wire[:repeated_wire.rindex('"')])
+    enforcer = SimpleNamespace(prefix_states={(): SimpleNamespace(parser=before_closing_meaning)},
+                               tokenizer_tree=SimpleNamespace(new_word_tokens={0, 1}, tokens_to_strs={0: '"', 1: '追'}))
+    choose = probe._occurrence_greedy_node_filter(None, 1, facts,
+        compact_prefix=SimpleNamespace(token_enforcer=enforcer), authored_roots=roots)
+    assert choose(np.array([[9]]), np.array([[2.0, 1.0]])).tolist() == [[-np.inf, 1.0]]
+
+    raw = advance(native, wire.compact_json(separate)).projected_prefix()
+    assert not probe._occurrence_duplicate_prefix(raw, facts, authored_roots=roots)
+    assert core.admit_semantic_node_local_v4_nodes_response(stage, plan, codec.decode(separate),
+                                                          bound_titles=True, ordered_titles=True)
+
+
 @pytest.mark.parametrize('proposal,report,reply,can_follow', [
     ('提案したが、送信したかは確認していない', 'があった', 'に返事をし、家具は注文していない', True),
     ('提案した', 'が届いた', 'が届いたが、まだ返事はしていない', True),
