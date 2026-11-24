@@ -4366,6 +4366,7 @@ def _expand_analysis_semantic_node_local_v3(prepared, packet, *, fact_endpoints=
     material = json.loads(prepared.material_json)
     is_v24 = material.get('author_profile') == SEMANTIC_MAP_OCCURRENCE_V24_PROFILE
     standalone_v24 = is_v24 and 'history_stage' not in material
+    history_merge_v24 = is_v24 and material.get('history_stage', {}).get('kind') == 'MERGE'
     def display_facts(units, facts, refs):
         if fixed_record_units:
             from analysis_plan_source_choices import mixed_record_facts
@@ -4406,6 +4407,7 @@ def _expand_analysis_semantic_node_local_v3(prepared, packet, *, fact_endpoints=
     field_records = {field['field']: field['record'] for field in material['fields']}
     required_records = {row['record'] for row in material['records']}
     covered_records = set()
+    mapped_record_refs = set()
     nodes, bodies, summaries = [], {}, {}
     for index, node in enumerate(rows(packet['nodes'], 12, 1), 1):
         require(keys(node, {'units', 'node_kind', 'perspective', 'title', 'meaning'})
@@ -4417,8 +4419,11 @@ def _expand_analysis_semantic_node_local_v3(prepared, packet, *, fact_endpoints=
                 and type(unit['source_mode']) is str and unit['source_mode'] in {
                     'RECORDED', 'PERSON_JUDGMENT', 'PERSON_WISH', 'DECIDED_PLAN'}, reason)
             evidence = rows(unit['evidence'], 4, 1)
-            bound = [_semantic_map_evidence(prepared, root)[1] for root in evidence]
-            require(len({root['evidence_id'] for root in bound}) == len(bound), reason)
+            bound = [_semantic_map_evidence(prepared, root) for root in evidence]
+            require(len({root['evidence_id'] for _, root in bound}) == len(bound), reason)
+            if history_merge_v24:
+                for dependency, _ in bound:
+                    mapped_record_refs.update(dependency if type(dependency) is tuple else (dependency,))
             facts.append(text(unit['fact'], 160 * len(evidence) if per_root_fact_limit else 160))
             for root in evidence:
                 # A map-correction cohort is not a substitute citation of the
@@ -4555,6 +4560,12 @@ def _expand_analysis_semantic_node_local_v3(prepared, packet, *, fact_endpoints=
         per_item = (2000 - len(refs) + 1) // len(refs)
         summaries = {ref: summaries[ref] if len(summaries[ref]) <= per_item else titles[ref] for ref in refs}
     heading = text(overview['title'], 80)
+    if history_merge_v24:
+        from analysis_plan_source_choices import WholeMapTitle
+        if heading == WholeMapTitle(material, packet['nodes']).neutral:
+            # The authored fallback counts original title witnesses. The visible
+            # count comes from all mapped records, including correction dependencies.
+            heading = f'{len(mapped_record_refs)}件の記録を振り返って'
     overview_text = '\n'.join(summaries[ref] for ref in refs)
     if compact_source_captions:
         from analysis_plan_source_choices import selected_record_overview
@@ -4562,7 +4573,7 @@ def _expand_analysis_semantic_node_local_v3(prepared, packet, *, fact_endpoints=
             include_authored_titles=record_scoped_captions) or overview_text
     if record_scoped_captions:
         from analysis_plan_source_choices import repeated_record_node_dates
-        date_corrections = standalone_v24 or (is_v24 and material.get('history_stage', {}).get('kind') == 'MERGE')
+        date_corrections = standalone_v24 or history_merge_v24
         for index, label in repeated_record_node_dates(
                 material, packet['nodes'], include_corrections=date_corrections).items():
             node = nodes[index]

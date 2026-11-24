@@ -80,3 +80,34 @@ def test_comparison_detail_uses_the_two_chosen_sentences_and_keeps_the_complete_
     detail = actual['edges'][0]['explanation']
     assert asked in detail and replied in detail and context not in detail and after not in detail
     assert context in old['edges'][0]['explanation'] and after in old['edges'][0]['explanation']
+
+
+def test_v24_merge_neutral_heading_counts_distinct_mapped_records():
+    from dataclasses import replace
+    import json
+
+    from cocolon_meaning_experience_engine.cores.analysis import intent_compiler, semantic_admission as core
+    from test_analysis_merge_transport import source_merge
+
+    notes = ['朝に公園を散歩した。', '昼に図書館で本を借りた。', '夕方に机を片付けた。']
+    merged = core._semantic_v4_view(source_merge(notes))
+    prepared = replace(merged, prompt_version=core.SEMANTIC_MAP_NODE_LOCAL_V3_PROFILE)
+
+    def node(*indexes):
+        roots = tuple((index, notes[index - 1]) for index in indexes)
+        fact = ''.join(quote for _, quote in roots)
+        return dict(node_kind='CHOICE_OUTPUT', perspective='SELF', title=fact, meaning='',
+                    units=[dict(unit(*roots), fact=fact, unknowns=[])])
+
+    nodes = [node(1, 2), node(2, 3), node(3)]
+    material = json.loads(merged.material_json)
+    neutral = choices.WholeMapTitle(material, nodes).neutral
+    assert neutral == '1件の記録を振り返って'
+    authored = '散歩と読書、机の片付け'
+    overview = dict(node_refs=['n1', 'n2', 'n3'], title=neutral)
+    packet = dict(schema_version=core.SEMANTIC_MAP_NODE_LOCAL_V3_SCHEMA, nodes=nodes,
+                  edges=[], overview=overview)
+    render = intent_compiler._expand_analysis_semantic_node_local_v3
+    assert render(prepared, packet)['overview']['title'] == '3件の記録を振り返って'
+    assert packet['overview']['title'] == neutral
+    assert render(prepared, dict(packet, overview=dict(overview, title=authored)))['overview']['title'] == authored
