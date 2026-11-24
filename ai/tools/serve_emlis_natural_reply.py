@@ -1451,7 +1451,8 @@ def _fact_escape_examples(start, end, *, numeric=False):
 def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None, bound_node_ids=(),
                                         unique_qualifications=False, endpoint_nodes=(), unique_allocations=False,
                                         plan_source_texts=None, plan_choice_quotes=None, overview_sources=None, protect_visible=False,
-                                        compare_title_end_marks=False, record_owners=(), compact_pairs=(), reading_regions=(), required_sources=None, merge_anchors=False, action_sources=()):
+                                        compare_title_end_marks=False, record_owners=(), compact_pairs=(), reading_regions=(), required_sources=None, merge_anchors=False, action_sources=(),
+                                        reserved_free_source_pairs=()):
     """Bind graph references and unique source/quote pairs while decoding.
 
     The pinned parser does not enforce JSON Schema uniqueItems. Use an isolated
@@ -1518,6 +1519,20 @@ def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None, b
     unit_cues = {f"{node['node_id']}.u{i}": list(dict.fromkeys(cue for root in unit['evidence']
                  for cue in _semantic_source_cues(root['quote'])))
                  for node in endpoint_nodes for i, unit in enumerate(node['units'], 1)} if cue_edges else {}
+    reserved_pairs = frozenset(reserved_free_source_pairs)
+    endpoint_sources = {node: tuple((node, ref, cue) for ref, cues in unit_cues.items()
+        if ref.partition('.')[0] == node for cue in cues) for node in endpoint_titles} if reserved_pairs else {}
+
+    def restrict_free_edge_sources(parser):
+        return reserved_pairs and not getattr(parser.root.context, 'reading_explicit_comparison', False)
+
+    def free_source_pairs(left, right, edge=None):
+        def choices(node, unit, cue):
+            return (source for source in endpoint_sources[node]
+                    if (unit is None or source[1] == unit) and (cue is None or source[2] == cue))
+        start = choices(left, edge.selected_from_unit if edge else None, edge.selected_from_source if edge else None)
+        end = tuple(choices(right, edge.selected_to_unit if edge else None, edge.selected_to_source if edge else None))
+        return ((a, b) for a in start for b in end if (a, b) not in reserved_pairs)
     closer_rules = _semantic_choice_module() if protect_visible else None
     label_alphabet = ''.join(c for c in config.alphabet if ord(c) >= 32 and c not in '"\\')
 
@@ -1933,6 +1948,8 @@ def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None, b
             for right in graph.generated_node_ids:
                 if left == right or end is not None and right != end:
                     continue
+                if restrict_free_edge_sources(graph) and not any(free_source_pairs(left, right)):
+                    continue
                 for kind in kinds:
                     if edge_key(left, right, kind) not in graph.generated_edge_keys:
                         yield left, right, kind
@@ -2217,6 +2234,7 @@ def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None, b
             self.selected_node_id = self.selected_from = None
             self.selected_to = self.selected_relation_kind = None
             self.selected_from_unit = self.selected_to_unit = None
+            self.selected_from_source = self.selected_to_source = None
             self.selected_quote = None
             self.selected_event_roots = ()
 
@@ -2237,10 +2255,20 @@ def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None, b
             result.selected_to = self.selected_to
             result.selected_from_unit = self.selected_from_unit
             result.selected_to_unit = self.selected_to_unit
+            result.selected_from_source = self.selected_from_source
+            result.selected_to_source = self.selected_to_source
             result.selected_relation_kind = self.selected_relation_kind
             result.selected_quote = self.selected_quote
             result.selected_event_roots = self.selected_event_roots
             return result
+
+        def get_allowed_characters(self):
+            chars = super().get_allowed_characters()
+            if '{' in chars and restrict_free_edge_sources(self) and edge_type(self.schema_object):
+                _, graph = graph_state(self.root.context.active_parser)
+                if not any(remaining_edges(graph)):
+                    return chars.replace('{', '')
+            return chars
 
         def add_character(self, char):
             prior_key = self.current_key
@@ -2258,7 +2286,7 @@ def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None, b
                     result.selected_from = active.last_parsed_string
                 if edge_type(result.schema_object) and prior_key == 'to':
                     result.selected_to = active.last_parsed_string
-                if unit_cues and edge_type(result.schema_object) and prior_key in {'from_unit', 'to_unit'}:
+                if unit_cues and edge_type(result.schema_object) and prior_key in {'from_unit', 'to_unit', 'from_source', 'to_source'}:
                     setattr(result, 'selected_' + prior_key, active.last_parsed_string)
                 if edge_type(result.schema_object) and prior_key == 'relation_kind':
                     result.selected_relation_kind = active.last_parsed_string
@@ -2333,6 +2361,15 @@ def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None, b
                     value.enum = [item for item in value.enum if item in available]
                     if not value.enum:
                         raise ValueError('semantic_edge_options_exhausted')
+                elif (restrict_free_edge_sources(result) and edge_type(result.schema_object)
+                        and key in {'from_unit', 'to_unit', 'from_source', 'to_source'}):
+                    side = 0 if key.startswith('from_') else 1
+                    position = 1 if key.endswith('_unit') else 2
+                    value = deepcopy(result.schema_object.properties[key])
+                    value.enum = list(dict.fromkeys(sources[side][position] for sources in
+                        free_source_pairs(result.selected_from, result.selected_to, result)))
+                    if not value.enum:
+                        raise ValueError('semantic_free_edge_sources_exhausted')
                 elif endpoint_titles and edge_type(result.schema_object) and key in {'from_unit','to_unit'}:
                     endpoint = result.selected_from if key == 'from_unit' else result.selected_to
                     value = deepcopy(result.schema_object.properties[key])
@@ -2498,11 +2535,11 @@ def _semantic_unique_json_schema_parser(schema, config, *, record_fields=None, b
 
 
 def semantic_json_parser(messages, alphabet):
-    logical = _semantic_logical_json_parser(messages, alphabet)
-    if not _semantic_merge_tuple_output(messages):
-        return logical
-    codec = _semantic_merge_wire_module().response_codec(messages,
+    codec = (_semantic_merge_wire_module().response_codec(messages,
         choice_module=_semantic_choice_module(), fact_key=_semantic_fact_part_key)
+        if _semantic_merge_tuple_output(messages) else None)
+    reserved = codec.reserved_free_source_pairs if codec is not None and codec.judgments else ()
+    logical = _semantic_logical_json_parser(messages, alphabet, reserved_free_source_pairs=reserved)
     if codec is None:
         return logical
     from importlib.util import module_from_spec, spec_from_file_location
@@ -2513,7 +2550,7 @@ def semantic_json_parser(messages, alphabet):
     return module.response_parser(logical, codec)
 
 
-def _semantic_logical_json_parser(messages, alphabet):
+def _semantic_logical_json_parser(messages, alphabet, *, reserved_free_source_pairs=()):
     merge_action_sources_enabled = _semantic_merge_tuple_output(messages)
     wire_version = json.loads(messages[1]['content'])['merge_wire_version'] if merge_action_sources_enabled else None
     context_sources = wire_version in _semantic_merge_wire_module().COMPARISON_VERSIONS if wire_version else False
@@ -2543,6 +2580,7 @@ def _semantic_logical_json_parser(messages, alphabet):
                 and material.get('author_profile') in CONTENT_PLAN_PROFILES else None,
             endpoint_nodes=material['candidate_nodes'] if material.get('author_phase') == 'RELATIONS'
                 and material.get('author_profile') in {OCCURRENCE_V6_PROFILE, OCCURRENCE_V7_PROFILE, OCCURRENCE_V8_PROFILE, *SOURCE_CUED_PROFILES} else (),
+            reserved_free_source_pairs=reserved_free_source_pairs,
             unique_qualifications=material.get('author_phase') == 'NODES'
                 and material.get('author_profile') in OCCURRENCE_PROFILES)
     anchor_key = 'events' if 'events' in schema['properties'] else 'nodes'
