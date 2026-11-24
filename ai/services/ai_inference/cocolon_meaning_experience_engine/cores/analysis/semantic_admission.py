@@ -12,6 +12,7 @@ from copy import deepcopy
 from dataclasses import asdict, dataclass, replace
 import hashlib
 import json
+import unicodedata
 
 from .source_adapter import (AnalysisObservedMapRequest, AnalysisSourceError, freeze_analysis_sources,
                              source_field_text, commitment, canonical_bytes)
@@ -3548,10 +3549,27 @@ _PRIMARY_STRUCTURE_V2_INSTRUCTION = (
     'case_reading「手帳に書く日も、資料を持ち帰るだけの日も、見返せるものが残るかどうかで記録の仕方が変わっています。」'
     'heading「あとで確かめられる手がかり」。この例は書き方の説明です。対象者の事実・結論として流用しません。'
 )
+_PRIMARY_STRUCTURE_V3_INSTRUCTION = (
+    '\nprimary_structuresは、本人が選ぶときの基準を、根拠の強い順に0〜3件返します。'
+    'across_recordsでは別々の原記録から、本人がどうしてその選択をしたかが分かる根拠をanchorsに選びます。'
+    '二つの場面で条件が違っても、本人が共通して何を重く見ていたかを先に考えます。'
+    '同じ行動でも理由が異なる場合は一つの基準にしません。反対の行動でも同じ基準で説明できるか確かめます。'
+    '当てはまらない場面も読み、その場面で別の条件を重く見ていたなら説明の範囲を狭めます。'
+    'self_reportでは本人が得た自己理解、in_this_recordではその場で確かめられたことに限ります。'
+    'decision_factorは本人が重く見た条件や基準を表す短い語句です。'
+    'criterionは、その語句を使い、どういうときに何を大切にして選ぶのかを本人に伝える結論の一文です。'
+    'case_readingは、各場面の条件がその基準を満たしたかどうかと、どう選んだかをつなぐ説明です。'
+    '説明にも同じdecision_factorを使います。行動を並べるだけで終わらず、どちらの選択にも通じる理由を書きます。'
+    '結論と説明は敬語で、文末は句点です。headingは結論の後で短い見出しをつけ、結論や説明と同じ文にしません。'
+    '本人が後に得た自己理解を以前からの意図にせず、本人の望み、実際の行動、相手の言葉を分けます。'
+    '本文に根拠の参照番号や原文の列を出しません。根拠から判断基準を言えなければ空配列です。')
+_PRIMARY_STRUCTURE_VERSIONS = ('karen.v1', 'karen.v2', 'karen.v3')
 
 
 def _primary_structure_guidance(material):
     version = material.get('primary_structure_reading')
+    if version == 'karen.v3':
+        return _PRIMARY_STRUCTURE_V3_INSTRUCTION
     if version == 'karen.v2':
         return _PRIMARY_STRUCTURE_INSTRUCTION.format(writing_instruction='') + _PRIMARY_STRUCTURE_V2_INSTRUCTION
     if version == 'karen.v1':
@@ -3561,6 +3579,22 @@ def _primary_structure_guidance(material):
 
 
 _PRIMARY_STRUCTURE_SCOPES = {'across_records', 'self_report', 'in_this_record'}
+
+
+def _primary_structure_text_key(text):
+    return ''.join(char for char in unicodedata.normalize('NFKC', text) if char.isalnum())
+
+
+def _primary_structure_v3_has_conclusion(axis, factor, quotes):
+    sentences = [axis[key] for key in ('criterion', 'case_reading')]
+    heading = axis['heading']
+    sentence_keys = [_primary_structure_text_key(text) for text in sentences]
+    return (len(factor) >= 2 and all(factor in key for key in sentence_keys)
+        and len(set([_primary_structure_text_key(heading), *sentence_keys])) == 3
+        and all(re.search(r'(?:です|ます|ません|でした|ました)\s*[。．.]$', text) for text in sentences)
+        and not any(re.search(r'[\r\n\t]|n[1-9][0-9]*\.u[1-9][0-9]*(?:\.e[1-9][0-9]*)?', text)
+                    for text in [heading, *sentences])
+        and not set(sentence_keys) & {_primary_structure_text_key(quote) for quote in quotes})
 
 
 def _check_public_primary_structures(axes, node_refs):
@@ -3591,11 +3625,16 @@ def _read_primary_structures(prepared, material, nodes, axes):
     origins = {f"{node['node_id']}.u{i}.e{j}": (node, unit, fields[root['field']], root['quote'])
                for node in nodes for i, unit in enumerate(node['units'], 1)
                for j, root in enumerate(unit['evidence'], 1)}
-    public = []
-    conclusion_first = material.get('primary_structure_reading') == 'karen.v2'
+    public, admitted, factors = [], [], set()
+    version = material.get('primary_structure_reading')
+    independently_compared = version == 'karen.v3'
+    conclusion_first = version in ('karen.v2', 'karen.v3')
     parts = ('criterion', 'case_reading') if conclusion_first else ('reading',)
+    keys = {'anchors', 'scope', 'heading', *parts}
+    if independently_compared:
+        keys.add('decision_factor')
     for axis in axes:
-        _semantic_map_require(_semantic_map_keys(axis, {'anchors', 'scope', 'heading', *parts}), reason)
+        _semantic_map_require(_semantic_map_keys(axis, keys), reason)
         anchors = axis['anchors']
         _semantic_map_require(_semantic_map_strings(anchors, maximum=4, text_maximum=15)
             and bool(anchors) and set(anchors) <= origins.keys(), reason)
@@ -3616,8 +3655,20 @@ def _read_primary_structures(prepared, material, nodes, axes):
                   if node['perspective'] == 'SELF' and (field['source_role'] == 'ORIGINAL_INPUT'
                       and field['field_path'] == 'memo' or field['source_role'] in {
                           'SUPPLEMENTAL_ANSWER', 'USER_INTERPRETATION_CORRECTION', 'USER_DEEP_INSIGHT_ANSWER'})]
+        if independently_compared and not mental:
+            continue
         _semantic_map_require(bool(mental), reason)
-        if axis['scope'] == 'across_records':
+        if axis['scope'] == 'across_records' and independently_compared:
+            decisions = [(field['record'], _primary_structure_text_key(quote))
+                         for node, unit, field, quote in selected if node['perspective'] == 'SELF'
+                         and unit['source_mode'] in ('PERSON_JUDGMENT', 'DECIDED_PLAN')
+                         and (field['source_role'] == 'USER_DEEP_INSIGHT_ANSWER' or
+                              field['source_role'] == 'ORIGINAL_INPUT' and field['field_path'] == 'memo')]
+            # Bind both sides to distinct first-person evidence, at the root
+            # that supported the choice. Extra context does not supply a choice.
+            if not any(a != b and qa and qb and qa != qb for a, qa in decisions for b, qb in decisions):
+                continue
+        elif axis['scope'] == 'across_records':
             # Distinct original records and distinct first-person materials, rather than
             # two fields of one record or one literal copied into multiple records.
             judgments = {field['record'] for node, unit, field, _ in selected if
@@ -3637,19 +3688,30 @@ def _read_primary_structures(prepared, material, nodes, axes):
             # order; a missing conclusion cannot be supplied by the renderer.
             _semantic_map_require(_semantic_map_text(axis['criterion'], 160)
                 and _semantic_map_text(axis['case_reading'], 200)
-                and axis['criterion'] != axis['case_reading'], reason)
-        _semantic_map_require(all(axis[key] not in quotes for key in parts), reason)
+                and (independently_compared or axis['criterion'] != axis['case_reading']), reason)
+        description = ''.join(axis[key] for key in parts)
+        if independently_compared:
+            _semantic_map_require(_semantic_map_text(axis['heading'], 60)
+                and _semantic_map_text(axis['decision_factor'], 32), reason)
+            factor = _primary_structure_text_key(axis['decision_factor'])
+            if (factor in factors or not _primary_structure_v3_has_conclusion(axis, factor, quotes)
+                    or any(axis['heading'] == prior['title'] or description == prior['description'] for prior in public)):
+                continue
+            factors.add(factor)
+        else:
+            _semantic_map_require(all(axis[key] not in quotes for key in parts), reason)
         refs = list(dict.fromkeys(node['node_id'] for node, *_ in selected))
         public.append(dict(scope=axis['scope'], title=axis['heading'],
-                           description=''.join(axis[key] for key in parts), node_refs=refs))
+                           description=description, node_refs=refs))
+        admitted.append(axis)
     _check_public_primary_structures(public, {node['node_id'] for node in nodes})
-    for axis, source in zip(public, axes):
+    for axis, source in zip(public, admitted, strict=True):
         _semantic_v14_visible_text(prepared, (axis['title'], axis['description']),
             (origins[a][3] for a in source['anchors']))
-    if conclusion_first:
+    if version == 'karen.v2':
         # A verbatim repeat supplies no separate conclusion beneath that
         # heading. Keep the original RELATIONS receipt and the admitted graph.
-        return [axis for axis, source in zip(public, axes, strict=True) if source['criterion'] != source['heading']]
+        return [axis for axis, source in zip(public, admitted, strict=True) if source['criterion'] != source['heading']]
     return public
 
 
@@ -3661,7 +3723,7 @@ def semantic_node_local_v4_relations(prepared, plan, bodies, packet, *, ordered_
     review_qualifications = prepared.prompt_version in {SEMANTIC_MAP_OCCURRENCE_V7_PROFILE, SEMANTIC_MAP_OCCURRENCE_V8_PROFILE, *SEMANTIC_MAP_SOURCE_CUED_PROFILES}
     relation_keys = {'schema_version', 'nodes_sha256', 'edges', 'overview'}
     material = json.loads(prepared.material_json)
-    if material.get('primary_structure_reading') in ('karen.v1', 'karen.v2') and material.get('history_stage', {}).get('kind') != 'LEAF':
+    if material.get('primary_structure_reading') in _PRIMARY_STRUCTURE_VERSIONS and material.get('history_stage', {}).get('kind') != 'LEAF':
         relation_keys.add('primary_structures')
     if review_qualifications:
         relation_keys.add('qualification_review')
@@ -5316,7 +5378,7 @@ def prepare_analysis_semantic_map(request, snapshot, *,
             records[-1]['deep_insight_question'] = questions[ref].question_text
     material = dict(analysis_as_of=frozen.period[1], records=records, fields=material_fields)
     _semantic_map_require(type(primary_structures) is bool or
-        type(primary_structures) is str and primary_structures in ('karen.v1', 'karen.v2'),
+        type(primary_structures) is str and primary_structures in _PRIMARY_STRUCTURE_VERSIONS,
         'analysis_semantic_input_invalid')
     if primary_structures:
         _semantic_map_require(prompt_version == SEMANTIC_MAP_OCCURRENCE_V24_PROFILE, 'analysis_semantic_input_invalid')

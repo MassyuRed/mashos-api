@@ -488,7 +488,11 @@ def analysis_model_primary_structure_reading(source):
         model = source.model
     else:
         return False
-    return 'karen.v2' if model == SEMANTIC_PRIMARY_STRUCTURE_V2_MODEL else False
+    if model != SEMANTIC_PRIMARY_STRUCTURE_V2_MODEL:
+        return False
+    if os.getenv('COCOLON_ANALYSIS_PRIMARY_STRUCTURE_READING') == 'karen.v3':
+        return 'karen.v3'
+    return 'karen.v2'
 
 
 def analysis_model_prompt_version(source):

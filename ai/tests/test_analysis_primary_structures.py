@@ -44,6 +44,13 @@ def v2_reading():
                 heading='自分で選ぶ余地')
 
 
+def v3_reading():
+    return dict(anchors=['n1.u1.e1', 'n2.u1.e1'], scope='across_records', decision_factor='選べる余地',
+                criterion='引き受けるとき、ご自身で選べる余地があることを大切にしています。',
+                case_reading='会議では選べる余地があって引き受け、家では先に手伝うと決まっていて断ったことに表れています。',
+                heading='引き受ける前のひと言')
+
+
 def observed_v2_repeated_conclusion():
     # The complete, authored axis from the second fictional RELATIONS run.
     return dict(anchors=['n1.u1.e1', 'n2.u1.e1'], scope='across_records',
@@ -52,8 +59,16 @@ def observed_v2_repeated_conclusion():
                 heading='自分で選んだ仕事か、手伝うと決められてしまったか。')
 
 
+def v3_renamed_previous_response():
+    previous = observed_v2_repeated_conclusion()
+    return dict(anchors=previous['anchors'], scope=previous['scope'], decision_factor='自分で選んだ',
+                criterion=previous['criterion'], case_reading=previous['case_reading'], heading='自分の返事')
+
+
 @pytest.mark.parametrize('version, authored, publish', [
-    ('karen.v1', reading, True), ('karen.v2', v2_reading, True), ('karen.v2', observed_v2_repeated_conclusion, False)])
+    ('karen.v1', reading, True), ('karen.v2', v2_reading, True), ('karen.v2', observed_v2_repeated_conclusion, False),
+    ('karen.v3', v3_reading, True), ('karen.v3', v3_renamed_previous_response, False),
+])
 def test_final_native_receipt_and_saved_graph_show_conditional_conclusion_and_hide_private_anchors(version, authored, publish, monkeypatch):
     p, plan, bodies = scenario(FIRST, SECOND, version=version)
     axis = authored()
@@ -87,6 +102,7 @@ def test_final_native_receipt_and_saved_graph_show_conditional_conclusion_and_hi
     assert graph['overview']['primary_structures'] == (expected if publish else [])
     assert (description in text) == publish
     assert 'n1.u1.e1' not in json.dumps(graph)
+    assert 'decision_factor' not in json.dumps(graph)
     private = artifact.private_evidence()['graph']['meaning_review']['node_local_plan']['phase_artifact']
     assert private['phases'][-1]['raw'] == receipts[-1]['raw']
     row = dict(id=str(UUID(artifact.artifact_id[9:])), content_text=text, source_profile='cumulative.v1',
@@ -145,7 +161,7 @@ def test_single_self_interpretation_and_one_off_event_have_different_scope():
         core._read_primary_structures(p, material, nodes, [reading('in_this_record', ['n1.u1.e1'])])
 
 
-@pytest.mark.parametrize('version', ['karen.v1', 'karen.v2'])
+@pytest.mark.parametrize('version', ['karen.v1', 'karen.v2', 'karen.v3'])
 def test_history_merge_native_parser_preserves_structure_and_leaf_never_authors_one(version):
     from dataclasses import replace
 
@@ -164,8 +180,9 @@ def test_history_merge_native_parser_preserves_structure_and_leaf_never_authors_
     codec = merge.response_codec(messages)
     overview = dict(node_refs=['n1', 'n2'], title_proposal='', title=WholeMapTitle(
         material, core._semantic_v4_join(plan, bodies)).neutral)
+    authored = {'karen.v1': reading, 'karen.v2': v2_reading, 'karen.v3': v3_reading}
     rel = dict(schema_version=core._semantic_v4_schema('RELATIONS'), nodes_sha256=codec.binding,
-               qualification_review={}, edges=[], overview=overview, primary_structures=[v2_reading() if version == 'karen.v2' else reading()])
+               qualification_review={}, edges=[], overview=overview, primary_structures=[authored[version]()])
     physical = codec.encode(rel)
     raw = merge.compact_json(physical)
     alphabet = ''.join(dict.fromkeys(merge.compact_json(messages) + raw))
@@ -177,6 +194,49 @@ def test_history_merge_native_parser_preserves_structure_and_leaf_never_authors_
     leaf = core.prepare_semantic_leaf(p, refs)
     leaf_messages = core.semantic_node_local_v4_messages(leaf, 'RELATIONS', plan=plan, nodes=bodies)
     assert 'primary_structures' not in probe.semantic_output_schema(leaf_messages)['properties']
+
+
+@pytest.mark.parametrize('version, configured, enabled', [
+    ('ordinary', None, False), ('ordinary', 'karen.v3', False),
+    ('primary', None, 'karen.v2'), ('primary', 'karen.v3', 'karen.v3'),
+])
+def test_primary_structure_version_selects_a_mode_on_the_existing_alias(monkeypatch, version, configured, enabled):
+    import analysis_model_source as sources
+
+    monkeypatch.delenv('COCOLON_ANALYSIS_PRIMARY_STRUCTURE_READING', raising=False)
+    if configured:
+        monkeypatch.setenv('COCOLON_ANALYSIS_PRIMARY_STRUCTURE_READING', configured)
+    model = sources.SEMANTIC_OCCURRENCE_V24_MODEL if version == 'ordinary' else sources.SEMANTIC_PRIMARY_STRUCTURE_V2_MODEL
+    source = sources.SelfHostedSemanticAnalysisModelSource(endpoint='https://synthetic.invalid/v1/chat/completions',
+        model=model, api_key='synthetic')
+    assert sources.analysis_model_primary_structure_reading(source) == enabled
+
+
+@pytest.mark.parametrize('fault', ['one_judgment', 'one_record', 'duplicate_quote', 'unrelated_cases',
+                                   'repeat_heading', 'raw_reference', 'question', 'copied_source'])
+def test_v3_keeps_the_graph_when_optional_structure_lacks_a_complete_reading(fault):
+    p, plan, bodies = scenario(FIRST, FIRST if fault == 'duplicate_quote' else SECOND, version='karen.v3')
+    nodes = core._semantic_v4_join(plan, bodies)
+    material = json.loads(p.material_json)
+    axis = v3_reading()
+    if fault == 'one_judgment':
+        nodes[1]['units'][0]['source_mode'] = 'RECORDED'
+    elif fault == 'one_record':
+        axis['anchors'].pop()
+    elif fault == 'unrelated_cases':
+        axis['case_reading'] = '会議では自分から手を挙げ、家では断ったという記録です。'
+    elif fault == 'repeat_heading':
+        axis['heading'] = axis['criterion'].rstrip('。')
+    elif fault == 'raw_reference':
+        axis['case_reading'] = 'n1.u1.e1とn2.u1.e1に選べる余地が書かれています。'
+    elif fault == 'question':
+        axis = v3_renamed_previous_response()
+    elif fault == 'copied_source':
+        copied = '選べる余地が大切です。'
+        axis['criterion'] = copied
+        nodes[0]['units'][0]['evidence'][0]['quote'] = copied
+    assert core._read_primary_structures(p, material, nodes, [axis]) == []
+
 
 def test_archived_real_list_only_response_is_readable_only_on_its_original_contract():
     # Verbatim model-authored axis from the one-shot fictional 4B RELATIONS run.
@@ -239,7 +299,8 @@ def test_native_server_preserves_ordinary_v24_and_binds_new_contract_to_its_alia
             with httpx.Client(trust_env=False) as client:
                 for model, reading_version, accepted in [
                     (old_model, False, True), (new_model, 'karen.v2', new_server),
-                    (old_model, 'karen.v2', False), (new_model, False, False)
+                    (old_model, 'karen.v2', False), (new_model, False, False),
+                    (new_model, 'karen.v3', new_server), (old_model, 'karen.v3', False),
                 ]:
                     p, plan, bodies = scenario(FIRST, SECOND, version=reading_version)
                     messages = core.semantic_node_local_v4_messages(p, 'RELATIONS', plan=plan, nodes=bodies)
