@@ -191,7 +191,7 @@ class ActualInputFieldTests(unittest.TestCase):
             self.assertEqual(rendered[0], rendered[1])
 
     def test_ledger_whitespace_preserves_raw_whole_and_partial_evidence(self):
-        role = '私は、\t  会議を担当した'
+        role = '私は、 \u3000 会議を担当した'
         contrast = '私は家族を守りたいけれど、\t\u3000私は辛い'
         for field in ('memo', 'memo_action'):
             for literal in (role, contrast):

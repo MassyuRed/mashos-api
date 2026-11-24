@@ -2903,6 +2903,12 @@ def _fragment(source, nucleus, plan=None, *, _protective_contrast=False):
     literal = field[start:end]
     if normalize_evidence_literal(literal) != span.raw_text[a:b].strip():
         raise AnalysisSourceError('analysis_fragment_evidence_mismatch')
+    # Display normalization cannot make an unread separator inside a finite
+    # claim grammatically valid. A proved compound requires both endpoints.
+    endpoints = pair[2] if pair else ((a, b),)
+    if any(re.search(r'[^\S \u3000]', field[boundaries[left]:boundaries[right]])
+           for left, right in endpoints):
+        return None
     evidence = replace(ref,
         evidence_id='analysis-evidence:' + commitment([ref.source_envelope_id,
             ref.field_path, start, end])[7:],
