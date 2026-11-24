@@ -4364,8 +4364,8 @@ def _expand_analysis_semantic_node_local_v3(prepared, packet, *, fact_endpoints=
         return value
 
     material = json.loads(prepared.material_json)
-    standalone_v24 = (material.get('author_profile') == SEMANTIC_MAP_OCCURRENCE_V24_PROFILE
-                      and 'history_stage' not in material)
+    is_v24 = material.get('author_profile') == SEMANTIC_MAP_OCCURRENCE_V24_PROFILE
+    standalone_v24 = is_v24 and 'history_stage' not in material
     def display_facts(units, facts, refs):
         if fixed_record_units:
             from analysis_plan_source_choices import mixed_record_facts
@@ -4562,8 +4562,9 @@ def _expand_analysis_semantic_node_local_v3(prepared, packet, *, fact_endpoints=
             include_authored_titles=record_scoped_captions) or overview_text
     if record_scoped_captions:
         from analysis_plan_source_choices import repeated_record_node_dates
+        date_corrections = standalone_v24 or (is_v24 and material.get('history_stage', {}).get('kind') == 'MERGE')
         for index, label in repeated_record_node_dates(
-                material, packet['nodes'], include_corrections=standalone_v24).items():
+                material, packet['nodes'], include_corrections=date_corrections).items():
             node = nodes[index]
             dated = label + '：\n' + node['summary']
             # A dense caption can exceed the public bound; the body's full facts

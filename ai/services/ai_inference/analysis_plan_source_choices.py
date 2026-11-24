@@ -1868,6 +1868,7 @@ def repeated_record_node_dates(material, nodes, *, include_corrections=False):
                  if any(count > 1 for count in counts.values()) else {})
     corrections = {}
     if include_corrections:
+        merge = material.get('history_stage', {}).get('kind') == 'MERGE'
         fields = {field['field']: field for field in material['fields']
                   if field['source_role'] == 'USER_INTERPRETATION_CORRECTION'
                   and field.get('field_path') == 'memo' and field.get('source_recorded_at')
@@ -1875,14 +1876,23 @@ def repeated_record_node_dates(material, nodes, *, include_corrections=False):
         repeated = {}
         for index, node in enumerate(nodes):
             roots = [root for unit in node['units'] for root in unit['evidence']]
-            if len(roots) != 1:
+            if not roots or (not merge and len(roots) != 1) or (merge and node.get('meaning')):
                 continue
-            root = roots[0]
-            field = fields.get(root['field'])
-            if field and root['quote'] == field['text']:
-                repeated.setdefault(root['quote'], []).append((index, field['record']))
+            sources = [fields.get(root['field']) for root in roots]
+            if not all(field and root['quote'] == field['text']
+                       and (not merge or field.get('fragment_is_complete_field') is True)
+                       for root, field in zip(roots, sources, strict=True)):
+                continue
+            record_group = tuple(dict.fromkeys(field['record'] for field in sources))
+            quotes = tuple(root['quote'] for root in roots)
+            repeated.setdefault(quotes, []).append((index, record_group))
         for occurrences in repeated.values():
-            if len({record for _, record in occurrences}) > 1:
+            if len(occurrences) < 2:
+                continue
+            source_counts = Counter(record for _, group in occurrences for record in group)
+            # Dates distinguish independently recorded corrections. Overlapping
+            # evidence still has to pass the ordinary duplicate-prose check.
+            if len(source_counts) > 1 and (not merge or max(source_counts.values()) == 1):
                 corrections.update(occurrences)
     if not originals and not corrections:
         return {}
@@ -1890,7 +1900,8 @@ def repeated_record_node_dates(material, nodes, *, include_corrections=False):
     dated = {index: labels[owner] for index, owner in originals.items()}
     # Date the original being corrected. This label is the source record's
     # date and leaves both the correction clock and event timing intact.
-    dated.update((index, labels[owner] + 'への訂正') for index, owner in corrections.items())
+    dated.update((index, '・'.join(labels[owner] for owner in group) + 'への訂正')
+                 for index, group in corrections.items())
     return dated
 
 
