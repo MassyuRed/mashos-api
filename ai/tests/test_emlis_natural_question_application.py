@@ -19,6 +19,7 @@ from cocolon_meaning_experience_engine.natural_reply import (
     OBSERVATION_CONTEXT_VERSION, OBSERVATION_DELIVERY_CONTEXT_VERSION,
     OBSERVATION_GROUNDED_CONTEXT_VERSION, OBSERVATION_OUTCOME_CONTEXT_VERSION,
     OBSERVATION_CONVERSATION_CONTEXT_VERSION, OBSERVATION_SEPARATED_FOLLOW_CONTEXT_VERSION,
+    OBSERVATION_RECIPIENT_PURPOSE_CONTEXT_VERSION,
     OBSERVATION_QUOTED_FEELING_CONTEXT_VERSION, OBSERVATION_WRITTEN_FEELING_CONTEXT_VERSION,
     NaturalReply, NaturalReplyError, SelfHostedNaturalReplySource, build_natural_reply_messages, validate_reply,
 )
@@ -548,8 +549,10 @@ def test_quoted_feeling_requires_the_written_passage_and_keeps_the_saved_record(
     ('お聞きして、私は安心しました。', None),
     ('お聞きできました？', None),
 ])
+@pytest.mark.parametrize('version', [OBSERVATION_SEPARATED_FOLLOW_CONTEXT_VERSION,
+                                     OBSERVATION_RECIPIENT_PURPOSE_CONTEXT_VERSION])
 def test_separated_observation_uses_the_bound_source_and_rereads_without_generation(
-        natural_questions, qdb, monkeypatch, body, expected):
+        natural_questions, qdb, monkeypatch, body, expected, version):
     thought = '兄から「駐車場が空いた」と聞きました。私はほっとしました。'
     user, parent, _, _ = natural_questions(memo=thought)
     requests = []
@@ -563,13 +566,15 @@ def test_separated_observation_uses_the_bound_source_and_rereads_without_generat
 
     provider = SelfHostedNaturalReplySource(endpoint='https://emlis-test.invalid/v1/chat/completions',
         model='synthetic-provider', api_key='synthetic-only', transport=httpx.MockTransport(receive))
-    version = OBSERVATION_SEPARATED_FOLLOW_CONTEXT_VERSION
     owner = _active_application_owner(monkeypatch, provider, 'paid', observation_version=version)
     owner.natural_questions_enabled = False
     result = run(owner.start(user, parent))
     wire, = requests
     messages = wire['messages']
-    assert '本人の言葉はすでに画面に示します' in messages[0]['content']
+    if version == OBSERVATION_RECIPIENT_PURPOSE_CONTEXT_VERSION:
+        assert '気持ちを話してくださった本人' in messages[0]['content']
+    else:
+        assert '本人の言葉はすでに画面に示します' in messages[0]['content']
     assert json.loads(messages[1]['content']) == {'本人の原文': '私はほっとしました'}
     assert result['body_state'] == ('UNAVAILABLE' if expected is None else 'FINAL')
     if expected is None:
@@ -592,6 +597,45 @@ def test_separated_observation_uses_the_bound_source_and_rereads_without_generat
     reread = run(reopened.get(user, parent))
     assert reread['revision'] == result['revision']
     assert reread['current_observation'] == result['current_observation']
+
+
+@pytest.mark.parametrize(('thought', 'excerpt', 'extra'), [
+    ('赤いじょうろが好きでした。', '赤いじょうろが好きでした', {'本人が好きと書いた対象': '赤いじょうろ'}),
+    ('私は赤いじょうろが大好きでした。', '私は赤いじょうろが大好きでした', {'本人が好きと書いた対象': '赤いじょうろ'}),
+    ('展示が来月で終わると知ったので、私は寂しかったです。', '展示が来月で終わると知ったので、私は寂しかったです',
+     {'本人が書いた理由': '展示が来月で終わると知った'}),
+    ('兄に道を聞いた。私はほっとしました。', '私はほっとしました', {}),
+    ('兄が赤いじょうろが好きでした。', '兄が赤いじょうろが好きでした', {}),
+    ('私は全部を思い出すと寂しかった。', '私は全部を思い出すと寂しかった', {}),
+])
+def test_recipient_purpose_only_exposes_verbatim_attested_source(
+        natural_questions, qdb, monkeypatch, thought, excerpt, extra):
+    user, parent, _, _ = natural_questions(memo=thought)
+    calls = []
+
+    async def provider(request):
+        calls.append(request)
+        return NaturalReply(f'「{excerpt}」\n\nここに書いてくださって、ありがとうございます。',
+                            'synthetic-provider', request.source_prefix_ref)
+
+    owner = _active_application_owner(monkeypatch, provider, 'paid',
+        observation_version=OBSERVATION_RECIPIENT_PURPOSE_CONTEXT_VERSION)
+    owner.natural_questions_enabled = False
+    result = run(owner.start(user, parent))
+    request, = calls
+    messages = build_natural_reply_messages(request)
+    assert json.loads(messages[1]['content']) == {'本人の原文': excerpt, **extra}
+    if '本人が好きと書いた対象' in extra:
+        assert 'ものの性質や作り手の意図' in messages[0]['content']
+    elif '本人が書いた理由' in extra:
+        assert 'そのことを知った時点' in messages[0]['content']
+    elif thought.startswith('兄に道を'):
+        assert '気持ちを話してくださった本人' in messages[0]['content']
+    else:
+        _assert_writer_messages_match(request, OBSERVATION_RECIPIENT_PURPOSE_CONTEXT_VERSION,
+                                      OBSERVATION_SEPARATED_FOLLOW_CONTEXT_VERSION)
+    assert '兄に道を聞いた' not in messages[1]['content']
+    assert result['body_state'] == 'FINAL'
 
 
 @pytest.mark.parametrize(('tier', 'selected', 'action', 'expected'), [

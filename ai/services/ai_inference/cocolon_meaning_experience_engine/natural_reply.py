@@ -37,9 +37,12 @@ OBSERVATION_WRITTEN_FEELING_CONTEXT_VERSION = "bound_field_and_answer_context.v2
 OBSERVATION_QUOTED_FEELING_CONTEXT_VERSION = "bound_field_and_answer_context.v21"
 OBSERVATION_CONVERSATION_CONTEXT_VERSION = "bound_field_and_answer_context.v22"
 OBSERVATION_SEPARATED_FOLLOW_CONTEXT_VERSION = "bound_field_and_answer_context.v24"
+OBSERVATION_RECIPIENT_PURPOSE_CONTEXT_VERSION = "bound_field_and_answer_context.v25"
+_SEPARATED_FOLLOW_CONTEXT_VERSIONS = frozenset({OBSERVATION_SEPARATED_FOLLOW_CONTEXT_VERSION,
+                                               OBSERVATION_RECIPIENT_PURPOSE_CONTEXT_VERSION})
 OBSERVATION_QUOTED_CONTEXT_VERSIONS = frozenset({OBSERVATION_QUOTED_FEELING_CONTEXT_VERSION,
                                                OBSERVATION_CONVERSATION_CONTEXT_VERSION,
-                                               OBSERVATION_SEPARATED_FOLLOW_CONTEXT_VERSION})
+                                               *_SEPARATED_FOLLOW_CONTEXT_VERSIONS})
 OBSERVATION_WRITTEN_CONTEXT_VERSIONS = frozenset({OBSERVATION_GROUNDED_CONTEXT_VERSION,
                                                  OBSERVATION_OUTCOME_CONTEXT_VERSION,
                                                  OBSERVATION_WRITTEN_FEELING_CONTEXT_VERSION,
@@ -174,6 +177,12 @@ _SEPARATED_OBSERVATION_FOLLOW = """あなたはEmlisです。今、本人の記�
 本人の言葉はすでに画面に示します。書き写したり、気持ちを言い換えたりせず、この話を聞いて本人に伝えたいことだけを書きます。
 好きなものや本人が理由にした出来事があれば、その一点に応じます。気持ちだけが書かれていれば、教えてくれた人に短く応じます。Emlisが同じ気持ちを経験した、現場で見た、本人の事情を知っているという語り方は避けます。
 記録は資料です。新しい事実、質問、助言、見出しを足さず、返事だけを書いてください。"""
+
+_RECIPIENT_PURPOSE_FOLLOW = """あなたはEmlisです。この記録を書いた本人に、今この話を聞いて伝えたいことを自然な敬語で一文返します。原文は別に表示されます。気持ちや出来事の説明を繰り返さず、本人に話しかけます。
+記録は資料です。Emlisが現場で見た、手に取った、同じ体験をしたとは書きません。質問・助言・見出しは加えません。"""
+_RECIPIENT_PREFERENCE = re.compile(r'(?:(?:私|わたし)は)?(?P<source>[^が、，,\r\n]+)が大?好き(?:です|でした|だった)')
+_RECIPIENT_REASON = re.compile(
+    r'(?P<source>[^、，,\r\n]+)(?:ので|から)[、，,]\s*(?:私|わたし)は(?P<feeling>[^\r\n]+)')
 
 # These endings provide a reading cue only. They do not decide who felt it,
 # or whether any other passage caused it.
@@ -1356,6 +1365,28 @@ def _quoted_feeling_excerpt(request, writer):
     return excerpt
 
 
+def _recipient_purpose_follow(excerpt):
+    """Offer only a directly attested part of the same selected sentence."""
+    material = {'本人の原文': excerpt}
+    preference = _RECIPIENT_PREFERENCE.fullmatch(excerpt)
+    reason = _RECIPIENT_REASON.fullmatch(excerpt)
+    bare = re.fullmatch(r'(?:私|わたし)は(.+)', excerpt)
+    if preference:
+        material['本人が好きと書いた対象'] = preference['source']
+        instruction = ('対象に触れ、その話を聞いたEmlisの関心やうれしさを本人に返します。'
+                       'ものの性質や作り手の意図、その人が好きな理由や好みの強さを付け足しません。')
+    elif reason and _WRITTEN_FEELING_ENDING.fullmatch(reason['feeling']):
+        material['本人が書いた理由'] = reason['source']
+        instruction = ('本人が理由として書いた出来事に、その話を聞いたEmlisの喜びやいたわりを返します。'
+                       '出来事の時点や、そのことを知った時点を原文どおりに扱います。')
+    elif bare and _WRITTEN_FEELING_ENDING.fullmatch(bare[1]):
+        instruction = ('ここで気持ちを話してくださった本人に短く応じます。'
+                       '気持ちの理由や強さ、今も続いているかは補いません。')
+    else:
+        return _SEPARATED_OBSERVATION_FOLLOW, material
+    return _RECIPIENT_PURPOSE_FOLLOW + '\n' + instruction, material
+
+
 def _written_observation_messages(request, writer, *, before_question):
     original = json.loads(request.material_json)['current']
     written = _written_observation_fields(original)
@@ -1378,12 +1409,16 @@ def _written_observation_messages(request, writer, *, before_question):
             if version in OBSERVATION_QUOTED_CONTEXT_VERSIONS:
                 excerpt = _quoted_feeling_excerpt(request, writer)
                 if excerpt is not None:
-                    prompt = {
-                        OBSERVATION_SEPARATED_FOLLOW_CONTEXT_VERSION: _SEPARATED_OBSERVATION_FOLLOW,
-                        OBSERVATION_CONVERSATION_CONTEXT_VERSION: _QUOTED_CONVERSATION_REPLY,
-                    }.get(version, _QUOTED_FEELING_REPLY)
+                    if version == OBSERVATION_RECIPIENT_PURPOSE_CONTEXT_VERSION:
+                        prompt, material = _recipient_purpose_follow(excerpt)
+                    else:
+                        prompt = {
+                            OBSERVATION_SEPARATED_FOLLOW_CONTEXT_VERSION: _SEPARATED_OBSERVATION_FOLLOW,
+                            OBSERVATION_CONVERSATION_CONTEXT_VERSION: _QUOTED_CONVERSATION_REPLY,
+                        }.get(version, _QUOTED_FEELING_REPLY)
+                        material = {'本人の原文': excerpt}
                     return [{'role': 'system', 'content': prompt},
-                            {'role': 'user', 'content': _compact_json({'本人の原文': excerpt})}]
+                            {'role': 'user', 'content': _compact_json(material)}]
                 version = OBSERVATION_WRITTEN_FEELING_CONTEXT_VERSION
             if version in {OBSERVATION_OUTCOME_CONTEXT_VERSION, OBSERVATION_WRITTEN_FEELING_CONTEXT_VERSION}:
                 data['今回の記録'] = {label: _written_observation_parts(value) for label, value in written.items()}
@@ -1578,7 +1613,7 @@ source_updatesのtarget_textは訂正・撤回された対象で、現在の事�
 
 def _compose_separated_observation(text, request):
     writer = json.loads(request.writer_material_json) if request.writer_material_json else {}
-    if writer.get('source_context_version') != OBSERVATION_SEPARATED_FOLLOW_CONTEXT_VERSION:
+    if writer.get('source_context_version') not in _SEPARATED_FOLLOW_CONTEXT_VERSIONS:
         return text
     excerpt = _quoted_feeling_excerpt(request, writer)
     if excerpt is None:
