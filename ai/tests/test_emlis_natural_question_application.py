@@ -18,6 +18,7 @@ from cocolon_meaning_experience_engine.natural_reply import (
     INITIAL_RECIPIENT_CONTEXT_VERSION, OBSERVATION_ANSWER_CONTEXT_VERSION,
     OBSERVATION_CONTEXT_VERSION, OBSERVATION_DELIVERY_CONTEXT_VERSION,
     OBSERVATION_GROUNDED_CONTEXT_VERSION, OBSERVATION_OUTCOME_CONTEXT_VERSION,
+    OBSERVATION_CONVERSATION_CONTEXT_VERSION,
     OBSERVATION_QUOTED_FEELING_CONTEXT_VERSION, OBSERVATION_WRITTEN_FEELING_CONTEXT_VERSION,
     NaturalReply, NaturalReplyError, build_natural_reply_messages, validate_reply,
 )
@@ -483,6 +484,8 @@ def test_written_feeling_projection_preserves_sources_and_rereads_without_genera
     assert len(calls) == 1
 
 
+@pytest.mark.parametrize('version', [OBSERVATION_QUOTED_FEELING_CONTEXT_VERSION,
+                                     OBSERVATION_CONVERSATION_CONTEXT_VERSION])
 @pytest.mark.parametrize(('thought', 'action', 'excerpt'), [
     ('手編みのマフラーの色が大好きでした。', '帰宅して水を飲みました。', '手編みのマフラーの色が大好きでした'),
     ('友人が「入口が閉まった」と言いました。私はほっとしました。', '廊下の照明を消しました。', '私はほっとしました'),
@@ -493,7 +496,7 @@ def test_written_feeling_projection_preserves_sources_and_rereads_without_genera
     ('「' + '長' * 240 + '」と書いて、私はほっとしました。', '', None),
 ])
 def test_quoted_feeling_requires_the_written_passage_and_keeps_the_saved_record(
-        natural_questions, qdb, monkeypatch, thought, action, excerpt):
+        natural_questions, qdb, monkeypatch, thought, action, excerpt, version):
     user, parent, _, _ = natural_questions(memo=thought)
     assert 'code' not in qdb.query('update public.emotions set memo_action=$2 where id=$1', [parent, action])
     calls = []
@@ -503,7 +506,6 @@ def test_quoted_feeling_requires_the_written_passage_and_keeps_the_saved_record(
         text = FINAL if excerpt is None else f'「{excerpt}」と伝えてくださって、ありがとうございます。'
         return NaturalReply(text, 'synthetic-provider', request.source_prefix_ref)
 
-    version = OBSERVATION_QUOTED_FEELING_CONTEXT_VERSION
     owner = _active_application_owner(monkeypatch, provider, 'paid', observation_version=version)
     owner.natural_questions_enabled = False
     started = run(owner.start(user, parent))
@@ -516,6 +518,8 @@ def test_quoted_feeling_requires_the_written_passage_and_keeps_the_saved_record(
         _assert_writer_messages_match(request, version, OBSERVATION_WRITTEN_FEELING_CONTEXT_VERSION)
     else:
         assert json.loads(messages[1]['content']) == {'本人の原文': excerpt}
+        if version == OBSERVATION_CONVERSATION_CONTEXT_VERSION:
+            assert '停電の前に原稿を保存' not in messages[0]['content']
         quoted = f'「{excerpt}」'
         for invalid in (FINAL, quoted, f'{quoted}と聞き、私は安心しました。'):
             with pytest.raises(NaturalReplyError):
