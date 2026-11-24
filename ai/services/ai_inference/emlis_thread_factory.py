@@ -31,7 +31,9 @@ def application_thread_service():
     return EmlisThreadService(runtime_profile=Q3_PROFILE, enforce_application_policy=True,
                               natural_reply_source=source, response_profile=profile or None,
                               natural_context_update_enabled=context_update_mode in {"true", "paid"},
-                              natural_context_update_paid_only=context_update_mode == "paid")
+                              natural_context_update_paid_only=context_update_mode == "paid",
+                              initial_observation_follow_enabled=
+                                  os.getenv("COCOLON_EMLIS_INITIAL_OBSERVATION_FOLLOW") == "true")
 
 
 def schedule_initial_reply(owner, user_id, input_id):

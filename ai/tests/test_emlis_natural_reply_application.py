@@ -23,12 +23,13 @@ from cocolon_meaning_experience_engine.natural_reply import (
 BODY = "会議を終えて、少し安心できたのですね。\n\n資料を読み直したことも、今日の記録に残っています。"
 
 
-def _active_application_owner(monkeypatch, provider, context_mode):
+def _active_application_owner(monkeypatch, provider, context_mode, *, initial_follow=False):
     from emlis_thread_factory import application_thread_service
 
     monkeypatch.setenv("COCOLON_EMLIS_THREAD_MODE", "active")
     monkeypatch.setenv("COCOLON_EMLIS_THREAD_RELEASE_APPROVED", "true")
     monkeypatch.setenv("EMLIS_AI_RESPONSE_PROFILE", "natural_reply.v1")
+    monkeypatch.setenv("COCOLON_EMLIS_INITIAL_OBSERVATION_FOLLOW", "true" if initial_follow else "")
     if context_mode is None:
         monkeypatch.delenv("COCOLON_EMLIS_CONTEXT_UPDATE", raising=False)
     else:
@@ -997,7 +998,7 @@ def test_9b_initial_follow_uses_bound_focus_and_persists_literal(natural_case, q
 
     source = SelfHostedNaturalReplySource(endpoint="https://model.invalid/v1/chat/completions",
         model=QWEN_9B_NATURAL_ALIAS, api_key="synthetic-only", transport=httpx.MockTransport(infer))
-    service = _active_application_owner(monkeypatch, source, None)
+    service = _active_application_owner(monkeypatch, source, None, initial_follow=True)
     dto = run(service.start(user, parent))
     assert dto["state"] == "COMPLETED"
     assert dto["current_observation"]["text"] == f"「{literal}」\n\n{follow}"
@@ -1038,7 +1039,7 @@ def test_9b_initial_follow_does_not_project_uncertain_or_multiple_feelings(natur
 
     source = SelfHostedNaturalReplySource(endpoint="https://model.invalid/v1/chat/completions",
         model=QWEN_9B_NATURAL_ALIAS, api_key="synthetic-only", transport=httpx.MockTransport(infer))
-    service = _active_application_owner(monkeypatch, source, None)
+    service = _active_application_owner(monkeypatch, source, None, initial_follow=True)
     dto = run(service.start(user, parent))
     assert dto["current_observation"]["text"] == BODY
 
@@ -1064,7 +1065,7 @@ def test_9b_initial_follow_rejects_fabricated_witness_or_unbound_voice(natural_c
         transport=httpx.MockTransport(lambda _: httpx.Response(200, json={
             "model": QWEN_9B_NATURAL_ALIAS, "choices": [
                 {"finish_reason": "stop", "message": {"role": "assistant", "content": follow}}]})))
-    service = _active_application_owner(monkeypatch, source, None)
+    service = _active_application_owner(monkeypatch, source, None, initial_follow=True)
     dto = run(service.start(user, parent))
     assert dto["state"] == "RESPONSE_FAILED"
     assert dto["current_observation"] is None
@@ -1087,3 +1088,90 @@ def test_initial_follow_legacy_writer_retains_its_saved_message_shape():
         "本人の原文": literal, "本人の気持ちの言葉": "好き", "好きだと書いた箇所": "見本帳にあった青い縞",
     }
     assert messages[0]["content"].startswith("文章の話し手はEmlis")
+
+
+@pytest.mark.parametrize("thought,cues,follow,accepted", [
+    ("貸した定規を返してもらえたので、私はほっとしました。",
+     {"原文での貸し借りと返却": "貸していたものが戻った"},
+     "貸していただいた定規が無事でしたね。ほっとできてよかったです。", False),
+    ("貸した定規を返してもらえたので、私はほっとしました。",
+     {"原文での貸し借りと返却": "貸していたものが戻った"},
+     "貸した定規が戻って、ほっとできたと聞けてよかったです。", True),
+    ("貸した定規を返してもらえたので、私はほっとしました。",
+     {"原文での貸し借りと返却": "貸していたものが戻った"},
+     "相手が借りた定規が戻って、ほっとできてよかったです。", True),
+    ("貸したはさみを返してもらえたので、私はほっとしました。",
+     {"原文での貸し借りと返却": "貸していたものが戻った"},
+     "はさみを貸していただいたときに、ほっとされたのですね。", False),
+    ("借りた上着を返せたので、私はほっとしました。",
+     {"原文での貸し借りと返却": "借りていたものを返した"},
+     "貸した上着が戻ったのですね。ほっとできてよかったです。", False),
+    ("借りた上着を返せたので、私はほっとしました。",
+     {"原文での貸し借りと返却": "借りていたものを返した"},
+     "相手があなたに貸した上着を返せて、ほっとされたのですね。", True),
+    ("借りた上着を返せたので、私はほっとしました。",
+     {"原文での貸し借りと返却": "借りていたものを返した"},
+     "上着を返し終えて、ひと息つけたと聞けてよかったです。", True),
+    ("明日の講習には参加できないと今日分かったので、私は悲しかったです。",
+     {"知った内容": "明日の講習には参加できない", "知った時点": "今日"},
+     "明日の講習に参加できなくなったのは、おつらかったですね。", False),
+    ("明日の講習には参加できないと今日分かったので、私は悲しかったです。",
+     {"知った内容": "明日の講習には参加できない", "知った時点": "今日"},
+     "明日の講習に参加できないと今日分かったときのこと、ここでお聞きしました。", True),
+    ("丸い取っ手が好きでした。", {"本人が書いた好みの時制": "過去"},
+     "丸い取っ手のことが、今でも心に残っているのですね。", False),
+    ("丸い取っ手が好きでした。", {"本人が書いた好みの時制": "過去"},
+     "丸い取っ手がお好きだったお話を、今聞けて嬉しいです。", True),
+    ("丸い取っ手が好きです。", {"本人が書いた好みの時制": "現在"},
+     "丸い取っ手を今もお好きなんですね。ここで聞けて嬉しいです。", True),
+])
+def test_initial_follow_checks_explicit_participants_and_time_before_saving(
+        natural_case, qdb, monkeypatch, thought, cues, follow, accepted):
+    from cocolon_meaning_experience_engine.natural_reply import QWEN_9B_NATURAL_ALIAS
+
+    user, parent, _, _ = natural_case
+    qdb.query("update public.emotions set memo=$2, memo_action='' where id=$1", [parent, thought])
+    calls = []
+
+    def infer(request):
+        calls.append(request)
+        material = json.loads(json.loads(request.content)["messages"][-1]["content"])
+        assert {key: material[key] for key in cues} == cues
+        return httpx.Response(200, json={"model": QWEN_9B_NATURAL_ALIAS, "choices": [
+            {"finish_reason": "stop", "message": {"role": "assistant", "content": follow}}]})
+
+    source = SelfHostedNaturalReplySource(endpoint="https://model.invalid/v1/chat/completions",
+        model=QWEN_9B_NATURAL_ALIAS, api_key="synthetic-only", transport=httpx.MockTransport(infer))
+    service = _active_application_owner(monkeypatch, source, None, initial_follow=True)
+    dto = run(service.start(user, parent))
+    if accepted:
+        assert dto["current_observation"]["text"] == f"「{thought}」\n\n{follow}"
+    else:
+        assert dto["state"] == "RESPONSE_FAILED"
+        assert dto["current_observation"] is None
+    assert run(service.get(user, parent))["current_observation"] == dto["current_observation"]
+    assert len(calls) == 1
+
+
+def test_9b_initial_follow_is_not_selected_by_model_alias_alone(natural_case, qdb, monkeypatch):
+    from cocolon_meaning_experience_engine.natural_reply import QWEN_9B_NATURAL_ALIAS
+
+    user, parent, _, _ = natural_case
+    thought = "丸い取っ手が好きでした。"
+    qdb.query("update public.emotions set memo=$2, memo_action='' where id=$1", [parent, thought])
+    calls = []
+
+    def infer(request):
+        messages = json.loads(request.content)["messages"]
+        calls.append(messages)
+        material = json.loads(messages[-1]["content"])
+        assert material["records"][0]["active_fields"][0]["text"] == thought
+        return httpx.Response(200, json={"model": QWEN_9B_NATURAL_ALIAS, "choices": [
+            {"finish_reason": "stop", "message": {"role": "assistant", "content": BODY}}]})
+
+    source = SelfHostedNaturalReplySource(endpoint="https://model.invalid/v1/chat/completions",
+        model=QWEN_9B_NATURAL_ALIAS, api_key="synthetic-only", transport=httpx.MockTransport(infer))
+    service = _active_application_owner(monkeypatch, source, None)
+    dto = run(service.start(user, parent))
+    assert dto["current_observation"]["text"] == BODY
+    assert len(calls) == 1

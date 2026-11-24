@@ -357,7 +357,7 @@ class EmlisThreadService:
                  semantic_profile=None, offline_candidate_source=None, offline_model_attempt_seconds=None,
                  natural_reply_source=None, response_profile=None, natural_questions_enabled=True,
                  natural_meaning_profile=ACTIVE_MEANING_PROFILE, natural_context_update_enabled=True,
-                 natural_context_update_paid_only=False):
+                 natural_context_update_paid_only=False, initial_observation_follow_enabled=False):
         if runtime_profile not in {RUNTIME_PROFILE, Q3_PROFILE}:
             raise ValueError("unsupported_thread_profile")
         if natural_reply_source is not None:
@@ -374,6 +374,9 @@ class EmlisThreadService:
         self.natural_questions_enabled = natural_questions_enabled
         self.natural_context_update_enabled = natural_context_update_enabled
         self.natural_context_update_paid_only = natural_context_update_paid_only
+        if type(initial_observation_follow_enabled) is not bool:
+            raise ValueError("initial_observation_follow_setting_invalid")
+        self.initial_observation_follow_enabled = initial_observation_follow_enabled
         if natural_meaning_profile not in {None, ACTIVE_MEANING_PROFILE}:
             raise ValueError('natural_reply_meaning_profile_invalid')
         self.natural_meaning_profile = natural_meaning_profile
@@ -1043,7 +1046,8 @@ class EmlisThreadService:
         initial_follow_version = None
         if context_version in INITIAL_OBSERVATION_FOLLOW_CONTEXT_VERSIONS:
             initial_follow_version = context_version
-        elif prior is None and getattr(self.natural_reply_source, 'model', None) == QWEN_9B_NATURAL_ALIAS:
+        elif (prior is None and self.initial_observation_follow_enabled
+                and getattr(self.natural_reply_source, 'model', None) == QWEN_9B_NATURAL_ALIAS):
             initial_follow_version = INITIAL_OBSERVATION_FOLLOW_CONTEXT_VERSION
         material, safety = prepare_natural_reply(_request(snapshot), response_stage=response_stage,
             bind_writer_context=context_version is not None,
