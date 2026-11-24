@@ -66,6 +66,11 @@ def _memory_rows(rows, params):
     if 'visual_recipe->theme->>theme_id' in params:
         themes = params['visual_recipe->theme->>theme_id'].removeprefix('in.(').removesuffix(')').split(',')
         rows = [r for r in rows if r['visual_recipe']['theme']['theme_id'] in themes]
+    if 'visual_recipe->font_style->>font_style_id' in params:
+        assert params['visual_recipe->font_style->>font_style_id'] == 'eq.system_readable'
+        assert params['visual_recipe->font_style->>text_color_id'] == 'is.null'
+        rows = [r for r in rows if r['visual_recipe']['font_style']['font_style_id'] == 'system_readable'
+                and 'text_color_id' not in r['visual_recipe']['font_style']]
     if 'not.and' in params:
         assert params['not.and'] == ('(visual_recipe->theme->>theme_id.eq.quiet_night,'
             'visual_recipe->branding->>branding_mode.eq.required_small)')
@@ -474,7 +479,8 @@ def test_legacy_palette_filters_before_history_pagination_and_detail_export(harn
 
     headers = {'Authorization': 'Bearer synthetic-owner', 'X-Piece-Palette': '2'}
     assert call(headers=headers).json()['items'][0]['piece_id'] == expanded['id']
-    assert 'visual_recipe->theme->>theme_id' not in state['reads'][-1]
+    from piece_v2_visual import THEME_IDS
+    assert state['reads'][-1]['visual_recipe->theme->>theme_id'] == 'in.(' + ','.join(THEME_IDS) + ')'
     _detail(call(expanded['id'], headers=headers).json(), expanded)
     _detail(call(expanded['id'] + '/export', headers=headers).json(), expanded)
 

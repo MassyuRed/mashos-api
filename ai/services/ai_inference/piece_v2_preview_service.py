@@ -32,7 +32,8 @@ from piece_v2_source_adapter import (
     project_saved_refined_lineage, project_saved_refined_fence,
     project_saved_corrected_source,
 )
-from piece_v2_visual import build_visual_recipe, require_piece_theme, validate_visual_recipe
+from piece_v2_visual import (build_selected_visual_recipe, require_piece_visual_selection,
+                             validate_visual_recipe, visual_selection_from_recipe)
 
 _SOURCE_FIELDS = frozenset({
     'source_input_id', 'source_input_version', 'source_input_bundle_commitment',
@@ -40,6 +41,7 @@ _SOURCE_FIELDS = frozenset({
     'question_need_decision_identity', 'supplemental_answer_identity',
 })
 _VISUAL_FIELDS = frozenset({'theme_id', 'aspect_ratio', 'branding_mode'})
+_OPTIONAL_VISUAL_FIELDS = frozenset({'font_style_id', 'text_color_id'})
 _REQUEST_FIELDS = frozenset({'source_ref', 'requested_format', 'visual_selection'})
 _COMMITMENT = re.compile(r'sha256:[0-9a-f]{64}')
 _FORMAT_FAILURES = frozenset({'tier_invalid', 'format_choice_not_admitted', 'format_not_eligible'})
@@ -199,6 +201,14 @@ async def _revalidate_handoff(adapter, authorization, handoff):
     raise _error('PIECE_REQUEST_INVALID')
 
 
+def _validate_visual_selection(value: object) -> None:
+    if (type(value) is not dict or not _VISUAL_FIELDS <= value.keys()
+            or not value.keys() <= _VISUAL_FIELDS | _OPTIONAL_VISUAL_FIELDS):
+        raise _error('PIECE_REQUEST_INVALID')
+    if any(item is not None and (type(item) is not str or not item) for item in value.values()):
+        raise _error('PIECE_VISUAL_SELECTION_NOT_ALLOWED')
+
+
 def _request_snapshot(request: object) -> dict:
     """Copy once before the first await; do not retain caller-owned mappings."""
     try:
@@ -206,9 +216,9 @@ def _request_snapshot(request: object) -> dict:
             raise _error('PIECE_REQUEST_INVALID')
         value = json.loads(canonical_json_bytes(request))
         source, visual = value['source_ref'], value['visual_selection']
-        if (type(source) is not dict or set(source) != _SOURCE_FIELDS or
-                type(visual) is not dict or set(visual) != _VISUAL_FIELDS):
+        if type(source) is not dict or set(source) != _SOURCE_FIELDS:
             raise _error('PIECE_REQUEST_INVALID')
+        _validate_visual_selection(visual)
         for key in ('source_input_id', 'source_input_version',
                     'source_input_bundle_commitment', 'emlis_observation_stage',
                     'emlis_observation_result_identity'):
@@ -231,8 +241,6 @@ def _request_snapshot(request: object) -> dict:
         chosen = value['requested_format']
         if chosen is not None and (type(chosen) is not str or chosen not in ('short_essay', 'quote', 'declaration')):
             raise _error('PIECE_FORMAT_NOT_ELIGIBLE')
-        if any(item is not None and (type(item) is not str or not item) for item in visual.values()):
-            raise _error('PIECE_VISUAL_SELECTION_NOT_ALLOWED')
         return value
     except PieceContractError as exc:
         raise _error(exc.code if exc.code in _SERVICE_ERRORS else 'PIECE_REQUEST_INVALID') from None
@@ -257,11 +265,7 @@ def _visual_mutation_snapshot(request: object) -> dict:
             raise _error('PIECE_REQUEST_INVALID')
         value = json.loads(canonical_json_bytes(request))
         _positive(value['expected_preview_revision'])
-        selection = value['visual_selection']
-        if type(selection) is not dict or set(selection) != _VISUAL_FIELDS:
-            raise _error('PIECE_REQUEST_INVALID')
-        if any(v is not None and (type(v) is not str or not v) for v in selection.values()):
-            raise _error('PIECE_VISUAL_SELECTION_NOT_ALLOWED')
+        _validate_visual_selection(value['visual_selection'])
         return value
     except PieceContractError:
         raise
@@ -383,10 +387,9 @@ class PiecePreviewService:
                 raise _error('PIECE_HASH_MISMATCH') from None
             selection = value['visual_selection']
             try:
-                recipe = build_visual_recipe(candidate['format_type'],
+                recipe = build_selected_visual_recipe(candidate['format_type'],
                     tier=original.subscription_tier, language=payload['language'],
-                    theme=selection['theme_id'], aspect_ratio=selection['aspect_ratio'],
-                    branding=selection['branding_mode'])
+                    selection=selection)
             except PieceContractError:
                 raise _error('PIECE_VISUAL_SELECTION_NOT_ALLOWED') from None
             artifact = {
@@ -420,18 +423,16 @@ class PiecePreviewService:
         This is not PATCH or persistence: the caller must hold the immutable
         result of prepare_original or a validated owned preview snapshot,
         never deserialize a client-supplied body.
-        All three selectors are required; None uses B9's existing tier default.
+        All three base selectors are required. An omitted optional selector
+        keeps the current choice; an explicit None restores the default.
         No author, format change, preview ID, expiry or save effect is involved.
         """
         if type(previous) is not PreparedPiecePreview or type(previous.handoff) not in _HANDOFF_TYPES:
             raise _error('PIECE_REQUEST_INVALID')
         try:
             # Own the choice before either authenticated read can yield.
-            if type(visual_selection) is not dict or set(visual_selection) != _VISUAL_FIELDS:
-                raise _error('PIECE_REQUEST_INVALID')
+            _validate_visual_selection(visual_selection)
             selection = json.loads(canonical_json_bytes(visual_selection))
-            if any(v is not None and (type(v) is not str or not v) for v in selection.values()):
-                raise _error('PIECE_VISUAL_SELECTION_NOT_ALLOWED')
         except PieceContractError as exc:
             raise _error(exc.code if exc.code in _SERVICE_ERRORS else 'PIECE_REQUEST_INVALID') from None
         except (ValueError, TypeError, UnicodeError, RecursionError):
@@ -459,10 +460,10 @@ class PiecePreviewService:
             except (PieceContractError, KeyError, TypeError):
                 raise _error('PIECE_HASH_MISMATCH') from None
             try:
-                recipe = build_visual_recipe(artifact['format_type'],
+                selected = visual_selection_from_recipe(artifact['visual_recipe']) | selection
+                recipe = build_selected_visual_recipe(artifact['format_type'],
                     tier=current.original.subscription_tier, language=payload['language'],
-                    theme=selection['theme_id'], aspect_ratio=selection['aspect_ratio'],
-                    branding=selection['branding_mode'])
+                    selection=selected)
             except PieceContractError:
                 raise _error('PIECE_VISUAL_SELECTION_NOT_ALLOWED') from None
             artifact['visual_recipe'] = recipe
@@ -485,6 +486,7 @@ class PiecePreviewService:
         load_record: Callable[[str, str], Awaitable[dict | None]] = _load_owned_preview_for_replay,
         allowed_renderers: tuple[str, ...] | None = None,
         expanded_palette: bool = False,
+        visual_editor: bool = False,
     ) -> dict:
         """Revise only the visual recipe of an owned, persisted draft.
 
@@ -536,9 +538,10 @@ class PiecePreviewService:
                 _preview_content(dict(row, eligible_formats=row['preview_eligible_formats']))
             except PieceContractError:
                 raise _error('PIECE_HASH_MISMATCH') from None
-            expanded = expanded_palette and row['renderer_version'] == 'piece.rn_bitmap_renderer.ios.v2'
-            require_piece_theme(row['visual_recipe']['theme']['theme_id'], expanded_palette=expanded)
-            require_piece_theme(value['visual_selection']['theme_id'], expanded_palette=expanded)
+            capable_renderer = row['renderer_version'] == 'piece.rn_bitmap_renderer.ios.v2'
+            for selection in (visual_selection_from_recipe(row['visual_recipe']), value['visual_selection']):
+                require_piece_visual_selection(selection, expanded_palette=expanded_palette and capable_renderer,
+                                               visual_editor=visual_editor and capable_renderer)
             handoff = await _resolve_handoff(self._source_adapter, authorization,
                 _source_ref_from_lineage(row['source_lineage']))
             if (type(handoff) not in _HANDOFF_TYPES
@@ -669,9 +672,8 @@ class PiecePreviewService:
             try:
                 validate_visual_recipe(artifact['visual_recipe'], format_type=selected,
                     language=payload['language'], expected_hash=artifact['visual_recipe_hash'])
-                expected_recipe = build_visual_recipe(selected, tier=handoff.original.subscription_tier,
-                    language=payload['language'], theme=selection['theme_id'],
-                    aspect_ratio=selection['aspect_ratio'], branding=selection['branding_mode'])
+                expected_recipe = build_selected_visual_recipe(selected, tier=handoff.original.subscription_tier,
+                    language=payload['language'], selection=selection)
                 if expected_recipe != artifact['visual_recipe']:
                     raise _error('PIECE_VISUAL_SELECTION_NOT_ALLOWED')
             except PieceContractError:
@@ -807,15 +809,11 @@ class PiecePreviewService:
             # The original POST fingerprint still binds this key. After a
             # revision-bound PATCH it retrieves the CURRENT stored candidate,
             # not the original image settings, and never undoes the mutation.
-            selection = value['visual_selection'] if row['preview_revision'] == 1 else {
-                'theme_id': row['visual_recipe']['theme']['theme_id'],
-                'aspect_ratio': row['visual_recipe']['aspect_ratio'],
-                'branding_mode': row['visual_recipe']['branding']['branding_mode'],
-            }
+            selection = (value['visual_selection'] if row['preview_revision'] == 1
+                         else visual_selection_from_recipe(row['visual_recipe']))
             try:
-                recipe = build_visual_recipe(fmt, tier=tier,
-                    language=row['content_payload']['language'], theme=selection['theme_id'],
-                    aspect_ratio=selection['aspect_ratio'], branding=selection['branding_mode'])
+                recipe = build_selected_visual_recipe(fmt, tier=tier,
+                    language=row['content_payload']['language'], selection=selection)
                 if recipe != row['visual_recipe']:
                     raise _error('PIECE_VISUAL_SELECTION_NOT_ALLOWED')
             except PieceContractError:

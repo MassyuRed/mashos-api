@@ -268,14 +268,14 @@ def test_sql_saved_state_keeps_body_and_rechecks_after_visual(database, monkeypa
     before = run(service.prepare_original(authorization, request(handoff)))
     stored_before = run(emlis.store.read(user, input_id=parent))
     disallow_author(monkeypatch)
-    builder = preview.build_visual_recipe
+    builder = preview.build_selected_visual_recipe
     def build(*args, **kwargs):
         value = builder(*args, **kwargs)
         if change_during_visual:
             assert 'code' not in db.query('update public.emotions set memo_action=$1 where id=$2',
                                           ['私は今は休みたい。', parent])
         return value
-    monkeypatch.setattr(preview, 'build_visual_recipe', build)
+    monkeypatch.setattr(preview, 'build_selected_visual_recipe', build)
     if change_during_visual:
         with pytest.raises(PieceContractError) as exc:
             run(service.prepare_visual_change(authorization, before, choice('quiet_night')))
