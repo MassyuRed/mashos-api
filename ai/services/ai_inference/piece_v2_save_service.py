@@ -16,7 +16,7 @@ from piece_v2_preview_service import (
     _HANDOFF_TYPES, _resolve_handoff, _source_ref_from_lineage, _canonical_handoff_lineage,
 )
 from piece_v2_store import _preview_content, save_piece, save_request_arguments
-from piece_v2_visual import build_visual_recipe, require_piece_theme
+from piece_v2_visual import build_selected_visual_recipe, require_piece_visual_selection, visual_selection_from_recipe
 
 SAVE_STATUS = {
     'PIECE_REQUEST_INVALID': 400, 'PIECE_AUTH_REQUIRED': 401,
@@ -77,7 +77,9 @@ class PieceSaveService:
     async def save(self, authorization: str, *, authenticated_user_id: str,
                    request: dict, idempotency_key: str,
                    allowed_renderers: tuple[str, ...] | None = None,
-                   expanded_palette: bool = False) -> dict:
+                   expanded_palette: bool = False, visual_editor: bool = False,
+                   visual_alignment: bool = False, visual_text_size: bool = False,
+                   visual_background_style: bool = False) -> dict:
         """The HTTP owner authenticates every call, including committed replay.
 
         For a first save, B5 rechecks current source eligibility without calling
@@ -130,8 +132,13 @@ class PieceSaveService:
                 _preview_content(content)
             except PieceContractError:
                 _fail('PIECE_HASH_MISMATCH')
-            require_piece_theme(row['visual_recipe']['theme']['theme_id'], expanded_palette=(
-                expanded_palette and row['renderer_version'] == 'piece.rn_bitmap_renderer.ios.v2'))
+            selection = visual_selection_from_recipe(row['visual_recipe'])
+            capable_renderer = row['renderer_version'] == 'piece.rn_bitmap_renderer.ios.v2'
+            require_piece_visual_selection(selection, expanded_palette=expanded_palette and capable_renderer,
+                                           visual_editor=visual_editor and capable_renderer,
+                                           visual_alignment=visual_alignment and capable_renderer,
+                                           visual_text_size=visual_text_size and capable_renderer,
+                                           visual_background_style=visual_background_style and capable_renderer)
             lineage = row['source_lineage']
             current = await _resolve_handoff(self._source_adapter, authorization,
                 _source_ref_from_lineage(lineage))
@@ -154,9 +161,8 @@ class PieceSaveService:
                 _fail('PIECE_FORMAT_NOT_ELIGIBLE')
             recipe = row['visual_recipe']
             try:
-                allowed = build_visual_recipe(fmt, tier=tier, language=row['content_payload']['language'],
-                    theme=recipe['theme']['theme_id'], aspect_ratio=recipe['aspect_ratio'],
-                    branding=recipe['branding']['branding_mode'])
+                allowed = build_selected_visual_recipe(fmt, tier=tier, language=row['content_payload']['language'],
+                    selection=selection)
                 if allowed != recipe:
                     _fail('PIECE_VISUAL_SELECTION_NOT_ALLOWED')
             except PieceContractError:

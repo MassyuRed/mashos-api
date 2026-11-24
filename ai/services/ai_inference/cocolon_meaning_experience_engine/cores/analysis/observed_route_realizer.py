@@ -1170,7 +1170,10 @@ def validate_analysis_semantic_projection(projection, report_id):
         and projection['projection_of'] == 'artifact:' + UUID(report_id).hex + '@1'
         and _semantic_map_text(projection['period_label'], 200))
     overview = projection['overview']
-    _semantic_map_require(_semantic_map_keys(overview, {'title', 'summary'}) and _semantic_map_text(overview['title'], 80)
+    keys = {'title', 'summary'}
+    if type(overview) is dict and 'primary_structures' in overview:
+        keys.add('primary_structures')
+    _semantic_map_require(_semantic_map_keys(overview, keys) and _semantic_map_text(overview['title'], 80)
         and _semantic_map_text(overview['summary'], 2000))
     nodes, edges = projection['nodes'], projection['edges']
     _semantic_map_require(type(nodes) is list and 1 <= len(nodes) <= 24 and type(edges) is list and len(edges) <= 48)
@@ -1184,6 +1187,9 @@ def validate_analysis_semantic_projection(projection, report_id):
             and _semantic_map_strings(node['unknowns'], maximum=4, text_maximum=500)
             and type(node['evidence_badge_count']) is int and node['evidence_badge_count'] >= 1)
     refs = [node['node_ref'] for node in nodes]
+    if 'primary_structures' in overview:
+        from .semantic_admission import _check_public_primary_structures
+        _check_public_primary_structures(overview['primary_structures'], set(refs))
     _semantic_map_require(projection['accessibility_linear_order'] == refs)
     seen = set()
     for index, edge in enumerate(edges, 1):
@@ -1256,7 +1262,12 @@ def analysis_semantic_projection_text(projection, *, record_scoped_unknowns=True
                 else paragraphs(node['summary'], node['explanation']))
     displayed = {line for body in node_bodies.values() for line in body}
     displayed.update(node['summary'] for node in projection['nodes'])
-    lines = [projection['overview']['title']]
+    lines = []
+    for axis in projection['overview'].get('primary_structures', ()):
+        scope = {'across_records': 'いくつかの記録に通じること', 'self_report': 'ご自身が気づいたこと',
+                 'in_this_record': 'この場面で見えること'}[axis['scope']]
+        lines.extend([scope, axis['title'], axis['description'], ''])
+    lines.append(projection['overview']['title'])
     lines.extend(line for line in paragraphs(projection['overview']['summary']) if line not in displayed)
     index = {node['node_ref']: node for node in projection['nodes']}
     for node in projection['nodes']:

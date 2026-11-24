@@ -71,6 +71,75 @@ def test_saved_recipe_is_not_rewritten_on_later_downgrade():
     assert render(r=r)['lines'] == render(r=visible)['lines']
 
 
+@pytest.mark.parametrize(('fmt', 'intrinsic', 'custom'), [
+    ('short_essay', 'left', 'center'), ('quote', 'center', 'left'), ('declaration', 'left', 'center'),
+])
+def test_paid_alignment_changes_position_without_changing_text_or_old_recipe(fmt, intrinsic, custom):
+    old = build_visual_recipe(fmt, tier='plus')
+    assert old == build_visual_recipe(fmt, tier='plus', text_alignment=intrinsic)
+    changed = build_visual_recipe(fmt, tier='plus', text_alignment=custom)
+    assert resolve_visual(old)['alignment'] == intrinsic
+    assert resolve_visual(changed)['alignment'] == custom
+    assert validate_visual_recipe(changed, format_type=fmt, language='ja',
+        expected_hash=canonical_sha256_hex(changed)) == changed
+    c = candidate(fmt)
+    before, after = render(c, old), render(c, changed)
+    assert [line['text'] for line in before['lines']] == [line['text'] for line in after['lines']]
+    assert [line['ink_box'][0] for line in before['lines']] != [line['ink_box'][0] for line in after['lines']]
+
+
+@pytest.mark.parametrize('fmt', ['short_essay', 'quote', 'declaration'])
+@pytest.mark.parametrize('ratio', ['4:5', '9:16'])
+def test_paid_preferred_text_size_keeps_format_floor_and_old_recipe(fmt, ratio):
+    options = {'tier': 'plus', 'aspect_ratio': ratio}
+    original = build_visual_recipe(fmt, **options)
+    assert original == build_visual_recipe(fmt, text_size='standard', **options)
+    sizes = resolve_visual(original)['font_sizes']
+    small = build_visual_recipe(fmt, text_size='small', **options)
+    large = build_visual_recipe(fmt, text_size='large', **options)
+    assert resolve_visual(small)['font_sizes'] == sizes[1:]
+    assert resolve_visual(large)['font_sizes'] == [sizes[0] + (sizes[0]-sizes[1]), *sizes]
+    c = candidate(fmt, text='ゆっくり考える時間が大切です。')
+    plans = [render(c, recipe) for recipe in (small, original, large)]
+    assert [p['font_px'] for p in plans] == [sizes[1], sizes[0], sizes[0]+(sizes[0]-sizes[1])]
+    assert all(''.join(line['text'] for line in p['lines']) == c['piece_text'] for p in plans)
+
+
+def test_large_preference_downfits_without_losing_the_complete_body():
+    class Constrained(Metrics):
+        def measure(self, text, font_px):
+            if font_px > 48:
+                return TextMeasurement(10, 0, -1000, 10, 1000)
+            return super().measure(text, font_px)
+
+    c = candidate(text='書いた記録の内容は最初から最後まで残します。')
+    recipe = build_visual_recipe('short_essay', tier='plus', text_size='large')
+    result = render(c, recipe, Constrained())
+    assert result['font_px'] == 48 and result['font_floor_px'] == 36
+    assert ''.join(line['text'] for line in result['lines']) == c['piece_text']
+
+
+def test_premium_gradient_keeps_legacy_recipe_and_uses_two_theme_colors():
+    from piece_v2_visual import EDITOR_THEME_IDS
+
+    expected_ends = {'sage_paper': '#F5F8F0', 'peach_paper': '#FFF2EC', 'slate_paper': '#F3F5FA'}
+    for theme in EDITOR_THEME_IDS:
+        options = {'tier': 'premium', 'theme': theme}
+        original = build_visual_recipe('short_essay', **options)
+        assert original == build_visual_recipe('short_essay', background_style='solid', **options)
+        solid = resolve_visual(original)
+        assert 'background_gradient' not in solid
+        recipe = build_visual_recipe('short_essay', background_style='gradient', **options)
+        view = resolve_visual(recipe)
+        assert recipe['theme'] == dict(original['theme'], background_style='gradient')
+        assert view['colors'] == solid['colors']
+        assert view['background_gradient'] == {'start': solid['colors']['surface'],
+            'end': expected_ends.get(theme, solid['colors']['vector_end'])}
+        assert view['background_gradient']['start'] != view['background_gradient']['end']
+        assert validate_visual_recipe(recipe, format_type='short_essay', language='ja',
+            expected_hash=canonical_sha256_hex(recipe)) == recipe
+
+
 @pytest.mark.parametrize('change', [lambda r: r.update(extra='hidden'),
     lambda r: r['theme'].update(theme_version=2),
     lambda r: r['theme'].update(theme_version=True),

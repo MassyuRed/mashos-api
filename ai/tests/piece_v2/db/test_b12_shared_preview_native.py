@@ -64,7 +64,13 @@ def _save_harness(database, monkeypatch, *, tier='free'):
     async def load(path, *, params, timeout):
         assert path == '/rest/v1/piece_records' and timeout == 8.0
         theme_key = 'visual_recipe->theme->>theme_id'
-        assert set(params) <= {'select', 'id', 'owner_user_id', 'limit', 'lifecycle_status', theme_key, 'not.and'}
+        font_key = 'visual_recipe->font_style->>font_style_id'
+        color_key = 'visual_recipe->font_style->>text_color_id'
+        alignment_key = 'visual_recipe->font_style->>text_alignment'
+        size_key = 'visual_recipe->font_style->>text_size'
+        background_key = 'visual_recipe->theme->>background_style'
+        assert set(params) <= {'select', 'id', 'owner_user_id', 'limit', 'lifecycle_status', theme_key,
+                               font_key, color_key, alignment_key, size_key, background_key, 'not.and'}
         where, values = ['id=%s', 'owner_user_id=%s'], [params['id'][3:], params['owner_user_id'][3:]]
         if 'lifecycle_status' in params:
             assert params['lifecycle_status'] == 'eq.saved'
@@ -73,6 +79,19 @@ def _save_harness(database, monkeypatch, *, tier='free'):
             assert params[theme_key] == 'in.(soft_paper,quiet_night)'
             where.append("visual_recipe->'theme'->>'theme_id' in (%s,%s)")
             values.extend(['soft_paper', 'quiet_night'])
+        if font_key in params:
+            assert params[font_key] == 'eq.system_readable' and params[color_key] == 'is.null'
+            where.extend(["visual_recipe->'font_style'->>'font_style_id'='system_readable'",
+                          "visual_recipe->'font_style'->>'text_color_id' IS NULL"])
+        if alignment_key in params:
+            assert params[alignment_key] == 'is.null'
+            where.append("visual_recipe->'font_style'->>'text_alignment' IS NULL")
+        if size_key in params:
+            assert params[size_key] == 'is.null'
+            where.append("visual_recipe->'font_style'->>'text_size' IS NULL")
+        if background_key in params:
+            assert params[background_key] == 'is.null'
+            where.append("visual_recipe->'theme'->>'background_style' IS NULL")
         if 'not.and' in params:
             assert params['not.and'] == (
                 '(visual_recipe->theme->>theme_id.eq.quiet_night,'

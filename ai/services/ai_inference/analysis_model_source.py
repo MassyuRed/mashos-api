@@ -482,6 +482,19 @@ def _configured_semantic_prompt_version(model):
     return SEMANTIC_MAP_EVENT_PLAN_PROFILE if model == SEMANTIC_EVENT_PLAN_MODEL else SEMANTIC_MAP_PROFILE
 
 
+def analysis_model_primary_structure_reading(source):
+    if os.getenv('COCOLON_ANALYSIS_PRIMARY_STRUCTURE_READING') != 'karen.v3':
+        return False
+    if type(source) is _ApplicationSemanticAnalysisSource:
+        model = source._settings[2]
+    elif type(source) is SelfHostedSemanticAnalysisModelSource:
+        model = source.model
+    else:
+        return False
+    # Only the rehearsed 9B Map identity can request the extra response field.
+    return 'karen.v3' if model == SEMANTIC_OCCURRENCE_V24_9B_MODEL else False
+
+
 def analysis_model_prompt_version(source):
     """Only an explicitly constructed transport opts in; callbacks stay v4.
 

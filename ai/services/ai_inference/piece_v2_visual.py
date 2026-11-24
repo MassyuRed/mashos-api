@@ -47,6 +47,25 @@ THEMES = {
 }
 LEGACY_THEME_IDS = ('soft_paper', 'quiet_night')
 THEME_IDS = tuple(THEMES)
+THEMES.update({
+    'sage_paper': {'canvas': '#E5EEE0', 'surface': '#E5EEE0', 'text': '#273727',
+                   'secondary': '#4A5D48', 'accent': '#4C674B', 'border': '#B4C6AC',
+                   'branding': '#4C674B', 'vector_end': '#E5EEE0'},
+    'peach_paper': {'canvas': '#F8E4D8', 'surface': '#F8E4D8', 'text': '#462D27',
+                    'secondary': '#654941', 'accent': '#884834', 'border': '#D7B4A3',
+                    'branding': '#884834', 'vector_end': '#F8E4D8'},
+    'slate_paper': {'canvas': '#E3E7EF', 'surface': '#E3E7EF', 'text': '#293447',
+                    'secondary': '#4B586C', 'accent': '#4C5F7A', 'border': '#B8C2D2',
+                    'branding': '#4C5F7A', 'vector_end': '#E3E7EF'},
+})
+EDITOR_THEME_IDS = tuple(THEMES)
+FONT_STYLE_IDS = ('system_readable', 'serif_readable')
+TEXT_COLOR_IDS = ('neutral_ink',)
+TEXT_ALIGNMENTS = ('left', 'center')
+TEXT_SIZES = ('small', 'standard', 'large')
+BACKGROUND_STYLES = ('solid', 'gradient')
+GRADIENT_ENDS = {'sage_paper': '#F5F8F0', 'peach_paper': '#FFF2EC', 'slate_paper': '#F3F5FA'}
+DARK_THEME_IDS = frozenset({'quiet_night', 'forest_mint', 'ocean_ice'})
 SCALES = {
     'short_essay': {'4:5': (48, 44, 40, 36), '9:16': (52, 48, 44, 40)},
     'quote': {'4:5': (72, 64, 56), '9:16': (80, 72, 64)},
@@ -56,9 +75,17 @@ LINE_HEIGHT = {'short_essay': 1.55, 'quote': 1.35, 'declaration': 1.42}
 CANVASES = {'4:5': (1080, 1350, 96, 72), '9:16': (1080, 1920, 108, 84)}
 
 
-def require_piece_theme(theme: str | None, *, expanded_palette: bool) -> None:
+def require_piece_visual_selection(selection: Mapping, *, expanded_palette: bool,
+                                   visual_editor: bool = False, visual_alignment: bool = False,
+                                   visual_text_size: bool = False, visual_background_style: bool = False) -> None:
     """Guard client compatibility separately from the current plan."""
-    if theme is not None and theme not in (THEME_IDS if expanded_palette else LEGACY_THEME_IDS):
+    themes = EDITOR_THEME_IDS if visual_editor else THEME_IDS if expanded_palette else LEGACY_THEME_IDS
+    theme = selection['theme_id']
+    if (theme is not None and theme not in themes
+            or not visual_editor and ('font_style_id' in selection or 'text_color_id' in selection)
+            or not visual_alignment and 'text_alignment' in selection
+            or not visual_text_size and 'text_size' in selection
+            or not visual_background_style and 'background_style' in selection):
         raise PieceContractError('PIECE_VISUAL_SELECTION_NOT_ALLOWED')
 
 
@@ -66,9 +93,15 @@ def invalid() -> PieceContractError:
     return PieceContractError('PIECE_REQUEST_INVALID', 'visual_recipe')
 
 
+def default_text_alignment(format_type: str) -> str:
+    return 'center' if format_type == 'quote' else 'left'
+
+
 def build_visual_recipe(format_type: str, *, tier: str = 'free', language: str = 'ja',
                         theme: str | None = None, aspect_ratio: str | None = None,
-                        branding: str | None = None) -> dict:
+                        branding: str | None = None, font_style_id: str | None = None,
+                        text_color_id: str | None = None, text_alignment: str | None = None,
+                        text_size: str | None = None, background_style: str | None = None) -> dict:
     if tier not in ('free', 'plus', 'premium') or format_type not in TEMPLATES:
         raise invalid()
     if language not in ('ja', 'en', 'mixed'):
@@ -77,23 +110,66 @@ def build_visual_recipe(format_type: str, *, tier: str = 'free', language: str =
     aspect_ratio = '4:5' if aspect_ratio is None else aspect_ratio
     default_mark = 'required_small' if tier == 'free' else 'required_subtle'
     branding = default_mark if branding is None else branding
+    font_style_id = FONT_STYLE_IDS[0] if font_style_id is None else font_style_id
     if (theme not in THEMES or aspect_ratio not in CANVASES
+            or font_style_id not in FONT_STYLE_IDS
+            or text_color_id is not None and text_color_id not in TEXT_COLOR_IDS
+            or text_alignment is not None and (tier == 'free' or text_alignment not in TEXT_ALIGNMENTS)
+            or text_size is not None and (tier == 'free' or text_size not in TEXT_SIZES)
+            or background_style is not None and (tier != 'premium' or background_style not in BACKGROUND_STYLES)
+            or tier != 'premium' and (font_style_id != FONT_STYLE_IDS[0] or text_color_id is not None)
             or tier == 'free' and theme not in LEGACY_THEME_IDS
             or tier == 'free' and aspect_ratio != '4:5'
             or branding not in ((default_mark,) if tier == 'free' else (default_mark, 'off'))):
         raise invalid()
+    font_style = {'font_style_id': font_style_id, 'font_style_version': 1}
+    if text_color_id is not None:
+        font_style['text_color_id'] = text_color_id
+    if text_alignment is not None and text_alignment != default_text_alignment(format_type):
+        font_style['text_alignment'] = text_alignment
+    if text_size not in (None, 'standard'):
+        font_style['text_size'] = text_size
+    theme_settings = {'theme_id': theme, 'theme_version': 1}
+    if background_style == 'gradient':
+        theme_settings['background_style'] = background_style
     return {
         'visual_recipe_version': 'piece.visual_recipe.v1',
         'visual_catalog_version': 'piece.visual_catalog.v1',
         'format_type': format_type,
         'template': {'template_id': TEMPLATES[format_type], 'template_version': 1},
-        'theme': {'theme_id': theme, 'theme_version': 1},
-        'font_style': {'font_style_id': 'system_readable', 'font_style_version': 1},
+        'theme': theme_settings,
+        'font_style': font_style,
         'aspect_ratio': aspect_ratio,
         'branding': {'branding_mode': branding, 'branding_mark_id': 'cocolon_text_mark',
                      'branding_mark_version': 1},
         'layout_policy_version': 'piece.long_text_layout.v1', 'language': language,
     }
+
+
+def visual_selection_from_recipe(recipe: Mapping) -> dict:
+    selection = {'theme_id': recipe['theme']['theme_id'], 'aspect_ratio': recipe['aspect_ratio'],
+                 'branding_mode': recipe['branding']['branding_mode']}
+    style = recipe['font_style']
+    if style['font_style_id'] != FONT_STYLE_IDS[0]:
+        selection['font_style_id'] = style['font_style_id']
+    if 'text_color_id' in style:
+        selection['text_color_id'] = style['text_color_id']
+    if 'text_alignment' in style:
+        selection['text_alignment'] = style['text_alignment']
+    if 'text_size' in style:
+        selection['text_size'] = style['text_size']
+    if 'background_style' in recipe['theme']:
+        selection['background_style'] = recipe['theme']['background_style']
+    return selection
+
+
+def build_selected_visual_recipe(format_type: str, *, tier: str, language: str,
+                                 selection: Mapping) -> dict:
+    return build_visual_recipe(format_type, tier=tier, language=language,
+        theme=selection['theme_id'], aspect_ratio=selection['aspect_ratio'],
+        branding=selection['branding_mode'], font_style_id=selection.get('font_style_id'),
+        text_color_id=selection.get('text_color_id'), text_alignment=selection.get('text_alignment'),
+        text_size=selection.get('text_size'), background_style=selection.get('background_style'))
 
 
 def validate_visual_recipe(recipe: Mapping, *, format_type: str, language: str,
@@ -106,8 +182,8 @@ def validate_visual_recipe(recipe: Mapping, *, format_type: str, language: str,
     try:
         mark = recipe['branding']['branding_mode']
         implied_tier = 'free' if mark == 'required_small' else 'premium'
-        expected = build_visual_recipe(format_type, tier=implied_tier, language=language,
-            theme=recipe['theme']['theme_id'], aspect_ratio=recipe['aspect_ratio'], branding=mark)
+        expected = build_selected_visual_recipe(format_type, tier=implied_tier, language=language,
+            selection=visual_selection_from_recipe(recipe))
         # bool is not an integer version. Canonical bytes/hash alone would not
         # compensate for Python's True == 1 when comparing nested mappings.
         for key, v in (('template', 'template_version'), ('theme', 'theme_version'),
@@ -125,8 +201,22 @@ def resolve_visual(recipe: Mapping) -> dict:
     """For an already validated recipe; returns copies, not mutable catalog refs."""
     fmt, ratio = recipe['format_type'], recipe['aspect_ratio']
     w, h, margin, brand_zone = CANVASES[ratio]
-    return {'width': w, 'height': h, 'margin': margin, 'branding_zone': brand_zone,
-            'font_sizes': list(SCALES[fmt][ratio]), 'line_height_ratio': LINE_HEIGHT[fmt],
+    theme = recipe['theme']['theme_id']
+    colors = deepcopy(THEMES[theme])
+    if recipe['font_style'].get('text_color_id') == 'neutral_ink':
+        colors['text'] = '#F1F5F9' if theme in DARK_THEME_IDS else '#334155'
+    sizes = SCALES[fmt][ratio]
+    text_size = recipe['font_style'].get('text_size')
+    if text_size == 'small':
+        sizes = sizes[1:]
+    elif text_size == 'large':
+        sizes = (sizes[0] + (sizes[0] - sizes[1]), *sizes)
+    visual = {'width': w, 'height': h, 'margin': margin, 'branding_zone': brand_zone,
+            'font_sizes': list(sizes), 'line_height_ratio': LINE_HEIGHT[fmt],
             'paragraph_spacing_ratio': 0.65 if fmt == 'short_essay' else 0.0,
-            'alignment': 'center' if fmt == 'quote' else 'left',
-            'colors': deepcopy(THEMES[recipe['theme']['theme_id']])}
+            'alignment': recipe['font_style'].get('text_alignment', default_text_alignment(fmt)),
+            'colors': colors}
+    if recipe['theme'].get('background_style') == 'gradient':
+        visual['background_gradient'] = {'start': colors['surface'],
+                                         'end': GRADIENT_ENDS.get(theme, colors['vector_end'])}
+    return visual

@@ -62,3 +62,14 @@ def test_new_client_choices_match_server_tier_and_keep_format_policy(tier):
     caps['theme_ids'].clear()
     assert project_piece_plan_capabilities(server_tier=tier, expanded_palette=True,
         subscriber_customization=True)['theme_ids']
+
+
+@pytest.mark.parametrize('tier', ['free', 'plus', 'premium'])
+def test_editor_capabilities_add_only_paid_backgrounds_and_premium_typography(tier):
+    from piece_v2_visual import EDITOR_THEME_IDS
+
+    caps = project_piece_plan_capabilities(server_tier=tier, expanded_palette=True,
+        subscriber_customization=True, visual_editor=True)
+    assert caps['theme_ids'] == list(LEGACY_THEME_IDS if tier == 'free' else EDITOR_THEME_IDS)
+    assert caps['font_style_ids'] == (['system_readable', 'serif_readable'] if tier == 'premium' else [])
+    assert caps['text_color_ids'] == (['neutral_ink'] if tier == 'premium' else [])

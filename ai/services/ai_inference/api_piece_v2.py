@@ -14,7 +14,8 @@ from fastapi.responses import JSONResponse
 
 from piece_v2_contract import PieceContractError, normalize_visibility_scope
 from piece_v2_store import cancel_piece_preview
-from piece_v2_visual import LEGACY_THEME_IDS, require_piece_theme
+from piece_v2_visual import (LEGACY_THEME_IDS, THEME_IDS, build_selected_visual_recipe,
+                            require_piece_visual_selection, visual_selection_from_recipe)
 from piece_v2_runtime_control import (
     require_piece_feature_enabled, validate_piece_preview_runtime, wants_piece_publication,
 )
@@ -197,7 +198,9 @@ async def save_preview(request: Request) -> JSONResponse:
             rpc=features.wrap(save_rpc)).save)(request.headers['authorization'],
             authenticated_user_id=owner, request=value, idempotency_key=keys[0],
             allowed_renderers=_renderer_preferences(request)[1],
-            expanded_palette=_expanded_palette(request))
+            expanded_palette=_expanded_palette(request), visual_editor=_visual_editor(request),
+            visual_alignment=_visual_alignment(request), visual_text_size=_visual_text_size(request),
+            visual_background_style=_visual_background_style(request))
         features.require()
         return _response(result)
     except Exception as exc:
@@ -242,8 +245,7 @@ async def owner_history(request: Request) -> JSONResponse:
         features.require()
         result = await PieceOwnerService(load_records=features.wrap(load_saved_records)).history(authenticated_user_id=owner,
             limit=query.get('limit', '20'), cursor=query.get('cursor'),
-            theme_ids=None if _expanded_palette(request) else LEGACY_THEME_IDS,
-            subscriber_customization=_subscriber_customization(request))
+            **_owner_visual_options(request))
         features.require()
         return _response(result)
     except Exception as exc:
@@ -261,8 +263,7 @@ async def _read_owner_artifact(piece_id: str, request: Request, *, exporting: bo
         features.require()
         result = await PieceOwnerService(load_records=features.wrap(load_saved_records)).detail(
             authenticated_user_id=owner, piece_id=piece_id,
-            theme_ids=None if _expanded_palette(request) else LEGACY_THEME_IDS,
-            subscriber_customization=_subscriber_customization(request))
+            **_owner_visual_options(request))
         features.require()
         response = _response(result)
         if exporting and getattr(request.app.state, 'piece_export_receipt_ready', False) is True:
@@ -339,8 +340,7 @@ async def owner_export_receipt(piece_id: str, request: Request) -> JSONResponse:
         async def revalidate(name, args):
             current = await PieceOwnerService(load_records=features.wrap(load_saved_records)).detail(
                 authenticated_user_id=owner, piece_id=piece_id,
-                theme_ids=None if _expanded_palette(request) else LEGACY_THEME_IDS,
-                subscriber_customization=_subscriber_customization(request))
+                **_owner_visual_options(request))
             if (current['row_version'] != args['p_expected_row_version']
                     or current['piece_text_hash'] != args['p_piece_text_hash']
                     or current['visual_recipe_hash'] != args['p_visual_recipe_hash']):
@@ -537,16 +537,40 @@ def _palette_version(request: Request) -> str | None:
     values = request.headers.getlist('x-piece-palette')
     if len(values) > 1:
         raise PieceContractError('PIECE_REQUEST_INVALID')
-    return values[0] if values in (['2'], ['3']) else None
+    return values[0] if values in (['2'], ['3'], ['4'], ['5'], ['6'], ['7']) else None
 
 
 def _expanded_palette(request: Request) -> bool:
-    return _palette_version(request) in ('2', '3')
+    return _palette_version(request) in ('2', '3', '4', '5', '6', '7')
 
 
 def _subscriber_customization(request: Request) -> bool:
     """Client capability negotiation only; never a subscription assertion."""
-    return _palette_version(request) == '3'
+    return _palette_version(request) in ('3', '4', '5', '6', '7')
+
+
+def _visual_editor(request: Request) -> bool:
+    return _palette_version(request) in ('4', '5', '6', '7')
+
+
+def _visual_alignment(request: Request) -> bool:
+    return _palette_version(request) in ('5', '6', '7')
+
+
+def _visual_text_size(request: Request) -> bool:
+    return _palette_version(request) in ('6', '7')
+
+
+def _visual_background_style(request: Request) -> bool:
+    return _palette_version(request) == '7'
+
+
+def _owner_visual_options(request: Request) -> dict:
+    version = _palette_version(request)
+    return {'theme_ids': None if version in ('4', '5', '6', '7') else THEME_IDS if version in ('2', '3') else LEGACY_THEME_IDS,
+            'subscriber_customization': version in ('3', '4', '5', '6', '7'),
+            'visual_editor': version in ('4', '5', '6', '7'), 'visual_alignment': version in ('5', '6', '7'),
+            'visual_text_size': version in ('6', '7'), 'visual_background_style': version == '7'}
 
 
 def _preview_public_response(result: object) -> dict:
@@ -608,18 +632,35 @@ async def create_preview(request: Request) -> JSONResponse:
         ttl, runtime_renderer = _preview_runtime(request)
         renderer, allowed_renderers = _renderer_preferences(request)
         expanded_palette = _expanded_palette(request)
+        editor = _visual_editor(request)
+        alignment = _visual_alignment(request)
+        text_size = _visual_text_size(request)
+        background = _visual_background_style(request)
         def require_current_preview():
             features.require()
             if (_preview_runtime(request) != (ttl, runtime_renderer)
                     or _renderer_preferences(request) != (renderer, allowed_renderers)
-                    or _expanded_palette(request) != expanded_palette):
+                    or _expanded_palette(request) != expanded_palette
+                    or _visual_editor(request) != editor or _visual_alignment(request) != alignment
+                    or _visual_text_size(request) != text_size or _visual_background_style(request) != background):
                 raise PieceContractError('PIECE_CONFLICT')
-        require_piece_theme(value['visual_selection']['theme_id'], expanded_palette=(
-            expanded_palette and renderer == 'piece.rn_bitmap_renderer.ios.v2'))
+        capable_renderer = renderer == 'piece.rn_bitmap_renderer.ios.v2'
+        selection = value['visual_selection']
+        require_piece_visual_selection(selection, expanded_palette=expanded_palette and capable_renderer,
+                                       visual_editor=editor and capable_renderer,
+                                       visual_alignment=alignment and capable_renderer,
+                                       visual_text_size=text_size and capable_renderer,
+                                       visual_background_style=background and capable_renderer)
         # Read before generation/issuance: missing quota infrastructure must
         # not create a hidden preview. This snapshot does not admit a save.
         quota = await read_piece_quota(authenticated_user_id=owner,
             post_rpc=features.wrap(sb_post_rpc))
+        if editor and capable_renderer:
+            try:
+                build_selected_visual_recipe('short_essay', tier=quota['subscription_tier'], language='ja',
+                                             selection=selection)
+            except PieceContractError:
+                raise PieceContractError('PIECE_VISUAL_SELECTION_NOT_ALLOWED') from None
         features.require()
         result = await features.wrap(PiecePreviewService().issue_original)(
             request.headers['authorization'], value, idempotency_key=keys[0],
@@ -629,11 +670,18 @@ async def create_preview(request: Request) -> JSONResponse:
             rpc=features.wrap(_preview_rpc))
         features.require()
         public = _preview_public_response(result)
-        expanded = expanded_palette and public['renderer_version'] == 'piece.rn_bitmap_renderer.ios.v2'
-        require_piece_theme(public['visual_recipe']['theme']['theme_id'], expanded_palette=expanded)
+        capable_renderer = public['renderer_version'] == 'piece.rn_bitmap_renderer.ios.v2'
+        expanded = expanded_palette and capable_renderer
+        require_piece_visual_selection(visual_selection_from_recipe(public['visual_recipe']), expanded_palette=expanded,
+                                       visual_editor=editor and capable_renderer,
+                                       visual_alignment=alignment and capable_renderer,
+                                       visual_text_size=text_size and capable_renderer,
+                                       visual_background_style=background and capable_renderer)
         public.update(quota=quota, plan_capabilities=project_piece_plan_capabilities(
             server_tier=quota['subscription_tier'], expanded_palette=expanded,
-            subscriber_customization=expanded and _subscriber_customization(request)))
+            subscriber_customization=expanded and _subscriber_customization(request),
+            visual_editor=editor and capable_renderer, visual_alignment=alignment and capable_renderer,
+            visual_text_size=text_size and capable_renderer, visual_background_style=background and capable_renderer))
         return _response(public)
     except Exception as exc:
         # Cancellation (BaseException) deliberately propagates unchanged.
@@ -669,20 +717,32 @@ async def mutate_preview_visual(preview_id: str, request: Request) -> JSONRespon
         quota = await read_piece_quota(authenticated_user_id=owner,
             post_rpc=features.wrap(sb_post_rpc))
         expanded_palette = _expanded_palette(request)
+        editor = _visual_editor(request)
+        alignment = _visual_alignment(request)
+        text_size = _visual_text_size(request)
+        background = _visual_background_style(request)
         result = await features.wrap(PiecePreviewService().mutate_original_visual)(
             request.headers['authorization'], authenticated_user_id=owner,
-            preview_id=preview_id, request=value, expanded_palette=expanded_palette,
+            preview_id=preview_id, request=value, expanded_palette=expanded_palette, visual_editor=editor,
+            visual_alignment=alignment, visual_text_size=text_size, visual_background_style=background,
             allowed_renderers=_renderer_preferences(request)[1],
             expected_subscription_tier=quota['subscription_tier'],
             load_record=features.wrap(_load_owned_preview_for_replay),
             rpc=features.wrap(_preview_rpc))
         features.require()
         public = _preview_public_response(result)
-        expanded = expanded_palette and public['renderer_version'] == 'piece.rn_bitmap_renderer.ios.v2'
-        require_piece_theme(public['visual_recipe']['theme']['theme_id'], expanded_palette=expanded)
+        capable_renderer = public['renderer_version'] == 'piece.rn_bitmap_renderer.ios.v2'
+        expanded = expanded_palette and capable_renderer
+        require_piece_visual_selection(visual_selection_from_recipe(public['visual_recipe']), expanded_palette=expanded,
+                                       visual_editor=editor and capable_renderer,
+                                       visual_alignment=alignment and capable_renderer,
+                                       visual_text_size=text_size and capable_renderer,
+                                       visual_background_style=background and capable_renderer)
         public.update(quota=quota, plan_capabilities=project_piece_plan_capabilities(
             server_tier=quota['subscription_tier'], expanded_palette=expanded,
-            subscriber_customization=expanded and _subscriber_customization(request)))
+            subscriber_customization=expanded and _subscriber_customization(request),
+            visual_editor=editor and capable_renderer, visual_alignment=alignment and capable_renderer,
+            visual_text_size=text_size and capable_renderer, visual_background_style=background and capable_renderer))
         return _response(public)
     except Exception as exc:
         return features.failure(exc, _PREVIEW_STATUS)

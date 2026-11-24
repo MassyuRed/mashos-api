@@ -72,7 +72,9 @@ async def read_piece_quota(*, authenticated_user_id: str, post_rpc) -> dict:
 
 
 def project_piece_plan_capabilities(*, server_tier: str, expanded_palette: bool = False,
-                                    subscriber_customization: bool = False) -> dict:
+                                    subscriber_customization: bool = False,
+                                    visual_editor: bool = False, visual_alignment: bool = False,
+                                    visual_text_size: bool = False, visual_background_style: bool = False) -> dict:
     """PCE-6 plan display only; eligible formats remain the artifact's list.
 
     The new client negotiates subscriber customization separately from the
@@ -83,16 +85,27 @@ def project_piece_plan_capabilities(*, server_tier: str, expanded_palette: bool 
     """
     if type(server_tier) is not str or server_tier not in SAVE_LIMITS:
         raise PieceContractError('PIECE_TEMPORARILY_UNAVAILABLE')
-    from piece_v2_visual import LEGACY_THEME_IDS, THEME_IDS
-    return {
+    from piece_v2_visual import (BACKGROUND_STYLES, EDITOR_THEME_IDS, FONT_STYLE_IDS, LEGACY_THEME_IDS,
+                                TEXT_ALIGNMENTS, TEXT_COLOR_IDS, TEXT_SIZES, THEME_IDS)
+    capabilities = {
         'format_selection': {'free': 'fixed', 'plus': 'automatic',
                              'premium': 'eligible_choice'}[server_tier],
         'theme_ids': ((list(LEGACY_THEME_IDS) if subscriber_customization else ['soft_paper'])
                      if server_tier == 'free' else
-                      list(THEME_IDS if expanded_palette else LEGACY_THEME_IDS)),
+                      list(EDITOR_THEME_IDS if visual_editor else THEME_IDS if expanded_palette else LEGACY_THEME_IDS)),
         'aspect_ratios': (['4:5', '9:16'] if server_tier == 'premium' or
                           subscriber_customization and server_tier == 'plus' else ['4:5']),
         'branding_modes': (['required_small'] if server_tier == 'free' else
                            ['required_subtle', 'off'] if server_tier == 'premium' or
                            subscriber_customization else ['required_subtle']),
     }
+    if visual_editor:
+        capabilities['font_style_ids'] = list(FONT_STYLE_IDS) if server_tier == 'premium' else []
+        capabilities['text_color_ids'] = list(TEXT_COLOR_IDS) if server_tier == 'premium' else []
+    if visual_alignment:
+        capabilities['text_alignments'] = [] if server_tier == 'free' else list(TEXT_ALIGNMENTS)
+    if visual_text_size:
+        capabilities['text_sizes'] = [] if server_tier == 'free' else list(TEXT_SIZES)
+    if visual_background_style:
+        capabilities['background_styles'] = list(BACKGROUND_STYLES) if server_tier == 'premium' else []
+    return capabilities

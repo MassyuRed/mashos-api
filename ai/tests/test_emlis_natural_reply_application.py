@@ -963,3 +963,102 @@ def test_http_provider_sends_only_admitted_material_and_preserves_reply():
         model="chosen-4b", api_key="synthetic-only", transport=httpx.MockTransport(transport))
     reply = run(source(NaturalReplyInput("source", '{"current":{"memo":"合成入力"}}')))
     assert reply.text == BODY and reply.source_prefix_ref == "source"
+
+
+@pytest.mark.parametrize("thought,action,focus,feeling", [
+    ("見本帳にあった青い縞が好きでした。", "本を棚へ戻しました。", {"好きだと書いた箇所": "見本帳にあった青い縞"}, "好き"),
+    ("見本帳にあった青い縞が大好きでした。", "本を棚へ戻しました。", {"好きだと書いた箇所": "見本帳にあった青い縞"}, "大好き"),
+    ("友人が「寂しかった」と話していました。私はほっとしました。", "楽譜を返しました。", {}, "ほっとしました"),
+    ("楽譜を今日中に返せたので、私はほっとしました。", "受付を早く閉めると聞きました。", {"本人が明記した理由": "楽譜を今日中に返せた"}, "ほっとしました"),
+    ("私は帰り道に思い返すと寂しかったです。", "花に水をやりました。", {"本人が書いた場面": "帰り道に思い返す"}, "寂しかったです"),
+])
+def test_9b_initial_follow_uses_bound_focus_and_persists_literal(natural_case, qdb, monkeypatch,
+                                                              thought, action, focus, feeling):
+    from cocolon_meaning_experience_engine.natural_reply import (
+        INITIAL_OBSERVATION_FOLLOW_CONTEXT_VERSION, QWEN_9B_NATURAL_ALIAS)
+
+    user, parent, _, _ = natural_case
+    qdb.query("update public.emotions set memo=$2, memo_action=$3 where id=$1",
+              [parent, thought, action])
+    sent = []
+    literal = thought.split('。')[-2] + '。'
+    follow = "お話をここに残してくださったことを、Emlisは大事に受け取りました。"
+
+    def infer(request):
+        body = json.loads(request.content)
+        sent.append(body)
+        assert body["model"] == QWEN_9B_NATURAL_ALIAS
+        assert json.loads(body["messages"][-1]["content"]) == {
+            "本人の原文": literal, "本人の気持ちの言葉": feeling, **focus}
+        return httpx.Response(200, json={"model": QWEN_9B_NATURAL_ALIAS, "choices": [
+            {"finish_reason": "stop", "message": {"role": "assistant", "content": follow}}]})
+
+    source = SelfHostedNaturalReplySource(endpoint="https://model.invalid/v1/chat/completions",
+        model=QWEN_9B_NATURAL_ALIAS, api_key="synthetic-only", transport=httpx.MockTransport(infer))
+    service = _active_application_owner(monkeypatch, source, None)
+    dto = run(service.start(user, parent))
+    assert dto["state"] == "COMPLETED"
+    assert dto["current_observation"]["text"] == f"「{literal}」\n\n{follow}"
+    assert run(service.get(user, parent))["current_observation"] == dto["current_observation"]
+    saved = run(service.store.read(user, input_id=parent))
+    assert saved["original"]["memo"] == thought
+    assert saved["original"]["memo_action"] == action
+    receipt = next(event["payload"] for event in saved["events"]
+                   if event["payload"].get("stage") == "NATURAL_REPLY_RECEIVED")
+    assert receipt["writer_context_version"] == INITIAL_OBSERVATION_FOLLOW_CONTEXT_VERSION
+    assert receipt["reply"]["model"] == QWEN_9B_NATURAL_ALIAS
+    assert len(sent) == 1
+
+
+@pytest.mark.parametrize("thought,action", [
+    ("妹は青い縞が大好きでした。", "本を棚へ戻しました。"),
+    ("青い縞が好きでした。私は悲しかったです。", ""),
+    ("寂しかったけれど青い縞が好きでした。", ""),
+    ("私は寂しかったです。", "晴れてほっとしました。"),
+    ("友人が「私は寂しかったです。」と言っていました。", ""),
+    ("青い縞が好きな自分に気づきました。", ""),
+])
+def test_9b_initial_follow_does_not_project_uncertain_or_multiple_feelings(natural_case, qdb, monkeypatch,
+                                                                          thought, action):
+    from cocolon_meaning_experience_engine.natural_reply import QWEN_9B_NATURAL_ALIAS
+
+    user, parent, _, _ = natural_case
+    qdb.query("update public.emotions set memo=$2, memo_action=$3 where id=$1",
+              [parent, thought, action])
+
+    def infer(request):
+        body = json.loads(request.content)
+        material = json.loads(body["messages"][-1]["content"])
+        assert "本人の原文" not in material
+        assert material["records"][0]["active_fields"][0]["text"] == thought
+        return httpx.Response(200, json={"model": QWEN_9B_NATURAL_ALIAS, "choices": [
+            {"finish_reason": "stop", "message": {"role": "assistant", "content": BODY}}]})
+
+    source = SelfHostedNaturalReplySource(endpoint="https://model.invalid/v1/chat/completions",
+        model=QWEN_9B_NATURAL_ALIAS, api_key="synthetic-only", transport=httpx.MockTransport(infer))
+    service = _active_application_owner(monkeypatch, source, None)
+    dto = run(service.start(user, parent))
+    assert dto["current_observation"]["text"] == BODY
+
+
+@pytest.mark.parametrize("follow", [
+    "Emlisは見本帳にあった青い縞を見ました。",
+    "私も見本帳にあった青い縞が好きでした。",
+    "見本帳にあった青い縞が好きでした。",
+    "どんな色合いでしたか。",
+])
+def test_9b_initial_follow_rejects_fabricated_witness_or_unbound_voice(natural_case, qdb, monkeypatch, follow):
+    from cocolon_meaning_experience_engine.natural_reply import QWEN_9B_NATURAL_ALIAS
+
+    user, parent, _, _ = natural_case
+    qdb.query("update public.emotions set memo=$2 where id=$1",
+              [parent, "見本帳にあった青い縞が好きでした。"])
+    source = SelfHostedNaturalReplySource(endpoint="https://model.invalid/v1/chat/completions",
+        model=QWEN_9B_NATURAL_ALIAS, api_key="synthetic-only",
+        transport=httpx.MockTransport(lambda _: httpx.Response(200, json={
+            "model": QWEN_9B_NATURAL_ALIAS, "choices": [
+                {"finish_reason": "stop", "message": {"role": "assistant", "content": follow}}]})))
+    service = _active_application_owner(monkeypatch, source, None)
+    dto = run(service.start(user, parent))
+    assert dto["state"] == "RESPONSE_FAILED"
+    assert dto["current_observation"] is None

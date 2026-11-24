@@ -1014,6 +1014,7 @@ class ResponseCodec:
         self._reserved_source_pairs = pairs + tuple(pair[::-1] for pair in pairs)
         self.comparison_skips = COMPARISON_SKIPS
         self.phase = material['author_phase']
+        self.primary_structure_reading = material.get('primary_structure_reading') in ('karen.v1', 'karen.v2', 'karen.v3')
         self.plan_units = ()
         self.qualification_items = ()
         if self.phase == 'PLAN':
@@ -1148,6 +1149,8 @@ class ResponseCodec:
 
     def _relation_values(self, value, *, unpack, comparison_decisions=None, comparison_sources=None):
         keys = {'schema_version', 'nodes_sha256', 'qualification_review', 'edges', 'overview'}
+        if self.primary_structure_reading and type(value) is dict and 'primary_structures' in value:
+            keys.add('primary_structures')
         if self.comparisons and unpack:
             keys.add('comparisons')
         require(type(value) is dict and set(value) == keys and value['nodes_sha256'] == self.binding
@@ -1237,6 +1240,8 @@ class ResponseCodec:
                 if comparison_decisions is not None:
                     require(result['comparisons'] == comparison_decisions)
         result.update(edges=edges, overview=value['overview'])
+        if 'primary_structures' in value:
+            result['primary_structures'] = value['primary_structures']
         return result
 
     def judgment_decision(self, index, choice):

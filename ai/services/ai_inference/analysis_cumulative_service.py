@@ -96,7 +96,7 @@ def _saved_projection_text_matches(projection, text):
         return (text == analysis_semantic_projection_text(projection, compact_source_captions=True) or
                 text == analysis_semantic_projection_text(projection, compact_source_captions=True, source_ordered_detail=True) or
                 text == analysis_semantic_projection_text(projection, compact_source_captions=True, source_ordered_detail=True, original_field_sections=True) or
-                text == analysis_semantic_projection_text_legacy(projection) or
+                ('primary_structures' not in projection['overview'] and text == analysis_semantic_projection_text_legacy(projection)) or
                 text == analysis_semantic_projection_text(projection, record_scoped_unknowns=False))
     return False
 
@@ -129,7 +129,19 @@ def _legacy_semantic_projection(projection, saved_text=None):
 
 def map_response_for_renderer(payload, renderer):
     """Compatibility only; no generation, storage rewrite, or evidence change."""
+    if renderer == 'semantic.v2':
+        return payload
     if renderer == 'semantic.v1':
+        # Installed v3 readers require exactly the original overview keys.
+        item = payload.get('item') or {}
+        views = (payload.get('meta'), (item.get('content_json') or {}).get('watashiMap'))
+        if not any(type(graph) is dict and 'primary_structures' in (graph.get('overview') or {}) for graph in views):
+            return payload
+        payload = deepcopy(payload)
+        item = payload.get('item') or {}
+        for graph in (payload.get('meta'), (item.get('content_json') or {}).get('watashiMap')):
+            if type(graph) is dict and graph.get('wire_kind') == 'watashi.map.v3':
+                graph['overview'].pop('primary_structures', None)
         return payload
     meta = payload.get('meta')
     if type(meta) is dict and meta.get('wire_kind') == 'watashi.map.v3':
@@ -919,9 +931,10 @@ async def _ensure_map(user_id, *, ensure=True, force=False, monthly=False, model
                 if semantic_source:
                     from analysis_semantic_map import prepare_semantic_map, SemanticMapNoMaterial
                     try:
-                        from analysis_model_source import analysis_model_prompt_version
+                        from analysis_model_source import analysis_model_prompt_version, analysis_model_primary_structure_reading
                         prepared = await asyncio.to_thread(prepare_semantic_map, owner, snapshot,
-                            prompt_version=analysis_model_prompt_version(model_source))
+                            prompt_version=analysis_model_prompt_version(model_source),
+                            primary_structures=analysis_model_primary_structure_reading(model_source))
                     except SemanticMapNoMaterial as excluded:
                         artifact, coverage = None, _checked_coverage(excluded.coverage)
                     else:
