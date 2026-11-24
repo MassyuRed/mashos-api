@@ -3130,7 +3130,15 @@ def load_generator(adapter, process_stop, *, weights_sha256=None, config_sha256=
             add_generation_prompt=True, tokenize=True, return_dict=True,
             return_tensors="pt", truncation=False)
         count = encoded["input_ids"].shape[-1]
-        if count + output_budget > context_budget or time.monotonic() >= end:
+        if (count + output_budget > context_budget and qwen_9b and output_tokens is not None
+                and material.get('author_phase') == 'PLAN'
+                and material.get('author_profile') == OCCURRENCE_V24_PROFILE
+                and material.get('history_stage', {}).get('kind') == 'MERGE'
+                and _semantic_merge_tuple_output(messages)):
+            # The worker reserves the shared three-phase allowance on PLAN.
+            # Keep the prompt complete and use the actual remaining context.
+            output_budget = context_budget - count
+        if output_budget <= 0 or count + output_budget > context_budget or time.monotonic() >= end:
             raise ValueError("context_or_deadline_exceeded")
         encoded = {k: v.to(model.device) for k, v in encoded.items()}
         stopping = Deadline(end)

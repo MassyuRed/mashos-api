@@ -612,3 +612,58 @@ def test_event_plan_base_cannot_exceed_existing_32768_context(monkeypatch):
         generate(messages, time.monotonic() + 210, profile='event_plan_base')
     assert captured['generate'] == [] and captured['adapter_states'] == []
     assert captured['model'].adapter_enabled and captured['model'].active_adapter == 'default'
+
+
+def _compact_merge_plan_for_context_test():
+    from analysis_merge_wire import compact_json, response_codec
+    from cocolon_meaning_experience_engine.cores.analysis import semantic_admission as core
+    from test_analysis_merge_transport import source_merge
+    from test_analysis_occurrence_v17_record_owners import packet
+
+    notes = ['庭の箱を片づけた。', '集会で資料を配った。']
+    stage = source_merge(notes)
+    messages = core.semantic_node_local_v4_wire_messages(stage)
+    codec = response_codec(messages)
+    raw = compact_json(codec.encode(packet(stage, [[[(1, notes[0])]], [[(2, notes[1])]]])))
+    return messages, raw
+
+
+@pytest.mark.parametrize('count, expected', [(28672, 4096), (30814, 1954), (32768, None), (32769, None)])
+def test_9b_compact_merge_plan_uses_only_available_context_and_reports_actual_tokens(monkeypatch, count, expected):
+    from test_piece_model_server_constraints import synthetic_generator
+
+    messages, raw = _compact_merge_plan_for_context_test()
+    generate, captured, _, _ = synthetic_generator(monkeypatch, constrained=True, qwen_9b=True,
+        context_tokens=32768, input_count=count, raw_output=raw)
+    if expected is None:
+        with pytest.raises(ValueError, match='context_or_deadline_exceeded'):
+            generate(messages, time.monotonic() + 210, profile='event_plan', output_tokens=4096)
+        assert captured['generate'] == []
+        return
+    text, finish, usage = generate(messages, time.monotonic() + 210, profile='event_plan', output_tokens=4096)
+    assert (text, finish) == (raw, 'stop')
+    assert captured['generate'][0]['max_new_tokens'] == expected
+    assert captured['tokenize'][0][0] == messages
+    assert captured['tokenize'][0][1]['truncation'] is False
+    assert usage == dict(prompt_tokens=count, completion_tokens=len(raw) + 1, total_tokens=count + len(raw) + 1)
+
+
+@pytest.mark.parametrize('kind, phase, compact', [
+    ('LEAF', 'PLAN', False), ('WHOLE', 'PLAN', False), ('MERGE', 'PLAN', False),
+    ('MERGE', 'NODES', True), ('MERGE', 'RELATIONS', True),
+])
+def test_9b_other_staged_routes_keep_the_full_requested_reservation(monkeypatch, kind, phase, compact):
+    from analysis_merge_wire import compact_json, legacy_messages
+    from test_piece_model_server_constraints import synthetic_generator
+
+    messages, raw = _compact_merge_plan_for_context_test()
+    if not compact:
+        messages = legacy_messages(messages)
+    user = json.loads(messages[1]['content'])
+    user['history_stage']['kind'], user['author_phase'] = kind, phase
+    messages[1]['content'] = compact_json(user)
+    generate, captured, _, _ = synthetic_generator(monkeypatch, constrained=True, qwen_9b=True,
+        context_tokens=32768, input_count=30814, raw_output=raw)
+    with pytest.raises(ValueError, match='context_or_deadline_exceeded'):
+        generate(messages, time.monotonic() + 210, profile='event_plan', output_tokens=4096)
+    assert captured['generate'] == []
