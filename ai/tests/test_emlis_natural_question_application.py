@@ -18,9 +18,9 @@ from cocolon_meaning_experience_engine.natural_reply import (
     INITIAL_RECIPIENT_CONTEXT_VERSION, OBSERVATION_ANSWER_CONTEXT_VERSION,
     OBSERVATION_CONTEXT_VERSION, OBSERVATION_DELIVERY_CONTEXT_VERSION,
     OBSERVATION_GROUNDED_CONTEXT_VERSION, OBSERVATION_OUTCOME_CONTEXT_VERSION,
-    OBSERVATION_CONVERSATION_CONTEXT_VERSION,
+    OBSERVATION_CONVERSATION_CONTEXT_VERSION, OBSERVATION_SEPARATED_FOLLOW_CONTEXT_VERSION,
     OBSERVATION_QUOTED_FEELING_CONTEXT_VERSION, OBSERVATION_WRITTEN_FEELING_CONTEXT_VERSION,
-    NaturalReply, NaturalReplyError, build_natural_reply_messages, validate_reply,
+    NaturalReply, NaturalReplyError, SelfHostedNaturalReplySource, build_natural_reply_messages, validate_reply,
 )
 from emlis_thread_service import EmlisThreadService, Q3_PROFILE
 from emlis_thread_store import ThreadStoreError
@@ -485,7 +485,8 @@ def test_written_feeling_projection_preserves_sources_and_rereads_without_genera
 
 
 @pytest.mark.parametrize('version', [OBSERVATION_QUOTED_FEELING_CONTEXT_VERSION,
-                                     OBSERVATION_CONVERSATION_CONTEXT_VERSION])
+                                     OBSERVATION_CONVERSATION_CONTEXT_VERSION,
+                                     OBSERVATION_SEPARATED_FOLLOW_CONTEXT_VERSION])
 @pytest.mark.parametrize(('thought', 'action', 'excerpt'), [
     ('手編みのマフラーの色が大好きでした。', '帰宅して水を飲みました。', '手編みのマフラーの色が大好きでした'),
     ('友人が「入口が閉まった」と言いました。私はほっとしました。', '廊下の照明を消しました。', '私はほっとしました'),
@@ -537,6 +538,60 @@ def test_quoted_feeling_requires_the_written_passage_and_keeps_the_saved_record(
     reread = run(reopened.get(user, parent))
     assert reread['revision'] == started['revision']
     assert reread['current_observation'] == started['current_observation']
+
+
+@pytest.mark.parametrize(('body', 'expected'), [
+    ('ここに書いてくださって、ありがとうございます。', '「私はほっとしました」\n\nここに書いてくださって、ありがとうございます。'),
+    ('', None),
+    ('「私はほっとしました」とお聞きしました。', None),
+    ('私はほっとしましたとお聞きしました。', None),
+    ('お聞きして、私は安心しました。', None),
+    ('お聞きできました？', None),
+])
+def test_separated_observation_uses_the_bound_source_and_rereads_without_generation(
+        natural_questions, qdb, monkeypatch, body, expected):
+    thought = '兄から「駐車場が空いた」と聞きました。私はほっとしました。'
+    user, parent, _, _ = natural_questions(memo=thought)
+    requests = []
+
+    def receive(request):
+        wire = json.loads(request.content)
+        requests.append(wire)
+        return httpx.Response(200, json={'model': wire['model'], 'choices': [
+            {'finish_reason': 'stop', 'message': {'role': 'assistant', 'content': body}},
+        ]})
+
+    provider = SelfHostedNaturalReplySource(endpoint='https://emlis-test.invalid/v1/chat/completions',
+        model='synthetic-provider', api_key='synthetic-only', transport=httpx.MockTransport(receive))
+    version = OBSERVATION_SEPARATED_FOLLOW_CONTEXT_VERSION
+    owner = _active_application_owner(monkeypatch, provider, 'paid', observation_version=version)
+    owner.natural_questions_enabled = False
+    result = run(owner.start(user, parent))
+    wire, = requests
+    messages = wire['messages']
+    assert '本人の言葉はすでに画面に示します' in messages[0]['content']
+    assert json.loads(messages[1]['content']) == {'本人の原文': '私はほっとしました'}
+    assert result['body_state'] == ('UNAVAILABLE' if expected is None else 'FINAL')
+    if expected is None:
+        assert result['current_observation'] is None
+        return
+
+    assert result['current_observation']['text'] == expected
+    saved = run(owner.store.read(user, input_id=parent))
+    assert saved['original']['memo'] == thought
+    digest = sha256(json.dumps(messages, ensure_ascii=False, separators=(',', ':')).encode()).hexdigest()
+    received, = (event['payload'] for event in saved['events']
+                 if event['payload'].get('stage') == 'NATURAL_REPLY_RECEIVED')
+    assert received['writer_context_version'] == version
+    assert received['writer_messages_sha256'] == digest
+
+    async def no_generation(_request):
+        pytest.fail('reread called the provider')
+
+    reopened = _active_application_owner(monkeypatch, no_generation, 'false')
+    reread = run(reopened.get(user, parent))
+    assert reread['revision'] == result['revision']
+    assert reread['current_observation'] == result['current_observation']
 
 
 @pytest.mark.parametrize(('tier', 'selected', 'action', 'expected'), [
