@@ -23,6 +23,7 @@ from emlis_ai_grounded_observation_plan import (
 from ...contracts import EvidenceRef
 from ...emlis_answer_update import _WITHDRAWAL, _REPLACEMENT
 from ...emlis_question import standalone_feeling_witness
+from ...source_kernel import normalize_evidence_literal
 from .source_adapter import (AnalysisSourceError, AnalysisSourceSet, commitment,
                             scoped_source_view, source_field_text, selected_categories)
 
@@ -2888,12 +2889,26 @@ def _fragment(source, nucleus, plan=None, *, _protective_contrast=False):
     if (result is None and change is None and not bounded_past_action and not unattributed_wish
             and not re.match(r'^(?:(?:今日|昨日|その後|それから)[、，\s]*)?(?:私は|僕は|ぼくは|俺は|おれは|わたしは|自分は)', value)):
         return None
-    # The source helper already proved a length-preserving normalization.
+    # Ledger ranges address the display span, where each whitespace run
+    # occupies one character. Map the range within its verified raw span.
     field = source.envelope.raw_utf8[ref.field_utf8_start:ref.field_utf8_end].decode('utf-8')
-    start, end = ref.scalar_start + a, ref.scalar_start + b
-    literal = field[start:end]
-    if literal.replace('\u3000', ' ').strip() != span.raw_text[a:b].strip():
+    raw_span = field[ref.scalar_start:ref.scalar_end]
+    if normalize_evidence_literal(raw_span) != span.raw_text:
         raise AnalysisSourceError('analysis_fragment_evidence_mismatch')
+    trimmed = raw_span.lstrip()
+    offset = ref.scalar_start + len(raw_span) - len(trimmed)
+    boundaries = [offset, *(offset + match.end()
+        for match in re.finditer(r'\S|\s+', trimmed.rstrip()))]
+    start, end = boundaries[a], boundaries[b]
+    literal = field[start:end]
+    if normalize_evidence_literal(literal) != span.raw_text[a:b].strip():
+        raise AnalysisSourceError('analysis_fragment_evidence_mismatch')
+    # Display normalization cannot make an unread separator inside a finite
+    # claim grammatically valid. A proved compound requires both endpoints.
+    endpoints = pair[2] if pair else ((a, b),)
+    if any(re.search(r'[^\S \u3000]', field[boundaries[left]:boundaries[right]])
+           for left, right in endpoints):
+        return None
     evidence = replace(ref,
         evidence_id='analysis-evidence:' + commitment([ref.source_envelope_id,
             ref.field_path, start, end])[7:],

@@ -1,4 +1,5 @@
 """Real Analysis parsing of the two actual input fields, with source fidelity."""
+import hashlib
 import json
 import unittest
 from dataclasses import replace
@@ -188,6 +189,34 @@ class ActualInputFieldTests(unittest.TestCase):
                     for edge in artifact.graph.edges:
                         self.assertEqual({e.field_path for e in edge.evidence_refs}, {field})
             self.assertEqual(rendered[0], rendered[1])
+
+    def test_ledger_whitespace_preserves_raw_whole_and_partial_evidence(self):
+        role = '私は、 \u3000 会議を担当した'
+        contrast = '私は家族を守りたいけれど、\t\u3000私は辛い'
+        for field in ('memo', 'memo_action'):
+            for literal in (role, contrast):
+                with self.subTest(field=field, literal=literal):
+                    text = ' \t' + literal + '。'
+                    rec = saved(memo=text) if field == 'memo' else saved(action=text)
+                    artifact = self.generate(rec).artifact
+                    self.assertIsNotNone(artifact)
+                    source, = freeze_analysis_sources(request(rec)).sources
+                    if literal == role:
+                        node, = artifact.graph.nodes
+                        self.assertEqual(node.visible_label, '私は、 会議を担当した')
+                        evidence, = node.evidence_refs
+                        cases = ((evidence, role, 2),)
+                    else:
+                        burden, = (a for a in artifact.graph.annotations if a.kind == 'BURDEN')
+                        _, endpoint, whole = burden.evidence_refs
+                        cases = ((endpoint, '私は辛い', 17), (whole, contrast, 2))
+                    for evidence, expected, start in cases:
+                        raw = source.envelope.raw_utf8[evidence.utf8_start:evidence.utf8_end]
+                        self.assertEqual(evidence.field_path, field)
+                        self.assertEqual((evidence.scalar_start, evidence.scalar_end),
+                            (start, start + len(expected)))
+                        self.assertEqual(raw, expected.encode('utf-8'))
+                        self.assertEqual(evidence.literal_sha256, hashlib.sha256(raw).hexdigest())
 
     def test_action_field_supplement_targets_keep_original_and_answer_envelopes_separate(self):
         old, new = '私は職場にいた', '私は職場にいなかった'
