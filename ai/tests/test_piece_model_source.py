@@ -1,4 +1,4 @@
-"""Shared 4B transport with synthetic HTTP, without GPU or external requests."""
+"""Shared Piece model transport with synthetic HTTP and no GPU requests."""
 import asyncio
 from copy import deepcopy
 from dataclasses import replace
@@ -17,15 +17,18 @@ KEY = 'synthetic-existing-private-key-32'
 run = asyncio.run
 
 
-def prepared(*, refined=False):
-    from cocolon_meaning_experience_engine.piece_semantic_admission import prepare_piece_model_request
+def generation_request(*, refined=False):
     from cocolon_meaning_experience_engine.piece_v1c import PieceGenerationRequest
     from test_cmee_piece_refined_sources import source, request
     selected = source()
-    value = request(selected) if refined else PieceGenerationRequest('transport-original',
+    return request(selected) if refined else PieceGenerationRequest('transport-original',
         selected.original, selected.original.owner_id, selected.original.saved_input_id,
         selected.original.source_version)
-    return prepare_piece_model_request(value)
+
+
+def prepared(*, refined=False):
+    from cocolon_meaning_experience_engine.piece_semantic_admission import prepare_piece_model_request
+    return prepare_piece_model_request(generation_request(refined=refined))
 
 
 def raw_for(value):
@@ -322,6 +325,58 @@ def test_application_default_off_and_explicit_configuration_is_stable(monkeypatc
     first = sources.application_piece_model_source()
     assert first is sources.application_piece_model_source()
     sources.require_current_piece_model_source(first)
+
+
+@pytest.mark.parametrize('refined', [False, True])
+@pytest.mark.parametrize('returned_model', [sources.NINE_B_MODEL, MODEL])
+def test_9b_selector_reports_its_model_identity_without_4b_fallback(monkeypatch, refined, returned_model):
+    from cocolon_meaning_experience_engine.piece_semantic_admission import prepare_piece_model_request
+    from cocolon_meaning_experience_engine.piece_v1c import MODEL_REALIZATION_PROFILE
+
+    environment(monkeypatch)
+    monkeypatch.setenv('PIECE_MODEL_SOURCE', sources.CMEE_9B_SELECTOR)
+    monkeypatch.setenv('EMLIS_NATURAL_REPLY_MODEL', sources.NINE_B_MODEL)
+    source_request = generation_request(refined=refined)
+    value = prepare_piece_model_request(source_request)
+    raw = raw_for(value)
+    observed = []
+
+    def handler(request):
+        body = json.loads(request.content)
+        assert body['model'] == sources.NINE_B_MODEL
+        assert body['candidate_format'] == 'piece.field_slots.v1'
+        assert json.loads(body['messages'][1]['content'])['sources'] == value.payload()['sources']
+        observed.append(body)
+        return httpx.Response(200, json=packet(raw, model=returned_model))
+
+    real_source = sources.SharedPieceModelSource
+    monkeypatch.setattr(sources, 'SharedPieceModelSource',
+                        lambda **kw: real_source(**kw, transport=httpx.MockTransport(handler)))
+    assert sources.application_piece_realization_profile() == MODEL_REALIZATION_PROFILE
+    receipt = run(sources.application_piece_model_source()(value, source_request=source_request))
+    assert len(observed) == 1
+    metadata = json.loads(receipt.metadata_json)
+    assert metadata['model'] == sources.NINE_B_MODEL
+    assert metadata['provider'] == sources.NINE_B_PROVIDER
+    if returned_model == sources.NINE_B_MODEL:
+        assert receipt.status == 'CANDIDATE_UNREVIEWED'
+        assert receipt.raw_output == raw
+        assert metadata['realization_profile'] == MODEL_REALIZATION_PROFILE
+    else:
+        assert receipt.status == 'PROVIDER_ERROR'
+        assert receipt.raw_output is None
+
+
+@pytest.mark.parametrize(('selector', 'model'), [
+    (sources.CMEE_9B_SELECTOR, MODEL),
+    (sources.CMEE_SELECTOR, sources.NINE_B_MODEL),
+])
+def test_mixed_model_and_selector_is_rejected_before_transport(monkeypatch, selector, model):
+    environment(monkeypatch)
+    monkeypatch.setenv('PIECE_MODEL_SOURCE', selector)
+    monkeypatch.setenv('EMLIS_NATURAL_REPLY_MODEL', model)
+    with pytest.raises(RuntimeError, match='^piece_model_configuration_invalid$'):
+        run(sources.application_piece_model_source()(prepared()))
 
 
 @pytest.mark.parametrize('when', ['before', 'after'])

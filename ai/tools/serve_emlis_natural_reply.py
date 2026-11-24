@@ -1,4 +1,4 @@
-"""Private inference server for the existing local Qwen3.5-4B cache.
+"""Private inference server for a pinned local Qwen3.5 checkpoint.
 
 The default remains the bounded personal connection probe.  The explicit
 --analysis-service mode serves the ordinary Analysis route until stopped,
@@ -25,6 +25,10 @@ import time
 
 MODEL = "Qwen/Qwen3.5-4B"
 REVISION = "851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a"
+QWEN_9B_MODEL = "Qwen/Qwen3.5-9B"
+QWEN_9B_REVISION = "c202236235762e1c871ad0ccb60c8ee5ba337b9a"
+QWEN_9B_ANALYSIS_ALIAS = "cocolon-qwen3.5-9b-analysis"
+QWEN_9B_NATURAL_ALIAS = "cocolon-qwen3.5-9b-natural"
 FIT38_WEIGHTS = "ad8b89e8974df9bfe7e804b8f67bbaac59e6cbb37042c3254fb58ffb64230d0a"
 FIT38_CONFIG = "ef4b1aef621fb4e234ce6a05601efb62a987c3cf5d40f3995ca1b72200bab145"
 PINS = {"transformers": "5.19.0", "peft": "0.21.2", "accelerate": "1.15.0", "safetensors": "0.8.0"}
@@ -64,6 +68,7 @@ OCCURRENCE_V21_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v4-occurrence-v21
 OCCURRENCE_V22_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v4-occurrence-v22'
 OCCURRENCE_V23_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v4-occurrence-v23'
 OCCURRENCE_V24_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v4-occurrence-v24'
+OCCURRENCE_V24_9B_MODEL = 'cocolon-qwen3.5-9b-analysis-node-local-v4-occurrence-v24'
 OCCURRENCE_V3_PROFILE = 'semantic_map.node_local.v4.occurrence.v3'
 OCCURRENCE_V4_PROFILE = 'semantic_map.node_local.v4.occurrence.v4'
 OCCURRENCE_V5_PROFILE = 'semantic_map.node_local.v4.occurrence.v5'
@@ -2684,6 +2689,10 @@ def make_handler(generate, *, api_key, model_name, deadline, max_requests,
             or not event_plan_model.strip() or event_plan_model == model_name
             or natural_reply and event_plan_model == natural_reply['model_name']):
         raise ValueError('event_plan_model_configuration_invalid')
+    # The wire alias records the checkpoint, while the schema and phase
+    # contract for v24 are shared across checkpoints.
+    event_plan_contract = (OCCURRENCE_V24_MODEL if event_plan_model == OCCURRENCE_V24_9B_MODEL
+                           else event_plan_model)
     lock = threading.Lock()
     served = 0
 
@@ -2735,7 +2744,7 @@ def make_handler(generate, *, api_key, model_name, deadline, max_requests,
                     EVENT_PLAN_V2_BASE_MODEL, NODE_LOCAL_V3_BASE_MODEL}
                 if event_plan:
                     selected_model = event_plan_model
-                staged = event_plan and event_plan_model in {NODE_LOCAL_V4_MODEL, NODE_LOCAL_V4_BOUND_MODEL, NODE_LOCAL_V4_BOUND_V2_MODEL, OCCURRENCE_MODEL, OCCURRENCE_V2_MODEL, OCCURRENCE_V3_MODEL, OCCURRENCE_V4_MODEL, OCCURRENCE_V5_MODEL, OCCURRENCE_V6_MODEL, OCCURRENCE_V7_MODEL, OCCURRENCE_V8_MODEL, OCCURRENCE_V9_MODEL, OCCURRENCE_V10_MODEL, OCCURRENCE_V11_MODEL, OCCURRENCE_V12_MODEL, OCCURRENCE_V13_MODEL, OCCURRENCE_V14_MODEL, OCCURRENCE_V15_MODEL, OCCURRENCE_V16_MODEL, OCCURRENCE_V17_MODEL, OCCURRENCE_V18_MODEL, OCCURRENCE_V19_MODEL, OCCURRENCE_V20_MODEL, OCCURRENCE_V21_MODEL, OCCURRENCE_V22_MODEL, OCCURRENCE_V23_MODEL, OCCURRENCE_V24_MODEL}
+                staged = event_plan and event_plan_contract in {NODE_LOCAL_V4_MODEL, NODE_LOCAL_V4_BOUND_MODEL, NODE_LOCAL_V4_BOUND_V2_MODEL, OCCURRENCE_MODEL, OCCURRENCE_V2_MODEL, OCCURRENCE_V3_MODEL, OCCURRENCE_V4_MODEL, OCCURRENCE_V5_MODEL, OCCURRENCE_V6_MODEL, OCCURRENCE_V7_MODEL, OCCURRENCE_V8_MODEL, OCCURRENCE_V9_MODEL, OCCURRENCE_V10_MODEL, OCCURRENCE_V11_MODEL, OCCURRENCE_V12_MODEL, OCCURRENCE_V13_MODEL, OCCURRENCE_V14_MODEL, OCCURRENCE_V15_MODEL, OCCURRENCE_V16_MODEL, OCCURRENCE_V17_MODEL, OCCURRENCE_V18_MODEL, OCCURRENCE_V19_MODEL, OCCURRENCE_V20_MODEL, OCCURRENCE_V21_MODEL, OCCURRENCE_V22_MODEL, OCCURRENCE_V23_MODEL, OCCURRENCE_V24_MODEL}
                 if staged:
                     material = json.loads(messages[1]['content'])
                     if material.get('author_phase') not in NODE_LOCAL_V4_PHASES:
@@ -2764,7 +2773,7 @@ def make_handler(generate, *, api_key, model_name, deadline, max_requests,
                     except (ValueError, TypeError):
                         material = None
                     marker = material.get('model_schema') if type(material) is dict else None
-                    expected_marker = (NODE_LOCAL_V4_SCHEMA if event_plan_model in {NODE_LOCAL_V4_MODEL, NODE_LOCAL_V4_BOUND_MODEL, NODE_LOCAL_V4_BOUND_V2_MODEL, OCCURRENCE_MODEL, OCCURRENCE_V2_MODEL, OCCURRENCE_V3_MODEL, OCCURRENCE_V4_MODEL, OCCURRENCE_V5_MODEL, OCCURRENCE_V6_MODEL, OCCURRENCE_V7_MODEL, OCCURRENCE_V8_MODEL, OCCURRENCE_V9_MODEL, OCCURRENCE_V10_MODEL, OCCURRENCE_V11_MODEL, OCCURRENCE_V12_MODEL, OCCURRENCE_V13_MODEL, OCCURRENCE_V14_MODEL, OCCURRENCE_V15_MODEL, OCCURRENCE_V16_MODEL, OCCURRENCE_V17_MODEL, OCCURRENCE_V18_MODEL, OCCURRENCE_V19_MODEL, OCCURRENCE_V20_MODEL, OCCURRENCE_V21_MODEL, OCCURRENCE_V22_MODEL, OCCURRENCE_V23_MODEL, OCCURRENCE_V24_MODEL}
+                    expected_marker = (NODE_LOCAL_V4_SCHEMA if staged
                         else NODE_LOCAL_V3_SCHEMA if event_plan_model in {
                             NODE_LOCAL_V3_MODEL, NODE_LOCAL_V3_BASE_MODEL}
                         else EVENT_PLAN_V2_SCHEMA if event_plan_model in {
@@ -2774,7 +2783,7 @@ def make_handler(generate, *, api_key, model_name, deadline, max_requests,
                                 NODE_LOCAL_V3_SCHEMA, NODE_LOCAL_V4_SCHEMA}):
                         raise ValueError
                     if staged:
-                        expected_profile = (OCCURRENCE_V24_PROFILE if event_plan_model == OCCURRENCE_V24_MODEL
+                        expected_profile = (OCCURRENCE_V24_PROFILE if event_plan_contract == OCCURRENCE_V24_MODEL
                             else OCCURRENCE_V23_PROFILE if event_plan_model == OCCURRENCE_V23_MODEL
                             else OCCURRENCE_V22_PROFILE if event_plan_model == OCCURRENCE_V22_MODEL
                             else OCCURRENCE_V21_PROFILE if event_plan_model == OCCURRENCE_V21_MODEL
@@ -2942,7 +2951,8 @@ def load_piece_adapter(model, path, *, weights_sha256, config_sha256,
 def load_generator(adapter, process_stop, *, weights_sha256=None, config_sha256=None,
                    max_new_tokens=2048, context_tokens=8192, semantic_json=False,
                    piece_adapter=None, piece_weights_sha256=None, piece_config_sha256=None,
-                   event_plan_adapter=None, event_plan_weights_sha256=None, event_plan_config_sha256=None):
+                   event_plan_adapter=None, event_plan_weights_sha256=None, event_plan_config_sha256=None,
+                   qwen_9b=False):
     if (type(max_new_tokens) is not int or type(context_tokens) is not int
             or not 1 <= max_new_tokens < context_tokens <= 32768):
         raise ValueError("model_token_budget_invalid")
@@ -2950,6 +2960,10 @@ def load_generator(adapter, process_stop, *, weights_sha256=None, config_sha256=
         raise ValueError("offline_cache_required")
     if {name: version(name) for name in PINS} != PINS:
         raise ValueError("model_dependency_changed")
+    if qwen_9b and any(value is not None for value in (adapter, weights_sha256, config_sha256,
+            piece_adapter, piece_weights_sha256, piece_config_sha256, event_plan_adapter,
+            event_plan_weights_sha256, event_plan_config_sha256)):
+        raise ValueError("qwen_9b_adapter_unavailable")
     selected_identity = adapter_identity(adapter, weights_sha256, config_sha256)
     if (piece_adapter is not None or piece_weights_sha256 is not None
             or piece_config_sha256 is not None):
@@ -2972,9 +2986,10 @@ def load_generator(adapter, process_stop, *, weights_sha256=None, config_sha256=
     from transformers import AutoTokenizer, Qwen3_5ForConditionalGeneration, StoppingCriteria, StoppingCriteriaList
     if not torch.cuda.is_available() or torch.cuda.device_count() != 1:
         raise ValueError("single_cuda_device_required")
-    tokenizer = AutoTokenizer.from_pretrained(MODEL, revision=REVISION,
+    model_repo, model_revision = (QWEN_9B_MODEL, QWEN_9B_REVISION) if qwen_9b else (MODEL, REVISION)
+    tokenizer = AutoTokenizer.from_pretrained(model_repo, revision=model_revision,
         local_files_only=True, trust_remote_code=False)
-    model = Qwen3_5ForConditionalGeneration.from_pretrained(MODEL, revision=REVISION,
+    model = Qwen3_5ForConditionalGeneration.from_pretrained(model_repo, revision=model_revision,
         dtype=torch.bfloat16, device_map={"": 0}, attn_implementation="sdpa",
         local_files_only=True, trust_remote_code=False)
     if adapter:
@@ -3050,7 +3065,8 @@ def load_generator(adapter, process_stop, *, weights_sha256=None, config_sha256=
             raise ValueError("generation_profile_invalid")
         if profile == "piece" and (not semantic_json or tokenizer_data is None):
             raise ValueError("piece_constraint_unavailable")
-        if profile in ('event_plan', 'event_plan_base') and (event_plan_adapter is None or not semantic_json or tokenizer_data is None):
+        if profile in ('event_plan', 'event_plan_base') and (not semantic_json or tokenizer_data is None
+                or not (qwen_9b or event_plan_adapter is not None)):
             raise ValueError('event_plan_adapter_unavailable')
         use_semantic_json = semantic_json and profile != "natural"
         base_profile = profile in ("natural", "piece")
@@ -3067,7 +3083,7 @@ def load_generator(adapter, process_stop, *, weights_sha256=None, config_sha256=
         # Preserve the base identity previously connected for natural replies.
         # The analysis adapter stays loaded; its state is restored on context exit.
         adapter_context = (piece_inference_context(model, process_stop, adapter_name=EVENT_PLAN_ADAPTER_NAME)
-            if profile == 'event_plan' else piece_inference_context(model, process_stop)
+            if profile == 'event_plan' and event_plan_adapter is not None else piece_inference_context(model, process_stop)
             if profile == 'piece' and piece_adapter is not None else
             base_inference_context(model) if (base_profile or profile == 'event_plan_base') and adapter else nullcontext())
         if use_semantic_json:
@@ -3153,6 +3169,8 @@ def load_generator(adapter, process_stop, *, weights_sha256=None, config_sha256=
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--qwen-9b', action='store_true',
+                        help='Use the pinned Qwen3.5-9B base for every profile on this process.')
     parser.add_argument("--adapter")
     parser.add_argument("--adapter-weights-sha256")
     parser.add_argument("--adapter-config-sha256")
@@ -3164,6 +3182,7 @@ def main():
     parser.add_argument('--piece-adapter-weights-sha256')
     parser.add_argument('--piece-adapter-config-sha256')
     parser.add_argument("--model-name", required=True)
+    parser.add_argument('--bind', default='0.0.0.0')
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--max-requests", type=int)
     parser.add_argument("--seconds", type=int)
@@ -3177,6 +3196,19 @@ def main():
     parser.add_argument("--context-tokens", type=int)
     parser.add_argument("--request-seconds", type=int)
     args = parser.parse_args()
+    if args.qwen_9b:
+        if (not args.analysis_service or not args.semantic_json
+                or (args.model_name, args.natural_reply_model, args.event_plan_model)
+                != (QWEN_9B_ANALYSIS_ALIAS, QWEN_9B_NATURAL_ALIAS, OCCURRENCE_V24_9B_MODEL)):
+            parser.error('Qwen3.5-9B requires the shared constrained service and its pinned model aliases')
+        if any(value is not None for value in (args.adapter, args.adapter_weights_sha256,
+                args.adapter_config_sha256, args.piece_adapter, args.piece_adapter_weights_sha256,
+                args.piece_adapter_config_sha256, args.event_plan_adapter,
+                args.event_plan_adapter_weights_sha256, args.event_plan_adapter_config_sha256)):
+            parser.error('Qwen3.5-9B base service cannot load the existing adapters')
+    elif (args.model_name == QWEN_9B_ANALYSIS_ALIAS or args.natural_reply_model == QWEN_9B_NATURAL_ALIAS
+            or args.event_plan_model == OCCURRENCE_V24_9B_MODEL):
+        parser.error('Qwen3.5-9B model aliases require the pinned Qwen3.5-9B base')
     if args.natural_reply_model and not args.analysis_service:
         parser.error('shared natural reply requires explicit analysis service mode')
     if args.natural_reply_correction_target_context and not args.natural_reply_model:
@@ -3223,7 +3255,7 @@ def main():
             piece_weights_sha256=args.piece_adapter_weights_sha256,
             piece_config_sha256=args.piece_adapter_config_sha256)
     event_plan_options = {}
-    if any(value is not None for value in (args.event_plan_model, args.event_plan_adapter,
+    if not args.qwen_9b and any(value is not None for value in (args.event_plan_model, args.event_plan_adapter,
             args.event_plan_adapter_weights_sha256, args.event_plan_adapter_config_sha256)):
         if (not args.analysis_service or not args.semantic_json or not args.adapter
                 or not args.event_plan_model or args.event_plan_model == args.model_name
@@ -3254,8 +3286,10 @@ def main():
                        if args.analysis_service else {})
     if args.semantic_json:
         runtime_options['semantic_json'] = True
+    if args.qwen_9b:
+        runtime_options['qwen_9b'] = True
     generator = load_generator(args.adapter, stop, **identity_options, **runtime_options, **piece_options, **event_plan_options)
-    server = ThreadingHTTPServer(("0.0.0.0", args.port), make_handler(generator,
+    server = ThreadingHTTPServer((args.bind, args.port), make_handler(generator,
         api_key=key, model_name=args.model_name, deadline=deadline,
         max_requests=0 if args.analysis_service else args.max_requests,
         max_new_tokens=max_new_tokens, request_seconds=request_seconds,

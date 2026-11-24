@@ -55,6 +55,8 @@ SEMANTIC_OCCURRENCE_V21_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v4-occur
 SEMANTIC_OCCURRENCE_V22_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v4-occurrence-v22'
 SEMANTIC_OCCURRENCE_V23_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v4-occurrence-v23'
 SEMANTIC_OCCURRENCE_V24_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v4-occurrence-v24'
+SEMANTIC_OCCURRENCE_V24_9B_MODEL = 'cocolon-qwen3.5-9b-analysis-node-local-v4-occurrence-v24'
+SEMANTIC_ANALYSIS_9B_MODEL = 'cocolon-qwen3.5-9b-analysis'
 SEMANTIC_NODE_LOCAL_V4_BOUND_V2_MODEL = 'cocolon-qwen3.5-4b-analysis-node-local-v4-bound-roots-v2'
 SEMANTIC_EVENT_PLAN_BASE_MODEL = 'cocolon-qwen3.5-4b-analysis-semantic-120u'
 MAX_RESPONSE_BYTES = 262144
@@ -175,11 +177,13 @@ class SelfHostedSemanticAnalysisModelSource(SelfHostedAnalysisModelSource):
         from cocolon_meaning_experience_engine.cores.analysis.semantic_admission import (
             SEMANTIC_MAP_PROFILE, SEMANTIC_MAP_SOURCE_DUTIES_PROFILE, SEMANTIC_MAP_EVENT_PLAN_PROFILE,
             SEMANTIC_MAP_EVENT_PLAN_V2_PROFILE, SEMANTIC_MAP_NODE_LOCAL_V3_PROFILE,
-            SEMANTIC_MAP_NODE_LOCAL_V4_PROFILES)
+            SEMANTIC_MAP_NODE_LOCAL_V4_PROFILES, SEMANTIC_MAP_OCCURRENCE_V24_PROFILE)
         if type(semantic_prompt_version) is not str or semantic_prompt_version not in {
                 SEMANTIC_MAP_PROFILE, SEMANTIC_MAP_SOURCE_DUTIES_PROFILE, SEMANTIC_MAP_EVENT_PLAN_PROFILE,
                 SEMANTIC_MAP_EVENT_PLAN_V2_PROFILE, SEMANTIC_MAP_NODE_LOCAL_V3_PROFILE,
                 *SEMANTIC_MAP_NODE_LOCAL_V4_PROFILES}:
+            raise ValueError('analysis_model_configuration_invalid')
+        if model == SEMANTIC_OCCURRENCE_V24_9B_MODEL and semantic_prompt_version != SEMANTIC_MAP_OCCURRENCE_V24_PROFILE:
             raise ValueError('analysis_model_configuration_invalid')
         super().__init__(endpoint=endpoint, model=model, api_key=api_key, transport=transport)
         self._prompt_version = semantic_prompt_version
@@ -417,7 +421,7 @@ def _configured_semantic_prompt_version(model):
         SEMANTIC_MAP_OCCURRENCE_V4_PROFILE, SEMANTIC_MAP_OCCURRENCE_V5_PROFILE, SEMANTIC_MAP_OCCURRENCE_V6_PROFILE,
         SEMANTIC_MAP_OCCURRENCE_V7_PROFILE, SEMANTIC_MAP_OCCURRENCE_V8_PROFILE, SEMANTIC_MAP_OCCURRENCE_V9_PROFILE,
         SEMANTIC_MAP_OCCURRENCE_V10_PROFILE, SEMANTIC_MAP_OCCURRENCE_V11_PROFILE, SEMANTIC_MAP_OCCURRENCE_V12_PROFILE, SEMANTIC_MAP_OCCURRENCE_V13_PROFILE, SEMANTIC_MAP_OCCURRENCE_V14_PROFILE, SEMANTIC_MAP_OCCURRENCE_V15_PROFILE, SEMANTIC_MAP_OCCURRENCE_V16_PROFILE, SEMANTIC_MAP_OCCURRENCE_V17_PROFILE, SEMANTIC_MAP_OCCURRENCE_V18_PROFILE, SEMANTIC_MAP_OCCURRENCE_V19_PROFILE, SEMANTIC_MAP_OCCURRENCE_V20_PROFILE, SEMANTIC_MAP_OCCURRENCE_V21_PROFILE, SEMANTIC_MAP_OCCURRENCE_V22_PROFILE, SEMANTIC_MAP_OCCURRENCE_V23_PROFILE, SEMANTIC_MAP_OCCURRENCE_V24_PROFILE)
-    if model == SEMANTIC_OCCURRENCE_V24_MODEL:
+    if model in (SEMANTIC_OCCURRENCE_V24_MODEL, SEMANTIC_OCCURRENCE_V24_9B_MODEL):
         return SEMANTIC_MAP_OCCURRENCE_V24_PROFILE
     if model == SEMANTIC_OCCURRENCE_V23_MODEL:
         return SEMANTIC_MAP_OCCURRENCE_V23_PROFILE
@@ -509,7 +513,7 @@ class _ApplicationAnalysisSource:
     async def __call__(self, prepared):
         self.require_current()
         selector, endpoint, model, api_key = self._settings
-        if selector != SELECTOR:
+        if selector != SELECTOR or model == SEMANTIC_OCCURRENCE_V24_9B_MODEL:
             raise RuntimeError('analysis_model_configuration_invalid')
         try:
             source = SelfHostedAnalysisModelSource(endpoint=endpoint, model=model, api_key=api_key)

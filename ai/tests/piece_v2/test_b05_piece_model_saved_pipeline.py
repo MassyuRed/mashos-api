@@ -11,18 +11,20 @@ from pathlib import Path
 import httpx
 import pytest
 
-from piece_model_source import Shared4BPieceModelSource
+from piece_model_source import (CMEE_9B_SELECTOR, CMEE_SELECTOR, NINE_B_MODEL, NINE_B_PROVIDER,
+                                Shared4BPieceModelSource, SharedPieceModelSource)
 from piece_v2_contract import PieceContractError
 from test_cmee_piece_request_saved_pipeline import saved_piece_db, _run_saved_request
 from test_b05_refined_preview_saved_pipeline import refined_pipeline_db, _run_refined_pipeline
 
 
-def _provider(monkeypatch, case_id, default_blocks, *, realization_profile=None):
+def _provider(monkeypatch, case_id, default_blocks, *, realization_profile=None, qwen9b=False):
     seen = []
     recorded = os.environ.get('PIECE_MODEL_RECORDED_DIR')
     path = Path(recorded) / (case_id + '.private.json') if recorded else None
     response = json.loads(path.read_text())['response'] if path and path.exists() else {
-        'model': 'piece-shared-4b-test', 'candidate_format': 'piece.field_slots.v1', 'choices': [{'finish_reason': 'stop',
+        'model': NINE_B_MODEL if qwen9b else 'piece-shared-4b-test',
+        'candidate_format': 'piece.field_slots.v1', 'choices': [{'finish_reason': 'stop',
             'message': {'role': 'assistant', 'content': json.dumps(
                 {'body_blocks': default_blocks}, ensure_ascii=False)}}]}
 
@@ -50,14 +52,17 @@ def _provider(monkeypatch, case_id, default_blocks, *, realization_profile=None)
             transport=httpx.MockTransport(transport))
         monkeypatch.setattr('piece_model_source.application_piece_model_source', lambda: source)
     else:
-        monkeypatch.setenv('PIECE_MODEL_SOURCE', 'shared_4b.cmee.v2')
+        monkeypatch.setenv('PIECE_MODEL_SOURCE', CMEE_9B_SELECTOR if qwen9b else CMEE_SELECTOR)
         monkeypatch.setenv('EMLIS_NATURAL_REPLY_ENDPOINT', endpoint)
         monkeypatch.setenv('EMLIS_NATURAL_REPLY_MODEL', response['model'])
         monkeypatch.setenv('EMLIS_NATURAL_REPLY_API_KEY', key)
         def model_source(**options):
             assert options['realization_profile'] == realization_profile and options['use_editorial_choices']
-            return Shared4BPieceModelSource(**options, transport=httpx.MockTransport(transport))
-        monkeypatch.setattr('piece_model_source.Shared4BPieceModelSource', model_source)
+            if qwen9b:
+                assert options['provider'] == NINE_B_PROVIDER
+            return SharedPieceModelSource(**options, transport=httpx.MockTransport(transport))
+        class_name = 'SharedPieceModelSource' if qwen9b else 'Shared4BPieceModelSource'
+        monkeypatch.setattr(f'piece_model_source.{class_name}', model_source)
     return seen
 
 
@@ -122,7 +127,9 @@ def test_model_body_differs_from_old_author_and_remains_fixed_after_sql_save(sav
 
 
 @pytest.mark.parametrize('wrong_polarity', (False, True))
-def test_two_field_past_self_accounts_keep_model_bytes_and_negation(saved_piece_db, monkeypatch, wrong_polarity):
+@pytest.mark.parametrize('qwen9b', (False, True), ids=['legacy-label', '9b'])
+def test_two_field_past_self_accounts_keep_model_bytes_and_negation(saved_piece_db, monkeypatch,
+                                                                wrong_polarity, qwen9b):
     from cocolon_meaning_experience_engine.piece_v1c import MODEL_REALIZATION_PROFILE
 
     memo = '私は、急いで結論を出したくありませんでした。私は、自分で確かめてから決めたいと思いました。'
@@ -133,7 +140,8 @@ def test_two_field_past_self_accounts_keep_model_bytes_and_negation(saved_piece_
         created_at=saved_piece_db.query("SELECT (now()-interval '5 seconds')::text AS stamp")['rows'][0]['stamp'],
         memo=memo, memo_action=action, category=['生活','価値観'], emotions=['自己理解'],
         emotion_details=[dict(type='自己理解', strength='medium')])
-    seen = _provider(monkeypatch, case_id, [memo, model_action], realization_profile=MODEL_REALIZATION_PROFILE)
+    seen = _provider(monkeypatch, case_id, [memo, model_action],
+        realization_profile=MODEL_REALIZATION_PROFILE, qwen9b=qwen9b)
     if wrong_polarity:
         with pytest.raises(PieceContractError, match='PIECE_SOURCE_NOT_ELIGIBLE'):
             _run_saved_request(saved_piece_db, monkeypatch, record, tier='free')

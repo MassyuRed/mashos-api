@@ -359,3 +359,40 @@ def test_native_admits_only_the_configured_node_local_alias_and_schema(alias, ex
         server.server_close()
         worker.join(3)
 
+
+def test_9b_alias_uses_the_staged_v24_contract_and_returns_9b_identity():
+    from test_analysis_occurrence_v17_record_owners import prepared
+
+    def generate(messages, end, *, profile, output_tokens):
+        calls.append((profile, output_tokens))
+        return 'fictional-plan', 'stop', {'completion_tokens': 7}
+
+    calls = []
+    alias = probe.OCCURRENCE_V24_9B_MODEL
+    server = ThreadingHTTPServer(('127.0.0.1', 0), probe.make_handler(generate,
+        api_key='analysis-test-key', model_name=probe.QWEN_9B_ANALYSIS_ALIAS,
+        deadline=float('inf'), max_requests=0, max_new_tokens=4096, request_seconds=210,
+        natural_reply=dict(api_key='natural-test-key', model_name=probe.QWEN_9B_NATURAL_ALIAS),
+        event_plan_model=alias))
+    worker = threading.Thread(target=server.serve_forever, daemon=True)
+    worker.start()
+    messages = prepared(['祖母は図面を保存した。'], probe.OCCURRENCE_V24_PROFILE).messages()
+    body = dict(model=alias, messages=messages, max_tokens=143, generation_seconds=21,
+                temperature=0, stream=False, chat_template_kwargs={'enable_thinking': False})
+    try:
+        with httpx.Client(trust_env=False, timeout=5) as client:
+            url = f'http://127.0.0.1:{server.server_port}/v1/chat/completions'
+            headers = {'Authorization': 'Bearer analysis-test-key'}
+            assert client.post(url, headers=headers, json={**body, 'model': probe.OCCURRENCE_V24_MODEL}).status_code == 400
+            assert client.post(url, headers={'Authorization': 'Bearer natural-test-key'}, json=body).status_code == 400
+            assert calls == []
+            response = client.post(url, headers=headers, json=body)
+            assert response.status_code == 200
+            assert response.json()['model'] == alias
+            assert response.json()['usage'] == {'completion_tokens': 7}
+            assert calls == [('event_plan', 143)]
+    finally:
+        server.shutdown()
+        server.server_close()
+        worker.join(3)
+

@@ -487,6 +487,49 @@ def test_event_plan_base_without_loaded_event_adapter_never_falls_back(monkeypat
     assert captured == {'generate':[], 'tokenize':[]}
 
 
+def test_qwen_9b_requires_all_pinned_aliases_and_no_legacy_adapter(monkeypatch):
+    command = ['serve', '--qwen-9b', '--analysis-service', '--semantic-json',
+        '--model-name', probe.QWEN_9B_ANALYSIS_ALIAS, '--natural-reply-model', probe.QWEN_9B_NATURAL_ALIAS,
+        '--event-plan-model', probe.OCCURRENCE_V24_9B_MODEL, '--bind', '127.0.0.1']
+    captured = {}
+
+    def load(adapter, stop, **options):
+        captured.update(adapter=adapter, stop=stop, options=options)
+        return object()
+
+    class Server:
+        def __init__(self, address, handler):
+            captured['address'] = address
+
+        def handle_request(self):
+            captured['stop'].set()
+
+        def server_close(self):
+            pass
+
+    monkeypatch.setattr(probe, 'load_generator', load)
+    monkeypatch.setattr(probe, 'ThreadingHTTPServer', Server)
+    monkeypatch.setattr(probe.signal, 'signal', lambda *_args: None)
+    monkeypatch.setenv('COCOLON_ANALYSIS_MODEL_API_KEY', 'synthetic-analysis-private-key')
+    monkeypatch.setenv('EMLIS_NATURAL_REPLY_API_KEY', 'synthetic-natural-private-key')
+
+    for invalid in (command + ['--event-plan-adapter', 'legacy-adapter'],
+                    [part for part in command if part != '--qwen-9b'],
+                    [probe.OCCURRENCE_V24_MODEL if part == probe.OCCURRENCE_V24_9B_MODEL else part
+                     for part in command]):
+        monkeypatch.setattr(sys, 'argv', invalid)
+        with pytest.raises(SystemExit) as error:
+            probe.main()
+        assert error.value.code == 2 and not captured
+
+    monkeypatch.setattr(sys, 'argv', command)
+    probe.main()
+    assert captured['adapter'] is None
+    assert captured['options'] == dict(qwen_9b=True, semantic_json=True,
+                                      context_tokens=16384, max_new_tokens=4096)
+    assert captured['address'] == ('127.0.0.1', 8000)
+
+
 def _event_plan_comparison_generator(monkeypatch, *, input_count, node_local=False):
     """Reuse the existing CPU loader stand-in and the real serving/LMFE closure."""
     from test_piece_model_server_constraints import synthetic_generator

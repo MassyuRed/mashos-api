@@ -14,6 +14,7 @@ from analysis_model_source import (SelfHostedAnalysisModelSource, _settings,
     SELECTOR, SEMANTIC_SELECTOR, MAX_RESPONSE_BYTES,
     SEMANTIC_EVENT_PLAN_MODEL, SEMANTIC_EVENT_PLAN_V2_MODEL,
     SEMANTIC_EVENT_PLAN_V2_BASE_MODEL, SEMANTIC_EVENT_PLAN_BASE_MODEL,
+    SEMANTIC_OCCURRENCE_V24_9B_MODEL, SEMANTIC_ANALYSIS_9B_MODEL,
     SEMANTIC_NODE_LOCAL_V3_MODEL, SEMANTIC_NODE_LOCAL_V3_BASE_MODEL, SEMANTIC_NODE_LOCAL_V4_MODEL,
     SEMANTIC_NODE_LOCAL_V4_BOUND_MODEL, SEMANTIC_NODE_LOCAL_V4_BOUND_V2_MODEL, SEMANTIC_OCCURRENCE_MODEL, SEMANTIC_OCCURRENCE_V2_MODEL, SEMANTIC_OCCURRENCE_V3_MODEL, SEMANTIC_OCCURRENCE_V4_MODEL,
     SEMANTIC_OCCURRENCE_V5_MODEL, SEMANTIC_OCCURRENCE_V6_MODEL, SEMANTIC_OCCURRENCE_V7_MODEL, SEMANTIC_OCCURRENCE_V8_MODEL,
@@ -86,10 +87,13 @@ def application_analysis_if_model_source():
         return None
     if selector not in {SELECTOR, SEMANTIC_SELECTOR}:
         raise RuntimeError('analysis_if_model_configuration_invalid')
-    # The map-authoring alias selects only the observed-map candidate. IF keeps
-    # the existing 120u identity while its freshness guard watches the original
-    # four application settings; no fallback or live setting change occurs.
-    if selector == SEMANTIC_SELECTOR and model in {SEMANTIC_EVENT_PLAN_MODEL,
+    # Bind IF to the Analysis identity in the same serving generation. The
+    # freshness guard watches the original four application settings.
+    if model == SEMANTIC_OCCURRENCE_V24_9B_MODEL:
+        if selector != SEMANTIC_SELECTOR:
+            raise RuntimeError('analysis_if_model_configuration_invalid')
+        model = SEMANTIC_ANALYSIS_9B_MODEL
+    elif selector == SEMANTIC_SELECTOR and model in {SEMANTIC_EVENT_PLAN_MODEL,
             SEMANTIC_EVENT_PLAN_V2_MODEL, SEMANTIC_EVENT_PLAN_V2_BASE_MODEL,
             SEMANTIC_NODE_LOCAL_V3_MODEL, SEMANTIC_NODE_LOCAL_V3_BASE_MODEL, SEMANTIC_NODE_LOCAL_V4_MODEL,
             SEMANTIC_NODE_LOCAL_V4_BOUND_MODEL, SEMANTIC_NODE_LOCAL_V4_BOUND_V2_MODEL, SEMANTIC_OCCURRENCE_MODEL, SEMANTIC_OCCURRENCE_V2_MODEL, SEMANTIC_OCCURRENCE_V3_MODEL, SEMANTIC_OCCURRENCE_V4_MODEL,

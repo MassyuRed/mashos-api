@@ -61,6 +61,8 @@ def test_exact_alias_selects_new_profile_with_existing_four_setting_identity(mon
      core.SEMANTIC_MAP_OCCURRENCE_V22_SCHEMA),
     (sources.SEMANTIC_OCCURRENCE_V23_MODEL, core.SEMANTIC_MAP_OCCURRENCE_V23_PROFILE,
      core.SEMANTIC_MAP_OCCURRENCE_V23_SCHEMA),
+    (sources.SEMANTIC_OCCURRENCE_V24_9B_MODEL, core.SEMANTIC_MAP_OCCURRENCE_V24_PROFILE,
+     core.SEMANTIC_MAP_OCCURRENCE_V24_SCHEMA),
 ])
 def test_content_plan_alias_binds_version_for_generation_and_replay(monkeypatch, model, profile, artifact_schema):
     environment(monkeypatch, model)
@@ -103,6 +105,70 @@ def test_direct_constructor_default_is_legacy_and_explicit_profile_remains_suppo
             semantic_prompt_version=core.SEMANTIC_MAP_EVENT_PLAN_PROFILE)
         assert sources.analysis_model_prompt_version(default) == core.SEMANTIC_MAP_PROFILE
         assert sources.analysis_model_prompt_version(explicit) == core.SEMANTIC_MAP_EVENT_PLAN_PROFILE
+
+
+def test_nine_b_map_alias_requires_the_staged_v24_transport(monkeypatch):
+    import analysis_if_model_source as if_source
+
+    alias = sources.SEMANTIC_OCCURRENCE_V24_9B_MODEL
+    with pytest.raises(ValueError, match='analysis_model_configuration_invalid'):
+        sources.SelfHostedSemanticAnalysisModelSource(endpoint=ENDPOINT, model=alias, api_key=KEY)
+    environment(monkeypatch, alias, sources.SELECTOR)
+    monkeypatch.setattr(sources.httpx, 'AsyncClient', lambda **kwargs: pytest.fail('wrong selector attempted network I/O'))
+    with pytest.raises(RuntimeError, match='analysis_model_configuration_invalid'):
+        asyncio.run(sources.application_analysis_model_source()(None))
+    with pytest.raises(RuntimeError, match='analysis_if_model_configuration_invalid'):
+        if_source.application_analysis_if_model_source()
+
+
+@pytest.mark.parametrize('provider_model', [sources.SEMANTIC_OCCURRENCE_V24_9B_MODEL, sources.SEMANTIC_OCCURRENCE_V24_MODEL])
+def test_app_nine_b_requests_every_v24_phase_and_rejects_a_four_b_response(monkeypatch, provider_model):
+    from analysis_plan_source_choices import WholeMapTitle
+    from test_analysis_occurrence_v11_display import map_stages
+    from test_analysis_occurrence_v17_record_owners import packet
+    from test_analysis_v13_separate_record_titles import wire
+
+    alias = sources.SEMANTIC_OCCURRENCE_V24_9B_MODEL
+    environment(monkeypatch, alias)
+    source = sources.application_analysis_model_source()
+    first = '会議では、自分で選んだ仕事なので私から引き受けた。'
+    second = '家では手伝うと決められてしまい、自分で決めたかったので断った。'
+    old, plan, nodes = map_stages(first, second)
+    prepared = application.prepare_semantic_map(OWNER, json.loads(old.source_snapshot_json),
+        prompt_version=source.prompt_version)
+    for node in nodes['nodes'].values():
+        node['units']['u1'].update(unknowns=[], source_mode='PERSON_JUDGMENT')
+    joined = core._semantic_v4_join(plan, nodes)
+    final = dict(schema_version=core._semantic_v4_schema('RELATIONS'), nodes_sha256=core.semantic_map_hash(joined),
+        qualification_review={}, edges=[], overview=dict(node_refs=['n1', 'n2'], title_proposal='',
+            title=WholeMapTitle(json.loads(prepared.material_json), joined).neutral))
+    packets = {'PLAN': packet(prepared, [[[(1, first)]], [[(2, second)]]]),
+               'NODES': wire(prepared, plan, nodes), 'RELATIONS': final}
+    calls = []
+
+    def receive(request):
+        value = json.loads(request.content)
+        assert value['model'] == alias
+        phase = json.loads(value['messages'][1]['content'])['author_phase']
+        calls.append(phase)
+        raw = json.dumps(packets[phase], ensure_ascii=False, separators=(',', ':'))
+        return httpx.Response(200, json=dict(model=provider_model, usage=dict(completion_tokens=100),
+            choices=[dict(finish_reason='stop', message=dict(role='assistant', content=raw))]))
+
+    original_client = httpx.AsyncClient
+    monkeypatch.setattr(sources.httpx, 'AsyncClient', lambda **kwargs:
+        original_client(**{**kwargs, 'transport': httpx.MockTransport(receive)}))
+    if provider_model != alias:
+        with pytest.raises(RuntimeError, match='analysis_model_source_unavailable'):
+            asyncio.run(source(prepared))
+        assert calls == ['PLAN']
+        return
+    receipt = asyncio.run(source(prepared))
+    assert calls == ['PLAN', 'NODES', 'RELATIONS']
+    assert json.loads(receipt.raw)['schema_version'] == core.SEMANTIC_MAP_OCCURRENCE_V24_SCHEMA
+    artifact, coverage = application.build_semantic_map(prepared, receipt)
+    assert coverage['mapped_count'] == 2
+    assert artifact.safe_projection(authenticated_owner_scope=OWNER)['overview']['title'] == '2件の記録を振り返って'
 
 
 def test_application_acquisition_sends_exact_alias_bound_messages_and_existing_wire_limits(monkeypatch):
@@ -161,6 +227,7 @@ def test_if_original_identity_matches_existing_current_4b_fixture():
 
 
 @pytest.mark.parametrize('selector,alias,expected,budget', [
+    (sources.SEMANTIC_SELECTOR, sources.SEMANTIC_OCCURRENCE_V24_9B_MODEL, sources.SEMANTIC_ANALYSIS_9B_MODEL, 4096),
     (sources.SEMANTIC_SELECTOR, sources.SEMANTIC_OCCURRENCE_V14_MODEL, sources.SEMANTIC_EVENT_PLAN_BASE_MODEL, 4096),
     (sources.SEMANTIC_SELECTOR, sources.SEMANTIC_OCCURRENCE_V15_MODEL, sources.SEMANTIC_EVENT_PLAN_BASE_MODEL, 4096),
     (sources.SEMANTIC_SELECTOR, sources.SEMANTIC_OCCURRENCE_V16_MODEL, sources.SEMANTIC_EVENT_PLAN_BASE_MODEL, 4096),

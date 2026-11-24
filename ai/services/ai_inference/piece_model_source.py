@@ -1,4 +1,4 @@
-"""One opt-in Piece candidate from the existing shared, private 4B server.
+"""One opt-in Piece candidate from the shared, private model server.
 
 The natural/base serving profile already accepts system/user messages. Piece
 owns its prompt and unadopted receipt; Emlis reply validation is not reused.
@@ -20,10 +20,13 @@ from cocolon_meaning_experience_engine.preparation import PreparedRequest
 
 SELECTOR = 'shared_4b.v1'
 CMEE_SELECTOR = 'shared_4b.cmee.v2'
+CMEE_9B_SELECTOR = 'shared_9b.cmee.v2'
+NINE_B_MODEL = 'cocolon-qwen3.5-9b-natural'
 REQUEST_SECONDS = 240.0
 MAX_REQUEST_BYTES = 65536
 MAX_RESPONSE_BYTES = 262144
 PROVIDER = 'self_hosted.shared_4b'
+NINE_B_PROVIDER = 'self_hosted.shared_9b'
 
 SYSTEM_MESSAGE = """本人の記録を、本人の意味を保った、単独で他者へ伝わる自然な日本語の短い作品にしてください。
 これは本人へ返事をするEmlisの会話ではありません。本人の語りとして書き、助言、挨拶、解説、評価を付けないでください。
@@ -517,13 +520,15 @@ def _unique_object(pairs):
     return value
 
 
-class Shared4BPieceModelSource:
+class SharedPieceModelSource:
     """A single authenticated HTTPS request; no automatic reacquisition."""
     def __init__(self, *, endpoint, model, api_key, transport=None, use_editorial_choices=False,
-                 realization_profile=None):
+                 realization_profile=None, provider=PROVIDER):
         try:
             if (any(type(value) is not str for value in (endpoint, model, api_key))
-                    or type(use_editorial_choices) is not bool):
+                    or type(use_editorial_choices) is not bool
+                    or provider not in (PROVIDER, NINE_B_PROVIDER)
+                    or (provider == NINE_B_PROVIDER) != (model == NINE_B_MODEL)):
                 raise ValueError
             parsed = urlsplit(endpoint)
             if (parsed.scheme != 'https' or not parsed.hostname or parsed.username or parsed.password
@@ -540,6 +545,7 @@ class Shared4BPieceModelSource:
             raise ValueError('piece_model_configuration_invalid') from None
         self.endpoint, self.model, self._api_key = endpoint, model, api_key
         self._transport = transport
+        self._provider = provider
         # A bounded research candidate only. The configured application source
         # keeps the existing default until actual output justifies adoption.
         self._use_editorial_choices = use_editorial_choices
@@ -559,7 +565,7 @@ class Shared4BPieceModelSource:
 
         def receipt(raw=None, finish='error', *, usage=None, revision=None):
             return receive_piece_model_candidate(prepared, raw_output=raw, finish_reason=finish,
-                provider=PROVIDER, model=self.model, revision=revision, usage=usage,
+                provider=self._provider, model=self.model, revision=revision, usage=usage,
                 elapsed_seconds=time.monotonic() - started, candidate_format=PIECE_FIELD_SLOTS_FORMAT,
                 realization_profile=self._realization_profile)
 
@@ -603,8 +609,8 @@ class Shared4BPieceModelSource:
                     or message.get('function_call') or message.get('reasoning_content')
                     or type(message.get('content')) is not str):
                 raise ValueError
-            # This server currently supplies neither usage nor revision. Keep
-            # those unknown; never infer tokens or assert a loaded revision.
+            # Keep omitted usage and revision unknown. Do not infer tokens
+            # or claim a checkpoint identity absent from the envelope.
             usage = data.get('usage')
             if usage is not None and (type(usage) is not dict or any(type(key) is not str
                     or (value is not None and (type(value) is not int or value < 0))
@@ -619,6 +625,10 @@ class Shared4BPieceModelSource:
         except (httpx.HTTPError, httpx.InvalidURL, ValueError, TypeError, KeyError,
                 UnicodeError, RecursionError):
             return receipt()
+
+
+# Preserve the historical private capture entry point and receipt identity.
+Shared4BPieceModelSource = SharedPieceModelSource
 
 
 def _settings():
@@ -639,14 +649,18 @@ class _ApplicationPieceModelSource:
     async def __call__(self, prepared, *, source_request=None):
         self.require_current()
         selector, endpoint, model, api_key = self._settings
-        if selector not in (SELECTOR, CMEE_SELECTOR):
+        if selector not in (SELECTOR, CMEE_SELECTOR, CMEE_9B_SELECTOR):
             raise RuntimeError('piece_model_configuration_invalid')
         try:
             options = {}
-            if selector == CMEE_SELECTOR:
+            if selector in (CMEE_SELECTOR, CMEE_9B_SELECTOR):
                 from cocolon_meaning_experience_engine.piece_v1c import MODEL_REALIZATION_PROFILE
                 options = dict(realization_profile=MODEL_REALIZATION_PROFILE, use_editorial_choices=True)
-            source = Shared4BPieceModelSource(endpoint=endpoint, model=model, api_key=api_key, **options)
+            if selector == CMEE_9B_SELECTOR:
+                source = SharedPieceModelSource(endpoint=endpoint, model=model, api_key=api_key,
+                                               provider=NINE_B_PROVIDER, **options)
+            else:
+                source = Shared4BPieceModelSource(endpoint=endpoint, model=model, api_key=api_key, **options)
         except ValueError:
             raise RuntimeError('piece_model_configuration_invalid') from None
         result = await source(prepared, **({'source_request': source_request}
@@ -673,7 +687,7 @@ def application_piece_model_source():
 
 def application_piece_realization_profile():
     """An explicit private profile; legacy raw=canonical is unchanged."""
-    if _settings()[0] == CMEE_SELECTOR:
+    if _settings()[0] in (CMEE_SELECTOR, CMEE_9B_SELECTOR):
         from cocolon_meaning_experience_engine.piece_v1c import MODEL_REALIZATION_PROFILE
         return MODEL_REALIZATION_PROFILE
     return None
