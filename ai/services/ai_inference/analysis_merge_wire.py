@@ -1104,6 +1104,10 @@ class ResponseCodec:
                     self._extra_comparisons[key] = (choices, candidate['subject_witness']['kind'] == 'requested_object')
         return self._extra_comparisons.get(endpoint_key, ({}, False))
 
+    @property
+    def reserved_free_source_pairs(self):
+        return self._reserved_source_pairs if self._request_progress else ()
+
     def free_comparisons_allowed(self, edges, *, comparison_sources=None):
         if self.paired_material is None:
             return True
@@ -1111,7 +1115,7 @@ class ResponseCodec:
             if any(type(edge.get(key)) is not str for key in ('from','to','label')):
                 return False
             # The explicit decision owns these exact source choices in either direction.
-            if self._request_progress and _comparison_source_pair(edge) in self._reserved_source_pairs:
+            if _comparison_source_pair(edge) in self.reserved_free_source_pairs:
                 return False
             l = self._owners.get(edge.get('from'),set())
             r = self._owners.get(edge.get('to'),set())

@@ -993,7 +993,8 @@ class EmlisThreadService:
             ARTIFACT_SCHEMA, NaturalReply, NaturalReplyError, prepare_natural_reply, validate_reply,
             CORRECTED_SOURCE_CONTEXT_VERSION, DIRECT_FEELING_CORRECTION_CONTEXT_VERSION,
             DIRECT_FEELING_CORRECTION_CONTEXT_VERSIONS, INITIAL_STANDALONE_FEELING_CONTEXT_VERSION,
-            INITIAL_OBSERVATION_FOLLOW_CONTEXT_VERSION, QWEN_9B_NATURAL_ALIAS,
+            INITIAL_OBSERVATION_FOLLOW_CONTEXT_VERSION, INITIAL_OBSERVATION_FOLLOW_CONTEXT_VERSIONS,
+            QWEN_9B_NATURAL_ALIAS,
             PAID_RECEIVED_ANSWER_CONTEXT_VERSION,
             RECEIVED_ANSWER_CONTEXT_VERSION, SOURCE_CONTEXT_VERSION,
             build_natural_reply_messages)
@@ -1034,11 +1035,16 @@ class EmlisThreadService:
             context_version = None
         if context_version not in {None, SOURCE_CONTEXT_VERSION, CORRECTED_SOURCE_CONTEXT_VERSION,
                                    RECEIVED_ANSWER_CONTEXT_VERSION, PAID_RECEIVED_ANSWER_CONTEXT_VERSION,
-                                   INITIAL_STANDALONE_FEELING_CONTEXT_VERSION, INITIAL_OBSERVATION_FOLLOW_CONTEXT_VERSION,
+                                   INITIAL_STANDALONE_FEELING_CONTEXT_VERSION, *INITIAL_OBSERVATION_FOLLOW_CONTEXT_VERSIONS,
                                    *DIRECT_FEELING_CORRECTION_CONTEXT_VERSIONS}:
             raise NaturalReplyError('natural_reply_writer_identity_changed')
         direct_version = (context_version if context_version in DIRECT_FEELING_CORRECTION_CONTEXT_VERSIONS
                           else DIRECT_FEELING_CORRECTION_CONTEXT_VERSION)
+        initial_follow_version = None
+        if context_version in INITIAL_OBSERVATION_FOLLOW_CONTEXT_VERSIONS:
+            initial_follow_version = context_version
+        elif prior is None and getattr(self.natural_reply_source, 'model', None) == QWEN_9B_NATURAL_ALIAS:
+            initial_follow_version = INITIAL_OBSERVATION_FOLLOW_CONTEXT_VERSION
         material, safety = prepare_natural_reply(_request(snapshot), response_stage=response_stage,
             bind_writer_context=context_version is not None,
             include_corrected_circumstance=context_version == CORRECTED_SOURCE_CONTEXT_VERSION,
@@ -1050,8 +1056,7 @@ class EmlisThreadService:
             include_initial_standalone_feeling=(context_version == INITIAL_STANDALONE_FEELING_CONTEXT_VERSION
                 or (prior is None and context_version == PAID_RECEIVED_ANSWER_CONTEXT_VERSION
                     and t['data'].get('started_tier') in {'plus', 'premium'})),
-            include_initial_observation_follow=(context_version == INITIAL_OBSERVATION_FOLLOW_CONTEXT_VERSION
-                or (prior is None and getattr(self.natural_reply_source, 'model', None) == QWEN_9B_NATURAL_ALIAS)),
+            initial_observation_follow_context_version=initial_follow_version,
             direct_feeling_correction_context_version=direct_version,
             prepared_meaning=prepared_meaning,
             meaning_profile=t['data'].get('natural_meaning_profile'), owner_scope=user_id,

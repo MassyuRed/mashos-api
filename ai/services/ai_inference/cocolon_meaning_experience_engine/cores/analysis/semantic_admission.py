@@ -3551,10 +3551,12 @@ _PRIMARY_STRUCTURE_V2_INSTRUCTION = (
 )
 _PRIMARY_STRUCTURE_V3_INSTRUCTION = (
     '\nprimary_structuresは、本人が選ぶときの基準を、根拠の強い順に0〜3件返します。'
-    'across_recordsでは別々の原記録から、本人がどうしてその選択をしたかが分かる根拠をanchorsに選びます。'
-    '二つの場面で条件が違っても、本人が共通して何を重く見ていたかを先に考えます。'
-    '同じ行動でも理由が異なる場合は一つの基準にしません。反対の行動でも同じ基準で説明できるか確かめます。'
-    '当てはまらない場面も読み、その場面で別の条件を重く見ていたなら説明の範囲を狭めます。'
+    'across_recordsでは別々の原記録を選び、各記録で「本人が実際に選んだこと」と'
+    '「本人がその選択と結びつけた条件」を原文から一組ずつ確認します。確認に使った箇所がanchorsです。'
+    '選択が二つとも実行されていれば、違うのは条件や選んだ内容です。比較のために一方を断ったことにしません。'
+    '同じ行動でも理由が異なる場合は一つの基準にまとめません。逆の行動を選んだ場合は共通の基準でも説明できるか確かめます。'
+    'ほかの記録に異なる理由で選んだ例があれば、その記録にも照らし、説明が当てはまる場面を限ります。'
+    'いくつかの場面で重く見たことを、常に最優先することや唯一の基準に広げません。'
     'self_reportでは本人が得た自己理解、in_this_recordではその場で確かめられたことに限ります。'
     'decision_factorは本人が重く見た条件や基準を表す短い語句です。'
     'criterionは、その語句を使い、どういうときに何を大切にして選ぶのかを本人に伝える結論の一文です。'
@@ -3562,7 +3564,8 @@ _PRIMARY_STRUCTURE_V3_INSTRUCTION = (
     '説明にも同じdecision_factorを使います。行動を並べるだけで終わらず、どちらの選択にも通じる理由を書きます。'
     '結論と説明は敬語で、文末は句点です。headingは結論の後で短い見出しをつけ、結論や説明と同じ文にしません。'
     '本人が後に得た自己理解を以前からの意図にせず、本人の望み、実際の行動、相手の言葉を分けます。'
-    '本文に根拠の参照番号や原文の列を出しません。根拠から判断基準を言えなければ空配列です。')
+    '見出しと本文には、根拠の参照番号も項目番号も書かず、場面が分かる言葉で説明します。'
+    '根拠から判断基準を言えなければ空配列です。')
 _PRIMARY_STRUCTURE_VERSIONS = ('karen.v1', 'karen.v2', 'karen.v3')
 
 
@@ -3579,6 +3582,8 @@ def _primary_structure_guidance(material):
 
 
 _PRIMARY_STRUCTURE_SCOPES = {'across_records', 'self_report', 'in_this_record'}
+_PRIMARY_STRUCTURE_PRIVATE_REF = re.compile(
+    r'(?<![a-z0-9_])n[1-9][0-9]*(?:\.u[1-9][0-9]*)?(?![a-z0-9_])', re.IGNORECASE)
 
 
 def _primary_structure_text_key(text):
@@ -3592,7 +3597,8 @@ def _primary_structure_v3_has_conclusion(axis, factor, quotes):
     return (len(factor) >= 2 and all(factor in key for key in sentence_keys)
         and len(set([_primary_structure_text_key(heading), *sentence_keys])) == 3
         and all(re.search(r'(?:です|ます|ません|でした|ました)\s*[。．.]$', text) for text in sentences)
-        and not any(re.search(r'[\r\n\t]|n[1-9][0-9]*\.u[1-9][0-9]*(?:\.e[1-9][0-9]*)?', text)
+        and not any(re.search(r'[\r\n\t]', text) or
+                    _PRIMARY_STRUCTURE_PRIVATE_REF.search(unicodedata.normalize('NFKC', text))
                     for text in [heading, *sentences])
         and not set(sentence_keys) & {_primary_structure_text_key(quote) for quote in quotes})
 

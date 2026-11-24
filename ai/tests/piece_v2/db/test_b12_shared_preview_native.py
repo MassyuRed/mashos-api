@@ -26,10 +26,11 @@ database = _H['database']
 _RUNTIME = {'ttl_seconds': 600, 'renderer_version': 'synthetic-renderer.v1'}
 
 
-def _save_application(kind):
+def _save_application(kind, *, export=False):
     settings = dict(preview_requested=True, preview_ready=True,
                     preview_runtime=dict(_RUNTIME), save_requested=True, save_ready=True,
-                    owner_read_requested=True, owner_read_ready=True)
+                    owner_read_requested=True, owner_read_ready=True,
+                    export_requested=export, export_ready=export)
     return (shared.create_application(piece_preview_configuration=settings)
             if kind == 'shared' else create_piece_preview_application(**settings))
 
@@ -195,6 +196,68 @@ def test_composed_generated_preview_private_save_replay_and_owner_detail(databas
     assert state['save_rpc'] == 2
     for table in ('mymodel_reflections', 'piece_record_reads', 'piece_record_resonances', 'piece_export_receipts'):
         assert conn.execute('SELECT count(*) FROM public.' + table).fetchone() == (0,)
+
+
+def test_composed_gradient_recipe_is_saved_and_exported_from_the_same_native_row(database, monkeypatch):
+    conn, _, _ = database
+    request, _, state = _save_harness(database, monkeypatch, tier='premium')
+    migrations = _B5['_B4']['_ROOT'] / 'supabase/migrations'
+    for name in (
+        '20261103235434_piece_v2_expand_visual_palette.sql',
+        '20261124040800_piece_v2_visual_editor.sql',
+        '20261124052500_piece_v2_visual_alignment.sql',
+        '20261124055500_piece_v2_visual_text_size.sql',
+        '20261124062800_piece_v2_visual_gradient_background.sql',
+    ):
+        conn.execute((migrations / name).read_text())
+    request['visual_selection'].update(
+        theme_id='sage_paper', font_style_id='serif_readable',
+        text_color_id='neutral_ink', text_alignment='center', text_size='large',
+        background_style='gradient')
+    app = _save_application('shared', export=True)
+    v1, v2 = 'piece.rn_bitmap_renderer.ios.v1', 'piece.rn_bitmap_renderer.ios.v2'
+    app.state.piece_preview_runtime['renderer_version'] = v1
+    state['expected_renderers'] = (v1, v2)
+
+    async def call(method, resource, *, palette='7', key=None, body=None):
+        headers = {'Authorization': _B5['AUTH'], 'X-Piece-Palette': palette,
+                   'X-Piece-Renderer': v2}
+        if key is not None:
+            headers['Idempotency-Key'] = key
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),
+                                     base_url='http://piece-test.invalid') as client:
+            return await client.request(method, '/emotion/piece/' + resource,
+                                        headers=headers, json=body)
+
+    unavailable = asyncio.run(call('POST', 'preview', palette='6', key='piece-visual-preview', body=request))
+    assert unavailable.status_code == 422
+    assert state['authors'] == state['http_rpc'] == 0
+    created = asyncio.run(call('POST', 'preview', key='piece-visual-preview', body=request))
+    assert created.status_code == 200, created.json()
+    preview = created.json()
+    record_id = preview['preview_id']
+    recipe = preview['visual_recipe']
+    assert recipe['theme'] == {'theme_id': 'sage_paper', 'theme_version': 1,
+                               'background_style': 'gradient'}
+    assert recipe['font_style']['text_size'] == 'large'
+    assert recipe['font_style']['font_style_id'] == 'serif_readable'
+    assert recipe['font_style']['text_color_id'] == 'neutral_ink'
+    _H['_no_author'](monkeypatch)
+    saved = asyncio.run(call('POST', 'save', key='piece-visual-save', body=_save_request(preview)))
+    assert saved.status_code == 200, saved.json()
+    assert saved.json()['piece_id'] == record_id and saved.json()['visibility_scope'] == 'private'
+
+    conn.execute("UPDATE public.profiles SET subscription_tier='plus' WHERE id=%s", (_B5['OWNER'],))
+    detail = asyncio.run(call('GET', record_id))
+    export = asyncio.run(call('GET', record_id + '/export'))
+    assert detail.status_code == export.status_code == 200
+    assert detail.json() == export.json()
+    row = _stored(conn)
+    for field in ('piece_text', 'piece_text_hash', 'content_payload_hash',
+                  'visual_recipe', 'visual_recipe_hash', 'renderer_version'):
+        assert detail.json()[field] == row[field] == preview[field]
+    assert asyncio.run(call('GET', record_id + '/export', palette='6')).status_code == 404
+    assert state['authors'] == state['actual_reviews'] == _B5['_B4']['_used'](conn) == 1
 
 
 @pytest.mark.parametrize('kind', ['preview', 'shared'])

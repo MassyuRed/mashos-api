@@ -5,6 +5,7 @@ name: Analysis observed content
   push:
     branches:
       - agent/cmee-v1a-i1sx-source-explicit-20260815
+      - agent/cmee-continuation-20261124
     paths:
       - .github/workflows/analysis-observed-content.yml
       - ai/services/ai_inference/cocolon_meaning_experience_engine/**

@@ -138,10 +138,12 @@ def response_parser(logical, codec):
 
 
 class ResponseParser(CharacterLevelParser):
-    def __init__(self, logical, codec, quoted, ops, history=None):
+    def __init__(self, logical, codec, quoted, ops, history=None, context=None):
         super().__init__(logical.config)
         self.logical = logical
-        self.context = logical.context if hasattr(logical, 'context') else None
+        # The logical parser can become a union of branches while retaining
+        # the same root configuration and comparison context.
+        self.context = context if context is not None else getattr(logical, 'context', None)
         self.codec = codec
         self.quoted = quoted
         self.ops = ops
@@ -162,7 +164,8 @@ class ResponseParser(CharacterLevelParser):
 
     def _next(self, ops, parser=None, logical_text=''):
         history = (self.history, logical_text) if logical_text else self.history
-        return ResponseParser(self.logical if parser is None else parser, self.codec, self.quoted, ops, history)
+        return ResponseParser(self.logical if parser is None else parser, self.codec, self.quoted,
+                              ops, history, self.context)
 
     def _choices(self):
         if self._options is not None:
@@ -220,7 +223,15 @@ class ResponseParser(CharacterLevelParser):
                     else:
                         assert len(values) == 1
                         _, logical, *continuation = values[0]
-                        parser = _advance(self.logical, logical)
+                        if continuation and logical and self.codec.judgments:
+                            # The explicit comparison menu owns these source pairs.
+                            self.context.reading_explicit_comparison = True
+                            try:
+                                parser = _advance(self.logical, logical)
+                            finally:
+                                self.context.reading_explicit_comparison = False
+                        else:
+                            parser = _advance(self.logical, logical)
                         if parser is not None:
                             rest = continuation[0] if continuation else ()
                             options[char] = self._next(rest + tail, parser, logical)

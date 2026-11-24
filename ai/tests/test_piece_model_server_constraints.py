@@ -230,7 +230,7 @@ def test_piece_adapter_revision_is_server_owned_and_never_added_to_other_profile
 
 
 def synthetic_generator(monkeypatch, *, constrained, input_count=1, with_piece_adapter=False,
-                        raw_output=None, inject_order_reset=False):
+                        raw_output=None, inject_order_reset=False, qwen_9b=False, context_tokens=16384):
     """Load the real serving closure with a CPU-only deterministic stand-in."""
     from lmformatenforcer.tokenenforcer import TokenEnforcer, TokenEnforcerTokenizerData
     raw = (raw_output if raw_output is not None else
@@ -244,6 +244,9 @@ def synthetic_generator(monkeypatch, *, constrained, input_count=1, with_piece_a
         lambda tokens: ''.join(alphabet[i] for i in tokens if i < eos), eos, False, eos + 1)
     captured = {'generate': [], 'tokenize': []}
     class Sent(list):
+        def __getitem__(self, index):
+            value = super().__getitem__(index)
+            return type(self)(value) if isinstance(index, slice) else value
         def tolist(self):
             return list(self)
     class Encoded:
@@ -360,7 +363,7 @@ def synthetic_generator(monkeypatch, *, constrained, input_count=1, with_piece_a
                    piece_config_sha256='d' * 64) if with_piece_adapter else {}
     generator = probe.load_generator('analysis-cpu' if with_piece_adapter else None,
         threading.Event(), max_new_tokens=4096,
-        context_tokens=16384, semantic_json=constrained, **options)
+        context_tokens=context_tokens, semantic_json=constrained, qwen_9b=qwen_9b, **options)
     return generator, captured, raw, eos
 
 

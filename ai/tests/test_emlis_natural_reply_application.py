@@ -966,8 +966,10 @@ def test_http_provider_sends_only_admitted_material_and_preserves_reply():
 
 
 @pytest.mark.parametrize("thought,action,focus,feeling", [
-    ("見本帳にあった青い縞が好きでした。", "本を棚へ戻しました。", {"好きだと書いた箇所": "見本帳にあった青い縞"}, "好き"),
-    ("見本帳にあった青い縞が大好きでした。", "本を棚へ戻しました。", {"好きだと書いた箇所": "見本帳にあった青い縞"}, "大好き"),
+    ("見本帳にあった青い縞が好きでした。", "本を棚へ戻しました。",
+     {"好きだと書いた箇所": "見本帳にあった青い縞", "本人が書いた好みの時制": "過去"}, "好き"),
+    ("見本帳にあった青い縞が大好きです。", "本を棚へ戻しました。",
+     {"好きだと書いた箇所": "見本帳にあった青い縞", "本人が書いた好みの時制": "現在"}, "大好き"),
     ("友人が「寂しかった」と話していました。私はほっとしました。", "楽譜を返しました。", {}, "ほっとしました"),
     ("楽譜を今日中に返せたので、私はほっとしました。", "受付を早く閉めると聞きました。", {"本人が明記した理由": "楽譜を今日中に返せた"}, "ほっとしました"),
     ("私は帰り道に思い返すと寂しかったです。", "花に水をやりました。", {"本人が書いた場面": "帰り道に思い返す"}, "寂しかったです"),
@@ -989,7 +991,7 @@ def test_9b_initial_follow_uses_bound_focus_and_persists_literal(natural_case, q
         sent.append(body)
         assert body["model"] == QWEN_9B_NATURAL_ALIAS
         assert json.loads(body["messages"][-1]["content"]) == {
-            "本人の原文": literal, "本人の気持ちの言葉": feeling, **focus}
+            "本人の気持ちの言葉": feeling, **focus}
         return httpx.Response(200, json={"model": QWEN_9B_NATURAL_ALIAS, "choices": [
             {"finish_reason": "stop", "message": {"role": "assistant", "content": follow}}]})
 
@@ -1046,6 +1048,10 @@ def test_9b_initial_follow_does_not_project_uncertain_or_multiple_feelings(natur
     "私も見本帳にあった青い縞が好きでした。",
     "見本帳にあった青い縞が好きでした。",
     "どんな色合いでしたか。",
+    "あの青い縞が、今も私の記憶に鮮明に残っています。",
+    "Emlisもその模様を想像するだけで心が和みます。",
+    "その模様が愛おしいものか、Emlis はよく存じております。",
+    "これからも一緒にその景色を眺めていけたらと思います。",
 ])
 def test_9b_initial_follow_rejects_fabricated_witness_or_unbound_voice(natural_case, qdb, monkeypatch, follow):
     from cocolon_meaning_experience_engine.natural_reply import QWEN_9B_NATURAL_ALIAS
@@ -1062,3 +1068,22 @@ def test_9b_initial_follow_rejects_fabricated_witness_or_unbound_voice(natural_c
     dto = run(service.start(user, parent))
     assert dto["state"] == "RESPONSE_FAILED"
     assert dto["current_observation"] is None
+
+
+def test_initial_follow_legacy_writer_retains_its_saved_message_shape():
+    from cocolon_meaning_experience_engine.natural_reply import (
+        ACTIVE_MEANING_PROFILE, LEGACY_INITIAL_OBSERVATION_FOLLOW_CONTEXT_VERSION,
+        build_natural_reply_messages)
+
+    literal = "見本帳にあった青い縞が好きでした。"
+    material = NaturalReplyInput("source", "{}", ACTIVE_MEANING_PROFILE, json.dumps({
+        "source_context_version": LEGACY_INITIAL_OBSERVATION_FOLLOW_CONTEXT_VERSION,
+        "initial_observation_follow": {
+            "kind": "対象", "excerpt": literal, "feeling": "好き", "anchor": "見本帳にあった青い縞",
+        },
+    }))
+    messages = build_natural_reply_messages(material)
+    assert json.loads(messages[1]["content"]) == {
+        "本人の原文": literal, "本人の気持ちの言葉": "好き", "好きだと書いた箇所": "見本帳にあった青い縞",
+    }
+    assert messages[0]["content"].startswith("文章の話し手はEmlis")

@@ -213,7 +213,8 @@ def test_direct_transport_primary_structure_mode_requires_the_pinned_9b_alias(mo
 
 
 @pytest.mark.parametrize('fault', ['one_judgment', 'one_record', 'duplicate_quote', 'unrelated_cases',
-                                   'repeat_heading', 'raw_reference', 'question', 'copied_source'])
+                                   'repeat_heading', 'raw_reference', 'raw_node_identifier',
+                                   'raw_unit_identifier', 'question', 'copied_source'])
 def test_v3_keeps_the_graph_when_optional_structure_lacks_a_complete_reading(fault):
     p, plan, bodies = scenario(FIRST, FIRST if fault == 'duplicate_quote' else SECOND, version='karen.v3')
     nodes = core._semantic_v4_join(plan, bodies)
@@ -229,6 +230,10 @@ def test_v3_keeps_the_graph_when_optional_structure_lacks_a_complete_reading(fau
         axis['heading'] = axis['criterion'].rstrip('。')
     elif fault == 'raw_reference':
         axis['case_reading'] = 'n1.u1.e1とn2.u1.e1に選べる余地が書かれています。'
+    elif fault == 'raw_node_identifier':
+        axis['case_reading'] += '会議（n1）での選択です。'
+    elif fault == 'raw_unit_identifier':
+        axis['heading'] += '（ｎ２．ｕ１）'
     elif fault == 'question':
         axis = v3_renamed_previous_response()
     elif fault == 'copied_source':

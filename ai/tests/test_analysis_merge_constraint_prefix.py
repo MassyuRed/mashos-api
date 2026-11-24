@@ -285,3 +285,41 @@ def test_a_different_addressee_does_not_get_a_shared_request_judgment():
         advance(native, bad)
     with pytest.raises(ValueError):
         codec.decode(false_review)
+
+
+def test_v10_never_enters_a_reserved_free_edge_without_a_legal_closing_token():
+    from test_analysis_node_local_native_profile import advance
+
+    first = '案内所への部品依頼を提案した。'
+    second = '同僚の交換部品の依頼連絡に返事をした。'
+    third = '展示会では、準備の段取りを見直した。'
+    messages = _request_relation_messages(first, second,
+        '同僚から交換部品を案内所へ頼んだと連絡があった。', third, version=wire.JUDGMENT_VERSION)
+    codec = wire.response_codec(messages)
+    pair, = codec.comparisons
+    endpoints = wire.comparison_endpoints(pair)
+    rejected = dict(endpoints, label=first + '後の記録では、' + second, relation_kind='SHARED_MEANING')
+    unrelated = dict(endpoints, to='n3', to_unit='n3.u1', to_source=third[:16],
+        label=first + '後の記録では、' + third, relation_kind='SHARED_MEANING')
+    offer = next(choice for choice in codec.judgments[0] if choice[0] == '同じ依頼の経過')
+    decline = next(choice for choice in codec.judgments[0] if choice[0] == '別件')
+    blank = codec.encode(dict(schema_version=wire.MODEL_SCHEMA + '.relations', nodes_sha256=codec.binding,
+        qualification_review={}, edges=[], overview=dict(node_refs=['n1', 'n2', 'n3'],
+        title_proposal='', title='3件の記録を振り返って')))
+    words = wire.compact_json(messages) + wire.compact_json([blank, rejected, unrelated, offer, decline])
+    alphabet = ''.join(dict.fromkeys(words))
+    native = probe.semantic_json_parser(messages, alphabet)
+
+    def render(decision, edges):
+        return wire.compact_json(dict(blank, comparisons=[decision], edges=edges))
+
+    for comparison in (offer, decline):
+        for edges in ([], [unrelated]):
+            raw = render(comparison, edges)
+            completed = advance(native, raw)
+            assert completed.can_end()
+            assert json.loads(completed.projected_prefix()) == codec.decode(json.loads(raw))
+        # Rejection must precede label authoring. At the old terminal check
+        # `}` was forbidden only after there was no other edge choice left.
+        with pytest.raises(ValueError):
+            advance(native, render(comparison, [rejected]).split(',"label":', 1)[0])
