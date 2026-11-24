@@ -125,6 +125,67 @@ def test_ambiguous_target_uncertainty_does_not_gain_a_declaration(text):
     assert 'declaration' not in out.artifact.eligible_formats
 
 
+@pytest.mark.parametrize('target', ('自分の迷いを整理する時間', '迷いのない時間'))
+@pytest.mark.parametrize('shape', (
+    '私は{target}を選びたい。',
+    '私が選びたいのは、{target}です。',
+    '私にとって{target}が大切です。',
+))
+@pytest.mark.parametrize('tier', ('free', 'plus', 'premium'))
+def test_bound_nominal_doubt_does_not_qualify_the_outer_commitment(target, shape, tier):
+    text = shape.format(target=target)
+    out = generated(text, tier=tier)
+    assert out.artifact_plan.declaration_eligible
+    assert 'declaration' in out.artifact.eligible_formats
+    assert target in out.artifact.piece_text
+    assert out.source_meaning.envelope.raw_utf8 == text.encode('utf-8')
+    # Selecting another eligible format cannot author away the noun or add a vow.
+    explicit = generated(text, tier='premium', requested_format='declaration')
+    assert explicit.artifact.piece_text == out.artifact.piece_text
+    assert explicit.artifact.piece_text_hash == out.artifact.piece_text_hash
+    assert explicit.artifact.format_type == 'declaration'
+
+
+@pytest.mark.parametrize('text', (
+    '私はたぶん自分の迷いを整理する時間を選びたい。',
+    '私が選びたいのは、おそらく自分の迷いを整理する時間です。',
+    '私にとってたぶん迷いのない時間が大切です。',
+    '私は自分の迷いを整理する時間を選びたいかもしれない。',
+    '私が選びたいとは限らないのは、迷いのない時間です。',
+    '私にとって迷いのない時間が大切かもしれない。',
+    '私にとって迷いのない時間が大切ではありません。',
+    '私にとって迷いのない時間が大切でした。',
+    '私は自分の迷いを整理する時間を選びたかった。',
+    '私は判断に迷いがちな時間を選びたい。',
+    '私にとって判断に迷いにくい時間が大切です。',
+    '私にとって迷いのだという時間が大切です。',
+    '私は迷いのに考える時間を選びたい。',
+    '余裕があるなら、私は迷いのない時間を選びたい。',
+))
+def test_nominal_doubt_keeps_real_reservations_past_and_unproved_inflections(text):
+    out = generated(text, tier='premium')
+    assert not out.artifact_plan.declaration_eligible
+    assert 'declaration' not in out.artifact.eligible_formats
+
+
+@pytest.mark.parametrize('text', (
+    '私は自分の迷いを整理する時間を選びたい。',
+    '私が選びたいのは、迷いのない時間です。',
+    '私にとって自分の迷いを整理する時間が大切です。',
+))
+def test_author_free_offer_review_accepts_the_bound_nominal_doubt_plan(monkeypatch, text):
+    import piece_v2_safety_review as review
+    import cocolon_meaning_experience_engine.piece_v1c as author
+    out = generated(text, tier='premium', requested_format='declaration')
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError('Format review must not author or regenerate text.')
+
+    monkeypatch.setattr(author, 'realize_piece_artifact', forbidden)
+    assert review._check_formats(out.source_meaning, out.artifact_plan,
+        out.artifact.content_payload(), out.artifact) is None
+
+
 @pytest.mark.parametrize('operator', ('ので', 'なら', 'ならば', 'けれど', 'けれども'))
 @pytest.mark.parametrize('offered', (None, 'quote', 'declaration'))
 def test_author_free_format_review_matches_the_qualified_topic_offer(monkeypatch, operator, offered):
