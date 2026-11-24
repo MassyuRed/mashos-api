@@ -61,6 +61,7 @@ THEMES.update({
 EDITOR_THEME_IDS = tuple(THEMES)
 FONT_STYLE_IDS = ('system_readable', 'serif_readable')
 TEXT_COLOR_IDS = ('neutral_ink',)
+TEXT_ALIGNMENTS = ('left', 'center')
 DARK_THEME_IDS = frozenset({'quiet_night', 'forest_mint', 'ocean_ice'})
 SCALES = {
     'short_essay': {'4:5': (48, 44, 40, 36), '9:16': (52, 48, 44, 40)},
@@ -72,12 +73,13 @@ CANVASES = {'4:5': (1080, 1350, 96, 72), '9:16': (1080, 1920, 108, 84)}
 
 
 def require_piece_visual_selection(selection: Mapping, *, expanded_palette: bool,
-                                   visual_editor: bool = False) -> None:
+                                   visual_editor: bool = False, visual_alignment: bool = False) -> None:
     """Guard client compatibility separately from the current plan."""
     themes = EDITOR_THEME_IDS if visual_editor else THEME_IDS if expanded_palette else LEGACY_THEME_IDS
     theme = selection['theme_id']
     if (theme is not None and theme not in themes
-            or not visual_editor and ('font_style_id' in selection or 'text_color_id' in selection)):
+            or not visual_editor and ('font_style_id' in selection or 'text_color_id' in selection)
+            or not visual_alignment and 'text_alignment' in selection):
         raise PieceContractError('PIECE_VISUAL_SELECTION_NOT_ALLOWED')
 
 
@@ -85,10 +87,14 @@ def invalid() -> PieceContractError:
     return PieceContractError('PIECE_REQUEST_INVALID', 'visual_recipe')
 
 
+def default_text_alignment(format_type: str) -> str:
+    return 'center' if format_type == 'quote' else 'left'
+
+
 def build_visual_recipe(format_type: str, *, tier: str = 'free', language: str = 'ja',
                         theme: str | None = None, aspect_ratio: str | None = None,
                         branding: str | None = None, font_style_id: str | None = None,
-                        text_color_id: str | None = None) -> dict:
+                        text_color_id: str | None = None, text_alignment: str | None = None) -> dict:
     if tier not in ('free', 'plus', 'premium') or format_type not in TEMPLATES:
         raise invalid()
     if language not in ('ja', 'en', 'mixed'):
@@ -101,6 +107,7 @@ def build_visual_recipe(format_type: str, *, tier: str = 'free', language: str =
     if (theme not in THEMES or aspect_ratio not in CANVASES
             or font_style_id not in FONT_STYLE_IDS
             or text_color_id is not None and text_color_id not in TEXT_COLOR_IDS
+            or text_alignment is not None and (tier == 'free' or text_alignment not in TEXT_ALIGNMENTS)
             or tier != 'premium' and (font_style_id != FONT_STYLE_IDS[0] or text_color_id is not None)
             or tier == 'free' and theme not in LEGACY_THEME_IDS
             or tier == 'free' and aspect_ratio != '4:5'
@@ -109,6 +116,8 @@ def build_visual_recipe(format_type: str, *, tier: str = 'free', language: str =
     font_style = {'font_style_id': font_style_id, 'font_style_version': 1}
     if text_color_id is not None:
         font_style['text_color_id'] = text_color_id
+    if text_alignment is not None and text_alignment != default_text_alignment(format_type):
+        font_style['text_alignment'] = text_alignment
     return {
         'visual_recipe_version': 'piece.visual_recipe.v1',
         'visual_catalog_version': 'piece.visual_catalog.v1',
@@ -131,6 +140,8 @@ def visual_selection_from_recipe(recipe: Mapping) -> dict:
         selection['font_style_id'] = style['font_style_id']
     if 'text_color_id' in style:
         selection['text_color_id'] = style['text_color_id']
+    if 'text_alignment' in style:
+        selection['text_alignment'] = style['text_alignment']
     return selection
 
 
@@ -139,7 +150,7 @@ def build_selected_visual_recipe(format_type: str, *, tier: str, language: str,
     return build_visual_recipe(format_type, tier=tier, language=language,
         theme=selection['theme_id'], aspect_ratio=selection['aspect_ratio'],
         branding=selection['branding_mode'], font_style_id=selection.get('font_style_id'),
-        text_color_id=selection.get('text_color_id'))
+        text_color_id=selection.get('text_color_id'), text_alignment=selection.get('text_alignment'))
 
 
 def validate_visual_recipe(recipe: Mapping, *, format_type: str, language: str,
@@ -178,5 +189,5 @@ def resolve_visual(recipe: Mapping) -> dict:
     return {'width': w, 'height': h, 'margin': margin, 'branding_zone': brand_zone,
             'font_sizes': list(SCALES[fmt][ratio]), 'line_height_ratio': LINE_HEIGHT[fmt],
             'paragraph_spacing_ratio': 0.65 if fmt == 'short_essay' else 0.0,
-            'alignment': 'center' if fmt == 'quote' else 'left',
+            'alignment': recipe['font_style'].get('text_alignment', default_text_alignment(fmt)),
             'colors': colors}

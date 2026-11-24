@@ -71,6 +71,23 @@ def test_saved_recipe_is_not_rewritten_on_later_downgrade():
     assert render(r=r)['lines'] == render(r=visible)['lines']
 
 
+@pytest.mark.parametrize(('fmt', 'intrinsic', 'custom'), [
+    ('short_essay', 'left', 'center'), ('quote', 'center', 'left'), ('declaration', 'left', 'center'),
+])
+def test_paid_alignment_changes_position_without_changing_text_or_old_recipe(fmt, intrinsic, custom):
+    old = build_visual_recipe(fmt, tier='plus')
+    assert old == build_visual_recipe(fmt, tier='plus', text_alignment=intrinsic)
+    changed = build_visual_recipe(fmt, tier='plus', text_alignment=custom)
+    assert resolve_visual(old)['alignment'] == intrinsic
+    assert resolve_visual(changed)['alignment'] == custom
+    assert validate_visual_recipe(changed, format_type=fmt, language='ja',
+        expected_hash=canonical_sha256_hex(changed)) == changed
+    c = candidate(fmt)
+    before, after = render(c, old), render(c, changed)
+    assert [line['text'] for line in before['lines']] == [line['text'] for line in after['lines']]
+    assert [line['ink_box'][0] for line in before['lines']] != [line['ink_box'][0] for line in after['lines']]
+
+
 @pytest.mark.parametrize('change', [lambda r: r.update(extra='hidden'),
     lambda r: r['theme'].update(theme_version=2),
     lambda r: r['theme'].update(theme_version=True),

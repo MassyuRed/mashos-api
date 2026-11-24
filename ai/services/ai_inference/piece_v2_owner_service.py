@@ -150,7 +150,7 @@ _SUBSCRIBER_RECIPE_FILTER = (
 
 
 def _visual_filter(theme_ids: tuple[str, ...] | None, *, subscriber_customization: bool,
-                   visual_editor: bool) -> dict:
+                   visual_editor: bool, visual_alignment: bool) -> dict:
     filters = {} if theme_ids is None else {
         'visual_recipe->theme->>theme_id': 'in.(' + ','.join(theme_ids) + ')'}
     if not subscriber_customization:
@@ -160,15 +160,20 @@ def _visual_filter(theme_ids: tuple[str, ...] | None, *, subscriber_customizatio
     if not visual_editor:
         filters['visual_recipe->font_style->>font_style_id'] = 'eq.system_readable'
         filters['visual_recipe->font_style->>text_color_id'] = 'is.null'
+    if not visual_alignment:
+        filters['visual_recipe->font_style->>text_alignment'] = 'is.null'
     return filters
 
 
-def _visual_compatible(recipe: dict, *, subscriber_customization: bool, visual_editor: bool) -> bool:
+def _visual_compatible(recipe: dict, *, subscriber_customization: bool, visual_editor: bool,
+                       visual_alignment: bool) -> bool:
     if not visual_editor:
         selection = visual_selection_from_recipe(recipe)
         if (selection['theme_id'] not in THEME_IDS or 'font_style_id' in selection
                 or 'text_color_id' in selection):
             return False
+    if not visual_alignment and 'text_alignment' in recipe['font_style']:
+        return False
     return subscriber_customization or not (
         recipe['theme']['theme_id'] == 'quiet_night' and
         recipe['branding']['branding_mode'] == 'required_small')
@@ -188,7 +193,8 @@ class PieceOwnerService:
 
     async def detail(self, *, authenticated_user_id: str, piece_id: str,
                      theme_ids: tuple[str, ...] | None = None,
-                     subscriber_customization: bool = True, visual_editor: bool = True) -> dict:
+                     subscriber_customization: bool = True, visual_editor: bool = True,
+                     visual_alignment: bool = True) -> dict:
         try:
             owner = _uuid(authenticated_user_id, 'PIECE_AUTH_REQUIRED')
             raw = piece_id[6:] if isinstance(piece_id, str) and piece_id.startswith('piece:') else piece_id
@@ -197,7 +203,7 @@ class PieceOwnerService:
                 'owner_user_id': 'eq.' + owner, 'lifecycle_status': 'eq.saved',
                 'id': 'eq.' + pid, 'limit': '2',
                 **_visual_filter(theme_ids, subscriber_customization=subscriber_customization,
-                                 visual_editor=visual_editor)})
+                                 visual_editor=visual_editor, visual_alignment=visual_alignment)})
             if type(rows) is not list or len(rows) > 1:
                 _fail()
             if not rows or type(rows[0]) is not dict or rows[0].get('id') != pid:
@@ -206,7 +212,7 @@ class PieceOwnerService:
             if theme_ids is not None and item['visual_recipe']['theme']['theme_id'] not in theme_ids:
                 _fail('PIECE_NOT_FOUND')
             if not _visual_compatible(item['visual_recipe'], subscriber_customization=subscriber_customization,
-                                      visual_editor=visual_editor):
+                                      visual_editor=visual_editor, visual_alignment=visual_alignment):
                 _fail('PIECE_NOT_FOUND')
             return item
         except PieceContractError as exc:
@@ -217,7 +223,8 @@ class PieceOwnerService:
     async def history(self, *, authenticated_user_id: str, limit: str = '20',
                       cursor: str | None = None,
                       theme_ids: tuple[str, ...] | None = None,
-                      subscriber_customization: bool = True, visual_editor: bool = True) -> dict:
+                      subscriber_customization: bool = True, visual_editor: bool = True,
+                      visual_alignment: bool = True) -> dict:
         try:
             owner = _uuid(authenticated_user_id, 'PIECE_AUTH_REQUIRED')
             size, boundary = _history_request(owner, limit, cursor)
@@ -225,7 +232,7 @@ class PieceOwnerService:
                 'lifecycle_status': 'eq.saved', 'order': 'saved_at.desc,id.desc',
                 'limit': str(size + 1),
                 **_visual_filter(theme_ids, subscriber_customization=subscriber_customization,
-                                 visual_editor=visual_editor)}
+                                 visual_editor=visual_editor, visual_alignment=visual_alignment)}
             if boundary is not None:
                 stamp, pid = boundary[0].isoformat(), boundary[1]
                 params['or'] = f'(saved_at.lt.{stamp},and(saved_at.eq.{stamp},id.lt.{pid}))'
@@ -239,7 +246,7 @@ class PieceOwnerService:
                     if theme_ids is not None and item['visual_recipe']['theme']['theme_id'] not in theme_ids:
                         _fail()
                     if not _visual_compatible(item['visual_recipe'], subscriber_customization=subscriber_customization,
-                                              visual_editor=visual_editor):
+                                              visual_editor=visual_editor, visual_alignment=visual_alignment):
                         _fail()
                     current = _boundary(row)
                     if previous is not None and current >= previous:

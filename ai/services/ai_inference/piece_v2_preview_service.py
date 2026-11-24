@@ -41,7 +41,7 @@ _SOURCE_FIELDS = frozenset({
     'question_need_decision_identity', 'supplemental_answer_identity',
 })
 _VISUAL_FIELDS = frozenset({'theme_id', 'aspect_ratio', 'branding_mode'})
-_OPTIONAL_VISUAL_FIELDS = frozenset({'font_style_id', 'text_color_id'})
+_OPTIONAL_VISUAL_FIELDS = frozenset({'font_style_id', 'text_color_id', 'text_alignment'})
 _REQUEST_FIELDS = frozenset({'source_ref', 'requested_format', 'visual_selection'})
 _COMMITMENT = re.compile(r'sha256:[0-9a-f]{64}')
 _FORMAT_FAILURES = frozenset({'tier_invalid', 'format_choice_not_admitted', 'format_not_eligible'})
@@ -487,6 +487,7 @@ class PiecePreviewService:
         allowed_renderers: tuple[str, ...] | None = None,
         expanded_palette: bool = False,
         visual_editor: bool = False,
+        visual_alignment: bool = False,
     ) -> dict:
         """Revise only the visual recipe of an owned, persisted draft.
 
@@ -541,7 +542,8 @@ class PiecePreviewService:
             capable_renderer = row['renderer_version'] == 'piece.rn_bitmap_renderer.ios.v2'
             for selection in (visual_selection_from_recipe(row['visual_recipe']), value['visual_selection']):
                 require_piece_visual_selection(selection, expanded_palette=expanded_palette and capable_renderer,
-                                               visual_editor=visual_editor and capable_renderer)
+                                               visual_editor=visual_editor and capable_renderer,
+                                               visual_alignment=visual_alignment and capable_renderer)
             handoff = await _resolve_handoff(self._source_adapter, authorization,
                 _source_ref_from_lineage(row['source_lineage']))
             if (type(handoff) not in _HANDOFF_TYPES

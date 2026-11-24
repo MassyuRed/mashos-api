@@ -34,8 +34,8 @@ _FORBIDDEN_SELECT = {'source_input_id', 'source_input_version', 'source_input_bu
     'source_lineage', 'save_idempotency_key_hash', 'preview_request_hash', 'preview_eligible_formats'}
 
 
-def _row(*, owner=OWNER, stamp='2026-10-06T00:00:00+00:00', state='saved'):
-    row = _B6['_row']('premium')
+def _row(*, owner=OWNER, stamp='2026-10-06T00:00:00+00:00', state='saved', fmt='short_essay'):
+    row = _B6['_row']('premium', fmt=fmt)
     row.update(owner_user_id=owner, public_id='piece:'+row['id'], lifecycle_status=state,
         expires_at=None, row_version=2, saved_at=stamp, source_input_id=PRIVATE,
         renderer_version='synthetic-test-renderer.v1',
@@ -71,6 +71,9 @@ def _memory_rows(rows, params):
         assert params['visual_recipe->font_style->>text_color_id'] == 'is.null'
         rows = [r for r in rows if r['visual_recipe']['font_style']['font_style_id'] == 'system_readable'
                 and 'text_color_id' not in r['visual_recipe']['font_style']]
+    if 'visual_recipe->font_style->>text_alignment' in params:
+        assert params['visual_recipe->font_style->>text_alignment'] == 'is.null'
+        rows = [r for r in rows if 'text_alignment' not in r['visual_recipe']['font_style']]
     if 'not.and' in params:
         assert params['not.and'] == ('(visual_recipe->theme->>theme_id.eq.quiet_night,'
             'visual_recipe->branding->>branding_mode.eq.required_small)')
@@ -483,6 +486,34 @@ def test_legacy_palette_filters_before_history_pagination_and_detail_export(harn
     assert state['reads'][-1]['visual_recipe->theme->>theme_id'] == 'in.(' + ','.join(THEME_IDS) + ')'
     _detail(call(expanded['id'], headers=headers).json(), expanded)
     _detail(call(expanded['id'] + '/export', headers=headers).json(), expanded)
+
+
+def test_alignment_client_filters_before_limit_and_retains_v4_work(harness):
+    from piece_v2_contract import canonical_sha256_hex
+    from piece_v2_visual import build_visual_recipe
+
+    call, state = harness
+    old = _row(stamp='2026-10-17T00:00:00+00:00', fmt='quote')
+    aligned = _row(stamp='2026-10-18T00:00:00+00:00', fmt='quote')
+    for row, alignment in ((old, None), (aligned, 'left')):
+        assert row['format_type'] == 'quote'
+        recipe = build_visual_recipe('quote', tier='premium', language=row['content_payload']['language'],
+            theme='sage_paper', font_style_id='serif_readable', text_alignment=alignment)
+        row.update(visual_recipe=recipe, visual_recipe_hash=canonical_sha256_hex(recipe),
+                   renderer_version='piece.rn_bitmap_renderer.ios.v2')
+    state['rows'] = [old, aligned]
+    v4 = {'Authorization': 'Bearer synthetic-owner', 'X-Piece-Palette': '4'}
+    v5 = dict(v4, **{'X-Piece-Palette': '5'})
+    older = call(query={'limit': '1'}, headers=v4).json()
+    assert [r['piece_id'] for r in older['items']] == [old['id']]
+    assert older['next_cursor'] is None
+    newer = call(query={'limit': '1'}, headers=v5).json()
+    assert [r['piece_id'] for r in newer['items']] == [aligned['id']]
+    assert [r['piece_id'] for r in call(query={'limit': '1', 'cursor': newer['next_cursor']},
+        headers=v5).json()['items']] == [old['id']]
+    _detail(call(old['id'] + '/export', headers=v4).json(), old)
+    _error(call(aligned['id'] + '/export', headers=v4), 404, 'PIECE_NOT_FOUND')
+    _detail(call(aligned['id'] + '/export', headers=v5).json(), aligned)
 
 
 @pytest.mark.parametrize('palette', [None, '2', '3'])
