@@ -79,7 +79,7 @@ class PieceSaveService:
                    allowed_renderers: tuple[str, ...] | None = None,
                    expanded_palette: bool = False, visual_editor: bool = False,
                    visual_alignment: bool = False, visual_text_size: bool = False,
-                   visual_background_style: bool = False) -> dict:
+                   visual_background_style: bool = False, visual_decorations: bool = False) -> dict:
         """The HTTP owner authenticates every call, including committed replay.
 
         For a first save, B5 rechecks current source eligibility without calling
@@ -138,7 +138,8 @@ class PieceSaveService:
                                            visual_editor=visual_editor and capable_renderer,
                                            visual_alignment=visual_alignment and capable_renderer,
                                            visual_text_size=visual_text_size and capable_renderer,
-                                           visual_background_style=visual_background_style and capable_renderer)
+                                           visual_background_style=visual_background_style and capable_renderer,
+                                           visual_decorations=visual_decorations and capable_renderer)
             lineage = row['source_lineage']
             current = await _resolve_handoff(self._source_adapter, authorization,
                 _source_ref_from_lineage(lineage))

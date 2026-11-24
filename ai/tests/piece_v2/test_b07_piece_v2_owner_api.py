@@ -80,6 +80,15 @@ def _memory_rows(rows, params):
     if 'visual_recipe->theme->>background_style' in params:
         assert params['visual_recipe->theme->>background_style'] == 'is.null'
         rows = [r for r in rows if 'background_style' not in r['visual_recipe']['theme']]
+    if 'and' in params:
+        assert params['and'] == ('(or(visual_recipe->theme->>background_style.is.null,'
+                                 'visual_recipe->theme->>background_style.eq.gradient))')
+        rows = [r for r in rows if r['visual_recipe']['theme'].get('background_style') in (None, 'gradient')]
+    for field in ('frame_style', 'accent_style'):
+        key = 'visual_recipe->theme->>' + field
+        if key in params:
+            assert params[key] == 'is.null'
+            rows = [r for r in rows if field not in r['visual_recipe']['theme']]
     if 'not.and' in params:
         assert params['not.and'] == ('(visual_recipe->theme->>theme_id.eq.quiet_night,'
             'visual_recipe->branding->>branding_mode.eq.required_small)')
@@ -574,6 +583,48 @@ def test_gradient_client_can_retrieve_only_supported_saved_rows(harness):
     _detail(call(solid['id'] + '/export', headers=v6).json(), solid)
     _error(call(gradient['id'] + '/export', headers=v6), 404, 'PIECE_NOT_FOUND')
     _detail(call(gradient['id'] + '/export', headers=v7).json(), gradient)
+
+
+def test_decorations_client_and_v7_paginate_mixed_saved_recipes(harness):
+    from piece_v2_contract import canonical_sha256_hex
+    from piece_v2_visual import build_visual_recipe
+
+    call, state = harness
+    rows = []
+    for date, selection in enumerate(
+            ({}, {'frame_style': 'line'}, {'background_style': 'gradient'},
+             {'accent_style': 'corner_marks'}, {'background_style': 'stripe_pattern'}), start=17):
+        row = _row(stamp=f'2026-10-{date}T00:00:00+00:00')
+        recipe = build_visual_recipe(row['format_type'], tier='premium',
+            language=row['content_payload']['language'], **selection)
+        row.update(visual_recipe=recipe, visual_recipe_hash=canonical_sha256_hex(recipe),
+                   renderer_version='piece.rn_bitmap_renderer.ios.v2')
+        rows.append(row)
+    state['rows'] = rows
+    v7 = {'Authorization': 'Bearer synthetic-owner', 'X-Piece-Palette': '7'}
+    v8 = dict(v7, **{'X-Piece-Decoration-Palette': '8'})
+    first = call(query={'limit': '1'}, headers=v7).json()
+    assert [item['piece_id'] for item in first['items']] == [rows[2]['id']]
+    second = call(query={'limit': '1', 'cursor': first['next_cursor']}, headers=v7).json()
+    assert [item['piece_id'] for item in second['items']] == [rows[0]['id']]
+    assert second['next_cursor'] is None
+    assert [item['piece_id'] for item in call(headers=v8).json()['items']] == [row['id'] for row in rows[::-1]]
+    for row in (rows[1], rows[3], rows[4]):
+        _error(call(row['id'] + '/export', headers=v7), 404, 'PIECE_NOT_FOUND')
+        _detail(call(row['id'] + '/export', headers=v8).json(), row)
+    for base, decorations, expected in (
+            ('7', '9', [rows[2], rows[0]]), ('7', '8, 8', [rows[2], rows[0]]),
+            ('6', '8', [rows[0]]), ('8', '8', [rows[0]]), (None, '8', [rows[0]])):
+        headers = {'Authorization': v7['Authorization'], 'X-Piece-Decoration-Palette': decorations}
+        if base:
+            headers['X-Piece-Palette'] = base
+        response = call(headers=headers)
+        assert response.status_code == 200
+        assert [item['piece_id'] for item in response.json()['items']] == [row['id'] for row in expected]
+    before = len(state['reads'])
+    duplicate = list(v8.items()) + [('X-Piece-Decoration-Palette', '8')]
+    _error(call(headers=duplicate), 400, 'PIECE_REQUEST_INVALID')
+    assert len(state['reads']) == before
 
 
 @pytest.mark.parametrize('palette', [None, '2', '3'])

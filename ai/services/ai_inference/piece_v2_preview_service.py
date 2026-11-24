@@ -41,7 +41,10 @@ _SOURCE_FIELDS = frozenset({
     'question_need_decision_identity', 'supplemental_answer_identity',
 })
 _VISUAL_FIELDS = frozenset({'theme_id', 'aspect_ratio', 'branding_mode'})
-_OPTIONAL_VISUAL_FIELDS = frozenset({'font_style_id', 'text_color_id', 'text_alignment', 'text_size', 'background_style'})
+_OPTIONAL_VISUAL_FIELDS = frozenset({
+    'font_style_id', 'text_color_id', 'text_alignment', 'text_size',
+    'background_style', 'frame_style', 'accent_style',
+})
 _REQUEST_FIELDS = frozenset({'source_ref', 'requested_format', 'visual_selection'})
 _COMMITMENT = re.compile(r'sha256:[0-9a-f]{64}')
 _FORMAT_FAILURES = frozenset({'tier_invalid', 'format_choice_not_admitted', 'format_not_eligible'})
@@ -490,6 +493,7 @@ class PiecePreviewService:
         visual_alignment: bool = False,
         visual_text_size: bool = False,
         visual_background_style: bool = False,
+        visual_decorations: bool = False,
     ) -> dict:
         """Revise only the visual recipe of an owned, persisted draft.
 
@@ -547,7 +551,8 @@ class PiecePreviewService:
                                                visual_editor=visual_editor and capable_renderer,
                                                visual_alignment=visual_alignment and capable_renderer,
                                                visual_text_size=visual_text_size and capable_renderer,
-                                               visual_background_style=visual_background_style and capable_renderer)
+                                               visual_background_style=visual_background_style and capable_renderer,
+                                               visual_decorations=visual_decorations and capable_renderer)
             handoff = await _resolve_handoff(self._source_adapter, authorization,
                 _source_ref_from_lineage(row['source_lineage']))
             if (type(handoff) not in _HANDOFF_TYPES

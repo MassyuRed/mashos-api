@@ -1200,6 +1200,23 @@ def _semantic_constraint_messages(messages):
     return messages
 
 
+def _compact_merge_model_messages(messages, material):
+    """Keep leaf integrity receipts on the validated wire, outside the model context."""
+    receipts = material.get('leaf_receipts')
+    if type(receipts) is not list or not receipts:
+        return messages
+    keys = {'leaf_request_ref', 'messages_sha256', 'response_sha256'}
+    for receipt in receipts:
+        if (type(receipt) is not dict or set(receipt) != keys
+                or any(type(receipt[key]) is not str for key in keys)
+                or re.fullmatch(r'analysis-semantic-stage:[a-f0-9]{64}', receipt['leaf_request_ref']) is None
+                or any(re.fullmatch(r'[a-f0-9]{64}', receipt[key]) is None
+                       for key in ('messages_sha256', 'response_sha256'))):
+            return messages
+    visible = {key: value for key, value in material.items() if key != 'leaf_receipts'}
+    return [messages[0], dict(messages[1], content=_semantic_merge_wire_module().compact_json(visible))]
+
+
 def semantic_output_schema(messages):
     """Constrain protocol and source quotes; meanings remain model-generated."""
     if (type(messages) is not list or len(messages) != 2
@@ -3166,18 +3183,27 @@ def load_generator(adapter, process_stop, *, weights_sha256=None, config_sha256=
             base_inference_context(model) if (base_profile or profile == 'event_plan_base') and adapter else nullcontext())
         if use_semantic_json:
             generation_stage('tokenize')
-        encoded = tokenizer.apply_chat_template(messages, enable_thinking=False,
-            add_generation_prompt=True, tokenize=True, return_dict=True,
-            return_tensors="pt", truncation=False)
+        def encode(selected):
+            return tokenizer.apply_chat_template(selected, enable_thinking=False,
+                add_generation_prompt=True, tokenize=True, return_dict=True,
+                return_tensors="pt", truncation=False)
+
+        encoded = encode(messages)
         count = encoded["input_ids"].shape[-1]
         if (count + output_budget > context_budget and qwen_9b and output_tokens is not None
-                and material.get('author_phase') == 'PLAN'
                 and material.get('author_profile') == OCCURRENCE_V24_PROFILE
                 and material.get('history_stage', {}).get('kind') == 'MERGE'
                 and _semantic_merge_tuple_output(messages)):
-            # The worker reserves the shared three-phase allowance on PLAN.
-            # Keep the prompt complete and use the actual remaining context.
-            output_budget = context_budget - count
+            current_wire = material['merge_wire_version'] == _semantic_merge_wire_module().JUDGMENT_VERSION
+            if current_wire:
+                model_messages = _compact_merge_model_messages(messages, material)
+                if model_messages is not messages:
+                    encoded = encode(model_messages)
+                    count = encoded["input_ids"].shape[-1]
+            if current_wire or material['author_phase'] == 'PLAN':
+                # The wire and parser still bind the complete history. Each
+                # stage may reserve only what remains after the intact sources.
+                output_budget = min(output_budget, context_budget - count)
         if output_budget <= 0 or count + output_budget > context_budget or time.monotonic() >= end:
             raise ValueError("context_or_deadline_exceeded")
         encoded = {k: v.to(model.device) for k, v in encoded.items()}

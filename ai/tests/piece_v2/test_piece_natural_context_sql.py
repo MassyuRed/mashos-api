@@ -46,7 +46,8 @@ def qdb():
                  '20261103235434_piece_v2_expand_visual_palette.sql', '20261010_005_piece_v2_quota_read.sql',
                  '20261124040800_piece_v2_visual_editor.sql', '20261124052500_piece_v2_visual_alignment.sql',
                  '20261124055500_piece_v2_visual_text_size.sql',
-                 '20261124062800_piece_v2_visual_gradient_background.sql']:
+                 '20261124062800_piece_v2_visual_gradient_background.sql',
+                 '20261125084000_piece_v2_visual_decorations.sql']:
         script(db, (ROOT / 'supabase/migrations' / name).read_text())
     yield db
     db.proc.stdin.close()
@@ -211,6 +212,16 @@ def format_flow(natural_case, qdb, monkeypatch):
         if 'visual_recipe->theme->>background_style' in params:
             assert params['visual_recipe->theme->>background_style'] == 'is.null'
             where.append("visual_recipe->'theme'->>'background_style' IS NULL")
+        if 'and' in params:
+            assert params['and'] == ('(or(visual_recipe->theme->>background_style.is.null,'
+                                     'visual_recipe->theme->>background_style.eq.gradient))')
+            where.append("(visual_recipe->'theme'->>'background_style' IS NULL "
+                         "OR visual_recipe->'theme'->>'background_style'='gradient')")
+        for field in ('frame_style', 'accent_style'):
+            key = 'visual_recipe->theme->>' + field
+            if key in params:
+                assert params[key] == 'is.null'
+                where.append("visual_recipe->'theme'->>'" + field + "' IS NULL")
         if 'not.and' in params:
             assert params['not.and'] == ('(visual_recipe->theme->>theme_id.eq.quiet_night,'
                 'visual_recipe->branding->>branding_mode.eq.required_small)')
@@ -263,10 +274,13 @@ def format_flow(natural_case, qdb, monkeypatch):
             'requested_format': None,
             'visual_selection': {'theme_id': None, 'aspect_ratio': None, 'branding_mode': None}}
 
-    async def call(method, path, value=None, *, key=None, expanded=True, palette=None):
-        headers = {'Authorization': 'Bearer synthetic', 'X-Piece-Renderer': 'piece.rn_bitmap_renderer.ios.v2'}
+    async def call(method, path, value=None, *, key=None, expanded=True, palette=None,
+                   decoration_palette=None, renderer='piece.rn_bitmap_renderer.ios.v2'):
+        headers = {'Authorization': 'Bearer synthetic', 'X-Piece-Renderer': renderer}
         if expanded:
             headers['X-Piece-Palette'] = palette or '2'
+        if decoration_palette is not None:
+            headers['X-Piece-Decoration-Palette'] = decoration_palette
         if key:
             headers['Idempotency-Key'] = key
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),
@@ -279,6 +293,91 @@ def format_flow(natural_case, qdb, monkeypatch):
 def _save_body(preview):
     return {'preview_id': preview['preview_id'], 'expected_preview_revision': preview['preview_revision'],
         **{key: preview[key] for key in ('piece_text_hash', 'content_payload_hash', 'visual_recipe_hash')}}
+
+
+@pytest.mark.parametrize('tier', ['free', 'plus', 'premium'])
+def test_premium_decorations_are_versioned_and_survive_save(format_flow, qdb, tier):
+    prepare, call, state, user = format_flow
+    request = prepare(tier, memo='資料を読みました\n窓を閉めませんでした')
+    options = {'palette': '7', 'decoration_palette': '8'}
+    created = run(call('POST', 'preview', request, key='decorations-preview', **options))
+    assert created.status_code == 200, created.json()
+    original = created.json()
+    preview_id = original['preview_id']
+    caps = original['plan_capabilities']
+    backgrounds = ['solid', 'gradient', 'color_bands', 'color_wash', 'dot_pattern', 'stripe_pattern']
+    assert caps['background_styles'] == (backgrounds if tier == 'premium' else [])
+    assert caps['frame_styles'] == (['none', 'line', 'double_line'] if tier == 'premium' else [])
+    assert caps['accent_styles'] == (['none', 'top_rule', 'corner_marks'] if tier == 'premium' else [])
+    assert not {'background_style', 'frame_style', 'accent_style'} & original['visual_recipe']['theme'].keys()
+
+    def change(previous, decoration_palette='8', **selection):
+        return run(call('PATCH', 'preview/' + preview_id, {
+            'expected_preview_revision': previous['preview_revision'],
+            'visual_selection': {**request['visual_selection'], **selection}},
+            palette='7', decoration_palette=decoration_palette))
+
+    unsupported_renderer = run(call('POST', 'preview', {
+        **request, 'visual_selection': {**request['visual_selection'], 'background_style': 'color_bands'},
+    }, key='decorations-v1-denied', renderer='piece.rn_bitmap_renderer.ios.v1', **options))
+    assert unsupported_renderer.status_code == 422
+    assert change(original, decoration_palette=None, background_style='dot_pattern').status_code == 422
+    assert change(original, decoration_palette='9', frame_style='line').status_code == 422
+    assert change(original, decoration_palette='8, 8', accent_style='top_rule').status_code == 422
+    assert change(original, frame_style='arbitrary').status_code == 422
+    assert change(original, accent_style='arbitrary').status_code == 422
+    if tier != 'premium':
+        for selection in ({'background_style': 'color_wash'}, {'frame_style': 'line'},
+                          {'accent_style': 'top_rule'}):
+            rejected = change(original, **selection)
+            assert rejected.status_code == 422
+            assert rejected.json()['code'] == 'PIECE_VISUAL_SELECTION_NOT_ALLOWED'
+        return
+
+    previous = original
+    seen_hashes = {original['visual_recipe_hash']}
+    for background, frame, accent in (
+            ('color_bands', 'line', 'top_rule'), ('color_wash', 'double_line', 'corner_marks'),
+            ('dot_pattern', 'line', 'top_rule'), ('stripe_pattern', 'double_line', 'corner_marks')):
+        changed = change(previous, background_style=background, frame_style=frame, accent_style=accent)
+        assert changed.status_code == 200, changed.json()
+        previous = changed.json()
+        assert previous['visual_recipe']['theme'] == {
+            **original['visual_recipe']['theme'], 'background_style': background,
+            'frame_style': frame, 'accent_style': accent,
+        }
+        assert previous['visual_recipe_hash'] not in seen_hashes
+        seen_hashes.add(previous['visual_recipe_hash'])
+        for field in ('piece_text', 'piece_text_hash', 'content_payload_hash'):
+            assert previous[field] == original[field]
+    preserved = change(previous).json()
+    assert preserved['visual_recipe_hash'] == previous['visual_recipe_hash']
+    reset = change(preserved, background_style='solid', frame_style='none', accent_style=None).json()
+    assert reset['visual_recipe'] == original['visual_recipe']
+    assert reset['visual_recipe_hash'] == original['visual_recipe_hash']
+    final = change(reset, background_style='color_wash', frame_style='double_line',
+                   accent_style='corner_marks').json()
+    assert run(call('POST', 'preview', request, key='decorations-preview', palette='7')).status_code == 422
+    assert run(call('POST', 'preview', request, key='decorations-preview', **options)).json() == final
+    assert state['issued'] == [preview_id]
+    assert run(call('POST', 'save', _save_body(final), key='decorations-save', palette='7')).status_code == 422
+    saved = run(call('POST', 'save', _save_body(final), key='decorations-save', **options))
+    assert saved.status_code == 200, saved.json()
+    assert saved.json()['visibility_scope'] == 'private'
+    assert 'code' not in qdb.query("update public.profiles set subscription_tier='plus' where id=$1", [user])
+    detail = run(call('GET', preview_id, **options)).json()
+    assert detail == run(call('GET', preview_id + '/export', **options)).json()
+    assert detail['piece_id'] == saved.json()['piece_id'] == preview_id
+    for field in ('piece_text', 'piece_text_hash', 'content_payload_hash', 'visual_recipe', 'visual_recipe_hash'):
+        assert detail[field] == final[field]
+    assert run(call('GET', preview_id, palette='7')).status_code == 404
+    assert run(call('GET', preview_id + '/export', palette='7')).status_code == 404
+    for field in ('background_style', 'frame_style', 'accent_style'):
+        invalid = qdb.query("update public.piece_records set visual_recipe=jsonb_set(visual_recipe,"
+                            "array['theme',$2],to_jsonb('arbitrary'::text)) where id=$1", [preview_id, field])
+        assert invalid.get('code') == '23514'
+    assert qdb.query('select count(*)::int as n from public.piece_quota_consumptions where owner_user_id=$1',
+                     [user])['rows'] == [{'n': 1}]
 
 
 @pytest.mark.parametrize('tier', ['free', 'plus', 'premium'])

@@ -70,8 +70,11 @@ def _save_harness(database, monkeypatch, *, tier='free'):
         alignment_key = 'visual_recipe->font_style->>text_alignment'
         size_key = 'visual_recipe->font_style->>text_size'
         background_key = 'visual_recipe->theme->>background_style'
+        frame_key = 'visual_recipe->theme->>frame_style'
+        accent_key = 'visual_recipe->theme->>accent_style'
         assert set(params) <= {'select', 'id', 'owner_user_id', 'limit', 'lifecycle_status', theme_key,
-                               font_key, color_key, alignment_key, size_key, background_key, 'not.and'}
+                               font_key, color_key, alignment_key, size_key, background_key,
+                               frame_key, accent_key, 'and', 'not.and'}
         where, values = ['id=%s', 'owner_user_id=%s'], [params['id'][3:], params['owner_user_id'][3:]]
         if 'lifecycle_status' in params:
             assert params['lifecycle_status'] == 'eq.saved'
@@ -93,6 +96,14 @@ def _save_harness(database, monkeypatch, *, tier='free'):
         if background_key in params:
             assert params[background_key] == 'is.null'
             where.append("visual_recipe->'theme'->>'background_style' IS NULL")
+        if 'and' in params:
+            assert params['and'] == f'(or({background_key}.is.null,{background_key}.eq.gradient))'
+            where.append("(visual_recipe->'theme'->>'background_style' IS NULL "
+                         "OR visual_recipe->'theme'->>'background_style'='gradient')")
+        for key, field in ((frame_key, 'frame_style'), (accent_key, 'accent_style')):
+            if key in params:
+                assert params[key] == 'is.null'
+                where.append("visual_recipe->'theme'->>'" + field + "' IS NULL")
         if 'not.and' in params:
             assert params['not.and'] == (
                 '(visual_recipe->theme->>theme_id.eq.quiet_night,'
@@ -198,7 +209,12 @@ def test_composed_generated_preview_private_save_replay_and_owner_detail(databas
         assert conn.execute('SELECT count(*) FROM public.' + table).fetchone() == (0,)
 
 
-def test_composed_gradient_recipe_is_saved_and_exported_from_the_same_native_row(database, monkeypatch):
+@pytest.mark.parametrize(('palette', 'decoration'), [
+    ('7', {'background_style': 'gradient'}),
+    ('8', {'background_style': 'color_wash', 'frame_style': 'double_line', 'accent_style': 'corner_marks'}),
+])
+def test_composed_visual_recipe_is_saved_and_exported_from_the_same_native_row(database, monkeypatch,
+                                                                                   palette, decoration):
     conn, _, _ = database
     request, _, state = _save_harness(database, monkeypatch, tier='premium')
     migrations = _B5['_B4']['_ROOT'] / 'supabase/migrations'
@@ -210,18 +226,23 @@ def test_composed_gradient_recipe_is_saved_and_exported_from_the_same_native_row
         '20261124062800_piece_v2_visual_gradient_background.sql',
     ):
         conn.execute((migrations / name).read_text())
+    if palette == '8':
+        conn.execute((migrations / '20261125084000_piece_v2_visual_decorations.sql').read_text())
     request['visual_selection'].update(
         theme_id='sage_paper', font_style_id='serif_readable',
         text_color_id='neutral_ink', text_alignment='center', text_size='large',
-        background_style='gradient')
+        **decoration)
     app = _save_application('shared', export=True)
     v1, v2 = 'piece.rn_bitmap_renderer.ios.v1', 'piece.rn_bitmap_renderer.ios.v2'
     app.state.piece_preview_runtime['renderer_version'] = v1
     state['expected_renderers'] = (v1, v2)
 
-    async def call(method, resource, *, palette='7', key=None, body=None):
-        headers = {'Authorization': _B5['AUTH'], 'X-Piece-Palette': palette,
+    async def call(method, resource, *, client_palette=None, key=None, body=None):
+        version = client_palette or palette
+        headers = {'Authorization': _B5['AUTH'], 'X-Piece-Palette': '7' if version == '8' else version,
                    'X-Piece-Renderer': v2}
+        if version == '8':
+            headers['X-Piece-Decoration-Palette'] = '8'
         if key is not None:
             headers['Idempotency-Key'] = key
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),
@@ -229,7 +250,9 @@ def test_composed_gradient_recipe_is_saved_and_exported_from_the_same_native_row
             return await client.request(method, '/emotion/piece/' + resource,
                                         headers=headers, json=body)
 
-    unavailable = asyncio.run(call('POST', 'preview', palette='6', key='piece-visual-preview', body=request))
+    older_palette = str(int(palette) - 1)
+    unavailable = asyncio.run(call('POST', 'preview', client_palette=older_palette,
+                                   key='piece-visual-preview', body=request))
     assert unavailable.status_code == 422
     assert state['authors'] == state['http_rpc'] == 0
     created = asyncio.run(call('POST', 'preview', key='piece-visual-preview', body=request))
@@ -237,8 +260,7 @@ def test_composed_gradient_recipe_is_saved_and_exported_from_the_same_native_row
     preview = created.json()
     record_id = preview['preview_id']
     recipe = preview['visual_recipe']
-    assert recipe['theme'] == {'theme_id': 'sage_paper', 'theme_version': 1,
-                               'background_style': 'gradient'}
+    assert recipe['theme'] == {'theme_id': 'sage_paper', 'theme_version': 1, **decoration}
     assert recipe['font_style']['text_size'] == 'large'
     assert recipe['font_style']['font_style_id'] == 'serif_readable'
     assert recipe['font_style']['text_color_id'] == 'neutral_ink'
@@ -256,7 +278,7 @@ def test_composed_gradient_recipe_is_saved_and_exported_from_the_same_native_row
     for field in ('piece_text', 'piece_text_hash', 'content_payload_hash',
                   'visual_recipe', 'visual_recipe_hash', 'renderer_version'):
         assert detail.json()[field] == row[field] == preview[field]
-    assert asyncio.run(call('GET', record_id + '/export', palette='6')).status_code == 404
+    assert asyncio.run(call('GET', record_id + '/export', client_palette=older_palette)).status_code == 404
     assert state['authors'] == state['actual_reviews'] == _B5['_B4']['_used'](conn) == 1
 
 

@@ -250,7 +250,9 @@ def synthetic_generator(monkeypatch, *, constrained, input_count=1, with_piece_a
         def tolist(self):
             return list(self)
     class Encoded:
-        shape = (1, input_count)
+        def __init__(self, size):
+            self.shape = (1, size)
+
         def to(self, device):
             return self
     class Result:
@@ -267,7 +269,8 @@ def synthetic_generator(monkeypatch, *, constrained, input_count=1, with_piece_a
             return eos + 1
         def apply_chat_template(self, selected, **kwargs):
             captured['tokenize'].append((deepcopy(selected), kwargs))
-            return {'input_ids': Encoded()}
+            size = input_count(selected) if callable(input_count) else input_count
+            return {'input_ids': Encoded(size)}
         def decode(self, tokens, **kwargs):
             assert kwargs == dict(skip_special_tokens=True, clean_up_tokenization_spaces=False)
             return ''.join(alphabet[i] for i in tokens if i < eos)
@@ -307,7 +310,7 @@ def synthetic_generator(monkeypatch, *, constrained, input_count=1, with_piece_a
                 captured['adapter_states'].append((self.active_adapter,
                     self.adapter_enabled, self.grads, self.training))
             generated_eos = kwargs.get('eos_token_id', 999)
-            sequence = Sent([token_ids['P']] * input_count)
+            sequence = Sent([token_ids['P']] * kwargs['input_ids'].shape[-1])
             for token in [token_ids[char] for char in raw] + [generated_eos]:
                 if 'prefix_allowed_tokens_fn' in kwargs:
                     assert token in kwargs['prefix_allowed_tokens_fn'](0, sequence)

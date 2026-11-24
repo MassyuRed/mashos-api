@@ -147,11 +147,12 @@ def _project(row: dict, owner: str) -> dict:
 _SUBSCRIBER_RECIPE_FILTER = (
     '(visual_recipe->theme->>theme_id.eq.quiet_night,'
     'visual_recipe->branding->>branding_mode.eq.required_small)')
+_BACKGROUND_STYLE_KEY = 'visual_recipe->theme->>background_style'
 
 
 def _visual_filter(theme_ids: tuple[str, ...] | None, *, subscriber_customization: bool,
                    visual_editor: bool, visual_alignment: bool, visual_text_size: bool,
-                   visual_background_style: bool) -> dict:
+                   visual_background_style: bool, visual_decorations: bool) -> dict:
     filters = {} if theme_ids is None else {
         'visual_recipe->theme->>theme_id': 'in.(' + ','.join(theme_ids) + ')'}
     if not subscriber_customization:
@@ -166,12 +167,19 @@ def _visual_filter(theme_ids: tuple[str, ...] | None, *, subscriber_customizatio
     if not visual_text_size:
         filters['visual_recipe->font_style->>text_size'] = 'is.null'
     if not visual_background_style:
-        filters['visual_recipe->theme->>background_style'] = 'is.null'
+        filters[_BACKGROUND_STYLE_KEY] = 'is.null'
+    elif not visual_decorations:
+        # Keep the gradient filter independent of the history cursor's or.
+        filters['and'] = f'(or({_BACKGROUND_STYLE_KEY}.is.null,{_BACKGROUND_STYLE_KEY}.eq.gradient))'
+    if not visual_decorations:
+        filters['visual_recipe->theme->>frame_style'] = 'is.null'
+        filters['visual_recipe->theme->>accent_style'] = 'is.null'
     return filters
 
 
 def _visual_compatible(recipe: dict, *, subscriber_customization: bool, visual_editor: bool,
-                       visual_alignment: bool, visual_text_size: bool, visual_background_style: bool) -> bool:
+                       visual_alignment: bool, visual_text_size: bool, visual_background_style: bool,
+                       visual_decorations: bool) -> bool:
     if not visual_editor:
         selection = visual_selection_from_recipe(recipe)
         if (selection['theme_id'] not in THEME_IDS or 'font_style_id' in selection
@@ -182,6 +190,9 @@ def _visual_compatible(recipe: dict, *, subscriber_customization: bool, visual_e
     if not visual_text_size and 'text_size' in recipe['font_style']:
         return False
     if not visual_background_style and 'background_style' in recipe['theme']:
+        return False
+    if not visual_decorations and (recipe['theme'].get('background_style') not in (None, 'gradient')
+            or 'frame_style' in recipe['theme'] or 'accent_style' in recipe['theme']):
         return False
     return subscriber_customization or not (
         recipe['theme']['theme_id'] == 'quiet_night' and
@@ -204,7 +215,7 @@ class PieceOwnerService:
                      theme_ids: tuple[str, ...] | None = None,
                      subscriber_customization: bool = True, visual_editor: bool = True,
                      visual_alignment: bool = True, visual_text_size: bool = True,
-                     visual_background_style: bool = True) -> dict:
+                     visual_background_style: bool = True, visual_decorations: bool = True) -> dict:
         try:
             owner = _uuid(authenticated_user_id, 'PIECE_AUTH_REQUIRED')
             raw = piece_id[6:] if isinstance(piece_id, str) and piece_id.startswith('piece:') else piece_id
@@ -214,7 +225,8 @@ class PieceOwnerService:
                 'id': 'eq.' + pid, 'limit': '2',
                 **_visual_filter(theme_ids, subscriber_customization=subscriber_customization,
                                  visual_editor=visual_editor, visual_alignment=visual_alignment,
-                                 visual_text_size=visual_text_size, visual_background_style=visual_background_style)})
+                                 visual_text_size=visual_text_size, visual_background_style=visual_background_style,
+                                 visual_decorations=visual_decorations)})
             if type(rows) is not list or len(rows) > 1:
                 _fail()
             if not rows or type(rows[0]) is not dict or rows[0].get('id') != pid:
@@ -224,7 +236,8 @@ class PieceOwnerService:
                 _fail('PIECE_NOT_FOUND')
             if not _visual_compatible(item['visual_recipe'], subscriber_customization=subscriber_customization,
                                       visual_editor=visual_editor, visual_alignment=visual_alignment,
-                                      visual_text_size=visual_text_size, visual_background_style=visual_background_style):
+                                      visual_text_size=visual_text_size, visual_background_style=visual_background_style,
+                                      visual_decorations=visual_decorations):
                 _fail('PIECE_NOT_FOUND')
             return item
         except PieceContractError as exc:
@@ -237,7 +250,7 @@ class PieceOwnerService:
                       theme_ids: tuple[str, ...] | None = None,
                       subscriber_customization: bool = True, visual_editor: bool = True,
                       visual_alignment: bool = True, visual_text_size: bool = True,
-                      visual_background_style: bool = True) -> dict:
+                      visual_background_style: bool = True, visual_decorations: bool = True) -> dict:
         try:
             owner = _uuid(authenticated_user_id, 'PIECE_AUTH_REQUIRED')
             size, boundary = _history_request(owner, limit, cursor)
@@ -246,7 +259,8 @@ class PieceOwnerService:
                 'limit': str(size + 1),
                 **_visual_filter(theme_ids, subscriber_customization=subscriber_customization,
                                  visual_editor=visual_editor, visual_alignment=visual_alignment,
-                                 visual_text_size=visual_text_size, visual_background_style=visual_background_style)}
+                                 visual_text_size=visual_text_size, visual_background_style=visual_background_style,
+                                 visual_decorations=visual_decorations)}
             if boundary is not None:
                 stamp, pid = boundary[0].isoformat(), boundary[1]
                 params['or'] = f'(saved_at.lt.{stamp},and(saved_at.eq.{stamp},id.lt.{pid}))'
@@ -262,7 +276,8 @@ class PieceOwnerService:
                     if not _visual_compatible(item['visual_recipe'], subscriber_customization=subscriber_customization,
                                               visual_editor=visual_editor, visual_alignment=visual_alignment,
                                               visual_text_size=visual_text_size,
-                                              visual_background_style=visual_background_style):
+                                              visual_background_style=visual_background_style,
+                                              visual_decorations=visual_decorations):
                         _fail()
                     current = _boundary(row)
                     if previous is not None and current >= previous:

@@ -4,6 +4,7 @@ These checks prove storage/lifecycle behavior, never real-model quality.
 """
 import asyncio
 from dataclasses import replace
+from hashlib import sha256
 import json
 import re
 import time
@@ -1088,6 +1089,29 @@ def test_initial_follow_legacy_writer_retains_its_saved_message_shape():
         "本人の原文": literal, "本人の気持ちの言葉": "好き", "好きだと書いた箇所": "見本帳にあった青い縞",
     }
     assert messages[0]["content"].startswith("文章の話し手はEmlis")
+
+
+def test_initial_follow_contextual_writer_keeps_v28_replay_and_its_source_facts():
+    from cocolon_meaning_experience_engine.natural_reply import (
+        ACTIVE_MEANING_PROFILE, GROUNDED_INITIAL_OBSERVATION_FOLLOW_CONTEXT_VERSION,
+        INITIAL_OBSERVATION_FOLLOW_CONTEXT_VERSION, build_natural_reply_messages)
+
+    focus = {
+        "kind": "理由", "excerpt": "明日の展示には参加できないと今日分かったので、私は悲しかったです。",
+        "feeling": "悲しかったです", "anchor": "明日の展示には参加できないと今日分かった",
+    }
+
+    def messages(version):
+        return build_natural_reply_messages(NaturalReplyInput("source", "{}", ACTIVE_MEANING_PROFILE,
+            json.dumps({"source_context_version": version, "initial_observation_follow": focus})))
+
+    archived = messages(GROUNDED_INITIAL_OBSERVATION_FOLLOW_CONTEXT_VERSION)
+    encoded = json.dumps(archived, ensure_ascii=False, separators=(",", ":")).encode()
+    assert sha256(encoded).hexdigest() == "83b008c6956ccbbd879c420437be0c035f8b3e914a0d8c43b97e27ddced47554"
+    candidate = messages(INITIAL_OBSERVATION_FOLLOW_CONTEXT_VERSION)
+    assert candidate[1] == archived[1]
+    assert "別の人にもそのまま言える言葉なら" in candidate[0]["content"]
+    assert "いつ何を知ったか" in candidate[0]["content"]
 
 
 @pytest.mark.parametrize("thought,cues,follow,accepted", [

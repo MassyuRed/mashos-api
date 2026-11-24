@@ -614,7 +614,8 @@ def test_event_plan_base_cannot_exceed_existing_32768_context(monkeypatch):
     assert captured['model'].adapter_enabled and captured['model'].active_adapter == 'default'
 
 
-def _compact_merge_plan_for_context_test():
+def _compact_merge_plan_for_context_test(leaf_receipts=()):
+    from dataclasses import replace
     from analysis_merge_wire import compact_json, response_codec
     from cocolon_meaning_experience_engine.cores.analysis import semantic_admission as core
     from test_analysis_merge_transport import source_merge
@@ -622,6 +623,10 @@ def _compact_merge_plan_for_context_test():
 
     notes = ['庭の箱を片づけた。', '集会で資料を配った。']
     stage = source_merge(notes)
+    if leaf_receipts:
+        material = json.loads(stage.material_json)
+        material['leaf_receipts'] = leaf_receipts
+        stage = replace(stage, material_json=compact_json(material))
     messages = core.semantic_node_local_v4_wire_messages(stage)
     codec = response_codec(messages)
     raw = compact_json(codec.encode(packet(stage, [[[(1, notes[0])]], [[(2, notes[1])]]])))
@@ -653,12 +658,13 @@ def test_9b_compact_merge_plan_uses_only_available_context_and_reports_actual_to
     ('MERGE', 'NODES', True), ('MERGE', 'RELATIONS', True),
 ])
 def test_9b_other_staged_routes_keep_the_full_requested_reservation(monkeypatch, kind, phase, compact):
-    from analysis_merge_wire import compact_json, legacy_messages
+    from analysis_merge_wire import REQUEST_PROGRESS_VERSION, compact_json, legacy_messages, prepare_messages
     from test_piece_model_server_constraints import synthetic_generator
 
     messages, raw = _compact_merge_plan_for_context_test()
-    if not compact:
-        messages = legacy_messages(messages)
+    messages = legacy_messages(messages)
+    if compact:
+        messages = prepare_messages(messages, version=REQUEST_PROGRESS_VERSION)
     user = json.loads(messages[1]['content'])
     user['history_stage']['kind'], user['author_phase'] = kind, phase
     messages[1]['content'] = compact_json(user)
@@ -667,3 +673,69 @@ def test_9b_other_staged_routes_keep_the_full_requested_reservation(monkeypatch,
     with pytest.raises(ValueError, match='context_or_deadline_exceeded'):
         generate(messages, time.monotonic() + 210, profile='event_plan', output_tokens=4096)
     assert captured['generate'] == []
+
+
+@pytest.mark.parametrize('phase', ['NODES', 'RELATIONS'])
+def test_9b_current_compact_merge_following_phases_cap_to_remaining_context(monkeypatch, phase):
+    from test_analysis_v24_progress_transport import merge_exchange
+    from test_piece_model_server_constraints import synthetic_generator
+
+    _, expected = merge_exchange.__wrapped__()
+    messages, raw = expected[phase]
+    generate, captured, _, _ = synthetic_generator(monkeypatch, constrained=True, qwen_9b=True,
+        context_tokens=32768, input_count=30814, raw_output=raw)
+    response, finish, usage = generate(messages, time.monotonic() + 210, profile='event_plan', output_tokens=2750)
+    assert (response, finish) == (raw, 'stop')
+    assert captured['generate'][0]['max_new_tokens'] == 1954
+    assert captured['tokenize'][0][0] == messages
+    assert usage['prompt_tokens'] == 30814
+
+
+@pytest.mark.parametrize('pressure, metadata_only, expected', [
+    (False, True, 4096), (True, False, None), (True, True, 4096),
+])
+def test_9b_keeps_exact_wire_and_source_when_releasing_receipt_token_capacity(
+        monkeypatch, pressure, metadata_only, expected):
+    from analysis_merge_wire import legacy_messages
+    from test_piece_model_server_constraints import synthetic_generator
+
+    receipts = [dict(leaf_request_ref='analysis-semantic-stage:' + 'a' * 64,
+        messages_sha256='b' * 64, response_sha256='c' * 64)]
+    if not metadata_only:
+        receipts[0]['unrecognized'] = '原文に含まれる値。'
+    messages, raw = _compact_merge_plan_for_context_test(receipts)
+    original_material = json.loads(messages[1]['content'])
+    model_material = dict(original_material)
+    del model_material['leaf_receipts']
+    checked = []
+    parser = probe.semantic_json_parser
+
+    def verify_wire(selected, alphabet):
+        checked.append(selected)
+        assert json.loads(legacy_messages(selected)[1]['content'])['leaf_receipts'] == receipts
+        return parser(selected, alphabet)
+
+    def count(selected):
+        has_receipts = 'leaf_receipts' in json.loads(selected[1]['content'])
+        return 33115 if pressure and has_receipts else 28000
+
+    monkeypatch.setattr(probe, 'semantic_json_parser', verify_wire)
+    generate, captured, _, _ = synthetic_generator(monkeypatch, constrained=True, qwen_9b=True,
+        context_tokens=32768, input_count=count, raw_output=raw)
+    if expected is None:
+        with pytest.raises(ValueError, match='context_or_deadline_exceeded'):
+            generate(messages, time.monotonic() + 210, profile='event_plan', output_tokens=4096)
+        assert len(captured['tokenize']) == 1 and not captured['generate'] and not checked
+        return
+    response, finish, usage = generate(messages, time.monotonic() + 210, profile='event_plan', output_tokens=4096)
+    assert (response, finish) == (raw, 'stop')
+    assert captured['generate'][0]['max_new_tokens'] == expected
+    assert checked == [messages] and json.loads(messages[1]['content']) == original_material
+    assert captured['tokenize'][0][0] == messages
+    if pressure:
+        compact, kwargs = captured['tokenize'][1]
+        assert compact[0] == messages[0] and json.loads(compact[1]['content']) == model_material
+        assert kwargs['truncation'] is False
+    else:
+        assert len(captured['tokenize']) == 1
+    assert usage['prompt_tokens'] == 28000

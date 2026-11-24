@@ -74,7 +74,8 @@ async def read_piece_quota(*, authenticated_user_id: str, post_rpc) -> dict:
 def project_piece_plan_capabilities(*, server_tier: str, expanded_palette: bool = False,
                                     subscriber_customization: bool = False,
                                     visual_editor: bool = False, visual_alignment: bool = False,
-                                    visual_text_size: bool = False, visual_background_style: bool = False) -> dict:
+                                    visual_text_size: bool = False, visual_background_style: bool = False,
+                                    visual_decorations: bool = False) -> dict:
     """PCE-6 plan display only; eligible formats remain the artifact's list.
 
     The new client negotiates subscriber customization separately from the
@@ -85,7 +86,8 @@ def project_piece_plan_capabilities(*, server_tier: str, expanded_palette: bool 
     """
     if type(server_tier) is not str or server_tier not in SAVE_LIMITS:
         raise PieceContractError('PIECE_TEMPORARILY_UNAVAILABLE')
-    from piece_v2_visual import (BACKGROUND_STYLES, EDITOR_THEME_IDS, FONT_STYLE_IDS, LEGACY_THEME_IDS,
+    from piece_v2_visual import (ACCENT_STYLES, BACKGROUND_STYLES, DECORATED_BACKGROUND_STYLES,
+                                EDITOR_THEME_IDS, FONT_STYLE_IDS, FRAME_STYLES, LEGACY_THEME_IDS,
                                 TEXT_ALIGNMENTS, TEXT_COLOR_IDS, TEXT_SIZES, THEME_IDS)
     capabilities = {
         'format_selection': {'free': 'fixed', 'plus': 'automatic',
@@ -106,6 +108,10 @@ def project_piece_plan_capabilities(*, server_tier: str, expanded_palette: bool 
         capabilities['text_alignments'] = [] if server_tier == 'free' else list(TEXT_ALIGNMENTS)
     if visual_text_size:
         capabilities['text_sizes'] = [] if server_tier == 'free' else list(TEXT_SIZES)
-    if visual_background_style:
-        capabilities['background_styles'] = list(BACKGROUND_STYLES) if server_tier == 'premium' else []
+    if visual_background_style or visual_decorations:
+        backgrounds = (*BACKGROUND_STYLES, *DECORATED_BACKGROUND_STYLES) if visual_decorations else BACKGROUND_STYLES
+        capabilities['background_styles'] = list(backgrounds) if server_tier == 'premium' else []
+    if visual_decorations:
+        capabilities['frame_styles'] = list(FRAME_STYLES) if server_tier == 'premium' else []
+        capabilities['accent_styles'] = list(ACCENT_STYLES) if server_tier == 'premium' else []
     return capabilities
