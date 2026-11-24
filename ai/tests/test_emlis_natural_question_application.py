@@ -18,8 +18,8 @@ from cocolon_meaning_experience_engine.natural_reply import (
     INITIAL_RECIPIENT_CONTEXT_VERSION, OBSERVATION_ANSWER_CONTEXT_VERSION,
     OBSERVATION_CONTEXT_VERSION, OBSERVATION_DELIVERY_CONTEXT_VERSION,
     OBSERVATION_GROUNDED_CONTEXT_VERSION, OBSERVATION_OUTCOME_CONTEXT_VERSION,
-    OBSERVATION_WRITTEN_FEELING_CONTEXT_VERSION, NaturalReply,
-    build_natural_reply_messages,
+    OBSERVATION_QUOTED_FEELING_CONTEXT_VERSION, OBSERVATION_WRITTEN_FEELING_CONTEXT_VERSION,
+    NaturalReply, NaturalReplyError, build_natural_reply_messages, validate_reply,
 )
 from emlis_thread_service import EmlisThreadService, Q3_PROFILE
 from emlis_thread_store import ThreadStoreError
@@ -481,6 +481,58 @@ def test_written_feeling_projection_preserves_sources_and_rereads_without_genera
     assert reread['current_observation'] == initial['current_observation']
     assert reread['current_observation']['text'] == FINAL
     assert len(calls) == 1
+
+
+@pytest.mark.parametrize(('thought', 'action', 'excerpt'), [
+    ('手編みのマフラーの色が大好きでした。', '帰宅して水を飲みました。', '手編みのマフラーの色が大好きでした'),
+    ('友人が「入口が閉まった」と言いました。私はほっとしました。', '廊下の照明を消しました。', '私はほっとしました'),
+    ('急な雨の前に洗濯物を取り込めたので、私はほっとしました。', '廊下の照明を消しました。',
+     '急な雨の前に洗濯物を取り込めたので、私はほっとしました'),
+    ('母は窓辺の風鈴が大好きでした。', '', None),
+    ('藍色の模様で作ったしおりが大好きでした。窓の外が寂しかった。', '', None),
+    ('「' + '長' * 240 + '」と書いて、私はほっとしました。', '', None),
+])
+def test_quoted_feeling_requires_the_written_passage_and_keeps_the_saved_record(
+        natural_questions, qdb, monkeypatch, thought, action, excerpt):
+    user, parent, _, _ = natural_questions(memo=thought)
+    assert 'code' not in qdb.query('update public.emotions set memo_action=$2 where id=$1', [parent, action])
+    calls = []
+
+    async def provider(request):
+        calls.append(request)
+        text = FINAL if excerpt is None else f'「{excerpt}」と伝えてくださって、ありがとうございます。'
+        return NaturalReply(text, 'synthetic-provider', request.source_prefix_ref)
+
+    version = OBSERVATION_QUOTED_FEELING_CONTEXT_VERSION
+    owner = _active_application_owner(monkeypatch, provider, 'paid', observation_version=version)
+    owner.natural_questions_enabled = False
+    started = run(owner.start(user, parent))
+    assert started['body_state'] == 'FINAL'
+    saved = run(owner.store.read(user, input_id=parent))
+    assert (saved['original']['memo'], saved['original']['memo_action']) == (thought, action)
+    request, = calls
+    messages = build_natural_reply_messages(request)
+    if excerpt is None:
+        _assert_writer_messages_match(request, version, OBSERVATION_WRITTEN_FEELING_CONTEXT_VERSION)
+    else:
+        assert json.loads(messages[1]['content']) == {'本人の原文': excerpt}
+        quoted = f'「{excerpt}」'
+        for invalid in (FINAL, quoted, f'{quoted}と聞き、私は安心しました。'):
+            with pytest.raises(NaturalReplyError):
+                validate_reply(NaturalReply(invalid, 'synthetic-provider', request.source_prefix_ref), request)
+    digest = sha256(json.dumps(messages, ensure_ascii=False, separators=(',', ':')).encode()).hexdigest()
+    for event in saved['events']:
+        if event['payload'].get('stage') in ('NATURAL_REPLY_CALL_STARTED', 'NATURAL_REPLY_RECEIVED'):
+            assert event['payload']['writer_context_version'] == version
+            assert event['payload']['writer_messages_sha256'] == digest
+
+    async def no_generation(_request):
+        pytest.fail('reread entered the provider')
+
+    reopened = _active_application_owner(monkeypatch, no_generation, 'false')
+    reread = run(reopened.get(user, parent))
+    assert reread['revision'] == started['revision']
+    assert reread['current_observation'] == started['current_observation']
 
 
 @pytest.mark.parametrize(('tier', 'selected', 'action', 'expected'), [
