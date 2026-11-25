@@ -4609,12 +4609,13 @@ def _semantic_node_local_review(graph, prepared, original, expanded):
     return replace(graph, meaning_review_json=semantic_map_canonical(review))
 
 
-def _semantic_event_plan_review(graph, prepared, original, expanded):
+def _semantic_event_plan_review(graph, prepared, original, expanded, *, source_parent=None):
     from .semantic_admission import SEMANTIC_MAP_NODE_LOCAL_V4_PROFILES
     if getattr(prepared, 'prompt_version', None) in SEMANTIC_MAP_NODE_LOCAL_V4_PROFILES:
         from .semantic_admission import (assemble_semantic_node_local_v4,
             semantic_map_canonical, semantic_map_hash)
-        joined = assemble_semantic_node_local_v4(prepared, original)
+        retained_axes = []
+        joined = assemble_semantic_node_local_v4(prepared, original, retained_axes=retained_axes)
         graph = _semantic_node_local_review(graph, prepared, joined, expanded)
         review = json.loads(graph.meaning_review_json)
         review['node_local_plan']['phase_artifact'] = deepcopy(original)
@@ -4632,6 +4633,12 @@ def _semantic_event_plan_review(graph, prepared, original, expanded):
                     axes = [axis for axis in axes if rejected not in (
                         axis['title'], axis['description'], axis.get('criterion'))]
             overview['primary_structures'] = axes
+            if len(retained_axes) >= 2:
+                from .structure_relations import structure_relation_review
+                relations = structure_relation_review(prepared, source_parent or prepared,
+                    joined['nodes'], retained_axes, axes)
+                if relations:
+                    review['structure_relations'] = relations
         return replace(graph, meaning_review_json=semantic_map_canonical(review), overview_json=semantic_map_canonical(overview),
             source_ordered_detail=original.get('merge_wire_version') in ('cocolon.analysis.merge_wire.v4', 'cocolon.analysis.merge_wire.v5', 'cocolon.analysis.merge_wire.v6', 'cocolon.analysis.merge_wire.v7', 'cocolon.analysis.merge_wire.v8', 'cocolon.analysis.merge_wire.v9', 'cocolon.analysis.merge_wire.v10'),
             original_field_sections=original.get('merge_wire_version') in ('cocolon.analysis.merge_wire.v6', 'cocolon.analysis.merge_wire.v7', 'cocolon.analysis.merge_wire.v8', 'cocolon.analysis.merge_wire.v9', 'cocolon.analysis.merge_wire.v10'),
@@ -4716,7 +4723,7 @@ def compile_analysis_semantic_stage(stage, packet, *, response_sha256):
         view = replace(view, material_json=stage.material_json, request_ref=expansion_view.request_ref)
     graph = _compile_analysis_semantic_map_v2(view, packet, response_sha256=response_sha256,
         author_packet=original_packet)
-    graph = _semantic_event_plan_review(graph, view, original_packet, packet)
+    graph = _semantic_event_plan_review(graph, view, original_packet, packet, source_parent=parent)
     nodes = json.loads(graph.nodes_json)
     _semantic_map_require(all(root_is_shown(root) for node in nodes
         for root in node['evidence_refs']), 'analysis_semantic_history_evidence_not_shown')

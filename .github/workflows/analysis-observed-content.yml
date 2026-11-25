@@ -164,6 +164,9 @@ name: Analysis observed content
       - ai/tests/test_analysis_v23_overview_arguments.py
       - ai/tests/test_analysis_v23_record_summary.py
       - ai/tests/test_analysis_primary_structures.py
+      - ai/tests/test_analysis_premium_structure_relations.py
+      - ai/services/ai_inference/cocolon_meaning_experience_engine/cores/analysis/structure_relations.py
+      - supabase/migrations/*_analysis_premium_structure_relations.sql
       - ai/tests/test_analysis_v24_distinct_participants.py
       - ai/tests/test_analysis_merge_wire.py
       - ai/tests/test_analysis_merge_transport.py
@@ -432,6 +435,7 @@ jobs:
           ai/tests/test_analysis_v23_overview_arguments.py
           ai/tests/test_analysis_v23_record_summary.py
           ai/tests/test_analysis_primary_structures.py
+          ai/tests/test_analysis_premium_structure_relations.py
           ai/tests/test_analysis_v24_distinct_participants.py
           ai/tests/test_analysis_merge_wire.py
           ai/tests/test_analysis_merge_transport.py

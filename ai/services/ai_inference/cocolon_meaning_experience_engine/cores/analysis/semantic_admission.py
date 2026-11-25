@@ -3777,7 +3777,7 @@ def _check_public_primary_structures(axes, node_refs):
         descriptions.add(axis['description'])
 
 
-def _read_primary_structures(prepared, material, nodes, axes):
+def _read_primary_structures(prepared, material, nodes, axes, *, retained=None):
     """Resolve only authored roots from the already admitted PLAN/NODES for this snapshot."""
     reason = 'analysis_primary_structure_unbound'
     _semantic_map_require(prepared.prompt_version == SEMANTIC_MAP_OCCURRENCE_V24_PROFILE
@@ -3883,10 +3883,12 @@ def _read_primary_structures(prepared, material, nodes, axes):
         # A verbatim repeat supplies no separate conclusion beneath that
         # heading. Keep the original RELATIONS receipt and the admitted graph.
         return [axis for axis, source in zip(public, admitted, strict=True) if source['criterion'] != source['heading']]
+    if retained is not None and independently_compared:
+        retained.extend(zip(public, admitted, strict=True))
     return public
 
 
-def semantic_node_local_v4_relations(prepared, plan, bodies, packet, *, ordered_titles=False):
+def semantic_node_local_v4_relations(prepared, plan, bodies, packet, *, ordered_titles=False, retained_axes=None):
     semantic_node_local_v4_nodes(prepared, plan, bodies, ordered_titles=ordered_titles)
     nodes = _semantic_v4_join(plan, bodies)
     ids = {node['node_id'] for node in nodes}
@@ -4024,7 +4026,7 @@ def semantic_node_local_v4_relations(prepared, plan, bodies, packet, *, ordered_
              for edge in raw_edges] if source_cued else raw_edges
     if 'primary_structures' in packet:
         overview = dict(overview, primary_structures=_read_primary_structures(
-            prepared, material, nodes, packet['primary_structures']))
+            prepared, material, nodes, packet['primary_structures'], retained=retained_axes))
         if material.get('primary_structure_reading') == 'karen.v3':
             _v3_grounded_choice_meanings(material, nodes)
     return dict(schema_version=SEMANTIC_MAP_NODE_LOCAL_V3_SCHEMA,
@@ -5055,12 +5057,12 @@ def semantic_node_local_v4_wire_messages(prepared, phase='PLAN', *, plan=None, n
     return wire
 
 
-def assemble_semantic_node_local_v4(prepared, packet):
-    joined, _ = assemble_semantic_node_local_v4_with_node_choices(prepared, packet)
+def assemble_semantic_node_local_v4(prepared, packet, *, retained_axes=None):
+    joined, _ = assemble_semantic_node_local_v4_with_node_choices(prepared, packet, retained_axes=retained_axes)
     return joined
 
 
-def assemble_semantic_node_local_v4_with_node_choices(prepared, packet, *, comparison_sources=None):
+def assemble_semantic_node_local_v4_with_node_choices(prepared, packet, *, comparison_sources=None, retained_axes=None):
     """Verify all raw receipts and retain the author's source selections for projection."""
     r, reason = _semantic_map_require, 'analysis_semantic_node_local_v4_lineage_invalid'
     compact = type(packet) is dict and 'merge_wire_version' in packet
@@ -5114,7 +5116,8 @@ def assemble_semantic_node_local_v4_with_node_choices(prepared, packet, *, compa
                 bound_titles=compact and packet['merge_wire_version'] in TITLE_VERSIONS, ordered_titles=ordered_titles)
             authored_nodes = value
         else:
-            joined = semantic_node_local_v4_relations(prepared, plan, nodes, value, ordered_titles=ordered_titles)
+            joined = semantic_node_local_v4_relations(prepared, plan, nodes, value, ordered_titles=ordered_titles,
+                retained_axes=retained_axes)
     return joined, authored_nodes
 
 

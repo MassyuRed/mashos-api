@@ -1435,6 +1435,7 @@ def register_self_structure_routes(app: FastAPI) -> None:
         response: Response,
         authorization: Optional[str] = Header(default=None, alias="Authorization"),
         map_renderer: Optional[str] = Header(default=None, alias="X-Watashi-Map-Renderer"),
+        map_structure_relations: Optional[str] = Header(default=None, alias="X-Watashi-Map-Structure-Relations"),
         ensure: bool = Query(
             default=True,
             description="If true, regenerate when stale/missing",
@@ -1489,7 +1490,7 @@ def register_self_structure_routes(app: FastAPI) -> None:
                 result = await ensure_map(uid, ensure=ensure, force=force)
             response.headers['Cache-Control'] = 'private, no-store'
             return SelfStructureLatestEnsureResponse(**map_response_for_renderer(
-                result, map_renderer))
+                result, map_renderer, map_structure_relations))
 
         # ---- Resolve report_mode (with subscription gating; fail-closed) ----
         # わたしマップ Phase 1: Free は latest の light 概要のみ許可する。
@@ -1785,6 +1786,7 @@ def register_self_structure_routes(app: FastAPI) -> None:
         body: SelfStructureMonthlyEnsureBody,
         authorization: Optional[str] = Header(default=None, alias="Authorization"),
         map_renderer: Optional[str] = Header(default=None, alias="X-Watashi-Map-Renderer"),
+        map_structure_relations: Optional[str] = Header(default=None, alias="X-Watashi-Map-Structure-Relations"),
     ) -> SelfStructureMonthlyEnsureResponse:
         """Ensure the current month's distributed MyProfile monthly report exists.
 
@@ -1819,7 +1821,7 @@ def register_self_structure_routes(app: FastAPI) -> None:
             from analysis_cumulative_service import ensure_map, map_response_for_renderer
             response.headers['Cache-Control'] = 'private, no-store'
             return SelfStructureMonthlyEnsureResponse(**map_response_for_renderer(
-                await ensure_map(uid, monthly=True), map_renderer))
+                await ensure_map(uid, monthly=True), map_renderer, map_structure_relations))
 
         # ---- Resolve report_mode (with subscription gating; fail-closed) ----
         # Spec v2: free users cannot view MyProfile self-structure reports.

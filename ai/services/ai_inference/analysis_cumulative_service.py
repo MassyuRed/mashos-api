@@ -127,13 +127,21 @@ def _legacy_semantic_projection(projection, saved_text=None):
         accessibility_linear_order=projection['accessibility_linear_order'])
 
 
-def map_response_for_renderer(payload, renderer):
+def map_response_for_renderer(payload, renderer, structure_relations=None):
     """Compatibility only; no generation, storage rewrite, or evidence change."""
     scoped = payload.get('_map_plan_projected', False)
     if scoped:
         payload = deepcopy(payload)
         del payload['_map_plan_projected']
         payload['map_plan_scoped'] = True
+        item = payload.get('item')
+        graph = item['content_json'].get('watashiMap') if item else payload.get('meta')
+        visible = item if item else payload
+        relations = visible.pop('_map_structure_relations', None)
+        if (graph and relations and renderer == 'semantic.v3' and structure_relations == 'v1'
+                and payload.get('map_subscription_tier') == 'premium'):
+            graph['overview']['structure_relations'] = relations
+            visible['content_text'] += '\n\n' + '\n'.join(relation['description'] for relation in relations)
     if renderer == 'semantic.v3' or (renderer == 'semantic.v2' and not scoped):
         return payload
     if scoped:
@@ -255,11 +263,24 @@ def map_projection_for_plan(projection, tier):
 
 
 def map_report_for_plan(row, tier):
-    projected = map_projection_for_plan(row['content_json']['watashiMap'], tier)
+    content = row['content_json']
+    if 'structure_relations' in content:
+        content = dict(content)
+        relations = content.pop('structure_relations')
+        row = dict(row, content_json=content)
+    else:
+        relations = None
+    projected = map_projection_for_plan(content['watashiMap'], tier)
     if projected is None:
         return row, False
     graph, text = projected
-    return dict(row, content_text=text, content_json=dict(row['content_json'], watashiMap=graph)), True
+    row = dict(row, content_text=text, content_json=dict(content, watashiMap=graph))
+    if tier == 'premium' and relations:
+        from cocolon_meaning_experience_engine.cores.analysis.structure_relations import safe_structure_relations
+        safe = safe_structure_relations(relations, len(graph['overview']['primary_structures']))
+        if safe:
+            row['_map_structure_relations'] = safe
+    return row, True
 
 
 async def read_maps(user_id, *, report_id=None, history=False, limit=60, offset=0, month=None, metadata_only=False):
@@ -279,8 +300,11 @@ async def read_maps(user_id, *, report_id=None, history=False, limit=60, offset=
                     raise ValueError
                 _owner(row['id'])
                 continue
+            keys = {'report_mode', 'watashiMap', 'map_context'}
+            if result['subscription_tier'] == 'premium' and 'structure_relations' in row['content_json']:
+                keys.add('structure_relations')
             if (row['source_profile'] != PROFILE or row['report_mode'] != 'standard'
-                    or set(row['content_json']) != {'report_mode', 'watashiMap', 'map_context'}
+                    or set(row['content_json']) != keys
                     or row['content_json']['report_mode'] != 'standard'):
                 raise ValueError
             projection = _checked_projection(row['content_json']['watashiMap'], row['id'])
@@ -1107,7 +1131,7 @@ def _response(row, *, refreshed=False, monthly=False, coverage=None, tier):
     if row:
         row, scoped = map_report_for_plan(row, tier)
     insufficient = row is None and coverage is not None and coverage['source_count'] > 0
-    return dict(status='ok', refreshed=refreshed, reason='saved' if refreshed else ('up_to_date' if row else ('insufficient_input' if insufficient else 'no_visible_content')),
+    payload = dict(status='ok', refreshed=refreshed, reason='saved' if refreshed else ('up_to_date' if row else ('insufficient_input' if insufficient else 'no_visible_content')),
         report_mode='standard', period='all', period_start=row['period_start'] if row else None,
         period_end=row['period_end'] if row else None, generated_at=row['generated_at'] if row else None,
         latest_generated_at=row['generated_at'] if row else None, title=row['title'] if row else None,
@@ -1118,6 +1142,9 @@ def _response(row, *, refreshed=False, monthly=False, coverage=None, tier):
         has_visible_content=bool(row), skip_reason=None if row else ('analysis_insufficient_input' if insufficient else 'analysis_saved_map_unavailable'),
         history_saved=bool(row) if monthly else False, map_subscription_tier=tier,
         **({'_map_plan_projected': True} if scoped else {}))
+    if row and row.get('_map_structure_relations'):
+        payload['_map_structure_relations'] = row['_map_structure_relations']
+    return payload
 
 
 async def map_status(user_id):

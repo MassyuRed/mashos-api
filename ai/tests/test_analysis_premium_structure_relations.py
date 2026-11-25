@@ -1,0 +1,235 @@
+"""Exact receipt admission, persistence and plan reads for actual structure relations."""
+
+import asyncio
+from copy import deepcopy
+from datetime import datetime, timedelta, timezone
+import hashlib
+import json
+from uuid import UUID
+
+from fastapi import HTTPException
+import pytest
+
+import analysis_cumulative_service as service
+from analysis_plan_source_choices import WholeMapTitle
+import analysis_semantic_map as maps
+from cocolon_meaning_experience_engine.cores.analysis import semantic_admission as core
+from report_artifact_read_service import get_detail
+from test_analysis_cumulative import OWNER, source_snapshot
+from test_analysis_cumulative_model_source import sql_source
+from test_analysis_interpretation_correction_sources import sql_script
+from test_analysis_node_local_v4_phases import response
+from test_analysis_occurrence_v17_record_owners import packet
+from test_analysis_v13_separate_record_titles import wire
+
+
+COEXISTENCE = ('私は、提出期限と手伝いの時間を両立できると判断して、資料確認を選び、'
+               '実際に提出期限と手伝いの時間を両立できました。')
+PRIORITY = ('私は、手伝いの時間より提出期限を優先して、取引先への連絡を断る方法を選び、'
+            '実際に手伝いの時間を確保できませんでした。')
+REVERSE = '私は、提出期限より手伝いの時間を優先して、取引先への連絡を選びました。'
+UNRELATED = '提出期限を確認し、手伝いの時間に伝票を見ました。'
+NOTES = ('提出期限に余裕があったので、私は資料の確認を引き受けた。',
+         '提出期限に間に合わないので、私は取引先への連絡を断った。',
+         '手伝いの時間が取れたので、私は見積もりを引き受けた。',
+         '手伝いの時間が取れなかったので、私は会議への同席を断った。')
+
+
+def _snapshot(action):
+    snapshot = source_snapshot(5)
+    for member, note in zip(snapshot['members'], (*NOTES, ''), strict=True):
+        member['original'].update(memo=note, memo_action='' if note else action)
+    return snapshot
+
+
+def _artifact(action, snapshot=None):
+    snapshot = _snapshot(action) if snapshot is None else snapshot
+    prepared = maps.prepare_semantic_map(OWNER, snapshot,
+        prompt_version=core.SEMANTIC_MAP_OCCURRENCE_V24_PROFILE, primary_structures='karen.v3')
+    material = json.loads(prepared.material_json)
+    by_text = {field['text']: field['field'] for field in material['fields']}
+    plan = dict(schema_version=core._semantic_v4_schema('PLAN'), nodes=[])
+    bodies = dict(schema_version=core._semantic_v4_schema('NODES'), nodes={})
+    by_root = []
+    for i, quote in enumerate((*NOTES, action), 1):
+        node_id = f'n{i}'
+        row = [(by_text[quote], quote)]
+        by_root.append([row])
+        evidence = [dict(field=field, quote=text) for field, text in row]
+        plan['nodes'].append(dict(node_id=node_id, units=[dict(evidence=evidence)]))
+        unit = dict(evidence_ref=node_id + '.u1', source_mode='RECORDED', unknowns=[],
+                    fact_parts={core._semantic_fact_part_key(evidence, 0): quote})
+        bodies['nodes'][node_id] = dict(units={'u1': unit}, node_kind='CHOICE_OUTPUT',
+                                        perspective='SELF', title=quote, meaning='')
+    bodies['plan_sha256'] = core.semantic_map_hash(plan)
+    nodes = core._semantic_v4_join(plan, bodies)
+    axes = [dict(scope='across_records', anchors=['n1.u1.e1', 'n2.u1.e1'], heading='提出との兼ね合い',
+                 decision_factor='提出期限', criterion='手伝いを引き受ける際は、提出期限を守れるかを考えています。',
+                 case_reading='「提出期限に余裕があった」ときは資料の確認を引き受けました。'
+                              '「提出期限に間に合わない」ときは取引先への連絡を断りました。'),
+            dict(scope='across_records', anchors=['n3.u1.e1', 'n4.u1.e1'], heading='手を貸せる時間',
+                 decision_factor='手伝いの時間', criterion='引き受けるかは、手伝いの時間を取れるかで決めています。',
+                 case_reading='「手伝いの時間が取れた」ときは見積もりを引き受けました。'
+                              '「手伝いの時間が取れなかった」ときは会議への同席を断りました。')]
+    relations = dict(schema_version=core._semantic_v4_schema('RELATIONS'), nodes_sha256=core.semantic_map_hash(nodes),
+        qualification_review={}, edges=[], primary_structures=axes,
+        overview=dict(title=WholeMapTitle(material, nodes).neutral, title_proposal='',
+                      node_refs=[node['node_id'] for node in nodes]))
+    receipts = []
+    phases = (packet(prepared, by_root), wire(prepared, plan, bodies), relations)
+    for phase, value in zip(core.SEMANTIC_MAP_NODE_LOCAL_V4_PHASES, phases, strict=True):
+        messages = core.semantic_node_local_v4_messages(prepared, phase,
+            plan=plan if phase != 'PLAN' else None, nodes=bodies if phase == 'RELATIONS' else None)
+        raw = json.dumps(value, ensure_ascii=False, separators=(',', ':'))
+        receipts.append(dict(phase=phase, messages_sha256=core.semantic_map_hash(messages), raw=raw,
+            raw_sha256=hashlib.sha256(raw.encode()).hexdigest(), finish_reason='stop', completion_tokens=100))
+    receipt = dict(schema_version=core.semantic_node_local_v4_artifact_schema(prepared), phases=receipts)
+    artifact, coverage = maps.build_semantic_map(prepared, response(prepared, receipt))
+    return artifact, coverage, snapshot
+
+
+@pytest.mark.parametrize('action, kind, preferred, other, outcome', [
+    (COEXISTENCE, 'COEXISTENCE', 0, 1, '提出期限と手伝いの時間を両立できました'),
+    (PRIORITY, 'PRIORITY', 0, 1, '手伝いの時間を確保できませんでした'),
+    (REVERSE, 'PRIORITY', 1, 0, None),
+    (UNRELATED, None, None, None, None),
+])
+def test_private_review_uses_both_admitted_axes_and_exact_actual_choice(action, kind, preferred, other, outcome):
+    artifact, _, snapshot = _artifact(action)
+    graph = artifact.safe_projection(authenticated_owner_scope=OWNER)
+    assert len(graph['overview']['primary_structures']) == 2
+    assert 'structure_relations' not in graph['overview']
+    assert action not in graph['overview']['primary_structures'][0]['description']
+    private = artifact.private_evidence()
+    review = private['graph']['meaning_review'].get('structure_relations')
+    if kind is None:
+        assert review is None
+        return
+    assert review['views'] == [dict(kind=kind, first_index=preferred, second_index=other, description=action)]
+    witness, = review['witnesses']
+    original = snapshot['members'][-1]['original']
+    for key in ('settlement', 'first_factor', 'second_factor', 'selected_option'):
+        span = witness[key]
+        assert span['record_ref'] == original['id'] and span['field'] == 'memo_action'
+        assert action[span['start']:span['end']] == span['quote']
+    assert (witness['confirmed_outcome'] or {}).get('quote') == outcome
+    assert len({witness[key]['record_ref'] for key in ('settlement', 'first_grounding', 'second_grounding')}) == 3
+
+
+def test_saved_premium_relation_is_not_reflected_in_lower_plans_or_legacy_renderers(monkeypatch):
+    artifact, coverage, _ = _artifact(COEXISTENCE)
+    rid = str(UUID(artifact.artifact_id[9:]))
+    graph = artifact.safe_projection(authenticated_owner_scope=OWNER)
+    private = artifact.private_evidence()
+    relation, = private['graph']['meaning_review']['structure_relations']['views']
+    row = dict(id=rid, report_type='latest', report_mode='standard', source_profile='cumulative.v1',
+               title='わたしマップ', period_start='2025-01-01', period_end='2026-11-01', generated_at='2026-11-01',
+               snapshot_month=None, captured_at=None, content_text=service._projection_text(graph),
+               content_json=dict(watashiMap=graph, report_mode='standard', map_context=coverage))
+    month = datetime.now(timezone(timedelta(hours=9))).date().replace(day=1).isoformat()
+    tier = 'premium'
+    corrupt = None
+
+    async def rpc(name, params):
+        assert name == 'analysis_cumulative_read' and params['p_user_id'] == OWNER
+        item = deepcopy(row)
+        if params['p_history'] or params['p_month']:
+            item.update(report_type='monthly', snapshot_month=month)
+        if tier == 'premium' or corrupt == 'down-tier':
+            item['content_json']['structure_relations'] = [dict(relation)]
+            if corrupt == 'extra-private-field':
+                item['content_json']['structure_relations'][0]['record_ref'] = 'private-source-ref'
+        return dict(items=[item], subscription_tier=tier, matched=True,
+                    history_limit={'free': 2, 'plus': 12, 'premium': None}[tier])
+
+    monkeypatch.setattr(service, '_rpc', rpc)
+    monkeypatch.setattr('analysis_observed_service.observed_enabled', lambda: True)
+
+    def latest(capability='v1', monthly=False, renderer='semantic.v3'):
+        payload = asyncio.run(service.ensure_map(OWNER, ensure=False, monthly=monthly))
+        return service.map_response_for_renderer(payload, renderer, capability)
+
+    def detail(capability='v1'):
+        payload = asyncio.run(get_detail(user_id=OWNER, family='self_structure', report_id=rid, month=month))
+        return service.map_response_for_renderer(payload, 'semantic.v3', capability)['item']
+
+    paid = latest()
+    assert paid['report_id'] == latest(monthly=True)['report_id'] == detail()['id'] == rid
+    assert paid['meta'] == latest(monthly=True)['meta'] == detail()['content_json']['watashiMap']
+    assert paid['meta']['overview']['structure_relations'] == [relation]
+    assert paid['content_text'].endswith(COEXISTENCE) and detail()['content_text'] == paid['content_text']
+    assert 'structure_relations' not in detail()['content_json']
+    assert 'structure_relations' not in latest(None)['meta']['overview']
+    assert COEXISTENCE not in latest(None)['content_text'] and COEXISTENCE not in latest(renderer=None)['content_text']
+    assert COEXISTENCE not in detail(None)['content_text']
+
+    corrupt = 'extra-private-field'
+    assert latest() == latest(None)
+    corrupt = None
+    for tier in ('plus', 'free'):
+        assert latest()['report_id'] == rid
+        assert 'structure_relations' not in json.dumps(latest(monthly=True))
+        assert COEXISTENCE not in detail()['content_text']
+    corrupt = 'down-tier'
+    with pytest.raises(HTTPException, match='analysis_saved_artifact_invalid'):
+        latest()
+
+
+def test_real_sql_commits_private_proof_and_rereads_one_saved_id_at_each_tier(sql_source):
+    db, rpc = sql_source
+    for migration in (
+        '20261107071033_analysis_semantic_map_wire.sql',
+        '20261114032520_analysis_interpretation_correction_sources.sql',
+        '20261114120000_analysis_if_route_artifacts.sql',
+        '20261114123000_analysis_emlis_material_handoff.sql',
+        '20261114132000_analysis_map_interpretation_corrections.sql',
+        '20261114133000_analysis_map_correction_handoff.sql',
+        '20261121132000_deep_insight_questions.sql',
+        '20261121133000_analysis_deep_insight_answer_handoff.sql',
+        '20261121134000_deep_insight_grounded_questions.sql',
+        '20261122145000_deep_insight_effective_emlis_corrections.sql',
+        '20261125184500_analysis_scoped_map_correction.sql',
+        '20261125191500_analysis_plan_independent_map_identity.sql',
+        '20261125205000_analysis_premium_structure_relations.sql',
+    ):
+        sql_script(db, migration)
+    other = str(UUID(int=2))
+    for owner in (OWNER, other):
+        assert 'code' not in db.query('insert into auth.users values ($1)', [owner])
+        assert 'code' not in db.query("insert into public.profiles values ($1,'free')", [owner])
+    originals = [item['original'] for item in _snapshot(COEXISTENCE)['members']]
+    for source in originals:
+        response_row = db.query('insert into public.emotions values ($1,$2,$3,$4,$5,$6,$7,$8)',
+            [source['id'], OWNER, source['created_at'], source['memo'], source['memo_action'],
+             source['category'], source['emotions'], json.dumps(source['emotion_details'])])
+        assert 'code' not in response_row
+    snapshot = asyncio.run(rpc('analysis_cumulative_source_snapshot', dict(p_user_id=OWNER)))
+    artifact, coverage, _ = _artifact(COEXISTENCE, snapshot)
+    graph = artifact.safe_projection(authenticated_owner_scope=OWNER)
+    private = artifact.private_evidence()
+    private.update(coverage=coverage, source_record_refs=[x['id'] for x in originals])
+    rid = asyncio.run(rpc('analysis_cumulative_commit', dict(p_user_id=OWNER, p_guard=snapshot['guard'],
+        p_artifact_id=artifact.artifact_id, p_private_evidence=private, p_projection=graph,
+        p_text=artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text'],
+        p_start=snapshot['period_start'], p_end=snapshot['period_end'])))
+    expected = private['graph']['meaning_review']['structure_relations']['views']
+
+    for tier in ('free', 'plus', 'premium', 'plus', 'free', 'premium'):
+        assert 'code' not in db.query('update public.profiles set subscription_tier=$1 where id=$2', [tier, OWNER])
+        current, = asyncio.run(service.read_maps(OWNER, limit=1))['items']
+        history, = asyncio.run(service.read_maps(OWNER, history=True))['items']
+        detail, = asyncio.run(service.read_maps(OWNER, report_id=rid, month=history['snapshot_month']))['items']
+        for row in (current, history, detail):
+            assert row['id'] == rid
+            assert row['content_json']['watashiMap'] == graph
+            assert row['content_json'].get('structure_relations') == (expected if tier == 'premium' else None)
+            assert 'confirmed_outcome' not in json.dumps(row)
+        summary, = asyncio.run(service.read_maps(OWNER, history=True, metadata_only=True))['items']
+        assert summary['id'] == rid and 'content_json' not in summary
+    assert not asyncio.run(service.read_maps(other, report_id=rid))['items']
+
+    changed = db.query("update public.analysis_observed_artifacts set private_evidence="
+        "jsonb_set(private_evidence,'{projection_of}','\"unrelated-artifact\"') where id=$1", [rid])
+    assert changed['code'] == '55000'
+    still_saved, = asyncio.run(service.read_maps(OWNER, limit=1))['items']
+    assert still_saved['id'] == rid and still_saved['content_json']['structure_relations'] == expected

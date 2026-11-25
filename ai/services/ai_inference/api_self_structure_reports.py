@@ -81,6 +81,7 @@ def register_self_structure_report_routes(app: FastAPI) -> None:
         authorization: Optional[str] = Header(default=None, alias="Authorization"),
         month: Optional[str] = Query(default=None),
         map_renderer: Optional[str] = Header(default=None, alias="X-Watashi-Map-Renderer"),
+        map_structure_relations: Optional[str] = Header(default=None, alias="X-Watashi-Map-Structure-Relations"),
     ) -> SelfStructureReportDetailResponse:
         """Current owner for Self Structure report detail."""
         me = await _require_user_id(authorization)
@@ -93,7 +94,7 @@ def register_self_structure_report_routes(app: FastAPI) -> None:
         )
         from analysis_cumulative_service import map_response_for_renderer
         response.headers['Cache-Control'] = 'private, no-store'
-        return SelfStructureReportDetailResponse(**map_response_for_renderer(payload, map_renderer))
+        return SelfStructureReportDetailResponse(**map_response_for_renderer(payload, map_renderer, map_structure_relations))
 
     @app.get("/self-structure/reports/{report_id}/evidence")
     async def get_map_evidence(
