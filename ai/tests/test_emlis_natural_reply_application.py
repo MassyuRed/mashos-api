@@ -1390,3 +1390,103 @@ def test_grounded_current_scope_survives_when_no_passage_can_be_quoted(
     wire = build_natural_reply_messages(chosen)[-1]["content"]
     assert memo in wire
     assert past not in wire
+
+
+@pytest.mark.parametrize('lead, focus, tail, action, cues, follow, rejected', [
+    ('', '私は少し寂しかったです。', '', '町内会の封筒を投函した。',
+     {'本人の気持ちの言葉': '少し寂しかったです'},
+     '少し寂しかったことも聞かせてもらえてよかったです。', None),
+    ('器のことを思い出しました。　', '黒い器で見た模様が好きでした。', '\n来月は展示が替わります。', '',
+     {'本人の気持ちの言葉': '好き', '好きだと書いた箇所': '黒い器で見た模様',
+      '本人が書いた好みの時制': '過去'},
+     '今も好きなお気持ちを聞かせてくださって、ありがとうございます。',
+     'initial_observation_preference_time'),
+    ('昼の休みに手帳を開いた。\n', '来週の研修には参加できないと昨日知ったので、私は悲しかったです。', '', '',
+     {'本人の気持ちの言葉': '悲しかったです', '本人が明記した理由': '来週の研修には参加できないと昨日知った',
+      '知った内容': '来週の研修には参加できない', '知った時点': '昨日'},
+     '来週の研修に参加できると聞けたのですね。', 'initial_observation_learned_polarity'),
+    ('机の上を片づけました。', '貸した定規を返してもらえたので、私は嬉しかったです。', '', '',
+     {'本人の気持ちの言葉': '嬉しかったです', '本人が明記した理由': '貸した定規を返してもらえた',
+      '原文での貸し借りと返却': '貸していたものが戻った'},
+     '定規を借りた話を聞かせてくださって、ありがとうございます。', 'initial_observation_loan_direction'),
+    ('机の上を片づけました。', '借りた定規を返せたので、私はほっとしました。', '', '',
+     {'本人の気持ちの言葉': 'ほっとしました', '本人が明記した理由': '借りた定規を返せた',
+      '原文での貸し借りと返却': '借りていたものを返した'},
+     '定規を貸した話を聞かせてくださって、ありがとうございます。', 'initial_observation_loan_direction'),
+    ('友達の日記に「私は悔しかったです。」と書いてあった。', '', '', '', {},
+     '友達の日記について、ここで聞かせてもらえてよかったです。', None),
+])
+def test_current_initial_evidence_projects_only_attested_source_text(
+        natural_case, qdb, monkeypatch, caplog, lead, focus, tail, action, cues, follow, rejected):
+    from cocolon_meaning_experience_engine.grounded_observation_reply import (
+        CONSTRAINED_CANDIDATE_FORMAT, INITIAL_EVIDENCE_CONTEXT_VERSION)
+    from cocolon_meaning_experience_engine.natural_reply import QWEN_9B_NATURAL_ALIAS
+    from ai.tools.serve_emlis_natural_reply import emlis_grounded_output_schema
+
+    user, parent, _, _ = natural_case
+    memo = lead + focus + tail
+    qdb.query('update public.emotions set memo=$2, memo_action=$3 where id=$1', [parent, memo, action])
+    past = None
+    if action:
+        qdb.query("update public.profiles set subscription_tier='plus' where id=$1", [user])
+        past = insert_past(qdb, user, action + focus + '近所の菊が咲いた。')
+    received = []
+
+    def infer(request):
+        wire = json.loads(request.content)
+        received.append(wire)
+        assert wire['candidate_format'] == CONSTRAINED_CANDIDATE_FORMAT
+        assert emlis_grounded_output_schema(wire['messages'])['required'] == ['follow']
+        material = json.loads(wire['messages'][1]['content'])
+        assert material['quote']['text'] == memo
+        assert material['current']['metadata']['category'] == ['仕事']
+        assert {'emotions', 'emotion_details'}.isdisjoint(material['current']['metadata'])
+        assert material['history'] == []
+        if cues:
+            assert material['current']['authored_focus'] == {'本人が書いた一文': focus, **cues}
+        else:
+            assert 'authored_focus' not in material['current']
+        if action:
+            assert action not in wire['messages'][1]['content']
+        return httpx.Response(200, json={'model': QWEN_9B_NATURAL_ALIAS,
+            'candidate_format': CONSTRAINED_CANDIDATE_FORMAT, 'choices': [
+                {'finish_reason': 'stop', 'message': {'role': 'assistant', 'content': json.dumps({'follow': follow})}}]})
+
+    monkeypatch.setenv('COCOLON_EMLIS_GROUNDED_OBSERVATION', 'true')
+    monkeypatch.setenv('COCOLON_EMLIS_GROUNDED_DECODING', 'true')
+    source = SelfHostedNaturalReplySource(endpoint='https://model.invalid/v1/chat/completions',
+        model=QWEN_9B_NATURAL_ALIAS, api_key='synthetic-only', transport=httpx.MockTransport(infer))
+    service = _active_application_owner(monkeypatch, source, None)
+    result = run(service.start(user, parent))
+    saved = run(service.store.read(user, input_id=parent))
+    assert saved['original']['memo_action'] == action and saved['original']['emotions'] == ['平穏']
+    if past:
+        assert past in {guard[0] for guard in saved['thread']['data']['context_guards']}
+    started = next(event['payload'] for event in saved['events']
+                   if event['payload'].get('stage') == 'NATURAL_REPLY_CALL_STARTED')
+    assert started['writer_context_version'] == INITIAL_EVIDENCE_CONTEXT_VERSION
+    assert len(received) == 1
+    if rejected:
+        assert result['state'] == 'RESPONSE_FAILED' and result['current_observation'] is None
+        assert f'reason={rejected}' in caplog.text
+    else:
+        quoted = f'『{memo}』' if '「' in memo else f'「{memo}」'
+        assert result['current_observation']['text'] == f'{quoted}\n\n{follow}'
+        assert run(service.get(user, parent))['current_observation'] == result['current_observation']
+
+
+def test_current_initial_evidence_requires_the_exact_active_source_range():
+    from cocolon_meaning_experience_engine.natural_reply import _active_initial_observation_follow
+
+    original = '温室に入りました。「私は安心しました。」と扉の札にあった。私は安心しました。'
+    focus = {'excerpt': '私は安心しました。'}
+    start = original.rindex(focus['excerpt'])
+    passage = {'field': 'memo', 'text': original, 'source_role': 'ORIGINAL_INPUT'}
+    current = dict(source_id='current', source_role='ORIGINAL_INPUT', field_path='memo',
+                   scalar_start=0, scalar_end=len(original), text=original)
+    assert _active_initial_observation_follow((focus, start), {'active_fields': [current]},
+                                               'current', [passage]) == focus
+    quoted = {**current, 'scalar_end': start, 'text': original[:start]}
+    history = {**current, 'source_id': 'past'}
+    assert _active_initial_observation_follow((focus, start), {'active_fields': [quoted, history]},
+                                               'current', [passage]) is None

@@ -669,6 +669,8 @@ def prepare_natural_reply(request, *, use_meaning_support=False, response_stage=
                           grounded_context_version=grounded_observation_reply.CONTEXT_VERSION,
                           select_grounded_reception=False,
                           select_grounded_self_insight=False,
+                          select_grounded_answer_evidence=False,
+                          select_grounded_initial_evidence=False,
                           direct_feeling_correction_context_version=DIRECT_FEELING_CORRECTION_CONTEXT_VERSION):
     """Return admitted user material and the existing independent Safety result."""
     if response_stage not in _RESPONSE_STAGES:
@@ -792,21 +794,48 @@ def prepare_natural_reply(request, *, use_meaning_support=False, response_stage=
             writer.update(records=records[:1], user_frame_feedback=[])
         latest_answer = material['current_answers'][-1] if material['current_answers'] else None
         passages = grounded_observation_reply.current_passages(records[0], original, latest_answer)
-        focus = _initial_observation_follow(admitted, original, response_stage)
+        initial_self_insight = (
+            select_grounded_self_insight and response_stage == "FINAL" and not grounded_current_only
+            and admitted.original.emotion == '自己理解'
+            and not admitted.answers and not admitted.control.question_control_context.issued_count
+            and not (original.get('memo_action') or '').strip()
+            and len(passages) == len(writer['records']) == 1 and not writer['user_frame_feedback']
+            and passages[0]['field'] == 'memo'
+            and passages[0]['text'] == (original.get('memo') or '').strip())
+        if (select_grounded_initial_evidence
+                and grounded_context_version == grounded_observation_reply.CONSTRAINED_CONTEXT_VERSION
+                and response_stage == 'FINAL' and not grounded_current_only and not initial_self_insight
+                and not admitted.answers and not admitted.control.question_control_context.issued_count):
+            grounded_context_version = grounded_observation_reply.INITIAL_EVIDENCE_CONTEXT_VERSION
+        initial_evidence = grounded_context_version == grounded_observation_reply.INITIAL_EVIDENCE_CONTEXT_VERSION
+        located_focus = _located_initial_observation_follow(admitted, original, response_stage,
+                                                            allow_sentence_line_break=initial_evidence)
+        focus = located_focus[0] if located_focus is not None else None
+        if initial_evidence:
+            focus = _active_initial_observation_follow(located_focus, active, current_id, passages)
         standalone_feeling = (focus is not None and focus['kind'] == '気持ち'
                               and (original.get('memo') or '').strip() == focus['excerpt'])
         if standalone_feeling:
             passages = [row for row in passages if row['field'] == 'memo']
         if passages:
-            initial_self_insight = (
-                select_grounded_self_insight and response_stage == "FINAL" and not grounded_current_only
-                and admitted.original.emotion == '自己理解'
-                and not admitted.answers and not admitted.control.question_control_context.issued_count
-                and not (original.get('memo_action') or '').strip()
-                and passages[0]['field'] == 'memo'
-                and passages[0]['text'] == (original.get('memo') or '').strip())
-            # Select only measured reception scopes with one passage in the current record.
-            if ((select_grounded_reception or initial_self_insight) and len(passages) == 1
+            answer_evidence_context = (
+                grounded_context_version == grounded_observation_reply.ANSWER_EVIDENCE_CONTEXT_VERSION)
+            original_evidence = []
+            if latest_answer is not None and (select_grounded_answer_evidence or answer_evidence_context):
+                original_evidence = _grounded_answer_original_evidence(admitted, active, latest_answer)
+                paid_context = admitted.control.capability_snapshot in {'Q3_PLUS', 'Q3_PREMIUM'}
+                answer_evidence_context = answer_evidence_context or bool(
+                    original_evidence or (paid_context and (histories or feedback)))
+            if answer_evidence_context:
+                grounded_context_version = grounded_observation_reply.ANSWER_EVIDENCE_CONTEXT_VERSION
+                writer.update(records=[{'scope': records[0]['scope'],
+                    'active_fields': [{'text': text} for text in original_evidence]}], user_frame_feedback=[])
+                if history and prepared_meaning is not None:
+                    line = _paid_received_answer_history_line(prepared_meaning,
+                        {record['input_id'] for record in history}, question_id=latest_answer['question_id'])
+                    if line:
+                        writer['history_line'] = line
+            elif (not initial_evidence and (select_grounded_reception or initial_self_insight) and len(passages) == 1
                     and len(writer['records']) == 1 and not writer['user_frame_feedback']
                     and len(material['current_answers']) <= 1):
                 if response_stage == "PRE_QUESTION":
@@ -815,7 +844,7 @@ def prepare_natural_reply(request, *, use_meaning_support=False, response_stage=
                             and grounded_observation_reply.supports_question_preface(passages[0])):
                         grounded_context_version = grounded_observation_reply.QUESTION_PREFACE_CONTEXT_VERSION
                 else:
-                    grounded_context_version = grounded_observation_reply.RECEPTION_CONTEXT_VERSION
+                    grounded_context_version = grounded_observation_reply.EXAMPLE_FREE_RECEPTION_CONTEXT_VERSION
             writer.update(source_context_version=grounded_context_version, grounded_passages=passages)
             if standalone_feeling:
                 # The other column and earlier records cannot supply a
@@ -824,11 +853,15 @@ def prepare_natural_reply(request, *, use_meaning_support=False, response_stage=
                 writer.update(records=[{'scope': records[0]['scope'], 'metadata': records[0]['metadata'],
                     'active_fields': [{'text': focus['excerpt'], 'field_path': 'memo',
                                        'source_role': 'ORIGINAL_INPUT'}]}], user_frame_feedback=[])
-            if response_stage == "REFINED":
+            if response_stage == "REFINED" or answer_evidence_context:
                 writer["ai_question_context"] = latest_answer["ai_question_context"]
             if response_stage != "FINAL":
                 writer['response_purpose'] = material['response_purpose']
-            if focus is not None and any(row['text'] == focus['excerpt'] for row in passages):
+            if initial_evidence and focus is not None:
+                writer['initial_observation_follow'] = focus
+                writer['authored_focus'] = {'本人が書いた一文': focus['excerpt'],
+                    **_initial_follow_material(focus, include_tense=True, include_relations=True)}
+            elif focus is not None and any(row['text'] == focus['excerpt'] for row in passages):
                 writer['initial_observation_follow'] = focus
             return NaturalReplyInput(admitted.source_prefix_ref, _compact_json(material), meaning_profile,
                 _compact_json(writer), _compact_json(active)), safety
@@ -875,7 +908,48 @@ def prepare_natural_reply(request, *, use_meaning_support=False, response_stage=
         _compact_json(writer), _compact_json(active)), safety
 
 
+def _issued_answer_question(admitted, question_id):
+    control = admitted.control.question_control_context
+    questions = control.issued_questions or ((control.pending_question,) if control.pending_question else ())
+    return next((question for question in questions if question.question_id == question_id), None)
+
+
+def _grounded_answer_original_evidence(admitted, active, answer):
+    """Expose the issued question's exact, still-active evidence from this record."""
+    if active['coverage']['active_state'] != 'RESOLVED':
+        return []
+    question = _issued_answer_question(admitted, answer['question_id'])
+    if question is None:
+        return []
+    resolver = admitted.resolver()
+    supporting_ids = set(question.decision.supporting_evidence_refs)
+    original_id = admitted.original.envelope.envelope_id
+    fields = [row for row in active['active_fields'] if row['source_role'] == 'ORIGINAL_INPUT'
+              and row['source_envelope_id'] == original_id]
+    evidence = []
+    for row in resolver.qualified_refs:
+        ref = row.evidence
+        if (ref.evidence_id not in supporting_ids or ref.source_envelope_id != original_id
+                or ref.field_path not in {'memo', 'memo_action'}):
+            continue
+        text = resolver.resolve(row.thread_span_id).raw_text
+        if text in evidence or any(text in value or value in text for value in
+                                   (answer['text'], answer['ai_question_context'])):
+            continue
+        if any(field['field_path'] == ref.field_path
+               and field['scalar_start'] <= ref.scalar_start < ref.scalar_end <= field['scalar_end']
+               and field['text'][ref.scalar_start - field['scalar_start']:
+                                 ref.scalar_end - field['scalar_start']] == text for field in fields):
+            evidence.append(text)
+    return evidence
+
+
 def _initial_observation_follow(admitted, original, response_stage):
+    located = _located_initial_observation_follow(admitted, original, response_stage)
+    return located[0] if located is not None else None
+
+
+def _located_initial_observation_follow(admitted, original, response_stage, *, allow_sentence_line_break=False):
     """Use a single supported present-record focus, preserving its literal form."""
     from emlis_ai_grounded_observation_plan import _top_level_text
 
@@ -892,11 +966,13 @@ def _initial_observation_follow(admitted, original, response_stage):
             return None
         ends = [match.end() for match in re.finditer(r'[。！？\n]+', visible)]
         for start, end in zip([0, *ends], [*ends, len(text)]):
-            if _INITIAL_FEELING_ENDING.search(visible[start:end]):
-                passages.append((field, text[start:end].strip()))
+            candidate = visible[start:end]
+            if _INITIAL_FEELING_ENDING.search(candidate.rstrip() if allow_sentence_line_break else candidate):
+                part = text[start:end]
+                passages.append((field, part.strip(), start + len(part) - len(part.lstrip())))
     if len(passages) != 1 or passages[0][0] != 'memo':
         return None
-    excerpt = passages[0][1]
+    _, excerpt, start = passages[0]
     if (not 0 < len(excerpt) <= 240
             or any(mark in excerpt for mark in ('？', '?', '<', '>', '`'))
             or any(mark in excerpt for pair in _DIRECT_FEELING_QUOTE_MARKS for mark in pair)):
@@ -911,7 +987,23 @@ def _initial_observation_follow(admitted, original, response_stage):
         if (anchor and any(join in anchor for join in ('けど', 'けれど', 'のに', '一方'))
                 or kind == '対象' and not match['speaker'] and 'は' in anchor):
             return None
-        return {'excerpt': excerpt, 'kind': kind, 'feeling': match['feeling'], 'anchor': anchor}
+        return {'excerpt': excerpt, 'kind': kind, 'feeling': match['feeling'], 'anchor': anchor}, start
+    return None
+
+
+def _active_initial_observation_follow(located, active, current_id, passages):
+    if located is None:
+        return None
+    focus, start = located
+    excerpt = focus['excerpt']
+    end = start + len(excerpt)
+    in_active_memo = any(
+        field['source_id'] == current_id and field['source_role'] == 'ORIGINAL_INPUT'
+        and field['field_path'] == 'memo' and field['scalar_start'] <= start and end <= field['scalar_end']
+        and field['text'][start - field['scalar_start']:end - field['scalar_start']] == excerpt
+        for field in active['active_fields'])
+    if in_active_memo and any(row['field'] == 'memo' and excerpt in row['text'] for row in passages):
+        return focus
     return None
 
 
@@ -951,6 +1043,25 @@ def _initial_reason_relations(anchor):
     learned = _INITIAL_LEARNED_REASON.fullmatch(anchor)
     loan = _INITIAL_RETURN_LOAN.fullmatch(anchor)
     return learned, loan
+
+
+def _initial_follow_material(focus, *, include_tense, include_relations):
+    material = {'本人の気持ちの言葉': focus['feeling']}
+    if focus['anchor']:
+        material[{'対象': '好きだと書いた箇所', '理由': '本人が明記した理由',
+                  '場面': '本人が書いた場面'}[focus['kind']]] = focus['anchor']
+    if include_tense and focus['kind'] == '対象':
+        material['本人が書いた好みの時制'] = '過去' if _initial_preference_is_past(focus) else '現在'
+    if include_relations and focus['kind'] == '理由':
+        learned, loan = _initial_reason_relations(focus['anchor'])
+        if learned:
+            material['知った内容'] = learned['known']
+            if learned['when']:
+                material['知った時点'] = learned['when']
+        if loan:
+            material['原文での貸し借りと返却'] = ('貸していたものが戻った' if loan['lent']
+                                                 else '借りていたものを返した')
+    return material
 
 
 def _validate_initial_grounded_follow(text, focus):
@@ -1034,7 +1145,7 @@ def _bound_feeling_dialogue(admitted, material, prepared_meaning, response_stage
         'Emlisが聞いた問い': answer['ai_question_context'], '本人の回答': answer['text']}
 
 
-def _paid_received_answer_history_line(prepared, safe_input_ids):
+def _paid_received_answer_history_line(prepared, safe_input_ids, *, question_id=None):
     """Render a separate, verified comparison of independently owned records."""
     from emlis_ai_grounded_observation_gate import evaluate_emlis_history_line_inverse
     from emlis_ai_grounded_sentence_surface import realize_emlis_history_line
@@ -1047,7 +1158,10 @@ def _paid_received_answer_history_line(prepared, safe_input_ids):
     prepared = replace(prepared, thread=replace(prepared.thread,
         control=replace(control, admitted_history=allowed_history)))
     try:
-        question = control.question_control_context.pending_question
+        question = (_issued_answer_question(prepared.thread, question_id) if question_id is not None
+                    else control.question_control_context.pending_question)
+        if question is None:
+            return None
         line_plan = history_line_plan(prepared, build_updated_grounded_plan(prepared),
                                      current_nucleus_ids=question.decision.affected_meaning_refs)
         if line_plan is not None:
@@ -1293,7 +1407,7 @@ def _has_changed_direct_feeling_quote(text, excerpt):
     return any(mark in text for pair in _DIRECT_FEELING_QUOTE_MARKS for mark in pair)
 
 
-def validate_reply(reply, request, *, check_grounded_answer=False):
+def validate_reply(reply, request, *, check_grounded_answer=False, allow_verified_history=False):
     if (type(reply) is not NaturalReply or reply.schema_version != ARTIFACT_SCHEMA
             or reply.source_prefix_ref != request.source_prefix_ref
             or not isinstance(reply.model, str) or not reply.model.strip()):
@@ -1316,7 +1430,11 @@ def validate_reply(reply, request, *, check_grounded_answer=False):
         from .natural_reply_meaning import compare_reply_meaning
 
         try:
-            follow = grounded_observation_reply.read_reply(reply.text, writer)
+            grounded_text = reply.text
+            if (allow_verified_history and context_version == grounded_observation_reply.ANSWER_EVIDENCE_CONTEXT_VERSION
+                    and writer.get('history_line')):
+                grounded_text = grounded_text.removesuffix('\n\n' + writer['history_line'])
+            follow = grounded_observation_reply.read_reply(grounded_text, writer)
         except ValueError as exc:
             raise _NaturalReplyValidationError(str(exc)) from None
         focus = writer.get('initial_observation_follow')
@@ -1392,29 +1510,17 @@ def build_natural_reply_messages(request, *, correction_target_context=False):
             return grounded_observation_reply.messages(writer)
         if context_version in INITIAL_OBSERVATION_FOLLOW_CONTEXT_VERSIONS:
             focus = writer['initial_observation_follow']
-            material = {'本人の気持ちの言葉': focus['feeling']}
-            if focus['anchor']:
-                material[{'対象': '好きだと書いた箇所', '理由': '本人が明記した理由',
-                          '場面': '本人が書いた場面'}[focus['kind']]] = focus['anchor']
+            material = _initial_follow_material(focus,
+                include_tense=context_version != LEGACY_INITIAL_OBSERVATION_FOLLOW_CONTEXT_VERSION,
+                include_relations=context_version not in {LEGACY_INITIAL_OBSERVATION_FOLLOW_CONTEXT_VERSION,
+                                                          PRIOR_INITIAL_OBSERVATION_FOLLOW_CONTEXT_VERSION})
             if context_version == LEGACY_INITIAL_OBSERVATION_FOLLOW_CONTEXT_VERSION:
                 material = {'本人の原文': focus['excerpt'], **material}
                 instructions = _INITIAL_OBSERVATION_FOLLOW_MESSAGE + '\n' + _INITIAL_OBSERVATION_FOLLOW_GUIDANCE[focus['kind']]
             else:
-                if focus['kind'] == '対象':
-                    material['本人が書いた好みの時制'] = '過去' if _initial_preference_is_past(focus) else '現在'
                 if context_version == PRIOR_INITIAL_OBSERVATION_FOLLOW_CONTEXT_VERSION:
                     instructions = _INITIAL_LISTENER_MESSAGE + '\n' + _INITIAL_LISTENER_GUIDANCE[focus['kind']]
                 else:
-                    learned = None
-                    if focus['kind'] == '理由':
-                        learned, loan = _initial_reason_relations(focus['anchor'])
-                        if learned:
-                            material['知った内容'] = learned['known']
-                            if learned['when']:
-                                material['知った時点'] = learned['when']
-                        if loan:
-                            material['原文での貸し借りと返却'] = ('貸していたものが戻った' if loan['lent']
-                                                                     else '借りていたものを返した')
                     if context_version == GROUNDED_INITIAL_OBSERVATION_FOLLOW_CONTEXT_VERSION:
                         instructions = _INITIAL_GROUNDED_LISTENER_MESSAGE + '\n' + _INITIAL_GROUNDED_LISTENER_GUIDANCE[focus['kind']]
                     elif context_version == CONTEXTUAL_INITIAL_OBSERVATION_FOLLOW_CONTEXT_VERSION:
@@ -1423,7 +1529,7 @@ def build_natural_reply_messages(request, *, correction_target_context=False):
                         material = {'本人が書いた一文': focus['excerpt'], **material}
                         instructions = _INITIAL_READER_RESPONSE_MESSAGE + '\n' + _INITIAL_READER_RESPONSE_GUIDANCE[focus['kind']]
                     else:
-                        example = '知った理由' if learned else focus['kind']
+                        example = '知った理由' if '知った内容' in material else focus['kind']
                         instructions = _INITIAL_FOCUSED_RECEPTION_MESSAGE + '\n' + _INITIAL_FOCUSED_RECEPTION_GUIDANCE[example]
             return [{'role': 'system', 'content': instructions},
                     {'role': 'user', 'content': _compact_json(material)}]

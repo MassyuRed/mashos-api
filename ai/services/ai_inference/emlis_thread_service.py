@@ -1064,8 +1064,12 @@ class EmlisThreadService:
             else grounded_observation_reply.CONTEXT_VERSION)
         select_grounded_reception = (prior is None and self.grounded_decoding_enabled
             and (response_stage in {"PRE_QUESTION", "REFINED"} or t["data"].get("natural_question_stop") == "skip"))
+        # A grounded receipt pins its renderer, not a new context-update mode.
+        # Rebuild using the flag that determined the first writer's source view.
+        bind_writer_context = (t["data"].get("natural_context_update_enabled") is True
+                               if grounded_observation else context_version is not None)
         material, safety = prepare_natural_reply(_request(snapshot), response_stage=response_stage,
-            bind_writer_context=context_version is not None,
+            bind_writer_context=bind_writer_context,
             include_corrected_circumstance=context_version == CORRECTED_SOURCE_CONTEXT_VERSION,
             include_received_answer=context_version in {RECEIVED_ANSWER_CONTEXT_VERSION,
                                                         PAID_RECEIVED_ANSWER_CONTEXT_VERSION},
@@ -1082,6 +1086,8 @@ class EmlisThreadService:
             grounded_current_only=bool(t["data"].get("natural_question_stop")
                                        and not t.get("latest_answer_event_id")),
             select_grounded_self_insight=(prior is None and self.grounded_decoding_enabled),
+            select_grounded_answer_evidence=(prior is None and self.grounded_decoding_enabled),
+            select_grounded_initial_evidence=(prior is None and self.grounded_decoding_enabled),
             direct_feeling_correction_context_version=direct_version,
             prepared_meaning=prepared_meaning,
             meaning_profile=t['data'].get('natural_meaning_profile'), owner_scope=user_id,
@@ -1109,14 +1115,16 @@ class EmlisThreadService:
 
         def with_history(reply):
             try:
-                return validate_reply(replace(reply, text=f'{reply.text}\n\n{history_line}'), material)
+                return validate_reply(replace(reply, text=f'{reply.text}\n\n{history_line}'), material,
+                                      allow_verified_history=True)
             except NaturalReplyError:
                 # Keep the current reply if the optional paragraph cannot fit.
                 return reply
 
         if received:
             check_writer_identity(received)
-            candidate = validate_reply(NaturalReply(**received["payload"]["reply"]), material)
+            candidate = validate_reply(NaturalReply(**received["payload"]["reply"]), material,
+                                       allow_verified_history=True)
             if history_line:
                 provider_reply = replace(candidate, text=received['payload'].get('provider_reply_text'))
                 if with_history(validate_reply(provider_reply, material)) != candidate:
