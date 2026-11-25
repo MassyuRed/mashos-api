@@ -1281,7 +1281,7 @@ def preserve_initial_past_preference(reply, request):
                                                  'user_frame_feedback', 'interpretation_corrections'))):
         return reply
     memo = (original.get('memo') or '').strip().removesuffix('。')
-    if (_top_level_text(memo) != memo or re.search(r'[。．.!！?？]', memo)
+    if (not 0 < len(memo) <= 240 or _top_level_text(memo) != memo or re.search(r'[。．.!！?？]', memo)
             or any(mark in memo for pair in _DIRECT_FEELING_QUOTE_MARKS for mark in pair)):
         return reply
     source = _INITIAL_PREFERENCE.fullmatch(memo)
