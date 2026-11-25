@@ -321,12 +321,13 @@ def test_opt_in_semantic_reader_checks_only_supported_claims_without_changing_ol
         assert grounded.read_reply(composed, {**writer, 'source_context_version': version}) == follow
 
 
+@pytest.mark.parametrize('version', [grounded.SEMANTIC_CONTEXT_VERSION, grounded.EVIDENCE_CONTEXT_VERSION])
 @pytest.mark.parametrize(('tier', 'related', 'action'), [
     ('plus', True, '会議で発表した。'), ('premium', True, '会議で発表した。'),
     ('plus', False, '会議で発表した。'), ('plus', True, ''),
 ])
-def test_v5_answer_uses_current_sources_and_replays_verified_paid_history(
-        natural_case, qdb, monkeypatch, tier, related, action):
+def test_grounded_answer_uses_current_sources_and_replays_verified_paid_history(
+        natural_case, qdb, monkeypatch, tier, related, action, version):
     from test_emlis_natural_frames_application import REVISION, _case, _past
 
     user, parent, _, _, past, _ = _case(natural_case, qdb, tier=tier, history=related)
@@ -375,6 +376,8 @@ def test_v5_answer_uses_current_sources_and_replays_verified_paid_history(
             idempotency_key='revise-past-frame'))
     monkeypatch.setenv('COCOLON_EMLIS_GROUNDED_DECODING', 'true')
     monkeypatch.setenv('COCOLON_EMLIS_GROUNDED_SEMANTICS', 'true')
+    monkeypatch.setenv('COCOLON_EMLIS_GROUNDED_EVIDENCE_VALIDATION',
+                       'true' if version == grounded.EVIDENCE_CONTEXT_VERSION else '')
     service = _active_application_owner(monkeypatch, source, 'paid')
     failed = False
 
@@ -392,7 +395,7 @@ def test_v5_answer_uses_current_sources_and_replays_verified_paid_history(
     receipt, = [e['payload'] for e in before['events']
                 if e['payload'].get('stage') == 'NATURAL_REPLY_RECEIVED'
                 and e['operation_id'] == interruption['operation_id']]
-    assert receipt['writer_context_version'] == grounded.SEMANTIC_CONTEXT_VERSION
+    assert receipt['writer_context_version'] == version
     assert ('writer_history_sha256' in receipt) is related
     current = f'「その時は怖かった。」\n\n{follow}'
     if related:
@@ -402,6 +405,7 @@ def test_v5_answer_uses_current_sources_and_replays_verified_paid_history(
         assert receipt['reply']['text'] == current
 
     monkeypatch.delenv('COCOLON_EMLIS_GROUNDED_SEMANTICS')
+    monkeypatch.delenv('COCOLON_EMLIS_GROUNDED_EVIDENCE_VALIDATION')
     reopened = _active_application_owner(monkeypatch, source, 'paid')
     saved = run(reopened.action(user, interruption['thread_id'], action='retry_response',
         expected_revision=interruption['revision'], idempotency_key='save-received-reply',
