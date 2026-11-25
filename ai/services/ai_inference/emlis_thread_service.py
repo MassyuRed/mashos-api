@@ -1116,7 +1116,14 @@ class EmlisThreadService:
             self._require_write()
             try:
                 candidate = validate_reply(await asyncio.wait_for(self.natural_reply_source(material),
-                    timeout=min(240.0, remaining)), material)
+                    timeout=min(240.0, remaining)), material,
+                    check_initial_availability=(response_stage == 'FINAL' and not t['issued_count']
+                                                and not t['data'].get('natural_question_stop')))
+                if t.get("latest_answer_event_id") and material.analysis_material_json:
+                    answer_review = compare_reply_meaning(material.material_json, candidate.text,
+                        material.source_prefix_ref, active_answer_analysis=json.loads(material.analysis_material_json))
+                    if answer_review.verdict == "CONFLICT":
+                        raise NaturalReplyError("natural_reply_current_answer_conflict")
             except asyncio.CancelledError:
                 raise
             except Exception:

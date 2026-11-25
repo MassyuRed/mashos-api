@@ -122,6 +122,38 @@ def test_one_real_bound_question_answer_update_and_saved_natural_reread(natural_
     assert len(calls) == 2
 
 
+@pytest.mark.parametrize(('reply', 'accepted'), [
+    ('あなたは資料を書かなかったのですね。', True),
+    ('あなたは資料を書いたのですね。', False),
+])
+def test_fresh_natural_reply_preserves_the_current_written_answer(natural_questions, monkeypatch, reply, accepted):
+    user, parent, _, _ = natural_questions()
+    written = '私は資料を書かなかった。'
+    calls = []
+
+    async def provider(material):
+        data = json.loads(material.material_json)
+        calls.append(data)
+        text = reply if data['current_answers'] else ACK
+        return NaturalReply(text, 'synthetic-single-provider', material.source_prefix_ref)
+
+    owner = _active_application_owner(monkeypatch, provider, 'paid')
+    initial = run(owner.start(user, parent))
+    result = run(answer(owner, user, initial, written))
+
+    assert result['answer_saved']
+    assert result['state'] == ('COMPLETED' if accepted else 'RESPONSE_FAILED')
+    assert bool(result['current_observation']) is accepted
+    snapshot = run(owner.store.read(user, input_id=parent))
+    answer_event, = [event for event in snapshot['events'] if event['kind'] == 'ANSWER']
+    assert answer_event['question_id'] == initial['pending_question']['question_id']
+    assert answer_event['payload']['source']['answer_text_private'] == written
+    assert calls[1]['current_answers'][0]['text'] == written
+    reread = run(owner.get(user, parent))
+    assert reread['current_observation'] == result['current_observation']
+    assert reread['revision'] == result['revision'] and len(calls) == 2
+
+
 def test_underspecified_feeling_gets_one_bound_question_and_an_event_answer(natural_questions):
     from cocolon_meaning_experience_engine.emlis_answer_update import (
         build_updated_grounded_plan, prepare_emlis_meaning,

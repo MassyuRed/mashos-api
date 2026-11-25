@@ -154,6 +154,14 @@ _INITIAL_SCENE = re.compile(
 _INITIAL_BARE_FEELING = re.compile(
     rf"(?:{_INITIAL_SELF_TOPIC})?(?P<feeling>(?:(?:少し|少しだけ|ちょっと|とても|本当に|すごく)\s*)?(?:{_INITIAL_FEELING}))")
 _INITIAL_FEELING_ENDING = re.compile(rf"(?:大?好き(?:だ|です|でした|だった)|{_INITIAL_FEELING})\s*[。！？]*\Z")
+_INITIAL_NOTICE_WITH_FEELING = re.compile(
+    rf"(?P<notice>[^。！？\r\n]{{1,172}})[、，,]\s*{_INITIAL_SELF_TOPIC}{_INITIAL_FEELING}")
+_FOLLOW_AVAILABILITY = re.compile(
+    r"(?:使え|(?:利用|使用)(?:が)?でき)(?P<verdict>なかった|なく|ない|ません|る(?!とは|か|わけでは)|た(?!ら|り)|ます(?!か))")
+_FOLLOW_AVAILABILITY_CHANGE = re.compile(
+    r"(?:制限|規制|禁止)[^。！？\n]{0,12}(?:解除|廃止|外れ|なくな[っり])"
+    r"|解禁(?:された|になっ|になり)|(?:利用|使用)許可が(?:下り|降り|取り消)"
+    r"|(?:使え|(?:利用|使用)(?:が)?でき)(?:るようにな[っり]|なくな[っり])")
 _INITIAL_FOLLOW_OWN_VOICE = re.compile(
     r"(?:^|[。．.!！、，,\n])[ \t]*(?:私|わたし|僕|ぼく|俺|おれ)(?:は|も|が)")
 _INITIAL_FOLLOW_FALSE_WITNESS = re.compile(
@@ -1194,7 +1202,33 @@ def _has_changed_direct_feeling_quote(text, excerpt):
     return any(mark in text for pair in _DIRECT_FEELING_QUOTE_MARKS for mark in pair)
 
 
-def validate_reply(reply, request):
+def _validate_initial_availability_reply(text, material, writer):
+    from .natural_reply_cognition import read_reported_availability
+
+    if any(material.get(key) for key in (
+            'current_answers', 'past_user_records', 'user_frame_feedback', 'interpretation_corrections')):
+        return
+    original = material['current']
+    if (original.get('memo_action') or '').strip():
+        return
+    memo = (original.get('memo') or '').strip()
+    match = _INITIAL_NOTICE_WITH_FEELING.fullmatch(memo.removesuffix('。'))
+    notice = read_reported_availability(match['notice']) if match is not None else None
+    if notice is None:
+        return
+    # The current follow writer prepends this already-validated literal source.
+    focus = writer.get('initial_observation_follow')
+    if focus is not None:
+        text = text.removeprefix(f"「{focus['excerpt']}」\n\n")
+    if _FOLLOW_AVAILABILITY_CHANGE.search(text):
+        raise _NaturalReplyValidationError('initial_observation_unwritten_availability_change')
+    known_unavailable = notice.endswith('ない')
+    for claim in _FOLLOW_AVAILABILITY.finditer(text):
+        if (claim['verdict'] in {'なかった', 'なく', 'ない', 'ません'}) != known_unavailable:
+            raise _NaturalReplyValidationError('initial_observation_availability_polarity')
+
+
+def validate_reply(reply, request, *, check_initial_availability=False):
     if (type(reply) is not NaturalReply or reply.schema_version != ARTIFACT_SCHEMA
             or reply.source_prefix_ref != request.source_prefix_ref
             or not isinstance(reply.model, str) or not reply.model.strip()):
@@ -1243,6 +1277,8 @@ def validate_reply(reply, request):
             raise _NaturalReplyValidationError("initial_feeling_source")
         if _has_first_person_feeling_declaration(reply.text):
             raise _NaturalReplyValidationError("initial_feeling_first_person")
+    if check_initial_availability:
+        _validate_initial_availability_reply(reply.text, json.loads(request.material_json), writer)
     return reply
 
 
