@@ -437,14 +437,21 @@ def _answer_meaning_material(prepared, admitted, *, include_active_relations=Fal
     Source leaves are read through the existing qualified locator, never from
     the preceding AI reply. The supplied object is internal, not public input.
     """
-    from .emlis_answer_update import PreparedEmlisMeaning
+    from .emlis_answer_update import PreparedEmlisMeaning, q3_answer_prefix_control
+    expected_control = replace(admitted.control, prepared_meaning_checkpoint_ref=None)
+    questions = expected_control.question_control_context
+    if (admitted.answers and expected_control.capability_snapshot.startswith("Q3_")
+            and len(questions.issued_questions) > len(admitted.answers)):
+        # Closing a later unanswered question leaves the answer owner's
+        # meaning bound to the last question the person actually answered.
+        expected_control = q3_answer_prefix_control(expected_control, len(admitted.answers))
     if (type(prepared) is not PreparedEmlisMeaning or not admitted.answers
             or prepared.thread.original != admitted.original
             or prepared.thread.answers != admitted.answers
             or prepared.thread.source_prefix_ref != admitted.source_prefix_ref
             or prepared.checkpoint.source_prefix_ref != admitted.source_prefix_ref
             or replace(prepared.thread.control, prepared_meaning_checkpoint_ref=None)
-                != replace(admitted.control, prepared_meaning_checkpoint_ref=None)):
+                != expected_control):
         raise NaturalReplyError('natural_reply_answer_meaning_binding_invalid')
     checkpoint = prepared.checkpoint
     update = checkpoint.answer_update
@@ -1512,7 +1519,7 @@ class SelfHostedNaturalReplySource:
                 request, correction_target_context=self._correction_target_context),
                 "temperature": 0, "max_tokens": 2048, "stream": False,
                 "chat_template_kwargs": {"enable_thinking": False}}
-            if context_version == grounded_observation_reply.CONSTRAINED_CONTEXT_VERSION:
+            if context_version in grounded_observation_reply.CONSTRAINED_CONTEXT_VERSIONS:
                 if self.model != QWEN_9B_NATURAL_ALIAS:
                     raise NaturalReplyError("natural_reply_provider_contract")
                 payload["candidate_format"] = grounded_observation_reply.CONSTRAINED_CANDIDATE_FORMAT

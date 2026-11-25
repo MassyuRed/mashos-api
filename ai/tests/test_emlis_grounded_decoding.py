@@ -25,13 +25,13 @@ MEMO = '紙の見本帳にあった細い青い縞が好きでした。'
 FOLLOW = '青い縞に目を留めたお話を分けてくださって、Emlisは嬉しいです。'
 
 
-def _messages(*, multi=False):
+def _messages(*, multi=False, context_version=None):
     passages = [{'id': 'P1', 'text': MEMO, 'field': 'memo', 'source_role': 'ORIGINAL_INPUT'}]
     if multi:
         passages.append({'id': 'P2', 'text': '受付で見本帳を返しました。', 'field': 'memo_action',
                          'source_role': 'ORIGINAL_INPUT'})
     return grounded.messages({'records': [{'scope': 'CURRENT_INPUT'}], 'grounded_passages': passages,
-                              'user_frame_feedback': []})
+                              'user_frame_feedback': [], 'source_context_version': context_version})
 
 
 def _accepts(messages, text):
@@ -60,6 +60,16 @@ def test_pinned_parser_requires_the_exact_reply_envelope_and_list_limits():
     # The receiver still independently rejects embedded quotes and duplicate IDs.
     assert _accepts(bound, '{"follow":"「引用」"}')
     assert _accepts(multi, '{"passages":["P1","P1"],"follow":"返事"}')
+
+
+@pytest.mark.parametrize('multi', [False, True])
+def test_reception_prompt_keeps_v4_source_material_and_decoder_schema(multi):
+    legacy = _messages(multi=multi, context_version=grounded.CONSTRAINED_CONTEXT_VERSION)
+    candidate = _messages(multi=multi, context_version=grounded.RECEPTION_CONTEXT_VERSION)
+    assert legacy == _messages(multi=multi, context_version=grounded.CONTEXT_VERSION)
+    assert candidate[0] != legacy[0]
+    assert candidate[1:] == legacy[1:]
+    assert probe.emlis_grounded_output_schema(candidate) == probe.emlis_grounded_output_schema(legacy)
 
 
 @pytest.mark.parametrize('multi', [False, True])
@@ -146,7 +156,7 @@ def test_authenticated_marker_is_distinct_from_ordinary_natural_piece_and_analys
 
 
 @pytest.mark.parametrize('constrained', [False, True])
-def test_v3_and_v4_receipts_keep_their_exact_messages_when_flag_changes(
+def test_grounded_receipts_keep_their_exact_messages_when_flag_changes(
         natural_case, qdb, monkeypatch, constrained):
     user, parent, _, _ = natural_case
     qdb.query("update public.emotions set memo=$2,memo_action='' where id=$1", [parent, MEMO])
@@ -183,7 +193,7 @@ def test_v3_and_v4_receipts_keep_their_exact_messages_when_flag_changes(
     receipt = next(event['payload'] for event in before['events']
                    if event['payload'].get('stage') == 'NATURAL_REPLY_RECEIVED')
     assert receipt['writer_context_version'] == (
-        grounded.CONSTRAINED_CONTEXT_VERSION if constrained else grounded.CONTEXT_VERSION)
+        grounded.RECEPTION_CONTEXT_VERSION if constrained else grounded.CONTEXT_VERSION)
 
     monkeypatch.setenv("COCOLON_EMLIS_GROUNDED_DECODING", "" if constrained else "true")
     restarted = _active_application_owner(monkeypatch, source, None)
@@ -201,7 +211,8 @@ def _messages_for_same_current_record(payload):
     writer = {'records': [material['current']], 'user_frame_feedback': [],
               'grounded_passages': [{'id': 'P1', 'text': MEMO, 'field': 'memo',
                                     'source_role': 'ORIGINAL_INPUT'}],
-              'source_context_version': grounded.CONTEXT_VERSION}
+              'source_context_version': (grounded.RECEPTION_CONTEXT_VERSION if 'candidate_format' in payload
+                                         else grounded.CONTEXT_VERSION)}
     return grounded.messages(writer)
 
 

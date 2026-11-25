@@ -319,6 +319,35 @@ def test_skip_finishes_with_new_final_reply_and_replay_never_reacquires(natural_
     assert saved['thread']['data']['natural_question_stop'] == 'skip'
 
 
+@pytest.mark.parametrize('answered_count', (1, 2))
+def test_skipping_later_question_keeps_only_the_actual_answers(natural_questions, answered_count):
+    user, parent, service, calls = natural_questions(tier='premium', memo=THREE)
+    dto = run(service.start(user, parent))
+    expected_answers = []
+    for index, text in enumerate(('その時は重かった。', 'その時は怖かった。')[:answered_count], 1):
+        question = dto['pending_question']
+        expected_answers.append((question['question_id'], text, question['text']))
+        dto = run(answer(service, user, dto, text, f'answer-{index}'))
+        assert dto['state'] == 'AWAITING_CONTINUE' and len(calls) == index + 1
+        dto = run(service.action(user, dto['thread_id'], action='continue',
+            expected_revision=dto['revision'], idempotency_key=f'continue-{index}'))
+
+    skipped = dto['pending_question']
+    assert skipped['question_id'] not in {question_id for question_id, _, _ in expected_answers}
+    done = run(service.action(user, dto['thread_id'], action='skip',
+        question_id=skipped['question_id'], expected_revision=dto['revision'], idempotency_key='skip-later'))
+    assert done['state'] == 'COMPLETED' and done['pending_question'] is None
+    assert done['body_state'] == 'REFINED' and done['current_observation']['text'] == FINAL
+    assert [(item['question_id'], item['text'], item['ai_question_context'])
+        for item in calls[-1]['current_answers']] == expected_answers
+
+    saved = run(service.get(user, parent))
+    assert saved['current_observation'] == done['current_observation']
+    assert saved['revision'] == done['revision'] and len(calls) == answered_count + 2
+    assert [event['question_id'] for event in saved['timeline'] if event['kind'] == 'ANSWER'] == [
+        question_id for question_id, _, _ in expected_answers]
+
+
 def test_stop_after_answer_preserves_current_complete_reply_without_extra_generation(natural_questions):
     user, parent, service, calls = natural_questions(memo=THREE)
     initial = run(service.start(user, parent))

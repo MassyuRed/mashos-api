@@ -1060,7 +1060,7 @@ class EmlisThreadService:
             prior is None and self.grounded_observation_enabled
             and getattr(self.natural_reply_source, 'model', None) == QWEN_9B_NATURAL_ALIAS)
         grounded_version = (context_version if context_version in grounded_observation_reply.CONTEXT_VERSIONS
-            else grounded_observation_reply.CONSTRAINED_CONTEXT_VERSION if self.grounded_decoding_enabled
+            else grounded_observation_reply.RECEPTION_CONTEXT_VERSION if self.grounded_decoding_enabled
             else grounded_observation_reply.CONTEXT_VERSION)
         material, safety = prepare_natural_reply(_request(snapshot), response_stage=response_stage,
             bind_writer_context=context_version is not None,
