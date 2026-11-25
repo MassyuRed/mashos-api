@@ -222,3 +222,105 @@ def test_plan_change_keeps_original_and_drops_old_paid_derivative(handoff_case, 
         with pytest.raises(AnalysisSourceError, match='analysis_emlis_material_binding_invalid'):
             admission.admit_saved_emlis_analysis_material(raw, owner_scope=user, tier='free',
                 as_of=snapshot['now'])
+
+
+@pytest.mark.parametrize('with_correction',[False,True])
+def test_current_map_and_monthly_capture_keep_id_as_paid_emlis_context_changes(handoff_case, with_correction):
+    db, rpc, user, parent, service, calls = handoff_case
+    for name in (
+        '20261114120000_analysis_if_route_artifacts.sql',
+        '20261114132000_analysis_map_interpretation_corrections.sql',
+        '20261114133000_analysis_map_correction_handoff.sql',
+        '20261121132000_deep_insight_questions.sql',
+        '20261121133000_analysis_deep_insight_answer_handoff.sql',
+        '20261121134000_deep_insight_grounded_questions.sql',
+        '20261122145000_deep_insight_effective_emlis_corrections.sql',
+        '20261125184500_analysis_scoped_map_correction.sql',
+    ):
+        sql_script(db, name)
+
+    def tier(name):
+        assert 'code' not in db.query('update public.profiles set subscription_tier=$1 where id=$2', [name, user])
+
+    def snapshot():
+        return run(rpc('analysis_cumulative_source_snapshot', {'p_user_id':user}))
+
+    def current_material(snap):
+        return next(row for row in snap['members'] if row['original']['id'] == parent)
+
+    tier('premium')
+    prior = str(uuid4())
+    assert 'code' not in db.query("insert into public.emotions values ($1,$2,(now()-interval '3 months')"
+        " at time zone 'UTC','私は仕事を続けたい。','',array['仕事'],array['平穏'],$3)",
+        [prior,user,json.dumps([dict(type='平穏',strength='medium')])])
+    assert run(service.start(user,parent))['current_observation']['text'] == BODY
+    legacy_snapshot = snapshot()
+    assert current_material(legacy_snapshot)['context']['history']
+    original_month_id = None
+    if with_correction:
+        from test_analysis_semantic_map import response
+        prepared = semantic.prepare_semantic_map(user,legacy_snapshot)
+        field = next(f for f in json.loads(prepared.material_json)['fields']
+            if f['record'] == 2 and '仕事を続けたい' in f['text'])
+        shape = packet(field['field'],'私は仕事を続けたい')
+        shape['nodes'][0].update(title='仕事を続けたい', summary='仕事を続けたいと書かれています。',
+            explanation='この記述を、この入力で本人が示した希望として読みます。')
+        artifact,coverage = semantic.build_semantic_map(prepared,response(prepared,shape))
+        projection = artifact.safe_projection(authenticated_owner_scope=user)
+        private = artifact.private_evidence()
+        private.update(coverage=coverage,source_record_refs=[prior,parent])
+        original_month_id = run(rpc('analysis_cumulative_commit', dict(p_user_id=user,
+            p_guard=legacy_snapshot['guard'],p_artifact_id=artifact.artifact_id,
+            p_private_evidence=private,p_projection=projection,
+            p_text=artifact.safe_text_projection(authenticated_owner_scope=user)['text'],
+            p_start=legacy_snapshot['period_start'],p_end=legacy_snapshot['period_end'])))
+        correction = run(rpc('analysis_map_correction_submit', dict(p_user_id=user,
+            p_artifact_ref=projection['projection_of'],p_kind='node',p_ref='n1',p_field='summary',
+            p_target_text=shape['nodes'][0]['summary'],p_explanation='その時に限った希望です。',
+            p_idempotency_key='legacy-correction')))
+        assert correction['source_state'] == 'ACTIVE'
+        legacy_snapshot = snapshot()
+    original = run(cumulative.ensure_map(user))
+    report_id = original['report_id']
+    assert report_id
+    original_month_id = original_month_id or report_id
+    old_read, = run(cumulative.read_maps(user, limit=1))['items']
+    base_ref = old_read['content_json']['watashiMap']['projection_of']
+    old_insight = run(rpc('deep_insight_material', {'p_user_id':user}))['map']
+    assert old_insight['id'] == report_id
+    tier('free')
+    assert not current_material(snapshot())['context']['history']
+    assert snapshot()['guard'] != legacy_snapshot['guard']
+    if with_correction:
+        assert snapshot()['map_corrections'][0]['source_state'] == 'STALE'
+    assert not run(cumulative.read_maps(user, limit=1))['items']
+    tier('premium')
+    assert snapshot()['guard'] == legacy_snapshot['guard']
+
+    sql_script(db, '20261125191500_analysis_plan_independent_map_identity.sql')
+    saved_guard = snapshot()['guard']
+    assert saved_guard != legacy_snapshot['guard']
+    for upgraded_to in ('free','plus','premium','free'):
+        tier(upgraded_to)
+        assert snapshot()['guard'] == saved_guard
+        if with_correction:
+            assert snapshot()['map_corrections'][0]['source_state'] == 'ACTIVE'
+        result = run(cumulative.read_maps(user, limit=1))
+        assert result['subscription_tier'] == upgraded_to
+        assert result['items'] == [old_read]
+        assert run(cumulative.ensure_map(user))['report_id'] == report_id
+        assert run(cumulative.ensure_map(user, monthly=True))['report_id'] == original_month_id
+        assert run(rpc('deep_insight_material', {'p_user_id':user}))['map'] == old_insight
+        if upgraded_to == 'premium':
+            base = run(rpc('analysis_if_base_context', {'p_user_id':user, 'p_base_ref':base_ref}))
+            assert base['base_source_guard'] == saved_guard
+            assert set(base['source_record_refs']) == {prior,parent}
+            assert run(rpc('analysis_if_sources_current', {'p_user_id':user,'p_guard':saved_guard,
+                'p_refs':[prior,parent]}))
+    assert len(calls) == 1
+    assert 'code' not in db.query("update public.emotions set memo=memo||'私は日程を決めた。' where id=$1", [prior])
+    assert snapshot()['guard'] != saved_guard
+    assert not run(cumulative.read_maps(user, limit=1))['items']
+    assert run(cumulative.ensure_map(user, monthly=True))['report_id'] == original_month_id
+    assert 'code' not in db.query('delete from public.emotions where id=$1', [prior])
+    assert not run(cumulative.read_maps(user, history=True))['items']
