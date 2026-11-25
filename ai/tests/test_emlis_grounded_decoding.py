@@ -590,7 +590,7 @@ def test_plus_answer_focus_saves_only_verified_history_and_reuses_the_receipt(
             result = {'passages': ['P1'], 'follow': 'そのときの気持ちに、Emlisは耳を傾けています。'}
         else:
             assert material['current']['follow_profile'] == 'answer_focus_v2'
-            assert material['current']['original_evidence'] == ['褒められたのに、嬉しくなかった']
+            assert material['current']['original_evidence'] == ['褒められた']
             assert material['quote']['text'] == authored
             assert material['ai_question_context'] == first['pending_question']['text']
             assert material['history'] == material['confirmed_frame_feedback'] == []

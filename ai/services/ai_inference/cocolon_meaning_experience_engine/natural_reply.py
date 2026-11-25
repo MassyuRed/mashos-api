@@ -810,9 +810,12 @@ def prepare_natural_reply(request, *, use_meaning_support=False, response_stage=
                 evidence = _question_original_evidence(admitted, active, pending_question, latest_answer,
                     include_question_excerpt=grounded_context_version != grounded_observation_reply.PLUS_ANSWER_FOCUS_CONTEXT_VERSION,
                     prepared_meaning=prepared_meaning)
-                if try_specific_answer and len(evidence) == 1:
-                    grounded_context_version = grounded_observation_reply.PLUS_SPECIFIC_LISTENING_CONTEXT_VERSION
-                    plus_answer_focus = True
+                if try_specific_answer or grounded_context_version == grounded_observation_reply.PLUS_EVENT_LISTENING_CONTEXT_VERSION:
+                    event = _question_event_excerpt(admitted, prepared_meaning, pending_question, evidence)
+                    evidence = [event] if event else []
+                    if event:
+                        grounded_context_version = grounded_observation_reply.PLUS_EVENT_LISTENING_CONTEXT_VERSION
+                        plus_answer_focus = True
             initial_self_insight = (
                 select_grounded_self_insight and response_stage == "FINAL" and not grounded_current_only
                 and admitted.original.emotion == '自己理解'
@@ -950,6 +953,24 @@ def _preserves_question_scene(prepared, question, answer):
     return (item.operation == 'ADD' and item.binding_kind == 'QUESTION_FOCUS'
             and item.temporal_binding.about_time == 'ORIGINAL_OCCASION'
             and len(answer.evidence_refs) == 1 and item.evidence_refs == (answer.evidence_refs[0].evidence_id,))
+
+
+def _question_event_excerpt(admitted, prepared, question, evidence):
+    """Bind the question's event to the original excerpt, without the reaction."""
+    from emlis_ai_grounded_human_reception import final_reception_source_anchor_text
+    from .emlis_question import received_event_excerpt
+
+    if len(evidence) != 1 or question is None or not _preserves_question_scene(prepared, question, admitted.answers[0]):
+        return None
+    change, = prepared.checkpoint.answer_update.updates
+    if len(change.target_meaning_refs) != 1:
+        return None
+    target, = change.target_meaning_refs
+    nuclei = {row.nucleus_id: row for row in prepared.original_plan.nuclei}
+    if target not in question.decision.affected_meaning_refs or target not in nuclei or nuclei[target].kind != 'event':
+        return None
+    event = received_event_excerpt(final_reception_source_anchor_text(target, nuclei, admitted.resolver()))
+    return event if event and event in evidence[0] else None
 
 
 def _initial_observation_follow(admitted, original, response_stage):

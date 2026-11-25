@@ -355,6 +355,18 @@ def _feeling_circumstance_candidate(thread, plan, *, parent_request_id, respect_
     return decision, question
 
 
+def received_event_excerpt(anchor):
+    """Keep the factual event clause owned by a received-meaning question."""
+    if not _RECEIVED_EVENT.search(anchor) or _NONFACT.search(anchor):
+        return None
+    event = re.split(r"(?:のに|けれど|けど|が[、,]|[、,])", anchor, maxsplit=1)[0]
+    if (not event or not _FACTUAL_RECEIVED.search(event) or len(event) > 48
+            or any(c in event for c in "「」『』\n")
+            or re.match(r"^(?:彼|彼女|母|父|妹|弟|兄|姉|友人|上司)(?:は|が|も)", event)):
+        return None
+    return event
+
+
 def question_candidate(thread: AdmittedEmlisThread, plan, *, parent_request_id: str,
                        respect_control: bool = True, allow_affect_question: bool = False):
     control = thread.control.question_control_context
@@ -387,15 +399,8 @@ def question_candidate(thread: AdmittedEmlisThread, plan, *, parent_request_id: 
         if not set(nucleus.source_fields) & {"memo", "memo_action"}:
             continue
         anchor = final_reception_source_anchor_text(nucleus.nucleus_id, index, resolver)
-        match = _RECEIVED_EVENT.search(anchor)
-        if not match or _NONFACT.search(anchor):
-            continue
-        # Keep the event clause only. No arbitrary character truncation and no
-        # hidden cause/character/third-party intention in the question premise.
-        event = re.split(r"(?:のに|けれど|けど|が[、,]|[、,])", anchor, maxsplit=1)[0]
-        if (not event or not _FACTUAL_RECEIVED.search(event) or len(event) > 48
-                or any(c in event for c in "「」『』\n")
-                or re.match(r"^(?:彼|彼女|母|父|妹|弟|兄|姉|友人|上司)(?:は|が|も)", event)):
+        event = received_event_excerpt(anchor)
+        if not event:
             continue
         bound_reactions = tuple(r for r in reactions
                                 if set(r.source_span_ids) & set(nucleus.source_span_ids))
