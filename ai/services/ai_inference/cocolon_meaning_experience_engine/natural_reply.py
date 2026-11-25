@@ -800,11 +800,19 @@ def prepare_natural_reply(request, *, use_meaning_support=False, response_stage=
             passages = [row for row in passages if row['field'] == 'memo']
         if passages:
             pending_question = admitted.control.question_control_context.pending_question
-            plus_answer_focus = (grounded_context_version == grounded_observation_reply.PLUS_ANSWER_FOCUS_CONTEXT_VERSION
-                or (select_grounded_plus_answer_focus and response_stage == "REFINED"
-                    and admitted.control.capability_snapshot == 'Q3_PLUS' and history
-                    and len(material['current_answers']) == len(passages) == 1
-                    and pending_question is not None and pending_question.question_id == latest_answer['question_id']))
+            plus_answer_focus = grounded_context_version in grounded_observation_reply.PLUS_ANSWER_CONTEXT_VERSIONS
+            try_specific_answer = (select_grounded_plus_answer_focus and response_stage == "REFINED"
+                and admitted.control.capability_snapshot == 'Q3_PLUS' and history
+                and len(material['current_answers']) == len(passages) == 1
+                and pending_question is not None and pending_question.question_id == latest_answer['question_id']
+                and _preserves_question_scene(prepared_meaning, pending_question, admitted.answers[0]))
+            if plus_answer_focus or try_specific_answer:
+                evidence = _question_original_evidence(admitted, active, pending_question, latest_answer,
+                    include_question_excerpt=grounded_context_version != grounded_observation_reply.PLUS_ANSWER_FOCUS_CONTEXT_VERSION,
+                    prepared_meaning=prepared_meaning)
+                if try_specific_answer and len(evidence) == 1:
+                    grounded_context_version = grounded_observation_reply.PLUS_SPECIFIC_LISTENING_CONTEXT_VERSION
+                    plus_answer_focus = True
             initial_self_insight = (
                 select_grounded_self_insight and response_stage == "FINAL" and not grounded_current_only
                 and admitted.original.emotion == '自己理解'
@@ -814,8 +822,6 @@ def prepare_natural_reply(request, *, use_meaning_support=False, response_stage=
                 and passages[0]['text'] == (original.get('memo') or '').strip())
             # Select only measured reception scopes with one passage in the current record.
             if plus_answer_focus:
-                grounded_context_version = grounded_observation_reply.PLUS_ANSWER_FOCUS_CONTEXT_VERSION
-                evidence = _question_original_evidence(admitted, active, pending_question, latest_answer)
                 writer.update(records=[{'scope': 'CURRENT_INPUT',
                     'active_fields': [{'text': text} for text in evidence]}], user_frame_feedback=[])
                 if prepared_meaning is not None:
@@ -891,30 +897,59 @@ def prepare_natural_reply(request, *, use_meaning_support=False, response_stage=
         _compact_json(writer), _compact_json(active)), safety
 
 
-def _question_original_evidence(admitted, active, question, answer):
+def _question_original_evidence(admitted, active, question, answer, *, include_question_excerpt=False,
+                                prepared_meaning=None):
     """Project only a live original range actually cited by the issued question."""
-    if active['coverage']['active_state'] != 'RESOLVED' or question is None:
+    if question is None:
         return []
     resolver = admitted.resolver()
     supporting_ids = set(question.decision.supporting_evidence_refs)
-    original_id = admitted.original.envelope.envelope_id
-    fields = [row for row in active['active_fields'] if row['source_role'] == 'ORIGINAL_INPUT'
-              and row['source_envelope_id'] == original_id]
+    original = admitted.original.envelope
+    ranges = [(row['field_path'], row['scalar_start'], row['text'])
+              for row in active['active_fields'] if row['source_role'] == 'ORIGINAL_INPUT'
+              and (row['source_id'] == original.source_record_id if include_question_excerpt
+                   else row['source_envelope_id'] == original.envelope_id)]
+    if active['coverage']['active_state'] != 'RESOLVED':
+        if (not include_question_excerpt or active['reason_codes'] != ['analysis_supplement_interpretation_pending']
+                or not _preserves_question_scene(prepared_meaning, question, admitted.answers[0])):
+            return []
+        # Analysis may be pending even after the answer owner proves a
+        # supplemental addition. Recover only the issued question's exact
+        # historical excerpt from the identical, admitted original source.
+        ranges = [(field, 0, text)
+                  for source in active['sources']
+                  if source['source_role'] == 'ORIGINAL_INPUT' and source['source_id'] == original.source_record_id
+                  for field, text in source['fields'].items()]
+    seen_texts = (answer['text'],) if include_question_excerpt else (answer['text'], answer['ai_question_context'])
     evidence = []
     for row in resolver.qualified_refs:
         ref = row.evidence
-        if ref.evidence_id not in supporting_ids or ref.source_envelope_id != original_id:
+        if ref.evidence_id not in supporting_ids or ref.source_envelope_id != original.envelope_id:
             continue
         text = resolver.resolve(row.thread_span_id).raw_text
-        if text in evidence or any(text in value or value in text for value in
-                                   (answer['text'], answer['ai_question_context'])):
+        if text in evidence or any(text in value or value in text for value in seen_texts):
             continue
-        if any(field['field_path'] == ref.field_path
-               and field['scalar_start'] <= ref.scalar_start < ref.scalar_end <= field['scalar_end']
-               and field['text'][ref.scalar_start - field['scalar_start']:
-                                 ref.scalar_end - field['scalar_start']] == text for field in fields):
+        if any(field == ref.field_path
+               and start <= ref.scalar_start < ref.scalar_end <= start + len(source_text)
+               and source_text[ref.scalar_start - start:ref.scalar_end - start] == text
+               for field, start, source_text in ranges):
             evidence.append(text)
     return evidence
+
+
+def _preserves_question_scene(prepared, question, answer):
+    if prepared is None or question.decision.target_kind != 'PERSONAL_RECEIVED_MEANING':
+        return False
+    checkpoint = prepared.checkpoint
+    update = checkpoint.answer_update
+    if (checkpoint.assessment_status != 'RESOLVED' or checkpoint.inactive_claim_refs
+            or checkpoint.unresolved_parts or update is None or len(update.updates) != 1
+            or update.question_ref != question.question_id or update.answer_source_ref != answer.envelope.envelope_id):
+        return False
+    item, = update.updates
+    return (item.operation == 'ADD' and item.binding_kind == 'QUESTION_FOCUS'
+            and item.temporal_binding.about_time == 'ORIGINAL_OCCASION'
+            and len(answer.evidence_refs) == 1 and item.evidence_refs == (answer.evidence_refs[0].evidence_id,))
 
 
 def _initial_observation_follow(admitted, original, response_stage):
@@ -1359,7 +1394,7 @@ def validate_reply(reply, request, *, check_grounded_answer=False, allow_verifie
 
         try:
             grounded_text = reply.text
-            if (allow_verified_history and context_version == grounded_observation_reply.PLUS_ANSWER_FOCUS_CONTEXT_VERSION
+            if (allow_verified_history and context_version in grounded_observation_reply.PLUS_ANSWER_CONTEXT_VERSIONS
                     and writer.get('history_line')):
                 grounded_text = grounded_text.removesuffix('\n\n' + writer['history_line'])
             follow = grounded_observation_reply.read_reply(grounded_text, writer)

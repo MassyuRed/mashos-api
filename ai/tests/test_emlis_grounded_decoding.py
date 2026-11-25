@@ -44,12 +44,12 @@ def _accepts(messages, text):
     return parser.can_end()
 
 
-def _answer_focus_messages():
+def _answer_focus_messages(profile=probe.EMLIS_ANSWER_FOLLOW_PROFILE):
     selected = _messages()
     material = json.loads(selected[1]['content'])
     material.update(stage='REFINED', ai_question_context='褒められた時は、どう感じましたか。')
     material['current'].update(
-        follow_profile=probe.EMLIS_ANSWER_FOLLOW_PROFILE,
+        follow_profile=profile,
         original_evidence=['教室で褒められました。'],
     )
     material['quote'].update(field='answer', source_role='SUPPLEMENTAL_ANSWER', text='その時は怖かった。')
@@ -98,6 +98,35 @@ def test_answer_focus_tokenizes_one_answer_with_the_pinned_decoding_mask(monkeyp
         'original_evidence': ['教室で褒められました。'],
     }
     assert focused == snapshot
+
+
+def test_specific_answer_supplies_the_verified_scene_without_issued_question_prose():
+    focused = _answer_focus_messages(probe.EMLIS_SPECIFIC_ANSWER_FOLLOW_PROFILE)
+    assert probe.emlis_grounded_output_schema(focused) == probe.emlis_grounded_output_schema(_messages())
+    _, message = probe._emlis_grounded_model_messages(focused)
+    assert json.loads(message['content']) == {
+        '当回の場面': '教室で褒められました。', '表示済みの回答': 'その時は怖かった。',
+    }
+    wire = json.loads(focused[1]['content'])
+    wire['current']['original_evidence'] = []
+    focused[1]['content'] = json.dumps(wire, ensure_ascii=False)
+    with pytest.raises(ValueError, match='emlis_grounded_answer_focus_invalid'):
+        probe.emlis_grounded_output_schema(focused)
+
+
+@pytest.mark.parametrize('follow', ['その時は怖かった、と受け取られたのですね。',
+                                    'その時は、怖かったと聞けました。'])
+def test_specific_answer_rejects_repetition_even_when_punctuation_changes(follow):
+    passage = {'id': 'P1', 'text': 'その時は怖かった。', 'field': 'answer',
+               'source_role': 'SUPPLEMENTAL_ANSWER'}
+    writer = {'records': [{'active_fields': []}], 'grounded_passages': [passage],
+              'source_context_version': grounded.PLUS_SPECIFIC_LISTENING_CONTEXT_VERSION}
+    response = grounded.compose(json.dumps({'follow': follow}, ensure_ascii=False), writer)
+    with pytest.raises(ValueError, match='grounded_observation_repeated_passage'):
+        grounded.read_reply(response, writer)
+    # A change in current admission must not invalidate a v12 receipt.
+    assert grounded.read_reply(response, {**writer,
+        'source_context_version': grounded.PLUS_ANSWER_FOCUS_CONTEXT_VERSION}) == follow
 
 
 @pytest.mark.parametrize('raw', ('{"follow":"「引用」"}', '{"follow":"『引用』"}',
@@ -560,7 +589,8 @@ def test_plus_answer_focus_saves_only_verified_history_and_reuses_the_receipt(
         if material['stage'] == 'PRE_QUESTION':
             result = {'passages': ['P1'], 'follow': 'そのときの気持ちに、Emlisは耳を傾けています。'}
         else:
-            assert material['current']['follow_profile'] == 'answer_focus_v1'
+            assert material['current']['follow_profile'] == 'answer_focus_v2'
+            assert material['current']['original_evidence'] == ['褒められたのに、嬉しくなかった']
             assert material['quote']['text'] == authored
             assert material['ai_question_context'] == first['pending_question']['text']
             assert material['history'] == material['confirmed_frame_feedback'] == []

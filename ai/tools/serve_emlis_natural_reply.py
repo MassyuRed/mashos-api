@@ -36,6 +36,7 @@ SEMANTIC_FORMAT_SOURCE = '817f944fcc8851917c40300a47f62d1defc3ffc3'
 PIECE_CANDIDATE_FORMAT = 'piece.field_slots.v1'
 EMLIS_GROUNDED_CANDIDATE_FORMAT = 'emlis.grounded_observation.v1'
 EMLIS_ANSWER_FOLLOW_PROFILE = 'answer_focus_v1'
+EMLIS_SPECIFIC_ANSWER_FOLLOW_PROFILE = 'answer_focus_v2'
 EVENT_PLAN_SCHEMA = 'cocolon.analysis.semantic_map.event_plan.model.v1'
 EVENT_PLAN_V2_SCHEMA = 'cocolon.analysis.semantic_map.event_plan.model.v2'
 EVENT_PLAN_V2_MODEL = 'cocolon-qwen3.5-4b-analysis-event-plan-v2'
@@ -2753,11 +2754,13 @@ def emlis_grounded_output_schema(messages):
     answer_focus = 'follow_profile' in current
     if answer_focus:
         evidence = current.get('original_evidence', [])
-        if (current['follow_profile'] != EMLIS_ANSWER_FOLLOW_PROFILE
+        follow_profile = current['follow_profile']
+        if (follow_profile not in (EMLIS_ANSWER_FOLLOW_PROFILE, EMLIS_SPECIFIC_ANSWER_FOLLOW_PROFILE)
                 or current.keys() - {'scope', 'follow_profile', 'original_evidence'}
                 or material['stage'] != 'REFINED' or not bound or passages[0]['field'] != 'answer'
                 or material['history'] or material['confirmed_frame_feedback']
-                or type(evidence) is not list or any(type(text) is not str or not text.strip() for text in evidence)):
+                or type(evidence) is not list or any(type(text) is not str or not text.strip() for text in evidence)
+                or (follow_profile == EMLIS_SPECIFIC_ANSWER_FOLLOW_PROFILE and len(evidence) != 1)):
             raise ValueError('emlis_grounded_answer_focus_invalid')
     properties = {}
     if not bound:
@@ -2772,6 +2775,9 @@ def _emlis_grounded_model_messages(messages):
     # reply writer the answer once, under a clearly labeled source role.
     material = json.loads(messages[1]['content'])
     current = material['current']
+    if current.get('follow_profile') == EMLIS_SPECIFIC_ANSWER_FOLLOW_PROFILE:
+        view = {'当回の場面': current['original_evidence'][0], '表示済みの回答': material['quote']['text']}
+        return [messages[0], dict(role='user', content=json.dumps(view, ensure_ascii=False, separators=(',', ':')))]
     if current.get('follow_profile') != EMLIS_ANSWER_FOLLOW_PROFILE:
         return messages
     view = dict(latest_answer=material['quote']['text'], issued_question=material['ai_question_context'])
