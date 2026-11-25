@@ -1201,6 +1201,78 @@ def test_9b_initial_follow_is_not_selected_by_model_alias_alone(natural_case, qd
     assert len(calls) == 1
 
 
+@pytest.mark.parametrize(('memo', 'raw', 'expected'), [
+    ('工房で作った琥珀色のしおりが好きでした。', '工房で作った琥珀色のしおりが、とても好きだったんですね。',
+     '工房で作った琥珀色のしおりが、好きだったんですね。'),
+    ('私は古い切符に印刷された鳥の輪郭が大好きでした。', '古い切符に印刷された鳥の輪郭が好きだったんですね。',
+     '古い切符に印刷された鳥の輪郭が大好きだったんですね。'),
+    ('木の定規の目盛りが好きでした。', '木の定規の目盛りが大好きだったのですね。',
+     '木の定規の目盛りが好きだったのですね。'),
+    ('木の定規の目盛りが大好きでした。', '木の定規の目盛りが、すごく好きだったんですね。', None),
+    ('木の定規の目盛りが好きでした。', '木の定規が、とても好きだったんですね。', None),
+    ('木の定規の目盛りが好きです。', '木の定規の目盛りが、とても好きだったんですね。', None),
+    ('木の定規の目盛りが好きでした。', '木の定規の目盛りが、とても好きなんですね。', None),
+    ('木の定規の目盛りが好きではなかった。', '木の定規の目盛りが、とても好きだったんですね。', None),
+    ('木の定規の目盛りが好きでした。', '木の定規の目盛りが、とても好きではなかったんですね。', None),
+    ('「木の定規の目盛りが好きでした。」', '木の定規の目盛りが、とても好きだったんですね。', None),
+    ('木の定規の目盛りが好きでした。', '「木の定規の目盛りが、とても好きだったんですね。」', None),
+    ('＂窓辺＂が好きでした。', '＂窓辺＂が、とても好きだったんですね。', None),
+    ('祖父は木の定規の目盛りが好きでした。', '祖父は木の定規の目盛りが、とても好きだったんですね。', None),
+    ('木の定規の目盛りが好きでした。', 'Emlisは木の定規の目盛りが、とても好きだったんですね。', None),
+    ('別の定規は嫌いでした。木の定規の目盛りが好きでした。',
+     '木の定規の目盛りが、とても好きだったんですね。', None),
+])
+def test_initial_preference_preservation_requires_the_same_past_statement(memo, raw, expected):
+    from cocolon_meaning_experience_engine.natural_reply import (
+        QWEN_9B_NATURAL_ALIAS, preserve_initial_past_preference)
+
+    request = NaturalReplyInput('source', json.dumps({'current': {'memo': memo}}))
+    provider_reply = NaturalReply(raw, QWEN_9B_NATURAL_ALIAS, request.source_prefix_ref)
+    reply = preserve_initial_past_preference(provider_reply, request)
+    assert reply.text == (expected or raw)
+    assert preserve_initial_past_preference(reply, request) == reply
+    assert preserve_initial_past_preference(provider_reply, replace(request, material_json=json.dumps({
+        'current': {'memo': memo}, 'past_user_records': [{'memo': memo}]}))) == provider_reply
+
+
+@pytest.mark.parametrize('tier', ('free', 'plus', 'premium'))
+def test_initial_preference_keeps_original_and_provider_text_on_same_version(
+        natural_case, qdb, monkeypatch, tier):
+    from cocolon_meaning_experience_engine.natural_reply import QWEN_9B_NATURAL_ALIAS
+
+    user, parent, _, _ = natural_case
+    memo = '工房で作った琥珀色のしおりが好きでした。'
+    # Captured from the normal 9B provider on 11/25 before this change.
+    raw = '工房で作った琥珀色のしおりが、とても好きだったんですね。'
+    qdb.query("update public.emotions set memo=$2,memo_action='' where id=$1", [parent, memo])
+    qdb.query('update public.profiles set subscription_tier=$2 where id=$1', [user, tier])
+    calls = []
+
+    def infer(request):
+        calls.append(json.loads(request.content))
+        current, = json.loads(calls[-1]['messages'][-1]['content'])['records']
+        assert current['active_fields'][0]['text'] == memo
+        return httpx.Response(200, json={'model': QWEN_9B_NATURAL_ALIAS, 'choices': [
+            {'finish_reason': 'stop', 'message': {'role': 'assistant', 'content': raw + '\n'}}]})
+
+    source = SelfHostedNaturalReplySource(endpoint='https://model.invalid/v1/chat/completions',
+        model=QWEN_9B_NATURAL_ALIAS, api_key='synthetic-only', transport=httpx.MockTransport(infer))
+    service = _active_application_owner(monkeypatch, source, None)
+    service.natural_questions_enabled = False
+    dto = run(service.start(user, parent))
+    expected = raw.replace('とても', '') if tier == 'free' else raw
+    assert dto['state'] == 'COMPLETED'
+    assert dto['current_observation']['text'] == expected
+    assert run(service.get(user, parent)) == dto
+    saved = run(service.store.read(user, input_id=parent))
+    assert saved['original']['memo'] == memo
+    receipt, = (event['payload'] for event in saved['events']
+                if event['payload'].get('stage') == 'NATURAL_REPLY_RECEIVED')
+    assert receipt['reply']['text'] == expected
+    assert receipt.get('provider_reply_text') == (raw if tier == 'free' else None)
+    assert len(calls) == 1
+
+
 @pytest.mark.parametrize('ability,follow,action,accepted', [
     ('使えない', '隣室の利用制限が解除されたことで、安心されたのですね。', '', False),
     ('使えない', '明日は使えると知った今朝のお話を聞けて嬉しいです。', '', False),

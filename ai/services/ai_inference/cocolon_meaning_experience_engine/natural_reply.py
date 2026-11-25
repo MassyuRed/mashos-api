@@ -155,7 +155,9 @@ _INITIAL_FEELING = (
 )
 _INITIAL_SELF_TOPIC = r"(?:私|わたし|僕|ぼく|俺|おれ)は"
 _INITIAL_PREFERENCE = re.compile(
-    rf"(?P<speaker>{_INITIAL_SELF_TOPIC})?(?P<anchor>[^、，,\r\n]+)が(?P<feeling>大?好き)(?:だ|です|だった|でした)")
+    rf"(?P<speaker>{_INITIAL_SELF_TOPIC})?(?P<anchor>[^、，,\r\n]+)が(?P<feeling>大?好き)(?P<time>だ|です|だった|でした)")
+_PAST_PREFERENCE_RECEPTION = re.compile(
+    r"が[、，,]?[ \t]*(?P<degree>(?:とても|すごく|大)?)好き(?:だった|でした)(?:の|ん)ですね[。．]?")
 _INITIAL_REASON = re.compile(
     rf"(?P<anchor>[^、，,\r\n]+)(?:ので|から)[、，,]\s*{_INITIAL_SELF_TOPIC}(?P<feeling>{_INITIAL_FEELING})")
 _INITIAL_SCENE = re.compile(
@@ -1264,6 +1266,39 @@ def _has_changed_direct_feeling_quote(text, excerpt):
     for opening, closing in _DIRECT_FEELING_QUOTE_MARKS:
         text = text.replace(f'{opening}{excerpt}{closing}', '')
     return any(mark in text for pair in _DIRECT_FEELING_QUOTE_MARKS for mark in pair)
+
+
+def preserve_initial_past_preference(reply, request):
+    """Preserve the written degree when the author mirrors the same past preference."""
+    from emlis_ai_grounded_observation_plan import _top_level_text
+
+    if reply.model != QWEN_9B_NATURAL_ALIAS:
+        return reply
+    material = json.loads(request.material_json)
+    original = material['current']
+    if ((original.get('memo_action') or '').strip() or '自己理解' in original.get('emotions', ())
+            or any(material.get(key) for key in ('current_answers', 'past_user_records',
+                                                 'user_frame_feedback', 'interpretation_corrections'))):
+        return reply
+    memo = (original.get('memo') or '').strip().removesuffix('。')
+    if (_top_level_text(memo) != memo or re.search(r'[。．.!！?？]', memo)
+            or any(mark in memo for pair in _DIRECT_FEELING_QUOTE_MARKS for mark in pair)):
+        return reply
+    source = _INITIAL_PREFERENCE.fullmatch(memo)
+    if source is None or source['time'] not in {'だった', 'でした'}:
+        return reply
+    anchor = source['anchor']
+    if (any(cue in anchor for cue in ('は', 'も', 'が', 'けど', 'けれど', 'のに', '一方', 'によると'))
+            or not reply.text.startswith(anchor)):
+        return reply
+    tail = reply.text[len(anchor):]
+    reception = _PAST_PREFERENCE_RECEPTION.fullmatch(tail)
+    strong = source['feeling'] == '大好き'
+    if reception is None or bool(reception['degree']) == strong:
+        return reply
+    start, end = reception.span('degree')
+    degree = '大' if strong else ''
+    return replace(reply, text=anchor + tail[:start] + degree + tail[end:])
 
 
 def _validate_initial_availability_reply(text, material, writer):
