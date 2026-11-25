@@ -1283,3 +1283,63 @@ def test_grounded_9b_uses_an_exact_current_passage_and_separate_listener_reply(
         assert not any(event["payload"].get("stage") == "NATURAL_REPLY_RECEIVED"
                        for event in saved["events"])
     assert len(calls) == 1
+
+
+@pytest.mark.parametrize("add_reason", [False, True])
+def test_grounded_listener_standalone_feeling_keeps_independent_action_in_the_record(
+        natural_case, qdb, monkeypatch, add_reason):
+    from cocolon_meaning_experience_engine.natural_reply import QWEN_9B_NATURAL_ALIAS
+
+    user, parent, _, _ = natural_case
+    action = "区役所の窓口に間に合いました。"
+    thought = "区役所の窓口に間に合ったので、私は安心しました。" if add_reason else "私は安心しました。"
+    qdb.query("update public.emotions set memo=$2, memo_action=$3 where id=$1", [parent, thought, action])
+    text = ("窓口に間に合ったお話を聞いて、Emlisもほっとしました。" if add_reason else
+            "ほっとした気持ちをここに置いてくださったことを、Emlisは大事に受け取りました。")
+
+    def infer(request):
+        material = json.loads(json.loads(request.content)["messages"][-1]["content"])
+        if add_reason:
+            assert action in {row["text"] for row in material["passages"]}
+            passage = next(row["id"] for row in material["passages"] if row["text"] == thought)
+            content = json.dumps({"passages": [passage], "follow": text}, ensure_ascii=False)
+        else:
+            assert action not in json.dumps(material, ensure_ascii=False)
+            assert material["quote"]["text"] == thought
+            assert "passages" not in material
+            content = text
+        return httpx.Response(200, json={"model": QWEN_9B_NATURAL_ALIAS, "choices": [
+            {"finish_reason": "stop", "message": {"role": "assistant", "content": content}}]})
+
+    monkeypatch.setenv("COCOLON_EMLIS_GROUNDED_OBSERVATION", "true")
+    source = SelfHostedNaturalReplySource(endpoint="https://model.invalid/v1/chat/completions",
+        model=QWEN_9B_NATURAL_ALIAS, api_key="synthetic-only", transport=httpx.MockTransport(infer))
+    service = _active_application_owner(monkeypatch, source, None)
+    response = run(service.start(user, parent))
+    assert response["current_observation"]["text"] == f"「{thought}」\n\n{text}"
+    saved = run(service.store.read(user, input_id=parent))
+    assert saved["original"]["memo_action"] == action
+
+
+@pytest.mark.parametrize("original, follow, reason", [
+    ("誘われたのに、嬉しくなかった。",
+     "誘われることへの期待とは裏腹に、嬉しくなかったお気持ちを受け取りました。",
+     "grounded_observation_unwritten_expectation"),
+    ("その時は怖かった。",
+     "その時の怖さを、今も鮮明に覚えていらっしゃるのですね。",
+     "grounded_observation_unwritten_memory"),
+    ("誘われることを期待していたけれど、嬉しくなかった。",
+     "誘われることへの期待とは違うお気持ちを聞かせてくださって、ありがとうございます。",
+     None),
+])
+def test_grounded_listener_rejects_unwritten_expectation_or_present_memory(original, follow, reason):
+    from cocolon_meaning_experience_engine import grounded_observation_reply
+
+    source = {"id": "P1", "text": original, "field": "memo", "source_role": "ORIGINAL_INPUT"}
+    writer = {"grounded_passages": [source], "records": [{"active_fields": [source]}]}
+    text = grounded_observation_reply.compose(follow, writer)
+    if reason:
+        with pytest.raises(ValueError, match=reason):
+            grounded_observation_reply.read_reply(text, writer)
+    else:
+        assert grounded_observation_reply.read_reply(text, writer) == follow

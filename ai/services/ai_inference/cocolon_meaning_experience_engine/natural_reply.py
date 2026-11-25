@@ -780,14 +780,25 @@ def prepare_natural_reply(request, *, use_meaning_support=False, response_stage=
     if use_grounded_observation and not admitted.control.interpretation_corrections:
         latest_answer = material['current_answers'][-1] if material['current_answers'] else None
         passages = grounded_observation_reply.current_passages(records[0], original, latest_answer)
+        focus = _initial_observation_follow(admitted, original, response_stage)
+        standalone_feeling = (focus is not None and focus['kind'] == '気持ち'
+                              and (original.get('memo') or '').strip() == focus['excerpt'])
+        if standalone_feeling:
+            passages = [row for row in passages if row['field'] == 'memo']
         if passages:
             writer.update(source_context_version=grounded_observation_reply.CONTEXT_VERSION,
                           grounded_passages=passages)
-            if grounded_current_only:
+            if standalone_feeling:
+                # The other column and earlier records cannot supply a
+                # missing reason for a standalone feeling. Keep them in the
+                # private source view for reread and cross-feature analysis.
+                writer.update(records=[{'scope': records[0]['scope'], 'metadata': records[0]['metadata'],
+                    'active_fields': [{'text': focus['excerpt'], 'field_path': 'memo',
+                                       'source_role': 'ORIGINAL_INPUT'}]}], user_frame_feedback=[])
+            elif grounded_current_only:
                 writer.update(records=records[:1], user_frame_feedback=[])
             if response_stage != "FINAL":
                 writer['response_purpose'] = material['response_purpose']
-            focus = _initial_observation_follow(admitted, original, response_stage)
             if focus is not None and any(row['text'] == focus['excerpt'] for row in passages):
                 writer['initial_observation_follow'] = focus
             return NaturalReplyInput(admitted.source_prefix_ref, _compact_json(material), meaning_profile,

@@ -863,13 +863,13 @@ def test_grounded_paid_question_round_preserves_answer_or_returns_only_to_curren
         if stage == "FINAL":
             assert material["history"] == []
             assert material["confirmed_frame_feedback"] == []
-        chosen = next(p for p in material["passages"] if p["text"] == (
-            supplement if stage == "REFINED" else ONE))
+        chosen = material["quote"]
+        assert "passages" not in material
+        assert chosen["text"] == (supplement if stage == "REFINED" else ONE)
         assert chosen["source_role"] == (
             "SUPPLEMENTAL_ANSWER" if stage == "REFINED" else "ORIGINAL_INPUT")
-        content = json.dumps({"passages": [chosen["id"]], "follow": follows[stage]}, ensure_ascii=False)
         return httpx.Response(200, json={"model": QWEN_9B_NATURAL_ALIAS, "choices": [
-            {"finish_reason": "stop", "message": {"role": "assistant", "content": content}}]})
+            {"finish_reason": "stop", "message": {"role": "assistant", "content": follows[stage]}}]})
 
     monkeypatch.setenv("COCOLON_EMLIS_GROUNDED_OBSERVATION", "true")
     source = SelfHostedNaturalReplySource(endpoint="https://model.invalid/v1/chat/completions",
