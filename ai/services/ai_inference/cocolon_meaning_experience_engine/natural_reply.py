@@ -185,6 +185,12 @@ _INITIAL_SCENE = re.compile(
 _INITIAL_BARE_FEELING = re.compile(
     rf"(?:{_INITIAL_SELF_TOPIC})?(?P<feeling>(?:(?:少し|少しだけ|ちょっと|とても|本当に|すごく)\s*)?(?:{_INITIAL_FEELING}))")
 _INITIAL_FEELING_ENDING = re.compile(rf"(?:大?好き(?:だ|です|でした|だった)|{_INITIAL_FEELING})\s*[。！？]*\Z")
+_INITIAL_REPORTED_AVAILABILITY = re.compile(
+    rf"(?P<report>[^。！？\r\n]{{1,172}})[、，,]\s*{_INITIAL_SELF_TOPIC}(?P<feeling>{_INITIAL_FEELING})")
+_FOLLOW_AVAILABILITY = re.compile(
+    r"(?:使え|(?:利用|使用)(?:が)?でき)(?P<verdict>なかった|なく|ない|ません|る(?!とは|か|わけでは)|た|ます(?!か))")
+_FOLLOW_AVAILABILITY_CHANGE = re.compile(
+    r"(?:制限|規制|禁止)[^。！？\n]{0,12}(?:解除|廃止|外れ|なくな[っり])|解禁|(?:利用|使用)許可が(?:下り|降り|取り消)")
 _INITIAL_FOLLOW_OWN_VOICE = re.compile(
     r"(?:^|[。．.!！、，,\n])[ \t]*(?:私|わたし|僕|ぼく|俺|おれ)(?:は|も|が)")
 _INITIAL_FOLLOW_FALSE_WITNESS = re.compile(
@@ -669,6 +675,7 @@ def prepare_natural_reply(request, *, use_meaning_support=False, response_stage=
                           grounded_context_version=grounded_observation_reply.CONTEXT_VERSION,
                           select_grounded_reception=False,
                           select_grounded_self_insight=False,
+                          select_grounded_initial_availability=False,
                           direct_feeling_correction_context_version=DIRECT_FEELING_CORRECTION_CONTEXT_VERSION):
     """Return admitted user material and the existing independent Safety result."""
     if response_stage not in _RESPONSE_STAGES:
@@ -798,6 +805,18 @@ def prepare_natural_reply(request, *, use_meaning_support=False, response_stage=
         if standalone_feeling:
             passages = [row for row in passages if row['field'] == 'memo']
         if passages:
+            availability_context = grounded_observation_reply.INITIAL_AVAILABILITY_CONTEXT_VERSION
+            if (grounded_context_version == availability_context
+                    or (select_grounded_initial_availability and response_stage == "FINAL"
+                        and not grounded_current_only and not latest_answer
+                        and not admitted.control.question_control_context.issued_count
+                        and len(passages) == len(writer['records']) == 1 and not writer['user_frame_feedback']
+                        and passages[0]['field'] == 'memo' and not (original.get('memo_action') or '').strip()
+                        and passages[0]['text'] == (original.get('memo') or '').strip())):
+                reported = _reported_availability(passages[0]['text'])
+                if reported is not None:
+                    grounded_context_version = availability_context
+                    writer['reported_availability'] = reported
             initial_self_insight = (
                 select_grounded_self_insight and response_stage == "FINAL" and not grounded_current_only
                 and admitted.original.emotion == '自己理解'
@@ -806,7 +825,8 @@ def prepare_natural_reply(request, *, use_meaning_support=False, response_stage=
                 and passages[0]['field'] == 'memo'
                 and passages[0]['text'] == (original.get('memo') or '').strip())
             # Select only measured reception scopes with one passage in the current record.
-            if ((select_grounded_reception or initial_self_insight) and len(passages) == 1
+            if (grounded_context_version != availability_context
+                    and (select_grounded_reception or initial_self_insight) and len(passages) == 1
                     and len(writer['records']) == 1 and not writer['user_frame_feedback']
                     and len(material['current_answers']) <= 1):
                 if response_stage == "PRE_QUESTION":
@@ -873,6 +893,26 @@ def prepare_natural_reply(request, *, use_meaning_support=False, response_stage=
         writer['response_purpose'] = material['response_purpose']
     return NaturalReplyInput(admitted.source_prefix_ref, _compact_json(material), meaning_profile,
         _compact_json(writer), _compact_json(active)), safety
+
+
+def _reported_availability(excerpt):
+    from .natural_reply_cognition import read_reported_availability
+
+    match = _INITIAL_REPORTED_AVAILABILITY.fullmatch(excerpt.removesuffix('。'))
+    notice = read_reported_availability(match['report']) if match is not None else None
+    if notice is None:
+        return None
+    return {'知った内容': notice['content'], '利用について述べた時点': notice['content_time'],
+            '知らせを受けた時点': notice['knowledge_time'], '本人が書いた気持ち': match['feeling']}
+
+
+def _validate_reported_availability_follow(follow, report):
+    known_unavailable = report['知った内容'].endswith('ない')
+    if _FOLLOW_AVAILABILITY_CHANGE.search(follow):
+        raise _NaturalReplyValidationError('grounded_observation_unwritten_availability_change')
+    for claim in _FOLLOW_AVAILABILITY.finditer(follow):
+        if (claim['verdict'] in {'なかった', 'なく', 'ない', 'ません'}) != known_unavailable:
+            raise _NaturalReplyValidationError('grounded_observation_availability_polarity')
 
 
 def _initial_observation_follow(admitted, original, response_stage):
@@ -1319,6 +1359,8 @@ def validate_reply(reply, request, *, check_grounded_answer=False):
             follow = grounded_observation_reply.read_reply(reply.text, writer)
         except ValueError as exc:
             raise _NaturalReplyValidationError(str(exc)) from None
+        if context_version == grounded_observation_reply.INITIAL_AVAILABILITY_CONTEXT_VERSION:
+            _validate_reported_availability_follow(follow, writer['reported_availability'])
         focus = writer.get('initial_observation_follow')
         if focus is not None:
             _validate_initial_observation_follow(follow, focus, INITIAL_OBSERVATION_FOLLOW_CONTEXT_VERSION)
