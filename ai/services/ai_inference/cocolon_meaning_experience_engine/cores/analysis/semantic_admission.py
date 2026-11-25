@@ -3550,22 +3550,22 @@ _PRIMARY_STRUCTURE_V2_INSTRUCTION = (
     'heading「あとで確かめられる手がかり」。この例は書き方の説明です。対象者の事実・結論として流用しません。'
 )
 _PRIMARY_STRUCTURE_V3_INSTRUCTION = (
-    '\nprimary_structuresは、本人が選ぶときの基準を、根拠の強い順に0〜3件返します。'
-    'across_recordsでは別々の原記録を選び、各記録で「本人が実際に選んだこと」と'
-    '「本人がその選択と結びつけた条件」を原文から一組ずつ確認します。確認に使った箇所がanchorsです。'
-    '選択が二つとも実行されていれば、違うのは条件や選んだ内容です。比較のために一方を断ったことにしません。'
-    '同じ行動でも理由が異なる場合は一つの基準にまとめません。逆の行動を選んだ場合は共通の基準でも説明できるか確かめます。'
-    'ほかの記録に異なる理由で選んだ例があれば、その記録にも照らし、説明が当てはまる場面を限ります。'
-    'いくつかの場面で重く見たことを、常に最優先することや唯一の基準に広げません。'
-    'self_reportでは本人が得た自己理解、in_this_recordではその場で確かめられたことに限ります。'
-    'decision_factorは本人が重く見た条件や基準を表す短い語句です。'
-    'criterionは、その語句を使い、どういうときに何を大切にして選ぶのかを本人に伝える結論の一文です。'
-    'case_readingは、各場面の条件がその基準を満たしたかどうかと、どう選んだかをつなぐ説明です。'
-    '説明にも同じdecision_factorを使います。行動を並べるだけで終わらず、どちらの選択にも通じる理由を書きます。'
-    '結論と説明は敬語で、文末は句点です。headingは結論の後で短い見出しをつけ、結論や説明と同じ文にしません。'
-    '本人が後に得た自己理解を以前からの意図にせず、本人の望み、実際の行動、相手の言葉を分けます。'
-    '見出しと本文には、根拠の参照番号も項目番号も書かず、場面が分かる言葉で説明します。'
-    '根拠から判断基準を言えなければ空配列です。')
+    '\nprimary_structuresは本人が画面で読む文章です。本人の選び方と、その選び方が変わった条件を、'
+    '根拠の強い順に0〜3件返します。埋めるために結論や説明を足しません。'
+    'across_recordsでは別々の原記録で、本人が実際にした選択と、本人がその選択に結びつけた条件をそろえます。'
+    'anchorsにはその箇所だけを入れます。選んだ、断った、候補に挙げただけの違いを各記録で確かめます。'
+    '本人が選択を記していない候補については、選んだとも断ったとも書きません。'
+    '反対の行動を同じ基準で説明できるか、同じ行動でも別の基準で選んだ日がないかを確かめます。'
+    '二つの場面に限って分かることは、その場面に限ります。本人が書いていない理由や優先順位は足しません。'
+    'self_reportは本人が得た自己理解、in_this_recordはその場の選択と条件に限ります。'
+    'decision_factorには「判断基準」「主体性」のような分類語の代わりに、'
+    '本人が重く見た条件を場面で使う短い言葉で書きます。criterionは、どういうときにその条件を'
+    '大切にして選ぶのかを、本人に届ける短い結論として書きます。'
+    'case_readingは、その条件が何と違うときに、本人が実際に何を選んだかを場面の言葉で説明します。'
+    'criterionとcase_readingの双方に、decision_factorと同じ短い言葉を自然に一度ずつ使います。'
+    'criterionは一文、case_readingは一文か二文で、です・ます調で書きます。'
+    'headingは本文と重ならない日常語の短い見出しにします。原記録の全文や参照番号を書きません。'
+    '同じ根拠で同じ選び方を述べる場合は一つにまとめ、判断の根拠が足りないときは空配列にします。')
 _PRIMARY_STRUCTURE_VERSIONS = ('karen.v1', 'karen.v2', 'karen.v3')
 
 
@@ -3584,6 +3584,8 @@ def _primary_structure_guidance(material):
 _PRIMARY_STRUCTURE_SCOPES = {'across_records', 'self_report', 'in_this_record'}
 _PRIMARY_STRUCTURE_PRIVATE_REF = re.compile(
     r'(?<![a-z0-9_])n[1-9][0-9]*(?:\.u[1-9][0-9]*)?(?![a-z0-9_])', re.IGNORECASE)
+_PRIMARY_STRUCTURE_UNSUPPORTED_PRIORITY = re.compile(
+    r'唯一の基準|唯一.{0,8}判断|最も重要|もっとも重要|いつでも最優先|常に最優先|決定的な要因')
 
 
 def _primary_structure_text_key(text):
@@ -3594,7 +3596,11 @@ def _primary_structure_v3_has_conclusion(axis, factor, quotes):
     sentences = [axis[key] for key in ('criterion', 'case_reading')]
     heading = axis['heading']
     sentence_keys = [_primary_structure_text_key(text) for text in sentences]
-    return (len(factor) >= 2 and all(factor in key for key in sentence_keys)
+    # These words change the strength of the conclusion, even when placed in the heading.
+    original = ''.join(quotes)
+    rankings = _PRIMARY_STRUCTURE_UNSUPPORTED_PRIORITY.findall(''.join([heading, *sentences]))
+    return (all(rank in original for rank in rankings)
+        and len(factor) >= 2 and all(factor in key for key in sentence_keys)
         and len(set([_primary_structure_text_key(heading), *sentence_keys])) == 3
         and all(re.search(r'(?:です|ます|ません|でした|ました)\s*[。．.]$', text) for text in sentences)
         and not any(re.search(r'[\r\n\t]', text) or
@@ -3608,7 +3614,14 @@ def _check_public_primary_structures(axes, node_refs):
     _semantic_map_require(type(axes) is list and len(axes) <= 3, reason)
     titles, descriptions = set(), set()
     for axis in axes:
-        _semantic_map_require(_semantic_map_keys(axis, {'scope', 'title', 'description', 'node_refs'})
+        keys = {'scope', 'title', 'description', 'node_refs'}
+        if type(axis) is dict and 'criterion' in axis:
+            keys.add('criterion')
+            _semantic_map_require(_semantic_map_text(axis['criterion'], 160)
+                and type(axis.get('description')) is str
+                and axis['description'].startswith(axis['criterion'])
+                and len(axis['description']) > len(axis['criterion']), reason)
+        _semantic_map_require(_semantic_map_keys(axis, keys)
             and type(axis['scope']) is str and axis['scope'] in _PRIMARY_STRUCTURE_SCOPES
             and _semantic_map_text(axis['title'], 60) and _semantic_map_text(axis['description'], 360)
             and '\n' not in axis['title'] and axis['title'] != axis['description']
@@ -3631,7 +3644,7 @@ def _read_primary_structures(prepared, material, nodes, axes):
     origins = {f"{node['node_id']}.u{i}.e{j}": (node, unit, fields[root['field']], root['quote'])
                for node in nodes for i, unit in enumerate(node['units'], 1)
                for j, root in enumerate(unit['evidence'], 1)}
-    public, admitted, factors = [], [], set()
+    public, admitted, factors, admitted_roots = [], [], set(), set()
     version = material.get('primary_structure_reading')
     independently_compared = version == 'karen.v3'
     conclusion_first = version in ('karen.v2', 'karen.v3')
@@ -3700,15 +3713,20 @@ def _read_primary_structures(prepared, material, nodes, axes):
             _semantic_map_require(_semantic_map_text(axis['heading'], 60)
                 and _semantic_map_text(axis['decision_factor'], 32), reason)
             factor = _primary_structure_text_key(axis['decision_factor'])
-            if (factor in factors or not _primary_structure_v3_has_conclusion(axis, factor, quotes)
+            root_set = frozenset(anchors)
+            if (factor in factors or root_set in admitted_roots
+                    or not _primary_structure_v3_has_conclusion(axis, factor, quotes)
                     or any(axis['heading'] == prior['title'] or description == prior['description'] for prior in public)):
                 continue
             factors.add(factor)
+            admitted_roots.add(root_set)
         else:
             _semantic_map_require(all(axis[key] not in quotes for key in parts), reason)
         refs = list(dict.fromkeys(node['node_id'] for node, *_ in selected))
-        public.append(dict(scope=axis['scope'], title=axis['heading'],
-                           description=description, node_refs=refs))
+        display = dict(scope=axis['scope'], title=axis['heading'], description=description, node_refs=refs)
+        if independently_compared:
+            display['criterion'] = axis['criterion']
+        public.append(display)
         admitted.append(axis)
     _check_public_primary_structures(public, {node['node_id'] for node in nodes})
     for axis, source in zip(public, admitted, strict=True):

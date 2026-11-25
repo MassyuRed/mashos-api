@@ -251,11 +251,13 @@ async def get_detail(
     observed = family == 'self_structure' and observed_enabled()
     observed_tier = None
     if observed:
-        from analysis_cumulative_service import read_maps
+        from analysis_cumulative_service import map_report_for_plan, read_maps
         result = await read_maps(me, report_id=rid, month=month, limit=1)
         observed_tier = result['subscription_tier']
         if result['items']:
-            return {'status': 'ok', 'item': result['items'][0]}
+            item, scoped = map_report_for_plan(result['items'][0], observed_tier)
+            return dict(status='ok', item=item, map_subscription_tier=observed_tier,
+                        **({'_map_plan_projected': True} if scoped else {}))
         if result['matched']:
             raise HTTPException(404, 'analysis_report_unavailable')
 

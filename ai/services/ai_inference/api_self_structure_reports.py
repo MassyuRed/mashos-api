@@ -8,9 +8,9 @@ rename-safe phase.
 """
 
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
-from fastapi import FastAPI, Header, Path, Query
+from fastapi import FastAPI, Header, Path, Query, Response
 from pydantic import BaseModel, Field
 
 from api_account_visibility import _require_user_id
@@ -48,11 +48,14 @@ class SelfStructureReportDetailItem(SelfStructureReportHistoryItem):
 class SelfStructureReportDetailResponse(BaseModel):
     status: str = "ok"
     item: SelfStructureReportDetailItem
+    map_subscription_tier: Optional[Literal['free', 'plus', 'premium']] = None
+    map_plan_scoped: bool = False
 
 
 def register_self_structure_report_routes(app: FastAPI) -> None:
     @app.get("/self-structure/reports/history", response_model=SelfStructureReportHistoryResponse)
     async def get_self_structure_report_history(
+        response: Response,
         report_type: str = Query(default="monthly"),
         limit: int = Query(default=60, ge=1, le=200),
         offset: int = Query(default=0, ge=0),
@@ -68,10 +71,12 @@ def register_self_structure_report_routes(app: FastAPI) -> None:
             offset=int(offset or 0),
             now_utc=datetime.now(timezone.utc),
         )
+        response.headers['Cache-Control'] = 'private, no-store'
         return SelfStructureReportHistoryResponse(**payload)
 
     @app.get("/self-structure/reports/{report_id}", response_model=SelfStructureReportDetailResponse)
     async def get_self_structure_report_detail(
+        response: Response,
         report_id: str = Path(..., min_length=1),
         authorization: Optional[str] = Header(default=None, alias="Authorization"),
         month: Optional[str] = Query(default=None),
@@ -87,10 +92,12 @@ def register_self_structure_report_routes(app: FastAPI) -> None:
             month=month,
         )
         from analysis_cumulative_service import map_response_for_renderer
+        response.headers['Cache-Control'] = 'private, no-store'
         return SelfStructureReportDetailResponse(**map_response_for_renderer(payload, map_renderer))
 
     @app.get("/self-structure/reports/{report_id}/evidence")
     async def get_map_evidence(
+        response: Response,
         report_id: str = Path(..., min_length=1),
         node: str = Query(...),
         month: Optional[str] = Query(default=None),
@@ -98,6 +105,7 @@ def register_self_structure_report_routes(app: FastAPI) -> None:
     ):
         me = await _require_user_id(authorization)
         from analysis_cumulative_service import map_evidence
+        response.headers['Cache-Control'] = 'private, no-store'
         return await map_evidence(me, report_id, node, month=month)
 
 

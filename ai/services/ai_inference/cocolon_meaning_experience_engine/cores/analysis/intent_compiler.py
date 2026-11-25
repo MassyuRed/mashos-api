@@ -4629,7 +4629,8 @@ def _semantic_event_plan_review(graph, prepared, original, expanded):
             for correction in json.loads(prepared.map_correction_sources_json or '[]'):
                 rejected = correction['source']['target_context']['field_text']
                 if rejected:
-                    axes = [axis for axis in axes if rejected not in (axis['title'], axis['description'])]
+                    axes = [axis for axis in axes if rejected not in (
+                        axis['title'], axis['description'], axis.get('criterion'))]
             overview['primary_structures'] = axes
         return replace(graph, meaning_review_json=semantic_map_canonical(review), overview_json=semantic_map_canonical(overview),
             source_ordered_detail=original.get('merge_wire_version') in ('cocolon.analysis.merge_wire.v4', 'cocolon.analysis.merge_wire.v5', 'cocolon.analysis.merge_wire.v6', 'cocolon.analysis.merge_wire.v7', 'cocolon.analysis.merge_wire.v8', 'cocolon.analysis.merge_wire.v9', 'cocolon.analysis.merge_wire.v10'),

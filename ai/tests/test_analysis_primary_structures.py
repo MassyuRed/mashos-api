@@ -99,6 +99,8 @@ def test_final_native_receipt_and_saved_graph_show_conditional_conclusion_and_hi
     text = artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text']
     assert coverage['mapped_count'] == 2
     expected = [dict(scope='across_records', title=axis['heading'], description=description, node_refs=['n1', 'n2'])]
+    if version == 'karen.v3':
+        expected[0]['criterion'] = axis['criterion']
     assert graph['overview']['primary_structures'] == (expected if publish else [])
     assert (description in text) == publish
     assert 'n1.u1.e1' not in json.dumps(graph)
@@ -343,3 +345,130 @@ def test_omission_preserves_neighbors_and_checks_every_origin_before_publication
     for bad in (dict(omitted, anchors=['n9.u1.e1']), dict(omitted, scope='across_records', anchors=['n1.u1.e1'])):
         with pytest.raises(core.AnalysisSemanticMapError):
             core._read_primary_structures(p, material, nodes, [first, bad, last])
+
+
+def test_viewer_plan_projects_one_saved_version_without_leaking_paid_graph_or_text(monkeypatch):
+    from copy import deepcopy
+    from datetime import datetime, timedelta, timezone
+    from fastapi import HTTPException
+    from report_artifact_read_service import get_detail
+
+    rid = str(UUID(int=840))
+    node_refs = ['n1', 'n2', 'n3', 'n4', 'n5', 'n6']
+    nodes = [dict(node_ref=ref, node_kind='CHOICE_OUTPUT', perspective='SELF', title=f'{ref}の選択',
+                  summary=f'{ref}の有料要約', explanation=f'{ref}の有料詳細', context=[f'{ref}の有料条件'],
+                  unknowns=[f'{ref}の有料未確認'], evidence_badge_count=1) for ref in node_refs]
+    edges = [dict(edge_ref=f'e{i}', from_ref=left, to_ref=right, relation_kind='CONTEXT_CONTRAST',
+                  label=f'{i}の違い', explanation=f'{i}の有料関係')
+             for i, (left, right) in enumerate((('n2', 'n3'), ('n3', 'n5'), ('n1', 'n4'), ('n1', 'n5')), 1)]
+    axes = [dict(scope='across_records', title=title, description=criterion + '有料の比較説明です。',
+                 criterion=criterion, node_refs=refs)
+            for title, criterion, refs in [('優先', '時間を優先します。', ['n2', 'n3', 'n5']),
+                                           ('確認', '確認を先にします。', ['n1', 'n4']),
+                                           ('納得', '納得して進めます。', ['n6'])]]
+    graph = dict(schema_version='cocolon.analysis.semantic_map.v1', wire_kind='watashi.map.v3',
+                 projection_of=f'artifact:{UUID(rid).hex}@1', artifact_version=1, period_label='すべての記録',
+                 overview=dict(title='本人の選び方', summary='有料の全体要約', primary_structures=axes),
+                 nodes=nodes, edges=edges, accessibility_linear_order=node_refs)
+    coverage = dict(profile='cumulative.v1', source_count=6, processed_count=6, mapped_count=6,
+                    unparsed_count=0, excluded_count=0, exclusion_reasons={}, stale_supplement_count=0)
+    row = dict(id=rid, report_type='latest', report_mode='standard', source_profile='cumulative.v1',
+               title='わたしマップ', period_start='2026-01-01', period_end='2026-11-01', generated_at='2026-11-02',
+               snapshot_month=None, captured_at=None, content_text=service._projection_text(graph),
+               content_json=dict(watashiMap=graph, report_mode='standard', map_context=coverage))
+    source = deepcopy(row)
+    month = datetime.now(timezone(timedelta(hours=9))).date().replace(day=1).isoformat()
+    tier = 'free'
+    calls = []
+
+    async def rpc(name, payload):
+        calls.append(name)
+        if name == 'analysis_cumulative_evidence':
+            return {'tier': tier, 'items': []}
+        assert name == 'analysis_cumulative_read'
+        item = deepcopy(source)
+        if payload['p_month'] or payload['p_history']:
+            item.update(report_type='monthly', snapshot_month=month, captured_at='2026-11-02')
+        return dict(items=[item], matched=True, subscription_tier=tier,
+                    history_limit={'free': 2, 'plus': 12, 'premium': None}[tier])
+
+    monkeypatch.setattr(service, '_rpc', rpc)
+    monkeypatch.setattr('analysis_observed_service.observed_enabled', lambda: True)
+    monkeypatch.setattr(service, '_project_evidence', lambda _owner, raw: raw['items'])
+
+    def current(renderer='semantic.v3'):
+        result = asyncio.run(service.ensure_map(OWNER, ensure=False))
+        return service.map_response_for_renderer(result, renderer)
+
+    def monthly(renderer='semantic.v3'):
+        result = asyncio.run(service.ensure_map(OWNER, monthly=True, ensure=False))
+        return service.map_response_for_renderer(result, renderer)
+
+    def detail(renderer='semantic.v3'):
+        result = asyncio.run(get_detail(user_id=OWNER, family='self_structure', report_id=rid, month=month))
+        return service.map_response_for_renderer(result, renderer)
+
+    free = current()
+    assert free['map_plan_scoped'] and free['map_subscription_tier'] == 'free'
+    assert free['report_id'] == rid == detail()['item']['id']
+    assert all(axis['criterion'] in free['content_text'] for axis in axes)
+    assert '有料' not in json.dumps(free, ensure_ascii=False)
+    assert [axis['node_refs'] for axis in free['meta']['overview']['primary_structures']] == [['n2', 'n3', 'n5'], [], []]
+    assert [edge['edge_ref'] for edge in free['meta']['edges']] == ['e1', 'e2']
+    assert detail()['item']['content_text'] == free['content_text']
+    assert detail()['item']['content_json']['watashiMap'] == free['meta']
+    assert monthly()['snapshot_month'] == month
+    assert monthly()['meta'] == free['meta']
+    assert monthly()['report_id'] == rid
+    for renderer in ('semantic.v2', 'semantic.v1', None):
+        assert current(renderer)['meta'] is None
+        assert current(renderer)['content_text'] == free['content_text']
+        assert 'watashiMap' not in detail(renderer)['item']['content_json']
+    with pytest.raises(HTTPException) as unauthorized:
+        asyncio.run(service.map_evidence(OWNER, rid, 'n2', month=month))
+    assert unauthorized.value.status_code == 404
+    assert 'analysis_cumulative_evidence' not in calls
+
+    tier = 'plus'
+    plus = current()
+    assert plus['map_subscription_tier'] == 'plus'
+    assert plus['report_id'] == rid and plus['meta']['projection_of'] == free['meta']['projection_of']
+    assert [axis['description'] for axis in plus['meta']['overview']['primary_structures']] == [axis['description'] for axis in axes]
+    assert [edge['edge_ref'] for edge in plus['meta']['edges']] == ['e1', 'e2', 'e3']
+    assert asyncio.run(service.map_evidence(OWNER, rid, 'n1', month=month)) == {'items': []}
+    assert detail()['item']['content_json']['watashiMap'] == plus['meta']
+    assert monthly()['meta'] == plus['meta']
+
+    tier = 'premium'
+    assert current()['meta'] == plus['meta']
+    assert detail()['map_subscription_tier'] == 'premium'
+    tier = 'free'
+    assert current() == free
+    assert row == source
+    assert all(call.startswith('analysis_cumulative_') for call in calls)
+
+    # With no independently supported relationship, the same verified conclusion
+    # remains readable. A saved result with no accepted conclusion reveals no details.
+    unsupported = deepcopy(graph)
+    unsupported['edges'] = []
+    figureless, text = service.map_projection_for_plan(unsupported, 'free')
+    assert figureless['nodes'] == [] and figureless['edges'] == []
+    assert text == free['content_text']
+    unsupported['overview']['primary_structures'] = []
+    figureless, text = service.map_projection_for_plan(unsupported, 'premium')
+    assert figureless['nodes'] == [] and figureless['overview']['primary_structures'] == []
+    assert '有料' not in text
+
+
+def test_v3_rejects_unwritten_priority_and_does_not_repeat_the_same_roots():
+    prepared, plan, bodies = scenario(FIRST, SECOND, version='karen.v3')
+    nodes = core._semantic_v4_join(plan, bodies)
+    material = json.loads(prepared.material_json)
+    grounded = v3_reading()
+    overstated = dict(grounded, heading='最も重要な基準')
+    repeated = dict(grounded, heading='引き受ける前の判断', decision_factor='余地',
+                    criterion='引き受けるかどうかを自分で判断できる余地を大切にしています。',
+                    case_reading='会議では余地があるため引き受け、家では先に決められていて断っています。',
+                    anchors=list(reversed(grounded['anchors'])))
+    admitted = core._read_primary_structures(prepared, material, nodes, [overstated, grounded, repeated])
+    assert [axis['title'] for axis in admitted] == [grounded['heading']]

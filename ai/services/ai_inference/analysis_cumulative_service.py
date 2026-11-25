@@ -129,7 +129,20 @@ def _legacy_semantic_projection(projection, saved_text=None):
 
 def map_response_for_renderer(payload, renderer):
     """Compatibility only; no generation, storage rewrite, or evidence change."""
-    if renderer == 'semantic.v2':
+    scoped = payload.get('_map_plan_projected', False)
+    if scoped:
+        payload = deepcopy(payload)
+        del payload['_map_plan_projected']
+        payload['map_plan_scoped'] = True
+    if renderer == 'semantic.v3' or (renderer == 'semantic.v2' and not scoped):
+        return payload
+    if scoped:
+        # Clients that cannot display the scoped graph still receive the same
+        # authorized conclusions and case readings, including graphless views.
+        if 'meta' in payload:
+            payload['meta'] = None
+        if 'item' in payload:
+            payload['item']['content_json'].pop('watashiMap', None)
         return payload
     if renderer == 'semantic.v1':
         # Installed v3 readers require exactly the original overview keys.
@@ -178,6 +191,75 @@ def _month(value):
         return month.isoformat()
     except (ValueError, TypeError):
         raise HTTPException(400, 'analysis_month_invalid') from None
+
+
+_FREE_FIGURE_RELATIONS = ('CRITERION_EXPRESSION', 'CONTEXT_CONTRAST')
+_NO_SUPPORTED_STRUCTURE = '現時点の記録からは、選び方を支える条件をまだ確かめられていません。'
+
+
+def _plan_structures(projection):
+    if projection.get('wire_kind') != 'watashi.map.v3':
+        return None
+    axes = projection['overview'].get('primary_structures')
+    if axes is None or (axes and all('criterion' not in axis for axis in axes)):
+        return None
+    return [axis for axis in axes if 'criterion' in axis]
+
+
+def _free_figure(axes, edges):
+    """The highest-ranked structure with a verified relation gets the one small figure."""
+    for index, axis in enumerate(axes):
+        refs = set(axis['node_refs'])
+        relationships = [(edge['from_ref'], edge['to_ref']) for edge in edges
+                         if edge['from_ref'] in refs and edge['to_ref'] in refs
+                         and edge['relation_kind'] in _FREE_FIGURE_RELATIONS]
+        if relationships:
+            connected = set(relationships[0])
+            for left, right in relationships[1:]:
+                if left in connected or right in connected:
+                    connected.update((left, right))
+                    if len(connected) == 3:
+                        break
+            return index, connected
+    return None, set()
+
+
+def map_projection_for_plan(projection, tier):
+    """Build a view from validated saved analysis while retaining saved node IDs."""
+    axes = _plan_structures(projection)
+    if axes is None:
+        return None
+    is_free = tier not in ('plus', 'premium')
+    chosen, figure = _free_figure(axes, projection['edges']) if is_free else (None, set())
+    sections = []
+    for index, axis in enumerate(axes):
+        refs = axis['node_refs']
+        if is_free:
+            refs = [ref for ref in refs if index == chosen and ref in figure]
+        sections.append(dict(scope=axis['scope'], title=axis['title'], node_refs=refs,
+                             description=axis['criterion'] if is_free else axis['description']))
+    visible_groups = [set(section['node_refs']) for section in sections]
+    visible_refs = set().union(*visible_groups)
+    nodes = [dict(node, summary=node['title'], explanation=node['title'], context=[], unknowns=[]) if is_free else node
+             for node in projection['nodes'] if node['node_ref'] in visible_refs]
+    edges = [dict(edge, explanation=edge['label']) if is_free else edge for edge in projection['edges']
+             if (not is_free or edge['relation_kind'] in _FREE_FIGURE_RELATIONS)
+             and any({edge['from_ref'], edge['to_ref']} <= group for group in visible_groups)]
+    body = '\n\n'.join(section['title'] + '\n' + section['description'] for section in sections) or _NO_SUPPORTED_STRUCTURE
+    overview = dict(title=projection['overview']['title'],
+                    summary=sections[0]['description'] if sections else _NO_SUPPORTED_STRUCTURE,
+                    primary_structures=sections)
+    view = dict(projection, overview=overview, nodes=nodes, edges=edges,
+                accessibility_linear_order=[node['node_ref'] for node in nodes])
+    return view, body
+
+
+def map_report_for_plan(row, tier):
+    projected = map_projection_for_plan(row['content_json']['watashiMap'], tier)
+    if projected is None:
+        return row, False
+    graph, text = projected
+    return dict(row, content_text=text, content_json=dict(row['content_json'], watashiMap=graph)), True
 
 
 async def read_maps(user_id, *, report_id=None, history=False, limit=60, offset=0, month=None, metadata_only=False):
@@ -901,8 +983,9 @@ async def _ensure_map(user_id, *, ensure=True, force=False, monthly=False, model
     this_month = datetime.now(timezone(timedelta(hours=9))).date().replace(day=1).isoformat()
     if monthly and row and row['snapshot_month'] != this_month:
         row = None
+    tier = result.get('subscription_tier', 'free')
     if monthly and row:
-        return _response(row, monthly=True)
+        return _response(row, monthly=True, tier=tier)
     refreshed, coverage = False, None
     if ensure and observed_mode() == 'development':
         current = await read_maps(owner, limit=1) if monthly else result
@@ -967,7 +1050,7 @@ async def _ensure_map(user_id, *, ensure=True, force=False, monthly=False, model
                     type(exc).__name__, '>'.join(locations))
                 raise HTTPException(422, 'analysis_saved_source_unavailable') from None
             if artifact is None:
-                return _response(None, coverage=coverage)
+                return _response(None, coverage=coverage, tier=tier)
             if model_source is not None:
                 _require_model_write_active()
                 from analysis_model_source import require_current_analysis_model_source
@@ -992,12 +1075,13 @@ async def _ensure_map(user_id, *, ensure=True, force=False, monthly=False, model
             refreshed = True
         checked = await read_maps(owner, report_id=rid if not monthly else None,
             history=monthly, month=this_month if monthly else None, limit=1)
+        tier = checked.get('subscription_tier', 'free')
         row = checked['items'][0] if checked['items'] else None
         if not row:
             raise HTTPException(409, 'analysis_source_changed')
         if refreshed and row['id'] == str(UUID(artifact.artifact_id[9:])):
             await _queue_map_update_notification(owner, row)
-    return _response(row, refreshed=refreshed, monthly=monthly, coverage=coverage)
+    return _response(row, refreshed=refreshed, monthly=monthly, coverage=coverage, tier=tier)
 
 
 async def _queue_map_update_notification(owner, row):
@@ -1018,7 +1102,10 @@ async def _queue_map_update_notification(owner, row):
         logging.getLogger(__name__).warning('Watashi map completion push reservation failed')
 
 
-def _response(row, *, refreshed=False, monthly=False, coverage=None):
+def _response(row, *, refreshed=False, monthly=False, coverage=None, tier):
+    scoped = False
+    if row:
+        row, scoped = map_report_for_plan(row, tier)
     insufficient = row is None and coverage is not None and coverage['source_count'] > 0
     return dict(status='ok', refreshed=refreshed, reason='saved' if refreshed else ('up_to_date' if row else ('insufficient_input' if insufficient else 'no_visible_content')),
         report_mode='standard', period='all', period_start=row['period_start'] if row else None,
@@ -1029,7 +1116,8 @@ def _response(row, *, refreshed=False, monthly=False, coverage=None):
         report_id=row['id'] if row else None, snapshot_month=row['snapshot_month'] if row else None,
         captured_at=row['captured_at'] if row else None, source_profile=PROFILE,
         has_visible_content=bool(row), skip_reason=None if row else ('analysis_insufficient_input' if insufficient else 'analysis_saved_map_unavailable'),
-        history_saved=bool(row) if monthly else False)
+        history_saved=bool(row) if monthly else False, map_subscription_tier=tier,
+        **({'_map_plan_projected': True} if scoped else {}))
 
 
 async def map_status(user_id):
@@ -1045,7 +1133,7 @@ async def map_status(user_id):
     return dict(version_key=row['content_json']['watashiMap']['projection_of'] if row else None,
         generated_at=row['generated_at'] if row else None, saved_report_mode='standard' if row else None,
         has_visible_content=bool(row), skip_reason=None if row else 'analysis_saved_map_unavailable',
-        refresh_status=refresh_status)
+        refresh_status=refresh_status, map_subscription_tier=result.get('subscription_tier', 'free'))
 
 
 def _map_refresh_queue_enabled():
@@ -1120,9 +1208,19 @@ async def map_history(user_id, *, limit=60, offset=0):
 async def map_evidence(user_id, report_id, node, *, month=None):
     if not re.fullmatch(r'n[1-9][0-9]*', node):
         raise HTTPException(400, 'analysis_node_invalid')
+    result = await read_maps(user_id, report_id=report_id, month=month, limit=1)
+    if not result['items']:
+        raise HTTPException(404, 'analysis_report_unavailable')
+    graph = result['items'][0]['content_json']['watashiMap']
+    view = map_projection_for_plan(graph, result['subscription_tier'])
+    if view is not None and (result['subscription_tier'] == 'free'
+            or node not in view[0]['accessibility_linear_order']):
+        raise HTTPException(404, 'analysis_report_unavailable')
     raw = await _rpc('analysis_cumulative_evidence', dict(p_user_id=_owner(user_id),
         p_id=_owner(report_id), p_node=node, p_month=_month(month)))
     try:
+        if view is not None and raw['tier'] not in ('plus', 'premium'):
+            raise HTTPException(404, 'analysis_report_unavailable')
         return {'items': await asyncio.to_thread(_project_evidence, _owner(user_id), raw)}
     except (ValueError, KeyError, TypeError, AttributeError):
         raise HTTPException(409, 'analysis_evidence_source_changed') from None

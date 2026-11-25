@@ -368,6 +368,7 @@ def test_authenticated_latest_and_detail_negotiate_actual_semantic_wire(monkeypa
             path = '/self-structure/reports/' + body['report_id']
             new_detail = await client.get(path, headers=headers)
             assert new_detail.status_code == 200, new_detail.text
+            assert created.headers['Cache-Control'] == new_detail.headers['Cache-Control'] == 'private, no-store'
             assert new_detail.json()['item']['content_json']['watashiMap'] == body['meta']
             old_detail = await client.get(path, headers={'Authorization': 'Bearer synthetic'})
             assert old_detail.status_code == 200, old_detail.text

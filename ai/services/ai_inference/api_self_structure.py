@@ -36,7 +36,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, Literal, Optional
 
 import httpx
-from fastapi import FastAPI, Header, HTTPException, Path, Query
+from fastapi import FastAPI, Header, HTTPException, Path, Query, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
@@ -301,6 +301,8 @@ class CumulativeMapMetadata(BaseModel):
     report_id: Optional[str] = None
     source_profile: Optional[str] = None
     map_context: Optional[Dict[str, Any]] = None
+    map_subscription_tier: Optional[Literal['free', 'plus', 'premium']] = None
+    map_plan_scoped: bool = False
     snapshot_month: Optional[str] = None
     captured_at: Optional[str] = None
 
@@ -336,6 +338,7 @@ class MyProfileLatestEnsureResponse(CumulativeMapMetadata):
 
 class MyProfileLatestStatusResponse(BaseModel):
     status: str = Field("ok", description="ok")
+    map_subscription_tier: Optional[Literal['free', 'plus', 'premium']] = None
     version_key: Optional[str] = Field(default=None, description="stable content/version key for app-internal banner polling")
     generated_at: Optional[str] = Field(default=None, description="generated_at of the saved latest report")
     saved_report_mode: Optional[str] = Field(default=None, description="saved latest report mode (light | standard | deep)")
@@ -1377,6 +1380,7 @@ def register_self_structure_routes(app: FastAPI) -> None:
 
     @app.get("/self-structure/latest/status", response_model=SelfStructureLatestStatusResponse)
     async def get_self_structure_latest_status(
+        response: Response,
         authorization: Optional[str] = Header(default=None, alias="Authorization"),
     ) -> SelfStructureLatestStatusResponse:
         access_token = _extract_bearer_token(authorization)
@@ -1388,6 +1392,7 @@ def register_self_structure_routes(app: FastAPI) -> None:
         from analysis_observed_service import observed_enabled, saved_status
         if observed_enabled():
             from analysis_cumulative_service import map_status
+            response.headers['Cache-Control'] = 'private, no-store'
             return SelfStructureLatestStatusResponse(**(await map_status(str(uid))))
 
         try:
@@ -1427,6 +1432,7 @@ def register_self_structure_routes(app: FastAPI) -> None:
 
     @app.get("/self-structure/latest", response_model=SelfStructureLatestEnsureResponse)
     async def get_or_refresh_self_structure_latest(
+        response: Response,
         authorization: Optional[str] = Header(default=None, alias="Authorization"),
         map_renderer: Optional[str] = Header(default=None, alias="X-Watashi-Map-Renderer"),
         ensure: bool = Query(
@@ -1481,6 +1487,7 @@ def register_self_structure_routes(app: FastAPI) -> None:
                     result['refresh_status'] = 'failed'
             else:
                 result = await ensure_map(uid, ensure=ensure, force=force)
+            response.headers['Cache-Control'] = 'private, no-store'
             return SelfStructureLatestEnsureResponse(**map_response_for_renderer(
                 result, map_renderer))
 
@@ -1774,6 +1781,7 @@ def register_self_structure_routes(app: FastAPI) -> None:
 
     @app.post("/self-structure/monthly/ensure", response_model=SelfStructureMonthlyEnsureResponse)
     async def ensure_self_structure_monthly_report(
+        response: Response,
         body: SelfStructureMonthlyEnsureBody,
         authorization: Optional[str] = Header(default=None, alias="Authorization"),
         map_renderer: Optional[str] = Header(default=None, alias="X-Watashi-Map-Renderer"),
@@ -1809,6 +1817,7 @@ def register_self_structure_routes(app: FastAPI) -> None:
             if not include_secret or body.now_iso is not None:
                 raise HTTPException(400, 'analysis_period_override_unavailable')
             from analysis_cumulative_service import ensure_map, map_response_for_renderer
+            response.headers['Cache-Control'] = 'private, no-store'
             return SelfStructureMonthlyEnsureResponse(**map_response_for_renderer(
                 await ensure_map(uid, monthly=True), map_renderer))
 

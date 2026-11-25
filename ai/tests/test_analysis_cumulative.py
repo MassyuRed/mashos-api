@@ -222,6 +222,10 @@ def test_real_q3_saved_answers_cross_trimmed_sql_source_and_cumulative_lifecycle
         member, _ = _analysis_saved_member(dict(raw,tier='free',now=snap['now']), owner=OWNER,
             input_id=parent, tier='free', start=_time(snap['period_start']), end=_time(snap['period_end']), cumulative=True)
         assert len(member.supplements) == 3
+        no_context, _ = _analysis_saved_member(dict(raw, tier='free', now=snap['now'], context=None),
+            owner=OWNER, input_id=parent, tier='free', start=_time(snap['period_start']),
+            end=_time(snap['period_end']), cumulative=True)
+        assert no_context == member
         built = run(service.ensure_map(OWNER))
         assert built['has_visible_content'], built
         assert built['map_context']['source_count'] == 2

@@ -118,6 +118,10 @@ def _analysis_saved_member(snapshot, *, owner, input_id, tier, start, end, cumul
         if not start <= created < end:
             raise AnalysisSavedSourceError('analysis_saved_source_changed')
         if cumulative:
+            # Older originals can omit the contextual Emlis reply after a plan
+            # change. Its absence does not invalidate the signed owner answers.
+            if 'context' in snapshot and snapshot['context'] is None:
+                snapshot = dict(snapshot, context={})
             # Map scope is all owned inputs, independent of the general input
             # history window. Never impersonate a higher subscription tier.
             thread = snapshot.get('thread')
