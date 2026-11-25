@@ -11,6 +11,7 @@ from contextvars import ContextVar
 from copy import deepcopy
 from dataclasses import asdict, dataclass, replace
 import hashlib
+from itertools import permutations
 import json
 import unicodedata
 
@@ -3734,6 +3735,12 @@ def _primary_structure_v3_has_conclusion(axis, factor, quotes):
     sentences = [axis[key] for key in ('criterion', 'case_reading')]
     heading = axis['heading']
     sentence_keys = [_primary_structure_text_key(text) for text in sentences]
+    quote_keys = [_primary_structure_text_key(quote) for quote in quotes]
+    # An inter-record explanation must add prose beyond the complete quotes.
+    if axis['scope'] == 'across_records' and any(
+            sentence_keys[1] == ''.join(parts) for size in range(2, len(quote_keys) + 1)
+            for parts in permutations(quote_keys, size)):
+        return False
     # Stronger terms also change the meaning when used only in the heading.
     claims = _PRIMARY_STRUCTURE_STRONG_CLAIM.findall(' '.join([heading, *sentences]))
     return (all(any(claim in quote for quote in quotes) for claim in claims)
@@ -3743,7 +3750,7 @@ def _primary_structure_v3_has_conclusion(axis, factor, quotes):
         and not any(re.search(r'[\r\n\t]', text) or
                     _PRIMARY_STRUCTURE_PRIVATE_REF.search(unicodedata.normalize('NFKC', text))
                     for text in [heading, *sentences])
-        and not set(sentence_keys) & {_primary_structure_text_key(quote) for quote in quotes})
+        and not set(sentence_keys) & set(quote_keys))
 
 
 def _check_public_primary_structures(axes, node_refs):

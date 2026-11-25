@@ -554,3 +554,20 @@ def test_v3_keeps_a_written_choice_when_its_optional_meaning_adds_an_action():
     assert not core._choice_comparison_covers('通路に置ける幅なので店員に話して買いました。' + grounded, left, right)
     assert core._choice_added_action('妨げになる可能性を排除した。', second)
     assert core._choice_added_action('通路をふさぐ幅か確認しなかった。', second)
+
+
+def test_v3_across_records_allows_short_quotes_but_rejects_combined_full_sources():
+    first = '通路に置ける幅だったので、私は小さい棚を買いました。'
+    second = '通路をふさぐ幅だったので、私は大きい棚を買いませんでした。'
+    prepared, plan, bodies = scenario(first, second, version='karen.v3')
+    material = json.loads(prepared.material_json)
+    nodes = core._semantic_v4_join(plan, bodies)
+    axis = dict(v3_reading(), decision_factor='通路', heading='棚を選んだときの条件',
+                criterion='この二つの場面では、通路をふさがずに置ける幅かどうかで棚を選んでいます。',
+                case_reading='「通路に置ける幅」のときは小さい棚を買いました。'
+                             '「通路をふさぐ幅」では大きい棚を買いませんでした。')
+    admitted = core._read_primary_structures(prepared, material, nodes, [axis])
+    assert admitted[0]['description'] == axis['criterion'] + axis['case_reading']
+
+    for combined in (first + second, second + first):
+        assert core._read_primary_structures(prepared, material, nodes, [dict(axis, case_reading=combined)]) == []
