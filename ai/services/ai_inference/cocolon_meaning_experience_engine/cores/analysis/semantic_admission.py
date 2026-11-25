@@ -3609,6 +3609,9 @@ _CHOICE_ADDED_ACTIONS = (
     re.compile(r'(?:可能性|危険|支障|おそれ)(?:を|は|が)(?:排除した|なくした|消した)'),
     re.compile(r'(?:と(?:言っ|話し|聞い|伝え)|に(?:相談し|話し|伝え)|から聞い)'),
 )
+_CHOICE_POLAR_CONDITION = re.compile(
+    r'(?:[一-鿿々ァ-ヺー]{1,12}で)?(?P<stem>[一-鿿々][一-鿿々ぁ-ゖ]{0,9}[えけげせぜてでねへべぺめれ])'
+    r'(?P<ending>る|ない)')
 
 
 def _choice_added_action(text, source):
@@ -3710,16 +3713,9 @@ def _v3_decision_edges(edges, material, nodes):
     return retained
 
 
-def _v3_source_contrast_edge(material, nodes, axes, edges):
-    """Use exact choice spans for a small diagram once its explanation is admitted."""
-    if (len(axes) != 1 or axes[0]['scope'] != 'across_records'
-            or material.get('history_stage') or len(material['records']) != 2
+def _v3_source_contrast_origins(material, nodes):
+    if (material.get('history_stage') or len(material['records']) != 2
             or len(material['fields']) != 2 or len(nodes) != 2):
-        return None
-    refs = [node['node_id'] for node in nodes]
-    if set(axes[0]['node_refs']) != set(refs) or any(
-            edge['relation_kind'] in ('CONTEXT_CONTRAST', 'CRITERION_EXPRESSION')
-            and {edge['from'], edge['to']} == set(refs) for edge in edges):
         return None
     fields = {field['field']: field for field in material['fields']}
     if any((field['source_role'], field['field_path']) != ('ORIGINAL_INPUT', 'memo') for field in fields.values()):
@@ -3733,6 +3729,21 @@ def _v3_source_contrast_edge(material, nodes, axes, edges):
             return None
         root, = unit['evidence']
         origins.append((node, unit, fields[root['field']], root['quote']))
+    return origins
+
+
+def _v3_source_contrast_edge(material, nodes, axes, edges):
+    """Use exact choice spans for a small diagram once its explanation is admitted."""
+    if len(axes) != 1 or axes[0]['scope'] != 'across_records':
+        return None
+    refs = [node['node_id'] for node in nodes]
+    if set(axes[0]['node_refs']) != set(refs) or any(
+            edge['relation_kind'] in ('CONTEXT_CONTRAST', 'CRITERION_EXPRESSION')
+            and {edge['from'], edge['to']} == set(refs) for edge in edges):
+        return None
+    origins = _v3_source_contrast_origins(material, nodes)
+    if origins is None:
+        return None
     pair = next(_choice_pairs(origins, _semantic_display_sentences(material)), None)
     if pair is None:
         return None
@@ -3741,6 +3752,63 @@ def _v3_source_contrast_edge(material, nodes, axes, edges):
         return None
     return {'from': refs[0], 'to': refs[1], 'from_unit': refs[0] + '.u1', 'to_unit': refs[1] + '.u1',
             'label': label, 'relation_kind': 'CONTEXT_CONTRAST'}
+
+
+def _v3_read_confirmed_choice_contrast(prepared, material, nodes, authored_axes):
+    """Describe an authored comparison from two complete, opposite written choices."""
+    from .intent_compiler import _proposition
+
+    if len(authored_axes) != 1 or prepared.map_correction_sources_json:
+        return None
+    origins = _v3_source_contrast_origins(material, nodes)
+    if not origins:
+        return None
+    axis, = authored_axes
+    refs = [node['node_id'] for node in nodes]
+    if (axis['scope'] != 'across_records' or set(axis['anchors']) != {ref + '.u1.e1' for ref in refs}
+            or any(field['text'] != quote or not field.get('fragment_is_complete_field', True)
+                   for _, _, field, quote in origins)):
+        return None
+    pair = next(_choice_pairs(origins, _semantic_display_sentences(material)), None)
+    if pair is None or not _choice_comparison_covers(axis['case_reading'], *pair):
+        return None
+
+    readings = {}
+    for (condition, action, forms, _), (*_, quote) in zip(pair, origins, strict=True):
+        condition_match = _CHOICE_POLAR_CONDITION.fullmatch(condition)
+        reading = _proposition(action)
+        if (condition_match is None or not quote.startswith(condition)
+                or reading is None or reading.actor != 'SELF' or not reading.arguments
+                or (reading.modality, reading.temporal_scope) != ('fact', 'past')
+                or reading.relative_day or reading.written_modifiers
+                or any(kind not in {'SELF_TOPIC', 'FINITE_PREDICATE'} and not kind.startswith('CASE_')
+                       for kind, _, _ in reading.source_parts)
+                or reading.source_parts[-1][0] != 'FINITE_PREDICATE'
+                or condition_match['ending'] != {'positive': 'る', 'negative': 'ない'}.get(reading.polarity)):
+            return None
+        polite = next((form for form in forms if form.endswith(('ました', 'ませんでした'))), None)
+        if polite is None:
+            return None
+        readings[reading.polarity] = condition, condition_match['stem'], reading, polite
+    if set(readings) != {'positive', 'negative'}:
+        return None
+    positive_condition, stem, positive, positive_verb = readings['positive']
+    negative_condition, negative_stem, negative, negative_verb = readings['negative']
+    if (stem != negative_stem or positive.arguments != negative.arguments
+            or positive.predicate_lemma != negative.predicate_lemma
+            or axis['decision_factor'] not in {stem + 'る', stem + 'るか', stem + 'るかどうか'}):
+        return None
+
+    topic = ''.join(noun + particle for particle, noun in positive.arguments)
+    factor = stem + 'るかどうか'
+    criterion = f'この二つの記録では、{stem}ることが{topic}{positive.predicate_lemma}条件でした。'
+    case_reading = f'{positive_condition}ため、{topic}{positive_verb}。{negative_condition}ため、{negative_verb}。'
+    display = dict(scope='across_records', title=factor, description=criterion + case_reading,
+                   node_refs=refs, criterion=criterion)
+    if len(criterion) > 160 or len(display['description']) > 360:
+        return None
+    _semantic_v14_visible_text(prepared, (factor, display['description']), (origin[3] for origin in origins))
+    return display
 
 
 def _v3_grounded_choice_meanings(material, nodes):
@@ -4060,12 +4128,16 @@ def semantic_node_local_v4_relations(prepared, plan, bodies, packet, *, ordered_
     if 'primary_structures' in packet:
         axes = _read_primary_structures(
             prepared, material, nodes, packet['primary_structures'], retained=retained_axes)
-        overview = dict(overview, primary_structures=axes)
         if material.get('primary_structure_reading') == 'karen.v3':
+            if not axes:
+                comparison = _v3_read_confirmed_choice_contrast(prepared, material, nodes, packet['primary_structures'])
+                if comparison is not None:
+                    axes.append(comparison)
             derived = _v3_source_contrast_edge(material, nodes, axes, edges)
             if derived is not None:
                 edges.append(derived)
             _v3_grounded_choice_meanings(material, nodes)
+        overview = dict(overview, primary_structures=axes)
     return dict(schema_version=SEMANTIC_MAP_NODE_LOCAL_V3_SCHEMA,
         nodes=nodes, edges=edges, overview=overview)
 

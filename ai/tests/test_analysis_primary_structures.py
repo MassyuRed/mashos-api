@@ -615,3 +615,41 @@ def test_v3_diagram_uses_exact_choices_after_independent_axis_admission(raw_kind
     expected = ('机で見返せる → 私は作業手順をノートに書いた／'
                 '作業場所で見返せない → 私は作業手順をノートに書かなかった')
     assert admitted['label'] == (raw_label if raw_kind == 'valid_edge' else expected)
+
+
+@pytest.mark.parametrize('source_variant', ['exact', 'different_object', 'different_reason', 'not_performed', 'different_actor'])
+def test_v3_reads_the_confirmed_contrast_when_model_scope_is_too_wide(source_variant):
+    first = '机で見返せるので、私は作業手順をノートに書いた。'
+    second = '作業場所で見返せないので、私は作業手順をノートに書かなかった。'
+    case_reading = '机で見返せるので、私は作業手順をノートに書きました。' + second
+    if source_variant != 'exact':
+        changes = {
+            'different_object': ('作業手順を', '進捗を'),
+            'different_reason': ('見返せない', '思い出せない'),
+            'not_performed': ('書かなかった', '書かないつもりだった'),
+            'different_actor': ('私は', '同僚は'),
+        }
+        before, after = changes[source_variant]
+        case_reading = case_reading.removesuffix(second) + second.replace(before, after)
+        second = second.replace(before, after)
+    prepared, plan, bodies = scenario(first, second, version='karen.v3')
+    nodes = core._semantic_v4_join(plan, bodies)
+    axis = dict(v3_reading(), decision_factor='見返せるか', heading='見返せるか',
+                criterion='作業手順をノートに書くかどうかは、その場で見返せるかどうかを基準に決めます。',
+                case_reading=case_reading)
+    packet = dict(schema_version=core._semantic_v4_schema('RELATIONS'), nodes_sha256=core.semantic_map_hash(nodes),
+                  qualification_review={}, edges=[], primary_structures=[axis],
+                  overview=dict(node_refs=['n1', 'n2'], title_proposal='', title='2件の記録を振り返って'))
+    assert core._read_primary_structures(prepared, json.loads(prepared.material_json), nodes, [axis]) == []
+    admitted = core.semantic_node_local_v4_relations(prepared, plan, bodies, packet)
+    assert packet['primary_structures'] == [axis] and not packet['edges']
+    if source_variant != 'exact':
+        assert not admitted['overview']['primary_structures'] and not admitted['edges']
+        return
+
+    comparison, = admitted['overview']['primary_structures']
+    assert comparison['criterion'] == 'この二つの記録では、見返せることが作業手順をノートに書く条件でした。'
+    assert comparison['description'] == comparison['criterion'] + (
+        '机で見返せるため、作業手順をノートに書きました。作業場所で見返せないため、書きませんでした。')
+    assert comparison['node_refs'] == ['n1', 'n2']
+    assert '書かなかった' in admitted['edges'][0]['label']
