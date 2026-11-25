@@ -1354,6 +1354,17 @@ def _active_plan(original, thread, added, inactive, updates, unresolved=(), *, p
         evidence_ledger_validation=EvidenceLedgerValidationReport(True, canonical_span_ids=resolver.span_ids))
 
 
+def q3_answer_prefix_control(control, count):
+    """Bind meaning to the issued questions for the first count authored answers."""
+    question_control = control.question_control_context
+    questions = question_control.issued_questions[:count]
+    return replace(control, answers=control.answers[:count], current_round=count,
+        question_control_context=replace(question_control, pending_question=questions[-1],
+            issued_questions=questions, issued_count=count,
+            asked_target_refs=question_control.asked_target_refs[:count]),
+        prepared_meaning_checkpoint_ref=None)
+
+
 def prepare_emlis_meaning(request: GenerationRequest, *, semantic_input=None) -> PreparedEmlisMeaning:
     if semantic_input is not None:
         from .emlis_semantic_admission import prepare_snapshot_meaning
@@ -1773,14 +1784,7 @@ def _prepare_emlis_meaning_from_plan_version(request, thread, original, *, legac
         plan = original
         accepted, inactive = (), ()
         for count in range(1, len(thread.answers) + 1):
-            control = thread.control.question_control_context
-            questions = control.issued_questions[:count]
-            prefix_control = replace(control, pending_question=questions[-1],
-                issued_questions=questions, issued_count=count,
-                asked_target_refs=control.asked_target_refs[:count])
-            prefix_request = replace(request, emlis_thread=replace(thread.control,
-                answers=thread.control.answers[:count], current_round=count,
-                question_control_context=prefix_control, prepared_meaning_checkpoint_ref=None))
+            prefix_request = replace(request, emlis_thread=q3_answer_prefix_control(thread.control, count))
             prefix = admit_emlis_thread(prefix_request)
             prepared = _prepare_answer(prefix, plan, legacy_appraisal_correction=legacy_appraisal_correction,
                 legacy_appraisal_answer_time=legacy_appraisal_answer_time,
