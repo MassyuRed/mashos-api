@@ -39,7 +39,8 @@ class WitnessedStructureRelation:
     confirmed_outcome: OriginalSpan | None = field(repr=False)
 
 
-_FACTOR = re.compile(r'[\w・ ]{2,32}')
+_FACTOR_PATTERN = r'[\w・ ]{2,32}'
+_FACTOR = re.compile(_FACTOR_PATTERN)
 _OPTION = r'(?P<option>[\w・ ]{2,40})'
 
 
@@ -60,9 +61,9 @@ def _independent_grounding(fields, axis, excluded_records):
                  and source['record'] not in excluded_records), None)
 
 
-def _match_choice(text, first, second):
-    first_factor = rf'(?P<first>{re.escape(first)})'
-    second_factor = rf'(?P<second>{re.escape(second)})'
+def _match_choice(text, first=None, second=None):
+    first_factor = rf'(?P<first>{re.escape(first) if first is not None else _FACTOR_PATTERN})'
+    second_factor = rf'(?P<second>{re.escape(second) if second is not None else _FACTOR_PATTERN})'
     coexistence = re.fullmatch(
         rf'私は、{first_factor}と{second_factor}を両立できると判断して、'
         rf'{_OPTION}を選び、実際に(?P<outcome>(?P=first)と(?P=second)を両立できました)。', text)
@@ -74,6 +75,14 @@ def _match_choice(text, first, second):
         rf'私は、{second_factor}より{first_factor}を優先して、{_OPTION}を選び'
         r'(?:ました|、実際に(?P<outcome>(?P=second)を確保できませんでした))。', text)
     return ('PRIORITY', priority) if priority else (None, None)
+
+
+def written_structure_factors(text):
+    """Read factor names from the complete, first-person choice form."""
+    _, match = _match_choice(text)
+    if match is not None and match['first'] != match['second']:
+        return match['first'], match['second']
+    return ()
 
 
 def admit_witnessed_structure_relation(fields, first, second, settlement):

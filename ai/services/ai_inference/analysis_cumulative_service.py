@@ -21,7 +21,8 @@ from uuid import UUID, uuid4
 import httpx
 from fastapi import HTTPException
 
-from analysis_model_source import analysis_primary_structure_reading_mode
+from analysis_model_source import (analysis_premium_structure_relations_enabled,
+    analysis_primary_structure_reading_mode)
 import analysis_observed_service as observed
 from analysis_observed_service import _checked_projection as _checked_v2_projection, private_storage_evidence, observed_mode
 
@@ -139,7 +140,16 @@ def map_response_for_renderer(payload, renderer, structure_relations=None):
         graph = item['content_json'].get('watashiMap') if item else payload.get('meta')
         visible = item if item else payload
         relations = visible.pop('_map_structure_relations', None)
-        if graph and graph['nodes'] and analysis_primary_structure_reading_mode() != 'karen.v3':
+        research_mode = analysis_primary_structure_reading_mode() == 'karen.v3'
+        premium_rollout = analysis_premium_structure_relations_enabled()
+        structured_relations = renderer == 'semantic.v3' and structure_relations == 'v1'
+        legacy_summary = premium_rollout and renderer in ('semantic.v1', 'semantic.v2')
+        if (graph and relations and payload.get('map_subscription_tier') == 'premium'
+                and (premium_rollout or research_mode) and (structured_relations or legacy_summary)):
+            if structured_relations:
+                graph['overview']['structure_relations'] = relations
+            visible['content_text'] += '\n\n' + '\n'.join(relation['description'] for relation in relations)
+        if graph and graph['nodes'] and not research_mode:
             if renderer in ('semantic.v1', 'semantic.v2'):
                 graph['overview'] = dict(title=graph['overview']['title'], summary=visible['content_text'])
             elif renderer != 'semantic.v3':
@@ -149,10 +159,6 @@ def map_response_for_renderer(payload, renderer, structure_relations=None):
                 else:
                     payload['meta'] = legacy
             return payload
-        if (graph and relations and renderer == 'semantic.v3' and structure_relations == 'v1'
-                and payload.get('map_subscription_tier') == 'premium'):
-            graph['overview']['structure_relations'] = relations
-            visible['content_text'] += '\n\n' + '\n'.join(relation['description'] for relation in relations)
     if renderer == 'semantic.v3' or (renderer == 'semantic.v2' and not scoped):
         return payload
     if scoped:
@@ -286,7 +292,8 @@ def map_report_for_plan(row, tier):
         return row, False
     graph, text = projected
     row = dict(row, content_text=text, content_json=dict(content, watashiMap=graph))
-    if tier == 'premium' and relations and analysis_primary_structure_reading_mode() == 'karen.v3':
+    if (tier == 'premium' and relations and (analysis_primary_structure_reading_mode() == 'karen.v3'
+                                          or analysis_premium_structure_relations_enabled())):
         from cocolon_meaning_experience_engine.cores.analysis.structure_relations import safe_structure_relations
         safe = safe_structure_relations(relations, len(graph['overview']['primary_structures']))
         if safe:
@@ -1050,9 +1057,11 @@ async def _ensure_map(user_id, *, ensure=True, force=False, monthly=False, model
                     from analysis_semantic_map import prepare_semantic_map, SemanticMapNoMaterial
                     try:
                         from analysis_model_source import analysis_model_prompt_version, analysis_model_primary_structure_reading
+                        version = analysis_model_primary_structure_reading(model_source)
                         prepared = await asyncio.to_thread(prepare_semantic_map, owner, snapshot,
                             prompt_version=analysis_model_prompt_version(model_source),
-                            primary_structures=analysis_model_primary_structure_reading(model_source))
+                            primary_structures=version, recover_witnessed_structures=(
+                                version == 'karen.v3' and analysis_premium_structure_relations_enabled()))
                     except SemanticMapNoMaterial as excluded:
                         artifact, coverage = None, _checked_coverage(excluded.coverage)
                     else:

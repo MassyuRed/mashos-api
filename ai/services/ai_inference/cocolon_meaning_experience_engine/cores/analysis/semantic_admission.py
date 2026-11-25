@@ -3621,12 +3621,19 @@ def _choice_added_action(text, source):
     return any(action.search(text) and not action.search(source) for action in _CHOICE_ADDED_ACTIONS)
 
 
-def _bound_choice(field, quote, sentences):
+def _bound_choice(field, quote, sentences, *, allow_written_negative=False):
     from ...natural_reply_cognition import source_context_allows_finite_hints
     from .intent_compiler import _FINITE_PREDICATES, _PAST_DECISION_PREDICATES, _proposition
 
+    context = (field['text'],)
+    if allow_written_negative and field['text'] == quote:
+        # A clause-final にならない before ので explicitly negates the reason.
+        # Retain the literal predicate in every visible string.
+        negative = re.search(r'にならない(?=ので[、，,])', quote)
+        if negative is not None:
+            context = quote[:negative.start()], quote[negative.end():]
     if (quote not in sentences.get(field['field'], ())
-            or not source_context_allows_finite_hints(field['text'])):
+            or not source_context_allows_finite_hints(*context)):
         return None
     link = _CHOICE_LINK.search(quote)
     if link is None:
@@ -3655,12 +3662,12 @@ def _bound_choice(field, quote, sentences):
     return None
 
 
-def _choice_pairs(origins, sentences):
+def _choice_pairs(origins, sentences, *, allow_written_negative=False):
     choices = [(field['record'], choice) for node, unit, field, quote in origins
                if node['perspective'] == 'SELF' and unit['source_mode'] in ('RECORDED', 'PERSON_JUDGMENT')
                and (field['source_role'] == 'USER_DEEP_INSIGHT_ANSWER'
                     or field['source_role'] == 'ORIGINAL_INPUT' and field['field_path'] == 'memo')
-               and (choice := _bound_choice(field, quote, sentences)) is not None]
+               and (choice := _bound_choice(field, quote, sentences, allow_written_negative=allow_written_negative)) is not None]
     for i, (record, left) in enumerate(choices):
         for other, right in choices[i + 1:]:
             if record != other and left[0] != right[0] and left[1] != right[1]:
@@ -3739,15 +3746,20 @@ def _v3_source_contrast_edge(material, nodes, axes, edges):
     if len(axes) != 1 or axes[0]['scope'] != 'across_records':
         return None
     refs = [node['node_id'] for node in nodes]
-    if set(axes[0]['node_refs']) != set(refs) or any(
-            edge['relation_kind'] in ('CONTEXT_CONTRAST', 'CRITERION_EXPRESSION')
-            and {edge['from'], edge['to']} == set(refs) for edge in edges):
+    if set(axes[0]['node_refs']) != set(refs):
         return None
     origins = _v3_source_contrast_origins(material, nodes)
     if origins is None:
         return None
     pair = next(_choice_pairs(origins, _semantic_display_sentences(material)), None)
     if pair is None:
+        return None
+    return _v3_choice_contrast_edge(refs, pair, edges)
+
+
+def _v3_choice_contrast_edge(refs, pair, edges):
+    if any(edge['relation_kind'] in ('CONTEXT_CONTRAST', 'CRITERION_EXPRESSION')
+            and {edge['from'], edge['to']} == set(refs) for edge in edges):
         return None
     label = '／'.join(f'{condition} → {action}' for condition, action, *_ in pair)
     if not _semantic_map_text(label, 80):
@@ -3886,6 +3898,93 @@ def _v3_read_confirmed_choice_contrast(prepared, material, nodes, authored_axes)
     return display
 
 
+def _v3_read_witnessed_choice_contrasts(prepared, material, nodes, edges, retained):
+    """Use separate complete choice records when a model supplied no admissible structure."""
+    from .structure_relations import written_structure_factors
+
+    if (material.get('history_stage') or prepared.map_correction_sources_json
+            or len(material['records']) < 5 or len(edges) > 46):
+        return []
+    fields = {field['field']: field for field in material['fields']}
+    if (len(fields) != len(material['records'])
+            or len({field['record'] for field in fields.values()}) != len(fields)
+            or any(field['source_role'] != 'ORIGINAL_INPUT' for field in fields.values())):
+        return []
+    sentences = _semantic_display_sentences(material)
+    settlements, choices = [], []
+    for index, node in enumerate(nodes):
+        if node['perspective'] != 'SELF' or len(node['units']) != 1:
+            continue
+        unit, = node['units']
+        if (unit['source_mode'] not in ('RECORDED', 'PERSON_JUDGMENT')
+                or unit['unknowns'] or len(unit['evidence']) != 1):
+            continue
+        root, = unit['evidence']
+        field, quote = fields[root['field']], root['quote']
+        if field['text'] != quote or not field.get('fragment_is_complete_field', True):
+            continue
+        if field['field_path'] == 'memo_action' and (factors := written_structure_factors(quote)):
+            settlements.append(factors)
+        if field['field_path'] == 'memo' and (choice := _bound_choice(field, quote, sentences, allow_written_negative=True)):
+            condition, action, _, _ = choice
+            if (quote.startswith(condition) and action.startswith('私は')
+                    and unit['fact'] == quote and node['title'] == quote):
+                choices.append((index, node['node_id'], quote, choice))
+    if len(settlements) != 1:
+        return []
+    factors, = settlements
+    groups = []
+    for factor, other in (factors, factors[::-1]):
+        condition_prefix = re.compile(re.escape(factor) + r'(?:は|が|を|に|で|なら|まで).+')
+        matches = [item for item in choices if condition_prefix.fullmatch(item[3][0])]
+        if len(matches) != 2 or any(other in quote for _, _, quote, _ in matches):
+            return []
+        pair = [item[3] for item in matches]
+        case_lines = []
+        verbs = set()
+        for _, _, quote, (_, action, forms, _) in matches:
+            past = next(((plain, polite) for _, plain, polite, *_ in _CHOICE_ACTION
+                         if plain in ('引き受けた', '断った') and plain in forms and polite in forms), None)
+            if past is None:
+                return []
+            plain, polite = past
+            ending = next((form for form in past if action.endswith(form)), None)
+            if ending is None:
+                return []
+            verbs.add(plain)
+            reason = quote[:_CHOICE_LINK.search(quote).end()]
+            choice_object = action[2:-len(ending)].lstrip('、，, ')
+            case_lines.append(f'{reason}、{choice_object}{polite}。')
+        # The records must explicitly show one acceptance and one refusal.
+        if len(verbs) != 2:
+            return []
+        criterion = f'引き受けた理由と断った理由の両方に、{factor}が関わっています。'
+        refs = [ref for _, ref, _, _ in matches]
+        axis = dict(scope='across_records', heading=factor, decision_factor=factor, criterion=criterion,
+                    case_reading='一方、'.join(case_lines), anchors=[ref + '.u1.e1' for ref in refs])
+        groups.append((matches[0][0], axis, refs, pair))
+    comparison_refs = {ref for _, _, refs, _ in groups for ref in refs}
+    if len(comparison_refs) != 4:
+        return []
+    groups.sort(key=lambda group: group[0])
+    bindings = []
+    axes = _read_primary_structures(prepared, material, nodes, [axis for _, axis, _, _ in groups],
+                                   retained=bindings, allow_written_negative=True)
+    if len(axes) != 2:
+        return []
+    # The admitted analysis is the comparison above. An unverified node
+    # paraphrase can still turn a predicted or difficult condition into a result.
+    for node in nodes:
+        if node['node_id'] in comparison_refs:
+            node['meaning'] = ''
+    for _, _, refs, pair in groups:
+        if derived := _v3_choice_contrast_edge(refs, pair, edges):
+            edges.append(derived)
+    if retained is not None:
+        retained.extend((visible, dict(source, witnessed_choice_fallback=True)) for visible, source in bindings)
+    return axes
+
+
 def _v3_grounded_choice_meanings(material, nodes):
     """Withhold an unsupported optional reading after validating the raw NODES receipt."""
     fields = {field['field']: field for field in material['fields']}
@@ -3953,8 +4052,8 @@ def _check_public_primary_structures(axes, node_refs):
         descriptions.add(axis['description'])
 
 
-def _read_primary_structures(prepared, material, nodes, axes, *, retained=None):
-    """Resolve only authored roots from the already admitted PLAN/NODES for this snapshot."""
+def _read_primary_structures(prepared, material, nodes, axes, *, retained=None, allow_written_negative=False):
+    """Resolve decision structures using the already admitted PLAN/NODES for this snapshot."""
     reason = 'analysis_primary_structure_unbound'
     _semantic_map_require(prepared.prompt_version == SEMANTIC_MAP_OCCURRENCE_V24_PROFILE
         and material.get('history_stage', {}).get('kind') != 'LEAF'
@@ -3999,7 +4098,7 @@ def _read_primary_structures(prepared, material, nodes, axes, *, retained=None):
             continue
         _semantic_map_require(bool(mental), reason)
         if axis['scope'] == 'across_records' and independently_compared:
-            decisions = tuple(_choice_pairs(selected, sentences))
+            decisions = tuple(_choice_pairs(selected, sentences, allow_written_negative=allow_written_negative))
             if not decisions:
                 continue
         elif axis['scope'] == 'across_records':
@@ -4024,8 +4123,8 @@ def _read_primary_structures(prepared, material, nodes, axes, *, retained=None):
             _semantic_map_require(len(owners) == 1, reason)
         quotes = [quote for *_, quote in selected]
         if conclusion_first:
-            # Both displayed sentences are the model's own output. Preserve them in
-            # order; a missing conclusion cannot be supplied by the renderer.
+            # Preserve both admitted sentences in order. The renderer cannot
+            # supply a missing conclusion.
             _semantic_map_require(_semantic_map_text(axis['criterion'], 160)
                 and _semantic_map_text(axis['case_reading'], 200)
                 and (independently_compared or axis['criterion'] != axis['case_reading']), reason)
@@ -4204,10 +4303,12 @@ def semantic_node_local_v4_relations(prepared, plan, bodies, packet, *, ordered_
         axes = _read_primary_structures(
             prepared, material, nodes, packet['primary_structures'], retained=retained_axes)
         if material.get('primary_structure_reading') == 'karen.v3':
-            if not axes:
+            if not axes and not material.get('history_stage'):
                 comparison = _v3_read_confirmed_choice_contrast(prepared, material, nodes, packet['primary_structures'])
                 if comparison is not None:
                     axes.append(comparison)
+                elif prepared.recover_witnessed_structures:
+                    axes = _v3_read_witnessed_choice_contrasts(prepared, material, nodes, edges, retained_axes)
             derived = _v3_source_contrast_edge(material, nodes, axes, edges)
             if derived is not None:
                 edges.append(derived)
@@ -5484,6 +5585,7 @@ class AnalysisSemanticMapInput:
     source_duties_json: str = ''
     active_source_updates: bool = False
     map_correction_sources_json: str = ''
+    recover_witnessed_structures: bool = False
 
     def messages(self, *, _lesson_stage=None):
         if self.prompt_version in SEMANTIC_MAP_NODE_LOCAL_V4_PROFILES:
@@ -5539,11 +5641,13 @@ class AnalysisSemanticMapInput:
 
 
 def prepare_analysis_semantic_map(request, snapshot, *,
-        prompt_version=SEMANTIC_MAP_PROFILE, primary_structures=False):
+        prompt_version=SEMANTIC_MAP_PROFILE, primary_structures=False, recover_witnessed_structures=False):
     """Admit original sources and exact source metadata before model acquisition."""
     from cocolon_meaning_experience_engine.cores.analysis.semantic_admission import AnalysisSemanticError
     from cocolon_meaning_experience_engine.cores.analysis.source_adapter import freeze_analysis_sources, AnalysisSourceError
     _semantic_map_require(type(request) is AnalysisObservedMapRequest, 'analysis_semantic_input_invalid')
+    _semantic_map_require(type(recover_witnessed_structures) is bool
+        and (not recover_witnessed_structures or primary_structures == 'karen.v3'), 'analysis_semantic_input_invalid')
     _semantic_map_require(prompt_version in {SEMANTIC_MAP_PROFILE,
         SEMANTIC_MAP_SOURCE_DUTIES_PROFILE, SEMANTIC_MAP_EVENT_PLAN_PROFILE,
         SEMANTIC_MAP_EVENT_PLAN_V2_PROFILE, SEMANTIC_MAP_NODE_LOCAL_V3_PROFILE,
@@ -5804,6 +5908,7 @@ def prepare_analysis_semantic_map(request, snapshot, *,
         prompt_version=prompt_version, source_request=source_request,
         source_snapshot_json=semantic_map_canonical(snapshot), source_duties_json=source_duties_json,
         active_source_updates=active_source_updates,
+        recover_witnessed_structures=recover_witnessed_structures,
         map_correction_sources_json=semantic_map_canonical(correction_private) if correction_private else '')
 
 
@@ -5860,7 +5965,8 @@ def generate_analysis_semantic_map(request, model_input):
             'analysis_semantic_input_invalid')
         expected = prepare_analysis_semantic_map(model_input.source_request,
             json.loads(model_input.source_snapshot_json), prompt_version=model_input.prompt_version,
-            primary_structures=json.loads(model_input.material_json).get('primary_structure_reading', False))
+            primary_structures=json.loads(model_input.material_json).get('primary_structure_reading', False),
+            recover_witnessed_structures=model_input.recover_witnessed_structures)
         _semantic_map_require(expected.request == request
             and expected == replace(model_input, response=None), 'analysis_semantic_input_unbound')
         packet = _admit_analysis_semantic_map_response(expected, model_input.response)
@@ -5970,7 +6076,8 @@ def _semantic_history_parent(parent, *, rederive=True):
                 return parent
         expected = prepare_analysis_semantic_map(parent.source_request,
             json.loads(parent.source_snapshot_json), prompt_version=parent.prompt_version,
-            primary_structures=json.loads(parent.material_json).get('primary_structure_reading', False))
+            primary_structures=json.loads(parent.material_json).get('primary_structure_reading', False),
+            recover_witnessed_structures=parent.recover_witnessed_structures)
         _semantic_map_require(expected == parent, 'analysis_semantic_input_unbound')
         if slot is not None and slot[0] is None:
             # Nested source maps can be mutable. Never compare the live input to itself.

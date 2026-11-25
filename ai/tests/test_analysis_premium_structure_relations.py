@@ -29,6 +29,7 @@ PRIORITY = ('私は、手伝いの時間より提出期限を優先して、取�
             '実際に手伝いの時間を確保できませんでした。')
 REVERSE = '私は、提出期限より手伝いの時間を優先して、取引先への連絡を選びました。'
 UNRELATED = '提出期限を確認し、手伝いの時間に伝票を見ました。'
+ADDED_RESULT = '資料の確認が期限内に終わりました。'
 NOTES = ('提出期限に余裕があったので、私は資料の確認を引き受けた。',
          '提出期限に間に合わないので、私は取引先への連絡を断った。',
          '手伝いの時間が取れたので、私は見積もりを引き受けた。',
@@ -42,16 +43,19 @@ def _snapshot(action):
     return snapshot
 
 
-def _artifact(action, snapshot=None):
+def _artifact(action, snapshot=None, *, authored_axes=True, recover_witnessed_structures=False):
     snapshot = _snapshot(action) if snapshot is None else snapshot
     prepared = maps.prepare_semantic_map(OWNER, snapshot,
-        prompt_version=core.SEMANTIC_MAP_OCCURRENCE_V24_PROFILE, primary_structures='karen.v3')
+        prompt_version=core.SEMANTIC_MAP_OCCURRENCE_V24_PROFILE, primary_structures='karen.v3',
+        recover_witnessed_structures=recover_witnessed_structures)
     material = json.loads(prepared.material_json)
     by_text = {field['text']: field['field'] for field in material['fields']}
     plan = dict(schema_version=core._semantic_v4_schema('PLAN'), nodes=[])
     bodies = dict(schema_version=core._semantic_v4_schema('NODES'), nodes={})
     by_root = []
-    for i, quote in enumerate((*NOTES, action), 1):
+    for i, member in enumerate(snapshot['members'], 1):
+        original = member['original']
+        quote = original['memo'] or original['memo_action']
         node_id = f'n{i}'
         row = [(by_text[quote], quote)]
         by_root.append([row])
@@ -59,8 +63,9 @@ def _artifact(action, snapshot=None):
         plan['nodes'].append(dict(node_id=node_id, units=[dict(evidence=evidence)]))
         unit = dict(evidence_ref=node_id + '.u1', source_mode='RECORDED', unknowns=[],
                     fact_parts={core._semantic_fact_part_key(evidence, 0): quote})
+        meaning = ADDED_RESULT if i == 1 and not authored_axes else ''
         bodies['nodes'][node_id] = dict(units={'u1': unit}, node_kind='CHOICE_OUTPUT',
-                                        perspective='SELF', title=quote, meaning='')
+                                        perspective='SELF', title=quote, meaning=meaning)
     bodies['plan_sha256'] = core.semantic_map_hash(plan)
     nodes = core._semantic_v4_join(plan, bodies)
     axes = [dict(scope='across_records', anchors=['n1.u1.e1', 'n2.u1.e1'], heading='提出との兼ね合い',
@@ -72,7 +77,7 @@ def _artifact(action, snapshot=None):
                  case_reading='「手伝いの時間が取れた」ときは見積もりを引き受けました。'
                               '「手伝いの時間が取れなかった」ときは会議への同席を断りました。')]
     relations = dict(schema_version=core._semantic_v4_schema('RELATIONS'), nodes_sha256=core.semantic_map_hash(nodes),
-        qualification_review={}, edges=[], primary_structures=axes,
+        qualification_review={}, edges=[], primary_structures=axes if authored_axes else [],
         overview=dict(title=WholeMapTitle(material, nodes).neutral, title_proposal='',
                       node_refs=[node['node_id'] for node in nodes]))
     receipts = []
@@ -116,6 +121,63 @@ def test_private_review_uses_both_admitted_axes_and_exact_actual_choice(action, 
     assert len({witness[key]['record_ref'] for key in ('settlement', 'first_grounding', 'second_grounding')}) == 3
 
 
+@pytest.mark.parametrize('action, expected', [
+    (COEXISTENCE, ('COEXISTENCE', 0, 1)),
+    (PRIORITY, ('PRIORITY', 0, 1)),
+    (REVERSE, ('PRIORITY', 1, 0)),
+    (UNRELATED, None),
+])
+def test_missing_authored_axes_can_use_two_distinct_complete_choice_comparisons(action, expected):
+    gated, _, _ = _artifact(action, authored_axes=False)
+    assert gated.safe_projection(authenticated_owner_scope=OWNER)['overview']['primary_structures'] == []
+    artifact, _, _ = _artifact(action, authored_axes=False, recover_witnessed_structures=True)
+    graph = artifact.safe_projection(authenticated_owner_scope=OWNER)
+    axes = graph['overview']['primary_structures']
+    review = artifact.private_evidence()['graph']['meaning_review']
+    roots = review.get('original_choice_contrast_roots')
+    relation = review.get('structure_relations')
+    if expected is None:
+        assert axes == graph['edges'] == []
+        assert roots is relation is None
+        return
+    assert roots == [['n1.u1.e1', 'n2.u1.e1'], ['n3.u1.e1', 'n4.u1.e1']]
+    assert [axis['title'] for axis in axes] == ['提出期限', '手伝いの時間']
+    assert [axis['node_refs'] for axis in axes] == [['n1', 'n2'], ['n3', 'n4']]
+    assert NOTES[0] in graph['nodes'][0]['explanation']
+    assert ADDED_RESULT not in graph['nodes'][0]['explanation']
+    raw_nodes = json.loads(review['node_local_plan']['phase_artifact']['phases'][1]['raw'])
+    assert raw_nodes['nodes']['n1']['meaning'] == ADDED_RESULT
+    assert '提出期限に間に合わないので、取引先への連絡を断りました。' in axes[0]['description']
+    assert '手伝いの時間が取れなかったので、会議への同席を断りました。' in axes[1]['description']
+    assert all(action not in axis['description'] for axis in axes)
+    assert [(edge['from_ref'], edge['to_ref']) for edge in graph['edges']] == [('n1', 'n2'), ('n3', 'n4')]
+    assert '提出期限に間に合わない → 私は取引先への連絡を断った' in graph['edges'][0]['label']
+    kind, first, second = expected
+    assert relation['views'] == [dict(kind=kind, first_index=first, second_index=second, description=action)]
+    assert (relation['witnesses'][0]['confirmed_outcome'] is None) is (action == REVERSE)
+
+
+def test_explicit_settlement_without_independent_acceptance_and_refusal_is_not_enough():
+    snapshot = _snapshot(PRIORITY)
+    snapshot['members'][3]['original']['memo'] = '手伝いの時間が取れなかったので、私は会議への同席を引き受けた。'
+    artifact, _, _ = _artifact(PRIORITY, snapshot, authored_axes=False, recover_witnessed_structures=True)
+    graph = artifact.safe_projection(authenticated_owner_scope=OWNER)
+    assert graph['overview']['primary_structures'] == graph['edges'] == []
+    assert 'structure_relations' not in artifact.private_evidence()['graph']['meaning_review']
+
+
+def test_source_comparison_keeps_the_written_negative_and_retains_qualification_checks():
+    exact = '印刷費の節約にならないので、私は冊子の増刷を断った。'
+    confirmed = dict(field=1, text=exact)
+    assert core._bound_choice(confirmed, exact, {1: (exact,)}) is None
+    admitted = core._bound_choice(confirmed, exact, {1: (exact,)}, allow_written_negative=True)
+    assert admitted[:2] == ('印刷費の節約にならない', '私は冊子の増刷を断った')
+    for text in ('もし' + exact, exact + 'これは仮定です。'):
+        qualified = dict(field=1, text=text)
+        assert core._bound_choice(qualified, text, {1: (text,)}, allow_written_negative=True) is None
+        assert core._bound_choice(qualified, exact, {1: (exact,)}, allow_written_negative=True) is None
+
+
 def test_saved_premium_relation_is_not_reflected_in_lower_plans_or_legacy_renderers(monkeypatch):
     monkeypatch.setenv('COCOLON_ANALYSIS_PRIMARY_STRUCTURE_READING', 'karen.v3')
     artifact, coverage, _ = _artifact(COEXISTENCE)
@@ -150,9 +212,9 @@ def test_saved_premium_relation_is_not_reflected_in_lower_plans_or_legacy_render
         payload = asyncio.run(service.ensure_map(OWNER, ensure=False, monthly=monthly))
         return service.map_response_for_renderer(payload, renderer, capability)
 
-    def detail(capability='v1'):
+    def detail(capability='v1', renderer='semantic.v3'):
         payload = asyncio.run(get_detail(user_id=OWNER, family='self_structure', report_id=rid, month=month))
-        return service.map_response_for_renderer(payload, 'semantic.v3', capability)['item']
+        return service.map_response_for_renderer(payload, renderer, capability)['item']
 
     paid = latest()
     assert paid['report_id'] == latest(monthly=True)['report_id'] == detail()['id'] == rid
@@ -185,6 +247,25 @@ def test_saved_premium_relation_is_not_reflected_in_lower_plans_or_legacy_render
     assert COEXISTENCE not in detail()['content_text']
     tier = 'plus'
     assert basic_premium['meta'] == latest()['meta']
+
+    monkeypatch.setenv('COCOLON_ANALYSIS_PREMIUM_RELATION_ROLLOUT', 'grounded.v1')
+    assert latest()['meta'] == basic_premium['meta']
+    tier = 'premium'
+    assert latest()['meta'] == latest(monthly=True)['meta'] == detail()['content_json']['watashiMap'] == paid['meta']
+    assert latest()['content_text'] == detail()['content_text'] == paid['content_text']
+    assert latest(None) == basic_premium
+    for renderer in ('semantic.v1', 'semantic.v2'):
+        older = latest(None, renderer=renderer)
+        assert older['content_text'] == latest(None, monthly=True, renderer=renderer)['content_text'] == paid['content_text']
+        assert older['meta']['overview'] == dict(title=paid['meta']['overview']['title'], summary=paid['content_text'])
+        assert older['meta'] == detail(None, renderer)['content_json']['watashiMap']
+        tier = 'plus'
+        assert COEXISTENCE not in latest(None, renderer=renderer)['content_text']
+        tier = 'premium'
+    monkeypatch.delenv('COCOLON_ANALYSIS_PRIMARY_STRUCTURE_READING')
+    monkeypatch.delenv('COCOLON_ANALYSIS_PLAN_READ_ROLLOUT')
+    assert latest() == basic_premium
+    assert COEXISTENCE not in latest(None, renderer='semantic.v1')['content_text']
 
 
 @pytest.fixture

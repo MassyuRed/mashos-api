@@ -4633,6 +4633,10 @@ def _semantic_event_plan_review(graph, prepared, original, expanded, *, source_p
                     axes = [axis for axis in axes if rejected not in (
                         axis['title'], axis['description'], axis.get('criterion'))]
             overview['primary_structures'] = axes
+            recovered = [raw['anchors'] for visible, raw in retained_axes
+                         if raw.get('witnessed_choice_fallback') and visible in axes]
+            if recovered:
+                review['original_choice_contrast_roots'] = recovered
             if len(retained_axes) >= 2:
                 from .structure_relations import structure_relation_review
                 relations = structure_relation_review(prepared, source_parent or prepared,

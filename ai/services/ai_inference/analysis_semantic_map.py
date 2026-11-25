@@ -32,11 +32,13 @@ from cocolon_meaning_experience_engine.cores.analysis.observed_route_realizer im
 )
 
 
-def prepare_semantic_map(owner, snapshot, *, prompt_version=PROFILE, primary_structures=False):
+def prepare_semantic_map(owner, snapshot, *, prompt_version=PROFILE, primary_structures=False,
+                         recover_witnessed_structures=False):
     from analysis_cumulative_service import _cumulative_model_request
     request = _cumulative_model_request(owner, snapshot,
         include_received_answer=prompt_version == SEMANTIC_MAP_OCCURRENCE_V24_PROFILE)
-    return _prepare_analysis_semantic_map(request, snapshot, prompt_version=prompt_version, primary_structures=primary_structures)
+    return _prepare_analysis_semantic_map(request, snapshot, prompt_version=prompt_version,
+        primary_structures=primary_structures, recover_witnessed_structures=recover_witnessed_structures)
 
 
 def build_semantic_map(prepared, response):

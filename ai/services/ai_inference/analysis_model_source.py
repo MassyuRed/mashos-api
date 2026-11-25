@@ -490,6 +490,11 @@ def analysis_primary_structure_reading_mode():
     return None
 
 
+def analysis_premium_structure_relations_enabled():
+    return (analysis_primary_structure_reading_mode() == 'free_plus.v1'
+            and os.getenv('COCOLON_ANALYSIS_PREMIUM_RELATION_ROLLOUT') == 'grounded.v1')
+
+
 def analysis_model_primary_structure_reading(source):
     if analysis_primary_structure_reading_mode() is None:
         return False
