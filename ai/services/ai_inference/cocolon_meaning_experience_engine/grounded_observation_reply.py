@@ -5,6 +5,9 @@ import re
 
 
 CONTEXT_VERSION = "bound_passage_listener.v3"
+CONSTRAINED_CONTEXT_VERSION = "bound_passage_listener.v4"
+CONTEXT_VERSIONS = {CONTEXT_VERSION, CONSTRAINED_CONTEXT_VERSION}
+CONSTRAINED_CANDIDATE_FORMAT = "emlis.grounded_observation.v1"
 
 _SYSTEM = """あなたは、記録を読んで本人に返事をするEmlisです。
 本人への短い返事を自然な敬語で一、二文書きます。本人が書いたことのうち、何が大事だったか、または何が心に残ったかを一つ捉えます。その一点を聞いたEmlisの喜び、いたわり、願いのうち、場面に合うものを伝えます。理由や対象が書かれていない気持ちには、打ち明けてくれた本人に応じます。

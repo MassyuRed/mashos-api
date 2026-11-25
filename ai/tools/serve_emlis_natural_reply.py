@@ -34,6 +34,7 @@ FIT38_CONFIG = "ef4b1aef621fb4e234ce6a05601efb62a987c3cf5d40f3995ca1b72200bab145
 PINS = {"transformers": "5.19.0", "peft": "0.21.2", "accelerate": "1.15.0", "safetensors": "0.8.0"}
 SEMANTIC_FORMAT_SOURCE = '817f944fcc8851917c40300a47f62d1defc3ffc3'
 PIECE_CANDIDATE_FORMAT = 'piece.field_slots.v1'
+EMLIS_GROUNDED_CANDIDATE_FORMAT = 'emlis.grounded_observation.v1'
 EVENT_PLAN_SCHEMA = 'cocolon.analysis.semantic_map.event_plan.model.v1'
 EVENT_PLAN_V2_SCHEMA = 'cocolon.analysis.semantic_map.event_plan.model.v2'
 EVENT_PLAN_V2_MODEL = 'cocolon-qwen3.5-4b-analysis-event-plan-v2'
@@ -2716,6 +2717,51 @@ def piece_json_parser(messages, alphabet):
         config=CharacterLevelParserConfig(alphabet=alphabet, force_json_field_order=True))
 
 
+def emlis_grounded_output_schema(messages):
+    """Constrain the private reply format without accepting its meaning."""
+    if (type(messages) is not list or len(messages) != 2
+            or any(type(message) is not dict or set(message) != {'role', 'content'}
+                   or type(message['content']) is not str or not message['content'] for message in messages)
+            or [message['role'] for message in messages] != ['system', 'user']):
+        raise ValueError('emlis_grounded_material_invalid')
+    material = json.loads(messages[1]['content'])
+    if (type(material) is not dict or material.get('stage') not in ('FINAL', 'PRE_QUESTION', 'REFINED')
+            or type(material.get('current')) is not dict or material['current'].get('scope') != 'CURRENT_INPUT'
+            or type(material.get('history')) is not list or type(material.get('confirmed_frame_feedback')) is not list):
+        raise ValueError('emlis_grounded_material_invalid')
+    expected = {'stage', 'current', 'history', 'confirmed_frame_feedback'}
+    if material['stage'] == 'REFINED':
+        expected.add('ai_question_context')
+        if type(material.get('ai_question_context')) is not str or not material['ai_question_context'].strip():
+            raise ValueError('emlis_grounded_material_invalid')
+    bound = 'quote' in material
+    if set(material) != expected | {'quote' if bound else 'passages'}:
+        raise ValueError('emlis_grounded_material_invalid')
+    passages = [material['quote']] if bound else material['passages']
+    if type(passages) is not list or not bound and len(passages) < 2:
+        raise ValueError('emlis_grounded_passages_invalid')
+    for index, passage in enumerate(passages, 1):
+        fields = {'text', 'field', 'source_role'} if bound else {'id', 'text', 'field', 'source_role'}
+        if (type(passage) is not dict or set(passage) != fields
+                or type(passage['text']) is not str or not 0 < len(passage['text']) <= 420
+                or passage['field'] not in ('memo', 'memo_action', 'answer')
+                or passage['source_role'] != ('SUPPLEMENTAL_ANSWER' if passage['field'] == 'answer' else 'ORIGINAL_INPUT')
+                or (not bound and passage['id'] != f'P{index}')):
+            raise ValueError('emlis_grounded_passages_invalid')
+    properties = {}
+    if not bound:
+        properties['passages'] = dict(type='array', minItems=1, maxItems=2,
+            items=dict(type='string', enum=[passage['id'] for passage in passages]))
+    properties['follow'] = dict(type='string', minLength=1, maxLength=240)
+    return dict(type='object', properties=properties, required=list(properties), additionalProperties=False)
+
+
+def emlis_grounded_json_parser(messages, alphabet):
+    from lmformatenforcer import CharacterLevelParserConfig, JsonSchemaParser
+    return JsonSchemaParser(emlis_grounded_output_schema(messages),
+        config=CharacterLevelParserConfig(alphabet=alphabet, force_json_field_order=True))
+
+
 def _correction_target_context_messages_valid(messages):
     """Admit only a complete, locator-bound AI target context, never arbitrary history."""
     try:
@@ -2829,7 +2875,12 @@ def make_handler(generate, *, api_key, model_name, deadline, max_requests,
                 self.connection.settimeout(5)
                 request = json.loads(self.rfile.read(length))
                 messages = request["messages"]
-                piece = 'candidate_format' in request
+                candidate_format = request.get('candidate_format')
+                if ('candidate_format' in request
+                        and candidate_format not in (PIECE_CANDIDATE_FORMAT, EMLIS_GROUNDED_CANDIDATE_FORMAT)):
+                    raise ValueError
+                piece = candidate_format == PIECE_CANDIDATE_FORMAT
+                emlis_grounded = candidate_format == EMLIS_GROUNDED_CANDIDATE_FORMAT
                 event_plan = bool(not natural and event_plan_model is not None
                     and request.get('model') == event_plan_model)
                 event_plan_base = event_plan and event_plan_model in {
@@ -2854,7 +2905,7 @@ def make_handler(generate, *, api_key, model_name, deadline, max_requests,
                 ordinary_messages = (isinstance(messages, list) and len(messages) == 2
                     and [m["role"] for m in messages] == ["system", "user"]
                     and all(isinstance(m["content"], str) and m["content"] for m in messages))
-                correction_messages = (correction_target_context and natural and not piece
+                correction_messages = (correction_target_context and natural and candidate_format is None
                     and _correction_target_context_messages_valid(messages))
                 if (request.get("model") != selected_model or request.get("stream") is not False
                         or type(request.get("max_tokens")) is not int
@@ -2909,9 +2960,13 @@ def make_handler(generate, *, api_key, model_name, deadline, max_requests,
                             raise ValueError
                         semantic_output_schema(messages)
                 if piece:
-                    if not natural or request['candidate_format'] != PIECE_CANDIDATE_FORMAT:
+                    if not natural:
                         raise ValueError
                     piece_output_schema(messages)
+                if emlis_grounded:
+                    if not natural or selected_model != QWEN_9B_NATURAL_ALIAS or not ordinary_messages:
+                        raise ValueError
+                    emlis_grounded_output_schema(messages)
             except Exception:
                 return self.reply(400, {"error": "request_invalid"})
             admitted = lock.acquire(timeout=natural_queue_seconds) if natural else lock.acquire(blocking=False)
@@ -2924,8 +2979,9 @@ def make_handler(generate, *, api_key, model_name, deadline, max_requests,
                 if not max_requests:
                     generation_stage('admitted')
                 end = min(deadline, time.monotonic() + selected_seconds)
+                natural_profile = 'piece' if piece else 'emlis_grounded' if emlis_grounded else 'natural'
                 generated = (generate(messages, end, profile='event_plan', output_tokens=selected_tokens)
-                                if staged else generate(messages, end, profile="piece" if piece else "natural")
+                                if staged else generate(messages, end, profile=natural_profile)
                                 if natural else generate(messages, end,
                                     profile='event_plan_base' if event_plan_base else 'event_plan')
                                 if event_plan else generate(messages, end))
@@ -2941,10 +2997,10 @@ def make_handler(generate, *, api_key, model_name, deadline, max_requests,
                 status, body = 200, {"model": selected_model, "choices": [{
                     "index": 0, "finish_reason": finish,
                     "message": {"role": "assistant", "content": text}}]}
-                if piece:
-                    body['candidate_format'] = PIECE_CANDIDATE_FORMAT
-                    if piece_revision is not None:
-                        body['revision'] = piece_revision
+                if candidate_format is not None:
+                    body['candidate_format'] = candidate_format
+                if piece and piece_revision is not None:
+                    body['revision'] = piece_revision
                 if staged:
                     body['usage'] = usage
             except Exception as exc:
@@ -3156,15 +3212,17 @@ def load_generator(adapter, process_stop, *, weights_sha256=None, config_sha256=
     def generate(messages, end, *, profile=None, output_tokens=None):
         if (piece_adapter is not None or event_plan_adapter is not None) and process_stop.is_set():
             raise ValueError('generation_stopping')
-        if profile not in (None, "natural", "piece", "event_plan", "event_plan_base"):
+        if profile not in (None, "natural", "piece", "emlis_grounded", "event_plan", "event_plan_base"):
             raise ValueError("generation_profile_invalid")
         if profile == "piece" and (not semantic_json or tokenizer_data is None):
             raise ValueError("piece_constraint_unavailable")
+        if profile == 'emlis_grounded' and (not qwen_9b or tokenizer_data is None):
+            raise ValueError('emlis_grounded_constraint_unavailable')
         if profile in ('event_plan', 'event_plan_base') and (not semantic_json or tokenizer_data is None
                 or not (qwen_9b or event_plan_adapter is not None)):
             raise ValueError('event_plan_adapter_unavailable')
         use_semantic_json = semantic_json and profile != "natural"
-        base_profile = profile in ("natural", "piece")
+        base_profile = profile in ("natural", "piece", "emlis_grounded")
         output_budget = 2048 if base_profile else max_new_tokens
         if output_tokens is not None:
             material = json.loads(messages[1]['content'])
@@ -3212,9 +3270,10 @@ def load_generator(adapter, process_stop, *, weights_sha256=None, config_sha256=
         if use_semantic_json:
             generation_stage('constraint')
             from lmformatenforcer.integrations.transformers import build_transformers_prefix_allowed_tokens_fn
+            parser = {'piece': piece_json_parser, 'emlis_grounded': emlis_grounded_json_parser}.get(
+                profile, semantic_json_parser)
             allowed_prefix = build_transformers_prefix_allowed_tokens_fn(
-                tokenizer_data, (piece_json_parser if profile == "piece" else semantic_json_parser)(
-                    messages, tokenizer_data.tokenizer_alphabet))
+                tokenizer_data, parser(messages, tokenizer_data.tokenizer_alphabet))
             if profile != 'piece':
                 # The pinned integration replaces parser.config. Restore the
                 # Analysis/IF order before the first token is explored.

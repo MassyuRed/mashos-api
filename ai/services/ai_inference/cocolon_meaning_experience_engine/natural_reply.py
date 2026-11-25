@@ -659,6 +659,7 @@ def prepare_natural_reply(request, *, use_meaning_support=False, response_stage=
                           include_paid_received_answer=False, include_direct_feeling_correction=False,
                           include_initial_standalone_feeling=False, initial_observation_follow_context_version=None,
                           use_grounded_observation=False, grounded_current_only=False,
+                          grounded_context_version=grounded_observation_reply.CONTEXT_VERSION,
                           direct_feeling_correction_context_version=DIRECT_FEELING_CORRECTION_CONTEXT_VERSION):
     """Return admitted user material and the existing independent Safety result."""
     if response_stage not in _RESPONSE_STAGES:
@@ -788,8 +789,7 @@ def prepare_natural_reply(request, *, use_meaning_support=False, response_stage=
         if standalone_feeling:
             passages = [row for row in passages if row['field'] == 'memo']
         if passages:
-            writer.update(source_context_version=grounded_observation_reply.CONTEXT_VERSION,
-                          grounded_passages=passages)
+            writer.update(source_context_version=grounded_context_version, grounded_passages=passages)
             if standalone_feeling:
                 # The other column and earlier records cannot supply a
                 # missing reason for a standalone feeling. Keep them in the
@@ -1285,7 +1285,7 @@ def validate_reply(reply, request):
         raise _NaturalReplyValidationError("control_character")
     writer = json.loads(request.writer_material_json) if request.writer_material_json else {}
     context_version = writer.get('source_context_version')
-    if context_version == grounded_observation_reply.CONTEXT_VERSION:
+    if context_version in grounded_observation_reply.CONTEXT_VERSIONS:
         from .natural_reply_meaning import compare_reply_meaning
 
         try:
@@ -1353,7 +1353,7 @@ def build_natural_reply_messages(request, *, correction_target_context=False):
         # Do not carry instructions for those absent protocols into this one.
         writer = json.loads(request.writer_material_json)
         context_version = writer.get('source_context_version')
-        if context_version == grounded_observation_reply.CONTEXT_VERSION:
+        if context_version in grounded_observation_reply.CONTEXT_VERSIONS:
             return grounded_observation_reply.messages(writer)
         if context_version in INITIAL_OBSERVATION_FOLLOW_CONTEXT_VERSIONS:
             focus = writer['initial_observation_follow']
@@ -1506,14 +1506,21 @@ class SelfHostedNaturalReplySource:
     async def __call__(self, request):
         stage, status = 'transport', None
         try:
+            writer = json.loads(request.writer_material_json) if request.writer_material_json else {}
+            context_version = writer.get('source_context_version')
+            payload = {"model": self.model, "messages": build_natural_reply_messages(
+                request, correction_target_context=self._correction_target_context),
+                "temperature": 0, "max_tokens": 2048, "stream": False,
+                "chat_template_kwargs": {"enable_thinking": False}}
+            if context_version == grounded_observation_reply.CONSTRAINED_CONTEXT_VERSION:
+                if self.model != QWEN_9B_NATURAL_ALIAS:
+                    raise NaturalReplyError("natural_reply_provider_contract")
+                payload["candidate_format"] = grounded_observation_reply.CONSTRAINED_CANDIDATE_FORMAT
             async with httpx.AsyncClient(transport=self._transport, follow_redirects=False,
                     timeout=httpx.Timeout(REQUEST_SECONDS, connect=5.0)) as client:
                 response = await client.post(self.endpoint,
                     headers={"Authorization": "Bearer " + self._api_key},
-                    json={"model": self.model, "messages": build_natural_reply_messages(
-                        request, correction_target_context=self._correction_target_context),
-                        "temperature": 0, "max_tokens": 2048, "stream": False,
-                        "chat_template_kwargs": {"enable_thinking": False}})
+                    json=payload)
             stage, status = 'http_status', response.status_code
             if status != 200:
                 raise NaturalReplyError("natural_reply_provider_unavailable")
@@ -1526,6 +1533,9 @@ class SelfHostedNaturalReplySource:
             choices = data.get("choices")
             if data.get("model") != self.model or not isinstance(choices, list) or len(choices) != 1:
                 raise NaturalReplyError("natural_reply_provider_contract")
+            if ("candidate_format" in payload
+                    and data.get("candidate_format") != payload["candidate_format"]):
+                raise NaturalReplyError("natural_reply_provider_contract")
             finish_reason = choices[0].get("finish_reason")
             if finish_reason != "stop":
                 stage = 'generation_length' if finish_reason == 'length' else 'generation_finish'
@@ -1536,9 +1546,7 @@ class SelfHostedNaturalReplySource:
                 raise NaturalReplyError("natural_reply_provider_contract")
             stage = 'reply_validation'
             text = message["content"].strip()
-            writer = json.loads(request.writer_material_json) if request.writer_material_json else {}
-            context_version = writer.get('source_context_version')
-            if context_version == grounded_observation_reply.CONTEXT_VERSION:
+            if context_version in grounded_observation_reply.CONTEXT_VERSIONS:
                 try:
                     text = grounded_observation_reply.compose(text, writer)
                 except ValueError as exc:

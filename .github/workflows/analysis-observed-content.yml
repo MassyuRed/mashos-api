@@ -109,6 +109,7 @@ name: Analysis observed content
       - supabase/migrations/*_analysis_interpretation_correction_sources.sql
       - ai/tests/test_analysis_semantic*.py
       - ai/tests/test_emlis_natural_reply_probe_http.py
+      - ai/tests/test_emlis_grounded_decoding.py
       - ai/tests/test_emlis_interpretation_correction.py
       - supabase/migrations/*_emlis_interpretation_correction_history.sql
       - ai/tests/test_emlis_natural_question_application.py
@@ -352,6 +353,7 @@ jobs:
           ai/tests/piece_v2/test_b05_piece_answer_update_saved_pipeline.py
           ai/tests/piece_v2/test_b05_refined_source_fence_sql.py
           ai/tests/test_emlis_natural_reply_application.py
+          ai/tests/test_emlis_grounded_decoding.py
           ai/tests/test_emlis_active_meaning_application.py
           ai/tests/test_emlis_analysis_material.py
           ai/tests/test_analysis_emlis_material_handoff.py
