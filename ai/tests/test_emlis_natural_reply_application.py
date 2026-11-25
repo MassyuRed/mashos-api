@@ -993,7 +993,7 @@ def test_9b_initial_follow_uses_bound_focus_and_persists_literal(natural_case, q
         sent.append(body)
         assert body["model"] == QWEN_9B_NATURAL_ALIAS
         assert json.loads(body["messages"][-1]["content"]) == {
-            "本人の気持ちの言葉": feeling, **focus}
+            "本人が書いた一文": literal, "本人の気持ちの言葉": feeling, **focus}
         return httpx.Response(200, json={"model": QWEN_9B_NATURAL_ALIAS, "choices": [
             {"finish_reason": "stop", "message": {"role": "assistant", "content": follow}}]})
 
@@ -1091,9 +1091,10 @@ def test_initial_follow_legacy_writer_retains_its_saved_message_shape():
     assert messages[0]["content"].startswith("文章の話し手はEmlis")
 
 
-def test_initial_follow_contextual_writer_keeps_v28_replay_and_its_source_facts():
+def test_initial_follow_current_writer_keeps_v28_and_v29_replay_and_their_source_facts():
     from cocolon_meaning_experience_engine.natural_reply import (
-        ACTIVE_MEANING_PROFILE, GROUNDED_INITIAL_OBSERVATION_FOLLOW_CONTEXT_VERSION,
+        ACTIVE_MEANING_PROFILE, CONTEXTUAL_INITIAL_OBSERVATION_FOLLOW_CONTEXT_VERSION,
+        GROUNDED_INITIAL_OBSERVATION_FOLLOW_CONTEXT_VERSION,
         INITIAL_OBSERVATION_FOLLOW_CONTEXT_VERSION, build_natural_reply_messages)
 
     focus = {
@@ -1108,10 +1109,14 @@ def test_initial_follow_contextual_writer_keeps_v28_replay_and_its_source_facts(
     archived = messages(GROUNDED_INITIAL_OBSERVATION_FOLLOW_CONTEXT_VERSION)
     encoded = json.dumps(archived, ensure_ascii=False, separators=(",", ":")).encode()
     assert sha256(encoded).hexdigest() == "83b008c6956ccbbd879c420437be0c035f8b3e914a0d8c43b97e27ddced47554"
+    contextual = messages(CONTEXTUAL_INITIAL_OBSERVATION_FOLLOW_CONTEXT_VERSION)
+    assert contextual[1] == archived[1]
+    assert "別の人にもそのまま言える言葉なら" in contextual[0]["content"]
+    assert "いつ何を知ったか" in contextual[0]["content"]
     candidate = messages(INITIAL_OBSERVATION_FOLLOW_CONTEXT_VERSION)
-    assert candidate[1] == archived[1]
-    assert "別の人にもそのまま言える言葉なら" in candidate[0]["content"]
-    assert "いつ何を知ったか" in candidate[0]["content"]
+    assert json.loads(candidate[1]["content"]) == {
+        "本人が書いた一文": focus["excerpt"], **json.loads(archived[1]["content"])}
+    assert "本人の気持ちは本人に属します" in candidate[0]["content"]
 
 
 @pytest.mark.parametrize("thought,cues,follow,accepted", [
@@ -1142,6 +1147,18 @@ def test_initial_follow_contextual_writer_keeps_v28_replay_and_its_source_facts(
     ("明日の講習には参加できないと今日分かったので、私は悲しかったです。",
      {"知った内容": "明日の講習には参加できない", "知った時点": "今日"},
      "明日の講習に参加できないと今日分かったときのこと、ここでお聞きしました。", True),
+    ("明日の展示には参加できないと今日分かったので、私は悲しかったです。",
+     {"知った内容": "明日の展示には参加できない", "知った時点": "今日"},
+     "明日の展示参加が今日分かったことで、悲しみを覚えたその気持ちを、Emlis は受け止めました。", False),
+    ("明日の展示には参加できないと今日分かったので、私は悲しかったです。",
+     {"知った内容": "明日の展示には参加できない", "知った時点": "今日"},
+     "明日の展示に参加できると分かったときのお気持ち、ここでお聞きしました。", False),
+    ("毎週届く手紙が今月で終わると知ったので、私は寂しかったです。",
+     {"知った内容": "毎週届く手紙が今月で終わる"},
+     "毎週届く手紙が今月で終わると知った寂しさを、Emlis は今も感じています。", False),
+    ("毎週届く手紙が今月で終わると知ったので、私は寂しかったです。",
+     {"知った内容": "毎週届く手紙が今月で終わる"},
+     "毎週届いていた手紙のこと、終わると知った日の寂しさもここで聞かせてくださいましたね。", True),
     ("丸い取っ手が好きでした。", {"本人が書いた好みの時制": "過去"},
      "丸い取っ手のことが、今でも心に残っているのですね。", False),
     ("丸い取っ手が好きでした。", {"本人が書いた好みの時制": "過去"},
