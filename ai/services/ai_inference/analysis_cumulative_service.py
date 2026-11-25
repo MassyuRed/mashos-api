@@ -21,6 +21,7 @@ from uuid import UUID, uuid4
 import httpx
 from fastapi import HTTPException
 
+from analysis_model_source import analysis_primary_structure_reading_mode
 import analysis_observed_service as observed
 from analysis_observed_service import _checked_projection as _checked_v2_projection, private_storage_evidence, observed_mode
 
@@ -138,6 +139,16 @@ def map_response_for_renderer(payload, renderer, structure_relations=None):
         graph = item['content_json'].get('watashiMap') if item else payload.get('meta')
         visible = item if item else payload
         relations = visible.pop('_map_structure_relations', None)
+        if graph and graph['nodes'] and analysis_primary_structure_reading_mode() != 'karen.v3':
+            if renderer in ('semantic.v1', 'semantic.v2'):
+                graph['overview'] = dict(title=graph['overview']['title'], summary=visible['content_text'])
+            elif renderer != 'semantic.v3':
+                legacy = _legacy_semantic_projection(graph)
+                if item:
+                    item['content_json']['watashiMap'] = legacy
+                else:
+                    payload['meta'] = legacy
+            return payload
         if (graph and relations and renderer == 'semantic.v3' and structure_relations == 'v1'
                 and payload.get('map_subscription_tier') == 'premium'):
             graph['overview']['structure_relations'] = relations
@@ -275,7 +286,7 @@ def map_report_for_plan(row, tier):
         return row, False
     graph, text = projected
     row = dict(row, content_text=text, content_json=dict(content, watashiMap=graph))
-    if tier == 'premium' and relations:
+    if tier == 'premium' and relations and analysis_primary_structure_reading_mode() == 'karen.v3':
         from cocolon_meaning_experience_engine.cores.analysis.structure_relations import safe_structure_relations
         safe = safe_structure_relations(relations, len(graph['overview']['primary_structures']))
         if safe:
@@ -1087,7 +1098,20 @@ async def _ensure_map(user_id, *, ensure=True, force=False, monthly=False, model
             private = artifact.private_evidence() if semantic_source else private_storage_evidence(artifact)
             private['coverage'] = coverage
             private['source_record_refs'] = [s['original']['id'] for s in snapshot['members']]
-            _checked_projection(projection, str(UUID(artifact.artifact_id[9:])))
+            artifact_id = str(UUID(artifact.artifact_id[9:]))
+            _checked_projection(projection, artifact_id)
+            declined_scope = False
+            if analysis_primary_structure_reading_mode() == 'free_plus.v1':
+                free_view = map_projection_for_plan(projection, 'free')
+                if free_view is not None and not free_view[0]['nodes']:
+                    # The installed renderer needs a supported figure. Keep a
+                    # current report for unchanged sources or save ordinary facts
+                    # if this source version has no current report.
+                    overview = dict(projection['overview'])
+                    del overview['primary_structures']
+                    projection = dict(projection, overview=overview)
+                    text = _projection_text(projection)
+                    declined_scope = True
             if per_phase:
                 from analysis_job_progress import check_map_job_owner
                 await check_map_job_owner()
@@ -1095,8 +1119,8 @@ async def _ensure_map(user_id, *, ensure=True, force=False, monthly=False, model
             rid = await _rpc('analysis_cumulative_commit', dict(p_user_id=owner, p_guard=snapshot['guard'],
                 p_artifact_id=artifact.artifact_id, p_private_evidence=private, p_projection=projection,
                 p_text=text, p_start=snapshot['period_start'], p_end=snapshot['period_end'],
-                p_force=force or refresh_category_policy))
-            refreshed = True
+                p_force=(force or refresh_category_policy) and not declined_scope))
+            refreshed = not declined_scope or rid == artifact_id
         checked = await read_maps(owner, report_id=rid if not monthly else None,
             history=monthly, month=this_month if monthly else None, limit=1)
         tier = checked.get('subscription_tier', 'free')

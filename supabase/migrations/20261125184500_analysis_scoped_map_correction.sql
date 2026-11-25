@@ -18,8 +18,12 @@ begin
   if not found then raise sqlstate 'P0002' using message='analysis_owner_unavailable'; end if;
   if not exists(select 1 from public.analysis_map_interpretation_corrections
       where user_id=p_user_id and idempotency_key=p_idempotency_key) then
-    lock table public.emotions,public.profiles,public.emlis_input_threads,public.emlis_thread_events,
-      public.analysis_observed_artifacts in share mode nowait;
+    lock table public.emotions,public.profiles,public.emlis_input_threads,public.emlis_thread_events
+      in share mode nowait;
+    -- Cumulative commits lock corrections before writing artifacts. Take the
+    -- correction write lock first so the two operations cannot wait in a cycle.
+    lock table public.analysis_map_interpretation_corrections in row exclusive mode nowait;
+    lock table public.analysis_observed_artifacts in share mode nowait;
     select safe_projection#>'{overview,primary_structures}' into axes
       from public.analysis_observed_artifacts where user_id=p_user_id
         and artifact_id || '@' || artifact_version::text=p_artifact_ref and source_profile='cumulative.v1';

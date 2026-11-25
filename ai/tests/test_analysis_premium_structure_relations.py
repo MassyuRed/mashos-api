@@ -117,6 +117,7 @@ def test_private_review_uses_both_admitted_axes_and_exact_actual_choice(action, 
 
 
 def test_saved_premium_relation_is_not_reflected_in_lower_plans_or_legacy_renderers(monkeypatch):
+    monkeypatch.setenv('COCOLON_ANALYSIS_PRIMARY_STRUCTURE_READING', 'karen.v3')
     artifact, coverage, _ = _artifact(COEXISTENCE)
     rid = str(UUID(artifact.artifact_id[9:]))
     graph = artifact.safe_projection(authenticated_owner_scope=OWNER)
@@ -174,8 +175,20 @@ def test_saved_premium_relation_is_not_reflected_in_lower_plans_or_legacy_render
     with pytest.raises(HTTPException, match='analysis_saved_artifact_invalid'):
         latest()
 
+    corrupt = None
+    tier = 'premium'
+    monkeypatch.setenv('COCOLON_ANALYSIS_PLAN_READ_ROLLOUT', 'free_plus.v1')
+    basic_premium = latest()
+    assert basic_premium['report_id'] == rid
+    assert 'structure_relations' not in json.dumps(basic_premium)
+    assert basic_premium['meta']['overview']['primary_structures'] == paid['meta']['overview']['primary_structures']
+    assert COEXISTENCE not in detail()['content_text']
+    tier = 'plus'
+    assert basic_premium['meta'] == latest()['meta']
 
-def test_real_sql_commits_private_proof_and_rereads_one_saved_id_at_each_tier(sql_source):
+
+@pytest.fixture
+def saved_map_source(sql_source):
     db, rpc = sql_source
     for migration in (
         '20261107071033_analysis_semantic_map_wire.sql',
@@ -190,7 +203,6 @@ def test_real_sql_commits_private_proof_and_rereads_one_saved_id_at_each_tier(sq
         '20261122145000_deep_insight_effective_emlis_corrections.sql',
         '20261125184500_analysis_scoped_map_correction.sql',
         '20261125191500_analysis_plan_independent_map_identity.sql',
-        '20261125205000_analysis_premium_structure_relations.sql',
     ):
         sql_script(db, migration)
     other = str(UUID(int=2))
@@ -204,6 +216,46 @@ def test_real_sql_commits_private_proof_and_rereads_one_saved_id_at_each_tier(sq
              source['category'], source['emotions'], json.dumps(source['emotion_details'])])
         assert 'code' not in response_row
     snapshot = asyncio.run(rpc('analysis_cumulative_source_snapshot', dict(p_user_id=OWNER)))
+    return db, rpc, other, originals, snapshot
+
+
+def test_rollout_preserves_the_ordinary_saved_map_when_no_verified_free_figure(saved_map_source, monkeypatch):
+    import analysis_model_source as sources
+    from unittest.mock import AsyncMock
+
+    db, _, _, _, snapshot = saved_map_source
+    first, coverage, _ = _artifact(COEXISTENCE, snapshot)
+    second, _, _ = _artifact(COEXISTENCE, snapshot)
+    proposed = first.safe_projection(authenticated_owner_scope=OWNER)
+    assert service.map_projection_for_plan(proposed, 'free')[0]['nodes'] == []
+    assert proposed['overview']['primary_structures']
+
+    monkeypatch.setenv('COCOLON_ANALYSIS_PLAN_READ_ROLLOUT', 'free_plus.v1')
+    acquired = AsyncMock(side_effect=((first, coverage), (second, coverage)))
+    monkeypatch.setattr(service, '_semantic_history_map', acquired)
+    notify = AsyncMock()
+    monkeypatch.setattr(service, '_queue_map_update_notification', notify)
+    source = sources.SelfHostedSemanticAnalysisModelSource(endpoint='https://synthetic.invalid/v1/chat/completions',
+        model=sources.SEMANTIC_OCCURRENCE_V24_9B_MODEL, api_key='synthetic',
+        semantic_prompt_version=core.SEMANTIC_MAP_OCCURRENCE_V24_PROFILE)
+    initial = asyncio.run(service.ensure_map(OWNER, force=True, model_source=source))
+    reread = asyncio.run(service.ensure_map(OWNER, force=True, model_source=source))
+    assert initial['refreshed'] and not reread['refreshed']
+    assert initial['report_id'] == reread['report_id']
+    assert initial['meta'] == reread['meta']
+    assert initial['meta']['nodes'] == proposed['nodes']
+    assert 'primary_structures' not in initial['meta']['overview']
+    assert 'map_plan_scoped' not in service.map_response_for_renderer(reread, 'semantic.v1')
+    assert all(axis['description'] not in reread['content_text'] for axis in proposed['overview']['primary_structures'])
+    assert db.query('select count(*)::integer as total from public.analysis_observed_artifacts')['rows'] == [{'total': 1}]
+    assert db.query('select count(*)::integer as total from public.analysis_cumulative_months')['rows'] == [{'total': 1}]
+    assert acquired.await_count == 2
+    notify.assert_awaited_once()
+
+
+def test_real_sql_commits_private_proof_and_rereads_one_saved_id_at_each_tier(saved_map_source):
+    db, rpc, other, originals, snapshot = saved_map_source
+    sql_script(db, '20261125205000_analysis_premium_structure_relations.sql')
     artifact, coverage, _ = _artifact(COEXISTENCE, snapshot)
     graph = artifact.safe_projection(authenticated_owner_scope=OWNER)
     private = artifact.private_evidence()

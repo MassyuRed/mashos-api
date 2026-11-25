@@ -160,6 +160,9 @@ _PAST_PREFERENCE_RECEPTION = re.compile(
     r"が[、，,]?[ \t]*(?P<degree>(?:とても|すごく|大)?)好き(?:だった|でした)(?:の|ん)ですね[。．]?")
 _INITIAL_REASON = re.compile(
     rf"(?P<anchor>[^、，,\r\n]+)(?:ので|から)[、，,]\s*{_INITIAL_SELF_TOPIC}(?P<feeling>{_INITIAL_FEELING})")
+_INITIAL_REASON_RECEPTION = re.compile(
+    rf"(?:ので|から|ことで)[、，,][ \t]*(?:あなたは)?(?P<feeling>{_INITIAL_FEELING})(?:の|ん)ですね[。．]?")
+_EXPLICIT_BENEFACTIVE = re.compile(r"[てで](?:くれ|くださ|もら|いただ|あげ)")
 _INITIAL_SCENE = re.compile(
     rf"{_INITIAL_SELF_TOPIC}(?P<anchor>[^、，,\r\n]+?)(?:とき|と)[、，,]?\s*(?P<feeling>{_INITIAL_FEELING})")
 _INITIAL_BARE_FEELING = re.compile(
@@ -1268,8 +1271,8 @@ def _has_changed_direct_feeling_quote(text, excerpt):
     return any(mark in text for pair in _DIRECT_FEELING_QUOTE_MARKS for mark in pair)
 
 
-def preserve_initial_past_preference(reply, request):
-    """Preserve the written degree when the author mirrors the same past preference."""
+def preserve_initial_mirrored_source(reply, request):
+    """Preserve the written form when the author mirrors a single preference or reason."""
     from emlis_ai_grounded_observation_plan import _top_level_text
 
     if reply.model != QWEN_9B_NATURAL_ALIAS:
@@ -1284,6 +1287,9 @@ def preserve_initial_past_preference(reply, request):
     if (not 0 < len(memo) <= 240 or _top_level_text(memo) != memo or re.search(r'[。．.!！?？]', memo)
             or any(mark in memo for pair in _DIRECT_FEELING_QUOTE_MARKS for mark in pair)):
         return reply
+    reason = _INITIAL_REASON.fullmatch(memo)
+    if reason is not None:
+        return _preserve_mirrored_reason_action(reply, reason)
     source = _INITIAL_PREFERENCE.fullmatch(memo)
     if source is None or source['time'] not in {'だった', 'でした'}:
         return reply
@@ -1299,6 +1305,23 @@ def preserve_initial_past_preference(reply, request):
     start, end = reception.span('degree')
     degree = '大' if strong else ''
     return replace(reply, text=anchor + tail[:start] + degree + tail[end:])
+
+
+def _preserve_mirrored_reason_action(reply, source):
+    anchor = source['anchor']
+    if (_EXPLICIT_BENEFACTIVE.search(anchor) or anchor.endswith('なかった')
+            or not anchor.endswith(('た', 'だ'))):
+        return reply
+    # Adding くれた to an otherwise exact past clause presents the reported
+    # action as a favor. Keep the writer's original inflection.
+    added_favor = anchor[:-1] + ('てくれた' if anchor[-1] == 'た' else 'でくれた')
+    if not reply.text.startswith(added_favor):
+        return reply
+    rest = reply.text[len(added_favor):]
+    reception = _INITIAL_REASON_RECEPTION.fullmatch(rest)
+    if reception is None or reception['feeling'] != source['feeling']:
+        return reply
+    return replace(reply, text=anchor + rest)
 
 
 def _validate_initial_availability_reply(text, material, writer):

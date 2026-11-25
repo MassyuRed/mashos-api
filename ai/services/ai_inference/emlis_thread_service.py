@@ -994,7 +994,7 @@ class EmlisThreadService:
     async def _process_natural(self, user_id, snapshot):
         from cocolon_meaning_experience_engine.natural_reply import (
             ARTIFACT_SCHEMA, NaturalReply, NaturalReplyError, prepare_natural_reply, validate_reply,
-            preserve_initial_past_preference,
+            preserve_initial_mirrored_source,
             CORRECTED_SOURCE_CONTEXT_VERSION, DIRECT_FEELING_CORRECTION_CONTEXT_VERSION,
             DIRECT_FEELING_CORRECTION_CONTEXT_VERSIONS, INITIAL_STANDALONE_FEELING_CONTEXT_VERSION,
             INITIAL_OBSERVATION_FOLLOW_CONTEXT_VERSION, INITIAL_OBSERVATION_FOLLOW_CONTEXT_VERSIONS,
@@ -1140,7 +1140,7 @@ class EmlisThreadService:
                                           failure="natural_reply_unavailable")
             provider_evidence = {}
             if initial_final and t['data'].get('started_tier') == 'free' and not history_line:
-                preserved = preserve_initial_past_preference(candidate, material)
+                preserved = preserve_initial_mirrored_source(candidate, material)
                 if preserved != candidate:
                     provider_evidence['provider_reply_text'] = candidate.text
                     candidate = preserved

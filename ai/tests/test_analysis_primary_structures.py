@@ -207,14 +207,17 @@ def test_history_merge_native_parser_preserves_structure_and_leaf_never_authors_
 
 
 @pytest.mark.parametrize('model_generation, configured, enabled', [
-    ('4B', None, False), ('4B', 'karen.v3', False),
-    ('9B', None, False), ('9B', 'karen.v3', 'karen.v3'),
+    ('4B', None, False), ('4B', 'karen.v3', False), ('4B', 'free_plus.v1', False),
+    ('9B', None, False), ('9B', 'karen.v3', 'karen.v3'), ('9B', 'free_plus.v1', 'karen.v3'),
 ])
 def test_direct_transport_primary_structure_mode_requires_the_pinned_9b_alias(monkeypatch, model_generation, configured, enabled):
     import analysis_model_source as sources
 
     monkeypatch.delenv('COCOLON_ANALYSIS_PRIMARY_STRUCTURE_READING', raising=False)
-    if configured:
+    monkeypatch.delenv('COCOLON_ANALYSIS_PLAN_READ_ROLLOUT', raising=False)
+    if configured == 'free_plus.v1':
+        monkeypatch.setenv('COCOLON_ANALYSIS_PLAN_READ_ROLLOUT', configured)
+    elif configured:
         monkeypatch.setenv('COCOLON_ANALYSIS_PRIMARY_STRUCTURE_READING', configured)
     model = sources.SEMANTIC_OCCURRENCE_V24_MODEL if model_generation == '4B' else sources.SEMANTIC_OCCURRENCE_V24_9B_MODEL
     source = sources.SelfHostedSemanticAnalysisModelSource(endpoint='https://synthetic.invalid/v1/chat/completions',
@@ -286,17 +289,21 @@ def test_worker_selects_new_grammar_only_for_explicitly_enabled_9b_map(monkeypat
 
     for model, setting, enabled, if_alias in [
         (sources.SEMANTIC_OCCURRENCE_V24_MODEL, 'karen.v3', False, sources.SEMANTIC_EVENT_PLAN_BASE_MODEL),
+        (sources.SEMANTIC_OCCURRENCE_V24_MODEL, 'free_plus.v1', False, sources.SEMANTIC_EVENT_PLAN_BASE_MODEL),
         (sources.SEMANTIC_OCCURRENCE_V24_9B_MODEL, None, False, sources.SEMANTIC_ANALYSIS_9B_MODEL),
         (sources.SEMANTIC_OCCURRENCE_V24_9B_MODEL, 'karen.v2', False, sources.SEMANTIC_ANALYSIS_9B_MODEL),
         (sources.SEMANTIC_OCCURRENCE_V24_9B_MODEL, 'karen.v3', 'karen.v3', sources.SEMANTIC_ANALYSIS_9B_MODEL),
+        (sources.SEMANTIC_OCCURRENCE_V24_9B_MODEL, 'free_plus.v1', 'karen.v3', sources.SEMANTIC_ANALYSIS_9B_MODEL),
     ]:
         monkeypatch.setenv('COCOLON_ANALYSIS_MODEL_SOURCE', sources.SEMANTIC_SELECTOR)
         monkeypatch.setenv('COCOLON_ANALYSIS_MODEL', model)
         monkeypatch.setenv('COCOLON_ANALYSIS_MODEL_ENDPOINT', 'https://synthetic.invalid/v1/chat/completions')
         monkeypatch.setenv('COCOLON_ANALYSIS_MODEL_API_KEY', 'synthetic')
-        if setting is None:
-            monkeypatch.delenv('COCOLON_ANALYSIS_PRIMARY_STRUCTURE_READING', raising=False)
-        else:
+        monkeypatch.delenv('COCOLON_ANALYSIS_PRIMARY_STRUCTURE_READING', raising=False)
+        monkeypatch.delenv('COCOLON_ANALYSIS_PLAN_READ_ROLLOUT', raising=False)
+        if setting == 'free_plus.v1':
+            monkeypatch.setenv('COCOLON_ANALYSIS_PLAN_READ_ROLLOUT', setting)
+        elif setting:
             monkeypatch.setenv('COCOLON_ANALYSIS_PRIMARY_STRUCTURE_READING', setting)
         assert if_sources.application_analysis_if_model_source().model == if_alias
         source = sources.application_analysis_model_source()
@@ -362,7 +369,8 @@ def test_omission_preserves_neighbors_and_checks_every_origin_before_publication
             core._read_primary_structures(p, material, nodes, [first, bad, last])
 
 
-def test_viewer_plan_projects_one_saved_version_without_leaking_paid_graph_or_text(monkeypatch):
+@pytest.mark.parametrize('mode', ['karen.v3', 'free_plus.v1'])
+def test_viewer_plan_projects_one_saved_version_without_leaking_paid_graph_or_text(monkeypatch, mode):
     from copy import deepcopy
     from datetime import datetime, timedelta, timezone
     from fastapi import HTTPException
@@ -410,6 +418,9 @@ def test_viewer_plan_projects_one_saved_version_without_leaking_paid_graph_or_te
     monkeypatch.setattr(service, '_rpc', rpc)
     monkeypatch.setattr('analysis_observed_service.observed_enabled', lambda: True)
     monkeypatch.setattr(service, '_project_evidence', lambda _owner, raw: raw['items'])
+    switch = ('COCOLON_ANALYSIS_PLAN_READ_ROLLOUT' if mode == 'free_plus.v1' else
+              'COCOLON_ANALYSIS_PRIMARY_STRUCTURE_READING')
+    monkeypatch.setenv(switch, mode)
 
     def current(renderer='semantic.v3'):
         result = asyncio.run(service.ensure_map(OWNER, ensure=False))
@@ -436,9 +447,22 @@ def test_viewer_plan_projects_one_saved_version_without_leaking_paid_graph_or_te
     assert monthly()['meta'] == free['meta']
     assert monthly()['report_id'] == rid
     for renderer in ('semantic.v2', 'semantic.v1', None):
-        assert current(renderer)['meta'] is None
-        assert current(renderer)['content_text'] == free['content_text']
-        assert 'watashiMap' not in detail(renderer)['item']['content_json']
+        latest = current(renderer)
+        assert latest['content_text'] == free['content_text']
+        if mode == 'karen.v3':
+            assert latest['meta'] is None
+            assert 'watashiMap' not in detail(renderer)['item']['content_json']
+        else:
+            projected = latest['meta']
+            assert projected == monthly(renderer)['meta'] == detail(renderer)['item']['content_json']['watashiMap']
+            assert projected['projection_of'] == graph['projection_of']
+            assert projected['accessibility_linear_order'] == ['n2', 'n3', 'n5']
+            if renderer:
+                assert projected['overview'] == dict(title=graph['overview']['title'], summary=free['content_text'])
+                assert [edge['edge_ref'] for edge in projected['edges']] == ['e1', 'e2']
+            else:
+                assert projected['wire_kind'] == 'watashi.map.v2' and projected['edges'] == []
+            assert '有料' not in json.dumps(latest, ensure_ascii=False)
     with pytest.raises(HTTPException) as unauthorized:
         asyncio.run(service.map_evidence(OWNER, rid, 'n2', month=month))
     assert unauthorized.value.status_code == 404
@@ -453,6 +477,9 @@ def test_viewer_plan_projects_one_saved_version_without_leaking_paid_graph_or_te
     assert asyncio.run(service.map_evidence(OWNER, rid, 'n1', month=month)) == {'items': []}
     assert detail()['item']['content_json']['watashiMap'] == plus['meta']
     assert monthly()['meta'] == plus['meta']
+    if mode == 'free_plus.v1':
+        assert current('semantic.v1')['meta']['overview']['summary'] == plus['content_text']
+        assert '有料の比較説明' in current('semantic.v1')['meta']['overview']['summary']
 
     tier = 'premium'
     assert current()['meta'] == plus['meta']
@@ -473,6 +500,20 @@ def test_viewer_plan_projects_one_saved_version_without_leaking_paid_graph_or_te
     figureless, text = service.map_projection_for_plan(unsupported, 'premium')
     assert figureless['nodes'] == [] and figureless['overview']['primary_structures'] == []
     assert '有料' not in text
+
+    monkeypatch.delenv(switch)
+    archived = current('semantic.v1')
+    assert archived['map_plan_scoped']
+    assert archived['meta']['overview']['summary'] == archived['content_text'] == free['content_text']
+    assert archived['meta']['nodes'] == free['meta']['nodes']
+    assert archived['meta']['edges'] == free['meta']['edges']
+    assert '有料' not in json.dumps(archived, ensure_ascii=False)
+
+    source['content_json']['watashiMap'] = unsupported
+    source['content_text'] = service._projection_text(unsupported)
+    historical = current('semantic.v1')
+    assert historical['map_plan_scoped'] and historical['meta'] is None
+    assert '有料' not in json.dumps(historical, ensure_ascii=False)
 
 
 def test_v3_rejects_unwritten_priority_and_does_not_repeat_the_same_roots():
@@ -688,3 +729,44 @@ def test_v3_reads_original_choices_when_model_splits_the_cases(fault):
         assert len(axes) == len(admitted['edges']) == 1
         assert axes[0]['criterion'] == 'この二つの記録では、見返せることが作業手順をノートに書く条件でした。'
         assert axes[0]['description'].endswith('作業場所で見返せないため、書きませんでした。')
+
+
+@pytest.mark.parametrize('fault', [None, 'different_condition', 'different_source_actor', 'different_model_actor',
+                                   'different_model_object', 'reversed_model_choice', 'unrelated_factor'])
+def test_v3_keeps_explicit_ability_and_two_actual_choices_when_model_paraphrases(fault):
+    first = '机で照合できるので、私は鍵の番号を手帳に書いた。'
+    second = '廊下で照合できないので、私は鍵の番号を手帳に書かなかった。'
+    case = ('机という環境では照合が可能だったため、鍵の番号を手帳に書いたが、'
+            '廊下では照合ができなかったため、同じ鍵の番号も手帳に書かなかった。')
+    factor = '場所の制約（照合可否）'
+    if fault == 'different_condition':
+        second = second.replace('照合できない', '確認できない')
+    elif fault == 'different_source_actor':
+        second = second.replace('私は', '同僚は')
+    elif fault == 'different_model_actor':
+        case = case.replace('ため、鍵', 'ため、同僚が鍵')
+    elif fault == 'different_model_object':
+        case = case.replace('同じ鍵の番号', '切符の番号')
+    elif fault == 'reversed_model_choice':
+        case = case.replace('書かなかった', '書いた')
+    elif fault == 'unrelated_factor':
+        factor = '手帳の大きさ'
+
+    prepared, plan, bodies = scenario(first, second, version='karen.v3')
+    nodes = core._semantic_v4_join(plan, bodies)
+    axis = dict(v3_reading(), heading='場所による行動の分岐', decision_factor=factor, case_reading=case,
+                criterion='照合が可能な環境であれば記録し、不可能であれば記録しない')
+    packet = dict(schema_version=core._semantic_v4_schema('RELATIONS'), nodes_sha256=core.semantic_map_hash(nodes),
+                  qualification_review={}, edges=[], primary_structures=[axis],
+                  overview=dict(node_refs=['n1', 'n2'], title_proposal='', title='2件の記録を振り返って'))
+    admitted = core.semantic_node_local_v4_relations(prepared, plan, bodies, packet)
+    axes = admitted['overview']['primary_structures']
+    if fault:
+        assert axes == [] and admitted['edges'] == []
+    else:
+        comparison, = axes
+        assert comparison['criterion'] == 'この二つの記録では、照合できることが鍵の番号を手帳に書く条件でした。'
+        assert comparison['description'].endswith('机で照合できるため、鍵の番号を手帳に書きました。廊下で照合できないため、書きませんでした。')
+        assert comparison['node_refs'] == ['n1', 'n2']
+        assert admitted['edges'][0]['label'] == (
+            '机で照合できる → 私は鍵の番号を手帳に書いた／廊下で照合できない → 私は鍵の番号を手帳に書かなかった')

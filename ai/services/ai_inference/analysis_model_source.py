@@ -482,8 +482,16 @@ def _configured_semantic_prompt_version(model):
     return SEMANTIC_MAP_EVENT_PLAN_PROFILE if model == SEMANTIC_EVENT_PLAN_MODEL else SEMANTIC_MAP_PROFILE
 
 
+def analysis_primary_structure_reading_mode():
+    if os.getenv('COCOLON_ANALYSIS_PLAN_READ_ROLLOUT') == 'free_plus.v1':
+        return 'free_plus.v1'
+    if os.getenv('COCOLON_ANALYSIS_PRIMARY_STRUCTURE_READING') == 'karen.v3':
+        return 'karen.v3'
+    return None
+
+
 def analysis_model_primary_structure_reading(source):
-    if os.getenv('COCOLON_ANALYSIS_PRIMARY_STRUCTURE_READING') != 'karen.v3':
+    if analysis_primary_structure_reading_mode() is None:
         return False
     if type(source) is _ApplicationSemanticAnalysisSource:
         model = source._settings[2]

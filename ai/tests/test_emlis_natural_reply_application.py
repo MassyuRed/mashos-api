@@ -1225,26 +1225,62 @@ def test_9b_initial_follow_is_not_selected_by_model_alias_alone(natural_case, qd
 ])
 def test_initial_preference_preservation_requires_the_same_past_statement(memo, raw, expected):
     from cocolon_meaning_experience_engine.natural_reply import (
-        QWEN_9B_NATURAL_ALIAS, preserve_initial_past_preference)
+        QWEN_9B_NATURAL_ALIAS, preserve_initial_mirrored_source)
 
     request = NaturalReplyInput('source', json.dumps({'current': {'memo': memo}}))
     provider_reply = NaturalReply(raw, QWEN_9B_NATURAL_ALIAS, request.source_prefix_ref)
-    reply = preserve_initial_past_preference(provider_reply, request)
+    reply = preserve_initial_mirrored_source(provider_reply, request)
     assert reply.text == (expected or raw)
-    assert preserve_initial_past_preference(reply, request) == reply
-    assert preserve_initial_past_preference(provider_reply, replace(request, material_json=json.dumps({
+    assert preserve_initial_mirrored_source(reply, request) == reply
+    assert preserve_initial_mirrored_source(provider_reply, replace(request, material_json=json.dumps({
         'current': {'memo': memo}, 'past_user_records': [{'memo': memo}]}))) == provider_reply
 
 
+@pytest.mark.parametrize(('memo', 'raw', 'expected'), [
+    ('友人が手順を読んだので、私は安心しました。',
+     '友人が手順を読んでくれたので、安心しましたね。', None),
+    ('友人が手順を読んだので、私は安心した。',
+     '友人が手順を読んでくれたので、安心したんですね。',
+     '友人が手順を読んだので、安心したんですね。'),
+    ('母が支柱を立ててくれたので、私は嬉しかった。',
+     '母が支柱を立ててくれたので、嬉しかったんですね。', None),
+    ('姉が直してくれたと聞いたので、私はほっとした。',
+     '姉が直してくれたと聞いてくれたので、ほっとしたんですね。', None),
+    ('姉がラジオを直したので、私はほっとした。',
+     '兄がラジオを直してくれたので、ほっとしたんですね。', None),
+    ('姉がラジオを直したので、私はほっとした。',
+     '姉がラジオを直してくれたので、嬉しかったんですね。', None),
+    ('姉がラジオを直したので、私はほっとした。',
+     '姉がラジオを直してくれたので、ほっとしたんですね。よかったです。', None),
+    ('前にラジオが壊れた。姉がラジオを直したので、私はほっとした。',
+     '姉がラジオを直してくれたので、ほっとしたんですね。', None),
+])
+def test_initial_reason_preservation_requires_the_same_plain_action_and_feeling(memo, raw, expected):
+    from cocolon_meaning_experience_engine.natural_reply import (
+        QWEN_9B_NATURAL_ALIAS, preserve_initial_mirrored_source)
+
+    request = NaturalReplyInput('source', json.dumps({'current': {'memo': memo}}))
+    provider_reply = NaturalReply(raw, QWEN_9B_NATURAL_ALIAS, request.source_prefix_ref)
+    reply = preserve_initial_mirrored_source(provider_reply, request)
+    assert reply.text == (expected or raw)
+    assert preserve_initial_mirrored_source(reply, request) == reply
+    with_action = replace(request, material_json=json.dumps({'current': {'memo': memo, 'memo_action': '補足'}}))
+    assert preserve_initial_mirrored_source(provider_reply, with_action) == provider_reply
+
+
 @pytest.mark.parametrize('tier', ('free', 'plus', 'premium'))
-def test_initial_preference_keeps_original_and_provider_text_on_same_version(
-        natural_case, qdb, monkeypatch, tier):
+@pytest.mark.parametrize(('memo', 'raw', 'preserved'), [
+    # Captured from the normal 9B provider before each change.
+    ('工房で作った琥珀色のしおりが好きでした。', '工房で作った琥珀色のしおりが、とても好きだったんですね。',
+     '工房で作った琥珀色のしおりが、好きだったんですね。'),
+    ('古いラジオを姉が直したので、私はほっとした。', '古いラジオを姉が直してくれたので、あなたはほっとしたんですね。',
+     '古いラジオを姉が直したので、あなたはほっとしたんですね。'),
+])
+def test_initial_reception_keeps_original_and_provider_text_on_same_version(
+        natural_case, qdb, monkeypatch, tier, memo, raw, preserved):
     from cocolon_meaning_experience_engine.natural_reply import QWEN_9B_NATURAL_ALIAS
 
     user, parent, _, _ = natural_case
-    memo = '工房で作った琥珀色のしおりが好きでした。'
-    # Captured from the normal 9B provider on 11/25 before this change.
-    raw = '工房で作った琥珀色のしおりが、とても好きだったんですね。'
     qdb.query("update public.emotions set memo=$2,memo_action='' where id=$1", [parent, memo])
     qdb.query('update public.profiles set subscription_tier=$2 where id=$1', [user, tier])
     calls = []
@@ -1261,7 +1297,7 @@ def test_initial_preference_keeps_original_and_provider_text_on_same_version(
     service = _active_application_owner(monkeypatch, source, None)
     service.natural_questions_enabled = False
     dto = run(service.start(user, parent))
-    expected = raw.replace('とても', '') if tier == 'free' else raw
+    expected = preserved if tier == 'free' else raw
     assert dto['state'] == 'COMPLETED'
     assert dto['current_observation']['text'] == expected
     assert run(service.get(user, parent)) == dto

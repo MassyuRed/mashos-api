@@ -246,7 +246,7 @@ def test_split_v24_leaf_renews_clock_after_accepted_plan(monkeypatch):
 
     async def scenario():
         loop = asyncio.get_running_loop()
-        base_time = loop.time()
+        base_time = 10_000.0
         elapsed = 0
         monkeypatch.setattr(loop, 'time', lambda: base_time + elapsed)
 

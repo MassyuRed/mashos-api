@@ -3612,6 +3612,9 @@ _CHOICE_ADDED_ACTIONS = (
 _CHOICE_POLAR_CONDITION = re.compile(
     r'(?:[一-鿿々ァ-ヺー]{1,12}で)?(?P<stem>[一-鿿々][一-鿿々ぁ-ゖ]{0,9}[えけげせぜてでねへべぺめれ])'
     r'(?P<ending>る|ない)')
+_CHOICE_ABILITY_CONDITION = re.compile(
+    r'(?P<place>[一-鿿々ァ-ヺー]{1,12})で(?P<stem>(?P<activity>[一-鿿々ァ-ヺー]{1,12})でき)'
+    r'(?P<ending>る|ない)')
 
 
 def _choice_added_action(text, source):
@@ -3786,6 +3789,40 @@ def _v3_authored_choice_comparison(axes, refs, pair, stem):
     return True
 
 
+def _v3_authored_ability_comparison(axes, refs, pair, conditions, arguments):
+    if len(axes) != 1:
+        return False
+    axis, = axes
+    if axis['scope'] != 'across_records' or set(axis['anchors']) != {ref + '.u1.e1' for ref in refs}:
+        return False
+    first, second = conditions
+    if first['place'] == second['place']:
+        return False
+    activity = first['activity']
+    stem = first['stem']
+    factor = unicodedata.normalize('NFKC', axis['decision_factor'])
+    if factor not in {stem + 'るか', stem + 'るかどうか', activity + '可否', activity + 'の可否'} and not factor.endswith(
+            f'({activity}可否)'):
+        return False
+    action_arguments = ''.join(
+        rf'(?:同じ)?{re.escape(noun)}(?:を|も)' if particle == 'を' else re.escape(noun + particle)
+        for particle, noun in arguments)
+    clauses = [clause.strip(' 、，,\t') for clause in _CHOICE_CASE_BOUNDARY.split(axis['case_reading'])
+               if clause.strip(' 、，,\t')]
+    if len(clauses) != 2:
+        return False
+    for condition, choice, clause in zip(conditions, pair, clauses, strict=True):
+        ability = 'できる|できた|可能だった' if condition['ending'] == 'る' else 'できない|できなかった|不可能だった'
+        outcomes = '|'.join(map(re.escape, choice[2]))
+        place = re.escape(condition['place'])
+        pattern = (rf'{place}(?:で(?:は)?|という(?:場所|環境)では)[、，, ]*'
+                   rf'{re.escape(activity)}が?(?:{ability})(?:ので|ため)[、，, ]*'
+                   rf'(?:私は|本人は)?{action_arguments}(?:{outcomes})')
+        if not re.fullmatch(pattern, clause):
+            return False
+    return True
+
+
 def _v3_read_confirmed_choice_contrast(prepared, material, nodes, authored_axes):
     """Describe an authored comparison from two complete, opposite written choices."""
     from .intent_compiler import _proposition
@@ -3804,8 +3841,11 @@ def _v3_read_confirmed_choice_contrast(prepared, material, nodes, authored_axes)
         return None
 
     readings = {}
+    ability_conditions = tuple(_CHOICE_ABILITY_CONDITION.fullmatch(choice[0]) for choice in pair)
+    explicit_ability = all(ability_conditions)
+    condition_pattern = _CHOICE_ABILITY_CONDITION if explicit_ability else _CHOICE_POLAR_CONDITION
     for (condition, action, forms, _), (*_, quote) in zip(pair, origins, strict=True):
-        condition_match = _CHOICE_POLAR_CONDITION.fullmatch(condition)
+        condition_match = condition_pattern.fullmatch(condition)
         reading = _proposition(action)
         if (condition_match is None or not quote.startswith(condition)
                 or reading is None or reading.actor != 'SELF' or not reading.arguments
@@ -3825,8 +3865,13 @@ def _v3_read_confirmed_choice_contrast(prepared, material, nodes, authored_axes)
     positive_condition, stem, positive, positive_verb = readings['positive']
     negative_condition, negative_stem, negative, negative_verb = readings['negative']
     if (stem != negative_stem or positive.arguments != negative.arguments
-            or positive.predicate_lemma != negative.predicate_lemma
-            or not _v3_authored_choice_comparison(authored_axes, refs, pair, stem)):
+            or positive.predicate_lemma != negative.predicate_lemma):
+        return None
+    if explicit_ability:
+        supported = _v3_authored_ability_comparison(authored_axes, refs, pair, ability_conditions, positive.arguments)
+    else:
+        supported = _v3_authored_choice_comparison(authored_axes, refs, pair, stem)
+    if not supported:
         return None
 
     topic = ''.join(noun + particle for particle, noun in positive.arguments)
