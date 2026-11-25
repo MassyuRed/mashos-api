@@ -795,8 +795,10 @@ def prepare_natural_reply(request, *, use_meaning_support=False, response_stage=
                 writer.update(records=[{'scope': records[0]['scope'], 'metadata': records[0]['metadata'],
                     'active_fields': [{'text': focus['excerpt'], 'field_path': 'memo',
                                        'source_role': 'ORIGINAL_INPUT'}]}], user_frame_feedback=[])
-            elif grounded_current_only:
+            elif grounded_current_only or response_stage == "PRE_QUESTION":
                 writer.update(records=records[:1], user_frame_feedback=[])
+            if response_stage == "REFINED":
+                writer["ai_question_context"] = latest_answer["ai_question_context"]
             if response_stage != "FINAL":
                 writer['response_purpose'] = material['response_purpose']
             if focus is not None and any(row['text'] == focus['excerpt'] for row in passages):

@@ -1307,7 +1307,7 @@ def test_grounded_listener_standalone_feeling_keeps_independent_action_in_the_re
             assert action not in json.dumps(material, ensure_ascii=False)
             assert material["quote"]["text"] == thought
             assert "passages" not in material
-            content = text
+            content = json.dumps({"follow": text}, ensure_ascii=False)
         return httpx.Response(200, json={"model": QWEN_9B_NATURAL_ALIAS, "choices": [
             {"finish_reason": "stop", "message": {"role": "assistant", "content": content}}]})
 
@@ -1337,9 +1337,23 @@ def test_grounded_listener_rejects_unwritten_expectation_or_present_memory(origi
 
     source = {"id": "P1", "text": original, "field": "memo", "source_role": "ORIGINAL_INPUT"}
     writer = {"grounded_passages": [source], "records": [{"active_fields": [source]}]}
-    text = grounded_observation_reply.compose(follow, writer)
+    text = grounded_observation_reply.compose(json.dumps({"follow": follow}), writer)
     if reason:
         with pytest.raises(ValueError, match=reason):
             grounded_observation_reply.read_reply(text, writer)
     else:
         assert grounded_observation_reply.read_reply(text, writer) == follow
+
+
+@pytest.mark.parametrize("wire", [
+    "その時の怖さも聞かせてくださったのですね。",
+    '{"passages":["P1"],"follow":"その時の怖さも聞かせてくださったのですね。"}',
+    '{"follow":"返事","follow":"別の返事"}',
+    '{"follow":["返事"]}',
+])
+def test_grounded_single_passage_format_accepts_only_one_follow_string(wire):
+    from cocolon_meaning_experience_engine import grounded_observation_reply
+
+    source = {"id": "P1", "text": "その時は怖かった。", "source_role": "SUPPLEMENTAL_ANSWER"}
+    with pytest.raises(ValueError, match="grounded_observation_format"):
+        grounded_observation_reply.compose(wire, {"grounded_passages": [source]})

@@ -835,12 +835,13 @@ def test_interrupted_started_provider_has_unknown_result_and_cannot_reacquire(na
 
 
 @pytest.mark.parametrize("end", ["answer", "skip"])
-def test_grounded_paid_question_round_preserves_answer_or_returns_only_to_current_record(
-        natural_questions, qdb, monkeypatch, end):
+@pytest.mark.parametrize("tier", ["free", "plus", "premium"])
+def test_grounded_question_round_binds_issued_question_or_uses_only_current_record(
+        natural_questions, qdb, monkeypatch, tier, end):
     from cocolon_meaning_experience_engine.natural_reply import (
         QWEN_9B_NATURAL_ALIAS, SelfHostedNaturalReplySource)
 
-    user, parent, _, _ = natural_questions(tier="premium")
+    user, parent, _, _ = natural_questions(tier=tier)
     earlier = "表彰の席で褒められたときは嬉しかった。"
     qdb.query("insert into public.emotions values ($1,$2,(now()-interval '1 day') at time zone 'UTC',$3,'',"
               "array['仕事'],array['喜び'],$4)",
@@ -858,18 +859,20 @@ def test_grounded_paid_question_round_preserves_answer_or_returns_only_to_curren
         material = json.loads(wire["messages"][-1]["content"])
         stage = material["stage"]
         calls.append(material)
-        if stage == "PRE_QUESTION":
-            assert earlier in json.dumps(material["history"], ensure_ascii=False)
-        if stage == "FINAL":
+        if stage in {"PRE_QUESTION", "FINAL"}:
             assert material["history"] == []
             assert material["confirmed_frame_feedback"] == []
+            assert "ai_question_context" not in material
+        else:
+            assert (earlier in json.dumps(material["history"], ensure_ascii=False)) == (tier != "free")
         chosen = material["quote"]
         assert "passages" not in material
         assert chosen["text"] == (supplement if stage == "REFINED" else ONE)
         assert chosen["source_role"] == (
             "SUPPLEMENTAL_ANSWER" if stage == "REFINED" else "ORIGINAL_INPUT")
         return httpx.Response(200, json={"model": QWEN_9B_NATURAL_ALIAS, "choices": [
-            {"finish_reason": "stop", "message": {"role": "assistant", "content": follows[stage]}}]})
+            {"finish_reason": "stop", "message": {"role": "assistant",
+                 "content": json.dumps({"follow": follows[stage]}, ensure_ascii=False)}}]})
 
     monkeypatch.setenv("COCOLON_EMLIS_GROUNDED_OBSERVATION", "true")
     source = SelfHostedNaturalReplySource(endpoint="https://model.invalid/v1/chat/completions",
@@ -880,6 +883,7 @@ def test_grounded_paid_question_round_preserves_answer_or_returns_only_to_curren
     if end == "answer":
         saved = run(answer(service, user, response, supplement))
         expected_stage, quote = "REFINED", supplement
+        assert calls[-1]["ai_question_context"] == response["pending_question"]["text"]
     else:
         saved = run(service.action(user, response["thread_id"], action="skip",
             expected_revision=response["revision"], idempotency_key="skip",
