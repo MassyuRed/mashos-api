@@ -12,9 +12,9 @@ import pytest
 import emlis_thread_store
 from cocolon_meaning_experience_engine import grounded_observation_reply as grounded
 from cocolon_meaning_experience_engine.natural_reply import SelfHostedNaturalReplySource
-from test_emlis_natural_reply_application import _active_application_owner, natural_case
+from test_emlis_natural_reply_application import _active_application_owner, _piece_adapter, natural_case
 from test_emlis_natural_reply_probe_http import probe
-from test_emlis_q2_application import run
+from test_emlis_q2_application import answer, run
 from test_emlis_q3_application import qdb
 from test_piece_model_server_constraints import messages as piece_messages, synthetic_generator
 
@@ -145,18 +145,20 @@ def test_authenticated_marker_is_distinct_from_ordinary_natural_piece_and_analys
         worker.join(3)
 
 
-@pytest.mark.parametrize('constrained', [False, True])
-def test_v3_and_v4_receipts_keep_their_exact_messages_when_flag_changes(
-        natural_case, qdb, monkeypatch, constrained):
+@pytest.mark.parametrize('version', [grounded.CONTEXT_VERSION, grounded.CONSTRAINED_CONTEXT_VERSION,
+                                     grounded.SEMANTIC_CONTEXT_VERSION])
+def test_grounded_receipts_keep_their_exact_messages_when_flag_changes(
+        natural_case, qdb, monkeypatch, version):
     user, parent, _, _ = natural_case
     qdb.query("update public.emotions set memo=$2,memo_action='' where id=$1", [parent, MEMO])
     calls = []
     failed = False
+    constrained = version in grounded.CONSTRAINED_CONTEXT_VERSIONS
 
     def infer(request):
         payload = json.loads(request.content)
         calls.append(payload)
-        assert payload["messages"] == _messages_for_same_current_record(payload)
+        assert payload["messages"] == _messages_for_same_current_record(payload, version)
         assert payload.get('candidate_format') == (FORMAT if constrained else None)
         result = {'model': QWEN, 'choices': [{'finish_reason': 'stop',
             'message': {'role': 'assistant', 'content': json.dumps({'follow': FOLLOW}, ensure_ascii=False)}}]}
@@ -174,6 +176,7 @@ def test_v3_and_v4_receipts_keep_their_exact_messages_when_flag_changes(
     monkeypatch.setattr(emlis_thread_store, "sb_post_rpc", rpc)
     monkeypatch.setenv("COCOLON_EMLIS_GROUNDED_OBSERVATION", "true")
     monkeypatch.setenv("COCOLON_EMLIS_GROUNDED_DECODING", "true" if constrained else "")
+    monkeypatch.setenv("COCOLON_EMLIS_GROUNDED_SEMANTICS", "true" if version == grounded.SEMANTIC_CONTEXT_VERSION else "")
     source = SelfHostedNaturalReplySource(endpoint='https://model.invalid/v1/chat/completions',
         model=QWEN, api_key='synthetic-only', transport=httpx.MockTransport(infer))
     service = _active_application_owner(monkeypatch, source, None)
@@ -182,10 +185,10 @@ def test_v3_and_v4_receipts_keep_their_exact_messages_when_flag_changes(
     before = run(service.store.read(user, input_id=parent))
     receipt = next(event['payload'] for event in before['events']
                    if event['payload'].get('stage') == 'NATURAL_REPLY_RECEIVED')
-    assert receipt['writer_context_version'] == (
-        grounded.CONSTRAINED_CONTEXT_VERSION if constrained else grounded.CONTEXT_VERSION)
+    assert receipt['writer_context_version'] == version
 
     monkeypatch.setenv("COCOLON_EMLIS_GROUNDED_DECODING", "" if constrained else "true")
+    monkeypatch.setenv("COCOLON_EMLIS_GROUNDED_SEMANTICS", "" if version == grounded.SEMANTIC_CONTEXT_VERSION else "true")
     restarted = _active_application_owner(monkeypatch, source, None)
     saved = run(restarted.action(user, failed_reply['thread_id'], action='retry_response',
         expected_revision=failed_reply['revision'], idempotency_key='restore-received-reply',
@@ -196,12 +199,12 @@ def test_v3_and_v4_receipts_keep_their_exact_messages_when_flag_changes(
     assert reread['revision'] == saved['revision'] and len(calls) == 1
 
 
-def _messages_for_same_current_record(payload):
+def _messages_for_same_current_record(payload, version):
     material = json.loads(payload["messages"][1]["content"])
     writer = {'records': [material['current']], 'user_frame_feedback': [],
               'grounded_passages': [{'id': 'P1', 'text': MEMO, 'field': 'memo',
                                     'source_role': 'ORIGINAL_INPUT'}],
-              'source_context_version': grounded.CONTEXT_VERSION}
+              'source_context_version': version}
     return grounded.messages(writer)
 
 
@@ -233,3 +236,130 @@ def test_client_rejects_unavailable_or_unconfirmed_decoder_with_one_call(
     assert reply['current_observation'] is None
     assert run(service.get(user, parent))['current_observation'] is None
     assert len(calls) == 1
+
+
+@pytest.mark.parametrize(('source', 'follow', 'reason'), [
+    ('誘われたのに、嬉しくなかった。', 'その気持ちを大切に抱き続けてください。', 'directive'),
+    ('その時は怖かった。', 'その怖さが今も強く残っているのですね。', 'unwritten_continuity'),
+    ('その時は怖かった。', 'その怖さを誰にも言わずにいたのですね。', 'unwritten_disclosure'),
+    ('怖さは今も残っています。', 'その怖さが今も残っているのですね。', None),
+    ('その時は怖かった。', 'その時のことを聞かせてくださって、ありがとうございます。', None),
+])
+def test_opt_in_semantic_reader_checks_only_supported_claims_without_changing_older_receipts(
+        source, follow, reason):
+    writer = {'source_context_version': grounded.SEMANTIC_CONTEXT_VERSION,
+              'records': [{'active_fields': [{'text': source}]}],
+              'grounded_passages': [{'id': 'P1', 'text': source, 'field': 'memo',
+                                    'source_role': 'ORIGINAL_INPUT'}]}
+    composed = grounded.compose(json.dumps({'follow': follow}, ensure_ascii=False), writer)
+    if reason:
+        with pytest.raises(ValueError, match='grounded_observation_' + reason):
+            grounded.read_reply(composed, writer)
+    else:
+        assert grounded.read_reply(composed, writer) == follow
+    for version in (grounded.CONTEXT_VERSION, grounded.CONSTRAINED_CONTEXT_VERSION):
+        assert grounded.read_reply(composed, {**writer, 'source_context_version': version}) == follow
+
+
+@pytest.mark.parametrize(('tier', 'related', 'action'), [
+    ('plus', True, '会議で発表した。'), ('premium', True, '会議で発表した。'),
+    ('plus', False, '会議で発表した。'), ('plus', True, ''),
+])
+def test_v5_answer_uses_current_sources_and_replays_verified_paid_history(
+        natural_case, qdb, monkeypatch, tier, related, action):
+    from test_emlis_natural_frames_application import REVISION, _case, _past
+
+    user, parent, _, _, past, _ = _case(natural_case, qdb, tier=tier, history=related)
+    qdb.query('update public.emotions set memo_action=$2 where id=$1', [parent, action])
+    if not related:
+        past, _, _ = _past(qdb, user, memo='誘われたのに、悲しかった。', memo_action=action)
+    calls = []
+    follow = 'そのときの怖さも聞かせてくださって、Emlisは大事に受け取ります。'
+
+    def infer(request):
+        payload = json.loads(request.content)
+        current = json.loads(payload['messages'][1]['content'])
+        assert probe.emlis_grounded_output_schema(payload['messages'])
+        calls.append(current)
+        if current['stage'] == 'PRE_QUESTION':
+            assert payload.get('candidate_format') == (FORMAT if tier == 'premium' else None)
+            result = {'follow': 'そのときの気持ちに、Emlisは耳を傾けています。'}
+            if action:
+                result['passages'] = ['P1']
+        else:
+            assert current['stage'] == 'REFINED'
+            assert payload['candidate_format'] == FORMAT
+            assert current['history'] == current['confirmed_frame_feedback'] == []
+            assert current['quote']['text'] == 'その時は怖かった。'
+            assert current['ai_question_context'] == initial['pending_question']['text']
+            if action:
+                assert action not in payload['messages'][1]['content']
+            result = {'follow': follow}
+        return httpx.Response(200, json={'model': QWEN,
+            **({'candidate_format': FORMAT} if payload.get('candidate_format') else {}), 'choices': [
+            {'finish_reason': 'stop', 'message': {'role': 'assistant',
+             'content': json.dumps(result, ensure_ascii=False)}}]})
+
+    monkeypatch.setenv('COCOLON_EMLIS_GROUNDED_OBSERVATION', 'true')
+    monkeypatch.setenv('COCOLON_EMLIS_GROUNDED_DECODING', 'true' if tier == 'premium' else '')
+    monkeypatch.delenv('COCOLON_EMLIS_GROUNDED_SEMANTICS', raising=False)
+    source = SelfHostedNaturalReplySource(endpoint='https://model.invalid/v1/chat/completions',
+        model=QWEN, api_key='synthetic-only', transport=httpx.MockTransport(infer))
+    service = _active_application_owner(monkeypatch, source, 'paid')
+    initial = run(service.start(user, parent))
+    assert initial['state'] == 'AWAITING_ANSWER'
+    if tier == 'premium':
+        frame, = initial['interpretive_frames']
+        initial = run(service.frame_feedback(user, initial['thread_id'], frame_ref=frame['frame_ref'],
+            status='REVISED', correction_text=REVISION, expected_revision=initial['revision'],
+            idempotency_key='revise-past-frame'))
+    monkeypatch.setenv('COCOLON_EMLIS_GROUNDED_DECODING', 'true')
+    monkeypatch.setenv('COCOLON_EMLIS_GROUNDED_SEMANTICS', 'true')
+    service = _active_application_owner(monkeypatch, source, 'paid')
+    failed = False
+
+    async def rpc(name, payload, **kwargs):
+        nonlocal failed
+        if not failed and any(event['kind'] == 'OBSERVATION' for event in payload.get('p_events', [])):
+            failed = True
+            return httpx.Response(503, json={'code': '57P03'})
+        return await qdb.rpc(name, payload, **kwargs)
+
+    monkeypatch.setattr(emlis_thread_store, 'sb_post_rpc', rpc)
+    interruption = run(answer(service, user, initial, 'その時は怖かった。'))
+    assert interruption['can_retry'] and len(calls) == 2
+    before = run(service.store.read(user, input_id=parent))
+    receipt, = [e['payload'] for e in before['events']
+                if e['payload'].get('stage') == 'NATURAL_REPLY_RECEIVED'
+                and e['operation_id'] == interruption['operation_id']]
+    assert receipt['writer_context_version'] == grounded.SEMANTIC_CONTEXT_VERSION
+    assert ('writer_history_sha256' in receipt) is related
+    current = f'「その時は怖かった。」\n\n{follow}'
+    if related:
+        assert receipt['provider_reply_text'] == current
+        assert '記録の「褒められた」' in receipt['reply']['text']
+    else:
+        assert receipt['reply']['text'] == current
+
+    monkeypatch.delenv('COCOLON_EMLIS_GROUNDED_SEMANTICS')
+    reopened = _active_application_owner(monkeypatch, source, 'paid')
+    saved = run(reopened.action(user, interruption['thread_id'], action='retry_response',
+        expected_revision=interruption['revision'], idempotency_key='save-received-reply',
+        operation_id=interruption['operation_id']))
+    assert saved['current_observation']['text'] == receipt['reply']['text']
+    if tier == 'premium':
+        frame, = saved['interpretive_frames']
+        assert frame['input_id'] == past and frame['status'] == 'REVISED'
+        assert frame['received_meaning'] == REVISION
+    else:
+        assert saved['interpretive_frames'] == []
+    reread = run(reopened.get(user, parent))
+    assert reread['current_observation'] == saved['current_observation']
+    assert reread['interpretive_frames'] == saved['interpretive_frames']
+    adapter = _piece_adapter(user, reopened, monkeypatch)
+    ref = run(adapter.resolve_refined_source_ref('Bearer synthetic', parent,
+        supplemental_answer_identity=before['thread']['latest_answer_event_id'], opted_in=True))
+    assert ref['emlis_observation_result_identity'] == saved['current_observation']['event_id']
+    assert len(calls) == 2
+    qdb.query('update public.emotions set memo=$2 where id=$1', [past, '別の記録です。'])
+    assert run(reopened.get(user, parent))['current_observation'] is None

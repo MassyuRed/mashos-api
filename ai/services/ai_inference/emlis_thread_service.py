@@ -358,7 +358,7 @@ class EmlisThreadService:
                  natural_reply_source=None, response_profile=None, natural_questions_enabled=True,
                  natural_meaning_profile=ACTIVE_MEANING_PROFILE, natural_context_update_enabled=True,
                  natural_context_update_paid_only=False, initial_observation_follow_enabled=False,
-                 grounded_observation_enabled=False, grounded_decoding_enabled=False):
+                 grounded_observation_enabled=False, grounded_decoding_enabled=False, grounded_semantics_enabled=False):
         if runtime_profile not in {RUNTIME_PROFILE, Q3_PROFILE}:
             raise ValueError("unsupported_thread_profile")
         if natural_reply_source is not None:
@@ -378,10 +378,12 @@ class EmlisThreadService:
         if type(initial_observation_follow_enabled) is not bool:
             raise ValueError("initial_observation_follow_setting_invalid")
         self.initial_observation_follow_enabled = initial_observation_follow_enabled
-        if type(grounded_observation_enabled) is not bool or type(grounded_decoding_enabled) is not bool:
+        if not all(type(enabled) is bool for enabled in
+                   (grounded_observation_enabled, grounded_decoding_enabled, grounded_semantics_enabled)):
             raise ValueError("grounded_observation_setting_invalid")
         self.grounded_observation_enabled = grounded_observation_enabled
         self.grounded_decoding_enabled = grounded_decoding_enabled
+        self.grounded_semantics_enabled = grounded_semantics_enabled
         if natural_meaning_profile not in {None, ACTIVE_MEANING_PROFILE}:
             raise ValueError('natural_reply_meaning_profile_invalid')
         self.natural_meaning_profile = natural_meaning_profile
@@ -1059,9 +1061,12 @@ class EmlisThreadService:
         grounded_observation = context_version in grounded_observation_reply.CONTEXT_VERSIONS or (
             prior is None and self.grounded_observation_enabled
             and getattr(self.natural_reply_source, 'model', None) == QWEN_9B_NATURAL_ALIAS)
-        grounded_version = (context_version if context_version in grounded_observation_reply.CONTEXT_VERSIONS
-            else grounded_observation_reply.CONSTRAINED_CONTEXT_VERSION if self.grounded_decoding_enabled
-            else grounded_observation_reply.CONTEXT_VERSION)
+        grounded_version = grounded_observation_reply.CONTEXT_VERSION
+        if context_version in grounded_observation_reply.CONTEXT_VERSIONS:
+            grounded_version = context_version
+        elif self.grounded_decoding_enabled:
+            grounded_version = (grounded_observation_reply.SEMANTIC_CONTEXT_VERSION if self.grounded_semantics_enabled
+                                else grounded_observation_reply.CONSTRAINED_CONTEXT_VERSION)
         material, safety = prepare_natural_reply(_request(snapshot), response_stage=response_stage,
             bind_writer_context=context_version is not None,
             include_corrected_circumstance=context_version == CORRECTED_SOURCE_CONTEXT_VERSION,
@@ -1083,6 +1088,7 @@ class EmlisThreadService:
             meaning_profile=t['data'].get('natural_meaning_profile'), owner_scope=user_id,
             original_record=snapshot['original'], as_of=t['data'].get('natural_meaning_as_of'))
         writer_identity = {}
+        writer_context = None
         history_line = None
         if material.meaning_profile is not None:
             writer_identity = {'meaning_profile': material.meaning_profile,
@@ -1103,16 +1109,20 @@ class EmlisThreadService:
                     or payload.get('writer_history_sha256') != writer_identity.get('writer_history_sha256')):
                 raise NaturalReplyError('natural_reply_writer_identity_changed')
 
+        history_validation = ({"allow_verified_history": True}
+            if history_line and writer_context == grounded_observation_reply.SEMANTIC_CONTEXT_VERSION else {})
+
         def with_history(reply):
             try:
-                return validate_reply(replace(reply, text=f'{reply.text}\n\n{history_line}'), material)
+                return validate_reply(replace(reply, text=f'{reply.text}\n\n{history_line}'), material,
+                                      **history_validation)
             except NaturalReplyError:
                 # Keep the current reply if the optional paragraph cannot fit.
                 return reply
 
         if received:
             check_writer_identity(received)
-            candidate = validate_reply(NaturalReply(**received["payload"]["reply"]), material)
+            candidate = validate_reply(NaturalReply(**received["payload"]["reply"]), material, **history_validation)
             if history_line:
                 provider_reply = replace(candidate, text=received['payload'].get('provider_reply_text'))
                 if with_history(validate_reply(provider_reply, material)) != candidate:

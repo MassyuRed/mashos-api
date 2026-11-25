@@ -779,7 +779,9 @@ def prepare_natural_reply(request, *, use_meaning_support=False, response_stage=
     writer = {'schema_version': ACTIVE_MEANING_PROFILE, 'records': records,
         'user_frame_feedback': _active_writer_feedback(material['user_frame_feedback'], record_numbers)}
     if use_grounded_observation and not admitted.control.interpretation_corrections:
-        if grounded_current_only or response_stage == "PRE_QUESTION":
+        semantic_context = grounded_context_version == grounded_observation_reply.SEMANTIC_CONTEXT_VERSION
+        scoped_answer = semantic_context and response_stage == "REFINED"
+        if grounded_current_only or response_stage == "PRE_QUESTION" or scoped_answer:
             writer.update(records=records[:1], user_frame_feedback=[])
         latest_answer = material['current_answers'][-1] if material['current_answers'] else None
         passages = grounded_observation_reply.current_passages(records[0], original, latest_answer)
@@ -790,6 +792,8 @@ def prepare_natural_reply(request, *, use_meaning_support=False, response_stage=
             passages = [row for row in passages if row['field'] == 'memo']
         if passages:
             writer.update(source_context_version=grounded_context_version, grounded_passages=passages)
+            if semantic_context and grounded_current_only:
+                writer['unanswered_skip'] = True
             if standalone_feeling:
                 # The other column and earlier records cannot supply a
                 # missing reason for a standalone feeling. Keep them in the
@@ -799,6 +803,17 @@ def prepare_natural_reply(request, *, use_meaning_support=False, response_stage=
                                        'source_role': 'ORIGINAL_INPUT'}]}], user_frame_feedback=[])
             if response_stage == "REFINED":
                 writer["ai_question_context"] = latest_answer["ai_question_context"]
+            if scoped_answer:
+                if received_answer_anchors(admitted, material['current'], prepared_meaning) is not None:
+                    # An independently written action is not evidence for the answered question.
+                    writer['records'] = [{'scope': records[0]['scope'], 'metadata': records[0]['metadata'],
+                        'active_fields': [{'text': material['current']['memo'], 'field_path': 'memo',
+                                           'source_role': 'ORIGINAL_INPUT'}]}]
+                if history:
+                    line = _paid_received_answer_history_line(prepared_meaning,
+                                                              {record['input_id'] for record in history})
+                    if line:
+                        writer['history_line'] = line
             if response_stage != "FINAL":
                 writer['response_purpose'] = material['response_purpose']
             if focus is not None and any(row['text'] == focus['excerpt'] for row in passages):
@@ -1009,6 +1024,8 @@ def _bound_feeling_dialogue(admitted, material, prepared_meaning, response_stage
 
 def _paid_received_answer_history_line(prepared, safe_input_ids):
     """Render a separate, verified comparison of independently owned records."""
+    if prepared is None or prepared.thread.control.question_control_context.pending_question is None:
+        return None
     from emlis_ai_grounded_observation_gate import evaluate_emlis_history_line_inverse
     from emlis_ai_grounded_sentence_surface import realize_emlis_history_line
     from .emlis_answer_update import build_updated_grounded_plan
@@ -1266,7 +1283,7 @@ def _has_changed_direct_feeling_quote(text, excerpt):
     return any(mark in text for pair in _DIRECT_FEELING_QUOTE_MARKS for mark in pair)
 
 
-def validate_reply(reply, request):
+def validate_reply(reply, request, *, allow_verified_history=False):
     if (type(reply) is not NaturalReply or reply.schema_version != ARTIFACT_SCHEMA
             or reply.source_prefix_ref != request.source_prefix_ref
             or not isinstance(reply.model, str) or not reply.model.strip()):
@@ -1289,7 +1306,11 @@ def validate_reply(reply, request):
         from .natural_reply_meaning import compare_reply_meaning
 
         try:
-            follow = grounded_observation_reply.read_reply(reply.text, writer)
+            grounded_text = reply.text
+            if (allow_verified_history and context_version == grounded_observation_reply.SEMANTIC_CONTEXT_VERSION
+                    and writer.get('history_line')):
+                grounded_text = grounded_text.removesuffix("\n\n" + writer['history_line'])
+            follow = grounded_observation_reply.read_reply(grounded_text, writer)
         except ValueError as exc:
             raise _NaturalReplyValidationError(str(exc)) from None
         focus = writer.get('initial_observation_follow')
@@ -1512,7 +1533,7 @@ class SelfHostedNaturalReplySource:
                 request, correction_target_context=self._correction_target_context),
                 "temperature": 0, "max_tokens": 2048, "stream": False,
                 "chat_template_kwargs": {"enable_thinking": False}}
-            if context_version == grounded_observation_reply.CONSTRAINED_CONTEXT_VERSION:
+            if context_version in grounded_observation_reply.CONSTRAINED_CONTEXT_VERSIONS:
                 if self.model != QWEN_9B_NATURAL_ALIAS:
                     raise NaturalReplyError("natural_reply_provider_contract")
                 payload["candidate_format"] = grounded_observation_reply.CONSTRAINED_CANDIDATE_FORMAT

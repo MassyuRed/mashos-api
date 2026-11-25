@@ -6,7 +6,9 @@ import re
 
 CONTEXT_VERSION = "bound_passage_listener.v3"
 CONSTRAINED_CONTEXT_VERSION = "bound_passage_listener.v4"
-CONTEXT_VERSIONS = {CONTEXT_VERSION, CONSTRAINED_CONTEXT_VERSION}
+SEMANTIC_CONTEXT_VERSION = "bound_passage_listener.v5"
+CONSTRAINED_CONTEXT_VERSIONS = {CONSTRAINED_CONTEXT_VERSION, SEMANTIC_CONTEXT_VERSION}
+CONTEXT_VERSIONS = {CONTEXT_VERSION, *CONSTRAINED_CONTEXT_VERSIONS}
 CONSTRAINED_CANDIDATE_FORMAT = "emlis.grounded_observation.v1"
 
 _SYSTEM = """あなたは、記録を読んで本人に返事をするEmlisです。
@@ -26,12 +28,30 @@ _ANSWER_STAGE = (
     "\n現在の本人の回答から新しく分かったことに応じます。ai_question_contextは、その回答に対応する"
     "Emlisの問いです。そこから本人の気持ちや出来事を読み足しません。"
     "補足で読みが変わった箇所は、今の本人の言葉を使います。")
+_SEMANTIC_SYSTEM = (
+    "\n本人が書いた戸惑いや否定を、勇気や前向きな変化と読み替えません。"
+    "理由や情景が書かれていない気持ちについては、その気持ちをここで共有した本人に短く応じます。")
+_SEMANTIC_QUESTION_STAGE = (
+    "\n問いの前に、今の本人の気持ちを一文で受け取ります。今後どんな気持ちを持つべきかは語りません。"
+    "この受け止めだけで終えます。")
+_SEMANTIC_ANSWER_STAGE = (
+    "\n当時の本人の気持ちはその時のこととして、補足の言葉から受け取ります。"
+    "その気持ちが今も続くか、その理由や程度は、本人が書いたときだけ触れます。")
+_SEMANTIC_SKIP_STAGE = (
+    "\n今書かれた気持ちに返事をして、この記録へのフォローを終えます。"
+    "答えや、スキップした理由を推測しません。話す前に一人で抱えていたかも決めません。"
+    "次に話すことや取る行動を促しません。")
 _UNSAFE_QUOTE = re.compile(r"[?？<>`]|[\x00-\x08\x0b-\x1f]")
 _REPLY_MARKUP = re.compile(r'[「」『』{}]|^(?:[-*#]|[0-9]+[.)])\s', re.MULTILINE)
 _EXPECTATION_RECAST = re.compile(
     r"(?:への期待(?:とは|より|があっ|を抱)|期待して(?:いた|いらっしゃ))")
 _VIVID_MEMORY_RECAST = re.compile(
     r"(?:今も|まだ)[^。]{0,16}(?:鮮明に|はっきりと)[^。]{0,12}(?:覚え|思い出)")
+_RECIPIENT_DIRECTIVE = re.compile(
+    r"(?:[てで]ください|しましょう|すべきです|した(?:方|ほう)がいいです)(?=[ \t]*(?:[。.!！\r\n]|$))")
+_CONTINUED_REACTION = re.compile(
+    r"(?:強く残って|(?:今も|まだ)[^。.!！\n]{0,24}(?:残って|続いて|抱えて))い")
+_UNDISCLOSED_REACTION = re.compile(r"誰にも(?:言わず|言えず|話さず|話せず)")
 
 
 def current_passages(record, original, latest_answer):
@@ -65,6 +85,14 @@ def messages(writer):
         system += _QUESTION_STAGE
     elif stage == "REFINED":
         system += _ANSWER_STAGE
+    if writer.get("source_context_version") == SEMANTIC_CONTEXT_VERSION:
+        system += _SEMANTIC_SYSTEM
+        if stage == "PRE_QUESTION":
+            system += _SEMANTIC_QUESTION_STAGE
+        elif stage == "REFINED":
+            system += _SEMANTIC_ANSWER_STAGE
+        elif writer.get("unanswered_skip"):
+            system += _SEMANTIC_SKIP_STAGE
     material = {
         "stage": stage,
         "current": current,
@@ -159,5 +187,14 @@ def read_reply(text, writer):
             if (_VIVID_MEMORY_RECAST.search(follow)
                     and not re.search(r"覚え|思い出|記憶に", current_text)):
                 raise ValueError("grounded_observation_unwritten_memory")
+            if writer.get("source_context_version") == SEMANTIC_CONTEXT_VERSION:
+                if _RECIPIENT_DIRECTIVE.search(follow):
+                    raise ValueError("grounded_observation_directive")
+                if (_CONTINUED_REACTION.search(follow)
+                        and not any(_CONTINUED_REACTION.search(row["text"]) for row in selected)):
+                    raise ValueError("grounded_observation_unwritten_continuity")
+                if (_UNDISCLOSED_REACTION.search(follow)
+                        and not any(_UNDISCLOSED_REACTION.search(row["text"]) for row in selected)):
+                    raise ValueError("grounded_observation_unwritten_disclosure")
             return follow
     raise ValueError("grounded_observation_passage")
