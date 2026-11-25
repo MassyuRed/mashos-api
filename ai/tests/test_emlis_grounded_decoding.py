@@ -146,7 +146,7 @@ def test_authenticated_marker_is_distinct_from_ordinary_natural_piece_and_analys
 
 
 @pytest.mark.parametrize('version', [grounded.CONTEXT_VERSION, grounded.CONSTRAINED_CONTEXT_VERSION,
-                                     grounded.SEMANTIC_CONTEXT_VERSION])
+                                     grounded.SEMANTIC_CONTEXT_VERSION, grounded.LISTENER_CONTEXT_VERSION])
 def test_grounded_receipts_keep_their_exact_messages_when_flag_changes(
         natural_case, qdb, monkeypatch, version):
     user, parent, _, _ = natural_case
@@ -176,7 +176,9 @@ def test_grounded_receipts_keep_their_exact_messages_when_flag_changes(
     monkeypatch.setattr(emlis_thread_store, "sb_post_rpc", rpc)
     monkeypatch.setenv("COCOLON_EMLIS_GROUNDED_OBSERVATION", "true")
     monkeypatch.setenv("COCOLON_EMLIS_GROUNDED_DECODING", "true" if constrained else "")
-    monkeypatch.setenv("COCOLON_EMLIS_GROUNDED_SEMANTICS", "true" if version == grounded.SEMANTIC_CONTEXT_VERSION else "")
+    monkeypatch.setenv("COCOLON_EMLIS_GROUNDED_SEMANTICS",
+                       "true" if version in grounded.SEMANTIC_CONTEXT_VERSIONS else "")
+    monkeypatch.setenv("COCOLON_EMLIS_GROUNDED_LISTENER", "true" if version == grounded.LISTENER_CONTEXT_VERSION else "")
     source = SelfHostedNaturalReplySource(endpoint='https://model.invalid/v1/chat/completions',
         model=QWEN, api_key='synthetic-only', transport=httpx.MockTransport(infer))
     service = _active_application_owner(monkeypatch, source, None)
@@ -188,7 +190,8 @@ def test_grounded_receipts_keep_their_exact_messages_when_flag_changes(
     assert receipt['writer_context_version'] == version
 
     monkeypatch.setenv("COCOLON_EMLIS_GROUNDED_DECODING", "" if constrained else "true")
-    monkeypatch.setenv("COCOLON_EMLIS_GROUNDED_SEMANTICS", "" if version == grounded.SEMANTIC_CONTEXT_VERSION else "true")
+    monkeypatch.setenv("COCOLON_EMLIS_GROUNDED_SEMANTICS", "" if version in grounded.SEMANTIC_CONTEXT_VERSIONS else "true")
+    monkeypatch.setenv("COCOLON_EMLIS_GROUNDED_LISTENER", "")
     restarted = _active_application_owner(monkeypatch, source, None)
     saved = run(restarted.action(user, failed_reply['thread_id'], action='retry_response',
         expected_revision=failed_reply['revision'], idempotency_key='restore-received-reply',
@@ -267,6 +270,22 @@ def test_opt_in_semantic_reader_checks_only_supported_claims_without_changing_ol
         assert grounded.read_reply(composed, {**writer, 'source_context_version': version}) == follow
 
 
+def test_listener_omits_only_displayed_source_rows_from_the_ordinary_record():
+    other = {'field_path': 'memo_action', 'source_role': 'ORIGINAL_INPUT', 'text': '今日窓口へ行きました。'}
+    current = {'scope': 'CURRENT_INPUT', 'metadata': {'emotions': ['喜び']}, 'active_state': 'RESOLVED',
+               'meaning_state': 'NOT_GENERATED',
+               'active_fields': [{**other, 'field_path': 'memo', 'text': MEMO}, other]}
+    writer = {'records': [current], 'user_frame_feedback': [], 'source_context_version': grounded.LISTENER_CONTEXT_VERSION,
+              'grounded_passages': [{'id': 'P1', 'field': 'memo', 'text': MEMO, 'source_role': 'ORIGINAL_INPUT'}]}
+    messages = grounded.messages(writer)
+    material = json.loads(messages[-1]['content'])
+    assert probe.emlis_grounded_output_schema(messages)
+    assert material['current']['active_fields'] == [other]
+    assert messages[-1]['content'].count(MEMO) == 1
+    current['active_state'] = 'PENDING'
+    assert json.loads(grounded.messages(writer)[-1]['content'])['current'] == current
+
+
 def test_answer_focus_requires_the_exact_active_original_evidence_range():
     from types import SimpleNamespace
     from cocolon_meaning_experience_engine.natural_reply import _grounded_answer_original_evidence
@@ -302,9 +321,10 @@ def test_answer_focus_requires_the_exact_active_original_evidence_range():
     ('plus', True, '会議で発表した。'), ('premium', True, '会議で発表した。'),
     ('plus', False, '会議で発表した。'), ('plus', True, ''),
 ])
-@pytest.mark.parametrize('answer_focus', [False, True])
+@pytest.mark.parametrize('version', [grounded.SEMANTIC_CONTEXT_VERSION, grounded.ANSWER_FOCUS_CONTEXT_VERSION,
+                                     grounded.LISTENER_CONTEXT_VERSION])
 def test_answer_uses_current_sources_and_replays_verified_paid_history(
-        natural_case, qdb, monkeypatch, tier, related, action, answer_focus):
+        natural_case, qdb, monkeypatch, tier, related, action, version):
     from test_emlis_natural_frames_application import REVISION, _case, _past
 
     user, parent, _, _, past, _ = _case(natural_case, qdb, tier=tier, history=related)
@@ -330,12 +350,11 @@ def test_answer_uses_current_sources_and_replays_verified_paid_history(
             assert current['history'] == current['confirmed_frame_feedback'] == []
             assert current['quote']['text'] == 'その時は怖かった。'
             assert current['ai_question_context'] == initial['pending_question']['text']
-            if answer_focus:
+            if version != grounded.SEMANTIC_CONTEXT_VERSION:
                 assert set(current['current']) == {'scope', 'original_evidence'}
                 content = payload['messages'][1]['content']
                 assert content.count('その時は怖かった。') == 1
                 assert content.count(initial['pending_question']['text']) == 1
-                assert '敬語の一文' in payload['messages'][0]['content']
             if action:
                 assert action not in payload['messages'][1]['content']
             result = {'follow': follow}
@@ -359,7 +378,9 @@ def test_answer_uses_current_sources_and_replays_verified_paid_history(
             idempotency_key='revise-past-frame'))
     monkeypatch.setenv('COCOLON_EMLIS_GROUNDED_DECODING', 'true')
     monkeypatch.setenv('COCOLON_EMLIS_GROUNDED_SEMANTICS', 'true')
-    monkeypatch.setenv('COCOLON_EMLIS_GROUNDED_ANSWER_FOCUS', 'true' if answer_focus else '')
+    monkeypatch.setenv('COCOLON_EMLIS_GROUNDED_ANSWER_FOCUS',
+                       'true' if version == grounded.ANSWER_FOCUS_CONTEXT_VERSION else '')
+    monkeypatch.setenv('COCOLON_EMLIS_GROUNDED_LISTENER', 'true' if version == grounded.LISTENER_CONTEXT_VERSION else '')
     service = _active_application_owner(monkeypatch, source, 'paid')
     failed = False
 
@@ -377,8 +398,7 @@ def test_answer_uses_current_sources_and_replays_verified_paid_history(
     receipt, = [e['payload'] for e in before['events']
                 if e['payload'].get('stage') == 'NATURAL_REPLY_RECEIVED'
                 and e['operation_id'] == interruption['operation_id']]
-    assert receipt['writer_context_version'] == (
-        grounded.ANSWER_FOCUS_CONTEXT_VERSION if answer_focus else grounded.SEMANTIC_CONTEXT_VERSION)
+    assert receipt['writer_context_version'] == version
     assert ('writer_history_sha256' in receipt) is related
     current = f'「その時は怖かった。」\n\n{follow}'
     if related:

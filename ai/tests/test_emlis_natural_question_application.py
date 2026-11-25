@@ -319,6 +319,34 @@ def test_skip_finishes_with_new_final_reply_and_replay_never_reacquires(natural_
     assert saved['thread']['data']['natural_question_stop'] == 'skip'
 
 
+def test_skipping_second_question_keeps_the_actual_first_answer(natural_questions):
+    user, parent, service, calls = natural_questions(tier='premium',
+        memo=ONE + '誘われたのに、悲しかった。')
+    initial = run(service.start(user, parent))
+    first = initial['pending_question']
+    answered = run(answer(service, user, initial, 'その時は重かった。'))
+    assert answered['state'] == 'AWAITING_CONTINUE' and len(calls) == 2
+    continued = run(service.action(user, answered['thread_id'], action='continue',
+        expected_revision=answered['revision'], idempotency_key='continue-second'))
+    second = continued['pending_question']
+    assert second['question_id'] != first['question_id'] and len(calls) == 2
+
+    done = run(service.action(user, continued['thread_id'], action='skip',
+        question_id=second['question_id'], expected_revision=continued['revision'],
+        idempotency_key='skip-second'))
+    assert done['state'] == 'COMPLETED' and done['pending_question'] is None
+    assert done['current_observation']['text'] == FINAL and len(calls) == 3
+    written, = calls[-1]['current_answers']
+    assert written['text'] == 'その時は重かった。'
+    assert written['question_id'] == first['question_id']
+    assert written['ai_question_context'] == first['text']
+    saved = run(service.get(user, parent))
+    assert saved['current_observation'] == done['current_observation']
+    assert saved['revision'] == done['revision'] and len(calls) == 3
+    only_answer, = (event for event in saved['timeline'] if event['kind'] == 'ANSWER')
+    assert only_answer['question_id'] == first['question_id']
+
+
 def test_stop_after_answer_preserves_current_complete_reply_without_extra_generation(natural_questions):
     user, parent, service, calls = natural_questions(memo=THREE)
     initial = run(service.start(user, parent))
