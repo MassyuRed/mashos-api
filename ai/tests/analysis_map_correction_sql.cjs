@@ -24,6 +24,10 @@ const submit = (fx, key, options = {}) => value(
     options.kind || 'node', options.ref || 'n1', options.field || 'summary',
     options.text || fx.projection.nodes[0].summary,
     options.explanation || 'その読み取りは違います。本人の説明です。', key]);
+const submitScoped = (fx, key, tier) => value(
+  'select public.analysis_map_correction_submit($1,$2,$3,$4,$5,$6,$7,$8,$9) as v',
+  [owner, fx.projection.projection_of, 'node', 'n1', 'title', fx.projection.nodes[0].title,
+    '選んだ行動はその理由によるものではありません。', key, tier]);
 const fail = (code, fn) => assert.rejects(fn, error => error.code === code);
 async function admin(sql, args = []) {
   await db.exec('reset role');
@@ -74,6 +78,7 @@ async function run() {
     '20261114032520_analysis_interpretation_correction_sources.sql',
     '20261114123000_analysis_emlis_material_handoff.sql',
     '20261114132000_analysis_map_interpretation_corrections.sql',
+    '20261125184500_analysis_scoped_map_correction.sql',
   ]) await db.exec(fs.readFileSync(path.join(root, 'supabase/migrations', file), 'utf8'));
   await db.query('insert into auth.users values($1),($2)', [owner, other]);
   await db.query("insert into public.profiles values($1,'premium'),($2,'premium')", [owner, other]);
@@ -94,6 +99,37 @@ async function run() {
   await fail('22023', () => submit(fx, 'bad-field', { field: 'evidence_refs' }));
   await fail('22023', () => submit(fx, 'not-literal', { text: '表示されていない内容' }));
   await fail('22023', () => submit(fx, 'too-long', { explanation: 'あ'.repeat(2001) }));
+
+  const scopedSnapshot = await snapshot();
+  const scoped = compile(scopedSnapshot);
+  scoped.projection.overview.primary_structures = [];
+  await db.exec('begin');
+  try {
+    await save(scoped, scopedSnapshot, true);
+    await fail('P0002', () => submit(scoped, 'unqualified-tier'));
+  } finally { await db.exec('rollback'); }
+  await db.exec('begin');
+  try {
+    await save(scoped, scopedSnapshot, true);
+    await admin("update public.profiles set subscription_tier='free' where id=$1", [owner]);
+    // A saved plan from before a downgrade cannot authorize this transaction.
+    await fail('40001', () => submitScoped(scoped, 'before-downgrade', 'premium'));
+  } finally { await db.exec('rollback'); }
+  scoped.projection.overview.primary_structures = [{scope: 'in_this_record', title: '確かめたこと',
+    criterion: '実際の条件を確かめています。', description: '実際の条件を確かめています。選んだ条件も記録にあります。',
+    node_refs: ['n1', 'n2']}];
+  await db.exec('begin');
+  try {
+    await save(scoped, scopedSnapshot, true);
+    const first = await submitScoped(scoped, 'visible-same-plan', 'premium');
+    assert.equal(first.target_context.field, 'title');
+    await admin("update public.profiles set subscription_tier='free' where id=$1", [owner]);
+    // A saved retry is still idempotent, regardless of its original plan.
+    assert.equal((await submitScoped(scoped, 'visible-same-plan', 'premium')).correction_id, first.correction_id);
+  } finally { await db.exec('rollback'); }
+  await fail('42501', () => db.query(`select public.analysis_map_correction_submit_original_field(
+    $1,$2,'node','n1','title','x','y','direct-internal')`, [owner, fx.projection.projection_of]));
+  assert.deepEqual(await sources(), []);
 
   const node = await submit(fx, 'node');
   assert.equal(node.source_state, 'ACTIVE');

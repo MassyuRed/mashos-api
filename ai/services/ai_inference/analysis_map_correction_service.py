@@ -13,7 +13,7 @@ from fastapi import HTTPException
 
 import analysis_observed_service as observed
 from cocolon_meaning_experience_engine.cores.analysis.map_interpretation_correction import (
-    checked_map_correction, checked_target_selector,
+    checked_map_correction, checked_target_selector, map_correction_target_field,
 )
 
 RESPONSE_SCHEMA = 'cocolon.analysis.map_correction.response.v1'
@@ -88,24 +88,57 @@ async def read_map_correction(user_id, *, idempotency_key):
     return _response(row, status)
 
 
-async def submit_map_correction(user_id, command):
-    if observed.observed_mode() != 'development':
-        raise HTTPException(503, 'analysis_map_correction_read_only')
-    owner, command = _owner(user_id), _command(command)
-    payload = dict(p_user_id=owner,
-        **{'p_' + key: value for key, value in command.items()})
+async def _saved_submission(owner, command):
+    """A saved retry is safe even after its target leaves the visible scope."""
+    return _row(owner, await observed._rpc('analysis_map_correction_read', dict(
+        p_user_id=owner, p_key=command['idempotency_key'])))
+
+
+async def _submit_visible_target(owner, command):
+    from analysis_cumulative_service import map_projection_for_plan, read_maps
+
+    report_id = str(UUID(command['artifact_ref'].split('@', 1)[0][9:]))
+    saved = await read_maps(owner, report_id=report_id, limit=1)
+    payload = dict(p_user_id=owner, **{'p_' + key: value for key, value in command.items()})
+    if saved['items']:
+        tier = saved['subscription_tier']
+        graph = saved['items'][0]['content_json']['watashiMap']
+        projection = map_projection_for_plan(graph, tier)
+        if projection is not None:
+            view, _ = projection
+            field = command['field']
+            try:
+                # The scoped overview summary and the Free diagram's detail
+                # strings are computed views, not original correction targets.
+                if (command['kind'] == 'overview' and field != 'title'
+                        or tier == 'free' and field not in ('title', 'label')):
+                    raise ValueError
+                map_correction_target_field(view, artifact_ref=command['artifact_ref'],
+                    kind=command['kind'], reference=command['ref'], field=field, target_text=command['target_text'])
+            except ValueError:
+                return await _saved_submission(owner, command)
+            payload['p_visible_tier'] = tier
+    elif saved.get('matched'):
+        # The report exists but is outside the viewer's permitted read range.
+        return await _saved_submission(owner, command)
     try:
-        row = _row(owner, await observed._rpc('analysis_map_correction_submit', payload))
+        return _row(owner, await observed._rpc('analysis_map_correction_submit', payload))
     except HTTPException as failure:
         if failure.status_code != 503:
             raise
         # Do not resend an uncertain command. A matching saved row confirms
         # admission; a missing/unreadable row leaves the original result unknown.
         try:
-            row = _row(owner, await observed._rpc('analysis_map_correction_read',
-                dict(p_user_id=owner, p_key=command['idempotency_key'])))
+            return await _saved_submission(owner, command)
         except HTTPException:
             raise failure
+
+
+async def submit_map_correction(user_id, command):
+    if observed.observed_mode() != 'development':
+        raise HTTPException(503, 'analysis_map_correction_read_only')
+    owner, command = _owner(user_id), _command(command)
+    row = await _submit_visible_target(owner, command)
     if not _matches(row, command):
         raise HTTPException(409, 'analysis_map_correction_idempotency_conflict')
     status = None

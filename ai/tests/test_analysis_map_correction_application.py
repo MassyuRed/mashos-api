@@ -210,3 +210,56 @@ def test_existing_api_registration_authenticates_and_never_takes_a_body_owner(mo
     run(scenario())
     submitted.assert_awaited_once_with(OWNER, command())
     read.assert_awaited_once_with(OWNER, idempotency_key='correction-once')
+
+
+@pytest.mark.parametrize('kind, ref, field, text', [
+    ('node', 'n1', 'summary', '本人のタイトル'),
+    ('node', 'n3', 'title', '隠された図の項目'),
+    ('edge', 'e1', 'explanation', '判断の違い'),
+    ('overview', 'overview', 'summary', '本人の短い結論です。'),
+])
+def test_scoped_free_never_uses_hidden_or_computed_correction_fields(environment, kind, ref, field, text):
+    rpc, queue, reads, _ = environment
+    reads.return_value = scoped_target_read()
+    rpc.side_effect = HTTPException(404, 'analysis_source_or_access_unavailable')
+    corrected = dict(command(), kind=kind, ref=ref, field=field, target_text=text)
+    with pytest.raises(HTTPException) as unavailable:
+        run(service.submit_map_correction(OWNER, corrected))
+    assert unavailable.value.status_code == 404
+    rpc.assert_awaited_once_with('analysis_map_correction_read',
+        dict(p_user_id=OWNER, p_key=corrected['idempotency_key']))
+    queue.assert_not_awaited()
+
+
+def scoped_target_read(tier='free'):
+    nodes = [dict(node_ref='n1', title='本人のタイトル', summary='有料要約'),
+             dict(node_ref='n2', title='本人の条件', summary='別の説明'),
+             dict(node_ref='n3', title='隠された図の項目', summary='許可されていない説明')]
+    graph = dict(wire_kind='watashi.map.v3', projection_of=ARTIFACT,
+        overview=dict(title='実際の選択', summary='有料全体説明', primary_structures=[dict(
+            scope='across_records', title='本人の基準', criterion='本人の短い結論です。',
+            description='本人の短い結論です。有料の説明です。', node_refs=['n1', 'n2'])]),
+        nodes=nodes, edges=[dict(edge_ref='e1', from_ref='n1', to_ref='n2', relation_kind='CONTEXT_CONTRAST',
+                                label='判断の違い', explanation='判断の違いについての有料説明')])
+    return dict(items=[dict(content_json=dict(watashiMap=graph))], matched=True, subscription_tier=tier)
+
+
+def test_scoped_correction_authorizes_original_field_and_passes_exact_plan(environment):
+    rpc, queue, reads, _ = environment
+    reads.return_value = scoped_target_read('free')
+    corrected = dict(command(), field='title', target_text='本人のタイトル')
+    result = row()
+    result['target_context'].update(field=corrected['field'], target_text=corrected['target_text'],
+                                    field_text=corrected['target_text'])
+    rpc.return_value = result
+    assert run(service.submit_map_correction(OWNER, corrected))['target_text'] == corrected['target_text']
+    call = rpc.await_args
+    assert call.args[0] == 'analysis_map_correction_submit' and call.args[1]['p_visible_tier'] == 'free'
+    reads.assert_any_await(OWNER, report_id=str(UUID(int=10)), limit=1)
+
+
+def test_scoped_correction_replays_existing_same_command_after_downgrade(environment):
+    rpc, _, reads, _ = environment
+    reads.return_value = scoped_target_read('free')
+    assert run(service.submit_map_correction(OWNER, command()))['correction_id'] == row()['correction_id']
+    rpc.assert_awaited_once_with('analysis_map_correction_read', dict(p_user_id=OWNER, p_key='correction-once'))
