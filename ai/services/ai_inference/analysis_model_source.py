@@ -233,7 +233,7 @@ class SelfHostedSemanticAnalysisModelSource(SelfHostedAnalysisModelSource):
                         'analysis_semantic_history_capacity_exceeded')
                     if not per_phase:
                         phase_end = min(end, loop.time() + SEMANTIC_HTTP_TIMEOUT_SECONDS)
-                    remaining = phase_end - loop.time()
+                    remaining = min(SEMANTIC_HTTP_TIMEOUT_SECONDS, phase_end - loop.time())
                     if remaining <= SEMANTIC_V4_RESPONSE_RESERVE_SECONDS:
                         raise TimeoutError('analysis_model_source_timeout')
                     body = dict(model=self.model, messages=messages, temperature=0, max_tokens=tokens,
