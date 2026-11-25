@@ -35,6 +35,7 @@ PINS = {"transformers": "5.19.0", "peft": "0.21.2", "accelerate": "1.15.0", "saf
 SEMANTIC_FORMAT_SOURCE = '817f944fcc8851917c40300a47f62d1defc3ffc3'
 PIECE_CANDIDATE_FORMAT = 'piece.field_slots.v1'
 EMLIS_GROUNDED_CANDIDATE_FORMAT = 'emlis.grounded_observation.v1'
+EMLIS_ANSWER_FOLLOW_PROFILE = 'answer_focus_v1'
 EVENT_PLAN_SCHEMA = 'cocolon.analysis.semantic_map.event_plan.model.v1'
 EVENT_PLAN_V2_SCHEMA = 'cocolon.analysis.semantic_map.event_plan.model.v2'
 EVENT_PLAN_V2_MODEL = 'cocolon-qwen3.5-4b-analysis-event-plan-v2'
@@ -2748,12 +2749,35 @@ def emlis_grounded_output_schema(messages):
                 or passage['source_role'] != ('SUPPLEMENTAL_ANSWER' if passage['field'] == 'answer' else 'ORIGINAL_INPUT')
                 or (not bound and passage['id'] != f'P{index}')):
             raise ValueError('emlis_grounded_passages_invalid')
+    current = material['current']
+    answer_focus = 'follow_profile' in current
+    if answer_focus:
+        evidence = current.get('original_evidence', [])
+        if (current['follow_profile'] != EMLIS_ANSWER_FOLLOW_PROFILE
+                or current.keys() - {'scope', 'follow_profile', 'original_evidence'}
+                or material['stage'] != 'REFINED' or not bound or passages[0]['field'] != 'answer'
+                or material['history'] or material['confirmed_frame_feedback']
+                or type(evidence) is not list or any(type(text) is not str or not text.strip() for text in evidence)):
+            raise ValueError('emlis_grounded_answer_focus_invalid')
     properties = {}
     if not bound:
         properties['passages'] = dict(type='array', minItems=1, maxItems=2,
             items=dict(type='string', enum=[passage['id'] for passage in passages]))
     properties['follow'] = dict(type='string', minLength=1, maxLength=240)
     return dict(type='object', properties=properties, required=list(properties), additionalProperties=False)
+
+
+def _emlis_grounded_model_messages(messages):
+    # Only the decoder and receiver need the bound quote object. Show the
+    # reply writer the answer once, under a clearly labeled source role.
+    material = json.loads(messages[1]['content'])
+    current = material['current']
+    if current.get('follow_profile') != EMLIS_ANSWER_FOLLOW_PROFILE:
+        return messages
+    view = dict(latest_answer=material['quote']['text'], issued_question=material['ai_question_context'])
+    if current.get('original_evidence'):
+        view['original_evidence'] = current['original_evidence']
+    return [messages[0], dict(role='user', content=json.dumps(view, ensure_ascii=False, separators=(',', ':')))]
 
 
 def emlis_grounded_json_parser(messages, alphabet):
@@ -3176,6 +3200,7 @@ def load_generator(adapter, process_stop, *, weights_sha256=None, config_sha256=
     blocked_free_text = set()
     invalid_json_tokens = set()
     unsupported_unicode_tokens = set()
+    answer_follow_quote_tokens = set()
     if semantic_json:
         private_log_filter = SourcePrivateConstraintLog()
         logging.getLogger().addFilter(private_log_filter)
@@ -3200,6 +3225,12 @@ def load_generator(adapter, process_stop, *, weights_sha256=None, config_sha256=
         tokenizer_alphabet = frozenset(tokenizer_data.tokenizer_alphabet)
         unsupported_unicode_tokens = {token for token, decoded, _ in tokenizer_data.regular_tokens
             if '\ufffd' in decoded or any(char not in tokenizer_alphabet for char in decoded)}
+        if qwen_9b:
+            # The bound answer format has a fixed JSON key. No JSON escape is
+            # needed in its output, so reject both literal and escaped quotes
+            # without leaving the parser's fast free-text path.
+            answer_follow_quote_tokens = {token for token, decoded, _ in tokenizer_data.regular_tokens
+                if any(char in decoded for char in '「」『』\\\u2028\u2029')}
 
     class Deadline(StoppingCriteria):
         def __init__(self, end):
@@ -3246,7 +3277,9 @@ def load_generator(adapter, process_stop, *, weights_sha256=None, config_sha256=
                 add_generation_prompt=True, tokenize=True, return_dict=True,
                 return_tensors="pt", truncation=False)
 
-        encoded = encode(messages)
+        model_messages = _emlis_grounded_model_messages(messages) if profile == 'emlis_grounded' else messages
+        focused_answer = model_messages is not messages
+        encoded = encode(model_messages)
         count = encoded["input_ids"].shape[-1]
         if (count + output_budget > context_budget and qwen_9b and output_tokens is not None
                 and material.get('author_profile') == OCCURRENCE_V24_PROFILE
@@ -3280,6 +3313,8 @@ def load_generator(adapter, process_stop, *, weights_sha256=None, config_sha256=
                 allowed_prefix.token_enforcer.root_parser.config.force_json_field_order = True
             profile_invalid_json_tokens = (invalid_json_tokens if profile == 'piece' else
                 invalid_json_tokens | unsupported_unicode_tokens)
+            if focused_answer:
+                profile_invalid_json_tokens |= answer_follow_quote_tokens
             material = json.loads(messages[1]['content']) if profile == 'event_plan' else None
             prefix_offset = _semantic_merge_prefix_offset(profile, material, messages, count)
             previous_allowed = None

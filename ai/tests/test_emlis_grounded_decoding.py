@@ -44,6 +44,74 @@ def _accepts(messages, text):
     return parser.can_end()
 
 
+def _answer_focus_messages():
+    selected = _messages()
+    material = json.loads(selected[1]['content'])
+    material.update(stage='REFINED', ai_question_context='褒められた時は、どう感じましたか。')
+    material['current'].update(
+        follow_profile=probe.EMLIS_ANSWER_FOLLOW_PROFILE,
+        original_evidence=['教室で褒められました。'],
+    )
+    material['quote'].update(field='answer', source_role='SUPPLEMENTAL_ANSWER', text='その時は怖かった。')
+    selected[1]['content'] = json.dumps(material, ensure_ascii=False)
+    return selected
+
+
+def test_answer_focus_keeps_the_legacy_json_envelope():
+    focused = _answer_focus_messages()
+    legacy = _messages()
+    assert probe.emlis_grounded_output_schema(focused) == probe.emlis_grounded_output_schema(legacy)
+    assert probe._emlis_grounded_model_messages(legacy) is legacy
+
+
+@pytest.mark.parametrize('disallowed', ['stage', 'role', 'history', 'evidence', 'marker'])
+def test_answer_focus_rejects_other_stages_and_source_shapes(disallowed):
+    focused = _answer_focus_messages()
+    material = json.loads(focused[1]['content'])
+    if disallowed == 'stage':
+        material['stage'] = 'FINAL'
+        del material['ai_question_context']
+    if disallowed == 'role':
+        material['quote'].update(field='memo', source_role='ORIGINAL_INPUT')
+    if disallowed == 'history':
+        material['history'] = ['昔の記録。']
+    if disallowed == 'evidence':
+        material['current']['original_evidence'] = '資料。'
+    if disallowed == 'marker':
+        material['current']['follow_profile'] = 'unknown'
+    focused[1]['content'] = json.dumps(material, ensure_ascii=False)
+    with pytest.raises(ValueError, match='emlis_grounded_answer_focus_invalid'):
+        probe.emlis_grounded_output_schema(focused)
+
+
+def test_answer_focus_tokenizes_one_answer_with_the_pinned_decoding_mask(monkeypatch):
+    focused = _answer_focus_messages()
+    snapshot = deepcopy(focused)
+    raw = json.dumps({'follow': FOLLOW}, ensure_ascii=False)
+    generator, capture, _, _ = synthetic_generator(monkeypatch, constrained=True, raw_output=raw, qwen_9b=True)
+    assert generator(focused, time.monotonic() + 23, profile='emlis_grounded') == (raw, 'stop')
+    chat, _ = capture['tokenize'][0]
+    assert chat[0] == focused[0]
+    assert json.loads(chat[1]['content']) == {
+        'latest_answer': 'その時は怖かった。',
+        'issued_question': '褒められた時は、どう感じましたか。',
+        'original_evidence': ['教室で褒められました。'],
+    }
+    assert focused == snapshot
+
+
+@pytest.mark.parametrize('raw', ('{"follow":"「引用」"}', '{"follow":"『引用』"}',
+                                r'{"follow":"\u300c引用\u300d"}', r'{"follow":"一行\n二行"}',
+                                r'{"follow":"\"引用\""}'))
+def test_answer_focus_blocks_quotes_and_escapes_only_in_the_focused_decoder(monkeypatch, raw):
+    generator, _, _, _ = synthetic_generator(monkeypatch, constrained=True, raw_output=raw, qwen_9b=True)
+    assert generator(_messages(), time.monotonic() + 23, profile='emlis_grounded') == (raw, 'stop')
+    with pytest.raises(AssertionError):
+        # The synthetic forward verifies every scripted token against the live
+        # prefix function, including the one it cannot emit for a focused reply.
+        generator(_answer_focus_messages(), time.monotonic() + 23, profile='emlis_grounded')
+
+
 def test_pinned_parser_requires_the_exact_reply_envelope_and_list_limits():
     bound, multi = _messages(), _messages(multi=True)
     valid = json.dumps({'follow': FOLLOW}, ensure_ascii=False)
@@ -469,3 +537,71 @@ def test_client_rejects_unavailable_or_unconfirmed_decoder_with_one_call(
     assert reply['current_observation'] is None
     assert run(service.get(user, parent))['current_observation'] is None
     assert len(calls) == 1
+
+
+@pytest.mark.parametrize('related', [True, False])
+def test_plus_answer_focus_saves_only_verified_history_and_reuses_the_receipt(
+        natural_case, qdb, monkeypatch, related):
+    from test_emlis_natural_frames_application import _case, _past
+
+    user, parent, _, _, _, _ = _case(natural_case, qdb, tier='plus', history=related)
+    independent_action = '会議で発表した。'
+    qdb.query('update public.emotions set memo_action=$2 where id=$1', [parent, independent_action])
+    if not related:
+        _past(qdb, user, memo='誘われたのに、悲しかった。', memo_action=independent_action)
+    calls = []
+    authored = 'その時は怖かった。'
+    follow = 'そのときの怖さまで話してくださったこと、Emlisは大事に受け止めます。'
+
+    def infer(request):
+        wire = json.loads(request.content)
+        material = json.loads(wire['messages'][1]['content'])
+        calls.append(material)
+        if material['stage'] == 'PRE_QUESTION':
+            result = {'passages': ['P1'], 'follow': 'そのときの気持ちに、Emlisは耳を傾けています。'}
+        else:
+            assert material['current']['follow_profile'] == 'answer_focus_v1'
+            assert material['quote']['text'] == authored
+            assert material['ai_question_context'] == first['pending_question']['text']
+            assert material['history'] == material['confirmed_frame_feedback'] == []
+            assert independent_action not in wire['messages'][1]['content']
+            result = {'follow': follow}
+        return httpx.Response(200, json={'model': QWEN, 'candidate_format': FORMAT, 'choices': [
+            {'finish_reason': 'stop', 'message': {'role': 'assistant',
+                'content': json.dumps(result, ensure_ascii=False)}}]})
+
+    for name in ('COCOLON_EMLIS_GROUNDED_OBSERVATION', 'COCOLON_EMLIS_GROUNDED_DECODING'):
+        monkeypatch.setenv(name, 'true')
+    source = SelfHostedNaturalReplySource(endpoint='https://model.invalid/v1/chat/completions',
+        model=QWEN, api_key='synthetic-only', transport=httpx.MockTransport(infer))
+    service = _active_application_owner(monkeypatch, source, 'paid')
+    first = run(service.start(user, parent))
+    failed = False
+
+    async def rpc(name, payload, **kwargs):
+        nonlocal failed
+        if not failed and any(event['kind'] == 'OBSERVATION' for event in payload.get('p_events', [])):
+            failed = True
+            return httpx.Response(503, json={'code': '57P03'})
+        return await qdb.rpc(name, payload, **kwargs)
+
+    monkeypatch.setattr(emlis_thread_store, 'sb_post_rpc', rpc)
+    interrupted = run(answer(service, user, first, authored))
+    assert interrupted['can_retry'] and len(calls) == 2
+    for name in ('COCOLON_EMLIS_GROUNDED_OBSERVATION', 'COCOLON_EMLIS_GROUNDED_DECODING'):
+        monkeypatch.delenv(name)
+    reopened = _active_application_owner(monkeypatch, source, 'paid')
+    saved = run(reopened.action(user, interrupted['thread_id'], action='retry_response',
+        expected_revision=interrupted['revision'], idempotency_key='save-received-plus-answer',
+        operation_id=interrupted['operation_id']))
+    assert saved['body_state'] == 'REFINED'
+    text = saved['current_observation']['text']
+    expected = f'「{authored}」\n\n{follow}'
+    if related:
+        current, suffix = text.rsplit('\n\n', 1)
+        assert current == expected and 'の記録の「褒められた」' in suffix
+    else:
+        assert text == expected
+    reread = run(reopened.get(user, parent))
+    assert reread['current_observation'] == saved['current_observation']
+    assert reread['revision'] == saved['revision'] and len(calls) == 2

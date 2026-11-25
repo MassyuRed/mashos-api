@@ -669,6 +669,7 @@ def prepare_natural_reply(request, *, use_meaning_support=False, response_stage=
                           grounded_context_version=grounded_observation_reply.CONTEXT_VERSION,
                           select_grounded_reception=False,
                           select_grounded_self_insight=False,
+                          select_grounded_plus_answer_focus=False,
                           direct_feeling_correction_context_version=DIRECT_FEELING_CORRECTION_CONTEXT_VERSION):
     """Return admitted user material and the existing independent Safety result."""
     if response_stage not in _RESPONSE_STAGES:
@@ -798,6 +799,12 @@ def prepare_natural_reply(request, *, use_meaning_support=False, response_stage=
         if standalone_feeling:
             passages = [row for row in passages if row['field'] == 'memo']
         if passages:
+            pending_question = admitted.control.question_control_context.pending_question
+            plus_answer_focus = (grounded_context_version == grounded_observation_reply.PLUS_ANSWER_FOCUS_CONTEXT_VERSION
+                or (select_grounded_plus_answer_focus and response_stage == "REFINED"
+                    and admitted.control.capability_snapshot == 'Q3_PLUS' and history
+                    and len(material['current_answers']) == len(passages) == 1
+                    and pending_question is not None and pending_question.question_id == latest_answer['question_id']))
             initial_self_insight = (
                 select_grounded_self_insight and response_stage == "FINAL" and not grounded_current_only
                 and admitted.original.emotion == '自己理解'
@@ -806,7 +813,16 @@ def prepare_natural_reply(request, *, use_meaning_support=False, response_stage=
                 and passages[0]['field'] == 'memo'
                 and passages[0]['text'] == (original.get('memo') or '').strip())
             # Select only measured reception scopes with one passage in the current record.
-            if ((select_grounded_reception or initial_self_insight) and len(passages) == 1
+            if plus_answer_focus:
+                grounded_context_version = grounded_observation_reply.PLUS_ANSWER_FOCUS_CONTEXT_VERSION
+                evidence = _question_original_evidence(admitted, active, pending_question, latest_answer)
+                writer.update(records=[{'scope': 'CURRENT_INPUT',
+                    'active_fields': [{'text': text} for text in evidence]}], user_frame_feedback=[])
+                if prepared_meaning is not None:
+                    line = _paid_received_answer_history_line(prepared_meaning, {row['input_id'] for row in history})
+                    if line:
+                        writer['history_line'] = line
+            elif ((select_grounded_reception or initial_self_insight) and len(passages) == 1
                     and len(writer['records']) == 1 and not writer['user_frame_feedback']
                     and len(material['current_answers']) <= 1):
                 if response_stage == "PRE_QUESTION":
@@ -873,6 +889,32 @@ def prepare_natural_reply(request, *, use_meaning_support=False, response_stage=
         writer['response_purpose'] = material['response_purpose']
     return NaturalReplyInput(admitted.source_prefix_ref, _compact_json(material), meaning_profile,
         _compact_json(writer), _compact_json(active)), safety
+
+
+def _question_original_evidence(admitted, active, question, answer):
+    """Project only a live original range actually cited by the issued question."""
+    if active['coverage']['active_state'] != 'RESOLVED' or question is None:
+        return []
+    resolver = admitted.resolver()
+    supporting_ids = set(question.decision.supporting_evidence_refs)
+    original_id = admitted.original.envelope.envelope_id
+    fields = [row for row in active['active_fields'] if row['source_role'] == 'ORIGINAL_INPUT'
+              and row['source_envelope_id'] == original_id]
+    evidence = []
+    for row in resolver.qualified_refs:
+        ref = row.evidence
+        if ref.evidence_id not in supporting_ids or ref.source_envelope_id != original_id:
+            continue
+        text = resolver.resolve(row.thread_span_id).raw_text
+        if text in evidence or any(text in value or value in text for value in
+                                   (answer['text'], answer['ai_question_context'])):
+            continue
+        if any(field['field_path'] == ref.field_path
+               and field['scalar_start'] <= ref.scalar_start < ref.scalar_end <= field['scalar_end']
+               and field['text'][ref.scalar_start - field['scalar_start']:
+                                 ref.scalar_end - field['scalar_start']] == text for field in fields):
+            evidence.append(text)
+    return evidence
 
 
 def _initial_observation_follow(admitted, original, response_stage):
@@ -1293,7 +1335,7 @@ def _has_changed_direct_feeling_quote(text, excerpt):
     return any(mark in text for pair in _DIRECT_FEELING_QUOTE_MARKS for mark in pair)
 
 
-def validate_reply(reply, request, *, check_grounded_answer=False):
+def validate_reply(reply, request, *, check_grounded_answer=False, allow_verified_history=False):
     if (type(reply) is not NaturalReply or reply.schema_version != ARTIFACT_SCHEMA
             or reply.source_prefix_ref != request.source_prefix_ref
             or not isinstance(reply.model, str) or not reply.model.strip()):
@@ -1316,7 +1358,11 @@ def validate_reply(reply, request, *, check_grounded_answer=False):
         from .natural_reply_meaning import compare_reply_meaning
 
         try:
-            follow = grounded_observation_reply.read_reply(reply.text, writer)
+            grounded_text = reply.text
+            if (allow_verified_history and context_version == grounded_observation_reply.PLUS_ANSWER_FOCUS_CONTEXT_VERSION
+                    and writer.get('history_line')):
+                grounded_text = grounded_text.removesuffix('\n\n' + writer['history_line'])
+            follow = grounded_observation_reply.read_reply(grounded_text, writer)
         except ValueError as exc:
             raise _NaturalReplyValidationError(str(exc)) from None
         focus = writer.get('initial_observation_follow')

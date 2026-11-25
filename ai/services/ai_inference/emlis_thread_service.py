@@ -1086,6 +1086,7 @@ class EmlisThreadService:
             grounded_current_only=bool(t["data"].get("natural_question_stop")
                                        and not t.get("latest_answer_event_id")),
             select_grounded_self_insight=(prior is None and self.grounded_decoding_enabled),
+            select_grounded_plus_answer_focus=(prior is None and self.grounded_decoding_enabled),
             direct_feeling_correction_context_version=direct_version,
             prepared_meaning=prepared_meaning,
             meaning_profile=t['data'].get('natural_meaning_profile'), owner_scope=user_id,
@@ -1113,14 +1114,16 @@ class EmlisThreadService:
 
         def with_history(reply):
             try:
-                return validate_reply(replace(reply, text=f'{reply.text}\n\n{history_line}'), material)
+                return validate_reply(replace(reply, text=f'{reply.text}\n\n{history_line}'), material,
+                                      allow_verified_history=True)
             except NaturalReplyError:
                 # Keep the current reply if the optional paragraph cannot fit.
                 return reply
 
         if received:
             check_writer_identity(received)
-            candidate = validate_reply(NaturalReply(**received["payload"]["reply"]), material)
+            candidate = validate_reply(NaturalReply(**received["payload"]["reply"]), material,
+                                       allow_verified_history=True)
             if history_line:
                 provider_reply = replace(candidate, text=received['payload'].get('provider_reply_text'))
                 if with_history(validate_reply(provider_reply, material)) != candidate:
