@@ -102,6 +102,14 @@ def test_final_native_receipt_and_saved_graph_show_conditional_conclusion_and_hi
     if version == 'karen.v3':
         expected[0]['criterion'] = axis['criterion']
     assert graph['overview']['primary_structures'] == (expected if publish else [])
+    if version == 'karen.v3' and publish:
+        free, free_text = service.map_projection_for_plan(graph, 'free')
+        plus, plus_text = service.map_projection_for_plan(graph, 'plus')
+        assert [n['node_ref'] for n in free['nodes']] == ['n1', 'n2']
+        assert free['edges'][0]['label'] == plus['edges'][0]['label']
+        assert '私から引き受けた' in free['edges'][0]['label'] and '断った' in free['edges'][0]['label']
+        assert axis['case_reading'] not in free_text
+        assert axis['case_reading'] in plus_text
     assert (description in text) == publish
     assert 'n1.u1.e1' not in json.dumps(graph)
     assert 'decision_factor' not in json.dumps(graph)
@@ -571,3 +579,39 @@ def test_v3_across_records_allows_short_quotes_but_rejects_combined_full_sources
 
     for combined in (first + second, second + first):
         assert core._read_primary_structures(prepared, material, nodes, [dict(axis, case_reading=combined)]) == []
+
+
+@pytest.mark.parametrize('raw_kind', ['absent', 'contradictory_edge', 'valid_edge', 'contradictory_axis'])
+def test_v3_diagram_uses_exact_choices_after_independent_axis_admission(raw_kind):
+    notes = ('机で見返せるので、私は作業手順をノートに書いた。',
+             '作業場所で見返せないので、私は作業手順をノートに書かなかった。')
+    prepared, plan, bodies = scenario(*notes, version='karen.v3')
+    material = json.loads(prepared.material_json)
+    nodes = core._semantic_v4_join(plan, bodies)
+    axis = dict(v3_reading(), decision_factor='見返せるか', heading='作業手順を残す条件',
+                criterion='作業手順をノートに書くかは、その場で見返せるかどうかで選んでいます。',
+                case_reading='見返せるかが違い、机で見返せるときはノートに書きました。'
+                             '作業場所で見返せないときは書きませんでした。')
+    raw_label = '机で見返せるときは書きました。一方、作業場所で見返せないときも書きました。'
+    if raw_kind == 'valid_edge':
+        raw_label = '机で見返せるときは書きました。一方、作業場所で見返せないときは書きませんでした。'
+    elif raw_kind == 'contradictory_axis':
+        axis['case_reading'] = axis['case_reading'].replace('書きませんでした', '書きました')
+    edge = {'from': 'n1', 'to': 'n2', 'from_unit': 'n1.u1', 'to_unit': 'n2.u1',
+            'from_source': notes[0][:16], 'to_source': notes[1][:16],
+            'label': raw_label, 'relation_kind': 'CONTEXT_CONTRAST'}
+    raw_edges = [] if raw_kind == 'absent' else [edge]
+    packet = dict(schema_version=core._semantic_v4_schema('RELATIONS'), nodes_sha256=core.semantic_map_hash(nodes),
+                  qualification_review={}, edges=raw_edges, primary_structures=[axis],
+                  overview=dict(node_refs=['n1', 'n2'], title_proposal='', title='2件の記録を振り返って'))
+    joined = core.semantic_node_local_v4_relations(prepared, plan, bodies, packet)
+    assert packet['edges'] == raw_edges == ([] if raw_kind == 'absent' else [edge])
+    if raw_kind == 'contradictory_axis':
+        assert not joined['edges'] and not joined['overview']['primary_structures']
+        return
+    assert joined['overview']['primary_structures'][0]['description'].endswith(axis['case_reading'])
+    admitted, = joined['edges']
+    assert (admitted['from_unit'], admitted['to_unit']) == ('n1.u1', 'n2.u1')
+    expected = ('机で見返せる → 私は作業手順をノートに書いた／'
+                '作業場所で見返せない → 私は作業手順をノートに書かなかった')
+    assert admitted['label'] == (raw_label if raw_kind == 'valid_edge' else expected)

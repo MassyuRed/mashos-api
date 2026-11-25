@@ -122,6 +122,63 @@ def test_one_real_bound_question_answer_update_and_saved_natural_reread(natural_
     assert len(calls) == 2
 
 
+@pytest.mark.parametrize(('reply', 'accepted'), [
+    ('あなたは資料を書かなかったのですね。', True),
+    ('あなたは資料を書いたのですね。', False),
+])
+def test_fresh_natural_reply_preserves_the_current_written_answer(natural_questions, monkeypatch, reply, accepted):
+    user, parent, _, _ = natural_questions()
+    written = '私は資料を書かなかった。'
+    calls = []
+
+    async def provider(material):
+        data = json.loads(material.material_json)
+        calls.append(data)
+        text = reply if data['current_answers'] else ACK
+        return NaturalReply(text, 'synthetic-single-provider', material.source_prefix_ref)
+
+    owner = _active_application_owner(monkeypatch, provider, 'paid')
+    initial = run(owner.start(user, parent))
+    result = run(answer(owner, user, initial, written))
+
+    assert result['answer_saved']
+    assert result['state'] == ('COMPLETED' if accepted else 'RESPONSE_FAILED')
+    assert bool(result['current_observation']) is accepted
+    snapshot = run(owner.store.read(user, input_id=parent))
+    answer_event, = [event for event in snapshot['events'] if event['kind'] == 'ANSWER']
+    assert answer_event['question_id'] == initial['pending_question']['question_id']
+    assert answer_event['payload']['source']['answer_text_private'] == written
+    assert calls[1]['current_answers'][0]['text'] == written
+    reread = run(owner.get(user, parent))
+    assert reread['current_observation'] == result['current_observation']
+    assert reread['revision'] == result['revision'] and len(calls) == 2
+
+
+@pytest.mark.parametrize('written', ('私は資料を書いた。', '私は資料を書かなかった。'))
+def test_normal_9b_does_not_receive_an_unlinked_reaction_with_a_written_fact(natural_questions, monkeypatch, written):
+    from cocolon_meaning_experience_engine.natural_reply import QWEN_9B_NATURAL_ALIAS
+
+    user, parent, _, _ = natural_questions(tier='plus')
+    messages = []
+
+    async def provider(material):
+        messages.append(build_natural_reply_messages(material))
+        return NaturalReply(ACK if len(messages) == 1 else '教えてくださってありがとうございます。',
+                            QWEN_9B_NATURAL_ALIAS, material.source_prefix_ref)
+
+    provider.model = QWEN_9B_NATURAL_ALIAS
+    owner = _active_application_owner(monkeypatch, provider, 'paid')
+    started = run(owner.start(user, parent))
+    done = run(answer(owner, user, started, written))
+    assert done['state'] == 'COMPLETED'
+    assert json.loads(messages[1][-1]['content']) == {'本人の補足': written}
+    snapshot = run(owner.store.read(user, input_id=parent))
+    assert snapshot['original']['memo'] == ONE
+    saved, = [event for event in snapshot['events'] if event['kind'] == 'ANSWER']
+    assert saved['payload']['source']['answer_text_private'] == written
+    assert run(owner.get(user, parent))['current_observation'] == done['current_observation']
+
+
 def test_underspecified_feeling_gets_one_bound_question_and_an_event_answer(natural_questions):
     from cocolon_meaning_experience_engine.emlis_answer_update import (
         build_updated_grounded_plan, prepare_emlis_meaning,
@@ -346,6 +403,49 @@ def test_skipping_later_question_keeps_only_the_actual_answers(natural_questions
     assert saved['revision'] == done['revision'] and len(calls) == answered_count + 2
     assert [event['question_id'] for event in saved['timeline'] if event['kind'] == 'ANSWER'] == [
         question_id for question_id, _, _ in expected_answers]
+
+
+def test_normal_9b_uses_the_answered_passage_when_a_later_question_is_skipped(natural_questions, monkeypatch):
+    from cocolon_meaning_experience_engine.natural_reply import (
+        ISSUED_ANSWER_RECEPTION_VERSION, QWEN_9B_NATURAL_ALIAS, SelfHostedNaturalReplySource,
+    )
+
+    user, parent, _, _ = natural_questions(tier='premium', memo=THREE)
+    written = 'その時は重かった。'
+    received = '褒められた言葉の重さも、ここで聞かせてくださったのですね。'
+    materials = []
+
+    def transport(request):
+        messages = json.loads(request.content)['messages']
+        materials.append(json.loads(messages[-1]['content']))
+        return httpx.Response(200, json={'model': QWEN_9B_NATURAL_ALIAS, 'choices': [
+            {'finish_reason': 'stop', 'message': {'role': 'assistant',
+             'content': ACK if len(materials) == 1 else received}},
+        ]})
+
+    source = SelfHostedNaturalReplySource(endpoint='https://model.invalid/v1/chat/completions',
+        model=QWEN_9B_NATURAL_ALIAS, api_key='synthetic-only', transport=httpx.MockTransport(transport))
+    owner = _active_application_owner(monkeypatch, source, 'paid')
+    first = run(owner.start(user, parent))
+    answered = run(answer(owner, user, first, written))
+    continued = run(owner.action(user, first['thread_id'], action='continue',
+        expected_revision=answered['revision'], idempotency_key='continue-scoped'))
+    assert continued['pending_question']['question_id'] != first['pending_question']['question_id']
+    done = run(owner.action(user, first['thread_id'], action='skip',
+        question_id=continued['pending_question']['question_id'],
+        expected_revision=continued['revision'], idempotency_key='skip-scoped'))
+
+    expected = {'問われた出来事': '褒められた', '本人の補足': written}
+    assert materials[1:] == [expected, expected]
+    assert done['state'] == 'COMPLETED' and done['current_observation']['text'] == received
+    snapshot = run(owner.store.read(user, input_id=parent))
+    assert snapshot['original']['memo'] == THREE
+    versions = [event['payload'].get('writer_context_version') for event in snapshot['events']
+                if event['payload'].get('stage') == 'NATURAL_REPLY_RECEIVED']
+    assert versions[1:] == [ISSUED_ANSWER_RECEPTION_VERSION, ISSUED_ANSWER_RECEPTION_VERSION]
+    reread = run(owner.get(user, parent))
+    assert reread['current_observation'] == done['current_observation']
+    assert reread['revision'] == done['revision'] and len(materials) == 3
 
 
 def test_stop_after_answer_preserves_current_complete_reply_without_extra_generation(natural_questions):

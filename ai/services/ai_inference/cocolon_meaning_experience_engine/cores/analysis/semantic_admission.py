@@ -3710,6 +3710,39 @@ def _v3_decision_edges(edges, material, nodes):
     return retained
 
 
+def _v3_source_contrast_edge(material, nodes, axes, edges):
+    """Use exact choice spans for a small diagram once its explanation is admitted."""
+    if (len(axes) != 1 or axes[0]['scope'] != 'across_records'
+            or material.get('history_stage') or len(material['records']) != 2
+            or len(material['fields']) != 2 or len(nodes) != 2):
+        return None
+    refs = [node['node_id'] for node in nodes]
+    if set(axes[0]['node_refs']) != set(refs) or any(
+            edge['relation_kind'] in ('CONTEXT_CONTRAST', 'CRITERION_EXPRESSION')
+            and {edge['from'], edge['to']} == set(refs) for edge in edges):
+        return None
+    fields = {field['field']: field for field in material['fields']}
+    if any((field['source_role'], field['field_path']) != ('ORIGINAL_INPUT', 'memo') for field in fields.values()):
+        return None
+    origins = []
+    for node in nodes:
+        if len(node['units']) != 1:
+            return None
+        unit, = node['units']
+        if len(unit['evidence']) != 1 or unit['unknowns']:
+            return None
+        root, = unit['evidence']
+        origins.append((node, unit, fields[root['field']], root['quote']))
+    pair = next(_choice_pairs(origins, _semantic_display_sentences(material)), None)
+    if pair is None:
+        return None
+    label = '／'.join(f'{condition} → {action}' for condition, action, *_ in pair)
+    if not _semantic_map_text(label, 80):
+        return None
+    return {'from': refs[0], 'to': refs[1], 'from_unit': refs[0] + '.u1', 'to_unit': refs[1] + '.u1',
+            'label': label, 'relation_kind': 'CONTEXT_CONTRAST'}
+
+
 def _v3_grounded_choice_meanings(material, nodes):
     """Withhold an unsupported optional reading after validating the raw NODES receipt."""
     fields = {field['field']: field for field in material['fields']}
@@ -4025,9 +4058,13 @@ def semantic_node_local_v4_relations(prepared, plan, bodies, packet, *, ordered_
     edges = [{k: v for k, v in edge.items() if k not in {'from_source', 'to_source'}}
              for edge in raw_edges] if source_cued else raw_edges
     if 'primary_structures' in packet:
-        overview = dict(overview, primary_structures=_read_primary_structures(
-            prepared, material, nodes, packet['primary_structures'], retained=retained_axes))
+        axes = _read_primary_structures(
+            prepared, material, nodes, packet['primary_structures'], retained=retained_axes)
+        overview = dict(overview, primary_structures=axes)
         if material.get('primary_structure_reading') == 'karen.v3':
+            derived = _v3_source_contrast_edge(material, nodes, axes, edges)
+            if derived is not None:
+                edges.append(derived)
             _v3_grounded_choice_meanings(material, nodes)
     return dict(schema_version=SEMANTIC_MAP_NODE_LOCAL_V3_SCHEMA,
         nodes=nodes, edges=edges, overview=overview)

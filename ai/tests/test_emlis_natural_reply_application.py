@@ -1199,3 +1199,55 @@ def test_9b_initial_follow_is_not_selected_by_model_alias_alone(natural_case, qd
     dto = run(service.start(user, parent))
     assert dto["current_observation"]["text"] == BODY
     assert len(calls) == 1
+
+
+@pytest.mark.parametrize('ability,follow,action,accepted', [
+    ('使えない', '隣室の利用制限が解除されたことで、安心されたのですね。', '', False),
+    ('使えない', '明日は使えると知った今朝のお話を聞けて嬉しいです。', '', False),
+    ('使える', '明日は利用できないと聞いて、ほっとされたのですね。', '', False),
+    ('使えない', '明日は使えなくなったと聞いたときのこと、Emlisは受け取りました。', '', False),
+    ('使える', '明日、隣の部屋を使えることをご存知になり、心が安らぐことができたのですね。'
+     'その平穏な気持ち、Emlis は心から喜んでおります。', '', True),
+    ('使えない', '今朝、明日の隣の部屋が使えないと知らされ、あなたがほっとされたその気持ち、'
+     'Emlis は心から喜びます。その平穏な安堵が、あなたにとってどれほど大切なものだったのか、'
+     'その一点を捉えられたことに感謝します。', '', True),
+    ('使えない', '資料室の利用制限が解除されたという知らせも受け取りました。',
+     '私は資料室の利用制限が解除されたという掲示を読みました。', True),
+])
+def test_initial_notice_reception_preserves_the_normal_writer_and_admitted_record(
+        natural_case, qdb, monkeypatch, ability, follow, action, accepted):
+    from cocolon_meaning_experience_engine.natural_reply import QWEN_9B_NATURAL_ALIAS
+
+    user, parent, _, _ = natural_case
+    memo = f'明日は隣の部屋を{ability}と今朝知らされ、私はほっとしました。'
+    qdb.query('update public.emotions set memo=$2,memo_action=$3 where id=$1', [parent, memo, action])
+    calls = []
+
+    def infer(request):
+        wire = json.loads(request.content)
+        calls.append(wire)
+        assert wire['model'] == QWEN_9B_NATURAL_ALIAS
+        assert 'candidate_format' not in wire
+        assert 'availability' not in wire['messages'][-1]['content']
+        records = json.loads(wire['messages'][-1]['content'])['records']
+        current, = records
+        assert current['active_fields'][0]['text'] == memo
+        return httpx.Response(200, json={'model': QWEN_9B_NATURAL_ALIAS, 'choices': [
+            {'finish_reason': 'stop', 'message': {'role': 'assistant', 'content': follow}}]})
+
+    source = SelfHostedNaturalReplySource(endpoint='https://model.invalid/v1/chat/completions',
+        model=QWEN_9B_NATURAL_ALIAS, api_key='synthetic-only', transport=httpx.MockTransport(infer))
+    service = _active_application_owner(monkeypatch, source, 'paid', initial_follow=True)
+    service.natural_questions_enabled = False
+    dto = run(service.start(user, parent))
+    assert dto['state'] == ('COMPLETED' if accepted else 'RESPONSE_FAILED')
+    observation = dto['current_observation']
+    assert (observation['text'] if observation else None) == (follow if accepted else None)
+    reread = run(service.get(user, parent))
+    assert reread['current_observation'] == observation and reread['revision'] == dto['revision']
+    saved = run(service.store.read(user, input_id=parent))
+    assert saved['original']['memo'] == memo and saved['original']['memo_action'] == action
+    receipts = [event for event in saved['events']
+                if event['payload'].get('stage') == 'NATURAL_REPLY_RECEIVED']
+    assert bool(receipts) == accepted
+    assert len(calls) == 1

@@ -6,6 +6,7 @@ name: Piece B2-B/B3/B4/B5 isolated PostgreSQL
     branches:
       - agent/cmee-v1a-i1sx-source-explicit-20260815
       - agent/cmee-continuation-20261124
+      - agent/cmee-normal-emlis-fixes-20261125
     paths:
       - .github/workflows/piece-b2b-isolated-postgres.yml
       - supabase/migrations/20260808_002_piece_v2_foundation.sql
