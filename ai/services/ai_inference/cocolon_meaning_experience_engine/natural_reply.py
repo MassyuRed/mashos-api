@@ -668,6 +668,7 @@ def prepare_natural_reply(request, *, use_meaning_support=False, response_stage=
                           use_grounded_observation=False, grounded_current_only=False,
                           grounded_context_version=grounded_observation_reply.CONTEXT_VERSION,
                           select_grounded_reception=False,
+                          select_grounded_self_insight=False,
                           direct_feeling_correction_context_version=DIRECT_FEELING_CORRECTION_CONTEXT_VERSION):
     """Return admitted user material and the existing independent Safety result."""
     if response_stage not in _RESPONSE_STAGES:
@@ -797,13 +798,24 @@ def prepare_natural_reply(request, *, use_meaning_support=False, response_stage=
         if standalone_feeling:
             passages = [row for row in passages if row['field'] == 'memo']
         if passages:
-            # A single source from the current record is the scope exercised
-            # by the measured reception replies. Keep the established writer
-            # when history, feedback or multiple authored answers are present.
-            if (select_grounded_reception and len(passages) == 1
+            initial_self_insight = (
+                select_grounded_self_insight and response_stage == "FINAL" and not grounded_current_only
+                and admitted.original.emotion == '自己理解'
+                and not admitted.answers and not admitted.control.question_control_context.issued_count
+                and not (original.get('memo_action') or '').strip()
+                and passages[0]['field'] == 'memo'
+                and passages[0]['text'] == (original.get('memo') or '').strip())
+            # Select only measured reception scopes with one passage in the current record.
+            if ((select_grounded_reception or initial_self_insight) and len(passages) == 1
                     and len(writer['records']) == 1 and not writer['user_frame_feedback']
                     and len(material['current_answers']) <= 1):
-                grounded_context_version = grounded_observation_reply.RECEPTION_CONTEXT_VERSION
+                if response_stage == "PRE_QUESTION":
+                    if (not (original.get('memo_action') or '').strip()
+                            and passages[0]['text'] == (original.get('memo') or '').strip()
+                            and grounded_observation_reply.supports_question_preface(passages[0])):
+                        grounded_context_version = grounded_observation_reply.QUESTION_PREFACE_CONTEXT_VERSION
+                else:
+                    grounded_context_version = grounded_observation_reply.RECEPTION_CONTEXT_VERSION
             writer.update(source_context_version=grounded_context_version, grounded_passages=passages)
             if standalone_feeling:
                 # The other column and earlier records cannot supply a
@@ -1281,7 +1293,7 @@ def _has_changed_direct_feeling_quote(text, excerpt):
     return any(mark in text for pair in _DIRECT_FEELING_QUOTE_MARKS for mark in pair)
 
 
-def validate_reply(reply, request):
+def validate_reply(reply, request, *, check_grounded_answer=False):
     if (type(reply) is not NaturalReply or reply.schema_version != ARTIFACT_SCHEMA
             or reply.source_prefix_ref != request.source_prefix_ref
             or not isinstance(reply.model, str) or not reply.model.strip()):
@@ -1318,6 +1330,14 @@ def validate_reply(reply, request):
         # of coverage from it does not attest to the quality of free prose.
         if compare_reply_meaning(request.material_json, follow, request.source_prefix_ref).verdict == "CONFLICT":
             raise _NaturalReplyValidationError('grounded_observation_meaning_conflict')
+        if check_grounded_answer and any(row["source_role"] == "SUPPLEMENTAL_ANSWER"
+                                         for row in writer["grounded_passages"]):
+            # The current answer is checked independently so similar past or
+            # original clauses cannot hide an explicit reversal of its fact.
+            answer_comparison = compare_reply_meaning(request.material_json, follow, request.source_prefix_ref,
+                grounded_writer=writer, analysis_material=json.loads(request.analysis_material_json or "{}"))
+            if answer_comparison.verdict == "CONFLICT":
+                raise _NaturalReplyValidationError('grounded_observation_meaning_conflict')
     if (context_version in {DIRECT_FEELING_CORRECTION_VOICE_CONTEXT_VERSION,
                             DIRECT_FEELING_CORRECTION_RECIPIENT_CONTEXT_VERSION,
                             DIRECT_FEELING_CORRECTION_CONTEXT_VERSION}

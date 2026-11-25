@@ -6,8 +6,11 @@ import re
 
 CONTEXT_VERSION = "bound_passage_listener.v3"
 CONSTRAINED_CONTEXT_VERSION = "bound_passage_listener.v4"
+QUESTION_PREFACE_CONTEXT_VERSION = "bound_passage_listener.v5.pre_question"
 RECEPTION_CONTEXT_VERSION = "bound_passage_listener.v10"
-CONSTRAINED_CONTEXT_VERSIONS = {CONSTRAINED_CONTEXT_VERSION, RECEPTION_CONTEXT_VERSION}
+CONSTRAINED_CONTEXT_VERSIONS = {
+    CONSTRAINED_CONTEXT_VERSION, QUESTION_PREFACE_CONTEXT_VERSION, RECEPTION_CONTEXT_VERSION,
+}
 CONTEXT_VERSIONS = {CONTEXT_VERSION, *CONSTRAINED_CONTEXT_VERSIONS}
 CONSTRAINED_CANDIDATE_FORMAT = "emlis.grounded_observation.v1"
 
@@ -31,6 +34,11 @@ _CHOOSE_OUTPUT = (
 _QUESTION_STAGE = (
     "\nこの後にアプリが別に問いを表示します。いま分かることを短く受け止め、"
     "問いの答えに当たる事実を推測しません。")
+_QUESTION_PREFACE_SYSTEM = (
+    "\n本人が書いた戸惑いや否定を、勇気や前向きな変化と読み替えません。"
+    "理由や情景が書かれていない気持ちについては、その気持ちをここで共有した本人に短く応じます。"
+    "\n問いの前に、今の本人の気持ちを一文で受け取ります。今後どんな気持ちを持つべきかは語りません。"
+    "この受け止めだけで終えます。")
 _ANSWER_STAGE = (
     "\n現在の本人の回答から新しく分かったことに応じます。ai_question_contextは、その回答に対応する"
     "Emlisの問いです。そこから本人の気持ちや出来事を読み足しません。"
@@ -41,6 +49,19 @@ _EXPECTATION_RECAST = re.compile(
     r"(?:への期待(?:とは|より|があっ|を抱)|期待して(?:いた|いらっしゃ))")
 _VIVID_MEMORY_RECAST = re.compile(
     r"(?:今も|まだ)[^。]{0,16}(?:鮮明に|はっきりと)[^。]{0,12}(?:覚え|思い出)")
+_PREFACE_SENTENCE = re.compile(r"[^。！？．.!?「」『』]+[。．.!！]?")
+_RECIPIENT_DIRECTIVE = re.compile(
+    r"(?:[てで]ください|しましょう|すべきです|した(?:方|ほう)がいいです)(?=[ \t]*(?:[。.!！\r\n]|$))")
+_CONTINUED_REACTION = re.compile(
+    r"(?:強く残って|(?:今も|まだ)[^。.!！\n]{0,24}(?:残って|続いて|抱えて))い")
+_UNDISCLOSED_REACTION = re.compile(r"誰にも(?:言わず|言えず|話さず|話せず)")
+
+
+def supports_question_preface(passage):
+    """Use the measured preface for one straightforward original thought."""
+    text = passage["text"]
+    return (passage["field"] == "memo" and passage["source_role"] == "ORIGINAL_INPUT"
+            and len(text.splitlines()) == 1 and _PREFACE_SENTENCE.fullmatch(text) is not None)
 
 
 def current_passages(record, original, latest_answer):
@@ -69,10 +90,12 @@ def messages(writer):
     current, *history = writer["records"]
     stage = writer.get("response_purpose", {}).get("stage", "FINAL")
     passages = writer["grounded_passages"]
-    system = (_RECEPTION_SYSTEM if writer.get("source_context_version") == RECEPTION_CONTEXT_VERSION
-              else _SYSTEM)
+    context = writer.get("source_context_version")
+    system = _RECEPTION_SYSTEM if context == RECEPTION_CONTEXT_VERSION else _SYSTEM
     if stage == "PRE_QUESTION":
         system += _QUESTION_STAGE
+        if context == QUESTION_PREFACE_CONTEXT_VERSION:
+            system += _QUESTION_PREFACE_SYSTEM
     elif stage == "REFINED":
         system += _ANSWER_STAGE
     material = {
@@ -169,5 +192,14 @@ def read_reply(text, writer):
             if (_VIVID_MEMORY_RECAST.search(follow)
                     and not re.search(r"覚え|思い出|記憶に", current_text)):
                 raise ValueError("grounded_observation_unwritten_memory")
+            if writer.get("source_context_version") == QUESTION_PREFACE_CONTEXT_VERSION:
+                if _RECIPIENT_DIRECTIVE.search(follow):
+                    raise ValueError("grounded_observation_directive")
+                if (_CONTINUED_REACTION.search(follow)
+                        and not any(_CONTINUED_REACTION.search(row["text"]) for row in selected)):
+                    raise ValueError("grounded_observation_unwritten_continuity")
+                if (_UNDISCLOSED_REACTION.search(follow)
+                        and not any(_UNDISCLOSED_REACTION.search(row["text"]) for row in selected)):
+                    raise ValueError("grounded_observation_unwritten_disclosure")
             return follow
     raise ValueError("grounded_observation_passage")

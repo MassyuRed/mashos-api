@@ -515,16 +515,51 @@ def _compatible_event_scope(source, reply):
     return True
 
 
-def compare_reply_meaning(material_json: str, reply_text: str, source_prefix_ref: str) -> MeaningComparison:
+def _active_answer_witnesses(material, writer, analysis, source_prefix_ref):
+    """Compare the latest answer only where a typed claim proves its exact written clause."""
+    answers = material.get("current_answers", ())
+    if (not answers or analysis.get("source_prefix_ref") != source_prefix_ref
+            or analysis.get("coverage", {}).get("active_state") != "RESOLVED"):
+        return ()
+    index = len(answers) - 1
+    latest = answers[index]
+    text = latest["text"]
+    if not any(row["source_role"] == "SUPPLEMENTAL_ANSWER" and row["text"] == text
+               for row in writer["grounded_passages"]):
+        return ()
+    fields = {row["field"] for row in analysis["active_fields"]
+              if row["source_role"] == "SUPPLEMENTAL_ANSWER"
+              and row["source_id"] == latest["answer_id"] and row["field_path"] == "memo"
+              and (row["scalar_start"], row["scalar_end"]) == (0, len(text)) and row["text"] == text}
+    claims = {(row["scalar_start"], row["scalar_end"], row["quote"],
+               row["proposition"]["predicate_lemma"], row["proposition"]["polarity"],
+               row["proposition"]["modality"], row["proposition"]["temporal_scope"])
+              for row in (analysis.get("source_duties") or {}).get("claims", ())
+              if row["field"] in fields and row["source_role"] == "SUPPLEMENTAL_ANSWER"}
+    rows, _ = _clauses(text, f"current_answers[{index}].text", "CURRENT")
+    return tuple(replace(row, source_role="SUPPLEMENTAL_ANSWER", source_id=latest["answer_id"],
+                         parent_input_id=material["current_input_id"], source_recorded_at=latest["recorded_at"])
+                 for row in rows
+                 if (row.scalar_start, row.scalar_end, row.raw_text, row.predicate,
+                     row.polarity, row.modality, row.temporal_scope) in claims)
+
+
+def compare_reply_meaning(material_json: str, reply_text: str, source_prefix_ref: str, *,
+                          grounded_writer=None, analysis_material=None) -> MeaningComparison:
     """Read final free text independently and compare only unique witnesses.
 
+    A grounded writer limits this comparison to the latest proved answer.
     Unmatched prose and permitted omission never become semantic failure.
     Source/JSON/integrity errors deliberately propagate to their caller.
     """
     if not isinstance(material_json, str) or not isinstance(reply_text, str) or not isinstance(source_prefix_ref, str) or not source_prefix_ref:
         raise ValueError("natural_meaning_material_invalid")
     material = json.loads(material_json)
-    sources, excluded = _source_witnesses(material)
+    if grounded_writer is None:
+        sources, excluded = _source_witnesses(material)
+    else:
+        sources = _active_answer_witnesses(material, grounded_writer, analysis_material or {}, source_prefix_ref)
+        excluded = 0
     replies, segment_count = _clauses(reply_text, "reply", "REPLY", reply=True)
     checks = []
     for reply in replies:

@@ -1063,7 +1063,7 @@ class EmlisThreadService:
             else grounded_observation_reply.CONSTRAINED_CONTEXT_VERSION if self.grounded_decoding_enabled
             else grounded_observation_reply.CONTEXT_VERSION)
         select_grounded_reception = (prior is None and self.grounded_decoding_enabled
-            and (response_stage == "REFINED" or t["data"].get("natural_question_stop") == "skip"))
+            and (response_stage in {"PRE_QUESTION", "REFINED"} or t["data"].get("natural_question_stop") == "skip"))
         material, safety = prepare_natural_reply(_request(snapshot), response_stage=response_stage,
             bind_writer_context=context_version is not None,
             include_corrected_circumstance=context_version == CORRECTED_SOURCE_CONTEXT_VERSION,
@@ -1081,6 +1081,7 @@ class EmlisThreadService:
             select_grounded_reception=select_grounded_reception,
             grounded_current_only=bool(t["data"].get("natural_question_stop")
                                        and not t.get("latest_answer_event_id")),
+            select_grounded_self_insight=(prior is None and self.grounded_decoding_enabled),
             direct_feeling_correction_context_version=direct_version,
             prepared_meaning=prepared_meaning,
             meaning_profile=t['data'].get('natural_meaning_profile'), owner_scope=user_id,
@@ -1136,7 +1137,7 @@ class EmlisThreadService:
             self._require_write()
             try:
                 candidate = validate_reply(await asyncio.wait_for(self.natural_reply_source(material),
-                    timeout=min(240.0, remaining)), material)
+                    timeout=min(240.0, remaining)), material, check_grounded_answer=True)
             except asyncio.CancelledError:
                 raise
             except Exception:

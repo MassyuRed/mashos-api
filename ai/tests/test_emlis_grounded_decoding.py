@@ -13,7 +13,7 @@ import emlis_thread_store
 from cocolon_meaning_experience_engine import grounded_observation_reply as grounded
 from cocolon_meaning_experience_engine.natural_reply import SelfHostedNaturalReplySource
 from test_emlis_natural_reply_application import _active_application_owner, natural_case
-from test_emlis_natural_question_application import natural_questions
+from test_emlis_natural_question_application import ONE, natural_questions
 from test_emlis_natural_reply_probe_http import probe
 from test_emlis_q2_application import answer, run
 from test_emlis_q3_application import past_record, qdb
@@ -73,15 +73,61 @@ def test_reception_prompt_keeps_v4_source_material_and_decoder_schema(multi):
     assert probe.emlis_grounded_output_schema(candidate) == probe.emlis_grounded_output_schema(legacy)
 
 
-@pytest.mark.parametrize(('tier', 'history', 'action', 'expected'), [
-    ('free', False, 'answer', grounded.RECEPTION_CONTEXT_VERSION),
-    ('plus', False, 'answer', grounded.RECEPTION_CONTEXT_VERSION),
-    ('premium', True, 'answer', grounded.CONSTRAINED_CONTEXT_VERSION),
-    ('premium', True, 'skip', grounded.RECEPTION_CONTEXT_VERSION),
+@pytest.mark.parametrize(('emotion', 'action_text', 'expected'), [
+    ('自己理解', '', grounded.RECEPTION_CONTEXT_VERSION),
+    ('平穏', '', grounded.CONSTRAINED_CONTEXT_VERSION),
+    ('自己理解', '会議のメモを読みました。', grounded.CONSTRAINED_CONTEXT_VERSION),
+    ('自己理解', '明日は何を準備する？', grounded.CONSTRAINED_CONTEXT_VERSION),
+])
+def test_initial_self_insight_reception_keeps_a_single_authored_memo_scope(
+        natural_case, qdb, monkeypatch, emotion, action_text, expected):
+    user, parent, _, _ = natural_case
+    memo = '誰かにゆっくり説明すると考えを整理しやすいと気づきました。'
+    assert 'code' not in qdb.query(
+        "update public.emotions set memo=$2,memo_action=$3,emotions=$4,emotion_details=$5 where id=$1",
+        [parent, memo, action_text, [emotion], json.dumps([dict(type=emotion, strength='medium')])])
+    requests = []
+
+    def infer(request):
+        wire = json.loads(request.content)
+        assert wire['candidate_format'] == FORMAT
+        material = json.loads(wire['messages'][1]['content'])
+        requests.append(material)
+        reply = {'follow': '説明しながら考えが整うという気づきを、Emlisは喜んで受け取りました。'}
+        if 'passages' in material:
+            reply['passages'] = ['P1']
+        return httpx.Response(200, json={'model': QWEN, 'candidate_format': FORMAT, 'choices': [{
+            'finish_reason': 'stop', 'message': {'role': 'assistant',
+                'content': json.dumps(reply, ensure_ascii=False)},
+        }]})
+
+    monkeypatch.setenv('COCOLON_EMLIS_GROUNDED_OBSERVATION', 'true')
+    monkeypatch.setenv('COCOLON_EMLIS_GROUNDED_DECODING', 'true')
+    source = SelfHostedNaturalReplySource(endpoint='https://model.invalid/v1/chat/completions',
+        model=QWEN, api_key='synthetic-only', transport=httpx.MockTransport(infer))
+    owner = _active_application_owner(monkeypatch, source, 'paid')
+    dto = run(owner.start(user, parent))
+    assert dto['state'] == 'COMPLETED' and dto['pending_question'] is None
+    assert dto['body_state'] == 'FINAL' and dto['current_observation']['text'].startswith(f'「{memo}」')
+    assert len(requests) == 1 and requests[0]['stage'] == 'FINAL' and not requests[0]['history']
+    saved = run(owner.store.read(user, input_id=parent))
+    received, = [row['payload'] for row in saved['events']
+                 if row['payload'].get('stage') == 'NATURAL_REPLY_RECEIVED']
+    assert received['writer_context_version'] == expected
+    assert run(owner.get(user, parent))['current_observation'] == dto['current_observation']
+    assert len(requests) == 1
+
+
+@pytest.mark.parametrize(('tier', 'history', 'action', 'memo', 'expected'), [
+    ('free', False, 'answer', ONE, grounded.RECEPTION_CONTEXT_VERSION),
+    ('plus', False, 'answer', ONE, grounded.RECEPTION_CONTEXT_VERSION),
+    ('premium', True, 'answer', ONE, grounded.CONSTRAINED_CONTEXT_VERSION),
+    ('premium', True, 'skip', ONE, grounded.RECEPTION_CONTEXT_VERSION),
+    ('premium', False, 'answer', ONE + '誘われたのに、悲しかった。', grounded.RECEPTION_CONTEXT_VERSION),
 ])
 def test_reception_selection_uses_admitted_material_and_persists_the_writer(
-        natural_questions, qdb, monkeypatch, tier, history, action, expected):
-    user, parent, _, _ = natural_questions(tier=tier)
+        natural_questions, qdb, monkeypatch, tier, history, action, memo, expected):
+    user, parent, _, _ = natural_questions(tier=tier, memo=memo)
     if history:
         past_record(qdb, user, monkeypatch)
     requests = []
@@ -123,13 +169,72 @@ def test_reception_selection_uses_admitted_material_and_persists_the_writer(
     stored = run(owner.store.read(user, input_id=parent))
     versions = [row['payload']['writer_context_version'] for row in stored['events']
                 if row['payload'].get('stage') == 'NATURAL_REPLY_RECEIVED']
-    assert versions == [grounded.CONSTRAINED_CONTEXT_VERSION, expected]
+    initial = (grounded.QUESTION_PREFACE_CONTEXT_VERSION if memo == ONE
+               else grounded.CONSTRAINED_CONTEXT_VERSION)
+    assert versions == [initial, expected]
 
     monkeypatch.delenv('COCOLON_EMLIS_GROUNDED_DECODING')
     restarted = _active_application_owner(monkeypatch, source, 'paid')
     reread = run(restarted.get(user, parent))
     assert reread['current_observation'] == closed['current_observation']
     assert reread['revision'] == closed['revision'] and len(requests) == 2
+
+
+@pytest.mark.parametrize(('follow', 'accepted'), [
+    ('あなたは資料を書かなかったのですね。', True),
+    ('あなたは資料を書いたのですね。', False),
+])
+def test_grounded_reply_checks_current_answer_polarity_before_saving(
+        natural_questions, monkeypatch, follow, accepted):
+    user, parent, _, _ = natural_questions()
+    authored = '私は資料を書かなかった。'
+    requests = []
+
+    def infer(request):
+        wire = json.loads(request.content)
+        material = json.loads(wire['messages'][-1]['content'])
+        requests.append(material)
+        text = follow if material['stage'] == 'REFINED' else 'お気持ちをEmlisは受け止めました。'
+        return httpx.Response(200, json={'model': QWEN, 'candidate_format': FORMAT, 'choices': [{
+            'finish_reason': 'stop', 'message': {'role': 'assistant',
+                'content': json.dumps({'follow': text}, ensure_ascii=False)},
+        }]})
+
+    monkeypatch.setenv('COCOLON_EMLIS_GROUNDED_OBSERVATION', 'true')
+    monkeypatch.setenv('COCOLON_EMLIS_GROUNDED_DECODING', 'true')
+    source = SelfHostedNaturalReplySource(endpoint='https://model.invalid/v1/chat/completions',
+        model=QWEN, api_key='synthetic-only', transport=httpx.MockTransport(infer))
+    owner = _active_application_owner(monkeypatch, source, None)
+    started = run(owner.start(user, parent))
+    result = run(answer(owner, user, started, authored))
+    assert requests[1]['quote']['text'] == authored
+    assert result['answer_saved']
+    assert result['state'] == ('COMPLETED' if accepted else 'RESPONSE_FAILED')
+    assert (result['current_observation'] is not None) == accepted
+
+    snapshot = run(owner.store.read(user, input_id=parent))
+    answer_event, = [event for event in snapshot['events'] if event['kind'] == 'ANSWER']
+    assert answer_event['payload']['source']['answer_text_private'] == authored
+    assert answer_event['question_id'] == started['pending_question']['question_id']
+    reread = run(owner.get(user, parent))
+    assert reread['current_observation'] == result['current_observation']
+    assert reread['revision'] == result['revision'] and len(requests) == 2
+
+
+@pytest.mark.parametrize(('follow', 'reason'), [
+    ('その時の気持ちを大切にしてください。', 'grounded_observation_directive'),
+    ('今もその気持ちが残っているのですね。', 'grounded_observation_unwritten_continuity'),
+    ('そのことを誰にも言わずにいたのですね。', 'grounded_observation_unwritten_disclosure'),
+])
+def test_question_preface_admission_uses_v5_checks_without_changing_older_versions(follow, reason):
+    passage = {'id': 'P1', 'text': ONE, 'field': 'memo', 'source_role': 'ORIGINAL_INPUT'}
+    writer = {'records': [{'active_fields': [passage]}], 'grounded_passages': [passage],
+              'source_context_version': grounded.QUESTION_PREFACE_CONTEXT_VERSION}
+    reply = grounded.compose(json.dumps({'follow': follow}, ensure_ascii=False), writer)
+    with pytest.raises(ValueError, match=reason):
+        grounded.read_reply(reply, writer)
+    for version in (grounded.CONSTRAINED_CONTEXT_VERSION, grounded.RECEPTION_CONTEXT_VERSION):
+        assert grounded.read_reply(reply, {**writer, 'source_context_version': version}) == follow
 
 
 @pytest.mark.parametrize('multi', [False, True])
@@ -215,21 +320,32 @@ def test_authenticated_marker_is_distinct_from_ordinary_natural_piece_and_analys
         worker.join(3)
 
 
-@pytest.mark.parametrize('constrained', [False, True])
+@pytest.mark.parametrize(('version', 'memo'), [
+    (grounded.CONTEXT_VERSION, MEMO),
+    (grounded.CONSTRAINED_CONTEXT_VERSION, MEMO),
+    (grounded.CONSTRAINED_CONTEXT_VERSION, ONE),
+    (grounded.QUESTION_PREFACE_CONTEXT_VERSION, ONE),
+])
 def test_grounded_receipts_keep_their_exact_messages_when_flag_changes(
-        natural_case, qdb, monkeypatch, constrained):
+        natural_case, qdb, monkeypatch, version, memo):
     user, parent, _, _ = natural_case
-    qdb.query("update public.emotions set memo=$2,memo_action='' where id=$1", [parent, MEMO])
+    qdb.query("update public.emotions set memo=$2,memo_action='' where id=$1", [parent, memo])
+    constrained = version != grounded.CONTEXT_VERSION
+    legacy_question = memo == ONE and version == grounded.CONSTRAINED_CONTEXT_VERSION
+    supports_question_preface = grounded.supports_question_preface
+    if legacy_question:
+        monkeypatch.setattr(grounded, 'supports_question_preface', lambda passage: False)
+    follow = FOLLOW if memo == MEMO else '率直なお気持ちをEmlisは受け止めました。'
     calls = []
     failed = False
 
     def infer(request):
         payload = json.loads(request.content)
         calls.append(payload)
-        assert payload["messages"] == _messages_for_same_current_record(payload)
+        assert payload["messages"] == _messages_for_same_current_record(payload, version, memo)
         assert payload.get('candidate_format') == (FORMAT if constrained else None)
         result = {'model': QWEN, 'choices': [{'finish_reason': 'stop',
-            'message': {'role': 'assistant', 'content': json.dumps({'follow': FOLLOW}, ensure_ascii=False)}}]}
+            'message': {'role': 'assistant', 'content': json.dumps({'follow': follow}, ensure_ascii=False)}}]}
         if constrained:
             result['candidate_format'] = FORMAT
         return httpx.Response(200, json=result)
@@ -252,27 +368,27 @@ def test_grounded_receipts_keep_their_exact_messages_when_flag_changes(
     before = run(service.store.read(user, input_id=parent))
     receipt = next(event['payload'] for event in before['events']
                    if event['payload'].get('stage') == 'NATURAL_REPLY_RECEIVED')
-    assert receipt['writer_context_version'] == (
-        grounded.CONSTRAINED_CONTEXT_VERSION if constrained else grounded.CONTEXT_VERSION)
+    assert receipt['writer_context_version'] == version
 
-    monkeypatch.setenv("COCOLON_EMLIS_GROUNDED_DECODING", "" if constrained else "true")
+    monkeypatch.setattr(grounded, 'supports_question_preface', supports_question_preface)
+    monkeypatch.setenv("COCOLON_EMLIS_GROUNDED_DECODING", "true" if legacy_question or not constrained else "")
     restarted = _active_application_owner(monkeypatch, source, None)
     saved = run(restarted.action(user, failed_reply['thread_id'], action='retry_response',
         expected_revision=failed_reply['revision'], idempotency_key='restore-received-reply',
         operation_id=failed_reply['operation_id']))
-    assert saved['current_observation']['text'] == f'「{MEMO}」\n\n{FOLLOW}'
+    assert saved['current_observation']['text'] == f'「{memo}」\n\n{follow}'
     reread = run(restarted.get(user, parent))
     assert reread['current_observation'] == saved['current_observation']
     assert reread['revision'] == saved['revision'] and len(calls) == 1
 
 
-def _messages_for_same_current_record(payload):
+def _messages_for_same_current_record(payload, version, memo):
     material = json.loads(payload["messages"][1]["content"])
     writer = {'records': [material['current']], 'user_frame_feedback': [],
-              'grounded_passages': [{'id': 'P1', 'text': MEMO, 'field': 'memo',
+              'grounded_passages': [{'id': 'P1', 'text': memo, 'field': 'memo',
                                     'source_role': 'ORIGINAL_INPUT'}],
-              'source_context_version': (grounded.CONSTRAINED_CONTEXT_VERSION if 'candidate_format' in payload
-                                         else grounded.CONTEXT_VERSION)}
+              'response_purpose': {'stage': 'FINAL' if memo == MEMO else 'PRE_QUESTION'},
+              'source_context_version': version}
     return grounded.messages(writer)
 
 
