@@ -7,7 +7,9 @@ import re
 CONTEXT_VERSION = "bound_passage_listener.v3"
 CONSTRAINED_CONTEXT_VERSION = "bound_passage_listener.v4"
 SEMANTIC_CONTEXT_VERSION = "bound_passage_listener.v5"
-CONSTRAINED_CONTEXT_VERSIONS = {CONSTRAINED_CONTEXT_VERSION, SEMANTIC_CONTEXT_VERSION}
+EVIDENCE_CONTEXT_VERSION = "bound_passage_listener.v6"
+SEMANTIC_CONTEXT_VERSIONS = {SEMANTIC_CONTEXT_VERSION, EVIDENCE_CONTEXT_VERSION}
+CONSTRAINED_CONTEXT_VERSIONS = {CONSTRAINED_CONTEXT_VERSION, *SEMANTIC_CONTEXT_VERSIONS}
 CONTEXT_VERSIONS = {CONTEXT_VERSION, *CONSTRAINED_CONTEXT_VERSIONS}
 CONSTRAINED_CANDIDATE_FORMAT = "emlis.grounded_observation.v1"
 
@@ -85,7 +87,7 @@ def messages(writer):
         system += _QUESTION_STAGE
     elif stage == "REFINED":
         system += _ANSWER_STAGE
-    if writer.get("source_context_version") == SEMANTIC_CONTEXT_VERSION:
+    if writer.get("source_context_version") in SEMANTIC_CONTEXT_VERSIONS:
         system += _SEMANTIC_SYSTEM
         if stage == "PRE_QUESTION":
             system += _SEMANTIC_QUESTION_STAGE
@@ -187,7 +189,7 @@ def read_reply(text, writer):
             if (_VIVID_MEMORY_RECAST.search(follow)
                     and not re.search(r"覚え|思い出|記憶に", current_text)):
                 raise ValueError("grounded_observation_unwritten_memory")
-            if writer.get("source_context_version") == SEMANTIC_CONTEXT_VERSION:
+            if writer.get("source_context_version") in SEMANTIC_CONTEXT_VERSIONS:
                 if _RECIPIENT_DIRECTIVE.search(follow):
                     raise ValueError("grounded_observation_directive")
                 if (_CONTINUED_REACTION.search(follow)

@@ -515,16 +515,66 @@ def _compatible_event_scope(source, reply):
     return True
 
 
-def compare_reply_meaning(material_json: str, reply_text: str, source_prefix_ref: str) -> MeaningComparison:
+def _visible_source_paths(material, writer):
+    originals = [("current", material["current"])]
+    originals.extend((f"past_user_records[{index}].original", row["original"])
+                     for index, row in enumerate(material.get("past_user_records", ())))
+    return {
+        f"{prefix}.{field['field_path']}"
+        for (prefix, original), record in zip(originals, writer["records"])
+        if record["scope"] == ("CURRENT_INPUT" if prefix == "current" else "PAST_RECORD")
+        and record["metadata"].get("created_at") == original.get("created_at")
+        for field in record["active_fields"]
+        if field["source_role"] == "ORIGINAL_INPUT"
+        and field["text"] == original.get(field["field_path"])
+    }
+
+
+def _active_answer_witnesses(material, writer, analysis, source_prefix_ref):
+    """Require the active field and a typed claim to cover the exact written clause."""
+    answers = material.get("current_answers", ())
+    if (not answers or analysis.get("source_prefix_ref") != source_prefix_ref
+            or analysis.get("coverage", {}).get("active_state") != "RESOLVED"):
+        return ()
+    index = len(answers) - 1
+    latest = answers[index]
+    text = latest["text"]
+    if not any(row["source_role"] == "SUPPLEMENTAL_ANSWER" and row["text"] == text
+               for row in writer["grounded_passages"]):
+        return ()
+    fields = {row["field"] for row in analysis["active_fields"]
+              if row["source_role"] == "SUPPLEMENTAL_ANSWER"
+              and row["source_id"] == latest["answer_id"] and row["field_path"] == "memo"
+              and (row["scalar_start"], row["scalar_end"]) == (0, len(text)) and row["text"] == text}
+    claims = {(row["scalar_start"], row["scalar_end"], row["quote"],
+               row["proposition"]["predicate_lemma"], row["proposition"]["polarity"],
+               row["proposition"]["modality"], row["proposition"]["temporal_scope"])
+              for row in (analysis.get("source_duties") or {}).get("claims", ())
+              if row["field"] in fields and row["source_role"] == "SUPPLEMENTAL_ANSWER"}
+    rows, _ = _clauses(text, f"current_answers[{index}].text", "CURRENT")
+    return tuple(replace(row, source_role="SUPPLEMENTAL_ANSWER", source_id=latest["answer_id"],
+                         parent_input_id=material["current_input_id"], source_recorded_at=latest["recorded_at"])
+                 for row in rows
+                 if (row.scalar_start, row.scalar_end, row.raw_text, row.predicate,
+                     row.polarity, row.modality, row.temporal_scope) in claims)
+
+
+def compare_reply_meaning(material_json: str, reply_text: str, source_prefix_ref: str, *,
+                          grounded_writer=None, analysis_material=None) -> MeaningComparison:
     """Read final free text independently and compare only unique witnesses.
 
-    Unmatched prose and permitted omission never become semantic failure.
-    Source/JSON/integrity errors deliberately propagate to their caller.
+    Unmatched prose and permitted omission remain unassessed. Grounded
+    admission only compares originals visible to the writer and the latest
+    answer's independently proved active text.
     """
     if not isinstance(material_json, str) or not isinstance(reply_text, str) or not isinstance(source_prefix_ref, str) or not source_prefix_ref:
         raise ValueError("natural_meaning_material_invalid")
     material = json.loads(material_json)
     sources, excluded = _source_witnesses(material)
+    if grounded_writer is not None:
+        visible_paths = _visible_source_paths(material, grounded_writer)
+        sources = tuple(source for source in sources if source.source_path in visible_paths)
+        sources += _active_answer_witnesses(material, grounded_writer, analysis_material or {}, source_prefix_ref)
     replies, segment_count = _clauses(reply_text, "reply", "REPLY", reply=True)
     checks = []
     for reply in replies:

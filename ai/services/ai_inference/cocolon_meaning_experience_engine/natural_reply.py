@@ -779,7 +779,7 @@ def prepare_natural_reply(request, *, use_meaning_support=False, response_stage=
     writer = {'schema_version': ACTIVE_MEANING_PROFILE, 'records': records,
         'user_frame_feedback': _active_writer_feedback(material['user_frame_feedback'], record_numbers)}
     if use_grounded_observation and not admitted.control.interpretation_corrections:
-        semantic_context = grounded_context_version == grounded_observation_reply.SEMANTIC_CONTEXT_VERSION
+        semantic_context = grounded_context_version in grounded_observation_reply.SEMANTIC_CONTEXT_VERSIONS
         scoped_answer = semantic_context and response_stage == "REFINED"
         if grounded_current_only or response_stage == "PRE_QUESTION" or scoped_answer:
             writer.update(records=records[:1], user_frame_feedback=[])
@@ -1307,7 +1307,7 @@ def validate_reply(reply, request, *, allow_verified_history=False):
 
         try:
             grounded_text = reply.text
-            if (allow_verified_history and context_version == grounded_observation_reply.SEMANTIC_CONTEXT_VERSION
+            if (allow_verified_history and context_version in grounded_observation_reply.SEMANTIC_CONTEXT_VERSIONS
                     and writer.get('history_line')):
                 grounded_text = grounded_text.removesuffix("\n\n" + writer['history_line'])
             follow = grounded_observation_reply.read_reply(grounded_text, writer)
@@ -1322,7 +1322,14 @@ def validate_reply(reply, request, *, allow_verified_history=False):
             raise _NaturalReplyValidationError('grounded_observation_voice')
         # The existing finite reader can contradict a generated claim; lack
         # of coverage from it does not attest to the quality of free prose.
-        if compare_reply_meaning(request.material_json, follow, request.source_prefix_ref).verdict == "CONFLICT":
+        comparison_scope = {}
+        if context_version == grounded_observation_reply.EVIDENCE_CONTEXT_VERSION:
+            comparison_scope = {
+                "grounded_writer": writer,
+                "analysis_material": json.loads(request.analysis_material_json or "{}"),
+            }
+        if compare_reply_meaning(request.material_json, follow, request.source_prefix_ref,
+                                 **comparison_scope).verdict == "CONFLICT":
             raise _NaturalReplyValidationError('grounded_observation_meaning_conflict')
     if (context_version in {DIRECT_FEELING_CORRECTION_VOICE_CONTEXT_VERSION,
                             DIRECT_FEELING_CORRECTION_RECIPIENT_CONTEXT_VERSION,

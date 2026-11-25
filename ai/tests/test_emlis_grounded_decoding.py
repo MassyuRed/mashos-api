@@ -146,7 +146,7 @@ def test_authenticated_marker_is_distinct_from_ordinary_natural_piece_and_analys
 
 
 @pytest.mark.parametrize('version', [grounded.CONTEXT_VERSION, grounded.CONSTRAINED_CONTEXT_VERSION,
-                                     grounded.SEMANTIC_CONTEXT_VERSION])
+                                     grounded.SEMANTIC_CONTEXT_VERSION, grounded.EVIDENCE_CONTEXT_VERSION])
 def test_grounded_receipts_keep_their_exact_messages_when_flag_changes(
         natural_case, qdb, monkeypatch, version):
     user, parent, _, _ = natural_case
@@ -176,7 +176,10 @@ def test_grounded_receipts_keep_their_exact_messages_when_flag_changes(
     monkeypatch.setattr(emlis_thread_store, "sb_post_rpc", rpc)
     monkeypatch.setenv("COCOLON_EMLIS_GROUNDED_OBSERVATION", "true")
     monkeypatch.setenv("COCOLON_EMLIS_GROUNDED_DECODING", "true" if constrained else "")
-    monkeypatch.setenv("COCOLON_EMLIS_GROUNDED_SEMANTICS", "true" if version == grounded.SEMANTIC_CONTEXT_VERSION else "")
+    semantic = version in grounded.SEMANTIC_CONTEXT_VERSIONS
+    monkeypatch.setenv("COCOLON_EMLIS_GROUNDED_SEMANTICS", "true" if semantic else "")
+    monkeypatch.setenv("COCOLON_EMLIS_GROUNDED_EVIDENCE_VALIDATION",
+                       "true" if version == grounded.EVIDENCE_CONTEXT_VERSION else "")
     source = SelfHostedNaturalReplySource(endpoint='https://model.invalid/v1/chat/completions',
         model=QWEN, api_key='synthetic-only', transport=httpx.MockTransport(infer))
     service = _active_application_owner(monkeypatch, source, None)
@@ -188,7 +191,8 @@ def test_grounded_receipts_keep_their_exact_messages_when_flag_changes(
     assert receipt['writer_context_version'] == version
 
     monkeypatch.setenv("COCOLON_EMLIS_GROUNDED_DECODING", "" if constrained else "true")
-    monkeypatch.setenv("COCOLON_EMLIS_GROUNDED_SEMANTICS", "" if version == grounded.SEMANTIC_CONTEXT_VERSION else "true")
+    monkeypatch.setenv("COCOLON_EMLIS_GROUNDED_SEMANTICS", "" if semantic else "true")
+    monkeypatch.delenv("COCOLON_EMLIS_GROUNDED_EVIDENCE_VALIDATION")
     restarted = _active_application_owner(monkeypatch, source, None)
     saved = run(restarted.action(user, failed_reply['thread_id'], action='retry_response',
         expected_revision=failed_reply['revision'], idempotency_key='restore-received-reply',
@@ -206,6 +210,62 @@ def _messages_for_same_current_record(payload, version):
                                     'source_role': 'ORIGINAL_INPUT'}],
               'source_context_version': version}
     return grounded.messages(writer)
+
+
+@pytest.mark.parametrize(('version', 'follow', 'saved'), [
+    (grounded.SEMANTIC_CONTEXT_VERSION, 'あなたは資料を書いたのですね。', True),
+    (grounded.EVIDENCE_CONTEXT_VERSION, 'あなたは資料を書かなかったのですね。', True),
+    (grounded.EVIDENCE_CONTEXT_VERSION, 'あなたは資料を書いたのですね。', False),
+])
+def test_grounded_admission_checks_only_proved_answer_facts(
+        natural_case, qdb, monkeypatch, version, follow, saved):
+    user, parent, _, _ = natural_case
+    qdb.query("update public.emotions set memo=$2,memo_action='' where id=$1",
+              [parent, '誘われたのに、嬉しくなかった。'])
+    authored = '私は資料を書かなかった。'
+    calls = []
+
+    def infer(request):
+        payload = json.loads(request.content)
+        wire = json.loads(payload['messages'][1]['content'])
+        calls.append(wire)
+        assert payload['candidate_format'] == FORMAT
+        result = follow if len(calls) == 2 else '聞かせてくださったことに、Emlisは耳を傾けています。'
+        return httpx.Response(200, json={'model': QWEN, 'candidate_format': FORMAT,
+            'choices': [{'finish_reason': 'stop', 'message': {'role': 'assistant',
+                'content': json.dumps({'follow': result}, ensure_ascii=False)}}]})
+
+    for flag in ('OBSERVATION', 'DECODING', 'SEMANTICS'):
+        monkeypatch.setenv(f'COCOLON_EMLIS_GROUNDED_{flag}', 'true')
+    monkeypatch.setenv('COCOLON_EMLIS_GROUNDED_EVIDENCE_VALIDATION',
+                       'true' if version == grounded.EVIDENCE_CONTEXT_VERSION else '')
+    source = SelfHostedNaturalReplySource(endpoint='https://model.invalid/v1/chat/completions',
+        model=QWEN, api_key='synthetic-only', transport=httpx.MockTransport(infer))
+    owner = _active_application_owner(monkeypatch, source, None)
+    initial = run(owner.start(user, parent))
+    assert initial['state'] == 'AWAITING_ANSWER'
+    result = run(answer(owner, user, initial, authored))
+    assert len(calls) == 2 and calls[1]['stage'] == 'REFINED'
+    assert calls[1]['quote']['text'] == authored
+    assert result['answer_saved']
+    snapshot = run(owner.store.read(user, input_id=parent))
+    assert [event['payload']['source']['answer_text_private'] for event in snapshot['events']
+            if event['kind'] == 'ANSWER'] == [authored]
+    received = [e['payload'] for e in snapshot['events']
+                if e['payload'].get('stage') == 'NATURAL_REPLY_RECEIVED'
+                and e['operation_id'] == result['operation_id']]
+    if saved:
+        receipt, = received
+        assert receipt['writer_context_version'] == version
+        assert result['state'] == 'COMPLETED'
+        assert result['current_observation']['text'] == f'「{authored}」\n\n{follow}'
+    else:
+        assert not received and result['state'] == 'RESPONSE_FAILED'
+        assert result['current_observation'] is None
+    reread = run(owner.get(user, parent))
+    assert reread['state'] == result['state'] and reread['revision'] == result['revision']
+    assert reread['current_observation'] == result['current_observation']
+    assert len(calls) == 2
 
 
 @pytest.mark.parametrize('response_marker', [None, probe.PIECE_CANDIDATE_FORMAT, 'legacy_http_400'])

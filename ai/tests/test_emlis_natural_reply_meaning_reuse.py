@@ -121,6 +121,21 @@ def test_admitted_past_is_separate_and_duplicate_sources_are_not_arbitrarily_sel
     assert compare(value, "あなたは友人に頼まれたのですね。").verdict == "UNASSESSED"
 
 
+def test_grounded_admission_uses_only_history_in_the_writer_material():
+    source = "私は資料を書かなかった。"
+    reply = "あなたは資料を書いたのですね。"
+    value = material("褒められたのに、嬉しくなかった。")
+    value["past_user_records"] = [dict(input_id="past-input", original=dict(memo=source), answers=[])]
+    current = dict(scope="CURRENT_INPUT", metadata={}, active_fields=[])
+    past = dict(scope="PAST_RECORD", metadata={}, active_fields=[dict(
+        source_role="ORIGINAL_INPUT", field_path="memo", text=source)])
+    assert compare(value, reply).verdict == "CONFLICT"
+    for records, verdict in [([current], "UNASSESSED"), ([current, past], "CONFLICT")]:
+        report = compare_reply_meaning(json.dumps(value, ensure_ascii=False), reply, "admitted-prefix",
+                                       grounded_writer=dict(records=records))
+        assert report.verdict == verdict
+
+
 @pytest.mark.parametrize("change", ["answer", "revised", "rejected"])
 def test_unresolved_update_cannot_reactivate_an_old_source_witness(change):
     value = material("私は友人に頼まれた。")

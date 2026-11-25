@@ -358,7 +358,8 @@ class EmlisThreadService:
                  natural_reply_source=None, response_profile=None, natural_questions_enabled=True,
                  natural_meaning_profile=ACTIVE_MEANING_PROFILE, natural_context_update_enabled=True,
                  natural_context_update_paid_only=False, initial_observation_follow_enabled=False,
-                 grounded_observation_enabled=False, grounded_decoding_enabled=False, grounded_semantics_enabled=False):
+                 grounded_observation_enabled=False, grounded_decoding_enabled=False, grounded_semantics_enabled=False,
+                 grounded_evidence_validation_enabled=False):
         if runtime_profile not in {RUNTIME_PROFILE, Q3_PROFILE}:
             raise ValueError("unsupported_thread_profile")
         if natural_reply_source is not None:
@@ -379,11 +380,13 @@ class EmlisThreadService:
             raise ValueError("initial_observation_follow_setting_invalid")
         self.initial_observation_follow_enabled = initial_observation_follow_enabled
         if not all(type(enabled) is bool for enabled in
-                   (grounded_observation_enabled, grounded_decoding_enabled, grounded_semantics_enabled)):
+                   (grounded_observation_enabled, grounded_decoding_enabled, grounded_semantics_enabled,
+                    grounded_evidence_validation_enabled)):
             raise ValueError("grounded_observation_setting_invalid")
         self.grounded_observation_enabled = grounded_observation_enabled
         self.grounded_decoding_enabled = grounded_decoding_enabled
         self.grounded_semantics_enabled = grounded_semantics_enabled
+        self.grounded_evidence_validation_enabled = grounded_evidence_validation_enabled
         if natural_meaning_profile not in {None, ACTIVE_MEANING_PROFILE}:
             raise ValueError('natural_reply_meaning_profile_invalid')
         self.natural_meaning_profile = natural_meaning_profile
@@ -1067,6 +1070,8 @@ class EmlisThreadService:
         elif self.grounded_decoding_enabled:
             grounded_version = (grounded_observation_reply.SEMANTIC_CONTEXT_VERSION if self.grounded_semantics_enabled
                                 else grounded_observation_reply.CONSTRAINED_CONTEXT_VERSION)
+            if self.grounded_semantics_enabled and self.grounded_evidence_validation_enabled:
+                grounded_version = grounded_observation_reply.EVIDENCE_CONTEXT_VERSION
         material, safety = prepare_natural_reply(_request(snapshot), response_stage=response_stage,
             bind_writer_context=context_version is not None,
             include_corrected_circumstance=context_version == CORRECTED_SOURCE_CONTEXT_VERSION,
@@ -1110,7 +1115,7 @@ class EmlisThreadService:
                 raise NaturalReplyError('natural_reply_writer_identity_changed')
 
         history_validation = ({"allow_verified_history": True}
-            if history_line and writer_context == grounded_observation_reply.SEMANTIC_CONTEXT_VERSION else {})
+            if history_line and writer_context in grounded_observation_reply.SEMANTIC_CONTEXT_VERSIONS else {})
 
         def with_history(reply):
             try:
