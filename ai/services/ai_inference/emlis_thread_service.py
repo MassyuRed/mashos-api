@@ -1086,6 +1086,7 @@ class EmlisThreadService:
             grounded_current_only=bool(t["data"].get("natural_question_stop")
                                        and not t.get("latest_answer_event_id")),
             select_grounded_self_insight=(prior is None and self.grounded_decoding_enabled),
+            check_initial_availability=(prior is None and self.grounded_decoding_enabled),
             direct_feeling_correction_context_version=direct_version,
             prepared_meaning=prepared_meaning,
             meaning_profile=t['data'].get('natural_meaning_profile'), owner_scope=user_id,

@@ -469,3 +469,47 @@ def test_client_rejects_unavailable_or_unconfirmed_decoder_with_one_call(
     assert reply['current_observation'] is None
     assert run(service.get(user, parent))['current_observation'] is None
     assert len(calls) == 1
+
+
+@pytest.mark.parametrize(('ability', 'follow', 'accepted'), [
+    ('使えない', '隣室の利用制限が解除されたことで、安心されたのですね。', False),
+    ('使えない', '明日は使えると知った今朝のお話を聞けて嬉しいです。', False),
+    ('使えない', '明日は使えなくなったと聞いたときのこと、Emlisは受け取りました。', False),
+    ('使える', '明日は利用できないと聞いて、ほっとされたのですね。', False),
+    ('使えない', '明日は利用できないという知らせにほっとされたこと、Emlisは大事に受け取りました。', True),
+    ('使える', '明日の利用ができると今朝知らされたときの安堵を、Emlisは受け取りました。', True),
+])
+def test_initial_notice_admission_rejects_inversion_without_changing_the_writer(
+        natural_case, qdb, monkeypatch, ability, follow, accepted):
+    user, parent, _, _ = natural_case
+    memo = f'明日は隣の部屋を{ability}と今朝知らされ、私はほっとしました。'
+    assert 'code' not in qdb.query(
+        "update public.emotions set memo=$2,memo_action='' where id=$1", [parent, memo])
+    calls = []
+
+    def infer(request):
+        wire = json.loads(request.content)
+        material = json.loads(wire['messages'][1]['content'])
+        assert wire['candidate_format'] == FORMAT and wire['messages'][0]['content'].startswith(grounded._SYSTEM)
+        assert material['stage'] == 'FINAL' and material['quote']['text'] == memo
+        assert 'initial_availability_notice' not in wire['messages'][1]['content']
+        assert material['current']['active_fields'][0]['text'] == memo
+        calls.append(material)
+        return httpx.Response(200, json={'model': QWEN, 'candidate_format': FORMAT, 'choices': [{
+            'finish_reason': 'stop', 'message': {'role': 'assistant',
+                'content': json.dumps({'follow': follow}, ensure_ascii=False)},
+        }]})
+
+    for flag in ('COCOLON_EMLIS_GROUNDED_OBSERVATION', 'COCOLON_EMLIS_GROUNDED_DECODING'):
+        monkeypatch.setenv(flag, 'true')
+    source = SelfHostedNaturalReplySource(endpoint='https://model.invalid/v1/chat/completions',
+        model=QWEN, api_key='synthetic-only', transport=httpx.MockTransport(infer))
+    owner = _active_application_owner(monkeypatch, source, 'paid')
+    dto = run(owner.start(user, parent))
+    expected = f'「{memo}」\n\n{follow}' if accepted else None
+    observed = dto['current_observation']['text'] if dto['current_observation'] else None
+    assert observed == expected
+    assert dto['state'] == ('COMPLETED' if accepted else 'RESPONSE_FAILED')
+    reread = run(owner.get(user, parent))
+    assert reread['current_observation'] == dto['current_observation'] and reread['revision'] == dto['revision']
+    assert len(calls) == 1

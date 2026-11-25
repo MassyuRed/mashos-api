@@ -185,6 +185,14 @@ _INITIAL_SCENE = re.compile(
 _INITIAL_BARE_FEELING = re.compile(
     rf"(?:{_INITIAL_SELF_TOPIC})?(?P<feeling>(?:(?:少し|少しだけ|ちょっと|とても|本当に|すごく)\s*)?(?:{_INITIAL_FEELING}))")
 _INITIAL_FEELING_ENDING = re.compile(rf"(?:大?好き(?:だ|です|でした|だった)|{_INITIAL_FEELING})\s*[。！？]*\Z")
+_INITIAL_NOTICE_WITH_FEELING = re.compile(
+    rf"(?P<notice>[^。！？\r\n]{{1,172}})[、，,]\s*{_INITIAL_SELF_TOPIC}{_INITIAL_FEELING}")
+_FOLLOW_AVAILABILITY = re.compile(
+    r"(?:使え|(?:利用|使用)(?:が)?でき)(?P<verdict>なかった|なく|ない|ません|る(?!とは|か|わけでは)|た|ます(?!か))")
+_FOLLOW_AVAILABILITY_CHANGE = re.compile(
+    r"(?:制限|規制|禁止)[^。！？\n]{0,12}(?:解除|廃止|外れ|なくな[っり])"
+    r"|解禁(?:された|になっ|になり)|(?:利用|使用)許可が(?:下り|降り|取り消)"
+    r"|(?:使え|(?:利用|使用)(?:が)?でき)(?:るようにな[っり]|なくな[っり])")
 _INITIAL_FOLLOW_OWN_VOICE = re.compile(
     r"(?:^|[。．.!！、，,\n])[ \t]*(?:私|わたし|僕|ぼく|俺|おれ)(?:は|も|が)")
 _INITIAL_FOLLOW_FALSE_WITNESS = re.compile(
@@ -669,6 +677,7 @@ def prepare_natural_reply(request, *, use_meaning_support=False, response_stage=
                           grounded_context_version=grounded_observation_reply.CONTEXT_VERSION,
                           select_grounded_reception=False,
                           select_grounded_self_insight=False,
+                          check_initial_availability=False,
                           direct_feeling_correction_context_version=DIRECT_FEELING_CORRECTION_CONTEXT_VERSION):
     """Return admitted user material and the existing independent Safety result."""
     if response_stage not in _RESPONSE_STAGES:
@@ -798,6 +807,16 @@ def prepare_natural_reply(request, *, use_meaning_support=False, response_stage=
         if standalone_feeling:
             passages = [row for row in passages if row['field'] == 'memo']
         if passages:
+            # The notice is private admission evidence. The existing author
+            # wire and received or displayed reply stay byte-for-byte stable.
+            if (check_initial_availability and response_stage == "FINAL" and not grounded_current_only
+                    and not latest_answer and not admitted.control.question_control_context.issued_count
+                    and len(passages) == len(writer['records']) == 1 and not writer['user_frame_feedback']
+                    and passages[0]['field'] == 'memo' and not (original.get('memo_action') or '').strip()
+                    and passages[0]['text'] == (original.get('memo') or '').strip()):
+                notice = _initial_availability_content(passages[0]['text'])
+                if notice is not None:
+                    writer['initial_availability_notice'] = notice
             initial_self_insight = (
                 select_grounded_self_insight and response_stage == "FINAL" and not grounded_current_only
                 and admitted.original.emotion == '自己理解'
@@ -873,6 +892,25 @@ def prepare_natural_reply(request, *, use_meaning_support=False, response_stage=
         writer['response_purpose'] = material['response_purpose']
     return NaturalReplyInput(admitted.source_prefix_ref, _compact_json(material), meaning_profile,
         _compact_json(writer), _compact_json(active)), safety
+
+
+def _initial_availability_content(excerpt):
+    from .natural_reply_cognition import read_reported_availability
+
+    match = _INITIAL_NOTICE_WITH_FEELING.fullmatch(excerpt.removesuffix('。'))
+    notice = read_reported_availability(match['notice']) if match is not None else None
+    return notice['content'] if notice is not None else None
+
+
+def _validate_initial_availability_follow(follow, notice):
+    # One admitted event, no other relevant record or author-supplied cause.
+    # A notice about whether something is usable does not attest to a change.
+    known_unavailable = notice.endswith('ない')
+    if _FOLLOW_AVAILABILITY_CHANGE.search(follow):
+        raise _NaturalReplyValidationError('grounded_observation_unwritten_availability_change')
+    for claim in _FOLLOW_AVAILABILITY.finditer(follow):
+        if (claim['verdict'] in {'なかった', 'なく', 'ない', 'ません'}) != known_unavailable:
+            raise _NaturalReplyValidationError('grounded_observation_availability_polarity')
 
 
 def _initial_observation_follow(admitted, original, response_stage):
@@ -1319,6 +1357,8 @@ def validate_reply(reply, request, *, check_grounded_answer=False):
             follow = grounded_observation_reply.read_reply(reply.text, writer)
         except ValueError as exc:
             raise _NaturalReplyValidationError(str(exc)) from None
+        if 'initial_availability_notice' in writer:
+            _validate_initial_availability_follow(follow, writer['initial_availability_notice'])
         focus = writer.get('initial_observation_follow')
         if focus is not None:
             _validate_initial_observation_follow(follow, focus, INITIAL_OBSERVATION_FOLLOW_CONTEXT_VERSION)

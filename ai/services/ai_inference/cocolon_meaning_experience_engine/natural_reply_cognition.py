@@ -56,6 +56,10 @@ _UNQUALIFIED_CONTEXT = re.compile(
 )
 _DAY = re.compile(r"^(一昨日|昨日|今日|明日|明後日)")
 _DAY_OFFSET = {"一昨日": -2, "昨日": -1, "今日": 0, "明日": 1, "明後日": 2}
+_REPORTED_AVAILABILITY = re.compile(
+    r"(?P<content>(?P<content_time>今日|きょう|明日|あした|あす|明後日|来週|来月|翌日)(?:は|から|に)"
+    r"[、，,]?" + _NOUN_PHRASE + r"(?:を|が)(?:使え|使用でき|利用でき)(?:る|ない))"
+    r"と(?P<knowledge_time>今朝|昨日|きのう|昨夜|今日|きょう|さっき)(?:知らされ|聞かされ)(?:て)?")
 
 
 def source_context_allows_finite_hints(*texts: str) -> bool:
@@ -63,6 +67,14 @@ def source_context_allows_finite_hints(*texts: str) -> bool:
     if any(not isinstance(text, str) for text in texts):
         raise ValueError("natural_cognition_source_invalid")
     return not any(_UNQUALIFIED_CONTEXT.search(text) for text in texts)
+
+
+def read_reported_availability(text: str) -> dict | None:
+    """Read an explicit, complete notice without asserting its later outcome."""
+    match = _REPORTED_AVAILABILITY.fullmatch(text)
+    if match is None or not source_context_allows_finite_hints(match['content']):
+        return None
+    return match.groupdict()
 
 
 def _part(source_text: str, start: int, end: int) -> dict:
