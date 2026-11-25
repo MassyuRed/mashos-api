@@ -214,7 +214,7 @@ def test_direct_transport_primary_structure_mode_requires_the_pinned_9b_alias(mo
     assert sources.analysis_model_primary_structure_reading(source) == enabled
 
 
-@pytest.mark.parametrize('fault', ['one_judgment', 'one_record', 'duplicate_quote', 'unrelated_cases',
+@pytest.mark.parametrize('fault', ['one_wish', 'one_record', 'duplicate_quote', 'unrelated_cases',
                                    'repeat_heading', 'raw_reference', 'raw_node_identifier',
                                    'raw_unit_identifier', 'question', 'copied_source',
                                    'multiple_record_self_report', 'multiple_record_single_scope', 'invented_force'])
@@ -223,8 +223,8 @@ def test_v3_keeps_the_graph_when_optional_structure_lacks_a_complete_reading(fau
     nodes = core._semantic_v4_join(plan, bodies)
     material = json.loads(p.material_json)
     axis = v3_reading()
-    if fault == 'one_judgment':
-        nodes[1]['units'][0]['source_mode'] = 'RECORDED'
+    if fault == 'one_wish':
+        nodes[1]['units'][0]['source_mode'] = 'PERSON_WISH'
     elif fault == 'one_record':
         axis['anchors'].pop()
     elif fault == 'unrelated_cases':
@@ -481,7 +481,7 @@ def test_v3_rejects_unwritten_priority_and_does_not_repeat_the_same_roots():
     assert [axis['title'] for axis in admitted] == [grounded['heading']]
 
 
-@pytest.mark.parametrize('shape', ['supported', 'reversed', 'thin', 'planned'])
+@pytest.mark.parametrize('shape', ['supported', 'recorded', 'reversed', 'thin', 'thin_recorded', 'planned'])
 def test_v3_only_keeps_independent_decisions_supported_by_original_conditions(shape):
     from analysis_plan_source_choices import WholeMapTitle
 
@@ -496,7 +496,7 @@ def test_v3_only_keeps_independent_decisions_supported_by_original_conditions(sh
         axis.update(case_reading='通路に置ける幅だったので小さい棚を買いました。'
                                  '通路をふさぐ幅でしたが通路への影響は問題ないと確かめ、大きい棚は買いませんでした。')
         label = '置ける幅で小さい棚を買ったが、通路をふさぐ幅でも問題ないため大きい棚を買わなかった。'
-    elif shape == 'thin':
+    elif shape in ('thin', 'thin_recorded'):
         notes = ['川を見た。', '紅茶を飲んだ。']
         axis.update(decision_factor='対象物', criterion='この二つの場面では、対象物で行為を選んでいます。',
                     case_reading='川という対象物は見ました。紅茶という対象物は飲みました。')
@@ -504,6 +504,9 @@ def test_v3_only_keeps_independent_decisions_supported_by_original_conditions(sh
     elif shape == 'planned':
         notes[1] = '通路をふさぐ幅だと確かめたので、私は大きい棚を買わないつもりだった。'
     prepared, plan, bodies = scenario(*notes, version='karen.v3')
+    if shape in ('recorded', 'thin_recorded'):
+        for node in bodies['nodes'].values():
+            node['units']['u1']['source_mode'] = 'RECORDED'
     material = json.loads(prepared.material_json)
     nodes = core._semantic_v4_join(plan, bodies)
     edge = {'from': 'n1', 'to': 'n2', 'from_unit': 'n1.u1', 'to_unit': 'n2.u1',
@@ -514,7 +517,40 @@ def test_v3_only_keeps_independent_decisions_supported_by_original_conditions(sh
                   overview=dict(node_refs=['n1', 'n2'], title_proposal='', title=WholeMapTitle(material, nodes).neutral))
     joined = core.semantic_node_local_v4_relations(prepared, plan, bodies, packet)
     assert [node['node_id'] for node in joined['nodes']] == ['n1', 'n2']
-    assert bool(joined['edges']) == (shape == 'supported')
-    assert bool(joined['overview']['primary_structures']) == (shape == 'supported')
+    assert bool(joined['edges']) == (shape in ('supported', 'recorded'))
+    assert bool(joined['overview']['primary_structures']) == (shape in ('supported', 'recorded'))
     assert packet['edges'] == [edge]
     assert packet['primary_structures'] == [axis]
+
+
+def test_v3_keeps_a_written_choice_when_its_optional_meaning_adds_an_action():
+    first = '通路に置ける幅だったので、私は小さい棚を買った。'
+    second = '通路をふさぐ幅だと確かめたので、私は大きい棚を買わなかった。'
+    prepared, plan, bodies = scenario(first, second, version='karen.v3')
+    material = json.loads(prepared.material_json)
+    for node in bodies['nodes'].values():
+        node.update(node_kind='CHOICE_OUTPUT', perspective='SELF')
+        node['units']['u1']['source_mode'] = 'RECORDED'
+    invented = '通路の寸法を確認し、小さい棚を選びました。'
+    grounded = '通路をふさぐ幅だと確認し、大きい棚を買いませんでした。'
+    bodies['nodes']['n1']['meaning'] = invented
+    bodies['nodes']['n2']['meaning'] = grounded
+    nodes = core._semantic_v4_join(plan, bodies)
+    packet = dict(schema_version=core._semantic_v4_schema('RELATIONS'), nodes_sha256=core.semantic_map_hash(nodes),
+                  qualification_review={}, edges=[], primary_structures=[],
+                  overview=dict(node_refs=['n1', 'n2'], title_proposal='', title='2件の記録を振り返って'))
+    joined = core.semantic_node_local_v4_relations(prepared, plan, bodies, packet)
+    assert [node['meaning'] for node in joined['nodes']] == ['', grounded]
+    assert [node['units'][0]['evidence'][0]['quote'] for node in joined['nodes']] == [first, second]
+    assert bodies['nodes']['n1']['meaning'] == invented
+    assert packet['nodes_sha256'] == core.semantic_map_hash(nodes)
+
+    sentences = core._semantic_display_sentences(material)
+    fields = material['fields']
+    left = core._bound_choice(fields[0], first, sentences)
+    right = core._bound_choice(fields[1], second, sentences)
+    assert core._choice_comparison_covers('通路に置ける幅で小さい棚を買いました。' + grounded, left, right)
+    assert not core._choice_comparison_covers('通路に置ける幅だと確かめて小さい棚を買いました。' + grounded, left, right)
+    assert not core._choice_comparison_covers('通路に置ける幅なので店員に話して買いました。' + grounded, left, right)
+    assert core._choice_added_action('妨げになる可能性を排除した。', second)
+    assert core._choice_added_action('通路をふさぐ幅か確認しなかった。', second)

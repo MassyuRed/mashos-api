@@ -3602,6 +3602,16 @@ _CHOICE_TERM = re.compile(r'[一-鿿々ァ-ヺー][ぁ-ゖ一-鿿々ァ-ヺー0-
 _CHOICE_CASE_BOUNDARY = re.compile(
     r'[。．.!！?？]|(?:一方|ですが|ものの)|(?<=[たす])が[、，,]|[、，,](?=[一-鿿々]{1,12}では)')
 _CHOICE_OUTPUT_CONTINUATION = re.compile(r'^(?:[、，,。．.\s]|$)')
+_CHOICE_ADDED_ACTIONS = (
+    re.compile(r'確かめ(?:た|て(?!いな)|る|ました)|確認(?:し(?:た|て(?!いな)|ました|[、，,])|する|された|をした)'),
+    re.compile(r'確かめ(?:なかった|ていない|ません)|確認(?:しなかった|していない|しません|せず)'),
+    re.compile(r'(?:可能性|危険|支障|おそれ)(?:を|は|が)(?:排除した|なくした|消した)'),
+    re.compile(r'(?:と(?:言っ|話し|聞い|伝え)|に(?:相談し|話し|伝え)|から聞い)'),
+)
+
+
+def _choice_added_action(text, source):
+    return any(action.search(text) and not action.search(source) for action in _CHOICE_ADDED_ACTIONS)
 
 
 def _bound_choice(field, quote, sentences):
@@ -3640,7 +3650,7 @@ def _bound_choice(field, quote, sentences):
 
 def _choice_pairs(origins, sentences):
     choices = [(field['record'], choice) for node, unit, field, quote in origins
-               if node['perspective'] == 'SELF' and unit['source_mode'] in ('PERSON_JUDGMENT', 'DECIDED_PLAN')
+               if node['perspective'] == 'SELF' and unit['source_mode'] in ('RECORDED', 'PERSON_JUDGMENT')
                and (field['source_role'] == 'USER_DEEP_INSIGHT_ANSWER'
                     or field['source_role'] == 'ORIGINAL_INPUT' and field['field_path'] == 'memo')
                and (choice := _bound_choice(field, quote, sentences)) is not None]
@@ -3657,11 +3667,11 @@ def _choice_comparison_covers(text, left, right):
         return False
 
     def matched(choice, other):
-        condition, _, forms, continuative = choice
+        condition, action, forms, continuative = choice
         terms = {condition[i:i + 3] for i in range(len(condition) - 2)
                  if _CHOICE_TERM.fullmatch(condition[i:i + 3]) and condition[i:i + 3] not in other[0]}
         for i, clause in enumerate(clauses):
-            if not any(term in clause for term in terms):
+            if not any(term in clause for term in terms) or _choice_added_action(clause, f'{condition}、{action}'):
                 continue
             if (any(re.search(re.escape(form) + r'(?!かった|く|ら|り)', clause) for form in forms)
                     or continuative and any(_CHOICE_OUTPUT_CONTINUATION.match(clause[match.end():])
@@ -3697,6 +3707,23 @@ def _v3_decision_edges(edges, material, nodes):
                 retained.append(edge)
                 break
     return retained
+
+
+def _v3_grounded_choice_meanings(material, nodes):
+    """Withhold an unsupported optional reading after validating the raw NODES receipt."""
+    fields = {field['field']: field for field in material['fields']}
+    sentences = _semantic_display_sentences(material)
+    for node in nodes:
+        if (node['node_kind'], node['perspective']) != ('CHOICE_OUTPUT', 'SELF') or len(node['units']) != 1:
+            continue
+        unit = node['units'][0]
+        if not node['meaning'] or unit['source_mode'] != 'RECORDED' or len(unit['evidence']) != 1:
+            continue
+        root = unit['evidence'][0]
+        field, quote = fields[root['field']], root['quote']
+        if (field['source_role'] == 'ORIGINAL_INPUT' and field['field_path'] == 'memo'
+                and _choice_added_action(node['meaning'], quote) and _bound_choice(field, quote, sentences)):
+            node['meaning'] = ''
 
 
 def _primary_structure_text_key(text):
@@ -3991,6 +4018,8 @@ def semantic_node_local_v4_relations(prepared, plan, bodies, packet, *, ordered_
     if 'primary_structures' in packet:
         overview = dict(overview, primary_structures=_read_primary_structures(
             prepared, material, nodes, packet['primary_structures']))
+        if material.get('primary_structure_reading') == 'karen.v3':
+            _v3_grounded_choice_meanings(material, nodes)
     return dict(schema_version=SEMANTIC_MAP_NODE_LOCAL_V3_SCHEMA,
         nodes=nodes, edges=edges, overview=overview)
 
