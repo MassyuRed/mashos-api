@@ -993,7 +993,8 @@ def test_9b_initial_follow_uses_bound_focus_and_persists_literal(natural_case, q
         sent.append(body)
         assert body["model"] == QWEN_9B_NATURAL_ALIAS
         assert json.loads(body["messages"][-1]["content"]) == {
-            "本人が書いた一文": literal, "本人の気持ちの言葉": feeling, **focus}
+            "本人の気持ちの言葉": feeling, **focus}
+        assert "架空の別人の例" in body["messages"][0]["content"]
         return httpx.Response(200, json={"model": QWEN_9B_NATURAL_ALIAS, "choices": [
             {"finish_reason": "stop", "message": {"role": "assistant", "content": follow}}]})
 
@@ -1091,11 +1092,12 @@ def test_initial_follow_legacy_writer_retains_its_saved_message_shape():
     assert messages[0]["content"].startswith("文章の話し手はEmlis")
 
 
-def test_initial_follow_current_writer_keeps_v28_and_v29_replay_and_their_source_facts():
+def test_initial_follow_example_writer_preserves_archived_requests_and_separates_examples():
     from cocolon_meaning_experience_engine.natural_reply import (
         ACTIVE_MEANING_PROFILE, CONTEXTUAL_INITIAL_OBSERVATION_FOLLOW_CONTEXT_VERSION,
         GROUNDED_INITIAL_OBSERVATION_FOLLOW_CONTEXT_VERSION,
-        INITIAL_OBSERVATION_FOLLOW_CONTEXT_VERSION, build_natural_reply_messages)
+        INITIAL_OBSERVATION_FOLLOW_CONTEXT_VERSION, READER_INITIAL_OBSERVATION_FOLLOW_CONTEXT_VERSION,
+        build_natural_reply_messages)
 
     focus = {
         "kind": "理由", "excerpt": "明日の展示には参加できないと今日分かったので、私は悲しかったです。",
@@ -1106,17 +1108,23 @@ def test_initial_follow_current_writer_keeps_v28_and_v29_replay_and_their_source
         return build_natural_reply_messages(NaturalReplyInput("source", "{}", ACTIVE_MEANING_PROFILE,
             json.dumps({"source_context_version": version, "initial_observation_follow": focus})))
 
-    archived = messages(GROUNDED_INITIAL_OBSERVATION_FOLLOW_CONTEXT_VERSION)
-    encoded = json.dumps(archived, ensure_ascii=False, separators=(",", ":")).encode()
-    assert sha256(encoded).hexdigest() == "83b008c6956ccbbd879c420437be0c035f8b3e914a0d8c43b97e27ddced47554"
-    contextual = messages(CONTEXTUAL_INITIAL_OBSERVATION_FOLLOW_CONTEXT_VERSION)
-    assert contextual[1] == archived[1]
-    assert "別の人にもそのまま言える言葉なら" in contextual[0]["content"]
-    assert "いつ何を知ったか" in contextual[0]["content"]
+    archived_versions = {
+        GROUNDED_INITIAL_OBSERVATION_FOLLOW_CONTEXT_VERSION:
+            "83b008c6956ccbbd879c420437be0c035f8b3e914a0d8c43b97e27ddced47554",
+        CONTEXTUAL_INITIAL_OBSERVATION_FOLLOW_CONTEXT_VERSION:
+            "f601ae648a9cb34fa78302e54341bdb7b5a2b163c4dfc5915972ea4167116b23",
+        READER_INITIAL_OBSERVATION_FOLLOW_CONTEXT_VERSION:
+            "5278700b041eab9bf89f2b1601899aba9a00b0b6567277529c9c68cd80f954d5",
+    }
+    for version, expected in archived_versions.items():
+        encoded = json.dumps(messages(version), ensure_ascii=False, separators=(",", ":")).encode()
+        assert sha256(encoded).hexdigest() == expected
     candidate = messages(INITIAL_OBSERVATION_FOLLOW_CONTEXT_VERSION)
-    assert json.loads(candidate[1]["content"]) == {
-        "本人が書いた一文": focus["excerpt"], **json.loads(archived[1]["content"])}
-    assert "本人の気持ちは本人に属します" in candidate[0]["content"]
+    assert candidate[1] == messages(CONTEXTUAL_INITIAL_OBSERVATION_FOLLOW_CONTEXT_VERSION)[1]
+    assert json.loads(candidate[1]["content"])["知った内容"] == "明日の展示には参加できない"
+    assert "稽古に出られない" in candidate[0]["content"]
+    assert "稽古に出られる" in candidate[0]["content"]
+    assert "稽古" not in candidate[1]["content"]
 
 
 @pytest.mark.parametrize("thought,cues,follow,accepted", [
