@@ -811,7 +811,7 @@ def prepare_natural_reply(request, *, use_meaning_support=False, response_stage=
             if response_stage == "REFINED":
                 writer["ai_question_context"] = latest_answer["ai_question_context"]
                 if grounded_context_version in {grounded_observation_reply.ANSWER_FOCUS_CONTEXT_VERSION,
-                                                  grounded_observation_reply.LISTENER_CONTEXT_VERSION}:
+                                                *grounded_observation_reply.LISTENER_CONTEXT_VERSIONS}:
                     writer["answer_focus_original"] = _grounded_answer_original_evidence(
                         admitted, active, latest_answer)
             if scoped_answer:

@@ -146,7 +146,8 @@ def test_authenticated_marker_is_distinct_from_ordinary_natural_piece_and_analys
 
 
 @pytest.mark.parametrize('version', [grounded.CONTEXT_VERSION, grounded.CONSTRAINED_CONTEXT_VERSION,
-                                     grounded.SEMANTIC_CONTEXT_VERSION, grounded.LISTENER_CONTEXT_VERSION])
+                                     grounded.SEMANTIC_CONTEXT_VERSION, grounded.LEGACY_LISTENER_CONTEXT_VERSION,
+                                     grounded.LISTENER_CONTEXT_VERSION])
 def test_grounded_receipts_keep_their_exact_messages_when_flag_changes(
         natural_case, qdb, monkeypatch, version):
     user, parent, _, _ = natural_case
@@ -178,20 +179,33 @@ def test_grounded_receipts_keep_their_exact_messages_when_flag_changes(
     monkeypatch.setenv("COCOLON_EMLIS_GROUNDED_DECODING", "true" if constrained else "")
     monkeypatch.setenv("COCOLON_EMLIS_GROUNDED_SEMANTICS",
                        "true" if version in grounded.SEMANTIC_CONTEXT_VERSIONS else "")
-    monkeypatch.setenv("COCOLON_EMLIS_GROUNDED_LISTENER", "true" if version == grounded.LISTENER_CONTEXT_VERSION else "")
+    monkeypatch.setenv("COCOLON_EMLIS_GROUNDED_LISTENER",
+                       "true" if version in grounded.LISTENER_CONTEXT_VERSIONS else "")
     source = SelfHostedNaturalReplySource(endpoint='https://model.invalid/v1/chat/completions',
         model=QWEN, api_key='synthetic-only', transport=httpx.MockTransport(infer))
     service = _active_application_owner(monkeypatch, source, None)
-    failed_reply = run(service.start(user, parent))
+    from cocolon_meaning_experience_engine import natural_reply
+    prepare = natural_reply.prepare_natural_reply
+
+    def prepare_archived_request(request, **kwargs):
+        if kwargs.get("grounded_context_version") == grounded.LISTENER_CONTEXT_VERSION:
+            kwargs["grounded_context_version"] = grounded.LEGACY_LISTENER_CONTEXT_VERSION
+        return prepare(request, **kwargs)
+
+    with monkeypatch.context() as archived:
+        if version == grounded.LEGACY_LISTENER_CONTEXT_VERSION:
+            archived.setattr(natural_reply, "prepare_natural_reply", prepare_archived_request)
+        failed_reply = run(service.start(user, parent))
     assert failed_reply["can_retry"] and failed_reply["current_observation"] is None
     before = run(service.store.read(user, input_id=parent))
     receipt = next(event['payload'] for event in before['events']
                    if event['payload'].get('stage') == 'NATURAL_REPLY_RECEIVED')
     assert receipt['writer_context_version'] == version
 
-    monkeypatch.setenv("COCOLON_EMLIS_GROUNDED_DECODING", "" if constrained else "true")
-    monkeypatch.setenv("COCOLON_EMLIS_GROUNDED_SEMANTICS", "" if version in grounded.SEMANTIC_CONTEXT_VERSIONS else "true")
-    monkeypatch.setenv("COCOLON_EMLIS_GROUNDED_LISTENER", "")
+    if version != grounded.LEGACY_LISTENER_CONTEXT_VERSION:
+        monkeypatch.setenv("COCOLON_EMLIS_GROUNDED_DECODING", "" if constrained else "true")
+        monkeypatch.setenv("COCOLON_EMLIS_GROUNDED_SEMANTICS", "" if version in grounded.SEMANTIC_CONTEXT_VERSIONS else "true")
+        monkeypatch.setenv("COCOLON_EMLIS_GROUNDED_LISTENER", "")
     restarted = _active_application_owner(monkeypatch, source, None)
     saved = run(restarted.action(user, failed_reply['thread_id'], action='retry_response',
         expected_revision=failed_reply['revision'], idempotency_key='restore-received-reply',
@@ -275,7 +289,7 @@ def test_listener_omits_only_displayed_source_rows_from_the_ordinary_record():
     current = {'scope': 'CURRENT_INPUT', 'metadata': {'emotions': ['喜び']}, 'active_state': 'RESOLVED',
                'meaning_state': 'NOT_GENERATED',
                'active_fields': [{**other, 'field_path': 'memo', 'text': MEMO}, other]}
-    writer = {'records': [current], 'user_frame_feedback': [], 'source_context_version': grounded.LISTENER_CONTEXT_VERSION,
+    writer = {'records': [current], 'user_frame_feedback': [], 'source_context_version': grounded.LEGACY_LISTENER_CONTEXT_VERSION,
               'grounded_passages': [{'id': 'P1', 'field': 'memo', 'text': MEMO, 'source_role': 'ORIGINAL_INPUT'}]}
     messages = grounded.messages(writer)
     material = json.loads(messages[-1]['content'])
@@ -284,6 +298,57 @@ def test_listener_omits_only_displayed_source_rows_from_the_ordinary_record():
     assert messages[-1]['content'].count(MEMO) == 1
     current['active_state'] = 'PENDING'
     assert json.loads(grounded.messages(writer)[-1]['content'])['current'] == current
+
+
+def test_listener_readable_text_hides_only_emotion_selection():
+    metadata = {"created_at": "2026-11-24T14:00:00+00:00", "category": ["生活"],
+                "emotions": ["喜び"], "emotion_details": [{"type": "喜び", "strength": "medium"}]}
+    active = {"text": MEMO, "field_path": "memo", "source_role": "ORIGINAL_INPUT",
+              "recorded_at": "2026-11-23T14:00:00+00:00"}
+    current = {"scope": "CURRENT_INPUT", "metadata": metadata, "active_state": "PENDING", "active_fields": [],
+               "unresolved_sources": [{"source_role": "ORIGINAL_INPUT", "fields": {"memo": MEMO}}]}
+    historical = {"scope": "OWNED_HISTORY", "metadata": metadata, "active_fields": [active]}
+    textless = {**historical, "active_fields": []}
+    writer = {"records": [current, historical, textless], "user_frame_feedback": [],
+              "grounded_passages": [{"id": "P1", "field": "memo", "text": MEMO, "source_role": "ORIGINAL_INPUT"}],
+              "source_context_version": grounded.LISTENER_CONTEXT_VERSION}
+    messages = grounded.messages(writer)
+    material = json.loads(messages[-1]["content"])
+    expected_metadata = {"created_at": metadata["created_at"], "category": metadata["category"]}
+    assert material["current"] == {**current, "metadata": expected_metadata}
+    assert material["history"] == [{**historical, "metadata": expected_metadata}, textless]
+    assert material["quote"]["text"] == MEMO
+    assert current["metadata"] is metadata and "emotions" in metadata
+    assert probe.emlis_grounded_output_schema(messages)
+
+
+def test_listener_keeps_metadata_on_the_no_passage_fallback(natural_case, qdb, monkeypatch):
+    user, parent, _, _ = natural_case
+    memo = "どうしたら手順を見直せるのだろう？"
+    qdb.query("update public.emotions set memo=$2,memo_action='' where id=$1", [parent, memo])
+    calls = []
+
+    def infer(request):
+        payload = json.loads(request.content)
+        calls.append(payload)
+        assert "candidate_format" not in payload
+        current = json.loads(payload["messages"][-1]["content"])["records"][0]
+        assert current["metadata"]["emotions"] == ["平穏"]
+        assert current["metadata"]["emotion_details"] == [{"type": "平穏", "strength": "medium"}]
+        assert current["active_fields"][0]["text"] == memo
+        return httpx.Response(200, json={"model": QWEN, "choices": [
+            {"finish_reason": "stop", "message": {"role": "assistant", "content": "記録を残してくださり、ありがとうございます。"}}
+        ]})
+
+    for flag in ("OBSERVATION", "DECODING", "SEMANTICS", "LISTENER"):
+        monkeypatch.setenv(f"COCOLON_EMLIS_GROUNDED_{flag}", "true")
+    source = SelfHostedNaturalReplySource(endpoint="https://model.invalid/v1/chat/completions",
+        model=QWEN, api_key="synthetic-only", transport=httpx.MockTransport(infer))
+    owner = _active_application_owner(monkeypatch, source, None)
+    first = run(owner.start(user, parent))
+    assert first["current_observation"]["text"] == "記録を残してくださり、ありがとうございます。"
+    assert run(owner.get(user, parent))["current_observation"] == first["current_observation"]
+    assert len(calls) == 1
 
 
 def test_answer_focus_requires_the_exact_active_original_evidence_range():
