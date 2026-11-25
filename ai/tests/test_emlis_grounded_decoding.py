@@ -392,6 +392,55 @@ def _messages_for_same_current_record(payload, version, memo):
     return grounded.messages(writer)
 
 
+def test_free_answer_receipt_keeps_original_writer_binding_on_retry(natural_questions, qdb, monkeypatch):
+    user, parent, _, _ = natural_questions()
+    authored = 'その時は怖かった。'
+    follow = 'その時の怖さをEmlisは受け止めました。'
+    calls = []
+
+    def infer(request):
+        payload = json.loads(request.content)
+        material = json.loads(payload['messages'][1]['content'])
+        calls.append(material)
+        assert payload['candidate_format'] == FORMAT
+        return httpx.Response(200, json={'model': QWEN, 'candidate_format': FORMAT, 'choices': [{
+            'finish_reason': 'stop', 'message': {'role': 'assistant',
+                'content': json.dumps({'follow': follow}, ensure_ascii=False)},
+        }]})
+
+    async def interrupt_observation(name, payload, **kwargs):
+        if any(event['kind'] == 'OBSERVATION' for event in payload.get('p_events', [])):
+            return httpx.Response(503, json={'code': '57P03'})
+        return await qdb.rpc(name, payload, **kwargs)
+
+    monkeypatch.setenv('COCOLON_EMLIS_GROUNDED_OBSERVATION', 'true')
+    monkeypatch.setenv('COCOLON_EMLIS_GROUNDED_DECODING', 'true')
+    source = SelfHostedNaturalReplySource(endpoint='https://model.invalid/v1/chat/completions',
+        model=QWEN, api_key='synthetic-only', transport=httpx.MockTransport(infer))
+    service = _active_application_owner(monkeypatch, source, 'paid')
+    started = run(service.start(user, parent))
+    with monkeypatch.context() as making_receipt:
+        making_receipt.setattr(emlis_thread_store, 'sb_post_rpc', interrupt_observation)
+        interrupted = run(answer(service, user, started, authored))
+    assert interrupted['can_retry'] and len(calls) == 2
+    state = run(service.store.read(user, input_id=parent))
+    receipt, = [event['payload'] for event in state['events'] if event['operation_id'] == interrupted['operation_id']
+                and event['payload'].get('stage') == 'NATURAL_REPLY_RECEIVED']
+    assert receipt['writer_context_version'] == grounded.RECEPTION_CONTEXT_VERSION
+    material = calls[1]
+    assert material['ai_question_context'] == started['pending_question']['text']
+    assert 'ai_question_context' not in json.dumps(material['current'], ensure_ascii=False)
+
+    monkeypatch.delenv('COCOLON_EMLIS_GROUNDED_DECODING')
+    restarted = _active_application_owner(monkeypatch, source, 'true')
+    saved = run(restarted.action(user, interrupted['thread_id'], action='retry_response',
+        expected_revision=interrupted['revision'], idempotency_key='restore-free-answer',
+        operation_id=interrupted['operation_id']))
+    assert saved['body_state'] == 'REFINED'
+    assert saved['current_observation']['text'] == f'「{authored}」\n\n{follow}'
+    assert len(calls) == 2
+
+
 @pytest.mark.parametrize('response_marker', [None, probe.PIECE_CANDIDATE_FORMAT, 'legacy_http_400'])
 def test_client_rejects_unavailable_or_unconfirmed_decoder_with_one_call(
         natural_case, qdb, monkeypatch, response_marker):

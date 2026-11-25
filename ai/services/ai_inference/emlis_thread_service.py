@@ -1064,8 +1064,12 @@ class EmlisThreadService:
             else grounded_observation_reply.CONTEXT_VERSION)
         select_grounded_reception = (prior is None and self.grounded_decoding_enabled
             and (response_stage in {"PRE_QUESTION", "REFINED"} or t["data"].get("natural_question_stop") == "skip"))
+        # A grounded receipt pins its renderer, not a new context-update mode.
+        # Rebuild using the flag that determined the first writer's source view.
+        bind_writer_context = (t["data"].get("natural_context_update_enabled") is True
+                               if grounded_observation else context_version is not None)
         material, safety = prepare_natural_reply(_request(snapshot), response_stage=response_stage,
-            bind_writer_context=context_version is not None,
+            bind_writer_context=bind_writer_context,
             include_corrected_circumstance=context_version == CORRECTED_SOURCE_CONTEXT_VERSION,
             include_received_answer=context_version in {RECEIVED_ANSWER_CONTEXT_VERSION,
                                                         PAID_RECEIVED_ANSWER_CONTEXT_VERSION},
