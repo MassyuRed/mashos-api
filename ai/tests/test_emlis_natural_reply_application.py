@@ -1224,3 +1224,62 @@ def test_9b_initial_follow_is_not_selected_by_model_alias_alone(natural_case, qd
     dto = run(service.start(user, parent))
     assert dto["current_observation"]["text"] == BODY
     assert len(calls) == 1
+
+
+@pytest.mark.parametrize("variant", ["listener", "unknown_passage", "strength", "fabricated_voice"])
+def test_grounded_9b_uses_an_exact_current_passage_and_separate_listener_reply(
+        natural_case, qdb, monkeypatch, variant):
+    from cocolon_meaning_experience_engine.grounded_observation_reply import CONTEXT_VERSION
+    from cocolon_meaning_experience_engine.natural_reply import QWEN_9B_NATURAL_ALIAS
+
+    user, parent, _, _ = natural_case
+    memo = "紙の見本帳にあった細い青い縞が好きでした。"
+    action = "受付で見本帳を返しました。"
+    qdb.query("update public.emotions set memo=$2, memo_action=$3 where id=$1",
+              [parent, memo, action])
+    follow = "青い縞に目を留めたお話を分けてくださって、Emlisは嬉しいです。"
+    responses = {
+        "listener": (None, follow),
+        "unknown_passage": ("P0", follow),
+        "strength": (None, "あの青い縞が大好きだというお気持ちを受け取りました。"),
+        "fabricated_voice": (None, "Emlisはあの青い縞を見ました。"),
+    }
+    calls = []
+
+    def infer(request):
+        body = json.loads(request.content)
+        calls.append(body)
+        material = json.loads(body["messages"][-1]["content"])
+        assert material["stage"] == "FINAL"
+        assert material["history"] == []
+        assert {item["text"] for item in material["passages"]} == {memo, action}
+        assert {item["field"] for item in material["passages"]} == {"memo", "memo_action"}
+        bound = next(item["id"] for item in material["passages"] if item["text"] == memo)
+        passage, text = responses[variant]
+        content = json.dumps({"passages": [passage or bound], "follow": text}, ensure_ascii=False)
+        return httpx.Response(200, json={"model": QWEN_9B_NATURAL_ALIAS, "choices": [
+            {"finish_reason": "stop", "message": {"role": "assistant", "content": content}}]})
+
+    monkeypatch.setenv("COCOLON_EMLIS_GROUNDED_OBSERVATION", "true")
+    source = SelfHostedNaturalReplySource(endpoint="https://model.invalid/v1/chat/completions",
+        model=QWEN_9B_NATURAL_ALIAS, api_key="synthetic-only", transport=httpx.MockTransport(infer))
+    service = _active_application_owner(monkeypatch, source, None)
+    dto = run(service.start(user, parent))
+    saved = run(service.store.read(user, input_id=parent))
+    started = next(event["payload"] for event in saved["events"]
+                   if event["payload"].get("stage") == "NATURAL_REPLY_CALL_STARTED")
+    assert started["writer_context_version"] == CONTEXT_VERSION
+    if variant == "listener":
+        assert dto["state"] == "COMPLETED"
+        assert dto["current_observation"]["text"] == f"「{memo}」\n\n{follow}"
+        monkeypatch.delenv("COCOLON_EMLIS_GROUNDED_OBSERVATION")
+        rebuilt = _active_application_owner(monkeypatch, source, None)
+        reread = run(rebuilt.get(user, parent))
+        assert reread["revision"] == dto["revision"]
+        assert reread["current_observation"] == dto["current_observation"]
+    else:
+        assert dto["state"] == "RESPONSE_FAILED"
+        assert dto["current_observation"] is None
+        assert not any(event["payload"].get("stage") == "NATURAL_REPLY_RECEIVED"
+                       for event in saved["events"])
+    assert len(calls) == 1

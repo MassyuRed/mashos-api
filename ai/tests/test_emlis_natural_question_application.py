@@ -832,3 +832,62 @@ def test_interrupted_started_provider_has_unknown_result_and_cannot_reacquire(na
             operation_id=failed['operation_id']))
     assert len(calls) == 2
 
+
+
+@pytest.mark.parametrize("end", ["answer", "skip"])
+def test_grounded_paid_question_round_preserves_answer_or_returns_only_to_current_record(
+        natural_questions, qdb, monkeypatch, end):
+    from cocolon_meaning_experience_engine.natural_reply import (
+        QWEN_9B_NATURAL_ALIAS, SelfHostedNaturalReplySource)
+
+    user, parent, _, _ = natural_questions(tier="premium")
+    earlier = "表彰の席で褒められたときは嬉しかった。"
+    qdb.query("insert into public.emotions values ($1,$2,(now()-interval '1 day') at time zone 'UTC',$3,'',"
+              "array['仕事'],array['喜び'],$4)",
+              [str(uuid4()), user, earlier, json.dumps([dict(type="喜び", strength="medium")])])
+    calls = []
+    supplement = "その時は、期待に応え続けないといけないようで重かったです。"
+    follows = {
+        "PRE_QUESTION": "受け取った言葉と気持ちがそろわないところに、Emlisは心を留めました。",
+        "REFINED": "その言葉が次の期待まで背負うように響いたことも、Emlisは大切に聞きました。",
+        "FINAL": "褒め言葉をどう受け取ったか、その時の気持ちをEmlisにも聞かせてくださったのですね。",
+    }
+
+    def infer(request):
+        wire = json.loads(request.content)
+        material = json.loads(wire["messages"][-1]["content"])
+        stage = material["stage"]
+        calls.append(material)
+        if stage == "PRE_QUESTION":
+            assert earlier in json.dumps(material["history"], ensure_ascii=False)
+        if stage == "FINAL":
+            assert material["history"] == []
+            assert material["confirmed_frame_feedback"] == []
+        chosen = next(p for p in material["passages"] if p["text"] == (
+            supplement if stage == "REFINED" else ONE))
+        assert chosen["source_role"] == (
+            "SUPPLEMENTAL_ANSWER" if stage == "REFINED" else "ORIGINAL_INPUT")
+        content = json.dumps({"passages": [chosen["id"]], "follow": follows[stage]}, ensure_ascii=False)
+        return httpx.Response(200, json={"model": QWEN_9B_NATURAL_ALIAS, "choices": [
+            {"finish_reason": "stop", "message": {"role": "assistant", "content": content}}]})
+
+    monkeypatch.setenv("COCOLON_EMLIS_GROUNDED_OBSERVATION", "true")
+    source = SelfHostedNaturalReplySource(endpoint="https://model.invalid/v1/chat/completions",
+        model=QWEN_9B_NATURAL_ALIAS, api_key="synthetic-only", transport=httpx.MockTransport(infer))
+    service = _active_application_owner(monkeypatch, source, "paid")
+    response = run(service.start(user, parent))
+    assert response["state"] == "AWAITING_ANSWER"
+    if end == "answer":
+        saved = run(answer(service, user, response, supplement))
+        expected_stage, quote = "REFINED", supplement
+    else:
+        saved = run(service.action(user, response["thread_id"], action="skip",
+            expected_revision=response["revision"], idempotency_key="skip",
+            question_id=response["pending_question"]["question_id"]))
+        expected_stage, quote = "FINAL", ONE
+    assert saved["current_observation"]["text"] == f"「{quote}」\n\n{follows[expected_stage]}"
+    assert [material["stage"] for material in calls] == ["PRE_QUESTION", expected_stage]
+    reread = run(service.get(user, parent))
+    assert reread["revision"] == saved["revision"]
+    assert reread["current_observation"] == saved["current_observation"]
+    assert len(calls) == 2

@@ -33,7 +33,9 @@ def application_thread_service():
                               natural_context_update_enabled=context_update_mode in {"true", "paid"},
                               natural_context_update_paid_only=context_update_mode == "paid",
                               initial_observation_follow_enabled=
-                                  os.getenv("COCOLON_EMLIS_INITIAL_OBSERVATION_FOLLOW") == "true")
+                                  os.getenv("COCOLON_EMLIS_INITIAL_OBSERVATION_FOLLOW") == "true",
+                              grounded_observation_enabled=
+                                  os.getenv("COCOLON_EMLIS_GROUNDED_OBSERVATION") == "true")
 
 
 def schedule_initial_reply(owner, user_id, input_id):

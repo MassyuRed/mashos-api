@@ -357,7 +357,8 @@ class EmlisThreadService:
                  semantic_profile=None, offline_candidate_source=None, offline_model_attempt_seconds=None,
                  natural_reply_source=None, response_profile=None, natural_questions_enabled=True,
                  natural_meaning_profile=ACTIVE_MEANING_PROFILE, natural_context_update_enabled=True,
-                 natural_context_update_paid_only=False, initial_observation_follow_enabled=False):
+                 natural_context_update_paid_only=False, initial_observation_follow_enabled=False,
+                 grounded_observation_enabled=False):
         if runtime_profile not in {RUNTIME_PROFILE, Q3_PROFILE}:
             raise ValueError("unsupported_thread_profile")
         if natural_reply_source is not None:
@@ -377,6 +378,9 @@ class EmlisThreadService:
         if type(initial_observation_follow_enabled) is not bool:
             raise ValueError("initial_observation_follow_setting_invalid")
         self.initial_observation_follow_enabled = initial_observation_follow_enabled
+        if type(grounded_observation_enabled) is not bool:
+            raise ValueError("grounded_observation_setting_invalid")
+        self.grounded_observation_enabled = grounded_observation_enabled
         if natural_meaning_profile not in {None, ACTIVE_MEANING_PROFILE}:
             raise ValueError('natural_reply_meaning_profile_invalid')
         self.natural_meaning_profile = natural_meaning_profile
@@ -992,6 +996,7 @@ class EmlisThreadService:
         return snapshot, question if decision.disposition == "ASK" else None, prepared
 
     async def _process_natural(self, user_id, snapshot):
+        from cocolon_meaning_experience_engine.grounded_observation_reply import CONTEXT_VERSION as GROUNDED_OBSERVATION_CONTEXT
         from cocolon_meaning_experience_engine.natural_reply import (
             ARTIFACT_SCHEMA, NaturalReply, NaturalReplyError, prepare_natural_reply, validate_reply,
             CORRECTED_SOURCE_CONTEXT_VERSION, DIRECT_FEELING_CORRECTION_CONTEXT_VERSION,
@@ -1039,7 +1044,7 @@ class EmlisThreadService:
         if context_version not in {None, SOURCE_CONTEXT_VERSION, CORRECTED_SOURCE_CONTEXT_VERSION,
                                    RECEIVED_ANSWER_CONTEXT_VERSION, PAID_RECEIVED_ANSWER_CONTEXT_VERSION,
                                    INITIAL_STANDALONE_FEELING_CONTEXT_VERSION, *INITIAL_OBSERVATION_FOLLOW_CONTEXT_VERSIONS,
-                                   *DIRECT_FEELING_CORRECTION_CONTEXT_VERSIONS}:
+                                   GROUNDED_OBSERVATION_CONTEXT, *DIRECT_FEELING_CORRECTION_CONTEXT_VERSIONS}:
             raise NaturalReplyError('natural_reply_writer_identity_changed')
         direct_version = (context_version if context_version in DIRECT_FEELING_CORRECTION_CONTEXT_VERSIONS
                           else DIRECT_FEELING_CORRECTION_CONTEXT_VERSION)
@@ -1049,6 +1054,9 @@ class EmlisThreadService:
         elif (prior is None and self.initial_observation_follow_enabled
                 and getattr(self.natural_reply_source, 'model', None) == QWEN_9B_NATURAL_ALIAS):
             initial_follow_version = INITIAL_OBSERVATION_FOLLOW_CONTEXT_VERSION
+        grounded_observation = context_version == GROUNDED_OBSERVATION_CONTEXT or (
+            prior is None and self.grounded_observation_enabled
+            and getattr(self.natural_reply_source, 'model', None) == QWEN_9B_NATURAL_ALIAS)
         material, safety = prepare_natural_reply(_request(snapshot), response_stage=response_stage,
             bind_writer_context=context_version is not None,
             include_corrected_circumstance=context_version == CORRECTED_SOURCE_CONTEXT_VERSION,
@@ -1061,6 +1069,9 @@ class EmlisThreadService:
                 or (prior is None and context_version == PAID_RECEIVED_ANSWER_CONTEXT_VERSION
                     and t['data'].get('started_tier') in {'plus', 'premium'})),
             initial_observation_follow_context_version=initial_follow_version,
+            use_grounded_observation=grounded_observation,
+            grounded_current_only=bool(t["data"].get("natural_question_stop")
+                                       and not t.get("latest_answer_event_id")),
             direct_feeling_correction_context_version=direct_version,
             prepared_meaning=prepared_meaning,
             meaning_profile=t['data'].get('natural_meaning_profile'), owner_scope=user_id,

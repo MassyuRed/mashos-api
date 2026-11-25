@@ -15,6 +15,7 @@ import httpx
 
 from emlis_ai_safety_triage import build_emlis_safety_triage_decision, merge_emlis_safety_triage_decisions
 from .emlis_thread_source import admit_emlis_thread
+from . import grounded_observation_reply
 
 PROFILE = "natural_reply.v1"
 ACTIVE_MEANING_PROFILE = "source_grounded_active_meaning.v1"
@@ -657,6 +658,7 @@ def prepare_natural_reply(request, *, use_meaning_support=False, response_stage=
                           include_corrected_circumstance=False, include_received_answer=False,
                           include_paid_received_answer=False, include_direct_feeling_correction=False,
                           include_initial_standalone_feeling=False, initial_observation_follow_context_version=None,
+                          use_grounded_observation=False, grounded_current_only=False,
                           direct_feeling_correction_context_version=DIRECT_FEELING_CORRECTION_CONTEXT_VERSION):
     """Return admitted user material and the existing independent Safety result."""
     if response_stage not in _RESPONSE_STAGES:
@@ -775,6 +777,21 @@ def prepare_natural_reply(request, *, use_meaning_support=False, response_stage=
     # ranges; disjoint ranges are never joined into a synthetic original.
     writer = {'schema_version': ACTIVE_MEANING_PROFILE, 'records': records,
         'user_frame_feedback': _active_writer_feedback(material['user_frame_feedback'], record_numbers)}
+    if use_grounded_observation and not admitted.control.interpretation_corrections:
+        latest_answer = material['current_answers'][-1] if material['current_answers'] else None
+        passages = grounded_observation_reply.current_passages(records[0], original, latest_answer)
+        if passages:
+            writer.update(source_context_version=grounded_observation_reply.CONTEXT_VERSION,
+                          grounded_passages=passages)
+            if grounded_current_only:
+                writer.update(records=records[:1], user_frame_feedback=[])
+            if response_stage != "FINAL":
+                writer['response_purpose'] = material['response_purpose']
+            focus = _initial_observation_follow(admitted, original, response_stage)
+            if focus is not None and any(row['text'] == focus['excerpt'] for row in passages):
+                writer['initial_observation_follow'] = focus
+            return NaturalReplyInput(admitted.source_prefix_ref, _compact_json(material), meaning_profile,
+                _compact_json(writer), _compact_json(active)), safety
     initial_follow = None
     if initial_observation_follow_context_version in INITIAL_OBSERVATION_FOLLOW_CONTEXT_VERSIONS and not history and not feedback:
         initial_follow = _initial_observation_follow(admitted, original, response_stage)
@@ -1255,6 +1272,24 @@ def validate_reply(reply, request):
         raise _NaturalReplyValidationError("control_character")
     writer = json.loads(request.writer_material_json) if request.writer_material_json else {}
     context_version = writer.get('source_context_version')
+    if context_version == grounded_observation_reply.CONTEXT_VERSION:
+        from .natural_reply_meaning import compare_reply_meaning
+
+        try:
+            follow = grounded_observation_reply.read_reply(reply.text, writer)
+        except ValueError as exc:
+            raise _NaturalReplyValidationError(str(exc)) from None
+        focus = writer.get('initial_observation_follow')
+        if focus is not None:
+            _validate_initial_observation_follow(follow, focus, INITIAL_OBSERVATION_FOLLOW_CONTEXT_VERSION)
+            if focus["kind"] == "対象" and focus["feeling"] == "好き" and "大好き" in follow:
+                raise _NaturalReplyValidationError('grounded_observation_preference_strength')
+        if _INITIAL_FOLLOW_OWN_VOICE.search(follow) or _INITIAL_FOLLOW_FALSE_WITNESS.search(follow):
+            raise _NaturalReplyValidationError('grounded_observation_voice')
+        # The existing finite reader can contradict a generated claim; lack
+        # of coverage from it does not attest to the quality of free prose.
+        if compare_reply_meaning(request.material_json, follow, request.source_prefix_ref).verdict == "CONFLICT":
+            raise _NaturalReplyValidationError('grounded_observation_meaning_conflict')
     if (context_version in {DIRECT_FEELING_CORRECTION_VOICE_CONTEXT_VERSION,
                             DIRECT_FEELING_CORRECTION_RECIPIENT_CONTEXT_VERSION,
                             DIRECT_FEELING_CORRECTION_CONTEXT_VERSION}
@@ -1305,6 +1340,8 @@ def build_natural_reply_messages(request, *, correction_target_context=False):
         # Do not carry instructions for those absent protocols into this one.
         writer = json.loads(request.writer_material_json)
         context_version = writer.get('source_context_version')
+        if context_version == grounded_observation_reply.CONTEXT_VERSION:
+            return grounded_observation_reply.messages(writer)
         if context_version in INITIAL_OBSERVATION_FOLLOW_CONTEXT_VERSIONS:
             focus = writer['initial_observation_follow']
             material = {'本人の気持ちの言葉': focus['feeling']}
@@ -1487,7 +1524,13 @@ class SelfHostedNaturalReplySource:
             stage = 'reply_validation'
             text = message["content"].strip()
             writer = json.loads(request.writer_material_json) if request.writer_material_json else {}
-            if writer.get('source_context_version') in INITIAL_OBSERVATION_FOLLOW_CONTEXT_VERSIONS:
+            context_version = writer.get('source_context_version')
+            if context_version == grounded_observation_reply.CONTEXT_VERSION:
+                try:
+                    text = grounded_observation_reply.compose(text, writer)
+                except ValueError as exc:
+                    raise _NaturalReplyValidationError(str(exc)) from None
+            elif context_version in INITIAL_OBSERVATION_FOLLOW_CONTEXT_VERSIONS:
                 focus = writer['initial_observation_follow']
                 text = f"「{focus['excerpt']}」\n\n{text}"
             return validate_reply(NaturalReply(text, self.model, request.source_prefix_ref), request)
