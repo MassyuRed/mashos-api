@@ -3584,8 +3584,119 @@ def _primary_structure_guidance(material):
 _PRIMARY_STRUCTURE_SCOPES = {'across_records', 'self_report', 'in_this_record'}
 _PRIMARY_STRUCTURE_PRIVATE_REF = re.compile(
     r'(?<![a-z0-9_])n[1-9][0-9]*(?:\.u[1-9][0-9]*)?(?![a-z0-9_])', re.IGNORECASE)
-_PRIMARY_STRUCTURE_UNSUPPORTED_PRIORITY = re.compile(
-    r'唯一の基準|唯一.{0,8}判断|最も重要|もっとも重要|いつでも最優先|常に最優先|決定的な要因')
+_PRIMARY_STRUCTURE_STRONG_CLAIM = re.compile(
+    r'唯一の基準|唯一.{0,8}判断|最も重要|もっとも重要|いつでも最優先|常に最優先|決定的な要因|強制|奪われ'
+    r'|(?:問題|支障)(?:が|は)?(?:ない|なかった)|(?:確認|考慮)(?:せず|しなかった|の有無)')
+_CHOICE_LINK = re.compile(r'(?:な)?ので(?!す)|(?<=[たい])から(?=[、，,])')
+_CHOICE_ACTION = (
+    ('引き受け', '引き受けた', '引き受けました', '引き受けなかった', '引き受けませんでした'),
+    ('断り', '断った', '断りました', '断らなかった', '断りませんでした'),
+    ('買い', '買った', '買いました', '買わなかった', '買いませんでした'),
+    ('選び', '選んだ', '選びました', '選ばなかった', '選びませんでした'),
+    ('見送り', '見送った', '見送りました', '見送らなかった', '見送りませんでした'),
+)
+_CHOICE_ARGUMENT = re.compile(r'(?:(?:私|わたし|自分|僕|ぼく|俺)(?:は|が|から)[、，, ]*)?'
+    r'(?:[一-鿿々ぁ-ゖァ-ヺ0-9ー]{1,48}(?:を))?')
+_CHOICE_LOCATION = re.compile(r'^[^、，,。]{1,24}(?:では|には|時は|ときは)[、，,]\s*')
+_CHOICE_TERM = re.compile(r'[一-鿿々ァ-ヺー][ぁ-ゖ一-鿿々ァ-ヺー0-9]{2}')
+_CHOICE_CASE_BOUNDARY = re.compile(
+    r'[。．.!！?？]|(?:一方|ですが|ものの)|(?<=[たす])が[、，,]|[、，,](?=[一-鿿々]{1,12}では)')
+_CHOICE_OUTPUT_CONTINUATION = re.compile(r'^(?:[、，,。．.\s]|$)')
+
+
+def _bound_choice(field, quote, sentences):
+    from ...natural_reply_cognition import source_context_allows_finite_hints
+    from .intent_compiler import _FINITE_PREDICATES, _PAST_DECISION_PREDICATES, _proposition
+
+    if (quote not in sentences.get(field['field'], ())
+            or not source_context_allows_finite_hints(field['text'])):
+        return None
+    link = _CHOICE_LINK.search(quote)
+    if link is None:
+        return None
+    condition = _CHOICE_LOCATION.sub('', quote[:link.start()]).strip()
+    action = quote[link.end():].strip('、，, \t。．.')
+    if not condition or not action or _CHOICE_LINK.search(action):
+        return None
+    reading = _proposition(action)
+    if (reading is not None and reading.actor in ('SELF', 'UNSPECIFIED')
+            and (reading.modality, reading.temporal_scope) == ('fact', 'past')
+            and not any((reading.possible_content, reading.dependent_form, reading.sequence_marker))):
+        forms = tuple(surface for surface, lemma, polarity, mode, time
+                      in (*_FINITE_PREDICATES, *_PAST_DECISION_PREDICATES)
+                      if (lemma, polarity, mode, time) ==
+                      (reading.predicate_lemma, reading.polarity, 'fact', 'past'))
+        if forms:
+            return condition, action, forms, ''
+    # The finite reader has a deliberately closed verb inventory. Accept a
+    # short written choice outside it only as the complete causal clause's
+    # past host. This does not parse a new standalone action or its actor.
+    for continuative, positive, polite, negative, negative_polite in _CHOICE_ACTION:
+        for forms in ((positive, polite), (negative, negative_polite)):
+            if any(action.endswith(form) and _CHOICE_ARGUMENT.fullmatch(action[:-len(form)]) for form in forms):
+                return condition, action, forms, continuative if forms[0] == positive else ''
+    return None
+
+
+def _choice_pairs(origins, sentences):
+    choices = [(field['record'], choice) for node, unit, field, quote in origins
+               if node['perspective'] == 'SELF' and unit['source_mode'] in ('PERSON_JUDGMENT', 'DECIDED_PLAN')
+               and (field['source_role'] == 'USER_DEEP_INSIGHT_ANSWER'
+                    or field['source_role'] == 'ORIGINAL_INPUT' and field['field_path'] == 'memo')
+               and (choice := _bound_choice(field, quote, sentences)) is not None]
+    for i, (record, left) in enumerate(choices):
+        for other, right in choices[i + 1:]:
+            if record != other and left[0] != right[0] and left[1] != right[1]:
+                yield left, right
+
+
+def _choice_comparison_covers(text, left, right):
+    """Keep both observed actions and their own distinguishing source terms."""
+    clauses = _CHOICE_CASE_BOUNDARY.split(text)
+    if len(clauses) < 2:
+        return False
+
+    def matched(choice, other):
+        condition, _, forms, continuative = choice
+        terms = {condition[i:i + 3] for i in range(len(condition) - 2)
+                 if _CHOICE_TERM.fullmatch(condition[i:i + 3]) and condition[i:i + 3] not in other[0]}
+        for i, clause in enumerate(clauses):
+            if not any(term in clause for term in terms):
+                continue
+            if (any(re.search(re.escape(form) + r'(?!かった|く|ら|り)', clause) for form in forms)
+                    or continuative and any(_CHOICE_OUTPUT_CONTINUATION.match(clause[match.end():])
+                        for match in re.finditer(re.escape(continuative), clause))):
+                yield i
+
+    return any(a != b for a in matched(left, right) for b in matched(right, left))
+
+
+def _v3_decision_edges(edges, material, nodes):
+    fields = {field['field']: field for field in material['fields']}
+    sentences = _semantic_display_sentences(material)
+    units = {f"{node['node_id']}.u{i}": (node, unit)
+             for node in nodes for i, unit in enumerate(node['units'], 1)}
+    retained = []
+    for edge in edges:
+        if edge['relation_kind'] not in ('CRITERION_EXPRESSION', 'CONTEXT_CONTRAST'):
+            retained.append(edge)
+            continue
+        endpoints = []
+        for side in ('from', 'to'):
+            node, unit = units[edge[side + '_unit']]
+            endpoints.append([(node, unit, fields[root['field']], root['quote']) for root in unit['evidence']
+                              if edge[side + '_source'] in _semantic_source_cues(root['quote'])])
+        if len({field['record'] for group in endpoints for _, _, field, _ in group}) == 1:
+            retained.append(edge)
+            continue
+        for first, second in ((a, b) for a in endpoints[0] for b in endpoints[1]):
+            if (all(claim in first[3] or claim in second[3]
+                    for claim in _PRIMARY_STRUCTURE_STRONG_CLAIM.findall(edge['label']))
+                    and any(_choice_comparison_covers(edge['label'], left, right)
+                            for left, right in _choice_pairs((first, second), sentences))):
+                retained.append(edge)
+                break
+    return retained
 
 
 def _primary_structure_text_key(text):
@@ -3596,10 +3707,9 @@ def _primary_structure_v3_has_conclusion(axis, factor, quotes):
     sentences = [axis[key] for key in ('criterion', 'case_reading')]
     heading = axis['heading']
     sentence_keys = [_primary_structure_text_key(text) for text in sentences]
-    # These words change the strength of the conclusion, even when placed in the heading.
-    original = ''.join(quotes)
-    rankings = _PRIMARY_STRUCTURE_UNSUPPORTED_PRIORITY.findall(''.join([heading, *sentences]))
-    return (all(rank in original for rank in rankings)
+    # Stronger terms also change the meaning when used only in the heading.
+    claims = _PRIMARY_STRUCTURE_STRONG_CLAIM.findall(' '.join([heading, *sentences]))
+    return (all(any(claim in quote for quote in quotes) for claim in claims)
         and len(factor) >= 2 and all(factor in key for key in sentence_keys)
         and len(set([_primary_structure_text_key(heading), *sentence_keys])) == 3
         and all(re.search(r'(?:です|ます|ません|でした|ました)\s*[。．.]$', text) for text in sentences)
@@ -3648,6 +3758,7 @@ def _read_primary_structures(prepared, material, nodes, axes):
     version = material.get('primary_structure_reading')
     independently_compared = version == 'karen.v3'
     conclusion_first = version in ('karen.v2', 'karen.v3')
+    sentences = _semantic_display_sentences(material) if independently_compared else {}
     parts = ('criterion', 'case_reading') if conclusion_first else ('reading',)
     keys = {'anchors', 'scope', 'heading', *parts}
     if independently_compared:
@@ -3678,14 +3789,8 @@ def _read_primary_structures(prepared, material, nodes, axes):
             continue
         _semantic_map_require(bool(mental), reason)
         if axis['scope'] == 'across_records' and independently_compared:
-            decisions = [(field['record'], _primary_structure_text_key(quote))
-                         for node, unit, field, quote in selected if node['perspective'] == 'SELF'
-                         and unit['source_mode'] in ('PERSON_JUDGMENT', 'DECIDED_PLAN')
-                         and (field['source_role'] == 'USER_DEEP_INSIGHT_ANSWER' or
-                              field['source_role'] == 'ORIGINAL_INPUT' and field['field_path'] == 'memo')]
-            # Bind both sides to distinct first-person evidence, at the root
-            # that supported the choice. Extra context does not supply a choice.
-            if not any(a != b and qa and qb and qa != qb for a, qa in decisions for b, qb in decisions):
+            decisions = tuple(_choice_pairs(selected, sentences))
+            if not decisions:
                 continue
         elif axis['scope'] == 'across_records':
             # Distinct original records and distinct first-person materials, rather than
@@ -3696,11 +3801,17 @@ def _read_primary_structures(prepared, material, nodes, axes):
             _semantic_map_require(any(a != b and qa != qb and (a in judgments or b in judgments)
                                       for a, qa in mental for b, qb in mental), reason)
         elif axis['scope'] == 'self_report':
-            _semantic_map_require(len(owners) == 1 and any(
+            stated_self_insight = len(owners) == 1 and any(
                 name in ('自己理解', 'self_insight') for name in
-                (records[next(iter(owners))].get('selected_emotions') or [])), reason)
+                (records[next(iter(owners))].get('selected_emotions') or []))
+            if independently_compared and not stated_self_insight:
+                continue
+            _semantic_map_require(stated_self_insight, reason)
         else:
-            _semantic_map_require(axis['scope'] == 'in_this_record' and len(owners) == 1, reason)
+            _semantic_map_require(axis['scope'] == 'in_this_record', reason)
+            if independently_compared and len(owners) != 1:
+                continue
+            _semantic_map_require(len(owners) == 1, reason)
         quotes = [quote for *_, quote in selected]
         if conclusion_first:
             # Both displayed sentences are the model's own output. Preserve them in
@@ -3716,6 +3827,8 @@ def _read_primary_structures(prepared, material, nodes, axes):
             root_set = frozenset(anchors)
             if (factor in factors or root_set in admitted_roots
                     or not _primary_structure_v3_has_conclusion(axis, factor, quotes)
+                    or (axis['scope'] == 'across_records' and not any(
+                        _choice_comparison_covers(axis['case_reading'], left, right) for left, right in decisions))
                     or any(axis['heading'] == prior['title'] or description == prior['description'] for prior in public)):
                 continue
             factors.add(factor)
@@ -3870,8 +3983,11 @@ def semantic_node_local_v4_relations(prepared, plan, bodies, packet, *, ordered_
         overview = dict(overview, title=post_answer_heading)
     # Source cues stay private in the raw receipt. The existing compiler uses
     # the selected units to bind public edge evidence, exactly as before.
+    raw_edges = packet['edges']
+    if material.get('primary_structure_reading') == 'karen.v3' and source_cued:
+        raw_edges = _v3_decision_edges(raw_edges, material, nodes)
     edges = [{k: v for k, v in edge.items() if k not in {'from_source', 'to_source'}}
-             for edge in packet['edges']] if source_cued else packet['edges']
+             for edge in raw_edges] if source_cued else raw_edges
     if 'primary_structures' in packet:
         overview = dict(overview, primary_structures=_read_primary_structures(
             prepared, material, nodes, packet['primary_structures']))

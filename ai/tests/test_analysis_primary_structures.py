@@ -47,7 +47,7 @@ def v2_reading():
 def v3_reading():
     return dict(anchors=['n1.u1.e1', 'n2.u1.e1'], scope='across_records', decision_factor='選べる余地',
                 criterion='引き受けるとき、ご自身で選べる余地があることを大切にしています。',
-                case_reading='会議では選べる余地があって引き受け、家では先に手伝うと決まっていて断ったことに表れています。',
+                case_reading='会議では自分で選んだ仕事を引き受け、家では先に手伝うと決まっていて断ったことに、選べる余地の違いが表れています。',
                 heading='引き受ける前のひと言')
 
 
@@ -216,7 +216,8 @@ def test_direct_transport_primary_structure_mode_requires_the_pinned_9b_alias(mo
 
 @pytest.mark.parametrize('fault', ['one_judgment', 'one_record', 'duplicate_quote', 'unrelated_cases',
                                    'repeat_heading', 'raw_reference', 'raw_node_identifier',
-                                   'raw_unit_identifier', 'question', 'copied_source'])
+                                   'raw_unit_identifier', 'question', 'copied_source',
+                                   'multiple_record_self_report', 'multiple_record_single_scope', 'invented_force'])
 def test_v3_keeps_the_graph_when_optional_structure_lacks_a_complete_reading(fault):
     p, plan, bodies = scenario(FIRST, FIRST if fault == 'duplicate_quote' else SECOND, version='karen.v3')
     nodes = core._semantic_v4_join(plan, bodies)
@@ -242,6 +243,12 @@ def test_v3_keeps_the_graph_when_optional_structure_lacks_a_complete_reading(fau
         copied = '選べる余地が大切です。'
         axis['criterion'] = copied
         nodes[0]['units'][0]['evidence'][0]['quote'] = copied
+    elif fault == 'multiple_record_self_report':
+        axis['scope'] = 'self_report'
+    elif fault == 'multiple_record_single_scope':
+        axis['scope'] = 'in_this_record'
+    elif fault == 'invented_force':
+        axis['case_reading'] = '家では強制されて選べる余地がなかったので断りました。'
     assert core._read_primary_structures(p, material, nodes, [axis]) == []
 
 
@@ -472,3 +479,42 @@ def test_v3_rejects_unwritten_priority_and_does_not_repeat_the_same_roots():
                     anchors=list(reversed(grounded['anchors'])))
     admitted = core._read_primary_structures(prepared, material, nodes, [overstated, grounded, repeated])
     assert [axis['title'] for axis in admitted] == [grounded['heading']]
+
+
+@pytest.mark.parametrize('shape', ['supported', 'reversed', 'thin', 'planned'])
+def test_v3_only_keeps_independent_decisions_supported_by_original_conditions(shape):
+    from analysis_plan_source_choices import WholeMapTitle
+
+    notes = ['通路に置ける幅だったので、私は小さい棚を買った。',
+             '通路をふさぐ幅だと確かめたので、私は大きい棚を買わなかった。']
+    axis = dict(v3_reading(), decision_factor='通路', heading='棚を選んだときの条件',
+                criterion='この二つの場面では、通路をふさがずに置ける幅かどうかで棚を選んでいます。',
+                case_reading='通路に置ける幅だったので、小さい棚を買いました。'
+                             '通路をふさぐ幅だったので、大きい棚は買いませんでした。')
+    label = '置ける幅で小さい棚を買ったが、通路をふさぐ幅で大きい棚を買わなかった。'
+    if shape == 'reversed':
+        axis.update(case_reading='通路に置ける幅だったので小さい棚を買いました。'
+                                 '通路をふさぐ幅でしたが通路への影響は問題ないと確かめ、大きい棚は買いませんでした。')
+        label = '置ける幅で小さい棚を買ったが、通路をふさぐ幅でも問題ないため大きい棚を買わなかった。'
+    elif shape == 'thin':
+        notes = ['川を見た。', '紅茶を飲んだ。']
+        axis.update(decision_factor='対象物', criterion='この二つの場面では、対象物で行為を選んでいます。',
+                    case_reading='川という対象物は見ました。紅茶という対象物は飲みました。')
+        label = '川という対象では見ましたが、紅茶という対象では飲みました。'
+    elif shape == 'planned':
+        notes[1] = '通路をふさぐ幅だと確かめたので、私は大きい棚を買わないつもりだった。'
+    prepared, plan, bodies = scenario(*notes, version='karen.v3')
+    material = json.loads(prepared.material_json)
+    nodes = core._semantic_v4_join(plan, bodies)
+    edge = {'from': 'n1', 'to': 'n2', 'from_unit': 'n1.u1', 'to_unit': 'n2.u1',
+            'from_source': notes[0][:16], 'to_source': notes[1][:16],
+            'label': label, 'relation_kind': 'CONTEXT_CONTRAST'}
+    packet = dict(schema_version=core._semantic_v4_schema('RELATIONS'), nodes_sha256=core.semantic_map_hash(nodes),
+                  qualification_review={}, edges=[edge], primary_structures=[axis],
+                  overview=dict(node_refs=['n1', 'n2'], title_proposal='', title=WholeMapTitle(material, nodes).neutral))
+    joined = core.semantic_node_local_v4_relations(prepared, plan, bodies, packet)
+    assert [node['node_id'] for node in joined['nodes']] == ['n1', 'n2']
+    assert bool(joined['edges']) == (shape == 'supported')
+    assert bool(joined['overview']['primary_structures']) == (shape == 'supported')
+    assert packet['edges'] == [edge]
+    assert packet['primary_structures'] == [axis]
