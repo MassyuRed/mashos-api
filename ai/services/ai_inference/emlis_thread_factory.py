@@ -39,7 +39,9 @@ def application_thread_service():
                               grounded_decoding_enabled=
                                   os.getenv("COCOLON_EMLIS_GROUNDED_DECODING") == "true",
                               grounded_semantics_enabled=
-                                  os.getenv("COCOLON_EMLIS_GROUNDED_SEMANTICS") == "true")
+                                  os.getenv("COCOLON_EMLIS_GROUNDED_SEMANTICS") == "true",
+                              grounded_answer_focus_enabled=
+                                  os.getenv("COCOLON_EMLIS_GROUNDED_ANSWER_FOCUS") == "true")
 
 
 def schedule_initial_reply(owner, user_id, input_id):

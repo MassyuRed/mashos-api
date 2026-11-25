@@ -779,7 +779,7 @@ def prepare_natural_reply(request, *, use_meaning_support=False, response_stage=
     writer = {'schema_version': ACTIVE_MEANING_PROFILE, 'records': records,
         'user_frame_feedback': _active_writer_feedback(material['user_frame_feedback'], record_numbers)}
     if use_grounded_observation and not admitted.control.interpretation_corrections:
-        semantic_context = grounded_context_version == grounded_observation_reply.SEMANTIC_CONTEXT_VERSION
+        semantic_context = grounded_context_version in grounded_observation_reply.SEMANTIC_CONTEXT_VERSIONS
         scoped_answer = semantic_context and response_stage == "REFINED"
         if grounded_current_only or response_stage == "PRE_QUESTION" or scoped_answer:
             writer.update(records=records[:1], user_frame_feedback=[])
@@ -803,6 +803,9 @@ def prepare_natural_reply(request, *, use_meaning_support=False, response_stage=
                                        'source_role': 'ORIGINAL_INPUT'}]}], user_frame_feedback=[])
             if response_stage == "REFINED":
                 writer["ai_question_context"] = latest_answer["ai_question_context"]
+                if grounded_context_version == grounded_observation_reply.ANSWER_FOCUS_CONTEXT_VERSION:
+                    writer["answer_focus_original"] = _grounded_answer_original_evidence(
+                        admitted, active, latest_answer)
             if scoped_answer:
                 if received_answer_anchors(admitted, material['current'], prepared_meaning) is not None:
                     # An independently written action is not evidence for the answered question.
@@ -861,6 +864,38 @@ def prepare_natural_reply(request, *, use_meaning_support=False, response_stage=
         writer['response_purpose'] = material['response_purpose']
     return NaturalReplyInput(admitted.source_prefix_ref, _compact_json(material), meaning_profile,
         _compact_json(writer), _compact_json(active)), safety
+
+
+def _grounded_answer_original_evidence(admitted, active, answer):
+    """Read only the issued question's still-active, same-record evidence."""
+    if active["coverage"]["active_state"] == "PENDING":
+        return []
+    control = admitted.control.question_control_context
+    question = next((q for q in control.issued_questions if q.question_id == answer["question_id"]), None)
+    if question is None:
+        return []
+    resolver = admitted.resolver()
+    supporting_ids = set(question.decision.supporting_evidence_refs)
+    excluded_text = (answer["text"], answer["ai_question_context"])
+    active_original = [row for row in active["active_fields"] if row["source_role"] == "ORIGINAL_INPUT"]
+    evidence = []
+    for row in resolver.qualified_refs:
+        ref = row.evidence
+        if (ref.evidence_id not in supporting_ids or ref.source_envelope_id != admitted.original.envelope.envelope_id
+                or ref.field_path not in {"memo", "memo_action"}):
+            continue
+        text = resolver.resolve(row.thread_span_id).raw_text
+        if text in evidence or any(text in value or value in text for value in excluded_text):
+            continue
+        for field in active_original:
+            if (field["source_envelope_id"] == ref.source_envelope_id and field["field_path"] == ref.field_path
+                    and field["scalar_start"] <= ref.scalar_start < ref.scalar_end <= field["scalar_end"]):
+                start = ref.scalar_start - field["scalar_start"]
+                end = ref.scalar_end - field["scalar_start"]
+                if field["text"][start:end] == text:
+                    evidence.append(text)
+                    break
+    return evidence
 
 
 def _initial_observation_follow(admitted, original, response_stage):
@@ -1307,7 +1342,7 @@ def validate_reply(reply, request, *, allow_verified_history=False):
 
         try:
             grounded_text = reply.text
-            if (allow_verified_history and context_version == grounded_observation_reply.SEMANTIC_CONTEXT_VERSION
+            if (allow_verified_history and context_version in grounded_observation_reply.SEMANTIC_CONTEXT_VERSIONS
                     and writer.get('history_line')):
                 grounded_text = grounded_text.removesuffix("\n\n" + writer['history_line'])
             follow = grounded_observation_reply.read_reply(grounded_text, writer)

@@ -257,16 +257,54 @@ def test_opt_in_semantic_reader_checks_only_supported_claims_without_changing_ol
             grounded.read_reply(composed, writer)
     else:
         assert grounded.read_reply(composed, writer) == follow
+    v7_writer = {**writer, 'source_context_version': grounded.ANSWER_FOCUS_CONTEXT_VERSION}
+    if reason:
+        with pytest.raises(ValueError, match='grounded_observation_' + reason):
+            grounded.read_reply(composed, v7_writer)
+    else:
+        assert grounded.read_reply(composed, v7_writer) == follow
     for version in (grounded.CONTEXT_VERSION, grounded.CONSTRAINED_CONTEXT_VERSION):
         assert grounded.read_reply(composed, {**writer, 'source_context_version': version}) == follow
+
+
+def test_answer_focus_requires_the_exact_active_original_evidence_range():
+    from types import SimpleNamespace
+    from cocolon_meaning_experience_engine.natural_reply import _grounded_answer_original_evidence
+
+    def evidence(evidence_id, start, end):
+        ref = SimpleNamespace(evidence_id=evidence_id, source_envelope_id='original', field_path='memo',
+                              scalar_start=start, scalar_end=end)
+        return SimpleNamespace(evidence=ref, thread_span_id=evidence_id)
+
+    selected = evidence('selected', 3, 6)
+    same_words = evidence('same_words', 7, 10)
+    resolver = SimpleNamespace(qualified_refs=[selected, same_words],
+                               resolve=lambda _: SimpleNamespace(raw_text='返事済'))
+    question = SimpleNamespace(question_id='question',
+        decision=SimpleNamespace(supporting_evidence_refs=['selected']))
+    admitted = SimpleNamespace(
+        control=SimpleNamespace(question_control_context=SimpleNamespace(issued_questions=[question])),
+        original=SimpleNamespace(envelope=SimpleNamespace(envelope_id='original')),
+        resolver=lambda: resolver)
+    answer = {'question_id': 'question', 'text': 'その時は重く感じました。',
+              'ai_question_context': 'どのように受け取りましたか。'}
+    current = {'source_role': 'ORIGINAL_INPUT', 'source_envelope_id': 'original',
+               'field_path': 'memo', 'scalar_start': 7, 'scalar_end': 10, 'text': '返事済'}
+    active = {'coverage': {'active_state': 'RESOLVED'}, 'active_fields': [current]}
+    assert _grounded_answer_original_evidence(admitted, active, answer) == []
+    active['active_fields'] = [{**current, 'scalar_start': 2, 'scalar_end': 7, 'text': '前返事済後'}]
+    assert _grounded_answer_original_evidence(admitted, active, answer) == ['返事済']
+    active['coverage']['active_state'] = 'PENDING'
+    assert _grounded_answer_original_evidence(admitted, active, answer) == []
 
 
 @pytest.mark.parametrize(('tier', 'related', 'action'), [
     ('plus', True, '会議で発表した。'), ('premium', True, '会議で発表した。'),
     ('plus', False, '会議で発表した。'), ('plus', True, ''),
 ])
-def test_v5_answer_uses_current_sources_and_replays_verified_paid_history(
-        natural_case, qdb, monkeypatch, tier, related, action):
+@pytest.mark.parametrize('answer_focus', [False, True])
+def test_answer_uses_current_sources_and_replays_verified_paid_history(
+        natural_case, qdb, monkeypatch, tier, related, action, answer_focus):
     from test_emlis_natural_frames_application import REVISION, _case, _past
 
     user, parent, _, _, past, _ = _case(natural_case, qdb, tier=tier, history=related)
@@ -292,6 +330,12 @@ def test_v5_answer_uses_current_sources_and_replays_verified_paid_history(
             assert current['history'] == current['confirmed_frame_feedback'] == []
             assert current['quote']['text'] == 'その時は怖かった。'
             assert current['ai_question_context'] == initial['pending_question']['text']
+            if answer_focus:
+                assert set(current['current']) == {'scope', 'original_evidence'}
+                content = payload['messages'][1]['content']
+                assert content.count('その時は怖かった。') == 1
+                assert content.count(initial['pending_question']['text']) == 1
+                assert '敬語の一文' in payload['messages'][0]['content']
             if action:
                 assert action not in payload['messages'][1]['content']
             result = {'follow': follow}
@@ -315,6 +359,7 @@ def test_v5_answer_uses_current_sources_and_replays_verified_paid_history(
             idempotency_key='revise-past-frame'))
     monkeypatch.setenv('COCOLON_EMLIS_GROUNDED_DECODING', 'true')
     monkeypatch.setenv('COCOLON_EMLIS_GROUNDED_SEMANTICS', 'true')
+    monkeypatch.setenv('COCOLON_EMLIS_GROUNDED_ANSWER_FOCUS', 'true' if answer_focus else '')
     service = _active_application_owner(monkeypatch, source, 'paid')
     failed = False
 
@@ -332,7 +377,8 @@ def test_v5_answer_uses_current_sources_and_replays_verified_paid_history(
     receipt, = [e['payload'] for e in before['events']
                 if e['payload'].get('stage') == 'NATURAL_REPLY_RECEIVED'
                 and e['operation_id'] == interruption['operation_id']]
-    assert receipt['writer_context_version'] == grounded.SEMANTIC_CONTEXT_VERSION
+    assert receipt['writer_context_version'] == (
+        grounded.ANSWER_FOCUS_CONTEXT_VERSION if answer_focus else grounded.SEMANTIC_CONTEXT_VERSION)
     assert ('writer_history_sha256' in receipt) is related
     current = f'「その時は怖かった。」\n\n{follow}'
     if related:
