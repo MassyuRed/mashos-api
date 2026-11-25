@@ -3664,25 +3664,24 @@ def _choice_pairs(origins, sentences):
                 yield left, right
 
 
+def _choice_matched_clauses(clauses, choice, other):
+    condition, action, forms, continuative = choice
+    terms = {condition[i:i + 3] for i in range(len(condition) - 2)
+             if _CHOICE_TERM.fullmatch(condition[i:i + 3]) and condition[i:i + 3] not in other[0]}
+    for i, clause in enumerate(clauses):
+        if not any(term in clause for term in terms) or _choice_added_action(clause, f'{condition}、{action}'):
+            continue
+        if (any(re.search(re.escape(form) + r'(?!かった|く|ら|り)', clause) for form in forms)
+                or continuative and any(_CHOICE_OUTPUT_CONTINUATION.match(clause[match.end():])
+                    for match in re.finditer(re.escape(continuative), clause))):
+            yield i
+
+
 def _choice_comparison_covers(text, left, right):
     """Keep both observed actions and their own distinguishing source terms."""
     clauses = _CHOICE_CASE_BOUNDARY.split(text)
-    if len(clauses) < 2:
-        return False
-
-    def matched(choice, other):
-        condition, action, forms, continuative = choice
-        terms = {condition[i:i + 3] for i in range(len(condition) - 2)
-                 if _CHOICE_TERM.fullmatch(condition[i:i + 3]) and condition[i:i + 3] not in other[0]}
-        for i, clause in enumerate(clauses):
-            if not any(term in clause for term in terms) or _choice_added_action(clause, f'{condition}、{action}'):
-                continue
-            if (any(re.search(re.escape(form) + r'(?!かった|く|ら|り)', clause) for form in forms)
-                    or continuative and any(_CHOICE_OUTPUT_CONTINUATION.match(clause[match.end():])
-                        for match in re.finditer(re.escape(continuative), clause))):
-                yield i
-
-    return any(a != b for a in matched(left, right) for b in matched(right, left))
+    return (len(clauses) >= 2 and any(a != b for a in _choice_matched_clauses(clauses, left, right)
+                                     for b in _choice_matched_clauses(clauses, right, left)))
 
 
 def _v3_decision_edges(edges, material, nodes):
@@ -3754,23 +3753,54 @@ def _v3_source_contrast_edge(material, nodes, axes, edges):
             'label': label, 'relation_kind': 'CONTEXT_CONTRAST'}
 
 
+def _v3_authored_choice_comparison(axes, refs, pair, stem):
+    root_refs = [ref + '.u1.e1' for ref in refs]
+    across = [axis for axis in axes if axis['scope'] == 'across_records' and set(axis['anchors']) == set(root_refs)]
+    if len(across) != 1:
+        return False
+    axis, = across
+    factor = unicodedata.normalize('NFKC', axis['decision_factor'])
+    if factor not in {stem + 'る', stem + 'るか', stem + 'るかどうか'} and not factor.endswith(f'({stem}るか{stem}ないか)'):
+        return False
+    if len(axes) == 1:
+        return _choice_comparison_covers(axis['case_reading'], *pair)
+
+    # The model may put the second case in a separate axis. Each text must
+    # describe only its own outcome, and the second axis must cite that root.
+    peer = next(other for other in axes if other is not axis)
+    if peer['scope'] != 'in_this_record' or len(peer['anchors']) != 1 or peer['anchors'][0] not in root_refs:
+        return False
+    peer_index = root_refs.index(peer['anchors'][0])
+    other_index = 1 - peer_index
+    peer_choice, other_choice = pair[peer_index], pair[other_index]
+    condition = stem + ('る' if peer_choice[0].endswith('る') else 'ない')
+    peer_factor = unicodedata.normalize('NFKC', peer['decision_factor'])
+    if peer_factor != condition and not peer_factor.endswith(f'({condition})'):
+        return False
+    for text, own, other in ((axis['case_reading'], other_choice, peer_choice),
+                             (peer['case_reading'], peer_choice, other_choice)):
+        clauses = _CHOICE_CASE_BOUNDARY.split(text)
+        if (next(_choice_matched_clauses(clauses, own, other), None) is None
+                or next(_choice_matched_clauses(clauses, other, own), None) is not None):
+            return False
+    return True
+
+
 def _v3_read_confirmed_choice_contrast(prepared, material, nodes, authored_axes):
     """Describe an authored comparison from two complete, opposite written choices."""
     from .intent_compiler import _proposition
 
-    if len(authored_axes) != 1 or prepared.map_correction_sources_json:
+    if len(authored_axes) not in (1, 2) or prepared.map_correction_sources_json:
         return None
     origins = _v3_source_contrast_origins(material, nodes)
     if not origins:
         return None
-    axis, = authored_axes
     refs = [node['node_id'] for node in nodes]
-    if (axis['scope'] != 'across_records' or set(axis['anchors']) != {ref + '.u1.e1' for ref in refs}
-            or any(field['text'] != quote or not field.get('fragment_is_complete_field', True)
-                   for _, _, field, quote in origins)):
+    if any(field['text'] != quote or not field.get('fragment_is_complete_field', True)
+           for _, _, field, quote in origins):
         return None
     pair = next(_choice_pairs(origins, _semantic_display_sentences(material)), None)
-    if pair is None or not _choice_comparison_covers(axis['case_reading'], *pair):
+    if pair is None:
         return None
 
     readings = {}
@@ -3796,7 +3826,7 @@ def _v3_read_confirmed_choice_contrast(prepared, material, nodes, authored_axes)
     negative_condition, negative_stem, negative, negative_verb = readings['negative']
     if (stem != negative_stem or positive.arguments != negative.arguments
             or positive.predicate_lemma != negative.predicate_lemma
-            or axis['decision_factor'] not in {stem + 'る', stem + 'るか', stem + 'るかどうか'}):
+            or not _v3_authored_choice_comparison(authored_axes, refs, pair, stem)):
         return None
 
     topic = ''.join(noun + particle for particle, noun in positive.arguments)

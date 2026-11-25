@@ -994,6 +994,7 @@ class EmlisThreadService:
     async def _process_natural(self, user_id, snapshot):
         from cocolon_meaning_experience_engine.natural_reply import (
             ARTIFACT_SCHEMA, NaturalReply, NaturalReplyError, prepare_natural_reply, validate_reply,
+            preserve_initial_past_preference,
             CORRECTED_SOURCE_CONTEXT_VERSION, DIRECT_FEELING_CORRECTION_CONTEXT_VERSION,
             DIRECT_FEELING_CORRECTION_CONTEXT_VERSIONS, INITIAL_STANDALONE_FEELING_CONTEXT_VERSION,
             INITIAL_OBSERVATION_FOLLOW_CONTEXT_VERSION, INITIAL_OBSERVATION_FOLLOW_CONTEXT_VERSIONS,
@@ -1123,10 +1124,10 @@ class EmlisThreadService:
                 raise NaturalReplyError("natural_reply_deadline")
             self._require_write()
             try:
+                initial_final = (response_stage == 'FINAL' and not t['issued_count']
+                                 and not t['data'].get('natural_question_stop'))
                 candidate = validate_reply(await asyncio.wait_for(self.natural_reply_source(material),
-                    timeout=min(240.0, remaining)), material,
-                    check_initial_availability=(response_stage == 'FINAL' and not t['issued_count']
-                                                and not t['data'].get('natural_question_stop')))
+                    timeout=min(240.0, remaining)), material, check_initial_availability=initial_final)
                 if t.get("latest_answer_event_id") and material.analysis_material_json:
                     answer_review = compare_reply_meaning(material.material_json, candidate.text,
                         material.source_prefix_ref, active_answer_analysis=json.loads(material.analysis_material_json))
@@ -1138,6 +1139,11 @@ class EmlisThreadService:
                 return await self._finish(user_id, snapshot, body_state="UNAVAILABLE", state="RESPONSE_FAILED",
                                           failure="natural_reply_unavailable")
             provider_evidence = {}
+            if initial_final and t['data'].get('started_tier') == 'free' and not history_line:
+                preserved = preserve_initial_past_preference(candidate, material)
+                if preserved != candidate:
+                    provider_evidence['provider_reply_text'] = candidate.text
+                    candidate = preserved
             if history_line:
                 provider_evidence['provider_reply_text'] = candidate.text
                 candidate = with_history(candidate)

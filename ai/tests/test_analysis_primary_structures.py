@@ -653,3 +653,38 @@ def test_v3_reads_the_confirmed_contrast_when_model_scope_is_too_wide(source_var
         '机で見返せるため、作業手順をノートに書きました。作業場所で見返せないため、書きませんでした。')
     assert comparison['node_refs'] == ['n1', 'n2']
     assert '書かなかった' in admitted['edges'][0]['label']
+
+
+@pytest.mark.parametrize('fault', [None, 'wrong_anchor', 'wrong_factor', 'reversed_choice', 'both_outcomes'])
+def test_v3_reads_original_choices_when_model_splits_the_cases(fault):
+    first = '机で見返せるので、私は作業手順をノートに書いた。'
+    second = '作業場所で見返せないので、私は作業手順をノートに書かなかった。'
+    prepared, plan, bodies = scenario(first, second, version='karen.v3')
+    nodes = core._semantic_v4_join(plan, bodies)
+    comparison = dict(v3_reading(), decision_factor='作業場所の視認性（見返せるか見返せないか）',
+                      criterion='確認できる環境がある場合、それを理由にノートに記録する。',
+                      case_reading='机という場所で見返せる条件があったため、本人は手順をノートに書いた。')
+    peer = dict(scope='in_this_record', anchors=['n2.u1.e1'], decision_factor='作業場所の視認性（見返せない）',
+                criterion='確認できない環境ではノートに記録しない。',
+                case_reading='作業場所で見返せない条件だったため、本人は手順をノートに書かなかった。',
+                heading='ノートに書かない場面')
+    if fault == 'wrong_anchor':
+        peer['anchors'] = ['n1.u1.e1']
+    elif fault == 'wrong_factor':
+        peer['decision_factor'] = '作業場所の広さ'
+    elif fault == 'reversed_choice':
+        peer['case_reading'] = peer['case_reading'].replace('書かなかった', '書いた')
+    elif fault == 'both_outcomes':
+        peer['case_reading'] += comparison['case_reading']
+    packet = dict(schema_version=core._semantic_v4_schema('RELATIONS'), nodes_sha256=core.semantic_map_hash(nodes),
+                  qualification_review={}, edges=[], primary_structures=[comparison, peer],
+                  overview=dict(node_refs=['n1', 'n2'], title_proposal='', title='2件の記録を振り返って'))
+
+    admitted = core.semantic_node_local_v4_relations(prepared, plan, bodies, packet)
+    axes = admitted['overview']['primary_structures']
+    if fault:
+        assert axes == [] and admitted['edges'] == []
+    else:
+        assert len(axes) == len(admitted['edges']) == 1
+        assert axes[0]['criterion'] == 'この二つの記録では、見返せることが作業手順をノートに書く条件でした。'
+        assert axes[0]['description'].endswith('作業場所で見返せないため、書きませんでした。')
