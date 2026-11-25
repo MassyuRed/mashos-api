@@ -778,6 +778,8 @@ def prepare_natural_reply(request, *, use_meaning_support=False, response_stage=
     writer = {'schema_version': ACTIVE_MEANING_PROFILE, 'records': records,
         'user_frame_feedback': _active_writer_feedback(material['user_frame_feedback'], record_numbers)}
     if use_grounded_observation and not admitted.control.interpretation_corrections:
+        if grounded_current_only or response_stage == "PRE_QUESTION":
+            writer.update(records=records[:1], user_frame_feedback=[])
         latest_answer = material['current_answers'][-1] if material['current_answers'] else None
         passages = grounded_observation_reply.current_passages(records[0], original, latest_answer)
         focus = _initial_observation_follow(admitted, original, response_stage)
@@ -795,8 +797,6 @@ def prepare_natural_reply(request, *, use_meaning_support=False, response_stage=
                 writer.update(records=[{'scope': records[0]['scope'], 'metadata': records[0]['metadata'],
                     'active_fields': [{'text': focus['excerpt'], 'field_path': 'memo',
                                        'source_role': 'ORIGINAL_INPUT'}]}], user_frame_feedback=[])
-            elif grounded_current_only or response_stage == "PRE_QUESTION":
-                writer.update(records=records[:1], user_frame_feedback=[])
             if response_stage == "REFINED":
                 writer["ai_question_context"] = latest_answer["ai_question_context"]
             if response_stage != "FINAL":

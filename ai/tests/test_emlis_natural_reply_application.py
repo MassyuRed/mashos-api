@@ -1357,3 +1357,36 @@ def test_grounded_single_passage_format_accepts_only_one_follow_string(wire):
     source = {"id": "P1", "text": "その時は怖かった。", "source_role": "SUPPLEMENTAL_ANSWER"}
     with pytest.raises(ValueError, match="grounded_observation_format"):
         grounded_observation_reply.compose(wire, {"grounded_passages": [source]})
+
+
+@pytest.mark.parametrize("stage,current_only", [("PRE_QUESTION", False), ("FINAL", True)])
+def test_grounded_current_scope_survives_when_no_passage_can_be_quoted(
+        natural_case, qdb, monkeypatch, stage, current_only):
+    from cocolon_meaning_experience_engine.natural_reply import (
+        ACTIVE_MEANING_PROFILE, build_natural_reply_messages, prepare_natural_reply)
+    from emlis_thread_service import _request
+
+    user, parent, _, calls = natural_case
+    memo = "受付の予定って何時だったかな？と書き留めた。"
+    past = "昨日も受付の予定を手帳に書き留めた。"
+    qdb.query("update public.profiles set subscription_tier='plus' where id=$1", [user])
+    qdb.query("update public.emotions set memo=$2 where id=$1", [parent, memo])
+    insert_past(qdb, user, past)
+
+    async def infer(material):
+        calls.append(material)
+        return NaturalReply(BODY, "synthetic", material.source_prefix_ref)
+
+    owner = _active_application_owner(monkeypatch, infer, None)
+    run(owner.start(user, parent))
+    snapshot = run(owner._hydrate(user, run(owner.store.read(user, input_id=parent))))
+    chosen, _ = prepare_natural_reply(_request(snapshot), response_stage=stage,
+        meaning_profile=ACTIVE_MEANING_PROFILE, owner_scope=user,
+        original_record=snapshot["original"], as_of=snapshot["thread"]["data"]["natural_meaning_as_of"],
+        use_grounded_observation=True, grounded_current_only=current_only)
+    assert past in chosen.material_json
+    writer = json.loads(chosen.writer_material_json)
+    assert "grounded_passages" not in writer
+    wire = build_natural_reply_messages(chosen)[-1]["content"]
+    assert memo in wire
+    assert past not in wire
