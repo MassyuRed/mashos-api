@@ -667,6 +667,7 @@ def prepare_natural_reply(request, *, use_meaning_support=False, response_stage=
                           include_initial_standalone_feeling=False, initial_observation_follow_context_version=None,
                           use_grounded_observation=False, grounded_current_only=False,
                           grounded_context_version=grounded_observation_reply.CONTEXT_VERSION,
+                          select_grounded_reception=False,
                           direct_feeling_correction_context_version=DIRECT_FEELING_CORRECTION_CONTEXT_VERSION):
     """Return admitted user material and the existing independent Safety result."""
     if response_stage not in _RESPONSE_STAGES:
@@ -796,6 +797,13 @@ def prepare_natural_reply(request, *, use_meaning_support=False, response_stage=
         if standalone_feeling:
             passages = [row for row in passages if row['field'] == 'memo']
         if passages:
+            # A single source from the current record is the scope exercised
+            # by the measured reception replies. Keep the established writer
+            # when history, feedback or multiple authored answers are present.
+            if (select_grounded_reception and len(passages) == 1
+                    and len(writer['records']) == 1 and not writer['user_frame_feedback']
+                    and len(material['current_answers']) <= 1):
+                grounded_context_version = grounded_observation_reply.RECEPTION_CONTEXT_VERSION
             writer.update(source_context_version=grounded_context_version, grounded_passages=passages)
             if standalone_feeling:
                 # The other column and earlier records cannot supply a

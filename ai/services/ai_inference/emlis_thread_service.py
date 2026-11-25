@@ -1060,8 +1060,10 @@ class EmlisThreadService:
             prior is None and self.grounded_observation_enabled
             and getattr(self.natural_reply_source, 'model', None) == QWEN_9B_NATURAL_ALIAS)
         grounded_version = (context_version if context_version in grounded_observation_reply.CONTEXT_VERSIONS
-            else grounded_observation_reply.RECEPTION_CONTEXT_VERSION if self.grounded_decoding_enabled
+            else grounded_observation_reply.CONSTRAINED_CONTEXT_VERSION if self.grounded_decoding_enabled
             else grounded_observation_reply.CONTEXT_VERSION)
+        select_grounded_reception = (prior is None and self.grounded_decoding_enabled
+            and (response_stage == "REFINED" or t["data"].get("natural_question_stop") == "skip"))
         material, safety = prepare_natural_reply(_request(snapshot), response_stage=response_stage,
             bind_writer_context=context_version is not None,
             include_corrected_circumstance=context_version == CORRECTED_SOURCE_CONTEXT_VERSION,
@@ -1076,6 +1078,7 @@ class EmlisThreadService:
             initial_observation_follow_context_version=initial_follow_version,
             use_grounded_observation=grounded_observation,
             grounded_context_version=grounded_version,
+            select_grounded_reception=select_grounded_reception,
             grounded_current_only=bool(t["data"].get("natural_question_stop")
                                        and not t.get("latest_answer_event_id")),
             direct_feeling_correction_context_version=direct_version,
