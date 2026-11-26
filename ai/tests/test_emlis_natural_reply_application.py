@@ -1343,7 +1343,6 @@ def test_initial_reception_keeps_original_and_provider_text_on_same_version(
     ('plus', 'skip', 'つらかったんです', True),
     ('plus', 'skip', '今はつらいです。', False),
     ('plus', 'skip', 'とてもつらかったんです。', False),
-    ('plus', None, 'つらくなかったです。', False),
     ('plus', 'stop', 'つらかったんです', False),
     ('premium', 'skip', 'つらかったんです', False),
 ])
@@ -1369,10 +1368,6 @@ def test_plus_first_unanswered_skip_closes_only_bare_past_distress(
         model=QWEN_9B_NATURAL_ALIAS, api_key='synthetic-only', transport=httpx.MockTransport(infer))
     service = _active_application_owner(monkeypatch, provider, 'paid')
     pending = run(service.start(user, parent))
-    if action is None:
-        assert pending['state'] == 'COMPLETED' and pending['pending_question'] is None
-        assert len(provider_calls) == 1 and provider_calls[0][-1]['content'] != memo
-        return
     assert pending['state'] == 'AWAITING_ANSWER'
     dto = run(service.action(user, pending['thread_id'], action=action,
         question_id=pending['pending_question']['question_id'], expected_revision=pending['revision'],
@@ -1389,6 +1384,12 @@ def test_plus_first_unanswered_skip_closes_only_bare_past_distress(
     receipt = next(event['payload'] for event in reversed(stored['events'])
                    if event['payload'].get('stage') == 'NATURAL_REPLY_RECEIVED')
     assert (receipt.get('writer_context_version') == FIRST_SKIPPED_DISTRESS_CONTEXT_VERSION) is uses_closing_turn
+
+
+def test_first_skipped_distress_excludes_past_negation():
+    from cocolon_meaning_experience_engine.natural_reply import _BARE_PAST_DISTRESS
+
+    assert _BARE_PAST_DISTRESS.fullmatch('つらくなかったです。') is None
 
 
 @pytest.mark.parametrize('ability,follow,action,accepted', [
