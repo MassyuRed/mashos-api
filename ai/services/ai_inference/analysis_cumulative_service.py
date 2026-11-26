@@ -11,6 +11,7 @@ from collections import Counter
 from copy import deepcopy
 from dataclasses import asdict, dataclass
 from datetime import date
+from functools import partial
 import inspect
 import json
 import os
@@ -21,7 +22,7 @@ from uuid import UUID, uuid4
 import httpx
 from fastapi import HTTPException
 
-from analysis_model_source import (analysis_premium_structure_relations_enabled,
+from analysis_model_source import (AnalysisDirectHistoryPromptTooLarge, analysis_premium_structure_relations_enabled,
     analysis_primary_structure_reading_mode)
 import analysis_observed_service as observed
 from analysis_observed_service import _checked_projection as _checked_v2_projection, private_storage_evidence, observed_mode
@@ -858,11 +859,13 @@ async def _model_response(model_source, prepared, *, merge_deadline=None, per_ph
         return response
     except TimeoutError:
         raise HTTPException(504, 'analysis_model_source_timeout') from None
+    except AnalysisDirectHistoryPromptTooLarge:
+        raise
     except (httpx.HTTPError, OSError, RuntimeError):
         raise HTTPException(503, 'analysis_model_source_unavailable') from None
 
 
-def prepare_semantic_history_batches(parent):
+def prepare_semantic_history_batches(parent, *, split_fitting_parent=False):
     """Partition the admitted history, never a latest-N window or DB subset.
 
     A record, all its active fields/answers and map-correction dependencies
@@ -874,7 +877,7 @@ def prepare_semantic_history_batches(parent):
         AnalysisSemanticMapInput, prepare_semantic_leaf, _semantic_map_require)
     _semantic_map_require(type(parent) is AnalysisSemanticMapInput,
         'analysis_semantic_input_invalid')
-    if semantic_analysis_input_fits(parent):
+    if not split_fitting_parent and semantic_analysis_input_fits(parent):
         return ()
     refs = tuple(m.saved_record_ref for m in parent.frozen.members)
     groups = {ref: ref for ref in refs}
@@ -917,7 +920,21 @@ def prepare_semantic_history_batches(parent):
         _semantic_map_require(len(stages) < SEMANTIC_HISTORY_MAX_LEAVES,
             'analysis_semantic_history_capacity_exceeded')
     if pending:
-        stages.append(prepare_semantic_leaf(parent, pending))
+        if split_fitting_parent and not stages and len(cohorts) >= 2:
+            # Later-stage growth can exceed the direct limit even though all
+            # PLAN source rows would fit under the normal leaf packing target.
+            middle = len(cohorts) // 2
+            grouped = tuple(cohorts.values())
+            for subset in (grouped[:middle], grouped[middle:]):
+                stage = prepare_semantic_leaf(parent, ordered(ref for group in subset for ref in group))
+                _semantic_map_require(semantic_analysis_input_fits(stage),
+                    'analysis_semantic_history_capacity_exceeded')
+                stages.append(stage)
+        else:
+            stages.append(prepare_semantic_leaf(parent, pending))
+    if split_fitting_parent and len(stages) < 2:
+        # An inseparable correction cohort must not be clipped or rerun whole.
+        raise HTTPException(503, 'analysis_model_source_unavailable')
     _semantic_map_require(2 <= len(stages) <= SEMANTIC_HISTORY_MAX_LEAVES,
         'analysis_semantic_history_capacity_exceeded')
     return tuple(stages)
@@ -937,7 +954,7 @@ async def _v24_history_uses_per_phase(source, parent):
         raise HTTPException(504, 'analysis_model_source_timeout') from None
 
 
-async def _semantic_history_map(source, parent, *, per_phase=None):
+async def _semantic_history_map(source, parent, *, per_phase=None, split_fitting_parent=False):
     from analysis_model_source import (semantic_analysis_input_fits,
         SEMANTIC_PIPELINE_TIMEOUT_SECONDS, SEMANTIC_REQUEST_TIMEOUT_SECONDS)
     from analysis_semantic_map import build_semantic_map, build_semantic_history_stage
@@ -965,7 +982,10 @@ async def _semantic_history_map(source, parent, *, per_phase=None):
         # The original profile shares one finite clock. Long v24 histories instead
         # advance only after a bounded local step or a fully admitted provider phase.
         async with asyncio.timeout(None if per_phase else SEMANTIC_PIPELINE_TIMEOUT_SECONDS) as deadline:
-            stages = await cpu_step(prepare_semantic_history_batches, parent)
+            planner = prepare_semantic_history_batches
+            if split_fitting_parent:
+                planner = partial(planner, split_fitting_parent=True)
+            stages = await cpu_step(planner, parent)
             if not per_phase:
                 calls = len(stages) + 1 if stages else 1
                 deadline.reschedule(started + min(SEMANTIC_PIPELINE_TIMEOUT_SECONDS,
@@ -1012,8 +1032,8 @@ async def _ensure_map(user_id, *, ensure=True, force=False, monthly=False, model
     """Save/read the normal map; explicit transport may opt into the v7 input.
 
     The asynchronous source returns AnalysisModelQuotedParentUnitsResponse.
-    It is called once only when rebuilding within the existing consumer scope.
-    Saved reads do not acquire responses; failed responses never use a fallback.
+    Saved reads do not acquire responses. During a rebuild, a v24 whole-history
+    prompt overflow can switch once to source-bound leaves and their merge.
     """
     owner = _owner(user_id)
     result = await read_maps(owner, history=monthly, limit=1)
@@ -1064,7 +1084,16 @@ async def _ensure_map(user_id, *, ensure=True, force=False, monthly=False, model
                         artifact, coverage = None, _checked_coverage(excluded.coverage)
                     else:
                         per_phase = await _v24_history_uses_per_phase(model_source, prepared)
-                        artifact, coverage = await _semantic_history_map(model_source, prepared, per_phase=per_phase)
+                        try:
+                            artifact, coverage = await _semantic_history_map(model_source, prepared, per_phase=per_phase)
+                        except AnalysisDirectHistoryPromptTooLarge:
+                            # Retry exactly once using the existing full-history
+                            # route, before any artifact is saved or notified.
+                            from analysis_job_progress import check_map_job_owner
+                            await check_map_job_owner()
+                            per_phase = True
+                            artifact, coverage = await _semantic_history_map(model_source, prepared,
+                                per_phase=per_phase, split_fitting_parent=True)
                 elif model_source is None:
                     artifact, coverage = await asyncio.to_thread(build_cumulative_map, owner, snapshot)
                 else:

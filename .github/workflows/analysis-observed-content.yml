@@ -69,6 +69,7 @@ name: Analysis observed content
       - ai/tests/test_analysis_cumulative*.py
       - ai/tests/test_analysis_v24_progress_history.py
       - ai/tests/test_analysis_v24_progress_transport.py
+      - ai/tests/test_analysis_v24_direct_capacity_recovery.py
       - ai/tests/test_analysis_worker_progress.py
       - ai/tests/test_emlis_active_meaning_application.py
       - ai/tests/test_emlis_analysis_material.py
@@ -453,6 +454,7 @@ jobs:
           ai/tests/test_analysis_cumulative_jobs.py
           ai/tests/test_analysis_v24_progress_history.py
           ai/tests/test_analysis_v24_progress_transport.py
+          ai/tests/test_analysis_v24_direct_capacity_recovery.py
           ai/tests/test_analysis_worker_progress.py
           ai/tests/test_analysis_observed_api.py
       - name: Verify monthly rank, immutable re-read and source deletion SQL

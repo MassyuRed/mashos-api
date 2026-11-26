@@ -45,8 +45,8 @@ def model_source(stage, handler):
         transport=httpx.MockTransport(handler))
 
 
-def successful_response(content):
-    return httpx.Response(200, json=dict(model='test-model', usage=dict(completion_tokens=20),
+def successful_response(content, *, completion_tokens=20):
+    return httpx.Response(200, json=dict(model='test-model', usage=dict(completion_tokens=completion_tokens),
         choices=[dict(finish_reason='stop', message=dict(role='assistant', content=content))]))
 
 
@@ -202,6 +202,62 @@ def test_v24_logs_invalid_plan_wire_without_model_data(caplog, merge_exchange):
     assert len(calls) == 1
     assert 'analysis_model_acquisition_failed phase=PLAN stage=phase_wire http_status=200' in caplog.text
     assert 'PRIVATE_REPLY' not in caplog.text
+    assert 'test.invalid' not in caplog.text
+
+
+@pytest.mark.parametrize('failure_stage', ['token_budget', 'prompt_build', 'prompt_bytes', 'request_bytes'])
+@pytest.mark.parametrize('failed_phase', ['NODES', 'RELATIONS'])
+def test_v24_distinguishes_pre_request_failures_without_model_data(
+        monkeypatch, caplog, merge_exchange, failure_stage, failed_phase):
+    stage, expected = merge_exchange
+    phases = tuple(expected)
+    sent = []
+    prior_phase = phases[phases.index(failed_phase) - 1]
+
+    if failure_stage in {'prompt_build', 'prompt_bytes'}:
+        build = core.semantic_node_local_v4_wire_messages
+
+        def fail_build(prepared, phase='PLAN', **kwargs):
+            if phase != failed_phase:
+                return build(prepared, phase, **kwargs)
+            if failure_stage == 'prompt_build':
+                raise ValueError('PRIVATE_CONTEXT')
+            messages = build(prepared, phase, **kwargs)
+            extra = dict(role='user', content='x' * (sources.SEMANTIC_MERGE_MAX_PROMPT_BYTES + 1))
+            return [*messages, extra]
+
+        monkeypatch.setattr(core, 'semantic_node_local_v4_wire_messages', fail_build)
+
+    def handler(request):
+        body = json.loads(request.content)
+        phase = phases[len(sent)]
+        sent.append(phase)
+        completion_tokens = 20
+        if phase == prior_phase:
+            if failure_stage == 'token_budget':
+                completion_tokens = body['max_tokens']
+            elif failure_stage == 'request_bytes':
+                monkeypatch.setattr(sources, 'SEMANTIC_MAX_REQUEST_BYTES', 1)
+        return successful_response(expected[phase][1], completion_tokens=completion_tokens)
+
+    async def scenario():
+        with pytest.raises(RuntimeError, match='analysis_model_source_unavailable'):
+            await model_source(stage, handler)(stage, per_phase=True)
+
+    asyncio.run(scenario())
+    assert sent == list(phases[:phases.index(failed_phase)])
+    assert f'phase={failed_phase} stage={failure_stage} http_status=None' in caplog.text
+    log = next(record for record in caplog.messages if 'analysis_model_acquisition_failed' in record)
+    counts = dict(item.split('=', 1) for item in log.split()[5:])
+    if failure_stage == 'token_budget':
+        assert counts['remaining_tokens'] == '0' and counts['prompt_bytes'] == 'None'
+    else:
+        assert int(counts['remaining_tokens']) > 0
+    if failure_stage == 'prompt_bytes':
+        assert int(counts['prompt_bytes']) > int(counts['prompt_limit'])
+    if failure_stage == 'request_bytes':
+        assert int(counts['request_bytes']) > int(counts['request_limit'])
+    assert 'PRIVATE_CONTEXT' not in caplog.text
     assert 'test.invalid' not in caplog.text
 
 

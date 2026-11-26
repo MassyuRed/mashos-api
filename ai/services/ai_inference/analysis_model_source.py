@@ -1,6 +1,6 @@
 """Opt-in self-hosted Analysis transport; original material stays Analysis-owned.
 
-No Emlis reply, provider fallback, retry, prompt rewrite, or model selection.
+No Emlis reply, alternate provider, prompt rewrite, or model selection.
 The normal application remains finite unless its own server setting opts in.
 """
 from __future__ import annotations
@@ -75,6 +75,10 @@ SEMANTIC_REQUEST_TIMEOUT_SECONDS = 225.0
 # The shared deadline for all profiles except multi-stage v24 history.
 # Long v24 histories bound source operations and each of at most 51 native phases.
 SEMANTIC_PIPELINE_TIMEOUT_SECONDS = 840.0
+
+
+class AnalysisDirectHistoryPromptTooLarge(RuntimeError):
+    """A whole-history v24 request grew beyond its bound after PLAN was admitted."""
 
 
 def _semantic_message_bytes(prepared):
@@ -216,11 +220,13 @@ class SelfHostedSemanticAnalysisModelSource(SelfHostedAnalysisModelSource):
         remaining_tokens = core.SEMANTIC_MAP_NODE_LOCAL_V4_TOKEN_BUDGET
         maximum = SEMANTIC_MERGE_MAX_PROMPT_BYTES if getattr(prepared, 'kind', None) == 'MERGE' else SEMANTIC_MAX_PROMPT_BYTES
         phase, stage, status = 'PLAN', 'prepare', None
+        prompt_bytes = request_bytes = None
         try:
             async with asyncio.timeout_at(end), httpx.AsyncClient(transport=self._transport, follow_redirects=False,
                     trust_env=False) as client:
                 for phase in core.SEMANTIC_MAP_NODE_LOCAL_V4_PHASES:
-                    stage, status = 'prepare', None
+                    stage, status = 'token_budget', None
+                    prompt_bytes = request_bytes = None
                     if per_phase:
                         if asyncio.current_task().cancelling():
                             raise asyncio.CancelledError
@@ -228,9 +234,17 @@ class SelfHostedSemanticAnalysisModelSource(SelfHostedAnalysisModelSource):
                     if remaining_tokens <= 0:
                         raise RuntimeError('analysis_model_source_token_budget_exhausted')
                     tokens = remaining_tokens
+                    stage = 'prompt_build'
                     messages = core.semantic_node_local_v4_wire_messages(prepared, phase, plan=plan, nodes=nodes)
-                    core.require(len(core.semantic_map_canonical(messages).encode()) <= maximum,
-                        'analysis_semantic_history_capacity_exceeded')
+                    stage = 'prompt_bytes'
+                    prompt_bytes = len(core.semantic_map_canonical(messages).encode())
+                    if prompt_bytes > maximum:
+                        if (phase != 'PLAN' and type(prepared) is core.AnalysisSemanticMapInput
+                                and prepared.prompt_version == core.SEMANTIC_MAP_OCCURRENCE_V24_PROFILE
+                                and len(prepared.frozen.members) >= 2):
+                            raise AnalysisDirectHistoryPromptTooLarge('analysis_model_source_unavailable')
+                        raise core.AnalysisSemanticError('analysis_semantic_history_capacity_exceeded')
+                    stage = 'deadline'
                     if not per_phase:
                         phase_end = min(end, loop.time() + SEMANTIC_HTTP_TIMEOUT_SECONDS)
                     remaining = phase_end - loop.time()
@@ -239,7 +253,9 @@ class SelfHostedSemanticAnalysisModelSource(SelfHostedAnalysisModelSource):
                     body = dict(model=self.model, messages=messages, temperature=0, max_tokens=tokens,
                         stream=False, chat_template_kwargs={'enable_thinking': False},
                         generation_seconds=min(210.0, remaining - SEMANTIC_V4_RESPONSE_RESERVE_SECONDS))
-                    core.require(len(core.semantic_map_canonical(body).encode()) <= SEMANTIC_MAX_REQUEST_BYTES,
+                    stage = 'request_bytes'
+                    request_bytes = len(core.semantic_map_canonical(body).encode())
+                    core.require(request_bytes <= SEMANTIC_MAX_REQUEST_BYTES,
                         'analysis_semantic_history_capacity_exceeded')
                     stage = 'transport'
                     async with asyncio.timeout_at(phase_end), client.stream('POST', self.endpoint,
@@ -348,8 +364,12 @@ class SelfHostedSemanticAnalysisModelSource(SelfHostedAnalysisModelSource):
         except (httpx.HTTPError, ValueError, TypeError, KeyError, UnicodeError, RuntimeError) as exc:
             # Only the semantic validator's fixed codes are safe to include.
             reason = str(exc) if isinstance(exc, core.AnalysisSemanticMapError) else None
-            logger.warning('analysis_model_acquisition_failed phase=%s stage=%s http_status=%s reason=%s',
-                phase, stage, status, reason)
+            logger.warning('analysis_model_acquisition_failed phase=%s stage=%s http_status=%s reason=%s '
+                'remaining_tokens=%s prompt_bytes=%s prompt_limit=%s request_bytes=%s request_limit=%s',
+                phase, stage, status, reason, remaining_tokens, prompt_bytes, maximum,
+                request_bytes, SEMANTIC_MAX_REQUEST_BYTES)
+            if isinstance(exc, AnalysisDirectHistoryPromptTooLarge):
+                raise
             raise RuntimeError('analysis_model_source_unavailable') from None
 
     async def __call__(self, prepared, *, pipeline_deadline=None, per_phase=False):
