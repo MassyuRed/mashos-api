@@ -62,6 +62,21 @@ def _source_changed(prepared, text):
     return replace(prepared, handoff=handoff)
 
 
+def _reverse_negation_on_assembly(monkeypatch, owner):
+    assemble = owner._assemble_original
+
+    def assemble_reversed(handoff, value, model_input):
+        assert model_input is None
+        prepared = assemble(handoff, value, model_input)
+        blocks = [block.replace('大切にしていない', '大切にしている')
+                  for block in prepared.artifact_payload()['content_payload']['body_blocks']]
+        altered = _changed(prepared, blocks=blocks)
+        assert altered._artifact_json != prepared._artifact_json
+        return altered
+
+    monkeypatch.setattr(owner, '_assemble_original', assemble_reversed)
+
+
 @pytest.mark.parametrize('tier', ['free', 'plus', 'premium'])
 @pytest.mark.parametrize('named', [False, True], ids=['ready', 'role-transformed'])
 def test_actual_review_issues_same_generated_body_and_replays_without_author(database, monkeypatch, tier, named):
@@ -428,7 +443,7 @@ def test_orchestrated_invalid_server_configuration_stops_before_lookup_or_genera
     assert conn.execute('SELECT count(*) FROM public.piece_records').fetchone() == (0,)
 
 
-@pytest.mark.parametrize('change_at', [1, 2, 3])
+@pytest.mark.parametrize('change_at', [1, 2], ids=['before-review', 'after-review'])
 def test_orchestrated_current_source_change_still_prevents_issue(database, monkeypatch, change_at):
     conn, _, _ = database
     owner, request, _, state, rpc, load = _orchestration(database, monkeypatch)
@@ -436,28 +451,44 @@ def test_orchestrated_current_source_change_still_prevents_issue(database, monke
     with pytest.raises(PieceContractError) as error:
         _orchestrate(owner, request, rpc, load)
     assert error.value.code == 'PIECE_CONFLICT'
+    assert state['authors'] == 1 and state['actual_reviews'] == change_at - 1
     assert not state['posts']
+    assert conn.execute('SELECT count(*) FROM public.piece_records').fetchone() == (0,)
+    assert _B5['_B4']['_used'](conn) == 0
+
+
+def test_orchestrated_source_change_after_app_revalidation_is_rejected_by_sql(database, monkeypatch):
+    from psycopg.errors import RaiseException
+
+    conn, _, _ = database
+    owner, request, _, state, rpc, load = _orchestration(database, monkeypatch)
+
+    async def change_source_before_sql(name, args):
+        assert state['checks'] == 2 and state['actual_reviews'] == 1
+        changed = conn.execute('UPDATE public.emotions SET memo=%s WHERE id=%s',
+                               ('A different original entry.', _B5['INPUT']))
+        assert changed.rowcount == 1
+        with pytest.raises(RaiseException) as error:
+            await rpc(name, args)
+        assert error.value.diag.message_primary == 'PIECE_CONFLICT'
+        raise PieceContractError(error.value.diag.message_primary) from None
+
+    with pytest.raises(PieceContractError) as error:
+        _orchestrate(owner, request, change_source_before_sql, load)
+    assert error.value.code == 'PIECE_CONFLICT'
+    assert state['authors'] == state['actual_reviews'] == len(state['posts']) == 1
     assert conn.execute('SELECT count(*) FROM public.piece_records').fetchone() == (0,)
     assert _B5['_B4']['_used'](conn) == 0
 
 
 def test_orchestrated_candidate_must_pass_actual_review_before_native_write(database, monkeypatch):
     conn, _, _ = database
-    owner, request, prepared, state, rpc, load = _orchestration(database, monkeypatch)
-    blocks = [b.replace('大切にしていない', '大切にしている')
-              for b in prepared.artifact_payload()['content_payload']['body_blocks']]
-    altered = _changed(prepared, blocks=blocks)
-    assert altered._artifact_json != prepared._artifact_json
-
-    async def altered_preparation(*args, **kwargs):
-        assert kwargs == {'_model_input': None}
-        return altered
-
-    monkeypatch.setattr(owner, 'prepare_original', altered_preparation)
+    owner, request, _, state, rpc, load = _orchestration(database, monkeypatch)
+    _reverse_negation_on_assembly(monkeypatch, owner)
     with pytest.raises(PieceContractError) as error:
         _orchestrate(owner, request, rpc, load)
     assert error.value.code == 'PIECE_SAFETY_UNAVAILABLE'
-    assert state['actual_reviews'] == 1 and not state['posts']
+    assert state['authors'] == state['actual_reviews'] == 1 and not state['posts']
     assert conn.execute('SELECT count(*) FROM public.piece_records').fetchone() == (0,)
 
 
@@ -701,20 +732,12 @@ def test_http_rpc_protocol_failure_is_not_auth_absence_or_success(database, monk
 
 def test_http_actual_safety_rejection_never_reaches_sql(database, monkeypatch):
     conn, _, _ = database
-    app, owner, request, prepared, state = _preview_http_harness(database, monkeypatch)
-    blocks = [b.replace('大切にしていない', '大切にしている')
-              for b in prepared.artifact_payload()['content_payload']['body_blocks']]
-    altered = _changed(prepared, blocks=blocks)
-
-    async def altered_preparation(*args, **kwargs):
-        assert kwargs == {'_model_input': None}
-        return altered
-
-    monkeypatch.setattr(owner, 'prepare_original', altered_preparation)
+    app, owner, request, _, state = _preview_http_harness(database, monkeypatch)
+    _reverse_negation_on_assembly(monkeypatch, owner)
     result = _preview_http_post(app, request)
     assert result.status_code == 422
     assert result.json() == {'code': 'PIECE_SAFETY_UNAVAILABLE'}
-    assert state['actual_reviews'] == 1 and state['http_rpc'] == 0
+    assert state['authors'] == state['actual_reviews'] == 1 and state['http_rpc'] == 0
     assert conn.execute('SELECT count(*) FROM public.piece_records').fetchone() == (0,)
 
 
