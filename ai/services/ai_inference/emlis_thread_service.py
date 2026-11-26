@@ -230,6 +230,15 @@ def _observation_text(snapshot, payload):
     return payload["text"]
 
 
+def _is_free_reply_on_paid_tier(snapshot, data, payload):
+    # A paid upgrade can change freshness without making the old Free context
+    # inaccessible. Require the saved observation's original-only binding.
+    return (snapshot["tier"] in {"plus", "premium"}
+            and data.get("evaluated_tier") == "free"
+            and payload.get("context_guards") == []
+            and payload.get("context_ref") == identity("context", "free", [], []))
+
+
 def _natural_interpretive_frames(snapshot, material):
     """Reuse owned history frames without interpreting the model's reply.
 
@@ -304,7 +313,8 @@ def thread_dto(snapshot, *, requested_attempt_id=None, can_write=True):
             if (p.get('artifact', {}).get('schema_version') == 'cocolon.emlis.recipient_reply.v1'
                     and (not _generation_current(snapshot)
                          or not _context_current(snapshot, p.get('context_guards', []))
-                         or p.get('context_ref') != _context_ref(snapshot))):
+                         or p.get('context_ref') != _context_ref(snapshot))
+                    and not _is_free_reply_on_paid_tier(snapshot, d, p)):
                 # A natural reply cannot be split into current/past sections.
                 # Do not leak a stale paid/deleted source through the timeline.
                 continue
@@ -984,7 +994,8 @@ class EmlisThreadService:
             decision, question = await asyncio.to_thread(question_candidate,
                 prepared.thread if prepared is not None else admitted, plan,
                 parent_request_id=request.request_id,
-                allow_affect_question=t["data"].get("natural_context_update_enabled") is True)
+                allow_affect_question=t["data"].get("natural_context_update_enabled") is True,
+                allow_unspecified_concern=t["data"].get("natural_response_stage") != "FINAL")
         except Exception:
             if prepared is not None:
                 raise
@@ -1002,8 +1013,9 @@ class EmlisThreadService:
             ISSUED_ANSWER_RECEPTION_VERSION,
             QWEN_9B_NATURAL_ALIAS,
             PAID_RECEIVED_ANSWER_CONTEXT_VERSION,
-            RECEIVED_ANSWER_CONTEXT_VERSION, SOURCE_CONTEXT_VERSION,
+            RECEIVED_ANSWER_CONTEXT_VERSION, SOURCE_CONTEXT_VERSION, UNSPECIFIED_CONCERN_CONTEXT_VERSION,
             build_natural_reply_messages)
+        from cocolon_meaning_experience_engine.emlis_question import unspecified_concern_focus
         from cocolon_meaning_experience_engine.natural_reply_meaning import (
             SCHEMA as MEANING_REVIEW_SCHEMA, compare_reply_meaning)
         t = snapshot["thread"]
@@ -1034,6 +1046,8 @@ class EmlisThreadService:
         prior = received or started
         if prior is not None:
             context_version = prior["payload"].get("writer_context_version")
+        elif not correcting and unspecified_concern_focus(snapshot["original"]):
+            context_version = UNSPECIFIED_CONCERN_CONTEXT_VERSION
         elif t["data"].get("natural_context_update_enabled") is True:
             context_version = (CORRECTED_SOURCE_CONTEXT_VERSION if correcting
                                else PAID_RECEIVED_ANSWER_CONTEXT_VERSION)
@@ -1041,7 +1055,7 @@ class EmlisThreadService:
             context_version = None
         if context_version not in {None, SOURCE_CONTEXT_VERSION, CORRECTED_SOURCE_CONTEXT_VERSION,
                                    RECEIVED_ANSWER_CONTEXT_VERSION, PAID_RECEIVED_ANSWER_CONTEXT_VERSION,
-                                   ISSUED_ANSWER_RECEPTION_VERSION,
+                                   ISSUED_ANSWER_RECEPTION_VERSION, UNSPECIFIED_CONCERN_CONTEXT_VERSION,
                                    FIRST_SKIPPED_DISTRESS_CONTEXT_VERSION,
                                    INITIAL_STANDALONE_FEELING_CONTEXT_VERSION, *INITIAL_OBSERVATION_FOLLOW_CONTEXT_VERSIONS,
                                    *DIRECT_FEELING_CORRECTION_CONTEXT_VERSIONS}:
@@ -1078,6 +1092,7 @@ class EmlisThreadService:
             initial_observation_follow_context_version=initial_follow_version,
             use_issued_answer_reception=use_issued_answer_reception,
             use_first_skipped_distress=use_first_skipped_distress,
+            scope_unspecified_concern=context_version == UNSPECIFIED_CONCERN_CONTEXT_VERSION,
             direct_feeling_correction_context_version=direct_version,
             prepared_meaning=prepared_meaning,
             meaning_profile=t['data'].get('natural_meaning_profile'), owner_scope=user_id,

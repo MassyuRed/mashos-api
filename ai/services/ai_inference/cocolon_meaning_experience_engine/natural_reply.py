@@ -23,6 +23,7 @@ CORRECTED_SOURCE_CONTEXT_VERSION = "bound_field_and_answer_context.v2"
 RECEIVED_ANSWER_CONTEXT_VERSION = "bound_field_and_answer_context.v3"
 PAID_RECEIVED_ANSWER_CONTEXT_VERSION = "bound_field_and_answer_context.v4"
 ISSUED_ANSWER_RECEPTION_VERSION = "issued_question_answer_reception.v3"
+UNSPECIFIED_CONCERN_CONTEXT_VERSION = "unspecified_concern_context.v1"
 LEGACY_DIRECT_FEELING_CORRECTION_CONTEXT_VERSION = "bound_field_and_answer_context.v5"
 DIRECT_FEELING_CORRECTION_VOICE_CONTEXT_VERSION = "bound_field_and_answer_context.v6"
 INITIAL_STANDALONE_FEELING_CONTEXT_VERSION = "bound_field_and_answer_context.v7"
@@ -658,6 +659,7 @@ def prepare_natural_reply(request, *, use_meaning_support=False, response_stage=
                           include_paid_received_answer=False, include_direct_feeling_correction=False,
                           include_initial_standalone_feeling=False, initial_observation_follow_context_version=None,
                           use_issued_answer_reception=False, use_first_skipped_distress=False,
+                          scope_unspecified_concern=False,
                           direct_feeling_correction_context_version=DIRECT_FEELING_CORRECTION_CONTEXT_VERSION):
     """Return admitted user material and the existing independent Safety result."""
     if response_stage not in _RESPONSE_STAGES:
@@ -672,6 +674,9 @@ def prepare_natural_reply(request, *, use_meaning_support=False, response_stage=
         raise NaturalReplyError('natural_reply_frame_feedback_not_connected')
     current_feedback = tuple(f for f in feedback if f.source_emotion_id == current_id)
     safety = _source_safety(original, admitted, current_feedback)
+    if scope_unspecified_concern:
+        # Older records cannot fill an unanswered gap about this occasion.
+        histories = ()
     history = []
     history_meanings = {}
     if use_meaning_support:
@@ -713,7 +718,8 @@ def prepare_natural_reply(request, *, use_meaning_support=False, response_stage=
         included_ids.add(source.source_guard[0])
     material = {"current": _material(original), "current_input_id": current_id,
                 "current_answers": _answers(admitted), "past_user_records": history,
-                "user_frame_feedback": _frame_feedback_material(admitted, included_ids)}
+                "user_frame_feedback": ([] if scope_unspecified_concern
+                                        else _frame_feedback_material(admitted, included_ids))}
     if admitted.control.interpretation_corrections:
         material["interpretation_corrections"] = _interpretation_corrections(admitted)
     if response_stage == "REFINED" and not material["current_answers"]:
@@ -783,7 +789,9 @@ def prepare_natural_reply(request, *, use_meaning_support=False, response_stage=
                         if use_issued_answer_reception and not history and not feedback else None)
     closing_distress = (_first_skipped_distress(admitted, original, response_stage)
                         if use_first_skipped_distress and not histories and not feedback else None)
-    if answer_reception is not None:
+    if scope_unspecified_concern:
+        writer['source_context_version'] = UNSPECIFIED_CONCERN_CONTEXT_VERSION
+    elif answer_reception is not None:
         writer.update(source_context_version=ISSUED_ANSWER_RECEPTION_VERSION,
                       issued_answer_reception=answer_reception)
     elif closing_distress is not None:
@@ -1523,7 +1531,8 @@ def build_natural_reply_messages(request, *, correction_target_context=False):
                        else _ISSUED_ANSWER_FACT_MESSAGE)
             return [{'role': 'system', 'content': message},
                     {'role': 'user', 'content': _compact_json(reception)}]
-        has_source_context = context_version in (SOURCE_CONTEXT_VERSION, CORRECTED_SOURCE_CONTEXT_VERSION)
+        has_source_context = context_version in (SOURCE_CONTEXT_VERSION, CORRECTED_SOURCE_CONTEXT_VERSION,
+                                                  UNSPECIFIED_CONCERN_CONTEXT_VERSION)
         if has_source_context and 'bound_feeling_dialogue' in writer:
             return [{'role': 'system', 'content': _BOUND_FEELING_REPLY_MESSAGE},
                     {'role': 'user', 'content': _compact_json(writer['bound_feeling_dialogue'])}]
@@ -1537,6 +1546,8 @@ def build_natural_reply_messages(request, *, correction_target_context=False):
                 message += _RESPONSE_PURPOSE_MESSAGES[purpose['stage']]
         if has_source_context:
             message += '\n思考・行動・回答の欄は出来事の順番を示しません。「いつ」「何が理由か」「何に対する感情か」は本人の原文に書かれたつながりに従います。別欄をつなぐ根拠がなければ、それぞれを分けて受け取るか、返事の中心となる一つに触れてください。'
+        if context_version == UNSPECIFIED_CONCERN_CONTEXT_VERSION:
+            message += '\n本人が具体的に書いていない不安の対象や、解決した問題の中身は未確認です。カテゴリや別欄の行動から具体例を足さず、今回の原文と本人の回答にある範囲を短く受け取ってください。'
         if context_version == CORRECTED_SOURCE_CONTEXT_VERSION:
             message += '\n本人が訂正した気持ちと、別に答えた出来事をそれぞれの有効な原文から受け取ってください。訂正前のつながりを引き継いだり、新たな理由や順番を決めたりしないでください。'
         message += """

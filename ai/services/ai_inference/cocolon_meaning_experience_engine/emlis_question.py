@@ -31,6 +31,26 @@ _PERSONAL_MEANING = re.compile(
 _NONFACT = re.compile(r"(?:と言った|と言って|そうなら|たら|なら|かもしれ|と言う話|なかった|ていない|なかったら|だろう)")
 _FACTUAL_RECEIVED = re.compile(r"(?:褒められ|ほめられ|言われ|伝えられ|評価され|断られ|誘われ|頼まれ|声をかけられ|声を掛けられ)(?:た|ました)$|(?:連絡|返事|返信)が来(?:た|ました)$")
 PERSONAL_FEELING_CIRCUMSTANCE = "PERSONAL_FEELING_CIRCUMSTANCE"
+PERSONAL_UNSPECIFIED_CONCERN = "PERSONAL_UNSPECIFIED_CONCERN"
+_FUTURE_TOPIC = r"(?:先の未来|未来|将来|今後|これから|この先|(?:(?:来[年週月]|次の[週月年])の)?先行き)"
+_UNSPECIFIED_FUTURE = re.compile(
+    rf"(?P<topic>{_FUTURE_TOPIC})(?:のこと)?(?:が|は|については?)"
+    r"(?:まだ|少し|とても|ずっと|漠然と){0,2}不安(?:だから(?:だ|です|だと思う)|だ|です|なんです|がある)?"
+)
+_THINKING_ABOUT_FUTURE = re.compile(
+    rf"(?:(?:{_FUTURE_TOPIC})(?:のこと)?|先のこと)(?:を|について)(?:考えた|考えていた|考えました)"
+)
+_LINGERING_FEELING = re.compile(
+    r"(?:気持ちの)?(?:モヤモヤ|もやもや|気がかり|不安)(?:が|は)(?:まだ)?(?:残っている|残っています|消えない)"
+)
+_RESOLVED_UNSPECIFIED_PROBLEM = re.compile(
+    r"(?P<topic>仕事|生活|学校|家庭|人間関係|学業)の(?:問題|懸念|悩み)が"
+    r"(?:解決した|落ち着いた)(?:から(?:だろう|だと思う|だ|です)|と思う|ようだ)?"
+)
+_GENERAL_RELIEF = re.compile(
+    r"(?:(?:今日|今朝|今)(?:は|、)?\s*)?(?:(?:なんだか|少し|ちょっと)\s*)?"
+    r"(?:気分が[良よ]い|気分が[良よ]くなった|ほっとした|安心した|気が楽になった)"
+)
 _UNEXPLAINED_FEELING = re.compile(
     r"(?:(?:今日|今|きょう|いま)(?:は|も)?[、,\s]*)?"
     r"(?:(?P<first_person>私|わたし|僕|ぼく|俺|おれ|自分)(?:は|も)[、,\s]*)?"
@@ -355,8 +375,59 @@ def _feeling_circumstance_candidate(thread, plan, *, parent_request_id, respect_
     return decision, question
 
 
+def unspecified_concern_focus(original):
+    """Find one broad topic in authored text without treating labels as evidence."""
+    memo = original.get('memo') or ''
+    action = (original.get('memo_action') or '').strip().rstrip('。．.!！').strip()
+    clauses = [part.strip() for part in re.split(r'[。．.!！\n]+', memo) if part.strip()]
+    if not 1 <= len(clauses) <= 2:
+        return None
+    for index, clause in enumerate(clauses):
+        other = clauses[1 - index] if len(clauses) == 2 else ''
+        future = _UNSPECIFIED_FUTURE.fullmatch(clause)
+        if (future and (not other or _LINGERING_FEELING.fullmatch(other))
+                and (not action or _THINKING_ABOUT_FUTURE.fullmatch(action))):
+            return clause, 'future', f'「{future["topic"]}」について、どんなことが不安ですか？'
+        problem = _RESOLVED_UNSPECIFIED_PROBLEM.fullmatch(clause)
+        if problem and _GENERAL_RELIEF.fullmatch(other):
+            return clause, 'problem', f'「{problem["topic"]}」のことで、どんな問題が解決したんですか？'
+    return None
+
+
+def _unspecified_concern_candidate(thread, plan, *, parent_request_id, respect_control):
+    if respect_control and thread.answers:
+        return None
+    original = thread.original
+    focus = unspecified_concern_focus(original.normalized_current_input)
+    if focus is None:
+        return None
+    anchor, kind, prompt = focus
+    resolver = thread.resolver()
+    matches = [row for row in plan.nuclei
+        if row.source_fields == ('memo',) and row.retention == 'required'
+        and row.grounding_kind == 'explicit' and row.semantic_frame.actor == 'current_user'
+        and len(row.source_span_ids) == 1
+        and resolver.resolve(row.source_span_ids[0]).raw_text.strip().rstrip('。．.!！') == anchor]
+    if len(matches) != 1:
+        return None
+    nucleus, = matches
+    control = thread.control.question_control_context
+    target = identity('emlis-target', original.envelope.envelope_id, nucleus.nucleus_id,
+                      'personal_unspecified_concern', kind)
+    if target in control.asked_target_refs:
+        return None
+    evidence = resolver.qualified_ref(nucleus.source_span_ids[0]).evidence.evidence_id
+    affected = (nucleus.nucleus_id,)
+    decision = EmlisQuestionDecisionV1('ASK', target, PERSONAL_UNSPECIFIED_CONCERN, (evidence,),
+        'personal_unspecified_concern', affected, affected,
+        control.asked_target_refs if respect_control else (), 'source_bound_concern_detail_missing')
+    return decision, EmlisClarificationV1(identity('emlis-question', thread.control.thread_id, target),
+        parent_request_id, thread.control.thread_id, original.envelope.envelope_id, decision, prompt)
+
+
 def question_candidate(thread: AdmittedEmlisThread, plan, *, parent_request_id: str,
-                       respect_control: bool = True, allow_affect_question: bool = False):
+                       respect_control: bool = True, allow_affect_question: bool = False,
+                       allow_unspecified_concern: bool = False):
     control = thread.control.question_control_context
     q3 = thread.control.capability_snapshot.startswith("Q3_")
     if respect_control and (control.stop or control.issued_count >= control.question_limit
@@ -364,6 +435,11 @@ def question_candidate(thread: AdmittedEmlisThread, plan, *, parent_request_id: 
         return EmlisQuestionDecisionV1("END", decision_reason="free_round_complete"), None
     if plan.input_profile.safety_kind != TRIAGE_SAFE_OBSERVATION:
         return EmlisQuestionDecisionV1("BLOCKED", decision_reason="separate_safety_owner"), None
+    if q3 and allow_unspecified_concern:
+        concern = _unspecified_concern_candidate(thread, plan,
+            parent_request_id=parent_request_id, respect_control=respect_control)
+        if concern is not None:
+            return concern
     original = thread.original
     # Read every admitted text field before treating a dimension as missing.
     texts = tuple(str(original.normalized_current_input.get(key, ""))
@@ -452,7 +528,8 @@ def validate_question_binding(thread: AdmittedEmlisThread, plan) -> None:
                         asked_target_refs=control.asked_target_refs[:-1], issued_questions=control.issued_questions[:-1])
         thread = replace(thread, control=replace(thread.control, question_control_context=prior))
     _, canonical = question_candidate(thread, plan, parent_request_id=question.parent_request_id,
-        respect_control=False, allow_affect_question=question.decision.target_kind == PERSONAL_FEELING_CIRCUMSTANCE)
+        respect_control=False, allow_affect_question=question.decision.target_kind == PERSONAL_FEELING_CIRCUMSTANCE,
+        allow_unspecified_concern=question.decision.target_kind == PERSONAL_UNSPECIFIED_CONCERN)
     if canonical is None or question != replace(canonical, decision=replace(
             canonical.decision, asked_target_refs=question.decision.asked_target_refs)):
         raise ValueError("emlis_question_noncanonical")

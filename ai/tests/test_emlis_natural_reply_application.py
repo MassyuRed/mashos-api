@@ -285,6 +285,22 @@ def test_saved_reply_reopens_without_provider_or_meaning_generation(natural_case
     assert all(x not in public for x in ("source_prefix_ref", "material_json", "NATURAL_REPLY", "self-hosted-test-4b"))
 
 
+@pytest.mark.parametrize('tier', ['plus', 'premium'])
+def test_free_reply_remains_readable_as_history_after_upgrade(natural_case, qdb, tier):
+    user, parent, service, calls = natural_case
+    before = run(service.start(user, parent))
+    assert before['current_observation']['text'] == BODY
+    qdb.query('update public.profiles set subscription_tier=$2 where id=$1', [user, tier])
+
+    after = run(service.get(user, parent))
+    assert after['state'] == 'COMPLETED' and after['body_state'] == 'CONTEXT_CHANGED'
+    assert after['current_observation'] is None and not after['can_correct']
+    saved, = [event for event in after['timeline'] if event['kind'] == 'OBSERVATION']
+    assert saved['event_id'] == before['current_observation']['event_id']
+    assert saved['text'] == BODY and not saved['is_current']
+    assert len(calls) == 1
+
+
 def _piece_adapter(user, service, monkeypatch):
     import piece_v2_source_adapter as piece
     async def verified(_authorization):
@@ -1390,6 +1406,86 @@ def test_first_skipped_distress_excludes_past_negation():
     from cocolon_meaning_experience_engine.natural_reply import _BARE_PAST_DISTRESS
 
     assert _BARE_PAST_DISTRESS.fullmatch('つらくなかったです。') is None
+
+
+@pytest.mark.parametrize('tier,route,memo,action,expected,body', [
+    ('free', 'answer', '気がかりは残っている。この先がまだ不安だからだ。', '今後を考えた。',
+     '「この先」について、どんなことが不安ですか？', 'この先への不安が残っているのですね。'),
+    ('plus', 'skip', '今後が不安です。', '',
+     '「今後」について、どんなことが不安ですか？', '今後への不安があるのですね。'),
+    ('premium', 'answer', '今日は気分が良い。仕事の問題が解決したからだろう。', '自宅で働く予定になった。',
+     '「仕事」のことで、どんな問題が解決したんですか？', '仕事の問題が解決した日の、気分の変化を受け取りました。'),
+    ('premium', 'off', '将来が不安だ。', '将来のことを考えた。',
+     None, '将来のことを考えるなかで、不安が残っているのですね。'),
+])
+def test_unspecified_concern_asks_and_rereads_without_borrowing_past_details(
+        natural_case, qdb, monkeypatch, tier, route, memo, action, expected, body):
+    from cocolon_meaning_experience_engine.natural_reply import (
+        QWEN_9B_NATURAL_ALIAS, UNSPECIFIED_CONCERN_CONTEXT_VERSION)
+
+    user, parent, _, _ = natural_case
+    qdb.query('update public.profiles set subscription_tier=$2 where id=$1', [user, tier])
+    qdb.query('update public.emotions set memo=$2,memo_action=$3,receive_emlis_questions=$4 where id=$1',
+        [parent, memo, action, route != 'off'])
+    qdb.query("insert into public.emotions values ($1,$2,(now()-interval '1 day') at time zone 'UTC',$3,'',array['仕事'],array['不安'],$4)",
+        [str(uuid4()), user, '会費の請求が不安だった。', json.dumps([dict(type='不安', strength='medium')])])
+    calls = []
+    answer_text = '来月から家賃が上がることです。'
+    answered_body = '来月から家賃が上がるとお話しくださったんですね。'
+
+    def infer(request):
+        messages = json.loads(request.content)['messages']
+        calls.append(messages)
+        content = answered_body if route == 'answer' and len(calls) == 2 else body
+        return httpx.Response(200, json={'model': QWEN_9B_NATURAL_ALIAS, 'choices': [
+            {'finish_reason': 'stop', 'message': {'role': 'assistant', 'content': content}}]})
+
+    provider = SelfHostedNaturalReplySource(endpoint='https://model.invalid/v1/chat/completions',
+        model=QWEN_9B_NATURAL_ALIAS, api_key='synthetic-only', transport=httpx.MockTransport(infer))
+    service = _active_application_owner(monkeypatch, provider, 'paid')
+    initial = run(service.start(user, parent))
+    assert initial['state'] == ('AWAITING_ANSWER' if expected else 'COMPLETED'), initial
+    assert run(service.get(user, parent)) == initial
+    assert initial['current_observation']['text'] == body
+    final = initial
+    if expected:
+        question = initial['pending_question']
+        assert question['text'] == expected
+        args = dict(question_id=question['question_id'], expected_revision=initial['revision'],
+                    idempotency_key='respond-to-unspecified-concern')
+        if route == 'answer':
+            final = run(service.answer(user, initial['thread_id'], answer_text=answer_text, **args))
+        else:
+            final = run(service.action(user, initial['thread_id'], action='skip', **args))
+        assert final['state'] == 'COMPLETED', final
+        assert final['current_observation']['text'] == (answered_body if route == 'answer' else body)
+        assert run(service.get(user, parent)) == final
+    assert len(calls) == (2 if expected else 1)
+    for messages in calls:
+        writer = json.loads(messages[-1]['content'])
+        assert writer['source_context_version'] == UNSPECIFIED_CONCERN_CONTEXT_VERSION
+        assert [record['scope'] for record in writer['records']] == ['CURRENT_INPUT']
+        assert '会費' not in messages[-1]['content']
+    assert ('PRE_QUESTION' in calls[0][-1]['content']) is bool(expected)
+    if route == 'answer':
+        assert answer_text in calls[1][-1]['content'] and expected in calls[1][-1]['content']
+    stored = run(service.store.read(user, input_id=parent))
+    assert sum(event['kind'] == 'QUESTION' for event in stored['events']) == bool(expected)
+    assert sum(event['kind'] == 'ANSWER' for event in stored['events']) == (route == 'answer')
+
+
+@pytest.mark.parametrize('memo,action', [
+    ('来月から仕事が減ると聞いて、将来が不安だ。', ''),
+    ('将来が不安ではない。', ''),
+    ('弟は将来が不安だ。', ''),
+    ('将来が不安だ。収入が落ちるからだ。', ''),
+    ('将来が不安だ。', '賃料と毎月の収入を見直した。'),
+    ('今日は気分が良い。納期が決まって仕事の問題が解決した。', ''),
+])
+def test_unspecified_concern_does_not_ask_about_already_supported_or_other_persons_sources(memo, action):
+    from cocolon_meaning_experience_engine.emlis_question import unspecified_concern_focus
+
+    assert unspecified_concern_focus({'memo': memo, 'memo_action': action}) is None
 
 
 @pytest.mark.parametrize('ability,follow,action,accepted', [

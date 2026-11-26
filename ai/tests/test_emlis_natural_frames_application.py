@@ -144,6 +144,7 @@ def test_changed_history_hides_old_frame_without_regenerating(natural_case, qdb,
         qdb.query('delete from public.emotions where id=$1', [past])
     reread = run(service.get(user, parent))
     assert reread['interpretive_frames'] == [] and reread['current_observation'] is None
+    assert all(event['kind'] != 'OBSERVATION' for event in reread['timeline'])
     assert len(calls) == 1
 
 
@@ -152,7 +153,9 @@ def test_downgrade_hides_premium_frames_without_regenerating(natural_case, qdb):
     dto = run(service.start(user, parent))
     assert dto['interpretive_frames']
     qdb.query("update public.profiles set subscription_tier='plus' where id=$1", [user])
-    assert run(service.get(user, parent))['interpretive_frames'] == []
+    reread = run(service.get(user, parent))
+    assert reread['interpretive_frames'] == []
+    assert all(event['kind'] != 'OBSERVATION' for event in reread['timeline'])
     assert len(calls) == 1
 
 
