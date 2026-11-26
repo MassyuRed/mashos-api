@@ -163,12 +163,12 @@ def test_late_candidate_after_runtime_stop_or_request_cancellation_never_reaches
             return object()  # No cancelled/stopped result may reach adoption.
         async def load_record(*args): return None
         async def rpc(*args): calls['rpc'] += 1; pytest.fail('late candidate attempted a preview write')
-        async def prepare(*args, **kwargs):
+        def prepare(*args, **kwargs):
             calls['prepare'] += 1; pytest.fail('late candidate entered body adoption')
         def require_current():
             if not enabled: raise PieceContractError('PIECE_FEATURE_DISABLED')
         service = preview.PiecePreviewService(source_adapter=adapter, model_source=source)
-        monkeypatch.setattr(service, 'prepare_original', prepare)
+        monkeypatch.setattr(service, '_assemble_original', prepare)
         task = asyncio.create_task(service.issue_original(None, request(adapter.handoff),
             idempotency_key='independent-model-boundary', ttl_seconds=600,
             renderer_version='synthetic-renderer.v1', allowed_renderers=('synthetic-renderer.v1',),
@@ -217,14 +217,14 @@ def test_http_runtime_change_while_model_is_pending_prevents_rpc_dispatch(monkey
                 server_now='2026-11-09T00:00:00+00:00'))
         async def rpc(*args):
             calls['rpc'] += 1; pytest.fail('runtime-changed HTTP dispatched a preview RPC')
-        async def prepare(*args, **kwargs):
+        def prepare(*args, **kwargs):
             calls['prepare'] += 1; pytest.fail('runtime-changed HTTP adopted a late body')
         service = preview.PiecePreviewService(source_adapter=adapter, model_source=source)
         original_issue = service.issue_original
         async def issue(*args, **kwargs):
             return await original_issue(*args, **kwargs, load_record=load_record)
         monkeypatch.setattr(service, 'issue_original', issue)
-        monkeypatch.setattr(service, 'prepare_original', prepare)
+        monkeypatch.setattr(service, '_assemble_original', prepare)
         monkeypatch.setattr(preview, 'PiecePreviewService', lambda: service)
         monkeypatch.setattr(api, '_verify_bearer', verify)
         monkeypatch.setattr(api, '_preview_rpc', rpc)
@@ -259,9 +259,9 @@ def test_completed_acquisition_is_shared_until_the_first_issuance_acknowledgemen
         receipt = object(); calls = {'model': 0, 'rpc': 0, 'prepare': 0}
         async def source(prepared): calls['model'] += 1; return receipt
         async def load_record(*args): return None  # No committed row yet.
-        async def prepare(authorization, value, *, _model_input):
+        def prepare(handoff, value, model_input):
             calls['prepare'] += 1
-            assert _model_input.receipt is receipt
+            assert handoff == adapter.handoff and model_input.receipt is receipt
             return preview.PreparedPiecePreview(adapter.handoff, b'{}')
         async def rpc(name, args):
             assert name == 'piece_issue_preview_v2'
@@ -275,7 +275,7 @@ def test_completed_acquisition_is_shared_until_the_first_issuance_acknowledgemen
             return await options['rpc']('piece_issue_preview_v2', {})
         services = [preview.PiecePreviewService(source_adapter=adapter, model_source=source) for _ in range(2)]
         for service in services:
-            monkeypatch.setattr(service, 'prepare_original', prepare)
+            monkeypatch.setattr(service, '_assemble_original', prepare)
             monkeypatch.setattr(service, 'issue_prepared_original', issue_prepared)
         options = dict(idempotency_key='same-acquisition-and-issuance', ttl_seconds=600,
             renderer_version='synthetic-renderer.v1', allowed_renderers=('synthetic-renderer.v1',),

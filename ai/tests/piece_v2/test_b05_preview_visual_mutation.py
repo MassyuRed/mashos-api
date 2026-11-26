@@ -227,7 +227,7 @@ def test_service_mutates_only_recipe_with_current_source_fence_and_no_author(har
     s = harness
     result = mutate(s, mutation(selection))
     assert result['preview_id'] == s['pid'] and result['preview_revision'] == result['row_version'] == 2
-    assert len(s['posts']) == len(s['reviews']) == 1
+    assert len(s['posts']) == len(s['reviews']) == s['adapter'].checks == 1
     assert {k: s['row'][k] for k in UNCHANGED} == {k: s['original'][k] for k in UNCHANGED}
     assert result['piece_text'].encode() == s['original']['piece_text'].encode()
     assert result['visual_recipe_hash'] == canonical_sha256_hex(result['visual_recipe'])
@@ -276,12 +276,10 @@ def test_noncurrent_or_corrupt_preview_cannot_be_repaired(harness, field, value,
     assert s['posts'] == s['reviews'] == []
 
 
-@pytest.mark.parametrize('check', [1, 2])
-def test_source_change_during_visual_preparation_prevents_write(harness, check):
+def test_source_change_at_visual_final_check_prevents_write(harness):
     s = harness
-    def changed(n):
-        if n == check:
-            s['adapter'].handoff = replace(s['adapter'].handoff, thread_revision=2)
+    def changed(_):
+        s['adapter'].handoff = replace(s['adapter'].handoff, thread_revision=2)
     s['adapter'].on_check = changed
     with pytest.raises(PieceContractError, match='^PIECE_CONFLICT$'):
         mutate(s)

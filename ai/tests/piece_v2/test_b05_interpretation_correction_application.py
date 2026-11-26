@@ -107,7 +107,30 @@ def corrected_case(natural_case, db, monkeypatch, *, operation='REVISE', tier='f
     issue_args = dict(idempotency_key='corrected-piece-preview', ttl_seconds=600,
         renderer_version='piece.rn_bitmap_renderer.ios.v2', allowed_renderers=('piece.rn_bitmap_renderer.ios.v2',),
         expected_subscription_tier=tier, load_record=load_preview, rpc=call)
-    issued = run(preview.issue_original('Bearer '+token, request, **issue_args)) if issue else None
+    issued = None
+    if issue:
+        from request_metrics import begin_request_metrics, finish_request_metrics, snapshot_request_metrics
+
+        source_reads = []
+        original_rpc = emlis_thread_store.sb_post_rpc
+
+        async def record_source_reads(name, *args, **kwargs):
+            source_reads.append(name)
+            return await original_rpc(name, *args, **kwargs)
+
+        request_metrics = begin_request_metrics('synthetic-piece', 'POST', '/emotion/piece/preview')
+        try:
+            with patch.object(emlis_thread_store, 'sb_post_rpc', record_source_reads):
+                issued = run(preview.issue_original('Bearer '+token, request, **issue_args))
+            timings = snapshot_request_metrics()
+        finally:
+            finish_request_metrics(request_metrics)
+        assert source_reads.count('emlis_thread_read') == 3
+        assert source_reads.count('emlis_thread_related_context') == 3
+        assert timings['piece_preview_candidate_ms'] >= 0
+        assert timings['piece_preview_review_ms'] >= 0
+        if direct_feeling:
+            assert timings['piece_preview_model_wait_ms'] >= 0
     record = run(load_record(owner, issued['preview_id'])) if issued else None
     expected = dict(original=snapshot['original'], thread_id=handoff.thread_id,
         thread_revision=handoff.thread_revision, lineage=handoff.lineage_payload(),
