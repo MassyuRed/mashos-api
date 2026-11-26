@@ -997,6 +997,7 @@ class EmlisThreadService:
             preserve_initial_mirrored_source,
             CORRECTED_SOURCE_CONTEXT_VERSION, DIRECT_FEELING_CORRECTION_CONTEXT_VERSION,
             DIRECT_FEELING_CORRECTION_CONTEXT_VERSIONS, INITIAL_STANDALONE_FEELING_CONTEXT_VERSION,
+            FIRST_SKIPPED_DISTRESS_CONTEXT_VERSION,
             INITIAL_OBSERVATION_FOLLOW_CONTEXT_VERSION, INITIAL_OBSERVATION_FOLLOW_CONTEXT_VERSIONS,
             ISSUED_ANSWER_RECEPTION_VERSION,
             QWEN_9B_NATURAL_ALIAS,
@@ -1041,6 +1042,7 @@ class EmlisThreadService:
         if context_version not in {None, SOURCE_CONTEXT_VERSION, CORRECTED_SOURCE_CONTEXT_VERSION,
                                    RECEIVED_ANSWER_CONTEXT_VERSION, PAID_RECEIVED_ANSWER_CONTEXT_VERSION,
                                    ISSUED_ANSWER_RECEPTION_VERSION,
+                                   FIRST_SKIPPED_DISTRESS_CONTEXT_VERSION,
                                    INITIAL_STANDALONE_FEELING_CONTEXT_VERSION, *INITIAL_OBSERVATION_FOLLOW_CONTEXT_VERSIONS,
                                    *DIRECT_FEELING_CORRECTION_CONTEXT_VERSIONS}:
             raise NaturalReplyError('natural_reply_writer_identity_changed')
@@ -1057,6 +1059,11 @@ class EmlisThreadService:
                 and t['data'].get('started_tier') in {'plus', 'premium'}
                 and t.get('latest_answer_event_id') and not correcting
                 and getattr(self.natural_reply_source, 'model', None) == QWEN_9B_NATURAL_ALIAS))
+        use_first_skipped_distress = (context_version == FIRST_SKIPPED_DISTRESS_CONTEXT_VERSION
+            or (prior is None and t['data'].get('natural_question_stop') == 'skip'
+                and t['data'].get('started_tier') == snapshot['tier'] == 'plus'
+                and t['issued_count'] == 1 and not t.get('latest_answer_event_id') and not correcting
+                and getattr(self.natural_reply_source, 'model', None) == QWEN_9B_NATURAL_ALIAS))
         material, safety = prepare_natural_reply(_request(snapshot), response_stage=response_stage,
             bind_writer_context=context_version is not None,
             include_corrected_circumstance=context_version == CORRECTED_SOURCE_CONTEXT_VERSION,
@@ -1070,6 +1077,7 @@ class EmlisThreadService:
                     and t['data'].get('started_tier') in {'plus', 'premium'})),
             initial_observation_follow_context_version=initial_follow_version,
             use_issued_answer_reception=use_issued_answer_reception,
+            use_first_skipped_distress=use_first_skipped_distress,
             direct_feeling_correction_context_version=direct_version,
             prepared_meaning=prepared_meaning,
             meaning_profile=t['data'].get('natural_meaning_profile'), owner_scope=user_id,

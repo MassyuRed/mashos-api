@@ -438,6 +438,7 @@ def test_viewer_plan_projects_one_saved_version_without_leaking_paid_graph_or_te
     assert free['map_plan_scoped'] and free['map_subscription_tier'] == 'free'
     assert free['report_id'] == rid == detail()['item']['id']
     assert all(axis['criterion'] in free['content_text'] for axis in axes)
+    assert free['meta']['overview']['summary'] == free['content_text']
     assert '有料' not in json.dumps(free, ensure_ascii=False)
     assert [axis['node_refs'] for axis in free['meta']['overview']['primary_structures']] == [['n2', 'n3', 'n5'], [], []]
     assert [edge['edge_ref'] for edge in free['meta']['edges']] == ['e1', 'e2']
@@ -473,6 +474,7 @@ def test_viewer_plan_projects_one_saved_version_without_leaking_paid_graph_or_te
     assert plus['map_subscription_tier'] == 'plus'
     assert plus['report_id'] == rid and plus['meta']['projection_of'] == free['meta']['projection_of']
     assert [axis['description'] for axis in plus['meta']['overview']['primary_structures']] == [axis['description'] for axis in axes]
+    assert plus['meta']['overview']['summary'] == plus['content_text']
     assert [edge['edge_ref'] for edge in plus['meta']['edges']] == ['e1', 'e2', 'e3']
     assert asyncio.run(service.map_evidence(OWNER, rid, 'n1', month=month)) == {'items': []}
     assert detail()['item']['content_json']['watashiMap'] == plus['meta']

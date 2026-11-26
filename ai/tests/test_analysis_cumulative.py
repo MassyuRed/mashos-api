@@ -107,16 +107,38 @@ class CumulativeReadTests(unittest.IsolatedAsyncioTestCase):
             title='わたしマップ', period_start=fx['snapshot']['period_start'], period_end=fx['snapshot']['period_end'],
             generated_at=fx['snapshot']['period_end'], snapshot_month=None, captured_at=None,
             content_text=fx['text'], content_json=dict(report_mode='standard', watashiMap=fx['projection'], map_context=fx['private']['coverage']))
+        captured = dict(row, report_type='monthly', snapshot_month='2026-11-01', captured_at=row['generated_at'])
+
+        async def read_current(_owner, *, report_id=None, **_kwargs):
+            return {'items': [captured if report_id else row]}
+
         rpc = AsyncMock(side_effect=[fx['snapshot'], fx['id']])
-        with patch.object(service, 'read_maps', AsyncMock(return_value={'items':[row]})), \
+        with patch.object(service, 'read_maps', side_effect=read_current), \
                 patch.object(service, '_rpc', rpc), patch.object(service, 'observed_mode', return_value='development'), \
                 patch.object(service, 'build_cumulative_map', side_effect=AssertionError('must not regenerate')):
             result = await service.ensure_map(OWNER)
         self.assertTrue(result['has_visible_content'])
+        self.assertIsNone(result['snapshot_month'])
+        self.assertIsNone(result['captured_at'])
         self.assertEqual(rpc.await_args.args[0], 'analysis_cumulative_commit')
         self.assertEqual(rpc.await_args.args[1]['p_existing_id'], fx['id'])
 
+    async def test_reused_current_rejects_a_refresh_after_the_current_source_changes(self):
+        from fastapi import HTTPException
 
+        snapshot = source_snapshot(1)
+        artifact, _ = service.build_cumulative_map(OWNER, snapshot)
+        row = dict(id=str(UUID(artifact.artifact_id[9:])), source_profile='cumulative.v1', report_mode='standard',
+                   content_json=dict(watashiMap=artifact.safe_projection(authenticated_owner_scope=OWNER)))
+        for current in ([], [dict(row, id=str(UUID(int=303)))]):
+            with self.subTest(current_is_missing=not current), \
+                    patch.object(service, 'read_maps', AsyncMock(side_effect=({'items': [row]}, {'items': current}))), \
+                    patch.object(service, '_rpc', AsyncMock(side_effect=[snapshot, row['id']])), \
+                    patch.object(service, 'observed_mode', return_value='development'):
+                with self.assertRaises(HTTPException) as conflict:
+                    await service.ensure_map(OWNER)
+                self.assertEqual(conflict.exception.status_code, 409)
+                self.assertEqual(conflict.exception.detail, 'analysis_source_changed')
 
     async def test_legacy_current_refreshes_once_but_monthly_snapshot_remains_unchanged(self):
         from datetime import datetime, timedelta, timezone

@@ -146,9 +146,9 @@ def map_response_for_renderer(payload, renderer, structure_relations=None):
         legacy_summary = premium_rollout and renderer in ('semantic.v1', 'semantic.v2')
         if (graph and relations and payload.get('map_subscription_tier') == 'premium'
                 and (premium_rollout or research_mode) and (structured_relations or legacy_summary)):
-            if structured_relations:
-                graph['overview']['structure_relations'] = relations
             visible['content_text'] += '\n\n' + '\n'.join(relation['description'] for relation in relations)
+            if structured_relations:
+                graph['overview'].update(summary=visible['content_text'], structure_relations=relations)
         if graph and graph['nodes'] and not research_mode:
             if renderer in ('semantic.v1', 'semantic.v2'):
                 graph['overview'] = dict(title=graph['overview']['title'], summary=visible['content_text'])
@@ -271,9 +271,7 @@ def map_projection_for_plan(projection, tier):
              if (not is_free or edge['relation_kind'] in _FREE_FIGURE_RELATIONS)
              and any({edge['from_ref'], edge['to_ref']} <= group for group in visible_groups)]
     body = '\n\n'.join(section['title'] + '\n' + section['description'] for section in sections) or _NO_SUPPORTED_STRUCTURE
-    overview = dict(title=projection['overview']['title'],
-                    summary=sections[0]['description'] if sections else _NO_SUPPORTED_STRUCTURE,
-                    primary_structures=sections)
+    overview = dict(title=projection['overview']['title'], summary=body, primary_structures=sections)
     view = dict(projection, overview=overview, nodes=nodes, edges=edges,
                 accessibility_linear_order=[node['node_ref'] for node in nodes])
     return view, body
@@ -1130,11 +1128,12 @@ async def _ensure_map(user_id, *, ensure=True, force=False, monthly=False, model
                 p_text=text, p_start=snapshot['period_start'], p_end=snapshot['period_end'],
                 p_force=(force or refresh_category_policy) and not declined_scope))
             refreshed = not declined_scope or rid == artifact_id
-        checked = await read_maps(owner, report_id=rid if not monthly else None,
-            history=monthly, month=this_month if monthly else None, limit=1)
+        # An ID lookup can select a monthly capture of the same artifact.
+        # Read the current slot again before confirming a current refresh.
+        checked = await read_maps(owner, history=monthly, month=this_month if monthly else None, limit=1)
         tier = checked.get('subscription_tier', 'free')
         row = checked['items'][0] if checked['items'] else None
-        if not row:
+        if not row or (not monthly and row['id'] != rid):
             raise HTTPException(409, 'analysis_source_changed')
         if refreshed and row['id'] == str(UUID(artifact.artifact_id[9:])):
             await _queue_map_update_notification(owner, row)

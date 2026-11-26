@@ -221,6 +221,8 @@ def test_saved_premium_relation_is_not_reflected_in_lower_plans_or_legacy_render
     assert paid['meta'] == latest(monthly=True)['meta'] == detail()['content_json']['watashiMap']
     assert paid['meta']['overview']['structure_relations'] == [relation]
     assert paid['content_text'].endswith(COEXISTENCE) and detail()['content_text'] == paid['content_text']
+    assert paid['meta']['overview']['summary'] == paid['content_text']
+    assert paid['meta']['overview']['summary'].count(COEXISTENCE) == 1
     assert 'structure_relations' not in detail()['content_json']
     assert 'structure_relations' not in latest(None)['meta']['overview']
     assert COEXISTENCE not in latest(None)['content_text'] and COEXISTENCE not in latest(renderer=None)['content_text']
@@ -254,6 +256,7 @@ def test_saved_premium_relation_is_not_reflected_in_lower_plans_or_legacy_render
     assert latest()['meta'] == latest(monthly=True)['meta'] == detail()['content_json']['watashiMap'] == paid['meta']
     assert latest()['content_text'] == detail()['content_text'] == paid['content_text']
     assert latest(None) == basic_premium
+    assert basic_premium['meta']['overview']['summary'] == basic_premium['content_text']
     for renderer in ('semantic.v1', 'semantic.v2'):
         older = latest(None, renderer=renderer)
         assert older['content_text'] == latest(None, monthly=True, renderer=renderer)['content_text'] == paid['content_text']

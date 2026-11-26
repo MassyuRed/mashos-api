@@ -1237,6 +1237,32 @@ def test_initial_preference_preservation_requires_the_same_past_statement(memo, 
 
 
 @pytest.mark.parametrize(('memo', 'raw', 'expected'), [
+    ('窓辺の苗に今朝はじめて芽が出たので、私は嬉しかった。',
+     '窓辺の苗に今朝はじめて芽が出たことで、あなたは嬉しかったと記録されていますね。',
+     '窓辺の苗に今朝はじめて芽が出たので、嬉しかったんですね。'),
+    ('終了の合図が鳴ったから、私はほっとした。',
+     '終了の合図が鳴ったことで、あなたはほっとしたと記録されていますね。',
+     '終了の合図が鳴ったから、ほっとしたんですね。'),
+    ('窓辺の苗に母が支柱を立ててくれたので、私は嬉しかった。',
+     '窓辺の苗に母が支柱を立ててくれたことについて、嬉しかったという記録を受け取りました。', None),
+    ('母が支柱を立てたので、私は嬉しかった。',
+     '母が支柱を立てたことで、あなたは嬉しかったと記録されていますね。', None),
+    ('私の当番が終わったので、私はほっとした。',
+     '私の当番が終わったことで、あなたはほっとしたと記録されていますね。', None),
+    ('私自身が終わりを告げたので、私はほっとした。',
+     '私自身が終わりを告げたことで、あなたはほっとしたと記録されていますね。', None),
+    ('自分の手で直せたので、私はほっとした。',
+     '自分の手で直せたことで、あなたはほっとしたと記録されていますね。', None),
+    ('今朝芽が出たので、私は嬉しくなかった。',
+     '今朝芽が出たことで、あなたは嬉しかったと記録されていますね。', None),
+    ('今朝芽が出たので、私は嬉しかった。',
+     '昨日芽が出たことで、あなたは嬉しかったと記録されていますね。', None),
+    ('今朝芽が出たので、私は嬉しかった。',
+     '今朝芽が出たことで、あなたはとても嬉しかったと記録されていますね。', None),
+    ('終了の合図が鳴ったので、私は安心しました。',
+     '終了の合図が鳴ったことで、あなたは安心しましたと記録されていますね。', None),
+    ('「今朝芽が出た」ので、私は嬉しかった。',
+     '「今朝芽が出た」ことで、あなたは嬉しかったと記録されていますね。', None),
     ('友人が手順を読んだので、私は安心しました。',
      '友人が手順を読んでくれたので、安心しましたね。', None),
     ('友人が手順を読んだので、私は安心した。',
@@ -1271,6 +1297,9 @@ def test_initial_reason_preservation_requires_the_same_plain_action_and_feeling(
 @pytest.mark.parametrize('tier', ('free', 'plus', 'premium'))
 @pytest.mark.parametrize(('memo', 'raw', 'preserved'), [
     # Captured from the normal 9B provider before each change.
+    ('窓辺の苗に今朝はじめて芽が出たので、私は嬉しかった。',
+     '窓辺の苗に今朝はじめて芽が出たことで、あなたは嬉しかったと記録されていますね。',
+     '窓辺の苗に今朝はじめて芽が出たので、嬉しかったんですね。'),
     ('工房で作った琥珀色のしおりが好きでした。', '工房で作った琥珀色のしおりが、とても好きだったんですね。',
      '工房で作った琥珀色のしおりが、好きだったんですね。'),
     ('古いラジオを姉が直したので、私はほっとした。', '古いラジオを姉が直してくれたので、あなたはほっとしたんですね。',
@@ -1308,6 +1337,58 @@ def test_initial_reception_keeps_original_and_provider_text_on_same_version(
     assert receipt['reply']['text'] == expected
     assert receipt.get('provider_reply_text') == (raw if tier == 'free' else None)
     assert len(calls) == 1
+
+
+@pytest.mark.parametrize(('tier', 'action', 'memo', 'uses_closing_turn'), [
+    ('plus', 'skip', 'つらかったんです', True),
+    ('plus', 'skip', '今はつらいです。', False),
+    ('plus', 'skip', 'とてもつらかったんです。', False),
+    ('plus', None, 'つらくなかったです。', False),
+    ('plus', 'stop', 'つらかったんです', False),
+    ('premium', 'skip', 'つらかったんです', False),
+])
+def test_plus_first_unanswered_skip_closes_only_bare_past_distress(
+        natural_case, qdb, monkeypatch, tier, action, memo, uses_closing_turn):
+    from cocolon_meaning_experience_engine.natural_reply import (
+        FIRST_SKIPPED_DISTRESS_CONTEXT_VERSION, QWEN_9B_NATURAL_ALIAS)
+
+    user, parent, _, _ = natural_case
+    qdb.query("update public.emotions set memo=$2,memo_action='' where id=$1", [parent, memo])
+    qdb.query('update public.profiles set subscription_tier=$2 where id=$1', [user, tier])
+    provider_calls = []
+    closing = 'お辛い思いをされましたね。'
+
+    def infer(request):
+        messages = json.loads(request.content)['messages']
+        provider_calls.append(messages)
+        content = closing if len(provider_calls) == 2 and uses_closing_turn else BODY
+        return httpx.Response(200, json={'model': QWEN_9B_NATURAL_ALIAS, 'choices': [
+            {'finish_reason': 'stop', 'message': {'role': 'assistant', 'content': content}}]})
+
+    provider = SelfHostedNaturalReplySource(endpoint='https://model.invalid/v1/chat/completions',
+        model=QWEN_9B_NATURAL_ALIAS, api_key='synthetic-only', transport=httpx.MockTransport(infer))
+    service = _active_application_owner(monkeypatch, provider, 'paid')
+    pending = run(service.start(user, parent))
+    if action is None:
+        assert pending['state'] == 'COMPLETED' and pending['pending_question'] is None
+        assert len(provider_calls) == 1 and provider_calls[0][-1]['content'] != memo
+        return
+    assert pending['state'] == 'AWAITING_ANSWER'
+    dto = run(service.action(user, pending['thread_id'], action=action,
+        question_id=pending['pending_question']['question_id'], expected_revision=pending['revision'],
+        idempotency_key='first-skip'))
+    assert len(provider_calls) == 2
+    assert provider_calls[0][-1]['content'] != memo
+    assert (provider_calls[1][-1]['content'] == memo) is uses_closing_turn
+    assert dto['state'] == 'COMPLETED' and dto['pending_question'] is None
+    assert dto['current_observation']['text'] == (closing if uses_closing_turn else BODY)
+    assert run(service.get(user, parent)) == dto
+    stored = run(service.store.read(user, input_id=parent))
+    assert stored['original']['memo'] == memo
+    assert all(event['kind'] != 'ANSWER' for event in stored['events'])
+    receipt = next(event['payload'] for event in reversed(stored['events'])
+                   if event['payload'].get('stage') == 'NATURAL_REPLY_RECEIVED')
+    assert (receipt.get('writer_context_version') == FIRST_SKIPPED_DISTRESS_CONTEXT_VERSION) is uses_closing_turn
 
 
 @pytest.mark.parametrize('ability,follow,action,accepted', [
