@@ -77,6 +77,13 @@ def _reverse_negation_on_assembly(monkeypatch, owner):
     monkeypatch.setattr(owner, '_assemble_original', assemble_reversed)
 
 
+def _change_original_after_app_revalidation(conn, state):
+    assert state['checks'] == 2 and state['actual_reviews'] == 1
+    changed = conn.execute('UPDATE public.emotions SET memo=%s WHERE id=%s',
+                           ('A different original entry.', _B5['INPUT']))
+    assert changed.rowcount == 1
+
+
 @pytest.mark.parametrize('tier', ['free', 'plus', 'premium'])
 @pytest.mark.parametrize('named', [False, True], ids=['ready', 'role-transformed'])
 def test_actual_review_issues_same_generated_body_and_replays_without_author(database, monkeypatch, tier, named):
@@ -464,10 +471,7 @@ def test_orchestrated_source_change_after_app_revalidation_is_rejected_by_sql(da
     owner, request, _, state, rpc, load = _orchestration(database, monkeypatch)
 
     async def change_source_before_sql(name, args):
-        assert state['checks'] == 2 and state['actual_reviews'] == 1
-        changed = conn.execute('UPDATE public.emotions SET memo=%s WHERE id=%s',
-                               ('A different original entry.', _B5['INPUT']))
-        assert changed.rowcount == 1
+        _change_original_after_app_revalidation(conn, state)
         with pytest.raises(RaiseException) as error:
             await rpc(name, args)
         assert error.value.diag.message_primary == 'PIECE_CONFLICT'

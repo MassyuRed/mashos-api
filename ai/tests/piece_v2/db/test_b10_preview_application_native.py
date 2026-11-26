@@ -170,31 +170,49 @@ def test_composed_lost_ack_replays_native_row_without_second_generation(database
 
 def test_composed_application_does_not_approve_hash_consistent_meaning_change(database, monkeypatch):
     conn, _, _ = database
-    app, owner, request, prepared, state = _harness(database, monkeypatch)
-    blocks = [b.replace('大切にしていない', '大切にしている')
-              for b in prepared.artifact_payload()['content_payload']['body_blocks']]
-    altered = _H['_changed'](prepared, blocks=blocks)
-    assert altered._artifact_json != prepared._artifact_json
-
-    async def altered_preparation(*args, **kwargs):
-        assert kwargs == {'_model_input': None}
-        return altered
-
-    monkeypatch.setattr(owner, 'prepare_original', altered_preparation)
+    app, owner, request, _, state = _harness(database, monkeypatch)
+    _H['_reverse_negation_on_assembly'](monkeypatch, owner)
     result = _post(app, request)
     assert result.status_code == 422 and result.json() == {'code': 'PIECE_SAFETY_UNAVAILABLE'}
-    assert state['actual_reviews'] == 1 and state['http_rpc'] == 0
+    assert state['authors'] == state['actual_reviews'] == 1 and state['http_rpc'] == 0
     assert conn.execute('SELECT count(*) FROM public.piece_records').fetchone() == (0,)
     assert _B5['_B4']['_used'](conn) == 0
 
 
-@pytest.mark.parametrize('change_at', [1, 2, 3])
+@pytest.mark.parametrize('change_at', [1, 2], ids=['before-review', 'after-review'])
 def test_composed_source_change_never_becomes_success(database, monkeypatch, change_at):
     conn, _, _ = database
     app, _, request, _, state = _harness(database, monkeypatch)
     state['change_at'] = change_at
     result = _post(app, request)
     assert result.status_code == 409 and result.json() == {'code': 'PIECE_CONFLICT'}
+    assert state['authors'] == 1 and state['actual_reviews'] == change_at - 1
     assert state['http_rpc'] == 0 and not state['posts']
+    assert conn.execute('SELECT count(*) FROM public.piece_records').fetchone() == (0,)
+    assert _B5['_B4']['_used'](conn) == 0
+
+
+def test_composed_source_change_after_app_revalidation_returns_native_conflict(database, monkeypatch):
+    from psycopg.errors import RaiseException
+    import supabase_client
+
+    conn, _, _ = database
+    app, _, request, _, state = _harness(database, monkeypatch)
+    transport = supabase_client.sb_post_rpc
+
+    async def change_source_before_sql(name, args, *, timeout):
+        if name != 'piece_issue_preview_v2':
+            return await transport(name, args, timeout=timeout)
+        _H['_change_original_after_app_revalidation'](conn, state)
+        with pytest.raises(RaiseException) as error:
+            await transport(name, args, timeout=timeout)
+        return httpx.Response(400, json={
+            'code': error.value.sqlstate, 'message': error.value.diag.message_primary,
+        })
+
+    monkeypatch.setattr(supabase_client, 'sb_post_rpc', change_source_before_sql)
+    result = _post(app, request)
+    assert result.status_code == 409 and result.json() == {'code': 'PIECE_CONFLICT'}
+    assert state['authors'] == state['actual_reviews'] == state['http_rpc'] == len(state['posts']) == 1
     assert conn.execute('SELECT count(*) FROM public.piece_records').fetchone() == (0,)
     assert _B5['_B4']['_used'](conn) == 0
