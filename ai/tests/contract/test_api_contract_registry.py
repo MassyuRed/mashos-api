@@ -124,7 +124,7 @@ def _route_map(app):
         if not isinstance(route, APIRoute):
             continue
         for method in route.methods or set():
-            if method in {"GET", "POST", "PATCH", "DELETE"}:
+            if method in {"GET", "POST", "PUT", "PATCH", "DELETE"}:
                 routes[(method, route.path)] = route
     return routes
 
@@ -140,7 +140,7 @@ import app as app_module
 
 routes = {}
 for path, path_item in app_module.app.openapi().get("paths", {}).items():
-    for method in {"get", "post", "patch", "delete"}:
+    for method in {"get", "post", "put", "patch", "delete"}:
         operation = path_item.get(method)
         if not isinstance(operation, dict):
             continue

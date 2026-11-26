@@ -13,13 +13,17 @@ from typing import Any, Dict, List, Literal, Optional, Set, Tuple, Union
 
 from fastapi import FastAPI, Header, HTTPException, Query, Response
 from fastapi.encoders import jsonable_encoder
-from pydantic import BaseModel, Field
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, ConfigDict, Field, StrictBool
 
 from api_emotion_submit import _extract_bearer_token, _resolve_user_id_from_token
 from follow_content_visibility import hidden_share_code_owner_ids
+from piece_public_read_store import set_native_piece_resonance
 from piece_v2_runtime_control import piece_feature_flags_for_app
+from publish_governance import parse_iso_utc
 from piece_public_read_service import (
     EMOTION_GENERATED_SOURCE_TYPE,
+    build_native_resonance_history,
     build_nexus_reflections_payload,
     build_qna_public_detail_payload,
     build_qna_public_unread_status_payload,
@@ -30,6 +34,7 @@ from api_piece_runtime import (
     _fetch_followed_owner_ids,
     _fetch_profiles_by_ids,
     _filter_recommendation_enabled,
+    _resolve_history_retention_for_user,
 )
 
 
@@ -79,12 +84,28 @@ class NexusNativePieceItem(BaseModel):
     created_at: str
 
 
+class NexusNativePieceWithResonance(NexusNativePieceItem):
+    metrics: NexusMetrics
+    viewer_state: NexusViewerState
+
+
+class NexusNativePieceResonanceRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    resonated: StrictBool
+
+
+class NexusNativePieceResonanceResponse(BaseModel):
+    q_instance_id: str
+    resonated: bool
+    resonances: int
+
+
 class NexusReflectionResponse(BaseModel):
     status: str = Field(default="ok")
     sort: str = Field(default="latest")
     total_items: int = 0
     has_more: bool = False
-    items: List[Union[NexusNativePieceItem, NexusReflectionItem]] = Field(default_factory=list)
+    items: List[Union[NexusNativePieceWithResonance, NexusNativePieceItem, NexusReflectionItem]] = Field(default_factory=list)
 
 
 
@@ -207,6 +228,46 @@ async def _call_registered_route_json(
         raise HTTPException(status_code=502, detail=f"{detail}: {exc}") from exc
 
 
+async def _nexus_resonance_viewer(authorization: Optional[str]) -> str:
+    token = _extract_bearer_token(authorization) if authorization else None
+    if not token:
+        raise HTTPException(status_code=401, detail="Authorization header with Bearer token is required")
+    viewer_id = await _resolve_user_id_from_token(token)
+    if not viewer_id:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    return str(viewer_id)
+
+
+async def _mixed_resonance_history(app: FastAPI, authorization: Optional[str], order: str,
+                                   limit: int, offset: int) -> dict:
+    viewer_id = await _nexus_resonance_viewer(authorization)
+    _, retention = await _resolve_history_retention_for_user(viewer_id)
+    # Two legacy sources each cap their scan at 2000. Use one internal read
+    # for the leading rows needed by this merge, keeping the first page small.
+    legacy = await _call_registered_route_json(
+        app, path=NEXUS_SOURCE_PATHS["history_echoes"], detail="Failed to load Nexus resonance history",
+        limit=min(offset + limit, 4000), offset=0, order=order, authorization=authorization,
+    )
+    legacy_total = legacy["total_items"]
+    native_offset = max(0, offset - legacy_total)
+    relative_offset = offset - native_offset
+    native_rows, native_total = await build_native_resonance_history(
+        viewer_user_id=viewer_id, order=order, limit=relative_offset + limit, offset=native_offset,
+        retention=retention,
+    )
+
+    # If the requested offset already lies past the count of native reactions,
+    # retain the legacy rows that are still in range after merging the streams.
+    skipped_native = min(native_offset, native_total)
+    if skipped_native < native_offset:
+        relative_offset = offset - skipped_native
+    rows = sorted(legacy["items"] + native_rows, key=lambda item: (
+        parse_iso_utc(item.get("saved_at")) or datetime.min.replace(tzinfo=timezone.utc), item["q_instance_id"],
+    ), reverse=order == "newest")
+    return {"status": "ok", "order": order, "total_items": legacy_total + native_total,
+            "limit": limit, "offset": offset, "items": rows[relative_offset:relative_offset + limit]}
+
+
 def _normalize_include_sections(raw: Optional[str]) -> Set[str]:
     if raw is None:
         return {"emotion_ranking", "reflections"}
@@ -288,6 +349,7 @@ def register_nexus_routes(app: FastAPI) -> None:
         user_id: Optional[str] = Query(default=None, description="Optional followed user filter"),
         following_only: bool = Query(default=True),
         include_piece_v2: bool = Query(default=False),
+        include_piece_v2_resonance: bool = Query(default=False),
         authorization: Optional[str] = Header(default=None, alias="Authorization"),
     ) -> NexusReflectionResponse:
         token = _extract_bearer_token(authorization) if authorization else None
@@ -308,11 +370,24 @@ def register_nexus_routes(app: FastAPI) -> None:
             limit=int(limit),
             following_only=bool(following_only),
             **({"include_piece_v2": True} if native_read else {}),
+            **({"include_piece_v2_resonance": True} if native_read and include_piece_v2_resonance else {}),
         )
         if native_read and not piece_feature_flags_for_app(app)['piece_v2_public_read_enabled']:
             raise HTTPException(status_code=503, detail="Piece publication unavailable",
                                 headers={"Cache-Control": "private, no-store"})
         return NexusReflectionResponse(**payload)
+
+    @app.put("/nexus/pieces/{q_instance_id}/resonance", response_model=NexusNativePieceResonanceResponse)
+    async def nexus_set_native_resonance(
+        q_instance_id: str, body: NexusNativePieceResonanceRequest, response: Response,
+        authorization: Optional[str] = Header(default=None, alias="Authorization"),
+    ) -> NexusNativePieceResonanceResponse:
+        viewer_id = await _nexus_resonance_viewer(authorization)
+        response.headers["Cache-Control"] = "private, no-store"
+        if not piece_feature_flags_for_app(app)["piece_v2_public_read_enabled"]:
+            raise HTTPException(503, "Piece publication unavailable", headers={"Cache-Control": "private, no-store"})
+        result = await set_native_piece_resonance(viewer_id, q_instance_id, body.resonated)
+        return NexusNativePieceResonanceResponse(**result)
 
     @app.get("/nexus/pieces/unread-status", response_model=NexusReflectionsUnreadStatusResponse)
     async def nexus_reflections_unread_status(
@@ -423,11 +498,17 @@ def register_nexus_routes(app: FastAPI) -> None:
         limit: int = Query(default=20, ge=1, le=100),
         offset: int = Query(default=0, ge=0),
         order: str = Query(default="newest", description="newest | oldest"),
+        include_piece_v2: bool = Query(default=False),
         authorization: Optional[str] = Header(default=None, alias="Authorization"),
     ) -> Any:
         order_key = str(order or "newest").strip().lower()
         if order_key not in ("newest", "oldest"):
             order_key = "newest"
+        if include_piece_v2 and piece_feature_flags_for_app(app)["piece_v2_public_read_enabled"]:
+            result = await _mixed_resonance_history(app, authorization, order_key, limit, offset)
+            if not piece_feature_flags_for_app(app)["piece_v2_public_read_enabled"]:
+                raise HTTPException(503, "Piece publication unavailable", headers={"Cache-Control": "private, no-store"})
+            return JSONResponse(result, headers={"Cache-Control": "private, no-store"})
         return await _call_registered_route_json(
             app,
             path=NEXUS_SOURCE_PATHS["history_echoes"],

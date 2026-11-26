@@ -162,6 +162,7 @@ Deprecated rows remain listed until their compatibility window is closed.
 | GET | `/nexus/pieces` | `nexus.pieces.list.v1` | `false` |  |  |
 | GET | `/nexus/pieces/unread-status` | `nexus.pieces.unread_status.v1` | `false` |  |  |
 | GET | `/nexus/pieces/{q_instance_id}` | `nexus.pieces.detail.v1` | `false` |  |  |
+| PUT | `/nexus/pieces/{q_instance_id}/resonance` | `nexus.pieces.resonance.v1` | `false` |  | Sets the authenticated follower's desired Piece v2 resonance state (`resonated`) and returns the current count. |
 | DELETE | `/nexus/pieces/{q_instance_id}` | `nexus.pieces.delete.v1` | `false` |  | Deletes only the viewer-owned Piece and related per-instance read/reaction state |
 | GET | `/nexus/history/resonances` | `nexus.history.resonances.v1` | `false` |  |  |
 | GET | `/nexus/recommend/users` | `nexus.recommend.users.v1` | `false` |  |  |
@@ -218,6 +219,12 @@ captured for that application:
 | POST | `/emotion/reflection/preview` | none | Not registered (404); its legacy DTO must not delegate to the v2 owner |
 | PATCH | `/emotion/piece/{piece_id}/visibility` | `emotion.piece.visibility.v2` | Authenticated exact owner and saved row version with `X-Piece-Publication: 1`; public transitions require current non-Secret source and permission. Private transitions withdraw the post. |
 | GET | `/nexus/pieces?include_piece_v2=true` | `nexus.pieces.list.v1` | Active publication read includes Piece v2 cards with the canonical body, date, author, and public Piece ID for the owner and approved followers. The legacy default feed is unchanged. |
+
+Clients can send `include_piece_v2_resonance=true` together with
+`include_piece_v2=true` on the Nexus feed to include Piece v2 resonance counts
+and the viewer's current state. `GET /nexus/history/resonances?include_piece_v2=true`
+includes the viewer's resonated Piece v2 posts that are still visible to them,
+ordered with the existing history by resonance time.
 
 The source-ref query accepts no answer text, owner, tier, stage or eligibility
 flag. Duplicate and unknown query fields are rejected. Its seven-field response

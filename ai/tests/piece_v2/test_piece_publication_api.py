@@ -29,7 +29,11 @@ PIECE = 'f1fcf08d-4baf-422e-8faa-fab45f23e54e'
 PIECE_ID = 'piece:' + PIECE
 MUTATION = '/emotion/piece/' + PIECE_ID + '/visibility'
 FEED = '/nexus/pieces?include_piece_v2=true'
+RESONANCE_FEED = FEED + '&include_piece_v2_resonance=true'
+RESONANCE = '/nexus/pieces/' + PIECE_ID + '/resonance'
+HISTORY = '/nexus/history/resonances?include_piece_v2=true'
 PUBLISHED_AT = '2026-11-21T03:45:56+00:00'
+RESONATED_AT = '2026-11-26T06:20:00+00:00'
 BODY = 'この作品を通して、自分の気持ちをゆっくり言葉にできました。'
 PRIVATE = 'SYNTHETIC_PRIVATE_SOURCE'
 AUTH = {'owner': OWNER, 'follower': FOLLOWER, 'stranger': STRANGER}
@@ -73,6 +77,18 @@ def application(monkeypatch):
     async def read_profiles(user_ids):
         return {owner: {'display_name': 'あるユーザー', 'friend_code': PRIVATE} for owner in user_ids}
 
+    async def read_retention(viewer_id):
+        assert viewer_id == FOLLOWER
+        return 'free', {'gte_iso': '2026-10-31T15:00:00Z', 'lt_iso': '2026-11-30T15:00:00Z'}
+
+    async def read_legacy_history(_, *, path, detail, order, limit, offset, authorization):
+        assert path == '/piece/resonances/pieces'
+        state.setdefault('legacy_queries', []).append((limit, offset))
+        rows = sorted(state.get('legacy_history', []), key=lambda row: (row['saved_at'], row['q_instance_id']),
+                      reverse=order == 'newest')
+        return {'status': 'ok', 'order': order, 'limit': limit, 'offset': offset,
+                'total_items': len(rows), 'items': rows[offset:offset + limit]}
+
     def sql_error(message):
         return httpx.Response(400, json={'code': 'P0001', 'message': message, 'details': PRIVATE})
 
@@ -97,19 +113,41 @@ def application(monkeypatch):
                 'visibility_scope': state['visibility_scope'],
                 'row_version': state['row_version'],
             })
-        assert path == 'piece_read_public_feed_v2'
+        can_follower_read = state['visibility_scope'] == 'public' and not state['secret'] and not state.get('revoked')
+        reacted = state.get('resonated', False)
+        if path == 'piece_set_resonance_v2':
+            if args['p_viewer_user_id'] != FOLLOWER or args['p_piece_id'] != PIECE or not can_follower_read:
+                return sql_error('PIECE_NOT_FOUND')
+            reacted = state['resonated'] = args['p_resonated']
+            return httpx.Response(200, json={'public_id': PIECE_ID, 'resonated': reacted,
+                                             'resonances': int(reacted)})
+        item = {'public_id': PIECE_ID, 'owner_user_id': OWNER, 'body': BODY, 'published_at': PUBLISHED_AT}
+        if path == 'piece_read_resonance_history_v2':
+            assert args['p_viewer_user_id'] == FOLLOWER
+            assert args['p_since'] == '2026-10-31T15:00:00Z' and args['p_until'] == '2026-11-30T15:00:00Z'
+            rows = [dict(item, resonances=1, is_resonated=True, can_resonate=True,
+                         saved_at=RESONATED_AT)] if can_follower_read and reacted else []
+            offset = args['p_offset']
+            return httpx.Response(200, json={'total_items': len(rows),
+                'items': rows[offset:offset + args['p_limit']]})
+        assert path in {'piece_read_public_feed_v2', 'piece_read_resonance_feed_v2'}
         assert args['p_target_owner_user_id'] is None
         eligible = (args['p_viewer_user_id'] == FOLLOWER or
                     (args['p_viewer_user_id'] == OWNER and not args['p_following_only']))
-        if not eligible or state['visibility_scope'] != 'public':
+        if not eligible or state['visibility_scope'] != 'public' or state['secret'] or (
+                state.get('revoked') and args['p_viewer_user_id'] == FOLLOWER):
             return httpx.Response(200, json=[])
-        item = {'public_id': PIECE_ID, 'owner_user_id': OWNER, 'body': BODY, 'published_at': PUBLISHED_AT}
+        if path == 'piece_read_resonance_feed_v2':
+            can_resonate = args['p_viewer_user_id'] == FOLLOWER
+            item.update(resonances=int(reacted), is_resonated=can_resonate and reacted, can_resonate=can_resonate)
         if state.get('malformed'):
             item['source_input_id'] = PRIVATE
         return httpx.Response(200, json=[item])
 
     monkeypatch.setattr(socket.socket, 'connect', block_network)
     monkeypatch.setattr(nexus, '_resolve_user_id_from_token', require_user)
+    monkeypatch.setattr(nexus, '_resolve_history_retention_for_user', read_retention)
+    monkeypatch.setattr(nexus, '_call_registered_route_json', read_legacy_history)
     monkeypatch.setattr(piece, '_verify_bearer', verify_bearer)
     monkeypatch.setattr(active_touch, 'resolve_user_id_verified_cached', no_active_user)
     monkeypatch.setattr(service, 'fetch_followed_owner_ids', followed_owners)
@@ -235,3 +273,69 @@ def test_initial_save_rejects_public_visibility_even_if_publication_is_enabled(a
     assert response.status_code == 400
     assert response.json() == {'code': 'PIECE_REQUEST_INVALID'}
     assert calls == [] and state['visibility_scope'] == 'private'
+
+
+def test_native_resonance_is_retained_on_read_and_removed_without_duplicates(application):
+    send, state, calls = application
+    state['visibility_scope'] = 'public'
+    own = send('GET', RESONANCE_FEED + '&following_only=false').json()['items'][0]
+    assert own['viewer_state'] == {'is_new': False, 'is_resonated': False, 'can_resonate': False}
+    before = send('GET', RESONANCE_FEED, token='follower').json()['items'][0]
+    assert before['metrics'] == {'views': 0, 'resonances': 0}
+    assert before['viewer_state']['can_resonate'] is True
+    for state_value in (True, True, False, False):
+        updated = send('PUT', RESONANCE, token='follower', json={'resonated': state_value})
+        assert updated.status_code == 200 and updated.headers['cache-control'] == 'private, no-store'
+        assert updated.json() == {'q_instance_id': PIECE_ID, 'resonated': state_value, 'resonances': int(state_value)}
+        assert calls[-1] == ('piece_set_resonance_v2', {
+            'p_viewer_user_id': FOLLOWER, 'p_piece_id': PIECE, 'p_resonated': state_value,
+        })
+        item = send('GET', RESONANCE_FEED, token='follower').json()['items'][0]
+        assert item['viewer_state']['is_resonated'] is state_value
+        assert item['metrics']['resonances'] == int(state_value)
+        history = send('GET', HISTORY, token='follower')
+        assert history.headers['cache-control'] == 'private, no-store'
+        assert history.json()['items'] == ([dict(item, saved_at=RESONATED_AT)] if state_value else [])
+        assert send('GET', '/nexus/history/resonances', token='follower').json()['items'] == []
+
+
+def test_native_resonance_rechecks_visibility_and_keeps_legacy_history_sorted(application):
+    send, state, calls = application
+    state['visibility_scope'] = 'public'
+    assert send('PUT', RESONANCE, token=None, json={'resonated': True}).status_code == 401
+    assert send('PUT', RESONANCE, token='owner', json={'resonated': True}).status_code == 404
+    assert send('PUT', RESONANCE, token='stranger', json={'resonated': True}).status_code == 404
+    before = len(calls)
+    assert send('PUT', RESONANCE, token='follower', json={'resonated': 'true'}).status_code == 422
+    assert send('PUT', '/nexus/pieces/reflection:legacy/resonance', token='follower', json={'resonated': True}).status_code == 404
+    assert len(calls) == before
+    legacy = {'q_instance_id': 'reflection:legacy', 'saved_at': '2026-11-22T07:00:00+09:00'}
+    state['legacy_history'] = [legacy]
+    assert send('PUT', RESONANCE, token='follower', json={'resonated': True}).status_code == 200
+    assert [i['q_instance_id'] for i in send('GET', HISTORY, token='follower').json()['items']] == [PIECE_ID, legacy['q_instance_id']]
+    assert send('GET', HISTORY + '&offset=1&limit=1', token='follower').json()['items'] == [legacy]
+    assert send('GET', HISTORY + '&order=oldest&offset=0&limit=1', token='follower').json()['items'] == [legacy]
+    for changed in ({'revoked': True}, {'secret': True}, {'visibility_scope': 'private'}):
+        state.update(revoked=False, secret=False, visibility_scope='public')
+        state.update(changed)
+        assert send('GET', RESONANCE_FEED, token='follower').json()['items'] == []
+        assert send('GET', HISTORY, token='follower').json()['items'] == [legacy]
+        assert send('PUT', RESONANCE, token='follower', json={'resonated': False}).status_code == 404
+
+
+def test_native_resonance_history_reads_only_the_legacy_prefix_needed_by_the_mixed_page(application):
+    send, state, calls = application
+    state.update(visibility_scope='public', resonated=True, legacy_history=[
+        {'q_instance_id': f'reflection:{number:04d}', 'saved_at': '2026-11-22T07:00:00+09:00'}
+        for number in range(4000)
+    ])
+    first_page = send('GET', HISTORY, token='follower').json()
+    assert state['legacy_queries'] == [(20, 0)]
+    assert first_page['items'][0]['q_instance_id'] == PIECE_ID
+    assert first_page['total_items'] == 4001
+
+    last_page = send('GET', HISTORY + '&order=oldest&offset=4000', token='follower').json()
+    assert state['legacy_queries'] == [(20, 0), (4000, 0)]
+    assert [item['q_instance_id'] for item in last_page['items']] == [PIECE_ID]
+    assert calls[-1][1]['p_limit'] == 4020
+    assert send('GET', HISTORY + '&offset=4001', token='follower').json()['items'] == []

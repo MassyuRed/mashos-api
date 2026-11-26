@@ -30,6 +30,7 @@ from piece_public_read_store import (
     fetch_followed_owner_ids,
     fetch_instance_metrics,
     fetch_native_public_piece_posts,
+    fetch_native_resonance_history,
     fetch_profiles_by_ids,
     fetch_reads,
     fetch_resonated_instances,
@@ -339,6 +340,7 @@ async def build_nexus_reflections_payload(
     limit: int,
     following_only: bool,
     include_piece_v2: bool = False,
+    include_piece_v2_resonance: bool = False,
 ) -> Dict[str, Any]:
     viewer_id = str(viewer_user_id or "").strip()
     if not viewer_id:
@@ -383,18 +385,9 @@ async def build_nexus_reflections_payload(
             following_only=following_only,
             sort="oldest" if fetch_oldest_first else "latest",
             limit=int(limit) + 1,
+            include_resonance=include_piece_v2_resonance,
         )
-        native_profiles = await fetch_profiles_by_ids(sorted({row["owner_user_id"] for row in native_rows}))
-        items.extend({
-            "q_instance_id": row["public_id"],
-            "source_type": "piece_v2",
-            "owner": {
-                "user_id": row["owner_user_id"],
-                "display_name": (native_profiles.get(row["owner_user_id"]) or {}).get("display_name"),
-            },
-            "body": row["body"],
-            "created_at": row["published_at"],
-        } for row in native_rows)
+        items.extend(await _project_native_posts(native_rows))
     sorted_items = _sort_nexus_items(items, sort)
     total_items = len(sorted_items)
     return {
@@ -404,6 +397,34 @@ async def build_nexus_reflections_payload(
         "has_more": total_items > int(limit),
         "items": sorted_items[: int(limit)],
     }
+
+
+async def _project_native_posts(rows: list[dict]) -> list[dict]:
+    profiles = await fetch_profiles_by_ids(sorted({row["owner_user_id"] for row in rows}))
+    items = []
+    for row in rows:
+        owner_id = row["owner_user_id"]
+        item = {
+            "q_instance_id": row["public_id"], "source_type": "piece_v2",
+            "owner": {"user_id": owner_id, "display_name": (profiles.get(owner_id) or {}).get("display_name")},
+            "body": row["body"], "created_at": row["published_at"],
+        }
+        if "resonances" in row:
+            item["metrics"] = {"views": 0, "resonances": row["resonances"]}
+            item["viewer_state"] = {
+                "is_new": False, "is_resonated": row["is_resonated"], "can_resonate": row["can_resonate"],
+            }
+        if "saved_at" in row:
+            item["saved_at"] = row["saved_at"]
+        items.append(item)
+    return items
+
+
+async def build_native_resonance_history(*, viewer_user_id: str, order: str, limit: int, offset: int,
+                                         retention: dict) -> tuple[list[dict], int]:
+    rows, total = await fetch_native_resonance_history(viewer_user_id=viewer_user_id,
+        order=order, limit=limit, offset=offset, retention=retention)
+    return await _project_native_posts(rows), total
 
 
 async def build_qna_public_list_payload(

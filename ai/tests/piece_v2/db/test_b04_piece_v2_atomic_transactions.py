@@ -640,3 +640,68 @@ def test_author_follow_visibility_bounds_native_legacy_emotion_and_direct_rows(d
     _author_visibility_patch(conn,pieces=True)
     assert _read_public_feed(conn,_VIEWER,target=_OWNER)[0]['body']==piece['piece_text']
     assert _direct_emotion_feed_ids(conn,_VIEWER)==[2]
+
+
+def test_native_resonance_is_atomic_and_rechecks_publication_and_follower_rights(database):
+    conn, pg, url = database
+    other_viewer = uuid4()
+    _author_visibility_schema(conn, other_viewer)
+    conn.execute((_ROOT / 'supabase/migrations/20261126070000_piece_v2_resonance.sql').read_text())
+    source, piece, saved = _publication_save(conn)
+    piece_id = piece['id']
+    public_id = 'piece:' + str(piece_id)
+    publish = dict(p_owner_user_id=_OWNER, p_piece_id=piece_id, p_expected_row_version=saved['row_version'])
+    added = dict(p_viewer_user_id=_VIEWER, p_piece_id=piece_id, p_resonated=True)
+    removed = dict(added, p_resonated=False)
+    history = dict(p_viewer_user_id=_VIEWER, p_order='newest', p_limit=20, p_offset=0, p_since=None, p_until=None)
+    feed = dict(p_viewer_user_id=_VIEWER, p_target_owner_user_id=None, p_following_only=False,
+                p_sort='latest', p_limit=20)
+    mutate = 'piece_set_resonance_v2'
+    read_feed = 'piece_read_resonance_feed_v2'
+    read_history = 'piece_read_resonance_history_v2'
+    one = {'public_id': public_id, 'resonated': True, 'resonances': 1}
+    zero = dict(one, resonated=False, resonances=0)
+    conn.execute('INSERT INTO public.myprofile_links VALUES (%s,%s)', (_OWNER, _VIEWER))
+    with pytest.raises(pg.errors.RaiseException, match='PIECE_NOT_FOUND'):
+        _rpc(conn, mutate, added)
+    published = _rpc(conn, 'piece_set_visibility_v2', dict(publish, p_visibility_scope='public'))
+    with pytest.raises(pg.errors.RaiseException, match='PIECE_NOT_FOUND'):
+        _rpc(conn, mutate, added)
+    with pytest.raises(pg.errors.RaiseException, match='PIECE_NOT_FOUND'):
+        _rpc(conn, mutate, dict(added, p_viewer_user_id=_OWNER))
+    conn.execute('INSERT INTO public.myprofile_links VALUES (%s,%s)', (_VIEWER, _OWNER))
+    for function, args in ((mutate, added), (read_feed, feed), (read_history, history)):
+        for role in ('anon', 'authenticated'):
+            with pytest.raises(pg.errors.InsufficientPrivilege):
+                _rpc(conn, function, args, role=role)
+    assert _parallel(pg, url, [(mutate, added), (mutate, added)]) == [one, one]
+    initial = _rpc(conn, read_history, history)
+    assert initial['total_items'] == 1
+    assert initial['items'][0]['body'] == piece['piece_text']
+    assert initial['items'][0]['is_resonated'] is True
+    assert _rpc(conn, read_feed, feed)[0]['resonances'] == 1
+    assert _rpc(conn, read_feed, dict(feed, p_viewer_user_id=_OWNER))[0]['can_resonate'] is False
+    assert _rpc(conn, read_history, dict(history, p_offset=1)) == {'total_items': 1, 'items': []}
+    assert _rpc(conn, read_history, dict(history, p_since=datetime(2099, 1, 1, tzinfo=timezone.utc))) == {
+        'total_items': 0, 'items': []}
+    assert _parallel(pg, url, [(mutate, removed), (mutate, removed)]) == [zero, zero]
+    assert _rpc(conn, read_history, history)['items'] == []
+    assert _rpc(conn, mutate, added) == one
+    assert _rpc(conn, mutate, added) == one
+    _author_visibility_patch(conn, pieces=False)
+    assert _rpc(conn, read_feed, feed) == []
+    assert _rpc(conn, read_history, history)['items'] == []
+    with pytest.raises(pg.errors.RaiseException, match='PIECE_NOT_FOUND'):
+        _rpc(conn, mutate, removed)
+    _author_visibility_patch(conn, pieces=True)
+    conn.execute('UPDATE public.emotions SET is_secret=true WHERE id=%s', (source,))
+    assert _rpc(conn, read_history, history)['items'] == []
+    with pytest.raises(pg.errors.RaiseException, match='PIECE_NOT_FOUND'):
+        _rpc(conn, mutate, added)
+    conn.execute('UPDATE public.emotions SET is_secret=false WHERE id=%s', (source,))
+    _rpc(conn, 'piece_set_visibility_v2', dict(publish, p_expected_row_version=published['row_version'],
+                                             p_visibility_scope='private'))
+    assert _rpc(conn, read_history, history)['items'] == []
+    conn.execute('DELETE FROM auth.users WHERE id=%s', (_VIEWER,))
+    assert conn.execute('SELECT count(*) FROM public.piece_record_resonances').fetchone() == (0,)
+    assert _used(conn) == 1

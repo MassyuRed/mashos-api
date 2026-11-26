@@ -87,7 +87,8 @@ async def has_myprofile_link(*, viewer_user_id: str, owner_user_id: str) -> bool
 
 
 async def fetch_native_public_piece_posts(*, viewer_user_id: str, target_user_id: Optional[str],
-                                         following_only: bool, sort: str, limit: int) -> list[dict]:
+                                         following_only: bool, sort: str, limit: int,
+                                         include_resonance: bool = False) -> list[dict]:
     """The service RPC projects only pieces visible in the current follower feed."""
     try:
         viewer_id = str(UUID(viewer_user_id))
@@ -99,7 +100,8 @@ async def fetch_native_public_piece_posts(*, viewer_user_id: str, target_user_id
         raise HTTPException(status_code=422, detail="Invalid Piece author") from None
 
     try:
-        response = await _sb_post_rpc_shared("piece_read_public_feed_v2", {
+        function = "piece_read_resonance_feed_v2" if include_resonance else "piece_read_public_feed_v2"
+        response = await _sb_post_rpc_shared(function, {
             "p_viewer_user_id": viewer_id,
             "p_target_owner_user_id": target_id,
             "p_following_only": following_only,
@@ -109,30 +111,104 @@ async def fetch_native_public_piece_posts(*, viewer_user_id: str, target_user_id
         if response.status_code != 200:
             raise ValueError
         rows = response.json()
-        if type(rows) is not list or len(rows) > limit:
-            raise ValueError
-        result = []
-        seen = set()
-        for row in rows:
-            if type(row) is not dict or set(row) != {"public_id", "owner_user_id", "body", "published_at"}:
-                raise ValueError
-            public_id = row["public_id"]
-            owner_id = str(UUID(row["owner_user_id"]))
-            published = datetime.fromisoformat(row["published_at"])
-            if (type(public_id) is not str or not public_id.startswith("piece:")
-                    or public_id != f"piece:{UUID(public_id[6:])}" or public_id in seen
-                    or (target_id is not None and owner_id != target_id)
-                    or (target_id is None and following_only and owner_id == viewer_id)
-                    or type(row["body"]) is not str or not row["body"].strip()
-                    or published.utcoffset() is None):
-                raise ValueError
-            seen.add(public_id)
-            result.append({"public_id": public_id, "owner_user_id": owner_id, "body": row["body"],
-                           "published_at": published.astimezone(timezone.utc).isoformat()})
-        return result
+        return _validate_native_posts(rows, viewer_id, limit, target_id=target_id,
+                                     following_only=following_only, include_resonance=include_resonance)
     except Exception:
         # Do not pass raw Supabase errors, diagnostics or unverified rows to the client.
         raise HTTPException(status_code=503, detail="Piece publication unavailable",
+                            headers={"Cache-Control": "private, no-store"}) from None
+
+
+def _native_piece_uuid(public_id: str) -> str:
+    if type(public_id) is not str or not public_id.startswith("piece:"):
+        raise ValueError
+    piece_id = str(UUID(public_id[6:]))
+    if public_id != "piece:" + piece_id:
+        raise ValueError
+    return piece_id
+
+
+def _validate_native_posts(rows, viewer_id, limit, *, target_id=None, following_only=False,
+                           include_resonance=False, history=False):
+    if type(rows) is not list or len(rows) > limit:
+        raise ValueError
+    keys = {"public_id", "owner_user_id", "body", "published_at"}
+    if include_resonance:
+        keys.update({"resonances", "is_resonated", "can_resonate"})
+    if history:
+        keys.add("saved_at")
+    result, seen = [], set()
+    for row in rows:
+        if type(row) is not dict or set(row) != keys:
+            raise ValueError
+        piece_id = _native_piece_uuid(row["public_id"])
+        owner_id = str(UUID(row["owner_user_id"]))
+        published = datetime.fromisoformat(row["published_at"])
+        if (piece_id in seen or (target_id is not None and owner_id != target_id)
+                or (target_id is None and following_only and owner_id == viewer_id)
+                or type(row["body"]) is not str or not row["body"].strip()
+                or published.utcoffset() is None):
+            raise ValueError
+        seen.add(piece_id)
+        clean = {**row, "owner_user_id": owner_id, "published_at": published.astimezone(timezone.utc).isoformat()}
+        if include_resonance and (type(row["resonances"]) is not int or row["resonances"] < 0
+                or type(row["is_resonated"]) is not bool or type(row["can_resonate"]) is not bool
+                or row["can_resonate"] != (owner_id != viewer_id)
+                or (row["is_resonated"] and (not row["can_resonate"] or row["resonances"] == 0))):
+            raise ValueError
+        if history:
+            saved = datetime.fromisoformat(row["saved_at"])
+            if not row["is_resonated"] or saved.utcoffset() is None:
+                raise ValueError
+            clean["saved_at"] = saved.astimezone(timezone.utc).isoformat()
+        result.append(clean)
+    return result
+
+
+async def set_native_piece_resonance(viewer_user_id: str, public_id: str, resonated: bool) -> dict:
+    headers = {"Cache-Control": "private, no-store"}
+    try:
+        piece_id = _native_piece_uuid(public_id)
+    except ValueError:
+        raise HTTPException(404, "Piece not found", headers=headers) from None
+    try:
+        response = await _sb_post_rpc_shared("piece_set_resonance_v2", {
+            "p_viewer_user_id": str(UUID(viewer_user_id)), "p_piece_id": piece_id,
+            "p_resonated": resonated,
+        }, timeout=8.0)
+        row = response.json()
+        if response.status_code == 400 and isinstance(row, dict) and row.get("message") == "PIECE_NOT_FOUND":
+            raise HTTPException(404, "Piece not found", headers=headers)
+        if (response.status_code != 200 or type(row) is not dict
+                or set(row) != {"public_id", "resonated", "resonances"}
+                or row["public_id"] != public_id or row["resonated"] is not resonated
+                or type(row["resonances"]) is not int or row["resonances"] < int(resonated)):
+            raise ValueError
+        return {"q_instance_id": public_id, "resonated": resonated, "resonances": row["resonances"]}
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(503, "Piece resonance unavailable", headers=headers) from None
+
+
+async def fetch_native_resonance_history(*, viewer_user_id: str, order: str, limit: int, offset: int,
+                                         retention: dict) -> tuple[list[dict], int]:
+    try:
+        viewer_id = str(UUID(viewer_user_id))
+        response = await _sb_post_rpc_shared("piece_read_resonance_history_v2", {
+            "p_viewer_user_id": viewer_id, "p_order": order, "p_limit": limit, "p_offset": offset,
+            "p_since": retention.get("gte_iso"), "p_until": retention.get("lt_iso"),
+        }, timeout=8.0)
+        body = response.json()
+        if (response.status_code != 200 or type(body) is not dict or set(body) != {"total_items", "items"}
+                or type(body["total_items"]) is not int or body["total_items"] < 0):
+            raise ValueError
+        rows = _validate_native_posts(body["items"], viewer_id, limit, include_resonance=True, history=True)
+        if len(rows) != min(limit, max(0, body["total_items"] - offset)):
+            raise ValueError
+        return rows, body["total_items"]
+    except Exception:
+        raise HTTPException(503, "Piece resonance history unavailable",
                             headers={"Cache-Control": "private, no-store"}) from None
 
 
