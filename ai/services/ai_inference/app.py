@@ -53,6 +53,7 @@ def _install_optional_perf_runtime_stubs() -> None:
             stub.record_cache_hit = _noop  # type: ignore[attr-defined]
             stub.record_cache_miss = _noop  # type: ignore[attr-defined]
             stub.record_supabase_call = _noop  # type: ignore[attr-defined]
+            stub.set_metric = _noop  # type: ignore[attr-defined]
             sys.modules["request_metrics"] = stub
 
     if "response_microcache" not in sys.modules:
