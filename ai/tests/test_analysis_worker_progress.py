@@ -175,6 +175,29 @@ class MapProgressTests(unittest.IsolatedAsyncioTestCase):
         progress.assert_awaited_once()
         check.assert_awaited_once()
 
+    async def test_unaccepted_analysis_settles_the_claim_without_repeating_generation(self):
+        import analysis_cumulative_service as cumulative
+        import analysis_observed_service as observed
+        import astor_worker as worker
+
+        rejected = dict(reason=cumulative.NO_ACCEPTED_MAP_STRUCTURE, has_visible_content=False)
+        with patch.object(observed, 'observed_enabled', return_value=True), \
+                patch.object(cumulative, 'ensure_map', AsyncMock(return_value=rejected)) as ensure_map, \
+                patch.object(worker, '_run_worker_maintenance', AsyncMock()), \
+                patch.object(worker, 'fetch_next_queued_job',
+                             AsyncMock(side_effect=[self.job, asyncio.CancelledError()])), \
+                patch.object(worker, 'claim_job', AsyncMock(return_value=self.job)), \
+                patch.object(worker, 'requeue', AsyncMock()) as requeue, \
+                patch.object(worker, 'mark_done_if_unchanged', AsyncMock()) as mark_done:
+            self.job.user_id = '00000000-0000-4000-8000-000000000001'
+            with self.assertRaises(asyncio.CancelledError):
+                await worker._worker_loop()
+        ensure_map.assert_awaited_once()
+        mark_done.assert_not_awaited()
+        requeue.assert_not_awaited()
+        self.assertEqual((self.row['status'], self.row['last_error']),
+                         ('failed', cumulative.NO_ACCEPTED_MAP_STRUCTURE))
+
 
 if __name__ == '__main__':
     unittest.main()

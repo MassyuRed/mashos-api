@@ -221,6 +221,7 @@ def _month(value):
 
 _FREE_FIGURE_RELATIONS = ('CRITERION_EXPRESSION', 'CONTEXT_CONTRAST')
 _NO_SUPPORTED_STRUCTURE = '現時点の記録からは、選び方を支える条件をまだ確かめられていません。'
+NO_ACCEPTED_MAP_STRUCTURE = 'analysis_primary_structure_unavailable'
 
 
 def _plan_structures(projection):
@@ -301,7 +302,8 @@ def map_report_for_plan(row, tier):
 
 
 async def read_maps(user_id, *, report_id=None, history=False, limit=60, offset=0, month=None, metadata_only=False):
-    result = await _rpc('analysis_cumulative_read', dict(p_user_id=_owner(user_id),
+    owner = _owner(user_id)
+    result = await _rpc('analysis_cumulative_read', dict(p_user_id=owner,
         p_id=_owner(report_id) if report_id is not None else None,
         p_history=history, p_limit=limit, p_offset=offset, p_month=_month(month), p_metadata_only=metadata_only))
     try:
@@ -328,9 +330,47 @@ async def read_maps(user_id, *, report_id=None, history=False, limit=60, offset=
             if not _saved_projection_text_matches(projection, row['content_text']):
                 raise ValueError
             _checked_coverage(row['content_json']['map_context'])
+        if analysis_primary_structure_reading_mode() == 'free_plus.v1':
+            result = await _exclude_unpublished_plan_fallbacks(owner, result, metadata_only)
         return result
     except (ValueError, KeyError, TypeError, AttributeError):
         raise HTTPException(503, 'analysis_saved_artifact_invalid') from None
+
+
+async def _exclude_unpublished_plan_fallbacks(owner, result, metadata_only):
+    """Distinguish saved empty plan attempts from maps written before plan rollout."""
+    candidates = []
+    for row in result['items']:
+        graph = (row.get('content_json') or {}).get('watashiMap', {})
+        if metadata_only or (graph.get('wire_kind') == 'watashi.map.v3'
+                             and 'primary_structures' not in graph['overview']):
+            candidates.append(row['id'])
+    if not candidates:
+        return result
+
+    from supabase_client import sb_get
+    ids = list(dict.fromkeys(candidates))
+    rejected = set()
+    # The history endpoint allows 200 UUIDs. Keep the encoded query comfortably below 8 KB.
+    for start in range(0, len(ids), 100):
+        batch = ids[start:start + 100]
+        response = await sb_get('/rest/v1/analysis_observed_artifacts', params={
+            'select': 'id', 'id': 'in.(' + ','.join(batch) + ')', 'user_id': 'eq.' + owner,
+            'source_profile': 'eq.' + PROFILE, 'safe_projection->>wire_kind': 'eq.watashi.map.v3',
+            'safe_projection->overview->primary_structures': 'is.null',
+            'private_evidence->graph->meaning_review->node_local_plan->plan->overview->primary_structures': 'eq.[]',
+        }, timeout=3.0)
+        if response.status_code != 200:
+            raise ValueError('analysis_plan_fallback_lookup_failed')
+        rows = response.json()
+        if (type(rows) is not list or any(type(row) is not dict or set(row) != {'id'}
+                                         or row['id'] not in batch for row in rows)):
+            raise ValueError('analysis_plan_fallback_lookup_invalid')
+        rejected.update(row['id'] for row in rows)
+    if not rejected:
+        return result
+    return dict(result, items=[row for row in result['items'] if row['id'] not in rejected],
+                declined_plan_fallback=[index for index, row in enumerate(result['items']) if row['id'] in rejected])
 
 
 def _checked_coverage(coverage):
@@ -1046,6 +1086,7 @@ async def _ensure_map(user_id, *, ensure=True, force=False, monthly=False, model
     tier = result.get('subscription_tier', 'free')
     if monthly and row:
         return _response(row, monthly=True, tier=tier)
+    declined_saved = result.get('declined_plan_fallback', False)
     refreshed, coverage = False, None
     if ensure and observed_mode() == 'development':
         current = await read_maps(owner, limit=1) if monthly else result
@@ -1121,7 +1162,9 @@ async def _ensure_map(user_id, *, ensure=True, force=False, monthly=False, model
                     type(exc).__name__, '>'.join(locations))
                 raise HTTPException(422, 'analysis_saved_source_unavailable') from None
             if artifact is None:
-                return _response(None, coverage=coverage, tier=tier)
+                analysis_unavailable = semantic_source and analysis_primary_structure_reading_mode() == 'free_plus.v1'
+                return _response(current_row if analysis_unavailable else None, monthly=monthly, coverage=coverage,
+                                 tier=tier, analysis_unavailable=analysis_unavailable)
             if model_source is not None:
                 _require_model_write_active()
                 from analysis_model_source import require_current_analysis_model_source
@@ -1136,18 +1179,9 @@ async def _ensure_map(user_id, *, ensure=True, force=False, monthly=False, model
             private['source_record_refs'] = [s['original']['id'] for s in snapshot['members']]
             artifact_id = str(UUID(artifact.artifact_id[9:]))
             _checked_projection(projection, artifact_id)
-            declined_scope = False
-            if analysis_primary_structure_reading_mode() == 'free_plus.v1':
-                free_view = map_projection_for_plan(projection, 'free')
-                if free_view is not None and not free_view[0]['nodes']:
-                    # The installed renderer needs a supported figure. Keep a
-                    # current report for unchanged sources or save ordinary facts
-                    # if this source version has no current report.
-                    overview = dict(projection['overview'])
-                    del overview['primary_structures']
-                    projection = dict(projection, overview=overview)
-                    text = _projection_text(projection)
-                    declined_scope = True
+            if (analysis_primary_structure_reading_mode() == 'free_plus.v1'
+                    and _plan_structures(projection) == []):
+                return _response(current_row, monthly=monthly, tier=tier, analysis_unavailable=True)
             if per_phase:
                 from analysis_job_progress import check_map_job_owner
                 await check_map_job_owner()
@@ -1155,8 +1189,8 @@ async def _ensure_map(user_id, *, ensure=True, force=False, monthly=False, model
             rid = await _rpc('analysis_cumulative_commit', dict(p_user_id=owner, p_guard=snapshot['guard'],
                 p_artifact_id=artifact.artifact_id, p_private_evidence=private, p_projection=projection,
                 p_text=text, p_start=snapshot['period_start'], p_end=snapshot['period_end'],
-                p_force=(force or refresh_category_policy) and not declined_scope))
-            refreshed = not declined_scope or rid == artifact_id
+                p_force=force or refresh_category_policy or bool(current.get('declined_plan_fallback'))))
+            refreshed = True
         # An ID lookup can select a monthly capture of the same artifact.
         # Read the current slot again before confirming a current refresh.
         checked = await read_maps(owner, history=monthly, month=this_month if monthly else None, limit=1)
@@ -1166,7 +1200,8 @@ async def _ensure_map(user_id, *, ensure=True, force=False, monthly=False, model
             raise HTTPException(409, 'analysis_source_changed')
         if refreshed and row['id'] == str(UUID(artifact.artifact_id[9:])):
             await _queue_map_update_notification(owner, row)
-    return _response(row, refreshed=refreshed, monthly=monthly, coverage=coverage, tier=tier)
+    return _response(row, refreshed=refreshed, monthly=monthly, coverage=coverage, tier=tier,
+                     analysis_unavailable=declined_saved and row is None)
 
 
 async def _queue_map_update_notification(owner, row):
@@ -1187,7 +1222,7 @@ async def _queue_map_update_notification(owner, row):
         logging.getLogger(__name__).warning('Watashi map completion push reservation failed')
 
 
-def _response(row, *, refreshed=False, monthly=False, coverage=None, tier):
+def _response(row, *, refreshed=False, monthly=False, coverage=None, tier, analysis_unavailable=False):
     scoped = False
     if row:
         row, scoped = map_report_for_plan(row, tier)
@@ -1205,6 +1240,9 @@ def _response(row, *, refreshed=False, monthly=False, coverage=None, tier):
         **({'_map_plan_projected': True} if scoped else {}))
     if row and row.get('_map_structure_relations'):
         payload['_map_structure_relations'] = row['_map_structure_relations']
+    if analysis_unavailable:
+        payload.update(reason=NO_ACCEPTED_MAP_STRUCTURE, skip_reason=NO_ACCEPTED_MAP_STRUCTURE,
+                       refresh_status='failed')
     return payload
 
 
@@ -1212,16 +1250,21 @@ async def map_status(user_id):
     result = await read_maps(user_id, limit=1)
     row = result['items'][0] if result['items'] else None
     try:
-        refresh_status = await map_refresh_status(user_id)
+        refresh_status = await map_refresh_status(user_id, include_analysis_outcome=True)
     except Exception:
         # A queue outage must not hide a valid, separately authorized map.
         import logging
         logging.getLogger(__name__).warning('Analysis refresh status read failed')
         refresh_status = 'failed'
+    analysis_unavailable = refresh_status == NO_ACCEPTED_MAP_STRUCTURE or (
+        row is None and result.get('declined_plan_fallback') and refresh_status is None)
+    skip_reason = NO_ACCEPTED_MAP_STRUCTURE if analysis_unavailable else (
+        None if row else 'analysis_saved_map_unavailable')
     return dict(version_key=row['content_json']['watashiMap']['projection_of'] if row else None,
         generated_at=row['generated_at'] if row else None, saved_report_mode='standard' if row else None,
-        has_visible_content=bool(row), skip_reason=None if row else 'analysis_saved_map_unavailable',
-        refresh_status=refresh_status, map_subscription_tier=result.get('subscription_tier', 'free'))
+        has_visible_content=bool(row), skip_reason=skip_reason,
+        refresh_status='failed' if analysis_unavailable else refresh_status,
+        map_subscription_tier=result.get('subscription_tier', 'free'))
 
 
 def _map_refresh_queue_enabled():
@@ -1229,15 +1272,17 @@ def _map_refresh_queue_enabled():
         os.getenv('ASTOR_WORKER_QUEUE_ENABLED', 'false').strip().lower() in {'1', 'true', 'yes', 'y', 'on'})
 
 
-async def map_refresh_status(user_id):
+async def map_refresh_status(user_id, *, for_automatic_refresh=False, include_analysis_outcome=False):
     """Read only the authenticated owner's existing refresh-job state."""
     owner = _owner(user_id)
     if not _map_refresh_queue_enabled():
         return None
     from astor_job_queue import JOBS_TABLE
     from supabase_client import sb_get
+    include_reason = for_automatic_refresh or include_analysis_outcome
     response = await sb_get(f'/rest/v1/{JOBS_TABLE}', params={
-        'select': 'status,job_type', 'user_id': 'eq.' + owner,
+        'select': 'status,job_type,last_error' if include_reason else 'status,job_type',
+        'user_id': 'eq.' + owner,
         'job_key': 'eq.myprofile_latest_refresh:' + owner, 'limit': '1'}, timeout=3.0)
     if response.status_code != 200:
         raise HTTPException(503, 'analysis_refresh_status_unavailable')
@@ -1248,6 +1293,11 @@ async def map_refresh_status(user_id):
         row = rows[0] if rows else None
         if row and row.get('job_type') == 'myprofile_latest_refresh_v1':
             status = row.get('status')
+            if status == 'failed':
+                if include_analysis_outcome and row.get('last_error') == NO_ACCEPTED_MAP_STRUCTURE:
+                    return NO_ACCEPTED_MAP_STRUCTURE
+                if for_automatic_refresh and row.get('last_error') != NO_ACCEPTED_MAP_STRUCTURE:
+                    return None
             if status in {'queued', 'running', 'failed'}:
                 return status
         return None
@@ -1267,11 +1317,20 @@ async def request_map_refresh(user_id, *, force=False, trigger='map_view', reque
         return None
     if trigger not in {'map_view', 'manual', 'emotion_submit', 'deep_insight_answer'}:
         raise ValueError('analysis_refresh_trigger_invalid')
-    if not force and (await read_maps(owner, limit=1, metadata_only=True))['items']:
-        return await map_refresh_status(owner)
-    status = await map_refresh_status(owner)
+    automatic_refresh = (not force and trigger == 'map_view'
+                         and analysis_primary_structure_reading_mode() == 'free_plus.v1')
+    declined_fallback = False
+    if not force:
+        current = await read_maps(owner, limit=1, metadata_only=True)
+        if current['items']:
+            return await map_refresh_status(owner)
+        declined_fallback = bool(current.get('declined_plan_fallback'))
+    status = (await map_refresh_status(owner, for_automatic_refresh=True) if automatic_refresh
+              else await map_refresh_status(owner))
     if not force and trigger in {'map_view', 'manual'} and status in {'queued', 'running'}:
         return status
+    if automatic_refresh and (declined_fallback or status == 'failed'):
+        return 'failed'
     from datetime import datetime, timezone
     from astor_job_queue import enqueue_job
     await enqueue_job(job_key='myprofile_latest_refresh:' + owner,
@@ -1285,11 +1344,15 @@ async def request_map_refresh(user_id, *, force=False, trigger='map_view', reque
 async def map_history(user_id, *, limit=60, offset=0):
     result = await read_maps(user_id, history=True, limit=min(limit + 1, 200), offset=offset, metadata_only=True)
     rows = result['items']
-    has_more = len(rows) > limit
-    if limit == 200 and len(rows) == limit:
-        has_more = bool((await read_maps(user_id, history=True, limit=1, offset=offset + limit, metadata_only=True))['items'])
+    excluded = result.get('declined_plan_fallback', ())
+    row_count = len(rows) + len(excluded)
+    has_more = row_count > limit
+    if limit == 200 and row_count == limit:
+        extra = await read_maps(user_id, history=True, limit=1, offset=offset + limit, metadata_only=True)
+        has_more = bool(extra['items'] or extra.get('declined_plan_fallback'))
+    visible = limit - sum(index < limit for index in excluded)
     return dict(status='ok', items=[{k: v for k, v in r.items() if k not in {'content_text', 'content_json'}}
-        for r in rows[:limit]], limit=limit, offset=offset, has_more=has_more,
+        for r in rows[:visible]], limit=limit, offset=offset, has_more=has_more,
         next_offset=offset + limit if has_more else None, subscription_tier=result['subscription_tier'])
 
 

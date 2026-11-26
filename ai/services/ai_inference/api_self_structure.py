@@ -1474,13 +1474,23 @@ def register_self_structure_routes(app: FastAPI) -> None:
         from analysis_observed_service import observed_enabled
         if observed_enabled():
             from analysis_cumulative_service import (
-                ensure_map, map_refresh_status, map_response_for_renderer, request_map_refresh)
+                NO_ACCEPTED_MAP_STRUCTURE, ensure_map, map_refresh_status, map_response_for_renderer, request_map_refresh)
             if background:
                 result = await ensure_map(uid, ensure=False)
                 try:
-                    result['refresh_status'] = (await request_map_refresh(uid, force=force,
-                        trigger='manual' if force else 'map_view') if ensure
-                        else await map_refresh_status(uid))
+                    if ensure:
+                        refresh_status = await request_map_refresh(uid, force=force, trigger='manual' if force else 'map_view')
+                        if refresh_status == 'failed' and result['skip_reason'] != NO_ACCEPTED_MAP_STRUCTURE:
+                            refresh_status = await map_refresh_status(uid, include_analysis_outcome=True) or refresh_status
+                    else:
+                        refresh_status = await map_refresh_status(uid, include_analysis_outcome=True)
+                    if refresh_status == NO_ACCEPTED_MAP_STRUCTURE:
+                        result['skip_reason'] = NO_ACCEPTED_MAP_STRUCTURE
+                        if not result['has_visible_content']:
+                            result['reason'] = NO_ACCEPTED_MAP_STRUCTURE
+                        refresh_status = 'failed'
+                    if refresh_status is not None or result['skip_reason'] != NO_ACCEPTED_MAP_STRUCTURE:
+                        result['refresh_status'] = refresh_status
                 except Exception:
                     # Saved-content authorization and guard checks above remain
                     # hard failures; only the optional queue operation degrades.
