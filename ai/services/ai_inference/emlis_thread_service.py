@@ -17,12 +17,13 @@ from enum import Enum
 from uuid import uuid4
 
 from emlis_ai_current_input_bundle import build_emlis_current_input_bundle
+from emlis_ai_user_address_service import display_name_call, repair_emlis_reply_address
 from publish_governance import parse_iso_utc, timestamp_in_history_retention
 from cocolon_meaning_experience_engine import MeaningExperienceEngine
 from cocolon_meaning_experience_engine.contracts import GenerationRequest, EngineStatus, ExecutionMode
 from cocolon_meaning_experience_engine.source_kernel import freeze_text_source
 from cocolon_meaning_experience_engine.emlis_thread_source import admit_emlis_thread, identity
-from cocolon_meaning_experience_engine.natural_reply import ACTIVE_MEANING_PROFILE
+from cocolon_meaning_experience_engine.natural_reply import ACTIVE_MEANING_PROFILE, ARTIFACT_SCHEMA
 from cocolon_meaning_experience_engine.emlis_thread_contracts import (
     EmlisThreadInputV1, EmlisQuestionControlV1, EmlisClarificationV1,
     EmlisQuestionDecisionV1, SupplementalAnswerSource, InterpretationCorrectionSource, SEMANTIC_SCHEMA,
@@ -227,6 +228,8 @@ def _observation_text(snapshot, payload):
     artifact = payload.get("artifact", {})
     if artifact.get("history_line") and not _context_current(snapshot, payload.get("context_guards", [])):
         return f"見えたこと：\n{artifact['observation']}\n\nEmlisから：\n{artifact['reception']}"
+    if artifact.get("schema_version") == ARTIFACT_SCHEMA:
+        return repair_emlis_reply_address(payload["text"], leading_only=True)
     return payload["text"]
 
 
@@ -356,7 +359,7 @@ def thread_dto(snapshot, *, requested_attempt_id=None, can_write=True):
             and d.get("response_profile") == NATURAL_REPLY_PROFILE and _generation_current(snapshot)
             and (current or body_state == "CORRECTION_UNREFLECTED" and target_visible)),
         "correction_target": ({"event_id": t["last_observation_event_id"],
-            "text": _find(snapshot, t["last_observation_event_id"])["payload"]["text"]}
+            "text": _observation_text(snapshot, latest_body["payload"])}
             if body_state == "CORRECTION_UNREFLECTED" and target_visible
             and t.get("last_observation_event_id") else None),
         **({"interpretive_frames":_public_frames(snapshot)} if d["runtime_profile"] == Q3_PROFILE else {})}
@@ -366,6 +369,7 @@ class EmlisThreadService:
     def __init__(self, store=None, engine=None, *, runtime_profile=RUNTIME_PROFILE, enforce_application_policy=False,
                  semantic_profile=None, offline_candidate_source=None, offline_model_attempt_seconds=None,
                  natural_reply_source=None, response_profile=None, natural_questions_enabled=True,
+                 recipient_display_name_source=None,
                  natural_meaning_profile=ACTIVE_MEANING_PROFILE, natural_context_update_enabled=True,
                  natural_context_update_paid_only=False, initial_observation_follow_enabled=False):
         if runtime_profile not in {RUNTIME_PROFILE, Q3_PROFILE}:
@@ -378,6 +382,7 @@ class EmlisThreadService:
             raise ValueError("unsupported_response_profile")
         self.response_profile = response_profile
         self.natural_reply_source = natural_reply_source
+        self.recipient_display_name_source = recipient_display_name_source
         if (type(natural_questions_enabled) is not bool or type(natural_context_update_enabled) is not bool
                 or type(natural_context_update_paid_only) is not bool):
             raise ValueError("natural_question_setting_invalid")
@@ -1012,6 +1017,7 @@ class EmlisThreadService:
             INITIAL_OBSERVATION_FOLLOW_CONTEXT_VERSION, INITIAL_OBSERVATION_FOLLOW_CONTEXT_VERSIONS,
             ISSUED_ANSWER_RECEPTION_VERSION,
             QWEN_9B_NATURAL_ALIAS,
+            RECIPIENT_VOICE_VERSION,
             PAID_RECEIVED_ANSWER_CONTEXT_VERSION,
             RECEIVED_ANSWER_CONTEXT_VERSION, SOURCE_CONTEXT_VERSION, UNSPECIFIED_CONCERN_CONTEXT_VERSION,
             build_natural_reply_messages)
@@ -1097,12 +1103,29 @@ class EmlisThreadService:
             prepared_meaning=prepared_meaning,
             meaning_profile=t['data'].get('natural_meaning_profile'), owner_scope=user_id,
             original_record=snapshot['original'], as_of=t['data'].get('natural_meaning_as_of'))
-        writer_identity = {}
+        voice_version = prior["payload"].get("recipient_voice_version") if prior else RECIPIENT_VOICE_VERSION
+        if voice_version not in (None, RECIPIENT_VOICE_VERSION):
+            raise NaturalReplyError("natural_reply_writer_identity_changed")
+        name_call = ""
+        if voice_version:
+            if prior:
+                name_call = prior["payload"].get("recipient_display_name_call", "")
+            elif self.recipient_display_name_source is not None:
+                try:
+                    name = await asyncio.wait_for(self.recipient_display_name_source(user_id), timeout=2.0)
+                    name_call = display_name_call(name, honorific="さん")
+                    if any(mark in name_call for mark in ("?", "？", "<think>", "</think>", "```")):
+                        name_call = ""
+                except (TimeoutError, ValueError):
+                    pass
+        material = replace(material, recipient_voice_version=voice_version, recipient_display_name_call=name_call)
+        writer_identity = ({"recipient_voice_version": voice_version, "recipient_display_name_call": name_call}
+                           if voice_version else {})
         history_line = None
         if material.meaning_profile is not None:
-            writer_identity = {'meaning_profile': material.meaning_profile,
+            writer_identity.update({'meaning_profile': material.meaning_profile,
                 'writer_messages_sha256': hashlib.sha256(json.dumps(build_natural_reply_messages(material),
-                    ensure_ascii=False, separators=(',', ':')).encode('utf-8')).hexdigest()}
+                    ensure_ascii=False, separators=(',', ':')).encode('utf-8')).hexdigest()})
             writer_material = json.loads(material.writer_material_json)
             writer_context = writer_material.get('source_context_version')
             history_line = writer_material.get('history_line')

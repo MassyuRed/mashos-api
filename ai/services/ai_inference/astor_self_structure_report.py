@@ -3516,6 +3516,10 @@ async def refresh_myprofile_monthly_report(
     }
 
 
+class AnalysisMapContentUnavailable(RuntimeError):
+    """The map run finished without an accepted structural reading."""
+
+
 async def refresh_myprofile_latest_report(
     *,
     user_id: str,
@@ -3536,8 +3540,10 @@ async def refresh_myprofile_latest_report(
 
     from analysis_observed_service import observed_enabled
     if observed_enabled():
-        from analysis_cumulative_service import ensure_map
+        from analysis_cumulative_service import NO_ACCEPTED_MAP_STRUCTURE, ensure_map
         result = await ensure_map(uid, force=force)
+        if result.get('reason') == NO_ACCEPTED_MAP_STRUCTURE:
+            raise AnalysisMapContentUnavailable(NO_ACCEPTED_MAP_STRUCTURE)
         # Worker callers log this result. Do not return private map contents.
         return {'status': 'ok' if result['has_visible_content'] else 'empty',
             'user_id': uid, 'report_mode': 'standard', 'period': 'all',

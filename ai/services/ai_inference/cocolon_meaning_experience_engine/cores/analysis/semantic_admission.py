@@ -11,7 +11,7 @@ from contextvars import ContextVar
 from copy import deepcopy
 from dataclasses import asdict, dataclass, replace
 import hashlib
-from itertools import permutations
+from itertools import combinations, permutations
 import json
 import unicodedata
 
@@ -3570,9 +3570,11 @@ _PRIMARY_STRUCTURE_V3_INSTRUCTION = (
 _PRIMARY_STRUCTURE_VERSIONS = ('karen.v1', 'karen.v2', 'karen.v3')
 
 
-def _primary_structure_guidance(material):
+def _primary_structure_guidance(material, *, merge_source_reading=False):
     version = material.get('primary_structure_reading')
     if version == 'karen.v3':
+        if merge_source_reading:
+            return _primary_structure_merge_guidance(material)
         return _PRIMARY_STRUCTURE_V3_INSTRUCTION
     if version == 'karen.v2':
         return _PRIMARY_STRUCTURE_INSTRUCTION.format(writing_instruction='') + _PRIMARY_STRUCTURE_V2_INSTRUCTION
@@ -3662,16 +3664,63 @@ def _bound_choice(field, quote, sentences, *, allow_written_negative=False):
     return None
 
 
+def _primary_structure_origins(material, nodes):
+    fields = {field['field']: field for field in material['fields']}
+    return {f"{node['node_id']}.u{i}.e{j}": (node, unit, fields[root['field']], root['quote'])
+            for node in nodes for i, unit in enumerate(node['units'], 1)
+            for j, root in enumerate(unit['evidence'], 1)}
+
+
+def _primary_self_insight_records(material):
+    return {record['record'] for record in material['records']
+            if any(emotion in ('自己理解', 'self_insight') for emotion in (record.get('selected_emotions') or ()))}
+
+
+def _choice_from_origin(origin, sentences, *, allow_written_negative=False):
+    node, unit, field, quote = origin
+    if (node['perspective'] == 'SELF' and unit['source_mode'] in ('RECORDED', 'PERSON_JUDGMENT')
+            and (field['source_role'] == 'USER_DEEP_INSIGHT_ANSWER'
+                 or field['source_role'] == 'ORIGINAL_INPUT' and field['field_path'] == 'memo')):
+        return _bound_choice(field, quote, sentences, allow_written_negative=allow_written_negative)
+    return None
+
+
 def _choice_pairs(origins, sentences, *, allow_written_negative=False):
-    choices = [(field['record'], choice) for node, unit, field, quote in origins
-               if node['perspective'] == 'SELF' and unit['source_mode'] in ('RECORDED', 'PERSON_JUDGMENT')
-               and (field['source_role'] == 'USER_DEEP_INSIGHT_ANSWER'
-                    or field['source_role'] == 'ORIGINAL_INPUT' and field['field_path'] == 'memo')
-               and (choice := _bound_choice(field, quote, sentences, allow_written_negative=allow_written_negative)) is not None]
+    choices = [(origin[2]['record'], choice) for origin in origins
+               if (choice := _choice_from_origin(origin, sentences, allow_written_negative=allow_written_negative)) is not None]
     for i, (record, left) in enumerate(choices):
         for other, right in choices[i + 1:]:
             if record != other and left[0] != right[0] and left[1] != right[1]:
                 yield left, right
+
+
+def _primary_structure_merge_guidance(material):
+    sentences = _semantic_display_sentences(material)
+    origins = _primary_structure_origins(material, material['candidate_nodes'])
+    # Only suggest passages that the same admission reader recognizes. The
+    # passage references do not assert a relationship between the records.
+    choices = [f"{anchor} (record {origin[2]['record']})" for anchor, origin in origins.items()
+               if _choice_from_origin(origin, sentences) is not None]
+    insight = _primary_self_insight_records(material)
+    guidance = ('\nprimary_structuresは本人の選び方を説明する0〜3件です。先に別々の原記録の条件と実際の選択を照合します。'
+        'across_recordsは、本人が選択に結びつけた条件を、選び方の変わった場面で照合できる場合に使います。'
+        '両方で実際にしたことと各条件をcase_readingに書き、その原文をanchorsに1〜4件入れます。'
+        '予定・希望・感情・他者の行動から理由や本人の選択を作りません。反例があれば範囲を狭めます。'
+        + ('self_reportはselected_emotionsが自己理解の一記録に本人が明記した気づきに限ります。'
+           if insight else '自己理解を選択した記録がないため、self_reportは使いません。')
+        + 'in_this_recordは一記録で明記された本人の条件と選択に絞ります。'
+        'decision_factorは本人が重く見た具体的な条件を短く書き、criterionとcase_readingの両方に同じ言葉を自然に入れます。'
+        'criterionは本人に届ける結論一文、case_readingは場面の違いを説明する一〜二文で、どちらも敬語です。'
+        'headingは本文と重ならない短い見出しです。本文に記録番号や原文の一覧は入れません。'
+        '同じ基準は一つにまとめ、根拠がなければ[]です。')
+    if insight and len(insight) <= 24:
+        guidance += ' 自己理解を選択したrecordは ' + ', '.join(map(str, sorted(insight))) + ' です。'
+    if choices:
+        hint = (' 条件と選択が一文にある比較候補の出典は ' + ', '.join(choices) + ' です。'
+                '原文を照合して、同じ基準を比べられる出典だけを選びます。')
+        if len((guidance + hint).encode()) <= len(_PRIMARY_STRUCTURE_V3_INSTRUCTION.encode()):
+            guidance += hint
+    return guidance
 
 
 def _choice_matched_clauses(clauses, choice, other):
@@ -3757,15 +3806,40 @@ def _v3_source_contrast_edge(material, nodes, axes, edges):
     return _v3_choice_contrast_edge(refs, pair, edges)
 
 
-def _v3_choice_contrast_edge(refs, pair, edges):
+def _v3_choice_contrast_edge(refs, pair, edges, *, units=None):
     if any(edge['relation_kind'] in ('CONTEXT_CONTRAST', 'CRITERION_EXPRESSION')
             and {edge['from'], edge['to']} == set(refs) for edge in edges):
         return None
     label = '／'.join(f'{condition} → {action}' for condition, action, *_ in pair)
     if not _semantic_map_text(label, 80):
         return None
-    return {'from': refs[0], 'to': refs[1], 'from_unit': refs[0] + '.u1', 'to_unit': refs[1] + '.u1',
+    left, right = units if units is not None else [ref + '.u1' for ref in refs]
+    return {'from': refs[0], 'to': refs[1], 'from_unit': left, 'to_unit': right,
             'label': label, 'relation_kind': 'CONTEXT_CONTRAST'}
+
+
+def _v3_merge_choice_contrast_edges(material, nodes, bindings, edges):
+    """Draw only the unique complete choice pair already used by an admitted reading."""
+    origins = _primary_structure_origins(material, nodes)
+    sentences = _semantic_display_sentences(material)
+    for _, axis in bindings:
+        if axis['scope'] != 'across_records' or len(edges) >= 48:
+            continue
+        supported = []
+        for left, right in combinations(axis['anchors'], 2):
+            first, second = origins[left], origins[right]
+            pair = next(_choice_pairs((first, second), sentences), None)
+            if pair is not None and _choice_comparison_covers(axis['case_reading'], *pair):
+                supported.append((left, right, pair))
+        if len(supported) != 1:
+            continue
+        left, right, pair = supported[0]
+        refs = [origins[anchor][0]['node_id'] for anchor in (left, right)]
+        if len(set(refs)) != 2 or any(len(origins[anchor][1]['evidence']) != 1 for anchor in (left, right)):
+            continue
+        units = [anchor.rsplit('.', 1)[0] for anchor in (left, right)]
+        if edge := _v3_choice_contrast_edge(refs, pair, edges, units=units):
+            edges.append(edge)
 
 
 def _v3_authored_choice_comparison(axes, refs, pair, stem):
@@ -4028,6 +4102,51 @@ def _primary_structure_v3_has_conclusion(axis, factor, quotes):
         and not set(sentence_keys) & set(quote_keys))
 
 
+def _v3_single_choice_matches(axis, factor, origins, sentences, *, allow_written_negative):
+    for origin in origins:
+        choice = _choice_from_origin(origin, sentences, allow_written_negative=allow_written_negative)
+        if choice is None:
+            continue
+        condition, action, forms, _ = choice
+        if factor not in _primary_structure_text_key(condition):
+            continue
+        ending = next((form for form in forms if action.endswith(form)), None)
+        if ending is None:
+            continue
+        argument = action[:-len(ending)]
+        bare_argument = re.sub(r'^(?:私は|私が|私から|わたしは|僕は)[、，, ]*', '', argument)
+        source_prefix = origin[3].split(condition, 1)[0]
+        context = '(?:' + re.escape(source_prefix) + ')?' if source_prefix else ''
+        outcomes = '|'.join(re.escape(prefix + form) for prefix in dict.fromkeys((argument, bare_argument))
+                            for form in forms)
+        case = rf'{context}{re.escape(condition)}(?:なので|ので|だったため|ため)[、，, ]*(?:{outcomes})[。．.]'
+        outcome_text = axis['criterion'].replace(condition, '', 1)
+        unsupported_outcome = any(form in outcome_text for _, *variants in _CHOICE_ACTION
+                                  for form in variants if form not in forms)
+        if (re.fullmatch(case, axis['case_reading']) and any(form in outcome_text for form in forms)
+                and not unsupported_outcome and not _choice_added_action(axis['criterion'], origin[3])):
+            return True
+    return False
+
+
+def _v3_self_report_matches(axis, factor, origins):
+    for node, unit, field, quote in origins:
+        if (node['perspective'] != 'SELF' or unit['source_mode'] not in ('RECORDED', 'PERSON_JUDGMENT')
+                or not (field['source_role'] == 'ORIGINAL_INPUT' and field['field_path'] == 'memo'
+                        or field['source_role'] in {'SUPPLEMENTAL_ANSWER', 'USER_DEEP_INSIGHT_ANSWER'})):
+            continue
+        expressed = re.fullmatch(r'(.+?)(?:と思った|と感じた|と気づいた)[。．.]?', quote)
+        if expressed is None:
+            continue
+        statement = _primary_structure_text_key(expressed[1])
+        if factor in statement and all(
+                re.fullmatch(statement + r'(?:と書いています|との気づきです|と振り返っています|と記しています)',
+                             _primary_structure_text_key(axis[key]))
+                for key in ('criterion', 'case_reading')):
+            return True
+    return False
+
+
 def _check_public_primary_structures(axes, node_refs):
     reason = 'analysis_primary_structure_invalid'
     _semantic_map_require(type(axes) is list and len(axes) <= 3, reason)
@@ -4058,11 +4177,9 @@ def _read_primary_structures(prepared, material, nodes, axes, *, retained=None, 
     _semantic_map_require(prepared.prompt_version == SEMANTIC_MAP_OCCURRENCE_V24_PROFILE
         and material.get('history_stage', {}).get('kind') != 'LEAF'
         and type(axes) is list and len(axes) <= 3, reason)
-    fields = {f['field']: f for f in material['fields']}
     records = {r['record']: r for r in material['records']}
-    origins = {f"{node['node_id']}.u{i}.e{j}": (node, unit, fields[root['field']], root['quote'])
-               for node in nodes for i, unit in enumerate(node['units'], 1)
-               for j, root in enumerate(unit['evidence'], 1)}
+    self_insight = _primary_self_insight_records(material)
+    origins = _primary_structure_origins(material, nodes)
     public, admitted, factors, admitted_roots = [], [], set(), set()
     version = material.get('primary_structure_reading')
     independently_compared = version == 'karen.v3'
@@ -4110,9 +4227,7 @@ def _read_primary_structures(prepared, material, nodes, axes, *, retained=None, 
             _semantic_map_require(any(a != b and qa != qb and (a in judgments or b in judgments)
                                       for a, qa in mental for b, qb in mental), reason)
         elif axis['scope'] == 'self_report':
-            stated_self_insight = len(owners) == 1 and any(
-                name in ('自己理解', 'self_insight') for name in
-                (records[next(iter(owners))].get('selected_emotions') or []))
+            stated_self_insight = len(owners) == 1 and owners <= self_insight
             if independently_compared and not stated_self_insight:
                 continue
             _semantic_map_require(stated_self_insight, reason)
@@ -4138,6 +4253,9 @@ def _read_primary_structures(prepared, material, nodes, axes, *, retained=None, 
                     or not _primary_structure_v3_has_conclusion(axis, factor, quotes)
                     or (axis['scope'] == 'across_records' and not any(
                         _choice_comparison_covers(axis['case_reading'], left, right) for left, right in decisions))
+                    or (axis['scope'] == 'in_this_record' and not _v3_single_choice_matches(
+                        axis, factor, selected, sentences, allow_written_negative=allow_written_negative))
+                    or (axis['scope'] == 'self_report' and not _v3_self_report_matches(axis, factor, selected))
                     or any(axis['heading'] == prior['title'] or description == prior['description'] for prior in public)):
                 continue
             factors.add(factor)
@@ -4163,7 +4281,8 @@ def _read_primary_structures(prepared, material, nodes, axes, *, retained=None, 
     return public
 
 
-def semantic_node_local_v4_relations(prepared, plan, bodies, packet, *, ordered_titles=False, retained_axes=None):
+def semantic_node_local_v4_relations(prepared, plan, bodies, packet, *, ordered_titles=False, retained_axes=None,
+        merge_source_reading=False):
     semantic_node_local_v4_nodes(prepared, plan, bodies, ordered_titles=ordered_titles)
     nodes = _semantic_v4_join(plan, bodies)
     ids = {node['node_id'] for node in nodes}
@@ -4300,8 +4419,16 @@ def semantic_node_local_v4_relations(prepared, plan, bodies, packet, *, ordered_
     edges = [{k: v for k, v in edge.items() if k not in {'from_source', 'to_source'}}
              for edge in raw_edges] if source_cued else raw_edges
     if 'primary_structures' in packet:
+        derive_merge_edges = (merge_source_reading and not received_plan
+            and material.get('history_stage', {}).get('kind') == 'MERGE'
+            and material.get('primary_structure_reading') == 'karen.v3')
+        bindings = [] if derive_merge_edges else retained_axes
         axes = _read_primary_structures(
-            prepared, material, nodes, packet['primary_structures'], retained=retained_axes)
+            prepared, material, nodes, packet['primary_structures'], retained=bindings)
+        if derive_merge_edges and bindings:
+            _v3_merge_choice_contrast_edges(material, nodes, bindings, edges)
+            if retained_axes is not None:
+                retained_axes.extend(bindings)
         if material.get('primary_structure_reading') == 'karen.v3':
             if not axes and not material.get('history_stage'):
                 comparison = _v3_read_confirmed_choice_contrast(prepared, material, nodes, packet['primary_structures'])
@@ -4821,7 +4948,7 @@ _SEMANTIC_RECORD_PLAN_FORMAT = (
 _SEMANTIC_RECORD_FIRST_PLAN = _SEMANTIC_RECORD_READING + _SEMANTIC_RECORD_GROUPING + _SEMANTIC_RECORD_PLAN_FORMAT
 
 
-def _semantic_occurrence_v6_messages(prepared, material, phase, bodies=None):
+def _semantic_occurrence_v6_messages(prepared, material, phase, bodies=None, *, merge_source_reading=False):
     # The same originals and correction cohorts remain available in all phases.
     # Give the relation author a direct address for each *actual* prior fact.
     if phase == 'RELATIONS':
@@ -4946,9 +5073,11 @@ def _semantic_occurrence_v6_messages(prepared, material, phase, bodies=None):
                 '表示句のない連続引用は原文のまま選びます。MERGEではleaf_source_indexのchoice内のどの句も同じ原引用です。'
                 'rootのsource_choices_sha256には表示値を入れます。先に各欄を末尾まで読み、'
                 'この記録で本人がしたこと、しなかったこと、他者から聞いたことを確かめます。'
-                'その理解を変える条件・結果・独立した未確認事項を同じ記録の別欄や本人補足にも探します。'
-                '同じ場面を説明できたらそこで閉じ、別の場面へ移ります。各欄・各unitの枠を埋める必要はありません。'
-                '似た行為でも条件や結果が違う箇所、先の読みを変える否定や本人訂正は出典を保って残します。')
+                + ('理由と実際の選択が同じ一文にあれば、一文を丸ごと引用します。選択が変わった場面は別々の項目に残します。'
+                   '同じ場面を重ねず、否定・留保・本人補足・訂正は出典を保ちます。' if merge_source_reading else
+                   'その理解を変える条件・結果・独立した未確認事項を同じ記録の別欄や本人補足にも探します。'
+                   '同じ場面を説明できたらそこで閉じ、別の場面へ移ります。各欄・各unitの枠を埋める必要はありません。'
+                   '似た行為でも条件や結果が違う箇所、先の読みを変える否定や本人訂正は出典を保って残します。'))
         else:
             guidance += (' passagesは同じ欄の原文を順番に示します。各組の先頭の@番号をquoteに、'
                 'そのfield番号をfieldに書くと、その組の原文を選べます。番号のない連続引用は元の文字で書きます。'
@@ -5236,7 +5365,7 @@ def _semantic_occurrence_v6_messages(prepared, material, phase, bodies=None):
     guidance = _semantic_v4_view(prepared)._source_instruction(_SEMANTIC_V4_COMMON + '\n' + guidance + lesson, material)
     guidance += scoped_guidance
     if phase == 'RELATIONS' and stage != 'LEAF':
-        guidance += _primary_structure_guidance(material)
+        guidance += _primary_structure_guidance(material, merge_source_reading=merge_source_reading)
     messages = [dict(role='system', content=guidance), dict(role='user', content=_semantic_occurrence_message(material))]
     if prepared.prompt_version in SEMANTIC_MAP_FACT_REFERENCE_PROFILES and phase == 'RELATIONS':
         maximum = SEMANTIC_HISTORY_MERGE_MAX_PROMPT_BYTES if stage == 'MERGE' else SEMANTIC_MAP_MAX_PROMPT_BYTES
@@ -5244,7 +5373,8 @@ def _semantic_occurrence_v6_messages(prepared, material, phase, bodies=None):
     return messages
 
 
-def semantic_node_local_v4_messages(prepared, phase='PLAN', *, plan=None, nodes=None, ordered_titles=False):
+def semantic_node_local_v4_messages(prepared, phase='PLAN', *, plan=None, nodes=None, ordered_titles=False,
+        merge_source_reading=False):
     _semantic_map_require(prepared.prompt_version in SEMANTIC_MAP_NODE_LOCAL_V4_PROFILES
         and phase in SEMANTIC_MAP_NODE_LOCAL_V4_PHASES, 'analysis_semantic_node_local_v4_phase_invalid')
     material = json.loads(prepared.material_json)
@@ -5261,7 +5391,8 @@ def semantic_node_local_v4_messages(prepared, phase='PLAN', *, plan=None, nodes=
         semantic_node_local_v4_nodes(prepared, plan, nodes, ordered_titles=ordered_titles)
         material['candidate_nodes'] = _semantic_v4_join(plan, nodes)
     if prepared.prompt_version in SEMANTIC_MAP_FACT_ENDPOINT_PROFILES:
-        return _semantic_occurrence_v6_messages(prepared, material, phase, nodes)
+        return _semantic_occurrence_v6_messages(prepared, material, phase, nodes,
+            merge_source_reading=merge_source_reading)
     stage = material.get('history_stage', {}).get('kind')
     refs_first = prepared.prompt_version in {SEMANTIC_MAP_NODE_LOCAL_V4_BOUND_V2_PROFILE, *SEMANTIC_MAP_OCCURRENCE_PROFILES}
     instruction = _semantic_v4_instruction(phase, bound=bound, refs_first=refs_first,
@@ -5328,14 +5459,25 @@ def semantic_node_local_v4_uses_compact_merge(prepared):
     return kind == 'MERGE'
 
 
-def semantic_node_local_v4_wire_messages(prepared, phase='PLAN', *, plan=None, nodes=None, wire_version=None):
+def _merge_primary_source_reading(prepared, version):
+    from analysis_merge_wire import JUDGMENT_VERSION
+    if version != JUDGMENT_VERSION:
+        return False
+    material = json.loads(getattr(prepared, 'material_json', '{}'))
+    return material.get('primary_structure_reading') == 'karen.v3' and not _semantic_received_answer_plan(material)
+
+
+def semantic_node_local_v4_wire_messages(prepared, phase='PLAN', *, plan=None, nodes=None, wire_version=None,
+        merge_source_reading=True):
     if not semantic_node_local_v4_uses_compact_merge(prepared):
         return semantic_node_local_v4_messages(prepared, phase, plan=plan, nodes=nodes)
     from analysis_merge_wire import VERSION, is_compact, legacy_messages, prepare_messages
     from analysis_plan_source_choices import source_ordered_merge
     version = VERSION if wire_version is None else wire_version
+    qualified_reading = merge_source_reading and _merge_primary_source_reading(prepared, version)
     logical = semantic_node_local_v4_messages(prepared, phase, plan=plan, nodes=nodes,
-        **({'ordered_titles': True} if source_ordered_merge(version) else {}))
+        **({'ordered_titles': True} if source_ordered_merge(version) else {}),
+        **({'merge_source_reading': True} if qualified_reading else {}))
     wire = prepare_messages(logical, version=version)
     _semantic_map_require(is_compact(wire) and legacy_messages(wire) == logical,
         'analysis_semantic_merge_message_binding_invalid')
@@ -5362,6 +5504,7 @@ def assemble_semantic_node_local_v4_with_node_choices(prepared, packet, *, compa
     from analysis_plan_source_choices import source_ordered_merge, uses_attributed_context, uses_speaker_context
     ordered_titles = compact and source_ordered_merge(packet['merge_wire_version'])
     wire_options = {'wire_version': packet['merge_wire_version']} if compact else {}
+    merge_source_reading = compact and _merge_primary_source_reading(prepared, packet['merge_wire_version'])
     r(prepared.prompt_version in SEMANTIC_MAP_NODE_LOCAL_V4_PROFILES
         and _semantic_map_keys(packet, packet_keys)
         and packet['schema_version'] == semantic_node_local_v4_artifact_schema(prepared)
@@ -5377,6 +5520,12 @@ def assemble_semantic_node_local_v4_with_node_choices(prepared, packet, *, compa
         used_tokens += row['completion_tokens']
         r(used_tokens <= SEMANTIC_MAP_NODE_LOCAL_V4_TOKEN_BUDGET, reason)
         messages = make_messages(prepared, phase, plan=plan, nodes=nodes, **wire_options)
+        if phase == 'PLAN' and merge_source_reading and row['messages_sha256'] != semantic_map_hash(messages):
+            # Old v10 artifacts keep their exact prompt and projection. A
+            # PLAN binding selects one reading for every subsequent phase.
+            merge_source_reading = False
+            wire_options['merge_source_reading'] = False
+            messages = make_messages(prepared, phase, **wire_options)
         if compact:
             r(row['logical_messages_sha256'] == semantic_map_hash(legacy_messages(messages)), reason)
         r(row['messages_sha256'] == semantic_map_hash(messages), reason)
@@ -5402,7 +5551,7 @@ def assemble_semantic_node_local_v4_with_node_choices(prepared, packet, *, compa
             authored_nodes = value
         else:
             joined = semantic_node_local_v4_relations(prepared, plan, nodes, value, ordered_titles=ordered_titles,
-                retained_axes=retained_axes)
+                retained_axes=retained_axes, **({'merge_source_reading': True} if merge_source_reading else {}))
     return joined, authored_nodes
 
 

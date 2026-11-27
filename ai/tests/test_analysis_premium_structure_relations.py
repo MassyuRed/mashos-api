@@ -303,13 +303,13 @@ def saved_map_source(sql_source):
     return db, rpc, other, originals, snapshot
 
 
-def test_rollout_preserves_the_ordinary_saved_map_when_no_verified_free_figure(saved_map_source, monkeypatch):
+def test_rollout_keeps_valid_text_without_a_figure_and_does_not_replace_it_with_raw_records(saved_map_source, monkeypatch):
     import analysis_model_source as sources
     from unittest.mock import AsyncMock
 
     db, _, _, _, snapshot = saved_map_source
     first, coverage, _ = _artifact(COEXISTENCE, snapshot)
-    second, _, _ = _artifact(COEXISTENCE, snapshot)
+    second, _, _ = _artifact(COEXISTENCE, snapshot, authored_axes=False)
     proposed = first.safe_projection(authenticated_owner_scope=OWNER)
     assert service.map_projection_for_plan(proposed, 'free')[0]['nodes'] == []
     assert proposed['overview']['primary_structures']
@@ -327,14 +327,176 @@ def test_rollout_preserves_the_ordinary_saved_map_when_no_verified_free_figure(s
     assert initial['refreshed'] and not reread['refreshed']
     assert initial['report_id'] == reread['report_id']
     assert initial['meta'] == reread['meta']
-    assert initial['meta']['nodes'] == proposed['nodes']
-    assert 'primary_structures' not in initial['meta']['overview']
-    assert 'map_plan_scoped' not in service.map_response_for_renderer(reread, 'semantic.v1')
-    assert all(axis['description'] not in reread['content_text'] for axis in proposed['overview']['primary_structures'])
+    assert initial['meta']['nodes'] == []
+    assert initial['meta']['overview']['primary_structures']
+    assert reread['reason'] == service.NO_ACCEPTED_MAP_STRUCTURE
+    assert reread['refresh_status'] == 'failed'
+    assert service.map_response_for_renderer(reread, 'semantic.v1')['map_plan_scoped']
+    assert all(axis['criterion'] in reread['content_text'] for axis in proposed['overview']['primary_structures'])
     assert db.query('select count(*)::integer as total from public.analysis_observed_artifacts')['rows'] == [{'total': 1}]
     assert db.query('select count(*)::integer as total from public.analysis_cumulative_months')['rows'] == [{'total': 1}]
     assert acquired.await_count == 2
     notify.assert_awaited_once()
+
+
+@pytest.mark.parametrize('legacy', [False, True])
+def test_saved_map_eligibility_is_shared_by_history_detail_if_deep_insight_and_push(saved_map_source, monkeypatch, legacy):
+    import httpx
+    from unittest.mock import AsyncMock
+    import analysis_model_source as sources
+    import astor_worker as worker
+
+    db, rpc, other, originals, snapshot = saved_map_source
+    artifact, coverage, _ = _artifact(COEXISTENCE, snapshot, authored_axes=False)
+    graph = artifact.safe_projection(authenticated_owner_scope=OWNER)
+    graph['overview'].pop('primary_structures')
+    graph['overview']['summary'] = ('1月4日の記録：棚の寸法を測った。\n'
+                                    '2月5日の記録：部品を探した。\n箱にしまった。') if not legacy else (
+                                    '二つの場面で、続けられる条件を見比べています。')
+    private = artifact.private_evidence()
+    private.update(coverage=coverage, source_record_refs=[row['id'] for row in originals])
+    if legacy:
+        private['graph']['meaning_review']['node_local_plan']['plan']['overview'].pop('primary_structures')
+    candidate = dict(p_user_id=OWNER, p_guard=snapshot['guard'], p_artifact_id=artifact.artifact_id,
+                     p_private_evidence=private, p_projection=graph, p_text=service._projection_text(graph),
+                     p_start=snapshot['period_start'], p_end=snapshot['period_end'])
+    rid = asyncio.run(rpc('analysis_cumulative_commit', candidate))
+    month = db.query('select snapshot_month::text as month from public.analysis_cumulative_months')['rows'][0]['month']
+    sql_script(db, '20261125205000_analysis_premium_structure_relations.sql')
+    sql_script(db, '20261127080000_analysis_withhold_unaccepted_map.sql')
+    for function in (
+        'analysis_cumulative_has_accepted_reading(jsonb,jsonb)',
+        'analysis_cumulative_current_id(uuid,text)',
+        'analysis_cumulative_commit(uuid,text,text,jsonb,jsonb,text,timestamptz,timestamptz,uuid,boolean)',
+        'analysis_cumulative_read(uuid,uuid,boolean,integer,integer,date,boolean)',
+        'analysis_if_base_context(uuid,text)',
+    ):
+        acl = db.query("select has_function_privilege('anon',$1,'execute') anon, "
+            "has_function_privilege('authenticated',$1,'execute') authenticated, "
+            "has_function_privilege('service_role',$1,'execute') service_role", ['public.' + function])
+        assert acl['rows'] == [dict(anon=False, authenticated=False, service_role=True)]
+
+    async def get(path, *, params, **_kwargs):
+        assert path == '/rest/v1/astor_jobs'
+        return httpx.Response(200, json=[dict(status='done', job_type='myprofile_latest_refresh_v1')])
+
+    monkeypatch.setattr('supabase_client.sb_get', get)
+    monkeypatch.setenv('COCOLON_ANALYSIS_OBSERVED_MODE', 'development')
+    monkeypatch.setenv('ASTOR_WORKER_QUEUE_ENABLED', 'true')
+    latest = asyncio.run(service.ensure_map(OWNER, ensure=False))
+    monthly = asyncio.run(service.ensure_map(OWNER, monthly=True, ensure=False))
+    status = asyncio.run(service.map_status(OWNER))
+    material = asyncio.run(rpc('deep_insight_material', dict(p_user_id=OWNER)))
+    assert not asyncio.run(service.read_maps(other, report_id=rid))['items']
+    assert 'code' not in db.query("update public.profiles set subscription_tier='premium' where id=$1", [OWNER])
+    if legacy:
+        assert latest['report_id'] == monthly['report_id'] == rid
+        assert status['has_visible_content']
+        assert material['map']['id'] == rid
+        plan = asyncio.run(rpc('analysis_if_base_context', dict(p_user_id=OWNER, p_base_ref=artifact.reference)))
+        assert plan['base_projection'] == graph
+        assert [row['id'] for row in asyncio.run(service.map_history(OWNER))['items']] == [rid]
+        return
+
+    assert not latest['has_visible_content'] and latest['report_id'] is None and latest['meta'] is None
+    assert latest['reason'] == monthly['reason'] == service.NO_ACCEPTED_MAP_STRUCTURE
+    assert status['refresh_status'] == latest['refresh_status'] == 'failed'
+    assert not status['has_visible_content'] and material['map'] is None
+    assert not asyncio.run(service.read_maps(OWNER, report_id=rid))['items']
+    assert not asyncio.run(service.map_history(OWNER))['items']
+    assert asyncio.run(service.read_maps(OWNER, limit=1, metadata_only=True))['withheld'] is True
+    with pytest.raises(HTTPException, match='analysis_report_unavailable'):
+        asyncio.run(get_detail(user_id=OWNER, family='self_structure', report_id=rid, month=month))
+    with pytest.raises(HTTPException, match='analysis_report_unavailable'):
+        asyncio.run(service.map_evidence(OWNER, rid, 'n1', month=month))
+    with pytest.raises(HTTPException, match='P0002'):
+        asyncio.run(rpc('analysis_if_base_context', dict(p_user_id=OWNER, p_base_ref=artifact.reference)))
+    with pytest.raises(HTTPException, match='22023'):
+        asyncio.run(rpc('analysis_cumulative_commit', dict(candidate, p_force=True)))
+
+    tokens, sender, enqueue = AsyncMock(), AsyncMock(), AsyncMock()
+    monkeypatch.setattr(worker, '_fetch_push_tokens_for_users', tokens)
+    monkeypatch.setattr(worker, '_send_fcm_push', sender)
+    stale = asyncio.run(worker._handle_send_fcm_push_v1(user_id=OWNER,
+        payload=dict(recipient_mode='user_ids', recipient_user_ids=[OWNER], actor_user_id=OWNER,
+            title='Emlis', body='わたしマップが更新されました', event_type='watashi_map_updated',
+            data=dict(type='watashi_map_updated', target='watashi_map', user_id=OWNER,
+                      report_id=rid, version_key=artifact.reference))))
+    assert stale['status'] == 'skipped_stale_map_notification'
+    tokens.assert_not_awaited()
+    sender.assert_not_awaited()
+    monkeypatch.setattr('astor_job_queue.enqueue_job', enqueue)
+    assert asyncio.run(service.request_map_refresh(OWNER)) == 'failed'
+    enqueue.assert_not_awaited()
+
+    monkeypatch.setenv('COCOLON_ANALYSIS_PLAN_READ_ROLLOUT', 'free_plus.v1')
+    accepted, good_coverage, _ = _artifact(COEXISTENCE, snapshot)
+    next_accepted, _, _ = _artifact(COEXISTENCE, snapshot)
+    monkeypatch.setattr(service, '_semantic_history_map', AsyncMock(
+        side_effect=[(artifact, coverage), (accepted, good_coverage), (next_accepted, good_coverage)]))
+    notify = AsyncMock()
+    monkeypatch.setattr(service, '_queue_map_update_notification', notify)
+    model = sources.SelfHostedSemanticAnalysisModelSource(endpoint='https://synthetic.invalid/v1/chat/completions',
+        model=sources.SEMANTIC_OCCURRENCE_V24_9B_MODEL, api_key='synthetic',
+        semantic_prompt_version=core.SEMANTIC_MAP_OCCURRENCE_V24_PROFILE)
+    declined = asyncio.run(service.ensure_map(OWNER, model_source=model))
+    assert declined['reason'] == service.NO_ACCEPTED_MAP_STRUCTURE
+    assert not declined['refreshed'] and not declined['has_visible_content']
+    notify.assert_not_awaited()
+    recovered = asyncio.run(service.ensure_map(OWNER, model_source=model))
+    assert recovered['refreshed'] and recovered['report_id'] != rid
+    notify.assert_awaited_once()
+    retained = asyncio.run(service.ensure_map(OWNER, monthly=True, ensure=False))
+    assert retained['report_id'] == recovered['report_id'] and retained['snapshot_month'] == month
+    next_report = asyncio.run(service.ensure_map(OWNER, force=True, model_source=model))
+    assert next_report['refreshed'] and next_report['report_id'] != retained['report_id']
+    assert asyncio.run(service.ensure_map(OWNER, monthly=True, ensure=False)) == retained
+    assert db.query('select count(*)::integer as total from public.analysis_cumulative_months')['rows'] == [{'total': 1}]
+    assert db.query('select count(*)::integer as total from public.analysis_observed_artifacts')['rows'] == [{'total': 3}]
+    assert not asyncio.run(service.read_maps(OWNER, report_id=rid))['items']
+    for historical_id, months_ago in ((rid, '1 month'), (next_report['report_id'], '2 months')):
+        assert 'code' not in db.query('insert into public.analysis_cumulative_months(user_id,snapshot_month,artifact_id) '
+            'values ($1,($2::date-$3::interval)::date,$4)', [OWNER, month, months_ago, historical_id])
+    assert 'code' not in db.query("update public.profiles set subscription_tier='free' where id=$1", [OWNER])
+    history = asyncio.run(service.map_history(OWNER, limit=1))
+    assert [row['id'] for row in history['items']] == [retained['report_id']]
+    assert history['has_more'] and history['next_offset'] == 1
+    assert [row['id'] for row in asyncio.run(service.map_history(OWNER, limit=1, offset=1))['items']] == [
+        next_report['report_id']]
+
+    assert 'code' not in db.query('update public.emotions set memo_action=$1 where id=$2',
+                                  ['以前と別の行動をとった。', originals[0]['id']])
+    assert not asyncio.run(service.ensure_map(OWNER, ensure=False))['has_visible_content']
+    assert asyncio.run(rpc('deep_insight_material', dict(p_user_id=OWNER)))['map'] is None
+    after_edit = asyncio.run(service.ensure_map(OWNER, monthly=True, ensure=False))
+    assert (after_edit['report_id'], after_edit['captured_at']) == (retained['report_id'], retained['captured_at'])
+    assert after_edit['map_subscription_tier'] == 'free'
+
+
+@pytest.mark.parametrize('queue_status,last_error,expected,will_enqueue', [
+    ('failed', service.NO_ACCEPTED_MAP_STRUCTURE, 'failed', False),
+    ('failed', 'analysis_model_source_unavailable', 'queued', True),
+    ('queued', service.NO_ACCEPTED_MAP_STRUCTURE, 'queued', False),
+    ('running', service.NO_ACCEPTED_MAP_STRUCTURE, 'running', False),
+])
+def test_only_terminal_empty_map_failure_stops_automatic_requeue(monkeypatch, queue_status, last_error, expected, will_enqueue):
+    import httpx
+    from unittest.mock import AsyncMock
+
+    response = httpx.Response(200, json=[dict(status=queue_status, last_error=last_error,
+                                              job_type='myprofile_latest_refresh_v1')])
+    get = AsyncMock(return_value=response)
+    enqueue = AsyncMock()
+    monkeypatch.setenv('ASTOR_WORKER_QUEUE_ENABLED', 'true')
+    monkeypatch.setenv('COCOLON_ANALYSIS_PLAN_READ_ROLLOUT', 'free_plus.v1')
+    monkeypatch.setattr(service, 'observed_mode', lambda: 'development')
+    monkeypatch.setattr(service, 'read_maps', AsyncMock(return_value={'items': []}))
+    monkeypatch.setattr('supabase_client.sb_get', get)
+    monkeypatch.setattr('astor_job_queue.enqueue_job', enqueue)
+
+    assert asyncio.run(service.request_map_refresh(OWNER)) == expected
+    assert bool(enqueue.await_count) == will_enqueue
+    assert get.await_args.kwargs['params']['select'] == 'status,job_type,last_error'
 
 
 def test_real_sql_commits_private_proof_and_rereads_one_saved_id_at_each_tier(saved_map_source):

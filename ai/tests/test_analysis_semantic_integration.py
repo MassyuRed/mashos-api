@@ -597,6 +597,44 @@ def test_background_queue_failure_does_not_hide_authorized_saved_content_or_stat
     asyncio.run(scenario())
 
 
+@pytest.mark.parametrize('last_error,expected_skip', [
+    (service.NO_ACCEPTED_MAP_STRUCTURE, service.NO_ACCEPTED_MAP_STRUCTURE),
+    ('synthetic_provider_failure', 'analysis_saved_map_unavailable'),
+])
+def test_background_map_reports_known_content_outcome_separately_from_technical_error(
+        monkeypatch, last_error, expected_skip):
+    import api_self_structure as latest
+    setup_store(monkeypatch, OwnedStore())
+    monkeypatch.setenv('COCOLON_ANALYSIS_OBSERVED_MODE', 'development')
+    monkeypatch.setenv('COCOLON_ANALYSIS_PLAN_READ_ROLLOUT', 'free_plus.v1')
+    monkeypatch.setenv('ASTOR_WORKER_QUEUE_ENABLED', 'true')
+    monkeypatch.setattr(latest, '_resolve_user_id_from_token', AsyncMock(return_value=OWNER))
+    queue = AsyncMock(return_value=httpx.Response(200, json=[dict(
+        status='failed', job_type='myprofile_latest_refresh_v1', last_error=last_error)]))
+    monkeypatch.setattr('supabase_client.sb_get', queue)
+    enqueue = AsyncMock()
+    monkeypatch.setattr('astor_job_queue.enqueue_job', enqueue)
+    app = FastAPI()
+    latest.register_self_structure_routes(app)
+
+    async def scenario():
+        paths = ['/self-structure/latest?background=true&ensure=false', '/self-structure/latest/status']
+        if last_error == service.NO_ACCEPTED_MAP_STRUCTURE:
+            paths.append('/self-structure/latest?background=true')
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url='http://synthetic') as client:
+            for path in paths:
+                response = await client.get(path, headers={'Authorization': 'Bearer synthetic'})
+                assert response.status_code == 200
+                body = response.json()
+                assert body['refresh_status'] == 'failed' and body['skip_reason'] == expected_skip
+                assert not body['has_visible_content']
+                assert body.get('content_text') is None and body.get('meta') is None
+                assert 'synthetic_provider_failure' not in response.text
+        enqueue.assert_not_awaited()
+
+    asyncio.run(scenario())
+
+
 @pytest.mark.parametrize('status_path', [False, True])
 def test_background_saved_read_guard_failure_is_not_downgraded_to_queue_failure(monkeypatch, status_path):
     import api_self_structure as latest

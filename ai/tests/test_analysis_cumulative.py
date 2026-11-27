@@ -161,10 +161,10 @@ class CumulativeReadTests(unittest.IsolatedAsyncioTestCase):
         untouched = copy.deepcopy(old)
         reads = AsyncMock(side_effect=[{'items':[old]}, {'items':[row]}, {'items':[row]}, {'items':[row]}])
         rpc = AsyncMock(side_effect=[snapshot, rid, snapshot, rid])
-        builder = service.build_cumulative_map
         with patch.object(service, 'read_maps', reads), patch.object(service, '_rpc', rpc), \
                 patch.object(service, 'observed_mode', return_value='development'), \
-                patch.object(service, 'build_cumulative_map', wraps=builder) as build:
+                patch.object(service, '_queue_map_update_notification', AsyncMock()), \
+                patch.object(service, 'build_cumulative_map', return_value=(artifact, coverage)) as build:
             first = await service.ensure_map(OWNER)
             second = await service.ensure_map(OWNER)
         self.assertTrue(first['refreshed'])

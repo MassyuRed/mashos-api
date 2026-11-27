@@ -24,9 +24,16 @@ from cocolon_meaning_experience_engine.natural_reply import (
 BODY = "会議を終えて、少し安心できたのですね。\n\n資料を読み直したことも、今日の記録に残っています。"
 
 
-def _active_application_owner(monkeypatch, provider, context_mode, *, initial_follow=False):
+def _active_application_owner(monkeypatch, provider, context_mode, *, initial_follow=False,
+                              display_name=None, profile_gets=None):
     from emlis_thread_factory import application_thread_service
 
+    async def read_profile(path, *, params, timeout):
+        if profile_gets is not None:
+            profile_gets.append((path, params))
+        return httpx.Response(200, json=[{'display_name': display_name}])
+
+    monkeypatch.setattr('emlis_ai_context_service.sb_get', read_profile)
     monkeypatch.setenv("COCOLON_EMLIS_THREAD_MODE", "active")
     monkeypatch.setenv("COCOLON_EMLIS_THREAD_RELEASE_APPROVED", "true")
     monkeypatch.setenv("EMLIS_AI_RESPONSE_PROFILE", "natural_reply.v1")
@@ -283,6 +290,111 @@ def test_saved_reply_reopens_without_provider_or_meaning_generation(natural_case
     assert len(calls) == 1
     public = json.dumps(dto, ensure_ascii=False)
     assert all(x not in public for x in ("source_prefix_ref", "material_json", "NATURAL_REPLY", "self-hosted-test-4b"))
+
+
+def test_paid_recipient_voice_reuses_the_writer_and_saves_only_the_repaired_address(natural_case, qdb, monkeypatch):
+    from cocolon_meaning_experience_engine.natural_reply import RECIPIENT_VOICE_VERSION
+
+    user, parent, _, _ = natural_case
+    past = str(uuid4())
+    qdb.query('update public.profiles set subscription_tier=$2 where id=$1', [user, 'plus'])
+    qdb.query("insert into public.emotions values ($1,$2,(now()-interval '1 day') at time zone 'UTC',$3,'',array['仕事'],array['平穏'],$4)",
+        [past, user, '会議の資料を読み直した。担当が決まり、少しほっとした。',
+         json.dumps([dict(type='平穏', strength='medium')])])
+    observation = '会議の資料をもう一度読んで、終わったときに安心できたのですね。'
+    reception = 'Emlisにも、安心された様子が伝わりました。'
+    intended = f'{observation}\n\nみなさん、{reception}'
+    calls = []
+    profile_gets = []
+
+    def infer(request):
+        messages = json.loads(request.content)['messages']
+        calls.append(messages)
+        instructions, source = messages
+        assert '冒頭や文頭で「Emlis、」と相手を呼ぶ形にしません' in instructions['content']
+        assert '別々の記録にあった気持ちや場面を' in instructions['content']
+        assert 'みなさん' not in instructions['content'] + source['content']
+        records = json.loads(source['content'])['records']
+        assert [record['scope'] for record in records] == ['CURRENT_INPUT', 'PAST_RECORD']
+        assert '担当が決まり' in source['content']
+        return httpx.Response(200, json={'model': 'synthetic-9b', 'choices': [
+            {'finish_reason': 'stop', 'message': {'role': 'assistant',
+             'content': f'Emlis、{observation}\n\nあなた、{reception}'}}]})
+
+    provider = SelfHostedNaturalReplySource(endpoint='https://model.invalid/v1/chat/completions',
+        model='synthetic-9b', api_key='synthetic-only', transport=httpx.MockTransport(infer))
+    service = _active_application_owner(monkeypatch, provider, 'paid', display_name='みな', profile_gets=profile_gets)
+    service.natural_questions_enabled = False
+    dto = run(service.start(user, parent))
+    assert dto['current_observation']['text'] == intended
+    assert profile_gets == [('/rest/v1/profiles', {'select': 'display_name', 'id': f'eq.{user}', 'limit': '1'})]
+    snapshot = run(service.store.read(user, input_id=parent))
+    receipt, = [e['payload'] for e in snapshot['events'] if e['payload'].get('stage') == 'NATURAL_REPLY_RECEIVED']
+    assert receipt['reply']['text'] == intended and receipt['recipient_voice_version'] == RECIPIENT_VOICE_VERSION
+    assert receipt['recipient_display_name_call'] == 'みなさん'
+    saved, = [e for e in snapshot['events'] if e['kind'] == 'OBSERVATION']
+    assert saved['id'] == dto['current_observation']['event_id']
+    assert saved['payload']['text'] == saved['payload']['artifact']['text'] == intended
+    restarted = EmlisThreadService(runtime_profile=Q3_PROFILE)
+    assert run(restarted.get(user, parent))['current_observation'] == dto['current_observation']
+    assert len(calls) == 1
+
+
+def test_prechange_receipt_retries_with_original_prompt_and_reader_keeps_a_correctable_suffix(natural_case, qdb, monkeypatch):
+    import cocolon_meaning_experience_engine.natural_reply as natural_reply
+
+    user, parent, service, calls = natural_case
+    before = f'Emlis、{BODY}'
+
+    async def old_source(material):
+        assert material.recipient_voice_version is None
+        calls.append(material)
+        return NaturalReply(before, 'synthetic-old-reply', material.source_prefix_ref)
+
+    service.natural_reply_source = old_source
+    failed = False
+
+    async def rpc(name, payload, **kwargs):
+        nonlocal failed
+        if not failed and any(e['kind'] == 'OBSERVATION' for e in payload.get('p_events', [])):
+            failed = True
+            return httpx.Response(503, json={'code': '57P03'})
+        return await qdb.rpc(name, payload, **kwargs)
+
+    monkeypatch.setattr(emlis_thread_store, 'sb_post_rpc', rpc)
+    with monkeypatch.context() as prechange:
+        prechange.setattr(natural_reply, 'RECIPIENT_VOICE_VERSION', None)
+        pending = run(service.start(user, parent))
+    assert pending['can_retry']
+    reopened = run(service.action(user, pending['thread_id'], action='retry_response',
+        expected_revision=pending['revision'], idempotency_key='save-legacy-reply', operation_id=pending['operation_id']))
+    original = run(service.store.read(user, input_id=parent))
+    receipt, = [e['payload'] for e in original['events'] if e['payload'].get('stage') == 'NATURAL_REPLY_RECEIVED']
+    assert 'recipient_voice_version' not in receipt and receipt['reply']['text'] == before
+    saved, = [e for e in original['events'] if e['kind'] == 'OBSERVATION']
+    assert saved['payload']['text'] == saved['payload']['artifact']['text'] == before
+    assert reopened['current_observation'] == {'event_id': saved['id'], 'text': BODY}
+    assert run(service.get(user, parent))['current_observation'] == reopened['current_observation']
+    corrected = run(service.correct_interpretation(user, reopened['thread_id'], target_event_id=saved['id'],
+        target_text=BODY, explanation='違います。', expected_revision=reopened['revision'],
+        idempotency_key='correct-legacy-reply'))
+    assert corrected['correction_saved'] and corrected['correction_target']['text'] == BODY
+    assert len(calls) == 1
+
+
+def test_recipient_address_preserves_the_record_writers_quoted_words_and_emlis_first_person():
+    from emlis_ai_user_address_service import repair_emlis_reply_address
+
+    quote = '「Emlis、聞いてほしいと書いた。」'
+    spoken = '話してくださったことを、Emlisは大切に受け取ります。Emlisも、言葉にしてくださったことが嬉しいです。'
+    assert repair_emlis_reply_address(f'{quote}\n\nEmlis、{spoken}') == f'{quote}\n\n{spoken}'
+    assert repair_emlis_reply_address(quote) == quote
+    assert repair_emlis_reply_address(f'Emlisさん、{spoken}') == spoken
+    spoken = 'あなたが伝えてくれたことは、Emlisには大切な話です。'
+    for opening in ('あなた', 'みな', 'みなさん'):
+        assert repair_emlis_reply_address(f'{opening}、{spoken}', recipient_call='みなさん') == f'みなさん、{spoken}'
+    assert repair_emlis_reply_address(f'あなた、{spoken}') == spoken
+    assert repair_emlis_reply_address(f'あなた、{spoken}', recipient_call='Emlisさん') == spoken
 
 
 @pytest.mark.parametrize('tier', ['plus', 'premium'])

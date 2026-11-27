@@ -138,7 +138,7 @@ from supabase_client import sb_get, sb_patch, sb_post, sb_post_rpc  # type: igno
 # NOTE:
 # In your repo, the module is expected to be `astor_myprofile_report.py`.
 # (This patch provides an updated version that adds `refresh_myprofile_latest_report`.)
-from astor_self_structure_report import refresh_myprofile_latest_report  # type: ignore
+from astor_self_structure_report import AnalysisMapContentUnavailable, refresh_myprofile_latest_report  # type: ignore
 
 # Phase X: material snapshots (central input snapshots)
 from astor_material_snapshots import (
@@ -4472,6 +4472,13 @@ async def _worker_loop() -> None:
             # A missing PATCH acknowledgement could mean the lease changed.
             # Stop local work. The conditional stale recovery owns the decision.
             logger.warning('MAP progress acknowledgement unavailable; awaiting stale recovery')
+        except AnalysisMapContentUnavailable as exc:
+            try:
+                await mark_failed(job_key=claimed.job_key, worker_id=worker_id, error=str(exc), claim=map_claim)
+            except Exception:
+                logger.warning('MAP claimant could not confirm content failure; awaiting stale recovery')
+            else:
+                logger.info('MAP analysis unavailable. key=%s type=%s', claimed.job_key, claimed.job_type)
         except Exception as exc:
             # Retry with backoff, then fail
             try:

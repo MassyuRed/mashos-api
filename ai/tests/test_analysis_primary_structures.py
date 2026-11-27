@@ -171,6 +171,40 @@ def test_single_self_interpretation_and_one_off_event_have_different_scope():
         core._read_primary_structures(p, material, nodes, [reading('in_this_record', ['n1.u1.e1'])])
 
 
+def test_v3_single_choice_requires_the_anchored_reason_and_same_recorded_choice():
+    prepared, plan, bodies = scenario(FIRST, version='karen.v3')
+    material = json.loads(prepared.material_json)
+    nodes = core._semantic_v4_join(plan, bodies)
+    axis = dict(scope='in_this_record', anchors=['n1.u1.e1'], heading='会議で仕事を引き受けた場面',
+                decision_factor='自分で選んだ仕事',
+                criterion='自分で選んだ仕事だったことが、この場面で引き受けた理由です。',
+                case_reading='会議では、自分で選んだ仕事だったため、引き受けました。')
+    assert core._read_primary_structures(prepared, material, nodes, [axis])[0]['scope'] == 'in_this_record'
+    for unsupported in (
+        dict(axis, decision_factor='昇進', criterion='昇進を大切にしています。',
+             case_reading='会議では昇進を考えて引き受けました。'),
+        dict(axis, case_reading=axis['case_reading'].replace('引き受けました', '断りました')),
+        dict(axis, criterion='自分で選んだ仕事を引き受けた後、別の仕事は断ったと書いています。'),
+    ):
+        assert core._read_primary_structures(prepared, material, nodes, [unsupported]) == []
+
+
+def test_v3_self_report_requires_the_anchored_statement_and_the_self_insight_selection():
+    statement = '人と過ごした後は一人で本を読む時間も大切だ'
+    prepared, plan, bodies = scenario(statement + 'と思った。', self_report=True, version='karen.v3')
+    material = json.loads(prepared.material_json)
+    nodes = core._semantic_v4_join(plan, bodies)
+    axis = dict(scope='self_report', anchors=['n1.u1.e1'], heading='本を読む時間についての気づき',
+                decision_factor='一人で本を読む時間', criterion='「' + statement + '」との気づきです。',
+                case_reading='「' + statement + '」と振り返っています。')
+    assert core._read_primary_structures(prepared, material, nodes, [axis])[0]['scope'] == 'self_report'
+    invented = dict(axis, decision_factor='昇進', criterion='昇進を大切にしています。',
+                    case_reading='会議では昇進を考えて引き受けました。')
+    assert core._read_primary_structures(prepared, material, nodes, [invented]) == []
+    material['records'][0]['selected_emotions'] = ['喜び']
+    assert core._read_primary_structures(prepared, material, nodes, [axis]) == []
+
+
 @pytest.mark.parametrize('version', ['karen.v1', 'karen.v2', 'karen.v3'])
 def test_history_merge_native_parser_preserves_structure_and_leaf_never_authors_one(version):
     from dataclasses import replace
@@ -204,6 +238,114 @@ def test_history_merge_native_parser_preserves_structure_and_leaf_never_authors_
     leaf = core.prepare_semantic_leaf(p, refs)
     leaf_messages = core.semantic_node_local_v4_messages(leaf, 'RELATIONS', plan=plan, nodes=bodies)
     assert 'primary_structures' not in probe.semantic_output_schema(leaf_messages)['properties']
+
+
+def test_history_merge_keeps_24_record_bindings_and_draws_the_admitted_choice_pair():
+    import analysis_merge_wire as merge
+    from analysis_plan_source_choices import WholeMapTitle, source_node_titles
+    from test_analysis_cumulative import source_snapshot
+    from test_analysis_v24_direct_capacity_recovery import bind_reply
+
+    notes = [f'{n}番の見本を確認した。' for n in range(1, 25)]
+    # The two choices live in different leaves and are both u2, not the
+    # leading source in their respective nodes.
+    notes[1], notes[13] = FIRST, SECOND
+    snapshot = source_snapshot(24, tier='premium')
+    for member, note in zip(snapshot['members'], notes, strict=True):
+        member['original'].update(memo=note, memo_action='')
+    parent = maps.prepare_semantic_map(OWNER, snapshot,
+        prompt_version=core.SEMANTIC_MAP_OCCURRENCE_V24_PROFILE, primary_structures='karen.v3')
+    refs = tuple(member.saved_record_ref for member in parent.frozen.members)
+
+    def receipt(phase, messages, authored):
+        raw = merge.compact_json(authored)
+        return dict(phase=phase, messages_sha256=core.semantic_map_hash(messages), raw=raw,
+                    raw_sha256=hashlib.sha256(raw.encode()).hexdigest(), finish_reason='stop', completion_tokens=100)
+
+    leaves = []
+    for index in (0, 12):
+        leaf = core.prepare_semantic_leaf(parent, refs[index:index + 12])
+        plan = nodes = None
+        receipts = []
+        for phase in core.SEMANTIC_MAP_NODE_LOCAL_V4_PHASES:
+            messages = core.semantic_node_local_v4_wire_messages(leaf, phase, plan=plan, nodes=nodes)
+            _, _, authored = bind_reply(messages)
+            receipts.append(receipt(phase, messages, authored))
+            if phase == 'PLAN':
+                plan = core.admit_semantic_node_local_v4_plan_response(leaf, authored)
+            if phase == 'NODES':
+                nodes = core.admit_semantic_node_local_v4_nodes_response(leaf, plan, authored)
+        leaves.append((leaf, response(leaf, dict(schema_version=core.semantic_node_local_v4_artifact_schema(leaf),
+                                                  phases=receipts))))
+
+    stage = core.prepare_semantic_merge(parent, tuple(leaves))
+    material = json.loads(stage.material_json)
+    assert [field['text'] for field in material['fields']] == notes
+    assert all(field['fragment_is_complete_field'] for field in material['fields']) and not material['omitted_ranges']
+    units = [[[(i, notes[i - 1])]] for i in range(1, 25)]
+    raw_plan = packet(stage, [units[i] + units[i + 1] for i in range(0, len(units), 2)])
+    plan = core.admit_semantic_node_local_v4_plan_response(stage, raw_plan, merge_anchors=True,
+        merge_action_sources=True, context_sources=True, distinct_context_sources=True,
+        speaker_context_sources=True, attributed_context_sources=True)
+    fact_slots = core._semantic_node_fact_sources(plan, material, stage.prompt_version)
+    raw_nodes = dict(schema_version=core._semantic_v4_schema('NODES'), plan_sha256=core.semantic_map_hash(
+        ['analysis.node-facts.v1', 'NODES', stage.request_ref, plan]), nodes={})
+    for node in plan['nodes']:
+        ref = node['node_id']
+        title = source_node_titles(material, node['units'], ())[0]
+        raw_nodes['nodes'][ref] = dict(node_kind='CHOICE_OUTPUT', perspective='SELF', title=title, meaning='', units={
+            unit: dict(evidence_ref=f'{ref}.{unit}', source_mode='RECORDED', fact_parts={key: ordinal}, unknowns=[])
+            for (node_id, unit, key), (ordinal, _) in fact_slots.items() if node_id == ref})
+    nodes = core.admit_semantic_node_local_v4_nodes_response(stage, plan, raw_nodes, bound_titles=True, ordered_titles=True)
+    joined = core._semantic_v4_join(plan, nodes)
+    axis = dict(v3_reading(), anchors=['n1.u2.e1', 'n7.u2.e1'])
+    invalid = dict(axis, scope='self_report', anchors=['n1.u2.e1'])
+    rel = dict(schema_version=core._semantic_v4_schema('RELATIONS'), nodes_sha256=core.semantic_map_hash(joined),
+               qualification_review={}, edges=[], primary_structures=[invalid, axis],
+               overview=dict(node_refs=list(nodes['nodes']), title_proposal='', title=WholeMapTitle(material, joined).neutral))
+
+    def receipts_for(*, source_reading, primary_structures=None):
+        receipts = []
+        relations = rel if primary_structures is None else dict(rel, primary_structures=primary_structures)
+        for phase, logical in zip(core.SEMANTIC_MAP_NODE_LOCAL_V4_PHASES, (raw_plan, raw_nodes, relations), strict=True):
+            args = dict(plan=plan if phase != 'PLAN' else None, nodes=nodes if phase == 'RELATIONS' else None)
+            messages = core.semantic_node_local_v4_wire_messages(stage, phase, **args, merge_source_reading=source_reading)
+            restored = merge.legacy_messages(messages)
+            if source_reading:
+                old = core.semantic_node_local_v4_wire_messages(stage, phase, **args, merge_source_reading=False)
+                assert restored[1] == merge.legacy_messages(old)[1]
+                assert len(core.semantic_map_canonical(messages).encode()) <= len(core.semantic_map_canonical(old).encode())
+            if phase == 'PLAN' and source_reading:
+                assert '一文を丸ごと引用' in messages[0]['content']
+            if phase == 'RELATIONS' and source_reading:
+                assert 'self_reportは使いません。' in messages[0]['content']
+                assert 'n1.u2.e1 (record 2), n7.u2.e1 (record 14)' in messages[0]['content']
+            assert len(core.semantic_map_canonical(messages).encode()) < core.SEMANTIC_HISTORY_MERGE_MAX_PROMPT_BYTES
+            physical = merge.response_codec(messages).encode(logical)
+            receipts.append(dict(receipt(phase, messages, physical), logical_messages_sha256=core.semantic_map_hash(restored)))
+        return dict(schema_version=core.semantic_node_local_v4_artifact_schema(stage),
+                    merge_wire_version=merge.JUDGMENT_VERSION, phases=receipts)
+
+    previous, current = receipts_for(source_reading=False), receipts_for(source_reading=True)
+    assert core.assemble_semantic_node_local_v4(stage, previous)['edges'] == []
+    unsupported = core.assemble_semantic_node_local_v4(stage, receipts_for(source_reading=True, primary_structures=[invalid]))
+    assert unsupported['overview']['primary_structures'] == unsupported['edges'] == []
+    result = core.build_semantic_stage(stage, response(stage, current))
+    assert result.coverage['mapped_count'] == 24
+    private = result.artifact.private_evidence()
+    assert {ref for node in private['graph']['nodes'] for ref in node['record_refs']} == set(refs)
+    public = result.artifact.safe_projection(authenticated_owner_scope=OWNER)
+    assert len(public['overview']['primary_structures']) == 1
+    assert public['overview']['primary_structures'][0]['criterion'] == axis['criterion']
+    edge, = public['edges']
+    assert ('n1', 'n7') == (edge['from_ref'], edge['to_ref'])
+    assert '私から引き受けた' in edge['label'] and '断った' in edge['label']
+    for tier in ('free', 'plus', 'premium'):
+        graph, description = service.map_projection_for_plan(public, tier)
+        expected = dict(edge, explanation=edge['label']) if tier == 'free' else edge
+        assert graph['edges'] == [expected]
+        assert axis['criterion'] in description
+        assert (axis['case_reading'] in description) == (tier != 'free')
 
 
 @pytest.mark.parametrize('model_generation, configured, enabled', [
