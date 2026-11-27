@@ -1053,6 +1053,9 @@ async def _ensure_map(user_id, *, ensure=True, force=False, monthly=False, model
     refreshed, coverage = False, None
     if ensure and observed_mode() == 'development':
         current = await read_maps(owner, limit=1) if monthly else result
+        if monthly and current.get('withheld') and not force:
+            # Opening history must not retry a declined read of the same sources.
+            return _response(None, monthly=True, tier=tier, analysis_unavailable=True)
         current_row = current['items'][0] if current['items'] else None
         snapshot = await _rpc('analysis_cumulative_source_snapshot', {'p_user_id': owner})
         if not re.fullmatch(r'analysis-db-cumulative-v1:[0-9a-f]{64}', snapshot['guard']):

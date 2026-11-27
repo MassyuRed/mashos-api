@@ -432,13 +432,21 @@ def test_saved_map_eligibility_is_shared_by_history_detail_if_deep_insight_and_p
     monkeypatch.setenv('COCOLON_ANALYSIS_PLAN_READ_ROLLOUT', 'free_plus.v1')
     accepted, good_coverage, _ = _artifact(COEXISTENCE, snapshot)
     next_accepted, _, _ = _artifact(COEXISTENCE, snapshot)
-    monkeypatch.setattr(service, '_semantic_history_map', AsyncMock(
-        side_effect=[(artifact, coverage), (accepted, good_coverage), (next_accepted, good_coverage)]))
+    read_provider = AsyncMock(side_effect=[(artifact, coverage), (accepted, good_coverage), (next_accepted, good_coverage)])
+    monkeypatch.setattr(service, '_semantic_history_map', read_provider)
     notify = AsyncMock()
     monkeypatch.setattr(service, '_queue_map_update_notification', notify)
     model = sources.SelfHostedSemanticAnalysisModelSource(endpoint='https://synthetic.invalid/v1/chat/completions',
         model=sources.SEMANTIC_OCCURRENCE_V24_9B_MODEL, api_key='synthetic',
         semantic_prompt_version=core.SEMANTIC_MAP_OCCURRENCE_V24_PROFILE)
+    with monkeypatch.context() as read_only:
+        tracked_rpc = AsyncMock(wraps=rpc)
+        read_only.setattr(service, '_rpc', tracked_rpc)
+        history_visit = asyncio.run(service.ensure_map(OWNER, monthly=True, model_source=model))
+        assert history_visit['reason'] == service.NO_ACCEPTED_MAP_STRUCTURE
+        assert [call.args[0] for call in tracked_rpc.await_args_list] == ['analysis_cumulative_read'] * 2
+        read_provider.assert_not_awaited()
+        notify.assert_not_awaited()
     declined = asyncio.run(service.ensure_map(OWNER, model_source=model))
     assert declined['reason'] == service.NO_ACCEPTED_MAP_STRUCTURE
     assert not declined['refreshed'] and not declined['has_visible_content']
