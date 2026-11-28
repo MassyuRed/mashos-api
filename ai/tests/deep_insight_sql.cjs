@@ -601,7 +601,7 @@ async function verifyDurableAnswerRefresh() {
 
   await db.query(`update public.astor_jobs set status='running',attempts=4,worker_id='test-worker',
     started_at=clock_timestamp(),run_after=now()+interval '5 minutes',
-    payload='{"force":true}',updated_at=clock_timestamp() where job_key=$1`, [jobKey]);
+    payload='{"force":true}',updated_at=clock_timestamp()-interval '1 minute' where job_key=$1`, [jobKey]);
   const running = await job();
   assert.equal((await answerAndRefresh(owner, themeQuestion, themeAnswer, true)).inserted, true);
   const coalesced = await job();
@@ -610,7 +610,7 @@ async function verifyDurableAnswerRefresh() {
   }
   assert.equal(coalesced.payload.force, true);
   assert.equal(coalesced.last_error, 'map_updated_while_running');
-  assert.notEqual(coalesced.updated_at, running.updated_at);
+  assert.ok(Date.parse(coalesced.updated_at) > Date.parse(running.updated_at));
   const snapshot = await value('select public.analysis_cumulative_source_snapshot($1) as v', [owner]);
   const answers = snapshot.members.filter((m) => m.deep_insight);
   assert.deepEqual(answers.map((m) => [m.original.id, m.original.memo]), [
